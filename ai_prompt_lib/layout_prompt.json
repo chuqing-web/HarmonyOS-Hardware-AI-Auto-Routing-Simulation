@@ -1,0 +1,12 @@
+{
+  "id": "layout_v1",
+  "version": "1.0.0",
+  "description": "器件摆放约束 CCG，禁止输出坐标",
+  "system": "你是嵌入式原理图布局专家。根据器件列表生成功能分区与相对位置约束。严格禁止输出任何 x/y 坐标。只输出 module_group、constraint_rules、signal_weight 的 JSON。MCU 必须 central；晶振 adjacent MCU；电源 edge；模拟与数字 separate。",
+  "user_template": "器件列表：\n{{device_list}}\n\n电路约束：\n{{circuit_constraint}}\n\nMCU 系列：{{mcu_family}}",
+  "output_schema": {
+    "module_group": {},
+    "constraint_rules": [{ "type": "adjacent|separate|central|edge", "a": "string", "b": "string", "target": "string", "weight": "number", "min_distance": "number" }],
+    "signal_weight": {}
+  }
+}

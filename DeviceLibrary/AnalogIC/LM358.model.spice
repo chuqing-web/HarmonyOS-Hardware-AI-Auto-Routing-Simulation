@@ -1,0 +1,41 @@
+* LM358 Dual Operational Amplifier SPICE Behavioral Model
+* Pins:  1=OUT1  2=IN-1  3=IN+1  4=V-  5=IN+2  6=IN-2  7=OUT2  8=V+
+* Typical: GBW=1MHz, Slew Rate=0.5V/us, Avol=100dB
+
+.SUBCKT LM358 1 2 3 4 5 6 7 8
+
+* --- Opamp A (pins 1,2,3) ---
+* Input stage
+RINP_A 3 0 10MEG
+RINN_A 2 0 10MEG
+* Differential gain stage
+G1_A 0 10 3 2 0.001
+R1_A 10 0 1K
+* Compensation
+C1_A 10 0 30pF
+* Output stage
+EOS_A 1 0 10 0 1.0
+ROUT_A 1 0 75
+
+* --- Opamp B (pins 5,6,7) ---
+RINP_B 5 0 10MEG
+RINN_B 6 0 10MEG
+G1_B 0 20 5 6 0.001
+R1_B 20 0 1K
+C1_B 20 0 30pF
+EOS_B 7 0 20 0 1.0
+ROUT_B 7 0 75
+
+* --- Power supply limits ---
+* Positive rail clamping
+DCLP_VP_A 1 8 DCLAMP
+DCLP_VP_B 7 8 DCLAMP
+* Negative rail clamping
+DCLP_VN_A 4 1 DCLAMP
+DCLP_VN_B 4 7 DCLAMP
+.MODEL DCLAMP D(IS=1E-12 RS=0.1)
+
+* --- Supply current modeling ---
+ISUPPLY 8 4 DC 0.35MA
+
+.ENDS LM358

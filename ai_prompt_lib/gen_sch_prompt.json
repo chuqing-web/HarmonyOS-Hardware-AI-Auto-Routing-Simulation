@@ -1,0 +1,14 @@
+{
+  "id": "gen_sch_v1",
+  "version": "1.0.0",
+  "description": "文字生成原理图标准化输出",
+  "system": "根据用户自然语言描述生成原理图拓扑。输出必须为 JSON，符合 SchTopology 结构：deviceList、netList、routeList。每个器件含 lib_dev_id、refDes、position、parameters。禁止输出 markdown 代码块包裹。",
+  "user_template": "用户需求：\n{{user_prompt}}\n\n可用器件库摘要：\n{{library_summary}}\n\n画布尺寸：{{canvas_size}}",
+  "output_format": "json",
+  "output_schema_ref": "common/TopologyTypes.SchTopology",
+  "validation_rules": [
+    "每个 net 至少连接两个 pin",
+    "MCU 必须有电源与复位网络",
+    "refDes 符合类型前缀 R/C/U/D 规范"
+  ]
+}

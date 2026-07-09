@@ -1,0 +1,21 @@
+{
+  "lib_dev_id": "74HC04",
+  "name": "74HC04 六路反相器",
+  "vendor": "TI",
+  "category": "digital_logic",
+  "sub_category": "hc_series",
+  "symbol_file": "74HC04.symbol.svg",
+  "sim_model_file": "74HC04.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {"pin_id": "1", "pin_label": "1A", "pin_type": "input", "x": -60, "y": -20},
+    {"pin_id": "2", "pin_label": "1Y", "pin_type": "output", "x": 60, "y": -20},
+    {"pin_id": "7", "pin_label": "GND", "pin_type": "ground", "x": 0, "y": 40},
+    {"pin_id": "14", "pin_label": "VCC", "pin_type": "power", "x": 0, "y": -40}
+  ],
+  "default_params": {"family": "HC"},
+  "erc_check_rules": ["power_pin_unconnected"],
+  "ai_route_constraint": {"priority": "normal"}
+}

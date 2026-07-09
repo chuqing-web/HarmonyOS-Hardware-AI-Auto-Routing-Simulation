@@ -1,0 +1,18 @@
+{
+  "id": "route_v1",
+  "version": "1.0.0",
+  "description": "AI 自动布线专用约束指令",
+  "system": "你是资深硬件原理图布线工程师。请根据给定拓扑 JSON 输出布线方案。必须遵守：模拟/数字分区；晶振至 MCU 路径最短；电源/地星型或面连接；总线信号规整平行；避免交叉穿越敏感模拟网络。输出严格 JSON，不含解释文字。",
+  "user_template": "拓扑数据：\n{{topology}}\n\n附加约束：\n{{constraints}}\n\n已有网络：\n{{existing_nets}}",
+  "output_format": "json",
+  "output_schema": {
+    "routes": [{ "netId": "string", "points": [{ "x": "number", "y": "number" }] }],
+    "warnings": ["string"]
+  },
+  "constraints": [
+    "analog_digital_partition",
+    "crystal_shortest_path",
+    "bus_alignment",
+    "power_star_or_plane"
+  ]
+}

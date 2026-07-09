@@ -1,0 +1,264 @@
+export { EventBus } from './src/main/ets/utils/EventBus';
+
+export {
+  mapJsonReplacer, mapJsonReviver, mapAwareStringify, mapAwareParse,
+  serializeMap, deserializeStringMap
+} from './src/main/ets/utils/MapJsonUtil';
+
+export { MinHeap } from './src/main/ets/utils/MinHeap';
+
+export { RandomUtil } from './src/main/ets/utils/RandomUtil';
+
+export { HexParser } from './src/main/ets/utils/HexParser';
+
+export { CryptoUtil } from './src/main/ets/utils/CryptoUtil';
+
+export { IdUtil } from './src/main/ets/utils/IdUtil';
+
+export { parsePinRef, buildPinRef, getPinNetMap, ParsedPinRef } from './src/main/ets/utils/PinRefUtil';
+
+export { ErcEngine } from './src/main/ets/utils/ErcEngine';
+
+export { DeepErcEngine } from './src/main/ets/utils/DeepErcEngine';
+
+export { DynamicErcEngine } from './src/main/ets/utils/DynamicErcEngine';
+
+export { UnitParser } from './src/main/ets/utils/UnitParser';
+
+export { ExportPostProcessor } from './src/main/ets/utils/ExportPostProcessor';
+
+export { PerformanceOptimizer } from './src/main/ets/utils/PerformanceOptimizer';
+
+export { Validate } from './src/main/ets/utils/Validate';
+
+export { Logger } from './src/main/ets/utils/Logger';
+
+export { ResultHelper, ApiResult } from './src/main/ets/utils/ResultHelper';
+
+export { TopologyAdapter } from './src/main/ets/utils/TopologyAdapter';
+
+export { calcSymbolBounds, pointInSymbolBounds, resolveSymbolKey, SymbolBounds } from './src/main/ets/utils/SymbolGeometry';
+
+export { CallbackRegistry } from './src/main/ets/utils/CallbackRegistry';
+
+export {
+  copyStringMap, copyNumberMap, paramMapGet, appendArray, arrayMin, arrayMax,
+  arrayBufferToString, normalizeRotation, copySchTopologyWithDevices,
+  emptyStringMap, emptyNumberMap, stringMap1, stringMap2,
+  makeDeviceInst, makeDeviceRequirement, makeRouteLine, emptySchTopology
+} from './src/main/ets/utils/MapHelpers';
+
+export { HardwareFingerprint } from './src/main/ets/security/HardwareFingerprint';
+
+export { LicenseManager } from './src/main/ets/security/LicenseManager';
+
+export { FeatureGate } from './src/main/ets/security/FeatureGate';
+
+export { TrialManager, TrialStatus } from './src/main/ets/security/TrialManager';
+
+export { PrivacyConsentStore, PrivacyConsentRecord } from './src/main/ets/security/PrivacyConsentStore';
+
+export { Mcu8051Engine, Mcu8051State } from './src/main/ets/engines/Mcu8051Engine';
+
+export { TopologyPatchApplier, TopologyPatch, TopologyPatchOp } from './src/main/ets/utils/TopologyPatch';
+
+export { AiContextSanitizer } from './src/main/ets/utils/AiContextSanitizer';
+
+
+
+export { ErrCode, errCodeMessage } from './src/main/ets/types/ErrCode';
+
+export { ProgressInfo, ProgressCallback, makeProgress } from './src/main/ets/types/ProgressTypes';
+
+export {
+
+  NetNodeRef, NetInfo, DeviceInst, BusInfo, ProbeInfo, TextAnnotate,
+
+  ErcError, SubCircuitBlock, SubCircuitPort, SchTopology, RouteLine, RouteResult
+
+} from './src/main/ets/types/TopologyTypes';
+
+export {
+
+  SimConfig, WaveData, FreqNoiseData, SimStatResult, SpiceResult, defaultSimConfig
+
+} from './src/main/ets/types/SimExtendedTypes';
+
+export {
+
+  AiTaskType, DiagError, AiTaskResult, AiTestResult, BomOptResult,
+
+  LibDevicePin, SimModelInfo, ParamLimit, LibDevice,
+
+  DeviceRequirement, DeviceSelectLlmOutput, MatchedDevice, DeviceSelectResult,
+
+  LayoutConstraintRule, LayoutLlmOutput, PlacementCandidate, PlacementResult,
+
+  NetPriorityRule, SpecialNetRule, RoutingLlmOutput, RoutingWeightPrefs, AiPipelineResult,
+
+  DevicePosition
+
+} from './src/main/ets/types/AiExtendedTypes';
+
+export {
+
+  DeviceModelType, DeviceParamValue, DevicePinMeta, DeviceMeta,
+
+  DeviceIndexEntry, DeviceLibraryIndex, ProteusMappingEntry, ProteusMappingIndex,
+
+  McuSimModel, LoadedDeviceBundle
+
+} from './src/main/ets/types/DeviceLibraryTypes';
+
+export { FlashSegment, HexFileInfo } from './src/main/ets/types/HexExtendedTypes';
+
+export {
+
+  OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode, MathChannelOp,
+
+  OscilloscopeConfig, CursorMeasurement, LogicDecodeProtocol, LogicAnalyzerConfig,
+
+  DecodedFrame, MultimeterMode, SignalWaveform, SignalGenConfig, UartTerminalConfig,
+
+  VoltmeterType, VoltmeterConfig, AmmeterType, AmmeterConfig,
+
+  PowerMeterConfig, FrequencyCounterConfig, InstrumentSnapshot
+
+} from './src/main/ets/types/InstrumentTypes';
+
+export { FaultType, FaultInjection, FaultScanResult } from './src/main/ets/types/FaultTypes';
+
+export {
+
+  PluginPermission, PluginType, PluginInfo, PluginManifest
+
+} from './src/main/ets/types/PluginTypes';
+
+export {
+
+  LicenseTier, LicenseFeatures, LicenseFile, LicenseStatus,
+
+  ApiUsageRecord, UsageDashboard
+
+} from './src/main/ets/types/LicenseTypes';
+
+export {
+
+  SchematicAnnotationType, SchematicAnnotationStatus, AnnotationTargetKind,
+
+  SchematicAnnotation, SnapshotMeta, TopologySnapshotDiff, VersionCompareReport,
+
+  CollabChangeLogEntry, ProjectAccessMode, ProjectLockInfo, CollaborationData
+
+} from './src/main/ets/types/CollaborationTypes';
+
+export {
+
+  ProjectSnapshot, VersionDiff, ChangeLogEntry, PrintConfig, Annotation,
+
+  AccessibilityConfig, ProxyConfig, HotUpdateInfo, LengthUnit
+
+} from './src/main/ets/types/PlatformTypes';
+
+
+
+export {
+
+  Point2D,
+
+  Rect2D,
+
+  WorldRect,
+
+  Rotation,
+
+  ViewportState,
+
+  PinType,
+
+  NetType,
+
+  LogicState,
+
+  BusWidth,
+
+  WireStyle,
+
+  Pin,
+
+  Net,
+
+  NetLabel,
+
+  Wire,
+
+  Port,
+
+  ComponentCategory,
+
+  ComponentInstance,
+
+  SchematicDocument,
+
+  SubcircuitRef,
+
+  SchematicMetadata,
+
+  ProbeMeta,
+
+  SimulationMode,
+
+  SimulationState,
+
+  SimulationConfig,
+
+  SimulationResult,
+
+  McuRegisterSnapshot,
+
+  McuFamily,
+
+  DebugState,
+
+  HexFirmware,
+
+  HexSegment,
+
+  McuDebugConfig,
+
+  AiCapability,
+
+  AiProviderType,
+
+  LoadBalanceMode,
+
+  ApiConnectionStatus,
+
+  AiApiConfig,
+
+  AiRequest,
+
+  AiResponse,
+
+  FileFormat,
+
+  ProjectFile,
+
+  ErcSeverity,
+
+  ErcRuleType,
+
+  ErcViolation,
+
+  ModuleEvent,
+
+  ModuleEventPayload,
+
+  ModuleEventHandler,
+
+  Result,
+
+  PaginatedResult
+
+} from './src/main/ets/types/CommonTypes';
+

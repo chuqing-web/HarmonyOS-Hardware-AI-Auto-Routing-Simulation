@@ -1,0 +1,22 @@
+<svg width="80" height="110" viewBox="-40 -40 80 110" xmlns="http://www.w3.org/2000/svg">
+  <!-- Instrument body with rounded corners -->
+  <rect x="-30" y="-20" width="60" height="60" fill="none" stroke="#000" stroke-width="1.2" rx="4"/>
+  <!-- Waveform preview inside -->
+  <polyline points="-25,5 -15,-5 -5,8 5,-8 15,3 25,-3"
+            fill="none" stroke="#000" stroke-width="0.8"/>
+  <!-- 5 channel input pins -->
+  <line x1="-40" y1="-30" x2="-30" y2="-30" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="-10" x2="-30" y2="-10" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="10" x2="-30" y2="10" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="30" x2="-30" y2="30" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="50" x2="-30" y2="50" stroke="#000" stroke-width="1.2"/>
+  <!-- Pin dots -->
+  <circle cx="-40" cy="-30" r="2" fill="#000"/>
+  <circle cx="-40" cy="-10" r="2" fill="#000"/>
+  <circle cx="-40" cy="10" r="2" fill="#000"/>
+  <circle cx="-40" cy="30" r="2" fill="#000"/>
+  <circle cx="-40" cy="50" r="2" fill="#000"/>
+  <!-- Labels above body -->
+  <text x="0" y="-34" font-size="5" fill="#888" text-anchor="middle" font-family="sans-serif">REF</text>
+  <text x="0" y="-26" font-size="6" fill="#000" text-anchor="middle" font-family="sans-serif">SCOPE</text>
+</svg>

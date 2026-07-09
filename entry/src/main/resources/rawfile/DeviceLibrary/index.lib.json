@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-07-07T08:00:00Z",
+  "total_count": 5,
+  "devices": [
+    {
+      "lib_dev_id": "R_10k",
+      "name": "通用贴片电阻 10kΩ",
+      "category": "passive_resistor",
+      "sub_category": "smd_0805",
+      "meta_path": "Passive/Resistor/R_10k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LM358",
+      "name": "LM358 双路通用运算放大器",
+      "category": "analog_opamp",
+      "sub_category": "dual_opamp",
+      "meta_path": "AnalogIC/LM358.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F103C8T6",
+      "name": "STM32F103C8T6 Cortex-M3",
+      "category": "mcu_stm32",
+      "sub_category": "f103",
+      "meta_path": "MCU/STM32/STM32F103C8T6.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC04",
+      "name": "74HC04 六路反相器",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC04.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "OSCILLOSCOPE",
+      "name": "虚拟四通道示波器",
+      "category": "instrument",
+      "sub_category": "oscilloscope",
+      "meta_path": "Instrument/OSCILLOSCOPE.meta.json",
+      "is_custom": false
+    }
+  ]
+}

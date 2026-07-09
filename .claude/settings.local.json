@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"D:\\\\Download\\\\DevEco Studio\\\\tools\\\\node\\\\node.exe\" \"D:\\\\Download\\\\DevEco Studio\\\\tools\\\\hvigor\\\\bin\\\\hvigorw.js\" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 assembleHap --analyze=normal --parallel --incremental --daemon)",
+      "Bash(hvigorw assembleHap --mode module -p module=entry@default)",
+      "Bash(where hvigorw *)",
+      "Read(//c/Users/Chuqing/**)",
+      "Bash(node hvigorw.js clean --mode module -p product=default assembleHap)",
+      "Read(//d/Projects/**)",
+      "Bash(node -e \"console.log\\(require.resolve\\('@ohos/hvigor/bin/hvigorw.js'\\)\\)\")",
+      "Bash(npm list *)",
+      "Read(//c/Program Files/Huawei/**)",
+      "Read(//c/Program Files \\(x86\\)/Huawei/**)",
+      "Bash(hvigorw clean *)",
+      "Bash(hvigorw assemble *)",
+      "Bash(npm root *)",
+      "Read(//Applications/DevEco-Studio.app/Contents/tools/**)",
+      "Read(//d/Programs/**)",
+      "Bash(\"D:/Download/DevEco Studio/tools/node/node.exe\" \"D:/Download/DevEco Studio/tools/hvigor/bin/hvigorw.js\" --mode module -p module=entry@default -p product=default -p requiredDeviceType=2in1 assembleHap --analyze=normal --parallel --incremental --daemon)",
+      "WebSearch",
+      "Bash(hvigor --mode module -p module=entry@default -p product=default assembleHap)",
+      "Bash(npm -v)",
+      "Bash(ls \"$\\(npm root -g \\)/@ohos\")"
+    ]
+  }
+}

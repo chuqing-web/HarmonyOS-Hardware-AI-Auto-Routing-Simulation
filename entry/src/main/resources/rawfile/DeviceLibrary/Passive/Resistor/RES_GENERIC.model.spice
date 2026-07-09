@@ -1,0 +1,15 @@
+* Generic Resistor Model
+* Parameters: R=nominal value, DEV=device tolerance, TC1/TC2=temp coefficients
+
+.MODEL RES_GENERIC RES(
+  R=1
+  DEV=0.05
+  TC1=0.001
+  TC2=0.000001
+  TNOM=27
+)
+
+* Subcircuit wrapper with optional power rating enforcement
+.SUBCKT RES_PWR 1 2 PARAMS: VALUE=10K POWER=0.25W
+R1 1 2 {VALUE}
+.ENDS RES_PWR

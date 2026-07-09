@@ -1,0 +1,818 @@
+{
+  "version": 1,
+  "ohos-module-entry": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\cache\\default\\default@CompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\cache\\default\\default@CompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-common": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-schematic_editor": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-component_library": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-simulation_kernel": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-hex_debugger": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-ai_engine": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-ai_api_manager": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-file_persistence": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-instruments": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-module-plugin_system": {
+    "SELECT_TARGET": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build",
+    "TARGETS": {
+      "default": {
+        "SOURCE_ROOT": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\src\\main",
+        "RESOURCES_PATH": [
+          "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\src\\main\\resources"
+        ],
+        "BUILD_PATH": {
+          "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\outputs\\default",
+          "INTERMEDIA_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates",
+          "JS_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\loader_out\\default",
+          "JS_LITE_ASSETS_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\loader_out_lite\\default",
+          "RES_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\res\\default",
+          "RES_PROFILE_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\res\\default\\resources\\base\\profile",
+          "ETS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\cache\\default\\default@HarCompileArkTS\\esmodule",
+          "JS_SUPER_VISUAL_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\cache\\default\\default@HarCompileJS\\jsbundle",
+          "WORKER_LOADER": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\loader\\default\\loader.json",
+          "MANIFEST_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\manifest\\default",
+          "OUTPUT_METADATA_JSON": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\hap_metadata\\default\\output_metadata.json",
+          "SOURCE_MAP_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system\\build\\default\\intermediates\\source_map\\default"
+        },
+        "BUILD_OPTION": {
+          "debuggable": true
+        }
+      }
+    },
+    "BUILD_OPTION": {
+      "default-default": {
+        "debuggable": true,
+        "copyFrom": "default"
+      }
+    },
+    "BUILD_PROFILE_OPT": {
+      "apiType": "stageMode",
+      "buildOption": {},
+      "targets": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    "BUILD_CACHE_DIR": ""
+  },
+  "ohos-project": {
+    "SELECT_PRODUCT_NAME": "default",
+    "MODULE_BUILD_DIR": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\build",
+    "BUNDLE_NAME": "com.elecdraw.aischsim",
+    "VERSION_CODE": 1000000,
+    "VERSION_NAME": "1.0.0",
+    "BUILD_PATH": {
+      "OUTPUT_PATH": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\build\\outputs\\default"
+    },
+    "MODULES": [
+      {
+        "name": "entry",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\entry",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "common",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\common",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "schematic_editor",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\schematic_editor",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "component_library",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\component_library",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "simulation_kernel",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\simulation_kernel",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "hex_debugger",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\hex_debugger",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "ai_engine",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_engine",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "ai_api_manager",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\ai_api_manager",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "file_persistence",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\file_persistence",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "instruments",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\instruments",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      },
+      {
+        "name": "plugin_system",
+        "srcPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation\\features\\plugin_system",
+        "targets": [
+          {
+            "name": "default",
+            "applyToProducts": [
+              "default"
+            ]
+          }
+        ],
+        "belongProjectPath": "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+      }
+    ],
+    "PROFILE_OPT": {
+      "app": {
+        "signingConfigs": [],
+        "products": [
+          {
+            "name": "default",
+            "signingConfig": "default",
+            "compatibleSdkVersion": "5.0.0(12)",
+            "runtimeOS": "HarmonyOS",
+            "targetSdkVersion": "5.0.0(12)"
+          }
+        ],
+        "buildModeSet": [
+          {
+            "name": "debug"
+          },
+          {
+            "name": "release"
+          }
+        ]
+      },
+      "modules": [
+        {
+          "name": "entry",
+          "srcPath": "./entry",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "common",
+          "srcPath": "./common",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "schematic_editor",
+          "srcPath": "./features/schematic_editor",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "component_library",
+          "srcPath": "./features/component_library",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "simulation_kernel",
+          "srcPath": "./features/simulation_kernel",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "hex_debugger",
+          "srcPath": "./features/hex_debugger",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "ai_engine",
+          "srcPath": "./features/ai_engine",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "ai_api_manager",
+          "srcPath": "./features/ai_api_manager",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "file_persistence",
+          "srcPath": "./features/file_persistence",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "instruments",
+          "srcPath": "./features/instruments",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "plugin_system",
+          "srcPath": "./features/plugin_system",
+          "targets": [
+            {
+              "name": "default",
+              "applyToProducts": [
+                "default"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "CONFIG_PROPERTIES": {
+      "enableSignTask": true,
+      "skipNativeIncremental": false,
+      "hvigor.keepDependency": true
+    },
+    "OVERALL_PROJECT_PATHS": [
+      "D:\\Projects\\AI-Auto-Routing-Hardware-Simulation"
+    ],
+    "BUILD_CACHE_DIR": ""
+  }
+}

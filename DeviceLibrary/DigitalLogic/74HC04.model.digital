@@ -1,0 +1,40 @@
+# 74HC04 Hex Inverter Behavioral Model
+# TTL-compatible CMOS logic
+
+DEV_TYPE: NOT_GATE
+GATE_COUNT: 6
+
+# Pin definitions (gate 1 of 6)
+INPUT_PIN: 1
+OUTPUT_PIN: 2
+
+# Timing parameters
+DELAY_RISE: 8ns
+DELAY_FALL: 8ns
+DELAY_RISE_MAX: 15ns
+DELAY_FALL_MAX: 15ns
+
+# Voltage thresholds
+VIH_MIN: 3.5V
+VIL_MAX: 1.5V
+VOH_MIN: 4.8V  @ VDD=5V IOH=-4mA
+VOL_MAX: 0.2V  @ VDD=5V IOL=4mA
+
+# Power supply
+VDD_MIN: 2.0V
+VDD_MAX: 6.0V
+VDD_TYP: 5.0V
+ICC_STATIC: 1uA   @ VDD=5V
+ICC_DYNAMIC: 10uA  @ f=1MHz
+
+# Truth table
+FUNCTION: Y = NOT(A)
+
+# Additional gate pin mappings
+GATE1: A=1  Y=2
+GATE2: A=3  Y=4
+GATE3: A=5  Y=6
+GATE4: A=9  Y=8
+GATE5: A=11 Y=10
+GATE6: A=13 Y=12
+POWER: VCC=14 GND=7
