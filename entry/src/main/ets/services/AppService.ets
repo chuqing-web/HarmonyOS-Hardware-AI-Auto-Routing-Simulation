@@ -6,13 +6,16 @@ import { ComponentLibraryImpl, IComponentLibrary } from 'component_library';
 import { SimulationKernelImpl, ISimulationKernel } from 'simulation_kernel';
 import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugger';
 import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
-import { AiEngineImpl, IAiEngine, TeachingService, TemplateFirmware } from 'ai_engine';
+import { AiEngineImpl, IAiEngine, TeachingService, LabTemplate } from 'ai_engine';
 import { FilePersistenceImpl, CrashGuard, IFilePersistence, BomLookup, SessionState } from 'file_persistence';
 import { VirtualInstrumentsImpl, IVirtualInstruments, ComponentInstrumentBinding } from 'instruments';
 import { PluginManagerImpl, IPluginManager } from 'plugin_system';
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import { DeviceLibraryBootstrap } from '../utils/DeviceLibraryBootstrap';
+import { TemplateProjectBootstrap } from '../utils/TemplateProjectBootstrap';
+import { TemplateMergeUtil } from '../utils/TemplateMergeUtil';
+import { ProjectPaths } from '../utils/ProjectPaths';
 import { KeyboardShortcutManager } from '../utils/KeyboardShortcutManager';
 import { ThemeManager } from '../theme/ThemeManager';
 import {
@@ -25,11 +28,11 @@ import {
   SchematicAnnotationType, SchematicAnnotationStatus,
   SnapshotMeta, VersionCompareReport, IdUtil, calcSymbolBounds, SymbolBounds,
   paramMapGet, PrivacyConsentStore, Pin, McuFamily, SimulationState, SchematicDocument, NetType,
-  getPinNetMap, findNetForPinLabel,
+  getPinNetMap, findNetForPinLabel, TopologyAdapter,
   traceBindingRefresh, traceActiveComponent, traceActiveComponentChanged, traceReloadSchematic, traceSimStep,
   tracePinNetEmpty, BindingTraceInfo, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap,
   ensureNetPinConnectivity, PinGeometryResolver, PinGeometry,
-  traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow
+  traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -95,6 +98,7 @@ export class AppService {
   private readonly SIM_TICK_MS: number = 50;
   private lastActiveInstrumentId: string | null = null;
   private bindingPinHash: Map<string, string> = new Map();
+  private appBaseDir: string = '';
 
   onProjectChanged: () => void = () => {};
   onStatusMessage: (msg: string) => void = () => {};
@@ -131,14 +135,17 @@ export class AppService {
 
   initPlatform(context: common.UIAbilityContext): void {
     const filesDir = context.filesDir;
-    const baseDir = `${filesDir}/AISchSim`;
-    // Ensure base directories exist
+    const baseDir = `${filesDir}/${ProjectPaths.APP_ROOT}`;
+    this.appBaseDir = baseDir;
     try { fs.accessSync(baseDir); } catch (_e) { try { fs.mkdirSync(baseDir); } catch (_e2) {} }
-    try { fs.accessSync(`${baseDir}/autosave`); } catch (_e) { try { fs.mkdirSync(`${baseDir}/autosave`); } catch (_e2) {} }
-    try { fs.accessSync(`${baseDir}/projects`); } catch (_e) { try { fs.mkdirSync(`${baseDir}/projects`); } catch (_e2) {} }
+    try { fs.accessSync(`${baseDir}/${ProjectPaths.AUTOSAVE_DIR}`); } catch (_e) {
+      try { fs.mkdirSync(`${baseDir}/${ProjectPaths.AUTOSAVE_DIR}`); } catch (_e2) {}
+    }
+    try { fs.mkdirSync(ProjectPaths.userProjectRoot(baseDir), true); } catch (_e) {}
     ThemeManager.getInstance().init(baseDir);
     (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
     this.filePersistence.initCollaboration(baseDir);
+    void TemplateProjectBootstrap.ensure(context, baseDir);
     void this.bootstrapAndLoadLibrary(context, `${baseDir}/DeviceLibrary`);
     void this.loadProteusAliases(context);
     void LicenseManager.getInstance().applyTrialStatus(context);
@@ -344,6 +351,11 @@ export class AppService {
   isSimulationRunning(): boolean {
     const kernel = this.simulationKernel as SimulationKernelImpl;
     return kernel.isSimActive() && kernel.getState() === SimulationState.RUNNING;
+  }
+
+  /** 仿真运行或暂停中 — 禁止改原理图/接线 */
+  isSimulationActive(): boolean {
+    return (this.simulationKernel as SimulationKernelImpl).isSimActive();
   }
 
   /** Resolve net UUID to human-readable net name for logs */
@@ -801,6 +813,7 @@ export class AppService {
     });
 
     if (!result.success) {
+      Logger.warn(INSTR_TRACE_TAG, `[SIM_START_FAIL] ${result.error ?? 'unknown'}`);
       this.onStatusMessage(`仿真启动失败: ${result.error}`);
       return false;
     }
@@ -1092,21 +1105,115 @@ export class AppService {
     return (this.simulationKernel as SimulationKernelImpl).batchFaultScan();
   }
 
-  loadLabTemplate(templateId: string): boolean {
-    const r = this.teachingService.loadTemplate(templateId);
-    if (r.success && r.data) {
-      this.schematicEditor.loadTopology(r.data);
-      this.onProjectChanged();
-      this.reloadSimulationFromSchematic();
-      // 自动加载模板关联的固件
-      const fw = this.teachingService.getTemplateFirmware(templateId);
-      if (fw) {
-        const family = fw.mcuFamily === '8051' ? McuFamily.MCU_8051 : McuFamily.MCU_STM32F1;
-        this.hexDebugger.loadHexFromString(fw.hexText, family);
+  getAppBaseDir(): string {
+    return this.appBaseDir;
+  }
+
+  getUserProjectDir(): string {
+    return ProjectPaths.userProjectRoot(this.appBaseDir);
+  }
+
+  getAutosaveDir(): string {
+    return ProjectPaths.autosaveRoot(this.appBaseDir);
+  }
+
+  /** 列出沙箱 project/ 目录下用户工程（完整路径） */
+  listUserProjectFiles(): string[] {
+    const dir = this.getUserProjectDir();
+    try {
+      const names = fs.listFileSync(dir);
+      const out: string[] = [];
+      for (let i = 0; i < names.length; i++) {
+        if (names[i].endsWith('.schsim')) {
+          out.push(`${dir}/${names[i]}`);
+        }
       }
-      return true;
+      return out.sort();
+    } catch (_e) {
+      return [];
     }
-    return false;
+  }
+
+  getTemplateDir(): string {
+    return ProjectPaths.templateRoot(this.appBaseDir);
+  }
+
+  getHexDir(): string {
+    return ProjectPaths.hexRoot(this.appBaseDir);
+  }
+
+  /** 沙箱 hex_files 目录下全部固件（完整路径） */
+  listHexFiles(): string[] {
+    return TemplateProjectBootstrap.listHexFiles(this.appBaseDir);
+  }
+
+  listAvailableLabTemplates(category: string = 'all'): LabTemplate[] {
+    const all = category === 'all'
+      ? this.teachingService.listTemplates()
+      : this.teachingService.listTemplatesByCategory(category);
+    const out: LabTemplate[] = [];
+    for (let i = 0; i < all.length; i++) {
+      const tpl = all[i];
+      const path = ProjectPaths.templateFile(this.appBaseDir, tpl.id);
+      if (TemplateProjectBootstrap.fileExists(path)) {
+        out.push(tpl);
+      }
+    }
+    return out;
+  }
+
+  async loadLabTemplate(templateId: string): Promise<boolean> {
+    const templatePath = ProjectPaths.templateFile(this.appBaseDir, templateId);
+    if (!TemplateProjectBootstrap.fileExists(templatePath)) {
+      this.onStatusMessage(`模板工程不存在: ${templatePath}`);
+      return false;
+    }
+    if (this.currentProject === null) {
+      this.newProject('Untitled');
+    }
+    const loadResult = await (this.filePersistence as FilePersistenceImpl).loadProjectData(templatePath);
+    if (!loadResult.success || loadResult.data === undefined) {
+      this.onStatusMessage(`读取模板失败: ${loadResult.error ?? templatePath}`);
+      return false;
+    }
+    const templateDoc = TopologyAdapter.fromTopology(loadResult.data.topology);
+    const editor = this.schematicEditor as SchematicEditorImpl;
+    const currentDoc = editor.getDocument();
+    TemplateMergeUtil.mergeTemplateInto(currentDoc, templateDoc);
+    editor.loadDocument(currentDoc);
+    editor.rebuildNetPinConnectivity();
+    const grid = currentDoc.metadata.gridSize || 10;
+    ensureNetPinConnectivity(currentDoc, grid, this.pinGeometryResolver());
+    this.syncProjectFromModules();
+    this.reloadSimulationFromSchematic();
+    editor.fitAllInView();
+    this.onProjectChanged();
+    const def = this.teachingService.listTemplates().find(t => t.id === templateId);
+    const tplName = def !== undefined ? def.name : templateId;
+    const hexPath = this.getTemplateHexPath(templateId);
+    if (hexPath !== null) {
+      if (TemplateProjectBootstrap.fileExists(hexPath)) {
+        this.onStatusMessage(`已将实验「${tplName}」插入（固件 ${hexPath}，请在 MCU 调试面板烧录）`);
+      } else {
+        this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexPath}`);
+      }
+    } else {
+      this.onStatusMessage(`已将实验「${tplName}」插入当前工程空白区域`);
+    }
+    return true;
+  }
+
+  /** 模板关联 hex 沙箱完整路径（.../AISchSim/hex_files/xxx.hex） */
+  getTemplateHexPath(templateId: string): string | null {
+    const name = this.teachingService.getTemplateHexFileName(templateId);
+    if (name === null) {
+      return null;
+    }
+    return ProjectPaths.hexFile(this.appBaseDir, name);
+  }
+
+  isHexFileReady(hexPath: string): boolean {
+    return TemplateProjectBootstrap.fileExists(hexPath);
   }
 
   stepPowerOn(stepIndex: number): void {
@@ -1147,7 +1254,10 @@ export class AppService {
   }
 
   private wireCallbacks(): void {
-    CallbackRegistry.getInstance().onErcUpdate((errors) => this.onErcUpdate(errors));
+    CallbackRegistry.getInstance().onErcUpdate((errors) => {
+      traceErcErrorList(errors, 'RUNTIME_ERC');
+      this.onErcUpdate(errors);
+    });
     CallbackRegistry.getInstance().onBreakpointHit((mcuUuid, addr) => {
       this.onStatusMessage(`断点命中: MCU ${mcuUuid} @ 0x${addr.toString(16)}`);
     });

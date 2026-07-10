@@ -8,6 +8,7 @@ import { ErcEngine, PinResolverFn } from './ErcEngine';
 import { UnitParser } from './UnitParser';
 import { IdUtil } from './IdUtil';
 import { appendArray, paramMapGet, parseVoltageVolts } from './MapHelpers';
+import { getPinNetMap } from './PinRefUtil';
 
 const MCU_IDS = new Set([
   'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
@@ -79,7 +80,7 @@ export class DeepErcEngine {
         }
       }
 
-      if (comp.libraryId.includes('LED') && !DeepErcEngine.hasNearbyResistor(doc, comp)) {
+      if (comp.libraryId.includes('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
         result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT,
           `LED ${comp.refDes} 无限流电阻`, comp.id, undefined, '串联 220Ω~1kΩ 限流电阻'));
       }
@@ -157,9 +158,33 @@ export class DeepErcEngine {
     return 5;
   }
 
-  private static hasNearbyResistor(doc: SchematicDocument, comp: ComponentInstance): boolean {
-    return doc.components.some(c => c.libraryId.startsWith('R_') &&
-      Math.abs(c.position.x - comp.position.x) < 100 && Math.abs(c.position.y - comp.position.y) < 80);
+  /** True when some resistor shares the LED anode or cathode net (series path). */
+  private static hasSeriesLimitResistor(doc: SchematicDocument, led: ComponentInstance): boolean {
+    const ledNets = getPinNetMap(led.id, doc.nets);
+    const anodeNet = ledNets.get('A') ?? ledNets.get('1');
+    const cathodeNet = ledNets.get('K') ?? ledNets.get('2');
+    if (anodeNet === undefined || cathodeNet === undefined) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === led.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      const rNet1 = rNets.get('1');
+      const rNet2 = rNets.get('2');
+      if (rNet1 === undefined || rNet2 === undefined) {
+        continue;
+      }
+      if ((rNet1 === anodeNet && rNet2 !== cathodeNet) || (rNet2 === anodeNet && rNet1 !== cathodeNet)) {
+        return true;
+      }
+      if ((rNet1 === cathodeNet && rNet2 !== anodeNet) || (rNet2 === cathodeNet && rNet1 !== anodeNet)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static violation(severity: ErcSeverity, ruleType: ErcRuleType, message: string,

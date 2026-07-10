@@ -237,6 +237,31 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
 }
 
 /** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc: SchematicDocument): number {
+  const wireNetIds = new Set<string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const nid = doc.wires[wi].netId;
+    if (nid.length > 0) {
+      wireNetIds.add(nid);
+    }
+  }
+  const before = doc.nets.length;
+  doc.nets = doc.nets.filter((net) => {
+    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+      return true;
+    }
+    if (wireNetIds.has(net.id)) {
+      return true;
+    }
+    if (net.pinIds.length > 0) {
+      return true;
+    }
+    return false;
+  });
+  return before - doc.nets.length;
+}
+
 function mergeRailNets(doc: SchematicDocument): void {
   const rails = ['VCC', 'VDD', 'GND', 'VSS', '0'];
   for (let ri = 0; ri < rails.length; ri++) {
@@ -273,9 +298,14 @@ export function ensureNetPinConnectivity(doc: SchematicDocument, gridSize: numbe
 
   rebuildWireNetTopology(doc, gridSize, resolver);
 
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+
   const threshold = Math.max(gridSize * 2.5, 20);
   const wired = connectWireEndpoints(doc, threshold, resolver);
   mergeRailNets(doc);
+  pruneOrphanNets(doc);
 
   const after = countPinRefs(doc);
   traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);

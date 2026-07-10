@@ -12,6 +12,7 @@ import {
   ProteusVDivider, ProteusPanelTitle,
   ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle,
   ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer,
+  ProteusSidebarTab,
   ProteusMenuEntry
 } from '../components/proteus/ProteusWidgets';
 import { ProteusIcon, ProteusIconName } from '../components/proteus/ProteusIcons';
@@ -26,7 +27,9 @@ import { SchematicEditorImpl, AlignType } from 'schematic_editor';
 import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
 import { AppViewModel } from '../viewmodel/AppViewModel';
 import { common } from '@kit.AbilityKit';
+import { window } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
+import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 import fs from '@ohos.file.fs';
 import util from '@ohos.util';
 
@@ -58,6 +61,7 @@ struct Index {
   @State gridVisible: boolean = true;
   @State rulerVisible: boolean = true;
   @State selectedCount: number = 0;
+  @State selectedWireActive: boolean = false;
   @State navTab: number = 0;
   @State leftLibCollapsed: boolean = false;
   @State leftNavCollapsed: boolean = false;
@@ -98,7 +102,8 @@ struct Index {
   @State showExitConfirmDialog: boolean = false;
 
   private clipboardLibId: string = '';
-  private projectBaseDir: string = '';
+  private clipboardDeviceIds: string[] = [];
+  private userProjectDir: string = '';
   private modifierKeys: number = 0;
   private appService: AppService = AppService.getInstance();
   private vm: AppViewModel = AppViewModel.getInstance(this.appService);
@@ -106,8 +111,8 @@ struct Index {
 
   async aboutToAppear(): Promise<void> {
     const ctx = getContext(this) as common.UIAbilityContext;
-    this.projectBaseDir = `${ctx.filesDir}/AISchSim`;
     this.appService.initPlatform(ctx);
+    this.userProjectDir = this.appService.getUserProjectDir();
     this.vm.bindCallbacks();
     this.appService.onStatusMessage = (msg: string) => { this.statusMessage = msg; };
     this.appService.onErcUpdate = (errors: ErcError[]) => {
@@ -128,26 +133,41 @@ struct Index {
 
     CallbackRegistry.getInstance().onSelectionChange((devs) => {
       this.selectedCount = devs.length;
+      const nets = this.appService.schematicEditor.getSelectedNets();
+      this.selectedWireActive = nets.length > 0;
       if (devs.length > 0) {
         this.selectedComponentId = devs[0].instUuid;
         this.updateContextualTabs(devs[0].instUuid);
-      } else if (this.selectedCount === 0) {
+      } else if (!this.selectedWireActive) {
         this.selectedComponentId = '';
         this.debugTabHasBadge = false;
         this.instrTabHasBadge = false;
+      } else {
+        this.selectedComponentId = '';
       }
     });
 
     EventBus.getInstance().subscribe(ModuleEvent.SCHEMATIC_CHANGED, this.onSchematicChanged);
 
+    EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STARTED, () => {
+      this.simRunning = true;
+      this.lockEditingForSimulation();
+    });
+    EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STOPPED, () => {
+      this.simRunning = false;
+      this.simPaused = false;
+    });
+
     this.loadUiState();
     this.initCategoryTree();
+    this.hookStartupWindowResize();
+    void maximizeAppWindow(ctx);
 
     // Check for crash recovery files
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
     if (this.recoveryFiles.length > 0) {
       this.appService.newProject('Untitled');
-      this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/Untitled.schsim`, 120000);
+      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
       this.showRecoveryDialog = true;
       this.appInitialized = true;
       this.statusMessage = '检测到未正常关闭的工程，是否恢复？';
@@ -157,7 +177,7 @@ struct Index {
     // Check last session
     const session = await this.appService.loadSession();
     if (session !== null && session.lastPath.length > 0) {
-      const autoSavePath = `${this.projectBaseDir}/autosave/${session.lastProjectName}.schsim`;
+      const autoSavePath = `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
       if (session.closedCleanly) {
         // Normal last session — try to auto-open
         let ok = await this.appService.loadProject(session.lastPath);
@@ -193,7 +213,7 @@ struct Index {
 
     // No recovery, no last session — show welcome dialog
     this.appService.newProject('Untitled');
-    this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/Untitled.schsim`, 120000);
+    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
     this.refreshComponentList();
     this.deferCanvasFit();
     this.appInitialized = true;
@@ -333,19 +353,43 @@ struct Index {
     this.navRefreshKey++;
   }
 
-  /** Wait for canvas layout before fit/redraw — avoids partial first paint. */
-  private deferCanvasFit(delayMs: number = 150): void {
-    setTimeout(() => {
-      this.appService.schematicEditor.fitAllInView();
+  private startupRefitDeadline: number = 0;
+  private windowResizeHooked: boolean = false;
+
+  /** Wait until canvas reports real size, then fit — avoids 800×600 fallback mis-centering. */
+  private deferCanvasFit(attempt: number = 0): void {
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    if (editor.isCanvasViewReady()) {
+      editor.fitAllInView();
       this.bumpCanvas();
-    }, delayMs);
+      return;
+    }
+    if (attempt < 30) {
+      setTimeout(() => this.deferCanvasFit(attempt + 1), 50);
+    }
+  }
+
+  private hookStartupWindowResize(): void {
+    if (this.windowResizeHooked) {
+      return;
+    }
+    this.windowResizeHooked = true;
+    this.startupRefitDeadline = Date.now() + 4000;
+    const ctx = getContext(this) as common.UIAbilityContext;
+    window.getLastWindow(ctx).then((win) => {
+      win.on('windowSizeChange', () => {
+        if (Date.now() > this.startupRefitDeadline) {
+          return;
+        }
+        this.deferCanvasFit();
+      });
+    }).catch(() => {});
   }
 
   onPageShow(): void {
-    this.deferCanvasFit(80);
-    setTimeout(() => {
-      this.bumpCanvas();
-    }, 300);
+    void maximizeAppWindow(getContext(this) as common.UIAbilityContext);
+    this.hookStartupWindowResize();
+    this.deferCanvasFit();
   }
 
   resetAfterProjectChange(): void {
@@ -361,7 +405,29 @@ struct Index {
     this.bumpCanvas();
   }
 
+  private lockEditingForSimulation(): void {
+    if (this.toolMode === EditorToolMode.WIRE || this.toolMode === EditorToolMode.BUS) {
+      this.toolMode = EditorToolMode.SELECT;
+      this.uiState.toolMode = EditorToolMode.SELECT;
+    }
+    this.wireStartActive = false;
+    this.wireStartX = 0;
+    this.wireStartY = 0;
+    this.bumpCanvas();
+  }
+
+  private applySimStartResult(ok: boolean): void {
+    this.simRunning = ok;
+    if (ok) {
+      this.lockEditingForSimulation();
+    }
+  }
+
   setToolMode(mode: EditorToolMode, pendingId: string = ''): void {
+    if (this.simRunning && (mode === EditorToolMode.WIRE || mode === EditorToolMode.BUS)) {
+      this.statusMessage = '仿真运行中，无法接线';
+      return;
+    }
     this.toolMode = mode;
     this.wireStartActive = false;
     this.wireStartX = 0;
@@ -409,14 +475,34 @@ struct Index {
     this.resetAfterProjectChange();
     this.refreshComponentList();
     this.appService.schematicEditor.fitAllInView();
-    const autoSavePath = `${this.projectBaseDir}/autosave/${name}.schsim`;
+    const projectPath = `${this.userProjectDir}/${name}.schsim`;
+    const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
+    void this.appService.saveProject(projectPath).then((saved) => {
+      if (saved) {
+        this.appService.currentProjectPath = projectPath;
+        this.statusMessage = `已创建: ${projectPath}`;
+      }
+    });
     this.appService.enableAutoSave(autoSavePath, 120000);
-    this.appService.currentProjectPath = '';
-    this.statusMessage = `已创建新工程: ${name}（使用 Ctrl+S 保存）`;
+    this.appService.currentProjectPath = projectPath;
   }
 
   async handleOpenProject(): Promise<void> {
     this.showWelcomeDialog = false;
+    const sandboxProjects = this.appService.listUserProjectFiles();
+    const recents = this.appService.filePersistence.getRecentFiles();
+    if (sandboxProjects.length > 0) {
+      this.openFilePath = sandboxProjects[sandboxProjects.length - 1];
+    } else if (recents.length > 0) {
+      this.openFilePath = recents[0];
+    } else {
+      this.openFilePath = `${this.userProjectDir}/Untitled.schsim`;
+    }
+    this.showOpenDialog = true;
+    this.showSaveAsDialog = false;
+  }
+
+  async handleOpenFromPicker(): Promise<void> {
     try {
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
@@ -429,7 +515,7 @@ struct Index {
           this.projectName = this.appService.currentProject?.name ?? this.projectName;
           const name = this.projectName;
           this.appService.disableAutoSave();
-          this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/${name}.schsim`, 120000);
+          this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
           this.resetAfterProjectChange();
           this.appService.schematicEditor.fitAllInView();
           this.refreshComponentList();
@@ -439,13 +525,8 @@ struct Index {
         }
       }
     } catch (_e) {
-      // File picker not available or cancelled, show manual dialog
+      this.statusMessage = '文件选择器不可用';
     }
-    // Fallback: show manual path input dialog
-    const recents = this.appService.filePersistence.getRecentFiles();
-    this.openFilePath = recents.length > 0 ? recents[0] : `${this.projectBaseDir}/autosave/Untitled.schsim`;
-    this.showOpenDialog = true;
-    this.showSaveAsDialog = false;
   }
 
   async doOpenFromPath(): Promise<void> {
@@ -461,7 +542,7 @@ struct Index {
       this.projectName = this.appService.currentProject?.name ?? this.projectName;
       const name = this.projectName;
       this.appService.disableAutoSave();
-      this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/${name}.schsim`, 120000);
+      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
       this.resetAfterProjectChange();
       this.appService.schematicEditor.fitAllInView();
       this.refreshComponentList();
@@ -478,7 +559,7 @@ struct Index {
       const ok = await this.appService.saveProject(path);
       if (ok) {
         // Also sync auto-save so recovery works even if picker URI expires
-        const autoPath = `${this.projectBaseDir}/autosave/${this.projectName}.schsim`;
+        const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
         void this.appService.saveProject(autoPath);
         await this.appService.saveSession(path, this.projectName, false);
         this.unsavedChanges = false;
@@ -500,7 +581,7 @@ struct Index {
         const ok = await this.appService.saveProject(uris[0]);
         if (ok) {
           // Sync auto-save to keep recovery path current
-          const autoPath = `${this.projectBaseDir}/autosave/${this.projectName}.schsim`;
+          const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
           void this.appService.saveProject(autoPath);
           await this.appService.saveSession(uris[0], this.projectName, false);
           this.unsavedChanges = false;
@@ -511,7 +592,7 @@ struct Index {
     } catch (_e) {
       // File picker not available, show manual dialog
     }
-    this.saveAsPath = `${this.projectBaseDir}/projects/${this.projectName}.schsim`;
+    this.saveAsPath = `${this.userProjectDir}/${this.projectName}.schsim`;
     this.showSaveAsDialog = true;
     this.showOpenDialog = false;
   }
@@ -610,33 +691,48 @@ struct Index {
     }
 
     if (selectedDevices.length === 0 && selectedNets.length === 0) {
-      this.statusMessage = 'No component selected';
+      this.statusMessage = '未选中任何对象';
       return;
     }
 
     this.selectedComponentId = '';
     this.selectedCount = 0;
+    this.selectedWireActive = false;
     this.bumpCanvas();
-    this.statusMessage = 'Deleted';
+    this.statusMessage = '已删除';
   }
 
   handleCopy(): void {
     const selected = this.appService.schematicEditor.getSelectedDevices();
     if (selected.length === 0) {
-      this.statusMessage = 'No component selected';
+      this.statusMessage = '请先选中器件';
       return;
     }
+    this.clipboardDeviceIds = [];
+    for (let i = 0; i < selected.length; i++) {
+      this.clipboardDeviceIds.push(selected[i].instUuid);
+    }
     this.clipboardLibId = selected[0].libDevId;
-    this.statusMessage = `Copied ${selected[0].refName}`;
+    this.statusMessage = selected.length > 1
+      ? `已复制 ${selected.length} 个器件`
+      : `已复制 ${selected[0].refName}`;
   }
 
   handlePaste(): void {
-    if (this.selectedComponentId) {
-      const r = this.appService.schematicEditor.duplicateDevice(this.selectedComponentId, 30, 30);
-      if (r.success && r.data) {
-        this.selectedComponentId = r.data;
+    if (this.clipboardDeviceIds.length > 0) {
+      const newIds: string[] = [];
+      for (let i = 0; i < this.clipboardDeviceIds.length; i++) {
+        const offset = 30 + i * 12;
+        const r = this.appService.schematicEditor.duplicateDevice(this.clipboardDeviceIds[i], offset, offset);
+        if (r.success && r.data) {
+          newIds.push(r.data);
+        }
+      }
+      if (newIds.length > 0) {
+        this.appService.schematicEditor.setSelection(newIds);
+        this.selectedComponentId = newIds[newIds.length - 1];
         this.bumpCanvas();
-        this.statusMessage = 'Duplicated';
+        this.statusMessage = newIds.length > 1 ? `已粘贴 ${newIds.length} 个器件` : '已粘贴';
       }
       return;
     }
@@ -831,8 +927,12 @@ struct Index {
     }
     if (kt === 'f1') { this.setActiveRightTab(7); this.rightCollapsed = false; this.uiState.rightCollapsed = false; return true; }
     if (kt === 'f5') {
-      if (this.simRunning) { this.appService.stopSimulation(); this.simRunning = false; }
-      else { this.simRunning = this.appService.startSimulation(); }
+      if (this.simRunning) {
+        this.appService.stopSimulation();
+        this.simRunning = false;
+      } else {
+        this.applySimStartResult(this.appService.startSimulation());
+      }
       return true;
     }
     if (kt === 'f7') {
@@ -982,7 +1082,7 @@ struct Index {
           this.appService.stopSimulation();
           this.simRunning = false;
         } else {
-          this.simRunning = this.appService.startSimulation();
+          this.applySimStartResult(this.appService.startSimulation());
         }
       }},
       { label: $r('app.string.toolbar_sim_pause'), shortcut: 'F6', icon: ProteusIconName.PAUSE, action: () => {
@@ -1045,72 +1145,77 @@ struct Index {
   MainToolbar() {
     Row() {
       ProteusToolGroup({ title: 'File' }) {
-        ProteusToolButton({ iconName: ProteusIconName.NEW, tooltip: 'New (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } })
-        ProteusToolButton({ iconName: ProteusIconName.OPEN, tooltip: 'Open (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } })
-        ProteusToolButton({ iconName: ProteusIconName.SAVE, tooltip: 'Save (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } })
+        ProteusToolButton({ iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } })
+        ProteusToolButton({ iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } })
+        ProteusToolButton({ iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } })
       }
 
       ProteusToolGroup({ title: 'History' }) {
-        ProteusToolButton({ iconName: ProteusIconName.UNDO, tooltip: 'Undo (Ctrl+Z)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.UNDO, tooltip: '撤销 (Ctrl+Z)', showLabel: false, onAction: () => {
           const r = this.appService.schematicEditor.undo();
           this.statusMessage = r.success ? 'Undone' : 'Nothing to undo';
           this.bumpCanvas();
         }})
-        ProteusToolButton({ iconName: ProteusIconName.REDO, tooltip: 'Redo (Ctrl+Y)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.REDO, tooltip: '重做 (Ctrl+Y)', showLabel: false, onAction: () => {
           const r = this.appService.schematicEditor.redo();
           this.statusMessage = r.success ? 'Redone' : 'Nothing to redo';
           this.bumpCanvas();
         }})
-        ProteusToolButton({ iconName: ProteusIconName.TRASH, tooltip: 'Delete (Del)', showLabel: false,
-          disabled: this.selectedComponentId.length === 0, onAction: () => this.handleDeleteSelected() })
+        ProteusToolButton({ iconName: ProteusIconName.TRASH, tooltip: '删除 (Del)', showLabel: false,
+          disabled: this.selectedCount === 0 && !this.selectedWireActive,
+          onAction: () => this.handleDeleteSelected() })
       }
 
       ProteusToolGroup({ title: 'Edit' }) {
-        ProteusToolButton({ iconName: ProteusIconName.COPY, tooltip: 'Copy (Ctrl+C)', showLabel: false,
-          disabled: this.selectedComponentId.length === 0, onAction: () => this.handleCopy() })
-        ProteusToolButton({ iconName: ProteusIconName.PASTE, tooltip: 'Paste (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() })
+        ProteusToolButton({ iconName: ProteusIconName.COPY, tooltip: '复制 (Ctrl+C)', showLabel: false,
+          disabled: this.selectedCount === 0, onAction: () => this.handleCopy() })
+        ProteusToolButton({ iconName: ProteusIconName.PASTE, tooltip: '粘贴 (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() })
       }
 
       ProteusToolGroup({ title: 'View' }) {
-        ProteusToolButton({ iconName: ProteusIconName.ZOOM_IN, tooltip: 'Zoom In (+)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
           this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
           this.bumpCanvas();
         }})
-        ProteusToolButton({ iconName: ProteusIconName.ZOOM_OUT, tooltip: 'Zoom Out (-)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
           this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
           this.bumpCanvas();
         }})
-        ProteusToolButton({ iconName: ProteusIconName.FIT, tooltip: 'Fit All (Ctrl+0)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.FIT, tooltip: '适应窗口 (Ctrl+0)', showLabel: false, onAction: () => {
           this.appService.schematicEditor.fitAllInView();
           this.bumpCanvas();
         }})
-        ProteusToolButton({ iconName: ProteusIconName.GRID, tooltip: 'Toggle Grid (G)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.GRID, tooltip: '显示/隐藏网格 (G)', showLabel: false,
           active: this.gridVisible, onAction: () => this.toggleGrid() })
       }
 
       ProteusToolGroup({ title: 'Place' }) {
-        ProteusToolButton({ iconName: ProteusIconName.COMPONENT, tooltip: 'Place Component (P)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.COMPONENT, tooltip: '放置器件 (P)', showLabel: false,
           active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) })
-        ProteusToolButton({ iconName: ProteusIconName.WIRE, tooltip: 'Wire (W)', showLabel: false,
-          active: this.toolMode === EditorToolMode.WIRE, onAction: () => this.setToolMode(EditorToolMode.WIRE) })
-        ProteusToolButton({ iconName: ProteusIconName.BUS, tooltip: 'Bus (B)', showLabel: false,
-          active: this.toolMode === EditorToolMode.BUS, onAction: () => this.setToolMode(EditorToolMode.BUS) })
-        ProteusToolButton({ iconName: ProteusIconName.LABEL, tooltip: 'Label (L)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.WIRE, tooltip: '连线 (W)', showLabel: false,
+          active: this.toolMode === EditorToolMode.WIRE,
+          disabled: this.simRunning,
+          onAction: () => this.setToolMode(EditorToolMode.WIRE) })
+        ProteusToolButton({ iconName: ProteusIconName.BUS, tooltip: '总线 (B)', showLabel: false,
+          active: this.toolMode === EditorToolMode.BUS,
+          disabled: this.simRunning,
+          onAction: () => this.setToolMode(EditorToolMode.BUS) })
+        ProteusToolButton({ iconName: ProteusIconName.LABEL, tooltip: '网络标签 (L)', showLabel: false,
           active: this.toolMode === EditorToolMode.LABEL, onAction: () => this.setToolMode(EditorToolMode.LABEL) })
-        ProteusToolButton({ iconName: ProteusIconName.POWER, tooltip: 'Power (Shift+P)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.POWER, tooltip: '放置 VCC (Shift+P)', showLabel: false,
           onAction: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') })
-        ProteusToolButton({ iconName: ProteusIconName.GROUND, tooltip: 'Ground (Shift+G)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.GROUND, tooltip: '放置 GND (Shift+G)', showLabel: false,
           onAction: () => this.setToolMode(EditorToolMode.PLACE, 'GND') })
       }
 
       ProteusToolGroup({ title: 'Align' }) {
-        ProteusToolButton({ iconName: ProteusIconName.ALIGN_LEFT, tooltip: 'Align Left', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.ALIGN_LEFT, tooltip: '左对齐', showLabel: false,
           disabled: this.selectedCount < 2, onAction: () => this.handleAlign('left') })
-        ProteusToolButton({ iconName: ProteusIconName.ALIGN_RIGHT, tooltip: 'Align Right', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.ALIGN_RIGHT, tooltip: '右对齐', showLabel: false,
           disabled: this.selectedCount < 2, onAction: () => this.handleAlign('right') })
-        ProteusToolButton({ iconName: ProteusIconName.ALIGN_TOP, tooltip: 'Align Top', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.ALIGN_TOP, tooltip: '顶对齐', showLabel: false,
           disabled: this.selectedCount < 2, onAction: () => this.handleAlign('top') })
-        ProteusToolButton({ iconName: ProteusIconName.DISTRIBUTE, tooltip: 'Distribute Horizontal', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.DISTRIBUTE, tooltip: '水平均布', showLabel: false,
           disabled: this.selectedCount < 3, onAction: () => {
             const sel = this.appService.schematicEditor.getSelectedDevices();
             if (sel.length >= 3) {
@@ -1122,16 +1227,16 @@ struct Index {
               this.statusMessage = 'Select at least 3 components';
             }
           }})
-        ProteusToolButton({ iconName: ProteusIconName.ROTATE, tooltip: 'Rotate (R)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.ROTATE, tooltip: '旋转 (R)', showLabel: false,
           disabled: this.selectedComponentId.length === 0, onAction: () => this.handleRotate() })
-        ProteusToolButton({ iconName: ProteusIconName.MIRROR, tooltip: 'Mirror (M)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.MIRROR, tooltip: '镜像 (M)', showLabel: false,
           disabled: this.selectedComponentId.length === 0, onAction: () => this.handleMirror() })
       }
 
       ProteusToolGroup({ title: 'Sim' }) {
         ProteusToolButton({
           iconName: this.simRunning ? ProteusIconName.STOP : ProteusIconName.PLAY,
-          tooltip: this.simRunning ? 'Stop (Shift+F5)' : 'Run (F5)', showLabel: false,
+          tooltip: this.simRunning ? '停止仿真 (Shift+F5)' : '运行仿真 (F5)', showLabel: false,
           active: this.simRunning,
           onAction: async () => {
             if (this.simRunning) {
@@ -1139,14 +1244,13 @@ struct Index {
               this.simRunning = false;
               this.simPaused = false;
             } else {
-              const ok = this.appService.startSimulation();
-              this.simRunning = ok;
+              this.applySimStartResult(this.appService.startSimulation());
               this.simPaused = false;
             }
           }})
-        ProteusToolButton({ iconName: ProteusIconName.PAUSE, tooltip: 'Pause (F6)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.PAUSE, tooltip: '暂停仿真 (F6)', showLabel: false,
           disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); }})
-        ProteusToolButton({ iconName: ProteusIconName.ERC, tooltip: 'ERC (F7)', showLabel: false, onAction: () => {
+        ProteusToolButton({ iconName: ProteusIconName.ERC, tooltip: '电气规则检查 (F7)', showLabel: false, onAction: () => {
           const errors = this.appService.runErc(false);
           this.ercErrors = errors;
           const errN = errors.filter(e => e.severity === 'error' || e.severity === 'critical').length;
@@ -1157,7 +1261,7 @@ struct Index {
       }
 
       ProteusToolGroup({ title: 'AI' }) {
-        ProteusToolButton({ iconName: ProteusIconName.AI_ROUTE, tooltip: 'AI Auto-Route (F8)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.AI_ROUTE, tooltip: 'AI 自动布线 (F8)', showLabel: false,
           onAction: async () => {
             this.statusMessage = 'AI auto-routing...';
             const ok = await this.appService.aiAutoRoute();
@@ -1166,7 +1270,7 @@ struct Index {
               this.statusMessage = 'AI routing complete';
             }
           }})
-        ProteusToolButton({ iconName: ProteusIconName.AI_LAYOUT, tooltip: 'AI Optimize Layout (F9)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.AI_LAYOUT, tooltip: 'AI 优化布局 (F9)', showLabel: false,
           onAction: async () => {
             this.statusMessage = 'AI layout optimizing...';
             const ok = await this.appService.aiOptimizePlacement();
@@ -1175,7 +1279,7 @@ struct Index {
               this.statusMessage = 'AI layout optimized';
             }
           }})
-        ProteusToolButton({ iconName: ProteusIconName.AI_DIAG, tooltip: 'AI Diagnose (F10)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.AI_DIAG, tooltip: 'AI 电路诊断 (F10)', showLabel: false,
           onAction: () => {
             const errors = this.appService.runErc(true);
             this.ercErrors = errors;
@@ -1187,7 +1291,7 @@ struct Index {
 
       Blank()
 
-      ProteusToolButton({ iconName: ProteusIconName.MORE, tooltip: 'More tools', showLabel: false,
+      ProteusToolButton({ iconName: ProteusIconName.MORE, tooltip: '更多工具', showLabel: false,
         onAction: () => { this.statusMessage = 'All tools available in menus'; } })
     }
     .padding({ left: 4, right: 4 })
@@ -1469,7 +1573,9 @@ struct Index {
         rulerVisible: this.rulerVisible,
         ercErrors: this.ercErrors,
         onStatusChange: (msg: string) => { this.statusMessage = msg; },
-        onDocumentChanged: () => { this.bumpCanvas(); }
+        onDocumentChanged: () => { this.bumpCanvas(); },
+        onCopySelected: () => { this.handleCopy(); },
+        onDeleteSelected: () => { this.handleDeleteSelected(); }
       })
         .width('100%')
         .height('100%')
@@ -1486,13 +1592,13 @@ struct Index {
   @Builder
   FloatingToolBar() {
     Row() {
-      ProteusToolButton({ iconName: ProteusIconName.ROTATE, tooltip: 'Rotate (R)', showLabel: false,
+      ProteusToolButton({ iconName: ProteusIconName.ROTATE, tooltip: '旋转 (R)', showLabel: false,
         onAction: () => this.handleRotate() })
-      ProteusToolButton({ iconName: ProteusIconName.MIRROR, tooltip: 'Mirror (M)', showLabel: false,
+      ProteusToolButton({ iconName: ProteusIconName.MIRROR, tooltip: '镜像 (M)', showLabel: false,
         onAction: () => this.handleMirror() })
-      ProteusToolButton({ iconName: ProteusIconName.TRASH, tooltip: 'Delete (Del)', showLabel: false,
+      ProteusToolButton({ iconName: ProteusIconName.TRASH, tooltip: '删除 (Del)', showLabel: false,
         onAction: () => this.handleDeleteSelected() })
-      ProteusToolButton({ iconName: ProteusIconName.SETTINGS, tooltip: 'Properties', showLabel: false,
+      ProteusToolButton({ iconName: ProteusIconName.SETTINGS, tooltip: '属性面板', showLabel: false,
         onAction: () => {
           this.rightCollapsed = false;
           this.uiState.rightCollapsed = false;
@@ -1584,18 +1690,20 @@ struct Index {
                   Row({ space: 8 }) {
                     ProteusClassicBtn({
                       label: this.simRunning ? $r('app.string.sim_stop') : $r('app.string.sim_run'),
+                      tooltip: this.simRunning ? '停止仿真' : '运行仿真',
                       widthVal: '42%',
                       onAction: async () => {
                         if (this.simRunning) {
                           this.appService.stopSimulation();
                           this.simRunning = false;
                         } else {
-                          this.simRunning = this.appService.startSimulation();
+                          this.applySimStartResult(this.appService.startSimulation());
                         }
                       }
                     })
                     ProteusClassicBtn({
                       label: $r('app.string.sim_pause'),
+                      tooltip: '暂停/恢复仿真',
                       widthVal: '42%',
                       onAction: () => { this.toggleSimPause(); }
                     })
@@ -1711,11 +1819,27 @@ struct Index {
 
         // Vertical sidebar tab strip
         Column() {
-          this.SidebarTab('Props', ProteusIconName.SETTINGS, 0)
-          this.SidebarTab('Sim', ProteusIconName.PLAY, 1)
-          this.SidebarTab('AI', ProteusIconName.AI_ROUTE, 2)
+          ProteusSidebarTab({
+            label: '属性', tooltip: '属性面板', icon: ProteusIconName.SETTINGS,
+            selected: this.activeRightTab === 0,
+            onSelect: () => { this.setActiveRightTab(0); }
+          })
+          ProteusSidebarTab({
+            label: '仿真', tooltip: '仿真控制', icon: ProteusIconName.PLAY,
+            selected: this.activeRightTab === 1,
+            onSelect: () => { this.setActiveRightTab(1); }
+          })
+          ProteusSidebarTab({
+            label: 'AI', tooltip: 'AI 助手', icon: ProteusIconName.AI_ROUTE,
+            selected: this.activeRightTab === 2,
+            onSelect: () => { this.setActiveRightTab(2); }
+          })
           Stack() {
-            this.SidebarTab('Debug', ProteusIconName.COMPONENT, 3)
+            ProteusSidebarTab({
+              label: '调试', tooltip: 'MCU 调试', icon: ProteusIconName.COMPONENT,
+              selected: this.activeRightTab === 3,
+              onSelect: () => { this.setActiveRightTab(3); }
+            })
             if (this.debugTabHasBadge) {
               Text('●')
                 .fontSize(7)
@@ -1723,10 +1847,26 @@ struct Index {
                 .position({ x: 28, y: 4 })
             }
           }
-          this.SidebarTab('Instr', ProteusIconName.ZOOM_IN, 4)
-          this.SidebarTab('Fault', ProteusIconName.WARNING, 5)
-          this.SidebarTab('Teach', ProteusIconName.LABEL, 6)
-          this.SidebarTab('Set', ProteusIconName.GRID, 7)
+          ProteusSidebarTab({
+            label: '仪器', tooltip: '虚拟仪器', icon: ProteusIconName.ZOOM_IN,
+            selected: this.activeRightTab === 4,
+            onSelect: () => { this.setActiveRightTab(4); }
+          })
+          ProteusSidebarTab({
+            label: '故障', tooltip: '故障注入', icon: ProteusIconName.WARNING,
+            selected: this.activeRightTab === 5,
+            onSelect: () => { this.setActiveRightTab(5); }
+          })
+          ProteusSidebarTab({
+            label: '教学', tooltip: '教学助手', icon: ProteusIconName.LABEL,
+            selected: this.activeRightTab === 6,
+            onSelect: () => { this.setActiveRightTab(6); }
+          })
+          ProteusSidebarTab({
+            label: '设置', tooltip: '平台设置', icon: ProteusIconName.GRID,
+            selected: this.activeRightTab === 7,
+            onSelect: () => { this.setActiveRightTab(7); }
+          })
         }
         .width(44)
         .height('100%')
@@ -1742,41 +1882,6 @@ struct Index {
     .border({ width: { left: 1 }, color: ProteusColors.DIVIDER })
   }
 
-  @Builder
-  SidebarTab(label: string, icon: ProteusIconName, tabIdx: number) {
-    Column() {
-      ProteusIcon({
-        name: icon,
-        iconSize: 16,
-        color: this.activeRightTab === tabIdx ?
-          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
-      })
-      Text(label)
-        .fontSize(9)
-        .fontColor(this.activeRightTab === tabIdx ?
-          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT)
-        .fontWeight(this.activeRightTab === tabIdx ? FontWeight.Bold : FontWeight.Medium)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
-    }
-    .width(44)
-    .height(50)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(this.activeRightTab === tabIdx ?
-      ProteusColors.SIDEBAR_TAB_ACTIVE_BG : ProteusColors.SIDEBAR_TAB_IDLE_BG)
-    .border({
-      width: {
-        left: this.activeRightTab === tabIdx ? 3 : 0,
-        bottom: 1
-      },
-      color: this.activeRightTab === tabIdx ?
-        ProteusColors.BTN_FOCUS : ProteusColors.SIDEBAR_TAB_BORDER
-    })
-    .onClick(() => { this.setActiveRightTab(tabIdx); })
-  }
-
   /** Welcome dialog — shown on first launch when no prior session exists */
   @Builder
   WelcomeDialog() {
@@ -1790,6 +1895,11 @@ struct Index {
         Text('请先新建工程或打开已有工程')
           .fontSize(ProteusFonts.STATUS)
           .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 4 })
+        Text(`工程目录: ${this.userProjectDir}`)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .maxLines(2)
           .margin({ bottom: 16 })
         Row({ space: 12 }) {
           ProteusClassicBtn({
@@ -1828,9 +1938,14 @@ struct Index {
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
           .margin({ bottom: 8 })
-        Text('请输入工程名称')
+        Text('请输入工程名称（保存至 project 目录）')
           .fontSize(ProteusFonts.STATUS)
           .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 4 })
+        Text(this.userProjectDir)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .maxLines(2)
           .margin({ bottom: 8 })
         TextInput({ placeholder: 'MyProject', text: this.newProjectNameInput })
           .width('100%')
@@ -1959,7 +2074,7 @@ struct Index {
       this.projectName = this.appService.currentProject?.name ?? 'Recovered';
       const name = this.projectName;
       this.appService.disableAutoSave();
-      this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/${name}.schsim`, 120000);
+      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
       this.resetAfterProjectChange();
       this.appService.schematicEditor.fitAllInView();
       this.refreshComponentList();
@@ -1979,11 +2094,16 @@ struct Index {
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
           .margin({ bottom: 8 })
-        Text('请输入 .schsim 工程文件路径')
+        Text('请输入 .schsim 工程文件路径（默认在应用沙箱 project 目录）')
           .fontSize(ProteusFonts.STATUS)
           .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 4 })
+        Text(this.userProjectDir)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .maxLines(2)
           .margin({ bottom: 8 })
-        TextInput({ placeholder: '/path/to/project.schsim', text: this.openFilePath })
+        TextInput({ placeholder: `${this.userProjectDir}/MyProject.schsim`, text: this.openFilePath })
           .width('100%')
           .height(32)
           .fontSize(ProteusFonts.PARAM_KEY)
@@ -1995,12 +2115,17 @@ struct Index {
         Row({ space: 8 }) {
           ProteusClassicBtn({
             label: '取消',
-            widthVal: '48%',
+            widthVal: '32%',
             onAction: () => { this.showOpenDialog = false; }
           })
           ProteusClassicBtn({
+            label: '浏览',
+            widthVal: '32%',
+            onAction: () => { void this.handleOpenFromPicker(); }
+          })
+          ProteusClassicBtn({
             label: '打开',
-            widthVal: '48%',
+            widthVal: '32%',
             onAction: () => { void this.doOpenFromPath(); }
           })
         }
@@ -2030,11 +2155,16 @@ struct Index {
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
           .margin({ bottom: 8 })
-        Text('请输入保存路径')
+        Text('请输入保存路径（默认在应用沙箱 project 目录）')
           .fontSize(ProteusFonts.STATUS)
           .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 4 })
+        Text(this.userProjectDir)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .maxLines(2)
           .margin({ bottom: 8 })
-        TextInput({ placeholder: '/path/to/project.schsim', text: this.saveAsPath })
+        TextInput({ placeholder: `${this.userProjectDir}/${this.projectName}.schsim`, text: this.saveAsPath })
           .width('100%')
           .height(32)
           .fontSize(ProteusFonts.PARAM_KEY)

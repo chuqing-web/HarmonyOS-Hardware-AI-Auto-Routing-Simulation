@@ -12,6 +12,8 @@ export interface SymbolDrawStyle {
   lineWidth: number;
   selected: boolean;
   hovered: boolean;
+  /** LED fill/emission color; empty = unlit (outline only) */
+  ledDisplayColor?: string;
 }
 
 export class SchematicSymbolRenderer {
@@ -35,15 +37,18 @@ export class SchematicSymbolRenderer {
     }
 
     const symbolKey = resolveSymbolKey(def.id, def.svgSymbol, def.behaviorModel);
-    SchematicSymbolRenderer.drawSymbolBody(ctx, symbolKey, def);
+    SchematicSymbolRenderer.drawSymbolBody(ctx, symbolKey, def, style.ledDisplayColor ?? '');
     SchematicSymbolRenderer.drawPins(ctx, def.pins, style.strokeColor);
     SchematicSymbolRenderer.drawLabels(ctx, def, refDes, style);
 
     if (style.hovered && !style.selected) {
-      const bounds = calcSymbolBounds(def.pins, 6);
+      const pad = 14;
+      const bounds = calcSymbolBounds(def.pins, pad);
+      ctx.fillStyle = 'rgba(0, 170, 255, 0.12)';
+      ctx.fillRect(bounds.minX, bounds.minY, bounds.width, bounds.height);
       ctx.strokeStyle = ProteusColors.HOVER_PREVIEW;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
       ctx.strokeRect(bounds.minX, bounds.minY, bounds.width, bounds.height);
       ctx.setLineDash([]);
     }
@@ -81,7 +86,12 @@ export class SchematicSymbolRenderer {
     ctx.restore();
   }
 
-  private static drawSymbolBody(ctx: CanvasRenderingContext2D, key: string, def: ComponentDefinition): void {
+  private static drawSymbolBody(
+    ctx: CanvasRenderingContext2D,
+    key: string,
+    def: ComponentDefinition,
+    ledDisplayColor: string = ''
+  ): void {
     ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
     ctx.fillStyle = ProteusColors.CANVAS_BG;
     ctx.lineWidth = 1.2;
@@ -128,8 +138,7 @@ export class SchematicSymbolRenderer {
         SchematicSymbolRenderer.drawDiode(ctx, false, '');
         break;
       case 'led':
-        const ledColor = def.defaultParams.get('color') ?? 'red';
-        SchematicSymbolRenderer.drawDiode(ctx, true, ledColor);
+        SchematicSymbolRenderer.drawDiode(ctx, true, ledDisplayColor);
         break;
       case 'transistor':
         SchematicSymbolRenderer.drawTransistor(ctx);
@@ -360,15 +369,6 @@ export class SchematicSymbolRenderer {
       // Restore stroke style
       ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
       ctx.lineWidth = 1.2;
-    } else if (isLed) {
-      ctx.beginPath();
-      ctx.moveTo(10, -12);
-      ctx.lineTo(18, -20);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(10, -8);
-      ctx.lineTo(18, -16);
-      ctx.stroke();
     }
   }
 

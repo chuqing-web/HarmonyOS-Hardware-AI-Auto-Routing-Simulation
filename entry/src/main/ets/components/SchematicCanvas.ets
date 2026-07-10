@@ -6,8 +6,10 @@ import { AppService } from '../services/AppService';
 import { SchematicSymbolRenderer, SymbolDrawStyle } from '../utils/SchematicSymbolRenderer';
 import {
   SchematicDocument, ComponentInstance, Wire, ViewportState, Point2D, WorldRect, Rect2D,
-  ModuleEvent, ModuleEventPayload, EventBus, ErcError, Pin, calcSymbolBounds, SimulationState
+  ModuleEvent, ModuleEventPayload, EventBus, ErcError, Pin, calcSymbolBounds, SimulationState,
+  getPinNetMap, findNetForPinLabel
 } from 'common';
+import { SimulationKernelImpl } from 'simulation_kernel';
 import { ComponentDefinition } from 'component_library';
 import { EditorToolMode } from '../model/EditorToolMode';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
@@ -36,6 +38,8 @@ export struct SchematicCanvas {
   @Prop ercErrors: ErcError[] = [];
   onStatusChange: (msg: string) => void = () => {};
   onDocumentChanged: () => void = () => {};
+  onCopySelected: () => void = () => {};
+  onDeleteSelected: () => void = () => {};
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -54,9 +58,14 @@ export struct SchematicCanvas {
   private viewWidth: number = 0;
   private viewHeight: number = 0;
   private canvasReady: boolean = false;
+  private needsFitOnLayout: boolean = true;
   private redrawScheduled: boolean = false;
   private redrawTimer: number = -1;
   @State hoverComponentId: string = '';
+  @State hoverWireNetId: string = '';
+  @State contextMenuVisible: boolean = false;
+  @State contextMenuScreenX: number = 0;
+  @State contextMenuScreenY: number = 0;
   @State previewWireEnd: Point2D | null = null;
   @State placementPreview: Point2D | null = null;
   private isBoxSelecting: boolean = false;
@@ -100,6 +109,7 @@ export struct SchematicCanvas {
     EventBus.getInstance().subscribe(ModuleEvent.SCHEMATIC_CHANGED, this.onSchematicChanged);
     EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STEP, this.onSimStep);
+    EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STARTED, this.onSimulationStarted);
     // Fallback: layout may complete after onReady — force a full paint once sizes settle.
     setTimeout(() => {
       this.ensureLayoutRedraw('startup');
@@ -113,6 +123,7 @@ export struct SchematicCanvas {
     EventBus.getInstance().unsubscribe(ModuleEvent.SCHEMATIC_CHANGED, this.onSchematicChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STEP, this.onSimStep);
+    EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STARTED, this.onSimulationStarted);
     if (this.redrawTimer >= 0) {
       clearTimeout(this.redrawTimer);
       this.redrawTimer = -1;
@@ -152,6 +163,14 @@ export struct SchematicCanvas {
 
   private onSimStep = (_payload: ModuleEventPayload): void => {
     this.simFrameDirty = true;
+    this.scheduleRedraw();
+  };
+
+  private onSimulationStarted = (_payload: ModuleEventPayload): void => {
+    this.blockWireEditing();
+    if (this.toolMode === EditorToolMode.WIRE || this.toolMode === EditorToolMode.BUS) {
+      this.toolMode = EditorToolMode.SELECT;
+    }
     this.scheduleRedraw();
   };
 
@@ -197,12 +216,22 @@ export struct SchematicCanvas {
     if (nw <= 0 || nh <= 0) {
       return;
     }
-    const sizeChanged = Math.abs(nw - this.viewWidth) > 0.5 || Math.abs(nh - this.viewHeight) > 0.5;
+    const prevW = this.viewWidth;
+    const prevH = this.viewHeight;
+    const sizeChanged = Math.abs(nw - prevW) > 0.5 || Math.abs(nh - prevH) > 0.5;
+    const wasUnlaid = prevW <= 0 || prevH <= 0;
     this.viewWidth = nw;
     this.viewHeight = nh;
+    (this.appService.schematicEditor as SchematicEditorImpl).setCanvasViewSize(nw, nh);
     if (sizeChanged || !this.canvasReady) {
       this.canvasReady = true;
       this.forceFullRedraw('areaChange');
+      const growAfterMaximize = !wasUnlaid && (nw - prevW > 64 || nh - prevH > 64);
+      if (this.needsFitOnLayout || wasUnlaid || growAfterMaximize) {
+        this.needsFitOnLayout = false;
+        this.appService.schematicEditor.fitAllInView();
+        this.scheduleRedraw();
+      }
     }
   }
 
@@ -294,6 +323,36 @@ export struct SchematicCanvas {
             .width('100%')
             .height('100%')
             .hitTestBehavior(HitTestMode.Transparent)
+
+          if (this.contextMenuVisible) {
+            Column({ space: 4 }) {
+              Button('复制')
+                .type(ButtonType.Normal)
+                .fontSize(13)
+                .height(32)
+                .width(96)
+                .onClick(() => {
+                  this.contextMenuVisible = false;
+                  this.onCopySelected();
+                })
+              Button('删除')
+                .type(ButtonType.Normal)
+                .fontSize(13)
+                .height(32)
+                .width(96)
+                .onClick(() => {
+                  this.contextMenuVisible = false;
+                  this.onDeleteSelected();
+                })
+            }
+            .padding(6)
+            .backgroundColor(ProteusColors.PANEL_TITLE_BG)
+            .border({ width: 1, color: ProteusColors.DIVIDER })
+            .borderRadius(6)
+            .shadow({ radius: 8, color: '#40000000', offsetX: 2, offsetY: 2 })
+            .position({ x: this.contextMenuScreenX, y: this.contextMenuScreenY })
+            .zIndex(20)
+          }
         }
         .layoutWeight(1)
         .height('100%')
@@ -324,8 +383,9 @@ export struct SchematicCanvas {
       // Only track hover in SELECT mode — hover results are not used in tool modes
       if (this.isSelectMode()) {
         const prevHover = this.hoverComponentId;
+        const prevWireHover = this.hoverWireNetId;
         this.updateHover(world);
-        if (prevHover !== this.hoverComponentId) {
+        if (prevHover !== this.hoverComponentId || prevWireHover !== this.hoverWireNetId) {
           this.scheduleRedraw();
         }
       }
@@ -337,6 +397,8 @@ export struct SchematicCanvas {
     if (event.action === MouseAction.Press) {
       if (this.isTouchActive) return; // touch handles interaction, skip mouse
       if (event.button === 2) {
+        this.contextMenuScreenX = event.x;
+        this.contextMenuScreenY = event.y;
         this.handleRightClick();
         return;
       }
@@ -375,12 +437,11 @@ export struct SchematicCanvas {
   }
 
   /**
-   * Right-click: direct actions (no context menu) for fast workflow.
-   * PLACE mode → cancel placement. Wire drawing → cancel wire.
-   * Has selection → delete. Nothing selected → clear selection.
+   * Right-click: cancel tools when active; show copy/delete menu when something is selected.
    */
   private handleRightClick(): void {
-    // PLACE mode: cancel placement instantly
+    this.contextMenuVisible = false;
+
     if (this.toolMode === EditorToolMode.PLACE) {
       this.pendingLibraryId = '';
       this.placementPreview = null;
@@ -390,7 +451,6 @@ export struct SchematicCanvas {
       return;
     }
 
-    // Wire drawing: cancel all waypoints
     if (this.wireWaypoints.length > 0 || this.wireStartActive) {
       this.wireWaypoints = [];
       this.setWireStart(null);
@@ -400,27 +460,11 @@ export struct SchematicCanvas {
       return;
     }
 
-    // SELECT mode: delete selected, or clear selection
     const selectedDevices = this.appService.schematicEditor.getSelectedDevices();
     const selectedNets = this.appService.schematicEditor.getSelectedNets();
 
     if (selectedDevices.length > 0 || selectedNets.length > 0) {
-      if (selectedDevices.length > 0) {
-        const ids: string[] = [];
-        for (let i = 0; i < selectedDevices.length; i++) {
-          ids.push(selectedDevices[i].instUuid);
-        }
-        this.appService.schematicEditor.batchDeleteDevice(ids);
-      }
-      if (selectedNets.length > 0) {
-        this.appService.schematicEditor.clearSelectedRoute();
-      }
-      this.selectedComponentId = '';
-      this.dragComponentId = '';
-      this.dragPreviewPos = null;
-      this.dragBlocked = false;
-      this.onStatusChange('已删除');
-      this.scheduleRedraw();
+      this.contextMenuVisible = true;
       return;
     }
 
@@ -543,6 +587,9 @@ export struct SchematicCanvas {
   }
 
   private onPointerDown(sx: number, sy: number): void {
+    if (this.contextMenuVisible) {
+      this.contextMenuVisible = false;
+    }
     const now = Date.now();
     if (now - this.lastDownTime < 100) {
       return;
@@ -571,38 +618,49 @@ export struct SchematicCanvas {
     }
 
     const hits = this.appService.schematicEditor.selectAt(world);
-    if (this.toolMode === EditorToolMode.SELECT && hits.length > 0) {
-      if (this.shiftHeld) {
-        const toggled = this.appService.schematicEditor.toggleSelection(hits[0]);
-        this.selectedComponentId = toggled.length > 0 ? toggled[toggled.length - 1] : '';
-        this.appService.schematicEditor.setSelection(toggled);
-        this.onStatusChange(`已选择 ${toggled.length} 个器件`);
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const selectedNets = this.appService.schematicEditor.getSelectedNets();
+    if (this.toolMode === EditorToolMode.SELECT && (hits.length > 0 || selectedNets.length > 0)) {
+      if (hits.length > 0) {
+        if (this.shiftHeld) {
+          const toggled = this.appService.schematicEditor.toggleSelection(hits[0]);
+          this.selectedComponentId = toggled.length > 0 ? toggled[toggled.length - 1] : '';
+          this.appService.schematicEditor.setSelection(toggled);
+          this.onStatusChange(`已选择 ${toggled.length} 个器件`);
+          return;
+        }
+        this.selectedComponentId = hits[0];
+        if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
+          this.dragComponentId = '';
+          this.dragPreviewPos = null;
+          this.dragBlocked = true;
+          this.onStatusChange('器件层已锁定');
+        } else if (this.appService.schematicEditor.isComponentLocked(hits[0])) {
+          this.dragComponentId = '';
+          this.dragPreviewPos = null;
+          this.dragBlocked = true;
+          this.onStatusChange('器件已锁定，无法拖动');
+        } else {
+          this.dragComponentId = hits[0];
+          this.dragBlocked = false;
+          const doc = this.appService.schematicEditor.getDocument();
+          const comp = doc.components.find(c => c.id === hits[0]);
+          if (comp) {
+            this.dragStartPos = { x: comp.position.x, y: comp.position.y };
+            this.dragPreviewPos = { x: comp.position.x, y: comp.position.y };
+          }
+        }
+        this.appService.schematicEditor.setSelection([hits[0]]);
+        this.onStatusChange(`已选择 ${hits[0]}`);
         return;
       }
-      this.selectedComponentId = hits[0];
-      const editor = this.appService.schematicEditor as SchematicEditorImpl;
-      if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
-        this.dragComponentId = '';
-        this.dragPreviewPos = null;
-        this.dragBlocked = true;
-        this.onStatusChange('器件层已锁定');
-      } else if (this.appService.schematicEditor.isComponentLocked(hits[0])) {
-        this.dragComponentId = '';
-        this.dragPreviewPos = null;
-        this.dragBlocked = true;
-        this.onStatusChange('器件已锁定，无法拖动');
-      } else {
-        this.dragComponentId = hits[0];
-        this.dragBlocked = false;
-        const doc = this.appService.schematicEditor.getDocument();
-        const comp = doc.components.find(c => c.id === hits[0]);
-        if (comp) {
-          this.dragStartPos = { x: comp.position.x, y: comp.position.y };
-          this.dragPreviewPos = { x: comp.position.x, y: comp.position.y };
-        }
-      }
-      this.appService.schematicEditor.setSelection([hits[0]]);
-      this.onStatusChange(`已选择 ${hits[0]}`);
+      // Wire selected
+      this.selectedComponentId = '';
+      this.dragComponentId = '';
+      this.dragPreviewPos = null;
+      this.dragBlocked = false;
+      this.onStatusChange('已选择导线');
+      return;
     } else if (this.toolMode === EditorToolMode.SELECT) {
       this.selectedComponentId = '';
       this.dragComponentId = '';
@@ -624,6 +682,10 @@ export struct SchematicCanvas {
     // Wire preview: always show when wire start is set (pointer may be up after first click)
     const wireStart = this.getWireStart();
     if (this.toolMode === EditorToolMode.WIRE && wireStart !== null) {
+      if (this.isSimulationActive()) {
+        this.blockWireEditing();
+        return;
+      }
       this.previewWireEnd = world;
       this.scheduleRedraw();
       if (!this.pointerDown) {
@@ -824,6 +886,22 @@ export struct SchematicCanvas {
     }
   }
 
+  private isSimulationActive(): boolean {
+    return this.appService.isSimulationActive();
+  }
+
+  private blockWireEditing(): boolean {
+    if (!this.isSimulationActive()) {
+      return false;
+    }
+    this.wireWaypoints = [];
+    this.setWireStart(null);
+    this.previewWireEnd = null;
+    this.onStatusChange('仿真运行中，无法接线');
+    this.scheduleRedraw();
+    return true;
+  }
+
   private isLayerBlocked(layerId: SchematicLayerId): boolean {
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
     return editor.isLayerLocked(layerId);
@@ -842,6 +920,9 @@ export struct SchematicCanvas {
         this.tryPlaceComponent(world);
         break;
       case EditorToolMode.WIRE: {
+        if (this.blockWireEditing()) {
+          break;
+        }
         if (this.isLayerBlocked(SchematicLayerId.WIRING)) {
           this.onStatusChange('布线层已锁定');
           break;
@@ -865,11 +946,15 @@ export struct SchematicCanvas {
             break;
           }
           this.wireWaypoints.push(wirePoint);
-          editor.addWireWithPoints(this.wireWaypoints);
+          const wireResult = editor.addWireWithPoints(this.wireWaypoints);
           this.wireWaypoints = [];
           this.setWireStart(null);
           this.previewWireEnd = null;
-          this.onStatusChange('导线已完成');
+          if (wireResult.success) {
+            this.onStatusChange('导线已完成');
+          } else {
+            this.onStatusChange(wireResult.error ?? '接线失败');
+          }
         } else {
           this.wireWaypoints.push(wirePoint);
           this.setWireStart(wirePoint);
@@ -878,6 +963,9 @@ export struct SchematicCanvas {
         break;
       }
       case EditorToolMode.BUS:
+        if (this.blockWireEditing()) {
+          break;
+        }
         if (this.isLayerBlocked(SchematicLayerId.WIRING)) {
           this.onStatusChange('布线层已锁定');
           break;
@@ -907,6 +995,10 @@ export struct SchematicCanvas {
         // Auto-switch to wire mode when clicking a pin in SELECT mode
         const nearPin = this.findNearestPinWorld(world);
         if (nearPin !== null) {
+          if (this.isSimulationActive()) {
+            this.onStatusChange('仿真运行中，无法接线');
+            break;
+          }
           this.toolMode = EditorToolMode.WIRE;
           this.selectedComponentId = '';
           this.dragComponentId = '';
@@ -936,8 +1028,16 @@ export struct SchematicCanvas {
   }
 
   private updateHover(world: Point2D): void {
-    const hits = this.appService.schematicEditor.hitTestAt(world);
-    this.hoverComponentId = hits.length > 0 ? hits[0] : '';
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const hits = editor.hitTestAt(world);
+    if (hits.length > 0) {
+      this.hoverComponentId = hits[0];
+      this.hoverWireNetId = '';
+      return;
+    }
+    const wireNet = editor.hitTestWireAt(world);
+    this.hoverComponentId = '';
+    this.hoverWireNetId = wireNet !== null ? wireNet : '';
   }
 
   private screenToWorld(sx: number, sy: number): Point2D {
@@ -1087,6 +1187,8 @@ export struct SchematicCanvas {
     if (this.alignGuideX !== null || this.alignGuideY !== null) {
       this.drawAlignGuides(ctx, bounds);
     }
+    this.drawHoverOverlays(ctx, doc, editor);
+    this.drawLitLedOverlays(ctx, doc);
     // Draw pin snap markers in WIRE mode to show clickable pin positions
     if (this.toolMode === EditorToolMode.WIRE) {
       this.drawPinSnapMarkers(ctx);
@@ -1377,6 +1479,7 @@ export struct SchematicCanvas {
   ): void {
     const vp = this.appService.schematicEditor.getViewport();
     const bounds = this.getVisibleWorldBounds(vp);
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
     const compCount = components.length;
     for (let i = 0; i < compCount; i++) {
       const comp = components[i];
@@ -1390,7 +1493,7 @@ export struct SchematicCanvas {
         cy < bounds.minY - 120 || cy > bounds.maxY + 120) {
         continue;
       }
-      const selected = comp.id === this.selectedComponentId;
+      const selected = editor.isComponentSelected(comp.id);
       const hovered = comp.id === this.hoverComponentId && !selected;
       const def = this.getCachedCompDef(comp.libraryId);
       if (def === null) {
@@ -1406,7 +1509,8 @@ export struct SchematicCanvas {
         fillColor: ProteusColors.CANVAS_BG,
         lineWidth: selected ? 2 : 1.2,
         selected: selected,
-        hovered: hovered
+        hovered: false,
+        ledDisplayColor: this.isLedComponent(comp, def) ? '' : undefined
       };
       SchematicSymbolRenderer.drawComponent(
         ctx, drawPos.x, drawPos.y, def,
@@ -1574,7 +1678,7 @@ export struct SchematicCanvas {
   }
 
   private drawPinSnapMarkers(ctx: CanvasRenderingContext2D): void {
-    if (this.toolMode !== EditorToolMode.WIRE) {
+    if (this.toolMode !== EditorToolMode.WIRE || this.isSimulationActive()) {
       return;
     }
     const doc = this.appService.schematicEditor.getDocument();
@@ -1612,20 +1716,185 @@ export struct SchematicCanvas {
     return def;
   }
 
+  private drawHitHoverOverlay(
+    ctx: CanvasRenderingContext2D,
+    editor: SchematicEditorImpl,
+    comp: ComponentInstance
+  ): void {
+    const rect = editor.getComponentHitRect(comp);
+    ctx.fillStyle = 'rgba(0, 170, 255, 0.18)';
+    ctx.strokeStyle = ProteusColors.HOVER_PREVIEW;
+    ctx.lineWidth = 1.5 / Math.max(this.appService.schematicEditor.getZoom(), 0.5);
+    ctx.setLineDash([6, 4]);
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.setLineDash([]);
+  }
+
+  private drawHoverOverlays(
+    ctx: CanvasRenderingContext2D,
+    doc: SchematicDocument,
+    editor: SchematicEditorImpl
+  ): void {
+    if (!this.isSelectMode() || this.hoverComponentId.length === 0) {
+      return;
+    }
+    if (editor.isComponentSelected(this.hoverComponentId)) {
+      return;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      if (doc.components[i].id === this.hoverComponentId) {
+        this.drawHitHoverOverlay(ctx, editor, doc.components[i]);
+        return;
+      }
+    }
+  }
+
+  private isLedComponent(comp: ComponentInstance, def: ComponentDefinition | null): boolean {
+    if (def !== null) {
+      const key = def.id.toUpperCase();
+      if (key.includes('LED')) {
+        return true;
+      }
+    }
+    return comp.libraryId.toUpperCase().includes('LED');
+  }
+
+  private resolveLedNominalColor(comp: ComponentInstance, def: ComponentDefinition): string {
+    const fromParam = comp.parameters.get('color');
+    if (fromParam !== undefined && fromParam.length > 0) {
+      return fromParam;
+    }
+    return def.defaultParams.get('color') ?? 'red';
+  }
+
+  /** Both terminals wired to distinct nets — minimum connectivity for a path. */
+  private isLedWired(comp: ComponentInstance, def: ComponentDefinition): boolean {
+    const doc = this.appService.schematicEditor.getDocument();
+    const pinNets = getPinNetMap(comp.id, doc.nets);
+    if (pinNets.size < 2) {
+      return false;
+    }
+    const anodeNet = this.findLedAnodeNet(def, pinNets);
+    const cathodeNet = this.findLedCathodeNet(def, pinNets);
+    if (anodeNet === null || cathodeNet === null) {
+      return false;
+    }
+    return anodeNet.length > 0 && cathodeNet.length > 0 && anodeNet !== cathodeNet;
+  }
+
+  private findLedAnodeNet(def: ComponentDefinition, pinNets: Map<string, string>): string | null {
+    for (let i = 0; i < def.pins.length; i++) {
+      const pin = def.pins[i];
+      const name = pin.name.toUpperCase();
+      if (name === 'A' || name === 'ANODE' || name === '1') {
+        const net = findNetForPinLabel(pinNets, pin.name) ?? findNetForPinLabel(pinNets, pin.id);
+        if (net !== null) {
+          return net;
+        }
+      }
+    }
+    if (def.pins.length > 0) {
+      return findNetForPinLabel(pinNets, def.pins[0].name) ?? findNetForPinLabel(pinNets, def.pins[0].id);
+    }
+    return null;
+  }
+
+  private findLedCathodeNet(def: ComponentDefinition, pinNets: Map<string, string>): string | null {
+    for (let i = 0; i < def.pins.length; i++) {
+      const pin = def.pins[i];
+      const name = pin.name.toUpperCase();
+      if (name === 'K' || name === 'C' || name === 'CATHODE' || name === '2') {
+        const net = findNetForPinLabel(pinNets, pin.name) ?? findNetForPinLabel(pinNets, pin.id);
+        if (net !== null) {
+          return net;
+        }
+      }
+    }
+    if (def.pins.length > 1) {
+      return findNetForPinLabel(pinNets, def.pins[1].name) ?? findNetForPinLabel(pinNets, def.pins[1].id);
+    }
+    return null;
+  }
+
+  private isLedConducting(comp: ComponentInstance, def: ComponentDefinition): boolean {
+    const doc = this.appService.schematicEditor.getDocument();
+    const pinNets = getPinNetMap(comp.id, doc.nets);
+    const anodeNet = this.findLedAnodeNet(def, pinNets);
+    const cathodeNet = this.findLedCathodeNet(def, pinNets);
+    if (anodeNet === null || cathodeNet === null || anodeNet === cathodeNet) {
+      return false;
+    }
+    const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+    const vA = kernel.getNetVoltageByUuid(anodeNet);
+    const vK = kernel.getNetVoltageByUuid(cathodeNet);
+    const vf = vA - vK;
+    if (vf < 1.5) {
+      return false;
+    }
+    const current = kernel.getBranchCurrent(comp.id);
+    if (Math.abs(current) >= 1e-5) {
+      return true;
+    }
+    return vf >= 1.8;
+  }
+
+  private resolveLedDisplayColor(comp: ComponentInstance, def: ComponentDefinition): string {
+    if (!this.isLedWired(comp, def)) {
+      return '';
+    }
+    const simState = this.appService.simulationKernel.getState();
+    const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
+    if (!simActive) {
+      return '';
+    }
+    if (!this.isLedConducting(comp, def)) {
+      return '';
+    }
+    return this.resolveLedNominalColor(comp, def);
+  }
+
+  private drawLitLedOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument): void {
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    if (!editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
+      return;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      if (comp.id === this.dragComponentId) {
+        continue;
+      }
+      const def = this.getCachedCompDef(comp.libraryId);
+      if (def === null || !this.isLedComponent(comp, def)) {
+        continue;
+      }
+      const ledColor = this.resolveLedDisplayColor(comp, def);
+      if (ledColor.length === 0) {
+        continue;
+      }
+      const style: SymbolDrawStyle = {
+        strokeColor: ProteusColors.COMPONENT_STROKE,
+        fillColor: ProteusColors.CANVAS_BG,
+        lineWidth: 1.2,
+        selected: false,
+        hovered: false,
+        ledDisplayColor: ledColor
+      };
+      SchematicSymbolRenderer.drawComponent(
+        ctx, comp.position.x, comp.position.y, def,
+        comp.refDes, comp.rotation, comp.mirrored, style
+      );
+    }
+  }
+
   private drawFallbackComponent(
     ctx: CanvasRenderingContext2D,
     comp: ComponentInstance,
     selected: boolean,
-    hovered: boolean
+    _hovered: boolean
   ): void {
     const cx = comp.position.x;
     const cy = comp.position.y;
-    if (hovered) {
-      ctx.strokeStyle = ProteusColors.HOVER_PREVIEW;
-      ctx.setLineDash([3, 3]);
-      ctx.strokeRect(cx - 32, cy - 22, 64, 44);
-      ctx.setLineDash([]);
-    }
     ctx.strokeStyle = selected ? ProteusColors.SELECTED : ProteusColors.COMPONENT_STROKE;
     ctx.lineWidth = selected ? 2 : 1.2;
     ctx.fillStyle = '#F8F8FC';
@@ -1678,6 +1947,12 @@ export struct SchematicCanvas {
 
   private drawWires(ctx: CanvasRenderingContext2D, wires: Wire[]): void {
     const wCount = wires.length;
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const selectedWireNets = editor.getSelectedWireNetIds();
+    const selectedWireSet = new Set<string>();
+    for (let si = 0; si < selectedWireNets.length; si++) {
+      selectedWireSet.add(selectedWireNets[si]);
+    }
     // Check if simulation is active (running or paused) for live voltage coloring
     const simState = this.appService.simulationKernel.getState();
     const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
@@ -1765,8 +2040,25 @@ export struct SchematicCanvas {
         drawPts[1] = this.smartMidpoint(drawPts[0], drawPts[2], this.dragComponentId);
       }
 
+      const wireSelected = selectedWireSet.has(wire.netId);
+      const wireHovered = wire.netId === this.hoverWireNetId && !wireSelected;
+
+      if (wireHovered) {
+        ctx.strokeStyle = 'rgba(0, 170, 255, 0.35)';
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(drawPts[0].x, drawPts[0].y);
+        for (let j = 1; j < drawPts.length; j++) {
+          ctx.lineTo(drawPts[j].x, drawPts[j].y);
+        }
+        ctx.stroke();
+      }
+
       // Voltage-based coloring during simulation
-      if (simActive && wire.netId.length > 0) {
+      if (wireSelected) {
+        ctx.strokeStyle = ProteusColors.SELECTED;
+        ctx.lineWidth = 3;
+      } else if (simActive && wire.netId.length > 0) {
         const voltage = nodeVoltages.get(wire.netId) ?? 0;
         ctx.strokeStyle = this.voltageToColor(voltage);
         ctx.lineWidth = 2.0;

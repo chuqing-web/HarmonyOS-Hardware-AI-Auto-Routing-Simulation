@@ -1,16 +1,15 @@
 /**
  * 教学辅助 + 实验模板 + AI 答疑
  */
+import { SchTopology } from 'common';
 import {
-  SchTopology, ApiResult, ResultHelper, ErrCode, TopologyAdapter
-} from 'common';
-import { CircuitTemplates } from './algorithms/CircuitTemplates';
-import { cloneLabTemplateArray } from './internal/AiEngineHelpers';
+  LabTemplateRegistry, LabTemplateDef, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
+} from './algorithms/LabTemplateRegistry';
 
 /** 模板关联的固件信息 */
 export interface TemplateFirmware {
   hexText: string;
-  mcuFamily: string; // '8051' | 'STM32'
+  mcuFamily: string;
 }
 
 export interface LabTemplate {
@@ -19,6 +18,8 @@ export interface LabTemplate {
   category: string;
   description: string;
   knowledgePoints: string[];
+  /** 本模板覆盖的器件 libraryId */
+  libraryIds?: string[];
 }
 
 export interface KnowledgeTip {
@@ -28,21 +29,14 @@ export interface KnowledgeTip {
 }
 
 export class TeachingService {
-  private static templates: LabTemplate[] = [
-    { id: 'lab_power', name: '直流电源电路', category: 'power', description: 'LM7805 稳压电源', knowledgePoints: ['稳压原理', '滤波电容'] },
-    { id: 'lab_amp', name: '运算放大电路', category: 'analog', description: '同相/反相放大器', knowledgePoints: ['虚短虚断', '增益计算'] },
-    { id: 'lab_filter', name: 'RC滤波电路', category: 'analog', description: '低通/高通滤波', knowledgePoints: ['截止频率', '波特图'] },
-    { id: 'lab_51_led', name: '51流水灯', category: 'mcu', description: 'STC89 流水灯实验', knowledgePoints: ['IO口', '定时器'] },
-    { id: 'lab_uart', name: '串口通信', category: 'mcu', description: 'STM32 UART 实验', knowledgePoints: ['波特率', '帧格式'] },
-  ];
-
   private static tips: KnowledgeTip[] = [
-    { componentType: 'UA741', title: '运算放大器', content: '虚短：同相端与反相端电压相等；虚断：输入电流为零' },
-    { componentType: 'AT89C51', title: '51单片机', content: '4组IO口(P0~P3)，P0需外部上拉，16位寻址空间64KB' },
-    { componentType: 'STM32F103', title: 'STM32', content: 'Cortex-M3内核，72MHz，丰富外设：GPIO/ADC/UART/SPI/I2C/TIM' },
+    { componentType: 'LM358', title: '双运放 LM358', content: '双路运放，单电源可用；IN+ 与 IN- 虚短虚断' },
+    { componentType: 'UA741', title: '运算放大器', content: '经典单运放；注意 VCC/VEE 双电源或单电源偏置' },
+    { componentType: 'AT89C51', title: '51单片机', content: '4组IO口(P0~P3)，P0需外部上拉，EA 接 VCC 用内部程序' },
+    { componentType: 'STM32F103', title: 'STM32', content: 'Cortex-M3，72MHz；USART1 常用 PA9/PA10 或 P10/P11' },
+    { componentType: '74HC', title: 'CMOS 逻辑', content: '未用输入不可悬空；VCC 去耦 100nF 靠近芯片' },
   ];
 
-  /** 模板固件数据 (Intel HEX 格式) */
   private static readonly FW_51: TemplateFirmware = {
     mcuFamily: '8051',
     hexText:
@@ -59,32 +53,72 @@ export class TeachingService {
       ':00000001FF\n'
   };
 
-  private static getFirmwareById(id: string): TemplateFirmware | null {
-    if (id === 'lab_51_led') return TeachingService.FW_51;
-    if (id === 'lab_uart') return TeachingService.FW_STM32;
-    return null;
+  private static toLabTemplate(def: LabTemplateDef): LabTemplate {
+    return {
+      id: def.id,
+      name: def.name,
+      category: def.category,
+      description: def.description,
+      knowledgePoints: def.knowledgePoints,
+      libraryIds: def.libraryIds
+    };
   }
 
   listTemplates(): LabTemplate[] {
-    return cloneLabTemplateArray(TeachingService.templates);
+    return LabTemplateRegistry.listTemplates().map(TeachingService.toLabTemplate);
   }
 
-  loadTemplate(templateId: string): ApiResult<SchTopology> {
-    const tpl = TeachingService.templates.find(t => t.id === templateId);
-    if (!tpl) return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Template not found');
-    const doc = CircuitTemplates.generate(tpl.description);
-    doc.name = tpl.name;
-    return ResultHelper.ok(TopologyAdapter.toTopology(doc));
+  listCategories(): string[] {
+    return LabTemplateRegistry.listCategories();
   }
 
-  /** 获取模板关联的固件 (有 MCU 的模板才返回) */
+  listTemplatesByCategory(category: string): LabTemplate[] {
+    return LabTemplateRegistry.listTemplates()
+      .filter(t => t.category === category)
+      .map(TeachingService.toLabTemplate);
+  }
+
+  getCoverageReport(): LabCoverageReport {
+    return LabTemplateRegistry.getCoverageReport();
+  }
+
+  getAllCatalogLibraryIds(): string[] {
+    return ALL_CATALOG_LIBRARY_IDS.slice();
+  }
+
+  /** 注册自定义实验模板（运行时扩展） */
+  registerTemplate(def: LabTemplateDef): void {
+    LabTemplateRegistry.registerTemplate(def);
+  }
+
+  /** 模板关联 hex 文件名（不含路径） */
+  getTemplateHexFileName(templateId: string): string | null {
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined || def.hexFile === undefined || def.hexFile.length === 0) {
+      return null;
+    }
+    return def.hexFile;
+  }
+
   getTemplateFirmware(templateId: string): TemplateFirmware | null {
-    return TeachingService.getFirmwareById(templateId);
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined || def.firmware === undefined) {
+      return null;
+    }
+    if (def.firmware === '8051') {
+      return TeachingService.FW_51;
+    }
+    if (def.firmware === 'STM32') {
+      return TeachingService.FW_STM32;
+    }
+    return null;
   }
 
   getKnowledgeTip(libraryId: string): KnowledgeTip | null {
     for (const tip of TeachingService.tips) {
-      if (libraryId.includes(tip.componentType)) return tip;
+      if (libraryId.includes(tip.componentType)) {
+        return tip;
+      }
     }
     return null;
   }
@@ -100,7 +134,9 @@ export class TeachingService {
 
   buildAiQuestion(topo: SchTopology, selectedUuid: string): string {
     const dev = topo.deviceList.find(d => d.instUuid === selectedUuid);
-    if (!dev) return '请解释当前电路的工作原理';
+    if (!dev) {
+      return '请解释当前电路的工作原理';
+    }
     return `请解释电路中 ${dev.refName}(${dev.libDevId}) 的作用，以及 surrounding 连接关系`;
   }
 }

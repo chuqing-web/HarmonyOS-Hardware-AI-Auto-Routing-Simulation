@@ -40,6 +40,9 @@ export class ErcEngine {
         }
         continue;
       }
+      if (net.pinIds.length === 0) {
+        continue;
+      }
       if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
         result.push(ErcEngine.makeViolation(
           ErcSeverity.WARNING, ErcRuleType.FLOATING_NET,

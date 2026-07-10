@@ -19,6 +19,8 @@ export struct McuDebugPanel {
   @State uartOutput: string = '';
   @State hexInput: string = '';
   @State hexFilePath: string = '';
+  @State hexDir: string = '';
+  @State sandboxHexFiles: string[] = [];
   @State mcuFamily: McuFamily = McuFamily.MCU_8051;
   @State mcuLabel: string = '';
   @State fwSegmentInfo: string = '';
@@ -29,6 +31,11 @@ export struct McuDebugPanel {
   private appService: AppService = AppService.getInstance();
 
   aboutToAppear(): void {
+    this.hexDir = this.appService.getHexDir();
+    this.sandboxHexFiles = this.appService.listHexFiles();
+    if (this.sandboxHexFiles.length > 0) {
+      this.hexFilePath = this.sandboxHexFiles[0];
+    }
     this.detectMcu();
     const family = this.getFamily();
     this.appService.hexDebugger.configure({
@@ -156,9 +163,18 @@ export struct McuDebugPanel {
       const uris = await docPicker.select(options);
       if (uris && uris.length > 0) {
         this.hexFilePath = uris[0];
+        return;
       }
     } catch (_e) {
-      this.statusMessage = '文件选择器不可用，请手动输入 HEX 路径';
+      // fall through to sandbox list
+    }
+    const sandbox = this.appService.listHexFiles();
+    this.sandboxHexFiles = sandbox;
+    if (sandbox.length > 0) {
+      this.hexFilePath = sandbox[0];
+      this.statusMessage = `已选用沙箱固件: ${sandbox[0]}`;
+    } else {
+      this.statusMessage = `沙箱固件目录为空: ${this.hexDir}`;
     }
   }
 
@@ -259,8 +275,14 @@ export struct McuDebugPanel {
       }
 
       // HEX burn section
+      Text(`固件目录: ${this.hexDir}`)
+        .fontSize(9)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .padding({ left: 8, right: 8 })
+        .width('100%')
+        .maxLines(2)
       Row() {
-        TextInput({ placeholder: 'firmware.hex 路径', text: this.hexFilePath })
+        TextInput({ placeholder: `${this.hexDir}/lab_51_led.hex`, text: this.hexFilePath })
           .layoutWeight(1)
           .height(28)
           .fontSize(ProteusFonts.PARAM_KEY)
@@ -282,6 +304,28 @@ export struct McuDebugPanel {
       }
       .width('100%')
       .padding({ left: 8, right: 8 })
+
+      if (this.sandboxHexFiles.length > 0) {
+        Scroll() {
+          Row({ space: 4 }) {
+            ForEach(this.sandboxHexFiles, (hexPath: string) => {
+              ProteusClassicBtn({
+                label: hexPath.substring(hexPath.lastIndexOf('/') + 1),
+                widthVal: 100,
+                onAction: () => {
+                  this.hexFilePath = hexPath;
+                  void this.burnHex();
+                }
+              })
+            }, (hexPath: string) => hexPath)
+          }
+          .padding({ left: 8, right: 8 })
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .width('100%')
+        .height(32)
+      }
 
       Row({ space: 4 }) {
         ProteusClassicBtn({ label: '▶ 运行', widthVal: '23%', onAction: () => {

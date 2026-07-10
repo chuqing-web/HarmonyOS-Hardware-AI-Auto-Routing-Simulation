@@ -1,10 +1,24 @@
 /**
- * 教学辅助面板 - 实验模板 / 知识点 / AI 答疑
+ * 教学辅助面板 - 实验模板库 / 器件覆盖 / AI 答疑
  */
 import { AppService } from '../services/AppService';
-import { LabTemplate, KnowledgeTip } from 'ai_engine';
+import { LabTemplate, KnowledgeTip, LabCoverageReport } from 'ai_engine';
 import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusFonts } from '../theme/ProteusTheme';
+
+const CATEGORY_LABELS: Map<string, string> = new Map([
+  ['all', '全部'],
+  ['power', '电源'],
+  ['analog', '模拟'],
+  ['passive', '无源'],
+  ['discrete', '分立'],
+  ['digital', '数字'],
+  ['memory', '存储'],
+  ['mcu', 'MCU'],
+  ['peripheral', '外设'],
+  ['sensor', '传感器'],
+  ['instrument', '仪器']
+]);
 
 @Component
 export struct TeachingPanel {
@@ -13,16 +27,63 @@ export struct TeachingPanel {
   @State templates: LabTemplate[] = [];
   @State tip: KnowledgeTip | null = null;
   @State stepIndex: number = 0;
+  @State activeCategory: string = 'all';
+  @State coverage: LabCoverageReport = { covered: [], missing: [], total: 0, percent: 0 };
+  @State showCoverage: boolean = false;
+  @State templateDir: string = '';
+  @State hexDir: string = '';
 
   private appService: AppService = AppService.getInstance();
 
   aboutToAppear(): void {
-    this.templates = this.appService.teachingService.listTemplates();
+    this.templateDir = this.appService.getTemplateDir();
+    this.hexDir = this.appService.getHexDir();
+    this.refreshTemplates();
+  }
+
+  private refreshTemplates(): void {
+    this.templateDir = this.appService.getTemplateDir();
+    this.hexDir = this.appService.getHexDir();
+    this.coverage = this.appService.teachingService.getCoverageReport();
+    this.templates = this.appService.listAvailableLabTemplates(this.activeCategory);
+  }
+
+  private getTemplateHexHint(templateId: string): string {
+    const hexPath = this.appService.getTemplateHexPath(templateId);
+    if (hexPath === null) {
+      return '';
+    }
+    if (this.appService.isHexFileReady(hexPath)) {
+      return `HEX: ${hexPath}`;
+    }
+    return `HEX 缺失: ${hexPath}`;
   }
 
   build() {
     Column({ space: 6 }) {
       ProteusSectionTitle({ title: '教学辅助' })
+
+      Row() {
+        Text(`器件库覆盖 ${this.coverage.percent}% (${this.coverage.covered.length}/${this.coverage.total})`)
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(this.coverage.percent >= 100 ? ProteusColors.ERC_OK : ProteusColors.TEXT_LABEL)
+          .layoutWeight(1)
+        ProteusClassicBtn({
+          label: this.showCoverage ? '收起' : '详情',
+          widthVal: 48,
+          onAction: () => { this.showCoverage = !this.showCoverage; }
+        })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8 })
+
+      if (this.showCoverage && this.coverage.missing.length > 0) {
+        Text(`未覆盖: ${this.coverage.missing.join(', ')}`)
+          .fontSize(10)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .padding({ left: 8, right: 8 })
+          .width('100%')
+      }
 
       Text('实验模板库')
         .fontSize(ProteusFonts.PARAM_KEY)
@@ -31,31 +92,87 @@ export struct TeachingPanel {
         .padding({ left: 8 })
         .alignSelf(ItemAlign.Start)
 
+      Text(`模板: ${this.templateDir}`)
+        .fontSize(9)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .padding({ left: 8, right: 8 })
+        .width('100%')
+        .maxLines(2)
+      Text(`固件: ${this.hexDir}`)
+        .fontSize(9)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .padding({ left: 8, right: 8, bottom: 4 })
+        .width('100%')
+        .maxLines(2)
+
+      Scroll() {
+        Row({ space: 4 }) {
+          ForEach(Array.from(CATEGORY_LABELS.keys()), (cat: string) => {
+            Text(CATEGORY_LABELS.get(cat) ?? cat)
+              .fontSize(10)
+              .fontColor(this.activeCategory === cat ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_LABEL)
+              .backgroundColor(this.activeCategory === cat ? ProteusColors.INPUT_READONLY_BG : 'transparent')
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .border({
+                width: 1,
+                color: this.activeCategory === cat ? ProteusColors.SELECTED : ProteusColors.DIVIDER
+              })
+              .onClick(() => {
+                this.activeCategory = cat;
+                this.refreshTemplates();
+              })
+          }, (cat: string) => cat)
+        }
+        .padding({ left: 8, right: 8 })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+      .height(32)
+
       Column({ space: 4 }) {
         ForEach(this.templates, (tpl: LabTemplate) => {
           Row() {
             Column({ space: 2 }) {
-              Text(tpl.name)
-                .fontSize(ProteusFonts.PARAM_KEY)
-                .fontColor(ProteusColors.TEXT_PRIMARY)
-                .fontWeight(FontWeight.Medium)
+              Row({ space: 6 }) {
+                Text(tpl.name)
+                  .fontSize(ProteusFonts.PARAM_KEY)
+                  .fontColor(ProteusColors.TEXT_PRIMARY)
+                  .fontWeight(FontWeight.Medium)
+                Text(tpl.category)
+                  .fontSize(9)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+                  .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                  .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+              }
               Text(tpl.description)
                 .fontSize(ProteusFonts.PARAM_KEY)
                 .fontColor(ProteusColors.TEXT_LABEL)
-                .maxLines(3)
+                .maxLines(2)
+              if (tpl.libraryIds !== undefined && tpl.libraryIds.length > 0) {
+                Text(`${tpl.libraryIds.length} 种器件`)
+                  .fontSize(9)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+              }
+              if (this.getTemplateHexHint(tpl.id).length > 0) {
+                Text(this.getTemplateHexHint(tpl.id))
+                  .fontSize(9)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+                  .maxLines(2)
+              }
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
             ProteusClassicBtn({
-              label: '加载',
+              label: '插入',
               widthVal: 52,
               onAction: () => {
-                const r = this.appService.loadLabTemplate(tpl.id);
-                if (r) {
-                  this.statusMessage = `已加载实验: ${tpl.name}`;
-                } else {
-                  this.statusMessage = '模板加载失败';
-                }
+                void this.appService.loadLabTemplate(tpl.id).then((r) => {
+                  if (!r) {
+                    this.statusMessage =
+                      `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
+                  }
+                });
               }
             })
           }
@@ -120,12 +237,6 @@ export struct TeachingPanel {
           .fontSize(ProteusFonts.PARAM_KEY)
           .fontColor(ProteusColors.TEXT_LABEL)
           .fontWeight(FontWeight.Medium)
-          .padding({ left: 8 })
-          .alignSelf(ItemAlign.Start)
-
-        Text(`已选中: ${this.selectedComponentId}`)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
           .padding({ left: 8 })
           .alignSelf(ItemAlign.Start)
 

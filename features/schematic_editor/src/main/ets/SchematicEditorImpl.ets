@@ -61,6 +61,33 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private boundsResolver: ComponentBoundsResolver | null = null;
   private pinResolver: PinResolver | null = null;
   private defaultParamsResolver: DefaultParamsResolver | null = null;
+  private canvasViewWidth: number = 0;
+  private canvasViewHeight: number = 0;
+  private static readonly HIT_PAD: number = 14;
+  private static readonly WIRE_HIT_THRESHOLD: number = 10;
+
+  isCanvasViewReady(): boolean {
+    return this.canvasViewWidth > 0 && this.canvasViewHeight > 0;
+  }
+
+  setCanvasViewSize(width: number, height: number): void {
+    this.canvasViewWidth = Math.max(0, width);
+    this.canvasViewHeight = Math.max(0, height);
+  }
+
+  /** World-space hit rectangle for hover/selection overlay (includes HIT_PAD). */
+  getComponentHitRect(comp: ComponentInstance): Rect2D {
+    const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HIT_PAD);
+    return this.localBoundsToWorldAabb(comp, bounds);
+  }
+
+  isComponentSelected(compId: string): boolean {
+    return this.selectedIds.includes(compId);
+  }
+
+  getSelectedWireNetIds(): string[] {
+    return this.selectedNetIds.slice();
+  }
 
   setComponentBoundsResolver(resolver: ComponentBoundsResolver): void {
     this.boundsResolver = resolver;
@@ -221,7 +248,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   private guardSimBusy(): ApiResult<void> | null {
     if (this.simBusy) {
-      return ResultHelper.fail(ErrCode.ERR_SIM_BUSY);
+      return ResultHelper.fail(ErrCode.ERR_SIM_BUSY, '仿真运行中，无法修改原理图');
     }
     return null;
   }
@@ -960,9 +987,19 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   fitAllInView(): void {
     const box: Rect2D = this.getBoundingBox();
-    this.viewport.zoom = 1.0;
-    const pan: Point2D = { x: -box.x, y: -box.y };
-    this.viewport.panOffset = pan;
+    const viewW: number = this.canvasViewWidth > 0 ? this.canvasViewWidth : 800;
+    const viewH: number = this.canvasViewHeight > 0 ? this.canvasViewHeight : 600;
+    const margin: number = 48;
+    const availW: number = Math.max(100, viewW - margin * 2);
+    const availH: number = Math.max(100, viewH - margin * 2);
+    const scaleX: number = availW / Math.max(box.width, 1);
+    const scaleY: number = availH / Math.max(box.height, 1);
+    const zoom: number = Math.min(scaleX, scaleY, 2.0);
+    this.viewport.zoom = Math.max(0.15, zoom);
+    this.viewport.panOffset = {
+      x: (viewW - box.width * zoom) / 2 - box.x * zoom,
+      y: (viewH - box.height * zoom) / 2 - box.y * zoom
+    };
     this.publishViewport();
   }
 
@@ -1361,6 +1398,16 @@ export class SchematicEditorImpl implements ISchematicEditor {
       maxX = Math.max(maxX, c.position.x + bounds.maxX);
       maxY = Math.max(maxY, c.position.y + bounds.maxY);
     }
+    for (let i = 0; i < doc.wires.length; i++) {
+      const wire = doc.wires[i];
+      for (let j = 0; j < wire.points.length; j++) {
+        const pt = wire.points[j];
+        minX = Math.min(minX, pt.x);
+        minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
+      }
+    }
     const box: Rect2D = {
       x: minX - 50,
       y: minY - 50,
@@ -1371,16 +1418,33 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   hitTestAt(point: Point2D): string[] {
-    const hit: string[] = [];
     const components: ComponentInstance[] = this.getDocument().components;
     for (let i = components.length - 1; i >= 0; i--) {
       const c: ComponentInstance = components[i];
-      const bounds = this.resolveBounds(c.libraryId);
+      const bounds = this.expandLocalBounds(this.resolveBounds(c.libraryId), SchematicEditorImpl.HIT_PAD);
       if (this.pointInComponentBounds(point, c, bounds)) {
-        hit.push(c.id);
+        return [c.id];
       }
     }
-    return hit;
+    return [];
+  }
+
+  hitTestWireAt(point: Point2D): string | null {
+    const wires = this.getDocument().wires;
+    let bestNet: string | null = null;
+    let bestDist: number = SchematicEditorImpl.WIRE_HIT_THRESHOLD;
+    for (let i = 0; i < wires.length; i++) {
+      const wire = wires[i];
+      const pts = wire.points;
+      for (let j = 0; j < pts.length - 1; j++) {
+        const dist = SchematicEditorImpl.pointSegmentDistance(point, pts[j], pts[j + 1]);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestNet = wire.netId;
+        }
+      }
+    }
+    return bestNet;
   }
 
   selectInRect(rect: Rect2D): string[] {
@@ -1389,16 +1453,18 @@ export class SchematicEditorImpl implements ISchematicEditor {
     for (let i = 0; i < components.length; i++) {
       const c = components[i];
       const bounds = this.resolveBounds(c.libraryId);
-      const cx = c.position.x;
-      const cy = c.position.y;
-      const hw = bounds.width / 2;
-      const hh = bounds.height / 2;
-      const compRect: Rect2D = { x: cx - hw, y: cy - hh, width: bounds.width, height: bounds.height };
+      const compRect: Rect2D = {
+        x: c.position.x + bounds.minX,
+        y: c.position.y + bounds.minY,
+        width: bounds.width,
+        height: bounds.height
+      };
       if (SchematicEditorImpl.rectsOverlap(rect, compRect)) {
         hit.push(c.id);
       }
     }
     this.selectedIds = hit;
+    this.selectedNetIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
     EventBus.getInstance().publish({
       event: ModuleEvent.SELECTION_CHANGED,
@@ -1444,15 +1510,106 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   selectAt(point: Point2D): string[] {
     const hit: string[] = this.hitTestAt(point);
-    this.selectedIds = hit;
+    if (hit.length > 0) {
+      this.selectedIds = hit;
+      this.selectedNetIds = [];
+      CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
+      EventBus.getInstance().publish({
+        event: ModuleEvent.SELECTION_CHANGED,
+        source: 'schematic_editor',
+        timestamp: Date.now(),
+        data: hit
+      });
+      return hit;
+    }
+    const wireNet: string | null = this.hitTestWireAt(point);
+    if (wireNet !== null && wireNet.length > 0) {
+      this.selectedIds = [];
+      this.selectedNetIds = [wireNet];
+      CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
+      EventBus.getInstance().publish({
+        event: ModuleEvent.SELECTION_CHANGED,
+        source: 'schematic_editor',
+        timestamp: Date.now(),
+        data: []
+      });
+      return [];
+    }
+    this.selectedIds = [];
+    this.selectedNetIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
     EventBus.getInstance().publish({
       event: ModuleEvent.SELECTION_CHANGED,
       source: 'schematic_editor',
       timestamp: Date.now(),
-      data: hit
+      data: []
     });
-    return hit;
+    return [];
+  }
+
+  private expandLocalBounds(bounds: SymbolBounds, pad: number): SymbolBounds {
+    return {
+      minX: bounds.minX - pad,
+      maxX: bounds.maxX + pad,
+      minY: bounds.minY - pad,
+      maxY: bounds.maxY + pad,
+      width: bounds.width + pad * 2,
+      height: bounds.height + pad * 2
+    };
+  }
+
+  private localBoundsToWorldAabb(comp: ComponentInstance, bounds: SymbolBounds): Rect2D {
+    const corners: Point2D[] = [
+      { x: bounds.minX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.maxY },
+      { x: bounds.minX, y: bounds.maxY }
+    ];
+    let minX: number = Infinity;
+    let minY: number = Infinity;
+    let maxX: number = -Infinity;
+    let maxY: number = -Infinity;
+    for (let i = 0; i < corners.length; i++) {
+      const world = this.localToWorldPoint(comp, corners[i]);
+      minX = Math.min(minX, world.x);
+      minY = Math.min(minY, world.y);
+      maxX = Math.max(maxX, world.x);
+      maxY = Math.max(maxY, world.y);
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
+  private localToWorldPoint(comp: ComponentInstance, local: Point2D): Point2D {
+    let lx: number = local.x;
+    let ly: number = local.y;
+    if (comp.mirrored) {
+      lx = -lx;
+    }
+    if (comp.rotation !== 0) {
+      const rad: number = (comp.rotation as number) * Math.PI / 180;
+      const rx: number = lx * Math.cos(rad) - ly * Math.sin(rad);
+      const ry: number = lx * Math.sin(rad) + ly * Math.cos(rad);
+      lx = rx;
+      ly = ry;
+    }
+    return { x: comp.position.x + lx, y: comp.position.y + ly };
+  }
+
+  private static pointSegmentDistance(p: Point2D, a: Point2D, b: Point2D): number {
+    const dx: number = b.x - a.x;
+    const dy: number = b.y - a.y;
+    if (dx === 0 && dy === 0) {
+      const ex: number = p.x - a.x;
+      const ey: number = p.y - a.y;
+      return Math.sqrt(ex * ex + ey * ey);
+    }
+    const t: number = Math.max(0, Math.min(1,
+      ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+    const projX: number = a.x + t * dx;
+    const projY: number = a.y + t * dy;
+    const ex: number = p.x - projX;
+    const ey: number = p.y - projY;
+    return Math.sqrt(ex * ex + ey * ey);
   }
 
   private pointInComponentBounds(point: Point2D, comp: ComponentInstance, bounds: SymbolBounds): boolean {

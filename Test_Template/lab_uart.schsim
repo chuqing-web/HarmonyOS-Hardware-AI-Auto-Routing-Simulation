@@ -1,0 +1,734 @@
+{
+  "magic": "SCHSIM",
+  "version": "2.0.0",
+  "name": "串口通信",
+  "topology": {
+    "schUuid": "sch_1783674971331_1",
+    "schName": "串口通信",
+    "layerDepth": 0,
+    "deviceList": [
+      {
+        "instUuid": "comp_1783674971331_2",
+        "libDevId": "STM32F103C8",
+        "refName": "U1",
+        "x": 200,
+        "y": 180,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_3",
+        "libDevId": "XTAL_8M",
+        "refName": "Y1",
+        "x": 80,
+        "y": 60,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_4",
+        "libDevId": "C_100nF",
+        "refName": "C1",
+        "x": 60,
+        "y": 100,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_5",
+        "libDevId": "C_100nF",
+        "refName": "C2",
+        "x": 60,
+        "y": 40,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_6",
+        "libDevId": "C_100nF",
+        "refName": "C3",
+        "x": 280,
+        "y": 320,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_7",
+        "libDevId": "R_10k",
+        "refName": "R1",
+        "x": 120,
+        "y": 260,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_8",
+        "libDevId": "UART_TERMINAL",
+        "refName": "TERM1",
+        "x": 450,
+        "y": 180,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_9",
+        "libDevId": "VCC",
+        "refName": "PWR1",
+        "x": 50,
+        "y": 120,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_10",
+        "libDevId": "GND",
+        "refName": "GND1",
+        "x": 50,
+        "y": 360,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_11",
+        "libDevId": "R_1k",
+        "refName": "R_PWR",
+        "x": 350,
+        "y": 120,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_12",
+        "libDevId": "LED_GREEN",
+        "refName": "D1",
+        "x": 350,
+        "y": 60,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1783674971331_13",
+        "libDevId": "VOLTMETER_DC",
+        "refName": "M1",
+        "x": 420,
+        "y": 300,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      }
+    ],
+    "netList": [
+      {
+        "netUuid": "net_1783674971331_14",
+        "netName": "XTAL1",
+        "displayName": "XTAL1",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P5"
+          },
+          {
+            "devUuid": "comp_1783674971331_3",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_4",
+            "pinId": "1"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_16",
+        "netName": "XTAL2",
+        "displayName": "XTAL2",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P6"
+          },
+          {
+            "devUuid": "comp_1783674971331_3",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_5",
+            "pinId": "1"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_18",
+        "netName": "GND",
+        "displayName": "GND",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_4",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_5",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_10",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P24"
+          },
+          {
+            "devUuid": "comp_1783674971331_6",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_8",
+            "pinId": "GND"
+          },
+          {
+            "devUuid": "comp_1783674971331_12",
+            "pinId": "K"
+          },
+          {
+            "devUuid": "comp_1783674971331_13",
+            "pinId": "COM"
+          }
+        ],
+        "isPower": true,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_20",
+        "netName": "NRST",
+        "displayName": "NRST",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P7"
+          },
+          {
+            "devUuid": "comp_1783674971331_7",
+            "pinId": "1"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_22",
+        "netName": "VCC",
+        "displayName": "VCC",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_9",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P48"
+          },
+          {
+            "devUuid": "comp_1783674971331_7",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_6",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_11",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_13",
+            "pinId": "V+"
+          }
+        ],
+        "isPower": true,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 5,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_25",
+        "netName": "UART_TX",
+        "displayName": "UART_TX",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P10"
+          },
+          {
+            "devUuid": "comp_1783674971331_8",
+            "pinId": "TX"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_27",
+        "netName": "UART_RX",
+        "displayName": "UART_RX",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_2",
+            "pinId": "P11"
+          },
+          {
+            "devUuid": "comp_1783674971331_8",
+            "pinId": "RX"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_31",
+        "netName": "PWR_R",
+        "displayName": "PWR_R",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_9",
+            "pinId": "1"
+          },
+          {
+            "devUuid": "comp_1783674971331_11",
+            "pinId": "1"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1783674971331_33",
+        "netName": "PWR_LED",
+        "displayName": "PWR_LED",
+        "nodeList": [
+          {
+            "devUuid": "comp_1783674971331_11",
+            "pinId": "2"
+          },
+          {
+            "devUuid": "comp_1783674971331_12",
+            "pinId": "A"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      }
+    ],
+    "busList": [],
+    "wireList": [
+      {
+        "netUuid": "net_1783674971331_14",
+        "points": [
+          {
+            "x": 150,
+            "y": 100
+          },
+          {
+            "x": 50,
+            "y": 60
+          },
+          {
+            "x": 30,
+            "y": 100
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_16",
+        "points": [
+          {
+            "x": 150,
+            "y": 110
+          },
+          {
+            "x": 110,
+            "y": 60
+          },
+          {
+            "x": 30,
+            "y": 40
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_18",
+        "points": [
+          {
+            "x": 90,
+            "y": 100
+          },
+          {
+            "x": 90,
+            "y": 40
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_20",
+        "points": [
+          {
+            "x": 150,
+            "y": 120
+          },
+          {
+            "x": 90,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_22",
+        "points": [
+          {
+            "x": 50,
+            "y": 130
+          },
+          {
+            "x": 250,
+            "y": 290
+          },
+          {
+            "x": 150,
+            "y": 260
+          },
+          {
+            "x": 250,
+            "y": 320
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_18",
+        "points": [
+          {
+            "x": 50,
+            "y": 350
+          },
+          {
+            "x": 150,
+            "y": 290
+          },
+          {
+            "x": 310,
+            "y": 320
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_25",
+        "points": [
+          {
+            "x": 150,
+            "y": 150
+          },
+          {
+            "x": 410,
+            "y": 170
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_27",
+        "points": [
+          {
+            "x": 150,
+            "y": 160
+          },
+          {
+            "x": 410,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_18",
+        "points": [
+          {
+            "x": 410,
+            "y": 210
+          },
+          {
+            "x": 380,
+            "y": 60
+          },
+          {
+            "x": 390,
+            "y": 310
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_22",
+        "points": [
+          {
+            "x": 320,
+            "y": 120
+          },
+          {
+            "x": 390,
+            "y": 290
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_31",
+        "points": [
+          {
+            "x": 50,
+            "y": 130
+          },
+          {
+            "x": 320,
+            "y": 120
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_33",
+        "points": [
+          {
+            "x": 380,
+            "y": 120
+          },
+          {
+            "x": 320,
+            "y": 60
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1783674971331_18",
+        "points": [
+          {
+            "x": 50,
+            "y": 350
+          },
+          {
+            "x": 380,
+            "y": 60
+          }
+        ],
+        "isBus": false
+      }
+    ],
+    "subCircuitList": [],
+    "probeList": [],
+    "textAnnotate": [],
+    "ercErrorList": [],
+    "gridStep": 10,
+    "bgColor": "#0a0a1a"
+  },
+  "simConfig": {
+    "simMode": "mixed",
+    "transientTotalTime": 0.01,
+    "minTimeStep": 1e-9,
+    "maxTimeStep": 0.000001,
+    "dcVoltageScan": {
+      "start": 0,
+      "end": 5,
+      "step": 0.1
+    },
+    "acFreqStart": 10,
+    "acFreqEnd": 1000000,
+    "acPoints": 1000,
+    "monteCarloCount": 100,
+    "enableGpuSpice": false,
+    "freezeIdleSubcircuit": true,
+    "waveSampleInterval": 1e-7,
+    "syncMcuSpicePrecision": "ns",
+    "mcuClockHz": 11059200,
+    "temperature": 27,
+    "convergence": 0.000001
+  },
+  "aiConfigs": [],
+  "createdAt": "2026-07-10T09:16:11.331Z",
+  "modifiedAt": "2026-07-10T09:16:11.331Z",
+  "collaboration": {
+    "annotations": [],
+    "snapshots": [],
+    "changeLog": []
+  },
+  "integrityHash": "0aaff84a40bd4733d9292fee25ed165b2a924df54d9f17139b66725d7d556289"
+}

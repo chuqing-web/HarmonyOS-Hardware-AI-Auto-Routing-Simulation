@@ -37,6 +37,7 @@ export {
   traceTopologyHealthCheck, tracePinMultiNetConflicts, traceWireEndpointCollisions,
   traceComponentPinNets, traceResistorDividerCheck, traceInstrumentWiringIssues, traceNetVoltageResolve,
   tracePerPinConnectivity, traceInstrumentMeasureModel,
+  traceErcErrorList,
   BindingTraceInfo
 } from './src/main/ets/utils/InstrumentTraceLog';
 

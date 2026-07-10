@@ -4,6 +4,24 @@
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../../theme/ProteusTheme';
 import { ProteusIcon, ProteusIconName } from './ProteusIcons';
 
+/** 统一悬停提示气泡 */
+@Builder
+export function ProteusTooltipBubble(text: string) {
+  Column() {
+    Text(text)
+      .fontSize(12)
+      .fontColor('#FFFFFF')
+      .textAlign(TextAlign.Center)
+      .maxLines(4)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+  }
+  .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+  .backgroundColor('#E6383838')
+  .borderRadius(4)
+  .constraintSize({ maxWidth: 320 })
+  .shadow({ radius: 6, color: '#40000000', offsetX: 0, offsetY: 2 })
+}
+
 export interface ProteusMenuEntry {
   label: ResourceStr;
   shortcut?: string;
@@ -17,7 +35,16 @@ export interface ProteusMenuEntry {
 export struct ProteusPanelTitle {
   @Prop title: ResourceStr = '';
   @Prop collapsed: boolean = false;
+  @Prop tooltip: string = '';
   onToggle: () => void = () => {};
+  @State private tipVisible: boolean = false;
+
+  private tipText(): string {
+    if (this.tooltip.length > 0) {
+      return this.tooltip;
+    }
+    return this.collapsed ? '点击展开面板' : '点击折叠面板';
+  }
 
   build() {
     Row() {
@@ -38,6 +65,26 @@ export struct ProteusPanelTitle {
     .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.onToggle())
+    .onHover((hover: boolean) => {
+      this.tipVisible = hover;
+    })
+    .bindPopup(this.tipVisible, {
+      builder: this.panelTitleTip,
+      placement: Placement.Bottom,
+      enableArrow: true,
+      popupColor: Color.Transparent,
+      mask: false,
+      onStateChange: (event) => {
+        if (!event.isVisible) {
+          this.tipVisible = false;
+        }
+      }
+    })
+  }
+
+  @Builder
+  panelTitleTip() {
+    ProteusTooltipBubble(this.tipText())
   }
 }
 
@@ -79,7 +126,13 @@ export struct ProteusClassicBtn {
   @Prop label: ResourceStr = '';
   @Prop widthVal: string | number = 'auto';
   @Prop heightVal: number = ProteusDimens.PARAM_ROW_HEIGHT;
+  @Prop tooltip: string = '';
   onAction: () => void = () => {};
+  @State private tipVisible: boolean = false;
+
+  private tipText(): string {
+    return this.tooltip;
+  }
 
   build() {
     Button({ type: ButtonType.Normal }) {
@@ -97,6 +150,28 @@ export struct ProteusClassicBtn {
     .width(this.widthVal)
     .padding({ left: 6, right: 6 })
     .onClick(() => this.onAction())
+    .onHover((hover: boolean) => {
+      if (this.tipText().length > 0) {
+        this.tipVisible = hover;
+      }
+    })
+    .bindPopup(this.tipVisible, {
+      builder: this.tooltipPopup,
+      placement: Placement.Top,
+      enableArrow: true,
+      popupColor: Color.Transparent,
+      mask: false,
+      onStateChange: (event) => {
+        if (!event.isVisible) {
+          this.tipVisible = false;
+        }
+      }
+    })
+  }
+
+  @Builder
+  tooltipPopup() {
+    ProteusTooltipBubble(this.tipText())
   }
 }
 
@@ -377,6 +452,7 @@ export struct ProteusToolButton {
   @Prop tooltip: string = '';
   @Prop btnSize: number = 24;
   onAction: () => void = () => {};
+  @State private tipVisible: boolean = false;
 
   build() {
     Button({ type: ButtonType.Normal }) {
@@ -409,7 +485,28 @@ export struct ProteusToolButton {
     .border({ width: 1, color: this.active ? ProteusColors.BTN_FOCUS : ProteusColors.INPUT_BORDER })
     .enabled(!this.disabled)
     .onClick(() => { if (!this.disabled) this.onAction(); })
-    // .tooltip removed — not available on ButtonAttribute in current SDK
+    .onHover((hover: boolean) => {
+      if (!this.disabled && this.tooltip.length > 0) {
+        this.tipVisible = hover;
+      }
+    })
+    .bindPopup(this.tipVisible, {
+      builder: this.tooltipPopup,
+      placement: Placement.Top,
+      enableArrow: true,
+      popupColor: Color.Transparent,
+      mask: false,
+      onStateChange: (event) => {
+        if (!event.isVisible) {
+          this.tipVisible = false;
+        }
+      }
+    })
+  }
+
+  @Builder
+  tooltipPopup() {
+    ProteusTooltipBubble(this.tooltip)
   }
 }
 
@@ -483,6 +580,79 @@ export struct ProteusMenuTrigger {
 }
 
 /**
+ * 右侧边栏图标标签 — 悬停显示完整名称
+ */
+@Component
+export struct ProteusSidebarTab {
+  @Prop label: string = '';
+  @Prop tooltip: string = '';
+  @Prop icon: ProteusIconName = ProteusIconName.SETTINGS;
+  @Prop selected: boolean = false;
+  onSelect: () => void = () => {};
+  @State private tipVisible: boolean = false;
+
+  private tipText(): string {
+    return this.tooltip.length > 0 ? this.tooltip : this.label;
+  }
+
+  build() {
+    Column() {
+      ProteusIcon({
+        name: this.icon,
+        iconSize: 16,
+        color: this.selected ?
+          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
+      })
+      Text(this.label)
+        .fontSize(9)
+        .fontColor(this.selected ?
+          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT)
+        .fontWeight(this.selected ? FontWeight.Bold : FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+    }
+    .width(44)
+    .height(50)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.selected ?
+      ProteusColors.SIDEBAR_TAB_ACTIVE_BG : ProteusColors.SIDEBAR_TAB_IDLE_BG)
+    .border({
+      width: {
+        left: this.selected ? 3 : 0,
+        bottom: 1
+      },
+      color: this.selected ?
+        ProteusColors.BTN_FOCUS : ProteusColors.SIDEBAR_TAB_BORDER
+    })
+    .onClick(() => { this.onSelect(); })
+    .onHover((hover: boolean) => {
+      if (this.tipText().length > 0) {
+        this.tipVisible = hover;
+      }
+    })
+    .bindPopup(this.tipVisible, {
+      builder: this.tooltipPopup,
+      placement: Placement.Left,
+      enableArrow: true,
+      popupColor: Color.Transparent,
+      mask: false,
+      onStateChange: (event) => {
+        if (!event.isVisible) {
+          this.tipVisible = false;
+        }
+      }
+    })
+  }
+
+  @Builder
+  tooltipPopup() {
+    ProteusTooltipBubble(this.tipText())
+  }
+}
+
+/**
  * 工具栏分组标签 — 小标题 + 分隔线
  */
 @Component
@@ -517,6 +687,7 @@ export struct ProteusResizer {
   @Prop side: 'left' | 'right' = 'right';
   onDrag: (delta: number) => void = () => {};
   @State hovered: boolean = false;
+  @State private tipVisible: boolean = false;
   private startOffset: number = 0;
   private lastOffset: number = 0;
 
@@ -525,7 +696,22 @@ export struct ProteusResizer {
       .width(4)
       .height('100%')
       .backgroundColor(this.hovered ? ProteusColors.BTN_FOCUS : ProteusColors.DIVIDER)
-      .onHover((h: boolean) => { this.hovered = h; })
+      .onHover((h: boolean) => {
+        this.hovered = h;
+        this.tipVisible = h;
+      })
+      .bindPopup(this.tipVisible, {
+        builder: this.resizerTip,
+        placement: this.side === 'right' ? Placement.Left : Placement.Right,
+        enableArrow: true,
+        popupColor: Color.Transparent,
+        mask: false,
+        onStateChange: (event) => {
+          if (!event.isVisible) {
+            this.tipVisible = false;
+          }
+        }
+      })
       .gesture(
         PanGesture()
           .onActionStart((e: GestureEvent) => {
@@ -540,5 +726,10 @@ export struct ProteusResizer {
           })
       )
       .hitTestBehavior(HitTestMode.Block)
+  }
+
+  @Builder
+  resizerTip() {
+    ProteusTooltipBubble('拖动调整面板宽度')
   }
 }

@@ -16,6 +16,8 @@ import {
 
 } from '../types/CommonTypes';
 
+import { ErcError } from '../types/TopologyTypes';
+
 import { parsePinRef, getPinNetMap } from './PinRefUtil';
 
 import { isInstrumentLibraryId, detectInstrumentKind } from './InstrumentKindUtil';
@@ -853,6 +855,39 @@ export function traceTopologyHealthCheck(doc: SchematicDocument, spiceMap?: Map<
   traceResistorDividerCheck(doc);
   traceInstrumentWiringIssues(doc);
   Logger.info(INSTR_TRACE_TAG, '---------- TOPOLOGY HEALTH CHECK END ----------');
+}
+
+/** ERC / 运行时错误列表 — 与导航栏错误列表一致，输出到 instr_trace */
+export function traceErcErrorList(errors: ErcError[], context: string = 'ERC'): void {
+  if (errors.length === 0) {
+    Logger.info(INSTR_TRACE_TAG, `[${context}] errors=0`);
+    return;
+  }
+  let errCount = 0;
+  let warnCount = 0;
+  for (let i = 0; i < errors.length; i++) {
+    if (errors[i].severity === 'error' || errors[i].severity === 'critical') {
+      errCount++;
+    } else if (errors[i].severity === 'warning') {
+      warnCount++;
+    }
+  }
+  Logger.info(INSTR_TRACE_TAG,
+    `[${context}] errors=${errors.length} critical=${errCount} warn=${warnCount} ----------`);
+  for (let i = 0; i < errors.length; i++) {
+    const e = errors[i];
+    const target = e.targetUuid.length > 0 ? e.targetUuid.substring(0, 20) : '-';
+    const line = `[${context}] #${i + 1} ${e.severity} type=${e.errType} target=${target} ${e.desc}`;
+    if (e.severity === 'error' || e.severity === 'critical') {
+      Logger.warn(INSTR_TRACE_TAG, line);
+    } else {
+      Logger.info(INSTR_TRACE_TAG, line);
+    }
+    if (e.suggest.length > 0) {
+      Logger.info(INSTR_TRACE_TAG, `[${context}]     fix: ${e.suggest}`);
+    }
+  }
+  Logger.info(INSTR_TRACE_TAG, `[${context}] ---------- END errors=${errors.length} ----------`);
 }
 
 

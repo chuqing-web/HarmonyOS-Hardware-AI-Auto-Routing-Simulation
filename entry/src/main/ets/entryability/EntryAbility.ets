@@ -1,7 +1,8 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { display, window } from '@kit.ArkUI';
+import { window } from '@kit.ArkUI';
 import { AppService } from '../services/AppService';
+import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 
 const DOMAIN = 0x0000;
 const TAG = 'AISchSim';
@@ -25,17 +26,8 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, TAG, 'SplashPage loaded');
+      void maximizeAppWindow(undefined, windowStage);
     });
-
-    windowStage.getMainWindow().then((mainWindow) => {
-      mainWindow.setWindowLayoutFullScreen(true);
-      try {
-        const screen = display.getDefaultDisplaySync();
-        mainWindow.resize(screen.width, screen.height);
-      } catch (_e) {
-        // Fallback: keep layout fullscreen even if display query fails
-      }
-    }).catch(() => {});
   }
 
   onWindowStageDestroy(): void {
