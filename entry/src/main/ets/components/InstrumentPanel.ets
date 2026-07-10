@@ -5,9 +5,10 @@ import { AppService } from '../services/AppService';
 import {
   OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode,
   MathChannelOp, MultimeterMode, SignalWaveform, LogicDecodeProtocol,
-  VoltmeterType, AmmeterType
+  VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect,
+  detectInstrumentKind, instrumentSubTabForKind
 } from 'common';
-import { ProteusClassicBtn } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
@@ -18,8 +19,12 @@ interface SelectValueOption {
 
 @Component
 export struct InstrumentPanel {
+  @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
+  @Prop @Watch('onSimWaveTick') simWaveTick: number = 0;
   @Link statusMessage: string;
   @State subTab: number = 0;
+  @State selectionRefDes: string = '';
+  @State selectionLibraryId: string = '';
   @State timebaseIdx: number = 2;
   @State voltageScaleIdx: number = 3;
   @State triggerLevel: number = 1.0;
@@ -70,11 +75,63 @@ export struct InstrumentPanel {
     { value: '8' }, { value: '16' }, { value: '32' }
   ];
   private autoRefreshTimer: number = -1;
+  private uiLogTick: number = 0;
+  private subTabLabels: string[] = ['示波', '逻辑', '万用', '信号', '串口', '电压', '电流', '功率', '频率'];
 
   aboutToAppear(): void {
+    this.updateSelectionHeader();
+    this.syncSubTabFromSelection();
+    this.syncInstrumentContext();
     this.autoRefreshTimer = setInterval(() => {
       this.autoRefreshReadings();
     }, 500);
+  }
+
+  onSelectionChange(): void {
+    this.updateSelectionHeader();
+    this.syncSubTabFromSelection();
+    this.syncInstrumentContext();
+    const reading = this.autoRefreshReadings();
+    this.logInstrumentReading(true, reading);
+  }
+
+  /** 根据选中器件 libraryId 自动切换到对应仪器子标签 */
+  private syncSubTabFromSelection(): void {
+    const kind = this.instrKindForSelection();
+    const tabIdx = instrumentSubTabForKind(kind);
+    if (tabIdx >= 0) {
+      this.subTab = tabIdx;
+    }
+  }
+
+  onSimWaveTick(): void {
+    this.autoRefreshReadings();
+  }
+
+  private syncInstrumentContext(): void {
+    if (this.selectedComponentId.length > 0) {
+      this.appService.setActiveInstrumentComponent(this.selectedComponentId);
+      this.appService.refreshInstrumentReaderForComponent(this.selectedComponentId);
+    } else {
+      this.appService.setActiveInstrumentComponent(null);
+    }
+  }
+
+  private updateSelectionHeader(): void {
+    if (this.selectedComponentId.length === 0) {
+      this.selectionRefDes = '';
+      this.selectionLibraryId = '';
+      return;
+    }
+    const doc = this.appService.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === this.selectedComponentId);
+    if (comp !== undefined) {
+      this.selectionRefDes = comp.refDes;
+      this.selectionLibraryId = comp.libraryId;
+    } else {
+      this.selectionRefDes = '';
+      this.selectionLibraryId = '';
+    }
   }
 
   aboutToDisappear(): void {
@@ -84,89 +141,238 @@ export struct InstrumentPanel {
     }
   }
 
-  /** Auto-refresh all instrument readings from simulation */
-  autoRefreshReadings(): void {
+  /** Auto-refresh instrument readings for the selected component only */
+  autoRefreshReadings(): string {
+    if (this.selectedComponentId.length === 0) {
+      this.appService.setActiveInstrumentComponent(null);
+      return '';
+    }
+    this.appService.setActiveInstrumentComponent(this.selectedComponentId);
+    const instrKind = this.instrKindForSelection();
     try {
-      // Multimeter
-      const mm = this.appService.instruments.measure();
-      if (mm.success && mm.data !== undefined) {
-        this.mmReading = mm.data.toFixed(3);
-      }
-      // Voltmeter
-      const vr = this.appService.instruments.voltmeterMeasure();
-      if (vr.success && vr.data !== undefined) {
-        this.vmReading = vr.data.toFixed(3);
-      }
-      const vcfg = this.appService.instruments.getVoltmeterConfig();
-      if (vcfg.success && vcfg.data !== undefined) {
-        this.vmRange = `${vcfg.data.range}V`;
-        this.vmUnit = vcfg.data.unit ?? 'V DC';
-      }
-      // Ammeter
-      const ar = this.appService.instruments.ammeterMeasure();
-      if (ar.success && ar.data !== undefined) {
-        this.amReading = ar.data.toFixed(3);
-      }
-      const acfg = this.appService.instruments.getAmmeterConfig();
-      if (acfg.success && acfg.data !== undefined) {
-        this.amRange = `${acfg.data.range}mA`;
-        this.amUnit = acfg.data.unit ?? 'mA DC';
-      }
-      // Oscilloscope
-      const osc = this.appService.instruments.getOscilloscopeWave(0);
-      if (osc.success && osc.data) {
-        this.waveTimeData = osc.data.timeAxis.slice();
-        this.waveVoltageData = osc.data.voltageAxis.slice();
-      }
-      const osc2 = this.appService.instruments.getOscilloscopeWave(1);
-      if (osc2.success && osc2.data) {
-        this.waveCh2Data = osc2.data.voltageAxis.slice();
-      }
-      // Power Meter
-      const pm = this.appService.instruments.powerMeterMeasure();
-      if (pm.success && pm.data) {
-        this.pmVoltage = pm.data.voltage.toFixed(3);
-        this.pmCurrent = (pm.data.current * 1000).toFixed(2);
-        this.pmPower = (pm.data.power * 1000).toFixed(1);
-        this.pmPF = pm.data.powerFactor.toFixed(2);
-      }
-      // Frequency Counter
-      const fc = this.appService.instruments.freqCounterMeasure();
-      if (fc.success && fc.data !== undefined) {
-        if (fc.data >= 1000000) {
-          this.fcReading = `${(fc.data / 1000000).toFixed(3)} MHz`;
-        } else if (fc.data >= 1000) {
-          this.fcReading = `${(fc.data / 1000).toFixed(1)} kHz`;
-        } else {
-          this.fcReading = `${fc.data.toFixed(0)} Hz`;
+      if (instrKind === 'dmm') {
+        const mm = this.appService.instruments.measure();
+        if (mm.success && mm.data !== undefined) {
+          this.mmReading = mm.data.toFixed(3);
         }
+        const snap = this.appService.instruments.getInstrumentSnapshot();
+        if (snap !== undefined) {
+          this.mmMode = this.modeLabel(snap.multimeterMode);
+        }
+      } else if (instrKind === 'vm') {
+        const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+        if (delta !== null) {
+          this.vmReading = delta.toFixed(3);
+        } else {
+          const vr = this.appService.instruments.voltmeterMeasure();
+          if (vr.success && vr.data !== undefined) {
+            this.vmReading = vr.data.toFixed(3);
+          }
+        }
+        const vcfg = this.appService.instruments.getVoltmeterConfig();
+        if (vcfg.success && vcfg.data !== undefined) {
+          this.vmRange = `${vcfg.data.range}V`;
+          this.vmUnit = vcfg.data.unit ?? 'V DC';
+        }
+      } else if (instrKind === 'am') {
+        const mA = this.appService.readAmmeterCurrentForComponent(this.selectedComponentId);
+        if (mA !== null) {
+          this.amReading = mA.toFixed(3);
+        } else {
+          const ar = this.appService.instruments.ammeterMeasure();
+          if (ar.success && ar.data !== undefined) {
+            this.amReading = ar.data.toFixed(3);
+          }
+        }
+        const acfg = this.appService.instruments.getAmmeterConfig();
+        if (acfg.success && acfg.data !== undefined) {
+          this.amRange = `${acfg.data.range}mA`;
+          this.amUnit = acfg.data.unit ?? 'mA DC';
+        }
+      } else if (instrKind === 'osc') {
+        const osc = this.appService.instruments.getOscilloscopeWave(0);
+        if (osc.success && osc.data) {
+          this.waveTimeData = osc.data.timeAxis.slice();
+          this.waveVoltageData = osc.data.voltageAxis.slice();
+        }
+        const osc2 = this.appService.instruments.getOscilloscopeWave(1);
+        if (osc2.success && osc2.data) {
+          this.waveCh2Data = osc2.data.voltageAxis.slice();
+        }
+      } else if (instrKind === 'power') {
+        const pm = this.appService.instruments.powerMeterMeasure();
+        if (pm.success && pm.data) {
+          this.pmVoltage = pm.data.voltage.toFixed(3);
+          this.pmCurrent = (pm.data.current * 1000).toFixed(2);
+          this.pmPower = (pm.data.power * 1000).toFixed(1);
+          this.pmPF = pm.data.powerFactor.toFixed(2);
+        }
+      } else if (instrKind === 'freq') {
+        const fc = this.appService.instruments.freqCounterMeasure();
+        if (fc.success && fc.data !== undefined) {
+          if (fc.data >= 1000000) {
+            this.fcReading = `${(fc.data / 1000000).toFixed(3)} MHz`;
+          } else if (fc.data >= 1000) {
+            this.fcReading = `${(fc.data / 1000).toFixed(1)} kHz`;
+          } else {
+            this.fcReading = `${fc.data.toFixed(0)} Hz`;
+          }
+        }
+      } else if (instrKind === 'logic') {
+        const logic = this.appService.instruments.getLogicWaveData();
+        if (logic.success && logic.data !== undefined) {
+          const channels: number[][] = [];
+          for (let i = 0; i < logic.data.length; i++) {
+            const wave = logic.data[i];
+            const bits: number[] = [];
+            for (let j = 0; j < wave.voltageAxis.length; j++) {
+              bits.push(wave.voltageAxis[j] > 0.5 ? 1 : 0);
+            }
+            channels.push(bits.slice());
+          }
+          this.logicChannelData = channels;
+          this.logicSampleCount = channels.length > 0 ? channels[0].length : 128;
+          if (channels.length > 0) {
+            this.logicChannels = channels.length;
+          }
+        }
+      } else if (instrKind === 'uart') {
+        this.uartLog = this.appService.instruments.getUartLog();
       }
     } catch (_e) {
-      // Best-effort auto-refresh
+      // Best-effort refresh
+    }
+    const reading = this.buildReadingSummary(instrKind);
+    this.logInstrumentReading(false, reading);
+    return reading;
+  }
+
+  private logInstrumentReading(onSelect: boolean, readingOverride: string = ''): void {
+    if (this.selectedComponentId.length === 0) {
+      return;
+    }
+    const kind = this.instrKindForSelection();
+    if (kind.length === 0) {
+      return;
+    }
+    this.uiLogTick++;
+    if (!onSelect && this.uiLogTick % 20 !== 0) {
+      return;
+    }
+    const reading = readingOverride.length > 0 ? readingOverride : this.buildReadingSummary(kind);
+    if (onSelect) {
+      traceUiSelect('Instr', this.selectedComponentId, this.selectionRefDes,
+        this.selectionLibraryId, kind, reading);
+    } else {
+      traceUiRefresh('Instr', this.selectedComponentId, this.selectionRefDes,
+        this.selectionLibraryId, kind, reading);
+    }
+  }
+
+  private buildReadingSummary(kind: string): string {
+    if (kind === 'dmm') return `DMM ${this.mmReading}`;
+    if (kind === 'vm') return `VM ${this.vmReading} ${this.vmUnit}`;
+    if (kind === 'am') return `AM ${this.amReading} ${this.amUnit}`;
+    if (kind === 'power') return `PM V=${this.pmVoltage} I=${this.pmCurrent} P=${this.pmPower}`;
+    if (kind === 'freq') return `FC ${this.fcReading}`;
+    if (kind === 'osc') {
+      const pts = this.waveVoltageData.length;
+      const last = pts > 0 ? this.waveVoltageData[pts - 1].toFixed(4) : '0';
+      return `OSC pts=${pts} last=${last}V ch2=${this.waveCh2Data.length}`;
+    }
+    if (kind === 'logic') return `LA ch=${this.logicChannels} samples=${this.logicSampleCount}`;
+    if (kind === 'uart') return `UART logLen=${this.uartLog.length}`;
+    return kind;
+  }
+
+  private instrKindForSelection(): string {
+    return detectInstrumentKind(this.selectionLibraryId);
+  }
+
+  private modeLabel(mode: MultimeterMode): string {
+    switch (mode) {
+      case MultimeterMode.DCV: return 'DCV';
+      case MultimeterMode.ACV: return 'ACV';
+      case MultimeterMode.RESISTANCE: return 'OHM';
+      case MultimeterMode.CURRENT: return 'AMP';
+      case MultimeterMode.DIODE: return 'DIODE';
+      default: return 'DCV';
     }
   }
 
   build() {
     Column() {
-      Tabs({ barPosition: BarPosition.Start, index: this.subTab }) {
-        TabContent() { this.OscPanel() }.tabBar('示波器')
-        TabContent() { this.LogicPanel() }.tabBar('逻辑仪')
-        TabContent() { this.MmPanel() }.tabBar('万用表')
-        TabContent() { this.SigGenPanel() }.tabBar('信号源')
-        TabContent() { this.UartPanel() }.tabBar('串口')
-        TabContent() { this.VoltmeterPanel() }.tabBar('电压表')
-        TabContent() { this.AmmeterPanel() }.tabBar('电流表')
-        TabContent() { this.PowerMeterPanel() }.tabBar('功率表')
-        TabContent() { this.FreqCounterPanel() }.tabBar('频率计')
+      this.SelectionHeader()
+      this.InstrumentSubTabBar()
+      Column() {
+        if (this.subTab === 0) {
+          this.OscPanel()
+        } else if (this.subTab === 1) {
+          this.LogicPanel()
+        } else if (this.subTab === 2) {
+          this.MmPanel()
+        } else if (this.subTab === 3) {
+          this.SigGenPanel()
+        } else if (this.subTab === 4) {
+          this.UartPanel()
+        } else if (this.subTab === 5) {
+          this.VoltmeterPanel()
+        } else if (this.subTab === 6) {
+          this.AmmeterPanel()
+        } else if (this.subTab === 7) {
+          this.PowerMeterPanel()
+        } else if (this.subTab === 8) {
+          this.FreqCounterPanel()
+        }
       }
-      .barHeight(28)
-      .barMode(BarMode.Scrollable)
-      .onChange((idx: number) => { this.subTab = idx; })
       .layoutWeight(1)
+      .width('100%')
     }
     .backgroundColor(ProteusColors.CANVAS_BG)
     .width('100%')
     .height('100%')
+  }
+
+  /** 仪器子标签 — 按面板宽度 3 列换行排列 */
+  @Builder
+  InstrumentSubTabBar() {
+    Column() {
+      ProteusChipGrid({
+        labels: this.subTabLabels,
+        selectedIdx: this.subTab,
+        colsPerRow: 3,
+        onSelect: (idx: number) => { this.subTab = idx; }
+      })
+    }
+    .width('100%')
+    .padding({ left: 6, right: 6, top: 5, bottom: 5 })
+    .backgroundColor(ProteusColors.TAB_BAR_BG)
+    .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
+  }
+
+  /** 顶部选中器件信息 — 避免与下方控件挤在同一视觉层 */
+  @Builder
+  SelectionHeader() {
+    Column({ space: 2 }) {
+      Text(this.selectionRefDes.length > 0 ? this.selectionRefDes : 'Instruments')
+        .fontSize(13)
+        .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+      Text(this.selectionLibraryId.length > 0 ? this.selectionLibraryId : '选中画布上的仪器以关联读数')
+        .fontSize(10)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .width('100%')
+    .padding({ left: 10, right: 10, top: 8, bottom: 6 })
+    .backgroundColor(ProteusColors.PANEL_TITLE_BG)
+    .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
+    .alignItems(HorizontalAlign.Start)
   }
 
   // ==================== Readout Display (shared) ====================
@@ -178,7 +384,7 @@ export struct InstrumentPanel {
         .fontColor(ProteusColors.TEXT_LABEL)
         .fontFamily('monospace')
       Text(value)
-        .fontSize(36)
+        .fontSize(28)
         .fontColor(ProteusColors.TEXT_PRIMARY)
         .fontWeight(FontWeight.Bold)
         .fontFamily('monospace')
@@ -214,48 +420,73 @@ export struct InstrumentPanel {
   @Builder
   OscPanel() {
     Scroll() {
-      Column({ space: 6 }) {
-        // Controls row
+      Column({ space: 8 }) {
+        // Row 1: timebase
         Row({ space: 6 }) {
-          Text('时基').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(28)
+          Text('时基')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width(32)
           Select(this.selTimebase)
             .selected(this.timebaseIdx).value(this.timebaseLabels[this.timebaseIdx])
-            .font({ size: 10 }).fontColor(ProteusColors.TEXT_PRIMARY)
+            .font({ size: 11 }).fontColor(ProteusColors.TEXT_PRIMARY)
             .backgroundColor(ProteusColors.CANVAS_BG)
-            .width(56).height(ProteusDimens.PARAM_ROW_HEIGHT)
+            .layoutWeight(1)
+            .height(ProteusDimens.PARAM_ROW_HEIGHT)
             .onSelect((idx: number) => {
               this.timebaseIdx = idx;
               this.appService.instruments.setTimebase(this.timebases[idx]);
             })
-          Text('档位').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(28)
-          Select(this.selVScale)
-            .selected(this.voltageScaleIdx)
-            .value(['1mV','10mV','100mV','1V','10V','100V'][this.voltageScaleIdx])
-            .font({ size: 10 }).fontColor(ProteusColors.TEXT_PRIMARY)
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .width(56).height(ProteusDimens.PARAM_ROW_HEIGHT)
-            .onSelect((idx: number) => { this.voltageScaleIdx = idx; })
         }
         .width('100%').padding({ left: 8, right: 8, top: 6 })
-        .justifyContent(FlexAlign.Start)
 
-        // Action buttons
-        Row({ space: 4 }) {
-          ProteusClassicBtn({ label: 'AC', widthVal: 36,
+        // Row 2: voltage scale
+        Row({ space: 6 }) {
+          Text('档位')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width(32)
+          Select(this.selVScale)
+            .selected(this.voltageScaleIdx)
+            .value(['1mV', '10mV', '100mV', '1V', '10V', '100V'][this.voltageScaleIdx])
+            .font({ size: 11 }).fontColor(ProteusColors.TEXT_PRIMARY)
+            .backgroundColor(ProteusColors.CANVAS_BG)
+            .layoutWeight(1)
+            .height(ProteusDimens.PARAM_ROW_HEIGHT)
+            .onSelect((idx: number) => { this.voltageScaleIdx = idx; })
+        }
+        .width('100%').padding({ left: 8, right: 8 })
+
+        // Row 3: coupling + capture (2×2 grid)
+        Row({ space: 6 }) {
+          ProteusClassicBtn({ label: 'AC', widthVal: '48%',
             onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } })
-          ProteusClassicBtn({ label: 'DC', widthVal: 36,
+          ProteusClassicBtn({ label: 'DC', widthVal: '48%',
             onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } })
-          Text(`触发:${this.triggerLevel.toFixed(1)}V`)
-            .fontSize(ProteusFonts.STATUS).fontColor(ProteusColors.TEXT_LABEL).width(52)
-          Slider({ value: this.triggerLevel, min: -5, max: 5, step: 0.1 })
-            .width(50).height(ProteusDimens.PARAM_ROW_HEIGHT)
-            .onChange((v: number) => { this.triggerLevel = v; })
-          ProteusClassicBtn({ label: '采样', widthVal: 40,
+        }
+        .width('100%').padding({ left: 8, right: 8 })
+
+        Row({ space: 6 }) {
+          ProteusClassicBtn({ label: '采样', widthVal: '48%',
             onAction: () => { this.captureWave(); } })
-          ProteusClassicBtn({ label: 'FFT', widthVal: 36,
+          ProteusClassicBtn({ label: 'FFT', widthVal: '48%',
             onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT, true); } })
         }
         .width('100%').padding({ left: 8, right: 8 })
+
+        // Row 4: trigger slider (full width)
+        Column({ space: 4 }) {
+          Text(`触发 ${this.triggerLevel.toFixed(1)} V`)
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width('100%')
+          Slider({ value: this.triggerLevel, min: -5, max: 5, step: 0.1 })
+            .width('100%')
+            .height(ProteusDimens.PARAM_ROW_HEIGHT)
+            .onChange((v: number) => { this.triggerLevel = v; })
+        }
+        .width('100%')
+        .padding({ left: 8, right: 8 })
 
         // Waveform display
         Column() {
@@ -334,40 +565,64 @@ export struct InstrumentPanel {
   @Builder
   LogicPanel() {
     Scroll() {
-      Column({ space: 6 }) {
+      Column({ space: 8 }) {
         Row({ space: 6 }) {
-          Text('通道').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(28)
+          Text('通道')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width(32)
           Select(this.selLogicCh)
-            .selected(0).font({ size: 10 }).fontColor(ProteusColors.TEXT_PRIMARY)
+            .selected(0).font({ size: 11 }).fontColor(ProteusColors.TEXT_PRIMARY)
             .backgroundColor(ProteusColors.CANVAS_BG)
-            .width(50).height(ProteusDimens.PARAM_ROW_HEIGHT)
+            .layoutWeight(1)
+            .height(ProteusDimens.PARAM_ROW_HEIGHT)
             .onSelect((idx: number) => {
               this.logicChannels = [8, 16, 32][idx];
               this.appService.instruments.setChannels(this.logicChannels);
             })
-          Text('阈值').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(28)
+        }
+        .width('100%').padding({ left: 8, right: 8, top: 6 })
+
+        Row({ space: 6 }) {
+          Text('阈值')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width(32)
           TextInput({ text: `${this.threshold}` })
-            .fontSize(10).fontColor(ProteusColors.TEXT_PRIMARY)
-            .width(60).height(ProteusDimens.PARAM_ROW_HEIGHT)
+            .fontSize(11).fontColor(ProteusColors.TEXT_PRIMARY)
+            .layoutWeight(1)
+            .height(ProteusDimens.PARAM_ROW_HEIGHT)
             .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
             .backgroundColor(ProteusColors.CANVAS_BG)
             .onChange((v: string) => {
               this.threshold = parseInt(v) || 1500;
               this.appService.instruments.setThreshold(this.threshold);
             })
+          Text('mV')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .width(24)
         }
-        .width('100%').padding({ left: 8, right: 8, top: 6 })
+        .width('100%').padding({ left: 8, right: 8 })
 
-        Row({ space: 4 }) {
-          ProteusClassicBtn({ label: 'UART', widthVal: 44,
+        Row({ space: 6 }) {
+          ProteusClassicBtn({ label: 'UART', widthVal: '48%',
             onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200); this.refreshDecodedFrames(); } })
-          ProteusClassicBtn({ label: 'I2C', widthVal: 36,
+          ProteusClassicBtn({ label: 'I2C', widthVal: '48%',
             onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C); this.refreshDecodedFrames(); } })
-          ProteusClassicBtn({ label: 'SPI', widthVal: 36,
+        }
+        .width('100%').padding({ left: 8, right: 8 })
+
+        Row({ space: 6 }) {
+          ProteusClassicBtn({ label: 'SPI', widthVal: '48%',
             onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI); this.refreshDecodedFrames(); } })
-          ProteusClassicBtn({ label: 'CAN', widthVal: 36,
+          ProteusClassicBtn({ label: 'CAN', widthVal: '48%',
             onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.CAN); } })
-          ProteusClassicBtn({ label: '采样', widthVal: 40,
+        }
+        .width('100%').padding({ left: 8, right: 8 })
+
+        Row({ space: 6 }) {
+          ProteusClassicBtn({ label: '采样', widthVal: '100%',
             onAction: () => { this.captureLogic(); } })
         }
         .width('100%').padding({ left: 8, right: 8 })
@@ -421,18 +676,22 @@ export struct InstrumentPanel {
   // ==================== Multimeter ====================
   @Builder
   MmPanel() {
-    Column({ space: 6 }) {
-      Row({ space: 4 }) {
-        ProteusClassicBtn({ label: 'DCV', widthVal: 44,
+    Column({ space: 8 }) {
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'DCV', widthVal: '48%',
           onAction: () => { this.mmMode = 'DCV'; this.appService.instruments.setMode(MultimeterMode.DCV); } })
-        ProteusClassicBtn({ label: 'ACV', widthVal: 44,
+        ProteusClassicBtn({ label: 'ACV', widthVal: '48%',
           onAction: () => { this.mmMode = 'ACV'; this.appService.instruments.setMode(MultimeterMode.ACV); } })
-        ProteusClassicBtn({ label: 'OHM', widthVal: 44,
-          onAction: () => { this.mmMode = 'OHM'; this.appService.instruments.setMode(MultimeterMode.RESISTANCE); } })
-        ProteusClassicBtn({ label: 'AMP', widthVal: 44,
-          onAction: () => { this.mmMode = 'AMP'; this.appService.instruments.setMode(MultimeterMode.CURRENT); } })
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
+
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'OHM', widthVal: '48%',
+          onAction: () => { this.mmMode = 'OHM'; this.appService.instruments.setMode(MultimeterMode.RESISTANCE); } })
+        ProteusClassicBtn({ label: 'AMP', widthVal: '48%',
+          onAction: () => { this.mmMode = 'AMP'; this.appService.instruments.setMode(MultimeterMode.CURRENT); } })
+      }
+      .width('100%').padding({ left: 8, right: 8 })
 
       Column() {
         this.ReadoutDisplay(this.mmMode, this.mmReading, '')
@@ -456,18 +715,22 @@ export struct InstrumentPanel {
   // ==================== Signal Generator ====================
   @Builder
   SigGenPanel() {
-    Column({ space: 6 }) {
-      Row({ space: 4 }) {
-        ProteusClassicBtn({ label: '正弦', widthVal: 44,
+    Column({ space: 8 }) {
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: '正弦', widthVal: '48%',
           onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.SINE); } })
-        ProteusClassicBtn({ label: '方波', widthVal: 44,
+        ProteusClassicBtn({ label: '方波', widthVal: '48%',
           onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.SQUARE); } })
-        ProteusClassicBtn({ label: '三角', widthVal: 44,
-          onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.TRIANGLE); } })
-        ProteusClassicBtn({ label: 'Burst', widthVal: 44,
-          onAction: () => { this.appService.instruments.setBurstMode(true, 5); } })
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
+
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: '三角', widthVal: '48%',
+          onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.TRIANGLE); } })
+        ProteusClassicBtn({ label: 'Burst', widthVal: '48%',
+          onAction: () => { this.appService.instruments.setBurstMode(true, 5); } })
+      }
+      .width('100%').padding({ left: 8, right: 8 })
 
       Column({ space: 8 }) {
         Text('频率')
@@ -577,9 +840,18 @@ export struct InstrumentPanel {
           } })
         ProteusClassicBtn({ label: '测量', widthVal: '42%',
           onAction: () => {
-            const r = this.appService.instruments.voltmeterMeasure();
-            if (r.success && r.data !== undefined) {
-              this.vmReading = r.data.toFixed(3);
+            let reading: number | null = null;
+            if (this.selectedComponentId.length > 0) {
+              reading = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+            }
+            if (reading === null) {
+              const r = this.appService.instruments.voltmeterMeasure();
+              if (r.success && r.data !== undefined) {
+                reading = r.data;
+              }
+            }
+            if (reading !== null) {
+              this.vmReading = reading.toFixed(3);
             }
             const cfg = this.appService.instruments.getVoltmeterConfig();
             if (cfg.success && cfg.data) {
@@ -687,7 +959,7 @@ export struct InstrumentPanel {
         .fontColor(ProteusColors.TEXT_LABEL)
         .width(56)
       Text(value)
-        .fontSize(28)
+        .fontSize(22)
         .fontColor(ProteusColors.TEXT_PRIMARY)
         .fontWeight(FontWeight.Bold)
         .fontFamily('monospace')

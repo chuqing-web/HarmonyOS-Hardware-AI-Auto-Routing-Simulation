@@ -14,7 +14,8 @@ import {
   SpiceResult, ProgressCallback, ApiResult, ErrCode,
   ResultHelper, TopologyAdapter, makeProgress, IdUtil,
   DynamicErcEngine, ErcViolation, FaultInjection, FaultScanResult, FaultType,
-  copyNumberMap, copyStringMap, RandomUtil
+  copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts,
+  traceLoadSchematic
 } from 'common';
 import { FaultInjectionEngine } from './engines/FaultInjectionEngine';
 import { Mcu8051Simulator } from './engines/Mcu8051Simulator';
@@ -125,14 +126,15 @@ export class SimulationKernelImpl implements ISimulationKernel {
     this.scheduler = new GlobalScheduler(this.config, this.digitalEngine, this.analogEngine);
     this.buildSpiceNodeMap(topo);
 
-    // Pre-populate initial voltages: VCC=5V, GND=0V for all mapped nets
-    this.nodeVoltages.set('VCC', 5.0);
+    // Pre-populate initial voltages from schematic VCC setting
+    const supplyV = SimulationKernelImpl.resolveSupplyVoltage(doc);
+    this.nodeVoltages.set('VCC', supplyV);
     this.nodeVoltages.set('0', 0);
     this.nodeVoltages.set('GND', 0);
     this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
       if (nodeName === 'VCC' || nodeName === 'VCC_5V' || nodeName === 'VDD') {
-        this.nodeVoltages.set(netUuid, 5.0);
-        this.nodeVoltages.set(nodeName, 5.0);
+        this.nodeVoltages.set(netUuid, supplyV);
+        this.nodeVoltages.set(nodeName, supplyV);
       } else if (nodeName === '0' || nodeName === 'GND') {
         this.nodeVoltages.set(netUuid, 0);
         this.nodeVoltages.set(nodeName, 0);
@@ -207,6 +209,14 @@ export class SimulationKernelImpl implements ISimulationKernel {
     return this.state === SimulationState.RUNNING;
   }
 
+  isSimPaused(): boolean {
+    return this.state === SimulationState.PAUSED;
+  }
+
+  isSimActive(): boolean {
+    return this.state === SimulationState.RUNNING || this.state === SimulationState.PAUSED;
+  }
+
   getAllWaveData(): WaveData[] {
     return this.waveDataList.slice();
   }
@@ -262,6 +272,10 @@ export class SimulationKernelImpl implements ISimulationKernel {
 
   /** Get voltage on a net by its UUID */
   getNetVoltageByUuid(netUuid: string): number {
+    const aeV = this.analogEngine.getVoltage(netUuid);
+    if (this.analogEngine.getNodeNameForNetUuid(netUuid).length > 0) {
+      return aeV;
+    }
     return this.getNodeVoltage(netUuid);
   }
 
@@ -279,7 +293,25 @@ export class SimulationKernelImpl implements ISimulationKernel {
   }
 
   getNodeVoltageMap(): Map<string, number> {
-    return new Map(this.nodeVoltages);
+    const map = new Map(this.nodeVoltages);
+    const aeNetMap = this.analogEngine.getNetUuidMapping();
+    aeNetMap.forEach((nodeName: string, netUuid: string) => {
+      if (!map.has(netUuid)) {
+        const voltage = map.get(nodeName);
+        if (voltage !== undefined) {
+          map.set(netUuid, voltage);
+        }
+      }
+    });
+    this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
+      if (!map.has(netUuid)) {
+        const voltage = map.get(nodeName);
+        if (voltage !== undefined) {
+          map.set(netUuid, voltage);
+        }
+      }
+    });
+    return map;
   }
 
   getBranchCurrentMap(): Map<string, number> {
@@ -387,13 +419,18 @@ export class SimulationKernelImpl implements ISimulationKernel {
       this.nodeVoltages.set(name, val);
       this.updateWaveData(name, stepResult.time, val, 0);
     });
-    // Also populate with net UUID keys from AnalogEngine's mapping
+    // Mirror node voltages under net UUID keys — instruments bind by UUID, not SPICE node name
     const aeNetMap = this.analogEngine.getNetUuidMapping();
     aeNetMap.forEach((nodeName: string, netUuid: string) => {
       const voltage = this.nodeVoltages.get(nodeName);
       if (voltage !== undefined) {
         this.nodeVoltages.set(netUuid, voltage);
-        this.updateWaveData(netUuid, stepResult.time, voltage, 0);
+      } else {
+        const aeV = this.analogEngine.getVoltage(netUuid);
+        this.nodeVoltages.set(netUuid, aeV);
+        if (aeV !== 0 && !this.nodeVoltages.has(nodeName)) {
+          this.nodeVoltages.set(nodeName, aeV);
+        }
       }
     });
     // Also copy from spiceNodeMap
@@ -648,14 +685,24 @@ export class SimulationKernelImpl implements ISimulationKernel {
   // ---- v1 兼容 ----
 
   loadSchematic(doc: SchematicDocument): Result<void> {
+    const prevState = this.state;
     this.schematic = doc;
     this.topology = TopologyAdapter.toTopology(doc);
-    this.state = SimulationState.IDLE;
-    this.result = null;
     this.digitalEngine.loadSchematic(doc);
     this.analogEngine.loadSchematic(doc, this.config);
     this.scheduler = new GlobalScheduler(this.config, this.digitalEngine, this.analogEngine);
-    if (this.topology) this.buildSpiceNodeMap(this.topology);
+    if (this.topology) {
+      this.buildSpiceNodeMap(this.topology);
+    }
+    if (prevState === SimulationState.RUNNING || prevState === SimulationState.PAUSED) {
+      this.waveDataList = [];
+      this.state = prevState;
+      traceLoadSchematic(true, doc.components.length, doc.nets.length);
+    } else {
+      this.state = SimulationState.IDLE;
+      this.result = null;
+      traceLoadSchematic(false, doc.components.length, doc.nets.length);
+    }
     return { success: true, errCode: ErrCode.OK };
   }
 
@@ -767,6 +814,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
     const comp = this.schematic.components.find(c => c.id === componentId);
     if (!comp) return { success: false, errCode: ErrCode.ERR_DEVICE_NOT_EXIST, error: 'Component not found' };
     comp.parameters.set(param, value);
+    if (this.isSimActive()) {
+      this.analogEngine.loadSchematic(this.schematic, this.config);
+      if (this.topology) {
+        this.buildSpiceNodeMap(this.topology);
+      }
+    }
     return { success: true, errCode: ErrCode.OK };
   }
 
@@ -928,13 +981,26 @@ export class SimulationKernelImpl implements ISimulationKernel {
     }
   }
 
+  private static readonly MAX_WAVE_POINTS = 4096;
+
+  private resolveNetUuidForNode(nodeName: string): string {
+    let netUuid = nodeName;
+    this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
+      if (spiceNode === nodeName) {
+        netUuid = uuid;
+      }
+    });
+    return netUuid;
+  }
+
   private updateWaveData(probeName: string, time: number, voltage: number, current: number): void {
     let wave = this.waveDataList.find(w => w.probeName === probeName);
     if (!wave) {
+      const netUuid = this.resolveNetUuidForNode(probeName);
       wave = {
         waveId: IdUtil.generate('wave'),
         probeName: probeName,
-        netName: probeName,
+        netName: netUuid,
         timeAxis: [],
         voltageAxis: [],
         currentAxis: [],
@@ -943,6 +1009,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
         holdTime: 0
       };
       this.waveDataList.push(wave);
+    }
+    // Ring buffer: shift oldest data when exceeding max points
+    if (wave.timeAxis.length >= SimulationKernelImpl.MAX_WAVE_POINTS) {
+      wave.timeAxis.shift();
+      wave.voltageAxis.shift();
+      wave.currentAxis.shift();
     }
     wave.timeAxis.push(time);
     wave.voltageAxis.push(voltage);
@@ -966,7 +1038,6 @@ export class SimulationKernelImpl implements ISimulationKernel {
         this.result!.signals.set(name, signalSeries);
       }
       signalSeries.push(val);
-      this.updateWaveData(name, stepResult.time, val, 0);
     });
     stepResult.digitalStates.forEach((state: LogicState, pinId: string) => {
       let pinHistory = this.result!.digitalStates.get(pinId);
@@ -1047,5 +1118,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
     const cp = stdDev > 0 ? (usl - lsl) / (6 * stdDev) : 0;
     const cpk = stdDev > 0 ? Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev)) : 0;
     return { mean, stdDev, min, max, cp, cpk };
+  }
+
+  private static resolveSupplyVoltage(doc: SchematicDocument): number {
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      const lib = comp.libraryId.toUpperCase();
+      if (lib === 'VCC' || lib.endsWith('/VCC')) {
+        return parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
+      }
+    }
+    return 5;
   }
 }

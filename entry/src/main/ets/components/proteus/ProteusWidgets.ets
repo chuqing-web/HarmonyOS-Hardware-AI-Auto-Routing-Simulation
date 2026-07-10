@@ -78,23 +78,118 @@ export struct ProteusToolBtn {
 export struct ProteusClassicBtn {
   @Prop label: ResourceStr = '';
   @Prop widthVal: string | number = 'auto';
+  @Prop heightVal: number = ProteusDimens.PARAM_ROW_HEIGHT;
   onAction: () => void = () => {};
 
   build() {
     Button({ type: ButtonType.Normal }) {
       Text(this.label)
-        .fontSize(ProteusFonts.PARAM_KEY)
+        .fontSize(ProteusFonts.BTN_LABEL)
         .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .backgroundColor(ProteusColors.BTN_BG)
     .borderRadius(0)
     .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-    .height(ProteusDimens.PARAM_ROW_HEIGHT)
+    .height(this.heightVal)
     .width(this.widthVal)
-    .padding({ left: 3, right: 3 })
+    .padding({ left: 6, right: 6 })
     .onClick(() => this.onAction())
+  }
+}
+
+/** 面板内分段标题 */
+@Component
+export struct ProteusSectionTitle {
+  @Prop title: string = '';
+
+  build() {
+    Text(this.title)
+      .fontSize(ProteusFonts.TITLE)
+      .fontColor(ProteusColors.TEXT_PRIMARY)
+      .fontWeight(FontWeight.Medium)
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 8, bottom: 4 })
+  }
+}
+
+/** 仪器/面板子标签芯片 — 选中蓝底白字，支持等宽铺满一行 */
+@Component
+export struct ProteusChipTab {
+  @Prop label: string = '';
+  @Prop selected: boolean = false;
+  @Prop fillWidth: boolean = false;
+  onSelect: () => void = () => {};
+
+  build() {
+    Column() {
+      Text(this.label)
+        .fontSize(ProteusFonts.TAB_CHIP)
+        .fontColor(this.selected ? ProteusColors.TAB_CHIP_ACTIVE_TEXT : ProteusColors.TAB_CHIP_IDLE_TEXT)
+        .fontWeight(this.selected ? FontWeight.Bold : FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.Center)
+        .width('100%')
+    }
+    .width(this.fillWidth ? '100%' : 'auto')
+    .layoutWeight(this.fillWidth ? 1 : 0)
+    .height(ProteusDimens.TAB_CHIP_HEIGHT)
+    .padding({ left: 4, right: 4 })
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.selected ? ProteusColors.TAB_CHIP_ACTIVE_BG : ProteusColors.TAB_CHIP_IDLE_BG)
+    .border({
+      width: this.selected ? { left: 3, top: 1, right: 1, bottom: 1 } : 1,
+      color: this.selected ? ProteusColors.SELECTED : ProteusColors.TAB_CHIP_BORDER
+    })
+    .onClick(() => this.onSelect())
+  }
+}
+
+/** 芯片按钮网格 — 按列数自动换行向下排列，无需横向滑动 */
+@Component
+export struct ProteusChipGrid {
+  @Prop labels: string[] = [];
+  @Prop selectedIdx: number = -1;
+  @Prop colsPerRow: number = 3;
+  onSelect: (idx: number) => void = (_idx: number) => {};
+
+  private rowStarts(): number[] {
+    const starts: number[] = [];
+    for (let i = 0; i < this.labels.length; i += this.colsPerRow) {
+      starts.push(i);
+    }
+    return starts;
+  }
+
+  private rowLabels(start: number): string[] {
+    const end = Math.min(start + this.colsPerRow, this.labels.length);
+    const slice: string[] = [];
+    for (let i = start; i < end; i++) {
+      slice.push(this.labels[i]);
+    }
+    return slice;
+  }
+
+  build() {
+    Column({ space: 4 }) {
+      ForEach(this.rowStarts(), (start: number) => {
+        Row({ space: 4 }) {
+          ForEach(this.rowLabels(start), (label: string, offset: number) => {
+            ProteusChipTab({
+              label: label,
+              selected: this.selectedIdx === start + offset,
+              fillWidth: true,
+              onSelect: () => { this.onSelect(start + offset); }
+            })
+          }, (label: string, offset: number) => `chip_${start}_${offset}_${label}`)
+        }
+        .width('100%')
+      }, (start: number) => `chip_row_${start}`)
+    }
+    .width('100%')
   }
 }
 
@@ -130,21 +225,21 @@ export struct ProteusNavTab {
   onSelect: () => void = () => {};
 
   build() {
-    Button({ type: ButtonType.Normal }) {
-      Text(this.label)
-        .fontSize(ProteusFonts.STATUS)
-        .fontColor(this.selected ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY)
-        .fontWeight(this.selected ? FontWeight.Medium : FontWeight.Normal)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .layoutWeight(1)
-    .height(ProteusDimens.PANEL_TITLE_HEIGHT)
-    .padding(0)
-    .borderRadius(0)
-    .backgroundColor(this.selected ? ProteusColors.CANVAS_BG : '#E0E0E0')
-    .border({ width: { bottom: this.selected ? 2 : 1 }, color: this.selected ? ProteusColors.SELECTED : ProteusColors.DIVIDER })
-    .onClick(() => this.onSelect())
+    Text(this.label)
+      .fontSize(ProteusFonts.TAB_CHIP)
+      .fontColor(this.selected ? ProteusColors.TAB_CHIP_ACTIVE_TEXT : ProteusColors.TAB_CHIP_IDLE_TEXT)
+      .fontWeight(this.selected ? FontWeight.Bold : FontWeight.Medium)
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(ProteusDimens.TAB_BAR_HEIGHT)
+      .backgroundColor(this.selected ? ProteusColors.TAB_CHIP_ACTIVE_BG : ProteusColors.TAB_CHIP_IDLE_BG)
+      .border({
+        width: { bottom: this.selected ? 2 : 1 },
+        color: this.selected ? ProteusColors.BTN_FOCUS : ProteusColors.TAB_CHIP_BORDER
+      })
+      .onClick(() => this.onSelect())
   }
 }
 
@@ -236,7 +331,7 @@ export struct ProteusParamRow {
       Text(this.label)
         .fontSize(ProteusFonts.PARAM_KEY)
         .fontColor(ProteusColors.TEXT_LABEL)
-        .width(80)
+        .width(ProteusDimens.PARAM_LABEL_WIDTH)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.editable) {

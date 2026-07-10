@@ -3,7 +3,7 @@
  */
 import {
   SchematicDocument, ErcViolation, ErcSeverity, ErcRuleType,
-  NetType, Pin
+  NetType, Pin, Net
 } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
 import { appendArray } from './MapHelpers';
@@ -28,6 +28,18 @@ export class ErcEngine {
     const result: ErcViolation[] = [];
     for (let i = 0; i < doc.nets.length; i++) {
       const net = doc.nets[i];
+      if (ErcEngine.isPowerOrGroundNet(net)) {
+        // 电源/地网络：仅接符号未接电路时单独提示，不算普通信号悬空
+        if (net.pinIds.length <= 1) {
+          result.push(ErcEngine.makeViolation(
+            ErcSeverity.WARNING, ErcRuleType.FLOATING_NET,
+            `电源/地网络 "${net.name}" 未连接到其他器件（仅 ${net.pinIds.length} 处连接）`,
+            net.id, undefined, undefined,
+            '将 GND/VCC 符号用导线连接到 MCU、电阻等器件引脚'
+          ));
+        }
+        continue;
+      }
       if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
         result.push(ErcEngine.makeViolation(
           ErcSeverity.WARNING, ErcRuleType.FLOATING_NET,
@@ -38,6 +50,16 @@ export class ErcEngine {
       }
     }
     return result;
+  }
+
+  /** 电源/地网络（不应按普通信号网络做悬空判定） */
+  private static isPowerOrGroundNet(net: Net): boolean {
+    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+      return true;
+    }
+    const upper = net.name.toUpperCase();
+    return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
+      upper === 'VCC' || upper === 'VDD' || upper === '0';
   }
 
   private static checkDuplicateNetNames(doc: SchematicDocument): ErcViolation[] {

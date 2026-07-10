@@ -87,6 +87,7 @@ export interface ISchematicEditor {
   createBus(x1: number, y1: number, x2: number, y2: number, bitCount?: number): ApiResult<string>;
   assignBusNet(busUuid: string, netNameList: string[]): ApiResult<void>;
   createNetLabel(x: number, y: number, netName: string): ApiResult<string>;
+  attachPowerSymbolNet(compId: string): ApiResult<void>;
   createSubPort(subUuid: string, portName: string, dir?: 'in' | 'out' | 'inout'): ApiResult<string>;
 
   // ---- 探针 ----

@@ -22,11 +22,13 @@ import {
   ErcSeverity, ErcRuleType, PinType, Wire, SchematicMetadata, SubcircuitRef,
   SimulationConfig,
   calcSymbolBounds, pointInSymbolBounds, SymbolBounds,
-  mapAwareStringify, mapAwareParse
+  mapAwareStringify, mapAwareParse,
+  rebuildAllNetPinConnectivity, PinGeometryResolver, PinGeometry
 } from 'common';
 
 type ComponentBoundsResolver = (libraryId: string) => SymbolBounds | null;
 type PinResolver = (libraryId: string) => Pin[] | null;
+type DefaultParamsResolver = (libraryId: string) => Map<string, string> | null;
 
 interface WirePathScore {
   score: number;
@@ -58,6 +60,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private readOnlyMode: boolean = false;
   private boundsResolver: ComponentBoundsResolver | null = null;
   private pinResolver: PinResolver | null = null;
+  private defaultParamsResolver: DefaultParamsResolver | null = null;
 
   setComponentBoundsResolver(resolver: ComponentBoundsResolver): void {
     this.boundsResolver = resolver;
@@ -65,6 +68,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   setPinResolver(resolver: PinResolver): void {
     this.pinResolver = resolver;
+  }
+
+  setDefaultParamsResolver(resolver: DefaultParamsResolver): void {
+    this.defaultParamsResolver = resolver;
   }
 
   private static createDefaultViewport(): ViewportState {
@@ -272,9 +279,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return result;
   }
 
-  runERC(topo?: SchTopology, _autoFixSuggest: boolean = true): ErcError[] {
-    const t: SchTopology = topo !== undefined ? topo : this.getFullTopology();
-    const doc: SchematicDocument = TopologyAdapter.fromTopology(t);
+  runERC(_topo?: SchTopology, _autoFixSuggest: boolean = true): ErcError[] {
+    this.rebuildNetPinConnectivity();
+    const doc: SchematicDocument = this.getDocument();
     const violations: ErcViolation[] = DeepErcEngine.runFull(doc,
       this.pinResolver !== null ? this.pinResolver : undefined);
     const errors: ErcError[] = [];
@@ -444,6 +451,15 @@ export class SchematicEditorImpl implements ISchematicEditor {
       mirrored: false,
       parameters: SchematicEditorImpl.emptyParameters()
     };
+    if (this.defaultParamsResolver !== null) {
+      const defaults = this.defaultParamsResolver(libDevId);
+      if (defaults !== null) {
+        defaults.forEach((value: string, key: string) => {
+          component.parameters.set(key, value);
+        });
+      }
+    }
+    this.normalizeComponentValue(component);
     if (this.document !== null) {
       this.commandHistory.push(new PlaceCommand(this.document, component));
     } else {
@@ -468,10 +484,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (comp === undefined) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID);
     }
+    let finalValue = value;
+    if (key === 'value' && comp !== undefined) {
+      finalValue = this.normalizeComponentValueStr(comp.libraryId, value);
+    }
     if (this.document !== null) {
-      this.commandHistory.push(new SetDeviceParamCommand(this.document, instUuid, key, value));
+      this.commandHistory.push(new SetDeviceParamCommand(this.document, instUuid, key, finalValue));
     } else {
-      comp.parameters.set(key, value);
+      comp.parameters.set(key, finalValue);
     }
     this.notifyChange();
     return ResultHelper.ok();
@@ -806,6 +826,39 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return ResultHelper.ok(net.id);
   }
 
+  /** 将 VCC/GND 符号引脚接入全局电源网络，并在引脚处放置网络标签 */
+  attachPowerSymbolNet(compId: string): ApiResult<void> {
+    const comp = this.findComponent(compId);
+    if (comp === undefined) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '器件不存在');
+    }
+    const libUpper = comp.libraryId.toUpperCase();
+    let netName: string | null = null;
+    if (libUpper === 'VCC' || libUpper.endsWith('/VCC')) {
+      netName = 'VCC';
+    } else if (libUpper === 'GND' || libUpper.endsWith('/GND')) {
+      netName = 'GND';
+    }
+    if (netName === null) {
+      return ResultHelper.ok();
+    }
+    const pins = this.resolvePins(comp.libraryId);
+    if (pins === null || pins.length === 0) {
+      return ResultHelper.ok();
+    }
+    const pin = pins[0];
+    const local = this.transformPinOffsetForConnect(pin.position, comp.rotation, comp.mirrored);
+    const pinWorld: Point2D = { x: comp.position.x + local.x, y: comp.position.y + local.y };
+    this.createNetLabel(pinWorld.x, pinWorld.y, netName);
+    const doc = this.getDocument();
+    const net = this.findNetByName(doc, netName);
+    if (net !== undefined) {
+      this.addPinToNet(net.id, comp.id, pin.id, pin.name);
+    }
+    this.notifyChange();
+    return ResultHelper.ok();
+  }
+
   createSubPort(subUuid: string, portName: string, dir: 'in' | 'out' | 'inout' = 'inout'): ApiResult<string> {
     const sub: SubcircuitRef | undefined = this.findSubcircuit(subUuid);
     if (sub === undefined) {
@@ -1099,6 +1152,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.document = normalized;
     }
     this.rebuildRefDesCounters();
+    this.rebuildNetPinConnectivity();
     this.syncTopologyFromDoc();
     this.notifyChange();
     return ResultHelper.ok();
@@ -1124,6 +1178,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
     const comp: ComponentInstance | undefined = this.findComponent(r.data.instUuid);
     if (comp === undefined) {
       return ResultHelper.fail(ErrCode.ERR_DEVICE_NOT_EXIST);
+    }
+    const libUpper = libraryId.toUpperCase();
+    if (libUpper === 'VCC' || libUpper === 'GND' ||
+      libUpper.endsWith('/VCC') || libUpper.endsWith('/GND')) {
+      this.attachPowerSymbolNet(comp.id);
     }
     return ResultHelper.ok(comp);
   }
@@ -1513,6 +1572,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     this.ensureNetExists(resolvedNetId);
     this.connectWireToPins(snappedFrom, snappedTo, resolvedNetId);
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok(wireId);
   }
@@ -1562,7 +1622,16 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.ensurePerpendicularApproach(allPoints);
 
     const wireId = IdUtil.generate('wire');
-    const resolvedNetId = netId !== undefined && netId.length > 0 ? netId : IdUtil.generate('net');
+    // Inherit net from the start point: if the first endpoint lands on a pin
+    // that already belongs to a net, the new wire joins that net.  Otherwise
+    // (and for intermediate corners) create a fresh net.
+    let resolvedNetId: string;
+    if (netId !== undefined && netId.length > 0) {
+      resolvedNetId = netId;
+    } else {
+      const inherited = this.inheritNetAtPosition(allPoints[0]);
+      resolvedNetId = inherited !== null ? inherited : IdUtil.generate('net');
+    }
     const wire: Wire = {
       id: wireId,
       netId: resolvedNetId,
@@ -1575,9 +1644,173 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.getDocument().wires.push(wire);
     }
     this.ensureNetExists(resolvedNetId);
-    this.connectWireToPins(snapped[0], snapped[snapped.length - 1], resolvedNetId);
+    this.connectWireToPins(allPoints[0], allPoints[allPoints.length - 1], resolvedNetId);
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok(wireId);
+  }
+
+  /**
+   * 从导线几何与器件引脚位置重建全部 net.pinIds，合并 VCC/GND 全局网络。
+   * 解决画布显示已连接但拓扑 pinIds 为空的问题。
+   */
+  rebuildNetPinConnectivity(): void {
+    const doc = this.getDocument();
+    const resolver: PinGeometryResolver = (libraryId: string): PinGeometry[] | null => {
+      const pins = this.resolvePins(libraryId);
+      if (pins === null) {
+        return null;
+      }
+      const out: PinGeometry[] = [];
+      for (let i = 0; i < pins.length; i++) {
+        const geom: PinGeometry = {
+          id: pins[i].id,
+          name: pins[i].name,
+          x: pins[i].position.x,
+          y: pins[i].position.y
+        };
+        out.push(geom);
+      }
+      return out;
+    };
+    rebuildAllNetPinConnectivity(doc, this.viewport.gridSize, resolver);
+    this.mergeDuplicateNamedNets();
+  }
+
+  /**
+   * Reassign wires at shared endpoints so all wires touching the same point
+   * belong to the same net.  Unlike mergeNets (which merges entire nets),
+   * this only touches wires whose endpoints are co-located — it does not
+   * pull in other wires that happen to share the same net elsewhere.
+   */
+  private mergeNetsAtSharedWireEndpoints(): void {
+    const doc = this.getDocument();
+    const junctionRadius = Math.max(2, this.viewport.gridSize * 0.5);
+    // Collect endpoint → {point, wireIndex} pairs
+    interface EndpointEntry { pt: Point2D; wireIdx: number; }
+    const endpoints: EndpointEntry[] = [];
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const wire = doc.wires[wi];
+      if (wire.points.length < 2) continue;
+      endpoints.push({ pt: wire.points[0], wireIdx: wi });
+      endpoints.push({ pt: wire.points[wire.points.length - 1], wireIdx: wi });
+    }
+    // Greedy grouping: endpoints within junctionRadius share the same junction
+    const groups: EndpointEntry[][] = [];
+    const used = new Array<boolean>(endpoints.length).fill(false);
+    for (let i = 0; i < endpoints.length; i++) {
+      if (used[i]) continue;
+      const group: EndpointEntry[] = [endpoints[i]];
+      used[i] = true;
+      for (let j = i + 1; j < endpoints.length; j++) {
+        if (used[j]) continue;
+        for (const member of group) {
+          const dx = member.pt.x - endpoints[j].pt.x;
+          const dy = member.pt.y - endpoints[j].pt.y;
+          if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            group.push(endpoints[j]);
+            used[j] = true;
+            break;
+          }
+        }
+      }
+      groups.push(group);
+    }
+    // For each junction, reassign all wires to the first wire's net.
+    // No rail priority — it would pull signal wires onto GND at junctions
+    // where the saved data already has a wrong net assignment.
+    for (const group of groups) {
+      // Collect distinct net IDs in this group
+      const netIds: string[] = [];
+      for (const ep of group) {
+        const nid = doc.wires[ep.wireIdx].netId;
+        if (!netIds.includes(nid)) {
+          netIds.push(nid);
+        }
+      }
+      if (netIds.length <= 1) continue;
+      const canonicalId = netIds[0];
+      for (const ep of group) {
+        const wire = doc.wires[ep.wireIdx];
+        if (wire.netId !== canonicalId) {
+          wire.netId = canonicalId;
+        }
+      }
+    }
+  }
+
+  /** 将 VCC/GND 符号引脚注册到全局电源网络 */
+  private registerPowerSymbolOnGlobalNet(comp: ComponentInstance): void {
+    const libUpper = comp.libraryId.toUpperCase();
+    let netName: string | null = null;
+    if (libUpper === 'VCC' || libUpper.endsWith('/VCC')) {
+      netName = 'VCC';
+    } else if (libUpper === 'GND' || libUpper.endsWith('/GND')) {
+      netName = 'GND';
+    }
+    if (netName === null) {
+      return;
+    }
+    const pins = this.resolvePins(comp.libraryId);
+    if (pins === null || pins.length === 0) {
+      return;
+    }
+    const pin = pins[0];
+    let powerNet = this.findNetByName(this.getDocument(), netName);
+    if (powerNet === undefined) {
+      this.createNetLabel(comp.position.x, comp.position.y, netName);
+      powerNet = this.findNetByName(this.getDocument(), netName);
+    }
+    if (powerNet !== undefined) {
+      this.addPinToNet(powerNet.id, comp.id, pin.id, pin.name);
+    }
+  }
+
+  /** 合并同名电源/地网络及同标签网络 */
+  private mergeDuplicateNamedNets(): void {
+    const doc = this.getDocument();
+    const railNames: string[] = ['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0'];
+    for (let ri = 0; ri < railNames.length; ri++) {
+      const rail = railNames[ri];
+      let canonicalId: string | null = null;
+      for (let ni = 0; ni < doc.nets.length; ni++) {
+        if (doc.nets[ni].name.toUpperCase() === rail) {
+          if (canonicalId === null) {
+            canonicalId = doc.nets[ni].id;
+          } else if (doc.nets[ni].id !== canonicalId) {
+            this.mergeNets(doc.nets[ni].id, canonicalId);
+          }
+        }
+      }
+    }
+    // Merge non-rail nets that share the same name (including auto-named nets like NET_xxx)
+    const nameCanonical = new Map<string, string>();
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const net = doc.nets[ni];
+      const key = net.name.toUpperCase();
+      if (key.length === 0) {
+        continue;
+      }
+      if (nameCanonical.has(key)) {
+        this.mergeNets(net.id, nameCanonical.get(key)!);
+      } else {
+        nameCanonical.set(key, net.id);
+      }
+    }
+    // Label-based merging: nets that share a user-placed net label (skip auto-named labels)
+    const labelCanonical = new Map<string, string>();
+    for (let li = 0; li < doc.netLabels.length; li++) {
+      const label = doc.netLabels[li];
+      const key = label.text.toUpperCase();
+      if (key.length === 0 || key.startsWith('NET_')) {
+        continue;
+      }
+      if (labelCanonical.has(key)) {
+        this.mergeNets(label.netId, labelCanonical.get(key)!);
+      } else {
+        labelCanonical.set(key, label.netId);
+      }
+    }
   }
 
   /**
@@ -2142,7 +2375,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
     }
     if (bestPoint !== null) {
-      Logger.info('schematic_editor', `snapToNearestPin: snapping (${point.x},${point.y}) -> (${bestPoint.x},${bestPoint.y}) dist=${bestDist.toFixed(1)}`);
+      Logger.debug('schematic_editor', `snapToNearestPin: snapping (${point.x},${point.y}) -> (${bestPoint.x},${bestPoint.y}) dist=${bestDist.toFixed(1)}`);
       return bestPoint;
     }
     return point;
@@ -2163,11 +2396,75 @@ export class SchematicEditorImpl implements ISchematicEditor {
     Logger.info('schematic_editor', `ensureNetExists: created net ${netId}`);
   }
 
-  private connectWireToPins(from: Point2D, to: Point2D, netId: string): void {
+  /** Find the net that a world position already belongs to, if any.
+   *  Checks both pin-to-net membership and wire-to-net proximity. */
+  private inheritNetAtPosition(pos: Point2D): string | null {
     const doc = this.getDocument();
-    const threshold = this.viewport.gridSize;
+    const junctionRadius = Math.max(2, this.viewport.gridSize * 0.5);
+    // 1) Check if any component pin at this position is already on a net
+    for (const net of doc.nets) {
+      if (net.pinIds.length === 0) continue;
+      for (const pinRef of net.pinIds) {
+        const parts = pinRef.split(':');
+        if (parts.length < 2) continue;
+        const comp = this.findComponent(parts[0]);
+        if (comp === undefined) continue;
+        const pins = this.resolvePins(comp.libraryId);
+        if (pins === null) continue;
+        for (const pin of pins) {
+          if (pin.id !== parts[1]) continue;
+          const local = this.transformPinOffsetForConnect(pin.position, comp.rotation, comp.mirrored);
+          const wx = comp.position.x + local.x;
+          const wy = comp.position.y + local.y;
+          if (Math.abs(pos.x - wx) <= junctionRadius && Math.abs(pos.y - wy) <= junctionRadius) {
+            return net.id;
+          }
+        }
+      }
+    }
+    // 2) Check if the position lies on an existing wire segment
+    for (const wire of doc.wires) {
+      if (wire.points.length < 2) continue;
+      for (let i = 1; i < wire.points.length; i++) {
+        const a = wire.points[i - 1];
+        const b = wire.points[i];
+        if (this.pointOnSegment(pos, a, b, junctionRadius)) {
+          return wire.netId;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** True if point p lies within tolerance of segment a–b. */
+  private pointOnSegment(p: Point2D, a: Point2D, b: Point2D, tol: number): boolean {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 0.01) {
+      return Math.abs(p.x - a.x) <= tol && Math.abs(p.y - a.y) <= tol;
+    }
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const projX = a.x + t * dx;
+    const projY = a.y + t * dy;
+    return Math.abs(p.x - projX) <= tol && Math.abs(p.y - projY) <= tol;
+  }
+
+  private connectWireToPins(from: Point2D, to: Point2D, netId: string,
+    threshold: number = this.viewport.gridSize * 1.5): void {
+    const doc = this.getDocument();
     const endpoints = [from, to];
+    const junctionRadius = 2; // Two pins within this distance are considered co-located (junction)
     let connectedCount = 0;
+
+    // Collect all (component, pin, worldPos) tuples for efficient lookup
+    interface PinCandidate {
+      comp: ComponentInstance;
+      pin: Pin;
+      world: Point2D;
+    }
+    const allCandidates: PinCandidate[] = [];
     for (let ci = 0; ci < doc.components.length; ci++) {
       const comp = doc.components[ci];
       const pins = this.resolvePins(comp.libraryId);
@@ -2177,22 +2474,158 @@ export class SchematicEditorImpl implements ISchematicEditor {
       for (let pi = 0; pi < pins.length; pi++) {
         const pin = pins[pi];
         const local = this.transformPinOffsetForConnect(pin.position, comp.rotation, comp.mirrored);
-        const pinWorld: Point2D = { x: comp.position.x + local.x, y: comp.position.y + local.y };
-        for (let ei = 0; ei < endpoints.length; ei++) {
-          const ep = endpoints[ei];
-          const dx = ep.x - pinWorld.x;
-          const dy = ep.y - pinWorld.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist <= threshold) {
-            this.addPinToNet(netId, comp.id, pin.id, pin.name);
-            Logger.info('schematic_editor', `connectWireToPins: pin ${pin.name}(${pin.id}) of ${comp.refDes} at (${pinWorld.x},${pinWorld.y}) connected to wire endpoint (${ep.x},${ep.y}) dist=${dist}`);
+        allCandidates.push({
+          comp: comp,
+          pin: pin,
+          world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+        });
+      }
+    }
+
+    for (let ei = 0; ei < endpoints.length; ei++) {
+      const ep = endpoints[ei];
+      // Find the single closest pin to this endpoint
+      let bestDist = threshold;
+      let bestCandidate: PinCandidate | null = null;
+      for (let ci = 0; ci < allCandidates.length; ci++) {
+        const c = allCandidates[ci];
+        const dx = ep.x - c.world.x;
+        const dy = ep.y - c.world.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestCandidate = c;
+        }
+      }
+
+      if (bestCandidate !== null) {
+        // Add the closest pin
+        this.addPinToNet(netId, bestCandidate.comp.id, bestCandidate.pin.id, bestCandidate.pin.name);
+        connectedCount++;
+        Logger.debug('schematic_editor',
+          `connectWireToPins: pin ${bestCandidate.pin.name}(${bestCandidate.pin.id}) of ${bestCandidate.comp.refDes} connected dist=${bestDist.toFixed(1)}`);
+
+        // Also add any other pins co-located with the closest pin (junction)
+        for (let ci = 0; ci < allCandidates.length; ci++) {
+          const c = allCandidates[ci];
+          if (c.comp.id === bestCandidate.comp.id && c.pin.id === bestCandidate.pin.id) {
+            continue;
+          }
+          const dx = bestCandidate.world.x - c.world.x;
+          const dy = bestCandidate.world.y - c.world.y;
+          if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            this.addPinToNet(netId, c.comp.id, c.pin.id, c.pin.name);
             connectedCount++;
-            break;
           }
         }
       }
     }
-    Logger.info('schematic_editor', `connectWireToPins: ${connectedCount} pins connected to net ${netId}`);
+    Logger.debug('schematic_editor', `connectWireToPins: ${connectedCount} pins connected to net ${netId}`);
+  }
+
+  /** 若导线网络连接到 VCC/GND 引脚，则合并到全局电源网络 */
+  private normalizePowerNet(wireNetId: string): void {
+    const doc = this.getDocument();
+    const wireNet = this.findNetById(doc, wireNetId);
+    if (wireNet === undefined) {
+      return;
+    }
+    let targetName: string | null = null;
+    for (let i = 0; i < wireNet.pinIds.length; i++) {
+      const pinRef = wireNet.pinIds[i];
+      const parts = pinRef.split(':');
+      if (parts.length < 2) {
+        continue;
+      }
+      const comp = this.findComponent(parts[0]);
+      if (comp === undefined) {
+        continue;
+      }
+      const pins = this.resolvePins(comp.libraryId);
+      if (pins === null) {
+        continue;
+      }
+      let pinDef: Pin | undefined = undefined;
+      for (let pi = 0; pi < pins.length; pi++) {
+        if (pins[pi].id === parts[1]) {
+          pinDef = pins[pi];
+          break;
+        }
+      }
+      if (pinDef === undefined) {
+        continue;
+      }
+      const resolved = this.resolvePowerNetName(comp, pinDef);
+      if (resolved !== null) {
+        targetName = resolved;
+        break;
+      }
+    }
+    if (targetName === null) {
+      return;
+    }
+    let powerNet = this.findNetByName(doc, targetName);
+    if (powerNet === undefined) {
+      this.createNetLabel(0, 0, targetName);
+      powerNet = this.findNetByName(doc, targetName);
+    }
+    if (powerNet === undefined || powerNet.id === wireNetId) {
+      return;
+    }
+    this.mergeNets(wireNetId, powerNet.id);
+  }
+
+  private resolvePowerNetName(comp: ComponentInstance, pin: Pin): string | null {
+    const lib = comp.libraryId.toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC')) {
+      return 'VCC';
+    }
+    if (lib === 'GND' || lib.endsWith('/GND')) {
+      return 'GND';
+    }
+    // Instrument COM/I- follow wire geometry only — not auto-assigned to GND.
+    return null;
+  }
+
+  private mergeNets(fromNetId: string, toNetId: string): void {
+    if (fromNetId === toNetId) {
+      return;
+    }
+    const doc = this.getDocument();
+    const fromNet = this.findNetById(doc, fromNetId);
+    const toNet = this.findNetById(doc, toNetId);
+    if (fromNet === undefined || toNet === undefined) {
+      return;
+    }
+    for (let i = 0; i < fromNet.pinIds.length; i++) {
+      const pinRef = fromNet.pinIds[i];
+      if (!toNet.pinIds.includes(pinRef)) {
+        toNet.pinIds.push(pinRef);
+      }
+    }
+    // 合并后保留电源/地网络类型
+    if (fromNet.type === NetType.GROUND || toNet.type === NetType.GROUND) {
+      toNet.type = NetType.GROUND;
+    } else if (fromNet.type === NetType.POWER || toNet.type === NetType.POWER) {
+      toNet.type = NetType.POWER;
+    }
+    if (toNet.name.toUpperCase() === 'GND' || toNet.name.toUpperCase() === 'VSS') {
+      toNet.type = NetType.GROUND;
+    } else if (toNet.name.toUpperCase() === 'VCC' || toNet.name.toUpperCase() === 'VDD') {
+      toNet.type = NetType.POWER;
+    }
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      if (doc.wires[wi].netId === fromNetId) {
+        doc.wires[wi].netId = toNetId;
+      }
+    }
+    for (let li = 0; li < doc.netLabels.length; li++) {
+      if (doc.netLabels[li].netId === fromNetId) {
+        doc.netLabels[li].netId = toNetId;
+      }
+    }
+    doc.nets = doc.nets.filter(n => n.id !== fromNetId);
+    Logger.info('schematic_editor', `mergeNets: ${fromNet.name}(${fromNetId}) -> ${toNet.name}(${toNetId})`);
   }
 
   private transformPinOffsetForConnect(local: Point2D, rotation: Rotation, mirrored: boolean): Point2D {
@@ -2216,9 +2649,19 @@ export class SchematicEditorImpl implements ISchematicEditor {
       return;
     }
     const pinRef = `${compId}:${pinId}:${pinName}`;
-    if (!net.pinIds.includes(pinRef)) {
-      net.pinIds.push(pinRef);
+    if (net.pinIds.includes(pinRef)) {
+      return;
     }
+    // Remove this pin from any other nets — a pin must belong to exactly one net
+    for (const other of doc.nets) {
+      if (other.id !== netId) {
+        const idx = other.pinIds.indexOf(pinRef);
+        if (idx >= 0) {
+          other.pinIds.splice(idx, 1);
+        }
+      }
+    }
+    net.pinIds.push(pinRef);
   }
 
   private resolvePins(libraryId: string): Pin[] | null {
@@ -2425,7 +2868,42 @@ export class SchematicEditorImpl implements ISchematicEditor {
         doc.wires[i].style = WireStyle.ORTHOGONAL;
       }
     }
+    for (let i = 0; i < doc.components.length; i++) {
+      this.normalizeComponentValue(doc.components[i]);
+    }
     return doc;
+  }
+
+  /** Ensure the "value" param has the same unit suffix as the library ID.
+   *  e.g. R_4.7K with value="4.7" → value="4.7K" */
+  private normalizeComponentValueStr(libraryId: string, value: string): string {
+    if (value.length === 0) return value;
+    if (/[a-zµ]/i.test(value)) return value; // already has unit
+
+    const libId = libraryId.toUpperCase();
+    let fallback = '';
+    if (libId.startsWith('R_') || libId.includes('RESISTOR')) {
+      fallback = libId.replace(/^(R_|RESISTOR_?)/i, '');
+    } else if (libId.startsWith('C_') || libId.includes('CAP')) {
+      fallback = libId.replace(/^(C_|CAP_?)/i, '');
+    } else if (libId.startsWith('L_') || libId.includes('INDUCTOR')) {
+      fallback = libId.replace(/^L_/i, '');
+    } else {
+      return value;
+    }
+
+    const m = fallback.match(/[a-zµ]+$/i);
+    if (m === null) return value;
+    return value + m[0];
+  }
+
+  private normalizeComponentValue(comp: ComponentInstance): void {
+    const val = comp.parameters.get('value');
+    if (val === undefined) return;
+    const normalized = this.normalizeComponentValueStr(comp.libraryId, val);
+    if (normalized !== val) {
+      comp.parameters.set('value', normalized);
+    }
   }
 
   private rebuildRefDesCounters(): void {

@@ -3,7 +3,7 @@
  */
 import {
   IVirtualInstruments, SignalGroup, SignalGenParams, TimedScriptCommand,
-  InstrumentSnapshotView
+  InstrumentSnapshotView, ComponentInstrumentBinding
 } from './api/IVirtualInstruments';
 import { OscilloscopeEngine } from './engines/OscilloscopeEngine';
 import { LogicAnalyzerEngine } from './engines/LogicAnalyzerEngine';
@@ -19,7 +19,8 @@ import {
   OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode,
   MathChannelOp, CursorMeasurement, LogicDecodeProtocol, DecodedFrame,
   MultimeterMode, SignalWaveform, VoltmeterType, VoltmeterConfig,
-  AmmeterType, AmmeterConfig, PowerMeterConfig, FrequencyCounterConfig
+  AmmeterType, AmmeterConfig, PowerMeterConfig, FrequencyCounterConfig,
+  traceActiveComponent, traceActiveComponentChanged, formatBindingSummary, BindingTraceInfo, Logger, INSTR_TRACE_TAG
 } from 'common';
 import fs from '@ohos.file.fs';
 
@@ -33,6 +34,93 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   private ammeter: AmmeterEngine = new AmmeterEngine();
   private powerMeter: PowerMeterEngine = new PowerMeterEngine();
   private freqCounter: FrequencyCounterEngine = new FrequencyCounterEngine();
+
+  private componentBindings: Map<string, ComponentInstrumentBinding> = new Map();
+  private activeCompId: string | null = null;
+
+  registerComponentBinding(compId: string, binding: ComponentInstrumentBinding): void {
+    this.componentBindings.set(compId, binding);
+    const traceInfo: BindingTraceInfo = {
+      libraryId: binding.libraryId,
+      scopeProbes: binding.scopeProbes.slice(),
+      logicProbes: binding.logicProbes.slice(),
+      hasVoltageReader: binding.voltageReader !== null,
+      hasCurrentReader: binding.currentReader !== null,
+      hasPowerVoltageReader: binding.powerVoltageReader !== null,
+      hasPowerCurrentReader: binding.powerCurrentReader !== null,
+      hasFreqReader: binding.freqReader !== null
+    };
+    Logger.debug(INSTR_TRACE_TAG, `registerBinding comp=${compId} ${formatBindingSummary(traceInfo)}`);
+    if (compId === this.activeCompId) {
+      this.applyActiveBinding();
+    }
+  }
+
+  setActiveInstrumentComponent(compId: string | null): void {
+    const changed = compId !== this.activeCompId;
+    this.activeCompId = compId;
+    if (changed) {
+      traceActiveComponentChanged(compId, 'VirtualInstrumentsImpl.setActive');
+    }
+    this.applyActiveBinding();
+  }
+
+  getActiveInstrumentComponent(): string | null {
+    return this.activeCompId;
+  }
+
+  clearComponentBindings(): void {
+    this.componentBindings.clear();
+    this.activeCompId = null;
+    this.clearLegacyReaders();
+  }
+
+  private getActiveBinding(): ComponentInstrumentBinding | null {
+    if (this.activeCompId === null || this.activeCompId.length === 0) {
+      return null;
+    }
+    return this.componentBindings.get(this.activeCompId) ?? null;
+  }
+
+  /** Apply active component's readers and scope probes to the shared engines */
+  private applyActiveBinding(): void {
+    const binding = this.getActiveBinding();
+    if (binding === null) {
+      Logger.debug(INSTR_TRACE_TAG, 'applyBinding: cleared (no active component)');
+      this.clearLegacyReaders();
+      return;
+    }
+    Logger.debug(INSTR_TRACE_TAG,
+      `applyBinding active=${this.activeCompId} scope=[${binding.scopeProbes.join('|')}] ` +
+      `logic=[${binding.logicProbes.join('|')}]`);
+    this.multimeter.setReadingReader(binding.voltageReader);
+    this.voltmeter.setVoltageReader(binding.voltageReader);
+    this.ammeter.setCurrentReader(binding.currentReader);
+    this.powerMeter.setVoltageReader(binding.powerVoltageReader);
+    this.powerMeter.setCurrentReader(binding.powerCurrentReader);
+    this.freqCounter.setFreqReader(binding.freqReader);
+    for (let ch = 0; ch < 4; ch++) {
+      const probe = ch < binding.scopeProbes.length ? binding.scopeProbes[ch] : '';
+      this.oscilloscope.setChannelProbe(ch, probe);
+    }
+  }
+
+  private clearLegacyReaders(): void {
+    this.multimeter.setReadingReader(null);
+    this.voltmeter.setVoltageReader(null);
+    this.ammeter.setCurrentReader(null);
+    this.powerMeter.setVoltageReader(null);
+    this.powerMeter.setCurrentReader(null);
+    this.freqCounter.setFreqReader(null);
+    this.oscilloscope.setChannelProbe(0, '');
+    this.oscilloscope.setChannelProbe(1, '');
+    this.oscilloscope.setChannelProbe(2, '');
+    this.oscilloscope.setChannelProbe(3, '');
+  }
+
+  private ensureActiveBindingApplied(): void {
+    this.applyActiveBinding();
+  }
 
   // ---- Oscilloscope ----
 
@@ -86,6 +174,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     if (channel < 0 || channel > 3) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Channel must be 0-3');
     }
+    this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.oscilloscope.captureWave(channel));
   }
 
@@ -142,6 +231,11 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   getLogicWaveData(): ApiResult<WaveData[]> {
+    this.ensureActiveBindingApplied();
+    const binding = this.getActiveBinding();
+    if (binding !== null && binding.logicProbes.length > 0) {
+      return ResultHelper.ok(this.logicAnalyzer.captureChannelsForProbes(binding.logicProbes));
+    }
     return ResultHelper.ok(this.logicAnalyzer.captureAllChannels());
   }
 
@@ -153,6 +247,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   measure(): ApiResult<number> {
+    this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.multimeter.measure());
   }
 
@@ -256,6 +351,11 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     this.oscilloscope.feedTimeSnapshot(time, voltages);
   }
 
+  /** Feed digital pin levels to logic analyzer for UUID-keyed probes */
+  feedLogicDigitalStates(states: Map<string, number>): void {
+    this.logicAnalyzer.feedDigitalStates(states);
+  }
+
   /** Auto-assign oscilloscope probes from simulation data */
   autoAssignScopeProbes(): void {
     this.oscilloscope.autoAssignProbes();
@@ -286,6 +386,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   voltmeterMeasure(): ApiResult<number> {
+    this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.voltmeter.measure());
   }
 
@@ -325,6 +426,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   ammeterMeasure(): ApiResult<number> {
+    this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.ammeter.measure());
   }
 
@@ -372,6 +474,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   powerMeterMeasure(): ApiResult<PowerMeterConfig> {
+    this.ensureActiveBindingApplied();
     const r = this.powerMeter.measure();
     const config: PowerMeterConfig = {
       voltage: r.voltage,
@@ -403,6 +506,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   }
 
   freqCounterMeasure(): ApiResult<number> {
+    this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.freqCounter.measure());
   }
 

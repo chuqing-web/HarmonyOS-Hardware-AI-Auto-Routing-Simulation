@@ -15,7 +15,35 @@ export { CryptoUtil } from './src/main/ets/utils/CryptoUtil';
 
 export { IdUtil } from './src/main/ets/utils/IdUtil';
 
-export { parsePinRef, buildPinRef, getPinNetMap, ParsedPinRef } from './src/main/ets/utils/PinRefUtil';
+export { parsePinRef, buildPinRef, getPinNetMap, findNetForPinLabel, ParsedPinRef } from './src/main/ets/utils/PinRefUtil';
+
+export {
+  ensureNetPinConnectivity, rebuildAllNetPinConnectivity, summarizeNetPins,
+  PinGeometryResolver, PinGeometry
+} from './src/main/ets/utils/NetPinRebuildUtil';
+
+export { rebuildWireNetTopology } from './src/main/ets/utils/WireNetTopology';
+
+export {
+  INSTR_TRACE_TAG, INSTR_TRACE_SIM_STEP, setInstrTraceSimStep,
+  formatPinNetMap, formatBindingSummary, formatWaveSummary, formatVoltageSample, formatCurrentSample,
+  traceBindingRefresh, traceActiveComponent, traceActiveComponentChanged, traceReloadSchematic, traceSimStep,
+  traceCaptureWave, traceUiRefresh, traceUiSelect, traceLoadSchematic, tracePinNetEmpty, traceMeasure,
+  traceAnalogOpSummary, traceNetConnectivity,
+  traceAnalogDeviceStamp, traceAnalogNetlistSummary, AnalogResistorStamp,
+  traceDataFlow, traceCanvasInfo, traceComponentLayout, traceWireTopology, traceNetPinDetail,
+  traceUnconnectedComponents, traceInstrumentInventory, traceConnectionPointSimData,
+  traceSpiceNodeMap, traceSimGlobalSnapshot, traceProjectOpenAudit, traceSimStartupAudit,
+  traceTopologyHealthCheck, tracePinMultiNetConflicts, traceWireEndpointCollisions,
+  traceComponentPinNets, traceResistorDividerCheck, traceInstrumentWiringIssues, traceNetVoltageResolve,
+  tracePerPinConnectivity, traceInstrumentMeasureModel,
+  BindingTraceInfo
+} from './src/main/ets/utils/InstrumentTraceLog';
+
+export {
+  detectInstrumentKind, isInstrumentLibraryId,
+  instrumentSubTabForKind, instrumentSubTabForLibraryId
+} from './src/main/ets/utils/InstrumentKindUtil';
 
 export { ErcEngine } from './src/main/ets/utils/ErcEngine';
 
@@ -42,7 +70,7 @@ export { calcSymbolBounds, pointInSymbolBounds, resolveSymbolKey, SymbolBounds }
 export { CallbackRegistry } from './src/main/ets/utils/CallbackRegistry';
 
 export {
-  copyStringMap, copyNumberMap, paramMapGet, appendArray, arrayMin, arrayMax,
+  copyStringMap, copyNumberMap, paramMapGet, parseVoltageVolts, appendArray, arrayMin, arrayMax,
   arrayBufferToString, normalizeRotation, copySchTopologyWithDevices,
   emptyStringMap, emptyNumberMap, stringMap1, stringMap2,
   makeDeviceInst, makeDeviceRequirement, makeRouteLine, emptySchTopology

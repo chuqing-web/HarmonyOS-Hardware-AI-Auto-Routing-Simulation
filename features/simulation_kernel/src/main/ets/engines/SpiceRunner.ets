@@ -77,7 +77,9 @@ export class SpiceRunner {
     for (const comp of doc.components) {
       const libId = comp.libraryId.toLowerCase();
       if (libId.includes('resistor') || libId.startsWith('r_')) {
-        const rVal = this.parseResistance(comp.parameters.get('value') ?? comp.parameters.get('resistance') ?? '1000');
+        const val = comp.parameters.get('value') ?? comp.parameters.get('resistance') ?? '';
+        const fallback = comp.libraryId.replace(/^(R_|RESISTOR_?)/i, '');
+        const rVal = this.parseResistance(this.withUnitSuffix(val, fallback));
         const pinIds = comp.pinIds ?? [];
         for (let pi = 0; pi < pinIds.length; pi++) {
           this.resistorNoise.set(pinIds[pi], rVal);
@@ -94,9 +96,22 @@ export class SpiceRunner {
   }
 
   private parseResistance(val: string): number {
-    const n = parseFloat(val);
-    if (!isNaN(n)) return n;
-    return 1000;
+    const s = val.toLowerCase().replace(/[ωohm]/g, '').trim();
+    if (s.includes('meg')) return parseFloat(s) * 1e6;
+    if (s.includes('k')) return parseFloat(s) * 1000;
+    if (s.includes('m') && !s.includes('meg')) return parseFloat(s) * 0.001;
+    const n = parseFloat(s);
+    return isNaN(n) || n <= 0 ? 1000 : n;
+  }
+
+  /** Append unit suffix from fallback if value is bare number. See AnalogEngine.withUnitSuffix. */
+  private withUnitSuffix(value: string, fallback: string): string {
+    const v = value.trim();
+    if (v.length === 0) return fallback;
+    if (/[a-z]/i.test(v)) return v;
+    const m = fallback.match(/[a-zµ]+$/i);
+    if (m === null) return v;
+    return v + m[0];
   }
 
   // ---- 瞬态 / DC / AC 基本分析 ----

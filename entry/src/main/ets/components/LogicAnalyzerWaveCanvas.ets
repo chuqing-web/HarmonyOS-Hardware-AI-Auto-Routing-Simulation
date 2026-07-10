@@ -1,18 +1,23 @@
 /**
  * 逻辑分析仪多通道波形 Canvas
+ * v2: @Watch 数据变化自动重绘
  */
 import { ProteusColors } from '../theme/ProteusTheme';
 
 @Component
 export struct LogicAnalyzerWaveCanvas {
-  @Prop channelData: number[][] = [];
-  @Prop channelCount: number = 8;
+  @Prop @Watch('onDataChanged') channelData: number[][] = [];
+  @Prop @Watch('onDataChanged') channelCount: number = 8;
   @Prop sampleCount: number = 128;
   @State canvasW: number = 320;
   @State canvasH: number = 80;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
+
+  onDataChanged(): void {
+    this.drawLogic();
+  }
 
   build() {
     Canvas(this.ctx)

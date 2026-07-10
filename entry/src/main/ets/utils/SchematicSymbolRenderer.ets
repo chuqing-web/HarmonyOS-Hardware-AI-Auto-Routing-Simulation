@@ -5,7 +5,6 @@ import { ComponentDefinition, SvgSymbolCache, DrawCommand } from 'component_libr
 import { Pin, PinType, Point2D, Rotation } from 'common';
 import { calcSymbolBounds, resolveSymbolKey, SymbolBounds } from 'common';
 import { ProteusColors, ProteusFonts } from '../theme/ProteusTheme';
-import { Logger } from 'common';
 
 export interface SymbolDrawStyle {
   strokeColor: string;
@@ -91,7 +90,6 @@ export class SchematicSymbolRenderer {
 
     const isIcType = key === 'counter' || key === 'mcu_8051' || key === 'mcu_stm32' ||
       key === 'memory' || key === 'generic_ic';
-    Logger.info('SchematicSymbolRenderer', `drawSymbolBody key=${key} isIcType=${isIcType} svgLen=${def.svgSymbol.length} hasSvg=${def.svgSymbol.indexOf('<') >= 0}`);
 
     // For IC-type components, always draw the body backdrop first so the border
     // is visible even when SVG content exists (device-library components)
@@ -900,7 +898,6 @@ export class SchematicSymbolRenderer {
     const h = Math.max(40, bounds.height);
     const cx = (bounds.minX + bounds.maxX) / 2;
     const cy = (bounds.minY + bounds.maxY) / 2;
-    Logger.info('SchematicSymbolRenderer', `drawIcBody name=${name} pins=${pins.length} bounds=(${bounds.minX},${bounds.minY})-(${bounds.maxX},${bounds.maxY}) w=${w} h=${h} cx=${cx} cy=${cy}`);
     ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
     ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
     ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;

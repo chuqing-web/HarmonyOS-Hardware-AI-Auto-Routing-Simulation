@@ -5,12 +5,13 @@
 import { AppService } from '../services/AppService';
 import {
   ComponentInstance, UnitParser, paramMapGet, emptyStringMap, ApiResult,
-  CouplingMode, MathChannelOp, LogicDecodeProtocol, MultimeterMode, McuFamily
+  CouplingMode, MathChannelOp, LogicDecodeProtocol, MultimeterMode, McuFamily,
+  traceUiRefresh, traceUiSelect
 } from 'common';
 import {
   ComponentParamsUpdate, ComponentParamEntry
 } from 'schematic_editor';
-import { ProteusParamRow, ProteusClassicBtn } from './proteus/ProteusWidgets';
+import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
@@ -22,6 +23,7 @@ import util from '@ohos.util';
 export struct PropertyPanel {
   @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
   @Prop @Watch('onDocVersionChange') docVersion: number = 0;
+  @Prop @Watch('onSimWaveTick') simWaveTick: number = 0;
   @Link statusMessage: string;
   onDeleted: () => void = () => {};
   @State comp: ComponentInstance | null = null;
@@ -64,6 +66,7 @@ export struct PropertyPanel {
 
   private appService: AppService = AppService.getInstance();
   private refreshTimer: number = -1;
+  private uiLogTick: number = 0;
 
   aboutToAppear(): void {
     this.loadComponent();
@@ -76,11 +79,24 @@ export struct PropertyPanel {
 
   onSelectionChange(): void {
     this.loadComponent();
+    this.ensureInstrumentBinding();
     this.refreshInstrumentData();
+    this.logInstrumentReading(true);
   }
 
   onDocVersionChange(): void {
     this.loadComponent();
+    if (this.comp !== null) {
+      this.appService.invalidateInstrumentBinding(this.comp.id);
+      this.ensureInstrumentBinding();
+      this.refreshInstrumentData();
+    }
+  }
+
+  onSimWaveTick(): void {
+    if (this.comp !== null) {
+      this.refreshInstrumentData();
+    }
   }
 
   private startRefresh(): void {
@@ -100,15 +116,11 @@ export struct PropertyPanel {
 
   refreshInstrumentData(): void {
     if (this.comp === null) {
-      // Clear per-component readers when nothing is selected
-      this.appService.clearPerComponentReaders();
+      this.appService.setActiveInstrumentComponent(null);
       return;
     }
+    this.appService.setActiveInstrumentComponent(this.comp.id);
     const libId = this.comp.libraryId.toUpperCase();
-    // Wire instrument reader to selected component's circuit nets for all instrument types
-    if (this.isInstrument() || libId.includes('METER') || libId.includes('SCOPE') || libId.includes('LOGIC')) {
-      this.appService.refreshInstrumentReaderForComponent(this.comp.id);
-    }
     try {
       if (libId.includes('VIRTUAL_METER') || libId === 'MULTIMETER') {
         const r = this.appService.instruments.measure();
@@ -120,18 +132,28 @@ export struct PropertyPanel {
           this.mmMode = this.modeLabel(snap.multimeterMode);
         }
       } else if (libId.includes('VOLTMETER')) {
-        const r = this.appService.instruments.voltmeterMeasure();
-        if (r.success && r.data !== undefined) {
-          this.vmReading = Number(r.data).toFixed(2);
+        const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
+        if (delta !== null) {
+          this.vmReading = delta.toFixed(2);
+        } else {
+          const r = this.appService.instruments.voltmeterMeasure();
+          if (r.success && r.data !== undefined) {
+            this.vmReading = Number(r.data).toFixed(2);
+          }
         }
         const cfg = this.appService.instruments.getVoltmeterConfig();
         if (cfg.success && cfg.data !== undefined) {
           this.vmUnit = cfg.data.unit ?? 'V DC';
         }
       } else if (libId.includes('AMMETER')) {
-        const r = this.appService.instruments.ammeterMeasure();
-        if (r.success && r.data !== undefined) {
-          this.amReading = Number(r.data).toFixed(3);
+        const mA = this.appService.readAmmeterCurrentForComponent(this.comp.id);
+        if (mA !== null) {
+          this.amReading = mA.toFixed(3);
+        } else {
+          const r = this.appService.instruments.ammeterMeasure();
+          if (r.success && r.data !== undefined) {
+            this.amReading = Number(r.data).toFixed(3);
+          }
         }
         const cfg = this.appService.instruments.getAmmeterConfig();
         if (cfg.success && cfg.data !== undefined) {
@@ -163,12 +185,12 @@ export struct PropertyPanel {
       } else if (libId.includes('OSC')) {
         const w = this.appService.instruments.getOscilloscopeWave(0);
         if (w.success && w.data !== undefined) {
-          this.oscTimeData = w.data.timeAxis;
-          this.oscWaveData = w.data.voltageAxis;
+          this.oscTimeData = w.data.timeAxis.slice();
+          this.oscWaveData = w.data.voltageAxis.slice();
         }
         const w2 = this.appService.instruments.getOscilloscopeWave(1);
         if (w2.success && w2.data !== undefined) {
-          this.oscWaveDataCh2 = w2.data.voltageAxis;
+          this.oscWaveDataCh2 = w2.data.voltageAxis.slice();
         }
       } else if (libId.includes('LOGIC') || libId.includes('ANALYZER')) {
         const snap = this.appService.instruments.getLogicWaveData();
@@ -181,7 +203,7 @@ export struct PropertyPanel {
             for (let j = 0; j < wave.voltageAxis.length; j++) {
               bits.push(wave.voltageAxis[j] > 0.5 ? 1 : 0);
             }
-            channels.push(bits);
+            channels.push(bits.slice());
           }
           this.logicChannelData = channels;
           this.logicSampleCount = channels.length > 0 ? channels[0].length : 128;
@@ -201,6 +223,54 @@ export struct PropertyPanel {
     } catch (_e) {
       // Best-effort refresh
     }
+    this.logInstrumentReading(false);
+  }
+
+  private logInstrumentReading(onSelect: boolean): void {
+    if (this.comp === null) {
+      return;
+    }
+    if (!this.isInstrument()) {
+      return;
+    }
+    this.uiLogTick++;
+    if (!onSelect && this.uiLogTick % 20 !== 0) {
+      return;
+    }
+    const kind = this.instrType();
+    const reading = this.buildReadingSummary(kind);
+    if (onSelect) {
+      traceUiSelect('Props', this.comp.id, this.comp.refDes, this.comp.libraryId, kind, reading);
+    } else {
+      traceUiRefresh('Props', this.comp.id, this.comp.refDes, this.comp.libraryId, kind, reading);
+    }
+  }
+
+  private buildReadingSummary(kind: string): string {
+    if (kind === 'dmm') return `DMM ${this.mmReading} ${this.mmMode}`;
+    if (kind === 'vm') return `VM ${this.vmReading} ${this.vmUnit}`;
+    if (kind === 'am') return `AM ${this.amReading} ${this.amUnit}`;
+    if (kind === 'power') return `PM V=${this.pmVoltage} I=${this.pmCurrent} P=${this.pmPower}`;
+    if (kind === 'freq') return `FC ${this.fcFreq} gate=${this.fcGate}`;
+    if (kind === 'osc') {
+      const pts = this.oscWaveData.length;
+      const last = pts > 0 ? this.oscWaveData[pts - 1].toFixed(4) : '0';
+      return `OSC pts=${pts} last=${last}V`;
+    }
+    if (kind === 'logic') return `LA ch=${this.logicChannelCount} samples=${this.logicSampleCount}`;
+    if (kind === 'uart') return `UART logLen=${this.uartLog.length}`;
+    return kind;
+  }
+
+  private ensureInstrumentBinding(): void {
+    if (this.comp === null) {
+      return;
+    }
+    const libId = this.comp.libraryId.toUpperCase();
+    this.appService.setActiveInstrumentComponent(this.comp.id);
+    if (this.isInstrument() || libId.includes('METER') || libId.includes('SCOPE') || libId.includes('LOGIC')) {
+      this.appService.refreshInstrumentReaderForComponent(this.comp.id);
+    }
   }
 
   loadComponent(): void {
@@ -217,10 +287,65 @@ export struct PropertyPanel {
       this.comp.parameters.forEach((_value: string, key: string) => {
         keys.push(key);
       });
+      const def = this.appService.componentLibrary.getComponent(this.comp.libraryId);
+      if (def.success && def.data !== undefined) {
+        def.data.defaultParams.forEach((_value: string, key: string) => {
+          if (!keys.includes(key)) {
+            keys.push(key);
+          }
+        });
+      }
       this.paramEntries = keys;
     } else {
       this.paramEntries = [];
     }
+  }
+
+  private paramDisplayValue(key: string): string {
+    if (this.comp === null) {
+      return '';
+    }
+    const stored = this.comp.parameters.get(key);
+    if (stored !== undefined && stored.length > 0) {
+      return stored;
+    }
+    const def = this.appService.componentLibrary.getComponent(this.comp.libraryId);
+    if (def.success && def.data !== undefined) {
+      return paramMapGet(def.data.defaultParams, key, '');
+    }
+    return '';
+  }
+
+  private paramEditable(key: string): boolean {
+    if (this.comp === null) {
+      return false;
+    }
+    const lib = this.comp.libraryId.toUpperCase();
+    if (key === 'voltage') {
+      return lib === 'VCC' || lib.includes('VAC') || lib.includes('POWER') || lib.includes('VDC');
+    }
+    if (key === 'power') {
+      return lib.startsWith('R_');
+    }
+    if (key === 'value') {
+      return lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_');
+    }
+    return false;
+  }
+
+  private saveParam(key: string, value: string): void {
+    if (this.comp === null) {
+      return;
+    }
+    const validated = UnitParser.validateParam(key, value);
+    if (!validated.valid) {
+      this.statusMessage = `参数无效: ${key}=${value}`;
+      return;
+    }
+    this.appService.schematicEditor.setDeviceParam(this.comp.id, key, validated.normalized);
+    this.comp.parameters.set(key, validated.normalized);
+    this.appService.syncComponentParamToSimulation(this.comp.id, key, validated.normalized);
+    this.statusMessage = `已更新 ${key}=${validated.normalized}`;
   }
 
   private isInstrument(): boolean {
@@ -263,13 +388,13 @@ export struct PropertyPanel {
       Column({ space: 6 }) {
         if (this.comp) {
           // ---- Basic info (always shown) ----
-          Text('器件信息')
-            .fontSize(ProteusFonts.TITLE)
-            .fontColor(ProteusColors.TEXT_LABEL)
-            .fontWeight(FontWeight.Medium)
-            .width('100%')
-          ProteusParamRow({ label: '位号', value: this.comp.refDes, editable: false })
-          ProteusParamRow({ label: '型号', value: this.comp.libraryId, editable: false })
+          if (this.isInstrument()) {
+            this.InstrumentComponentHeader()
+          } else {
+            ProteusSectionTitle({ title: '器件信息' })
+            ProteusParamRow({ label: '位号', value: this.comp.refDes, editable: false })
+            ProteusParamRow({ label: '型号', value: this.comp.libraryId, editable: false })
+          }
           ProteusParamRow({ label: 'X', value: `${this.comp.position.x}`, editable: false })
           ProteusParamRow({ label: 'Y', value: `${this.comp.position.y}`, editable: false })
 
@@ -279,8 +404,9 @@ export struct PropertyPanel {
             ForEach(this.paramEntries, (key: string) => {
               ProteusParamRow({
                 label: key,
-                value: paramMapGet(this.comp !== null ? this.comp.parameters : emptyStringMap(), key, ''),
-                editable: false
+                value: this.paramDisplayValue(key),
+                editable: this.paramEditable(key),
+                onChange: (v: string) => { this.saveParam(key, v); }
               })
             }, (key: string) => key)
           }
@@ -289,10 +415,11 @@ export struct PropertyPanel {
           if (this.isInstrument()) {
             Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 6, bottom: 4 })
             Text('仪表数据')
-              .fontSize(ProteusFonts.TITLE)
+              .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_LABEL)
               .fontWeight(FontWeight.Medium)
               .width('100%')
+              .padding({ left: 8, top: 4 })
             if (this.instrType() === 'osc') {
               this.OscilloscopeSection()
             } else if (this.instrType() === 'logic') {
@@ -370,6 +497,7 @@ export struct PropertyPanel {
                   const entry: ComponentParamEntry = { key: this.paramKey, value: validated.normalized };
                   const update: ComponentParamsUpdate = { entries: [entry] };
                   this.appService.schematicEditor.updateComponentParams(this.comp.id, update);
+                  this.appService.syncComponentParamToSimulation(this.comp.id, entry.key, entry.value);
                   this.loadComponent();
                   this.statusMessage = '参数已更新';
                 }
@@ -423,8 +551,30 @@ export struct PropertyPanel {
   }
 
   @Builder
-  OscilloscopeSection() {
+  InstrumentComponentHeader() {
     Column({ space: 4 }) {
+      Text(this.comp !== null ? this.comp.refDes : '')
+        .fontSize(14)
+        .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+      Text(this.comp !== null ? this.comp.libraryId : '')
+        .fontSize(11)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .width('100%')
+    .padding({ top: 4, bottom: 6, left: 2, right: 2 })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  OscilloscopeSection() {
+    Column({ space: 6 }) {
       Text('波形显示')
         .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
       if (this.oscWaveData.length > 0) {
@@ -456,14 +606,17 @@ export struct PropertyPanel {
         Text('(运行仿真后显示波形)')
           .fontSize(ProteusFonts.STATUS).fontColor(ProteusColors.TEXT_SECONDARY)
       }
-      Row({ space: 4 }) {
-        ProteusClassicBtn({ label: 'AC', widthVal: 36,
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'AC', widthVal: '48%',
           onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } })
-        ProteusClassicBtn({ label: 'DC', widthVal: 36,
+        ProteusClassicBtn({ label: 'DC', widthVal: '48%',
           onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } })
-        ProteusClassicBtn({ label: 'FFT', widthVal: 36,
+      }
+      .width('100%')
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'FFT', widthVal: '48%',
           onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT); } })
-        ProteusClassicBtn({ label: '测量', widthVal: 44,
+        ProteusClassicBtn({ label: '测量', widthVal: '48%',
           onAction: () => {
             const m = this.appService.instruments.measureCursors(50, 150);
             if (m.success && m.data !== undefined) {
@@ -496,18 +649,21 @@ export struct PropertyPanel {
       Text('协议解码')
         .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
         .margin({ top: 4 })
-      Row({ space: 4 }) {
-        ProteusClassicBtn({ label: 'UART', widthVal: 44,
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'UART', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200);
             this.refreshInstrumentData();
           } })
-        ProteusClassicBtn({ label: 'I2C', widthVal: 36,
+        ProteusClassicBtn({ label: 'I2C', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C);
             this.refreshInstrumentData();
           } })
-        ProteusClassicBtn({ label: 'SPI', widthVal: 36,
+      }
+      .width('100%')
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'SPI', widthVal: '100%',
           onAction: () => {
             this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI);
             this.refreshInstrumentData();
@@ -529,26 +685,29 @@ export struct PropertyPanel {
 
   @Builder
   MultimeterSection() {
-    Column({ space: 4 }) {
-      Row({ space: 4 }) {
-        ProteusClassicBtn({ label: 'DCV', widthVal: 36,
+    Column({ space: 6 }) {
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'DCV', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.setMode(MultimeterMode.DCV);
             this.mmMode = 'DCV';
             this.refreshInstrumentData();
           } })
-        ProteusClassicBtn({ label: 'ACV', widthVal: 36,
+        ProteusClassicBtn({ label: 'ACV', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.setMode(MultimeterMode.ACV);
             this.mmMode = 'ACV';
           } })
-        ProteusClassicBtn({ label: 'Ω', widthVal: 30,
+      }
+      .width('100%')
+      Row({ space: 6 }) {
+        ProteusClassicBtn({ label: 'Ω', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
             this.mmMode = 'OHM';
             this.refreshInstrumentData();
           } })
-        ProteusClassicBtn({ label: 'Auto', widthVal: 40,
+        ProteusClassicBtn({ label: 'Auto', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.autoRange();
             this.refreshInstrumentData();

@@ -42,7 +42,7 @@ export class UiStateStore {
     const clamped = Math.min(400, Math.max(160, Math.round(v)));
     this.writeNum('left_panel_w', clamped);
   }
-  get rightPanelWidth(): number { return this.readNum('right_panel_w', 260); }
+  get rightPanelWidth(): number { return this.readNum('right_panel_w', 300); }
   set rightPanelWidth(v: number) {
     const clamped = Math.min(420, Math.max(200, Math.round(v)));
     this.writeNum('right_panel_w', clamped);

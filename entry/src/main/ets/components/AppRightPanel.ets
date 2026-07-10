@@ -19,6 +19,7 @@ export struct AppRightPanel {
   @Link statusMessage: string;
   @Link themeRefreshKey: number;
   @Prop selectedComponentId: string = '';
+  @Prop simWaveTick: number = 0;
   @Link canvasVersion: number;
   @State expandedLayers: boolean = true;
   @State expandedShortcuts: boolean = false;
@@ -46,6 +47,7 @@ export struct AppRightPanel {
         PropertyPanel({
           selectedComponentId: this.selectedComponentId,
           docVersion: this.canvasVersion,
+          simWaveTick: this.simWaveTick,
           statusMessage: $statusMessage,
           onDeleted: () => this.onDeleted()
         })
@@ -81,7 +83,11 @@ export struct AppRightPanel {
           }
 
           ProteusCollapsibleSection({ title: $r('app.string.panel_instruments'), expanded: $expandedInstr }) {
-            InstrumentPanel({ statusMessage: $statusMessage })
+            InstrumentPanel({
+              statusMessage: $statusMessage,
+              selectedComponentId: this.selectedComponentId,
+              simWaveTick: this.simWaveTick
+            })
           }
 
           ProteusCollapsibleSection({ title: $r('app.string.panel_fault'), expanded: $expandedFault }) {

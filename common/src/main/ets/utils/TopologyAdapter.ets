@@ -15,6 +15,7 @@ import {
 import { IdUtil } from './IdUtil';
 
 import { copyStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
+import { parsePinRef, buildPinRef } from './PinRefUtil';
 import { TopologyPatchApplier } from './TopologyPatch';
 
 
@@ -191,9 +192,15 @@ export class TopologyAdapter {
 
       displayName: n.name,
 
-      nodeList: n.pinIds.map(pinId => makeNetNodeRef('', pinId)),
+      nodeList: n.pinIds.map((pinRef: string) => {
+        const parsed = parsePinRef(pinRef);
+        if (parsed !== null && parsed.compId.length > 0 && parsed.pinId.length > 0) {
+          return makeNetNodeRef(parsed.compId, parsed.pinId);
+        }
+        return makeNetNodeRef('', pinRef);
+      }),
 
-      isPower: n.type === NetType.POWER,
+      isPower: n.type === NetType.POWER || n.type === NetType.GROUND,
 
       isAnalog: false,
 
@@ -215,15 +222,33 @@ export class TopologyAdapter {
 
   static toNet(n: NetInfo): Net {
 
+    const upper = n.netName.toUpperCase();
+    let netType = NetType.SIGNAL;
+    if (n.isPower) {
+      netType = (upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0') ?
+        NetType.GROUND : NetType.POWER;
+    } else if (n.isBusMember) {
+      netType = NetType.BUS;
+    } else if (upper === 'GND' || upper === 'VSS' || upper === 'VEE') {
+      netType = NetType.GROUND;
+    } else if (upper === 'VCC' || upper === 'VDD') {
+      netType = NetType.POWER;
+    }
+
     return {
 
       id: n.netUuid,
 
       name: n.netName,
 
-      type: n.isPower ? NetType.POWER : (n.isBusMember ? NetType.BUS : NetType.SIGNAL),
+      type: netType,
 
-      pinIds: n.nodeList.map(node => node.pinId)
+      pinIds: n.nodeList.map(node => {
+        if (node.devUuid.length > 0) {
+          return buildPinRef(node.devUuid, node.pinId, node.pinId);
+        }
+        return node.pinId;
+      })
 
     };
 

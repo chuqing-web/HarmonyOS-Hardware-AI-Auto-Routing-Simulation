@@ -106,6 +106,23 @@ export interface IVirtualInstruments {
   autoAssignScopeProbes(): void;
   feedScopeNodeData(voltages: Map<string, number>, currents: Map<string, number>): void;
   feedScopeTimeSnapshot(time: number, voltages: Map<string, number>): void;
+
+  /** Bind instrument readings to a specific schematic component instance */
+  registerComponentBinding(compId: string, binding: ComponentInstrumentBinding): void;
+  setActiveInstrumentComponent(compId: string | null): void;
+  getActiveInstrumentComponent(): string | null;
+  clearComponentBindings(): void;
+}
+
+export interface ComponentInstrumentBinding {
+  libraryId: string;
+  scopeProbes: string[];
+  logicProbes: string[];
+  voltageReader: (() => number) | null;
+  currentReader: (() => number) | null;
+  powerVoltageReader: (() => number) | null;
+  powerCurrentReader: (() => number) | null;
+  freqReader: (() => number) | null;
 }
 
 export interface InstrumentSnapshotView {

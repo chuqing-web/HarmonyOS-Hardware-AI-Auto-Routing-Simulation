@@ -60,6 +60,64 @@ export class LogicAnalyzerEngine {
   }
   getDecodedFrames(): DecodedFrame[] { return this.decodedFrames.slice(); }
 
+  /** Capture channels bound to specific probe net UUIDs */
+  captureChannelsForProbes(probeNets: string[]): WaveData[] {
+    const waves: WaveData[] = [];
+    const count = Math.min(this.channelCount, probeNets.length);
+    for (let ch = 0; ch < count; ch++) {
+      const probeNet = probeNets[ch];
+      if (probeNet.length === 0) {
+        continue;
+      }
+      let matched: WaveData | undefined = undefined;
+      for (let i = 0; i < this.simulationWaves.length; i++) {
+        const src = this.simulationWaves[i];
+        if (this.waveMatchesProbe(src, probeNet)) {
+          matched = src;
+          break;
+        }
+      }
+      if (matched !== undefined && matched.voltageAxis.length > 0) {
+        const digitized = matched.voltageAxis.map(v => v > this.threshold ? 3.3 : 0);
+        waves.push({
+          waveId: IdUtil.generate('la'),
+          probeName: `D${ch}`,
+          netName: probeNet,
+          timeAxis: matched.timeAxis.slice(),
+          voltageAxis: digitized,
+          currentAxis: new Array(digitized.length).fill(0),
+          sampleRate: matched.sampleRate,
+          waveType: 'digital',
+          holdTime: matched.holdTime
+        });
+      } else if (this.digitalStates.size > 0) {
+        const level = (this.digitalStates.get(probeNet) ?? this.digitalStates.get(`D${ch}`) ?? 0) > 0.5 ? 3.3 : 0;
+        waves.push({
+          waveId: IdUtil.generate('la'),
+          probeName: `D${ch}`,
+          netName: probeNet,
+          timeAxis: [0, 1e-3],
+          voltageAxis: [level, level],
+          currentAxis: [0, 0],
+          sampleRate: 1000,
+          waveType: 'digital',
+          holdTime: 1e-3
+        });
+      }
+    }
+    if (waves.length > 0) {
+      return waves;
+    }
+    return this.captureAllChannels();
+  }
+
+  private waveMatchesProbe(wave: WaveData, probeNet: string): boolean {
+    if (probeNet.length === 0) {
+      return false;
+    }
+    return wave.netName === probeNet || wave.probeName === probeNet;
+  }
+
   /** Capture digitized waveforms from real simulation data */
   captureAllChannels(): WaveData[] {
     const waves: WaveData[] = [];
@@ -87,11 +145,17 @@ export class LogicAnalyzerEngine {
       return waves;
     }
 
-    // Use digital states if fed directly
+    // Use digital states keyed by net UUID / node name
     if (this.digitalStates.size > 0) {
-      // Render digital states as constant-level waveforms
+      const keys: string[] = [];
+      this.digitalStates.forEach((_level: number, key: string) => {
+        const upper = key.toUpperCase();
+        if (upper !== '0' && upper !== 'GND' && upper !== 'VCC' && upper !== 'VDD') {
+          keys.push(key);
+        }
+      });
       for (let ch = 0; ch < this.channelCount; ch++) {
-        const key = `D${ch}`;
+        const key = ch < keys.length ? keys[ch] : `D${ch}`;
         const level = (this.digitalStates.get(key) ?? 0) > 0.5 ? 3.3 : 0;
         const timeAxis = [0, 1e-3];
         const voltageAxis = [level, level];

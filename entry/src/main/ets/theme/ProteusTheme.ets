@@ -60,6 +60,22 @@ export class ProteusColors {
   static readonly ERC_OK: string = '#009933';
   static readonly ERC_WARN: string = '#CC9900';
   static readonly ERC_ERR: string = '#CC0000';
+
+  // 右侧边栏标签（高对比度，避免文字与背景融在一起）
+  static readonly SIDEBAR_BG: string = '#C4C4C4';
+  static readonly SIDEBAR_TAB_IDLE_BG: string = '#A8A8A8';
+  static readonly SIDEBAR_TAB_IDLE_TEXT: string = '#1A1A1A';
+  static readonly SIDEBAR_TAB_ACTIVE_BG: string = '#FFFFFF';
+  static readonly SIDEBAR_TAB_ACTIVE_TEXT: string = '#000000';
+  static readonly SIDEBAR_TAB_BORDER: string = '#909090';
+
+  // 面板内子标签 / 芯片按钮
+  static readonly TAB_CHIP_IDLE_BG: string = '#E4E4E4';
+  static readonly TAB_CHIP_IDLE_TEXT: string = '#333333';
+  static readonly TAB_CHIP_ACTIVE_BG: string = '#0066CC';
+  static readonly TAB_CHIP_ACTIVE_TEXT: string = '#FFFFFF';
+  static readonly TAB_CHIP_BORDER: string = '#999999';
+  static readonly TAB_BAR_BG: string = '#EDEDED';
 }
 
 /** 深色主题（Proteus 夜间模式） */
@@ -95,8 +111,11 @@ export class ProteusDimens {
   static readonly TREE_ROW_HEIGHT: number = 20;
   static readonly NAV_ROW_HEIGHT: number = 18;
   static readonly PREVIEW_HEIGHT: number = 260;
-  static readonly PARAM_ROW_HEIGHT: number = 22;
-  static readonly PARAM_GAP: number = 4;
+  static readonly PARAM_ROW_HEIGHT: number = 28;
+  static readonly PARAM_GAP: number = 6;
+  static readonly TAB_BAR_HEIGHT: number = 38;
+  static readonly TAB_CHIP_HEIGHT: number = 30;
+  static readonly PARAM_LABEL_WIDTH: number = 52;
   static readonly ICON_SIZE: number = 16;
   static readonly TOOL_BTN_SIZE: number = 24;
   static readonly RULER_SIZE: number = 20;
@@ -109,6 +128,8 @@ export class ProteusFonts {
   static readonly PARAM_KEY: number = 11;
   static readonly PARAM_VALUE: number = 12;
   static readonly STATUS: number = 10;
+  static readonly TAB_CHIP: number = 11;
+  static readonly BTN_LABEL: number = 12;
   static readonly CANVAS_LABEL: number = 12;
   static readonly RULER: number = 10;
 }

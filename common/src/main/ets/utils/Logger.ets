@@ -22,7 +22,9 @@ interface EventLogEntry {
 
 export class Logger {
   private static logLevel: LogLevel = LogLevel.INFO;
-  private static ringBuffer: string[] = [];
+  private static ringBuffer: string[] = new Array<string>(RING_BUFFER_MAX);
+  private static ringPos: number = 0;
+  private static ringFull: boolean = false;
   private static eventLog: EventLogEntry[] = [];
 
   static setLogLevel(level: LogLevel): void {
@@ -70,16 +72,30 @@ export class Logger {
 
   /** 7.2.9 获取环形缓冲区日志 (可用于崩溃后分析) */
   static getRingBuffer(): string[] {
-    return Logger.ringBuffer.slice();
+    if (!Logger.ringFull) {
+      return Logger.ringBuffer.slice(0, Logger.ringPos);
+    }
+    const result: string[] = [];
+    for (let i = 0; i < RING_BUFFER_MAX; i++) {
+      result.push(Logger.ringBuffer[(Logger.ringPos + i) % RING_BUFFER_MAX]);
+    }
+    return result;
   }
 
   /** 清空环形缓冲区 */
   static clearRingBuffer(): void {
-    Logger.ringBuffer = [];
+    Logger.ringBuffer = new Array<string>(RING_BUFFER_MAX);
+    Logger.ringPos = 0;
+    Logger.ringFull = false;
   }
 
   private static writeRing(entry: string): void {
-    if (Logger.ringBuffer.length >= RING_BUFFER_MAX) Logger.ringBuffer.shift();
-    Logger.ringBuffer.push(`[${new Date().toISOString()}] ${entry}`);
+    const ts = new Date().toISOString();
+    Logger.ringBuffer[Logger.ringPos] = `[${ts}] ${entry}`;
+    Logger.ringPos++;
+    if (Logger.ringPos >= RING_BUFFER_MAX) {
+      Logger.ringPos = 0;
+      Logger.ringFull = true;
+    }
   }
 }

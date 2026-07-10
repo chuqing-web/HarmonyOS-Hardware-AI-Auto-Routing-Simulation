@@ -3,7 +3,7 @@
  */
 import { AppService } from '../services/AppService';
 import { AccessibilityConfig } from 'common';
-import { ProteusClassicBtn } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { ThemeManager } from '../theme/ThemeManager';
 
@@ -22,21 +22,16 @@ export struct PlatformSettingsPanel {
   private appService: AppService = AppService.getInstance();
 
   build() {
-    Scroll() {
-      Column({ space: 0 }) {
-        Text('平台设置')
-          .fontSize(ProteusFonts.TITLE)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .fontWeight(FontWeight.Medium)
-          .margin({ left: 8, top: 6, bottom: 6 })
+    Column({ space: 0 }) {
+      ProteusSectionTitle({ title: '平台设置' })
 
         // ---- 外观 ----
         Column() {
           Text('外观主题')
-            .fontSize(ProteusFonts.TITLE)
+            .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .fontWeight(FontWeight.Medium)
-            .margin({ left: 8, top: 4, bottom: 4 })
+            .padding({ left: 8, top: 4, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
           Row() {
@@ -66,10 +61,10 @@ export struct PlatformSettingsPanel {
         // ---- 网络与 AI ----
         Column() {
           Text('网络与 AI')
-            .fontSize(ProteusFonts.TITLE)
+            .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .fontWeight(FontWeight.Medium)
-            .margin({ left: 8, top: 6, bottom: 4 })
+            .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
           Row() {
@@ -92,10 +87,10 @@ export struct PlatformSettingsPanel {
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
 
           Row() {
-            Text('全局代理:')
+            Text('全局代理')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_LABEL)
-              .width(64)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
             TextInput({ text: this.globalProxy, placeholder: 'http://127.0.0.1:7890' })
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
@@ -105,18 +100,20 @@ export struct PlatformSettingsPanel {
               .border({ width: 1, color: ProteusColors.INPUT_BORDER })
               .backgroundColor(ProteusColors.CANVAS_BG)
               .onChange((v: string) => { this.globalProxy = v; })
-            ProteusClassicBtn({
-              label: '应用',
-              widthVal: 52,
-              onAction: () => {
-                this.appService.setGlobalProxy(this.globalProxy);
-                this.statusMessage = '代理已更新';
-              }
-            })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: 8, right: 8, top: 4 })
           .alignItems(VerticalAlign.Center)
+
+          ProteusClassicBtn({
+            label: '应用代理设置',
+            widthVal: '92%',
+            onAction: () => {
+              this.appService.setGlobalProxy(this.globalProxy);
+              this.statusMessage = '代理已更新';
+            }
+          })
+          .margin({ left: 8, right: 8, bottom: 4 })
         }
         .width('100%')
 
@@ -125,10 +122,10 @@ export struct PlatformSettingsPanel {
         // ---- 无障碍 ----
         Column() {
           Text('无障碍')
-            .fontSize(ProteusFonts.TITLE)
+            .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .fontWeight(FontWeight.Medium)
-            .margin({ left: 8, top: 6, bottom: 4 })
+            .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
           Row() {
@@ -181,16 +178,16 @@ export struct PlatformSettingsPanel {
         // ---- 版本与隐私 ----
         Column() {
           Text('版本与隐私')
-            .fontSize(ProteusFonts.TITLE)
+            .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .fontWeight(FontWeight.Medium)
-            .margin({ left: 8, top: 6, bottom: 4 })
+            .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
-          Row({ space: 6 }) {
+          Column({ space: 6 }) {
             ProteusClassicBtn({
               label: '保存快照',
-              widthVal: '30%',
+              widthVal: '92%',
               onAction: () => {
                 this.appService.saveSnapshot('手动快照', '用户手动保存');
                 this.statusMessage = '版本快照已保存';
@@ -198,7 +195,7 @@ export struct PlatformSettingsPanel {
             })
             ProteusClassicBtn({
               label: '隐私清理',
-              widthVal: '30%',
+              widthVal: '92%',
               onAction: () => {
                 this.appService.privacyCleanup();
                 this.statusMessage = '已清理 AI 缓存与临时文件';
@@ -206,7 +203,7 @@ export struct PlatformSettingsPanel {
             })
             ProteusClassicBtn({
               label: '同意隐私政策',
-              widthVal: '30%',
+              widthVal: '92%',
               onAction: () => {
                 void this.appService.acceptPrivacyPolicy();
                 this.statusMessage = '已记录隐私政策同意';
@@ -214,15 +211,14 @@ export struct PlatformSettingsPanel {
             })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 8 })
+          .padding({ left: 8, right: 8, top: 4, bottom: 12 })
+          .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
-      }
-      .alignItems(HorizontalAlign.Start)
-      .width('100%')
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .height('100%')
+    .padding({ bottom: 12 })
     .backgroundColor(ProteusColors.CANVAS_BG)
   }
 

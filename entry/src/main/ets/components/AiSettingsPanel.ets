@@ -3,7 +3,7 @@
  */
 import { AppService } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode } from 'common';
-import { ProteusClassicBtn } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -40,6 +40,7 @@ export struct AiSettingsPanel {
     { label: 'DeepSeek Chat', value: 'deepseek' },
     { label: 'Ollama (原生)', value: 'ollama' }
   ];
+  private loadBalanceLabels: string[] = ['优先级', '轮询', '故障切换'];
   private authFieldOptions: string[] = [
     'ANTHROPIC_AUTH_TOKEN', 'x-api-key', 'Authorization', 'Bearer', 'X-API-Key'
   ];
@@ -59,15 +60,16 @@ export struct AiSettingsPanel {
           .fontSize(ProteusFonts.TITLE)
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
-        Blank()
+          .layoutWeight(1)
+          .padding({ left: 8, top: 8, bottom: 4 })
         ProteusClassicBtn({
-          label: this.showAddForm ? '收起 ▲' : '+ 添加',
-          widthVal: 60,
+          label: this.showAddForm ? '收起' : '+ 添加',
+          widthVal: 64,
           onAction: () => { this.showAddForm = !this.showAddForm; }
         })
       }
       .width('100%')
-      .padding({ left: 6, right: 6, top: 4, bottom: 2 })
+      .padding({ right: 6 })
 
       if (this.showAddForm) {
         Column({ space: 4 }) {
@@ -77,34 +79,31 @@ export struct AiSettingsPanel {
             .fontColor(ProteusColors.TEXT_LABEL)
             .width('100%')
 
-          Row({ space: 3 }) {
-            ForEach(this.providers, (label: string, idx: number) => {
-              Text(label)
-                .fontSize(10)
-                .fontColor(this.providerIdx === idx ? '#fff' : ProteusColors.TEXT_PRIMARY)
-                .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-                .borderRadius(2)
-                .backgroundColor(this.providerIdx === idx ? ProteusColors.BTN_FOCUS : ProteusColors.BTN_BG)
-                .onClick(() => {
-                  this.providerIdx = idx;
-                  this.selectedProvider = this.providerTypes[idx];
-                  const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
-                  if (tmpl.success && tmpl.data) {
-                    this.newApiModel = tmpl.data.model;
-                    this.newApiUrl = tmpl.data.baseUrl;
-                  }
-                })
-            }, (_label: string, idx: number) => `${idx}`)
-          }
+          ProteusChipGrid({
+            labels: this.providers,
+            selectedIdx: this.providerIdx,
+            colsPerRow: 3,
+            onSelect: (idx: number) => {
+              this.providerIdx = idx;
+              this.selectedProvider = this.providerTypes[idx];
+              const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
+              if (tmpl.success && tmpl.data) {
+                this.newApiModel = tmpl.data.model;
+                this.newApiUrl = tmpl.data.baseUrl;
+              }
+            }
+          })
+          .padding({ left: 8, right: 8, top: 2, bottom: 4 })
 
           Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 2 })
 
           // Endpoint URL
           Row() {
             Text('官网链接')
-              .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
             TextInput({ placeholder: 'https://example.com （可选）', text: this.newApiUrl })
-              .layoutWeight(1).height(26).fontSize(10).borderRadius(0)
+              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT).fontSize(ProteusFonts.PARAM_KEY).borderRadius(0)
               .border({ width: 1, color: ProteusColors.INPUT_BORDER })
               .backgroundColor(ProteusColors.CANVAS_BG)
               .fontColor(ProteusColors.TEXT_PRIMARY)
@@ -114,9 +113,10 @@ export struct AiSettingsPanel {
           // API Key
           Row() {
             Text('API Key')
-              .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
             TextInput({ placeholder: 'sk-...', text: this.newApiKey })
-              .layoutWeight(1).height(26).fontSize(10).borderRadius(0)
+              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT).fontSize(ProteusFonts.PARAM_KEY).borderRadius(0)
               .border({ width: 1, color: ProteusColors.INPUT_BORDER })
               .backgroundColor(ProteusColors.CANVAS_BG)
               .fontColor(ProteusColors.TEXT_PRIMARY)
@@ -208,23 +208,19 @@ export struct AiSettingsPanel {
         .margin({ left: 6, top: 4 })
         .alignSelf(ItemAlign.Start)
 
-      Row({ space: 3 }) {
-        ForEach(['优先级', '轮询', '故障切换'], (label: string, idx: number) => {
-          Text(label)
-            .fontSize(10)
-            .fontColor(this.selectedStratIdx === idx ? '#fff' : ProteusColors.TEXT_PRIMARY)
-            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-            .borderRadius(2)
-            .backgroundColor(this.selectedStratIdx === idx ? ProteusColors.BTN_FOCUS : ProteusColors.BTN_BG)
-            .onClick(() => {
-              this.selectedStratIdx = idx;
-              const modes = [LoadBalanceMode.PRIORITY, LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER];
-              this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
-              this.statusMessage = `负载均衡: ${label}`;
-            })
-        }, (label: string) => label)
-      }
-      .width('100%').padding({ left: 6, top: 2, bottom: 4 })
+      ProteusChipGrid({
+        labels: this.loadBalanceLabels,
+        selectedIdx: this.selectedStratIdx,
+        colsPerRow: 3,
+        onSelect: (idx: number) => {
+          this.selectedStratIdx = idx;
+          const modes = [LoadBalanceMode.PRIORITY, LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER];
+          this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
+          this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
+        }
+      })
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 2, bottom: 4 })
 
       Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
 

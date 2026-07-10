@@ -1,6 +1,6 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window } from '@kit.ArkUI';
+import { display, window } from '@kit.ArkUI';
 import { AppService } from '../services/AppService';
 
 const DOMAIN = 0x0000;
@@ -29,7 +29,12 @@ export default class EntryAbility extends UIAbility {
 
     windowStage.getMainWindow().then((mainWindow) => {
       mainWindow.setWindowLayoutFullScreen(true);
-      mainWindow.resize(1440, 900);
+      try {
+        const screen = display.getDefaultDisplaySync();
+        mainWindow.resize(screen.width, screen.height);
+      } catch (_e) {
+        // Fallback: keep layout fullscreen even if display query fails
+      }
     }).catch(() => {});
   }
 

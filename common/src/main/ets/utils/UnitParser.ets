@@ -58,6 +58,36 @@ export class UnitParser {
 
   }
 
+  /** Parse power rating: 0.25W / 250mW / 1W */
+  static parsePower(input: string): ParsedValue {
+    const v = input.trim().replace(/\s+/g, '');
+    if (v.length === 0) {
+      return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
+    }
+    const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
+    if (mwMatch) {
+      const w = parseFloat(mwMatch[1]) / 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
+    if (kwMatch) {
+      const w = parseFloat(kwMatch[1]) * 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const wMatch = v.match(/^([\d.]+)\s*W?$/i);
+    if (wMatch) {
+      const w = parseFloat(wMatch[1]);
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+  }
+
 
 
   static normalizeParam(key: string, value: string): ParsedValue {
@@ -80,6 +110,10 @@ export class UnitParser {
 
       return UnitParser.parseFrequency(v);
 
+    }
+
+    if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
+      return UnitParser.parsePower(v);
     }
 
     return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };

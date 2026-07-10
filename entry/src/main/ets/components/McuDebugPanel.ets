@@ -5,14 +5,14 @@ import util from '@ohos.util';
 import fs from '@ohos.file.fs';
 import { picker } from '@kit.CoreFileKit';
 import { AppService } from '../services/AppService';
-import { McuFamily } from 'common';
-import { ProteusClassicBtn } from './proteus/ProteusWidgets';
+import { McuFamily, SimulationState } from 'common';
+import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 @Component
 export struct McuDebugPanel {
   @Link statusMessage: string;
-  @Prop selectedComponentId: string = '';
+  @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
   @State debugState: string = 'reset';
   @State pcValue: string = '0x0000';
   @State registers: string[] = [];
@@ -44,6 +44,12 @@ export struct McuDebugPanel {
 
   aboutToDisappear(): void {
     this.stopAutoRefresh();
+  }
+
+  onSelectionChange(): void {
+    this.detectMcu();
+    this.refreshState();
+    this.refreshFirmwareInfo();
   }
 
   startAutoRefresh(): void {
@@ -95,6 +101,23 @@ export struct McuDebugPanel {
   }
 
   refreshState(): void {
+    const kernel = this.appService.simulationKernel;
+    const simState = kernel.getState();
+    const simSnap = kernel.getMcuSnapshot();
+    if (simSnap !== null &&
+        (simState === SimulationState.RUNNING || simState === SimulationState.PAUSED)) {
+      this.debugState = 'running';
+      const pcVal = simSnap.registers.get('PC');
+      const pcNum = pcVal !== undefined ? pcVal : 0;
+      this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
+      const regs: string[] = [];
+      simSnap.registers.forEach((value: number, key: string) => {
+        regs.push(`${key}: 0x${value.toString(16).toUpperCase().padStart(2, '0')}`);
+      });
+      this.registers = regs;
+      this.uartOutput = this.appService.hexDebugger.getUartOutput();
+      return;
+    }
     const state = this.appService.hexDebugger.getDebugState();
     this.debugState = state;
     const snap = this.appService.hexDebugger.getRegisterSnapshot();
@@ -171,6 +194,7 @@ export struct McuDebugPanel {
 
   build() {
     Column({ space: 6 }) {
+      ProteusSectionTitle({ title: 'MCU 调试' })
       Row() {
         Text(`状态: ${this.debugState}`)
           .fontSize(ProteusFonts.TITLE)
@@ -304,19 +328,19 @@ export struct McuDebugPanel {
         .margin({ left: 8, top: 4 })
         .alignSelf(ItemAlign.Start)
 
-      List({ space: 1 }) {
+      Column({ space: 2 }) {
         ForEach(this.registers, (reg: string) => {
-          ListItem() {
-            Text(reg)
-              .fontSize(ProteusFonts.PARAM_KEY)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .fontFamily('monospace')
-          }
+          Text(reg)
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_PRIMARY)
+            .fontFamily('monospace')
+            .width('100%')
+            .padding({ top: 2, bottom: 2 })
         }, (reg: string) => reg)
       }
-      .height(100)
       .width('100%')
       .padding({ left: 8, right: 8 })
+      .alignItems(HorizontalAlign.Start)
 
       Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
 

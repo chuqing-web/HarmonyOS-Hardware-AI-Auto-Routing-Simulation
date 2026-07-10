@@ -2,7 +2,9 @@
  * Analog circuit simulation engine — MNA (Modified Nodal Analysis) with real netlist connectivity
  * Features: Newton-Raphson nonlinear iteration, trapezoidal companion models, LU decomposition
  */
-import { SchematicDocument, SimulationConfig, paramMapGet, ComponentInstance } from 'common';
+import { SchematicDocument, SimulationConfig, paramMapGet, parseVoltageVolts, ComponentInstance,
+  traceAnalogOpSummary, summarizeNetPins, traceAnalogDeviceStamp, traceSpiceNodeMap,
+  traceAnalogNetlistSummary, AnalogResistorStamp, Logger, INSTR_TRACE_TAG, UnitParser } from 'common';
 
 interface MnaStamp { row: number; col: number; value: number; }
 
@@ -53,17 +55,37 @@ export class AnalogEngine {
   loadSchematic(doc: SchematicDocument, config: SimulationConfig): void {
     this.netUuidToNode.clear();
     this.compUuidToDevId.clear();
+    this.compPinNets.clear();
     this.nodeVoltages.clear();
     this.branchCurrents.clear();
     this.netlist = this.generateNetlist(doc, config);
-    this.buildNodeIndex(doc);
     this.buildDeviceModels(doc);
+    traceSpiceNodeMap(this.netUuidToNode);
+    this.buildNodeIndex(doc);
     // Ensure VCC/GND have baseline voltages before OP analysis
     this.nodeVoltages.set('0', 0);
     this.nodeVoltages.set('GND', 0);
     this.nodeVoltages.set('VCC', 5.0);
     this.simTime = config.startTime;
     this.runOpAnalysis();
+    const nodeParts: string[] = [];
+    let nodeCount = 0;
+    this.nodeVoltages.forEach((v: number, name: string) => {
+      if (nodeCount >= 6) {
+        return;
+      }
+      if (Math.abs(v) > 1e-9 || name === 'VCC' || name === '0') {
+        nodeParts.push(`${name}=${v.toFixed(3)}V`);
+        nodeCount++;
+      }
+    });
+    traceAnalogOpSummary(this.resistors.length, this.voltageSources.length,
+      this.lastConverged, nodeParts.join(', '));
+    if (this.resistors.length > 0) {
+      const r0 = this.resistors[0];
+      Logger.info(INSTR_TRACE_TAG,
+        `analog R0 ${r0.id} ${r0.nodeA}->${r0.nodeB} ${r0.resistance}Ω nets=${summarizeNetPins(doc, 4)}`);
+    }
   }
 
   /** Get the node name for a net UUID (for instrument lookups) */
@@ -127,8 +149,9 @@ export class AnalogEngine {
     for (const comp of doc.components) {
       const libId = comp.libraryId.toUpperCase();
       const pinNets = this.getPinNetConnections(comp.id, doc);
-      const nA = this.resolveCompNode(comp, 'A', pinNets, netNodeMap);
-      const nB = this.resolveCompNode(comp, 'B', pinNets, netNodeMap);
+      const passive = this.resolvePassiveTerminals(comp, pinNets, netNodeMap);
+      const nA = passive[0];
+      const nB = passive[1];
 
       if (libId.startsWith('R_') || libId.includes('RESISTOR')) {
         const val = paramMapGet(comp.parameters, 'value', libId.replace('R_', ''));
@@ -150,9 +173,12 @@ export class AnalogEngine {
         const nN = this.resolveCompNode(comp, '-', pinNets, netNodeMap);
         nl += `X${xCount} ${nP} ${nN} ${nO} VCC GND OPA\n`; xCount++;
       } else if (libId.includes('VCC') || libId.includes('POWER') || libId.includes('VDD')) {
-        nl += `V${rCount} ${nA} GND DC 5\n`; rCount++;
+        const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, 'VCC');
+        const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
+        nl += `V${rCount} ${supplyNode} GND DC ${vNum}\n`; rCount++;
       } else if (libId.includes('GND')) {
-        nl += `* GND reference at ${nA}\n`;
+        const gndNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, '0');
+        nl += `* GND reference at ${gndNode}\n`;
       }
     }
     nl += `.model DMOD D (IS=1e-14 RS=0.5 N=1.0)\n`;
@@ -208,51 +234,186 @@ export class AnalogEngine {
   private resolveCompNode(comp: ComponentInstance, pinHint: string,
     pinNets: PinNetMapping[], netNodeMap: Map<string, string>): string {
     const hintUpper = pinHint.toUpperCase();
+    // First pass: exact match by pin name or ID
     for (const m of pinNets) {
       const pn = m.pinName.toUpperCase();
       const pi = m.pinId.toUpperCase();
-      if (pn === hintUpper || pi === hintUpper || pn.startsWith(hintUpper) || pi.startsWith(hintUpper)) {
+      if (pn === hintUpper || pi === hintUpper) {
         return netNodeMap.get(m.netId) ?? `NC_${comp.id}_${pinHint}`;
       }
     }
-    // Fallback: match by index or create unique terminal node
+    // Second pass: prefix match (e.g. hint 'V' matching 'V+')
+    for (const m of pinNets) {
+      const pn = m.pinName.toUpperCase();
+      const pi = m.pinId.toUpperCase();
+      if (pn.startsWith(hintUpper) || pi.startsWith(hintUpper)) {
+        return netNodeMap.get(m.netId) ?? `NC_${comp.id}_${pinHint}`;
+      }
+    }
+    // Fallback: numeric index (1-based or 0-based) or alphabetic index
     if (pinNets.length > 0) {
-      const idx = pinHint.charCodeAt(0) - 'A'.charCodeAt(0);
-      if (idx >= 0 && idx < pinNets.length) {
-        return netNodeMap.get(pinNets[idx].netId) ?? `N_${comp.id}_${pinHint}`;
+      const numIdx = parseInt(pinHint);
+      if (!isNaN(numIdx) && numIdx >= 1 && numIdx <= pinNets.length) {
+        return netNodeMap.get(pinNets[numIdx - 1].netId) ?? `N_${comp.id}_${pinHint}`;
+      }
+      const alphaIdx = pinHint.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
+      if (alphaIdx >= 0 && alphaIdx < pinNets.length) {
+        return netNodeMap.get(pinNets[alphaIdx].netId) ?? `N_${comp.id}_${pinHint}`;
       }
     }
     return `N_${comp.id}_${pinHint}`;
   }
 
+  /** Two-terminal passives: try common pin naming conventions in order. */
+  private resolvePassiveTerminals(comp: ComponentInstance, pinNets: PinNetMapping[],
+    netNodeMap: Map<string, string>): [string, string] {
+    // For two-pin devices the order doesn't matter, so use index-based assignment as primary strategy
+    if (pinNets.length >= 2) {
+      const nA = netNodeMap.get(pinNets[0].netId) ?? `NC_${comp.id}_A`;
+      const nB = netNodeMap.get(pinNets[1].netId) ?? `NC_${comp.id}_B`;
+      if (nA !== nB && !this.isFloatingNode(nA) && !this.isFloatingNode(nB)) {
+        return [nA, nB];
+      }
+    }
+    // Fallback: try named pin conventions
+    const tryHints = [
+      ['A', 'K'], ['A', 'B'], ['1', '2'], ['P1', 'P2'],
+      ['+', '-'], ['ANODE', 'CATHODE'], ['PLUS', 'MINUS']
+    ];
+    for (const hintPair of tryHints) {
+      const hA = hintPair[0];
+      const hB = hintPair[1];
+      const nA = this.resolveCompNode(comp, hA, pinNets, netNodeMap);
+      const nB = this.resolveCompNode(comp, hB, pinNets, netNodeMap);
+      if (nA !== nB && !this.isFloatingNode(nA) && !this.isFloatingNode(nB)) {
+        return [nA, nB];
+      }
+    }
+    // Last resort: use first two pins regardless
+    if (pinNets.length >= 2) {
+      return [
+        netNodeMap.get(pinNets[0].netId) ?? `NC_${comp.id}_A`,
+        netNodeMap.get(pinNets[1].netId) ?? `NC_${comp.id}_B`
+      ];
+    }
+    if (pinNets.length === 1) {
+      const n1 = netNodeMap.get(pinNets[0].netId) ?? `NC_${comp.id}_1`;
+      return [n1, `NC_${comp.id}_2`];
+    }
+    return [`NC_${comp.id}_A`, `NC_${comp.id}_B`];
+  }
+
+  /** Voltmeter V+/COM and ammeter I+/I- — never rely on pin index order. */
+  private resolveInstrumentTerminals(comp: ComponentInstance, pinNets: PinNetMapping[],
+    netNodeMap: Map<string, string>, libUpper: string): [string, string] {
+    if (libUpper.includes('VOLTMETER') || (libUpper.includes('METER') && !libUpper.includes('AMMETER'))) {
+      const nPlus = this.resolveCompNode(comp, 'V+', pinNets, netNodeMap);
+      const nCom = this.resolveCompNode(comp, 'COM', pinNets, netNodeMap);
+      return [nPlus, nCom];
+    }
+    if (libUpper.includes('AMMETER')) {
+      const nPlus = this.resolveCompNode(comp, 'I+', pinNets, netNodeMap);
+      const nMinus = this.resolveCompNode(comp, 'I-', pinNets, netNodeMap);
+      return [nPlus, nMinus];
+    }
+    return this.resolvePassiveTerminals(comp, pinNets, netNodeMap);
+  }
+
+  /** Single-pin supply symbols (VCC/GND) — match by pin name or ID; must be wire-connected. */
+  private resolveSupplyNode(comp: ComponentInstance, pinNets: PinNetMapping[],
+    netNodeMap: Map<string, string>, defaultName: string): string {
+    for (const hint of ['VCC', 'VDD', 'V+', 'GND', '1', 'A']) {
+      const node = this.resolveCompNode(comp, hint, pinNets, netNodeMap);
+      if (!this.isFloatingNode(node)) {
+        return node;
+      }
+    }
+    if (pinNets.length > 0) {
+      const node = netNodeMap.get(pinNets[0].netId);
+      if (node !== undefined && !this.isFloatingNode(node)) {
+        return node;
+      }
+    }
+    return `NC_${comp.id}_${defaultName}`;
+  }
+
+  private areTerminalsConnected(nA: string, nB: string): boolean {
+    return !this.isFloatingNode(nA) && !this.isFloatingNode(nB) && nA !== nB;
+  }
+
+  private isFloatingNode(nodeName: string): boolean {
+    if (nodeName.startsWith('NC_')) {
+      return true;
+    }
+    // Synthetic node from resolveCompNode when pin is unmapped: N_<compId>_<pinHint>
+    // compId contains underscores (e.g. comp_1783663703417_11), so do not use [^_]+.
+    if (nodeName.startsWith('N_')) {
+      return true;
+    }
+    return false;
+  }
+
   // ---- MNA core solver ----
 
-  private buildNodeIndex(doc: SchematicDocument): void {
+  private buildNodeIndex(_doc: SchematicDocument): void {
     this.nodeIndex.clear();
-    this.nodeIndex.set('0', 0); // GND always at index 0
+    this.nodeIndex.set('0', 0);
 
     let idx = 1;
-    // Assign indices from actual nets
-    for (const net of doc.nets) {
-      const nodeName = net.name.length > 0 ? net.name : `N_${net.id.substring(0, 6)}`;
-      if (nodeName !== '0' && nodeName !== 'GND' && !this.nodeIndex.has(nodeName)) {
-        this.nodeIndex.set(nodeName, idx++);
+    const addNode = (nodeName: string): void => {
+      if (nodeName.length === 0) {
+        return;
       }
+      const normalized = nodeName === 'GND' ? '0' : nodeName;
+      if (normalized === '0' || this.nodeIndex.has(normalized)) {
+        return;
+      }
+      this.nodeIndex.set(normalized, idx++);
+    };
+
+    // Use the same node names as buildNetNodeMap / device stamps
+    this.netUuidToNode.forEach((nodeName: string) => {
+      addNode(nodeName);
+    });
+
+    for (const r of this.resistors) {
+      addNode(r.nodeA);
+      addNode(r.nodeB);
     }
-    // Ensure VCC node exists for power connections
+    for (const c of this.capacitors) {
+      addNode(c.nodeA);
+      addNode(c.nodeB);
+    }
+    for (const l of this.inductors) {
+      addNode(l.nodeA);
+      addNode(l.nodeB);
+    }
+    for (const d of this.diodes) {
+      addNode(d.nodeA);
+      addNode(d.nodeB);
+    }
+    for (const vs of this.voltageSources) {
+      addNode(vs.nodeA);
+      addNode(vs.nodeB);
+    }
+    for (const bjt of this.bjts) {
+      addNode(bjt.nodeC);
+      addNode(bjt.nodeB);
+      addNode(bjt.nodeE);
+    }
+    for (const opa of this.opamps) {
+      addNode(opa.nodeOut);
+      addNode(opa.nodeInP);
+      addNode(opa.nodeInN);
+      addNode(opa.nodeVcc);
+      addNode(opa.nodeVee);
+    }
+
     if (!this.nodeIndex.has('VCC')) {
-      this.nodeIndex.set('VCC', idx++);
+      addNode('VCC');
     }
-    // Add any unconnected component terminal nodes
-    for (const comp of doc.components) {
-      for (const ch of ['A', 'B', 'C', 'E', 'OUT', 'IN+', 'IN-']) {
-        const nodeName = `N_${comp.id}_${ch}`;
-        if (!this.nodeIndex.has(nodeName)) {
-          this.nodeIndex.set(nodeName, idx++);
-        }
-      }
-    }
-    this.matrixSize = idx + 10; // Extra rows for voltage sources
+
+    this.matrixSize = idx + this.voltageSources.length + 10;
   }
 
   private buildDeviceModels(doc: SchematicDocument): void {
@@ -267,23 +428,38 @@ export class AnalogEngine {
     for (const comp of doc.components) {
       const libId = comp.libraryId.toUpperCase();
       const pinNets = this.getPinNetConnections(comp.id, doc);
-      const nA = this.resolveCompNode(comp, 'A', pinNets, netNodeMap);
-      const nB = this.resolveCompNode(comp, 'B', pinNets, netNodeMap);
+      const passive = this.resolvePassiveTerminals(comp, pinNets, netNodeMap);
+      const nA = passive[0];
+      const nB = passive[1];
 
       if (libId.startsWith('R_') || libId.includes('RESISTOR')) {
+        if (!this.areTerminalsConnected(nA, nB)) {
+          Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: resistor pin(s) not wired`);
+          continue;
+        }
         const val = paramMapGet(comp.parameters, 'value', '');
-        const rVal = this.parseResistance(val || libId.replace('R_', ''));
+        const fallback = libId.replace(/^(R_|RESISTOR_?)/i, '');
+        const corrected = this.withUnitSuffix(val, fallback);
+        const rVal = this.parseResistance(corrected);
         const devId = `R${rIdx++}`;
+        Logger.info(INSTR_TRACE_TAG,
+          `analog R-dev ${comp.refDes} lib=${comp.libraryId} val="${val}" fallback="${fallback}" corrected="${corrected}" → ${rVal}Ω`);
         this.resistors.push({ id: devId, nodeA: nA, nodeB: nB, resistance: rVal });
         this.compUuidToDevId.set(comp.id, [devId]);
+        traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nA, nB,
+          `${rVal}Ω pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
         // Also store net ↔ node mapping for this component's nets
         for (const m of pinNets) {
           const node = netNodeMap.get(m.netId);
           if (node) this.netUuidToNode.set(m.netId, node);
         }
       } else if (libId.startsWith('C_') || libId.includes('CAP')) {
+        if (!this.areTerminalsConnected(nA, nB)) {
+          continue;
+        }
         const val = paramMapGet(comp.parameters, 'value', '');
-        const cVal = this.parseCapacitance(val || libId.replace('C_', ''));
+        const fallback = libId.replace(/^(C_|CAP_?)/i, '');
+        const cVal = this.parseCapacitance(this.withUnitSuffix(val, fallback));
         const devId = `C${cIdx}`;
         this.capacitors.push({
           id: devId, nodeA: nA, nodeB: nB,
@@ -296,7 +472,12 @@ export class AnalogEngine {
           if (node) this.netUuidToNode.set(m.netId, node);
         }
       } else if (libId.startsWith('L_') || libId.includes('INDUCTOR')) {
-        const lVal = this.parseInductance(paramMapGet(comp.parameters, 'value', '1m'));
+        if (!this.areTerminalsConnected(nA, nB)) {
+          continue;
+        }
+        const val = paramMapGet(comp.parameters, 'value', '');
+        const fallback = libId.replace(/^L_/i, '');
+        const lVal = this.parseInductance(this.withUnitSuffix(val, fallback || '1m'));
         const devId = `L${cIdx}`;
         this.inductors.push({
           id: devId, nodeA: nA, nodeB: nB,
@@ -309,6 +490,9 @@ export class AnalogEngine {
           if (node) this.netUuidToNode.set(m.netId, node);
         }
       } else if (libId.includes('LED') || libId.startsWith('1N') || libId.includes('DIODE')) {
+        if (!this.areTerminalsConnected(nA, nB)) {
+          continue;
+        }
         const devId = `D${dIdx++}`;
         this.diodes.push({
           id: devId, nodeA: nA, nodeB: nB, is: 1e-14, n: 1.0, vt: vt, rs: 0.5
@@ -346,8 +530,52 @@ export class AnalogEngine {
           const node = netNodeMap.get(m.netId);
           if (node) this.netUuidToNode.set(m.netId, node);
         }
+      } else if (libId.includes('VCC') || libId.includes('POWER') || libId.includes('VDD')) {
+        const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, 'VCC');
+        if (this.isFloatingNode(supplyNode)) {
+          Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: supply pin not wired`);
+          continue;
+        }
+        const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
+        const devId = `V${this.voltageSources.length}`;
+        this.voltageSources.push({
+          id: devId, nodeA: supplyNode, nodeB: '0',
+          voltage: vNum, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+          dutyCycle: 0.5, riseTime: 0, fallTime: 0
+        });
+        this.compUuidToDevId.set(comp.id, [devId]);
+        traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, supplyNode, '0',
+          `Vsrc ${vNum}V pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+        for (const m of pinNets) {
+          const node = netNodeMap.get(m.netId);
+          if (node) this.netUuidToNode.set(m.netId, node);
+        }
       } else {
-        // For other components (MCU, instruments, etc.), still track net mappings
+        // MCU, instruments, etc. — inject characteristic impedance so nodes don't float
+        const libUpper = libId.toUpperCase();
+        if (libUpper.includes('VOLTMETER') || (libUpper.includes('METER') && !libUpper.includes('AMMETER'))) {
+          const vm = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
+          if (!this.areTerminalsConnected(vm[0], vm[1])) {
+            Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: voltmeter pin(s) not wired`);
+          } else {
+            const devId = `R${rIdx++}`;
+            this.resistors.push({ id: devId, nodeA: vm[0], nodeB: vm[1], resistance: 10e6 });
+            this.compUuidToDevId.set(comp.id, [devId]);
+            traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, vm[0], vm[1],
+              `10MΩ VM pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+          }
+        } else if (libUpper.includes('AMMETER')) {
+          const am = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
+          if (!this.areTerminalsConnected(am[0], am[1])) {
+            Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ammeter pin(s) not wired`);
+          } else {
+            const devId = `R${rIdx++}`;
+            this.resistors.push({ id: devId, nodeA: am[0], nodeB: am[1], resistance: 0.1 });
+            this.compUuidToDevId.set(comp.id, [devId]);
+            traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, am[0], am[1],
+              `0.1Ω AM pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+          }
+        }
         for (const m of pinNets) {
           const node = netNodeMap.get(m.netId);
           if (node) this.netUuidToNode.set(m.netId, node);
@@ -355,13 +583,26 @@ export class AnalogEngine {
       }
     }
 
-    // Add default VCC supply
-    const vSup: VoltageSourceEntry = {
-      id: 'VSUP', nodeA: 'VCC', nodeB: '0',
-      voltage: 5.0, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
-      dutyCycle: 0.5, riseTime: 0, fallTime: 0
-    };
-    this.voltageSources.push(vSup);
+    const rStamps: AnalogResistorStamp[] = [];
+    for (let ri = 0; ri < this.resistors.length; ri++) {
+      const r = this.resistors[ri];
+      let refDes = r.id;
+      this.compUuidToDevId.forEach((devIds: string[], compId: string) => {
+        if (devIds.includes(r.id)) {
+          const comp = doc.components.find(c => c.id === compId);
+          if (comp !== undefined) {
+            refDes = comp.refDes;
+          }
+        }
+      });
+      rStamps.push({ devId: r.id, refDes: refDes, nodeA: r.nodeA, nodeB: r.nodeB, ohms: r.resistance });
+    }
+    const vsrcLines: string[] = [];
+    for (let vi = 0; vi < this.voltageSources.length; vi++) {
+      const vs = this.voltageSources[vi];
+      vsrcLines.push(`Vsrc ${vs.id} ${vs.nodeA}->${vs.nodeB} ${vs.voltage}V`);
+    }
+    traceAnalogNetlistSummary(rStamps, vsrcLines);
   }
 
   solveTransient(time: number, stepSize: number): Map<string, number> {
@@ -854,13 +1095,68 @@ export class AnalogEngine {
 
   // ---- Parse utilities ----
 
+  /**
+   * If value is a bare number (no unit suffix) but fallback has one,
+   * append the suffix so "4.7"+"4.7K"→"4.7K".  If value is empty,
+   * return the fallback as-is.
+   */
+  private withUnitSuffix(value: string, fallback: string): string {
+    const v = value.trim();
+    if (v.length === 0) return fallback;
+    if (/[a-z]/i.test(v)) return v;                  // already has a unit
+    const m = fallback.match(/[a-zµ]+$/i);           // extract suffix from fallback
+    if (m === null) return v;
+    return v + m[0];
+  }
+
+  private static formatPinNetDetail(pinNets: PinNetMapping[], netNodeMap: Map<string, string>): string {
+    const parts: string[] = [];
+    for (let i = 0; i < pinNets.length; i++) {
+      const m = pinNets[i];
+      const label = m.pinName.length > 0 ? m.pinName : m.pinId;
+      const node = netNodeMap.get(m.netId) ?? '?';
+      parts.push(`${label}@${node}`);
+    }
+    return parts.length > 0 ? parts.join(',') : '(none)';
+  }
+
   private parseResistance(val: string): number {
-    const s = val.toLowerCase().replace(/[ωohm]/g, '').trim();
-    if (s.includes('meg')) return parseFloat(s) * 1e6;
-    if (s.includes('k')) return parseFloat(s) * 1000;
-    if (s.includes('m') && !s.includes('meg')) return parseFloat(s) * 0.001;
+    const normalized = AnalogEngine.normalizeResistanceInput(val);
+    const parsed = UnitParser.parseResistance(normalized);
+    if (parsed.valid && parsed.numeric > 0) {
+      return parsed.numeric;
+    }
+    const s = normalized.toLowerCase().replace(/[ωohm]/g, '').trim();
+    if (s.includes('meg')) {
+      return parseFloat(s) * 1e6;
+    }
+    if (s.includes('k')) {
+      const n = parseFloat(s);
+      return isNaN(n) ? 1000 : n * 1000;
+    }
+    if (s.includes('m') && !s.includes('meg')) {
+      return parseFloat(s) * 0.001;
+    }
     const n = parseFloat(s);
     return isNaN(n) || n <= 0 ? 1000 : n;
+  }
+
+  /**
+   * Fix malformed values like "47000ΩK" (already ohms + stray K from lib id).
+   * Values >= 1000 with a trailing K are treated as plain ohms.
+   */
+  private static normalizeResistanceInput(val: string): string {
+    let s = val.trim().replace(/\s+/g, '');
+    // "47ΩK" / "47000ΩK" — strip Ω before K/M/G suffix
+    s = s.replace(/(?:Ω|ohm|R)(?=[KMG])/i, '');
+    const redundantK = s.match(/^([\d.]+)(?:Ω|ohm|R)?K$/i);
+    if (redundantK !== null) {
+      const n = parseFloat(redundantK[1]);
+      if (!isNaN(n) && n >= 1000) {
+        return `${n}Ω`;
+      }
+    }
+    return s;
   }
 
   private parseCapacitance(val: string): number {

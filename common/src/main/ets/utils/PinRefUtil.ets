@@ -43,15 +43,30 @@ export interface Net {
   pinIds: string[];
 }
 
+/** Build pinName/pinId (uppercase keys) → netId for one component instance. */
 export function getPinNetMap(compId: string, nets: Net[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const net of nets) {
     for (const pinRef of net.pinIds) {
       const parsed = parsePinRef(pinRef);
-      if (parsed !== null && parsed.compId === compId && parsed.pinName.length > 0) {
-        map.set(parsed.pinName, net.id);
+      if (parsed === null || parsed.compId !== compId) {
+        continue;
+      }
+      if (parsed.pinName.length > 0) {
+        map.set(parsed.pinName.toUpperCase(), net.id);
+      }
+      if (parsed.pinId.length > 0) {
+        map.set(parsed.pinId.toUpperCase(), net.id);
       }
     }
   }
   return map;
+}
+
+/** Look up a net UUID by pin label (name or id, case-insensitive). */
+export function findNetForPinLabel(pinNets: Map<string, string>, pinLabel: string): string | null {
+  if (pinLabel.length === 0) {
+    return null;
+  }
+  return pinNets.get(pinLabel.toUpperCase()) ?? null;
 }

@@ -32,6 +32,19 @@ export function paramMapGet(params: Map<string, string>, key: string, fallback: 
   return fallback;
 }
 
+/** 解析 "5V" / "3.3" 等为伏特数值 */
+export function parseVoltageVolts(value: string, fallback: number = 5): number {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return fallback;
+  }
+  const numeric = parseFloat(trimmed.replace(/[^\d.]/g, ''));
+  if (isNaN(numeric) || numeric <= 0) {
+    return fallback;
+  }
+  return numeric;
+}
+
 export function appendArray<T>(target: T[], source: T[]): void {
   for (let i = 0; i < source.length; i++) {
     target.push(source[i]);

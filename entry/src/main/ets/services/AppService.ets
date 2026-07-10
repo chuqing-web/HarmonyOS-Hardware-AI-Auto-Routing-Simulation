@@ -8,7 +8,7 @@ import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugge
 import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
 import { AiEngineImpl, IAiEngine, TeachingService, TemplateFirmware } from 'ai_engine';
 import { FilePersistenceImpl, CrashGuard, IFilePersistence, BomLookup, SessionState } from 'file_persistence';
-import { VirtualInstrumentsImpl, IVirtualInstruments } from 'instruments';
+import { VirtualInstrumentsImpl, IVirtualInstruments, ComponentInstrumentBinding } from 'instruments';
 import { PluginManagerImpl, IPluginManager } from 'plugin_system';
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
@@ -24,7 +24,12 @@ import {
   LicenseManager, LicenseStatus, FeatureGate, UsageDashboard,
   SchematicAnnotationType, SchematicAnnotationStatus,
   SnapshotMeta, VersionCompareReport, IdUtil, calcSymbolBounds, SymbolBounds,
-  paramMapGet, PrivacyConsentStore, Pin, McuFamily
+  paramMapGet, PrivacyConsentStore, Pin, McuFamily, SimulationState, SchematicDocument, NetType,
+  getPinNetMap, findNetForPinLabel,
+  traceBindingRefresh, traceActiveComponent, traceActiveComponentChanged, traceReloadSchematic, traceSimStep,
+  tracePinNetEmpty, BindingTraceInfo, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap,
+  ensureNetPinConnectivity, PinGeometryResolver, PinGeometry,
+  traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -85,7 +90,11 @@ export class AppService {
     highContrast: false, keyboardOnly: false, uiScale: 1.0, screenReader: false
   };
   private simTimer: number = -1;
+  private simTickScheduled: boolean = false;
   private simStepCount: number = 0;
+  private readonly SIM_TICK_MS: number = 50;
+  private lastActiveInstrumentId: string | null = null;
+  private bindingPinHash: Map<string, string> = new Map();
 
   onProjectChanged: () => void = () => {};
   onStatusMessage: (msg: string) => void = () => {};
@@ -197,264 +206,375 @@ export class AppService {
     return this.schematicEditor.getFullTopology();
   }
 
-  /** Wire the voltmeter/ammeter engine to read from actual circuit nets for a given component instance. */
+  /** Reload simulation netlist from current schematic while preserving run/pause state */
+  reloadSimulationFromSchematic(): void {
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    if (!kernel.isSimActive()) {
+      return;
+    }
+    (this.schematicEditor as SchematicEditorImpl).rebuildNetPinConnectivity();
+    const doc = this.schematicEditor.getDocument();
+    ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
+    this.bindingPinHash.clear();
+    kernel.loadSchematic(doc);
+    this.autoWireAllInstruments();
+    this.autoWireSignalGenerators();
+    const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
+    traceReloadSchematic(activeComp, doc.components.length, doc.nets.length);
+    if (activeComp !== null && activeComp.length > 0) {
+      this.refreshInstrumentReaderForComponent(activeComp);
+      this.setActiveInstrumentComponent(activeComp);
+    }
+  }
+
+  /** Toggle pause/resume during active simulation; returns true if now paused */
+  toggleSimulationPause(): boolean {
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    if (kernel.getState() === SimulationState.RUNNING) {
+      kernel.pauseSim();
+      this.onStatusMessage('仿真已暂停');
+      return true;
+    }
+    if (kernel.getState() === SimulationState.PAUSED) {
+      kernel.resumeSim();
+      this.onStatusMessage('仿真已恢复');
+      return false;
+    }
+    return false;
+  }
+
+  isSimulationPaused(): boolean {
+    return (this.simulationKernel as SimulationKernelImpl).isSimPaused();
+  }
+
+  invalidateInstrumentBinding(compId: string): void {
+    this.bindingPinHash.delete(compId);
+  }
+
+  /** Force re-bind all instruments (e.g. after simulation start) */
+  refreshAllInstrumentBindings(): void {
+    this.bindingPinHash.clear();
+    this.autoWireAllInstruments();
+  }
+
+  /** Push schematic parameter changes into the running simulation kernel */
+  syncComponentParamToSimulation(_compId: string, _key: string, _value: string): void {
+    this.reloadSimulationFromSchematic();
+  }
+
+  /** Set which component instance drives Props/Instr instrument readouts */
+  setActiveInstrumentComponent(compInstId: string | null): void {
+    if (compInstId !== this.lastActiveInstrumentId) {
+      traceActiveComponentChanged(compInstId, 'AppService.setActive');
+      this.lastActiveInstrumentId = compInstId;
+    }
+    if (compInstId !== null && compInstId.length > 0) {
+      this.refreshInstrumentReaderForComponent(compInstId);
+    }
+    (this.instruments as VirtualInstrumentsImpl).setActiveInstrumentComponent(compInstId);
+  }
+
+  /**
+   * Read voltmeter V+ − COM directly from schematic pins + simulation.
+   * Avoids shared-engine stale binding when multiple voltmeters exist.
+   */
+  readVoltmeterDeltaForComponent(compInstId: string): number | null {
+    const doc = this.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compInstId);
+    if (comp === undefined) {
+      return null;
+    }
+    const upper = comp.libraryId.toUpperCase();
+    if (!upper.includes('VOLTMETER') && !upper.includes('VIRTUAL_METER') && upper !== 'MULTIMETER') {
+      return null;
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const pinNets = getPinNetMap(compInstId, doc.nets);
+    const netPlus = findNetForPinLabel(pinNets, 'V+') ?? findNetForPinLabel(pinNets, 'V') ??
+      findNetForPinLabel(pinNets, 'PLUS') ?? findNetForPinLabel(pinNets, '+') ??
+      findNetForPinLabel(pinNets, 'PROBE1');
+    if (netPlus === null) {
+      return null;
+    }
+    const netCom = findNetForPinLabel(pinNets, 'COM') ?? findNetForPinLabel(pinNets, 'V-') ??
+      findNetForPinLabel(pinNets, '-') ?? findNetForPinLabel(pinNets, 'GND') ??
+      findNetForPinLabel(pinNets, 'PROBE2');
+    if (netCom === null) {
+      return null;
+    }
+    const vPlus = kernel.getNetVoltageByUuid(netPlus);
+    const vCom = kernel.getNetVoltageByUuid(netCom);
+    const delta = vPlus - vCom;
+    traceMeasure(comp.refDes, 'V', kernel.isSimActive(),
+      `UI V+(${this.netLabel(doc, netPlus)})=${vPlus.toFixed(4)}V ` +
+      `COM(${this.netLabel(doc, netCom)})=${vCom.toFixed(4)}V ` +
+      `Δ=${delta.toFixed(4)}V sign=${delta >= 0 ? '+' : '-'} (${delta >= 0 ? 'V+>COM' : 'COM>V+'})`);
+    return delta;
+  }
+
+  /** Read ammeter branch current (mA, signed I+→I-) for a specific instance. */
+  readAmmeterCurrentForComponent(compInstId: string): number | null {
+    const doc = this.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compInstId);
+    if (comp === undefined) {
+      return null;
+    }
+    if (!comp.libraryId.toUpperCase().includes('AMMETER')) {
+      return null;
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const pinNets = getPinNetMap(compInstId, doc.nets);
+    const netPlus = findNetForPinLabel(pinNets, 'I+') ?? findNetForPinLabel(pinNets, 'PLUS') ??
+      findNetForPinLabel(pinNets, '+');
+    const netMinus = findNetForPinLabel(pinNets, 'I-') ?? findNetForPinLabel(pinNets, 'MINUS') ??
+      findNetForPinLabel(pinNets, '-');
+    if (netPlus === null || netMinus === null) {
+      return null;
+    }
+    const iBranch = kernel.getBranchCurrent(compInstId);
+    if (Math.abs(iBranch) > 1e-15) {
+      const mA = iBranch * 1000;
+      traceMeasure(comp.refDes, 'I', kernel.isSimActive(),
+        `UI I+→I- I=${mA.toFixed(4)}mA sign=${iBranch >= 0 ? '+' : '-'}`);
+      return mA;
+    }
+    return null;
+  }
+
+  isSimulationRunning(): boolean {
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    return kernel.isSimActive() && kernel.getState() === SimulationState.RUNNING;
+  }
+
+  /** Resolve net UUID to human-readable net name for logs */
+  private netLabel(doc: SchematicDocument, netId: string): string {
+    const net = doc.nets.find(n => n.id === netId);
+    if (net !== undefined && net.name.length > 0) {
+      return `${net.name}(${netId})`;
+    }
+    return netId;
+  }
+
+  /** Build voltage detail string for bound instrument nets */
+  private buildNetVoltageDetail(
+    doc: SchematicDocument,
+    kernel: SimulationKernelImpl,
+    netIds: string[]): string {
+    const parts: string[] = [];
+    for (let i = 0; i < netIds.length; i++) {
+      const id = netIds[i];
+      if (id.length === 0) {
+        continue;
+      }
+      const v = kernel.getNetVoltageByUuid(id);
+      parts.push(`${this.netLabel(doc, id)}=${v.toFixed(4)}V`);
+    }
+    return parts.length > 0 ? `nets_V={${parts.join(', ')}}` : '';
+  }
+
+  /** Wire instrument readers to a specific component's connected nets (per-instance binding) */
   refreshInstrumentReaderForComponent(compInstId: string): void {
     const doc = this.schematicEditor.getDocument();
     const comp = doc.components.find(c => c.id === compInstId);
     if (comp === undefined) {
-      this.clearPerComponentReaders();
       return;
     }
 
-    const isRunning = this.simulationKernel.isSimRunning();
-    if (!isRunning) {
-      this.clearPerComponentReaders();
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const pinNets = getPinNetMap(compInstId, doc.nets);
+    const pinHash = formatPinNetMap(pinNets);
+    if (this.bindingPinHash.get(compInstId) === pinHash) {
       return;
     }
+    this.bindingPinHash.set(compInstId, pinHash);
 
-    // Find nets connected to this component's pins by scanning net.pinIds
-    // Pin ref format: compId:pinId:pinName
-    const pinNets = new Map<string, string>(); // pinName → netId
-    const allPinNetIds: string[] = [];
-    for (const net of doc.nets) {
-      for (const pinRef of net.pinIds) {
-        const parts = pinRef.split(':');
-        if (parts.length >= 2 && parts[0] === compInstId) {
-          const pinLabel = parts.length >= 3 ? parts[2] : parts[1];
-          pinNets.set(pinLabel.toUpperCase(), net.id);
-          // Also index by the bare pin ID (parts[1])
-          if (!pinNets.has(parts[1].toUpperCase())) {
-            pinNets.set(parts[1].toUpperCase(), net.id);
+    const upperId = comp.libraryId.toUpperCase();
+    const isInstrumentLib = upperId.includes('METER') || upperId.includes('SCOPE') || upperId.includes('OSC') ||
+      upperId.includes('LOGIC') || upperId.includes('ANALYZER') || upperId.includes('POWER') ||
+      upperId.includes('WATT') || upperId.includes('FREQ') || upperId.includes('COUNTER');
+    if (isInstrumentLib && pinNets.size === 0) {
+      tracePinNetEmpty(compInstId, comp.refDes);
+    }
+
+    const findNetForPin = (pinLabel: string): string | null => findNetForPinLabel(pinNets, pinLabel);
+
+    const binding: ComponentInstrumentBinding = {
+      libraryId: comp.libraryId,
+      scopeProbes: ['', '', '', ''],
+      logicProbes: [],
+      voltageReader: null,
+      currentReader: null,
+      powerVoltageReader: null,
+      powerCurrentReader: null,
+      freqReader: null
+    };
+
+    if (upperId.includes('OSC') || upperId.includes('SCOPE')) {
+      for (let ch = 1; ch <= 4; ch++) {
+        const net = findNetForPin(`CH${ch}`) ?? findNetForPin(`IN${ch}`) ?? findNetForPin(`A${ch}`);
+        if (net !== null) {
+          binding.scopeProbes[ch - 1] = net;
+        }
+      }
+    } else if (upperId.includes('LOGIC') || upperId.includes('ANALYZER') || upperId.startsWith('LA')) {
+      for (let ch = 1; ch <= 8; ch++) {
+        const net = findNetForPin(`CH${ch}`) ?? findNetForPin(`D${ch - 1}`) ?? findNetForPin(`IN${ch}`);
+        if (net !== null) {
+          binding.logicProbes.push(net);
+        }
+      }
+    } else if (upperId.includes('VOLTMETER') || upperId.includes('VIRTUAL_METER') || upperId === 'MULTIMETER') {
+      const netPlus = findNetForPin('V+') ?? findNetForPin('V') ?? findNetForPin('PLUS') ?? findNetForPin('+') ??
+        findNetForPin('PROBE1');
+      const netCom = findNetForPin('COM') ?? findNetForPin('V-') ?? findNetForPin('-') ?? findNetForPin('GND') ??
+        findNetForPin('PROBE2');
+      if (netPlus !== null && netCom !== null) {
+        const vPlusId = netPlus;
+        const vComId = netCom;
+        binding.voltageReader = () => {
+          const vPlus = kernel.getNetVoltageByUuid(vPlusId);
+          const vCom = kernel.getNetVoltageByUuid(vComId);
+          const delta = vPlus - vCom;
+          traceMeasure(comp.refDes, 'V', kernel.isSimActive(),
+            `V+(${this.netLabel(doc, vPlusId)})=${vPlus.toFixed(4)}V ` +
+            `COM(${this.netLabel(doc, vComId)})=${vCom.toFixed(4)}V ` +
+            `Δ=${delta.toFixed(4)}V sign=${delta >= 0 ? '+' : '-'} (${delta >= 0 ? 'V+>COM' : 'COM>V+'})`);
+          return delta;
+        };
+      }
+    } else if (upperId.includes('AMMETER')) {
+      const netPlus = findNetForPin('I+') ?? findNetForPin('PLUS') ?? findNetForPin('+');
+      const netMinus = findNetForPin('I-') ?? findNetForPin('MINUS') ?? findNetForPin('-');
+      if (netPlus !== null && netMinus !== null) {
+        binding.currentReader = () => {
+          const iBranch = kernel.getBranchCurrent(compInstId);
+          if (Math.abs(iBranch) > 1e-15) {
+            const mA = iBranch * 1000;
+            traceMeasure(comp.refDes, 'I', kernel.isSimActive(),
+              `I+(${this.netLabel(doc, netPlus)})→I-(${this.netLabel(doc, netMinus)}) ` +
+              `I=${mA.toFixed(4)}mA sign=${iBranch >= 0 ? '+' : '-'} (${iBranch >= 0 ? 'I+→I-' : 'I-→I+'})`);
+            return mA;
           }
-          if (!allPinNetIds.includes(net.id)) {
-            allPinNetIds.push(net.id);
+          return 0;
+        };
+      }
+    } else if (upperId.includes('POWER') || upperId.includes('WATT')) {
+      const netVPlus = findNetForPin('V+') ?? findNetForPin('VP') ?? findNetForPin('PLUS') ?? findNetForPin('+');
+      const netVCom = findNetForPin('V-') ?? findNetForPin('COM') ?? findNetForPin('GND') ?? findNetForPin('-');
+      const netIPlus = findNetForPin('I+') ?? findNetForPin('IP') ?? findNetForPin('A+');
+      const netIMinus = findNetForPin('I-') ?? findNetForPin('IM') ?? findNetForPin('A-');
+
+      if (netVPlus !== null && netVCom !== null) {
+        binding.powerVoltageReader = () => {
+          return kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom);
+        };
+      }
+      if (netIPlus !== null && netIMinus !== null) {
+        binding.powerCurrentReader = () => {
+          const netCur = kernel.getNetCurrentByUuid(netIPlus);
+          if (Math.abs(netCur) > 1e-15) {
+            return netCur;
           }
+          return 0;
+        };
+      }
+    } else if (upperId.includes('FREQ') || upperId.includes('COUNTER')) {
+      const netSig = findNetForPin('IN') ?? findNetForPin('SIG') ?? findNetForPin('INPUT') ?? findNetForPin('+');
+      if (netSig !== null) {
+        binding.freqReader = (): number => {
+          return AppService.estimateFrequencyFromWaves(kernel.getAllWaveData(), netSig);
+        };
+        binding.scopeProbes[0] = netSig;
+      }
+    }
+
+    (this.instruments as VirtualInstrumentsImpl).registerComponentBinding(compInstId, binding);
+    const traceInfo: BindingTraceInfo = {
+      libraryId: binding.libraryId,
+      scopeProbes: binding.scopeProbes.slice(),
+      logicProbes: binding.logicProbes.slice(),
+      hasVoltageReader: binding.voltageReader !== null,
+      hasCurrentReader: binding.currentReader !== null,
+      hasPowerVoltageReader: binding.powerVoltageReader !== null,
+      hasPowerCurrentReader: binding.powerCurrentReader !== null,
+      hasFreqReader: binding.freqReader !== null
+    };
+    const simActive = (this.simulationKernel as SimulationKernelImpl).isSimActive();
+    const boundNetIds: string[] = [];
+    pinNets.forEach((netId: string) => {
+      if (!boundNetIds.includes(netId)) {
+        boundNetIds.push(netId);
+      }
+    });
+    const netDetail = this.buildNetVoltageDetail(doc, kernel, boundNetIds);
+    traceBindingRefresh(compInstId, comp.refDes, pinNets, traceInfo, simActive, netDetail);
+  }
+
+  private static estimateFrequencyFromWaves(waves: WaveData[], netSig: string): number {
+    let targetWave: WaveData | undefined = undefined;
+    for (let wi = 0; wi < waves.length; wi++) {
+      const w = waves[wi];
+      if (w.netName === netSig || w.probeName === netSig) {
+        targetWave = w;
+        break;
+      }
+    }
+    if (targetWave === undefined) {
+      for (let wi = 0; wi < waves.length; wi++) {
+        const w = waves[wi];
+        if (w.netName === netSig || w.probeName === netSig) {
+          targetWave = w;
+          break;
         }
       }
     }
-
-    const findNetForPin = (pinLabel: string): string | null => {
-      return pinNets.get(pinLabel.toUpperCase()) ?? null;
-    };
-
-    const kernel = this.simulationKernel as SimulationKernelImpl;
-    const upperId = comp.libraryId.toUpperCase();
-
-    if (upperId.includes('VOLTMETER')) {
-      // Voltmeter: find two nets it sits across — typically V+ and V- (or COM)
-      const netPlus = findNetForPin('V+') ?? findNetForPin('PLUS') ?? findNetForPin('+') ?? findNetForPin('A') ??
-        (allPinNetIds.length > 0 ? allPinNetIds[0] : null);
-      const netCom = findNetForPin('COM') ?? findNetForPin('V-') ?? findNetForPin('-') ?? findNetForPin('GND') ?? findNetForPin('B') ??
-        (allPinNetIds.length > 1 ? allPinNetIds[1] : '0');
-      if (netPlus !== null) {
-        this.instruments.setVoltmeterReader(() => {
-          const vPlus = kernel.getNetVoltageByUuid(netPlus);
-          const vCom = kernel.getNetVoltageByUuid(netCom ?? '0');
-          return vPlus - vCom;
-        });
-      } else {
-        this.instruments.setVoltmeterReader(null);
+    if (targetWave === undefined || targetWave.timeAxis.length < 4) {
+      return 0;
+    }
+    const ta = targetWave.timeAxis;
+    const va = targetWave.voltageAxis;
+    let maxV = va[0];
+    let minV = va[0];
+    for (let k = 1; k < va.length; k++) {
+      if (va[k] > maxV) {
+        maxV = va[k];
       }
-    } else if (upperId.includes('VIRTUAL_METER') || upperId === 'MULTIMETER') {
-      // Multimeter: find two probe nets — V+/COM or A/B
-      const netPlus = findNetForPin('V+') ?? findNetForPin('PLUS') ?? findNetForPin('+') ?? findNetForPin('A') ??
-        findNetForPin('PROBE1') ?? (allPinNetIds.length > 0 ? allPinNetIds[0] : null);
-      const netCom = findNetForPin('COM') ?? findNetForPin('V-') ?? findNetForPin('-') ?? findNetForPin('GND') ??
-        findNetForPin('B') ?? findNetForPin('PROBE2') ??
-        (allPinNetIds.length > 1 ? allPinNetIds[1] : '0');
-      if (netPlus !== null) {
-        this.instruments.setMultimeterReader(() => {
-          return kernel.getNetVoltageByUuid(netPlus) - kernel.getNetVoltageByUuid(netCom ?? '0');
-        });
-      } else {
-        this.instruments.setMultimeterReader(null);
-      }
-    } else if (upperId.includes('OSC') || upperId.includes('SCOPE')) {
-      // Oscilloscope: auto-assign probes from connected nets
-      this.instruments.autoAssignScopeProbes();
-    } else if (upperId.includes('AMMETER')) {
-      // Ammeter: is in series — measure current through the net it sits on
-      const netPlus = findNetForPin('I+') ?? findNetForPin('PLUS') ?? findNetForPin('+') ?? findNetForPin('A') ??
-        (allPinNetIds.length > 0 ? allPinNetIds[0] : null);
-      const netMinus = findNetForPin('I-') ?? findNetForPin('MINUS') ?? findNetForPin('-') ?? findNetForPin('B') ??
-        (allPinNetIds.length > 1 ? allPinNetIds[1] : null);
-      if (netPlus !== null) {
-        this.instruments.setAmmeterReader(() => {
-          // Ammeter measures current flowing through it
-          // First try: get current from the net (series connection means both sides are on the same net)
-          const netCur = kernel.getNetCurrentByUuid(netPlus);
-          if (Math.abs(netCur) > 1e-15) return netCur * 1000; // Convert to mA
-          // Second try: compute from voltage difference across the ammeter's internal shunt (0.1 ohm)
-          if (netMinus !== null) {
-            const vDiff = kernel.getNetVoltageByUuid(netPlus) - kernel.getNetVoltageByUuid(netMinus);
-            // Ammeter internal shunt is ~0.1 ohm → I = V/0.1 = V*10 in amps = V*10000 in mA
-            if (Math.abs(vDiff) > 1e-9) return vDiff * 10000;
-          }
-          // Third try: get component current
-          const compCur = kernel.getBranchCurrent(compInstId);
-          if (Math.abs(compCur) > 1e-15) return compCur * 1000;
-          return 0;
-        });
-      } else {
-        this.instruments.setAmmeterReader(null);
-      }
-    } else if (upperId.includes('POWER') || upperId.includes('WATT')) {
-      const netVPlus = findNetForPin('V+') ?? findNetForPin('VP') ?? findNetForPin('PLUS') ?? findNetForPin('+') ??
-        (allPinNetIds.length > 0 ? allPinNetIds[0] : null);
-      const netVCom = findNetForPin('V-') ?? findNetForPin('COM') ?? findNetForPin('GND') ?? findNetForPin('-') ??
-        (allPinNetIds.length > 1 ? allPinNetIds[1] : '0');
-      const netIPlus = findNetForPin('I+') ?? findNetForPin('IP') ?? findNetForPin('A+') ?? netVPlus;
-      const netIMinus = findNetForPin('I-') ?? findNetForPin('IM') ?? findNetForPin('A-') ??
-        (allPinNetIds.length > 2 ? allPinNetIds[2] : (allPinNetIds.length > 1 ? allPinNetIds[1] : '0'));
-
-      if (netVPlus !== null) {
-        this.instruments.setPowerMeterVoltageReader(() => {
-          return kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom ?? '0');
-        });
-      } else {
-        this.instruments.setPowerMeterVoltageReader(null);
-      }
-      if (netIPlus !== null) {
-        this.instruments.setPowerMeterCurrentReader(() => {
-          const netCur = kernel.getNetCurrentByUuid(netIPlus);
-          if (Math.abs(netCur) > 1e-15) return netCur;
-          const vDiff = kernel.getNetVoltageByUuid(netIPlus) - kernel.getNetVoltageByUuid(netIMinus ?? '0');
-          if (Math.abs(vDiff) > 1e-9) return vDiff * 10; // Shunt = 0.1 ohm
-          return 0;
-        });
-      } else {
-        this.instruments.setPowerMeterCurrentReader(null);
-      }
-    } else if (upperId.includes('FREQ') || upperId.includes('COUNTER')) {
-      const netSig = findNetForPin('IN') ?? findNetForPin('SIG') ?? findNetForPin('INPUT') ?? findNetForPin('+') ??
-        (allPinNetIds.length > 0 ? allPinNetIds[0] : null);
-      if (netSig !== null) {
-        this.instruments.setFreqCounterReader((): number => {
-          const waves: WaveData[] = kernel.getAllWaveData();
-          let targetWave: WaveData | undefined = undefined;
-          for (let wi: number = 0; wi < waves.length; wi++) {
-            const w: WaveData = waves[wi];
-            if (w.netName === netSig || w.probeName === netSig || w.netName.indexOf(netSig) >= 0) {
-              targetWave = w;
-              break;
-            }
-          }
-          if (targetWave === undefined && waves.length > 0) {
-            targetWave = waves[0];
-          }
-          if (targetWave === undefined || targetWave.timeAxis.length < 4) return 0;
-          const ta: number[] = targetWave.timeAxis;
-          const va: number[] = targetWave.voltageAxis;
-          let maxV: number = va[0];
-          let minV: number = va[0];
-          for (let k: number = 1; k < va.length; k++) {
-            if (va[k] > maxV) maxV = va[k];
-            if (va[k] < minV) minV = va[k];
-          }
-          const threshold: number = (maxV + minV) / 2;
-          let crossings: number = 0;
-          let firstCross: number = -1;
-          for (let i: number = 1; i < va.length; i++) {
-            if ((va[i - 1] < threshold && va[i] >= threshold) ||
-                (va[i - 1] > threshold && va[i] <= threshold)) {
-              if (firstCross < 0) firstCross = ta[i];
-              crossings++;
-            }
-          }
-          if (crossings < 2) return 0;
-          const lastCrossVal: number = ta[ta.length - 1];
-          const period: number = 2 * (lastCrossVal - firstCross) / (crossings - 1);
-          if (period <= 0) return 0;
-          return 1.0 / period;
-        });
-      } else {
-        this.instruments.setFreqCounterReader(null);
+      if (va[k] < minV) {
+        minV = va[k];
       }
     }
+    const threshold = (maxV + minV) / 2;
+    let crossings = 0;
+    let firstCross = -1;
+    for (let i = 1; i < va.length; i++) {
+      if ((va[i - 1] < threshold && va[i] >= threshold) ||
+          (va[i - 1] > threshold && va[i] <= threshold)) {
+        if (firstCross < 0) {
+          firstCross = ta[i];
+        }
+        crossings++;
+      }
+    }
+    if (crossings < 2) {
+      return 0;
+    }
+    const period = 2 * (ta[ta.length - 1] - firstCross) / (crossings - 1);
+    return period > 0 ? 1.0 / period : 0;
   }
 
-  /** Clear only per-component readers, preserving global fallbacks */
+  /** Clear active component selection (bindings are preserved for re-activation) */
   clearPerComponentReaders(): void {
-    this.instruments.setVoltmeterReader(null);
-    this.instruments.setAmmeterReader(null);
-    this.instruments.setPowerMeterVoltageReader(null);
-    this.instruments.setPowerMeterCurrentReader(null);
-    this.instruments.setFreqCounterReader(null);
-    this.instruments.setMultimeterReader(null);
+    this.setActiveInstrumentComponent(null);
   }
 
   clearInstrumentReaders(): void {
-    this.clearPerComponentReaders();
+    this.setActiveInstrumentComponent(null);
     this.clearInstrumentGlobalFallbacks();
   }
 
-  /** Set up global fallback readers so instruments show simulation data even without a selected component */
+  /** No global instrument fallbacks — readings require explicit pin wiring. */
   private setupInstrumentGlobalFallbacks(): void {
-    const kernel = this.simulationKernel as SimulationKernelImpl;
-    // Voltmeter: read the voltage of the first non-ground net
-    this.instruments.setVoltmeterGlobalFallback(() => {
-      const vm = kernel.getNodeVoltageMap();
-      if (vm.size > 0) {
-        return vm.values().next().value as number;
-      }
-      return 0;
-    });
-    // Ammeter: read current from first available branch
-    this.instruments.setAmmeterGlobalFallback(() => {
-      const cm = kernel.getBranchCurrentMap();
-      if (cm.size > 0) {
-        // Return in mA (map values are in amps)
-        return (cm.values().next().value as number) * 1000;
-      }
-      return 0;
-    });
-    // Multimeter: read voltage from first net
-    this.instruments.setMultimeterGlobalFallback(() => {
-      const vm = kernel.getNodeVoltageMap();
-      if (vm.size > 0) {
-        return vm.values().next().value as number;
-      }
-      return 0;
-    });
-    // Power meter: voltage from first net, current from first branch
-    this.instruments.setPowerMeterGlobalFallbacks(
-      () => {
-        const vm = kernel.getNodeVoltageMap();
-        return vm.size > 0 ? vm.values().next().value as number : 0;
-      },
-      () => {
-        const cm = kernel.getBranchCurrentMap();
-        return cm.size > 0 ? cm.values().next().value as number : 0;
-      }
-    );
-    // Frequency counter: estimate from first scope channel waveform
-    this.instruments.setFreqCounterGlobalFallback(() => {
-      const waveResult = this.instruments.getOscilloscopeWave(0);
-      if (!waveResult.success) return 0;
-      const data = waveResult.data;
-      if (data === undefined || data.timeAxis.length < 4) return 0;
-      const ta: number[] = data.timeAxis;
-      const va: number[] = data.voltageAxis;
-      let maxV: number = va[0];
-      let minV: number = va[0];
-      for (let i = 1; i < va.length; i++) {
-        if (va[i] > maxV) maxV = va[i];
-        if (va[i] < minV) minV = va[i];
-      }
-      const threshold: number = (maxV + minV) / 2;
-      let crossings: number = 0;
-      let firstCross: number = -1;
-      for (let i = 1; i < va.length; i++) {
-        if ((va[i - 1] < threshold && va[i] >= threshold) ||
-            (va[i - 1] > threshold && va[i] <= threshold)) {
-          if (firstCross < 0) firstCross = ta[i];
-          crossings++;
-        }
-      }
-      if (crossings < 2) return 0;
-      const period: number = 2 * (ta[ta.length - 1] - firstCross) / (crossings - 1);
-      return period > 0 ? 1.0 / period : 0;
-    });
+    this.clearInstrumentGlobalFallbacks();
   }
 
   private clearInstrumentGlobalFallbacks(): void {
@@ -515,7 +635,12 @@ export class AppService {
     const editor = this.schematicEditor as SchematicEditorImpl;
     editor.loadDocument(this.currentProject.schematic);
     editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
-    this.simulationKernel.loadSchematic(this.currentProject.schematic);
+    editor.rebuildNetPinConnectivity();
+    const doc = this.currentProject.schematic;
+    ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
+    this.simulationKernel.loadSchematic(doc);
+    traceProjectOpenAudit(path, this.currentProject.name, doc, editor.getViewport());
+    traceDataFlow('LOAD', 'schematic→editor→netRebuild→kernel loadSchematic complete');
     if (this.currentProject.mcuDebugConfig) {
       this.hexDebugger.configure(this.currentProject.mcuDebugConfig);
     }
@@ -523,6 +648,8 @@ export class AppService {
       const cfg = this.currentProject.aiConfigs[i];
       this.aiApiManager.addApi(cfg);
     }
+    this.bindingPinHash.clear();
+    this.autoWireAllInstruments();
     this.onProjectChanged();
     return true;
   }
@@ -635,14 +762,38 @@ export class AppService {
     return errors;
   }
 
+  /** Resolve pin world positions from component library for net connectivity rebuild */
+  private pinGeometryResolver(): PinGeometryResolver {
+    const lib = this.componentLibrary as ComponentLibraryImpl;
+    return (libraryId: string): PinGeometry[] | null => {
+      const resolvedId = lib.resolveLibraryId(libraryId);
+      const comp = lib.getComponent(resolvedId);
+      if (!comp.success || comp.data === undefined) {
+        return null;
+      }
+      const pins: PinGeometry[] = [];
+      for (let i = 0; i < comp.data.pins.length; i++) {
+        const p = comp.data.pins[i];
+        pins.push({ id: p.id, name: p.name, x: p.position.x, y: p.position.y });
+      }
+      return pins;
+    };
+  }
+
   startSimulation(): boolean {
-    const topo = this.getTopology();
-    const ercErrors = this.schematicEditor.runERC(topo);
+    (this.schematicEditor as SchematicEditorImpl).rebuildNetPinConnectivity();
+    const pinResolver = this.pinGeometryResolver();
+    let doc = this.schematicEditor.getDocument();
+    ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, pinResolver);
+    // runERC rebuilds pin connectivity — capture topology AFTER it completes
+    const ercErrors = this.schematicEditor.runERC();
     const critical = ercErrors.filter(e => e.severity === 'error' || e.severity === 'critical');
     if (critical.some(e => e.desc.includes('短路'))) {
       this.onStatusMessage('存在短路错误，禁止启动仿真');
       return false;
     }
+    doc = this.schematicEditor.getDocument();
+    const topo = this.getTopology();
 
     const cfg = defaultSimConfig();
     const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
@@ -654,36 +805,72 @@ export class AppService {
       return false;
     }
 
+    // Reload from editor doc so analog MNA uses rebuilt net.pinIds (not stale topology)
+    (this.simulationKernel as SimulationKernelImpl).loadSchematic(doc);
+
     this.schematicEditor.setSimBusy(true);
     this.simStepCount = 0;
     this.onStatusMessage('仿真运行中...');
 
-    // Run initial batch of simulation steps to populate wave data immediately
-    this.runSimBatch(200);
+    // Run a small initial batch to populate wave data, then let the tick loop take over
+    this.runSimBatch(20);
 
     // Set up global instrument fallbacks so instruments show data even without a selected component
     this.setupInstrumentGlobalFallbacks();
 
-    // Auto-wire all instrument components on the schematic to the simulation
-    this.autoWireAllInstruments();
+    // Re-bind all instruments now that simulation is active (refresh pin-hash cache)
+    const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
+    this.refreshAllInstrumentBindings();
+    if (activeComp !== null && activeComp.length > 0) {
+      this.setActiveInstrumentComponent(activeComp);
+    }
     // Auto-connect signal generators to analog engine
     this.autoWireSignalGenerators();
 
-    // Start periodic stepping to continuously generate data for instruments
-    this.simTimer = setInterval(() => {
-      if (!this.simulationKernel.isSimRunning()) {
-        clearInterval(this.simTimer);
-        this.simTimer = -1;
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    traceSimStartupAudit(
+      doc, this.simulationKernel.getState(), this.simStepCount,
+      (netId: string) => kernel.getNetVoltageByUuid(netId),
+      (netId: string) => kernel.getNetCurrentByUuid(netId),
+      kernel.getNodeVoltageMap(), kernel.getBranchCurrentMap(),
+      kernel.getAllWaveData(), kernel.netToSpiceNodeMap(), activeComp,
+      (compId: string) => kernel.getBranchCurrent(compId));
+
+    Logger.info(INSTR_TRACE_TAG,
+      '仿真已启动 — DevEco 日志过滤 instr_trace 可追踪仪器绑定; setInstrTraceSimStep(true) 开启逐步采样');
+
+    // Start periodic stepping using setTimeout chain to prevent overlap when main thread is busy
+    this.scheduleSimTick();
+
+    return true;
+  }
+
+  private scheduleSimTick(): void {
+    if (this.simTickScheduled) {
+      return;
+    }
+    const state = this.simulationKernel.getState();
+    if (state !== SimulationState.RUNNING && state !== SimulationState.PAUSED) {
+      return;
+    }
+    this.simTickScheduled = true;
+    this.simTimer = setTimeout(() => {
+      this.simTimer = -1;
+      this.simTickScheduled = false;
+      const currentState = this.simulationKernel.getState();
+      if (currentState === SimulationState.PAUSED) {
+        this.scheduleSimTick();
+        return;
+      }
+      if (currentState !== SimulationState.RUNNING) {
         return;
       }
       this.runSimBatch(10);
-      // Refresh instrument readers every few batches
       if (this.simStepCount % 50 === 0) {
         this.autoWireAllInstruments();
       }
-    }, 50);
-
-    return true;
+      this.scheduleSimTick();
+    }, this.SIM_TICK_MS);
   }
 
   /** Auto-wire all instrument components on the schematic to read from simulation */
@@ -735,6 +922,9 @@ export class AppService {
 
   /** Run a batch of simulation steps and feed wave data to instruments */
   private runSimBatch(count: number): void {
+    if (this.simulationKernel.getState() !== SimulationState.RUNNING) {
+      return;
+    }
     const kernel = this.simulationKernel as SimulationKernelImpl;
     for (let i = 0; i < count; i++) {
       kernel.runSpiceStep();
@@ -755,9 +945,15 @@ export class AppService {
     const nodeVoltages = kernel.getNodeVoltageMap();
     const branchCurrents = kernel.getBranchCurrentMap();
     (this.instruments as VirtualInstrumentsImpl).feedScopeNodeData(nodeVoltages, branchCurrents);
-    // Auto-assign probes on first batch
-    if (this.simStepCount <= count * 2) {
-      (this.instruments as VirtualInstrumentsImpl).autoAssignScopeProbes();
+    const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
+    const digitalLevels = new Map<string, number>();
+    nodeVoltages.forEach((voltage: number, netKey: string) => {
+      digitalLevels.set(netKey, voltage > 1.65 ? 1 : 0);
+    });
+    (this.instruments as VirtualInstrumentsImpl).feedLogicDigitalStates(digitalLevels);
+    traceSimStep(this.simStepCount, waves.length, waves, activeComp, nodeVoltages, branchCurrents);
+    if (this.simStepCount % 50 === 0) {
+      this.autoWireAllInstruments();
     }
     const stepData: SimStepData = { waves: waves, stepCount: this.simStepCount };
     EventBus.getInstance().publish({
@@ -770,8 +966,9 @@ export class AppService {
   }
 
   stopSimulation(): void {
+    this.simTickScheduled = false;
     if (this.simTimer >= 0) {
-      clearInterval(this.simTimer);
+      clearTimeout(this.simTimer);
       this.simTimer = -1;
     }
     this.simulationKernel.stopSim();
@@ -875,7 +1072,11 @@ export class AppService {
     if (!gate.success) {
       return ResultHelper.fail<FaultInjection>(gate.errCode, gate.error);
     }
-    return (this.simulationKernel as SimulationKernelImpl).injectFault(instUuid, faultType);
+    const result = (this.simulationKernel as SimulationKernelImpl).injectFault(instUuid, faultType);
+    if (result.success) {
+      this.reloadSimulationFromSchematic();
+    }
+    return result;
   }
 
   clearFaults(): void {
@@ -884,6 +1085,7 @@ export class AppService {
     for (let i = 0; i < faults.length; i++) {
       kernel.removeFault(faults[i].id);
     }
+    this.reloadSimulationFromSchematic();
   }
 
   batchFaultScan(): FaultScanResult[] {
@@ -895,6 +1097,7 @@ export class AppService {
     if (r.success && r.data) {
       this.schematicEditor.loadTopology(r.data);
       this.onProjectChanged();
+      this.reloadSimulationFromSchematic();
       // 自动加载模板关联的固件
       const fw = this.teachingService.getTemplateFirmware(templateId);
       if (fw) {
@@ -910,6 +1113,7 @@ export class AppService {
     const topo = this.teachingService.stepPowerOnSequence(this.getTopology(), stepIndex);
     this.schematicEditor.loadTopology(topo);
     this.onProjectChanged();
+    this.reloadSimulationFromSchematic();
   }
 
   saveSnapshot(name: string, note: string): void {
@@ -935,10 +1139,7 @@ export class AppService {
       this.schematicEditor.setSimBusy(false);
     });
     EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STEP, () => {
-      const waves = this.simulationKernel.getAllWaveData();
-      this.instruments.feedSimulationWaves(waves);
-      CallbackRegistry.getInstance().emitWave(waves);
-      this.onWaveUpdate(waves);
+      CallbackRegistry.getInstance().emitWave(this.simulationKernel.getAllWaveData());
     });
     EventBus.getInstance().subscribe(ModuleEvent.AI_TASK_PROGRESS, (payload) => {
       this.onAiProgress(payload.data as ProgressInfo);
@@ -980,6 +1181,18 @@ export class AppService {
         return null;
       }
       return comp.data.pins;
+    });
+    editor.setDefaultParamsResolver((libraryId: string): Map<string, string> | null => {
+      const resolvedId = lib.resolveLibraryId(libraryId);
+      const comp = lib.getComponent(resolvedId);
+      if (!comp.success || comp.data === undefined) {
+        return null;
+      }
+      const copy = new Map<string, string>();
+      comp.data.defaultParams.forEach((value: string, key: string) => {
+        copy.set(key, value);
+      });
+      return copy;
     });
   }
 
@@ -1039,6 +1252,7 @@ export class AppService {
     if (this.currentProject) {
       this.currentProject.schematic = this.schematicEditor.getDocument();
     }
+    this.reloadSimulationFromSchematic();
   };
 
   registerKeyboardShortcuts(): void {

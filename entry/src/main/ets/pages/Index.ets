@@ -10,7 +10,7 @@ import { TeachingPanel } from '../components/TeachingPanel';
 import { ComponentPreview } from '../components/ComponentPreview';
 import {
   ProteusVDivider, ProteusPanelTitle,
-  ProteusNavTab, ProteusTreeRow, ProteusClassicBtn,
+  ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle,
   ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer,
   ProteusMenuEntry
 } from '../components/proteus/ProteusWidgets';
@@ -20,7 +20,7 @@ import { UiStateStore } from '../utils/UiStateStore';
 import {
   CallbackRegistry, ErcError, ProgressInfo, Point2D, ComponentCategory,
   ComponentInstance, SchematicDocument, EventBus, ModuleEvent, ModuleEventPayload,
-  McuFamily
+  McuFamily, isInstrumentLibraryId
 } from 'common';
 import { SchematicEditorImpl, AlignType } from 'schematic_editor';
 import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
@@ -42,6 +42,7 @@ struct Index {
   @State projectName: string = 'Untitled';
   @State simRunning: boolean = false;
   @State simPaused: boolean = false;
+  @State simWaveTick: number = 0;
   @State statusMessage: string = '';
   @State canvasVersion: number = 0;
   @State selectedComponentId: string = '';
@@ -63,7 +64,7 @@ struct Index {
   @State rightCollapsed: boolean = false;
   @State activeRightTab: number = 0;
   @State leftPanelWidth: number = 240;
-  @State rightPanelWidth: number = 260;
+  @State rightPanelWidth: number = 300;
   @State debugTabHasBadge: boolean = false;
   @State instrTabHasBadge: boolean = false;
   @State categoryNodes: CategoryNode[] = [];
@@ -121,6 +122,9 @@ struct Index {
       this.projectName = this.appService.currentProject?.name ?? 'Untitled';
       this.canvasVersion++;
     };
+    this.appService.onWaveUpdate = (_waves) => {
+      this.simWaveTick++;
+    };
 
     CallbackRegistry.getInstance().onSelectionChange((devs) => {
       this.selectedCount = devs.length;
@@ -166,7 +170,7 @@ struct Index {
           this.appService.enableAutoSave(autoSavePath, 120000);
           this.resetAfterProjectChange();
           this.refreshComponentList();
-          this.appService.schematicEditor.fitAllInView();
+          this.deferCanvasFit();
           this.appInitialized = true;
           this.statusMessage = `已恢复上次工程: ${this.projectName}`;
           return;
@@ -179,7 +183,7 @@ struct Index {
           this.appService.enableAutoSave(autoSavePath, 120000);
           this.resetAfterProjectChange();
           this.refreshComponentList();
-          this.appService.schematicEditor.fitAllInView();
+          this.deferCanvasFit();
           this.appInitialized = true;
           this.statusMessage = `已从自动保存恢复: ${this.projectName}`;
           return;
@@ -191,7 +195,7 @@ struct Index {
     this.appService.newProject('Untitled');
     this.appService.enableAutoSave(`${this.projectBaseDir}/autosave/Untitled.schsim`, 120000);
     this.refreshComponentList();
-    this.appService.schematicEditor.fitAllInView();
+    this.deferCanvasFit();
     this.appInitialized = true;
     this.showWelcomeDialog = true;
     this.statusMessage = '欢迎使用 AI 原理图仿真 — 请新建或打开工程';
@@ -258,9 +262,22 @@ struct Index {
     if (!comp) return;
     const lib = comp.libraryId.toUpperCase();
     const isMcu = lib.startsWith('STM32') || lib.startsWith('8051') || lib.startsWith('AT89') || lib.startsWith('AVR');
-    const isInstr = lib.startsWith('OSC') || lib.startsWith('LA') || lib.startsWith('DMM') || lib.startsWith('GEN');
+    const isInstr = isInstrumentLibraryId(comp.libraryId);
     this.debugTabHasBadge = isMcu;
     this.instrTabHasBadge = isInstr;
+    if (isMcu) {
+      this.activeRightTab = 3;
+    } else if (isInstr) {
+      this.activeRightTab = 4;
+    }
+  }
+
+  private toggleSimPause(): void {
+    if (!this.simRunning) {
+      return;
+    }
+    this.simPaused = this.appService.toggleSimulationPause();
+    this.statusMessage = this.simPaused ? '仿真已暂停' : '仿真已恢复';
   }
 
   initCategoryTree(): void {
@@ -314,6 +331,21 @@ struct Index {
   bumpCanvas(): void {
     this.canvasVersion++;
     this.navRefreshKey++;
+  }
+
+  /** Wait for canvas layout before fit/redraw — avoids partial first paint. */
+  private deferCanvasFit(delayMs: number = 150): void {
+    setTimeout(() => {
+      this.appService.schematicEditor.fitAllInView();
+      this.bumpCanvas();
+    }, delayMs);
+  }
+
+  onPageShow(): void {
+    this.deferCanvasFit(80);
+    setTimeout(() => {
+      this.bumpCanvas();
+    }, 300);
   }
 
   resetAfterProjectChange(): void {
@@ -706,6 +738,7 @@ struct Index {
   private onSchematicChanged = (_payload: ModuleEventPayload): void => {
     this.navRefreshKey++;
     this.unsavedChanges = true;
+    this.canvasVersion++;
   };
 
   build() {
@@ -953,10 +986,7 @@ struct Index {
         }
       }},
       { label: $r('app.string.toolbar_sim_pause'), shortcut: 'F6', icon: ProteusIconName.PAUSE, action: () => {
-        if (this.simRunning) {
-          this.simPaused = !this.simPaused;
-          this.statusMessage = this.simPaused ? 'Simulation paused' : 'Simulation resumed';
-        }
+        this.toggleSimPause();
       }},
       { label: $r('app.string.toolbar_sim_stop'), shortcut: 'Shift+F5', icon: ProteusIconName.STOP, action: () => {
         this.appService.stopSimulation();
@@ -1115,12 +1145,7 @@ struct Index {
             }
           }})
         ProteusToolButton({ iconName: ProteusIconName.PAUSE, tooltip: 'Pause (F6)', showLabel: false,
-          disabled: !this.simRunning, onAction: () => {
-            if (this.simRunning) {
-              this.simPaused = !this.simPaused;
-              this.statusMessage = this.simPaused ? 'Simulation paused' : 'Simulation resumed';
-            }
-          }})
+          disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); }})
         ProteusToolButton({ iconName: ProteusIconName.ERC, tooltip: 'ERC (F7)', showLabel: false, onAction: () => {
           const errors = this.appService.runErc(false);
           this.ercErrors = errors;
@@ -1511,6 +1536,7 @@ struct Index {
           PropertyPanel({
             selectedComponentId: this.selectedComponentId,
             docVersion: this.canvasVersion,
+            simWaveTick: this.simWaveTick,
             statusMessage: $statusMessage,
             onDeleted: () => {
               this.selectedComponentId = '';
@@ -1520,17 +1546,20 @@ struct Index {
           })
             .layoutWeight(1)
             .height('100%')
+        } else if (this.activeRightTab === 4) {
+          InstrumentPanel({
+            statusMessage: $statusMessage,
+            selectedComponentId: this.selectedComponentId,
+            simWaveTick: this.simWaveTick
+          })
+            .layoutWeight(1)
+            .height('100%')
         } else {
           Scroll() {
             Column() {
               if (this.activeRightTab === 1) {
                 Column({ space: 8 }) {
-                  Text('仿真控制')
-                    .fontSize(ProteusFonts.TITLE)
-                    .fontColor(ProteusColors.TEXT_PRIMARY)
-                    .fontWeight(FontWeight.Medium)
-                    .width('100%')
-                    .padding({ left: 8, top: 6 })
+                  ProteusSectionTitle({ title: '仿真控制' })
 
                   Column() {
                     Text('仿真状态')
@@ -1568,7 +1597,7 @@ struct Index {
                     ProteusClassicBtn({
                       label: $r('app.string.sim_pause'),
                       widthVal: '42%',
-                      onAction: () => { this.simPaused = !this.simPaused; }
+                      onAction: () => { this.toggleSimPause(); }
                     })
                   }
                   .width('100%')
@@ -1578,7 +1607,7 @@ struct Index {
                   Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4 })
 
                   Text('ERC 检查')
-                    .fontSize(ProteusFonts.TITLE)
+                    .fontSize(ProteusFonts.PARAM_KEY)
                     .fontColor(ProteusColors.TEXT_LABEL)
                     .fontWeight(FontWeight.Medium)
                     .width('100%')
@@ -1615,7 +1644,7 @@ struct Index {
                   Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4 })
 
                   Text('电路统计')
-                    .fontSize(ProteusFonts.TITLE)
+                    .fontSize(ProteusFonts.PARAM_KEY)
                     .fontColor(ProteusColors.TEXT_LABEL)
                     .fontWeight(FontWeight.Medium)
                     .width('100%')
@@ -1657,9 +1686,6 @@ struct Index {
                   selectedComponentId: this.selectedComponentId
                 })
                   .constraintSize({ minHeight: 320 })
-              } else if (this.activeRightTab === 4) {
-                InstrumentPanel({ statusMessage: $statusMessage })
-                  .constraintSize({ minHeight: 380 })
               } else if (this.activeRightTab === 5) {
                 FaultInjectionPanel({
                   statusMessage: $statusMessage,
@@ -1704,8 +1730,8 @@ struct Index {
         }
         .width(44)
         .height('100%')
-        .backgroundColor('#E8E8E8')
-        .border({ width: { left: 1 }, color: ProteusColors.DIVIDER })
+        .backgroundColor(ProteusColors.SIDEBAR_BG)
+        .border({ width: { left: 1 }, color: ProteusColors.SIDEBAR_TAB_BORDER })
       }
       .layoutWeight(1)
       .width('100%')
@@ -1718,28 +1744,37 @@ struct Index {
 
   @Builder
   SidebarTab(label: string, icon: ProteusIconName, tabIdx: number) {
-    Button({ type: ButtonType.Normal }) {
-      Column() {
-        ProteusIcon({ name: icon, iconSize: 16, color: this.activeRightTab === tabIdx ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY })
-        Text(label)
-          .fontSize(8)
-          .fontColor(this.activeRightTab === tabIdx ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
-          .fontWeight(this.activeRightTab === tabIdx ? FontWeight.Medium : FontWeight.Normal)
-          .maxLines(1)
-          .margin({ top: 2 })
-      }
-      .width(44)
-      .height(48)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
+    Column() {
+      ProteusIcon({
+        name: icon,
+        iconSize: 16,
+        color: this.activeRightTab === tabIdx ?
+          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
+      })
+      Text(label)
+        .fontSize(9)
+        .fontColor(this.activeRightTab === tabIdx ?
+          ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT)
+        .fontWeight(this.activeRightTab === tabIdx ? FontWeight.Bold : FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
     }
     .width(44)
-    .height(48)
-    .padding(0)
-    .borderRadius(0)
-    .backgroundColor(this.activeRightTab === tabIdx ? ProteusColors.CANVAS_BG : Color.Transparent)
-    .border({ width: { left: this.activeRightTab === tabIdx ? 2 : 0 }, color: this.activeRightTab === tabIdx ? ProteusColors.BTN_FOCUS : Color.Transparent })
-    .onClick(() => this.setActiveRightTab(tabIdx))
+    .height(50)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.activeRightTab === tabIdx ?
+      ProteusColors.SIDEBAR_TAB_ACTIVE_BG : ProteusColors.SIDEBAR_TAB_IDLE_BG)
+    .border({
+      width: {
+        left: this.activeRightTab === tabIdx ? 3 : 0,
+        bottom: 1
+      },
+      color: this.activeRightTab === tabIdx ?
+        ProteusColors.BTN_FOCUS : ProteusColors.SIDEBAR_TAB_BORDER
+    })
+    .onClick(() => { this.setActiveRightTab(tabIdx); })
   }
 
   /** Welcome dialog — shown on first launch when no prior session exists */

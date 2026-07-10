@@ -2,7 +2,7 @@
  * SPICE 网表构建器 — 从 SchTopology 动态构造网表
  * v2.0: 移除虚假激励源, 使用真实拓扑连接, 条件化分析命令
  */
-import { SchTopology, DeviceInst, paramMapGet } from 'common';
+import { SchTopology, DeviceInst, paramMapGet, parseVoltageVolts, parsePinRef } from 'common';
 
 export interface SpiceBuildResult {
   netlist: string;
@@ -57,7 +57,18 @@ export class SpiceMatrixBuilder {
       for (let ni = 0; ni < net.nodeList.length; ni++) {
         const ref = net.nodeList[ni];
         const spiceNode = nodeMap.get(net.netUuid) ?? '0';
-        pinMap.set(`${ref.devUuid}_${ref.pinId}`, spiceNode);
+        let devUuid = ref.devUuid;
+        let pinId = ref.pinId;
+        if (devUuid.length === 0 && pinId.includes(':')) {
+          const parsed = parsePinRef(pinId);
+          if (parsed !== null && parsed.compId.length > 0) {
+            devUuid = parsed.compId;
+            pinId = parsed.pinId;
+          }
+        }
+        if (devUuid.length > 0) {
+          pinMap.set(`${devUuid}_${pinId}`, spiceNode);
+        }
       }
     }
     nodeMap.set('GND', '0');
@@ -119,6 +130,14 @@ export class SpiceMatrixBuilder {
         const voltage = paramMapGet(params, 'voltage', paramMapGet(params, 'value', '5'));
         nl += `V${vCount} ${nPos} ${nNeg} DC ${voltage}\n`;
         vCount++;
+      } else if (lib === 'VCC' || (lib.includes('VCC') && !lib.includes('MCU'))) {
+        const nPos = pinNodes.get(0) ?? 'VCC';
+        const voltageRaw = paramMapGet(params, 'voltage', '5V');
+        const voltage = `${parseVoltageVolts(voltageRaw, 5)}`;
+        nl += `V${vCount} ${nPos} 0 DC ${voltage}\n`;
+        vCount++;
+      } else if (lib === 'GND' || lib.endsWith('/GND')) {
+        // GND symbol — reference node only
       } else if (lib.includes('VPULSE') || lib.includes('VSIN') || lib.includes('SIGNAL') ||
                  lib.includes('FUNC_GEN')) {
         const nPos = pinNodes.get(0) ?? 'IN';
@@ -160,12 +179,11 @@ export class SpiceMatrixBuilder {
   private static resolveAllPins(dev: DeviceInst,
     nodeMap: Map<string, string>, pinMap: Map<string, string>): Map<number, string> {
     const result = new Map<number, string>();
-    const keys = Array.from(pinMap.keys()).filter(k => k.startsWith(`${dev.instUuid}_`));
-    // Also check for net connections by pin name
+    const prefix = `${dev.instUuid}_`;
+    const keys = Array.from(pinMap.keys()).filter(k => k.startsWith(prefix));
+    keys.sort();
     for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const pinId = key.substring(dev.instUuid.length + 1);
-      result.set(i, pinMap.get(key) ?? '0');
+      result.set(i, pinMap.get(keys[i]) ?? '0');
     }
     // Fallback: try common pin names A, B, C, etc.
     if (result.size === 0) {

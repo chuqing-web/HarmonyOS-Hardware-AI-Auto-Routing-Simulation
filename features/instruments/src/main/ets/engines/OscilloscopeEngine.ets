@@ -4,7 +4,7 @@
  */
 import {
   WaveData, IdUtil, OscTimebase, OscVoltageScale, CouplingMode,
-  TriggerMode, CaptureMode, MathChannelOp, CursorMeasurement
+  TriggerMode, CaptureMode, MathChannelOp, CursorMeasurement, traceCaptureWave
 } from 'common';
 
 interface SimSnapshot {
@@ -121,23 +121,35 @@ export class OscilloscopeEngine {
 
   /** Auto-assign simulation probes to channels based on active wave data */
   autoAssignProbes(): void {
-    this.channelProbes = ['', '', '', ''];
     for (let i = 0; i < Math.min(4, this.simulationWaveCache.length); i++) {
+      if (i < this.channelProbes.length && this.channelProbes[i].length > 0) {
+        continue;
+      }
       const wave = this.simulationWaveCache[i];
       if (wave && wave.voltageAxis.length > 0) {
-        this.channelProbes[i] = wave.probeName;
+        while (this.channelProbes.length <= i) {
+          this.channelProbes.push('');
+        }
+        this.channelProbes[i] = wave.probeName.length > 0 ? wave.probeName : wave.netName;
       }
     }
-    // Fallback: assign from node voltage map
+    // Fallback: assign from node voltage map for empty channels only
     let ch = 0;
-    if (this.simulationWaveCache.length === 0) {
-      this.lastNodeVoltages.forEach((_v: number, name: string) => {
-        if (ch < 4 && name !== '0' && name !== 'GND' && name !== 'VCC') {
-          this.channelProbes[ch] = name;
-          ch++;
+    this.lastNodeVoltages.forEach((_v: number, name: string) => {
+      if (ch >= 4) {
+        return;
+      }
+      while (ch < 4 && ch < this.channelProbes.length && this.channelProbes[ch].length > 0) {
+        ch++;
+      }
+      if (ch < 4 && name !== '0' && name !== 'GND' && name !== 'VCC') {
+        while (this.channelProbes.length <= ch) {
+          this.channelProbes.push('');
         }
-      });
-    }
+        this.channelProbes[ch] = name;
+        ch++;
+      }
+    });
   }
 
   getTimebase(): OscTimebase { return this.timebase; }
@@ -152,57 +164,143 @@ export class OscilloscopeEngine {
 
   /** Capture waveform from real simulation data */
   captureWave(channel: number = 0): WaveData {
-    // 1. Try probe-name mapped wave from history buffer
     const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
-    if (probeName.length > 0 && this.historyBuffer.length > 1) {
-      return this.buildWaveFromHistory(probeName, channel);
-    }
 
-    // 2. Try simulation wave cache by probe name match
+    // 1. Prefer simulation wave cache — full time-series from kernel
     if (probeName.length > 0) {
-      const matched = this.simulationWaveCache.find(
-        w => w.probeName === probeName || w.netName === probeName
-      );
-      if (matched && matched.voltageAxis.length > 0) {
-        return {
-          waveId: matched.waveId,
-          probeName: `CH${channel + 1}`,
-          netName: matched.netName,
-          timeAxis: matched.timeAxis.slice(),
-          voltageAxis: matched.voltageAxis.slice(),
-          currentAxis: matched.currentAxis.slice(),
-          sampleRate: matched.sampleRate,
-          waveType: matched.waveType,
-          holdTime: matched.holdTime
-        };
+      const matched = this.findCachedWave(probeName);
+      if (matched !== undefined && matched.voltageAxis.length > 0) {
+        const wave = this.cloneWaveForChannel(matched, channel);
+        const lastV = wave.voltageAxis.length > 0 ? wave.voltageAxis[wave.voltageAxis.length - 1] : 0;
+        traceCaptureWave(channel, probeName, 'waveCache', wave.voltageAxis.length, lastV);
+        return wave;
       }
     }
 
-    // 3. Try simulation wave cache by channel index
+    // 2. History buffer for live time-domain (probe-bound)
+    if (probeName.length > 0 && this.historyBuffer.length > 1) {
+      const histWave = this.buildWaveFromHistory(probeName, channel);
+      if (this.hasMeaningfulWave(histWave)) {
+        const lastV = histWave.voltageAxis.length > 0 ? histWave.voltageAxis[histWave.voltageAxis.length - 1] : 0;
+        traceCaptureWave(channel, probeName, 'history', histWave.voltageAxis.length, lastV);
+        return histWave;
+      }
+    }
+
+    // 3. Simulation wave cache by channel index
     if (this.simulationWaveCache.length > channel) {
       const ext = this.simulationWaveCache[channel];
       if (ext && ext.voltageAxis.length > 0) {
-        return {
-          waveId: ext.waveId,
-          probeName: `CH${channel + 1}`,
-          netName: ext.netName,
-          timeAxis: ext.timeAxis.slice(),
-          voltageAxis: ext.voltageAxis.slice(),
-          currentAxis: ext.currentAxis.slice(),
-          sampleRate: ext.sampleRate,
-          waveType: ext.waveType,
-          holdTime: ext.holdTime
-        };
+        const wave = this.cloneWaveForChannel(ext, channel);
+        const lastV = wave.voltageAxis.length > 0 ? wave.voltageAxis[wave.voltageAxis.length - 1] : 0;
+        traceCaptureWave(channel, probeName, 'cacheByIndex', wave.voltageAxis.length, lastV);
+        return wave;
       }
     }
 
-    // 4. Build from history buffer using any available voltage key
-    if (this.historyBuffer.length > 1) {
-      return this.buildWaveFromAnyHistoryKey(channel);
+    // 4. Any non-rail wave in cache
+    const anyWave = this.findAnySignalWave();
+    if (anyWave !== undefined) {
+      const wave = this.cloneWaveForChannel(anyWave, channel);
+      const lastV = wave.voltageAxis.length > 0 ? wave.voltageAxis[wave.voltageAxis.length - 1] : 0;
+      traceCaptureWave(channel, probeName, 'anySignal', wave.voltageAxis.length, lastV);
+      return wave;
     }
 
-    // 5. Build live snapshot from node voltages (single-point → flat line)
-    return this.makeFlatWave(channel);
+    // 5. History buffer fallback
+    if (this.historyBuffer.length > 1) {
+      const wave = this.buildWaveFromAnyHistoryKey(channel);
+      const lastV = wave.voltageAxis.length > 0 ? wave.voltageAxis[wave.voltageAxis.length - 1] : 0;
+      traceCaptureWave(channel, probeName, 'historyAny', wave.voltageAxis.length, lastV);
+      return wave;
+    }
+
+    // 6. DC snapshot from current node voltages
+    const flat = this.makeFlatWave(channel);
+    const lastV = flat.voltageAxis.length > 0 ? flat.voltageAxis[flat.voltageAxis.length - 1] : 0;
+    traceCaptureWave(channel, probeName, 'flatDC', flat.voltageAxis.length, lastV);
+    return flat;
+  }
+
+  private cloneWaveForChannel(src: WaveData, channel: number): WaveData {
+    return {
+      waveId: src.waveId,
+      probeName: `CH${channel + 1}`,
+      netName: src.netName,
+      timeAxis: src.timeAxis.slice(),
+      voltageAxis: src.voltageAxis.slice(),
+      currentAxis: src.currentAxis.slice(),
+      sampleRate: src.sampleRate,
+      waveType: src.waveType,
+      holdTime: src.holdTime
+    };
+  }
+
+  private findCachedWave(probeName: string): WaveData | undefined {
+    for (let i = 0; i < this.simulationWaveCache.length; i++) {
+      const w = this.simulationWaveCache[i];
+      if (this.waveMatchesProbe(w, probeName)) {
+        return w;
+      }
+    }
+    return undefined;
+  }
+
+  private waveMatchesProbe(wave: WaveData, probeName: string): boolean {
+    if (probeName.length === 0) {
+      return false;
+    }
+    return wave.probeName === probeName || wave.netName === probeName;
+  }
+
+  private findAnySignalWave(): WaveData | undefined {
+    for (let i = 0; i < this.simulationWaveCache.length; i++) {
+      const w = this.simulationWaveCache[i];
+      if (w.voltageAxis.length < 2) {
+        continue;
+      }
+      const upperProbe = w.probeName.toUpperCase();
+      const upperNet = w.netName.toUpperCase();
+      if (upperProbe === '0' || upperProbe === 'GND' || upperProbe === 'VCC' ||
+          upperNet === '0' || upperNet === 'GND' || upperNet === 'VCC') {
+        continue;
+      }
+      let minV = w.voltageAxis[0];
+      let maxV = w.voltageAxis[0];
+      for (let j = 1; j < w.voltageAxis.length; j++) {
+        if (w.voltageAxis[j] < minV) minV = w.voltageAxis[j];
+        if (w.voltageAxis[j] > maxV) maxV = w.voltageAxis[j];
+      }
+      if (maxV - minV > 1e-9 || Math.abs(maxV) > 1e-9) {
+        return w;
+      }
+    }
+    return undefined;
+  }
+
+  private hasMeaningfulWave(wave: WaveData): boolean {
+    if (wave.voltageAxis.length < 2) {
+      return false;
+    }
+    let minV = wave.voltageAxis[0];
+    let maxV = wave.voltageAxis[0];
+    for (let i = 1; i < wave.voltageAxis.length; i++) {
+      if (wave.voltageAxis[i] < minV) minV = wave.voltageAxis[i];
+      if (wave.voltageAxis[i] > maxV) maxV = wave.voltageAxis[i];
+    }
+    return maxV - minV > 1e-12 || Math.abs(maxV) > 1e-12;
+  }
+
+  /** Resolve voltage for a probe key (net UUID or SPICE node name) */
+  private resolveVoltage(probeName: string, voltages: Map<string, number>): number {
+    if (probeName.length === 0) {
+      return 0;
+    }
+    const direct = voltages.get(probeName);
+    if (direct !== undefined) {
+      return direct;
+    }
+    return 0;
   }
 
   /** Build time-domain waveform from history buffer for a specific probe */
@@ -212,18 +310,17 @@ export class OscilloscopeEngine {
     const dt = getTimebaseSec(this.timebase);
     const windowSec = dt * DIVISIONS;
 
-    // Use recent history within the time window
     const maxTime = this.lastSimTime;
     const minTime = Math.max(0, maxTime - windowSec);
 
     for (const snap of this.historyBuffer) {
       if (snap.time >= minTime) {
-        let voltage = snap.voltages.get(probeName);
-        if (voltage === undefined && this.lastNodeVoltages.size > 0) {
-          voltage = this.lastNodeVoltages.get(probeName) ?? 0;
+        let voltage = this.resolveVoltage(probeName, snap.voltages);
+        if (Math.abs(voltage) < 1e-12 && this.lastNodeVoltages.size > 0) {
+          voltage = this.resolveVoltage(probeName, this.lastNodeVoltages);
         }
         timeAxis.push(snap.time);
-        voltageAxis.push(voltage ?? 0);
+        voltageAxis.push(voltage);
       }
     }
 
@@ -259,15 +356,27 @@ export class OscilloscopeEngine {
     const sampleRate = SAMPLE_POINTS / windowSec;
     const timeAxis: number[] = [];
     const voltageAxis: number[] = [];
+    const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
 
     // Use actual DC voltage from simulation if available
     let dcLevel = 0;
-    const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
     if (probeName.length > 0) {
-      dcLevel = this.lastNodeVoltages.get(probeName) ?? 0;
+      dcLevel = this.resolveVoltage(probeName, this.lastNodeVoltages);
+      if (Math.abs(dcLevel) < 1e-12) {
+        const cached = this.findCachedWave(probeName);
+        if (cached !== undefined && cached.voltageAxis.length > 0) {
+          dcLevel = cached.voltageAxis[cached.voltageAxis.length - 1];
+        }
+      }
+    }
+    if (Math.abs(dcLevel) < 1e-12) {
+      const anyWave = this.findAnySignalWave();
+      if (anyWave !== undefined && anyWave.voltageAxis.length > 0) {
+        dcLevel = anyWave.voltageAxis[anyWave.voltageAxis.length - 1];
+      }
     }
     // Try VCC for ch0 if nothing else
-    if (dcLevel === 0 && channel === 0) {
+    if (Math.abs(dcLevel) < 1e-12 && channel === 0) {
       dcLevel = this.lastNodeVoltages.get('VCC') ?? this.lastNodeVoltages.get('VCC_5V') ?? 0;
     }
 
@@ -292,23 +401,25 @@ export class OscilloscopeEngine {
   /** Resample waveform to uniform SAMPLE_POINTS grid */
   private resampleWave(timeAxis: number[], voltageAxis: number[],
                        channel: number, windowSec: number): WaveData {
-    const sampleRate = SAMPLE_POINTS / windowSec;
+    const tMin = timeAxis[0];
+    const tMax = timeAxis[timeAxis.length - 1];
+    const span = Math.max(tMax - tMin, windowSec);
+    const sampleRate = SAMPLE_POINTS / span;
     const outTime: number[] = [];
     const outVoltage: number[] = [];
     const n = timeAxis.length;
 
     for (let i = 0; i < SAMPLE_POINTS; i++) {
-      const t = (i / SAMPLE_POINTS) * windowSec;
-      outTime.push(t);
-      // Linear interpolation
-      let vi = 0;
+      const t = tMin + (i / SAMPLE_POINTS) * span;
+      outTime.push(t - tMin);
+      let vi = voltageAxis[n - 1];
       for (let j = 1; j < n; j++) {
         if (timeAxis[j] >= t) {
-          const frac = (t - timeAxis[j - 1]) / Math.max(timeAxis[j] - timeAxis[j - 1], 1e-15);
+          const dt = Math.max(timeAxis[j] - timeAxis[j - 1], 1e-15);
+          const frac = (t - timeAxis[j - 1]) / dt;
           vi = voltageAxis[j - 1] + frac * (voltageAxis[j] - voltageAxis[j - 1]);
           break;
         }
-        vi = voltageAxis[n - 1];
       }
       outVoltage.push(vi);
     }
@@ -322,15 +433,13 @@ export class OscilloscopeEngine {
       currentAxis: new Array(SAMPLE_POINTS).fill(0),
       sampleRate,
       waveType: 'voltage',
-      holdTime: windowSec
+      holdTime: span
     };
   }
 
   /** Sample a specific simulation probe by name */
   captureProbe(probeName: string): WaveData | null {
-    const wave = this.simulationWaveCache.find(
-      w => w.probeName === probeName || w.netName === probeName
-    );
+    const wave = this.findCachedWave(probeName);
     if (!wave) return null;
     return {
       waveId: wave.waveId,

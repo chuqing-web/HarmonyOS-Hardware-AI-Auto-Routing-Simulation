@@ -7,7 +7,7 @@ import {
 import { ErcEngine, PinResolverFn } from './ErcEngine';
 import { UnitParser } from './UnitParser';
 import { IdUtil } from './IdUtil';
-import { appendArray, paramMapGet } from './MapHelpers';
+import { appendArray, paramMapGet, parseVoltageVolts } from './MapHelpers';
 
 const MCU_IDS = new Set([
   'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
@@ -106,15 +106,18 @@ export class DeepErcEngine {
       const comp = doc.components[i];
       if (comp.libraryId.startsWith('R_')) {
         const val = paramMapGet(comp.parameters, 'value', comp.libraryId.replace('R_', ''));
-        const parsed = UnitParser.parseResistance(val);
-        const power = paramMapGet(comp.parameters, 'power', '0.25W');
-        const powerW = parseFloat(power) || 0.25;
+        const parsed = UnitParser.parseResistance(val.endsWith('Ω') ? val : `${val}Ω`);
+        const powerStr = paramMapGet(comp.parameters, 'power', '0.25W');
+        const powerParsed = UnitParser.parsePower(powerStr);
+        const powerW = powerParsed.valid ? powerParsed.numeric : 0.25;
         if (parsed.valid && parsed.numeric > 0) {
-          const estPower = 5 * 5 / parsed.numeric;
+          const supplyV = DeepErcEngine.estimateSupplyVoltage(doc);
+          const estPower = supplyV * supplyV / parsed.numeric;
           if (estPower > powerW * 0.8) {
             result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
-              `${comp.refDes} 电阻功率可能不足 (估算 ${estPower.toFixed(3)}W > ${powerW}W)`,
-              comp.id, undefined, '选用更大功率电阻或增大阻值'));
+              `${comp.refDes} 电阻功率可能不足 (估算 ${estPower.toFixed(3)}W @ ${supplyV}V, ` +
+                `阻值 ${parsed.normalized}, 额定 ${powerW}W)`,
+              comp.id, undefined, '降低电源电压、增大阻值或选用更大功率电阻（修改 power 参数）'));
           }
         }
       }
@@ -139,6 +142,19 @@ export class DeepErcEngine {
     }
 
     return result;
+  }
+
+  private static estimateSupplyVoltage(doc: SchematicDocument): number {
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      const lib = comp.libraryId.toUpperCase();
+      if (lib === 'VCC' || lib.endsWith('/VCC') || lib.includes('POWER_5V') ||
+          lib.includes('VDC') || lib.includes('VAC') || lib.includes('POWER')) {
+        const v = paramMapGet(comp.parameters, 'voltage', '5V');
+        return parseVoltageVolts(v, 5);
+      }
+    }
+    return 5;
   }
 
   private static hasNearbyResistor(doc: SchematicDocument, comp: ComponentInstance): boolean {

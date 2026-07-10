@@ -6,7 +6,7 @@ import { AppService } from '../services/AppService';
 import { SchematicSymbolRenderer, SymbolDrawStyle } from '../utils/SchematicSymbolRenderer';
 import {
   SchematicDocument, ComponentInstance, Wire, ViewportState, Point2D, WorldRect, Rect2D,
-  ModuleEvent, ModuleEventPayload, EventBus, ErcError, Pin, calcSymbolBounds
+  ModuleEvent, ModuleEventPayload, EventBus, ErcError, Pin, calcSymbolBounds, SimulationState
 } from 'common';
 import { ComponentDefinition } from 'component_library';
 import { EditorToolMode } from '../model/EditorToolMode';
@@ -39,6 +39,7 @@ export struct SchematicCanvas {
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
+  private wireCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private rulerHCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private rulerVCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private appService: AppService = AppService.getInstance();
@@ -50,8 +51,9 @@ export struct SchematicCanvas {
   private lastPointerY: number = 0;
   private downPointerX: number = 0;
   private downPointerY: number = 0;
-  private viewWidth: number = 800;
-  private viewHeight: number = 600;
+  private viewWidth: number = 0;
+  private viewHeight: number = 0;
+  private canvasReady: boolean = false;
   private redrawScheduled: boolean = false;
   private redrawTimer: number = -1;
   @State hoverComponentId: string = '';
@@ -70,18 +72,18 @@ export struct SchematicCanvas {
   private middlePanning: boolean = false;
   private middlePanLastX: number = 0;
   private middlePanLastY: number = 0;
-  private sceneSnapshot: ImageData | null = null;
-  private sceneSnapshotKey: string = '';
+  private simFrameDirty: boolean = false;
+  private backgroundDirty: boolean = true;
   private gridTile: ImageData | null = null;
   private gridTileKey: string = '';
   private gridTileWorldW: number = 0;
   private gridTileWorldH: number = 0;
-  private offscreenCtx: CanvasRenderingContext2D | null = null;
   private compDefCache: Map<string, ComponentDefinition | null> = new Map();
   private juncCache: Map<string, number> | null = null;
   private juncCacheKey: string = '';
   private lastDocChangeVer: number = -1;
   private rulerDirty: boolean = true;
+  private cachedNodeVoltages: Map<string, number> = new Map();
 
   private isTouchActive: boolean = false; // distinguish touch from mouse to avoid double-processing
   private touchCooldownTimer: number = -1; // reset isTouchActive after cooldown (ms)
@@ -98,7 +100,13 @@ export struct SchematicCanvas {
     EventBus.getInstance().subscribe(ModuleEvent.SCHEMATIC_CHANGED, this.onSchematicChanged);
     EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STEP, this.onSimStep);
-    this.offscreenCtx = new CanvasRenderingContext2D(this.settings);
+    // Fallback: layout may complete after onReady — force a full paint once sizes settle.
+    setTimeout(() => {
+      this.ensureLayoutRedraw('startup');
+    }, 120);
+    setTimeout(() => {
+      this.ensureLayoutRedraw('startup-late');
+    }, 400);
   }
 
   aboutToDisappear(): void {
@@ -111,18 +119,12 @@ export struct SchematicCanvas {
     }
     this.clearTouchCooldown();
     this.compDefCache.clear();
-    this.offscreenCtx = null;
   }
 
   onCanvasVersionChange(): void {
-    this.invalidateSceneSnapshot();
+    this.backgroundDirty = true;
     this.rulerDirty = true;
     this.scheduleRedraw();
-  }
-
-  private invalidateSceneSnapshot(): void {
-    this.sceneSnapshot = null;
-    this.sceneSnapshotKey = '';
   }
 
   private invalidateJuncCache(): void {
@@ -131,9 +133,10 @@ export struct SchematicCanvas {
   }
 
   private onSchematicChanged = (_payload: ModuleEventPayload): void => {
-    this.invalidateSceneSnapshot();
+    this.backgroundDirty = true;
     this.invalidateJuncCache();
     this.compDefCache.clear();
+    this.cachedNodeVoltages.clear();
     this.lastDocChangeVer++;
     this.rulerDirty = true;
     this.scheduleRedraw();
@@ -141,18 +144,21 @@ export struct SchematicCanvas {
   };
 
   private onViewportChanged = (_payload: ModuleEventPayload): void => {
-    this.invalidateSceneSnapshot();
+    this.backgroundDirty = true;
     this.rulerDirty = true;
     this.scheduleRedraw();
     this.zoomPercent = Math.round(this.appService.schematicEditor.getZoom() * 100);
   };
 
   private onSimStep = (_payload: ModuleEventPayload): void => {
-    this.invalidateSceneSnapshot();
+    this.simFrameDirty = true;
     this.scheduleRedraw();
   };
 
   private scheduleRedraw(): void {
+    if (this.viewWidth <= 0 || this.viewHeight <= 0) {
+      return;
+    }
     if (this.redrawScheduled) {
       return;
     }
@@ -162,6 +168,42 @@ export struct SchematicCanvas {
       this.redrawTimer = -1;
       this.redraw();
     }, SchematicCanvas.REDRAW_INTERVAL_MS);
+  }
+
+  /** Immediate full repaint — used when canvas size changes or on first layout. */
+  private forceFullRedraw(_reason: string = ''): void {
+    if (this.viewWidth <= 0 || this.viewHeight <= 0) {
+      return;
+    }
+    if (this.redrawTimer >= 0) {
+      clearTimeout(this.redrawTimer);
+      this.redrawTimer = -1;
+    }
+    this.redrawScheduled = false;
+    this.backgroundDirty = true;
+    this.rulerDirty = true;
+    this.redraw();
+  }
+
+  private ensureLayoutRedraw(reason: string): void {
+    if (this.viewWidth > 0 && this.viewHeight > 0) {
+      this.forceFullRedraw(reason);
+    }
+  }
+
+  private onCanvasAreaChange(area: Area): void {
+    const nw = Math.max(0, Math.floor(area.width as number));
+    const nh = Math.max(0, Math.floor(area.height as number));
+    if (nw <= 0 || nh <= 0) {
+      return;
+    }
+    const sizeChanged = Math.abs(nw - this.viewWidth) > 0.5 || Math.abs(nh - this.viewHeight) > 0.5;
+    this.viewWidth = nw;
+    this.viewHeight = nh;
+    if (sizeChanged || !this.canvasReady) {
+      this.canvasReady = true;
+      this.forceFullRedraw('areaChange');
+    }
   }
 
   private getWireStart(): Point2D | null {
@@ -212,36 +254,49 @@ export struct SchematicCanvas {
             .onReady(() => this.drawVRuler())
         }
 
-        Canvas(this.context)
-          .layoutWeight(1)
-          .height('100%')
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .hitTestBehavior(HitTestMode.Block)
-          .focusable(true)
-          .onReady(() => this.redraw())
-          .onAreaChange((_old, area) => {
-            this.viewWidth = area.width as number;
-            this.viewHeight = area.height as number;
-            this.scheduleRedraw();
-          })
-          .onTouch((event: TouchEvent) => this.handleTouch(event))
-          .onMouse((event: MouseEvent) => this.handleMouse(event))
-          .onKeyEvent((event: KeyEvent) => {
-            if (event.type === KeyType.Down && event.keyCode === 27) {
-              this.wireWaypoints = [];
-              this.clearSelection();
-              return true;
-            }
-            return false;
-          })
-          .gesture(
-            PinchGesture()
-              .onActionUpdate((event: GestureEvent) => {
-                const editor = this.appService.schematicEditor;
-                editor.setZoom(editor.getZoom() * event.scale);
-                this.scheduleRedraw();
-              })
-          )
+        Stack() {
+          // Layer 0: Background — grid + components (static, rarely redrawn)
+          Canvas(this.context)
+            .width('100%')
+            .height('100%')
+            .backgroundColor(ProteusColors.CANVAS_BG)
+            .hitTestBehavior(HitTestMode.Block)
+            .focusable(true)
+            .onReady(() => {
+              if (this.viewWidth > 0 && this.viewHeight > 0) {
+                this.fullRedraw();
+              }
+            })
+            .onAreaChange((_old, area) => {
+              this.onCanvasAreaChange(area);
+            })
+            .onTouch((event: TouchEvent) => this.handleTouch(event))
+            .onMouse((event: MouseEvent) => this.handleMouse(event))
+            .onKeyEvent((event: KeyEvent) => {
+              if (event.type === KeyType.Down && event.keyCode === 27) {
+                this.wireWaypoints = [];
+                this.clearSelection();
+                return true;
+              }
+              return false;
+            })
+            .gesture(
+              PinchGesture()
+                .onActionUpdate((event: GestureEvent) => {
+                  const editor = this.appService.schematicEditor;
+                  editor.setZoom(editor.getZoom() * event.scale);
+                  this.scheduleRedraw();
+                })
+            )
+
+          // Layer 1: Foreground — wires (voltage-colored, redrawn each sim step) + overlays
+          Canvas(this.wireCtx)
+            .width('100%')
+            .height('100%')
+            .hitTestBehavior(HitTestMode.Transparent)
+        }
+        .layoutWeight(1)
+        .height('100%')
       }
       .layoutWeight(1)
       .width('100%')
@@ -390,13 +445,13 @@ export struct SchematicCanvas {
     if (r.success && r.data) {
       this.selectedComponentId = r.data.id;
       this.appService.schematicEditor.setSelection([r.data.id]);
-      this.onStatusChange(`已放置 ${resolvedId} @ (${Math.round(world.x)}, ${Math.round(world.y)})`);
-      // Auto-create net for VCC/GND power supply components
       const upperId = resolvedId.toUpperCase();
       if (upperId === 'VCC' || upperId.endsWith('/VCC')) {
-        this.appService.schematicEditor.createNetLabel(world.x, world.y, 'VCC');
+        this.onStatusChange(`已放置 VCC — 请从下方橙色引脚连线；选中后在 Props 修改 voltage`);
       } else if (upperId === 'GND' || upperId.endsWith('/GND')) {
-        this.appService.schematicEditor.createNetLabel(world.x, world.y, 'GND');
+        this.onStatusChange(`已放置 GND — 请从上方引脚连线`);
+      } else {
+        this.onStatusChange(`已放置 ${resolvedId} @ (${Math.round(world.x)}, ${Math.round(world.y)})`);
       }
       return true;
     }
@@ -903,90 +958,66 @@ export struct SchematicCanvas {
     return result;
   }
 
+  /**
+   * Two-layer rendering:
+   * - Background canvas (this.context): grid + components + net labels + ERC (only when dirty)
+   * - Wire canvas (this.wireCtx): wires + junctions + overlays (every frame)
+   * This eliminates ImageData snapshot copies and separates static from dynamic content.
+   */
   redraw(): void {
-    const doc = this.appService.schematicEditor.getDocument();
-    const vp = this.appService.schematicEditor.getViewport();
-    const ctx = this.context;
-    const w = this.viewWidth;
-    const h = this.viewHeight;
-    const editor = this.appService.schematicEditor as SchematicEditorImpl;
-    const bounds = this.getVisibleWorldBounds(vp);
-    const sceneKey = this.buildSceneSnapshotKey(vp);
-    const overlayActive = this.hasOverlayActivity();
-    // When dragging a component, wires must be redrawn with drag offset — skip fast path
-    const isDragging = this.dragComponentId.length > 0 && this.dragPreviewPos !== null;
-
-    // Fast path: overlay-only (wire preview, box select, hover) — reuse cached snapshot
-    if (overlayActive && !isDragging && this.sceneSnapshot !== null && this.sceneSnapshotKey === sceneKey) {
-      ctx.putImageData(this.sceneSnapshot, 0, 0);
-      ctx.save();
-      ctx.translate(vp.panOffset.x, vp.panOffset.y);
-      ctx.scale(vp.zoom, vp.zoom);
-      this.renderOverlays(ctx, doc, vp, bounds, editor);
-      ctx.restore();
-      this.zoomPercent = Math.round(vp.zoom * 100);
-      // Only redraw rulers if they changed (viewport changed or initial)
-      if (this.rulerVisible && this.rulerDirty) {
-        this.rulerDirty = false;
-        this.drawHRuler();
-        this.drawVRuler();
-      }
+    if (this.viewWidth <= 0 || this.viewHeight <= 0) {
       return;
     }
+    const doc = this.appService.schematicEditor.getDocument();
+    const vp = this.appService.schematicEditor.getViewport();
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const w = this.viewWidth;
+    const h = this.viewHeight;
+    const bounds = this.getVisibleWorldBounds(vp);
 
-    // Full redraw path
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = ThemeManager.getInstance().canvasBg();
-    ctx.fillRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(vp.panOffset.x, vp.panOffset.y);
-    ctx.scale(vp.zoom, vp.zoom);
-
-    this.renderBaseScene(ctx, doc, vp, bounds, editor);
-    this.renderOverlays(ctx, doc, vp, bounds, editor);
-
-    ctx.restore();
-
-    // Only snapshot when no overlays active (static scene)
-    if (!overlayActive) {
-      try {
-        this.sceneSnapshot = ctx.getImageData(0, 0, w, h);
-        this.sceneSnapshotKey = sceneKey;
-      } catch (_e) {
-        this.sceneSnapshot = null;
-        this.sceneSnapshotKey = '';
-      }
+    // Background: only redraw when scene changed or pan/zoom changed
+    if (this.backgroundDirty) {
+      const bgCtx = this.context;
+      bgCtx.clearRect(0, 0, w, h);
+      bgCtx.fillStyle = ThemeManager.getInstance().canvasBg();
+      bgCtx.fillRect(0, 0, w, h);
+      bgCtx.save();
+      bgCtx.translate(vp.panOffset.x, vp.panOffset.y);
+      bgCtx.scale(vp.zoom, vp.zoom);
+      this.drawBackgroundScene(bgCtx, doc, vp, bounds, editor);
+      bgCtx.restore();
+      this.backgroundDirty = false;
     }
 
+    // Wire layer: always redraw (clear + wires + overlays)
+    const wCtx = this.wireCtx;
+    wCtx.clearRect(0, 0, w, h);
+    wCtx.save();
+    wCtx.translate(vp.panOffset.x, vp.panOffset.y);
+    wCtx.scale(vp.zoom, vp.zoom);
+    if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
+      this.drawWires(wCtx, doc.wires);
+    }
+    this.renderOverlays(wCtx, doc, vp, bounds, editor);
+    wCtx.restore();
+
+    this.simFrameDirty = false;
     this.zoomPercent = Math.round(vp.zoom * 100);
-    if (this.rulerVisible) {
+    if (this.rulerVisible && this.rulerDirty) {
       this.rulerDirty = false;
       this.drawHRuler();
       this.drawVRuler();
     }
   }
 
-  private buildSceneSnapshotKey(vp: ViewportState): string {
-    const simRunning = this.appService.simulationKernel.isSimRunning() ? '1' : '0';
-    return `v${this.canvasVersion}_d${this.lastDocChangeVer}_sim${simRunning}_` +
-      `${vp.panOffset.x.toFixed(0)}_${vp.panOffset.y.toFixed(0)}_${vp.zoom.toFixed(2)}_` +
-      `${vp.gridVisible ? 1 : 0}_${vp.gridSize}_${this.ercErrors.length}`;
+  /** Initial full draw (called from onReady); forces background redraw */
+  private fullRedraw(): void {
+    this.backgroundDirty = true;
+    this.redraw();
   }
 
-  private hasOverlayActivity(): boolean {
-    return this.dragComponentId.length > 0 ||
-      this.previewWireEnd !== null ||
-      this.wireStartActive ||
-      this.isBoxSelecting ||
-      this.alignGuideX !== null ||
-      this.alignGuideY !== null ||
-      (this.toolMode === EditorToolMode.PLACE && this.placementPreview !== null &&
-        this.pendingLibraryId.length > 0) ||
-      this.hoverComponentId.length > 0 ||
-      this.toolMode === EditorToolMode.WIRE;
-  }
-
-  private renderBaseScene(
+  /** Draw only the static background elements (grid + components + labels + ERC) */
+  private drawBackgroundScene(
     ctx: CanvasRenderingContext2D,
     doc: SchematicDocument,
     vp: ViewportState,
@@ -996,11 +1027,10 @@ export struct SchematicCanvas {
     if (vp.gridVisible) {
       this.drawCachedGrid(ctx, vp, bounds);
       if (vp.zoom >= 0.8) {
-        this.drawGridLines(ctx, vp, bounds);  // Grid lines for zoomed-in views
+        this.drawGridLines(ctx, vp, bounds);
       }
     }
     if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
-      this.drawWires(ctx, doc.wires);
       this.drawBackgroundGridOnEmpty(ctx, vp, bounds, doc.wires.length);
     }
     if (editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
@@ -1648,9 +1678,10 @@ export struct SchematicCanvas {
 
   private drawWires(ctx: CanvasRenderingContext2D, wires: Wire[]): void {
     const wCount = wires.length;
-    // Check if simulation is running for live voltage coloring
-    const simRunning = this.appService.simulationKernel.isSimRunning();
-    const nodeVoltages = simRunning ? this.getSimNodeVoltages() : new Map<string, number>();
+    // Check if simulation is active (running or paused) for live voltage coloring
+    const simState = this.appService.simulationKernel.getState();
+    const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
+    const nodeVoltages = simActive ? this.getSimNodeVoltages() : new Map<string, number>();
 
     // If dragging a component, compute drag offset for wire endpoints that
     // are connected to the dragged component's pins
@@ -1735,7 +1766,7 @@ export struct SchematicCanvas {
       }
 
       // Voltage-based coloring during simulation
-      if (simRunning && wire.netId.length > 0) {
+      if (simActive && wire.netId.length > 0) {
         const voltage = nodeVoltages.get(wire.netId) ?? 0;
         ctx.strokeStyle = this.voltageToColor(voltage);
         ctx.lineWidth = 2.0;
@@ -1757,13 +1788,20 @@ export struct SchematicCanvas {
   private getSimNodeVoltages(): Map<string, number> {
     const doc = this.appService.schematicEditor.getDocument();
     const result = new Map<string, number>();
-    // Get the SPICE node map (net UUID → SPICE node name)
     const spiceNodeMap = this.appService.simulationKernel.netToSpiceNodeMap();
+    let changed = false;
     for (const net of doc.nets) {
-      // Resolve SPICE node name from net UUID
       const spiceNode = spiceNodeMap.get(net.id) ?? net.id;
       const voltage = this.appService.simulationKernel.getNodeVoltage(spiceNode);
       result.set(net.id, voltage);
+      const prev = this.cachedNodeVoltages.get(net.id);
+      if (prev === undefined || Math.abs(prev - voltage) > 0.001) {
+        changed = true;
+      }
+    }
+    // Update cache only if voltages changed; null cache signals "needs full redraw"
+    if (changed) {
+      this.cachedNodeVoltages = result;
     }
     return result;
   }
