@@ -25,9 +25,9 @@ export struct InstrumentPanel {
   @State subTab: number = 0;
   @State selectionRefDes: string = '';
   @State selectionLibraryId: string = '';
-  @State timebaseIdx: number = 2;
+  @State timebaseIdx: number = 3; // MS_1 — good default for lab 1kHz AC
   @State voltageScaleIdx: number = 3;
-  @State triggerLevel: number = 1.0;
+  @State triggerLevel: number = 2.0;
   @State logicChannels: number = 8;
   @State threshold: number = 1500;
   @State mmReading: string = '----';
@@ -58,17 +58,29 @@ export struct InstrumentPanel {
   @State pmPF: string = '--';
   @State fcReading: string = '----';
   @State fcGateTime: number = 1.0;
+  @State oscAutoFit: boolean = true;
+  @State oscStatsText: string = '';
+  @State oscTriggerHold: boolean = true;
+  @State oscLiveVolts: string = '--';
 
   private appService: AppService = AppService.getInstance();
   private timebases: OscTimebase[] = [
-    OscTimebase.NS_10, OscTimebase.US_1, OscTimebase.MS_1, OscTimebase.S_1, OscTimebase.S_10
+    OscTimebase.NS_10, OscTimebase.US_1, OscTimebase.US_100,
+    OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.S_1, OscTimebase.S_10
   ];
-  private timebaseLabels: string[] = ['10ns', '1us', '1ms', '1s', '10s'];
+  private timebaseLabels: string[] = ['10ns', '1us', '100us', '1ms', '10ms', '1s', '10s'];
   private selTimebase: SelectValueOption[] = [
-    { value: '10ns' }, { value: '1us' }, { value: '1ms' }, { value: '1s' }, { value: '10s' }
+    { value: '10ns' }, { value: '1us' }, { value: '100us' },
+    { value: '1ms' }, { value: '10ms' }, { value: '1s' }, { value: '10s' }
   ];
+  private voltageScales: OscVoltageScale[] = [
+    OscVoltageScale.MV_1, OscVoltageScale.MV_50, OscVoltageScale.MV_100,
+    OscVoltageScale.V_1, OscVoltageScale.V_10, OscVoltageScale.V_100
+  ];
+  private voltagePerDiv: number[] = [0.001, 0.05, 0.1, 1, 10, 100];
+  private voltageScaleLabels: string[] = ['1mV', '50mV', '100mV', '1V', '10V', '100V'];
   private selVScale: SelectValueOption[] = [
-    { value: '1mV' }, { value: '10mV' }, { value: '100mV' },
+    { value: '1mV' }, { value: '50mV' }, { value: '100mV' },
     { value: '1V' }, { value: '10V' }, { value: '100V' }
   ];
   private selLogicCh: SelectValueOption[] = [
@@ -82,9 +94,14 @@ export struct InstrumentPanel {
     this.updateSelectionHeader();
     this.syncSubTabFromSelection();
     this.syncInstrumentContext();
+    this.appService.instruments.setTimebase(this.timebases[this.timebaseIdx]);
+    this.appService.instruments.setVoltageScale(0, this.voltageScales[this.voltageScaleIdx]);
+    this.appService.instruments.setTrigger(TriggerMode.EDGE, this.triggerLevel, 0);
+    this.appService.instruments.setCaptureMode(
+      this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
     this.autoRefreshTimer = setInterval(() => {
       this.autoRefreshReadings();
-    }, 500);
+    }, 120);
   }
 
   onSelectionChange(): void {
@@ -112,6 +129,13 @@ export struct InstrumentPanel {
     if (this.selectedComponentId.length > 0) {
       this.appService.setActiveInstrumentComponent(this.selectedComponentId);
       this.appService.refreshInstrumentReaderForComponent(this.selectedComponentId);
+      // VOLTMETER_DC must stay on DC; AC mode + frozen samples → 0 Vrms and looks "broken"
+      const lib = this.selectionLibraryId.toUpperCase();
+      if (lib.includes('VOLTMETER_DC') || lib === 'VOLTMETER') {
+        this.vmType = 0;
+        this.vmUnit = 'V DC';
+        this.appService.instruments.setVoltmeterType(VoltmeterType.DC);
+      }
     } else {
       this.appService.setActiveInstrumentComponent(null);
     }
@@ -151,9 +175,16 @@ export struct InstrumentPanel {
     const instrKind = this.instrKindForSelection();
     try {
       if (instrKind === 'dmm') {
-        const mm = this.appService.instruments.measure();
-        if (mm.success && mm.data !== undefined) {
-          this.mmReading = mm.data.toFixed(3);
+        const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+        if (delta !== null) {
+          const averaged = this.appService.instruments.multimeterMeasureValue(delta);
+          this.mmReading = (averaged.success && averaged.data !== undefined)
+            ? averaged.data.toFixed(3) : delta.toFixed(3);
+        } else {
+          const mm = this.appService.instruments.measure();
+          if (mm.success && mm.data !== undefined) {
+            this.mmReading = mm.data.toFixed(3);
+          }
         }
         const snap = this.appService.instruments.getInstrumentSnapshot();
         if (snap !== undefined) {
@@ -162,7 +193,10 @@ export struct InstrumentPanel {
       } else if (instrKind === 'vm') {
         const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
         if (delta !== null) {
-          this.vmReading = delta.toFixed(3);
+          // DC meter averages AC ripple (true DMM behavior); AC mode returns true-RMS
+          const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
+          this.vmReading = (averaged.success && averaged.data !== undefined)
+            ? averaged.data.toFixed(3) : delta.toFixed(3);
         } else {
           const vr = this.appService.instruments.voltmeterMeasure();
           if (vr.success && vr.data !== undefined) {
@@ -177,7 +211,9 @@ export struct InstrumentPanel {
       } else if (instrKind === 'am') {
         const mA = this.appService.readAmmeterCurrentForComponent(this.selectedComponentId);
         if (mA !== null) {
-          this.amReading = mA.toFixed(3);
+          const averaged = this.appService.instruments.ammeterMeasureValue(mA);
+          this.amReading = (averaged.success && averaged.data !== undefined)
+            ? averaged.data.toFixed(3) : mA.toFixed(3);
         } else {
           const ar = this.appService.instruments.ammeterMeasure();
           if (ar.success && ar.data !== undefined) {
@@ -194,6 +230,11 @@ export struct InstrumentPanel {
         if (osc.success && osc.data) {
           this.waveTimeData = osc.data.timeAxis.slice();
           this.waveVoltageData = osc.data.voltageAxis.slice();
+          this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
+          if (osc.data.voltageAxis.length > 0) {
+            const last = osc.data.voltageAxis[osc.data.voltageAxis.length - 1];
+            this.oscLiveVolts = `${last.toFixed(3)} V`;
+          }
         }
         const osc2 = this.appService.instruments.getOscilloscopeWave(1);
         if (osc2.success && osc2.data) {
@@ -448,21 +489,40 @@ export struct InstrumentPanel {
             .width(32)
           Select(this.selVScale)
             .selected(this.voltageScaleIdx)
-            .value(['1mV', '10mV', '100mV', '1V', '10V', '100V'][this.voltageScaleIdx])
+            .value(this.voltageScaleLabels[this.voltageScaleIdx])
             .font({ size: 11 }).fontColor(ProteusColors.TEXT_PRIMARY)
             .backgroundColor(ProteusColors.CANVAS_BG)
             .layoutWeight(1)
             .height(ProteusDimens.PARAM_ROW_HEIGHT)
-            .onSelect((idx: number) => { this.voltageScaleIdx = idx; })
+            .onSelect((idx: number) => {
+              this.voltageScaleIdx = idx;
+              this.appService.instruments.setVoltageScale(0, this.voltageScales[idx]);
+              this.appService.instruments.setVoltageScale(1, this.voltageScales[idx]);
+            })
         }
         .width('100%').padding({ left: 8, right: 8 })
 
-        // Row 3: coupling + capture (2×2 grid)
+        // Row 3: coupling + capture
         Row({ space: 6 }) {
-          ProteusClassicBtn({ label: 'AC', widthVal: '48%',
+          ProteusClassicBtn({ label: 'AC', widthVal: '24%',
             onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } })
-          ProteusClassicBtn({ label: 'DC', widthVal: '48%',
+          ProteusClassicBtn({ label: 'DC', widthVal: '24%',
             onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } })
+          ProteusClassicBtn({
+            label: this.oscAutoFit ? '自适应' : '固定档',
+            widthVal: '24%',
+            onAction: () => { this.oscAutoFit = !this.oscAutoFit; }
+          })
+          ProteusClassicBtn({
+            label: this.oscTriggerHold ? '触发锁' : '滚动',
+            widthVal: '24%',
+            onAction: () => {
+              this.oscTriggerHold = !this.oscTriggerHold;
+              this.appService.instruments.setCaptureMode(
+                this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
+              this.captureWave();
+            }
+          })
         }
         .width('100%').padding({ left: 8, right: 8 })
 
@@ -474,49 +534,62 @@ export struct InstrumentPanel {
         }
         .width('100%').padding({ left: 8, right: 8 })
 
-        // Row 4: trigger slider (full width)
+        // Row 4: trigger slider
         Column({ space: 4 }) {
-          Text(`触发 ${this.triggerLevel.toFixed(1)} V`)
+          Text(this.oscTriggerHold
+            ? `触发锁 ${this.triggerLevel.toFixed(2)} V（稳像）`
+            : `滚动模式 · 实时 ${this.oscLiveVolts}`)
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .width('100%')
-          Slider({ value: this.triggerLevel, min: -5, max: 5, step: 0.1 })
+          Slider({ value: this.triggerLevel, min: -5, max: 5, step: 0.05 })
             .width('100%')
             .height(ProteusDimens.PARAM_ROW_HEIGHT)
-            .onChange((v: number) => { this.triggerLevel = v; })
+            .enabled(this.oscTriggerHold)
+            .onChange((v: number) => {
+              this.triggerLevel = v;
+              this.appService.instruments.setTrigger(TriggerMode.EDGE, v, 0);
+            })
         }
         .width('100%')
         .padding({ left: 8, right: 8 })
 
-        // Waveform display
-        Column() {
-          if (this.waveVoltageData.length > 0) {
-            OscilloscopeWaveCanvas({
-              timeData: this.waveTimeData,
-              voltageData: this.waveVoltageData,
-              channelLabel: 'CH1',
-              vPerDiv: 1,
-              triggerLevel: this.triggerLevel
-            })
-          } else {
-            this.PlaceholderDisplay('点击"采样"获取波形')
-          }
-        }
-        .width('100%').padding({ left: 4, right: 4 })
-
-        // CH2
-        if (this.waveCh2Data.length > 0) {
-          Column() {
+        // 主波形区：始终显示，无数据时显示空屏提示
+        Column({ space: 4 }) {
+          OscilloscopeWaveCanvas({
+            timeData: this.waveTimeData,
+            voltageData: this.waveVoltageData,
+            channelLabel: 'CH1',
+            waveColor: '#00e676',
+            vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
+            triggerLevel: this.triggerLevel,
+            autoFit: this.oscAutoFit,
+            canvasHeight: 168,
+            showStats: true
+          })
+          if (this.waveCh2Data.length > 1) {
             OscilloscopeWaveCanvas({
               timeData: this.waveTimeData,
               voltageData: this.waveCh2Data,
               channelLabel: 'CH2',
-              vPerDiv: 1,
-              triggerLevel: this.triggerLevel
+              waveColor: '#40c4ff',
+              vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
+              triggerLevel: this.triggerLevel,
+              autoFit: this.oscAutoFit,
+              canvasHeight: 120,
+              showStats: true
             })
           }
-          .width('100%').padding({ left: 4, right: 4 })
+          if (this.oscStatsText.length > 0) {
+            Text(this.oscStatsText)
+              .fontSize(ProteusFonts.STATUS)
+              .fontColor(ProteusColors.HOVER_PREVIEW)
+              .maxLines(2)
+              .width('100%')
+              .padding({ left: 4, right: 4 })
+          }
         }
+        .width('100%').padding({ left: 4, right: 4 })
 
         // Cursors
         Column({ space: 2 }) {
@@ -554,11 +627,56 @@ export struct InstrumentPanel {
         if (ch === 0) {
           this.waveTimeData = snap.data.timeAxis.slice();
           this.waveVoltageData = snap.data.voltageAxis.slice();
+          this.updateOscStatsText(snap.data.voltageAxis, snap.data.timeAxis);
+          if (snap.data.voltageAxis.length > 0) {
+            const last = snap.data.voltageAxis[snap.data.voltageAxis.length - 1];
+            this.oscLiveVolts = `${last.toFixed(3)} V`;
+          }
         } else if (ch === 1) {
           this.waveCh2Data = snap.data.voltageAxis.slice();
         }
       }
     }
+  }
+
+  private updateOscStatsText(volts: number[], times: number[]): void {
+    if (volts.length < 2) {
+      this.oscStatsText = '';
+      return;
+    }
+    let minV = volts[0];
+    let maxV = volts[0];
+    let sum = 0;
+    for (let i = 0; i < volts.length; i++) {
+      const v = volts[i];
+      if (v < minV) {
+        minV = v;
+      }
+      if (v > maxV) {
+        maxV = v;
+      }
+      sum += v;
+    }
+    const avg = sum / volts.length;
+    const m = this.appService.instruments.measureCursors(0, volts.length - 1);
+    let freqText = '--';
+    if (m.success && m.data !== undefined && m.data.frequency > 0) {
+      const f = m.data.frequency;
+      if (f >= 1000) {
+        freqText = `${(f / 1000).toFixed(1)} kHz`;
+      } else {
+        freqText = `${f.toFixed(1)} Hz`;
+      }
+    }
+    const tSpan = Math.abs(times[times.length - 1] - times[0]);
+    let spanText = `${(tSpan * 1e6).toFixed(1)} us`;
+    if (tSpan >= 1) {
+      spanText = `${tSpan.toFixed(3)} s`;
+    } else if (tSpan >= 1e-3) {
+      spanText = `${(tSpan * 1e3).toFixed(2)} ms`;
+    }
+    this.oscStatsText =
+      `窗宽 ${spanText}  |  Vmin ${minV.toFixed(3)}V  Vmax ${maxV.toFixed(3)}V  Avg ${avg.toFixed(3)}V  |  f ${freqText}`;
   }
 
   // ==================== Logic Analyzer ====================
@@ -777,12 +895,14 @@ export struct InstrumentPanel {
         ProteusClassicBtn({ label: '发', widthVal: 36,
           onAction: () => {
             this.appService.instruments.uartHexSend(this.uartHex);
+            this.uartLog = this.appService.instruments.getUartLog();
             this.statusMessage = `已发送: ${this.uartHex}`;
           } })
         ProteusClassicBtn({ label: '收', widthVal: 36,
           onAction: () => {
-            const r = this.appService.instruments.uartHexReceive();
-            this.uartLog = r.data ?? '';
+            // Show full TX/RX log — not hexReceive() raw buffer (was 5555… spam)
+            this.uartLog = this.appService.instruments.getUartLog();
+            this.statusMessage = this.uartLog.length > 0 ? '已刷新接收日志' : '暂无数据';
           } })
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
@@ -795,7 +915,7 @@ export struct InstrumentPanel {
           .constraintSize({ minHeight: 80 })
           .backgroundColor(ProteusColors.INPUT_READONLY_BG)
           .padding(6).border({ width: 1, color: ProteusColors.DIVIDER })
-          .maxLines(16)
+          .maxLines(24)
       }
       .layoutWeight(1).width('100%').padding({ left: 8, right: 8, bottom: 8 })
     }
@@ -814,6 +934,14 @@ export struct InstrumentPanel {
           } })
         ProteusClassicBtn({ label: 'AC', widthVal: 36,
           onAction: () => {
+            // VOLTMETER_DC symbol is a DC meter; keep AC optional only for generic meters
+            const lib = this.selectionLibraryId.toUpperCase();
+            if (lib.includes('VOLTMETER_DC')) {
+              this.vmType = 0; this.vmUnit = 'V DC';
+              this.appService.instruments.setVoltmeterType(VoltmeterType.DC);
+              this.statusMessage = 'VOLTMETER_DC 固定为直流档';
+              return;
+            }
             this.vmType = 1; this.vmUnit = 'V AC';
             this.appService.instruments.setVoltmeterType(VoltmeterType.AC);
           } })
@@ -842,7 +970,11 @@ export struct InstrumentPanel {
           onAction: () => {
             let reading: number | null = null;
             if (this.selectedComponentId.length > 0) {
-              reading = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+              const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+              if (delta !== null) {
+                const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
+                reading = (averaged.success && averaged.data !== undefined) ? averaged.data : delta;
+              }
             }
             if (reading === null) {
               const r = this.appService.instruments.voltmeterMeasure();

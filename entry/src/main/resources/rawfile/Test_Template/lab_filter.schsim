@@ -3,21 +3,24 @@
   "version": "2.0.0",
   "name": "RC滤波电路",
   "topology": {
-    "schUuid": "sch_1783674971323_1",
+    "schUuid": "sch_1784021179637_1",
     "schName": "RC滤波电路",
     "layerDepth": 0,
     "deviceList": [
       {
-        "instUuid": "comp_1783674971323_2",
-        "libDevId": "LM358",
-        "refName": "U1",
-        "x": 320,
-        "y": 180,
+        "instUuid": "comp_1784021179637_2",
+        "libDevId": "VAC",
+        "refName": "AC1",
+        "x": 60,
+        "y": 220,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
         "params": {
-          "__map__": "1"
+          "__map__": "1",
+          "amplitude": "0.5V",
+          "frequency": "1kHz",
+          "offset": "1.5V"
         },
         "pinVoltage": {
           "__map__": "1"
@@ -27,16 +30,18 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1783674971323_3",
+        "instUuid": "comp_1784021179637_3",
         "libDevId": "R_1k",
         "refName": "R1",
-        "x": 140,
-        "y": 160,
+        "x": 160,
+        "y": 140,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
         "params": {
-          "__map__": "1"
+          "__map__": "1",
+          "value": "1k",
+          "power": "0.25W"
         },
         "pinVoltage": {
           "__map__": "1"
@@ -46,11 +51,32 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1783674971323_4",
+        "instUuid": "comp_1784021179637_4",
         "libDevId": "C_100nF",
         "refName": "C1",
-        "x": 240,
-        "y": 280,
+        "x": 260,
+        "y": 260,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1",
+          "value": "100nF",
+          "voltage": "50V"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1784021179637_5",
+        "libDevId": "LM358",
+        "refName": "U1",
+        "x": 400,
+        "y": 180,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
@@ -65,16 +91,17 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1783674971323_5",
+        "instUuid": "comp_1784021179637_6",
         "libDevId": "VCC",
         "refName": "PWR1",
-        "x": 320,
-        "y": 60,
+        "x": 400,
+        "y": 20,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
         "params": {
-          "__map__": "1"
+          "__map__": "1",
+          "voltage": "5V"
         },
         "pinVoltage": {
           "__map__": "1"
@@ -84,11 +111,11 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1783674971323_6",
+        "instUuid": "comp_1784021179637_7",
         "libDevId": "GND",
         "refName": "GND1",
-        "x": 240,
-        "y": 360,
+        "x": 260,
+        "y": 400,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
@@ -103,11 +130,30 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1783674971323_7",
+        "instUuid": "comp_1784021179637_8",
         "libDevId": "VOLTMETER_DC",
         "refName": "M1",
-        "x": 460,
-        "y": 180,
+        "x": 560,
+        "y": 140,
+        "rotate": 0,
+        "mirrorH": false,
+        "mirrorV": false,
+        "params": {
+          "__map__": "1"
+        },
+        "pinVoltage": {
+          "__map__": "1"
+        },
+        "hidden": false,
+        "subCircuitRef": "",
+        "ercErrorMsg": ""
+      },
+      {
+        "instUuid": "comp_1784021179637_9",
+        "libDevId": "OSCILLOSCOPE",
+        "refName": "OSC1",
+        "x": 560,
+        "y": 300,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
@@ -124,21 +170,48 @@
     ],
     "netList": [
       {
-        "netUuid": "net_1783674971323_8",
+        "netUuid": "net_1784021179637_10",
+        "netName": "SIG_SRC",
+        "displayName": "SIG_SRC",
+        "nodeList": [
+          {
+            "devUuid": "comp_1784021179637_3",
+            "pinId": "1",
+            "pinName": "1"
+          },
+          {
+            "devUuid": "comp_1784021179637_2",
+            "pinId": "1",
+            "pinName": "1"
+          }
+        ],
+        "isPower": false,
+        "isAnalog": false,
+        "isBusMember": false,
+        "busParentUuid": "",
+        "defaultVoltage": 0,
+        "ercWarning": false,
+        "connectedProbeIds": []
+      },
+      {
+        "netUuid": "net_1784021179637_12",
         "netName": "SIG_MID",
         "displayName": "SIG_MID",
         "nodeList": [
           {
-            "devUuid": "comp_1783674971323_3",
-            "pinId": "2"
+            "devUuid": "comp_1784021179637_3",
+            "pinId": "2",
+            "pinName": "2"
           },
           {
-            "devUuid": "comp_1783674971323_4",
-            "pinId": "1"
+            "devUuid": "comp_1784021179637_4",
+            "pinId": "1",
+            "pinName": "1"
           },
           {
-            "devUuid": "comp_1783674971323_2",
-            "pinId": "IN+1"
+            "devUuid": "comp_1784021179637_5",
+            "pinId": "IN+1",
+            "pinName": "IN+1"
           }
         ],
         "isPower": false,
@@ -150,17 +223,29 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1783674971323_10",
-        "netName": "SIG_OUT",
-        "displayName": "SIG_OUT",
+        "netUuid": "net_1784021179637_15",
+        "netName": "BUF_FB",
+        "displayName": "BUF_FB",
         "nodeList": [
           {
-            "devUuid": "comp_1783674971323_2",
-            "pinId": "OUT1"
+            "devUuid": "comp_1784021179637_5",
+            "pinId": "OUT1",
+            "pinName": "OUT1"
           },
           {
-            "devUuid": "comp_1783674971323_7",
-            "pinId": "V+"
+            "devUuid": "comp_1784021179637_5",
+            "pinId": "IN-1",
+            "pinName": "IN-1"
+          },
+          {
+            "devUuid": "comp_1784021179637_8",
+            "pinId": "V+",
+            "pinName": "V+"
+          },
+          {
+            "devUuid": "comp_1784021179637_9",
+            "pinId": "CH1",
+            "pinName": "CH1"
           }
         ],
         "isPower": false,
@@ -172,17 +257,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1783674971323_12",
+        "netUuid": "net_1784021179638_19",
         "netName": "VCC",
         "displayName": "VCC",
         "nodeList": [
           {
-            "devUuid": "comp_1783674971323_2",
-            "pinId": "V+"
+            "devUuid": "comp_1784021179637_6",
+            "pinId": "1",
+            "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1783674971323_5",
-            "pinId": "1"
+            "devUuid": "comp_1784021179637_5",
+            "pinId": "V+",
+            "pinName": "V+"
           }
         ],
         "isPower": true,
@@ -194,29 +281,39 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1783674971323_14",
+        "netUuid": "net_1784021179638_21",
         "netName": "GND",
         "displayName": "GND",
         "nodeList": [
           {
-            "devUuid": "comp_1783674971323_4",
-            "pinId": "2"
+            "devUuid": "comp_1784021179637_7",
+            "pinId": "1",
+            "pinName": "GND"
           },
           {
-            "devUuid": "comp_1783674971323_2",
-            "pinId": "V-"
+            "devUuid": "comp_1784021179637_2",
+            "pinId": "2",
+            "pinName": "2"
           },
           {
-            "devUuid": "comp_1783674971323_2",
-            "pinId": "IN-1"
+            "devUuid": "comp_1784021179637_4",
+            "pinId": "2",
+            "pinName": "2"
           },
           {
-            "devUuid": "comp_1783674971323_7",
-            "pinId": "COM"
+            "devUuid": "comp_1784021179637_5",
+            "pinId": "V-",
+            "pinName": "V-"
           },
           {
-            "devUuid": "comp_1783674971323_6",
-            "pinId": "1"
+            "devUuid": "comp_1784021179637_8",
+            "pinId": "COM",
+            "pinName": "COM"
+          },
+          {
+            "devUuid": "comp_1784021179637_9",
+            "pinId": "GND",
+            "pinName": "GND"
           }
         ],
         "isPower": true,
@@ -231,73 +328,203 @@
     "busList": [],
     "wireList": [
       {
-        "netUuid": "net_1783674971323_8",
+        "netUuid": "net_1784021179637_10",
         "points": [
           {
-            "x": 170,
-            "y": 160
+            "x": 130,
+            "y": 140
           },
           {
-            "x": 210,
-            "y": 280
+            "x": 40,
+            "y": 140
           },
           {
-            "x": 270,
+            "x": 40,
+            "y": 220
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179637_12",
+        "points": [
+          {
+            "x": 190,
+            "y": 140
+          },
+          {
+            "x": 230,
+            "y": 140
+          },
+          {
+            "x": 230,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179637_12",
+        "points": [
+          {
+            "x": 190,
+            "y": 140
+          },
+          {
+            "x": 350,
             "y": 140
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1783674971323_10",
+        "netUuid": "net_1784021179637_15",
         "points": [
           {
-            "x": 370,
+            "x": 450,
             "y": 150
           },
           {
-            "x": 430,
-            "y": 170
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1783674971323_12",
-        "points": [
-          {
-            "x": 320,
-            "y": 130
+            "x": 350,
+            "y": 150
           },
           {
-            "x": 320,
-            "y": 70
+            "x": 350,
+            "y": 160
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1783674971323_14",
+        "netUuid": "net_1784021179637_15",
         "points": [
           {
-            "x": 270,
+            "x": 450,
+            "y": 150
+          },
+          {
+            "x": 530,
+            "y": 150
+          },
+          {
+            "x": 530,
+            "y": 115
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179637_15",
+        "points": [
+          {
+            "x": 450,
+            "y": 150
+          },
+          {
+            "x": 520,
+            "y": 150
+          },
+          {
+            "x": 520,
             "y": 280
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_19",
+        "points": [
+          {
+            "x": 400,
+            "y": 30
           },
           {
-            "x": 320,
+            "x": 400,
+            "y": 130
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 260,
+            "y": 390
+          },
+          {
+            "x": 260,
+            "y": 410
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 80,
+            "y": 220
+          },
+          {
+            "x": 100,
+            "y": 220
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 290,
+            "y": 260
+          },
+          {
+            "x": 310,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 400,
             "y": 230
           },
           {
-            "x": 270,
-            "y": 160
+            "x": 400,
+            "y": 250
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 530,
+            "y": 165
           },
           {
-            "x": 430,
-            "y": 190
+            "x": 510,
+            "y": 165
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784021179638_21",
+        "points": [
+          {
+            "x": 520,
+            "y": 340
           },
           {
-            "x": 240,
-            "y": 350
+            "x": 500,
+            "y": 340
           }
         ],
         "isBus": false
@@ -306,6 +533,56 @@
     "subCircuitList": [],
     "probeList": [],
     "textAnnotate": [],
+    "netLabelList": [
+      {
+        "id": "lbl_1784021179638_23",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 260,
+        "y": 410,
+        "global": false
+      },
+      {
+        "id": "lbl_1784021179638_25",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 100,
+        "y": 220,
+        "global": false
+      },
+      {
+        "id": "lbl_1784021179638_27",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 310,
+        "y": 260,
+        "global": false
+      },
+      {
+        "id": "lbl_1784021179638_29",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 400,
+        "y": 250,
+        "global": false
+      },
+      {
+        "id": "lbl_1784021179638_31",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 510,
+        "y": 165,
+        "global": false
+      },
+      {
+        "id": "lbl_1784021179638_33",
+        "netUuid": "net_1784021179638_21",
+        "text": "GND",
+        "x": 500,
+        "y": 340,
+        "global": false
+      }
+    ],
     "ercErrorList": [],
     "gridStep": 10,
     "bgColor": "#0a0a1a"
@@ -333,12 +610,12 @@
     "convergence": 0.000001
   },
   "aiConfigs": [],
-  "createdAt": "2026-07-10T09:16:11.322Z",
-  "modifiedAt": "2026-07-10T09:16:11.322Z",
+  "createdAt": "2026-07-14T09:26:19.637Z",
+  "modifiedAt": "2026-07-14T09:26:19.637Z",
   "collaboration": {
     "annotations": [],
     "snapshots": [],
     "changeLog": []
   },
-  "integrityHash": "5f2e060bbd60b5c12bd1ba9bee0c173cf322f0bb590cb3a8591ab05111fc146f"
+  "integrityHash": "09dbf095d3f54061fe3addad341b5f43ebb8d97a664c467a9303f45f63b58a3c"
 }

@@ -1,0 +1,1622 @@
+import type { ISimulationKernel } from './api/ISimulationKernel';
+import { DigitalEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/DigitalEngine";
+import type { HazardReport } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/DigitalEngine";
+import { AnalogEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/AnalogEngine";
+import { GlobalScheduler } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
+import type { SchedulerStepResult } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
+import { SimulationState, SimulationMode, LogicState, EventBus, ModuleEvent, ErrCode, ResultHelper, TopologyAdapter, makeProgress, IdUtil, DynamicErcEngine, copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts, traceLoadSchematic, traceBurn, formatFirmwarePreview, traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceUart, formatUartBytesHex, traceUartTxDrain, traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchematicDocument, SimulationConfig, SimulationResult, Result, McuRegisterSnapshot, SchTopology, SimConfig, WaveData, FreqNoiseData, SimStatResult, SpiceResult, ProgressCallback, ApiResult, ErcViolation, FaultInjection, FaultScanResult, FaultType } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { FaultInjectionEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/FaultInjectionEngine";
+import { Mcu8051Simulator } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/Mcu8051Simulator";
+import { SpiceMatrixBuilder } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/SpiceMatrixBuilder";
+import { SpiceRunner } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/SpiceRunner";
+import { QemuMcuBridge } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/QemuMcuBridge";
+// ---- 混合信号耦合参数 (1.3.11-1.3.14) ----
+const VOH_HC_5V = 4.5; // HC系列输出高电平 Thevenin 电压
+const ROUT_HC = 50; // HC系列输出阻抗 (Ω)
+const VIL_CMOS_5V = 0.8; // CMOS 低电平阈值
+const VIH_CMOS_5V = 2.0; // CMOS 高电平阈值
+const VIL_CMOS_3V3 = 0.6;
+const VIH_CMOS_3V3 = 2.0;
+const SUPPLY_INDUCTANCE = 10e-9; // 电源引线电感 10nH
+interface TheveninSource {
+    netId: string;
+    voltage: number;
+    resistance: number;
+}
+interface SupplyNoiseSnapshot {
+    vccNoise: number;
+    gndBounce: number;
+}
+interface StatsSnapshot {
+    mean: number;
+    stdDev: number;
+    min: number;
+    max: number;
+    cp: number;
+    cpk: number;
+}
+interface PowerIntegrityState {
+    lastTotalCurrent: number;
+    lastTime: number;
+    vccNoise: number;
+    gndBounce: number;
+}
+interface SimStartedData {
+    config: SimConfig | SimulationConfig;
+}
+interface SimStoppedData {
+    released?: boolean;
+}
+interface SimStepEmptyData {
+    empty: boolean;
+}
+/** 扁平帧快照 — Worker/UI DisplayPump 共用形状 */
+export interface KernelFrameSnapshot {
+    t: number;
+    stepCount: number;
+    netKeys: string[];
+    voltages: number[];
+    branchKeys: string[];
+    currents: number[];
+    mcuFamily: string;
+    mcuPc: number;
+    mcuP1: number;
+    gpioWords: number[];
+    /** USART TX bytes produced since previous snapshot (drained) */
+    uartBytes: number[];
+    state: string;
+}
+export class SimulationKernelImpl implements ISimulationKernel {
+    private schematic: SchematicDocument | null = null;
+    private topology: SchTopology | null = null;
+    private config: SimulationConfig = {
+        mode: SimulationMode.MIXED,
+        startTime: 0, stopTime: 0.001, stepSize: 1e-6,
+        maxStep: 1e-5, temperature: 27, convergence: 1e-6,
+        mcuClockHz: 11059200
+    };
+    private simConfig: SimConfig | null = null;
+    private state: SimulationState = SimulationState.IDLE;
+    private result: SimulationResult | null = null;
+    private waveDataList: WaveData[] = [];
+    private nodeVoltages: Map<string, number> = new Map();
+    private branchCurrents: Map<string, number> = new Map();
+    private spiceNodeMap: Map<string, string> = new Map();
+    private globalTime: number = 0;
+    private digitalEngine: DigitalEngine = new DigitalEngine();
+    private analogEngine: AnalogEngine = new AnalogEngine();
+    private scheduler: GlobalScheduler | null = null;
+    private mcuPc: number = 0;
+    private mcuRegs: Map<string, number> = SimulationKernelImpl.createDefaultMcuRegs();
+    private mcuPinVoltages: Map<string, number> = new Map();
+    private faultEngine: FaultInjectionEngine = new FaultInjectionEngine();
+    private dynamicErcViolations: ErcViolation[] = [];
+    private mcu8051: Mcu8051Simulator = new Mcu8051Simulator();
+    private mcuLoaded: boolean = false;
+    private qemuBridge: QemuMcuBridge = new QemuMcuBridge();
+    private mcuFamily: string = '8051';
+    private paramScanDefaults: Map<string, Map<string, string>> = new Map();
+    /** Last traced GPIO port values — debounce [MCU] GPIO_SYNC spam */
+    private lastTracedGpio: Map<string, number> = new Map();
+    private mcuTickCount: number = 0;
+    /** Accumulated spice/digital steps for frame telemetry */
+    private budgetStepCount: number = 0;
+    // ---- 混合信号耦合状态 (1.3.11-1.3.14) ----
+    private theveninSources: TheveninSource[] = [];
+    private powerState: PowerIntegrityState = { lastTotalCurrent: 0, lastTime: 0, vccNoise: 0, gndBounce: 0 };
+    private crossCoupledNets: Map<string, string> = new Map(); // digital_net → analog_node
+    // ---- v2 API ----
+    startSimulation(topo: SchTopology, config: SimConfig, onProgress?: ProgressCallback, schematicDoc?: SchematicDocument): ApiResult<void> {
+        this.topology = topo;
+        this.simConfig = config;
+        // Prefer editor doc (full pinId:pinName). fromTopology alone used to drop AC+/OUT1 names.
+        const doc = schematicDoc !== undefined ? schematicDoc : TopologyAdapter.fromTopology(topo);
+        this.schematic = doc;
+        this.config = this.toLegacyConfig(config);
+        this.state = SimulationState.IDLE;
+        this.result = null;
+        this.waveDataList = [];
+        this.nodeVoltages.clear();
+        this.branchCurrents.clear();
+        this.globalTime = 0;
+        this.budgetStepCount = 0;
+        this.digitalEngine.loadSchematic(doc);
+        this.analogEngine.loadSchematic(doc, this.config);
+        this.scheduler = new GlobalScheduler(this.config, this.digitalEngine, this.analogEngine);
+        this.buildSpiceNodeMap(topo);
+        // Pre-populate initial voltages from schematic VCC setting
+        const supplyV = SimulationKernelImpl.resolveSupplyVoltage(doc);
+        this.nodeVoltages.set('VCC', supplyV);
+        this.nodeVoltages.set('0', 0);
+        this.nodeVoltages.set('GND', 0);
+        this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
+            if (nodeName === 'VCC' || nodeName === 'VCC_5V' || nodeName === 'VDD') {
+                this.nodeVoltages.set(netUuid, supplyV);
+                this.nodeVoltages.set(nodeName, supplyV);
+            }
+            else if (nodeName === '0' || nodeName === 'GND') {
+                this.nodeVoltages.set(netUuid, 0);
+                this.nodeVoltages.set(nodeName, 0);
+            }
+        });
+        onProgress?.(makeProgress(30, 'Netlist built'));
+        this.state = SimulationState.RUNNING;
+        this.scheduler.reset();
+        // DC seed: push analog rail levels into digital nets, then settle gates
+        this.seedDigitalFromAnalogDc();
+        // loadSchematic cleared GPIO Thevenin sources — re-apply if firmware already loaded
+        if (this.mcuLoaded) {
+            if (this.mcuFamily.startsWith('STM32')) {
+                this.syncStm32GpioToSpice();
+            }
+            else {
+                this.syncMcuPinsToSpice();
+            }
+        }
+        onProgress?.(makeProgress(100, 'Simulation started', true));
+        const startedData: SimStartedData = { config: config };
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STARTED,
+            source: 'simulation_kernel',
+            timestamp: Date.now(),
+            data: startedData
+        });
+        return ResultHelper.ok();
+    }
+    pauseSim(): ApiResult<void> {
+        if (this.state !== SimulationState.RUNNING) {
+            return ResultHelper.fail(ErrCode.ERR_SIM_BUSY, 'Not running');
+        }
+        this.state = SimulationState.PAUSED;
+        return ResultHelper.ok();
+    }
+    resumeSim(): ApiResult<void> {
+        if (this.state !== SimulationState.PAUSED) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Not paused');
+        }
+        this.state = SimulationState.RUNNING;
+        return ResultHelper.ok();
+    }
+    globalResetSim(): ApiResult<void> {
+        this.globalTime = 0;
+        this.mcuPc = 0;
+        this.mcuRegs = SimulationKernelImpl.createDefaultMcuRegs();
+        this.nodeVoltages = new Map<string, number>();
+        this.branchCurrents = new Map<string, number>();
+        this.waveDataList = [];
+        this.result = null;
+        this.theveninSources = [];
+        this.powerState = { lastTotalCurrent: 0, lastTime: 0, vccNoise: 0, gndBounce: 0 };
+        this.lastTracedGpio.clear();
+        this.mcuTickCount = 0;
+        this.scheduler?.reset();
+        this.state = SimulationState.IDLE;
+        return ResultHelper.ok();
+    }
+    stopSim(): ApiResult<void> {
+        this.state = SimulationState.STOPPED;
+        const stoppedData: SimStoppedData = {};
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STOPPED,
+            source: 'simulation_kernel',
+            timestamp: Date.now(),
+            data: stoppedData
+        });
+        return ResultHelper.ok();
+    }
+    simSingleStep(): ApiResult<SpiceResult> {
+        this.tickMcuCore();
+        const spice = this.runSpiceStep();
+        this.tickDigitalLogic();
+        return ResultHelper.ok(spice);
+    }
+    isSimRunning(): boolean {
+        return this.state === SimulationState.RUNNING;
+    }
+    isSimPaused(): boolean {
+        return this.state === SimulationState.PAUSED;
+    }
+    isSimActive(): boolean {
+        return this.state === SimulationState.RUNNING || this.state === SimulationState.PAUSED;
+    }
+    getAllWaveData(): WaveData[] {
+        return this.waveDataList.slice();
+    }
+    getDynamicErcViolations(): ErcViolation[] {
+        return this.dynamicErcViolations.slice();
+    }
+    injectFault(instUuid: string, faultType: FaultType, params?: Map<string, string>): ApiResult<FaultInjection> {
+        return this.faultEngine.inject(instUuid, faultType, params);
+    }
+    removeFault(faultId: string): ApiResult<void> {
+        return this.faultEngine.remove(faultId);
+    }
+    listFaults(): FaultInjection[] {
+        return this.faultEngine.list();
+    }
+    batchFaultScan(): FaultScanResult[] {
+        if (!this.topology)
+            return [];
+        return this.faultEngine.batchScan(this.topology, this.waveDataList);
+    }
+    getNodeVoltage(nodeName: string): number {
+        // Try direct lookup first (node name like "N1", "VCC", "0")
+        const direct = this.nodeVoltages.get(nodeName);
+        if (direct !== undefined)
+            return direct;
+        // Try AnalogEngine's net UUID → node name mapping
+        const aeVoltage = this.analogEngine.getVoltage(nodeName);
+        if (aeVoltage !== 0 || this.analogEngine.getNodeNameForNetUuid(nodeName).length > 0) {
+            return aeVoltage;
+        }
+        // Try spiceNodeMap translation (net UUID → SPICE node name)
+        const spiceNode = this.spiceNodeMap.get(nodeName);
+        if (spiceNode !== undefined) {
+            return this.nodeVoltages.get(spiceNode) ?? 0;
+        }
+        return 0;
+    }
+    getBranchCurrent(branchName: string): number {
+        // Try direct component UUID lookup first
+        const aeCurrent = this.analogEngine.getCurrentForComponent(branchName);
+        if (aeCurrent !== 0)
+            return aeCurrent;
+        // Try net UUID lookup
+        const netCurrent = this.analogEngine.getNetCurrentForUuid(branchName);
+        if (netCurrent !== 0)
+            return netCurrent;
+        // Fall back to stored branch currents
+        return this.branchCurrents.get(branchName) ?? 0;
+    }
+    /** Get voltage on a net by its UUID */
+    getNetVoltageByUuid(netUuid: string): number {
+        // Digital gate Thevenin wins over floating SPICE nodes (LA probes etc.)
+        for (let i = 0; i < this.theveninSources.length; i++) {
+            const src = this.theveninSources[i];
+            if (src.netId === netUuid) {
+                return src.voltage;
+            }
+            const spice = this.spiceNodeMap.get(netUuid);
+            if (spice !== undefined && src.netId === spice) {
+                return src.voltage;
+            }
+        }
+        const kernelV = this.nodeVoltages.get(netUuid);
+        if (kernelV !== undefined) {
+            const spiceName = this.spiceNodeMap.get(netUuid) ?? '';
+            // Prefer kernel when AE would report float-0 on a named dig output node
+            if (spiceName.length > 0) {
+                const aeMapped = this.analogEngine.getNodeNameForNetUuid(netUuid);
+                if (aeMapped.length > 0) {
+                    const aeV = this.analogEngine.getVoltage(netUuid);
+                    // If AE still at 0 but kernel/DIG has driven level, trust kernel
+                    if (Math.abs(aeV) < 1e-6 && Math.abs(kernelV) > 0.5) {
+                        return kernelV;
+                    }
+                }
+            }
+        }
+        const aeV = this.analogEngine.getVoltage(netUuid);
+        if (this.analogEngine.getNodeNameForNetUuid(netUuid).length > 0) {
+            return aeV;
+        }
+        return this.getNodeVoltage(netUuid);
+    }
+    /** Get current flowing through a net by its UUID */
+    getNetCurrentByUuid(netUuid: string): number {
+        return this.analogEngine.getNetCurrentForUuid(netUuid);
+    }
+    /** Register a signal generator as a voltage source in the analog engine */
+    registerSignalSource(sourceId: string, nodeA: string, nodeB: string, waveform: string, voltage: number, amplitude: number, freq: number, phase: number, dutyCycle: number): void {
+        this.analogEngine.registerSignalSource(sourceId, nodeA, nodeB, waveform, voltage, amplitude, freq, phase, dutyCycle);
+    }
+    getNodeVoltageMap(): Map<string, number> {
+        const map = new Map(this.nodeVoltages);
+        const aeNetMap = this.analogEngine.getNetUuidMapping();
+        aeNetMap.forEach((nodeName: string, netUuid: string) => {
+            if (!map.has(netUuid)) {
+                const voltage = map.get(nodeName);
+                if (voltage !== undefined) {
+                    map.set(netUuid, voltage);
+                }
+            }
+        });
+        this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
+            if (!map.has(netUuid)) {
+                const voltage = map.get(nodeName);
+                if (voltage !== undefined) {
+                    map.set(netUuid, voltage);
+                }
+            }
+        });
+        return map;
+    }
+    getBranchCurrentMap(): Map<string, number> {
+        return new Map(this.branchCurrents);
+    }
+    getMcuPinVoltage(mcuInstUuid: string, pinId: string): number {
+        return this.mcuPinVoltages.get(`${mcuInstUuid}:${pinId}`) ?? 0;
+    }
+    getTotalPower(): number {
+        let power = 0;
+        this.branchCurrents.forEach((current: number, branch: string) => {
+            const node = branch.split('_')[0];
+            const v = this.nodeVoltages.get(node) ?? 0;
+            power += Math.abs(v * current);
+        });
+        return power;
+    }
+    globalTimeTick(): number {
+        return this.globalTime;
+    }
+    syncMcuPinToSpice(mcuInstUuid: string, pinId: string, level: number): ApiResult<void> {
+        const voltage = level > 0.5 ? 3.3 : 0;
+        this.mcuPinVoltages.set(`${mcuInstUuid}:${pinId}`, voltage);
+        // Find the actual net connected to this MCU pin and set its voltage
+        if (this.topology) {
+            for (const net of this.topology.netList) {
+                for (const nodeRef of net.nodeList) {
+                    if (nodeRef.devUuid === mcuInstUuid) {
+                        // Check if this nodeRef is for the pin we're setting
+                        const refPinId = nodeRef.pinId;
+                        // Match by pin ID (e.g., "P1.0", "PA0", "GPIO0")
+                        if (refPinId === pinId || refPinId.includes(pinId) || pinId.includes(refPinId)) {
+                            // Get the actual node name for this net
+                            const nodeName = this.spiceNodeMap.get(net.netUuid) ?? net.netName;
+                            if (nodeName.length > 0 && nodeName !== '0') {
+                                this.nodeVoltages.set(nodeName, voltage);
+                                // Also set the Thevenin source for digital→analog coupling
+                                this.registerCrossCoupledNet(mcuInstUuid, nodeName);
+                                const existingThev = this.theveninSources.findIndex(s => s.netId === nodeName);
+                                const thevSrc: TheveninSource = {
+                                    netId: nodeName,
+                                    voltage: voltage,
+                                    resistance: 50 // HC output impedance
+                                };
+                                if (existingThev >= 0) {
+                                    this.theveninSources[existingThev] = thevSrc;
+                                }
+                                else {
+                                    this.theveninSources.push(thevSrc);
+                                }
+                            }
+                            return ResultHelper.ok();
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: set by synthetic net name
+        const fallbackNet = `${mcuInstUuid}_${pinId}`;
+        this.nodeVoltages.set(fallbackNet, voltage);
+        return ResultHelper.ok();
+    }
+    syncSpiceToMcuAdc(mcuInstUuid: string, adcChannel: number, voltage: number): ApiResult<void> {
+        const key = `ADC${adcChannel}`;
+        this.mcuRegs.set(key, Math.round((voltage / 3.3) * 4095));
+        this.mcuPinVoltages.set(`${mcuInstUuid}:ADC${adcChannel}`, voltage);
+        return ResultHelper.ok();
+    }
+    syncDigitalToAnalogNet(netUuid: string): ApiResult<void> {
+        if (!this.topology)
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'No topology loaded');
+        const net = this.topology.netList.find(n => n.netUuid === netUuid);
+        if (!net)
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Net not found');
+        const digitalLevel = net.defaultVoltage > 1.5 ? 1 : 0;
+        this.nodeVoltages.set(net.netName, digitalLevel * 3.3);
+        return ResultHelper.ok();
+    }
+    runSpiceStep(): SpiceResult {
+        if (!this.scheduler) {
+            return {
+                errCode: ErrCode.ERR_PARAM_INVALID,
+                nodeVoltages: new Map<string, number>(),
+                branchCurrents: new Map<string, number>(),
+                time: this.globalTime
+            };
+        }
+        const prevAnalog = copyNumberMap(this.nodeVoltages);
+        // Stamp previous DIG levels into AE before this step's SPICE solve
+        this.analogEngine.pinVoltageSources();
+        const stepResult = this.scheduler.step(this.mcuPc, this.mcuRegs);
+        this.globalTime = stepResult.time;
+        // 1.3.11 数字→模拟: Thevenin 源注入
+        this.applyDigitalToAnalogThevenin(stepResult.digitalStates);
+        // 1.3.12 模拟→数字: 阈值检测反馈
+        this.applyAnalogToDigitalThresholds(prevAnalog, stepResult.analogSignals);
+        // Populate node voltages with BOTH node names and net UUIDs for instrument lookup
+        stepResult.analogSignals.forEach((val: number, name: string) => {
+            this.nodeVoltages.set(name, val);
+            this.updateWaveData(name, stepResult.time, val, 0);
+        });
+        // Mirror node voltages under net UUID keys — instruments bind by UUID, not SPICE node name
+        const aeNetMap = this.analogEngine.getNetUuidMapping();
+        aeNetMap.forEach((nodeName: string, netUuid: string) => {
+            const voltage = this.nodeVoltages.get(nodeName);
+            if (voltage !== undefined) {
+                this.nodeVoltages.set(netUuid, voltage);
+            }
+            else {
+                const aeV = this.analogEngine.getVoltage(netUuid);
+                this.nodeVoltages.set(netUuid, aeV);
+                if (aeV !== 0 && !this.nodeVoltages.has(nodeName)) {
+                    this.nodeVoltages.set(nodeName, aeV);
+                }
+            }
+        });
+        // Also copy from spiceNodeMap
+        this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
+            const voltage = this.nodeVoltages.get(nodeName);
+            if (voltage !== undefined && !this.nodeVoltages.has(netUuid)) {
+                this.nodeVoltages.set(netUuid, voltage);
+            }
+        });
+        // Digital gate outputs win: Thevenin / dig levels must survive SPICE float=0 on LA nets
+        const drivenNets = new Set<string>();
+        const drivenList = this.digitalEngine.getDrivenNetIds();
+        for (let di = 0; di < drivenList.length; di++) {
+            drivenNets.add(drivenList[di]);
+        }
+        for (let i = 0; i < this.theveninSources.length; i++) {
+            const src = this.theveninSources[i];
+            this.nodeVoltages.set(src.netId, src.voltage);
+        }
+        stepResult.digitalStates.forEach((state: LogicState, nodeId: string) => {
+            if (!drivenNets.has(nodeId)) {
+                return;
+            }
+            if (state === LogicState.HIGH_Z || state === LogicState.UNKNOWN) {
+                return;
+            }
+            const v = state === LogicState.HIGH ? VOH_HC_5V : 0;
+            this.nodeVoltages.set(nodeId, v);
+            const spice = this.spiceNodeMap.get(nodeId);
+            if (spice !== undefined) {
+                this.nodeVoltages.set(spice, v);
+            }
+        });
+        const branchCurrents = this.analogEngine.getBranchCurrents();
+        branchCurrents.forEach((current: number, name: string) => {
+            this.branchCurrents.set(name, current);
+        });
+        // 1.3.13 电源完整性 di/dt 噪声
+        this.computeSupplyNoise(stepResult.time);
+        this.accumulateResult(stepResult);
+        return {
+            errCode: ErrCode.OK,
+            nodeVoltages: copyNumberMap(this.nodeVoltages),
+            branchCurrents: copyNumberMap(this.branchCurrents),
+            time: this.globalTime
+        };
+    }
+    tickDigitalLogic(): void {
+        if (!this.scheduler)
+            return;
+        const syncTime = this.globalTime;
+        this.digitalEngine.processEvents(syncTime);
+    }
+    /**
+     * Time-budgeted sim slice for Worker / fallback pump.
+     * Hard caps are intentional: one slow SPICE step can exceed Date.now() budget and
+     * starve the UI event loop (APP_INPUT_BLOCK / THREAD_BLOCK_*).
+     */
+    runBudgetSteps(budgetMs: number = 3): number {
+        if (this.state !== SimulationState.RUNNING) {
+            return 0;
+        }
+        // Hard wall + hard step count: Newton OP can still exceed a soft clock mid-step
+        const deadline = Date.now() + Math.max(1, Math.min(budgetMs, 4));
+        this.tickMcuCore();
+        let steps = 0;
+        const maxSpice = 1;
+        while (steps < maxSpice && Date.now() < deadline) {
+            this.runSpiceStep();
+            this.tickDigitalLogic();
+            steps++;
+            this.budgetStepCount++;
+        }
+        return steps;
+    }
+    buildFrameSnapshot(): KernelFrameSnapshot {
+        const netKeys: string[] = [];
+        const voltages: number[] = [];
+        this.nodeVoltages.forEach((v: number, k: string) => {
+            netKeys.push(k);
+            voltages.push(v);
+        });
+        const branchKeys: string[] = [];
+        const currents: number[] = [];
+        this.branchCurrents.forEach((c: number, k: string) => {
+            branchKeys.push(k);
+            currents.push(c);
+        });
+        let mcuP1 = 0;
+        if (this.mcuLoaded && !this.mcuFamily.startsWith('STM32')) {
+            mcuP1 = this.mcu8051.getPort1();
+        }
+        const gpioWords: number[] = [];
+        let uartBytes: number[] = [];
+        if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+            // GPIOA..E ODR snapshot for UI LEDs
+            const bases: number[] = [0x40010800, 0x40010C00, 0x40011000, 0x40011400, 0x40011800];
+            for (let i = 0; i < bases.length; i++) {
+                gpioWords.push(this.qemuBridge.readPeriph(bases[i] + 0x0C) & 0xFFFF);
+            }
+            uartBytes = this.qemuBridge.drainUartTx();
+            if (uartBytes.length > 0) {
+                traceUartTxDrain('kernel_snap', uartBytes);
+            }
+        }
+        return {
+            t: this.globalTime,
+            stepCount: this.budgetStepCount,
+            netKeys: netKeys,
+            voltages: voltages,
+            branchKeys: branchKeys,
+            currents: currents,
+            mcuFamily: this.mcuFamily,
+            mcuPc: this.mcuPc,
+            mcuP1: mcuP1,
+            gpioWords: gpioWords,
+            uartBytes: uartBytes,
+            state: this.state as string
+        };
+    }
+    /** Mirror remote Worker frame onto this kernel for UI instrument / canvas reads */
+    applyFrameSnapshot(frame: KernelFrameSnapshot): void {
+        for (let i = 0; i < frame.netKeys.length; i++) {
+            this.nodeVoltages.set(frame.netKeys[i], frame.voltages[i] ?? 0);
+        }
+        for (let i = 0; i < frame.branchKeys.length; i++) {
+            this.branchCurrents.set(frame.branchKeys[i], frame.currents[i] ?? 0);
+        }
+        this.globalTime = frame.t;
+        this.budgetStepCount = frame.stepCount;
+        this.mcuPc = frame.mcuPc;
+        this.mcuFamily = frame.mcuFamily.length > 0 ? frame.mcuFamily : this.mcuFamily;
+        this.mcuRegs.set('PC', frame.mcuPc);
+        this.mcuRegs.set('P1', frame.mcuP1);
+    }
+    getBudgetStepCount(): number {
+        return this.budgetStepCount;
+    }
+    tickMcuCore(): void {
+        if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+            this.mcuTickCount++;
+            // lab_uart init ~20 instr + TXE poll; batch enough for USART activity per pump tick
+            const step = this.qemuBridge.step(256);
+            if (step.success && step.data !== undefined) {
+                this.mcuPc = step.data;
+                this.mcuRegs.set('PC', this.mcuPc);
+            }
+            this.syncStm32GpioToSpice();
+            if (this.mcuTickCount <= 3 || this.mcuTickCount % 50 === 0) {
+                traceMcuTick('STM32', `pc=0x${this.mcuPc.toString(16)} ticks=${this.mcuTickCount}`);
+            }
+            return;
+        }
+        if (this.mcuLoaded) {
+            this.mcuTickCount++;
+            // lab_51_led delay ≈ 8×255 DJNZ ≈ 2k instr / LED. Budget steps per UI tick so
+            // one Port1 bit spans several frames (smooth chase) without a 12k main-thread burst.
+            // Stop early when P1 changes so we never skip a bit inside one batch.
+            const prevP1 = this.mcu8051.getPort1();
+            // Keep MCU slices small so main/fallback pumps cannot monopolize the UV loop
+            const maxSteps = 96;
+            let steps = 0;
+            while (steps < maxSteps) {
+                this.mcu8051.step();
+                steps++;
+                if (this.mcu8051.getPort1() !== prevP1) {
+                    break;
+                }
+            }
+            const p1 = this.mcu8051.getPort1();
+            const acc = this.mcu8051.getAcc();
+            this.mcuPc = this.mcu8051.getPc();
+            this.mcuRegs.set('PC', this.mcuPc);
+            this.mcuRegs.set('P1', p1);
+            this.mcuRegs.set('ACC', acc);
+            this.syncMcuPinsToSpice();
+            if (this.mcuTickCount <= 5 || this.mcuTickCount % 25 === 0) {
+                traceMcuTick('8051', `pc=0x${this.mcuPc.toString(16)} steps=${steps} P1=0x${(p1 & 0xFF).toString(16)} ` +
+                    `ACC=0x${(acc & 0xFF).toString(16)} ticks=${this.mcuTickCount}`);
+            }
+        }
+        else {
+            this.mcuPc += 1;
+            this.mcuRegs.set('PC', this.mcuPc);
+        }
+    }
+    loadMcuProgram(data: Uint8Array, offset: number = 0, family: string = '8051'): void {
+        this.mcuFamily = family.toUpperCase();
+        this.mcuTickCount = 0;
+        this.lastTracedGpio.clear();
+        traceBurn('SIM_LOAD_MCU', `family=${this.mcuFamily} offset=${offset} bytes=${data.length} preview=${formatFirmwarePreview(data)}`);
+        if (this.mcuFamily.startsWith('STM32')) {
+            this.qemuBridge.loadFirmware(data);
+            this.qemuBridge.start('firmware.hex', 'stm32f103');
+            this.mcuLoaded = true;
+            if (this.topology) {
+                for (let bit = 0; bit < 8; bit++) {
+                    const digitalNetId = `mcu0_GPIO${bit}`;
+                    const analogNode = this.spiceNodeMap.get(digitalNetId) ?? digitalNetId;
+                    this.crossCoupledNets.set(digitalNetId, analogNode);
+                }
+            }
+            this.syncStm32GpioToSpice();
+            traceBurn('SIM_LOAD_MCU_OK', `backend=qemu machine=stm32f103 bytes=${data.length}`);
+            return;
+        }
+        // Sanity: Intel HEX text starts with ':' (0x3A) — must not load as machine code
+        if (data.length > 0 && data[0] === 0x3A) {
+            traceBurn('SIM_LOAD_MCU_FAIL', 'payload looks like Intel HEX ASCII (starts with 0x3A/:); pass parsed binary image');
+        }
+        this.mcu8051.loadProgram(data, offset);
+        this.mcu8051.reset();
+        this.mcuLoaded = true;
+        this.syncMcuPinsToSpice();
+        const mem = this.mcu8051.getMemory();
+        const peek = `${(mem[0] ?? 0).toString(16)} ${(mem[1] ?? 0).toString(16)} ${(mem[2] ?? 0).toString(16)} ` +
+            `| @100 ${(mem[0x100] ?? 0).toString(16)} ${(mem[0x101] ?? 0).toString(16)} ${(mem[0x102] ?? 0).toString(16)}`;
+        traceBurn('SIM_LOAD_MCU_OK', `backend=8051 offset=${offset} bytes=${data.length} pc=0x${this.mcu8051.getPc().toString(16)} mem=[${peek}]`);
+    }
+    injectUsartRx(bytes: number[]): void {
+        if (bytes.length === 0) {
+            return;
+        }
+        const fam = this.mcuFamily.length > 0 ? this.mcuFamily : '(empty)';
+        const stm32 = this.mcuFamily.startsWith('STM32');
+        const running = this.qemuBridge.isRunning();
+        if (stm32 && this.mcuLoaded) {
+            traceUart('KERNEL_RX_INJECT', `family=${fam} loaded=1 qemuRun=${running ? 1 : 0} n=${bytes.length} ` +
+                `hex=${formatUartBytesHex(bytes)}`);
+            this.qemuBridge.injectUsartRx(bytes);
+        }
+        else {
+            traceUart('KERNEL_RX_DROP', `family=${fam} stm32=${stm32 ? 1 : 0} loaded=${this.mcuLoaded ? 1 : 0} ` +
+                `qemuRun=${running ? 1 : 0} n=${bytes.length} hex=${formatUartBytesHex(bytes)} — not forwarded to USART`);
+        }
+    }
+    /**
+     * Drive each MCU GPIO onto its schematic net (8051 Port1 准双向).
+     * AT89C51 DIP: package pins P1..P8 = Port1 bit0..bit7 (lab_51_led wiring).
+     * LOW → 灌电流到 0V 点亮; HIGH → 拉到 VCC（不能 HiZ，否则阴极电压粘在 0、多灯常亮）。
+     */
+    private syncMcuPinsToSpice(): void {
+        if (!this.schematic) {
+            return;
+        }
+        const supply = SimulationKernelImpl.resolveSupplyVoltage(this.schematic);
+        for (let c = 0; c < this.schematic.components.length; c++) {
+            const comp = this.schematic.components[c];
+            const lib = comp.libraryId.toUpperCase();
+            if (!lib.includes('89C51') && !lib.includes('8051') && !lib.includes('AT89') &&
+                !lib.includes('MCS51') && !lib.includes('STC89') && !lib.includes('STC15')) {
+                continue;
+            }
+            let portVal = 0;
+            const drives: string[] = [];
+            const missPins: string[] = [];
+            for (let bit = 0; bit < 8; bit++) {
+                const level = this.mcu8051.getPinLevel('P1', bit);
+                if (level > 0) {
+                    portVal |= (1 << bit);
+                }
+                const candidates: string[] = [`P${bit + 1}`, `P1.${bit}`, `P1_${bit}`];
+                const nodeName = this.findMcuPinSpiceNode(comp.id, candidates);
+                if (nodeName === null || nodeName.length === 0 || nodeName === '0') {
+                    missPins.push(candidates[0]);
+                    continue;
+                }
+                const srcId = `MCU_${comp.id}_P1_${bit}`;
+                const voltage = level > 0 ? supply : 0;
+                this.analogEngine.registerSignalSource(srcId, nodeName, '0', 'dc', voltage, 0, 0, 0, 0.5);
+                this.nodeVoltages.set(nodeName, voltage);
+                this.mcuPinVoltages.set(`${comp.id}:P1.${bit}`, voltage);
+                drives.push(`P1.${bit}->${candidates[0]} node=${nodeName} V=${voltage.toFixed(1)} (${level > 0 ? 'H' : 'L'})`);
+            }
+            const traceKey = `${comp.id}:P1`;
+            const prev = this.lastTracedGpio.get(traceKey);
+            // Log on first sync, when port pattern changes, or first time we detect unbound pins
+            const missKey = `${traceKey}:miss`;
+            const missNew = missPins.length > 0 && !this.lastTracedGpio.has(missKey);
+            if (prev === undefined || prev !== portVal || missNew) {
+                this.lastTracedGpio.set(traceKey, portVal);
+                if (missPins.length > 0) {
+                    this.lastTracedGpio.set(missKey, missPins.length);
+                }
+                // Pin MCU Vsrc immediately so VF dump / UI don't see stale mid-voltages
+                this.analogEngine.pinVoltageSources();
+                traceMcuGpioSync('8051', comp.refDes, 'P1', portVal, drives, missPins);
+                this.traceLedForwardVoltages();
+            }
+        }
+    }
+    /**
+     * Sample LED A/K voltages for instr_trace.
+     * lit/off uses same rule as canvas (not raw Vf≥0.55 — that falsely marks floating nets ON).
+     */
+    private traceLedForwardVoltages(): void {
+        if (!this.schematic) {
+            return;
+        }
+        const lines: string[] = [];
+        for (let i = 0; i < this.schematic.components.length; i++) {
+            const comp = this.schematic.components[i];
+            const lib = comp.libraryId.toUpperCase();
+            if (!lib.includes('LED')) {
+                continue;
+            }
+            const pinNets = this.analogEngine.getNetUuidMapping();
+            let vA = -999;
+            let vK = -999;
+            for (let n = 0; n < this.schematic.nets.length; n++) {
+                const net = this.schematic.nets[n];
+                for (let p = 0; p < net.pinIds.length; p++) {
+                    const parts = net.pinIds[p].split(':');
+                    if (parts.length < 2 || parts[0] !== comp.id) {
+                        continue;
+                    }
+                    const pinKey = (parts.length >= 3 ? parts[2] : parts[1]).toUpperCase();
+                    const node = pinNets.get(net.id) ?? this.spiceNodeMap.get(net.id) ?? '';
+                    const v = node.length > 0 ? this.analogEngine.getVoltage(node) : this.getNetVoltageByUuid(net.id);
+                    if (pinKey === 'A' || pinKey === 'ANODE' || pinKey === '1') {
+                        vA = v;
+                    }
+                    else if (pinKey === 'K' || pinKey === 'CATHODE' || pinKey === '2') {
+                        vK = v;
+                    }
+                }
+            }
+            if (vA > -900 && vK > -900) {
+                const vf = vA - vK;
+                // Match SchematicCanvas.isLedConducting
+                let tag = 'off';
+                if (vK >= 2.5) {
+                    tag = 'off';
+                }
+                else if (vK <= 0.9 && vf >= 1.2) {
+                    tag = 'lit';
+                }
+                else {
+                    tag = 'mid';
+                }
+                lines.push(`${comp.refDes} Va=${vA.toFixed(2)} Vk=${vK.toFixed(2)} Vf=${vf.toFixed(2)} ${tag}`);
+            }
+        }
+        traceLedVfSample(lines);
+    }
+    /**
+     * STM32 GPIOA/B/C ODR → schematic pins PA0.. / PAxx / package Pnn.
+     * Uses real MCU component UUID (not hardcoded mcu0).
+     */
+    private syncStm32GpioToSpice(): void {
+        if (!this.schematic) {
+            return;
+        }
+        const gpioBases = [0x40010800, 0x40010C00, 0x40011000];
+        const portLetters = ['A', 'B', 'C'];
+        for (let c = 0; c < this.schematic.components.length; c++) {
+            const comp = this.schematic.components[c];
+            const lib = comp.libraryId.toUpperCase();
+            if (!lib.includes('STM32')) {
+                continue;
+            }
+            for (let port = 0; port < gpioBases.length; port++) {
+                const odr = this.qemuBridge.readPeriph(gpioBases[port] + 0x0C);
+                const letter = portLetters[port];
+                const drives: string[] = [];
+                const missPins: string[] = [];
+                let drivenBits = 0;
+                for (let bit = 0; bit < 16; bit++) {
+                    const level = (odr >> bit) & 1;
+                    const pinLabels: string[] = [
+                        `P${letter}${bit}`,
+                        `${letter}${bit}`,
+                        `P${letter}.${bit}`
+                    ];
+                    // Teaching templates often wire package pin Pn (genMcuPins) — map GPIOA0→P1, etc.
+                    if (port === 0 && bit < 16) {
+                        pinLabels.push(`P${bit + 1}`);
+                    }
+                    const nodeName = this.findMcuPinSpiceNode(comp.id, pinLabels);
+                    if (nodeName === null || nodeName.length === 0 || nodeName === '0') {
+                        if (port === 0 && bit < 8) {
+                            missPins.push(pinLabels[0]);
+                        }
+                        continue;
+                    }
+                    drivenBits++;
+                    const srcId = `MCU_${comp.id}_P${letter}${bit}`;
+                    const voltage = level > 0 ? 3.3 : 0;
+                    this.analogEngine.registerSignalSource(srcId, nodeName, '0', 'dc', voltage, 0, 0, 0, 0.5);
+                    this.nodeVoltages.set(nodeName, voltage);
+                    this.mcuPinVoltages.set(`${comp.id}:P${letter}${bit}`, voltage);
+                    drives.push(`P${letter}${bit}->${pinLabels[pinLabels.length - 1]} node=${nodeName} ` +
+                        `V=${voltage.toFixed(1)} (${level > 0 ? 'H' : 'L'})`);
+                }
+                const traceKey = `${comp.id}:GPIO${letter}`;
+                const prev = this.lastTracedGpio.get(traceKey);
+                const port8 = odr & 0xFF;
+                const missKey = `${traceKey}:miss`;
+                const missNew = missPins.length > 0 && drivenBits === 0 && !this.lastTracedGpio.has(missKey);
+                if (prev === undefined || prev !== port8 || missNew) {
+                    this.lastTracedGpio.set(traceKey, port8);
+                    if (missNew) {
+                        this.lastTracedGpio.set(missKey, 1);
+                    }
+                    if (drives.length > 0 || missPins.length > 0) {
+                        traceMcuGpioSync('STM32', `${comp.refDes}/GPIO${letter}`, `P${letter}`, port8, drives, missPins);
+                    }
+                }
+            }
+        }
+    }
+    /** Resolve schematic pin label → SPICE node name for an MCU instance. */
+    private findMcuPinSpiceNode(compId: string, pinCandidates: string[]): string | null {
+        if (!this.schematic) {
+            return null;
+        }
+        const aeMap = this.analogEngine.getNetUuidMapping();
+        for (let n = 0; n < this.schematic.nets.length; n++) {
+            const net = this.schematic.nets[n];
+            for (let p = 0; p < net.pinIds.length; p++) {
+                const parts = net.pinIds[p].split(':');
+                if (parts.length < 2 || parts[0] !== compId) {
+                    continue;
+                }
+                const pinKey = parts[1];
+                const pinName = parts.length >= 3 ? parts[2] : pinKey;
+                for (let i = 0; i < pinCandidates.length; i++) {
+                    const cand = pinCandidates[i];
+                    if (pinKey === cand || pinName === cand) {
+                        const fromAe = aeMap.get(net.id);
+                        if (fromAe !== undefined && fromAe.length > 0) {
+                            return fromAe;
+                        }
+                        const fromSpice = this.spiceNodeMap.get(net.id);
+                        if (fromSpice !== undefined && fromSpice.length > 0) {
+                            return fromSpice;
+                        }
+                        if (net.name.length > 0) {
+                            return net.name;
+                        }
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    runParamScan(paramName: string, start: number, end: number, steps: number): SimStatResult[] {
+        const results: SimStatResult[] = [];
+        const step = (end - start) / Math.max(steps - 1, 1);
+        this.saveParamDefaults();
+        for (let i = 0; i < steps; i++) {
+            const value = start + step * i;
+            this.restoreParamDefaults();
+            if (this.schematic) {
+                for (let c = 0; c < this.schematic.components.length; c++) {
+                    const comp = this.schematic.components[c];
+                    if (comp.parameters.has(paramName)) {
+                        comp.parameters.set(paramName, `${value}`);
+                    }
+                }
+                this.analogEngine.loadSchematic(this.schematic, this.config);
+            }
+            const spice = this.runSpiceStep();
+            const voltages: number[] = [];
+            spice.nodeVoltages.forEach((voltage: number) => voltages.push(voltage));
+            const stats = SimulationKernelImpl.computeStats(voltages);
+            results.push({ runIndex: i, mean: stats.mean, stdDev: stats.stdDev, min: stats.min, max: stats.max, cp: stats.cp, cpk: stats.cpk, waves: this.waveDataList.slice() });
+        }
+        this.restoreParamDefaults();
+        return results;
+    }
+    runMonteCarlo(count: number, onProgress?: ProgressCallback): SimStatResult[] {
+        const results: SimStatResult[] = [];
+        this.saveParamDefaults();
+        const batchSteps = Math.min(100, Math.floor(this.config.stopTime / Math.max(this.config.stepSize, 1e-9)));
+        for (let i = 0; i < count; i++) {
+            this.restoreParamDefaults();
+            if (this.schematic) {
+                for (let c = 0; c < this.schematic.components.length; c++) {
+                    const comp = this.schematic.components[c];
+                    comp.parameters.forEach((val: string, key: string) => {
+                        if (comp.libraryId.startsWith('R_') || comp.libraryId.includes('Resistor')) {
+                            const nominal = SimulationKernelImpl.parseNumericValue(val);
+                            const sampled = RandomUtil.sampleWithTolerance(nominal, 5);
+                            comp.parameters.set(key, `${sampled}`);
+                        }
+                        else if (comp.libraryId.startsWith('C_') || comp.libraryId.includes('Cap')) {
+                            const nominal = SimulationKernelImpl.parseNumericValue(val);
+                            const sampled = RandomUtil.sampleWithTolerance(nominal, 10);
+                            comp.parameters.set(key, `${sampled}`);
+                        }
+                    });
+                }
+                // Reload with perturbed parameters and reset scheduler
+                this.analogEngine.loadSchematic(this.schematic, this.config);
+                this.scheduler?.reset();
+            }
+            // Run a batch of transient steps to reach steady state
+            for (let s = 0; s < batchSteps; s++) {
+                this.runSpiceStep();
+            }
+            const voltages: number[] = [];
+            this.nodeVoltages.forEach((voltage: number) => voltages.push(voltage));
+            const stats = SimulationKernelImpl.computeStats(voltages);
+            results.push({
+                runIndex: i, mean: stats.mean, stdDev: stats.stdDev,
+                min: stats.min, max: stats.max, cp: stats.cp, cpk: stats.cpk,
+                waves: this.waveDataList.slice()
+            });
+            onProgress?.(makeProgress(Math.round((i + 1) / count * 100), `Monte Carlo ${i + 1}/${count}`));
+        }
+        this.restoreParamDefaults();
+        onProgress?.(makeProgress(100, 'Monte Carlo complete', true));
+        return results;
+    }
+    runNoiseAnalysis(freqStart: number, freqEnd: number, points: number): FreqNoiseData[] {
+        const data: FreqNoiseData[] = [];
+        const runner = new SpiceRunner(this.analogEngine);
+        runner.init();
+        // Use actual noise model: thermal (4kTR), shot (2qIc), flicker (Kf/f)
+        // Sample at logarithmically spaced frequencies
+        const logStart = Math.log10(Math.max(freqStart, 1));
+        const logEnd = Math.log10(Math.max(freqEnd, 1));
+        const step = (logEnd - logStart) / Math.max(points - 1, 1);
+        for (let i = 0; i < points; i++) {
+            const freq = Math.pow(10, logStart + step * i);
+            // Find a representative output node from the netlist
+            const nl = this.analogEngine.getNetlist().split('\n');
+            let outNode = 'N1';
+            for (const line of nl) {
+                const tokens = line.trim().split(/\s+/);
+                if (tokens.length >= 3 && !line.startsWith('*') && !line.startsWith('.')) {
+                    const n = tokens[1];
+                    if (n !== '0' && n !== 'GND' && n !== 'VCC') {
+                        outNode = n;
+                        break;
+                    }
+                }
+            }
+            const noiseResult = runner.runNoise(outNode, freq);
+            const noiseV = noiseResult.nodeVoltages.get(outNode) ?? 0;
+            const noiseDb = noiseV > 1e-30 ? 20 * Math.log10(noiseV) : -200;
+            data.push({ frequency: freq, noiseDb: noiseDb });
+        }
+        return data;
+    }
+    generateSpiceNetlistFromTopo(topo: SchTopology): ApiResult<string> {
+        const cfg = this.simConfig ? this.toLegacyConfig(this.simConfig) : this.config;
+        const build = SpiceMatrixBuilder.build(topo, cfg.temperature, cfg.stepSize, cfg.stopTime);
+        this.spiceNodeMap = build.nodeMap;
+        return ResultHelper.ok(build.netlist);
+    }
+    netToSpiceNodeMap(): Map<string, string> {
+        if (this.topology) {
+            const cfg = this.simConfig ? this.toLegacyConfig(this.simConfig) : this.config;
+            const build = SpiceMatrixBuilder.build(this.topology, cfg.temperature, cfg.stepSize, cfg.stopTime);
+            this.spiceNodeMap = build.nodeMap;
+        }
+        return copyStringMap(this.spiceNodeMap);
+    }
+    releaseSimResource(): void {
+        this.schematic = null;
+        this.topology = null;
+        this.scheduler = null;
+        this.result = null;
+        this.waveDataList = [];
+        this.nodeVoltages = new Map();
+        this.branchCurrents = new Map();
+        this.spiceNodeMap = new Map();
+        this.state = SimulationState.IDLE;
+    }
+    // ---- v1 兼容 ----
+    loadSchematic(doc: SchematicDocument): Result<void> {
+        const prevState = this.state;
+        this.schematic = doc;
+        this.topology = TopologyAdapter.toTopology(doc);
+        this.digitalEngine.loadSchematic(doc);
+        this.analogEngine.loadSchematic(doc, this.config);
+        this.scheduler = new GlobalScheduler(this.config, this.digitalEngine, this.analogEngine);
+        if (this.topology) {
+            this.buildSpiceNodeMap(this.topology);
+        }
+        if (prevState === SimulationState.RUNNING || prevState === SimulationState.PAUSED) {
+            this.waveDataList = [];
+            this.state = prevState;
+            traceLoadSchematic(true, doc.components.length, doc.nets.length);
+        }
+        else {
+            this.state = SimulationState.IDLE;
+            this.result = null;
+            traceLoadSchematic(false, doc.components.length, doc.nets.length);
+        }
+        return { success: true, errCode: ErrCode.OK };
+    }
+    setConfig(config: SimulationConfig): void {
+        this.config = config;
+        if (this.schematic) {
+            this.analogEngine.loadSchematic(this.schematic, config);
+            this.scheduler = new GlobalScheduler(config, this.digitalEngine, this.analogEngine);
+        }
+    }
+    getConfig(): SimulationConfig { return this.config; }
+    start(): Result<void> {
+        if (!this.schematic)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No schematic loaded' };
+        this.state = SimulationState.RUNNING;
+        this.scheduler?.reset();
+        const startedData: SimStartedData = { config: this.config };
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STARTED,
+            source: 'simulation_kernel',
+            timestamp: Date.now(),
+            data: startedData
+        });
+        return { success: true, errCode: ErrCode.OK };
+    }
+    pause(): Result<void> {
+        if (this.state !== SimulationState.RUNNING)
+            return { success: false, errCode: ErrCode.ERR_SIM_BUSY, error: 'Not running' };
+        this.state = SimulationState.PAUSED;
+        return { success: true, errCode: ErrCode.OK };
+    }
+    resume(): Result<void> {
+        if (this.state !== SimulationState.PAUSED)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'Not paused' };
+        this.state = SimulationState.RUNNING;
+        return { success: true, errCode: ErrCode.OK };
+    }
+    stop(): Result<void> {
+        this.state = SimulationState.STOPPED;
+        const stoppedData: SimStoppedData = {};
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STOPPED,
+            source: 'simulation_kernel',
+            timestamp: Date.now(),
+            data: stoppedData
+        });
+        return { success: true, errCode: ErrCode.OK };
+    }
+    step(): Result<SimulationResult> {
+        if (!this.schematic || !this.scheduler) {
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No schematic loaded' };
+        }
+        if (this.state !== SimulationState.RUNNING && this.state !== SimulationState.IDLE) {
+            return { success: false, errCode: ErrCode.ERR_SIM_BUSY, error: 'Simulation not in runnable state' };
+        }
+        const stepResult = this.scheduler.step(this.mcuPc, this.mcuRegs);
+        this.tickMcuCore();
+        this.mcuPc = this.mcu8051.getPc();
+        this.globalTime = stepResult.time;
+        this.accumulateResult(stepResult);
+        this.dynamicErcViolations = DynamicErcEngine.analyze(this.waveDataList, this.result?.digitalStates ? this.flattenDigitalStates(this.result.digitalStates) : new Map<string, string>());
+        const emptyStep: SimStepEmptyData = { empty: true };
+        const stepData: Object = this.result !== null ? this.result as Object : emptyStep;
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STEP,
+            source: 'simulation_kernel',
+            timestamp: Date.now(),
+            data: stepData
+        });
+        if (this.scheduler.isFinished()) {
+            this.state = SimulationState.STOPPED;
+        }
+        return { success: true, errCode: ErrCode.OK, data: this.result! };
+    }
+    getState(): SimulationState { return this.state; }
+    getResult(): SimulationResult | null { return this.result; }
+    getSignalData(signalName: string): Result<number[]> {
+        if (!this.result)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No simulation result' };
+        const data = this.result.signals.get(signalName);
+        if (!data)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: `Signal ${signalName} not found` };
+        return { success: true, errCode: ErrCode.OK, data };
+    }
+    getDigitalState(pinId: string): boolean {
+        const states = this.result?.digitalStates.get(pinId);
+        if (!states || states.length === 0)
+            return false;
+        return states[states.length - 1] === LogicState.HIGH;
+    }
+    getMcuSnapshot(): McuRegisterSnapshot | null {
+        if (!this.result?.mcuRegisters?.length)
+            return null;
+        return this.result.mcuRegisters[this.result.mcuRegisters.length - 1];
+    }
+    setComponentParameter(componentId: string, param: string, value: string): Result<void> {
+        if (!this.schematic)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No schematic loaded' };
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp)
+            return { success: false, errCode: ErrCode.ERR_DEVICE_NOT_EXIST, error: 'Component not found' };
+        comp.parameters.set(param, value);
+        if (this.isSimActive()) {
+            this.analogEngine.loadSchematic(this.schematic, this.config);
+            if (this.topology) {
+                this.buildSpiceNodeMap(this.topology);
+            }
+        }
+        return { success: true, errCode: ErrCode.OK };
+    }
+    generateSpiceNetlist(): Result<string> {
+        if (!this.schematic)
+            return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No schematic loaded' };
+        return { success: true, errCode: ErrCode.OK, data: this.analogEngine.getNetlist() };
+    }
+    getHazards(): HazardReport[] {
+        return this.digitalEngine.detectHazards();
+    }
+    // ---- 1.3.11 A/D 接口: 数字输出 → Thevenin 等效源映射到模拟节点 ----
+    registerCrossCoupledNet(digitalNetId: string, analogNetId: string): void {
+        this.crossCoupledNets.set(digitalNetId, analogNetId);
+    }
+    // ---- 1.3.12 D/A 阈值检测: 模拟电压 → 数字事件（含直流电平种子，不仅边沿） ----
+    private applyAnalogToDigitalThresholds(_prevAnalog: Map<string, number>, currAnalog: Map<string, number>): void {
+        const vcc = 5.0;
+        const vil = vcc > 4.0 ? VIL_CMOS_5V : VIL_CMOS_3V3;
+        const vih = vcc > 4.0 ? VIH_CMOS_5V : VIH_CMOS_3V3;
+        currAnalog.forEach((voltage: number, nodeId: string) => {
+            const netKeys = this.expandAnalogNodeKeys(nodeId);
+            for (let i = 0; i < netKeys.length; i++) {
+                const key = netKeys[i];
+                const cur = this.digitalEngine.getState(key);
+                if (voltage >= vih && cur !== LogicState.HIGH) {
+                    this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.HIGH);
+                }
+                else if (voltage <= vil && cur !== LogicState.LOW) {
+                    this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.LOW);
+                }
+            }
+            this.nodeVoltages.set(nodeId, voltage);
+        });
+    }
+    /** Map SPICE node name / net UUID / net name onto all keys DigitalEngine may use. */
+    private expandAnalogNodeKeys(nodeId: string): string[] {
+        const keys: string[] = [nodeId];
+        this.spiceNodeMap.forEach((spiceNode: string, netUuid: string) => {
+            if (spiceNode === nodeId || netUuid === nodeId) {
+                if (keys.indexOf(netUuid) < 0) {
+                    keys.push(netUuid);
+                }
+                if (keys.indexOf(spiceNode) < 0) {
+                    keys.push(spiceNode);
+                }
+            }
+        });
+        if (this.schematic) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const n = this.schematic.nets[i];
+                if (n.id === nodeId || n.name === nodeId) {
+                    if (keys.indexOf(n.id) < 0) {
+                        keys.push(n.id);
+                    }
+                }
+            }
+        }
+        return keys;
+    }
+    /** Resolve OP voltage trying UUID / spice node / net name (AE may key as LOGIC_H while map points to N1). */
+    private resolveSeedVoltage(netUuid: string, spiceNode: string): number {
+        let v = this.analogEngine.getVoltage(netUuid);
+        if (Math.abs(v) > 1e-9) {
+            return v;
+        }
+        v = this.analogEngine.getVoltage(spiceNode);
+        if (Math.abs(v) > 1e-9) {
+            return v;
+        }
+        const kv = this.nodeVoltages.get(spiceNode) ?? this.nodeVoltages.get(netUuid);
+        if (kv !== undefined && Math.abs(kv) > 1e-9) {
+            return kv;
+        }
+        if (this.schematic) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const n = this.schematic.nets[i];
+                if (n.id === netUuid && n.name.length > 0) {
+                    v = this.analogEngine.getVoltage(n.name);
+                    if (Math.abs(v) > 1e-9) {
+                        return v;
+                    }
+                    const named = this.nodeVoltages.get(n.name);
+                    if (named !== undefined) {
+                        return named;
+                    }
+                }
+            }
+        }
+        return this.analogEngine.getVoltage(netUuid);
+    }
+    /** After OP, seed LOGIC_H/L and settle combinational outputs for lab_digital etc. */
+    private seedDigitalFromAnalogDc(): void {
+        const aeMap = this.analogEngine.getNetUuidMapping();
+        const vil = VIL_CMOS_5V;
+        const vih = VIH_CMOS_5V;
+        const seedParts: string[] = [];
+        const seeded = new Set<string>();
+        const trySeed = (netUuid: string, spiceNode: string): void => {
+            if (seeded.has(netUuid)) {
+                return;
+            }
+            const v = this.resolveSeedVoltage(netUuid, spiceNode);
+            this.nodeVoltages.set(netUuid, v);
+            this.nodeVoltages.set(spiceNode, v);
+            if (v >= vih) {
+                this.digitalEngine.forceSetLevel(netUuid, LogicState.HIGH);
+                seeded.add(netUuid);
+                seedParts.push(`${spiceNode}=H(${v.toFixed(2)}V)`);
+            }
+            else if (v <= vil) {
+                this.digitalEngine.forceSetLevel(netUuid, LogicState.LOW);
+                seeded.add(netUuid);
+                seedParts.push(`${spiceNode}=L(${v.toFixed(2)}V)`);
+            }
+        };
+        aeMap.forEach((spiceNode: string, netUuid: string) => {
+            trySeed(netUuid, spiceNode);
+        });
+        this.spiceNodeMap.forEach((spiceNode: string, netUuid: string) => {
+            trySeed(netUuid, spiceNode);
+        });
+        traceDigitalLogic('SEED_IN', seedParts.length > 0 ? seedParts.join(' ') : '(no rail levels)');
+        // Combinational DC settle (no event-edge clocks)
+        this.digitalEngine.settleCombinational(0);
+        const settled = this.digitalEngine.processEvents(1e-6);
+        const gateN = this.digitalEngine.getGateCount();
+        const primary = this.digitalEngine.getPrimaryDrivenNetIds();
+        let highOut = 0;
+        let lowOut = 0;
+        let unkOut = 0;
+        for (let i = 0; i < primary.length; i++) {
+            const st = settled.get(primary[i]) ?? this.digitalEngine.getState(primary[i]);
+            if (st === LogicState.HIGH) {
+                highOut++;
+            }
+            else if (st === LogicState.LOW) {
+                lowOut++;
+            }
+            else {
+                unkOut++;
+            }
+        }
+        traceDigitalLogic('SEED_OUT', `gates=${gateN} primary=${primary.length} H=${highOut} L=${lowOut} X=${unkOut} | ${this.digitalEngine.formatGateSummary()}`);
+        this.applyDigitalToAnalogThevenin(settled);
+        this.traceLogicAnalyzerSnapshot('after_seed');
+    }
+    /** Stamp dig Thevenin + log DIG VSRC list */
+    private applyDigitalToAnalogThevenin(digitalStates: Map<string, LogicState>): void {
+        // Drop previous digital→analog sources before re-stamping
+        for (let i = 0; i < this.theveninSources.length; i++) {
+            this.analogEngine.removeSignalSource(`DIG_${this.theveninSources[i].netId}`);
+        }
+        this.theveninSources = [];
+        const driven = new Set<string>();
+        const drivenIds = this.digitalEngine.getDrivenNetIds();
+        for (let di = 0; di < drivenIds.length; di++) {
+            driven.add(drivenIds[di]);
+        }
+        const thevParts: string[] = [];
+        digitalStates.forEach((state: LogicState, nodeId: string) => {
+            if (state === LogicState.HIGH_Z || state === LogicState.UNKNOWN)
+                return;
+            if (!driven.has(nodeId))
+                return;
+            const analogNode = this.crossCoupledNets.get(nodeId) ??
+                (this.spiceNodeMap.get(nodeId) ?? nodeId);
+            const voltage = state === LogicState.HIGH ? VOH_HC_5V : 0;
+            this.theveninSources.push({ netId: analogNode, voltage: voltage, resistance: ROUT_HC });
+            // Also index by net UUID so getNetVoltageByUuid finds DIG levels
+            this.theveninSources.push({ netId: nodeId, voltage: voltage, resistance: ROUT_HC });
+            this.nodeVoltages.set(analogNode, voltage);
+            this.nodeVoltages.set(nodeId, voltage);
+            if (analogNode !== '0' && analogNode !== 'GND') {
+                this.analogEngine.registerSignalSource(`DIG_${analogNode}`, analogNode, '0', 'dc', voltage, 0, 0, 0, 0.5);
+                if (thevParts.length < 12) {
+                    thevParts.push(`${analogNode}=${voltage.toFixed(2)}V`);
+                }
+            }
+        });
+        this.analogEngine.pinVoltageSources();
+        traceDigitalThevenin(thevParts);
+    }
+    /** Dump LA1 CH voltages for instr_trace */
+    private traceLogicAnalyzerSnapshot(phase: string): void {
+        if (!this.schematic) {
+            return;
+        }
+        for (let ci = 0; ci < this.schematic.components.length; ci++) {
+            const comp = this.schematic.components[ci];
+            if (!comp.libraryId.toUpperCase().includes('LOGIC_ANALYZER')) {
+                continue;
+            }
+            const pinNets = getPinNetMap(comp.id, this.schematic.nets);
+            const chParts: string[] = [];
+            for (let ch = 1; ch <= 8; ch++) {
+                const netId = pinNets.get(`CH${ch}`) ?? pinNets.get(`CH${ch}`.toUpperCase());
+                if (netId === undefined || netId.length === 0) {
+                    continue;
+                }
+                const v = this.getNetVoltageByUuid(netId);
+                const bit = v >= VIH_CMOS_5V ? 'H' : (v <= VIL_CMOS_5V ? 'L' : '?');
+                chParts.push(`CH${ch}=${bit}(${v.toFixed(2)}V)`);
+            }
+            traceLogicAnalyzerChannels(`${comp.refDes}@${phase}`, chParts);
+        }
+    }
+    // ---- 1.3.13 电源完整性: di/dt 噪声估算 ----
+    private computeSupplyNoise(currentTime: number): void {
+        let totalCurrent = 0;
+        this.branchCurrents.forEach((current: number) => { totalCurrent += Math.abs(current); });
+        const dt = currentTime - this.powerState.lastTime;
+        if (dt > 0 && this.powerState.lastTotalCurrent > 0) {
+            const di = totalCurrent - this.powerState.lastTotalCurrent;
+            const diDt = di / dt;
+            this.powerState.vccNoise = SUPPLY_INDUCTANCE * diDt;
+            this.powerState.gndBounce = this.powerState.vccNoise * 0.7; // 地弹约为 VCC 噪声 70%
+        }
+        this.powerState.lastTotalCurrent = totalCurrent;
+        this.powerState.lastTime = currentTime;
+    }
+    getSupplyNoise(): SupplyNoiseSnapshot {
+        const result: SupplyNoiseSnapshot = {
+            vccNoise: this.powerState.vccNoise,
+            gndBounce: this.powerState.gndBounce
+        };
+        return result;
+    }
+    // ---- internal ----
+    private static createDefaultMcuRegs(): Map<string, number> {
+        const regs = new Map<string, number>();
+        regs.set('PC', 0);
+        regs.set('ACC', 0);
+        regs.set('SP', 0x07);
+        return regs;
+    }
+    private toLegacyConfig(sim: SimConfig): SimulationConfig {
+        let mode = SimulationMode.MIXED;
+        if (sim.simMode === 'transient') {
+            mode = SimulationMode.TRANSIENT;
+        }
+        else if (sim.simMode === 'dc') {
+            mode = SimulationMode.DC;
+        }
+        else if (sim.simMode === 'ac') {
+            mode = SimulationMode.AC;
+        }
+        else if (sim.simMode === 'monte_carlo') {
+            mode = SimulationMode.MONTE_CARLO;
+        }
+        else if (sim.simMode === 'noise') {
+            mode = SimulationMode.NOISE;
+        }
+        return {
+            mode: mode,
+            startTime: 0,
+            stopTime: sim.transientTotalTime,
+            stepSize: sim.minTimeStep,
+            maxStep: sim.maxTimeStep,
+            temperature: sim.temperature,
+            convergence: sim.convergence,
+            mcuClockHz: sim.mcuClockHz
+        };
+    }
+    private buildSpiceNodeMap(topo: SchTopology): void {
+        const cfg = this.simConfig ? this.toLegacyConfig(this.simConfig) : this.config;
+        const build = SpiceMatrixBuilder.build(topo, cfg.temperature, cfg.stepSize, cfg.stopTime);
+        // Merge SpiceMatrixBuilder node map with AnalogEngine's net UUID mapping
+        const aeNetMap = this.analogEngine.getNetUuidMapping();
+        aeNetMap.forEach((nodeName: string, netUuid: string) => {
+            build.nodeMap.set(netUuid, nodeName);
+        });
+        this.spiceNodeMap = build.nodeMap;
+        this.autoRegisterCrossCouplings(topo);
+    }
+    /** Auto-register digital↔analog net couplings from schematic topology.
+     *  Scans every net for mixed-signal connections (digital IC pin + analog component pin)
+     *  and maps the digital net UUID to its corresponding analog SPICE node name. */
+    private autoRegisterCrossCouplings(topo: SchTopology): void {
+        this.crossCoupledNets.clear();
+        for (const net of topo.netList) {
+            let hasDigitalPin = false;
+            let hasAnalogPin = false;
+            for (const nodeRef of net.nodeList) {
+                const compId = nodeRef.devUuid;
+                // Find component in schematic (or topology device list)
+                let libId = '';
+                if (this.schematic) {
+                    const comp = this.schematic.components.find(c => c.id === compId);
+                    if (comp)
+                        libId = comp.libraryId.toUpperCase();
+                }
+                if (libId.length === 0) {
+                    const dev = topo.deviceList.find(d => d.instUuid === compId);
+                    if (dev)
+                        libId = dev.libDevId.toUpperCase();
+                }
+                if (libId.length === 0)
+                    continue;
+                // Detect digital ICs (74HC, 74LS, 74HCT, CD40xx, MCUs)
+                if (libId.includes('74HC') || libId.includes('74LS') || libId.includes('74HCT') ||
+                    libId.includes('74ACT') || libId.includes('CD40') || libId.includes('74LVC') ||
+                    libId.includes('STM32') || libId.includes('MCS51') || libId.includes('8051') ||
+                    libId.includes('MCU') || libId.includes('LOGIC_')) {
+                    hasDigitalPin = true;
+                }
+                // Detect analog components (R, C, L, diodes, transistors, opamps, etc.)
+                if (libId.startsWith('R_') || libId.includes('RESISTOR') || libId.startsWith('C_') ||
+                    libId.includes('CAP') || libId.includes('INDUCTOR') || libId.startsWith('L_') ||
+                    libId.includes('DIODE') || libId.includes('LED') || libId.includes('NPN') ||
+                    libId.includes('PNP') || libId.includes('TRANSISTOR') || libId.includes('MOSFET') ||
+                    libId.includes('OPAMP') || libId.includes('LM358') || libId.includes('LM324') ||
+                    libId.includes('REGULATOR') || libId.includes('CRYSTAL')) {
+                    hasAnalogPin = true;
+                }
+            }
+            if (hasDigitalPin && hasAnalogPin) {
+                // Map digital net UUID → analog SPICE node name
+                const analogNode = this.spiceNodeMap.get(net.netUuid) ?? net.netName;
+                this.crossCoupledNets.set(net.netUuid, analogNode);
+            }
+        }
+    }
+    private static readonly MAX_WAVE_POINTS = 16384;
+    private resolveNetUuidForNode(nodeName: string): string {
+        let netUuid = nodeName;
+        this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
+            if (spiceNode === nodeName) {
+                netUuid = uuid;
+            }
+        });
+        return netUuid;
+    }
+    private updateWaveData(probeName: string, time: number, voltage: number, current: number): void {
+        let wave = this.waveDataList.find(w => w.probeName === probeName);
+        if (!wave) {
+            const netUuid = this.resolveNetUuidForNode(probeName);
+            wave = {
+                waveId: IdUtil.generate('wave'),
+                probeName: probeName,
+                netName: netUuid,
+                timeAxis: [],
+                voltageAxis: [],
+                currentAxis: [],
+                sampleRate: 1 / (this.config.stepSize || 1e-6),
+                waveType: 'voltage',
+                holdTime: 0
+            };
+            this.waveDataList.push(wave);
+        }
+        // Ring buffer: drop a chunk (cheaper than per-sample shift) when full
+        if (wave.timeAxis.length >= SimulationKernelImpl.MAX_WAVE_POINTS) {
+            const drop = Math.floor(SimulationKernelImpl.MAX_WAVE_POINTS / 8);
+            wave.timeAxis.splice(0, drop);
+            wave.voltageAxis.splice(0, drop);
+            wave.currentAxis.splice(0, drop);
+        }
+        wave.timeAxis.push(time);
+        wave.voltageAxis.push(voltage);
+        wave.currentAxis.push(current);
+    }
+    private accumulateResult(stepResult: SchedulerStepResult): void {
+        if (!this.result) {
+            this.result = {
+                time: [],
+                signals: new Map<string, number[]>(),
+                digitalStates: new Map<string, LogicState[]>(),
+                mcuRegisters: []
+            };
+        }
+        this.result.time.push(stepResult.time);
+        stepResult.analogSignals.forEach((val: number, name: string) => {
+            let signalSeries = this.result!.signals.get(name);
+            if (!signalSeries) {
+                signalSeries = [];
+                this.result!.signals.set(name, signalSeries);
+            }
+            signalSeries.push(val);
+        });
+        stepResult.digitalStates.forEach((state: LogicState, pinId: string) => {
+            let pinHistory = this.result!.digitalStates.get(pinId);
+            if (!pinHistory) {
+                pinHistory = [];
+                this.result!.digitalStates.set(pinId, pinHistory);
+            }
+            pinHistory.push(state);
+        });
+        if (stepResult.mcuSnapshot) {
+            this.result.mcuRegisters?.push(stepResult.mcuSnapshot);
+        }
+    }
+    private flattenDigitalStates(states: Map<string, LogicState[]>): Map<string, string> {
+        const flat = new Map<string, string>();
+        states.forEach((history: LogicState[], pinId: string) => {
+            const last = history[history.length - 1];
+            if (last === LogicState.HIGH) {
+                flat.set(pinId, '1');
+            }
+            else if (last === LogicState.LOW) {
+                flat.set(pinId, '0');
+            }
+            else {
+                flat.set(pinId, 'X');
+            }
+        });
+        return flat;
+    }
+    private saveParamDefaults(): void {
+        this.paramScanDefaults.clear();
+        if (!this.schematic)
+            return;
+        for (const comp of this.schematic.components) {
+            this.paramScanDefaults.set(comp.id, copyStringMap(comp.parameters));
+        }
+    }
+    private restoreParamDefaults(): void {
+        if (!this.schematic)
+            return;
+        this.schematic.components.forEach((comp) => {
+            const saved = this.paramScanDefaults.get(comp.id);
+            if (saved) {
+                comp.parameters = copyStringMap(saved);
+            }
+        });
+    }
+    private static parseNumericValue(val: string): number {
+        const s = val.toLowerCase();
+        if (s.includes('k'))
+            return parseFloat(s) * 1000;
+        if (s.includes('u') || s.includes('µ'))
+            return parseFloat(s) * 1e-6;
+        if (s.includes('n'))
+            return parseFloat(s) * 1e-9;
+        if (s.includes('p'))
+            return parseFloat(s) * 1e-12;
+        const n = parseFloat(s);
+        return isNaN(n) ? 1000 : n;
+    }
+    private static computeStats(values: number[]): StatsSnapshot {
+        if (values.length === 0) {
+            const empty: StatsSnapshot = { mean: 0, stdDev: 0, min: 0, max: 0, cp: 0, cpk: 0 };
+            return empty;
+        }
+        let sum = 0;
+        let min = values[0];
+        let max = values[0];
+        for (let i = 0; i < values.length; i++) {
+            sum += values[i];
+            if (values[i] < min)
+                min = values[i];
+            if (values[i] > max)
+                max = values[i];
+        }
+        const mean = sum / values.length;
+        let varSum = 0;
+        for (let i = 0; i < values.length; i++) {
+            const diff = values[i] - mean;
+            varSum += diff * diff;
+        }
+        const stdDev = Math.sqrt(varSum / values.length);
+        const usl = mean + 3 * stdDev;
+        const lsl = mean - 3 * stdDev;
+        const cp = stdDev > 0 ? (usl - lsl) / (6 * stdDev) : 0;
+        const cpk = stdDev > 0 ? Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev)) : 0;
+        return { mean, stdDev, min, max, cp, cpk };
+    }
+    private static resolveSupplyVoltage(doc: SchematicDocument): number {
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            const lib = comp.libraryId.toUpperCase();
+            if (lib === 'VCC' || lib.endsWith('/VCC')) {
+                return parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
+            }
+        }
+        return 5;
+    }
+}

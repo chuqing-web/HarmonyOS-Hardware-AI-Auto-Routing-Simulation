@@ -13,6 +13,7 @@ import { SimulationKernelImpl } from 'simulation_kernel';
 import { ComponentDefinition } from 'component_library';
 import { EditorToolMode } from '../model/EditorToolMode';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
+import { ProteusClassicBtn } from './proteus/ProteusWidgets';
 import { ThemeManager } from '../theme/ThemeManager';
 import { SchematicEditorImpl, SchematicLayerId } from 'schematic_editor';
 
@@ -99,10 +100,14 @@ export struct SchematicCanvas {
   private twoFingerPanning: boolean = false;
   private twoFingerLastMidX: number = 0;
   private twoFingerLastMidY: number = 0;
+  /** Pinch/pan in flight — skip sim-driven redraw so MMI is not starved */
+  private gestureBusy: boolean = false;
+  private gestureIdleTimer: number = -1;
 
   private static readonly TAP_SLOP: number = 12;
   private static readonly MOVE_THRESHOLD: number = 8;
-  private static readonly REDRAW_INTERVAL_MS: number = 32;
+  private static readonly REDRAW_INTERVAL_MS: number = 16;
+  private static readonly GESTURE_REDRAW_MS: number = 48;
   private static readonly ALIGN_THRESHOLD: number = 6;
 
   aboutToAppear(): void {
@@ -128,7 +133,15 @@ export struct SchematicCanvas {
       clearTimeout(this.redrawTimer);
       this.redrawTimer = -1;
     }
+    if (this.gestureIdleTimer >= 0) {
+      clearTimeout(this.gestureIdleTimer);
+      this.gestureIdleTimer = -1;
+    }
+    this.appService.setUiGestureBusy(false);
     this.clearTouchCooldown();
+    this.isTouchActive = false;
+    this.twoFingerPanning = false;
+    this.cancelPointerInteraction();
     this.compDefCache.clear();
   }
 
@@ -162,6 +175,9 @@ export struct SchematicCanvas {
   };
 
   private onSimStep = (_payload: ModuleEventPayload): void => {
+    if (this.gestureBusy) {
+      return;
+    }
     this.simFrameDirty = true;
     this.scheduleRedraw();
   };
@@ -174,6 +190,21 @@ export struct SchematicCanvas {
     this.scheduleRedraw();
   };
 
+  private markGestureBusy(): void {
+    this.gestureBusy = true;
+    this.appService.setUiGestureBusy(true);
+    if (this.gestureIdleTimer >= 0) {
+      clearTimeout(this.gestureIdleTimer);
+    }
+    this.gestureIdleTimer = setTimeout(() => {
+      this.gestureIdleTimer = -1;
+      this.gestureBusy = false;
+      this.appService.setUiGestureBusy(false);
+      this.backgroundDirty = true;
+      this.scheduleRedraw();
+    }, 120);
+  }
+
   private scheduleRedraw(): void {
     if (this.viewWidth <= 0 || this.viewHeight <= 0) {
       return;
@@ -182,11 +213,13 @@ export struct SchematicCanvas {
       return;
     }
     this.redrawScheduled = true;
+    const delay = this.gestureBusy ?
+      SchematicCanvas.GESTURE_REDRAW_MS : SchematicCanvas.REDRAW_INTERVAL_MS;
     this.redrawTimer = setTimeout(() => {
       this.redrawScheduled = false;
       this.redrawTimer = -1;
       this.redraw();
-    }, SchematicCanvas.REDRAW_INTERVAL_MS);
+    }, delay);
   }
 
   /** Immediate full repaint — used when canvas size changes or on first layout. */
@@ -311,10 +344,17 @@ export struct SchematicCanvas {
             })
             .gesture(
               PinchGesture()
+                .onActionStart(() => {
+                  this.markGestureBusy();
+                })
                 .onActionUpdate((event: GestureEvent) => {
+                  this.markGestureBusy();
                   const editor = this.appService.schematicEditor;
                   editor.setZoom(editor.getZoom() * event.scale);
-                  this.scheduleRedraw();
+                  // schedule via VIEWPORT_CHANGED only — avoid double redraw
+                })
+                .onActionEnd(() => {
+                  this.markGestureBusy();
                 })
             )
 
@@ -326,24 +366,24 @@ export struct SchematicCanvas {
 
           if (this.contextMenuVisible) {
             Column({ space: 4 }) {
-              Button('复制')
-                .type(ButtonType.Normal)
-                .fontSize(13)
-                .height(32)
-                .width(96)
-                .onClick(() => {
+              ProteusClassicBtn({
+                label: '复制',
+                widthVal: 96,
+                heightVal: 32,
+                onAction: () => {
                   this.contextMenuVisible = false;
                   this.onCopySelected();
-                })
-              Button('删除')
-                .type(ButtonType.Normal)
-                .fontSize(13)
-                .height(32)
-                .width(96)
-                .onClick(() => {
+                }
+              })
+              ProteusClassicBtn({
+                label: '删除',
+                widthVal: 96,
+                heightVal: 32,
+                onAction: () => {
                   this.contextMenuVisible = false;
                   this.onDeleteSelected();
-                })
+                }
+              })
             }
             .padding(6)
             .backgroundColor(ProteusColors.PANEL_TITLE_BG)
@@ -525,6 +565,7 @@ export struct SchematicCanvas {
         this.twoFingerLastMidX = midX;
         this.twoFingerLastMidY = midY;
         if (this.dragComponentId.length === 0) {
+          this.markGestureBusy();
           this.appService.schematicEditor.panBy(dx, dy);
           this.scheduleRedraw();
         }
@@ -1829,14 +1870,16 @@ export struct SchematicCanvas {
     const vA = kernel.getNetVoltageByUuid(anodeNet);
     const vK = kernel.getNetVoltageByUuid(cathodeNet);
     const vf = vA - vK;
-    if (vf < 1.5) {
+    // MCU HIGH pulls cathode ≈ VCC → must stay dark (HiZ leftover V=0 used to keep several ON)
+    if (vK >= 2.5) {
       return false;
     }
-    const current = kernel.getBranchCurrent(comp.id);
-    if (Math.abs(current) >= 1e-5) {
+    // 灌电流点亮：阴极被拉低 + 正向压差达到 LED Vf
+    if (vK <= 0.9 && vf >= 1.2) {
       return true;
     }
-    return vf >= 1.8;
+    const current = kernel.getBranchCurrent(comp.id);
+    return Math.abs(current) >= 5e-4 && vf >= 1.0;
   }
 
   private resolveLedDisplayColor(comp: ComponentInstance, def: ComponentDefinition): string {
@@ -2244,8 +2287,10 @@ export struct SchematicCanvas {
       const label = doc.netLabels[i];
       const x = label.position.x;
       const y = label.position.y;
-      const isPower = label.text === 'VCC' || label.text === 'VDD' || label.text === 'V+';
-      const isGnd = label.text === 'GND';
+      // global=true：电源/地符号级标号；模板 stub 标号用文字（Proteus LBL）
+      const isPower = label.global &&
+        (label.text === 'VCC' || label.text === 'VDD' || label.text === 'V+');
+      const isGnd = label.global && label.text === 'GND';
       if (isPower) {
         this.drawPowerSymbol(ctx, x, y, label.text);
       } else if (isGnd) {

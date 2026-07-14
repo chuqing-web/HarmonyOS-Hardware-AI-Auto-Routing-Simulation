@@ -1,0 +1,487 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚï/**
+ * å…¨å±€æ—¶åºè°ƒåº¦å™¨ â€” è‡ªé€‚åº”æ­¥é•¿ + æ”¶æ•›é‡è¯• + æ··åˆä¿¡å·åŒæ­¥
+ * v2.1: å¯é…ç½®æ­¥é•¿æ§åˆ¶, MCU/æ¨¡æ‹Ÿ/æ•°å­—ç²¾ç¡®åŒæ­¥, æ”¹è¿›æ”¶æ•›å›é€€
+ */
+import { LogicState, copyNumberMap } from 'common';
+import { SpiceRunner } from './SpiceRunner';
+const MIN_STEP_SIZE = 1e-12; // 1 ps absolute minimum
+/** Analog floor â€” below this VAC@1kHz barely moves and UI looks frozen */
+const MIN_ANALOG_STEP = 1e-8; // 10 ns
+const MAX_STEP_GROWTH = 2.0; // Max step doubling per successful step
+const MAX_STEP_SHRINK = 4.0; // Max step reduction per failed step
+const CONVERGENCE_MAX_RETRIES = 3;
+const VOLTAGE_DELTA_RAPID = 0.5; // V â€” shrink step when any node changes this fast
+const VOLTAGE_DELTA_STEADY = 0.02; // V â€” grow step when all nodes change slower than this
+const STEADY_GROW_COUNT = 8; // Consecutive steady steps before growing
+const FAIL_STREAK_RESET = 6; // After N soft-fails, accept iterate + restore step size
+export class GlobalScheduler {
+    analogMinStep() {
+        return Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.config.maxStep));
+    }
+    constructor(config, digital, analog) {
+        this.globalTime = 0;
+        this.stepCount = 0;
+        this.lastVoltageSnapshot = new Map();
+        this.convergenceRetries = 0;
+        this.steadyStepCounter = 0;
+        this.failStreak = 0;
+        this.mcuCycleAccum = 0;
+        this.mcuTicksPerStep = 1;
+        this.config = config;
+        this.digitalEngine = digital;
+        this.spiceRunner = new SpiceRunner(analog);
+        this.spiceRunner.init();
+        this.currentStepSize = Math.max(config.stepSize, this.analogMinStep());
+        this.globalTime = config.startTime;
+        const mcuHz = config.mcuClockHz ?? 11059200;
+        this.mcuClockPeriod = 1.0 / mcuHz;
+    }
+    step(mcuPc, mcuRegs) {
+        const dt = this.currentStepSize;
+        this.globalTime += dt;
+        this.stepCount++;
+        // Calculate how many MCU cycles fit in this analog step
+        this.mcuCycleAccum += dt / this.mcuClockPeriod;
+        this.mcuTicksPerStep = Math.max(1, Math.floor(this.mcuCycleAccum));
+        this.mcuCycleAccum -= this.mcuTicksPerStep;
+        // Sync time: use the later of analog time and MCU time
+        const mcuTime = this.stepCount * this.mcuClockPeriod * this.mcuTicksPerStep;
+        const syncTime = Math.max(this.globalTime, mcuTime);
+        // Evaluate digital logic first (inputs to analog)
+        const digitalStates = this.digitalEngine.processEvents(syncTime);
+        // Run analog with convergence retry
+        let spiceResult = this.spiceRunner.runWithConvergenceRetry(syncTime, dt);
+        let converged = spiceResult.converged;
+        if (!converged) {
+            this.convergenceRetries++;
+            let retryDt = dt;
+            for (let retry = 0; retry < CONVERGENCE_MAX_RETRIES && !converged; retry++) {
+                retryDt = Math.max(retryDt / 2, this.analogMinStep());
+                this.globalTime -= dt - retryDt;
+                spiceResult = this.spiceRunner.runWithConvergenceRetry(this.globalTime, retryDt);
+                converged = spiceResult.converged;
+            }
+            if (!converged) {
+                // Keep last Newton iterate; do not roll time backwards
+                this.globalTime = syncTime;
+                this.failStreak++;
+                // Soft-accept after a streak so VAC/time keep advancing (lab amp near rail)
+                if (this.failStreak >= FAIL_STREAK_RESET) {
+                    converged = true;
+                    this.failStreak = 0;
+                    this.currentStepSize = Math.min(Math.max(this.currentStepSize * 2, this.analogMinStep()), this.config.maxStep);
+                }
+            }
+        }
+        if (converged) {
+            this.convergenceRetries = 0;
+            if (this.failStreak > 0 && this.failStreak < FAIL_STREAK_RESET) {
+                this.failStreak = 0;
+            }
+            this.adaptStepSize(spiceResult.nodeVoltages);
+        }
+        else {
+            this.currentStepSize = Math.max(this.currentStepSize / MAX_STEP_SHRINK, this.analogMinStep());
+            this.steadyStepCounter = 0;
+        }
+        const registers = copyNumberMap(mcuRegs);
+        registers.set('PC', mcuPc);
+        const pinStates = new Map();
+        digitalStates.forEach((state, pinId) => {
+            if (state === LogicState.HIGH)
+                pinStates.set(pinId, 1);
+            else if (state === LogicState.LOW)
+                pinStates.set(pinId, 0);
+            else
+                pinStates.set(pinId, -1);
+        });
+        const mcuSnapshot = {
+            timestamp: syncTime,
+            registers: registers,
+            memory: new Uint8Array(0),
+            pinStates: pinStates
+        };
+        return {
+            time: syncTime,
+            analogSignals: spiceResult.nodeVoltages,
+            digitalStates: digitalStates,
+            mcuSnapshot: mcuSnapshot,
+            stepSize: this.currentStepSize,
+            converged: converged
+        };
+    }
+    adaptStepSize(voltages) {
+        let maxDelta = 0;
+        let hasReference = false;
+        voltages.forEach((v, node) => {
+            const prev = this.lastVoltageSnapshot.get(node);
+            if (prev !== undefined) {
+                hasReference = true;
+                const delta = Math.abs(v - prev);
+                if (delta > maxDelta)
+                    maxDelta = delta;
+            }
+            this.lastVoltageSnapshot.set(node, v);
+        });
+        if (!hasReference)
+            return;
+        if (maxDelta > VOLTAGE_DELTA_RAPID) {
+            this.currentStepSize = Math.max(this.currentStepSize / 4, this.analogMinStep());
+            this.steadyStepCounter = 0;
+        }
+        else if (maxDelta < VOLTAGE_DELTA_STEADY) {
+            this.steadyStepCounter++;
+            if (this.steadyStepCounter >= STEADY_GROW_COUNT) {
+                this.currentStepSize = Math.min(this.currentStepSize * MAX_STEP_GROWTH, this.config.maxStep);
+                this.steadyStepCounter = 0;
+            }
+        }
+        else {
+            this.steadyStepCounter = 0;
+        }
+    }
+    getMcuTicksPerStep() {
+        return this.mcuTicksPerStep;
+    }
+    restoreFromResult(result, timeIndex) {
+        if (timeIndex >= 0 && timeIndex < result.time.length) {
+            this.globalTime = result.time[timeIndex];
+            result.signals.forEach((series, name) => {
+                if (timeIndex < series.length) {
+                    this.lastVoltageSnapshot.set(name, series[timeIndex]);
+                }
+            });
+        }
+    }
+    getGlobalTime() { return this.globalTime; }
+    getCurrentStepSize() { return this.currentStepSize; }
+    reset() {
+        this.globalTime = this.config.startTime;
+        this.currentStepSize = Math.max(this.config.stepSize, this.analogMinStep());
+        this.stepCount = 0;
+        this.lastVoltageSnapshot.clear();
+        this.convergenceRetries = 0;
+        this.steadyStepCounter = 0;
+        this.failStreak = 0;
+        this.mcuCycleAccum = 0;
+        this.mcuTicksPerStep = 1;
+    }
+    isFinished() {
+        return this.globalTime >= this.config.stopTime;
+    }
+}
+//# sourceMappingURL=GlobalScheduler.js.mapÂ’Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙ\C:\Projects\ElecDraw_Harmony\features\simulation_kernel\src\main\ets\engines\SpiceRunner.etsÙ`C:\Projects\ElecDraw_Harmony\features\simulation_kernel\src\main\ets\engines\GlobalScheduler.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs±simulation_kernelÃÂÙ7C:\Projects\ElecDraw_Harmony\features\simulation_kernel¼C:\Projects\ElecDraw_Harmony±simulation_kernel¥1.0.0ÔrC’§pkgNameªpkgVersion±simulation_kernel¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¹./engines/GlobalScheduler±simulation_kernelÙ7C:\Projects\ElecDraw_Harmony\features\simulation_kernelÃÃÚä/**
+ * å…¨å±€æ—¶åºè°ƒåº¦å™¨ â€” è‡ªé€‚åº”æ­¥é•¿ + æ”¶æ•›é‡è¯• + æ··åˆä¿¡å·åŒæ­¥
+ * v2.1: å¯é…ç½®æ­¥é•¿æ§åˆ¶, MCU/æ¨¡æ‹Ÿ/æ•°å­—ç²¾ç¡®åŒæ­¥, æ”¹è¿›æ”¶æ•›å›é€€
+ */
+import { SimulationConfig, LogicState, McuRegisterSnapshot, SimulationResult, copyNumberMap } from 'common';
+import { DigitalEngine } from './DigitalEngine';
+import { AnalogEngine } from './AnalogEngine';
+import { SpiceRunner } from './SpiceRunner';
+
+export interface SchedulerStepResult {
+  time: number;
+  analogSignals: Map<string, number>;
+  digitalStates: Map<string, LogicState>;
+  mcuSnapshot: McuRegisterSnapshot | null;
+  stepSize: number;
+  converged: boolean;
+}
+
+const MIN_STEP_SIZE = 1e-12;     // 1 ps absolute minimum
+/** Analog floor â€” below this VAC@1kHz barely moves and UI looks frozen */
+const MIN_ANALOG_STEP = 1e-8;    // 10 ns
+const MAX_STEP_GROWTH = 2.0;     // Max step doubling per successful step
+const MAX_STEP_SHRINK = 4.0;     // Max step reduction per failed step
+const CONVERGENCE_MAX_RETRIES = 3;
+const VOLTAGE_DELTA_RAPID = 0.5;  // V â€” shrink step when any node changes this fast
+const VOLTAGE_DELTA_STEADY = 0.02; // V â€” grow step when all nodes change slower than this
+const STEADY_GROW_COUNT = 8;       // Consecutive steady steps before growing
+const FAIL_STREAK_RESET = 6;       // After N soft-fails, accept iterate + restore step size
+
+export class GlobalScheduler {
+  private config: SimulationConfig;
+  private digitalEngine: DigitalEngine;
+  private spiceRunner: SpiceRunner;
+  private globalTime: number = 0;
+  private currentStepSize: number;
+  private mcuClockPeriod: number;
+  private stepCount: number = 0;
+  private lastVoltageSnapshot: Map<string, number> = new Map();
+  private convergenceRetries: number = 0;
+  private steadyStepCounter: number = 0;
+  private failStreak: number = 0;
+  private mcuCycleAccum: number = 0;
+  private mcuTicksPerStep: number = 1;
+
+  private analogMinStep(): number {
+    return Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.config.maxStep));
+  }
+
+  constructor(config: SimulationConfig, digital: DigitalEngine, analog: AnalogEngine) {
+    this.config = config;
+    this.digitalEngine = digital;
+    this.spiceRunner = new SpiceRunner(analog);
+    this.spiceRunner.init();
+    this.currentStepSize = Math.max(config.stepSize, this.analogMinStep());
+    this.globalTime = config.startTime;
+    const mcuHz = config.mcuClockHz ?? 11059200;
+    this.mcuClockPeriod = 1.0 / mcuHz;
+  }
+
+  step(mcuPc: number, mcuRegs: Map<string, number>): SchedulerStepResult {
+    const dt = this.currentStepSize;
+    this.globalTime += dt;
+    this.stepCount++;
+
+    // Calculate how many MCU cycles fit in this analog step
+    this.mcuCycleAccum += dt / this.mcuClockPeriod;
+    this.mcuTicksPerStep = Math.max(1, Math.floor(this.mcuCycleAccum));
+    this.mcuCycleAccum -= this.mcuTicksPerStep;
+
+    // Sync time: use the later of analog time and MCU time
+    const mcuTime = this.stepCount * this.mcuClockPeriod * this.mcuTicksPerStep;
+    const syncTime = Math.max(this.globalTime, mcuTime);
+
+    // Evaluate digital logic first (inputs to analog)
+    const digitalStates = this.digitalEngine.processEvents(syncTime);
+
+    // Run analog with convergence retry
+    let spiceResult = this.spiceRunner.runWithConvergenceRetry(syncTime, dt);
+    let converged = spiceResult.converged;
+
+    if (!converged) {
+      this.convergenceRetries++;
+      let retryDt = dt;
+      for (let retry = 0; retry < CONVERGENCE_MAX_RETRIES && !converged; retry++) {
+        retryDt = Math.max(retryDt / 2, this.analogMinStep());
+        this.globalTime -= dt - retryDt;
+        spiceResult = this.spiceRunner.runWithConvergenceRetry(this.globalTime, retryDt);
+        converged = spiceResult.converged;
+      }
+      if (!converged) {
+        // Keep last Newton iterate; do not roll time backwards
+        this.globalTime = syncTime;
+        this.failStreak++;
+        // Soft-accept after a streak so VAC/time keep advancing (lab amp near rail)
+        if (this.failStreak >= FAIL_STREAK_RESET) {
+          converged = true;
+          this.failStreak = 0;
+          this.currentStepSize = Math.min(
+            Math.max(this.currentStepSize * 2, this.analogMinStep()),
+            this.config.maxStep);
+        }
+      }
+    }
+
+    if (converged) {
+      this.convergenceRetries = 0;
+      if (this.failStreak > 0 && this.failStreak < FAIL_STREAK_RESET) {
+        this.failStreak = 0;
+      }
+      this.adaptStepSize(spiceResult.nodeVoltages);
+    } else {
+      this.currentStepSize = Math.max(this.currentStepSize / MAX_STEP_SHRINK, this.analogMinStep());
+      this.steadyStepCounter = 0;
+    }
+
+    const registers = copyNumberMap(mcuRegs);
+    registers.set('PC', mcuPc);
+
+    const pinStates = new Map<string, number>();
+    digitalStates.forEach((state: LogicState, pinId: string) => {
+      if (state === LogicState.HIGH) pinStates.set(pinId, 1);
+      else if (state === LogicState.LOW) pinStates.set(pinId, 0);
+      else pinStates.set(pinId, -1);
+    });
+
+    const mcuSnapshot: McuRegisterSnapshot = {
+      timestamp: syncTime,
+      registers: registers,
+      memory: new Uint8Array(0),
+      pinStates: pinStates
+    };
+
+    return {
+      time: syncTime,
+      analogSignals: spiceResult.nodeVoltages,
+      digitalStates: digitalStates,
+      mcuSnapshot: mcuSnapshot,
+      stepSize: this.currentStepSize,
+      converged: converged
+    };
+  }
+
+  private adaptStepSize(voltages: Map<string, number>): void {
+    let maxDelta = 0;
+    let hasReference = false;
+    voltages.forEach((v: number, node: string) => {
+      const prev = this.lastVoltageSnapshot.get(node);
+      if (prev !== undefined) {
+        hasReference = true;
+        const delta = Math.abs(v - prev);
+        if (delta > maxDelta) maxDelta = delta;
+      }
+      this.lastVoltageSnapshot.set(node, v);
+    });
+
+    if (!hasReference) return;
+
+    if (maxDelta > VOLTAGE_DELTA_RAPID) {
+      this.currentStepSize = Math.max(this.currentStepSize / 4, this.analogMinStep());
+      this.steadyStepCounter = 0;
+    } else if (maxDelta < VOLTAGE_DELTA_STEADY) {
+      this.steadyStepCounter++;
+      if (this.steadyStepCounter >= STEADY_GROW_COUNT) {
+        this.currentStepSize = Math.min(this.currentStepSize * MAX_STEP_GROWTH, this.config.maxStep);
+        this.steadyStepCounter = 0;
+      }
+    } else {
+      this.steadyStepCounter = 0;
+    }
+  }
+
+  getMcuTicksPerStep(): number {
+    return this.mcuTicksPerStep;
+  }
+
+  restoreFromResult(result: SimulationResult, timeIndex: number): void {
+    if (timeIndex >= 0 && timeIndex < result.time.length) {
+      this.globalTime = result.time[timeIndex];
+      result.signals.forEach((series: number[], name: string) => {
+        if (timeIndex < series.length) {
+          this.lastVoltageSnapshot.set(name, series[timeIndex]);
+        }
+      });
+    }
+  }
+
+  getGlobalTime(): number { return this.globalTime; }
+  getCurrentStepSize(): number { return this.currentStepSize; }
+
+  reset(): void {
+    this.globalTime = this.config.startTime;
+    this.currentStepSize = Math.max(this.config.stepSize, this.analogMinStep());
+    this.stepCount = 0;
+    this.lastVoltageSnapshot.clear();
+    this.convergenceRetries = 0;
+    this.steadyStepCounter = 0;
+    this.failStreak = 0;
+    this.mcuCycleAccum = 0;
+    this.mcuTicksPerStep = 1;
+  }
+
+  isFinished(): boolean {
+    return this.globalTime >= this.config.stopTime;
+  }
+}
+ÀÔrE’­./SpiceRunner¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ\C:\Projects\ElecDraw_Harmony\features\simulation_kernel\src\main\ets\engines\SpiceRunner.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings²GlobalScheduler.js ‘³GlobalScheduler.etsÜ ¬‘”    ‘” š”   ” ”	 ” %” ÌN”" Ì[”$ Ì]”* Ìc”2 Ìk”3 Ìl˜”   ” ”	 	” ” ” ”+ +”, ,˜”   ” ” ” ” ” ” !”5 9’”   ”ÌJ ÌJ˜”   ” ” ” ” ” ” !”& )˜”   ” ” ” ” ” ” !”ÌE ÌI˜”   ” ” ” ” ” ” !”ÌB ÌF–”   ” ” ”   ”! !”" "˜”   ” ” ” ” ”   ”! "”ÌS ÌT˜”   ” ” ” ”! !”" "”# #”ÌZ ÌZ˜”   ” ” ” ” ” ” #”ÌG ÌM˜”   ” ” ” ” ” ” #”ÌV Ì\””   ” ” ” ’” ,
+” ,Ü ” -” -” -” -” -” -”' -#”) -%”- -)”. -*”1 --”2 -.”6 -2”7 -3”= -9”> -:”ÌF -ÌB”ÌH -ÌD”ÌL -ÌH”ÌM -ÌI”ÌS -ÌO”ÌT -ÌP”Ì[ -ÌW”Ì\ -ÌX”Ì] -ÌY”Ì^ -ÌZ’” .” .—” 0” 0” 0&” 0(” 0>”! 0Ì@”' 0ÌT•” !
+” !” !” ! ” !!•” $
+” $” $” $” $ —” %
+”  %”# %5”' %9”* %<”, %>”- %?•” &
+” &”" &'”# &(”$ &)•” '
+” '”! '&”" ''”# '(•” (
+” (” (” ( ” (!•” )
+” )” )"” )#” )$•” *
+” *” *$”  *%”! *&—” 1” 1” 1	” 1” 1” 1” 1—” 2” 2” 2	” 2” 2”$ 2 ”% 2!›” 3” 3” 3	” 3” 3” 3”* 3&”+ 3'”1 3-”2 3.”3 3/˜” 4” 4” 4	” 4” 4” 4” 4”  4Ü ” 5” 5” 5	” 5” 5”# 5”$ 5 ”' 5#”( 5$”. 5*”/ 5+”7 53”9 55”= 59”> 5:”ÌK 5ÌG”ÌM 5ÌI”ÌN 5ÌJ”ÌO 5ÌK™” 6” 6” 6	” 6” 6”  6”! 6”* 6&”+ 6'š” 7” 7
+” 7” 7” 7” 7”' 7#”+ 7'”3 7/”4 70™” 8” 8” 8	” 8” 8”! 8”$ 8 ”) 8%”* 8&’” 9” 9–” ;” ;”	 ;” ;” ;” ;2˜” <” <
+” <” <” <” <”' <#”( <$—” =” =” =	” =” =” =” =–” >” >” >	” >” >” >’” Ì@”Ì@ Ì@<›” ÌA” ÌA” ÌA	” ÌA” ÌA”  ÌA”# ÌA”' ÌA#”( ÌA$”6 ÌA2”7 ÌA3Ü ” ÌB” ÌB” ÌB	” ÌB” ÌB”# ÌB”$ ÌB ”' ÌB#”( ÌB$”) ÌB%”+ ÌB'”/ ÌB+”0 ÌB,”5 ÌB1”6 ÌB2”: ÌB6”; ÌB7”ÌH ÌBÌD”ÌI ÌBÌE”ÌJ ÌBÌF”ÌK ÌBÌG™” ÌC” ÌC” ÌC	” ÌC” ÌC”" ÌC”# ÌC”2 ÌC.”3 ÌC/’” ÌE”? ÌE;Ü ” ÌF” ÌF
+” ÌF” ÌF” ÌF” ÌF”& ÌF"”) ÌF%”- ÌF)”. ÌF*”< ÌF8”? ÌF;”ÌC ÌF?”ÌD ÌFÌ@”ÌS ÌFÌO”ÌT ÌFÌPŸ” ÌG” ÌG
+” ÌG” ÌG” ÌG” ÌG”! ÌG”" ÌG”& ÌG"”' ÌG#”1 ÌG-”3 ÌG/”: ÌG6”; ÌG7”< ÌG8’” ÌI”: ÌI6” ÌJ” ÌJ
+” ÌJ” ÌJ”" ÌJ”# ÌJ”0 ÌJ,”1 ÌJ-”> ÌJ:”? ÌJ;”ÌG ÌJÌC”ÌH ÌJÌD”ÌI ÌJÌE’” ÌL”, ÌL(Ÿ” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”* ÌM&”+ ÌM'”ÌB ÌM>”ÌC ÌM?”ÌK ÌMÌG”ÌM ÌMÌI”ÌO ÌMÌK”ÌP ÌMÌL”ÌQ ÌMÌM˜” ÌN” ÌN” ÌN” ÌN”# ÌN”$ ÌN ”- ÌN)”. ÌN*•” ÌP” ÌP” ÌP	” ÌP” ÌP–” ÌQ” ÌQ
+” ÌQ”# ÌQ”% ÌQ”& ÌQ –” ÌR” ÌR
+” ÌR” ÌR” ÌR” ÌRÜ ” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS”  ÌS”% ÌS”( ÌS"”? ÌS9”ÌC ÌS=”ÌD ÌS>”ÌM ÌSÌG”ÌO ÌSÌI”ÌT ÌSÌN”ÌV ÌSÌP”ÌX ÌSÌRÜ ” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”# ÌT”* ÌT"”- ÌT%”. ÌT&”0 ÌT(”4 ÌT,”5 ÌT-”ÌB ÌT:”ÌD ÌT<”ÌE ÌT=”ÌF ÌT>™” ÌU” ÌU” ÌU” ÌU”# ÌU”% ÌU”( ÌU ”/ ÌU'”0 ÌU(Ü ” ÌV” ÌV” ÌV”" ÌV”# ÌV”. ÌV&”/ ÌV'”ÌF ÌV>”ÌG ÌV?”ÌK ÌVÌC”ÌL ÌVÌD”ÌV ÌVÌN”ÌX ÌVÌP”Ì_ ÌVÌW”Ì` ÌVÌX”Ìa ÌVÌY—” ÌW” ÌW” ÌW”' ÌW”( ÌW ”1 ÌW)”2 ÌW*‘” ÌX•” ÌY” ÌY
+” ÌY” ÌY” ÌY’” ÌZ”ÌG ÌZ?—” Ì[” Ì[” Ì[” Ì[”" Ì[”* Ì["”+ Ì[#–” Ì\” Ì\” Ì\” Ì\”! Ì\”" Ì\’” Ì]”Ì\ Ì]ÌT˜” Ì^” Ì^” Ì^” Ì^”# Ì^”' Ì^”8 Ì^0”: Ì^2•” Ì_
+” Ì_”  Ì_”$ Ì_”% Ì_—” Ì`
+” Ì`” Ì`”# Ì`”& Ì`”' Ì`”( Ì`Ü  ” Ìa
+” Ìa” Ìa”( Ìa”+ Ìa!”/ Ìa%”0 Ìa&”3 Ìa)”4 Ìb”8 Ìb”9 Ìb”< Ìb”= Ìb”ÌA Ìb”ÌB Ìb”ÌQ Ìb)”ÌT Ìb,”ÌU Ìb-”ÌW Ìb/”Ì[ Ìb3”Ì\ Ìb4”Ìi ÌbÌA”Ìk ÌbÌC”Ìl ÌbÌD”Ìn Ìc”Ìr Ìc”Ìs Ìc”Ìy Ìc”Ìz Ìc”Ì Ìc”Ì‚ Ìc ”Ìƒ Ìc!‘” Ìd	‘” Ìe‘”	 Ìf”” Ìh” Ìh” Ìh” Ìh—” Ìi” Ìi
+” Ìi”# Ìi”& Ìi ”' Ìi!”( Ìi"” Ìj” Ìj
+” Ìj” Ìj” Ìj”" Ìj”# Ìj”' Ìj!”+ Ìj%”, Ìj&”6 Ìj0”9 Ìj3”ÌJ ÌjÌD”ÌL ÌjÌF—” Ìk” Ìk” Ìk” Ìk”" Ìk”# Ìk”$ Ìk‘” Ìlš” Ìm” Ìm
+” Ìm” Ìm” Ìm”* Ìm$”+ Ìm%”7 Ìm1”8 Ìm2”9 Ìm3‘”	 Ìn‘” ÌnÜ ” Ìo” Ìo
+” Ìo”  Ìo”# Ìo”' Ìo!”( Ìo"”+ Ìo%”, Ìo&”0 Ìo*”1 Ìo+”Ì@ Ìo:”ÌC Ìo=”ÌR ÌoÌL”ÌT ÌoÌN”ÌX ÌoÌR”ÌY ÌoÌS”Ìf ÌoÌ`”Ìh ÌoÌb”Ìi ÌoÌc”Ìj ÌoÌd—” Ìp” Ìp
+” Ìp”" Ìp”% Ìp”& Ìp ”' Ìp!‘”	 Ìq™” Ìs” Ìs
+” Ìs” Ìs”' Ìs#”( Ìs$”/ Ìs+”0 Ìs,”1 Ìs-š” Ìt” Ìt” Ìt” Ìt” Ìt” Ìt” Ìt”! Ìt”" Ìt”# Ìt˜” Ìv” Ìv
+” Ìv” Ìv” Ìv”! Ìv”# Ìv/”$ Ìv0›” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw”$ Ìw,”& Ìw.”+ Ìw;”- Ìw=”/ Ìw?—” Ìx” Ìx
+” Ìx” Ìx”$ Ìx”% Ìx”) Ìx#š” Ìx%” Ìx.” Ìx/” Ìx2” Ìx3”# Ìx8”% Ìx:”& Ìx;”' Ìx<”( Ìx=—” Ìy” Ìy” Ìy” Ìy”) Ìy#”* Ìy$”- Ìy'š” Ìy)” Ìy2” Ìy3” Ìy6” Ìy7”# Ìy<”% Ìy>”& Ìy?”' ÌyÌ@”( ÌyÌA›” Ìz” Ìz” Ìz” Ìz” Ìz”# Ìz”% Ìz ”& Ìz!”' Ìz"”( Ìz#”) Ìz$”” Ì{”	 Ì{”
+ Ì{” Ì{”” Ì}” Ì}
+” Ì}” Ì}-”” Ì~” Ì~” Ì~” Ì~”” Ì” Ì” Ì”  Ì˜” Ì€” Ì€” Ì€” Ì€”" Ì€”# Ì€”$ Ì€”% Ì€”” Ì” Ì” Ì”  Ì’”	 Ì‚”
+ Ì‚’” Ì„” Ì„”” Ì…” Ì…
+” Ì…” Ì…–” Ì†” Ì†” Ì†”& Ì† ”' Ì†!”3 Ì†-”” Ì‡” Ì‡” Ì‡”( Ì‡"”” Ìˆ” Ìˆ” Ìˆ”$ Ìˆ–” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”* Ì‰$”” ÌŠ” ÌŠ” ÌŠ”  ÌŠ’”	 Ì‹”
+ Ì‹’” ÌŒ” ÌŒ”” Ì
+” Ì” Ì” Ì5–” Ì” Ì” Ì” Ì” Ì” Ì–” Ì” Ì” Ì” Ì”  Ì”! Ì›” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘!”! Ì‘-”# Ì‘/”% Ì‘1” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’”1 Ì’+”2 Ì’,”5 Ì’/”6 Ì’0”: Ì’4”; Ì’5”< Ì’6–” Ì“” Ì“
+” Ì“” Ì“”" Ì“”$ Ì“•” Ì”” Ì”” Ì””# Ì””$ Ì”” Ì•” Ì•” Ì•” Ì•”" Ì•”# Ì•”& Ì•”' Ì•”( Ì• ”+ Ì•#”/ Ì•'”0 Ì•(”1 Ì•)•” Ì–” Ì–” Ì–” Ì–”$ Ì–•” Ì–” Ì–&” Ì–)”$ Ì–.”% Ì–/‘” Ì—œ” Ì˜” Ì˜
+” Ì˜”$ Ì˜”% Ì˜”( Ì˜"”) Ì˜#”- Ì˜'”/ Ì˜)”0 Ì˜*”1 Ì˜+”2 Ì˜,”” Ì™”	 Ì™”
+ Ì™” Ì™”” Ì›” Ì›” Ì›	” Ì›’” Ì›” Ì›–” Ì” Ì” Ì” Ì”* Ì&”, Ì(Ü ” Ì” Ì
+” Ì”  Ì”# Ì”' Ì!”( Ì"”+ Ì%”, Ì&”0 Ì*”1 Ì+”Ì@ Ì:”ÌC Ì=”ÌD Ì>”ÌF ÌÌ@”ÌJ ÌÌD”ÌK ÌÌE”ÌX ÌÌR”ÌZ ÌÌT”Ì[ ÌÌU”Ì\ ÌÌV—” ÌŸ” ÌŸ
+” ÌŸ”" ÌŸ”% ÌŸ”& ÌŸ ”' ÌŸ!‘”	 Ì –” Ì ” Ì ” Ì ” Ì ”0 Ì .”2 Ì 0–” Ì¡” Ì¡
+” Ì¡”" Ì¡”$ Ì¡”% Ì¡˜” Ì¢” Ì¢
+” Ì¢” Ì¢”& Ì¢ ”* Ì¢$”; Ì¢5”= Ì¢7Ü ” Ì£” Ì£” Ì£”$ Ì£”' Ì£”+ Ì£#”, Ì£$”/ Ì£'”0 Ì£(”4 Ì£,”5 Ì£-”ÌD Ì£<”ÌG Ì£?”ÌV Ì£ÌN”ÌX Ì£ÌP”Ì\ Ì£ÌT”Ì] Ì£ÌU”Ìc Ì£Ì[”Ìd Ì£Ì\”Ìk Ì£Ìc”Ìl Ì£Ìd”Ìm Ì£Ìe—” Ì¤” Ì¤” Ì¤”& Ì¤”) Ì¤!”* Ì¤"”+ Ì¤#‘” Ì¥‘”	 Ì¦‘” Ì¦—” Ì§” Ì§
+” Ì§”" Ì§”% Ì§”& Ì§ ”' Ì§!‘”	 Ì¨’” Ì©” Ì©’” Ì«” Ì«–” Ì¬” Ì¬” Ì¬” Ì¬”# Ì¬”$ Ì¬ ’” Ì­” Ì­–” Ì¯” Ì¯” Ì¯” Ì¯,” Ì¯.”' Ì¯?” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°”' Ì°#”* Ì°&”0 Ì°,”1 Ì°-”5 Ì°1”6 Ì°2”< Ì°8”> Ì°:œ” Ì±” Ì±
+” Ì±” Ì±” Ì±”$ Ì±”% Ì±”) Ì±#”* Ì±$”3 Ì±-”4 Ì±.”5 Ì±/” Ì²” Ì²” Ì²” Ì²” Ì²”" Ì²”# Ì²”$ Ì²”* Ì².”, Ì²0”0 Ì²<”2 Ì²>”4 Ì²Ì@˜” Ì³” Ì³” Ì³”  Ì³”& Ì³”' Ì³”- Ì³%”/ Ì³'Ÿ” Ì´
+” Ì´” Ì´”, Ì´"”- Ì´#”0 Ì´&”1 Ì´'”5 Ì´+”7 Ì´-”= Ì´3”> Ì´4”ÌG Ì´=”ÌH Ì´>”ÌI Ì´?”ÌJ Ì´Ì@‘” Ìµ	”” Ì¶” Ì¶” Ì¶” Ì¶	‘”	 Ì·’” Ì¸” Ì¸š” Ìº” Ìº” Ìº” Ìº#”! Ìº'”" Ìº(”, Ìº2”- Ìº3”. Ìº4”/ Ìº5š” Ì»” Ì»” Ì»!”" Ì»(”& Ì»,”' Ì»-”6 Ì»<”7 Ì»=”8 Ì»>”9 Ì»?’” Ì½”	 Ì½›” Ì¾” Ì¾” Ì¾	” Ì¾” Ì¾” Ì¾” Ì¾”% Ì¾!”& Ì¾"”/ Ì¾+”0 Ì¾,Ü ” Ì¿” Ì¿” Ì¿	” Ì¿” Ì¿”# Ì¿”$ Ì¿ ”' Ì¿#”( Ì¿$”, Ì¿(”- Ì¿)”3 Ì¿/”4 Ì¿0”< Ì¿8”> Ì¿:”ÌB Ì¿>”ÌC Ì¿?”ÌP Ì¿ÌL”ÌR Ì¿ÌN”ÌS Ì¿ÌO”ÌT Ì¿ÌP—” ÌÀ” ÌÀ” ÌÀ	” ÌÀ” ÌÀ” ÌÀ” ÌÀ˜” ÌÁ” ÌÁ” ÌÁ	”  ÌÁ”! ÌÁ”& ÌÁ"”( ÌÁ$”) ÌÁ%—” ÌÂ” ÌÂ” ÌÂ	” ÌÂ”" ÌÂ”# ÌÂ”$ ÌÂ —” ÌÃ” ÌÃ” ÌÃ	” ÌÃ”! ÌÃ”" ÌÃ”# ÌÃ—” ÌÄ” ÌÄ” ÌÄ	” ÌÄ” ÌÄ” ÌÄ” ÌÄ—” ÌÅ” ÌÅ” ÌÅ	” ÌÅ” ÌÅ” ÌÅ” ÌÅ—” ÌÆ” ÌÆ” ÌÆ	” ÌÆ” ÌÆ”  ÌÆ”! ÌÆ’” ÌÇ” ÌÇ’” ÌÉ” ÌÉœ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”" ÌÊ”& ÌÊ"”' ÌÊ#”- ÌÊ)”. ÌÊ*”6 ÌÊ2”7 ÌÊ3’” ÌË” ÌË‘” ÌÌÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ­‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍfÍdÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍmÍdÔrM”¤type¥start£end¤nameªIdentifierÍsÍ‚¯GlobalSchedulerÀÔrN”¤type¥start£end¤body©ClassBodyÍƒÍdšÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍŠÍÂÂMªIdentifierÍŠÍ—­analogMinStep¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ—ÍÀÂÂÂN®BlockStatementÍšÍ‘ÔrQ”¤type¥start£end¨argument¯ReturnStatementÍ¥ÍûÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ¬ÍúÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¬Í´MªIdentifierÍ¬Í°¤MathMªIdentifierÍ±Í´£maxÂÂ’MªIdentifierÍµÍÄ¯MIN_ANALOG_STEPR®CallExpressionÍÆÍùS°MemberExpressionÍÆÍÎMªIdentifierÍÆÍÊ¤MathMªIdentifierÍËÍÎ£minÂÂ’S°MemberExpressionÍÏÍãS°MemberExpressionÍÏÍÚÔrT“¤type¥start£end®ThisExpressionÍÏÍÓMªIdentifierÍÔÍÚ¦configÂÂMªIdentifierÍÛÍã¨stepSizeÂÂS°MemberExpressionÍåÍøS°MemberExpressionÍåÍğT®ThisExpressionÍåÍéMªIdentifierÍêÍğ¦configÂÂMªIdentifierÍñÍø§maxStepÂÂÂÂO°MethodDefinitionÍÍÉÂÂMªIdentifierÍÍ«constructor«constructorP²FunctionExpressionÍÍÉÀÂÂÂ“MªIdentifierÍÍ¦configMªIdentifierÍÍ#§digitalMªIdentifierÍ%Í+¦analogN®BlockStatementÍ-ÍÉÜ ÔrU”¤type¥start£endªexpression³ExpressionStatementÍ8ÍLÔrV–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ8ÍK¡=S°MemberExpressionÍ8ÍGT®ThisExpressionÍ8Í<MªIdentifierÍ=ÍGªglobalTimeÂÂÔrW•¤type¥start£end¥value£raw§LiteralÍJÍK ¡0U³ExpressionStatementÍVÍiV´AssignmentExpressionÍVÍh¡=S°MemberExpressionÍVÍdT®ThisExpressionÍVÍZMªIdentifierÍ[Íd©stepCountÂÂW§LiteralÍgÍh ¡0U³ExpressionStatementÍsÍ˜V´AssignmentExpressionÍsÍ—¡=S°MemberExpressionÍsÍ‹T®ThisExpressionÍsÍwMªIdentifierÍxÍ‹³lastVoltageSnapshotÂÂÔrX•¤type¥start£end¦callee©arguments­NewExpressionÍÍ—MªIdentifierÍ’Í•£MapU³ExpressionStatementÍ¢Í¾V´AssignmentExpressionÍ¢Í½¡=S°MemberExpressionÍ¢Í¹T®ThisExpressionÍ¢Í¦MªIdentifierÍ§Í¹²convergenceRetriesÂÂW§LiteralÍ¼Í½ ¡0U³ExpressionStatementÍÈÍãV´AssignmentExpressionÍÈÍâ¡=S°MemberExpressionÍÈÍŞT®ThisExpressionÍÈÍÌMªIdentifierÍÍÍŞ±steadyStepCounterÂÂW§LiteralÍáÍâ ¡0U³ExpressionStatementÍíÍV´AssignmentExpressionÍíÍ ¡=S°MemberExpressionÍíÍüT®ThisExpressionÍíÍñMªIdentifierÍòÍüªfailStreakÂÂW§LiteralÍÿÍ  ¡0U³ExpressionStatementÍÍ"V´AssignmentExpressionÍÍ!¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ­mcuCycleAccumÂÂW§LiteralÍ Í! ¡0U³ExpressionStatementÍ,ÍEV´AssignmentExpressionÍ,ÍD¡=S°MemberExpressionÍ,Í@T®ThisExpressionÍ,Í0MªIdentifierÍ1Í@¯mcuTicksPerStepÂÂW§LiteralÍCÍD¡1U³ExpressionStatementÍOÍdV´AssignmentExpressionÍOÍc¡=S°MemberExpressionÍOÍZT®ThisExpressionÍOÍSMªIdentifierÍTÍZ¦configÂÂMªIdentifierÍ]Íc¦configU³ExpressionStatementÍnÍ‹V´AssignmentExpressionÍnÍŠ¡=S°MemberExpressionÍnÍ€T®ThisExpressionÍnÍrMªIdentifierÍsÍ€­digitalEngineÂÂMªIdentifierÍƒÍŠ§digitalU³ExpressionStatementÍ•ÍÀV´AssignmentExpressionÍ•Í¿¡=S°MemberExpressionÍ•Í¥T®ThisExpressionÍ•Í™MªIdentifierÍšÍ¥«spiceRunnerÂÂX­NewExpressionÍ¨Í¿MªIdentifierÍ¬Í·«SpiceRunner‘MªIdentifierÍ¸Í¾¦analogU³ExpressionStatementÍÊÍâR®CallExpressionÍÊÍáS°MemberExpressionÍÊÍßS°MemberExpressionÍÊÍÚT®ThisExpressionÍÊÍÎMªIdentifierÍÏÍÚ«spiceRunnerÂÂMªIdentifierÍÛÍß¤initÂÂÂU³ExpressionStatementÍìÍ3V´AssignmentExpressionÍìÍ2¡=S°MemberExpressionÍìÍ T®ThisExpressionÍìÍğMªIdentifierÍñÍ ¯currentStepSizeÂÂR®CallExpressionÍÍ2S°MemberExpressionÍÍMªIdentifierÍÍ¤MathMªIdentifierÍÍ£maxÂÂ’S°MemberExpressionÍÍMªIdentifierÍÍ¦configMªIdentifierÍÍ¨stepSizeÂÂR®CallExpressionÍÍ1S°MemberExpressionÍÍ/T®ThisExpressionÍÍ!MªIdentifierÍ"Í/­analogMinStepÂÂÂÂU³ExpressionStatementÍ=Í`V´AssignmentExpressionÍ=Í_¡=S°MemberExpressionÍ=ÍLT®ThisExpressionÍ=ÍAMªIdentifierÍBÍLªglobalTimeÂÂS°MemberExpressionÍOÍ_MªIdentifierÍOÍU¦configMªIdentifierÍVÍ_©startTimeÂÂÔrY•¤type¥start£end¬declarations¤kind³VariableDeclarationÍjÍ–‘ÔrZ•¤type¥start£end¢id¤init²VariableDeclaratorÍpÍ•MªIdentifierÍpÍu¥mcuHzÔr[–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍxÍ•S°MemberExpressionÍxÍ‰MªIdentifierÍxÍ~¦configMªIdentifierÍÍ‰ªmcuClockHzÂÂ¢??W§LiteralÍÍ•Î ¨À ¨11059200¥constU³ExpressionStatementÍ ÍÂV´AssignmentExpressionÍ ÍÁ¡=S°MemberExpressionÍ Í³T®ThisExpressionÍ Í¤MªIdentifierÍ¥Í³®mcuClockPeriodÂÂ[°BinaryExpressionÍ¶ÍÁW§LiteralÍ¶Í¹£1.0¡/MªIdentifierÍ¼ÍÁ¥mcuHzO°MethodDefinitionÍÏÍÄÂÂMªIdentifierÍÏÍÓ¤step¦methodP²FunctionExpressionÍÓÍÄÀÂÂÂ’MªIdentifierÍÔÍÙ¥mcuPcMªIdentifierÍÛÍâ§mcuRegsN®BlockStatementÍäÍÄÜ Y³VariableDeclarationÍïÍ‘Z²VariableDeclaratorÍõÍMªIdentifierÍõÍ÷¢dtS°MemberExpressionÍúÍT®ThisExpressionÍúÍşMªIdentifierÍÿÍ¯currentStepSizeÂÂ¥constU³ExpressionStatementÍÍ/V´AssignmentExpressionÍÍ.¢+=S°MemberExpressionÍÍ(T®ThisExpressionÍÍMªIdentifierÍÍ(ªglobalTimeÂÂMªIdentifierÍ,Í.¢dtU³ExpressionStatementÍ9ÍJÔr\–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ9ÍI¢++ÂS°MemberExpressionÍ9ÍGT®ThisExpressionÍ9Í=MªIdentifierÍ>ÍG©stepCountÂÂU³ExpressionStatementÍ–ÍÅV´AssignmentExpressionÍ–ÍÄ¢+=S°MemberExpressionÍ–Í¨T®ThisExpressionÍ–ÍšMªIdentifierÍ›Í¨­mcuCycleAccumÂÂ[°BinaryExpressionÍ¬ÍÄMªIdentifierÍ¬Í®¢dt¡/S°MemberExpressionÍ±ÍÄT®ThisExpressionÍ±ÍµMªIdentifierÍ¶ÍÄ®mcuClockPeriodÂÂU³ExpressionStatementÍÏÍV´AssignmentExpressionÍÏÍ¡=S°MemberExpressionÍÏÍãT®ThisExpressionÍÏÍÓMªIdentifierÍÔÍã¯mcuTicksPerStepÂÂR®CallExpressionÍæÍS°MemberExpressionÍæÍîMªIdentifierÍæÍê¤MathMªIdentifierÍëÍî£maxÂÂ’W§LiteralÍïÍğ¡1R®CallExpressionÍòÍS°MemberExpressionÍòÍüMªIdentifierÍòÍö¤MathMªIdentifierÍ÷Íü¥floorÂÂ‘S°MemberExpressionÍıÍT®ThisExpressionÍıÍMªIdentifierÍÍ­mcuCycleAccumÂÂÂÂU³ExpressionStatementÍÍGV´AssignmentExpressionÍÍF¢-=S°MemberExpressionÍÍ.T®ThisExpressionÍÍ MªIdentifierÍ!Í.­mcuCycleAccumÂÂS°MemberExpressionÍ2ÍFT®ThisExpressionÍ2Í6MªIdentifierÍ7ÍF¯mcuTicksPerStepÂÂY³VariableDeclarationÍ’ÍŞ‘Z²VariableDeclaratorÍ˜ÍİMªIdentifierÍ˜ÍŸ§mcuTime[°BinaryExpressionÍ¢Íİ[°BinaryExpressionÍ¢ÍÆS°MemberExpressionÍ¢Í°T®ThisExpressionÍ¢Í¦MªIdentifierÍ§Í°©stepCountÂÂ¡*S°MemberExpressionÍ³ÍÆT®ThisExpressionÍ³Í·MªIdentifierÍ¸ÍÆ®mcuClockPeriodÂÂ¡*S°MemberExpressionÍÉÍİT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍİ¯mcuTicksPerStepÂÂ¥constY³VariableDeclarationÍèÍ	‘Z²VariableDeclaratorÍîÍ	MªIdentifierÍîÍö¨syncTimeR®CallExpressionÍùÍ	S°MemberExpressionÍùÍ	MªIdentifierÍùÍı¤MathMªIdentifierÍşÍ	£maxÂÂ’S°MemberExpressionÍ	Í	T®ThisExpressionÍ	Í	MªIdentifierÍ	Í	ªglobalTimeÂÂMªIdentifierÍ	Í	§mcuTimeÂ¥constY³VariableDeclarationÍ	bÍ	£‘Z²VariableDeclaratorÍ	hÍ	¢MªIdentifierÍ	hÍ	u­digitalStatesR®CallExpressionÍ	xÍ	¢S°MemberExpressionÍ	xÍ	˜S°MemberExpressionÍ	xÍ	ŠT®ThisExpressionÍ	xÍ	|MªIdentifierÍ	}Í	Š­digitalEngineÂÂMªIdentifierÍ	‹Í	˜­processEventsÂÂ‘MªIdentifierÍ	™Í	¡¨syncTimeÂ¥constY³VariableDeclarationÍ	ÛÍ
+$‘Z²VariableDeclaratorÍ	ßÍ
+#MªIdentifierÍ	ßÍ	ê«spiceResultR®CallExpressionÍ	íÍ
+#S°MemberExpressionÍ	íÍ
+S°MemberExpressionÍ	íÍ	ıT®ThisExpressionÍ	íÍ	ñMªIdentifierÍ	òÍ	ı«spiceRunnerÂÂMªIdentifierÍ	şÍ
+·runWithConvergenceRetryÂÂ’MªIdentifierÍ
+Í
+¨syncTimeMªIdentifierÍ
+ Í
+"¢dtÂ£letY³VariableDeclarationÍ
+.Í
+T‘Z²VariableDeclaratorÍ
+2Í
+SMªIdentifierÍ
+2Í
+;©convergedS°MemberExpressionÍ
+>Í
+SMªIdentifierÍ
+>Í
+I«spiceResultMªIdentifierÍ
+JÍ
+S©convergedÂÂ£letÔr]–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ
+^Íˆ\¯UnaryExpressionÍ
+bÍ
+l¡!ÃMªIdentifierÍ
+cÍ
+l©convergedN®BlockStatementÍ
+nÍˆ”U³ExpressionStatementÍ
+}Í
+—\°UpdateExpressionÍ
+}Í
+–¢++ÂS°MemberExpressionÍ
+}Í
+”T®ThisExpressionÍ
+}Í
+MªIdentifierÍ
+‚Í
+”²convergenceRetriesÂÂY³VariableDeclarationÍ
+¥Í
+¶‘Z²VariableDeclaratorÍ
+©Í
+µMªIdentifierÍ
+©Í
+°§retryDtMªIdentifierÍ
+³Í
+µ¢dt£letÔr^—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ
+ÄÍ1Y³VariableDeclarationÍ
+ÉÍ
+Ö‘Z²VariableDeclaratorÍ
+ÍÍ
+ÖMªIdentifierÍ
+ÍÍ
+Ò¥retryW§LiteralÍ
+ÕÍ
+Ö ¡0£let[±LogicalExpressionÍ
+ØÍ[°BinaryExpressionÍ
+ØÍ
+÷MªIdentifierÍ
+ØÍ
+İ¥retry¡<MªIdentifierÍ
+àÍ
+÷·CONVERGENCE_MAX_RETRIES¢&&\¯UnaryExpressionÍ
+ûÍ¡!ÃMªIdentifierÍ
+üÍ©converged\°UpdateExpressionÍÍ¢++ÂMªIdentifierÍÍ¥retryN®BlockStatementÍÍ1”U³ExpressionStatementÍ#ÍYV´AssignmentExpressionÍ#ÍX¡=MªIdentifierÍ#Í*§retryDtR®CallExpressionÍ-ÍXS°MemberExpressionÍ-Í5MªIdentifierÍ-Í1¤MathMªIdentifierÍ2Í5£maxÂÂ’[°BinaryExpressionÍ6ÍAMªIdentifierÍ6Í=§retryDt¡/W§LiteralÍ@ÍA¡2R®CallExpressionÍCÍWS°MemberExpressionÍCÍUT®ThisExpressionÍCÍGMªIdentifierÍHÍU­analogMinStepÂÂÂÂU³ExpressionStatementÍkÍ‹V´AssignmentExpressionÍkÍŠ¢-=S°MemberExpressionÍkÍzT®ThisExpressionÍkÍoMªIdentifierÍpÍzªglobalTimeÂÂ[°BinaryExpressionÍ~ÍŠMªIdentifierÍ~Í€¢dt¡-MªIdentifierÍƒÍŠ§retryDtU³ExpressionStatementÍÍîV´AssignmentExpressionÍÍí¡=MªIdentifierÍÍ¨«spiceResultR®CallExpressionÍ«ÍíS°MemberExpressionÍ«ÍÓS°MemberExpressionÍ«Í»T®ThisExpressionÍ«Í¯MªIdentifierÍ°Í»«spiceRunnerÂÂMªIdentifierÍ¼ÍÓ·runWithConvergenceRetryÂÂ’S°MemberExpressionÍÔÍãT®ThisExpressionÍÔÍØMªIdentifierÍÙÍãªglobalTimeÂÂMªIdentifierÍåÍì§retryDtÂU³ExpressionStatementÍ Í"V´AssignmentExpressionÍ Í!¡=MªIdentifierÍ Í	©convergedS°MemberExpressionÍÍ!MªIdentifierÍÍ«spiceResultMªIdentifierÍÍ!©convergedÂÂ]«IfStatementÍ?Í}\¯UnaryExpressionÍCÍM¡!ÃMªIdentifierÍDÍM©convergedN®BlockStatementÍOÍ}“U³ExpressionStatementÍ«ÍÆV´AssignmentExpressionÍ«ÍÅ¡=S°MemberExpressionÍ«ÍºT®ThisExpressionÍ«Í¯MªIdentifierÍ°ÍºªglobalTimeÂÂMªIdentifierÍ½ÍÅ¨syncTimeU³ExpressionStatementÍØÍê\°UpdateExpressionÍØÍé¢++ÂS°MemberExpressionÍØÍçT®ThisExpressionÍØÍÜMªIdentifierÍİÍçªfailStreakÂÂ]«IfStatementÍZÍn[°BinaryExpressionÍ^Í‚S°MemberExpressionÍ^ÍmT®ThisExpressionÍ^ÍbMªIdentifierÍcÍmªfailStreakÂÂ¢>=MªIdentifierÍqÍ‚±FAIL_STREAK_RESETN®BlockStatementÍ„Ín“U³ExpressionStatementÍ›Í¬V´AssignmentExpressionÍ›Í«¡=MªIdentifierÍ›Í¤©convergedW§LiteralÍ§Í«Ã¤trueU³ExpressionStatementÍÂÍÖV´AssignmentExpressionÍÂÍÕ¡=S°MemberExpressionÍÂÍÑT®ThisExpressionÍÂÍÆMªIdentifierÍÇÍÑªfailStreakÂÂW§LiteralÍÔÍÕ ¡0U³ExpressionStatementÍìÍ[V´AssignmentExpressionÍìÍZ¡=S°MemberExpressionÍìÍ T®ThisExpressionÍìÍğMªIdentifierÍñÍ ¯currentStepSizeÂÂR®CallExpressionÍÍZS°MemberExpressionÍÍMªIdentifierÍÍ¤MathMªIdentifierÍÍ£minÂÂ’R®CallExpressionÍÍDS°MemberExpressionÍÍMªIdentifierÍÍ¤MathMªIdentifierÍÍ£maxÂÂ’[°BinaryExpressionÍÍ-S°MemberExpressionÍÍ)T®ThisExpressionÍÍMªIdentifierÍÍ)¯currentStepSizeÂÂ¡*W§LiteralÍ,Í-¡2R®CallExpressionÍ/ÍCS°MemberExpressionÍ/ÍAT®ThisExpressionÍ/Í3MªIdentifierÍ4ÍA­analogMinStepÂÂÂÂS°MemberExpressionÍFÍYS°MemberExpressionÍFÍQT®ThisExpressionÍFÍJMªIdentifierÍKÍQ¦configÂÂMªIdentifierÍRÍY§maxStepÂÂÂÀÀÀ]«IfStatementÍ’ÍFMªIdentifierÍ–ÍŸ©convergedN®BlockStatementÍ¡Í–“U³ExpressionStatementÍ°ÍÌV´AssignmentExpressionÍ°ÍË¡=S°MemberExpressionÍ°ÍÇT®ThisExpressionÍ°Í´MªIdentifierÍµÍÇ²convergenceRetriesÂÂW§LiteralÍÊÍË ¡0]«IfStatementÍÚÍP[±LogicalExpressionÍŞÍ[°BinaryExpressionÍŞÍñS°MemberExpressionÍŞÍíT®ThisExpressionÍŞÍâMªIdentifierÍãÍíªfailStreakÂÂ¡>W§LiteralÍğÍñ ¡0¢&&[°BinaryExpressionÍõÍS°MemberExpressionÍõÍT®ThisExpressionÍõÍùMªIdentifierÍúÍªfailStreakÂÂ¡<MªIdentifierÍÍ±FAIL_STREAK_RESETN®BlockStatementÍÍP‘U³ExpressionStatementÍ-ÍAV´AssignmentExpressionÍ-Í@¡=S°MemberExpressionÍ-Í<T®ThisExpressionÍ-Í1MªIdentifierÍ2Í<ªfailStreakÂÂW§LiteralÍ?Í@ ¡0ÀU³ExpressionStatementÍ^Í‹R®CallExpressionÍ^ÍŠS°MemberExpressionÍ^ÍpT®ThisExpressionÍ^ÍbMªIdentifierÍcÍp­adaptStepSizeÂÂ‘S°MemberExpressionÍqÍ‰MªIdentifierÍqÍ|«spiceResultMªIdentifierÍ}Í‰¬nodeVoltagesÂÂÂN®BlockStatementÍ¥ÍF’U³ExpressionStatementÍ´ÍV´AssignmentExpressionÍ´Í¡=S°MemberExpressionÍ´ÍÈT®ThisExpressionÍ´Í¸MªIdentifierÍ¹ÍÈ¯currentStepSizeÂÂR®CallExpressionÍËÍS°MemberExpressionÍËÍÓMªIdentifierÍËÍÏ¤MathMªIdentifierÍĞÍÓ£maxÂÂ’[°BinaryExpressionÍÔÍúS°MemberExpressionÍÔÍèT®ThisExpressionÍÔÍØMªIdentifierÍÙÍè¯currentStepSizeÂÂ¡/MªIdentifierÍëÍú¯MAX_STEP_SHRINKR®CallExpressionÍüÍS°MemberExpressionÍüÍT®ThisExpressionÍüÍ MªIdentifierÍÍ­analogMinStepÂÂÂÂU³ExpressionStatementÍ Í;V´AssignmentExpressionÍ Í:¡=S°MemberExpressionÍ Í6T®ThisExpressionÍ Í$MªIdentifierÍ%Í6±steadyStepCounterÂÂW§LiteralÍ9Í: ¡0Y³VariableDeclarationÍPÍy‘Z²VariableDeclaratorÍVÍxMªIdentifierÍVÍ_©registersR®CallExpressionÍbÍxMªIdentifierÍbÍo­copyNumberMap‘MªIdentifierÍpÍw§mcuRegsÂ¥constU³ExpressionStatementÍƒÍR®CallExpressionÍƒÍS°MemberExpressionÍƒÍMªIdentifierÍƒÍŒ©registersMªIdentifierÍÍ£setÂÂ’W§LiteralÍ‘Í•¢PC¤'PC'MªIdentifierÍ—Íœ¥mcuPcÂY³VariableDeclarationÍ¨ÍÄ‘Z²VariableDeclaratorÍ®ÍÃMªIdentifierÍ®Í·©pinStatesX­NewExpressionÍºÍÃMªIdentifierÍ¾ÍÁ£Map¥constU³ExpressionStatementÍÎÍñR®CallExpressionÍÎÍğS°MemberExpressionÍÎÍãMªIdentifierÍÎÍÛ­digitalStatesMªIdentifierÍÜÍã§forEachÂÂ‘P·ArrowFunctionExpressionÍäÍïÀÂÂÂ’MªIdentifierÍåÍê¥stateMªIdentifierÍìÍñ¥pinIdN®BlockStatementÍöÍï‘]«IfStatementÍÍä[°BinaryExpressionÍ	Í"MªIdentifierÍ	Í¥state£===S°MemberExpressionÍÍ"MªIdentifierÍÍªLogicStateMªIdentifierÍÍ"¤HIGHÂÂU³ExpressionStatementÍ5ÍMR®CallExpressionÍ5ÍLS°MemberExpressionÍ5ÍBMªIdentifierÍ5Í>©pinStatesMªIdentifierÍ?ÍB£setÂÂ’MªIdentifierÍCÍH¥pinIdW§LiteralÍJÍK¡1Â]«IfStatementÍ`Íä[°BinaryExpressionÍdÍ|MªIdentifierÍdÍi¥state£===S°MemberExpressionÍnÍ|MªIdentifierÍnÍxªLogicStateMªIdentifierÍyÍ|£LOWÂÂU³ExpressionStatementÍÍ§R®CallExpressionÍÍ¦S°MemberExpressionÍÍœMªIdentifierÍÍ˜©pinStatesMªIdentifierÍ™Íœ£setÂÂ’MªIdentifierÍÍ¢¥pinIdW§LiteralÍ¤Í¥ ¡0ÂU³ExpressionStatementÍËÍäR®CallExpressionÍËÍãS°MemberExpressionÍËÍØMªIdentifierÍËÍÔ©pinStatesMªIdentifierÍÕÍØ£setÂÂ’MªIdentifierÍÙÍŞ¥pinId\¯UnaryExpressionÍàÍâ¡-ÃW§LiteralÍáÍâ¡1ÂÂY³VariableDeclarationÍûÍ«‘Z²VariableDeclaratorÍÍªMªIdentifierÍÍ«mcuSnapshotÔr_”¤type¥start£endªproperties°ObjectExpressionÍÍª”Ôr`™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍ1ÂÂÂMªIdentifierÍÍ'©timestampMªIdentifierÍ)Í1¨syncTime¤init`¨PropertyÍ@ÍTÂÂÂMªIdentifierÍ@ÍI©registersMªIdentifierÍKÍT©registers¤init`¨PropertyÍcÍ|ÂÂÂMªIdentifierÍcÍi¦memoryX­NewExpressionÍkÍ|MªIdentifierÍoÍyªUint8Array‘W§LiteralÍzÍ{ ¡0¤init`¨PropertyÍ‹ÍŸÂÂÂMªIdentifierÍ‹Í”©pinStatesMªIdentifierÍ–ÍŸ©pinStates¤init¥constQ¯ReturnStatementÍµÍ½_°ObjectExpressionÍ¼Í¼–`¨PropertyÍËÍÙÂÂÂMªIdentifierÍËÍÏ¤timeMªIdentifierÍÑÍÙ¨syncTime¤init`¨PropertyÍèÍÂÂÂMªIdentifierÍèÍõ­analogSignalsS°MemberExpressionÍ÷ÍMªIdentifierÍ÷Í«spiceResultMªIdentifierÍÍ¬nodeVoltagesÂÂ¤init`¨PropertyÍÍ:ÂÂÂMªIdentifierÍÍ+­digitalStatesMªIdentifierÍ-Í:­digitalStates¤init`¨PropertyÍIÍaÂÂÂMªIdentifierÍIÍT«mcuSnapshotMªIdentifierÍVÍa«mcuSnapshot¤init`¨PropertyÍpÍÂÂÂMªIdentifierÍpÍx¨stepSizeS°MemberExpressionÍzÍT®ThisExpressionÍzÍ~MªIdentifierÍÍ¯currentStepSizeÂÂ¤init`¨PropertyÍÍ±ÂÂÂMªIdentifierÍÍ¦©convergedMªIdentifierÍ¨Í±©converged¤initO°MethodDefinitionÍÊÍ5ÂÂMªIdentifierÍÊÍ×­adaptStepSize¦methodP²FunctionExpressionÍ×Í5ÀÂÂÂ‘MªIdentifierÍØÍà¨voltagesN®BlockStatementÍâÍ5•Y³VariableDeclarationÍíÍş‘Z²VariableDeclaratorÍñÍıMªIdentifierÍñÍù¨maxDeltaW§LiteralÍüÍı ¡0£letY³VariableDeclarationÍÍ!‘Z²VariableDeclaratorÍÍ MªIdentifierÍÍ¬hasReferenceW§LiteralÍÍ Â¥false£letU³ExpressionStatementÍ+Í¦R®CallExpressionÍ+Í¥S°MemberExpressionÍ+Í;MªIdentifierÍ+Í3¨voltagesMªIdentifierÍ4Í;§forEachÂÂ‘P·ArrowFunctionExpressionÍ<Í¤ÀÂÂÂ’MªIdentifierÍ=Í>¡vMªIdentifierÍ@ÍD¤nodeN®BlockStatementÍIÍ¤“Y³VariableDeclarationÍXÍˆ‘Z²VariableDeclaratorÍ^Í‡MªIdentifierÍ^Íb¤prevR®CallExpressionÍeÍ‡S°MemberExpressionÍeÍS°MemberExpressionÍeÍ}T®ThisExpressionÍeÍiMªIdentifierÍjÍ}³lastVoltageSnapshotÂÂMªIdentifierÍ~Í£getÂÂ‘MªIdentifierÍ‚Í†¤nodeÂ¥const]«IfStatementÍ–Íe[°BinaryExpressionÍšÍ¬MªIdentifierÍšÍ¤prev£!==MªIdentifierÍ£Í¬©undefinedN®BlockStatementÍ®Íe“U³ExpressionStatementÍÁÍÕV´AssignmentExpressionÍÁÍÔ¡=MªIdentifierÍÁÍÍ¬hasReferenceW§LiteralÍĞÍÔÃ¤trueY³VariableDeclarationÍçÍ‘Z²VariableDeclaratorÍíÍMªIdentifierÍíÍò¥deltaR®CallExpressionÍõÍS°MemberExpressionÍõÍıMªIdentifierÍõÍù¤MathMªIdentifierÍúÍı£absÂÂ‘[°BinaryExpressionÍşÍMªIdentifierÍşÍÿ¡v¡-MªIdentifierÍÍ¤prevÂ¥const]«IfStatementÍÍV[°BinaryExpressionÍÍ.MªIdentifierÍÍ#¥delta¡>MªIdentifierÍ&Í.¨maxDeltaU³ExpressionStatementÍEÍVV´AssignmentExpressionÍEÍU¡=MªIdentifierÍEÍM¨maxDeltaMªIdentifierÍPÍU¥deltaÀÀU³ExpressionStatementÍsÍ™R®CallExpressionÍsÍ˜S°MemberExpressionÍsÍS°MemberExpressionÍsÍ‹T®ThisExpressionÍsÍwMªIdentifierÍxÍ‹³lastVoltageSnapshotÂÂMªIdentifierÍŒÍ£setÂÂ’MªIdentifierÍÍ”¤nodeMªIdentifierÍ–Í—¡vÂÂ]«IfStatementÍ°Í×\¯UnaryExpressionÍ´ÍÁ¡!ÃMªIdentifierÍµÍÁ¬hasReferenceQ¯ReturnStatementÍĞÍ×ÀÀ]«IfStatementÍáÍ.[°BinaryExpressionÍåÍMªIdentifierÍåÍí¨maxDelta¡>MªIdentifierÍğÍ³VOLTAGE_DELTA_RAPIDN®BlockStatementÍÍ˜’U³ExpressionStatementÍÍdV´AssignmentExpressionÍÍc¡=S°MemberExpressionÍÍ(T®ThisExpressionÍÍMªIdentifierÍÍ(¯currentStepSizeÂÂR®CallExpressionÍ+ÍcS°MemberExpressionÍ+Í3MªIdentifierÍ+Í/¤MathMªIdentifierÍ0Í3£maxÂÂ’[°BinaryExpressionÍ4ÍLS°MemberExpressionÍ4ÍHT®ThisExpressionÍ4Í8MªIdentifierÍ9ÍH¯currentStepSizeÂÂ¡/W§LiteralÍKÍL¡4R®CallExpressionÍNÍbS°MemberExpressionÍNÍ`T®ThisExpressionÍNÍRMªIdentifierÍSÍ`­analogMinStepÂÂÂÂU³ExpressionStatementÍrÍV´AssignmentExpressionÍrÍŒ¡=S°MemberExpressionÍrÍˆT®ThisExpressionÍrÍvMªIdentifierÍwÍˆ±steadyStepCounterÂÂW§LiteralÍ‹ÍŒ ¡0]«IfStatementÍ§Í.[°BinaryExpressionÍ«ÍÊMªIdentifierÍ«Í³¨maxDelta¡<MªIdentifierÍ¶ÍÊ´VOLTAGE_DELTA_STEADYN®BlockStatementÍÌÍê’U³ExpressionStatementÍÛÍô\°UpdateExpressionÍÛÍó¢++ÂS°MemberExpressionÍÛÍñT®ThisExpressionÍÛÍßMªIdentifierÍàÍñ±steadyStepCounterÂÂ]«IfStatementÍÍß[°BinaryExpressionÍÍ1S°MemberExpressionÍÍT®ThisExpressionÍÍ
+MªIdentifierÍÍ±steadyStepCounterÂÂ¢>=MªIdentifierÍ Í1±STEADY_GROW_COUNTN®BlockStatementÍ3Íß’U³ExpressionStatementÍFÍ£V´AssignmentExpressionÍFÍ¢¡=S°MemberExpressionÍFÍZT®ThisExpressionÍFÍJMªIdentifierÍKÍZ¯currentStepSizeÂÂR®CallExpressionÍ]Í¢S°MemberExpressionÍ]ÍeMªIdentifierÍ]Ía¤MathMªIdentifierÍbÍe£minÂÂ’[°BinaryExpressionÍfÍŒS°MemberExpressionÍfÍzT®ThisExpressionÍfÍjMªIdentifierÍkÍz¯currentStepSizeÂÂ¡*MªIdentifierÍ}ÍŒ¯MAX_STEP_GROWTHS°MemberExpressionÍÍ¡S°MemberExpressionÍÍ™T®ThisExpressionÍÍ’MªIdentifierÍ“Í™¦configÂÂMªIdentifierÍšÍ¡§maxStepÂÂÂU³ExpressionStatementÍµÍĞV´AssignmentExpressionÍµÍÏ¡=S°MemberExpressionÍµÍËT®ThisExpressionÍµÍ¹MªIdentifierÍºÍË±steadyStepCounterÂÂW§LiteralÍÎÍÏ ¡0ÀN®BlockStatementÍùÍ.‘U³ExpressionStatementÍÍ#V´AssignmentExpressionÍÍ"¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ±steadyStepCounterÂÂW§LiteralÍ!Í" ¡0O°MethodDefinitionÍ;Í~ÂÂMªIdentifierÍ;ÍM²getMcuTicksPerStep¦methodP²FunctionExpressionÍMÍ~ÀÂÂÂN®BlockStatementÍPÍ~‘Q¯ReturnStatementÍ[ÍwS°MemberExpressionÍbÍvT®ThisExpressionÍbÍfMªIdentifierÍgÍv¯mcuTicksPerStepÂÂO°MethodDefinitionÍ„ÍÂÂMªIdentifierÍ„Í•±restoreFromResult¦methodP²FunctionExpressionÍ•ÍÀÂÂÂ’MªIdentifierÍ–Íœ¦resultMªIdentifierÍÍ§©timeIndexN®BlockStatementÍ©Í‘]«IfStatementÍ´Í[±LogicalExpressionÍ¸Íè[°BinaryExpressionÍ¸ÍÆMªIdentifierÍ¸ÍÁ©timeIndex¢>=W§LiteralÍÅÍÆ ¡0¢&&[°BinaryExpressionÍÊÍèMªIdentifierÍÊÍÓ©timeIndex¡<S°MemberExpressionÍÖÍèS°MemberExpressionÍÖÍáMªIdentifierÍÖÍÜ¦resultMªIdentifierÍİÍá¤timeÂÂMªIdentifierÍâÍè¦lengthÂÂN®BlockStatementÍêÍ’U³ExpressionStatementÍùÍ"V´AssignmentExpressionÍùÍ!¡=S°MemberExpressionÍùÍT®ThisExpressionÍùÍıMªIdentifierÍşÍªglobalTimeÂÂS°MemberExpressionÍÍ!S°MemberExpressionÍÍMªIdentifierÍÍ¦resultMªIdentifierÍÍ¤timeÂÂMªIdentifierÍÍ ©timeIndexÃÂU³ExpressionStatementÍ0ÍüR®CallExpressionÍ0ÍûS°MemberExpressionÍ0ÍFS°MemberExpressionÍ0Í>MªIdentifierÍ0Í6¦resultMªIdentifierÍ7Í>§signalsÂÂMªIdentifierÍ?ÍF§forEachÂÂ‘P·ArrowFunctionExpressionÍGÍúÀÂÂÂ’MªIdentifierÍHÍN¦seriesMªIdentifierÍPÍT¤nameN®BlockStatementÍYÍú‘]«IfStatementÍlÍë[°BinaryExpressionÍpÍ‰MªIdentifierÍpÍy©timeIndex¡<S°MemberExpressionÍ|Í‰MªIdentifierÍ|Í‚¦seriesMªIdentifierÍƒÍ‰¦lengthÂÂN®BlockStatementÍ‹Íë‘U³ExpressionStatementÍ¢ÍØR®CallExpressionÍ¢Í×S°MemberExpressionÍ¢Í¾S°MemberExpressionÍ¢ÍºT®ThisExpressionÍ¢Í¦MªIdentifierÍ§Íº³lastVoltageSnapshotÂÂMªIdentifierÍ»Í¾£setÂÂ’MªIdentifierÍ¿ÍÃ¤nameS°MemberExpressionÍÅÍÖMªIdentifierÍÅÍË¦seriesMªIdentifierÍÌÍÕ©timeIndexÃÂÂÀÂÀO°MethodDefinitionÍÍ?ÂÂMªIdentifierÍÍ!­getGlobalTime¦methodP²FunctionExpressionÍ!Í?ÀÂÂÂN®BlockStatementÍ$Í?‘Q¯ReturnStatementÍ&Í=S°MemberExpressionÍ-Í<T®ThisExpressionÍ-Í1MªIdentifierÍ2Í<ªglobalTimeÂÂO°MethodDefinitionÍEÍzÂÂMªIdentifierÍEÍW²getCurrentStepSize¦methodP²FunctionExpressionÍWÍzÀÂÂÂN®BlockStatementÍZÍz‘Q¯ReturnStatementÍ\ÍxS°MemberExpressionÍcÍwT®ThisExpressionÍcÍgMªIdentifierÍhÍw¯currentStepSizeÂÂO°MethodDefinitionÍ€ÍÂÂMªIdentifierÍ€Í…¥reset¦methodP²FunctionExpressionÍ…ÍÀÂÂÂN®BlockStatementÍˆÍ™U³ExpressionStatementÍ“Í»V´AssignmentExpressionÍ“Íº¡=S°MemberExpressionÍ“Í¢T®ThisExpressionÍ“Í—MªIdentifierÍ˜Í¢ªglobalTimeÂÂS°MemberExpressionÍ¥ÍºS°MemberExpressionÍ¥Í°T®ThisExpressionÍ¥Í©MªIdentifierÍªÍ°¦configÂÂMªIdentifierÍ±Íº©startTimeÂÂU³ExpressionStatementÍÅÍV´AssignmentExpressionÍÅÍ¡=S°MemberExpressionÍÅÍÙT®ThisExpressionÍÅÍÉMªIdentifierÍÊÍÙ¯currentStepSizeÂÂR®CallExpressionÍÜÍS°MemberExpressionÍÜÍäMªIdentifierÍÜÍà¤MathMªIdentifierÍáÍä£maxÂÂ’S°MemberExpressionÍåÍùS°MemberExpressionÍåÍğT®ThisExpressionÍåÍéMªIdentifierÍêÍğ¦configÂÂMªIdentifierÍñÍù¨stepSizeÂÂR®CallExpressionÍûÍS°MemberExpressionÍûÍT®ThisExpressionÍûÍÿMªIdentifierÍ Í­analogMinStepÂÂÂÂU³ExpressionStatementÍÍ.V´AssignmentExpressionÍÍ-¡=S°MemberExpressionÍÍ)T®ThisExpressionÍÍMªIdentifierÍ Í)©stepCountÂÂW§LiteralÍ,Í- ¡0U³ExpressionStatementÍ8ÍYR®CallExpressionÍ8ÍXS°MemberExpressionÍ8ÍVS°MemberExpressionÍ8ÍPT®ThisExpressionÍ8Í<MªIdentifierÍ=ÍP³lastVoltageSnapshotÂÂMªIdentifierÍQÍV¥clearÂÂÂU³ExpressionStatementÍcÍV´AssignmentExpressionÍcÍ~¡=S°MemberExpressionÍcÍzT®ThisExpressionÍcÍgMªIdentifierÍhÍz²convergenceRetriesÂÂW§LiteralÍ}Í~ ¡0U³ExpressionStatementÍ‰Í¤V´AssignmentExpressionÍ‰Í£¡=S°MemberExpressionÍ‰ÍŸT®ThisExpressionÍ‰ÍMªIdentifierÍÍŸ±steadyStepCounterÂÂW§LiteralÍ¢Í£ ¡0U³ExpressionStatementÍ®ÍÂV´AssignmentExpressionÍ®ÍÁ¡=S°MemberExpressionÍ®Í½T®ThisExpressionÍ®Í²MªIdentifierÍ³Í½ªfailStreakÂÂW§LiteralÍÀÍÁ ¡0U³ExpressionStatementÍÌÍãV´AssignmentExpressionÍÌÍâ¡=S°MemberExpressionÍÌÍŞT®ThisExpressionÍÌÍĞMªIdentifierÍÑÍŞ­mcuCycleAccumÂÂW§LiteralÍáÍâ ¡0U³ExpressionStatementÍíÍV´AssignmentExpressionÍíÍ¡=S°MemberExpressionÍíÍT®ThisExpressionÍíÍñMªIdentifierÍòÍ¯mcuTicksPerStepÂÂW§LiteralÍÍ¡1O°MethodDefinitionÍÍaÂÂMªIdentifierÍÍªisFinished¦methodP²FunctionExpressionÍÍaÀÂÂÂN®BlockStatementÍ Ía‘Q¯ReturnStatementÍ+ÍZ[°BinaryExpressionÍ2ÍYS°MemberExpressionÍ2ÍAT®ThisExpressionÍ2Í6MªIdentifierÍ7ÍAªglobalTimeÂÂ¢>=S°MemberExpressionÍEÍYS°MemberExpressionÍEÍPT®ThisExpressionÍEÍIMªIdentifierÍJÍP¦configÂÂMªIdentifierÍQÍY¨stopTimeÂÂÀ’Ôra•¤type¥start£endªspecifiers¦source±ImportDeclarationÌWÌŠ’Ôrb•¤type¥start£end¨imported¥local¯ImportSpecifierÌ`ÌjMªIdentifierÌ`ÌjªLogicStateMªIdentifierÌ`ÌjªLogicStateb¯ImportSpecifierÌlÌyMªIdentifierÌlÌy­copyNumberMapMªIdentifierÌlÌy­copyNumberMapW§LiteralÌÌ‰¦common¨'common'a±ImportDeclarationÌŒÌ¸‘b¯ImportSpecifierÌ•Ì MªIdentifierÌ•Ì «SpiceRunnerMªIdentifierÌ•Ì «SpiceRunnerW§LiteralÌ¨Ì·­./SpiceRunner¯'./SpiceRunner'

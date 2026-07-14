@@ -1,0 +1,18 @@
+<svg width="80" height="50" viewBox="-40 -25 80 50" xmlns="http://www.w3.org/2000/svg">
+  <!-- SPDT Relay -->
+  <rect x="-20" y="-15" width="15" height="30" fill="none" stroke="#000" stroke-width="1.2"/>
+  <text x="-13" y="4" font-size="5" fill="#000" text-anchor="middle">COIL</text>
+  <line x1="-40" y1="-5" x2="-20" y2="-5" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="5" x2="-20" y2="5" stroke="#000" stroke-width="1.2"/>
+  <!-- Contact -->
+  <line x1="-5" y1="-5" x2="30" y2="-5" stroke="#000" stroke-width="1.2"/>
+  <circle cx="-5" cy="-5" r="2" fill="none" stroke="#000" stroke-width="1"/>
+  <line x1="0" y1="-5" x2="5" y2="5" stroke="#000" stroke-width="1.2"/>
+  <line x1="5" y1="5" x2="30" y2="5" stroke="#666" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="5" y1="5" x2="8" y2="12" stroke="#000" stroke-width="1.2"/>
+  <circle cx="-40" cy="-5" r="2" fill="#000"/>
+  <circle cx="-40" cy="5" r="2" fill="#000"/>
+  <circle cx="30" cy="-5" r="2" fill="#000"/>
+  <circle cx="8" cy="12" r="2" fill="#000"/>
+  <text x="0" y="26" font-size="5" fill="#000" text-anchor="middle">REF</text>
+</svg>

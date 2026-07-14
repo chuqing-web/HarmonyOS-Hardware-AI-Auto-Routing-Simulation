@@ -1,0 +1,30 @@
+<svg width="120" height="120" viewBox="-60 -60 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Op-amp triangle body -->
+  <polygon points="-35,-30 35,0 -35,30" fill="none" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- + and - labels -->
+  <text x="-20" y="-10" font-size="8" fill="#000" font-family="sans-serif">+</text>
+  <text x="-20" y="14" font-size="8" fill="#000" font-family="sans-serif">−</text>
+  <!-- Pins: left side inputs -->
+  <line x1="-50" y1="-20" x2="-35" y2="-20" stroke="#000" stroke-width="1.2"/>
+  <line x1="-50" y1="20" x2="-35" y2="20" stroke="#000" stroke-width="1.2"/>
+  <line x1="-50" y1="-40" x2="-35" y2="-40" stroke="#000" stroke-width="1.2"/>
+  <line x1="-50" y1="40" x2="-35" y2="40" stroke="#000" stroke-width="1.2"/>
+  <!-- Pin: right side output -->
+  <line x1="35" y1="-30" x2="50" y2="-30" stroke="#000" stroke-width="1.2"/>
+  <line x1="35" y1="30" x2="50" y2="30" stroke="#000" stroke-width="1.2"/>
+  <!-- Pins: top V+ / bottom V- -->
+  <line x1="0" y1="-50" x2="0" y2="-30" stroke="#000" stroke-width="1.2"/>
+  <line x1="0" y1="30" x2="0" y2="50" stroke="#000" stroke-width="1.2"/>
+  <!-- Pin dots -->
+  <circle cx="-50" cy="-20" r="2" fill="#000"/>
+  <circle cx="-50" cy="-40" r="2" fill="#000"/>
+  <circle cx="50" cy="-30" r="2" fill="#000"/>
+  <circle cx="0" cy="-50" r="2" fill="#000"/>
+  <circle cx="0" cy="50" r="2" fill="#000"/>
+  <circle cx="-50" cy="20" r="2" fill="#000"/>
+  <circle cx="-50" cy="40" r="2" fill="#000"/>
+  <circle cx="50" cy="30" r="2" fill="#000"/>
+  <!-- Labels -->
+  <text x="0" y="-58" font-size="6" fill="#000" text-anchor="middle" font-family="sans-serif">REF</text>
+  <text x="0" y="62" font-size="5" fill="#444" text-anchor="middle" font-family="sans-serif">LM358</text>
+</svg>

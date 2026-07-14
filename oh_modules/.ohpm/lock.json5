@@ -1,0 +1,306 @@
+{
+  "lockVersion": "1.0",
+  "settings": {
+    "resolveConflict": true,
+    "resolveConflictStrict": false,
+    "installAll": true
+  },
+  "overrides": {},
+  "overrideDependencyMap": {},
+  "modules": {
+    ".": {
+      "name": "",
+      "dependencies": {},
+      "devDependencies": {
+        "@ohos/hypium": {
+          "specifier": "1.0.21",
+          "version": "1.0.21"
+        }
+      },
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "common": {
+      "name": "common",
+      "dependencies": {},
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "entry": {
+      "name": "entry",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        },
+        "schematic_editor": {
+          "specifier": "file:features/schematic_editor",
+          "version": "file:features/schematic_editor"
+        },
+        "component_library": {
+          "specifier": "file:features/component_library",
+          "version": "file:features/component_library"
+        },
+        "simulation_kernel": {
+          "specifier": "file:features/simulation_kernel",
+          "version": "file:features/simulation_kernel"
+        },
+        "hex_debugger": {
+          "specifier": "file:features/hex_debugger",
+          "version": "file:features/hex_debugger"
+        },
+        "ai_api_manager": {
+          "specifier": "file:features/ai_api_manager",
+          "version": "file:features/ai_api_manager"
+        },
+        "ai_engine": {
+          "specifier": "file:features/ai_engine",
+          "version": "file:features/ai_engine"
+        },
+        "file_persistence": {
+          "specifier": "file:features/file_persistence",
+          "version": "file:features/file_persistence"
+        },
+        "instruments": {
+          "specifier": "file:features/instruments",
+          "version": "file:features/instruments"
+        },
+        "plugin_system": {
+          "specifier": "file:features/plugin_system",
+          "version": "file:features/plugin_system"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/ai_api_manager": {
+      "name": "ai_api_manager",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/ai_engine": {
+      "name": "ai_engine",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        },
+        "ai_api_manager": {
+          "specifier": "file:features/ai_api_manager",
+          "version": "file:features/ai_api_manager"
+        },
+        "component_library": {
+          "specifier": "file:features/component_library",
+          "version": "file:features/component_library"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/component_library": {
+      "name": "component_library",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/file_persistence": {
+      "name": "file_persistence",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/hex_debugger": {
+      "name": "hex_debugger",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/instruments": {
+      "name": "instruments",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/plugin_system": {
+      "name": "plugin_system",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/schematic_editor": {
+      "name": "schematic_editor",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/simulation_kernel": {
+      "name": "simulation_kernel",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    }
+  },
+  "packages": {
+    "common@file:common": {
+      "storePath": "common",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "@ohos/hypium@1.0.21": {
+      "integrity": "sha512-iyKGMXxE+9PpCkqEwu0VykN/7hNpb+QOeIuHwkmZnxOpI+dFZt6yhPB7k89EgV1MiSK/ieV/hMjr5Z2mWwRfMQ==",
+      "storePath": "oh_modules/.ohpm/@ohos+hypium@1.0.21",
+      "dependencies": {},
+      "dynamicDependencies": {},
+      "dev": true,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "schematic_editor@file:features/schematic_editor": {
+      "storePath": "features/schematic_editor",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "component_library@file:features/component_library": {
+      "storePath": "features/component_library",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "simulation_kernel@file:features/simulation_kernel": {
+      "storePath": "features/simulation_kernel",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "hex_debugger@file:features/hex_debugger": {
+      "storePath": "features/hex_debugger",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "file_persistence@file:features/file_persistence": {
+      "storePath": "features/file_persistence",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "plugin_system@file:features/plugin_system": {
+      "storePath": "features/plugin_system",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "ai_api_manager@file:features/ai_api_manager": {
+      "storePath": "features/ai_api_manager",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "instruments@file:features/instruments": {
+      "storePath": "features/instruments",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "ai_engine@file:features/ai_engine": {
+      "storePath": "features/ai_engine",
+      "dependencies": {
+        "common": "common",
+        "ai_api_manager": "features/ai_api_manager",
+        "component_library": "features/component_library"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    }
+  }
+}

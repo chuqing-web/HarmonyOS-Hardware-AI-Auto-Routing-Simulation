@@ -12,7 +12,7 @@ import {
   ProteusVDivider, ProteusPanelTitle,
   ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle,
   ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer,
-  ProteusSidebarTab,
+  ProteusSidebarTab, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow,
   ProteusMenuEntry
 } from '../components/proteus/ProteusWidgets';
 import { ProteusIcon, ProteusIconName } from '../components/proteus/ProteusIcons';
@@ -21,7 +21,7 @@ import { UiStateStore } from '../utils/UiStateStore';
 import {
   CallbackRegistry, ErcError, ProgressInfo, Point2D, ComponentCategory,
   ComponentInstance, SchematicDocument, EventBus, ModuleEvent, ModuleEventPayload,
-  McuFamily, isInstrumentLibraryId
+  McuFamily, isInstrumentLibraryId, traceBurn, formatFirmwarePreview
 } from 'common';
 import { SchematicEditorImpl, AlignType } from 'schematic_editor';
 import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
@@ -110,7 +110,7 @@ struct Index {
   private uiState: UiStateStore = UiStateStore.getInstance();
 
   async aboutToAppear(): Promise<void> {
-    const ctx = getContext(this) as common.UIAbilityContext;
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.appService.initPlatform(ctx);
     this.userProjectDir = this.appService.getUserProjectDir();
     this.vm.bindCallbacks();
@@ -375,7 +375,7 @@ struct Index {
     }
     this.windowResizeHooked = true;
     this.startupRefitDeadline = Date.now() + 4000;
-    const ctx = getContext(this) as common.UIAbilityContext;
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     window.getLastWindow(ctx).then((win) => {
       win.on('windowSizeChange', () => {
         if (Date.now() > this.startupRefitDeadline) {
@@ -387,7 +387,8 @@ struct Index {
   }
 
   onPageShow(): void {
-    void maximizeAppWindow(getContext(this) as common.UIAbilityContext);
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    void maximizeAppWindow(ctx);
     this.hookStartupWindowResize();
     this.deferCanvasFit();
   }
@@ -616,8 +617,10 @@ struct Index {
     const path = this.burnFilePath.trim();
     if (path.length === 0) {
       this.statusMessage = '请选择或输入 HEX 文件路径';
+      traceBurn('UI_BURN_ABORT', 'empty path (toolbar dialog)');
       return;
     }
+    traceBurn('UI_BURN_BEGIN', `source=toolbar path=${path} family=${this.burnMcuFamily}`);
     try {
       const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
       const stat = fs.statSync(path);
@@ -626,11 +629,12 @@ struct Index {
       fs.closeSync(fileHandle);
 
       const hexView = new Uint8Array(buffer);
+      traceBurn('UI_BURN_READ', `path=${path} size=${stat.size} preview=${formatFirmwarePreview(hexView)}`);
       const family = this.burnMcuFamily === '8051' ? McuFamily.MCU_8051 : McuFamily.MCU_STM32F1;
       const result = this.appService.hexDebugger.loadHexData(hexView, family);
-      if (result.success) {
-        this.appService.simulationKernel.loadMcuProgram(
-          new Uint8Array(buffer), 0, this.burnMcuFamily);
+      if (result.success && result.data !== undefined) {
+        this.appService.loadMcuIntoSim(
+          result.data.data, 0, this.burnMcuFamily);
         const parsed = this.appService.hexDebugger.getParsedHexInfo();
         if (parsed) {
           this.burnFileSize = `${(stat.size / 1024).toFixed(1)} KB`;
@@ -639,11 +643,14 @@ struct Index {
           const entry = parsed.minAddr;
           this.burnEntryPoint = `0x${entry.toString(16).toUpperCase().padStart(4, '0')}`;
           this.burnFirmwareInfo = `已烧录 ${this.burnFileSize}, ${this.burnSegmentInfo}, 入口 ${this.burnEntryPoint}`;
+          traceBurn('UI_BURN_OK',
+            `source=toolbar path=${path} size=${this.burnFileSize} segs=${segCount} entry=${this.burnEntryPoint}`);
         } else {
           this.burnFileSize = `${(stat.size / 1024).toFixed(1)} KB`;
           this.burnFirmwareInfo = `已烧录 ${this.burnFileSize}`;
           this.burnSegmentInfo = '--';
           this.burnEntryPoint = '0x0000';
+          traceBurn('UI_BURN_OK', `source=toolbar path=${path} size=${this.burnFileSize} (no parsed info)`);
         }
         this.statusMessage = `HEX 烧录成功: ${path}`;
         this.rightCollapsed = false;
@@ -652,10 +659,12 @@ struct Index {
       } else {
         this.statusMessage = `HEX 加载失败: ${result.error ?? '未知错误'}`;
         this.burnFirmwareInfo = '';
+        traceBurn('UI_BURN_FAIL', `source=toolbar path=${path} err=${result.error ?? 'unknown'}`);
       }
     } catch (e) {
       this.statusMessage = `烧录失败: ${e}`;
       this.burnFirmwareInfo = '';
+      traceBurn('UI_BURN_FAIL', `source=toolbar path=${path} ex=${e}`);
     }
   }
 
@@ -1459,30 +1468,14 @@ struct Index {
   @Builder
   NavComponentList() {
     ForEach(this.getDocComponents(), (comp: ComponentInstance) => {
-      Row() {
-        Text(`${comp.refDes}`)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(comp.id === this.selectedComponentId ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY)
-          .fontWeight(FontWeight.Medium)
-          .width(60)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${comp.libraryId}`)
-          .fontSize(ProteusFonts.STATUS)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .width('100%')
-      .height(ProteusDimens.NAV_ROW_HEIGHT)
-      .padding({ left: 6, right: 4 })
-      .alignItems(VerticalAlign.Center)
-      .backgroundColor(comp.id === this.selectedComponentId ? ProteusColors.TREE_SELECTED : Color.Transparent)
-      .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
-      .onClick(() => {
-        this.selectedComponentId = comp.id;
-        this.appService.schematicEditor.setSelection([comp.id]);
+      ProteusNavCompRow({
+        refDes: `${comp.refDes}`,
+        libraryId: `${comp.libraryId}`,
+        selected: comp.id === this.selectedComponentId,
+        onAction: () => {
+          this.selectedComponentId = comp.id;
+          this.appService.schematicEditor.setSelection([comp.id]);
+        }
       })
     }, (comp: ComponentInstance) => `${comp.id}_${this.navRefreshKey}`)
   }
@@ -1494,18 +1487,10 @@ struct Index {
   @Builder
   NavNetList() {
     ForEach(this.getDocNets(), (netName: string, idx: number) => {
-      Row() {
-        Text(`NET ${idx + 1}`)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.WIRE)
-          .fontWeight(FontWeight.Medium)
-          .maxLines(1)
-      }
-      .width('100%')
-      .height(ProteusDimens.NAV_ROW_HEIGHT + 2)
-      .padding({ left: 8, right: 4 })
-      .alignItems(VerticalAlign.Center)
-      .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
+      ProteusNavNetRow({
+        label: `NET ${idx + 1}`,
+        onAction: () => {}
+      })
     }, (netName: string, idx: number) => `${netName}_${idx}`)
   }
 
@@ -1531,27 +1516,13 @@ struct Index {
       .padding({ left: 8, top: 8 })
     } else {
       ForEach(this.ercErrors, (err: ErcError, idx: number) => {
-        Row() {
-          Column() {
-            Text(err.severity === 'error' || err.severity === 'critical' ? '✕' : '⚠')
-              .fontSize(10)
-              .fontColor(err.severity === 'error' || err.severity === 'critical' ?
-                ProteusColors.ERC_ERR : ProteusColors.ERC_WARN)
-              .width(16)
-          }
-          Text(err.desc)
-            .fontSize(ProteusFonts.STATUS)
-            .fontColor(err.severity === 'error' || err.severity === 'critical' ?
-              ProteusColors.ERC_ERR : ProteusColors.ERC_WARN)
-            .layoutWeight(1)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .width('100%')
-        .height(ProteusDimens.NAV_ROW_HEIGHT)
-        .padding({ left: 6, right: 4 })
-        .alignItems(VerticalAlign.Center)
-        .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
+        ProteusErcRow({
+          mark: err.severity === 'error' || err.severity === 'critical' ? '✕' : '⚠',
+          markColor: err.severity === 'error' || err.severity === 'critical' ?
+            ProteusColors.ERC_ERR : ProteusColors.ERC_WARN,
+          desc: err.desc,
+          onAction: () => {}
+        })
       }, (err: ErcError, idx: number) => `${idx}_${err.desc}`)
     }
   }

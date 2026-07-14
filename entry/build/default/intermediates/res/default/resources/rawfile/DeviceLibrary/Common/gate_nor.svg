@@ -1,0 +1,16 @@
+<svg width="80" height="60" viewBox="-40 -30 80 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- NOR gate = OR + bubble -->
+  <path d="M-20,-25 Q-5,0 -20,25 Q12,25 22,0 Q12,-25 -20,-25 Z" fill="none" stroke="#000" stroke-width="1.2"/>
+  <circle cx="26" cy="0" r="4" fill="none" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="-12" x2="-20" y2="-12" stroke="#000" stroke-width="1.2"/>
+  <line x1="-40" y1="12" x2="-20" y2="12" stroke="#000" stroke-width="1.2"/>
+  <line x1="30" y1="0" x2="40" y2="0" stroke="#000" stroke-width="1.2"/>
+  <line x1="0" y1="-30" x2="0" y2="-25" stroke="#000" stroke-width="1.2"/>
+  <line x1="0" y1="25" x2="0" y2="30" stroke="#000" stroke-width="1.2"/>
+  <circle cx="-40" cy="-12" r="2" fill="#000"/>
+  <circle cx="-40" cy="12" r="2" fill="#000"/>
+  <circle cx="40" cy="0" r="2" fill="#000"/>
+  <circle cx="0" cy="-30" r="2" fill="#000"/>
+  <circle cx="0" cy="30" r="2" fill="#000"/>
+  <text x="0" y="36" font-size="5" fill="#000" text-anchor="middle">REF</text>
+</svg>

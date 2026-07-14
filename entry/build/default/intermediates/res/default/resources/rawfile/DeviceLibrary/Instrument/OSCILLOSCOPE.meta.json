@@ -1,0 +1,24 @@
+{
+  "lib_dev_id": "OSCILLOSCOPE",
+  "name": "虚拟四通道示波器",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "oscilloscope",
+  "symbol_file": "OSCILLOSCOPE.symbol.svg",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {"pin_id": "CH1", "pin_label": "CH1", "pin_type": "analog_in", "x": -40, "y": -30},
+    {"pin_id": "CH2", "pin_label": "CH2", "pin_type": "analog_in", "x": -40, "y": -10},
+    {"pin_id": "CH3", "pin_label": "CH3", "pin_type": "analog_in", "x": -40, "y": 10},
+    {"pin_id": "CH4", "pin_label": "CH4", "pin_type": "analog_in", "x": -40, "y": 30},
+    {"pin_id": "GND", "pin_label": "GND", "pin_type": "ground", "x": -40, "y": 50}
+  ],
+  "default_params": {
+    "channels": "4",
+    "sample_rate": "1MHz",
+    "time_div": "1ms"
+  },
+  "erc_check_rules": []
+}

@@ -1,0 +1,445 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ®/**
+ * Signal Generator engine â€” generates synthetic waveforms AND injects into analog simulation
+ * v2: Dual-mode â€” standalone synthetic + real circuit injection via AnalogEngine
+ */
+import { IdUtil, SignalWaveform } from 'common';
+const SAMPLE_POINTS = 1024;
+export class SignalGeneratorEngine {
+    constructor() {
+        this.waveform = SignalWaveform.SINE;
+        this.frequency = 1000;
+        this.amplitude = 3.3;
+        this.offset = 1.65;
+        this.dutyCycle = 50;
+        this.phase = 0;
+        this.burstEnabled = false;
+        this.burstCount = 5;
+        this.analogEngine = null;
+        this.connectedNodeA = '';
+        this.connectedNodeB = '0';
+        this.active = false;
+    }
+    setWaveform(waveform) {
+        this.waveform = waveform;
+        this.syncToAnalog();
+    }
+    setParams(params) {
+        this.frequency = params.frequency;
+        this.amplitude = params.amplitude;
+        this.offset = params.offset;
+        this.dutyCycle = params.dutyCycle;
+        this.phase = params.phase;
+        this.syncToAnalog();
+    }
+    setBurstMode(enabled, count = 5) {
+        this.burstEnabled = enabled;
+        this.burstCount = count;
+    }
+    /** Connect signal generator output to specific circuit nodes */
+    connectToCircuit(analogEngine, nodeA, nodeB) {
+        this.analogEngine = analogEngine;
+        this.connectedNodeA = nodeA;
+        this.connectedNodeB = nodeB;
+        this.active = true;
+        this.syncToAnalog();
+    }
+    disconnectFromCircuit() {
+        this.active = false;
+        this.analogEngine = null;
+    }
+    isActive() { return this.active; }
+    /** Sync current parameters to the analog engine voltage source */
+    syncToAnalog() {
+        if (!this.active || !this.analogEngine || this.connectedNodeA.length === 0)
+            return;
+        const waveformName = this.waveformName();
+        this.analogEngine.registerSignalSource('SIGGEN', this.connectedNodeA, this.connectedNodeB, waveformName, this.offset, this.amplitude, this.frequency, this.phase * Math.PI / 180, this.dutyCycle / 100);
+    }
+    waveformName() {
+        switch (this.waveform) {
+            case SignalWaveform.SINE: return 'sin';
+            case SignalWaveform.SQUARE: return 'square';
+            case SignalWaveform.TRIANGLE: return 'triangle';
+            case SignalWaveform.SAW: return 'sawtooth';
+            case SignalWaveform.PULSE: return 'pulse';
+            default: return 'sin';
+        }
+    }
+    getWaveform() { return this.waveform; }
+    getFrequency() { return this.frequency; }
+    getAmplitude() { return this.amplitude; }
+    getOffset() { return this.offset; }
+    getDutyCycle() { return this.dutyCycle; }
+    getPhase() { return this.phase; }
+    getBurstEnabled() { return this.burstEnabled; }
+    getBurstCount() { return this.burstCount; }
+    generateWave() {
+        const periods = this.burstEnabled ? this.burstCount : 4;
+        const windowSec = periods / Math.max(this.frequency, 1);
+        const sampleRate = SAMPLE_POINTS / windowSec;
+        const timeAxis = [];
+        const voltageAxis = [];
+        const phaseRad = this.phase * Math.PI / 180;
+        for (let i = 0; i < SAMPLE_POINTS; i++) {
+            const t = (i / SAMPLE_POINTS) * windowSec;
+            timeAxis.push(t);
+            voltageAxis.push(this.sampleAt(t, phaseRad));
+        }
+        return {
+            waveId: IdUtil.generate('siggen'),
+            probeName: 'SIG_OUT',
+            netName: this.connectedNodeA.length > 0 ? this.connectedNodeA : 'SIGGEN_OUT',
+            timeAxis,
+            voltageAxis,
+            currentAxis: new Array(SAMPLE_POINTS).fill(0),
+            sampleRate,
+            waveType: 'voltage',
+            holdTime: windowSec
+        };
+    }
+    /** Sample the waveform at time t for injection into the simulation */
+    sampleOutput(t) {
+        return this.sampleAt(t, this.phase * Math.PI / 180);
+    }
+    sampleAt(t, phaseRad) {
+        const omega = 2 * Math.PI * this.frequency;
+        const theta = omega * t + phaseRad;
+        let v = 0;
+        switch (this.waveform) {
+            case SignalWaveform.SINE:
+                v = this.amplitude * Math.sin(theta);
+                break;
+            case SignalWaveform.SQUARE:
+                v = Math.sin(theta) >= 0 ? this.amplitude : -this.amplitude;
+                break;
+            case SignalWaveform.TRIANGLE: {
+                const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+                v = norm < 0.5
+                    ? this.amplitude * (4 * norm - 1)
+                    : this.amplitude * (3 - 4 * norm);
+                break;
+            }
+            case SignalWaveform.SAW: {
+                const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+                v = this.amplitude * (2 * norm - 1);
+                break;
+            }
+            case SignalWaveform.PULSE: {
+                const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+                v = norm < (this.dutyCycle / 100) ? this.amplitude : -this.amplitude;
+                break;
+            }
+            default:
+                v = this.amplitude * Math.sin(theta);
+        }
+        if (this.burstEnabled) {
+            const period = 1 / Math.max(this.frequency, 1);
+            if (t > this.burstCount * period)
+                v = 0;
+        }
+        return v + this.offset;
+    }
+}
+//# sourceMappingURL=SignalGeneratorEngine.js.mapÂ‘Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙ`C:\Projects\ElecDraw_Harmony\features\instruments\src\main\ets\engines\SignalGeneratorEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs«instrumentsÃÂÙ1C:\Projects\ElecDraw_Harmony\features\instruments¼C:\Projects\ElecDraw_Harmony«instruments¥1.0.0ÔrC’§pkgNameªpkgVersion«instruments¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¿./engines/SignalGeneratorEngine«instrumentsÙ1C:\Projects\ElecDraw_Harmony\features\instrumentsÃÃÚ­/**
+ * Signal Generator engine â€” generates synthetic waveforms AND injects into analog simulation
+ * v2: Dual-mode â€” standalone synthetic + real circuit injection via AnalogEngine
+ */
+import { WaveData, IdUtil, SignalWaveform } from 'common';
+import { SignalGenParams } from '../api/IVirtualInstruments';
+
+const SAMPLE_POINTS = 1024;
+
+export interface AnalogEngineSink {
+  registerSignalSource(sourceId: string, nodeA: string, nodeB: string,
+    waveform: string, voltage: number, amplitude: number,
+    freq: number, phase: number, dutyCycle: number): void;
+  getNodeVoltageMap(): Map<string, number>;
+  getBranchCurrentMap(): Map<string, number>;
+  getNodeVoltage(node: string): number;
+}
+
+export class SignalGeneratorEngine {
+  private waveform: SignalWaveform = SignalWaveform.SINE;
+  private frequency: number = 1000;
+  private amplitude: number = 3.3;
+  private offset: number = 1.65;
+  private dutyCycle: number = 50;
+  private phase: number = 0;
+  private burstEnabled: boolean = false;
+  private burstCount: number = 5;
+  private analogEngine: AnalogEngineSink | null = null;
+  private connectedNodeA: string = '';
+  private connectedNodeB: string = '0';
+  private active: boolean = false;
+
+  setWaveform(waveform: SignalWaveform): void {
+    this.waveform = waveform;
+    this.syncToAnalog();
+  }
+
+  setParams(params: SignalGenParams): void {
+    this.frequency = params.frequency;
+    this.amplitude = params.amplitude;
+    this.offset = params.offset;
+    this.dutyCycle = params.dutyCycle;
+    this.phase = params.phase;
+    this.syncToAnalog();
+  }
+
+  setBurstMode(enabled: boolean, count: number = 5): void {
+    this.burstEnabled = enabled;
+    this.burstCount = count;
+  }
+
+  /** Connect signal generator output to specific circuit nodes */
+  connectToCircuit(analogEngine: AnalogEngineSink, nodeA: string, nodeB: string): void {
+    this.analogEngine = analogEngine;
+    this.connectedNodeA = nodeA;
+    this.connectedNodeB = nodeB;
+    this.active = true;
+    this.syncToAnalog();
+  }
+
+  disconnectFromCircuit(): void {
+    this.active = false;
+    this.analogEngine = null;
+  }
+
+  isActive(): boolean { return this.active; }
+
+  /** Sync current parameters to the analog engine voltage source */
+  private syncToAnalog(): void {
+    if (!this.active || !this.analogEngine || this.connectedNodeA.length === 0) return;
+    const waveformName = this.waveformName();
+    this.analogEngine.registerSignalSource(
+      'SIGGEN', this.connectedNodeA, this.connectedNodeB,
+      waveformName, this.offset, this.amplitude, this.frequency,
+      this.phase * Math.PI / 180, this.dutyCycle / 100
+    );
+  }
+
+  private waveformName(): string {
+    switch (this.waveform) {
+      case SignalWaveform.SINE: return 'sin';
+      case SignalWaveform.SQUARE: return 'square';
+      case SignalWaveform.TRIANGLE: return 'triangle';
+      case SignalWaveform.SAW: return 'sawtooth';
+      case SignalWaveform.PULSE: return 'pulse';
+      default: return 'sin';
+    }
+  }
+
+  getWaveform(): SignalWaveform { return this.waveform; }
+  getFrequency(): number { return this.frequency; }
+  getAmplitude(): number { return this.amplitude; }
+  getOffset(): number { return this.offset; }
+  getDutyCycle(): number { return this.dutyCycle; }
+  getPhase(): number { return this.phase; }
+  getBurstEnabled(): boolean { return this.burstEnabled; }
+  getBurstCount(): number { return this.burstCount; }
+
+  generateWave(): WaveData {
+    const periods = this.burstEnabled ? this.burstCount : 4;
+    const windowSec = periods / Math.max(this.frequency, 1);
+    const sampleRate = SAMPLE_POINTS / windowSec;
+    const timeAxis: number[] = [];
+    const voltageAxis: number[] = [];
+    const phaseRad = this.phase * Math.PI / 180;
+
+    for (let i = 0; i < SAMPLE_POINTS; i++) {
+      const t = (i / SAMPLE_POINTS) * windowSec;
+      timeAxis.push(t);
+      voltageAxis.push(this.sampleAt(t, phaseRad));
+    }
+
+    return {
+      waveId: IdUtil.generate('siggen'),
+      probeName: 'SIG_OUT',
+      netName: this.connectedNodeA.length > 0 ? this.connectedNodeA : 'SIGGEN_OUT',
+      timeAxis,
+      voltageAxis,
+      currentAxis: new Array(SAMPLE_POINTS).fill(0),
+      sampleRate,
+      waveType: 'voltage',
+      holdTime: windowSec
+    };
+  }
+
+  /** Sample the waveform at time t for injection into the simulation */
+  sampleOutput(t: number): number {
+    return this.sampleAt(t, this.phase * Math.PI / 180);
+  }
+
+  private sampleAt(t: number, phaseRad: number): number {
+    const omega = 2 * Math.PI * this.frequency;
+    const theta = omega * t + phaseRad;
+    let v = 0;
+
+    switch (this.waveform) {
+      case SignalWaveform.SINE:
+        v = this.amplitude * Math.sin(theta);
+        break;
+      case SignalWaveform.SQUARE:
+        v = Math.sin(theta) >= 0 ? this.amplitude : -this.amplitude;
+        break;
+      case SignalWaveform.TRIANGLE: {
+        const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+        v = norm < 0.5
+          ? this.amplitude * (4 * norm - 1)
+          : this.amplitude * (3 - 4 * norm);
+        break;
+      }
+      case SignalWaveform.SAW: {
+        const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+        v = this.amplitude * (2 * norm - 1);
+        break;
+      }
+      case SignalWaveform.PULSE: {
+        const norm = ((theta / (2 * Math.PI)) % 1 + 1) % 1;
+        v = norm < (this.dutyCycle / 100) ? this.amplitude : -this.amplitude;
+        break;
+      }
+      default:
+        v = this.amplitude * Math.sin(theta);
+    }
+
+    if (this.burstEnabled) {
+      const period = 1 / Math.max(this.frequency, 1);
+      if (t > this.burstCount * period) v = 0;
+    }
+
+    return v + this.offset;
+  }
+}
+ÀÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings¸SignalGeneratorEngine.js ‘¹SignalGeneratorEngine.etsÜ ‘”    ‘” š”   ” ”	 ” ” ” )”! +”' 1”/ 9”0 :–”   ” ” ” ” ” ””   ” ” ”" "‘”  —” 
+” ” %”& 3”' 4”+ 8”, 9•” 
+” ” ” "” #•” 
+” ” ” !” "•” 
+” ” ” ”  •” 
+” ” ”  ” !•” 
+” ” ” ” •” 
+” ” "”! '”" (•” 
+” ” ”  ” !•” 
+” ” 2”  6”! 7•” 
+” ” #”  %”! &•” 
+” ” #”! &”" '•” 
+” ” ” !” "’” Ìª ” Ìª””  ”  ”  ”  &—” !” !” !	” !” !”  !”! !–” "” "” "	” "” "” "’” #” #”” %” %” %” %#™” &” &” &	” &” &” &”  &”) &%”* &&™” '” '” '	” '” '” '”  '”) '%”* '&™” (” (” (	” (” (” (” (”# (”$ ( ™” )” )” )	” )” )” )”  )”) )%”* )&™” *” *” *	” *” *” *” *”! *”" *–” +” +” +	” +” +” +’” ,” ,—” .” .” .” .” .!”" .1”# .2—” /” /” /	” /” /”# /”$ / —” 0” 0” 0	” 0” 0” 0”  0’” 1” 1’” 3”ÌD 3ÌB˜” 4” 4” 4”! 41”# 43”( 4Ì@”* 4ÌB”/ 4ÌO—” 5” 5” 5	” 5” 5”( 5$”) 5%—” 6” 6” 6	” 6” 6”# 6”$ 6 —” 7” 7” 7	” 7” 7”# 7”$ 7 —” 8” 8” 8	” 8” 8” 8” 8–” 9” 9” 9	” 9” 9” 9’” :” :’” <” <—” =” =” =	” =” =” =” =—” >” >” >	” >” >”  >”! >’” ?” ?š” ÌA” ÌA
+” ÌA” ÌA” ÌA#” ÌA$”# ÌA*”$ ÌA+”% ÌA,”& ÌA-’” ÌC”ÌF ÌCÌD’” ÌD
+” ÌDÜ ” ÌE” ÌE” ÌE	” ÌE” ÌE” ÌE” ÌE” ÌE”! ÌE”" ÌE”. ÌE*”2 ÌE.”6 ÌE2”7 ÌE3”ÌE ÌEÌA”ÌF ÌEÌB”ÌL ÌEÌH”ÌQ ÌEÌM”ÌR ÌEÌN’” ÌEÌP” ÌEÌW™” ÌF” ÌF
+” ÌF” ÌF”! ÌF”" ÌF”. ÌF*”0 ÌF,”1 ÌF-Ü 0” ÌG” ÌG” ÌG	” ÌG” ÌG”. ÌG*”/ ÌH”7 ÌH”9 ÌH”= ÌH”> ÌH”ÌL ÌH#”ÌN ÌH%”ÌR ÌH)”ÌS ÌH*”Ìa ÌH8”Ìc ÌI”Ìo ÌI”Ìq ÌI”Ìu ÌI”Ìv ÌI”Ì| ÌI”Ì~ ÌI!”Ì‚ ÌI%”Ìƒ ÌI&”ÌŒ ÌI/”Ì ÌI1”Ì’ ÌI5”Ì“ ÌI6”Ìœ ÌI?”Ì ÌJ”Ì¢ ÌJ
+”Ì£ ÌJ”Ì¨ ÌJ”Ì« ÌJ”Ì¯ ÌJ”Ì° ÌJ”Ì² ÌJ”Ìµ ÌJ”Ì¸ ÌJ ”Ìº ÌJ"”Ì¾ ÌJ&”Ì¿ ÌJ'”ÌÈ ÌJ0”ÌË ÌJ3”ÌÎ ÌJ6”ÌÏ ÌK”ÌĞ ÌK’” ÌL” ÌL’” ÌN
+” ÌN–” ÌO” ÌO” ÌO” ÌO” ÌO” ÌOš” ÌP” ÌP” ÌP”  ÌP”$ ÌP”% ÌP”& ÌP ”- ÌP'”2 ÌP,”3 ÌP-š” ÌQ” ÌQ” ÌQ”  ÌQ”& ÌQ ”' ÌQ!”( ÌQ"”/ ÌQ)”7 ÌQ1”8 ÌQ2š” ÌR” ÌR” ÌR”  ÌR”( ÌR"”) ÌR#”* ÌR$”1 ÌR+”; ÌR5”< ÌR6š” ÌS” ÌS” ÌS”  ÌS”# ÌS”$ ÌS”% ÌS”, ÌS&”6 ÌS0”7 ÌS1š” ÌT” ÌT” ÌT”  ÌT”% ÌT”& ÌT ”' ÌT!”. ÌT(”5 ÌT/”6 ÌT0—” ÌU” ÌU” ÌU” ÌU” ÌU”! ÌU”" ÌU‘”	 ÌV’” ÌW” ÌWš” ÌY” ÌY” ÌY"” ÌY)” ÌY-”  ÌY.”( ÌY6”) ÌY7”* ÌY8”+ ÌY9š” ÌZ” ÌZ” ÌZ” ÌZ"”  ÌZ&”! ÌZ'”* ÌZ0”+ ÌZ1”, ÌZ2”- ÌZ3š” Ì[” Ì[” Ì[” Ì["”  Ì[&”! Ì['”* Ì[0”+ Ì[1”, Ì[2”- Ì[3š” Ì\” Ì\” Ì\” Ì\” Ì\#” Ì\$”$ Ì\*”% Ì\+”& Ì\,”' Ì\-š” Ì]” Ì]” Ì]” Ì]"”  Ì]&”! Ì]'”* Ì]0”+ Ì]1”, Ì]2”- Ì]3š” Ì^” Ì^
+” Ì^” Ì^” Ì^"” Ì^#”" Ì^(”# Ì^)”$ Ì^*”% Ì^+š” Ì_” Ì_” Ì_” Ì_&”# Ì_*”$ Ì_+”0 Ì_7”1 Ì_8”2 Ì_9”3 Ì_:š” Ì`” Ì`” Ì`” Ì`#”! Ì`'”" Ì`(”, Ì`2”- Ì`3”. Ì`4”/ Ì`5’” Ìb” ÌbÜ ” Ìc” Ìc
+” Ìc” Ìc” Ìc” Ìc”) Ìc%”* Ìc&”+ Ìc'”, Ìc(”0 Ìc,”1 Ìc-”; Ìc7”< Ìc8”= Ìc9”> Ìc:”? Ìc;”Ì@ Ìc<Ü ” Ìd” Ìd
+” Ìd” Ìd”! Ìd”$ Ìd ”( Ìd$”) Ìd%”, Ìd(”- Ìd)”1 Ìd-”2 Ìd.”; Ìd7”= Ìd9”> Ìd:”? Ìd;”Ì@ Ìd<˜” Ìe” Ìe
+” Ìe” Ìe”( Ìe$”+ Ìe'”4 Ìe0”5 Ìe1–” Ìf” Ìf
+” Ìf” Ìf” Ìf!” Ìf"–” Ìg” Ìg
+” Ìg” Ìg"” Ìg$” Ìg%” Ìh” Ìh
+” Ìh” Ìh” Ìh” Ìh”# Ìh”& Ìh"”* Ìh&”+ Ìh'”- Ìh)”0 Ìh,”3 Ìh/”4 Ìh0” Ìj” Ìj	” Ìj” Ìj” Ìj” Ìj” Ìj” Ìj” Ìj”) Ìj%”+ Ìj'”, Ìj(”. Ìj*”0 Ìj,œ” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”( Ìk"”) Ìk#”, Ìk&”5 Ìk/”6 Ìk0˜” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl” ÌlŸ” Ìm” Ìm” Ìm” Ìm” Ìm”! Ìm”" Ìm”* Ìm$”+ Ìm%”, Ìm&”. Ìm(”6 Ìm0”7 Ìm1”8 Ìm2”9 Ìm3‘”	 Ìn’” Ìp” Ìp™” Ìq” Ìq” Ìq” Ìq” Ìq”# Ìq”$ Ìq”, Ìq&”- Ìq'”” Ìr” Ìr” Ìr”  ÌrÜ ” Ìs” Ìs” Ìs” Ìs” Ìs”( Ìs"”) Ìs#”/ Ìs)”2 Ìs,”3 Ìs-”4 Ìs.”5 Ìs/”6 Ìs0”: Ìs4”; Ìs5”ÌI ÌsÌC”ÌJ ÌsÌD”ÌK ÌsÌE”ÌL ÌsÌF”ÌX ÌsÌR’” Ìt” Ìt’” Ìu” Ìu” Ìv” Ìv” Ìv” Ìv”" Ìv”# Ìv”0 Ìv*”1 Ìv+”2 Ìv,”6 Ìv0”7 Ìv1”8 Ìv2”9 Ìv3’” Ìw” Ìw”” Ìx” Ìx” Ìx” Ìx”” Ìy” Ìy” Ìy” Ìy’”	 Ìz”
+ Ìz’” Ì{” Ì{’” Ì}”ÌJ Ì}ÌH”” Ì~” Ì~” Ì~” Ì~Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”$ Ì ”% Ì!”* Ì&”- Ì)”1 Ì-”2 Ì.”4 Ì0”7 Ì3”: Ì6”; Ì7”< Ì8’” Ì€” Ì€–” Ì‚
+” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚.” Ìƒ” Ìƒ
+” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”! Ìƒ”$ Ìƒ ”( Ìƒ$”) Ìƒ%”2 Ìƒ.”3 Ìƒ/š” Ì„” Ì„
+” Ì„” Ì„” Ì„” Ì„” Ì„”" Ì„”* Ì„&”+ Ì„'–” Ì…” Ì…” Ì…	” Ì…” Ì…” Ì…–” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡•” Ìˆ” Ìˆ” Ìˆ”  Ìˆ”$ Ìˆ” Ì‰” Ì‰	” Ì‰” Ì‰” Ì‰”" Ì‰”% Ì‰”) Ì‰!”* Ì‰"”- Ì‰%”. Ì‰&”3 Ì‰+”4 Ì‰,”5 Ì‰-’” ÌŠ” ÌŠ•” Ì‹” Ì‹” Ì‹”  Ì‹”& Ì‹ Ü ” ÌŒ” ÌŒ	” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”" ÌŒ”# ÌŒ”' ÌŒ”( ÌŒ ”) ÌŒ!”* ÌŒ"”+ ÌŒ#”/ ÌŒ'”0 ÌŒ(”9 ÌŒ1”: ÌŒ2”; ÌŒ3”< ÌŒ4”= ÌŒ5”ÌA ÌŒ9”ÌB ÌŒ:”ÌK ÌŒÌC”ÌL ÌŒÌD’” Ì” Ì—” Ì” Ì” Ì”  Ì”( Ì"”) Ì#”* Ì$Ü ” Ì” Ì” Ì” Ì” Ì” Ì”$ Ì”' Ì”( Ì ”) Ì!”, Ì$”0 Ì(”1 Ì)”3 Ì+”4 Ì,”5 Ì-”8 Ì0”9 Ì1”< Ì4”= Ì5”> Ì6”ÌA Ì9”ÌB Ì:”ÌC Ì;–” Ì” Ì	” Ì” Ì” Ì” Ì” Ì‘
+” Ì‘” Ì‘” Ì‘” Ì‘”$ Ì‘”' Ì‘”( Ì‘”) Ì‘”, Ì‘"”0 Ì‘&”3 Ì‘)”4 Ì‘*”5 Ì‘+Ÿ” Ì’
+” Ì’” Ì’” Ì’” Ì’”$ Ì’”' Ì’”( Ì’”) Ì’”, Ì’"”- Ì’#”0 Ì’&”4 Ì’*”5 Ì’+”6 Ì’,’” Ì“” Ì“‘” Ì”—” Ì•” Ì•” Ì•”  Ì•”# Ì•”$ Ì•”% Ì•Ü ” Ì–” Ì–” Ì–” Ì–” Ì–” Ì–”$ Ì–”' Ì–”( Ì– ”) Ì–!”, Ì–$”0 Ì–(”1 Ì–)”3 Ì–+”4 Ì–,”5 Ì–-”8 Ì–0”9 Ì–1”< Ì–4”= Ì–5”> Ì–6”ÌA Ì–9”ÌB Ì–:”ÌC Ì–;Ÿ” Ì—” Ì—	” Ì—” Ì—” Ì—”" Ì—”% Ì—”& Ì—”' Ì—”* Ì—"”. Ì—&”1 Ì—)”2 Ì—*”3 Ì—+”4 Ì—,’” Ì˜” Ì˜‘” Ì™—” Ìš” Ìš” Ìš”  Ìš”% Ìš”& Ìš ”' Ìš!Ü ” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›”$ Ì›”' Ì›”( Ì› ”) Ì›!”, Ì›$”0 Ì›(”1 Ì›)”3 Ì›+”4 Ì›,”5 Ì›-”8 Ì›0”9 Ì›1”< Ì›4”= Ì›5”> Ì›6”ÌA Ì›9”ÌB Ì›:”ÌC Ì›;Ü ” Ìœ” Ìœ	” Ìœ” Ìœ” Ìœ” Ìœ”  Ìœ”! Ìœ”* Ìœ"”- Ìœ%”0 Ìœ(”1 Ìœ)”2 Ìœ*”3 Ìœ+”4 Ìœ,”8 Ìœ0”9 Ìœ1”ÌB Ìœ:”ÌC Ìœ;”ÌD Ìœ<”ÌE Ìœ=”ÌF Ìœ>”ÌJ ÌœÌB”ÌK ÌœÌC”ÌT ÌœÌL”ÌU ÌœÌM’” Ì” Ì‘” Ì‘” ÌŸ” Ì ” Ì 	” Ì ” Ì ” Ì ”" Ì ”% Ì ”) Ì !”* Ì "”- Ì %”. Ì &”3 Ì +”4 Ì ,”5 Ì -‘”	 Ì¡–” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£Ü ” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤”# Ì¤”$ Ì¤”' Ì¤!”( Ì¤"”, Ì¤&”- Ì¤'”6 Ì¤0”8 Ì¤2”9 Ì¤3”: Ì¤4”; Ì¤5™” Ì¥” Ì¥
+” Ì¥” Ì¥” Ì¥” Ì¥”# Ì¥”& Ì¥ ”, Ì¥&•” Ì¥(” Ì¥)” Ì¥,” Ì¥-” Ì¥.‘”	 Ì¦˜” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨’” Ì©” Ì©‘” ÌªÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍwÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍwÔrM”¤type¥start£end¤nameªIdentifierÍÍ-µSignalGeneratorEngineÀÔrN”¤type¥start£end¤body©ClassBodyÍ.ÍwÜ ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ5ÍÖÂÂMªIdentifierÍ5Í@«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ@ÍÖÀÂÂÂN®BlockStatementÍCÍÖœÔrQ”¤type¥start£endªexpression³ExpressionStatementÍNÍrÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍNÍq¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍNÍ[ÔrT“¤type¥start£end®ThisExpressionÍNÍRMªIdentifierÍSÍ[¨waveformÂÂS°MemberExpressionÍ^ÍqMªIdentifierÍ^Íl®SignalWaveformMªIdentifierÍmÍq¤SINEÂÂQ³ExpressionStatementÍ|Í’R´AssignmentExpressionÍ|Í‘¡=S°MemberExpressionÍ|ÍŠT®ThisExpressionÍ|Í€MªIdentifierÍÍŠ©frequencyÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍÍ‘Íè¤1000Q³ExpressionStatementÍœÍ±R´AssignmentExpressionÍœÍ°¡=S°MemberExpressionÍœÍªT®ThisExpressionÍœÍ MªIdentifierÍ¡Íª©amplitudeÂÂU§LiteralÍ­Í°Ë@
+ffffff£3.3Q³ExpressionStatementÍ»ÍÎR´AssignmentExpressionÍ»ÍÍ¡=S°MemberExpressionÍ»ÍÆT®ThisExpressionÍ»Í¿MªIdentifierÍÀÍÆ¦offsetÂÂU§LiteralÍÉÍÍË?úffffff¤1.65Q³ExpressionStatementÍØÍìR´AssignmentExpressionÍØÍë¡=S°MemberExpressionÍØÍæT®ThisExpressionÍØÍÜMªIdentifierÍİÍæ©dutyCycleÂÂU§LiteralÍéÍë2¢50Q³ExpressionStatementÍöÍR´AssignmentExpressionÍöÍ¡=S°MemberExpressionÍöÍ T®ThisExpressionÍöÍúMªIdentifierÍûÍ ¥phaseÂÂU§LiteralÍÍ ¡0Q³ExpressionStatementÍÍ)R´AssignmentExpressionÍÍ(¡=S°MemberExpressionÍÍ T®ThisExpressionÍÍMªIdentifierÍÍ ¬burstEnabledÂÂU§LiteralÍ#Í(Â¥falseQ³ExpressionStatementÍ3ÍGR´AssignmentExpressionÍ3ÍF¡=S°MemberExpressionÍ3ÍBT®ThisExpressionÍ3Í7MªIdentifierÍ8ÍBªburstCountÂÂU§LiteralÍEÍF¡5Q³ExpressionStatementÍQÍjR´AssignmentExpressionÍQÍi¡=S°MemberExpressionÍQÍbT®ThisExpressionÍQÍUMªIdentifierÍVÍb¬analogEngineÂÂU§LiteralÍeÍiÀ¤nullQ³ExpressionStatementÍtÍR´AssignmentExpressionÍtÍŒ¡=S°MemberExpressionÍtÍ‡T®ThisExpressionÍtÍxMªIdentifierÍyÍ‡®connectedNodeAÂÂU§LiteralÍŠÍŒ ¢''Q³ExpressionStatementÍ—Í±R´AssignmentExpressionÍ—Í°¡=S°MemberExpressionÍ—ÍªT®ThisExpressionÍ—Í›MªIdentifierÍœÍª®connectedNodeBÂÂU§LiteralÍ­Í°¡0£'0'Q³ExpressionStatementÍ»ÍÏR´AssignmentExpressionÍ»ÍÎ¡=S°MemberExpressionÍ»ÍÆT®ThisExpressionÍ»Í¿MªIdentifierÍÀÍÆ¦activeÂÂU§LiteralÍÉÍÎÂ¥falseO°MethodDefinitionÍÜÍ;ÂÂMªIdentifierÍÜÍç«setWaveform¦methodP²FunctionExpressionÍçÍ;ÀÂÂÂ‘MªIdentifierÍèÍğ¨waveformN®BlockStatementÍòÍ;’Q³ExpressionStatementÍıÍR´AssignmentExpressionÍıÍ¡=S°MemberExpressionÍıÍ
+T®ThisExpressionÍıÍMªIdentifierÍÍ
+¨waveformÂÂMªIdentifierÍÍ¨waveformQ³ExpressionStatementÍ Í4ÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ Í3S°MemberExpressionÍ Í1T®ThisExpressionÍ Í$MªIdentifierÍ%Í1¬syncToAnalogÂÂÂO°MethodDefinitionÍAÍGÂÂMªIdentifierÍAÍJ©setParams¦methodP²FunctionExpressionÍJÍGÀÂÂÂ‘MªIdentifierÍKÍQ¦paramsN®BlockStatementÍSÍG–Q³ExpressionStatementÍ^Í€R´AssignmentExpressionÍ^Í¡=S°MemberExpressionÍ^ÍlT®ThisExpressionÍ^ÍbMªIdentifierÍcÍl©frequencyÂÂS°MemberExpressionÍoÍMªIdentifierÍoÍu¦paramsMªIdentifierÍvÍ©frequencyÂÂQ³ExpressionStatementÍŠÍ¬R´AssignmentExpressionÍŠÍ«¡=S°MemberExpressionÍŠÍ˜T®ThisExpressionÍŠÍMªIdentifierÍÍ˜©amplitudeÂÂS°MemberExpressionÍ›Í«MªIdentifierÍ›Í¡¦paramsMªIdentifierÍ¢Í«©amplitudeÂÂQ³ExpressionStatementÍ¶ÍÒR´AssignmentExpressionÍ¶ÍÑ¡=S°MemberExpressionÍ¶ÍÁT®ThisExpressionÍ¶ÍºMªIdentifierÍ»ÍÁ¦offsetÂÂS°MemberExpressionÍÄÍÑMªIdentifierÍÄÍÊ¦paramsMªIdentifierÍËÍÑ¦offsetÂÂQ³ExpressionStatementÍÜÍşR´AssignmentExpressionÍÜÍı¡=S°MemberExpressionÍÜÍêT®ThisExpressionÍÜÍàMªIdentifierÍáÍê©dutyCycleÂÂS°MemberExpressionÍíÍıMªIdentifierÍíÍó¦paramsMªIdentifierÍôÍı©dutyCycleÂÂQ³ExpressionStatementÍÍ"R´AssignmentExpressionÍÍ!¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ¥phaseÂÂS°MemberExpressionÍÍ!MªIdentifierÍÍ¦paramsMªIdentifierÍÍ!¥phaseÂÂQ³ExpressionStatementÍ,Í@V®CallExpressionÍ,Í?S°MemberExpressionÍ,Í=T®ThisExpressionÍ,Í0MªIdentifierÍ1Í=¬syncToAnalogÂÂÂO°MethodDefinitionÍMÍ¾ÂÂMªIdentifierÍMÍY¬setBurstMode¦methodP²FunctionExpressionÍYÍ¾ÀÂÂÂ’MªIdentifierÍZÍa§enabledÔrW•¤type¥start£end¤left¥right±AssignmentPatternÍcÍlMªIdentifierÍcÍh¥countU§LiteralÍkÍl¡5N®BlockStatementÍnÍ¾’Q³ExpressionStatementÍyÍ•R´AssignmentExpressionÍyÍ”¡=S°MemberExpressionÍyÍŠT®ThisExpressionÍyÍ}MªIdentifierÍ~ÍŠ¬burstEnabledÂÂMªIdentifierÍÍ”§enabledQ³ExpressionStatementÍŸÍ·R´AssignmentExpressionÍŸÍ¶¡=S°MemberExpressionÍŸÍ®T®ThisExpressionÍŸÍ£MªIdentifierÍ¤Í®ªburstCountÂÂMªIdentifierÍ±Í¶¥countO°MethodDefinitionÍ
+ÍñÂÂMªIdentifierÍ
+Í°connectToCircuit¦methodP²FunctionExpressionÍÍñÀÂÂÂ“MªIdentifierÍÍ'¬analogEngineMªIdentifierÍ)Í.¥nodeAMªIdentifierÍ0Í5¥nodeBN®BlockStatementÍ7Íñ•Q³ExpressionStatementÍBÍcR´AssignmentExpressionÍBÍb¡=S°MemberExpressionÍBÍST®ThisExpressionÍBÍFMªIdentifierÍGÍS¬analogEngineÂÂMªIdentifierÍVÍb¬analogEngineQ³ExpressionStatementÍmÍ‰R´AssignmentExpressionÍmÍˆ¡=S°MemberExpressionÍmÍ€T®ThisExpressionÍmÍqMªIdentifierÍrÍ€®connectedNodeAÂÂMªIdentifierÍƒÍˆ¥nodeAQ³ExpressionStatementÍ“Í¯R´AssignmentExpressionÍ“Í®¡=S°MemberExpressionÍ“Í¦T®ThisExpressionÍ“Í—MªIdentifierÍ˜Í¦®connectedNodeBÂÂMªIdentifierÍ©Í®¥nodeBQ³ExpressionStatementÍ¹ÍÌR´AssignmentExpressionÍ¹ÍË¡=S°MemberExpressionÍ¹ÍÄT®ThisExpressionÍ¹Í½MªIdentifierÍ¾ÍÄ¦activeÂÂU§LiteralÍÇÍËÃ¤trueQ³ExpressionStatementÍÖÍêV®CallExpressionÍÖÍéS°MemberExpressionÍÖÍçT®ThisExpressionÍÖÍÚMªIdentifierÍÛÍç¬syncToAnalogÂÂÂO°MethodDefinitionÍ÷ÍXÂÂMªIdentifierÍ÷ÍµdisconnectFromCircuit¦methodP²FunctionExpressionÍÍXÀÂÂÂN®BlockStatementÍÍX’Q³ExpressionStatementÍÍ.R´AssignmentExpressionÍÍ-¡=S°MemberExpressionÍÍ%T®ThisExpressionÍÍMªIdentifierÍÍ%¦activeÂÂU§LiteralÍ(Í-Â¥falseQ³ExpressionStatementÍ8ÍQR´AssignmentExpressionÍ8ÍP¡=S°MemberExpressionÍ8ÍIT®ThisExpressionÍ8Í<MªIdentifierÍ=ÍI¬analogEngineÂÂU§LiteralÍLÍPÀ¤nullO°MethodDefinitionÍ^Í€ÂÂMªIdentifierÍ^Íf¨isActive¦methodP²FunctionExpressionÍfÍ€ÀÂÂÂN®BlockStatementÍiÍ€‘ÔrX”¤type¥start£end¨argument¯ReturnStatementÍkÍ~S°MemberExpressionÍrÍ}T®ThisExpressionÍrÍvMªIdentifierÍwÍ}¦activeÂÂO°MethodDefinitionÍÎÍTÂÂMªIdentifierÍÎÍÚ¬syncToAnalog¦methodP²FunctionExpressionÍÚÍTÀÂÂÂN®BlockStatementÍİÍT“ÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍèÍHÔrZ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍìÍ2Z±LogicalExpressionÍìÍÔr[–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍìÍø¡!ÃS°MemberExpressionÍíÍøT®ThisExpressionÍíÍñMªIdentifierÍòÍø¦activeÂÂ¢||[¯UnaryExpressionÍüÍ¡!ÃS°MemberExpressionÍıÍT®ThisExpressionÍıÍMªIdentifierÍÍ¬analogEngineÂÂ¢||Z°BinaryExpressionÍÍ2S°MemberExpressionÍÍ,S°MemberExpressionÍÍ%T®ThisExpressionÍÍMªIdentifierÍÍ%®connectedNodeAÂÂMªIdentifierÍ&Í,¦lengthÂÂ£===U§LiteralÍ1Í2 ¡0X¯ReturnStatementÍAÍHÀÀÔr\•¤type¥start£end¬declarations¤kind³VariableDeclarationÍRÍ{‘Ôr]•¤type¥start£end¢id¤init²VariableDeclaratorÍXÍzMªIdentifierÍXÍd¬waveformNameV®CallExpressionÍgÍzS°MemberExpressionÍgÍxT®ThisExpressionÍgÍkMªIdentifierÍlÍx¬waveformNameÂÂÂ¥constQ³ExpressionStatementÍ…ÍMV®CallExpressionÍ…ÍLS°MemberExpressionÍ…Í«S°MemberExpressionÍ…Í–T®ThisExpressionÍ…Í‰MªIdentifierÍŠÍ–¬analogEngineÂÂMªIdentifierÍ—Í«´registerSignalSourceÂÂ™U§LiteralÍ¬Í´¦SIGGEN¨'SIGGEN'S°MemberExpressionÍ¶ÍÉT®ThisExpressionÍ¶ÍºMªIdentifierÍ»ÍÉ®connectedNodeAÂÂS°MemberExpressionÍËÍŞT®ThisExpressionÍËÍÏMªIdentifierÍĞÍŞ®connectedNodeBÂÂMªIdentifierÍàÍì¬waveformNameS°MemberExpressionÍîÍùT®ThisExpressionÍîÍòMªIdentifierÍóÍù¦offsetÂÂS°MemberExpressionÍûÍ	T®ThisExpressionÍûÍÿMªIdentifierÍ Í	©amplitudeÂÂS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ©frequencyÂÂZ°BinaryExpressionÍÍ5Z°BinaryExpressionÍÍ/S°MemberExpressionÍÍ%T®ThisExpressionÍÍMªIdentifierÍ Í%¥phaseÂÂ¡*S°MemberExpressionÍ(Í/MªIdentifierÍ(Í,¤MathMªIdentifierÍ-Í/¢PIÂÂ¡/U§LiteralÍ2Í5Ì´£180Z°BinaryExpressionÍ7ÍKS°MemberExpressionÍ7ÍET®ThisExpressionÍ7Í;MªIdentifierÍ<ÍE©dutyCycleÂÂ¡/U§LiteralÍHÍKÌd£100ÂO°MethodDefinitionÍZÍ	àÂÂMªIdentifierÍZÍf¬waveformName¦methodP²FunctionExpressionÍfÍ	àÀÂÂÂN®BlockStatementÍiÍ	à‘Ôr^•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍtÍ	ÙS°MemberExpressionÍ|Í‰T®ThisExpressionÍ|Í€MªIdentifierÍÍ‰¨waveformÂÂ–Ôr_•¤type¥start£endªconsequent¤testªSwitchCaseÍšÍÁ‘X¯ReturnStatementÍ´ÍÁU§LiteralÍ»ÍÀ£sin¥'sin'S°MemberExpressionÍŸÍ²MªIdentifierÍŸÍ­®SignalWaveformMªIdentifierÍ®Í²¤SINEÂÂ_ªSwitchCaseÍÏÍû‘X¯ReturnStatementÍëÍûU§LiteralÍòÍú¦square¨'square'S°MemberExpressionÍÔÍéMªIdentifierÍÔÍâ®SignalWaveformMªIdentifierÍãÍé¦SQUAREÂÂ_ªSwitchCaseÍ		Í	9‘X¯ReturnStatementÍ	'Í	9U§LiteralÍ	.Í	8¨triangleª'triangle'S°MemberExpressionÍ	Í	%MªIdentifierÍ	Í	®SignalWaveformMªIdentifierÍ	Í	%¨TRIANGLEÂÂ_ªSwitchCaseÍ	GÍ	r‘X¯ReturnStatementÍ	`Í	rU§LiteralÍ	gÍ	q¨sawtoothª'sawtooth'S°MemberExpressionÍ	LÍ	^MªIdentifierÍ	LÍ	Z®SignalWaveformMªIdentifierÍ	[Í	^£SAWÂÂ_ªSwitchCaseÍ	€Í	ª‘X¯ReturnStatementÍ	›Í	ªU§LiteralÍ	¢Í	©¥pulse§'pulse'S°MemberExpressionÍ	…Í	™MªIdentifierÍ	…Í	“®SignalWaveformMªIdentifierÍ	”Í	™¥PULSEÂÂ_ªSwitchCaseÍ	¸Í	Î‘X¯ReturnStatementÍ	ÁÍ	ÎU§LiteralÍ	ÈÍ	Í£sin¥'sin'ÀO°MethodDefinitionÍ	æÍ
+ÂÂMªIdentifierÍ	æÍ	ñ«getWaveform¦methodP²FunctionExpressionÍ	ñÍ
+ÀÂÂÂN®BlockStatementÍ	ôÍ
+‘X¯ReturnStatementÍ	öÍ
+S°MemberExpressionÍ	ıÍ
+
+T®ThisExpressionÍ	ıÍ
+MªIdentifierÍ
+Í
+
+¨waveformÂÂO°MethodDefinitionÍ
+Í
+<ÂÂMªIdentifierÍ
+Í
+¬getFrequency¦methodP²FunctionExpressionÍ
+Í
+<ÀÂÂÂN®BlockStatementÍ
+"Í
+<‘X¯ReturnStatementÍ
+$Í
+:S°MemberExpressionÍ
++Í
+9T®ThisExpressionÍ
++Í
+/MªIdentifierÍ
+0Í
+9©frequencyÂÂO°MethodDefinitionÍ
+BÍ
+kÂÂMªIdentifierÍ
+BÍ
+N¬getAmplitude¦methodP²FunctionExpressionÍ
+NÍ
+kÀÂÂÂN®BlockStatementÍ
+QÍ
+k‘X¯ReturnStatementÍ
+SÍ
+iS°MemberExpressionÍ
+ZÍ
+hT®ThisExpressionÍ
+ZÍ
+^MªIdentifierÍ
+_Í
+h©amplitudeÂÂO°MethodDefinitionÍ
+qÍ
+”ÂÂMªIdentifierÍ
+qÍ
+z©getOffset¦methodP²FunctionExpressionÍ
+zÍ
+”ÀÂÂÂN®BlockStatementÍ
+}Í
+”‘X¯ReturnStatementÍ
+Í
+’S°MemberExpressionÍ
+†Í
+‘T®ThisExpressionÍ
+†Í
+ŠMªIdentifierÍ
+‹Í
+‘¦offsetÂÂO°MethodDefinitionÍ
+šÍ
+ÃÂÂMªIdentifierÍ
+šÍ
+¦¬getDutyCycle¦methodP²FunctionExpressionÍ
+¦Í
+ÃÀÂÂÂN®BlockStatementÍ
+©Í
+Ã‘X¯ReturnStatementÍ
+«Í
+ÁS°MemberExpressionÍ
+²Í
+ÀT®ThisExpressionÍ
+²Í
+¶MªIdentifierÍ
+·Í
+À©dutyCycleÂÂO°MethodDefinitionÍ
+ÉÍ
+êÂÂMªIdentifierÍ
+ÉÍ
+Ñ¨getPhase¦methodP²FunctionExpressionÍ
+ÑÍ
+êÀÂÂÂN®BlockStatementÍ
+ÔÍ
+ê‘X¯ReturnStatementÍ
+ÖÍ
+èS°MemberExpressionÍ
+İÍ
+çT®ThisExpressionÍ
+İÍ
+áMªIdentifierÍ
+âÍ
+ç¥phaseÂÂO°MethodDefinitionÍ
+ğÍÂÂMªIdentifierÍ
+ğÍ
+ÿ¯getBurstEnabled¦methodP²FunctionExpressionÍ
+ÿÍÀÂÂÂN®BlockStatementÍÍ‘X¯ReturnStatementÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ¬burstEnabledÂÂO°MethodDefinitionÍ%ÍPÂÂMªIdentifierÍ%Í2­getBurstCount¦methodP²FunctionExpressionÍ2ÍPÀÂÂÂN®BlockStatementÍ5ÍP‘X¯ReturnStatementÍ7ÍNS°MemberExpressionÍ>ÍMT®ThisExpressionÍ>ÍBMªIdentifierÍCÍMªburstCountÂÂO°MethodDefinitionÍVÍÂÂMªIdentifierÍVÍb¬generateWave¦methodP²FunctionExpressionÍbÍÀÂÂÂN®BlockStatementÍeÍ˜\³VariableDeclarationÍpÍ¨‘]²VariableDeclaratorÍvÍ§MªIdentifierÍvÍ}§periodsYµConditionalExpressionÍ€Í§S°MemberExpressionÍ€Í‘T®ThisExpressionÍ€Í„MªIdentifierÍ…Í‘¬burstEnabledÂÂS°MemberExpressionÍ”Í£T®ThisExpressionÍ”Í˜MªIdentifierÍ™Í£ªburstCountÂÂU§LiteralÍ¦Í§¡4¥const\³VariableDeclarationÍ²Íê‘]²VariableDeclaratorÍ¸ÍéMªIdentifierÍ¸ÍÁ©windowSecZ°BinaryExpressionÍÄÍéMªIdentifierÍÄÍË§periods¡/V®CallExpressionÍÎÍéS°MemberExpressionÍÎÍÖMªIdentifierÍÎÍÒ¤MathMªIdentifierÍÓÍÖ£maxÂÂ’S°MemberExpressionÍ×ÍåT®ThisExpressionÍ×ÍÛMªIdentifierÍÜÍå©frequencyÂÂU§LiteralÍçÍè¡1Â¥const\³VariableDeclarationÍôÍ!‘]²VariableDeclaratorÍúÍ MªIdentifierÍúÍªsampleRateZ°BinaryExpressionÍÍ MªIdentifierÍÍ­SAMPLE_POINTS¡/MªIdentifierÍÍ ©windowSec¥const\³VariableDeclarationÍ+Í?‘]²VariableDeclaratorÍ1Í>MªIdentifierÍ1Í9¨timeAxisÔr`”¤type¥start£end¨elements¯ArrayExpressionÍ<Í>¥const\³VariableDeclarationÍIÍ`‘]²VariableDeclaratorÍOÍ_MªIdentifierÍOÍZ«voltageAxis`¯ArrayExpressionÍ]Í_¥const\³VariableDeclarationÍjÍ–‘]²VariableDeclaratorÍpÍ•MªIdentifierÍpÍx¨phaseRadZ°BinaryExpressionÍ{Í•Z°BinaryExpressionÍ{ÍS°MemberExpressionÍ{Í…T®ThisExpressionÍ{ÍMªIdentifierÍ€Í…¥phaseÂÂ¡*S°MemberExpressionÍˆÍMªIdentifierÍˆÍŒ¤MathMªIdentifierÍÍ¢PIÂÂ¡/U§LiteralÍ’Í•Ì´£180¥constÔra—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ Íf\³VariableDeclarationÍ¥Í®‘]²VariableDeclaratorÍ©Í®MªIdentifierÍ©Íª¡iU§LiteralÍ­Í® ¡0£letZ°BinaryExpressionÍ°ÍÁMªIdentifierÍ°Í±¡i¡<MªIdentifierÍ´ÍÁ­SAMPLE_POINTS[°UpdateExpressionÍÃÍÆ¢++ÂMªIdentifierÍÃÍÄ¡iN®BlockStatementÍÈÍf“\³VariableDeclarationÍ×Í‘]²VariableDeclaratorÍİÍ MªIdentifierÍİÍŞ¡tZ°BinaryExpressionÍáÍ Z°BinaryExpressionÍâÍóMªIdentifierÍâÍã¡i¡/MªIdentifierÍæÍó­SAMPLE_POINTS¡*MªIdentifierÍ÷Í ©windowSec¥constQ³ExpressionStatementÍÍ V®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¨timeAxisMªIdentifierÍÍ¤pushÂÂ‘MªIdentifierÍÍ¡tÂQ³ExpressionStatementÍ.Í[V®CallExpressionÍ.ÍZS°MemberExpressionÍ.Í>MªIdentifierÍ.Í9«voltageAxisMªIdentifierÍ:Í>¤pushÂÂ‘V®CallExpressionÍ?ÍYS°MemberExpressionÍ?ÍLT®ThisExpressionÍ?ÍCMªIdentifierÍDÍL¨sampleAtÂÂ’MªIdentifierÍMÍN¡tMªIdentifierÍPÍX¨phaseRadÂÂX¯ReturnStatementÍpÍûÔrb”¤type¥start£endªproperties°ObjectExpressionÍwÍú™Ôrc™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ†Í§ÂÂÂMªIdentifierÍ†ÍŒ¦waveIdV®CallExpressionÍÍ§S°MemberExpressionÍÍMªIdentifierÍÍ”¦IdUtilMªIdentifierÍ•Í¨generateÂÂ‘U§LiteralÍÍ¦¦siggen¨'siggen'Â¤initc¨PropertyÍ¶ÍÊÂÂÂMªIdentifierÍ¶Í¿©probeNameU§LiteralÍÁÍÊ§SIG_OUT©'SIG_OUT'¤initc¨PropertyÍÙÍ%ÂÂÂMªIdentifierÍÙÍà§netNameYµConditionalExpressionÍâÍ%Z°BinaryExpressionÍâÍ S°MemberExpressionÍâÍüS°MemberExpressionÍâÍõT®ThisExpressionÍâÍæMªIdentifierÍçÍõ®connectedNodeAÂÂMªIdentifierÍöÍü¦lengthÂÂ¡>U§LiteralÍÿÍ  ¡0S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ®connectedNodeAÂÂU§LiteralÍÍ%ªSIGGEN_OUT¬'SIGGEN_OUT'¤initÔrd™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ4Í<ÂÃÂMªIdentifierÍ4Í<¨timeAxis¤initMªIdentifierÍ4Í<¨timeAxisd¨PropertyÍKÍVÂÃÂMªIdentifierÍKÍV«voltageAxis¤initMªIdentifierÍKÍV«voltageAxisc¨PropertyÍeÍ’ÂÂÂMªIdentifierÍeÍp«currentAxisV®CallExpressionÍrÍ’S°MemberExpressionÍrÍÔre•¤type¥start£end¦callee©arguments­NewExpressionÍrÍŠMªIdentifierÍvÍ{¥Array‘MªIdentifierÍ|Í‰­SAMPLE_POINTSMªIdentifierÍ‹Í¤fillÂÂ‘U§LiteralÍÍ‘ ¡0Â¤initd¨PropertyÍ¡Í«ÂÃÂMªIdentifierÍ¡Í«ªsampleRate¤initMªIdentifierÍ¡Í«ªsampleRatec¨PropertyÍºÍÍÂÂÂMªIdentifierÍºÍÂ¨waveTypeU§LiteralÍÄÍÍ§voltage©'voltage'¤initc¨PropertyÍÜÍïÂÂÂMªIdentifierÍÜÍä¨holdTimeMªIdentifierÍæÍï©windowSec¤initO°MethodDefinitionÍTÍªÂÂMªIdentifierÍTÍ`¬sampleOutput¦methodP²FunctionExpressionÍ`ÍªÀÂÂÂ‘MªIdentifierÍaÍb¡tN®BlockStatementÍdÍª‘X¯ReturnStatementÍoÍ£V®CallExpressionÍvÍ¢S°MemberExpressionÍvÍƒT®ThisExpressionÍvÍzMªIdentifierÍ{Íƒ¨sampleAtÂÂ’MªIdentifierÍ„Í…¡tZ°BinaryExpressionÍ‡Í¡Z°BinaryExpressionÍ‡Í›S°MemberExpressionÍ‡Í‘T®ThisExpressionÍ‡Í‹MªIdentifierÍŒÍ‘¥phaseÂÂ¡*S°MemberExpressionÍ”Í›MªIdentifierÍ”Í˜¤MathMªIdentifierÍ™Í›¢PIÂÂ¡/U§LiteralÍÍ¡Ì´£180ÂO°MethodDefinitionÍ°ÍtÂÂMªIdentifierÍ°Í¸¨sampleAt¦methodP²FunctionExpressionÍ¸ÍtÀÂÂÂ’MªIdentifierÍ¹Íº¡tMªIdentifierÍ¼ÍÄ¨phaseRadN®BlockStatementÍÆÍt–\³VariableDeclarationÍÑÍü‘]²VariableDeclaratorÍ×ÍûMªIdentifierÍ×ÍÜ¥omegaZ°BinaryExpressionÍßÍûZ°BinaryExpressionÍßÍêU§LiteralÍßÍà¡2¡*S°MemberExpressionÍãÍêMªIdentifierÍãÍç¤MathMªIdentifierÍèÍê¢PIÂÂ¡*S°MemberExpressionÍíÍûT®ThisExpressionÍíÍñMªIdentifierÍòÍû©frequencyÂÂ¥const\³VariableDeclarationÍÍ)‘]²VariableDeclaratorÍÍ(MªIdentifierÍÍ¥thetaZ°BinaryExpressionÍÍ(Z°BinaryExpressionÍÍMªIdentifierÍÍ¥omega¡*MªIdentifierÍÍ¡t¡+MªIdentifierÍ Í(¨phaseRad¥const\³VariableDeclarationÍ3Í=‘]²VariableDeclaratorÍ7Í<MªIdentifierÍ7Í8¡vU§LiteralÍ;Í< ¡0£let^¯SwitchStatementÍGÍ›S°MemberExpressionÍOÍ\T®ThisExpressionÍOÍSMªIdentifierÍTÍ\¨waveformÂÂ–_ªSwitchCaseÍmÍÕ’Q³ExpressionStatementÍ˜Í½R´AssignmentExpressionÍ˜Í¼¡=MªIdentifierÍ˜Í™¡vZ°BinaryExpressionÍœÍ¼S°MemberExpressionÍœÍªT®ThisExpressionÍœÍ MªIdentifierÍ¡Íª©amplitudeÂÂ¡*V®CallExpressionÍ­Í¼S°MemberExpressionÍ­ÍµMªIdentifierÍ­Í±¤MathMªIdentifierÍ²Íµ£sinÂÂ‘MªIdentifierÍ¶Í»¥thetaÂÔrf”¤type¥start£end¥label®BreakStatementÍÏÍÕÀS°MemberExpressionÍrÍ…MªIdentifierÍrÍ€®SignalWaveformMªIdentifierÍÍ…¤SINEÂÂ_ªSwitchCaseÍãÍd’Q³ExpressionStatementÍÍLR´AssignmentExpressionÍÍK¡=MªIdentifierÍÍ¡vYµConditionalExpressionÍÍKZ°BinaryExpressionÍÍ(V®CallExpressionÍÍ#S°MemberExpressionÍÍMªIdentifierÍÍ¤MathMªIdentifierÍÍ£sinÂÂ‘MªIdentifierÍÍ"¥thetaÂ¢>=U§LiteralÍ'Í( ¡0S°MemberExpressionÍ+Í9T®ThisExpressionÍ+Í/MªIdentifierÍ0Í9©amplitudeÂÂ[¯UnaryExpressionÍ<ÍK¡-ÃS°MemberExpressionÍ=ÍKT®ThisExpressionÍ=ÍAMªIdentifierÍBÍK©amplitudeÂÂf®BreakStatementÍ^ÍdÀS°MemberExpressionÍèÍıMªIdentifierÍèÍö®SignalWaveformMªIdentifierÍ÷Íı¦SQUAREÂÂ_ªSwitchCaseÍrÍŒ‘N®BlockStatementÍÍŒ“\³VariableDeclarationÍ£ÍÖ‘]²VariableDeclaratorÍ©ÍÕMªIdentifierÍ©Í­¤normZ°BinaryExpressionÍ°ÍÕZ°BinaryExpressionÍ±ÍĞZ°BinaryExpressionÍ±ÍÌZ°BinaryExpressionÍ²ÍÇMªIdentifierÍ²Í·¥theta¡/Z°BinaryExpressionÍ»ÍÆU§LiteralÍ»Í¼¡2¡*S°MemberExpressionÍ¿ÍÆMªIdentifierÍ¿ÍÃ¤MathMªIdentifierÍÄÍÆ¢PIÂÂ¡%U§LiteralÍËÍÌ¡1¡+U§LiteralÍÏÍĞ¡1¡%U§LiteralÍÔÍÕ¡1¥constQ³ExpressionStatementÍèÍeR´AssignmentExpressionÍèÍd¡=MªIdentifierÍèÍé¡vYµConditionalExpressionÍìÍdZ°BinaryExpressionÍìÍöMªIdentifierÍìÍğ¤norm¡<U§LiteralÍóÍöË?à      £0.5Z°BinaryExpressionÍÍ-S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ©amplitudeÂÂ¡*Z°BinaryExpressionÍ Í,Z°BinaryExpressionÍ Í(U§LiteralÍ Í!¡4¡*MªIdentifierÍ$Í(¤norm¡-U§LiteralÍ+Í,¡1Z°BinaryExpressionÍEÍdS°MemberExpressionÍEÍST®ThisExpressionÍEÍIMªIdentifierÍJÍS©amplitudeÂÂ¡*Z°BinaryExpressionÍWÍcU§LiteralÍWÍX¡3¡-Z°BinaryExpressionÍ[ÍcU§LiteralÍ[Í\¡4¡*MªIdentifierÍ_Íc¤normf®BreakStatementÍwÍ}ÀS°MemberExpressionÍwÍMªIdentifierÍwÍ…®SignalWaveformMªIdentifierÍ†Í¨TRIANGLEÂÂ_ªSwitchCaseÍšÍV‘N®BlockStatementÍ³ÍV“\³VariableDeclarationÍÆÍù‘]²VariableDeclaratorÍÌÍøMªIdentifierÍÌÍĞ¤normZ°BinaryExpressionÍÓÍøZ°BinaryExpressionÍÔÍóZ°BinaryExpressionÍÔÍïZ°BinaryExpressionÍÕÍêMªIdentifierÍÕÍÚ¥theta¡/Z°BinaryExpressionÍŞÍéU§LiteralÍŞÍß¡2¡*S°MemberExpressionÍâÍéMªIdentifierÍâÍæ¤MathMªIdentifierÍçÍé¢PIÂÂ¡%U§LiteralÍîÍï¡1¡+U§LiteralÍòÍó¡1¡%U§LiteralÍ÷Íø¡1¥constQ³ExpressionStatementÍÍ/R´AssignmentExpressionÍÍ.¡=MªIdentifierÍÍ¡vZ°BinaryExpressionÍÍ.S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ©amplitudeÂÂ¡*Z°BinaryExpressionÍ!Í-Z°BinaryExpressionÍ!Í)U§LiteralÍ!Í"¡2¡*MªIdentifierÍ%Í)¤norm¡-U§LiteralÍ,Í-¡1f®BreakStatementÍAÍGÀS°MemberExpressionÍŸÍ±MªIdentifierÍŸÍ­®SignalWaveformMªIdentifierÍ®Í±£SAWÂÂ_ªSwitchCaseÍdÍC‘N®BlockStatementÍÍC“\³VariableDeclarationÍ’ÍÅ‘]²VariableDeclaratorÍ˜ÍÄMªIdentifierÍ˜Íœ¤normZ°BinaryExpressionÍŸÍÄZ°BinaryExpressionÍ Í¿Z°BinaryExpressionÍ Í»Z°BinaryExpressionÍ¡Í¶MªIdentifierÍ¡Í¦¥theta¡/Z°BinaryExpressionÍªÍµU§LiteralÍªÍ«¡2¡*S°MemberExpressionÍ®ÍµMªIdentifierÍ®Í²¤MathMªIdentifierÍ³Íµ¢PIÂÂ¡%U§LiteralÍºÍ»¡1¡+U§LiteralÍ¾Í¿¡1¡%U§LiteralÍÃÍÄ¡1¥constQ³ExpressionStatementÍ×ÍR´AssignmentExpressionÍ×Í¡=MªIdentifierÍ×ÍØ¡vYµConditionalExpressionÍÛÍZ°BinaryExpressionÍÛÍøMªIdentifierÍÛÍß¤norm¡<Z°BinaryExpressionÍãÍ÷S°MemberExpressionÍãÍñT®ThisExpressionÍãÍçMªIdentifierÍèÍñ©dutyCycleÂÂ¡/U§LiteralÍôÍ÷Ìd£100S°MemberExpressionÍûÍ	T®ThisExpressionÍûÍÿMªIdentifierÍ Í	©amplitudeÂÂ[¯UnaryExpressionÍÍ¡-ÃS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ©amplitudeÂÂf®BreakStatementÍ.Í4ÀS°MemberExpressionÍiÍ}MªIdentifierÍiÍw®SignalWaveformMªIdentifierÍxÍ}¥PULSEÂÂ_ªSwitchCaseÍQÍ‘Q³ExpressionStatementÍkÍR´AssignmentExpressionÍkÍ¡=MªIdentifierÍkÍl¡vZ°BinaryExpressionÍoÍS°MemberExpressionÍoÍ}T®ThisExpressionÍoÍsMªIdentifierÍtÍ}©amplitudeÂÂ¡*V®CallExpressionÍ€ÍS°MemberExpressionÍ€ÍˆMªIdentifierÍ€Í„¤MathMªIdentifierÍ…Íˆ£sinÂÂ‘MªIdentifierÍ‰Í¥thetaÂÀY«IfStatementÍ¥ÍLS°MemberExpressionÍ©ÍºT®ThisExpressionÍ©Í­MªIdentifierÍ®Íº¬burstEnabledÂÂN®BlockStatementÍ¼ÍL’\³VariableDeclarationÍËÍú‘]²VariableDeclaratorÍÑÍùMªIdentifierÍÑÍ×¦periodZ°BinaryExpressionÍÚÍùU§LiteralÍÚÍÛ¡1¡/V®CallExpressionÍŞÍùS°MemberExpressionÍŞÍæMªIdentifierÍŞÍâ¤MathMªIdentifierÍãÍæ£maxÂÂ’S°MemberExpressionÍçÍõT®ThisExpressionÍçÍëMªIdentifierÍìÍõ©frequencyÂÂU§LiteralÍ÷Íø¡1Â¥constY«IfStatementÍÍAZ°BinaryExpressionÍÍ(MªIdentifierÍÍ¡t¡>Z°BinaryExpressionÍÍ(S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍªburstCountÂÂ¡*MªIdentifierÍ"Í(¦periodQ³ExpressionStatementÍ;ÍAR´AssignmentExpressionÍ;Í@¡=MªIdentifierÍ;Í<¡vU§LiteralÍ?Í@ ¡0ÀÀX¯ReturnStatementÍVÍmZ°BinaryExpressionÍ]ÍlMªIdentifierÍ]Í^¡v¡+S°MemberExpressionÍaÍlT®ThisExpressionÍaÍeMªIdentifierÍfÍl¦offsetÂÂÀ‘Ôrg•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ¼Ìì’Ôrh•¤type¥start£end¨imported¥local¯ImportSpecifierÌÅÌËMªIdentifierÌÅÌË¦IdUtilMªIdentifierÌÅÌË¦IdUtilh¯ImportSpecifierÌÍÌÛMªIdentifierÌÍÌÛ®SignalWaveformMªIdentifierÌÍÌÛ®SignalWaveformU§LiteralÌãÌë¦common¨'common'

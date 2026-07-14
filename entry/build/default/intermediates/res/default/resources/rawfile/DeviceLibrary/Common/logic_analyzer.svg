@@ -1,0 +1,23 @@
+<svg width="80" height="60" viewBox="-40 -30 80 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logic Analyzer -->
+  <rect x="-35" y="-25" width="70" height="45" rx="2" fill="none" stroke="#000" stroke-width="1.2"/>
+  <!-- 8 channel inputs on left -->
+  <line x1="-45" y1="-20" x2="-35" y2="-20" stroke="#000" stroke-width="1"/>
+  <line x1="-45" y1="-13" x2="-35" y2="-13" stroke="#000" stroke-width="1"/>
+  <line x1="-45" y1="-6" x2="-35" y2="-6" stroke="#000" stroke-width="1"/>
+  <line x1="-45" y1="1" x2="-35" y2="1" stroke="#000" stroke-width="1"/>
+  <line x1="-45" y1="8" x2="-35" y2="8" stroke="#000" stroke-width="1"/>
+  <line x1="-45" y1="15" x2="-35" y2="15" stroke="#000" stroke-width="1"/>
+  <circle cx="-45" cy="-20" r="1.5" fill="#000"/>
+  <circle cx="-45" cy="-13" r="1.5" fill="#000"/>
+  <circle cx="-45" cy="-6" r="1.5" fill="#000"/>
+  <circle cx="-45" cy="1" r="1.5" fill="#000"/>
+  <circle cx="-45" cy="8" r="1.5" fill="#000"/>
+  <circle cx="-45" cy="15" r="1.5" fill="#000"/>
+  <!-- Digital timing diagram inside -->
+  <polyline points="-25,-10 -20,-10 -20,-18 -10,-18 -10,-10 -5,-10 -5,-18 5,-18 5,-10 15,-10" fill="none" stroke="#00f" stroke-width="0.8"/>
+  <polyline points="-25,-3 -15,-3 -15,-11 -5,-11 -5,-3 5,-3 5,-11 15,-11" fill="none" stroke="#f00" stroke-width="0.8"/>
+  <polyline points="-25,4 -20,4 -20,-4 -10,-4 -10,4 0,4 0,-4 10,-4 10,4 15,4" fill="none" stroke="#0a0" stroke-width="0.8"/>
+  <text x="20" y="-15" font-size="5" fill="#000" text-anchor="middle">D0-D7</text>
+  <text x="0" y="30" font-size="5" fill="#000" text-anchor="middle">REF</text>
+</svg>

@@ -1,10 +1,15 @@
 /**
- * Launch-time window sizing — maximize like the system title-bar button on PC / 2in1.
+ * Launch-time window sizing — immersive layout without SessionManager-only maximize APIs.
  */
 import { window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 
-/** Maximize the app main window (ENTER_IMMERSIVE = cover full work area). */
+/**
+ * Expand the main window for lab / 2in1 use.
+ * Uses setWindowLayoutFullScreen (WindowManager.Core) instead of maximize /
+ * MaximizePresentation (SessionManager), which is not available on all deviceTypes
+ * and triggers ArkTS syscap compile warnings.
+ */
 export async function maximizeAppWindow(ctx?: common.UIAbilityContext,
   stage?: window.WindowStage): Promise<void> {
   try {
@@ -16,8 +21,8 @@ export async function maximizeAppWindow(ctx?: common.UIAbilityContext,
     } else {
       return;
     }
-    await mainWindow.maximize(window.MaximizePresentation.ENTER_IMMERSIVE);
+    await mainWindow.setWindowLayoutFullScreen(true);
   } catch (_e) {
-    // Best-effort — freeform / unsupported devices keep default window size.
+    // Best-effort — unsupported environments keep the default window size.
   }
 }

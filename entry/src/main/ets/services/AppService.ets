@@ -3,7 +3,9 @@
  */
 import { SchematicEditorImpl, ISchematicEditor } from 'schematic_editor';
 import { ComponentLibraryImpl, IComponentLibrary } from 'component_library';
-import { SimulationKernelImpl, ISimulationKernel } from 'simulation_kernel';
+import { SimulationKernelImpl, ISimulationKernel, KernelFrameSnapshot } from 'simulation_kernel';
+import { SimWorkerHost } from './sim/SimWorkerHost';
+import { SimFramePlain } from './sim/SimProtocol';
 import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugger';
 import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
 import { AiEngineImpl, IAiEngine, TeachingService, LabTemplate } from 'ai_engine';
@@ -32,7 +34,8 @@ import {
   traceBindingRefresh, traceActiveComponent, traceActiveComponentChanged, traceReloadSchematic, traceSimStep,
   tracePinNetEmpty, BindingTraceInfo, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap,
   ensureNetPinConnectivity, PinGeometryResolver, PinGeometry,
-  traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList
+  traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn,
+  traceUart, formatUartBytesHex, traceUartTxDrain
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -92,10 +95,15 @@ export class AppService {
   private accessibility: AccessibilityConfig = {
     highContrast: false, keyboardOnly: false, uiScale: 1.0, screenReader: false
   };
-  private simTimer: number = -1;
-  private simTickScheduled: boolean = false;
+  private displayPumpTimer: number = -1;
+  private displayPumpActive: boolean = false;
   private simStepCount: number = 0;
-  private readonly SIM_TICK_MS: number = 50;
+  /** Set while pinch/pan — DisplayPump skips heavy publish to leave UV for MMI */
+  private uiGestureBusy: boolean = false;
+  private readonly DISPLAY_PUMP_MS: number = 33;
+  private readonly simHost: SimWorkerHost = new SimWorkerHost();
+  private schematicDebounceTimer: number = -1;
+  private readonly SCHEMATIC_DEBOUNCE_MS: number = 150;
   private lastActiveInstrumentId: string | null = null;
   private bindingPinHash: Map<string, string> = new Map();
   private appBaseDir: string = '';
@@ -124,6 +132,15 @@ export class AppService {
     this.mcuBehavior = new McuBehaviorSimulator();
     this.crashGuard = new CrashGuard();
 
+    (this.instruments as VirtualInstrumentsImpl).setUartTxSink((bytes: number[]) => {
+      traceUart('APP_TX_SINK',
+        `n=${bytes.length} hex=${formatUartBytesHex(bytes)} → simHost.injectUsartRx`);
+      this.simHost.injectUsartRx(bytes, this.simulationKernel as SimulationKernelImpl);
+    });
+
+    this.simHost.setErrorHandler((msg: string) => {
+      this.onStatusMessage(`仿真线程: ${msg}`);
+    });
     this.wireEventBus();
     this.wireCallbacks();
     this.wireComponentBoundsResolver();
@@ -239,11 +256,13 @@ export class AppService {
     const kernel = this.simulationKernel as SimulationKernelImpl;
     if (kernel.getState() === SimulationState.RUNNING) {
       kernel.pauseSim();
+      this.simHost.pause();
       this.onStatusMessage('仿真已暂停');
       return true;
     }
     if (kernel.getState() === SimulationState.PAUSED) {
       kernel.resumeSim();
+      this.simHost.resume(kernel);
       this.onStatusMessage('仿真已恢复');
       return false;
     }
@@ -284,8 +303,9 @@ export class AppService {
   /**
    * Read voltmeter V+ − COM directly from schematic pins + simulation.
    * Avoids shared-engine stale binding when multiple voltmeters exist.
+   * @param quiet Skip instr_trace measure log (high-rate sim sampling)
    */
-  readVoltmeterDeltaForComponent(compInstId: string): number | null {
+  readVoltmeterDeltaForComponent(compInstId: string, quiet: boolean = false): number | null {
     const doc = this.schematicEditor.getDocument();
     const comp = doc.components.find(c => c.id === compInstId);
     if (comp === undefined) {
@@ -312,15 +332,20 @@ export class AppService {
     const vPlus = kernel.getNetVoltageByUuid(netPlus);
     const vCom = kernel.getNetVoltageByUuid(netCom);
     const delta = vPlus - vCom;
-    traceMeasure(comp.refDes, 'V', kernel.isSimActive(),
-      `UI V+(${this.netLabel(doc, netPlus)})=${vPlus.toFixed(4)}V ` +
-      `COM(${this.netLabel(doc, netCom)})=${vCom.toFixed(4)}V ` +
-      `Δ=${delta.toFixed(4)}V sign=${delta >= 0 ? '+' : '-'} (${delta >= 0 ? 'V+>COM' : 'COM>V+'})`);
+    if (!quiet) {
+      traceMeasure(comp.refDes, 'V', kernel.isSimActive(),
+        `UI V+(${this.netLabel(doc, netPlus)})=${vPlus.toFixed(4)}V ` +
+        `COM(${this.netLabel(doc, netCom)})=${vCom.toFixed(4)}V ` +
+        `Δ=${delta.toFixed(4)}V sign=${delta >= 0 ? '+' : '-'} (${delta >= 0 ? 'V+>COM' : 'COM>V+'})`);
+    }
     return delta;
   }
 
-  /** Read ammeter branch current (mA, signed I+→I-) for a specific instance. */
-  readAmmeterCurrentForComponent(compInstId: string): number | null {
+  /**
+   * Read ammeter branch current (mA, signed I+→I-) for a specific instance.
+   * @param quiet Skip instr_trace measure log (high-rate sim sampling)
+   */
+  readAmmeterCurrentForComponent(compInstId: string, quiet: boolean = false): number | null {
     const doc = this.schematicEditor.getDocument();
     const comp = doc.components.find(c => c.id === compInstId);
     if (comp === undefined) {
@@ -341,8 +366,10 @@ export class AppService {
     const iBranch = kernel.getBranchCurrent(compInstId);
     if (Math.abs(iBranch) > 1e-15) {
       const mA = iBranch * 1000;
-      traceMeasure(comp.refDes, 'I', kernel.isSimActive(),
-        `UI I+→I- I=${mA.toFixed(4)}mA sign=${iBranch >= 0 ? '+' : '-'}`);
+      if (!quiet) {
+        traceMeasure(comp.refDes, 'I', kernel.isSimActive(),
+          `UI I+→I- I=${mA.toFixed(4)}mA sign=${iBranch >= 0 ? '+' : '-'}`);
+      }
       return mA;
     }
     return null;
@@ -494,7 +521,12 @@ export class AppService {
       const netSig = findNetForPin('IN') ?? findNetForPin('SIG') ?? findNetForPin('INPUT') ?? findNetForPin('+');
       if (netSig !== null) {
         binding.freqReader = (): number => {
-          return AppService.estimateFrequencyFromWaves(kernel.getAllWaveData(), netSig);
+          const fromWaves = AppService.estimateFrequencyFromWaves(kernel.getAllWaveData(), netSig);
+          if (fromWaves > 0) {
+            return fromWaves;
+          }
+          // Fallback: oscilloscope history ring (advances even when WaveData is stale/flat)
+          return (this.instruments as VirtualInstrumentsImpl).estimateFreqFromScopeHistory(netSig);
         };
         binding.scopeProbes[0] = netSig;
       }
@@ -554,6 +586,10 @@ export class AppService {
       if (va[k] < minV) {
         minV = va[k];
       }
+    }
+    // Frozen/DC wave → no frequency
+    if (maxV - minV < 1e-4) {
+      return 0;
     }
     const threshold = (maxV + minV) / 2;
     let crossings = 0;
@@ -808,9 +844,10 @@ export class AppService {
     const topo = this.getTopology();
 
     const cfg = defaultSimConfig();
+    // Pass editor doc so MNA sees OUT1/AC+ pin names (topo round-trip alone loses them)
     const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
       this.onAiProgress(p);
-    });
+    }, doc);
 
     if (!result.success) {
       Logger.warn(INSTR_TRACE_TAG, `[SIM_START_FAIL] ${result.error ?? 'unknown'}`);
@@ -818,15 +855,9 @@ export class AppService {
       return false;
     }
 
-    // Reload from editor doc so analog MNA uses rebuilt net.pinIds (not stale topology)
-    (this.simulationKernel as SimulationKernelImpl).loadSchematic(doc);
-
     this.schematicEditor.setSimBusy(true);
     this.simStepCount = 0;
     this.onStatusMessage('仿真运行中...');
-
-    // Run a small initial batch to populate wave data, then let the tick loop take over
-    this.runSimBatch(20);
 
     // Set up global instrument fallbacks so instruments show data even without a selected component
     this.setupInstrumentGlobalFallbacks();
@@ -841,49 +872,211 @@ export class AppService {
     this.autoWireSignalGenerators();
 
     const kernel = this.simulationKernel as SimulationKernelImpl;
-    traceSimStartupAudit(
-      doc, this.simulationKernel.getState(), this.simStepCount,
-      (netId: string) => kernel.getNetVoltageByUuid(netId),
-      (netId: string) => kernel.getNetCurrentByUuid(netId),
-      kernel.getNodeVoltageMap(), kernel.getBranchCurrentMap(),
-      kernel.getAllWaveData(), kernel.netToSpiceNodeMap(), activeComp,
-      (compId: string) => kernel.getBranchCurrent(compId));
+    // Time-budget pump (Worker disabled by default — FRAME flood caused APP_INPUT_BLOCK)
+    this.simHost.startRemote(topo, cfg, doc, kernel);
 
     Logger.info(INSTR_TRACE_TAG,
-      '仿真已启动 — DevEco 日志过滤 instr_trace 可追踪仪器绑定; setInstrTraceSimStep(true) 开启逐步采样');
-
-    // Start periodic stepping using setTimeout chain to prevent overlap when main thread is busy
-    this.scheduleSimTick();
-
+      '仿真已启动 — DisplayPump@~30fps + 轻量 Worker/预算泵; setInstrTraceSimStep(true) 开启逐步采样');
+    this.onStatusMessage('仿真运行中…');
+    this.startDisplayPump();
+    // Heavy PINCONN audit after yielding — keeps main thread responsive for Worker READY
+    setTimeout((): void => {
+      if (this.simulationKernel.getState() !== SimulationState.RUNNING &&
+          this.simulationKernel.getState() !== SimulationState.PAUSED) {
+        return;
+      }
+      traceSimStartupAudit(
+        doc, this.simulationKernel.getState(), this.simStepCount,
+        (netId: string) => kernel.getNetVoltageByUuid(netId),
+        (netId: string) => kernel.getNetCurrentByUuid(netId),
+        kernel.getNodeVoltageMap(), kernel.getBranchCurrentMap(),
+        kernel.getAllWaveData(), kernel.netToSpiceNodeMap(), activeComp,
+        (compId: string) => kernel.getBranchCurrent(compId));
+      const modeHint = this.simHost.isWorkerMode() ? 'Worker线程' : '时间预算泵';
+      this.onStatusMessage(`仿真运行中 (${modeHint} · ~30fps UI)`);
+    }, 200);
     return true;
   }
 
-  private scheduleSimTick(): void {
-    if (this.simTickScheduled) {
+  /** 60fps UI pump — never runs spice/MCU; only consumes latest frame */
+  private startDisplayPump(): void {
+    if (this.displayPumpActive) {
       return;
     }
-    const state = this.simulationKernel.getState();
-    if (state !== SimulationState.RUNNING && state !== SimulationState.PAUSED) {
+    this.displayPumpActive = true;
+    const tick = (): void => {
+      if (!this.displayPumpActive) {
+        return;
+      }
+      const state = this.simulationKernel.getState();
+      if (state !== SimulationState.RUNNING && state !== SimulationState.PAUSED) {
+        this.displayPumpActive = false;
+        this.displayPumpTimer = -1;
+        return;
+      }
+      if (state === SimulationState.RUNNING) {
+        this.consumeSimFrame();
+      }
+      this.displayPumpTimer = setTimeout(tick, this.DISPLAY_PUMP_MS);
+    };
+    this.displayPumpTimer = setTimeout(tick, this.DISPLAY_PUMP_MS);
+  }
+
+  private stopDisplayPump(): void {
+    this.displayPumpActive = false;
+    if (this.displayPumpTimer >= 0) {
+      clearTimeout(this.displayPumpTimer);
+      this.displayPumpTimer = -1;
+    }
+  }
+
+  /** Pinch/pan from SchematicCanvas — pause heavy frame publish so MMI can run */
+  setUiGestureBusy(busy: boolean): void {
+    this.uiGestureBusy = busy;
+    this.simHost.setUiGestureBusy(busy);
+  }
+
+  private consumeSimFrame(): void {
+    if (this.uiGestureBusy) {
+      // Still advance host store so frames do not pile as pending publish work
+      this.simHost.consumeLatest();
       return;
     }
-    this.simTickScheduled = true;
-    this.simTimer = setTimeout(() => {
-      this.simTimer = -1;
-      this.simTickScheduled = false;
-      const currentState = this.simulationKernel.getState();
-      if (currentState === SimulationState.PAUSED) {
-        this.scheduleSimTick();
-        return;
+    const frame: SimFramePlain | null = this.simHost.consumeLatest();
+    if (frame === null) {
+      return;
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    // Worker mode: mirror voltages onto local kernel for instrument/canvas reads
+    if (this.simHost.isWorkerMode()) {
+      const snap: KernelFrameSnapshot = {
+        t: frame.t,
+        stepCount: frame.stepCount,
+        netKeys: frame.netKeys,
+        voltages: frame.voltages,
+        branchKeys: frame.branchKeys,
+        currents: frame.currents,
+        mcuFamily: frame.mcuFamily,
+        mcuPc: frame.mcuPc,
+        mcuP1: frame.mcuP1,
+        gpioWords: frame.gpioWords,
+        uartBytes: frame.uartBytes !== undefined ? frame.uartBytes : [],
+        state: frame.state
+      };
+      kernel.applyFrameSnapshot(snap);
+    }
+    this.simStepCount = frame.stepCount;
+    this.ingestMcuUartBytes(frame.uartBytes !== undefined ? frame.uartBytes : []);
+    this.publishInstrumentFrame(kernel);
+  }
+
+  /** MCU USART TX → 虚拟终端 / 调试面板 / CallbackRegistry */
+  private ingestMcuUartBytes(bytes: number[]): void {
+    if (bytes.length === 0) {
+      return;
+    }
+    // Cap per frame so UI log does not explode if TXE poll is fast
+    const max = bytes.length > 16 ? 16 : bytes.length;
+    const slice = bytes.slice(0, max);
+    if (bytes.length > max) {
+      traceUart('APP_RX_CAP',
+        `raw=${bytes.length} shown=${max} dropped=${bytes.length - max} ` +
+        `hex=${formatUartBytesHex(slice)}`);
+    }
+    let non55 = false;
+    for (let i = 0; i < slice.length; i++) {
+      if ((slice[i] & 0xFF) !== 0x55) {
+        non55 = true;
+        break;
       }
-      if (currentState !== SimulationState.RUNNING) {
-        return;
+    }
+    if (non55) {
+      traceUart('APP_RX_UI', `n=${slice.length} hex=${formatUartBytesHex(slice)}`);
+    } else {
+      traceUartTxDrain('app_ui', slice);
+    }
+    (this.instruments as VirtualInstrumentsImpl).uartIngestMcuTx(slice);
+    let ascii = '';
+    for (let i = 0; i < slice.length; i++) {
+      const b = slice[i] & 0xFF;
+      CallbackRegistry.getInstance().emitUart('mcu_default', b);
+      ascii += String.fromCharCode(b);
+    }
+    if (ascii.length > 0) {
+      this.hexDebugger.appendUartOutput(ascii);
+    }
+  }
+
+  private publishInstrumentFrame(kernel: SimulationKernelImpl): void {
+    // Keep DisplayPump light: heavy Map copies / wave array clones / EventBus every
+    // frame previously stacked behind APP_INPUT_BLOCK (uv_timer_task >5s).
+    const voltages = kernel.getNodeVoltageMap();
+    (this.instruments as VirtualInstrumentsImpl).feedScopeTimeSnapshot(
+      kernel.globalTimeTick(), voltages);
+
+    if (this.simStepCount % 2 === 0) {
+      const activeId = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
+      if (activeId !== null && activeId.length > 0) {
+        const doc = this.schematicEditor.getDocument();
+        const activeComp = doc.components.find(c => c.id === activeId);
+        const lib = activeComp !== undefined ? activeComp.libraryId.toUpperCase() : '';
+        if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER')) {
+          const delta = this.readVoltmeterDeltaForComponent(activeId, true);
+          if (delta !== null) {
+            (this.instruments as VirtualInstrumentsImpl).voltmeterFeedSample(delta);
+          }
+        } else if (lib === 'MULTIMETER') {
+          const delta = this.readVoltmeterDeltaForComponent(activeId, true);
+          if (delta !== null) {
+            (this.instruments as VirtualInstrumentsImpl).multimeterFeedSample(delta);
+          }
+        } else if (lib.includes('AMMETER')) {
+          const mA = this.readAmmeterCurrentForComponent(activeId, true);
+          if (mA !== null) {
+            (this.instruments as VirtualInstrumentsImpl).ammeterFeedSample(mA);
+          }
+        }
       }
-      this.runSimBatch(10);
-      if (this.simStepCount % 50 === 0) {
-        this.autoWireAllInstruments();
+    }
+
+    // Waves + full instrument rebinds are expensive — keep rare
+    let waves: WaveData[] = [];
+    if (this.simStepCount % 4 === 0) {
+      waves = kernel.getAllWaveData();
+      if (waves.length > 0) {
+        this.instruments.feedSimulationWaves(waves);
+        CallbackRegistry.getInstance().emitWave(waves);
       }
-      this.scheduleSimTick();
-    }, this.SIM_TICK_MS);
+      const branchCurrents = kernel.getBranchCurrentMap();
+      (this.instruments as VirtualInstrumentsImpl).feedScopeNodeData(voltages, branchCurrents);
+      const digitalLevels = new Map<string, number>();
+      voltages.forEach((voltage: number, netKey: string) => {
+        digitalLevels.set(netKey, voltage > 1.65 ? 1 : 0);
+      });
+      (this.instruments as VirtualInstrumentsImpl).feedLogicDigitalStates(digitalLevels);
+      this.onWaveUpdate(waves);
+    }
+
+    if (this.simStepCount % 120 === 0) {
+      this.autoWireAllInstruments();
+      if (waves.length === 0) {
+        waves = kernel.getAllWaveData();
+      }
+      traceSimStep(this.simStepCount, waves.length, waves,
+        (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent(),
+        voltages, kernel.getBranchCurrentMap());
+    }
+
+    // Canvas wire-color refresh ≤ ~10fps — 60fps EventBus starved MMI / Skia serialize
+    if (this.simStepCount % 3 === 0) {
+      const stepData: SimStepData = { waves: waves, stepCount: this.simStepCount };
+      EventBus.getInstance().publish({
+        event: ModuleEvent.SIMULATION_STEP,
+        source: 'app_service',
+        timestamp: Date.now(),
+        data: stepData as Object
+      });
+    }
   }
 
   /** Auto-wire all instrument components on the schematic to read from simulation */
@@ -933,61 +1126,19 @@ export class AppService {
     }
   }
 
-  /** Run a batch of simulation steps and feed wave data to instruments */
-  private runSimBatch(count: number): void {
-    if (this.simulationKernel.getState() !== SimulationState.RUNNING) {
-      return;
-    }
-    const kernel = this.simulationKernel as SimulationKernelImpl;
-    for (let i = 0; i < count; i++) {
-      kernel.runSpiceStep();
-      kernel.tickDigitalLogic();
-      kernel.tickMcuCore();
-      this.simStepCount++;
-      // Feed per-step time snapshot to oscilloscope for live waveform display
-      if (this.simStepCount % 5 === 0) {
-        const voltages = kernel.getNodeVoltageMap();
-        (this.instruments as VirtualInstrumentsImpl).feedScopeTimeSnapshot(
-          kernel.globalTimeTick(), voltages);
-      }
-    }
-    const waves = kernel.getAllWaveData();
-    if (waves.length > 0) {
-      this.instruments.feedSimulationWaves(waves);
-    }
-    const nodeVoltages = kernel.getNodeVoltageMap();
-    const branchCurrents = kernel.getBranchCurrentMap();
-    (this.instruments as VirtualInstrumentsImpl).feedScopeNodeData(nodeVoltages, branchCurrents);
-    const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
-    const digitalLevels = new Map<string, number>();
-    nodeVoltages.forEach((voltage: number, netKey: string) => {
-      digitalLevels.set(netKey, voltage > 1.65 ? 1 : 0);
-    });
-    (this.instruments as VirtualInstrumentsImpl).feedLogicDigitalStates(digitalLevels);
-    traceSimStep(this.simStepCount, waves.length, waves, activeComp, nodeVoltages, branchCurrents);
-    if (this.simStepCount % 50 === 0) {
-      this.autoWireAllInstruments();
-    }
-    const stepData: SimStepData = { waves: waves, stepCount: this.simStepCount };
-    EventBus.getInstance().publish({
-      event: ModuleEvent.SIMULATION_STEP,
-      source: 'app_service',
-      timestamp: Date.now(),
-      data: stepData as Object
-    });
-    this.onWaveUpdate(waves);
-  }
-
   stopSimulation(): void {
-    this.simTickScheduled = false;
-    if (this.simTimer >= 0) {
-      clearTimeout(this.simTimer);
-      this.simTimer = -1;
-    }
+    this.stopDisplayPump();
+    this.simHost.stop();
     this.simulationKernel.stopSim();
     this.schematicEditor.setSimBusy(false);
     this.clearInstrumentReaders();
     this.onStatusMessage('仿真已停止');
+  }
+
+  /** Load MCU firmware into local kernel + Worker (when active) */
+  loadMcuIntoSim(data: Uint8Array, offset: number = 0, family: string = '8051'): void {
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    this.simHost.loadMcu(data, offset, family, kernel);
   }
 
   async aiAutoRoute(): Promise<boolean> {
@@ -1192,15 +1343,60 @@ export class AppService {
     const tplName = def !== undefined ? def.name : templateId;
     const hexPath = this.getTemplateHexPath(templateId);
     if (hexPath !== null) {
-      if (TemplateProjectBootstrap.fileExists(hexPath)) {
-        this.onStatusMessage(`已将实验「${tplName}」插入（固件 ${hexPath}，请在 MCU 调试面板烧录）`);
+      const exists = TemplateProjectBootstrap.fileExists(hexPath);
+      if (exists) {
+        const fwHint = this.teachingService.getTemplateFirmware(templateId);
+        const mcuFamily = (fwHint !== null && fwHint.mcuFamily === 'STM32')
+          ? McuFamily.MCU_STM32F1
+          : McuFamily.MCU_8051;
+        const autoLoaded = this.loadHexFileIntoSim(hexPath, mcuFamily);
+        if (autoLoaded) {
+          this.onStatusMessage(`已将实验「${tplName}」插入并预装固件（可在 MCU 面板重新烧录）`);
+          traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=true`);
+        } else {
+          this.onStatusMessage(`已将实验「${tplName}」插入（固件 ${hexPath}，请在 MCU 调试面板烧录）`);
+          traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=false`);
+        }
       } else {
         this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexPath}`);
+        traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=false`);
       }
     } else {
       this.onStatusMessage(`已将实验「${tplName}」插入当前工程空白区域`);
+      traceBurn('TEMPLATE_HEX', `template=${templateId} path=(none)`);
     }
     return true;
+  }
+
+  /**
+   * Parse Intel HEX from sandbox path and load binary into debugger + sim kernel.
+   * Returns false if file missing or parse fails.
+   */
+  loadHexFileIntoSim(hexPath: string, family: McuFamily = McuFamily.MCU_8051): boolean {
+    try {
+      if (!TemplateProjectBootstrap.fileExists(hexPath)) {
+        return false;
+      }
+      const fileHandle = fs.openSync(hexPath, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(hexPath);
+      const buffer = new ArrayBuffer(stat.size);
+      fs.readSync(fileHandle.fd, buffer);
+      fs.closeSync(fileHandle);
+      const raw = new Uint8Array(buffer);
+      const result = this.hexDebugger.loadHexData(raw, family);
+      if (!result.success || result.data === undefined) {
+        traceBurn('TEMPLATE_AUTOLOAD_FAIL', `path=${hexPath} err=${result.error ?? 'parse'}`);
+        return false;
+      }
+      const familyStr = family === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
+      this.loadMcuIntoSim(result.data.data, 0, familyStr);
+      traceBurn('TEMPLATE_AUTOLOAD_OK',
+        `path=${hexPath} family=${familyStr} bytes=${result.data.data.length}`);
+      return true;
+    } catch (e) {
+      traceBurn('TEMPLATE_AUTOLOAD_FAIL', `path=${hexPath} ex=${e}`);
+      return false;
+    }
   }
 
   /** 模板关联 hex 沙箱完整路径（.../AISchSim/hex_files/xxx.hex） */
@@ -1245,9 +1441,7 @@ export class AppService {
     EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STOPPED, () => {
       this.schematicEditor.setSimBusy(false);
     });
-    EventBus.getInstance().subscribe(ModuleEvent.SIMULATION_STEP, () => {
-      CallbackRegistry.getInstance().emitWave(this.simulationKernel.getAllWaveData());
-    });
+    // SIMULATION_STEP → canvas only; wave emit is in publishInstrumentFrame (throttled)
     EventBus.getInstance().subscribe(ModuleEvent.AI_TASK_PROGRESS, (payload) => {
       this.onAiProgress(payload.data as ProgressInfo);
     });
@@ -1362,7 +1556,14 @@ export class AppService {
     if (this.currentProject) {
       this.currentProject.schematic = this.schematicEditor.getDocument();
     }
-    this.reloadSimulationFromSchematic();
+    // Debounce heavy reload/ERC while user is dragging — keeps edit path smooth
+    if (this.schematicDebounceTimer >= 0) {
+      clearTimeout(this.schematicDebounceTimer);
+    }
+    this.schematicDebounceTimer = setTimeout(() => {
+      this.schematicDebounceTimer = -1;
+      this.reloadSimulationFromSchematic();
+    }, this.SCHEMATIC_DEBOUNCE_MS);
   };
 
   registerKeyboardShortcuts(): void {

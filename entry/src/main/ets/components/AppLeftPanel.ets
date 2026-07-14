@@ -4,7 +4,7 @@
 import { AppService } from '../services/AppService';
 import { ComponentPreview } from './ComponentPreview';
 import {
-  ProteusPanelTitle, ProteusNavTab, ProteusTreeRow
+  ProteusPanelTitle, ProteusNavTab, ProteusTreeRow, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow
 } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import {
@@ -194,28 +194,12 @@ export struct AppLeftPanel {
   @Builder
   NavComponentList() {
     ForEach(this.getDocComponents(), (comp: ComponentInstance) => {
-      Row() {
-        Text(`${comp.refDes}`)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(comp.id === this.selectedComponentId ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY)
-          .fontWeight(FontWeight.Medium)
-          .width(60)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${comp.libraryId}`)
-          .fontSize(ProteusFonts.STATUS)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .width('100%')
-      .height(ProteusDimens.NAV_ROW_HEIGHT)
-      .padding({ left: 6, right: 4 })
-      .alignItems(VerticalAlign.Center)
-      .backgroundColor(comp.id === this.selectedComponentId ? ProteusColors.TREE_SELECTED : Color.Transparent)
-      .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
-      .onClick(() => this.onSelectComponent(comp.id))
+      ProteusNavCompRow({
+        refDes: `${comp.refDes}`,
+        libraryId: `${comp.libraryId}`,
+        selected: comp.id === this.selectedComponentId,
+        onAction: () => this.onSelectComponent(comp.id)
+      })
     }, (comp: ComponentInstance) => `${comp.id}_${this.navRefreshKey}`)
   }
 
@@ -226,18 +210,10 @@ export struct AppLeftPanel {
   @Builder
   NavNetList() {
     ForEach(this.getDocNets(), (netName: string, idx: number) => {
-      Row() {
-        Text(`NET ${idx + 1}`)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.WIRE)
-          .fontWeight(FontWeight.Medium)
-          .maxLines(1)
-      }
-      .width('100%')
-      .height(ProteusDimens.NAV_ROW_HEIGHT + 2)
-      .padding({ left: 8, right: 4 })
-      .alignItems(VerticalAlign.Center)
-      .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
+      ProteusNavNetRow({
+        label: `NET ${idx + 1}`,
+        onAction: () => {}
+      })
     }, (netName: string, idx: number) => `${netName}_${idx}`)
   }
 
@@ -263,27 +239,13 @@ export struct AppLeftPanel {
       .padding({ left: 8, top: 8 })
     } else {
       ForEach(this.ercErrors, (err: ErcError, idx: number) => {
-        Row() {
-          Column() {
-            Text(err.severity === 'error' || err.severity === 'critical' ? '✕' : '⚠')
-              .fontSize(10)
-              .fontColor(err.severity === 'error' || err.severity === 'critical' ?
-                ProteusColors.ERC_ERR : ProteusColors.ERC_WARN)
-              .width(16)
-          }
-          Text(err.desc)
-            .fontSize(ProteusFonts.STATUS)
-            .fontColor(err.severity === 'error' || err.severity === 'critical' ?
-              ProteusColors.ERC_ERR : ProteusColors.ERC_WARN)
-            .layoutWeight(1)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .width('100%')
-        .height(ProteusDimens.NAV_ROW_HEIGHT)
-        .padding({ left: 6, right: 4 })
-        .alignItems(VerticalAlign.Center)
-        .border({ width: { bottom: 0.5 }, color: ProteusColors.DIVIDER })
+        ProteusErcRow({
+          mark: err.severity === 'error' || err.severity === 'critical' ? '✕' : '⚠',
+          markColor: err.severity === 'error' || err.severity === 'critical' ?
+            ProteusColors.ERC_ERR : ProteusColors.ERC_WARN,
+          desc: err.desc,
+          onAction: () => {}
+        })
       }, (err: ErcError, idx: number) => `${idx}_${err.desc}`)
     }
   }

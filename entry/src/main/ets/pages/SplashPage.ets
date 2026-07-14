@@ -2,7 +2,7 @@
  * Splash — 3D 参数化线框曲面启动页
  * 纯黑极简背景 | 左侧留白文字 | 右上霓虹线框双曲面 | 左下渐变logo
  */
-import { router } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 interface Vec3 {
   x: number; y: number; z: number;
@@ -317,7 +317,10 @@ struct SplashPage {
 
       if (progress >= 1) {
         clearInterval(expandTimer);
-        router.replaceUrl({ url: 'pages/Index' });
+        this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
+          .catch((_err: BusinessError) => {
+            // Fallback if UIContext router fails mid-transition
+          });
       }
     }, 30);
   }

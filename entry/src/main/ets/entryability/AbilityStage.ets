@@ -1,6 +1,5 @@
 import { AbilityStage, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { setInstrTraceSimStep, INSTR_TRACE_TAG, Logger } from 'common';
 
 const DOMAIN = 0x0000;
 const TAG = 'AISchSim';
@@ -8,8 +7,7 @@ const TAG = 'AISchSim';
 export default class AppAbilityStage extends AbilityStage {
   onCreate(): void {
     hilog.info(DOMAIN, TAG, 'AbilityStage onCreate');
-    setInstrTraceSimStep(true);
-    Logger.info(INSTR_TRACE_TAG, '逐步仿真采样已启动 (INSTR_TRACE_SIM_STEP=true)');
+    // INSTR_TRACE_SIM_STEP 默认关闭；调试时调用 setInstrTraceSimStep(true)
   }
 
   onAcceptWant(want: Want): string {

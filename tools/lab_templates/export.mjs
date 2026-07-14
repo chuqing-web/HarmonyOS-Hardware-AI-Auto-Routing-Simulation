@@ -36,6 +36,18 @@ function emptyMap() {
   return { [MAP_MARKER]: '1' };
 }
 
+function paramsToMapJson(params) {
+  const mapObj = { [MAP_MARKER]: '1' };
+  if (params && typeof params === 'object') {
+    for (const [k, v] of Object.entries(params)) {
+      if (typeof v === 'string' && v.length > 0) {
+        mapObj[k] = v;
+      }
+    }
+  }
+  return mapObj;
+}
+
 function docToTopology(doc) {
   return {
     schUuid: doc.id,
@@ -50,7 +62,7 @@ function docToTopology(doc) {
       rotate: c.rotation,
       mirrorH: c.mirrored,
       mirrorV: false,
-      params: emptyMap(),
+      params: paramsToMapJson(c.parameters),
       pinVoltage: emptyMap(),
       hidden: false,
       subCircuitRef: '',
@@ -63,9 +75,13 @@ function docToTopology(doc) {
       nodeList: n.pinIds.map(pinRef => {
         const parts = pinRef.split(':');
         if (parts.length >= 2 && parts[0].length > 0) {
-          return { devUuid: parts[0], pinId: parts[1] };
+          return {
+            devUuid: parts[0],
+            pinId: parts[1],
+            pinName: parts.length >= 3 ? parts[2] : parts[1]
+          };
         }
-        return { devUuid: '', pinId: pinRef };
+        return { devUuid: '', pinId: pinRef, pinName: pinRef };
       }),
       isPower: n.type === 'power' || n.type === 'ground',
       isAnalog: false,
@@ -84,6 +100,14 @@ function docToTopology(doc) {
     subCircuitList: [],
     probeList: [],
     textAnnotate: [],
+    netLabelList: (doc.netLabels || []).map(lb => ({
+      id: lb.id,
+      netUuid: lb.netId,
+      text: lb.text,
+      x: lb.position.x,
+      y: lb.position.y,
+      global: !!lb.global
+    })),
     ercErrorList: [],
     gridStep: doc.metadata.gridSize,
     bgColor: '#0a0a1a'

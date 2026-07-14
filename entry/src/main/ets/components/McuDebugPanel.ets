@@ -5,7 +5,7 @@ import util from '@ohos.util';
 import fs from '@ohos.file.fs';
 import { picker } from '@kit.CoreFileKit';
 import { AppService } from '../services/AppService';
-import { McuFamily, SimulationState } from 'common';
+import { McuFamily, SimulationState, traceBurn, formatFirmwarePreview } from 'common';
 import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
@@ -154,6 +154,14 @@ export struct McuDebugPanel {
     }
   }
 
+  /** Basename for narrow sidebar chips (/ and \\). */
+  private hexFileName(hexPath: string): string {
+    const slash = hexPath.lastIndexOf('/');
+    const back = hexPath.lastIndexOf('\\');
+    const idx = Math.max(slash, back);
+    return idx >= 0 ? hexPath.substring(idx + 1) : hexPath;
+  }
+
   async browseHexFile(): Promise<void> {
     try {
       const options = new picker.DocumentSelectOptions();
@@ -182,8 +190,12 @@ export struct McuDebugPanel {
     const path = this.hexFilePath.trim();
     if (path.length === 0) {
       this.statusMessage = '请选择或输入 HEX 文件路径';
+      traceBurn('UI_BURN_ABORT', 'empty path (mcu debug panel)');
       return;
     }
+    const familyStr = this.mcuFamily === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
+    traceBurn('UI_BURN_BEGIN',
+      `source=mcu_panel path=${path} family=${familyStr} mcu=${this.mcuLabel || '-'}`);
     try {
       const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
       const stat = fs.statSync(path);
@@ -192,19 +204,23 @@ export struct McuDebugPanel {
       fs.closeSync(fileHandle);
 
       const hexView = new Uint8Array(buffer);
+      traceBurn('UI_BURN_READ', `path=${path} size=${stat.size} preview=${formatFirmwarePreview(hexView)}`);
       const result = this.appService.hexDebugger.loadHexData(hexView, this.mcuFamily);
-      if (result.success) {
-        const familyStr = this.mcuFamily === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
-        this.appService.simulationKernel.loadMcuProgram(
-          new Uint8Array(buffer), 0, familyStr);
+      if (result.success && result.data !== undefined) {
+        // Must load parsed binary image — not raw Intel HEX ASCII text
+        this.appService.loadMcuIntoSim(result.data.data, 0, familyStr);
         this.refreshFirmwareInfo();
         this.statusMessage = `HEX 烧录成功 (${this.fwTotalSize})`;
         this.refreshState();
+        traceBurn('UI_BURN_OK',
+          `source=mcu_panel path=${path} size=${this.fwTotalSize} segs=${this.fwSegmentInfo} entry=${this.fwEntryAddr}`);
       } else {
         this.statusMessage = `HEX 加载失败: ${result.error ?? '未知错误'}`;
+        traceBurn('UI_BURN_FAIL', `source=mcu_panel path=${path} err=${result.error ?? 'unknown'}`);
       }
     } catch (e) {
       this.statusMessage = `烧录失败: ${e}`;
+      traceBurn('UI_BURN_FAIL', `source=mcu_panel path=${path} ex=${e}`);
     }
   }
 
@@ -274,16 +290,18 @@ export struct McuDebugPanel {
         .margin({ left: 8, right: 8, top: 4 })
       }
 
-      // HEX burn section
+      // HEX burn section — stacked for narrow right panel (~200–420px)
       Text(`固件目录: ${this.hexDir}`)
         .fontSize(9)
         .fontColor(ProteusColors.TEXT_SECONDARY)
         .padding({ left: 8, right: 8 })
         .width('100%')
         .maxLines(2)
-      Row() {
-        TextInput({ placeholder: `${this.hexDir}/lab_51_led.hex`, text: this.hexFilePath })
-          .layoutWeight(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Column() {
+        TextInput({ placeholder: '固件路径…', text: this.hexFilePath })
+          .width('100%')
           .height(28)
           .fontSize(ProteusFonts.PARAM_KEY)
           .fontColor(ProteusColors.TEXT_PRIMARY)
@@ -291,40 +309,53 @@ export struct McuDebugPanel {
           .border({ width: 1, color: ProteusColors.INPUT_BORDER })
           .backgroundColor(ProteusColors.CANVAS_BG)
           .onChange((v: string) => { this.hexFilePath = v; })
-        ProteusClassicBtn({
-          label: '浏览',
-          widthVal: 50,
-          onAction: () => { void this.browseHexFile(); }
-        })
-        ProteusClassicBtn({
-          label: '烧录',
-          widthVal: 50,
-          onAction: () => { void this.burnHex(); }
-        })
       }
       .width('100%')
       .padding({ left: 8, right: 8 })
 
+      Row({ space: 4 }) {
+        ProteusClassicBtn({
+          label: '浏览',
+          widthVal: '48%',
+          onAction: () => { void this.browseHexFile(); }
+        })
+        ProteusClassicBtn({
+          label: '烧录',
+          widthVal: '48%',
+          onAction: () => { void this.burnHex(); }
+        })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 4 })
+      .justifyContent(FlexAlign.SpaceBetween)
+
       if (this.sandboxHexFiles.length > 0) {
-        Scroll() {
-          Row({ space: 4 }) {
-            ForEach(this.sandboxHexFiles, (hexPath: string) => {
-              ProteusClassicBtn({
-                label: hexPath.substring(hexPath.lastIndexOf('/') + 1),
-                widthVal: 100,
-                onAction: () => {
-                  this.hexFilePath = hexPath;
-                  void this.burnHex();
-                }
-              })
-            }, (hexPath: string) => hexPath)
-          }
-          .padding({ left: 8, right: 8 })
+        Text('沙箱固件（点选即烧录）')
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .width('100%')
+          .padding({ left: 8, right: 8, top: 6, bottom: 2 })
+          .alignSelf(ItemAlign.Start)
+
+        Flex({
+          wrap: FlexWrap.Wrap,
+          justifyContent: FlexAlign.SpaceBetween
+        }) {
+          ForEach(this.sandboxHexFiles, (hexPath: string) => {
+            ProteusClassicBtn({
+              label: this.hexFileName(hexPath),
+              widthVal: '48%',
+              tooltip: hexPath,
+              onAction: () => {
+                this.hexFilePath = hexPath;
+                void this.burnHex();
+              }
+            })
+              .margin({ bottom: 4 })
+          }, (hexPath: string) => hexPath)
         }
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
         .width('100%')
-        .height(32)
+        .padding({ left: 8, right: 8 })
       }
 
       Row({ space: 4 }) {
@@ -346,22 +377,34 @@ export struct McuDebugPanel {
           }})
       }
       .width('100%')
-      .padding({ left: 8, right: 8 })
+      .padding({ left: 8, right: 8, top: 4 })
       .justifyContent(FlexAlign.SpaceBetween)
 
-      ProteusClassicBtn({
-        label: '加载示例 HEX',
-        widthVal: '92%',
-        onAction: () => {
-          const sampleHex = ':100000000074012280020322D2DC8F9F0A\n:00000001FF\n';
-          const encoder = new util.TextEncoder();
-          const data = encoder.encodeInto(sampleHex);
-          const result = this.appService.hexDebugger.loadHexData(data, this.mcuFamily);
-          this.statusMessage = result.success ? 'HEX 加载成功' : `加载失败: ${result.error}`;
-          this.refreshState();
-        }
-      })
-      .margin({ left: 8 })
+      Column() {
+        ProteusClassicBtn({
+          label: '加载示例 HEX',
+          widthVal: '100%',
+          onAction: () => {
+            const sampleHex = ':100000000074012280020322D2DC8F9F0A\n:00000001FF\n';
+            const encoder = new util.TextEncoder();
+            const data = encoder.encodeInto(sampleHex);
+            traceBurn('UI_BURN_BEGIN', `source=mcu_panel_sample family=${this.mcuFamily} bytes=${data.length}`);
+            const result = this.appService.hexDebugger.loadHexData(data, this.mcuFamily);
+            if (result.success && result.data !== undefined) {
+              const fam = this.mcuFamily === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
+              this.appService.loadMcuIntoSim(result.data.data, 0, fam);
+              this.statusMessage = 'HEX 加载成功';
+              this.refreshFirmwareInfo();
+            } else {
+              this.statusMessage = `加载失败: ${result.error}`;
+              traceBurn('UI_BURN_FAIL', `source=mcu_panel_sample err=${result.error}`);
+            }
+            this.refreshState();
+          }
+        })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 4 })
 
       Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4 })
 
@@ -395,17 +438,20 @@ export struct McuDebugPanel {
         .margin({ left: 8, top: 4 })
         .alignSelf(ItemAlign.Start)
 
-      Text(this.uartOutput || '(无输出)')
-        .fontSize(ProteusFonts.PARAM_KEY)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .fontFamily('monospace')
-        .width('92%')
-        .height(56)
-        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-        .padding(6)
-        .border({ width: 1, color: ProteusColors.DIVIDER })
-        .borderRadius(0)
-        .margin({ left: 8 })
+      Column() {
+        Text(this.uartOutput || '(无输出)')
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontFamily('monospace')
+          .width('100%')
+          .height(56)
+          .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+          .padding(6)
+          .border({ width: 1, color: ProteusColors.DIVIDER })
+          .borderRadius(0)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8 })
 
       Text('UART 发送')
         .fontSize(ProteusFonts.TITLE)
@@ -414,7 +460,7 @@ export struct McuDebugPanel {
         .margin({ left: 8, top: 4 })
         .alignSelf(ItemAlign.Start)
 
-      Row() {
+      Row({ space: 4 }) {
         TextInput({ placeholder: '输入 UART 数据', text: this.hexInput })
           .layoutWeight(1)
           .height(28)
@@ -433,8 +479,8 @@ export struct McuDebugPanel {
           }
         })
       }
-      .width('92%')
-      .margin({ left: 8 })
+      .width('100%')
+      .padding({ left: 8, right: 8 })
     }
     .width('100%')
     .height('100%')

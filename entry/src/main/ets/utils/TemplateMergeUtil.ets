@@ -2,7 +2,7 @@
  * 将实验模板电路合并到用户当前工程（放置在空白区域，不替换工程文件）
  */
 import {
-  SchematicDocument, ComponentInstance, Net, Wire, NetType, Point2D, WorldRect
+  SchematicDocument, ComponentInstance, Net, Wire, NetLabel, NetType, Point2D, WorldRect
 } from 'common';
 import { IdUtil, parsePinRef, buildPinRef, copyStringMap } from 'common';
 
@@ -93,6 +93,35 @@ export class TemplateMergeUtil {
       target.wires.push(wire);
     }
 
+    // Net Labels（Proteus LBL）必须一并迁入，否则仿真并网与画面上都看不到标号
+    if (target.netLabels === undefined) {
+      target.netLabels = [];
+    }
+    if (source.netLabels !== undefined) {
+      for (let i = 0; i < source.netLabels.length; i++) {
+        const srcLb = source.netLabels[i];
+        let mappedNetId = netIdMap.get(srcLb.netId);
+        if (mappedNetId === undefined || mappedNetId.length === 0) {
+          // 标号文本可能对应已合并的电源轨或同名网络
+          mappedNetId = TemplateMergeUtil.findNetIdByName(target, srcLb.text);
+        }
+        if (mappedNetId === undefined || mappedNetId.length === 0) {
+          continue;
+        }
+        const label: NetLabel = {
+          id: IdUtil.generate('lbl'),
+          netId: mappedNetId,
+          text: srcLb.text,
+          position: {
+            x: srcLb.position.x + offset.x,
+            y: srcLb.position.y + offset.y
+          },
+          global: srcLb.global
+        };
+        target.netLabels.push(label);
+      }
+    }
+
     target.metadata.modifiedAt = new Date().toISOString();
     return offset;
   }
@@ -149,6 +178,21 @@ export class TemplateMergeUtil {
         }
       }
     }
+    if (doc.netLabels !== undefined) {
+      for (let li = 0; li < doc.netLabels.length; li++) {
+        const x = doc.netLabels[li].position.x;
+        const y = doc.netLabels[li].position.y;
+        if (!hasAny) {
+          minX = x; maxX = x; minY = y; maxY = y;
+          hasAny = true;
+        } else {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
     if (!hasAny) {
       return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     }
@@ -166,6 +210,15 @@ export class TemplateMergeUtil {
     }
     const upper = net.name.toUpperCase();
     return upper === 'VCC' || upper === 'VDD' || upper === 'GND' || upper === 'VSS' || upper === 'VEE';
+  }
+
+  private static findNetIdByName(doc: SchematicDocument, name: string): string | undefined {
+    for (let i = 0; i < doc.nets.length; i++) {
+      if (doc.nets[i].name === name) {
+        return doc.nets[i].id;
+      }
+    }
+    return undefined;
   }
 
   private static appendPinRefs(net: Net, pinRefs: string[], compIdMap: Map<string, string>): void {

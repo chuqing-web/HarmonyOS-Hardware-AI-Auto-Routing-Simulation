@@ -1,0 +1,305 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ
+import { LabTemplateRegistry, ALL_CATALOG_LIBRARY_IDS } from './algorithms/LabTemplateRegistry';
+export class TeachingService {
+    static toLabTemplate(def) {
+        return {
+            id: def.id,
+            name: def.name,
+            category: def.category,
+            description: def.description,
+            knowledgePoints: def.knowledgePoints,
+            libraryIds: def.libraryIds
+        };
+    }
+    listTemplates() {
+        return LabTemplateRegistry.listTemplates().map(TeachingService.toLabTemplate);
+    }
+    listCategories() {
+        return LabTemplateRegistry.listCategories();
+    }
+    listTemplatesByCategory(category) {
+        return LabTemplateRegistry.listTemplates()
+            .filter(t => t.category === category)
+            .map(TeachingService.toLabTemplate);
+    }
+    getCoverageReport() {
+        return LabTemplateRegistry.getCoverageReport();
+    }
+    getAllCatalogLibraryIds() {
+        return ALL_CATALOG_LIBRARY_IDS.slice();
+    }
+    /** æ³¨å†Œè‡ªå®šä¹‰å®éªŒæ¨¡æ¿ï¼ˆè¿è¡Œæ—¶æ‰©å±•ï¼‰ */
+    registerTemplate(def) {
+        LabTemplateRegistry.registerTemplate(def);
+    }
+    /** æ¨¡æ¿å…³è” hex æ–‡ä»¶åï¼ˆä¸å«è·¯å¾„ï¼‰ */
+    getTemplateHexFileName(templateId) {
+        const def = LabTemplateRegistry.findById(templateId);
+        if (def === undefined || def.hexFile === undefined || def.hexFile.length === 0) {
+            return null;
+        }
+        return def.hexFile;
+    }
+    getTemplateFirmware(templateId) {
+        const def = LabTemplateRegistry.findById(templateId);
+        if (def === undefined || def.firmware === undefined) {
+            return null;
+        }
+        if (def.firmware === '8051') {
+            return TeachingService.FW_51;
+        }
+        if (def.firmware === 'STM32') {
+            return TeachingService.FW_STM32;
+        }
+        return null;
+    }
+    getKnowledgeTip(libraryId) {
+        for (const tip of TeachingService.tips) {
+            if (libraryId.includes(tip.componentType)) {
+                return tip;
+            }
+        }
+        return null;
+    }
+    stepPowerOnSequence(topo, stepIndex) {
+        const result = JSON.parse(JSON.stringify(topo));
+        const powerNets = result.netList.filter(n => n.isPower);
+        for (let i = 0; i <= stepIndex && i < powerNets.length; i++) {
+            powerNets[i].defaultVoltage = 5.0;
+        }
+        return result;
+    }
+    buildAiQuestion(topo, selectedUuid) {
+        const dev = topo.deviceList.find(d => d.instUuid === selectedUuid);
+        if (!dev) {
+            return 'è¯·è§£é‡Šå½“å‰ç”µè·¯çš„å·¥ä½œåŸç†';
+        }
+        return `è¯·è§£é‡Šç”µè·¯ä¸­ ${dev.refName}(${dev.libDevId}) çš„ä½œç”¨ï¼Œä»¥åŠ surrounding è¿æ¥å…³ç³»`;
+    }
+}
+TeachingService.tips = [
+    { componentType: 'LM358', title: 'åŒè¿æ”¾ LM358', content: 'åŒè·¯è¿æ”¾ï¼Œå•ç”µæºå¯ç”¨ï¼›IN+ ä¸ IN- è™šçŸ­è™šæ–­' },
+    { componentType: 'UA741', title: 'è¿ç®—æ”¾å¤§å™¨', content: 'ç»å…¸å•è¿æ”¾ï¼›æ³¨æ„ VCC/VEE åŒç”µæºæˆ–å•ç”µæºåç½®' },
+    { componentType: 'AT89C51', title: '51å•ç‰‡æœº', content: '4ç»„IOå£(P0~P3)ï¼ŒP0éœ€å¤–éƒ¨ä¸Šæ‹‰ï¼ŒEA æ¥ VCC ç”¨å†…éƒ¨ç¨‹åº' },
+    { componentType: 'STM32F103', title: 'STM32', content: 'Cortex-M3ï¼Œ72MHzï¼›USART1 å¸¸ç”¨ PA9/PA10 æˆ– P10/P11' },
+    { componentType: '74HC', title: 'CMOS é€»è¾‘', content: 'æœªç”¨è¾“å…¥ä¸å¯æ‚¬ç©ºï¼›VCC å»è€¦ 100nF é è¿‘èŠ¯ç‰‡' },
+];
+TeachingService.FW_51 = {
+    mcuFamily: '8051',
+    hexText: ':03000000020100FA\n' +
+        ':1301000074FEF59012010A2380F8780879FFD9FED8FA227A\n' +
+        ':00000001FF\n'
+};
+TeachingService.FW_STM32 = {
+    mcuFamily: 'STM32',
+    hexText: 
+    // USART init + RXNE echo + free-run TX 0x55. See tools/_build_lab_uart_hex.py
+    ':020000040800F2\n' +
+        ':1000000000100020010100080000000000000000B6\n' +
+        ':10004000FEE70000000000000000000000000000CB\n' +
+        ':100100000E480F4901600F480F4901600F48104920\n' +
+        ':1001100081601049C16001782022114206D0037924\n' +
+        ':10012000017880221142FBD00371F4E7017880222C\n' +
+        ':100130001142F0D055210171EDE700BF18100240C7\n' +
+        ':100140000004000000080140004B0000003801409E\n' +
+        ':080150004C1D00000C20000012\n' +
+        ':00000001FF\n'
+};
+//# sourceMappingURL=TeachingService.js.mapÂ‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsÙPC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\TeachingService.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0’ÔrD’²hostDependencyName®hostModuleName¾./src/main/ets/TeachingService©ai_engineD±./TeachingService©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚñ/**
+ * æ•™å­¦è¾…åŠ© + å®éªŒæ¨¡æ¿ + AI ç­”ç–‘
+ */
+import { SchTopology } from 'common';
+import {
+  LabTemplateRegistry, LabTemplateDef, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
+} from './algorithms/LabTemplateRegistry';
+
+/** æ¨¡æ¿å…³è”çš„å›ºä»¶ä¿¡æ¯ */
+export interface TemplateFirmware {
+  hexText: string;
+  mcuFamily: string;
+}
+
+export interface LabTemplate {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  knowledgePoints: string[];
+  /** æœ¬æ¨¡æ¿è¦†ç›–çš„å™¨ä»¶ libraryId */
+  libraryIds?: string[];
+}
+
+export interface KnowledgeTip {
+  componentType: string;
+  title: string;
+  content: string;
+}
+
+export class TeachingService {
+  private static tips: KnowledgeTip[] = [
+    { componentType: 'LM358', title: 'åŒè¿æ”¾ LM358', content: 'åŒè·¯è¿æ”¾ï¼Œå•ç”µæºå¯ç”¨ï¼›IN+ ä¸ IN- è™šçŸ­è™šæ–­' },
+    { componentType: 'UA741', title: 'è¿ç®—æ”¾å¤§å™¨', content: 'ç»å…¸å•è¿æ”¾ï¼›æ³¨æ„ VCC/VEE åŒç”µæºæˆ–å•ç”µæºåç½®' },
+    { componentType: 'AT89C51', title: '51å•ç‰‡æœº', content: '4ç»„IOå£(P0~P3)ï¼ŒP0éœ€å¤–éƒ¨ä¸Šæ‹‰ï¼ŒEA æ¥ VCC ç”¨å†…éƒ¨ç¨‹åº' },
+    { componentType: 'STM32F103', title: 'STM32', content: 'Cortex-M3ï¼Œ72MHzï¼›USART1 å¸¸ç”¨ PA9/PA10 æˆ– P10/P11' },
+    { componentType: '74HC', title: 'CMOS é€»è¾‘', content: 'æœªç”¨è¾“å…¥ä¸å¯æ‚¬ç©ºï¼›VCC å»è€¦ 100nF é è¿‘èŠ¯ç‰‡' },
+  ];
+
+  private static readonly FW_51: TemplateFirmware = {
+    mcuFamily: '8051',
+    hexText:
+      ':03000000020100FA\n' +
+      ':1301000074FEF59012010A2380F8780879FFD9FED8FA227A\n' +
+      ':00000001FF\n'
+  };
+  private static readonly FW_STM32: TemplateFirmware = {
+    mcuFamily: 'STM32',
+    hexText:
+      // USART init + RXNE echo + free-run TX 0x55. See tools/_build_lab_uart_hex.py
+      ':020000040800F2\n' +
+      ':1000000000100020010100080000000000000000B6\n' +
+      ':10004000FEE70000000000000000000000000000CB\n' +
+      ':100100000E480F4901600F480F4901600F48104920\n' +
+      ':1001100081601049C16001782022114206D0037924\n' +
+      ':10012000017880221142FBD00371F4E7017880222C\n' +
+      ':100130001142F0D055210171EDE700BF18100240C7\n' +
+      ':100140000004000000080140004B0000003801409E\n' +
+      ':080150004C1D00000C20000012\n' +
+      ':00000001FF\n'
+  };
+
+  private static toLabTemplate(def: LabTemplateDef): LabTemplate {
+    return {
+      id: def.id,
+      name: def.name,
+      category: def.category,
+      description: def.description,
+      knowledgePoints: def.knowledgePoints,
+      libraryIds: def.libraryIds
+    };
+  }
+
+  listTemplates(): LabTemplate[] {
+    return LabTemplateRegistry.listTemplates().map(TeachingService.toLabTemplate);
+  }
+
+  listCategories(): string[] {
+    return LabTemplateRegistry.listCategories();
+  }
+
+  listTemplatesByCategory(category: string): LabTemplate[] {
+    return LabTemplateRegistry.listTemplates()
+      .filter(t => t.category === category)
+      .map(TeachingService.toLabTemplate);
+  }
+
+  getCoverageReport(): LabCoverageReport {
+    return LabTemplateRegistry.getCoverageReport();
+  }
+
+  getAllCatalogLibraryIds(): string[] {
+    return ALL_CATALOG_LIBRARY_IDS.slice();
+  }
+
+  /** æ³¨å†Œè‡ªå®šä¹‰å®éªŒæ¨¡æ¿ï¼ˆè¿è¡Œæ—¶æ‰©å±•ï¼‰ */
+  registerTemplate(def: LabTemplateDef): void {
+    LabTemplateRegistry.registerTemplate(def);
+  }
+
+  /** æ¨¡æ¿å…³è” hex æ–‡ä»¶åï¼ˆä¸å«è·¯å¾„ï¼‰ */
+  getTemplateHexFileName(templateId: string): string | null {
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined || def.hexFile === undefined || def.hexFile.length === 0) {
+      return null;
+    }
+    return def.hexFile;
+  }
+
+  getTemplateFirmware(templateId: string): TemplateFirmware | null {
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined || def.firmware === undefined) {
+      return null;
+    }
+    if (def.firmware === '8051') {
+      return TeachingService.FW_51;
+    }
+    if (def.firmware === 'STM32') {
+      return TeachingService.FW_STM32;
+    }
+    return null;
+  }
+
+  getKnowledgeTip(libraryId: string): KnowledgeTip | null {
+    for (const tip of TeachingService.tips) {
+      if (libraryId.includes(tip.componentType)) {
+        return tip;
+      }
+    }
+    return null;
+  }
+
+  stepPowerOnSequence(topo: SchTopology, stepIndex: number): SchTopology {
+    const result = JSON.parse(JSON.stringify(topo)) as SchTopology;
+    const powerNets = result.netList.filter(n => n.isPower);
+    for (let i = 0; i <= stepIndex && i < powerNets.length; i++) {
+      powerNets[i].defaultVoltage = 5.0;
+    }
+    return result;
+  }
+
+  buildAiQuestion(topo: SchTopology, selectedUuid: string): string {
+    const dev = topo.deviceList.find(d => d.instUuid === selectedUuid);
+    if (!dev) {
+      return 'è¯·è§£é‡Šå½“å‰ç”µè·¯çš„å·¥ä½œåŸç†';
+    }
+    return `è¯·è§£é‡Šç”µè·¯ä¸­ ${dev.refName}(${dev.libDevId}) çš„ä½œç”¨ï¼Œä»¥åŠ surrounding è¿æ¥å…³ç³»`;
+  }
+}
+ÀÔrE‘Ù ./algorithms/LabTemplateRegistryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings²TeachingService.js ‘³TeachingService.etsÜ jš”   ” ”	 ” ” :”5 ÌQ”7 ”= ”Ì_ )”Ì` *””   ” ” ” –” >
+”
+ >” >” >” >” >2’” ?” ?–” Ì@” Ì@” Ì@
+” Ì@” Ì@” Ì@–” ÌA” ÌA
+” ÌA” ÌA” ÌA” ÌA–” ÌB” ÌB” ÌB” ÌB” ÌB”" ÌB–” ÌC” ÌC” ÌC” ÌC” ÌC”( ÌC"–” ÌD” ÌD” ÌD”  ÌD”! ÌD”0 ÌD*–” ÌE” ÌE” ÌE” ÌE” ÌE”& ÌE ’”	 ÌF”
+ ÌF’” ÌG” ÌG’” ÌI” ÌI” ÌJ” ÌJ”" ÌJ”# ÌJ”0 ÌJ,”2 ÌJ.”3 ÌJ/”6 ÌJ2”7 ÌJ3”ÌF ÌJÌB”ÌG ÌJÌC”ÌT ÌJÌP”ÌU ÌJÌQ”ÌV ÌJÌR’” ÌK” ÌK’” ÌM” ÌM—” ÌN” ÌN”" ÌN”# ÌN”1 ÌN-”3 ÌN/”4 ÌN0’” ÌO” ÌO”” ÌQ” ÌQ” ÌQ”$ ÌQ*–” ÌR” ÌR”" ÌR”# ÌR”0 ÌR,”2 ÌR.” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS”# ÌS”( ÌS"”0 ÌS*”1 ÌS+˜” ÌT” ÌT
+” ÌT”  ÌT”! ÌT”. ÌT(”/ ÌT)”0 ÌT*’” ÌU” ÌU’” ÌW” ÌW—” ÌX” ÌX”" ÌX”# ÌX”4 ÌX0”6 ÌX2”7 ÌX3’” ÌY” ÌY’” Ì[” Ì[—” Ì\” Ì\”& Ì\"”' Ì\#”, Ì\(”. Ì\*”/ Ì\+’” Ì]” Ì]’” Ì_” Ì_”” Ì`” Ì`” Ì`” Ì`&˜” Ìa” Ìa” Ìa”, Ìa(”- Ìa)”0 Ìa,”1 Ìa-”2 Ìa.’” Ìb” Ìb’” Ìd” Ìd”” Ìe” Ìe” Ìe”% Ìe+›” Ìf” Ìf
+” Ìf” Ìf”' Ìf#”( Ìf$”0 Ìf,”1 Ìf-”; Ìf7”< Ìf8”= Ìf9Ü ” Ìg” Ìg” Ìg” Ìg” Ìg”! Ìg”$ Ìg ”% Ìg!”, Ìg(”1 Ìg-”: Ìg6”> Ìg:”ÌA Ìg=”ÌB Ìg>”ÌI ÌgÌE”ÌJ ÌgÌF”ÌP ÌgÌL”ÌU ÌgÌQ”ÌV ÌgÌR”ÌX ÌgÌT”” Ìh” Ìh” Ìh” Ìh‘”	 Ìi–” Ìj” Ìj” Ìj” Ìj” Ìj” Ìj’” Ìk” Ìk”” Ìm” Ìm” Ìm”" Ìm(›” Ìn” Ìn
+” Ìn” Ìn”' Ìn#”( Ìn$”0 Ìn,”1 Ìn-”; Ìn7”< Ìn8”= Ìn9œ” Ìo” Ìo” Ìo” Ìo” Ìo”! Ìo”$ Ìo ”% Ìo!”- Ìo)”2 Ìo.”; Ìo7”= Ìo9”” Ìp” Ìp” Ìp” Ìp‘”	 Ìq˜” Ìr” Ìr” Ìr” Ìr” Ìr” Ìr”# Ìr”% Ìr!–” Ìs” Ìs”" Ìs”# Ìs”( Ìs"”) Ìs#‘”	 Ìt˜” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu”$ Ìu ”& Ìu"–” Ìv” Ìv”" Ìv”# Ìv”+ Ìv%”, Ìv&‘”	 Ìw”” Ìx” Ìx” Ìx” Ìx’” Ìy” Ìy”” Ì{” Ì{” Ì{” Ì{#™” Ì|” Ì|	” Ì|” Ì|” Ì|”) Ì|%”* Ì|&”. Ì|*”0 Ì|,›” Ì}” Ì}
+” Ì}” Ì}”" Ì}”# Ì}”& Ì} ”' Ì}!”4 Ì}.”5 Ì}/”7 Ì}1”” Ì~” Ì~” Ì~” Ì~‘” Ì‘”	 Ì€”” Ì” Ì” Ì” Ì’” Ì‚” Ì‚–” Ì„” Ì„” Ì„” Ì„'” Ì„)”' Ì„:Ü ” Ì…” Ì…
+” Ì…” Ì…” Ì…” Ì…”! Ì…”" Ì…”& Ì…"”' Ì…#”0 Ì…,”1 Ì…-”5 Ì…1”6 Ì…2”7 Ì…ÌB”8 Ì…ÌCÜ ” Ì†” Ì†
+” Ì†” Ì†”  Ì†”! Ì†”( Ì†$”) Ì†%”/ Ì†+”0 Ì†,”1 Ì†-”2 Ì†.”4 Ì†0”5 Ì†1”6 Ì†2”7 Ì†3”> Ì†:”? Ì†;”Ì@ Ì†<Ü ” Ì‡” Ì‡	” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡”& Ì‡"”* Ì‡&”+ Ì‡'”. Ì‡*”7 Ì‡3”8 Ì‡4”> Ì‡:”Ì@ Ì‡<”ÌA Ì‡=”ÌC Ì‡?”ÌE Ì‡ÌAš” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”' Ìˆ!”* Ìˆ$”- Ìˆ'”. Ìˆ(‘”	 Ì‰”” ÌŠ” ÌŠ” ÌŠ” ÌŠ’” Ì‹” Ì‹–” Ì” Ì” Ì” Ì#” Ì%”& Ì9Ü ” Ì” Ì
+” Ì” Ì” Ì” Ì”# Ì”$ Ì ”( Ì$”) Ì%”* Ì&”+ Ì'”- Ì)”. Ì*”/ Ì+”0 Ì,”8 Ì4”= Ì9”ÌI ÌÌE”ÌJ ÌÌF”ÌK ÌÌG•” Ì” Ì” Ì	” Ì” Ì”” Ì” Ì”! Ì”" Ì‘”	 Ì‘œ” Ì’” Ì’” Ì’” Ì’” Ì’”$ Ì’ ”( Ì’$”+ Ì’'”, Ì’(”4 Ì’0”ÌO Ì’ÌK”ÌP Ì’ÌL’” Ì“” Ì““”  ” ” (”  ”  ”  ”  ”  ”  ”#  #”%  %”0  0”2  2”9  9”;  ;”ÌV  ÌV”ÌX  ÌX” !” !” !” !” !” !”# !#”% !%”, !,”. !.”5 !5”7 !7”ÌS !ÌS”ÌU !ÌU” "” "” "” "” "”  " ”% "%”' "'”. ".”0 "0”7 "7”9 "9”Ì^ "Ì^”Ì` "Ì`” #” #” #” #”  # ”" #"”' #'”) #)”0 #0”2 #2”9 #9”; #;”Ìi #Ìi”Ìk #Ìk” $” $” $” $” $” $”" $"”$ $$”- $-”/ $/”6 $6”8 $8”ÌT $ÌT”ÌV $ÌV’” %” %“”  '” '” '4”” (” (” (” (”” )” )” *”" *’” +”= +;’” ,” ,’” -” -“”  .” ."” .7”” /” /” /” /’” 0” 0’” 1”ÌR 1ÌT’” 2” 2’” 3”7 35’” 4”7 45’” 5”7 55’” 6”7 65’” 7”7 75’” 8”7 85’” 9”7 95’” :”' :%’” ;” ;’” <” <ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ k‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌbÍ
+}ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌiÍ
+}ÔrM”¤type¥start£end¤nameªIdentifierÌoÌ~¯TeachingServiceÀÔrN”¤type¥start£end¤body©ClassBodyÌÍ
+}œÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌ†Í§ÃÂMªIdentifierÌÌš­toLabTemplate¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌšÍ§ÀÂÂÂ‘MªIdentifierÌ›Ì£defN®BlockStatementÌ Í§‘ÔrQ”¤type¥start£end¨argument¯ReturnStatementÌ«Í ÔrR”¤type¥start£endªproperties°ObjectExpressionÌ²ÍŸ–ÔrS™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌÁÌËÂÂÂMªIdentifierÌÁÌÃ¢idÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌÅÌËMªIdentifierÌÅÌÈ£defMªIdentifierÌÉÌË¢idÂÂ¤initS¨PropertyÌÚÌèÂÂÂMªIdentifierÌÚÌŞ¤nameT°MemberExpressionÌàÌèMªIdentifierÌàÌã£defMªIdentifierÌäÌè¤nameÂÂ¤initS¨PropertyÌ÷ÍÂÂÂMªIdentifierÌ÷Ìÿ¨categoryT°MemberExpressionÍÍMªIdentifierÍÍ£defMªIdentifierÍÍ¨categoryÂÂ¤initS¨PropertyÍÍ8ÂÂÂMªIdentifierÍÍ'«descriptionT°MemberExpressionÍ)Í8MªIdentifierÍ)Í,£defMªIdentifierÍ-Í8«descriptionÂÂ¤initS¨PropertyÍGÍkÂÂÂMªIdentifierÍGÍV¯knowledgePointsT°MemberExpressionÍXÍkMªIdentifierÍXÍ[£defMªIdentifierÍ\Ík¯knowledgePointsÂÂ¤initS¨PropertyÍzÍ”ÂÂÂMªIdentifierÍzÍ„ªlibraryIdsT°MemberExpressionÍ†Í”MªIdentifierÍ†Í‰£defMªIdentifierÍŠÍ”ªlibraryIdsÂÂ¤initO°MethodDefinitionÍ­ÍÂÂMªIdentifierÍ­Íº­listTemplates¦methodP²FunctionExpressionÍºÍÀÂÂÂN®BlockStatementÍ½Í‘Q¯ReturnStatementÍÈÍÔrU–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÏÍT°MemberExpressionÍÏÍöU®CallExpressionÍÏÍòT°MemberExpressionÍÏÍğMªIdentifierÍÏÍâ³LabTemplateRegistryMªIdentifierÍãÍğ­listTemplatesÂÂÂMªIdentifierÍóÍö£mapÂÂ‘T°MemberExpressionÍ÷ÍMªIdentifierÍ÷Í¯TeachingServiceMªIdentifierÍÍ­toLabTemplateÂÂÂO°MethodDefinitionÍ#ÍrÂÂMªIdentifierÍ#Í1®listCategories¦methodP²FunctionExpressionÍ1ÍrÀÂÂÂN®BlockStatementÍ4Ír‘Q¯ReturnStatementÍ?ÍkU®CallExpressionÍFÍjT°MemberExpressionÍFÍhMªIdentifierÍFÍY³LabTemplateRegistryMªIdentifierÍZÍh®listCategoriesÂÂÂO°MethodDefinitionÍxÍ;ÂÂMªIdentifierÍxÍ·listTemplatesByCategory¦methodP²FunctionExpressionÍÍ;ÀÂÂÂ‘MªIdentifierÍÍ˜¨categoryN®BlockStatementÍšÍ;‘Q¯ReturnStatementÍ¥Í4U®CallExpressionÍ¬Í3T°MemberExpressionÍ¬ÍU®CallExpressionÍ¬ÍT°MemberExpressionÍ¬ÍäU®CallExpressionÍ¬ÍÏT°MemberExpressionÍ¬ÍÍMªIdentifierÍ¬Í¿³LabTemplateRegistryMªIdentifierÍÀÍÍ­listTemplatesÂÂÂMªIdentifierÍŞÍä¦filterÂÂ‘P·ArrowFunctionExpressionÍåÍÀÃÂÂ‘MªIdentifierÍåÍæ¡tÔrV–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍêÍT°MemberExpressionÍêÍôMªIdentifierÍêÍë¡tMªIdentifierÍìÍô¨categoryÂÂ£===MªIdentifierÍùÍ¨categoryÂMªIdentifierÍÍ£mapÂÂ‘T°MemberExpressionÍÍ2MªIdentifierÍÍ$¯TeachingServiceMªIdentifierÍ%Í2­toLabTemplateÂÂÂO°MethodDefinitionÍAÍ–ÂÂMªIdentifierÍAÍR±getCoverageReport¦methodP²FunctionExpressionÍRÍ–ÀÂÂÂN®BlockStatementÍUÍ–‘Q¯ReturnStatementÍ`ÍU®CallExpressionÍgÍT°MemberExpressionÍgÍŒMªIdentifierÍgÍz³LabTemplateRegistryMªIdentifierÍ{ÍŒ±getCoverageReportÂÂÂO°MethodDefinitionÍœÍïÂÂMªIdentifierÍœÍ³·getAllCatalogLibraryIds¦methodP²FunctionExpressionÍ³ÍïÀÂÂÂN®BlockStatementÍ¶Íï‘Q¯ReturnStatementÍÁÍèU®CallExpressionÍÈÍçT°MemberExpressionÍÈÍåMªIdentifierÍÈÍß·ALL_CATALOG_LIBRARY_IDSMªIdentifierÍàÍå¥sliceÂÂÂO°MethodDefinitionÍÍdÂÂMªIdentifierÍÍ"°registerTemplate¦methodP²FunctionExpressionÍ"ÍdÀÂÂÂ‘MªIdentifierÍ#Í&£defN®BlockStatementÍ(Íd‘ÔrW”¤type¥start£endªexpression³ExpressionStatementÍ3Í]U®CallExpressionÍ3Í\T°MemberExpressionÍ3ÍWMªIdentifierÍ3ÍF³LabTemplateRegistryMªIdentifierÍGÍW°registerTemplateÂÂ‘MªIdentifierÍXÍ[£defÂO°MethodDefinitionÍ‰ÍÂÂMªIdentifierÍ‰ÍŸ¶getTemplateHexFileName¦methodP²FunctionExpressionÍŸÍÀÂÂÂ‘MªIdentifierÍ ÍªªtemplateIdN®BlockStatementÍ¬Í“ÔrX•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ·Íì‘ÔrY•¤type¥start£end¢id¤init²VariableDeclaratorÍ½ÍëMªIdentifierÍ½ÍÀ£defU®CallExpressionÍÃÍëT°MemberExpressionÍÃÍßMªIdentifierÍÃÍÖ³LabTemplateRegistryMªIdentifierÍ×Íß¨findByIdÂÂ‘MªIdentifierÍàÍêªtemplateIdÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍöÍlV±LogicalExpressionÍúÍDV±LogicalExpressionÍúÍ(V°BinaryExpressionÍúÍMªIdentifierÍúÍı£def£===MªIdentifierÍÍ©undefined¢||V°BinaryExpressionÍÍ(T°MemberExpressionÍÍMªIdentifierÍÍ£defMªIdentifierÍÍ§hexFileÂÂ£===MªIdentifierÍÍ(©undefined¢||V°BinaryExpressionÍ,ÍDT°MemberExpressionÍ,Í>T°MemberExpressionÍ,Í7MªIdentifierÍ,Í/£defMªIdentifierÍ0Í7§hexFileÂÂMªIdentifierÍ8Í>¦lengthÂÂ£===Ôr[•¤type¥start£end¥value£raw§LiteralÍCÍD ¡0N®BlockStatementÍFÍl‘Q¯ReturnStatementÍUÍa[§LiteralÍ\Í`À¤nullÀQ¯ReturnStatementÍvÍ‰T°MemberExpressionÍ}ÍˆMªIdentifierÍ}Í€£defMªIdentifierÍÍˆ§hexFileÂÂO°MethodDefinitionÍ–Í8ÂÂMªIdentifierÍ–Í©³getTemplateFirmware¦methodP²FunctionExpressionÍ©Í8ÀÂÂÂ‘MªIdentifierÍªÍ´ªtemplateIdN®BlockStatementÍ¶Í8•X³VariableDeclarationÍÁÍö‘Y²VariableDeclaratorÍÇÍõMªIdentifierÍÇÍÊ£defU®CallExpressionÍÍÍõT°MemberExpressionÍÍÍéMªIdentifierÍÍÍà³LabTemplateRegistryMªIdentifierÍáÍé¨findByIdÂÂ‘MªIdentifierÍêÍôªtemplateIdÂ¥constZ«IfStatementÍ Í[V±LogicalExpressionÍÍ3V°BinaryExpressionÍÍMªIdentifierÍÍ£def£===MªIdentifierÍÍ©undefined¢||V°BinaryExpressionÍÍ3T°MemberExpressionÍÍ%MªIdentifierÍÍ£defMªIdentifierÍÍ%¨firmwareÂÂ£===MªIdentifierÍ*Í3©undefinedN®BlockStatementÍ5Í[‘Q¯ReturnStatementÍDÍP[§LiteralÍKÍOÀ¤nullÀZ«IfStatementÍeÍ¹V°BinaryExpressionÍiÍ€T°MemberExpressionÍiÍuMªIdentifierÍiÍl£defMªIdentifierÍmÍu¨firmwareÂÂ£===[§LiteralÍzÍ€¤8051¦'8051'N®BlockStatementÍ‚Í¹‘Q¯ReturnStatementÍ‘Í®T°MemberExpressionÍ˜Í­MªIdentifierÍ˜Í§¯TeachingServiceMªIdentifierÍ¨Í­¥FW_51ÂÂÀZ«IfStatementÍÃÍV°BinaryExpressionÍÇÍßT°MemberExpressionÍÇÍÓMªIdentifierÍÇÍÊ£defMªIdentifierÍËÍÓ¨firmwareÂÂ£===[§LiteralÍØÍß¥STM32§'STM32'N®BlockStatementÍáÍ‘Q¯ReturnStatementÍğÍT°MemberExpressionÍ÷ÍMªIdentifierÍ÷Í¯TeachingServiceMªIdentifierÍÍ¨FW_STM32ÂÂÀQ¯ReturnStatementÍ%Í1[§LiteralÍ,Í0À¤nullO°MethodDefinitionÍ>ÍÂÂMªIdentifierÍ>ÍM¯getKnowledgeTip¦methodP²FunctionExpressionÍMÍÀÂÂÂ‘MªIdentifierÍNÍW©libraryIdN®BlockStatementÍYÍ’Ôr\—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍdÍşÂX³VariableDeclarationÍiÍr‘Y²VariableDeclaratorÍoÍrMªIdentifierÍoÍr£tipÀ¥constT°MemberExpressionÍvÍŠMªIdentifierÍvÍ…¯TeachingServiceMªIdentifierÍ†ÍŠ¤tipsÂÂN®BlockStatementÍŒÍş‘Z«IfStatementÍ›ÍóU®CallExpressionÍŸÍÄT°MemberExpressionÍŸÍ±MªIdentifierÍŸÍ¨©libraryIdMªIdentifierÍ©Í±¨includesÂÂ‘T°MemberExpressionÍ²ÍÃMªIdentifierÍ²Íµ£tipMªIdentifierÍ¶ÍÃ­componentTypeÂÂÂN®BlockStatementÍÆÍó‘Q¯ReturnStatementÍÙÍäMªIdentifierÍàÍã£tipÀQ¯ReturnStatementÍÍ[§LiteralÍÍÀ¤nullO°MethodDefinitionÍ!Í	eÂÂMªIdentifierÍ!Í4³stepPowerOnSequence¦methodP²FunctionExpressionÍ4Í	eÀÂÂÂ’MªIdentifierÍ5Í9¤topoMªIdentifierÍ;ÍD©stepIndexN®BlockStatementÍFÍ	e”X³VariableDeclarationÍQÍ‘Y²VariableDeclaratorÍWÍ€MªIdentifierÍWÍ]¦resultU®CallExpressionÍ`Í€T°MemberExpressionÍ`ÍjMªIdentifierÍ`Íd¤JSONMªIdentifierÍeÍj¥parseÂÂ‘U®CallExpressionÍkÍT°MemberExpressionÍkÍyMªIdentifierÍkÍo¤JSONMªIdentifierÍpÍy©stringifyÂÂ‘MªIdentifierÍzÍ~¤topoÂÂ¥constX³VariableDeclarationÍ‹ÍÃ‘Y²VariableDeclaratorÍ‘ÍÂMªIdentifierÍ‘Íš©powerNetsU®CallExpressionÍÍÂT°MemberExpressionÍÍ²T°MemberExpressionÍÍ«MªIdentifierÍÍ£¦resultMªIdentifierÍ¤Í«§netListÂÂMªIdentifierÍ¬Í²¦filterÂÂ‘P·ArrowFunctionExpressionÍ³ÍÁÀÃÂÂ‘MªIdentifierÍ³Í´¡nT°MemberExpressionÍ¸ÍÁMªIdentifierÍ¸Í¹¡nMªIdentifierÍºÍÁ§isPowerÂÂÂ¥constÔr]—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÍÍ	FX³VariableDeclarationÍÒÍÛ‘Y²VariableDeclaratorÍÖÍÛMªIdentifierÍÖÍ×¡i[§LiteralÍÚÍÛ ¡0£letV±LogicalExpressionÍİÍ	V°BinaryExpressionÍİÍëMªIdentifierÍİÍŞ¡i¢<=MªIdentifierÍâÍë©stepIndex¢&&V°BinaryExpressionÍïÍ	MªIdentifierÍïÍğ¡i¡<T°MemberExpressionÍóÍ	MªIdentifierÍóÍü©powerNetsMªIdentifierÍıÍ	¦lengthÂÂÔr^–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ	Í	¢++ÂMªIdentifierÍ	Í	¡iN®BlockStatementÍ	
+Í	F‘W³ExpressionStatementÍ	Í	;Ôr_–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ	Í	:¡=T°MemberExpressionÍ	Í	4T°MemberExpressionÍ	Í	%MªIdentifierÍ	Í	"©powerNetsMªIdentifierÍ	#Í	$¡iÃÂMªIdentifierÍ	&Í	4®defaultVoltageÂÂ[§LiteralÍ	7Í	:£5.0Q¯ReturnStatementÍ	PÍ	^MªIdentifierÍ	WÍ	]¦resultO°MethodDefinitionÍ	kÍ
+zÂÂMªIdentifierÍ	kÍ	z¯buildAiQuestion¦methodP²FunctionExpressionÍ	zÍ
+zÀÂÂÂ’MªIdentifierÍ	{Í	¤topoMªIdentifierÍ	Í	¬selectedUuidN®BlockStatementÍ	Í
+z“X³VariableDeclarationÍ	šÍ	İ‘Y²VariableDeclaratorÍ	 Í	ÜMªIdentifierÍ	 Í	££devU®CallExpressionÍ	¦Í	ÜT°MemberExpressionÍ	¦Í	ºT°MemberExpressionÍ	¦Í	µMªIdentifierÍ	¦Í	ª¤topoMªIdentifierÍ	«Í	µªdeviceListÂÂMªIdentifierÍ	¶Í	º¤findÂÂ‘P·ArrowFunctionExpressionÍ	»Í	ÛÀÃÂÂ‘MªIdentifierÍ	»Í	¼¡dV°BinaryExpressionÍ	ÀÍ	ÛT°MemberExpressionÍ	ÀÍ	ÊMªIdentifierÍ	ÀÍ	Á¡dMªIdentifierÍ	ÂÍ	Ê¨instUuidÂÂ£===MªIdentifierÍ	ÏÍ	Û¬selectedUuidÂ¥constZ«IfStatementÍ	çÍ
+!^¯UnaryExpressionÍ	ëÍ	ï¡!ÃMªIdentifierÍ	ìÍ	ï£devN®BlockStatementÍ	ñÍ
+!‘Q¯ReturnStatementÍ
+ Í
+[§LiteralÍ
+Í
+Ù$è¯·è§£é‡Šå½“å‰ç”µè·¯çš„å·¥ä½œåŸç†Ù&'è¯·è§£é‡Šå½“å‰ç”µè·¯çš„å·¥ä½œåŸç†'ÀQ¯ReturnStatementÍ
++Í
+sÔr`•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ
+2Í
+r’T°MemberExpressionÍ
+<Í
+GMªIdentifierÍ
+<Í
+?£devMªIdentifierÍ
+@Í
+G§refNameÂÂT°MemberExpressionÍ
+KÍ
+WMªIdentifierÍ
+KÍ
+N£devMªIdentifierÍ
+OÍ
+W¨libDevIdÂÂ“Ôra•¤type¥start£end¥value¤tail¯TemplateElementÍ
+3Í
+:Ôrb’£raw¦cooked³è¯·è§£é‡Šç”µè·¯ä¸­ ³è¯·è§£é‡Šç”µè·¯ä¸­ Âa¯TemplateElementÍ
+HÍ
+Ib¡(¡(Âa¯TemplateElementÍ
+XÍ
+qbÙ-) çš„ä½œç”¨ï¼Œä»¥åŠ surrounding è¿æ¥å…³ç³»Ù-) çš„ä½œç”¨ï¼Œä»¥åŠ surrounding è¿æ¥å…³ç³»ÃÀ‘Ôrc•¤type¥start£endªspecifiers¦source±ImportDeclaration Ì`’Ôrd•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	³LabTemplateRegistryMªIdentifier	³LabTemplateRegistryd¯ImportSpecifier5MªIdentifier5·ALL_CATALOG_LIBRARY_IDSMªIdentifier5·ALL_CATALOG_LIBRARY_IDS[§Literal=Ì_Ù ./algorithms/LabTemplateRegistryÙ"'./algorithms/LabTemplateRegistry'

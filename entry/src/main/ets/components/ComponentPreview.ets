@@ -12,6 +12,7 @@ import { ComponentDefinition } from 'component_library';
 export struct ComponentPreview {
   @Prop @Watch('onLibraryIdChange') libraryId: string = '';
   @State private previewVersion: number = 0;
+  @State private pressed: boolean = false;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -46,9 +47,18 @@ export struct ComponentPreview {
     }
     .width('100%')
     .height(ProteusDimens.PREVIEW_HEIGHT)
-    .backgroundColor(ProteusColors.PREVIEW_BG)
+    .backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED : ProteusColors.PREVIEW_BG)
     .justifyContent(FlexAlign.Center)
     .border({ width: { top: 1 }, color: ProteusColors.DIVIDER })
+    .scale(this.pressed ? { x: 0.98, y: 0.98 } : { x: 1, y: 1 })
+    .opacity(this.pressed ? 0.88 : 1)
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) {
+        this.pressed = true;
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.pressed = false;
+      }
+    })
   }
 
   private redraw(): void {

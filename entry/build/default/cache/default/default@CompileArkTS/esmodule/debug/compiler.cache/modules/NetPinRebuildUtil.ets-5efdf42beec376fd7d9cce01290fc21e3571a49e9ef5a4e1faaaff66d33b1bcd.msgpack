@@ -1,0 +1,807 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ0ö/**
+ * Rebuild net.pinIds from wire geometry when pin refs are missing.
+ * Used by schematic editor and analog simulation so MNA sees real connectivity.
+ */
+import { NetType } from '../types/CommonTypes';
+import { buildPinRef, parsePinRef } from './PinRefUtil';
+import { traceNetConnectivity } from './InstrumentTraceLog';
+import { rebuildWireNetTopology } from './WireNetTopology';
+import { applyNetLabelConnectivity } from './NetLabelConnectivity';
+function transformPin(local, rotation, mirrored) {
+    let x = local.x;
+    let y = local.y;
+    if (mirrored) {
+        x = -x;
+    }
+    switch (rotation) {
+        case 90: return { x: -y, y: x };
+        case 180: return { x: -x, y: -y };
+        case 270: return { x: y, y: -x };
+        default: return { x: x, y: y };
+    }
+}
+function defaultPinsForLib(libraryId, resolver) {
+    if (resolver !== undefined) {
+        const resolved = resolver(libraryId);
+        if (resolved !== null && resolved.length > 0) {
+            return resolved;
+        }
+    }
+    const lib = libraryId.toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC')) {
+        return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
+    }
+    if (lib === 'GND' || lib.endsWith('/GND')) {
+        return [{ id: '1', name: 'GND', x: 0, y: -10 }];
+    }
+    if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
+        return [
+            { id: 'V+', name: 'V+', x: -30, y: -25 },
+            { id: 'COM', name: 'COM', x: -30, y: 25 }
+        ];
+    }
+    if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
+        return [
+            { id: 'I+', name: 'I+', x: -30, y: 0 },
+            { id: 'I-', name: 'I-', x: -30, y: 20 }
+        ];
+    }
+    if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+        return [
+            { id: '1', name: 'IN', x: -40, y: 0 },
+            { id: '2', name: 'GND', x: 0, y: 40 },
+            { id: '3', name: 'OUT', x: 40, y: 0 }
+        ];
+    }
+    if (lib === 'VAC' || lib.startsWith('VAC')) {
+        return [
+            { id: '1', name: 'AC+', x: -20, y: 0 },
+            { id: '2', name: 'AC-', x: 20, y: 0 }
+        ];
+    }
+    // Dual LM358/TL082 (match BuiltinComponents.genDualOpAmpPins / kit.mjs)
+    if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+        return [
+            { id: 'OUT1', name: 'OUT1', x: 50, y: -30 },
+            { id: 'IN-1', name: 'IN-1', x: -50, y: -20 },
+            { id: 'IN+1', name: 'IN+1', x: -50, y: -40 },
+            { id: 'V-', name: 'V-', x: 0, y: 50 },
+            { id: 'IN+2', name: 'IN+2', x: -50, y: 20 },
+            { id: 'IN-2', name: 'IN-2', x: -50, y: 40 },
+            { id: 'OUT2', name: 'OUT2', x: 50, y: 30 },
+            { id: 'V+', name: 'V+', x: 0, y: -50 }
+        ];
+    }
+    if (lib.includes('UA741') || lib.includes('OP')) {
+        return [
+            { id: 'IN+', name: 'IN+', x: -50, y: -20 },
+            { id: 'IN-', name: 'IN-', x: -50, y: 20 },
+            { id: 'OUT', name: 'OUT', x: 50, y: 0 },
+            { id: 'VCC', name: 'VCC', x: 0, y: -50 },
+            { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+        ];
+    }
+    if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
+        return [
+            { id: 'A', name: 'A', x: -30, y: 0 },
+            { id: 'K', name: 'K', x: 30, y: 0 }
+        ];
+    }
+    // Generic two-terminal passives (R/C/L/fuse/crystalâ€¦)
+    return [
+        { id: '1', name: '1', x: -30, y: 0 },
+        { id: '2', name: '2', x: 30, y: 0 }
+    ];
+}
+function countPinRefs(doc) {
+    let total = 0;
+    for (let i = 0; i < doc.nets.length; i++) {
+        total += doc.nets[i].pinIds.length;
+    }
+    return total;
+}
+function findNetByName(doc, name) {
+    const upper = name.toUpperCase();
+    for (let i = 0; i < doc.nets.length; i++) {
+        if (doc.nets[i].name.toUpperCase() === upper) {
+            return doc.nets[i].id;
+        }
+    }
+    return null;
+}
+function ensureNet(doc, netId) {
+    if (doc.nets.some(n => n.id === netId)) {
+        return;
+    }
+    doc.nets.push({ id: netId, name: '', type: NetType.SIGNAL, pinIds: [] });
+}
+function addPinToNet(doc, netId, compId, pinId, pinName) {
+    ensureNet(doc, netId);
+    const net = doc.nets.find(n => n.id === netId);
+    if (net === undefined) {
+        return;
+    }
+    const pinRef = buildPinRef(compId, pinId, pinName);
+    if (net.pinIds.includes(pinRef)) {
+        return;
+    }
+    // Remove this pin from any other nets â€” a pin must belong to exactly one net
+    for (const other of doc.nets) {
+        if (other.id !== netId) {
+            const idx = other.pinIds.indexOf(pinRef);
+            if (idx >= 0) {
+                other.pinIds.splice(idx, 1);
+            }
+        }
+    }
+    net.pinIds.push(pinRef);
+}
+function countCompPinConnections(doc, compId) {
+    let count = 0;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+        const net = doc.nets[ni];
+        for (let pi = 0; pi < net.pinIds.length; pi++) {
+            const parsed = parsePinRef(net.pinIds[pi]);
+            if (parsed !== null && parsed.compId === compId) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+function expectedPinCount(libraryId) {
+    const lib = libraryId.toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND')) {
+        return 1;
+    }
+    return 2;
+}
+function needsWireRebuild(doc) {
+    if (countPinRefs(doc) < Math.max(2, doc.components.length)) {
+        return true;
+    }
+    for (let ci = 0; ci < doc.components.length; ci++) {
+        const comp = doc.components[ci];
+        const expected = expectedPinCount(comp.libraryId);
+        if (countCompPinConnections(doc, comp.id) < expected) {
+            return true;
+        }
+    }
+    return false;
+}
+function connectWireEndpoints(doc, threshold, resolver) {
+    const junctionRadius = 2;
+    // æ¾å¸é™„é˜ˆå€¼å†…ä¸å…è®¸æŠŠç”µæº/åœ°ç¬¦å·è„šå¸åˆ°ä¿¡å· stub æ¸¸ç¦»ç«¯ï¼ˆlab_passive DIV_TOP æ ¹å› ï¼‰
+    const strictSnap = Math.min(5, threshold);
+    const allCandidates = [];
+    for (let ci = 0; ci < doc.components.length; ci++) {
+        const comp = doc.components[ci];
+        const pins = defaultPinsForLib(comp.libraryId, resolver);
+        for (let pi = 0; pi < pins.length; pi++) {
+            const pin = pins[pi];
+            const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+            allCandidates.push({
+                compId: comp.id,
+                pinId: pin.id,
+                pinName: pin.name,
+                libraryId: comp.libraryId,
+                world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+            });
+        }
+    }
+    let connected = 0;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wire = doc.wires[wi];
+        if (wire.points.length < 2) {
+            continue;
+        }
+        ensureNet(doc, wire.netId);
+        const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+        for (let ei = 0; ei < endpoints.length; ei++) {
+            const ep = endpoints[ei];
+            let bestDist = threshold;
+            let bestIdx = -1;
+            for (let ci = 0; ci < allCandidates.length; ci++) {
+                const c = allCandidates[ci];
+                const dx = ep.x - c.world.x;
+                const dy = ep.y - c.world.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist >= bestDist) {
+                    continue;
+                }
+                // å®½æ¾é˜ˆå€¼ï¼šç¦æ­¢æ å¤ºç”µæº/åœ°ç¬¦å·è„šï¼ˆç²¾ç¡®æ¥è§¦ä»å…è®¸ï¼‰
+                if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND')) {
+                    continue;
+                }
+                bestDist = dist;
+                bestIdx = ci;
+            }
+            if (bestIdx >= 0) {
+                const best = allCandidates[bestIdx];
+                addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+                connected++;
+                // Also add co-located pins (junction)
+                for (let ci = 0; ci < allCandidates.length; ci++) {
+                    if (ci === bestIdx) {
+                        continue;
+                    }
+                    const c = allCandidates[ci];
+                    const dx = best.world.x - c.world.x;
+                    const dy = best.world.y - c.world.y;
+                    if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+                        addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+                        connected++;
+                    }
+                }
+            }
+        }
+    }
+    return connected;
+}
+/** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc) {
+    const wireNetIds = new Set();
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const nid = doc.wires[wi].netId;
+        if (nid.length > 0) {
+            wireNetIds.add(nid);
+        }
+    }
+    const before = doc.nets.length;
+    const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
+    doc.nets = doc.nets.filter((net) => {
+        if (wireNetIds.has(net.id)) {
+            return true;
+        }
+        if (net.pinIds.length > 0) {
+            return true;
+        }
+        // ä¿ç•™çœŸæ­£çš„ç”µæº/åœ°è½¨ï¼›ä¸¢å¼ƒæ‹“æ‰‘é‡å»ºåæ‚¬ç©ºçš„å‘½åç”µæºç½‘ï¼ˆå¦‚ç©º VOUTï¼‰
+        if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+            return railNames.has(net.name.toUpperCase());
+        }
+        return false;
+    });
+    return before - doc.nets.length;
+}
+function mergeRailNets(doc) {
+    const rails = ['VCC', 'VDD', 'GND', 'VSS', '0'];
+    for (let ri = 0; ri < rails.length; ri++) {
+        const rail = rails[ri];
+        const canonical = findNetByName(doc, rail);
+        if (canonical === null) {
+            continue;
+        }
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const net = doc.nets[ni];
+            if (net.id === canonical || net.name.toUpperCase() !== rail) {
+                continue;
+            }
+            const canonNet = doc.nets.find(n => n.id === canonical);
+            if (canonNet === undefined) {
+                continue;
+            }
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                if (!canonNet.pinIds.includes(net.pinIds[pi])) {
+                    canonNet.pinIds.push(net.pinIds[pi]);
+                }
+            }
+        }
+    }
+}
+/**
+ * Ensure net.pinIds reflect wire connectivity only.
+ * Rebuilds wire netIds from geometry, then assigns pins at wire endpoints.
+ */
+export function ensureNetPinConnectivity(doc, gridSize = 10, resolver) {
+    const before = countPinRefs(doc);
+    rebuildWireNetTopology(doc, gridSize, resolver);
+    for (let i = 0; i < doc.nets.length; i++) {
+        doc.nets[i].pinIds = [];
+    }
+    const threshold = Math.max(gridSize * 2.5, 20);
+    const wired = connectWireEndpoints(doc, threshold, resolver);
+    // Proteus: same net-label text (case-sensitive) â‡’ same net â€” must run after geometry rebuild
+    applyNetLabelConnectivity(doc, gridSize);
+    mergeRailNets(doc);
+    pruneOrphanNets(doc);
+    const after = countPinRefs(doc);
+    traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+}
+/** Strip and rebuild all pinIds from wires (simulation reload). */
+export function rebuildAllNetPinConnectivity(doc, gridSize = 10, resolver) {
+    for (let i = 0; i < doc.nets.length; i++) {
+        doc.nets[i].pinIds = [];
+    }
+    ensureNetPinConnectivity(doc, gridSize, resolver);
+}
+export function summarizeNetPins(doc, maxNets = 6) {
+    const parts = [];
+    let count = 0;
+    for (let i = 0; i < doc.nets.length && count < maxNets; i++) {
+        const net = doc.nets[i];
+        if (net.pinIds.length === 0) {
+            continue;
+        }
+        parts.push(`${net.name || net.id}(${net.pinIds.length})`);
+        count++;
+    }
+    return parts.length > 0 ? parts.join(', ') : '(no pins)';
+}
+//# sourceMappingURL=NetPinRebuildUtil.js.mapÂ•ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.etsÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetPinRebuildUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/NetPinRebuildUtil¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ//**
+ * Rebuild net.pinIds from wire geometry when pin refs are missing.
+ * Used by schematic editor and analog simulation so MNA sees real connectivity.
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from '../types/CommonTypes';
+import { buildPinRef, parsePinRef } from './PinRefUtil';
+import { traceNetConnectivity } from './InstrumentTraceLog';
+import { rebuildWireNetTopology } from './WireNetTopology';
+import { applyNetLabelConnectivity } from './NetLabelConnectivity';
+
+export interface PinGeometry {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+}
+
+/** Optional callback to resolve real pin positions from component library. */
+export type PinGeometryResolver = (libraryId: string) => PinGeometry[] | null;
+
+function transformPin(local: Point2D, rotation: Rotation, mirrored: boolean): Point2D {
+  let x = local.x;
+  let y = local.y;
+  if (mirrored) {
+    x = -x;
+  }
+  switch (rotation) {
+    case 90: return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+    default: return { x: x, y: y };
+  }
+}
+
+function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): PinGeometry[] {
+  if (resolver !== undefined) {
+    const resolved = resolver(libraryId);
+    if (resolved !== null && resolved.length > 0) {
+      return resolved;
+    }
+  }
+  const lib = libraryId.toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC')) {
+    return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
+  }
+  if (lib === 'GND' || lib.endsWith('/GND')) {
+    return [{ id: '1', name: 'GND', x: 0, y: -10 }];
+  }
+  if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
+  if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
+    return [
+      { id: 'I+', name: 'I+', x: -30, y: 0 },
+      { id: 'I-', name: 'I-', x: -30, y: 20 }
+    ];
+  }
+  if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+    return [
+      { id: '1', name: 'IN', x: -40, y: 0 },
+      { id: '2', name: 'GND', x: 0, y: 40 },
+      { id: '3', name: 'OUT', x: 40, y: 0 }
+    ];
+  }
+  if (lib === 'VAC' || lib.startsWith('VAC')) {
+    return [
+      { id: '1', name: 'AC+', x: -20, y: 0 },
+      { id: '2', name: 'AC-', x: 20, y: 0 }
+    ];
+  }
+  // Dual LM358/TL082 (match BuiltinComponents.genDualOpAmpPins / kit.mjs)
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+    return [
+      { id: 'OUT1', name: 'OUT1', x: 50, y: -30 },
+      { id: 'IN-1', name: 'IN-1', x: -50, y: -20 },
+      { id: 'IN+1', name: 'IN+1', x: -50, y: -40 },
+      { id: 'V-', name: 'V-', x: 0, y: 50 },
+      { id: 'IN+2', name: 'IN+2', x: -50, y: 20 },
+      { id: 'IN-2', name: 'IN-2', x: -50, y: 40 },
+      { id: 'OUT2', name: 'OUT2', x: 50, y: 30 },
+      { id: 'V+', name: 'V+', x: 0, y: -50 }
+    ];
+  }
+  if (lib.includes('UA741') || lib.includes('OP')) {
+    return [
+      { id: 'IN+', name: 'IN+', x: -50, y: -20 },
+      { id: 'IN-', name: 'IN-', x: -50, y: 20 },
+      { id: 'OUT', name: 'OUT', x: 50, y: 0 },
+      { id: 'VCC', name: 'VCC', x: 0, y: -50 },
+      { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+    ];
+  }
+  if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
+    return [
+      { id: 'A', name: 'A', x: -30, y: 0 },
+      { id: 'K', name: 'K', x: 30, y: 0 }
+    ];
+  }
+  // Generic two-terminal passives (R/C/L/fuse/crystalâ€¦)
+  return [
+    { id: '1', name: '1', x: -30, y: 0 },
+    { id: '2', name: '2', x: 30, y: 0 }
+  ];
+}
+
+function countPinRefs(doc: SchematicDocument): number {
+  let total = 0;
+  for (let i = 0; i < doc.nets.length; i++) {
+    total += doc.nets[i].pinIds.length;
+  }
+  return total;
+}
+
+function findNetByName(doc: SchematicDocument, name: string): string | null {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < doc.nets.length; i++) {
+    if (doc.nets[i].name.toUpperCase() === upper) {
+      return doc.nets[i].id;
+    }
+  }
+  return null;
+}
+
+function ensureNet(doc: SchematicDocument, netId: string): void {
+  if (doc.nets.some(n => n.id === netId)) {
+    return;
+  }
+  doc.nets.push({ id: netId, name: '', type: NetType.SIGNAL, pinIds: [] });
+}
+
+function addPinToNet(doc: SchematicDocument, netId: string, compId: string,
+  pinId: string, pinName: string): void {
+  ensureNet(doc, netId);
+  const net = doc.nets.find(n => n.id === netId);
+  if (net === undefined) {
+    return;
+  }
+  const pinRef = buildPinRef(compId, pinId, pinName);
+  if (net.pinIds.includes(pinRef)) {
+    return;
+  }
+  // Remove this pin from any other nets â€” a pin must belong to exactly one net
+  for (const other of doc.nets) {
+    if (other.id !== netId) {
+      const idx = other.pinIds.indexOf(pinRef);
+      if (idx >= 0) {
+        other.pinIds.splice(idx, 1);
+      }
+    }
+  }
+  net.pinIds.push(pinRef);
+}
+
+function countCompPinConnections(doc: SchematicDocument, compId: string): number {
+  let count = 0;
+  for (let ni = 0; ni < doc.nets.length; ni++) {
+    const net = doc.nets[ni];
+    for (let pi = 0; pi < net.pinIds.length; pi++) {
+      const parsed = parsePinRef(net.pinIds[pi]);
+      if (parsed !== null && parsed.compId === compId) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+function expectedPinCount(libraryId: string): number {
+  const lib = libraryId.toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND')) {
+    return 1;
+  }
+  return 2;
+}
+
+function needsWireRebuild(doc: SchematicDocument): boolean {
+  if (countPinRefs(doc) < Math.max(2, doc.components.length)) {
+    return true;
+  }
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const expected = expectedPinCount(comp.libraryId);
+    if (countCompPinConnections(doc, comp.id) < expected) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function connectWireEndpoints(doc: SchematicDocument, threshold: number,
+  resolver?: PinGeometryResolver): number {
+  const junctionRadius = 2;
+  // æ¾å¸é™„é˜ˆå€¼å†…ä¸å…è®¸æŠŠç”µæº/åœ°ç¬¦å·è„šå¸åˆ°ä¿¡å· stub æ¸¸ç¦»ç«¯ï¼ˆlab_passive DIV_TOP æ ¹å› ï¼‰
+  const strictSnap = Math.min(5, threshold);
+  // Pre-collect all pin candidates with world positions
+  interface PinCandidate {
+    compId: string;
+    pinId: string;
+    pinName: string;
+    libraryId: string;
+    world: Point2D;
+  }
+  const allCandidates: PinCandidate[] = [];
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const pins = defaultPinsForLib(comp.libraryId, resolver);
+    for (let pi = 0; pi < pins.length; pi++) {
+      const pin = pins[pi];
+      const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+      allCandidates.push({
+        compId: comp.id,
+        pinId: pin.id,
+        pinName: pin.name,
+        libraryId: comp.libraryId,
+        world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+      });
+    }
+  }
+
+  let connected = 0;
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    ensureNet(doc, wire.netId);
+    const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+
+    for (let ei = 0; ei < endpoints.length; ei++) {
+      const ep = endpoints[ei];
+      let bestDist = threshold;
+      let bestIdx = -1;
+      for (let ci = 0; ci < allCandidates.length; ci++) {
+        const c = allCandidates[ci];
+        const dx = ep.x - c.world.x;
+        const dy = ep.y - c.world.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= bestDist) {
+          continue;
+        }
+        // å®½æ¾é˜ˆå€¼ï¼šç¦æ­¢æ å¤ºç”µæº/åœ°ç¬¦å·è„šï¼ˆç²¾ç¡®æ¥è§¦ä»å…è®¸ï¼‰
+        if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND')) {
+          continue;
+        }
+        bestDist = dist;
+        bestIdx = ci;
+      }
+
+      if (bestIdx >= 0) {
+        const best = allCandidates[bestIdx];
+        addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+        connected++;
+        // Also add co-located pins (junction)
+        for (let ci = 0; ci < allCandidates.length; ci++) {
+          if (ci === bestIdx) {
+            continue;
+          }
+          const c = allCandidates[ci];
+          const dx = best.world.x - c.world.x;
+          const dy = best.world.y - c.world.y;
+          if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+            connected++;
+          }
+        }
+      }
+    }
+  }
+  return connected;
+}
+
+/** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc: SchematicDocument): number {
+  const wireNetIds = new Set<string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const nid = doc.wires[wi].netId;
+    if (nid.length > 0) {
+      wireNetIds.add(nid);
+    }
+  }
+  const before = doc.nets.length;
+  const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
+  doc.nets = doc.nets.filter((net) => {
+    if (wireNetIds.has(net.id)) {
+      return true;
+    }
+    if (net.pinIds.length > 0) {
+      return true;
+    }
+    // ä¿ç•™çœŸæ­£çš„ç”µæº/åœ°è½¨ï¼›ä¸¢å¼ƒæ‹“æ‰‘é‡å»ºåæ‚¬ç©ºçš„å‘½åç”µæºç½‘ï¼ˆå¦‚ç©º VOUTï¼‰
+    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+      return railNames.has(net.name.toUpperCase());
+    }
+    return false;
+  });
+  return before - doc.nets.length;
+}
+
+function mergeRailNets(doc: SchematicDocument): void {
+  const rails = ['VCC', 'VDD', 'GND', 'VSS', '0'];
+  for (let ri = 0; ri < rails.length; ri++) {
+    const rail = rails[ri];
+    const canonical = findNetByName(doc, rail);
+    if (canonical === null) {
+      continue;
+    }
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const net = doc.nets[ni];
+      if (net.id === canonical || net.name.toUpperCase() !== rail) {
+        continue;
+      }
+      const canonNet = doc.nets.find(n => n.id === canonical);
+      if (canonNet === undefined) {
+        continue;
+      }
+      for (let pi = 0; pi < net.pinIds.length; pi++) {
+        if (!canonNet.pinIds.includes(net.pinIds[pi])) {
+          canonNet.pinIds.push(net.pinIds[pi]);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Ensure net.pinIds reflect wire connectivity only.
+ * Rebuilds wire netIds from geometry, then assigns pins at wire endpoints.
+ */
+export function ensureNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  const before = countPinRefs(doc);
+
+  rebuildWireNetTopology(doc, gridSize, resolver);
+
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+
+  const threshold = Math.max(gridSize * 2.5, 20);
+  const wired = connectWireEndpoints(doc, threshold, resolver);
+  // Proteus: same net-label text (case-sensitive) â‡’ same net â€” must run after geometry rebuild
+  applyNetLabelConnectivity(doc, gridSize);
+  mergeRailNets(doc);
+  pruneOrphanNets(doc);
+
+  const after = countPinRefs(doc);
+  traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+}
+
+/** Strip and rebuild all pinIds from wires (simulation reload). */
+export function rebuildAllNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+  ensureNetPinConnectivity(doc, gridSize, resolver);
+}
+
+export function summarizeNetPins(doc: SchematicDocument, maxNets: number = 6): string {
+  const parts: string[] = [];
+  let count = 0;
+  for (let i = 0; i < doc.nets.length && count < maxNets; i++) {
+    const net = doc.nets[i];
+    if (net.pinIds.length === 0) {
+      continue;
+    }
+    parts.push(`${net.name || net.id}(${net.pinIds.length})`);
+    count++;
+  }
+  return parts.length > 0 ? parts.join(', ') : '(no pins)';
+}
+ÀÔrE•¬./PinRefUtil±./WireNetTopology´../types/CommonTypes´./InstrumentTraceLog¶./NetLabelConnectivityÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsAÃªoh-resolveÂFAÂÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings´NetPinRebuildUtil.js ‘µNetPinRebuildUtil.etsÜK‘”    ‘” ˜”   ” ”	 /” 6” ÌK” ÌQ”. Ìg”/ Ìhš”   ” ”	 	” ” ”! !”# #”) )”7 7”8 8˜”   ” ”	 	” ” ”% %”; ;”< <˜”   ” ”	 	” ”! !”' '”: :”; ;˜”   ” ”	 	”" "”$ $”* *”ÌB ÌB”ÌC ÌC™”   ”	 	” ” ” $” &”% 8”' :”/ ÌK˜” ” ”	 ” 
+” ” ” ” ˜” ” ”	 ” 
+” ” ” ” ”” ” ” ” –” ”	 ” ” 	” 
+” ‘” ”” ” 
+” ” Ü ” ” 	” ” ” ” ” ” ” ” ” ”! ”" ”$  ”% !”' #”( $Ü ” ” 	” ” ” ” ” ” ” ” ”  ”" ”# ”% !”& "”' #”) %”* &Ü ” ” 	” ” ” ” ” ” ” ” ”! ”" ”$  ”% !”& "”( $”) %Ÿ” ” ” ” ” ” ” ” ” ”  ”! ”# ”$  ”& "”' #‘” ’”    ”  —”  " ”	 "	” "” "”$ ",”& ".”. "ÌL–” #” #” #” #” #”  #™” $” $
+” $” $”! $”" $”+ $'”, $(”- $)œ” %” %” %” %” %”! %”) %%”* %&”0 %,”3 %/”4 %0”6 %2”” &” &” &” &‘”	 '‘” (™” )”
+ )” )” )” )” )”% )#”' )%”( )&” *” *” *	” *” *” *” *” *”% *#”& *$”, **”- *+”/ *-Ü ” +” +” +” +” +” +” +” +” +”! +”& +"”( +$”) +%”+ +'”, +(”. +*”/ ++”1 +-”3 +/”5 +1”6 +2”7 +3‘” ,” -” -” -	” -” -” -” -” -”% -#”& -$”, -*”- -+”/ --Ü ” .” .” .” .” .” .” .” .” .”! .”& ."”( .$”) .%”+ .'”, .(”. .*”/ .+”1 .-”2 ..”4 .0”6 .2”7 .3”8 .4‘” /” 0” 0” 0	” 0” 0”" 0 ”% 0#”& 0$”. 0,”/ 0-”: 08”; 09”= 0;’” 1” 1Ü ” 2” 2” 2
+” 2” 2” 2” 2” 2”" 2”$ 2”% 2”' 2!”( 2"”* 2$”, 2&”- 2'”/ 2)”0 2*”2 2,”4 2.Ü ” 3” 3” 3
+” 3” 3” 3” 3” 3”$ 3”& 3 ”' 3!”) 3#”* 3$”, 3&”. 3(”/ 3)”1 3+”3 3-”5 3/’”	 4”
+ 4‘” 5” 6” 6” 6	” 6” 6”  6”# 6!”$ 6"”, 6*”- 6+”6 64”7 65”9 67’” 7” 7Ü ” 8” 8” 8
+” 8” 8” 8” 8” 8”" 8”$ 8”% 8”' 8!”( 8"”* 8$”, 8&”- 8'”/ 8)”0 8*”2 8,Ü ” 9” 9” 9
+” 9” 9” 9” 9” 9”" 9”$ 9”% 9”' 9!”( 9"”* 9$”, 9&”- 9'”/ 9)”1 9+”3 9-’”	 :”
+ :‘” ;Ü ” <” <” <	” <
+” <” <” <” <”" < ”% <#”& <$”. <,”/ <-”7 <5”8 <6”< <:”? <=”Ì@ <>”ÌH <ÌF”ÌI <ÌG”ÌR <ÌP”ÌS <ÌQ”ÌU <ÌS’” =” =Ü ” >” >” >
+” >” >” >” >” >”! >”# >”$ >”& > ”' >!”) >#”+ >%”, >&”. >(”/ >)”1 >+Ü ” ?” ?” ?
+” ?” ?” ?” ?” ?”" ?”$ ?”% ?”' ?!”( ?"”* ?$”+ ?%”- ?'”/ ?)”1 ?+Ü ” Ì@” Ì@” Ì@
+” Ì@” Ì@” Ì@” Ì@” Ì@”" Ì@”$ Ì@”% Ì@”' Ì@!”) Ì@#”+ Ì@%”, Ì@&”. Ì@(”/ Ì@)”1 Ì@+’”	 ÌA”
+ ÌA‘” ÌB” ÌC” ÌC” ÌC	” ÌC” ÌC” ÌC” ÌC” ÌC”' ÌC%”( ÌC&”- ÌC+”. ÌC,”0 ÌC.’” ÌD” ÌDÜ ” ÌE” ÌE” ÌE
+” ÌE” ÌE” ÌE” ÌE” ÌE”" ÌE”$ ÌE”% ÌE”' ÌE!”( ÌE"”* ÌE$”, ÌE&”- ÌE'”/ ÌE)”0 ÌE*”2 ÌE,Ü ” ÌF” ÌF” ÌF
+” ÌF” ÌF” ÌF” ÌF” ÌF”" ÌF”$ ÌF”% ÌF”' ÌF!”) ÌF#”+ ÌF%”, ÌF&”. ÌF(”/ ÌF)”1 ÌF+’”	 ÌG”
+ ÌG‘” ÌH’” ÌI”ÌL ÌIÌJÜ ” ÌJ” ÌJ” ÌJ	” ÌJ
+” ÌJ” ÌJ” ÌJ” ÌJ”! ÌJ”$ ÌJ"”% ÌJ#”- ÌJ+”. ÌJ,”5 ÌJ3”6 ÌJ4”: ÌJ8”= ÌJ;”> ÌJ<”ÌF ÌJÌD”ÌG ÌJÌE”ÌM ÌJÌK”ÌN ÌJÌL”ÌP ÌJÌN’” ÌK” ÌKÜ ” ÌL” ÌL” ÌL
+” ÌL” ÌL” ÌL” ÌL”  ÌL”& ÌL ”( ÌL"”) ÌL#”+ ÌL%”- ÌL'”/ ÌL)”0 ÌL*”2 ÌL,”3 ÌL-”5 ÌL/”7 ÌL1Ü ” ÌM” ÌM” ÌM
+” ÌM” ÌM” ÌM” ÌM”  ÌM”& ÌM ”( ÌM"”) ÌM#”+ ÌM%”, ÌM&”. ÌM(”0 ÌM*”1 ÌM+”3 ÌM-”4 ÌM.”6 ÌM0”8 ÌM2Ü ” ÌN” ÌN” ÌN
+” ÌN” ÌN” ÌN” ÌN”  ÌN”& ÌN ”( ÌN"”) ÌN#”+ ÌN%”, ÌN&”. ÌN(”0 ÌN*”1 ÌN+”3 ÌN-”4 ÌN.”6 ÌN0”8 ÌN2Ü ” ÌO” ÌO” ÌO
+” ÌO” ÌO” ÌO” ÌO” ÌO”" ÌO”$ ÌO”% ÌO”' ÌO!”( ÌO"”* ÌO$”+ ÌO%”- ÌO'”/ ÌO)”1 ÌO+Ü ” ÌP” ÌP” ÌP
+” ÌP” ÌP” ÌP” ÌP”  ÌP”& ÌP ”( ÌP"”) ÌP#”+ ÌP%”, ÌP&”. ÌP(”0 ÌP*”1 ÌP+”3 ÌP-”5 ÌP/”7 ÌP1Ü ” ÌQ” ÌQ” ÌQ
+” ÌQ” ÌQ” ÌQ” ÌQ”  ÌQ”& ÌQ ”( ÌQ"”) ÌQ#”+ ÌQ%”, ÌQ&”. ÌQ(”0 ÌQ*”1 ÌQ+”3 ÌQ-”5 ÌQ/”7 ÌQ1Ü ” ÌR” ÌR” ÌR
+” ÌR” ÌR” ÌR” ÌR”  ÌR”& ÌR ”( ÌR"”) ÌR#”+ ÌR%”- ÌR'”/ ÌR)”0 ÌR*”2 ÌR,”4 ÌR.”6 ÌR0Ü ” ÌS” ÌS” ÌS
+” ÌS” ÌS” ÌS” ÌS” ÌS”" ÌS”$ ÌS”% ÌS”' ÌS!”( ÌS"”* ÌS$”+ ÌS%”- ÌS'”. ÌS(”0 ÌS*”2 ÌS,’”	 ÌT”
+ ÌT‘” ÌUÜ ” ÌV” ÌV” ÌV	” ÌV
+” ÌV” ÌV” ÌV” ÌV”! ÌV”$ ÌV"”% ÌV#”- ÌV+”. ÌV,”2 ÌV0”3 ÌV1”5 ÌV3’” ÌW” ÌWÜ ” ÌX” ÌX” ÌX
+” ÌX” ÌX” ÌX” ÌX” ÌX”$ ÌX”& ÌX ”' ÌX!”) ÌX#”* ÌX$”, ÌX&”. ÌX(”/ ÌX)”1 ÌX+”2 ÌX,”4 ÌX.”6 ÌX0Ü ” ÌY” ÌY” ÌY
+” ÌY” ÌY” ÌY” ÌY” ÌY”$ ÌY”& ÌY ”' ÌY!”) ÌY#”* ÌY$”, ÌY&”. ÌY(”/ ÌY)”1 ÌY+”3 ÌY-”5 ÌY/Ü ” ÌZ” ÌZ” ÌZ
+” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”$ ÌZ”& ÌZ ”' ÌZ!”) ÌZ#”+ ÌZ%”- ÌZ'”. ÌZ(”0 ÌZ*”1 ÌZ+”3 ÌZ-Ü ” Ì[” Ì[” Ì[
+” Ì[” Ì[” Ì[” Ì[” Ì[”$ Ì[”& Ì[ ”' Ì[!”) Ì[#”* Ì[$”, Ì[&”- Ì['”/ Ì[)”0 Ì[*”2 Ì[,”4 Ì[.Ü ” Ì\” Ì\” Ì\
+” Ì\” Ì\” Ì\” Ì\” Ì\”$ Ì\”& Ì\ ”' Ì\!”) Ì\#”* Ì\$”, Ì\&”- Ì\'”/ Ì\)”1 Ì\+”3 Ì\-’”	 Ì]”
+ Ì]‘” Ì^Ü ” Ì_” Ì_” Ì_	” Ì_
+” Ì_” Ì_” Ì_” Ì_”! Ì_”$ Ì_"”% Ì_#”/ Ì_-”0 Ì_.”4 Ì_2”5 Ì_3”9 Ì_7”< Ì_:”= Ì_;”ÌE Ì_ÌC”ÌF Ì_ÌD”ÌK Ì_ÌI”ÌL Ì_ÌJ”ÌN Ì_ÌL’” Ì`” Ì`Ü ” Ìa” Ìa” Ìa
+” Ìa” Ìa” Ìa” Ìa” Ìa”  Ìa”" Ìa”# Ìa”% Ìa”& Ìa ”( Ìa"”* Ìa$”+ Ìa%”- Ìa'”. Ìa(”0 Ìa*Ü ” Ìb” Ìb” Ìb
+” Ìb” Ìb” Ìb” Ìb” Ìb”  Ìb”" Ìb”# Ìb”% Ìb”' Ìb!”) Ìb#”* Ìb$”, Ìb&”- Ìb'”/ Ìb)’”	 Ìc”
+ Ìc‘” Ìd’” Ìe”: Ìe8’” Ìf” Ìf	Ü ” Ìg”
+ Ìg” Ìg” Ìg
+” Ìg” Ìg” Ìg” Ìg” Ìg” Ìg” Ìg”! Ìg”" Ìg”$ Ìg ”& Ìg"”' Ìg#”) Ìg%”* Ìg&”, Ìg(Ü ” Ìh”
+ Ìh” Ìh” Ìh
+” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh”! Ìh”# Ìh”% Ìh!”& Ìh"”( Ìh$”) Ìh%”+ Ìh'’” Ìi” Ìi’”  Ìj ” Ìj•”  Ìl ”	 Ìl	” Ìl” Ìl” Ìl,–” Ìm” Ìm” Ìm” Ìm” Ìm” ÌmÜ ” Ìn”	 Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” Ìn”  Ìn”! Ìn”' Ìn%”) Ìn'”* Ìn(”, Ìn*”. Ìn,” Ìo” Ìo	” Ìo” Ìo” Ìo” Ìo” Ìo” Ìo” Ìo” Ìo”# Ìo”$ Ìo ”* Ìo&”+ Ìo'‘” Ìp”” Ìq” Ìq	” Ìq” Ìq’”  Ìr ” Ìr—”  Ìt ”	 Ìt	” Ìt” Ìt” Ìt-” Ìt/”  Ìt;™” Ìu”
+ Ìu” Ìu” Ìu” Ìu” Ìu”" Ìu ”$ Ìu"”% Ìu#Ü ” Ìv”	 Ìv” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv”  Ìv”! Ìv”' Ìv%”) Ìv'”* Ìv(”, Ìv*”. Ìv,Ü ” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw”( Ìw$”* Ìw&”/ Ìw+”4 Ìw0”6 Ìw2›” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx”! Ìx”" Ìx‘”	 Ìy‘” Ìz”” Ì{” Ì{	” Ì{” Ì{’”  Ì| ” Ì|—”  Ì~ ”	 Ì~	” Ì~” Ì~” Ì~)” Ì~+” Ì~8Ü ” Ì” Ì” Ì	” Ì
+” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”$ Ì"”) Ì'”* Ì(”, Ì*’” Ì€” Ì€‘” ÌÜ ” Ì‚” Ì‚” Ì‚” Ì‚
+” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚”# Ì‚!”% Ì‚#”' Ì‚%”) Ì‚'”- Ì‚+”/ Ì‚-”6 Ì‚4”7 Ì‚5”= Ì‚;”? Ì‚=”ÌE Ì‚ÌC”ÌG Ì‚ÌE”ÌI Ì‚ÌG”ÌK Ì‚ÌI”ÌL Ì‚ÌJ”ÌM Ì‚ÌK’”  Ìƒ ” Ìƒ”  Ì… ”	 Ì…	” Ì…” Ì…” Ì…+” Ì…-” Ì…:”! Ì…<”' Ì…ÌJ”) Ì†”. Ì†”0 Ì†”7 Ì† ˜” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡Ü ” Ìˆ”
+ Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”  Ìˆ”" Ìˆ ”# Ìˆ!”$ Ìˆ"”% Ìˆ#”' Ìˆ%”, Ìˆ*”1 Ìˆ/”2 Ìˆ0”3 Ìˆ1–” Ì‰” Ì‰” Ì‰	” Ì‰” Ì‰” Ì‰’” ÌŠ” ÌŠ‘” Ì‹” ÌŒ”
+ ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”% ÌŒ#”' ÌŒ%”, ÌŒ*”. ÌŒ,”5 ÌŒ3”6 ÌŒ4”7 ÌŒ5›” Ì” Ì” Ì	” Ì
+” Ì” Ì” Ì” Ì”" Ì ”# Ì!”% Ì#’” Ì” Ì‘” Ì’” Ì”ÌQ ÌÌO™” Ì‘”	 Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”  Ì‘”" Ì‘ ˜” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’”  Ì’” Ì“” Ì“” Ì“” Ì“” Ì“” Ì“”$ Ì“”% Ì“”, Ì“&”- Ì“'”3 Ì“-”4 Ì“.”5 Ì“/–” Ì”” Ì”
+” Ì”” Ì”” Ì”” Ì”œ” Ì•” Ì•” Ì•” Ì•” Ì•”# Ì•”$ Ì•”' Ì•”) Ì•!”* Ì•"”+ Ì•#”, Ì•$‘” Ì–‘”	 Ì—‘” Ì˜š” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™’”  Ìš ” Ìš—”  Ìœ ”	 Ìœ	”  Ìœ ”! Ìœ!”$ Ìœ7”& Ìœ9”, ÌœÌG–” Ì” Ì” Ì” Ì” Ì” ÌÜ ” Ì”	 Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”" Ì ”# Ì!”) Ì'”+ Ì)”- Ì+”/ Ì-”1 Ì/›” ÌŸ” ÌŸ
+” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”  ÌŸ”! ÌŸÜ ” Ì ” Ì 	” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ”! Ì ”" Ì ”( Ì $”) Ì %”/ Ì +”1 Ì -”3 Ì /”5 Ì 1”7 Ì 3” Ì¡” Ì¡” Ì¡” Ì¡”& Ì¡ ”' Ì¡!”* Ì¡$”+ Ì¡%”1 Ì¡+”2 Ì¡,”4 Ì¡.”5 Ì¡/”6 Ì¡0”7 Ì¡1œ” Ì¢” Ì¢
+” Ì¢” Ì¢” Ì¢”# Ì¢”) Ì¢#”* Ì¢$”0 Ì¢*”5 Ì¢/”; Ì¢5”= Ì¢7”” Ì£” Ì£” Ì£” Ì£‘” Ì¤‘”	 Ì¥‘” Ì¦”” Ì§” Ì§	” Ì§” Ì§’”  Ì¨ ” Ì¨•”  Ìª ”	 Ìª	” Ìª” Ìª”# Ìª+™” Ì«”
+ Ì«” Ì«” Ì«” Ì«” Ì«”% Ì«#”' Ì«%”( Ì«&Ü ” Ì¬” Ì¬” Ì¬	” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬”% Ì¬#”& Ì¬$”, Ì¬*”- Ì¬+”1 Ì¬/”4 Ì¬2”9 Ì¬7”> Ì¬<”ÌB Ì¬Ì@”ÌE Ì¬ÌC”ÌF Ì¬ÌD”ÌN Ì¬ÌL”ÌO Ì¬ÌM”ÌU Ì¬ÌS”ÌV Ì¬ÌT”ÌX Ì¬ÌV”” Ì­” Ì­” Ì­” Ì­‘” Ì®”” Ì¯” Ì¯	” Ì¯
+” Ì¯’”  Ì° ” Ì°•”  Ì² ”	 Ì²	” Ì²” Ì²” Ì²0Ü ” Ì³” Ì³” Ì³” Ì³” Ì³” Ì³” Ì³”  Ì³”! Ì³”$ Ì³"”% Ì³#”& Ì³$”( Ì³&”+ Ì³)”, Ì³*”6 Ì³4”7 Ì³5”= Ì³;”> Ì³<”Ì@ Ì³>”” Ì´” Ì´” Ì´” Ì´‘” ÌµÜ ” Ì¶”	 Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶”( Ì¶&”) Ì¶'”/ Ì¶-”1 Ì¶/”3 Ì¶1”5 Ì¶3”7 Ì¶5›” Ì·” Ì·
+” Ì·” Ì·” Ì·” Ì·”# Ì·”$ Ì· ”& Ì·"”' Ì·#”( Ì·$›” Ì¸” Ì¸
+” Ì¸” Ì¸”) Ì¸%”* Ì¸&”. Ì¸*”/ Ì¸+”8 Ì¸4”9 Ì¸5”: Ì¸6” Ì¹” Ì¹”# Ì¹”$ Ì¹ ”' Ì¹#”) Ì¹%”- Ì¹)”. Ì¹*”0 Ì¹,”1 Ì¹-”4 Ì¹0”< Ì¹8”> Ì¹:”” Ìº” Ìº” Ìº” Ìº‘”	 Ì»‘” Ì¼”” Ì½” Ì½	” Ì½” Ì½’”  Ì¾ ” Ì¾™”  ÌÀ ”	 ÌÀ	” ÌÀ” ÌÀ”! ÌÀ4”# ÌÀ6”, ÌÀÌG”. ÌÁ”6 ÌÁ –” ÌÂ”
+ ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ’” ÌÃ”= ÌÃ;” ÌÄ”
+ ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ”  ÌÄ”! ÌÄ”# ÌÄ!”, ÌÄ*”- ÌÄ+”. ÌÄ,–” ÌÍ”
+ ÌÍ” ÌÍ” ÌÍ(” ÌÍ*” ÌÍ+Ü ” ÌÎ”	 ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”( ÌÎ&”) ÌÎ'”/ ÌÎ-”1 ÌÎ/”3 ÌÎ1”5 ÌÎ3”7 ÌÎ5›” ÌÏ” ÌÏ
+” ÌÏ” ÌÏ” ÌÏ” ÌÏ”# ÌÏ”$ ÌÏ ”& ÌÏ"”' ÌÏ#”( ÌÏ$” ÌĞ” ÌĞ
+” ÌĞ” ÌĞ”& ÌĞ"”' ÌĞ#”+ ÌĞ'”, ÌĞ(”5 ÌĞ1”7 ÌĞ3”? ÌĞ;”Ì@ ÌĞ<”ÌA ÌĞ=Ü ” ÌÑ” ÌÑ	” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ”" ÌÑ”# ÌÑ”) ÌÑ%”+ ÌÑ'”- ÌÑ)”/ ÌÑ+”1 ÌÑ-™” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ”  ÌÒ”! ÌÒÜ ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”& ÌÓ ”' ÌÓ!”) ÌÓ#”* ÌÓ$”, ÌÓ&”/ ÌÓ)”0 ÌÓ*”1 ÌÓ+”3 ÌÓ-”4 ÌÓ.”6 ÌÓ0”9 ÌÓ3”: ÌÓ4”; ÌÓ5”= ÌÓ7”? ÌÓ9”ÌC ÌÓ=”ÌD ÌÓ>”ÌL ÌÓÌF”ÌN ÌÓÌH”ÌR ÌÓÌL”ÌS ÌÓÌM”Ì[ ÌÓÌU”Ì\ ÌÓÌV”Ì] ÌÓÌW•” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ–” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ–” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ–” Ì×” Ì×” Ì×” Ì×” Ì×”! Ì×–” ÌØ” ÌØ” ÌØ” ÌØ”  ÌØ”) ÌØ!Ü ” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ”  ÌÙ”! ÌÙ”) ÌÙ!”* ÌÙ"”+ ÌÙ#”. ÌÙ&”3 ÌÙ+”4 ÌÙ,”5 ÌÙ-”7 ÌÙ/”8 ÌÙ0”: ÌÙ2”> ÌÙ6”? ÌÙ7”ÌG ÌÙ?”ÌH ÌÙÌ@”ÌI ÌÙÌA”ÌL ÌÙÌD”ÌQ ÌÙÌI”ÌR ÌÙÌJ”ÌS ÌÙÌK”ÌU ÌÙÌM“” ÌÚ” ÌÚ” ÌÚ	‘”	 ÌÛ‘” ÌÜ–” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞÜ ” Ìß”	 Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß”# Ìß!”$ Ìß"”* Ìß(”, Ìß*”. Ìß,”0 Ìß.”2 Ìß0›” Ìà” Ìà
+” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà”! Ìà”" Ìà”# Ìàš” Ìá” Ìá” Ìá” Ìá” Ìá” Ìá” Ìá”! Ìá”" Ìá”$ Ìá ’” Ìâ” Ìâ‘”	 Ìãš” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä”! Ìä”" Ìä”# ÌäÜ ” Ìå” Ìå
+” Ìå” Ìå” Ìå” Ìå”  Ìå”& Ìå"”' Ìå#”( Ìå$”) Ìå%”+ Ìå'”/ Ìå+”0 Ìå,”6 Ìå2”7 Ìå3”; Ìå7”< Ìå8”ÌB Ìå>”ÌC Ìå?”ÌI ÌåÌE”ÌL ÌåÌH”ÌM ÌåÌI”ÌN ÌåÌJ”ÌO ÌåÌK”ÌP ÌåÌLÜ ” Ìç” Ìç	” Ìç” Ìç” Ìç” Ìç” Ìç” Ìç” Ìç”' Ìç#”( Ìç$”. Ìç*”0 Ìç,”2 Ìç.”4 Ìç0”6 Ìç2™” Ìè” Ìè” Ìè” Ìè”  Ìè”! Ìè”# Ìè”$ Ìè”% Ìè–” Ìé” Ìé
+” Ìé” Ìé”$ Ìé”% Ìé—” Ìê” Ìê
+” Ìê” Ìê” Ìê” Ìê” ÌêÜ ” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë”" Ìë”/ Ìë)”0 Ìë*”6 Ìë0”8 Ìë2”: Ìë4”< Ìë6”> Ìë8™” Ìì” Ìì” Ìì” Ìì”' Ìì”( Ìì ”* Ìì"”+ Ìì#”, Ìì$” Ìí” Ìí” Ìí” Ìí” Ìí” Ìí” Ìí”" Ìí”# Ìí”$ Ìí”) Ìí!”* Ìí"”+ Ìí#”, Ìí$” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî”" Ìî”# Ìî”$ Ìî”) Ìî!”* Ìî"”+ Ìî#”, Ìî$Ü ” Ìï” Ìï” Ìï” Ìï”! Ìï”" Ìï”& Ìï”' Ìï”) Ìï!”, Ìï$”. Ìï&”1 Ìï)”3 Ìï+”6 Ìï.”8 Ìï0”9 Ìï1”: Ìï2–” Ìğ” Ìğ” Ìğ” Ìğ”$ Ìğ”& Ìğ’” Ìñ
+” Ìñ‘” Ìò	’” Ìó”, Ìó$Ü ” Ìô” Ìô” Ìô” Ìô”% Ìô”) Ìô!”* Ìô"”+ Ìô#”, Ìô$”5 Ìô-”: Ìô2”? Ìô7”ÌC Ìô;”ÌD Ìô<”ÌE Ìô=”ÌN ÌôÌF”ÌS ÌôÌK”ÌX ÌôÌP”ÌY ÌôÌQ”Ì[ ÌôÌS’” Ìõ
+” Ìõ‘” Ìö	•” Ì÷” Ì÷” Ì÷” Ì÷”  Ì÷•” Ìø” Ìø” Ìø” Ìø” Ìø‘” Ìù–” Ìû” Ìû
+” Ìû” Ìû” Ìû” Ìû™” Ìü” Ìü” Ìü” Ìü”* Ìü"”+ Ìü#”2 Ìü*”3 Ìü+”4 Ìü,Ü ” Ìı” Ìı” Ìı” Ìı”! Ìı”% Ìı”& Ìı”+ Ìı#”- Ìı%”1 Ìı)”2 Ìı*”8 Ìı0”: Ìı2”> Ìı6”? Ìı7”ÌD Ìı<”ÌF Ìı>”ÌJ ÌıÌB”ÌK ÌıÌC”ÌR ÌıÌJ”ÌS ÌıÌK”ÌT ÌıÌL”” Ìş” Ìş” Ìş” Ìş’” Ìÿ”6 Ìÿ.Ü ” Í ” Í ” Í ” Í ” Í ” Í ”! Í ”# Í ”& Í ”3 Í +”4 Í ,”: Í 2”< Í 4”> Í 6”Ì@ Í 8”ÌB Í :–” Í
+” Í” Í” Í”& Í”( Í’” Í”! Í‘” Í™” Í
+” Í” Í” Í”+ Í!”, Í"”. Í$”/ Í%”0 Í&Ü ” Í
+” Í” Í” Í”# Í”$ Í”) Í”* Í ”+ Í!”. Í$”/ Í%”0 Í&”5 Í+”6 Í,”7 Í-”8 Í.Ü ” Í
+” Í” Í” Í”# Í”$ Í”) Í”* Í ”+ Í!”. Í$”/ Í%”0 Í&”5 Í+”6 Í,”7 Í-”8 Í.Ü ” Í
+” Í” Í” Í”  Í”! Í”# Í”$ Í”( Í”6 Í,”: Í0”> Í4”? Í5”ÌB Í8”ÌC Í9”ÌE Í;”ÌF Í<”ÌJ ÍÌ@”ÌX ÍÌN”ÌZ ÍÌPÜ ” Í”# Í”$ Í”' Í”) Í”- Í!”. Í"”3 Í'”5 Í)”6 Í*”7 Í+”= Í1”? Í3”Ì@ Í4”ÌA Í5”ÌF Í:”ÌH Í<”ÌI Í=”ÌJ Í>”ÌQ ÍÌE”ÌR ÍÌF”ÌS ÍÌG”” Í	”! Í	”# Í	”$ Í	‘” Í
+‘” Í	‘” Í‘”	 Í‘” Í”” Í” Í	” Í” Í’”  Í ” Í’”  Í ”ÌY ÍÌY’”  Í ”Ì^ ÍÌ^•”  Í ”	 Í	” Í” Í” Í/˜” Í”
+ Í” Í” Í” Í” Í”  Í&”! Í'Ü ” Í”	 Í” Í” Í” Í” Í” Í” Í” Í” Í” Í”# Í!”$ Í"”* Í(”, Í*”. Í,”0 Í.”2 Í0” Í” Í
+” Í” Í” Í” Í” Í” Í”  Í”! Í”" Í”' Í#”( Í$˜” Í” Í” Í” Í” Í” Í” Í” Í˜” Í” Í” Í” Í” Í” Í” Í”  Í‘”	 Í‘” Íš” Í”
+ Í” Í” Í” Í” Í” Í” Í”" Í ”# Í!Ü ” Í”
+ Í” Í” Í” Í” Í” Í” Í”$ Í"”& Í$”+ Í)”- Í+”2 Í0”4 Í2”9 Í7”; Í9”Ì@ Í>”ÌB ÍÌ@”ÌE ÍÌC”ÌF ÍÌD”ÌG ÍÌE”ÌH ÍÌFŸ” Í” Í” Í” Í
+” Í” Í” Í” Í” Í” Í” Í”  Í”# Í!”% Í#”' Í%›” Í” Í” Í” Í” Í” Í” Í” Í”! Í”" Í”$ Í ”” Í ” Í ” Í ” Í ‘”	 Í!š” Í"” Í"” Í"” Í"” Í"” Í"” Í"”  Í"”! Í"”# Í"”” Í#” Í#” Í#” Í#‘”	 Í$’” Í%”. Í%*Ü ” Í&” Í&” Í&” Í&” Í&” Í&”  Í&”! Í&”& Í&"”* Í&&”- Í&)”. Í&*”2 Í&.”7 Í&3”> Í&:”? Í&;”ÌE Í&ÌA”ÌG Í&ÌC” Í'” Í'” Í'” Í'”  Í'”! Í'”$ Í'”% Í'”) Í'#”* Í'$”5 Í'/”7 Í'1”8 Í'2”9 Í'3‘”	 Í(”” Í)” Í)” Í)” Í)”” Í*” Í*” Í*” Í*š” Í+” Í+	” Í+” Í+” Í+” Í+” Í+” Í+”# Í+!”$ Í+"’”  Í, ” Í,•”  Í. ”	 Í.	” Í.” Í.” Í.-Ü ” Í/”
+ Í/” Í/” Í/” Í/” Í/” Í/” Í/”! Í/”& Í/$”( Í/&”- Í/+”/ Í/-”2 Í/0”3 Í/1”4 Í/2Ü ” Í0”	 Í0” Í0” Í0” Í0” Í0” Í0” Í0” Í0” Í0”  Í0”& Í0$”( Í0&”* Í0(”, Í0*”. Í0,™” Í1” Í1
+” Í1” Í1” Í1” Í1” Í1” Í1” Í1›” Í2” Í2
+” Í2” Í2”' Í2#”( Í2$”+ Í2'”- Í2)”1 Í2-”2 Í2.”3 Í2/–” Í3” Í3” Í3” Í3” Í3”  Í3’” Í4” Í4‘”	 Í5Ü ” Í6” Í6	” Í6” Í6” Í6” Í6” Í6” Í6” Í6”! Í6”" Í6”& Í6"”' Í6#”- Í6)”/ Í6+”1 Í6-”3 Í6/”5 Í61›” Í7” Í7” Í7” Í7” Í7” Í7”  Í7”! Í7”# Í7”$ Í7”% Í7Ü ” Í8” Í8
+” Í8” Í8” Í8” Í8”$ Í8”( Í8"”+ Í8%”, Í8&”0 Í8*”1 Í8+”< Í86”> Í88”ÌC Í8=”ÌG Í8ÌA”ÌI Í8ÌC’” Í9” Í9‘” Í:Ü ” Í;” Í;” Í;” Í;”  Í;”! Í;”% Í;”& Í; ”* Í;$”+ Í;%”, Í;&”- Í;'”/ Í;)”0 Í;*”1 Í;+”2 Í;,”4 Í;.”9 Í;3”ÌB Í;<”ÌC Í;=”ÌD Í;>–” Í<” Í<
+” Í<” Í<”& Í< ”( Í<"’” Í=” Í=‘” Í>Ü ” Í?” Í?” Í?” Í?” Í?” Í?” Í?” Í?”" Í?”% Í?”& Í? ”, Í?&”- Í?'”3 Í?-”5 Í?/”7 Í?1”9 Í?3”; Í?5Ü ” Í@” Í@” Í@” Í@” Í@”$ Í@”% Í@”- Í@%”. Í@&”1 Í@)”2 Í@*”8 Í@0”9 Í@1”; Í@3”< Í@4”= Í@5”? Í@7Ÿ” ÍA
+” ÍA” ÍA”# ÍA”$ ÍA”( ÍA”) ÍA”, ÍA"”- ÍA#”3 ÍA)”4 ÍA*”6 ÍA,”7 ÍA-”8 ÍA.”9 ÍA/‘” ÍB	‘” ÍC‘”	 ÍD‘” ÍE’”  ÍF ” ÍF‘”  ÍH ‘” ÍK›”  ÍL ” ÍL” ÍL”( ÍL(”) ÍL)”, ÍL?”. ÍLÌA”9 ÍLÌT”; ÍLÌV”= ÍM”ÌE ÍM ™” ÍN”
+ ÍN” ÍN” ÍN” ÍN”  ÍN”# ÍN!”$ ÍN"”% ÍN#š” ÍP” ÍP” ÍP” ÍP”  ÍP”( ÍP&”* ÍP(”2 ÍP0”3 ÍP1”4 ÍP2Ü ” ÍR”	 ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR”  ÍR”! ÍR”' ÍR%”) ÍR'”* ÍR(”, ÍR*”. ÍR,œ” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS”  ÍS‘” ÍTŸ” ÍV”
+ ÍV” ÍV” ÍV” ÍV” ÍV” ÍV” ÍV”' ÍV%”* ÍV(”- ÍV+”/ ÍV-”1 ÍV/”2 ÍV0”3 ÍV1” ÍW”
+ ÍW” ÍW” ÍW”& ÍW$”' ÍW%”* ÍW(”, ÍW*”5 ÍW3”7 ÍW5”? ÍW=”Ì@ ÍW>”ÌA ÍW?’” ÍX”Ìa ÍXÌ_˜” ÍY” ÍY” ÍY”! ÍY”# ÍY!”+ ÍY)”, ÍY*”- ÍY+–” ÍZ” ÍZ” ÍZ” ÍZ” ÍZ” ÍZ–” Í[” Í[” Í[” Í[” Í[” Í[™” Í]”
+ Í]” Í]” Í]” Í]” Í]”" Í] ”# Í]!”$ Í]"Ü ” Í^” Í^” Í^” Í^”! Í^”& Í^$”( Í^&”- Í^+”/ Í^-”2 Í^0”3 Í^1”= Í^;”> Í^<”ÌD Í^ÌB”ÌF Í^ÌD”ÌI Í^ÌG”ÌJ Í^ÌH”ÌO Í^ÌM”ÌP Í^ÌN”ÌV Í^ÌT”ÌW Í^ÌU”ÌX Í^ÌV’”  Í_ ” Í_’”  Ía ”ÌC ÍaÌC›”  Íb ” Íb” Íb”, Íb,”- Íb-”0 ÍbÌC”2 ÍbÌE”= ÍbÌX”? ÍbÌZ”ÌA Íc”ÌI Íc Ü ” Íd”	 Íd” Íd” Íd” Íd” Íd” Íd” Íd” Íd” Íd” Íd”  Íd”! Íd”' Íd%”) Íd'”* Íd(”, Íd*”. Íd,œ” Íe” Íe” Íe” Íe” Íe” Íe” Íe” Íe” Íe” Íe” Íe”  Íe‘” Ífš” Íg” Íg” Íg”  Íg”" Íg ”* Íg(”, Íg*”4 Íg2”5 Íg3”6 Íg4’”  Íh ” Íh™”  Íj ” Íj” Íj”  Íj ”! Íj!”$ Íj7”& Íj9”0 ÍjÌK”1 ÍjÌL–” Ík”
+ Ík” Ík” Ík” Ík” Ík–” Íl” Íl” Íl” Íl” Íl” ÍlÜ ” Ím”	 Ím” Ím” Ím” Ím” Ím” Ím” Ím” Ím” Ím” Ím”  Ím”! Ím”' Ím%”+ Ím)”0 Ím.”3 Ím1”: Ím8”< Ím:”= Ím;”? Ím=”ÌA Ím?›” Ín” Ín
+” Ín” Ín” Ín” Ín” Ín” Ín” Ín” Ín”  Ínš” Ío” Ío” Ío” Ío” Ío” Ío” Ío”" Ío”# Ío”% Ío!’” Íp” Íp‘”	 ÍqÜ ” Ír” Ír	” Ír
+” Ír” Ír” Ír” Ír” Ír” Ír”" Ír”% Ír!”& Ír"”( Ír$”, Ír(”/ Ír+”0 Ír,”6 Ír2”7 Ír3”= Ír9”Ì@ Ír<”ÌA Ír=”ÌB Ír>”” Ís” Ís	” Ís” Ís‘” ÍtÜ ” Íu” Íu	” Íu” Íu” Íu” Íu” Íu” Íu” Íu” Íu”# Íu!”$ Íu"”( Íu&”) Íu'”- Íu+”. Íu,”/ Íu-”0 Íu.”1 Íu/”< Íu:”= Íu;’”  Ív ” ÍvÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜL‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache“ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ*‡Í-GÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ*Í-GÔrM”¤type¥start£end¤nameªIdentifierÍ*—Í*¯¸ensureNetPinConnectivityÂÂÂ“MªIdentifierÍ*°Í*³£docÔrN•¤type¥start£end¤left¥right±AssignmentPatternÍ*µÍ*ÂMªIdentifierÍ*µÍ*½¨gridSizeÔrO•¤type¥start£end¥value£raw§LiteralÍ*ÀÍ*Â
+¢10MªIdentifierÍ*ÄÍ*Ì¨resolverÔrP”¤type¥start£end¤body®BlockStatementÍ*ÎÍ-GšÔrQ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ*ÕÍ*ö‘ÔrR•¤type¥start£end¢id¤init²VariableDeclaratorÍ*ÛÍ*õMªIdentifierÍ*ÛÍ*á¦beforeÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ*äÍ*õMªIdentifierÍ*äÍ*ğ¬countPinRefs‘MªIdentifierÍ*ñÍ*ô£docÂ¥constÔrT”¤type¥start£endªexpression³ExpressionStatementÍ*üÍ+,S®CallExpressionÍ*üÍ++MªIdentifierÍ*üÍ+¶rebuildWireNetTopology“MªIdentifierÍ+Í+£docMªIdentifierÍ+Í+ ¨gridSizeMªIdentifierÍ+"Í+*¨resolverÂÔrU—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ+2Í+†Q³VariableDeclarationÍ+7Í+@‘R²VariableDeclaratorÍ+;Í+@MªIdentifierÍ+;Í+<¡iO§LiteralÍ+?Í+@ ¡0£letÔrV–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ+BÍ+UMªIdentifierÍ+BÍ+C¡i¡<ÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ+FÍ+UW°MemberExpressionÍ+FÍ+NMªIdentifierÍ+FÍ+I£docMªIdentifierÍ+JÍ+N¤netsÂÂMªIdentifierÍ+OÍ+U¦lengthÂÂÔrX–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ+WÍ+Z¢++ÂMªIdentifierÍ+WÍ+X¡iP®BlockStatementÍ+\Í+†‘T³ExpressionStatementÍ+gÍ+ÔrY–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ+gÍ+~¡=W°MemberExpressionÍ+gÍ+yW°MemberExpressionÍ+gÍ+rW°MemberExpressionÍ+gÍ+oMªIdentifierÍ+gÍ+j£docMªIdentifierÍ+kÍ+o¤netsÂÂMªIdentifierÍ+pÍ+q¡iÃÂMªIdentifierÍ+sÍ+y¦pinIdsÂÂÔrZ”¤type¥start£end¨elements¯ArrayExpressionÍ+|Í+~Q³VariableDeclarationÍ+ŒÍ+»‘R²VariableDeclaratorÍ+’Í+ºMªIdentifierÍ+’Í+›©thresholdS®CallExpressionÍ+Í+ºW°MemberExpressionÍ+Í+¦MªIdentifierÍ+Í+¢¤MathMªIdentifierÍ+£Í+¦£maxÂÂ’V°BinaryExpressionÍ+§Í+µMªIdentifierÍ+§Í+¯¨gridSize¡*O§LiteralÍ+²Í+µË@      £2.5O§LiteralÍ+·Í+¹¢20Â¥constQ³VariableDeclarationÍ+ÁÍ+ş‘R²VariableDeclaratorÍ+ÇÍ+ıMªIdentifierÍ+ÇÍ+Ì¥wiredS®CallExpressionÍ+ÏÍ+ıMªIdentifierÍ+ÏÍ+ã´connectWireEndpoints“MªIdentifierÍ+äÍ+ç£docMªIdentifierÍ+éÍ+ò©thresholdMªIdentifierÍ+ôÍ+ü¨resolverÂ¥constT³ExpressionStatementÍ,gÍ,S®CallExpressionÍ,gÍ,MªIdentifierÍ,gÍ,€¹applyNetLabelConnectivity’MªIdentifierÍ,Í,„£docMªIdentifierÍ,†Í,¨gridSizeÂT³ExpressionStatementÍ,–Í,©S®CallExpressionÍ,–Í,¨MªIdentifierÍ,–Í,£­mergeRailNets‘MªIdentifierÍ,¤Í,§£docÂT³ExpressionStatementÍ,¯Í,ÄS®CallExpressionÍ,¯Í,ÃMªIdentifierÍ,¯Í,¾¯pruneOrphanNets‘MªIdentifierÍ,¿Í,Â£docÂQ³VariableDeclarationÍ,ÊÍ,ê‘R²VariableDeclaratorÍ,ĞÍ,éMªIdentifierÍ,ĞÍ,Õ¥afterS®CallExpressionÍ,ØÍ,éMªIdentifierÍ,ØÍ,ä¬countPinRefs‘MªIdentifierÍ,åÍ,è£docÂ¥constT³ExpressionStatementÍ,ğÍ-DS®CallExpressionÍ,ğÍ-CMªIdentifierÍ,ğÍ-´traceNetConnectivity•MªIdentifierÍ-Í-¦beforeMªIdentifierÍ-Í-¥afterMªIdentifierÍ-Í-¥wiredW°MemberExpressionÍ-Í-0W°MemberExpressionÍ-Í-)MªIdentifierÍ-Í-£docMªIdentifierÍ-Í-)ªcomponentsÂÂMªIdentifierÍ-*Í-0¦lengthÂÂW°MemberExpressionÍ-2Í-BW°MemberExpressionÍ-2Í-;MªIdentifierÍ-2Í-5£docMªIdentifierÍ-6Í-;¥wiresÂÂMªIdentifierÍ-<Í-B¦lengthÂÂÂÀK¶ExportNamedDeclarationÍ-Í.oL³FunctionDeclarationÍ-•Í.oMªIdentifierÍ-Í-º¼rebuildAllNetPinConnectivityÂÂÂ“MªIdentifierÍ-»Í-¾£docN±AssignmentPatternÍ-ÀÍ-ÍMªIdentifierÍ-ÀÍ-È¨gridSizeO§LiteralÍ-ËÍ-Í
+¢10MªIdentifierÍ-ÏÍ-×¨resolverP®BlockStatementÍ-ÙÍ.o’U¬ForStatementÍ-àÍ.4Q³VariableDeclarationÍ-åÍ-î‘R²VariableDeclaratorÍ-éÍ-îMªIdentifierÍ-éÍ-ê¡iO§LiteralÍ-íÍ-î ¡0£letV°BinaryExpressionÍ-ğÍ.MªIdentifierÍ-ğÍ-ñ¡i¡<W°MemberExpressionÍ-ôÍ.W°MemberExpressionÍ-ôÍ-üMªIdentifierÍ-ôÍ-÷£docMªIdentifierÍ-øÍ-ü¤netsÂÂMªIdentifierÍ-ıÍ.¦lengthÂÂX°UpdateExpressionÍ.Í.¢++ÂMªIdentifierÍ.Í.¡iP®BlockStatementÍ.
+Í.4‘T³ExpressionStatementÍ.Í.-Y´AssignmentExpressionÍ.Í.,¡=W°MemberExpressionÍ.Í.'W°MemberExpressionÍ.Í. W°MemberExpressionÍ.Í.MªIdentifierÍ.Í.£docMªIdentifierÍ.Í.¤netsÂÂMªIdentifierÍ.Í.¡iÃÂMªIdentifierÍ.!Í.'¦pinIdsÂÂZ¯ArrayExpressionÍ.*Í.,T³ExpressionStatementÍ.:Í.lS®CallExpressionÍ.:Í.kMªIdentifierÍ.:Í.R¸ensureNetPinConnectivity“MªIdentifierÍ.SÍ.V£docMªIdentifierÍ.XÍ.`¨gridSizeMªIdentifierÍ.bÍ.j¨resolverÂÀK¶ExportNamedDeclarationÍ.qÍ0L³FunctionDeclarationÍ.xÍ0MªIdentifierÍ.Í.‘°summarizeNetPinsÂÂÂ’MªIdentifierÍ.’Í.•£docN±AssignmentPatternÍ.—Í.¢MªIdentifierÍ.—Í.§maxNetsO§LiteralÍ.¡Í.¢¡6P®BlockStatementÍ.¤Í0”Q³VariableDeclarationÍ.«Í.¼‘R²VariableDeclaratorÍ.±Í.»MªIdentifierÍ.±Í.¶¥partsZ¯ArrayExpressionÍ.¹Í.»¥constQ³VariableDeclarationÍ.ÂÍ.Ğ‘R²VariableDeclaratorÍ.ÆÍ.ÏMªIdentifierÍ.ÆÍ.Ë¥countO§LiteralÍ.ÎÍ.Ï ¡0£letU¬ForStatementÍ.ÖÍ/İQ³VariableDeclarationÍ.ÛÍ.ä‘R²VariableDeclaratorÍ.ßÍ.äMªIdentifierÍ.ßÍ.à¡iO§LiteralÍ.ãÍ.ä ¡0£letV±LogicalExpressionÍ.æÍ/V°BinaryExpressionÍ.æÍ.ùMªIdentifierÍ.æÍ.ç¡i¡<W°MemberExpressionÍ.êÍ.ùW°MemberExpressionÍ.êÍ.òMªIdentifierÍ.êÍ.í£docMªIdentifierÍ.îÍ.ò¤netsÂÂMªIdentifierÍ.óÍ.ù¦lengthÂÂ¢&&V°BinaryExpressionÍ.ıÍ/MªIdentifierÍ.ıÍ/¥count¡<MªIdentifierÍ/Í/§maxNetsX°UpdateExpressionÍ/Í/¢++ÂMªIdentifierÍ/Í/¡iP®BlockStatementÍ/Í/İ”Q³VariableDeclarationÍ/Í/6‘R²VariableDeclaratorÍ/$Í/5MªIdentifierÍ/$Í/'£netW°MemberExpressionÍ/*Í/5W°MemberExpressionÍ/*Í/2MªIdentifierÍ/*Í/-£docMªIdentifierÍ/.Í/2¤netsÂÂMªIdentifierÍ/3Í/4¡iÃÂ¥constÔr[–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ/@Í/€V°BinaryExpressionÍ/DÍ/[W°MemberExpressionÍ/DÍ/UW°MemberExpressionÍ/DÍ/NMªIdentifierÍ/DÍ/G£netMªIdentifierÍ/HÍ/N¦pinIdsÂÂMªIdentifierÍ/OÍ/U¦lengthÂÂ£===O§LiteralÍ/ZÍ/[ ¡0P®BlockStatementÍ/]Í/€‘Ôr\”¤type¥start£end¥label±ContinueStatementÍ/lÍ/uÀÀT³ExpressionStatementÍ/ŠÍ/ÄS®CallExpressionÍ/ŠÍ/ÃW°MemberExpressionÍ/ŠÍ/”MªIdentifierÍ/ŠÍ/¥partsMªIdentifierÍ/Í/”¤pushÂÂ‘Ôr]•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ/•Í/Â’V±LogicalExpressionÍ/˜Í/ªW°MemberExpressionÍ/˜Í/ MªIdentifierÍ/˜Í/›£netMªIdentifierÍ/œÍ/ ¤nameÂÂ¢||W°MemberExpressionÍ/¤Í/ªMªIdentifierÍ/¤Í/§£netMªIdentifierÍ/¨Í/ª¢idÂÂW°MemberExpressionÍ/®Í/¿W°MemberExpressionÍ/®Í/¸MªIdentifierÍ/®Í/±£netMªIdentifierÍ/²Í/¸¦pinIdsÂÂMªIdentifierÍ/¹Í/¿¦lengthÂÂ“Ôr^•¤type¥start£end¥value¤tail¯TemplateElementÍ/–Í/–Ôr_’£raw¦cooked  Â^¯TemplateElementÍ/«Í/¬_¡(¡(Â^¯TemplateElementÍ/ÀÍ/Á_¡)¡)ÃÂT³ExpressionStatementÍ/ÎÍ/ÖX°UpdateExpressionÍ/ÎÍ/Õ¢++ÂMªIdentifierÍ/ÎÍ/Ó¥countÔr`”¤type¥start£end¨argument¯ReturnStatementÍ/ãÍ0[µConditionalExpressionÍ/êÍ0V°BinaryExpressionÍ/êÍ/úW°MemberExpressionÍ/êÍ/öMªIdentifierÍ/êÍ/ï¥partsMªIdentifierÍ/ğÍ/ö¦lengthÂÂ¡>O§LiteralÍ/ùÍ/ú ¡0S®CallExpressionÍ/ıÍ0W°MemberExpressionÍ/ıÍ0MªIdentifierÍ/ıÍ0¥partsMªIdentifierÍ0Í0¤joinÂÂ‘O§LiteralÍ0Í0¢, ¤', 'ÂO§LiteralÍ0Í0©(no pins)«'(no pins)'À•Ôra•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ¡ÌĞ‘Ôrb•¤type¥start£end¨imported¥local¯ImportSpecifierÌªÌ±MªIdentifierÌªÌ±§NetTypeMªIdentifierÌªÌ±§NetTypeO§LiteralÌ¹ÌÏ´../types/CommonTypes¶'../types/CommonTypes'a±ImportDeclarationÌÒÍ
+’b¯ImportSpecifierÌÛÌæMªIdentifierÌÛÌæ«buildPinRefMªIdentifierÌÛÌæ«buildPinRefb¯ImportSpecifierÌèÌóMªIdentifierÌèÌó«parsePinRefMªIdentifierÌèÌó«parsePinRefO§LiteralÌûÍ	¬./PinRefUtil®'./PinRefUtil'a±ImportDeclarationÍÍH‘b¯ImportSpecifierÍÍ)MªIdentifierÍÍ)´traceNetConnectivityMªIdentifierÍÍ)´traceNetConnectivityO§LiteralÍ1ÍG´./InstrumentTraceLog¶'./InstrumentTraceLog'a±ImportDeclarationÍJÍ…‘b¯ImportSpecifierÍSÍiMªIdentifierÍSÍi¶rebuildWireNetTopologyMªIdentifierÍSÍi¶rebuildWireNetTopologyO§LiteralÍqÍ„±./WireNetTopology³'./WireNetTopology'a±ImportDeclarationÍ‡ÍÊ‘b¯ImportSpecifierÍÍ©MªIdentifierÍÍ©¹applyNetLabelConnectivityMªIdentifierÍÍ©¹applyNetLabelConnectivityO§LiteralÍ±ÍÉ¶./NetLabelConnectivity¸'./NetLabelConnectivity'

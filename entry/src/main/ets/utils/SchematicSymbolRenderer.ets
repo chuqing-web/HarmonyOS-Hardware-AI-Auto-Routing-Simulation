@@ -107,9 +107,10 @@ export class SchematicSymbolRenderer {
       SchematicSymbolRenderer.drawIcBody(ctx, def.pins, def.name);
     }
 
-    // LED/diode: always use custom renderer so color is applied, even when
-    // a device-library component carries an inline SVG symbol
-    const skipSvg = key === 'led' || key === 'diode';
+    // LED/diode/resistor: always use procedural symbols so pin geometry (±30)
+    // matches BuiltinComponents / template kit, even when DeviceLibrary ships SVG
+    const skipSvg = key === 'led' || key === 'diode' || key === 'resistor' ||
+      key === 'capacitor' || key === 'fuse';
     if (!skipSvg && def.svgSymbol.length > 20 && def.svgSymbol.indexOf('<') >= 0) {
       const cmds = SvgSymbolCache.preload(def.id, def.svgSymbol);
       if (cmds.length > 0) {
@@ -335,10 +336,12 @@ export class SchematicSymbolRenderer {
     if (isLed && ledColor.length > 0) {
       const hex = SchematicSymbolRenderer.diodeColorMap.get(ledColor) ?? '#E53935';
       ctx.save();
-      ctx.globalAlpha = 0.30;
+      ctx.globalAlpha = 0.72;
       ctx.fillStyle = hex;
       ctx.fill();
       ctx.globalAlpha = 1;
+      ctx.strokeStyle = hex;
+      ctx.lineWidth = 1.8;
       ctx.stroke();
       ctx.restore();
     } else {

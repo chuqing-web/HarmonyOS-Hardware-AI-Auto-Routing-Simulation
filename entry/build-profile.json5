@@ -1,6 +1,12 @@
 {
   "apiType": "stageMode",
-  "buildOption": {},
+  "buildOption": {
+    "sourceOption": {
+      "workers": [
+        "./src/main/ets/workers/SimWorker.ets"
+      ]
+    }
+  },
   "targets": [
     {
       "name": "default"

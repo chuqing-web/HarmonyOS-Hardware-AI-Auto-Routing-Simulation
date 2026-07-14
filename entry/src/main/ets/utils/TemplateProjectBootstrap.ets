@@ -3,7 +3,7 @@
  */
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
-import { Logger } from 'common';
+import { Logger, traceBurn } from 'common';
 import { ProjectPaths } from './ProjectPaths';
 
 interface ResourceManagerLike {
@@ -27,9 +27,14 @@ export class TemplateProjectBootstrap {
       ProjectPaths.templateRoot(baseDir));
 
     const tplCount = TemplateProjectBootstrap.listTemplateSchsimFiles(baseDir).length;
-    const hexCount = TemplateProjectBootstrap.listHexFiles(baseDir).length;
+    const hexFiles = TemplateProjectBootstrap.listHexFiles(baseDir);
+    const hexCount = hexFiles.length;
     Logger.info('AISchSim',
       `工程目录已就绪 @ ${baseDir} | project | Test_Template(${tplCount}) | hex_files(${hexCount})`);
+    const preview = hexFiles.slice(0, 12).join(', ');
+    const more = hexCount > 12 ? ` ...+${hexCount - 12}` : '';
+    traceBurn('HEX_SANDBOX',
+      `dir=${ProjectPaths.hexRoot(baseDir)} count=${hexCount} files=[${preview}${more}]`);
   }
 
   private static mkdirSafe(path: string): void {
@@ -60,6 +65,11 @@ export class TemplateProjectBootstrap {
         } catch (_e) { /* file */ }
         try {
           const data = await rm.getRawFileContent(rawPath);
+          // 始终覆盖：模板 .schsim 会迭代（如加入 netLabelList），旧文件不能永久 skip
+          try {
+            fs.accessSync(outPath);
+            fs.unlinkSync(outPath);
+          } catch (_exist) { /* new file */ }
           const file = fs.openSync(outPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
           fs.writeSync(file.fd, data.buffer);
           fs.closeSync(file);

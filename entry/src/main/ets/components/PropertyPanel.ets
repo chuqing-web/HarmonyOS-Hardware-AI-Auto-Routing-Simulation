@@ -6,7 +6,7 @@ import { AppService } from '../services/AppService';
 import {
   ComponentInstance, UnitParser, paramMapGet, emptyStringMap, ApiResult,
   CouplingMode, MathChannelOp, LogicDecodeProtocol, MultimeterMode, McuFamily,
-  traceUiRefresh, traceUiSelect
+  VoltmeterType, traceUiRefresh, traceUiSelect, traceBurn, formatFirmwarePreview
 } from 'common';
 import {
   ComponentParamsUpdate, ComponentParamEntry
@@ -123,9 +123,16 @@ export struct PropertyPanel {
     const libId = this.comp.libraryId.toUpperCase();
     try {
       if (libId.includes('VIRTUAL_METER') || libId === 'MULTIMETER') {
-        const r = this.appService.instruments.measure();
-        if (r.success && r.data !== undefined) {
-          this.mmReading = Number(r.data).toFixed(3);
+        const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
+        if (delta !== null) {
+          const averaged = this.appService.instruments.multimeterMeasureValue(delta);
+          this.mmReading = (averaged.success && averaged.data !== undefined)
+            ? Number(averaged.data).toFixed(3) : delta.toFixed(3);
+        } else {
+          const r = this.appService.instruments.measure();
+          if (r.success && r.data !== undefined) {
+            this.mmReading = Number(r.data).toFixed(3);
+          }
         }
         const snap = this.appService.instruments.getInstrumentSnapshot();
         if (snap !== undefined) {
@@ -134,7 +141,9 @@ export struct PropertyPanel {
       } else if (libId.includes('VOLTMETER')) {
         const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
         if (delta !== null) {
-          this.vmReading = delta.toFixed(2);
+          const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
+          this.vmReading = (averaged.success && averaged.data !== undefined)
+            ? Number(averaged.data).toFixed(2) : delta.toFixed(2);
         } else {
           const r = this.appService.instruments.voltmeterMeasure();
           if (r.success && r.data !== undefined) {
@@ -148,7 +157,9 @@ export struct PropertyPanel {
       } else if (libId.includes('AMMETER')) {
         const mA = this.appService.readAmmeterCurrentForComponent(this.comp.id);
         if (mA !== null) {
-          this.amReading = mA.toFixed(3);
+          const averaged = this.appService.instruments.ammeterMeasureValue(mA);
+          this.amReading = (averaged.success && averaged.data !== undefined)
+            ? Number(averaged.data).toFixed(3) : mA.toFixed(3);
         } else {
           const r = this.appService.instruments.ammeterMeasure();
           if (r.success && r.data !== undefined) {
@@ -270,6 +281,10 @@ export struct PropertyPanel {
     this.appService.setActiveInstrumentComponent(this.comp.id);
     if (this.isInstrument() || libId.includes('METER') || libId.includes('SCOPE') || libId.includes('LOGIC')) {
       this.appService.refreshInstrumentReaderForComponent(this.comp.id);
+    }
+    if (libId.includes('VOLTMETER_DC') || libId === 'VOLTMETER') {
+      this.vmUnit = 'V DC';
+      this.appService.instruments.setVoltmeterType(VoltmeterType.DC);
     }
   }
 
@@ -577,34 +592,31 @@ export struct PropertyPanel {
     Column({ space: 6 }) {
       Text('波形显示')
         .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
-      if (this.oscWaveData.length > 0) {
-        Column({ space: 2 }) {
-          OscilloscopeWaveCanvas({
-            timeData: this.oscTimeData,
-            voltageData: this.oscWaveData,
-            channelLabel: 'CH1',
-            vPerDiv: 1,
-            triggerLevel: 0
-          })
-            .width('100%').height(100)
-        }
-        .border({ width: 1, color: ProteusColors.DIVIDER })
-        if (this.oscWaveDataCh2.length > 0) {
-          Column({ space: 2 }) {
-            OscilloscopeWaveCanvas({
-              timeData: this.oscTimeData,
-              voltageData: this.oscWaveDataCh2,
-              channelLabel: 'CH2',
-              vPerDiv: 1,
-              triggerLevel: 0
-            })
-              .width('100%').height(100)
-          }
-          .border({ width: 1, color: ProteusColors.DIVIDER })
-        }
-      } else {
-        Text('(运行仿真后显示波形)')
-          .fontSize(ProteusFonts.STATUS).fontColor(ProteusColors.TEXT_SECONDARY)
+      OscilloscopeWaveCanvas({
+        timeData: this.oscTimeData,
+        voltageData: this.oscWaveData,
+        channelLabel: 'CH1',
+        waveColor: '#00e676',
+        vPerDiv: 1,
+        triggerLevel: 0,
+        autoFit: true,
+        canvasHeight: 140,
+        showStats: true
+      })
+        .width('100%')
+      if (this.oscWaveDataCh2.length > 1) {
+        OscilloscopeWaveCanvas({
+          timeData: this.oscTimeData,
+          voltageData: this.oscWaveDataCh2,
+          channelLabel: 'CH2',
+          waveColor: '#40c4ff',
+          vPerDiv: 1,
+          triggerLevel: 0,
+          autoFit: true,
+          canvasHeight: 110,
+          showStats: true
+        })
+          .width('100%')
       }
       Row({ space: 6 }) {
         ProteusClassicBtn({ label: 'AC', widthVal: '48%',
@@ -803,7 +815,13 @@ export struct PropertyPanel {
         ProteusClassicBtn({ label: '发', widthVal: 36,
           onAction: () => {
             this.appService.instruments.uartHexSend(this.uartHex);
+            this.uartLog = this.appService.instruments.getUartLog();
             this.statusMessage = `已发送: ${this.uartHex}`;
+          } })
+        ProteusClassicBtn({ label: '收', widthVal: 36,
+          onAction: () => {
+            this.uartLog = this.appService.instruments.getUartLog();
+            this.statusMessage = this.uartLog.length > 0 ? '已刷新接收日志' : '暂无数据';
           } })
       }
       .width('100%')
@@ -812,7 +830,7 @@ export struct PropertyPanel {
           .fontSize(9).fontColor('#CCCCCC')
           .fontFamily('monospace')
           .backgroundColor('#0a0a12')
-          .padding(4).width('100%').maxLines(8)
+          .padding(4).width('100%').maxLines(16)
       }
       Row({ space: 4 }) {
         ProteusClassicBtn({ label: '清空', widthVal: '48%',
@@ -888,8 +906,16 @@ export struct PropertyPanel {
             const id = this.comp.libraryId;
             if (id.includes('STM32')) family = McuFamily.MCU_STM32F1;
           }
+          traceBurn('UI_BURN_BEGIN', `source=property_sample family=${family} bytes=${data.length}`);
           const result = this.appService.hexDebugger.loadHexData(data, family);
-          this.statusMessage = result.success ? 'HEX 加载成功' : `加载失败: ${result.error}`;
+          if (result.success && result.data !== undefined) {
+            const fam = family === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
+            this.appService.loadMcuIntoSim(result.data.data, 0, fam);
+            this.statusMessage = 'HEX 加载成功';
+          } else {
+            this.statusMessage = `加载失败: ${result.error}`;
+            traceBurn('UI_BURN_FAIL', `source=property_sample err=${result.error}`);
+          }
         } })
 
       if (this.hexRegisters.length > 0) {
@@ -923,9 +949,12 @@ export struct PropertyPanel {
   private async burnHex(): Promise<void> {
     if (this.hexPath.length === 0) {
       this.statusMessage = '请先输入 HEX 文件路径';
+      traceBurn('UI_BURN_ABORT', 'empty path (property panel)');
       return;
     }
     this.statusMessage = '烧录中...';
+    const ref = this.comp !== null ? this.comp.refDes : '-';
+    traceBurn('UI_BURN_BEGIN', `source=property_panel path=${this.hexPath} ref=${ref}`);
     try {
       const fileHandle = fs.openSync(this.hexPath, fs.OpenMode.READ_ONLY);
       const stat = fs.statSync(this.hexPath);
@@ -938,10 +967,21 @@ export struct PropertyPanel {
         const id = this.comp.libraryId;
         if (id.includes('STM32')) family = McuFamily.MCU_STM32F1;
       }
+      const familyStr = family === McuFamily.MCU_8051 ? '8051' : 'STM32F1';
+      traceBurn('UI_BURN_READ',
+        `path=${this.hexPath} size=${stat.size} family=${familyStr} preview=${formatFirmwarePreview(data)}`);
       const result = this.appService.hexDebugger.loadHexData(data, family);
-      this.statusMessage = result.success ? 'HEX 烧录成功' : `烧录失败: ${result.error}`;
+      if (result.success && result.data !== undefined) {
+        this.appService.loadMcuIntoSim(result.data.data, 0, familyStr);
+        this.statusMessage = 'HEX 烧录成功';
+        traceBurn('UI_BURN_OK', `source=property_panel path=${this.hexPath} family=${familyStr}`);
+      } else {
+        this.statusMessage = `烧录失败: ${result.error}`;
+        traceBurn('UI_BURN_FAIL', `source=property_panel path=${this.hexPath} err=${result.error}`);
+      }
     } catch (_e) {
       this.statusMessage = `打开文件失败: ${_e}`;
+      traceBurn('UI_BURN_FAIL', `source=property_panel path=${this.hexPath} ex=${_e}`);
     }
   }
 }
