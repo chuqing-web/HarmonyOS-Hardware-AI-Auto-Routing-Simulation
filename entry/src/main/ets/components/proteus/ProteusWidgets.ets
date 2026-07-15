@@ -68,26 +68,39 @@ export struct ProteusPanelTitle {
         .fontColor(ProteusColors.TEXT_PRIMARY)
         .fontWeight(FontWeight.Medium)
         .layoutWeight(1)
-        .textAlign(TextAlign.Center)
-      Text(this.collapsed ? '▶' : '▼')
-        .fontSize(8)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .margin({ right: 4 })
+        .textAlign(TextAlign.Start)
+        .padding({ left: 8 })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+      Button({ type: ButtonType.Normal }) {
+        Text(this.collapsed ? '▶' : '◀')
+          .fontSize(12)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width(28)
+      .height(20)
+      .backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED : ProteusColors.BTN_BG)
+      .borderRadius(0)
+      .border(proteusBtnBorder(this.pressed))
+      .margin({ right: 4 })
+      .stateEffect(false)
+      .onClick(() => this.onToggle())
+      .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) {
+          this.pressed = true;
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.pressed = false;
+        }
+      })
     }
     .width('100%')
     .height(ProteusDimens.PANEL_TITLE_HEIGHT)
-    .backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED : ProteusColors.PANEL_TITLE_BG)
+    .backgroundColor(ProteusColors.PANEL_TITLE_BG)
     .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
     .alignItems(VerticalAlign.Center)
-    .scale(this.pressed ? { x: 0.995, y: 0.92 } : { x: 1, y: 1 })
-    .onClick(() => this.onToggle())
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down) {
-        this.pressed = true;
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.pressed = false;
-      }
-    })
     .onHover((hover: boolean) => {
       this.tipVisible = hover;
     })

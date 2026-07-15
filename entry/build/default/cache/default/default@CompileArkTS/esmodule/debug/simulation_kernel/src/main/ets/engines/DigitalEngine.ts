@@ -412,6 +412,37 @@ export class DigitalEngine {
     getGateCount(): number {
         return this.gates.length;
     }
+    /**
+     * Gate inputs/outputs/enables — only these should receive digital forceSetLevel
+     * from analog DC seed (avoid tagging relay/LED nets as LOGIC_H/L).
+     */
+    getLogicParticipantNetIds(): string[] {
+        const ids: string[] = [];
+        const seen = new Set<string>();
+        const add = (id: string): void => {
+            if (id.length === 0 || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            ids.push(id);
+        };
+        for (let i = 0; i < this.gates.length; i++) {
+            const g = this.gates[i];
+            add(g.outputId);
+            if (g.enableId.length > 0) {
+                add(g.enableId);
+            }
+            for (let j = 0; j < g.inputIds.length; j++) {
+                add(g.inputIds[j]);
+            }
+        }
+        this.cd4017States.forEach((st: Cd4017State) => {
+            for (let q = 0; q < st.qNetIds.length; q++) {
+                add(st.qNetIds[q]);
+            }
+        });
+        return ids;
+    }
     /** Primary gate outputs only (exclude unused CD4017 Q1–Q9 stubs). */
     getPrimaryDrivenNetIds(): string[] {
         const ids: string[] = [];

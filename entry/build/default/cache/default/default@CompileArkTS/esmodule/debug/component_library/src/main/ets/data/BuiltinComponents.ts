@@ -73,6 +73,11 @@ function makePassives(): ComponentDefinition[] {
         const v = resistors[i];
         items.push(twoPin(`R_${v}`, `Resistor ${v}Ω`, ComponentCategory.PASSIVE, params3('value', `${v}Ω`, 'tolerance', '5%', 'power', '0.25W'), `R{name} {1} {2} {value}`, ['pull-up', 'pull-down', 'voltage-divider']));
     }
+    const pots = ['1k', '10k', '100k'];
+    for (let i = 0; i < pots.length; i++) {
+        const v = pots[i];
+        items.push(makePotentiometer(`POT_${v}`, `滑动变阻器 ${v}Ω`, v));
+    }
     const caps = ['10pF', '100pF', '1nF', '10nF', '100nF', '1uF', '10uF', '100uF'];
     for (let i = 0; i < caps.length; i++) {
         const v = caps[i];
@@ -146,18 +151,41 @@ function makeMcus(): ComponentDefinition[] {
 }
 function makePeripherals(): ComponentDefinition[] {
     return [
-        twoPin('SW_PUSH', 'Push Button', ComponentCategory.PERIPHERAL, params1('type', 'momentary'), '', ['input']),
-        twoPin('RELAY_SPDT', 'SPDT Relay', ComponentCategory.PERIPHERAL, params1('coilVoltage', '5V'), '', ['output']),
+        twoPin('SW_PUSH', 'Push Button', ComponentCategory.PERIPHERAL, params2('type', 'momentary', 'pressed', '0'), '', ['input']),
+        makeRelaySpdt(),
         twoPin('BUZZER', 'Buzzer', ComponentCategory.PERIPHERAL, params1('voltage', '5V'), '', ['output']),
         makeLcd1602(),
         makeOled12864(),
     ];
 }
+/** Coil = pins 1/2 (template wiring); optional COM/NO/NC for contact model. */
+function makeRelaySpdt(): ComponentDefinition {
+    const def: ComponentDefinition = {
+        id: 'RELAY_SPDT',
+        name: 'SPDT Relay',
+        category: ComponentCategory.PERIPHERAL,
+        manufacturer: 'Generic',
+        description: '线圈 1/2 + 触点 COM/NO/NC',
+        pins: [
+            makePin('1', '1', '1', PinType.PASSIVE, -30, -10),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, -10),
+            makePin('COM', 'COM', '3', PinType.PASSIVE, 0, 20),
+            makePin('NO', 'NO', '4', PinType.PASSIVE, 20, 20),
+            makePin('NC', 'NC', '5', PinType.PASSIVE, -20, 20)
+        ],
+        defaultParams: params1('coilVoltage', '5V'),
+        spiceModel: '',
+        behaviorModel: 'relay_spdt',
+        svgSymbol: 'RELAY_SPDT.svg',
+        aiWiringRules: ['output']
+    };
+    return def;
+}
 function makeSensors(): ComponentDefinition[] {
     return [
         twoPin('DS18B20', 'DS18B20 Temperature', ComponentCategory.SENSOR, params2('range', '-55~125°C', 'interface', '1-Wire'), '', ['one-wire']),
         twoPin('HALL_SENSOR', 'Hall Sensor', ComponentCategory.SENSOR, params1('type', 'digital'), '', ['input']),
-        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params1('type', 'analog'), '', ['adc-input']),
+        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input']),
     ];
 }
 function makeInstruments(): ComponentDefinition[] {
@@ -188,6 +216,27 @@ function twoPin(id: string, name: string, cat: ComponentCategory, params: Map<st
         behaviorModel: '',
         svgSymbol: `${id}.svg`,
         aiWiringRules: rules
+    };
+    return def;
+}
+/** 三端滑动变阻器：1/2 为端，W 为抽头（wiper 0~1） */
+function makePotentiometer(id: string, name: string, value: string): ComponentDefinition {
+    const def: ComponentDefinition = {
+        id: id,
+        name: name,
+        category: ComponentCategory.PASSIVE,
+        manufacturer: 'Generic',
+        description: `${name}，可调抽头分压`,
+        pins: [
+            makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, 0),
+            makePin('W', 'W', '3', PinType.PASSIVE, 0, 28)
+        ],
+        defaultParams: params3('value', `${value}Ω`, 'wiper', '0.5', 'power', '0.25W'),
+        spiceModel: 'R{name}A {1} {W} {value}*{wiper}\nR{name}B {W} {2} {value}*(1-{wiper})',
+        behaviorModel: 'potentiometer',
+        svgSymbol: 'potentiometer.svg',
+        aiWiringRules: ['voltage-divider', 'adjustable']
     };
     return def;
 }
@@ -479,7 +528,7 @@ function makeOscilloscope(): ComponentDefinition {
             makePin('CH2', 'CH2', '2', PinType.INPUT, -40, -10),
             makePin('CH3', 'CH3', '3', PinType.INPUT, -40, 10),
             makePin('CH4', 'CH4', '4', PinType.INPUT, -40, 20),
-            makePin('GND', 'GND', '5', PinType.GROUND, -40, 40)
+            makePin('GND', 'GND', '5', PinType.GROUND, 40, 40)
         ],
         defaultParams: params2('channels', '4', 'sampleRate', '1MHz'),
         spiceModel: '',

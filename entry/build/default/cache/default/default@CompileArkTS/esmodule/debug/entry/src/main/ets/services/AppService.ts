@@ -26,10 +26,18 @@ import { TemplateMergeUtil } from "@bundle:com.elecdraw.aischsim/entry/ets/utils
 import { ProjectPaths } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/ProjectPaths";
 import { KeyboardShortcutManager } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/KeyboardShortcutManager";
 import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
-import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, BindingTraceInfo, PinGeometryResolver, PinGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, emptySchTopology } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
+/** AI 整图生成对话/日志条目（Claude/Cursor 风格流） */
+export interface AiGenLogEntry {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    text: string;
+    ts: number;
+}
+export type AiGenerateMode = 'replace' | 'append';
 interface SimStepData {
     waves: WaveData[];
     stepCount: number;
@@ -91,11 +99,17 @@ export class AppService {
     private lastActiveInstrumentId: string | null = null;
     private bindingPinHash: Map<string, string> = new Map();
     private appBaseDir: string = '';
+    private aiGenerating: boolean = false;
+    private aiGenLogs: AiGenLogEntry[] = [];
+    private aiGenLogSeq: number = 0;
+    private aiGenCancelRequested: boolean = false;
     onProjectChanged: () => void = () => { };
     onStatusMessage: (msg: string) => void = () => { };
     onErcUpdate: (errors: ErcError[]) => void = () => { };
     onWaveUpdate: (waves: WaveData[]) => void = () => { };
     onAiProgress: (p: ProgressInfo) => void = () => { };
+    onAiGeneratingChanged: (busy: boolean) => void = () => { };
+    onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => { };
     wireToolToggleHandler: () => void = () => { };
     copyHandler: () => void = () => { };
     pasteHandler: () => void = () => { };
@@ -204,6 +218,9 @@ export class AppService {
         return AppService.instance;
     }
     newProject(name: string = 'Untitled'): void {
+        if (this.currentProjectPath.length > 0 && this.canUseSidecarLock(this.currentProjectPath)) {
+            this.filePersistence.releaseProjectLock(this.currentProjectPath, this.sessionHolderId);
+        }
         this.currentProject = this.filePersistence.createNewProject(name);
         this.currentProjectPath = '';
         const editor = this.schematicEditor as SchematicEditorImpl;
@@ -349,7 +366,16 @@ export class AppService {
             }
             return mA;
         }
-        return null;
+        // Fallback: net current at I+ (ideal VSRC branch key can miss after quiet re-stamp)
+        const iNet = kernel.getNetCurrentByUuid(netPlus);
+        if (Math.abs(iNet) > 1e-15) {
+            const mA = iNet * 1000;
+            if (!quiet) {
+                traceMeasure(comp.refDes, 'I', kernel.isSimActive(), `UI I+(net) I=${mA.toFixed(4)}mA sign=${iNet >= 0 ? '+' : '-'}`);
+            }
+            return mA;
+        }
+        return 0;
     }
     isSimulationRunning(): boolean {
         const kernel = this.simulationKernel as SimulationKernelImpl;
@@ -358,6 +384,295 @@ export class AppService {
     /** 仿真运行或暂停中 — 禁止改原理图/接线 */
     isSimulationActive(): boolean {
         return (this.simulationKernel as SimulationKernelImpl).isSimActive();
+    }
+    /**
+     * 仿真中切换按键 pressed。成功返回 '0'/'1'，失败返回 ''。
+     * 与编辑器文档共用 ComponentInstance（startSimulation 传入同一引用）。
+     */
+    toggleInteractiveSwitch(componentId: string): string {
+        if (!this.isSimulationActive()) {
+            return '';
+        }
+        const kernel = this.simulationKernel as SimulationKernelImpl;
+        const next = kernel.toggleInteractiveSwitch(componentId);
+        if (next.length > 0) {
+            this.publishInteractiveCircuitRefresh('sw', `pressed=${next}`);
+        }
+        return next;
+    }
+    /**
+     * 仿真中调节电位器滑臂位置（0~1）。成功返回 "0.xxx"，失败返回 ''。
+     */
+    setInteractivePotWiper(componentId: string, wiper: number): string {
+        if (!this.isSimulationActive()) {
+            return '';
+        }
+        const kernel = this.simulationKernel as SimulationKernelImpl;
+        const next = kernel.setInteractivePotWiper(componentId, wiper);
+        if (next.length > 0) {
+            this.publishInteractiveCircuitRefresh('pot', `wiper=${next}`);
+        }
+        return next;
+    }
+    /**
+     * First schematic meter of a given panel kind ('vm' | 'dmm' | 'am' | 'osc' | 'power' | 'freq').
+     * Used when the selection is a pot/switch but the instrument tab still needs a binding.
+     */
+    findFirstSchematicInstrumentId(kind: string): string {
+        const doc = this.schematicEditor.getDocument();
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            const lib = c.libraryId.toUpperCase();
+            if (kind === 'vm') {
+                if (lib.includes('VOLTMETER') && !lib.includes('VIRTUAL_METER') && lib !== 'MULTIMETER') {
+                    return c.id;
+                }
+            }
+            else if (kind === 'dmm') {
+                if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER')) {
+                    return c.id;
+                }
+            }
+            else if (kind === 'am') {
+                if (lib.includes('AMMETER')) {
+                    return c.id;
+                }
+            }
+            else if (kind === 'osc') {
+                if (lib.includes('OSC') || lib.includes('SCOPE')) {
+                    return c.id;
+                }
+            }
+            else if (kind === 'power') {
+                if (lib.includes('POWER_METER') || lib.includes('WATT')) {
+                    return c.id;
+                }
+            }
+            else if (kind === 'freq') {
+                if (lib.includes('FREQ') || lib.includes('COUNTER')) {
+                    return c.id;
+                }
+            }
+        }
+        // vm tab also accepts DMM / virtual meter as a voltage source
+        if (kind === 'vm') {
+            for (let i = 0; i < doc.components.length; i++) {
+                const c = doc.components[i];
+                const lib = c.libraryId.toUpperCase();
+                if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER') || lib.includes('VOLTMETER')) {
+                    return c.id;
+                }
+            }
+        }
+        return '';
+    }
+    /**
+     * Live V/I/P for a schematic POWER_METER (bypasses EMA). Returns null if unwired.
+     */
+    readPowerMeterForComponent(compInstId: string): PowerMeterConfig | null {
+        const doc = this.schematicEditor.getDocument();
+        const comp = doc.components.find(c => c.id === compInstId);
+        if (comp === undefined) {
+            return null;
+        }
+        const lib = comp.libraryId.toUpperCase();
+        if (!lib.includes('POWER_METER') && !lib.includes('WATT')) {
+            return null;
+        }
+        const kernel = this.simulationKernel as SimulationKernelImpl;
+        const pinNets = getPinNetMap(compInstId, doc.nets);
+        const netVPlus = findNetForPinLabel(pinNets, 'V+') ?? findNetForPinLabel(pinNets, 'VP');
+        const netVCom = findNetForPinLabel(pinNets, 'V-') ?? findNetForPinLabel(pinNets, 'COM') ??
+            findNetForPinLabel(pinNets, 'GND');
+        const netIPlus = findNetForPinLabel(pinNets, 'I+') ?? findNetForPinLabel(pinNets, 'IP');
+        if (netVPlus === null || netVCom === null) {
+            return null;
+        }
+        const v = kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom);
+        let iA = 0;
+        if (netIPlus !== null) {
+            iA = kernel.getNetCurrentByUuid(netIPlus);
+        }
+        return this.instruments.powerMeterSnapReading(v, iA);
+    }
+    private isSchematicInstrumentLib(libUpper: string): boolean {
+        return libUpper.includes('VOLTMETER') || libUpper.includes('VIRTUAL_METER') ||
+            libUpper === 'MULTIMETER' || libUpper.includes('AMMETER') ||
+            libUpper.includes('OSC') || libUpper.includes('SCOPE') ||
+            libUpper.includes('POWER_METER') || libUpper.includes('WATT') ||
+            libUpper.includes('FREQ') || libUpper.includes('COUNTER') ||
+            libUpper.includes('LOGIC') || libUpper.includes('ANALYZER') ||
+            libUpper.includes('UART') || libUpper.includes('SIGNAL');
+    }
+    /**
+     * After live pot/switch edits: snap ALL meter/scope readings + push UI tick
+     * (bypass DisplayPump / DC-average lag). Keep active on the real instrument —
+     * never steal OSC/PM/AM back to the first voltmeter.
+     */
+    private publishInteractiveCircuitRefresh(reason: string = 'edit', detail: string = ''): void {
+        const kernel = this.simulationKernel as SimulationKernelImpl;
+        kernel.syncVoltagesFromAnalogEngine();
+        const doc = this.schematicEditor.getDocument();
+        const instr = this.instruments as VirtualInstrumentsImpl;
+        let firstInstrId = '';
+        const meterSnaps: InteractiveMeterSnap[] = [];
+        let oscCh1 = Number.NaN;
+        let oscCh2 = Number.NaN;
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            const lib = c.libraryId.toUpperCase();
+            if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+                const delta = this.readVoltmeterDeltaForComponent(c.id, true);
+                if (delta !== null) {
+                    if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER')) {
+                        instr.multimeterSnapReading(delta);
+                        meterSnaps.push({ refDes: c.refDes, kind: 'dmm', value: `${delta.toFixed(3)}V` });
+                    }
+                    else {
+                        instr.voltmeterSnapReading(delta);
+                        meterSnaps.push({ refDes: c.refDes, kind: 'vm', value: `${delta.toFixed(3)}V` });
+                    }
+                    if (firstInstrId.length === 0) {
+                        firstInstrId = c.id;
+                    }
+                }
+                else {
+                    meterSnaps.push({ refDes: c.refDes, kind: 'vm', value: 'null' });
+                }
+            }
+            else if (lib.includes('AMMETER')) {
+                const mA = this.readAmmeterCurrentForComponent(c.id, true);
+                if (mA !== null) {
+                    instr.ammeterSnapReading(mA);
+                    meterSnaps.push({ refDes: c.refDes, kind: 'am', value: `${mA.toFixed(3)}mA` });
+                    if (firstInstrId.length === 0) {
+                        firstInstrId = c.id;
+                    }
+                }
+                else {
+                    meterSnaps.push({ refDes: c.refDes, kind: 'am', value: 'null' });
+                }
+            }
+            else if (lib.includes('POWER_METER') || lib.includes('WATT')) {
+                const pinNets = getPinNetMap(c.id, doc.nets);
+                const netVPlus = findNetForPinLabel(pinNets, 'V+') ?? findNetForPinLabel(pinNets, 'VP');
+                const netVCom = findNetForPinLabel(pinNets, 'V-') ?? findNetForPinLabel(pinNets, 'COM') ??
+                    findNetForPinLabel(pinNets, 'GND');
+                const netIPlus = findNetForPinLabel(pinNets, 'I+') ?? findNetForPinLabel(pinNets, 'IP');
+                if (netVPlus !== null && netVCom !== null) {
+                    const v = kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom);
+                    let iA = 0;
+                    if (netIPlus !== null) {
+                        iA = kernel.getNetCurrentByUuid(netIPlus);
+                    }
+                    // Quiet pot re-stamp may leave NET(I) empty — fall back to series ammeter
+                    if (Math.abs(iA) < 1e-12) {
+                        for (let j = 0; j < doc.components.length; j++) {
+                            const am = doc.components[j];
+                            if (!am.libraryId.toUpperCase().includes('AMMETER')) {
+                                continue;
+                            }
+                            const mA = this.readAmmeterCurrentForComponent(am.id, true);
+                            if (mA !== null && Math.abs(mA) > 1e-9) {
+                                iA = mA / 1000;
+                                break;
+                            }
+                        }
+                    }
+                    instr.powerMeterSnapReading(v, iA);
+                    meterSnaps.push({
+                        refDes: c.refDes,
+                        kind: 'pm',
+                        value: `${v.toFixed(3)}V/${(iA * 1000).toFixed(3)}mA/${(v * iA * 1000).toFixed(3)}mW`
+                    });
+                    if (firstInstrId.length === 0) {
+                        firstInstrId = c.id;
+                    }
+                }
+                else {
+                    meterSnaps.push({ refDes: c.refDes, kind: 'pm', value: 'unwired' });
+                }
+            }
+            else if (lib.includes('OSC') || lib.includes('SCOPE')) {
+                const pinNets = getPinNetMap(c.id, doc.nets);
+                const ch1Net = findNetForPinLabel(pinNets, 'CH1') ?? findNetForPinLabel(pinNets, 'A');
+                const ch2Net = findNetForPinLabel(pinNets, 'CH2') ?? findNetForPinLabel(pinNets, 'B');
+                if (ch1Net !== null) {
+                    oscCh1 = kernel.getNetVoltageByUuid(ch1Net);
+                }
+                if (ch2Net !== null) {
+                    oscCh2 = kernel.getNetVoltageByUuid(ch2Net);
+                }
+                const ch1Str = Number.isNaN(oscCh1) ? '?' : `${oscCh1.toFixed(3)}V`;
+                const ch2Str = Number.isNaN(oscCh2) ? '?' : `${oscCh2.toFixed(3)}V`;
+                meterSnaps.push({ refDes: c.refDes, kind: 'osc', value: `CH1=${ch1Str} CH2=${ch2Str}` });
+                if (firstInstrId.length === 0) {
+                    firstInstrId = c.id;
+                }
+            }
+            else if (lib.includes('FREQ') || lib.includes('COUNTER')) {
+                meterSnaps.push({ refDes: c.refDes, kind: 'freq', value: 'DC→0Hz' });
+                if (firstInstrId.length === 0) {
+                    firstInstrId = c.id;
+                }
+            }
+        }
+        // Scope CH1/CH2 must jump with MID/HI — rewrite history ring, don't wait for avg buffer
+        const nodeMap = kernel.getNodeVoltageMap();
+        instr.snapScopeDcLevels(nodeMap);
+        // Keep active on a real instrument. Never force first-VM over OSC/PM/AM/FC.
+        const active = instr.getActiveInstrumentComponent();
+        let activeIsInstrument = false;
+        let activeLabel = '';
+        if (active !== null && active.length > 0) {
+            const ac = doc.components.find(c => c.id === active);
+            if (ac !== undefined) {
+                activeIsInstrument = this.isSchematicInstrumentLib(ac.libraryId.toUpperCase());
+                activeLabel = ac.refDes;
+            }
+            else {
+                activeLabel = active;
+            }
+        }
+        if (!activeIsInstrument && firstInstrId.length > 0) {
+            this.setActiveInstrumentComponent(firstInstrId);
+            const ac2 = doc.components.find(c => c.id === firstInstrId);
+            activeLabel = ac2 !== undefined ? ac2.refDes : firstInstrId;
+        }
+        // Named nets for [INSTR_LIVE]: always resolve via net UUID (nodeMap name keys
+        // can stay stale after quiet pot re-stamp while meter pin reads are live).
+        const namedVolts = new Map<string, number>();
+        const wantNames = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', 'GND'];
+        for (let i = 0; i < doc.nets.length; i++) {
+            const net = doc.nets[i];
+            if (net.name.length === 0) {
+                continue;
+            }
+            const upper = net.name.toUpperCase();
+            if (wantNames.indexOf(upper) >= 0) {
+                namedVolts.set(upper, kernel.getNetVoltageByUuid(net.id));
+            }
+        }
+        for (let ni = 0; ni < wantNames.length; ni++) {
+            const n = wantNames[ni];
+            if (namedVolts.has(n)) {
+                continue;
+            }
+            const v = nodeMap.get(n);
+            if (v !== undefined) {
+                namedVolts.set(n, v);
+            }
+        }
+        traceInteractiveInstrumentLive(reason, detail, namedVolts, meterSnaps, activeLabel, false);
+        // Bump PropertyPanel / InstrumentPanel (@Watch simWaveTick)
+        this.onWaveUpdate([]);
+        const stepData: SimStepData = { waves: [], stepCount: this.simStepCount };
+        EventBus.getInstance().publish({
+            event: ModuleEvent.SIMULATION_STEP,
+            source: 'app_service_interactive',
+            timestamp: Date.now(),
+            data: stepData as Object
+        });
     }
     /** Resolve net UUID to human-readable net name for logs */
     private netLabel(doc: SchematicDocument, netId: string): string {
@@ -592,38 +907,59 @@ export class AppService {
         this.instruments.setPowerMeterGlobalFallbacks(null, null);
         this.instruments.setFreqCounterGlobalFallback(null);
     }
-    async saveProject(path: string): Promise<boolean> {
+    /** content:// / file:// 旁路无法写同级 .lock，跳过文件锁 */
+    private canUseSidecarLock(path: string): boolean {
+        return path.length > 0
+            && !path.startsWith('content://')
+            && !path.startsWith('file://');
+    }
+    /**
+     * @param updateCurrentPath 为 false 时仅写副本（如 autosave 同步），不改正式工程路径、不写锁、不刷状态栏
+     */
+    async saveProject(path: string, updateCurrentPath: boolean = true): Promise<boolean> {
         if (!this.currentProject)
             return false;
         this.syncProjectFromModules();
-        const lock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'editable');
-        if (!lock.success) {
-            this.onStatusMessage(lock.error ?? '无法获取工程锁');
-            return false;
+        if (updateCurrentPath && this.canUseSidecarLock(path)) {
+            // 单机重启后旧 .lock 会残留；保存前先清再获取，避免误报“工程被锁定”
+            this.filePersistence.clearStaleProjectLock(path);
+            const lock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'editable');
+            if (!lock.success) {
+                this.onStatusMessage(lock.error ?? '无法获取工程锁');
+                return false;
+            }
         }
         const result = await this.filePersistence.saveProject(this.currentProject, path);
-        this.filePersistence.appendProjectChangeLog(this.sessionUserName, 'save', path, `保存工程 ${this.currentProject.name}`);
-        this.currentProjectPath = path;
-        this.onStatusMessage(result.success ? `已保存 ${path}` : `保存失败: ${result.error}`);
+        if (updateCurrentPath) {
+            this.filePersistence.appendProjectChangeLog(this.sessionUserName, 'save', path, `保存工程 ${this.currentProject.name}`);
+            this.currentProjectPath = path;
+            this.onStatusMessage(result.success ? `已保存 ${path}` : `保存失败: ${result.error}`);
+        }
         return result.success;
     }
     async loadProject(path: string): Promise<boolean> {
-        this.filePersistence.clearStaleProjectLock(path);
-        const lock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'editable');
-        if (!lock.success) {
-            const info = this.filePersistence.getProjectLockInfo(path);
-            if (info) {
-                const roLock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'read_only');
-                if (!roLock.success) {
-                    this.onStatusMessage(roLock.error ?? '工程被锁定');
+        const previousPath = this.currentProjectPath;
+        if (this.canUseSidecarLock(path)) {
+            this.filePersistence.clearStaleProjectLock(path);
+            const lock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'editable');
+            if (!lock.success) {
+                const info = this.filePersistence.getProjectLockInfo(path);
+                if (info) {
+                    const roLock = this.filePersistence.acquireProjectLock(path, this.sessionHolderId, this.sessionUserName, 'read_only');
+                    if (!roLock.success) {
+                        this.onStatusMessage(roLock.error ?? '工程被锁定');
+                        return false;
+                    }
+                    (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
+                    this.onStatusMessage(`只读模式打开（${info.holderName} 正在编辑）`);
+                }
+                else {
+                    this.onStatusMessage(lock.error ?? '无法打开工程');
                     return false;
                 }
-                (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
-                this.onStatusMessage(`只读模式打开（${info.holderName} 正在编辑）`);
             }
             else {
-                this.onStatusMessage(lock.error ?? '无法打开工程');
-                return false;
+                (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
             }
         }
         else {
@@ -632,6 +968,9 @@ export class AppService {
         const result = await this.filePersistence.loadProject(path);
         if (!result.success || !result.data)
             return false;
+        if (previousPath.length > 0 && previousPath !== path && this.canUseSidecarLock(previousPath)) {
+            this.filePersistence.releaseProjectLock(previousPath, this.sessionHolderId);
+        }
         this.currentProject = result.data;
         this.currentProjectPath = path;
         const editor = this.schematicEditor as SchematicEditorImpl;
@@ -932,31 +1271,10 @@ export class AppService {
         // frame previously stacked behind APP_INPUT_BLOCK (uv_timer_task >5s).
         const voltages = kernel.getNodeVoltageMap();
         (this.instruments as VirtualInstrumentsImpl).feedScopeTimeSnapshot(kernel.globalTimeTick(), voltages);
+        // Feed EVERY schematic meter (not only active) so DMM/AM/PM track pot edits
+        // while the user is looking at another instrument tab.
         if (this.simStepCount % 2 === 0) {
-            const activeId = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
-            if (activeId !== null && activeId.length > 0) {
-                const doc = this.schematicEditor.getDocument();
-                const activeComp = doc.components.find(c => c.id === activeId);
-                const lib = activeComp !== undefined ? activeComp.libraryId.toUpperCase() : '';
-                if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER')) {
-                    const delta = this.readVoltmeterDeltaForComponent(activeId, true);
-                    if (delta !== null) {
-                        (this.instruments as VirtualInstrumentsImpl).voltmeterFeedSample(delta);
-                    }
-                }
-                else if (lib === 'MULTIMETER') {
-                    const delta = this.readVoltmeterDeltaForComponent(activeId, true);
-                    if (delta !== null) {
-                        (this.instruments as VirtualInstrumentsImpl).multimeterFeedSample(delta);
-                    }
-                }
-                else if (lib.includes('AMMETER')) {
-                    const mA = this.readAmmeterCurrentForComponent(activeId, true);
-                    if (mA !== null) {
-                        (this.instruments as VirtualInstrumentsImpl).ammeterFeedSample(mA);
-                    }
-                }
-            }
+            this.feedAllSchematicMeterSamples(kernel);
         }
         // Waves + full instrument rebinds are expensive — keep rare
         let waves: WaveData[] = [];
@@ -991,6 +1309,49 @@ export class AppService {
                 timestamp: Date.now(),
                 data: stepData as Object
             });
+        }
+    }
+    /**
+     * Sample all schematic V/I/P meters into their engines so non-active tabs stay live.
+     */
+    private feedAllSchematicMeterSamples(kernel: SimulationKernelImpl): void {
+        const doc = this.schematicEditor.getDocument();
+        const instr = this.instruments as VirtualInstrumentsImpl;
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            const lib = c.libraryId.toUpperCase();
+            if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+                const delta = this.readVoltmeterDeltaForComponent(c.id, true);
+                if (delta !== null) {
+                    if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER')) {
+                        instr.multimeterFeedSample(delta);
+                    }
+                    else {
+                        instr.voltmeterFeedSample(delta);
+                    }
+                }
+            }
+            else if (lib.includes('AMMETER')) {
+                const mA = this.readAmmeterCurrentForComponent(c.id, true);
+                if (mA !== null) {
+                    instr.ammeterFeedSample(mA);
+                }
+            }
+            else if (lib.includes('POWER_METER') || lib.includes('WATT')) {
+                const pinNets = getPinNetMap(c.id, doc.nets);
+                const netVPlus = findNetForPinLabel(pinNets, 'V+') ?? findNetForPinLabel(pinNets, 'VP');
+                const netVCom = findNetForPinLabel(pinNets, 'V-') ?? findNetForPinLabel(pinNets, 'COM') ??
+                    findNetForPinLabel(pinNets, 'GND');
+                const netIPlus = findNetForPinLabel(pinNets, 'I+') ?? findNetForPinLabel(pinNets, 'IP');
+                if (netVPlus !== null && netVCom !== null) {
+                    const v = kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom);
+                    let iA = 0;
+                    if (netIPlus !== null) {
+                        iA = kernel.getNetCurrentByUuid(netIPlus);
+                    }
+                    instr.powerMeterSnapReading(v, iA);
+                }
+            }
         }
     }
     /** Auto-wire all instrument components on the schematic to read from simulation */
@@ -1071,25 +1432,210 @@ export class AppService {
         this.onStatusMessage(result.errMsg || 'AI 布线失败');
         return false;
     }
+    isAiGenerating(): boolean {
+        return this.aiGenerating;
+    }
+    getAiGenLogs(): AiGenLogEntry[] {
+        const out: AiGenLogEntry[] = [];
+        for (let i = 0; i < this.aiGenLogs.length; i++) {
+            out.push(this.aiGenLogs[i]);
+        }
+        return out;
+    }
+    clearAiGenLogs(): void {
+        this.aiGenLogs = [];
+        this.notifyAiGenLogs();
+    }
+    /** 拒绝手动放置（生成锁期间） */
+    rejectManualPlaceIfAiBusy(): boolean {
+        if (!this.aiGenerating) {
+            return false;
+        }
+        this.appendAiGenLog('system', '生成中，禁止手动放置器件');
+        this.onStatusMessage('AI 生成中，仅允许 AI 自动放置');
+        return true;
+    }
+    cancelAiGenerate(): void {
+        if (!this.aiGenerating) {
+            return;
+        }
+        this.aiGenCancelRequested = true;
+        this.aiEngine.cancelAiTask();
+        this.appendAiGenLog('system', '正在取消…');
+        this.onStatusMessage('正在取消 AI 生成…');
+    }
     async aiGenerateCircuit(prompt: string): Promise<boolean> {
-        const topo = this.getTopology();
-        const result = await this.aiEngine.runAiTask(AiTaskType.TASK_FULL_PIPELINE, topo, { prompt }, (p) => this.onAiProgress(p));
-        if (result.success && result.topology) {
-            this.schematicEditor.loadTopology(result.topology);
-            if (result.topology.wireList.length > 0) {
-                this.schematicEditor.applyRouteResult({
-                    routeLines: result.topology.wireList,
-                    crossCount: 0, totalLineLength: 0,
-                    isolateAnalogDigital: true, xtalShortPath: true, diffLineEqualLength: false
-                }, true);
+        return this.aiGenerateCircuitFromPrompt(prompt, 'replace');
+    }
+    /**
+     * 提示词 → 一键生成整图（选型→摆放→连线）。
+     * mode=replace 清空后替换；append 合并到当前空白区。
+     */
+    async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode): Promise<boolean> {
+        const trimmed = prompt.trim();
+        if (trimmed.length === 0) {
+            this.onStatusMessage('请输入提示词');
+            return false;
+        }
+        if (this.aiGenerating) {
+            this.onStatusMessage('AI 正在生成中');
+            return false;
+        }
+        if (this.aiApiManager.isQuotaWarningActive()) {
+            this.appendAiGenLog('system', 'AI 用量已达 80%，请注意额度');
+        }
+        this.beginAiGenerate(trimmed, mode);
+        try {
+            const runTopo = emptySchTopology();
+            runTopo.schName = 'AI Generated';
+            runTopo.bgColor = '#FFFFFF';
+            const result = await this.aiEngine.runAiTask(AiTaskType.TASK_FULL_PIPELINE, runTopo, { prompt: trimmed, scene: 'text_gen' }, (p) => this.handleAiGenProgress(p));
+            if (this.aiGenCancelRequested) {
+                this.appendAiGenLog('assistant', '已取消生成');
+                this.endAiGenerate(false);
+                this.onStatusMessage('AI 生成已取消');
+                return false;
             }
-            this.runErc(false);
+            if (!result.success || !result.topology) {
+                this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
+                this.endAiGenerate(false);
+                this.onStatusMessage(result.errMsg || 'AI 生成失败');
+                return false;
+            }
+            this.appendTopologySummary(result.topology, result.analysisText ?? '');
+            if (mode === 'replace') {
+                this.schematicEditor.loadTopology(result.topology);
+                if (result.topology.wireList.length > 0) {
+                    this.schematicEditor.applyRouteResult({
+                        routeLines: result.topology.wireList,
+                        crossCount: 0, totalLineLength: 0,
+                        isolateAnalogDigital: true, xtalShortPath: true, diffLineEqualLength: false
+                    }, true);
+                }
+            }
+            else {
+                const generatedDoc = TopologyAdapter.fromTopology(result.topology);
+                const editor = this.schematicEditor as SchematicEditorImpl;
+                const currentDoc = editor.getDocument();
+                TemplateMergeUtil.mergeTemplateInto(currentDoc, generatedDoc);
+                editor.loadDocument(currentDoc);
+                editor.rebuildNetPinConnectivity();
+                const grid = currentDoc.metadata.gridSize || 10;
+                ensureNetPinConnectivity(currentDoc, grid, this.pinGeometryResolver());
+                if (result.topology.wireList.length > 0) {
+                    // 合并后拓扑以文档为准；再 fit 视图
+                }
+            }
+            this.schematicEditor.fitAllInView();
+            this.syncProjectFromModules();
+            this.reloadSimulationFromSchematic();
+            const erc = this.runErc(false);
+            const errN = erc.filter(e => e.severity === 'error' || e.severity === 'critical').length;
+            const warnN = erc.filter(e => e.severity === 'warning').length;
+            this.appendAiGenLog('assistant', `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC ${erc.length} 条（错误 ${errN} / 警告 ${warnN}）`);
+            this.appendAiGenLog('system', '画布已解锁');
             this.onProjectChanged();
-            this.onStatusMessage(`AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.analysisText ?? ''}`);
+            this.onStatusMessage(`AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线`);
+            this.endAiGenerate(true);
             return true;
         }
-        this.onStatusMessage(result.errMsg || 'AI 生成失败');
-        return false;
+        catch (e) {
+            this.appendAiGenLog('assistant', `异常: ${e}`);
+            this.endAiGenerate(false);
+            this.onStatusMessage(`AI 生成异常: ${e}`);
+            return false;
+        }
+    }
+    private beginAiGenerate(prompt: string, mode: AiGenerateMode): void {
+        this.aiGenerating = true;
+        this.aiGenCancelRequested = false;
+        (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
+        this.aiGenLogs = [];
+        this.appendAiGenLog('user', prompt);
+        this.appendAiGenLog('system', `开始全闭环生成（${mode === 'replace' ? '替换整图' : '追加到空白区'}）· 画布已锁定`);
+        this.appendAiGenLog('assistant', '正在解析器件需求…');
+        this.onAiGeneratingChanged(true);
+        this.onStatusMessage('AI 生成中，画布已锁定');
+    }
+    private endAiGenerate(_ok: boolean): void {
+        this.aiGenerating = false;
+        this.aiGenCancelRequested = false;
+        (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+        this.onAiGeneratingChanged(false);
+    }
+    private handleAiGenProgress(p: ProgressInfo): void {
+        this.onAiProgress(p);
+        if (p.stage.length === 0) {
+            return;
+        }
+        const line = this.formatAiStageLog(p.progress, p.stage);
+        if (line.length === 0) {
+            return;
+        }
+        // 同阶段去重，避免日志刷屏
+        if (this.aiGenLogs.length > 0) {
+            const last = this.aiGenLogs[this.aiGenLogs.length - 1];
+            if (last.role === 'assistant' && last.text.indexOf(`] ${p.stage}`) >= 0) {
+                // 仅更新最后一条进度百分比
+                const updated: AiGenLogEntry = {
+                    id: last.id,
+                    role: last.role,
+                    text: line,
+                    ts: Date.now()
+                };
+                const next = this.aiGenLogs.slice(0, this.aiGenLogs.length - 1);
+                next.push(updated);
+                this.aiGenLogs = next;
+                this.notifyAiGenLogs();
+                return;
+            }
+        }
+        this.appendAiGenLog('assistant', line);
+    }
+    private formatAiStageLog(progress: number, stage: string): string {
+        const s = stage.trim();
+        if (s === 'init' || s === 'done' || s.indexOf('Starting task') >= 0 || s.indexOf('Task complete') >= 0) {
+            return '';
+        }
+        return `[${progress}%] ${s}`;
+    }
+    private appendTopologySummary(topo: SchTopology, analysis: string): void {
+        const deviceLines: string[] = [];
+        const maxDev = Math.min(topo.deviceList.length, 24);
+        for (let i = 0; i < maxDev; i++) {
+            const d = topo.deviceList[i];
+            deviceLines.push(`  · 摆放 ${d.refName} (${d.libDevId}) @ (${Math.round(d.x)}, ${Math.round(d.y)})`);
+        }
+        if (topo.deviceList.length > maxDev) {
+            deviceLines.push(`  · …另有 ${topo.deviceList.length - maxDev} 个器件`);
+        }
+        this.appendAiGenLog('assistant', `选型/摆放完成: ${topo.deviceList.length} 器件\n${deviceLines.join('\n')}`);
+        this.appendAiGenLog('assistant', `布线完成: ${topo.wireList.length} 导线 / ${topo.netList.length} 网络`);
+        if (analysis.length > 0) {
+            this.appendAiGenLog('system', `流水线状态: ${analysis}`);
+        }
+        if (topo.ercErrorList !== undefined && topo.ercErrorList.length > 0) {
+            const n = Math.min(topo.ercErrorList.length, 8);
+            const bits: string[] = [];
+            for (let i = 0; i < n; i++) {
+                bits.push(`  · ${topo.ercErrorList[i].desc}`);
+            }
+            this.appendAiGenLog('system', `流水线 ERC 提示 ${topo.ercErrorList.length} 条:\n${bits.join('\n')}`);
+        }
+    }
+    private appendAiGenLog(role: 'user' | 'assistant' | 'system', text: string): void {
+        this.aiGenLogSeq++;
+        const entry: AiGenLogEntry = {
+            id: `ailog_${this.aiGenLogSeq}_${Date.now()}`,
+            role: role,
+            text: text,
+            ts: Date.now()
+        };
+        this.aiGenLogs = this.aiGenLogs.concat([entry]);
+        this.notifyAiGenLogs();
+    }
+    private notifyAiGenLogs(): void {
+        this.onAiGenLogsChanged(this.getAiGenLogs());
     }
     /** 局部框选器件重新摆放 */
     async aiOptimizePlacement(prompt: string = '规整布局'): Promise<boolean> {
@@ -1224,8 +1770,9 @@ export class AppService {
         this.onProjectChanged();
         const def = this.teachingService.listTemplates().find(t => t.id === templateId);
         const tplName = def !== undefined ? def.name : templateId;
+        const hexName = this.teachingService.getTemplateHexFileName(templateId);
         const hexPath = this.getTemplateHexPath(templateId);
-        if (hexPath !== null) {
+        if (hexPath !== null && hexName !== null) {
             const exists = TemplateProjectBootstrap.fileExists(hexPath);
             if (exists) {
                 const fwHint = this.teachingService.getTemplateFirmware(templateId);
@@ -1234,16 +1781,16 @@ export class AppService {
                     : McuFamily.MCU_8051;
                 const autoLoaded = this.loadHexFileIntoSim(hexPath, mcuFamily);
                 if (autoLoaded) {
-                    this.onStatusMessage(`已将实验「${tplName}」插入并预装固件（可在 MCU 面板重新烧录）`);
+                    this.onStatusMessage(`已将实验「${tplName}」插入并预装 ${hexName}（可在 MCU 面板重选烧录）`);
                     traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=true`);
                 }
                 else {
-                    this.onStatusMessage(`已将实验「${tplName}」插入（固件 ${hexPath}，请在 MCU 调试面板烧录）`);
+                    this.onStatusMessage(`已将实验「${tplName}」插入；请在 MCU 调试面板烧录 ${hexName}`);
                     traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=false`);
                 }
             }
             else {
-                this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexPath}`);
+                this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexName}`);
                 traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=false`);
             }
         }

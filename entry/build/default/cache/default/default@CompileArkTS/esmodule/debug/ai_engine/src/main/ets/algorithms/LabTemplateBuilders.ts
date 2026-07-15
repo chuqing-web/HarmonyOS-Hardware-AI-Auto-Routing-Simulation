@@ -430,51 +430,101 @@ export function buildLabMemory(doc: SchematicDocument): void {
     const c2 = _caps.c2;
     K.crystal(doc, mcu, xtal, c1, c2, 'P5', 'P6', '', gnd);
     K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'P48', 'P24', 'P7');
-    // 存储器与上拉放在 MCU 右侧，与电源母线高度错开
     const eep = K.place(doc, '24C02', 'M1', { x: 500, y: 140 });
     const rSda = R(doc, 'R_4.7k', 'RSDA', 400, 100);
     const rScl = R(doc, 'R_4.7k', 'RSCL', 400, 180);
-    K.join(doc, 'GND', NetType.GROUND, [
-        p(gnd, '1', 'GND'), p(eep, '1'), p(eep, '2'), p(eep, '3'), p(eep, '4'), p(eep, '7')
-    ]);
-    K.join(doc, 'VCC', NetType.POWER, [
-        p(vcc, '1', 'VCC'), p(eep, '8'), p(rSda, '1'), p(rScl, '1')
-    ]);
+    const flash = K.place(doc, 'W25Q64', 'M2', { x: 680, y: 140 });
+    const eprom = K.place(doc, '2764', 'M3', { x: 900, y: 220 });
+    const sram = K.place(doc, '62256', 'M4', { x: 1100, y: 220 });
+    // 局部电源放外侧；信号先布线，再 joinWired 电源，利用 pathConflicts 绕开总线
+    const gndEep = K.place(doc, 'GND', 'GND_EEP', { x: 500, y: 300 });
+    const vccEep = K.place(doc, 'VCC', 'VCC_EEP', { x: 500, y: 20 });
+    const gndFlash = K.place(doc, 'GND', 'GND_FL', { x: 680, y: 300 });
+    const vccFlash = K.place(doc, 'VCC', 'VCC_FL', { x: 680, y: 20 });
+    const gndMcuL = K.place(doc, 'GND', 'GND_MCU_L', { x: 60, y: 220 });
+    const gndMcuR = K.place(doc, 'GND', 'GND_MCU_R', { x: 360, y: 400 });
+    // —— 信号总线（先于电源物理线）——
     K.join(doc, 'I2C_SDA', NetType.SIGNAL, [
         p(mcu, 'P18', 'P18'), p(eep, '5'), p(rSda, '2')
     ]);
     K.join(doc, 'I2C_SCL', NetType.SIGNAL, [
         p(mcu, 'P19', 'P19'), p(eep, '6'), p(rScl, '2')
     ]);
-    const flash = K.place(doc, 'W25Q64', 'M2', { x: 680, y: 140 });
-    K.join(doc, 'VCC', NetType.POWER, [
-        p(vcc, '1', 'VCC'), p(flash, '8'), p(flash, '3'), p(flash, '7')
-    ]);
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(flash, '4')]);
     K.join(doc, 'SPI_CS', NetType.SIGNAL, [p(flash, '1'), p(mcu, 'P20', 'P20')]);
     K.join(doc, 'SPI_MISO', NetType.SIGNAL, [p(flash, '2'), p(mcu, 'P21', 'P21')]);
     K.join(doc, 'SPI_MOSI', NetType.SIGNAL, [p(flash, '5'), p(mcu, 'P22', 'P22')]);
     K.join(doc, 'SPI_SCK', NetType.SIGNAL, [p(flash, '6'), p(mcu, 'P23', 'P23')]);
-    const eprom = K.place(doc, '2764', 'M3', { x: 900, y: 220 });
-    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(eprom, '28')]);
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(eprom, '14')]);
-    K.join(doc, 'MEM_CE', NetType.SIGNAL, [p(eprom, '20'), p(mcu, 'P25', 'P25')]);
-    K.join(doc, 'MEM_OE', NetType.SIGNAL, [p(eprom, '22'), p(mcu, 'P26', 'P26')]);
-    K.join(doc, 'MEM_D0', NetType.SIGNAL, [p(eprom, '11'), p(mcu, 'P27', 'P27')]);
-    const sram = K.place(doc, '62256', 'M4', { x: 1100, y: 220 });
-    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(sram, '28')]);
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(sram, '14')]);
-    K.join(doc, 'SRAM_CE', NetType.SIGNAL, [p(sram, '20'), p(mcu, 'P28', 'P28')]);
-    K.join(doc, 'SRAM_OE', NetType.SIGNAL, [p(sram, '22'), p(mcu, 'P29', 'P29')]);
-    K.join(doc, 'SRAM_WE', NetType.SIGNAL, [p(sram, '27'), p(mcu, 'P30', 'P30')]);
-    K.join(doc, 'MEM_D0', NetType.SIGNAL, [p(sram, '11')]);
+    K.joinByLabel(doc, 'MEM_CE', NetType.SIGNAL, [p(eprom, '20'), p(mcu, 'P25', 'P25')]);
+    K.joinByLabel(doc, 'MEM_OE', NetType.SIGNAL, [p(eprom, '22'), p(mcu, 'P26', 'P26')]);
+    K.joinByLabel(doc, 'SRAM_CE', NetType.SIGNAL, [p(sram, '20'), p(mcu, 'P28', 'P28')]);
+    K.joinByLabel(doc, 'SRAM_OE', NetType.SIGNAL, [p(sram, '22'), p(mcu, 'P29', 'P29')]);
+    K.joinByLabel(doc, 'SRAM_WE', NetType.SIGNAL, [p(sram, '27'), p(mcu, 'P30', 'P30')]);
+    const addrMem = ['10', '9', '8', '7', '6', '5', '4', '3'];
+    const addrMcu = ['P8', 'P9', 'P10', 'P11', 'P12', 'P13', 'P14', 'P15'];
+    for (let ai = 0; ai < 8; ai++) {
+        K.joinByLabel(doc, `MEM_A${ai}`, NetType.SIGNAL, [
+            p(eprom, addrMem[ai]), p(sram, addrMem[ai]),
+            p(mcu, addrMcu[ai], addrMcu[ai])
+        ]);
+    }
+    const dataMem = ['11', '12', '13', '15', '16', '17', '18', '19'];
+    const dataMcu = ['P27', 'P31', 'P32', 'P33', 'P34', 'P35', 'P36', 'P37'];
+    for (let di = 0; di < 8; di++) {
+        K.joinByLabel(doc, `MEM_D${di}`, NetType.SIGNAL, [
+            p(eprom, dataMem[di]), p(sram, dataMem[di]),
+            p(mcu, dataMcu[di], dataMcu[di])
+        ]);
+    }
+    // —— 就近电源：物理短线接到局部符号，拓扑 BFS 不依赖标号 ——
+    K.joinWired(doc, 'GND', NetType.GROUND, [
+        p(gndEep, '1', 'GND'), p(eep, '1'), p(eep, '2'), p(eep, '3'), p(eep, '4'), p(eep, '7')
+    ]);
+    K.joinWired(doc, 'VCC', NetType.POWER, [
+        p(vccEep, '1', 'VCC'), p(eep, '8'), p(rSda, '1'), p(rScl, '1')
+    ]);
+    K.joinWired(doc, 'VCC', NetType.POWER, [
+        p(vccFlash, '1', 'VCC'), p(flash, '8'), p(flash, '3'), p(flash, '7')
+    ]);
+    K.joinWired(doc, 'GND', NetType.GROUND, [p(gndFlash, '1', 'GND'), p(flash, '4')]);
+    // 并行封装高位脚：标号并到局部符号（物理长轨会与 MEM 总线 T 接短路）
+    const gndMem = K.place(doc, 'GND', 'GND_MEM', { x: 1250, y: 400 });
+    const vccMem = K.place(doc, 'VCC', 'VCC_MEM', { x: 1250, y: 40 });
+    K.joinByLabel(doc, 'GND', NetType.GROUND, [
+        p(gndMem, '1', 'GND'), p(eprom, '14'), p(sram, '14'),
+        p(eprom, '2'), p(eprom, '21'), p(eprom, '23'), p(eprom, '24'),
+        p(eprom, '25'), p(eprom, '26'), p(eprom, '27'),
+        p(sram, '1'), p(sram, '2'), p(sram, '21'), p(sram, '23'),
+        p(sram, '24'), p(sram, '25'), p(sram, '26')
+    ]);
+    K.joinByLabel(doc, 'VCC', NetType.POWER, [
+        p(vccMem, '1', 'VCC'), p(eprom, '28'), p(sram, '28'), p(eprom, '1')
+    ]);
+    K.joinWired(doc, 'GND', NetType.GROUND, [
+        p(gndMcuL, '1', 'GND'),
+        p(mcu, 'P1', 'P1'), p(mcu, 'P2', 'P2'), p(mcu, 'P3', 'P3'), p(mcu, 'P4', 'P4'),
+        p(mcu, 'P16', 'P16'), p(mcu, 'P17', 'P17')
+    ]);
+    K.joinWired(doc, 'GND', NetType.GROUND, [
+        p(gndMcuR, '1', 'GND'),
+        p(mcu, 'P38', 'P38'), p(mcu, 'P39', 'P39'), p(mcu, 'P40', 'P40'), p(mcu, 'P41', 'P41'),
+        p(mcu, 'P42', 'P42'), p(mcu, 'P43', 'P43'), p(mcu, 'P44', 'P44'), p(mcu, 'P45', 'P45'),
+        p(mcu, 'P46', 'P46'), p(mcu, 'P47', 'P47')
+    ]);
+    K.joinByLabel(doc, 'GND', NetType.GROUND, [
+        p(gnd, '1', 'GND'), p(gndEep, '1', 'GND'), p(gndFlash, '1', 'GND'),
+        p(gndMem, '1', 'GND'), p(gndMcuL, '1', 'GND'), p(gndMcuR, '1', 'GND')
+    ]);
+    K.joinByLabel(doc, 'VCC', NetType.POWER, [
+        p(vcc, '1', 'VCC'), p(vccEep, '1', 'VCC'), p(vccFlash, '1', 'VCC'), p(vccMem, '1', 'VCC')
+    ]);
 }
 /** lab_mcu_8051: 四款 8051 最小系统 */
 export function buildLabMcu8051(doc: SchematicDocument): void {
     const ids = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS'];
     const xtals = ['XTAL_11M', 'XTAL_11M', 'XTAL_11M', 'XTAL_8M'];
     for (let i = 0; i < ids.length; i++) {
-        const ox = 40 + i * 340;
+        // 列距 ≥420：LED 阴极线勿切穿邻列 MCU 左脚（原先 340 会把 L*_K 并到下一颗 P15）
+        const ox = 40 + i * 420;
         const mcu = K.place(doc, ids[i], `U${i + 1}`, { x: ox + 160, y: 240 });
         const xtal = K.place(doc, xtals[i], `Y${i + 1}`, { x: ox + 40, y: 40 });
         const _caps = placeXtalCaps(doc, ox + 40, 40, `CX${i}`);
@@ -484,57 +534,67 @@ export function buildLabMcu8051(doc: SchematicDocument): void {
         const rRst = R(doc, 'R_10k', `R${i + 1}`, ox + 10, 400);
         const vcc = K.place(doc, 'VCC', `PWR${i + 1}`, { x: ox, y: 10 });
         const gnd = K.place(doc, 'GND', `GND${i + 1}`, { x: ox, y: 480 });
-        const ledR = R(doc, 'R_330', `RL${i + 1}`, ox + 300, 200);
-        const led = K.place(doc, 'LED_RED', `D${i + 1}`, { x: ox + 400, y: 280 });
+        // 灌电流：VCC→R→LED→P1.0；LED 落在本列右侧、低于晶振，避免跨列短路
+        const ledR = R(doc, 'R_330', `RL${i + 1}`, ox + 280, 320);
+        const led = K.place(doc, 'LED_RED', `D${i + 1}`, { x: ox + 360, y: 320 });
         K.crystal(doc, mcu, xtal, c1, c2, 'P18', 'P19', `M${i}_`, gnd);
         K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'P40', 'P20', 'P9', `M${i}_`);
-        K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(mcu, 'P31', 'P31')]);
-        K.ledBranch(doc, p(mcu, 'P1', 'P1'), p(gnd, '1', 'GND'), ledR, led, `L${i}`);
+        K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(mcu, 'P31', 'P31'), p(ledR, '1')]);
+        K.series2(doc, `L${i}_A`, p(ledR, '2'), p(led, 'A', 'A'));
+        K.join(doc, `L${i}_K`, NetType.SIGNAL, [p(led, 'K', 'K'), p(mcu, 'P1', 'P1')]);
     }
 }
 /** lab_mcu_stm32: 五款 STM32 最小系统 */
 export function buildLabMcuStm32(doc: SchematicDocument): void {
     const ids = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'];
+    // F407 百脚封装极宽：列宽 ≥720，GND 下沉，避免 P11 等空脚 stub 并入电源地轨
+    let ox = 40;
     for (let i = 0; i < ids.length; i++) {
-        // 列距 ≥360：上一列 LED 驱动垂线勿压下一列晶振负载电容
-        const ox = 40 + i * 360;
         const id = ids[i];
         const isF407 = id.includes('F407');
+        const colW = isF407 ? 720 : 520;
         const vccPin = isF407 ? 'P100' : 'P48';
         const gndPin = isF407 ? 'P50' : 'P24';
-        const mcu = K.place(doc, id, `U${i + 1}`, { x: ox + 150, y: 240 });
+        const mcu = K.place(doc, id, `U${i + 1}`, { x: ox + (isF407 ? 260 : 160), y: 240 });
         const xtal = K.place(doc, 'XTAL_8M', `Y${i + 1}`, { x: ox + 40, y: 40 });
+        // DeepErcEngine：两侧负载电容须 |Δx|<80（placeXtalCaps = ±60）
         const _caps = placeXtalCaps(doc, ox + 40, 40, `CX${i}`);
         const c1 = _caps.c1;
         const c2 = _caps.c2;
-        const cDec = C(doc, 'C_10uF', `CD${i + 1}`, ox + 260, 400);
-        const rRst = R(doc, 'R_10k', `R${i + 1}`, ox + 10, 400);
+        const cDec = C(doc, 'C_10uF', `CD${i + 1}`, ox + 300, 460);
+        const rRst = R(doc, 'R_10k', `R${i + 1}`, ox + 10, 420);
         const vcc = K.place(doc, 'VCC', `PWR${i + 1}`, { x: ox, y: 10 });
-        const gnd = K.place(doc, 'GND', `GND${i + 1}`, { x: ox, y: 500 });
-        // LED 支路靠列右侧、低于晶振行，避免 L*_R 纵线切穿邻列 XTAL
-        const ledR = R(doc, 'R_330', `RL${i + 1}`, ox + 220, 320);
-        const led = K.place(doc, 'LED_GREEN', `D${i + 1}`, { x: ox + 320, y: 320 });
+        const gnd = K.place(doc, 'GND', `GND${i + 1}`, { x: ox, y: isF407 ? 580 : 520 });
+        const ledR = R(doc, 'R_330', `RL${i + 1}`, ox + 320, 340);
+        const led = K.place(doc, 'LED_GREEN', `D${i + 1}`, { x: ox + 420, y: 340 });
         K.crystal(doc, mcu, xtal, c1, c2, 'P5', 'P6', `S${i}_`, gnd);
         K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, vccPin, gndPin, 'P7', `S${i}_`);
         K.ledBranch(doc, p(mcu, 'P1', 'P1'), p(gnd, '1', 'GND'), ledR, led, `L${i}`);
+        ox += colW;
     }
 }
-/** lab_peripheral: 按键/继电器/蜂鸣器/LCD/OLED */
+/** lab_peripheral: 按键/继电器(触点指示)/蜂鸣器/LCD/OLED
+ *  引脚均落在 GPIOA→Pn 教学映射内（P1=PA0…P16=PA15），配合 lab_peripheral.hex：
+ *  KEY=P2(PA1) REL=P3(PA2) BUZ=P4(PA3) OLED=P8/P9(PA7/8) LCD RS=P11 E=P16 D4–D7=P12–P15
+ *  继电器：线圈 P3→RR→K1.1→K1.2→GND；触点 VCC→R→LED→NO/NC，COM→GND
+ *  （线圈吸合后红灯 DNO 亮、绿灯 DNC 灭；释放则相反）
+ */
 export function buildLabPeripheral(doc: SchematicDocument): void {
     const mcu = K.place(doc, 'STM32F103C8', 'U1', { x: 200, y: 260 });
     const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 10 });
     const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 560 });
     const cDec = C(doc, 'C_100nF', 'C1', 320, 440);
     const rRst = R(doc, 'R_10k', 'R1', 20, 400);
-    const xtal = K.place(doc, 'XTAL_8M', 'Y1', { x: 60, y: 50 });
-    const _caps = placeXtalCaps(doc, 60, 50, 'CX');
+    // 晶振贴顶：CX 在 y≈40，勿与 KEY(y≈160)/REL 左脚总线交叉导致拓扑并网
+    const xtal = K.place(doc, 'XTAL_8M', 'Y1', { x: 40, y: 0 });
+    const _caps = placeXtalCaps(doc, 40, 0, 'CX');
     const cx1 = _caps.c1;
     const cx2 = _caps.c2;
     K.crystal(doc, mcu, xtal, cx1, cx2, 'P5', 'P6', '', gnd);
     K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'P48', 'P24', 'P7');
-    // 外设分带：按键上 / 驱动中 / 显示右下；上拉与按键中心距须 >120，避免 stub 缝中 EP-short
-    const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 560, y: 100 });
-    const rPull = R(doc, 'R_10k', 'R2', 360, 100);
+    // 外设分带：按键上 / 驱动中 / 触点指示右中 / 显示右下；中心距须 >120
+    const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 560, y: 160 });
+    const rPull = R(doc, 'R_10k', 'R2', 360, 160);
     K.join(doc, 'KEY', NetType.SIGNAL, [p(sw, '1'), p(mcu, 'P2', 'P2'), p(rPull, '1')]);
     K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rPull, '2')]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(sw, '2')]);
@@ -542,9 +602,21 @@ export function buildLabPeripheral(doc: SchematicDocument): void {
     const rRel = R(doc, 'R_330', 'RR', 440, 220);
     K.join(doc, 'REL_DRV', NetType.SIGNAL, [p(rRel, '1'), p(mcu, 'P3', 'P3')]);
     K.series2(doc, 'REL_COIL', p(rRel, '2'), p(relay, '1'));
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(relay, '2')]);
-    const buzz = K.place(doc, 'BUZZER', 'BZ1', { x: 680, y: 300 });
-    const rb = R(doc, 'R_330', 'RBZ', 560, 300);
+    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(relay, '2'), p(relay, 'COM', 'COM')]);
+    // 触点指示：VCC→R→LED→NO/NC；COM 已接 GND。吸合 DNO 亮 / 释放 DNC 亮
+    // NO/NC 跨 LCD 区用标号并网，避免 y=240 总线穿 RVO
+    const rNo = R(doc, 'R_330', 'RLNO', 680, 80);
+    const ledNo = K.place(doc, 'LED_RED', 'DNO', { x: 800, y: 80 });
+    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rNo, '1')]);
+    K.series2(doc, 'REL_NO_A', p(rNo, '2'), p(ledNo, 'A', 'A'));
+    K.joinByLabel(doc, 'REL_NO', NetType.SIGNAL, [p(ledNo, 'K', 'K'), p(relay, 'NO', 'NO')]);
+    const rNc = R(doc, 'R_330', 'RLNC', 680, 280);
+    const ledNc = K.place(doc, 'LED_GREEN', 'DNC', { x: 800, y: 280 });
+    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rNc, '1')]);
+    K.series2(doc, 'REL_NC_A', p(rNc, '2'), p(ledNc, 'A', 'A'));
+    K.joinByLabel(doc, 'REL_NC', NetType.SIGNAL, [p(ledNc, 'K', 'K'), p(relay, 'NC', 'NC')]);
+    const buzz = K.place(doc, 'BUZZER', 'BZ1', { x: 680, y: 340 });
+    const rb = R(doc, 'R_330', 'RBZ', 560, 340);
     K.join(doc, 'BUZ', NetType.SIGNAL, [p(rb, '1'), p(mcu, 'P4', 'P4')]);
     K.series2(doc, 'BUZ_DRV', p(rb, '2'), p(buzz, '1'));
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(buzz, '2')]);
@@ -555,7 +627,7 @@ export function buildLabPeripheral(doc: SchematicDocument): void {
     ]);
     K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(lcd, '2'), p(lcd, '15')]);
     K.join(doc, 'LCD_VO', NetType.SIGNAL, [p(lcd, '3'), p(rVo, '1')]);
-    K.join(doc, 'LCD_RS', NetType.SIGNAL, [p(lcd, '4'), p(mcu, 'P17', 'P17')]);
+    K.join(doc, 'LCD_RS', NetType.SIGNAL, [p(lcd, '4'), p(mcu, 'P11', 'P11')]);
     K.join(doc, 'LCD_E', NetType.SIGNAL, [p(lcd, '6'), p(mcu, 'P16', 'P16')]);
     K.join(doc, 'LCD_D4', NetType.SIGNAL, [p(lcd, '11'), p(mcu, 'P12', 'P12')]);
     K.join(doc, 'LCD_D5', NetType.SIGNAL, [p(lcd, '12'), p(mcu, 'P13', 'P13')]);
@@ -569,13 +641,13 @@ export function buildLabPeripheral(doc: SchematicDocument): void {
     ]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(oled, 'GND', 'GND')]);
     K.join(doc, 'OLED_SDA', NetType.SIGNAL, [
-        p(oled, 'SDA', 'SDA'), p(mcu, 'P18', 'P18'), p(rOsda, '2')
+        p(oled, 'SDA', 'SDA'), p(mcu, 'P8', 'P8'), p(rOsda, '2')
     ]);
     K.join(doc, 'OLED_SCL', NetType.SIGNAL, [
-        p(oled, 'SCL', 'SCL'), p(mcu, 'P19', 'P19'), p(rOscl, '2')
+        p(oled, 'SCL', 'SCL'), p(mcu, 'P9', 'P9'), p(rOscl, '2')
     ]);
 }
-/** lab_sensor: DS18B20 / 霍尔 / 光敏 */
+/** lab_sensor: DS18B20 / 霍尔 / 光敏 + 滑动变阻器分压测 ADC */
 export function buildLabSensor(doc: SchematicDocument): void {
     const mcu = K.place(doc, 'STM32F103C8', 'U1', { x: 200, y: 260 });
     const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 10 });
@@ -600,35 +672,37 @@ export function buildLabSensor(doc: SchematicDocument): void {
         p(hall, '1'), p(mcu, 'P8', 'P8'), p(rHall, '2')
     ]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(hall, '2')]);
-    const ldr = K.place(doc, 'LDR', 'LDR1', { x: 600, y: 380 });
-    const rLdr = R(doc, 'R_10k', 'R3', 480, 380);
-    const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 720, y: 340 });
-    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rLdr, '1')]);
+    // VCC—RV1—GND 分压；抽头接 ADC / 光敏并联 / 电压表
+    const pot = K.place(doc, 'POT_10k', 'RV1', { x: 480, y: 360 });
+    pot.parameters.set('wiper', '0.5');
+    const ldr = K.place(doc, 'LDR', 'LDR1', { x: 620, y: 420 });
+    ldr.parameters.set('value', '50k');
+    const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 760, y: 340 });
+    K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(pot, '1')]);
     K.join(doc, 'ADC', NetType.SIGNAL, [
-        p(ldr, '1'), p(mcu, 'P9', 'P9'), p(rLdr, '2'), p(vm, 'V+', 'V+')
+        p(pot, 'W', 'W'), p(mcu, 'P9', 'P9'), p(vm, 'V+', 'V+'), p(ldr, '1')
     ]);
     K.join(doc, 'GND', NetType.GROUND, [
-        p(gnd, '1', 'GND'), p(ldr, '2'), p(vm, 'COM', 'COM')
+        p(gnd, '1', 'GND'), p(pot, '2'), p(vm, 'COM', 'COM'), p(ldr, '2')
     ]);
 }
-/** lab_instruments: 分压网络接全部仪器 */
+/** lab_instruments: 滑动变阻器分压 + 全套仪器 */
 export function buildLabInstruments(doc: SchematicDocument): void {
     const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
     const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 480 });
-    // 分压链；仪器分列到链上下方，避免探头脚落在 GND 垂线上
     const am = K.place(doc, 'AMMETER_DC', 'A1', { x: 120, y: 100 });
     const r1 = R(doc, 'R_10k', 'R1', 260, 200);
-    const r2 = R(doc, 'R_10k', 'R2', 420, 200);
+    const pot = K.place(doc, 'POT_10k', 'RV1', { x: 420, y: 200 });
+    pot.parameters.set('wiper', '0.5');
     K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(am, 'I+', 'I+')]);
     K.series2(doc, 'HI', p(am, 'I-', 'I-'), p(r1, '1'));
-    K.series2(doc, 'MID', p(r1, '2'), p(r2, '1'));
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(r2, '2')]);
-    // 仪表以 R2.1（MID 节点）为 hub 上挂，避免横穿 R2.2(GND)
+    K.join(doc, 'TOP', NetType.SIGNAL, [p(r1, '2'), p(pot, '1')]);
+    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pot, '2')]);
     const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 620, y: 40 });
-    K.join(doc, 'MID', NetType.SIGNAL, [p(r2, '1'), p(vm, 'V+', 'V+')]);
+    K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(vm, 'V+', 'V+')]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(vm, 'COM', 'COM')]);
     const virt = K.place(doc, 'VIRTUAL_METER', 'VM1', { x: 720, y: 80 });
-    K.join(doc, 'MID', NetType.SIGNAL, [p(r2, '1'), p(virt, 'V', 'V')]);
+    K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(virt, 'V', 'V')]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(virt, 'COM', 'COM')]);
     const pm = K.place(doc, 'POWER_METER', 'PM1', { x: 820, y: 40 });
     K.join(doc, 'HI', NetType.SIGNAL, [p(r1, '1'), p(pm, 'V+', 'V+')]);
@@ -636,10 +710,11 @@ export function buildLabInstruments(doc: SchematicDocument): void {
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pm, 'V-', 'V-')]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pm, 'I-', 'I-')]);
     const fc = K.place(doc, 'FREQ_COUNTER', 'FC1', { x: 820, y: 320 });
-    K.join(doc, 'MID', NetType.SIGNAL, [p(r2, '1'), p(fc, 'IN', 'IN')]);
+    K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(fc, 'IN', 'IN')]);
     K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(fc, 'GND', 'GND')]);
     const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 1000, y: 100 });
     K.join(doc, 'HI', NetType.SIGNAL, [p(r1, '1'), p(osc, 'CH1', 'CH1')]);
-    K.join(doc, 'MID', NetType.SIGNAL, [p(r2, '1'), p(osc, 'CH2', 'CH2')]);
-    K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(osc, 'GND', 'GND')]);
+    K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(osc, 'CH2', 'CH2')]);
+    // stub+标号：GND 母线横穿 OSC 易把 CH4 并地（与滤波电容接地同一策略）
+    K.stubLabel(doc, p(osc, 'GND', 'GND'), 'GND', NetType.GROUND);
 }

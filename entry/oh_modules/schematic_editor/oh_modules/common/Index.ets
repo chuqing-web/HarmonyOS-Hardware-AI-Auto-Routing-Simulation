@@ -30,7 +30,7 @@ export {
   INSTR_TRACE_TAG, INSTR_TRACE_SIM_STEP, setInstrTraceSimStep,
   formatPinNetMap, formatBindingSummary, formatWaveSummary, formatVoltageSample, formatCurrentSample,
   traceBindingRefresh, traceActiveComponent, traceActiveComponentChanged, traceReloadSchematic, traceSimStep,
-  traceCaptureWave, traceUiRefresh, traceUiSelect, traceLoadSchematic, tracePinNetEmpty, traceMeasure,
+  traceCaptureWave, traceUiRefresh, traceUiSelect, traceInstrUi, traceLoadSchematic, tracePinNetEmpty, traceMeasure,
   traceAnalogOpSummary, traceNetConnectivity,
   traceAnalogDeviceStamp, traceAnalogNetlistSummary, AnalogResistorStamp,
   traceDataFlow, traceCanvasInfo, traceComponentLayout, traceWireTopology, traceNetPinDetail,
@@ -43,7 +43,8 @@ export {
   traceErcErrorList,
   traceBurn, formatHexInfoSummary, traceBurnHexInfo, formatFirmwarePreview,
   traceUart, formatUartBytesHex, traceUartTxDrain,
-  traceMcuTick, traceMcuGpioSync, traceLedVfSample,
+  traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
+  traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo
 } from './src/main/ets/utils/InstrumentTraceLog';
 

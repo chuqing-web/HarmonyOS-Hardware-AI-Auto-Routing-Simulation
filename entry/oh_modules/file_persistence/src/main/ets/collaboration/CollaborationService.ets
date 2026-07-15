@@ -164,16 +164,28 @@ export class CollaborationService {
 
   acquireLock(projectPath: string, holderId: string, holderName: string,
     mode: ProjectAccessMode): ApiResult<ProjectLockInfo> {
+    // content:// / file:// 无法写同级旁路锁文件，视为成功以免阻断打开/保存
+    if (projectPath.startsWith('content://') || projectPath.startsWith('file://')) {
+      const virtual: ProjectLockInfo = {
+        projectPath,
+        holderId,
+        holderName,
+        mode,
+        acquiredAt: new Date().toISOString(),
+        stale: false
+      };
+      return ResultHelper.ok(virtual);
+    }
     this.lockPath = `${projectPath}.lock`;
     try {
-      if (fs.accessSync(this.lockPath)) {
-        const existing = CollaborationService.readJson(this.lockPath) as ProjectLockInfo;
-        if (!existing.stale && existing.holderId !== holderId) {
-          return ResultHelper.fail(
-            ErrCode.ERR_PROJECT_LOCKED,
-            `工程已被 ${existing.holderName} 以${existing.mode === 'editable' ? '编辑' : '只读'}模式打开`
-          );
-        }
+      // accessSync 成功时返回 void；仅用「未抛异常」表示锁文件存在
+      fs.accessSync(this.lockPath);
+      const existing = CollaborationService.readJson(this.lockPath) as ProjectLockInfo;
+      if (!existing.stale && existing.holderId !== holderId) {
+        return ResultHelper.fail(
+          ErrCode.ERR_PROJECT_LOCKED,
+          `工程已被 ${existing.holderName} 以${existing.mode === 'editable' ? '编辑' : '只读'}模式打开`
+        );
       }
     } catch (_e) { /* no lock */ }
     const lock: ProjectLockInfo = {
@@ -193,9 +205,12 @@ export class CollaborationService {
   }
 
   releaseLock(projectPath: string, holderId: string): ApiResult<void> {
+    if (projectPath.startsWith('content://') || projectPath.startsWith('file://')) {
+      return ResultHelper.ok();
+    }
     this.lockPath = `${projectPath}.lock`;
     try {
-      if (!fs.accessSync(this.lockPath)) return ResultHelper.ok();
+      fs.accessSync(this.lockPath);
       const existing = CollaborationService.readJson(this.lockPath) as ProjectLockInfo;
       if (existing.holderId === holderId) {
         fs.unlinkSync(this.lockPath);
@@ -207,6 +222,9 @@ export class CollaborationService {
   }
 
   getLockInfo(projectPath: string): ProjectLockInfo | null {
+    if (projectPath.startsWith('content://') || projectPath.startsWith('file://')) {
+      return null;
+    }
     const path = `${projectPath}.lock`;
     try {
       fs.accessSync(path);
@@ -217,11 +235,13 @@ export class CollaborationService {
   }
 
   clearStaleLock(projectPath: string): void {
+    if (projectPath.startsWith('content://') || projectPath.startsWith('file://')) {
+      return;
+    }
     const path = `${projectPath}.lock`;
     try {
-      if (fs.accessSync(path)) {
-        fs.unlinkSync(path);
-      }
+      fs.accessSync(path);
+      fs.unlinkSync(path);
     } catch (_e) { /* ignore */ }
   }
 

@@ -31,12 +31,23 @@
     "BUILD_OPTION": {
       "default-default": {
         "debuggable": true,
-        "copyFrom": "default"
+        "copyFrom": "default",
+        "sourceOption": {
+          "workers": [
+            "./src/main/ets/workers/SimWorker.ets"
+          ]
+        }
       }
     },
     "BUILD_PROFILE_OPT": {
       "apiType": "stageMode",
-      "buildOption": {},
+      "buildOption": {
+        "sourceOption": {
+          "workers": [
+            "./src/main/ets/workers/SimWorker.ets"
+          ]
+        }
+      },
       "targets": [
         {
           "name": "default"

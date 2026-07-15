@@ -53,6 +53,9 @@ interface SchematicCanvas_Params {
     wireWaypoints?: Point2D[];
     alignGuideY?: number | null;
     dragBlocked?: boolean;
+    interactiveToggleCompId?: string;
+    potDragCompId?: string;
+    potDragLastWiper?: number;
     lastDownTime?: number;
     lastUpTime?: number;
     middlePanning?: boolean;
@@ -157,6 +160,9 @@ export class SchematicCanvas extends ViewPU {
         this.wireWaypoints = [];
         this.alignGuideY = null;
         this.dragBlocked = false;
+        this.interactiveToggleCompId = '';
+        this.potDragCompId = '';
+        this.potDragLastWiper = -1;
         this.lastDownTime = 0;
         this.lastUpTime = 0;
         this.middlePanning = false;
@@ -338,6 +344,15 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.dragBlocked !== undefined) {
             this.dragBlocked = params.dragBlocked;
+        }
+        if (params.interactiveToggleCompId !== undefined) {
+            this.interactiveToggleCompId = params.interactiveToggleCompId;
+        }
+        if (params.potDragCompId !== undefined) {
+            this.potDragCompId = params.potDragCompId;
+        }
+        if (params.potDragLastWiper !== undefined) {
+            this.potDragLastWiper = params.potDragLastWiper;
         }
         if (params.lastDownTime !== undefined) {
             this.lastDownTime = params.lastDownTime;
@@ -637,6 +652,11 @@ export class SchematicCanvas extends ViewPU {
     private wireWaypoints: Point2D[]; // Proteus-style multi-point wire drawing
     private alignGuideY: number | null;
     private dragBlocked: boolean; // true when component/layer locked, prevents accidental pan
+    /** Sim-time pushbutton candidate — toggled on short click without drag */
+    private interactiveToggleCompId: string;
+    /** Sim-time potentiometer drag — horizontal local-X maps to wiper 0..1 */
+    private potDragCompId: string;
+    private potDragLastWiper: number;
     private lastDownTime: number;
     private lastUpTime: number;
     private middlePanning: boolean;
@@ -914,9 +934,15 @@ export class SchematicCanvas extends ViewPU {
             globalThis.Gesture.create(GesturePriority.Low);
             PinchGesture.create();
             PinchGesture.onActionStart(() => {
+                if (this.appService.isAiGenerating()) {
+                    return;
+                }
                 this.markGestureBusy();
             });
             PinchGesture.onActionUpdate((event: GestureEvent) => {
+                if (this.appService.isAiGenerating()) {
+                    return;
+                }
                 this.markGestureBusy();
                 const editor = this.appService.schematicEditor;
                 editor.setZoom(editor.getZoom() * event.scale);
@@ -967,7 +993,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onCopySelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 369, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 380, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1002,7 +1028,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onDeleteSelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 378, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 389, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1148,6 +1174,10 @@ export class SchematicCanvas extends ViewPU {
         return Math.abs(totalDx) <= SchematicCanvas.TAP_SLOP && Math.abs(totalDy) <= SchematicCanvas.TAP_SLOP;
     }
     private tryPlaceComponent(world: Point2D): boolean {
+        if (this.appService.rejectManualPlaceIfAiBusy()) {
+            this.pendingLibraryId = '';
+            return false;
+        }
         if (this.pendingLibraryId.length === 0) {
             this.onStatusChange('请先在左侧库中点击选择器件');
             return false;
@@ -1173,6 +1203,9 @@ export class SchematicCanvas extends ViewPU {
         return false;
     }
     private handleTouch(event: TouchEvent): void {
+        if (this.appService.isAiGenerating()) {
+            return;
+        }
         const touchCount = event.touches.length;
         // 2-finger pan: manually track midpoint for canvas navigation
         if (touchCount >= 2) {
@@ -1286,6 +1319,8 @@ export class SchematicCanvas extends ViewPU {
         const hits = this.appService.schematicEditor.selectAt(world);
         const editor = this.appService.schematicEditor as SchematicEditorImpl;
         const selectedNets = this.appService.schematicEditor.getSelectedNets();
+        this.interactiveToggleCompId = '';
+        this.potDragCompId = '';
         if (this.toolMode === EditorToolMode.SELECT && (hits.length > 0 || selectedNets.length > 0)) {
             if (hits.length > 0) {
                 if (this.shiftHeld) {
@@ -1296,6 +1331,28 @@ export class SchematicCanvas extends ViewPU {
                     return;
                 }
                 this.selectedComponentId = hits[0];
+                // Simulation: click SW_PUSH to press/release (no drag)
+                if (this.isSimulationActive() && this.isPushButtonComponent(hits[0])) {
+                    this.interactiveToggleCompId = hits[0];
+                    this.dragComponentId = '';
+                    this.dragPreviewPos = null;
+                    this.dragBlocked = true;
+                    this.appService.schematicEditor.setSelection([hits[0]]);
+                    this.onStatusChange('松开完成按键切换');
+                    return;
+                }
+                // Simulation: drag pot wiper along resistor body
+                if (this.isSimulationActive() && this.isPotentiometerComponent(hits[0])) {
+                    this.potDragCompId = hits[0];
+                    this.potDragLastWiper = -1;
+                    this.dragComponentId = '';
+                    this.dragPreviewPos = null;
+                    this.dragBlocked = true;
+                    this.appService.schematicEditor.setSelection([hits[0]]);
+                    this.applyPotWiperFromWorld(hits[0], world);
+                    this.onStatusChange('拖动调节滑动变阻器');
+                    return;
+                }
                 if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
                     this.dragComponentId = '';
                     this.dragPreviewPos = null;
@@ -1380,6 +1437,10 @@ export class SchematicCanvas extends ViewPU {
             this.scheduleRedraw();
             return;
         }
+        if (this.potDragCompId.length > 0 && this.isSimulationActive()) {
+            this.applyPotWiperFromWorld(this.potDragCompId, world);
+            return;
+        }
         if (this.dragComponentId.length > 0 && moved && this.isSelectMode()) {
             const editor = this.appService.schematicEditor as SchematicEditorImpl;
             if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
@@ -1412,6 +1473,44 @@ export class SchematicCanvas extends ViewPU {
         const totalDx = sx - this.downPointerX;
         const totalDy = sy - this.downPointerY;
         const moved = Math.abs(totalDx) > SchematicCanvas.MOVE_THRESHOLD || Math.abs(totalDy) > SchematicCanvas.MOVE_THRESHOLD;
+        // Sim pushbutton: short click toggles pressed → KEY shorts to GND
+        if (this.interactiveToggleCompId.length > 0) {
+            const swId = this.interactiveToggleCompId;
+            this.interactiveToggleCompId = '';
+            if (!moved || this.isTapSlop(totalDx, totalDy)) {
+                const next = this.appService.toggleInteractiveSwitch(swId);
+                if (next.length > 0) {
+                    this.onStatusChange(next === '1' ? 'SW CLOSED (KEY=GND)' : 'SW OPEN (KEY 上拉)');
+                    // Switch/LED symbols live on the cached background layer — must dirty it
+                    this.backgroundDirty = true;
+                }
+                else {
+                    this.onStatusChange('按键切换失败（是否在仿真中？）');
+                }
+            }
+            this.isBoxSelecting = false;
+            this.pointerDown = false;
+            this.dragComponentId = '';
+            this.dragPreviewPos = null;
+            this.dragBlocked = false;
+            this.scheduleRedraw();
+            return;
+        }
+        // Sim pot: finish wiper drag
+        if (this.potDragCompId.length > 0) {
+            const potId = this.potDragCompId;
+            this.applyPotWiperFromWorld(potId, world);
+            this.potDragCompId = '';
+            this.potDragLastWiper = -1;
+            this.backgroundDirty = true;
+            this.isBoxSelecting = false;
+            this.pointerDown = false;
+            this.dragComponentId = '';
+            this.dragPreviewPos = null;
+            this.dragBlocked = false;
+            this.scheduleRedraw();
+            return;
+        }
         // Wire/Bus/Label/Power/Ground modes always process as a tap regardless of move distance
         if (this.toolMode === EditorToolMode.WIRE ||
             this.toolMode === EditorToolMode.BUS ||
@@ -1548,6 +1647,136 @@ export class SchematicCanvas extends ViewPU {
     }
     private isSimulationActive(): boolean {
         return this.appService.isSimulationActive();
+    }
+    private isPushButtonComponent(compId: string): boolean {
+        const doc = this.appService.schematicEditor.getDocument();
+        const comp = doc.components.find(c => c.id === compId);
+        if (comp === undefined) {
+            return false;
+        }
+        const lib = comp.libraryId.toUpperCase();
+        return lib === 'SW_PUSH' || lib.includes('SWITCH_PUSH') || lib === 'BUTTON';
+    }
+    private isPotentiometerComponent(compId: string): boolean {
+        const doc = this.appService.schematicEditor.getDocument();
+        const comp = doc.components.find(c => c.id === compId);
+        if (comp === undefined) {
+            return false;
+        }
+        const lib = comp.libraryId.toUpperCase();
+        return lib.startsWith('POT_') || lib.includes('POTENTIOMETER') || lib === 'POT';
+    }
+    /** On-canvas live ΔV / I for meters during sim */
+    private drawLiveMeterReading(ctx: CanvasRenderingContext2D, drawPos: Point2D, comp: ComponentInstance): void {
+        const lib = comp.libraryId.toUpperCase();
+        let text = '';
+        if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+            const delta = this.appService.readVoltmeterDeltaForComponent(comp.id, true);
+            if (delta === null) {
+                return;
+            }
+            text = `${delta.toFixed(2)}V`;
+        }
+        else if (lib.includes('AMMETER')) {
+            const mA = this.appService.readAmmeterCurrentForComponent(comp.id, true);
+            if (mA === null) {
+                return;
+            }
+            text = `${mA.toFixed(2)}mA`;
+        }
+        else if (lib.includes('POWER_METER') || lib.includes('WATT')) {
+            const pm = this.appService.readPowerMeterForComponent(comp.id);
+            if (pm === null) {
+                return;
+            }
+            text = `${pm.voltage.toFixed(2)}V ${(pm.current * 1000).toFixed(2)}mA`;
+        }
+        else {
+            return;
+        }
+        ctx.save();
+        ctx.fillStyle = '#0a7a3e';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, drawPos.x, drawPos.y - 28);
+        ctx.textAlign = 'start';
+        ctx.restore();
+    }
+    private parsePotWiper(comp: ComponentInstance): number {
+        let s = (comp.parameters.get('wiper') ?? '0.5').trim().replace(/\s+/g, '');
+        if (s.length === 0) {
+            return 0.5;
+        }
+        let pct = false;
+        if (s.endsWith('%')) {
+            pct = true;
+            s = s.substring(0, s.length - 1);
+        }
+        let n = parseFloat(s);
+        if (isNaN(n)) {
+            return 0.5;
+        }
+        if (pct || n > 1) {
+            n = n / 100;
+        }
+        if (n < 0.001) {
+            return 0.001;
+        }
+        if (n > 0.999) {
+            return 0.999;
+        }
+        return n;
+    }
+    /** Map pointer world position → pot wiper along local X (−30…+30 = 0…1). */
+    private applyPotWiperFromWorld(compId: string, world: Point2D): void {
+        const doc = this.appService.schematicEditor.getDocument();
+        const comp = doc.components.find(c => c.id === compId);
+        if (comp === undefined) {
+            return;
+        }
+        const dx = world.x - comp.position.x;
+        const dy = world.y - comp.position.y;
+        // Inverse of transformPinOffset: un-rotate then un-mirror
+        let loc = this.inverseRotateLocal(dx, dy, comp.rotation);
+        if (comp.mirrored) {
+            loc = { x: -loc.x, y: loc.y };
+        }
+        // Body track ≈ ±22 along local X (matches drawPotentiometer / pin ±30)
+        let t = (loc.x + 22) / 44;
+        if (t < 0.001) {
+            t = 0.001;
+        }
+        else if (t > 0.999) {
+            t = 0.999;
+        }
+        if (this.potDragLastWiper >= 0 && Math.abs(t - this.potDragLastWiper) < 0.012) {
+            return;
+        }
+        const next = this.appService.setInteractivePotWiper(compId, t);
+        if (next.length === 0) {
+            return;
+        }
+        this.potDragLastWiper = t;
+        this.backgroundDirty = true;
+        this.onStatusChange(`${comp.refDes} 滑臂 ${(t * 100).toFixed(0)}%`);
+        this.scheduleRedraw();
+    }
+    private inverseRotateLocal(x: number, y: number, rotation: number): Point2D {
+        const r = ((rotation % 360) + 360) % 360;
+        switch (r) {
+            case 90: return { x: y, y: -x };
+            case 180: return { x: -x, y: -y };
+            case 270: return { x: -y, y: x };
+            default: return { x: x, y: y };
+        }
+    }
+    private isPushButtonPressed(comp: ComponentInstance): boolean {
+        const lib = comp.libraryId.toUpperCase();
+        if (lib !== 'SW_PUSH' && !lib.includes('SWITCH_PUSH') && lib !== 'BUTTON') {
+            return false;
+        }
+        const v = (comp.parameters.get('pressed') ?? '0').trim().toLowerCase();
+        return v === '1' || v === 'true' || v === 'yes' || v === 'on' || v === 'pressed';
     }
     private blockWireEditing(): boolean {
         if (!this.isSimulationActive()) {
@@ -1828,6 +2057,7 @@ export class SchematicCanvas extends ViewPU {
         }
         this.drawHoverOverlays(ctx, doc, editor);
         this.drawLitLedOverlays(ctx, doc);
+        this.drawActiveBuzzerOverlays(ctx, doc);
         // Draw pin snap markers in WIRE mode to show clickable pin positions
         if (this.toolMode === EditorToolMode.WIRE) {
             this.drawPinSnapMarkers(ctx);
@@ -2115,15 +2345,22 @@ export class SchematicCanvas extends ViewPU {
                 ? this.dragPreviewPos : comp.position;
             // Draw IC body backdrop directly on canvas for components with many pins
             this.drawComponentBodyBackdrop(ctx, drawPos, comp, def);
+            const swPressed = this.isPushButtonPressed(comp);
+            const potWiper = this.isPotentiometerComponent(comp.id) ? this.parsePotWiper(comp) : undefined;
             const style: SymbolDrawStyle = {
                 strokeColor: selected ? ProteusColors.SELECTED : ProteusColors.COMPONENT_STROKE,
                 fillColor: ProteusColors.CANVAS_BG,
-                lineWidth: selected ? 2 : 1.2,
+                lineWidth: selected ? 2.0 : 1.2,
                 selected: selected,
                 hovered: false,
-                ledDisplayColor: this.isLedComponent(comp, def) ? '' : undefined
+                ledDisplayColor: this.isLedComponent(comp, def) ? '' : undefined,
+                switchPressed: swPressed,
+                potWiper: potWiper
             };
             SchematicSymbolRenderer.drawComponent(ctx, drawPos.x, drawPos.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
+            if (this.isSimulationActive()) {
+                this.drawLiveMeterReading(ctx, drawPos, comp);
+            }
             if (this.appService.schematicEditor.isComponentLocked(comp.id)) {
                 const dx = drawPos.x;
                 const dy = drawPos.y;
@@ -2428,16 +2665,23 @@ export class SchematicCanvas extends ViewPU {
         const vA = kernel.getNetVoltageByUuid(anodeNet);
         const vK = kernel.getNetVoltageByUuid(cathodeNet);
         const vf = vA - vK;
-        // MCU HIGH pulls cathode ≈ VCC → must stay dark (HiZ leftover V=0 used to keep several ON)
+        const current = Math.abs(kernel.getBranchCurrent(comp.id));
+        // Open contact / HiZ: Vk≈0 with Va≈VCC and no ballast drop — not lit.
         if (vK >= 2.5) {
             return false;
         }
-        // 灌电流点亮：阴极被拉低 + 正向压差达到 LED Vf
+        // Sink-lit: cathode near GND + Vf. Branch I often reports 0 (node alias), so also
+        // accept anode pulled well below VCC (series ballast drop ⇒ real forward current).
         if (vK <= 0.9 && vf >= 1.2) {
-            return true;
+            if (current >= 2e-4) {
+                return true;
+            }
+            if (vA <= 4.7) {
+                return true;
+            }
+            return false;
         }
-        const current = kernel.getBranchCurrent(comp.id);
-        return Math.abs(current) >= 5e-4 && vf >= 1.0;
+        return current >= 5e-4 && vf >= 1.0;
     }
     private resolveLedDisplayColor(comp: ComponentInstance, def: ComponentDefinition): string {
         if (!this.isLedWired(comp, def)) {
@@ -2478,6 +2722,69 @@ export class SchematicCanvas extends ViewPU {
                 selected: false,
                 hovered: false,
                 ledDisplayColor: ledColor
+            };
+            SchematicSymbolRenderer.drawComponent(ctx, comp.position.x, comp.position.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
+        }
+    }
+    private isBuzzerComponent(comp: ComponentInstance, def: ComponentDefinition | null): boolean {
+        const lib = comp.libraryId.toUpperCase();
+        if (lib === 'BUZZER' || lib.includes('BUZZER')) {
+            return true;
+        }
+        if (def !== null) {
+            const id = def.id.toUpperCase();
+            return id === 'BUZZER' || id.includes('BUZZER');
+        }
+        return false;
+    }
+    /** True when voltage across buzzer terminals (or branch current) indicates sounding. */
+    private isBuzzerSounding(comp: ComponentInstance, def: ComponentDefinition): boolean {
+        const simState = this.appService.simulationKernel.getState();
+        const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
+        if (!simActive || def.pins.length < 2) {
+            return false;
+        }
+        const doc = this.appService.schematicEditor.getDocument();
+        const pinNets = getPinNetMap(comp.id, doc.nets);
+        const netA = findNetForPinLabel(pinNets, def.pins[0].name) ?? findNetForPinLabel(pinNets, def.pins[0].id);
+        const netB = findNetForPinLabel(pinNets, def.pins[1].name) ?? findNetForPinLabel(pinNets, def.pins[1].id);
+        if (netA === null || netB === null || netA === netB) {
+            return false;
+        }
+        const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+        const vA = kernel.getNetVoltageByUuid(netA);
+        const vB = kernel.getNetVoltageByUuid(netB);
+        const dv = Math.abs(vA - vB);
+        if (dv >= 0.8) {
+            return true;
+        }
+        const current = kernel.getBranchCurrent(comp.id);
+        return Math.abs(current) >= 5e-4;
+    }
+    private drawActiveBuzzerOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument): void {
+        const editor = this.appService.schematicEditor as SchematicEditorImpl;
+        if (!editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
+            return;
+        }
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            if (comp.id === this.dragComponentId) {
+                continue;
+            }
+            const def = this.getCachedCompDef(comp.libraryId);
+            if (def === null || !this.isBuzzerComponent(comp, def)) {
+                continue;
+            }
+            if (!this.isBuzzerSounding(comp, def)) {
+                continue;
+            }
+            const style: SymbolDrawStyle = {
+                strokeColor: '#c07010',
+                fillColor: '#fff8e8',
+                lineWidth: 1.2,
+                selected: false,
+                hovered: false,
+                buzzerActive: true
             };
             SchematicSymbolRenderer.drawComponent(ctx, comp.position.x, comp.position.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
         }

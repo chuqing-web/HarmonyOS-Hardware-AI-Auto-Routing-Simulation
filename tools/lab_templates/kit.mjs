@@ -129,8 +129,10 @@ function enumerateCompPins(comp) {
   if (lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_') ||
     lib.startsWith('XTAL') || lib.startsWith('FUSE') ||
     lib === 'DS18B20' || lib === 'HALL_SENSOR' || lib === 'LDR' ||
-    lib === 'BUZZER' || lib === 'RELAY_SPDT' || lib === 'SW_PUSH') {
+    lib === 'BUZZER' || lib === 'SW_PUSH') {
     ids.push('1', '2');
+  } else if (lib === 'RELAY_SPDT') {
+    ids.push('1', '2', 'COM', 'NO', 'NC');
   } else if (lib.startsWith('LED_') || lib === '1N4148' || lib === '1N4007' || lib === '1N5819') {
     ids.push('A', 'K');
   } else if (lib === 'VAC') {
@@ -388,6 +390,10 @@ export class K {
     if (libraryId.startsWith('R_')) {
       parameters.value = libraryId.slice(2);
       parameters.power = '0.25W';
+    } else if (libraryId.startsWith('POT_')) {
+      parameters.value = libraryId.slice(4);
+      parameters.wiper = '0.5';
+      parameters.power = '0.25W';
     } else if (libraryId.startsWith('C_')) {
       parameters.value = libraryId.slice(2);
       parameters.voltage = '50V';
@@ -542,10 +548,12 @@ export class K {
     const ref = K.pinRef(pin.comp, pin.pinId, pin.pinName);
     const nid = K.addNet(doc, name, type, [ref]);
     const world = K.pinWorld(pin.comp, pin.pinId, pin.pinName);
-    // Grow stub if end would hit foreign wire end OR foreign pin (runtime short)
+    // 密排脚错开 stub 长度，降低端点被 WireNetTopology 并短路的概率
+    const pinNum = parseInt(String(pin.pinId).replace(/\D/g, ''), 10);
+    const baseLen = stubLen + ((!Number.isNaN(pinNum) ? pinNum % 3 : 0) * 10);
     const selfKey = `${pin.comp.id}:${pin.pinId}`;
-    let end = labelStubEnd(pin.comp, world, stubLen, name);
-    for (let len = stubLen; len <= stubLen + 40; len += 10) {
+    let end = labelStubEnd(pin.comp, world, baseLen, name);
+    for (let len = baseLen; len <= baseLen + 40; len += 10) {
       const candidate = labelStubEnd(pin.comp, world, len, name);
       const hitsWire = doc.wires.some((w) => {
         if (w.netId === nid || w.points.length < 2) return false;
@@ -575,9 +583,11 @@ export class K {
       K.addWire(doc, nid, world, end);
     }
     const labelPos = already ? world : end;
-    const hasLabel = (doc.netLabels || []).some((lb) =>
-      lb.text === name && nearPt(lb.position, labelPos, stubLen + 4));
-    if (!hasLabel) {
+    // 每个 pin 必须有独立标号：邻脚间距约 10px，用 stubLen+4≈24 会误复用邻脚标号，
+    // WireNetTopology 重建后无标号的 stub 网无法并入 GND/VCC → floating_net。
+    const hasExact = (doc.netLabels || []).some((lb) =>
+      lb.text === name && nearPt(lb.position, labelPos, 2));
+    if (!hasExact) {
       K.netLabel(doc, nid, name, labelPos);
     }
     return nid;
@@ -672,26 +682,40 @@ export class K {
       { comp: xtal, pinId: '2', pinName: '2' },
       { comp: c2, pinId: '1', pinName: '1' }
     ]);
+    // 负载电容接地用 stub+标号：GND 电源母线若横穿电容本体（同 y 的 pin1–pin2），
+    // 拓扑重建会把 OSC 端并到地（CX2 两端皆 GND）。
     if (gnd) {
       K.join(doc, 'GND', NetType.GROUND, [
-        { comp: gnd, pinId: '1', pinName: 'GND' },
-        { comp: c1, pinId: '2', pinName: '2' },
-        { comp: c2, pinId: '2', pinName: '2' }
-      ]);
-    } else {
-      K.join(doc, 'GND', NetType.GROUND, [
-        { comp: c1, pinId: '2', pinName: '2' },
-        { comp: c2, pinId: '2', pinName: '2' }
+        { comp: gnd, pinId: '1', pinName: 'GND' }
       ]);
     }
+    K.stubLabel(doc, { comp: c1, pinId: '2', pinName: '2' }, 'GND', NetType.GROUND);
+    K.stubLabel(doc, { comp: c2, pinId: '2', pinName: '2' }, 'GND', NetType.GROUND);
   }
 
   static pinOffset(libraryId, pinId, _pinName) {
+    // 与 BuiltinComponents.makeRelaySpdt 对齐：线圈上排 + 触点下排
+    if (libraryId === 'RELAY_SPDT') {
+      switch (pinId) {
+        case '1': return { x: -30, y: -10 };
+        case '2': return { x: 30, y: -10 };
+        case 'COM': return { x: 0, y: 20 };
+        case 'NO': return { x: 20, y: 20 };
+        case 'NC': return { x: -20, y: 20 };
+        default: return { x: 0, y: 0 };
+      }
+    }
+    if (libraryId.startsWith('POT_')) {
+      if (pinId === '1') return { x: -30, y: 0 };
+      if (pinId === '2') return { x: 30, y: 0 };
+      if (pinId === 'W') return { x: 0, y: 28 };
+      return { x: 0, y: 0 };
+    }
     if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
       libraryId.startsWith('XTAL_') || libraryId.startsWith('L_') ||
       libraryId.startsWith('FUSE_') || libraryId === 'DS18B20' ||
       libraryId === 'HALL_SENSOR' || libraryId === 'LDR' ||
-      libraryId === 'BUZZER' || libraryId === 'RELAY_SPDT' ||
+      libraryId === 'BUZZER' ||
       libraryId === 'SW_PUSH') {
       return pinId === '1' ? { x: -30, y: 0 } : { x: 30, y: 0 };
     }
@@ -789,7 +813,7 @@ export class K {
       if (pinId === 'CH2') return { x: -40, y: -10 };
       if (pinId === 'CH3') return { x: -40, y: 10 };
       if (pinId === 'CH4') return { x: -40, y: 20 };
-      if (pinId === 'GND') return { x: -40, y: 40 };
+      if (pinId === 'GND') return { x: 40, y: 40 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'LOGIC_ANALYZER') {

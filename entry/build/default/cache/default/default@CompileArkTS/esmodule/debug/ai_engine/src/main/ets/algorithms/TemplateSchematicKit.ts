@@ -29,6 +29,11 @@ export class TemplateSchematicKit {
             parameters.set('value', libraryId.substring(2));
             parameters.set('power', '0.25W');
         }
+        else if (libraryId.startsWith('POT_')) {
+            parameters.set('value', libraryId.substring(4));
+            parameters.set('wiper', '0.5');
+            parameters.set('power', '0.25W');
+        }
         else if (libraryId.startsWith('C_')) {
             parameters.set('value', libraryId.substring(2));
             parameters.set('voltage', '50V');
@@ -286,13 +291,16 @@ export class TemplateSchematicKit {
         const ref = TemplateSchematicKit.pinRef(pin.comp, pin.pinId, pin.pinName);
         const nid = TemplateSchematicKit.addNet(doc, name, type, [ref]);
         const world = TemplateSchematicKit.pinWorld(pin.comp, pin.pinId, pin.pinName);
+        const pinNum = parseInt(String(pin.pinId).replace(/\D/g, ''), 10);
+        const baseLen = stubLen + ((!Number.isNaN(pinNum) ? (pinNum % 3) : 0) * 10);
         const selfKey = `${pin.comp.id}:${pin.pinId}`;
-        let end = TemplateSchematicKit.labelStubEnd(pin.comp, world, stubLen, name);
-        for (let len = stubLen; len <= stubLen + 40; len += 10) {
+        let end = TemplateSchematicKit.labelStubEnd(pin.comp, world, baseLen, name);
+        for (let len = baseLen; len <= baseLen + 40; len += 10) {
             const candidate = TemplateSchematicKit.labelStubEnd(pin.comp, world, len, name);
             let hitsForeign = false;
             for (let wi = 0; wi < doc.wires.length; wi++) {
                 const w = doc.wires[wi];
+                // Skip own net — only foreign wire endpoints count as collisions.
                 if (w.netId === nid || w.points.length < 2) {
                     continue;
                 }
@@ -347,18 +355,20 @@ export class TemplateSchematicKit {
             TemplateSchematicKit.addWire(doc, nid, world, end);
         }
         const labelPos = already ? world : end;
-        let hasLabel = false;
+        // 每个 pin 必须有独立标号：邻脚间距约 10px，用 stubLen+4≈24 会误复用邻脚标号，
+        // WireNetTopology 重建后无标号的 stub 网无法并入 GND/VCC → floating_net。
+        let hasExact = false;
         for (let li = 0; li < doc.netLabels.length; li++) {
             const lb = doc.netLabels[li];
             if (lb.text !== name) {
                 continue;
             }
-            if (Math.hypot(lb.position.x - labelPos.x, lb.position.y - labelPos.y) <= stubLen + 4) {
-                hasLabel = true;
+            if (Math.hypot(lb.position.x - labelPos.x, lb.position.y - labelPos.y) <= 2) {
+                hasExact = true;
                 break;
             }
         }
-        if (!hasLabel) {
+        if (!hasExact) {
             TemplateSchematicKit.netLabel(doc, nid, name, labelPos);
         }
         return nid;
@@ -459,19 +469,14 @@ export class TemplateSchematicKit {
             { comp: xtal, pinId: '2', pinName: '2' },
             { comp: c2, pinId: '1', pinName: '1' }
         ]);
+        // 负载电容接地用 stub+标号，避免 GND 母线横穿电容把 OSC 端并地
         if (gnd !== null) {
             TemplateSchematicKit.join(doc, 'GND', NetType.GROUND, [
-                { comp: gnd, pinId: '1', pinName: 'GND' },
-                { comp: c1, pinId: '2', pinName: '2' },
-                { comp: c2, pinId: '2', pinName: '2' }
+                { comp: gnd, pinId: '1', pinName: 'GND' }
             ]);
         }
-        else {
-            TemplateSchematicKit.join(doc, 'GND', NetType.GROUND, [
-                { comp: c1, pinId: '2', pinName: '2' },
-                { comp: c2, pinId: '2', pinName: '2' }
-            ]);
-        }
+        TemplateSchematicKit.stubLabel(doc, { comp: c1, pinId: '2', pinName: '2' }, 'GND', NetType.GROUND);
+        TemplateSchematicKit.stubLabel(doc, { comp: c2, pinId: '2', pinName: '2' }, 'GND', NetType.GROUND);
     }
     /** Stub 避让用的常见脚列表（不必完备，覆盖无源/仪器即可） */
     private static commonPinIds(libraryId: string): string[] {
@@ -498,11 +503,42 @@ export class TemplateSchematicKit {
         return ['1', '2'];
     }
     static pinOffset(libraryId: string, pinId: string, _pinName: string): Point2D {
+        // 与 BuiltinComponents.makeRelaySpdt 对齐：线圈上排 + 触点下排
+        if (libraryId === 'RELAY_SPDT') {
+            if (pinId === '1') {
+                return { x: -30, y: -10 };
+            }
+            if (pinId === '2') {
+                return { x: 30, y: -10 };
+            }
+            if (pinId === 'COM') {
+                return { x: 0, y: 20 };
+            }
+            if (pinId === 'NO') {
+                return { x: 20, y: 20 };
+            }
+            if (pinId === 'NC') {
+                return { x: -20, y: 20 };
+            }
+            return { x: 0, y: 0 };
+        }
+        if (libraryId.startsWith('POT_')) {
+            if (pinId === '1') {
+                return { x: -30, y: 0 };
+            }
+            if (pinId === '2') {
+                return { x: 30, y: 0 };
+            }
+            if (pinId === 'W') {
+                return { x: 0, y: 28 };
+            }
+            return { x: 0, y: 0 };
+        }
         if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
             libraryId.startsWith('XTAL_') || libraryId.startsWith('L_') ||
             libraryId.startsWith('FUSE_') || libraryId === 'DS18B20' ||
             libraryId === 'HALL_SENSOR' || libraryId === 'LDR' ||
-            libraryId === 'BUZZER' || libraryId === 'RELAY_SPDT' ||
+            libraryId === 'BUZZER' ||
             libraryId === 'SW_PUSH') {
             return pinId === '1' ? { x: -30, y: 0 } : { x: 30, y: 0 };
         }
@@ -653,7 +689,7 @@ export class TemplateSchematicKit {
             if (pinId === 'CH4')
                 return { x: -40, y: 20 };
             if (pinId === 'GND')
-                return { x: -40, y: 40 };
+                return { x: 40, y: 40 };
             return { x: 0, y: 0 };
         }
         if (libraryId === 'LOGIC_ANALYZER') {

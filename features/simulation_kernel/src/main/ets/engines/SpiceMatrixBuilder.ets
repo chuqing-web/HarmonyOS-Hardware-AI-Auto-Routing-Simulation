@@ -104,7 +104,7 @@ export class SpiceMatrixBuilder {
         const n2 = pinNodes.get(1) ?? '0';
         nl += `L${lCount} ${n1} ${n2} ${SpiceMatrixBuilder.toSpiceValue(val || '10u')}\n`;
         lCount++;
-      } else if (lib.includes('LED') || lib.startsWith('1N') || lib.includes('DIODE') || lib === 'D') {
+      } else if (lib.startsWith('LED') || lib.startsWith('1N') || lib.includes('DIODE') || lib === 'D') {
         const nA = pinNodes.get(0) ?? '0';
         const nK = pinNodes.get(1) ?? '0';
         nl += `D${dCount} ${nA} ${nK} DMOD\n`;
@@ -138,6 +138,23 @@ export class SpiceMatrixBuilder {
         vCount++;
       } else if (lib === 'GND' || lib.endsWith('/GND')) {
         // GND symbol — reference node only
+      } else if (lib === 'SW_PUSH' || lib.includes('SWITCH_PUSH') || lib === 'BUTTON') {
+        const n1 = pinNodes.get(0) ?? '0';
+        const n2 = pinNodes.get(1) ?? '0';
+        const pressed = paramMapGet(params, 'pressed', '0').trim().toLowerCase();
+        const closed = pressed === '1' || pressed === 'true' || pressed === 'on' || pressed === 'pressed';
+        nl += `R${rCount} ${n1} ${n2} ${closed ? '0.01' : '1G'}\n`;
+        rCount++;
+      } else if (lib === 'RELAY_SPDT' || lib.includes('RELAY')) {
+        const n1 = pinNodes.get(0) ?? '0';
+        const n2 = pinNodes.get(1) ?? '0';
+        nl += `R${rCount} ${n1} ${n2} 400\n`; // coil
+        rCount++;
+      } else if (lib === 'BUZZER' || lib.includes('BUZZER')) {
+        const n1 = pinNodes.get(0) ?? '0';
+        const n2 = pinNodes.get(1) ?? '0';
+        nl += `R${rCount} ${n1} ${n2} 330\n`;
+        rCount++;
       } else if (lib.includes('VPULSE') || lib.includes('VSIN') || lib.includes('SIGNAL') ||
                  lib.includes('FUNC_GEN')) {
         const nPos = pinNodes.get(0) ?? 'IN';

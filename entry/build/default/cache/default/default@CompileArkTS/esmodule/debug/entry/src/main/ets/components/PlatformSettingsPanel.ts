@@ -9,7 +9,6 @@ interface PlatformSettingsPanel_Params {
     highContrast?: boolean;
     uiScale?: number;
     screenReader?: boolean;
-    paperSize?: string;
     darkTheme?: boolean;
     appService?: AppService;
 }
@@ -31,7 +30,6 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__highContrast = new ObservedPropertySimplePU(false, this, "highContrast");
         this.__uiScale = new ObservedPropertySimplePU(100, this, "uiScale");
         this.__screenReader = new ObservedPropertySimplePU(false, this, "screenReader");
-        this.__paperSize = new ObservedPropertySimplePU('A4', this, "paperSize");
         this.__darkTheme = new ObservedPropertySimplePU(ThemeManager.getInstance().isDark(), this, "darkTheme");
         this.appService = AppService.getInstance();
         this.setInitiallyProvidedValue(params);
@@ -53,9 +51,6 @@ export class PlatformSettingsPanel extends ViewPU {
         if (params.screenReader !== undefined) {
             this.screenReader = params.screenReader;
         }
-        if (params.paperSize !== undefined) {
-            this.paperSize = params.paperSize;
-        }
         if (params.darkTheme !== undefined) {
             this.darkTheme = params.darkTheme;
         }
@@ -73,7 +68,6 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__highContrast.purgeDependencyOnElmtId(rmElmtId);
         this.__uiScale.purgeDependencyOnElmtId(rmElmtId);
         this.__screenReader.purgeDependencyOnElmtId(rmElmtId);
-        this.__paperSize.purgeDependencyOnElmtId(rmElmtId);
         this.__darkTheme.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
@@ -84,7 +78,6 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__highContrast.aboutToBeDeleted();
         this.__uiScale.aboutToBeDeleted();
         this.__screenReader.aboutToBeDeleted();
-        this.__paperSize.aboutToBeDeleted();
         this.__darkTheme.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
@@ -138,13 +131,6 @@ export class PlatformSettingsPanel extends ViewPU {
     set screenReader(newValue: boolean) {
         this.__screenReader.set(newValue);
     }
-    private __paperSize: ObservedPropertySimplePU<string>;
-    get paperSize() {
-        return this.__paperSize.get();
-    }
-    set paperSize(newValue: string) {
-        this.__paperSize.set(newValue);
-    }
     private __darkTheme: ObservedPropertySimplePU<boolean>;
     get darkTheme() {
         return this.__darkTheme.get();
@@ -153,18 +139,28 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__darkTheme.set(newValue);
     }
     private appService: AppService;
+    aboutToAppear(): void {
+        this.darkTheme = ThemeManager.getInstance().isDark();
+    }
     initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create();
+            Scroll.width('100%');
+            Scroll.height('100%');
+            Scroll.scrollBar(BarState.Auto);
+            Scroll.align(Alignment.TopStart);
+            Scroll.backgroundColor(ProteusColors.CANVAS_BG);
+        }, Scroll);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 0 });
             Column.alignItems(HorizontalAlign.Start);
             Column.width('100%');
             Column.padding({ bottom: 12 });
-            Column.backgroundColor(ProteusColors.CANVAS_BG);
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusSectionTitle(this, { title: '平台设置' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 26, col: 7 });
+                    let componentCall = new ProteusSectionTitle(this, { title: '平台设置' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 30, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -181,9 +177,7 @@ export class PlatformSettingsPanel extends ViewPU {
             }, { name: "ProteusSectionTitle" });
         }
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ---- 外观 ----
             Column.create();
-            // ---- 外观 ----
             Column.width('100%');
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -196,9 +190,10 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
+            Row.create({ space: 8 });
             Row.width('100%');
-            Row.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+            Row.padding({ left: 8, right: 8, top: 6, bottom: 6 });
+            Row.alignItems(VerticalAlign.Center);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('深色主题');
@@ -211,11 +206,13 @@ export class PlatformSettingsPanel extends ViewPU {
             Text.create(this.darkTheme ? '已启用' : '未启用');
             Text.fontSize(ProteusFonts.PARAM_KEY);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
-            Text.margin({ right: 8 });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Toggle.create({ type: ToggleType.Switch, isOn: this.darkTheme });
+            Toggle.selectedColor(ProteusColors.BTN_FOCUS);
+            Toggle.width(48);
+            Toggle.height(28);
             Toggle.onChange((on: boolean) => {
                 this.darkTheme = on;
                 ThemeManager.getInstance().setMode(on ? 'dark' : 'light');
@@ -225,7 +222,84 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Toggle);
         Toggle.pop();
         Row.pop();
-        // ---- 外观 ----
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 8 });
+            Row.width('100%');
+            Row.padding({ left: 8, right: 8, bottom: 8 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '浅色',
+                        widthVal: '46%',
+                        onAction: () => {
+                            this.darkTheme = false;
+                            ThemeManager.getInstance().setMode('light');
+                            this.themeRefreshKey++;
+                            this.statusMessage = '已启用浅色主题';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 64, col: 13 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '浅色',
+                            widthVal: '46%',
+                            onAction: () => {
+                                this.darkTheme = false;
+                                ThemeManager.getInstance().setMode('light');
+                                this.themeRefreshKey++;
+                                this.statusMessage = '已启用浅色主题';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '浅色',
+                        widthVal: '46%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '深色',
+                        widthVal: '46%',
+                        onAction: () => {
+                            this.darkTheme = true;
+                            ThemeManager.getInstance().setMode('dark');
+                            this.themeRefreshKey++;
+                            this.statusMessage = '已启用深色主题';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 74, col: 13 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '深色',
+                            widthVal: '46%',
+                            onAction: () => {
+                                this.darkTheme = true;
+                                ThemeManager.getInstance().setMode('dark');
+                                this.themeRefreshKey++;
+                                this.statusMessage = '已启用深色主题';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '深色',
+                        widthVal: '46%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Divider.create();
@@ -234,9 +308,7 @@ export class PlatformSettingsPanel extends ViewPU {
             Divider.width('100%');
         }, Divider);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ---- 网络与 AI ----
             Column.create();
-            // ---- 网络与 AI ----
             Column.width('100%');
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -249,9 +321,10 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
+            Row.create({ space: 8 });
             Row.width('100%');
-            Row.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+            Row.padding({ left: 8, right: 8, top: 6, bottom: 6 });
+            Row.alignItems(VerticalAlign.Center);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('离线模式');
@@ -261,14 +334,16 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(this.offlineMode ? '仅本地计算' : '联网可用');
+            Text.create(this.offlineMode ? '仅本地' : '可联网');
             Text.fontSize(ProteusFonts.PARAM_KEY);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
-            Text.margin({ right: 8 });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Toggle.create({ type: ToggleType.Switch, isOn: this.offlineMode });
+            Toggle.selectedColor(ProteusColors.BTN_FOCUS);
+            Toggle.width(48);
+            Toggle.height(28);
             Toggle.onChange((on: boolean) => {
                 this.offlineMode = on;
                 this.appService.setOfflineMode(on);
@@ -276,6 +351,46 @@ export class PlatformSettingsPanel extends ViewPU {
             });
         }, Toggle);
         Toggle.pop();
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 8 });
+            Row.width('100%');
+            Row.padding({ left: 8, right: 8, bottom: 4 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: this.offlineMode ? '关闭离线' : '开启离线',
+                        widthVal: '92%',
+                        onAction: () => {
+                            this.offlineMode = !this.offlineMode;
+                            this.appService.setOfflineMode(this.offlineMode);
+                            this.statusMessage = this.offlineMode ? '已开启离线模式（仅本地）' : '已关闭离线模式';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 123, col: 13 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: this.offlineMode ? '关闭离线' : '开启离线',
+                            widthVal: '92%',
+                            onAction: () => {
+                                this.offlineMode = !this.offlineMode;
+                                this.appService.setOfflineMode(this.offlineMode);
+                                this.statusMessage = this.offlineMode ? '已开启离线模式（仅本地）' : '已关闭离线模式';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: this.offlineMode ? '关闭离线' : '开启离线',
+                        widthVal: '92%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create();
@@ -304,7 +419,7 @@ export class PlatformSettingsPanel extends ViewPU {
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             __Common__.create();
-            __Common__.margin({ left: 8, right: 8, bottom: 4 });
+            __Common__.margin({ left: 8, right: 8, bottom: 8, top: 4 });
         }, __Common__);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -314,9 +429,11 @@ export class PlatformSettingsPanel extends ViewPU {
                         widthVal: '92%',
                         onAction: () => {
                             this.appService.setGlobalProxy(this.globalProxy);
-                            this.statusMessage = '代理已更新';
+                            this.statusMessage = this.globalProxy.length > 0
+                                ? `代理已更新: ${this.globalProxy}`
+                                : '代理已清空';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 108, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 155, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -324,7 +441,9 @@ export class PlatformSettingsPanel extends ViewPU {
                             widthVal: '92%',
                             onAction: () => {
                                 this.appService.setGlobalProxy(this.globalProxy);
-                                this.statusMessage = '代理已更新';
+                                this.statusMessage = this.globalProxy.length > 0
+                                    ? `代理已更新: ${this.globalProxy}`
+                                    : '代理已清空';
                             }
                         };
                     };
@@ -339,7 +458,6 @@ export class PlatformSettingsPanel extends ViewPU {
             }, { name: "ProteusClassicBtn" });
         }
         __Common__.pop();
-        // ---- 网络与 AI ----
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Divider.create();
@@ -348,9 +466,7 @@ export class PlatformSettingsPanel extends ViewPU {
             Divider.width('100%');
         }, Divider);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ---- 无障碍 ----
             Column.create();
-            // ---- 无障碍 ----
             Column.width('100%');
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -363,9 +479,10 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
+            Row.create({ space: 8 });
             Row.width('100%');
-            Row.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+            Row.padding({ left: 8, right: 8, top: 6, bottom: 6 });
+            Row.alignItems(VerticalAlign.Center);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('高对比度');
@@ -376,38 +493,153 @@ export class PlatformSettingsPanel extends ViewPU {
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Toggle.create({ type: ToggleType.Switch, isOn: this.highContrast });
+            Toggle.selectedColor(ProteusColors.BTN_FOCUS);
+            Toggle.width(48);
+            Toggle.height(28);
             Toggle.onChange((on: boolean) => {
                 this.highContrast = on;
                 this.applyAccessibility();
+                this.statusMessage = on ? '已开启高对比度' : '已关闭高对比度';
             });
         }, Toggle);
         Toggle.pop();
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
-            Row.width('100%');
-            Row.padding({ left: 8, right: 8, top: 4, bottom: 4 });
-        }, Row);
+            Column.create({ space: 4 });
+            Column.width('100%');
+        }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(`UI 缩放: ${this.uiScale}%`);
             Text.fontSize(ProteusFonts.PARAM_KEY);
             Text.fontColor(ProteusColors.TEXT_PRIMARY);
-            Text.width(110);
+            Text.padding({ left: 8 });
+            Text.alignSelf(ItemAlign.Start);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Slider.create({ value: this.uiScale, min: 100, max: 150, step: 25 });
-            Slider.layoutWeight(1);
+            Slider.width('92%');
+            Slider.margin({ left: 8, right: 8 });
             Slider.onChange((v: number) => {
-                this.uiScale = v;
+                this.uiScale = Math.round(v);
                 this.applyAccessibility();
+                this.statusMessage = `UI 缩放 ${this.uiScale}%`;
             });
         }, Slider);
-        Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
+            Row.create({ space: 6 });
             Row.width('100%');
-            Row.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+            Row.padding({ left: 8, right: 8, bottom: 4 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '100%',
+                        widthVal: '30%',
+                        onAction: () => {
+                            this.uiScale = 100;
+                            this.applyAccessibility();
+                            this.statusMessage = 'UI 缩放 100%';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 213, col: 15 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '100%',
+                            widthVal: '30%',
+                            onAction: () => {
+                                this.uiScale = 100;
+                                this.applyAccessibility();
+                                this.statusMessage = 'UI 缩放 100%';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '100%',
+                        widthVal: '30%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '125%',
+                        widthVal: '30%',
+                        onAction: () => {
+                            this.uiScale = 125;
+                            this.applyAccessibility();
+                            this.statusMessage = 'UI 缩放 125%';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 222, col: 15 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '125%',
+                            widthVal: '30%',
+                            onAction: () => {
+                                this.uiScale = 125;
+                                this.applyAccessibility();
+                                this.statusMessage = 'UI 缩放 125%';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '125%',
+                        widthVal: '30%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '150%',
+                        widthVal: '30%',
+                        onAction: () => {
+                            this.uiScale = 150;
+                            this.applyAccessibility();
+                            this.statusMessage = 'UI 缩放 150%';
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 231, col: 15 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '150%',
+                            widthVal: '30%',
+                            onAction: () => {
+                                this.uiScale = 150;
+                                this.applyAccessibility();
+                                this.statusMessage = 'UI 缩放 150%';
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '150%',
+                        widthVal: '30%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 8 });
+            Row.width('100%');
+            Row.padding({ left: 8, right: 8, top: 6, bottom: 8 });
+            Row.alignItems(VerticalAlign.Center);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('语音朗读');
@@ -418,14 +650,17 @@ export class PlatformSettingsPanel extends ViewPU {
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Toggle.create({ type: ToggleType.Switch, isOn: this.screenReader });
+            Toggle.selectedColor(ProteusColors.BTN_FOCUS);
+            Toggle.width(48);
+            Toggle.height(28);
             Toggle.onChange((on: boolean) => {
                 this.screenReader = on;
                 this.applyAccessibility();
+                this.statusMessage = on ? '已开启语音朗读' : '已关闭语音朗读';
             });
         }, Toggle);
         Toggle.pop();
         Row.pop();
-        // ---- 无障碍 ----
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Divider.create();
@@ -434,9 +669,7 @@ export class PlatformSettingsPanel extends ViewPU {
             Divider.width('100%');
         }, Divider);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ---- 版本与隐私 ----
             Column.create();
-            // ---- 版本与隐私 ----
             Column.width('100%');
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -449,9 +682,9 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create({ space: 6 });
+            Column.create({ space: 8 });
             Column.width('100%');
-            Column.padding({ left: 8, right: 8, top: 4, bottom: 12 });
+            Column.padding({ left: 8, right: 8, top: 4, bottom: 16 });
             Column.alignItems(HorizontalAlign.Start);
         }, Column);
         {
@@ -464,7 +697,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.appService.saveSnapshot('手动快照', '用户手动保存');
                             this.statusMessage = '版本快照已保存';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 188, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 278, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -496,7 +729,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.appService.privacyCleanup();
                             this.statusMessage = '已清理 AI 缓存与临时文件';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 196, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 286, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -525,18 +758,20 @@ export class PlatformSettingsPanel extends ViewPU {
                         label: '同意隐私政策',
                         widthVal: '92%',
                         onAction: () => {
-                            void this.appService.acceptPrivacyPolicy();
-                            this.statusMessage = '已记录隐私政策同意';
+                            void this.appService.acceptPrivacyPolicy().then(() => {
+                                this.statusMessage = '已记录隐私政策同意';
+                            });
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 204, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 294, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: '同意隐私政策',
                             widthVal: '92%',
                             onAction: () => {
-                                void this.appService.acceptPrivacyPolicy();
-                                this.statusMessage = '已记录隐私政策同意';
+                                void this.appService.acceptPrivacyPolicy().then(() => {
+                                    this.statusMessage = '已记录隐私政策同意';
+                                });
                             }
                         };
                     };
@@ -551,9 +786,9 @@ export class PlatformSettingsPanel extends ViewPU {
             }, { name: "ProteusClassicBtn" });
         }
         Column.pop();
-        // ---- 版本与隐私 ----
         Column.pop();
         Column.pop();
+        Scroll.pop();
     }
     private applyAccessibility(): void {
         const cfg: AccessibilityConfig = {

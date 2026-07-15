@@ -48,15 +48,32 @@ export struct TeachingPanel {
     this.templates = this.appService.listAvailableLabTemplates(this.activeCategory);
   }
 
-  private getTemplateHexHint(templateId: string): string {
-    const hexPath = this.appService.getTemplateHexPath(templateId);
-    if (hexPath === null) {
+  /** 需烧录固件的模板标注：文件名 + 就绪状态 */
+  private getTemplateHexHint(tpl: LabTemplate): string {
+    const hexName = tpl.hexFile !== undefined && tpl.hexFile.length > 0
+      ? tpl.hexFile
+      : this.appService.teachingService.getTemplateHexFileName(tpl.id);
+    if (hexName === null || hexName.length === 0) {
       return '';
     }
-    if (this.appService.isHexFileReady(hexPath)) {
-      return `HEX: ${hexPath}`;
+    const fw = tpl.firmware !== undefined && tpl.firmware.length > 0
+      ? tpl.firmware
+      : (this.appService.teachingService.getTemplateFirmware(tpl.id)?.mcuFamily ?? '');
+    const fwTag = fw.length > 0 ? `（${fw}）` : '';
+    const hexPath = this.appService.getTemplateHexPath(tpl.id);
+    const ready = hexPath !== null && this.appService.isHexFileReady(hexPath);
+    if (ready) {
+      return `需烧录: ${hexName}${fwTag}`;
     }
-    return `HEX 缺失: ${hexPath}`;
+    return `需烧录: ${hexName}${fwTag}（文件缺失）`;
+  }
+
+  private templateNeedsHex(tpl: LabTemplate): boolean {
+    if (tpl.hexFile !== undefined && tpl.hexFile.length > 0) {
+      return true;
+    }
+    const name = this.appService.teachingService.getTemplateHexFileName(tpl.id);
+    return name !== null && name.length > 0;
   }
 
   build() {
@@ -144,6 +161,14 @@ export struct TeachingPanel {
                   .fontColor(ProteusColors.TEXT_SECONDARY)
                   .padding({ left: 4, right: 4, top: 1, bottom: 1 })
                   .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+                if (this.templateNeedsHex(tpl)) {
+                  Text('需烧录')
+                    .fontSize(9)
+                    .fontColor('#FFFFFF')
+                    .fontWeight(FontWeight.Medium)
+                    .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                    .backgroundColor(ProteusColors.ERC_WARN)
+                }
               }
               Text(tpl.description)
                 .fontSize(ProteusFonts.PARAM_KEY)
@@ -154,10 +179,11 @@ export struct TeachingPanel {
                   .fontSize(9)
                   .fontColor(ProteusColors.TEXT_SECONDARY)
               }
-              if (this.getTemplateHexHint(tpl.id).length > 0) {
-                Text(this.getTemplateHexHint(tpl.id))
-                  .fontSize(9)
-                  .fontColor(ProteusColors.TEXT_SECONDARY)
+              if (this.templateNeedsHex(tpl)) {
+                Text(this.getTemplateHexHint(tpl))
+                  .fontSize(10)
+                  .fontColor(ProteusColors.ERC_WARN)
+                  .fontWeight(FontWeight.Medium)
                   .maxLines(2)
               }
             }

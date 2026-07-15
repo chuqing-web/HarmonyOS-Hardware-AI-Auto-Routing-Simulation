@@ -1867,8 +1867,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
           if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
             group.push(endpoints[j]);
             used[j] = true;
-            break;
-          }
+            break;          }
         }
       }
       groups.push(group);

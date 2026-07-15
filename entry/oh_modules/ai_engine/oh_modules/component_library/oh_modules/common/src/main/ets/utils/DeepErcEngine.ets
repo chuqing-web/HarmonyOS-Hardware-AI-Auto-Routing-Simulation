@@ -79,7 +79,8 @@ export class DeepErcEngine {
         }
       }
 
-      if (comp.libraryId.includes('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+      // LED_RED 等；勿匹配 OLED_12864
+      if (comp.libraryId.startsWith('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
         result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT,
           `LED ${comp.refDes} 无限流电阻`, comp.id, undefined, '串联 220Ω~1kΩ 限流电阻'));
       }

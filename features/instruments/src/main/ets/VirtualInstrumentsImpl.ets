@@ -393,6 +393,11 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     this.oscilloscope.feedTimeSnapshot(time, voltages);
   }
 
+  /** Rewrite scope history probe voltages after interactive DC edits (pot/switch). */
+  snapScopeDcLevels(voltages: Map<string, number>): void {
+    this.oscilloscope.snapDcProbeLevels(voltages);
+  }
+
   /** Frequency from scope history when kernel WaveData is flat / too short */
   estimateFreqFromScopeHistory(probeName: string): number {
     return this.oscilloscope.estimateFrequency(probeName);
@@ -446,9 +451,19 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     this.voltmeter.feedSample(raw);
   }
 
+  /** Instant DC reading after interactive circuit edits (clears avg lag) */
+  voltmeterSnapReading(raw: number): number {
+    return this.voltmeter.snapReading(raw);
+  }
+
   /** Multimeter silent sample (DCV/CURRENT avg, ACV RMS) */
   multimeterFeedSample(raw: number): void {
     this.multimeter.feedSample(raw);
+  }
+
+  /** Instant multimeter reading after interactive pot / switch edits */
+  multimeterSnapReading(raw: number): number {
+    return this.multimeter.snapReading(raw);
   }
 
   multimeterMeasureValue(raw: number): ApiResult<number> {
@@ -502,6 +517,11 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   /** High-rate silent sample (sim tick) — fills DC avg / AC RMS buffers */
   ammeterFeedSample(raw: number): void {
     this.ammeter.feedSample(raw);
+  }
+
+  /** Instant ammeter reading after interactive pot / switch edits */
+  ammeterSnapReading(raw: number): number {
+    return this.ammeter.snapReading(raw);
   }
 
   ammeterAutoRange(): ApiResult<void> {
@@ -559,6 +579,20 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
       frequency: r.frequency
     };
     return ResultHelper.ok(config);
+  }
+
+  /** Instant power reading after interactive pot / switch (no EMA lag). */
+  powerMeterSnapReading(vRaw: number, iRaw: number): PowerMeterConfig {
+    const r = this.powerMeter.snapReading(vRaw, iRaw);
+    const config: PowerMeterConfig = {
+      voltage: r.voltage,
+      current: r.current,
+      power: r.power,
+      apparentPower: r.apparentPower,
+      powerFactor: r.powerFactor,
+      frequency: r.frequency
+    };
+    return config;
   }
 
   // ---- Frequency Counter ----

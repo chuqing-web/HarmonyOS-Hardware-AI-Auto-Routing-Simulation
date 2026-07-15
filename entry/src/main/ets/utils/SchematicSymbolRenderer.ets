@@ -14,6 +14,12 @@ export interface SymbolDrawStyle {
   hovered: boolean;
   /** LED fill/emission color; empty = unlit (outline only) */
   ledDisplayColor?: string;
+  /** Buzzer energised (sounding) — filled body + sound waves */
+  buzzerActive?: boolean;
+  /** Pushbutton pressed (contacts closed) */
+  switchPressed?: boolean;
+  /** Potentiometer wiper fraction 0..1 (arrow along track) */
+  potWiper?: number;
 }
 
 export class SchematicSymbolRenderer {
@@ -37,7 +43,11 @@ export class SchematicSymbolRenderer {
     }
 
     const symbolKey = resolveSymbolKey(def.id, def.svgSymbol, def.behaviorModel);
-    SchematicSymbolRenderer.drawSymbolBody(ctx, symbolKey, def, style.ledDisplayColor ?? '');
+    SchematicSymbolRenderer.drawSymbolBody(
+      ctx, symbolKey, def, style.ledDisplayColor ?? '', style.buzzerActive === true,
+      style.switchPressed === true,
+      style.potWiper !== undefined ? style.potWiper : 0.5
+    );
     SchematicSymbolRenderer.drawPins(ctx, def.pins, style.strokeColor);
     SchematicSymbolRenderer.drawLabels(ctx, def, refDes, style);
 
@@ -90,7 +100,10 @@ export class SchematicSymbolRenderer {
     ctx: CanvasRenderingContext2D,
     key: string,
     def: ComponentDefinition,
-    ledDisplayColor: string = ''
+    ledDisplayColor: string = '',
+    buzzerActive: boolean = false,
+    switchPressed: boolean = false,
+    potWiper: number = 0.5
   ): void {
     ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
     ctx.fillStyle = ProteusColors.CANVAS_BG;
@@ -110,7 +123,8 @@ export class SchematicSymbolRenderer {
     // LED/diode/resistor: always use procedural symbols so pin geometry (±30)
     // matches BuiltinComponents / template kit, even when DeviceLibrary ships SVG
     const skipSvg = key === 'led' || key === 'diode' || key === 'resistor' ||
-      key === 'capacitor' || key === 'fuse';
+      key === 'potentiometer' ||
+      key === 'capacitor' || key === 'fuse' || key === 'buzzer' || key === 'switch';
     if (!skipSvg && def.svgSymbol.length > 20 && def.svgSymbol.indexOf('<') >= 0) {
       const cmds = SvgSymbolCache.preload(def.id, def.svgSymbol);
       if (cmds.length > 0) {
@@ -122,6 +136,9 @@ export class SchematicSymbolRenderer {
     switch (key) {
       case 'resistor':
         SchematicSymbolRenderer.drawResistor(ctx);
+        break;
+      case 'potentiometer':
+        SchematicSymbolRenderer.drawPotentiometer(ctx, potWiper);
         break;
       case 'capacitor':
         SchematicSymbolRenderer.drawCapacitor(ctx);
@@ -198,13 +215,13 @@ export class SchematicSymbolRenderer {
         SchematicSymbolRenderer.drawOled(ctx);
         break;
       case 'switch':
-        SchematicSymbolRenderer.drawSwitch(ctx);
+        SchematicSymbolRenderer.drawSwitch(ctx, switchPressed);
         break;
       case 'relay':
         SchematicSymbolRenderer.drawRelay(ctx);
         break;
       case 'buzzer':
-        SchematicSymbolRenderer.drawBuzzer(ctx);
+        SchematicSymbolRenderer.drawBuzzer(ctx, buzzerActive);
         break;
       case 'sensor':
         SchematicSymbolRenderer.drawSensor(ctx);
@@ -242,6 +259,60 @@ export class SchematicSymbolRenderer {
     ctx.lineTo(22, 0);
     ctx.lineTo(30, 0);
     ctx.stroke();
+  }
+
+  /** Zigzag body + top slider track/knob; t=0 at pin1 (−30), t=1 at pin2 (+30) */
+  private static drawPotentiometer(ctx: CanvasRenderingContext2D, wiper: number = 0.5): void {
+    SchematicSymbolRenderer.drawResistor(ctx);
+    let t = wiper;
+    if (t < 0.001) {
+      t = 0.001;
+    } else if (t > 0.999) {
+      t = 0.999;
+    }
+    // Top slider rail (above zigzag) — primary interactive affordance
+    const railL = -22;
+    const railR = 22;
+    const railY = -16;
+    ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(railL, railY);
+    ctx.lineTo(railR, railY);
+    ctx.stroke();
+    // End stops
+    ctx.beginPath();
+    ctx.moveTo(railL, railY - 4);
+    ctx.lineTo(railL, railY + 4);
+    ctx.moveTo(railR, railY - 4);
+    ctx.lineTo(railR, railY + 4);
+    ctx.stroke();
+    const wx = railL + t * (railR - railL);
+    // Knob
+    ctx.fillStyle = '#2a6fdb';
+    ctx.strokeStyle = '#1a4a9a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(wx - 4, railY - 7, 8, 14);
+    ctx.fill();
+    ctx.stroke();
+    // Arrow from electrical W pad (0,28) up to track (visual cue)
+    ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, 28);
+    ctx.lineTo(0, 14);
+    ctx.lineTo(wx, 8);
+    ctx.lineTo(wx - 4, 3);
+    ctx.moveTo(wx, 8);
+    ctx.lineTo(wx + 4, 3);
+    ctx.stroke();
+    // % label above slider
+    ctx.fillStyle = ProteusColors.TEXT_LABEL;
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${Math.round(t * 100)}%`, 0, railY - 12);
+    ctx.textAlign = 'start';
   }
 
   private static drawCapacitor(ctx: CanvasRenderingContext2D): void {
@@ -832,25 +903,99 @@ export class SchematicSymbolRenderer {
     ctx.fillText('OLED', -14, 28);
   }
 
-  private static drawSwitch(ctx: CanvasRenderingContext2D): void {
+  /**
+   * Pushbutton: OPEN = raised angled blade + gap; CLOSED = flat bar bridging contacts.
+   * Visuals must differ clearly — stroke color alone is not enough.
+   */
+  private static drawSwitch(ctx: CanvasRenderingContext2D, pressed: boolean = false): void {
+    // Lead wires
+    ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(-30, 0);
-    ctx.lineTo(-8, 0);
+    ctx.lineTo(-10, 0);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(-8, 0, 3, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-8, 0);
-    ctx.lineTo(8, -10);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(8, 0, 3, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
+    ctx.moveTo(10, 0);
     ctx.lineTo(30, 0);
     ctx.stroke();
+
+    if (pressed) {
+      // Closed: filled plate + horizontal blade bridging both contacts
+      ctx.fillStyle = 'rgba(40, 160, 80, 0.18)';
+      ctx.strokeStyle = '#2a8a48';
+      ctx.lineWidth = 1.2;
+      ctx.fillRect(-16, -14, 32, 28);
+      ctx.strokeRect(-16, -14, 32, 28);
+
+      ctx.fillStyle = '#2a8a48';
+      ctx.beginPath();
+      ctx.arc(-10, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(10, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#1e6b36';
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-10, 0);
+      ctx.lineTo(10, 0);
+      ctx.stroke();
+
+      // Actuator plunger down
+      ctx.fillStyle = '#2a8a48';
+      ctx.fillRect(-5, -12, 10, 6);
+      ctx.strokeStyle = '#1e6b36';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-5, -12, 10, 6);
+
+      ctx.fillStyle = '#1e6b36';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('CLOSED', 0, 18);
+      ctx.textAlign = 'start';
+      return;
+    }
+
+    // Open: hollow enclosure + raised angled blade (visible air gap)
+    ctx.fillStyle = 'rgba(80, 100, 120, 0.08)';
+    ctx.strokeStyle = '#607080';
+    ctx.lineWidth = 1.2;
+    ctx.fillRect(-16, -14, 32, 28);
+    ctx.strokeRect(-16, -14, 32, 28);
+
+    ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(-10, 0, 3.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(10, 0, 3.2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Blade hinged at left, tip clear of right contact
+    ctx.strokeStyle = '#4a5a6a';
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-10, 0);
+    ctx.lineTo(8, -11);
+    ctx.stroke();
+
+    // Actuator plunger up
+    ctx.fillStyle = '#8a9aaa';
+    ctx.fillRect(-5, -18, 10, 5);
+    ctx.strokeStyle = '#607080';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-5, -18, 10, 5);
+
+    ctx.fillStyle = '#607080';
+    ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('OPEN', 0, 18);
+    ctx.textAlign = 'start';
   }
 
   private static drawRelay(ctx: CanvasRenderingContext2D): void {
@@ -863,17 +1008,50 @@ export class SchematicSymbolRenderer {
     ctx.fillText('K', -4, 8);
   }
 
-  private static drawBuzzer(ctx: CanvasRenderingContext2D): void {
+  private static drawBuzzer(ctx: CanvasRenderingContext2D, active: boolean = false): void {
+    if (active) {
+      // Energised: filled amber body + bold sound arcs
+      ctx.fillStyle = '#f5a623';
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c07010';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#fff8e8';
+      ctx.beginPath();
+      ctx.arc(0, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c07010';
+      ctx.lineWidth = 2.2;
+      for (let i = 0; i < 3; i++) {
+        const r = 18 + i * 5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, -0.9, 0.9);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#c07010';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('ON', 0, -18);
+      ctx.textAlign = 'start';
+      return;
+    }
+    // Idle: outline + thin muted sound ticks
+    ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(0, 0, 14, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(14, -6);
-    ctx.lineTo(22, -12);
+    ctx.lineTo(20, -10);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(14, 6);
-    ctx.lineTo(22, 12);
+    ctx.lineTo(20, 10);
     ctx.stroke();
   }
 

@@ -61,7 +61,8 @@ export class DeepErcEngine {
                     result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.MISSING_RESET, `STM32 ${comp.refDes} 复位引脚可能悬空`, comp.id, undefined, 'NRST 添加 10kΩ 上拉 + 100nF 电容'));
                 }
             }
-            if (comp.libraryId.includes('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+            // LED_RED 等；勿匹配 OLED_12864
+            if (comp.libraryId.startsWith('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
                 result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT, `LED ${comp.refDes} 无限流电阻`, comp.id, undefined, '串联 220Ω~1kΩ 限流电阻'));
             }
         }

@@ -16,16 +16,19 @@ export struct PlatformSettingsPanel {
   @State highContrast: boolean = false;
   @State uiScale: number = 100;
   @State screenReader: boolean = false;
-  @State paperSize: string = 'A4';
   @State darkTheme: boolean = ThemeManager.getInstance().isDark();
 
   private appService: AppService = AppService.getInstance();
 
-  build() {
-    Column({ space: 0 }) {
-      ProteusSectionTitle({ title: '平台设置' })
+  aboutToAppear(): void {
+    this.darkTheme = ThemeManager.getInstance().isDark();
+  }
 
-        // ---- 外观 ----
+  build() {
+    Scroll() {
+      Column({ space: 0 }) {
+        ProteusSectionTitle({ title: '平台设置' })
+
         Column() {
           Text('外观主题')
             .fontSize(ProteusFonts.PARAM_KEY)
@@ -34,7 +37,7 @@ export struct PlatformSettingsPanel {
             .padding({ left: 8, top: 4, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
-          Row() {
+          Row({ space: 8 }) {
             Text('深色主题')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
@@ -42,8 +45,10 @@ export struct PlatformSettingsPanel {
             Text(this.darkTheme ? '已启用' : '未启用')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_SECONDARY)
-              .margin({ right: 8 })
             Toggle({ type: ToggleType.Switch, isOn: this.darkTheme })
+              .selectedColor(ProteusColors.BTN_FOCUS)
+              .width(48)
+              .height(28)
               .onChange((on: boolean) => {
                 this.darkTheme = on;
                 ThemeManager.getInstance().setMode(on ? 'dark' : 'light');
@@ -52,13 +57,38 @@ export struct PlatformSettingsPanel {
               })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .alignItems(VerticalAlign.Center)
+
+          Row({ space: 8 }) {
+            ProteusClassicBtn({
+              label: '浅色',
+              widthVal: '46%',
+              onAction: () => {
+                this.darkTheme = false;
+                ThemeManager.getInstance().setMode('light');
+                this.themeRefreshKey++;
+                this.statusMessage = '已启用浅色主题';
+              }
+            })
+            ProteusClassicBtn({
+              label: '深色',
+              widthVal: '46%',
+              onAction: () => {
+                this.darkTheme = true;
+                ThemeManager.getInstance().setMode('dark');
+                this.themeRefreshKey++;
+                this.statusMessage = '已启用深色主题';
+              }
+            })
+          }
+          .width('100%')
+          .padding({ left: 8, right: 8, bottom: 8 })
         }
         .width('100%')
 
         Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
 
-        // ---- 网络与 AI ----
         Column() {
           Text('网络与 AI')
             .fontSize(ProteusFonts.PARAM_KEY)
@@ -67,16 +97,18 @@ export struct PlatformSettingsPanel {
             .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
-          Row() {
+          Row({ space: 8 }) {
             Text('离线模式')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
-            Text(this.offlineMode ? '仅本地计算' : '联网可用')
+            Text(this.offlineMode ? '仅本地' : '可联网')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_SECONDARY)
-              .margin({ right: 8 })
             Toggle({ type: ToggleType.Switch, isOn: this.offlineMode })
+              .selectedColor(ProteusColors.BTN_FOCUS)
+              .width(48)
+              .height(28)
               .onChange((on: boolean) => {
                 this.offlineMode = on;
                 this.appService.setOfflineMode(on);
@@ -84,7 +116,22 @@ export struct PlatformSettingsPanel {
               })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .alignItems(VerticalAlign.Center)
+
+          Row({ space: 8 }) {
+            ProteusClassicBtn({
+              label: this.offlineMode ? '关闭离线' : '开启离线',
+              widthVal: '92%',
+              onAction: () => {
+                this.offlineMode = !this.offlineMode;
+                this.appService.setOfflineMode(this.offlineMode);
+                this.statusMessage = this.offlineMode ? '已开启离线模式（仅本地）' : '已关闭离线模式';
+              }
+            })
+          }
+          .width('100%')
+          .padding({ left: 8, right: 8, bottom: 4 })
 
           Row() {
             Text('全局代理')
@@ -110,16 +157,17 @@ export struct PlatformSettingsPanel {
             widthVal: '92%',
             onAction: () => {
               this.appService.setGlobalProxy(this.globalProxy);
-              this.statusMessage = '代理已更新';
+              this.statusMessage = this.globalProxy.length > 0
+                ? `代理已更新: ${this.globalProxy}`
+                : '代理已清空';
             }
           })
-          .margin({ left: 8, right: 8, bottom: 4 })
+          .margin({ left: 8, right: 8, bottom: 8, top: 4 })
         }
         .width('100%')
 
         Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
 
-        // ---- 无障碍 ----
         Column() {
           Text('无障碍')
             .fontSize(ProteusFonts.PARAM_KEY)
@@ -128,54 +176,96 @@ export struct PlatformSettingsPanel {
             .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
-          Row() {
+          Row({ space: 8 }) {
             Text('高对比度')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
             Toggle({ type: ToggleType.Switch, isOn: this.highContrast })
+              .selectedColor(ProteusColors.BTN_FOCUS)
+              .width(48)
+              .height(28)
               .onChange((on: boolean) => {
                 this.highContrast = on;
                 this.applyAccessibility();
+                this.statusMessage = on ? '已开启高对比度' : '已关闭高对比度';
               })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .alignItems(VerticalAlign.Center)
 
-          Row() {
+          Column({ space: 4 }) {
             Text(`UI 缩放: ${this.uiScale}%`)
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
-              .width(110)
+              .padding({ left: 8 })
+              .alignSelf(ItemAlign.Start)
             Slider({ value: this.uiScale, min: 100, max: 150, step: 25 })
-              .layoutWeight(1)
+              .width('92%')
+              .margin({ left: 8, right: 8 })
               .onChange((v: number) => {
-                this.uiScale = v;
+                this.uiScale = Math.round(v);
                 this.applyAccessibility();
+                this.statusMessage = `UI 缩放 ${this.uiScale}%`;
               })
+            Row({ space: 6 }) {
+              ProteusClassicBtn({
+                label: '100%',
+                widthVal: '30%',
+                onAction: () => {
+                  this.uiScale = 100;
+                  this.applyAccessibility();
+                  this.statusMessage = 'UI 缩放 100%';
+                }
+              })
+              ProteusClassicBtn({
+                label: '125%',
+                widthVal: '30%',
+                onAction: () => {
+                  this.uiScale = 125;
+                  this.applyAccessibility();
+                  this.statusMessage = 'UI 缩放 125%';
+                }
+              })
+              ProteusClassicBtn({
+                label: '150%',
+                widthVal: '30%',
+                onAction: () => {
+                  this.uiScale = 150;
+                  this.applyAccessibility();
+                  this.statusMessage = 'UI 缩放 150%';
+                }
+              })
+            }
+            .width('100%')
+            .padding({ left: 8, right: 8, bottom: 4 })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
 
-          Row() {
+          Row({ space: 8 }) {
             Text('语音朗读')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
             Toggle({ type: ToggleType.Switch, isOn: this.screenReader })
+              .selectedColor(ProteusColors.BTN_FOCUS)
+              .width(48)
+              .height(28)
               .onChange((on: boolean) => {
                 this.screenReader = on;
                 this.applyAccessibility();
+                this.statusMessage = on ? '已开启语音朗读' : '已关闭语音朗读';
               })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: 8, right: 8, top: 6, bottom: 8 })
+          .alignItems(VerticalAlign.Center)
         }
         .width('100%')
 
         Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
 
-        // ---- 版本与隐私 ----
         Column() {
           Text('版本与隐私')
             .fontSize(ProteusFonts.PARAM_KEY)
@@ -184,7 +274,7 @@ export struct PlatformSettingsPanel {
             .padding({ left: 8, top: 6, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
-          Column({ space: 6 }) {
+          Column({ space: 8 }) {
             ProteusClassicBtn({
               label: '保存快照',
               widthVal: '92%',
@@ -205,20 +295,26 @@ export struct PlatformSettingsPanel {
               label: '同意隐私政策',
               widthVal: '92%',
               onAction: () => {
-                void this.appService.acceptPrivacyPolicy();
-                this.statusMessage = '已记录隐私政策同意';
+                void this.appService.acceptPrivacyPolicy().then(() => {
+                  this.statusMessage = '已记录隐私政策同意';
+                });
               }
             })
           }
           .width('100%')
-          .padding({ left: 8, right: 8, top: 4, bottom: 12 })
+          .padding({ left: 8, right: 8, top: 4, bottom: 16 })
           .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .padding({ bottom: 12 })
     }
-    .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .padding({ bottom: 12 })
+    .height('100%')
+    .scrollBar(BarState.Auto)
+    .align(Alignment.TopStart)
     .backgroundColor(ProteusColors.CANVAS_BG)
   }
 

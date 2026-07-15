@@ -106,7 +106,22 @@ export class TemplateMergeUtil {
           mappedNetId = TemplateMergeUtil.findNetIdByName(target, srcLb.text);
         }
         if (mappedNetId === undefined || mappedNetId.length === 0) {
-          continue;
+          // 绝不丢标号：创建同名网，否则仿真侧 applyNetLabelConnectivity 无法并网
+          let netType = NetType.SIGNAL;
+          const upper = srcLb.text.toUpperCase();
+          if (upper === 'VCC' || upper === 'VDD') {
+            netType = NetType.POWER;
+          } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+            netType = NetType.GROUND;
+          }
+          mappedNetId = IdUtil.generate('net');
+          const created: Net = {
+            id: mappedNetId,
+            name: srcLb.text,
+            type: netType,
+            pinIds: []
+          };
+          target.nets.push(created);
         }
         const label: NetLabel = {
           id: IdUtil.generate('lbl'),

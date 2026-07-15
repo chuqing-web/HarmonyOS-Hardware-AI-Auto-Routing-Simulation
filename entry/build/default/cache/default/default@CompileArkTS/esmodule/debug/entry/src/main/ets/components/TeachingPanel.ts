@@ -194,15 +194,31 @@ export class TeachingPanel extends ViewPU {
         this.coverage = this.appService.teachingService.getCoverageReport();
         this.templates = this.appService.listAvailableLabTemplates(this.activeCategory);
     }
-    private getTemplateHexHint(templateId: string): string {
-        const hexPath = this.appService.getTemplateHexPath(templateId);
-        if (hexPath === null) {
+    /** 需烧录固件的模板标注：文件名 + 就绪状态 */
+    private getTemplateHexHint(tpl: LabTemplate): string {
+        const hexName = tpl.hexFile !== undefined && tpl.hexFile.length > 0
+            ? tpl.hexFile
+            : this.appService.teachingService.getTemplateHexFileName(tpl.id);
+        if (hexName === null || hexName.length === 0) {
             return '';
         }
-        if (this.appService.isHexFileReady(hexPath)) {
-            return `HEX: ${hexPath}`;
+        const fw = tpl.firmware !== undefined && tpl.firmware.length > 0
+            ? tpl.firmware
+            : (this.appService.teachingService.getTemplateFirmware(tpl.id)?.mcuFamily ?? '');
+        const fwTag = fw.length > 0 ? `（${fw}）` : '';
+        const hexPath = this.appService.getTemplateHexPath(tpl.id);
+        const ready = hexPath !== null && this.appService.isHexFileReady(hexPath);
+        if (ready) {
+            return `需烧录: ${hexName}${fwTag}`;
         }
-        return `HEX 缺失: ${hexPath}`;
+        return `需烧录: ${hexName}${fwTag}（文件缺失）`;
+    }
+    private templateNeedsHex(tpl: LabTemplate): boolean {
+        if (tpl.hexFile !== undefined && tpl.hexFile.length > 0) {
+            return true;
+        }
+        const name = this.appService.teachingService.getTemplateHexFileName(tpl.id);
+        return name !== null && name.length > 0;
     }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -215,7 +231,7 @@ export class TeachingPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusSectionTitle(this, { title: '教学辅助' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 64, col: 7 });
+                    let componentCall = new ProteusSectionTitle(this, { title: '教学辅助' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 81, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -250,7 +266,7 @@ export class TeachingPanel extends ViewPU {
                         label: this.showCoverage ? '收起' : '详情',
                         widthVal: 48,
                         onAction: () => { this.showCoverage = !this.showCoverage; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 71, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 88, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -393,6 +409,27 @@ export class TeachingPanel extends ViewPU {
                     Text.backgroundColor(ProteusColors.INPUT_READONLY_BG);
                 }, Text);
                 Text.pop();
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    If.create();
+                    if (this.templateNeedsHex(tpl)) {
+                        this.ifElseBranchUpdateFunction(0, () => {
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Text.create('需烧录');
+                                Text.fontSize(9);
+                                Text.fontColor('#FFFFFF');
+                                Text.fontWeight(FontWeight.Medium);
+                                Text.padding({ left: 5, right: 5, top: 1, bottom: 1 });
+                                Text.backgroundColor(ProteusColors.ERC_WARN);
+                            }, Text);
+                            Text.pop();
+                        });
+                    }
+                    else {
+                        this.ifElseBranchUpdateFunction(1, () => {
+                        });
+                    }
+                }, If);
+                If.pop();
                 Row.pop();
                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                     Text.create(tpl.description);
@@ -421,12 +458,13 @@ export class TeachingPanel extends ViewPU {
                 If.pop();
                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                     If.create();
-                    if (this.getTemplateHexHint(tpl.id).length > 0) {
+                    if (this.templateNeedsHex(tpl)) {
                         this.ifElseBranchUpdateFunction(0, () => {
                             this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                Text.create(this.getTemplateHexHint(tpl.id));
-                                Text.fontSize(9);
-                                Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                                Text.create(this.getTemplateHexHint(tpl));
+                                Text.fontSize(10);
+                                Text.fontColor(ProteusColors.ERC_WARN);
+                                Text.fontWeight(FontWeight.Medium);
                                 Text.maxLines(2);
                             }, Text);
                             Text.pop();
@@ -453,7 +491,7 @@ export class TeachingPanel extends ViewPU {
                                         }
                                     });
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 166, col: 13 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 192, col: 13 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -525,7 +563,7 @@ export class TeachingPanel extends ViewPU {
                             }
                             this.appService.stepPowerOn(this.stepIndex);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 204, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 230, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -569,7 +607,7 @@ export class TeachingPanel extends ViewPU {
                             this.appService.stepPowerOn(this.stepIndex);
                             this.statusMessage = `分步上电: 步骤 ${this.stepIndex + 1}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 220, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 246, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -631,7 +669,7 @@ export class TeachingPanel extends ViewPU {
                                             this.tip = this.appService.teachingService.getKnowledgeTip(dev.libDevId);
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 244, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 270, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -667,7 +705,7 @@ export class TeachingPanel extends ViewPU {
                                         this.statusMessage = `AI 提问: ${q.substring(0, 40)}...`;
                                         await this.appService.aiGenerateCircuit(q);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 255, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 281, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {

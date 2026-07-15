@@ -14,6 +14,10 @@ export interface LabTemplate {
     knowledgePoints: string[];
     /** 本模板覆盖的器件 libraryId */
     libraryIds?: string[];
+    /** 关联固件族: '8051' | 'STM32' */
+    firmware?: string;
+    /** 需烧录的 hex 文件名（hex_files 目录下） */
+    hexFile?: string;
 }
 export interface KnowledgeTip {
     componentType: string;
@@ -56,7 +60,9 @@ export class TeachingService {
             category: def.category,
             description: def.description,
             knowledgePoints: def.knowledgePoints,
-            libraryIds: def.libraryIds
+            libraryIds: def.libraryIds,
+            firmware: def.firmware,
+            hexFile: def.hexFile
         };
     }
     listTemplates(): LabTemplate[] {

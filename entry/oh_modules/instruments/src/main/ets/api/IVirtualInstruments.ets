@@ -77,6 +77,8 @@ export interface IVirtualInstruments {
   voltmeterMeasure(): ApiResult<number>;
   /** Feed a raw ΔV sample (per-instance) through DC avg / AC RMS */
   voltmeterMeasureValue(raw: number): ApiResult<number>;
+  /** Instant DC after interactive pot/switch */
+  voltmeterSnapReading(raw: number): number;
   voltmeterAutoRange(): ApiResult<void>;
   voltmeterSetRange(idx: number): ApiResult<void>;
   getVoltmeterConfig(): ApiResult<VoltmeterConfig>;
@@ -85,12 +87,16 @@ export interface IVirtualInstruments {
 
   // ---- Multimeter (DCV avg / ACV RMS) ----
   multimeterMeasureValue(raw: number): ApiResult<number>;
+  /** Instant DCV after interactive pot/switch */
+  multimeterSnapReading(raw: number): number;
 
   // ---- Ammeter ----
   setAmmeterType(type: AmmeterType): ApiResult<void>;
   ammeterMeasure(): ApiResult<number>;
   /** Feed a raw I sample (mA, per-instance) through DC avg / AC RMS */
   ammeterMeasureValue(raw: number): ApiResult<number>;
+  /** Instant DC after interactive pot/switch */
+  ammeterSnapReading(raw: number): number;
   ammeterAutoRange(): ApiResult<void>;
   ammeterSetRange(idx: number): ApiResult<void>;
   getAmmeterConfig(): ApiResult<AmmeterConfig>;
@@ -99,6 +105,8 @@ export interface IVirtualInstruments {
 
   // ---- Power Meter ----
   powerMeterMeasure(): ApiResult<PowerMeterConfig>;
+  /** Instant V/I/P after interactive pot/switch (no EMA lag) */
+  powerMeterSnapReading(vRaw: number, iRaw: number): PowerMeterConfig;
   setPowerMeterVoltageReader(reader: (() => number) | null): void;
   setPowerMeterCurrentReader(reader: (() => number) | null): void;
   setPowerMeterGlobalFallbacks(voltageReader: (() => number) | null, currentReader: (() => number) | null): void;
@@ -115,6 +123,8 @@ export interface IVirtualInstruments {
   autoAssignScopeProbes(): void;
   feedScopeNodeData(voltages: Map<string, number>, currents: Map<string, number>): void;
   feedScopeTimeSnapshot(time: number, voltages: Map<string, number>): void;
+  /** Rewrite scope history probe voltages after interactive DC edits */
+  snapScopeDcLevels(voltages: Map<string, number>): void;
 
   /** Bind instrument readings to a specific schematic component instance */
   registerComponentBinding(compId: string, binding: ComponentInstrumentBinding): void;

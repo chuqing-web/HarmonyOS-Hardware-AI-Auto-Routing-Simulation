@@ -313,19 +313,9 @@ export class ProteusPanelTitle extends ViewPU {
             Row.create();
             Row.width('100%');
             Row.height(ProteusDimens.PANEL_TITLE_HEIGHT);
-            Row.backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED : ProteusColors.PANEL_TITLE_BG);
+            Row.backgroundColor(ProteusColors.PANEL_TITLE_BG);
             Row.border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER });
             Row.alignItems(VerticalAlign.Center);
-            Row.scale(this.pressed ? { x: 0.995, y: 0.92 } : { x: 1, y: 1 });
-            Row.onClick(() => this.onToggle());
-            Row.onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                    this.pressed = true;
-                }
-                else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-                    this.pressed = false;
-                }
-            });
             Row.onHover((hover: boolean) => {
                 this.tipVisible = hover;
             });
@@ -348,16 +338,50 @@ export class ProteusPanelTitle extends ViewPU {
             Text.fontColor(ProteusColors.TEXT_PRIMARY);
             Text.fontWeight(FontWeight.Medium);
             Text.layoutWeight(1);
-            Text.textAlign(TextAlign.Center);
+            Text.textAlign(TextAlign.Start);
+            Text.padding({ left: 8 });
+            Text.maxLines(1);
+            Text.textOverflow({ overflow: TextOverflow.Ellipsis });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(this.collapsed ? '▶' : '▼');
-            Text.fontSize(8);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.createWithChild({ type: ButtonType.Normal });
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.width(28);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.height(20);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED : ProteusColors.BTN_BG);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.borderRadius(0);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.border(proteusBtnBorder(this.pressed));
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.margin({ right: 4 });
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.stateEffect(false);
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.onClick(() => this.onToggle());
+            // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+            Button.onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) {
+                    this.pressed = true;
+                }
+                else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+                    this.pressed = false;
+                }
+            });
+        }, Button);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.collapsed ? '▶' : '◀');
+            Text.fontSize(12);
             Text.fontColor(ProteusColors.TEXT_PRIMARY);
-            Text.margin({ right: 4 });
+            Text.fontWeight(FontWeight.Bold);
         }, Text);
         Text.pop();
+        // Explicit hit target — ▶▼ alone was 8px and nearly invisible / untappable on left panels
+        Button.pop();
         Row.pop();
     }
     panelTitleTip(parent = null) {
@@ -949,7 +973,7 @@ export class ProteusChipGrid extends ViewPU {
                                         selected: this.selectedIdx === start + offset,
                                         fillWidth: true,
                                         onSelect: () => { this.onSelect(start + offset); }
-                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 322, col: 13 });
+                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 335, col: 13 });
                                     ViewPU.create(componentCall);
                                     let paramsLambda = () => {
                                         return {
@@ -1242,7 +1266,7 @@ export class ProteusCollapsibleSection extends ViewPU {
                         title: this.title,
                         collapsed: !this.expanded,
                         onToggle: () => { this.expanded = !this.expanded; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 413, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 426, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1838,7 +1862,7 @@ export class ProteusToolButton extends ViewPU {
                         iconSize: 14,
                         color: this.disabled ? ProteusColors.TEXT_SECONDARY :
                             (this.active ? ProteusColors.BTN_FOCUS : ProteusColors.TEXT_PRIMARY)
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 573, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 586, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1994,7 +2018,7 @@ export class ProteusMenuTrigger extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 654, col: 9 });
+                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 667, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2052,7 +2076,7 @@ export class ProteusMenuTrigger extends ViewPU {
                                                 this.open = false;
                                                 e.action();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 683, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 696, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2418,7 +2442,7 @@ export class ProteusSidebarTab extends ViewPU {
                         iconSize: 16,
                         color: this.selected ?
                             ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 781, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 794, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

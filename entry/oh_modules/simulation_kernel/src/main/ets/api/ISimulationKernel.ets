@@ -56,5 +56,12 @@ export interface ISimulationKernel {
   getDigitalState(pinId: string): boolean;
   getMcuSnapshot(): McuRegisterSnapshot | null;
   setComponentParameter(componentId: string, param: string, value: string): Result<void>;
+  /**
+   * 仿真中切换按键：pressed 0↔1 → KEY 对地短路/开路，并同步 GPIO IDR。
+   * 返回切换后的 pressed 值（'0'/'1'），失败返回空串。
+   */
+  toggleInteractiveSwitch(componentId: string): string;
+  /** 把模拟网电压采样进 MCU GPIO 输入寄存器（STM32 IDR / 8051 pin）。 */
+  syncSpiceToGpioInputs(): void;
   generateSpiceNetlist(): Result<string>;
 }

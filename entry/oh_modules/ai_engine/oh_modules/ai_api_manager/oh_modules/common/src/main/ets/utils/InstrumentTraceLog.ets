@@ -265,17 +265,11 @@ export function traceDigitalLogic(
 /** 数字→模拟 Thevenin 注入摘要 */
 
 export function traceDigitalThevenin(parts: string[]): void {
-
+  // Empty THEV every sim frame floods instr_trace on analog-only labs — skip.
   if (parts.length === 0) {
-
-    Logger.info(INSTR_TRACE_TAG, '[DIGITAL] THEV | (none)');
-
     return;
-
   }
-
   Logger.info(INSTR_TRACE_TAG, `[DIGITAL] THEV | ${parts.join('; ')}`);
-
 }
 
 
@@ -1498,6 +1492,16 @@ export function traceUiRefresh(
 
 
 
+/**
+ * InstrumentPanel 刷新诊断 — INFO 级，写入右侧「日志」面板便于排查 500ms 轮询。
+ * stage 例：TIMER_START / TIMER_FIRE / TIMER_STOP / REFRESH / SKIP / ERROR
+ */
+export function traceInstrUi(stage: string, detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[INSTR_UI] ${stage} | ${detail}`);
+}
+
+
+
 /** 选中器件变化时输出 INFO 级日志（便于在默认 log level 下追踪） */
 
 export function traceUiSelect(
@@ -1591,7 +1595,8 @@ export function traceMcuGpioSync(
   if (drives.length > maxShow) {
     Logger.info(INSTR_TRACE_TAG, `[MCU]   ...+${drives.length - maxShow} more drives`);
   }
-  if (missPins.length > 0) {
+  // Only warn when nothing is driven: unbound PA1.. are normal for min-system templates.
+  if (missPins.length > 0 && drives.length === 0) {
     Logger.warn(INSTR_TRACE_TAG,
       `[MCU] GPIO_MISS | ${refDes} unbound pins=[${missPins.join(',')}] — LED/GPIO will not animate`);
   }
@@ -1607,5 +1612,84 @@ export function traceLedVfSample(lines: string[]): void {
   for (let i = 0; i < maxShow; i++) {
     Logger.info(INSTR_TRACE_TAG, `[LED]   ${lines[i]}`);
   }
+}
+
+/** Pushbutton pressed/open state + KEY net voltage for switch↔MCU↔relay debugging. */
+export function traceSwitchSample(lines: string[]): void {
+  if (lines.length === 0) {
+    return;
+  }
+  Logger.info(INSTR_TRACE_TAG, `[SW] sample count=${lines.length}`);
+  const maxShow = Math.min(lines.length, 8);
+  for (let i = 0; i < maxShow; i++) {
+    Logger.info(INSTR_TRACE_TAG, `[SW]   ${lines[i]}`);
+  }
+}
+
+/** Relay coil + NO/NC contact ohms / energized flag (why DNO/DNC both lit). */
+export function traceRelaySample(lines: string[]): void {
+  if (lines.length === 0) {
+    return;
+  }
+  Logger.info(INSTR_TRACE_TAG, `[REL] sample count=${lines.length}`);
+  const maxShow = Math.min(lines.length, 8);
+  for (let i = 0; i < maxShow; i++) {
+    Logger.info(INSTR_TRACE_TAG, `[REL]   ${lines[i]}`);
+  }
+}
+
+/** One pot/switch tick: per-instrument snapped reading for live-sync debugging. */
+export interface InteractiveMeterSnap {
+  refDes: string;
+  kind: string;
+  value: string;
+}
+
+let lastInstrLiveMs: number = 0;
+let lastInstrLiveFingerprint: string = '';
+
+/**
+ * Interactive pot/switch: log ALL meter snaps + key node voltages.
+ * Throttled (~10Hz) unless fingerprint changes (new wiper / MID / readings).
+ * Filter: instr_trace → [INSTR_LIVE]
+ */
+export function traceInteractiveInstrumentLive(
+  reason: string,
+  detail: string,
+  namedVolts: Map<string, number>,
+  meters: InteractiveMeterSnap[],
+  activeRefOrId: string,
+  force: boolean = false
+): void {
+  const prefer = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', 'GND'];
+  const netParts: string[] = [];
+  for (let i = 0; i < prefer.length; i++) {
+    const n = prefer[i];
+    const v = namedVolts.get(n);
+    if (v !== undefined) {
+      netParts.push(`${n}=${v.toFixed(3)}V`);
+    }
+  }
+  const meterParts: string[] = [];
+  for (let i = 0; i < meters.length; i++) {
+    const m = meters[i];
+    meterParts.push(`${m.refDes}/${m.kind}=${m.value}`);
+  }
+  const fingerprint =
+    `${reason}|${detail}|${netParts.join(',')}|${meterParts.join(';')}`;
+  const now = Date.now();
+  if (!force) {
+    if (fingerprint === lastInstrLiveFingerprint && now - lastInstrLiveMs < 150) {
+      return;
+    }
+    if (now - lastInstrLiveMs < 80) {
+      return;
+    }
+  }
+  lastInstrLiveMs = now;
+  lastInstrLiveFingerprint = fingerprint;
+  Logger.info(INSTR_TRACE_TAG,
+    `[INSTR_LIVE] ${reason} ${detail} nets={${netParts.join(', ')}} ` +
+    `meters=[${meterParts.join('; ')}] active=${activeRefOrId.length > 0 ? activeRefOrId : 'null'}`);
 }
 

@@ -44,6 +44,9 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
     const behavior = behaviorModel.toLowerCase();
     if (id.startsWith('r_') || svg.includes('resistor'))
         return 'resistor';
+    if (id.startsWith('pot_') || behavior === 'potentiometer' || svg.includes('potentiometer')) {
+        return 'potentiometer';
+    }
     if (id.startsWith('c_') || svg.includes('capacitor') || svg.includes('cap'))
         return 'capacitor';
     if (id.startsWith('l_') || svg.includes('inductor'))

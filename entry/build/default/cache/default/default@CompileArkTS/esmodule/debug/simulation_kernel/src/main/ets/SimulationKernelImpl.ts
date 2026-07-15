@@ -4,7 +4,7 @@ import type { HazardReport } from "@bundle:com.elecdraw.aischsim/entry@simulatio
 import { AnalogEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/AnalogEngine";
 import { GlobalScheduler } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
 import type { SchedulerStepResult } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
-import { SimulationState, SimulationMode, LogicState, EventBus, ModuleEvent, ErrCode, ResultHelper, TopologyAdapter, makeProgress, IdUtil, DynamicErcEngine, copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts, traceLoadSchematic, traceBurn, formatFirmwarePreview, traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceUart, formatUartBytesHex, traceUartTxDrain, traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { SimulationState, SimulationMode, LogicState, EventBus, ModuleEvent, ErrCode, ResultHelper, TopologyAdapter, makeProgress, IdUtil, DynamicErcEngine, copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts, traceLoadSchematic, traceBurn, formatFirmwarePreview, traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample, traceUart, formatUartBytesHex, traceUartTxDrain, traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchematicDocument, SimulationConfig, SimulationResult, Result, McuRegisterSnapshot, SchTopology, SimConfig, WaveData, FreqNoiseData, SimStatResult, SpiceResult, ProgressCallback, ApiResult, ErcViolation, FaultInjection, FaultScanResult, FaultType } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { FaultInjectionEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/FaultInjectionEngine";
 import { Mcu8051Simulator } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/Mcu8051Simulator";
@@ -153,7 +153,14 @@ export class SimulationKernelImpl implements ISimulationKernel {
             else {
                 this.syncMcuPinsToSpice();
             }
+            this.analogEngine.pinVoltageSources();
+            this.analogEngine.reSolveOp();
+            if (this.analogEngine.updateRelayContactsFromCoil()) {
+                this.analogEngine.reSolveOp();
+            }
         }
+        // Always dump SW/REL/LED so DNO/DNC diagnosis is visible without waiting for GPIO_SYNC
+        this.tracePeripheralIndicators('sim-start');
         onProgress?.(makeProgress(100, 'Simulation started', true));
         const startedData: SimStartedData = { config: config };
         EventBus.getInstance().publish({
@@ -206,8 +213,13 @@ export class SimulationKernelImpl implements ISimulationKernel {
         return ResultHelper.ok();
     }
     simSingleStep(): ApiResult<SpiceResult> {
+        this.syncSpiceToGpioInputs();
         this.tickMcuCore();
         const spice = this.runSpiceStep();
+        if (this.analogEngine.updateRelayContactsFromCoil()) {
+            this.analogEngine.reSolveOp();
+        }
+        this.syncSpiceToGpioInputs();
         this.tickDigitalLogic();
         return ResultHelper.ok(spice);
     }
@@ -282,23 +294,38 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 return src.voltage;
             }
         }
-        const kernelV = this.nodeVoltages.get(netUuid);
-        if (kernelV !== undefined) {
-            const spiceName = this.spiceNodeMap.get(netUuid) ?? '';
-            // Prefer kernel when AE would report float-0 on a named dig output node
-            if (spiceName.length > 0) {
-                const aeMapped = this.analogEngine.getNodeNameForNetUuid(netUuid);
-                if (aeMapped.length > 0) {
-                    const aeV = this.analogEngine.getVoltage(netUuid);
-                    // If AE still at 0 but kernel/DIG has driven level, trust kernel
-                    if (Math.abs(aeV) < 1e-6 && Math.abs(kernelV) > 0.5) {
-                        return kernelV;
+        const spiceName = this.spiceNodeMap.get(netUuid) ??
+            this.analogEngine.getNodeNameForNetUuid(netUuid);
+        const aeV = this.analogEngine.getVoltage(netUuid);
+        // Prefer live AE solve when it has a real level
+        if (spiceName.length > 0 && Math.abs(aeV) > 1e-6) {
+            return aeV;
+        }
+        // Worker→UI mirror: local AE may be empty while nodeVoltages hold OP / frame
+        const kernelByUuid = this.nodeVoltages.get(netUuid);
+        if (kernelByUuid !== undefined) {
+            return kernelByUuid;
+        }
+        if (spiceName.length > 0) {
+            const bySpice = this.nodeVoltages.get(spiceName);
+            if (bySpice !== undefined) {
+                return bySpice;
+            }
+        }
+        // Schematic net.name may be exported in Worker frames (ADC/VCC/…)
+        if (this.schematic !== null) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const n = this.schematic.nets[i];
+                if (n.id === netUuid && n.name.length > 0) {
+                    const byName = this.nodeVoltages.get(n.name);
+                    if (byName !== undefined) {
+                        return byName;
                     }
+                    break;
                 }
             }
         }
-        const aeV = this.analogEngine.getVoltage(netUuid);
-        if (this.analogEngine.getNodeNameForNetUuid(netUuid).length > 0) {
+        if (spiceName.length > 0) {
             return aeV;
         }
         return this.getNodeVoltage(netUuid);
@@ -508,11 +535,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
         // Hard wall + hard step count: Newton OP can still exceed a soft clock mid-step
         const deadline = Date.now() + Math.max(1, Math.min(budgetMs, 4));
+        // Sample KEY/net voltages into GPIO IDR before firmware reads inputs
+        this.syncSpiceToGpioInputs();
         this.tickMcuCore();
         let steps = 0;
         const maxSpice = 1;
         while (steps < maxSpice && Date.now() < deadline) {
             this.runSpiceStep();
+            if (this.analogEngine.updateRelayContactsFromCoil()) {
+                this.analogEngine.reSolveOp();
+            }
+            this.syncSpiceToGpioInputs();
             this.tickDigitalLogic();
             steps++;
             this.budgetStepCount++;
@@ -571,6 +604,24 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
         for (let i = 0; i < frame.branchKeys.length; i++) {
             this.branchCurrents.set(frame.branchKeys[i], frame.currents[i] ?? 0);
+        }
+        // Worker net UUIDs often differ from UI document; rematch via spice / net name
+        if (this.schematic !== null) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const net = this.schematic.nets[i];
+                const spice = this.spiceNodeMap.get(net.id) ??
+                    this.analogEngine.getNodeNameForNetUuid(net.id);
+                let v: number | undefined = undefined;
+                if (spice.length > 0) {
+                    v = this.nodeVoltages.get(spice);
+                }
+                if (v === undefined && net.name.length > 0) {
+                    v = this.nodeVoltages.get(net.name);
+                }
+                if (v !== undefined) {
+                    this.nodeVoltages.set(net.id, v);
+                }
+            }
         }
         this.globalTime = frame.t;
         this.budgetStepCount = frame.stepCount;
@@ -731,13 +782,88 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 // Pin MCU Vsrc immediately so VF dump / UI don't see stale mid-voltages
                 this.analogEngine.pinVoltageSources();
                 traceMcuGpioSync('8051', comp.refDes, 'P1', portVal, drives, missPins);
-                this.traceLedForwardVoltages();
+                this.tracePeripheralIndicators('8051-gpio');
             }
         }
     }
     /**
-     * Sample LED A/K voltages for instr_trace.
-     * lit/off uses same rule as canvas (not raw Vf≥0.55 — that falsely marks floating nets ON).
+     * Sample SW + RELAY + LED together for instr_trace (DNO/DNC dual-lit diagnosis).
+     */
+    private tracePeripheralIndicators(reason: string): void {
+        if (!this.schematic) {
+            return;
+        }
+        Logger.info(INSTR_TRACE_TAG, `[DIAG] peripheral snapshot reason=${reason}`);
+        this.traceSwitchStates();
+        const relLines = this.analogEngine.getRelayTraceLines();
+        if (relLines.length > 0) {
+            // Resolve refDes for readability
+            const named: string[] = [];
+            for (let i = 0; i < relLines.length; i++) {
+                const line = relLines[i];
+                const space = line.indexOf(' ');
+                const id = space > 0 ? line.substring(0, space) : line;
+                const rest = space > 0 ? line.substring(space + 1) : '';
+                const comp = this.schematic.components.find(c => c.id === id);
+                named.push(comp !== undefined ? `${comp.refDes} ${rest}` : line);
+            }
+            traceRelaySample(named);
+        }
+        this.traceLedForwardVoltages();
+    }
+    private traceSwitchStates(): void {
+        if (!this.schematic) {
+            return;
+        }
+        const lines: string[] = [];
+        for (let i = 0; i < this.schematic.components.length; i++) {
+            const comp = this.schematic.components[i];
+            const lib = comp.libraryId.toUpperCase();
+            if (lib !== 'SW_PUSH' && !lib.includes('SWITCH_PUSH') && lib !== 'BUTTON') {
+                continue;
+            }
+            const pressedRaw = (comp.parameters.get('pressed') ?? '0').trim().toLowerCase();
+            const closed = pressedRaw === '1' || pressedRaw === 'true' || pressedRaw === 'on' ||
+                pressedRaw === 'pressed' || pressedRaw === 'yes';
+            const pinNets = getPinNetMap(comp.id, this.schematic.nets);
+            let v1 = -999;
+            let v2 = -999;
+            let net1 = '';
+            let net2 = '';
+            const pinKeys = Array.from(pinNets.keys());
+            for (let pk = 0; pk < pinKeys.length; pk++) {
+                const pin = pinKeys[pk];
+                const netId = pinNets.get(pin) ?? '';
+                if (netId.length === 0) {
+                    continue;
+                }
+                const v = this.getNetVoltageByUuid(netId);
+                let name = netId;
+                for (let ni = 0; ni < this.schematic.nets.length; ni++) {
+                    if (this.schematic.nets[ni].id === netId) {
+                        name = this.schematic.nets[ni].name;
+                        break;
+                    }
+                }
+                const pinU = pin.toUpperCase();
+                if (pinU === '1' || pinU === 'A') {
+                    v1 = v;
+                    net1 = name;
+                }
+                else if (pinU === '2' || pinU === 'B') {
+                    v2 = v;
+                    net2 = name;
+                }
+            }
+            const iSw = this.getBranchCurrent(comp.id);
+            lines.push(`${comp.refDes} pressed=${closed ? '1' : '0'} (${closed ? 'CLOSED' : 'OPEN'}) ` +
+                `net1=${net1} V=${v1.toFixed(2)} net2=${net2} V=${v2.toFixed(2)} I=${iSw.toExponential(2)}A`);
+        }
+        traceSwitchSample(lines);
+    }
+    /**
+     * Sample LED A/K voltages + branch current for instr_trace.
+     * lit/off matches canvas: requires forward current (floating Vk=0 must stay off).
      */
     private traceLedForwardVoltages(): void {
         if (!this.schematic) {
@@ -747,12 +873,14 @@ export class SimulationKernelImpl implements ISimulationKernel {
         for (let i = 0; i < this.schematic.components.length; i++) {
             const comp = this.schematic.components[i];
             const lib = comp.libraryId.toUpperCase();
-            if (!lib.includes('LED')) {
+            if (!lib.startsWith('LED')) {
                 continue;
             }
             const pinNets = this.analogEngine.getNetUuidMapping();
             let vA = -999;
             let vK = -999;
+            let nodeA = '';
+            let nodeK = '';
             for (let n = 0; n < this.schematic.nets.length; n++) {
                 const net = this.schematic.nets[n];
                 for (let p = 0; p < net.pinIds.length; p++) {
@@ -765,26 +893,36 @@ export class SimulationKernelImpl implements ISimulationKernel {
                     const v = node.length > 0 ? this.analogEngine.getVoltage(node) : this.getNetVoltageByUuid(net.id);
                     if (pinKey === 'A' || pinKey === 'ANODE' || pinKey === '1') {
                         vA = v;
+                        nodeA = node.length > 0 ? node : (net.name ?? net.id);
                     }
                     else if (pinKey === 'K' || pinKey === 'CATHODE' || pinKey === '2') {
                         vK = v;
+                        nodeK = node.length > 0 ? node : (net.name ?? net.id);
                     }
                 }
             }
             if (vA > -900 && vK > -900) {
                 const vf = vA - vK;
-                // Match SchematicCanvas.isLedConducting
+                const iLed = Math.abs(this.getBranchCurrent(comp.id));
+                // Match SchematicCanvas.isLedConducting (voltage + ballast-drop fallback)
                 let tag = 'off';
                 if (vK >= 2.5) {
                     tag = 'off';
                 }
-                else if (vK <= 0.9 && vf >= 1.2) {
+                else if (vK <= 0.9 && vf >= 1.2 && (iLed >= 2e-4 || vA <= 4.7)) {
                     tag = 'lit';
                 }
-                else {
+                else if (iLed >= 5e-4 && vf >= 1.0) {
+                    tag = 'lit';
+                }
+                else if (vK <= 0.9 && vf >= 1.2) {
                     tag = 'mid';
                 }
-                lines.push(`${comp.refDes} Va=${vA.toFixed(2)} Vk=${vK.toFixed(2)} Vf=${vf.toFixed(2)} ${tag}`);
+                else {
+                    tag = 'off';
+                }
+                lines.push(`${comp.refDes} Va=${vA.toFixed(2)} Vk=${vK.toFixed(2)} Vf=${vf.toFixed(2)} ` +
+                    `I=${iLed.toExponential(2)}A A=${nodeA} K=${nodeK} ${tag}`);
             }
         }
         traceLedVfSample(lines);
@@ -806,12 +944,24 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 continue;
             }
             for (let port = 0; port < gpioBases.length; port++) {
-                const odr = this.qemuBridge.readPeriph(gpioBases[port] + 0x0C);
+                const base = gpioBases[port];
+                const odr = this.qemuBridge.readPeriph(base + 0x0C);
+                const crl = this.qemuBridge.readPeriph(base + 0x00);
+                const crh = this.qemuBridge.readPeriph(base + 0x04);
                 const letter = portLetters[port];
                 const drives: string[] = [];
                 const missPins: string[] = [];
                 let drivenBits = 0;
                 for (let bit = 0; bit < 16; bit++) {
+                    // Only push nets for pins configured as GPIO output (MODE≠00).
+                    // Teaching map GPIOAn→P(n+1) also hits OSC/NRST package pins — never stamp those.
+                    const crNibble = bit < 8
+                        ? ((crl >>> (bit * 4)) & 0xF)
+                        : ((crh >>> ((bit - 8) * 4)) & 0xF);
+                    const mode = crNibble & 0x3;
+                    if (mode === 0) {
+                        continue;
+                    }
                     const level = (odr >> bit) & 1;
                     const pinLabels: string[] = [
                         `P${letter}${bit}`,
@@ -829,9 +979,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
                         }
                         continue;
                     }
+                    const nu = nodeName.toUpperCase();
+                    if (nu === 'GND' || nu === 'VCC' || nu === 'VDD' ||
+                        nu.includes('NRST') || nu.includes('XTAL') || nu.includes('OSC')) {
+                        continue;
+                    }
                     drivenBits++;
                     const srcId = `MCU_${comp.id}_P${letter}${bit}`;
-                    const voltage = level > 0 ? 3.3 : 0;
+                    // Match board rail (lab VCC=5V). Hardcoded 3.3 left coil at ~1.8V below 2.25V thresh.
+                    const supply = this.schematic !== null
+                        ? SimulationKernelImpl.resolveSupplyVoltage(this.schematic) : 3.3;
+                    const voltage = level > 0 ? supply : 0;
                     this.analogEngine.registerSignalSource(srcId, nodeName, '0', 'dc', voltage, 0, 0, 0, 0.5);
                     this.nodeVoltages.set(nodeName, voltage);
                     this.mcuPinVoltages.set(`${comp.id}:P${letter}${bit}`, voltage);
@@ -839,17 +997,39 @@ export class SimulationKernelImpl implements ISimulationKernel {
                         `V=${voltage.toFixed(1)} (${level > 0 ? 'H' : 'L'})`);
                 }
                 const traceKey = `${comp.id}:GPIO${letter}`;
+                const crlKey = `${traceKey}:crl`;
                 const prev = this.lastTracedGpio.get(traceKey);
+                const prevCrl = this.lastTracedGpio.get(crlKey);
                 const port8 = odr & 0xFF;
+                const crl8 = crl & 0xFFFFFFFF;
                 const missKey = `${traceKey}:miss`;
                 const missNew = missPins.length > 0 && drivenBits === 0 && !this.lastTracedGpio.has(missKey);
-                if (prev === undefined || prev !== port8 || missNew) {
+                const crlChanged = prevCrl === undefined || prevCrl !== crl8;
+                const odrChanged = prev === undefined || prev !== port8;
+                // Always pin VSRC when we drive nets — do not gate on ODR change alone
+                // (first configured outputs often arrive with ODR still 0; skipping pin left them dead)
+                if (drives.length > 0) {
+                    this.analogEngine.pinVoltageSources();
+                }
+                if (odrChanged || crlChanged || missNew) {
                     this.lastTracedGpio.set(traceKey, port8);
+                    this.lastTracedGpio.set(crlKey, crl8);
                     if (missNew) {
                         this.lastTracedGpio.set(missKey, 1);
                     }
-                    if (drives.length > 0 || missPins.length > 0) {
-                        traceMcuGpioSync('STM32', `${comp.refDes}/GPIO${letter}`, `P${letter}`, port8, drives, missPins);
+                    if (drives.length > 0 || missPins.length > 0 || crlChanged) {
+                        Logger.info(INSTR_TRACE_TAG, `[MCU] GPIO_CFG ${letter} CRL=0x${(crl >>> 0).toString(16)} ` +
+                            `CRH=0x${(crh >>> 0).toString(16)} ODR=0x${(odr & 0xFFFF).toString(16)} drives=${drives.length}`);
+                        if (drives.length > 0 || missPins.length > 0) {
+                            traceMcuGpioSync('STM32', `${comp.refDes}/GPIO${letter}`, `P${letter}`, port8, drives, missPins);
+                            this.tracePeripheralIndicators(`stm32-gpio-${letter}`);
+                        }
+                    }
+                    if (odrChanged && drives.length > 0) {
+                        this.analogEngine.reSolveOp();
+                        if (this.analogEngine.updateRelayContactsFromCoil()) {
+                            this.analogEngine.reSolveOp();
+                        }
                     }
                 }
             }
@@ -1139,12 +1319,224 @@ export class SimulationKernelImpl implements ISimulationKernel {
             return { success: false, errCode: ErrCode.ERR_DEVICE_NOT_EXIST, error: 'Component not found' };
         comp.parameters.set(param, value);
         if (this.isSimActive()) {
-            this.analogEngine.loadSchematic(this.schematic, this.config);
-            if (this.topology) {
-                this.buildSpiceNodeMap(this.topology);
+            // Live pot/switch edits re-stamp the full MNA every tick — suppress stamp flood.
+            const quiet = param === 'wiper' || param === 'pressed';
+            if (quiet) {
+                this.analogEngine.setQuietLoad(true);
+            }
+            try {
+                this.analogEngine.loadSchematic(this.schematic, this.config);
+                if (this.topology) {
+                    this.buildSpiceNodeMap(this.topology);
+                }
+                // rebuild cleared Thevenin GPIO sources — re-drive outputs, then sample inputs
+                if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+                    this.syncStm32GpioToSpice();
+                }
+                else if (this.mcuLoaded) {
+                    this.syncMcuPinsToSpice();
+                }
+                this.analogEngine.pinVoltageSources();
+                this.analogEngine.reSolveOp();
+                if (this.analogEngine.updateRelayContactsFromCoil()) {
+                    this.analogEngine.reSolveOp();
+                }
+                // OP lives in AE — mirror into kernel map so instruments / wire colors update immediately
+                this.syncVoltagesFromAnalogEngine();
+                this.syncSpiceToGpioInputs();
+            }
+            finally {
+                if (quiet) {
+                    this.analogEngine.setQuietLoad(false);
+                }
             }
         }
         return { success: true, errCode: ErrCode.OK };
+    }
+    /** Copy AnalogEngine OP into kernel.nodeVoltages (names + net UUIDs). */
+    syncVoltagesFromAnalogEngine(): void {
+        const aeMap = this.analogEngine.exportNodeVoltages();
+        aeMap.forEach((v: number, name: string) => {
+            this.nodeVoltages.set(name, v);
+        });
+        const uuidMap = this.analogEngine.getNetUuidMapping();
+        uuidMap.forEach((nodeName: string, netUuid: string) => {
+            const v = this.nodeVoltages.get(nodeName);
+            if (v !== undefined) {
+                this.nodeVoltages.set(netUuid, v);
+            }
+            else {
+                this.nodeVoltages.set(netUuid, this.analogEngine.getVoltage(netUuid));
+            }
+        });
+        this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
+            const v = this.nodeVoltages.get(nodeName);
+            if (v !== undefined) {
+                this.nodeVoltages.set(netUuid, v);
+            }
+        });
+    }
+    toggleInteractiveSwitch(componentId: string): string {
+        if (!this.isSimActive() || !this.schematic) {
+            return '';
+        }
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp) {
+            return '';
+        }
+        const lib = comp.libraryId.toUpperCase();
+        if (lib !== 'SW_PUSH' && !lib.includes('SWITCH_PUSH') && lib !== 'BUTTON') {
+            return '';
+        }
+        const cur = (comp.parameters.get('pressed') ?? '0').trim().toLowerCase();
+        const pressedNow = cur === '1' || cur === 'true' || cur === 'yes' || cur === 'on' || cur === 'pressed';
+        const next = pressedNow ? '0' : '1';
+        const r = this.setComponentParameter(componentId, 'pressed', next);
+        if (!r.success) {
+            return '';
+        }
+        Logger.info(INSTR_TRACE_TAG, `[SW] ${comp.refDes} pressed=${next} (${next === '1' ? 'KEY→GND short' : 'open / pull-up'})`);
+        this.tracePeripheralIndicators(`sw-toggle-${comp.refDes}`);
+        return next;
+    }
+    /**
+     * 仿真中拖动滑动变阻器滑臂。wiper ∈ (0,1)，成功返回 "0.xxx"，失败返回 ''。
+     */
+    setInteractivePotWiper(componentId: string, wiper: number): string {
+        if (!this.isSimActive() || !this.schematic) {
+            return '';
+        }
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp) {
+            return '';
+        }
+        const lib = comp.libraryId.toUpperCase();
+        const isPot = lib.startsWith('POT_') || lib.includes('POTENTIOMETER') ||
+            lib === 'POT' || lib.includes('_POT');
+        if (!isPot) {
+            return '';
+        }
+        let t = wiper;
+        if (t < 0.001) {
+            t = 0.001;
+        }
+        else if (t > 0.999) {
+            t = 0.999;
+        }
+        const next = t.toFixed(3);
+        const prev = (comp.parameters.get('wiper') ?? '').trim();
+        if (prev === next) {
+            return next;
+        }
+        const r = this.setComponentParameter(componentId, 'wiper', next);
+        if (!r.success) {
+            return '';
+        }
+        Logger.info(INSTR_TRACE_TAG, `[POT] ${comp.refDes} wiper=${next} (${(t * 100).toFixed(0)}%)`);
+        return next;
+    }
+    /**
+     * Sample schematic net voltages into MCU GPIO input state.
+     * STM32: write GPIOx_IDR for MODE=00 (input) pins; unused bits left unchanged.
+     * 8051: setPinLevel on Port1 bits from package P1..P8 nets.
+     */
+    syncSpiceToGpioInputs(): void {
+        if (!this.schematic || !this.mcuLoaded) {
+            return;
+        }
+        const vinHl = 2.0; // ≥2.0V → logic 1 (5V KEY 与 3.3V GPIO 兼容)
+        if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+            this.syncStm32SpiceToIdr(vinHl);
+            return;
+        }
+        this.sync8051SpiceToPins(vinHl);
+    }
+    private syncStm32SpiceToIdr(vinHl: number): void {
+        if (!this.schematic) {
+            return;
+        }
+        const gpioBases = [0x40010800, 0x40010C00, 0x40011000];
+        const portLetters = ['A', 'B', 'C'];
+        for (let c = 0; c < this.schematic.components.length; c++) {
+            const comp = this.schematic.components[c];
+            if (!comp.libraryId.toUpperCase().includes('STM32')) {
+                continue;
+            }
+            for (let port = 0; port < gpioBases.length; port++) {
+                const base = gpioBases[port];
+                const crl = this.qemuBridge.readPeriph(base + 0x00);
+                const crh = this.qemuBridge.readPeriph(base + 0x04);
+                let idr = this.qemuBridge.readPeriph(base + 0x08);
+                const letter = portLetters[port];
+                let changed = false;
+                const samples: string[] = [];
+                for (let bit = 0; bit < 16; bit++) {
+                    const crNibble = bit < 8
+                        ? ((crl >>> (bit * 4)) & 0xF)
+                        : ((crh >>> ((bit - 8) * 4)) & 0xF);
+                    const mode = crNibble & 0x3;
+                    // Sample inputs; also refresh IDR for wired outputs so IDR mirrors pin
+                    const pinLabels: string[] = [
+                        `P${letter}${bit}`, `${letter}${bit}`, `P${letter}.${bit}`
+                    ];
+                    if (port === 0 && bit < 16) {
+                        pinLabels.push(`P${bit + 1}`);
+                    }
+                    const nodeName = this.findMcuPinSpiceNode(comp.id, pinLabels);
+                    if (nodeName === null || nodeName.length === 0) {
+                        continue;
+                    }
+                    const nu = nodeName.toUpperCase();
+                    if (nu.includes('NRST') || nu.includes('XTAL') || nu.includes('OSC')) {
+                        continue;
+                    }
+                    const v = this.analogEngine.getVoltage(nodeName);
+                    const bitOn = v >= vinHl ? 1 : 0;
+                    const prev = (idr >>> bit) & 1;
+                    if (bitOn !== prev) {
+                        changed = true;
+                        if (bitOn) {
+                            idr |= (1 << bit);
+                        }
+                        else {
+                            idr &= ~(1 << bit);
+                        }
+                    }
+                    // Prefer logging input pins (MODE=00) — KEY/PA1 path
+                    if (mode === 0) {
+                        samples.push(`P${letter}${bit}=${v.toFixed(2)}V→${bitOn}`);
+                    }
+                }
+                if (changed) {
+                    this.qemuBridge.writePeriph(base + 0x08, idr >>> 0);
+                }
+                if (samples.length > 0 && (this.mcuTickCount <= 3 || this.mcuTickCount % 50 === 0 || changed)) {
+                    Logger.info(INSTR_TRACE_TAG, `[MCU] GPIO_IN GPIO${letter} IDR=0x${(idr & 0xFFFF).toString(16)} | ${samples.slice(0, 6).join(' ')}`);
+                }
+            }
+        }
+    }
+    private sync8051SpiceToPins(vinHl: number): void {
+        if (!this.schematic) {
+            return;
+        }
+        for (let c = 0; c < this.schematic.components.length; c++) {
+            const comp = this.schematic.components[c];
+            const lib = comp.libraryId.toUpperCase();
+            if (!lib.includes('89C51') && !lib.includes('8051') && !lib.includes('AT89') &&
+                !lib.includes('MCS51') && !lib.includes('STC89') && !lib.includes('STC15')) {
+                continue;
+            }
+            for (let bit = 0; bit < 8; bit++) {
+                const candidates: string[] = [`P${bit + 1}`, `P1.${bit}`, `P1_${bit}`];
+                const nodeName = this.findMcuPinSpiceNode(comp.id, candidates);
+                if (nodeName === null || nodeName.length === 0) {
+                    continue;
+                }
+                const v = this.analogEngine.getVoltage(nodeName);
+                this.mcu8051.setPinLevel('P1', bit, v >= vinHl ? 1 : 0);
+            }
+        }
     }
     generateSpiceNetlist(): Result<string> {
         if (!this.schematic)
@@ -1241,13 +1633,32 @@ export class SimulationKernelImpl implements ISimulationKernel {
         const vih = VIH_CMOS_5V;
         const seedParts: string[] = [];
         const seeded = new Set<string>();
+        const logicNets = new Set<string>();
+        const participants = this.digitalEngine.getLogicParticipantNetIds();
+        for (let i = 0; i < participants.length; i++) {
+            logicNets.add(participants[i]);
+        }
+        // Also accept classic teaching rail names as digital inputs when gates exist
+        const hasGates = this.digitalEngine.getGateCount() > 0;
         const trySeed = (netUuid: string, spiceNode: string): void => {
             if (seeded.has(netUuid)) {
                 return;
             }
             const v = this.resolveSeedVoltage(netUuid, spiceNode);
+            // Always mirror SPICE into kernel voltage map for instruments / MCU IDR
             this.nodeVoltages.set(netUuid, v);
             this.nodeVoltages.set(spiceNode, v);
+            // Do NOT force digital levels on passive nets (REL_NO≈4V from LED+Gmin looked
+            // like LOGIC_H and polluted SEED_IN — only seed real gate pins / rail inputs)
+            if (!hasGates) {
+                return;
+            }
+            const nodeU = spiceNode.toUpperCase();
+            const isRail = nodeU === 'VCC' || nodeU === 'VDD' || nodeU === '0' || nodeU === 'GND' ||
+                nodeU.indexOf('LOGIC_') === 0;
+            if (!logicNets.has(netUuid) && !isRail) {
+                return;
+            }
             if (v >= vih) {
                 this.digitalEngine.forceSetLevel(netUuid, LogicState.HIGH);
                 seeded.add(netUuid);
@@ -1265,7 +1676,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
         this.spiceNodeMap.forEach((spiceNode: string, netUuid: string) => {
             trySeed(netUuid, spiceNode);
         });
-        traceDigitalLogic('SEED_IN', seedParts.length > 0 ? seedParts.join(' ') : '(no rail levels)');
+        traceDigitalLogic('SEED_IN', seedParts.length > 0 ? seedParts.join(' ') : '(no digital gate nets — skipped passive LED/REL seed)');
         // Combinational DC settle (no event-edge clocks)
         this.digitalEngine.settleCombinational(0);
         const settled = this.digitalEngine.processEvents(1e-6);
@@ -1452,7 +1863,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 // Detect analog components (R, C, L, diodes, transistors, opamps, etc.)
                 if (libId.startsWith('R_') || libId.includes('RESISTOR') || libId.startsWith('C_') ||
                     libId.includes('CAP') || libId.includes('INDUCTOR') || libId.startsWith('L_') ||
-                    libId.includes('DIODE') || libId.includes('LED') || libId.includes('NPN') ||
+                    libId.includes('DIODE') || libId.startsWith('LED') || libId.includes('NPN') ||
                     libId.includes('PNP') || libId.includes('TRANSISTOR') || libId.includes('MOSFET') ||
                     libId.includes('OPAMP') || libId.includes('LM358') || libId.includes('LM324') ||
                     libId.includes('REGULATOR') || libId.includes('CRYSTAL')) {

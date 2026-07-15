@@ -104,7 +104,7 @@ export struct PropertyPanel {
       if (this.comp !== null) {
         this.refreshInstrumentData();
       }
-    }, 500);
+    }, 150);
   }
 
   private stopRefresh(): void {
@@ -119,15 +119,20 @@ export struct PropertyPanel {
       this.appService.setActiveInstrumentComponent(null);
       return;
     }
-    this.appService.setActiveInstrumentComponent(this.comp.id);
     const libId = this.comp.libraryId.toUpperCase();
+    const isInstrument = libId.includes('METER') || libId.includes('SCOPE') || libId.includes('OSC') ||
+      libId.includes('LOGIC') || libId.includes('ANALYZER') || libId.includes('POWER') ||
+      libId.includes('SIGNAL') || libId.includes('UART') || libId.includes('GENERATOR');
+    // Do not steal instrument binding when inspecting a pot / MCU / passive.
+    if (isInstrument) {
+      this.appService.setActiveInstrumentComponent(this.comp.id);
+    }
     try {
       if (libId.includes('VIRTUAL_METER') || libId === 'MULTIMETER') {
         const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
         if (delta !== null) {
-          const averaged = this.appService.instruments.multimeterMeasureValue(delta);
-          this.mmReading = (averaged.success && averaged.data !== undefined)
-            ? Number(averaged.data).toFixed(3) : delta.toFixed(3);
+          this.appService.instruments.multimeterSnapReading(delta);
+          this.mmReading = delta.toFixed(3);
         } else {
           const r = this.appService.instruments.measure();
           if (r.success && r.data !== undefined) {
@@ -141,9 +146,8 @@ export struct PropertyPanel {
       } else if (libId.includes('VOLTMETER')) {
         const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
         if (delta !== null) {
-          const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
-          this.vmReading = (averaged.success && averaged.data !== undefined)
-            ? Number(averaged.data).toFixed(2) : delta.toFixed(2);
+          this.appService.instruments.voltmeterSnapReading(delta);
+          this.vmReading = delta.toFixed(2);
         } else {
           const r = this.appService.instruments.voltmeterMeasure();
           if (r.success && r.data !== undefined) {
@@ -157,9 +161,8 @@ export struct PropertyPanel {
       } else if (libId.includes('AMMETER')) {
         const mA = this.appService.readAmmeterCurrentForComponent(this.comp.id);
         if (mA !== null) {
-          const averaged = this.appService.instruments.ammeterMeasureValue(mA);
-          this.amReading = (averaged.success && averaged.data !== undefined)
-            ? Number(averaged.data).toFixed(3) : mA.toFixed(3);
+          this.appService.instruments.ammeterSnapReading(mA);
+          this.amReading = mA.toFixed(3);
         } else {
           const r = this.appService.instruments.ammeterMeasure();
           if (r.success && r.data !== undefined) {
@@ -171,12 +174,20 @@ export struct PropertyPanel {
           this.amUnit = cfg.data.unit ?? 'mA DC';
         }
       } else if (libId.includes('POWER') || libId.includes('WATT')) {
-        const r = this.appService.instruments.powerMeterMeasure();
-        if (r.success && r.data !== undefined) {
-          this.pmVoltage = Number(r.data.voltage).toFixed(3);
-          this.pmCurrent = (Number(r.data.current) * 1000).toFixed(2);
-          this.pmPower = (Number(r.data.power) * 1000).toFixed(1);
-          this.pmPF = Number(r.data.powerFactor).toFixed(2);
+        const pm = this.appService.readPowerMeterForComponent(this.comp.id);
+        if (pm !== null) {
+          this.pmVoltage = pm.voltage.toFixed(3);
+          this.pmCurrent = (pm.current * 1000).toFixed(2);
+          this.pmPower = (pm.power * 1000).toFixed(1);
+          this.pmPF = pm.powerFactor.toFixed(2);
+        } else {
+          const r = this.appService.instruments.powerMeterMeasure();
+          if (r.success && r.data !== undefined) {
+            this.pmVoltage = Number(r.data.voltage).toFixed(3);
+            this.pmCurrent = (Number(r.data.current) * 1000).toFixed(2);
+            this.pmPower = (Number(r.data.power) * 1000).toFixed(1);
+            this.pmPF = Number(r.data.powerFactor).toFixed(2);
+          }
         }
       } else if (libId.includes('FREQ') || libId.includes('COUNTER')) {
         const r = this.appService.instruments.freqCounterMeasure();
@@ -278,10 +289,13 @@ export struct PropertyPanel {
       return;
     }
     const libId = this.comp.libraryId.toUpperCase();
-    this.appService.setActiveInstrumentComponent(this.comp.id);
-    if (this.isInstrument() || libId.includes('METER') || libId.includes('SCOPE') || libId.includes('LOGIC')) {
-      this.appService.refreshInstrumentReaderForComponent(this.comp.id);
+    if (!this.isInstrument() && !libId.includes('METER') && !libId.includes('SCOPE') &&
+      !libId.includes('LOGIC') && !libId.includes('OSC') && !libId.includes('ANALYZER') &&
+      !libId.includes('UART') && !libId.includes('GENERATOR') && !libId.includes('SIGNAL')) {
+      return;
     }
+    this.appService.setActiveInstrumentComponent(this.comp.id);
+    this.appService.refreshInstrumentReaderForComponent(this.comp.id);
     if (libId.includes('VOLTMETER_DC') || libId === 'VOLTMETER') {
       this.vmUnit = 'V DC';
       this.appService.instruments.setVoltmeterType(VoltmeterType.DC);

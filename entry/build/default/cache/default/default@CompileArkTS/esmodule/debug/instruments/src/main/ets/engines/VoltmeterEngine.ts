@@ -146,6 +146,24 @@ export class VoltmeterEngine {
         }
         return 0.55 * box + 0.45 * this.dcEma;
     }
+    /**
+     * Immediate DC UI update (interactive pot / switch) — clears averaging so meters track instantly.
+     */
+    snapReading(raw: number): number {
+        this.dcSampleBuffer = [raw];
+        this.dcEma = raw;
+        this.dcEmaInit = true;
+        if (this.type === VoltmeterType.AC) {
+            this.lastReading = raw;
+            return raw;
+        }
+        if (this.autoRangeOn) {
+            this.autoRange(raw);
+        }
+        const displayMax = this.getRange();
+        this.lastReading = Math.min(Math.abs(raw), displayMax) * (raw < 0 ? -1 : 1);
+        return this.lastReading;
+    }
     /** Update sliding RMS buffer and compute true-RMS */
     private updateRmsBuffer(raw: number): void {
         if (this.rmsSampleBuffer.length < RMS_WINDOW_SAMPLES) {

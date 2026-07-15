@@ -63,7 +63,7 @@ const MCU8051_ALL = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS', 'XTAL_11M'
 const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
     'XTAL_8M', 'C_100nF', 'C_10uF', 'R_10k', 'VCC', 'GND'];
 const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
-    'R_10k', 'R_330', 'C_100nF', 'VCC', 'GND'];
+    'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
 const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'R_4.7k', 'R_10k',
     'C_100nF', 'VCC', 'GND'];
 const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
@@ -91,13 +91,13 @@ export class LabTemplateRegistry {
         },
         {
             id: 'lab_51_led', name: '51流水灯', category: 'mcu',
-            description: 'AT89C51 流水灯 + 晶振复位',
+            description: 'AT89C51 流水灯 + 晶振复位；需烧录 lab_51_led.hex',
             knowledgePoints: ['IO口', '定时器', '限流电阻'],
             libraryIds: MCU51_LIBS, firmware: '8051', hexFile: 'lab_51_led.hex', build: buildLab51Led
         },
         {
             id: 'lab_uart', name: '串口通信', category: 'mcu',
-            description: 'STM32F103 UART + 终端',
+            description: 'STM32F103 UART + 终端；需烧录 lab_uart.hex',
             knowledgePoints: ['波特率', '帧格式', 'TX/RX 交叉'],
             libraryIds: MCU_UART_LIBS, firmware: 'STM32', hexFile: 'lab_uart.hex', build: buildLabUart
         },
@@ -133,21 +133,22 @@ export class LabTemplateRegistry {
         },
         {
             id: 'lab_mcu_8051', name: '8051全系列', category: 'mcu',
-            description: 'AT89/STC 四款 MCU 最小系统',
+            description: 'AT89/STC 四款 MCU 最小系统；需烧录 lab_mcu_8051.hex',
             knowledgePoints: ['最小系统', '晶振', '复位'],
             libraryIds: MCU8051_ALL, firmware: '8051', hexFile: 'lab_mcu_8051.hex', build: buildLabMcu8051
         },
         {
             id: 'lab_mcu_stm32', name: 'STM32全系列', category: 'mcu',
-            description: '五款 STM32 最小系统并排',
+            description: '五款 STM32 最小系统并排；需烧录 lab_mcu_stm32.hex',
             knowledgePoints: ['Cortex-M', 'HSE', 'NRST'],
-            libraryIds: MCU_STM32_ALL, firmware: 'STM32', hexFile: 'lab_uart.hex', build: buildLabMcuStm32
+            libraryIds: MCU_STM32_ALL, firmware: 'STM32', hexFile: 'lab_mcu_stm32.hex', build: buildLabMcuStm32
         },
         {
             id: 'lab_peripheral', name: '外设接口实验', category: 'peripheral',
-            description: '按键/继电器/蜂鸣器/LCD/OLED',
-            knowledgePoints: ['GPIO', '人机交互', '显示'],
-            libraryIds: PERIPH_LIBS, build: buildLabPeripheral
+            description: '按键/继电器触点指示/蜂鸣器/LCD/OLED；需烧录 lab_peripheral.hex',
+            knowledgePoints: ['GPIO', '继电器触点', '人机交互', '显示'],
+            libraryIds: PERIPH_LIBS, firmware: 'STM32', hexFile: 'lab_peripheral.hex',
+            build: buildLabPeripheral
         },
         {
             id: 'lab_sensor', name: '传感器实验', category: 'sensor',

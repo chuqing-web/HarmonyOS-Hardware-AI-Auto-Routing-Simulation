@@ -256,8 +256,14 @@ export class ErcEngine {
       libraryId === '1N4007' || libraryId === '1N5819') {
       return ['A', 'K'];
     }
-    // Switch
+    // Switch / relay coil (+ optional contact pins when present)
     if (libraryId === 'SW_PUSH') {
+      return ['1', '2'];
+    }
+    if (libraryId === 'RELAY_SPDT') {
+      return ['1', '2', 'COM', 'NO', 'NC'];
+    }
+    if (libraryId === 'BUZZER') {
       return ['1', '2'];
     }
     // Power symbols (pin.id is '1' from makePin('1', 'VCC', ...) / makePin('1', 'GND', ...))

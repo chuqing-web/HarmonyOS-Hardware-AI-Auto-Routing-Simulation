@@ -93,6 +93,31 @@ export class MultimeterEngine {
     }
   }
 
+  /** Immediate DCV/CURRENT UI update after interactive circuit edits. */
+  snapReading(raw: number): number {
+    this.lastRawValue = raw;
+    this.dcSampleBuffer = [raw];
+    this.dcEma = raw;
+    this.dcEmaInit = true;
+    if (this.mode === MultimeterMode.ACV) {
+      this.lastRms = Math.abs(raw);
+      this.lastDisplay = this.clampToRange(this.lastRms);
+      return this.lastDisplay;
+    }
+    if (this.autoRangeEnabled) {
+      const ranges = this.getRanges();
+      for (let i = 0; i < ranges.length; i++) {
+        if (Math.abs(raw) <= ranges[i]) {
+          this.rangeIndex = i;
+          break;
+        }
+        this.rangeIndex = ranges.length - 1;
+      }
+    }
+    this.lastDisplay = this.clampToRange(raw);
+    return this.lastDisplay;
+  }
+
   getLastReading(): number { return this.lastDisplay; }
 
   private resetFilters(): void {

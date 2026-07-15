@@ -1,9 +1,9 @@
 /**
- * AI API 管理面板
+ * AI 面板 — API 配置（默认折叠）+ 提示词一键生成 + Claude/Cursor 风格流式日志
  */
-import { AppService } from '../services/AppService';
+import { AppService, AiGenLogEntry, AiGenerateMode } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode } from 'common';
-import { ProteusClassicBtn, ProteusChipGrid } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -14,8 +14,15 @@ interface ApiFormatOption {
 @Component
 export struct AiSettingsPanel {
   @Link statusMessage: string;
+  @Link aiGenerating: boolean;
+  @Link aiProgress: number;
+  @Link aiStage: string;
   @State apiList: AiApiConfig[] = [];
   @State showAddForm: boolean = false;
+  @State apiSectionExpanded: boolean = false;
+  @State promptText: string = '';
+  @State logs: AiGenLogEntry[] = [];
+  @State showModeDialog: boolean = false;
   @State newApiName: string = '';
   @State newApiKey: string = '';
   @State newApiModel: string = '';
@@ -41,19 +48,228 @@ export struct AiSettingsPanel {
     { label: 'Ollama (原生)', value: 'ollama' }
   ];
   private loadBalanceLabels: string[] = ['优先级', '轮询', '故障切换'];
-  private authFieldOptions: string[] = [
-    'ANTHROPIC_AUTH_TOKEN', 'x-api-key', 'Authorization', 'Bearer', 'X-API-Key'
-  ];
 
   aboutToAppear(): void {
     this.refreshList();
+    this.logs = this.appService.getAiGenLogs();
+    this.appService.onAiGenLogsChanged = (entries: AiGenLogEntry[]) => {
+      this.logs = entries;
+    };
   }
 
   refreshList(): void {
     this.apiList = this.appService.aiApiManager.listApis();
   }
 
+  private requestGenerate(): void {
+    if (this.aiGenerating) {
+      this.appService.cancelAiGenerate();
+      return;
+    }
+    const q = this.promptText.trim();
+    if (q.length === 0) {
+      this.statusMessage = '请输入提示词';
+      return;
+    }
+    this.showModeDialog = true;
+  }
+
+  private async runGenerate(mode: AiGenerateMode): Promise<void> {
+    this.showModeDialog = false;
+    const q = this.promptText.trim();
+    this.statusMessage = 'AI 生成中…';
+    const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode);
+    if (ok) {
+      this.statusMessage = 'AI 整图生成完成';
+    }
+  }
+
+  private bubbleBg(role: string): string {
+    if (role === 'user') {
+      return ProteusColors.SELECTED;
+    }
+    if (role === 'system') {
+      return ProteusColors.INPUT_READONLY_BG;
+    }
+    return ProteusColors.CANVAS_BG;
+  }
+
+  private bubbleFg(role: string): string {
+    if (role === 'user') {
+      return '#FFFFFF';
+    }
+    return ProteusColors.TEXT_PRIMARY;
+  }
+
   build() {
+    Column() {
+      // ---- API 配置（默认折叠） ----
+      Row() {
+        Text(this.apiSectionExpanded ? '▾ API 配置' : '▸ API 配置')
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .fontWeight(FontWeight.Medium)
+          .layoutWeight(1)
+        Text(`${this.apiList.length} 个`)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 8, bottom: 6 })
+      .onClick(() => {
+        this.apiSectionExpanded = !this.apiSectionExpanded;
+      })
+
+      if (this.apiSectionExpanded) {
+        this.ApiConfigSection()
+      }
+
+      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
+
+      // ---- 生成区 ----
+      ProteusSectionTitle({ title: 'AI 生成整图' })
+
+      Text('输入提示词后一键选型、摆放并连线')
+        .fontSize(9)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .width('100%')
+        .padding({ left: 8, right: 8, bottom: 4 })
+
+      TextArea({
+        placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
+        text: this.promptText
+      })
+        .height(72)
+        .width('100%')
+        .fontSize(ProteusFonts.PARAM_KEY)
+        .fontColor(ProteusColors.TEXT_PRIMARY)
+        .backgroundColor(ProteusColors.CANVAS_BG)
+        .border({ width: 1, color: ProteusColors.INPUT_BORDER })
+        .borderRadius(0)
+        .padding(6)
+        .margin({ left: 8, right: 8 })
+        .enabled(!this.aiGenerating)
+        .onChange((v: string) => {
+          this.promptText = v;
+        })
+
+      Row({ space: 6 }) {
+        ProteusClassicBtn({
+          label: this.aiGenerating ? '取消' : '生成整图',
+          widthVal: '58%',
+          onAction: () => {
+            this.requestGenerate();
+          }
+        })
+        ProteusClassicBtn({
+          label: '清空日志',
+          widthVal: '38%',
+          onAction: () => {
+            this.appService.clearAiGenLogs();
+          }
+        })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 6, bottom: 4 })
+
+      if (this.aiGenerating) {
+        Text(`${this.aiStage.length > 0 ? this.aiStage : 'AI 生成中'} · ${this.aiProgress}%`)
+          .fontSize(10)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .width('100%')
+          .padding({ left: 8, right: 8, bottom: 4 })
+      }
+
+      // 替换 / 追加 选择
+      if (this.showModeDialog) {
+        Column({ space: 8 }) {
+          Text('画布上已有电路时，请选择：')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_PRIMARY)
+            .width('100%')
+          ProteusClassicBtn({
+            label: '替换整图',
+            widthVal: '100%',
+            onAction: () => {
+              void this.runGenerate('replace');
+            }
+          })
+          ProteusClassicBtn({
+            label: '追加到空白区',
+            widthVal: '100%',
+            onAction: () => {
+              void this.runGenerate('append');
+            }
+          })
+          ProteusClassicBtn({
+            label: '取消',
+            widthVal: '100%',
+            onAction: () => {
+              this.showModeDialog = false;
+            }
+          })
+        }
+        .width('100%')
+        .padding(10)
+        .margin({ left: 8, right: 8, bottom: 6 })
+        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+        .border({ width: 1, color: ProteusColors.SELECTED })
+      }
+
+      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
+
+      // ---- 流式日志 ----
+      Row() {
+        Text('生成日志')
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .fontWeight(FontWeight.Medium)
+        Blank()
+        Text(`${this.logs.length}`)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 6, bottom: 4 })
+
+      List({ space: 6 }) {
+        ForEach(this.logs, (entry: AiGenLogEntry) => {
+          ListItem() {
+            Column() {
+              Text(entry.role === 'user' ? '你' : (entry.role === 'system' ? '系统' : 'AI'))
+                .fontSize(9)
+                .fontColor(ProteusColors.TEXT_SECONDARY)
+                .width('100%')
+                .textAlign(entry.role === 'user' ? TextAlign.End : TextAlign.Start)
+              Text(entry.text)
+                .fontSize(10)
+                .fontColor(this.bubbleFg(entry.role))
+                .fontFamily('monospace')
+                .width('100%')
+            }
+            .width(entry.role === 'user' ? '88%' : '100%')
+            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .backgroundColor(this.bubbleBg(entry.role))
+            .border({
+              width: 1,
+              color: entry.role === 'assistant' ? ProteusColors.DIVIDER : 'transparent'
+            })
+            .alignSelf(entry.role === 'user' ? ItemAlign.End : ItemAlign.Start)
+          }
+        }, (entry: AiGenLogEntry) => entry.id)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .padding({ left: 6, right: 6, bottom: 6 })
+      .scrollBar(BarState.Auto)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(ProteusColors.CANVAS_BG)
+  }
+
+  @Builder
+  ApiConfigSection() {
     Column() {
       Row() {
         Text('AI API 管理')
@@ -61,7 +277,7 @@ export struct AiSettingsPanel {
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
-          .padding({ left: 8, top: 8, bottom: 4 })
+          .padding({ left: 8, top: 4, bottom: 4 })
         ProteusClassicBtn({
           label: this.showAddForm ? '收起' : '+ 添加',
           widthVal: 64,
@@ -73,7 +289,6 @@ export struct AiSettingsPanel {
 
       if (this.showAddForm) {
         Column({ space: 4 }) {
-          // Provider chips
           Text('选择平台')
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
@@ -97,7 +312,6 @@ export struct AiSettingsPanel {
 
           Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 2 })
 
-          // Endpoint URL
           Row() {
             Text('官网链接')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
@@ -110,7 +324,6 @@ export struct AiSettingsPanel {
               .onChange((v: string) => { this.newApiUrl = v; })
           }.width('100%').alignItems(VerticalAlign.Center)
 
-          // API Key
           Row() {
             Text('API Key')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
@@ -124,7 +337,6 @@ export struct AiSettingsPanel {
               .onChange((v: string) => { this.newApiKey = v; })
           }.width('100%').alignItems(VerticalAlign.Center)
 
-          // API Format
           Row() {
             Text('API 格式')
               .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
@@ -140,11 +352,6 @@ export struct AiSettingsPanel {
               })
           }.width('100%').alignItems(VerticalAlign.Center)
 
-          Text('选择供应商 API 的输入格式')
-            .fontSize(8).fontColor(ProteusColors.TEXT_SECONDARY)
-            .width('100%').padding({ left: 56 })
-
-          // Auth field
           Row() {
             Text('认证字段')
               .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
@@ -156,7 +363,6 @@ export struct AiSettingsPanel {
               .onChange((v: string) => { this.newAuthField = v; })
           }.width('100%').alignItems(VerticalAlign.Center)
 
-          // Model name
           Row() {
             Text('模型名称')
               .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
@@ -201,7 +407,6 @@ export struct AiSettingsPanel {
         .margin({ left: 4, right: 4, top: 2 })
       }
 
-      // Load balance
       Text('负载均衡策略')
         .fontSize(ProteusFonts.PARAM_KEY)
         .fontColor(ProteusColors.TEXT_LABEL)
@@ -222,9 +427,6 @@ export struct AiSettingsPanel {
       .width('100%')
       .padding({ left: 8, right: 8, top: 2, bottom: 4 })
 
-      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
-
-      // Configured APIs list
       Row() {
         Text('已配置 API')
           .fontSize(ProteusFonts.PARAM_KEY)
@@ -235,88 +437,63 @@ export struct AiSettingsPanel {
       }
       .width('100%').padding({ left: 6, right: 6, top: 4 })
 
-      List({ space: 2 }) {
+      Column({ space: 2 }) {
         ForEach(this.apiList, (api: AiApiConfig) => {
-          ListItem() {
-            Column() {
-              Row() {
-                Text(api.name)
-                  .fontSize(10).fontColor(ProteusColors.TEXT_PRIMARY).fontWeight(FontWeight.Medium)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-                Text(api.enabled ? '●' : '○')
-                  .fontSize(8)
-                  .fontColor(api.enabled ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY)
-                  .margin({ left: 4 })
-              }.width('100%')
+          Column() {
+            Row() {
+              Text(api.name)
+                .fontSize(10).fontColor(ProteusColors.TEXT_PRIMARY).fontWeight(FontWeight.Medium)
+                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+              Text(api.enabled ? '●' : '○')
+                .fontSize(8)
+                .fontColor(api.enabled ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY)
+                .margin({ left: 4 })
+            }.width('100%')
 
-              Text(`${api.model}`)
-                .fontSize(9).fontColor(ProteusColors.TEXT_LABEL).width('100%')
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(`${api.model}`)
+              .fontSize(9).fontColor(ProteusColors.TEXT_LABEL).width('100%')
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
 
-              Row({ space: 3 }) {
-                ProteusClassicBtn({
-                  label: '测试', widthVal: 44,
-                  onAction: async () => {
-                    this.statusMessage = `测试 ${api.name}...`;
-                    const result = await this.appService.aiApiManager.testConnection(api.id);
-                    this.statusMessage = result.success ? `${api.name} 连接成功` : `${api.name} 失败`;
-                    this.refreshList();
+            Row({ space: 3 }) {
+              ProteusClassicBtn({
+                label: '测试', widthVal: 44,
+                onAction: async () => {
+                  this.statusMessage = `测试 ${api.name}...`;
+                  const result = await this.appService.aiApiManager.testConnection(api.id);
+                  this.statusMessage = result.success ? `${api.name} 连接成功` : `${api.name} 失败`;
+                  this.refreshList();
+                }
+              })
+              ProteusClassicBtn({
+                label: api.enabled ? '禁用' : '启用', widthVal: 44,
+                onAction: () => {
+                  if (api.enabled) {
+                    this.appService.aiApiManager.disableApi(api.id);
+                  } else {
+                    this.appService.aiApiManager.enableApi(api.id);
                   }
-                })
-                ProteusClassicBtn({
-                  label: api.enabled ? '禁用' : '启用', widthVal: 44,
-                  onAction: () => {
-                    if (api.enabled) {
-                      this.appService.aiApiManager.disableApi(api.id);
-                    } else {
-                      this.appService.aiApiManager.enableApi(api.id);
-                    }
-                    this.refreshList();
-                  }
-                })
-                ProteusClassicBtn({
-                  label: '删', widthVal: 36,
-                  onAction: () => {
-                    this.appService.aiApiManager.removeApi(api.id);
-                    this.refreshList();
-                  }
-                })
-              }.width('100%')
-            }
-            .width('100%')
-            .padding({ left: 6, right: 6, top: 4, bottom: 4 })
-            .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-            .border({ width: 1, color: ProteusColors.DIVIDER })
+                  this.refreshList();
+                }
+              })
+              ProteusClassicBtn({
+                label: '删', widthVal: 36,
+                onAction: () => {
+                  this.appService.aiApiManager.removeApi(api.id);
+                  this.refreshList();
+                }
+              })
+            }.width('100%')
           }
+          .width('100%')
+          .padding({ left: 6, right: 6, top: 4, bottom: 4 })
+          .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+          .border({ width: 1, color: ProteusColors.DIVIDER })
         }, (api: AiApiConfig) => api.id)
       }
-      .layoutWeight(1).width('100%').padding({ left: 4, right: 4, top: 2 })
-
-      Row({ space: 4 }) {
-        ProteusClassicBtn({
-          label: '导入', widthVal: '30%',
-          onAction: () => { this.statusMessage = '请将 JSON 配置文件放入应用目录后导入'; }
-        })
-        ProteusClassicBtn({
-          label: '导出', widthVal: '30%',
-          onAction: () => {
-            const result = this.appService.aiApiManager.exportConfigs(true);
-            this.statusMessage = result.success ? '配置已导出' : '导出失败';
-          }
-        })
-        ProteusClassicBtn({
-          label: '清空', widthVal: '30%',
-          onAction: () => {
-            this.appService.aiApiManager.clearAllConfigs();
-            this.refreshList();
-            this.statusMessage = '已清空所有 AI 配置';
-          }
-        })
-      }
-      .width('100%').padding({ left: 4, right: 4, top: 4, bottom: 4 })
+      .width('100%')
+      .padding({ left: 4, right: 4, top: 2, bottom: 6 })
     }
-    .width('100%').height('100%')
-    .backgroundColor(ProteusColors.CANVAS_BG)
+    .width('100%')
   }
 
   private buildApiFormatOptions(): SelectValueOption[] {

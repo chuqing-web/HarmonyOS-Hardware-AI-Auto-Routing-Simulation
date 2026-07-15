@@ -66,6 +66,27 @@ export class PowerMeterEngine {
     };
   }
 
+  /** Immediate V/I/P after interactive pot / switch (no EMA lag). */
+  snapReading(vRaw: number, iRaw: number): PowerReading {
+    this.vEma = vRaw;
+    this.iEma = iRaw;
+    this.emaInit = true;
+    this.voltage = vRaw;
+    this.current = iRaw;
+    this.power = vRaw * iRaw;
+    this.apparentPower = this.power;
+    this.powerFactor = Math.abs(this.power) > 1e-18 ? 1.0 : 0;
+    this.frequency = 50;
+    return {
+      voltage: this.voltage,
+      current: this.current,
+      power: this.power,
+      apparentPower: this.apparentPower,
+      powerFactor: this.powerFactor,
+      frequency: this.frequency
+    };
+  }
+
   getLastVoltage(): number { return this.voltage; }
   getLastCurrent(): number { return this.current; }
   getLastPower(): number { return this.power; }

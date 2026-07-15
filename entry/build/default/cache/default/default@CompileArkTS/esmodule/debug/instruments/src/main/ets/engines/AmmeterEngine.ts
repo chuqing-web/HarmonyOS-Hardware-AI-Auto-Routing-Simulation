@@ -99,6 +99,25 @@ export class AmmeterEngine {
         }
         this.updateDcAverage(raw);
     }
+    /**
+     * Immediate DC UI update (interactive pot / switch) — clears averaging lag.
+     */
+    snapReading(raw: number): number {
+        this.dcSampleBuffer = [raw];
+        this.dcEma = raw;
+        this.dcEmaInit = true;
+        if (this.type === AmmeterType.AC) {
+            this.lastReading = raw;
+            this.lastRms = Math.abs(raw);
+            return this.lastRms;
+        }
+        if (this.autoRangeOn) {
+            this.autoRange(raw);
+        }
+        const displayMax = this.getRange();
+        this.lastReading = Math.min(Math.abs(raw), displayMax) * (raw < 0 ? -1 : 1);
+        return this.lastReading;
+    }
     getLastReading(): number { return this.type === AmmeterType.AC ? this.lastRms : this.lastReading; }
     getUnit(): string { return this.type === AmmeterType.DC ? 'mA DC' : 'mArms AC'; }
     getReadingAmps(): number { return (this.type === AmmeterType.AC ? this.lastRms : this.lastReading) / 1000; }

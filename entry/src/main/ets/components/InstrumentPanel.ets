@@ -5,7 +5,7 @@ import { AppService } from '../services/AppService';
 import {
   OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode,
   MathChannelOp, MultimeterMode, SignalWaveform, LogicDecodeProtocol,
-  VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect,
+  VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect, traceInstrUi,
   detectInstrumentKind, instrumentSubTabForKind
 } from 'common';
 import { ProteusClassicBtn, ProteusChipGrid } from './proteus/ProteusWidgets';
@@ -15,6 +15,72 @@ import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
 
 interface SelectValueOption {
   value: string;
+}
+
+/** Live meter readout — must be @Component+@Prop so timer updates re-render ( @Builder params do not ). */
+@Component
+struct LiveReadout {
+  @Prop label: string = '';
+  @Prop value: string = '--';
+  @Prop unit: string = '';
+  @Prop pulse: number = 0;
+
+  build() {
+    Column() {
+      Text(this.label)
+        .fontSize(ProteusFonts.STATUS)
+        .fontColor(ProteusColors.TEXT_LABEL)
+        .fontFamily('monospace')
+      Text(this.value)
+        .fontSize(28)
+        .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily('monospace')
+        .key(`v-${this.pulse}-${this.value}`)
+      if (this.unit.length > 0) {
+        Text(this.unit)
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .fontFamily('monospace')
+          .margin({ top: 2 })
+      }
+    }
+    .width('92%')
+    .padding({ top: 10, bottom: 10 })
+    .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+    .border({ width: 1, color: ProteusColors.DIVIDER })
+    .alignItems(HorizontalAlign.Center)
+  }
+}
+
+@Component
+struct LivePmRow {
+  @Prop label: string = '';
+  @Prop value: string = '--';
+  @Prop unit: string = '';
+  @Prop pulse: number = 0;
+
+  build() {
+    Row() {
+      Text(this.label)
+        .fontSize(ProteusFonts.PARAM_KEY)
+        .fontColor(ProteusColors.TEXT_LABEL)
+        .width(56)
+      Text(this.value)
+        .fontSize(22)
+        .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily('monospace')
+        .key(`pm-${this.pulse}-${this.value}`)
+      if (this.unit.length > 0) {
+        Text(this.unit)
+          .fontSize(ProteusFonts.PARAM_KEY)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ left: 4 })
+      }
+    }
+    .width('82%')
+  }
 }
 
 @Component
@@ -62,6 +128,8 @@ export struct InstrumentPanel {
   @State oscStatsText: string = '';
   @State oscTriggerHold: boolean = true;
   @State oscLiveVolts: string = '--';
+  /** Force ArkUI re-render on each poll; also shown in INSTR_UI traces */
+  @State uiPulse: number = 0;
 
   private appService: AppService = AppService.getInstance();
   private timebases: OscTimebase[] = [
@@ -88,6 +156,9 @@ export struct InstrumentPanel {
   ];
   private autoRefreshTimer: number = -1;
   private uiLogTick: number = 0;
+  private refreshTickCount: number = 0;
+  private lastRefreshWallMs: number = 0;
+  private readonly refreshIntervalMs: number = 200;
   private subTabLabels: string[] = ['示波', '逻辑', '万用', '信号', '串口', '电压', '电流', '功率', '频率'];
 
   aboutToAppear(): void {
@@ -99,16 +170,36 @@ export struct InstrumentPanel {
     this.appService.instruments.setTrigger(TriggerMode.EDGE, this.triggerLevel, 0);
     this.appService.instruments.setCaptureMode(
       this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
+    this.lastRefreshWallMs = Date.now();
+    this.refreshTickCount = 0;
+    this.autoRefreshReadings('appear');
+    this.stopAutoRefreshTimer('appear_reset');
     this.autoRefreshTimer = setInterval(() => {
-      this.autoRefreshReadings();
-    }, 120);
+      const now = Date.now();
+      const dt = now - this.lastRefreshWallMs;
+      this.lastRefreshWallMs = now;
+      this.refreshTickCount++;
+      traceInstrUi('TIMER_FIRE',
+        `#${this.refreshTickCount} dt=${dt}ms expect=${this.refreshIntervalMs}ms ` +
+        `tab=${this.subTab}(${this.kindForSubTab(this.subTab)}) ` +
+        `sel=${this.selectedComponentId.length > 0 ? this.selectionRefDes : '(none)'} ` +
+        `timerId=${this.autoRefreshTimer}`);
+      this.autoRefreshReadings('timer');
+    }, this.refreshIntervalMs);
+    traceInstrUi('TIMER_START',
+      `interval=${this.refreshIntervalMs}ms timerId=${this.autoRefreshTimer} ` +
+      `tab=${this.subTab} kind=${this.kindForSubTab(this.subTab)} ` +
+      `sel=${this.selectedComponentId} ref=${this.selectionRefDes} lib=${this.selectionLibraryId}`);
   }
 
   onSelectionChange(): void {
     this.updateSelectionHeader();
     this.syncSubTabFromSelection();
     this.syncInstrumentContext();
-    const reading = this.autoRefreshReadings();
+    traceInstrUi('SELECT',
+      `comp=${this.selectedComponentId} ref=${this.selectionRefDes} ` +
+      `lib=${this.selectionLibraryId} tab=${this.subTab} kind=${this.instrKindForSelection()}`);
+    const reading = this.autoRefreshReadings('select');
     this.logInstrumentReading(true, reading);
   }
 
@@ -122,7 +213,7 @@ export struct InstrumentPanel {
   }
 
   onSimWaveTick(): void {
-    this.autoRefreshReadings();
+    this.autoRefreshReadings('wave');
   }
 
   private syncInstrumentContext(): void {
@@ -159,31 +250,101 @@ export struct InstrumentPanel {
   }
 
   aboutToDisappear(): void {
+    this.stopAutoRefreshTimer('disappear');
+  }
+
+  private stopAutoRefreshTimer(reason: string): void {
     if (this.autoRefreshTimer >= 0) {
+      const id = this.autoRefreshTimer;
       clearInterval(this.autoRefreshTimer);
       this.autoRefreshTimer = -1;
+      traceInstrUi('TIMER_STOP', `reason=${reason} timerId=${id} ticks=${this.refreshTickCount}`);
     }
   }
 
-  /** Auto-refresh instrument readings for the selected component only */
-  autoRefreshReadings(): string {
-    if (this.selectedComponentId.length === 0) {
-      this.appService.setActiveInstrumentComponent(null);
+  /** Map visible Instruments sub-tab → engine kind (9 instruments) */
+  private kindForSubTab(tab: number): string {
+    if (tab === 0) return 'osc';
+    if (tab === 1) return 'logic';
+    if (tab === 2) return 'dmm';
+    if (tab === 3) return 'sig';
+    if (tab === 4) return 'uart';
+    if (tab === 5) return 'vm';
+    if (tab === 6) return 'am';
+    if (tab === 7) return 'power';
+    if (tab === 8) return 'freq';
+    return '';
+  }
+
+  /**
+   * Auto-refresh the visible instrument tab every 500ms.
+   * Uses selection binding when available; still polls engines for scope/logic/uart/etc.
+   * without requiring a selected instrument (otherwise the 9 tabs stay frozen).
+   */
+  autoRefreshReadings(source: string = 'unknown'): string {
+    const t0 = Date.now();
+    // Prefer the currently visible sub-tab so all 9 instruments can refresh live.
+    let instrKind = this.kindForSubTab(this.subTab);
+    const selKind = this.instrKindForSelection();
+    if (instrKind.length === 0 && selKind.length > 0) {
+      instrKind = selKind;
+    }
+    // Only bind selection as active when it is actually an instrument.
+    // Dragging a pot must not steal the voltmeter binding → UI reading 0.
+    if (this.selectedComponentId.length > 0 && selKind.length > 0) {
+      this.appService.setActiveInstrumentComponent(this.selectedComponentId);
+    } else if (instrKind === 'vm' || instrKind === 'dmm' || instrKind === 'am' ||
+      instrKind === 'osc' || instrKind === 'power' || instrKind === 'freq') {
+      const fallbackId = this.appService.findFirstSchematicInstrumentId(instrKind);
+      if (fallbackId.length > 0) {
+        this.appService.setActiveInstrumentComponent(fallbackId);
+      }
+    }
+    if (instrKind.length === 0) {
+      traceInstrUi('SKIP',
+        `src=${source} reason=no_kind tab=${this.subTab} selKind='${selKind}' ` +
+        `sel=${this.selectedComponentId} lib=${this.selectionLibraryId}`);
       return '';
     }
-    this.appService.setActiveInstrumentComponent(this.selectedComponentId);
-    const instrKind = this.instrKindForSelection();
+    if (instrKind === 'sig') {
+      // Signal gen is a source — no live reading board; still pulse UI + log
+      this.uiPulse++;
+      const reading = `SIG freq=${this.freq}`;
+      traceInstrUi('REFRESH',
+        `src=${source} kind=sig tab=${this.subTab} pulse=${this.uiPulse} ` +
+        `reading=${reading} ms=${Date.now() - t0}`);
+      return reading;
+    }
+    const hasSelection = this.selectedComponentId.length > 0;
+    const selectionMatches = hasSelection && (selKind === instrKind ||
+      ((instrKind === 'vm' || instrKind === 'dmm') &&
+        (selKind === 'vm' || selKind === 'dmm')) ||
+      (instrKind === 'am' && selKind === 'am'));
+    let dataPath = 'none';
     try {
       if (instrKind === 'dmm') {
-        const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
-        if (delta !== null) {
-          const averaged = this.appService.instruments.multimeterMeasureValue(delta);
-          this.mmReading = (averaged.success && averaged.data !== undefined)
-            ? averaged.data.toFixed(3) : delta.toFixed(3);
-        } else {
+        let refreshed = false;
+        let readId = selectionMatches ? this.selectedComponentId : '';
+        if (readId.length === 0) {
+          readId = this.appService.findFirstSchematicInstrumentId('dmm');
+        }
+        if (readId.length > 0) {
+          const delta = this.appService.readVoltmeterDeltaForComponent(readId);
+          if (delta !== null) {
+            // Instantaneous — pot drag / live edits (avoid rolling-average lag)
+            this.appService.instruments.multimeterSnapReading(delta);
+            this.mmReading = delta.toFixed(3);
+            refreshed = true;
+            dataPath = selectionMatches ? 'delta' : 'schematic_dmm';
+          }
+        }
+        if (!refreshed) {
           const mm = this.appService.instruments.measure();
           if (mm.success && mm.data !== undefined) {
             this.mmReading = mm.data.toFixed(3);
+            dataPath = 'measure';
+          } else {
+            dataPath = 'measure_fail';
           }
         }
         const snap = this.appService.instruments.getInstrumentSnapshot();
@@ -191,16 +352,27 @@ export struct InstrumentPanel {
           this.mmMode = this.modeLabel(snap.multimeterMode);
         }
       } else if (instrKind === 'vm') {
-        const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
-        if (delta !== null) {
-          // DC meter averages AC ripple (true DMM behavior); AC mode returns true-RMS
-          const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
-          this.vmReading = (averaged.success && averaged.data !== undefined)
-            ? averaged.data.toFixed(3) : delta.toFixed(3);
-        } else {
+        let refreshed = false;
+        let readId = selectionMatches ? this.selectedComponentId : '';
+        if (readId.length === 0) {
+          readId = this.appService.findFirstSchematicInstrumentId('vm');
+        }
+        if (readId.length > 0) {
+          const delta = this.appService.readVoltmeterDeltaForComponent(readId);
+          if (delta !== null) {
+            this.appService.instruments.voltmeterSnapReading(delta);
+            this.vmReading = delta.toFixed(3);
+            refreshed = true;
+            dataPath = selectionMatches ? 'delta' : 'schematic_vm';
+          }
+        }
+        if (!refreshed) {
           const vr = this.appService.instruments.voltmeterMeasure();
           if (vr.success && vr.data !== undefined) {
             this.vmReading = vr.data.toFixed(3);
+            dataPath = 'measure';
+          } else {
+            dataPath = 'measure_fail';
           }
         }
         const vcfg = this.appService.instruments.getVoltmeterConfig();
@@ -209,15 +381,27 @@ export struct InstrumentPanel {
           this.vmUnit = vcfg.data.unit ?? 'V DC';
         }
       } else if (instrKind === 'am') {
-        const mA = this.appService.readAmmeterCurrentForComponent(this.selectedComponentId);
-        if (mA !== null) {
-          const averaged = this.appService.instruments.ammeterMeasureValue(mA);
-          this.amReading = (averaged.success && averaged.data !== undefined)
-            ? averaged.data.toFixed(3) : mA.toFixed(3);
-        } else {
+        let refreshed = false;
+        let readId = selectionMatches ? this.selectedComponentId : '';
+        if (readId.length === 0) {
+          readId = this.appService.findFirstSchematicInstrumentId('am');
+        }
+        if (readId.length > 0) {
+          const mA = this.appService.readAmmeterCurrentForComponent(readId);
+          if (mA !== null) {
+            this.appService.instruments.ammeterSnapReading(mA);
+            this.amReading = mA.toFixed(3);
+            refreshed = true;
+            dataPath = selectionMatches ? 'delta' : 'schematic_am';
+          }
+        }
+        if (!refreshed) {
           const ar = this.appService.instruments.ammeterMeasure();
           if (ar.success && ar.data !== undefined) {
             this.amReading = ar.data.toFixed(3);
+            dataPath = 'measure';
+          } else {
+            dataPath = 'measure_fail';
           }
         }
         const acfg = this.appService.instruments.getAmmeterConfig();
@@ -235,18 +419,35 @@ export struct InstrumentPanel {
             const last = osc.data.voltageAxis[osc.data.voltageAxis.length - 1];
             this.oscLiveVolts = `${last.toFixed(3)} V`;
           }
+          dataPath = `wave pts=${osc.data.voltageAxis.length}`;
+        } else {
+          dataPath = 'wave_empty';
         }
         const osc2 = this.appService.instruments.getOscilloscopeWave(1);
         if (osc2.success && osc2.data) {
           this.waveCh2Data = osc2.data.voltageAxis.slice();
         }
       } else if (instrKind === 'power') {
-        const pm = this.appService.instruments.powerMeterMeasure();
-        if (pm.success && pm.data) {
-          this.pmVoltage = pm.data.voltage.toFixed(3);
-          this.pmCurrent = (pm.data.current * 1000).toFixed(2);
-          this.pmPower = (pm.data.power * 1000).toFixed(1);
-          this.pmPF = pm.data.powerFactor.toFixed(2);
+        const pmId = selectionMatches ? this.selectedComponentId :
+          this.appService.findFirstSchematicInstrumentId('power');
+        const snap = pmId.length > 0 ? this.appService.readPowerMeterForComponent(pmId) : null;
+        if (snap !== null) {
+          this.pmVoltage = snap.voltage.toFixed(3);
+          this.pmCurrent = (snap.current * 1000).toFixed(2);
+          this.pmPower = (snap.power * 1000).toFixed(1);
+          this.pmPF = snap.powerFactor.toFixed(2);
+          dataPath = selectionMatches ? 'delta' : 'schematic_pm';
+        } else {
+          const pm = this.appService.instruments.powerMeterMeasure();
+          if (pm.success && pm.data) {
+            this.pmVoltage = pm.data.voltage.toFixed(3);
+            this.pmCurrent = (pm.data.current * 1000).toFixed(2);
+            this.pmPower = (pm.data.power * 1000).toFixed(1);
+            this.pmPF = pm.data.powerFactor.toFixed(2);
+            dataPath = 'measure';
+          } else {
+            dataPath = 'measure_fail';
+          }
         }
       } else if (instrKind === 'freq') {
         const fc = this.appService.instruments.freqCounterMeasure();
@@ -258,6 +459,9 @@ export struct InstrumentPanel {
           } else {
             this.fcReading = `${fc.data.toFixed(0)} Hz`;
           }
+          dataPath = 'measure';
+        } else {
+          dataPath = 'measure_fail';
         }
       } else if (instrKind === 'logic') {
         const logic = this.appService.instruments.getLogicWaveData();
@@ -276,14 +480,27 @@ export struct InstrumentPanel {
           if (channels.length > 0) {
             this.logicChannels = channels.length;
           }
+          dataPath = `ch=${channels.length}`;
+        } else {
+          dataPath = 'wave_empty';
         }
       } else if (instrKind === 'uart') {
         this.uartLog = this.appService.instruments.getUartLog();
+        dataPath = `logLen=${this.uartLog.length}`;
+      } else {
+        dataPath = `unhandled_kind=${instrKind}`;
       }
-    } catch (_e) {
-      // Best-effort refresh
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : `${e}`;
+      traceInstrUi('ERROR',
+        `src=${source} kind=${instrKind} tab=${this.subTab} err=${errMsg}`);
     }
+    this.uiPulse++;
     const reading = this.buildReadingSummary(instrKind);
+    traceInstrUi('REFRESH',
+      `src=${source} kind=${instrKind} tab=${this.subTab} ` +
+      `match=${selectionMatches ? 1 : 0} path=${dataPath} pulse=${this.uiPulse} ` +
+      `sel=${this.selectionRefDes || '(none)'} reading=${reading} ms=${Date.now() - t0}`);
     this.logInstrumentReading(false, reading);
     return reading;
   }
@@ -382,7 +599,11 @@ export struct InstrumentPanel {
         labels: this.subTabLabels,
         selectedIdx: this.subTab,
         colsPerRow: 3,
-        onSelect: (idx: number) => { this.subTab = idx; }
+        onSelect: (idx: number) => {
+          this.subTab = idx;
+          traceInstrUi('TAB', `tab=${idx} kind=${this.kindForSubTab(idx)}`);
+          this.autoRefreshReadings('tab');
+        }
       })
     }
     .width('100%')
@@ -395,13 +616,20 @@ export struct InstrumentPanel {
   @Builder
   SelectionHeader() {
     Column({ space: 2 }) {
-      Text(this.selectionRefDes.length > 0 ? this.selectionRefDes : 'Instruments')
-        .fontSize(13)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .fontWeight(FontWeight.Medium)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
+      Row() {
+        Text(this.selectionRefDes.length > 0 ? this.selectionRefDes : 'Instruments')
+          .fontSize(13)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(`#${this.uiPulse}`)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .fontFamily('monospace')
+      }
+      .width('100%')
       Text(this.selectionLibraryId.length > 0 ? this.selectionLibraryId : '选中画布上的仪器以关联读数')
         .fontSize(10)
         .fontColor(ProteusColors.TEXT_SECONDARY)
@@ -416,33 +644,7 @@ export struct InstrumentPanel {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // ==================== Readout Display (shared) ====================
-  @Builder
-  ReadoutDisplay(label: string, value: string, unit: string) {
-    Column() {
-      Text(label)
-        .fontSize(ProteusFonts.STATUS)
-        .fontColor(ProteusColors.TEXT_LABEL)
-        .fontFamily('monospace')
-      Text(value)
-        .fontSize(28)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily('monospace')
-      if (unit.length > 0) {
-        Text(unit)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
-          .fontFamily('monospace')
-          .margin({ top: 2 })
-      }
-    }
-    .width('92%')
-    .padding({ top: 10, bottom: 10 })
-    .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-    .border({ width: 1, color: ProteusColors.DIVIDER })
-    .alignItems(HorizontalAlign.Center)
-  }
+  // ==================== Readout Display (shared) — replaced by LiveReadout @Component
 
   @Builder
   PlaceholderDisplay(hint: string) {
@@ -812,7 +1014,12 @@ export struct InstrumentPanel {
       .width('100%').padding({ left: 8, right: 8 })
 
       Column() {
-        this.ReadoutDisplay(this.mmMode, this.mmReading, '')
+        LiveReadout({
+          label: this.mmMode,
+          value: this.mmReading,
+          unit: '',
+          pulse: this.uiPulse
+        })
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -953,7 +1160,12 @@ export struct InstrumentPanel {
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
       Column() {
-        this.ReadoutDisplay('VOLTAGE', this.vmReading, this.vmUnit)
+        LiveReadout({
+          label: 'VOLTAGE',
+          value: this.vmReading,
+          unit: this.vmUnit,
+          pulse: this.uiPulse
+        })
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -969,11 +1181,19 @@ export struct InstrumentPanel {
         ProteusClassicBtn({ label: '测量', widthVal: '42%',
           onAction: () => {
             let reading: number | null = null;
-            if (this.selectedComponentId.length > 0) {
-              const delta = this.appService.readVoltmeterDeltaForComponent(this.selectedComponentId);
+            let readId = '';
+            if (this.selectedComponentId.length > 0 &&
+              detectInstrumentKind(this.selectionLibraryId) === 'vm') {
+              readId = this.selectedComponentId;
+            }
+            if (readId.length === 0) {
+              readId = this.appService.findFirstSchematicInstrumentId('vm');
+            }
+            if (readId.length > 0) {
+              const delta = this.appService.readVoltmeterDeltaForComponent(readId);
               if (delta !== null) {
-                const averaged = this.appService.instruments.voltmeterMeasureValue(delta);
-                reading = (averaged.success && averaged.data !== undefined) ? averaged.data : delta;
+                this.appService.instruments.voltmeterSnapReading(delta);
+                reading = delta;
               }
             }
             if (reading === null) {
@@ -1021,7 +1241,12 @@ export struct InstrumentPanel {
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
       Column() {
-        this.ReadoutDisplay('CURRENT', this.amReading, this.amUnit)
+        LiveReadout({
+          label: 'CURRENT',
+          value: this.amReading,
+          unit: this.amUnit,
+          pulse: this.uiPulse
+        })
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -1072,37 +1297,15 @@ export struct InstrumentPanel {
       }).margin({ left: 8, right: 8, top: 8 })
 
       Column({ space: 6 }) {
-        this.PmRow('电压', this.pmVoltage, 'V')
-        this.PmRow('电流', this.pmCurrent, 'mA')
-        this.PmRow('功率', this.pmPower, 'mW')
-        this.PmRow('功率因数', this.pmPF, '')
+        LivePmRow({ label: '电压', value: this.pmVoltage, unit: 'V', pulse: this.uiPulse })
+        LivePmRow({ label: '电流', value: this.pmCurrent, unit: 'mA', pulse: this.uiPulse })
+        LivePmRow({ label: '功率', value: this.pmPower, unit: 'mW', pulse: this.uiPulse })
+        LivePmRow({ label: '功率因数', value: this.pmPF, unit: '', pulse: this.uiPulse })
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
     }
     .width('100%').height('100%')
-  }
-
-  @Builder
-  PmRow(label: string, value: string, unit: string) {
-    Row() {
-      Text(label)
-        .fontSize(ProteusFonts.PARAM_KEY)
-        .fontColor(ProteusColors.TEXT_LABEL)
-        .width(56)
-      Text(value)
-        .fontSize(22)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .fontWeight(FontWeight.Bold)
-        .fontFamily('monospace')
-      if (unit.length > 0) {
-        Text(unit)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
-          .margin({ left: 4 })
-      }
-    }
-    .width('82%')
   }
 
   // ==================== Frequency Counter ====================
@@ -1133,7 +1336,12 @@ export struct InstrumentPanel {
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
       Column() {
-        this.ReadoutDisplay('FREQUENCY', this.fcReading, `Gate: ${this.fcGateTime}s`)
+        LiveReadout({
+          label: 'FREQUENCY',
+          value: this.fcReading,
+          unit: `Gate: ${this.fcGateTime}s`,
+          pulse: this.uiPulse
+        })
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 

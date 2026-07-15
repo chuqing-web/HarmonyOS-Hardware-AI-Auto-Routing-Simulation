@@ -113,6 +113,62 @@ export class OscilloscopeEngine {
         }
     }
     /**
+     * Interactive DC circuit edit: rewrite probe voltages in the history ring so
+     * CH traces jump to the new levels instead of lagging behind old samples.
+     */
+    snapDcProbeLevels(voltages: Map<string, number>): void {
+        if (voltages.size === 0) {
+            return;
+        }
+        this.lastNodeVoltages = new Map(voltages);
+        for (let i = 0; i < this.historyBuffer.length; i++) {
+            const snap = this.historyBuffer[i];
+            for (let c = 0; c < this.channelProbes.length; c++) {
+                const p = this.channelProbes[c];
+                if (p.length === 0) {
+                    continue;
+                }
+                const v = voltages.get(p);
+                if (v !== undefined) {
+                    snap.voltages.set(p, v);
+                }
+            }
+            // Also refresh any already-stored keys present in the live map
+            snap.voltages.forEach((_old: number, name: string) => {
+                const v = voltages.get(name);
+                if (v !== undefined) {
+                    snap.voltages.set(name, v);
+                }
+            });
+        }
+        // Rewrite wave cache so captureWave does not prefer stale pre-pot samples
+        for (let i = 0; i < this.simulationWaveCache.length; i++) {
+            const w = this.simulationWaveCache[i];
+            let newV: number | undefined = undefined;
+            if (w.netName.length > 0) {
+                newV = voltages.get(w.netName);
+            }
+            if (newV === undefined && w.probeName.length > 0) {
+                newV = voltages.get(w.probeName);
+            }
+            if (newV === undefined && i < this.channelProbes.length) {
+                const p = this.channelProbes[i];
+                if (p.length > 0) {
+                    newV = voltages.get(p);
+                }
+            }
+            if (newV !== undefined && w.voltageAxis.length > 0) {
+                for (let j = 0; j < w.voltageAxis.length; j++) {
+                    w.voltageAxis[j] = newV as number;
+                }
+            }
+        }
+        // Ensure at least one sample exists for UI readout
+        if (this.historyBuffer.length === 0) {
+            this.feedTimeSnapshot(this.lastSimTime + 1e-6, voltages);
+        }
+    }
+    /**
      * Estimate frequency from the live history ring (works when kernel WaveData is flat/stale).
      */
     estimateFrequency(probeName: string): number {

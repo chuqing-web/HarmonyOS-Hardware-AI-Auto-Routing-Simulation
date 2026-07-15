@@ -7,6 +7,7 @@ import { PlatformSettingsPanel } from '../components/PlatformSettingsPanel';
 import { InstrumentPanel } from '../components/InstrumentPanel';
 import { FaultInjectionPanel } from '../components/FaultInjectionPanel';
 import { TeachingPanel } from '../components/TeachingPanel';
+import { InstrTraceLogPanel } from '../components/InstrTraceLogPanel';
 import { ComponentPreview } from '../components/ComponentPreview';
 import {
   ProteusVDivider, ProteusPanelTitle,
@@ -28,7 +29,7 @@ import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
 import { AppViewModel } from '../viewmodel/AppViewModel';
 import { common } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
-import { picker } from '@kit.CoreFileKit';
+import { picker, fileUri } from '@kit.CoreFileKit';
 import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 import fs from '@ohos.file.fs';
 import util from '@ohos.util';
@@ -55,6 +56,7 @@ struct Index {
   @State ercErrors: ErcError[] = [];
   @State aiProgress: number = 0;
   @State aiStage: string = '';
+  @State aiGenerating: boolean = false;
   @State mouseX: number = 0;
   @State mouseY: number = 0;
   @State zoomPercent: number = 100;
@@ -122,6 +124,18 @@ struct Index {
     this.appService.onAiProgress = (p: ProgressInfo) => {
       this.aiProgress = p.progress;
       this.aiStage = p.stage;
+    };
+    this.appService.onAiGeneratingChanged = (busy: boolean) => {
+      this.aiGenerating = busy;
+      if (busy) {
+        this.setActiveRightTab(2);
+        this.rightCollapsed = false;
+        this.uiState.rightCollapsed = false;
+        this.previewComponentId = '';
+        this.toolMode = EditorToolMode.SELECT;
+        this.wireStartActive = false;
+      }
+      this.bumpCanvas();
     };
     this.appService.onProjectChanged = () => {
       this.projectName = this.appService.currentProject?.name ?? 'Untitled';
@@ -425,6 +439,10 @@ struct Index {
   }
 
   setToolMode(mode: EditorToolMode, pendingId: string = ''): void {
+    if (this.aiGenerating) {
+      this.statusMessage = 'AI 生成中，画布已锁定';
+      return;
+    }
     if (this.simRunning && (mode === EditorToolMode.WIRE || mode === EditorToolMode.BUS)) {
       this.statusMessage = '仿真运行中，无法接线';
       return;
@@ -458,16 +476,125 @@ struct Index {
     this.setToolMode(EditorToolMode.PLACE, this.previewComponentId);
   }
 
-  handleNewProject(): void {
+  /** 将沙箱 project 目录转为系统文件选择器可用的 URI */
+  private getProjectDirUri(): string {
+    if (this.userProjectDir.length === 0) {
+      this.userProjectDir = this.appService.getUserProjectDir();
+    }
+    try {
+      fs.accessSync(this.userProjectDir);
+    } catch (_e) {
+      try { fs.mkdirSync(this.userProjectDir, true); } catch (_e2) { /* */ }
+    }
+    try {
+      return fileUri.getUriFromPath(this.userProjectDir);
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  private getHostAbilityContext(): common.UIAbilityContext {
+    return this.getUIContext().getHostContext() as common.UIAbilityContext;
+  }
+
+  /** 从 file:// / content:// / 本地路径提取工程名 */
+  private projectNameFromPath(pathOrUri: string): string {
+    let s = pathOrUri;
+    const q = s.indexOf('?');
+    if (q >= 0) {
+      s = s.substring(0, q);
+    }
+    const slash = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+    let name = slash >= 0 ? s.substring(slash + 1) : s;
+    try {
+      name = decodeURIComponent(name);
+    } catch (_e) { /* keep */ }
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.schsim')) {
+      name = name.substring(0, name.length - 7);
+    } else if (lower.endsWith('.json')) {
+      name = name.substring(0, name.length - 5);
+    }
+    name = name.replace(/[\\/:*?"<>|]/g, '_').trim();
+    return name.length > 0 ? name : 'Untitled';
+  }
+
+  private applyOpenedProject(path: string): void {
+    this.projectName = this.appService.currentProject?.name ?? this.projectNameFromPath(path);
+    const name = this.projectName;
+    this.appService.disableAutoSave();
+    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
+    this.resetAfterProjectChange();
+    this.appService.schematicEditor.fitAllInView();
+    this.refreshComponentList();
+    this.unsavedChanges = false;
+    void this.appService.saveSession(path, name, false);
+    this.statusMessage = `已加载: ${path}`;
+  }
+
+  /**
+   * 新建：直接打开系统文件管理（默认定位到 project 目录）另存为新工程
+   */
+  async handleNewProject(): Promise<void> {
     this.showWelcomeDialog = false;
     this.showOpenDialog = false;
     this.showSaveAsDialog = false;
-    this.newProjectNameInput = '';
-    this.showNewProjectDialog = true;
+    this.showNewProjectDialog = false;
+    const result = await this.createProjectViaPicker();
+    if (result === 'unavailable') {
+      // 选择器不可用时，回退到名称对话框（仍写入 project 目录）
+      this.newProjectNameInput = '';
+      this.showNewProjectDialog = true;
+    }
+  }
+
+  /** 通过系统保存对话框在 project 目录创建工程 */
+  private async createProjectViaPicker(): Promise<'ok' | 'cancel' | 'unavailable'> {
+    try {
+      const options = new picker.DocumentSaveOptions();
+      options.newFileNames = ['Untitled.schsim'];
+      options.fileSuffixChoices = ['原理图工程|.schsim', 'JSON|.json'];
+      const dirUri = this.getProjectDirUri();
+      if (dirUri.length > 0) {
+        options.defaultFilePathUri = dirUri;
+      }
+      const docPicker = new picker.DocumentViewPicker(this.getHostAbilityContext());
+      const uris = await docPicker.save(options);
+      if (!uris || uris.length === 0) {
+        return 'cancel';
+      }
+      const path = uris[0];
+      const name = this.projectNameFromPath(path);
+      this.appService.disableAutoSave();
+      this.appService.newProject(name);
+      this.projectName = name;
+      this.resetAfterProjectChange();
+      this.refreshComponentList();
+      this.appService.schematicEditor.fitAllInView();
+      const ok = await this.appService.saveProject(path, true);
+      if (ok) {
+        const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
+        this.appService.enableAutoSave(autoSavePath, 120000);
+        void this.appService.saveProject(autoSavePath, false);
+        await this.appService.saveSession(path, name, false);
+        this.unsavedChanges = false;
+        this.statusMessage = `已创建: ${path}`;
+      } else {
+        this.statusMessage = '创建失败：无法写入所选位置';
+      }
+      return 'ok';
+    } catch (_e) {
+      return 'unavailable';
+    }
   }
 
   doCreateNewProject(): void {
-    const name = this.newProjectNameInput.trim().length > 0 ? this.newProjectNameInput.trim() : 'Untitled';
+    let name = this.newProjectNameInput.trim().length > 0 ? this.newProjectNameInput.trim() : 'Untitled';
+    // 禁止路径分隔符，避免跳出 project 目录
+    name = name.replace(/[\\/:*?"<>|]/g, '_');
+    if (name.length === 0) {
+      name = 'Untitled';
+    }
     this.showNewProjectDialog = false;
     this.showWelcomeDialog = false;
     this.appService.disableAutoSave();
@@ -478,61 +605,73 @@ struct Index {
     this.appService.schematicEditor.fitAllInView();
     const projectPath = `${this.userProjectDir}/${name}.schsim`;
     const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
-    void this.appService.saveProject(projectPath).then((saved) => {
+    this.appService.currentProjectPath = projectPath;
+    void this.appService.saveProject(projectPath, true).then((saved) => {
       if (saved) {
         this.appService.currentProjectPath = projectPath;
+        this.unsavedChanges = false;
         this.statusMessage = `已创建: ${projectPath}`;
+        void this.appService.saveSession(projectPath, name, false);
+      } else {
+        this.statusMessage = `创建失败，请检查工程目录: ${this.userProjectDir}`;
       }
     });
     this.appService.enableAutoSave(autoSavePath, 120000);
-    this.appService.currentProjectPath = projectPath;
   }
 
+  /**
+   * 打开：直接打开系统文件管理（默认定位到 project 目录）
+   */
   async handleOpenProject(): Promise<void> {
     this.showWelcomeDialog = false;
-    const sandboxProjects = this.appService.listUserProjectFiles();
-    const recents = this.appService.filePersistence.getRecentFiles();
-    if (sandboxProjects.length > 0) {
-      this.openFilePath = sandboxProjects[sandboxProjects.length - 1];
-    } else if (recents.length > 0) {
-      this.openFilePath = recents[0];
-    } else {
-      this.openFilePath = `${this.userProjectDir}/Untitled.schsim`;
-    }
-    this.showOpenDialog = true;
     this.showSaveAsDialog = false;
+    const result = await this.handleOpenFromPicker();
+    if (result === 'unavailable') {
+      // 选择器不可用时回退到路径对话框
+      const sandboxProjects = this.appService.listUserProjectFiles();
+      const recents = this.appService.filePersistence.getRecentFiles();
+      if (sandboxProjects.length > 0) {
+        this.openFilePath = sandboxProjects[sandboxProjects.length - 1];
+      } else if (recents.length > 0) {
+        this.openFilePath = recents[0];
+      } else {
+        this.openFilePath = `${this.userProjectDir}/Untitled.schsim`;
+      }
+      this.showOpenDialog = true;
+    }
   }
 
-  async handleOpenFromPicker(): Promise<void> {
+  /** @returns ok=已选择并处理；cancel=用户取消；unavailable=选择器不可用 */
+  async handleOpenFromPicker(): Promise<'ok' | 'cancel' | 'unavailable'> {
     try {
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
-      options.fileSuffixFilters = ['.schsim', '.json'];
-      const docPicker = new picker.DocumentViewPicker();
+      options.fileSuffixFilters = ['原理图工程|.schsim,.json', '.schsim', '.json'];
+      const dirUri = this.getProjectDirUri();
+      if (dirUri.length > 0) {
+        options.defaultFilePathUri = dirUri;
+      }
+      const docPicker = new picker.DocumentViewPicker(this.getHostAbilityContext());
       const uris = await docPicker.select(options);
       if (uris && uris.length > 0) {
         const ok = await this.appService.loadProject(uris[0]);
         if (ok) {
-          this.projectName = this.appService.currentProject?.name ?? this.projectName;
-          const name = this.projectName;
-          this.appService.disableAutoSave();
-          this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-          this.resetAfterProjectChange();
-          this.appService.schematicEditor.fitAllInView();
-          this.refreshComponentList();
-          await this.appService.saveSession(uris[0], name, false);
-          this.statusMessage = `已加载: ${uris[0]}`;
-          return;
+          this.showOpenDialog = false;
+          this.showWelcomeDialog = false;
+          this.applyOpenedProject(uris[0]);
+          return 'ok';
         }
+        this.statusMessage = `无法打开: ${uris[0]}`;
+        return 'ok';
       }
+      return 'cancel';
     } catch (_e) {
       this.statusMessage = '文件选择器不可用';
+      return 'unavailable';
     }
   }
 
   async doOpenFromPath(): Promise<void> {
-    this.showOpenDialog = false;
-    this.showWelcomeDialog = false;
     if (this.openFilePath.trim().length === 0) {
       this.statusMessage = '请输入文件路径';
       return;
@@ -540,15 +679,9 @@ struct Index {
     const path = this.openFilePath.trim();
     const ok = await this.appService.loadProject(path);
     if (ok) {
-      this.projectName = this.appService.currentProject?.name ?? this.projectName;
-      const name = this.projectName;
-      this.appService.disableAutoSave();
-      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-      this.resetAfterProjectChange();
-      this.appService.schematicEditor.fitAllInView();
-      this.refreshComponentList();
-      await this.appService.saveSession(path, name, false);
-      this.statusMessage = `已加载: ${path}`;
+      this.showOpenDialog = false;
+      this.showWelcomeDialog = false;
+      this.applyOpenedProject(path);
     } else {
       this.statusMessage = `无法打开: ${path}`;
     }
@@ -557,11 +690,11 @@ struct Index {
   async handleSaveProject(): Promise<void> {
     const path = this.appService.currentProjectPath;
     if (path.length > 0) {
-      const ok = await this.appService.saveProject(path);
+      const ok = await this.appService.saveProject(path, true);
       if (ok) {
-        // Also sync auto-save so recovery works even if picker URI expires
+        // 同步 autosave 副本，不得改写正式路径
         const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
-        void this.appService.saveProject(autoPath);
+        void this.appService.saveProject(autoPath, false);
         await this.appService.saveSession(path, this.projectName, false);
         this.unsavedChanges = false;
       }
@@ -575,21 +708,25 @@ struct Index {
     try {
       const options = new picker.DocumentSaveOptions();
       options.newFileNames = [`${this.projectName}.schsim`];
-      options.fileSuffixChoices = ['schsim', 'json'];
-      const docPicker = new picker.DocumentViewPicker();
+      options.fileSuffixChoices = ['原理图工程|.schsim', 'JSON|.json'];
+      const dirUri = this.getProjectDirUri();
+      if (dirUri.length > 0) {
+        options.defaultFilePathUri = dirUri;
+      }
+      const docPicker = new picker.DocumentViewPicker(this.getHostAbilityContext());
       const uris = await docPicker.save(options);
       if (uris && uris.length > 0) {
-        const ok = await this.appService.saveProject(uris[0]);
+        const ok = await this.appService.saveProject(uris[0], true);
         if (ok) {
-          // Sync auto-save to keep recovery path current
           const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
-          void this.appService.saveProject(autoPath);
+          void this.appService.saveProject(autoPath, false);
           await this.appService.saveSession(uris[0], this.projectName, false);
           this.unsavedChanges = false;
         }
         this.statusMessage = ok ? `已保存: ${uris[0]}` : '保存失败';
         return;
       }
+      return;
     } catch (_e) {
       // File picker not available, show manual dialog
     }
@@ -599,14 +736,16 @@ struct Index {
   }
 
   async doSaveAsFromPath(): Promise<void> {
-    this.showSaveAsDialog = false;
     if (this.saveAsPath.trim().length === 0) {
       this.statusMessage = '请输入保存路径';
       return;
     }
     const path = this.saveAsPath.trim();
-    const ok = await this.appService.saveProject(path);
+    const ok = await this.appService.saveProject(path, true);
     if (ok) {
+      this.showSaveAsDialog = false;
+      const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
+      void this.appService.saveProject(autoPath, false);
       await this.appService.saveSession(path, this.projectName, false);
       this.unsavedChanges = false;
     }
@@ -728,6 +867,9 @@ struct Index {
   }
 
   handlePaste(): void {
+    if (this.appService.rejectManualPlaceIfAiBusy()) {
+      return;
+    }
     if (this.clipboardDeviceIds.length > 0) {
       const newIds: string[] = [];
       for (let i = 0; i < this.clipboardDeviceIds.length; i++) {
@@ -795,6 +937,9 @@ struct Index {
   }
 
   placeComponent(libraryId: string): void {
+    if (this.appService.rejectManualPlaceIfAiBusy()) {
+      return;
+    }
     const resolved = this.appService.componentLibrary.resolveLibraryId(libraryId);
     const x = 150 + (this.navRefreshKey % 8) * 40;
     const y = 100 + (this.navRefreshKey % 6) * 40;
@@ -852,6 +997,10 @@ struct Index {
         this.MenuBar()
         this.MainToolbar()
         Row() {
+          // Left edge peel when whole left dock is collapsed — was invisible before
+          if (this.leftLibCollapsed && this.leftNavCollapsed) {
+            this.LeftExpandStrip()
+          }
           if (!this.leftLibCollapsed || !this.leftNavCollapsed) {
             this.LeftPanel()
           }
@@ -864,6 +1013,8 @@ struct Index {
           }
           if (!this.rightCollapsed) {
             this.RightPanel()
+          } else {
+            this.RightExpandStrip()
           }
         }
         .layoutWeight(1)
@@ -1312,8 +1463,106 @@ struct Index {
   }
 
   @Builder
+  LeftExpandStrip() {
+    Column() {
+      Button({ type: ButtonType.Normal }) {
+        Text('▶')
+          .fontSize(14)
+          .fontColor(ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width(28)
+      .height(48)
+      .backgroundColor(ProteusColors.SIDEBAR_TAB_ACTIVE_BG)
+      .borderRadius(0)
+      .border({
+        width: { left: 1, top: 1, right: 1, bottom: 1 },
+        color: ProteusColors.SIDEBAR_TAB_BORDER
+      })
+      .stateEffect(false)
+      .onClick(() => {
+        this.leftLibCollapsed = false;
+        this.leftNavCollapsed = false;
+        this.uiState.leftLibCollapsed = false;
+        this.uiState.leftNavCollapsed = false;
+      })
+      Text('库')
+        .fontSize(10)
+        .fontColor(ProteusColors.SIDEBAR_TAB_IDLE_TEXT)
+        .margin({ top: 6 })
+    }
+    .width(32)
+    .height('100%')
+    .padding({ top: 8 })
+    .backgroundColor(ProteusColors.SIDEBAR_BG)
+    .border({ width: { right: 1 }, color: ProteusColors.DIVIDER })
+    .justifyContent(FlexAlign.Start)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  RightExpandStrip() {
+    Column() {
+      Button({ type: ButtonType.Normal }) {
+        Text('◀')
+          .fontSize(14)
+          .fontColor(ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width(28)
+      .height(48)
+      .backgroundColor(ProteusColors.SIDEBAR_TAB_ACTIVE_BG)
+      .borderRadius(0)
+      .border({
+        width: { left: 1, top: 1, right: 1, bottom: 1 },
+        color: ProteusColors.SIDEBAR_TAB_BORDER
+      })
+      .stateEffect(false)
+      .onClick(() => {
+        this.rightCollapsed = false;
+        this.uiState.rightCollapsed = false;
+      })
+      Text('栏')
+        .fontSize(10)
+        .fontColor(ProteusColors.SIDEBAR_TAB_IDLE_TEXT)
+        .margin({ top: 6 })
+    }
+    .width(32)
+    .height('100%')
+    .padding({ top: 8 })
+    .backgroundColor(ProteusColors.SIDEBAR_BG)
+    .border({ width: { left: 1 }, color: ProteusColors.DIVIDER })
+    .justifyContent(FlexAlign.Start)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
   LeftPanel() {
     Column() {
+      if (this.leftLibCollapsed) {
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            Text('▶')
+              .fontSize(12)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+              .fontWeight(FontWeight.Bold)
+            Text($r('app.string.left_library'))
+              .fontSize(ProteusFonts.TITLE)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+          }
+        }
+        .width('100%')
+        .height(ProteusDimens.PANEL_TITLE_HEIGHT)
+        .backgroundColor(ProteusColors.PANEL_TITLE_BG)
+        .borderRadius(0)
+        .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
+        .stateEffect(false)
+        .onClick(() => {
+          this.leftLibCollapsed = false;
+          this.uiState.leftLibCollapsed = false;
+        })
+      }
+
       if (!this.leftLibCollapsed) {
         Column() {
           ProteusPanelTitle({
@@ -1381,6 +1630,30 @@ struct Index {
         }
         .layoutWeight(3)
         .width('100%')
+      }
+
+      if (this.leftNavCollapsed) {
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            Text('▶')
+              .fontSize(12)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+              .fontWeight(FontWeight.Bold)
+            Text($r('app.string.left_navigator'))
+              .fontSize(ProteusFonts.TITLE)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+          }
+        }
+        .width('100%')
+        .height(ProteusDimens.PANEL_TITLE_HEIGHT)
+        .backgroundColor(ProteusColors.PANEL_TITLE_BG)
+        .borderRadius(0)
+        .border({ width: { top: 1 }, color: ProteusColors.DIVIDER })
+        .stateEffect(false)
+        .onClick(() => {
+          this.leftNavCollapsed = false;
+          this.uiState.leftNavCollapsed = false;
+        })
       }
 
       if (!this.leftNavCollapsed) {
@@ -1551,8 +1824,35 @@ struct Index {
         .width('100%')
         .height('100%')
 
-      if (this.selectedComponentId) {
+      if (this.selectedComponentId && !this.aiGenerating) {
         this.FloatingToolBar()
+      }
+
+      if (this.aiGenerating) {
+        Column({ space: 10 }) {
+          Text('AI 生成中')
+            .fontSize(18)
+            .fontColor('#FFFFFF')
+            .fontWeight(FontWeight.Medium)
+          Text(this.aiStage.length > 0 ? `${this.aiStage}  ${this.aiProgress}%` : `${this.aiProgress}%`)
+            .fontSize(13)
+            .fontColor('#E0E0E0')
+          Text('画布已锁定 · 仅允许 AI 自动放置与布线')
+            .fontSize(12)
+            .fontColor('#BDBDBD')
+          Text('详见右侧 AI 面板生成日志')
+            .fontSize(11)
+            .fontColor('#9E9E9E')
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor('#CC1A1A1A')
+        .hitTestBehavior(HitTestMode.Default)
+        .onTouch((_e: TouchEvent) => {
+          // 吞掉全部触摸，禁止平移/缩放/放置
+        })
       }
     }
     .layoutWeight(1)
@@ -1629,6 +1929,15 @@ struct Index {
             selectedComponentId: this.selectedComponentId,
             simWaveTick: this.simWaveTick
           })
+            .layoutWeight(1)
+            .height('100%')
+        } else if (this.activeRightTab === 7) {
+          PlatformSettingsPanel({ statusMessage: $statusMessage, themeRefreshKey: $themeRefreshKey })
+            .layoutWeight(1)
+            .height('100%')
+            .width('100%')
+        } else if (this.activeRightTab === 8) {
+          InstrTraceLogPanel({ statusMessage: $statusMessage })
             .layoutWeight(1)
             .height('100%')
         } else {
@@ -1757,7 +2066,12 @@ struct Index {
                 .alignItems(HorizontalAlign.Start)
                 .padding({ bottom: 8 })
               } else if (this.activeRightTab === 2) {
-                AiSettingsPanel({ statusMessage: $statusMessage })
+                AiSettingsPanel({
+                  statusMessage: $statusMessage,
+                  aiGenerating: $aiGenerating,
+                  aiProgress: $aiProgress,
+                  aiStage: $aiStage
+                })
                   .constraintSize({ minHeight: 280 })
               } else if (this.activeRightTab === 3) {
                 McuDebugPanel({
@@ -1777,9 +2091,6 @@ struct Index {
                   selectedComponentId: this.selectedComponentId
                 })
                   .constraintSize({ minHeight: 240 })
-              } else if (this.activeRightTab === 7) {
-                PlatformSettingsPanel({ statusMessage: $statusMessage, themeRefreshKey: $themeRefreshKey })
-                  .constraintSize({ minHeight: 320 })
               }
             }
             .width('100%')
@@ -1838,6 +2149,11 @@ struct Index {
             selected: this.activeRightTab === 7,
             onSelect: () => { this.setActiveRightTab(7); }
           })
+          ProteusSidebarTab({
+            label: '日志', tooltip: 'instr_trace 运行日志', icon: ProteusIconName.SEARCH,
+            selected: this.activeRightTab === 8,
+            onSelect: () => { this.setActiveRightTab(8); }
+          })
         }
         .width(44)
         .height('100%')
@@ -1876,7 +2192,7 @@ struct Index {
           ProteusClassicBtn({
             label: '新建工程',
             widthVal: '48%',
-            onAction: () => { this.handleNewProject(); }
+            onAction: () => { void this.handleNewProject(); }
           })
           ProteusClassicBtn({
             label: '打开工程',
@@ -1902,7 +2218,12 @@ struct Index {
   /** New project name input dialog */
   @Builder
   NewProjectDialog() {
-    Column() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#00000060')
+        .onClick(() => { this.showNewProjectDialog = false; })
       Column() {
         Text('新建工程')
           .fontSize(ProteusFonts.TITLE)
@@ -1951,13 +2272,10 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
+      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#00000060')
-    .onClick(() => { this.showNewProjectDialog = false; })
   }
 
   /** Recovery dialog — shown when unsaved recovery files are detected */
@@ -2017,7 +2335,7 @@ struct Index {
             widthVal: '32%',
             onAction: () => {
               this.showRecoveryDialog = false;
-              this.handleNewProject();
+              void this.handleNewProject();
             }
           })
         }
@@ -2108,13 +2426,13 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
+      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#00000060')
-    .onClick(() => { this.showOpenDialog = false; })
   }
 
   @Builder
@@ -2164,13 +2482,13 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
+      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#00000060')
-    .onClick(() => { this.showSaveAsDialog = false; })
   }
 
   @Builder
@@ -2292,13 +2610,13 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
+      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#00000060')
-    .onClick(() => { this.showBurnDialog = false; })
   }
 
   /** Exit confirmation dialog — shown when user presses back with unsaved changes */
@@ -2351,13 +2669,13 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
+      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#00000060')
-    .onClick(() => { this.showExitConfirmDialog = false; })
   }
 
   @Builder

@@ -828,7 +828,7 @@ export class FilePersistenceImpl implements IFilePersistence {
   /** 5.2.10 事务性保存: 先写.tmp → 原子重命名 → 删除旧文件 */
   private async writeTextFile(path: string, content: string): Promise<Result<void>> {
     // For content URIs (file picker), write directly — rename not supported
-    if (path.startsWith('content://')) {
+    if (path.startsWith('content://') || path.startsWith('file://')) {
       try {
         const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
         fs.writeSync(fileHandle.fd, content);
@@ -841,6 +841,13 @@ export class FilePersistenceImpl implements IFilePersistence {
     // Regular filesystem path: transactional .tmp → atomic rename
     const tmpPath = `${path}.tmp`;
     try {
+      const slash = path.lastIndexOf('/');
+      if (slash > 0) {
+        const parent = path.substring(0, slash);
+        try { fs.accessSync(parent); } catch (_e) {
+          try { fs.mkdirSync(parent, true); } catch (_e2) { /* best-effort */ }
+        }
+      }
       const fileHandle = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
       fs.writeSync(fileHandle.fd, content);
       fs.closeSync(fileHandle);
@@ -854,6 +861,7 @@ export class FilePersistenceImpl implements IFilePersistence {
       fs.renameSync(tmpPath, path);
       return { success: true, errCode: ErrCode.OK };
     } catch (e) {
+      try { fs.unlinkSync(tmpPath); } catch (_e2) { /* ignore */ }
       return { success: false, errCode: ErrCode.ERR_PERMISSION, error: `Write failed: ${e}` };
     }
   }

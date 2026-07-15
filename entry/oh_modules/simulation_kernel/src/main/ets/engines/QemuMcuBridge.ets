@@ -634,6 +634,42 @@ export class QemuMcuBridge {
       this.setReg(rd, imm);
       this.zFlag = imm === 0;
       this.state.pc = pc + 2;
+    } else if ((hw & 0xE000) === 0x0000) {
+      // Move shifted register: LSL/LSR/ASR Rd, Rm, #imm5  (000op)
+      // op=11 is ADD/SUB format — not handled here
+      const op = (hw >> 11) & 0x3;
+      if (op <= 2) {
+        const rd = hw & 0x7;
+        const rm = (hw >> 3) & 0x7;
+        const imm5 = (hw >> 6) & 0x1F;
+        const src = this.reg(rm) >>> 0;
+        let val = src;
+        if (op === 0) {
+          // LSL — imm5==0 encodes MOV Rd,Rm
+          if (imm5 > 0) {
+            val = (src << imm5) >>> 0;
+          }
+        } else if (op === 1) {
+          // LSR — imm5==0 means shift 32
+          const sh = imm5 === 0 ? 32 : imm5;
+          val = sh >= 32 ? 0 : (src >>> sh);
+        } else {
+          // ASR — imm5==0 means shift 32
+          const sh = imm5 === 0 ? 32 : imm5;
+          const signed = this.reg(rm) | 0;
+          if (sh >= 32) {
+            val = signed < 0 ? 0xFFFFFFFF : 0;
+          } else {
+            val = (signed >> sh) >>> 0;
+          }
+        }
+        this.setReg(rd, val);
+        this.zFlag = (val >>> 0) === 0;
+        this.state.pc = pc + 2;
+      } else {
+        // ADD/SUB (register/imm3) — advance to avoid hang
+        this.state.pc = pc + 2;
+      }
     } else if ((hw & 0xF800) === 0x4800) {
       // LDR Rd, [PC, #imm8]
       const rd = (hw >> 8) & 0x7;
@@ -699,6 +735,9 @@ export class QemuMcuBridge {
       const imm11 = hw & 0x7FF;
       const sign = imm11 >= 0x400 ? imm11 - 2048 : imm11;
       this.state.pc = (pc + 4 + sign * 2) >>> 0;
+    } else if ((hw & 0xFFFF) === 0xBF00) {
+      // NOP
+      this.state.pc = pc + 2;
     } else if ((hw & 0xF800) === 0xF000 || (hw & 0xF800) === 0xF800) {
       // BL/32-bit — skip half
       this.state.pc = (offset + 3 < this.firmware.length) ? (pc + 4) : (pc + 2);

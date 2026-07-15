@@ -147,7 +147,8 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
             makePinGeometry('CH2', 'CH2', -40, -10),
             makePinGeometry('CH3', 'CH3', -40, 10),
             makePinGeometry('CH4', 'CH4', -40, 20),
-            makePinGeometry('GND', 'GND', -40, 40)
+            // GND opposite channels — avoid CH4↔GND column merge during topo rebuild
+            makePinGeometry('GND', 'GND', 40, 40)
         ];
     }
     return [
@@ -266,16 +267,27 @@ function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind
         if (net.type === NetType.GROUND || name === 'GND' || name === 'VSS' || name === 'VEE') {
             return JunctionKind.GND;
         }
-        if (name === 'VCC' || name === 'VDD' || name === '+5V' || name === '+3V3') {
+        if (net.type === NetType.POWER || name === 'VCC' || name === 'VDD' ||
+            name === '+5V' || name === '+3V3') {
             return JunctionKind.VCC;
         }
         return JunctionKind.UNKNOWN;
     }
     return JunctionKind.UNKNOWN;
 }
+/** Skip T-junction union when rails would short each other or a rail would absorb a signal. */
 function railsWouldShort(a: JunctionKind, b: JunctionKind): boolean {
-    return (a === JunctionKind.VCC && b === JunctionKind.GND) ||
-        (a === JunctionKind.GND && b === JunctionKind.VCC);
+    if ((a === JunctionKind.VCC && b === JunctionKind.GND) ||
+        (a === JunctionKind.GND && b === JunctionKind.VCC)) {
+        return true;
+    }
+    const aRail = a === JunctionKind.VCC || a === JunctionKind.GND;
+    const bRail = b === JunctionKind.VCC || b === JunctionKind.GND;
+    // 布局 stub 与电源轨擦边：禁止把信号网并进 VCC/GND
+    if (aRail !== bRail) {
+        return true;
+    }
+    return false;
 }
 function ensureNet(doc: SchematicDocument, netId: string, name: string, type: NetType): void {
     if (doc.nets.some(n => n.id === netId)) {
@@ -369,11 +381,29 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
             }
         }
     }
-    // Assign pins snapped to wire endpoints (within threshold)
+    // Assign pins snapped to wire endpoints (within threshold).
+    // Cap threshold by half the distance to the nearest sibling pin so dense
+    // instrument pin rows (e.g. OSC CH4 vs GND at 20px) cannot steal each other's nets.
     for (let i = 0; i < pinList.length; i++) {
         const p = pinList[i];
+        let siblingHalf = pinThreshold;
+        for (let j = 0; j < pinList.length; j++) {
+            if (j === i) {
+                continue;
+            }
+            const o = pinList[j];
+            if (o.compId !== p.compId) {
+                continue;
+            }
+            const sdx = p.worldX - o.worldX;
+            const sdy = p.worldY - o.worldY;
+            const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+            if (half > 1 && half < siblingHalf) {
+                siblingHalf = half;
+            }
+        }
         let bestKey = '';
-        let bestDist = pinThreshold;
+        let bestDist = siblingHalf;
         junctions.forEach((j: Junction, key: string) => {
             const dx = p.worldX - j.x;
             const dy = p.worldY - j.y;
