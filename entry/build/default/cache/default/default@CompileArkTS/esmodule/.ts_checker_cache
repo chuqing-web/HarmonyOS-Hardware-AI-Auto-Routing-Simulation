@@ -112,7 +112,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets": {
-      "mtimeMs": 1784097771265.2993,
+      "mtimeMs": 1784190106160.2217,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -133,6 +133,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\ProjectPaths.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\KeyboardShortcutManager.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ThemeManager.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PlatformPrefsStore.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\Index.ets"
       ],
@@ -153,7 +155,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\entryability\\EntryAbility.ets": {
-      "mtimeMs": 1783673502847.9036,
+      "mtimeMs": 1784165222223.863,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.AbilityConstant.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.ConfigurationConstant.d.ts",
@@ -1642,7 +1644,10 @@
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\validation\\AiPipelineValidator.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\SchematicCanvas.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\SchematicSymbolRenderer.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\ComponentPreview.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\ComponentPreview.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
       ],
       "error": false
     },
@@ -1689,15 +1694,20 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets": {
-      "mtimeMs": 1783673502850.673,
+      "mtimeMs": 1784190075353.3884,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\api\\IAiEngine.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\TeachingService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateRegistry.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LlmJsonNormalizer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiResultCache.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\validation\\AiPipelineValidator.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\validation\\AiPipelineValidator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineTypes.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
@@ -1724,7 +1734,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\Index.ets": {
-      "mtimeMs": 1784097771277.595,
+      "mtimeMs": 1784187299612,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\api\\IVirtualInstruments.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\VirtualInstrumentsImpl.ets"
@@ -1770,7 +1780,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PropertyPanel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\McuDebugPanel.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\TemplateProjectBootstrap.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\TemplateProjectBootstrap.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PlatformPrefsStore.ets"
       ],
       "error": false
     },
@@ -1795,7 +1806,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ThemeManager.ets": {
-      "mtimeMs": 1783493075482.8486,
+      "mtimeMs": 1784187299605.6826,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts"
@@ -1808,7 +1819,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets": {
-      "mtimeMs": 1784097771285.761,
+      "mtimeMs": 1784193539890.8545,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\EventBus.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\MapJsonUtil.ets",
@@ -1960,7 +1971,13 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\TemplateMergeUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\sim\\SimWorkerHost.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\workers\\SimWorker.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LlmJsonNormalizer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
       ],
       "error": false
     },
@@ -1977,7 +1994,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\SchematicEditorImpl.ets": {
-      "mtimeMs": 1784089112356.0632,
+      "mtimeMs": 1784179591243.5144,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\api\\ISchematicEditor.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\internal\\EditorInternals.ets",
@@ -2036,7 +2053,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\HexParser.ets": {
-      "mtimeMs": 1784094245707.8274,
+      "mtimeMs": 1784187299625.8357,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
       ],
@@ -2083,7 +2100,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\ErcEngine.ets": {
-      "mtimeMs": 1784094245694.4343,
+      "mtimeMs": 1784097771275.2434,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
@@ -2096,7 +2113,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\DeepErcEngine.ets": {
-      "mtimeMs": 1784094245723.7678,
+      "mtimeMs": 1784187299629.7158,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\ErcEngine.ets",
@@ -2124,7 +2141,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\UnitParser.ets": {
-      "mtimeMs": 1784094245674.432,
+      "mtimeMs": 1784187299600.1555,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\ErrCode.ets"
       ],
@@ -2207,7 +2224,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\SymbolGeometry.ets": {
-      "mtimeMs": 1784094245675.4329,
+      "mtimeMs": 1784097771267.3018,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
       ],
@@ -2313,7 +2330,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\engines\\Mcu8051Engine.ets": {
-      "mtimeMs": 1784094245681.431,
+      "mtimeMs": 1784187299608.6797,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\ErrCode.ets"
       ],
@@ -2375,7 +2392,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\TopologyTypes.ets": {
-      "mtimeMs": 1784007360749.9995,
+      "mtimeMs": 1784174099813.1863,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
       ],
@@ -2408,7 +2425,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\AiExtendedTypes.ets": {
-      "mtimeMs": 1783496501302.0808,
+      "mtimeMs": 1784189766148.4817,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\TopologyTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\ErrCode.ets",
@@ -2587,7 +2604,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\internal\\EditCommands.ets": {
-      "mtimeMs": 1783493075480.9995,
+      "mtimeMs": 1784179385394.0847,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2613,7 +2630,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main\\ets\\ComponentLibraryImpl.ets": {
-      "mtimeMs": 1784076326232.6458,
+      "mtimeMs": 1784169713671.7197,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main\\ets\\api\\IComponentLibrary.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main\\ets\\data\\BuiltinComponents.ets",
@@ -2681,7 +2698,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main\\ets\\data\\BuiltinComponents.ets": {
-      "mtimeMs": 1784094073848.323,
+      "mtimeMs": 1784097771278.7524,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main\\ets\\api\\IComponentLibrary.ets",
@@ -2748,7 +2765,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\api\\ISimulationKernel.ets": {
-      "mtimeMs": 1784092471365.6016,
+      "mtimeMs": 1784097771279.7654,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2759,7 +2776,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\SimulationKernelImpl.ets": {
-      "mtimeMs": 1784092576785.4558,
+      "mtimeMs": 1784170459889.2778,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\api\\ISimulationKernel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\DigitalEngine.ets",
@@ -2789,7 +2806,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\DigitalEngine.ets": {
-      "mtimeMs": 1784092471346.591,
+      "mtimeMs": 1784097771264.2998,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2800,7 +2817,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\AnalogEngine.ets": {
-      "mtimeMs": 1784092990894.2744,
+      "mtimeMs": 1784097771277.595,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2825,7 +2842,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\Mcu8051Simulator.ets": {
-      "mtimeMs": 1784076326226.6467,
+      "mtimeMs": 1784170452974.26,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2835,7 +2852,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\SpiceMatrixBuilder.ets": {
-      "mtimeMs": 1784092471376.603,
+      "mtimeMs": 1784097771289.306,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2857,7 +2874,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main\\ets\\engines\\QemuMcuBridge.ets": {
-      "mtimeMs": 1784092471364.59,
+      "mtimeMs": 1784097771277.595,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2878,7 +2895,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger\\src\\main\\ets\\HexDebuggerImpl.ets": {
-      "mtimeMs": 1784076326247.6465,
+      "mtimeMs": 1784164799917.2,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger\\src\\main\\ets\\api\\IHexDebugger.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger\\src\\main\\ets\\engines\\Mcu8051Core.ets",
@@ -2931,7 +2948,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\api\\IAiApiManager.ets": {
-      "mtimeMs": 1783417471218.8486,
+      "mtimeMs": 1784192410772.1233,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\internal\\AiApiTypes.ets"
@@ -2943,7 +2960,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\AiApiManagerImpl.ets": {
-      "mtimeMs": 1783496349046.4688,
+      "mtimeMs": 1784192425618.3943,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\api\\IAiApiManager.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\config\\ProviderTemplates.ets",
@@ -2970,7 +2987,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\NetworkModeManager.ets": {
-      "mtimeMs": 1783417471218.8486,
+      "mtimeMs": 1784187299612,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -2981,7 +2998,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\internal\\AiApiTypes.ets": {
-      "mtimeMs": 1783496350805.3147,
+      "mtimeMs": 1784192412602.432,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3075,7 +3092,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets": {
-      "mtimeMs": 1783496649146.452,
+      "mtimeMs": 1784188793125.9,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\api\\IAiEngine.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AutoWiringEngine.ets",
@@ -3103,7 +3120,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\TeachingService.ets": {
-      "mtimeMs": 1784083067137.8044,
+      "mtimeMs": 1784187299626.8452,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateRegistry.ets"
@@ -3126,7 +3143,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\validation\\AiPipelineValidator.ets": {
-      "mtimeMs": 1783493075359.618,
+      "mtimeMs": 1784164799901.1038,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets",
@@ -3140,7 +3157,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineTypes.ets": {
-      "mtimeMs": 1783417471229.7327,
+      "mtimeMs": 1784189772616.9243,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3149,12 +3166,14 @@
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\DeviceSelectEngine.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\DeviceSelectEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AutoWiringEngine.ets": {
-      "mtimeMs": 1783417471210.0435,
+      "mtimeMs": 1784192727555.815,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3164,52 +3183,61 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\ConstrainedWiringEngine.ets": {
-      "mtimeMs": 1783417471229.7327,
+      "mtimeMs": 1784193776935.129,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\FaultDiagnoser.ets": {
-      "mtimeMs": 1783417471263.3652,
+      "mtimeMs": 1784171993543.3064,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\CircuitTemplates.ets": {
-      "mtimeMs": 1783673502857.822,
+      "mtimeMs": 1784187299613.9983,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateRegistry.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\TeachingService.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\TeachingService.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets": {
-      "mtimeMs": 1783493075481.5059,
+      "mtimeMs": 1784194221226.2383,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\DeviceSelectEngine.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PlacementOptimizer.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\ConstrainedWiringEngine.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\FaultDiagnoser.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\FaultDiagnoser.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LlmJsonNormalizer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
@@ -3218,7 +3246,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\DeviceSelectEngine.ets": {
-      "mtimeMs": 1783496365310.9749,
+      "mtimeMs": 1784193539912.9092,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3234,7 +3262,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PlacementOptimizer.ets": {
-      "mtimeMs": 1784076326186.081,
+      "mtimeMs": 1784193718613.901,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets",
@@ -3247,10 +3275,13 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets": {
-      "mtimeMs": 1783417471263.3652,
+      "mtimeMs": 1784194364518.6946,
       "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineTypes.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\AiEngineImpl.ets",
@@ -3277,7 +3308,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineHelpers.ets": {
-      "mtimeMs": 1783496294436.7732,
+      "mtimeMs": 1784193539901.3318,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\internal\\AiEngineTypes.ets"
@@ -3293,7 +3324,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\RagKnowledgeBase.ets": {
-      "mtimeMs": 1783417471191.291,
+      "mtimeMs": 1784187299620.6592,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3303,7 +3334,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PlacementGaWorker.ets": {
-      "mtimeMs": 1783643835333.3452,
+      "mtimeMs": 1784193539893.1682,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.taskpool.d.ts"
       ],
@@ -3333,7 +3364,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\src\\main\\ets\\FilePersistenceImpl.ets": {
-      "mtimeMs": 1784095059266.6104,
+      "mtimeMs": 1784165222201.417,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\src\\main\\ets\\api\\IFilePersistence.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\src\\main\\ets\\parsers\\ProteusParser.ets",
@@ -3355,7 +3386,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\src\\main\\ets\\collaboration\\CollaborationService.ets": {
-      "mtimeMs": 1784095156477.9685,
+      "mtimeMs": 1784097771272.1533,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3521,7 +3552,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\api\\IVirtualInstruments.ets": {
-      "mtimeMs": 1784094073853.6228,
+      "mtimeMs": 1784097771284.276,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3535,7 +3566,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\VirtualInstrumentsImpl.ets": {
-      "mtimeMs": 1784094073844.6333,
+      "mtimeMs": 1784097771277.595,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\api\\IVirtualInstruments.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\OscilloscopeEngine.ets",
@@ -3556,7 +3587,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\OscilloscopeEngine.ets": {
-      "mtimeMs": 1784094115144.634,
+      "mtimeMs": 1784097771286.7976,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3577,7 +3608,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\MultimeterEngine.ets": {
-      "mtimeMs": 1784094073850.625,
+      "mtimeMs": 1784097771281.7632,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3609,7 +3640,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\VoltmeterEngine.ets": {
-      "mtimeMs": 1784094073850.625,
+      "mtimeMs": 1784097771282.8474,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3619,7 +3650,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\AmmeterEngine.ets": {
-      "mtimeMs": 1784094073849.615,
+      "mtimeMs": 1784097771280.762,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -3629,7 +3660,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\engines\\PowerMeterEngine.ets": {
-      "mtimeMs": 1784094073864.7578,
+      "mtimeMs": 1784097771293.3972,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main\\ets\\VirtualInstrumentsImpl.ets"
@@ -3705,7 +3736,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets": {
-      "mtimeMs": 1784097771294.398,
+      "mtimeMs": 1784187299619.658,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ThemeManager.ets",
@@ -3724,9 +3755,13 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\FaultInjectionPanel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\TeachingPanel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\ComponentPreview.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets"
       ],
-      "error": false
+      "error": false,
+      "errorCodes": [
+        38
+      ]
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\SplashPage.ets": {
       "mtimeMs": 1783996312750.9382,
@@ -3791,7 +3826,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\AiSettingsPanel.ets": {
-      "mtimeMs": 1784097771269.2998,
+      "mtimeMs": 1784174204724.9138,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3804,7 +3839,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PlatformSettingsPanel.ets": {
-      "mtimeMs": 1784080775680.1453,
+      "mtimeMs": 1784180913610.756,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3836,7 +3871,7 @@
       ]
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\FaultInjectionPanel.ets": {
-      "mtimeMs": 1784097771266.3015,
+      "mtimeMs": 1784174204720.718,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3849,7 +3884,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\TeachingPanel.ets": {
-      "mtimeMs": 1784097771269.2998,
+      "mtimeMs": 1784174204721.9016,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
@@ -3877,7 +3912,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\proteus\\ProteusWidgets.ets": {
-      "mtimeMs": 1784080775672.6143,
+      "mtimeMs": 1784180919933.5059,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\proteus\\ProteusIcons.ets"
@@ -3908,7 +3943,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\UiStateStore.ets": {
-      "mtimeMs": 1784097771273.2312,
+      "mtimeMs": 1784174204727.0586,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\model\\EditorToolMode.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -3956,7 +3991,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\Index.ets": {
-      "mtimeMs": 1784097771284.276,
+      "mtimeMs": 1784179608647.8264,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\SchematicCanvas.ets",
@@ -4484,7 +4519,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\InstrumentTraceLog.ets": {
-      "mtimeMs": 1784094355147.9243,
+      "mtimeMs": 1784187299604.68,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\Logger.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\SimExtendedTypes.ets",
@@ -4549,7 +4584,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireNetTopology.ets": {
-      "mtimeMs": 1784094245723.7678,
+      "mtimeMs": 1784097771289.306,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\NetPinRebuildUtil.ets",
@@ -4598,7 +4633,7 @@
       ]
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateRegistry.ets": {
-      "mtimeMs": 1784085545279.625,
+      "mtimeMs": 1784097771285.761,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateBuilders.ets",
@@ -4612,19 +4647,22 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets": {
-      "mtimeMs": 1784094073867.7559,
+      "mtimeMs": 1784171936547.7327,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateRegistry.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateBuilders.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateBuilders.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LabTemplateBuilders.ets": {
-      "mtimeMs": 1784093037937.018,
+      "mtimeMs": 1784097771294.398,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
@@ -4648,7 +4686,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\ProjectPaths.ets": {
-      "mtimeMs": 1784097771282.8474,
+      "mtimeMs": 1784187299623.0789,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
@@ -4657,7 +4695,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\TemplateMergeUtil.ets": {
-      "mtimeMs": 1784097771275.2434,
+      "mtimeMs": 1784187299609.6926,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -4782,6 +4820,83 @@
       "children": [],
       "parent": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fileuri.d.ts"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets": {
+      "mtimeMs": 1784174176772.888,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\LlmJsonNormalizer.ets": {
+      "mtimeMs": 1784193539917.7246,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
+      ],
+      "error": false,
+      "errorCodes": [
+        2305
+      ]
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets": {
+      "mtimeMs": 1784193539916.715,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\ConstrainedWiringEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets": {
+      "mtimeMs": 1784180343468.6758,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PlatformPrefsStore.ets": {
+      "mtimeMs": 1784187299632.3826,
+      "children": [
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets": {
+      "mtimeMs": 1784194368947.0498,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\FaultDiagnoser.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\SemanticNetBuilder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\ConstrainedWiringEngine.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets"
       ],
       "error": false
     }

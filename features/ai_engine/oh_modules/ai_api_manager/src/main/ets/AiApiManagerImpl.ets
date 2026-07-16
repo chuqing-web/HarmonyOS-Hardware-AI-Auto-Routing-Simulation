@@ -7,15 +7,20 @@ import {
   AiApiConfig, AiProviderType, AiCapability, LoadBalanceMode,
   ApiConnectionStatus, Result, CryptoUtil, IdUtil,
   AiTaskType, AiTestResult, ApiResult, ErrCode, ResultHelper,
-  FeatureGate, UsageDashboard, AiContextSanitizer
+  FeatureGate, UsageDashboard, AiContextSanitizer,
+  Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp
 } from 'common';
 import { QuotaTracker } from './billing/QuotaTracker';
 import http from '@ohos.net.http';
 import { NetworkModeManager } from './NetworkModeManager';
 import {
-  AiApiConfigUpdate, ChatCompletionResponse, ChatRequestMessage, buildRequestHeaders, cloneAiApiConfig,
+  AiApiConfigUpdate, ChatCompletionResponse, ChatRequestMessage, buildChatRequestBody,
+  buildRequestHeaders, cloneAiApiConfig, extractChoiceContent,
   getFirstBoundCapabilityId, maskApiConfig, mergeAiApiConfig
 } from './internal/AiApiTypes';
+
+/** 流水线输出上限；配合 disableThinking，避免推理占满额度 */
+const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
 
 export class AiApiManagerImpl implements IAiApiManager {
   private apis: Map<string, AiApiConfig> = new Map();
@@ -45,6 +50,7 @@ export class AiApiManagerImpl implements IAiApiManager {
 
   async testApiConnect(id: string): Promise<AiTestResult> {
     const start = Date.now();
+    Logger.info(INSTR_TRACE_TAG, `[AI_API] testApiConnect START id=${id}`);
     const result = await this.testConnection(id);
     const api = this.apis.get(id);
     let errCode = ErrCode.OK;
@@ -54,10 +60,14 @@ export class AiApiManagerImpl implements IAiApiManager {
       else if (result.error?.includes('timeout')) errCode = ErrCode.ERR_API_TIMEOUT;
       else errCode = ErrCode.ERR_API_TIMEOUT;
     }
+    const latencyMs = Date.now() - start;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] testApiConnect END id=${id} ok=${result.success}` +
+      ` latencyMs=${latencyMs} errCode=${errCode} err=${result.error ?? ''}`);
     return {
       success: result.success,
       errCode,
-      latencyMs: Date.now() - start,
+      latencyMs: latencyMs,
       modelResponse: result.data ? 'OK' : (result.error ?? ''),
       remainingQuota: api?.dailyCallCount !== undefined ? `${1000 - (api.dailyCallCount ?? 0)}` : 'unknown'
     };
@@ -142,12 +152,19 @@ export class AiApiManagerImpl implements IAiApiManager {
   // ---- v1 API ----
 
   addApi(config: AiApiConfig): Result<void> {
-    if (this.apis.has(config.id)) return { success: false, error: 'API ID already exists' };
+    if (this.apis.has(config.id)) {
+      Logger.warn(INSTR_TRACE_TAG, `[AI_API] addApi REJECT duplicate id=${config.id}`);
+      return { success: false, error: 'API ID already exists' };
+    }
     const gate = FeatureGate.canAddAiApi(this.apis.size);
     if (!gate.success) {
+      Logger.warn(INSTR_TRACE_TAG, `[AI_API] addApi REJECT gate: ${gate.error}`);
       return { success: false, errCode: gate.errCode, error: gate.error };
     }
     const stored = cloneAiApiConfig(config);
+    if (stored.maxTokens < DEFAULT_MAX_OUTPUT_TOKENS) {
+      stored.maxTokens = DEFAULT_MAX_OUTPUT_TOKENS;
+    }
     if (config.apiKey && config.apiKey !== '***') {
       this.encryptedKeys.set(config.id, CryptoUtil.encryptWithHuks(config.apiKey));
       if (config.backupApiKey) {
@@ -156,6 +173,11 @@ export class AiApiManagerImpl implements IAiApiManager {
     }
     this.apis.set(config.id, stored);
     if (!this.defaultApiId && config.enabled) this.defaultApiId = config.id;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] addApi OK id=${config.id} name=${config.name}` +
+      ` provider=${config.provider} model=${config.model}` +
+      ` enabled=${config.enabled} keyLen=${config.apiKey && config.apiKey !== '***' ? config.apiKey.length : 0}` +
+      ` total=${this.apis.size}`);
     return { success: true };
   }
 
@@ -228,8 +250,14 @@ export class AiApiManagerImpl implements IAiApiManager {
 
   async testConnection(id: string): Promise<Result<boolean>> {
     const api = this.apis.get(id);
-    if (!api) return { success: false, error: 'API not found' };
+    if (!api) {
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] testConnection FAIL id=${id} not found`);
+      return { success: false, error: 'API not found' };
+    }
 
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] testConnection START id=${id} name=${api.name}` +
+      ` provider=${api.provider} model=${api.model} url=${api.baseUrl}`);
     const result = await this.sendRequest(api, CIRCUIT_TEST_PROMPT, { maxTokens: 50 });
     const status = result.success ? ApiConnectionStatus.OK :
       (result.error?.includes('401') ? ApiConnectionStatus.AUTH_ERROR :
@@ -238,17 +266,42 @@ export class AiApiManagerImpl implements IAiApiManager {
             ApiConnectionStatus.NETWORK_ERROR);
 
     this.updateApi(id, { lastStatus: status, lastTestedAt: new Date().toISOString() });
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] testConnection END id=${id} ok=${result.success}` +
+      ` status=${status} err=${result.error ?? ''}` +
+      ` respPreview=${result.data ? result.data.substring(0, 80) : ''}`);
     return { success: result.success, data: result.success, error: result.error };
   }
 
   async chat(prompt: string, options?: ChatOptions): Promise<Result<string>> {
+    if (!this.networkMode.shouldAllowCloudApi()) {
+      const local = this.selectApi(options?.capability);
+      const isLocal = local !== null && local.provider === AiProviderType.OLLAMA;
+      if (!isLocal) {
+        Logger.warn(INSTR_TRACE_TAG, '[AI_API] chat REJECT offline mode (cloud blocked)');
+        return {
+          success: false,
+          errCode: ErrCode.ERR_API_TIMEOUT,
+          error: '离线模式：已禁止云端 AI，请关闭离线或配置本地 Ollama'
+        };
+      }
+    }
     const safePrompt = AiContextSanitizer.sanitizePrompt(prompt);
     const api = this.selectApi(options?.capability);
-    if (!api) return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No enabled AI API configured' };
+    if (!api) {
+      Logger.error(INSTR_TRACE_TAG,
+        `[AI_API] chat REJECT no enabled API cap=${options?.capability ?? 'any'}`);
+      return { success: false, errCode: ErrCode.ERR_PARAM_INVALID, error: 'No enabled AI API configured' };
+    }
     const quotaCheck = this.quotaTracker.checkBeforeCall(api.id, api.name);
     if (!quotaCheck.success) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_API] chat REJECT quota id=${api.id} err=${quotaCheck.error ?? ''}`);
       return { success: false, errCode: quotaCheck.errCode, error: quotaCheck.error };
     }
+    traceAiOp('AI_API', 'chat',
+      `id=${api.id} name=${api.name} model=${api.model}` +
+      ` cap=${options?.capability ?? 'any'} promptLen=${safePrompt.length}`);
     const result = await this.sendRequest(api, safePrompt, options);
     if (result.success) this.recordApiCall(api.id);
     return result;
@@ -312,7 +365,7 @@ export class AiApiManagerImpl implements IAiApiManager {
       model: template.defaultModel,
       enabled: true,
       priority: 10,
-      maxTokens: 4096,
+      maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
       temperature: 0.7,
       contextLimit: 128000
     };
@@ -338,54 +391,105 @@ export class AiApiManagerImpl implements IAiApiManager {
     return this.updateApi(apiId, { capabilityBinding: binding });
   }
 
+  private resolveMaxTokens(api: AiApiConfig, options?: ChatOptions): number {
+    if (options?.maxTokens !== undefined) {
+      return options.maxTokens;
+    }
+    return api.maxTokens >= DEFAULT_MAX_OUTPUT_TOKENS ? api.maxTokens : DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+
   private async sendRequest(api: AiApiConfig, prompt: string, options?: ChatOptions): Promise<Result<string>> {
     const apiKey = this.getDecryptedKey(api.id);
     const template = getTemplate(api.provider);
     const chatPath = template?.chatPath ?? '/chat/completions';
     const url = `${api.baseUrl}${chatPath}`;
 
+    const maxTokens = this.resolveMaxTokens(api, options);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] HTTP POST id=${api.id} url=${url} model=${api.model}` +
+      ` keyLen=${apiKey.length} promptLen=${prompt.length}` +
+      ` maxTokens=${maxTokens}` +
+      ` temp=${options?.temperature ?? api.temperature}` +
+      ` disableThinking=${options?.disableThinking === true}`);
+    traceAiPayload('AI_API', 'PROMPT', prompt,
+      `id=${api.id} model=${api.model} cap=${options?.capability ?? 'any'}`);
+
     try {
       const httpRequest = http.createHttp();
       const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
 
       const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-      const body = JSON.stringify({
-        model: api.model,
-        messages: messages,
-        max_tokens: options?.maxTokens ?? api.maxTokens,
-        temperature: options?.temperature ?? api.temperature
-      });
+      const body = JSON.stringify(buildChatRequestBody(
+        api.model, messages, maxTokens,
+        options?.temperature ?? api.temperature,
+        options?.disableThinking
+      ));
 
+      const useProxy = this.shouldUseSystemProxy(api.id);
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: headers,
         extraData: body,
         connectTimeout: 10000,
-        readTimeout: 60000
+        readTimeout: 180000,
+        usingProxy: useProxy
       });
       httpRequest.destroy();
 
       if (response.responseCode === 200) {
         this.failedApiIds.delete(api.id);
-        const parsed = JSON.parse(response.result as string) as ChatCompletionResponse;
+        const rawBody = response.result as string;
+        const parsed = JSON.parse(rawBody) as ChatCompletionResponse;
         if (parsed.choices && parsed.choices.length > 0) {
-          return { success: true, data: parsed.choices[0].message.content };
+          const content = extractChoiceContent(parsed.choices[0]);
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_API] HTTP 200 id=${api.id} contentLen=${content.length}`);
+          traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} model=${api.model}`);
+          if (content.length === 0) {
+            let finishReason = 'unknown';
+            const fr = parsed.choices[0].finish_reason;
+            if (fr !== undefined && fr !== null && fr.length > 0) {
+              finishReason = fr;
+            }
+            Logger.warn(INSTR_TRACE_TAG,
+              `[AI_API] HTTP 200 id=${api.id} empty content finish_reason=${finishReason}`);
+            return { success: false,
+              error: `LLM returned empty content (finish_reason=${finishReason})` };
+          }
+          return { success: true, data: content };
         }
-        return { success: true, data: response.result as string };
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} raw body (no choices)`);
+        traceAiPayload('AI_API', 'REPLY', rawBody, `id=${api.id} raw=true`);
+        if (rawBody.length === 0) {
+          Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} empty response body`);
+          return { success: false, error: 'LLM returned empty response body' };
+        }
+        return { success: true, data: rawBody };
       }
 
+      const errBody = typeof response.result === 'string' ? response.result : `${response.result}`;
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_API] HTTP ${response.responseCode} id=${api.id}`);
+      traceAiPayload('AI_API', 'REPLY_ERR', errBody,
+        `id=${api.id} code=${response.responseCode}`);
       if (response.responseCode === 401) {
         const backupKey = this.encryptedKeys.get(`${api.id}_backup`);
         if (backupKey) {
+          Logger.info(INSTR_TRACE_TAG, `[AI_API] retry with backup key id=${api.id}`);
           return this.sendRequestWithKey(api, prompt, CryptoUtil.decrypt(backupKey), options);
         }
       }
 
-      this.failedApiIds.add(api.id);
+      // Only blacklist on permanent client errors (4xx); 5xx/network errors are transient
+      if (response.responseCode >= 400 && response.responseCode < 500) {
+        this.failedApiIds.add(api.id);
+      }
       return { success: false, error: `API returned ${response.responseCode}` };
     } catch (e) {
-      this.failedApiIds.add(api.id);
-      return { success: false, error: `Request failed: ${e}` };
+      // Network exceptions are transient — do NOT blacklist, allow retries
+      const errMsg = e instanceof Error ? e.message : `${e}`;
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception id=${api.id}: ${errMsg}`);
+      return { success: false, error: `Request failed: ${errMsg}` };
     }
   }
 
@@ -393,40 +497,69 @@ export class AiApiManagerImpl implements IAiApiManager {
     options?: ChatOptions): Promise<Result<string>> {
     const template = getTemplate(api.provider);
     const url = `${api.baseUrl}${template?.chatPath ?? '/chat/completions'}`;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] HTTP POST (backupKey) id=${api.id} url=${url} model=${api.model}` +
+      ` promptLen=${prompt.length}`);
+    traceAiPayload('AI_API', 'PROMPT', prompt, `id=${api.id} backupKey=true`);
+    const maxTokens = this.resolveMaxTokens(api, options);
     try {
       const httpRequest = http.createHttp();
       const reqHeaders: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
       const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-      const body = JSON.stringify({
-        model: api.model,
-        messages: messages,
-        max_tokens: options?.maxTokens ?? api.maxTokens,
-        temperature: options?.temperature ?? api.temperature
-      });
+      const body = JSON.stringify(buildChatRequestBody(
+        api.model, messages, maxTokens,
+        options?.temperature ?? api.temperature,
+        options?.disableThinking
+      ));
+      const useProxy = this.shouldUseSystemProxy(api.id);
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: reqHeaders,
         extraData: body,
         connectTimeout: 10000,
-        readTimeout: 60000
+        readTimeout: 180000,
+        usingProxy: useProxy
       });
       httpRequest.destroy();
       if (response.responseCode === 200) {
         const parsed = JSON.parse(response.result as string) as ChatCompletionResponse;
         const choices = parsed.choices;
         if (choices && choices.length > 0) {
-          return { success: true, data: choices[0].message.content };
+          const content = extractChoiceContent(choices[0]);
+          traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} backupKey=true`);
+          return { success: true, data: content };
         }
         return { success: false, error: 'Empty response' };
       }
+      const errBody = typeof response.result === 'string' ? response.result : `${response.result}`;
+      traceAiPayload('AI_API', 'REPLY_ERR', errBody,
+        `id=${api.id} backupKey=true code=${response.responseCode}`);
       return { success: false, error: `Backup key failed: ${response.responseCode}` };
     } catch (e) {
-      return { success: false, error: `Backup request failed: ${e}` };
+      const errMsg = e instanceof Error ? e.message : `${e}`;
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception backupKey id=${api.id}: ${errMsg}`);
+      return { success: false, error: `Backup request failed: ${errMsg}` };
     }
   }
 
+  /** 用户配置了全局/API 代理时启用 HTTP 系统代理 */
+  private shouldUseSystemProxy(apiId: string): boolean {
+    const cfg = this.networkMode.getConfig();
+    if (cfg.offlineMode) {
+      return false;
+    }
+    if (cfg.globalProxy.trim().length > 0) {
+      return true;
+    }
+    const effective = this.networkMode.getEffectiveProxy(apiId);
+    return effective.length > 0 && effective !== 'system';
+  }
+
   private selectApi(capability?: string): AiApiConfig | null {
-    const enabled = Array.from(this.apis.values()).filter(a => a.enabled && !this.failedApiIds.has(a.id));
+    let enabled = Array.from(this.apis.values()).filter(a => a.enabled && !this.failedApiIds.has(a.id));
+    if (!this.networkMode.shouldAllowCloudApi()) {
+      enabled = enabled.filter(a => a.provider === AiProviderType.OLLAMA);
+    }
     if (enabled.length === 0) return null;
 
     if (this.strategy === LoadBalanceMode.CAPABILITY_BINDING && capability) {

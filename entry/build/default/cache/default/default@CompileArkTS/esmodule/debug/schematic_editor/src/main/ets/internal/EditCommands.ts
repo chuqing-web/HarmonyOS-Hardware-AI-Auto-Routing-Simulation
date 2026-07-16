@@ -77,10 +77,16 @@ interface DeletedEntry {
     index: number;
     comp: ComponentInstance;
 }
+interface WireBackup {
+    index: number;
+    wire: Wire;
+}
 export class BatchDeleteCommand implements IEditCommand {
     private doc: SchematicDocument;
     private entries: DeletedEntry[] = [];
-    constructor(doc: SchematicDocument, compIds: string[]) {
+    private wireBackups: WireBackup[] = [];
+    private removedPinRefs: Map<string, string[]> = new Map();
+    constructor(doc: SchematicDocument, compIds: string[], wireIdsToRemove: string[] = []) {
         this.doc = doc;
         for (let i = 0; i < compIds.length; i++) {
             const idx = doc.components.findIndex(c => c.id === compIds[i]);
@@ -93,6 +99,49 @@ export class BatchDeleteCommand implements IEditCommand {
             }
         }
         this.entries.sort((a: DeletedEntry, b: DeletedEntry) => b.index - a.index);
+        const wireIdSet = new Set<string>();
+        for (let i = 0; i < wireIdsToRemove.length; i++) {
+            wireIdSet.add(wireIdsToRemove[i]);
+        }
+        for (let i = 0; i < doc.wires.length; i++) {
+            const w = doc.wires[i];
+            if (!wireIdSet.has(w.id)) {
+                continue;
+            }
+            const pts: Point2D[] = [];
+            for (let j = 0; j < w.points.length; j++) {
+                pts.push({ x: w.points[j].x, y: w.points[j].y });
+            }
+            this.wireBackups.push({
+                index: i,
+                wire: { id: w.id, netId: w.netId, points: pts, style: w.style }
+            });
+        }
+        this.wireBackups.sort((a: WireBackup, b: WireBackup) => b.index - a.index);
+        // Snapshot pinIds that will be stripped from nets (for undo)
+        for (let i = 0; i < this.entries.length; i++) {
+            const prefix = `${this.entries[i].comp.id}:`;
+            for (let ni = 0; ni < doc.nets.length; ni++) {
+                const net = doc.nets[ni];
+                const removed: string[] = [];
+                for (let pi = 0; pi < net.pinIds.length; pi++) {
+                    if (net.pinIds[pi].startsWith(prefix)) {
+                        removed.push(net.pinIds[pi]);
+                    }
+                }
+                if (removed.length > 0) {
+                    const existing = this.removedPinRefs.get(net.id);
+                    if (existing !== undefined) {
+                        for (let ri = 0; ri < removed.length; ri++) {
+                            existing.push(removed[ri]);
+                        }
+                    }
+                    else {
+                        this.removedPinRefs.set(net.id, removed);
+                    }
+                }
+            }
+        }
     }
     execute(): void {
         for (let i = 0; i < this.entries.length; i++) {
@@ -101,6 +150,32 @@ export class BatchDeleteCommand implements IEditCommand {
             if (idx >= 0)
                 this.doc.components.splice(idx, 1);
         }
+        if (this.wireBackups.length > 0) {
+            const removeIds = new Set<string>();
+            for (let i = 0; i < this.wireBackups.length; i++) {
+                removeIds.add(this.wireBackups[i].wire.id);
+            }
+            const kept: Wire[] = [];
+            for (let i = 0; i < this.doc.wires.length; i++) {
+                if (!removeIds.has(this.doc.wires[i].id)) {
+                    kept.push(this.doc.wires[i]);
+                }
+            }
+            this.doc.wires = kept;
+        }
+        this.removedPinRefs.forEach((refs: string[], netId: string) => {
+            const net = this.doc.nets.find(n => n.id === netId);
+            if (net === undefined) {
+                return;
+            }
+            const keepPins: string[] = [];
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                if (!refs.includes(net.pinIds[pi])) {
+                    keepPins.push(net.pinIds[pi]);
+                }
+            }
+            net.pinIds = keepPins;
+        });
     }
     undo(): void {
         const sorted = this.entries.slice().sort((a: DeletedEntry, b: DeletedEntry) => a.index - b.index);
@@ -108,8 +183,25 @@ export class BatchDeleteCommand implements IEditCommand {
             const e = sorted[i];
             this.doc.components.splice(e.index, 0, e.comp);
         }
+        const wireSorted = this.wireBackups.slice().sort((a: WireBackup, b: WireBackup) => a.index - b.index);
+        for (let i = 0; i < wireSorted.length; i++) {
+            this.doc.wires.splice(wireSorted[i].index, 0, wireSorted[i].wire);
+        }
+        this.removedPinRefs.forEach((refs: string[], netId: string) => {
+            const net = this.doc.nets.find(n => n.id === netId);
+            if (net === undefined) {
+                return;
+            }
+            for (let i = 0; i < refs.length; i++) {
+                if (!net.pinIds.includes(refs[i])) {
+                    net.pinIds.push(refs[i]);
+                }
+            }
+        });
     }
-    getMemoryEstimate(): number { return this.entries.length * 256; }
+    getMemoryEstimate(): number {
+        return this.entries.length * 256 + this.wireBackups.length * 128;
+    }
 }
 export class AddWireCommand implements IEditCommand {
     private doc: SchematicDocument;
@@ -136,10 +228,6 @@ export class AddWireCommand implements IEditCommand {
         }
     }
     getMemoryEstimate(): number { return 128; }
-}
-interface WireBackup {
-    index: number;
-    wire: Wire;
 }
 export class ClearWiresCommand implements IEditCommand {
     private doc: SchematicDocument;

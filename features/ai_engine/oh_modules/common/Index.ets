@@ -45,7 +45,8 @@ export {
   traceUart, formatUartBytesHex, traceUartTxDrain,
   traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
-  BindingTraceInfo
+  BindingTraceInfo,
+  traceAiPayload, traceAiOp
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {
@@ -108,9 +109,9 @@ export { ProgressInfo, ProgressCallback, makeProgress } from './src/main/ets/typ
 
 export {
 
-  NetNodeRef, NetInfo, DeviceInst, BusInfo, ProbeInfo, TextAnnotate,
+  NetNodeRef, NetInfo, DeviceInst, NetLabelInfo, BusInfo, ProbeInfo, TextAnnotate,
 
-  ErcError, SubCircuitBlock, SubCircuitPort, SchTopology, RouteLine, RouteResult
+  ErcError, SubCircuitBlock, SubCircuitPort, SchTopology, RouteLine, RouteResult, SpacingIssue
 
 } from './src/main/ets/types/TopologyTypes';
 
@@ -128,7 +129,7 @@ export {
 
   DeviceRequirement, DeviceSelectLlmOutput, MatchedDevice, DeviceSelectResult,
 
-  LayoutConstraintRule, LayoutLlmOutput, PlacementCandidate, PlacementResult,
+  LayoutConstraintRule, LayoutLlmOutput, LayoutPositionItem, PlacementCandidate, PlacementResult,
 
   NetPriorityRule, SpecialNetRule, RoutingLlmOutput, RoutingWeightPrefs, AiPipelineResult,
 

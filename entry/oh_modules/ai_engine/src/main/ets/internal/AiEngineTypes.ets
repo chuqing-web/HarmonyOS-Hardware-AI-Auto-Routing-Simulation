@@ -1,4 +1,4 @@
-import { WaveData, RoutingWeightPrefs } from 'common';
+import { WaveData, RoutingWeightPrefs, SchTopology } from 'common';
 
 export interface AiTaskExtra {
   devUuids?: string[];
@@ -12,6 +12,16 @@ export interface AiTaskExtra {
   lockedUuids?: string[];
   skipLlm?: boolean;
   routingWeights?: RoutingWeightPrefs;
+  onStreamSnapshot?: (topo: SchTopology, stage: string) => void;
+  /** 多轮对话历史，用于 LLM 上下文继承 */
+  conversationHistory?: ChatHistoryEntry[];
+  /** 生成模式: create=从零创建, edit=基于现有电路修改 */
+  generationMode?: 'create' | 'edit';
+}
+
+export interface ChatHistoryEntry {
+  role: string;
+  content: string;
 }
 
 export interface ParamValidationResult {

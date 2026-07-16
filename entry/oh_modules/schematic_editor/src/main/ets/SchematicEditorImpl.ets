@@ -583,13 +583,30 @@ export class SchematicEditorImpl implements ISchematicEditor {
         if (!this.isComponentLocked(instUuidList[i])) deletable.push(instUuidList[i]);
       }
       if (deletable.length > 0) {
-        this.commandHistory.push(new BatchDeleteCommand(this.document, deletable));
+        const wireIds = this.collectWireIdsTouchingComponents(deletable);
+        this.commandHistory.push(new BatchDeleteCommand(this.document, deletable, wireIds));
       }
     } else {
+      const wireIds = this.collectWireIdsTouchingComponents(instUuidList);
+      const wireRemove = new Set<string>();
+      for (let i = 0; i < wireIds.length; i++) {
+        wireRemove.add(wireIds[i]);
+      }
+      if (wireRemove.size > 0) {
+        const keptWires: Wire[] = [];
+        for (let i = 0; i < doc.wires.length; i++) {
+          if (!wireRemove.has(doc.wires[i].id)) {
+            keptWires.push(doc.wires[i]);
+          }
+        }
+        doc.wires = keptWires;
+      }
       const kept: ComponentInstance[] = [];
       for (let i = 0; i < doc.components.length; i++) {
         if (!instUuidList.includes(doc.components[i].id)) {
           kept.push(doc.components[i]);
+        } else {
+          this.stripNetPinRefsForComponent(doc, doc.components[i].id);
         }
       }
       doc.components = kept;
@@ -601,8 +618,72 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
     }
     this.selectedIds = newSelected;
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return before - doc.components.length;
+  }
+
+  /**
+   * Collect wire IDs that have an endpoint snapped to any pin of the given components.
+   * Used so deleting a device also removes its attached wires from the canvas.
+   */
+  private collectWireIdsTouchingComponents(compIds: string[]): string[] {
+    const doc = this.getDocument();
+    const pinPositions: Point2D[] = [];
+    for (let i = 0; i < compIds.length; i++) {
+      const comp = this.findComponent(compIds[i]);
+      if (comp === undefined) {
+        continue;
+      }
+      const pinMap = this.getComponentPinWorldPositions(comp);
+      pinMap.forEach((pos: Point2D) => {
+        pinPositions.push({ x: pos.x, y: pos.y });
+      });
+    }
+    if (pinPositions.length === 0 || doc.wires.length === 0) {
+      return [];
+    }
+    const threshold = Math.max(this.viewport.gridSize * 2.5, 20);
+    const hitIds: string[] = [];
+    const seen = new Set<string>();
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const wire = doc.wires[wi];
+      if (wire.points.length === 0) {
+        continue;
+      }
+      const endpoints: Point2D[] = [wire.points[0], wire.points[wire.points.length - 1]];
+      let touches = false;
+      for (let ei = 0; ei < endpoints.length && !touches; ei++) {
+        const ep = endpoints[ei];
+        for (let pi = 0; pi < pinPositions.length; pi++) {
+          const dx = ep.x - pinPositions[pi].x;
+          const dy = ep.y - pinPositions[pi].y;
+          if (Math.abs(dx) <= threshold && Math.abs(dy) <= threshold) {
+            touches = true;
+            break;
+          }
+        }
+      }
+      if (touches && !seen.has(wire.id)) {
+        seen.add(wire.id);
+        hitIds.push(wire.id);
+      }
+    }
+    return hitIds;
+  }
+
+  private stripNetPinRefsForComponent(doc: SchematicDocument, compId: string): void {
+    const prefix = `${compId}:`;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const net = doc.nets[ni];
+      const keep: string[] = [];
+      for (let pi = 0; pi < net.pinIds.length; pi++) {
+        if (!net.pinIds[pi].startsWith(prefix)) {
+          keep.push(net.pinIds[pi]);
+        }
+      }
+      net.pinIds = keep;
+    }
   }
 
   batchSetParam(instUuidList: string[], key: string, unifiedValue: string): ApiResult<number> {
@@ -1022,6 +1103,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.commandHistory.undo();
     this.syncTopologyFromDoc();
     this.rebuildRefDesCounters();
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -1033,6 +1115,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.commandHistory.redo();
     this.syncTopologyFromDoc();
     this.rebuildRefDesCounters();
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -1257,11 +1340,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     const oldPos: Point2D = { x: comp.position.x, y: comp.position.y };
     const newPos: Point2D = EditorInternals.calcSnapPoint(position.x, position.y, this.viewport.gridSize);
+    const delta: Point2D = { x: newPos.x - oldPos.x, y: newPos.y - oldPos.y };
     // Capture old pin world positions before the move
     const oldPinPositions = this.getComponentPinWorldPositions(comp);
     this.commandHistory.push(new MoveCommand(this.document, componentId, oldPos, newPos));
     // Update wire endpoints that were at the component's old pin positions
     this.updateWiresForComponentMove(componentId, oldPinPositions);
+    // Update net labels near the component's pins to follow the move
+    this.updateLabelsForComponentMove(oldPinPositions, delta);
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -1288,7 +1374,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
    * Updates wire endpoints that were connected to a moved component's pins.
    * After the component moves, any wire endpoint that was at a pin's old
    * world position gets moved to the pin's new world position.
-   * Also recalculates the midpoint for 3-point orthogonal wires.
+   * For 3-point orthogonal wires, recalculates the midpoint using an L-shape
+   * that avoids: (a) intersecting component bodies (except endpoint components),
+   * and (b) collinear overlap with wires of other nets.
    */
   private updateWiresForComponentMove(
     compId: string,
@@ -1300,7 +1388,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     const newPinPositions = this.getComponentPinWorldPositions(comp);
     const doc = this.getDocument();
-    const threshold = 3; // wire endpoint should be at exact pin position
+    const threshold = 3;
     let updatedCount = 0;
 
     for (let wi = 0; wi < doc.wires.length; wi++) {
@@ -1334,17 +1422,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
       }
       if (changed) {
-        // Recalculate midpoint using smart routing to avoid body intersections
-        const smartPoints = this.routeOrthogonalWire(newPoints[0], newPoints[newPoints.length - 1]);
-        // routeOrthogonalWire may return 3 or more points; only replace with new mid if it's
-        // still a simple 3-point path that didn't need detouring
-        if (smartPoints.length === 3) {
-          newPoints = smartPoints;
-        } else {
-          // For detoured paths, replace the entire wire with the new points
-          wire.points = smartPoints;
-          updatedCount++;
-          continue;
+        if (newPoints.length === 3) {
+          newPoints = this.recalcMidForMovedWire(
+            newPoints, wire, compId
+          );
         }
         wire.points = newPoints;
         updatedCount++;
@@ -1352,6 +1433,133 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     if (updatedCount > 0) {
       Logger.info('schematic_editor', `updateWiresForComponentMove: updated ${updatedCount} wires for comp ${compId}`);
+    }
+  }
+
+  /**
+   * Recalculates the midpoint for a 3-point wire whose endpoint(s) moved.
+   * Picks the L-shape that avoids component bodies and other-net wire overlap.
+   */
+  private recalcMidForMovedWire(
+    newPoints: Point2D[],
+    wire: Wire,
+    movedCompId: string
+  ): Point2D[] {
+    const from = newPoints[0];
+    const to = newPoints[2];
+    const midA: Point2D = { x: to.x, y: from.y };
+    const midB: Point2D = { x: from.x, y: to.y };
+
+    // Exclude both endpoint components from body intersection checks
+    const excludeIds = new Set<string>();
+    excludeIds.add(movedCompId);
+    const otherEndInfo = this.findPinAtPoint(to);
+    if (otherEndInfo !== null && otherEndInfo.comp.id !== movedCompId) {
+      excludeIds.add(otherEndInfo.comp.id);
+    }
+    // Also check the from end in case both ends were moved (same component)
+    const fromEndInfo = this.findPinAtPoint(from);
+    if (fromEndInfo !== null && fromEndInfo.comp.id !== movedCompId) {
+      excludeIds.add(fromEndInfo.comp.id);
+    }
+
+    // Body intersection check
+    const aBodyHit = this.horizontalSegmentIntersectsBody(from.x, midA.x, from.y, excludeIds) ||
+      this.verticalSegmentIntersectsBody(midA.x, midA.y, to.y, excludeIds);
+    const bBodyHit = this.verticalSegmentIntersectsBody(from.x, from.y, to.y, excludeIds) ||
+      this.horizontalSegmentIntersectsBody(from.x, to.x, to.y, excludeIds);
+
+    // Other-net overlap check (wires on the same net can overlap)
+    const aOverlap = this.doesPathOverlapOtherNets([from, midA, to], wire.netId, wire.id);
+    const bOverlap = this.doesPathOverlapOtherNets([from, midB, to], wire.netId, wire.id);
+
+    // Rank: no-body-hit + no-overlap > no-body-hit > no-overlap > fallback
+    if (!aBodyHit && !aOverlap) {
+      newPoints[1] = midA;
+    } else if (!bBodyHit && !bOverlap) {
+      newPoints[1] = midB;
+    } else if (!aBodyHit) {
+      newPoints[1] = midA;
+    } else if (!bBodyHit) {
+      newPoints[1] = midB;
+    } else if (!aOverlap) {
+      newPoints[1] = midA;
+    } else if (!bOverlap) {
+      newPoints[1] = midB;
+    } else {
+      // Both L-shapes are bad; preserve original shape
+      const origMid = wire.points.length === 3 ? wire.points[1] : null;
+      if (origMid !== null) {
+        const origWasA = (origMid.x === wire.points[2].x);
+        newPoints[1] = origWasA ? midA : midB;
+      } else {
+        newPoints[1] = midA;
+      }
+    }
+    return newPoints;
+  }
+
+  /**
+   * Checks whether a candidate wire path has collinear overlap with any wire
+   * of a DIFFERENT net. Same-net wires are allowed to overlap.
+   */
+  private doesPathOverlapOtherNets(points: Point2D[], ownNetId: string, ownWireId: string): boolean {
+    const doc = this.getDocument();
+    for (const other of doc.wires) {
+      if (other.id === ownWireId || other.netId === ownNetId) {
+        continue;
+      }
+      for (let wi = 1; wi < other.points.length; wi++) {
+        const w0 = other.points[wi - 1];
+        const w1 = other.points[wi];
+        for (let si = 1; si < points.length; si++) {
+          if (this.segmentsCollinearOverlap(points[si - 1], points[si], w0, w1)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Moves net labels that are positioned near a component's pins.
+   * Labels within 40px of any old pin position are shifted by the move delta
+   * so they follow the component instead of being left behind.
+   */
+  private updateLabelsForComponentMove(
+    oldPinPositions: Map<string, Point2D>,
+    delta: Point2D
+  ): void {
+    if (delta.x === 0 && delta.y === 0) {
+      return;
+    }
+    const doc = this.getDocument();
+    const proximityThreshold = 40; // covers 30px stub offset + 10px margin
+    let updatedCount = 0;
+
+    for (let li = 0; li < doc.netLabels.length; li++) {
+      const label = doc.netLabels[li];
+      let nearPin = false;
+      oldPinPositions.forEach((oldPinPos: Point2D) => {
+        if (nearPin) {
+          return;
+        }
+        const dx = label.position.x - oldPinPos.x;
+        const dy = label.position.y - oldPinPos.y;
+        if (Math.abs(dx) <= proximityThreshold && Math.abs(dy) <= proximityThreshold) {
+          nearPin = true;
+        }
+      });
+      if (nearPin) {
+        label.position.x += delta.x;
+        label.position.y += delta.y;
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      Logger.info('schematic_editor', `updateLabelsForComponentMove: moved ${updatedCount} labels by (${delta.x},${delta.y})`);
     }
   }
 
@@ -2883,8 +3091,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (comps.length === 0 || this.document === null) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '未找到可移动器件');
     }
-    // Capture old pin positions for all moved components before any moves
+    // Capture old pin positions and actual deltas for all moved components
     const oldPinMaps = new Map<string, Map<string, Point2D>>();
+    const deltas = new Map<string, Point2D>();
     for (let i = 0; i < comps.length; i++) {
       const comp = comps[i];
       oldPinMaps.set(comp.id, this.getComponentPinWorldPositions(comp));
@@ -2894,11 +3103,16 @@ export class SchematicEditorImpl implements ISchematicEditor {
         comp.position.y + delta.y,
         this.viewport.gridSize
       );
+      deltas.set(comp.id, { x: newPos.x - oldPos.x, y: newPos.y - oldPos.y });
       this.commandHistory.push(new MoveCommand(this.document, comp.id, oldPos, newPos));
     }
-    // Update wire endpoints for all moved components
+    // Update wire endpoints and labels for all moved components
     oldPinMaps.forEach((oldPins: Map<string, Point2D>, compId: string) => {
       this.updateWiresForComponentMove(compId, oldPins);
+      const d = deltas.get(compId);
+      if (d !== undefined) {
+        this.updateLabelsForComponentMove(oldPins, d);
+      }
     });
     this.notifyChange();
     return ResultHelper.ok();

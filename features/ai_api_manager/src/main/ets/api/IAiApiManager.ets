@@ -12,6 +12,8 @@ export interface ChatOptions {
   context?: AiChatContext;
   maxTokens?: number;
   temperature?: number;
+  /** 关闭 DeepSeek V4 等模型的 thinking，避免推理占满 max_tokens 导致 content 为空 */
+  disableThinking?: boolean;
 }
 
 export interface ProviderTemplateInfo {

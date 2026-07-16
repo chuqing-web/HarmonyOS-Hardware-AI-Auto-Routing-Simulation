@@ -5,6 +5,13 @@ export type { LabTemplate, KnowledgeTip, TemplateFirmware } from "@bundle:com.el
 export { LabTemplateRegistry, ALL_CATALOG_LIBRARY_IDS } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 export type { LabTemplateDef, LabTemplateBuilder, LabCoverageReport } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 export { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
+export { SemanticNetBuilder } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
+export type { SemanticNetBuildResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
+export { NetPlanExecutor } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/NetPlanExecutor";
+export type { NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/NetPlanExecutor";
+export { LlmJsonNormalizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LlmJsonNormalizer";
+export { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 export { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiResultCache";
 export { AiPipelineValidator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/validation/AiPipelineValidator";
 export type { AiValidationResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/validation/AiPipelineValidator";
+export type { ChatHistoryEntry } from './src/main/ets/internal/AiEngineTypes';

@@ -122,6 +122,12 @@ export interface RouteLine {
   isBus: boolean;
 }
 
+export interface SpacingIssue {
+  netA: string;
+  netB: string;
+  pos: Point2D;
+}
+
 export interface RouteResult {
   routeLines: RouteLine[];
   crossCount: number;
@@ -129,4 +135,5 @@ export interface RouteResult {
   isolateAnalogDigital: boolean;
   xtalShortPath: boolean;
   diffLineEqualLength: boolean;
+  spacingIssues?: SpacingIssue[];
 }

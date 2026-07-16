@@ -32,15 +32,54 @@ export interface ChatRequestMessage {
 }
 
 export interface ChatCompletionMessage {
-  content: string;
+  content?: string;
+  reasoning_content?: string;
 }
 
 export interface ChatCompletionChoice {
   message: ChatCompletionMessage;
+  finish_reason?: string;
 }
 
 export interface ChatCompletionResponse {
   choices: ChatCompletionChoice[];
+}
+
+export interface ThinkingParam {
+  type: string;
+}
+
+export interface ChatRequestBody {
+  model: string;
+  messages: ChatRequestMessage[];
+  max_tokens: number;
+  temperature: number;
+  thinking?: ThinkingParam;
+}
+
+export function buildChatRequestBody(model: string, messages: ChatRequestMessage[],
+  maxTokens: number, temperature: number, disableThinking?: boolean): ChatRequestBody {
+  const body: ChatRequestBody = {
+    model: model,
+    messages: messages,
+    max_tokens: maxTokens,
+    temperature: temperature
+  };
+  if (disableThinking) {
+    const thinking: ThinkingParam = { type: 'disabled' };
+    body.thinking = thinking;
+  }
+  return body;
+}
+
+export function extractChoiceContent(choice: ChatCompletionChoice): string {
+  const msg = choice.message;
+  const content = msg.content ?? '';
+  if (content.length > 0) {
+    return content;
+  }
+  const reasoning = msg.reasoning_content ?? '';
+  return reasoning;
 }
 
 export function maskApiConfig(api: AiApiConfig): AiApiConfig {

@@ -1,55 +1,145 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚFimport { LabTemplateRegistry } from './LabTemplateRegistry';
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ°import { LabTemplateRegistry } from './LabTemplateRegistry';
 export class CircuitTemplates {
     /** æŒ‰å®éªŒæ¨¡æ¿ ID ç”Ÿæˆï¼ˆæ•™å­¦é¢æ¿ä¸“ç”¨ï¼‰ */
     static generateById(templateId) {
         return LabTemplateRegistry.generateById(templateId);
     }
     static generate(prompt, mcuFamily) {
-        const lower = prompt.toLowerCase();
-        if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
-            return CircuitTemplates.generateById('lab_power') ??
+        const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
+        if (match !== null) {
+            return CircuitTemplates.generateById(match.templateId) ??
                 CircuitTemplates.fallbackDoc(prompt);
         }
+        return CircuitTemplates.generateById('lab_power') ??
+            CircuitTemplates.fallbackDoc(prompt);
+    }
+    /**
+     * v3.0: å¸¦ä»ªå™¨æ„ŸçŸ¥çš„æ¨¡æ¿åŒ¹é… â€” æ£€æµ‹ç”µè·¯ç±»å‹ + éšå«çš„ä»ªå™¨éœ€æ±‚ã€‚
+     * è¿”å›åŒ¹é…ç»“æœï¼ˆå«ä»ªå™¨åˆ—è¡¨ï¼‰ï¼Œä¾›ä¸Šå±‚åœ¨å¸ƒçº¿/å¸ƒå±€æ—¶è¿½åŠ ä»ªå™¨å¤„ç†ã€‚
+     */
+    static matchWithInstruments(prompt, mcuFamily) {
+        const lower = prompt.toLowerCase();
+        const instruments = [];
+        // å…ˆæ£€æµ‹ä»ªå™¨éœ€æ±‚ï¼ˆç‹¬ç«‹äºç”µè·¯ç±»å‹ï¼‰
+        if (lower.includes('ç”µæµè¡¨') || lower.includes('æµ‹ç”µæµ') || lower.includes('æ€»ç”µæµ')) {
+            instruments.push('AMMETER_DC');
+        }
+        // æ£€æµ‹"Nä¸ªç”µå‹è¡¨"æˆ–"Nå—ç”µå‹è¡¨"
+        const vmMatch = lower.match(/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/);
+        if (vmMatch) {
+            const count = parseInt(vmMatch[1]);
+            for (let vi = 0; vi < count; vi++) {
+                instruments.push('VOLTMETER_DC');
+            }
+        }
+        else if (lower.includes('ç”µå‹è¡¨') || lower.includes('æµ‹ç”µå‹')) {
+            // åˆ†å‹ç”µè·¯é»˜è®¤é…1å—ç”µå‹è¡¨ï¼ˆéœ€è½®æ¢æµ‹é‡ï¼‰ï¼ŒNä¸ªç”µé˜»åˆ™æ¨èNå—
+            instruments.push('VOLTMETER_DC');
+        }
+        if (lower.includes('ç¤ºæ³¢å™¨') || lower.includes('æ³¢å½¢') || lower.includes('è§‚å¯Ÿ')) {
+            instruments.push('OSCILLOSCOPE');
+        }
+        if (lower.includes('é€»è¾‘åˆ†æä»ª') || lower.includes('æ—¶åº')) {
+            instruments.push('LOGIC_ANALYZER');
+        }
+        // å¤åˆåœºæ™¯åŒ¹é…: ç”µè·¯ç±»å‹ + ä»ªå™¨
+        // "åˆ†å‹" æˆ– "ç”µé˜»åˆ†å‹" + ä»ªå™¨ â†’ lab_passive + instruments
+        if ((lower.includes('åˆ†å‹') || lower.includes('ç”µé˜»') && lower.includes('ä¸²è”')) &&
+            instruments.length > 0) {
+            return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "LED" + ç”µæµè¡¨ â†’ lab_51_led + ammeter
+        if ((lower.includes('led') || lower.includes('ç¯') || lower.includes('æµæ°´')) &&
+            instruments.some(i => i.includes('AMMETER'))) {
+            const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+                lower.includes('8051') || lower.includes('51') || lower.includes('stc');
+            return {
+                templateId: is51 ? 'lab_51_led' : 'lab_digital',
+                instrumentsNeeded: instruments, isCompound: true
+            };
+        }
+        // "è¿æ”¾/æ”¾å¤§" + ç¤ºæ³¢å™¨ â†’ lab_amp + scope
+        if ((lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸')) &&
+            instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+            return { templateId: 'lab_amp', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "ç¨³å‹/ç”µæº" + ç”µå‹è¡¨ â†’ lab_power + voltmeter
+        if ((lower.includes('7805') || lower.includes('ç¨³å‹') || lower.includes('ç”µæº')) &&
+            instruments.some(i => i.includes('VOLTMETER'))) {
+            return { templateId: 'lab_power', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "ä¼ æ„Ÿå™¨" + ä»ªå™¨ â†’ lab_sensor + instruments
+        if (lower.includes('ä¼ æ„Ÿå™¨') && instruments.length > 0) {
+            return { templateId: 'lab_sensor', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // çº¯ä»ªå™¨åœºæ™¯ï¼ˆåªæœ‰ä»ªå™¨æ²¡æœ‰å…·ä½“ç”µè·¯ï¼‰
+        if (instruments.length >= 2 && !lower.includes('ç”µé˜»') && !lower.includes('è¿æ”¾') &&
+            !lower.includes('å•ç‰‡æœº') && !lower.includes('led')) {
+            return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // çº¯ä»ªå™¨åœºæ™¯ fallback
+        if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+            lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+            return { templateId: 'lab_instruments', instrumentsNeeded: instruments, isCompound: false };
+        }
+        // å¼ºå…³é”®è¯åŒ¹é…ç”µè·¯ç±»å‹ï¼ˆæ— ä»ªå™¨éœ€æ±‚ï¼‰
+        const baseId = CircuitTemplates.matchStrongTemplateId(prompt, mcuFamily);
+        if (baseId !== null) {
+            return { templateId: baseId, instrumentsNeeded: instruments, isCompound: instruments.length > 0 };
+        }
+        return null;
+    }
+    /**
+     * å¼ºå…³é”®è¯åŒ¹é…å®éªŒæ¨¡æ¿ IDï¼›æ— å‘½ä¸­è¿”å› nullï¼ˆä¸å›è½ lab_powerï¼‰ã€‚
+     * AI å…¨é—­ç¯ä»…åœ¨å¼ºå‘½ä¸­æ—¶èµ°æ¨¡æ¿æ·å¾„ã€‚
+     */
+    static matchStrongTemplateId(prompt, mcuFamily) {
+        const lower = prompt.toLowerCase();
+        if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
+            return 'lab_power';
+        }
         if (lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸') || lower.includes('åç›¸')) {
-            return CircuitTemplates.generateById('lab_amp') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_amp';
         }
         if (lower.includes('rc') || lower.includes('æ»¤æ³¢')) {
-            return CircuitTemplates.generateById('lab_filter') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_filter';
         }
         if ((lower.includes('51') || lower.includes('stc')) &&
             (lower.includes('æµæ°´') || lower.includes('led') || lower.includes('ç¯'))) {
-            return CircuitTemplates.generateById('lab_51_led') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_51_led';
         }
         if (lower.includes('uart') || lower.includes('ä¸²å£')) {
-            return CircuitTemplates.generateById('lab_uart') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_uart';
         }
-        if (lower.includes('æ— æº') || lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹')) {
-            return CircuitTemplates.generateById('lab_passive') ?? CircuitTemplates.fallbackDoc(prompt);
+        if (lower.includes('æ— æº') && (lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹') || lower.includes('å®éªŒ'))) {
+            return 'lab_passive';
         }
         if (lower.includes('åˆ†ç«‹') || lower.includes('ä¸‰æç®¡') || lower.includes('mosfet')) {
-            return CircuitTemplates.generateById('lab_discrete') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_discrete';
         }
-        if (lower.includes('74hc') || lower.includes('é€»è¾‘') || lower.includes('æ•°å­—')) {
-            return CircuitTemplates.generateById('lab_digital') ?? CircuitTemplates.fallbackDoc(prompt);
+        if (lower.includes('74hc') || (lower.includes('é€»è¾‘') && lower.includes('é—¨'))) {
+            return 'lab_digital';
         }
         if (lower.includes('å­˜å‚¨') || lower.includes('eeprom') || lower.includes('flash')) {
-            return CircuitTemplates.generateById('lab_memory') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_memory';
         }
         if (lower.includes('ä¼ æ„Ÿå™¨') || lower.includes('ds18') || lower.includes('éœå°”')) {
-            return CircuitTemplates.generateById('lab_sensor') ?? CircuitTemplates.fallbackDoc(prompt);
+            return 'lab_sensor';
         }
-        if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨')) {
-            return CircuitTemplates.generateById('lab_instruments') ?? CircuitTemplates.fallbackDoc(prompt);
+        if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+            lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+            return 'lab_instruments';
         }
-        const isStm32 = mcuFamily?.includes('STM32') || lower.includes('stm32');
-        const is51 = mcuFamily?.includes('8051') || lower.includes('51') || lower.includes('stc');
-        if (is51 && (lower.includes('led') || lower.includes('ç¯'))) {
-            return CircuitTemplates.generateById('lab_51_led') ?? CircuitTemplates.fallbackDoc(prompt);
+        const isStm32 = (mcuFamily !== undefined && mcuFamily.includes('STM32')) || lower.includes('stm32');
+        const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+            lower.includes('8051') || (lower.includes('stc') && lower.includes('å•ç‰‡æœº'));
+        if (is51 && (lower.includes('led') || lower.includes('ç¯') || lower.includes('æœ€å°ç³»ç»Ÿ'))) {
+            return 'lab_51_led';
         }
-        if (isStm32) {
-            return CircuitTemplates.generateById('lab_uart') ?? CircuitTemplates.fallbackDoc(prompt);
+        if (isStm32 && (lower.includes('æœ€å°ç³»ç»Ÿ') || lower.includes('uart') || lower.includes('ä¸²å£'))) {
+            return 'lab_uart';
         }
-        return CircuitTemplates.generateById('lab_power') ?? CircuitTemplates.fallbackDoc(prompt);
+        return null;
     }
     static fallbackDoc(prompt) {
         const doc = LabTemplateRegistry.generateById('lab_power');
@@ -60,11 +150,21 @@ export class CircuitTemplates {
         throw new Error('No template available');
     }
 }
-//# sourceMappingURL=CircuitTemplates.js.mapÂ‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitTemplates.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName½./algorithms/CircuitTemplates©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚÆ/**
- * ç”µè·¯æ¨¡æ¿ç”Ÿæˆå™¨ â€” AI å…³é”®è¯åˆ†æ´¾ + å®éªŒæ¨¡æ¿ ID åˆ†æ´¾
+//# sourceMappingURL=CircuitTemplates.js.mapÂ‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitTemplates.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName½./algorithms/CircuitTemplates©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ6/**
+ * ç”µè·¯æ¨¡æ¿ç”Ÿæˆå™¨ v3.0 â€” AI å…³é”®è¯åˆ†æ´¾ + å®éªŒæ¨¡æ¿ ID åˆ†æ´¾ + ä»ªå™¨æ„ŸçŸ¥å¤åˆåŒ¹é…
+ * v3.0: å¤åˆä»ªå™¨æ£€æµ‹(å¦‚"åˆ†å‹+ç”µå‹è¡¨")ã€ä»ªå™¨éœ€æ±‚æ ‡è®°ã€æ¨¡æ¿ç»„åˆç­–ç•¥
  */
 import { SchematicDocument } from 'common';
 import { LabTemplateRegistry } from './LabTemplateRegistry';
+
+/** v3.0: æ¨¡æ¿åŒ¹é…ç»“æœ â€” æºå¸¦ä»ªå™¨éœ€æ±‚æ ‡è®° */
+export interface TemplateMatchResult {
+  templateId: string;
+  /** ç”¨æˆ·éœ€æ±‚ä¸­éšå«çš„ä»ªå™¨ç±»å‹åˆ—è¡¨ */
+  instrumentsNeeded: string[];
+  /** æ˜¯å¦ä¸ºå¤åˆåœºæ™¯ï¼ˆå¦‚"åˆ†å‹+ç”µå‹è¡¨"ï¼‰ */
+  isCompound: boolean;
+}
 
 export class CircuitTemplates {
 
@@ -74,53 +174,149 @@ export class CircuitTemplates {
   }
 
   static generate(prompt: string, mcuFamily?: string): SchematicDocument {
+    const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
+    if (match !== null) {
+      return CircuitTemplates.generateById(match.templateId) ??
+        CircuitTemplates.fallbackDoc(prompt);
+    }
+    return CircuitTemplates.generateById('lab_power') ??
+      CircuitTemplates.fallbackDoc(prompt);
+  }
+
+  /**
+   * v3.0: å¸¦ä»ªå™¨æ„ŸçŸ¥çš„æ¨¡æ¿åŒ¹é… â€” æ£€æµ‹ç”µè·¯ç±»å‹ + éšå«çš„ä»ªå™¨éœ€æ±‚ã€‚
+   * è¿”å›åŒ¹é…ç»“æœï¼ˆå«ä»ªå™¨åˆ—è¡¨ï¼‰ï¼Œä¾›ä¸Šå±‚åœ¨å¸ƒçº¿/å¸ƒå±€æ—¶è¿½åŠ ä»ªå™¨å¤„ç†ã€‚
+   */
+  static matchWithInstruments(prompt: string, mcuFamily?: string): TemplateMatchResult | null {
+    const lower = prompt.toLowerCase();
+    const instruments: string[] = [];
+
+    // å…ˆæ£€æµ‹ä»ªå™¨éœ€æ±‚ï¼ˆç‹¬ç«‹äºç”µè·¯ç±»å‹ï¼‰
+    if (lower.includes('ç”µæµè¡¨') || lower.includes('æµ‹ç”µæµ') || lower.includes('æ€»ç”µæµ')) {
+      instruments.push('AMMETER_DC');
+    }
+    // æ£€æµ‹"Nä¸ªç”µå‹è¡¨"æˆ–"Nå—ç”µå‹è¡¨"
+    const vmMatch = lower.match(/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/);
+    if (vmMatch) {
+      const count = parseInt(vmMatch[1]);
+      for (let vi = 0; vi < count; vi++) {
+        instruments.push('VOLTMETER_DC');
+      }
+    } else if (lower.includes('ç”µå‹è¡¨') || lower.includes('æµ‹ç”µå‹')) {
+      // åˆ†å‹ç”µè·¯é»˜è®¤é…1å—ç”µå‹è¡¨ï¼ˆéœ€è½®æ¢æµ‹é‡ï¼‰ï¼ŒNä¸ªç”µé˜»åˆ™æ¨èNå—
+      instruments.push('VOLTMETER_DC');
+    }
+    if (lower.includes('ç¤ºæ³¢å™¨') || lower.includes('æ³¢å½¢') || lower.includes('è§‚å¯Ÿ')) {
+      instruments.push('OSCILLOSCOPE');
+    }
+    if (lower.includes('é€»è¾‘åˆ†æä»ª') || lower.includes('æ—¶åº')) {
+      instruments.push('LOGIC_ANALYZER');
+    }
+
+    // å¤åˆåœºæ™¯åŒ¹é…: ç”µè·¯ç±»å‹ + ä»ªå™¨
+    // "åˆ†å‹" æˆ– "ç”µé˜»åˆ†å‹" + ä»ªå™¨ â†’ lab_passive + instruments
+    if ((lower.includes('åˆ†å‹') || lower.includes('ç”µé˜»') && lower.includes('ä¸²è”')) &&
+      instruments.length > 0) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "LED" + ç”µæµè¡¨ â†’ lab_51_led + ammeter
+    if ((lower.includes('led') || lower.includes('ç¯') || lower.includes('æµæ°´')) &&
+      instruments.some(i => i.includes('AMMETER'))) {
+      const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+        lower.includes('8051') || lower.includes('51') || lower.includes('stc');
+      return {
+        templateId: is51 ? 'lab_51_led' : 'lab_digital',
+        instrumentsNeeded: instruments, isCompound: true
+      };
+    }
+    // "è¿æ”¾/æ”¾å¤§" + ç¤ºæ³¢å™¨ â†’ lab_amp + scope
+    if ((lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸')) &&
+      instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+      return { templateId: 'lab_amp', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ç¨³å‹/ç”µæº" + ç”µå‹è¡¨ â†’ lab_power + voltmeter
+    if ((lower.includes('7805') || lower.includes('ç¨³å‹') || lower.includes('ç”µæº')) &&
+      instruments.some(i => i.includes('VOLTMETER'))) {
+      return { templateId: 'lab_power', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ä¼ æ„Ÿå™¨" + ä»ªå™¨ â†’ lab_sensor + instruments
+    if (lower.includes('ä¼ æ„Ÿå™¨') && instruments.length > 0) {
+      return { templateId: 'lab_sensor', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ï¼ˆåªæœ‰ä»ªå™¨æ²¡æœ‰å…·ä½“ç”µè·¯ï¼‰
+    if (instruments.length >= 2 && !lower.includes('ç”µé˜»') && !lower.includes('è¿æ”¾') &&
+      !lower.includes('å•ç‰‡æœº') && !lower.includes('led')) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ fallback
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return { templateId: 'lab_instruments', instrumentsNeeded: instruments, isCompound: false };
+    }
+
+    // å¼ºå…³é”®è¯åŒ¹é…ç”µè·¯ç±»å‹ï¼ˆæ— ä»ªå™¨éœ€æ±‚ï¼‰
+    const baseId = CircuitTemplates.matchStrongTemplateId(prompt, mcuFamily);
+    if (baseId !== null) {
+      return { templateId: baseId, instrumentsNeeded: instruments, isCompound: instruments.length > 0 };
+    }
+    return null;
+  }
+
+  /**
+   * å¼ºå…³é”®è¯åŒ¹é…å®éªŒæ¨¡æ¿ IDï¼›æ— å‘½ä¸­è¿”å› nullï¼ˆä¸å›è½ lab_powerï¼‰ã€‚
+   * AI å…¨é—­ç¯ä»…åœ¨å¼ºå‘½ä¸­æ—¶èµ°æ¨¡æ¿æ·å¾„ã€‚
+   */
+  static matchStrongTemplateId(prompt: string, mcuFamily?: string): string | null {
     const lower = prompt.toLowerCase();
 
     if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
-      return CircuitTemplates.generateById('lab_power') ??
-        CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_power';
     }
     if (lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸') || lower.includes('åç›¸')) {
-      return CircuitTemplates.generateById('lab_amp') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_amp';
     }
     if (lower.includes('rc') || lower.includes('æ»¤æ³¢')) {
-      return CircuitTemplates.generateById('lab_filter') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_filter';
     }
     if ((lower.includes('51') || lower.includes('stc')) &&
       (lower.includes('æµæ°´') || lower.includes('led') || lower.includes('ç¯'))) {
-      return CircuitTemplates.generateById('lab_51_led') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_51_led';
     }
     if (lower.includes('uart') || lower.includes('ä¸²å£')) {
-      return CircuitTemplates.generateById('lab_uart') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_uart';
     }
-    if (lower.includes('æ— æº') || lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹')) {
-      return CircuitTemplates.generateById('lab_passive') ?? CircuitTemplates.fallbackDoc(prompt);
+    if (lower.includes('æ— æº') && (lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹') || lower.includes('å®éªŒ'))) {
+      return 'lab_passive';
     }
     if (lower.includes('åˆ†ç«‹') || lower.includes('ä¸‰æç®¡') || lower.includes('mosfet')) {
-      return CircuitTemplates.generateById('lab_discrete') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_discrete';
     }
-    if (lower.includes('74hc') || lower.includes('é€»è¾‘') || lower.includes('æ•°å­—')) {
-      return CircuitTemplates.generateById('lab_digital') ?? CircuitTemplates.fallbackDoc(prompt);
+    if (lower.includes('74hc') || (lower.includes('é€»è¾‘') && lower.includes('é—¨'))) {
+      return 'lab_digital';
     }
     if (lower.includes('å­˜å‚¨') || lower.includes('eeprom') || lower.includes('flash')) {
-      return CircuitTemplates.generateById('lab_memory') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_memory';
     }
     if (lower.includes('ä¼ æ„Ÿå™¨') || lower.includes('ds18') || lower.includes('éœå°”')) {
-      return CircuitTemplates.generateById('lab_sensor') ?? CircuitTemplates.fallbackDoc(prompt);
+      return 'lab_sensor';
     }
-    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨')) {
-      return CircuitTemplates.generateById('lab_instruments') ?? CircuitTemplates.fallbackDoc(prompt);
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return 'lab_instruments';
     }
 
-    const isStm32 = mcuFamily?.includes('STM32') || lower.includes('stm32');
-    const is51 = mcuFamily?.includes('8051') || lower.includes('51') || lower.includes('stc');
-    if (is51 && (lower.includes('led') || lower.includes('ç¯'))) {
-      return CircuitTemplates.generateById('lab_51_led') ?? CircuitTemplates.fallbackDoc(prompt);
+    const isStm32 = (mcuFamily !== undefined && mcuFamily.includes('STM32')) || lower.includes('stm32');
+    const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+      lower.includes('8051') || (lower.includes('stc') && lower.includes('å•ç‰‡æœº'));
+    if (is51 && (lower.includes('led') || lower.includes('ç¯') || lower.includes('æœ€å°ç³»ç»Ÿ'))) {
+      return 'lab_51_led';
     }
-    if (isStm32) {
-      return CircuitTemplates.generateById('lab_uart') ?? CircuitTemplates.fallbackDoc(prompt);
+    if (isStm32 && (lower.includes('æœ€å°ç³»ç»Ÿ') || lower.includes('uart') || lower.includes('ä¸²å£'))) {
+      return 'lab_uart';
     }
-    return CircuitTemplates.generateById('lab_power') ?? CircuitTemplates.fallbackDoc(prompt);
+    return null;
   }
 
   private static fallbackDoc(prompt: string): SchematicDocument {
@@ -132,120 +328,83 @@ export class CircuitTemplates {
     throw new Error('No template available');
   }
 }
-ÀÔrE‘µ./LabTemplateRegistryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings³CircuitTemplates.js ‘´CircuitTemplates.etsÜ >˜”   ” ”	 	” ” ”$ $”; ;”< <””   ” ” ” ’” ” –” 	”
- 	” 		” 	” 	”" 	(™” 
-” 
-”" 
-”# 
-”/ 
-+”0 
-,”: 
-6”; 
-7”< 
-8’” ” ˜” ”
- ” 	” ” ”  ” "”% 4™” ” 
-” ” ” ” ”( $”* &”+ 'Ü ” ” ” ” ” ” ”! ”" ”& "”+ '”, (”4 0”5 1”9 5”: 6”< 8˜” ” ”# ”$ ”0 *”1 +”< 6”= 7˜” ”  ”! ”, $”- %”3 +”4 ,”5 -‘”	 Ü ” ” ” ” ” ” ” ”  ”$  ”) %”* &”2 .”3 /”7 3”8 4”< 8”ÌA =”ÌB >”ÌJ ÌF”ÌK ÌG”ÌO ÌK”ÌP ÌL”ÌT ÌP”ÌY ÌU”ÌZ ÌV”Ìb Ì^”Ìc Ì_”Ìg Ìc”Ìh Ìd”Ìj ÌfÜ ” ” ”# ”$ ”0 *”1 +”: 4”; 5”? 9”ÌO ÌI”ÌP ÌJ”Ì[ ÌU”Ì\ ÌV”Ìb Ì\”Ìc Ì]”Ìd Ì^‘”	 Ü ” ” ” ” ” ” ” ”  ”$  ”) %”* &”2 .”3 /”7 3”8 4”: 6Ü ” ” ”# ”$ ”0 *”1 +”= 7”> 8”ÌB <”ÌR ÌL”ÌS ÌM”Ì^ ÌX”Ì_ ÌY”Ìe Ì_”Ìf Ì`”Ìg Ìa‘”	 Ü ” ” ” 	” ” ” ” ”  ”! ”% !”* &”+ '”3 /”4 0”9 5”: 6”; 7Ü ” ” ” ” ” ” ”  ”! ”% ”* $”+ %”3 -”4 .”9 3”: 4”> 8”ÌC =”ÌD >”ÌL ÌF”ÌM ÌG”ÌP ÌJ”ÌQ ÌK”ÌR ÌL”ÌT ÌNÜ ” ” ”# ”$ ”0 *”1 +”= 7”> 8”ÌB <”ÌR ÌL”ÌS ÌM”Ì^ ÌX”Ì_ ÌY”Ìe Ì_”Ìf Ì`”Ìg Ìa‘”	 Ü ” ” ” ” ” ” ”! ”" ”& "”+ '”, (”4 0”5 1”9 5”: 6”< 8Ü ” ” ”# ”$ ”0 *”1 +”; 5”< 6”Ì@ :”ÌP ÌJ”ÌQ ÌK”Ì\ ÌV”Ì] ÌW”Ìc Ì]”Ìd Ì^”Ìe Ì_‘”	  Ü ” !” !” !” !” !” !” !”  !”$ ! ”) !%”* !&”2 !.”3 !/”7 !3”8 !4”< !8”ÌA !=”ÌB !>”ÌJ !ÌF”ÌK !ÌG”ÌO !ÌK”ÌP !ÌL”ÌR !ÌNÜ ” "” "”# "”$ "”0 "*”1 "+”> "8”? "9”ÌC "=”ÌS "ÌM”ÌT "ÌN”Ì_ "ÌY”Ì` "ÌZ”Ìf "Ì`”Ìg "Ìa”Ìh "Ìb‘”	 #Ü ” $” $” $” $” $” $” $”  $”$ $ ”) $%”* $&”2 $.”3 $/”8 $4”9 $5”= $9”ÌB $>”ÌC $?”ÌK $ÌG”ÌL $ÌH”ÌT $ÌP”ÌU $ÌQ”ÌW $ÌSÜ ” %” %”# %”$ %”0 %*”1 %+”? %9”Ì@ %:”ÌD %>”ÌT %ÌN”ÌU %ÌO”Ì` %ÌZ”Ìa %Ì[”Ìg %Ìa”Ìh %Ìb”Ìi %Ìc‘”	 &Ü ” '” '” '” '” '” '”! '”" '”& '"”+ ''”, '(”4 '0”5 '1”9 '5”: '6”> ':”ÌC '?”ÌD 'Ì@”ÌL 'ÌH”ÌM 'ÌI”ÌQ 'ÌM”ÌR 'ÌN”ÌT 'ÌPÜ ” (” (”# (”$ (”0 (*”1 (+”> (8”? (9”ÌC (=”ÌS (ÌM”ÌT (ÌN”Ì_ (ÌY”Ì` (ÌZ”Ìf (Ì`”Ìg (Ìa”Ìh (Ìb‘”	 )Ü ” *” *” *” *” *” *” *”  *”$ * ”) *%”* *&”2 *.”3 */”; *7”< *8”Ì@ *<”ÌE *ÌA”ÌF *ÌB”ÌN *ÌJ”ÌO *ÌK”ÌV *ÌR”ÌW *ÌS”ÌY *ÌUÜ ” +” +”# +”$ +”0 +*”1 ++”= +7”> +8”ÌB +<”ÌR +ÌL”ÌS +ÌM”Ì^ +ÌX”Ì_ +ÌY”Ìe +Ì_”Ìf +Ì`”Ìg +Ìa‘”	 ,Ü ” -” -” -” -” -” -”  -”! -”% -!”* -&”+ -'”3 -/”4 -0”: -6”; -7”? -;”ÌD -Ì@”ÌE -ÌA”ÌM -ÌI”ÌN -ÌJ”ÌR -ÌN”ÌS -ÌO”ÌU -ÌQÜ ” .” .”# .”$ .”0 .*”1 .+”= .7”> .8”ÌB .<”ÌR .ÌL”ÌS .ÌM”Ì^ .ÌX”Ì_ .ÌY”Ìe .Ì_”Ìf .Ì`”Ìg .Ìa‘”	 /Ü ” 0” 0” 0” 0” 0” 0” 0”  0”$ 0 ”) 0%”* 0&”2 0.”3 0/”8 04”9 05”= 09”ÌB 0>”ÌC 0?”ÌK 0ÌG”ÌL 0ÌH”ÌQ 0ÌM”ÌR 0ÌN”ÌT 0ÌPÜ ” 1” 1”# 1”$ 1”0 1*”1 1+”ÌB 1<”ÌC 1=”ÌG 1ÌA”ÌW 1ÌQ”ÌX 1ÌR”Ìc 1Ì]”Ìd 1Ì^”Ìj 1Ìd”Ìk 1Ìe”Ìl 1Ìf‘”	 2Ü ” 4” 4
-” 4” 4”! 4”# 4”+ 4'”, 4(”3 4/”4 40”8 44”= 49”> 4:”ÌF 4ÌB”ÌG 4ÌC”ÌN 4ÌJ”ÌO 4ÌK”ÌP 4ÌLÜ ” 5” 5
-” 5” 5” 5”  5”( 5$”) 5%”/ 5+”0 5,”4 50”9 55”: 56”ÌB 5>”ÌC 5?”ÌG 5ÌC”ÌH 5ÌD”ÌL 5ÌH”ÌQ 5ÌM”ÌR 5ÌN”ÌZ 5ÌV”Ì[ 5ÌW”Ì` 5Ì\”Ìa 5Ì]”Ìb 5Ì^Ü ” 6” 6” 6” 6” 6” 6” 6”# 6”$ 6 ”) 6%”* 6&”. 6*”3 6/”4 60”< 68”= 69”Ì@ 6<”ÌA 6=”ÌB 6>”ÌD 6Ì@Ü ” 7” 7”# 7”$ 7”0 7*”1 7+”= 77”> 78”ÌB 7<”ÌR 7ÌL”ÌS 7ÌM”Ì^ 7ÌX”Ì_ 7ÌY”Ìe 7Ì_”Ìf 7Ì`”Ìg 7Ìa‘”	 8”” 9” 9” 9” 9Ü ” :” :”# :”$ :”0 :*”1 :+”; :5”< :6”Ì@ ::”ÌP :ÌJ”ÌQ :ÌK”Ì\ :ÌV”Ì] :ÌW”Ìc :Ì]”Ìd :Ì^”Ìe :Ì_‘”	 ;Ü ” <” <” <”  <”, <(”- <)”8 <4”9 <5”= <9”ÌM <ÌI”ÌN <ÌJ”ÌY <ÌU”ÌZ <ÌV”Ì` <Ì\”Ìa <Ì]”Ìb <Ì^’” =” =–” ?
+ÀÔrE‘µ./LabTemplateRegistryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings³CircuitTemplates.js ‘´CircuitTemplates.etsÜ ˜˜”   ” ”	 	” ” ”$ $”; ;”< <””   ” ” ” ’” ” –” ”
+ ” 	” ” ”" (™” ” ”" ”# ”/ +”0 ,”: 6”; 7”< 8’” ” ˜” ”
+ ” 	” ” ”  ” "”% 4” ” 
+” ” ”& "”' #”; 7”< 8”ÌB >”ÌD Ì@”ÌM ÌI”ÌN ÌJ”ÌO ÌK–” ” ” ” ” ” š” ” ”# ”$ ”0 *”1 +”6 0”7 1”ÌA ;”ÌB <˜” ”  ”! ”, $”- %”3 +”4 ,”5 -‘”	 ˜” ” ” ”  ”, (”- )”8 4”9 5˜” ” ” ”( "”) #”/ )”0 *”1 +’” ” ‘” !‘” $˜” %”
+ %” %	” %”  %”& %,”( %.”1 %Ì@™” &” &
+” &” &” &” &”( &$”* &&”+ &'–” '” '
+” '” '"” '$” '%’” )” )Ü ” *” *” *” *” *” *”  *”! *”% *!”* *&”+ *'”3 */”4 *0”9 *5”: *6”> *:”ÌC *?”ÌD *Ì@”ÌL *ÌH”ÌM *ÌI”ÌR *ÌN”ÌS *ÌO”ÌU *ÌQ˜” +” +” +” +” +”) +#”* +$”+ +%‘”	 ,’” -” -›” .” .
+” .” .” .” .”# .”$ . ”: .6”; .7”< .8”” /” /” /” /œ” 0” 0” 0” 0”" 0”# 0”* 0$”+ 0%”, 0&”- 0'”. 0(”/ 0)” 1” 1” 1” 1” 1” 1” 1” 1”" 1”' 1!”) 1#”+ 1%”- 1'”/ 1)˜” 2” 2” 2”  2”! 2”/ 2'”0 2(”1 2)‘” 3‘”	 4Ü ” 4” 4” 4” 4” 4”  4”% 4#”& 4$”* 4(”/ 4-”0 4.”8 46”9 47”> 4<”? 4=”ÌA 4?’” 5”, 5&˜” 6” 6” 6” 6” 6”+ 6%”, 6&”- 6'‘”	 7Ü ” 8” 8” 8” 8” 8” 8”  8”! 8”% 8!”* 8&”+ 8'”3 8/”4 80”8 84”9 85”= 89”ÌB 8>”ÌC 8?”ÌK 8ÌG”ÌL 8ÌH”ÌP 8ÌL”ÌQ 8ÌM”ÌS 8ÌO˜” 9” 9” 9” 9” 9”+ 9%”, 9&”- 9'‘”	 :Ü ” ;” ;” ;” ;” ;” ;”" ;”# ;”' ;#”, ;(”- ;)”5 ;1”6 ;2”: ;6”; ;7”= ;9˜” <” <” <” <” <”- <'”. <(”/ <)‘”	 =’” ?” ?’” Ì@”9 Ì@5Ü ” ÌA” ÌA” ÌA	” ÌA” ÌA” ÌA” ÌA”  ÌA”! ÌA”% ÌA!”* ÌA&”+ ÌA'”3 ÌA/”4 ÌA0”8 ÌA4”9 ÌA5”= ÌA9”ÌB ÌA>”ÌC ÌA?”ÌK ÌAÌG”ÌL ÌAÌH”ÌP ÌAÌL”ÌQ ÌAÌM”ÌR ÌAÌN—” ÌB” ÌB” ÌB” ÌB”! ÌB”" ÌB”$ ÌBÜ ” ÌC” ÌC” ÌC” ÌC”! ÌC”. ÌC(”0 ÌC*”ÌA ÌC;”ÌC ÌC=”ÌN ÌCÌH”ÌP ÌCÌJ”ÌZ ÌCÌT”Ì\ ÌCÌV”Ì` ÌCÌZ”Ìb ÌCÌ\”Ìc ÌCÌ]‘”	 ÌD’” ÌE”- ÌE)Ü ” ÌF” ÌF” ÌF	” ÌF” ÌF” ÌF” ÌF”! ÌF”" ÌF”& ÌF"”+ ÌF'”, ÌF(”4 ÌF0”5 ÌF1”8 ÌF4”9 ÌF5”= ÌF9”ÌB ÌF>”ÌC ÌF?”ÌK ÌFÌG”ÌL ÌFÌH”ÌP ÌFÌL”ÌQ ÌFÌM”ÌR ÌFÌNÜ ” ÌG” ÌG” ÌG” ÌG” ÌG” ÌG” ÌG”! ÌG”" ÌG”# ÌG”$ ÌG”, ÌG&”- ÌG'”6 ÌG0”7 ÌG1”8 ÌG2”: ÌG4Ü ” ÌH” ÌH” ÌH” ÌH” ÌH”# ÌH”( ÌH"”1 ÌH+”5 ÌH/”> ÌH8”? ÌH9”ÌG ÌHÌA”ÌH ÌHÌB”ÌN ÌHÌH”ÌO ÌHÌI”ÌP ÌHÌJÜ ” ÌI” ÌI” ÌI” ÌI” ÌI”% ÌI”& ÌI”* ÌI"”/ ÌI'”0 ÌI(”8 ÌI0”9 ÌI1”= ÌI5”> ÌI6”ÌB ÌI:”ÌG ÌI?”ÌH ÌIÌ@”ÌP ÌIÌH”ÌQ ÌIÌI”ÌV ÌIÌN”ÌW ÌIÌO”ÌX ÌIÌP’” ÌJ” ÌJœ” ÌK” ÌK” ÌK”  ÌK”! ÌK”" ÌK”# ÌK”/ ÌK'”0 ÌK(”1 ÌK)”2 ÌK*”? ÌK7˜” ÌL”! ÌL”# ÌL”. ÌL&”0 ÌL(”: ÌL2”< ÌL4”Ì@ ÌL8’” ÌM” ÌM‘”	 ÌN’” ÌO”* ÌO&Ü ” ÌP” ÌP” ÌP	” ÌP” ÌP” ÌP” ÌP”  ÌP”! ÌP”% ÌP!”* ÌP&”+ ÌP'”3 ÌP/”4 ÌP0”8 ÌP4”9 ÌP5”= ÌP9”ÌB ÌP>”ÌC ÌP?”ÌK ÌPÌG”ÌL ÌPÌH”ÌP ÌPÌL”ÌQ ÌPÌM”ÌR ÌPÌNÜ ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”! ÌQ”" ÌQ”# ÌQ”$ ÌQ”, ÌQ&”- ÌQ'”; ÌQ5”< ÌQ6”= ÌQ7”? ÌQ9Ü ” ÌR” ÌR” ÌR” ÌR”! ÌR”* ÌR$”, ÌR&”= ÌR7”? ÌR9”ÌJ ÌRÌD”ÌL ÌRÌF”ÌV ÌRÌP”ÌX ÌRÌR”Ì\ ÌRÌV”Ì^ ÌRÌX”Ì_ ÌRÌY‘”	 ÌS’” ÌT”0 ÌT,Ü ” ÌU” ÌU” ÌU	” ÌU” ÌU” ÌU” ÌU”" ÌU”# ÌU”' ÌU#”, ÌU(”- ÌU)”5 ÌU1”6 ÌU2”: ÌU6”; ÌU7”? ÌU;”ÌD ÌUÌ@”ÌE ÌUÌA”ÌM ÌUÌI”ÌN ÌUÌJ”ÌR ÌUÌN”ÌS ÌUÌO”ÌT ÌUÌPÜ ” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”! ÌV”" ÌV”# ÌV”$ ÌV”, ÌV&”- ÌV'”8 ÌV2”9 ÌV3”: ÌV4”< ÌV6Ü ” ÌW” ÌW” ÌW” ÌW”! ÌW”, ÌW&”. ÌW(”? ÌW9”ÌA ÌW;”ÌL ÌWÌF”ÌN ÌWÌH”ÌX ÌWÌR”ÌZ ÌWÌT”Ì^ ÌWÌX”Ì` ÌWÌZ”Ìa ÌWÌ[‘”	 ÌX’” ÌY”0 ÌY,Ÿ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”! ÌZ”% ÌZ!”0 ÌZ,”1 ÌZ-”7 ÌZ3”: ÌZ6”; ÌZ7”= ÌZ9Ü ” Ì[” Ì[” Ì[” Ì[”! Ì[”- Ì['”/ Ì[)”Ì@ Ì[:”ÌB Ì[<”ÌM Ì[ÌG”ÌO Ì[ÌI”ÌY Ì[ÌS”Ì[ Ì[ÌU”Ì_ Ì[ÌY”Ìa Ì[Ì[”Ìb Ì[Ì\‘”	 Ì\’” Ì^” Ì^Ü ” Ì_” Ì_” Ì_” Ì_” Ì_”" Ì_”# Ì_”' Ì_#”( Ì_$”- Ì_)”. Ì_*”6 Ì_2”7 Ì_3”; Ì_7”< Ì_8”Ì@ Ì_<”ÌA Ì_=”ÌF Ì_ÌB”ÌG Ì_ÌC”ÌO Ì_ÌK”ÌP Ì_ÌL”ÌT Ì_ÌP”ÌU Ì_ÌQÜ ” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`”! Ì`”" Ì`”& Ì` ”' Ì`!”, Ì`&”- Ì`'”5 Ì`/”6 Ì`0”; Ì`5”< Ì`6”> Ì`8Ü ” Ìa” Ìa” Ìa” Ìa”! Ìa”. Ìa(”0 Ìa*”ÌA Ìa;”ÌC Ìa=”ÌN ÌaÌH”ÌP ÌaÌJ”ÌZ ÌaÌT”Ì\ ÌaÌV”Ì` ÌaÌZ”Ìb ÌaÌ\”Ìc ÌaÌ]‘”	 Ìb’” Ìd” ÌdÜ ” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe”  Ìe”$ Ìe ”) Ìe%”* Ìe&”2 Ìe.”3 Ìe/”8 Ìe4”9 Ìe5”= Ìe9”ÌB Ìe>”ÌC Ìe?”ÌK ÌeÌG”ÌL ÌeÌH”ÌQ ÌeÌM”ÌR ÌeÌNŸ” Ìf” Ìf” Ìf” Ìf” Ìf”  Ìf”! Ìf”% Ìf”* Ìf$”+ Ìf%”3 Ìf-”4 Ìf.”9 Ìf3”: Ìf4”< Ìf6Ü ” Ìg” Ìg” Ìg” Ìg”! Ìg”2 Ìg,”4 Ìg.”ÌE Ìg?”ÌG ÌgÌA”ÌR ÌgÌL”ÌT ÌgÌN”Ì^ ÌgÌX”Ì` ÌgÌZ”Ìe ÌgÌ_”Ìg ÌgÌa”Ìh ÌgÌb‘”	 Ìh’” Ìj” Ìj” Ìk” Ìk
+” Ìk” Ìk”' Ìk#”( Ìk$”= Ìk9”> Ìk:”ÌD ÌkÌ@”ÌF ÌkÌB”ÌO ÌkÌK”ÌP ÌkÌL”ÌQ ÌkÌM–” Ìl” Ìl” Ìl” Ìl” Ìl” ÌlÜ ” Ìm” Ìm” Ìm” Ìm”! Ìm”' Ìm!”) Ìm#”: Ìm4”< Ìm6”ÌG ÌmÌA”ÌI ÌmÌC”ÌS ÌmÌM”ÌU ÌmÌO”Ì` ÌmÌZ”Ìa ÌmÌ[”Ìg ÌmÌa”Ìj ÌmÌd”Ìk ÌmÌe”Ìm ÌmÌg”Ìn ÌmÌh‘”	 Ìn”” Ìo” Ìo” Ìo” Ìo’” Ìp” Ìp‘” Ìr‘” Ìu˜” Ìv”
+ Ìv” Ìv	”  Ìv”! Ìv”' Ìv-”) Ìv/”2 ÌvÌA™” Ìw” Ìw
+” Ìw” Ìw” Ìw” Ìw”( Ìw$”* Ìw&”+ Ìw'Ü ” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”! Ìy”" Ìy”& Ìy"”+ Ìy'”, Ìy(”4 Ìy0”5 Ìy1”9 Ìy5”: Ìy6”< Ìy8”” Ìz” Ìz” Ìz” Ìz‘”	 Ì{Ü ” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|”  Ì|”$ Ì| ”) Ì|%”* Ì|&”2 Ì|.”3 Ì|/”7 Ì|3”8 Ì|4”< Ì|8”ÌA Ì|=”ÌB Ì|>”ÌJ Ì|ÌF”ÌK Ì|ÌG”ÌO Ì|ÌK”ÌP Ì|ÌL”ÌT Ì|ÌP”ÌY Ì|ÌU”ÌZ Ì|ÌV”Ìb Ì|Ì^”Ìc Ì|Ì_”Ìg Ì|Ìc”Ìh Ì|Ìd”Ìj Ì|Ìf”” Ì}” Ì}” Ì}” Ì}‘”	 Ì~Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”$ Ì ”) Ì%”* Ì&”2 Ì.”3 Ì/”7 Ì3”8 Ì4”: Ì6”” Ì€” Ì€” Ì€”  Ì€‘”	 ÌÜ ” Ì‚” Ì‚” Ì‚	” Ì‚” Ì‚” Ì‚” Ì‚”  Ì‚”! Ì‚”% Ì‚!”* Ì‚&”+ Ì‚'”3 Ì‚/”4 Ì‚0”9 Ì‚5”: Ì‚6”; Ì‚7Ü ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”! Ìƒ”% Ìƒ”* Ìƒ$”+ Ìƒ%”3 Ìƒ-”4 Ìƒ.”9 Ìƒ3”: Ìƒ4”> Ìƒ8”ÌC Ìƒ=”ÌD Ìƒ>”ÌL ÌƒÌF”ÌM ÌƒÌG”ÌP ÌƒÌJ”ÌQ ÌƒÌK”ÌR ÌƒÌL”ÌT ÌƒÌN”” Ì„” Ì„” Ì„”  Ì„‘”	 Ì…Ü ” Ì†” Ì†” Ì†” Ì†” Ì†” Ì†”! Ì†”" Ì†”& Ì†"”+ Ì†'”, Ì†(”4 Ì†0”5 Ì†1”9 Ì†5”: Ì†6”< Ì†8”” Ì‡” Ì‡” Ì‡” Ì‡‘”	 ÌˆÜ  ” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”  Ì‰”$ Ì‰ ”% Ì‰!”* Ì‰&”+ Ì‰'”3 Ì‰/”4 Ì‰0”8 Ì‰4”9 Ì‰5”= Ì‰9”ÌB Ì‰>”ÌC Ì‰?”ÌK Ì‰ÌG”ÌL Ì‰ÌH”ÌP Ì‰ÌL”ÌQ Ì‰ÌM”ÌU Ì‰ÌQ”ÌZ Ì‰ÌV”Ì[ Ì‰ÌW”Ìc Ì‰Ì_”Ìd Ì‰Ì`”Ìh Ì‰Ìd”Ìi Ì‰Ìe”Ìj Ì‰Ìf”Ìl Ì‰Ìh”” ÌŠ” ÌŠ”  ÌŠ”! ÌŠ‘”	 Ì‹Ü ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”  ÌŒ”$ ÌŒ ”) ÌŒ%”* ÌŒ&”2 ÌŒ.”3 ÌŒ/”8 ÌŒ4”9 ÌŒ5”= ÌŒ9”ÌB ÌŒ>”ÌC ÌŒ?”ÌK ÌŒÌG”ÌL ÌŒÌH”ÌT ÌŒÌP”ÌU ÌŒÌQ”ÌW ÌŒÌS”” Ì” Ì”! Ì”" Ì‘”	 ÌÜ ” Ì” Ì” Ì” Ì” Ì” Ì”! Ì”" Ì”& Ì"”' Ì#”, Ì(”- Ì)”5 Ì1”6 Ì2”: Ì6”; Ì7”? Ì;”ÌD ÌÌ@”ÌE ÌÌA”ÌM ÌÌI”ÌN ÌÌJ”ÌQ ÌÌM”ÌR ÌÌN”ÌS ÌÌO”ÌU ÌÌQ”” Ì” Ì”  Ì”! Ì‘”	 Ì‘Ü ” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’”  Ì’”$ Ì’ ”) Ì’%”* Ì’&”2 Ì’.”3 Ì’/”; Ì’7”< Ì’8”Ì@ Ì’<”ÌE Ì’ÌA”ÌF Ì’ÌB”ÌN Ì’ÌJ”ÌO Ì’ÌK”ÌV Ì’ÌR”ÌW Ì’ÌS”ÌY Ì’ÌU”” Ì“” Ì“” Ì“”  Ì“‘”	 Ì”Ü ” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•”  Ì•”! Ì•”% Ì•!”* Ì•&”+ Ì•'”3 Ì•/”4 Ì•0”: Ì•6”; Ì•7”? Ì•;”ÌD Ì•Ì@”ÌE Ì•ÌA”ÌM Ì•ÌI”ÌN Ì•ÌJ”ÌR Ì•ÌN”ÌS Ì•ÌO”ÌU Ì•ÌQ”” Ì–” Ì–” Ì–”  Ì–‘”	 Ì—Ü ” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”  Ì˜”$ Ì˜ ”) Ì˜%”* Ì˜&”2 Ì˜.”3 Ì˜/”8 Ì˜4”9 Ì˜5”= Ì˜9”ÌB Ì˜>”ÌC Ì˜?”ÌK Ì˜ÌG”ÌL Ì˜ÌH”ÌQ Ì˜ÌM”ÌR Ì˜ÌNŸ” Ì™” Ì™” Ì™” Ì™” Ì™”  Ì™”! Ì™”% Ì™”* Ì™$”+ Ì™%”3 Ì™-”4 Ì™.”9 Ì™3”: Ì™4”< Ì™6”” Ìš” Ìš”$ Ìš”% Ìš‘”	 Ì›Ü ” Ì” Ì
+” Ì” Ì” Ì”" Ì”' Ì#”0 Ì,”4 Ì0”= Ì9”> Ì:”ÌF ÌÌB”ÌG ÌÌC”ÌN ÌÌJ”ÌO ÌÌK”ÌP ÌÌL”ÌT ÌÌP”ÌY ÌÌU”ÌZ ÌÌV”Ìb ÌÌ^”Ìc ÌÌ_”Ìj ÌÌf”Ìk ÌÌg”Ìl ÌÌhÜ ” Ì” Ì
+” Ì” Ì” Ì” Ì”$ Ì ”- Ì)”1 Ì-”: Ì6”; Ì7”ÌC Ì?”ÌD ÌÌ@”ÌJ ÌÌF”ÌK ÌÌG”ÌL ÌÌHÜ ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”! ÌŸ”" ÌŸ”& ÌŸ ”' ÌŸ!”, ÌŸ&”- ÌŸ'”5 ÌŸ/”6 ÌŸ0”; ÌŸ5”< ÌŸ6”Ì@ ÌŸ:”ÌE ÌŸ?”ÌF ÌŸÌ@”ÌN ÌŸÌH”ÌO ÌŸÌI”ÌT ÌŸÌN”ÌU ÌŸÌO”ÌV ÌŸÌP”ÌW ÌŸÌQÜ ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ”# Ì ”$ Ì  ”) Ì %”* Ì &”. Ì *”3 Ì /”4 Ì 0”< Ì 8”= Ì 9”Ì@ Ì <”ÌA Ì =”ÌE Ì ÌA”ÌJ Ì ÌF”ÌK Ì ÌG”ÌS Ì ÌO”ÌT Ì ÌP”ÌZ Ì ÌV”Ì[ Ì ÌW”Ì\ Ì ÌX”Ì^ Ì ÌZ”” Ì¡” Ì¡” Ì¡”  Ì¡‘”	 Ì¢Ü ” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”& Ì£"”' Ì£#”- Ì£)”. Ì£*”2 Ì£.”7 Ì£3”8 Ì£4”Ì@ Ì£<”ÌA Ì£=”ÌG Ì£ÌC”ÌH Ì£ÌD”ÌL Ì£ÌH”ÌQ Ì£ÌM”ÌR Ì£ÌN”ÌZ Ì£ÌV”Ì[ Ì£ÌW”Ì_ Ì£Ì[”Ì` Ì£Ì\”Ìa Ì£Ì]”Ìc Ì£Ì_”” Ì¤” Ì¤” Ì¤” Ì¤‘”	 Ì¥”” Ì¦” Ì¦” Ì¦” Ì¦’” Ì§” Ì§–” Ì©
 ”
- ?” ?” ?” ?” ?+›” Ì@” Ì@
-” Ì@” Ì@”' Ì@#”( Ì@$”4 Ì@0”5 Ì@1”Ì@ Ì@<”ÌA Ì@=”ÌB Ì@>–” ÌA” ÌA” ÌA” ÌA” ÌA” ÌA™” ÌB” ÌB	” ÌB
-” ÌB” ÌB”$ ÌB”' ÌB!”- ÌB'”. ÌB(”” ÌC” ÌC” ÌC” ÌC‘”	 ÌD˜” ÌE” ÌE
-” ÌE” ÌE” ÌE”/ ÌE+”0 ÌE,”1 ÌE-’” ÌF” ÌF‘” ÌGÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ?‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration>ÍšÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌEÍšÔrM”¤type¥start£end¤nameªIdentifierÌKÌ[°CircuitTemplatesÀÔrN”¤type¥start£end¤body©ClassBodyÌ\Íš“ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌƒÌéÃÂMªIdentifierÌŠÌ–¬generateById¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ–ÌéÀÂÂÂ‘MªIdentifierÌ—Ì¡ªtemplateIdN®BlockStatementÌ£Ìé‘ÔrQ”¤type¥start£end¨argument¯ReturnStatementÌ®ÌâÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌµÌáÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌµÌÕMªIdentifierÌµÌÈ³LabTemplateRegistryMªIdentifierÌÉÌÕ¬generateByIdÂÂ‘MªIdentifierÌÖÌàªtemplateIdÂO°MethodDefinitionÌïÍ†ÃÂMªIdentifierÌöÌş¨generate¦methodP²FunctionExpressionÌşÍ†ÀÂÂÂ’MªIdentifierÌÿÍ¦promptMªIdentifierÍÍ©mcuFamilyN®BlockStatementÍÍ†Ü ÔrT•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍ@‘ÔrU•¤type¥start£end¢id¤init²VariableDeclaratorÍ#Í?MªIdentifierÍ#Í(¥lowerR®CallExpressionÍ+Í?S°MemberExpressionÍ+Í=MªIdentifierÍ+Í1¦promptMªIdentifierÍ2Í=«toLowerCaseÂÂÂ¥constÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍJÍÔrW–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍNÍ|R®CallExpressionÍNÍdS°MemberExpressionÍNÍ\MªIdentifierÍNÍS¥lowerMªIdentifierÍTÍ\¨includesÂÂ‘ÔrX•¤type¥start£end¥value£raw§LiteralÍ]Íc¤7805¦'7805'Â¢||R®CallExpressionÍhÍ|S°MemberExpressionÍhÍvMªIdentifierÍhÍm¥lowerMªIdentifierÍnÍv¨includesÂÂ‘X§LiteralÍwÍ{¦ç¨³å‹¨'ç¨³å‹'ÂN®BlockStatementÍ~Í‘Q¯ReturnStatementÍÍøW±LogicalExpressionÍ”Í÷R®CallExpressionÍ”Í¾S°MemberExpressionÍ”Í±MªIdentifierÍ”Í¤°CircuitTemplatesMªIdentifierÍ¥Í±¬generateByIdÂÂ‘X§LiteralÍ²Í½©lab_power«'lab_power'Â¢??R®CallExpressionÍÓÍ÷S°MemberExpressionÍÓÍïMªIdentifierÍÓÍã°CircuitTemplatesMªIdentifierÍäÍï«fallbackDocÂÂ‘MªIdentifierÍğÍö¦promptÂÀV«IfStatementÍÍáW±LogicalExpressionÍÍmW±LogicalExpressionÍÍUW±LogicalExpressionÍÍ=R®CallExpressionÍÍ%S°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍ Í$¦è¿æ”¾¨'è¿æ”¾'Â¢||R®CallExpressionÍ)Í=S°MemberExpressionÍ)Í7MªIdentifierÍ)Í.¥lowerMªIdentifierÍ/Í7¨includesÂÂ‘X§LiteralÍ8Í<¦æ”¾å¤§¨'æ”¾å¤§'Â¢||R®CallExpressionÍAÍUS°MemberExpressionÍAÍOMªIdentifierÍAÍF¥lowerMªIdentifierÍGÍO¨includesÂÂ‘X§LiteralÍPÍT¦åŒç›¸¨'åŒç›¸'Â¢||R®CallExpressionÍYÍmS°MemberExpressionÍYÍgMªIdentifierÍYÍ^¥lowerMªIdentifierÍ_Íg¨includesÂÂ‘X§LiteralÍhÍl¦åç›¸¨'åç›¸'ÂN®BlockStatementÍoÍá‘Q¯ReturnStatementÍ~ÍÖW±LogicalExpressionÍ…ÍÕR®CallExpressionÍ…Í­S°MemberExpressionÍ…Í¢MªIdentifierÍ…Í•°CircuitTemplatesMªIdentifierÍ–Í¢¬generateByIdÂÂ‘X§LiteralÍ£Í¬§lab_amp©'lab_amp'Â¢??R®CallExpressionÍ±ÍÕS°MemberExpressionÍ±ÍÍMªIdentifierÍ±ÍÁ°CircuitTemplatesMªIdentifierÍÂÍÍ«fallbackDocÂÂ‘MªIdentifierÍÎÍÔ¦promptÂÀV«IfStatementÍëÍ’W±LogicalExpressionÍïÍR®CallExpressionÍïÍS°MemberExpressionÍïÍıMªIdentifierÍïÍô¥lowerMªIdentifierÍõÍı¨includesÂÂ‘X§LiteralÍşÍ¢rc¤'rc'Â¢||R®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ¦æ»¤æ³¢¨'æ»¤æ³¢'ÂN®BlockStatementÍÍ’‘Q¯ReturnStatementÍ,Í‡W±LogicalExpressionÍ3Í†R®CallExpressionÍ3Í^S°MemberExpressionÍ3ÍPMªIdentifierÍ3ÍC°CircuitTemplatesMªIdentifierÍDÍP¬generateByIdÂÂ‘X§LiteralÍQÍ]ªlab_filter¬'lab_filter'Â¢??R®CallExpressionÍbÍ†S°MemberExpressionÍbÍ~MªIdentifierÍbÍr°CircuitTemplatesMªIdentifierÍsÍ~«fallbackDocÂÂ‘MªIdentifierÍÍ…¦promptÂÀV«IfStatementÍœÍW±LogicalExpressionÍ Í&W±LogicalExpressionÍ¡ÍÎR®CallExpressionÍ¡ÍµS°MemberExpressionÍ¡Í¯MªIdentifierÍ¡Í¦¥lowerMªIdentifierÍ§Í¯¨includesÂÂ‘X§LiteralÍ°Í´¢51¤'51'Â¢||R®CallExpressionÍ¹ÍÎS°MemberExpressionÍ¹ÍÇMªIdentifierÍ¹Í¾¥lowerMªIdentifierÍ¿ÍÇ¨includesÂÂ‘X§LiteralÍÈÍÍ£stc¥'stc'Â¢&&W±LogicalExpressionÍáÍ%W±LogicalExpressionÍáÍR®CallExpressionÍáÍõS°MemberExpressionÍáÍïMªIdentifierÍáÍæ¥lowerMªIdentifierÍçÍï¨includesÂÂ‘X§LiteralÍğÍô¦æµæ°´¨'æµæ°´'Â¢||R®CallExpressionÍùÍS°MemberExpressionÍùÍMªIdentifierÍùÍş¥lowerMªIdentifierÍÿÍ¨includesÂÂ‘X§LiteralÍÍ£led¥'led'Â¢||R®CallExpressionÍÍ%S°MemberExpressionÍÍ MªIdentifierÍÍ¥lowerMªIdentifierÍÍ ¨includesÂÂ‘X§LiteralÍ!Í$£ç¯¥'ç¯'ÂN®BlockStatementÍ(Í‘Q¯ReturnStatementÍ7Í’W±LogicalExpressionÍ>Í‘R®CallExpressionÍ>ÍiS°MemberExpressionÍ>Í[MªIdentifierÍ>ÍN°CircuitTemplatesMªIdentifierÍOÍ[¬generateByIdÂÂ‘X§LiteralÍ\Íhªlab_51_led¬'lab_51_led'Â¢??R®CallExpressionÍmÍ‘S°MemberExpressionÍmÍ‰MªIdentifierÍmÍ}°CircuitTemplatesMªIdentifierÍ~Í‰«fallbackDocÂÂ‘MªIdentifierÍŠÍ¦promptÂÀV«IfStatementÍ§ÍNW±LogicalExpressionÍ«ÍÙR®CallExpressionÍ«ÍÁS°MemberExpressionÍ«Í¹MªIdentifierÍ«Í°¥lowerMªIdentifierÍ±Í¹¨includesÂÂ‘X§LiteralÍºÍÀ¤uart¦'uart'Â¢||R®CallExpressionÍÅÍÙS°MemberExpressionÍÅÍÓMªIdentifierÍÅÍÊ¥lowerMªIdentifierÍËÍÓ¨includesÂÂ‘X§LiteralÍÔÍØ¦ä¸²å£¨'ä¸²å£'ÂN®BlockStatementÍÛÍN‘Q¯ReturnStatementÍêÍCW±LogicalExpressionÍñÍBR®CallExpressionÍñÍS°MemberExpressionÍñÍMªIdentifierÍñÍ°CircuitTemplatesMªIdentifierÍÍ¬generateByIdÂÂ‘X§LiteralÍÍ¨lab_uartª'lab_uart'Â¢??R®CallExpressionÍÍBS°MemberExpressionÍÍ:MªIdentifierÍÍ.°CircuitTemplatesMªIdentifierÍ/Í:«fallbackDocÂÂ‘MªIdentifierÍ;ÍA¦promptÂÀV«IfStatementÍXÍW±LogicalExpressionÍ\Í W±LogicalExpressionÍ\ÍˆR®CallExpressionÍ\ÍpS°MemberExpressionÍ\ÍjMªIdentifierÍ\Ía¥lowerMªIdentifierÍbÍj¨includesÂÂ‘X§LiteralÍkÍo¦æ— æº¨'æ— æº'Â¢||R®CallExpressionÍtÍˆS°MemberExpressionÍtÍ‚MªIdentifierÍtÍy¥lowerMªIdentifierÍzÍ‚¨includesÂÂ‘X§LiteralÍƒÍ‡¦ç”µé˜»¨'ç”µé˜»'Â¢||R®CallExpressionÍŒÍ S°MemberExpressionÍŒÍšMªIdentifierÍŒÍ‘¥lowerMªIdentifierÍ’Íš¨includesÂÂ‘X§LiteralÍ›ÍŸ¦ç”µå®¹¨'ç”µå®¹'ÂN®BlockStatementÍ¢Í‘Q¯ReturnStatementÍ±ÍW±LogicalExpressionÍ¸ÍR®CallExpressionÍ¸ÍäS°MemberExpressionÍ¸ÍÕMªIdentifierÍ¸ÍÈ°CircuitTemplatesMªIdentifierÍÉÍÕ¬generateByIdÂÂ‘X§LiteralÍÖÍã«lab_passive­'lab_passive'Â¢??R®CallExpressionÍèÍS°MemberExpressionÍèÍMªIdentifierÍèÍø°CircuitTemplatesMªIdentifierÍùÍ«fallbackDocÂÂ‘MªIdentifierÍÍ¦promptÂÀV«IfStatementÍ"ÍèW±LogicalExpressionÍ&ÍoW±LogicalExpressionÍ&ÍSR®CallExpressionÍ&Í:S°MemberExpressionÍ&Í4MªIdentifierÍ&Í+¥lowerMªIdentifierÍ,Í4¨includesÂÂ‘X§LiteralÍ5Í9¦åˆ†ç«‹¨'åˆ†ç«‹'Â¢||R®CallExpressionÍ>ÍSS°MemberExpressionÍ>ÍLMªIdentifierÍ>ÍC¥lowerMªIdentifierÍDÍL¨includesÂÂ‘X§LiteralÍMÍR©ä¸‰æç®¡«'ä¸‰æç®¡'Â¢||R®CallExpressionÍWÍoS°MemberExpressionÍWÍeMªIdentifierÍWÍ\¥lowerMªIdentifierÍ]Íe¨includesÂÂ‘X§LiteralÍfÍn¦mosfet¨'mosfet'ÂN®BlockStatementÍqÍè‘Q¯ReturnStatementÍ€ÍİW±LogicalExpressionÍ‡ÍÜR®CallExpressionÍ‡Í´S°MemberExpressionÍ‡Í¤MªIdentifierÍ‡Í—°CircuitTemplatesMªIdentifierÍ˜Í¤¬generateByIdÂÂ‘X§LiteralÍ¥Í³¬lab_discrete®'lab_discrete'Â¢??R®CallExpressionÍ¸ÍÜS°MemberExpressionÍ¸ÍÔMªIdentifierÍ¸ÍÈ°CircuitTemplatesMªIdentifierÍÉÍÔ«fallbackDocÂÂ‘MªIdentifierÍÕÍÛ¦promptÂÀV«IfStatementÍòÍ´W±LogicalExpressionÍöÍ<W±LogicalExpressionÍöÍ$R®CallExpressionÍöÍS°MemberExpressionÍöÍMªIdentifierÍöÍû¥lowerMªIdentifierÍüÍ¨includesÂÂ‘X§LiteralÍÍ¤74hc¦'74hc'Â¢||R®CallExpressionÍÍ$S°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ#¦é€»è¾‘¨'é€»è¾‘'Â¢||R®CallExpressionÍ(Í<S°MemberExpressionÍ(Í6MªIdentifierÍ(Í-¥lowerMªIdentifierÍ.Í6¨includesÂÂ‘X§LiteralÍ7Í;¦æ•°å­—¨'æ•°å­—'ÂN®BlockStatementÍ>Í´‘Q¯ReturnStatementÍMÍ©W±LogicalExpressionÍTÍ¨R®CallExpressionÍTÍ€S°MemberExpressionÍTÍqMªIdentifierÍTÍd°CircuitTemplatesMªIdentifierÍeÍq¬generateByIdÂÂ‘X§LiteralÍrÍ«lab_digital­'lab_digital'Â¢??R®CallExpressionÍ„Í¨S°MemberExpressionÍ„Í MªIdentifierÍ„Í”°CircuitTemplatesMªIdentifierÍ•Í «fallbackDocÂÂ‘MªIdentifierÍ¡Í§¦promptÂÀV«IfStatementÍ¾Í„W±LogicalExpressionÍÂÍW±LogicalExpressionÍÂÍòR®CallExpressionÍÂÍÖS°MemberExpressionÍÂÍĞMªIdentifierÍÂÍÇ¥lowerMªIdentifierÍÈÍĞ¨includesÂÂ‘X§LiteralÍÑÍÕ¦å­˜å‚¨¨'å­˜å‚¨'Â¢||R®CallExpressionÍÚÍòS°MemberExpressionÍÚÍèMªIdentifierÍÚÍß¥lowerMªIdentifierÍàÍè¨includesÂÂ‘X§LiteralÍéÍñ¦eeprom¨'eeprom'Â¢||R®CallExpressionÍöÍS°MemberExpressionÍöÍMªIdentifierÍöÍû¥lowerMªIdentifierÍüÍ¨includesÂÂ‘X§LiteralÍÍ¥flash§'flash'ÂN®BlockStatementÍÍ„‘Q¯ReturnStatementÍÍyW±LogicalExpressionÍ%ÍxR®CallExpressionÍ%ÍPS°MemberExpressionÍ%ÍBMªIdentifierÍ%Í5°CircuitTemplatesMªIdentifierÍ6ÍB¬generateByIdÂÂ‘X§LiteralÍCÍOªlab_memory¬'lab_memory'Â¢??R®CallExpressionÍTÍxS°MemberExpressionÍTÍpMªIdentifierÍTÍd°CircuitTemplatesMªIdentifierÍeÍp«fallbackDocÂÂ‘MªIdentifierÍqÍw¦promptÂÀV«IfStatementÍÍ	PW±LogicalExpressionÍ’ÍÙW±LogicalExpressionÍ’ÍÁR®CallExpressionÍ’Í§S°MemberExpressionÍ’Í MªIdentifierÍ’Í—¥lowerMªIdentifierÍ˜Í ¨includesÂÂ‘X§LiteralÍ¡Í¦©ä¼ æ„Ÿå™¨«'ä¼ æ„Ÿå™¨'Â¢||R®CallExpressionÍ«ÍÁS°MemberExpressionÍ«Í¹MªIdentifierÍ«Í°¥lowerMªIdentifierÍ±Í¹¨includesÂÂ‘X§LiteralÍºÍÀ¤ds18¦'ds18'Â¢||R®CallExpressionÍÅÍÙS°MemberExpressionÍÅÍÓMªIdentifierÍÅÍÊ¥lowerMªIdentifierÍËÍÓ¨includesÂÂ‘X§LiteralÍÔÍØ¦éœå°”¨'éœå°”'ÂN®BlockStatementÍÛÍ	P‘Q¯ReturnStatementÍêÍ	EW±LogicalExpressionÍñÍ	DR®CallExpressionÍñÍ	S°MemberExpressionÍñÍ	MªIdentifierÍñÍ	°CircuitTemplatesMªIdentifierÍ	Í	¬generateByIdÂÂ‘X§LiteralÍ	Í	ªlab_sensor¬'lab_sensor'Â¢??R®CallExpressionÍ	 Í	DS°MemberExpressionÍ	 Í	<MªIdentifierÍ	 Í	0°CircuitTemplatesMªIdentifierÍ	1Í	<«fallbackDocÂÂ‘MªIdentifierÍ	=Í	C¦promptÂÀV«IfStatementÍ	ZÍ
- W±LogicalExpressionÍ	^Í	¤W±LogicalExpressionÍ	^Í	‹R®CallExpressionÍ	^Í	rS°MemberExpressionÍ	^Í	lMªIdentifierÍ	^Í	c¥lowerMªIdentifierÍ	dÍ	l¨includesÂÂ‘X§LiteralÍ	mÍ	q¦ä»ªå™¨¨'ä»ªå™¨'Â¢||R®CallExpressionÍ	vÍ	‹S°MemberExpressionÍ	vÍ	„MªIdentifierÍ	vÍ	{¥lowerMªIdentifierÍ	|Í	„¨includesÂÂ‘X§LiteralÍ	…Í	Š©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||R®CallExpressionÍ	Í	¤S°MemberExpressionÍ	Í	MªIdentifierÍ	Í	”¥lowerMªIdentifierÍ	•Í	¨includesÂÂ‘X§LiteralÍ	Í	£©ä¸‡ç”¨è¡¨«'ä¸‡ç”¨è¡¨'ÂN®BlockStatementÍ	¦Í
- ‘Q¯ReturnStatementÍ	µÍ
-W±LogicalExpressionÍ	¼Í
-R®CallExpressionÍ	¼Í	ìS°MemberExpressionÍ	¼Í	ÙMªIdentifierÍ	¼Í	Ì°CircuitTemplatesMªIdentifierÍ	ÍÍ	Ù¬generateByIdÂÂ‘X§LiteralÍ	ÚÍ	ë¯lab_instruments±'lab_instruments'Â¢??R®CallExpressionÍ	ğÍ
-S°MemberExpressionÍ	ğÍ
-MªIdentifierÍ	ğÍ
- °CircuitTemplatesMªIdentifierÍ
-Í
-«fallbackDocÂÂ‘MªIdentifierÍ
-Í
-¦promptÂÀT³VariableDeclarationÍ
-*Í
-r‘U²VariableDeclaratorÍ
-0Í
-qMªIdentifierÍ
-0Í
-7§isStm32W±LogicalExpressionÍ
-:Í
-qÔrY”¤type¥start£endªexpression¯ChainExpressionÍ
-:Í
-VR®CallExpressionÍ
-:Í
-VS°MemberExpressionÍ
-:Í
-MMªIdentifierÍ
-:Í
-C©mcuFamilyMªIdentifierÍ
-EÍ
-M¨includesÂÃ‘X§LiteralÍ
-NÍ
-U¥STM32§'STM32'Â¢||R®CallExpressionÍ
-ZÍ
-qS°MemberExpressionÍ
-ZÍ
-hMªIdentifierÍ
-ZÍ
-_¥lowerMªIdentifierÍ
-`Í
-h¨includesÂÂ‘X§LiteralÍ
-iÍ
-p¥stm32§'stm32'Â¥constT³VariableDeclarationÍ
-|Í
-Ö‘U²VariableDeclaratorÍ
-‚Í
-ÕMªIdentifierÍ
-‚Í
-†¤is51W±LogicalExpressionÍ
-‰Í
-ÕW±LogicalExpressionÍ
-‰Í
-¼Y¯ChainExpressionÍ
-‰Í
-¤R®CallExpressionÍ
-‰Í
-¤S°MemberExpressionÍ
-‰Í
-œMªIdentifierÍ
-‰Í
-’©mcuFamilyMªIdentifierÍ
-”Í
-œ¨includesÂÃ‘X§LiteralÍ
-Í
-£¤8051¦'8051'Â¢||R®CallExpressionÍ
-¨Í
-¼S°MemberExpressionÍ
-¨Í
-¶MªIdentifierÍ
-¨Í
-­¥lowerMªIdentifierÍ
-®Í
-¶¨includesÂÂ‘X§LiteralÍ
-·Í
-»¢51¤'51'Â¢||R®CallExpressionÍ
-ÀÍ
-ÕS°MemberExpressionÍ
-ÀÍ
-ÎMªIdentifierÍ
-ÀÍ
-Å¥lowerMªIdentifierÍ
-ÆÍ
-Î¨includesÂÂ‘X§LiteralÍ
-ÏÍ
-Ô£stc¥'stc'Â¥constV«IfStatementÍ
-àÍ‘W±LogicalExpressionÍ
-äÍMªIdentifierÍ
-äÍ
-è¤is51¢&&W±LogicalExpressionÍ
-íÍR®CallExpressionÍ
-íÍS°MemberExpressionÍ
-íÍ
-ûMªIdentifierÍ
-íÍ
-ò¥lowerMªIdentifierÍ
-óÍ
-û¨includesÂÂ‘X§LiteralÍ
-üÍ£led¥'led'Â¢||R®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ£ç¯¥'ç¯'ÂN®BlockStatementÍÍ‘‘Q¯ReturnStatementÍ+Í†W±LogicalExpressionÍ2Í…R®CallExpressionÍ2Í]S°MemberExpressionÍ2ÍOMªIdentifierÍ2ÍB°CircuitTemplatesMªIdentifierÍCÍO¬generateByIdÂÂ‘X§LiteralÍPÍ\ªlab_51_led¬'lab_51_led'Â¢??R®CallExpressionÍaÍ…S°MemberExpressionÍaÍ}MªIdentifierÍaÍq°CircuitTemplatesMªIdentifierÍrÍ}«fallbackDocÂÂ‘MªIdentifierÍ~Í„¦promptÂÀV«IfStatementÍ›ÍMªIdentifierÍŸÍ¦§isStm32N®BlockStatementÍ¨Í‘Q¯ReturnStatementÍ·ÍW±LogicalExpressionÍ¾ÍR®CallExpressionÍ¾ÍçS°MemberExpressionÍ¾ÍÛMªIdentifierÍ¾ÍÎ°CircuitTemplatesMªIdentifierÍÏÍÛ¬generateByIdÂÂ‘X§LiteralÍÜÍæ¨lab_uartª'lab_uart'Â¢??R®CallExpressionÍëÍS°MemberExpressionÍëÍMªIdentifierÍëÍû°CircuitTemplatesMªIdentifierÍüÍ«fallbackDocÂÂ‘MªIdentifierÍÍ¦promptÂÀQ¯ReturnStatementÍ%ÍW±LogicalExpressionÍ,Í~R®CallExpressionÍ,ÍVS°MemberExpressionÍ,ÍIMªIdentifierÍ,Í<°CircuitTemplatesMªIdentifierÍ=ÍI¬generateByIdÂÂ‘X§LiteralÍJÍU©lab_power«'lab_power'Â¢??R®CallExpressionÍZÍ~S°MemberExpressionÍZÍvMªIdentifierÍZÍj°CircuitTemplatesMªIdentifierÍkÍv«fallbackDocÂÂ‘MªIdentifierÍwÍ}¦promptÂO°MethodDefinitionÍŒÍ—ÃÂMªIdentifierÍ“Í«fallbackDoc¦methodP²FunctionExpressionÍÍ—ÀÂÂÂ‘MªIdentifierÍŸÍ¥¦promptN®BlockStatementÍ§Í—“T³VariableDeclarationÍ²Íì‘U²VariableDeclaratorÍ¸ÍëMªIdentifierÍ¸Í»£docR®CallExpressionÍ¾ÍëS°MemberExpressionÍ¾ÍŞMªIdentifierÍ¾ÍÑ³LabTemplateRegistryMªIdentifierÍÒÍŞ¬generateByIdÂÂ‘X§LiteralÍßÍê©lab_power«'lab_power'Â¥constV«IfStatementÍöÍ]W°BinaryExpressionÍúÍMªIdentifierÍúÍı£doc£!==X§LiteralÍÍÀ¤nullN®BlockStatementÍÍ]’Y³ExpressionStatementÍÍ9ÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ8¡=S°MemberExpressionÍÍ/S°MemberExpressionÍÍ#MªIdentifierÍÍ£docMªIdentifierÍÍ#¨metadataÂÂMªIdentifierÍ$Í/«descriptionÂÂMªIdentifierÍ2Í8¦promptQ¯ReturnStatementÍGÍRMªIdentifierÍNÍQ£docÀQ®ThrowStatementÍgÍÔr[•¤type¥start£end¦callee©arguments­NewExpressionÍmÍMªIdentifierÍqÍv¥Error‘X§LiteralÍwÍµNo template available·'No template available'À‘Ôr\•¤type¥start£endªspecifiers¦source±ImportDeclaration <‘Ôr]•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	³LabTemplateRegistryMªIdentifier	³LabTemplateRegistryX§Literal$;µ./LabTemplateRegistry·'./LabTemplateRegistry'
+ Ì©” Ì©” Ì©” Ì©” Ì©+›” Ìª” Ìª
+” Ìª” Ìª”' Ìª#”( Ìª$”4 Ìª0”5 Ìª1”Ì@ Ìª<”ÌA Ìª=”ÌB Ìª>–” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«™” Ì¬” Ì¬	” Ì¬
+” Ì¬” Ì¬”$ Ì¬”' Ì¬!”- Ì¬'”. Ì¬(”” Ì­” Ì­” Ì­” Ì­‘”	 Ì®˜” Ì¯” Ì¯
+” Ì¯” Ì¯” Ì¯”/ Ì¯+”0 Ì¯,”1 Ì¯-’” Ì°” Ì°‘” Ì±ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ™‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration>ÍnÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌEÍnÔrM”¤type¥start£end¤nameªIdentifierÌKÌ[°CircuitTemplatesÀÔrN”¤type¥start£end¤body©ClassBodyÌ\Ín•ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌƒÌéÃÂMªIdentifierÌŠÌ–¬generateById¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ–ÌéÀÂÂÂ‘MªIdentifierÌ—Ì¡ªtemplateIdN®BlockStatementÌ£Ìé‘ÔrQ”¤type¥start£end¨argument¯ReturnStatementÌ®ÌâÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌµÌáÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌµÌÕMªIdentifierÌµÌÈ³LabTemplateRegistryMªIdentifierÌÉÌÕ¬generateByIdÂÂ‘MªIdentifierÌÖÌàªtemplateIdÂO°MethodDefinitionÌïÍ„ÃÂMªIdentifierÌöÌş¨generate¦methodP²FunctionExpressionÌşÍ„ÀÂÂÂ’MªIdentifierÌÿÍ¦promptMªIdentifierÍÍ©mcuFamilyN®BlockStatementÍÍ„“ÔrT•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍd‘ÔrU•¤type¥start£end¢id¤init²VariableDeclaratorÍ#ÍcMªIdentifierÍ#Í(¥matchR®CallExpressionÍ+ÍcS°MemberExpressionÍ+ÍPMªIdentifierÍ+Í;°CircuitTemplatesMªIdentifierÍ<ÍP´matchWithInstrumentsÂÂ’MªIdentifierÍQÍW¦promptMªIdentifierÍYÍb©mcuFamilyÂ¥constÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍnÍÔrW–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍrÍ€MªIdentifierÍrÍw¥match£!==ÔrX•¤type¥start£end¥value£raw§LiteralÍ|Í€À¤nullN®BlockStatementÍ‚Í‘Q¯ReturnStatementÍ‘ÍW±LogicalExpressionÍ˜Í R®CallExpressionÍ˜ÍÇS°MemberExpressionÍ˜ÍµMªIdentifierÍ˜Í¨°CircuitTemplatesMªIdentifierÍ©Íµ¬generateByIdÂÂ‘S°MemberExpressionÍ¶ÍÆMªIdentifierÍ¶Í»¥matchMªIdentifierÍ¼ÍÆªtemplateIdÂÂÂ¢??R®CallExpressionÍÜÍ S°MemberExpressionÍÜÍøMªIdentifierÍÜÍì°CircuitTemplatesMªIdentifierÍíÍø«fallbackDocÂÂ‘MªIdentifierÍùÍÿ¦promptÂÀQ¯ReturnStatementÍÍ}W±LogicalExpressionÍÍ|R®CallExpressionÍÍGS°MemberExpressionÍÍ:MªIdentifierÍÍ-°CircuitTemplatesMªIdentifierÍ.Í:¬generateByIdÂÂ‘X§LiteralÍ;ÍF©lab_power«'lab_power'Â¢??R®CallExpressionÍXÍ|S°MemberExpressionÍXÍtMªIdentifierÍXÍh°CircuitTemplatesMªIdentifierÍiÍt«fallbackDocÂÂ‘MªIdentifierÍuÍ{¦promptÂO°MethodDefinitionÍñÍ(ÃÂMªIdentifierÍøÍ´matchWithInstruments¦methodP²FunctionExpressionÍÍ(ÀÂÂÂ’MªIdentifierÍÍ¦promptMªIdentifierÍÍ©mcuFamilyN®BlockStatementÍ Í(Ü T³VariableDeclarationÍ+ÍN‘U²VariableDeclaratorÍ1ÍMMªIdentifierÍ1Í6¥lowerR®CallExpressionÍ9ÍMS°MemberExpressionÍ9ÍKMªIdentifierÍ9Í?¦promptMªIdentifierÍ@ÍK«toLowerCaseÂÂÂ¥constT³VariableDeclarationÍXÍo‘U²VariableDeclaratorÍ^ÍnMªIdentifierÍ^Íi«instrumentsÔrY”¤type¥start£end¨elements¯ArrayExpressionÍlÍn¥constV«IfStatementÍ–ÍW±LogicalExpressionÍšÍáW±LogicalExpressionÍšÍÈR®CallExpressionÍšÍ¯S°MemberExpressionÍšÍ¨MªIdentifierÍšÍŸ¥lowerMªIdentifierÍ Í¨¨includesÂÂ‘X§LiteralÍ©Í®©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||R®CallExpressionÍ³ÍÈS°MemberExpressionÍ³ÍÁMªIdentifierÍ³Í¸¥lowerMªIdentifierÍ¹ÍÁ¨includesÂÂ‘X§LiteralÍÂÍÇ©æµ‹ç”µæµ«'æµ‹ç”µæµ'Â¢||R®CallExpressionÍÌÍáS°MemberExpressionÍÌÍÚMªIdentifierÍÌÍÑ¥lowerMªIdentifierÍÒÍÚ¨includesÂÂ‘X§LiteralÍÛÍà©æ€»ç”µæµ«'æ€»ç”µæµ'ÂN®BlockStatementÍãÍ‘ÔrZ”¤type¥start£endªexpression³ExpressionStatementÍòÍR®CallExpressionÍòÍS°MemberExpressionÍòÍMªIdentifierÍòÍı«instrumentsMªIdentifierÍşÍ¤pushÂÂ‘X§LiteralÍÍªAMMETER_DC¬'AMMETER_DC'ÂÀT³VariableDeclarationÍDÍx‘U²VariableDeclaratorÍJÍwMªIdentifierÍJÍQ§vmMatchR®CallExpressionÍTÍwS°MemberExpressionÍTÍ_MªIdentifierÍTÍY¥lowerMªIdentifierÍZÍ_¥matchÂÂ‘Ôr[–¤type¥start£end¥value£raw¥regex§LiteralÍ`Ív’Ù"(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨ Ù$/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/Ôr\’§pattern¥flagsÙ"(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨ Â¥constV«IfStatementÍ‚ÍìMªIdentifierÍ†Í§vmMatchN®BlockStatementÍÍ@’T³VariableDeclarationÍÍÁ‘U²VariableDeclaratorÍ¤ÍÀMªIdentifierÍ¤Í©¥countR®CallExpressionÍ¬ÍÀMªIdentifierÍ¬Í´¨parseInt‘S°MemberExpressionÍµÍ¿MªIdentifierÍµÍ¼§vmMatchX§LiteralÍ½Í¾¡1ÃÂÂ¥constÔr]—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÏÍ5T³VariableDeclarationÍÔÍŞ‘U²VariableDeclaratorÍØÍŞMªIdentifierÍØÍÚ¢viX§LiteralÍİÍŞ ¡0£letW°BinaryExpressionÍàÍêMªIdentifierÍàÍâ¢vi¡<MªIdentifierÍåÍê¥countÔr^–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍìÍğ¢++ÂMªIdentifierÍìÍî¢viN®BlockStatementÍòÍ5‘Z³ExpressionStatementÍÍ&R®CallExpressionÍÍ%S°MemberExpressionÍÍMªIdentifierÍÍ«instrumentsMªIdentifierÍÍ¤pushÂÂ‘X§LiteralÍÍ$¬VOLTMETER_DC®'VOLTMETER_DC'ÂV«IfStatementÍOÍìW±LogicalExpressionÍSÍR®CallExpressionÍSÍhS°MemberExpressionÍSÍaMªIdentifierÍSÍX¥lowerMªIdentifierÍYÍa¨includesÂÂ‘X§LiteralÍbÍg©ç”µå‹è¡¨«'ç”µå‹è¡¨'Â¢||R®CallExpressionÍlÍS°MemberExpressionÍlÍzMªIdentifierÍlÍq¥lowerMªIdentifierÍrÍz¨includesÂÂ‘X§LiteralÍ{Í€©æµ‹ç”µå‹«'æµ‹ç”µå‹'ÂN®BlockStatementÍƒÍì‘Z³ExpressionStatementÍÀÍáR®CallExpressionÍÀÍàS°MemberExpressionÍÀÍĞMªIdentifierÍÀÍË«instrumentsMªIdentifierÍÌÍĞ¤pushÂÂ‘X§LiteralÍÑÍß¬VOLTMETER_DC®'VOLTMETER_DC'ÂÀV«IfStatementÍöÍ|W±LogicalExpressionÍúÍ?W±LogicalExpressionÍúÍ'R®CallExpressionÍúÍS°MemberExpressionÍúÍMªIdentifierÍúÍÿ¥lowerMªIdentifierÍ Í¨includesÂÂ‘X§LiteralÍ	Í©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||R®CallExpressionÍÍ'S°MemberExpressionÍÍ!MªIdentifierÍÍ¥lowerMªIdentifierÍÍ!¨includesÂÂ‘X§LiteralÍ"Í&¦æ³¢å½¢¨'æ³¢å½¢'Â¢||R®CallExpressionÍ+Í?S°MemberExpressionÍ+Í9MªIdentifierÍ+Í0¥lowerMªIdentifierÍ1Í9¨includesÂÂ‘X§LiteralÍ:Í>¦è§‚å¯Ÿ¨'è§‚å¯Ÿ'ÂN®BlockStatementÍAÍ|‘Z³ExpressionStatementÍPÍqR®CallExpressionÍPÍpS°MemberExpressionÍPÍ`MªIdentifierÍPÍ[«instrumentsMªIdentifierÍ\Í`¤pushÂÂ‘X§LiteralÍaÍo¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂÀV«IfStatementÍ†ÍøW±LogicalExpressionÍŠÍ¹R®CallExpressionÍŠÍ¡S°MemberExpressionÍŠÍ˜MªIdentifierÍŠÍ¥lowerMªIdentifierÍÍ˜¨includesÂÂ‘X§LiteralÍ™Í ¯é€»è¾‘åˆ†æä»ª±'é€»è¾‘åˆ†æä»ª'Â¢||R®CallExpressionÍ¥Í¹S°MemberExpressionÍ¥Í³MªIdentifierÍ¥Íª¥lowerMªIdentifierÍ«Í³¨includesÂÂ‘X§LiteralÍ´Í¸¦æ—¶åº¨'æ—¶åº'ÂN®BlockStatementÍ»Íø‘Z³ExpressionStatementÍÊÍíR®CallExpressionÍÊÍìS°MemberExpressionÍÊÍÚMªIdentifierÍÊÍÕ«instrumentsMªIdentifierÍÖÍÚ¤pushÂÂ‘X§LiteralÍÛÍë®LOGIC_ANALYZER°'LOGIC_ANALYZER'ÂÀV«IfStatementÍ[Í?W±LogicalExpressionÍ_ÍÌW±LogicalExpressionÍ`Í¤R®CallExpressionÍ`ÍtS°MemberExpressionÍ`ÍnMªIdentifierÍ`Íe¥lowerMªIdentifierÍfÍn¨includesÂÂ‘X§LiteralÍoÍs¦åˆ†å‹¨'åˆ†å‹'Â¢||W±LogicalExpressionÍxÍ¤R®CallExpressionÍxÍŒS°MemberExpressionÍxÍ†MªIdentifierÍxÍ}¥lowerMªIdentifierÍ~Í†¨includesÂÂ‘X§LiteralÍ‡Í‹¦ç”µé˜»¨'ç”µé˜»'Â¢&&R®CallExpressionÍÍ¤S°MemberExpressionÍÍMªIdentifierÍÍ•¥lowerMªIdentifierÍ–Í¨includesÂÂ‘X§LiteralÍŸÍ£¦ä¸²è”¨'ä¸²è”'Â¢&&W°BinaryExpressionÍ¶ÍÌS°MemberExpressionÍ¶ÍÈMªIdentifierÍ¶ÍÁ«instrumentsMªIdentifierÍÂÍÈ¦lengthÂÂ¡>X§LiteralÍËÍÌ ¡0N®BlockStatementÍÎÍ?‘Q¯ReturnStatementÍİÍ4Ôr_”¤type¥start£endªproperties°ObjectExpressionÍäÍ3“Ôr`™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍæÍÿÂÂÂMªIdentifierÍæÍğªtemplateIdX§LiteralÍòÍÿ«lab_passive­'lab_passive'¤init`¨PropertyÍÍÂÂÂMªIdentifierÍÍ±instrumentsNeededMªIdentifierÍÍ«instruments¤init`¨PropertyÍ!Í1ÂÂÂMªIdentifierÍ!Í+ªisCompoundX§LiteralÍ-Í1Ã¤true¤initÀV«IfStatementÍxÍ
+fW±LogicalExpressionÍ|ÍÿW±LogicalExpressionÍ}ÍÁW±LogicalExpressionÍ}Í©R®CallExpressionÍ}Í’S°MemberExpressionÍ}Í‹MªIdentifierÍ}Í‚¥lowerMªIdentifierÍƒÍ‹¨includesÂÂ‘X§LiteralÍŒÍ‘£led¥'led'Â¢||R®CallExpressionÍ–Í©S°MemberExpressionÍ–Í¤MªIdentifierÍ–Í›¥lowerMªIdentifierÍœÍ¤¨includesÂÂ‘X§LiteralÍ¥Í¨£ç¯¥'ç¯'Â¢||R®CallExpressionÍ­ÍÁS°MemberExpressionÍ­Í»MªIdentifierÍ­Í²¥lowerMªIdentifierÍ³Í»¨includesÂÂ‘X§LiteralÍ¼ÍÀ¦æµæ°´¨'æµæ°´'Â¢&&R®CallExpressionÍÓÍÿS°MemberExpressionÍÓÍãMªIdentifierÍÓÍŞ«instrumentsMªIdentifierÍßÍã¤someÂÂ‘P·ArrowFunctionExpressionÍäÍşÀÃÂÂ‘MªIdentifierÍäÍå¡iR®CallExpressionÍéÍşS°MemberExpressionÍéÍóMªIdentifierÍéÍê¡iMªIdentifierÍëÍó¨includesÂÂ‘X§LiteralÍôÍı§AMMETER©'AMMETER'ÂÂN®BlockStatementÍ	Í
+f’T³VariableDeclarationÍ	Í	±‘U²VariableDeclaratorÍ	Í	°MªIdentifierÍ	Í	¤is51W±LogicalExpressionÍ	Í	°W±LogicalExpressionÍ	Í	—W±LogicalExpressionÍ	Í	W±LogicalExpressionÍ	Í	SW°BinaryExpressionÍ	Í	5MªIdentifierÍ	Í	'©mcuFamily£!==MªIdentifierÍ	,Í	5©undefined¢&&R®CallExpressionÍ	9Í	SS°MemberExpressionÍ	9Í	KMªIdentifierÍ	9Í	B©mcuFamilyMªIdentifierÍ	CÍ	K¨includesÂÂ‘X§LiteralÍ	LÍ	R¤8051¦'8051'Â¢||R®CallExpressionÍ	iÍ	S°MemberExpressionÍ	iÍ	wMªIdentifierÍ	iÍ	n¥lowerMªIdentifierÍ	oÍ	w¨includesÂÂ‘X§LiteralÍ	xÍ	~¤8051¦'8051'Â¢||R®CallExpressionÍ	ƒÍ	—S°MemberExpressionÍ	ƒÍ	‘MªIdentifierÍ	ƒÍ	ˆ¥lowerMªIdentifierÍ	‰Í	‘¨includesÂÂ‘X§LiteralÍ	’Í	–¢51¤'51'Â¢||R®CallExpressionÍ	›Í	°S°MemberExpressionÍ	›Í	©MªIdentifierÍ	›Í	 ¥lowerMªIdentifierÍ	¡Í	©¨includesÂÂ‘X§LiteralÍ	ªÍ	¯£stc¥'stc'Â¥constQ¯ReturnStatementÍ	¿Í
+[_°ObjectExpressionÍ	ÆÍ
+Z“`¨PropertyÍ	ÙÍ
+ÂÂÂMªIdentifierÍ	ÙÍ	ãªtemplateIdVµConditionalExpressionÍ	åÍ
+MªIdentifierÍ	åÍ	é¤is51X§LiteralÍ	ìÍ	øªlab_51_led¬'lab_51_led'X§LiteralÍ	ûÍ
+«lab_digital­'lab_digital'¤init`¨PropertyÍ
+Í
+9ÂÂÂMªIdentifierÍ
+Í
+,±instrumentsNeededMªIdentifierÍ
+.Í
+9«instruments¤init`¨PropertyÍ
+;Í
+KÂÂÂMªIdentifierÍ
+;Í
+EªisCompoundX§LiteralÍ
+GÍ
+KÃ¤true¤initÀV«IfStatementÍ
+œÍ—W±LogicalExpressionÍ
+ Í(W±LogicalExpressionÍ
+¡Í
+åW±LogicalExpressionÍ
+¡Í
+ÍR®CallExpressionÍ
+¡Í
+µS°MemberExpressionÍ
+¡Í
+¯MªIdentifierÍ
+¡Í
+¦¥lowerMªIdentifierÍ
+§Í
+¯¨includesÂÂ‘X§LiteralÍ
+°Í
+´¦è¿æ”¾¨'è¿æ”¾'Â¢||R®CallExpressionÍ
+¹Í
+ÍS°MemberExpressionÍ
+¹Í
+ÇMªIdentifierÍ
+¹Í
+¾¥lowerMªIdentifierÍ
+¿Í
+Ç¨includesÂÂ‘X§LiteralÍ
+ÈÍ
+Ì¦æ”¾å¤§¨'æ”¾å¤§'Â¢||R®CallExpressionÍ
+ÑÍ
+åS°MemberExpressionÍ
+ÑÍ
+ßMªIdentifierÍ
+ÑÍ
+Ö¥lowerMªIdentifierÍ
+×Í
+ß¨includesÂÂ‘X§LiteralÍ
+àÍ
+ä¦åŒç›¸¨'åŒç›¸'Â¢&&R®CallExpressionÍ
+÷Í(S°MemberExpressionÍ
+÷ÍMªIdentifierÍ
+÷Í«instrumentsMªIdentifierÍÍ¤someÂÂ‘P·ArrowFunctionExpressionÍÍ'ÀÃÂÂ‘MªIdentifierÍÍ	¡iR®CallExpressionÍÍ'S°MemberExpressionÍÍMªIdentifierÍÍ¡iMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ&¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂÂN®BlockStatementÍ*Í—‘Q¯ReturnStatementÍ9ÍŒ_°ObjectExpressionÍ@Í‹“`¨PropertyÍBÍWÂÂÂMªIdentifierÍBÍLªtemplateIdX§LiteralÍNÍW§lab_amp©'lab_amp'¤init`¨PropertyÍYÍwÂÂÂMªIdentifierÍYÍj±instrumentsNeededMªIdentifierÍlÍw«instruments¤init`¨PropertyÍyÍ‰ÂÂÂMªIdentifierÍyÍƒªisCompoundX§LiteralÍ…Í‰Ã¤true¤initÀV«IfStatementÍÓÍÏW±LogicalExpressionÍ×Í^W±LogicalExpressionÍØÍW±LogicalExpressionÍØÍR®CallExpressionÍØÍîS°MemberExpressionÍØÍæMªIdentifierÍØÍİ¥lowerMªIdentifierÍŞÍæ¨includesÂÂ‘X§LiteralÍçÍí¤7805¦'7805'Â¢||R®CallExpressionÍòÍS°MemberExpressionÍòÍ MªIdentifierÍòÍ÷¥lowerMªIdentifierÍøÍ ¨includesÂÂ‘X§LiteralÍÍ¦ç¨³å‹¨'ç¨³å‹'Â¢||R®CallExpressionÍ
+ÍS°MemberExpressionÍ
+ÍMªIdentifierÍ
+Í¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ¦ç”µæº¨'ç”µæº'Â¢&&R®CallExpressionÍ0Í^S°MemberExpressionÍ0Í@MªIdentifierÍ0Í;«instrumentsMªIdentifierÍ<Í@¤someÂÂ‘P·ArrowFunctionExpressionÍAÍ]ÀÃÂÂ‘MªIdentifierÍAÍB¡iR®CallExpressionÍFÍ]S°MemberExpressionÍFÍPMªIdentifierÍFÍG¡iMªIdentifierÍHÍP¨includesÂÂ‘X§LiteralÍQÍ\©VOLTMETER«'VOLTMETER'ÂÂN®BlockStatementÍ`ÍÏ‘Q¯ReturnStatementÍoÍÄ_°ObjectExpressionÍvÍÃ“`¨PropertyÍxÍÂÂÂMªIdentifierÍxÍ‚ªtemplateIdX§LiteralÍ„Í©lab_power«'lab_power'¤init`¨PropertyÍ‘Í¯ÂÂÂMªIdentifierÍ‘Í¢±instrumentsNeededMªIdentifierÍ¤Í¯«instruments¤init`¨PropertyÍ±ÍÁÂÂÂMªIdentifierÍ±Í»ªisCompoundX§LiteralÍ½ÍÁÃ¤true¤initÀV«IfStatementÍÍ°W±LogicalExpressionÍÍ>R®CallExpressionÍÍ$S°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ#©ä¼ æ„Ÿå™¨«'ä¼ æ„Ÿå™¨'Â¢&&W°BinaryExpressionÍ(Í>S°MemberExpressionÍ(Í:MªIdentifierÍ(Í3«instrumentsMªIdentifierÍ4Í:¦lengthÂÂ¡>X§LiteralÍ=Í> ¡0N®BlockStatementÍ@Í°‘Q¯ReturnStatementÍOÍ¥_°ObjectExpressionÍVÍ¤“`¨PropertyÍXÍpÂÂÂMªIdentifierÍXÍbªtemplateIdX§LiteralÍdÍpªlab_sensor¬'lab_sensor'¤init`¨PropertyÍrÍÂÂÂMªIdentifierÍrÍƒ±instrumentsNeededMªIdentifierÍ…Í«instruments¤init`¨PropertyÍ’Í¢ÂÂÂMªIdentifierÍ’ÍœªisCompoundX§LiteralÍÍ¢Ã¤true¤initÀV«IfStatementÍØÍÙW±LogicalExpressionÍÜÍfW±LogicalExpressionÍÜÍLW±LogicalExpressionÍÜÍ%W±LogicalExpressionÍÜÍW°BinaryExpressionÍÜÍóS°MemberExpressionÍÜÍîMªIdentifierÍÜÍç«instrumentsMªIdentifierÍèÍî¦lengthÂÂ¢>=X§LiteralÍòÍó¡2¢&&^¯UnaryExpressionÍ÷Í¡!ÃR®CallExpressionÍøÍS°MemberExpressionÍøÍMªIdentifierÍøÍı¥lowerMªIdentifierÍşÍ¨includesÂÂ‘X§LiteralÍÍ¦ç”µé˜»¨'ç”µé˜»'Â¢&&^¯UnaryExpressionÍÍ%¡!ÃR®CallExpressionÍÍ%S°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍ Í$¦è¿æ”¾¨'è¿æ”¾'Â¢&&^¯UnaryExpressionÍ6ÍL¡!ÃR®CallExpressionÍ7ÍLS°MemberExpressionÍ7ÍEMªIdentifierÍ7Í<¥lowerMªIdentifierÍ=ÍE¨includesÂÂ‘X§LiteralÍFÍK©å•ç‰‡æœº«'å•ç‰‡æœº'Â¢&&^¯UnaryExpressionÍPÍf¡!ÃR®CallExpressionÍQÍfS°MemberExpressionÍQÍ_MªIdentifierÍQÍV¥lowerMªIdentifierÍWÍ_¨includesÂÂ‘X§LiteralÍ`Íe£led¥'led'ÂN®BlockStatementÍhÍÙ‘Q¯ReturnStatementÍwÍÎ_°ObjectExpressionÍ~ÍÍ“`¨PropertyÍ€Í™ÂÂÂMªIdentifierÍ€ÍŠªtemplateIdX§LiteralÍŒÍ™«lab_passive­'lab_passive'¤init`¨PropertyÍ›Í¹ÂÂÂMªIdentifierÍ›Í¬±instrumentsNeededMªIdentifierÍ®Í¹«instruments¤init`¨PropertyÍ»ÍËÂÂÂMªIdentifierÍ»ÍÅªisCompoundX§LiteralÍÇÍËÃ¤true¤initÀV«IfStatementÍşÍÿW±LogicalExpressionÍÍ‡W±LogicalExpressionÍÍnW±LogicalExpressionÍÍHW±LogicalExpressionÍÍ/R®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ¦ä»ªå™¨¨'ä»ªå™¨'Â¢||R®CallExpressionÍÍ/S°MemberExpressionÍÍ(MªIdentifierÍÍ¥lowerMªIdentifierÍ Í(¨includesÂÂ‘X§LiteralÍ)Í.©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||R®CallExpressionÍ3ÍHS°MemberExpressionÍ3ÍAMªIdentifierÍ3Í8¥lowerMªIdentifierÍ9ÍA¨includesÂÂ‘X§LiteralÍBÍG©ä¸‡ç”¨è¡¨«'ä¸‡ç”¨è¡¨'Â¢||R®CallExpressionÍYÍnS°MemberExpressionÍYÍgMªIdentifierÍYÍ^¥lowerMªIdentifierÍ_Íg¨includesÂÂ‘X§LiteralÍhÍm©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||R®CallExpressionÍrÍ‡S°MemberExpressionÍrÍ€MªIdentifierÍrÍw¥lowerMªIdentifierÍxÍ€¨includesÂÂ‘X§LiteralÍÍ†©ç”µå‹è¡¨«'ç”µå‹è¡¨'ÂN®BlockStatementÍ‰Íÿ‘Q¯ReturnStatementÍ˜Íô_°ObjectExpressionÍŸÍó“`¨PropertyÍ¡Í¾ÂÂÂMªIdentifierÍ¡Í«ªtemplateIdX§LiteralÍ­Í¾¯lab_instruments±'lab_instruments'¤init`¨PropertyÍÀÍŞÂÂÂMªIdentifierÍÀÍÑ±instrumentsNeededMªIdentifierÍÓÍŞ«instruments¤init`¨PropertyÍàÍñÂÂÂMªIdentifierÍàÍêªisCompoundX§LiteralÍìÍñÂ¥false¤initÀT³VariableDeclarationÍ'Íp‘U²VariableDeclaratorÍ-ÍoMªIdentifierÍ-Í3¦baseIdR®CallExpressionÍ6ÍoS°MemberExpressionÍ6Í\MªIdentifierÍ6ÍF°CircuitTemplatesMªIdentifierÍGÍ\µmatchStrongTemplateIdÂÂ’MªIdentifierÍ]Íc¦promptMªIdentifierÍeÍn©mcuFamilyÂ¥constV«IfStatementÍzÍW°BinaryExpressionÍ~ÍMªIdentifierÍ~Í„¦baseId£!==X§LiteralÍ‰ÍÀ¤nullN®BlockStatementÍÍ‘Q¯ReturnStatementÍÍ _°ObjectExpressionÍ¥Íÿ“`¨PropertyÍ§Í¹ÂÂÂMªIdentifierÍ§Í±ªtemplateIdMªIdentifierÍ³Í¹¦baseId¤init`¨PropertyÍ»ÍÙÂÂÂMªIdentifierÍ»ÍÌ±instrumentsNeededMªIdentifierÍÎÍÙ«instruments¤init`¨PropertyÍÛÍıÂÂÂMªIdentifierÍÛÍåªisCompoundW°BinaryExpressionÍçÍıS°MemberExpressionÍçÍùMªIdentifierÍçÍò«instrumentsMªIdentifierÍóÍù¦lengthÂÂ¡>X§LiteralÍüÍı ¡0¤initÀQ¯ReturnStatementÍÍ!X§LiteralÍÍ À¤nullO°MethodDefinitionÍŒÍZÃÂMªIdentifierÍ“Í¨µmatchStrongTemplateId¦methodP²FunctionExpressionÍ¨ÍZÀÂÂÂ’MªIdentifierÍ©Í¯¦promptMªIdentifierÍ±Íº©mcuFamilyN®BlockStatementÍ¼ÍZÜ T³VariableDeclarationÍÇÍê‘U²VariableDeclaratorÍÍÍéMªIdentifierÍÍÍÒ¥lowerR®CallExpressionÍÕÍéS°MemberExpressionÍÕÍçMªIdentifierÍÕÍÛ¦promptMªIdentifierÍÜÍç«toLowerCaseÂÂÂ¥constV«IfStatementÍôÍUW±LogicalExpressionÍøÍ&R®CallExpressionÍøÍS°MemberExpressionÍøÍMªIdentifierÍøÍı¥lowerMªIdentifierÍşÍ¨includesÂÂ‘X§LiteralÍÍ¤7805¦'7805'Â¢||R®CallExpressionÍÍ&S°MemberExpressionÍÍ MªIdentifierÍÍ¥lowerMªIdentifierÍÍ ¨includesÂÂ‘X§LiteralÍ!Í%¦ç¨³å‹¨'ç¨³å‹'ÂN®BlockStatementÍ(ÍU‘Q¯ReturnStatementÍ7ÍJX§LiteralÍ>ÍI©lab_power«'lab_power'ÀV«IfStatementÍ_ÍìW±LogicalExpressionÍcÍ¿W±LogicalExpressionÍcÍ§W±LogicalExpressionÍcÍR®CallExpressionÍcÍwS°MemberExpressionÍcÍqMªIdentifierÍcÍh¥lowerMªIdentifierÍiÍq¨includesÂÂ‘X§LiteralÍrÍv¦è¿æ”¾¨'è¿æ”¾'Â¢||R®CallExpressionÍ{ÍS°MemberExpressionÍ{Í‰MªIdentifierÍ{Í€¥lowerMªIdentifierÍÍ‰¨includesÂÂ‘X§LiteralÍŠÍ¦æ”¾å¤§¨'æ”¾å¤§'Â¢||R®CallExpressionÍ“Í§S°MemberExpressionÍ“Í¡MªIdentifierÍ“Í˜¥lowerMªIdentifierÍ™Í¡¨includesÂÂ‘X§LiteralÍ¢Í¦¦åŒç›¸¨'åŒç›¸'Â¢||R®CallExpressionÍ«Í¿S°MemberExpressionÍ«Í¹MªIdentifierÍ«Í°¥lowerMªIdentifierÍ±Í¹¨includesÂÂ‘X§LiteralÍºÍ¾¦åç›¸¨'åç›¸'ÂN®BlockStatementÍÁÍì‘Q¯ReturnStatementÍĞÍáX§LiteralÍ×Íà§lab_amp©'lab_amp'ÀV«IfStatementÍöÍVW±LogicalExpressionÍúÍ&R®CallExpressionÍúÍS°MemberExpressionÍúÍMªIdentifierÍúÍÿ¥lowerMªIdentifierÍ Í¨includesÂÂ‘X§LiteralÍ	Í¢rc¤'rc'Â¢||R®CallExpressionÍÍ&S°MemberExpressionÍÍ MªIdentifierÍÍ¥lowerMªIdentifierÍÍ ¨includesÂÂ‘X§LiteralÍ!Í%¦æ»¤æ³¢¨'æ»¤æ³¢'ÂN®BlockStatementÍ(ÍV‘Q¯ReturnStatementÍ7ÍKX§LiteralÍ>ÍJªlab_filter¬'lab_filter'ÀV«IfStatementÍ`ÍW±LogicalExpressionÍdÍêW±LogicalExpressionÍeÍ’R®CallExpressionÍeÍyS°MemberExpressionÍeÍsMªIdentifierÍeÍj¥lowerMªIdentifierÍkÍs¨includesÂÂ‘X§LiteralÍtÍx¢51¤'51'Â¢||R®CallExpressionÍ}Í’S°MemberExpressionÍ}Í‹MªIdentifierÍ}Í‚¥lowerMªIdentifierÍƒÍ‹¨includesÂÂ‘X§LiteralÍŒÍ‘£stc¥'stc'Â¢&&W±LogicalExpressionÍ¥ÍéW±LogicalExpressionÍ¥ÍÒR®CallExpressionÍ¥Í¹S°MemberExpressionÍ¥Í³MªIdentifierÍ¥Íª¥lowerMªIdentifierÍ«Í³¨includesÂÂ‘X§LiteralÍ´Í¸¦æµæ°´¨'æµæ°´'Â¢||R®CallExpressionÍ½ÍÒS°MemberExpressionÍ½ÍËMªIdentifierÍ½ÍÂ¥lowerMªIdentifierÍÃÍË¨includesÂÂ‘X§LiteralÍÌÍÑ£led¥'led'Â¢||R®CallExpressionÍÖÍéS°MemberExpressionÍÖÍäMªIdentifierÍÖÍÛ¥lowerMªIdentifierÍÜÍä¨includesÂÂ‘X§LiteralÍåÍè£ç¯¥'ç¯'ÂN®BlockStatementÍìÍ‘Q¯ReturnStatementÍûÍX§LiteralÍÍªlab_51_led¬'lab_51_led'ÀV«IfStatementÍ$Í„W±LogicalExpressionÍ(ÍVR®CallExpressionÍ(Í>S°MemberExpressionÍ(Í6MªIdentifierÍ(Í-¥lowerMªIdentifierÍ.Í6¨includesÂÂ‘X§LiteralÍ7Í=¤uart¦'uart'Â¢||R®CallExpressionÍBÍVS°MemberExpressionÍBÍPMªIdentifierÍBÍG¥lowerMªIdentifierÍHÍP¨includesÂÂ‘X§LiteralÍQÍU¦ä¸²å£¨'ä¸²å£'ÂN®BlockStatementÍXÍ„‘Q¯ReturnStatementÍgÍyX§LiteralÍnÍx¨lab_uartª'lab_uart'ÀV«IfStatementÍÍ!W±LogicalExpressionÍ’ÍğR®CallExpressionÍ’Í¦S°MemberExpressionÍ’Í MªIdentifierÍ’Í—¥lowerMªIdentifierÍ˜Í ¨includesÂÂ‘X§LiteralÍ¡Í¥¦æ— æº¨'æ— æº'Â¢&&W±LogicalExpressionÍ«ÍïW±LogicalExpressionÍ«Í×R®CallExpressionÍ«Í¿S°MemberExpressionÍ«Í¹MªIdentifierÍ«Í°¥lowerMªIdentifierÍ±Í¹¨includesÂÂ‘X§LiteralÍºÍ¾¦ç”µé˜»¨'ç”µé˜»'Â¢||R®CallExpressionÍÃÍ×S°MemberExpressionÍÃÍÑMªIdentifierÍÃÍÈ¥lowerMªIdentifierÍÉÍÑ¨includesÂÂ‘X§LiteralÍÒÍÖ¦ç”µå®¹¨'ç”µå®¹'Â¢||R®CallExpressionÍÛÍïS°MemberExpressionÍÛÍéMªIdentifierÍÛÍà¥lowerMªIdentifierÍáÍé¨includesÂÂ‘X§LiteralÍêÍî¦å®éªŒ¨'å®éªŒ'ÂN®BlockStatementÍòÍ!‘Q¯ReturnStatementÍÍX§LiteralÍÍ«lab_passive­'lab_passive'ÀV«IfStatementÍ+ÍªW±LogicalExpressionÍ/ÍxW±LogicalExpressionÍ/Í\R®CallExpressionÍ/ÍCS°MemberExpressionÍ/Í=MªIdentifierÍ/Í4¥lowerMªIdentifierÍ5Í=¨includesÂÂ‘X§LiteralÍ>ÍB¦åˆ†ç«‹¨'åˆ†ç«‹'Â¢||R®CallExpressionÍGÍ\S°MemberExpressionÍGÍUMªIdentifierÍGÍL¥lowerMªIdentifierÍMÍU¨includesÂÂ‘X§LiteralÍVÍ[©ä¸‰æç®¡«'ä¸‰æç®¡'Â¢||R®CallExpressionÍ`ÍxS°MemberExpressionÍ`ÍnMªIdentifierÍ`Íe¥lowerMªIdentifierÍfÍn¨includesÂÂ‘X§LiteralÍoÍw¦mosfet¨'mosfet'ÂN®BlockStatementÍzÍª‘Q¯ReturnStatementÍ‰ÍŸX§LiteralÍÍ¬lab_discrete®'lab_discrete'ÀV«IfStatementÍ´Í0W±LogicalExpressionÍ¸ÍÿR®CallExpressionÍ¸ÍÎS°MemberExpressionÍ¸ÍÆMªIdentifierÍ¸Í½¥lowerMªIdentifierÍ¾ÍÆ¨includesÂÂ‘X§LiteralÍÇÍÍ¤74hc¦'74hc'Â¢||W±LogicalExpressionÍÓÍşR®CallExpressionÍÓÍçS°MemberExpressionÍÓÍáMªIdentifierÍÓÍØ¥lowerMªIdentifierÍÙÍá¨includesÂÂ‘X§LiteralÍâÍæ¦é€»è¾‘¨'é€»è¾‘'Â¢&&R®CallExpressionÍëÍşS°MemberExpressionÍëÍùMªIdentifierÍëÍğ¥lowerMªIdentifierÍñÍù¨includesÂÂ‘X§LiteralÍúÍı£é—¨¥'é—¨'ÂN®BlockStatementÍÍ0‘Q¯ReturnStatementÍÍ%X§LiteralÍÍ$«lab_digital­'lab_digital'ÀV«IfStatementÍ:Í¹W±LogicalExpressionÍ>Í‰W±LogicalExpressionÍ>ÍnR®CallExpressionÍ>ÍRS°MemberExpressionÍ>ÍLMªIdentifierÍ>ÍC¥lowerMªIdentifierÍDÍL¨includesÂÂ‘X§LiteralÍMÍQ¦å­˜å‚¨¨'å­˜å‚¨'Â¢||R®CallExpressionÍVÍnS°MemberExpressionÍVÍdMªIdentifierÍVÍ[¥lowerMªIdentifierÍ\Íd¨includesÂÂ‘X§LiteralÍeÍm¦eeprom¨'eeprom'Â¢||R®CallExpressionÍrÍ‰S°MemberExpressionÍrÍ€MªIdentifierÍrÍw¥lowerMªIdentifierÍxÍ€¨includesÂÂ‘X§LiteralÍÍˆ¥flash§'flash'ÂN®BlockStatementÍ‹Í¹‘Q¯ReturnStatementÍšÍ®X§LiteralÍ¡Í­ªlab_memory¬'lab_memory'ÀV«IfStatementÍÃÍ>W±LogicalExpressionÍÇÍW±LogicalExpressionÍÇÍöR®CallExpressionÍÇÍÜS°MemberExpressionÍÇÍÕMªIdentifierÍÇÍÌ¥lowerMªIdentifierÍÍÍÕ¨includesÂÂ‘X§LiteralÍÖÍÛ©ä¼ æ„Ÿå™¨«'ä¼ æ„Ÿå™¨'Â¢||R®CallExpressionÍàÍöS°MemberExpressionÍàÍîMªIdentifierÍàÍå¥lowerMªIdentifierÍæÍî¨includesÂÂ‘X§LiteralÍïÍõ¤ds18¦'ds18'Â¢||R®CallExpressionÍúÍS°MemberExpressionÍúÍMªIdentifierÍúÍÿ¥lowerMªIdentifierÍ Í¨includesÂÂ‘X§LiteralÍ	Í¦éœå°”¨'éœå°”'ÂN®BlockStatementÍÍ>‘Q¯ReturnStatementÍÍ3X§LiteralÍ&Í2ªlab_sensor¬'lab_sensor'ÀV«IfStatementÍHÍW±LogicalExpressionÍLÍÑW±LogicalExpressionÍLÍ¸W±LogicalExpressionÍLÍ’W±LogicalExpressionÍLÍyR®CallExpressionÍLÍ`S°MemberExpressionÍLÍZMªIdentifierÍLÍQ¥lowerMªIdentifierÍRÍZ¨includesÂÂ‘X§LiteralÍ[Í_¦ä»ªå™¨¨'ä»ªå™¨'Â¢||R®CallExpressionÍdÍyS°MemberExpressionÍdÍrMªIdentifierÍdÍi¥lowerMªIdentifierÍjÍr¨includesÂÂ‘X§LiteralÍsÍx©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||R®CallExpressionÍ}Í’S°MemberExpressionÍ}Í‹MªIdentifierÍ}Í‚¥lowerMªIdentifierÍƒÍ‹¨includesÂÂ‘X§LiteralÍŒÍ‘©ä¸‡ç”¨è¡¨«'ä¸‡ç”¨è¡¨'Â¢||R®CallExpressionÍ£Í¸S°MemberExpressionÍ£Í±MªIdentifierÍ£Í¨¥lowerMªIdentifierÍ©Í±¨includesÂÂ‘X§LiteralÍ²Í·©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||R®CallExpressionÍ¼ÍÑS°MemberExpressionÍ¼ÍÊMªIdentifierÍ¼ÍÁ¥lowerMªIdentifierÍÂÍÊ¨includesÂÂ‘X§LiteralÍËÍĞ©ç”µå‹è¡¨«'ç”µå‹è¡¨'ÂN®BlockStatementÍÓÍ‘Q¯ReturnStatementÍâÍûX§LiteralÍéÍú¯lab_instruments±'lab_instruments'ÀT³VariableDeclarationÍÍt‘U²VariableDeclaratorÍÍsMªIdentifierÍÍ§isStm32W±LogicalExpressionÍ ÍsW±LogicalExpressionÍ!ÍWW°BinaryExpressionÍ!Í8MªIdentifierÍ!Í*©mcuFamily£!==MªIdentifierÍ/Í8©undefined¢&&R®CallExpressionÍ<ÍWS°MemberExpressionÍ<ÍNMªIdentifierÍ<ÍE©mcuFamilyMªIdentifierÍFÍN¨includesÂÂ‘X§LiteralÍOÍV¥STM32§'STM32'Â¢||R®CallExpressionÍ\ÍsS°MemberExpressionÍ\ÍjMªIdentifierÍ\Ía¥lowerMªIdentifierÍbÍj¨includesÂÂ‘X§LiteralÍkÍr¥stm32§'stm32'Â¥constT³VariableDeclarationÍ~Í‘U²VariableDeclaratorÍ„ÍMªIdentifierÍ„Íˆ¤is51W±LogicalExpressionÍ‹ÍW±LogicalExpressionÍ‹ÍéW±LogicalExpressionÍŒÍÁW°BinaryExpressionÍŒÍ£MªIdentifierÍŒÍ•©mcuFamily£!==MªIdentifierÍšÍ£©undefined¢&&R®CallExpressionÍ§ÍÁS°MemberExpressionÍ§Í¹MªIdentifierÍ§Í°©mcuFamilyMªIdentifierÍ±Í¹¨includesÂÂ‘X§LiteralÍºÍÀ¤8051¦'8051'Â¢||R®CallExpressionÍÓÍéS°MemberExpressionÍÓÍáMªIdentifierÍÓÍØ¥lowerMªIdentifierÍÙÍá¨includesÂÂ‘X§LiteralÍâÍè¤8051¦'8051'Â¢||W±LogicalExpressionÍîÍR®CallExpressionÍîÍS°MemberExpressionÍîÍüMªIdentifierÍîÍó¥lowerMªIdentifierÍôÍü¨includesÂÂ‘X§LiteralÍıÍ£stc¥'stc'Â¢&&R®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¥lowerMªIdentifierÍÍ¨includesÂÂ‘X§LiteralÍÍ©å•ç‰‡æœº«'å•ç‰‡æœº'Â¥constV«IfStatementÍ(Í¬W±LogicalExpressionÍ,Í|MªIdentifierÍ,Í0¤is51¢&&W±LogicalExpressionÍ5Í{W±LogicalExpressionÍ5ÍaR®CallExpressionÍ5ÍJS°MemberExpressionÍ5ÍCMªIdentifierÍ5Í:¥lowerMªIdentifierÍ;ÍC¨includesÂÂ‘X§LiteralÍDÍI£led¥'led'Â¢||R®CallExpressionÍNÍaS°MemberExpressionÍNÍ\MªIdentifierÍNÍS¥lowerMªIdentifierÍTÍ\¨includesÂÂ‘X§LiteralÍ]Í`£ç¯¥'ç¯'Â¢||R®CallExpressionÍeÍ{S°MemberExpressionÍeÍsMªIdentifierÍeÍj¥lowerMªIdentifierÍkÍs¨includesÂÂ‘X§LiteralÍtÍz¬æœ€å°ç³»ç»Ÿ®'æœ€å°ç³»ç»Ÿ'ÂN®BlockStatementÍ~Í¬‘Q¯ReturnStatementÍÍ¡X§LiteralÍ”Í ªlab_51_led¬'lab_51_led'ÀV«IfStatementÍ¶Í=W±LogicalExpressionÍºÍMªIdentifierÍºÍÁ§isStm32¢&&W±LogicalExpressionÍÆÍW±LogicalExpressionÍÆÍöR®CallExpressionÍÆÍÜS°MemberExpressionÍÆÍÔMªIdentifierÍÆÍË¥lowerMªIdentifierÍÌÍÔ¨includesÂÂ‘X§LiteralÍÕÍÛ¬æœ€å°ç³»ç»Ÿ®'æœ€å°ç³»ç»Ÿ'Â¢||R®CallExpressionÍàÍöS°MemberExpressionÍàÍîMªIdentifierÍàÍå¥lowerMªIdentifierÍæÍî¨includesÂÂ‘X§LiteralÍïÍõ¤uart¦'uart'Â¢||R®CallExpressionÍúÍS°MemberExpressionÍúÍMªIdentifierÍúÍÿ¥lowerMªIdentifierÍ Í¨includesÂÂ‘X§LiteralÍ	Í¦ä¸²å£¨'ä¸²å£'ÂN®BlockStatementÍÍ=‘Q¯ReturnStatementÍ Í2X§LiteralÍ'Í1¨lab_uartª'lab_uart'ÀQ¯ReturnStatementÍGÍSX§LiteralÍNÍRÀ¤nullO°MethodDefinitionÍ`ÍkÃÂMªIdentifierÍgÍr«fallbackDoc¦methodP²FunctionExpressionÍrÍkÀÂÂÂ‘MªIdentifierÍsÍy¦promptN®BlockStatementÍ{Ík“T³VariableDeclarationÍ†ÍÀ‘U²VariableDeclaratorÍŒÍ¿MªIdentifierÍŒÍ£docR®CallExpressionÍ’Í¿S°MemberExpressionÍ’Í²MªIdentifierÍ’Í¥³LabTemplateRegistryMªIdentifierÍ¦Í²¬generateByIdÂÂ‘X§LiteralÍ³Í¾©lab_power«'lab_power'Â¥constV«IfStatementÍÊÍ1W°BinaryExpressionÍÎÍÚMªIdentifierÍÎÍÑ£doc£!==X§LiteralÍÖÍÚÀ¤nullN®BlockStatementÍÜÍ1’Z³ExpressionStatementÍëÍÔra–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍëÍ¡=S°MemberExpressionÍëÍS°MemberExpressionÍëÍ÷MªIdentifierÍëÍî£docMªIdentifierÍïÍ÷¨metadataÂÂMªIdentifierÍøÍ«descriptionÂÂMªIdentifierÍÍ¦promptQ¯ReturnStatementÍÍ&MªIdentifierÍ"Í%£docÀQ®ThrowStatementÍ;ÍdÔrb•¤type¥start£end¦callee©arguments­NewExpressionÍAÍcMªIdentifierÍEÍJ¥Error‘X§LiteralÍKÍbµNo template available·'No template available'À‘Ôrc•¤type¥start£endªspecifiers¦source±ImportDeclaration <‘Ôrd•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	³LabTemplateRegistryMªIdentifier	³LabTemplateRegistryX§Literal$;µ./LabTemplateRegistry·'./LabTemplateRegistry'

@@ -24,7 +24,8 @@ import {
   WaveData, ProgressCallback, ApiResult, RouteResult, RouteLine, ErrCode,
   ResultHelper, TopologyAdapter, DeviceSelectLlmOutput,
   RoutingLlmOutput, AiPipelineResult, RoutingWeightPrefs, DeviceSelectResult,
-  makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine
+  makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine,
+  Logger, INSTR_TRACE_TAG
 } from 'common';
 import { IAiApiManager } from 'ai_api_manager';
 import { AiTaskExtra, DiagLevel, DiagTargetType } from './internal/AiEngineTypes';
@@ -185,11 +186,45 @@ export class AiEngineImpl implements IAiEngine {
         }
         case AiTaskType.TASK_FULL_PIPELINE: {
           const prompt = extra?.prompt ?? '';
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_TASK] FULL_PIPELINE promptLen=${prompt.length} skipLlm=${!!extra?.skipLlm}`);
           const pipe = await this.runFullPipeline(prompt, topo, extra, onProgress);
           result.success = pipe.success;
           result.errCode = pipe.errCode;
           result.topology = pipe.data?.topology;
-          result.analysisText = pipe.data ? `LLM:${pipe.data.usedLlm} degraded:${pipe.data.degradedMode}` : '';
+          if (pipe.data) {
+            const nDev = pipe.data.selectResult?.devices.length ?? pipe.data.topology?.deviceList.length ?? 0;
+            const nWire = pipe.data.topology?.wireList.length ?? 0;
+            const nNet = pipe.data.topology?.netList.length ?? 0;
+            const matchBits: string[] = [];
+            const devices = pipe.data.selectResult?.devices;
+            if (devices !== undefined) {
+              for (let i = 0; i < Math.min(devices.length, 12); i++) {
+                matchBits.push(`${devices[i].libDevId}:${devices[i].matchLevel}`);
+              }
+            }
+            result.analysisText =
+              `LLM:${pipe.data.usedLlm} degraded:${pipe.data.degradedMode}` +
+              ` devices:${nDev} nets:${nNet} wires:${nWire}` +
+              (matchBits.length > 0 ? ` match=[${matchBits.join(',')}]` : '') +
+              (pipe.data.selectResult?.ragTemplateId ?
+                ` rag:${pipe.data.selectResult.ragTemplateId}` : '');
+            // 整图生成必须走 LLM；禁止模板静默落图
+            if (!extra?.skipLlm && !pipe.data.usedLlm) {
+              result.success = false;
+              result.errCode = ErrCode.ERR_API_TIMEOUT;
+              result.errMsg = 'AI API 不可用或未正确配置，已拒绝模板回退';
+              result.topology = undefined;
+              Logger.error(INSTR_TRACE_TAG,
+                `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
+            } else {
+              Logger.info(INSTR_TRACE_TAG,
+                `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
+            }
+          } else {
+            result.analysisText = '';
+            Logger.error(INSTR_TRACE_TAG, '[AI_TASK] FULL_PIPELINE empty pipe.data');
+          }
           break;
         }
         default:
@@ -305,11 +340,19 @@ export class AiEngineImpl implements IAiEngine {
     const emptyTopo = emptySchTopology();
     emptyTopo.schName = 'AI Generated';
     emptyTopo.bgColor = '#FFFFFF';
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_TASK] aiGenFullSchematic promptLen=${prompt.length} mcu=${mcuFamily ?? 'auto'}`);
     const pipe = await this.runFullPipeline(prompt, emptyTopo, extra);
     if (!pipe.success || !pipe.data?.topology) {
-      const doc = await this.generateCircuit(prompt, mcuFamily);
-      if (!doc.success || !doc.data) return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, doc.error);
-      return ResultHelper.ok(TopologyAdapter.toTopology(doc.data));
+      Logger.error(INSTR_TRACE_TAG,
+        `[AI_TASK] aiGenFullSchematic FAIL (no template fallback): ${pipe.error}`);
+      return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT,
+        pipe.error ?? 'AI 整图生成失败：API 不可用且已禁用模板回退');
+    }
+    if (!pipe.data.usedLlm) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_TASK] aiGenFullSchematic REJECT non-LLM topology');
+      return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT,
+        'AI API 未返回有效结果，已拒绝模板/本地回退');
     }
     return ResultHelper.ok(pipe.data.topology);
   }
@@ -326,7 +369,10 @@ export class AiEngineImpl implements IAiEngine {
       lockedDeviceUuids: extra?.lockedUuids ?? [],
       mcuFamily: extra?.mcuFamily,
       skipLlm: extra?.skipLlm,
-      routingWeights: extra?.routingWeights
+      routingWeights: extra?.routingWeights,
+      onStreamSnapshot: extra?.onStreamSnapshot,
+      conversationHistory: extra?.conversationHistory,
+      generationMode: extra?.generationMode
     }, onProgress);
     return ResultHelper.ok(result);
   }
@@ -626,15 +672,18 @@ export class AiEngineImpl implements IAiEngine {
     if (!this.pipeline || !this.componentLibrary) {
       return '验证跳过：器件库未初始化';
     }
+    Logger.info(INSTR_TRACE_TAG, '[AI_VAL] runValidationSuite START');
     const validator = new AiPipelineValidator(this.componentLibrary, this.pipeline);
     const led = await validator.validateMinSystemLed();
     const ood = validator.validateHallucinationChip();
-    const fallback = await validator.validateApiFailureFallback();
+    const noFallback = await validator.validateApiFailureFallback();
     const lines: string[] = [];
     lines.push(`[LED最小系统] ${led.passed ? 'PASS' : 'FAIL'}: ${led.checks.join('; ')}`);
     if (led.failures.length > 0) lines.push(`  失败: ${led.failures.join('; ')}`);
     lines.push(`[幻觉拦截] ${ood.success ? 'PASS' : 'FAIL'}`);
-    lines.push(`[API降级] ${fallback.passed ? 'PASS' : 'FAIL'}: ${fallback.checks.join('; ')}`);
+    lines.push(`[无模板回退] ${noFallback.passed ? 'PASS' : 'FAIL'}: ${noFallback.checks.join('; ')}`);
+    if (noFallback.failures.length > 0) lines.push(`  失败: ${noFallback.failures.join('; ')}`);
+    Logger.info(INSTR_TRACE_TAG, `[AI_VAL] runValidationSuite END\n${lines.join('\n')}`);
     return lines.join('\n');
   }
 }

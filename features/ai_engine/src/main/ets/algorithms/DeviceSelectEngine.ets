@@ -4,7 +4,7 @@
 
  */
 
-import { IComponentLibrary } from 'component_library';
+import { IComponentLibrary, ComponentDefinition } from 'component_library';
 
 import {
 
@@ -140,6 +140,20 @@ export class DeviceSelectEngine {
       ragTemplateId: ragTemplateId
 
     };
+
+    // 强制确保 VCC/GND 存在 — LLM 有时遗漏，由引擎兜底
+    const hasVcc = devices.some(d => d.libDevId === 'VCC');
+    const hasGnd = devices.some(d => d.libDevId === 'GND');
+    if (!hasVcc) {
+      const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
+      devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
+      Logger.info('DeviceSelect', 'Auto-added VCC (LLM omitted it)');
+    }
+    if (!hasGnd) {
+      const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
+      devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
+      Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+    }
 
     return result;
 
@@ -337,7 +351,23 @@ export class DeviceSelectEngine {
 
     const query = `${req.func} ${req.devType} ${joinParamConstraintValues(req.paramConstraint)}`;
 
-    const semantic = this.library.semanticSearch(query, 5);
+    let semantic = this.library.semanticSearch(query, 8);
+
+    // 电阻类器件优先匹配真实电阻 (R_*) 而非光敏/传感器类
+    const devTypeLower = req.devType.toLowerCase();
+    if (devTypeLower === 'resistor' || devTypeLower.includes('resistor')) {
+      const resistors: ComponentDefinition[] = [];
+      const others: ComponentDefinition[] = [];
+      for (let i = 0; i < semantic.length; i++) {
+        const c = semantic[i];
+        if (c.id.startsWith('R_') || c.id.startsWith('POT_')) {
+          resistors.push(c);
+        } else {
+          others.push(c);
+        }
+      }
+      semantic = resistors.concat(others);
+    }
 
     for (let i = 0; i < semantic.length; i++) {
 
@@ -681,6 +711,7 @@ export class DeviceSelectEngine {
 
 
 
+  /** 本地选型增强: 电路模式识别 + 强制器件 + 仪器自动追加 */
   static buildLocalLlmOutput(prompt: string): DeviceSelectLlmOutput {
 
     const rag = RagKnowledgeBase.search(prompt);
@@ -700,35 +731,145 @@ export class DeviceSelectEngine {
     }
 
     const lower = prompt.toLowerCase();
-
     const reqs: DeviceRequirement[] = [];
+    const modules: string[] = [];
+    let circuitConstraint = '标准嵌入式分区布局';
 
-    if (lower.includes('stm32')) {
+    // --- 电路模式识别 ---
 
-      reqs.push(makeDeviceRequirement('MCU', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8T6'));
+    const isMcu = lower.includes('stm32') || lower.includes('单片机') ||
+      lower.includes('mcu') || lower.includes('51') || lower.includes('stc') ||
+      lower.includes('at89') || lower.includes('arm') || lower.includes('cortex');
+    const isAnalog = lower.includes('运放') || lower.includes('放大') ||
+      lower.includes('opamp') || lower.includes('ua741') || lower.includes('lm358') ||
+      lower.includes('同相') || lower.includes('反相') || lower.includes('跟随器');
+    const isPower = lower.includes('电源') || lower.includes('稳压') ||
+      lower.includes('7805') || lower.includes('1117') || lower.includes('ldo') ||
+      lower.includes('降压') || lower.includes('升压');
+    const isLed = lower.includes('led');
+    const isDigital = lower.includes('74hc') || lower.includes('门电路') ||
+      lower.includes('与门') || lower.includes('或门') || lower.includes('非门') ||
+      lower.includes('触发器') || lower.includes('计数器');
+    const isSensor = lower.includes('传感器') || lower.includes('ds18b20') ||
+      lower.includes('温度') || lower.includes('光敏') || lower.includes('霍尔');
+    const isI2c = lower.includes('i2c') || lower.includes('iic') ||
+      lower.includes('24c02') || lower.includes('oled');
+    const isUart = lower.includes('uart') || lower.includes('串口');
 
+    // --- MCU 电路: 强制完整器件清单 ---
+    if (isMcu) {
+      modules.push('MCU 核心系统');
+      if (lower.includes('stm32')) {
+        reqs.push(makeDeviceRequirement('MCU', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8T6'));
+        circuitConstraint = 'STM32 MCU居中,晶振紧邻,去耦电容每VDD配1个,BOOT0接GND';
+      } else {
+        reqs.push(makeDeviceRequirement('MCU', 'mcu_51', 10, emptyStringMap(), 'AT89C51'));
+        circuitConstraint = '51 MCU居中,晶振紧邻,EA接VCC,复位电路必备';
+      }
       reqs.push(makeDeviceRequirement('晶振', 'crystal', 9, stringMap1('freq', '8MHz')));
+      reqs.push(makeDeviceRequirement('复位上拉', 'resistor', 9, stringMap1('value', '10k')));
+      reqs.push(makeDeviceRequirement('去耦电容', 'cap', 8, stringMap1('value', '100nF')));
+      reqs.push(makeDeviceRequirement('大电容', 'cap', 7, stringMap1('value', '10uF')));
+      reqs.push(makeDeviceRequirement('晶振负载电容×2', 'cap', 8, stringMap1('value', '22pF')));
 
-      reqs.push(makeDeviceRequirement('去耦', 'cap', 8, stringMap1('value', '100nF')));
-
+      // I2C 设备追加上拉
+      if (isI2c) {
+        reqs.push(makeDeviceRequirement('I2C上拉', 'resistor', 6, stringMap1('value', '4.7k')));
+        reqs.push(makeDeviceRequirement('I2C上拉', 'resistor', 6, stringMap1('value', '4.7k')));
+      }
+      // UART 终端
+      if (isUart) {
+        reqs.push(makeDeviceRequirement('串口终端', 'instrument', 5, emptyStringMap(), 'UART_TERMINAL'));
+      }
     }
 
-    if (lower.includes('51') || lower.includes('stc')) {
-
-      reqs.push(makeDeviceRequirement('MCU', 'mcu_51', 10, emptyStringMap(), 'AT89C51'));
-
+    // --- 模拟电路 ---
+    if (isAnalog) {
+      modules.push('模拟放大电路');
+      reqs.push(makeDeviceRequirement('运放', 'opamp', 8, emptyStringMap(), 'LM358'));
+      reqs.push(makeDeviceRequirement('反馈电阻', 'resistor', 7, stringMap1('value', '10k')));
+      reqs.push(makeDeviceRequirement('输入电阻', 'resistor', 7, stringMap1('value', '1k')));
+      reqs.push(makeDeviceRequirement('去耦电容', 'cap', 6, stringMap1('value', '100nF')));
+      reqs.push(makeDeviceRequirement('示波器', 'oscilloscope', 8, emptyStringMap(), 'OSCILLOSCOPE'));
     }
 
-    if (lower.includes('lcd')) {
-
-      reqs.push(makeDeviceRequirement('LCD', 'lcd', 5, emptyStringMap()));
-
+    // --- 电源电路 ---
+    if (isPower) {
+      modules.push('电源稳压电路');
+      if (lower.includes('3.3') || lower.includes('3v3')) {
+        reqs.push(makeDeviceRequirement('LDO', 'ldo', 9, emptyStringMap(), 'AMS1117_3V3'));
+      } else {
+        reqs.push(makeDeviceRequirement('稳压器', 'ldo', 9, emptyStringMap(), 'LM7805'));
+      }
+      reqs.push(makeDeviceRequirement('输入电容', 'cap', 7, stringMap1('value', '10uF')));
+      reqs.push(makeDeviceRequirement('输出电容', 'cap', 7, stringMap1('value', '100uF')));
+      reqs.push(makeDeviceRequirement('去耦', 'cap', 6, stringMap1('value', '100nF')));
+      reqs.push(makeDeviceRequirement('电压表', 'voltmeter', 7, emptyStringMap(), 'VOLTMETER_DC'));
     }
 
-    if (lower.includes('led')) {
+    // --- LED 电路 (独立或附属) ---
+    if (isLed) {
+      modules.push('LED 指示电路');
+      reqs.push(makeDeviceRequirement('LED', 'led', 6, emptyStringMap(), 'LED_RED'));
+      reqs.push(makeDeviceRequirement('限流电阻', 'resistor', 5, stringMap1('value', '330')));
+      if (!isMcu && !isAnalog) {
+        reqs.push(makeDeviceRequirement('电压表', 'voltmeter', 7, emptyStringMap(), 'VOLTMETER_DC'));
+      }
+    }
 
-      reqs.push(makeDeviceRequirement('LED', 'led', 6, emptyStringMap(), 'LED_0805'));
+    // --- 数字逻辑 ---
+    if (isDigital) {
+      modules.push('数字逻辑电路');
+      reqs.push(makeDeviceRequirement('逻辑IC', 'digital_ic', 8, emptyStringMap(), '74HC04'));
+      reqs.push(makeDeviceRequirement('逻辑分析仪', 'logic_analyzer', 7, emptyStringMap(), 'LOGIC_ANALYZER'));
+    }
 
+    // --- 传感器 ---
+    if (isSensor) {
+      modules.push('传感器电路');
+      if (lower.includes('ds18b20')) {
+        reqs.push(makeDeviceRequirement('温度传感器', 'sensor', 7, emptyStringMap(), 'DS18B20'));
+        reqs.push(makeDeviceRequirement('上拉电阻', 'resistor', 6, stringMap1('value', '4.7k')));
+      }
+      reqs.push(makeDeviceRequirement('电压表', 'voltmeter', 7, emptyStringMap(), 'VOLTMETER_DC'));
+    }
+
+    // --- 独立仪器追加 ---
+    if (!isMcu && !isAnalog && !isPower && !isLed && !isDigital && !isSensor) {
+      // 纯分立元件 / 无源电路
+      if (lower.includes('电阻') || lower.includes('电容') || lower.includes('分压') ||
+        lower.includes('rc') || lower.includes('滤波')) {
+        modules.push('无源电路');
+        reqs.push(makeDeviceRequirement('电阻', 'resistor', 5, stringMap1('value', '1k')));
+        reqs.push(makeDeviceRequirement('电容', 'cap', 5, stringMap1('value', '10uF')));
+        reqs.push(makeDeviceRequirement('电压表', 'voltmeter', 7, emptyStringMap(), 'VOLTMETER_DC'));
+        // 检测电流表/电压表需求 → 提示仪器拓扑约束
+        if (lower.includes('电流表') || lower.includes('电流') || lower.includes('测总电流')) {
+          reqs.push(makeDeviceRequirement('电流表', 'ammeter', 8, emptyStringMap(), 'AMMETER_DC'));
+          circuitConstraint = '电流表串联在 VCC 与分压电阻之间,I+接VCC,I-接第一电阻';
+        }
+        if ((lower.match(/电压表/g) ?? []).length >= 2 || lower.includes('分别测')) {
+          circuitConstraint = circuitConstraint.length > 15
+            ? circuitConstraint + ';电压表分布在不同分压节点(分别测不同电阻压降)'
+            : '电压表分布在不同分压节点(分别测不同电阻压降)';
+        }
+      }
+    }
+
+    // --- 必须有电源符号 ---
+    if (reqs.length > 0) {
+      const hasVcc = reqs.some(r => r.explicitModel === 'VCC');
+      const hasGnd = reqs.some(r => r.explicitModel === 'GND');
+      if (!hasVcc) {
+        reqs.push(makeDeviceRequirement('VCC', 'instrument', 2, emptyStringMap(), 'VCC'));
+      }
+      if (!hasGnd) {
+        reqs.push(makeDeviceRequirement('GND', 'instrument', 2, emptyStringMap(), 'GND'));
+      }
+    }
+
+    if (modules.length === 0) {
+      modules.push('用户定制');
     }
 
     const oodMatch = prompt.match(/[A-Z]{2,}[A-Z0-9-]{2,}/g);
@@ -753,11 +894,11 @@ export class DeviceSelectEngine {
 
     return {
 
-      functionModule: ['用户定制'],
+      functionModule: modules,
 
       deviceRequireList: reqs,
 
-      circuitConstraint: '标准嵌入式分区布局',
+      circuitConstraint: circuitConstraint,
 
       oodFlags: oodFlags.length > 0 ? oodFlags : undefined
 

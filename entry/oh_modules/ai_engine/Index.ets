@@ -5,5 +5,10 @@ export {
   LabTemplateRegistry, LabTemplateDef, LabTemplateBuilder, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
 } from './src/main/ets/algorithms/LabTemplateRegistry';
 export { TemplateSchematicKit } from './src/main/ets/algorithms/TemplateSchematicKit';
+export { SemanticNetBuilder, SemanticNetBuildResult } from './src/main/ets/algorithms/SemanticNetBuilder';
+export { NetPlanExecutor, NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints } from './src/main/ets/algorithms/NetPlanExecutor';
+export { LlmJsonNormalizer } from './src/main/ets/algorithms/LlmJsonNormalizer';
+export { PinWorldResolver } from './src/main/ets/algorithms/PinWorldResolver';
 export { AiResultCache } from './src/main/ets/AiResultCache';
 export { AiPipelineValidator, AiValidationResult } from './src/main/ets/validation/AiPipelineValidator';
+export { ChatHistoryEntry } from './src/main/ets/internal/AiEngineTypes';

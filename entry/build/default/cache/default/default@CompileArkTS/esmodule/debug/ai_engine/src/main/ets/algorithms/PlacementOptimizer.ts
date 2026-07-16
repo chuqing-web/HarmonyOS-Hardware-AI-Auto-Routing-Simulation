@@ -14,8 +14,8 @@ interface ScoredChromosome {
 }
 type Chromosome = Map<string, Gene>;
 const GRID = 10;
-const CANVAS_W = 800;
-const CANVAS_H = 600;
+const CANVAS_W = 1000;
+const CANVAS_H = 750;
 const POP_SIZE = 60;
 const GENERATIONS = 50;
 export class PlacementOptimizer {
@@ -24,7 +24,7 @@ export class PlacementOptimizer {
         const idToLib = new Map<string, MatchedDevice>();
         deviceIds.forEach((id, i) => idToLib.set(id, matched[i]));
         const locked = new Set(lockedUuids);
-        let population = this.initPopulation(deviceIds, locked, existingTopo);
+        let population = this.initPopulation(deviceIds, locked, existingTopo, idToLib);
         for (let gen = 0; gen < GENERATIONS; gen++) {
             const scored: ScoredChromosome[] = [];
             for (let pi = 0; pi < population.length; pi++) {
@@ -85,10 +85,16 @@ export class PlacementOptimizer {
         try {
             const deviceIds = matched.map((_: MatchedDevice, i: number) => `dev_${i}`);
             const seedGenes: number[] = [];
-            for (let i = 0; i < deviceIds.length; i++) {
+            const zoneCodes: number[] = [];
+            const priorities: number[] = [];
+            for (let i = 0; i < matched.length; i++) {
+                const m = matched[i];
                 const dev = existingTopo?.deviceList[i];
-                seedGenes.push(dev?.x ?? 100 + i * 40, dev?.y ?? 100, dev?.rotate ?? 0);
+                seedGenes.push(dev?.x ?? 100 + i * 40, dev?.y ?? 100, 0);
+                zoneCodes.push(PlacementOptimizer.zoneCodeOf(m));
+                priorities.push(m.placementPriority);
             }
+            const adjacentPairs = PlacementOptimizer.buildAdjacentPairs(matched, constraints);
             const input: GaWorkerInput = {
                 deviceCount: matched.length,
                 popSize: POP_SIZE,
@@ -96,15 +102,21 @@ export class PlacementOptimizer {
                 canvasW: CANVAS_W,
                 canvasH: CANVAS_H,
                 grid: GRID,
-                seedGenes: seedGenes
+                seedGenes: seedGenes,
+                zoneCodes: zoneCodes,
+                priorities: priorities,
+                adjacentPairs: adjacentPairs
             };
             const workerOut = await runPlacementGaAsync(input);
+            if (workerOut.bestGenes.length < matched.length * 3) {
+                return this.optimize(matched, constraints, lockedUuids, existingTopo);
+            }
             const chrom: Chromosome = new Map();
             for (let i = 0; i < deviceIds.length; i++) {
                 const gene: Gene = {
                     x: this.snap(workerOut.bestGenes[i * 3]),
                     y: this.snap(workerOut.bestGenes[i * 3 + 1]),
-                    rotate: workerOut.bestGenes[i * 3 + 2]
+                    rotate: 0
                 };
                 chrom.set(deviceIds[i], gene);
             }
@@ -119,6 +131,95 @@ export class PlacementOptimizer {
         catch (_e) {
             return this.optimize(matched, constraints, lockedUuids, existingTopo);
         }
+    }
+    private static zoneCodeOf(m: MatchedDevice): number {
+        const id = m.libDevId.toUpperCase();
+        if (id.includes('STM32') || id.includes('AT89') || id.includes('STC') ||
+            m.moduleZone === 'mcu_core' || m.requirement.devType.indexOf('mcu') >= 0) {
+            return 0;
+        }
+        if (id === 'VCC' || id === 'GND' || id.includes('7805') || id.includes('1117') ||
+            m.moduleZone === 'power' || m.requirement.devType === 'ldo') {
+            return 1;
+        }
+        if (id.includes('XTAL') || m.requirement.devType === 'crystal') {
+            return 2;
+        }
+        if (id.includes('OSCILLOSCOPE') || id.includes('VOLTMETER') || id.includes('AMMETER') ||
+            id.includes('VIRTUAL_METER') || id.includes('FREQ_COUNTER') || id.includes('UART_TERMINAL') ||
+            id.includes('LOGIC_ANALYZER') || id.includes('POWER_METER') ||
+            m.requirement.devType === 'instrument' || m.requirement.devType === 'oscilloscope' ||
+            m.requirement.devType === 'voltmeter' || m.requirement.devType === 'ammeter' ||
+            m.requirement.devType === 'multimeter') {
+            return 3;
+        }
+        return 4;
+    }
+    private static buildAdjacentPairs(matched: MatchedDevice[], constraints: LayoutLlmOutput): number[] {
+        const pairs: number[] = [];
+        // MCU–晶振
+        let mcuIdx = -1;
+        let xtalIdx = -1;
+        let vccIdx = -1;
+        let ammeterIdx = -1;
+        for (let i = 0; i < matched.length; i++) {
+            const id = matched[i].libDevId.toUpperCase();
+            if (mcuIdx < 0 && (id.includes('STM32') || id.includes('AT89') || id.includes('STC'))) {
+                mcuIdx = i;
+            }
+            if (xtalIdx < 0 && id.includes('XTAL')) {
+                xtalIdx = i;
+            }
+            if (vccIdx < 0 && id === 'VCC') {
+                vccIdx = i;
+            }
+            if (ammeterIdx < 0 && id.includes('AMMETER')) {
+                ammeterIdx = i;
+            }
+        }
+        if (mcuIdx >= 0 && xtalIdx >= 0) {
+            pairs.push(mcuIdx, xtalIdx);
+        }
+        // v3.0: 电流表紧邻VCC（串联在电源回路中）
+        if (vccIdx >= 0 && ammeterIdx >= 0) {
+            pairs.push(vccIdx, ammeterIdx);
+        }
+        // 电压表紧邻对应电阻（优先R_开头的电阻器件）
+        for (let vi = 0; vi < matched.length; vi++) {
+            const vid = matched[vi].libDevId.toUpperCase();
+            if (!vid.includes('VOLTMETER') && !vid.includes('VIRTUAL_METER'))
+                continue;
+            for (let ri = 0; ri < matched.length; ri++) {
+                const rid = matched[ri].libDevId.toUpperCase();
+                if (rid.startsWith('R_')) {
+                    pairs.push(vi, ri);
+                    break; // 每块电压表配一个电阻
+                }
+            }
+        }
+        for (let i = 0; i < constraints.constraintRules.length; i++) {
+            const rule = constraints.constraintRules[i];
+            if (rule.type !== 'adjacent') {
+                continue;
+            }
+            const a = PlacementOptimizer.indexByLabel(matched, rule.a ?? rule.target ?? '');
+            const b = PlacementOptimizer.indexByLabel(matched, rule.b ?? '');
+            if (a >= 0 && b >= 0) {
+                pairs.push(a, b);
+            }
+        }
+        return pairs;
+    }
+    private static indexByLabel(matched: MatchedDevice[], label: string): number {
+        if (label.length === 0) {
+            return -1;
+        }
+        for (let i = 0; i < matched.length; i++) {
+            if (matched[i].name.indexOf(label) >= 0 || matched[i].libDevId.indexOf(label) >= 0) {
+                return i;
+            }
+        }
+        return -1;
     }
     /** 无 LLM 时生成默认 MCU 布局约束 */
     static defaultConstraints(matched: MatchedDevice[]): LayoutLlmOutput {
@@ -170,33 +271,189 @@ export class PlacementOptimizer {
         };
         return layoutOut;
     }
-    private initPopulation(deviceIds: string[], locked: Set<string>, existing?: SchTopology): Chromosome[] {
+    /** 分组感知初始化: MCU居中→晶振紧邻→电容就近→LED+R配对→仪器靠右 */
+    private initPopulation(deviceIds: string[], locked: Set<string>, existing?: SchTopology, idToLib?: Map<string, MatchedDevice>): Chromosome[] {
         const pop: Chromosome[] = [];
+        // 预计算种子布局: 按器件类型分区放置
+        const seedBase = this.buildSeedLayout(deviceIds, idToLib);
         for (let i = 0; i < POP_SIZE; i++) {
             const chrom: Chromosome = new Map();
             for (let j = 0; j < deviceIds.length; j++) {
                 const id = deviceIds[j];
                 const existingDev = existing?.deviceList[j];
                 if (locked.has(existingDev?.instUuid ?? '')) {
-                    const lockedGene: Gene = {
-                        x: existingDev!.x,
-                        y: existingDev!.y,
-                        rotate: existingDev!.rotate
-                    };
-                    chrom.set(id, lockedGene);
+                    chrom.set(id, { x: existingDev!.x, y: existingDev!.y, rotate: 0 });
                 }
                 else {
-                    const randGene: Gene = {
-                        x: this.snap(100 + (j % 5) * 120 + Math.random() * 40),
-                        y: this.snap(80 + Math.floor(j / 5) * 100 + Math.random() * 40),
-                        rotate: [0, 0, 0, 90][Math.floor(Math.random() * 4)]
-                    };
-                    chrom.set(id, randGene);
+                    const seed = seedBase.get(id);
+                    const jitterX = i > 0 ? (Math.random() - 0.5) * 80 : 0;
+                    const jitterY = i > 0 ? (Math.random() - 0.5) * 80 : 0;
+                    chrom.set(id, {
+                        x: this.snap((seed?.x ?? 100 + (j % 5) * 120) + jitterX),
+                        y: this.snap((seed?.y ?? 80 + Math.floor(j / 5) * 100) + jitterY),
+                        rotate: 0
+                    });
                 }
             }
             pop.push(chrom);
         }
         return pop;
+    }
+    /** 按器件功能分组计算种子坐标 */
+    private buildSeedLayout(deviceIds: string[], idToLib?: Map<string, MatchedDevice>): Map<string, Gene> {
+        const seeds = new Map<string, Gene>();
+        if (!idToLib)
+            return seeds;
+        let mcuIdx = -1;
+        let xtalIdx = -1;
+        let vccIdx = -1;
+        let gndIdx = -1;
+        const capIdxs: number[] = [];
+        const ledIdxs: number[] = [];
+        const resIdxs: number[] = [];
+        const ammeterIdxs: number[] = [];
+        const voltmeterIdxs: number[] = [];
+        const instrIdxs: number[] = []; // 非电流表/电压表的其他仪器
+        const otherIdxs: number[] = [];
+        for (let i = 0; i < deviceIds.length; i++) {
+            const m = idToLib.get(deviceIds[i]);
+            if (!m) {
+                otherIdxs.push(i);
+                continue;
+            }
+            const idUp = m.libDevId.toUpperCase();
+            if (idUp.includes('STM32') || idUp.includes('AT89') || idUp.includes('STC')) {
+                mcuIdx = i;
+            }
+            else if (idUp.includes('XTAL')) {
+                xtalIdx = i;
+            }
+            else if (idUp === 'VCC') {
+                vccIdx = i;
+            }
+            else if (idUp === 'GND') {
+                gndIdx = i;
+            }
+            else if (idUp.startsWith('C_')) {
+                capIdxs.push(i);
+            }
+            else if (idUp.startsWith('LED_')) {
+                ledIdxs.push(i);
+            }
+            else if (idUp.startsWith('R_')) {
+                resIdxs.push(i);
+            }
+            else if (idUp.includes('AMMETER')) {
+                ammeterIdxs.push(i);
+            }
+            else if (idUp.includes('VOLTMETER') || idUp.includes('VIRTUAL_METER')) {
+                voltmeterIdxs.push(i);
+            }
+            else if (idUp.includes('OSCILLOSCOPE') || idUp.includes('UART_TERMINAL') ||
+                idUp.includes('LOGIC_ANALYZER') || idUp.includes('POWER_METER') ||
+                idUp.includes('FREQ_COUNTER')) {
+                instrIdxs.push(i);
+            }
+            else {
+                otherIdxs.push(i);
+            }
+        }
+        const cx = CANVAS_W / 2;
+        const cy = CANVAS_H / 2;
+        if (mcuIdx >= 0) {
+            seeds.set(deviceIds[mcuIdx], { x: cx, y: cy, rotate: 0 });
+            // 晶振紧邻 MCU 左侧
+            if (xtalIdx >= 0) {
+                seeds.set(deviceIds[xtalIdx], { x: cx - 110, y: cy - 20, rotate: 0 });
+            }
+            // 去耦电容在 MCU 右侧/上侧
+            for (let ci = 0; ci < capIdxs.length; ci++) {
+                seeds.set(deviceIds[capIdxs[ci]], {
+                    x: cx + 60 + ci * 30, y: cy - 40, rotate: 0
+                });
+            }
+            // 复位电阻在 MCU 右下
+            if (resIdxs.length > 0) {
+                seeds.set(deviceIds[resIdxs[0]], {
+                    x: cx + 80, y: cy + 60, rotate: 0
+                });
+                resIdxs.splice(0, 1);
+            }
+        }
+        // LED + 限流电阻配对: 水平排列在右侧区域
+        let pairX = mcuIdx >= 0 ? cx + 160 : 200;
+        let pairY = mcuIdx >= 0 ? cy - 80 : 100;
+        const ledCount = Math.min(ledIdxs.length, resIdxs.length);
+        for (let li = 0; li < ledCount; li++) {
+            seeds.set(deviceIds[ledIdxs[li]], { x: pairX + 100, y: pairY, rotate: 0 });
+            seeds.set(deviceIds[resIdxs[li]], {
+                x: pairX, y: pairY, rotate: 0
+            });
+            pairY += 100;
+        }
+        // 剩余电阻
+        for (let ri = ledCount; ri < resIdxs.length; ri++) {
+            seeds.set(deviceIds[resIdxs[ri]], { x: pairX, y: pairY, rotate: 0 });
+            pairY += 100;
+        }
+        // 剩余 LED
+        for (let li = ledCount; li < ledIdxs.length; li++) {
+            seeds.set(deviceIds[ledIdxs[li]], { x: pairX + 100, y: pairY, rotate: 0 });
+            pairY += 100;
+        }
+        // VCC/GND 靠左
+        if (vccIdx >= 0) {
+            seeds.set(deviceIds[vccIdx], { x: 60, y: mcuIdx >= 0 ? cy - 80 : 80, rotate: 0 });
+        }
+        if (gndIdx >= 0) {
+            seeds.set(deviceIds[gndIdx], { x: 60, y: mcuIdx >= 0 ? cy + 100 : 180, rotate: 0 });
+        }
+        // v3.0: 电流表紧邻VCC（串联在电源回路中）— 放在VCC下方
+        for (let ai = 0; ai < ammeterIdxs.length; ai++) {
+            const vccY = vccIdx >= 0 ? (mcuIdx >= 0 ? cy - 80 : 80) : 80;
+            seeds.set(deviceIds[ammeterIdxs[ai]], {
+                x: 60, y: vccY + 90 + ai * 100, rotate: 0
+            });
+        }
+        // v3.0: 电压表靠近对应被测电阻 — 每块表放在一个电阻右侧
+        for (let vi = 0; vi < voltmeterIdxs.length; vi++) {
+            // 分配电压表到对应电阻（循环分配到可用电阻）
+            const targetResIdx = vi < resIdxs.length ? resIdxs[vi] :
+                resIdxs.length > 0 ? resIdxs[vi % resIdxs.length] : -1;
+            if (targetResIdx >= 0) {
+                const resSeed = seeds.get(deviceIds[targetResIdx]);
+                if (resSeed) {
+                    seeds.set(deviceIds[voltmeterIdxs[vi]], {
+                        x: resSeed.x + 120, y: resSeed.y, rotate: 0
+                    });
+                }
+                else {
+                    seeds.set(deviceIds[voltmeterIdxs[vi]], {
+                        x: CANVAS_W - 140, y: 100 + vi * 90, rotate: 0
+                    });
+                }
+            }
+            else {
+                seeds.set(deviceIds[voltmeterIdxs[vi]], {
+                    x: CANVAS_W - 140, y: 100 + vi * 90, rotate: 0
+                });
+            }
+        }
+        // 其他仪器靠右列
+        for (let ii = 0; ii < instrIdxs.length; ii++) {
+            seeds.set(deviceIds[instrIdxs[ii]], {
+                x: CANVAS_W - 140, y: 100 + (voltmeterIdxs.length + ii) * 90, rotate: 0
+            });
+        }
+        // 剩余器件网格排列在底部
+        for (let oi = 0; oi < otherIdxs.length; oi++) {
+            seeds.set(deviceIds[otherIdxs[oi]], {
+                x: 200 + (oi % 4) * 130,
+                y: CANVAS_H - 120 + Math.floor(oi / 4) * 80,
+                rotate: 0
+            });
+        }
+        return seeds;
     }
     private fitness(chrom: Chromosome, deviceIds: string[], idToLib: Map<string, MatchedDevice>, constraints: LayoutLlmOutput): number {
         let score = 0;
@@ -207,11 +464,13 @@ export class PlacementOptimizer {
                 positions.push(gene);
             }
         }
-        score += this.evalAdjacency(chrom, deviceIds, constraints, idToLib) * 0.4;
-        score += this.evalModuleIsolation(idToLib, deviceIds, chrom) * 0.25;
-        score += this.evalWireLength(deviceIds, chrom) * 0.2;
-        score += this.evalHighFreqIsolation(idToLib, deviceIds, chrom) * 0.15;
+        score += this.evalAdjacency(chrom, deviceIds, constraints, idToLib) * 0.3;
+        score += this.evalModuleIsolation(idToLib, deviceIds, chrom) * 0.2;
+        score += this.evalWireLength(deviceIds, chrom) * 0.15;
+        score += this.evalHighFreqIsolation(idToLib, deviceIds, chrom) * 0.1;
+        score += this.evalInstrumentProximity(idToLib, deviceIds, chrom) * 0.25;
         score -= this.evalOverlap(positions) * 0.5;
+        score -= this.evalCrystalKeepout(idToLib, deviceIds, chrom) * 0.3;
         for (let i = 0; i < constraints.constraintRules.length; i++) {
             const rule = constraints.constraintRules[i];
             score += this.evalRule(rule, chrom, deviceIds, idToLib) * (rule.weight / 100);
@@ -259,8 +518,9 @@ export class PlacementOptimizer {
         for (let i = 0; i < analog.length; i++) {
             for (let j = 0; j < digital.length; j++) {
                 const dist = Math.hypot(analog[i].x - digital[j].x, analog[i].y - digital[j].y);
-                if (dist < 100) {
-                    penalty += (100 - dist);
+                // 模数隔离 ≥150mil (per SKILL.md spec)
+                if (dist < 150) {
+                    penalty += (150 - dist) * 1.2;
                 }
             }
         }
@@ -306,13 +566,147 @@ export class PlacementOptimizer {
         }
         return 100;
     }
+    /** v3.0: 仪器邻近度 — 电流表靠近VCC、电压表靠近被测电阻、示波器靠近信号源 */
+    private evalInstrumentProximity(idToLib: Map<string, MatchedDevice>, ids: string[], chrom: Chromosome): number {
+        let score = 0;
+        // 收集各类型器件位置
+        const ammeterGenes: Gene[] = [];
+        const voltmeterGenes: Gene[] = [];
+        const scopeGenes: Gene[] = [];
+        const vccGenes: Gene[] = [];
+        const resistorGenes: Gene[] = [];
+        const opampGenes: Gene[] = [];
+        const mcuGenes: Gene[] = [];
+        for (let i = 0; i < ids.length; i++) {
+            const m = idToLib.get(ids[i]);
+            if (!m)
+                continue;
+            const gene = chrom.get(ids[i]);
+            if (!gene)
+                continue;
+            const idUp = m.libDevId.toUpperCase();
+            if (idUp.includes('AMMETER') || m.requirement.devType === 'ammeter') {
+                ammeterGenes.push(gene);
+            }
+            else if (idUp.includes('VOLTMETER') || idUp.includes('VIRTUAL_METER') ||
+                m.requirement.devType === 'voltmeter' || m.requirement.devType === 'multimeter') {
+                voltmeterGenes.push(gene);
+            }
+            else if (idUp.includes('OSCILLOSCOPE') || m.requirement.devType === 'oscilloscope') {
+                scopeGenes.push(gene);
+            }
+            else if (idUp === 'VCC' || m.moduleZone === 'power') {
+                vccGenes.push(gene);
+            }
+            else if (idUp.startsWith('R_')) {
+                resistorGenes.push(gene);
+            }
+            else if (idUp.includes('LM358') || idUp.includes('LM324') || idUp.includes('OP') ||
+                m.moduleZone === 'analog') {
+                opampGenes.push(gene);
+            }
+            else if (idUp.includes('STM32') || idUp.includes('AT89') || idUp.includes('STC')) {
+                mcuGenes.push(gene);
+            }
+        }
+        // 电流表必须靠近VCC（串联在电源回路中），距离 ≤ 150mil 得满分
+        for (let ai = 0; ai < ammeterGenes.length; ai++) {
+            let bestDist = Infinity;
+            for (let vi = 0; vi < vccGenes.length; vi++) {
+                const d = Math.hypot(ammeterGenes[ai].x - vccGenes[vi].x, ammeterGenes[ai].y - vccGenes[vi].y);
+                if (d < bestDist)
+                    bestDist = d;
+            }
+            if (bestDist < Infinity) {
+                score += Math.max(0, 300 - bestDist * 2); // ≤150mil=满分, >150递减
+            }
+            // 电流表也应靠近第一电阻（I- 流入负载）
+            for (let ri = 0; ri < resistorGenes.length; ri++) {
+                const d = Math.hypot(ammeterGenes[ai].x - resistorGenes[ri].x, ammeterGenes[ai].y - resistorGenes[ri].y);
+                if (d < 200)
+                    score += 50;
+            }
+        }
+        // 电压表靠近被测电阻 — 每块表匹配一个最近电阻
+        for (let vi = 0; vi < voltmeterGenes.length; vi++) {
+            let bestDist = Infinity;
+            for (let ri = 0; ri < resistorGenes.length; ri++) {
+                const d = Math.hypot(voltmeterGenes[vi].x - resistorGenes[ri].x, voltmeterGenes[vi].y - resistorGenes[ri].y);
+                if (d < bestDist)
+                    bestDist = d;
+            }
+            if (bestDist < Infinity) {
+                score += Math.max(0, 250 - bestDist);
+            }
+            // 电压表远离VCC（测量的是电阻压降，不是电源电压）
+            for (let pi = 0; pi < vccGenes.length; pi++) {
+                const dVcc = Math.hypot(voltmeterGenes[vi].x - vccGenes[pi].x, voltmeterGenes[vi].y - vccGenes[pi].y);
+                if (dVcc < 100)
+                    score -= 30; // 太靠近VCC不合适
+            }
+        }
+        // 示波器靠近运放/信号源
+        for (let si = 0; si < scopeGenes.length; si++) {
+            let bestDist = Infinity;
+            const targets = opampGenes.length > 0 ? opampGenes : mcuGenes;
+            for (let ti = 0; ti < targets.length; ti++) {
+                const d = Math.hypot(scopeGenes[si].x - targets[ti].x, scopeGenes[si].y - targets[ti].y);
+                if (d < bestDist)
+                    bestDist = d;
+            }
+            if (bestDist < Infinity) {
+                score += Math.max(0, 300 - bestDist);
+            }
+        }
+        // 无仪器时不补偿 → 避免偏置非仪器电路
+        // 有仪器但未匹配到目标(如缺少VCC/电阻) → 给基数分避免无限惩罚
+        const instrCount = ammeterGenes.length + voltmeterGenes.length + scopeGenes.length;
+        if (instrCount > 0 && (vccGenes.length === 0 && resistorGenes.length === 0)) {
+            score += 100; // 基数分
+        }
+        return score;
+    }
+    /** 晶振禁区: 非晶振/非MCU器件靠近晶振时惩罚 */
+    private evalCrystalKeepout(idToLib: Map<string, MatchedDevice>, ids: string[], chrom: Chromosome): number {
+        let xtalGene: Gene | null = null;
+        for (let i = 0; i < ids.length; i++) {
+            const m = idToLib.get(ids[i]);
+            if (m && (m.libDevId.includes('XTAL') || m.requirement.devType === 'crystal')) {
+                xtalGene = chrom.get(ids[i]) ?? null;
+                break;
+            }
+        }
+        if (!xtalGene)
+            return 0;
+        let penalty = 0;
+        for (let i = 0; i < ids.length; i++) {
+            const m = idToLib.get(ids[i]);
+            if (!m)
+                continue;
+            const idUp = m.libDevId.toUpperCase();
+            // 晶振自身、MCU可紧邻，其余器件必须退开
+            if (idUp.includes('XTAL') || idUp.includes('STM32') ||
+                idUp.includes('AT89') || idUp.includes('STC')) {
+                continue;
+            }
+            const gene = chrom.get(ids[i]);
+            if (!gene)
+                continue;
+            const dist = Math.hypot(gene.x - xtalGene.x, gene.y - xtalGene.y);
+            // 晶振 100mil 内不得有非 MCU 器件
+            if (dist < 100) {
+                penalty += (100 - dist) * 0.5;
+            }
+        }
+        return penalty;
+    }
     private evalOverlap(positions: Gene[]): number {
         let penalty = 0;
         for (let i = 0; i < positions.length; i++) {
             for (let j = i + 1; j < positions.length; j++) {
                 const a = positions[i];
                 const b = positions[j];
-                if (Math.abs(a.x - b.x) < 80 && Math.abs(a.y - b.y) < 50) {
+                if (Math.abs(a.x - b.x) < 110 && Math.abs(a.y - b.y) < 70) {
                     penalty += 100;
                 }
             }
@@ -365,10 +759,13 @@ export class PlacementOptimizer {
     }
     private mutate(chrom: Chromosome, ids: string[], locked: Set<string>): void {
         const id = ids[Math.floor(Math.random() * ids.length)];
+        if (locked.has(id)) {
+            return;
+        }
         const mutated: Gene = {
             x: this.snap(Math.random() * (CANVAS_W - 120) + 60),
             y: this.snap(Math.random() * (CANVAS_H - 100) + 40),
-            rotate: [0, 90, 180, 270][Math.floor(Math.random() * 4)]
+            rotate: 0
         };
         chrom.set(id, mutated);
     }
@@ -380,7 +777,8 @@ export class PlacementOptimizer {
             const refPrefix = m.libDevId.startsWith('R_') ? 'R' :
                 m.libDevId.startsWith('C_') ? 'C' :
                     m.libDevId.includes('STM32') || m.libDevId.includes('AT89') ? 'U' : 'U';
-            deviceList.push(makeDeviceInst(IdUtil.generate('inst'), m.libDevId, `${refPrefix}${i + 1}`, gene.x, gene.y, gene.rotate, m.params));
+            deviceList.push(makeDeviceInst(IdUtil.generate('inst'), m.libDevId, `${refPrefix}${i + 1}`, gene.x, gene.y, 0, // AI 落图强制 0°，保证 Kit 脚几何与真脚布线一致
+            m.params));
         }
         const topo: SchTopology = {
             schUuid: existing?.schUuid ?? IdUtil.generate('sch'),
@@ -402,6 +800,11 @@ export class PlacementOptimizer {
     }
     private postProcessAlign(topo: SchTopology, constraints: LayoutLlmOutput): void {
         this.applyMcuHardRules(topo);
+        // 无 MCU 时的通用布局规则
+        if (!topo.deviceList.some(d => d.libDevId.includes('STM32') || d.libDevId.includes('AT89') ||
+            d.libDevId.includes('STC'))) {
+            this.applyBasicLayoutRules(topo);
+        }
         const groups = getModuleGroupValues(constraints.moduleGroup);
         for (let i = 0; i < groups.length; i++) {
             const group = groups[i];
@@ -417,6 +820,116 @@ export class PlacementOptimizer {
                 d.y = baseY;
                 d.x = this.snap(devices[0].x + idx * 100);
             });
+        }
+        // 重叠消解: 迭代推开所有重叠器件
+        this.resolveOverlaps(topo);
+    }
+    /** 无 MCU 的通用布局: 电源左列、电流表近VCC、电压表近电阻、其他仪器右列、信号器件居中网格 */
+    private applyBasicLayoutRules(topo: SchTopology): void {
+        const vcc = topo.deviceList.find(d => d.libDevId === 'VCC');
+        const gnd = topo.deviceList.find(d => d.libDevId === 'GND');
+        // v3.0: 区分电流表与电压表/其他仪器
+        const ammeters = topo.deviceList.filter(d => {
+            const id = d.libDevId.toUpperCase();
+            return id.includes('AMMETER');
+        });
+        const otherInstruments = topo.deviceList.filter(d => {
+            const id = d.libDevId.toUpperCase();
+            return (id.includes('OSCILLOSCOPE') || id.includes('VOLTMETER') ||
+                id.includes('VIRTUAL_METER') || id.includes('UART_TERMINAL') ||
+                id.includes('LOGIC_ANALYZER')) && !id.includes('AMMETER');
+        });
+        const instruments = [...ammeters, ...otherInstruments];
+        const others = topo.deviceList.filter(d => d.libDevId !== 'VCC' && d.libDevId !== 'GND' && !instruments.includes(d));
+        if (vcc) {
+            vcc.x = this.snap(60);
+            vcc.y = this.snap(80);
+        }
+        if (gnd) {
+            gnd.x = this.snap(60);
+            gnd.y = this.snap(180);
+        }
+        // 电流表放在VCC下方（串联在电源回路）
+        for (let i = 0; i < ammeters.length; i++) {
+            ammeters[i].x = this.snap(60);
+            ammeters[i].y = this.snap(170 + i * 100);
+        }
+        // 电压表尽量靠近对应电阻
+        for (let i = 0; i < otherInstruments.length; i++) {
+            const inst = otherInstruments[i];
+            const idUp = inst.libDevId.toUpperCase();
+            if (idUp.includes('VOLTMETER') || idUp.includes('VIRTUAL_METER')) {
+                // 在others中找电阻，将电压表放在电阻右侧
+                const resistor = others.find(o => o.libDevId.startsWith('R_'));
+                if (resistor) {
+                    inst.x = this.snap(resistor.x + 120);
+                    inst.y = this.snap(resistor.y);
+                }
+                else {
+                    inst.x = this.snap(CANVAS_W - 140);
+                    inst.y = this.snap(100 + i * 90);
+                }
+            }
+            else {
+                inst.x = this.snap(CANVAS_W - 140);
+                inst.y = this.snap(100 + i * 90);
+            }
+        }
+        // 信号器件网格居中
+        for (let i = 0; i < others.length; i++) {
+            const col = i % 3;
+            const row = Math.floor(i / 3);
+            others[i].x = this.snap(250 + col * 130);
+            others[i].y = this.snap(100 + row * 100);
+        }
+    }
+    /** 迭代消解器件重叠，最多10轮 */
+    private resolveOverlaps(topo: SchTopology): void {
+        const MIN_DIST_X = 130; // 器件宽110 + 间距20
+        const MIN_DIST_Y = 90; // 器件高60 + 间距30
+        for (let round = 0; round < 10; round++) {
+            let moved = false;
+            for (let i = 0; i < topo.deviceList.length; i++) {
+                for (let j = i + 1; j < topo.deviceList.length; j++) {
+                    const a = topo.deviceList[i];
+                    const b = topo.deviceList[j];
+                    const overlapX = MIN_DIST_X - Math.abs(a.x - b.x);
+                    const overlapY = MIN_DIST_Y - Math.abs(a.y - b.y);
+                    if (overlapX > 0 && overlapY > 0) {
+                        // 沿重叠较小的轴推开
+                        if (overlapX < overlapY) {
+                            const push = Math.ceil(overlapX / 2) + 5;
+                            if (a.x <= b.x) {
+                                a.x -= push;
+                                b.x += push;
+                            }
+                            else {
+                                a.x += push;
+                                b.x -= push;
+                            }
+                        }
+                        else {
+                            const push = Math.ceil(overlapY / 2) + 5;
+                            if (a.y <= b.y) {
+                                a.y -= push;
+                                b.y += push;
+                            }
+                            else {
+                                a.y += push;
+                                b.y -= push;
+                            }
+                        }
+                        // 钳位到画布内
+                        a.x = Math.max(30, Math.min(CANVAS_W - 30, a.x));
+                        a.y = Math.max(30, Math.min(CANVAS_H - 30, a.y));
+                        b.x = Math.max(30, Math.min(CANVAS_W - 30, b.x));
+                        b.y = Math.max(30, Math.min(CANVAS_H - 30, b.y));
+                        moved = true;
+                    }
+                }
+            }
+            if (!moved)
+                break;
         }
     }
     /** 单片机专属硬约束微调 */
@@ -441,6 +954,59 @@ export class PlacementOptimizer {
         if (resetR) {
             resetR.x = mcu.x + 80;
             resetR.y = mcu.y + 60;
+        }
+        // v3.0: 电流表放在VCC下方（串联在电源回路中）
+        const ammeters = topo.deviceList.filter(d => {
+            const id = d.libDevId.toUpperCase();
+            return id.includes('AMMETER');
+        });
+        for (let i = 0; i < ammeters.length; i++) {
+            ammeters[i].x = this.snap(60);
+            ammeters[i].y = this.snap(mcu.y - 140 + i * 100);
+            ammeters[i].rotate = 0;
+        }
+        // 其他仪器靠右外侧排列
+        const instruments = topo.deviceList.filter(d => {
+            const id = d.libDevId.toUpperCase();
+            return (id.includes('OSCILLOSCOPE') || id.includes('VOLTMETER') ||
+                id.includes('VIRTUAL_METER') || id.includes('FREQ_COUNTER') || id.includes('UART_TERMINAL') ||
+                id.includes('LOGIC_ANALYZER') || id.includes('POWER_METER')) &&
+                !id.includes('AMMETER');
+        });
+        for (let i = 0; i < instruments.length; i++) {
+            instruments[i].x = this.snap(CANVAS_W - 140);
+            instruments[i].y = this.snap(100 + i * 90);
+            instruments[i].rotate = 0;
+        }
+        // 电源符号靠左
+        const vcc = topo.deviceList.find(d => d.libDevId === 'VCC');
+        const gnd = topo.deviceList.find(d => d.libDevId === 'GND');
+        if (vcc) {
+            vcc.x = this.snap(60);
+            vcc.y = this.snap(mcu.y - 80);
+        }
+        if (gnd) {
+            gnd.x = this.snap(60);
+            gnd.y = this.snap(mcu.y + 100);
+        }
+        // 晶振禁区: 非MCU/非晶振/非去耦器件须推离晶振区域
+        if (xtal) {
+            for (const dev of topo.deviceList) {
+                if (dev.libDevId === mcu.libDevId || dev.libDevId.includes('XTAL') ||
+                    dev.libDevId.includes('100nF') || dev.libDevId.includes('22pF') ||
+                    dev.libDevId === 'VCC' || dev.libDevId === 'GND') {
+                    continue;
+                }
+                const dist = Math.hypot(dev.x - xtal.x, dev.y - xtal.y);
+                if (dist < 120) {
+                    // 沿当前象限方向外推
+                    const dx = dev.x - xtal.x;
+                    const dy = dev.y - xtal.y;
+                    const angle = Math.atan2(dy, dx);
+                    dev.x = this.snap(xtal.x + Math.cos(angle) * 140);
+                    dev.y = this.snap(xtal.y + Math.sin(angle) * 140);
+                }
+            }
         }
     }
     private snap(v: number): number {

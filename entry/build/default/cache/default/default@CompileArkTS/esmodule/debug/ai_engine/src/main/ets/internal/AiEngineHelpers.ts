@@ -38,7 +38,7 @@ export function getAllAiCapabilities(): AiCapability[] {
 export function getCategoriesForDevType(devType: string): string[] {
     switch (devType) {
         case 'ldo':
-            return ['analog', 'passive'];
+            return ['analog', 'passive', 'power_supply'];
         case 'mcu_stm32':
             return ['mcu_stm32', 'mcu'];
         case 'mcu_51':
@@ -51,12 +51,24 @@ export function getCategoriesForDevType(devType: string): string[] {
             return ['passive'];
         case 'resistor':
             return ['passive'];
+        case 'led':
+            return ['discrete', 'passive'];
         case 'lcd':
             return ['peripheral', 'display'];
         case 'opamp':
             return ['analog_ic', 'analog'];
         case 'digital':
             return ['digital_ic', 'digital_logic'];
+        case 'sensor':
+            return ['sensor'];
+        case 'instrument':
+        case 'oscilloscope':
+        case 'voltmeter':
+        case 'ammeter':
+        case 'multimeter':
+            return ['instrument'];
+        case 'uart':
+            return ['instrument', 'peripheral'];
         default:
             return [devType];
     }
@@ -84,10 +96,18 @@ export function getPlacementPriority(devType: string, reqPriority: number): numb
             return 70;
         case 'lcd':
             return 50;
+        case 'instrument':
+        case 'oscilloscope':
+        case 'voltmeter':
+        case 'ammeter':
+        case 'multimeter':
+            return 45;
         case 'cap':
             return 40;
         case 'resistor':
             return 30;
+        case 'led':
+            return 35;
         default:
             return reqPriority * 10;
     }

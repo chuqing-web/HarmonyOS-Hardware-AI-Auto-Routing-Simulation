@@ -1155,3 +1155,30 @@ export struct ProteusKeyDescRow {
     .onClick(() => this.onAction())
   }
 }
+
+/**
+ * 统一 Switch：关闭态用灰色轨道 + 白滑块，避免白底上看不见圆形。
+ */
+@Component
+export struct ProteusSwitch {
+  @Prop isOn: boolean = false;
+  @Prop onColor: string = '';
+  @Prop widthVp: number = 48;
+  @Prop heightVp: number = 28;
+  onChange: (on: boolean) => void = (_on: boolean) => {};
+
+  build() {
+    Toggle({ type: ToggleType.Switch, isOn: this.isOn })
+      .selectedColor(this.onColor.length > 0 ? this.onColor : ProteusColors.BTN_FOCUS)
+      .switchPointColor(ProteusColors.TOGGLE_KNOB)
+      .switchStyle({
+        unselectedColor: ProteusColors.TOGGLE_OFF_TRACK,
+        pointColor: ProteusColors.TOGGLE_KNOB
+      })
+      .width(this.widthVp)
+      .height(this.heightVp)
+      .onChange((on: boolean) => {
+        this.onChange(on);
+      })
+  }
+}

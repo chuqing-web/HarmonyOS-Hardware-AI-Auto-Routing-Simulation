@@ -188,6 +188,11 @@ export class ComponentLibraryImpl implements IComponentLibrary {
 
   search(keyword: string, page: number = 1, pageSize: number = 50): PaginatedResult<ComponentDefinition> {
     const lower = keyword.toLowerCase();
+    // 精确 libDevId 快路径（AI 选型高频）
+    const exact = this.components.get(keyword) ?? this.components.get(lower);
+    if (exact) {
+      return { items: [exact], total: 1, page: page, pageSize: pageSize };
+    }
     const rangeMatch = keyword.match(/([\d.]+)\s*(k|K|m|M|u|n|p|Ω|R)?\s*[~\-–]\s*([\d.]+)\s*(k|K|m|M|u|n|p|Ω|R)?/);
     const indexHits = this.searchByIndex(keyword);
     const filtered: ComponentDefinition[] = [];
@@ -235,53 +240,91 @@ export class ComponentLibraryImpl implements IComponentLibrary {
     return { items: filtered.slice(start, start + pageSize), total: filtered.length, page: page, pageSize: pageSize };
   }
 
-  /** 4.1.2 BM25 排序算法 — 对高频词自动降权 */
+  /**
+   * 4.1.2 BM25 排序 — O(N·K)。
+   * 注意：旧实现在每个文档内重算 DF（O(N²·K)），会在主线程卡死触发 THREAD_BLOCK。
+   */
   semanticSearch(query: string, limit: number = 10): ComponentDefinition[] {
-    const keywords = query.toLowerCase().split(/\s+/);
+    const rawParts = query.toLowerCase().split(/\s+/);
+    const keywords: string[] = [];
+    for (let i = 0; i < rawParts.length; i++) {
+      const kw = rawParts[i].trim();
+      if (kw.length > 0) {
+        keywords.push(kw);
+      }
+    }
+    if (keywords.length === 0 || this.components.size === 0) {
+      return [];
+    }
+
     const scored: ScoredComponent[] = [];
     const all = Array.from(this.components.values());
     const N = all.length;
-    const k1 = 1.5; const b = 0.75;
+    const k1 = 1.5;
+    const b = 0.75;
 
-    // 计算平均文档长度
+    // 预计算文档文本（只建一次）
+    const docTexts: string[] = [];
+    const docIds: string[] = [];
+    let totalLen = 0;
+    for (let i = 0; i < all.length; i++) {
+      const c = all[i];
+      const text = `${c.name} ${c.id} ${c.description} ${c.aiWiringRules.join(' ')}`.toLowerCase();
+      docTexts.push(text);
+      docIds.push(c.id.toLowerCase());
+      totalLen += text.length;
+    }
+    const avgLen = totalLen / Math.max(N, 1);
     if (this.avgDocLength === 0) {
-      let totalLen = 0;
-      for (const c of all) totalLen += `${c.name} ${c.description}`.length;
-      this.avgDocLength = totalLen / Math.max(N, 1);
+      this.avgDocLength = avgLen;
     }
 
-    for (let i = 0; i < all.length; i++) {
-      const comp = all[i];
-      const text = `${comp.name} ${comp.id} ${comp.description} ${comp.aiWiringRules.join(' ')}`.toLowerCase();
+    // DF 每词只扫一遍库 — O(N·K)
+    const idfList: number[] = [];
+    for (let k = 0; k < keywords.length; k++) {
+      const kw = keywords[k];
+      let df = 0;
+      for (let i = 0; i < N; i++) {
+        if (docTexts[i].indexOf(kw) >= 0) {
+          df++;
+        }
+      }
+      idfList.push(Math.log((N - df + 0.5) / (df + 0.5) + 1));
+    }
+
+    for (let i = 0; i < N; i++) {
+      const text = docTexts[i];
       const docLen = text.length;
       let bm25 = 0;
-
       for (let k = 0; k < keywords.length; k++) {
         const kw = keywords[k];
-        // 计算该项的 DF (Document Frequency)
-        let df = 0;
-        for (const c of all) {
-          const t = `${c.name} ${c.id} ${c.description}`.toLowerCase();
-          if (t.includes(kw)) df++;
-        }
-        const idf = Math.log((N - df + 0.5) / (df + 0.5) + 1);
-        // TF in this document
         let tf = 0;
         let idx = 0;
-        while ((idx = text.indexOf(kw, idx)) !== -1) { tf++; idx += kw.length; }
-        const tfNorm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * docLen / Math.max(this.avgDocLength, 1)));
-        bm25 += idf * tfNorm;
-        // 精确ID匹配加权
-        if (comp.id.toLowerCase() === kw) bm25 += 2.0;
+        while ((idx = text.indexOf(kw, idx)) !== -1) {
+          tf++;
+          idx += kw.length;
+        }
+        if (tf === 0 && docIds[i] !== kw) {
+          continue;
+        }
+        const tfNorm = (tf * (k1 + 1)) /
+          (tf + k1 * (1 - b + b * docLen / Math.max(avgLen, 1)));
+        bm25 += idfList[k] * tfNorm;
+        if (docIds[i] === kw) {
+          bm25 += 2.0;
+        }
       }
-      // 使用频率加权 (4.3.12)
-      const usageBonus = Math.log(1 + (this.usageStats.get(comp.id) ?? 0)) * 0.5;
+      const usageBonus = Math.log(1 + (this.usageStats.get(all[i].id) ?? 0)) * 0.5;
       bm25 += usageBonus;
-      if (bm25 > 0) scored.push({ comp: comp, score: bm25 });
+      if (bm25 > 0) {
+        scored.push({ comp: all[i], score: bm25 });
+      }
     }
     scored.sort((a: ScoredComponent, b: ScoredComponent) => b.score - a.score);
     const result: ComponentDefinition[] = [];
-    for (let i = 0; i < Math.min(limit, scored.length); i++) result.push(scored[i].comp);
+    for (let i = 0; i < Math.min(limit, scored.length); i++) {
+      result.push(scored[i].comp);
+    }
     return result;
   }
 

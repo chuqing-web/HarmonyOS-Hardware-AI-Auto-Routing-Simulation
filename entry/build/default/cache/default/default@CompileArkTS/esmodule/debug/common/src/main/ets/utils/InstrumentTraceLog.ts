@@ -999,3 +999,54 @@ export function traceInteractiveInstrumentLive(reason: string, detail: string, n
     Logger.info(INSTR_TRACE_TAG, `[INSTR_LIVE] ${reason} ${detail} nets={${netParts.join(', ')}} ` +
         `meters=[${meterParts.join('; ')}] active=${activeRefOrId.length > 0 ? activeRefOrId : 'null'}`);
 }
+/** 将换行压成可见标记，便于 instr_trace 单行分片展示 */
+function flattenAiTraceText(text: string): string {
+    let out = '';
+    for (let i = 0; i < text.length; i++) {
+        const ch = text.charAt(i);
+        if (ch === '\n' || ch === '\r') {
+            out += '⏎';
+        }
+        else if (ch === '\t') {
+            out += ' ';
+        }
+        else {
+            out += ch;
+        }
+    }
+    return out;
+}
+/**
+ * AI 指令/回复正文写入 instr_trace（自动截断分片）。
+ * prefix 例：AI_API / AI_PIPE / AI_GEN；kind 例：PROMPT / REPLY / USER
+ */
+export function traceAiPayload(prefix: string, kind: string, text: string, meta: string = ''): void {
+    const raw = text ?? '';
+    const flat = flattenAiTraceText(raw);
+    const maxTotal = 2400;
+    const chunkSize = 360;
+    const truncated = flat.length > maxTotal;
+    const body = truncated ? flat.substring(0, maxTotal) : flat;
+    const metaPart = meta.length > 0 ? ` ${meta}` : '';
+    Logger.info(INSTR_TRACE_TAG, `[${prefix}] ${kind} len=${raw.length}` +
+        `${truncated ? ` show=${body.length}` : ''}${metaPart}`);
+    if (body.length === 0) {
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] ${kind} | (empty)`);
+        return;
+    }
+    let offset = 0;
+    let part = 0;
+    while (offset < body.length) {
+        const end = Math.min(offset + chunkSize, body.length);
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] ${kind}|${part} ${body.substring(offset, end)}`);
+        offset = end;
+        part++;
+    }
+    if (truncated) {
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] ${kind} <<< truncated`);
+    }
+}
+/** AI 管线/UI 操作步骤（选型/摆放/建网/落图等） */
+export function traceAiOp(prefix: string, op: string, detail: string): void {
+    Logger.info(INSTR_TRACE_TAG, `[${prefix}] OP ${op} | ${detail}`);
+}

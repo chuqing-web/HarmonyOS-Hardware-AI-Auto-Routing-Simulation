@@ -139,10 +139,18 @@ export interface DevicePosition {
     y: number;
     rotate: number;
 }
+export interface LayoutPositionItem {
+    deviceId: string;
+    x: number;
+    y: number;
+    rotate: number;
+}
 export interface LayoutLlmOutput {
     moduleGroup: Record<string, string[]>;
     constraintRules: LayoutConstraintRule[];
     signalWeight: Record<string, number>;
+    /** LLM 直接输出的器件坐标 (AI 驱动布局) */
+    positions?: LayoutPositionItem[];
 }
 export interface PlacementCandidate {
     devicePositions: Record<string, DevicePosition>;

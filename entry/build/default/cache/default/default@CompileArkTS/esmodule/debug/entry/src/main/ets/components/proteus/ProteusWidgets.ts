@@ -1,6 +1,13 @@
 if (!("finalizeConstruction" in ViewPU.prototype)) {
     Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
 }
+interface ProteusSwitch_Params {
+    isOn?: boolean;
+    onColor?: string;
+    widthVp?: number;
+    heightVp?: number;
+    onChange?: (on: boolean) => void;
+}
 interface ProteusKeyDescRow_Params {
     keyLabel?: string;
     description?: string;
@@ -3344,6 +3351,107 @@ export class ProteusKeyDescRow extends ViewPU {
         }, Text);
         Text.pop();
         Row.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
+export class ProteusSwitch extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__isOn = new SynchedPropertySimpleOneWayPU(params.isOn, this, "isOn");
+        this.__onColor = new SynchedPropertySimpleOneWayPU(params.onColor, this, "onColor");
+        this.__widthVp = new SynchedPropertySimpleOneWayPU(params.widthVp, this, "widthVp");
+        this.__heightVp = new SynchedPropertySimpleOneWayPU(params.heightVp, this, "heightVp");
+        this.onChange = (_on: boolean) => { };
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params: ProteusSwitch_Params) {
+        if (params.isOn === undefined) {
+            this.__isOn.set(false);
+        }
+        if (params.onColor === undefined) {
+            this.__onColor.set('');
+        }
+        if (params.widthVp === undefined) {
+            this.__widthVp.set(48);
+        }
+        if (params.heightVp === undefined) {
+            this.__heightVp.set(28);
+        }
+        if (params.onChange !== undefined) {
+            this.onChange = params.onChange;
+        }
+    }
+    updateStateVars(params: ProteusSwitch_Params) {
+        this.__isOn.reset(params.isOn);
+        this.__onColor.reset(params.onColor);
+        this.__widthVp.reset(params.widthVp);
+        this.__heightVp.reset(params.heightVp);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__isOn.purgeDependencyOnElmtId(rmElmtId);
+        this.__onColor.purgeDependencyOnElmtId(rmElmtId);
+        this.__widthVp.purgeDependencyOnElmtId(rmElmtId);
+        this.__heightVp.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__isOn.aboutToBeDeleted();
+        this.__onColor.aboutToBeDeleted();
+        this.__widthVp.aboutToBeDeleted();
+        this.__heightVp.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    private __isOn: SynchedPropertySimpleOneWayPU<boolean>;
+    get isOn() {
+        return this.__isOn.get();
+    }
+    set isOn(newValue: boolean) {
+        this.__isOn.set(newValue);
+    }
+    private __onColor: SynchedPropertySimpleOneWayPU<string>;
+    get onColor() {
+        return this.__onColor.get();
+    }
+    set onColor(newValue: string) {
+        this.__onColor.set(newValue);
+    }
+    private __widthVp: SynchedPropertySimpleOneWayPU<number>;
+    get widthVp() {
+        return this.__widthVp.get();
+    }
+    set widthVp(newValue: number) {
+        this.__widthVp.set(newValue);
+    }
+    private __heightVp: SynchedPropertySimpleOneWayPU<number>;
+    get heightVp() {
+        return this.__heightVp.get();
+    }
+    set heightVp(newValue: number) {
+        this.__heightVp.set(newValue);
+    }
+    private onChange: (on: boolean) => void;
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Toggle.create({ type: ToggleType.Switch, isOn: this.isOn });
+            Toggle.selectedColor(this.onColor.length > 0 ? this.onColor : ProteusColors.BTN_FOCUS);
+            Toggle.switchPointColor(ProteusColors.TOGGLE_KNOB);
+            Toggle.switchStyle({
+                unselectedColor: ProteusColors.TOGGLE_OFF_TRACK,
+                pointColor: ProteusColors.TOGGLE_KNOB
+            });
+            Toggle.width(this.widthVp);
+            Toggle.height(this.heightVp);
+            Toggle.onChange((on: boolean) => {
+                this.onChange(on);
+            });
+        }, Toggle);
+        Toggle.pop();
     }
     rerender() {
         this.updateDirtyElements();

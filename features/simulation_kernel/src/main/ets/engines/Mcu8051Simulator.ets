@@ -58,21 +58,30 @@ export class Mcu8051Simulator {
   getPort1(): number { return this.state.sfr.get(0x90) ?? 0xFF; }
   getAcc(): number { return this.state.regs.get('ACC') ?? 0; }
 
+  /**
+   * GPIO→Spice drive level follows the port *latch* (SFR), not pinLevels.
+   * pinLevels is external pin sense for reads; preferring it here let Spice→GPIO
+   * feedback sticky-hold every bit HIGH and kill active-low LED sinks (lab_51_led).
+   */
   getPinLevel(port: string, bit: number): number {
-    const key = `${port}.${bit}`;
-    if (this.state.pinLevels.has(key)) return this.state.pinLevels.get(key) ?? 0;
     const portAddr = port === 'P1' ? 0x90 : port === 'P0' ? 0x80 : port === 'P2' ? 0xA0 : 0xB0;
     const val = this.state.sfr.get(portAddr) ?? 0xFF;
     return (val >> bit) & 1;
   }
 
+  /**
+   * Sample physical pin voltage into pinLevels only.
+   * Never overwrite the SFR latch — firmware owns that (MOV P1,A etc.).
+   * Quasi-bidirectional: latch=0 strongly drives low → pin sense is forced 0.
+   */
   setPinLevel(port: string, bit: number, level: number): void {
     const key = `${port}.${bit}`;
-    this.state.pinLevels.set(key, level);
     const portAddr = port === 'P1' ? 0x90 : port === 'P0' ? 0x80 : port === 'P2' ? 0xA0 : 0xB0;
-    let val = this.state.sfr.get(portAddr) ?? 0xFF;
-    if (level > 0) val |= (1 << bit);
-    else val &= ~(1 << bit);
-    this.state.sfr.set(portAddr, val & 0xFF);
+    const latch = this.state.sfr.get(portAddr) ?? 0xFF;
+    if (((latch >> bit) & 1) === 0) {
+      this.state.pinLevels.set(key, 0);
+      return;
+    }
+    this.state.pinLevels.set(key, level > 0 ? 1 : 0);
   }
 }

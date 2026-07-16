@@ -6,13 +6,17 @@ import { ProxyConfig } from 'common';
 export class NetworkModeManager {
   private config: ProxyConfig = {
     globalProxy: '',
-    systemProxy: true,
+    systemProxy: false,
     offlineMode: false
   };
   private apiProxies: Map<string, string> = new Map();
   private retryCount: number = 3;
 
-  setGlobalProxy(url: string): void { this.config.globalProxy = url; }
+  setGlobalProxy(url: string): void {
+    this.config.globalProxy = url;
+    // 有自定义代理地址时启用系统代理；清空则直连
+    this.config.systemProxy = url.trim().length > 0;
+  }
   setApiProxy(apiId: string, url: string): void { this.apiProxies.set(apiId, url); }
 
   getEffectiveProxy(apiId: string): string {

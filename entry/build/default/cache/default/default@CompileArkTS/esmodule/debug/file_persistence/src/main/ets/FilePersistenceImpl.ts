@@ -63,6 +63,8 @@ export class FilePersistenceImpl implements IFilePersistence {
                     const existing = mapAwareParse<ProjectData>(existingJson);
                     existing.modifiedAt = data.modifiedAt;
                     existing.name = data.name;
+                    // 必须用内存明文 aiConfigs，勿沿用磁盘密文（否则二次加密导致下次读不到）
+                    existing.aiConfigs = data.aiConfigs;
                     merged = existing;
                 }
                 catch (_e) { /* full save */ }

@@ -1,9 +1,10 @@
 /**
- * 平台设置面板 - 离线模式 / 代理 / 无障碍 / 打印
+ * 平台设置面板 - 主题 / 离线 / 代理 / 无障碍 / 隐私
+ * 所有开关写入 AppService 并持久化，通过 themeRefreshKey 强制主界面重绘。
  */
 import { AppService } from '../services/AppService';
 import { AccessibilityConfig } from 'common';
-import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusSectionTitle, ProteusSwitch } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { ThemeManager } from '../theme/ThemeManager';
 
@@ -16,17 +17,56 @@ export struct PlatformSettingsPanel {
   @State highContrast: boolean = false;
   @State uiScale: number = 100;
   @State screenReader: boolean = false;
-  @State darkTheme: boolean = ThemeManager.getInstance().isDark();
+  @State darkTheme: boolean = false;
 
   private appService: AppService = AppService.getInstance();
 
   aboutToAppear(): void {
+    this.reloadFromService();
+  }
+
+  private reloadFromService(): void {
     this.darkTheme = ThemeManager.getInstance().isDark();
+    this.offlineMode = this.appService.isOfflineMode();
+    this.globalProxy = this.appService.getGlobalProxy();
+    const a11y = this.appService.getAccessibility();
+    this.highContrast = a11y.highContrast;
+    this.uiScale = Math.round(a11y.uiScale * 100);
+    this.screenReader = a11y.screenReader;
+  }
+
+  private bumpUi(): void {
+    this.themeRefreshKey++;
+  }
+
+  private applyTheme(dark: boolean): void {
+    this.darkTheme = dark;
+    ThemeManager.getInstance().setMode(dark ? 'dark' : 'light');
+    this.bumpUi();
+    this.statusMessage = dark ? '已启用深色主题' : '已启用浅色主题';
+    this.appService.announceIfScreenReader(this.statusMessage);
+  }
+
+  private applyAccessibility(): void {
+    const cfg: AccessibilityConfig = {
+      highContrast: this.highContrast,
+      keyboardOnly: false,
+      uiScale: this.uiScale / 100,
+      screenReader: this.screenReader
+    };
+    this.appService.setAccessibility(cfg);
+    this.bumpUi();
   }
 
   build() {
     Scroll() {
       Column({ space: 0 }) {
+        // 依赖 themeRefreshKey，确保切换主题后本面板自身也刷新色值
+        Text(`设置 · ${this.themeRefreshKey >= 0 ? '' : ''}`)
+          .fontSize(1)
+          .height(0)
+          .opacity(0)
+
         ProteusSectionTitle({ title: '平台设置' })
 
         Column() {
@@ -45,16 +85,10 @@ export struct PlatformSettingsPanel {
             Text(this.darkTheme ? '已启用' : '未启用')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_SECONDARY)
-            Toggle({ type: ToggleType.Switch, isOn: this.darkTheme })
-              .selectedColor(ProteusColors.BTN_FOCUS)
-              .width(48)
-              .height(28)
-              .onChange((on: boolean) => {
-                this.darkTheme = on;
-                ThemeManager.getInstance().setMode(on ? 'dark' : 'light');
-                this.themeRefreshKey++;
-                this.statusMessage = on ? '已启用深色主题' : '已启用浅色主题';
-              })
+            ProteusSwitch({
+              isOn: this.darkTheme,
+              onChange: (on: boolean) => { this.applyTheme(on); }
+            })
           }
           .width('100%')
           .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -64,22 +98,12 @@ export struct PlatformSettingsPanel {
             ProteusClassicBtn({
               label: '浅色',
               widthVal: '46%',
-              onAction: () => {
-                this.darkTheme = false;
-                ThemeManager.getInstance().setMode('light');
-                this.themeRefreshKey++;
-                this.statusMessage = '已启用浅色主题';
-              }
+              onAction: () => { this.applyTheme(false); }
             })
             ProteusClassicBtn({
               label: '深色',
               widthVal: '46%',
-              onAction: () => {
-                this.darkTheme = true;
-                ThemeManager.getInstance().setMode('dark');
-                this.themeRefreshKey++;
-                this.statusMessage = '已启用深色主题';
-              }
+              onAction: () => { this.applyTheme(true); }
             })
           }
           .width('100%')
@@ -105,15 +129,14 @@ export struct PlatformSettingsPanel {
             Text(this.offlineMode ? '仅本地' : '可联网')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_SECONDARY)
-            Toggle({ type: ToggleType.Switch, isOn: this.offlineMode })
-              .selectedColor(ProteusColors.BTN_FOCUS)
-              .width(48)
-              .height(28)
-              .onChange((on: boolean) => {
+            ProteusSwitch({
+              isOn: this.offlineMode,
+              onChange: (on: boolean) => {
                 this.offlineMode = on;
                 this.appService.setOfflineMode(on);
-                this.statusMessage = on ? '已开启离线模式（仅本地）' : '已关闭离线模式';
-              })
+                this.statusMessage = on ? '已开启离线模式（禁止云端 AI）' : '已关闭离线模式';
+              }
+            })
           }
           .width('100%')
           .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -126,7 +149,7 @@ export struct PlatformSettingsPanel {
               onAction: () => {
                 this.offlineMode = !this.offlineMode;
                 this.appService.setOfflineMode(this.offlineMode);
-                this.statusMessage = this.offlineMode ? '已开启离线模式（仅本地）' : '已关闭离线模式';
+                this.statusMessage = this.offlineMode ? '已开启离线模式（禁止云端 AI）' : '已关闭离线模式';
               }
             })
           }
@@ -138,7 +161,7 @@ export struct PlatformSettingsPanel {
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
-            TextInput({ text: this.globalProxy, placeholder: 'http://127.0.0.1:7890' })
+            TextInput({ text: this.globalProxy, placeholder: '启用系统代理（如 Clash）' })
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
@@ -152,14 +175,20 @@ export struct PlatformSettingsPanel {
           .padding({ left: 8, right: 8, top: 4 })
           .alignItems(VerticalAlign.Center)
 
+          Text('填写任意非空地址后，AI HTTP 请求将启用系统代理(usingProxy)。')
+            .fontSize(ProteusFonts.STATUS)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .padding({ left: 8, right: 8, top: 2 })
+            .width('100%')
+
           ProteusClassicBtn({
             label: '应用代理设置',
             widthVal: '92%',
             onAction: () => {
               this.appService.setGlobalProxy(this.globalProxy);
-              this.statusMessage = this.globalProxy.length > 0
-                ? `代理已更新: ${this.globalProxy}`
-                : '代理已清空';
+              this.statusMessage = this.globalProxy.trim().length > 0
+                ? `代理已启用系统代理: ${this.globalProxy.trim()}`
+                : '代理已清空（直连）';
             }
           })
           .margin({ left: 8, right: 8, bottom: 8, top: 4 })
@@ -181,15 +210,15 @@ export struct PlatformSettingsPanel {
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
-            Toggle({ type: ToggleType.Switch, isOn: this.highContrast })
-              .selectedColor(ProteusColors.BTN_FOCUS)
-              .width(48)
-              .height(28)
-              .onChange((on: boolean) => {
+            ProteusSwitch({
+              isOn: this.highContrast,
+              onChange: (on: boolean) => {
                 this.highContrast = on;
                 this.applyAccessibility();
                 this.statusMessage = on ? '已开启高对比度' : '已关闭高对比度';
-              })
+                this.appService.announceIfScreenReader(this.statusMessage);
+              }
+            })
           }
           .width('100%')
           .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -244,19 +273,18 @@ export struct PlatformSettingsPanel {
           .width('100%')
 
           Row({ space: 8 }) {
-            Text('语音朗读')
+            Text('语音朗读提示')
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_PRIMARY)
               .layoutWeight(1)
-            Toggle({ type: ToggleType.Switch, isOn: this.screenReader })
-              .selectedColor(ProteusColors.BTN_FOCUS)
-              .width(48)
-              .height(28)
-              .onChange((on: boolean) => {
+            ProteusSwitch({
+              isOn: this.screenReader,
+              onChange: (on: boolean) => {
                 this.screenReader = on;
                 this.applyAccessibility();
-                this.statusMessage = on ? '已开启语音朗读' : '已关闭语音朗读';
-              })
+                this.statusMessage = on ? '已开启语音朗读提示（状态栏播报）' : '已关闭语音朗读提示';
+              }
+            })
           }
           .width('100%')
           .padding({ left: 8, right: 8, top: 6, bottom: 8 })
@@ -281,6 +309,7 @@ export struct PlatformSettingsPanel {
               onAction: () => {
                 this.appService.saveSnapshot('手动快照', '用户手动保存');
                 this.statusMessage = '版本快照已保存';
+                this.appService.announceIfScreenReader(this.statusMessage);
               }
             })
             ProteusClassicBtn({
@@ -289,6 +318,7 @@ export struct PlatformSettingsPanel {
               onAction: () => {
                 this.appService.privacyCleanup();
                 this.statusMessage = '已清理 AI 缓存与临时文件';
+                this.appService.announceIfScreenReader(this.statusMessage);
               }
             })
             ProteusClassicBtn({
@@ -297,6 +327,7 @@ export struct PlatformSettingsPanel {
               onAction: () => {
                 void this.appService.acceptPrivacyPolicy().then(() => {
                   this.statusMessage = '已记录隐私政策同意';
+                  this.appService.announceIfScreenReader(this.statusMessage);
                 });
               }
             })
@@ -316,15 +347,5 @@ export struct PlatformSettingsPanel {
     .scrollBar(BarState.Auto)
     .align(Alignment.TopStart)
     .backgroundColor(ProteusColors.CANVAS_BG)
-  }
-
-  private applyAccessibility(): void {
-    const cfg: AccessibilityConfig = {
-      highContrast: this.highContrast,
-      keyboardOnly: false,
-      uiScale: this.uiScale / 100,
-      screenReader: this.screenReader
-    };
-    this.appService.setAccessibility(cfg);
   }
 }

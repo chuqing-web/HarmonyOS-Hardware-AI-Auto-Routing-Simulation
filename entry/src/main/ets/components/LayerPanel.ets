@@ -4,6 +4,7 @@
 import { SchematicEditorImpl, SchematicLayerId } from 'schematic_editor';
 import { AppService } from '../services/AppService';
 import { ProteusColors, ProteusFonts } from '../theme/ProteusTheme';
+import { ProteusSwitch } from './proteus/ProteusWidgets';
 
 @Component
 export struct LayerPanel {
@@ -32,22 +33,30 @@ export struct LayerPanel {
   LayerRow(label: string, layerId: SchematicLayerId) {
     Row() {
       Text(label).fontSize(11).fontColor(ProteusColors.TEXT_LABEL).layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: this.isVisible(layerId) })
-        .onChange((on: boolean) => {
+      ProteusSwitch({
+        isOn: this.isVisible(layerId),
+        widthVp: 40,
+        heightVp: 24,
+        onChange: (on: boolean) => {
           const editor = this.appService.schematicEditor as SchematicEditorImpl;
           editor.setLayerVisible(layerId, on);
           this.canvasVersion++;
           this.onLayerChanged();
-        })
-      Toggle({ type: ToggleType.Switch, isOn: this.isLocked(layerId) })
-        .selectedColor('#c08020')
-        .margin({ left: 6 })
-        .onChange((on: boolean) => {
+        }
+      })
+      ProteusSwitch({
+        isOn: this.isLocked(layerId),
+        onColor: '#c08020',
+        widthVp: 40,
+        heightVp: 24,
+        onChange: (on: boolean) => {
           const editor = this.appService.schematicEditor as SchematicEditorImpl;
           editor.setLayerLocked(layerId, on);
           this.canvasVersion++;
           this.onLayerChanged();
-        })
+        }
+      })
+        .margin({ left: 6 })
     }
     .width('100%')
     .padding({ left: 12, right: 12 })

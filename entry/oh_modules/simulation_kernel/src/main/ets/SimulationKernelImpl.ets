@@ -847,13 +847,19 @@ export class SimulationKernelImpl implements ISimulationKernel {
       // Log on first sync, when port pattern changes, or first time we detect unbound pins
       const missKey = `${traceKey}:miss`;
       const missNew = missPins.length > 0 && !this.lastTracedGpio.has(missKey);
-      if (prev === undefined || prev !== portVal || missNew) {
+      const portChanged = prev === undefined || prev !== portVal;
+      // Always pin Vsrc after registerSignalSource so cathode sinks take effect this frame
+      this.analogEngine.pinVoltageSources();
+      if (portChanged || missNew) {
         this.lastTracedGpio.set(traceKey, portVal);
         if (missPins.length > 0) {
           this.lastTracedGpio.set(missKey, missPins.length);
         }
-        // Pin MCU Vsrc immediately so VF dump / UI don't see stale mid-voltages
-        this.analogEngine.pinVoltageSources();
+        if (portChanged) {
+          // Re-OP so LED anode/cathode / series-R settle with new MCU Thevenin drives
+          this.analogEngine.reSolveOp();
+          this.syncVoltagesFromAnalogEngine();
+        }
         traceMcuGpioSync('8051', comp.refDes, 'P1', portVal, drives, missPins);
         this.tracePeripheralIndicators('8051-gpio');
       }
@@ -1616,6 +1622,8 @@ export class SimulationKernelImpl implements ISimulationKernel {
     if (!this.schematic) {
       return;
     }
+    // Latch snapshot — setPinLevel must not clobber firmware writes (see Mcu8051Simulator).
+    const latch = this.mcu8051.getPort1();
     for (let c = 0; c < this.schematic.components.length; c++) {
       const comp = this.schematic.components[c];
       const lib = comp.libraryId.toUpperCase();
@@ -1627,6 +1635,11 @@ export class SimulationKernelImpl implements ISimulationKernel {
         const candidates: string[] = [`P${bit + 1}`, `P1.${bit}`, `P1_${bit}`];
         const nodeName = this.findMcuPinSpiceNode(comp.id, candidates);
         if (nodeName === null || nodeName.length === 0) {
+          continue;
+        }
+        // Latch=0: strong sink — skip external sample (avoids 5V net forcing "input high")
+        if (((latch >> bit) & 1) === 0) {
+          this.mcu8051.setPinLevel('P1', bit, 0);
           continue;
         }
         const v = this.analogEngine.getVoltage(nodeName);

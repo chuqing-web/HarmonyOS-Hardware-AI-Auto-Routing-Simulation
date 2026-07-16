@@ -8,7 +8,7 @@ import { SimWorkerHost } from './sim/SimWorkerHost';
 import { SimFramePlain } from './sim/SimProtocol';
 import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugger';
 import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
-import { AiEngineImpl, IAiEngine, TeachingService, LabTemplate } from 'ai_engine';
+import { AiEngineImpl, IAiEngine, TeachingService, LabTemplate, SemanticNetBuilder, ChatHistoryEntry } from 'ai_engine';
 import { FilePersistenceImpl, CrashGuard, IFilePersistence, BomLookup, SessionState } from 'file_persistence';
 import { VirtualInstrumentsImpl, IVirtualInstruments, ComponentInstrumentBinding } from 'instruments';
 import { PluginManagerImpl, IPluginManager } from 'plugin_system';
@@ -20,9 +20,11 @@ import { TemplateMergeUtil } from '../utils/TemplateMergeUtil';
 import { ProjectPaths } from '../utils/ProjectPaths';
 import { KeyboardShortcutManager } from '../utils/KeyboardShortcutManager';
 import { ThemeManager } from '../theme/ThemeManager';
+import { ProteusFonts } from '../theme/ProteusTheme';
+import { PlatformPrefsStore } from '../utils/PlatformPrefsStore';
 import {
   ProjectFile, EventBus, ModuleEvent, ModuleEventPayload,
-  CallbackRegistry, SchTopology, WaveData, ErcError,
+  CallbackRegistry, SchTopology, WaveData, ErcError, AiApiConfig,
   AiTaskType, ProgressInfo, defaultSimConfig, Logger,
   FaultType, FaultInjection, FaultScanResult, AccessibilityConfig,
   ExportPostProcessor, ApiResult, ResultHelper,
@@ -37,8 +39,8 @@ import {
   tracePinNetEmpty, BindingTraceInfo, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap,
   ensureNetPinConnectivity, PinGeometryResolver, PinGeometry,
   traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn,
-  traceUart, formatUartBytesHex, traceUartTxDrain,
-  emptySchTopology
+  traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity,
+  emptySchTopology, traceAiPayload, traceAiOp
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -51,6 +53,12 @@ export interface AiGenLogEntry {
 }
 
 export type AiGenerateMode = 'replace' | 'append';
+
+interface AiPostGenerateIssues {
+  needAsk: boolean;
+  count: number;
+  summary: string;
+}
 
 interface SimStepData {
   waves: WaveData[];
@@ -124,6 +132,9 @@ export class AppService {
   private aiGenLogs: AiGenLogEntry[] = [];
   private aiGenLogSeq: number = 0;
   private aiGenCancelRequested: boolean = false;
+  private aiSelfCheckPromptPending: boolean = false;
+  private lastAiPrompt: string = '';
+  private aiConversationHistory: ChatHistoryEntry[] = [];
 
   onProjectChanged: () => void = () => {};
   onStatusMessage: (msg: string) => void = () => {};
@@ -132,6 +143,7 @@ export class AppService {
   onAiProgress: (p: ProgressInfo) => void = () => {};
   onAiGeneratingChanged: (busy: boolean) => void = () => {};
   onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => {};
+  onAiSelfCheckNeeded: (issueCount: number, summary: string) => void = () => {};
   wireToolToggleHandler: () => void = () => {};
   copyHandler: () => void = () => {};
   pasteHandler: () => void = () => {};
@@ -179,6 +191,8 @@ export class AppService {
     }
     try { fs.mkdirSync(ProjectPaths.userProjectRoot(baseDir), true); } catch (_e) {}
     ThemeManager.getInstance().init(baseDir);
+    PlatformPrefsStore.getInstance().init(baseDir);
+    this.applyPlatformPrefsFromStore();
     (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
     this.filePersistence.initCollaboration(baseDir);
     void TemplateProjectBootstrap.ensure(context, baseDir);
@@ -239,6 +253,9 @@ export class AppService {
     }
     this.currentProject = this.filePersistence.createNewProject(name);
     this.currentProjectPath = '';
+    // 新建工程与空 aiConfigs 对齐，避免内存残留旧 API 与工程脱节
+    this.aiApiManager.clearAllConfigs();
+    Logger.info(INSTR_TRACE_TAG, '[AI_API] newProject cleared API manager');
     const editor = this.schematicEditor as SchematicEditorImpl;
     editor.loadAnnotations([]);
     editor.setReadOnly(false);
@@ -1034,10 +1051,16 @@ export class AppService {
     if (this.currentProject.mcuDebugConfig) {
       this.hexDebugger.configure(this.currentProject.mcuDebugConfig);
     }
+    this.aiApiManager.clearAllConfigs();
     for (let i = 0; i < this.currentProject.aiConfigs.length; i++) {
       const cfg = this.currentProject.aiConfigs[i];
-      this.aiApiManager.addApi(cfg);
+      const addResult = this.aiApiManager.addApi(cfg);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] loadProject add id=${cfg.id} name=${cfg.name}` +
+        ` ok=${addResult.success} keyLen=${cfg.apiKey ? cfg.apiKey.length : 0}`);
     }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] loadProject restored ${this.currentProject.aiConfigs.length} configs`);
     this.bindingPinHash.clear();
     this.autoWireAllInstruments();
     this.onProjectChanged();
@@ -1052,6 +1075,55 @@ export class AppService {
     const editor = this.schematicEditor as SchematicEditorImpl;
     const bundle = this.filePersistence.buildCollaborationBundle(editor.getAnnotations());
     this.currentProject.collaboration = bundle;
+    this.syncAiApiConfigsToProject(false);
+  }
+
+  /**
+   * 将内存中的 API 配置（含真实 Key）写回工程。
+   * @param persistToDisk 为 true 且已有工程路径时立即 save（UI 保存 API 用）；
+   *                      saveProject 内部调用时必须传 false，避免递归。
+   */
+  syncAiApiConfigsToProject(persistToDisk: boolean = true): void {
+    if (!this.currentProject) {
+      Logger.warn(INSTR_TRACE_TAG, '[AI_API] sync→project skipped: no current project');
+      return;
+    }
+    const exported = this.aiApiManager.exportConfigs(false);
+    if (!exported.success || !exported.data) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_API] sync→project FAILED: ${exported.error ?? 'export empty'}`);
+      return;
+    }
+    try {
+      const configs = JSON.parse(exported.data) as AiApiConfig[];
+      const existing = this.currentProject.aiConfigs ?? [];
+      // 禁止用空 manager 覆盖已持久化配置（启动未 load 时会静默擦除）
+      if (configs.length === 0 && existing.length > 0) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_API] sync→project REFUSED empty wipe: manager=0 project=${existing.length}`);
+        return;
+      }
+      this.currentProject.aiConfigs = configs;
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] sync→project ok count=${configs.length}` +
+        ` ids=[${configs.map(c => c.id).join(',')}]`);
+      if (persistToDisk && this.currentProjectPath.length > 0) {
+        const mainPath = this.currentProjectPath;
+        const autoPath = `${this.getAutosaveDir()}/${this.currentProject.name}.schsim`;
+        void this.saveProject(mainPath, false).then((ok: boolean) => {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_API] persist→disk ${ok ? 'OK' : 'FAIL'} path=${mainPath}`);
+        });
+        if (autoPath !== mainPath) {
+          void this.saveProject(autoPath, false).then((ok: boolean) => {
+            Logger.info(INSTR_TRACE_TAG,
+              `[AI_API] persist→autosave ${ok ? 'OK' : 'FAIL'} path=${autoPath}`);
+          });
+        }
+      }
+    } catch (e) {
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] sync→project parse error: ${e}`);
+    }
   }
 
   async createSnapshot(versionLabel: string, note: string): Promise<SnapshotMeta | null> {
@@ -1565,8 +1637,167 @@ export class AppService {
     this.onStatusMessage('正在取消 AI 生成…');
   }
 
+  isAiSelfCheckPromptPending(): boolean {
+    return this.aiSelfCheckPromptPending;
+  }
+
+  dismissAiSelfCheckPrompt(): void {
+    this.aiSelfCheckPromptPending = false;
+  }
+
+  /**
+   * AI 自检修复：拓扑重建 + ERC 自动修 + 诊断日志。
+   * 可由生成结束后的弹窗或面板按钮触发。
+   */
+  async aiSelfCheckAndFix(): Promise<boolean> {
+    if (this.aiGenerating) {
+      this.onStatusMessage('AI 正在运行，请稍候');
+      return false;
+    }
+    this.aiSelfCheckPromptPending = false;
+    this.aiGenerating = true;
+    this.aiGenCancelRequested = false;
+    (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
+    this.onAiGeneratingChanged(true);
+    this.appendAiGenLog('system', '开始 AI 自检修复 · 画布已锁定');
+    this.onStatusMessage('AI 自检修复中…');
+    Logger.info(INSTR_TRACE_TAG, '[AI_GEN] self_check START');
+    traceAiOp('AI_GEN', 'self_check_start', 'canvas locked');
+
+    try {
+      const editor = this.schematicEditor as SchematicEditorImpl;
+      editor.rebuildNetPinConnectivity();
+      let doc = editor.getDocument();
+      const grid = doc.metadata.gridSize || 10;
+      ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver());
+      editor.loadDocument(doc);
+      this.appendAiGenLog('assistant', '已重建脚网连通 (ensureNetPinConnectivity)');
+      traceAiOp('AI_GEN', 'self_check_pinconn',
+        `wires=${doc.wires.length} nets=${doc.nets.length}`);
+
+      const before = this.runErc(false);
+      const beforeErr = before.filter(e => e.severity === 'error' || e.severity === 'critical').length;
+      this.appendAiGenLog('assistant',
+        `自检前 ERC: ${before.length} 条（错误 ${beforeErr}）`);
+      for (let i = 0; i < Math.min(before.length, 10); i++) {
+        this.appendAiGenLog('system',
+          `  · [${before[i].severity}] ${before[i].desc}${before[i].suggest ? ' → ' + before[i].suggest : ''}`);
+      }
+
+      const after = this.runErc(true);
+      const afterErr = after.filter(e => e.severity === 'error' || e.severity === 'critical').length;
+      this.appendAiGenLog('assistant',
+        `自动修复后 ERC: ${after.length} 条（错误 ${afterErr}，此前 ${beforeErr}）`);
+
+      // 语义再建网：补仪器/电源脚线
+      const beforeWires = editor.getDocument().wires.length;
+      const beforeNets = editor.getDocument().nets.length;
+      const rebuilt = new SemanticNetBuilder(this.componentLibrary).build(this.getTopology());
+      if (rebuilt.topology.wireList.length > beforeWires ||
+        rebuilt.topology.netList.length > beforeNets) {
+        editor.loadTopology(rebuilt.topology);
+        editor.rebuildNetPinConnectivity();
+        doc = editor.getDocument();
+        ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
+        editor.loadDocument(doc);
+        this.appendAiGenLog('assistant',
+          `语义再建网: ${rebuilt.summary}`);
+        traceAiOp('AI_GEN', 'self_check_rebuild_net', rebuilt.summary);
+      } else {
+        this.appendAiGenLog('assistant', '语义再建网：无新增连接（保持现状）');
+        traceAiOp('AI_GEN', 'self_check_rebuild_net', 'no change');
+      }
+
+      const afterNet = this.runErc(false);
+      const afterNetErr = afterNet.filter(e => e.severity === 'error' || e.severity === 'critical').length;
+
+      // 诊断器补充
+      const topo = this.getTopology();
+      const diag = await (this.aiEngine as AiEngineImpl).aiStaticDiagnose(topo);
+      if (diag.success && diag.data !== undefined && diag.data.length > 0) {
+        const n = Math.min(diag.data.length, 8);
+        this.appendAiGenLog('assistant', `静态诊断 ${diag.data.length} 条:`);
+        for (let i = 0; i < n; i++) {
+          this.appendAiGenLog('system',
+            `  · ${diag.data[i].errorDesc}${diag.data[i].repairSuggest ? ' | 建议: ' + diag.data[i].repairSuggest : ''}`);
+        }
+      }
+
+      editor.fitAllInView();
+      this.syncProjectFromModules();
+      this.reloadSimulationFromSchematic();
+      this.onProjectChanged();
+
+      const remaining = afterNetErr;
+      if (remaining > 0) {
+        this.appendAiGenLog('system',
+          `仍有 ${remaining} 项硬错误未消除；可修改提示词后重新「生成整图」`);
+      } else {
+        this.appendAiGenLog('system', '自检修复完成，未发现硬错误');
+      }
+      this.appendAiGenLog('system', '画布已解锁');
+      this.onStatusMessage(remaining > 0
+        ? `自检完成，仍有 ${remaining} 项错误`
+        : 'AI 自检修复完成');
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_GEN] self_check END remainingErrors=${remaining}`);
+      traceAiOp('AI_GEN', 'self_check_end', `remainingErrors=${remaining}`);
+      this.endAiGenerate(true);
+      return remaining === 0;
+    } catch (e) {
+      const msg = `${e}`;
+      this.appendAiGenLog('assistant', `自检异常: ${msg}`);
+      Logger.error(INSTR_TRACE_TAG, `[AI_GEN] self_check EXCEPTION ${msg}`);
+      this.endAiGenerate(false);
+      this.onStatusMessage(`自检异常: ${msg}`);
+      return false;
+    }
+  }
+
+  /** 评估首次落图是否需要弹出自检询问 */
+  private evaluatePostGenerateIssues(erc: ErcError[]): AiPostGenerateIssues {
+    const hard = erc.filter(e => e.severity === 'error' || e.severity === 'critical');
+    const doc = this.schematicEditor.getDocument();
+    let floatingPins = 0;
+    for (let i = 0; i < doc.nets.length; i++) {
+      if (doc.nets[i].pinIds.length === 0 && doc.nets[i].name.toUpperCase() !== 'VCC' &&
+        doc.nets[i].name.toUpperCase() !== 'GND') {
+        floatingPins++;
+      }
+    }
+    const noWires = doc.components.length > 0 && doc.wires.length === 0;
+    const count = hard.length + (noWires ? 1 : 0) + (floatingPins > 2 ? 1 : 0);
+    const bits: string[] = [];
+    if (hard.length > 0) {
+      bits.push(`ERC错误 ${hard.length}`);
+    }
+    if (noWires) {
+      bits.push('无导线');
+    }
+    if (floatingPins > 2) {
+      bits.push(`空脚网 ${floatingPins}`);
+    }
+    const result: AiPostGenerateIssues = {
+      needAsk: count > 0,
+      count: count,
+      summary: bits.length > 0 ? bits.join(' · ') : '无明显硬错误'
+    };
+    return result;
+  }
+
   async aiGenerateCircuit(prompt: string): Promise<boolean> {
     return this.aiGenerateCircuitFromPrompt(prompt, 'replace');
+  }
+
+  /** 清除多轮对话历史，下次生成将从零开始（create 模式） */
+  clearAiConversation(): void {
+    this.aiConversationHistory = [];
+    Logger.info(INSTR_TRACE_TAG, '[AI_GEN] conversation history cleared');
+  }
+
+  /** 获取当前对话轮次（0 表示无历史） */
+  getAiConversationRound(): number {
+    return Math.floor(this.aiConversationHistory.length / 2);
   }
 
   /**
@@ -1588,19 +1819,48 @@ export class AppService {
     }
 
     this.beginAiGenerate(trimmed, mode);
+    this.lastAiPrompt = trimmed;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_GEN] START mode=${mode} promptLen=${trimmed.length}` +
+      ` apis=${this.aiApiManager.listApis().length}`);
+    traceAiPayload('AI_GEN', 'USER', trimmed, `mode=${mode}`);
+    traceAiOp('AI_GEN', 'generate_start',
+      `mode=${mode} apis=${this.aiApiManager.listApis().length}`);
     try {
-      const runTopo = emptySchTopology();
-      runTopo.schName = 'AI Generated';
+      const hasHistory = this.aiConversationHistory.length > 0;
+      const isEditMode = hasHistory;
+      let runTopo: SchTopology;
+      if (isEditMode) {
+        // 编辑模式: 基于当前画布拓扑进行增量修改
+        const editor = this.schematicEditor as SchematicEditorImpl;
+        runTopo = TopologyAdapter.toTopology(editor.getDocument());
+        runTopo.schName = 'AI Edited';
+        this.appendAiGenLog('system',
+          `多轮对话 · 第${this.aiConversationHistory.length / 2 + 1}轮 · 基于当前${runTopo.deviceList.length}器件修改`);
+      } else {
+        runTopo = emptySchTopology();
+        runTopo.schName = 'AI Generated';
+      }
       runTopo.bgColor = '#FFFFFF';
 
+      traceAiOp('AI_GEN', 'run_full_pipeline',
+        `TASK_FULL_PIPELINE mode=${isEditMode ? 'edit' : 'create'}`);
       const result = await this.aiEngine.runAiTask(
         AiTaskType.TASK_FULL_PIPELINE, runTopo,
-        { prompt: trimmed, scene: 'text_gen' },
+        {
+          prompt: trimmed, scene: 'text_gen',
+          onStreamSnapshot: (snapshot: SchTopology, stage: string) => {
+            this.handleStreamSnapshot(snapshot, stage);
+          },
+          conversationHistory: isEditMode ? [...this.aiConversationHistory] : undefined,
+          generationMode: isEditMode ? 'edit' : 'create'
+        },
         (p) => this.handleAiGenProgress(p)
       );
 
       if (this.aiGenCancelRequested) {
         this.appendAiGenLog('assistant', '已取消生成');
+        traceAiOp('AI_GEN', 'generate_cancel', 'user cancelled');
         this.endAiGenerate(false);
         this.onStatusMessage('AI 生成已取消');
         return false;
@@ -1608,34 +1868,74 @@ export class AppService {
 
       if (!result.success || !result.topology) {
         this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_GEN] FAILED err=${result.errMsg || 'unknown'} code=${result.errCode}`);
+        traceAiOp('AI_GEN', 'generate_fail',
+          `err=${result.errMsg || 'unknown'} code=${result.errCode}`);
         this.endAiGenerate(false);
         this.onStatusMessage(result.errMsg || 'AI 生成失败');
         return false;
       }
 
-      this.appendTopologySummary(result.topology, result.analysisText ?? '');
+      const analysis = result.analysisText ?? '';
+      // 必须来自真实 LLM：拒绝模板/本地算法静默落图
+      if (analysis.indexOf('LLM:false') >= 0 || analysis.indexOf('LLM: false') >= 0) {
+        const msg = 'AI API 未返回有效结果（已禁用模板回退）。请检查 API 配置与连通性测试。';
+        this.appendAiGenLog('assistant', msg);
+        Logger.error(INSTR_TRACE_TAG, `[AI_GEN] REJECT non-LLM topology | ${analysis}`);
+        traceAiOp('AI_GEN', 'generate_reject_non_llm', analysis);
+        this.endAiGenerate(false);
+        this.onStatusMessage(msg);
+        return false;
+      }
+
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_GEN] OK devices=${result.topology.deviceList.length}` +
+        ` wires=${result.topology.wireList.length} | ${analysis}`);
+      traceAiPayload('AI_GEN', 'ASSISTANT', analysis,
+        `devices=${result.topology.deviceList.length} wires=${result.topology.wireList.length}`);
+      this.appendTopologySummary(result.topology, analysis);
 
       if (mode === 'replace') {
+        traceAiOp('AI_GEN', 'load_topology', 'mode=replace');
         this.schematicEditor.loadTopology(result.topology);
-        if (result.topology.wireList.length > 0) {
-          this.schematicEditor.applyRouteResult({
-            routeLines: result.topology.wireList,
-            crossCount: 0, totalLineLength: 0,
-            isolateAnalogDigital: true, xtalShortPath: true, diffLineEqualLength: false
-          }, true);
-        }
       } else {
+        traceAiOp('AI_GEN', 'load_topology', 'mode=append merge');
         const generatedDoc = TopologyAdapter.fromTopology(result.topology);
         const editor = this.schematicEditor as SchematicEditorImpl;
         const currentDoc = editor.getDocument();
         TemplateMergeUtil.mergeTemplateInto(currentDoc, generatedDoc);
         editor.loadDocument(currentDoc);
-        editor.rebuildNetPinConnectivity();
-        const grid = currentDoc.metadata.gridSize || 10;
-        ensureNetPinConnectivity(currentDoc, grid, this.pinGeometryResolver());
-        if (result.topology.wireList.length > 0) {
-          // 合并后拓扑以文档为准；再 fit 视图
+      }
+
+      const editor = this.schematicEditor as SchematicEditorImpl;
+      editor.rebuildNetPinConnectivity();
+      const doc = editor.getDocument();
+      const grid = doc.metadata.gridSize || 10;
+      ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver());
+      editor.loadDocument(doc);
+
+      // 落图后连通性审计：统计无脚入网的器件
+      tracePerPinConnectivity(doc);
+      let floatingComps = 0;
+      for (let ci = 0; ci < doc.components.length; ci++) {
+        const c = doc.components[ci];
+        if (c.libraryId === 'VCC' || c.libraryId === 'GND') {
+          continue;
         }
+        const pinNets = getPinNetMap(c.id, doc.nets);
+        if (pinNets.size === 0) {
+          floatingComps++;
+        }
+      }
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_GEN] post-load wires=${doc.wires.length} nets=${doc.nets.length}` +
+        ` floatingNonPower=${floatingComps}`);
+      traceAiOp('AI_GEN', 'post_load',
+        `wires=${doc.wires.length} nets=${doc.nets.length} floatingNonPower=${floatingComps}`);
+      if (floatingComps > 0) {
+        this.appendAiGenLog('system',
+          `警告: ${floatingComps} 个器件落图后无引脚入网，请检查建网/导线端点`);
       }
 
       this.schematicEditor.fitAllInView();
@@ -1645,7 +1945,28 @@ export class AppService {
       const errN = erc.filter(e => e.severity === 'error' || e.severity === 'critical').length;
       const warnN = erc.filter(e => e.severity === 'warning').length;
       this.appendAiGenLog('assistant',
-        `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC ${erc.length} 条（错误 ${errN} / 警告 ${warnN}）`);
+        `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC ${erc.length} 条（错误 ${errN} / 警告 ${warnN}）` +
+        ` · 悬空器件 ${floatingComps}`);
+
+      const issues = this.evaluatePostGenerateIssues(erc);
+      if (issues.needAsk) {
+        this.aiSelfCheckPromptPending = true;
+        this.appendAiGenLog('system',
+          `首次布局检测到问题（${issues.summary}）。可点击「AI 自检修复」或确认弹窗进行修复。`);
+        this.onAiSelfCheckNeeded(issues.count, issues.summary);
+      } else {
+        this.appendAiGenLog('system', '首次布局未发现硬错误；仍可手动「AI 自检修复」');
+      }
+
+      // 多轮对话: 记录本轮对话历史
+      const userEntry: ChatHistoryEntry = { role: 'user', content: trimmed };
+      this.aiConversationHistory.push(userEntry);
+      const summary = `${result.topology.deviceList.length}器件, ${result.topology.wireList.length}导线`;
+      const asstEntry: ChatHistoryEntry = { role: 'assistant', content: `已生成: ${summary}` };
+      this.aiConversationHistory.push(asstEntry);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_GEN] conversation history size=${this.aiConversationHistory.length}`);
+
       this.appendAiGenLog('system', '画布已解锁');
       this.onProjectChanged();
       this.onStatusMessage(
@@ -1678,6 +1999,26 @@ export class AppService {
     this.aiGenCancelRequested = false;
     (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
     this.onAiGeneratingChanged(false);
+  }
+
+  /**
+   * 流式画布快照：将流水线各阶段的中间拓扑加载到画布，
+   * 实现器件逐步出现 → 标号连接 → 导线完成的动画效果。
+   */
+  private handleStreamSnapshot(snapshot: SchTopology, stage: string): void {
+    // 深拷贝避免后续流水线阶段修改影响已加载的文档
+    const cloned = JSON.parse(JSON.stringify(snapshot)) as SchTopology;
+    const stageNames: Record<string, string> = {
+      'placement': '器件已摆放',
+      'net_plan': '网络/标号已创建',
+      'routing': '导线已连接'
+    };
+    const label = stageNames[stage] ?? stage;
+    this.appendAiGenLog('system', `[画布] ${label}`);
+    Logger.info(INSTR_TRACE_TAG, `[AI_GEN] stream snapshot stage=${stage}` +
+      ` devs=${cloned.deviceList.length} nets=${cloned.netList?.length ?? 0}` +
+      ` wires=${cloned.wireList?.length ?? 0}`);
+    this.schematicEditor.loadTopology(cloned);
   }
 
   private handleAiGenProgress(p: ProgressInfo): void {
@@ -1735,6 +2076,11 @@ export class AppService {
       `布线完成: ${topo.wireList.length} 导线 / ${topo.netList.length} 网络`);
     if (analysis.length > 0) {
       this.appendAiGenLog('system', `流水线状态: ${analysis}`);
+      // 解析 match=[...] 段落为可读列表
+      const m = analysis.match(/match=\[([^\]]*)\]/);
+      if (m !== null && m[1].length > 0) {
+        this.appendAiGenLog('assistant', `库匹配明细: ${m[1].split(',').join(' · ')}`);
+      }
     }
     if (topo.ercErrorList !== undefined && topo.ercErrorList.length > 0) {
       const n = Math.min(topo.ercErrorList.length, 8);
@@ -1745,6 +2091,15 @@ export class AppService {
       this.appendAiGenLog('system',
         `流水线 ERC 提示 ${topo.ercErrorList.length} 条:\n${bits.join('\n')}`);
     }
+    // 连通健康
+    let emptyPinNets = 0;
+    for (let i = 0; i < topo.netList.length; i++) {
+      if (topo.netList[i].nodeList.length === 0) {
+        emptyPinNets++;
+      }
+    }
+    this.appendAiGenLog('system',
+      `连通健康: 空脚网 ${emptyPinNets}/${topo.netList.length} · 假脚回退=0`);
   }
 
   private appendAiGenLog(role: 'user' | 'assistant' | 'system', text: string): void {
@@ -1786,14 +2141,36 @@ export class AppService {
 
   setOfflineMode(enabled: boolean): void {
     (this.aiApiManager as AiApiManagerImpl).networkMode.setOfflineMode(enabled);
+    this.persistPlatformPrefs();
+    this.onStatusMessage(enabled ? '已开启离线模式（禁止云端 AI）' : '已关闭离线模式');
   }
 
   setGlobalProxy(url: string): void {
-    (this.aiApiManager as AiApiManagerImpl).networkMode.setGlobalProxy(url);
+    (this.aiApiManager as AiApiManagerImpl).networkMode.setGlobalProxy(url.trim());
+    this.persistPlatformPrefs();
+    this.onStatusMessage(url.trim().length > 0
+      ? `代理已保存（HTTP 将启用系统代理）: ${url.trim()}`
+      : '代理已清空（直连）');
+  }
+
+  isOfflineMode(): boolean {
+    return (this.aiApiManager as AiApiManagerImpl).networkMode.isOfflineMode();
+  }
+
+  getGlobalProxy(): string {
+    return (this.aiApiManager as AiApiManagerImpl).networkMode.getConfig().globalProxy;
   }
 
   setAccessibility(cfg: AccessibilityConfig): void {
-    this.accessibility = cfg;
+    this.accessibility = {
+      highContrast: cfg.highContrast,
+      keyboardOnly: cfg.keyboardOnly,
+      uiScale: Math.min(1.5, Math.max(1.0, cfg.uiScale)),
+      screenReader: cfg.screenReader
+    };
+    ProteusFonts.setScale(this.accessibility.uiScale);
+    ThemeManager.getInstance().setHighContrast(this.accessibility.highContrast);
+    this.persistPlatformPrefs();
   }
 
   getAccessibility(): AccessibilityConfig {
@@ -1803,6 +2180,37 @@ export class AppService {
       uiScale: this.accessibility.uiScale,
       screenReader: this.accessibility.screenReader
     };
+  }
+
+  /** 启动时从磁盘恢复离线/代理/无障碍并立刻生效 */
+  private applyPlatformPrefsFromStore(): void {
+    const prefs = PlatformPrefsStore.getInstance().get();
+    (this.aiApiManager as AiApiManagerImpl).networkMode.setOfflineMode(prefs.offlineMode);
+    (this.aiApiManager as AiApiManagerImpl).networkMode.setGlobalProxy(prefs.globalProxy);
+    this.accessibility = {
+      highContrast: prefs.highContrast,
+      keyboardOnly: false,
+      uiScale: prefs.uiScale,
+      screenReader: prefs.screenReader
+    };
+    ProteusFonts.setScale(prefs.uiScale);
+    ThemeManager.getInstance().setHighContrast(prefs.highContrast);
+  }
+
+  private persistPlatformPrefs(): void {
+    PlatformPrefsStore.getInstance().set({
+      offlineMode: this.isOfflineMode(),
+      globalProxy: this.getGlobalProxy(),
+      highContrast: this.accessibility.highContrast,
+      uiScale: this.accessibility.uiScale,
+      screenReader: this.accessibility.screenReader
+    });
+  }
+
+  announceIfScreenReader(message: string): void {
+    if (this.accessibility.screenReader && message.length > 0) {
+      this.onStatusMessage(`🔊 ${message}`);
+    }
   }
 
   injectFault(instUuid: string, faultType: FaultType): ApiResult<FaultInjection> {
@@ -2124,6 +2532,7 @@ export class AppService {
   toggleTheme(): boolean {
     const mode = ThemeManager.getInstance().toggle();
     this.onStatusMessage(mode === 'dark' ? '已切换深色主题' : '已切换浅色主题');
+    this.announceIfScreenReader(mode === 'dark' ? '深色主题' : '浅色主题');
     return mode === 'dark';
   }
 

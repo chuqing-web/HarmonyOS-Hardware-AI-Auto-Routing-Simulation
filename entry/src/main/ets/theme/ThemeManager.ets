@@ -1,7 +1,7 @@
 /**
  * 主题切换与持久化（浅色 / 深色）
  */
-import { ProteusColors, ProteusDarkColors } from './ProteusTheme';
+import { ProteusColors } from './ProteusTheme';
 import fs from '@ohos.file.fs';
 
 export type ThemeMode = 'light' | 'dark';
@@ -9,6 +9,7 @@ export type ThemeMode = 'light' | 'dark';
 export class ThemeManager {
   private static instance: ThemeManager;
   private mode: ThemeMode = 'light';
+  private highContrast: boolean = false;
   private prefPath: string = '';
 
   static getInstance(): ThemeManager {
@@ -21,48 +22,61 @@ export class ThemeManager {
   init(prefDir: string): void {
     this.prefPath = `${prefDir}/theme.pref`;
     this.loadFromDisk();
+    this.applyActivePalette();
   }
 
   getMode(): ThemeMode { return this.mode; }
   isDark(): boolean { return this.mode === 'dark'; }
+  isHighContrast(): boolean { return this.highContrast; }
 
   setMode(mode: ThemeMode): void {
     this.mode = mode;
     this.saveToDisk();
+    this.applyActivePalette();
+  }
+
+  setHighContrast(enabled: boolean): void {
+    this.highContrast = enabled;
+    this.applyActivePalette();
   }
 
   toggle(): ThemeMode {
     this.mode = this.mode === 'light' ? 'dark' : 'light';
     this.saveToDisk();
+    this.applyActivePalette();
     return this.mode;
   }
 
+  applyActivePalette(): void {
+    ProteusColors.applyTheme(this.mode === 'dark', this.highContrast);
+  }
+
   menuBg(): string {
-    return this.isDark() ? ProteusDarkColors.MENU_BG : ProteusColors.MENU_BG;
+    return ProteusColors.MENU_BG;
   }
 
   toolbarBg(): string {
-    return this.isDark() ? ProteusDarkColors.TOOLBAR_BG : ProteusColors.TOOLBAR_BG;
+    return ProteusColors.TOOLBAR_BG;
   }
 
   canvasBg(): string {
-    return this.isDark() ? ProteusDarkColors.CANVAS_BG : ProteusColors.CANVAS_BG;
+    return ProteusColors.CANVAS_BG;
   }
 
   textPrimary(): string {
-    return this.isDark() ? ProteusDarkColors.TEXT_PRIMARY : ProteusColors.TEXT_PRIMARY;
+    return ProteusColors.TEXT_PRIMARY;
   }
 
   gridDot(): string {
-    return this.isDark() ? ProteusDarkColors.GRID_DOT : ProteusColors.GRID_DOT;
+    return ProteusColors.GRID_DOT;
   }
 
   wireColor(): string {
-    return this.isDark() ? ProteusDarkColors.WIRE : ProteusColors.WIRE;
+    return ProteusColors.WIRE;
   }
 
   selectedColor(): string {
-    return this.isDark() ? ProteusDarkColors.SELECTED : ProteusColors.SELECTED;
+    return ProteusColors.SELECTED;
   }
 
   private loadFromDisk(): void {

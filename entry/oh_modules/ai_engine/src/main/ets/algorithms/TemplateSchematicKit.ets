@@ -1,5 +1,6 @@
 /**
- * 实验模板共享工具 — 器件放置、网络/导线、引脚坐标
+ * 实验模板共享工具 v2.0 — 器件放置、网络/导线、引脚坐标
+ * 新增: autoConnect 智能选线/标号、标号唯一性校验、标号器件避碰
  */
 import {
   SchematicDocument, ComponentInstance, NetType, WireStyle,
@@ -77,9 +78,10 @@ export class TemplateSchematicKit {
   }
 
   static addNet(doc: SchematicDocument, name: string, type: NetType, pinRefs: string[]): string {
-    let net = doc.nets.find(n => n.name === name);
+    const safeName = TemplateSchematicKit.sanitizeNetName(name, type);
+    let net = doc.nets.find(n => n.name === safeName);
     if (net === undefined) {
-      net = { id: IdUtil.generate('net'), name: name, type: type, pinIds: [] };
+      net = { id: IdUtil.generate('net'), name: safeName, type: type, pinIds: [] };
       doc.nets.push(net);
     }
     for (let i = 0; i < pinRefs.length; i++) {
@@ -141,6 +143,50 @@ export class TemplateSchematicKit {
   /** 远跨模块才优先标号；近/中距先物理线（与 tools/lab_templates/kit.mjs 对齐） */
   private static readonly LABEL_SPAN: number = 420;
 
+  /** 保留电源网络名 — 信号网络不得使用这些名称 */
+  static readonly RESERVED_POWER_NAMES: Set<string> = new Set([
+    'VCC', 'VDD', 'GND', 'VSS', '3V3', '3.3V', '5V', '12V', '-12V',
+    'VCC_5V', 'VCC_3V3', 'AVCC', 'AVDD', 'DVCC', 'VCCIO', 'VREF',
+    'AGND', 'DGND', 'PGND', 'VEE', 'VBB'
+  ]);
+
+  /** 校验并修正网络名: 信号网络使用保留电源名 → 自动加 _SIG 后缀 */
+  static sanitizeNetName(netName: string, netType: NetType): string {
+    if (netType === NetType.POWER || netType === NetType.GROUND) {
+      return netName;
+    }
+    const upper = netName.toUpperCase();
+    if (TemplateSchematicKit.RESERVED_POWER_NAMES.has(upper)) {
+      return `${netName}_SIG`;
+    }
+    return netName;
+  }
+
+  /** 校验引脚是否存在于器件引脚表中 */
+  static validatePinExists(libDevId: string, pinId: string): boolean {
+    const local = TemplateSchematicKit.pinOffset(libDevId, pinId, pinId);
+    // pinOffset 对未知引脚返回 {x:0, y:0}, 但有效引脚也可能在原点
+    // 使用 commonPinIds 做精确校验
+    const knownPins = TemplateSchematicKit.commonPinIds(libDevId);
+    if (knownPins.length > 0) {
+      return knownPins.includes(pinId);
+    }
+    // 如果 commonPinIds 为空 (未注册器件), 信任调用方
+    return true;
+  }
+
+  /** 统计文档中每个器件的已连接引脚数，返回 [compId, connectedCount][] */
+  static countConnectedPins(doc: SchematicDocument): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const net of doc.nets) {
+      for (const pr of net.pinIds) {
+        const compId = pr.split(':')[0];
+        counts.set(compId, (counts.get(compId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
   private static pinSpan(pins: PinSpec[]): number {
     if (pins.length < 2) {
       return 0;
@@ -201,16 +247,35 @@ export class TemplateSchematicKit {
   }
 
   /**
-   * 多脚并网（混用）：近/中距物理导线；远跨模块 Net Label。
+   * 多脚并网（混用）：近/中距物理导线；远跨模块/多脚/拥塞区域 Net Label。
+   * v2.1: 增加 >4脚→标号、局部拥塞→标号 规则，减少导线交叉混乱。
    */
   static join(doc: SchematicDocument, netName: string, type: NetType, pins: PinSpec[]): string {
     if (pins.length === 0) {
       return '';
     }
     const span = TemplateSchematicKit.joinSpan(doc, netName, pins);
+    const nameUp = netName.toUpperCase();
+    const isClock = nameUp.includes('XTAL') || nameUp.includes('CLK');
+    const isDecoupling = nameUp.includes('VDD') || nameUp.includes('DECOUPLE');
+
+    // 强制导线: 晶振/去耦 (最短路径)
+    if (isClock || isDecoupling) {
+      return TemplateSchematicKit.joinWired(doc, netName, type, pins);
+    }
+    // 多脚网络(>4) → 标号，避免星形导线杂乱
+    if (pins.length > 4) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 远跨模块 → 标号
     if (span >= TemplateSchematicKit.LABEL_SPAN) {
       return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
     }
+    // 局部拥塞区域(已有>3根导线) → 标号
+    if (pins.length >= 3 && TemplateSchematicKit.isLocallyCongested(doc, pins)) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 近/中距 → 导线
     return TemplateSchematicKit.joinWired(doc, netName, type, pins);
   }
 
@@ -338,6 +403,20 @@ export class TemplateSchematicKit {
         }
       }
       if (!hitsForeign) {
+        // 检查标号端点是否在器件包围盒内
+        for (let ci = 0; ci < doc.components.length; ci++) {
+          const comp = doc.components[ci];
+          if (`${comp.id}:` === `${pin.comp.id}:`) continue;
+          const margin = 10;
+          const bx = comp.position.x - margin;
+          const by = comp.position.y - margin;
+          if (candidate.x >= bx && candidate.x <= bx + 80 + margin * 2 &&
+            candidate.y >= by && candidate.y <= by + 50 + margin * 2) {
+            hitsForeign = true;
+            break;
+          }
+        }
+        if (hitsForeign) continue;
         for (let ci = 0; ci < doc.components.length; ci++) {
           const comp = doc.components[ci];
           const pinIds = TemplateSchematicKit.commonPinIds(comp.libraryId);
@@ -411,6 +490,133 @@ export class TemplateSchematicKit {
       TemplateSchematicKit.stubLabel(doc, pins[i], netName, type);
     }
     return nid;
+  }
+
+  /**
+   * 智能自动连接 — 综合距离/网络类型/拥塞度/器件数量自动选择导线或标号。
+   * 规则: 晶振/去耦强制导线; 电源轨跨区标号; 本地已有>3根导线时转标号; 多脚(>4)优先标号。
+   */
+  static autoConnect(doc: SchematicDocument, netName: string, type: NetType,
+    pins: PinSpec[]): string {
+    if (pins.length < 2) {
+      if (pins.length === 1) {
+        return TemplateSchematicKit.stubLabel(doc, pins[0], netName, type);
+      }
+      return '';
+    }
+    const span = TemplateSchematicKit.joinSpan(doc, netName, pins);
+    const isPowerRail = type === NetType.POWER || type === NetType.GROUND;
+    const nameUp = netName.toUpperCase();
+    const isClock = nameUp.includes('XTAL') || nameUp.includes('CLK');
+    const isDecoupling = nameUp.includes('VDD') || nameUp.includes('DECOUPLE');
+
+    // 晶振/去耦强制导线(最短路径)
+    if (isClock || isDecoupling) {
+      return TemplateSchematicKit.joinWired(doc, netName, type, pins);
+    }
+    // 电源轨跨区优先标号
+    if (isPowerRail && span > 300) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 远跨模块 → 标号
+    if (span >= TemplateSchematicKit.LABEL_SPAN) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 多脚网络(>4个引脚) → 标号，避免星形导线杂乱
+    if (pins.length > 4) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 局部拥塞检测: 如果连接区域已有 >3 根不同 net 的导线穿越，改用标号
+    if (TemplateSchematicKit.isLocallyCongested(doc, pins)) {
+      return TemplateSchematicKit.joinByLabel(doc, netName, type, pins);
+    }
+    // 近/中距 → 导线
+    return TemplateSchematicKit.joinWired(doc, netName, type, pins);
+  }
+
+  /**
+   * 局部拥塞检测: 统计 pins 包围区域(含100mil margin)内已有的不同 net 导线数。
+   * >3 根不同 net 则认为该区域拥塞。
+   */
+  static isLocallyCongested(doc: SchematicDocument, pins: PinSpec[]): boolean {
+    if (doc.wires.length < 2) return false;
+    // 计算引脚包围盒
+    let minX = 99999, minY = 99999, maxX = -1, maxY = -1;
+    for (const p of pins) {
+      const w = TemplateSchematicKit.pinWorld(p.comp, p.pinId, p.pinName);
+      if (w.x < minX) minX = w.x; if (w.y < minY) minY = w.y;
+      if (w.x > maxX) maxX = w.x; if (w.y > maxY) maxY = w.y;
+    }
+    const margin = 100;
+    minX -= margin; minY -= margin; maxX += margin; maxY += margin;
+    const netSet = new Set<string>();
+    for (const wire of doc.wires) {
+      for (const pt of wire.points) {
+        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+          netSet.add(wire.netId);
+          break;
+        }
+      }
+    }
+    return netSet.size > 3;
+  }
+
+  /**
+   * 校验标号全局唯一性: 同一 net 名的标号必须属于同一 netId;
+   * 不同 net 不得使用相同标号名 (防止 Netlist 重建时错误合并)。
+   * 返回发现的冲突数。
+   */
+  static validateNetLabels(doc: SchematicDocument): number {
+    let conflicts = 0;
+    // name → netId (第一个注册的)
+    const seen = new Map<string, string>();
+    for (const lbl of doc.netLabels) {
+      const existing = seen.get(lbl.text);
+      if (existing !== undefined) {
+        if (existing !== lbl.netId) {
+          conflicts++;
+        }
+      } else {
+        seen.set(lbl.text, lbl.netId);
+      }
+    }
+    // 检查电源名是否被非电源网占用
+    const powerNames = new Set(['VCC', 'VDD', 'GND', 'VSS', '3V3', '3.3V', '5V']);
+    for (const lbl of doc.netLabels) {
+      if (powerNames.has(lbl.text.toUpperCase())) {
+        const net = doc.nets.find(n => n.id === lbl.netId);
+        if (net !== undefined &&
+          net.type !== NetType.POWER && net.type !== NetType.GROUND) {
+          conflicts++;
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  /**
+   * 检测标号位置是否与器件体/引脚重叠。
+   * 返回重叠的标号索引列表。
+   */
+  static findLabelDeviceCollisions(doc: SchematicDocument): number[] {
+    const collided: number[] = [];
+    for (let li = 0; li < doc.netLabels.length; li++) {
+      const lbl = doc.netLabels[li];
+      for (const comp of doc.components) {
+        // 器件包围盒 (含引脚延伸区 margin)
+        const margin = 15;
+        const bx = comp.position.x - margin;
+        const by = comp.position.y - margin;
+        const bw = 80 + margin * 2;
+        const bh = 50 + margin * 2;
+        if (lbl.position.x >= bx && lbl.position.x <= bx + bw &&
+          lbl.position.y >= by && lbl.position.y <= by + bh) {
+          collided.push(li);
+          break;
+        }
+      }
+    }
+    return collided;
   }
 
   /** 串联两脚器件: A.1 — R — B.1 */

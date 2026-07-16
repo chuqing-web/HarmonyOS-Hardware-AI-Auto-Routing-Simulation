@@ -74,7 +74,7 @@ struct Index {
   @State debugTabHasBadge: boolean = false;
   @State instrTabHasBadge: boolean = false;
   @State categoryNodes: CategoryNode[] = [];
-  @State themeRefreshKey: number = 0;
+  @State @Watch('onThemeRefresh') themeRefreshKey: number = 0;
   @State expandedCategories: Set<ComponentCategory> = new Set();
   @State selectedTreeItem: string = '';
   @State previewComponentId: string = '';
@@ -173,12 +173,39 @@ struct Index {
     });
 
     this.loadUiState();
+    // 平台设置（主题/缩放）已在 initPlatform 落地，触发一次 UI 重绘
+    this.themeRefreshKey++;
+    this.getEditorImpl().setGridVisible(this.gridVisible);
     this.initCategoryTree();
     this.hookStartupWindowResize();
     void maximizeAppWindow(ctx);
 
-    // Check for crash recovery files
+    // 优先从上次正式工程路径加载（含 AI API）；勿因 recovery/dirty 跳过导致 API 丢失
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
+    const session = await this.appService.loadSession();
+    if (session !== null && session.lastPath.length > 0) {
+      const autoSavePath = `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
+      let ok = await this.appService.loadProject(session.lastPath);
+      if (!ok && session.lastPath !== autoSavePath) {
+        ok = await this.appService.loadProject(autoSavePath);
+      }
+      if (ok) {
+        this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
+        this.appService.enableAutoSave(autoSavePath, 120000);
+        this.resetAfterProjectChange();
+        this.refreshComponentList();
+        this.deferCanvasFit();
+        this.appInitialized = true;
+        if (this.recoveryFiles.length > 0) {
+          this.showRecoveryDialog = true;
+          this.statusMessage = `已恢复工程: ${this.projectName}（检测到额外恢复文件）`;
+        } else {
+          this.statusMessage = `已恢复上次工程: ${this.projectName}`;
+        }
+        return;
+      }
+    }
+
     if (this.recoveryFiles.length > 0) {
       this.appService.newProject('Untitled');
       this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
@@ -186,43 +213,6 @@ struct Index {
       this.appInitialized = true;
       this.statusMessage = '检测到未正常关闭的工程，是否恢复？';
       return;
-    }
-
-    // Check last session
-    const session = await this.appService.loadSession();
-    if (session !== null && session.lastPath.length > 0) {
-      const autoSavePath = `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
-      if (session.closedCleanly) {
-        // Normal last session — try to auto-open
-        let ok = await this.appService.loadProject(session.lastPath);
-        if (!ok && session.lastPath !== autoSavePath) {
-          // content:// URI from file picker may have expired — fall back to auto-save
-          ok = await this.appService.loadProject(autoSavePath);
-        }
-        if (ok) {
-          this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
-          this.appService.enableAutoSave(autoSavePath, 120000);
-          this.resetAfterProjectChange();
-          this.refreshComponentList();
-          this.deferCanvasFit();
-          this.appInitialized = true;
-          this.statusMessage = `已恢复上次工程: ${this.projectName}`;
-          return;
-        }
-      } else {
-        // Last session was not cleanly closed — check recovery
-        const ok = await this.appService.loadProject(autoSavePath);
-        if (ok) {
-          this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
-          this.appService.enableAutoSave(autoSavePath, 120000);
-          this.resetAfterProjectChange();
-          this.refreshComponentList();
-          this.deferCanvasFit();
-          this.appInitialized = true;
-          this.statusMessage = `已从自动保存恢复: ${this.projectName}`;
-          return;
-        }
-      }
     }
 
     // No recovery, no last session — show welcome dialog
@@ -262,6 +252,11 @@ struct Index {
     return false; // allow system to proceed with exit
   }
 
+  onThemeRefresh(): void {
+    // 主题/无障碍变更后重绘画布（网格色、导线色、背景）
+    this.canvasVersion++;
+  }
+
   loadUiState(): void {
     const s = this.uiState;
     this.leftLibCollapsed = s.leftLibCollapsed;
@@ -295,14 +290,22 @@ struct Index {
     const comp = doc.components.find(c => c.id === instUuid);
     if (!comp) return;
     const lib = comp.libraryId.toUpperCase();
-    const isMcu = lib.startsWith('STM32') || lib.startsWith('8051') || lib.startsWith('AT89') || lib.startsWith('AVR');
+    const isMcu = lib.startsWith('STM32') || lib.startsWith('8051') || lib.startsWith('AT89') ||
+      lib.startsWith('STC') || lib.startsWith('AVR');
     const isInstr = isInstrumentLibraryId(comp.libraryId);
     this.debugTabHasBadge = isMcu;
     this.instrTabHasBadge = isInstr;
+    // 选中器件时展开右侧栏并跳到对应面板：MCU→调试、仪器→Instr、其余→属性
+    if (this.rightCollapsed) {
+      this.rightCollapsed = false;
+      this.uiState.rightCollapsed = false;
+    }
     if (isMcu) {
-      this.activeRightTab = 3;
+      this.setActiveRightTab(3);
     } else if (isInstr) {
-      this.activeRightTab = 4;
+      this.setActiveRightTab(4);
+    } else {
+      this.setActiveRightTab(0);
     }
   }
 
@@ -1023,7 +1026,9 @@ struct Index {
       }
       .width('100%')
       .height('100%')
+      // themeRefreshKey 参与 build：主题/字号/对比度变更后整页重读 ProteusColors/Fonts
       .backgroundColor(ProteusColors.MENU_BG)
+      .id(`main_shell_${this.themeRefreshKey}`)
       .onKeyEvent((event: KeyEvent) => this.handleKeyEvent(event))
 
       // Overlay dialogs

@@ -2,7 +2,7 @@
  * AI 面板 — API 配置（默认折叠）+ 提示词一键生成 + Claude/Cursor 风格流式日志
  */
 import { AppService, AiGenLogEntry, AiGenerateMode } from '../services/AppService';
-import { AiApiConfig, AiProviderType, LoadBalanceMode } from 'common';
+import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from 'common';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
@@ -23,6 +23,9 @@ export struct AiSettingsPanel {
   @State promptText: string = '';
   @State logs: AiGenLogEntry[] = [];
   @State showModeDialog: boolean = false;
+  @State showSelfCheckDialog: boolean = false;
+  @State selfCheckSummary: string = '';
+  @State selfCheckCount: number = 0;
   @State newApiName: string = '';
   @State newApiKey: string = '';
   @State newApiModel: string = '';
@@ -55,6 +58,15 @@ export struct AiSettingsPanel {
     this.appService.onAiGenLogsChanged = (entries: AiGenLogEntry[]) => {
       this.logs = entries;
     };
+    this.appService.onAiSelfCheckNeeded = (count: number, summary: string) => {
+      this.selfCheckCount = count;
+      this.selfCheckSummary = summary;
+      this.showSelfCheckDialog = true;
+    };
+    if (this.appService.isAiSelfCheckPromptPending()) {
+      this.showSelfCheckDialog = true;
+      this.selfCheckSummary = '检测到首次布局问题';
+    }
   }
 
   refreshList(): void {
@@ -63,14 +75,18 @@ export struct AiSettingsPanel {
 
   private requestGenerate(): void {
     if (this.aiGenerating) {
+      Logger.info(INSTR_TRACE_TAG, '[AI_UI] OP cancel_generate | user click');
       this.appService.cancelAiGenerate();
       return;
     }
     const q = this.promptText.trim();
     if (q.length === 0) {
       this.statusMessage = '请输入提示词';
+      Logger.warn(INSTR_TRACE_TAG, '[AI_UI] OP generate_blocked | empty prompt');
       return;
     }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_UI] OP request_generate | promptLen=${q.length}`);
     this.showModeDialog = true;
   }
 
@@ -78,10 +94,22 @@ export struct AiSettingsPanel {
     this.showModeDialog = false;
     const q = this.promptText.trim();
     this.statusMessage = 'AI 生成中…';
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_UI] OP run_generate | mode=${mode} promptLen=${q.length}`);
     const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_UI] OP run_generate_done | mode=${mode} ok=${ok}`);
     if (ok) {
       this.statusMessage = 'AI 整图生成完成';
     }
+  }
+
+  private async runSelfCheck(): Promise<void> {
+    this.statusMessage = 'AI 自检修复中…';
+    Logger.info(INSTR_TRACE_TAG, '[AI_UI] OP run_self_check | start');
+    const ok = await this.appService.aiSelfCheckAndFix();
+    Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_self_check_done | ok=${ok}`);
+    this.statusMessage = ok ? '自检修复完成' : '自检完成（仍有问题或已跳过）';
   }
 
   private bubbleBg(role: string): string {
@@ -156,14 +184,25 @@ export struct AiSettingsPanel {
       Row({ space: 6 }) {
         ProteusClassicBtn({
           label: this.aiGenerating ? '取消' : '生成整图',
-          widthVal: '58%',
+          widthVal: '46%',
           onAction: () => {
             this.requestGenerate();
           }
         })
         ProteusClassicBtn({
-          label: '清空日志',
-          widthVal: '38%',
+          label: 'AI自检修复',
+          widthVal: '28%',
+          onAction: () => {
+            if (this.aiGenerating) {
+              this.statusMessage = '请等待当前任务结束';
+              return;
+            }
+            void this.runSelfCheck();
+          }
+        })
+        ProteusClassicBtn({
+          label: '清空',
+          widthVal: '20%',
           onAction: () => {
             this.appService.clearAiGenLogs();
           }
@@ -178,6 +217,45 @@ export struct AiSettingsPanel {
           .fontColor(ProteusColors.TEXT_LABEL)
           .width('100%')
           .padding({ left: 8, right: 8, bottom: 4 })
+      }
+
+      // 首次布局问题 → 询问自检
+      if (this.showSelfCheckDialog && !this.aiGenerating) {
+        Column({ space: 8 }) {
+          Text('首次布局检测到问题')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_PRIMARY)
+            .fontWeight(FontWeight.Medium)
+            .width('100%')
+          Text(this.selfCheckSummary.length > 0
+            ? this.selfCheckSummary
+            : '是否根据自检日志与错误进行修复？')
+            .fontSize(10)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width('100%')
+          ProteusClassicBtn({
+            label: '自检修复',
+            widthVal: '100%',
+            onAction: () => {
+              this.showSelfCheckDialog = false;
+              void this.runSelfCheck();
+            }
+          })
+          ProteusClassicBtn({
+            label: '暂不',
+            widthVal: '100%',
+            onAction: () => {
+              this.showSelfCheckDialog = false;
+              this.appService.dismissAiSelfCheckPrompt();
+              this.statusMessage = '已跳过自检修复';
+            }
+          })
+        }
+        .width('100%')
+        .padding(10)
+        .margin({ left: 8, right: 8, bottom: 6 })
+        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+        .border({ width: 1, color: ProteusColors.ERC_WARN })
       }
 
       // 替换 / 追加 选择
@@ -380,24 +458,39 @@ export struct AiSettingsPanel {
             onAction: () => {
               const tmpl = this.appService.aiApiManager.createFromTemplate(
                 this.selectedProvider, this.newApiName || 'New API');
-              if (!tmpl.success || !tmpl.data) return;
+              if (!tmpl.success || !tmpl.data) {
+                Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
+                this.statusMessage = '创建 API 配置失败';
+                return;
+              }
               const config = tmpl.data;
               config.apiKey = this.newApiKey;
               config.model = this.newApiModel || config.model;
-              config.name = this.newApiName || config.name;
+              config.name = this.newApiName || config.name || 'New API';
               config.baseUrl = this.newApiUrl || config.baseUrl;
-              if (this.newAuthField.length > 0) {
+              if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
                 const headers: Record<string, string> = {};
                 headers[this.newAuthField] = this.newApiKey;
                 config.customHeaders = headers;
               }
-              this.appService.aiApiManager.addApi(config);
+              const addResult = this.appService.aiApiManager.addApi(config);
+              if (!addResult.success) {
+                Logger.error(INSTR_TRACE_TAG,
+                  `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
+                this.statusMessage = addResult.error ?? '保存 API 失败';
+                return;
+              }
+              this.appService.syncAiApiConfigsToProject();
+              Logger.info(INSTR_TRACE_TAG,
+                `[AI_API] saved id=${config.id} name=${config.name}` +
+                ` provider=${config.provider} model=${config.model}` +
+                ` url=${config.baseUrl} keyLen=${config.apiKey.length}`);
               this.refreshList();
               this.showAddForm = false;
               this.newApiKey = '';
               this.newApiUrl = '';
               this.newAuthField = 'ANTHROPIC_AUTH_TOKEN';
-              this.statusMessage = `已添加 ${config.name}`;
+              this.statusMessage = `已添加并同步 ${config.name}`;
             }
           })
         }
@@ -459,8 +552,16 @@ export struct AiSettingsPanel {
                 label: '测试', widthVal: 44,
                 onAction: async () => {
                   this.statusMessage = `测试 ${api.name}...`;
+                  Logger.info(INSTR_TRACE_TAG,
+                    `[AI_API] UI test click id=${api.id} name=${api.name}`);
                   const result = await this.appService.aiApiManager.testConnection(api.id);
-                  this.statusMessage = result.success ? `${api.name} 连接成功` : `${api.name} 失败`;
+                  Logger.info(INSTR_TRACE_TAG,
+                    `[AI_API] UI test done id=${api.id} ok=${result.success}` +
+                    ` err=${result.error ?? ''}`);
+                  this.statusMessage = result.success
+                    ? `${api.name} 连接成功`
+                    : `${api.name} 失败: ${result.error ?? ''}`;
+                  this.appService.syncAiApiConfigsToProject();
                   this.refreshList();
                 }
               })
@@ -472,6 +573,7 @@ export struct AiSettingsPanel {
                   } else {
                     this.appService.aiApiManager.enableApi(api.id);
                   }
+                  this.appService.syncAiApiConfigsToProject();
                   this.refreshList();
                 }
               })
@@ -479,6 +581,8 @@ export struct AiSettingsPanel {
                 label: '删', widthVal: 36,
                 onAction: () => {
                   this.appService.aiApiManager.removeApi(api.id);
+                  this.appService.syncAiApiConfigsToProject();
+                  Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                   this.refreshList();
                 }
               })
