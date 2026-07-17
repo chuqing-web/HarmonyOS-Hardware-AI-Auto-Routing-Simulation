@@ -152,6 +152,8 @@ export class ProteusParser {
             return '74HC595';
         if (upper.includes('LM358'))
             return 'LM358';
+        if (upper.includes('LM555') || upper.includes('NE555') || upper.includes('SE555'))
+            return 'LM555';
         if (upper.includes('OSCILLOSCOPE') || upper === 'OSC')
             return 'OSCILLOSCOPE';
         if (upper.includes('RES') || upper.startsWith('R'))

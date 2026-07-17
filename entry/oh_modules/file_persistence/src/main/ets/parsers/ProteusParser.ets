@@ -139,6 +139,7 @@ export class ProteusParser {
     if (upper.includes('74HC00')) return '74HC00';
     if (upper.includes('74HC595')) return '74HC595';
     if (upper.includes('LM358')) return 'LM358';
+    if (upper.includes('LM555') || upper.includes('NE555') || upper.includes('SE555')) return 'LM555';
     if (upper.includes('OSCILLOSCOPE') || upper === 'OSC') return 'OSCILLOSCOPE';
     if (upper.includes('RES') || upper.startsWith('R')) return 'R_10k';
     if (upper.includes('CAP') || upper.startsWith('C')) return 'C_100nF';

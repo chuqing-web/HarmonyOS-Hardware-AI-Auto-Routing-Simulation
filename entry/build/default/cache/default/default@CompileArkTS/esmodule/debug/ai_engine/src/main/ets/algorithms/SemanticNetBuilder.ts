@@ -278,7 +278,7 @@ export class SemanticNetBuilder {
         }
         // ---- LED：优先继电器 SPDT 互斥双色；否则每颗 LED 配对限流电阻 ----
         let dividerWired = dividerTopo !== null;
-        const relays = SemanticNetBuilder.findAllByLib(doc, (id) => id === 'RELAY_SPDT' || id.toUpperCase().indexOf('RELAY') >= 0);
+        const relays = SemanticNetBuilder.findAllByLib(doc, (id) => id === 'RELAY_SPDT' || (id ?? '').toUpperCase().indexOf('RELAY') >= 0);
         const switches = SemanticNetBuilder.findAllByLib(doc, (id) => id.startsWith('SW_'));
         // 有继电器时建触点网；缺继电器由 AI 选型/自审补齐，此处不硬塞
         let relayLedWired = false;
@@ -290,7 +290,18 @@ export class SemanticNetBuilder {
                 Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] relay dual-LED topology: NC=green NO=red coil=${switches.length > 0 ? 'SW' : 'open'}`);
             }
         }
-        if (leds.length > 0 && gnd !== null && !dividerWired && !relayLedWired) {
+        // ---- LM555 多谐振荡器（优先于通用 LED→VCC，避免抢 OUT 驱动）----
+        let timer555Wired = false;
+        const timers555 = SemanticNetBuilder.findAllByLib(doc, (id) => id === 'LM555' || id === 'NE555');
+        if (!dividerWired && !relayLedWired && timers555.length > 0 && vcc !== null && gnd !== null) {
+            const t555 = this.wireTimer555Astable(doc, vcc, gnd, timers555[0], resistors, caps, leds, notes, autoFixes);
+            timer555Wired = t555.wired;
+            addedSymbols += t555.added;
+            if (timer555Wired) {
+                Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] LM555 astable wired ref=${timers555[0].refDes}`);
+            }
+        }
+        if (leds.length > 0 && gnd !== null && !dividerWired && !relayLedWired && !timer555Wired) {
             const usedLedResistors: ComponentInstance[] = [];
             // MCU 复位上拉电阻优先保留，不占用 LED 限流
             const rstResistor = (mcu !== null && resistors.length > 0) ? resistors[0] : null;
@@ -551,6 +562,114 @@ export class SemanticNetBuilder {
         notes.push('I2C 上拉: R_4.7k×2→VCC');
     }
     /**
+     * LM555 经典多谐振荡:
+     *   VCC—Ra—DISCH ; DISCH—Rb—THRES≡TRIG—Ct—GND
+     *   RESET→VCC ; CTRL—Cbypass—GND ; VCC/GND 电源脚
+     *   OUT—Rled—LED—GND
+     */
+    private wireTimer555Astable(doc: SchematicDocument, vcc: ComponentInstance, gnd: ComponentInstance, timer: ComponentInstance, resistors: ComponentInstance[], caps: ComponentInstance[], leds: ComponentInstance[], notes: string[], autoFixes: string[]): RelayLedWireResult {
+        let added = 0;
+        const usedR: ComponentInstance[] = [];
+        const usedC: ComponentInstance[] = [];
+        const takeR = (prefer: string, tag: string, near: ComponentInstance): ComponentInstance => {
+            for (let i = 0; i < resistors.length; i++) {
+                if (usedR.indexOf(resistors[i]) >= 0) {
+                    continue;
+                }
+                if (prefer.length > 0 && resistors[i].libraryId !== prefer) {
+                    continue;
+                }
+                usedR.push(resistors[i]);
+                return resistors[i];
+            }
+            for (let i = 0; i < resistors.length; i++) {
+                if (usedR.indexOf(resistors[i]) < 0) {
+                    usedR.push(resistors[i]);
+                    return resistors[i];
+                }
+            }
+            const r = TemplateSchematicKit.place(doc, prefer.length > 0 ? prefer : 'R_10k', `R_${tag}`, { x: near.position.x - 60, y: near.position.y });
+            added++;
+            autoFixes.push(`补放 ${prefer.length > 0 ? prefer : 'R_10k'} (${tag})`);
+            usedR.push(r);
+            return r;
+        };
+        const takeC = (prefer: string, tag: string, near: ComponentInstance): ComponentInstance => {
+            for (let i = 0; i < caps.length; i++) {
+                if (usedC.indexOf(caps[i]) >= 0) {
+                    continue;
+                }
+                if (prefer.length > 0 && caps[i].libraryId !== prefer) {
+                    continue;
+                }
+                usedC.push(caps[i]);
+                return caps[i];
+            }
+            for (let i = 0; i < caps.length; i++) {
+                if (usedC.indexOf(caps[i]) < 0) {
+                    usedC.push(caps[i]);
+                    return caps[i];
+                }
+            }
+            const c = TemplateSchematicKit.place(doc, prefer.length > 0 ? prefer : 'C_10uF', `C_${tag}`, { x: near.position.x + 60, y: near.position.y + 40 });
+            added++;
+            autoFixes.push(`补放 ${prefer.length > 0 ? prefer : 'C_10uF'} (${tag})`);
+            usedC.push(c);
+            return c;
+        };
+        const ra = takeR('R_1k', '555_RA', timer);
+        const rb = takeR('R_10k', '555_RB', timer);
+        const rLed = takeR('R_330', '555_LED', timer);
+        const ct = takeC('C_10uF', '555_T', timer);
+        const cCtrl = takeC('C_100nF', '555_CV', timer);
+        const cDec = takeC('C_100nF', '555_DEC', timer);
+        const led = leds.length > 0 ? leds[0] : TemplateSchematicKit.place(doc, 'LED_RED', 'LED_555', { x: timer.position.x + 100, y: timer.position.y });
+        if (leds.length === 0) {
+            added++;
+            autoFixes.push('补放 LED_RED 接 LM555.OUT');
+        }
+        TemplateSchematicKit.joinWired(doc, 'VCC', NetType.POWER, [
+            { comp: vcc, pinId: '1', pinName: 'VCC' },
+            { comp: timer, pinId: 'VCC', pinName: 'VCC' },
+            { comp: timer, pinId: 'RESET', pinName: 'RESET' },
+            { comp: ra, pinId: '1', pinName: '1' },
+            { comp: cDec, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, 'GND', NetType.GROUND, [
+            { comp: gnd, pinId: '1', pinName: 'GND' },
+            { comp: timer, pinId: 'GND', pinName: 'GND' },
+            { comp: ct, pinId: '2', pinName: '2' },
+            { comp: cCtrl, pinId: '2', pinName: '2' },
+            { comp: cDec, pinId: '2', pinName: '2' },
+            { comp: led, pinId: 'K', pinName: 'K' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, '555_DISCH', NetType.SIGNAL, [
+            { comp: ra, pinId: '2', pinName: '2' },
+            { comp: timer, pinId: 'DISCH', pinName: 'DISCH' },
+            { comp: rb, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, '555_CAP', NetType.SIGNAL, [
+            { comp: rb, pinId: '2', pinName: '2' },
+            { comp: timer, pinId: 'THRES', pinName: 'THRES' },
+            { comp: timer, pinId: 'TRIG', pinName: 'TRIG' },
+            { comp: ct, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, '555_CTRL', NetType.SIGNAL, [
+            { comp: timer, pinId: 'CTRL', pinName: 'CTRL' },
+            { comp: cCtrl, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, 'LM555_OUT', NetType.SIGNAL, [
+            { comp: timer, pinId: 'OUT', pinName: 'OUT' },
+            { comp: rLed, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.joinWired(doc, 'LED_NODE', NetType.SIGNAL, [
+            { comp: rLed, pinId: '2', pinName: '2' },
+            { comp: led, pinId: 'A', pinName: 'A' }
+        ]);
+        notes.push(`LM555 多谐: ${timer.refDes} Ra=${ra.refDes} Rb=${rb.refDes} Ct=${ct.refDes} → ${led.refDes}`);
+        return { wired: true, added: added };
+    }
+    /**
      * RELAY_SPDT 互斥双色指示（对应「打开绿灯 / 闭合红灯」）:
      *   线圈: VCC→SW→coil1 / coil2→GND（无 SW 则线圈浮空留给上层）
      *   COM→GND
@@ -768,7 +887,7 @@ export class SemanticNetBuilder {
         for (let vi = 0; vi < voltmeters.length; vi++) {
             const vm = voltmeters[vi];
             const pair = nodePairs[vi % nodePairs.length];
-            const id = vm.libraryId.toUpperCase();
+            const id = (vm.libraryId ?? '').toUpperCase();
             if (id === 'VOLTMETER_DC') {
                 TemplateSchematicKit.joinByLabel(doc, pair.high, NetType.SIGNAL, [
                     { comp: pair.comp, pinId: '1', pinName: '1' },
@@ -840,7 +959,7 @@ export class SemanticNetBuilder {
         // 将电压表分发到不同的测量点 (循环分配)
         for (let vi = 0; vi < voltmeters.length; vi++) {
             const vm = voltmeters[vi];
-            const id = vm.libraryId.toUpperCase();
+            const id = (vm.libraryId ?? '').toUpperCase();
             const hub = measurePoints[vi % measurePoints.length];
             const vpin = id === 'VOLTMETER_DC' ? 'V+' : 'V';
             TemplateSchematicKit.joinByLabel(doc, hub.net, NetType.SIGNAL, [
@@ -855,7 +974,7 @@ export class SemanticNetBuilder {
         // 电流表: 串联在 VCC 和第一个电阻之间
         for (let i = 0; i < doc.components.length; i++) {
             const c = doc.components[i];
-            if (c.libraryId.toUpperCase() !== 'AMMETER_DC')
+            if ((c.libraryId ?? '').toUpperCase() !== 'AMMETER_DC')
                 continue;
             const load = SemanticNetBuilder.findAllByLib(doc, (lid) => lid.startsWith('R_'));
             if (load.length > 0) {
@@ -886,7 +1005,7 @@ export class SemanticNetBuilder {
             : null;
         for (let i = 0; i < doc.components.length; i++) {
             const c = doc.components[i];
-            const id = c.libraryId.toUpperCase();
+            const id = (c.libraryId ?? '').toUpperCase();
             if (id === 'OSCILLOSCOPE' && signalHub !== null) {
                 TemplateSchematicKit.joinByLabel(doc, signalHub.net, NetType.SIGNAL, [
                     signalHub.pin, { comp: c, pinId: 'CH1', pinName: 'CH1' }
@@ -947,6 +1066,10 @@ export class SemanticNetBuilder {
         }
     }
     private static pickSignalHub(doc: SchematicDocument, mcu: ComponentInstance | null, leds: ComponentInstance[]): SignalHub | null {
+        const t555 = SemanticNetBuilder.findByLib(doc, (id) => id === 'LM555' || id === 'NE555');
+        if (t555 !== null) {
+            return { net: 'LM555_OUT', pin: { comp: t555, pinId: 'OUT', pinName: 'OUT' } };
+        }
         if (leds.length > 0) {
             return { net: 'LED_NODE', pin: { comp: leds[0], pinId: 'A', pinName: 'A' } };
         }

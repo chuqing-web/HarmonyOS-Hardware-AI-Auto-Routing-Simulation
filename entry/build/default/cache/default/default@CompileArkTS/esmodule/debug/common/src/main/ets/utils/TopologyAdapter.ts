@@ -2,7 +2,7 @@ import { NetType, WireStyle, PinType } from "@bundle:com.elecdraw.aischsim/entry
 import type { SchematicDocument, ComponentInstance, Net, SubcircuitRef, Port, Rotation, Wire, NetLabel } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/CommonTypes";
 import type { SchTopology, DeviceInst, NetInfo, SubCircuitBlock, SubCircuitPort, NetLabelInfo } from '../types/TopologyTypes';
 import { IdUtil } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/IdUtil";
-import { copyStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/MapHelpers";
+import { ensureStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/MapHelpers";
 import { parsePinRef, buildPinRef } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PinRefUtil";
 import { TopologyPatchApplier } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/TopologyPatch";
 export class TopologyAdapter {
@@ -90,7 +90,7 @@ export class TopologyAdapter {
             rotate: c.rotation,
             mirrorH: c.mirrored,
             mirrorV: false,
-            params: copyStringMap(c.parameters),
+            params: ensureStringMap(c.parameters),
             pinVoltage: new Map<string, number>(),
             hidden: false,
             subCircuitRef: c.subcircuitId ?? '',
@@ -100,15 +100,15 @@ export class TopologyAdapter {
     static toComponent(d: DeviceInst): ComponentInstance {
         const rotation: Rotation = normalizeRotation(d.rotate);
         const comp: ComponentInstance = {
-            id: d.instUuid,
-            libraryId: d.libDevId,
-            refDes: d.refName,
+            id: d.instUuid ?? IdUtil.generate('comp'),
+            libraryId: d.libDevId ?? '',
+            refDes: d.refName ?? '',
             position: { x: d.x, y: d.y },
             rotation: rotation,
             mirrored: d.mirrorH,
-            parameters: copyStringMap(d.params)
+            parameters: ensureStringMap(d.params)
         };
-        if (d.subCircuitRef.length > 0) {
+        if (d.subCircuitRef && d.subCircuitRef.length > 0) {
             comp.subcircuitId = d.subCircuitRef;
         }
         return comp;
@@ -135,7 +135,7 @@ export class TopologyAdapter {
         };
     }
     static toNet(n: NetInfo): Net {
-        const upper = n.netName.toUpperCase();
+        const upper = (n.netName ?? '').toUpperCase();
         let netType = NetType.SIGNAL;
         if (n.isPower) {
             netType = (upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0') ?

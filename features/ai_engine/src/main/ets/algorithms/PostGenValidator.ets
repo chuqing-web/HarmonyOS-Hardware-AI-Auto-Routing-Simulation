@@ -17,12 +17,15 @@ import {
   IdUtil, TopologyAdapter, makeDeviceInst,
   stringMap1, getPinNetMap, Logger,
   DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WorldHitRect,
-  WireConflictGeometry
+  WireConflictGeometry, mapAwareStringify, mapAwareParse, MainThreadYield
 } from 'common';
 import { IComponentLibrary, ComponentDefinition } from 'component_library';
 import { FaultDiagnoser } from './FaultDiagnoser';
 import { SemanticNetBuilder } from './SemanticNetBuilder';
 import { ConstrainedWiringEngine } from './ConstrainedWiringEngine';
+import { CircuitIntent } from './CircuitIntent';
+import { PinWorldResolver } from './PinWorldResolver';
+import { TemplateSchematicKit } from './TemplateSchematicKit';
 
 export interface ValidationIssue {
   type: 'missing_power' | 'instrument_topo' | 'wire_body' | 'wire_cross' | 'floating_pin' | 'pin_proximity' | 'erc';
@@ -46,6 +49,7 @@ interface FixResult {
 export class PostGenValidator {
   private library: IComponentLibrary;
   private wiringEngine: ConstrainedWiringEngine;
+  private circuitIntent: CircuitIntent | null = null;
 
   constructor(library: IComponentLibrary) {
     this.library = library;
@@ -53,16 +57,37 @@ export class PostGenValidator {
     this.wiringEngine.setComponentLibrary(library);
   }
 
+  setCircuitIntent(intent: CircuitIntent): void {
+    this.circuitIntent = intent;
+  }
+
   /** 只读检查 — 不修改拓扑, 供 pipeline 几何碰撞检测使用 */
   collectIssues(topo: SchTopology): ValidationIssue[] {
     return this.collectAllIssues(topo);
   }
 
-  /** 主入口: 验证 + 自动修复循环 (最多 3 轮) */
+  /**
+   * 同步入口（仅测试/小规模）。生产流水线必须用 validateAndFixAsync，
+   * 否则 routeUntilClean 同步 A* 会触发 THREAD_BLOCK_3S/6S。
+   */
   validateAndFix(topo: SchTopology): ValidationResult {
+    return this.validateAndFixCoreSync(topo);
+  }
+
+  /** 生产主入口：异步修复 + 每轮让出主线程 */
+  async validateAndFixAsync(topo: SchTopology): Promise<ValidationResult> {
+    return await this.validateAndFixCoreAsync(topo);
+  }
+
+  private async yieldMain(): Promise<void> {
+    await MainThreadYield.yield();
+  }
+
+  private validateAndFixCoreSync(topo: SchTopology): ValidationResult {
     const maxRounds = 3;
     let totalFixed = 0;
     let current = topo;
+    let prevErrorCount = -1;
 
     for (let round = 0; round < maxRounds; round++) {
       const issues = this.collectAllIssues(current);
@@ -87,7 +112,73 @@ export class PostGenValidator {
         Logger.info('PostGenValidator', `  ${e.type}: ${e.desc}`);
       }
 
-      const fixResult = this.attemptFixes(current, errors);
+      // 错误数未下降 → 停止空转 A*（防 THREAD_BLOCK）
+      if (prevErrorCount >= 0 && errors.length >= prevErrorCount) {
+        Logger.warn('PostGenValidator',
+          `[VALIDATE] round=${round + 1} no progress (${errors.length} errors) — stop`);
+        return { passed: false, issues, fixedCount: totalFixed, topo: current };
+      }
+      prevErrorCount = errors.length;
+
+      const fixResult = this.attemptFixesSync(current, errors);
+      current = fixResult.topo;
+      totalFixed += fixResult.fixed;
+
+      if (fixResult.fixed === 0) {
+        Logger.warn('PostGenValidator',
+          `[VALIDATE] round=${round + 1} cannot fix remaining ${errors.length} errors`);
+        return { passed: false, issues, fixedCount: totalFixed, topo: current };
+      }
+    }
+
+    const finalIssues = this.collectAllIssues(current);
+    const remainingErrors = finalIssues.filter(i => i.severity === 'error');
+    return {
+      passed: remainingErrors.length === 0,
+      issues: finalIssues,
+      fixedCount: totalFixed,
+      topo: current
+    };
+  }
+
+  private async validateAndFixCoreAsync(topo: SchTopology): Promise<ValidationResult> {
+    const maxRounds = 3;
+    let totalFixed = 0;
+    let current = topo;
+    let prevErrorCount = -1;
+
+    for (let round = 0; round < maxRounds; round++) {
+      await this.yieldMain();
+      const issues = this.collectAllIssues(current);
+      const errors = issues.filter(i => i.severity === 'error');
+
+      if (errors.length === 0) {
+        const warns = issues.filter(i => i.severity === 'warning');
+        if (warns.length > 0) {
+          Logger.info('PostGenValidator',
+            `[VALIDATE] round=${round + 1} pass (${warns.length} warnings)`);
+        } else {
+          Logger.info('PostGenValidator',
+            `[VALIDATE] round=${round + 1} all clear`);
+        }
+        return { passed: true, issues, fixedCount: totalFixed, topo: current };
+      }
+
+      Logger.info('PostGenValidator',
+        `[VALIDATE] round=${round + 1} errors=${errors.length}` +
+        ` issues=[${errors.map(e => e.type).join(',')}]`);
+      for (const e of errors) {
+        Logger.info('PostGenValidator', `  ${e.type}: ${e.desc}`);
+      }
+
+      if (prevErrorCount >= 0 && errors.length >= prevErrorCount) {
+        Logger.warn('PostGenValidator',
+          `[VALIDATE] round=${round + 1} no progress (${errors.length} errors) — stop`);
+        return { passed: false, issues, fixedCount: totalFixed, topo: current };
+      }
+      prevErrorCount = errors.length;
+
+      const fixResult = await this.attemptFixesAsync(current, errors);
       current = fixResult.topo;
       totalFixed += fixResult.fixed;
 
@@ -123,32 +214,35 @@ export class PostGenValidator {
   }
 
   /**
-   * 双 LED + 开关/继电器：阴极必须接到 NC/NO，不能两路都直连 GND（否则无法互斥）。
+   * 双 LED + 继电器：阴极必须接到 NC/NO（互斥指示）。
+   * 仅电路已含 RELAY_SPDT 时检查触点；SW_PUSH+双LED 可能是电源开关+闪烁灯，不得强制继电器。
    */
   private checkDualLedSwitchTopology(topo: SchTopology): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
+    if (this.circuitIntent !== null &&
+      !(this.circuitIntent.mutualLedIndicator || this.circuitIntent.relayContactTopo)) {
+      return issues;
+    }
     const leds = topo.deviceList.filter(d => d.libDevId.startsWith('LED_'));
     if (leds.length < 2) {
       return issues;
     }
-    const hasSwitch = topo.deviceList.some(d =>
-      d.libDevId.startsWith('SW_') || d.libDevId.toUpperCase().indexOf('RELAY') >= 0);
-    if (!hasSwitch) {
-      return issues;
-    }
     const hasRelay = topo.deviceList.some(d =>
-      d.libDevId === 'RELAY_SPDT' || d.libDevId.toUpperCase().indexOf('RELAY') >= 0);
+      d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
     if (!hasRelay) {
-      issues.push({
-        type: 'instrument_topo',
-        severity: 'error',
-        desc: '双LED+开关互斥电路缺少 RELAY_SPDT（SW_PUSH 无法做 SPDT）'
-      });
+      if (this.circuitIntent !== null && this.circuitIntent.mutualLedIndicator) {
+        issues.push({
+          type: 'instrument_topo',
+          severity: 'error',
+          desc: '缺少 RELAY_SPDT — 互斥双色指示必须含继电器',
+          targetUuid: ''
+        });
+      }
       return issues;
     }
     // 检查是否有 LED 阴极接到 RELAY 的 NC/NO
     const relay = topo.deviceList.find(d =>
-      d.libDevId === 'RELAY_SPDT' || d.libDevId.toUpperCase().indexOf('RELAY') >= 0);
+      d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
     if (!relay) {
       return issues;
     }
@@ -191,7 +285,7 @@ export class PostGenValidator {
   private checkOrphanOptionalCaps(topo: SchTopology): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     const hasMcu = topo.deviceList.some(d => {
-      const id = d.libDevId.toUpperCase();
+      const id = (d.libDevId ?? '').toUpperCase();
       return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
     });
     if (hasMcu) {
@@ -240,7 +334,7 @@ export class PostGenValidator {
 
     for (const dev of topo.deviceList) {
       const pinNets = getPinNetMap(dev.instUuid, doc.nets);
-      const libId = dev.libDevId.toUpperCase();
+      const libId = (dev.libDevId ?? '').toUpperCase();
 
       if (libId === 'AMMETER_DC') {
         const iPlusNet = pinNets.get('I+') ?? pinNets.get('1');
@@ -344,7 +438,7 @@ export class PostGenValidator {
 
   private readonly PIN_ESCAPE_GRID: number = 10;
 
-  /** 本网、本器件选中区内的引脚逃逸走廊 */
+  /** 本网、本器件选中区内的引脚逃逸走廊（pinId/pinName 均可，兼容 LLM 数字脚号） */
   private pointInOwnDeviceEscapeCorridor(
     pt: Point2D, topo: SchTopology, netUuid: string, rect: WorldHitRect
   ): boolean {
@@ -357,20 +451,15 @@ export class PostGenValidator {
       if (node.devUuid !== rect.instUuid) {
         continue;
       }
-      const def = this.getCompDef(
-        topo.deviceList.find(d => d.instUuid === node.devUuid)?.libDevId ?? '');
       const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
-      if (!dev || !def) {
+      if (!dev) {
         continue;
       }
-      const pin = def.pins.find(p => p.id === node.pinId || p.name === node.pinName);
-      if (!pin) {
-        continue;
-      }
-      const t = DeviceHitGeometry.transformLocal(pin.position, dev.rotate, dev.mirrorH);
-      const px = dev.x + t.x;
-      const py = dev.y + t.y;
-      if (DeviceHitGeometry.pointInPinEscapeCorridor(pt.x, pt.y, px, py, rect, hw)) {
+      const pinId = node.pinId.length > 0 ? node.pinId : '1';
+      const pinName = (node.pinName !== undefined && node.pinName.length > 0)
+        ? node.pinName : pinId;
+      const pw = PinWorldResolver.forDeviceInst(dev, pinId, pinName);
+      if (DeviceHitGeometry.pointInPinEscapeCorridor(pt.x, pt.y, pw.x, pw.y, rect, hw)) {
         return true;
       }
     }
@@ -426,12 +515,28 @@ export class PostGenValidator {
       allDevicePins.set(dev.instUuid, pinMap);
     }
 
-    // 构建每个网络关联的 (devUuid, pinId) 集合
+    // 构建每个网络关联的 (devUuid, pinId) 集合（含 555 数字脚号别名）
     const netSafePins = new Map<string, Set<string>>();
     for (const net of topo.netList) {
       const safe = new Set<string>();
       for (const node of net.nodeList) {
-        safe.add(`${node.devUuid}:${node.pinId}`);
+        const pinId = node.pinId.length > 0 ? node.pinId : '1';
+        const pinName = (node.pinName !== undefined && node.pinName.length > 0)
+          ? node.pinName : '';
+        safe.add(`${node.devUuid}:${pinId}`);
+        if (pinName.length > 0 && pinName !== pinId) {
+          safe.add(`${node.devUuid}:${pinName}`);
+        }
+        const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
+        if (dev) {
+          const lib = (dev.libDevId ?? '').toUpperCase();
+          if (lib === 'LM555' || lib === 'NE555') {
+            const c = TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
+            if (c.length > 0) {
+              safe.add(`${node.devUuid}:${c}`);
+            }
+          }
+        }
       }
       netSafePins.set(net.netUuid, safe);
     }
@@ -545,12 +650,11 @@ export class PostGenValidator {
 
   // ─── 自动修复 ───
 
-  private attemptFixes(topo: SchTopology, errors: ValidationIssue[]):
+  private applyNonRouteFixes(topo: SchTopology, errors: ValidationIssue[]):
     FixResult {
     let fixed = 0;
     let current = this.deepClone(topo);
 
-    // 修复 1: 缺少电源符号 → 补充
     const missingPower = errors.filter(e => e.type === 'missing_power');
     if (missingPower.length > 0) {
       const hasVcc = topo.deviceList.some(d => d.libDevId === 'VCC');
@@ -567,7 +671,6 @@ export class PostGenValidator {
       }
     }
 
-    // 修复 1b: 非 MCU 浮空电容 → 直接删除
     const orphanCaps = errors.filter(e =>
       e.type === 'floating_pin' && e.desc.indexOf('浮空电容') >= 0 && e.targetUuid);
     if (orphanCaps.length > 0) {
@@ -581,8 +684,15 @@ export class PostGenValidator {
       }
     }
 
-    // 修复 2: 仅「缺 RELAY_SPDT」才整网 Semantic 重建（触点拓扑 LLM 不可能凭空编出）；
-    // 其他仪器错误（浮空/短路/读数为0）留给 AI self-review fix loop 处理，避免清空已成功的 LLM net_plan。
+    const result: FixResult = { topo: current, fixed: fixed };
+    return result;
+  }
+
+  private attemptFixesSync(topo: SchTopology, errors: ValidationIssue[]): FixResult {
+    let base = this.applyNonRouteFixes(topo, errors);
+    let fixed = base.fixed;
+    let current = base.topo;
+
     const instErrors = errors.filter(e => e.type === 'instrument_topo');
     const relayMissing = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') >= 0);
     const otherInstErrors = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') < 0);
@@ -610,32 +720,108 @@ export class PostGenValidator {
         `[${otherInstErrors.map(e => e.desc).join('; ')}] — deferred to AI fix loop, skip Semantic wipe`);
     }
 
-    // 修复 3+4: 导线碰撞/重叠/引脚接近 → 重新布线
-    const routeErrors = errors.filter(e => e.type === 'wire_body' || e.type === 'wire_cross' || e.type === 'pin_proximity');
+    const routeErrors = errors.filter(e =>
+      e.type === 'wire_body' || e.type === 'wire_cross' || e.type === 'pin_proximity');
     if (routeErrors.length > 0 && relayMissing.length === 0) {
-      Logger.info('PostGenValidator',
-        `[FIX] wire issues=${routeErrors.length}, re-routing`);
-      const routeResult = this.wiringEngine.routeUntilClean(current,
-        ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 3);
-      current.wireList = routeResult.routeLines;
-      // 仍穿区的网 → 标号 stub，避免反复 A* 失败
-      const stillBad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
-      if (stillBad.size > 0) {
-        this.wiringEngine.demoteNetsToLabelStubs(current, stillBad);
+      // 标号优先：先降级违例网，避免对无法清几何的网空转 A*
+      const bad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
+      if (bad.size > 0) {
+        Logger.info('PostGenValidator',
+          `[FIX] demote-first wire violations nets=${bad.size}`);
+        this.wiringEngine.demoteNetsToLabelStubs(current, bad);
         fixed++;
       }
-      fixed++;
+      // 问题少时才轻量重布一轮；多问题时 demote 已足够
+      if (routeErrors.length <= 4) {
+        Logger.info('PostGenValidator',
+          `[FIX] wire issues=${routeErrors.length}, light re-route (sync maxRounds=1)`);
+        const routeResult = this.wiringEngine.routeUntilClean(current,
+          ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 1);
+        current.wireList = routeResult.routeLines;
+        const stillBad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
+        if (stillBad.size > 0) {
+          this.wiringEngine.demoteNetsToLabelStubs(current, stillBad);
+          fixed++;
+        }
+        fixed++;
+      }
     } else if (routeErrors.length > 0 && relayMissing.length > 0) {
       Logger.info('PostGenValidator',
         `[FIX] wire issues=${routeErrors.length} deferred after instrument rebuild+route`);
     }
 
-    const result: FixResult = { topo: current, fixed: fixed };
-    return result;
+    return { topo: current, fixed: fixed };
   }
 
+  private async attemptFixesAsync(topo: SchTopology, errors: ValidationIssue[]):
+    Promise<FixResult> {
+    let base = this.applyNonRouteFixes(topo, errors);
+    let fixed = base.fixed;
+    let current = base.topo;
+
+    const instErrors = errors.filter(e => e.type === 'instrument_topo');
+    const relayMissing = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') >= 0);
+    const otherInstErrors = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') < 0);
+    if (relayMissing.length > 0) {
+      Logger.info('PostGenValidator',
+        `[FIX] relay missing — rebuilding nets for SPDT topology`);
+      try {
+        const clone = this.deepClone(current);
+        clone.netList = [];
+        clone.netLabelList = [];
+        clone.wireList = [];
+        const semResult = new SemanticNetBuilder(this.library).build(clone);
+        current = semResult.topology;
+        fixed++;
+        await this.yieldMain();
+        const routeResult = await this.wiringEngine.routeUntilCleanAsync(current,
+          ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 2);
+        current.wireList = routeResult.routeLines;
+        fixed++;
+      } catch (_e) {
+        Logger.warn('PostGenValidator', '[FIX] SemanticNetBuilder rebuild failed');
+      }
+    } else if (otherInstErrors.length > 0) {
+      Logger.info('PostGenValidator',
+        `[FIX] instrument errors=${otherInstErrors.length} ` +
+        `[${otherInstErrors.map(e => e.desc).join('; ')}] — deferred to AI fix loop, skip Semantic wipe`);
+    }
+
+    const routeErrors = errors.filter(e =>
+      e.type === 'wire_body' || e.type === 'wire_cross' || e.type === 'pin_proximity');
+    if (routeErrors.length > 0 && relayMissing.length === 0) {
+      const bad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
+      if (bad.size > 0) {
+        Logger.info('PostGenValidator',
+          `[FIX] demote-first wire violations nets=${bad.size}`);
+        this.wiringEngine.demoteNetsToLabelStubs(current, bad);
+        fixed++;
+      }
+      if (routeErrors.length <= 4) {
+        Logger.info('PostGenValidator',
+          `[FIX] wire issues=${routeErrors.length}, light re-route (async maxRounds=1)`);
+        await this.yieldMain();
+        const routeResult = await this.wiringEngine.routeUntilCleanAsync(current,
+          ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 1);
+        current.wireList = routeResult.routeLines;
+        const stillBad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
+        if (stillBad.size > 0) {
+          this.wiringEngine.demoteNetsToLabelStubs(current, stillBad);
+          fixed++;
+        }
+        fixed++;
+      }
+    } else if (routeErrors.length > 0 && relayMissing.length > 0) {
+      Logger.info('PostGenValidator',
+        `[FIX] wire issues=${routeErrors.length} deferred after instrument rebuild+route`);
+    }
+
+    return { topo: current, fixed: fixed };
+  }
+
+  /** Map-safe clone：禁止 JSON.stringify 把 Map 打成 {}（会导致后续 params.set 崩溃） */
   private deepClone(topo: SchTopology): SchTopology {
-    return JSON.parse(JSON.stringify(topo)) as SchTopology;
+    return mapAwareParse<SchTopology>(mapAwareStringify(topo));
   }
 
   private getCompDef(libraryId: string): ComponentDefinition | null {

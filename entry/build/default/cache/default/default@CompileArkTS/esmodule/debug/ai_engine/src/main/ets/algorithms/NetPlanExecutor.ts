@@ -1,4 +1,4 @@
-import { IdUtil, makeRouteLine, DeviceHitGeometry, SELECTION_HIT_PAD } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { IdUtil, makeRouteLine, DeviceHitGeometry, SELECTION_HIT_PAD, Logger, INSTR_TRACE_TAG, traceAiDiag } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchTopology, NetInfo, NetLabelInfo, DeviceInst, NetNodeRef, Point2D, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 export interface NetPlanWiringHints {
@@ -54,6 +54,176 @@ interface LabelPinEntry {
     pinName: string;
 }
 export class NetPlanExecutor {
+    /** 将 LLM 原始 JSON 规范成可安全使用的 NetPlanResult（防 undefined.toUpperCase） */
+    static normalizeLlmPlan(raw: Object | null): NetPlanResult | null {
+        if (!raw || typeof raw !== 'object') {
+            Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] net_plan normalize FAIL raw=null/non-object');
+            return null;
+        }
+        const src = raw as Record<string, Object>;
+        const netsRaw = src['nets'];
+        if (!Array.isArray(netsRaw) || netsRaw.length === 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] net_plan normalize FAIL nets=${netsRaw === undefined ? 'missing' :
+                (Array.isArray(netsRaw) ? `empty(${(netsRaw as Object[]).length})` : typeof netsRaw)}`);
+            return null;
+        }
+        const dropLines: string[] = [];
+        let dropNet = 0;
+        let dropConn = 0;
+        let rawConn = 0;
+        const nets: NetPlanEntry[] = [];
+        for (let i = 0; i < (netsRaw as Object[]).length; i++) {
+            const nObj = (netsRaw as Object[])[i];
+            if (!nObj || typeof nObj !== 'object') {
+                dropNet++;
+                if (dropLines.length < 12) {
+                    dropLines.push(`net[${i}] skipped: non-object`);
+                }
+                continue;
+            }
+            const n = nObj as Record<string, Object>;
+            const name = `${n['name'] ?? n['netName'] ?? n['net_name'] ?? ''}`.trim();
+            if (name.length === 0) {
+                dropNet++;
+                if (dropLines.length < 12) {
+                    dropLines.push(`net[${i}] skipped: empty name keys=[${Object.keys(n).join(',')}]`);
+                }
+                continue;
+            }
+            const nameUp = name.toUpperCase();
+            const typeRaw = `${n['type'] ?? n['netType'] ?? n['net_type'] ?? ''}`.toLowerCase();
+            let type: 'power' | 'ground' | 'signal' = typeRaw === 'power' ? 'power' : (typeRaw === 'ground' ? 'ground' : 'signal');
+            // 按网名强制纠正：LLM 常漏写 type，默认 signal 会触发 HARD critique 误杀 VCC/GND
+            if (nameUp === 'VCC' || nameUp === 'VDD' || nameUp === '+5V' || nameUp === '5V' ||
+                nameUp === '3V3' || nameUp === '+3V3') {
+                type = 'power';
+            }
+            else if (nameUp === 'GND' || nameUp === 'VSS' || nameUp === 'AGND' || nameUp === 'DGND') {
+                type = 'ground';
+            }
+            const netModeHint = `${n['mode'] ?? ''}`.toLowerCase();
+            const connsRaw = n['connections'] ?? n['pins'] ?? n['nodes'];
+            const connections: NetPlanConnection[] = [];
+            if (Array.isArray(connsRaw)) {
+                for (let ci = 0; ci < (connsRaw as Object[]).length; ci++) {
+                    const cObj = (connsRaw as Object[])[ci];
+                    rawConn++;
+                    if (!cObj || typeof cObj !== 'object') {
+                        dropConn++;
+                        if (dropLines.length < 12) {
+                            dropLines.push(`net[${i}].conn[${ci}] skipped: non-object`);
+                        }
+                        continue;
+                    }
+                    const c = cObj as Record<string, Object>;
+                    const compRef = `${c['compRef'] ?? c['comp'] ?? c['ref'] ?? c['refDes'] ?? ''}`.trim();
+                    const pinId = `${c['pinId'] ?? c['pin'] ?? c['pin_id'] ?? ''}`.trim();
+                    const pinName = `${c['pinName'] ?? c['pin_name'] ?? pinId}`.trim();
+                    if (compRef.length === 0 || pinId.length === 0) {
+                        dropConn++;
+                        if (dropLines.length < 12) {
+                            dropLines.push(`net[${i}](${name}).conn[${ci}] skipped: compRef="${compRef}" pinId="${pinId}" keys=[${Object.keys(c).join(',')}]`);
+                        }
+                        continue;
+                    }
+                    // 继承网级 mode（LLM 常只在 net 上写 joinByLabel）
+                    const modeRaw = `${c['mode'] ?? netModeHint ?? 'joinWired'}`.toLowerCase();
+                    const mode: 'joinWired' | 'joinByLabel' = modeRaw.indexOf('label') >= 0 ? 'joinByLabel' : 'joinWired';
+                    connections.push({ compRef, pinId, pinName: pinName.length > 0 ? pinName : pinId, mode });
+                }
+            }
+            if (connections.length === 0) {
+                dropNet++;
+                if (dropLines.length < 12) {
+                    dropLines.push(`net[${i}](${name}) skipped: no valid connections`);
+                }
+                continue;
+            }
+            nets.push({ name, type, connections });
+        }
+        if (nets.length === 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] net_plan normalize FAIL all nets dropped rawNets=${(netsRaw as Object[]).length} dropNet=${dropNet} dropConn=${dropConn}`);
+            if (dropLines.length > 0) {
+                traceAiDiag('AI_PIPE', 'net_plan_drop', dropLines, 16);
+            }
+            return null;
+        }
+        const labels: NetPlanLabel[] = [];
+        const labelsRaw = src['labels'] ?? src['netLabels'] ?? src['net_labels'];
+        if (Array.isArray(labelsRaw)) {
+            for (let i = 0; i < (labelsRaw as Object[]).length; i++) {
+                const lObj = (labelsRaw as Object[])[i];
+                if (!lObj || typeof lObj !== 'object') {
+                    continue;
+                }
+                const l = lObj as Record<string, Object>;
+                const netName = `${l['netName'] ?? l['net'] ?? l['name'] ?? ''}`.trim();
+                const text = `${l['text'] ?? l['label'] ?? netName}`.trim();
+                const atComp = `${l['atComp'] ?? l['compRef'] ?? l['ref'] ?? ''}`.trim();
+                const atPin = `${l['atPin'] ?? l['pinId'] ?? l['pin'] ?? ''}`.trim();
+                if (netName.length === 0 || atComp.length === 0 || atPin.length === 0) {
+                    continue;
+                }
+                const sideRaw = `${l['side'] ?? 'right'}`.toLowerCase();
+                let side: 'left' | 'right' | 'top' | 'bottom' = 'right';
+                if (sideRaw === 'left' || sideRaw === 'top' || sideRaw === 'bottom') {
+                    side = sideRaw;
+                }
+                labels.push({ netName, text: text.length > 0 ? text : netName, atComp, atPin, side });
+            }
+        }
+        const hintsRaw = src['wiringHints'] ?? src['wiring_hints'] ?? src['connectionModeHints'];
+        const wiringHints: NetPlanWiringHints = {
+            priorityOrder: NetPlanExecutor.safeStringList(hintsRaw && typeof hintsRaw === 'object'
+                ? (hintsRaw as Record<string, Object>)['priorityOrder'] ??
+                    (hintsRaw as Record<string, Object>)['priority_order'] : null),
+            forceWire: NetPlanExecutor.safeStringList(hintsRaw && typeof hintsRaw === 'object'
+                ? (hintsRaw as Record<string, Object>)['forceWire'] ??
+                    (hintsRaw as Record<string, Object>)['force_wire'] : null),
+            forceLabel: NetPlanExecutor.safeStringList(hintsRaw && typeof hintsRaw === 'object'
+                ? (hintsRaw as Record<string, Object>)['forceLabel'] ??
+                    (hintsRaw as Record<string, Object>)['force_label'] : null)
+        };
+        const notes = `${src['topologyNotes'] ?? src['topology_notes'] ?? src['notes'] ?? ''}`;
+        let connKeep = 0;
+        for (let ni = 0; ni < nets.length; ni++) {
+            connKeep += nets[ni].connections.length;
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] net_plan normalize OK nets=${nets.length}/${(netsRaw as Object[]).length}` +
+            ` conns=${connKeep}/${rawConn} dropNet=${dropNet} dropConn=${dropConn}` +
+            ` labels=${labels.length} forceWire=${wiringHints.forceWire.length}` +
+            ` forceLabel=${wiringHints.forceLabel.length}`);
+        if (dropLines.length > 0) {
+            traceAiDiag('AI_PIPE', 'net_plan_drop', dropLines, 16);
+        }
+        const sample: string[] = [];
+        for (let i = 0; i < Math.min(nets.length, 8); i++) {
+            const nn = nets[i];
+            sample.push(`${nn.name}(${nn.type})×${nn.connections.length}` +
+                `[${nn.connections.slice(0, 3).map(c => `${c.compRef}:${c.pinId}`).join(',')}]`);
+        }
+        if (sample.length > 0) {
+            traceAiDiag('AI_PIPE', 'net_plan_norm', sample, 10);
+        }
+        return { nets, labels, wiringHints, topologyNotes: notes };
+    }
+    private static safeStringList(value: Object | null | undefined): string[] {
+        const out: string[] = [];
+        if (value === null || value === undefined || !Array.isArray(value)) {
+            return out;
+        }
+        const arr = value as Object[];
+        for (let i = 0; i < arr.length; i++) {
+            if (arr[i] === null || arr[i] === undefined) {
+                continue;
+            }
+            const s = `${arr[i]}`.trim();
+            if (s.length > 0 && s !== 'undefined' && s !== 'null') {
+                out.push(s);
+            }
+        }
+        return out;
+    }
     /**
      * 确定性修复：合并探针/仪器重复脚、消除一脚双网。
      * 返回修复条数；调用方应在 critique 前执行。
@@ -63,24 +233,29 @@ export class NetPlanExecutor {
             return 0;
         }
         let fixes = 0;
+        fixes += NetPlanExecutor.sanitizeUnknownDeviceRefs(plan, topo);
         const isInstrLib = (lib: string): boolean => {
-            const u = lib.toUpperCase();
+            const u = (lib ?? '').toUpperCase();
             return u.indexOf('OSCILLOSCOPE') >= 0 || u.indexOf('VOLTMETER') >= 0 ||
                 u.indexOf('AMMETER') >= 0 || u.indexOf('LOGIC_ANALYZER') >= 0 ||
                 u.indexOf('UART') >= 0 || u.indexOf('FREQ') >= 0;
         };
         const libOf = (ref: string): string => {
-            const d = topo.deviceList.find(x => x.refName.toUpperCase() === ref.toUpperCase());
-            return d ? d.libDevId : '';
+            const want = (ref ?? '').toUpperCase();
+            if (want.length === 0) {
+                return '';
+            }
+            const d = topo.deviceList.find(x => (x.refName ?? '').toUpperCase() === want);
+            return d ? (d.libDevId ?? '') : '';
         };
         const isInstrRef = (ref: string): boolean => isInstrLib(libOf(ref));
         const isProbeNetName = (name: string): boolean => {
-            const u = name.toUpperCase();
+            const u = (name ?? '').toUpperCase();
             return u.indexOf('PROBE') === 0 || u.indexOf('OSC_') === 0 ||
                 u.indexOf('OSCCH') === 0 || /^CH\d+$/.test(u) ||
                 u.indexOf('SENSE_PROBE') >= 0;
         };
-        const pinKey = (c: NetPlanConnection): string => `${c.compRef}:${c.pinId}`.toUpperCase();
+        const pinKey = (c: NetPlanConnection): string => `${c.compRef ?? ''}:${c.pinId ?? ''}`.toUpperCase();
         // Pass1: 探针网 → 并入已含同一 DUT 脚的信号网
         for (let pi = plan.nets.length - 1; pi >= 0; pi--) {
             const probe = plan.nets[pi];
@@ -195,6 +370,42 @@ export class NetPlanExecutor {
         }
         // Pass3: 删空网
         plan.nets = plan.nets.filter(n => (n.connections ?? []).length > 0);
+        return fixes;
+    }
+    /**
+     * 丢弃拓扑中不存在的器件引用（并行模块串扰 / LLM 幻觉 U1 等），
+     * 避免 LED 模块接受 555 网表。
+     */
+    static sanitizeUnknownDeviceRefs(plan: NetPlanResult, topo: SchTopology): number {
+        if (!plan.nets || plan.nets.length === 0) {
+            return 0;
+        }
+        const known = new Set<string>();
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            known.add((d.refName ?? '').toUpperCase());
+            known.add((d.libDevId ?? '').toUpperCase());
+        }
+        let fixes = 0;
+        for (let ni = 0; ni < plan.nets.length; ni++) {
+            const net = plan.nets[ni];
+            const conns = net.connections ?? [];
+            const kept: NetPlanConnection[] = [];
+            for (let ci = 0; ci < conns.length; ci++) {
+                const c = conns[ci];
+                const ref = (c.compRef ?? '').toUpperCase();
+                if (ref.length > 0 && known.has(ref)) {
+                    kept.push(c);
+                }
+                else {
+                    fixes++;
+                }
+            }
+            net.connections = kept;
+        }
+        const before = plan.nets.length;
+        plan.nets = plan.nets.filter(n => (n.connections ?? []).length >= 1);
+        fixes += before - plan.nets.length;
         return fixes;
     }
     /**
@@ -366,17 +577,22 @@ export class NetPlanExecutor {
         }
         for (let ni = 0; ni < plan.nets.length; ni++) {
             const net = plan.nets[ni];
-            const nameUp = net.name.toUpperCase();
+            const nameUp = (net.name ?? '').toUpperCase();
+            if (nameUp.length === 0) {
+                continue;
+            }
             let toLabel = false;
             let toWire = false;
             for (let i = 0; i < forceLabel.length; i++) {
-                if (nameUp === forceLabel[i].toUpperCase()) {
+                const fl = forceLabel[i];
+                if (fl && nameUp === `${fl}`.toUpperCase()) {
                     toLabel = true;
                     break;
                 }
             }
             for (let i = 0; i < forceWire.length; i++) {
-                if (nameUp === forceWire[i].toUpperCase()) {
+                const fw = forceWire[i];
+                if (fw && nameUp === `${fw}`.toUpperCase()) {
                     toWire = true;
                     break;
                 }

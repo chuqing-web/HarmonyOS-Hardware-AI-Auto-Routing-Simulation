@@ -144,7 +144,7 @@ export class PlacementOptimizer {
         }
     }
     private static zoneCodeOf(m: MatchedDevice): number {
-        const id = m.libDevId.toUpperCase();
+        const id = (m.libDevId ?? '').toUpperCase();
         if (id.includes('STM32') || id.includes('AT89') || id.includes('STC') ||
             m.moduleZone === 'mcu_core' || m.requirement.devType.indexOf('mcu') >= 0) {
             return 0;
@@ -174,7 +174,7 @@ export class PlacementOptimizer {
         let vccIdx = -1;
         let ammeterIdx = -1;
         for (let i = 0; i < matched.length; i++) {
-            const id = matched[i].libDevId.toUpperCase();
+            const id = (matched[i].libDevId ?? '').toUpperCase();
             if (mcuIdx < 0 && (id.includes('STM32') || id.includes('AT89') || id.includes('STC'))) {
                 mcuIdx = i;
             }
@@ -197,11 +197,11 @@ export class PlacementOptimizer {
         }
         // 电压表紧邻对应电阻（优先R_开头的电阻器件）
         for (let vi = 0; vi < matched.length; vi++) {
-            const vid = matched[vi].libDevId.toUpperCase();
+            const vid = (matched[vi].libDevId ?? '').toUpperCase();
             if (!vid.includes('VOLTMETER') && !vid.includes('VIRTUAL_METER'))
                 continue;
             for (let ri = 0; ri < matched.length; ri++) {
-                const rid = matched[ri].libDevId.toUpperCase();
+                const rid = (matched[ri].libDevId ?? '').toUpperCase();
                 if (rid.startsWith('R_')) {
                     pairs.push(vi, ri);
                     break; // 每块电压表配一个电阻
@@ -332,7 +332,7 @@ export class PlacementOptimizer {
                 otherIdxs.push(i);
                 continue;
             }
-            const idUp = m.libDevId.toUpperCase();
+            const idUp = (m.libDevId ?? '').toUpperCase();
             if (idUp.includes('STM32') || idUp.includes('AT89') || idUp.includes('STC')) {
                 mcuIdx = i;
             }
@@ -595,7 +595,7 @@ export class PlacementOptimizer {
             const gene = chrom.get(ids[i]);
             if (!gene)
                 continue;
-            const idUp = m.libDevId.toUpperCase();
+            const idUp = (m.libDevId ?? '').toUpperCase();
             if (idUp.includes('AMMETER') || m.requirement.devType === 'ammeter') {
                 ammeterGenes.push(gene);
             }
@@ -694,7 +694,7 @@ export class PlacementOptimizer {
             const m = idToLib.get(ids[i]);
             if (!m)
                 continue;
-            const idUp = m.libDevId.toUpperCase();
+            const idUp = (m.libDevId ?? '').toUpperCase();
             // 晶振自身、MCU可紧邻，其余器件必须退开
             if (idUp.includes('XTAL') || idUp.includes('STM32') ||
                 idUp.includes('AT89') || idUp.includes('STC')) {
@@ -748,9 +748,9 @@ export class PlacementOptimizer {
             if (!m) {
                 continue;
             }
-            const libUpper = m.libDevId.toUpperCase();
-            const nameUpper = m.name.toUpperCase();
-            const typeUpper = m.requirement.devType.toUpperCase();
+            const libUpper = (m.libDevId ?? '').toUpperCase();
+            const nameUpper = (m.name ?? '').toUpperCase();
+            const typeUpper = (m.requirement?.devType ?? '').toUpperCase();
             if (libUpper.includes(upper) || nameUpper.includes(upper) || typeUpper.includes(upper)) {
                 return chrom.get(id) ?? null;
             }
@@ -783,13 +783,44 @@ export class PlacementOptimizer {
     }
     private buildTopology(matched: MatchedDevice[], chrom: Chromosome, existing?: SchTopology): SchTopology {
         const deviceList: DeviceInst[] = [];
+        const prefixCount = new Map<string, number>();
         for (let i = 0; i < matched.length; i++) {
             const m = matched[i];
             const gene = chrom.get(`dev_${i}`)!;
-            const refPrefix = m.libDevId.startsWith('R_') ? 'R' :
-                m.libDevId.startsWith('C_') ? 'C' :
-                    m.libDevId.includes('STM32') || m.libDevId.includes('AT89') ? 'U' : 'U';
-            deviceList.push(makeDeviceInst(IdUtil.generate('inst'), m.libDevId, `${refPrefix}${i + 1}`, gene.x, gene.y, 0, // AI 落图强制 0°，保证 Kit 脚几何与真脚布线一致
+            const idUp = (m.libDevId ?? '').toUpperCase();
+            let refPrefix = 'U';
+            if (m.libDevId.startsWith('R_')) {
+                refPrefix = 'R';
+            }
+            else if (m.libDevId.startsWith('C_')) {
+                refPrefix = 'C';
+            }
+            else if (idUp.startsWith('LED_') || idUp.indexOf('DIODE') >= 0 || idUp.indexOf('1N') === 0) {
+                refPrefix = 'D';
+            }
+            else if (idUp.indexOf('RELAY') >= 0) {
+                refPrefix = 'K';
+            }
+            else if (idUp.startsWith('SW_')) {
+                refPrefix = 'SW';
+            }
+            else if (m.libDevId === 'VCC' || m.libDevId === 'GND') {
+                refPrefix = m.libDevId;
+            }
+            else if (idUp.includes('STM32') || idUp.includes('AT89') || idUp.includes('LM555') ||
+                idUp.includes('NE555')) {
+                refPrefix = 'U';
+            }
+            let refName: string;
+            if (m.libDevId === 'VCC' || m.libDevId === 'GND') {
+                refName = m.libDevId;
+            }
+            else {
+                const n = (prefixCount.get(refPrefix) ?? 0) + 1;
+                prefixCount.set(refPrefix, n);
+                refName = `${refPrefix}${n}`;
+            }
+            deviceList.push(makeDeviceInst(IdUtil.generate('inst'), m.libDevId, refName, gene.x, gene.y, 0, // AI 落图强制 0°，保证 Kit 脚几何与真脚布线一致
             m.params));
         }
         const topo: SchTopology = {
@@ -842,11 +873,11 @@ export class PlacementOptimizer {
         const gnd = topo.deviceList.find(d => d.libDevId === 'GND');
         // v3.0: 区分电流表与电压表/其他仪器
         const ammeters = topo.deviceList.filter(d => {
-            const id = d.libDevId.toUpperCase();
+            const id = (d.libDevId ?? '').toUpperCase();
             return id.includes('AMMETER');
         });
         const otherInstruments = topo.deviceList.filter(d => {
-            const id = d.libDevId.toUpperCase();
+            const id = (d.libDevId ?? '').toUpperCase();
             return (id.includes('OSCILLOSCOPE') || id.includes('VOLTMETER') ||
                 id.includes('VIRTUAL_METER') || id.includes('UART_TERMINAL') ||
                 id.includes('LOGIC_ANALYZER')) && !id.includes('AMMETER');
@@ -869,7 +900,7 @@ export class PlacementOptimizer {
         // 电压表尽量靠近对应电阻
         for (let i = 0; i < otherInstruments.length; i++) {
             const inst = otherInstruments[i];
-            const idUp = inst.libDevId.toUpperCase();
+            const idUp = (inst.libDevId ?? '').toUpperCase();
             if (idUp.includes('VOLTMETER') || idUp.includes('VIRTUAL_METER')) {
                 // 在others中找电阻，将电压表放在电阻右侧
                 const resistor = others.find(o => o.libDevId.startsWith('R_'));
@@ -1025,7 +1056,7 @@ export class PlacementOptimizer {
         }
         // v3.0: 电流表放在VCC下方（串联在电源回路中）
         const ammeters = topo.deviceList.filter(d => {
-            const id = d.libDevId.toUpperCase();
+            const id = (d.libDevId ?? '').toUpperCase();
             return id.includes('AMMETER');
         });
         for (let i = 0; i < ammeters.length; i++) {
@@ -1035,7 +1066,7 @@ export class PlacementOptimizer {
         }
         // 其他仪器靠右外侧排列
         const instruments = topo.deviceList.filter(d => {
-            const id = d.libDevId.toUpperCase();
+            const id = (d.libDevId ?? '').toUpperCase();
             return (id.includes('OSCILLOSCOPE') || id.includes('VOLTMETER') ||
                 id.includes('VIRTUAL_METER') || id.includes('FREQ_COUNTER') || id.includes('UART_TERMINAL') ||
                 id.includes('LOGIC_ANALYZER') || id.includes('POWER_METER')) &&

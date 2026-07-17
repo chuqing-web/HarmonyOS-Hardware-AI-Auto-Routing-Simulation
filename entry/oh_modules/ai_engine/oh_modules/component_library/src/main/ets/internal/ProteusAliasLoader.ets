@@ -40,6 +40,9 @@ export class ProteusAliasLoader {
   }
 
   resolve(name: string, vendor: string = ''): string {
+    if (!name || name.length === 0) {
+      return name ?? '';
+    }
     const upper = name.toUpperCase();
     const alias = this.aliases.get(upper);
     if (alias) return alias;

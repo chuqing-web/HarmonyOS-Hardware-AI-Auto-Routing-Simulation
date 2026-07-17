@@ -112,7 +112,7 @@ export class SchematicSymbolRenderer {
     ctx.lineJoin = 'round';
 
     const isIcType = key === 'counter' || key === 'mcu_8051' || key === 'mcu_stm32' ||
-      key === 'memory' || key === 'generic_ic';
+      key === 'memory' || key === 'generic_ic' || key === 'timer555';
 
     // For IC-type components, always draw the body backdrop first so the border
     // is visible even when SVG content exists (device-library components)
@@ -230,6 +230,7 @@ export class SchematicSymbolRenderer {
       case 'mcu_8051':
       case 'mcu_stm32':
       case 'memory':
+      case 'timer555':
         // Body already drawn above as backdrop
         break;
       case 'vcc':

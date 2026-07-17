@@ -20,6 +20,7 @@ const DOMESTIC_REPLACEMENTS: Map<string, string> = new Map([
     ['CH340G', 'CH340C'],
     ['CH340T', 'CH340C'],
     ['LM358', 'SGM358'],
+    ['LM555', 'NE555'],
     ['1N4148', '1N4148WS'],
 ]);
 const BASE_PRICES: Map<string, number> = new Map([
@@ -32,6 +33,7 @@ const BASE_PRICES: Map<string, number> = new Map([
     ['STM32F103C8T6', 3.5],
     ['AT89C51', 1.2],
     ['LM358', 0.15],
+    ['LM555', 0.12],
     ['1N4148', 0.01],
     ['XTAL_11M', 0.08],
     ['CH340G', 0.6],

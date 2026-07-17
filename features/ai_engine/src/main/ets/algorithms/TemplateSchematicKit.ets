@@ -759,6 +759,45 @@ export class TemplateSchematicKit {
     return ['1', '2'];
   }
 
+  /**
+   * LM555 DIP-8：LLM 常写数字脚号(1–8)或别名(CONT/THR)，统一到库 pinId。
+   */
+  static canonicalize555Pin(pinId: string, pinName: string): string {
+    const tryCanon = (raw: string): string => {
+      const u = raw.trim().toUpperCase();
+      if (u === '1' || u === 'GND') {
+        return 'GND';
+      }
+      if (u === '2' || u === 'TRIG' || u === 'TRIGGER') {
+        return 'TRIG';
+      }
+      if (u === '3' || u === 'OUT' || u === 'OUTPUT') {
+        return 'OUT';
+      }
+      if (u === '4' || u === 'RESET' || u === 'RST') {
+        return 'RESET';
+      }
+      if (u === '5' || u === 'CTRL' || u === 'CONT' || u === 'CONTROL' || u === 'CV') {
+        return 'CTRL';
+      }
+      if (u === '6' || u === 'THRES' || u === 'THR' || u === 'THRESHOLD') {
+        return 'THRES';
+      }
+      if (u === '7' || u === 'DISCH' || u === 'DISCHARGE') {
+        return 'DISCH';
+      }
+      if (u === '8' || u === 'VCC' || u === 'VDD') {
+        return 'VCC';
+      }
+      return '';
+    };
+    const a = tryCanon(pinId);
+    if (a.length > 0) {
+      return a;
+    }
+    return tryCanon(pinName);
+  }
+
   static pinOffset(libraryId: string, pinId: string, _pinName: string): Point2D {
     // 与 BuiltinComponents.makeRelaySpdt 对齐：线圈上排 + 触点下排
     if (libraryId === 'RELAY_SPDT') {
@@ -819,6 +858,20 @@ export class TemplateSchematicKit {
         case 'OUT': return { x: 30, y: 0 };
         case 'VCC': return { x: 0, y: -40 };
         case 'VEE': return { x: 0, y: 40 };
+        default: return { x: 0, y: 0 };
+      }
+    }
+    if (libraryId === 'LM555' || libraryId === 'NE555') {
+      const canon = TemplateSchematicKit.canonicalize555Pin(pinId, _pinName);
+      switch (canon) {
+        case 'GND': return { x: -40, y: -30 };
+        case 'TRIG': return { x: -40, y: -10 };
+        case 'OUT': return { x: -40, y: 10 };
+        case 'RESET': return { x: -40, y: 30 };
+        case 'CTRL': return { x: 40, y: 30 };
+        case 'THRES': return { x: 40, y: 10 };
+        case 'DISCH': return { x: 40, y: -10 };
+        case 'VCC': return { x: 40, y: -30 };
         default: return { x: 0, y: 0 };
       }
     }

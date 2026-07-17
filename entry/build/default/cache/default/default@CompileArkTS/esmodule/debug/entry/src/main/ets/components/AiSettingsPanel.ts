@@ -11,7 +11,9 @@ interface AiSettingsPanel_Params {
     apiSectionExpanded?: boolean;
     promptText?: string;
     logs?: AiGenLogEntry[];
+    showStrategyDialog?: boolean;
     showModeDialog?: boolean;
+    pendingStrategy?: AiGenerateStrategy;
     showSelfCheckDialog?: boolean;
     selfCheckSummary?: string;
     selfCheckCount?: number;
@@ -32,7 +34,7 @@ interface AiSettingsPanel_Params {
     loadBalanceLabels?: string[];
 }
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
-import type { AiGenLogEntry, AiGenerateMode } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
+import type { AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiApiConfig } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
@@ -56,7 +58,9 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiSectionExpanded = new ObservedPropertySimplePU(false, this, "apiSectionExpanded");
         this.__promptText = new ObservedPropertySimplePU('', this, "promptText");
         this.__logs = new ObservedPropertyObjectPU([], this, "logs");
+        this.__showStrategyDialog = new ObservedPropertySimplePU(false, this, "showStrategyDialog");
         this.__showModeDialog = new ObservedPropertySimplePU(false, this, "showModeDialog");
+        this.__pendingStrategy = new ObservedPropertySimplePU('oneshot', this, "pendingStrategy");
         this.__showSelfCheckDialog = new ObservedPropertySimplePU(false, this, "showSelfCheckDialog");
         this.__selfCheckSummary = new ObservedPropertySimplePU('', this, "selfCheckSummary");
         this.__selfCheckCount = new ObservedPropertySimplePU(0, this, "selfCheckCount");
@@ -103,8 +107,14 @@ export class AiSettingsPanel extends ViewPU {
         if (params.logs !== undefined) {
             this.logs = params.logs;
         }
+        if (params.showStrategyDialog !== undefined) {
+            this.showStrategyDialog = params.showStrategyDialog;
+        }
         if (params.showModeDialog !== undefined) {
             this.showModeDialog = params.showModeDialog;
+        }
+        if (params.pendingStrategy !== undefined) {
+            this.pendingStrategy = params.pendingStrategy;
         }
         if (params.showSelfCheckDialog !== undefined) {
             this.showSelfCheckDialog = params.showSelfCheckDialog;
@@ -173,7 +183,9 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiSectionExpanded.purgeDependencyOnElmtId(rmElmtId);
         this.__promptText.purgeDependencyOnElmtId(rmElmtId);
         this.__logs.purgeDependencyOnElmtId(rmElmtId);
+        this.__showStrategyDialog.purgeDependencyOnElmtId(rmElmtId);
         this.__showModeDialog.purgeDependencyOnElmtId(rmElmtId);
+        this.__pendingStrategy.purgeDependencyOnElmtId(rmElmtId);
         this.__showSelfCheckDialog.purgeDependencyOnElmtId(rmElmtId);
         this.__selfCheckSummary.purgeDependencyOnElmtId(rmElmtId);
         this.__selfCheckCount.purgeDependencyOnElmtId(rmElmtId);
@@ -196,7 +208,9 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiSectionExpanded.aboutToBeDeleted();
         this.__promptText.aboutToBeDeleted();
         this.__logs.aboutToBeDeleted();
+        this.__showStrategyDialog.aboutToBeDeleted();
         this.__showModeDialog.aboutToBeDeleted();
+        this.__pendingStrategy.aboutToBeDeleted();
         this.__showSelfCheckDialog.aboutToBeDeleted();
         this.__selfCheckSummary.aboutToBeDeleted();
         this.__selfCheckCount.aboutToBeDeleted();
@@ -274,12 +288,26 @@ export class AiSettingsPanel extends ViewPU {
     set logs(newValue: AiGenLogEntry[]) {
         this.__logs.set(newValue);
     }
+    private __showStrategyDialog: ObservedPropertySimplePU<boolean>;
+    get showStrategyDialog() {
+        return this.__showStrategyDialog.get();
+    }
+    set showStrategyDialog(newValue: boolean) {
+        this.__showStrategyDialog.set(newValue);
+    }
     private __showModeDialog: ObservedPropertySimplePU<boolean>;
     get showModeDialog() {
         return this.__showModeDialog.get();
     }
     set showModeDialog(newValue: boolean) {
         this.__showModeDialog.set(newValue);
+    }
+    private __pendingStrategy: ObservedPropertySimplePU<AiGenerateStrategy>;
+    get pendingStrategy() {
+        return this.__pendingStrategy.get();
+    }
+    set pendingStrategy(newValue: AiGenerateStrategy) {
+        this.__pendingStrategy.set(newValue);
     }
     private __showSelfCheckDialog: ObservedPropertySimplePU<boolean>;
     get showSelfCheckDialog() {
@@ -397,17 +425,27 @@ export class AiSettingsPanel extends ViewPU {
             return;
         }
         Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP request_generate | promptLen=${q.length}`);
+        this.showStrategyDialog = true;
+        this.showModeDialog = false;
+    }
+    private pickStrategy(strategy: AiGenerateStrategy): void {
+        this.pendingStrategy = strategy;
+        this.showStrategyDialog = false;
+        Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP modular_strategy | strategy=${strategy}`);
         this.showModeDialog = true;
     }
     private async runGenerate(mode: AiGenerateMode): Promise<void> {
         this.showModeDialog = false;
         const q = this.promptText.trim();
-        this.statusMessage = 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
-        Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate | mode=${mode} promptLen=${q.length}`);
-        const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode);
-        Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate_done | mode=${mode} ok=${ok}`);
+        const strategy = this.pendingStrategy;
+        this.statusMessage = strategy === 'modular'
+            ? '模块并行：整体设计中（请耐心等待）…'
+            : 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
+        Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate | mode=${mode} strategy=${strategy} promptLen=${q.length}`);
+        const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode, strategy);
+        Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate_done | mode=${mode} strategy=${strategy} ok=${ok}`);
         if (ok) {
-            this.statusMessage = 'AI 整图生成完成';
+            this.statusMessage = strategy === 'modular' ? '模块并行生图完成' : 'AI 整图生成完成';
         }
     }
     private async runSelfCheck(): Promise<void> {
@@ -491,7 +529,7 @@ export class AiSettingsPanel extends ViewPU {
                 if (isInitialRender) {
                     let componentCall = new 
                     // ---- 生成区 ----
-                    ProteusSectionTitle(this, { title: 'AI 生成整图' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 158, col: 7 });
+                    ProteusSectionTitle(this, { title: 'AI 生成整图' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 171, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -548,7 +586,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestGenerate();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 185, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 198, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -582,7 +620,7 @@ export class AiSettingsPanel extends ViewPU {
                             }
                             void this.runSelfCheck();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 192, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 205, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -616,7 +654,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.appService.clearAiGenLogs();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 203, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 216, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -699,7 +737,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.showSelfCheckDialog = false;
                                         void this.runSelfCheck();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 236, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 249, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -732,7 +770,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.appService.dismissAiSelfCheckPrompt();
                                         this.statusMessage = '已跳过自检修复';
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 244, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 257, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -750,6 +788,147 @@ export class AiSettingsPanel extends ViewPU {
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
                                     label: '暂不',
+                                    widthVal: '100%'
+                                });
+                            }
+                        }, { name: "ProteusClassicBtn" });
+                    }
+                    Column.pop();
+                });
+            }
+            // 生成策略：整图一次 / 模块并行
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            // 生成策略：整图一次 / 模块并行
+            if (this.showStrategyDialog) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create({ space: 8 });
+                        Column.width('100%');
+                        Column.padding(10);
+                        Column.margin({ left: 8, right: 8, bottom: 6 });
+                        Column.backgroundColor(ProteusColors.INPUT_READONLY_BG);
+                        Column.border({ width: 1, color: ProteusColors.SELECTED });
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('请选择生成方式：');
+                        Text.fontSize(ProteusFonts.PARAM_KEY);
+                        Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.appService.getAiConversationRound() > 0
+                            ? '当前为多轮编辑：仅支持「整图一次」（模块并行二期）。'
+                            : '复杂电路建议「模块并行」：先整体设计连接边界，再多路并行生图后合并。');
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusClassicBtn(this, {
+                                    label: '整图一次',
+                                    widthVal: '100%',
+                                    onAction: () => {
+                                        this.pickStrategy('oneshot');
+                                    }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 287, col: 11 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: '整图一次',
+                                        widthVal: '100%',
+                                        onAction: () => {
+                                            this.pickStrategy('oneshot');
+                                        }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: '整图一次',
+                                    widthVal: '100%'
+                                });
+                            }
+                        }, { name: "ProteusClassicBtn" });
+                    }
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.appService.getAiConversationRound() === 0) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new ProteusClassicBtn(this, {
+                                                label: '模块并行（先整体设计+边界）',
+                                                widthVal: '100%',
+                                                onAction: () => {
+                                                    this.pickStrategy('modular');
+                                                }
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 295, col: 13 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    label: '模块并行（先整体设计+边界）',
+                                                    widthVal: '100%',
+                                                    onAction: () => {
+                                                        this.pickStrategy('modular');
+                                                    }
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                label: '模块并行（先整体设计+边界）',
+                                                widthVal: '100%'
+                                            });
+                                        }
+                                    }, { name: "ProteusClassicBtn" });
+                                }
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusClassicBtn(this, {
+                                    label: '取消',
+                                    widthVal: '100%',
+                                    onAction: () => {
+                                        this.showStrategyDialog = false;
+                                    }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 303, col: 11 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: '取消',
+                                        widthVal: '100%',
+                                        onAction: () => {
+                                            this.showStrategyDialog = false;
+                                        }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: '取消',
                                     widthVal: '100%'
                                 });
                             }
@@ -779,7 +958,9 @@ export class AiSettingsPanel extends ViewPU {
                         Column.border({ width: 1, color: ProteusColors.SELECTED });
                     }, Column);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create('画布上已有电路时，请选择：');
+                        Text.create(this.pendingStrategy === 'modular'
+                            ? '模块并行 · 画布处理方式：'
+                            : '画布上已有电路时，请选择：');
                         Text.fontSize(ProteusFonts.PARAM_KEY);
                         Text.fontColor(ProteusColors.TEXT_PRIMARY);
                         Text.width('100%');
@@ -794,7 +975,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         void this.runGenerate('replace');
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 268, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 327, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -824,7 +1005,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         void this.runGenerate('append');
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 275, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 334, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -854,7 +1035,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.showModeDialog = false;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 282, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 341, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1008,7 +1189,7 @@ export class AiSettingsPanel extends ViewPU {
                         label: this.showAddForm ? '收起' : '+ 添加',
                         widthVal: 64,
                         onAction: () => { this.showAddForm = !this.showAddForm; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 359, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 418, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1066,7 +1247,7 @@ export class AiSettingsPanel extends ViewPU {
                                             this.newApiUrl = tmpl.data.baseUrl;
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 375, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 434, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1268,7 +1449,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.newAuthField = 'ANTHROPIC_AUTH_TOKEN';
                                         this.statusMessage = `已添加并同步 ${config.name}`;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 455, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 514, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1355,7 +1536,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 509, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1472,7 +1653,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 551, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 610, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1516,7 +1697,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 627, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1554,7 +1735,7 @@ export class AiSettingsPanel extends ViewPU {
                                     Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 580, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 639, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {

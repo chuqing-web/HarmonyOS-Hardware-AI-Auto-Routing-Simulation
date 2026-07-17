@@ -269,7 +269,7 @@ export class FaultDiagnoser {
         const vccComp = doc.components.find(c => c.libraryId === 'VCC');
         if (vccComp !== undefined) {
             const hasBulkCap = caps.some(c => {
-                const cVal = c.libraryId.toUpperCase();
+                const cVal = (c.libraryId ?? '').toUpperCase();
                 return (cVal.includes('10U') || cVal.includes('100U')) &&
                     Math.abs(c.position.x - vccComp.position.x) < 300;
             });
@@ -294,8 +294,8 @@ export class FaultDiagnoser {
             // 单个 GPIO 驱动 > 6 个负载
             if (loadCount > 6) {
                 // 检查是否为电源网络
-                if (!VCC_NAMES.has(net.name.toUpperCase()) &&
-                    !GND_NAMES.has(net.name.toUpperCase())) {
+                if (!VCC_NAMES.has((net.name ?? '').toUpperCase()) &&
+                    !GND_NAMES.has((net.name ?? '').toUpperCase())) {
                     result.push({
                         id: IdUtil.generate('erc'),
                         severity: ErcSeverity.WARNING,
@@ -354,7 +354,7 @@ export class FaultDiagnoser {
             const iMinusComps = FaultDiagnoser.netComponentIds(iMinusNet, doc);
             const hasVccOnPlus = iPlusComps.some(id => {
                 const c = doc.components.find(x => x.id === id);
-                return c !== undefined && (c.libraryId === 'VCC' || VCC_NAMES.has(c.libraryId.toUpperCase()));
+                return c !== undefined && (c.libraryId === 'VCC' || VCC_NAMES.has((c.libraryId ?? '').toUpperCase()));
             });
             const hasLoadOnMinus = iMinusComps.some(id => {
                 const c = doc.components.find(x => x.id === id);
@@ -414,8 +414,8 @@ export class FaultDiagnoser {
         }
         // ---- 电流路径完整性 ----
         // 检测: VCC 是否直接连到地 (绕过所有负载)
-        const vccNets = doc.nets.filter(n => n.name.toUpperCase() === 'VCC');
-        const gndNets = doc.nets.filter(n => n.name.toUpperCase() === 'GND' || n.name === 'GND');
+        const vccNets = doc.nets.filter(n => (n.name ?? '').toUpperCase() === 'VCC');
+        const gndNets = doc.nets.filter(n => (n.name ?? '').toUpperCase() === 'GND' || n.name === 'GND');
         for (const vn of vccNets) {
             for (const gn of gndNets) {
                 if (vn.id === gn.id) {
@@ -463,7 +463,7 @@ export class FaultDiagnoser {
         const result: ErcViolation[] = [];
         const reserved = new Set(['VCC', 'VDD', 'GND', 'VSS', '3V3', '3.3V', '5V', '12V']);
         for (const net of doc.nets) {
-            const upper = net.name.toUpperCase();
+            const upper = (net.name ?? '').toUpperCase();
             if (reserved.has(upper) && net.type !== NetType.POWER && net.type !== NetType.GROUND) {
                 result.push({
                     id: IdUtil.generate('erc'),
@@ -520,8 +520,8 @@ export class FaultDiagnoser {
         for (const mcu of mcus) {
             const mcuNets = doc.nets.filter(n => n.pinIds.some(p => p.startsWith(mcu.id)));
             for (const net of mcuNets) {
-                const isPowerNet = VCC_NAMES.has(net.name.toUpperCase()) ||
-                    GND_NAMES.has(net.name.toUpperCase());
+                const isPowerNet = VCC_NAMES.has((net.name ?? '').toUpperCase()) ||
+                    GND_NAMES.has((net.name ?? '').toUpperCase());
                 if (!isPowerNet) {
                     continue;
                 }

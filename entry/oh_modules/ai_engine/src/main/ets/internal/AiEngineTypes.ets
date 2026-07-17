@@ -17,6 +17,8 @@ export interface AiTaskExtra {
   conversationHistory?: ChatHistoryEntry[];
   /** 生成模式: create=从零创建, edit=基于现有电路修改 */
   generationMode?: 'create' | 'edit';
+  /** oneshot=整图一次；modular=整体设计+边界后真并行合并 */
+  generateStrategy?: 'oneshot' | 'modular';
 }
 
 export interface ChatHistoryEntry {

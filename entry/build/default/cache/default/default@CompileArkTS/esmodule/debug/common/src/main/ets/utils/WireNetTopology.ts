@@ -97,7 +97,7 @@ function collectPins(doc: SchematicDocument, resolver?: PinGeometryResolver): Pi
     return pins;
 }
 function internalDefaultPins(libraryId: string): PinGeometry[] {
-    const lib = libraryId.toUpperCase();
+    const lib = (libraryId ?? '').toUpperCase();
     if (lib === 'VCC' || lib.endsWith('/VCC')) {
         return [makePinGeometry('1', 'VCC', 0, 10)];
     }
@@ -139,6 +139,18 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
             makePinGeometry('IN-2', 'IN-2', -50, 40),
             makePinGeometry('OUT2', 'OUT2', 50, 30),
             makePinGeometry('V+', 'V+', 0, -50)
+        ];
+    }
+    if (lib.includes('LM555') || lib.includes('NE555')) {
+        return [
+            makePinGeometry('GND', 'GND', -40, -30),
+            makePinGeometry('TRIG', 'TRIG', -40, -10),
+            makePinGeometry('OUT', 'OUT', -40, 10),
+            makePinGeometry('RESET', 'RESET', -40, 30),
+            makePinGeometry('CTRL', 'CTRL', 40, 30),
+            makePinGeometry('THRES', 'THRES', 40, 10),
+            makePinGeometry('DISCH', 'DISCH', 40, -10),
+            makePinGeometry('VCC', 'VCC', 40, -30)
         ];
     }
     if (lib.includes('OSCILLOSCOPE')) {

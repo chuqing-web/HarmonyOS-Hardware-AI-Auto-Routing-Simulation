@@ -4,6 +4,7 @@ import { ConstrainedWiringEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_
 import { FaultDiagnoser } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/FaultDiagnoser";
 import { CircuitTemplates } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitTemplates";
 import { AiPipelineOrchestrator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiPipelineOrchestrator";
+import type { PipelineOptions } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiPipelineOrchestrator";
 import { DeviceSelectEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceSelectEngine";
 import { PlacementOptimizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PlacementOptimizer";
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
@@ -13,7 +14,7 @@ import { AiPipelineValidator } from "@bundle:com.elecdraw.aischsim/entry@ai_engi
 import { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiResultCache";
 import { TeachingService } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
 import type { IComponentLibrary } from 'component_library';
-import { AiCapability, EventBus, ModuleEvent, ErcSeverity, ErcRuleType, AiTaskType, ErrCode, ResultHelper, TopologyAdapter, makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine, Logger, INSTR_TRACE_TAG, AiErcGateUtil } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { AiCapability, EventBus, ModuleEvent, ErcSeverity, ErcRuleType, AiTaskType, ErrCode, ResultHelper, TopologyAdapter, makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine, Logger, INSTR_TRACE_TAG, AiErcGateUtil, traceAiDiag, traceAiOp } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiRequest, AiResponse, SchematicDocument, SimulationResult, ErcViolation, Result, LogicState, SchTopology, AiTaskResult, DiagError, BomOptResult, WaveData, ProgressCallback, ApiResult, RouteResult, RouteLine, DeviceSelectLlmOutput, RoutingLlmOutput, AiPipelineResult, DeviceSelectResult } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import type { AiTaskExtra, DiagLevel, DiagTargetType } from './internal/AiEngineTypes';
@@ -54,6 +55,7 @@ export class AiEngineImpl implements IAiEngine {
             };
         }
         onProgress?.(makeProgress(0, `Starting task ${taskType}`));
+        Logger.info(INSTR_TRACE_TAG, `[AI_TASK] START type=${taskType}`);
         let result: AiTaskResult = {
             taskType, success: false, errCode: ErrCode.OK, errMsg: '',
             progress: makeProgress(0, 'init')
@@ -202,12 +204,42 @@ export class AiEngineImpl implements IAiEngine {
                             const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
                             const geoN = pipe.data.geoBlocking ?? 0;
                             const hint = AiErcGateUtil.summarizeBlocking(pipe.data.ercErrors ?? [], 4);
+                            const errs = pipe.data.ercErrors ?? [];
+                            let modularHard = false;
+                            let modularSuggest = '';
+                            for (let ei = 0; ei < errs.length; ei++) {
+                                const et = errs[ei].errType;
+                                if (et === 'modular_plan' || et === 'modular_parallel') {
+                                    modularHard = true;
+                                    if (errs[ei].suggest.length > 0) {
+                                        modularSuggest = errs[ei].suggest;
+                                    }
+                                    if (errs[ei].desc.length > 0) {
+                                        result.errMsg = errs[ei].desc +
+                                            (modularSuggest.length > 0 ? `。${modularSuggest}` : '');
+                                    }
+                                    break;
+                                }
+                            }
+                            const emptyTopo = (pipe.data.topology?.deviceList.length ?? 0) === 0;
                             result.success = false;
                             result.errCode = ErrCode.ERR_PARAM_INVALID;
-                            result.errMsg =
-                                `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}，清零后才算完整过程` +
-                                    (hint.length > 0 ? `（${hint}）` : '');
-                            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN} | ${result.analysisText}`);
+                            if (modularHard || emptyTopo) {
+                                // 计划/全模块失败：不落空图
+                                result.topology = undefined;
+                                if (!result.errMsg || result.errMsg.length === 0) {
+                                    result.errMsg = emptyTopo
+                                        ? '模块并行失败：无有效拓扑'
+                                        : `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}`;
+                                }
+                            }
+                            else {
+                                result.errMsg =
+                                    `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}，清零后才算完整过程` +
+                                        (hint.length > 0 ? `（${hint}）` : '');
+                            }
+                            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN}` +
+                                ` modularHard=${modularHard} empty=${emptyTopo} | ${result.analysisText}`);
                         }
                         else {
                             Logger.info(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
@@ -233,8 +265,28 @@ export class AiEngineImpl implements IAiEngine {
         }
         catch (e) {
             result.success = false;
-            result.errCode = ErrCode.ERR_API_TIMEOUT;
-            result.errMsg = `${e}`;
+            result.errCode = ErrCode.ERR_PARAM_INVALID;
+            const msg = e instanceof Error ? (e.message || `${e}`) : `${e}`;
+            const stack = e instanceof Error ? (e.stack ?? '') : '';
+            const stage = this.pipeline?.getDiagStage() ?? 'unknown';
+            result.errMsg = `流水线异常[${stage}]: ${msg}`;
+            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] EXCEPTION type=${taskType} stage=${stage} msg=${msg}`);
+            const diagLines: string[] = [
+                `taskType=${taskType}`,
+                `stage=${stage}`,
+                `msg=${msg}`
+            ];
+            if (stack.length > 0) {
+                const parts = stack.split('\n');
+                for (let si = 0; si < Math.min(parts.length, 12); si++) {
+                    const line = parts[si].trim();
+                    if (line.length > 0) {
+                        diagLines.push(line.substring(0, 200));
+                    }
+                }
+            }
+            traceAiDiag('AI_TASK', 'exception', diagLines, 16);
+            traceAiOp('AI_TASK', 'exception', `stage=${stage} ${msg}`);
         }
         return result;
     }
@@ -261,7 +313,7 @@ export class AiEngineImpl implements IAiEngine {
         onProgress?.(makeProgress(15, '序列化拓扑'));
         const routeLlm = await this.fetchRoutingConstraints(topo);
         onProgress?.(makeProgress(40, 'A* 约束布线'));
-        let routeResult = this.constrainedWiring.routeUntilClean(topo, routeLlm, undefined, undefined, 3);
+        let routeResult = await this.constrainedWiring.routeUntilCleanAsync(topo, routeLlm, undefined, undefined, 3);
         this.resultCache.cacheRoute(topo, routeResult);
         onProgress?.(makeProgress(100, 'Routing complete', true));
         return ResultHelper.ok(routeResult);
@@ -276,7 +328,7 @@ export class AiEngineImpl implements IAiEngine {
     }
     async aiOptimizeExistRoute(topo: SchTopology): Promise<ApiResult<RouteResult>> {
         const routeLlm = await this.fetchRoutingConstraints(topo);
-        let routeResult = this.constrainedWiring.routeUntilClean(topo, routeLlm, undefined, undefined, 3);
+        let routeResult = await this.constrainedWiring.routeUntilCleanAsync(topo, routeLlm, undefined, undefined, 3);
         return ResultHelper.ok(routeResult);
     }
     async aiStaticDiagnose(topo: SchTopology): Promise<ApiResult<DiagError[]>> {
@@ -355,8 +407,8 @@ export class AiEngineImpl implements IAiEngine {
         if (!this.pipeline) {
             return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Component library not configured');
         }
-        const result = await this.pipeline.runFullPipeline({
-            prompt,
+        const pipeOpts: PipelineOptions = {
+            prompt: prompt,
             scene: extra?.scene ?? 'text_gen',
             partialTopo: topo.deviceList.length > 0 ? topo : undefined,
             lockedDeviceUuids: extra?.lockedUuids ?? (extra?.generationMode === 'edit' && topo.deviceList.length > 0
@@ -367,8 +419,13 @@ export class AiEngineImpl implements IAiEngine {
             routingWeights: extra?.routingWeights,
             onStreamSnapshot: extra?.onStreamSnapshot,
             conversationHistory: extra?.conversationHistory,
-            generationMode: extra?.generationMode
-        }, onProgress);
+            generationMode: extra?.generationMode,
+            generateStrategy: extra?.generateStrategy
+        };
+        // 模块并行：整体设计门禁 → Promise.all 子流水线 → POWER/joints 合并
+        const result = extra?.generateStrategy === 'modular'
+            ? await this.pipeline.runModularParallelPipeline(pipeOpts, onProgress)
+            : await this.pipeline.runFullPipeline(pipeOpts, onProgress);
         return ResultHelper.ok(result);
     }
     async aiSelectDevices(prompt: string, partialTopo?: SchTopology): Promise<ApiResult<DeviceSelectResult>> {
@@ -674,6 +731,7 @@ export class AiEngineImpl implements IAiEngine {
         const led = await validator.validateMinSystemLed();
         const ood = validator.validateHallucinationChip();
         const noFallback = await validator.validateApiFailureFallback();
+        const modularMerge = validator.validateModularMerge();
         const lines: string[] = [];
         lines.push(`[LED最小系统] ${led.passed ? 'PASS' : 'FAIL'}: ${led.checks.join('; ')}`);
         if (led.failures.length > 0)
@@ -682,6 +740,10 @@ export class AiEngineImpl implements IAiEngine {
         lines.push(`[无模板回退] ${noFallback.passed ? 'PASS' : 'FAIL'}: ${noFallback.checks.join('; ')}`);
         if (noFallback.failures.length > 0)
             lines.push(`  失败: ${noFallback.failures.join('; ')}`);
+        lines.push(`[模块并行合并] ${modularMerge.passed ? 'PASS' : 'FAIL'}: ${modularMerge.checks.join('; ')}`);
+        if (modularMerge.failures.length > 0) {
+            lines.push(`  失败: ${modularMerge.failures.join('; ')}`);
+        }
         Logger.info(INSTR_TRACE_TAG, `[AI_VAL] runValidationSuite END\n${lines.join('\n')}`);
         return lines.join('\n');
     }

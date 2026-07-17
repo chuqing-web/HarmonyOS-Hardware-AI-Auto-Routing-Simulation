@@ -182,10 +182,10 @@ export class DeviceSelectEngine {
             const search = this.library.search(req.explicitModel, 1, 5);
             if (search.items.length > 0) {
                 // 显式型号：只接受 id 精确一致（大小写不敏感），禁止搜到别的器件冒充
-                const want = req.explicitModel.toUpperCase();
+                const want = (req.explicitModel ?? '').toUpperCase();
                 for (let si = 0; si < search.items.length; si++) {
                     const c = search.items[si];
-                    if (c.id.toUpperCase() === want) {
+                    if ((c.id ?? '').toUpperCase() === want) {
                         return this.buildMatched(req, c.id, c.name, 'exact');
                     }
                 }

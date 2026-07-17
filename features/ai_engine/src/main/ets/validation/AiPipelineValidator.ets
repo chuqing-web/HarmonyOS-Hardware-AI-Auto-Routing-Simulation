@@ -2,10 +2,15 @@
  * AI Pipeline 端到端验证器 — 本地可运行验收测试
  */
 import {
-  SchTopology, ErrCode, ResultHelper, ApiResult, Logger, INSTR_TRACE_TAG
+  SchTopology, DeviceInst, NetInfo, NetNodeRef, ErrCode, ResultHelper, ApiResult,
+  Logger, INSTR_TRACE_TAG, IdUtil, emptySchTopology, makeDeviceInst
 } from 'common';
 import { AiPipelineOrchestrator } from '../algorithms/AiPipelineOrchestrator';
 import { DeviceSelectEngine } from '../algorithms/DeviceSelectEngine';
+import {
+  ModularPlan, ModularModuleSpec, ModularJointSpec,
+  mergeModularTopologies, critiqueModularPlan, looksLikeLibIdAsRefDes
+} from '../algorithms/ModularParallelMerge';
 import { IComponentLibrary } from 'component_library';
 
 export interface AiValidationResult {
@@ -74,6 +79,160 @@ export class AiPipelineValidator {
     }
     Logger.info(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD OK');
     return ResultHelper.ok(true);
+  }
+
+  /**
+   * 模块并行合并：同名电源网须合并；joints 可用 libDevId 回退匹配位号。
+   */
+  validateModularMerge(): AiValidationResult {
+    const checks: string[] = [];
+    const failures: string[] = [];
+
+    if (!looksLikeLibIdAsRefDes('LM555') || !looksLikeLibIdAsRefDes('LED_RED')) {
+      failures.push('looksLikeLibIdAsRefDes 应识别 LM555/LED_RED');
+    } else {
+      checks.push('libId-as-RefDes 识别 OK');
+    }
+    if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1')) {
+      failures.push('looksLikeLibIdAsRefDes 误伤正常位号 U1/D1/LED1');
+    } else {
+      checks.push('正常位号豁免 OK');
+    }
+
+    const badMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: '振荡',
+      prompt: '放置 LM555 与阻容构成无稳态，边界 U1.OUT',
+      boundaryPins: ['LM555.OUT']
+    };
+    const badMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: '指示',
+      prompt: '放置 LED_RED 限流电阻，边界 D1.A',
+      boundaryPins: ['LED_RED.A']
+    };
+    const badJoint0: ModularJointSpec = { from: 'M1.LM555.OUT', to: 'M2.LED_RED.A' };
+    const badJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.LM555.OUT' };
+    const badJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.LED_RED.A' };
+    const badPlan: ModularPlan = {
+      systemOverview: '555 无稳态振荡驱动 LED，电源接 VCC/GND',
+      modules: [badMod1, badMod2],
+      joints: [badJoint0, badJoint1, badJoint2]
+    };
+    const critique = critiqueModularPlan(badPlan, this.library);
+    const libAsRefHit = critique.some(s => s.indexOf('libDevId') >= 0 || s.indexOf('型号') >= 0);
+    if (!libAsRefHit) {
+      failures.push('critiqueModularPlan 未拒收把 LM555/LED_RED 当 RefDes');
+    } else {
+      checks.push(`plan 门禁拒收型号当位号 (${critique.length} issues)`);
+    }
+
+    const m1 = AiPipelineValidator.makeModuleTopo('U1', 'LM555', 'net_vcc_m1', 'net_gnd_m1');
+    const m2 = AiPipelineValidator.makeModuleTopo('D1', 'LED_RED', 'net_vcc_m2', 'net_gnd_m2');
+    const goodMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: '振荡',
+      prompt: '放置 U1=LM555 无稳态，边界 U1.3',
+      boundaryPins: ['U1.3']
+    };
+    const goodMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: '指示',
+      prompt: '放置 D1=LED_RED，边界 D1.A',
+      boundaryPins: ['D1.A']
+    };
+    const goodJoint0: ModularJointSpec = { from: 'M1.LM555.3', to: 'M2.LED_RED.A' };
+    const goodJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.U1.3' };
+    const goodJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.D1.A' };
+    const plan: ModularPlan = {
+      systemOverview: '555 驱动 LED 指示灯，双模块电源共享',
+      modules: [goodMod1, goodMod2],
+      joints: [goodJoint0, goodJoint1, goodJoint2]
+    };
+    const mergeOut = mergeModularTopologies([m1, m2], plan, (_lib: string, hint: string) => {
+      return hint && hint.length > 0 ? '1' : '1';
+    });
+    const vccNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'VCC');
+    const gndNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'GND');
+    if (vccNets.length !== 1) {
+      failures.push(`合并后 VCC 网应唯一，实际 ${vccNets.length}`);
+    } else {
+      checks.push('VCC 网唯一');
+    }
+    if (gndNets.length !== 1) {
+      failures.push(`合并后 GND 网应唯一，实际 ${gndNets.length}`);
+    } else {
+      checks.push('GND 网唯一');
+    }
+    if (mergeOut.jointFail > 0) {
+      failures.push(`joints 应按 libDevId 回退命中，fail=${mergeOut.jointFail}: ` +
+        mergeOut.jointFailReasons.join('; '));
+    } else {
+      checks.push(`joints ok=${mergeOut.jointOk}`);
+    }
+    const labelN = mergeOut.topology.netLabelList?.length ?? 0;
+    if (mergeOut.jointOk > 0 && labelN < 2) {
+      failures.push(`跨模块应使用网络标号并网，labels=${labelN}`);
+    } else if (mergeOut.jointOk > 0) {
+      checks.push(`网络标号 labels=${labelN}`);
+    }
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateModularMerge passed=${failures.length === 0}` +
+      ` checks=${checks.length} failures=${failures.length}`);
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      topology: mergeOut.topology
+    };
+  }
+
+  private static makeDev(libDevId: string, refName: string, x: number, y: number): DeviceInst {
+    return makeDeviceInst(IdUtil.generate('d'), libDevId, refName, x, y, 0, new Map<string, string>());
+  }
+
+  private static makeNet(uuid: string, name: string, nodes: DeviceInst[], isPower: boolean): NetInfo {
+    const nodeList: NetNodeRef[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node: NetNodeRef = {
+        devUuid: nodes[i].instUuid,
+        pinId: '1',
+        pinName: '1'
+      };
+      nodeList.push(node);
+    }
+    const net: NetInfo = {
+      netUuid: uuid,
+      netName: name,
+      displayName: name,
+      nodeList: nodeList,
+      isPower,
+      isAnalog: false,
+      isBusMember: false,
+      busParentUuid: '',
+      defaultVoltage: 0,
+      ercWarning: false,
+      connectedProbeIds: []
+    };
+    return net;
+  }
+
+  private static makeModuleTopo(
+    chipRef: string, chipLib: string, vccNetId: string, gndNetId: string
+  ): SchTopology {
+    const topo = emptySchTopology();
+    const chip = AiPipelineValidator.makeDev(chipLib, chipRef, 200, 200);
+    const vcc = AiPipelineValidator.makeDev('VCC', 'VCC', 60, 80);
+    const gnd = AiPipelineValidator.makeDev('GND', 'GND', 60, 400);
+    topo.deviceList.push(chip, vcc, gnd);
+    topo.netList.push(
+      AiPipelineValidator.makeNet(vccNetId, 'VCC', [vcc, chip], true),
+      AiPipelineValidator.makeNet(gndNetId, 'GND', [gnd, chip], true)
+    );
+    return topo;
   }
 
   /**

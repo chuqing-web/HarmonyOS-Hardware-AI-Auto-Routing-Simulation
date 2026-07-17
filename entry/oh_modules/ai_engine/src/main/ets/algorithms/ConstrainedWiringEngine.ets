@@ -4,9 +4,9 @@
  */
 import {
   SchTopology, RouteResult, RouteLine, RoutingLlmOutput, RoutingWeightPrefs,
-  Point2D, SpecialNetRule, SpacingIssue, DeviceInst, NetLabelInfo,
+  Point2D, SpecialNetRule, SpacingIssue, DeviceInst, NetLabelInfo, NetNodeRef,
   DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WorldHitRect, Pin,
-  WireConflictGeometry, IdUtil, makeRouteLine, Logger
+  WireConflictGeometry, IdUtil, makeRouteLine, Logger, MainThreadYield
 } from 'common';
 import { IComponentLibrary } from 'component_library';
 import {
@@ -47,9 +47,9 @@ interface WireOverlapIssue {
   atPoint: Point2D;
 }
 
-interface ScoredNeighbor {
-  node: WiringNode;
-  score: number;
+interface RouteTaskMetrics {
+  cross: number;
+  length: number;
 }
 
 const DEFAULT_WEIGHTS: RoutingWeightPrefs = {
@@ -63,6 +63,12 @@ const DEFAULT_WEIGHTS: RoutingWeightPrefs = {
 export class ConstrainedWiringEngine {
   private gridSize: number = 10;
   private readonly MIN_WIRE_GAP: number = 10; // 最小平行导线间距 (mil)
+  /** A* 单段最大扩展步数；失败则走捷径并交由 routeUntilClean 降级标号 */
+  private readonly ASTAR_MAX_STEPS: number = 500;
+  /** 异步 A* 每 N 步让出主线程，避免单网同步搜索触发 THREAD_BLOCK */
+  private readonly ASTAR_YIELD_EVERY: number = 64;
+  /** routeUntilCleanAsync 墙钟预算（ms）；超时则标号降级退出 */
+  private readonly ROUTE_WALL_MS: number = 12000;
   private weights: RoutingWeightPrefs = DEFAULT_WEIGHTS;
   private obstacleMap: Set<string> = new Set();
   private existingRoutes: RouteLine[] = [];
@@ -71,27 +77,66 @@ export class ConstrainedWiringEngine {
   private hitRects: WorldHitRect[] = [];
   /** 缓存所有引脚世界坐标 (devUuid:pinId → Point2D) */
   private allPinWorld: Map<string, Point2D> = new Map();
+  /** 与 allPinWorld 同步的 key/坐标列表，避免 isBlocked 热路径 Array.from 分配 */
+  private pinKeysCache: string[] = [];
+  private pinWorldCache: Point2D[] = [];
+  /** 本轮 route 内 netUuid → net 索引，避免逃逸走廊反复 find */
+  private netByUuid: Map<string, number> = new Map();
+  private routeTopo: SchTopology | null = null;
 
   setComponentLibrary(library: IComponentLibrary): void {
     this.componentLibrary = library;
   }
 
+  /** 让出主线程 UV（勿用 setTimeout(0) 忙等） */
+  private async yieldMain(): Promise<void> {
+    await MainThreadYield.yield();
+  }
+
+  /** 布线结束后释放几何缓存，降低峰值内存 */
+  private releaseRouteCaches(): void {
+    this.obstacleMap.clear();
+    this.existingRoutes = [];
+    this.hitRects = [];
+    this.allPinWorld.clear();
+    this.pinKeysCache = [];
+    this.pinWorldCache = [];
+    this.netByUuid.clear();
+    this.routeTopo = null;
+  }
+
   /**
    * Route with quality gate: 交叉 / 选中区违规则剔除坏网重布，最多 maxRounds 轮。
    * 先剥离非 stub 旧线强制 A* 重布；仍违规则降级 joinByLabel stub。
+   * 同步版仅供小规模/测试；生产流水线请用 routeUntilCleanAsync。
    */
   routeUntilClean(topo: SchTopology, constraints: RoutingLlmOutput,
     weights?: RoutingWeightPrefs,
     netWaypoints?: Map<string, Point2D[]>,
     maxRounds: number = 3): RouteResult {
-    // Phase 0: 丢弃 NetPlan/Semantic 留下的长导线，仅保留 stub，强制纳入 A*
+    return this.routeUntilCleanCoreSync(topo, constraints, weights, netWaypoints, maxRounds);
+  }
+
+  /**
+   * 异步 A*：每网/每轮让出主线程，避免 THREAD_BLOCK_6S。
+   */
+  async routeUntilCleanAsync(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>,
+    maxRounds: number = 3): Promise<RouteResult> {
+    return await this.routeUntilCleanCoreAsync(topo, constraints, weights, netWaypoints, maxRounds);
+  }
+
+  private routeUntilCleanCoreSync(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>,
+    maxRounds: number = 3): RouteResult {
     const stripped = this.stripNonStubWires(topo);
     if (stripped > 0) {
       Logger.info('ConstrainedWiring',
         `[routeUntilClean] stripped ${stripped} non-stub wires for forced re-route`);
     }
 
-    // Phase 0.5: LLM forceLabel 网直接标号 stub，跳过长线 A*
     const forceLabelUuids = this.resolveForceLabelNetUuids(topo, constraints);
     if (forceLabelUuids.size > 0) {
       const n = this.demoteNetsToLabelStubs(topo, forceLabelUuids);
@@ -122,13 +167,71 @@ export class ConstrainedWiringEngine {
         xtalShortPath: weights?.xtalShortPath ?? DEFAULT_WEIGHTS.xtalShortPath,
         diffEqualLength: weights?.diffEqualLength ?? DEFAULT_WEIGHTS.diffEqualLength
       };
-      // 重布丢弃 waypoints，避免错误弯折点反复穿区
       last = this.route(topo, constraints, bumped, undefined);
       last = this.fixViolations(topo, last);
       topo.wireList = last.routeLines;
     }
 
-    // 仍违规：自动降级为标号+stub，消除交叉/穿区
+    return this.finalizeRouteUntilClean(topo, last);
+  }
+
+  private async routeUntilCleanCoreAsync(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>,
+    maxRounds: number = 3): Promise<RouteResult> {
+    const deadline = Date.now() + this.ROUTE_WALL_MS;
+    const stripped = this.stripNonStubWires(topo);
+    if (stripped > 0) {
+      Logger.info('ConstrainedWiring',
+        `[routeUntilClean] stripped ${stripped} non-stub wires for forced re-route`);
+    }
+
+    const forceLabelUuids = this.resolveForceLabelNetUuids(topo, constraints);
+    if (forceLabelUuids.size > 0) {
+      const n = this.demoteNetsToLabelStubs(topo, forceLabelUuids);
+      Logger.info('ConstrainedWiring',
+        `[routeUntilClean] forceLabel demote ${forceLabelUuids.size} nets (${n} stubs)`);
+    }
+
+    await this.yieldMain();
+    let last = await this.routeAsync(topo, constraints, weights, netWaypoints);
+    last = this.fixViolations(topo, last);
+    topo.wireList = last.routeLines;
+
+    for (let round = 0; round < maxRounds; round++) {
+      if (Date.now() > deadline) {
+        Logger.warn('ConstrainedWiring',
+          `[routeUntilClean] wall budget ${this.ROUTE_WALL_MS}ms exceeded at round=${round} — demote exit`);
+        break;
+      }
+      const bad = this.findViolatingNetUuids(topo, last.routeLines);
+      if (bad.size === 0) {
+        break;
+      }
+      const kept: RouteLine[] = [];
+      for (let i = 0; i < last.routeLines.length; i++) {
+        if (!bad.has(last.routeLines[i].netUuid)) {
+          kept.push(last.routeLines[i]);
+        }
+      }
+      topo.wireList = kept;
+      const bumped: RoutingWeightPrefs = {
+        lineLength: weights?.lineLength ?? DEFAULT_WEIGHTS.lineLength,
+        crossPenalty: (weights?.crossPenalty ?? DEFAULT_WEIGHTS.crossPenalty) * (1.5 + round),
+        analogDigitalIsolate: weights?.analogDigitalIsolate ?? DEFAULT_WEIGHTS.analogDigitalIsolate,
+        xtalShortPath: weights?.xtalShortPath ?? DEFAULT_WEIGHTS.xtalShortPath,
+        diffEqualLength: weights?.diffEqualLength ?? DEFAULT_WEIGHTS.diffEqualLength
+      };
+      await this.yieldMain();
+      last = await this.routeAsync(topo, constraints, bumped, undefined);
+      last = this.fixViolations(topo, last);
+      topo.wireList = last.routeLines;
+    }
+
+    return this.finalizeRouteUntilClean(topo, last);
+  }
+
+  private finalizeRouteUntilClean(topo: SchTopology, last: RouteResult): RouteResult {
     const stillBad = this.findViolatingNetUuids(topo, last.routeLines);
     if (stillBad.size > 0) {
       const demoted = this.demoteNetsToLabelStubs(topo, stillBad);
@@ -138,7 +241,6 @@ export class ConstrainedWiringEngine {
       last.crossCount = 0;
     }
 
-    // 单脚导线端点 >2：多余导线改标号，避免星形扇出
     const capped = this.enforceMaxWiresPerPin(topo, 2);
     if (capped > 0) {
       Logger.info('ConstrainedWiring',
@@ -146,7 +248,6 @@ export class ConstrainedWiringEngine {
       last.routeLines = topo.wireList.slice();
     }
 
-    // 扇出截断后若仍穿区：再降级一次（保证门禁可清零）
     const stillAfterCap = this.findViolatingNetUuids(topo, last.routeLines);
     if (stillAfterCap.size > 0) {
       const demoted2 = this.demoteNetsToLabelStubs(topo, stillAfterCap);
@@ -176,18 +277,15 @@ export class ConstrainedWiringEngine {
       const ends: Point2D[] = [pts[0], pts[pts.length - 1]];
       for (let ei = 0; ei < ends.length; ei++) {
         const ep = ends[ei];
-        const keys = Array.from(this.allPinWorld.keys());
-        for (let ki = 0; ki < keys.length; ki++) {
-          const pw = this.allPinWorld.get(keys[ki]);
-          if (!pw) {
-            continue;
-          }
+        for (let ki = 0; ki < this.pinKeysCache.length; ki++) {
+          const pw = this.pinWorldCache[ki];
           if (Math.hypot(ep.x - pw.x, ep.y - pw.y) <= PIN_TOL) {
-            const list = pinToWires.get(keys[ki]) ?? [];
+            const pk = this.pinKeysCache[ki];
+            const list = pinToWires.get(pk) ?? [];
             if (list.indexOf(wi) < 0) {
               list.push(wi);
             }
-            pinToWires.set(keys[ki], list);
+            pinToWires.set(pk, list);
           }
         }
       }
@@ -315,7 +413,7 @@ export class ConstrainedWiringEngine {
     }
     for (let i = 0; i < topo.netList.length; i++) {
       const net = topo.netList[i];
-      const nameUp = net.netName.toUpperCase();
+      const nameUp = (net.netName ?? '').toUpperCase();
       // 线圈驱动网禁止强制标号降级（否则易丢 stub / 仿真跳过继电器）
       if (nameUp.indexOf('COIL') >= 0 || nameUp.indexOf('REL_COIL') >= 0) {
         continue;
@@ -467,31 +565,28 @@ export class ConstrainedWiringEngine {
 
   private wireNearForeignPin(topo: SchTopology, line: RouteLine): boolean {
     const safe = new Set<string>();
-    const net = topo.netList.find(n => n.netUuid === line.netUuid);
+    const netIdx = this.netByUuid.get(line.netUuid);
+    const net = netIdx !== undefined ? topo.netList[netIdx] :
+      topo.netList.find(n => n.netUuid === line.netUuid);
     if (net) {
       for (const node of net.nodeList) {
-        safe.add(`${node.devUuid}:${node.pinId}`);
+        this.addNetNodeSafeKeys(safe, topo, node);
       }
     }
-    // 导线端点附近豁免：避免与邻脚/端点并网点误报
     const ends: Point2D[] = [];
     if (line.points.length > 0) {
       ends.push(line.points[0]);
       ends.push(line.points[line.points.length - 1]);
     }
     const ENDPOINT_EXEMPT = 12;
-    const keys = Array.from(this.allPinWorld.keys());
     for (let i = 1; i < line.points.length; i++) {
       const a = line.points[i - 1];
       const b = line.points[i];
-      for (let k = 0; k < keys.length; k++) {
-        if (safe.has(keys[k])) {
+      for (let k = 0; k < this.pinKeysCache.length; k++) {
+        if (safe.has(this.pinKeysCache[k])) {
           continue;
         }
-        const pw = this.allPinWorld.get(keys[k]);
-        if (!pw) {
-          continue;
-        }
+        const pw = this.pinWorldCache[k];
         let nearEnd = false;
         for (let e = 0; e < ends.length; e++) {
           if (Math.hypot(pw.x - ends[e].x, pw.y - ends[e].y) <= ENDPOINT_EXEMPT) {
@@ -510,11 +605,13 @@ export class ConstrainedWiringEngine {
     return false;
   }
 
-  /** 点是否落在本网、且属于该选中区器件的引脚逃逸走廊内 */
+  /** 点是否落在本网、且属于该选中区器件的引脚逃逸走廊内（兼容 pinId/pinName） */
   private pointInOwnDeviceEscapeCorridor(
     topo: SchTopology, netUuid: string, pt: Point2D, rect: WorldHitRect
   ): boolean {
-    const net = topo.netList.find(n => n.netUuid === netUuid);
+    const netIdx = this.netByUuid.get(netUuid);
+    const net = netIdx !== undefined ? topo.netList[netIdx] :
+      topo.netList.find(n => n.netUuid === netUuid);
     if (!net) {
       return false;
     }
@@ -523,8 +620,7 @@ export class ConstrainedWiringEngine {
       if (node.devUuid !== rect.instUuid) {
         continue;
       }
-      const key = `${node.devUuid}:${node.pinId}`;
-      const pw = this.allPinWorld.get(key);
+      const pw = this.resolveNodePinWorld(topo, node);
       if (!pw) {
         continue;
       }
@@ -533,6 +629,59 @@ export class ConstrainedWiringEngine {
       }
     }
     return false;
+  }
+
+  /** 解析网络节点引脚世界坐标：缓存 miss 时用 PinWorldResolver（LLM 常写数字脚号） */
+  private resolveNodePinWorld(topo: SchTopology, node: NetNodeRef): Point2D | null {
+    const pinId = node.pinId.length > 0 ? node.pinId : '1';
+    const pinName = (node.pinName !== undefined && node.pinName.length > 0)
+      ? node.pinName : pinId;
+    let pw = this.allPinWorld.get(`${node.devUuid}:${pinId}`);
+    if (!pw && pinName !== pinId) {
+      pw = this.allPinWorld.get(`${node.devUuid}:${pinName}`);
+    }
+    if (!pw) {
+      const canon = this.canonicalizeLibPinId(topo, node.devUuid, pinId, pinName);
+      if (canon.length > 0) {
+        pw = this.allPinWorld.get(`${node.devUuid}:${canon}`);
+      }
+    }
+    if (pw) {
+      return pw;
+    }
+    const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
+    if (!dev) {
+      return null;
+    }
+    return PinWorldResolver.forDeviceInst(dev, pinId, pinName);
+  }
+
+  /** 本网节点可匹配的安全键（含 555 数字脚号 → 库 pinId） */
+  private addNetNodeSafeKeys(safe: Set<string>, topo: SchTopology, node: NetNodeRef): void {
+    const pinId = node.pinId.length > 0 ? node.pinId : '1';
+    const pinName = (node.pinName !== undefined && node.pinName.length > 0)
+      ? node.pinName : '';
+    safe.add(`${node.devUuid}:${pinId}`);
+    if (pinName.length > 0 && pinName !== pinId) {
+      safe.add(`${node.devUuid}:${pinName}`);
+    }
+    const canon = this.canonicalizeLibPinId(topo, node.devUuid, pinId, pinName);
+    if (canon.length > 0) {
+      safe.add(`${node.devUuid}:${canon}`);
+    }
+  }
+
+  private canonicalizeLibPinId(topo: SchTopology, devUuid: string,
+    pinId: string, pinName: string): string {
+    const dev = topo.deviceList.find(d => d.instUuid === devUuid);
+    if (!dev) {
+      return '';
+    }
+    const lib = (dev.libDevId ?? '').toUpperCase();
+    if (lib === 'LM555' || lib === 'NE555' || lib.indexOf('555') >= 0) {
+      return TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
+    }
+    return '';
   }
 
   /** @deprecated 兼容旧调用：任意本网脚逃逸走廊 */
@@ -554,8 +703,7 @@ export class ConstrainedWiringEngine {
     const sx = this.snap(pt.x);
     const sy = this.snap(pt.y);
     for (const node of net.nodeList) {
-      const key = `${node.devUuid}:${node.pinId}`;
-      const pw = this.allPinWorld.get(key);
+      const pw = this.resolveNodePinWorld(topo, node);
       if (!pw) {
         continue;
       }
@@ -574,90 +722,105 @@ export class ConstrainedWiringEngine {
   route(topo: SchTopology, constraints: RoutingLlmOutput,
     weights?: RoutingWeightPrefs,
     netWaypoints?: Map<string, Point2D[]>): RouteResult {
+    return this.routeCore(topo, constraints, weights, netWaypoints);
+  }
+
+  async routeAsync(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>): Promise<RouteResult> {
+    return await this.routeCoreAsync(topo, constraints, weights, netWaypoints);
+  }
+
+  private beginRoute(topo: SchTopology, weights?: RoutingWeightPrefs): RouteLine[] {
     this.weights = weights ?? DEFAULT_WEIGHTS;
     this.obstacleMap.clear();
     this.existingRoutes = [];
     this.hitRects = [];
     this.allPinWorld.clear();
-    // 仅快照调用前的 stub/旧线；新布线段不得再追加进最终结果（否则整表翻倍）
+    this.pinKeysCache = [];
+    this.pinWorldCache = [];
+    this.netByUuid.clear();
+    this.routeTopo = topo;
+    for (let i = 0; i < topo.netList.length; i++) {
+      this.netByUuid.set(topo.netList[i].netUuid, i);
+    }
     const preservedWires: RouteLine[] = [];
     for (let i = 0; i < topo.wireList.length; i++) {
       preservedWires.push(topo.wireList[i]);
       this.existingRoutes.push(topo.wireList[i]);
     }
-
     this.buildDeviceGeometryCache(topo);
     this.buildObstacleMap(topo);
-    const tasks = this.buildNetTasks(topo, constraints);
-    tasks.sort((a, b) => b.priority - a.priority);
+    return preservedWires;
+  }
 
-    const routeLines: RouteLine[] = [];
+  private routeOneTask(task: NetRouteTask, topo: SchTopology,
+    netWaypoints: Map<string, Point2D[]> | undefined,
+    routeLines: RouteLine[],
+    congestionMap: Map<string, number>): RouteTaskMetrics {
     let crossCount = 0;
     let totalLength = 0;
-
-    const congestionMap = new Map<string, number>();
-
-    for (const task of tasks) {
-      if (task.pinPositions.length < 2) continue;
-      const wp = netWaypoints ? netWaypoints.get(task.netName) : undefined;
-      let segments = this.routeNet(task, topo, wp);
-      // 任一段穿区/交叉 → 整网丢弃 waypoints 重试
-      let needRetry = false;
-      for (let si = 0; si < segments.length; si++) {
-        const probe = segments[si];
-        const simplified = this.simplifyPath(probe.points);
-        probe.points = this.relaxCorners(this.eliminateHairpinTurns(simplified), topo);
-        if (this.countCrossings(probe, routeLines) > 0 ||
-          this.wireHitsAnyDeviceSelection(topo, probe) ||
-          this.wireNearForeignPin(topo, probe)) {
-          needRetry = true;
-          break;
-        }
-      }
-      if (needRetry && wp && wp.length > 0) {
-        segments = this.routeNet(task, topo, undefined);
-      }
-      for (let si = 0; si < segments.length; si++) {
-        let seg = segments[si];
-        const simplified = this.simplifyPath(seg.points);
-        const cleaned = this.eliminateHairpinTurns(simplified);
-        seg.points = this.relaxCorners(cleaned, topo);
-        if (this.countCrossings(seg, routeLines) > 0 ||
-          this.wireHitsAnyDeviceSelection(topo, seg) ||
-          this.wireNearForeignPin(topo, seg)) {
-          const retrySegs = this.routeNet(task, topo, undefined);
-          if (retrySegs.length > si) {
-            seg = retrySegs[si];
-            seg.points = this.relaxCorners(
-              this.eliminateHairpinTurns(this.simplifyPath(seg.points)), topo);
-          }
-        }
-        crossCount += this.countCrossings(seg, routeLines);
-        totalLength += this.pathLength(seg.points);
-        routeLines.push(seg);
-        this.markRouteAsObstacle(seg);
-        this.updateCongestionMap(seg, congestionMap);
+    if (task.pinPositions.length < 2) {
+      const empty: RouteTaskMetrics = { cross: 0, length: 0 };
+      return empty;
+    }
+    const wp = netWaypoints ? netWaypoints.get(task.netName) : undefined;
+    let segments = this.routeNet(task, topo, wp);
+    let needRetry = false;
+    for (let si = 0; si < segments.length; si++) {
+      const probe = segments[si];
+      const simplified = this.simplifyPath(probe.points);
+      probe.points = this.relaxCorners(this.eliminateHairpinTurns(simplified), topo);
+      if (this.countCrossings(probe, routeLines) > 0 ||
+        this.wireHitsAnyDeviceSelection(topo, probe) ||
+        this.wireNearForeignPin(topo, probe)) {
+        needRetry = true;
+        break;
       }
     }
+    if (needRetry && wp && wp.length > 0) {
+      segments = this.routeNet(task, topo, undefined);
+    }
+    for (let si = 0; si < segments.length; si++) {
+      let seg = segments[si];
+      const simplified = this.simplifyPath(seg.points);
+      const cleaned = this.eliminateHairpinTurns(simplified);
+      seg.points = this.relaxCorners(cleaned, topo);
+      if (this.countCrossings(seg, routeLines) > 0 ||
+        this.wireHitsAnyDeviceSelection(topo, seg) ||
+        this.wireNearForeignPin(topo, seg)) {
+        const retrySegs = this.routeNet(task, topo, undefined);
+        if (retrySegs.length > si) {
+          seg = retrySegs[si];
+          seg.points = this.relaxCorners(
+            this.eliminateHairpinTurns(this.simplifyPath(seg.points)), topo);
+        }
+      }
+      crossCount += this.countCrossings(seg, routeLines);
+      totalLength += this.pathLength(seg.points);
+      routeLines.push(seg);
+      this.markRouteAsObstacle(seg);
+      this.updateCongestionMap(seg, congestionMap);
+    }
+    const metrics: RouteTaskMetrics = { cross: crossCount, length: totalLength };
+    return metrics;
+  }
 
-    // 只合并调用前保留的 stub，不重复追加本轮新布线段
+  private finishRoute(topo: SchTopology, constraints: RoutingLlmOutput,
+    tasks: NetRouteTask[], routeLines: RouteLine[], preservedWires: RouteLine[],
+    crossCount: number, totalLength: number,
+    congestionMap: Map<string, number>): RouteResult {
     for (let i = 0; i < preservedWires.length; i++) {
       routeLines.push(preservedWires[i]);
     }
-
-    // 后验: 导线穿越器件体检测
     const deviceCollisions = this.checkWireDeviceCollisions(topo, routeLines);
     crossCount += deviceCollisions;
-
-    // 后验: 检测可通过标号简化的高拥塞区域
-    const congestionHints = this.buildCongestionHints(congestionMap, routeLines);
-
+    this.buildCongestionHints(congestionMap, routeLines);
     const xtalShort = tasks.filter(t => t.isClock).every(t => {
       const seg = routeLines.find(r => r.netUuid === t.netUuid);
       return seg ? seg.points.length <= 4 : true;
     });
-
-    return {
+    const result: RouteResult = {
       routeLines,
       crossCount,
       totalLineLength: totalLength,
@@ -666,6 +829,99 @@ export class ConstrainedWiringEngine {
       diffLineEqualLength: this.checkDiffEqualLength(routeLines, tasks),
       spacingIssues: this.checkParallelSpacing(routeLines)
     };
+    this.releaseRouteCaches();
+    return result;
+  }
+
+  private routeCore(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>): RouteResult {
+    const preservedWires = this.beginRoute(topo, weights);
+    const tasks = this.buildNetTasks(topo, constraints);
+    tasks.sort((a, b) => b.priority - a.priority);
+    const routeLines: RouteLine[] = [];
+    let crossCount = 0;
+    let totalLength = 0;
+    const congestionMap = new Map<string, number>();
+    for (const task of tasks) {
+      const r = this.routeOneTask(task, topo, netWaypoints, routeLines, congestionMap);
+      crossCount += r.cross;
+      totalLength += r.length;
+    }
+    return this.finishRoute(topo, constraints, tasks, routeLines, preservedWires,
+      crossCount, totalLength, congestionMap);
+  }
+
+  private async routeOneTaskAsync(task: NetRouteTask, topo: SchTopology,
+    netWaypoints: Map<string, Point2D[]> | undefined,
+    routeLines: RouteLine[],
+    congestionMap: Map<string, number>): Promise<RouteTaskMetrics> {
+    let crossCount = 0;
+    let totalLength = 0;
+    if (task.pinPositions.length < 2) {
+      const empty: RouteTaskMetrics = { cross: 0, length: 0 };
+      return empty;
+    }
+    const wp = netWaypoints ? netWaypoints.get(task.netName) : undefined;
+    let segments = await this.routeNetAsync(task, topo, wp);
+    let needRetry = false;
+    for (let si = 0; si < segments.length; si++) {
+      const probe = segments[si];
+      const simplified = this.simplifyPath(probe.points);
+      probe.points = this.relaxCorners(this.eliminateHairpinTurns(simplified), topo);
+      if (this.countCrossings(probe, routeLines) > 0 ||
+        this.wireHitsAnyDeviceSelection(topo, probe) ||
+        this.wireNearForeignPin(topo, probe)) {
+        needRetry = true;
+        break;
+      }
+    }
+    if (needRetry && wp && wp.length > 0) {
+      segments = await this.routeNetAsync(task, topo, undefined);
+    }
+    for (let si = 0; si < segments.length; si++) {
+      let seg = segments[si];
+      const simplified = this.simplifyPath(seg.points);
+      const cleaned = this.eliminateHairpinTurns(simplified);
+      seg.points = this.relaxCorners(cleaned, topo);
+      if (this.countCrossings(seg, routeLines) > 0 ||
+        this.wireHitsAnyDeviceSelection(topo, seg) ||
+        this.wireNearForeignPin(topo, seg)) {
+        const retrySegs = await this.routeNetAsync(task, topo, undefined);
+        if (retrySegs.length > si) {
+          seg = retrySegs[si];
+          seg.points = this.relaxCorners(
+            this.eliminateHairpinTurns(this.simplifyPath(seg.points)), topo);
+        }
+      }
+      crossCount += this.countCrossings(seg, routeLines);
+      totalLength += this.pathLength(seg.points);
+      routeLines.push(seg);
+      this.markRouteAsObstacle(seg);
+      this.updateCongestionMap(seg, congestionMap);
+    }
+    const metrics: RouteTaskMetrics = { cross: crossCount, length: totalLength };
+    return metrics;
+  }
+
+  private async routeCoreAsync(topo: SchTopology, constraints: RoutingLlmOutput,
+    weights?: RoutingWeightPrefs,
+    netWaypoints?: Map<string, Point2D[]>): Promise<RouteResult> {
+    const preservedWires = this.beginRoute(topo, weights);
+    const tasks = this.buildNetTasks(topo, constraints);
+    tasks.sort((a, b) => b.priority - a.priority);
+    const routeLines: RouteLine[] = [];
+    let crossCount = 0;
+    let totalLength = 0;
+    const congestionMap = new Map<string, number>();
+    for (let ti = 0; ti < tasks.length; ti++) {
+      const r = await this.routeOneTaskAsync(tasks[ti], topo, netWaypoints, routeLines, congestionMap);
+      crossCount += r.cross;
+      totalLength += r.length;
+      await this.yieldMain();
+    }
+    return this.finishRoute(topo, constraints, tasks, routeLines, preservedWires,
+      crossCount, totalLength, congestionMap);
   }
 
   /** 更新拥塞图: 导线段经过的 50×50 格计数+1 */
@@ -821,6 +1077,8 @@ export class ConstrainedWiringEngine {
   private buildDeviceGeometryCache(topo: SchTopology): void {
     this.hitRects = [];
     this.allPinWorld.clear();
+    this.pinKeysCache = [];
+    this.pinWorldCache = [];
     for (const dev of topo.deviceList) {
       const rect = this.resolveHitRect(dev);
       this.hitRects.push(rect);
@@ -829,14 +1087,34 @@ export class ConstrainedWiringEngine {
         for (let i = 0; i < pins.length; i++) {
           const p = pins[i];
           const world = PinWorldResolver.forDeviceInst(dev, p.id, p.name || p.id);
-          this.allPinWorld.set(`${dev.instUuid}:${p.id}`, world);
+          const key = `${dev.instUuid}:${p.id}`;
+          this.allPinWorld.set(key, world);
+          this.pinKeysCache.push(key);
+          this.pinWorldCache.push(world);
+          // 同时按 pinName / DIP 脚号索引，避免 LLM 用脚号时 escape/safe 查找 miss
+          const pname = (p.name && p.name.length > 0) ? p.name : '';
+          if (pname.length > 0 && pname !== p.id) {
+            this.allPinWorld.set(`${dev.instUuid}:${pname}`, world);
+          }
+          const libUp = (dev.libDevId ?? '').toUpperCase();
+          if (libUp === 'LM555' || libUp === 'NE555') {
+            const dipMap: string[] = ['', 'GND', 'TRIG', 'OUT', 'RESET', 'CTRL', 'THRES', 'DISCH', 'VCC'];
+            for (let n = 1; n <= 8; n++) {
+              if (dipMap[n] === p.id) {
+                this.allPinWorld.set(`${dev.instUuid}:${String(n)}`, world);
+                break;
+              }
+            }
+          }
         }
       } else {
-        // Kit 回退：至少缓存 1/2 脚
         const fallback = ['1', '2', 'A', 'K'];
         for (let i = 0; i < fallback.length; i++) {
           const world = PinWorldResolver.forDeviceInst(dev, fallback[i], fallback[i]);
-          this.allPinWorld.set(`${dev.instUuid}:${fallback[i]}`, world);
+          const key = `${dev.instUuid}:${fallback[i]}`;
+          this.allPinWorld.set(key, world);
+          this.pinKeysCache.push(key);
+          this.pinWorldCache.push(world);
         }
       }
     }
@@ -854,7 +1132,7 @@ export class ConstrainedWiringEngine {
     const hints: NetPriorityHint[] = [];
     for (let i = 0; i < topo.netList.length; i++) {
       const net = topo.netList[i];
-      const nameUp = net.netName.toUpperCase();
+      const nameUp = (net.netName ?? '').toUpperCase();
       hints.push({
         netName: net.netName,
         isPower: net.isPower,
@@ -869,7 +1147,7 @@ export class ConstrainedWiringEngine {
     priorityMap.set('3V3', 10);
     for (let i = 0; i < hints.length; i++) {
       const hint = hints[i];
-      const nameUp = hint.netName.toUpperCase();
+      const nameUp = (hint.netName ?? '').toUpperCase();
       if (hint.isClock) {
         priorityMap.set(hint.netName, 9);
       } else if (hint.isAnalog) {
@@ -931,7 +1209,7 @@ export class ConstrainedWiringEngine {
         continue;
       }
 
-      const nameUp = net.netName.toUpperCase();
+      const nameUp = (net.netName ?? '').toUpperCase();
       const rules = constraints.specialNetRules
         .filter(r => nameUp.includes(r.netGroup.toUpperCase()) || this.matchNetGroup(nameUp, r.netGroup))
         .map(r => r.rule);
@@ -1021,6 +1299,40 @@ export class ConstrainedWiringEngine {
     return lines;
   }
 
+  private async routeNetAsync(task: NetRouteTask, topo: SchTopology,
+    waypoints?: Point2D[]): Promise<RouteLine[]> {
+    const lines: RouteLine[] = [];
+    const pts = task.pinPositions;
+
+    if (waypoints && waypoints.length > 0) {
+      const orderedWaypoints = this.orderWaypointsAlongPath(pts, waypoints);
+      let allPts: Point2D[] = [pts[0]];
+      for (const wp of orderedWaypoints) {
+        allPts.push(wp);
+      }
+      allPts.push(pts[pts.length - 1]);
+
+      for (let i = 0; i < allPts.length - 1; i++) {
+        const path = await this.findPathAsync(allPts[i], allPts[i + 1], task, topo);
+        lines.push({
+          netUuid: task.netUuid,
+          points: path,
+          isBus: task.netName.includes('BUS')
+        });
+      }
+    } else {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const path = await this.findPathAsync(pts[i], pts[i + 1], task, topo);
+        lines.push({
+          netUuid: task.netUuid,
+          points: path,
+          isBus: task.netName.includes('BUS')
+        });
+      }
+    }
+    return lines;
+  }
+
   /** Order AI waypoints along the path from pts[0] to pts[last]. */
   private orderWaypointsAlongPath(pinPts: Point2D[], waypoints: Point2D[]): Point2D[] {
     const start = pinPts[0];
@@ -1041,6 +1353,7 @@ export class ConstrainedWiringEngine {
 
   private findPath(start: Point2D, end: Point2D, task: NetRouteTask, topo: SchTopology): Point2D[] {
     const openList: WiringNode[] = [];
+    const openMap = new Map<string, number>();
     const closedSet: Set<string> = new Set();
     const s = this.snapPoint(start);
     const e = this.snapPoint(end);
@@ -1051,18 +1364,30 @@ export class ConstrainedWiringEngine {
     };
     startNode.f = startNode.g + startNode.h;
     openList.push(startNode);
+    openMap.set(`${s.x},${s.y}`, 0);
 
     let steps = 0;
-    while (openList.length > 0 && steps < 800) {
-      // 找最优节点 (最小f)
+    while (openList.length > 0 && steps < this.ASTAR_MAX_STEPS) {
       let bestIdx = 0;
       for (let oi = 1; oi < openList.length; oi++) {
-        if (openList[oi].f < openList[bestIdx].f) bestIdx = oi;
+        if (openList[oi].f < openList[bestIdx].f) {
+          bestIdx = oi;
+        }
       }
       const current = openList[bestIdx];
-      openList.splice(bestIdx, 1);
+      openMap.delete(`${current.x},${current.y}`);
+      if (bestIdx === openList.length - 1) {
+        openList.pop();
+      } else {
+        const moved = openList[openList.length - 1];
+        openList[bestIdx] = moved;
+        openList.pop();
+        openMap.set(`${moved.x},${moved.y}`, bestIdx);
+      }
       const key = `${current.x},${current.y}`;
-      if (closedSet.has(key)) continue;
+      if (closedSet.has(key)) {
+        continue;
+      }
       closedSet.add(key);
       steps++;
 
@@ -1073,35 +1398,112 @@ export class ConstrainedWiringEngine {
         return this.relaxCorners(cleaned, topo);
       }
 
-      // 邻居按朝向目标排序: 优先走向终点的方向
       const rawNeighbors = this.getNeighbors(current, task, topo);
-      const scoredNeighbors: ScoredNeighbor[] = [];
       for (let ni = 0; ni < rawNeighbors.length; ni++) {
-        const n = rawNeighbors[ni];
-        const sn: ScoredNeighbor = {
-          node: n,
-          score: Math.abs(n.x - e.x) + Math.abs(n.y - e.y)
-        };
-        scoredNeighbors.push(sn);
-      }
-      scoredNeighbors.sort((a: ScoredNeighbor, b: ScoredNeighbor) => a.score - b.score);
-
-      for (const sn of scoredNeighbors) {
-        const neighbor = sn.node;
+        const neighbor = rawNeighbors[ni];
         const nKey = `${neighbor.x},${neighbor.y}`;
-        if (closedSet.has(nKey)) continue;
+        if (closedSet.has(nKey)) {
+          continue;
+        }
         const tentativeG = current.g + this.moveCost(current, neighbor, task);
-        // 检查 openList 中是否有更好的路径到此节点
-        const existingIdx = openList.findIndex(
-          o => o.x === neighbor.x && o.y === neighbor.y);
-        if (existingIdx >= 0 && openList[existingIdx].g <= tentativeG) continue;
+        const existingIdx = openMap.get(nKey);
+        if (existingIdx !== undefined && existingIdx < openList.length &&
+          openList[existingIdx].x === neighbor.x && openList[existingIdx].y === neighbor.y &&
+          openList[existingIdx].g <= tentativeG) {
+          continue;
+        }
         neighbor.g = tentativeG;
         neighbor.h = this.heuristic({ x: neighbor.x, y: neighbor.y }, e, task);
         neighbor.f = neighbor.g + neighbor.h;
         neighbor.parent = current;
-        if (existingIdx >= 0) {
+        if (existingIdx !== undefined && existingIdx < openList.length &&
+          openList[existingIdx].x === neighbor.x && openList[existingIdx].y === neighbor.y) {
           openList[existingIdx] = neighbor;
         } else {
+          openMap.set(nKey, openList.length);
+          openList.push(neighbor);
+        }
+      }
+    }
+
+    return task.isPower ? [s, { x: s.x, y: e.y }, e] : [s, e];
+  }
+
+  /** 异步 A*：每 ASTAR_YIELD_EVERY 步让出主线程 */
+  private async findPathAsync(start: Point2D, end: Point2D, task: NetRouteTask,
+    topo: SchTopology): Promise<Point2D[]> {
+    const openList: WiringNode[] = [];
+    const openMap = new Map<string, number>();
+    const closedSet: Set<string> = new Set();
+    const s = this.snapPoint(start);
+    const e = this.snapPoint(end);
+
+    const startNode: WiringNode = {
+      x: s.x, y: s.y, g: 0,
+      h: this.heuristic(s, e, task), f: 0, parent: null
+    };
+    startNode.f = startNode.g + startNode.h;
+    openList.push(startNode);
+    openMap.set(`${s.x},${s.y}`, 0);
+
+    let steps = 0;
+    while (openList.length > 0 && steps < this.ASTAR_MAX_STEPS) {
+      if (steps > 0 && steps % this.ASTAR_YIELD_EVERY === 0) {
+        await this.yieldMain();
+      }
+      let bestIdx = 0;
+      for (let oi = 1; oi < openList.length; oi++) {
+        if (openList[oi].f < openList[bestIdx].f) {
+          bestIdx = oi;
+        }
+      }
+      const current = openList[bestIdx];
+      openMap.delete(`${current.x},${current.y}`);
+      if (bestIdx === openList.length - 1) {
+        openList.pop();
+      } else {
+        const moved = openList[openList.length - 1];
+        openList[bestIdx] = moved;
+        openList.pop();
+        openMap.set(`${moved.x},${moved.y}`, bestIdx);
+      }
+      const key = `${current.x},${current.y}`;
+      if (closedSet.has(key)) {
+        continue;
+      }
+      closedSet.add(key);
+      steps++;
+
+      if (Math.abs(current.x - e.x) < this.gridSize && Math.abs(current.y - e.y) < this.gridSize) {
+        const path = this.reconstructPath(current);
+        const simplified = this.simplifyPath(path);
+        const cleaned = this.eliminateHairpinTurns(simplified);
+        return this.relaxCorners(cleaned, topo);
+      }
+
+      const rawNeighbors = this.getNeighbors(current, task, topo);
+      for (let ni = 0; ni < rawNeighbors.length; ni++) {
+        const neighbor = rawNeighbors[ni];
+        const nKey = `${neighbor.x},${neighbor.y}`;
+        if (closedSet.has(nKey)) {
+          continue;
+        }
+        const tentativeG = current.g + this.moveCost(current, neighbor, task);
+        const existingIdx = openMap.get(nKey);
+        if (existingIdx !== undefined && existingIdx < openList.length &&
+          openList[existingIdx].x === neighbor.x && openList[existingIdx].y === neighbor.y &&
+          openList[existingIdx].g <= tentativeG) {
+          continue;
+        }
+        neighbor.g = tentativeG;
+        neighbor.h = this.heuristic({ x: neighbor.x, y: neighbor.y }, e, task);
+        neighbor.f = neighbor.g + neighbor.h;
+        neighbor.parent = current;
+        if (existingIdx !== undefined && existingIdx < openList.length &&
+          openList[existingIdx].x === neighbor.x && openList[existingIdx].y === neighbor.y) {
+          openList[existingIdx] = neighbor;
+        } else {
+          openMap.set(nKey, openList.length);
           openList.push(neighbor);
         }
       }
@@ -1145,7 +1547,7 @@ export class ConstrainedWiringEngine {
     return neighbors;
   }
 
-  private isBlocked(x: number, y: number, task: NetRouteTask, topo: SchTopology): boolean {
+  private isBlocked(x: number, y: number, task: NetRouteTask, _topo: SchTopology): boolean {
     // 本网引脚逃逸走廊可进入；禁止穿器件体；电源网同样禁止
     if (this.isTaskPinEscapeCell(x, y, task)) {
       return false;
@@ -1163,19 +1565,22 @@ export class ConstrainedWiringEngine {
       }
     }
 
-    const pinKeys = Array.from(this.allPinWorld.keys());
-    for (let i = 0; i < pinKeys.length; i++) {
-      const pk = pinKeys[i];
-      const pw = this.allPinWorld.get(pk);
-      if (!pw) {
-        continue;
-      }
+    const ep0 = task.pinPositions.length > 0 ? task.pinPositions[0] : null;
+    const ep1 = task.pinPositions.length > 1 ? task.pinPositions[task.pinPositions.length - 1] : ep0;
+    for (let i = 0; i < this.pinWorldCache.length; i++) {
+      const pw = this.pinWorldCache[i];
       let isEndpoint = false;
-      for (let j = 0; j < task.pinPositions.length; j++) {
-        const ep = task.pinPositions[j];
-        if (this.snap(pw.x) === this.snap(ep.x) && this.snap(pw.y) === this.snap(ep.y)) {
-          isEndpoint = true;
-          break;
+      if (ep0 && this.snap(pw.x) === this.snap(ep0.x) && this.snap(pw.y) === this.snap(ep0.y)) {
+        isEndpoint = true;
+      } else if (ep1 && this.snap(pw.x) === this.snap(ep1.x) && this.snap(pw.y) === this.snap(ep1.y)) {
+        isEndpoint = true;
+      } else {
+        for (let j = 1; j < task.pinPositions.length - 1; j++) {
+          const ep = task.pinPositions[j];
+          if (this.snap(pw.x) === this.snap(ep.x) && this.snap(pw.y) === this.snap(ep.y)) {
+            isEndpoint = true;
+            break;
+          }
         }
       }
       if (isEndpoint) {
@@ -1236,12 +1641,8 @@ export class ConstrainedWiringEngine {
       }
     }
     // 无关引脚安全圈在 isBlocked 动态判定；此处再强化引脚格本身
-    const pinKeys = Array.from(this.allPinWorld.keys());
-    for (let i = 0; i < pinKeys.length; i++) {
-      const pw = this.allPinWorld.get(pinKeys[i]);
-      if (!pw) {
-        continue;
-      }
+    for (let i = 0; i < this.pinWorldCache.length; i++) {
+      const pw = this.pinWorldCache[i];
       this.obstacleMap.add(`${this.snap(pw.x)},${this.snap(pw.y)}`);
     }
   }
@@ -1461,7 +1862,7 @@ export class ConstrainedWiringEngine {
     const fixed = cloneRouteResult(route);
     for (const line of fixed.routeLines) {
       const net = topo.netList.find(n => n.netUuid === line.netUuid);
-      const nameUp = net?.netName.toUpperCase() ?? '';
+      const nameUp = (net?.netName ?? '').toUpperCase();
       if (nameUp.includes('XTAL') && line.points.length > 4) {
         const a = line.points[0];
         const b = line.points[line.points.length - 1];

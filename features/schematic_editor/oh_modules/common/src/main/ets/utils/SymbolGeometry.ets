@@ -63,6 +63,9 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
   if (svg.includes('mosfet') || behavior.includes('mos')) return 'mosfet';
   if (svg.includes('transistor') || behavior === 'npn' || behavior === 'pnp') return 'transistor';
   if (svg.includes('opamp') || behavior === 'opamp') return 'opamp';
+  if (svg.includes('timer555') || behavior === 'timer555' || id === 'lm555' || id === 'ne555') {
+    return 'timer555';
+  }
   if (svg.includes('regulator') || behavior === 'regulator') return 'regulator';
   if (svg.includes('gate_not') || id.includes('hc04') || behavior.includes('not')) return 'gate_not';
   if (svg.includes('gate_nand') || behavior.includes('nand')) return 'gate_nand';

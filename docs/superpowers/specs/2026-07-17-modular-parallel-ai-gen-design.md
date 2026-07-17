@@ -1,7 +1,7 @@
 # 模块化并行 AI 生图设计
 
 日期：2026-07-17  
-状态：已批准（用户确认）
+状态：已批准（用户确认）· 实现加固中（失败不落空图 / 子模块重试 / joint 门禁）
 
 ## 问题
 
@@ -42,7 +42,8 @@
 ```
 用户选「模块并行」
   → ① LLM 整体设计（1 次，门禁）
-  → ② Promise.all：各模块独立 runFullPipeline(子 prompt)
+  → ② Promise.all：各模块 forkForModule 隔离子编排器 → runFullPipeline(子 prompt)
+       （独立 intent / wiringEngine / placement / select；共享 apiManager + 器件库）
   → ③ 按 joints pin-to-pin 合并 + 通道消解 + ERC/几何门禁
   → 落图画布（replace / append 与现网一致）
 ```
@@ -68,8 +69,11 @@
 - 每个 `boundaryPins` 项能在该模块 prompt/约定 ref 中对应
 - 每条 joint 的两端可解析；跨模块脚必须出现在对应模块的 `boundaryPins` 中（POWER 端除外）
 - 至少有电源相关 joints（接到 `POWER.VCC` / `POWER.GND`），除非 overview 明确无源（教学浮空除外，默认要求电源）
+- **库内型号**：`modular_plan` 注入 libDevId 清单；prompt/overview 不得出现无法解析的经典库外型号（如 NE555）；无 555 时须用库内替代拓扑
 
 失败：KEEP_RETRY 回灌批判（最多有限轮），仍失败则报错给用户（**不**静默改走模板；可选提示改选「整图一次」）。
+
+子模块 `runFullPipeline` 的 prompt **仅**含模块需求 + boundary 约束，**不**注入完整 `systemOverview`（避免 Intent 关键词污染）。
 
 ### ② 真并行子流水线
 
@@ -86,8 +90,8 @@
 
 1. 拼接各模块 `deviceList` / `wires` / `nets` / labels（uuid 重映射）
 2. 物化 `POWER.VCC` / `POWER.GND`：若合并结果尚无 VCC/GND 符号则放置一对，并按 joints 接到各模块边界电源脚
-3. 按 `joints` **pin-to-pin** 连线（优先与现网一致的 `joinWired` / 布线引擎）
-4. `resolveSelectionOverlaps` + `routeUntilClean`
+3. 按 `joints` **同名网络标号**并网（`joinByLabel`；含 POWER.VCC/GND），不拉跨模块长导线
+4. `resolveSelectionOverlaps` + `routeUntilClean`（已有 stub/标号脚不再 A* 长线）
 5. 既有 ERC + 几何完成门禁（`AiErcGateUtil`）；未清零 → INCOMPLETE 落图供检视（与现行为一致）
 
 ## API / 类型面

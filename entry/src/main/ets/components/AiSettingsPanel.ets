@@ -1,7 +1,7 @@
 /**
  * AI 面板 — API 配置（默认折叠）+ 提示词一键生成 + Claude/Cursor 风格流式日志
  */
-import { AppService, AiGenLogEntry, AiGenerateMode } from '../services/AppService';
+import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from 'common';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
@@ -22,7 +22,9 @@ export struct AiSettingsPanel {
   @State apiSectionExpanded: boolean = false;
   @State promptText: string = '';
   @State logs: AiGenLogEntry[] = [];
+  @State showStrategyDialog: boolean = false;
   @State showModeDialog: boolean = false;
+  @State pendingStrategy: AiGenerateStrategy = 'oneshot';
   @State showSelfCheckDialog: boolean = false;
   @State selfCheckSummary: string = '';
   @State selfCheckCount: number = 0;
@@ -87,20 +89,31 @@ export struct AiSettingsPanel {
     }
     Logger.info(INSTR_TRACE_TAG,
       `[AI_UI] OP request_generate | promptLen=${q.length}`);
+    this.showStrategyDialog = true;
+    this.showModeDialog = false;
+  }
+
+  private pickStrategy(strategy: AiGenerateStrategy): void {
+    this.pendingStrategy = strategy;
+    this.showStrategyDialog = false;
+    Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP modular_strategy | strategy=${strategy}`);
     this.showModeDialog = true;
   }
 
   private async runGenerate(mode: AiGenerateMode): Promise<void> {
     this.showModeDialog = false;
     const q = this.promptText.trim();
-    this.statusMessage = 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
+    const strategy = this.pendingStrategy;
+    this.statusMessage = strategy === 'modular'
+      ? '模块并行：整体设计中（请耐心等待）…'
+      : 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_UI] OP run_generate | mode=${mode} promptLen=${q.length}`);
-    const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode);
+      `[AI_UI] OP run_generate | mode=${mode} strategy=${strategy} promptLen=${q.length}`);
+    const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode, strategy);
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_UI] OP run_generate_done | mode=${mode} ok=${ok}`);
+      `[AI_UI] OP run_generate_done | mode=${mode} strategy=${strategy} ok=${ok}`);
     if (ok) {
-      this.statusMessage = 'AI 整图生成完成';
+      this.statusMessage = strategy === 'modular' ? '模块并行生图完成' : 'AI 整图生成完成';
     }
   }
 
@@ -258,10 +271,56 @@ export struct AiSettingsPanel {
         .border({ width: 1, color: ProteusColors.ERC_WARN })
       }
 
+      // 生成策略：整图一次 / 模块并行
+      if (this.showStrategyDialog) {
+        Column({ space: 8 }) {
+          Text('请选择生成方式：')
+            .fontSize(ProteusFonts.PARAM_KEY)
+            .fontColor(ProteusColors.TEXT_PRIMARY)
+            .width('100%')
+          Text(this.appService.getAiConversationRound() > 0
+            ? '当前为多轮编辑：仅支持「整图一次」（模块并行二期）。'
+            : '复杂电路建议「模块并行」：先整体设计连接边界，再多路并行生图后合并。')
+            .fontSize(9)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .width('100%')
+          ProteusClassicBtn({
+            label: '整图一次',
+            widthVal: '100%',
+            onAction: () => {
+              this.pickStrategy('oneshot');
+            }
+          })
+          if (this.appService.getAiConversationRound() === 0) {
+            ProteusClassicBtn({
+              label: '模块并行（先整体设计+边界）',
+              widthVal: '100%',
+              onAction: () => {
+                this.pickStrategy('modular');
+              }
+            })
+          }
+          ProteusClassicBtn({
+            label: '取消',
+            widthVal: '100%',
+            onAction: () => {
+              this.showStrategyDialog = false;
+            }
+          })
+        }
+        .width('100%')
+        .padding(10)
+        .margin({ left: 8, right: 8, bottom: 6 })
+        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+        .border({ width: 1, color: ProteusColors.SELECTED })
+      }
+
       // 替换 / 追加 选择
       if (this.showModeDialog) {
         Column({ space: 8 }) {
-          Text('画布上已有电路时，请选择：')
+          Text(this.pendingStrategy === 'modular'
+            ? '模块并行 · 画布处理方式：'
+            : '画布上已有电路时，请选择：')
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_PRIMARY)
             .width('100%')

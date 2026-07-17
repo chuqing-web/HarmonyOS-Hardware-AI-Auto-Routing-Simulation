@@ -21,11 +21,33 @@ interface RelayContactEntry {
   energized: boolean;
 }
 
+/** Behavioral 555: OUT as VS to GND, DISCH as switched R to GND, FF updated after each step. */
+interface Timer555Entry {
+  compId: string;
+  refDes: string;
+  nodeVcc: string;
+  nodeGnd: string;
+  nodeTrig: string;
+  nodeThres: string;
+  nodeCtrl: string;
+  nodeReset: string;
+  nodeOut: string;
+  outVsId: string;
+  dischRId: string;
+  ctrlFloating: boolean;
+  resetFloating: boolean;
+  qHigh: boolean;
+}
+
 const SW_CLOSED_OHMS = 0.01;
 const SW_OPEN_OHMS = 1e12;
 const RELAY_COIL_OHMS = 400;
 const RELAY_CONTACT_CLOSED_OHMS = 0.01;
 const RELAY_CONTACT_OPEN_OHMS = 1e12;
+const TIMER555_DISCH_ON_OHMS = 10;
+const TIMER555_DISCH_OFF_OHMS = 1e12;
+const TIMER555_OUT_LOW = 0.1;
+const TIMER555_OUT_HIGH_DROP = 1.4;
 interface CapacitorEntry {
   id: string; nodeA: string; nodeB: string; capacitance: number;
   /** Branch voltage vA-vB after last committed step (OP seed or transient). */
@@ -83,6 +105,7 @@ export class AnalogEngine {
   // Component instance UUID → internal device ID mapping (for current lookup)
   private compUuidToDevId: Map<string, string[]> = new Map();
   private relayContacts: RelayContactEntry[] = [];
+  private timer555s: Timer555Entry[] = [];
   /** Suppress per-device MNA flood during live pot/switch edits */
   private quietLoad: boolean = false;
 
@@ -95,6 +118,7 @@ export class AnalogEngine {
     this.compUuidToDevId.clear();
     this.compPinNets.clear();
     this.relayContacts = [];
+    this.timer555s = [];
     this.nodeVoltages.clear();
     this.branchCurrents.clear();
     this.netlist = this.generateNetlist(doc, config);
@@ -631,6 +655,7 @@ export class AnalogEngine {
     this.diodes = []; this.bjts = []; this.mosfets = []; this.opamps = [];
     this.voltageSources = []; this.compPinNets.clear();
     this.relayContacts = [];
+    this.timer555s = [];
 
     const netNodeMap = this.buildNetNodeMap(doc);
     const vt = 0.02585;
@@ -899,6 +924,8 @@ export class AnalogEngine {
           const node = netNodeMap.get(m.netId);
           if (node) this.netUuidToNode.set(m.netId, node);
         }
+      } else if (AnalogEngine.isTimer555Lib(libId)) {
+        rIdx = this.stampTimer555(comp, pinNets, netNodeMap, rIdx);
       } else if (libId === 'VAC' || libId.startsWith('VAC')) {
         const nPlus = this.resolveCompNode(comp, 'AC+', pinNets, netNodeMap);
         const nA = this.isFloatingNode(nPlus) ? this.resolveCompNode(comp, '1', pinNets, netNodeMap) : nPlus;
@@ -1869,7 +1896,8 @@ export class AnalogEngine {
 
   /**
    * After each SPICE step: refresh relay NO/NC contact resistances from coil voltage.
-   * Returns true if any contact state flipped (caller may want to re-solve OP).
+   * Also updates behavioral 555 OUT/DISCH from TRIG/THRES/RESET.
+   * Returns true if any contact/FF state flipped (caller may want to re-solve OP).
    */
   updateRelayContactsFromCoil(): boolean {
     let flipped = false;
@@ -1890,6 +1918,9 @@ export class AnalogEngine {
       Logger.info(INSTR_TRACE_TAG,
         `[RELAY] ${rc.compId} coil=${vCoil.toFixed(2)}V → ${on ? 'ENERGIZED' : 'RELEASED'} ` +
         `(NO=${on ? 'ON' : 'OFF'} NC=${on ? 'OFF' : 'ON'})`);
+    }
+    if (this.updateTimer555State()) {
+      flipped = true;
     }
     return flipped;
   }
@@ -1934,6 +1965,126 @@ export class AnalogEngine {
         return;
       }
     }
+  }
+
+  private setVoltageSourceVolts(devId: string, volts: number): void {
+    for (let i = 0; i < this.voltageSources.length; i++) {
+      if (this.voltageSources[i].id === devId) {
+        this.voltageSources[i].voltage = volts;
+        return;
+      }
+    }
+  }
+
+  private static isTimer555Lib(libId: string): boolean {
+    return libId === 'LM555' || libId === 'NE555' || libId === 'SE555' ||
+      libId === 'SA555' || libId === 'ICM7555' || libId === 'TLC555' ||
+      libId.includes('TIMER555') || (libId.endsWith('555') && libId.length <= 8);
+  }
+
+  private stampTimer555(comp: ComponentInstance, pinNets: PinNetMapping[],
+    netNodeMap: Map<string, string>, rIdx: number): number {
+    const nVcc = this.resolveCompNode(comp, 'VCC', pinNets, netNodeMap);
+    const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+    const nOut = this.resolveCompNode(comp, 'OUT', pinNets, netNodeMap);
+    const nDisch = this.resolveCompNode(comp, 'DISCH', pinNets, netNodeMap);
+    const nTrig = this.resolveCompNode(comp, 'TRIG', pinNets, netNodeMap);
+    const nThres = this.resolveCompNode(comp, 'THRES', pinNets, netNodeMap);
+    const nCtrl = this.resolveCompNode(comp, 'CTRL', pinNets, netNodeMap);
+    const nReset = this.resolveCompNode(comp, 'RESET', pinNets, netNodeMap);
+    if (this.isFloatingNode(nVcc) || this.isFloatingNode(nGnd) || this.isFloatingNode(nOut)) {
+      Logger.info(INSTR_TRACE_TAG,
+        `analog skip ${comp.refDes}: 555 VCC/GND/OUT not wired`);
+      return rIdx;
+    }
+    const gndNode = nGnd === 'GND' ? '0' : nGnd;
+    const outVsId = `V${this.voltageSources.length}`;
+    this.voltageSources.push({
+      id: outVsId, nodeA: nOut, nodeB: gndNode,
+      voltage: TIMER555_OUT_LOW, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+      dutyCycle: 0.5, riseTime: 0, fallTime: 0
+    });
+    const dischRId = `R${rIdx++}`;
+    // Initial Q low → discharge ON (classic power-on for astable)
+    const dischWired = !this.isFloatingNode(nDisch);
+    if (dischWired) {
+      this.resistors.push({
+        id: dischRId, nodeA: nDisch, nodeB: gndNode, resistance: TIMER555_DISCH_ON_OHMS
+      });
+    }
+    const ctrlFloating = this.isFloatingNode(nCtrl);
+    const resetFloating = this.isFloatingNode(nReset);
+    this.timer555s.push({
+      compId: comp.id,
+      refDes: comp.refDes,
+      nodeVcc: nVcc,
+      nodeGnd: gndNode,
+      nodeTrig: nTrig,
+      nodeThres: nThres,
+      nodeCtrl: nCtrl,
+      nodeReset: nReset,
+      nodeOut: nOut,
+      outVsId: outVsId,
+      dischRId: dischWired ? dischRId : '',
+      ctrlFloating: ctrlFloating,
+      resetFloating: resetFloating,
+      qHigh: false
+    });
+    const ids: string[] = [outVsId];
+    if (dischWired) {
+      ids.push(dischRId);
+    }
+    this.compUuidToDevId.set(comp.id, ids);
+    Logger.info(INSTR_TRACE_TAG,
+      `[MNA] ${comp.refDes} TIMER555 OUT=${nOut} DISCH=${nDisch} TRIG=${nTrig} THRES=${nThres} ` +
+      `VCC=${nVcc} GND=${gndNode}`);
+    for (const m of pinNets) {
+      const node = netNodeMap.get(m.netId);
+      if (node) this.netUuidToNode.set(m.netId, node);
+    }
+    return rIdx;
+  }
+
+  /** Classic 555 SR latch: RESET low forces Q=0; THRES≥⅔ resets; TRIG≤⅓ sets. */
+  private updateTimer555State(): boolean {
+    let flipped = false;
+    for (let i = 0; i < this.timer555s.length; i++) {
+      const t = this.timer555s[i];
+      const vGnd = this.getVoltage(t.nodeGnd);
+      const vcc = this.getVoltage(t.nodeVcc) - vGnd;
+      const vTrig = this.getVoltage(t.nodeTrig) - vGnd;
+      const vThres = this.getVoltage(t.nodeThres) - vGnd;
+      let vCtrl = t.ctrlFloating ? (vcc * 2 / 3) : (this.getVoltage(t.nodeCtrl) - vGnd);
+      if (vCtrl < 0.5) {
+        vCtrl = vcc * 2 / 3;
+      }
+      const thrHigh = vCtrl;
+      const thrLow = vCtrl / 2;
+      let next = t.qHigh;
+      if (!t.resetFloating && (this.getVoltage(t.nodeReset) - vGnd) < 0.7) {
+        next = false;
+      } else if (!this.isFloatingNode(t.nodeThres) && vThres >= thrHigh - 0.01) {
+        next = false;
+      } else if (!this.isFloatingNode(t.nodeTrig) && vTrig <= thrLow + 0.01) {
+        next = true;
+      }
+      const outTarget = next
+        ? Math.max(TIMER555_OUT_LOW, vcc - TIMER555_OUT_HIGH_DROP)
+        : TIMER555_OUT_LOW;
+      this.setVoltageSourceVolts(t.outVsId, outTarget);
+      if (t.dischRId.length > 0) {
+        this.setResistorOhms(t.dischRId, next ? TIMER555_DISCH_OFF_OHMS : TIMER555_DISCH_ON_OHMS);
+      }
+      if (next !== t.qHigh) {
+        t.qHigh = next;
+        flipped = true;
+        Logger.info(INSTR_TRACE_TAG,
+          `[555] ${t.refDes} Q→${next ? 'HIGH' : 'LOW'} ` +
+          `trig=${vTrig.toFixed(2)} thres=${vThres.toFixed(2)} ctrl=${vCtrl.toFixed(2)} ` +
+          `out=${outTarget.toFixed(2)}V`);
+      }
+    }
+    return flipped;
   }
 
   private stampRelay(comp: ComponentInstance, pinNets: PinNetMapping[],

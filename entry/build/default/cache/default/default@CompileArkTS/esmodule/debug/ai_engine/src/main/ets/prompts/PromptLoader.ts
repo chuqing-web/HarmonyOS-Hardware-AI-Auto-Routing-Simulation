@@ -13,11 +13,18 @@ import { ROUTE_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/
 import { SELF_REVIEW_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/SelfReviewPrompt";
 import { DIAG_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/DiagPrompt";
 import { GEN_SCH_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/GenSchPrompt";
+import { MODULAR_PLAN_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/ModularPlanPrompt";
+import type { CircuitIntent } from '../algorithms/CircuitIntent';
+import { assembleDeviceSelectSystem, assembleNetPlanSystem } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/IntentPromptFragments";
 export type { PromptTemplate } from './PromptTypes';
 /** renderEnriched 选项 */
 export interface RenderEnrichOptions {
     /** 注入全库每个器件的全部引脚（选型必开） */
     includeFullPins?: boolean;
+    /** 仅注入 libDevId 逗号清单（modular_plan 用，不必全脚） */
+    includeLibIds?: boolean;
+    /** 按意图组装 system（device_select / net_plan） */
+    intent?: CircuitIntent;
 }
 interface ClusterInfo {
     devices: DeviceInst[];
@@ -125,9 +132,34 @@ export class PromptLoader {
                 return NET_PLAN_PROMPT;
             case 'self_review':
                 return SELF_REVIEW_PROMPT;
+            case 'modular_plan':
+                return MODULAR_PLAN_PROMPT;
             default:
                 return DEVICE_SELECT_PROMPT;
         }
+    }
+    /** 按 CircuitIntent 替换 device_select / net_plan 的 system */
+    static loadForIntent(name: string, intent: CircuitIntent): PromptTemplate {
+        const base = PromptLoader.load(name);
+        if (name === 'device_select') {
+            const t: PromptTemplate = {
+                id: base.id,
+                version: base.version,
+                system: assembleDeviceSelectSystem(intent),
+                userTemplate: base.userTemplate
+            };
+            return t;
+        }
+        if (name === 'net_plan') {
+            const t: PromptTemplate = {
+                id: base.id,
+                version: base.version,
+                system: assembleNetPlanSystem(intent),
+                userTemplate: base.userTemplate
+            };
+            return t;
+        }
+        return base;
     }
     static render(template: PromptTemplate, vars: PromptVarEntry[]): string {
         const user = applyPromptVars(template.userTemplate, vars);
@@ -136,8 +168,18 @@ export class PromptLoader {
     /**
      * 增强版 prompt：注入器件库目录 + 拓扑反模式（SharedPromptRules）。
      * @param options.includeFullPins 选型阶段 true：注入每个器件全部引脚
+     * @param options.intent 若提供且模板为 device_select/net_plan，用意图组装 system
      */
     static renderEnriched(template: PromptTemplate, vars: PromptVarEntry[], library: IComponentLibrary, options?: RenderEnrichOptions): string {
+        let effective = template;
+        if (options?.intent) {
+            if (template.id.indexOf('device_select') >= 0) {
+                effective = PromptLoader.loadForIntent('device_select', options.intent);
+            }
+            else if (template.id.indexOf('net_plan') >= 0) {
+                effective = PromptLoader.loadForIntent('net_plan', options.intent);
+            }
+        }
         if (cachedCatalogSummary.length === 0) {
             cachedCatalogSummary = buildCompactCatalog(library);
             cachedCatalogLibIds = buildLibIdList(library);
@@ -146,7 +188,7 @@ export class PromptLoader {
             cachedFullPinCatalog = buildFullCatalogWithPins(library);
         }
         const catalogForUser = options?.includeFullPins ? cachedFullPinCatalog : cachedCatalogSummary;
-        let enrichedUser = template.userTemplate;
+        let enrichedUser = effective.userTemplate;
         if (enrichedUser.includes('{{library_catalog}}')) {
             enrichedUser = enrichedUser.replace('{{library_catalog}}', catalogForUser);
         }
@@ -155,14 +197,17 @@ export class PromptLoader {
         }
         const user = applyPromptVars(enrichedUser, vars);
         // 反模式警示始终注入 — 所有阶段都需要电路安全规则
-        // 库 ID 清单仅在选型/审查阶段注入（includeFullPins），其他阶段省略以避免浪费 token
+        // 库 ID：选型开 includeFullPins；modular_plan 开 includeLibIds（只要清单）
         const pinRule = options?.includeFullPins
             ? '\n【选型铁律】explicitModel 必须是上方清单中的精确 libDevId；引脚连接只能使用该器件列出的 pinId/pinName；禁止编造库外型号。'
-            : '';
-        const idHint = options?.includeFullPins
+            : (options?.includeLibIds
+                ? '\n【库约束 — 硬性】modules[].prompt 中的器件必须是上方清单中的精确 libDevId；禁止 2N3906/BC547 等库外型号；555 定时器用 LM555。'
+                : '');
+        const wantLibIds = !!(options?.includeFullPins || options?.includeLibIds);
+        const idHint = wantLibIds
             ? `\n\n【可用器件 libDevId 清单 — 只能使用下列 ID】:\n${cachedCatalogLibIds}${pinRule}`
             : pinRule;
-        return `${template.system}${TOPOLOGY_ANTIPATTERN_GUARD}${idHint}\n\n${user}`;
+        return `${effective.system}${TOPOLOGY_ANTIPATTERN_GUARD}${idHint}\n\n${user}`;
     }
     static clearCatalogCache(): void {
         cachedCatalogSummary = '';
@@ -322,7 +367,7 @@ export class PromptLoader {
         lines.push(`共 ${topo.deviceList.length} 个器件:\n`);
         for (let i = 0; i < topo.deviceList.length; i++) {
             const d = topo.deviceList[i];
-            const id = d.libDevId.toUpperCase();
+            const id = (d.libDevId ?? '').toUpperCase();
             let tag = '';
             if (id.includes('MCU') || id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
                 tag = ' [MCU]';
@@ -341,6 +386,9 @@ export class PromptLoader {
             }
             else if (id.startsWith('C_')) {
                 tag = ' [电容]';
+            }
+            else if (id.includes('555')) {
+                tag = ' [定时器]';
             }
             else if (id.includes('OSC') || id.includes('XTAL') || id.includes('CRYSTAL')) {
                 tag = ' [晶振]';
@@ -530,14 +578,16 @@ export class PromptLoader {
         return hotspots.slice(0, 5);
     }
     private static estimatePinCount(libDevId: string): number {
-        const id = libDevId.toUpperCase();
+        const id = (libDevId ?? '').toUpperCase();
+        if (id.length === 0)
+            return 4;
         if (id.includes('STM32') || id.includes('AT89') || id.includes('STC'))
             return 40;
         if (id.includes('MCU') || id.includes('ESP32'))
             return 30;
         if (id.includes('LCD') || id.includes('DISPLAY'))
             return 16;
-        if (id.includes('OP') || id.includes('LM358') || id.includes('LM324'))
+        if (id.includes('OP') || id.includes('LM358') || id.includes('LM324') || id.includes('LM555'))
             return 8;
         if (id.includes('LOGIC') || id.includes('GATE') || id.includes('74'))
             return 14;

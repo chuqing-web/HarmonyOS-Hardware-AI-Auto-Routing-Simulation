@@ -484,11 +484,15 @@ export class ComponentLibraryImpl implements IComponentLibrary {
         return this.resolveLibraryId(resolved);
     }
     resolveLibraryId(idOrAlias: string): string {
+        if (!idOrAlias || idOrAlias.length === 0) {
+            return idOrAlias ?? '';
+        }
         if (this.components.has(idOrAlias))
             return idOrAlias;
         const aliasResolved = this.aliasLoader.resolve(idOrAlias, '');
-        if (aliasResolved !== idOrAlias && this.components.has(aliasResolved))
+        if (aliasResolved && aliasResolved !== idOrAlias && this.components.has(aliasResolved)) {
             return aliasResolved;
+        }
         const mapped = ComponentLibraryImpl.PROTEUS_ALIASES.get(idOrAlias.toUpperCase());
         if (mapped !== undefined && this.components.has(mapped))
             return mapped;
@@ -499,8 +503,9 @@ export class ComponentLibraryImpl implements IComponentLibrary {
         const upper = idOrAlias.toUpperCase();
         const allComps = Array.from(this.components.values());
         for (let i = 0; i < allComps.length; i++) {
-            if (allComps[i].id.toUpperCase() === upper)
-                return allComps[i].id;
+            const cid = allComps[i].id;
+            if (cid && cid.toUpperCase() === upper)
+                return cid;
         }
         return idOrAlias;
     }
@@ -533,6 +538,13 @@ export class ComponentLibraryImpl implements IComponentLibrary {
         ['7404', '74HC04'],
         ['LM358', 'LM358'],
         ['LM358N', 'LM358'],
+        ['LM555', 'LM555'],
+        ['NE555', 'LM555'],
+        ['SE555', 'LM555'],
+        ['SA555', 'LM555'],
+        ['ICM7555', 'LM555'],
+        ['TLC555', 'LM555'],
+        ['555', 'LM555'],
         ['RES', 'R_1k'],
         ['CAP', 'C_100nF'],
         ['DIODE', '1N4148'],

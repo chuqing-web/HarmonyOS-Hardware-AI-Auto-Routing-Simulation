@@ -385,7 +385,7 @@ VCC — AMMETER_DC(I+) — AMMETER_DC(I-) — VCC_AM — R_1k — SENSE_1 — R_
 **器件清单**:
 | 器件 | libDevId | 数量 | 备注 |
 |------|----------|------|------|
-| 555定时器 | NE555 | 1 | |
+| 555定时器 | LM555 | 1 | 别名 NE555 等 |
 | 电阻 | R_1k, R_10k | 各1 | 定时RC |
 | 电容 | C_10uF, C_100nF | 各1 | |
 | LED | LED_RED | 1 | 输出指示 |
@@ -396,18 +396,18 @@ VCC — AMMETER_DC(I+) — AMMETER_DC(I-) — VCC_AM — R_1k — SENSE_1 — R_
 
 **网络拓扑（多谐振荡器）**:
 ```
-VCC — R_1k — NE555(DIS=7)
-       R_10k — NE555(DIS=7) — NE555(THR=6) — NE555(TRIG=2) — C_10uF — GND
-       NE555(RST=4) — VCC
-       NE555(VCC=8) — VCC — C_100nF — GND
-       NE555(GND=1) — GND
-       NE555(CV=5) — C_100nF — GND
-       NE555(OUT=3) — R_330 — LED_RED(A) — LED_RED(K) — GND
+VCC — R_1k — LM555(DISCH=7)
+       R_10k — LM555(DISCH=7) — LM555(THRES=6) — LM555(TRIG=2) — C_10uF — GND
+       LM555(RESET=4) — VCC
+       LM555(VCC=8) — VCC — C_100nF — GND
+       LM555(GND=1) — GND
+       LM555(CTRL=5) — C_100nF — GND
+       LM555(OUT=3) — R_330 — LED_RED(A) — LED_RED(K) — GND
 ```
 
 **仪器拓扑要求**:
-- CH1 探针→OUT(3脚) 测输出方波（标号: NE555_OUT）
-- CH2 探针→THR(6脚) 测电容充放电波形（标号: NE555_CAP）
+- CH1 探针→OUT(3脚) 测输出方波（标号: LM555_OUT）
+- CH2 探针→THRES(6脚) 测电容充放电波形（标号: 555_CAP）
 - FREQ_COUNTER 输入→OUT(3脚)（标号连接）
 - 所有仪器 GND→电路 GND
 

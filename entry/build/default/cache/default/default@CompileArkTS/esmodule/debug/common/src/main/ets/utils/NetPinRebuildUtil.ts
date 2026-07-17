@@ -32,7 +32,7 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
             return resolved;
         }
     }
-    const lib = libraryId.toUpperCase();
+    const lib = (libraryId ?? '').toUpperCase();
     if (lib === 'VCC' || lib.endsWith('/VCC')) {
         return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
     }
@@ -84,6 +84,18 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
             { id: 'OUT', name: 'OUT', x: 50, y: 0 },
             { id: 'VCC', name: 'VCC', x: 0, y: -50 },
             { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+        ];
+    }
+    if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+        return [
+            { id: 'GND', name: 'GND', x: -40, y: -30 },
+            { id: 'TRIG', name: 'TRIG', x: -40, y: -10 },
+            { id: 'OUT', name: 'OUT', x: -40, y: 10 },
+            { id: 'RESET', name: 'RESET', x: -40, y: 30 },
+            { id: 'CTRL', name: 'CTRL', x: 40, y: 30 },
+            { id: 'THRES', name: 'THRES', x: 40, y: 10 },
+            { id: 'DISCH', name: 'DISCH', x: 40, y: -10 },
+            { id: 'VCC', name: 'VCC', x: 40, y: -30 }
         ];
     }
     if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
@@ -155,7 +167,7 @@ function countCompPinConnections(doc: SchematicDocument, compId: string): number
     return count;
 }
 function expectedPinCount(libraryId: string): number {
-    const lib = libraryId.toUpperCase();
+    const lib = (libraryId ?? '').toUpperCase();
     if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND')) {
         return 1;
     }

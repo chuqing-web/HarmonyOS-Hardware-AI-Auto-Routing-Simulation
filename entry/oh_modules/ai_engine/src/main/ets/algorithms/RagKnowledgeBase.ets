@@ -57,6 +57,17 @@ function buildTemplates(): RagTemplate[] {
     makeDeviceRequirement('电源正极', 'instrument', 2, emptyStringMap(), 'VCC'),
     makeDeviceRequirement('电源地', 'instrument', 2, emptyStringMap(), 'GND')
   ];
+  const timer555Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('555定时器', 'timer', 10, emptyStringMap(), 'LM555'),
+    makeDeviceRequirement('定时电阻Ra', 'resistor', 8, stringMap1('value', '1k')),
+    makeDeviceRequirement('定时电阻Rb', 'resistor', 8, stringMap1('value', '10k')),
+    makeDeviceRequirement('定时电容', 'cap', 8, stringMap1('value', '10uF')),
+    makeDeviceRequirement('控制端旁路', 'cap', 5, stringMap1('value', '100nF')),
+    makeDeviceRequirement('LED指示', 'led', 6, emptyStringMap(), 'LED_RED'),
+    makeDeviceRequirement('限流电阻', 'resistor', 5, stringMap1('value', '330')),
+    makeDeviceRequirement('电源正极', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('电源地', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
   const powerHints: DeviceRequirement[] = [
     makeDeviceRequirement('7805稳压', 'ldo', 10, emptyStringMap(), 'LM7805'),
     makeDeviceRequirement('滤波电容', 'cap', 8, stringMap1('value', '100uF')),
@@ -108,6 +119,13 @@ function buildTemplates(): RagTemplate[] {
       mcuFamily: 'any',
       modules: ['模拟运放'],
       deviceHints: opampHints
+    },
+    {
+      id: 'timer555_astable',
+      keywords: ['555', 'ne555', 'lm555', '多谐', '无稳态', '振荡器', '定时器'],
+      mcuFamily: 'any',
+      modules: ['555振荡'],
+      deviceHints: timer555Hints
     },
     {
       id: 'power_7805',

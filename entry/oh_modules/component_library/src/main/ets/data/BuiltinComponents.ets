@@ -124,6 +124,7 @@ function makeAnalogIcs(): ComponentDefinition[] {
     icOpAmp('UA741', 'UA741 Op-Amp'),
     icOpAmp('LM358', 'LM358 Dual Op-Amp'),
     icOpAmp('TL082', 'TL082 JFET Op-Amp'),
+    ic555(),
     icRegulator('LM7805', '5V Regulator', 3),
     icRegulator('LM7812', '12V Regulator', 3),
     icRegulator('AMS1117_3V3', '3.3V LDO', 3),
@@ -375,6 +376,34 @@ function icOpAmp(id: string, name: string): ComponentDefinition {
     behaviorModel: 'opamp',
     svgSymbol: 'opamp.svg',
     aiWiringRules: ['analog-signal']
+  };
+  return def;
+}
+
+/** LM555 定时器 DIP-8：左 GND/TRIG/OUT/RESET，右 VCC/DISCH/THRES/CTRL */
+function ic555(): ComponentDefinition {
+  const pins: Pin[] = [
+    makePin('GND', 'GND', '1', PinType.GROUND, -40, -30),
+    makePin('TRIG', 'TRIG', '2', PinType.INPUT, -40, -10),
+    makePin('OUT', 'OUT', '3', PinType.OUTPUT, -40, 10),
+    makePin('RESET', 'RESET', '4', PinType.INPUT, -40, 30),
+    makePin('CTRL', 'CTRL', '5', PinType.INPUT, 40, 30),
+    makePin('THRES', 'THRES', '6', PinType.INPUT, 40, 10),
+    makePin('DISCH', 'DISCH', '7', PinType.BIDIRECTIONAL, 40, -10),
+    makePin('VCC', 'VCC', '8', PinType.POWER, 40, -30)
+  ];
+  const def: ComponentDefinition = {
+    id: 'LM555',
+    name: 'LM555 Timer',
+    category: ComponentCategory.ANALOG_IC,
+    manufacturer: 'TI',
+    description: '555 Timer (astable/monostable)',
+    pins: pins,
+    defaultParams: emptyParams(),
+    spiceModel: '',
+    behaviorModel: 'timer555',
+    svgSymbol: 'timer555.svg',
+    aiWiringRules: ['timer', 'oscillator']
   };
   return def;
 }

@@ -57,6 +57,10 @@ export function getCategoriesForDevType(devType: string): string[] {
             return ['peripheral', 'display'];
         case 'opamp':
             return ['analog_ic', 'analog'];
+        case 'timer':
+        case 'timer555':
+        case '555':
+            return ['analog_ic', 'analog'];
         case 'digital':
             return ['digital_ic', 'digital_logic'];
         case 'sensor':

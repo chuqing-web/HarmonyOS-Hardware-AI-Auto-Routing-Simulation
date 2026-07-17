@@ -29,7 +29,7 @@ import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/Them
 import { ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PlatformPrefsStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/PlatformPrefsStore";
 import { AiApiVaultStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiApiVaultStore";
-import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, AiErcGateUtil } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -41,6 +41,8 @@ export interface AiGenLogEntry {
     ts: number;
 }
 export type AiGenerateMode = 'replace' | 'append';
+/** oneshot=整图一次；modular=先整体设计边界再真并行合并 */
+export type AiGenerateStrategy = 'oneshot' | 'modular';
 interface AiPostGenerateIssues {
     needAsk: boolean;
     count: number;
@@ -1715,7 +1717,7 @@ export class AppService {
      * 提示词 → 一键生成整图（选型→摆放→连线）。
      * mode=replace 清空后替换；append 合并到当前空白区。
      */
-    async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode): Promise<boolean> {
+    async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode, strategy: AiGenerateStrategy = 'oneshot'): Promise<boolean> {
         const trimmed = prompt.trim();
         if (trimmed.length === 0) {
             this.onStatusMessage('请输入提示词');
@@ -1730,13 +1732,20 @@ export class AppService {
         }
         this.beginAiGenerate(trimmed, mode);
         this.lastAiPrompt = trimmed;
-        Logger.info(INSTR_TRACE_TAG, `[AI_GEN] START mode=${mode} promptLen=${trimmed.length}` +
+        Logger.info(INSTR_TRACE_TAG, `[AI_GEN] START mode=${mode} strategy=${strategy} promptLen=${trimmed.length}` +
             ` apis=${this.aiApiManager.listApis().length}`);
-        traceAiPayload('AI_GEN', 'USER', trimmed, `mode=${mode}`);
-        traceAiOp('AI_GEN', 'generate_start', `mode=${mode} apis=${this.aiApiManager.listApis().length}`);
+        traceAiPayload('AI_GEN', 'USER', trimmed, `mode=${mode} strategy=${strategy}`);
+        traceAiOp('AI_GEN', 'generate_start', `mode=${mode} strategy=${strategy} apis=${this.aiApiManager.listApis().length}`);
         try {
             const hasHistory = this.aiConversationHistory.length > 0;
             const isEditMode = hasHistory;
+            // 首期：编辑模式强制 oneshot（增量整体设计留二期）
+            let effectiveStrategy: AiGenerateStrategy = strategy;
+            if (isEditMode && strategy === 'modular') {
+                effectiveStrategy = 'oneshot';
+                this.appendAiGenLog('system', '多轮编辑模式暂用整图一次（模块并行二期支持）');
+                Logger.warn(INSTR_TRACE_TAG, '[AI_GEN] modular forced→oneshot in edit mode');
+            }
             let runTopo: SchTopology;
             if (isEditMode) {
                 // 编辑模式: 基于当前画布拓扑进行增量修改
@@ -1750,9 +1759,13 @@ export class AppService {
                 runTopo.schName = 'AI Generated';
             }
             runTopo.bgColor = '#FFFFFF';
-            traceAiOp('AI_GEN', 'run_full_pipeline', `TASK_FULL_PIPELINE mode=${isEditMode ? 'edit' : 'create'}`);
+            if (effectiveStrategy === 'modular') {
+                this.appendAiGenLog('system', '模块并行：整体设计 → 真并行生图 → 跨模块网络标号合并');
+            }
+            traceAiOp('AI_GEN', 'run_full_pipeline', `TASK_FULL_PIPELINE mode=${isEditMode ? 'edit' : 'create'} strategy=${effectiveStrategy}`);
             const result = await this.aiEngine.runAiTask(AiTaskType.TASK_FULL_PIPELINE, runTopo, {
                 prompt: trimmed, scene: 'text_gen',
+                generateStrategy: effectiveStrategy,
                 onStreamSnapshot: (snapshot: SchTopology, stage: string) => {
                     this.handleStreamSnapshot(snapshot, stage);
                 },
@@ -1769,9 +1782,11 @@ export class AppService {
             if (!result.success || !result.topology) {
                 // 门禁未清零时引擎会 success=false 但仍可能带 topology — 落图供检视，不算完整生图
                 const incompleteGate = !result.success && !!result.topology &&
+                    (result.topology.deviceList.length > 0) &&
                     ((result.errMsg ?? '').indexOf('生图未完成') >= 0 ||
                         (result.errMsg ?? '').indexOf('ERC') >= 0 ||
-                        (result.errMsg ?? '').indexOf('几何') >= 0);
+                        (result.errMsg ?? '').indexOf('几何') >= 0 ||
+                        (result.errMsg ?? '').indexOf('joints') >= 0);
                 if (incompleteGate && result.topology) {
                     Logger.error(INSTR_TRACE_TAG, `[AI_GEN] INCOMPLETE gate | ${result.errMsg}`);
                     traceAiOp('AI_GEN', 'generate_incomplete_gate', result.errMsg ?? '');
@@ -1806,6 +1821,14 @@ export class AppService {
                 this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
                 Logger.error(INSTR_TRACE_TAG, `[AI_GEN] FAILED err=${result.errMsg || 'unknown'} code=${result.errCode}`);
                 traceAiOp('AI_GEN', 'generate_fail', `err=${result.errMsg || 'unknown'} code=${result.errCode}`);
+                if ((result.errMsg ?? '').indexOf('流水线异常') >= 0 ||
+                    (result.errMsg ?? '').indexOf('toUpperCase') >= 0) {
+                    traceAiDiag('AI_GEN', 'fail_hint', [
+                        '搜 instr_trace: [AI_TASK] EXCEPTION / [AI_PIPE] STAGE / DIAG|exception',
+                        'STAGE=最后成功阶段；exception 含 stack',
+                        'net_plan_drop / topo_bad_* 可看空字段'
+                    ], 8);
+                }
                 this.endAiGenerate(false);
                 this.onStatusMessage(result.errMsg || 'AI 生成失败');
                 return false;
@@ -1907,9 +1930,23 @@ export class AppService {
             return true;
         }
         catch (e) {
-            this.appendAiGenLog('assistant', `异常: ${e}`);
+            const msg = e instanceof Error ? (e.message || `${e}`) : `${e}`;
+            const stack = e instanceof Error ? (e.stack ?? '') : '';
+            this.appendAiGenLog('assistant', `异常: ${msg}`);
+            Logger.error(INSTR_TRACE_TAG, `[AI_GEN] EXCEPTION ${msg}`);
+            const lines: string[] = [`msg=${msg}`];
+            if (stack.length > 0) {
+                const parts = stack.split('\n');
+                for (let i = 0; i < Math.min(parts.length, 12); i++) {
+                    const line = parts[i].trim();
+                    if (line.length > 0) {
+                        lines.push(line.substring(0, 200));
+                    }
+                }
+            }
+            traceAiDiag('AI_GEN', 'exception', lines, 16);
             this.endAiGenerate(false);
-            this.onStatusMessage(`AI 生成异常: ${e}`);
+            this.onStatusMessage(`AI 生成异常: ${msg}`);
             return false;
         }
     }
@@ -1935,12 +1972,16 @@ export class AppService {
      * 实现器件逐步出现 → 标号连接 → 导线完成的动画效果。
      */
     private handleStreamSnapshot(snapshot: SchTopology, stage: string): void {
-        // 深拷贝避免后续流水线阶段修改影响已加载的文档
-        const cloned = JSON.parse(JSON.stringify(snapshot)) as SchTopology;
+        if (this.aiGenCancelRequested) {
+            return;
+        }
+        // Map-safe 深拷贝：禁止 JSON.stringify 把 params Map 打成 {}
+        const cloned = mapAwareParse<SchTopology>(mapAwareStringify(snapshot));
         const stageNames: Record<string, string> = {
             'placement': '器件已摆放',
             'net_plan': '网络/标号已创建',
-            'routing': '导线已连接'
+            'routing': '导线已连接',
+            'modular_merge': '模块已合并'
         };
         const label = stageNames[stage] ?? stage;
         this.appendAiGenLog('system', `[画布] ${label}`);

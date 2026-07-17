@@ -1,7 +1,7 @@
 /**
  * 教学辅助 + 实验模板 + AI 答疑
  */
-import { SchTopology } from 'common';
+import { SchTopology, mapAwareStringify, mapAwareParse } from 'common';
 import {
   LabTemplateRegistry, LabTemplateDef, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
 } from './algorithms/LabTemplateRegistry';
@@ -137,7 +137,7 @@ export class TeachingService {
   }
 
   stepPowerOnSequence(topo: SchTopology, stepIndex: number): SchTopology {
-    const result = JSON.parse(JSON.stringify(topo)) as SchTopology;
+    const result = mapAwareParse<SchTopology>(mapAwareStringify(topo));
     const powerNets = result.netList.filter(n => n.isPower);
     for (let i = 0; i <= stepIndex && i < powerNets.length; i++) {
       powerNets[i].defaultVoltage = 5.0;

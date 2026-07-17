@@ -168,7 +168,13 @@ export class LlmJsonNormalizer {
     }
     const arr: Object[] = value as Object[];
     for (let i = 0; i < arr.length; i++) {
-      out.push(`${arr[i]}`);
+      if (arr[i] === null || arr[i] === undefined) {
+        continue;
+      }
+      const s = `${arr[i]}`.trim();
+      if (s.length > 0 && s !== 'undefined' && s !== 'null') {
+        out.push(s);
+      }
     }
     return out;
   }

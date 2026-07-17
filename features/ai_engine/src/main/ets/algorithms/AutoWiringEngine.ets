@@ -51,7 +51,7 @@ export class AutoWiringEngine {
     const result: InstrumentInfo[] = [];
     for (let i = 0; i < doc.components.length; i++) {
       const c = doc.components[i];
-      const id = c.libraryId.toUpperCase();
+      const id = (c.libraryId ?? '').toUpperCase();
       let type: string = 'other';
       if (id.includes('AMMETER')) {
         type = 'ammeter';
@@ -292,7 +292,7 @@ export class AutoWiringEngine {
 
     for (let i = 0; i < doc.components.length; i++) {
       const comp = doc.components[i];
-      const id = comp.libraryId.toUpperCase();
+      const id = (comp.libraryId ?? '').toUpperCase();
       // 跳过电源/地符号（它们是端点）、已连接的器件、仪器（已处理）
       if (id === 'VCC' || id === 'GND') continue;
       if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
@@ -345,7 +345,7 @@ export class AutoWiringEngine {
   private estimatePinPos(comp: ComponentInstance, edge: string, pinIndex: number): Point2D {
     const p = comp.position;
     // 常见器件尺寸: IC 80x50, R 60x20, C 40x30, 仪器 100x60
-    const id = comp.libraryId.toUpperCase();
+    const id = (comp.libraryId ?? '').toUpperCase();
     let w = 60; let h = 40; // 默认
 
     if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {

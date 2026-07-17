@@ -11,8 +11,9 @@ import {
   ErcError, makeDeviceInst, stringMap1, Point2D, DeviceInst,
   LayoutPositionItem, PlacementResult, PlacementCandidate, DevicePosition,
   EventBus, ModuleEvent, ModuleEventPayload,
-  Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp, AiErcGateUtil,
-  DeviceHitGeometry
+  Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil,
+  DeviceHitGeometry, emptySchTopology, mapAwareStringify, mapAwareParse, ensureStringMap,
+  MainThreadYield
 } from 'common';
 import { PromptLoader } from '../prompts/PromptLoader';
 import { PromptVarEntry, ChatHistoryEntry } from '../internal/AiEngineTypes';
@@ -24,6 +25,17 @@ import { LlmJsonNormalizer } from './LlmJsonNormalizer';
 import { NetPlanExecutor, NetPlanResult } from './NetPlanExecutor';
 import { SemanticNetBuilder } from './SemanticNetBuilder';
 import { PostGenValidator, ValidationIssue } from './PostGenValidator';
+import {
+  CircuitIntent, CritiqueSplit, classifyCircuitIntent, refineCircuitIntent,
+  refineIntentFromTopo, formatIntentLog, hardResidualFingerprint,
+  splitEmpty, allCritiqueLines, intentIsMutualLedSwitch,
+  defaultCircuitIntent
+} from './CircuitIntent';
+import {
+  ModularPlan, normalizeModularPlan, critiqueModularPlan,
+  buildModuleSubPrompt, mergeModularTopologies, alignTopoRefsToBoundaryPins,
+  buildModularStreamPreview
+} from './ModularParallelMerge';
 
 export interface PipelineOptions {
   prompt: string;
@@ -40,6 +52,10 @@ export interface PipelineOptions {
   conversationHistory?: ChatHistoryEntry[];
   /** 生成模式: create=从零创建, edit=基于现有电路修改 */
   generationMode?: 'create' | 'edit';
+  /** oneshot 走 runFullPipeline；modular 走 runModularParallelPipeline */
+  generateStrategy?: 'oneshot' | 'modular';
+  /** 预置电路意图（可选；缺省则 classifyCircuitIntent） */
+  circuitIntent?: CircuitIntent;
 }
 
 interface AiDiagnoseFixResult {
@@ -62,6 +78,12 @@ interface ChatResult {
   success: boolean;
   data?: string;
   error?: string;
+}
+
+interface EarlyStopStableResult {
+  accept: boolean;
+  lastFp: string;
+  stableCount: number;
 }
 
 interface AiFixDetail {
@@ -94,6 +116,11 @@ interface AiFixExecResult {
   needReroute: boolean;
 }
 
+interface AiFixExecState {
+  fixCount: number;
+  needReroute: boolean;
+}
+
 interface DeviceIndexPair {
   d: DeviceInst;
   i: number;
@@ -115,8 +142,10 @@ interface PartialTopoPromptItem {
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const LLM_MAX_RETRIES = 2;
 /** 永不主动 ABORT：阶段级硬重试上限（防死循环；达上限仍尽量带最佳结果继续） */
-const NEVER_ABORT_ROUNDS = 24;
+const CRITIQUE_INNER_ROUNDS = 4;
+const LAYOUT_INNER_ROUNDS = 3;
 const NEVER_ABORT_OUTER = 8;
+const NEVER_ABORT_ROUNDS = CRITIQUE_INNER_ROUNDS;
 const LLM_BASE_BACKOFF_MS = 1000;
 const LLM_MAX_OUTPUT_TOKENS = 65536;
 const QUALITY_MIN_FILL_RATE = 0.6;
@@ -127,19 +156,100 @@ export class AiPipelineOrchestrator {
   private selectEngine: DeviceSelectEngine;
   private placementOptimizer: PlacementOptimizer = new PlacementOptimizer();
   private wiringEngine: ConstrainedWiringEngine = new ConstrainedWiringEngine();
+  private postGenValidator: PostGenValidator | null = null;
   private constraintCache: Map<string, CacheEntry> = new Map();
+  private activeIntent: CircuitIntent = defaultCircuitIntent();
+  /** 当前流水线阶段（异常日志用） */
+  private diagStage: string = 'idle';
+  /** 模块并行子实例标签（如 M1）；空=主流水线 */
+  private moduleTag: string = '';
+  /** 模块并行有界并发，避免 N 路全开打爆内存与主线程 */
+  private readonly MODULAR_CONCURRENCY: number = 2;
 
-  constructor(apiManager: IAiApiManager, library: IComponentLibrary) {
+  constructor(apiManager: IAiApiManager, library: IComponentLibrary, moduleTag: string = '') {
     this.apiManager = apiManager;
     this.componentLibrary = library;
+    this.moduleTag = moduleTag;
     this.selectEngine = new DeviceSelectEngine(library);
     this.wiringEngine.setComponentLibrary(library);
     this.placementOptimizer.setComponentLibrary(library);
+    this.postGenValidator = new PostGenValidator(library);
+  }
+
+  private getPostGen(): PostGenValidator {
+    if (!this.postGenValidator) {
+      this.postGenValidator = new PostGenValidator(this.componentLibrary);
+    }
+    this.postGenValidator.setCircuitIntent(this.activeIntent);
+    return this.postGenValidator;
+  }
+
+  /**
+   * 模块并行：派生隔离子编排器。
+   * 共享 apiManager / 器件库（只读+HTTP 可并发）；独立 intent / wiring / placement / select / cache。
+   */
+  forkForModule(moduleId: string): AiPipelineOrchestrator {
+    return new AiPipelineOrchestrator(this.apiManager, this.componentLibrary, moduleId);
+  }
+
+  getDiagStage(): string {
+    return this.diagStage;
+  }
+
+  private logTag(): string {
+    return this.moduleTag.length > 0 ? `[${this.moduleTag}] ` : '';
+  }
+
+  private markStage(stage: string): void {
+    this.diagStage = stage;
+    Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] ${this.logTag()}STAGE ${stage}`);
+  }
+
+  /** 扫描拓扑中可能触发 toUpperCase 崩溃的空字段 */
+  private logTopoFieldDiag(stage: string, topo: SchTopology): void {
+    const bad: string[] = [];
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const d = topo.deviceList[i];
+      if (d.libDevId === undefined || d.libDevId === null || `${d.libDevId}`.length === 0) {
+        bad.push(`dev[${i}] ref=${d.refName ?? '?'} libDevId=EMPTY`);
+      }
+      if (d.refName === undefined || d.refName === null) {
+        bad.push(`dev[${i}] lib=${d.libDevId ?? '?'} refName=undefined`);
+      }
+    }
+    for (let i = 0; i < topo.netList.length; i++) {
+      const n = topo.netList[i];
+      if (n.netName === undefined || n.netName === null) {
+        bad.push(`net[${i}] uuid=${n.netUuid ?? '?'} netName=undefined`);
+      }
+      const nodes = n.nodeList ?? [];
+      for (let j = 0; j < nodes.length; j++) {
+        const p = nodes[j];
+        if (p === undefined || p === null) {
+          bad.push(`net[${i}].node[${j}]=null`);
+          continue;
+        }
+        if (p.pinId === undefined || p.pinId === null) {
+          bad.push(`net[${i}](${n.netName}).node[${j}] pinId=undefined`);
+        }
+      }
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] ${this.logTag()}topo_diag ${stage} devices=${topo.deviceList.length}` +
+      ` nets=${topo.netList.length} wires=${topo.wireList.length} badFields=${bad.length}`);
+    if (bad.length > 0) {
+      traceAiDiag('AI_PIPE', `topo_bad_${stage}`, bad, 24);
+    }
   }
 
   async runFullPipeline(opts: PipelineOptions, onProgress?: ProgressCallback): Promise<AiPipelineResult> {
     let usedLlm = false;
     let degradedMode = false;
+
+    this.markStage('intent');
+    this.activeIntent = opts.circuitIntent ?? classifyCircuitIntent(opts.prompt);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] intent | ${formatIntentLog(this.activeIntent)}`);
 
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] START promptLen=${opts.prompt.length} skipLlm=${!!opts.skipLlm}` +
@@ -150,6 +260,7 @@ export class AiPipelineOrchestrator {
       `scene=${opts.scene ?? 'text_gen'} mcu=${opts.mcuFamily ?? 'auto'}`);
 
     onProgress?.(makeProgress(5, '解析器件需求(LLM)'));
+    this.markStage('device_select');
     traceAiOp('AI_PIPE', 'device_select', 'fetch LLM JSON');
     let selectLlm = await this.fetchDeviceSelectLlm(opts);
     for (let outer = 0; !selectLlm.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
@@ -178,6 +289,7 @@ export class AiPipelineOrchestrator {
     }
 
     onProgress?.(makeProgress(20, '本地器件库匹配'));
+    this.markStage('library_match');
     traceAiOp('AI_PIPE', 'library_match', 'matchFromLlmOutput');
     let selectResult = this.selectEngine.matchFromLlmOutput(selectLlm.output, opts.prompt);
     for (let outer = 0; selectResult.devices.length === 0 && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
@@ -208,7 +320,12 @@ export class AiPipelineOrchestrator {
       `count=${selectResult.devices.length} ${matchHint}`);
     onProgress?.(makeProgress(28, `匹配 ${selectResult.devices.length}: ${matchHint}`));
 
+    this.activeIntent = refineCircuitIntent(opts.prompt, selectLlm.output, selectResult.devices);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] intent refined | ${formatIntentLog(this.activeIntent)}`);
+
     onProgress?.(makeProgress(35, '获取布局约束'));
+    this.markStage('layout');
     traceAiOp('AI_PIPE', 'layout_constraints', 'fetch LLM or default');
     let layoutLlm = await this.fetchLayoutLlm(selectResult.devices, selectLlm.output.circuitConstraint, opts);
     for (let outer = 0;
@@ -241,6 +358,7 @@ export class AiPipelineOrchestrator {
     // AI 坐标布局；无坐标则确定性摆放继续（永不 ABORT）
     const aiPositions = layoutLlm.output.positions;
     let placement: PlacementResult;
+    this.markStage('placement');
     if (aiPositions && aiPositions.length > 0) {
       onProgress?.(makeProgress(50, 'AI 坐标布局'));
       traceAiOp('AI_PIPE', 'placement', 'AI position-driven');
@@ -270,12 +388,14 @@ export class AiPipelineOrchestrator {
       `[AI_PIPE] placement devices=${placement.topology.deviceList.length}`);
     traceAiOp('AI_PIPE', 'placement_done',
       `devices=${placement.topology.deviceList.length} ${placeHint}`);
+    this.logTopoFieldDiag('placement', placement.topology);
 
     // 流式快照 #1: 器件已摆放，尚无网络/导线
     opts.onStreamSnapshot?.(placement.topology, 'placement');
 
     // LLM 网络拓扑：KEEP_RETRY，永不因 critique 主动 ABORT
     onProgress?.(makeProgress(62, 'LLM 网络拓扑规划'));
+    this.markStage('net_plan');
     traceAiOp('AI_PIPE', 'net_plan', 'LLM net_plan + NetPlanExecutor');
     let netPlanResult = await this.fetchNetPlanLlm(placement.topology, opts);
     for (let outer = 0; !netPlanResult.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
@@ -307,7 +427,7 @@ export class AiPipelineOrchestrator {
       }
     } else if (opts.skipLlm) {
       traceAiOp('AI_PIPE', 'net_plan_fallback', 'SemanticNetBuilder (skipLlm only)');
-      const clone = JSON.parse(JSON.stringify(placement.topology)) as SchTopology;
+      const clone = mapAwareParse<SchTopology>(mapAwareStringify(placement.topology));
       clone.netList = [];
       clone.netLabelList = [];
       clone.wireList = [];
@@ -334,8 +454,10 @@ export class AiPipelineOrchestrator {
 
     // 流式快照 #2: 网络/标号/stub导线已创建，布线尚未开始
     opts.onStreamSnapshot?.(topoWithNets, 'net_plan');
+    this.logTopoFieldDiag('net_plan', topoWithNets);
 
     onProgress?.(makeProgress(75, '获取布线约束'));
+    this.markStage('routing');
     traceAiOp('AI_PIPE', 'routing_constraints', 'fetch LLM or default');
     let routeLlm = await this.fetchRoutingLlm(topoWithNets, opts);
     for (let outer = 0; !routeLlm.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
@@ -370,7 +492,7 @@ export class AiPipelineOrchestrator {
     }
 
     onProgress?.(makeProgress(85, '真脚补线 A*'));
-    traceAiOp('AI_PIPE', 'astar_route', 'ConstrainedWiringEngine.route');
+    traceAiOp('AI_PIPE', 'astar_route', 'ConstrainedWiringEngine.routeAsync');
 
     // Build AI-suggested waypoint map from netPlan for routing guidance
     const netWaypoints = new Map<string, Point2D[]>();
@@ -389,20 +511,24 @@ export class AiPipelineOrchestrator {
         }
       }
     }
-    let routeResult = this.wiringEngine.routeUntilClean(topoWithNets, routeLlm.output,
+    const astarT0 = Date.now();
+    let routeResult = await this.wiringEngine.routeUntilCleanAsync(topoWithNets, routeLlm.output,
       opts.routingWeights, netWaypoints, 3);
     topoWithNets.wireList = routeResult.routeLines;
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] routed wires=${topoWithNets.wireList.length}` +
-      ` (no template fallback)`);
+      ` ms=${Date.now() - astarT0} (async A*, no template fallback)`);
     traceAiOp('AI_PIPE', 'astar_route_done',
-      `wires=${topoWithNets.wireList.length} nets=${topoWithNets.netList.length}`);
+      `wires=${topoWithNets.wireList.length} nets=${topoWithNets.netList.length}` +
+      ` ms=${Date.now() - astarT0}`);
 
     // 流式快照 #3: 布线完成，完整拓扑
     opts.onStreamSnapshot?.(topoWithNets, 'routing');
+    this.logTopoFieldDiag('routing', topoWithNets);
 
     // ─── ERC 静态校验 (函数: 确定性规则检查) ───
     onProgress?.(makeProgress(90, 'ERC 静态校验'));
+    this.markStage('erc');
     traceAiOp('AI_PIPE', 'erc', 'FaultDiagnoser / collectErc');
     let ercErrors = this.collectErc(topoWithNets);
     topoWithNets.ercErrorList = ercErrors;
@@ -431,6 +557,7 @@ export class AiPipelineOrchestrator {
     let clearRound = 0;
     while (clearRound < ERC_CLEAR_MAX_ROUNDS) {
       clearRound++;
+      await MainThreadYield.yield();
       onProgress?.(makeProgress(93 + clearRound,
         ercHard > 0 ? `AI 消 ERC 阻断项 第${clearRound}轮` : 'AI 自检审查'));
       traceAiOp('AI_PIPE', 'self_review',
@@ -457,8 +584,8 @@ export class AiPipelineOrchestrator {
         aiFixApplied += fixExec.fixCount;
         if (fixExec.fixCount > 0) {
           if (fixExec.needReroute) {
-            const reRoute = this.wiringEngine.routeUntilClean(topoWithNets,
-              ConstrainedWiringEngine.defaultConstraints(topoWithNets), opts.routingWeights, undefined, 4);
+            const reRoute = await this.wiringEngine.routeUntilCleanAsync(topoWithNets,
+              ConstrainedWiringEngine.defaultConstraints(topoWithNets), opts.routingWeights, undefined, 2);
             topoWithNets.wireList = reRoute.routeLines;
             const geoAfterFix = this.collectGeometricIssues(topoWithNets);
             const badNets = new Set<string>();
@@ -482,9 +609,9 @@ export class AiPipelineOrchestrator {
         }
       }
 
-      // PostGenValidator：每轮 AI 修复后做确定性兜底
-      const validator = new PostGenValidator(this.componentLibrary);
-      const valResult = validator.validateAndFix(topoWithNets);
+      // PostGenValidator：每轮 AI 修复后做确定性兜底（异步，避免主线程 THREAD_BLOCK）
+      const validator = this.getPostGen();
+      const valResult = await validator.validateAndFixAsync(topoWithNets);
       if (valResult.fixedCount > 0) {
         topoWithNets = valResult.topo;
         Logger.info(INSTR_TRACE_TAG,
@@ -511,9 +638,9 @@ export class AiPipelineOrchestrator {
       if (!reviewResult.fromLlm ||
         (reviewResult.output.issues.length === 0 && valResult.fixedCount === 0)) {
         if (geoHard > 0) {
-          const forced = this.wiringEngine.routeUntilClean(topoWithNets,
+          const forced = await this.wiringEngine.routeUntilCleanAsync(topoWithNets,
             ConstrainedWiringEngine.defaultConstraints(topoWithNets),
-            opts.routingWeights, undefined, 3);
+            opts.routingWeights, undefined, 1);
           topoWithNets.wireList = forced.routeLines;
           geoIssues = this.collectGeometricIssues(topoWithNets);
           const geoAfter = this.countGeoBlocking(geoIssues);
@@ -579,6 +706,329 @@ export class AiPipelineOrchestrator {
       ercClean,
       geoBlocking: geoHard
     };
+  }
+
+  /**
+   * 模块并行：整体设计+边界门禁 → Promise.all 隔离子编排器 → POWER joints 合并
+   *
+   * 真并行约束：每个子模块 forkForModule 得到独立 intent/wiring/placement/select，
+   * 仅共享 apiManager 与器件库；禁止多模块共抢同一 wiringEngine / activeIntent。
+   */
+  async runModularParallelPipeline(opts: PipelineOptions,
+    onProgress?: ProgressCallback): Promise<AiPipelineResult> {
+    this.markStage('modular_plan');
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] modular_plan START promptLen=${opts.prompt.length}`);
+    traceAiOp('AI_PIPE', 'modular_plan', `promptLen=${opts.prompt.length}`);
+    onProgress?.(makeProgress(5, '整体设计中…'));
+
+    const plan = await this.fetchModularPlanLlm(opts);
+    if (!plan) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_PIPE] modular_plan FAIL — no valid plan');
+      return {
+        topology: emptySchTopology(),
+        usedLlm: true,
+        degradedMode: false,
+        ercClean: false,
+        ercErrors: [{
+          errType: 'modular_plan',
+          targetUuid: '',
+          desc: '整体设计失败：缺少有效 modules/boundaryPins/joints',
+          suggest: '改选「整图一次」，或简化需求后重试模块并行',
+          severity: 'error'
+        }],
+        geoBlocking: 0
+      };
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] modular_plan OK modules=${plan.modules.length} joints=${plan.joints.length}`);
+    try {
+      traceAiPayload('AI_PIPE', 'MODULAR_PLAN', JSON.stringify(plan), 'stage=modular_plan');
+    } catch (_e) {
+      // ignore
+    }
+
+    const moduleCount = plan.modules.length;
+    onProgress?.(makeProgress(12, `并行生成模块 0/${moduleCount}`));
+    this.markStage('modular_parallel');
+    traceAiOp('AI_PIPE', 'modular_parallel', `count=${moduleCount}`);
+
+    const MODULE_RETRY = 1;
+    let completedCount = 0;
+    // 各模块最新快照（未偏移）；流式时按列拼合推画布
+    const streamSlots: Array<SchTopology | null> = [];
+    for (let si = 0; si < moduleCount; si++) {
+      streamSlots.push(null);
+    }
+    const emitModularStream = (modIdx: number, topo: SchTopology, stage: string): void => {
+      if (!opts.onStreamSnapshot || !topo || topo.deviceList.length === 0) {
+        return;
+      }
+      streamSlots[modIdx] = topo;
+      const preview = buildModularStreamPreview(streamSlots, plan);
+      if (preview.deviceList.length === 0) {
+        return;
+      }
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] modular_stream ${plan.modules[modIdx].id}/${stage}` +
+        ` previewDevs=${preview.deviceList.length}`);
+      opts.onStreamSnapshot(preview, stage);
+    };
+
+    const runOneModule = async (modIdx: number): Promise<AiPipelineResult> => {
+      const mod = plan.modules[modIdx];
+      // 每模块独立编排器：避免 activeIntent / wiringEngine 缓存互相踩踏
+      const child = this.forkForModule(mod.id);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] modular_parallel spawn isolated child=${mod.id}`);
+      const subPrompt = buildModuleSubPrompt(mod, plan.systemOverview);
+      const childOpts: PipelineOptions = {
+        prompt: subPrompt,
+        scene: 'text_gen',
+        mcuFamily: opts.mcuFamily,
+        skipLlm: opts.skipLlm,
+        routingWeights: opts.routingWeights,
+        generationMode: 'create',
+        generateStrategy: 'oneshot',
+        onStreamSnapshot: (snap: SchTopology, stage: string) => {
+          emitModularStream(modIdx, snap, stage);
+        }
+      };
+      let last: AiPipelineResult | null = null;
+      for (let attempt = 0; attempt <= MODULE_RETRY; attempt++) {
+        last = await child.runFullPipeline(childOpts, (p) => {
+          const pct = 12 + Math.floor((70 * completedCount) / moduleCount);
+          onProgress?.(makeProgress(pct,
+            `并行生成模块 ${completedCount}/${moduleCount} · ${mod.id} ${p.stage}`));
+        });
+        if (last.topology && last.topology.deviceList.length > 0 && last.usedLlm) {
+          const n = alignTopoRefsToBoundaryPins(last.topology, mod.boundaryPins);
+          if (n > 0) {
+            Logger.info(INSTR_TRACE_TAG,
+              `[AI_PIPE] modular ${mod.id} boundary_ref_align renamed=${n}`);
+          }
+          emitModularStream(modIdx, last.topology, 'routing');
+          break;
+        }
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] modular_parallel retry module=${mod.id} attempt=${attempt + 1}`);
+      }
+      completedCount++;
+      onProgress?.(makeProgress(
+        12 + Math.floor((70 * completedCount) / moduleCount),
+        `并行生成模块 ${completedCount}/${moduleCount}`));
+      return last!;
+    };
+
+    const results: AiPipelineResult[] = [];
+    for (let i = 0; i < moduleCount; i++) {
+      results.push({
+        topology: emptySchTopology(),
+        usedLlm: false,
+        degradedMode: false,
+        ercClean: false,
+        ercErrors: [],
+        geoBlocking: 0
+      });
+    }
+    let nextIdx = 0;
+    const runWorker = async (): Promise<void> => {
+      while (true) {
+        const i = nextIdx;
+        nextIdx++;
+        if (i >= moduleCount) {
+          return;
+        }
+        results[i] = await runOneModule(i);
+        await MainThreadYield.yield();
+      }
+    };
+    const workers: Promise<void>[] = [];
+    const parallel = this.MODULAR_CONCURRENCY < moduleCount ?
+      this.MODULAR_CONCURRENCY : moduleCount;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] modular_parallel concurrency=${parallel}/${moduleCount}`);
+    for (let w = 0; w < parallel; w++) {
+      workers.push(runWorker());
+    }
+    await Promise.all(workers);
+
+    let usedLlm = true;
+    let degradedMode = false;
+    const moduleTopos: SchTopology[] = [];
+    const failedIds: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (!r.usedLlm) {
+        usedLlm = false;
+      }
+      if (r.degradedMode) {
+        degradedMode = true;
+      }
+      if (r.topology && r.topology.deviceList.length > 0) {
+        moduleTopos.push(r.topology);
+      } else {
+        failedIds.push(plan.modules[i].id);
+        moduleTopos.push(emptySchTopology());
+      }
+    }
+
+    if (failedIds.length > 0) {
+      Logger.error(INSTR_TRACE_TAG,
+        `[AI_PIPE] modular_parallel FAIL modules=[${failedIds.join(',')}]`);
+      return {
+        topology: emptySchTopology(),
+        usedLlm,
+        degradedMode,
+        ercClean: false,
+        ercErrors: [{
+          errType: 'modular_parallel',
+          targetUuid: '',
+          desc: `模块并行失败：${failedIds.join(', ')} 无有效拓扑（已重试）`,
+          suggest: '检查 AI API；确认整体设计仅用库内 libDevId（555 用 LM555）；或改选「整图一次」',
+          severity: 'error'
+        }],
+        geoBlocking: 0
+      };
+    }
+    if (!usedLlm) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_PIPE] modular_parallel REJECT non-LLM child');
+      return {
+        topology: emptySchTopology(),
+        usedLlm: false,
+        degradedMode,
+        ercClean: false,
+        ercErrors: [{
+          errType: 'modular_parallel',
+          targetUuid: '',
+          desc: '子模块未走真实 LLM，已拒绝模板回退',
+          suggest: '检查 AI API 配置与连通性',
+          severity: 'error'
+        }],
+        geoBlocking: 0
+      };
+    }
+
+    onProgress?.(makeProgress(88, '按边界 joints 网络标号合并中…'));
+    this.markStage('modular_merge');
+    traceAiOp('AI_PIPE', 'modular_merge', `modules=${moduleTopos.length} mode=joinByLabel`);
+    const pinLookup = (libId: string, hint: string): string => {
+      const h = `${hint ?? ''}`.toUpperCase();
+      if (h.length === 0) {
+        return '';
+      }
+      const comp = this.componentLibrary.getComponent(libId ?? '');
+      if (!comp?.success || !comp.data) {
+        return '';
+      }
+      const pins = comp.data.pins ?? [];
+      for (let pi = 0; pi < pins.length; pi++) {
+        const p = pins[pi];
+        const pid = `${p.id ?? ''}`.toUpperCase();
+        const pname = `${p.name ?? ''}`.toUpperCase();
+        if (pid === h || pname === h) {
+          return p.id ?? '';
+        }
+      }
+      for (let pi = 0; pi < pins.length; pi++) {
+        const p = pins[pi];
+        const pid = `${p.id ?? ''}`.toUpperCase();
+        const pname = `${p.name ?? ''}`.toUpperCase();
+        if (pid === h || pname === h) {
+          return p.id ?? '';
+        }
+        if (pname.length > 0 && (pname.endsWith(h) || h.endsWith(pname))) {
+          return p.id ?? '';
+        }
+      }
+      return '';
+    };
+
+    const mergeOut = mergeModularTopologies(moduleTopos, plan, pinLookup);
+    let merged = mergeOut.topology;
+    this.placementOptimizer.resolveSelectionOverlaps(merged);
+    // 跨模块已用网络标号并网；此处仅轻量补线（已有 stub/标号的脚不会再拉长线）
+    opts.onStreamSnapshot?.(merged, 'net_plan');
+    const routed = await this.wiringEngine.routeUntilCleanAsync(
+      merged, ConstrainedWiringEngine.defaultConstraints(merged),
+      opts.routingWeights, undefined, 4);
+    merged.wireList = routed.routeLines;
+
+    const ercErrors = this.collectErc(merged);
+    if (mergeOut.jointFail > 0) {
+      const detail = mergeOut.jointFailReasons.slice(0, 6).join('；');
+      ercErrors.push({
+        errType: 'modular_joint',
+        targetUuid: '',
+        desc: `模块边界 joints 失败 ${mergeOut.jointFail}/${plan.joints.length}` +
+          (detail.length > 0 ? `：${detail}` : ''),
+        suggest: '检查 boundaryPins 与子模块 RefDes/引脚是否一致后重试',
+        severity: 'error'
+      });
+    }
+    merged.ercErrorList = ercErrors;
+    const ercHard = AiErcGateUtil.countBlocking(ercErrors);
+    const geoIssues = this.collectGeometricIssues(merged);
+    const geoHard = this.countGeoBlocking(geoIssues);
+    const ercClean = ercHard === 0 && geoHard === 0;
+    opts.onStreamSnapshot?.(merged, 'modular_merge');
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] modular_merge END devices=${merged.deviceList.length}` +
+      ` wires=${merged.wireList.length} jointsOk=${mergeOut.jointOk}` +
+      ` jointsFail=${mergeOut.jointFail} ercBlocking=${ercHard} geoBlocking=${geoHard}`);
+    this.logTopoFieldDiag('modular_merge', merged);
+    if (mergeOut.jointFailReasons.length > 0) {
+      traceAiDiag('AI_PIPE', 'modular_joint_fail', mergeOut.jointFailReasons, 16);
+    }
+    onProgress?.(makeProgress(100, ercClean ? '模块并行完成' : '模块并行完成(仍有门禁项)', true));
+    return {
+      topology: merged,
+      usedLlm,
+      degradedMode,
+      ercClean,
+      ercErrors,
+      geoBlocking: geoHard
+    };
+  }
+
+  private async fetchModularPlanLlm(opts: PipelineOptions): Promise<ModularPlan | null> {
+    if (opts.skipLlm) {
+      return null;
+    }
+    const tpl = PromptLoader.load('modular_plan');
+    const basePrompt = PromptLoader.renderEnriched(tpl, [
+      { key: 'user_prompt', value: opts.prompt }
+    ], this.componentLibrary, { includeLibIds: true });
+    let critique = '';
+    const rounds = 5;
+    for (let round = 0; round <= rounds; round++) {
+      const roundPrompt = critique.length > 0
+        ? `${basePrompt}\n\n【上次整体设计被拒绝 — 必须重出完整 JSON】:\n${critique}`
+        : basePrompt;
+      const api = await this.chatWithRetry(roundPrompt, AiCapability.COMPONENT_RECOMMEND,
+        { temperature: 0.1 });
+      if (api.success && api.data) {
+        const raw = PromptLoader.extractJson<Object>(api.data);
+        const parsed = normalizeModularPlan(raw);
+        if (parsed) {
+          const issues = critiqueModularPlan(parsed, this.componentLibrary);
+          if (issues.length === 0) {
+            return parsed;
+          }
+          critique = issues.map((s, i) => `${i + 1}. ${s}`).join('\n');
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PIPE] modular_plan critique reject round=${round + 1}: ${critique}`);
+          continue;
+        }
+      }
+      if (round === rounds) {
+        break;
+      }
+    }
+    Logger.warn(INSTR_TRACE_TAG,
+      '[AI_PIPE] modular_plan residual — refuse parallel (no ABORT to template)');
+    return null;
   }
 
   /** @deprecated 使用 AiErcGateUtil.countBlocking — 含功能影响 warning */
@@ -729,15 +1179,16 @@ export class AiPipelineOrchestrator {
 
   /** 唯一位号: R1/R2、D1/D2、SW1… — 避免两颗电阻都叫 "Resistor 330Ω" */
   private allocUniqueRefName(libDevId: string, used: Set<string>): string {
-    const id = libDevId.toUpperCase();
-    if ((libDevId === 'VCC' || libDevId === 'GND') && !used.has(libDevId)) {
-      used.add(libDevId);
-      return libDevId;
+    const safeId = libDevId ?? '';
+    const id = safeId.toUpperCase();
+    if ((safeId === 'VCC' || safeId === 'GND') && !used.has(safeId)) {
+      used.add(safeId);
+      return safeId;
     }
     let prefix = 'U';
-    if (libDevId.startsWith('R_')) {
+    if (safeId.startsWith('R_')) {
       prefix = 'R';
-    } else if (libDevId.startsWith('C_')) {
+    } else if (safeId.startsWith('C_')) {
       prefix = 'C';
     } else if (id.startsWith('LED_') || id.includes('DIODE') || id.startsWith('1N')) {
       prefix = 'D';
@@ -748,11 +1199,12 @@ export class AiPipelineOrchestrator {
     } else if (id.includes('AMMETER') || id.includes('VOLTMETER') || id.includes('OSCILLOSCOPE') ||
       id.includes('UART') || id.includes('LOGIC_ANALYZER') || id.includes('FREQ')) {
       prefix = 'M';
-    } else if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
+    } else if (id.includes('STM32') || id.includes('AT89') || id.includes('STC') ||
+      id.includes('LM555') || id.includes('555')) {
       prefix = 'U';
-    } else if (libDevId === 'VCC') {
+    } else if (safeId === 'VCC') {
       prefix = 'VCC';
-    } else if (libDevId === 'GND') {
+    } else if (safeId === 'GND') {
       prefix = 'GND';
     }
     let n = 1;
@@ -768,7 +1220,7 @@ export class AiPipelineOrchestrator {
   // ─── 几何碰撞检测 (函数: 确定性几何计算) ───
 
   private collectGeometricIssues(topo: SchTopology): ValidationIssue[] {
-    const validator = new PostGenValidator(this.componentLibrary);
+    const validator = this.getPostGen();
     const allIssues = validator.collectIssues(topo);
     const geoIssues: ValidationIssue[] = [];
     for (const iss of allIssues) {
@@ -940,160 +1392,181 @@ export class AiPipelineOrchestrator {
   // ─── AI 驱动修复执行 (LLM 决策修复策略, 函数执行具体操作) ───
 
   private executeAiFixes(topo: SchTopology, issues: AiReviewIssue[]): AiFixExecResult {
-    let fixCount = 0;
-    let needReroute = false;
     const seenKeys = new Set<string>();
+    const state: AiFixExecState = { fixCount: 0, needReroute: false };
 
     for (const issue of issues) {
-      if (!issue.fixDetail) {
-        continue;
-      }
-      const detail = issue.fixDetail;
-      // wire_layout / reroute：整轮合并为一次 needReroute
-      if (issue.fixAction === 'reroute') {
-        if (!seenKeys.has('reroute|*')) {
-          seenKeys.add('reroute|*');
-          needReroute = true;
-          fixCount++;
-          Logger.info(INSTR_TRACE_TAG,
-            `[AI_FIX] reroute batched (reason sample=${detail.reason ?? issue.desc})`);
-        }
-        continue;
-      }
-      const dedupeKey = `${issue.fixAction}|${issue.targetDevice ?? ''}|` +
-        `${detail.libDevId ?? ''}|${detail.refName ?? ''}|${detail.x ?? ''}|${detail.y ?? ''}|${issue.desc}`;
-      if (seenKeys.has(dedupeKey)) {
-        continue;
-      }
-      seenKeys.add(dedupeKey);
-
-      switch (issue.fixAction) {
-        case 'add_component': {
-          // warning 级「可选电容/装饰件」一律不添加 — 这是多出多余器件的主因
-          if (issue.severity === 'warning') {
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_FIX] skip warning add_component: ${issue.desc}`);
-            break;
-          }
-          const resolvedId = this.resolveAiFixLibDevId(detail);
-          if (!resolvedId) {
-            Logger.warn(INSTR_TRACE_TAG,
-              `[AI_FIX] reject invalid libDevId=${detail.libDevId} (not in library)`);
-            break;
-          }
-          // LED 已有足够限流电阻时禁止再加 R
-          if (resolvedId.startsWith('R_')) {
-            const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
-            const rN = topo.deviceList.filter(d => d.libDevId.startsWith('R_')).length;
-            if (ledN > 0 && rN >= ledN) {
-              Logger.info(INSTR_TRACE_TAG,
-                `[AI_FIX] skip add ${resolvedId}: already ${rN} resistors for ${ledN} LEDs`);
-              break;
-            }
-          }
-          // 非 MCU 电路禁止自审追加滤波电容
-          if (resolvedId.startsWith('C_') && !this.topoHasMcu(topo) &&
-            issue.type !== 'mcu_system') {
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_FIX] skip optional cap ${resolvedId} on non-MCU circuit`);
-            break;
-          }
-          const existCheck = topo.deviceList.some(d =>
-            d.libDevId === resolvedId &&
-            Math.abs(d.x - (detail.x ?? 0)) < 30 &&
-            Math.abs(d.y - (detail.y ?? 0)) < 30);
-          if (!existCheck) {
-            const params = new Map<string, string>();
-            if (detail.paramKey && detail.paramValue) {
-              params.set(detail.paramKey, detail.paramValue);
-            }
-            const usedRefs = new Set<string>();
-            for (const d of topo.deviceList) {
-              usedRefs.add(d.refName);
-            }
-            const refName = detail.refName && detail.refName.length > 0 && !usedRefs.has(detail.refName)
-              ? detail.refName
-              : this.allocUniqueRefName(resolvedId, usedRefs);
-            topo.deviceList.push(makeDeviceInst(
-              IdUtil.generate('inst'),
-              resolvedId,
-              refName,
-              detail.x ?? 200 + fixCount * 60,
-              detail.y ?? 300,
-              0,
-              params
-            ));
-            fixCount++;
-            needReroute = true;
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_FIX] add ${resolvedId} as ${refName} at (${detail.x},${detail.y})` +
-              ` reason=${detail.reason ?? ''}`);
-          }
-          break;
-        }
-        case 'remove_component': {
-          const idx = this.findSafeRemoveIndex(topo, issue, detail);
-          if (idx >= 0) {
-            const removed = topo.deviceList[idx];
-            topo.deviceList.splice(idx, 1);
-            // 同步摘掉该器件相关网络节点 / 导线 / 标号
-            for (const net of topo.netList) {
-              net.nodeList = net.nodeList.filter(n => n.devUuid !== removed.instUuid);
-            }
-            const orphanNets = new Set<string>();
-            for (const net of topo.netList) {
-              if (net.nodeList.length < 1) {
-                orphanNets.add(net.netUuid);
-              }
-            }
-            topo.netList = topo.netList.filter(n => n.nodeList.length >= 1);
-            topo.wireList = topo.wireList.filter(w => !orphanNets.has(w.netUuid));
-            topo.netLabelList = topo.netLabelList.filter(l => !orphanNets.has(l.netUuid));
-            // 端点可能仍指向已删器件附近的线：按 net 节点不足已清；残留同 net 线由重布处理
-            fixCount++;
-            needReroute = true;
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_FIX] removed ${removed.refName}(${removed.libDevId})` +
-              ` reason=${detail.reason ?? ''}`);
-          } else {
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_FIX] skip remove — no safe single target` +
-              ` target=${issue.targetDevice ?? detail.refName ?? detail.libDevId}`);
-          }
-          break;
-        }
-        case 'change_param': {
-          if (detail.paramKey && detail.paramValue) {
-            for (const d of topo.deviceList) {
-              if (d.libDevId === detail.libDevId || d.refName === detail.refName ||
-                d.refName === issue.targetDevice) {
-                d.params.set(detail.paramKey, detail.paramValue);
-                fixCount++;
-                Logger.info(INSTR_TRACE_TAG,
-                  `[AI_FIX] param ${d.refName}.${detail.paramKey}=${detail.paramValue}` +
-                  ` reason=${detail.reason ?? ''}`);
-                break;
-              }
-            }
-          }
-          break;
-        }
-        case 'reroute': {
-          // 已在循环入口批量处理
-          break;
-        }
-        default: {
-          Logger.info(INSTR_TRACE_TAG,
-            `[AI_FIX] unknown fixAction=${issue.fixAction} type=${issue.type}`);
-          break;
-        }
+      try {
+        this.applyOneAiFix(topo, issue, seenKeys, state);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : `${e}`;
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_FIX] skip crashed fixAction=${issue.fixAction} type=${issue.type}: ${msg}`);
       }
     }
     const out: AiFixExecResult = {
-      fixCount: fixCount,
-      needReroute: needReroute
+      fixCount: state.fixCount,
+      needReroute: state.needReroute
     };
     return out;
+  }
+
+  private applyOneAiFix(topo: SchTopology, issue: AiReviewIssue, seenKeys: Set<string>,
+    state: AiFixExecState): void {
+    // wire_layout / reroute / rebuild_instrument：整轮合并为一次 needReroute（可不依赖 fixDetail）
+    if (issue.fixAction === 'reroute' || issue.fixAction === 'rebuild_instrument') {
+      if (!seenKeys.has('reroute|*')) {
+        seenKeys.add('reroute|*');
+        state.needReroute = true;
+        state.fixCount++;
+        const reason = (issue.fixDetail !== undefined && issue.fixDetail !== null)
+          ? (issue.fixDetail.reason ?? issue.desc)
+          : issue.desc;
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_FIX] ${issue.fixAction} → reroute batched (reason sample=${reason})`);
+      }
+      return;
+    }
+    if (!issue.fixDetail) {
+      return;
+    }
+    const detail = issue.fixDetail;
+    const dedupeKey = `${issue.fixAction}|${issue.targetDevice ?? ''}|` +
+      `${detail.libDevId ?? ''}|${detail.refName ?? ''}|${detail.x ?? ''}|${detail.y ?? ''}|${issue.desc}`;
+    if (seenKeys.has(dedupeKey)) {
+      return;
+    }
+    seenKeys.add(dedupeKey);
+
+    switch (issue.fixAction) {
+      case 'add_component': {
+        // warning 级「可选电容/装饰件」一律不添加 — 这是多出多余器件的主因
+        if (issue.severity === 'warning') {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] skip warning add_component: ${issue.desc}`);
+          break;
+        }
+        const resolvedId = this.resolveAiFixLibDevId(detail);
+        if (!resolvedId) {
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_FIX] reject invalid libDevId=${detail.libDevId} (not in library)`);
+          break;
+        }
+        // LED 已有足够限流电阻时禁止再加 R
+        if (resolvedId.startsWith('R_')) {
+          const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
+          const rN = topo.deviceList.filter(d => d.libDevId.startsWith('R_')).length;
+          if (ledN > 0 && rN >= ledN) {
+            Logger.info(INSTR_TRACE_TAG,
+              `[AI_FIX] skip add ${resolvedId}: already ${rN} resistors for ${ledN} LEDs`);
+            break;
+          }
+        }
+        // 非 MCU 电路禁止自审追加滤波电容
+        if (resolvedId.startsWith('C_') && !this.topoHasMcu(topo) &&
+          issue.type !== 'mcu_system') {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] skip optional cap ${resolvedId} on non-MCU circuit`);
+          break;
+        }
+        const existCheck = topo.deviceList.some(d =>
+          d.libDevId === resolvedId &&
+          Math.abs(d.x - (detail.x ?? 0)) < 30 &&
+          Math.abs(d.y - (detail.y ?? 0)) < 30);
+        if (!existCheck) {
+          const params = new Map<string, string>();
+          if (detail.paramKey && detail.paramValue) {
+            params.set(detail.paramKey, detail.paramValue);
+          }
+          const usedRefs = new Set<string>();
+          for (const d of topo.deviceList) {
+            usedRefs.add(d.refName);
+          }
+          const refName = detail.refName && detail.refName.length > 0 && !usedRefs.has(detail.refName)
+            ? detail.refName
+            : this.allocUniqueRefName(resolvedId, usedRefs);
+          topo.deviceList.push(makeDeviceInst(
+            IdUtil.generate('inst'),
+            resolvedId,
+            refName,
+            detail.x ?? 200 + state.fixCount * 60,
+            detail.y ?? 300,
+            0,
+            params
+          ));
+          state.fixCount++;
+          state.needReroute = true;
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] add ${resolvedId} as ${refName} at (${detail.x},${detail.y})` +
+            ` reason=${detail.reason ?? ''}`);
+        }
+        break;
+      }
+      case 'remove_component': {
+        const idx = this.findSafeRemoveIndex(topo, issue, detail);
+        if (idx >= 0) {
+          const removed = topo.deviceList[idx];
+          topo.deviceList.splice(idx, 1);
+          // 同步摘掉该器件相关网络节点 / 导线 / 标号
+          for (const net of topo.netList) {
+            net.nodeList = net.nodeList.filter(n => n.devUuid !== removed.instUuid);
+          }
+          const orphanNets = new Set<string>();
+          for (const net of topo.netList) {
+            if (net.nodeList.length < 1) {
+              orphanNets.add(net.netUuid);
+            }
+          }
+          topo.netList = topo.netList.filter(n => n.nodeList.length >= 1);
+          topo.wireList = topo.wireList.filter(w => !orphanNets.has(w.netUuid));
+          topo.netLabelList = topo.netLabelList.filter(l => !orphanNets.has(l.netUuid));
+          state.fixCount++;
+          state.needReroute = true;
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] removed ${removed.refName}(${removed.libDevId})` +
+            ` reason=${detail.reason ?? ''}`);
+        } else {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] skip remove — no safe single target` +
+            ` target=${issue.targetDevice ?? detail.refName ?? detail.libDevId}`);
+        }
+        break;
+      }
+      case 'change_param': {
+        if (!detail.paramKey || !detail.paramValue) {
+          break;
+        }
+        // 伪参数（如 bypass_cap 建议）不写进器件，避免污染与无意义写入
+        const pk = detail.paramKey.toLowerCase();
+        if (pk === 'bypass_cap' || pk === 'none' || pk.indexOf('建议') >= 0) {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] skip pseudo change_param key=${detail.paramKey}`);
+          break;
+        }
+        for (const d of topo.deviceList) {
+          if (d.libDevId === detail.libDevId || d.refName === detail.refName ||
+            d.refName === issue.targetDevice) {
+            d.params = ensureStringMap(d.params);
+            d.params.set(detail.paramKey, detail.paramValue);
+            state.fixCount++;
+            Logger.info(INSTR_TRACE_TAG,
+              `[AI_FIX] param ${d.refName}.${detail.paramKey}=${detail.paramValue}` +
+              ` reason=${detail.reason ?? ''}`);
+            break;
+          }
+        }
+        break;
+      }
+      case 'reroute': {
+        // 已在循环入口批量处理
+        break;
+      }
+      default: {
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_FIX] unknown fixAction=${issue.fixAction} type=${issue.type}`);
+        break;
+      }
+    }
   }
 
   /** 将 LLM 幻觉 ID (R / CAP_ELECTRO) 映射到库内真实 libDevId */
@@ -1137,7 +1610,7 @@ export class AiPipelineOrchestrator {
 
   private topoHasMcu(topo: SchTopology): boolean {
     return topo.deviceList.some(d => {
-      const id = d.libDevId.toUpperCase();
+      const id = (d.libDevId ?? '').toUpperCase();
       return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
     });
   }
@@ -1259,193 +1732,181 @@ export class AiPipelineOrchestrator {
   }
 
   private static isMutualLedSwitchPrompt(prompt: string): boolean {
-    const zh = prompt ?? '';
-    const lower = zh.toLowerCase();
-    const dualColor =
-      (zh.indexOf('绿') >= 0 && zh.indexOf('红') >= 0) ||
-      (lower.indexOf('green') >= 0 && lower.indexOf('red') >= 0) ||
-      (zh.indexOf('双') >= 0 && zh.indexOf('LED') >= 0);
-    const mutual =
-      (zh.indexOf('打开') >= 0 && zh.indexOf('闭合') >= 0) ||
-      (zh.indexOf('断开') >= 0 && (zh.indexOf('闭合') >= 0 || zh.indexOf('接通') >= 0)) ||
-      (zh.indexOf('松开') >= 0 && zh.indexOf('按下') >= 0) ||
-      (lower.indexOf('open') >= 0 && lower.indexOf('close') >= 0) ||
-      zh.indexOf('互斥') >= 0 ||
-      ((zh.indexOf('开关') >= 0 || zh.indexOf('按键') >= 0 || lower.indexOf('switch') >= 0) &&
-        dualColor);
-    return mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0);
+    return intentIsMutualLedSwitch(prompt);
   }
 
-  /** AI 选型结果审查：只产出纠错文案，不改器件列表 */
-  private critiqueDeviceSelect(out: DeviceSelectLlmOutput, prompt: string): string[] {
-    const issues: string[] = [];
+  /** AI 选型结果审查：HARD/SOFT 分流 */
+  private critiqueDeviceSelectSplit(out: DeviceSelectLlmOutput, prompt: string,
+    intent: CircuitIntent): CritiqueSplit {
+    const split = splitEmpty();
     const list = out.deviceRequireList ?? [];
-    // 强制：每个需求必须带库内存在的 explicitModel
     for (let i = 0; i < list.length; i++) {
       const req = list[i];
       const model = (req.explicitModel ?? '').trim();
       if (model.length === 0) {
-        issues.push(`器件「${req.func}/${req.devType}」缺少 explicitModel — 必须填写库内精确 libDevId`);
+        split.hard.push(`器件「${req.func}/${req.devType}」缺少 explicitModel — 必须填写库内精确 libDevId`);
         continue;
       }
       const got = this.componentLibrary.getComponent(model);
       if (!got.success || !got.data) {
-        issues.push(`explicitModel=${model} 不在器件库中 — 只能从注入的库清单中选精确 ID，禁止编造`);
+        split.hard.push(`explicitModel=${model} 不在器件库中 — 只能从注入的库清单中选精确 ID，禁止编造`);
       }
     }
-    // 互斥双色专项
-    const mutual = AiPipelineOrchestrator.critiqueMutualLedSelect(out, prompt);
-    for (let j = 0; j < mutual.length; j++) {
-      issues.push(mutual[j]);
+
+    if (intent.mutualLedIndicator) {
+      const mutualSplit = AiPipelineOrchestrator.critiqueMutualLedSelectSplit(out);
+      for (let mh = 0; mh < mutualSplit.hard.length; mh++) {
+        split.hard.push(mutualSplit.hard[mh]);
+      }
+      for (let ms = 0; ms < mutualSplit.soft.length; ms++) {
+        split.soft.push(mutualSplit.soft[ms]);
+      }
     }
-    // 强制器件检查
+
     const models = list.map(r => (r.explicitModel ?? '').toUpperCase());
     const devTypes = list.map(r => (r.devType ?? '').toUpperCase());
     const allIds = models.concat(devTypes);
 
-    const hasVcc = allIds.some(m => m === 'VCC');
-    const hasGnd = allIds.some(m => m === 'GND');
-    if (!hasVcc) {
-      issues.push('缺失 VCC 电源符号 — 任何电路都必须包含 VCC');
-    }
-    if (!hasGnd) {
-      issues.push('缺失 GND 接地符号 — 任何电路都必须包含 GND');
+    if (intent.needsPowerRails) {
+      const hasVcc = allIds.some(m => m === 'VCC');
+      const hasGnd = allIds.some(m => m === 'GND');
+      if (!hasVcc) {
+        split.hard.push('缺失 VCC 电源符号 — 任何电路都必须包含 VCC');
+      }
+      if (!hasGnd) {
+        split.hard.push('缺失 GND 接地符号 — 任何电路都必须包含 GND');
+      }
     }
 
-    // LED 限流电阻配对
     const ledN = models.filter(m => m.indexOf('LED') >= 0).length;
     const rN = models.filter(m => m.startsWith('R_')).length;
-    if (ledN > 0 && rN < ledN) {
-      issues.push(`有 ${ledN} 颗 LED 但只有 ${rN} 颗电阻 — 每颗 LED 必须配一颗限流电阻(R_330)`);
+    if (intent.needsLedSeriesR && ledN > 0 && rN < ledN && !intent.blinkOscillator) {
+      split.soft.push(`有 ${ledN} 颗 LED 但只有 ${rN} 颗电阻 — 每颗 LED 建议配一颗限流电阻(R_330)`);
     }
 
-    // 运放必须有反馈电阻
-    const hasOpAmp = allIds.some(m =>
-      m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OP') >= 0 || m.indexOf('OPAMP') >= 0);
-    if (hasOpAmp && rN === 0) {
-      issues.push('运放电路必须有反馈电阻 — 禁止开环');
-    }
-
-    // I2C 必须有上拉电阻
-    const hasI2c = list.some(r =>
-      (r.func ?? '').indexOf('I2C') >= 0 || (r.devType ?? '').toUpperCase().indexOf('I2C') >= 0);
-    const has4k7 = models.some(m => m === 'R_4.7k' || m === 'R_4K7');
-    if (hasI2c && !has4k7) {
-      issues.push('I2C 器件必须配 4.7kΩ 上拉电阻 (R_4.7k)');
-    }
-
-    // MCU 必须有晶振和去耦电容
-    const hasMcu = allIds.some(m =>
-      m.indexOf('STM32') >= 0 || m.indexOf('AT89') >= 0 || m.indexOf('STC') >= 0 || m.indexOf('MCU') >= 0);
-    if (hasMcu) {
-      const hasXtal = allIds.some(m =>
-        m.indexOf('XTAL') >= 0 || m.indexOf('CRYSTAL') >= 0 || m.indexOf('OSC') >= 0);
-      const hasDecap = models.some(m => m === 'C_100nF' || m === 'C_100NF');
-      if (!hasXtal) {
-        issues.push('MCU 最小系统必须包含晶振 (XTAL)');
-      }
-      if (!hasDecap) {
-        issues.push('MCU 最小系统必须包含去耦电容 (C_100nF)');
-      }
-      const hasRstR = models.some(m => m === 'R_10k' || m === 'R_10K');
-      if (!hasRstR) {
-        issues.push('MCU 最小系统必须包含 RST 上拉电阻 (R_10k)');
+    if (intent.needsOpAmpFeedback) {
+      const hasOpAmp = allIds.some(m =>
+        m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OP') >= 0 || m.indexOf('OPAMP') >= 0);
+      if (hasOpAmp && rN === 0) {
+        split.soft.push('运放电路建议有反馈电阻 — 禁止开环');
       }
     }
 
-    // 仪器数量检查：电压表数量与用户需求一致
-    const voltN = models.filter(m => m === 'VOLTMETER_DC').length;
-    const userWantsNVolt = prompt.match(/(\d+)\s*[个块只]\s*电压表/);
-    if (userWantsNVolt && voltN !== parseInt(userWantsNVolt[1])) {
-      issues.push(`用户要求 ${userWantsNVolt[1]} 个电压表，但输出了 ${voltN} 个`);
-    }
-    const userWantsAmmeter = prompt.indexOf('电流表') >= 0 || prompt.indexOf('测电流') >= 0;
-    const hasAmmeter = models.some(m => m === 'AMMETER_DC');
-    if (userWantsAmmeter && !hasAmmeter) {
-      issues.push('用户要求测电流但缺少 AMMETER_DC');
+    if (intent.needsI2cPullup) {
+      const hasI2c = list.some(r =>
+        (r.func ?? '').indexOf('I2C') >= 0 || (r.devType ?? '').toUpperCase().indexOf('I2C') >= 0);
+      const has4k7 = models.some(m => m === 'R_4.7k' || m === 'R_4K7');
+      if (hasI2c && !has4k7) {
+        split.soft.push('I2C 器件建议配 4.7kΩ 上拉电阻 (R_4.7k)');
+      }
     }
 
-    return issues;
+    if (intent.hasMcuMinSystem) {
+      const hasMcu = allIds.some(m =>
+        m.indexOf('STM32') >= 0 || m.indexOf('AT89') >= 0 || m.indexOf('STC') >= 0 || m.indexOf('MCU') >= 0);
+      if (hasMcu) {
+        const hasXtal = allIds.some(m =>
+          m.indexOf('XTAL') >= 0 || m.indexOf('CRYSTAL') >= 0 || m.indexOf('OSC') >= 0);
+        const hasDecap = models.some(m => m === 'C_100nF' || m === 'C_100NF');
+        if (!hasXtal) {
+          split.soft.push('MCU 最小系统建议包含晶振 (XTAL)');
+        }
+        if (!hasDecap) {
+          split.soft.push('MCU 最小系统建议包含去耦电容 (C_100nF)');
+        }
+        const hasRstR = models.some(m => m === 'R_10k' || m === 'R_10K');
+        if (!hasRstR) {
+          split.soft.push('MCU 最小系统建议包含 RST 上拉电阻 (R_10k)');
+        }
+      }
+    }
+
+    if (intent.hasInstruments) {
+      const voltN = models.filter(m => m === 'VOLTMETER_DC').length;
+      const userWantsNVolt = prompt.match(/(\d+)\s*[个块只]\s*电压表/);
+      if (userWantsNVolt && voltN !== parseInt(userWantsNVolt[1])) {
+        split.hard.push(`用户要求 ${userWantsNVolt[1]} 个电压表，但输出了 ${voltN} 个`);
+      }
+      const userWantsAmmeter = prompt.indexOf('电流表') >= 0 || prompt.indexOf('测电流') >= 0;
+      const hasAmmeter = models.some(m => m === 'AMMETER_DC');
+      if (userWantsAmmeter && !hasAmmeter) {
+        split.hard.push('用户要求测电流但缺少 AMMETER_DC');
+      }
+    }
+
+    return split;
   }
 
-  private static critiqueMutualLedSelect(out: DeviceSelectLlmOutput, prompt: string): string[] {
-    const issues: string[] = [];
-    if (!AiPipelineOrchestrator.isMutualLedSwitchPrompt(prompt)) {
-      return issues;
-    }
+  /** 兼容旧调用：返回 HARD+SOFT 合并行 */
+  private critiqueDeviceSelect(out: DeviceSelectLlmOutput, prompt: string): string[] {
+    return allCritiqueLines(this.critiqueDeviceSelectSplit(out, prompt, this.activeIntent));
+  }
+
+  private static critiqueMutualLedSelectSplit(out: DeviceSelectLlmOutput): CritiqueSplit {
+    const split = splitEmpty();
     const list = out.deviceRequireList ?? [];
     const models = list.map(r => (r.explicitModel ?? r.devType ?? '').toUpperCase());
     const hasRelay = models.some(m => m.indexOf('RELAY') >= 0);
     const ledN = models.filter(m => m.indexOf('LED') >= 0).length;
     const hasSw = models.some(m => m.indexOf('SW_') >= 0 || m === 'SW_PUSH');
     if (ledN < 2) {
-      issues.push('互斥双色指示必须包含至少两颗 LED（如 LED_GREEN + LED_RED）');
+      split.hard.push('互斥双色指示必须包含至少两颗 LED（如 LED_GREEN + LED_RED）');
     }
     if (!hasRelay) {
-      issues.push(
+      split.hard.push(
         '开/闭互斥双色禁止只用 SW_PUSH(SPST)。必须增加 explicitModel=RELAY_SPDT，' +
         '并用 SW_PUSH 仅驱动继电器线圈；触点 NC→绿灯支路、NO→红灯支路、COM→GND');
     }
     if (!hasSw) {
-      issues.push('需要 SW_PUSH 驱动 RELAY_SPDT 线圈（VCC→SW→coil→GND）');
+      split.hard.push('需要 SW_PUSH 驱动 RELAY_SPDT 线圈（VCC→SW→coil→GND）');
     }
     const rN = models.filter(m => m.startsWith('R_')).length;
     if (rN < 2) {
-      issues.push('双 LED 必须各配一颗限流电阻（两颗 R_330）');
+      split.hard.push('双 LED 必须各配一颗限流电阻（两颗 R_330）');
     }
-    return issues;
+    return split;
   }
 
-  /** @deprecated 使用实例 critiqueDeviceSelect */
-  private static critiqueDeviceSelect(out: DeviceSelectLlmOutput, prompt: string): string[] {
-    return AiPipelineOrchestrator.critiqueMutualLedSelect(out, prompt);
-  }
-
-  /** AI net_plan 审查：拓扑正确性全面检查 */
-  private static critiqueNetPlan(plan: NetPlanResult, topo: SchTopology, prompt: string): string[] {
-    const issues: string[] = [];
+  /** AI net_plan 审查：HARD/SOFT 分流 + 意图门控 */
+  private static critiqueNetPlanSplit(plan: NetPlanResult, topo: SchTopology, prompt: string,
+    intent: CircuitIntent): CritiqueSplit {
+    const split = splitEmpty();
     const nets = plan.nets ?? [];
     const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
     const hasRelay = topo.deviceList.some(d =>
-      d.libDevId === 'RELAY_SPDT' || d.libDevId.toUpperCase().indexOf('RELAY') >= 0);
-    const hasSw = topo.deviceList.some(d => d.libDevId.startsWith('SW_'));
+      d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
 
-    // ═══════════════════════════════════════════════════════════
-    // 通用拓扑检查 — 对所有电路强制执行
-    // ═══════════════════════════════════════════════════════════
-
-    // 电流表 I+/I- 不得同网
     for (let i = 0; i < nets.length; i++) {
       const conns = nets[i].connections ?? [];
       const pins = conns.map(c => `${c.compRef}:${c.pinName || c.pinId}`.toUpperCase());
       const hasIPlus = pins.some(p => p.endsWith(':I+') || p.endsWith(':I_PLUS'));
       const hasIMinus = pins.some(p => p.endsWith(':I-') || p.endsWith(':I_MINUS'));
       if (hasIPlus && hasIMinus) {
-        issues.push(`电流表 I+/I- 在同一网络 "${nets[i].name}" → 短路！必须分到不同网络`);
+        split.hard.push(`电流表 I+/I- 在同一网络 "${nets[i].name}" → 短路！必须分到不同网络`);
       }
     }
 
-    // VCC/GND 网络必须存在
     const netNames = nets.map(n => (n.name ?? '').toUpperCase());
-    const hasVccNet = netNames.some(n => n === 'VCC');
-    const hasGndNet = netNames.some(n => n === 'GND');
-    if (!hasVccNet) {
-      issues.push('netPlan 缺少 VCC 网络 — 必须创建 VCC 电源网络并连接 VCC 符号引脚');
-    }
-    if (!hasGndNet) {
-      issues.push('netPlan 缺少 GND 网络 — 必须创建 GND 地网络并连接 GND 符号引脚');
+    if (intent.needsPowerRails) {
+      const hasVccNet = netNames.some(n => n === 'VCC');
+      const hasGndNet = netNames.some(n => n === 'GND');
+      if (!hasVccNet) {
+        split.hard.push('netPlan 缺少 VCC 网络 — 必须创建 VCC 电源网络并连接 VCC 符号引脚');
+      }
+      if (!hasGndNet) {
+        split.hard.push('netPlan 缺少 GND 网络 — 必须创建 GND 地网络并连接 GND 符号引脚');
+      }
     }
 
-    // 信号网络禁止命名为 VCC/GND
     for (let i = 0; i < nets.length; i++) {
       const name = (nets[i].name ?? '').toUpperCase();
       const type = nets[i].type ?? '';
+      // 按网名已强制纠正 type 后，此条不应再 HARD 拒收；保留作防御
       if ((name === 'VCC' || name === 'GND') && type === 'signal') {
-        issues.push(`信号网络 "${nets[i].name}" 不能使用电源网络名 — 改为描述性名称如 LED_CTRL`);
+        split.soft.push(`信号网络 "${nets[i].name}" 使用了电源名 — 已建议改为 power/ground 类型`);
       }
     }
 
-    // 同一引脚不得出现在两个不同网络
     const pinOwner = new Map<string, string>();
     for (let i = 0; i < nets.length; i++) {
       const netName = (nets[i].name ?? '').toUpperCase();
@@ -1455,7 +1916,7 @@ export class AiPipelineOrchestrator {
         const pinKey = `${c.compRef}:${c.pinId}`.toUpperCase();
         const prev = pinOwner.get(pinKey);
         if (prev !== undefined && prev !== netName) {
-          issues.push(
+          split.hard.push(
             `引脚 ${pinKey} 同时出现在网络 ${prev} 与 ${netName}：一脚只能属一网；` +
             `若 ${netName} 是探针/PROBE，请把仪器脚并入 ${prev} 并删除重复 DUT 脚；` +
             `若是驱动冲突（如三极管 B），只保留正确驱动网`);
@@ -1465,7 +1926,6 @@ export class AiPipelineOrchestrator {
       }
     }
 
-    // GPIO 禁止直连 VCC/GND（除非经限流电阻）
     for (let i = 0; i < nets.length; i++) {
       const name = (nets[i].name ?? '').toUpperCase();
       if (name !== 'VCC' && name !== 'GND') {
@@ -1478,13 +1938,13 @@ export class AiPipelineOrchestrator {
         if ((pin.indexOf('GPIO') >= 0 || pin.indexOf('IO') >= 0 || pin.indexOf('PA') === 0 ||
           pin.indexOf('PB') === 0 || pin.indexOf('PC') === 0 || pin.indexOf('PD') === 0 ||
           pin.indexOf('P1') === 0 || pin.indexOf('P2') === 0 || pin.indexOf('P3') === 0) &&
-          !ref.startsWith('R_')) {
-          issues.push(`GPIO/IO引脚 ${c.compRef}:${c.pinName || c.pinId} 直连 ${name} — 必须经限流电阻`);
+          !ref.startsWith('R_') && pin !== 'VDD' && pin !== 'VSS' && pin !== 'VCC' && pin !== 'GND' &&
+          pin.indexOf('BOOT') < 0) {
+          split.soft.push(`GPIO/IO引脚 ${c.compRef}:${c.pinName || c.pinId} 直连 ${name} — 建议经限流电阻`);
         }
       }
     }
 
-    // 检查关键引脚是否浮空
     const allConnectedPins = new Set<string>();
     for (let i = 0; i < nets.length; i++) {
       const conns = nets[i].connections ?? [];
@@ -1493,41 +1953,40 @@ export class AiPipelineOrchestrator {
       }
     }
     for (const dev of topo.deviceList) {
-      const id = dev.libDevId.toUpperCase();
+      const id = (dev.libDevId ?? '').toUpperCase();
       if (id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0) {
         const criticalPins = ['NRST', 'RST', 'VDD', 'VSS', 'VCC', 'GND'];
         for (const pin of criticalPins) {
           const key = `${dev.refName}:${pin}`;
           if (!allConnectedPins.has(key) &&
-            !Array.from(allConnectedPins).some(k => k.startsWith(`${dev.refName}:`) && k.toUpperCase().indexOf(pin) >= 0)) {
-            issues.push(`MCU 关键引脚 ${dev.refName}:${pin} 未入网 — 不得浮空`);
+            !Array.from(allConnectedPins).some(k => k.startsWith(`${dev.refName}:`) &&
+              k.toUpperCase().indexOf(pin) >= 0)) {
+            split.soft.push(`MCU 关键引脚 ${dev.refName}:${pin} 未入网 — 建议不得浮空`);
           }
         }
       }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // 互斥双色 LED + 继电器触点拓扑 — 专用电路特定检查
-    // ═══════════════════════════════════════════════════════════
-    const mutual = AiPipelineOrchestrator.isMutualLedSwitchPrompt(prompt) ||
-      (ledN >= 2 && (hasRelay || hasSw));
-    if (!mutual || ledN < 2) {
-      return issues;
+    const needMutualTopo = (intent.mutualLedIndicator || intent.relayContactTopo) &&
+      !intent.blinkOscillator && ledN >= 2;
+    if (!needMutualTopo) {
+      return split;
     }
     if (!hasRelay) {
-      issues.push(
-        '器件列表无 RELAY_SPDT：如需 SPDT 切换请在 topologyNotes 中说明。' +
-        '当前 netPlan 不得用 SW_PUSH 当常开/常闭三端。');
-      return issues;
+      if (intent.mutualLedIndicator) {
+        split.hard.push(
+          '器件列表无 RELAY_SPDT：互斥双色必须含 RELAY_SPDT，' +
+          '当前 netPlan 不得用 SW_PUSH 当常开/常闭三端。');
+      }
+      return split;
     }
 
-    // 构建 refName 索引给回灌提示
     const relayRef = topo.deviceList.find(d =>
-      d.libDevId === 'RELAY_SPDT' || d.libDevId.toUpperCase().indexOf('RELAY') >= 0)?.refName ?? 'K1';
+      d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0)?.refName ?? 'K1';
     const swRef = topo.deviceList.find(d => d.libDevId.startsWith('SW_'))?.refName ?? 'SW1';
     const leds = topo.deviceList.filter(d => d.libDevId.startsWith('LED_'));
-    const ledGreen = leds.find(d => d.libDevId.toUpperCase().indexOf('GREEN') >= 0)?.refName;
-    const ledRed = leds.find(d => d.libDevId.toUpperCase().indexOf('RED') >= 0)?.refName;
+    const ledGreen = leds.find(d => (d.libDevId ?? '').toUpperCase().indexOf('GREEN') >= 0)?.refName;
+    const ledRed = leds.find(d => (d.libDevId ?? '').toUpperCase().indexOf('RED') >= 0)?.refName;
     const resistors = topo.deviceList.filter(d => d.libDevId.startsWith('R_'));
     const rRefs = resistors.slice(0, 2).map(d => d.refName);
     const greenR = rRefs[0] ?? 'R1';
@@ -1555,52 +2014,50 @@ export class AiPipelineOrchestrator {
       if (hasNo && (hasLedK || hasLed)) {
         noHit++;
       }
-      if (hasCom && (nets[i].name.toUpperCase() === 'GND' ||
+      if (hasCom && ((nets[i].name ?? '').toUpperCase() === 'GND' ||
         pins.some(p => p.indexOf('GND') >= 0))) {
         comGnd = true;
       }
-      if (hasCom && (nets[i].name.toUpperCase() === 'VCC' ||
+      if (hasCom && ((nets[i].name ?? '').toUpperCase() === 'VCC' ||
         pins.some(p => p.endsWith(':VCC') || p.indexOf(':VCC') >= 0))) {
-        issues.push('禁止 RELAY.COM 接到 VCC：COM 必须接 GND');
+        split.hard.push('禁止 RELAY.COM 接到 VCC：COM 必须接 GND');
       }
     }
     if (ncHit < 1) {
-      issues.push(
+      split.hard.push(
         `缺少 NC 触点支路：LED_GREEN.K(${greenLedRef}:K)→RELAY.NC(${relayRef}:NC) ` +
         `断开(未按下)时绿灯常亮。正确示例: ` +
         `VCC→${greenR}.1→${greenR}.2→${greenLedRef}.A, ${greenLedRef}.K→${relayRef}.NC`);
     }
     if (noHit < 1) {
-      issues.push(
+      split.hard.push(
         `缺少 NO 触点支路：LED_RED.K(${redLedRef}:K)→RELAY.NO(${relayRef}:NO) ` +
         `闭合(按下)时红灯常亮。正确示例: ` +
         `VCC→${redR}.1→${redR}.2→${redLedRef}.A, ${redLedRef}.K→${relayRef}.NO`);
     }
     if (!comGnd) {
-      issues.push(`RELAY.COM(${relayRef}:COM) 必须接到 GND 网络，作为两路 LED 的公共回流路径`);
+      split.hard.push(`RELAY.COM(${relayRef}:COM) 必须接到 GND 网络，作为两路 LED 的公共回流路径`);
     }
 
-    // 禁止两路 LED 阴极都只接 GND（无触点切换）
     let ledKToGndOnly = 0;
     for (let i = 0; i < nets.length; i++) {
-      if (nets[i].name.toUpperCase() !== 'GND' && nets[i].type !== 'ground') {
+      if ((nets[i].name ?? '').toUpperCase() !== 'GND' && nets[i].type !== 'ground') {
         continue;
       }
       const conns = nets[i].connections ?? [];
       for (const c of conns) {
         if ((c.pinId === 'K' || c.pinName === 'K') &&
-          (c.compRef.toUpperCase().indexOf('LED') >= 0 || c.compRef.startsWith('D') ||
+          ((c.compRef ?? '').toUpperCase().indexOf('LED') >= 0 || c.compRef.startsWith('D') ||
             c.compRef === greenLedRef || c.compRef === redLedRef)) {
           ledKToGndOnly++;
         }
       }
     }
     if (ledKToGndOnly >= 2 && ncHit + noHit < 2) {
-      issues.push(
+      split.hard.push(
         '禁止两颗 LED 阴极都直连 GND：互斥指示必须经 NC/NO 触点，否则开关无法切换颜色');
     }
 
-    // 线圈回路：RELAY 脚 1/2（非 COM/NC/NO）须分别接到 SW 与电源轨，禁止两脚同网
     let coilPinsOnPlan: string[] = [];
     let coilNetNames: string[] = [];
     for (let i = 0; i < nets.length; i++) {
@@ -1614,7 +2071,7 @@ export class AiPipelineOrchestrator {
           pref === relayRef.toUpperCase() ||
           topo.deviceList.some(d =>
             d.refName.toUpperCase() === pref &&
-            (d.libDevId === 'RELAY_SPDT' || d.libDevId.toUpperCase().indexOf('RELAY') >= 0));
+            (d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0));
         if (!isRelayRef) {
           continue;
         }
@@ -1630,14 +2087,14 @@ export class AiPipelineOrchestrator {
     }
     const uniqueCoilPins = Array.from(new Set(coilPinsOnPlan));
     if (uniqueCoilPins.length < 2) {
-      issues.push(
+      split.hard.push(
         `RELAY 线圈(${relayRef})两端未完整入网：` +
         `正确回路 VCC→${swRef}.1→${swRef}.2→${relayRef}.1, ${relayRef}.2→GND。` +
         `线圈两脚 1/2 各自独立入网，不可浮空`);
     } else {
       const uniqNets = Array.from(new Set(coilNetNames));
       if (uniqNets.length < 2) {
-        issues.push(
+        split.hard.push(
           `RELAY 线圈两端(${relayRef}:1,${relayRef}:2)不得同网：` +
           `必须分到两个不同网络，一端经 ${swRef} 接 VCC，另一端接 GND`);
       }
@@ -1664,14 +2121,59 @@ export class AiPipelineOrchestrator {
         }
       }
       if (!hasSwOnCoilPath) {
-        issues.push(`线圈驱动回路缺少 ${swRef}：须 SW_PUSH 串联在 VCC 与 ${relayRef}:1 之间`);
+        split.hard.push(`线圈驱动回路缺少 ${swRef}：须 SW_PUSH 串联在 VCC 与 ${relayRef}:1 之间`);
       }
       if (!hasPowerOnCoilPath) {
-        issues.push(`线圈驱动回路缺少电源轨：完整回路 VCC→${swRef}→${relayRef}:1, ${relayRef}:2→GND`);
+        split.hard.push(`线圈驱动回路缺少电源轨：完整回路 VCC→${swRef}→${relayRef}:1, ${relayRef}:2→GND`);
       }
     }
 
-    return issues;
+    return split;
+  }
+
+  /** 兼容旧调用 */
+  private static critiqueNetPlan(plan: NetPlanResult, topo: SchTopology, prompt: string,
+    intent?: CircuitIntent): string[] {
+    const effective = intent ?? defaultCircuitIntent();
+    return allCritiqueLines(AiPipelineOrchestrator.critiqueNetPlanSplit(plan, topo, prompt, effective));
+  }
+
+  private static formatCritiqueFeedback(split: CritiqueSplit): string {
+    const lines: string[] = [];
+    for (let i = 0; i < split.hard.length; i++) {
+      lines.push(`${i + 1}. [HARD] ${split.hard[i]}`);
+    }
+    if (split.soft.length > 0) {
+      lines.push('');
+      lines.push('软性建议（可选改进，不阻塞输出）:');
+      for (let j = 0; j < split.soft.length; j++) {
+        lines.push(`${j + 1}. [SOFT] ${split.soft[j]}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  private static tryEarlyStopStable(
+    hard: string[], lastFp: string, stableCount: number, stage: string
+  ): EarlyStopStableResult {
+    const fp = hardResidualFingerprint(hard);
+    if (fp.length === 0) {
+      const emptyStop: EarlyStopStableResult = { accept: false, lastFp: fp, stableCount: 0 };
+      return emptyStop;
+    }
+    if (fp === lastFp) {
+      const next = stableCount + 1;
+      if (next >= 2) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] early_stop residual_stable stage=${stage} fp=${fp.substring(0, 80)}`);
+        const acceptStop: EarlyStopStableResult = { accept: true, lastFp: fp, stableCount: next };
+        return acceptStop;
+      }
+      const continueStop: EarlyStopStableResult = { accept: false, lastFp: fp, stableCount: next };
+      return continueStop;
+    }
+    const resetStop: EarlyStopStableResult = { accept: false, lastFp: fp, stableCount: 0 };
+    return resetStop;
   }
 
   private cacheGet<T extends object>(key: string): T | null {
@@ -1712,13 +2214,14 @@ export class AiPipelineOrchestrator {
 
   private async chatWithRetry(prompt: string, capability: string, extraOpts?: ChatOptions): Promise<ChatResult> {
     let lastError = '';
+    const tag = this.logTag();
     traceAiOp('AI_PIPE', 'llm_chat',
-      `cap=${capability} promptLen=${prompt.length} maxRetries=${LLM_MAX_RETRIES}`);
+      `${tag}cap=${capability} promptLen=${prompt.length} maxRetries=${LLM_MAX_RETRIES}`);
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_PIPE] WAIT LLM cap=${capability} promptLen=${prompt.length} — complex replies may take a long time`);
+      `[AI_PIPE] ${tag}WAIT LLM cap=${capability} promptLen=${prompt.length} — complex replies may take a long time`);
     for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_PIPE] chat attempt=${attempt + 1}/${LLM_MAX_RETRIES + 1} cap=${capability}`);
+        `[AI_PIPE] ${tag}chat attempt=${attempt + 1}/${LLM_MAX_RETRIES + 1} cap=${capability}`);
       const useThinking = AiPipelineOrchestrator.needsThinking(capability);
       const chatOpts: ChatOptions = {
         capability: capability as AiCapability,
@@ -1734,9 +2237,9 @@ export class AiPipelineOrchestrator {
       const result = await this.apiManager.chat(prompt, chatOpts);
       if (result.success && result.data) {
         Logger.info(INSTR_TRACE_TAG,
-          `[AI_PIPE] chat OK cap=${capability} len=${result.data.length}`);
+          `[AI_PIPE] ${tag}chat OK cap=${capability} len=${result.data.length}`);
         traceAiOp('AI_PIPE', 'llm_chat_ok',
-          `cap=${capability} attempt=${attempt + 1} replyLen=${result.data.length}`);
+          `${tag}cap=${capability} attempt=${attempt + 1} replyLen=${result.data.length}`);
         return result;
       }
       if (result.errCode && result.errCode >= 400 && result.errCode < 500) {
@@ -1861,13 +2364,14 @@ export class AiPipelineOrchestrator {
       vars.push({ key: 'generation_mode', value: '' });
     }
     const prompt = PromptLoader.renderEnriched(tpl, vars, this.componentLibrary,
-      { includeFullPins: true });
+      { includeFullPins: true, intent: this.activeIntent });
 
     // AI 驱动纠错：选型不过关则把 critique 喂回 LLM 重试，不本地硬塞器件
     let critique = '';
     let lastParsed: DeviceSelectLlmOutput | null = null;
-    const selectRounds = NEVER_ABORT_ROUNDS;
-    for (let round = 0; round <= selectRounds; round++) {
+    let lastHardFp = '';
+    let stableCount = 0;
+    for (let round = 0; round <= CRITIQUE_INNER_ROUNDS; round++) {
       const roundPrompt = critique.length > 0
         ? `${prompt}\n\n【上次选型被审查拒绝 — 必须按下列要求重出完整 JSON】:\n${critique}`
         : prompt;
@@ -1881,33 +2385,48 @@ export class AiPipelineOrchestrator {
           `[AI_PIPE] device_select parse score=${score.toFixed(2)} round=${round + 1}`);
         if (parsed && score >= QUALITY_MIN_FILL_RATE) {
           lastParsed = parsed;
-          const issues = this.critiqueDeviceSelect(parsed, opts.prompt);
-          if (issues.length === 0) {
+          const split = this.critiqueDeviceSelectSplit(parsed, opts.prompt, this.activeIntent);
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_PIPE] critique HARD=${split.hard.length} SOFT=${split.soft.length}`);
+          if (split.hard.length === 0) {
+            if (split.soft.length > 0) {
+              Logger.warn(INSTR_TRACE_TAG,
+                `[AI_PIPE] device_select SOFT residual=${split.soft.length}: ${split.soft.join('; ')}`);
+            }
             if (!isEdit) {
               this.cacheSet(cacheKey, parsed);
             }
             return { output: parsed, fromLlm: true };
           }
-          critique = issues.map((s, i) => `${i + 1}. ${s}`).join('\n');
+          const early = AiPipelineOrchestrator.tryEarlyStopStable(
+            split.hard, lastHardFp, stableCount, 'device_select');
+          lastHardFp = early.lastFp;
+          stableCount = early.stableCount;
+          if (early.accept) {
+            Logger.warn(INSTR_TRACE_TAG,
+              `[AI_PIPE] KEEP_RETRY device_select early_stop residual ACCEPT HARD=${split.hard.length}`);
+            return { output: parsed, fromLlm: true };
+          }
+          critique = AiPipelineOrchestrator.formatCritiqueFeedback(split);
           Logger.warn(INSTR_TRACE_TAG,
-            `[AI_PIPE] device_select AI-critique reject round=${round + 1}: ${critique}`);
+            `[AI_PIPE] device_select AI-critique reject round=${round + 1}: HARD=${split.hard.length}`);
           continue;
         }
       }
-      if (round === selectRounds) {
+      if (round === CRITIQUE_INNER_ROUNDS) {
         break;
       }
     }
     if (lastParsed) {
-      const still = this.critiqueDeviceSelect(lastParsed, opts.prompt);
-      if (still.length === 0) {
+      const stillSplit = this.critiqueDeviceSelectSplit(lastParsed, opts.prompt, this.activeIntent);
+      if (stillSplit.hard.length === 0) {
         Logger.warn(INSTR_TRACE_TAG,
           '[AI_PIPE] device_select critique exhausted but last output now clean — accept without cache');
         return { output: lastParsed, fromLlm: true };
       }
-      // 永不 ABORT：带瑕疵选型继续，外层/自审再修
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PIPE] KEEP_RETRY device_select residual=${still.length} — accept best (no ABORT): ${still.join('; ')}`);
+        `[AI_PIPE] KEEP_RETRY device_select residual=${stillSplit.hard.length} — accept best (no ABORT):` +
+        ` ${stillSplit.hard.join('; ')}`);
       return { output: lastParsed, fromLlm: true };
     }
     Logger.warn(INSTR_TRACE_TAG,
@@ -1933,8 +2452,9 @@ export class AiPipelineOrchestrator {
     // AI 驱动纠错：布局不过关则 critique 回灌；轮次有上限，残差交给 resolveSelectionOverlaps
     let critique = '';
     let lastParsed: LayoutLlmOutput | null = null;
-    const layoutRounds = 5;
-    for (let round = 0; round <= layoutRounds; round++) {
+    let lastHardFp = '';
+    let stableCount = 0;
+    for (let round = 0; round <= LAYOUT_INNER_ROUNDS; round++) {
       const roundPrompt = critique.length > 0
         ? `${basePrompt}\n\n【上次布局被审查拒绝 — 必须按下列要求重出完整 positions JSON】:\n${critique}`
         : basePrompt;
@@ -1947,16 +2467,27 @@ export class AiPipelineOrchestrator {
         if (parsed && score >= QUALITY_MIN_FILL_RATE) {
           lastParsed = parsed;
           const issues = this.critiqueLayout(parsed, devices);
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_PIPE] critique HARD=${issues.length} SOFT=0`);
           if (issues.length === 0) {
             return { output: parsed, fromLlm: true };
           }
-          critique = issues.map((s, i) => `${i + 1}. ${s}`).join('\n');
+          const early = AiPipelineOrchestrator.tryEarlyStopStable(
+            issues, lastHardFp, stableCount, 'layout');
+          lastHardFp = early.lastFp;
+          stableCount = early.stableCount;
+          if (early.accept) {
+            Logger.warn(INSTR_TRACE_TAG,
+              `[AI_PIPE] KEEP_RETRY layout early_stop residual ACCEPT issues=${issues.length}`);
+            return { output: parsed, fromLlm: true };
+          }
+          critique = issues.map((s, i) => `${i + 1}. [HARD] ${s}`).join('\n');
           Logger.warn(INSTR_TRACE_TAG,
             `[AI_PIPE] layout AI-critique reject round=${round + 1}: ${critique}`);
           continue;
         }
       }
-      if (round === layoutRounds) {
+      if (round === LAYOUT_INNER_ROUNDS) {
         break;
       }
     }
@@ -2073,7 +2604,7 @@ export class AiPipelineOrchestrator {
     }
 
     const hasMcu = devices.some(d => {
-      const id = d.libDevId.toUpperCase();
+      const id = (d.libDevId ?? '').toUpperCase();
       return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
     });
     if (hasMcu) {
@@ -2083,9 +2614,9 @@ export class AiPipelineOrchestrator {
           id.indexOf('STC') >= 0 || id.indexOf('MCU') >= 0;
       });
       if (mcuPos) {
-        if (mcuPos.x < 300 || mcuPos.x > 800 || mcuPos.y < 150 || mcuPos.y > 550) {
+        if (mcuPos.x < 400 || mcuPos.x > 700 || mcuPos.y < 250 || mcuPos.y > 450) {
           issues.push(
-            `MCU "${mcuPos.deviceId}" 不在画布中央区域 (x∈[300,800], y∈[150,550])，` +
+            `MCU "${mcuPos.deviceId}" 不在画布中央区域 (x∈[400,700], y∈[250,450])，` +
             `当前(${Math.round(mcuPos.x)},${Math.round(mcuPos.y)})`);
         }
       }
@@ -2108,22 +2639,26 @@ export class AiPipelineOrchestrator {
       return { output: skipOut, fromLlm: false };
     }
 
+    this.activeIntent = refineIntentFromTopo(this.activeIntent, topo);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] intent topo-refined | ${formatIntentLog(this.activeIntent)}`);
+
     const tpl = PromptLoader.load('net_plan');
     const deviceDetail = PromptLoader.buildDeviceDetailForNetPlan(topo, this.componentLibrary);
     const posSummary = PromptLoader.buildPositionSummary(topo, this.componentLibrary);
 
-    // 注入反模式警示 + 库内 libDevId 清单，防止 LLM 编造不存在的连接方式
     const prompt = PromptLoader.renderEnriched(tpl, [
       { key: 'user_prompt', value: opts.prompt },
       { key: 'device_detail', value: deviceDetail },
       { key: 'position_summary', value: posSummary }
-    ], this.componentLibrary);
+    ], this.componentLibrary, { intent: this.activeIntent });
 
     // AI 驱动纠错：net_plan 触点拓扑不过关则 critique 回灌 LLM
     let critique = '';
     let lastPlan: NetPlanResult | null = null;
-    const netRounds = NEVER_ABORT_ROUNDS;
-    for (let round = 0; round <= netRounds; round++) {
+    let lastHardFp = '';
+    let stableCount = 0;
+    for (let round = 0; round <= CRITIQUE_INNER_ROUNDS; round++) {
       const roundPrompt = critique.length > 0
         ? `${prompt}\n\n【上次网络计划被审查拒绝 — 必须按下列要求重出完整 netPlan JSON】:\n${critique}\n` +
           `【铁律】仪器 CH/V+ 必须并入被测信号网同名，禁止 PROBE_* 重复列出被测脚；一脚只能属一网。`
@@ -2141,7 +2676,8 @@ export class AiPipelineOrchestrator {
         continue;
       }
 
-      const raw = PromptLoader.extractJson<NetPlanResult>(api.data);
+      const rawObj = PromptLoader.extractJson<Object>(api.data);
+      const raw = NetPlanExecutor.normalizeLlmPlan(rawObj);
       if (!raw || !raw.nets || !Array.isArray(raw.nets) || raw.nets.length === 0) {
         Logger.warn(INSTR_TRACE_TAG,
           `[AI_PIPE] KEEP_RETRY net_plan JSON invalid round=${round + 1}`);
@@ -2155,8 +2691,15 @@ export class AiPipelineOrchestrator {
           `[AI_PIPE] net_plan sanitize duplicate-pins fixes=${repaired} round=${round + 1}`);
       }
       lastPlan = raw;
-      const issues = AiPipelineOrchestrator.critiqueNetPlan(raw, topo, opts.prompt);
-      if (issues.length === 0) {
+      const split = AiPipelineOrchestrator.critiqueNetPlanSplit(
+        raw, topo, opts.prompt, this.activeIntent);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] critique HARD=${split.hard.length} SOFT=${split.soft.length}`);
+      if (split.hard.length === 0) {
+        if (split.soft.length > 0) {
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PIPE] net_plan SOFT residual=${split.soft.length}: ${split.soft.join('; ')}`);
+        }
         Logger.info(INSTR_TRACE_TAG,
           `[AI_PIPE] net_plan LLM OK nets=${raw.nets.length}` +
           ` labels=${raw.labels?.length ?? 0} round=${round + 1}`);
@@ -2168,9 +2711,18 @@ export class AiPipelineOrchestrator {
         }
         return { output: raw, fromLlm: true };
       }
-      critique = issues.map((s, i) => `${i + 1}. ${s}`).join('\n');
+      const early = AiPipelineOrchestrator.tryEarlyStopStable(
+        split.hard, lastHardFp, stableCount, 'net_plan');
+      lastHardFp = early.lastFp;
+      stableCount = early.stableCount;
+      if (early.accept) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] KEEP_RETRY net_plan early_stop residual ACCEPT HARD=${split.hard.length}`);
+        return { output: raw, fromLlm: true };
+      }
+      critique = AiPipelineOrchestrator.formatCritiqueFeedback(split);
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PIPE] net_plan AI-critique reject round=${round + 1}: ${critique}`);
+        `[AI_PIPE] net_plan AI-critique reject round=${round + 1}: HARD=${split.hard.length}`);
     }
 
     if (lastPlan) {
@@ -2179,15 +2731,16 @@ export class AiPipelineOrchestrator {
         Logger.info(INSTR_TRACE_TAG,
           `[AI_PIPE] net_plan final sanitize fixes=${again}`);
       }
-      const still = AiPipelineOrchestrator.critiqueNetPlan(lastPlan, topo, opts.prompt);
-      if (still.length === 0) {
+      const stillSplit = AiPipelineOrchestrator.critiqueNetPlanSplit(
+        lastPlan, topo, opts.prompt, this.activeIntent);
+      if (stillSplit.hard.length === 0) {
         Logger.warn(INSTR_TRACE_TAG,
           '[AI_PIPE] net_plan critique exhausted but sanitized plan clean — accept');
         return { output: lastPlan, fromLlm: true };
       }
-      // 永不 ABORT：消毒后仍有瑕疵也继续执行，交给自审/布线修复
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PIPE] KEEP_RETRY net_plan residual=${still.length} — accept sanitized (no ABORT): ${still.join('; ')}`);
+        `[AI_PIPE] KEEP_RETRY net_plan residual=${stillSplit.hard.length} — accept sanitized (no ABORT):` +
+        ` ${stillSplit.hard.join('; ')}`);
       return { output: lastPlan, fromLlm: true };
     }
 
@@ -2213,14 +2766,17 @@ export class AiPipelineOrchestrator {
     const mergeUnique = (base: string[] | undefined, extra: string[]): string[] => {
       const out: string[] = [];
       const seen = new Set<string>();
-      const src = (base ?? []).concat(extra);
+      const src = (base ?? []).concat(extra ?? []);
       for (let i = 0; i < src.length; i++) {
-        const u = src[i].toUpperCase();
-        if (u.length === 0 || seen.has(u)) {
+        if (src[i] === undefined || src[i] === null) {
+          continue;
+        }
+        const u = `${src[i]}`.toUpperCase();
+        if (u.length === 0 || u === 'UNDEFINED' || u === 'NULL' || seen.has(u)) {
           continue;
         }
         seen.add(u);
-        out.push(src[i]);
+        out.push(`${src[i]}`);
       }
       return out;
     };

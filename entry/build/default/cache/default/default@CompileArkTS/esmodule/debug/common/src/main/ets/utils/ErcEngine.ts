@@ -39,7 +39,7 @@ export class ErcEngine {
         if (net.type === NetType.POWER || net.type === NetType.GROUND) {
             return true;
         }
-        const upper = net.name.toUpperCase();
+        const upper = (net.name ?? '').toUpperCase();
         return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
             upper === 'VCC' || upper === 'VDD' || upper === '0';
     }
@@ -206,6 +206,9 @@ export class ErcEngine {
             return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
         if (libraryId === 'LM358' || libraryId === 'TL082') {
             return ['IN+1', 'IN-1', 'OUT1', 'IN+2', 'IN-2', 'OUT2', 'V+', 'V-'];
+        }
+        if (libraryId === 'LM555' || libraryId === 'NE555') {
+            return ['GND', 'TRIG', 'OUT', 'RESET', 'CTRL', 'THRES', 'DISCH', 'VCC'];
         }
         // Voltage regulators (3-terminal, genPins 3)
         if (libraryId === 'LM7805' || libraryId === 'LM7812' || libraryId === 'AMS1117_3V3') {

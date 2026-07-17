@@ -11,6 +11,29 @@ export function copyStringMap(source: Map<string, string>): Map<string, string> 
     }
     return copy;
 }
+/**
+ * 确保 params 为可写 Map。
+ * JSON.parse(JSON.stringify) 会把 Map 变成普通对象，调用 .set 会抛 "undefined is not callable"。
+ */
+export function ensureStringMap(source: Map<string, string> | Record<string, string> | null | undefined): Map<string, string> {
+    if (source !== undefined && source !== null &&
+        typeof (source as Map<string, string>).set === 'function' &&
+        typeof (source as Map<string, string>).forEach === 'function') {
+        return source as Map<string, string>;
+    }
+    const map = new Map<string, string>();
+    if (source !== undefined && source !== null && typeof source === 'object') {
+        const keys = Object.keys(source as Record<string, string>);
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            const v = (source as Record<string, string>)[k];
+            if (v !== undefined && v !== null) {
+                map.set(k, `${v}`);
+            }
+        }
+    }
+    return map;
+}
 export function copyNumberMap(source: Map<string, number>): Map<string, number> {
     const copy = new Map<string, number>();
     source.forEach((value: number, key: string) => {

@@ -1,4 +1,5 @@
-import type { SchTopology } from 'common';
+import { mapAwareStringify, mapAwareParse } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchTopology } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { LabTemplateRegistry, ALL_CATALOG_LIBRARY_IDS } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 import type { LabTemplateDef, LabCoverageReport } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 /** 模板关联的固件信息 */
@@ -116,7 +117,7 @@ export class TeachingService {
         return null;
     }
     stepPowerOnSequence(topo: SchTopology, stepIndex: number): SchTopology {
-        const result = JSON.parse(JSON.stringify(topo)) as SchTopology;
+        const result = mapAwareParse<SchTopology>(mapAwareStringify(topo));
         const powerNets = result.netList.filter(n => n.isPower);
         for (let i = 0; i <= stepIndex && i < powerNets.length; i++) {
             powerNets[i].defaultVoltage = 5.0;

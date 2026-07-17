@@ -14,7 +14,7 @@ import {
 
 import { IdUtil } from './IdUtil';
 
-import { copyStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
+import { ensureStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
 import { parsePinRef, buildPinRef } from './PinRefUtil';
 import { TopologyPatchApplier } from './TopologyPatch';
 
@@ -162,7 +162,7 @@ export class TopologyAdapter {
 
       mirrorV: false,
 
-      params: copyStringMap(c.parameters),
+      params: ensureStringMap(c.parameters),
 
       pinVoltage: new Map<string, number>(),
 
@@ -184,11 +184,11 @@ export class TopologyAdapter {
 
     const comp: ComponentInstance = {
 
-      id: d.instUuid,
+      id: d.instUuid ?? IdUtil.generate('comp'),
 
-      libraryId: d.libDevId,
+      libraryId: d.libDevId ?? '',
 
-      refDes: d.refName,
+      refDes: d.refName ?? '',
 
       position: { x: d.x, y: d.y },
 
@@ -196,11 +196,11 @@ export class TopologyAdapter {
 
       mirrored: d.mirrorH,
 
-      parameters: copyStringMap(d.params)
+      parameters: ensureStringMap(d.params)
 
     };
 
-    if (d.subCircuitRef.length > 0) {
+    if (d.subCircuitRef && d.subCircuitRef.length > 0) {
 
       comp.subcircuitId = d.subCircuitRef;
 
@@ -252,7 +252,7 @@ export class TopologyAdapter {
 
   static toNet(n: NetInfo): Net {
 
-    const upper = n.netName.toUpperCase();
+    const upper = (n.netName ?? '').toUpperCase();
     let netType = NetType.SIGNAL;
     if (n.isPower) {
       netType = (upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0') ?

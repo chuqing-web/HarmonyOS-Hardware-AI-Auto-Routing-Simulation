@@ -46,7 +46,7 @@ export {
   traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo,
-  traceAiPayload, traceAiOp
+  traceAiPayload, traceAiOp, traceAiDiag
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {
@@ -75,6 +75,8 @@ export { ExportPostProcessor } from './src/main/ets/utils/ExportPostProcessor';
 
 export { PerformanceOptimizer } from './src/main/ets/utils/PerformanceOptimizer';
 
+export { MainThreadYield } from './src/main/ets/utils/MainThreadYield';
+
 export { Validate } from './src/main/ets/utils/Validate';
 
 export { Logger } from './src/main/ets/utils/Logger';
@@ -90,7 +92,7 @@ export { calcSymbolBounds, pointInSymbolBounds, resolveSymbolKey, SymbolBounds }
 export { CallbackRegistry } from './src/main/ets/utils/CallbackRegistry';
 
 export {
-  copyStringMap, copyNumberMap, paramMapGet, parseVoltageVolts, appendArray, arrayMin, arrayMax,
+  copyStringMap, copyNumberMap, ensureStringMap, paramMapGet, parseVoltageVolts, appendArray, arrayMin, arrayMax,
   arrayBufferToString, normalizeRotation, copySchTopologyWithDevices,
   emptyStringMap, emptyNumberMap, stringMap1, stringMap2,
   makeDeviceInst, makeDeviceRequirement, makeRouteLine, emptySchTopology
