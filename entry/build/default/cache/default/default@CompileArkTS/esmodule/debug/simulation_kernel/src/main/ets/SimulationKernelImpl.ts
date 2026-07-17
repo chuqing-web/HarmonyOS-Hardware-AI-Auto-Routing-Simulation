@@ -915,14 +915,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 if (vK >= 2.5) {
                     tag = 'off';
                 }
-                else if (vK <= 0.9 && vf >= 1.2 && (iLed >= 2e-4 || vA <= 4.7)) {
+                else if (vK <= 0.9 && vf >= 1.2) {
+                    // 与 SchematicCanvas.isLedConducting 一致：Vk 近地 + Vf 足够即视为亮
                     tag = 'lit';
                 }
                 else if (iLed >= 5e-4 && vf >= 1.0) {
                     tag = 'lit';
-                }
-                else if (vK <= 0.9 && vf >= 1.2) {
-                    tag = 'mid';
                 }
                 else {
                     tag = 'off';

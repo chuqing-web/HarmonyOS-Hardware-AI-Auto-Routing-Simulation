@@ -13,7 +13,7 @@ import { AiPipelineValidator } from "@bundle:com.elecdraw.aischsim/entry@ai_engi
 import { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiResultCache";
 import { TeachingService } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
 import type { IComponentLibrary } from 'component_library';
-import { AiCapability, EventBus, ModuleEvent, ErcSeverity, ErcRuleType, AiTaskType, ErrCode, ResultHelper, TopologyAdapter, makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { AiCapability, EventBus, ModuleEvent, ErcSeverity, ErcRuleType, AiTaskType, ErrCode, ResultHelper, TopologyAdapter, makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine, Logger, INSTR_TRACE_TAG, AiErcGateUtil } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiRequest, AiResponse, SchematicDocument, SimulationResult, ErcViolation, Result, LogicState, SchTopology, AiTaskResult, DiagError, BomOptResult, WaveData, ProgressCallback, ApiResult, RouteResult, RouteLine, DeviceSelectLlmOutput, RoutingLlmOutput, AiPipelineResult, DeviceSelectResult } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import type { AiTaskExtra, DiagLevel, DiagTargetType } from './internal/AiEngineTypes';
@@ -33,11 +33,13 @@ export class AiEngineImpl implements IAiEngine {
         this.apiManager = apiManager;
         if (componentLibrary) {
             this.componentLibrary = componentLibrary;
+            this.constrainedWiring.setComponentLibrary(componentLibrary);
             this.pipeline = new AiPipelineOrchestrator(apiManager, componentLibrary);
         }
     }
     setComponentLibrary(library: IComponentLibrary): void {
         this.componentLibrary = library;
+        this.constrainedWiring.setComponentLibrary(library);
         this.pipeline = new AiPipelineOrchestrator(this.apiManager, library);
     }
     // ---- v2 API ----
@@ -104,7 +106,7 @@ export class AiEngineImpl implements IAiEngine {
                 }
                 case AiTaskType.TASK_GEN_SCH_FULL: {
                     const prompt = extra?.prompt ?? '';
-                    const gen = await this.aiGenFullSchematic(prompt, extra?.mcuFamily);
+                    const gen = await this.aiGenFullSchematic(prompt, extra);
                     result.success = gen.success;
                     result.errCode = gen.errCode;
                     result.topology = gen.data;
@@ -182,6 +184,7 @@ export class AiEngineImpl implements IAiEngine {
                         }
                         result.analysisText =
                             `LLM:${pipe.data.usedLlm} degraded:${pipe.data.degradedMode}` +
+                                ` ercClean:${pipe.data.ercClean}` +
                                 ` devices:${nDev} nets:${nNet} wires:${nWire}` +
                                 (matchBits.length > 0 ? ` match=[${matchBits.join(',')}]` : '') +
                                 (pipe.data.selectResult?.ragTemplateId ?
@@ -193,6 +196,18 @@ export class AiEngineImpl implements IAiEngine {
                             result.errMsg = 'AI API 不可用或未正确配置，已拒绝模板回退';
                             result.topology = undefined;
                             Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
+                        }
+                        else if (!pipe.data.ercClean) {
+                            // 生图完整门禁：ERC 阻断 + 几何阻断
+                            const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
+                            const geoN = pipe.data.geoBlocking ?? 0;
+                            const hint = AiErcGateUtil.summarizeBlocking(pipe.data.ercErrors ?? [], 4);
+                            result.success = false;
+                            result.errCode = ErrCode.ERR_PARAM_INVALID;
+                            result.errMsg =
+                                `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}，清零后才算完整过程` +
+                                    (hint.length > 0 ? `（${hint}）` : '');
+                            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN} | ${result.analysisText}`);
                         }
                         else {
                             Logger.info(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
@@ -246,8 +261,7 @@ export class AiEngineImpl implements IAiEngine {
         onProgress?.(makeProgress(15, '序列化拓扑'));
         const routeLlm = await this.fetchRoutingConstraints(topo);
         onProgress?.(makeProgress(40, 'A* 约束布线'));
-        let routeResult = this.constrainedWiring.route(topo, routeLlm);
-        routeResult = this.constrainedWiring.fixViolations(topo, routeResult);
+        let routeResult = this.constrainedWiring.routeUntilClean(topo, routeLlm, undefined, undefined, 3);
         this.resultCache.cacheRoute(topo, routeResult);
         onProgress?.(makeProgress(100, 'Routing complete', true));
         return ResultHelper.ok(routeResult);
@@ -262,8 +276,7 @@ export class AiEngineImpl implements IAiEngine {
     }
     async aiOptimizeExistRoute(topo: SchTopology): Promise<ApiResult<RouteResult>> {
         const routeLlm = await this.fetchRoutingConstraints(topo);
-        let routeResult = this.constrainedWiring.route(topo, routeLlm);
-        routeResult = this.constrainedWiring.fixViolations(topo, routeResult);
+        let routeResult = this.constrainedWiring.routeUntilClean(topo, routeLlm, undefined, undefined, 3);
         return ResultHelper.ok(routeResult);
     }
     async aiStaticDiagnose(topo: SchTopology): Promise<ApiResult<DiagError[]>> {
@@ -304,13 +317,24 @@ export class AiEngineImpl implements IAiEngine {
         }
         return ResultHelper.ok(errors);
     }
-    async aiGenFullSchematic(prompt: string, mcuFamily?: string): Promise<ApiResult<SchTopology>> {
-        const extra: AiTaskExtra = { mcuFamily: mcuFamily, prompt: prompt };
+    async aiGenFullSchematic(prompt: string, extra?: AiTaskExtra): Promise<ApiResult<SchTopology>> {
         const emptyTopo = emptySchTopology();
         emptyTopo.schName = 'AI Generated';
         emptyTopo.bgColor = '#FFFFFF';
-        Logger.info(INSTR_TRACE_TAG, `[AI_TASK] aiGenFullSchematic promptLen=${prompt.length} mcu=${mcuFamily ?? 'auto'}`);
-        const pipe = await this.runFullPipeline(prompt, emptyTopo, extra);
+        Logger.info(INSTR_TRACE_TAG, `[AI_TASK] aiGenFullSchematic promptLen=${prompt.length} mcu=${extra?.mcuFamily ?? 'auto'}` +
+            ` mode=${extra?.generationMode ?? 'create'}`);
+        const merged: AiTaskExtra = {
+            prompt: prompt,
+            mcuFamily: extra?.mcuFamily,
+            scene: extra?.scene,
+            skipLlm: extra?.skipLlm,
+            routingWeights: extra?.routingWeights,
+            onStreamSnapshot: extra?.onStreamSnapshot,
+            conversationHistory: extra?.conversationHistory,
+            generationMode: extra?.generationMode,
+            lockedUuids: extra?.lockedUuids
+        };
+        const pipe = await this.runFullPipeline(prompt, emptyTopo, merged);
         if (!pipe.success || !pipe.data?.topology) {
             Logger.error(INSTR_TRACE_TAG, `[AI_TASK] aiGenFullSchematic FAIL (no template fallback): ${pipe.error}`);
             return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT, pipe.error ?? 'AI 整图生成失败：API 不可用且已禁用模板回退');
@@ -318,6 +342,12 @@ export class AiEngineImpl implements IAiEngine {
         if (!pipe.data.usedLlm) {
             Logger.error(INSTR_TRACE_TAG, '[AI_TASK] aiGenFullSchematic REJECT non-LLM topology');
             return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT, 'AI API 未返回有效结果，已拒绝模板/本地回退');
+        }
+        if (!pipe.data.ercClean) {
+            const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
+            const geoN = pipe.data.geoBlocking ?? 0;
+            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] aiGenFullSchematic INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN}`);
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}`);
         }
         return ResultHelper.ok(pipe.data.topology);
     }
@@ -329,7 +359,9 @@ export class AiEngineImpl implements IAiEngine {
             prompt,
             scene: extra?.scene ?? 'text_gen',
             partialTopo: topo.deviceList.length > 0 ? topo : undefined,
-            lockedDeviceUuids: extra?.lockedUuids ?? [],
+            lockedDeviceUuids: extra?.lockedUuids ?? (extra?.generationMode === 'edit' && topo.deviceList.length > 0
+                ? topo.deviceList.map(d => d.instUuid)
+                : []),
             mcuFamily: extra?.mcuFamily,
             skipLlm: extra?.skipLlm,
             routingWeights: extra?.routingWeights,
@@ -344,12 +376,18 @@ export class AiEngineImpl implements IAiEngine {
             return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'No library');
         const engine = new DeviceSelectEngine(this.componentLibrary);
         const tpl = PromptLoader.load('device_select');
-        const llmPrompt = PromptLoader.render(tpl, [
+        const llmPrompt = PromptLoader.renderEnriched(tpl, [
             { key: 'user_prompt', value: prompt },
             { key: 'scene', value: 'partial_assist' },
-            { key: 'partial_topo', value: partialTopo ? JSON.stringify(partialTopo.deviceList) : '' }
-        ]);
-        const api = await this.apiManager.chat(llmPrompt, { capability: AiCapability.COMPONENT_RECOMMEND });
+            { key: 'partial_topo', value: partialTopo ? JSON.stringify(partialTopo.deviceList) : '' },
+            { key: 'conversation_history', value: '' },
+            { key: 'generation_mode', value: '' }
+        ], this.componentLibrary, { includeFullPins: true });
+        const api = await this.apiManager.chat(llmPrompt, {
+            capability: AiCapability.COMPONENT_RECOMMEND,
+            temperature: 0.08,
+            disableThinking: false
+        });
         let llmOut: DeviceSelectLlmOutput;
         if (api.success && api.data) {
             llmOut = PromptLoader.extractJson<DeviceSelectLlmOutput>(api.data) ??
@@ -374,11 +412,15 @@ export class AiEngineImpl implements IAiEngine {
     }
     private async fetchRoutingConstraints(topo: SchTopology): Promise<RoutingLlmOutput> {
         const tpl = PromptLoader.load('route');
-        const prompt = PromptLoader.render(tpl, [
+        const prompt = PromptLoader.renderEnriched(tpl, [
             { key: 'topology_summary', value: `${topo.deviceList.length} devs` },
             { key: 'net_list', value: topo.netList.map(n => n.netName).join(',') }
-        ]);
-        const api = await this.apiManager.chat(prompt, { capability: AiCapability.AUTO_WIRING });
+        ], this.componentLibrary!);
+        const api = await this.apiManager.chat(prompt, {
+            capability: AiCapability.AUTO_WIRING,
+            temperature: 0.05,
+            disableThinking: true
+        });
         if (api.success && api.data) {
             const parsed = PromptLoader.extractJson<RoutingLlmOutput>(api.data);
             if (parsed?.netPriority)

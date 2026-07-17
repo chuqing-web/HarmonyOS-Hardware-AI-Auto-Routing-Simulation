@@ -22,6 +22,7 @@ import { KeyboardShortcutManager } from '../utils/KeyboardShortcutManager';
 import { ThemeManager } from '../theme/ThemeManager';
 import { ProteusFonts } from '../theme/ProteusTheme';
 import { PlatformPrefsStore } from '../utils/PlatformPrefsStore';
+import { AiApiVaultStore } from '../utils/AiApiVaultStore';
 import {
   ProjectFile, EventBus, ModuleEvent, ModuleEventPayload,
   CallbackRegistry, SchTopology, WaveData, ErcError, AiApiConfig,
@@ -40,7 +41,7 @@ import {
   ensureNetPinConnectivity, PinGeometryResolver, PinGeometry,
   traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn,
   traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity,
-  emptySchTopology, traceAiPayload, traceAiOp
+  emptySchTopology, traceAiPayload, traceAiOp, AiErcGateUtil
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -189,10 +190,13 @@ export class AppService {
     try { fs.accessSync(`${baseDir}/${ProjectPaths.AUTOSAVE_DIR}`); } catch (_e) {
       try { fs.mkdirSync(`${baseDir}/${ProjectPaths.AUTOSAVE_DIR}`); } catch (_e2) {}
     }
+    try { fs.mkdirSync(ProjectPaths.apiVaultRoot(baseDir), true); } catch (_e) {}
     try { fs.mkdirSync(ProjectPaths.userProjectRoot(baseDir), true); } catch (_e) {}
     ThemeManager.getInstance().init(baseDir);
     PlatformPrefsStore.getInstance().init(baseDir);
+    AiApiVaultStore.getInstance().init(baseDir);
     this.applyPlatformPrefsFromStore();
+    this.loadAiApiVaultOnStartup();
     (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
     this.filePersistence.initCollaboration(baseDir);
     void TemplateProjectBootstrap.ensure(context, baseDir);
@@ -253,9 +257,9 @@ export class AppService {
     }
     this.currentProject = this.filePersistence.createNewProject(name);
     this.currentProjectPath = '';
-    // 新建工程与空 aiConfigs 对齐，避免内存残留旧 API 与工程脱节
-    this.aiApiManager.clearAllConfigs();
-    Logger.info(INSTR_TRACE_TAG, '[AI_API] newProject cleared API manager');
+    // API 存在全局加密金库，新建工程不再清空已加载的 API
+    this.currentProject.aiConfigs = [];
+    Logger.info(INSTR_TRACE_TAG, '[AI_API] newProject keep vault APIs (not cleared)');
     const editor = this.schematicEditor as SchematicEditorImpl;
     editor.loadAnnotations([]);
     editor.setReadOnly(false);
@@ -1051,20 +1055,72 @@ export class AppService {
     if (this.currentProject.mcuDebugConfig) {
       this.hexDebugger.configure(this.currentProject.mcuDebugConfig);
     }
-    this.aiApiManager.clearAllConfigs();
-    for (let i = 0; i < this.currentProject.aiConfigs.length; i++) {
-      const cfg = this.currentProject.aiConfigs[i];
-      const addResult = this.aiApiManager.addApi(cfg);
-      Logger.info(INSTR_TRACE_TAG,
-        `[AI_API] loadProject add id=${cfg.id} name=${cfg.name}` +
-        ` ok=${addResult.success} keyLen=${cfg.apiKey ? cfg.apiKey.length : 0}`);
-    }
-    Logger.info(INSTR_TRACE_TAG,
-      `[AI_API] loadProject restored ${this.currentProject.aiConfigs.length} configs`);
+    // API 以全局金库为准；工程内遗留配置仅作一次性迁移
+    this.migrateProjectAiConfigsToVaultIfNeeded();
     this.bindingPinHash.clear();
     this.autoWireAllInstruments();
     this.onProjectChanged();
     return true;
+  }
+
+  /** 启动：从加密金库加载 API 并注入 manager */
+  private loadAiApiVaultOnStartup(): void {
+    const vault = AiApiVaultStore.getInstance();
+    const configs = vault.loadConfigs();
+    this.aiApiManager.clearAllConfigs();
+    for (let i = 0; i < configs.length; i++) {
+      const cfg = configs[i];
+      const addResult = this.aiApiManager.addApi(cfg);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] vault→manager add id=${cfg.id} name=${cfg.name}` +
+        ` ok=${addResult.success} keyLen=${cfg.apiKey ? cfg.apiKey.length : 0}`);
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] vault startup restored ${configs.length} configs` +
+      ` path=${vault.getVaultPath()}`);
+  }
+
+  /**
+   * 旧工程内仍带 aiConfigs 时：金库为空则迁入；否则忽略工程内 Key。
+   */
+  private migrateProjectAiConfigsToVaultIfNeeded(): void {
+    if (!this.currentProject) {
+      return;
+    }
+    const projectCfgs = this.currentProject.aiConfigs ?? [];
+    if (projectCfgs.length === 0) {
+      return;
+    }
+    const vault = AiApiVaultStore.getInstance();
+    const vaultCfgs = vault.loadConfigs();
+    if (vaultCfgs.length === 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] migrate project→vault count=${projectCfgs.length}`);
+      for (let i = 0; i < projectCfgs.length; i++) {
+        this.aiApiManager.addApi(projectCfgs[i]);
+      }
+      this.persistAiApiVaultFromManager();
+    } else {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] skip project aiConfigs (vault has ${vaultCfgs.length}, project ${projectCfgs.length})`);
+    }
+    this.currentProject.aiConfigs = [];
+  }
+
+  private persistAiApiVaultFromManager(): boolean {
+    const exported = this.aiApiManager.exportConfigs(false);
+    if (!exported.success || !exported.data) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_API] vault export FAILED: ${exported.error ?? 'empty'}`);
+      return false;
+    }
+    try {
+      const configs = JSON.parse(exported.data) as AiApiConfig[];
+      return AiApiVaultStore.getInstance().saveConfigs(configs);
+    } catch (e) {
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] vault export parse error: ${e}`);
+      return false;
+    }
   }
 
   syncProjectFromModules(): void {
@@ -1075,54 +1131,37 @@ export class AppService {
     const editor = this.schematicEditor as SchematicEditorImpl;
     const bundle = this.filePersistence.buildCollaborationBundle(editor.getAnnotations());
     this.currentProject.collaboration = bundle;
+    this.currentProject.aiConfigs = [];
     this.syncAiApiConfigsToProject(false);
   }
 
   /**
-   * 将内存中的 API 配置（含真实 Key）写回工程。
-   * @param persistToDisk 为 true 且已有工程路径时立即 save（UI 保存 API 用）；
-   *                      saveProject 内部调用时必须传 false，避免递归。
+   * 将内存中的 API 配置加密写入全局金库（与工程文件分离）。
+   * @param persistToDisk 为 true 时立即写金库（UI 保存 API）；
+   *                      工程 save 传 false 时仍写金库，但 Key 不进 .schsim。
    */
   syncAiApiConfigsToProject(persistToDisk: boolean = true): void {
-    if (!this.currentProject) {
-      Logger.warn(INSTR_TRACE_TAG, '[AI_API] sync→project skipped: no current project');
-      return;
+    if (this.currentProject) {
+      this.currentProject.aiConfigs = [];
     }
     const exported = this.aiApiManager.exportConfigs(false);
     if (!exported.success || !exported.data) {
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_API] sync→project FAILED: ${exported.error ?? 'export empty'}`);
+        `[AI_API] sync→vault FAILED: ${exported.error ?? 'export empty'}`);
       return;
     }
     try {
       const configs = JSON.parse(exported.data) as AiApiConfig[];
-      const existing = this.currentProject.aiConfigs ?? [];
-      // 禁止用空 manager 覆盖已持久化配置（启动未 load 时会静默擦除）
-      if (configs.length === 0 && existing.length > 0) {
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_API] sync→project REFUSED empty wipe: manager=0 project=${existing.length}`);
-        return;
-      }
-      this.currentProject.aiConfigs = configs;
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_API] sync→project ok count=${configs.length}` +
+        `[AI_API] sync→vault ok count=${configs.length}` +
         ` ids=[${configs.map(c => c.id).join(',')}]`);
-      if (persistToDisk && this.currentProjectPath.length > 0) {
-        const mainPath = this.currentProjectPath;
-        const autoPath = `${this.getAutosaveDir()}/${this.currentProject.name}.schsim`;
-        void this.saveProject(mainPath, false).then((ok: boolean) => {
-          Logger.info(INSTR_TRACE_TAG,
-            `[AI_API] persist→disk ${ok ? 'OK' : 'FAIL'} path=${mainPath}`);
-        });
-        if (autoPath !== mainPath) {
-          void this.saveProject(autoPath, false).then((ok: boolean) => {
-            Logger.info(INSTR_TRACE_TAG,
-              `[AI_API] persist→autosave ${ok ? 'OK' : 'FAIL'} path=${autoPath}`);
-          });
-        }
+      if (persistToDisk || configs.length > 0) {
+        const ok = AiApiVaultStore.getInstance().saveConfigs(configs, persistToDisk && configs.length === 0);
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_API] persist→vault ${ok ? 'OK' : 'FAIL'} path=${AiApiVaultStore.getInstance().getVaultPath()}`);
       }
     } catch (e) {
-      Logger.error(INSTR_TRACE_TAG, `[AI_API] sync→project parse error: ${e}`);
+      Logger.error(INSTR_TRACE_TAG, `[AI_API] sync→vault parse error: ${e}`);
     }
   }
 
@@ -1622,8 +1661,8 @@ export class AppService {
     if (!this.aiGenerating) {
       return false;
     }
-    this.appendAiGenLog('system', '生成中，禁止手动放置器件');
-    this.onStatusMessage('AI 生成中，仅允许 AI 自动放置');
+    this.appendAiGenLog('system', '生成中，禁止手动放置器件（复杂问题 AI 可能需较长时间，请耐心等待）');
+    this.onStatusMessage('AI 生成中，请耐心等待（复杂电路可能数分钟）');
     return true;
   }
 
@@ -1754,9 +1793,9 @@ export class AppService {
     }
   }
 
-  /** 评估首次落图是否需要弹出自检询问 */
+  /** 评估首次落图是否需要弹出自检询问（含功能影响 warning） */
   private evaluatePostGenerateIssues(erc: ErcError[]): AiPostGenerateIssues {
-    const hard = erc.filter(e => e.severity === 'error' || e.severity === 'critical');
+    const hard = AiErcGateUtil.filterBlocking(erc);
     const doc = this.schematicEditor.getDocument();
     let floatingPins = 0;
     for (let i = 0; i < doc.nets.length; i++) {
@@ -1769,7 +1808,7 @@ export class AppService {
     const count = hard.length + (noWires ? 1 : 0) + (floatingPins > 2 ? 1 : 0);
     const bits: string[] = [];
     if (hard.length > 0) {
-      bits.push(`ERC错误 ${hard.length}`);
+      bits.push(`ERC阻断 ${hard.length}`);
     }
     if (noWires) {
       bits.push('无导线');
@@ -1811,7 +1850,7 @@ export class AppService {
       return false;
     }
     if (this.aiGenerating) {
-      this.onStatusMessage('AI 正在生成中');
+      this.onStatusMessage('AI 正在生成中，请耐心等待');
       return false;
     }
     if (this.aiApiManager.isQuotaWarningActive()) {
@@ -1867,6 +1906,44 @@ export class AppService {
       }
 
       if (!result.success || !result.topology) {
+        // 门禁未清零时引擎会 success=false 但仍可能带 topology — 落图供检视，不算完整生图
+        const incompleteGate = !result.success && !!result.topology &&
+          ((result.errMsg ?? '').indexOf('生图未完成') >= 0 ||
+            (result.errMsg ?? '').indexOf('ERC') >= 0 ||
+            (result.errMsg ?? '').indexOf('几何') >= 0);
+        if (incompleteGate && result.topology) {
+          Logger.error(INSTR_TRACE_TAG,
+            `[AI_GEN] INCOMPLETE gate | ${result.errMsg}`);
+          traceAiOp('AI_GEN', 'generate_incomplete_gate', result.errMsg ?? '');
+          this.appendAiGenLog('assistant',
+            `生图未完成（ERC/几何门禁）：${result.errMsg || '仍有阻断项'}`);
+          if (mode === 'replace') {
+            this.schematicEditor.loadTopology(result.topology);
+          } else {
+            const generatedDoc = TopologyAdapter.fromTopology(result.topology);
+            const editor = this.schematicEditor as SchematicEditorImpl;
+            const currentDoc = editor.getDocument();
+            TemplateMergeUtil.mergeTemplateInto(currentDoc, generatedDoc);
+            editor.loadDocument(currentDoc);
+          }
+          const editor = this.schematicEditor as SchematicEditorImpl;
+          editor.rebuildNetPinConnectivity();
+          const doc = editor.getDocument();
+          const grid = doc.metadata.gridSize || 10;
+          ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver());
+          editor.loadDocument(doc);
+          this.schematicEditor.fitAllInView();
+          this.syncProjectFromModules();
+          const erc = this.runErc(false);
+          const errN = AiErcGateUtil.countBlocking(erc);
+          this.appendAiGenLog('system',
+            `已落图供检视，但生图过程未完成：仍有 ${errN} 条 ERC 阻断项（含功能影响 warning）。` +
+            `请勿以此图仿真；请自检修复或重新生成。`);
+          this.onProjectChanged();
+          this.endAiGenerate(false);
+          this.onStatusMessage(result.errMsg || '生图未完成：仍有 ERC/几何阻断项');
+          return false;
+        }
         this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
         Logger.error(INSTR_TRACE_TAG,
           `[AI_GEN] FAILED err=${result.errMsg || 'unknown'} code=${result.errCode}`);
@@ -1942,11 +2019,28 @@ export class AppService {
       this.syncProjectFromModules();
       this.reloadSimulationFromSchematic();
       const erc = this.runErc(false);
-      const errN = erc.filter(e => e.severity === 'error' || e.severity === 'critical').length;
-      const warnN = erc.filter(e => e.severity === 'warning').length;
+      const errN = AiErcGateUtil.countBlocking(erc);
+      const warnN = erc.filter(e => e.severity === 'warning' && !AiErcGateUtil.isBlocking(e)).length;
       this.appendAiGenLog('assistant',
-        `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC ${erc.length} 条（错误 ${errN} / 警告 ${warnN}）` +
+        `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC 阻断 ${errN} / 软警告 ${warnN}` +
         ` · 悬空器件 ${floatingComps}`);
+
+      // 落图后二次门禁：error/critical + 功能影响 warning 均须清零
+      if (errN > 0) {
+        const issues = this.evaluatePostGenerateIssues(erc);
+        this.aiSelfCheckPromptPending = true;
+        this.appendAiGenLog('system',
+          `生图未完成：落图后仍有 ${errN} 条阻断项（${issues.summary}）。` +
+          `功能影响 warning 亦不可放行。请「AI 自检修复」或重新生成；本次不算完整过程。`);
+        this.onAiSelfCheckNeeded(issues.count, issues.summary);
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_GEN] INCOMPLETE post-load ercBlocking=${errN}`);
+        traceAiOp('AI_GEN', 'generate_incomplete_post_erc', `ercBlocking=${errN}`);
+        this.onProjectChanged();
+        this.endAiGenerate(false);
+        this.onStatusMessage(`生图未完成：仍有 ${errN} 条 ERC 阻断项`);
+        return false;
+      }
 
       const issues = this.evaluatePostGenerateIssues(erc);
       if (issues.needAsk) {
@@ -1955,7 +2049,7 @@ export class AppService {
           `首次布局检测到问题（${issues.summary}）。可点击「AI 自检修复」或确认弹窗进行修复。`);
         this.onAiSelfCheckNeeded(issues.count, issues.summary);
       } else {
-        this.appendAiGenLog('system', '首次布局未发现硬错误；仍可手动「AI 自检修复」');
+        this.appendAiGenLog('system', 'ERC 阻断项清零 · 生图过程完整；仍可手动「AI 自检修复」');
       }
 
       // 多轮对话: 记录本轮对话历史
@@ -1970,7 +2064,7 @@ export class AppService {
       this.appendAiGenLog('system', '画布已解锁');
       this.onProjectChanged();
       this.onStatusMessage(
-        `AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线`);
+        `AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线 · ERC 清零`);
       this.endAiGenerate(true);
       return true;
     } catch (e) {
@@ -1991,7 +2085,7 @@ export class AppService {
       `开始全闭环生成（${mode === 'replace' ? '替换整图' : '追加到空白区'}）· 画布已锁定`);
     this.appendAiGenLog('assistant', '正在解析器件需求…');
     this.onAiGeneratingChanged(true);
-    this.onStatusMessage('AI 生成中，画布已锁定');
+    this.onStatusMessage('AI 生成中，画布已锁定（请耐心等待长回复）');
   }
 
   private endAiGenerate(_ok: boolean): void {

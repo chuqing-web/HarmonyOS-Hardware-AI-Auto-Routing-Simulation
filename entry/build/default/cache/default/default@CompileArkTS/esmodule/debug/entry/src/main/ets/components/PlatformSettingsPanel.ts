@@ -10,10 +10,12 @@ interface PlatformSettingsPanel_Params {
     uiScale?: number;
     screenReader?: boolean;
     darkTheme?: boolean;
+    appVersion?: string;
     appService?: AppService;
 }
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
-import type { AccessibilityConfig } from 'common';
+import { appVersionLabel } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { AccessibilityConfig } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusClassicBtn, ProteusSectionTitle, ProteusSwitch } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
@@ -31,6 +33,7 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__uiScale = new ObservedPropertySimplePU(100, this, "uiScale");
         this.__screenReader = new ObservedPropertySimplePU(false, this, "screenReader");
         this.__darkTheme = new ObservedPropertySimplePU(false, this, "darkTheme");
+        this.__appVersion = new ObservedPropertySimplePU(appVersionLabel(), this, "appVersion");
         this.appService = AppService.getInstance();
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
@@ -54,6 +57,9 @@ export class PlatformSettingsPanel extends ViewPU {
         if (params.darkTheme !== undefined) {
             this.darkTheme = params.darkTheme;
         }
+        if (params.appVersion !== undefined) {
+            this.appVersion = params.appVersion;
+        }
         if (params.appService !== undefined) {
             this.appService = params.appService;
         }
@@ -69,6 +75,7 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__uiScale.purgeDependencyOnElmtId(rmElmtId);
         this.__screenReader.purgeDependencyOnElmtId(rmElmtId);
         this.__darkTheme.purgeDependencyOnElmtId(rmElmtId);
+        this.__appVersion.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__statusMessage.aboutToBeDeleted();
@@ -79,6 +86,7 @@ export class PlatformSettingsPanel extends ViewPU {
         this.__uiScale.aboutToBeDeleted();
         this.__screenReader.aboutToBeDeleted();
         this.__darkTheme.aboutToBeDeleted();
+        this.__appVersion.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -137,6 +145,13 @@ export class PlatformSettingsPanel extends ViewPU {
     }
     set darkTheme(newValue: boolean) {
         this.__darkTheme.set(newValue);
+    }
+    private __appVersion: ObservedPropertySimplePU<string>;
+    get appVersion() {
+        return this.__appVersion.get();
+    }
+    set appVersion(newValue: string) {
+        this.__appVersion.set(newValue);
     }
     private appService: AppService;
     aboutToAppear(): void {
@@ -201,7 +216,7 @@ export class PlatformSettingsPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusSectionTitle(this, { title: '平台设置' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 70, col: 9 });
+                    let componentCall = new ProteusSectionTitle(this, { title: '平台设置' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 71, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -255,7 +270,7 @@ export class PlatformSettingsPanel extends ViewPU {
                     let componentCall = new ProteusSwitch(this, {
                         isOn: this.darkTheme,
                         onChange: (on: boolean) => { this.applyTheme(on); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 88, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 89, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -285,7 +300,7 @@ export class PlatformSettingsPanel extends ViewPU {
                         label: '浅色',
                         widthVal: '46%',
                         onAction: () => { this.applyTheme(false); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 98, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 99, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -311,7 +326,7 @@ export class PlatformSettingsPanel extends ViewPU {
                         label: '深色',
                         widthVal: '46%',
                         onAction: () => { this.applyTheme(true); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 103, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 104, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -380,7 +395,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.appService.setOfflineMode(on);
                             this.statusMessage = on ? '已开启离线模式（禁止云端 AI）' : '已关闭离线模式';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 132, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 133, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -418,7 +433,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.appService.setOfflineMode(this.offlineMode);
                             this.statusMessage = this.offlineMode ? '已开启离线模式（禁止云端 AI）' : '已关闭离线模式';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 146, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 147, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -491,7 +506,7 @@ export class PlatformSettingsPanel extends ViewPU {
                                 ? `代理已启用系统代理: ${this.globalProxy.trim()}`
                                 : '代理已清空（直连）';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 184, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 185, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -560,7 +575,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.statusMessage = on ? '已开启高对比度' : '已关闭高对比度';
                             this.appService.announceIfScreenReader(this.statusMessage);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 213, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 214, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -621,7 +636,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.applyAccessibility();
                             this.statusMessage = 'UI 缩放 100%';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 242, col: 15 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 243, col: 15 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -655,7 +670,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.applyAccessibility();
                             this.statusMessage = 'UI 缩放 125%';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 251, col: 15 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 252, col: 15 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -689,7 +704,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.applyAccessibility();
                             this.statusMessage = 'UI 缩放 150%';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 260, col: 15 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 261, col: 15 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -737,7 +752,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.applyAccessibility();
                             this.statusMessage = on ? '已开启语音朗读提示（状态栏播报）' : '已关闭语音朗读提示';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 280, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 281, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -780,6 +795,14 @@ export class PlatformSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`软件版本 ${this.appVersion}`);
+            Text.fontSize(ProteusFonts.PARAM_VALUE);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.padding({ left: 8, bottom: 4 });
+            Text.alignSelf(ItemAlign.Start);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 8 });
             Column.width('100%');
             Column.padding({ left: 8, right: 8, top: 4, bottom: 16 });
@@ -796,7 +819,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.statusMessage = '版本快照已保存';
                             this.appService.announceIfScreenReader(this.statusMessage);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 306, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 313, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -830,7 +853,7 @@ export class PlatformSettingsPanel extends ViewPU {
                             this.statusMessage = '已清理 AI 缓存与临时文件';
                             this.appService.announceIfScreenReader(this.statusMessage);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 315, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 322, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -865,7 +888,7 @@ export class PlatformSettingsPanel extends ViewPU {
                                 this.appService.announceIfScreenReader(this.statusMessage);
                             });
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 324, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PlatformSettingsPanel.ets", line: 331, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

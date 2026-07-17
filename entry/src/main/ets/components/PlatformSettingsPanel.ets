@@ -3,7 +3,7 @@
  * 所有开关写入 AppService 并持久化，通过 themeRefreshKey 强制主界面重绘。
  */
 import { AppService } from '../services/AppService';
-import { AccessibilityConfig } from 'common';
+import { AccessibilityConfig, appVersionLabel } from 'common';
 import { ProteusClassicBtn, ProteusSectionTitle, ProteusSwitch } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { ThemeManager } from '../theme/ThemeManager';
@@ -18,6 +18,7 @@ export struct PlatformSettingsPanel {
   @State uiScale: number = 100;
   @State screenReader: boolean = false;
   @State darkTheme: boolean = false;
+  @State appVersion: string = appVersionLabel();
 
   private appService: AppService = AppService.getInstance();
 
@@ -300,6 +301,12 @@ export struct PlatformSettingsPanel {
             .fontColor(ProteusColors.TEXT_LABEL)
             .fontWeight(FontWeight.Medium)
             .padding({ left: 8, top: 6, bottom: 4 })
+            .alignSelf(ItemAlign.Start)
+
+          Text(`软件版本 ${this.appVersion}`)
+            .fontSize(ProteusFonts.PARAM_VALUE)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .padding({ left: 8, bottom: 4 })
             .alignSelf(ItemAlign.Start)
 
           Column({ space: 8 }) {

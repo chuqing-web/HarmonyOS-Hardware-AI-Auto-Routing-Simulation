@@ -53,6 +53,8 @@ interface RawRoutingOut {
     special_net_rules?: Object;
     globalConstraint?: Object;
     global_constraint?: Object;
+    connectionModeHints?: Object;
+    connection_mode_hints?: Object;
 }
 interface RawSpecialNetRule {
     netGroup?: Object;
@@ -94,7 +96,43 @@ export class LlmJsonNormalizer {
         if (value === null || value === undefined) {
             return fallback;
         }
-        return `${value}`;
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            return `${value}`;
+        }
+        // 对象/数组禁止 `${obj}` → "[object Object]"
+        if (Array.isArray(value)) {
+            return (value as Object[]).map(v => LlmJsonNormalizer.asText(v, '')).filter(s => s.length > 0).join(',');
+        }
+        if (typeof value === 'object') {
+            return LlmJsonNormalizer.objectToConstraintText(value as Record<string, Object>);
+        }
+        return fallback;
+    }
+    /** 将 LLM 嵌套对象压成可读约束串（避免 [object Object]） */
+    private static objectToConstraintText(rec: Record<string, Object>): string {
+        const parts: string[] = [];
+        const ks = Object.keys(rec);
+        for (let i = 0; i < ks.length; i++) {
+            const k = ks[i];
+            const cell = rec[k];
+            if (cell === null || cell === undefined) {
+                continue;
+            }
+            if (typeof cell === 'boolean' || typeof cell === 'number') {
+                if (cell === true || (typeof cell === 'number' && cell !== 0)) {
+                    parts.push(`${k}`);
+                }
+                continue;
+            }
+            if (typeof cell === 'string') {
+                if ((cell as string).length > 0) {
+                    parts.push(`${k}=${cell}`);
+                }
+                continue;
+            }
+            parts.push(`${k}=${LlmJsonNormalizer.asText(cell, '')}`);
+        }
+        return parts.join(',');
     }
     private static asNumber(value: Object | null | undefined, fallback: number): number {
         if (value === null || value === undefined) {
@@ -254,7 +292,7 @@ export class LlmJsonNormalizer {
                 const x = LlmJsonNormalizer.asNumber(p['x'], 0);
                 const y = LlmJsonNormalizer.asNumber(p['y'], 0);
                 const rotate = LlmJsonNormalizer.asNumber(p['rotate'] ?? p['rotation'], 0);
-                if (deviceId.length > 0 && x > 0 && y > 0) {
+                if (deviceId.length > 0 && !isNaN(x) && !isNaN(y) && x >= 0 && y >= 0) {
                     const item: LayoutPositionItem = { deviceId: deviceId, x: x, y: y, rotate: rotate };
                     positions.push(item);
                 }
@@ -274,30 +312,84 @@ export class LlmJsonNormalizer {
         }
         return layoutOut;
     }
+    /**
+     * special_net_rules 支持:
+     * - 数组 [{netGroup, rule}]
+     * - 对象映射 { "VCC": "direct_route,...", "COIL_CTRL": "avoid_cross" }
+     */
+    private static parseSpecialNetRules(value: Object | null): SpecialNetRule[] {
+        const specialNetRules: SpecialNetRule[] = [];
+        if (value === null) {
+            return specialNetRules;
+        }
+        if (Array.isArray(value)) {
+            const rulesArr = value as Object[];
+            for (let i = 0; i < rulesArr.length; i++) {
+                const r = rulesArr[i] as RawSpecialNetRule;
+                const rule: SpecialNetRule = {
+                    netGroup: LlmJsonNormalizer.asText(LlmJsonNormalizer.firstDefined(r.netGroup, r.net_group), ''),
+                    rule: LlmJsonNormalizer.asText(r.rule, '')
+                };
+                if (rule.netGroup.length > 0 || rule.rule.length > 0) {
+                    specialNetRules.push(rule);
+                }
+            }
+            return specialNetRules;
+        }
+        if (typeof value === 'object') {
+            const rec = value as Record<string, Object>;
+            const ks = Object.keys(rec);
+            for (let i = 0; i < ks.length; i++) {
+                const netGroup = ks[i];
+                const ruleText = LlmJsonNormalizer.asText(rec[netGroup], '');
+                if (netGroup.length > 0 && ruleText.length > 0) {
+                    const rule: SpecialNetRule = { netGroup: netGroup, rule: ruleText };
+                    specialNetRules.push(rule);
+                }
+            }
+        }
+        return specialNetRules;
+    }
+    private static parseModeHintNets(hints: Object | null): string[][] {
+        const forceWire: string[] = [];
+        const forceLabel: string[] = [];
+        if (hints === null || typeof hints !== 'object') {
+            return [forceWire, forceLabel];
+        }
+        const rec = hints as Record<string, Object>;
+        const wireRaw = LlmJsonNormalizer.firstDefined(rec['forceWire'], rec['force_wire']);
+        const labelRaw = LlmJsonNormalizer.firstDefined(rec['forceLabel'], rec['force_label']);
+        const w = LlmJsonNormalizer.asStringArray(wireRaw);
+        const l = LlmJsonNormalizer.asStringArray(labelRaw);
+        for (let i = 0; i < w.length; i++) {
+            forceWire.push(w[i]);
+        }
+        for (let i = 0; i < l.length; i++) {
+            forceLabel.push(l[i]);
+        }
+        return [forceWire, forceLabel];
+    }
     static normalizeRouting(raw: Object | null): RoutingLlmOutput | null {
         if (!raw) {
             return null;
         }
         const src = raw as RawRoutingOut;
         const netPriority = LlmJsonNormalizer.toNumberRecord(LlmJsonNormalizer.firstDefined(src.netPriority, src.net_priority));
-        const rulesArr = LlmJsonNormalizer.asObjectArray(LlmJsonNormalizer.firstDefined(src.specialNetRules, src.special_net_rules));
-        const specialNetRules: SpecialNetRule[] = [];
-        for (let i = 0; i < rulesArr.length; i++) {
-            const r = rulesArr[i] as RawSpecialNetRule;
-            const rule: SpecialNetRule = {
-                netGroup: LlmJsonNormalizer.asText(LlmJsonNormalizer.firstDefined(r.netGroup, r.net_group), ''),
-                rule: LlmJsonNormalizer.asText(r.rule, '')
-            };
-            specialNetRules.push(rule);
-        }
+        const specialNetRules = LlmJsonNormalizer.parseSpecialNetRules(LlmJsonNormalizer.firstDefined(src.specialNetRules, src.special_net_rules));
         const globalConstraint = LlmJsonNormalizer.asText(LlmJsonNormalizer.firstDefined(src.globalConstraint, src.global_constraint), '');
-        if (Object.keys(netPriority).length === 0 && specialNetRules.length === 0 && globalConstraint.length === 0) {
+        const modeHints = LlmJsonNormalizer.parseModeHintNets(LlmJsonNormalizer.firstDefined(src.connectionModeHints, src.connection_mode_hints));
+        const forceWireNets = modeHints[0];
+        const forceLabelNets = modeHints[1];
+        if (Object.keys(netPriority).length === 0 && specialNetRules.length === 0 &&
+            globalConstraint.length === 0 && forceWireNets.length === 0 && forceLabelNets.length === 0) {
             return null;
         }
         const routeOut: RoutingLlmOutput = {
             netPriority: netPriority,
             specialNetRules: specialNetRules,
-            globalConstraint: globalConstraint.length > 0 ? globalConstraint : 'analog_net_area separate from digital'
+            globalConstraint: globalConstraint.length > 0 ? globalConstraint : 'analog_net_area separate from digital',
+            forceWireNets: forceWireNets,
+            forceLabelNets: forceLabelNets
         };
         return routeOut;
     }

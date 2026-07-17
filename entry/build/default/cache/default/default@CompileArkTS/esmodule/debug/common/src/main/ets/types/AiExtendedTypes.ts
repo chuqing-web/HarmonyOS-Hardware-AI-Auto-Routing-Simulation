@@ -174,6 +174,10 @@ export interface RoutingLlmOutput {
     netPriority: Record<string, number>;
     specialNetRules: SpecialNetRule[];
     globalConstraint: string;
+    /** 强制 A* 导线的网络名（来自 LLM connection_mode_hints） */
+    forceWireNets?: string[];
+    /** 强制标号+stub、跳过长导线 A* 的网络名 */
+    forceLabelNets?: string[];
 }
 export interface RoutingWeightPrefs {
     lineLength: number;
@@ -190,4 +194,8 @@ export interface AiPipelineResult {
     topology?: SchTopology;
     usedLlm: boolean;
     degradedMode: boolean;
+    /** 生图完整门禁：无 error/critical，且无严重影响用户功能的 warning */
+    ercClean: boolean;
+    /** 几何阻断项数量（wire_body / pin_proximity / wire_cross） */
+    geoBlocking?: number;
 }

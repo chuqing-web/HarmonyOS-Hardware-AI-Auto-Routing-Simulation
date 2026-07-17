@@ -17,10 +17,14 @@ export class DeviceSelectEngine {
         let ragTemplateId: string | undefined;
         let requirements = llm.deviceRequireList ?? [];
         if (requirements.length === 0) {
-            const rag = RagKnowledgeBase.search(prompt);
-            if (rag) {
-                ragTemplateId = rag.id;
-                requirements = rag.deviceHints;
+            // 生产路径禁止 RAG 静默填 BOM；空选型由上层 abort
+            Logger.warn('DeviceSelect', 'empty deviceRequireList — no RAG fill');
+            oodDetected = true;
+            if (!llm.oodFlags) {
+                llm.oodFlags = [];
+            }
+            if (!llm.oodFlags.includes('EMPTY_REQUIRE_LIST')) {
+                llm.oodFlags.push('EMPTY_REQUIRE_LIST');
             }
         }
         for (let i = 0; i < requirements.length; i++) {
@@ -46,11 +50,25 @@ export class DeviceSelectEngine {
                 });
             }
             else {
-                Logger.warn('DeviceSelect', `No match for ${req.func}/${req.devType}`);
-                const fallback = this.fuzzyFallback(req);
-                if (fallback) {
-                    devices.push(fallback);
-                    alternativeEntries.push({ libDevId: fallback.libDevId, alternatives: [] });
+                Logger.warn('DeviceSelect', `No match for ${req.func}/${req.devType}` +
+                    (req.explicitModel ? ` explicitModel=${req.explicitModel}` : ''));
+                // 禁止 fuzzyFallback 静默替身
+                if (req.explicitModel) {
+                    oodDetected = true;
+                    if (!llm.oodFlags)
+                        llm.oodFlags = [];
+                    if (!llm.oodFlags.includes(req.explicitModel)) {
+                        llm.oodFlags.push(req.explicitModel);
+                    }
+                }
+                else if (req.devType || req.func) {
+                    oodDetected = true;
+                    const flag = `UNMATCHED:${req.explicitModel || req.devType || req.func}`;
+                    if (!llm.oodFlags)
+                        llm.oodFlags = [];
+                    if (!llm.oodFlags.includes(flag)) {
+                        llm.oodFlags.push(flag);
+                    }
                 }
             }
         }
@@ -60,18 +78,20 @@ export class DeviceSelectEngine {
             oodDetected: oodDetected,
             ragTemplateId: ragTemplateId
         };
-        // 强制确保 VCC/GND 存在 — LLM 有时遗漏，由引擎兜底
-        const hasVcc = devices.some(d => d.libDevId === 'VCC');
-        const hasGnd = devices.some(d => d.libDevId === 'GND');
-        if (!hasVcc) {
-            const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
-            devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
-            Logger.info('DeviceSelect', 'Auto-added VCC (LLM omitted it)');
-        }
-        if (!hasGnd) {
-            const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
-            devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
-            Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+        // 仅在已有有效匹配时补 VCC/GND；空 BOM 不得靠电源符号假装选型成功
+        if (devices.length > 0) {
+            const hasVcc = devices.some(d => d.libDevId === 'VCC');
+            const hasGnd = devices.some(d => d.libDevId === 'GND');
+            if (!hasVcc) {
+                const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
+                devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
+                Logger.info('DeviceSelect', 'Auto-added VCC (LLM omitted it)');
+            }
+            if (!hasGnd) {
+                const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
+                devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
+                Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+            }
         }
         return result;
     }
@@ -161,8 +181,14 @@ export class DeviceSelectEngine {
             }
             const search = this.library.search(req.explicitModel, 1, 5);
             if (search.items.length > 0) {
-                const c = search.items[0];
-                return this.buildMatched(req, c.id, c.name, 'exact');
+                // 显式型号：只接受 id 精确一致（大小写不敏感），禁止搜到别的器件冒充
+                const want = req.explicitModel.toUpperCase();
+                for (let si = 0; si < search.items.length; si++) {
+                    const c = search.items[si];
+                    if (c.id.toUpperCase() === want) {
+                        return this.buildMatched(req, c.id, c.name, 'exact');
+                    }
+                }
             }
             return null;
         }

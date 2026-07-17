@@ -15,6 +15,10 @@ export { INSTR_TRACE_TAG, INSTR_TRACE_SIM_STEP, setInstrTraceSimStep, formatPinN
 export type { AnalogResistorStamp, InteractiveMeterSnap, BindingTraceInfo } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/InstrumentTraceLog";
 export { detectInstrumentKind, isInstrumentLibraryId, instrumentSubTabForKind, instrumentSubTabForLibraryId } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/InstrumentKindUtil";
 export { ErcEngine } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/ErcEngine";
+export { AiErcGateUtil } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/AiErcGateUtil";
+export { DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/DeviceHitGeometry";
+export type { WorldHitRect, WirePathCoverage } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/DeviceHitGeometry";
+export { WireConflictGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/WireConflictGeometry";
 export { DeepErcEngine } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/DeepErcEngine";
 export { DynamicErcEngine } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/DynamicErcEngine";
 export { UnitParser } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/UnitParser";
@@ -22,6 +26,7 @@ export { ExportPostProcessor } from "@bundle:com.elecdraw.aischsim/entry@common/
 export { PerformanceOptimizer } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PerformanceOptimizer";
 export { Validate } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/Validate";
 export { Logger } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/Logger";
+export { APP_VERSION_NAME, APP_VERSION_CODE, appVersionLabel } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/AppVersion";
 export { ResultHelper } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/ResultHelper";
 export type { ApiResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/ResultHelper";
 export { TopologyAdapter } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/TopologyAdapter";

@@ -540,11 +540,12 @@ class SplashPage extends ViewPU {
 }
 registerNamedRoute(() => new SplashPage(undefined, {}), "", { bundleName: "com.elecdraw.aischsim", moduleName: "entry", pagePath: "pages/SplashPage", pageFullPath: "entry/src/main/ets/pages/SplashPage", integratedHsp: "false", moduleType: "followWithHap" });
 export {};
-//# sourceMappingURL=SplashPage.js.mapÂÙDC:\Projects\ElecDraw_Harmony\entry\src\main\ets\pages\SplashPage.etsÔrBšªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¥entryÃÂÙ"C:\Projects\ElecDraw_Harmony\entry¼C:\Projects\ElecDraw_Harmony¥entry¥1.0.0Ô  Ù"C:\Projects\ElecDraw_Harmony\entryÃÃÚ/0/**
+//# sourceMappingURL=SplashPage.js.mapÂÙDC:\Projects\ElecDraw_Harmony\entry\src\main\ets\pages\SplashPage.etsÔrBšªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¥entryÃÂÙ"C:\Projects\ElecDraw_Harmony\entry¼C:\Projects\ElecDraw_Harmony¥entry¥1.0.0Ô  Ù"C:\Projects\ElecDraw_Harmony\entryÃÃÚ/i/**
  * Splash â€” 3D å‚æ•°åŒ–çº¿æ¡†æ›²é¢å¯åŠ¨é¡µ
  * çº¯é»‘æç®€èƒŒæ™¯ | å·¦ä¾§ç•™ç™½æ–‡å­— | å³ä¸Šéœ“è™¹çº¿æ¡†åŒæ›²é¢ | å·¦ä¸‹æ¸å˜logo
  */
 import { BusinessError } from '@kit.BasicServicesKit';
+import { APP_VERSION_NAME } from 'common';
 
 interface Vec3 {
   x: number; y: number; z: number;
@@ -938,7 +939,7 @@ struct SplashPage {
               .fontColor('rgba(255,255,255,0.65)')
               .fontFamily('sans-serif')
               .fontWeight(FontWeight.Medium)
-            Text('v1.0.0')
+            Text(`v${APP_VERSION_NAME}`)
               .fontSize(9)
               .fontColor('rgba(255,255,255,0.30)')
               .fontFamily('sans-serif')

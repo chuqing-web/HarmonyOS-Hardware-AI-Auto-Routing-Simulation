@@ -232,7 +232,7 @@ export class FaultDiagnoser {
         if (!hasPower) {
           result.push({
             id: IdUtil.generate('erc'),
-            severity: ErcSeverity.WARNING,
+            severity: ErcSeverity.ERROR,
             ruleType: ErcRuleType.PARAM_MISMATCH,
             message: `MCU ${comp.refDes} 似乎无任何引脚连接`,
             componentId: comp.id,
@@ -253,7 +253,7 @@ export class FaultDiagnoser {
         if (!hasFeedback) {
           result.push({
             id: IdUtil.generate('erc'),
-            severity: ErcSeverity.WARNING,
+            severity: ErcSeverity.ERROR,
             ruleType: ErcRuleType.PARAM_MISMATCH,
             message: `运放 ${comp.refDes} 可能开环（无反馈路径）`,
             componentId: comp.id,
@@ -399,7 +399,7 @@ export class FaultDiagnoser {
       if (!hasVccOnPlus) {
         result.push({
           id: IdUtil.generate('erc'),
-          severity: ErcSeverity.WARNING,
+          severity: ErcSeverity.ERROR,
           ruleType: ErcRuleType.PARAM_MISMATCH,
           message: `电流表 ${am.refDes} I+ 未接 VCC — 可能未串联在电源回路`,
           componentId: am.id,
@@ -409,7 +409,7 @@ export class FaultDiagnoser {
       if (!hasLoadOnMinus && iMinusComps.length > 0) {
         result.push({
           id: IdUtil.generate('erc'),
-          severity: ErcSeverity.WARNING,
+          severity: ErcSeverity.ERROR,
           ruleType: ErcRuleType.PARAM_MISMATCH,
           message: `电流表 ${am.refDes} I- 未接负载 — 电流未流经测量器件`,
           componentId: am.id,
@@ -444,7 +444,7 @@ export class FaultDiagnoser {
         if (allSame && vmNodePairs[0].length > 0) {
           result.push({
             id: IdUtil.generate('erc'),
-            severity: ErcSeverity.WARNING,
+            severity: ErcSeverity.ERROR,
             ruleType: ErcRuleType.PARAM_MISMATCH,
             message: `${voltmeters.length} 块电压表全部测量同一节点对 — 应分布在分压链不同节点`,
             fixSuggestion: '电压表应分别测量不同电阻的压降 (VCC↔SENSE 和 SENSE↔GND)'
@@ -592,7 +592,7 @@ export class FaultDiagnoser {
             upperPin.includes('GPIO')) {
             result.push({
               id: IdUtil.generate('erc'),
-              severity: ErcSeverity.WARNING,
+              severity: ErcSeverity.ERROR,
               ruleType: ErcRuleType.IO_OVERCURRENT,
               message: `MCU ${mcu.refDes} 引脚 ${pinId} 直连电源 "${net.name}" — GPIO可能烧毁`,
               componentId: mcu.id,

@@ -3,6 +3,7 @@
  * 纯黑极简背景 | 左侧留白文字 | 右上霓虹线框双曲面 | 左下渐变logo
  */
 import { BusinessError } from '@kit.BasicServicesKit';
+import { APP_VERSION_NAME } from 'common';
 
 interface Vec3 {
   x: number; y: number; z: number;
@@ -396,7 +397,7 @@ struct SplashPage {
               .fontColor('rgba(255,255,255,0.65)')
               .fontFamily('sans-serif')
               .fontWeight(FontWeight.Medium)
-            Text('v1.0.0')
+            Text(`v${APP_VERSION_NAME}`)
               .fontSize(9)
               .fontColor('rgba(255,255,255,0.30)')
               .fontFamily('sans-serif')

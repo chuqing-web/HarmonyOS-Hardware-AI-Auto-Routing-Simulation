@@ -22,7 +22,8 @@ import { UiStateStore } from '../utils/UiStateStore';
 import {
   CallbackRegistry, ErcError, ProgressInfo, Point2D, ComponentCategory,
   ComponentInstance, SchematicDocument, EventBus, ModuleEvent, ModuleEventPayload,
-  McuFamily, isInstrumentLibraryId, traceBurn, formatFirmwarePreview
+  McuFamily, isInstrumentLibraryId, traceBurn, formatFirmwarePreview,
+  appVersionLabel, Logger, INSTR_TRACE_TAG
 } from 'common';
 import { SchematicEditorImpl, AlignType } from 'schematic_editor';
 import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
@@ -112,6 +113,7 @@ struct Index {
   private uiState: UiStateStore = UiStateStore.getInstance();
 
   async aboutToAppear(): Promise<void> {
+    Logger.info(INSTR_TRACE_TAG, `[APP] START ver=${appVersionLabel()}`);
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.appService.initPlatform(ctx);
     this.userProjectDir = this.appService.getUserProjectDir();
@@ -1302,7 +1304,9 @@ struct Index {
         this.statusMessage = 'Opened Settings panel — see shortcuts in toolbar tooltips';
       }},
       { label: '', separator: true, action: () => {} },
-      { label: 'About', action: () => { this.statusMessage = 'ElecDraw Schematic Editor v2.0'; } }
+      { label: 'About', action: () => {
+        this.statusMessage = `ElecDraw Schematic Editor ${appVersionLabel()}`;
+      } }
     ];
   }
 

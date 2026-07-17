@@ -28,7 +28,7 @@ export interface IAiEngine {
   aiOptimizeExistRoute(topo: SchTopology): Promise<ApiResult<RouteResult>>;
   aiStaticDiagnose(topo: SchTopology): Promise<ApiResult<DiagError[]>>;
   aiDynamicDiagnose(topo: SchTopology, waves: WaveData[]): Promise<ApiResult<DiagError[]>>;
-  aiGenFullSchematic(prompt: string, mcuFamily?: string): Promise<ApiResult<SchTopology>>;
+  aiGenFullSchematic(prompt: string, extra?: AiTaskExtra): Promise<ApiResult<SchTopology>>;
   aiGenSubCircuit(prompt: string, parentTopo: SchTopology): Promise<ApiResult<SchTopology>>;
   aiAnalyzeWave(waves: WaveData[]): Promise<ApiResult<string>>;
   aiRecommendParam(topo: SchTopology, devInstUuid: string): Promise<ApiResult<Record<string, string>>>;

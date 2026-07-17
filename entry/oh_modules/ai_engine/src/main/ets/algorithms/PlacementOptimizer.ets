@@ -5,8 +5,9 @@
 import {
   SchTopology, DeviceInst, LayoutLlmOutput, LayoutConstraintRule,
   MatchedDevice, PlacementCandidate, PlacementResult, IdUtil,
-  makeDeviceInst
+  makeDeviceInst, DeviceHitGeometry, SELECTION_HIT_PAD, WorldHitRect
 } from 'common';
+import { IComponentLibrary } from 'component_library';
 import {
   getModuleGroupLists, moduleGroupToRecord, positionsFromChromosome,
   positionsToRecord, getModuleGroupValues
@@ -27,12 +28,24 @@ interface ScoredChromosome {
 type Chromosome = Map<string, Gene>;
 
 const GRID = 10;
-const CANVAS_W = 1000;
-const CANVAS_H = 750;
+const CANVAS_W = 1200;
+const CANVAS_H = 800;
 const POP_SIZE = 60;
 const GENERATIONS = 50;
+/** 选中区之间额外走线通道 */
+const HIT_CHANNEL = 80;
 
 export class PlacementOptimizer {
+  private componentLibrary: IComponentLibrary | null = null;
+
+  setComponentLibrary(library: IComponentLibrary): void {
+    this.componentLibrary = library;
+  }
+
+  /** 公开：按选中区 AABB 消解重叠（AI 坐标布局后调用） */
+  resolveSelectionOverlaps(topo: SchTopology): void {
+    this.resolveOverlaps(topo);
+  }
   optimize(
     matched: MatchedDevice[],
     constraints: LayoutLlmOutput,
@@ -290,7 +303,7 @@ export class PlacementOptimizer {
       }
     }
     const sepRule: LayoutConstraintRule = {
-      type: 'separate', a: 'power', b: 'analog', minDistance: 150, weight: 80
+      type: 'separate', a: 'power', b: 'analog', minDistance: 220, weight: 80
     };
     rules.push(sepRule);
 
@@ -750,7 +763,8 @@ export class PlacementOptimizer {
       for (let j = i + 1; j < positions.length; j++) {
         const a = positions[i];
         const b = positions[j];
-        if (Math.abs(a.x - b.x) < 110 && Math.abs(a.y - b.y) < 70) {
+        // 无库时退回加大固定间距；有库时在 resolveOverlaps 用真实选中区
+        if (Math.abs(a.x - b.x) < 220 && Math.abs(a.y - b.y) < 160) {
           penalty += 100;
         }
       }
@@ -943,40 +957,84 @@ export class PlacementOptimizer {
     }
   }
 
-  /** 迭代消解器件重叠，最多10轮 */
+  /** 迭代消解选中区重叠+通道，最多40轮；优先用真实 HIT_PAD AABB */
   private resolveOverlaps(topo: SchTopology): void {
-    const MIN_DIST_X = 130;  // 器件宽110 + 间距20
-    const MIN_DIST_Y = 90;   // 器件高60 + 间距30
-    for (let round = 0; round < 10; round++) {
+    const FALLBACK_X = 220;
+    const FALLBACK_Y = 160;
+    for (let round = 0; round < 40; round++) {
       let moved = false;
       for (let i = 0; i < topo.deviceList.length; i++) {
         for (let j = i + 1; j < topo.deviceList.length; j++) {
           const a = topo.deviceList[i];
           const b = topo.deviceList[j];
-          const overlapX = MIN_DIST_X - Math.abs(a.x - b.x);
-          const overlapY = MIN_DIST_Y - Math.abs(a.y - b.y);
-          if (overlapX > 0 && overlapY > 0) {
-            // 沿重叠较小的轴推开
-            if (overlapX < overlapY) {
-              const push = Math.ceil(overlapX / 2) + 5;
-              if (a.x <= b.x) { a.x -= push; b.x += push; }
-              else { a.x += push; b.x -= push; }
-            } else {
-              const push = Math.ceil(overlapY / 2) + 5;
-              if (a.y <= b.y) { a.y -= push; b.y += push; }
-              else { a.y += push; b.y -= push; }
+          const ra = this.hitRectForInst(a);
+          const rb = this.hitRectForInst(b);
+          if (ra && rb) {
+            // 边到边通道不足 HIT_CHANNEL → 推开
+            const ax1 = ra.x;
+            const ay1 = ra.y;
+            const ax2 = ra.x + ra.w;
+            const ay2 = ra.y + ra.h;
+            const bx1 = rb.x;
+            const by1 = rb.y;
+            const bx2 = rb.x + rb.w;
+            const by2 = rb.y + rb.h;
+            // 正交边间隙：投影不相交为正间隙，相交为负重叠
+            const gapX = (ax2 < bx1) ? (bx1 - ax2) : ((bx2 < ax1) ? (ax1 - bx2) : -(Math.min(ax2, bx2) - Math.max(ax1, bx1)));
+            const gapY = (ay2 < by1) ? (by1 - ay2) : ((by2 < ay1) ? (ay1 - by2) : -(Math.min(ay2, by2) - Math.max(ay1, by1)));
+            const needPush = gapX < HIT_CHANNEL && gapY < HIT_CHANNEL;
+            if (needPush) {
+              const shortfallX = HIT_CHANNEL - gapX;
+              const shortfallY = HIT_CHANNEL - gapY;
+              if (shortfallX <= shortfallY) {
+                const push = Math.ceil(Math.max(shortfallX, GRID) / 2) + GRID;
+                if (a.x <= b.x) { a.x -= push; b.x += push; }
+                else { a.x += push; b.x -= push; }
+              } else {
+                const push = Math.ceil(Math.max(shortfallY, GRID) / 2) + GRID;
+                if (a.y <= b.y) { a.y -= push; b.y += push; }
+                else { a.y += push; b.y -= push; }
+              }
+              moved = true;
             }
-            // 钳位到画布内
-            a.x = Math.max(30, Math.min(CANVAS_W - 30, a.x));
-            a.y = Math.max(30, Math.min(CANVAS_H - 30, a.y));
-            b.x = Math.max(30, Math.min(CANVAS_W - 30, b.x));
-            b.y = Math.max(30, Math.min(CANVAS_H - 30, b.y));
-            moved = true;
+          } else {
+            const overlapX = FALLBACK_X - Math.abs(a.x - b.x);
+            const overlapY = FALLBACK_Y - Math.abs(a.y - b.y);
+            if (overlapX > 0 && overlapY > 0) {
+              if (overlapX < overlapY) {
+                const push = Math.ceil(overlapX / 2) + 5;
+                if (a.x <= b.x) { a.x -= push; b.x += push; }
+                else { a.x += push; b.x -= push; }
+              } else {
+                const push = Math.ceil(overlapY / 2) + 5;
+                if (a.y <= b.y) { a.y -= push; b.y += push; }
+                else { a.y += push; b.y -= push; }
+              }
+              moved = true;
+            }
           }
+          // 钳位到画布内（放宽上限，避免通道推开被夹回重叠）
+          a.x = Math.max(40, Math.min(CANVAS_W - 40, this.snap(a.x)));
+          a.y = Math.max(40, Math.min(CANVAS_H - 40, this.snap(a.y)));
+          b.x = Math.max(40, Math.min(CANVAS_W - 40, this.snap(b.x)));
+          b.y = Math.max(40, Math.min(CANVAS_H - 40, this.snap(b.y)));
         }
       }
-      if (!moved) break;
+      if (!moved) {
+        break;
+      }
     }
+  }
+
+  private hitRectForInst(dev: DeviceInst): WorldHitRect | null {
+    if (!this.componentLibrary) {
+      return null;
+    }
+    const r = this.componentLibrary.getComponent(dev.libDevId);
+    if (!r.success || !r.data || r.data.pins.length === 0) {
+      return null;
+    }
+    return DeviceHitGeometry.hitRectFromDeviceInst(dev, r.data.pins, SELECTION_HIT_PAD);
   }
 
   /** 单片机专属硬约束微调 */

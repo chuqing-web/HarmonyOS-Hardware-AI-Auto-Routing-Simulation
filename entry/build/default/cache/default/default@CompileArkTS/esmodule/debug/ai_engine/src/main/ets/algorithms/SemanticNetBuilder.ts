@@ -19,6 +19,10 @@ interface OriginPoint {
     x: number;
     y: number;
 }
+interface RelayLedWireResult {
+    wired: boolean;
+    added: number;
+}
 interface DividerNodePair {
     high: string;
     low: string;
@@ -272,24 +276,48 @@ export class SemanticNetBuilder {
                 id.indexOf('NTC') >= 0 || id.indexOf('THERM') >= 0);
             dividerTopo = this.buildDividerChain(doc, vcc, gnd, resistors, sensors, notes);
         }
-        // ---- LED + 限流电阻 ----
+        // ---- LED：优先继电器 SPDT 互斥双色；否则每颗 LED 配对限流电阻 ----
         let dividerWired = dividerTopo !== null;
-        if (leds.length > 0 && gnd !== null && !dividerWired) {
-            const led = leds[0];
-            let rLed: ComponentInstance | null = null;
-            for (let i = 0; i < resistors.length; i++) {
-                if (resistors[i] !== (mcu !== null && i === 0 ? resistors[0] : null) ||
-                    resistors.length > usedCaps.length + 1) {
-                    rLed = resistors[i];
+        const relays = SemanticNetBuilder.findAllByLib(doc, (id) => id === 'RELAY_SPDT' || id.toUpperCase().indexOf('RELAY') >= 0);
+        const switches = SemanticNetBuilder.findAllByLib(doc, (id) => id.startsWith('SW_'));
+        // 有继电器时建触点网；缺继电器由 AI 选型/自审补齐，此处不硬塞
+        let relayLedWired = false;
+        if (!dividerWired && leds.length >= 2 && relays.length > 0 && vcc !== null && gnd !== null) {
+            const relayRes = this.wireRelaySpdtDualLed(doc, vcc, gnd, relays[0], switches.length > 0 ? switches[0] : null, leds, resistors, notes, autoFixes);
+            relayLedWired = relayRes.wired;
+            addedSymbols += relayRes.added;
+            if (relayLedWired) {
+                Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] relay dual-LED topology: NC=green NO=red coil=${switches.length > 0 ? 'SW' : 'open'}`);
+            }
+        }
+        if (leds.length > 0 && gnd !== null && !dividerWired && !relayLedWired) {
+            const usedLedResistors: ComponentInstance[] = [];
+            // MCU 复位上拉电阻优先保留，不占用 LED 限流
+            const rstResistor = (mcu !== null && resistors.length > 0) ? resistors[0] : null;
+            for (let li = 0; li < leds.length; li++) {
+                const led = leds[li];
+                let rLed: ComponentInstance | null = null;
+                for (let i = 0; i < resistors.length; i++) {
+                    const cand = resistors[i];
+                    if (cand === rstResistor && leds.length < resistors.length) {
+                        continue;
+                    }
+                    if (usedLedResistors.indexOf(cand) >= 0) {
+                        continue;
+                    }
+                    rLed = cand;
                     break;
                 }
-            }
-            if (rLed === null && resistors.length > 0) {
-                rLed = resistors[resistors.length - 1];
-            }
-            if (rLed !== null) {
+                if (rLed === null) {
+                    const ox = led.position.x - 80;
+                    const oy = led.position.y;
+                    rLed = TemplateSchematicKit.place(doc, 'R_330', `R_LED${li + 1}`, { x: ox, y: oy });
+                    addedSymbols++;
+                    autoFixes.push(`补放 ${led.refDes} 限流电阻 R_330`);
+                }
+                usedLedResistors.push(rLed);
                 let drive: PinSpec;
-                if (mcu !== null) {
+                if (mcu !== null && li === 0) {
                     const meta = this.library.getDeviceMeta(mcu.libraryId);
                     const pinList = meta.success && meta.data ? meta.data.pin_list : [];
                     const gpio = this.resolvePin(pinList, ['GPIO', 'PA0', 'PB0', 'PC13', 'P1', 'P1.0']) ?? 'P1';
@@ -301,7 +329,8 @@ export class SemanticNetBuilder {
                 else {
                     drive = { comp: rLed, pinId: '1', pinName: '1' };
                 }
-                TemplateSchematicKit.ledBranch(doc, drive, { comp: gnd, pinId: '1', pinName: 'GND' }, rLed, led, 'LED', mcu !== null ? null : 'VCC', false);
+                const prefix = leds.length > 1 ? `LED${li + 1}` : 'LED';
+                TemplateSchematicKit.ledBranch(doc, drive, { comp: gnd, pinId: '1', pinName: 'GND' }, rLed, led, prefix, mcu !== null ? null : 'VCC', false);
                 notes.push(`LED 支路: ${led.refDes}+${rLed.refDes}`);
             }
         }
@@ -520,6 +549,85 @@ export class SemanticNetBuilder {
             { comp: rScl, pinId: '1', pinName: '1' }
         ]);
         notes.push('I2C 上拉: R_4.7k×2→VCC');
+    }
+    /**
+     * RELAY_SPDT 互斥双色指示（对应「打开绿灯 / 闭合红灯」）:
+     *   线圈: VCC→SW→coil1 / coil2→GND（无 SW 则线圈浮空留给上层）
+     *   COM→GND
+     *   NC 支路: VCC→R→LED_GREEN→NC（断开/未吸合亮绿）
+     *   NO 支路: VCC→R→LED_RED→NO（闭合/吸合亮红）
+     */
+    private wireRelaySpdtDualLed(doc: SchematicDocument, vcc: ComponentInstance, gnd: ComponentInstance, relay: ComponentInstance, sw: ComponentInstance | null, leds: ComponentInstance[], resistors: ComponentInstance[], notes: string[], autoFixes: string[]): RelayLedWireResult {
+        let added = 0;
+        let ledGreen = leds.find(l => l.libraryId === 'LED_GREEN') ?? null;
+        let ledRed = leds.find(l => l.libraryId === 'LED_RED') ?? null;
+        if (ledGreen === null) {
+            ledGreen = leds[0];
+        }
+        if (ledRed === null) {
+            ledRed = leds.length > 1 ? leds[1] : leds[0];
+        }
+        if (ledGreen === ledRed && leds.length > 1) {
+            ledRed = leds[1];
+        }
+        const usedR: ComponentInstance[] = [];
+        const takeR = (tag: string, near: ComponentInstance): ComponentInstance => {
+            for (let i = 0; i < resistors.length; i++) {
+                if (usedR.indexOf(resistors[i]) < 0) {
+                    usedR.push(resistors[i]);
+                    return resistors[i];
+                }
+            }
+            const r = TemplateSchematicKit.place(doc, 'R_330', `R_${tag}`, { x: near.position.x - 80, y: near.position.y });
+            added++;
+            autoFixes.push(`补放 ${tag} 限流电阻 R_330`);
+            usedR.push(r);
+            return r;
+        };
+        const rGreen = takeR('NC', ledGreen);
+        const rRed = takeR('NO', ledRed);
+        // COM → GND
+        TemplateSchematicKit.join(doc, 'GND', NetType.GROUND, [
+            { comp: gnd, pinId: '1', pinName: 'GND' },
+            { comp: relay, pinId: 'COM', pinName: 'COM' }
+        ]);
+        // NC: VCC→R→LED_GREEN.A ; LED_GREEN.K→NC
+        TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [
+            { comp: vcc, pinId: '1', pinName: 'VCC' },
+            { comp: rGreen, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.series2(doc, 'REL_NC_A', { comp: rGreen, pinId: '2', pinName: '2' }, { comp: ledGreen, pinId: 'A', pinName: 'A' });
+        TemplateSchematicKit.join(doc, 'REL_NC', NetType.SIGNAL, [
+            { comp: ledGreen, pinId: 'K', pinName: 'K' },
+            { comp: relay, pinId: 'NC', pinName: 'NC' }
+        ]);
+        // NO: VCC→R→LED_RED.A ; LED_RED.K→NO
+        TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [
+            { comp: vcc, pinId: '1', pinName: 'VCC' },
+            { comp: rRed, pinId: '1', pinName: '1' }
+        ]);
+        TemplateSchematicKit.series2(doc, 'REL_NO_A', { comp: rRed, pinId: '2', pinName: '2' }, { comp: ledRed, pinId: 'A', pinName: 'A' });
+        TemplateSchematicKit.join(doc, 'REL_NO', NetType.SIGNAL, [
+            { comp: ledRed, pinId: 'K', pinName: 'K' },
+            { comp: relay, pinId: 'NO', pinName: 'NO' }
+        ]);
+        // 线圈驱动
+        if (sw !== null) {
+            TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [
+                { comp: vcc, pinId: '1', pinName: 'VCC' },
+                { comp: sw, pinId: '1', pinName: '1' }
+            ]);
+            TemplateSchematicKit.series2(doc, 'REL_COIL_DRV', { comp: sw, pinId: '2', pinName: '2' }, { comp: relay, pinId: '1', pinName: '1' });
+            TemplateSchematicKit.join(doc, 'GND', NetType.GROUND, [
+                { comp: gnd, pinId: '1', pinName: 'GND' },
+                { comp: relay, pinId: '2', pinName: '2' }
+            ]);
+            notes.push(`继电器互斥LED: SW开→${ledGreen.refDes}@NC 亮; SW闭→${ledRed.refDes}@NO 亮`);
+            return { wired: true, added: added };
+        }
+        // 无 SW：只建触点支路，不半接线圈（避免 PINCONN/仿真误判）
+        notes.push(`继电器互斥LED: NC→${ledGreen.refDes} NO→${ledRed.refDes}（缺 SW_PUSH，线圈未驱动）`);
+        return { wired: true, added: added };
     }
     // ---- 以下方法保持不变 ----
     /**

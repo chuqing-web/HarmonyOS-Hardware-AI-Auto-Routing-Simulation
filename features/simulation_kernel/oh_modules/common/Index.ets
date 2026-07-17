@@ -56,6 +56,15 @@ export {
 
 export { ErcEngine } from './src/main/ets/utils/ErcEngine';
 
+export { AiErcGateUtil } from './src/main/ets/utils/AiErcGateUtil';
+
+export {
+  DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE,
+  WorldHitRect, WirePathCoverage
+} from './src/main/ets/utils/DeviceHitGeometry';
+
+export { WireConflictGeometry } from './src/main/ets/utils/WireConflictGeometry';
+
 export { DeepErcEngine } from './src/main/ets/utils/DeepErcEngine';
 
 export { DynamicErcEngine } from './src/main/ets/utils/DynamicErcEngine';
@@ -69,6 +78,8 @@ export { PerformanceOptimizer } from './src/main/ets/utils/PerformanceOptimizer'
 export { Validate } from './src/main/ets/utils/Validate';
 
 export { Logger } from './src/main/ets/utils/Logger';
+
+export { APP_VERSION_NAME, APP_VERSION_CODE, appVersionLabel } from './src/main/ets/utils/AppVersion';
 
 export { ResultHelper, ApiResult } from './src/main/ets/utils/ResultHelper';
 

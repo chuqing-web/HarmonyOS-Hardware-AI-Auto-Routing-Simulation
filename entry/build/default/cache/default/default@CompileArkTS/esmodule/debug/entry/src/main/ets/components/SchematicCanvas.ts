@@ -2666,20 +2666,15 @@ export class SchematicCanvas extends ViewPU {
         const vK = kernel.getNetVoltageByUuid(cathodeNet);
         const vf = vA - vK;
         const current = Math.abs(kernel.getBranchCurrent(comp.id));
-        // Open contact / HiZ: Vk≈0 with Va≈VCC and no ballast drop — not lit.
+        // Open contact / HiZ: cathode not near GND — not lit
         if (vK >= 2.5) {
             return false;
         }
-        // Sink-lit: cathode near GND + Vf. Branch I often reports 0 (node alias), so also
-        // accept anode pulled well below VCC (series ballast drop ⇒ real forward current).
+        // Sink-lit: cathode near GND + forward Vf.
+        // Branch I 常因节点别名报 0，不能单靠电流；Va 也可能仍接近 VCC（量测取到电源网）。
+        // 以 Vk≤0.9 且 Vf≥1.2 作为主判据（与 instr_trace [LED] mid/lit 一致）。
         if (vK <= 0.9 && vf >= 1.2) {
-            if (current >= 2e-4) {
-                return true;
-            }
-            if (vA <= 4.7) {
-                return true;
-            }
-            return false;
+            return true;
         }
         return current >= 5e-4 && vf >= 1.0;
     }

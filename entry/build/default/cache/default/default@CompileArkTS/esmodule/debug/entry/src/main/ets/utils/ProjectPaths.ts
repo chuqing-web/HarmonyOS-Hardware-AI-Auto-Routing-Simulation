@@ -11,8 +11,16 @@ export class ProjectPaths {
     /** 模板关联固件 .hex */
     static readonly HEX_DIR = 'hex_files';
     static readonly AUTOSAVE_DIR = 'autosave';
+    /** AI API 加密金库（全局，与工程文件分离） */
+    static readonly API_VAULT_DIR = 'api_vault';
     static userProjectRoot(baseDir: string): string {
         return `${baseDir}/${ProjectPaths.USER_PROJECT_DIR}`;
+    }
+    static apiVaultRoot(baseDir: string): string {
+        return `${baseDir}/${ProjectPaths.API_VAULT_DIR}`;
+    }
+    static apiVaultFile(baseDir: string): string {
+        return `${ProjectPaths.apiVaultRoot(baseDir)}/apis.enc`;
     }
     static templateRoot(baseDir: string): string {
         return `${baseDir}/${ProjectPaths.TEMPLATE_DIR}`;

@@ -1050,3 +1050,23 @@ export function traceAiPayload(prefix: string, kind: string, text: string, meta:
 export function traceAiOp(prefix: string, op: string, detail: string): void {
     Logger.info(INSTR_TRACE_TAG, `[${prefix}] OP ${op} | ${detail}`);
 }
+/**
+ * AI 诊断多行明细（布局 AABB/间距、建网失败、ERC 条目等）。
+ * stage 例：layout_aabb / layout_gap / place_match / net_fail / erc_block
+ */
+export function traceAiDiag(prefix: string, stage: string, lines: string[], maxLines: number = 48): void {
+    const n = lines.length;
+    const show = Math.min(n, Math.max(1, maxLines));
+    Logger.info(INSTR_TRACE_TAG, `[${prefix}] DIAG ${stage} | count=${n}` +
+        `${n > show ? ` show=${show}` : ''}`);
+    if (n === 0) {
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] DIAG ${stage} | (none)`);
+        return;
+    }
+    for (let i = 0; i < show; i++) {
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] DIAG|${stage}|${i} ${lines[i]}`);
+    }
+    if (n > show) {
+        Logger.info(INSTR_TRACE_TAG, `[${prefix}] DIAG ${stage} <<< truncated +${n - show}`);
+    }
+}

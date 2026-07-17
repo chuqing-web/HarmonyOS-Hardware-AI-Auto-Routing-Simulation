@@ -402,7 +402,7 @@ export class AiSettingsPanel extends ViewPU {
     private async runGenerate(mode: AiGenerateMode): Promise<void> {
         this.showModeDialog = false;
         const q = this.promptText.trim();
-        this.statusMessage = 'AI 生成中…';
+        this.statusMessage = 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
         Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate | mode=${mode} promptLen=${q.length}`);
         const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode);
         Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP run_generate_done | mode=${mode} ok=${ok}`);

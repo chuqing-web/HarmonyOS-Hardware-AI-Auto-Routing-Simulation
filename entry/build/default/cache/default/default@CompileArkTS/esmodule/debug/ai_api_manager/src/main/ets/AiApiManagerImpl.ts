@@ -9,6 +9,51 @@ import { buildChatRequestBody, buildRequestHeaders, cloneAiApiConfig, extractCho
 import type { AiApiConfigUpdate, ChatCompletionResponse, ChatRequestMessage } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/internal/AiApiTypes";
 /** 流水线输出上限；配合 disableThinking，避免推理占满额度 */
 const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
+/**
+ * 复杂原理图 LLM 单次回复可能极慢（深推理/长 JSON）。
+ * 必须耐心等待：连接超时 2min，读超时 30min。
+ */
+const AI_HTTP_CONNECT_TIMEOUT_MS = 120000;
+const AI_HTTP_READ_TIMEOUT_MS = 1800000;
+/** HarmonyOS http / BusinessError 常不是 Error 实例，`${e}` 会变成 [object Object] */
+function formatCaughtError(e: Object | string | number | boolean | Error | null | undefined): string {
+    if (e === null || e === undefined) {
+        return 'unknown';
+    }
+    if (typeof e === 'string') {
+        return e.length > 0 ? e : 'empty string error';
+    }
+    if (typeof e === 'number' || typeof e === 'boolean') {
+        return `${e}`;
+    }
+    if (e instanceof Error) {
+        return e.message.length > 0 ? e.message : e.name;
+    }
+    // BusinessError / 普通对象：优先 code+message
+    try {
+        const anyErr = e as Record<string, Object>;
+        const code = anyErr['code'];
+        const message = anyErr['message'];
+        const name = anyErr['name'];
+        const parts: string[] = [];
+        if (code !== undefined && code !== null) {
+            parts.push(`code=${code}`);
+        }
+        if (typeof message === 'string' && message.length > 0) {
+            parts.push(message);
+        }
+        else if (typeof name === 'string' && name.length > 0) {
+            parts.push(name);
+        }
+        if (parts.length > 0) {
+            return parts.join(' ');
+        }
+        return JSON.stringify(e);
+    }
+    catch (_jsonFail) {
+        return 'unprintable error';
+    }
+}
 export class AiApiManagerImpl implements IAiApiManager {
     private apis: Map<string, AiApiConfig> = new Map();
     private encryptedKeys: Map<string, string> = new Map();
@@ -260,6 +305,9 @@ export class AiApiManagerImpl implements IAiApiManager {
             }
         }
         const safePrompt = AiContextSanitizer.sanitizePrompt(prompt);
+        if (safePrompt.indexOf('<dist>') >= 0 || safePrompt.indexOf('<coord>') >= 0) {
+            Logger.warn(INSTR_TRACE_TAG, '[AI_API] sanitize left placeholder <dist>/<coord> — geometry may be broken');
+        }
         const api = this.selectApi(options?.capability);
         if (!api) {
             Logger.error(INSTR_TRACE_TAG, `[AI_API] chat REJECT no enabled API cap=${options?.capability ?? 'any'}`);
@@ -375,7 +423,10 @@ export class AiApiManagerImpl implements IAiApiManager {
             ` keyLen=${apiKey.length} promptLen=${prompt.length}` +
             ` maxTokens=${maxTokens}` +
             ` temp=${options?.temperature ?? api.temperature}` +
-            ` disableThinking=${options?.disableThinking === true}`);
+            ` disableThinking=${options?.disableThinking === true}` +
+            ` connectTimeoutMs=${AI_HTTP_CONNECT_TIMEOUT_MS}` +
+            ` readTimeoutMs=${AI_HTTP_READ_TIMEOUT_MS}`);
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] WAIT long reply — complex prompts may take many minutes, do not cancel`);
         traceAiPayload('AI_API', 'PROMPT', prompt, `id=${api.id} model=${api.model} cap=${options?.capability ?? 'any'}`);
         try {
             const httpRequest = http.createHttp();
@@ -387,8 +438,8 @@ export class AiApiManagerImpl implements IAiApiManager {
                 method: http.RequestMethod.POST,
                 header: headers,
                 extraData: body,
-                connectTimeout: 10000,
-                readTimeout: 180000,
+                connectTimeout: AI_HTTP_CONNECT_TIMEOUT_MS,
+                readTimeout: AI_HTTP_READ_TIMEOUT_MS,
                 usingProxy: useProxy
             });
             httpRequest.destroy();
@@ -438,8 +489,8 @@ export class AiApiManagerImpl implements IAiApiManager {
         }
         catch (e) {
             // Network exceptions are transient — do NOT blacklist, allow retries
-            const errMsg = e instanceof Error ? e.message : `${e}`;
-            Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception id=${api.id}: ${errMsg}`);
+            const errMsg = formatCaughtError(e);
+            Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception id=${api.id} url=${url}: ${errMsg}`);
             return { success: false, error: `Request failed: ${errMsg}` };
         }
     }
@@ -460,8 +511,8 @@ export class AiApiManagerImpl implements IAiApiManager {
                 method: http.RequestMethod.POST,
                 header: reqHeaders,
                 extraData: body,
-                connectTimeout: 10000,
-                readTimeout: 180000,
+                connectTimeout: AI_HTTP_CONNECT_TIMEOUT_MS,
+                readTimeout: AI_HTTP_READ_TIMEOUT_MS,
                 usingProxy: useProxy
             });
             httpRequest.destroy();
@@ -480,8 +531,8 @@ export class AiApiManagerImpl implements IAiApiManager {
             return { success: false, error: `Backup key failed: ${response.responseCode}` };
         }
         catch (e) {
-            const errMsg = e instanceof Error ? e.message : `${e}`;
-            Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception backupKey id=${api.id}: ${errMsg}`);
+            const errMsg = formatCaughtError(e);
+            Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception backupKey id=${api.id} url=${url}: ${errMsg}`);
             return { success: false, error: `Backup request failed: ${errMsg}` };
         }
     }

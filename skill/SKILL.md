@@ -1,14 +1,20 @@
 # AI 电路仿真图生成与诊断
 
-> **版本**: 3.0 | **管线**: AiPipelineOrchestrator | **平台**: HarmonyOS NEXT
+> **版本**: 5.0 | **管线**: AiPipelineOrchestrator | **平台**: HarmonyOS NEXT
 >
-> 本技能指导 AI 管线从自然语言输入生成可仿真电路原理图的全过程。
-> 运行时由 PromptLoader / SemanticNetBuilder / DeviceSelectEngine / FaultDiagnoser / ConstrainedWiringEngine / TemplateSchematicKit 读取。
+> 本技能是规则总纲；**Prompt 文案权威源在 [`skill/prompts/`](prompts/README.md)**。
 >
-> **v3.0 核心改进**:
-> - 拓扑感知型协调接线 — 电流表串联/电压表分发 由单一拓扑计划一次性完成
-> - 四层防错体系 — 命名净化 → 引脚校验 → 拓扑验证 → ERC 后验
-> - 所有仪器统一使用网络标号 (joinByLabel), 避免导线穿越混乱
+> **运行时加载路径**（真机不读磁盘 `skill/`）:
+> `skill/prompts/*.md` → 同步 → `features/ai_engine/.../prompts/templates/*.ets`
+> → `PromptLoader.load(runtime_key)` → LLM / 本地引擎
+> 本地算法仍由 SemanticNetBuilder / DeviceSelectEngine / FaultDiagnoser /
+> ConstrainedWiringEngine / TemplateSchematicKit / DeviceHitGeometry 执行。
+>
+> **v5.0 核心**:
+> - Prompt 分阶段权威源 + 代码镜像，避免文档与运行时漂移
+> - 导线避让器件选中命中区 (HIT_PAD=14) 与无关引脚 (≥20mil)
+> - 完整生图门禁：ERC 阻断项 + 几何 error
+> - 互斥双色指示强制 RELAY_SPDT 触点拓扑
 
 ---
 
@@ -238,15 +244,47 @@ I2C/SPI/UART 总线 → 标号（跨区域）
 
 ### 5.2 导线几何约束
 
+与编辑器选中范围及 `DeviceHitGeometry` 对齐（常量：`SELECTION_HIT_PAD=14`，`FOREIGN_PIN_CLEARANCE=20`）。
+
 ```
-1. 导线不得穿越器件体 (80×50 包围盒 + 引脚延伸区)
-2. 不同 net 导线不得重合/共享路径
-3. 导线端点必须在引脚坐标 ±5mil 容差内
-4. 最小转弯间距 ≥ 10mil (1 grid)
-5. 禁止斜线 (仅正交 0°/90°)
-6. 器件旋转后包围盒跟随旋转
-7. 不同 net 平行导线最小间距 ≥ 10mil (v3.0 新增 checkParallelSpacing)
-8. T 型连接点由 UI 层添加 Junction Dot (非布线引擎职责)
+1. 导线不得进入任何器件的「选中命中区」(符号包围盒 + HIT_PAD=14)
+2. 导线距无关引脚 ≥20mil；接线仅允许本网引脚格+1格引出（禁止穿器件体）
+3. 不同 net 导线不得正交交叉、不得共线重合/共享路径（PostGen 与 A* 共用 WireConflictGeometry）
+4. 导线端点必须在引脚坐标 ±5mil 容差内
+5. 最小转弯间距 ≥ 10mil (1 grid)
+6. 禁止斜线 (仅正交 0°/90°)
+7. 器件旋转/镜像后选中区 AABB 跟随变换
+8. 不同 net 平行导线最小间距 ≥ 10mil
+9. routeWaypoints / A* 路径不得落入任何器件选中区（含本网）；无法绕开则 joinByLabel
+10. routeUntilClean：先剥离非 stub 旧线强制重布；多轮仍违规则自动降级标号+stub
+11. T 型连接点由 UI 层添加 Junction Dot (非布线引擎职责)
+12. 选型 critique 未过审不得静默放行（纠错轮次用尽仍有问题则中止生图）
+13. route() 禁止把新布线段再追加进 existingRoutes 导致导线翻倍
+14. NetPlanExecutor 执行前必须清空 wireList；takeDevice 仅精确 refName/libDevId
+15. buildNetTasks：stub 已覆盖脚不入 A*；未覆盖脚≥2 仍布线（混合 joinWired+Label）
+16. A* / 后验：任何器件选中区均禁止导线穿行（含本网/电源）；仅目标引脚格+1格正交邻格允许接线
+17. 禁止 RAG/fuzzyFallback 静默替身选型；net_plan 执行 failures 生产中止
+18. 编辑模式锁定现有器件 UUID，布局复用同型号实例，不全图重建
+19. 【硬】同一引脚物理导线端点 ≤2；超出自动改 joinByLabel（NetPlan 规划 + routeUntilClean 后验）
+```
+
+### 5.5 互斥双色开关指示
+
+```
+用户要「打开绿灯 / 闭合红灯」类互斥指示时:
+- 必须 RELAY_SPDT + SW_PUSH(驱动线圈) + LED_GREEN + LED_RED + 两颗限流电阻 + VCC + GND
+- COM→GND；绿灯支路经 NC；红灯支路经 NO
+- 禁止只用 SW_PUSH(SPST) 假装 SPDT
+```
+
+### 5.6 完整生图门禁
+
+```
+ercClean / 生图完成 当且仅当:
+- ERC 阻断项 = 0（error/critical + 功能影响 warning，见 AiErcGateUtil）
+- 几何 error = 0（wire_body / pin_proximity / wire_cross=正交交叉或共线重叠）
+软性建议可保留: 去耦余量、入口电解、耐压余量、连线拥挤 warning
+选型/net_plan critique 未过审 → 中止生图（禁止静默放行或 SemanticNetBuilder 生产回退）
 ```
 
 ### 5.3 网络标号约束
@@ -299,9 +337,10 @@ GPIO 普通网络:  priority = 2
 ### 6.3 障碍物
 
 ```
-器件体: 80×50 网格点 (buildObstacleMap)
+器件选中区(HIT_PAD): buildObstacleMap 全量禁入（含本网，电源网同样禁止穿体）
 已布导线: 逐段标记 (markRouteAsObstacle)
-电源走线: 可穿越器件隔离区 (isBlocked 返回 false for power)
+引脚接线: 仅目标引脚格 + 正交邻格(1 grid)可进入，禁止穿器件体引出
+无法到达则 joinByLabel / demote stub（标号置于选中区外侧）
 ```
 
 ### 6.4 路径简化
