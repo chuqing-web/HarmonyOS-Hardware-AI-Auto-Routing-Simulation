@@ -798,7 +798,51 @@ export class TemplateSchematicKit {
     return tryCanon(pinName);
   }
 
+  /**
+   * LM358/TL082 DIP-8：LLM 常写数字脚号(1–8)，统一到库 pinId（OUT1/IN-1/…）。
+   */
+  static canonicalizeDualOpAmpPin(pinId: string, pinName: string): string {
+    const tryCanon = (raw: string): string => {
+      const u = raw.trim().toUpperCase();
+      if (u === '1' || u === 'OUT1' || u === 'OUTA') {
+        return 'OUT1';
+      }
+      if (u === '2' || u === 'IN-1' || u === 'INN1' || u === '-IN1') {
+        return 'IN-1';
+      }
+      if (u === '3' || u === 'IN+1' || u === 'INP1' || u === '+IN1') {
+        return 'IN+1';
+      }
+      if (u === '4' || u === 'V-' || u === 'VEE' || u === 'VSS') {
+        return 'V-';
+      }
+      if (u === '5' || u === 'IN+2' || u === 'INP2' || u === '+IN2') {
+        return 'IN+2';
+      }
+      if (u === '6' || u === 'IN-2' || u === 'INN2' || u === '-IN2') {
+        return 'IN-2';
+      }
+      if (u === '7' || u === 'OUT2' || u === 'OUTB') {
+        return 'OUT2';
+      }
+      if (u === '8' || u === 'V+' || u === 'VCC' || u === 'VDD') {
+        return 'V+';
+      }
+      return '';
+    };
+    const a = tryCanon(pinId);
+    if (a.length > 0) {
+      return a;
+    }
+    return tryCanon(pinName);
+  }
+
   static pinOffset(libraryId: string, pinId: string, _pinName: string): Point2D {
+    // LLM 常写 "1(VCC)" — 剥成精确 pinId 再查表（否则 R/C 非 "1" 会落到 pin2）
+    const mPin = /^([A-Za-z0-9_+-]+)\s*\([^)]*\)\s*$/.exec(pinId ?? '');
+    if (mPin) {
+      pinId = mPin[1];
+    }
     // 与 BuiltinComponents.makeRelaySpdt 对齐：线圈上排 + 触点下排
     if (libraryId === 'RELAY_SPDT') {
       if (pinId === '1') {
@@ -848,8 +892,22 @@ export class TemplateSchematicKit {
     if (libraryId === 'GND') {
       return { x: 0, y: -10 };
     }
+    if (libraryId === 'VEE') {
+      // 与 BuiltinComponents VEE 对齐：脚在符号下方
+      return { x: 0, y: -10 };
+    }
     if (libraryId === 'VAC') {
       return pinId === '1' ? { x: -20, y: 0 } : { x: 20, y: 0 };
+    }
+    // 与 BuiltinComponents SIGNAL_GEN 对齐；缺表会 OUT/GND 同落器件中心 → SIGNAL_IN 与 GND 短路
+    if (libraryId === 'SIGNAL_GEN') {
+      if (pinId === 'OUT' || pinId === '1') {
+        return { x: -30, y: 0 };
+      }
+      if (pinId === 'GND' || pinId === '2') {
+        return { x: 30, y: 0 };
+      }
+      return { x: 0, y: 0 };
     }
     if (libraryId === 'UA741') {
       switch (pinId) {
@@ -876,7 +934,8 @@ export class TemplateSchematicKit {
       }
     }
     if (libraryId === 'LM358' || libraryId === 'TL082') {
-      switch (pinId) {
+      const canon = TemplateSchematicKit.canonicalizeDualOpAmpPin(pinId, _pinName);
+      switch (canon) {
         case 'OUT1': return { x: 50, y: -30 };
         case 'IN-1': return { x: -50, y: -20 };
         case 'IN+1': return { x: -50, y: -40 };

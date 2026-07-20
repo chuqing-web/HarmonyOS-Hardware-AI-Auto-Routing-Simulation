@@ -185,9 +185,11 @@
 
 | libDevId | 名称 | 通道 | 引脚 | aiWiringRules |
 |----------|------|------|------|---------------|
-| VCC | 直流电源正极 | - | VCC(1) | voltage-source-5V |
+| VCC | 直流电源正极 | - | VCC(1) | voltage 可调（默认5V） |
+| VEE | 直流电源负极 | - | VEE(1) | voltage 负值（默认-12V）；运放双电源 |
 | GND | 直流电源地 | - | GND(1) | ground-reference |
-| VAC | 交流电源 | - | 1,2 | - |
+| VAC | 交流电源（正弦） | - | 1,2 | amplitude/frequency |
+| SIGNAL_GEN | 信号发生器 | - | OUT,GND | waveform=sine\|square\|triangle\|saw\|pulse；frequency/amplitude/offset/dutyCycle 可调 |
 | OSCILLOSCOPE | 四通道示波器 | 4CH | CH1,CH2,CH3,CH4,GND | voltage-probe,high-impedance |
 | VOLTMETER_DC | 直流电压表 | 1CH | V+,COM | voltage-probe,parallel-connect |
 | AMMETER_DC | 直流电流表 | 1CH | I+,I- | current-sense,series-connect |

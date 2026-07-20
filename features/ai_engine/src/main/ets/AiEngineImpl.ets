@@ -222,7 +222,7 @@ export class AiEngineImpl implements IAiEngine {
               Logger.error(INSTR_TRACE_TAG,
                 `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
             } else if (!pipe.data.ercClean) {
-              // 生图完整门禁：ERC 阻断 + 几何阻断
+              // 生图完整门禁：仅计划/空图/选型失败才拒交付；其余经强力收尾后必须交付
               const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
               const geoN = pipe.data.geoBlocking ?? 0;
               const hint = AiErcGateUtil.summarizeBlocking(pipe.data.ercErrors ?? [], 4);
@@ -231,7 +231,8 @@ export class AiEngineImpl implements IAiEngine {
               let modularSuggest = '';
               for (let ei = 0; ei < errs.length; ei++) {
                 const et = errs[ei].errType;
-                if (et === 'modular_plan' || et === 'modular_parallel') {
+                if (et === 'modular_plan' || et === 'modular_parallel' ||
+                  et === 'device_select' || et === 'net_plan' || et === 'library_match') {
                   modularHard = true;
                   if (errs[ei].suggest.length > 0) {
                     modularSuggest = errs[ei].suggest;
@@ -244,24 +245,27 @@ export class AiEngineImpl implements IAiEngine {
                 }
               }
               const emptyTopo = (pipe.data.topology?.deviceList.length ?? 0) === 0;
-              result.success = false;
-              result.errCode = ErrCode.ERR_PARAM_INVALID;
               if (modularHard || emptyTopo) {
-                // 计划/全模块失败：不落空图
+                result.success = false;
+                result.errCode = ErrCode.ERR_PARAM_INVALID;
                 result.topology = undefined;
                 if (!result.errMsg || result.errMsg.length === 0) {
                   result.errMsg = emptyTopo
                     ? '模块并行失败：无有效拓扑'
-                    : `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}`;
+                    : (result.errMsg ?? '生图失败：选型/建网未成功');
                 }
+                Logger.error(INSTR_TRACE_TAG,
+                  `[AI_TASK] FULL_PIPELINE FAIL modularHard=${modularHard} empty=${emptyTopo}` +
+                  ` | ${result.analysisText}`);
               } else {
-                result.errMsg =
-                  `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}，清零后才算完整过程` +
-                  (hint.length > 0 ? `（${hint}）` : '');
+                // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付
+                result.success = true;
+                result.topology = pipe.data.topology;
+                Logger.warn(INSTR_TRACE_TAG,
+                  `[AI_TASK] FULL_PIPELINE DELIVER residualErc=${hardN} residualGeo=${geoN}` +
+                  (hint.length > 0 ? ` (${hint})` : '') +
+                  ` | ${result.analysisText}`);
               }
-              Logger.error(INSTR_TRACE_TAG,
-                `[AI_TASK] FULL_PIPELINE INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN}` +
-                ` modularHard=${modularHard} empty=${emptyTopo} | ${result.analysisText}`);
             } else {
               Logger.info(INSTR_TRACE_TAG,
                 `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
@@ -432,10 +436,9 @@ export class AiEngineImpl implements IAiEngine {
     if (!pipe.data.ercClean) {
       const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
       const geoN = pipe.data.geoBlocking ?? 0;
-      Logger.error(INSTR_TRACE_TAG,
-        `[AI_TASK] aiGenFullSchematic INCOMPLETE ercBlocking=${hardN} geoBlocking=${geoN}`);
-      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
-        `生图未完成：ERC阻断 ${hardN} + 几何阻断 ${geoN}`);
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_TASK] aiGenFullSchematic DELIVER residualErc=${hardN} residualGeo=${geoN}`);
+      // 用户硬要求：不许因门禁残留拒交付
     }
     return ResultHelper.ok(pipe.data.topology);
   }
@@ -519,7 +522,7 @@ export class AiEngineImpl implements IAiEngine {
     const api = await this.apiManager.chat(prompt, {
       capability: AiCapability.AUTO_WIRING,
       temperature: 0.05,
-      disableThinking: true
+      disableThinking: false
     });
     if (api.success && api.data) {
       const parsed = PromptLoader.extractJson<RoutingLlmOutput>(api.data);

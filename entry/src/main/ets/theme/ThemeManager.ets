@@ -1,16 +1,23 @@
 /**
  * 主题切换与持久化（浅色 / 深色）
+ * - 更新 ProteusColors 色板
+ * - 同步系统 ColorMode（避免壳层控件仍锁在深色）
+ * - 通过 AppStorage 广播 proteusThemeRev，驱动未显式传参的 @Component 重绘
  */
+import { ConfigurationConstant, common } from '@kit.AbilityKit';
 import { ProteusColors } from './ProteusTheme';
 import fs from '@ohos.file.fs';
 
 export type ThemeMode = 'light' | 'dark';
+
+export const PROTEUS_THEME_REV_KEY: string = 'proteusThemeRev';
 
 export class ThemeManager {
   private static instance: ThemeManager;
   private mode: ThemeMode = 'light';
   private highContrast: boolean = false;
   private prefPath: string = '';
+  private appContext: common.ApplicationContext | null = null;
 
   static getInstance(): ThemeManager {
     if (!ThemeManager.instance) {
@@ -19,8 +26,15 @@ export class ThemeManager {
     return ThemeManager.instance;
   }
 
+  /** 绑定 ApplicationContext，用于 setColorMode；可在 init 前或后调用 */
+  bindApplicationContext(ctx: common.ApplicationContext): void {
+    this.appContext = ctx;
+    this.syncSystemColorMode();
+  }
+
   init(prefDir: string): void {
     this.prefPath = `${prefDir}/theme.pref`;
+    AppStorage.setOrCreate(PROTEUS_THEME_REV_KEY, 0);
     this.loadFromDisk();
     this.applyActivePalette();
   }
@@ -49,6 +63,8 @@ export class ThemeManager {
 
   applyActivePalette(): void {
     ProteusColors.applyTheme(this.mode === 'dark', this.highContrast);
+    this.syncSystemColorMode();
+    this.publishThemeRev();
   }
 
   menuBg(): string {
@@ -77,6 +93,28 @@ export class ThemeManager {
 
   selectedColor(): string {
     return ProteusColors.SELECTED;
+  }
+
+  private syncSystemColorMode(): void {
+    if (this.appContext === null) {
+      return;
+    }
+    try {
+      this.appContext.setColorMode(
+        this.mode === 'dark'
+          ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+          : ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT
+      );
+    } catch (_e) { /* ignore */ }
+  }
+
+  private publishThemeRev(): void {
+    let rev = 0;
+    const cur = AppStorage.get<number>(PROTEUS_THEME_REV_KEY);
+    if (cur !== undefined) {
+      rev = cur;
+    }
+    AppStorage.setOrCreate(PROTEUS_THEME_REV_KEY, rev + 1);
   }
 
   private loadFromDisk(): void {

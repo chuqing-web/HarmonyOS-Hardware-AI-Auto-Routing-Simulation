@@ -40,7 +40,7 @@ export class DeepErcEngine {
     });
 
     if (hasMcu && decoupling.length === 0) {
-      result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.PARAM_MISMATCH,
+      result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
         'MCU VDD/VCC 缺少 0.1uF 滤波电容', undefined, undefined, '每个 MCU 电源引脚附近添加 100nF 去耦电容'));
     }
 
@@ -49,7 +49,7 @@ export class DeepErcEngine {
     if (hasAnalog && hasDigital) {
       const avdd = doc.nets.some(n => n.name.includes('AVDD') || n.name.includes('VDDA'));
       if (!avdd) {
-        result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.POWER_REVERSED,
+        result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.POWER_REVERSED,
           '模拟与数字电源可能未隔离', undefined, undefined, '模拟电源与数字电源应通过磁珠或独立 LDO 隔离'));
       }
     }
@@ -66,7 +66,7 @@ export class DeepErcEngine {
         const hasPullUp = doc.components.some(c => c.libraryId.startsWith('R_') &&
           Math.abs(c.position.x - comp.position.x) < 150);
         if (!hasPullUp) {
-          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.UNCONNECTED_PIN,
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN,
             `51 单片机 ${comp.refDes} P0 口可能无外部上拉`, comp.id, undefined,
             '51 P0 口无内部上拉，需外接 10kΩ 排阻'));
         }
@@ -74,13 +74,13 @@ export class DeepErcEngine {
 
       if (comp.libraryId.includes('STM32')) {
         if (!DeepErcEngine.hasStm32ResetPullUp(doc, comp)) {
-          result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.MISSING_RESET,
+          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
             `STM32 ${comp.refDes} 复位引脚可能悬空`, comp.id, undefined, 'NRST 添加 10kΩ 上拉 + 100nF 电容'));
         }
       }
 
       // LED_RED 等；勿匹配 OLED_12864
-      if (comp.libraryId.startsWith('LED') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+      if (comp.libraryId.startsWith('LED_') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
         result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT,
           `LED ${comp.refDes} 无限流电阻`, comp.id, undefined, '串联 220Ω~1kΩ 限流电阻'));
       }
@@ -92,7 +92,7 @@ export class DeepErcEngine {
       const loadCaps = doc.components.filter(c => c.libraryId.startsWith('C_') &&
         Math.abs(c.position.x - xtal.position.x) < 80);
       if (loadCaps.length < 2) {
-        result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.MISSING_CRYSTAL,
+        result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL,
           `晶振 ${xtal.refDes} 负载电容不足`, xtal.id, undefined, '晶振两侧各添加负载电容（通常 10~30pF）'));
       }
     }
@@ -118,7 +118,7 @@ export class DeepErcEngine {
           const supplyV = DeepErcEngine.estimateSupplyVoltage(doc);
           const estPower = supplyV * supplyV / parsed.numeric;
           if (estPower > powerW * 0.8) {
-            result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
+            result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
               `${comp.refDes} 电阻功率可能不足 (估算 ${estPower.toFixed(3)}W @ ${supplyV}V, ` +
                 `阻值 ${parsed.normalized}, 额定 ${powerW}W)`,
               comp.id, undefined, '降低电源电压、增大阻值或选用更大功率电阻（修改 power 参数）'));
@@ -130,7 +130,7 @@ export class DeepErcEngine {
         const voltageStr = paramMapGet(comp.parameters, 'voltage', '50');
         const voltage = parseFloat(voltageStr) || 50;
         if (voltage < 16) {
-          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
             `${comp.refDes} 电容耐压 ${voltage}V 可能低于工作电压`, comp.id, undefined, '选用 50V 及以上耐压'));
         }
       }
@@ -140,10 +140,10 @@ export class DeepErcEngine {
       const looksLikeMos = libUpper.includes('MOS') || libUpper.includes('IRF') ||
         libUpper.includes('2N7000') || libUpper.includes('FET');
       if (!looksLikeMos && (comp.libraryId.includes('2N') || comp.libraryId.includes('BC'))) {
-        const hasBaseRes = doc.components.some(c => c.libraryId.startsWith('R_') &&
-          Math.abs(c.position.x - comp.position.x) < 100);
+        // 须与三极管共网才算偏置，禁止纯距离误报
+        const hasBaseRes = DeepErcEngine.hasNetSharedResistor(doc, comp);
         if (!hasBaseRes) {
-          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
             `三极管 ${comp.refDes} 基极可能无偏置电阻`, comp.id, undefined, '添加基极分压或限流电阻'));
         }
       }
@@ -250,6 +250,42 @@ export class DeepErcEngine {
         return true;
       }
       if ((rNet1 === cathodeNet && rNet2 !== anodeNet) || (rNet2 === cathodeNet && rNet1 !== anodeNet)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True when some resistor shares any net with the device (bias / series). */
+  private static hasNetSharedResistor(doc: SchematicDocument, device: ComponentInstance): boolean {
+    const devNets = getPinNetMap(device.id, doc.nets);
+    const netIds: string[] = [];
+    devNets.forEach((nid: string, _pin: string) => {
+      if (nid.length > 0 && netIds.indexOf(nid) < 0) {
+        netIds.push(nid);
+      }
+    });
+    if (netIds.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === device.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      let shared = false;
+      rNets.forEach((rid: string, _pin: string) => {
+        if (!shared) {
+          for (let j = 0; j < netIds.length; j++) {
+            if (rid === netIds[j]) {
+              shared = true;
+              break;
+            }
+          }
+        }
+      });
+      if (shared) {
         return true;
       }
     }

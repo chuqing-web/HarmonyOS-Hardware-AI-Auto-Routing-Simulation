@@ -274,6 +274,9 @@ export interface DeviceSelectResult {
 
   ragTemplateId?: string;
 
+  /** LLM deviceRequireList 中成功 matchOne 的数量（不含 auto 补的 VCC/GND） */
+  matchedRequireCount?: number;
+
 }
 
 

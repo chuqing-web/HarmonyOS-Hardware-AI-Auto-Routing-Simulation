@@ -81,12 +81,17 @@ interface WireBackup {
     index: number;
     wire: Wire;
 }
+interface LabelBackup {
+    index: number;
+    label: NetLabel;
+}
 export class BatchDeleteCommand implements IEditCommand {
     private doc: SchematicDocument;
     private entries: DeletedEntry[] = [];
     private wireBackups: WireBackup[] = [];
+    private labelBackups: LabelBackup[] = [];
     private removedPinRefs: Map<string, string[]> = new Map();
-    constructor(doc: SchematicDocument, compIds: string[], wireIdsToRemove: string[] = []) {
+    constructor(doc: SchematicDocument, compIds: string[], wireIdsToRemove: string[] = [], labelIdsToRemove: string[] = []) {
         this.doc = doc;
         for (let i = 0; i < compIds.length; i++) {
             const idx = doc.components.findIndex(c => c.id === compIds[i]);
@@ -118,6 +123,28 @@ export class BatchDeleteCommand implements IEditCommand {
             });
         }
         this.wireBackups.sort((a: WireBackup, b: WireBackup) => b.index - a.index);
+        const labelIdSet = new Set<string>();
+        for (let i = 0; i < labelIdsToRemove.length; i++) {
+            labelIdSet.add(labelIdsToRemove[i]);
+        }
+        const labels = doc.netLabels ?? [];
+        for (let i = 0; i < labels.length; i++) {
+            const lb = labels[i];
+            if (!labelIdSet.has(lb.id)) {
+                continue;
+            }
+            this.labelBackups.push({
+                index: i,
+                label: {
+                    id: lb.id,
+                    netId: lb.netId,
+                    text: lb.text,
+                    position: { x: lb.position.x, y: lb.position.y },
+                    global: lb.global
+                }
+            });
+        }
+        this.labelBackups.sort((a: LabelBackup, b: LabelBackup) => b.index - a.index);
         // Snapshot pinIds that will be stripped from nets (for undo)
         for (let i = 0; i < this.entries.length; i++) {
             const prefix = `${this.entries[i].comp.id}:`;
@@ -163,6 +190,20 @@ export class BatchDeleteCommand implements IEditCommand {
             }
             this.doc.wires = kept;
         }
+        if (this.labelBackups.length > 0) {
+            const removeLabelIds = new Set<string>();
+            for (let i = 0; i < this.labelBackups.length; i++) {
+                removeLabelIds.add(this.labelBackups[i].label.id);
+            }
+            const keptLabels: NetLabel[] = [];
+            const srcLabels = this.doc.netLabels ?? [];
+            for (let i = 0; i < srcLabels.length; i++) {
+                if (!removeLabelIds.has(srcLabels[i].id)) {
+                    keptLabels.push(srcLabels[i]);
+                }
+            }
+            this.doc.netLabels = keptLabels;
+        }
         this.removedPinRefs.forEach((refs: string[], netId: string) => {
             const net = this.doc.nets.find(n => n.id === netId);
             if (net === undefined) {
@@ -187,6 +228,21 @@ export class BatchDeleteCommand implements IEditCommand {
         for (let i = 0; i < wireSorted.length; i++) {
             this.doc.wires.splice(wireSorted[i].index, 0, wireSorted[i].wire);
         }
+        const labelSorted = this.labelBackups.slice().sort((a: LabelBackup, b: LabelBackup) => a.index - b.index);
+        if (this.doc.netLabels === undefined) {
+            this.doc.netLabels = [];
+        }
+        for (let i = 0; i < labelSorted.length; i++) {
+            const lb = labelSorted[i];
+            const insertAt = Math.min(lb.index, this.doc.netLabels.length);
+            this.doc.netLabels.splice(insertAt, 0, {
+                id: lb.label.id,
+                netId: lb.label.netId,
+                text: lb.label.text,
+                position: { x: lb.label.position.x, y: lb.label.position.y },
+                global: lb.label.global
+            });
+        }
         this.removedPinRefs.forEach((refs: string[], netId: string) => {
             const net = this.doc.nets.find(n => n.id === netId);
             if (net === undefined) {
@@ -200,7 +256,7 @@ export class BatchDeleteCommand implements IEditCommand {
         });
     }
     getMemoryEstimate(): number {
-        return this.entries.length * 256 + this.wireBackups.length * 128;
+        return this.entries.length * 256 + this.wireBackups.length * 128 + this.labelBackups.length * 64;
     }
 }
 export class AddWireCommand implements IEditCommand {

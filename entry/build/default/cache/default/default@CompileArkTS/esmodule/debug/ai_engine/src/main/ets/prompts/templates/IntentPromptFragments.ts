@@ -23,18 +23,30 @@ export const DEVICE_SELECT_BASE: string = `你是资深硬件工程师。根据�
 - 参考 conversation_history 理解上下文，只调整用户要求变更的部分
 - 保留未涉及修改的现有器件
 
-输出纯 JSON（可用 snake_case 或 camelCase），无 markdown 包裹。
+输出纯 JSON（可用 snake_case 或 camelCase），无 markdown；第一字符 { 最后字符 }。
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`;
 export const FRAG_POWER_RAILS: string = `
 【强制电源符号】:
-- 必须输出 VCC: {"func":"电源正极","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
-- 必须输出 GND: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}`;
+- 必须输出 VCC: {"func":"电源正极","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
+- 必须输出 GND: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- 用户指定电压时：VCC 的 param_constraint.voltage 写精确值（如 "3.3V"/"12V"）`;
+export const FRAG_DUAL_SUPPLY: string = `
+【双电源 / VEE 负压 — 强制】:
+- 必须额外输出 VEE: {"func":"电源负极","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- 运放 VCC/V+→VCC 网，VEE/V-→VEE 网（禁止把 VEE 接到 GND，除非用户明确单电源）
+- 用户写 ±15V/±12V/±5V 时同步改 VCC 与 VEE 的 voltage`;
+export const FRAG_SIGNAL_GEN: string = `
+【信号发生器 SIGNAL_GEN】用户要求正弦/方波/三角/锯齿/脉冲激励时:
+- 输出 SIGNAL_GEN: param_constraint 含 waveform(sine|square|triangle|saw|pulse)、amplitude、frequency、offset、dutyCycle
+- frequency 按用户指定（如 1kHz/10kHz）；dutyCycle 对方波/脉冲有效（如 25%/50%），默认 50%
+- waveform 以「输入/激励/信号源」为准；若同时出现「正弦输入」与「整形/输出方波」，waveform 必须写 sine
+- 拓扑: OUT→被激励节点，GND→GND；可用示波器观测`;
 export const FRAG_MCU_MIN: string = `
 【MCU 最小系统】必须包含: 晶振、去耦电容(C_100nF)、复位上拉电阻(R_10k)、VCC、GND`;
 export const FRAG_LED_SERIES_R: string = `
 【LED 限流】LED 必须配对限流电阻（优先 R_330）；N 颗 LED 配 N 颗电阻`;
 export const FRAG_OPAMP: string = `
-【运放】必须包含反馈电阻（闭环），输入不可浮空`;
+【运放】必须包含反馈电阻（闭环），输入不可浮空；滞回比较器须正反馈分压（OUT→Rf→IN+，IN+→Rg→GND）`;
 export const FRAG_I2C: string = `
 【I2C】必须配 4.7kΩ 上拉电阻（R_4.7k）`;
 export const FRAG_MUTUAL_LED: string = `
@@ -45,6 +57,12 @@ export const FRAG_MUTUAL_LED: string = `
 export const FRAG_BLINK_OK: string = `
 【闪烁/多谐/交替指示】电源开关(SW_PUSH)串联供电 + 振荡/驱动双灯交替闪烁是合法拓扑。
 禁止套用「开/闭互斥双色 → RELAY_SPDT」规则；不要为闪烁电路强行加入继电器。`;
+export const FRAG_SERIES_RC: string = `
+【串联 RC 充放电 — 强制配方】观测 τ=RC / 指数波形时:
+- 必须: VCC + GND + R_* + C_* + SW_PUSH（充电通断）+（用户要求时）OSCILLOSCOPE
+- 拓扑: VCC→SW→R→RC_MID→C→GND；示波器 CH1→RC_MID，GND→GND
+- 【硬禁】禁止输出 RELAY_SPDT（RC 充放电不是互斥双色指示）
+- 未使用示波器 CH2/CH3/CH4 保持悬空，禁止接到 GND 或另建单脚网`;
 export const FRAG_INSTRUMENTS_SELECT: string = `
 【仪器追加 — 仅用户明确要求或测量意图时】:
 - 用户提到"电流表""测电流" → AMMETER_DC
@@ -56,20 +74,20 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 你的任务：
 1. 分析电路结构，识别功能模块
 2. 为每个网络分配合理名称和类型
-3. 【关键】自主决定 mode (joinWired vs joinByLabel)
-4. 【关键】为 joinWired 规划 routeWaypoints：不穿选中区、不碰无关脚、不与异网交叉
+3. 【关键】可建议 mode；系统标号优先，按脚预算≤2 升级导线并对并拉近
+4. 【关键】为可能升级的 joinWired 规划 routeWaypoints：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整 netPlan JSON
 
 【通用拓扑铁律】:
 1. 电流表 I+ / I- 绝不在同一网络
 2. 电压表分布在不同测量节点对
 3. 仪器引脚必须入网；GND/COM 最终到 GND
-4. 导线优先；标号仅在拥挤/跨大封装/仪器脚/单脚扇出>2 时使用
+4. 标号优先；仅≤3脚小网且脚预算≤2可升级短导线并拉近(~120mil)；仪器脚/COM/大电源扇出保持标号
 5. 【硬】一脚一网；禁止 PROBE_* 重复列出被测脚
 6. 【硬】NPN 基极 B 只接一路驱动
 7. 导线正交；不得进入选中命中区(HIT_PAD=14)；无关脚间距≥20mil
 
-【输出】纯 JSON，无 markdown。每个 net 至少 2 个 connections；joinWired 须含 routeWaypoints。
+【输出】严格 JSON，无 markdown；第一字符 { 最后字符 }。每个 net 至少 2 个 connections；joinWired 须含 routeWaypoints。
 Schema 含 nets/labels/wiringHints/routeStrategy/topologyNotes。`;
 export const FRAG_NET_MCU: string = `
 【MCU 最小系统接线】:
@@ -85,14 +103,28 @@ export const FRAG_NET_MUTUAL: string = `
 export const FRAG_NET_BLINK: string = `
 【闪烁/振荡电路】SW_PUSH 仅作电源通断合法；双灯由三极管/MCU 等驱动交替闪烁。
 不要要求 RELAY_SPDT，不要把 SW 当常开/常闭三端。`;
+export const FRAG_NET_SERIES_RC: string = `
+【串联 RC 充放电】VCC→(SW)→R.1；R.2 与 C.1 同网 RC_MID；C.2→GND。
+示波器 CH1 并入 RC_MID（同名标号），OSC.GND→GND；未用 CH2/3/4 不入网。
+禁止 RELAY 线圈直连 VCC/GND；禁止用继电器冒充充放电开关。`;
 export const FRAG_NET_OPAMP: string = `
-【运放】必须有反馈闭环；输入不浮空；电源脚入网`;
+【运放】必须有反馈闭环；输入不浮空；VCC/V+→VCC；双电源时 VEE/V-→VEE（勿接 GND）`;
+export const FRAG_NET_DUAL: string = `
+【双电源网】独立网名 VCC 与 VEE；VCC 符号→VCC 网，VEE 符号→VEE 网，GND→GND；禁止 VCC/VEE 同网`;
+export const FRAG_NET_SIGNAL_GEN: string = `
+【SIGNAL_GEN】OUT 并入激励信号网；GND→GND；可用 OSC CH1 观测同一信号网`;
 export const FRAG_NET_INSTR: string = `
 【仪器】测量脚并入被测信号网同名；禁止另建 PROBE 网重复 DUT 脚`;
 export function assembleDeviceSelectSystem(intent: CircuitIntent): string {
     let s = DEVICE_SELECT_BASE;
     if (intent.needsPowerRails) {
         s += FRAG_POWER_RAILS;
+    }
+    if (intent.dualSupply) {
+        s += FRAG_DUAL_SUPPLY;
+    }
+    if (intent.needsSignalGen) {
+        s += FRAG_SIGNAL_GEN;
     }
     if (intent.hasMcuMinSystem) {
         s += FRAG_MCU_MIN;
@@ -112,6 +144,9 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent): string {
     if (intent.blinkOscillator) {
         s += FRAG_BLINK_OK;
     }
+    if (intent.seriesRcCharge) {
+        s += FRAG_SERIES_RC;
+    }
     if (intent.hasInstruments) {
         s += FRAG_INSTRUMENTS_SELECT;
     }
@@ -125,14 +160,23 @@ export function assembleNetPlanSystem(intent: CircuitIntent): string {
     if (intent.needsLedSeriesR) {
         s += FRAG_NET_LED;
     }
-    if (intent.mutualLedIndicator || intent.relayContactTopo) {
+    if ((intent.mutualLedIndicator || intent.relayContactTopo) && !intent.seriesRcCharge) {
         s += FRAG_NET_MUTUAL;
     }
     if (intent.blinkOscillator) {
         s += FRAG_NET_BLINK;
     }
+    if (intent.seriesRcCharge) {
+        s += FRAG_NET_SERIES_RC;
+    }
     if (intent.needsOpAmpFeedback) {
         s += FRAG_NET_OPAMP;
+    }
+    if (intent.dualSupply) {
+        s += FRAG_NET_DUAL;
+    }
+    if (intent.needsSignalGen) {
+        s += FRAG_NET_SIGNAL_GEN;
     }
     if (intent.hasInstruments) {
         s += FRAG_NET_INSTR;

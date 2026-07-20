@@ -14,8 +14,9 @@ runtime_key: device_select
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
 3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号
-5. 电源名(VCC/GND)绝不能用于非电源网络
+4. 每个电路必须包含VCC和GND符号；用户要求双电源/负压/±V 时还必须含 VEE
+5. 电源名(VCC/GND/VEE)绝不能用于非电源网络
+6. VCC 可用 param_constraint.voltage 指定（如 "3.3V"/"5V"/"12V"）；VEE 默认 "-12V"
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -38,8 +39,11 @@ runtime_key: device_select
 10. 简单开关+LED 电路不要追加电压表/电流表/滤波电容，除非用户明确要求
 
 【强制器件 — 任何电路都必须包含，缺一不可】:
-- 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
+- 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND 接地符号: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- 双电源/运放±供电时追加 VEE: {"func":"电源负极","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- 用户要正弦/方波/三角/锯齿/脉冲激励时追加 SIGNAL_GEN（param_constraint: waveform、frequency、dutyCycle、amplitude、offset）
+  - waveform 以「输入/激励/信号源」为准；若同时出现「正弦输入」与「整形/输出方波」，waveform 必须写 sine（方波是输出结果）
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
 【仪器自动追加规则 — 严格按用户需求】:
@@ -48,8 +52,10 @@ runtime_key: device_select
 - 用户说"N个电压表"→ 必须输出N个 VOLTMETER_DC
 - 电路含 MCU+UART → 追加 UART_TERMINAL
 - 电路含运放/放大器 → 追加 OSCILLOSCOPE
+- 用户明确要求观测波形/示波/指数/充放电 → 追加 OSCILLOSCOPE
 - 电路含数字 IC → 追加 LOGIC_ANALYZER
 - 电路含电源/稳压 → 追加 VOLTMETER_DC
+- 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
@@ -60,7 +66,7 @@ runtime_key: device_select
 - 参考 conversation_history 理解上下文，只调整用户要求变更的部分
 - 保留未涉及修改的现有器件
 
-输出纯 JSON（可用 snake_case 或 camelCase），无 markdown 包裹。
+输出纯 JSON（可用 snake_case 或 camelCase），无 markdown；第一字符 { 最后字符 }。
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}
 
 ## userTemplate
@@ -75,3 +81,6 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 
 可用器件库摘要：
 {{library_catalog}}
+
+现在立即只输出 JSON，不要任何其它文字：
+

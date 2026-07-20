@@ -40,7 +40,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
     private defaultParamsResolver: DefaultParamsResolver | null = null;
     private canvasViewWidth: number = 0;
     private canvasViewHeight: number = 0;
-    private static readonly HIT_PAD: number = 14;
+    /** 点击选中外扩（世界坐标） */
+    private static readonly HIT_PAD: number = 22;
+    /** 悬停感应外扩：鼠标靠近即显示选中区 */
+    static readonly HOVER_PAD: number = 36;
     private static readonly WIRE_HIT_THRESHOLD: number = 10;
     isCanvasViewReady(): boolean {
         return this.canvasViewWidth > 0 && this.canvasViewHeight > 0;
@@ -49,9 +52,19 @@ export class SchematicEditorImpl implements ISchematicEditor {
         this.canvasViewWidth = Math.max(0, width);
         this.canvasViewHeight = Math.max(0, height);
     }
-    /** World-space hit rectangle for hover/selection overlay (includes HIT_PAD). */
+    /** World-space hit rectangle for click overlay (includes HIT_PAD). */
     getComponentHitRect(comp: ComponentInstance): Rect2D {
         const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HIT_PAD);
+        return this.localBoundsToWorldAabb(comp, bounds);
+    }
+    /** 悬停选中区（更大外扩，靠近即出现） */
+    getComponentHoverRect(comp: ComponentInstance): Rect2D {
+        const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HOVER_PAD);
+        return this.localBoundsToWorldAabb(comp, bounds);
+    }
+    /** 选中高亮框：紧贴符号，略外扩，避免像命中区那样过大 */
+    getComponentSelectRect(comp: ComponentInstance): Rect2D {
+        const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), 8);
         return this.localBoundsToWorldAabb(comp, bounds);
     }
     isComponentSelected(compId: string): boolean {
@@ -513,11 +526,13 @@ export class SchematicEditorImpl implements ISchematicEditor {
             }
             if (deletable.length > 0) {
                 const wireIds = this.collectWireIdsTouchingComponents(deletable);
-                this.commandHistory.push(new BatchDeleteCommand(this.document, deletable, wireIds));
+                const labelIds = this.collectNetLabelIdsForDelete(deletable, wireIds);
+                this.commandHistory.push(new BatchDeleteCommand(this.document, deletable, wireIds, labelIds));
             }
         }
         else {
             const wireIds = this.collectWireIdsTouchingComponents(instUuidList);
+            const labelIds = this.collectNetLabelIdsForDelete(instUuidList, wireIds);
             const wireRemove = new Set<string>();
             for (let i = 0; i < wireIds.length; i++) {
                 wireRemove.add(wireIds[i]);
@@ -530,6 +545,20 @@ export class SchematicEditorImpl implements ISchematicEditor {
                     }
                 }
                 doc.wires = keptWires;
+            }
+            if (labelIds.length > 0) {
+                const labelRemove = new Set<string>();
+                for (let i = 0; i < labelIds.length; i++) {
+                    labelRemove.add(labelIds[i]);
+                }
+                const keptLabels: NetLabel[] = [];
+                const srcLabels = doc.netLabels ?? [];
+                for (let i = 0; i < srcLabels.length; i++) {
+                    if (!labelRemove.has(srcLabels[i].id)) {
+                        keptLabels.push(srcLabels[i]);
+                    }
+                }
+                doc.netLabels = keptLabels;
             }
             const kept: ComponentInstance[] = [];
             for (let i = 0; i < doc.components.length; i++) {
@@ -600,6 +629,93 @@ export class SchematicEditorImpl implements ISchematicEditor {
             }
         }
         return hitIds;
+    }
+    /**
+     * Collect net-label IDs owned by components being deleted.
+     * A label is removed when it sits near a deleted pin / deleted stub wire,
+     * and is not still anchored by any remaining wire (shared power labels stay).
+     */
+    private collectNetLabelIdsForDelete(compIds: string[], wireIdsToRemove: string[]): string[] {
+        const doc = this.getDocument();
+        const labels = doc.netLabels ?? [];
+        if (labels.length === 0) {
+            return [];
+        }
+        const pinPositions: Point2D[] = [];
+        for (let i = 0; i < compIds.length; i++) {
+            const comp = this.findComponent(compIds[i]);
+            if (comp === undefined) {
+                continue;
+            }
+            const pinMap = this.getComponentPinWorldPositions(comp);
+            pinMap.forEach((pos: Point2D) => {
+                pinPositions.push({ x: pos.x, y: pos.y });
+            });
+        }
+        const deletedWireIds = new Set<string>();
+        for (let i = 0; i < wireIdsToRemove.length; i++) {
+            deletedWireIds.add(wireIdsToRemove[i]);
+        }
+        // Same proximity as updateLabelsForComponentMove (stub ~20–60px + margin)
+        const threshold = 45;
+        const hitIds: string[] = [];
+        const seen = new Set<string>();
+        for (let li = 0; li < labels.length; li++) {
+            const label = labels[li];
+            let nearDeletedPin = false;
+            for (let pi = 0; pi < pinPositions.length; pi++) {
+                const dx = label.position.x - pinPositions[pi].x;
+                const dy = label.position.y - pinPositions[pi].y;
+                if (Math.abs(dx) <= threshold && Math.abs(dy) <= threshold) {
+                    nearDeletedPin = true;
+                    break;
+                }
+            }
+            let touchedByDeletedWire = false;
+            let touchedByRemainingWire = false;
+            for (let wi = 0; wi < doc.wires.length; wi++) {
+                const wire = doc.wires[wi];
+                if (wire.points.length === 0) {
+                    continue;
+                }
+                const nearWire = SchematicEditorImpl.labelNearWire(label.position, wire, threshold);
+                if (!nearWire) {
+                    continue;
+                }
+                if (deletedWireIds.has(wire.id)) {
+                    touchedByDeletedWire = true;
+                }
+                else {
+                    touchedByRemainingWire = true;
+                }
+            }
+            // Only drop labels that belonged to the deleted device/stub and are not shared
+            const shouldRemove = (nearDeletedPin || touchedByDeletedWire) && !touchedByRemainingWire;
+            if (shouldRemove && !seen.has(label.id)) {
+                seen.add(label.id);
+                hitIds.push(label.id);
+            }
+        }
+        return hitIds;
+    }
+    private static labelNearWire(pos: Point2D, wire: Wire, threshold: number): boolean {
+        for (let i = 0; i < wire.points.length; i++) {
+            const p = wire.points[i];
+            if (Math.abs(pos.x - p.x) <= threshold && Math.abs(pos.y - p.y) <= threshold) {
+                return true;
+            }
+        }
+        // Also check segment midpoints for short stubs
+        for (let i = 1; i < wire.points.length; i++) {
+            const a = wire.points[i - 1];
+            const b = wire.points[i];
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            if (Math.abs(pos.x - mx) <= threshold && Math.abs(pos.y - my) <= threshold) {
+                return true;
+            }
+        }
+        return false;
     }
     private stripNetPinRefsForComponent(doc: SchematicDocument, compId: string): void {
         const prefix = `${compId}:`;
@@ -1498,6 +1614,42 @@ export class SchematicEditorImpl implements ISchematicEditor {
             }
         }
         return [];
+    }
+    /**
+     * 悬停命中：优先精确命中，否则取 HOVER_PAD 范围内最近器件。
+     * 鼠标只要靠近附近器件就会出现选中区。
+     */
+    hitTestNear(point: Point2D, pad: number = SchematicEditorImpl.HOVER_PAD): string[] {
+        const direct = this.hitTestAt(point);
+        if (direct.length > 0) {
+            return direct;
+        }
+        const components: ComponentInstance[] = this.getDocument().components;
+        let bestId: string = '';
+        let bestDist: number = pad;
+        for (let i = components.length - 1; i >= 0; i--) {
+            const c: ComponentInstance = components[i];
+            const hoverBounds = this.expandLocalBounds(this.resolveBounds(c.libraryId), pad);
+            if (this.pointInComponentBounds(point, c, hoverBounds)) {
+                const aabb = this.localBoundsToWorldAabb(c, this.resolveBounds(c.libraryId));
+                const dist = SchematicEditorImpl.distancePointToRect(point, aabb);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestId = c.id;
+                }
+            }
+        }
+        if (bestId.length > 0) {
+            return [bestId];
+        }
+        return [];
+    }
+    private static distancePointToRect(p: Point2D, r: Rect2D): number {
+        const x2 = r.x + r.width;
+        const y2 = r.y + r.height;
+        const dx = p.x < r.x ? (r.x - p.x) : (p.x > x2 ? p.x - x2 : 0);
+        const dy = p.y < r.y ? (r.y - p.y) : (p.y > y2 ? p.y - y2 : 0);
+        return Math.sqrt(dx * dx + dy * dy);
     }
     hitTestWireAt(point: Point2D): string | null {
         const wires = this.getDocument().wires;

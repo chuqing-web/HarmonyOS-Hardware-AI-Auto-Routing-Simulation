@@ -1,377 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚŞ/**
-
- * å…¨å±€ç»Ÿä¸€é”™è¯¯ç 
-
- */
-export var ErrCode;
-(function (ErrCode) {
-    ErrCode[ErrCode["OK"] = 0] = "OK";
-    ErrCode[ErrCode["ERR_PARAM_INVALID"] = 1] = "ERR_PARAM_INVALID";
-    ErrCode[ErrCode["ERR_FILE_NOT_FOUND"] = 2] = "ERR_FILE_NOT_FOUND";
-    ErrCode[ErrCode["ERR_FILE_CORRUPT"] = 3] = "ERR_FILE_CORRUPT";
-    ErrCode[ErrCode["ERR_HEX_PARSE_FAIL"] = 4] = "ERR_HEX_PARSE_FAIL";
-    ErrCode[ErrCode["ERR_API_AUTH"] = 5] = "ERR_API_AUTH";
-    ErrCode[ErrCode["ERR_API_LIMIT"] = 6] = "ERR_API_LIMIT";
-    ErrCode[ErrCode["ERR_API_TIMEOUT"] = 7] = "ERR_API_TIMEOUT";
-    ErrCode[ErrCode["ERR_SIM_BUSY"] = 8] = "ERR_SIM_BUSY";
-    ErrCode[ErrCode["ERR_MCU_NO_HEX"] = 9] = "ERR_MCU_NO_HEX";
-    ErrCode[ErrCode["ERR_DEVICE_NOT_EXIST"] = 10] = "ERR_DEVICE_NOT_EXIST";
-    ErrCode[ErrCode["ERR_NET_SHORT"] = 11] = "ERR_NET_SHORT";
-    ErrCode[ErrCode["ERR_PERMISSION"] = 12] = "ERR_PERMISSION";
-    ErrCode[ErrCode["ERR_ASYNC_CANCEL"] = 13] = "ERR_ASYNC_CANCEL";
-    ErrCode[ErrCode["ERR_MODEL_MISS"] = 14] = "ERR_MODEL_MISS";
-    ErrCode[ErrCode["ERR_LICENSE_INVALID"] = 15] = "ERR_LICENSE_INVALID";
-    ErrCode[ErrCode["ERR_QUOTA_EXCEEDED"] = 16] = "ERR_QUOTA_EXCEEDED";
-    ErrCode[ErrCode["ERR_FEATURE_LOCKED"] = 17] = "ERR_FEATURE_LOCKED";
-    ErrCode[ErrCode["ERR_PROJECT_LOCKED"] = 18] = "ERR_PROJECT_LOCKED";
-    ErrCode[ErrCode["ERR_SPICE_CONVERGENCE"] = 19] = "ERR_SPICE_CONVERGENCE";
-    ErrCode[ErrCode["ERR_MCU_INVALID_OPCODE"] = 20] = "ERR_MCU_INVALID_OPCODE";
-    ErrCode[ErrCode["ERR_DEVICE_LIB_PARSE"] = 21] = "ERR_DEVICE_LIB_PARSE";
-})(ErrCode || (ErrCode = {}));
-export function errCodeMessage(code, locale = 'zh') {
-    if (locale === 'en') {
-        return errCodeMessageEn(code);
-    }
-    switch (code) {
-        case ErrCode.OK:
-            return 'æ­£å¸¸';
-        case ErrCode.ERR_PARAM_INVALID:
-            return 'å‚æ•°éæ³•ã€ç©ºå€¼æˆ–è¶…å‡ºèŒƒå›´';
-        case ErrCode.ERR_FILE_NOT_FOUND:
-            return 'æ–‡ä»¶ä¸å­˜åœ¨';
-        case ErrCode.ERR_FILE_CORRUPT:
-            return 'æ–‡ä»¶æŸåæˆ–æ ¼å¼ä¸åŒ¹é…';
-        case ErrCode.ERR_HEX_PARSE_FAIL:
-            return 'HEX è§£æå¤±è´¥æˆ–æ ¡éªŒå’Œä¸åŒ¹é…';
-        case ErrCode.ERR_API_AUTH:
-            return 'AI å¯†é’¥é”™è¯¯ (401)';
-        case ErrCode.ERR_API_LIMIT:
-            return 'AI é™æµ (429)';
-        case ErrCode.ERR_API_TIMEOUT:
-            return 'AI æ¥å£è¶…æ—¶';
-        case ErrCode.ERR_SIM_BUSY:
-            return 'ä»¿çœŸæ­£åœ¨è¿è¡Œï¼Œç¦æ­¢ä¿®æ”¹åŸç†å›¾';
-        case ErrCode.ERR_MCU_NO_HEX:
-            return 'å•ç‰‡æœºæœªåŠ è½½ HEXï¼Œæ— æ³•è°ƒè¯•';
-        case ErrCode.ERR_DEVICE_NOT_EXIST:
-            return 'å™¨ä»¶åº“æ— å¯¹åº”å™¨ä»¶';
-        case ErrCode.ERR_NET_SHORT:
-            return 'ç½‘ç»œçŸ­è·¯å†²çª';
-        case ErrCode.ERR_PERMISSION:
-            return 'æ–‡ä»¶è¯»å†™æƒé™ä¸è¶³';
-        case ErrCode.ERR_ASYNC_CANCEL:
-            return 'å¼‚æ­¥ AI ä»»åŠ¡å·²å–æ¶ˆ';
-        case ErrCode.ERR_MODEL_MISS:
-            return 'å™¨ä»¶ç¼ºå°‘ä»¿çœŸæ¨¡å‹';
-        case ErrCode.ERR_LICENSE_INVALID:
-            return 'æˆæƒæ— æ•ˆæˆ–å·²ç¯¡æ”¹';
-        case ErrCode.ERR_QUOTA_EXCEEDED:
-            return 'AI ç”¨é‡è¶…å‡ºæˆæƒé¢åº¦';
-        case ErrCode.ERR_FEATURE_LOCKED:
-            return 'å½“å‰æˆæƒç‰ˆæœ¬ä¸æ”¯æŒæ­¤åŠŸèƒ½';
-        case ErrCode.ERR_PROJECT_LOCKED:
-            return 'å·¥ç¨‹å·²è¢«å…¶ä»–ä¼šè¯ä»¥åªè¯»/ç¼–è¾‘é”å ç”¨';
-        case ErrCode.ERR_SPICE_CONVERGENCE:
-            return 'SPICE ä»¿çœŸæœªæ”¶æ•›ï¼Œè¯·å‡å°æ­¥é•¿æˆ–æ£€æŸ¥ç½‘è¡¨';
-        case ErrCode.ERR_MCU_INVALID_OPCODE:
-            return 'MCU é‡åˆ°æ— æ•ˆæŒ‡ä»¤ç ';
-        case ErrCode.ERR_DEVICE_LIB_PARSE:
-            return 'å™¨ä»¶åº“æ–‡ä»¶è§£æå¤±è´¥';
-        default:
-            return `æœªçŸ¥é”™è¯¯ (${code})`;
-    }
-}
-function errCodeMessageEn(code) {
-    switch (code) {
-        case ErrCode.OK: return 'OK';
-        case ErrCode.ERR_PARAM_INVALID: return 'Invalid parameter';
-        case ErrCode.ERR_FILE_NOT_FOUND: return 'File not found';
-        case ErrCode.ERR_FILE_CORRUPT: return 'File corrupted or tampered';
-        case ErrCode.ERR_HEX_PARSE_FAIL: return 'HEX parse or checksum failed';
-        case ErrCode.ERR_API_AUTH: return 'AI API authentication failed';
-        case ErrCode.ERR_API_LIMIT: return 'AI rate limit exceeded';
-        case ErrCode.ERR_API_TIMEOUT: return 'AI request timeout';
-        case ErrCode.ERR_SIM_BUSY: return 'Simulation running, edit blocked';
-        case ErrCode.ERR_MCU_NO_HEX: return 'No HEX loaded for MCU';
-        case ErrCode.ERR_DEVICE_NOT_EXIST: return 'Device not in library';
-        case ErrCode.ERR_NET_SHORT: return 'Net short circuit';
-        case ErrCode.ERR_PERMISSION: return 'Permission denied';
-        case ErrCode.ERR_ASYNC_CANCEL: return 'Async task cancelled';
-        case ErrCode.ERR_MODEL_MISS: return 'Simulation model missing';
-        case ErrCode.ERR_LICENSE_INVALID: return 'Invalid license';
-        case ErrCode.ERR_QUOTA_EXCEEDED: return 'Quota exceeded';
-        case ErrCode.ERR_FEATURE_LOCKED: return 'Feature locked by license';
-        case ErrCode.ERR_PROJECT_LOCKED: return 'Project locked by another session';
-        case ErrCode.ERR_SPICE_CONVERGENCE: return 'SPICE convergence failed';
-        case ErrCode.ERR_MCU_INVALID_OPCODE: return 'Invalid MCU opcode';
-        case ErrCode.ERR_DEVICE_LIB_PARSE: return 'Device library parse failed';
-        default: return `Unknown error (${code})`;
-    }
-}
-//# sourceMappingURL=ErrCode.js.mapÂÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0“ÔrD’²hostDependencyName®hostModuleName¼./src/main/ets/types/ErrCode¦commonD°../types/ErrCode¦commonD©./ErrCode¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ„/**
-
- * å…¨å±€ç»Ÿä¸€é”™è¯¯ç 
-
- */
-
-export enum ErrCode {
-
-  OK = 0,
-
-  ERR_PARAM_INVALID = 1,
-
-  ERR_FILE_NOT_FOUND = 2,
-
-  ERR_FILE_CORRUPT = 3,
-
-  ERR_HEX_PARSE_FAIL = 4,
-
-  ERR_API_AUTH = 5,
-
-  ERR_API_LIMIT = 6,
-
-  ERR_API_TIMEOUT = 7,
-
-  ERR_SIM_BUSY = 8,
-
-  ERR_MCU_NO_HEX = 9,
-
-  ERR_DEVICE_NOT_EXIST = 10,
-
-  ERR_NET_SHORT = 11,
-
-  ERR_PERMISSION = 12,
-
-  ERR_ASYNC_CANCEL = 13,
-
-  ERR_MODEL_MISS = 14,
-
-  ERR_LICENSE_INVALID = 15,
-
-  ERR_QUOTA_EXCEEDED = 16,
-
-  ERR_FEATURE_LOCKED = 17,
-
-  ERR_PROJECT_LOCKED = 18,
-
-  ERR_SPICE_CONVERGENCE = 19,
-
-  ERR_MCU_INVALID_OPCODE = 20,
-
-  ERR_DEVICE_LIB_PARSE = 21
-
-}
-
-
-
-export function errCodeMessage(code: ErrCode, locale: string = 'zh'): string {
-
-  if (locale === 'en') {
-    return errCodeMessageEn(code);
-  }
-
-  switch (code) {
-
-    case ErrCode.OK:
-
-      return 'æ­£å¸¸';
-
-    case ErrCode.ERR_PARAM_INVALID:
-
-      return 'å‚æ•°éæ³•ã€ç©ºå€¼æˆ–è¶…å‡ºèŒƒå›´';
-
-    case ErrCode.ERR_FILE_NOT_FOUND:
-
-      return 'æ–‡ä»¶ä¸å­˜åœ¨';
-
-    case ErrCode.ERR_FILE_CORRUPT:
-
-      return 'æ–‡ä»¶æŸåæˆ–æ ¼å¼ä¸åŒ¹é…';
-
-    case ErrCode.ERR_HEX_PARSE_FAIL:
-
-      return 'HEX è§£æå¤±è´¥æˆ–æ ¡éªŒå’Œä¸åŒ¹é…';
-
-    case ErrCode.ERR_API_AUTH:
-
-      return 'AI å¯†é’¥é”™è¯¯ (401)';
-
-    case ErrCode.ERR_API_LIMIT:
-
-      return 'AI é™æµ (429)';
-
-    case ErrCode.ERR_API_TIMEOUT:
-
-      return 'AI æ¥å£è¶…æ—¶';
-
-    case ErrCode.ERR_SIM_BUSY:
-
-      return 'ä»¿çœŸæ­£åœ¨è¿è¡Œï¼Œç¦æ­¢ä¿®æ”¹åŸç†å›¾';
-
-    case ErrCode.ERR_MCU_NO_HEX:
-
-      return 'å•ç‰‡æœºæœªåŠ è½½ HEXï¼Œæ— æ³•è°ƒè¯•';
-
-    case ErrCode.ERR_DEVICE_NOT_EXIST:
-
-      return 'å™¨ä»¶åº“æ— å¯¹åº”å™¨ä»¶';
-
-    case ErrCode.ERR_NET_SHORT:
-
-      return 'ç½‘ç»œçŸ­è·¯å†²çª';
-
-    case ErrCode.ERR_PERMISSION:
-
-      return 'æ–‡ä»¶è¯»å†™æƒé™ä¸è¶³';
-
-    case ErrCode.ERR_ASYNC_CANCEL:
-
-      return 'å¼‚æ­¥ AI ä»»åŠ¡å·²å–æ¶ˆ';
-
-    case ErrCode.ERR_MODEL_MISS:
-
-      return 'å™¨ä»¶ç¼ºå°‘ä»¿çœŸæ¨¡å‹';
-
-    case ErrCode.ERR_LICENSE_INVALID:
-
-      return 'æˆæƒæ— æ•ˆæˆ–å·²ç¯¡æ”¹';
-
-    case ErrCode.ERR_QUOTA_EXCEEDED:
-
-      return 'AI ç”¨é‡è¶…å‡ºæˆæƒé¢åº¦';
-
-    case ErrCode.ERR_FEATURE_LOCKED:
-
-      return 'å½“å‰æˆæƒç‰ˆæœ¬ä¸æ”¯æŒæ­¤åŠŸèƒ½';
-
-    case ErrCode.ERR_PROJECT_LOCKED:
-
-      return 'å·¥ç¨‹å·²è¢«å…¶ä»–ä¼šè¯ä»¥åªè¯»/ç¼–è¾‘é”å ç”¨';
-
-    case ErrCode.ERR_SPICE_CONVERGENCE:
-
-      return 'SPICE ä»¿çœŸæœªæ”¶æ•›ï¼Œè¯·å‡å°æ­¥é•¿æˆ–æ£€æŸ¥ç½‘è¡¨';
-
-    case ErrCode.ERR_MCU_INVALID_OPCODE:
-
-      return 'MCU é‡åˆ°æ— æ•ˆæŒ‡ä»¤ç ';
-
-    case ErrCode.ERR_DEVICE_LIB_PARSE:
-
-      return 'å™¨ä»¶åº“æ–‡ä»¶è§£æå¤±è´¥';
-
-    default:
-
-      return `æœªçŸ¥é”™è¯¯ (${code})`;
-
-  }
-
-}
-
-
-
-function errCodeMessageEn(code: ErrCode): string {
-
-  switch (code) {
-
-    case ErrCode.OK: return 'OK';
-
-    case ErrCode.ERR_PARAM_INVALID: return 'Invalid parameter';
-
-    case ErrCode.ERR_FILE_NOT_FOUND: return 'File not found';
-
-    case ErrCode.ERR_FILE_CORRUPT: return 'File corrupted or tampered';
-
-    case ErrCode.ERR_HEX_PARSE_FAIL: return 'HEX parse or checksum failed';
-
-    case ErrCode.ERR_API_AUTH: return 'AI API authentication failed';
-
-    case ErrCode.ERR_API_LIMIT: return 'AI rate limit exceeded';
-
-    case ErrCode.ERR_API_TIMEOUT: return 'AI request timeout';
-
-    case ErrCode.ERR_SIM_BUSY: return 'Simulation running, edit blocked';
-
-    case ErrCode.ERR_MCU_NO_HEX: return 'No HEX loaded for MCU';
-
-    case ErrCode.ERR_DEVICE_NOT_EXIST: return 'Device not in library';
-
-    case ErrCode.ERR_NET_SHORT: return 'Net short circuit';
-
-    case ErrCode.ERR_PERMISSION: return 'Permission denied';
-
-    case ErrCode.ERR_ASYNC_CANCEL: return 'Async task cancelled';
-
-    case ErrCode.ERR_MODEL_MISS: return 'Simulation model missing';
-
-    case ErrCode.ERR_LICENSE_INVALID: return 'Invalid license';
-
-    case ErrCode.ERR_QUOTA_EXCEEDED: return 'Quota exceeded';
-
-    case ErrCode.ERR_FEATURE_LOCKED: return 'Feature locked by license';
-
-    case ErrCode.ERR_PROJECT_LOCKED: return 'Project locked by another session';
-
-    case ErrCode.ERR_SPICE_CONVERGENCE: return 'SPICE convergence failed';
-
-    case ErrCode.ERR_MCU_INVALID_OPCODE: return 'Invalid MCU opcode';
-
-    case ErrCode.ERR_DEVICE_LIB_PARSE: return 'Device library parse failed';
-
-    default: return `Unknown error (${code})`;
-
-  }
-
-}
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsªErrCode.js ‘«ErrCode.etsÜ n‘”    ‘” •”   ” ”  ” ” 4“”   ” ” “” ”% ”& “” 
-”ÌC 
-”ÌD 
-“” ”ÌE ”ÌF “” ”ÌA ”ÌB “” ”ÌE ”ÌF “” ”9 ”: “” ”; ”< “” ”? ”Ì@ “” ”9 ”: “” ”= ”> “” ”ÌJ ”ÌK “” ”< ”= “”  ”>  ”?  “” "”ÌB "”ÌC "“” $”> $”? $“” &”ÌH &”ÌI &“” (”ÌF (”ÌG (“” *”ÌF *”ÌG *“” ,”ÌF ,”ÌG ,“” .”ÌL .”ÌM .“” 0”ÌN 0”ÌO 0“” 2”ÌJ 2”ÌK 2—”  4 ” 4” ”
- ” ” ” 4™”  8 ” 8” 8” 8” 8”# 8,”% 8.”. 8?”2 8ÌC–” :” :” :” :” :” :—” ;” ;” ;”  ;”$ ; ”% ;!”& ;"‘” <”” >” >
-” >” >•” Ì@” Ì@	” Ì@” Ì@” Ì@”” ÌB” ÌB” ÌB” ÌB•” ÌD” ÌD	” ÌD” ÌD”& ÌD"”” ÌF” ÌF”! ÌF”" ÌF•” ÌH” ÌH	” ÌH” ÌH”' ÌH#”” ÌJ” ÌJ” ÌJ” ÌJ•” ÌL” ÌL	” ÌL” ÌL”% ÌL!”” ÌN” ÌN” ÌN”  ÌN•” ÌP” ÌP	” ÌP” ÌP”' ÌP#”” ÌR” ÌR”$ ÌR”% ÌR•” ÌT” ÌT	” ÌT” ÌT”! ÌT”” ÌV” ÌV”" ÌV”# ÌV•” ÌX” ÌX	” ÌX” ÌX”" ÌX”” ÌZ” ÌZ”  ÌZ”! ÌZ•” Ì\” Ì\	” Ì\” Ì\”$ Ì\ ”” Ì^” Ì^” Ì^” Ì^•” Ì`” Ì`	” Ì`” Ì`”! Ì`”” Ìb” Ìb”# Ìb”$ Ìb•” Ìd” Ìd	” Ìd” Ìd”# Ìd”” Ìf” Ìf”$ Ìf”% Ìf•” Ìh” Ìh	” Ìh” Ìh”) Ìh%”” Ìj” Ìj” Ìj” Ìj•” Ìl” Ìl	” Ìl” Ìl”" Ìl”” Ìn” Ìn” Ìn” Ìn•” Ìp” Ìp	” Ìp” Ìp”# Ìp”” Ìr” Ìr” Ìr” Ìr•” Ìt” Ìt	” Ìt” Ìt”% Ìt!”” Ìv” Ìv”  Ìv”! Ìv•” Ìx” Ìx	” Ìx” Ìx”# Ìx”” Ìz” Ìz” Ìz” Ìz•” Ì|” Ì|	” Ì|” Ì|”( Ì|$”” Ì~” Ì~” Ì~” Ì~•” Ì€” Ì€	” Ì€” Ì€”' Ì€#”” Ì‚” Ì‚”  Ì‚”! Ì‚•” Ì„” Ì„	” Ì„” Ì„”' Ì„#”” Ì†” Ì†”! Ì†”" Ì†•” Ìˆ” Ìˆ	” Ìˆ” Ìˆ”' Ìˆ#”” ÌŠ” ÌŠ”& ÌŠ ”' ÌŠ!•” ÌŒ” ÌŒ	” ÌŒ” ÌŒ”* ÌŒ&”” Ì” Ì”+ Ì%”, Ì&•” Ì” Ì	” Ì” Ì”+ Ì'”” Ì’” Ì’”  Ì’”! Ì’•” Ì”” Ì”	” Ì”” Ì””) Ì”%”” Ì–” Ì–” Ì–” Ì–‘” Ì˜–” Ìš” Ìš” Ìš”  Ìš”# Ìš”$ Ìš‘” Ìœ’”  Ì ” Ì•”  Ì¢ ”	 Ì¢	” Ì¢” Ì¢” Ì¢'”” Ì¤” Ì¤
-” Ì¤” Ì¤š” Ì¦” Ì¦	” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦”  Ì¦”$ Ì¦ ”% Ì¦!š” Ì¨” Ì¨	” Ì¨” Ì¨”& Ì¨"”' Ì¨#”( Ì¨$”/ Ì¨+”ÌB Ì¨>”ÌC Ì¨?š” Ìª” Ìª	” Ìª” Ìª”' Ìª#”( Ìª$”) Ìª%”0 Ìª,”Ì@ Ìª<”ÌA Ìª=š” Ì¬” Ì¬	” Ì¬” Ì¬”% Ì¬!”& Ì¬"”' Ì¬#”. Ì¬*”ÌJ Ì¬ÌF”ÌK Ì¬ÌGš” Ì®” Ì®	” Ì®” Ì®”' Ì®#”( Ì®$”) Ì®%”0 Ì®,”ÌN Ì®ÌJ”ÌO Ì®ÌKš” Ì°” Ì°	” Ì°” Ì°”! Ì°”" Ì°”# Ì°”* Ì°&”ÌH Ì°ÌD”ÌI Ì°ÌEš” Ì²” Ì²	” Ì²” Ì²”" Ì²”# Ì²”$ Ì² ”+ Ì²'”ÌC Ì²?”ÌD Ì²Ì@š” Ì´” Ì´	” Ì´” Ì´”$ Ì´ ”% Ì´!”& Ì´"”- Ì´)”ÌA Ì´=”ÌB Ì´>š” Ì¶” Ì¶	” Ì¶” Ì¶”! Ì¶”" Ì¶”# Ì¶”* Ì¶&”ÌL Ì¶ÌH”ÌM Ì¶ÌIš” Ì¸” Ì¸	” Ì¸” Ì¸”# Ì¸”$ Ì¸ ”% Ì¸!”, Ì¸(”ÌC Ì¸?”ÌD Ì¸Ì@š” Ìº” Ìº	” Ìº” Ìº”) Ìº%”* Ìº&”+ Ìº'”2 Ìº.”ÌI ÌºÌE”ÌJ ÌºÌFš” Ì¼” Ì¼	” Ì¼” Ì¼”" Ì¼”# Ì¼”$ Ì¼ ”+ Ì¼'”> Ì¼:”? Ì¼;š” Ì¾” Ì¾	” Ì¾” Ì¾”# Ì¾”$ Ì¾ ”% Ì¾!”, Ì¾(”? Ì¾;”Ì@ Ì¾<š” ÌÀ” ÌÀ	” ÌÀ” ÌÀ”% ÌÀ!”& ÌÀ"”' ÌÀ#”. ÌÀ*”ÌD ÌÀÌ@”ÌE ÌÀÌAš” ÌÂ” ÌÂ	” ÌÂ” ÌÂ”# ÌÂ”$ ÌÂ ”% ÌÂ!”, ÌÂ(”ÌF ÌÂÌB”ÌG ÌÂÌCš” ÌÄ” ÌÄ	” ÌÄ” ÌÄ”( ÌÄ$”) ÌÄ%”* ÌÄ&”1 ÌÄ-”ÌB ÌÄ>”ÌC ÌÄ?š” ÌÆ” ÌÆ	” ÌÆ” ÌÆ”' ÌÆ#”( ÌÆ$”) ÌÆ%”0 ÌÆ,”Ì@ ÌÆ<”ÌA ÌÆ=š” ÌÈ” ÌÈ	” ÌÈ” ÌÈ”' ÌÈ#”( ÌÈ$”) ÌÈ%”0 ÌÈ,”ÌK ÌÈÌG”ÌL ÌÈÌHš” ÌÊ” ÌÊ	” ÌÊ” ÌÊ”' ÌÊ#”( ÌÊ$”) ÌÊ%”0 ÌÊ,”ÌS ÌÊÌO”ÌT ÌÊÌPš” ÌÌ” ÌÌ	” ÌÌ” ÌÌ”* ÌÌ&”+ ÌÌ'”, ÌÌ(”3 ÌÌ/”ÌM ÌÌÌI”ÌN ÌÌÌJš” ÌÎ” ÌÎ	” ÌÎ” ÌÎ”+ ÌÎ'”, ÌÎ(”- ÌÎ)”4 ÌÎ0”ÌH ÌÎÌD”ÌI ÌÎÌEš” ÌĞ” ÌĞ	” ÌĞ” ÌĞ”) ÌĞ%”* ÌĞ&”+ ÌĞ'”2 ÌĞ.”ÌO ÌĞÌK”ÌP ÌĞÌL™” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ”* ÌÒ&”. ÌÒ*”1 ÌÒ-”2 ÌÒ.‘” ÌÔ’”  ÌÖ ” ÌÖÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ o‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration-ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration!-‘ÔrK•¤type¥start£end¢id¤init²VariableDeclarator%,ÔrL”¤type¥start£end¤nameªIdentifier%,§ErrCodeÀ£varÀI¶ExportNamedDeclarationÍFÍ†ÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍMÍ†LªIdentifierÍVÍd®errCodeMessageÂÂÂ’LªIdentifierÍeÍi¤codeÔrN•¤type¥start£end¤left¥right±AssignmentPatternÍkÍxLªIdentifierÍkÍq¦localeÔrO•¤type¥start£end¥value£raw§LiteralÍtÍx¢zh¤'zh'ÔrP”¤type¥start£end¤body®BlockStatementÍzÍ†’ÔrQ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍÆÔrR–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ…Í”LªIdentifierÍ…Í‹¦locale£===O§LiteralÍÍ”¢en¤'en'P®BlockStatementÍ–ÍÆ‘ÔrS”¤type¥start£end¨argument¯ReturnStatementÍ¡Í¿ÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ¨Í¾LªIdentifierÍ¨Í¸°errCodeMessageEn‘LªIdentifierÍ¹Í½¤codeÂÀÔrU•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍÌÍƒLªIdentifierÍÔÍØ¤codeÜ ÔrV•¤type¥start£endªconsequent¤testªSwitchCaseÍåÍ‘S¯ReturnStatementÍÍO§LiteralÍ
-Í¦æ­£å¸¸¨'æ­£å¸¸'ÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍêÍôLªIdentifierÍêÍñ§ErrCodeLªIdentifierÍòÍô¢OKÂÂVªSwitchCaseÍÍ\‘S¯ReturnStatementÍFÍ\O§LiteralÍMÍ[Ù$å‚æ•°éæ³•ã€ç©ºå€¼æˆ–è¶…å‡ºèŒƒå›´Ù&'å‚æ•°éæ³•ã€ç©ºå€¼æˆ–è¶…å‡ºèŒƒå›´'W°MemberExpressionÍÍ7LªIdentifierÍÍ%§ErrCodeLªIdentifierÍ&Í7±ERR_PARAM_INVALIDÂÂVªSwitchCaseÍfÍ£‘S¯ReturnStatementÍ”Í£O§LiteralÍ›Í¢¯æ–‡ä»¶ä¸å­˜åœ¨±'æ–‡ä»¶ä¸å­˜åœ¨'W°MemberExpressionÍkÍ…LªIdentifierÍkÍr§ErrCodeLªIdentifierÍsÍ…²ERR_FILE_NOT_FOUNDÂÂVªSwitchCaseÍ­Íí‘S¯ReturnStatementÍÙÍíO§LiteralÍàÍì¾æ–‡ä»¶æŸåæˆ–æ ¼å¼ä¸åŒ¹é…Ù 'æ–‡ä»¶æŸåæˆ–æ ¼å¼ä¸åŒ¹é…'W°MemberExpressionÍ²ÍÊLªIdentifierÍ²Í¹§ErrCodeLªIdentifierÍºÍÊ°ERR_FILE_CORRUPTÂÂVªSwitchCaseÍ÷Í>‘S¯ReturnStatementÍ%Í>O§LiteralÍ,Í=Ù%HEX è§£æå¤±è´¥æˆ–æ ¡éªŒå’Œä¸åŒ¹é…Ù''HEX è§£æå¤±è´¥æˆ–æ ¡éªŒå’Œä¸åŒ¹é…'W°MemberExpressionÍüÍLªIdentifierÍüÍ§ErrCodeLªIdentifierÍÍ²ERR_HEX_PARSE_FAILÂÂVªSwitchCaseÍHÍ‡‘S¯ReturnStatementÍpÍ‡O§LiteralÍwÍ†µAI å¯†é’¥é”™è¯¯ (401)·'AI å¯†é’¥é”™è¯¯ (401)'W°MemberExpressionÍMÍaLªIdentifierÍMÍT§ErrCodeLªIdentifierÍUÍa¬ERR_API_AUTHÂÂVªSwitchCaseÍ‘ÍÏ‘S¯ReturnStatementÍºÍÏO§LiteralÍÁÍÎ¯AI é™æµ (429)±'AI é™æµ (429)'W°MemberExpressionÍ–Í«LªIdentifierÍ–Í§ErrCodeLªIdentifierÍÍ«­ERR_API_LIMITÂÂVªSwitchCaseÍÙÍ	‘S¯ReturnStatementÍ	Í	O§LiteralÍ	Í	¯AI æ¥å£è¶…æ—¶±'AI æ¥å£è¶…æ—¶'W°MemberExpressionÍŞÍõLªIdentifierÍŞÍå§ErrCodeLªIdentifierÍæÍõ¯ERR_API_TIMEOUTÂÂVªSwitchCaseÍ	Í	_‘S¯ReturnStatementÍ	GÍ	_O§LiteralÍ	NÍ	^Ù*ä»¿çœŸæ­£åœ¨è¿è¡Œï¼Œç¦æ­¢ä¿®æ”¹åŸç†å›¾Ù,'ä»¿çœŸæ­£åœ¨è¿è¡Œï¼Œç¦æ­¢ä¿®æ”¹åŸç†å›¾'W°MemberExpressionÍ	$Í	8LªIdentifierÍ	$Í	+§ErrCodeLªIdentifierÍ	,Í	8¬ERR_SIM_BUSYÂÂVªSwitchCaseÍ	iÍ	¬‘S¯ReturnStatementÍ	“Í	¬O§LiteralÍ	šÍ	«Ù%å•ç‰‡æœºæœªåŠ è½½ HEXï¼Œæ— æ³•è°ƒè¯•Ù''å•ç‰‡æœºæœªåŠ è½½ HEXï¼Œæ— æ³•è°ƒè¯•'W°MemberExpressionÍ	nÍ	„LªIdentifierÍ	nÍ	u§ErrCodeLªIdentifierÍ	vÍ	„®ERR_MCU_NO_HEXÂÂVªSwitchCaseÍ	¶Í	ø‘S¯ReturnStatementÍ	æÍ	øO§LiteralÍ	íÍ	÷¸å™¨ä»¶åº“æ— å¯¹åº”å™¨ä»¶º'å™¨ä»¶åº“æ— å¯¹åº”å™¨ä»¶'W°MemberExpressionÍ	»Í	×LªIdentifierÍ	»Í	Â§ErrCodeLªIdentifierÍ	ÃÍ	×´ERR_DEVICE_NOT_EXISTÂÂVªSwitchCaseÍ
-Í
-;‘S¯ReturnStatementÍ
-+Í
-;O§LiteralÍ
-2Í
-:²ç½‘ç»œçŸ­è·¯å†²çª´'ç½‘ç»œçŸ­è·¯å†²çª'W°MemberExpressionÍ
-Í
-LªIdentifierÍ
-Í
-§ErrCodeLªIdentifierÍ
-Í
-­ERR_NET_SHORTÂÂVªSwitchCaseÍ
-EÍ
-‘S¯ReturnStatementÍ
-oÍ
-O§LiteralÍ
-vÍ
-€¸æ–‡ä»¶è¯»å†™æƒé™ä¸è¶³º'æ–‡ä»¶è¯»å†™æƒé™ä¸è¶³'W°MemberExpressionÍ
-JÍ
-`LªIdentifierÍ
-JÍ
-Q§ErrCodeLªIdentifierÍ
-RÍ
-`®ERR_PERMISSIONÂÂVªSwitchCaseÍ
-‹Í
-Ì‘S¯ReturnStatementÍ
-·Í
-ÌO§LiteralÍ
-¾Í
-Ë¹å¼‚æ­¥ AI ä»»åŠ¡å·²å–æ¶ˆ»'å¼‚æ­¥ AI ä»»åŠ¡å·²å–æ¶ˆ'W°MemberExpressionÍ
-Í
-¨LªIdentifierÍ
-Í
-—§ErrCodeLªIdentifierÍ
-˜Í
-¨°ERR_ASYNC_CANCELÂÂVªSwitchCaseÍ
-ÖÍ‘S¯ReturnStatementÍ ÍO§LiteralÍÍ¸å™¨ä»¶ç¼ºå°‘ä»¿çœŸæ¨¡å‹º'å™¨ä»¶ç¼ºå°‘ä»¿çœŸæ¨¡å‹'W°MemberExpressionÍ
-ÛÍ
-ñLªIdentifierÍ
-ÛÍ
-â§ErrCodeLªIdentifierÍ
-ãÍ
-ñ®ERR_MODEL_MISSÂÂVªSwitchCaseÍÍ]‘S¯ReturnStatementÍKÍ]O§LiteralÍRÍ\¸æˆæƒæ— æ•ˆæˆ–å·²ç¯¡æ”¹º'æˆæƒæ— æ•ˆæˆ–å·²ç¯¡æ”¹'W°MemberExpressionÍ!Í<LªIdentifierÍ!Í(§ErrCodeLªIdentifierÍ)Í<³ERR_LICENSE_INVALIDÂÂVªSwitchCaseÍgÍª‘S¯ReturnStatementÍ•ÍªO§LiteralÍœÍ©»AI ç”¨é‡è¶…å‡ºæˆæƒé¢åº¦½'AI ç”¨é‡è¶…å‡ºæˆæƒé¢åº¦'W°MemberExpressionÍlÍ†LªIdentifierÍlÍs§ErrCodeLªIdentifierÍtÍ†²ERR_QUOTA_EXCEEDEDÂÂVªSwitchCaseÍ´Íø‘S¯ReturnStatementÍâÍøO§LiteralÍéÍ÷Ù$å½“å‰æˆæƒç‰ˆæœ¬ä¸æ”¯æŒæ­¤åŠŸèƒ½Ù&'å½“å‰æˆæƒç‰ˆæœ¬ä¸æ”¯æŒæ­¤åŠŸèƒ½'W°MemberExpressionÍ¹ÍÓLªIdentifierÍ¹ÍÀ§ErrCodeLªIdentifierÍÁÍÓ²ERR_FEATURE_LOCKEDÂÂVªSwitchCaseÍÍK‘S¯ReturnStatementÍ0ÍKO§LiteralÍ7ÍJÙ1å·¥ç¨‹å·²è¢«å…¶ä»–ä¼šè¯ä»¥åªè¯»/ç¼–è¾‘é”å ç”¨Ù3'å·¥ç¨‹å·²è¢«å…¶ä»–ä¼šè¯ä»¥åªè¯»/ç¼–è¾‘é”å ç”¨'W°MemberExpressionÍÍ!LªIdentifierÍÍ§ErrCodeLªIdentifierÍÍ!²ERR_PROJECT_LOCKEDÂÂVªSwitchCaseÍUÍ¦‘S¯ReturnStatementÍ†Í¦O§LiteralÍÍ¥Ù6SPICE ä»¿çœŸæœªæ”¶æ•›ï¼Œè¯·å‡å°æ­¥é•¿æˆ–æ£€æŸ¥ç½‘è¡¨Ù8'SPICE ä»¿çœŸæœªæ”¶æ•›ï¼Œè¯·å‡å°æ­¥é•¿æˆ–æ£€æŸ¥ç½‘è¡¨'W°MemberExpressionÍZÍwLªIdentifierÍZÍa§ErrCodeLªIdentifierÍbÍwµERR_SPICE_CONVERGENCEÂÂVªSwitchCaseÍ°Í÷‘S¯ReturnStatementÍâÍ÷O§LiteralÍéÍö¹MCU é‡åˆ°æ— æ•ˆæŒ‡ä»¤ç »'MCU é‡åˆ°æ— æ•ˆæŒ‡ä»¤ç 'W°MemberExpressionÍµÍÓLªIdentifierÍµÍ¼§ErrCodeLªIdentifierÍ½ÍÓ¶ERR_MCU_INVALID_OPCODEÂÂVªSwitchCaseÍÍD‘S¯ReturnStatementÍ1ÍDO§LiteralÍ8ÍC»å™¨ä»¶åº“æ–‡ä»¶è§£æå¤±è´¥½'å™¨ä»¶åº“æ–‡ä»¶è§£æå¤±è´¥'W°MemberExpressionÍÍ"LªIdentifierÍÍ§ErrCodeLªIdentifierÍÍ"´ERR_DEVICE_LIB_PARSEÂÂVªSwitchCaseÍNÍ|‘S¯ReturnStatementÍdÍ|ÔrX•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍkÍ{‘LªIdentifierÍtÍx¤code’ÔrY•¤type¥start£end¥value¤tail¯TemplateElementÍlÍrÔrZ’£raw¦cooked®æœªçŸ¥é”™è¯¯ (®æœªçŸ¥é”™è¯¯ (ÂY¯TemplateElementÍyÍzZ¡)¡)ÃÀÀ

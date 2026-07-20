@@ -14,6 +14,10 @@ export interface ChatOptions {
   temperature?: number;
   /** 关闭 DeepSeek V4 等模型的 thinking，避免推理占满 max_tokens 导致 content 为空 */
   disableThinking?: boolean;
+  /** 覆盖默认连接超时（测试连接用短超时） */
+  connectTimeoutMs?: number;
+  /** 覆盖默认读超时 */
+  readTimeoutMs?: number;
 }
 
 export interface ProviderTemplateInfo {

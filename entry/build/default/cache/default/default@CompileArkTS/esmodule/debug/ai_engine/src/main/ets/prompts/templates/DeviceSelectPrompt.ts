@@ -36,6 +36,7 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 【强制器件 — 任何电路都必须包含，缺一不可】:
 - 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND 接地符号: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- 用户要正弦/方波等激励时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
 【仪器自动追加规则 — 严格按用户需求】:
@@ -44,8 +45,10 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - 用户说"N个电压表"→ 必须输出N个 VOLTMETER_DC
 - 电路含 MCU+UART → 追加 UART_TERMINAL
 - 电路含运放/放大器 → 追加 OSCILLOSCOPE
+- 用户明确要求观测波形/示波/指数/充放电 → 追加 OSCILLOSCOPE
 - 电路含数字 IC → 追加 LOGIC_ANALYZER
 - 电路含电源/稳压 → 追加 VOLTMETER_DC
+- 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
@@ -56,7 +59,7 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - 参考 conversation_history 理解上下文，只调整用户要求变更的部分
 - 保留未涉及修改的现有器件
 
-输出纯 JSON（可用 snake_case 或 camelCase），无 markdown 包裹。
+输出规则（与全局输出铁律一致）: 回复正文只能是一个 JSON 对象，禁止任何说明/markdown。
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`,
-    userTemplate: '{{conversation_history}}{{generation_mode}}用户需求：\n{{user_prompt}}\n\n场景：{{scene}}\n\n局部电路（可选）：\n{{partial_topo}}\n\n可用器件库摘要：\n{{library_catalog}}'
+    userTemplate: '{{conversation_history}}{{generation_mode}}用户需求：\n{{user_prompt}}\n\n场景：{{scene}}\n\n局部电路（可选）：\n{{partial_topo}}\n\n可用器件库摘要：\n{{library_catalog}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };

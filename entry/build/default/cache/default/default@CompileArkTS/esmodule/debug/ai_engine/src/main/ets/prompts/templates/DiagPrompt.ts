@@ -21,12 +21,13 @@ export const DIAG_PROMPT: PromptTemplate = {
 
 【互斥双色】若需求为开/闭双色指示：检查 RELAY_SPDT 与 NC/NO 支路是否正确。
 
-【输出格式】:
-## 诊断摘要
-## 确定问题
-## 待验证假设
-## 修复优先级
-
-使用中文，条理清晰。`,
-    userTemplate: 'ERC：{{erc_violations}}\n拓扑：{{topology}}'
+【输出 — 严格 JSON；禁止 markdown/散文】:
+{
+  "summary":"诊断摘要一句话",
+  "confirmedIssues":[{"desc":"...","severity":"error|warning"}],
+  "hypotheses":["待验证假设"],
+  "fixPriority":["优先修复项"]
+}
+使用中文写在 JSON 字段内。`,
+    userTemplate: 'ERC：{{erc_violations}}\n拓扑：{{topology}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };

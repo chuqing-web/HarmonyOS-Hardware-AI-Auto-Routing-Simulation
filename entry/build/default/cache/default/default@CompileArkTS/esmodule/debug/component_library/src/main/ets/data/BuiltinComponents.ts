@@ -1,7 +1,7 @@
 import { ComponentCategory, PinType } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { Pin } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ComponentDefinition } from '../api/IComponentLibrary';
-import { appendComponents, emptyParams, makePin, params1, params2, params3 } from "@bundle:com.elecdraw.aischsim/entry@component_library/ets/internal/ComponentLibHelpers";
+import { appendComponents, emptyParams, makePin, params1, params2, params3, params5 } from "@bundle:com.elecdraw.aischsim/entry@component_library/ets/internal/ComponentLibHelpers";
 export function getAllBuiltinComponents(): ComponentDefinition[] {
     const list: ComponentDefinition[] = [];
     appendComponents(list, makePowerSupplies());
@@ -23,7 +23,7 @@ function makePowerSupplies(): ComponentDefinition[] {
             name: 'VCC 电源',
             category: ComponentCategory.POWER_SUPPLY,
             manufacturer: 'Generic',
-            description: '正电源 VCC / VDD',
+            description: '正电源 VCC / VDD（voltage 可调，如 5V/3.3V/12V）',
             pins: [
                 makePin('1', 'VCC', '1', PinType.POWER, 0, 10)
             ],
@@ -32,6 +32,21 @@ function makePowerSupplies(): ComponentDefinition[] {
             behaviorModel: 'vcc',
             svgSymbol: 'vcc.svg',
             aiWiringRules: ['power-rail']
+        },
+        {
+            id: 'VEE',
+            name: 'VEE 负电源',
+            category: ComponentCategory.POWER_SUPPLY,
+            manufacturer: 'Generic',
+            description: '负电源 VEE（voltage 为负值，如 -5V/-12V；运放双电源必备）',
+            pins: [
+                makePin('1', 'VEE', '1', PinType.POWER, 0, -10)
+            ],
+            defaultParams: params1('voltage', '-12V'),
+            spiceModel: '',
+            behaviorModel: 'vee',
+            svgSymbol: 'gnd.svg',
+            aiWiringRules: ['power-rail', 'negative-rail']
         },
         {
             id: 'GND',
@@ -63,6 +78,22 @@ function makePowerSupplies(): ComponentDefinition[] {
             behaviorModel: 'ac_source',
             svgSymbol: 'vac.svg',
             aiWiringRules: ['ac-power']
+        },
+        {
+            id: 'SIGNAL_GEN',
+            name: '信号发生器',
+            category: ComponentCategory.INSTRUMENT,
+            manufacturer: 'AI-SCH',
+            description: '函数信号源：正弦/方波/三角/锯齿/脉冲；frequency 与 dutyCycle(方波/脉冲)可调',
+            pins: [
+                makePin('OUT', 'OUT', '1', PinType.OUTPUT, -30, 0),
+                makePin('GND', 'GND', '2', PinType.GROUND, 30, 0)
+            ],
+            defaultParams: params5('waveform', 'sine', 'amplitude', '1V', 'frequency', '1kHz', 'offset', '0V', 'dutyCycle', '50%'),
+            spiceModel: '',
+            behaviorModel: 'signal_gen',
+            svgSymbol: 'vac.svg',
+            aiWiringRules: ['signal-source', 'series-gnd']
         }
     ];
 }

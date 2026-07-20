@@ -123,6 +123,8 @@ export interface DeviceSelectResult {
     alternatives: Map<string, string[]>;
     oodDetected: boolean;
     ragTemplateId?: string;
+    /** LLM deviceRequireList 中成功 matchOne 的数量（不含 auto 补的 VCC/GND） */
+    matchedRequireCount?: number;
 }
 /** LLM 布局约束（CCG），不输出坐标 */
 export type LayoutConstraintType = 'adjacent' | 'separate' | 'central' | 'edge';

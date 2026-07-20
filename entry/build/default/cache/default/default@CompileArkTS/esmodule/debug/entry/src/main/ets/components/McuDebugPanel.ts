@@ -25,7 +25,7 @@ import fs from "@ohos:file.fs";
 import picker from "@ohos:file.picker";
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { McuFamily, SimulationState, traceBurn, formatFirmwarePreview } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import { ProteusClassicBtn, ProteusSectionTitle } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 export class McuDebugPanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -599,16 +599,36 @@ export class McuDebugPanel extends ViewPU {
             Column.padding({ left: 8, right: 8 });
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: '固件路径…', text: this.hexFilePath });
-            TextInput.width('100%');
-            TextInput.height(28);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.hexFilePath = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.width('100%');
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: '固件路径…',
+                        text: this.hexFilePath,
+                        onChange: (v: string) => { this.hexFilePath = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 303, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: '固件路径…',
+                            text: this.hexFilePath,
+                            onChange: (v: string) => { this.hexFilePath = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: '固件路径…',
+                        text: this.hexFilePath
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 4 });
@@ -623,7 +643,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '浏览',
                         widthVal: '48%',
                         onAction: () => { void this.browseHexFile(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 317, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 314, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -649,7 +669,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '烧录',
                         widthVal: '48%',
                         onAction: () => { void this.burnHex(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 322, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 319, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -709,7 +729,7 @@ export class McuDebugPanel extends ViewPU {
                                                 this.hexFilePath = hexPath;
                                                 void this.burnHex();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 345, col: 13 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 342, col: 13 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -759,7 +779,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '▶ 运行', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.run();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 362, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 359, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -786,7 +806,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '⏸ 暂停', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.pause();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 366, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 363, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -813,7 +833,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↷ 单步', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.step();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 370, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 367, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -840,7 +860,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↺ 复位', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.reset();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 374, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 371, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -891,7 +911,7 @@ export class McuDebugPanel extends ViewPU {
                             }
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 384, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 381, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1017,16 +1037,36 @@ export class McuDebugPanel extends ViewPU {
             Row.padding({ left: 8, right: 8 });
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: '输入 UART 数据', text: this.hexInput });
-            TextInput.layoutWeight(1);
-            TextInput.height(28);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.hexInput = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.layoutWeight(1);
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: '输入 UART 数据',
+                        text: this.hexInput,
+                        onChange: (v: string) => { this.hexInput = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 461, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: '输入 UART 数据',
+                            text: this.hexInput,
+                            onChange: (v: string) => { this.hexInput = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: '输入 UART 数据',
+                        text: this.hexInput
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
@@ -1037,7 +1077,7 @@ export class McuDebugPanel extends ViewPU {
                             this.appService.hexDebugger.sendUartInput(this.hexInput);
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 473, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 467, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

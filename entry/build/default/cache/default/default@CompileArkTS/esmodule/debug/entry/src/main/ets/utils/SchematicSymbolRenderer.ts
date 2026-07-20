@@ -1071,10 +1071,22 @@ export class SchematicSymbolRenderer {
             }
         }
     }
+    /** SVG 里常见的黑/近黑描边在深色画布上不可见 → 映射到主题描边色 */
+    private static resolveSvgStroke(color: string | undefined): string {
+        if (color === undefined || color.length === 0) {
+            return ProteusColors.COMPONENT_STROKE;
+        }
+        const c = color.trim().toLowerCase();
+        if (c === '#000' || c === '#000000' || c === 'black' || c === '#111' || c === '#111111' ||
+            c === '#222' || c === '#222222' || c === 'rgb(0,0,0)' || c === 'rgb(0, 0, 0)') {
+            return ProteusColors.COMPONENT_STROKE;
+        }
+        return color;
+    }
     private static drawSvgCommands(ctx: CanvasRenderingContext2D, cmds: DrawCommand[]): void {
         for (let i = 0; i < cmds.length; i++) {
             const c = cmds[i];
-            ctx.strokeStyle = c.color ?? ProteusColors.COMPONENT_STROKE;
+            ctx.strokeStyle = SchematicSymbolRenderer.resolveSvgStroke(c.color);
             ctx.lineWidth = c.strokeWidth ?? 1.2;
             if (c.type === 'line' && c.x1 !== undefined && c.y1 !== undefined && c.x2 !== undefined && c.y2 !== undefined) {
                 ctx.beginPath();

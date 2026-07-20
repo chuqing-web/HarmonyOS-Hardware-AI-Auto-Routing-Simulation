@@ -86,7 +86,8 @@ export struct AppRightPanel {
             InstrumentPanel({
               statusMessage: $statusMessage,
               selectedComponentId: this.selectedComponentId,
-              simWaveTick: this.simWaveTick
+              simWaveTick: this.simWaveTick,
+              simRunning: this.simRunning
             })
           }
 

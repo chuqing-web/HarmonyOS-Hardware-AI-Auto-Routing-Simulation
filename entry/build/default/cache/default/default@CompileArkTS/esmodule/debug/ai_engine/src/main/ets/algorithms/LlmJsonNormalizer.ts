@@ -288,18 +288,36 @@ export class LlmJsonNormalizer {
         }
         const moduleGroupRec = LlmJsonNormalizer.toStringArrayRecord(LlmJsonNormalizer.firstDefined(src.moduleGroup, src.module_group, src.moduleGroups, src.module_groups));
         const signalWeight = LlmJsonNormalizer.toNumberRecord(LlmJsonNormalizer.firstDefined(src.signalWeight, src.signal_weight));
-        // AI 驱动布局: 解析 LLM 直接输出的器件坐标
-        const positionsRaw = (raw as Record<string, Object>)['positions'];
+        // AI 驱动布局: 解析 LLM 直接输出的器件坐标（兼容多别名）
+        const rawRec = raw as Record<string, Object>;
+        const altPos = LlmJsonNormalizer.firstDefined(rawRec['placement'], rawRec['devices']);
+        const positionsRaw = LlmJsonNormalizer.firstDefined(rawRec['positions'], rawRec['devicePositions'], rawRec['device_positions'], altPos !== null ? altPos : undefined);
         const positions: LayoutPositionItem[] = [];
         if (Array.isArray(positionsRaw)) {
             for (const posObj of positionsRaw as Object[]) {
                 const p = posObj as Record<string, Object>;
-                const deviceId = LlmJsonNormalizer.asText(p['deviceId'] ?? p['device_id'] ?? p['refName'] ?? p['ref_name'], '');
-                const x = LlmJsonNormalizer.asNumber(p['x'], 0);
-                const y = LlmJsonNormalizer.asNumber(p['y'], 0);
+                const deviceId = LlmJsonNormalizer.asText(p['deviceId'] ?? p['device_id'] ?? p['refName'] ?? p['ref_name'] ??
+                    p['id'] ?? p['name'] ?? p['libDevId'] ?? p['lib_dev_id'], '');
+                let x = LlmJsonNormalizer.asNumber(p['x'], NaN);
+                let y = LlmJsonNormalizer.asNumber(p['y'], NaN);
+                // 部分模型把坐标写成字符串 "540"
+                if (isNaN(x) && p['x'] !== undefined && p['x'] !== null) {
+                    x = Number(`${p['x']}`);
+                }
+                if (isNaN(y) && p['y'] !== undefined && p['y'] !== null) {
+                    y = Number(`${p['y']}`);
+                }
                 const rotate = LlmJsonNormalizer.asNumber(p['rotate'] ?? p['rotation'], 0);
                 if (deviceId.length > 0 && !isNaN(x) && !isNaN(y) && x >= 0 && y >= 0) {
-                    const item: LayoutPositionItem = { deviceId: deviceId, x: x, y: y, rotate: rotate };
+                    // 入库即 snap 到 20mil，避免 critique 因栅格反复 reject
+                    const sx = Math.round(x / 20) * 20;
+                    const sy = Math.round(y / 20) * 20;
+                    const item: LayoutPositionItem = {
+                        deviceId: deviceId,
+                        x: Math.max(40, Math.min(1200, sx)),
+                        y: Math.max(40, Math.min(800, sy)),
+                        rotate: rotate
+                    };
                     positions.push(item);
                 }
             }
@@ -403,7 +421,8 @@ export class LlmJsonNormalizer {
         return ['deviceRequireList', 'circuitConstraint', 'functionModule'];
     }
     static layoutScoreFields(): string[] {
-        return ['positions', 'constraintRules', 'moduleGroup', 'signalWeight'];
+        // AI 驱动布局以 positions 为准；其余字段可选，勿因缺 moduleGroup 判 no parse
+        return ['positions'];
     }
     static routingScoreFields(): string[] {
         return ['netPriority', 'specialNetRules', 'globalConstraint'];

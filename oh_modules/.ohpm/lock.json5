@@ -240,6 +240,16 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
+    "ai_api_manager@file:features/ai_api_manager": {
+      "storePath": "features/ai_api_manager",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
     "hex_debugger@file:features/hex_debugger": {
       "storePath": "features/hex_debugger",
       "dependencies": {
@@ -262,16 +272,6 @@
     },
     "plugin_system@file:features/plugin_system": {
       "storePath": "features/plugin_system",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "ai_api_manager@file:features/ai_api_manager": {
-      "storePath": "features/ai_api_manager",
       "dependencies": {
         "common": "common"
       },

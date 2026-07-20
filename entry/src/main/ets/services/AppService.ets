@@ -42,7 +42,7 @@ import {
   traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn,
   traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity,
   emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil,
-  mapAwareStringify, mapAwareParse
+  mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, ComponentInstance
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -129,9 +129,15 @@ export class AppService {
   private readonly simHost: SimWorkerHost = new SimWorkerHost();
   private schematicDebounceTimer: number = -1;
   private readonly SCHEMATIC_DEBOUNCE_MS: number = 150;
+  private persistDebounceTimer: number = -1;
+  private readonly PERSIST_DEBOUNCE_MS: number = 2000;
+  /** 当前工作副本 autosave 路径（含未保存的 Untitled 工程） */
+  private workingAutoSavePath: string = '';
+  static readonly AUTOSAVE_INTERVAL_MS: number = 30000;
   private lastActiveInstrumentId: string | null = null;
   private bindingPinHash: Map<string, string> = new Map();
   private appBaseDir: string = '';
+  private templateBootstrapPromise: Promise<void> | null = null;
   private aiGenerating: boolean = false;
   private aiGenLogs: AiGenLogEntry[] = [];
   private aiGenLogSeq: number = 0;
@@ -195,6 +201,9 @@ export class AppService {
     }
     try { fs.mkdirSync(ProjectPaths.apiVaultRoot(baseDir), true); } catch (_e) {}
     try { fs.mkdirSync(ProjectPaths.userProjectRoot(baseDir), true); } catch (_e) {}
+    try {
+      ThemeManager.getInstance().bindApplicationContext(context.getApplicationContext());
+    } catch (_e) { /* ignore */ }
     ThemeManager.getInstance().init(baseDir);
     PlatformPrefsStore.getInstance().init(baseDir);
     AiApiVaultStore.getInstance().init(baseDir);
@@ -202,7 +211,7 @@ export class AppService {
     this.loadAiApiVaultOnStartup();
     (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
     this.filePersistence.initCollaboration(baseDir);
-    void TemplateProjectBootstrap.ensure(context, baseDir);
+    this.templateBootstrapPromise = TemplateProjectBootstrap.ensure(context, baseDir);
     void this.bootstrapAndLoadLibrary(context, `${baseDir}/DeviceLibrary`);
     void this.loadProteusAliases(context);
     void LicenseManager.getInstance().applyTrialStatus(context);
@@ -258,6 +267,7 @@ export class AppService {
     if (this.currentProjectPath.length > 0 && this.canUseSidecarLock(this.currentProjectPath)) {
       this.filePersistence.releaseProjectLock(this.currentProjectPath, this.sessionHolderId);
     }
+    this.resetInstrumentUiForProjectSwitch();
     this.currentProject = this.filePersistence.createNewProject(name);
     this.currentProjectPath = '';
     // API 存在全局加密金库，新建工程不再清空已加载的 API
@@ -332,6 +342,97 @@ export class AppService {
   /** Push schematic parameter changes into the running simulation kernel */
   syncComponentParamToSimulation(_compId: string, _key: string, _value: string): void {
     this.reloadSimulationFromSchematic();
+  }
+
+  /** Resolve SIGNAL_GEN instance: prefer selection, else first on schematic. */
+  private findSignalGenComponent(preferredCompId: string = ''): ComponentInstance | null {
+    const doc = this.schematicEditor.getDocument();
+    if (preferredCompId.length > 0) {
+      const sel = doc.components.find(c => c.id === preferredCompId);
+      if (sel !== undefined) {
+        const lib = sel.libraryId.toUpperCase();
+        if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN') ||
+          ((lib.includes('SIGNAL') || lib.includes('GEN') || lib.includes('FUNC')) &&
+            !lib.includes('OSC'))) {
+          return sel;
+        }
+      }
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      const lib = c.libraryId.toUpperCase();
+      if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  private signalWaveformToParam(wf: SignalWaveform): string {
+    switch (wf) {
+      case SignalWaveform.SQUARE: return 'square';
+      case SignalWaveform.TRIANGLE: return 'triangle';
+      case SignalWaveform.SAW: return 'saw';
+      case SignalWaveform.PULSE: return 'pulse';
+      case SignalWaveform.SINE:
+      default: return 'sine';
+    }
+  }
+
+  /**
+   * 仪器面板波形按钮 → 写回原理图 SIGNAL_GEN.parameters.waveform 并重载仿真。
+   * 仅改 VirtualInstruments 内存不会影响 AnalogEngine（后者读器件参数）。
+   */
+  applySignalGenWaveform(waveform: SignalWaveform, preferredCompId: string = ''): string {
+    const comp = this.findSignalGenComponent(preferredCompId);
+    if (comp === null) {
+      return '未找到信号发生器器件';
+    }
+    const name = this.signalWaveformToParam(waveform);
+    const validated = UnitParser.validateParam('waveform', name);
+    if (!validated.valid) {
+      return `波形无效: ${name}`;
+    }
+    this.schematicEditor.setDeviceParam(comp.id, 'waveform', validated.normalized);
+    this.instruments.setWaveform(waveform);
+    this.syncComponentParamToSimulation(comp.id, 'waveform', validated.normalized);
+    Logger.info(INSTR_TRACE_TAG,
+      `[SIGGEN] apply waveform=${validated.normalized} ref=${comp.refDes} id=${comp.id}`);
+    return `${comp.refDes} 波形=${validated.normalized}`;
+  }
+
+  /** 仪器面板「应用参数」→ 写回原理图并重载仿真 */
+  applySignalGenParams(
+    frequency: number, amplitude: number, offset: number, dutyCycle: number,
+    preferredCompId: string = ''
+  ): string {
+    const comp = this.findSignalGenComponent(preferredCompId);
+    if (comp === null) {
+      return '未找到信号发生器器件';
+    }
+    const freqStr = `${frequency}`;
+    const ampStr = `${amplitude}V`;
+    const offStr = `${offset}V`;
+    const dutyStr = `${dutyCycle}%`;
+    const fOk = UnitParser.validateParam('frequency', freqStr);
+    const aOk = UnitParser.validateParam('amplitude', ampStr);
+    const oOk = UnitParser.validateParam('offset', offStr);
+    const dOk = UnitParser.validateParam('dutyCycle', dutyStr);
+    if (!fOk.valid || !aOk.valid || !oOk.valid || !dOk.valid) {
+      return '频率/振幅/偏置/占空比无效';
+    }
+    this.schematicEditor.setDeviceParam(comp.id, 'frequency', fOk.normalized);
+    this.schematicEditor.setDeviceParam(comp.id, 'amplitude', aOk.normalized);
+    this.schematicEditor.setDeviceParam(comp.id, 'offset', oOk.normalized);
+    this.schematicEditor.setDeviceParam(comp.id, 'dutyCycle', dOk.normalized);
+    this.instruments.setParams({
+      frequency, amplitude, offset, dutyCycle, phase: 0
+    });
+    this.syncComponentParamToSimulation(comp.id, 'frequency', fOk.normalized);
+    Logger.info(INSTR_TRACE_TAG,
+      `[SIGGEN] apply params ref=${comp.refDes} f=${fOk.normalized} amp=${aOk.normalized} ` +
+      `off=${oOk.normalized} duty=${dOk.normalized}`);
+    return `${comp.refDes} f=${fOk.normalized} amp=${aOk.normalized} duty=${dOk.normalized}`;
   }
 
   /** Set which component instance drives Props/Instr instrument readouts */
@@ -772,7 +873,8 @@ export class AppService {
     const upperId = comp.libraryId.toUpperCase();
     const isInstrumentLib = upperId.includes('METER') || upperId.includes('SCOPE') || upperId.includes('OSC') ||
       upperId.includes('LOGIC') || upperId.includes('ANALYZER') || upperId.includes('POWER') ||
-      upperId.includes('WATT') || upperId.includes('FREQ') || upperId.includes('COUNTER');
+      upperId.includes('WATT') || upperId.includes('FREQ') || upperId.includes('COUNTER') ||
+      upperId.includes('UART') || upperId.includes('TERMINAL');
     if (isInstrumentLib && pinNets.size === 0) {
       tracePinNetEmpty(compInstId, comp.refDes);
     }
@@ -872,6 +974,21 @@ export class AppService {
         };
         binding.scopeProbes[0] = netSig;
       }
+    } else if (upperId.includes('UART') || upperId.includes('TERMINAL')) {
+      const tx = findNetForPin('TX') ?? findNetForPin('1');
+      const rx = findNetForPin('RX') ?? findNetForPin('2');
+      const gnd = findNetForPin('GND') ?? findNetForPin('3');
+      if (tx !== null) {
+        binding.scopeProbes[0] = tx;
+      }
+      if (rx !== null) {
+        binding.scopeProbes[1] = rx;
+      }
+      if (gnd !== null && binding.scopeProbes[2].length === 0) {
+        binding.scopeProbes[2] = gnd;
+      }
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_GEN] UART bind ${comp.refDes} TX=${tx ?? '-'} RX=${rx ?? '-'} GND=${gnd ?? '-'}`);
     }
 
     (this.instruments as VirtualInstrumentsImpl).registerComponentBinding(compInstId, binding);
@@ -1061,9 +1178,15 @@ export class AppService {
     // API 以全局金库为准；工程内遗留配置仅作一次性迁移
     this.migrateProjectAiConfigsToVaultIfNeeded();
     this.bindingPinHash.clear();
+    this.resetInstrumentUiForProjectSwitch();
     this.autoWireAllInstruments();
     this.onProjectChanged();
     return true;
+  }
+
+  /** 切换工程时清仪器绑定，避免右侧面板沿用上一工程读数 */
+  private resetInstrumentUiForProjectSwitch(): void {
+    this.clearInstrumentReaders();
   }
 
   /** 启动：从加密金库加载 API 并注入 manager */
@@ -1214,7 +1337,8 @@ export class AppService {
     }
   }
 
-  enableAutoSave(path: string, intervalMs: number = 60000): void {
+  enableAutoSave(path: string, intervalMs: number = AppService.AUTOSAVE_INTERVAL_MS): void {
+    this.workingAutoSavePath = path;
     this.filePersistence.enableAutoSave(intervalMs, path, () => {
       this.syncProjectFromModules();
       return this.currentProject;
@@ -1223,6 +1347,65 @@ export class AppService {
 
   disableAutoSave(): void {
     this.filePersistence.disableAutoSave();
+    this.workingAutoSavePath = '';
+  }
+
+  getWorkingAutoSavePath(): string {
+    if (this.workingAutoSavePath.length > 0) {
+      return this.workingAutoSavePath;
+    }
+    return (this.filePersistence as FilePersistenceImpl).getAutoSavePath();
+  }
+
+  /** 正式工程路径；无则回落到 autosave 工作副本 */
+  getEffectiveSessionPath(): string {
+    if (this.currentProjectPath.length > 0) {
+      return this.currentProjectPath;
+    }
+    return this.getWorkingAutoSavePath();
+  }
+
+  /** 编辑后防抖写入 autosave 工作副本 */
+  async persistWorkingCopy(): Promise<boolean> {
+    if (this.currentProject === null) {
+      return false;
+    }
+    this.syncProjectFromModules();
+    return (this.filePersistence as FilePersistenceImpl).saveAutoSaveNow();
+  }
+
+  /**
+   * 退出/切后台：写 autosave + recovery + session。
+   * closedCleanly=true 表示正常退出；false 表示异常/编辑中，下次启动走恢复。
+   */
+  async flushProjectProtection(closedCleanly: boolean): Promise<void> {
+    if (this.currentProject === null) {
+      return;
+    }
+    await this.persistWorkingCopy();
+    await this.saveRecoveryCache();
+    const projectName = this.currentProject.name.length > 0
+      ? this.currentProject.name
+      : 'Untitled';
+    const autoPath = this.getWorkingAutoSavePath();
+    await this.saveSession(
+      this.currentProjectPath,
+      projectName,
+      closedCleanly,
+      autoPath
+    );
+  }
+
+  /** 启动时标记 session 为运行中（非正常关闭），供下次 crash 检测 */
+  async markSessionRunning(): Promise<void> {
+    const session = await this.loadSession();
+    if (session === null) {
+      return;
+    }
+    const autoPath = session.autoSavePath !== undefined && session.autoSavePath.length > 0
+      ? session.autoSavePath
+      : this.getWorkingAutoSavePath();
+    await this.saveSession(session.lastPath, session.lastProjectName, false, autoPath);
   }
 
   getFilePersistenceImpl(): FilePersistenceImpl {
@@ -1233,8 +1416,11 @@ export class AppService {
     return (this.filePersistence as FilePersistenceImpl).loadSessionState();
   }
 
-  async saveSession(path: string, projectName: string, closedCleanly: boolean): Promise<void> {
-    await (this.filePersistence as FilePersistenceImpl).saveSessionState(path, projectName, closedCleanly);
+  async saveSession(path: string, projectName: string, closedCleanly: boolean,
+    autoSavePath: string = ''): Promise<void> {
+    const autoPath = autoSavePath.length > 0 ? autoSavePath : this.getWorkingAutoSavePath();
+    await (this.filePersistence as FilePersistenceImpl)
+      .saveSessionState(path, projectName, closedCleanly, autoPath);
   }
 
   async markCleanShutdown(): Promise<void> {
@@ -1328,6 +1514,9 @@ export class AppService {
     this.autoWireSignalGenerators();
 
     const kernel = this.simulationKernel as SimulationKernelImpl;
+    // AC warm-up: previously 1 step/frame left the scope flat for minutes; pre-fill a few ms
+    kernel.runBudgetSteps(10);
+    kernel.runBudgetSteps(10);
     // Time-budget pump (Worker disabled by default — FRAME flood caused APP_INPUT_BLOCK)
     this.simHost.startRemote(topo, cfg, doc, kernel);
 
@@ -1476,16 +1665,19 @@ export class AppService {
       this.feedAllSchematicMeterSamples(kernel);
     }
 
-    // Waves + full instrument rebinds are expensive — keep rare
-    let waves: WaveData[] = [];
-    if (this.simStepCount % 4 === 0) {
-      waves = kernel.getAllWaveData();
-      if (waves.length > 0) {
-        this.instruments.feedSimulationWaves(waves);
+    // Keep live voltage map fresh every frame (scope UUID↔NET alias matching)
+    const branchCurrents = kernel.getBranchCurrentMap();
+    (this.instruments as VirtualInstrumentsImpl).feedScopeNodeData(voltages, branchCurrents);
+
+    // Waves every frame when present — scope needs fresh ring; clone is cheap vs SPICE
+    let waves: WaveData[] = kernel.getAllWaveData();
+    if (waves.length > 0) {
+      this.instruments.feedSimulationWaves(waves);
+      if (this.simStepCount % 4 === 0) {
         CallbackRegistry.getInstance().emitWave(waves);
       }
-      const branchCurrents = kernel.getBranchCurrentMap();
-      (this.instruments as VirtualInstrumentsImpl).feedScopeNodeData(voltages, branchCurrents);
+    }
+    if (this.simStepCount % 4 === 0) {
       const digitalLevels = new Map<string, number>();
       voltages.forEach((voltage: number, netKey: string) => {
         digitalLevels.set(netKey, voltage > 1.65 ? 1 : 0);
@@ -1571,36 +1763,47 @@ export class AppService {
     }
   }
 
-  /** Auto-connect signal generator components to the analog simulation engine */
+  /**
+   * Sync instrument-panel SignalGen engine from schematic SIGNAL_GEN params.
+   * Do NOT register a second Vsrc (AnalogEngine already stamps Vn from parameters).
+   * Former hardcode registerSignalSource('SIGGEN', …, 'sin', …) fought the stamped source.
+   */
   private autoWireSignalGenerators(): void {
     const doc = this.schematicEditor.getDocument();
-    const kernel = this.simulationKernel as SimulationKernelImpl;
     for (const comp of doc.components) {
       const libUpper = comp.libraryId.toUpperCase();
-      if (libUpper.includes('SIGNAL') || libUpper.includes('GEN') || libUpper.includes('FUNC')) {
-        let outNetId = '';
-        let gndNetId = '0';
-        for (const net of doc.nets) {
-          for (const pinRef of net.pinIds) {
-            const parts = pinRef.split(':');
-            if (parts.length >= 2 && parts[0] === comp.id) {
-              const pinLabel = (parts.length >= 3 ? parts[2] : parts[1]).toUpperCase();
-              if (pinLabel === 'OUT' || pinLabel === 'OUTPUT' || pinLabel === 'SIG' ||
-                  pinLabel === 'SIGNAL' || pinLabel === '+' || pinLabel === 'A') {
-                outNetId = net.id;
-              } else if (pinLabel === 'GND' || pinLabel === 'COM' || pinLabel === '-' ||
-                         pinLabel === 'B') {
-                gndNetId = net.id;
-              }
-            }
-          }
-        }
-        if (outNetId.length > 0) {
-          const nodeA = kernel.netToSpiceNodeMap().get(outNetId) ?? outNetId;
-          const nodeB = kernel.netToSpiceNodeMap().get(gndNetId) ?? (gndNetId === '0' ? '0' : gndNetId);
-          kernel.registerSignalSource('SIGGEN', nodeA, nodeB, 'sin', 1.65, 3.3, 1000, 0, 0.5);
-        }
+      if (libUpper !== 'SIGNAL_GEN' && !libUpper.startsWith('SIGNAL_GEN')) {
+        continue;
       }
+      const wfRaw = paramMapGet(comp.parameters, 'waveform', 'sine');
+      const wfNorm = UnitParser.validateParam('waveform', wfRaw).normalized;
+      let enumWf = SignalWaveform.SINE;
+      if (wfNorm === 'square') {
+        enumWf = SignalWaveform.SQUARE;
+      } else if (wfNorm === 'triangle') {
+        enumWf = SignalWaveform.TRIANGLE;
+      } else if (wfNorm === 'saw' || wfNorm === 'sawtooth') {
+        enumWf = SignalWaveform.SAW;
+      } else if (wfNorm === 'pulse') {
+        enumWf = SignalWaveform.PULSE;
+      }
+      this.instruments.setWaveform(enumWf);
+      const freqP = UnitParser.parseFrequency(paramMapGet(comp.parameters, 'frequency', '1kHz'));
+      const amp = parseFloat(paramMapGet(comp.parameters, 'amplitude', '1V').replace(/[Vv]/g, ''));
+      const off = parseFloat(paramMapGet(comp.parameters, 'offset', '0V').replace(/[Vv]/g, ''));
+      const duty = parseFloat(paramMapGet(comp.parameters, 'dutyCycle', '50%').replace(/%/g, ''));
+      if (freqP.valid && Number.isFinite(amp) && Number.isFinite(off) && Number.isFinite(duty)) {
+        this.instruments.setParams({
+          frequency: freqP.numeric,
+          amplitude: amp,
+          offset: off,
+          dutyCycle: duty,
+          phase: 0
+        });
+      }
+      Logger.info(INSTR_TRACE_TAG,
+        `[SIGGEN] sync UI←schematic ref=${comp.refDes} wf=${wfNorm} ` +
+        `f=${paramMapGet(comp.parameters, 'frequency', '1kHz')}`);
     }
   }
 
@@ -1921,46 +2124,7 @@ export class AppService {
       }
 
       if (!result.success || !result.topology) {
-        // 门禁未清零时引擎会 success=false 但仍可能带 topology — 落图供检视，不算完整生图
-        const incompleteGate = !result.success && !!result.topology &&
-          (result.topology.deviceList.length > 0) &&
-          ((result.errMsg ?? '').indexOf('生图未完成') >= 0 ||
-            (result.errMsg ?? '').indexOf('ERC') >= 0 ||
-            (result.errMsg ?? '').indexOf('几何') >= 0 ||
-            (result.errMsg ?? '').indexOf('joints') >= 0);
-        if (incompleteGate && result.topology) {
-          Logger.error(INSTR_TRACE_TAG,
-            `[AI_GEN] INCOMPLETE gate | ${result.errMsg}`);
-          traceAiOp('AI_GEN', 'generate_incomplete_gate', result.errMsg ?? '');
-          this.appendAiGenLog('assistant',
-            `生图未完成（ERC/几何门禁）：${result.errMsg || '仍有阻断项'}`);
-          if (mode === 'replace') {
-            this.schematicEditor.loadTopology(result.topology);
-          } else {
-            const generatedDoc = TopologyAdapter.fromTopology(result.topology);
-            const editor = this.schematicEditor as SchematicEditorImpl;
-            const currentDoc = editor.getDocument();
-            TemplateMergeUtil.mergeTemplateInto(currentDoc, generatedDoc);
-            editor.loadDocument(currentDoc);
-          }
-          const editor = this.schematicEditor as SchematicEditorImpl;
-          editor.rebuildNetPinConnectivity();
-          const doc = editor.getDocument();
-          const grid = doc.metadata.gridSize || 10;
-          ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver());
-          editor.loadDocument(doc);
-          this.schematicEditor.fitAllInView();
-          this.syncProjectFromModules();
-          const erc = this.runErc(false);
-          const errN = AiErcGateUtil.countBlocking(erc);
-          this.appendAiGenLog('system',
-            `已落图供检视，但生图过程未完成：仍有 ${errN} 条 ERC 阻断项（含功能影响 warning）。` +
-            `请勿以此图仿真；请自检修复或重新生成。`);
-          this.onProjectChanged();
-          this.endAiGenerate(false);
-          this.onStatusMessage(result.errMsg || '生图未完成：仍有 ERC/几何阻断项');
-          return false;
-        }
+        // 仅真正失败（无拓扑 / API / 选型）——不再以「生图未完成」门禁中止
         this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
         Logger.error(INSTR_TRACE_TAG,
           `[AI_GEN] FAILED err=${result.errMsg || 'unknown'} code=${result.errCode}`);
@@ -2037,11 +2201,23 @@ export class AppService {
         `wires=${doc.wires.length} nets=${doc.nets.length} floatingNonPower=${floatingComps}`);
       if (floatingComps > 0) {
         this.appendAiGenLog('system',
-          `警告: ${floatingComps} 个器件落图后无引脚入网，请检查建网/导线端点`);
+          `落图完成，但有 ${floatingComps} 个器件暂无引脚入网 — 已触发自检修复提示（不中止交付）。`);
+        this.aiSelfCheckPromptPending = true;
+        this.onAiSelfCheckNeeded(floatingComps, `${floatingComps} 器件无脚入网`);
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_GEN] post-load floatingNonPower=${floatingComps} — deliver anyway`);
+        traceAiOp('AI_GEN', 'generate_deliver_floating',
+          `floatingNonPower=${floatingComps}`);
       }
 
       this.schematicEditor.fitAllInView();
       this.syncProjectFromModules();
+      // 无论仿真是否已开：先绑定仪器网脚，再尝试 reload
+      this.bindingPinHash.clear();
+      this.autoWireAllInstruments();
+      this.autoWireSignalGenerators();
+      Logger.info(INSTR_TRACE_TAG,
+        '[AI_GEN] post-load instrument bindings refreshed (all instruments)');
       this.reloadSimulationFromSchematic();
       const erc = this.runErc(false);
       const errN = AiErcGateUtil.countBlocking(erc);
@@ -2050,31 +2226,27 @@ export class AppService {
         `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC 阻断 ${errN} / 软警告 ${warnN}` +
         ` · 悬空器件 ${floatingComps}`);
 
-      // 落图后二次门禁：error/critical + 功能影响 warning 均须清零
+      // 用户硬要求：不许「生图未完成」中止 — 有残留则提示自检，仍算交付成功
       if (errN > 0) {
         const issues = this.evaluatePostGenerateIssues(erc);
         this.aiSelfCheckPromptPending = true;
         this.appendAiGenLog('system',
-          `生图未完成：落图后仍有 ${errN} 条阻断项（${issues.summary}）。` +
-          `功能影响 warning 亦不可放行。请「AI 自检修复」或重新生成；本次不算完整过程。`);
+          `生图已交付；落图后仍有 ${errN} 条提示项（${issues.summary}）。` +
+          `可点「AI 自检修复」继续完善。`);
         this.onAiSelfCheckNeeded(issues.count, issues.summary);
-        Logger.error(INSTR_TRACE_TAG,
-          `[AI_GEN] INCOMPLETE post-load ercBlocking=${errN}`);
-        traceAiOp('AI_GEN', 'generate_incomplete_post_erc', `ercBlocking=${errN}`);
-        this.onProjectChanged();
-        this.endAiGenerate(false);
-        this.onStatusMessage(`生图未完成：仍有 ${errN} 条 ERC 阻断项`);
-        return false;
-      }
-
-      const issues = this.evaluatePostGenerateIssues(erc);
-      if (issues.needAsk) {
-        this.aiSelfCheckPromptPending = true;
-        this.appendAiGenLog('system',
-          `首次布局检测到问题（${issues.summary}）。可点击「AI 自检修复」或确认弹窗进行修复。`);
-        this.onAiSelfCheckNeeded(issues.count, issues.summary);
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_GEN] DELIVER with residual ercBlocking=${errN}`);
+        traceAiOp('AI_GEN', 'generate_deliver_residual_erc', `ercBlocking=${errN}`);
       } else {
-        this.appendAiGenLog('system', 'ERC 阻断项清零 · 生图过程完整；仍可手动「AI 自检修复」');
+        const issues = this.evaluatePostGenerateIssues(erc);
+        if (issues.needAsk) {
+          this.aiSelfCheckPromptPending = true;
+          this.appendAiGenLog('system',
+            `首次布局检测到问题（${issues.summary}）。可点击「AI 自检修复」或确认弹窗进行修复。`);
+          this.onAiSelfCheckNeeded(issues.count, issues.summary);
+        } else {
+          this.appendAiGenLog('system', 'ERC 阻断项清零 · 生图过程完整；仍可手动「AI 自检修复」');
+        }
       }
 
       // 多轮对话: 记录本轮对话历史
@@ -2089,7 +2261,9 @@ export class AppService {
       this.appendAiGenLog('system', '画布已解锁');
       this.onProjectChanged();
       this.onStatusMessage(
-        `AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线 · ERC 清零`);
+        errN === 0
+          ? `AI 闭环完成: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线 · ERC 清零`
+          : `AI 已交付: ${result.topology.deviceList.length} 器件, ${result.topology.wireList.length} 导线 · 残留 ${errN} 项可自检修复`);
       this.endAiGenerate(true);
       return true;
     } catch (e) {
@@ -2417,6 +2591,15 @@ export class AppService {
     return TemplateProjectBootstrap.listHexFiles(this.appBaseDir);
   }
 
+  /** 等待 Test_Template / hex_files 从 rawfile 复制完成 */
+  async ensureTemplatesReady(): Promise<void> {
+    if (this.templateBootstrapPromise !== null) {
+      await this.templateBootstrapPromise;
+      return;
+    }
+    await TemplateProjectBootstrap.whenReady();
+  }
+
   listAvailableLabTemplates(category: string = 'all'): LabTemplate[] {
     const all = category === 'all'
       ? this.teachingService.listTemplates()
@@ -2433,6 +2616,7 @@ export class AppService {
   }
 
   async loadLabTemplate(templateId: string): Promise<boolean> {
+    await this.ensureTemplatesReady();
     const templatePath = ProjectPaths.templateFile(this.appBaseDir, templateId);
     if (!TemplateProjectBootstrap.fileExists(templatePath)) {
       this.onStatusMessage(`模板工程不存在: ${templatePath}`);
@@ -2677,6 +2861,13 @@ export class AppService {
     if (this.currentProject) {
       this.currentProject.schematic = this.schematicEditor.getDocument();
     }
+    if (this.persistDebounceTimer >= 0) {
+      clearTimeout(this.persistDebounceTimer);
+    }
+    this.persistDebounceTimer = setTimeout(() => {
+      this.persistDebounceTimer = -1;
+      void this.persistWorkingCopy();
+    }, this.PERSIST_DEBOUNCE_MS);
     // Debounce heavy reload/ERC while user is dragging — keeps edit path smooth
     if (this.schematicDebounceTimer >= 0) {
       clearTimeout(this.schematicDebounceTimer);

@@ -67,12 +67,32 @@ export class OscilloscopeEngine {
   private channelProbes: string[] = ['', '', '', ''];
   // Historical voltage snapshots for time-domain display
   private historyBuffer: HistoryEntry[] = [];
-  /** Keep ≥20ms @ 1µs/step so 1kHz has many full cycles in the ring */
-  private historyMaxSize: number = 20000;
+  /** Keep ≥100ms @ 1µs/step — enough for 10+ cycles at 1kHz on 10ms/div timebase */
+  private historyMaxSize: number = 100000;
   private lastSimTime: number = 0;
 
   feedSimulationWaves(waves: WaveData[]): void {
-    this.simulationWaveCache = waves.slice();
+    // Deep-copy axes — kernel mutates live WaveData; sharing refs scrambled long runs
+    const copied: WaveData[] = [];
+    for (let i = 0; i < waves.length; i++) {
+      const w = waves[i];
+      const n = Math.min(w.timeAxis.length, w.voltageAxis.length);
+      if (n < 1) {
+        continue;
+      }
+      copied.push({
+        waveId: w.waveId,
+        probeName: w.probeName,
+        netName: w.netName,
+        timeAxis: w.timeAxis.slice(0, n),
+        voltageAxis: w.voltageAxis.slice(0, n),
+        currentAxis: w.currentAxis.length >= n ? w.currentAxis.slice(0, n) : new Array(n).fill(0),
+        sampleRate: w.sampleRate,
+        waveType: w.waveType,
+        holdTime: w.holdTime
+      });
+    }
+    this.simulationWaveCache = copied;
     this.simDataAge++;
   }
 
@@ -86,13 +106,15 @@ export class OscilloscopeEngine {
 
   /** Feed a time snapshot for building time-domain waveforms */
   feedTimeSnapshot(time: number, voltages: Map<string, number>): void {
-    // Skip stagnant time — otherwise a frozen scheduler fills the ring with flat points
-    // and the UI looks dead while stepCount still advances.
+    // Skip stagnant or backwards time — non-monotonic history scrambles long-run scope
     if (this.historyBuffer.length > 0) {
       const last = this.historyBuffer[this.historyBuffer.length - 1];
-      if (Math.abs(time - last.time) < 1e-15) {
+      if (!(time > last.time)) {
         return;
       }
+    }
+    if (!(time === time) || !Number.isFinite(time)) {
+      return;
     }
     this.lastSimTime = time;
     // Slim store: only probed nets (full map × 20k steps would thrash memory)
@@ -307,95 +329,122 @@ export class OscilloscopeEngine {
   getMathOp(): MathChannelOp { return this.mathOp; }
   getFftLogScale(): boolean { return this.fftLogScale; }
 
-  /** Capture waveform from real simulation data — 按时基截窗 + 触发对齐，避免整段缓冲叠屏变乱 */
+  /** Capture waveform from real simulation data — 按时基截窗；禁止串台到 GND/其它网络 */
   captureWave(channel: number = 0): WaveData {
     const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
+    // CH2+ without a bound probe must not steal CH1 nets / invent a second trace
+    if (channel > 0 && probeName.length === 0) {
+      return this.makeFlatWave(channel);
+    }
     let raw: WaveData | undefined = undefined;
     let source = 'flatDC';
 
-    // Prefer history ring: uniform wall-clock stamps, fewer Newton one-sample glitches
-    if (probeName.length > 0 && this.historyBuffer.length > 8) {
-      const histWave = this.buildWaveFromHistory(probeName, channel);
-      if (this.hasMeaningfulWave(histWave) && histWave.voltageAxis.length >= 16) {
-        raw = histWave;
-        source = 'history';
-      }
-    }
-    if (raw === undefined && probeName.length > 0) {
+    // 有绑定探针时：优先内核逐步 WaveData（µs 级），history 仅作兜底
+    // DisplayPump history ≈ 帧率采样，对 1kHz 会严重混叠成「慢漂直流」
+    if (probeName.length > 0) {
       const matched = this.findCachedWave(probeName);
-      if (matched !== undefined && matched.voltageAxis.length > 0) {
+      if (matched !== undefined && matched.voltageAxis.length >= 32 &&
+          this.hasMeaningfulWave(matched)) {
         raw = matched;
         source = 'waveCache';
       }
-    }
-    if (raw === undefined && this.simulationWaveCache.length > channel) {
-      const ext = this.simulationWaveCache[channel];
-      if (ext && ext.voltageAxis.length > 0) {
-        raw = ext;
-        source = 'cacheByIndex';
+      if (raw === undefined && this.historyBuffer.length >= 2) {
+        const histWave = this.buildWaveFromHistory(probeName, channel);
+        if (histWave.voltageAxis.length >= 2 && this.hasMeaningfulWave(histWave)) {
+          raw = histWave;
+          source = 'history';
+        }
       }
-    }
-    if (raw === undefined) {
-      const anyWave = this.findAnySignalWave();
-      if (anyWave !== undefined) {
-        raw = anyWave;
-        source = 'anySignal';
+      if (raw === undefined && matched !== undefined && matched.voltageAxis.length >= 2) {
+        raw = matched;
+        source = 'waveCacheShort';
       }
-    }
-    if (raw === undefined && this.historyBuffer.length > 1) {
-      raw = this.buildWaveFromAnyHistoryKey(channel);
-      source = 'historyAny';
-    }
-    if (raw === undefined) {
-      raw = this.makeFlatWave(channel);
-      source = 'flatDC';
+      if (raw === undefined) {
+        raw = this.makeFlatWave(channel);
+        source = 'flatDC';
+      }
+    } else {
+      // 无探针：仅 CH0 允许弱回退
+      if (this.simulationWaveCache.length > 0) {
+        const anyWave = this.findAnySignalWave();
+        if (anyWave !== undefined) {
+          raw = anyWave;
+          source = 'anySignal';
+        }
+      }
+      if (raw === undefined && this.historyBuffer.length > 1) {
+        raw = this.buildWaveFromAnyHistoryKey(channel);
+        source = 'historyAny';
+      }
+      if (raw === undefined) {
+        raw = this.makeFlatWave(channel);
+        source = 'flatDC';
+      }
     }
 
     const display = this.prepareDisplayWave(raw, channel);
     const lastV = display.voltageAxis.length > 0
       ? display.voltageAxis[display.voltageAxis.length - 1] : 0;
-    traceCaptureWave(channel, probeName, source, display.voltageAxis.length, lastV);
+    let minV = lastV;
+    let maxV = lastV;
+    for (let i = 0; i < display.voltageAxis.length; i++) {
+      const v = display.voltageAxis[i];
+      if (v < minV) {
+        minV = v;
+      }
+      if (v > maxV) {
+        maxV = v;
+      }
+    }
+    const rawN = Math.min(raw.timeAxis.length, raw.voltageAxis.length);
+    const rawSpan = rawN >= 2 ? Math.max(raw.timeAxis[rawN - 1] - raw.timeAxis[0], 0) : 0;
+    const estFreq = rawN >= 8
+      ? OscilloscopeEngine.estimateFreqLocal(raw.timeAxis, raw.voltageAxis, 0, rawN) : 0;
+    traceCaptureWave(channel, probeName, source, display.voltageAxis.length, lastV,
+      maxV - minV, rawSpan, estFreq);
     return display;
   }
 
   /**
    * 按时基截窗 + 均匀重采样。
-   * 关键：绝不要把「不足 1 周期」的短片段横向拉满（会变成锯齿斜坡）。
-   * 有足够数据时锁定 ≥2 个完整周期并边沿触发对齐。
+   * 显示窗宽 = 时基 × 10 格；滚动模式取最新窗；边沿触发仅非 ROLL。
+   * 禁止输出 NaN（会把 UI 打成 last=NaNV / 空迹线）。
    */
   private prepareDisplayWave(src: WaveData, channel: number): WaveData {
-    const n = Math.min(src.timeAxis.length, src.voltageAxis.length);
+    const n0 = Math.min(src.timeAxis.length, src.voltageAxis.length);
+    if (n0 < 2) {
+      return this.makeFlatWave(channel);
+    }
+
+    // Keep only the trailing monotonic segment (guards against any legacy bad stamps)
+    let startIdx = 0;
+    for (let i = 1; i < n0; i++) {
+      if (!(src.timeAxis[i] > src.timeAxis[i - 1])) {
+        startIdx = i;
+      }
+    }
+    const times = startIdx > 0 ? src.timeAxis.slice(startIdx) : src.timeAxis;
+    const volts = startIdx > 0 ? src.voltageAxis.slice(startIdx) : src.voltageAxis;
+    const n = Math.min(times.length, volts.length);
     if (n < 2) {
       return this.makeFlatWave(channel);
     }
 
-    const times = src.timeAxis;
-    const volts = src.voltageAxis;
     const divSec = getTimebaseSec(this.timebase);
     const userWindow = Math.max(divSec * DIVISIONS, 1e-12);
     const tEnd = times[n - 1];
     const tStartAll = times[0];
     const availableSpan = Math.max(tEnd - tStartAll, 1e-12);
 
-    const estFreq = OscilloscopeEngine.estimateFreqLocal(times, volts, 0, n);
-    let windowSec = Math.min(userWindow, availableSpan);
-
-    if (estFreq > 5 && estFreq < 5e6) {
-      const onePeriod = 1.0 / estFreq;
-      const twoPeriods = 2.2 * onePeriod;
-      const fourPeriods = 4.0 * onePeriod;
-      if (availableSpan >= twoPeriods) {
-        // Always ≥2 cycles; timebase may widen up to 4 cycles
-        windowSec = Math.min(availableSpan, Math.max(twoPeriods, Math.min(userWindow, fourPeriods)));
-      } else if (availableSpan >= onePeriod) {
-        windowSec = availableSpan;
-      } else {
-        windowSec = availableSpan;
-      }
+    // 显示窗始终跟随时基；数据不足时用真实跨度，避免短片段横向拉满成假直流
+    let windowSec = userWindow;
+    if (availableSpan < userWindow) {
+      windowSec = availableSpan;
     }
 
-    // Edge-lock whenever ≥1 period is available — stabilizes a complete cycle on screen
-    const canTrigger = estFreq > 5 && availableSpan >= (1.0 / estFreq) * 0.95;
+    const estFreq = OscilloscopeEngine.estimateFreqLocal(times, volts, 0, n);
+    const canTrigger = this.captureMode !== CaptureMode.ROLL &&
+      estFreq > 5 && availableSpan >= (1.0 / estFreq) * 0.95;
     const lockEdge = canTrigger && this.triggerMode !== TriggerMode.LEVEL;
 
     let tWinStart: number;
@@ -418,7 +467,6 @@ export class OscilloscopeEngine {
       if (level < scanMin || level > scanMax || (scanMax - scanMin) < 1e-6) {
         level = mid;
       }
-      // Prefer last rising edge that still leaves a full window ahead
       let trigIdx = -1;
       const needAhead = windowSec * 0.85;
       for (let i = 1; i < n; i++) {
@@ -429,7 +477,6 @@ export class OscilloscopeEngine {
         }
       }
       if (trigIdx < 0) {
-        // Fallback: any rising edge in the last 3 windows
         const searchFrom = tEnd - windowSec * 3;
         for (let i = 1; i < n; i++) {
           if (times[i] < searchFrom) {
@@ -457,9 +504,6 @@ export class OscilloscopeEngine {
       tWinEnd = tEnd;
       tWinStart = Math.max(tStartAll, tWinEnd - windowSec);
     }
-    // Actual window must match real samples — do not invent time
-    const realSpan = Math.max(tWinEnd - tWinStart, 1e-15);
-    windowSec = realSpan;
 
     const winT: number[] = [];
     const winV: number[] = [];
@@ -468,7 +512,7 @@ export class OscilloscopeEngine {
       if (t < tWinStart) {
         continue;
       }
-      if (t > tWinEnd) {
+      if (t > tWinEnd + 1e-18) {
         break;
       }
       winT.push(t);
@@ -478,16 +522,17 @@ export class OscilloscopeEngine {
     let useT = winT;
     let useV = winV;
     if (winT.length < 4) {
-      // Take the newest chunk of equal length in samples
       const take = Math.min(n, Math.max(64, Math.floor(n * 0.5)));
       useT = times.slice(n - take);
       useV = volts.slice(n - take);
-      windowSec = Math.max(useT[useT.length - 1] - useT[0], 1e-15);
     }
 
     if (useT.length < 2) {
       return this.makeFlatWave(channel);
     }
+
+    // 显示跨度严格等于截窗（不要用更大的 dataSpan 把波形横向压扁/拉乱）
+    const displaySpan = Math.max(windowSec, 1e-15);
 
     const coup = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
     if (coup === CouplingMode.AC) {
@@ -505,7 +550,7 @@ export class OscilloscopeEngine {
       }
     }
 
-    return this.resampleWave(useT, useV, channel, windowSec);
+    return this.resampleWave(useT, useV, channel, displaySpan);
   }
 
   private cloneWaveForChannel(src: WaveData, channel: number): WaveData {
@@ -513,20 +558,77 @@ export class OscilloscopeEngine {
   }
 
   private findCachedWave(probeName: string): WaveData | undefined {
+    let exact: WaveData | undefined = undefined;
     for (let i = 0; i < this.simulationWaveCache.length; i++) {
       const w = this.simulationWaveCache[i];
-      if (this.waveMatchesProbe(w, probeName)) {
-        return w;
+      if (this.waveMatchesProbeExact(w, probeName)) {
+        exact = w;
+        break;
       }
     }
-    return undefined;
+    if (exact !== undefined) {
+      return exact;
+    }
+    // UUID↔NET_4：精确名对不上时，在 live 电压表里找同电位波形，取 Vpp 最大者（避开虚短同电位）
+    const probeV = this.lastNodeVoltages.get(probeName);
+    if (probeV === undefined) {
+      return undefined;
+    }
+    let best: WaveData | undefined = undefined;
+    let bestVpp = -1;
+    for (let i = 0; i < this.simulationWaveCache.length; i++) {
+      const w = this.simulationWaveCache[i];
+      if (w.voltageAxis.length < 2) {
+        continue;
+      }
+      const upperProbe = w.probeName.toUpperCase();
+      const upperNet = w.netName.toUpperCase();
+      if (upperProbe === '0' || upperProbe === 'GND' || upperProbe === 'VCC' ||
+          upperNet === '0' || upperNet === 'GND' || upperNet === 'VCC') {
+        continue;
+      }
+      const wv = this.lastNodeVoltages.get(w.netName) ??
+        this.lastNodeVoltages.get(w.probeName);
+      if (wv === undefined || Math.abs(wv - probeV) > 1e-4) {
+        continue;
+      }
+      let lo = w.voltageAxis[0];
+      let hi = w.voltageAxis[0];
+      for (let j = 1; j < w.voltageAxis.length; j++) {
+        if (w.voltageAxis[j] < lo) {
+          lo = w.voltageAxis[j];
+        }
+        if (w.voltageAxis[j] > hi) {
+          hi = w.voltageAxis[j];
+        }
+      }
+      const vpp = hi - lo;
+      if (vpp > bestVpp) {
+        bestVpp = vpp;
+        best = w;
+      }
+    }
+    return best;
   }
 
   private waveMatchesProbe(wave: WaveData, probeName: string): boolean {
+    return this.waveMatchesProbeExact(wave, probeName);
+  }
+
+  private waveMatchesProbeExact(wave: WaveData, probeName: string): boolean {
     if (probeName.length === 0) {
       return false;
     }
-    return wave.probeName === probeName || wave.netName === probeName;
+    if (wave.probeName === probeName || wave.netName === probeName) {
+      return true;
+    }
+    const upperProbe = probeName.toUpperCase();
+    const upperWProbe = wave.probeName.toUpperCase();
+    const upperWNet = wave.netName.toUpperCase();
+    if (upperWProbe === upperProbe || upperWNet === upperProbe) {
+      return true;
+    }
+    return false;
   }
 
   private findAnySignalWave(): WaveData | undefined {
@@ -683,15 +785,17 @@ export class OscilloscopeEngine {
     };
   }
 
-  /** Resample + despike + smooth — span always equals real sample span (never stretch). */
+  /**
+   * Resample + despike + light smooth.
+   * 时间轴覆盖 displaySpan；样点之外 hold 边界值（真实示波器行为），禁止 NaN。
+   */
   private resampleWave(timeAxis: number[], voltageAxis: number[],
                        channel: number, windowSec: number): WaveData {
     const cleaned = OscilloscopeEngine.despikeSeries(voltageAxis);
     const t0 = timeAxis[0];
     const tLast = timeAxis[timeAxis.length - 1];
-    const dataSpan = Math.max(tLast - t0, 1e-15);
-    // Honest time axis: never map a short fragment onto a longer windowSec
-    const span = Math.min(Math.max(windowSec, 1e-15), dataSpan);
+    // Display span follows timebase window; hold last sample past end of data
+    const span = Math.max(windowSec, 1e-15);
     const sampleRate = SAMPLE_POINTS / span;
     const outTime: number[] = [];
     const rawOut: number[] = [];
@@ -700,39 +804,42 @@ export class OscilloscopeEngine {
     let j = 1;
     for (let i = 0; i < SAMPLE_POINTS; i++) {
       const fracI = SAMPLE_POINTS > 1 ? i / (SAMPLE_POINTS - 1) : 0;
-      const tAbs = t0 + fracI * span;
+      const tUse = t0 + fracI * span;
       outTime.push(fracI * span);
-      let vi = cleaned[0];
-      if (tAbs <= timeAxis[0]) {
+      let vi = cleaned[n - 1];
+      if (tUse <= timeAxis[0]) {
         vi = cleaned[0];
-      } else if (tAbs >= timeAxis[n - 1]) {
+      } else if (tUse >= tLast) {
         vi = cleaned[n - 1];
       } else {
-        while (j < n && timeAxis[j] < tAbs) {
+        while (j < n && timeAxis[j] < tUse) {
           j++;
         }
         if (j >= n) {
           vi = cleaned[n - 1];
-        } else if (j === 1) {
+        } else if (j <= 1) {
           const dtr = Math.max(timeAxis[1] - timeAxis[0], 1e-15);
-          const frac = (tAbs - timeAxis[0]) / dtr;
-          vi = OscilloscopeEngine.hermiteInterp(
-            cleaned[0], cleaned[0], cleaned[1], cleaned[Math.min(2, n - 1)], frac);
+          const frac = (tUse - timeAxis[0]) / dtr;
+          vi = cleaned[0] + frac * (cleaned[1] - cleaned[0]);
         } else {
           const jm = j - 1;
           const dtr = Math.max(timeAxis[j] - timeAxis[jm], 1e-15);
-          const frac = (tAbs - timeAxis[jm]) / dtr;
-          const y0 = cleaned[Math.max(0, jm - 1)];
-          const y1 = cleaned[jm];
-          const y2 = cleaned[j];
-          const y3 = cleaned[Math.min(n - 1, j + 1)];
-          vi = OscilloscopeEngine.hermiteInterp(y0, y1, y2, y3, frac);
+          const frac = (tUse - timeAxis[jm]) / dtr;
+          vi = cleaned[jm] + frac * (cleaned[j] - cleaned[jm]);
         }
+      }
+      if (!(vi === vi) || !Number.isFinite(vi)) {
+        vi = cleaned[n - 1];
       }
       rawOut.push(vi);
     }
 
-    const outVoltage = OscilloscopeEngine.smoothSeries(rawOut, 9);
+    const outVoltage = OscilloscopeEngine.smoothSeries(rawOut, 3);
+    for (let i = 0; i < outVoltage.length; i++) {
+      if (!(outVoltage[i] === outVoltage[i]) || !Number.isFinite(outVoltage[i])) {
+        outVoltage[i] = rawOut[i];
+      }
+    }
 
     return {
       waveId: IdUtil.generate('osc'),
@@ -747,7 +854,7 @@ export class OscilloscopeEngine {
     };
   }
 
-  /** Catmull-Rom (uniform) between y1→y2, frac in [0,1] */
+  /** Catmull-Rom (uniform) between y1→y2, frac in [0,1] — kept for SVG export */
   private static hermiteInterp(y0: number, y1: number, y2: number, y3: number, frac: number): number {
     const t = Math.max(0, Math.min(1, frac));
     const t2 = t * t;
@@ -936,19 +1043,27 @@ export class OscilloscopeEngine {
       sumSq += v * v;
     }
     const rms = Math.sqrt(sumSq / len);
-    let freq = 0;
-    let crossings = 0;
-    let firstCross = -1;
-    for (let i = 1; i < len; i++) {
-      if (wave.voltageAxis[i - 1] <= 0 && wave.voltageAxis[i] > 0) {
-        if (firstCross < 0) firstCross = i;
-        else crossings++;
+    const estFreq = OscilloscopeEngine.estimateFreqLocal(
+      wave.timeAxis, wave.voltageAxis, 0, len);
+    let freq = estFreq;
+    if (freq <= 0) {
+      let crossings = 0;
+      let firstCross = -1;
+      const mid = (minV + maxV) / 2;
+      for (let i = 1; i < len; i++) {
+        if (wave.voltageAxis[i - 1] <= mid && wave.voltageAxis[i] > mid) {
+          if (firstCross < 0) {
+            firstCross = i;
+          } else {
+            crossings++;
+          }
+        }
       }
-    }
-    if (crossings > 0 && firstCross >= 0) {
-      const lastCrossIdx = len - 1;
-      const period = (wave.timeAxis[lastCrossIdx] - wave.timeAxis[firstCross]) / crossings;
-      freq = period > 0 ? 1 / period : 0;
+      if (crossings > 0 && firstCross >= 0) {
+        const lastCrossIdx = len - 1;
+        const period = (wave.timeAxis[lastCrossIdx] - wave.timeAxis[firstCross]) / crossings;
+        freq = period > 0 ? 1 / period : 0;
+      }
     }
 
     return {

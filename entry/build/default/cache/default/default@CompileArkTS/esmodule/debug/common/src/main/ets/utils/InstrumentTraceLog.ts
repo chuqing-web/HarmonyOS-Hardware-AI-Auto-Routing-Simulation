@@ -865,8 +865,18 @@ export function traceSimStep(stepCount: number, waveCount: number, waves: WaveDa
         Logger.debug(INSTR_TRACE_TAG, msg);
     }
 }
-export function traceCaptureWave(channel: number, probe: string, source: string, pointCount: number, lastV: number): void {
-    Logger.debug(INSTR_TRACE_TAG, `scope CH${channel + 1} probe=${probe} src=${source} pts=${pointCount} last=${lastV.toFixed(4)}V`);
+export function traceCaptureWave(channel: number, probe: string, source: string, pointCount: number, lastV: number, vpp: number = 0, rawSpanSec: number = 0, estFreq: number = 0): void {
+    const spanMs = rawSpanSec * 1e3;
+    const msg = `scope CH${channel + 1} probe=${probe.length > 18 ? probe.substring(0, 18) : probe} ` +
+        `src=${source} pts=${pointCount} last=${lastV.toFixed(4)}V ` +
+        `Vpp=${vpp.toFixed(4)}V span=${spanMs.toFixed(3)}ms f=${estFreq > 0 ? estFreq.toFixed(1) : '--'}Hz`;
+    // 短窗/低 Vpp 用 info，便于现场确认是否仍在「仿真时间几乎不前进」
+    if (vpp < 0.05 || rawSpanSec < 5e-4 || source === 'history' || source === 'flatDC') {
+        Logger.info(INSTR_TRACE_TAG, msg);
+    }
+    else {
+        Logger.debug(INSTR_TRACE_TAG, msg);
+    }
 }
 export function traceUiRefresh(panel: string, compId: string, refDes: string, libraryId: string, instrKind: string, reading: string): void {
     Logger.debug(INSTR_TRACE_TAG, `${panel} comp=${compId} ref=${refDes} lib=${libraryId} kind=${instrKind} reading=${reading}`);
@@ -1049,6 +1059,15 @@ export function traceAiPayload(prefix: string, kind: string, text: string, meta:
 /** AI 管线/UI 操作步骤（选型/摆放/建网/落图等） */
 export function traceAiOp(prefix: string, op: string, detail: string): void {
     Logger.info(INSTR_TRACE_TAG, `[${prefix}] OP ${op} | ${detail}`);
+}
+/**
+ * AI 生图阶段标准化日志（排错主线）。
+ * 过滤 instr_trace 后按 STAGE_BEGIN → METRIC → STAGE_END / STAGE_ABORT 复盘。
+ * phase: BEGIN | END | METRIC | ABORT | RETRY
+ */
+export function traceAiStage(prefix: string, stage: string, phase: string, detail: string = ''): void {
+    const d = (detail ?? '').trim();
+    Logger.info(INSTR_TRACE_TAG, `[${prefix}] STAGE_${phase} ${stage}` + (d.length > 0 ? ` | ${d}` : ''));
 }
 /**
  * AI 诊断多行明细（布局 AABB/间距、建网失败、ERC 条目等）。

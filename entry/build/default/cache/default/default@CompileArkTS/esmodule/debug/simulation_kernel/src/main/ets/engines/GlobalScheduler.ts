@@ -35,8 +35,23 @@ export class GlobalScheduler {
     private failStreak: number = 0;
     private mcuCycleAccum: number = 0;
     private mcuTicksPerStep: number = 1;
+    /** Optional tighter/looser cap (e.g. AC scope: ~1/40 period). Infinity = use config only. */
+    private maxStepCap: number = Number.POSITIVE_INFINITY;
+    /** Last emitted step time — wave/history timestamps must never go backwards. */
+    private lastEmittedTime: number = Number.NEGATIVE_INFINITY;
     private analogMinStep(): number {
-        return Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.config.maxStep));
+        return Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.effectiveMaxStep()));
+    }
+    private effectiveMaxStep(): number {
+        // AC scope override may be larger than config.maxStep (often 1µs) — that is intentional
+        if (this.maxStepCap > 0 && this.maxStepCap < Number.POSITIVE_INFINITY) {
+            return this.maxStepCap;
+        }
+        return this.config.maxStep;
+    }
+    /** Cap adaptive dt (pass <=0 to clear). Keeps VAC@1kHz from needing 10k × 1µs steps/frame. */
+    setMaxStepCap(cap: number): void {
+        this.maxStepCap = cap > 0 ? cap : Number.POSITIVE_INFINITY;
     }
     constructor(config: SimulationConfig, digital: DigitalEngine, analog: AnalogEngine) {
         this.config = config;
@@ -52,18 +67,24 @@ export class GlobalScheduler {
         const dt = this.currentStepSize;
         this.globalTime += dt;
         this.stepCount++;
-        // Calculate how many MCU cycles fit in this analog step
+        // Calculate how many MCU cycles fit in this analog step (for MCU tick batching only)
         this.mcuCycleAccum += dt / this.mcuClockPeriod;
         this.mcuTicksPerStep = Math.max(1, Math.floor(this.mcuCycleAccum));
         this.mcuCycleAccum -= this.mcuTicksPerStep;
-        // Sync time: use the later of analog time and MCU time
-        const mcuTime = this.stepCount * this.mcuClockPeriod * this.mcuTicksPerStep;
-        const syncTime = Math.max(this.globalTime, mcuTime);
+        // Analog globalTime is the sole clock for waves/instruments.
+        // Do NOT use stepCount*period*ticks — that quantity jumps when ticks change and
+        // made syncTime go backwards after long runs (scope waveform "scrambles").
+        let syncTime = this.globalTime;
+        if (syncTime <= this.lastEmittedTime) {
+            syncTime = this.lastEmittedTime + Math.max(dt * 0.01, 1e-15);
+            this.globalTime = syncTime;
+        }
         // Evaluate digital logic first (inputs to analog)
         const digitalStates = this.digitalEngine.processEvents(syncTime);
         // Run analog with convergence retry
         let spiceResult = this.spiceRunner.runWithConvergenceRetry(syncTime, dt);
         let converged = spiceResult.converged;
+        let resultTime = syncTime;
         if (!converged) {
             this.convergenceRetries++;
             let retryDt = dt;
@@ -72,16 +93,21 @@ export class GlobalScheduler {
                 this.globalTime -= dt - retryDt;
                 spiceResult = this.spiceRunner.runWithConvergenceRetry(this.globalTime, retryDt);
                 converged = spiceResult.converged;
+                if (converged) {
+                    resultTime = Math.max(this.globalTime, this.lastEmittedTime + 1e-18);
+                    this.globalTime = resultTime;
+                }
             }
             if (!converged) {
-                // Keep last Newton iterate; do not roll time backwards
-                this.globalTime = syncTime;
+                // Keep last Newton iterate; do not roll emitted time backwards
+                this.globalTime = Math.max(syncTime, this.lastEmittedTime + 1e-18);
+                resultTime = this.globalTime;
                 this.failStreak++;
                 // Soft-accept after a streak so VAC/time keep advancing (lab amp near rail)
                 if (this.failStreak >= FAIL_STREAK_RESET) {
                     converged = true;
                     this.failStreak = 0;
-                    this.currentStepSize = Math.min(Math.max(this.currentStepSize * 2, this.analogMinStep()), this.config.maxStep);
+                    this.currentStepSize = Math.min(Math.max(this.currentStepSize * 2, this.analogMinStep()), this.effectiveMaxStep());
                 }
             }
         }
@@ -96,6 +122,7 @@ export class GlobalScheduler {
             this.currentStepSize = Math.max(this.currentStepSize / MAX_STEP_SHRINK, this.analogMinStep());
             this.steadyStepCounter = 0;
         }
+        this.lastEmittedTime = resultTime;
         const registers = copyNumberMap(mcuRegs);
         registers.set('PC', mcuPc);
         const pinStates = new Map<string, number>();
@@ -108,13 +135,13 @@ export class GlobalScheduler {
                 pinStates.set(pinId, -1);
         });
         const mcuSnapshot: McuRegisterSnapshot = {
-            timestamp: syncTime,
+            timestamp: resultTime,
             registers: registers,
             memory: new Uint8Array(0),
             pinStates: pinStates
         };
         return {
-            time: syncTime,
+            time: resultTime,
             analogSignals: spiceResult.nodeVoltages,
             digitalStates: digitalStates,
             mcuSnapshot: mcuSnapshot,
@@ -144,7 +171,7 @@ export class GlobalScheduler {
         else if (maxDelta < VOLTAGE_DELTA_STEADY) {
             this.steadyStepCounter++;
             if (this.steadyStepCounter >= STEADY_GROW_COUNT) {
-                this.currentStepSize = Math.min(this.currentStepSize * MAX_STEP_GROWTH, this.config.maxStep);
+                this.currentStepSize = Math.min(this.currentStepSize * MAX_STEP_GROWTH, this.effectiveMaxStep());
                 this.steadyStepCounter = 0;
             }
         }
@@ -167,6 +194,16 @@ export class GlobalScheduler {
     }
     getGlobalTime(): number { return this.globalTime; }
     getCurrentStepSize(): number { return this.currentStepSize; }
+    /** Jump adaptive dt toward a target (e.g. AC-friendly 1/40 period) without exceeding cap. */
+    bumpStepToward(target: number): void {
+        if (!(target > 0)) {
+            return;
+        }
+        const capped = Math.min(target, this.effectiveMaxStep());
+        if (capped > this.currentStepSize) {
+            this.currentStepSize = capped;
+        }
+    }
     reset(): void {
         this.globalTime = this.config.startTime;
         this.currentStepSize = Math.max(this.config.stepSize, this.analogMinStep());
@@ -177,6 +214,7 @@ export class GlobalScheduler {
         this.failStreak = 0;
         this.mcuCycleAccum = 0;
         this.mcuTicksPerStep = 1;
+        this.lastEmittedTime = Number.NEGATIVE_INFINITY;
     }
     isFinished(): boolean {
         return this.globalTime >= this.config.stopTime;

@@ -37,7 +37,7 @@ import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/App
 import type { AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiApiConfig } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle, ProteusTextArea, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 interface ApiFormatOption {
     label: string;
@@ -554,24 +554,42 @@ export class AiSettingsPanel extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextArea.create({
-                placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
-                text: this.promptText
-            });
-            TextArea.height(72);
-            TextArea.width('100%');
-            TextArea.fontSize(ProteusFonts.PARAM_KEY);
-            TextArea.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextArea.backgroundColor(ProteusColors.CANVAS_BG);
-            TextArea.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextArea.borderRadius(0);
-            TextArea.padding(6);
-            TextArea.margin({ left: 8, right: 8 });
-            TextArea.enabled(!this.aiGenerating);
-            TextArea.onChange((v: string) => {
-                this.promptText = v;
-            });
-        }, TextArea);
+            __Common__.create();
+            __Common__.margin({ left: 8, right: 8 });
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextArea(this, {
+                        placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
+                        text: this.promptText,
+                        areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
+                        isEnabled: !this.aiGenerating,
+                        onChange: (v: string) => { this.promptText = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 179, col: 7 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
+                            text: this.promptText,
+                            areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
+                            isEnabled: !this.aiGenerating,
+                            onChange: (v: string) => { this.promptText = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
+                        text: this.promptText,
+                        areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
+                        isEnabled: !this.aiGenerating
+                    });
+                }
+            }, { name: "ProteusTextArea" });
+        }
+        __Common__.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 6 });
             Row.width('100%');
@@ -582,16 +600,16 @@ export class AiSettingsPanel extends ViewPU {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: this.aiGenerating ? '取消' : '生成整图',
-                        widthVal: '46%',
+                        widthVal: '34%',
                         onAction: () => {
                             this.requestGenerate();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 198, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 189, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: this.aiGenerating ? '取消' : '生成整图',
-                            widthVal: '46%',
+                            widthVal: '34%',
                             onAction: () => {
                                 this.requestGenerate();
                             }
@@ -602,7 +620,7 @@ export class AiSettingsPanel extends ViewPU {
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
                         label: this.aiGenerating ? '取消' : '生成整图',
-                        widthVal: '46%'
+                        widthVal: '34%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
@@ -612,7 +630,7 @@ export class AiSettingsPanel extends ViewPU {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: 'AI自检修复',
-                        widthVal: '28%',
+                        widthVal: '42%',
                         onAction: () => {
                             if (this.aiGenerating) {
                                 this.statusMessage = '请等待当前任务结束';
@@ -620,12 +638,12 @@ export class AiSettingsPanel extends ViewPU {
                             }
                             void this.runSelfCheck();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 205, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 196, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: 'AI自检修复',
-                            widthVal: '28%',
+                            widthVal: '42%',
                             onAction: () => {
                                 if (this.aiGenerating) {
                                     this.statusMessage = '请等待当前任务结束';
@@ -640,7 +658,7 @@ export class AiSettingsPanel extends ViewPU {
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
                         label: 'AI自检修复',
-                        widthVal: '28%'
+                        widthVal: '42%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
@@ -650,16 +668,16 @@ export class AiSettingsPanel extends ViewPU {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: '清空',
-                        widthVal: '20%',
+                        widthVal: '18%',
                         onAction: () => {
                             this.appService.clearAiGenLogs();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 216, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 207, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: '清空',
-                            widthVal: '20%',
+                            widthVal: '18%',
                             onAction: () => {
                                 this.appService.clearAiGenLogs();
                             }
@@ -670,7 +688,7 @@ export class AiSettingsPanel extends ViewPU {
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
                         label: '清空',
-                        widthVal: '20%'
+                        widthVal: '18%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
@@ -737,7 +755,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.showSelfCheckDialog = false;
                                         void this.runSelfCheck();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 249, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 240, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -770,7 +788,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.appService.dismissAiSelfCheckPrompt();
                                         this.statusMessage = '已跳过自检修复';
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 257, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 248, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -841,7 +859,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.pickStrategy('oneshot');
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 287, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 278, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -875,7 +893,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 onAction: () => {
                                                     this.pickStrategy('modular');
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 295, col: 13 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 286, col: 13 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -913,7 +931,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.showStrategyDialog = false;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 303, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 294, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -975,7 +993,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         void this.runGenerate('replace');
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 327, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 318, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1005,7 +1023,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         void this.runGenerate('append');
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 334, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 325, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1035,7 +1053,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.showModeDialog = false;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 341, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 332, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1189,7 +1207,7 @@ export class AiSettingsPanel extends ViewPU {
                         label: this.showAddForm ? '收起' : '+ 添加',
                         widthVal: 64,
                         onAction: () => { this.showAddForm = !this.showAddForm; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 418, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 409, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1247,7 +1265,7 @@ export class AiSettingsPanel extends ViewPU {
                                             this.newApiUrl = tmpl.data.baseUrl;
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 434, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 425, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1288,6 +1306,7 @@ export class AiSettingsPanel extends ViewPU {
                         Row.create();
                         Row.width('100%');
                         Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
                     }, Row);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('官网链接');
@@ -1297,21 +1316,42 @@ export class AiSettingsPanel extends ViewPU {
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: 'https://example.com （可选）', text: this.newApiUrl });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_KEY);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.onChange((v: string) => { this.newApiUrl = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: 'https://example.com （可选）',
+                                    text: this.newApiUrl,
+                                    onChange: (v: string) => { this.newApiUrl = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 447, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: 'https://example.com （可选）',
+                                        text: this.newApiUrl,
+                                        onChange: (v: string) => { this.newApiUrl = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: 'https://example.com （可选）',
+                                    text: this.newApiUrl
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create();
                         Row.width('100%');
                         Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
                     }, Row);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('API Key');
@@ -1321,39 +1361,62 @@ export class AiSettingsPanel extends ViewPU {
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: 'sk-...', text: this.newApiKey });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_KEY);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.type(InputType.Password);
-                        TextInput.onChange((v: string) => { this.newApiKey = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: 'sk-...',
+                                    text: this.newApiKey,
+                                    password: true,
+                                    onChange: (v: string) => { this.newApiKey = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 459, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: 'sk-...',
+                                        text: this.newApiKey,
+                                        password: true,
+                                        onChange: (v: string) => { this.newApiKey = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: 'sk-...',
+                                    text: this.newApiKey,
+                                    password: true
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create();
                         Row.width('100%');
                         Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
                     }, Row);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('API 格式');
-                        Text.fontSize(10);
+                        Text.fontSize(ProteusFonts.PARAM_KEY);
                         Text.fontColor(ProteusColors.TEXT_LABEL);
-                        Text.width(52);
+                        Text.width(ProteusDimens.PARAM_LABEL_WIDTH);
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Select.create(this.buildApiFormatOptions());
                         Select.selected(this.apiFormatIdx);
                         Select.value(this.apiFormats[this.apiFormatIdx].label);
-                        Select.font({ size: 10 });
+                        Select.font({ size: ProteusFonts.INPUT });
                         Select.fontColor(ProteusColors.TEXT_PRIMARY);
                         Select.backgroundColor(ProteusColors.CANVAS_BG);
                         Select.layoutWeight(1);
-                        Select.height(26);
+                        Select.height(ProteusDimens.PARAM_ROW_HEIGHT);
                         Select.onSelect((idx: number) => {
                             this.apiFormatIdx = idx;
                             this.newApiFormat = this.apiFormats[idx].value;
@@ -1365,49 +1428,91 @@ export class AiSettingsPanel extends ViewPU {
                         Row.create();
                         Row.width('100%');
                         Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
                     }, Row);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('认证字段');
-                        Text.fontSize(10);
+                        Text.fontSize(ProteusFonts.PARAM_KEY);
                         Text.fontColor(ProteusColors.TEXT_LABEL);
-                        Text.width(52);
+                        Text.width(ProteusDimens.PARAM_LABEL_WIDTH);
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）', text: this.newAuthField });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(26);
-                        TextInput.fontSize(10);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.onChange((v: string) => { this.newAuthField = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）',
+                                    text: this.newAuthField,
+                                    onChange: (v: string) => { this.newAuthField = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 488, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）',
+                                        text: this.newAuthField,
+                                        onChange: (v: string) => { this.newAuthField = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）',
+                                    text: this.newAuthField
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create();
                         Row.width('100%');
                         Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
                     }, Row);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('模型名称');
-                        Text.fontSize(10);
+                        Text.fontSize(ProteusFonts.PARAM_KEY);
                         Text.fontColor(ProteusColors.TEXT_LABEL);
-                        Text.width(52);
+                        Text.width(ProteusDimens.PARAM_LABEL_WIDTH);
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: 'claude-sonnet-4-6', text: this.newApiModel });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(26);
-                        TextInput.fontSize(10);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.onChange((v: string) => { this.newApiModel = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: 'claude-sonnet-4-6',
+                                    text: this.newApiModel,
+                                    onChange: (v: string) => { this.newApiModel = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 500, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: 'claude-sonnet-4-6',
+                                        text: this.newApiModel,
+                                        onChange: (v: string) => { this.newApiModel = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: 'claude-sonnet-4-6',
+                                    text: this.newApiModel
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -1449,7 +1554,7 @@ export class AiSettingsPanel extends ViewPU {
                                         this.newAuthField = 'ANTHROPIC_AUTH_TOKEN';
                                         this.statusMessage = `已添加并同步 ${config.name}`;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 514, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 508, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1536,7 +1641,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 562, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1653,7 +1758,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 610, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 604, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1697,7 +1802,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 627, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 621, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1735,7 +1840,7 @@ export class AiSettingsPanel extends ViewPU {
                                     Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 639, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 633, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {

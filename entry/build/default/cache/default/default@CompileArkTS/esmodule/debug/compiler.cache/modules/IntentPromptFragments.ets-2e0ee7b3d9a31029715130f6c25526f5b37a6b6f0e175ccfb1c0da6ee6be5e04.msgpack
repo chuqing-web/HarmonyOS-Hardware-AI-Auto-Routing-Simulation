@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚYexport const DEVICE_SELECT_BASE = `ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ%"export const DEVICE_SELECT_BASE = `ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
 
 ã€æ ¸å¿ƒæ‹“æ‰‘é“å¾‹ â€” ä¸¥ç¦è¿åã€‘:
 1. ç”µæµè¡¨(AMMETER_DC)å¿…é¡»ä¸²è”åœ¨ç”µæºå›è·¯: VCCâ†’I+â†’I-â†’è´Ÿè½½ã€‚ç»ä¸å¹¶è”ï¼
@@ -22,18 +22,30 @@
 - å‚è€ƒ conversation_history ç†è§£ä¸Šä¸‹æ–‡ï¼Œåªè°ƒæ•´ç”¨æˆ·è¦æ±‚å˜æ›´çš„éƒ¨åˆ†
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
-è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdown åŒ…è£¹ã€‚
+è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`;
 export const FRAG_POWER_RAILS = `
 ã€å¼ºåˆ¶ç”µæºç¬¦å·ã€‘:
-- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
-- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}`;
+- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
+- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- ç”¨æˆ·æŒ‡å®šç”µå‹æ—¶ï¼šVCC çš„ param_constraint.voltage å†™ç²¾ç¡®å€¼ï¼ˆå¦‚ "3.3V"/"12V"ï¼‰`;
+export const FRAG_DUAL_SUPPLY = `
+ã€åŒç”µæº / VEE è´Ÿå‹ â€” å¼ºåˆ¶ã€‘:
+- å¿…é¡»é¢å¤–è¾“å‡º VEE: {"func":"ç”µæºè´Ÿæ","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- è¿æ”¾ VCC/V+â†’VCC ç½‘ï¼ŒVEE/V-â†’VEE ç½‘ï¼ˆç¦æ­¢æŠŠ VEE æ¥åˆ° GNDï¼Œé™¤éç”¨æˆ·æ˜ç¡®å•ç”µæºï¼‰
+- ç”¨æˆ·å†™ Â±15V/Â±12V/Â±5V æ—¶åŒæ­¥æ”¹ VCC ä¸ VEE çš„ voltage`;
+export const FRAG_SIGNAL_GEN = `
+ã€ä¿¡å·å‘ç”Ÿå™¨ SIGNAL_GENã€‘ç”¨æˆ·è¦æ±‚æ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²æ¿€åŠ±æ—¶:
+- è¾“å‡º SIGNAL_GEN: param_constraint å« waveform(sine|square|triangle|saw|pulse)ã€amplitudeã€frequencyã€offsetã€dutyCycle
+- frequency æŒ‰ç”¨æˆ·æŒ‡å®šï¼ˆå¦‚ 1kHz/10kHzï¼‰ï¼›dutyCycle å¯¹æ–¹æ³¢/è„‰å†²æœ‰æ•ˆï¼ˆå¦‚ 25%/50%ï¼‰ï¼Œé»˜è®¤ 50%
+- waveform ä»¥ã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€ä¸ºå‡†ï¼›è‹¥åŒæ—¶å‡ºç°ã€Œæ­£å¼¦è¾“å…¥ã€ä¸ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ï¼Œwaveform å¿…é¡»å†™ sine
+- æ‹“æ‰‘: OUTâ†’è¢«æ¿€åŠ±èŠ‚ç‚¹ï¼ŒGNDâ†’GNDï¼›å¯ç”¨ç¤ºæ³¢å™¨è§‚æµ‹`;
 export const FRAG_MCU_MIN = `
 ã€MCU æœ€å°ç³»ç»Ÿã€‘å¿…é¡»åŒ…å«: æ™¶æŒ¯ã€å»è€¦ç”µå®¹(C_100nF)ã€å¤ä½ä¸Šæ‹‰ç”µé˜»(R_10k)ã€VCCã€GND`;
 export const FRAG_LED_SERIES_R = `
 ã€LED é™æµã€‘LED å¿…é¡»é…å¯¹é™æµç”µé˜»ï¼ˆä¼˜å…ˆ R_330ï¼‰ï¼›N é¢— LED é… N é¢—ç”µé˜»`;
 export const FRAG_OPAMP = `
-ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©º`;
+ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºï¼›æ»å›æ¯”è¾ƒå™¨é¡»æ­£åé¦ˆåˆ†å‹ï¼ˆOUTâ†’Rfâ†’IN+ï¼ŒIN+â†’Rgâ†’GNDï¼‰`;
 export const FRAG_I2C = `
 ã€I2Cã€‘å¿…é¡»é… 4.7kÎ© ä¸Šæ‹‰ç”µé˜»ï¼ˆR_4.7kï¼‰`;
 export const FRAG_MUTUAL_LED = `
@@ -44,6 +56,12 @@ export const FRAG_MUTUAL_LED = `
 export const FRAG_BLINK_OK = `
 ã€é—ªçƒ/å¤šè°/äº¤æ›¿æŒ‡ç¤ºã€‘ç”µæºå¼€å…³(SW_PUSH)ä¸²è”ä¾›ç”µ + æŒ¯è¡/é©±åŠ¨åŒç¯äº¤æ›¿é—ªçƒæ˜¯åˆæ³•æ‹“æ‰‘ã€‚
 ç¦æ­¢å¥—ç”¨ã€Œå¼€/é—­äº’æ–¥åŒè‰² â†’ RELAY_SPDTã€è§„åˆ™ï¼›ä¸è¦ä¸ºé—ªçƒç”µè·¯å¼ºè¡ŒåŠ å…¥ç»§ç”µå™¨ã€‚`;
+export const FRAG_SERIES_RC = `
+ã€ä¸²è” RC å……æ”¾ç”µ â€” å¼ºåˆ¶é…æ–¹ã€‘è§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢æ—¶:
+- å¿…é¡»: VCC + GND + R_* + C_* + SW_PUSHï¼ˆå……ç”µé€šæ–­ï¼‰+ï¼ˆç”¨æˆ·è¦æ±‚æ—¶ï¼‰OSCILLOSCOPE
+- æ‹“æ‰‘: VCCâ†’SWâ†’Râ†’RC_MIDâ†’Câ†’GNDï¼›ç¤ºæ³¢å™¨ CH1â†’RC_MIDï¼ŒGNDâ†’GND
+- ã€ç¡¬ç¦ã€‘ç¦æ­¢è¾“å‡º RELAY_SPDTï¼ˆRC å……æ”¾ç”µä¸æ˜¯äº’æ–¥åŒè‰²æŒ‡ç¤ºï¼‰
+- æœªä½¿ç”¨ç¤ºæ³¢å™¨ CH2/CH3/CH4 ä¿æŒæ‚¬ç©ºï¼Œç¦æ­¢æ¥åˆ° GND æˆ–å¦å»ºå•è„šç½‘`;
 export const FRAG_INSTRUMENTS_SELECT = `
 ã€ä»ªå™¨è¿½åŠ  â€” ä»…ç”¨æˆ·æ˜ç¡®è¦æ±‚æˆ–æµ‹é‡æ„å›¾æ—¶ã€‘:
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ" â†’ AMMETER_DC
@@ -55,20 +73,20 @@ export const NET_PLAN_BASE = `ä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚æ ¹æ®å·
 ä½ çš„ä»»åŠ¡ï¼š
 1. åˆ†æç”µè·¯ç»“æ„ï¼Œè¯†åˆ«åŠŸèƒ½æ¨¡å—
 2. ä¸ºæ¯ä¸ªç½‘ç»œåˆ†é…åˆç†åç§°å’Œç±»å‹
-3. ã€å…³é”®ã€‘è‡ªä¸»å†³å®š mode (joinWired vs joinByLabel)
-4. ã€å…³é”®ã€‘ä¸º joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
+3. ã€å…³é”®ã€‘å¯å»ºè®® modeï¼›ç³»ç»Ÿæ ‡å·ä¼˜å…ˆï¼ŒæŒ‰è„šé¢„ç®—â‰¤2 å‡çº§å¯¼çº¿å¹¶å¯¹å¹¶æ‹‰è¿‘
+4. ã€å…³é”®ã€‘ä¸ºå¯èƒ½å‡çº§çš„ joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
 5. è¾“å‡ºå®Œæ•´ netPlan JSON
 
 ã€é€šç”¨æ‹“æ‰‘é“å¾‹ã€‘:
 1. ç”µæµè¡¨ I+ / I- ç»ä¸åœ¨åŒä¸€ç½‘ç»œ
 2. ç”µå‹è¡¨åˆ†å¸ƒåœ¨ä¸åŒæµ‹é‡èŠ‚ç‚¹å¯¹
 3. ä»ªå™¨å¼•è„šå¿…é¡»å…¥ç½‘ï¼›GND/COM æœ€ç»ˆåˆ° GND
-4. å¯¼çº¿ä¼˜å…ˆï¼›æ ‡å·ä»…åœ¨æ‹¥æŒ¤/è·¨å¤§å°è£…/ä»ªå™¨è„š/å•è„šæ‰‡å‡º>2 æ—¶ä½¿ç”¨
+4. æ ‡å·ä¼˜å…ˆï¼›ä»…â‰¤3è„šå°ç½‘ä¸”è„šé¢„ç®—â‰¤2å¯å‡çº§çŸ­å¯¼çº¿å¹¶æ‹‰è¿‘(~120mil)ï¼›ä»ªå™¨è„š/COM/å¤§ç”µæºæ‰‡å‡ºä¿æŒæ ‡å·
 5. ã€ç¡¬ã€‘ä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢ PROBE_* é‡å¤åˆ—å‡ºè¢«æµ‹è„š
 6. ã€ç¡¬ã€‘NPN åŸºæ B åªæ¥ä¸€è·¯é©±åŠ¨
 7. å¯¼çº¿æ­£äº¤ï¼›ä¸å¾—è¿›å…¥é€‰ä¸­å‘½ä¸­åŒº(HIT_PAD=14)ï¼›æ— å…³è„šé—´è·â‰¥20mil
 
-ã€è¾“å‡ºã€‘çº¯ JSONï¼Œæ—  markdownã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
+ã€è¾“å‡ºã€‘ä¸¥æ ¼ JSONï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
 Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚`;
 export const FRAG_NET_MCU = `
 ã€MCU æœ€å°ç³»ç»Ÿæ¥çº¿ã€‘:
@@ -84,14 +102,28 @@ export const FRAG_NET_MUTUAL = `
 export const FRAG_NET_BLINK = `
 ã€é—ªçƒ/æŒ¯è¡ç”µè·¯ã€‘SW_PUSH ä»…ä½œç”µæºé€šæ–­åˆæ³•ï¼›åŒç¯ç”±ä¸‰æç®¡/MCU ç­‰é©±åŠ¨äº¤æ›¿é—ªçƒã€‚
 ä¸è¦è¦æ±‚ RELAY_SPDTï¼Œä¸è¦æŠŠ SW å½“å¸¸å¼€/å¸¸é—­ä¸‰ç«¯ã€‚`;
+export const FRAG_NET_SERIES_RC = `
+ã€ä¸²è” RC å……æ”¾ç”µã€‘VCCâ†’(SW)â†’R.1ï¼›R.2 ä¸ C.1 åŒç½‘ RC_MIDï¼›C.2â†’GNDã€‚
+ç¤ºæ³¢å™¨ CH1 å¹¶å…¥ RC_MIDï¼ˆåŒåæ ‡å·ï¼‰ï¼ŒOSC.GNDâ†’GNDï¼›æœªç”¨ CH2/3/4 ä¸å…¥ç½‘ã€‚
+ç¦æ­¢ RELAY çº¿åœˆç›´è¿ VCC/GNDï¼›ç¦æ­¢ç”¨ç»§ç”µå™¨å†’å……å……æ”¾ç”µå¼€å…³ã€‚`;
 export const FRAG_NET_OPAMP = `
-ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›ç”µæºè„šå…¥ç½‘`;
+ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›VCC/V+â†’VCCï¼›åŒç”µæºæ—¶ VEE/V-â†’VEEï¼ˆå‹¿æ¥ GNDï¼‰`;
+export const FRAG_NET_DUAL = `
+ã€åŒç”µæºç½‘ã€‘ç‹¬ç«‹ç½‘å VCC ä¸ VEEï¼›VCC ç¬¦å·â†’VCC ç½‘ï¼ŒVEE ç¬¦å·â†’VEE ç½‘ï¼ŒGNDâ†’GNDï¼›ç¦æ­¢ VCC/VEE åŒç½‘`;
+export const FRAG_NET_SIGNAL_GEN = `
+ã€SIGNAL_GENã€‘OUT å¹¶å…¥æ¿€åŠ±ä¿¡å·ç½‘ï¼›GNDâ†’GNDï¼›å¯ç”¨ OSC CH1 è§‚æµ‹åŒä¸€ä¿¡å·ç½‘`;
 export const FRAG_NET_INSTR = `
 ã€ä»ªå™¨ã€‘æµ‹é‡è„šå¹¶å…¥è¢«æµ‹ä¿¡å·ç½‘åŒåï¼›ç¦æ­¢å¦å»º PROBE ç½‘é‡å¤ DUT è„š`;
 export function assembleDeviceSelectSystem(intent) {
     let s = DEVICE_SELECT_BASE;
     if (intent.needsPowerRails) {
         s += FRAG_POWER_RAILS;
+    }
+    if (intent.dualSupply) {
+        s += FRAG_DUAL_SUPPLY;
+    }
+    if (intent.needsSignalGen) {
+        s += FRAG_SIGNAL_GEN;
     }
     if (intent.hasMcuMinSystem) {
         s += FRAG_MCU_MIN;
@@ -111,6 +143,9 @@ export function assembleDeviceSelectSystem(intent) {
     if (intent.blinkOscillator) {
         s += FRAG_BLINK_OK;
     }
+    if (intent.seriesRcCharge) {
+        s += FRAG_SERIES_RC;
+    }
     if (intent.hasInstruments) {
         s += FRAG_INSTRUMENTS_SELECT;
     }
@@ -124,21 +159,30 @@ export function assembleNetPlanSystem(intent) {
     if (intent.needsLedSeriesR) {
         s += FRAG_NET_LED;
     }
-    if (intent.mutualLedIndicator || intent.relayContactTopo) {
+    if ((intent.mutualLedIndicator || intent.relayContactTopo) && !intent.seriesRcCharge) {
         s += FRAG_NET_MUTUAL;
     }
     if (intent.blinkOscillator) {
         s += FRAG_NET_BLINK;
     }
+    if (intent.seriesRcCharge) {
+        s += FRAG_NET_SERIES_RC;
+    }
     if (intent.needsOpAmpFeedback) {
         s += FRAG_NET_OPAMP;
+    }
+    if (intent.dualSupply) {
+        s += FRAG_NET_DUAL;
+    }
+    if (intent.needsSignalGen) {
+        s += FRAG_NET_SIGNAL_GEN;
     }
     if (intent.hasInstruments) {
         s += FRAG_NET_INSTR;
     }
     return s;
 }
-//# sourceMappingURL=IntentPromptFragments.js.mapÂÙhC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\IntentPromptFragments.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ!./templates/IntentPromptFragments©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ%/**
+//# sourceMappingURL=IntentPromptFragments.js.mapÂÙhC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\IntentPromptFragments.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ!./templates/IntentPromptFragments©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ%„/**
  * æŒ‰ CircuitIntent ç»„è£…çš„ prompt æ¡ä»¶ç‰‡æ®µï¼ˆé»˜è®¤éª¨æ¶ + å‘½ä¸­æ‰æ³¨å…¥ï¼‰
  */
 import { CircuitIntent } from '../../algorithms/CircuitIntent';
@@ -167,13 +211,27 @@ export const DEVICE_SELECT_BASE: string = `ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç
 - å‚è€ƒ conversation_history ç†è§£ä¸Šä¸‹æ–‡ï¼Œåªè°ƒæ•´ç”¨æˆ·è¦æ±‚å˜æ›´çš„éƒ¨åˆ†
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
-è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdown åŒ…è£¹ã€‚
+è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`;
 
 export const FRAG_POWER_RAILS: string = `
 ã€å¼ºåˆ¶ç”µæºç¬¦å·ã€‘:
-- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
-- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}`;
+- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
+- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- ç”¨æˆ·æŒ‡å®šç”µå‹æ—¶ï¼šVCC çš„ param_constraint.voltage å†™ç²¾ç¡®å€¼ï¼ˆå¦‚ "3.3V"/"12V"ï¼‰`;
+
+export const FRAG_DUAL_SUPPLY: string = `
+ã€åŒç”µæº / VEE è´Ÿå‹ â€” å¼ºåˆ¶ã€‘:
+- å¿…é¡»é¢å¤–è¾“å‡º VEE: {"func":"ç”µæºè´Ÿæ","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- è¿æ”¾ VCC/V+â†’VCC ç½‘ï¼ŒVEE/V-â†’VEE ç½‘ï¼ˆç¦æ­¢æŠŠ VEE æ¥åˆ° GNDï¼Œé™¤éç”¨æˆ·æ˜ç¡®å•ç”µæºï¼‰
+- ç”¨æˆ·å†™ Â±15V/Â±12V/Â±5V æ—¶åŒæ­¥æ”¹ VCC ä¸ VEE çš„ voltage`;
+
+export const FRAG_SIGNAL_GEN: string = `
+ã€ä¿¡å·å‘ç”Ÿå™¨ SIGNAL_GENã€‘ç”¨æˆ·è¦æ±‚æ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²æ¿€åŠ±æ—¶:
+- è¾“å‡º SIGNAL_GEN: param_constraint å« waveform(sine|square|triangle|saw|pulse)ã€amplitudeã€frequencyã€offsetã€dutyCycle
+- frequency æŒ‰ç”¨æˆ·æŒ‡å®šï¼ˆå¦‚ 1kHz/10kHzï¼‰ï¼›dutyCycle å¯¹æ–¹æ³¢/è„‰å†²æœ‰æ•ˆï¼ˆå¦‚ 25%/50%ï¼‰ï¼Œé»˜è®¤ 50%
+- waveform ä»¥ã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€ä¸ºå‡†ï¼›è‹¥åŒæ—¶å‡ºç°ã€Œæ­£å¼¦è¾“å…¥ã€ä¸ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ï¼Œwaveform å¿…é¡»å†™ sine
+- æ‹“æ‰‘: OUTâ†’è¢«æ¿€åŠ±èŠ‚ç‚¹ï¼ŒGNDâ†’GNDï¼›å¯ç”¨ç¤ºæ³¢å™¨è§‚æµ‹`;
 
 export const FRAG_MCU_MIN: string = `
 ã€MCU æœ€å°ç³»ç»Ÿã€‘å¿…é¡»åŒ…å«: æ™¶æŒ¯ã€å»è€¦ç”µå®¹(C_100nF)ã€å¤ä½ä¸Šæ‹‰ç”µé˜»(R_10k)ã€VCCã€GND`;
@@ -182,7 +240,7 @@ export const FRAG_LED_SERIES_R: string = `
 ã€LED é™æµã€‘LED å¿…é¡»é…å¯¹é™æµç”µé˜»ï¼ˆä¼˜å…ˆ R_330ï¼‰ï¼›N é¢— LED é… N é¢—ç”µé˜»`;
 
 export const FRAG_OPAMP: string = `
-ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©º`;
+ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºï¼›æ»å›æ¯”è¾ƒå™¨é¡»æ­£åé¦ˆåˆ†å‹ï¼ˆOUTâ†’Rfâ†’IN+ï¼ŒIN+â†’Rgâ†’GNDï¼‰`;
 
 export const FRAG_I2C: string = `
 ã€I2Cã€‘å¿…é¡»é… 4.7kÎ© ä¸Šæ‹‰ç”µé˜»ï¼ˆR_4.7kï¼‰`;
@@ -197,6 +255,13 @@ export const FRAG_BLINK_OK: string = `
 ã€é—ªçƒ/å¤šè°/äº¤æ›¿æŒ‡ç¤ºã€‘ç”µæºå¼€å…³(SW_PUSH)ä¸²è”ä¾›ç”µ + æŒ¯è¡/é©±åŠ¨åŒç¯äº¤æ›¿é—ªçƒæ˜¯åˆæ³•æ‹“æ‰‘ã€‚
 ç¦æ­¢å¥—ç”¨ã€Œå¼€/é—­äº’æ–¥åŒè‰² â†’ RELAY_SPDTã€è§„åˆ™ï¼›ä¸è¦ä¸ºé—ªçƒç”µè·¯å¼ºè¡ŒåŠ å…¥ç»§ç”µå™¨ã€‚`;
 
+export const FRAG_SERIES_RC: string = `
+ã€ä¸²è” RC å……æ”¾ç”µ â€” å¼ºåˆ¶é…æ–¹ã€‘è§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢æ—¶:
+- å¿…é¡»: VCC + GND + R_* + C_* + SW_PUSHï¼ˆå……ç”µé€šæ–­ï¼‰+ï¼ˆç”¨æˆ·è¦æ±‚æ—¶ï¼‰OSCILLOSCOPE
+- æ‹“æ‰‘: VCCâ†’SWâ†’Râ†’RC_MIDâ†’Câ†’GNDï¼›ç¤ºæ³¢å™¨ CH1â†’RC_MIDï¼ŒGNDâ†’GND
+- ã€ç¡¬ç¦ã€‘ç¦æ­¢è¾“å‡º RELAY_SPDTï¼ˆRC å……æ”¾ç”µä¸æ˜¯äº’æ–¥åŒè‰²æŒ‡ç¤ºï¼‰
+- æœªä½¿ç”¨ç¤ºæ³¢å™¨ CH2/CH3/CH4 ä¿æŒæ‚¬ç©ºï¼Œç¦æ­¢æ¥åˆ° GND æˆ–å¦å»ºå•è„šç½‘`;
+
 export const FRAG_INSTRUMENTS_SELECT: string = `
 ã€ä»ªå™¨è¿½åŠ  â€” ä»…ç”¨æˆ·æ˜ç¡®è¦æ±‚æˆ–æµ‹é‡æ„å›¾æ—¶ã€‘:
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ" â†’ AMMETER_DC
@@ -209,20 +274,20 @@ export const NET_PLAN_BASE: string = `ä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚
 ä½ çš„ä»»åŠ¡ï¼š
 1. åˆ†æç”µè·¯ç»“æ„ï¼Œè¯†åˆ«åŠŸèƒ½æ¨¡å—
 2. ä¸ºæ¯ä¸ªç½‘ç»œåˆ†é…åˆç†åç§°å’Œç±»å‹
-3. ã€å…³é”®ã€‘è‡ªä¸»å†³å®š mode (joinWired vs joinByLabel)
-4. ã€å…³é”®ã€‘ä¸º joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
+3. ã€å…³é”®ã€‘å¯å»ºè®® modeï¼›ç³»ç»Ÿæ ‡å·ä¼˜å…ˆï¼ŒæŒ‰è„šé¢„ç®—â‰¤2 å‡çº§å¯¼çº¿å¹¶å¯¹å¹¶æ‹‰è¿‘
+4. ã€å…³é”®ã€‘ä¸ºå¯èƒ½å‡çº§çš„ joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
 5. è¾“å‡ºå®Œæ•´ netPlan JSON
 
 ã€é€šç”¨æ‹“æ‰‘é“å¾‹ã€‘:
 1. ç”µæµè¡¨ I+ / I- ç»ä¸åœ¨åŒä¸€ç½‘ç»œ
 2. ç”µå‹è¡¨åˆ†å¸ƒåœ¨ä¸åŒæµ‹é‡èŠ‚ç‚¹å¯¹
 3. ä»ªå™¨å¼•è„šå¿…é¡»å…¥ç½‘ï¼›GND/COM æœ€ç»ˆåˆ° GND
-4. å¯¼çº¿ä¼˜å…ˆï¼›æ ‡å·ä»…åœ¨æ‹¥æŒ¤/è·¨å¤§å°è£…/ä»ªå™¨è„š/å•è„šæ‰‡å‡º>2 æ—¶ä½¿ç”¨
+4. æ ‡å·ä¼˜å…ˆï¼›ä»…â‰¤3è„šå°ç½‘ä¸”è„šé¢„ç®—â‰¤2å¯å‡çº§çŸ­å¯¼çº¿å¹¶æ‹‰è¿‘(~120mil)ï¼›ä»ªå™¨è„š/COM/å¤§ç”µæºæ‰‡å‡ºä¿æŒæ ‡å·
 5. ã€ç¡¬ã€‘ä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢ PROBE_* é‡å¤åˆ—å‡ºè¢«æµ‹è„š
 6. ã€ç¡¬ã€‘NPN åŸºæ B åªæ¥ä¸€è·¯é©±åŠ¨
 7. å¯¼çº¿æ­£äº¤ï¼›ä¸å¾—è¿›å…¥é€‰ä¸­å‘½ä¸­åŒº(HIT_PAD=14)ï¼›æ— å…³è„šé—´è·â‰¥20mil
 
-ã€è¾“å‡ºã€‘çº¯ JSONï¼Œæ—  markdownã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
+ã€è¾“å‡ºã€‘ä¸¥æ ¼ JSONï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
 Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚`;
 
 export const FRAG_NET_MCU: string = `
@@ -243,8 +308,19 @@ export const FRAG_NET_BLINK: string = `
 ã€é—ªçƒ/æŒ¯è¡ç”µè·¯ã€‘SW_PUSH ä»…ä½œç”µæºé€šæ–­åˆæ³•ï¼›åŒç¯ç”±ä¸‰æç®¡/MCU ç­‰é©±åŠ¨äº¤æ›¿é—ªçƒã€‚
 ä¸è¦è¦æ±‚ RELAY_SPDTï¼Œä¸è¦æŠŠ SW å½“å¸¸å¼€/å¸¸é—­ä¸‰ç«¯ã€‚`;
 
+export const FRAG_NET_SERIES_RC: string = `
+ã€ä¸²è” RC å……æ”¾ç”µã€‘VCCâ†’(SW)â†’R.1ï¼›R.2 ä¸ C.1 åŒç½‘ RC_MIDï¼›C.2â†’GNDã€‚
+ç¤ºæ³¢å™¨ CH1 å¹¶å…¥ RC_MIDï¼ˆåŒåæ ‡å·ï¼‰ï¼ŒOSC.GNDâ†’GNDï¼›æœªç”¨ CH2/3/4 ä¸å…¥ç½‘ã€‚
+ç¦æ­¢ RELAY çº¿åœˆç›´è¿ VCC/GNDï¼›ç¦æ­¢ç”¨ç»§ç”µå™¨å†’å……å……æ”¾ç”µå¼€å…³ã€‚`;
+
 export const FRAG_NET_OPAMP: string = `
-ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›ç”µæºè„šå…¥ç½‘`;
+ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›VCC/V+â†’VCCï¼›åŒç”µæºæ—¶ VEE/V-â†’VEEï¼ˆå‹¿æ¥ GNDï¼‰`;
+
+export const FRAG_NET_DUAL: string = `
+ã€åŒç”µæºç½‘ã€‘ç‹¬ç«‹ç½‘å VCC ä¸ VEEï¼›VCC ç¬¦å·â†’VCC ç½‘ï¼ŒVEE ç¬¦å·â†’VEE ç½‘ï¼ŒGNDâ†’GNDï¼›ç¦æ­¢ VCC/VEE åŒç½‘`;
+
+export const FRAG_NET_SIGNAL_GEN: string = `
+ã€SIGNAL_GENã€‘OUT å¹¶å…¥æ¿€åŠ±ä¿¡å·ç½‘ï¼›GNDâ†’GNDï¼›å¯ç”¨ OSC CH1 è§‚æµ‹åŒä¸€ä¿¡å·ç½‘`;
 
 export const FRAG_NET_INSTR: string = `
 ã€ä»ªå™¨ã€‘æµ‹é‡è„šå¹¶å…¥è¢«æµ‹ä¿¡å·ç½‘åŒåï¼›ç¦æ­¢å¦å»º PROBE ç½‘é‡å¤ DUT è„š`;
@@ -253,6 +329,12 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent): string {
   let s = DEVICE_SELECT_BASE;
   if (intent.needsPowerRails) {
     s += FRAG_POWER_RAILS;
+  }
+  if (intent.dualSupply) {
+    s += FRAG_DUAL_SUPPLY;
+  }
+  if (intent.needsSignalGen) {
+    s += FRAG_SIGNAL_GEN;
   }
   if (intent.hasMcuMinSystem) {
     s += FRAG_MCU_MIN;
@@ -272,6 +354,9 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent): string {
   if (intent.blinkOscillator) {
     s += FRAG_BLINK_OK;
   }
+  if (intent.seriesRcCharge) {
+    s += FRAG_SERIES_RC;
+  }
   if (intent.hasInstruments) {
     s += FRAG_INSTRUMENTS_SELECT;
   }
@@ -286,26 +371,35 @@ export function assembleNetPlanSystem(intent: CircuitIntent): string {
   if (intent.needsLedSeriesR) {
     s += FRAG_NET_LED;
   }
-  if (intent.mutualLedIndicator || intent.relayContactTopo) {
+  if ((intent.mutualLedIndicator || intent.relayContactTopo) && !intent.seriesRcCharge) {
     s += FRAG_NET_MUTUAL;
   }
   if (intent.blinkOscillator) {
     s += FRAG_NET_BLINK;
   }
+  if (intent.seriesRcCharge) {
+    s += FRAG_NET_SERIES_RC;
+  }
   if (intent.needsOpAmpFeedback) {
     s += FRAG_NET_OPAMP;
+  }
+  if (intent.dualSupply) {
+    s += FRAG_NET_DUAL;
+  }
+  if (intent.needsSignalGen) {
+    s += FRAG_NET_SIGNAL_GEN;
   }
   if (intent.hasInstruments) {
     s += FRAG_NET_INSTR;
   }
   return s;
 }
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings¸IntentPromptFragments.js ‘¹IntentPromptFragments.etsÜ Œ–”   ” ” ” ” ”" *’”ÌË ÌË”ÌÌ ÌÌ–”    ”  ”  ”  ”  ”   (’”Ìf #Ìf”Ìg #Ìg–”  % ” %” %” %” %” %$’”7 &7”8 &8–”  ( ” (” (” (” (”! ()’”/ )/”0 )0–”  + ” +” +” +” +” +"’” ,” ,–”  . ” .” .” .” .” . ’” /” /–”  1 ” 1” 1” 1” 1” 1'’”? 5?”Ì@ 5Ì@–”  7 ” 7” 7” 7” 7” 7%’”- 9-”. 9.–”  ; ” ;” ;” ;”$ ;$”' ;/’” Ì@” Ì@–”  ÌB ” ÌB” ÌB” ÌB” ÌB” ÌB%’”> ÌU>”? ÌU?–”  ÌW ” ÌW” ÌW” ÌW” ÌW” ÌW$’”. ÌZ.”/ ÌZ/–”  Ì\ ” Ì\” Ì\” Ì\” Ì\” Ì\$’”3 Ì]3”4 Ì]4–”  Ì_ ” Ì_” Ì_” Ì_” Ì_” Ì_'’” Ìc”  Ìc –”  Ìe ” Ìe” Ìe” Ìe” Ìe” Ìe&’”! Ìg!”" Ìg"–”  Ìi ” Ìi” Ìi” Ìi” Ìi” Ìi&’” Ìj” Ìj–”  Ìl ” Ìl” Ìl” Ìl” Ìl” Ìl&’”& Ìm&”' Ìm'–”  Ìo ” Ìo” Ìo”* Ìo*”+ Ìo+”1 ÌoÌ@–” Ìp” Ìp”	 Ìp” Ìp
-” Ìp” Ìp–” Ìq” Ìq” Ìq” Ìq” Ìq”  Ìq•” Ìr”	 Ìr” Ìr	” Ìr” Ìr‘” Ìs–” Ìt” Ìt” Ìt” Ìt” Ìt”  Ìt•” Ìu”	 Ìu” Ìu	” Ìu” Ìu‘” Ìv–” Ìw” Ìw” Ìw” Ìw” Ìw”  Ìw•” Ìx”	 Ìx” Ìx	” Ìx” Ìx‘” Ìy–” Ìz” Ìz” Ìz” Ìz”! Ìz”# Ìz!•” Ì{”	 Ì{” Ì{	” Ì{” Ì{‘” Ì|–” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}•” Ì~”	 Ì~” Ì~	” Ì~” Ì~‘” Ì–” Ì€” Ì€” Ì€” Ì€”! Ì€”# Ì€!•” Ì”	 Ì” Ì	” Ì” Ì‘” Ì‚–” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”  Ìƒ•” Ì„”	 Ì„” Ì„	” Ì„” Ì„‘” Ì…–” Ì†” Ì†” Ì†” Ì†” Ì†” Ì†•” Ì‡”	 Ì‡” Ì‡	”$ Ì‡ ”% Ì‡!‘” Ìˆ”” Ì‰” Ì‰	” Ì‰
-” Ì‰’”  ÌŠ ” ÌŠ–”  ÌŒ ” ÌŒ” ÌŒ”% ÌŒ%”& ÌŒ&”, ÌŒ;–” Ì” Ì”	 Ì” Ì
-” Ì” Ì–” Ì” Ì” Ì” Ì” Ì”  Ì•” Ì”	 Ì” Ì	” Ì” Ì‘” Ì–” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”  Ì‘•” Ì’”	 Ì’” Ì’	” Ì’” Ì’‘” Ì“š” Ì”” Ì”” Ì”” Ì””! Ì””% Ì”#”+ Ì”)”, Ì”*”< Ì”:”> Ì”<•” Ì•”	 Ì•” Ì•	” Ì•” Ì•‘” Ì––” Ì—” Ì—” Ì—” Ì—” Ì—”  Ì—•” Ì˜”	 Ì˜” Ì˜	” Ì˜” Ì˜‘” Ì™–” Ìš” Ìš” Ìš” Ìš”! Ìš”# Ìš!•” Ì›”	 Ì›” Ì›	” Ì›” Ì›‘” Ìœ–” Ì” Ì” Ì” Ì” Ì” Ì•” Ì”	 Ì” Ì	” Ì” Ì‘” ÌŸ”” Ì ” Ì 	” Ì 
-” Ì ’”  Ì¡ ” Ì¡ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration Í‚ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ‚‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍÔrL”¤type¥start£end¤nameªIdentifier²DEVICE_SELECT_BASEÔrM•¤type¥start£end«expressions¦quasis¯TemplateLiteral"Í‘ÔrN•¤type¥start£end¥value¤tail¯TemplateElement#Í€ÔrO’£raw¦cookedÚüä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings¸IntentPromptFragments.js ‘¹IntentPromptFragments.etsÜ ¸–”   ” ” ” ” ”" *’”ÌË ÌË”ÌÌ ÌÌ–”    ”  ”  ”  ”  ”   (’”> $>”? $?–”  & ” &” &” &” &”  &(’”- *-”. *.–”  , ” ,” ,” ,” ,” ,'’”  1 ”! 1!–”  3 ” 3” 3” 3” 3” 3$’”7 47”8 48–”  6 ” 6” 6” 6” 6”! 6)’”/ 7/”0 70–”  9 ” 9” 9” 9” 9” 9"’”; :;”< :<–”  < ” <” <” <” <” < ’” =” =–”  ? ” ?” ?” ?” ?” ?'’”? ÌC?”Ì@ ÌCÌ@–”  ÌE ” ÌE” ÌE” ÌE” ÌE” ÌE%’”- ÌG-”. ÌG.–”  ÌI ” ÌI” ÌI” ÌI” ÌI” ÌI&’”* ÌN*”+ ÌN+–”  ÌP ” ÌP” ÌP” ÌP”$ ÌP$”' ÌP/’” ÌU” ÌU–”  ÌW ” ÌW” ÌW” ÌW” ÌW” ÌW%’”> Ìj>”? Ìj?–”  Ìl ” Ìl” Ìl” Ìl” Ìl” Ìl$’”. Ìo.”/ Ìo/–”  Ìq ” Ìq” Ìq” Ìq” Ìq” Ìq$’”3 Ìr3”4 Ìr4–”  Ìt ” Ìt” Ìt” Ìt” Ìt” Ìt'’” Ìx”  Ìx –”  Ìz ” Ìz” Ìz” Ìz” Ìz” Ìz&’”! Ì|!”" Ì|"–”  Ì~ ” Ì~” Ì~” Ì~” Ì~”" Ì~*’”% Ì%”& Ì&–”  Ìƒ ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ&’”5 Ì„5”6 Ì„6–”  Ì† ” Ì†” Ì†” Ì†” Ì†” Ì†%’”ÌE Ì‡ÌE”ÌF Ì‡ÌF–”  Ì‰ ” Ì‰” Ì‰” Ì‰”  Ì‰ ”# Ì‰+’”3 ÌŠ3”4 ÌŠ4–”  ÌŒ ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ&’”& Ì&”' Ì'–”  Ì ” Ì” Ì”* Ì*”+ Ì+”1 ÌÌ@–” Ì” Ì”	 Ì” Ì
+” Ì” Ì–” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”  Ì‘•” Ì’”	 Ì’” Ì’	” Ì’” Ì’‘” Ì“–” Ì”” Ì”” Ì”” Ì”” Ì”” Ì”•” Ì•”	 Ì•” Ì•	” Ì•” Ì•‘” Ì––” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—•” Ì˜”	 Ì˜” Ì˜	” Ì˜” Ì˜‘” Ì™–” Ìš” Ìš” Ìš” Ìš” Ìš”  Ìš•” Ì›”	 Ì›” Ì›	” Ì›” Ì›‘” Ìœ–” Ì” Ì” Ì” Ì” Ì”  Ì•” Ì”	 Ì” Ì	” Ì” Ì‘” ÌŸ–” Ì ” Ì ” Ì ” Ì ”! Ì ”# Ì !•” Ì¡”	 Ì¡” Ì¡	” Ì¡” Ì¡‘” Ì¢–” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£•” Ì¤”	 Ì¤” Ì¤	” Ì¤” Ì¤‘” Ì¥–” Ì¦” Ì¦” Ì¦” Ì¦”! Ì¦”# Ì¦!•” Ì§”	 Ì§” Ì§	” Ì§” Ì§‘” Ì¨–” Ì©” Ì©” Ì©” Ì©” Ì©”  Ì©•” Ìª”	 Ìª” Ìª	” Ìª” Ìª‘” Ì«–” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬•” Ì­”	 Ì­” Ì­	” Ì­” Ì­‘” Ì®–” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯•” Ì°”	 Ì°” Ì°	”$ Ì° ”% Ì°!‘” Ì±”” Ì²” Ì²	” Ì²
+” Ì²’”  Ì³ ” Ì³–”  Ìµ ” Ìµ” Ìµ”% Ìµ%”& Ìµ&”, Ìµ;–” Ì¶” Ì¶”	 Ì¶” Ì¶
+” Ì¶” Ì¶–” Ì·” Ì·” Ì·” Ì·” Ì·”  Ì·•” Ì¸”	 Ì¸” Ì¸	” Ì¸” Ì¸‘” Ì¹–” Ìº” Ìº” Ìº” Ìº” Ìº”  Ìº•” Ì»”	 Ì»” Ì»	” Ì»” Ì»‘” Ì¼Ü ” Ì½” Ì½”	 Ì½” Ì½” Ì½”" Ì½ ”& Ì½$”, Ì½*”- Ì½+”= Ì½;”> Ì½<”ÌB Ì½Ì@”ÌC Ì½ÌA”ÌI Ì½ÌG”ÌJ Ì½ÌH”ÌX Ì½ÌV”ÌZ Ì½ÌX•” Ì¾”	 Ì¾” Ì¾	” Ì¾” Ì¾‘” Ì¿–” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ”  ÌÀ•” ÌÁ”	 ÌÁ” ÌÁ	” ÌÁ” ÌÁ‘” ÌÂ–” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ•” ÌÄ”	 ÌÄ” ÌÄ	” ÌÄ”  ÌÄ‘” ÌÅ–” ÌÆ” ÌÆ” ÌÆ” ÌÆ”! ÌÆ”# ÌÆ!•” ÌÇ”	 ÌÇ” ÌÇ	” ÌÇ” ÌÇ‘” ÌÈ–” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ•” ÌÊ”	 ÌÊ” ÌÊ	” ÌÊ” ÌÊ‘” ÌË–” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ•” ÌÍ”	 ÌÍ” ÌÍ	”  ÌÍ”! ÌÍ‘” ÌÎ–” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ•” ÌĞ”	 ÌĞ” ÌĞ	” ÌĞ” ÌĞ‘” ÌÑ”” ÌÒ” ÌÒ	” ÌÒ
+” ÌÒ’”  ÌÓ ” ÌÓÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ¹‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍtÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍt‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍsÔrL”¤type¥start£end¤nameªIdentifier²DEVICE_SELECT_BASEÔrM•¤type¥start£end«expressions¦quasis¯TemplateLiteral"Ís‘ÔrN•¤type¥start£end¥value¤tail¯TemplateElement#ÍrÔrO’£raw¦cookedÚä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
 
 ã€æ ¸å¿ƒæ‹“æ‰‘é“å¾‹ â€” ä¸¥ç¦è¿åã€‘:
 1. ç”µæµè¡¨(AMMETER_DC)å¿…é¡»ä¸²è”åœ¨ç”µæºå›è·¯: VCCâ†’I+â†’I-â†’è´Ÿè½½ã€‚ç»ä¸å¹¶è”ï¼
@@ -329,8 +423,8 @@ export function assembleNetPlanSystem(intent: CircuitIntent): string {
 - å‚è€ƒ conversation_history ç†è§£ä¸Šä¸‹æ–‡ï¼Œåªè°ƒæ•´ç”¨æˆ·è¦æ±‚å˜æ›´çš„éƒ¨åˆ†
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
-è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdown åŒ…è£¹ã€‚
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Úüä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
+è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Úä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
 
 ã€æ ¸å¿ƒæ‹“æ‰‘é“å¾‹ â€” ä¸¥ç¦è¿åã€‘:
 1. ç”µæµè¡¨(AMMETER_DC)å¿…é¡»ä¸²è”åœ¨ç”µæºå›è·¯: VCCâ†’I+â†’I-â†’è´Ÿè½½ã€‚ç»ä¸å¹¶è”ï¼
@@ -354,22 +448,42 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - å‚è€ƒ conversation_history ç†è§£ä¸Šä¸‹æ–‡ï¼Œåªè°ƒæ•´ç”¨æˆ·è¦æ±‚å˜æ›´çš„éƒ¨åˆ†
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
-è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdown åŒ…è£¹ã€‚
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Ã¥constÀI¶ExportNamedDeclarationÍ„ÍJ³VariableDeclarationÍ‹Í‘K²VariableDeclaratorÍ‘Í€LªIdentifierÍ‘Í¡°FRAG_POWER_RAILSM¯TemplateLiteralÍ¤Í€‘N¯TemplateElementÍ¥ÍOÚ
+è¾“å‡ºçº¯ JSONï¼ˆå¯ç”¨ snake_case æˆ– camelCaseï¼‰ï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Ã¥constÀI¶ExportNamedDeclarationÍvÍ¼J³VariableDeclarationÍ}Í¼‘K²VariableDeclaratorÍƒÍ»LªIdentifierÍƒÍ“°FRAG_POWER_RAILSM¯TemplateLiteralÍ–Í»‘N¯TemplateElementÍ—ÍºOÚq
 ã€å¼ºåˆ¶ç”µæºç¬¦å·ã€‘:
-- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
-- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}Ú
+- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
+- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- ç”¨æˆ·æŒ‡å®šç”µå‹æ—¶ï¼šVCC çš„ param_constraint.voltage å†™ç²¾ç¡®å€¼ï¼ˆå¦‚ "3.3V"/"12V"ï¼‰Úq
 ã€å¼ºåˆ¶ç”µæºç¬¦å·ã€‘:
-- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
-- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}Ã¥constÀI¶ExportNamedDeclarationÍƒÍÚJ³VariableDeclarationÍŠÍÚ‘K²VariableDeclaratorÍÍÙLªIdentifierÍÍœ¬FRAG_MCU_MINM¯TemplateLiteralÍŸÍÙ‘N¯TemplateElementÍ ÍØOÙk
+- å¿…é¡»è¾“å‡º VCC: {"func":"ç”µæºæ­£æ","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
+- å¿…é¡»è¾“å‡º GND: {"func":"ç”µæºåœ°","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
+- ç”¨æˆ·æŒ‡å®šç”µå‹æ—¶ï¼šVCC çš„ param_constraint.voltage å†™ç²¾ç¡®å€¼ï¼ˆå¦‚ "3.3V"/"12V"ï¼‰Ã¥constÀI¶ExportNamedDeclarationÍ¾ÍÕJ³VariableDeclarationÍÅÍÕ‘K²VariableDeclaratorÍËÍÔLªIdentifierÍËÍÛ°FRAG_DUAL_SUPPLYM¯TemplateLiteralÍŞÍÔ‘N¯TemplateElementÍßÍÓOÚa
+ã€åŒç”µæº / VEE è´Ÿå‹ â€” å¼ºåˆ¶ã€‘:
+- å¿…é¡»é¢å¤–è¾“å‡º VEE: {"func":"ç”µæºè´Ÿæ","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- è¿æ”¾ VCC/V+â†’VCC ç½‘ï¼ŒVEE/V-â†’VEE ç½‘ï¼ˆç¦æ­¢æŠŠ VEE æ¥åˆ° GNDï¼Œé™¤éç”¨æˆ·æ˜ç¡®å•ç”µæºï¼‰
+- ç”¨æˆ·å†™ Â±15V/Â±12V/Â±5V æ—¶åŒæ­¥æ”¹ VCC ä¸ VEE çš„ voltageÚa
+ã€åŒç”µæº / VEE è´Ÿå‹ â€” å¼ºåˆ¶ã€‘:
+- å¿…é¡»é¢å¤–è¾“å‡º VEE: {"func":"ç”µæºè´Ÿæ","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
+- è¿æ”¾ VCC/V+â†’VCC ç½‘ï¼ŒVEE/V-â†’VEE ç½‘ï¼ˆç¦æ­¢æŠŠ VEE æ¥åˆ° GNDï¼Œé™¤éç”¨æˆ·æ˜ç¡®å•ç”µæºï¼‰
+- ç”¨æˆ·å†™ Â±15V/Â±12V/Â±5V æ—¶åŒæ­¥æ”¹ VCC ä¸ VEE çš„ voltageÃ¥constÀI¶ExportNamedDeclarationÍ×Í;J³VariableDeclarationÍŞÍ;‘K²VariableDeclaratorÍäÍ:LªIdentifierÍäÍó¯FRAG_SIGNAL_GENM¯TemplateLiteralÍöÍ:‘N¯TemplateElementÍ÷Í9OÚ
+ã€ä¿¡å·å‘ç”Ÿå™¨ SIGNAL_GENã€‘ç”¨æˆ·è¦æ±‚æ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²æ¿€åŠ±æ—¶:
+- è¾“å‡º SIGNAL_GEN: param_constraint å« waveform(sine|square|triangle|saw|pulse)ã€amplitudeã€frequencyã€offsetã€dutyCycle
+- frequency æŒ‰ç”¨æˆ·æŒ‡å®šï¼ˆå¦‚ 1kHz/10kHzï¼‰ï¼›dutyCycle å¯¹æ–¹æ³¢/è„‰å†²æœ‰æ•ˆï¼ˆå¦‚ 25%/50%ï¼‰ï¼Œé»˜è®¤ 50%
+- waveform ä»¥ã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€ä¸ºå‡†ï¼›è‹¥åŒæ—¶å‡ºç°ã€Œæ­£å¼¦è¾“å…¥ã€ä¸ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ï¼Œwaveform å¿…é¡»å†™ sine
+- æ‹“æ‰‘: OUTâ†’è¢«æ¿€åŠ±èŠ‚ç‚¹ï¼ŒGNDâ†’GNDï¼›å¯ç”¨ç¤ºæ³¢å™¨è§‚æµ‹Ú
+ã€ä¿¡å·å‘ç”Ÿå™¨ SIGNAL_GENã€‘ç”¨æˆ·è¦æ±‚æ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²æ¿€åŠ±æ—¶:
+- è¾“å‡º SIGNAL_GEN: param_constraint å« waveform(sine|square|triangle|saw|pulse)ã€amplitudeã€frequencyã€offsetã€dutyCycle
+- frequency æŒ‰ç”¨æˆ·æŒ‡å®šï¼ˆå¦‚ 1kHz/10kHzï¼‰ï¼›dutyCycle å¯¹æ–¹æ³¢/è„‰å†²æœ‰æ•ˆï¼ˆå¦‚ 25%/50%ï¼‰ï¼Œé»˜è®¤ 50%
+- waveform ä»¥ã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€ä¸ºå‡†ï¼›è‹¥åŒæ—¶å‡ºç°ã€Œæ­£å¼¦è¾“å…¥ã€ä¸ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ï¼Œwaveform å¿…é¡»å†™ sine
+- æ‹“æ‰‘: OUTâ†’è¢«æ¿€åŠ±èŠ‚ç‚¹ï¼ŒGNDâ†’GNDï¼›å¯ç”¨ç¤ºæ³¢å™¨è§‚æµ‹Ã¥constÀI¶ExportNamedDeclarationÍ=Í“J³VariableDeclarationÍDÍ“‘K²VariableDeclaratorÍJÍ’LªIdentifierÍJÍV¬FRAG_MCU_MINM¯TemplateLiteralÍYÍ’‘N¯TemplateElementÍZÍ‘OÙk
 ã€MCU æœ€å°ç³»ç»Ÿã€‘å¿…é¡»åŒ…å«: æ™¶æŒ¯ã€å»è€¦ç”µå®¹(C_100nF)ã€å¤ä½ä¸Šæ‹‰ç”µé˜»(R_10k)ã€VCCã€GNDÙk
-ã€MCU æœ€å°ç³»ç»Ÿã€‘å¿…é¡»åŒ…å«: æ™¶æŒ¯ã€å»è€¦ç”µå®¹(C_100nF)ã€å¤ä½ä¸Šæ‹‰ç”µé˜»(R_10k)ã€VCCã€GNDÃ¥constÀI¶ExportNamedDeclarationÍÜÍ0J³VariableDeclarationÍãÍ0‘K²VariableDeclaratorÍéÍ/LªIdentifierÍéÍú±FRAG_LED_SERIES_RM¯TemplateLiteralÍıÍ/‘N¯TemplateElementÍşÍ.OÙ[
+ã€MCU æœ€å°ç³»ç»Ÿã€‘å¿…é¡»åŒ…å«: æ™¶æŒ¯ã€å»è€¦ç”µå®¹(C_100nF)ã€å¤ä½ä¸Šæ‹‰ç”µé˜»(R_10k)ã€VCCã€GNDÃ¥constÀI¶ExportNamedDeclarationÍ•ÍèJ³VariableDeclarationÍœÍè‘K²VariableDeclaratorÍ¢ÍçLªIdentifierÍ¢Í³±FRAG_LED_SERIES_RM¯TemplateLiteralÍ¶Íç‘N¯TemplateElementÍ·ÍæOÙ[
 ã€LED é™æµã€‘LED å¿…é¡»é…å¯¹é™æµç”µé˜»ï¼ˆä¼˜å…ˆ R_330ï¼‰ï¼›N é¢— LED é… N é¢—ç”µé˜»Ù[
-ã€LED é™æµã€‘LED å¿…é¡»é…å¯¹é™æµç”µé˜»ï¼ˆä¼˜å…ˆ R_330ï¼‰ï¼›N é¢— LED é… N é¢—ç”µé˜»Ã¥constÀI¶ExportNamedDeclarationÍ2ÍhJ³VariableDeclarationÍ9Íh‘K²VariableDeclaratorÍ?ÍgLªIdentifierÍ?ÍIªFRAG_OPAMPM¯TemplateLiteralÍLÍg‘N¯TemplateElementÍMÍfOÙF
-ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºÙF
-ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºÃ¥constÀI¶ExportNamedDeclarationÍjÍ¢J³VariableDeclarationÍqÍ¢‘K²VariableDeclaratorÍwÍ¡LªIdentifierÍwÍ¨FRAG_I2CM¯TemplateLiteralÍ‚Í¡‘N¯TemplateElementÍƒÍ OÙ3
+ã€LED é™æµã€‘LED å¿…é¡»é…å¯¹é™æµç”µé˜»ï¼ˆä¼˜å…ˆ R_330ï¼‰ï¼›N é¢— LED é… N é¢—ç”µé˜»Ã¥constÀI¶ExportNamedDeclarationÍêÍBJ³VariableDeclarationÍñÍB‘K²VariableDeclaratorÍ÷ÍALªIdentifierÍ÷ÍªFRAG_OPAMPM¯TemplateLiteralÍÍA‘N¯TemplateElementÍÍ@OÙ
+ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºï¼›æ»å›æ¯”è¾ƒå™¨é¡»æ­£åé¦ˆåˆ†å‹ï¼ˆOUTâ†’Rfâ†’IN+ï¼ŒIN+â†’Rgâ†’GNDï¼‰Ù
+ã€è¿æ”¾ã€‘å¿…é¡»åŒ…å«åé¦ˆç”µé˜»ï¼ˆé—­ç¯ï¼‰ï¼Œè¾“å…¥ä¸å¯æµ®ç©ºï¼›æ»å›æ¯”è¾ƒå™¨é¡»æ­£åé¦ˆåˆ†å‹ï¼ˆOUTâ†’Rfâ†’IN+ï¼ŒIN+â†’Rgâ†’GNDï¼‰Ã¥constÀI¶ExportNamedDeclarationÍDÍ{J³VariableDeclarationÍKÍ{‘K²VariableDeclaratorÍQÍzLªIdentifierÍQÍY¨FRAG_I2CM¯TemplateLiteralÍ\Íz‘N¯TemplateElementÍ]ÍyOÙ3
 ã€I2Cã€‘å¿…é¡»é… 4.7kÎ© ä¸Šæ‹‰ç”µé˜»ï¼ˆR_4.7kï¼‰Ù3
-ã€I2Cã€‘å¿…é¡»é… 4.7kÎ© ä¸Šæ‹‰ç”µé˜»ï¼ˆR_4.7kï¼‰Ã¥constÀI¶ExportNamedDeclarationÍ¤ÍˆJ³VariableDeclarationÍ«Íˆ‘K²VariableDeclaratorÍ±Í‡LªIdentifierÍ±ÍÀ¯FRAG_MUTUAL_LEDM¯TemplateLiteralÍÃÍ‡‘N¯TemplateElementÍÄÍ†OÚ0
+ã€I2Cã€‘å¿…é¡»é… 4.7kÎ© ä¸Šæ‹‰ç”µé˜»ï¼ˆR_4.7kï¼‰Ã¥constÀI¶ExportNamedDeclarationÍ}Í	]J³VariableDeclarationÍ„Í	]‘K²VariableDeclaratorÍŠÍ	\LªIdentifierÍŠÍ™¯FRAG_MUTUAL_LEDM¯TemplateLiteralÍœÍ	\‘N¯TemplateElementÍÍ	[OÚ0
 ã€å¼ºåˆ¶ã€‘å¼€/é—­ä¸¤è·¯äº’æ–¥æŒ‡ç¤ºå¿…é¡»è¾“å‡º:
 - RELAY_SPDT + SW_PUSHï¼ˆä»…é©±çº¿åœˆï¼‰+ LED_GREEN + LED_RED + ä¸¤é¢— R_330 + VCC + GND
 - SW_PUSH ä»… 2 è„š(SPST)ï¼Œç»ä¸èƒ½å•ç‹¬å½“ä½œ SPDT
@@ -377,13 +491,30 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 ã€å¼ºåˆ¶ã€‘å¼€/é—­ä¸¤è·¯äº’æ–¥æŒ‡ç¤ºå¿…é¡»è¾“å‡º:
 - RELAY_SPDT + SW_PUSHï¼ˆä»…é©±çº¿åœˆï¼‰+ LED_GREEN + LED_RED + ä¸¤é¢— R_330 + VCC + GND
 - SW_PUSH ä»… 2 è„š(SPST)ï¼Œç»ä¸èƒ½å•ç‹¬å½“ä½œ SPDT
-- circuit_constraint å†™æ˜: æ–­å¼€â†’ç»¿ç¯ç» NCï¼›é—­åˆâ†’çº¢ç¯ç» NOï¼›COMâ†’GNDï¼›çº¿åœˆç”± SW é©±åŠ¨Ã¥constÀI¶ExportNamedDeclarationÍŠÍJ³VariableDeclarationÍ‘Í‘K²VariableDeclaratorÍ—Í
-LªIdentifierÍ—Í¤­FRAG_BLINK_OKM¯TemplateLiteralÍ§Í
-‘N¯TemplateElementÍ¨Í	OÙá
+- circuit_constraint å†™æ˜: æ–­å¼€â†’ç»¿ç¯ç» NCï¼›é—­åˆâ†’çº¢ç¯ç» NOï¼›COMâ†’GNDï¼›çº¿åœˆç”± SW é©±åŠ¨Ã¥constÀI¶ExportNamedDeclarationÍ	_Í	ŞJ³VariableDeclarationÍ	fÍ	Ş‘K²VariableDeclaratorÍ	lÍ	İLªIdentifierÍ	lÍ	y­FRAG_BLINK_OKM¯TemplateLiteralÍ	|Í	İ‘N¯TemplateElementÍ	}Í	ÜOÙá
 ã€é—ªçƒ/å¤šè°/äº¤æ›¿æŒ‡ç¤ºã€‘ç”µæºå¼€å…³(SW_PUSH)ä¸²è”ä¾›ç”µ + æŒ¯è¡/é©±åŠ¨åŒç¯äº¤æ›¿é—ªçƒæ˜¯åˆæ³•æ‹“æ‰‘ã€‚
 ç¦æ­¢å¥—ç”¨ã€Œå¼€/é—­äº’æ–¥åŒè‰² â†’ RELAY_SPDTã€è§„åˆ™ï¼›ä¸è¦ä¸ºé—ªçƒç”µè·¯å¼ºè¡ŒåŠ å…¥ç»§ç”µå™¨ã€‚Ùá
 ã€é—ªçƒ/å¤šè°/äº¤æ›¿æŒ‡ç¤ºã€‘ç”µæºå¼€å…³(SW_PUSH)ä¸²è”ä¾›ç”µ + æŒ¯è¡/é©±åŠ¨åŒç¯äº¤æ›¿é—ªçƒæ˜¯åˆæ³•æ‹“æ‰‘ã€‚
-ç¦æ­¢å¥—ç”¨ã€Œå¼€/é—­äº’æ–¥åŒè‰² â†’ RELAY_SPDTã€è§„åˆ™ï¼›ä¸è¦ä¸ºé—ªçƒç”µè·¯å¼ºè¡ŒåŠ å…¥ç»§ç”µå™¨ã€‚Ã¥constÀI¶ExportNamedDeclarationÍÍ¿J³VariableDeclarationÍÍ¿‘K²VariableDeclaratorÍÍ¾LªIdentifierÍÍ1·FRAG_INSTRUMENTS_SELECTM¯TemplateLiteralÍ4Í¾‘N¯TemplateElementÍ5Í½OÚ
+ç¦æ­¢å¥—ç”¨ã€Œå¼€/é—­äº’æ–¥åŒè‰² â†’ RELAY_SPDTã€è§„åˆ™ï¼›ä¸è¦ä¸ºé—ªçƒç”µè·¯å¼ºè¡ŒåŠ å…¥ç»§ç”µå™¨ã€‚Ã¥constÀI¶ExportNamedDeclarationÍ	àÍ
+çJ³VariableDeclarationÍ	çÍ
+ç‘K²VariableDeclaratorÍ	íÍ
+æLªIdentifierÍ	íÍ	û®FRAG_SERIES_RCM¯TemplateLiteralÍ	şÍ
+æ‘N¯TemplateElementÍ	ÿÍ
+åOÚ›
+ã€ä¸²è” RC å……æ”¾ç”µ â€” å¼ºåˆ¶é…æ–¹ã€‘è§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢æ—¶:
+- å¿…é¡»: VCC + GND + R_* + C_* + SW_PUSHï¼ˆå……ç”µé€šæ–­ï¼‰+ï¼ˆç”¨æˆ·è¦æ±‚æ—¶ï¼‰OSCILLOSCOPE
+- æ‹“æ‰‘: VCCâ†’SWâ†’Râ†’RC_MIDâ†’Câ†’GNDï¼›ç¤ºæ³¢å™¨ CH1â†’RC_MIDï¼ŒGNDâ†’GND
+- ã€ç¡¬ç¦ã€‘ç¦æ­¢è¾“å‡º RELAY_SPDTï¼ˆRC å……æ”¾ç”µä¸æ˜¯äº’æ–¥åŒè‰²æŒ‡ç¤ºï¼‰
+- æœªä½¿ç”¨ç¤ºæ³¢å™¨ CH2/CH3/CH4 ä¿æŒæ‚¬ç©ºï¼Œç¦æ­¢æ¥åˆ° GND æˆ–å¦å»ºå•è„šç½‘Ú›
+ã€ä¸²è” RC å……æ”¾ç”µ â€” å¼ºåˆ¶é…æ–¹ã€‘è§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢æ—¶:
+- å¿…é¡»: VCC + GND + R_* + C_* + SW_PUSHï¼ˆå……ç”µé€šæ–­ï¼‰+ï¼ˆç”¨æˆ·è¦æ±‚æ—¶ï¼‰OSCILLOSCOPE
+- æ‹“æ‰‘: VCCâ†’SWâ†’Râ†’RC_MIDâ†’Câ†’GNDï¼›ç¤ºæ³¢å™¨ CH1â†’RC_MIDï¼ŒGNDâ†’GND
+- ã€ç¡¬ç¦ã€‘ç¦æ­¢è¾“å‡º RELAY_SPDTï¼ˆRC å……æ”¾ç”µä¸æ˜¯äº’æ–¥åŒè‰²æŒ‡ç¤ºï¼‰
+- æœªä½¿ç”¨ç¤ºæ³¢å™¨ CH2/CH3/CH4 ä¿æŒæ‚¬ç©ºï¼Œç¦æ­¢æ¥åˆ° GND æˆ–å¦å»ºå•è„šç½‘Ã¥constÀI¶ExportNamedDeclarationÍ
+éÍ–J³VariableDeclarationÍ
+ğÍ–‘K²VariableDeclaratorÍ
+öÍ•LªIdentifierÍ
+öÍ·FRAG_INSTRUMENTS_SELECTM¯TemplateLiteralÍÍ•‘N¯TemplateElementÍÍ”OÚ
 ã€ä»ªå™¨è¿½åŠ  â€” ä»…ç”¨æˆ·æ˜ç¡®è¦æ±‚æˆ–æµ‹é‡æ„å›¾æ—¶ã€‘:
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ" â†’ AMMETER_DC
 - ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨" â†’ N ä¸ª VOLTMETER_DC
@@ -393,77 +524,53 @@ LªIdentifierÍ—Í¤­FRAG_BLINK_OKM¯TemplateLiteralÍ§Í
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ" â†’ AMMETER_DC
 - ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨" â†’ N ä¸ª VOLTMETER_DC
 - ç”¨æˆ·è¦æ±‚ç¤ºæ³¢å™¨/é€»è¾‘åˆ†æä»ªæ—¶å†è¿½åŠ å¯¹åº”ä»ªå™¨
-- ä¸è¦ä»…å› å«ç”µé˜»/MCU å°±è‡ªåŠ¨å †ä»ªå™¨Ã¥constÀI¶ExportNamedDeclarationÍÁÍ
-J³VariableDeclarationÍÈÍ
-‘K²VariableDeclaratorÍÎÍ
-LªIdentifierÍÎÍÛ­NET_PLAN_BASEM¯TemplateLiteralÍŞÍ
-‘N¯TemplateElementÍßÍ
-OÚä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚æ ¹æ®å·²æ”¾ç½®çš„å™¨ä»¶åˆ—è¡¨ï¼Œæ¨ç†å¹¶è¾“å‡ºå®Œæ•´çš„ç½‘ç»œè¿æ¥è®¡åˆ’ã€‚
+- ä¸è¦ä»…å› å«ç”µé˜»/MCU å°±è‡ªåŠ¨å †ä»ªå™¨Ã¥constÀI¶ExportNamedDeclarationÍ˜ÍJ³VariableDeclarationÍŸÍ‘K²VariableDeclaratorÍ¥ÍLªIdentifierÍ¥Í²­NET_PLAN_BASEM¯TemplateLiteralÍµÍ‘N¯TemplateElementÍ¶ÍOÚ™ä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚æ ¹æ®å·²æ”¾ç½®çš„å™¨ä»¶åˆ—è¡¨ï¼Œæ¨ç†å¹¶è¾“å‡ºå®Œæ•´çš„ç½‘ç»œè¿æ¥è®¡åˆ’ã€‚
 
 ä½ çš„ä»»åŠ¡ï¼š
 1. åˆ†æç”µè·¯ç»“æ„ï¼Œè¯†åˆ«åŠŸèƒ½æ¨¡å—
 2. ä¸ºæ¯ä¸ªç½‘ç»œåˆ†é…åˆç†åç§°å’Œç±»å‹
-3. ã€å…³é”®ã€‘è‡ªä¸»å†³å®š mode (joinWired vs joinByLabel)
-4. ã€å…³é”®ã€‘ä¸º joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
+3. ã€å…³é”®ã€‘å¯å»ºè®® modeï¼›ç³»ç»Ÿæ ‡å·ä¼˜å…ˆï¼ŒæŒ‰è„šé¢„ç®—â‰¤2 å‡çº§å¯¼çº¿å¹¶å¯¹å¹¶æ‹‰è¿‘
+4. ã€å…³é”®ã€‘ä¸ºå¯èƒ½å‡çº§çš„ joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
 5. è¾“å‡ºå®Œæ•´ netPlan JSON
 
 ã€é€šç”¨æ‹“æ‰‘é“å¾‹ã€‘:
 1. ç”µæµè¡¨ I+ / I- ç»ä¸åœ¨åŒä¸€ç½‘ç»œ
 2. ç”µå‹è¡¨åˆ†å¸ƒåœ¨ä¸åŒæµ‹é‡èŠ‚ç‚¹å¯¹
 3. ä»ªå™¨å¼•è„šå¿…é¡»å…¥ç½‘ï¼›GND/COM æœ€ç»ˆåˆ° GND
-4. å¯¼çº¿ä¼˜å…ˆï¼›æ ‡å·ä»…åœ¨æ‹¥æŒ¤/è·¨å¤§å°è£…/ä»ªå™¨è„š/å•è„šæ‰‡å‡º>2 æ—¶ä½¿ç”¨
+4. æ ‡å·ä¼˜å…ˆï¼›ä»…â‰¤3è„šå°ç½‘ä¸”è„šé¢„ç®—â‰¤2å¯å‡çº§çŸ­å¯¼çº¿å¹¶æ‹‰è¿‘(~120mil)ï¼›ä»ªå™¨è„š/COM/å¤§ç”µæºæ‰‡å‡ºä¿æŒæ ‡å·
 5. ã€ç¡¬ã€‘ä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢ PROBE_* é‡å¤åˆ—å‡ºè¢«æµ‹è„š
 6. ã€ç¡¬ã€‘NPN åŸºæ B åªæ¥ä¸€è·¯é©±åŠ¨
 7. å¯¼çº¿æ­£äº¤ï¼›ä¸å¾—è¿›å…¥é€‰ä¸­å‘½ä¸­åŒº(HIT_PAD=14)ï¼›æ— å…³è„šé—´è·â‰¥20mil
 
-ã€è¾“å‡ºã€‘çº¯ JSONï¼Œæ—  markdownã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
-Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚Úä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚æ ¹æ®å·²æ”¾ç½®çš„å™¨ä»¶åˆ—è¡¨ï¼Œæ¨ç†å¹¶è¾“å‡ºå®Œæ•´çš„ç½‘ç»œè¿æ¥è®¡åˆ’ã€‚
+ã€è¾“å‡ºã€‘ä¸¥æ ¼ JSONï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
+Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚Ú™ä½ æ˜¯åŸç†å›¾ç½‘ç»œæ‹“æ‰‘è§„åˆ’ä¸“å®¶ã€‚æ ¹æ®å·²æ”¾ç½®çš„å™¨ä»¶åˆ—è¡¨ï¼Œæ¨ç†å¹¶è¾“å‡ºå®Œæ•´çš„ç½‘ç»œè¿æ¥è®¡åˆ’ã€‚
 
 ä½ çš„ä»»åŠ¡ï¼š
 1. åˆ†æç”µè·¯ç»“æ„ï¼Œè¯†åˆ«åŠŸèƒ½æ¨¡å—
 2. ä¸ºæ¯ä¸ªç½‘ç»œåˆ†é…åˆç†åç§°å’Œç±»å‹
-3. ã€å…³é”®ã€‘è‡ªä¸»å†³å®š mode (joinWired vs joinByLabel)
-4. ã€å…³é”®ã€‘ä¸º joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
+3. ã€å…³é”®ã€‘å¯å»ºè®® modeï¼›ç³»ç»Ÿæ ‡å·ä¼˜å…ˆï¼ŒæŒ‰è„šé¢„ç®—â‰¤2 å‡çº§å¯¼çº¿å¹¶å¯¹å¹¶æ‹‰è¿‘
+4. ã€å…³é”®ã€‘ä¸ºå¯èƒ½å‡çº§çš„ joinWired è§„åˆ’ routeWaypointsï¼šä¸ç©¿é€‰ä¸­åŒºã€ä¸ç¢°æ— å…³è„šã€ä¸ä¸å¼‚ç½‘äº¤å‰
 5. è¾“å‡ºå®Œæ•´ netPlan JSON
 
 ã€é€šç”¨æ‹“æ‰‘é“å¾‹ã€‘:
 1. ç”µæµè¡¨ I+ / I- ç»ä¸åœ¨åŒä¸€ç½‘ç»œ
 2. ç”µå‹è¡¨åˆ†å¸ƒåœ¨ä¸åŒæµ‹é‡èŠ‚ç‚¹å¯¹
 3. ä»ªå™¨å¼•è„šå¿…é¡»å…¥ç½‘ï¼›GND/COM æœ€ç»ˆåˆ° GND
-4. å¯¼çº¿ä¼˜å…ˆï¼›æ ‡å·ä»…åœ¨æ‹¥æŒ¤/è·¨å¤§å°è£…/ä»ªå™¨è„š/å•è„šæ‰‡å‡º>2 æ—¶ä½¿ç”¨
+4. æ ‡å·ä¼˜å…ˆï¼›ä»…â‰¤3è„šå°ç½‘ä¸”è„šé¢„ç®—â‰¤2å¯å‡çº§çŸ­å¯¼çº¿å¹¶æ‹‰è¿‘(~120mil)ï¼›ä»ªå™¨è„š/COM/å¤§ç”µæºæ‰‡å‡ºä¿æŒæ ‡å·
 5. ã€ç¡¬ã€‘ä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢ PROBE_* é‡å¤åˆ—å‡ºè¢«æµ‹è„š
 6. ã€ç¡¬ã€‘NPN åŸºæ B åªæ¥ä¸€è·¯é©±åŠ¨
 7. å¯¼çº¿æ­£äº¤ï¼›ä¸å¾—è¿›å…¥é€‰ä¸­å‘½ä¸­åŒº(HIT_PAD=14)ï¼›æ— å…³è„šé—´è·â‰¥20mil
 
-ã€è¾“å‡ºã€‘çº¯ JSONï¼Œæ—  markdownã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
-Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚Ã¥constÀI¶ExportNamedDeclarationÍ
-Í
-¸J³VariableDeclarationÍ
-$Í
-¸‘K²VariableDeclaratorÍ
-*Í
-·LªIdentifierÍ
-*Í
-6¬FRAG_NET_MCUM¯TemplateLiteralÍ
-9Í
-·‘N¯TemplateElementÍ
-:Í
-¶OÙ¼
+ã€è¾“å‡ºã€‘ä¸¥æ ¼ JSONï¼Œæ—  markdownï¼›ç¬¬ä¸€å­—ç¬¦ { æœ€åå­—ç¬¦ }ã€‚æ¯ä¸ª net è‡³å°‘ 2 ä¸ª connectionsï¼›joinWired é¡»å« routeWaypointsã€‚
+Schema å« nets/labels/wiringHints/routeStrategy/topologyNotesã€‚Ã¥constÀI¶ExportNamedDeclarationÍÍŸJ³VariableDeclarationÍÍŸ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ ¬FRAG_NET_MCUM¯TemplateLiteralÍ#Í‘N¯TemplateElementÍ$ÍOÙ¼
 ã€MCU æœ€å°ç³»ç»Ÿæ¥çº¿ã€‘:
 - VDDâ†’VCC+å°±è¿‘ 100nFâ†’GNDï¼›VSSâ†’GNDï¼›NRSTâ†’10kâ†’VCCï¼›BOOT0â†’GNDï¼›EAâ†’VCC
 - æ™¶æŒ¯ XTALâ†’OSC_IN/OSC_OUT + 22pFÃ—2â†’GNDï¼ˆå¯¼çº¿æœ€çŸ­è·¯å¾„ï¼‰Ù¼
 ã€MCU æœ€å°ç³»ç»Ÿæ¥çº¿ã€‘:
 - VDDâ†’VCC+å°±è¿‘ 100nFâ†’GNDï¼›VSSâ†’GNDï¼›NRSTâ†’10kâ†’VCCï¼›BOOT0â†’GNDï¼›EAâ†’VCC
-- æ™¶æŒ¯ XTALâ†’OSC_IN/OSC_OUT + 22pFÃ—2â†’GNDï¼ˆå¯¼çº¿æœ€çŸ­è·¯å¾„ï¼‰Ã¥constÀI¶ExportNamedDeclarationÍ
-ºÍJ³VariableDeclarationÍ
-ÁÍ‘K²VariableDeclaratorÍ
-ÇÍLªIdentifierÍ
-ÇÍ
-Ó¬FRAG_NET_LEDM¯TemplateLiteralÍ
-ÖÍ‘N¯TemplateElementÍ
-×ÍOÙo
+- æ™¶æŒ¯ XTALâ†’OSC_IN/OSC_OUT + 22pFÃ—2â†’GNDï¼ˆå¯¼çº¿æœ€çŸ­è·¯å¾„ï¼‰Ã¥constÀI¶ExportNamedDeclarationÍ¡ÍóJ³VariableDeclarationÍ¨Íó‘K²VariableDeclaratorÍ®ÍòLªIdentifierÍ®Íº¬FRAG_NET_LEDM¯TemplateLiteralÍ½Íò‘N¯TemplateElementÍ¾ÍñOÙo
 ã€LED é©±åŠ¨ã€‘é˜³æç»é™æµç”µé˜»ï¼›é˜´æâ†’GND æˆ–åˆæ³•é©±åŠ¨èŠ‚ç‚¹ï¼›ç¦æ­¢ K æ¥ VCCï¼›N ç¯ N ç”µé˜»Ùo
-ã€LED é©±åŠ¨ã€‘é˜³æç»é™æµç”µé˜»ï¼›é˜´æâ†’GND æˆ–åˆæ³•é©±åŠ¨èŠ‚ç‚¹ï¼›ç¦æ­¢ K æ¥ VCCï¼›N ç¯ N ç”µé˜»Ã¥constÀI¶ExportNamedDeclarationÍÍ»J³VariableDeclarationÍÍ»‘K²VariableDeclaratorÍÍºLªIdentifierÍÍ+¯FRAG_NET_MUTUALM¯TemplateLiteralÍ.Íº‘N¯TemplateElementÍ/Í¹OÙâ
+ã€LED é©±åŠ¨ã€‘é˜³æç»é™æµç”µé˜»ï¼›é˜´æâ†’GND æˆ–åˆæ³•é©±åŠ¨èŠ‚ç‚¹ï¼›ç¦æ­¢ K æ¥ VCCï¼›N ç¯ N ç”µé˜»Ã¥constÀI¶ExportNamedDeclarationÍõÍJ³VariableDeclarationÍüÍ‘K²VariableDeclaratorÍÍœLªIdentifierÍÍ¯FRAG_NET_MUTUALM¯TemplateLiteralÍÍœ‘N¯TemplateElementÍÍ›OÙâ
 ã€äº’æ–¥åŒè‰²è§¦ç‚¹æ‹“æ‰‘ã€‘å¿…é¡»ç”¨ RELAY_SPDTï¼Œç¦æ­¢ SW_PUSH å½“ SPDT:
 - çº¿åœˆ: VCCâ†’SWâ†’RELAY.1ï¼ŒRELAY.2â†’GND
 - COMâ†’GNDï¼›NCâ†’ç»¿ç¯æ”¯è·¯ï¼›NOâ†’çº¢ç¯æ”¯è·¯
@@ -471,14 +578,22 @@ $Í
 ã€äº’æ–¥åŒè‰²è§¦ç‚¹æ‹“æ‰‘ã€‘å¿…é¡»ç”¨ RELAY_SPDTï¼Œç¦æ­¢ SW_PUSH å½“ SPDT:
 - çº¿åœˆ: VCCâ†’SWâ†’RELAY.1ï¼ŒRELAY.2â†’GND
 - COMâ†’GNDï¼›NCâ†’ç»¿ç¯æ”¯è·¯ï¼›NOâ†’çº¢ç¯æ”¯è·¯
-- forceWire å«çº¿åœˆé©±åŠ¨ç½‘ï¼›COM ç¦æ­¢æ¥ VCCÃ¥constÀI¶ExportNamedDeclarationÍ½Í/J³VariableDeclarationÍÄÍ/‘K²VariableDeclaratorÍÊÍ.LªIdentifierÍÊÍØ®FRAG_NET_BLINKM¯TemplateLiteralÍÛÍ.‘N¯TemplateElementÍÜÍ-OÙ­
+- forceWire å«çº¿åœˆé©±åŠ¨ç½‘ï¼›COM ç¦æ­¢æ¥ VCCÃ¥constÀI¶ExportNamedDeclarationÍŸÍJ³VariableDeclarationÍ¦Í‘K²VariableDeclaratorÍ¬ÍLªIdentifierÍ¬Íº®FRAG_NET_BLINKM¯TemplateLiteralÍ½Í‘N¯TemplateElementÍ¾ÍOÙ­
 ã€é—ªçƒ/æŒ¯è¡ç”µè·¯ã€‘SW_PUSH ä»…ä½œç”µæºé€šæ–­åˆæ³•ï¼›åŒç¯ç”±ä¸‰æç®¡/MCU ç­‰é©±åŠ¨äº¤æ›¿é—ªçƒã€‚
 ä¸è¦è¦æ±‚ RELAY_SPDTï¼Œä¸è¦æŠŠ SW å½“å¸¸å¼€/å¸¸é—­ä¸‰ç«¯ã€‚Ù­
 ã€é—ªçƒ/æŒ¯è¡ç”µè·¯ã€‘SW_PUSH ä»…ä½œç”µæºé€šæ–­åˆæ³•ï¼›åŒç¯ç”±ä¸‰æç®¡/MCU ç­‰é©±åŠ¨äº¤æ›¿é—ªçƒã€‚
-ä¸è¦è¦æ±‚ RELAY_SPDTï¼Œä¸è¦æŠŠ SW å½“å¸¸å¼€/å¸¸é—­ä¸‰ç«¯ã€‚Ã¥constÀI¶ExportNamedDeclarationÍ1ÍkJ³VariableDeclarationÍ8Ík‘K²VariableDeclaratorÍ>ÍjLªIdentifierÍ>ÍL®FRAG_NET_OPAMPM¯TemplateLiteralÍOÍj‘N¯TemplateElementÍPÍiOÙF
-ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›ç”µæºè„šå…¥ç½‘ÙF
-ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›ç”µæºè„šå…¥ç½‘Ã¥constÀI¶ExportNamedDeclarationÍmÍµJ³VariableDeclarationÍtÍµ‘K²VariableDeclaratorÍzÍ´LªIdentifierÍzÍˆ®FRAG_NET_INSTRM¯TemplateLiteralÍ‹Í´‘N¯TemplateElementÍŒÍ³OÙX
+ä¸è¦è¦æ±‚ RELAY_SPDTï¼Œä¸è¦æŠŠ SW å½“å¸¸å¼€/å¸¸é—­ä¸‰ç«¯ã€‚Ã¥constÀI¶ExportNamedDeclarationÍÍÄJ³VariableDeclarationÍÍÄ‘K²VariableDeclaratorÍÍÃLªIdentifierÍÍ0²FRAG_NET_SERIES_RCM¯TemplateLiteralÍ3ÍÃ‘N¯TemplateElementÍ4ÍÂOÚ 
+ã€ä¸²è” RC å……æ”¾ç”µã€‘VCCâ†’(SW)â†’R.1ï¼›R.2 ä¸ C.1 åŒç½‘ RC_MIDï¼›C.2â†’GNDã€‚
+ç¤ºæ³¢å™¨ CH1 å¹¶å…¥ RC_MIDï¼ˆåŒåæ ‡å·ï¼‰ï¼ŒOSC.GNDâ†’GNDï¼›æœªç”¨ CH2/3/4 ä¸å…¥ç½‘ã€‚
+ç¦æ­¢ RELAY çº¿åœˆç›´è¿ VCC/GNDï¼›ç¦æ­¢ç”¨ç»§ç”µå™¨å†’å……å……æ”¾ç”µå¼€å…³ã€‚Ú 
+ã€ä¸²è” RC å……æ”¾ç”µã€‘VCCâ†’(SW)â†’R.1ï¼›R.2 ä¸ C.1 åŒç½‘ RC_MIDï¼›C.2â†’GNDã€‚
+ç¤ºæ³¢å™¨ CH1 å¹¶å…¥ RC_MIDï¼ˆåŒåæ ‡å·ï¼‰ï¼ŒOSC.GNDâ†’GNDï¼›æœªç”¨ CH2/3/4 ä¸å…¥ç½‘ã€‚
+ç¦æ­¢ RELAY çº¿åœˆç›´è¿ VCC/GNDï¼›ç¦æ­¢ç”¨ç»§ç”µå™¨å†’å……å……æ”¾ç”µå¼€å…³ã€‚Ã¥constÀI¶ExportNamedDeclarationÍÆÍJ³VariableDeclarationÍÍÍ‘K²VariableDeclaratorÍÓÍLªIdentifierÍÓÍá®FRAG_NET_OPAMPM¯TemplateLiteralÍäÍ‘N¯TemplateElementÍåÍOÙo
+ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›VCC/V+â†’VCCï¼›åŒç”µæºæ—¶ VEE/V-â†’VEEï¼ˆå‹¿æ¥ GNDï¼‰Ùo
+ã€è¿æ”¾ã€‘å¿…é¡»æœ‰åé¦ˆé—­ç¯ï¼›è¾“å…¥ä¸æµ®ç©ºï¼›VCC/V+â†’VCCï¼›åŒç”µæºæ—¶ VEE/V-â†’VEEï¼ˆå‹¿æ¥ GNDï¼‰Ã¥constÀI¶ExportNamedDeclarationÍÍƒJ³VariableDeclarationÍ%Íƒ‘K²VariableDeclaratorÍ+Í‚LªIdentifierÍ+Í8­FRAG_NET_DUALM¯TemplateLiteralÍ;Í‚‘N¯TemplateElementÍ<ÍOÙ}
+ã€åŒç”µæºç½‘ã€‘ç‹¬ç«‹ç½‘å VCC ä¸ VEEï¼›VCC ç¬¦å·â†’VCC ç½‘ï¼ŒVEE ç¬¦å·â†’VEE ç½‘ï¼ŒGNDâ†’GNDï¼›ç¦æ­¢ VCC/VEE åŒç½‘Ù}
+ã€åŒç”µæºç½‘ã€‘ç‹¬ç«‹ç½‘å VCC ä¸ VEEï¼›VCC ç¬¦å·â†’VCC ç½‘ï¼ŒVEE ç¬¦å·â†’VEE ç½‘ï¼ŒGNDâ†’GNDï¼›ç¦æ­¢ VCC/VEE åŒç½‘Ã¥constÀI¶ExportNamedDeclarationÍ…ÍŞJ³VariableDeclarationÍŒÍŞ‘K²VariableDeclaratorÍ’ÍİLªIdentifierÍ’Í¥³FRAG_NET_SIGNAL_GENM¯TemplateLiteralÍ¨Íİ‘N¯TemplateElementÍ©ÍÜOÙ]
+ã€SIGNAL_GENã€‘OUT å¹¶å…¥æ¿€åŠ±ä¿¡å·ç½‘ï¼›GNDâ†’GNDï¼›å¯ç”¨ OSC CH1 è§‚æµ‹åŒä¸€ä¿¡å·ç½‘Ù]
+ã€SIGNAL_GENã€‘OUT å¹¶å…¥æ¿€åŠ±ä¿¡å·ç½‘ï¼›GNDâ†’GNDï¼›å¯ç”¨ OSC CH1 è§‚æµ‹åŒä¸€ä¿¡å·ç½‘Ã¥constÀI¶ExportNamedDeclarationÍàÍ'J³VariableDeclarationÍçÍ'‘K²VariableDeclaratorÍíÍ&LªIdentifierÍíÍû®FRAG_NET_INSTRM¯TemplateLiteralÍşÍ&‘N¯TemplateElementÍÿÍ%OÙX
 ã€ä»ªå™¨ã€‘æµ‹é‡è„šå¹¶å…¥è¢«æµ‹ä¿¡å·ç½‘åŒåï¼›ç¦æ­¢å¦å»º PROBE ç½‘é‡å¤ DUT è„šÙX
-ã€ä»ªå™¨ã€‘æµ‹é‡è„šå¹¶å…¥è¢«æµ‹ä¿¡å·ç½‘åŒåï¼›ç¦æ­¢å¦å»º PROBE ç½‘é‡å¤ DUT è„šÃ¥constÀI¶ExportNamedDeclarationÍ·ÍdÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ¾ÍdLªIdentifierÍÇÍáºassembleDeviceSelectSystemÂÂÂ‘LªIdentifierÍâÍè¦intentÔrQ”¤type¥start£end¤body®BlockStatementÍêÍdšJ³VariableDeclarationÍñÍ‘K²VariableDeclaratorÍõÍLªIdentifierÍõÍö¡sLªIdentifierÍùÍ²DEVICE_SELECT_BASE£letÔrR–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍVÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÍ,LªIdentifierÍÍ¦intentLªIdentifierÍÍ,¯needsPowerRailsÂÂQ®BlockStatementÍ.ÍV‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÍ9ÍOÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ9ÍN¢+=LªIdentifierÍ9Í:¡sLªIdentifierÍ>ÍN°FRAG_POWER_RAILSÀR«IfStatementÍ\ÍœS°MemberExpressionÍ`ÍvLªIdentifierÍ`Íf¦intentLªIdentifierÍgÍv¯hasMcuMinSystemÂÂQ®BlockStatementÍxÍœ‘T³ExpressionStatementÍƒÍ•U´AssignmentExpressionÍƒÍ”¢+=LªIdentifierÍƒÍ„¡sLªIdentifierÍˆÍ”¬FRAG_MCU_MINÀR«IfStatementÍ¢ÍçS°MemberExpressionÍ¦Í¼LªIdentifierÍ¦Í¬¦intentLªIdentifierÍ­Í¼¯needsLedSeriesRÂÂQ®BlockStatementÍ¾Íç‘T³ExpressionStatementÍÉÍàU´AssignmentExpressionÍÉÍß¢+=LªIdentifierÍÉÍÊ¡sLªIdentifierÍÎÍß±FRAG_LED_SERIES_RÀR«IfStatementÍíÍ.S°MemberExpressionÍñÍ
-LªIdentifierÍñÍ÷¦intentLªIdentifierÍøÍ
-²needsOpAmpFeedbackÂÂQ®BlockStatementÍÍ.‘T³ExpressionStatementÍÍ'U´AssignmentExpressionÍÍ&¢+=LªIdentifierÍÍ¡sLªIdentifierÍÍ&ªFRAG_OPAMPÀR«IfStatementÍ4ÍoS°MemberExpressionÍ8ÍMLªIdentifierÍ8Í>¦intentLªIdentifierÍ?ÍM®needsI2cPullupÂÂQ®BlockStatementÍOÍo‘T³ExpressionStatementÍZÍhU´AssignmentExpressionÍZÍg¢+=LªIdentifierÍZÍ[¡sLªIdentifierÍ_Íg¨FRAG_I2CÀR«IfStatementÍuÍ»S°MemberExpressionÍyÍ’LªIdentifierÍyÍ¦intentLªIdentifierÍ€Í’²mutualLedIndicatorÂÂQ®BlockStatementÍ”Í»‘T³ExpressionStatementÍŸÍ´U´AssignmentExpressionÍŸÍ³¢+=LªIdentifierÍŸÍ ¡sLªIdentifierÍ¤Í³¯FRAG_MUTUAL_LEDÀR«IfStatementÍÁÍS°MemberExpressionÍÅÍÛLªIdentifierÍÅÍË¦intentLªIdentifierÍÌÍÛ¯blinkOscillatorÂÂQ®BlockStatementÍİÍ‘T³ExpressionStatementÍèÍûU´AssignmentExpressionÍèÍú¢+=LªIdentifierÍèÍé¡sLªIdentifierÍíÍú­FRAG_BLINK_OKÀR«IfStatementÍÍRS°MemberExpressionÍÍ!LªIdentifierÍÍ¦intentLªIdentifierÍÍ!®hasInstrumentsÂÂQ®BlockStatementÍ#ÍR‘T³ExpressionStatementÍ.ÍKU´AssignmentExpressionÍ.ÍJ¢+=LªIdentifierÍ.Í/¡sLªIdentifierÍ3ÍJ·FRAG_INSTRUMENTS_SELECTÀÔrV”¤type¥start£end¨argument¯ReturnStatementÍXÍaLªIdentifierÍ_Í`¡sÀI¶ExportNamedDeclarationÍfÍP³FunctionDeclarationÍmÍLªIdentifierÍvÍ‹µassembleNetPlanSystemÂÂÂ‘LªIdentifierÍŒÍ’¦intentQ®BlockStatementÍ”Í˜J³VariableDeclarationÍ›Í±‘K²VariableDeclaratorÍŸÍ°LªIdentifierÍŸÍ ¡sLªIdentifierÍ£Í°­NET_PLAN_BASE£letR«IfStatementÍ·Í÷S°MemberExpressionÍ»ÍÑLªIdentifierÍ»ÍÁ¦intentLªIdentifierÍÂÍÑ¯hasMcuMinSystemÂÂQ®BlockStatementÍÓÍ÷‘T³ExpressionStatementÍŞÍğU´AssignmentExpressionÍŞÍï¢+=LªIdentifierÍŞÍß¡sLªIdentifierÍãÍï¬FRAG_NET_MCUÀR«IfStatementÍıÍ=S°MemberExpressionÍÍLªIdentifierÍÍ¦intentLªIdentifierÍÍ¯needsLedSeriesRÂÂQ®BlockStatementÍÍ=‘T³ExpressionStatementÍ$Í6U´AssignmentExpressionÍ$Í5¢+=LªIdentifierÍ$Í%¡sLªIdentifierÍ)Í5¬FRAG_NET_LEDÀR«IfStatementÍCÍ¤ÔrW–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍGÍ{S°MemberExpressionÍGÍ`LªIdentifierÍGÍM¦intentLªIdentifierÍNÍ`²mutualLedIndicatorÂÂ¢||S°MemberExpressionÍdÍ{LªIdentifierÍdÍj¦intentLªIdentifierÍkÍ{°relayContactTopoÂÂQ®BlockStatementÍ}Í¤‘T³ExpressionStatementÍˆÍU´AssignmentExpressionÍˆÍœ¢+=LªIdentifierÍˆÍ‰¡sLªIdentifierÍÍœ¯FRAG_NET_MUTUALÀR«IfStatementÍªÍìS°MemberExpressionÍ®ÍÄLªIdentifierÍ®Í´¦intentLªIdentifierÍµÍÄ¯blinkOscillatorÂÂQ®BlockStatementÍÆÍì‘T³ExpressionStatementÍÑÍåU´AssignmentExpressionÍÑÍä¢+=LªIdentifierÍÑÍÒ¡sLªIdentifierÍÖÍä®FRAG_NET_BLINKÀR«IfStatementÍòÍ7S°MemberExpressionÍöÍLªIdentifierÍöÍü¦intentLªIdentifierÍıÍ²needsOpAmpFeedbackÂÂQ®BlockStatementÍÍ7‘T³ExpressionStatementÍÍ0U´AssignmentExpressionÍÍ/¢+=LªIdentifierÍÍ¡sLªIdentifierÍ!Í/®FRAG_NET_OPAMPÀR«IfStatementÍ=Í~S°MemberExpressionÍAÍVLªIdentifierÍAÍG¦intentLªIdentifierÍHÍV®hasInstrumentsÂÂQ®BlockStatementÍXÍ~‘T³ExpressionStatementÍcÍwU´AssignmentExpressionÍcÍv¢+=LªIdentifierÍcÍd¡sLªIdentifierÍhÍv®FRAG_NET_INSTRÀV¯ReturnStatementÍ„ÍLªIdentifierÍ‹ÍŒ¡sÀ
+ã€ä»ªå™¨ã€‘æµ‹é‡è„šå¹¶å…¥è¢«æµ‹ä¿¡å·ç½‘åŒåï¼›ç¦æ­¢å¦å»º PROBE ç½‘é‡å¤ DUT è„šÃ¥constÀI¶ExportNamedDeclarationÍ)ÍªÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ0ÍªLªIdentifierÍ9ÍSºassembleDeviceSelectSystemÂÂÂ‘LªIdentifierÍTÍZ¦intentÔrQ”¤type¥start£end¤body®BlockStatementÍ\ÍªJ³VariableDeclarationÍcÍ~‘K²VariableDeclaratorÍgÍ}LªIdentifierÍgÍh¡sLªIdentifierÍkÍ}²DEVICE_SELECT_BASE£letÔrR–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ„ÍÈÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍˆÍLªIdentifierÍˆÍ¦intentLªIdentifierÍÍ¯needsPowerRailsÂÂQ®BlockStatementÍ ÍÈ‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÍ«ÍÁÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ«ÍÀ¢+=LªIdentifierÍ«Í¬¡sLªIdentifierÍ°ÍÀ°FRAG_POWER_RAILSÀR«IfStatementÍÎÍS°MemberExpressionÍÒÍãLªIdentifierÍÒÍØ¦intentLªIdentifierÍÙÍãªdualSupplyÂÂQ®BlockStatementÍåÍ‘T³ExpressionStatementÍğÍU´AssignmentExpressionÍğÍ¢+=LªIdentifierÍğÍñ¡sLªIdentifierÍõÍ°FRAG_DUAL_SUPPLYÀR«IfStatementÍÍUS°MemberExpressionÍÍ,LªIdentifierÍÍ¦intentLªIdentifierÍÍ,®needsSignalGenÂÂQ®BlockStatementÍ.ÍU‘T³ExpressionStatementÍ9ÍNU´AssignmentExpressionÍ9ÍM¢+=LªIdentifierÍ9Í:¡sLªIdentifierÍ>ÍM¯FRAG_SIGNAL_GENÀR«IfStatementÍ[Í›S°MemberExpressionÍ_ÍuLªIdentifierÍ_Íe¦intentLªIdentifierÍfÍu¯hasMcuMinSystemÂÂQ®BlockStatementÍwÍ›‘T³ExpressionStatementÍ‚Í”U´AssignmentExpressionÍ‚Í“¢+=LªIdentifierÍ‚Íƒ¡sLªIdentifierÍ‡Í“¬FRAG_MCU_MINÀR«IfStatementÍ¡ÍæS°MemberExpressionÍ¥Í»LªIdentifierÍ¥Í«¦intentLªIdentifierÍ¬Í»¯needsLedSeriesRÂÂQ®BlockStatementÍ½Íæ‘T³ExpressionStatementÍÈÍßU´AssignmentExpressionÍÈÍŞ¢+=LªIdentifierÍÈÍÉ¡sLªIdentifierÍÍÍŞ±FRAG_LED_SERIES_RÀR«IfStatementÍìÍ-S°MemberExpressionÍğÍ	LªIdentifierÍğÍö¦intentLªIdentifierÍ÷Í	²needsOpAmpFeedbackÂÂQ®BlockStatementÍÍ-‘T³ExpressionStatementÍÍ&U´AssignmentExpressionÍÍ%¢+=LªIdentifierÍÍ¡sLªIdentifierÍÍ%ªFRAG_OPAMPÀR«IfStatementÍ3ÍnS°MemberExpressionÍ7ÍLLªIdentifierÍ7Í=¦intentLªIdentifierÍ>ÍL®needsI2cPullupÂÂQ®BlockStatementÍNÍn‘T³ExpressionStatementÍYÍgU´AssignmentExpressionÍYÍf¢+=LªIdentifierÍYÍZ¡sLªIdentifierÍ^Íf¨FRAG_I2CÀR«IfStatementÍtÍºS°MemberExpressionÍxÍ‘LªIdentifierÍxÍ~¦intentLªIdentifierÍÍ‘²mutualLedIndicatorÂÂQ®BlockStatementÍ“Íº‘T³ExpressionStatementÍÍ³U´AssignmentExpressionÍÍ²¢+=LªIdentifierÍÍŸ¡sLªIdentifierÍ£Í²¯FRAG_MUTUAL_LEDÀR«IfStatementÍÀÍS°MemberExpressionÍÄÍÚLªIdentifierÍÄÍÊ¦intentLªIdentifierÍËÍÚ¯blinkOscillatorÂÂQ®BlockStatementÍÜÍ‘T³ExpressionStatementÍçÍúU´AssignmentExpressionÍçÍù¢+=LªIdentifierÍçÍè¡sLªIdentifierÍìÍù­FRAG_BLINK_OKÀR«IfStatementÍÍHS°MemberExpressionÍÍ LªIdentifierÍÍ¦intentLªIdentifierÍÍ ®seriesRcChargeÂÂQ®BlockStatementÍ"ÍH‘T³ExpressionStatementÍ-ÍAU´AssignmentExpressionÍ-Í@¢+=LªIdentifierÍ-Í.¡sLªIdentifierÍ2Í@®FRAG_SERIES_RCÀR«IfStatementÍNÍ˜S°MemberExpressionÍRÍgLªIdentifierÍRÍX¦intentLªIdentifierÍYÍg®hasInstrumentsÂÂQ®BlockStatementÍiÍ˜‘T³ExpressionStatementÍtÍ‘U´AssignmentExpressionÍtÍ¢+=LªIdentifierÍtÍu¡sLªIdentifierÍyÍ·FRAG_INSTRUMENTS_SELECTÀÔrV”¤type¥start£end¨argument¯ReturnStatementÍÍ§LªIdentifierÍ¥Í¦¡sÀI¶ExportNamedDeclarationÍ¬ÍËP³FunctionDeclarationÍ³ÍËLªIdentifierÍ¼ÍÑµassembleNetPlanSystemÂÂÂ‘LªIdentifierÍÒÍØ¦intentQ®BlockStatementÍÚÍË›J³VariableDeclarationÍáÍ÷‘K²VariableDeclaratorÍåÍöLªIdentifierÍåÍæ¡sLªIdentifierÍéÍö­NET_PLAN_BASE£letR«IfStatementÍıÍ=S°MemberExpressionÍÍLªIdentifierÍÍ¦intentLªIdentifierÍÍ¯hasMcuMinSystemÂÂQ®BlockStatementÍÍ=‘T³ExpressionStatementÍ$Í6U´AssignmentExpressionÍ$Í5¢+=LªIdentifierÍ$Í%¡sLªIdentifierÍ)Í5¬FRAG_NET_MCUÀR«IfStatementÍCÍƒS°MemberExpressionÍGÍ]LªIdentifierÍGÍM¦intentLªIdentifierÍNÍ]¯needsLedSeriesRÂÂQ®BlockStatementÍ_Íƒ‘T³ExpressionStatementÍjÍ|U´AssignmentExpressionÍjÍ{¢+=LªIdentifierÍjÍk¡sLªIdentifierÍoÍ{¬FRAG_NET_LEDÀR«IfStatementÍ‰ÍÔrW–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍÍİW±LogicalExpressionÍÍÂS°MemberExpressionÍÍ§LªIdentifierÍÍ”¦intentLªIdentifierÍ•Í§²mutualLedIndicatorÂÂ¢||S°MemberExpressionÍ«ÍÂLªIdentifierÍ«Í±¦intentLªIdentifierÍ²ÍÂ°relayContactTopoÂÂ¢&&ÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÇÍİ¡!ÃS°MemberExpressionÍÈÍİLªIdentifierÍÈÍÎ¦intentLªIdentifierÍÏÍİ®seriesRcChargeÂÂQ®BlockStatementÍßÍ‘T³ExpressionStatementÍêÍÿU´AssignmentExpressionÍêÍş¢+=LªIdentifierÍêÍë¡sLªIdentifierÍïÍş¯FRAG_NET_MUTUALÀR«IfStatementÍÍNS°MemberExpressionÍÍ&LªIdentifierÍÍ¦intentLªIdentifierÍÍ&¯blinkOscillatorÂÂQ®BlockStatementÍ(ÍN‘T³ExpressionStatementÍ3ÍGU´AssignmentExpressionÍ3ÍF¢+=LªIdentifierÍ3Í4¡sLªIdentifierÍ8ÍF®FRAG_NET_BLINKÀR«IfStatementÍTÍ™S°MemberExpressionÍXÍmLªIdentifierÍXÍ^¦intentLªIdentifierÍ_Ím®seriesRcChargeÂÂQ®BlockStatementÍoÍ™‘T³ExpressionStatementÍzÍ’U´AssignmentExpressionÍzÍ‘¢+=LªIdentifierÍzÍ{¡sLªIdentifierÍÍ‘²FRAG_NET_SERIES_RCÀR«IfStatementÍŸÍäS°MemberExpressionÍ£Í¼LªIdentifierÍ£Í©¦intentLªIdentifierÍªÍ¼²needsOpAmpFeedbackÂÂQ®BlockStatementÍ¾Íä‘T³ExpressionStatementÍÉÍİU´AssignmentExpressionÍÉÍÜ¢+=LªIdentifierÍÉÍÊ¡sLªIdentifierÍÎÍÜ®FRAG_NET_OPAMPÀR«IfStatementÍêÍ&S°MemberExpressionÍîÍÿLªIdentifierÍîÍô¦intentLªIdentifierÍõÍÿªdualSupplyÂÂQ®BlockStatementÍÍ&‘T³ExpressionStatementÍÍU´AssignmentExpressionÍÍ¢+=LªIdentifierÍÍ¡sLªIdentifierÍÍ­FRAG_NET_DUALÀR«IfStatementÍ,ÍrS°MemberExpressionÍ0ÍELªIdentifierÍ0Í6¦intentLªIdentifierÍ7ÍE®needsSignalGenÂÂQ®BlockStatementÍGÍr‘T³ExpressionStatementÍRÍkU´AssignmentExpressionÍRÍj¢+=LªIdentifierÍRÍS¡sLªIdentifierÍWÍj³FRAG_NET_SIGNAL_GENÀR«IfStatementÍxÍ¹S°MemberExpressionÍ|Í‘LªIdentifierÍ|Í‚¦intentLªIdentifierÍƒÍ‘®hasInstrumentsÂÂQ®BlockStatementÍ“Í¹‘T³ExpressionStatementÍÍ²U´AssignmentExpressionÍÍ±¢+=LªIdentifierÍÍŸ¡sLªIdentifierÍ£Í±®FRAG_NET_INSTRÀV¯ReturnStatementÍ¿ÍÈLªIdentifierÍÆÍÇ¡sÀ

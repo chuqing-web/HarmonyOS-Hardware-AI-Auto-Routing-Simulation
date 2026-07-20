@@ -4,14 +4,16 @@
  */
 import { AppService } from '../services/AppService';
 import { AccessibilityConfig, appVersionLabel } from 'common';
-import { ProteusClassicBtn, ProteusSectionTitle, ProteusSwitch } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusSectionTitle, ProteusSwitch, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
-import { ThemeManager } from '../theme/ThemeManager';
+import { ThemeManager, PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
 
 @Component
 export struct PlatformSettingsPanel {
   @Link statusMessage: string;
   @Link themeRefreshKey: number;
+  /** 与 ThemeManager 广播同步，确保设置面板自身色值随主题刷新 */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @State offlineMode: boolean = false;
   @State globalProxy: string = '';
   @State highContrast: boolean = false;
@@ -62,8 +64,8 @@ export struct PlatformSettingsPanel {
   build() {
     Scroll() {
       Column({ space: 0 }) {
-        // 依赖 themeRefreshKey，确保切换主题后本面板自身也刷新色值
-        Text(`设置 · ${this.themeRefreshKey >= 0 ? '' : ''}`)
+        // 依赖 themeRev / themeRefreshKey，确保切换主题后本面板自身也刷新色值
+        Text(`设置 · ${this.themeRev}_${this.themeRefreshKey}`)
           .fontSize(1)
           .height(0)
           .opacity(0)
@@ -162,21 +164,23 @@ export struct PlatformSettingsPanel {
               .fontSize(ProteusFonts.PARAM_KEY)
               .fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
-            TextInput({ text: this.globalProxy, placeholder: '启用系统代理（如 Clash）' })
-              .fontSize(ProteusFonts.PARAM_KEY)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
+            ProteusTextInput({
+              text: this.globalProxy,
+              placeholder: '启用系统代理（如 Clash）',
+              onChange: (v: string) => { this.globalProxy = v; }
+            })
               .layoutWeight(1)
-              .height(ProteusDimens.PARAM_ROW_HEIGHT)
-              .borderRadius(0)
-              .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .onChange((v: string) => { this.globalProxy = v; })
           }
           .width('100%')
           .padding({ left: 8, right: 8, top: 4 })
           .alignItems(VerticalAlign.Center)
 
-          Text('填写任意非空地址后，AI HTTP 请求将启用系统代理(usingProxy)。')
+          Text('填写任意非空内容并点「应用」后，AI 请求会走系统代理(usingProxy)。')
+            .fontSize(ProteusFonts.STATUS)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .padding({ left: 8, right: 8, top: 2 })
+            .width('100%')
+          Text('鸿蒙应用默认不走 Clash/VPN：若测试报 DNS 失败，请开启此项或确保代理软件在线。清空并应用则直连。')
             .fontSize(ProteusFonts.STATUS)
             .fontColor(ProteusColors.TEXT_SECONDARY)
             .padding({ left: 8, right: 8, top: 2 })

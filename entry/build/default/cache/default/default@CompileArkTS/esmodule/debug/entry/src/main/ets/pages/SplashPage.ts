@@ -3,10 +3,13 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
 }
 interface SplashPage_Params {
     pageOpacity?: number;
-    textOpacity?: number;
+    titleOpacity?: number;
+    subOpacity?: number;
+    statusOpacity?: number;
     statusText?: string;
     meshAngle?: number;
     meshScale?: number;
+    meshBreath?: number;
     meshVertices?: Vec3[];
     meshEdges?: MeshEdge[];
     animTimer?: number;
@@ -16,9 +19,12 @@ interface SplashPage_Params {
     canvasW?: number;
     canvasH?: number;
     startTime?: number;
+    entering?: boolean;
+    exiting?: boolean;
     stages?: LoadingStage[];
 }
 import type { BusinessError } from "@ohos:base";
+import { APP_VERSION_NAME } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 interface Vec3 {
     x: number;
     y: number;
@@ -45,19 +51,24 @@ class SplashPage extends ViewPU {
             this.paramsGenerator_ = paramsLambda;
         }
         this.__pageOpacity = new ObservedPropertySimplePU(1, this, "pageOpacity");
-        this.__textOpacity = new ObservedPropertySimplePU(0, this, "textOpacity");
+        this.__titleOpacity = new ObservedPropertySimplePU(0, this, "titleOpacity");
+        this.__subOpacity = new ObservedPropertySimplePU(0, this, "subOpacity");
+        this.__statusOpacity = new ObservedPropertySimplePU(0, this, "statusOpacity");
         this.__statusText = new ObservedPropertySimplePU('Initializing simulation kernel...', this, "statusText");
         this.meshAngle = 0;
-        this.meshScale = 1;
+        this.meshScale = 0.88;
+        this.meshBreath = 0;
         this.meshVertices = [];
         this.meshEdges = [];
         this.animTimer = -1;
         this.exitTimer = -1;
         this.canvasSettings = new RenderingContextSettings(true);
         this.canvasCtx = new CanvasRenderingContext2D(this.canvasSettings);
-        this.canvasW = 1440;
-        this.canvasH = 810;
+        this.canvasW = 0;
+        this.canvasH = 0;
         this.startTime = 0;
+        this.entering = true;
+        this.exiting = false;
         this.stages = [
             { threshold: 0, text: 'Initializing simulation kernel...' },
             { threshold: 25, text: 'Loading component library...' },
@@ -72,8 +83,14 @@ class SplashPage extends ViewPU {
         if (params.pageOpacity !== undefined) {
             this.pageOpacity = params.pageOpacity;
         }
-        if (params.textOpacity !== undefined) {
-            this.textOpacity = params.textOpacity;
+        if (params.titleOpacity !== undefined) {
+            this.titleOpacity = params.titleOpacity;
+        }
+        if (params.subOpacity !== undefined) {
+            this.subOpacity = params.subOpacity;
+        }
+        if (params.statusOpacity !== undefined) {
+            this.statusOpacity = params.statusOpacity;
         }
         if (params.statusText !== undefined) {
             this.statusText = params.statusText;
@@ -83,6 +100,9 @@ class SplashPage extends ViewPU {
         }
         if (params.meshScale !== undefined) {
             this.meshScale = params.meshScale;
+        }
+        if (params.meshBreath !== undefined) {
+            this.meshBreath = params.meshBreath;
         }
         if (params.meshVertices !== undefined) {
             this.meshVertices = params.meshVertices;
@@ -111,6 +131,12 @@ class SplashPage extends ViewPU {
         if (params.startTime !== undefined) {
             this.startTime = params.startTime;
         }
+        if (params.entering !== undefined) {
+            this.entering = params.entering;
+        }
+        if (params.exiting !== undefined) {
+            this.exiting = params.exiting;
+        }
         if (params.stages !== undefined) {
             this.stages = params.stages;
         }
@@ -119,12 +145,16 @@ class SplashPage extends ViewPU {
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__pageOpacity.purgeDependencyOnElmtId(rmElmtId);
-        this.__textOpacity.purgeDependencyOnElmtId(rmElmtId);
+        this.__titleOpacity.purgeDependencyOnElmtId(rmElmtId);
+        this.__subOpacity.purgeDependencyOnElmtId(rmElmtId);
+        this.__statusOpacity.purgeDependencyOnElmtId(rmElmtId);
         this.__statusText.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__pageOpacity.aboutToBeDeleted();
-        this.__textOpacity.aboutToBeDeleted();
+        this.__titleOpacity.aboutToBeDeleted();
+        this.__subOpacity.aboutToBeDeleted();
+        this.__statusOpacity.aboutToBeDeleted();
         this.__statusText.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
@@ -136,12 +166,26 @@ class SplashPage extends ViewPU {
     set pageOpacity(newValue: number) {
         this.__pageOpacity.set(newValue);
     }
-    private __textOpacity: ObservedPropertySimplePU<number>;
-    get textOpacity() {
-        return this.__textOpacity.get();
+    private __titleOpacity: ObservedPropertySimplePU<number>;
+    get titleOpacity() {
+        return this.__titleOpacity.get();
     }
-    set textOpacity(newValue: number) {
-        this.__textOpacity.set(newValue);
+    set titleOpacity(newValue: number) {
+        this.__titleOpacity.set(newValue);
+    }
+    private __subOpacity: ObservedPropertySimplePU<number>;
+    get subOpacity() {
+        return this.__subOpacity.get();
+    }
+    set subOpacity(newValue: number) {
+        this.__subOpacity.set(newValue);
+    }
+    private __statusOpacity: ObservedPropertySimplePU<number>;
+    get statusOpacity() {
+        return this.__statusOpacity.get();
+    }
+    set statusOpacity(newValue: number) {
+        this.__statusOpacity.set(newValue);
     }
     private __statusText: ObservedPropertySimplePU<string>;
     get statusText() {
@@ -152,6 +196,7 @@ class SplashPage extends ViewPU {
     }
     private meshAngle: number;
     private meshScale: number;
+    private meshBreath: number;
     private meshVertices: Vec3[];
     private meshEdges: MeshEdge[];
     private animTimer: number;
@@ -161,17 +206,13 @@ class SplashPage extends ViewPU {
     private canvasW: number;
     private canvasH: number;
     private startTime: number;
+    private entering: boolean;
+    private exiting: boolean;
     private readonly stages: LoadingStage[];
     aboutToAppear(): void {
         this.startTime = Date.now();
         this.generateMesh();
-        // Entrance animation
-        try {
-            this.getUIContext()?.animateTo({ duration: 900, curve: Curve.EaseOut }, () => {
-                this.textOpacity = 1;
-            });
-        }
-        catch (_e) { } // fallback: property animates via @Animatable
+        this.startEntrance();
         this.startAnimation();
     }
     aboutToDisappear(): void {
@@ -182,6 +223,26 @@ class SplashPage extends ViewPU {
         if (this.exitTimer >= 0) {
             clearTimeout(this.exitTimer);
             this.exitTimer = -1;
+        }
+    }
+    /** 字标分阶淡入：标题 → 副标题 → 状态 */
+    private startEntrance(): void {
+        try {
+            const ui = this.getUIContext();
+            ui?.animateTo({ duration: 700, curve: Curve.EaseOut, delay: 120 }, () => {
+                this.titleOpacity = 1;
+            });
+            ui?.animateTo({ duration: 650, curve: Curve.EaseOut, delay: 320 }, () => {
+                this.subOpacity = 1;
+            });
+            ui?.animateTo({ duration: 600, curve: Curve.EaseOut, delay: 480 }, () => {
+                this.statusOpacity = 1;
+            });
+        }
+        catch (_e) {
+            this.titleOpacity = 1;
+            this.subOpacity = 1;
+            this.statusOpacity = 1;
         }
     }
     /**
@@ -195,42 +256,30 @@ class SplashPage extends ViewPU {
         const twist = 1.6;
         const a = 1.0;
         const b = 0.65;
-        // Elliptical cutout in parameter space (z, theta)
         const cutZ = 0.85;
         const cutT = 1.05;
         const vertices: Vec3[] = [];
-        // Build vertex grid [zSegs+1][tSegs]
-        const grid: Vec3[][] = [];
         const keepMask: boolean[][] = [];
         for (let iz = 0; iz <= zSegs; iz++) {
             const z = -height + (2 * height * iz) / zSegs;
             const r = Math.sqrt(1 + z * z);
-            const row: Vec3[] = [];
             const maskRow: boolean[] = [];
             for (let it = 0; it < tSegs; it++) {
                 const theta = (2 * Math.PI * it) / tSegs;
-                // Elliptical cutout: skip if inside the hole
                 const zNorm = z / cutZ;
                 const tNorm = (theta - Math.PI) / cutT;
                 const inHole = zNorm * zNorm + tNorm * tNorm < 1.0;
                 const x = a * r * Math.cos(theta + twist * z);
                 const y = b * r * Math.sin(theta + twist * z);
-                row.push({ x, y, z });
                 maskRow.push(!inHole);
                 if (!inHole) {
                     vertices.push({ x, y, z });
                 }
             }
-            grid.push(row);
             keepMask.push(maskRow);
         }
-        // Build edges from the grid
         const edges: MeshEdge[] = [];
         const edgeSet = new Set<string>();
-        const vertIdx = new Map<string, number>();
-        for (let i = 0; i < vertices.length; i++) {
-            vertIdx.set(`${vertices[i].x.toFixed(4)},${vertices[i].y.toFixed(4)},${vertices[i].z.toFixed(4)}`, i);
-        }
         let vi = 0;
         const idxGrid: number[][] = [];
         for (let iz = 0; iz <= zSegs; iz++) {
@@ -254,7 +303,8 @@ class SplashPage extends ViewPU {
             if (!edgeSet.has(key)) {
                 edgeSet.add(key);
                 edges.push({
-                    a: i1, b: i2,
+                    a: i1,
+                    b: i2,
                     avgZ: (vertices[i1].z + vertices[i2].z) / 2
                 });
             }
@@ -266,11 +316,8 @@ class SplashPage extends ViewPU {
                 const a1 = idxGrid[iz][itNext];
                 const b0 = idxGrid[iz + 1][it];
                 const b1 = idxGrid[iz + 1][itNext];
-                // Horizontal edges
                 addEdge(a0, a1);
-                // Vertical edges
                 addEdge(a0, b0);
-                // Diagonal (upper-left to lower-right of quad)
                 addEdge(a0, b1);
             }
         }
@@ -280,9 +327,21 @@ class SplashPage extends ViewPU {
     private startAnimation(): void {
         const fps = 30;
         this.animTimer = setInterval(() => {
-            this.meshAngle += 0.008;
+            this.meshAngle += 0.012;
+            this.meshBreath += 0.045;
+            // 入场：0.88 → 1.0（ease-out）
+            if (this.entering && !this.exiting) {
+                const enterT = Math.min((Date.now() - this.startTime) / 900, 1);
+                const ease = 1 - Math.pow(1 - enterT, 2.4);
+                this.meshScale = 0.88 + 0.12 * ease;
+                if (enterT >= 1) {
+                    this.entering = false;
+                }
+            }
             this.drawFrame();
-            // Loading progress
+            if (this.exiting) {
+                return;
+            }
             const elapsed = Date.now() - this.startTime;
             const totalDuration = 3200;
             const ratio = Math.min(elapsed / totalDuration, 1);
@@ -306,22 +365,29 @@ class SplashPage extends ViewPU {
             return;
         }
         ctx.clearRect(0, 0, w, h);
-        // Project vertices
-        const proj: ProjPoint[] = [];
+        const breath = 1 + 0.02 * Math.sin(this.meshBreath);
         const cosA = Math.cos(this.meshAngle);
         const sinA = Math.sin(this.meshAngle);
         const camDist = 5.5;
-        // Offset mesh to upper-right quadrant of screen
-        const screenCX = w * 0.68;
-        const screenCY = h * 0.38;
-        const projScale = Math.min(w, h) * 0.28 * this.meshScale;
+        // 动态区：水平居中、上半屏；与下方静态文案分区，避免叠在一起
+        const screenCX = w * 0.50;
+        const screenCY = h * 0.30;
+        const projScale = Math.min(w, h) * 0.18 * this.meshScale * breath;
+        const proj: ProjPoint[] = [];
+        let minDepth = 1e9;
+        let maxDepth = -1e9;
         for (let i = 0; i < this.meshVertices.length; i++) {
             const v = this.meshVertices[i];
-            // Rotate around Y axis
             const rx = v.x * cosA - v.z * sinA;
             const rz = v.x * sinA + v.z * cosA;
             const ry = v.y;
             const depth = rz + camDist;
+            if (depth < minDepth) {
+                minDepth = depth;
+            }
+            if (depth > maxDepth) {
+                maxDepth = depth;
+            }
             const invZ = projScale / depth;
             const pp: ProjPoint = {
                 sx: rx * invZ + screenCX,
@@ -330,23 +396,29 @@ class SplashPage extends ViewPU {
             };
             proj.push(pp);
         }
-        // Draw edges with neon glow — 3 passes
+        const depthSpan = Math.max(0.001, maxDepth - minDepth);
+        // 近→远排序，景深叠绘更干净
         const sortedEdges = this.meshEdges.slice();
-        // Sort back-to-front for glow depth (optional, subtle effect)
+        sortedEdges.sort((ea: MeshEdge, eb: MeshEdge) => {
+            const dA = (proj[ea.a].depth + proj[ea.b].depth) * 0.5;
+            const dB = (proj[eb.a].depth + proj[eb.b].depth) * 0.5;
+            return dB - dA;
+        });
+        // 三层霓虹（克制）：外晕淡、中晕轻、内芯不过曝
         for (let pass = 0; pass < 3; pass++) {
-            let lineW: number;
-            let alpha: number;
+            let baseW: number;
+            let baseA: number;
             if (pass === 0) {
-                lineW = 5;
-                alpha = 0.06;
+                baseW = 3.8;
+                baseA = 0.028;
             }
             else if (pass === 1) {
-                lineW = 2.2;
-                alpha = 0.22;
+                baseW = 1.6;
+                baseA = 0.10;
             }
             else {
-                lineW = 0.9;
-                alpha = 0.75;
+                baseW = 0.75;
+                baseA = 0.52;
             }
             for (let e = 0; e < sortedEdges.length; e++) {
                 const edge = sortedEdges[e];
@@ -355,11 +427,15 @@ class SplashPage extends ViewPU {
                 if (p1 === undefined || p2 === undefined) {
                     continue;
                 }
-                // Color gradient based on z-position: cyan-green (top) → yellow (mid) → light-blue (bottom)
-                const zNorm = (edge.avgZ + 2.2) / 4.4; // normalize to 0..1
-                const color = this.edgeColor(zNorm, alpha);
+                const edgeDepth = (p1.depth + p2.depth) * 0.5;
+                // 近亮远淡（0 近 → 1 远），对比放缓避免全屏发白
+                const far = (edgeDepth - minDepth) / depthSpan;
+                const depthFade = 1.0 - far * 0.55;
+                const widthBoost = 1.0 + (1.0 - far) * 0.18;
+                const zNorm = (edge.avgZ + 2.2) / 4.4;
+                const color = this.edgeColor(zNorm, baseA * depthFade);
                 ctx.strokeStyle = color;
-                ctx.lineWidth = lineW;
+                ctx.lineWidth = baseW * widthBoost;
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(p1.sx, p1.sy);
@@ -369,45 +445,58 @@ class SplashPage extends ViewPU {
         }
     }
     private edgeColor(t: number, alpha: number): string {
-        // t: 0=bottom(blue), 0.5=mid(yellow), 1=top(cyan-green)
-        let r: number, g: number, b: number;
+        let r: number;
+        let g: number;
+        let b: number;
         if (t < 0.5) {
-            // blue → yellow
             const s = t * 2;
             r = Math.round(68 + s * (255 - 68));
             g = Math.round(170 + s * (238 - 170));
             b = Math.round(255 - s * 255);
         }
         else {
-            // yellow → cyan-green
             const s = (t - 0.5) * 2;
             r = Math.round(255 - s * 255);
             g = Math.round(238 - s * (238 - 170));
             b = Math.round(s * 170);
         }
-        return `rgba(${r},${g},${b},${alpha})`;
+        const a = Math.max(0, Math.min(1, alpha));
+        return `rgba(${r},${g},${b},${a.toFixed(3)})`;
     }
     private finish(): void {
-        clearInterval(this.animTimer);
-        this.animTimer = -1;
-        // Fade out text
+        if (this.exiting) {
+            return;
+        }
+        this.exiting = true;
+        if (this.animTimer >= 0) {
+            clearInterval(this.animTimer);
+            this.animTimer = -1;
+        }
         try {
-            this.getUIContext()?.animateTo({ duration: 600, curve: Curve.EaseIn }, () => {
-                this.textOpacity = 0;
+            this.getUIContext()?.animateTo({ duration: 480, curve: Curve.EaseIn }, () => {
+                this.titleOpacity = 0;
+                this.subOpacity = 0;
+                this.statusOpacity = 0;
             });
         }
-        catch (_e) { } // fallback: property animates via @Animatable
-        // Expand mesh + fade page during exit transition
+        catch (_e) {
+            this.titleOpacity = 0;
+            this.subOpacity = 0;
+            this.statusOpacity = 0;
+        }
+        // 克制退场：轻微放大 + 整页淡出（不做炸开）
         const expandStart = Date.now();
-        const expandTimer = setInterval(() => {
+        const baseScale = this.meshScale;
+        this.exitTimer = setInterval(() => {
             const elapsed = Date.now() - expandStart;
-            const progress = Math.min(elapsed / 600, 1);
+            const progress = Math.min(elapsed / 550, 1);
             const easeIn = progress * progress;
-            this.meshScale = 1 + (2.5 * easeIn);
+            this.meshScale = baseScale + 0.12 * easeIn;
             this.pageOpacity = 1 - progress;
             this.drawFrame();
             if (progress >= 1) {
-                clearInterval(expandTimer);
+                clearInterval(this.exitTimer);
+                this.exitTimer = -1;
                 this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
                     .catch((_err: BusinessError) => {
                     // Fallback if UIContext router fails mid-transition
@@ -424,66 +513,59 @@ class SplashPage extends ViewPU {
             Stack.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
         }, Stack);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // Pure black background
             Column.create();
-            // Pure black background
             Column.width('100%');
-            // Pure black background
             Column.height('100%');
-            // Pure black background
             Column.backgroundColor('#000000');
         }, Column);
-        // Pure black background
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // Full-screen 3D wireframe canvas
             Canvas.create(this.canvasCtx);
-            // Full-screen 3D wireframe canvas
             Canvas.width('100%');
-            // Full-screen 3D wireframe canvas
             Canvas.height('100%');
-            // Full-screen 3D wireframe canvas
             Canvas.onReady(() => {
                 this.drawFrame();
             });
-            // Full-screen 3D wireframe canvas
             Canvas.onAreaChange((_old, area) => {
-                this.canvasW = area.width as number;
-                this.canvasH = area.height as number;
+                const nw = Number(area.width);
+                const nh = Number(area.height);
+                if (nw > 1 && nh > 1) {
+                    this.canvasW = nw;
+                    this.canvasH = nh;
+                    this.drawFrame();
+                }
             });
-            // Full-screen 3D wireframe canvas
             Canvas.hitTestBehavior(HitTestMode.None);
         }, Canvas);
-        // Full-screen 3D wireframe canvas
         Canvas.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ===== Left-side typography =====
+            // 静态文案固定下半区；上方留给动态曲面，互不叠压
             Column.create();
-            // ===== Left-side typography =====
+            // 静态文案固定下半区；上方留给动态曲面，互不叠压
             Column.width('100%');
-            // ===== Left-side typography =====
+            // 静态文案固定下半区；上方留给动态曲面，互不叠压
             Column.height('100%');
-            // ===== Left-side typography =====
-            Column.alignItems(HorizontalAlign.Start);
+            // 静态文案固定下半区；上方留给动态曲面，互不叠压
+            Column.alignItems(HorizontalAlign.Center);
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Blank.create();
-            Blank.layoutWeight(1);
+            Blank.layoutWeight(1.75);
         }, Blank);
         Blank.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 0 });
-            Column.alignItems(HorizontalAlign.Start);
-            Column.padding({ left: 72 });
+            Column.alignItems(HorizontalAlign.Center);
+            Column.width('100%');
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('ElecDraw');
-            Text.fontSize(38);
+            Text.fontSize(34);
             Text.fontWeight(FontWeight.Bold);
             Text.fontColor('#FFFFFF');
             Text.fontFamily('sans-serif');
-            Text.letterSpacing(4);
-            Text.opacity(this.textOpacity);
+            Text.letterSpacing(5);
+            Text.opacity(this.titleOpacity);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -493,93 +575,47 @@ class SplashPage extends ViewPU {
         Blank.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('Hardware Schematic Simulator');
-            Text.fontSize(14);
-            Text.fontColor('rgba(255,255,255,0.55)');
+            Text.fontSize(13);
+            Text.fontColor('rgba(255,255,255,0.42)');
             Text.fontFamily('sans-serif');
-            Text.letterSpacing(2);
-            Text.opacity(this.textOpacity * 0.85);
+            Text.letterSpacing(2.5);
+            Text.opacity(this.subOpacity);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Blank.create();
-            Blank.height(36);
+            Blank.height(24);
         }, Blank);
         Blank.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.statusText);
             Text.fontSize(12);
-            Text.fontColor('rgba(255,255,255,0.35)');
+            Text.fontColor('rgba(255,255,255,0.28)');
             Text.fontFamily('sans-serif');
-            Text.opacity(this.textOpacity * 0.7);
+            Text.opacity(this.statusOpacity);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.height(14);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`v${APP_VERSION_NAME}`);
+            Text.fontSize(10);
+            Text.fontColor('rgba(255,255,255,0.20)');
+            Text.fontFamily('sans-serif');
+            Text.letterSpacing(1);
+            Text.opacity(this.statusOpacity * 0.9);
         }, Text);
         Text.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Blank.create();
-            Blank.layoutWeight(1.2);
+            Blank.layoutWeight(0.55);
         }, Blank);
         Blank.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // ===== Bottom-left logo + text =====
-            Row.create({ space: 10 });
-            // ===== Bottom-left logo + text =====
-            Row.padding({ left: 72, bottom: 40 });
-            // ===== Bottom-left logo + text =====
-            Row.opacity(this.textOpacity * 0.8);
-        }, Row);
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // Small gradient square logo — triple-stripe colored blocks
-            Row.create({ space: 1.5 });
-        }, Row);
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
-            Column.width(6);
-            Column.height(20);
-            Column.backgroundColor('#44DDBB');
-            Column.borderRadius(0);
-        }, Column);
-        Column.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
-            Column.width(6);
-            Column.height(20);
-            Column.backgroundColor('#FFEE44');
-            Column.borderRadius(0);
-        }, Column);
-        Column.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
-            Column.width(6);
-            Column.height(20);
-            Column.backgroundColor('#44AAFF');
-            Column.borderRadius(0);
-        }, Column);
-        Column.pop();
-        // Small gradient square logo — triple-stripe colored blocks
-        Row.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create({ space: 1 });
-            Column.alignItems(HorizontalAlign.Start);
-        }, Column);
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('ElecDraw');
-            Text.fontSize(11);
-            Text.fontColor('rgba(255,255,255,0.65)');
-            Text.fontFamily('sans-serif');
-            Text.fontWeight(FontWeight.Medium);
-        }, Text);
-        Text.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('v1.0.0');
-            Text.fontSize(9);
-            Text.fontColor('rgba(255,255,255,0.30)');
-            Text.fontFamily('sans-serif');
-        }, Text);
-        Text.pop();
-        Column.pop();
-        // ===== Bottom-left logo + text =====
-        Row.pop();
-        // ===== Left-side typography =====
+        // 静态文案固定下半区；上方留给动态曲面，互不叠压
         Column.pop();
         Stack.pop();
     }

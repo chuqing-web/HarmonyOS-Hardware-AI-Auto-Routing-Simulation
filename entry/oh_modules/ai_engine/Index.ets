@@ -6,7 +6,8 @@ export {
 } from './src/main/ets/algorithms/LabTemplateRegistry';
 export { TemplateSchematicKit } from './src/main/ets/algorithms/TemplateSchematicKit';
 export { SemanticNetBuilder, SemanticNetBuildResult } from './src/main/ets/algorithms/SemanticNetBuilder';
-export { NetPlanExecutor, NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints } from './src/main/ets/algorithms/NetPlanExecutor';
+export { NetPlanExecutor, NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints, WiredCompactPair } from './src/main/ets/algorithms/NetPlanExecutor';
+export { AiTopologyFixKit, TopologyFixResult } from './src/main/ets/algorithms/AiTopologyFixKit';
 export { LlmJsonNormalizer } from './src/main/ets/algorithms/LlmJsonNormalizer';
 export { PinWorldResolver } from './src/main/ets/algorithms/PinWorldResolver';
 export { AiResultCache } from './src/main/ets/AiResultCache';

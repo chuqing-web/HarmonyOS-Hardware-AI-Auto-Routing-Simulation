@@ -30,21 +30,22 @@ export class SvgSymbolCache {
         const lineRe = /<line[^>]*x1="([\d.]+)"[^>]*y1="([\d.]+)"[^>]*x2="([\d.]+)"[^>]*y2="([\d.]+)"/gi;
         let m: RegExpExecArray | null;
         while ((m = lineRe.exec(svg)) !== null) {
+            // 不写死 #000：深色主题下由渲染器映射到 COMPONENT_STROKE
             cmds.push({
                 type: 'line', x1: parseFloat(m[1]), y1: parseFloat(m[2]),
-                x2: parseFloat(m[3]), y2: parseFloat(m[4]), color: '#000', strokeWidth: 1
+                x2: parseFloat(m[3]), y2: parseFloat(m[4]), strokeWidth: 1
             });
         }
         const rectRe = /<rect[^>]*x="([\d.-]+)"[^>]*y="([\d.-]+)"[^>]*width="([\d.]+)"[^>]*height="([\d.]+)"/gi;
         while ((m = rectRe.exec(svg)) !== null) {
             cmds.push({
                 type: 'rect', x: parseFloat(m[1]), y: parseFloat(m[2]),
-                w: parseFloat(m[3]), h: parseFloat(m[4]), color: '#000', strokeWidth: 1
+                w: parseFloat(m[3]), h: parseFloat(m[4]), strokeWidth: 1
             });
         }
         const circleRe = /<circle[^>]*cx="([\d.]+)"[^>]*cy="([\d.]+)"[^>]*r="([\d.]+)"/gi;
         while ((m = circleRe.exec(svg)) !== null) {
-            cmds.push({ type: 'circle', x: parseFloat(m[1]), y: parseFloat(m[2]), r: parseFloat(m[3]), color: '#000' });
+            cmds.push({ type: 'circle', x: parseFloat(m[1]), y: parseFloat(m[2]), r: parseFloat(m[3]) });
         }
         return cmds;
     }

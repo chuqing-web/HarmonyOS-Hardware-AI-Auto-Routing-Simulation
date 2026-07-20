@@ -292,7 +292,7 @@ ercClean / 生图完成 当且仅当:
 ```
 1. 标号名称全局唯一 (同 net 同名, 不同 net 不同名)
 2. ★ 禁止电源名用于信号网 (v3.0 自动净化: addNet 检测信号网用保留名→追加_SIG后缀)
-3. 保留名: VCC, VDD, GND, VSS, 3V3, 3.3V, 5V, 12V, -12V, AVCC, AGND, DGND
+3. 保留名: VCC, VDD, GND, VSS, VEE, 3V3, 3.3V, 5V, 12V, -12V, AVCC, AGND, DGND
 4. 纯标号网络必须至少有 1 段物理 stub 线
 5. 标号位置不覆盖器件体或引脚
 6. stubLabel 自动避让已有导线和引脚
@@ -361,7 +361,7 @@ GPIO 普通网络:  priority = 2
 |------|------|------|
 | LED 缺限流电阻 | LED 100mil 内无串联 R | 自动加 R_330 |
 | VCC-GND 短路 | 同 net 含 VCC+GND 引脚 | 报告, 无法自动修复 |
-| 运放开环 | OUT 无反馈到 IN- | 报告 |
+| 运放开环 | OUT 无反馈到 IN- 或 IN+（含经 R/C） | 报告 |
 | 导线穿器件 | 导线点在器件包围盒内 | A* 障碍物预防 |
 | 不同 net 导线重合 | 两线共享坐标 | A* crossPenalty 预防 |
 | 网络标号重名 | 不同 net 同名标号 | 重命名 |

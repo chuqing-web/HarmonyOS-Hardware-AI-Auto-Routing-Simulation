@@ -6,9 +6,9 @@ import {
   OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode,
   MathChannelOp, MultimeterMode, SignalWaveform, LogicDecodeProtocol,
   VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect, traceInstrUi,
-  detectInstrumentKind, instrumentSubTabForKind
+  detectInstrumentKind, instrumentSubTabForKind, UnitParser
 } from 'common';
-import { ProteusClassicBtn, ProteusChipGrid } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
@@ -87,6 +87,8 @@ struct LivePmRow {
 export struct InstrumentPanel {
   @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
   @Prop @Watch('onSimWaveTick') simWaveTick: number = 0;
+  /** 与主界面仿真运行态同步：停止后清定时器，避免 IDLE 仍刷 INSTR_UI */
+  @Prop @Watch('onSimRunningChange') simRunning: boolean = false;
   @Link statusMessage: string;
   @State subTab: number = 0;
   @State selectionRefDes: string = '';
@@ -99,6 +101,9 @@ export struct InstrumentPanel {
   @State mmReading: string = '----';
   @State mmMode: string = 'DCV';
   @State freq: string = '1kHz';
+  @State sigAmp: string = '1V';
+  @State sigOffset: string = '0V';
+  @State sigDuty: string = '50';
   @State uartHex: string = '55 AA';
   @State uartLog: string = '';
   @State waveTimeData: number[] = [];
@@ -126,8 +131,10 @@ export struct InstrumentPanel {
   @State fcGateTime: number = 1.0;
   @State oscAutoFit: boolean = true;
   @State oscStatsText: string = '';
-  @State oscTriggerHold: boolean = true;
+  @State oscTriggerHold: boolean = false;
   @State oscLiveVolts: string = '--';
+  /** 递增以强制 Canvas 重绘 */
+  @State oscFrameId: number = 0;
   /** Force ArkUI re-render on each poll; also shown in INSTR_UI traces */
   @State uiPulse: number = 0;
 
@@ -173,8 +180,34 @@ export struct InstrumentPanel {
     this.lastRefreshWallMs = Date.now();
     this.refreshTickCount = 0;
     this.autoRefreshReadings('appear');
+    // 仅仿真运行时轮询；面板打开时若已在跑则启动定时器
     this.stopAutoRefreshTimer('appear_reset');
+    if (this.simRunning) {
+      this.startAutoRefreshTimer('appear_running');
+    }
+  }
+
+  onSimRunningChange(): void {
+    if (this.simRunning) {
+      this.startAutoRefreshTimer('sim_start');
+    } else {
+      // 停仿后做最后一次读数（冻结值），再清定时器，避免 TIMER_FIRE 刷屏
+      this.autoRefreshReadings('sim_stop');
+      this.stopAutoRefreshTimer('sim_stop');
+    }
+  }
+
+  private startAutoRefreshTimer(reason: string): void {
+    if (this.autoRefreshTimer >= 0) {
+      return;
+    }
+    this.lastRefreshWallMs = Date.now();
+    this.refreshTickCount = 0;
     this.autoRefreshTimer = setInterval(() => {
+      if (!this.simRunning) {
+        this.stopAutoRefreshTimer('timer_guard_idle');
+        return;
+      }
       const now = Date.now();
       const dt = now - this.lastRefreshWallMs;
       this.lastRefreshWallMs = now;
@@ -187,7 +220,7 @@ export struct InstrumentPanel {
       this.autoRefreshReadings('timer');
     }, this.refreshIntervalMs);
     traceInstrUi('TIMER_START',
-      `interval=${this.refreshIntervalMs}ms timerId=${this.autoRefreshTimer} ` +
+      `reason=${reason} interval=${this.refreshIntervalMs}ms timerId=${this.autoRefreshTimer} ` +
       `tab=${this.subTab} kind=${this.kindForSubTab(this.subTab)} ` +
       `sel=${this.selectedComponentId} ref=${this.selectionRefDes} lib=${this.selectionLibraryId}`);
   }
@@ -414,9 +447,10 @@ export struct InstrumentPanel {
         if (osc.success && osc.data) {
           this.waveTimeData = osc.data.timeAxis.slice();
           this.waveVoltageData = osc.data.voltageAxis.slice();
+          this.oscFrameId = this.oscFrameId + 1;
           this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
-          if (osc.data.voltageAxis.length > 0) {
-            const last = osc.data.voltageAxis[osc.data.voltageAxis.length - 1];
+          const last = InstrumentPanel.lastFinite(osc.data.voltageAxis);
+          if (last !== null) {
             this.oscLiveVolts = `${last.toFixed(3)} V`;
           }
           dataPath = `wave pts=${osc.data.voltageAxis.length}`;
@@ -424,8 +458,10 @@ export struct InstrumentPanel {
           dataPath = 'wave_empty';
         }
         const osc2 = this.appService.instruments.getOscilloscopeWave(1);
-        if (osc2.success && osc2.data) {
+        if (osc2.success && osc2.data && InstrumentPanel.isLiveScopeChannel(osc2.data.netName)) {
           this.waveCh2Data = osc2.data.voltageAxis.slice();
+        } else {
+          this.waveCh2Data = [];
         }
       } else if (instrKind === 'power') {
         const pmId = selectionMatches ? this.selectedComponentId :
@@ -535,7 +571,8 @@ export struct InstrumentPanel {
     if (kind === 'freq') return `FC ${this.fcReading}`;
     if (kind === 'osc') {
       const pts = this.waveVoltageData.length;
-      const last = pts > 0 ? this.waveVoltageData[pts - 1].toFixed(4) : '0';
+      const lastV = InstrumentPanel.lastFinite(this.waveVoltageData);
+      const last = lastV !== null ? lastV.toFixed(4) : '--';
       return `OSC pts=${pts} last=${last}V ch2=${this.waveCh2Data.length}`;
     }
     if (kind === 'logic') return `LA ch=${this.logicChannels} samples=${this.logicSampleCount}`;
@@ -761,9 +798,11 @@ export struct InstrumentPanel {
           OscilloscopeWaveCanvas({
             timeData: this.waveTimeData,
             voltageData: this.waveVoltageData,
+            frameId: this.oscFrameId,
             channelLabel: 'CH1',
             waveColor: '#00e676',
             vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
+            tPerDiv: this.timebaseSecPerDiv(),
             triggerLevel: this.triggerLevel,
             autoFit: this.oscAutoFit,
             canvasHeight: 168,
@@ -773,9 +812,11 @@ export struct InstrumentPanel {
             OscilloscopeWaveCanvas({
               timeData: this.waveTimeData,
               voltageData: this.waveCh2Data,
+              frameId: this.oscFrameId,
               channelLabel: 'CH2',
               waveColor: '#40c4ff',
               vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
+              tPerDiv: this.timebaseSecPerDiv(),
               triggerLevel: this.triggerLevel,
               autoFit: this.oscAutoFit,
               canvasHeight: 120,
@@ -822,6 +863,11 @@ export struct InstrumentPanel {
     .width('100%').height('100%')
   }
 
+  private timebaseSecPerDiv(): number {
+    const secs: number[] = [10e-9, 1e-6, 100e-6, 1e-3, 10e-3, 1, 10];
+    return this.timebaseIdx < secs.length ? secs[this.timebaseIdx] : 1e-3;
+  }
+
   private captureWave(): void {
     for (let ch = 0; ch < 4; ch++) {
       const snap = this.appService.instruments.getOscilloscopeWave(ch);
@@ -829,16 +875,40 @@ export struct InstrumentPanel {
         if (ch === 0) {
           this.waveTimeData = snap.data.timeAxis.slice();
           this.waveVoltageData = snap.data.voltageAxis.slice();
+          this.oscFrameId = this.oscFrameId + 1;
           this.updateOscStatsText(snap.data.voltageAxis, snap.data.timeAxis);
-          if (snap.data.voltageAxis.length > 0) {
-            const last = snap.data.voltageAxis[snap.data.voltageAxis.length - 1];
+          const last = InstrumentPanel.lastFinite(snap.data.voltageAxis);
+          if (last !== null) {
             this.oscLiveVolts = `${last.toFixed(3)} V`;
           }
         } else if (ch === 1) {
-          this.waveCh2Data = snap.data.voltageAxis.slice();
+          if (InstrumentPanel.isLiveScopeChannel(snap.data.netName)) {
+            this.waveCh2Data = snap.data.voltageAxis.slice();
+          } else {
+            this.waveCh2Data = [];
+          }
         }
       }
     }
+  }
+
+  /** CH2+ only when bound to a real net (not placeholder OSC_CHx). */
+  private static isLiveScopeChannel(netName: string): boolean {
+    if (netName.length === 0) {
+      return false;
+    }
+    const upper = netName.toUpperCase();
+    return !upper.startsWith('OSC_CH');
+  }
+
+  private static lastFinite(values: number[]): number | null {
+    for (let i = values.length - 1; i >= 0; i--) {
+      const v = values[i];
+      if (Number.isFinite(v)) {
+        return v;
+      }
+    }
+    return null;
   }
 
   private updateOscStatsText(volts: number[], times: number[]): void {
@@ -846,11 +916,15 @@ export struct InstrumentPanel {
       this.oscStatsText = '';
       return;
     }
-    let minV = volts[0];
-    let maxV = volts[0];
+    let minV = Number.POSITIVE_INFINITY;
+    let maxV = Number.NEGATIVE_INFINITY;
     let sum = 0;
+    let count = 0;
     for (let i = 0; i < volts.length; i++) {
       const v = volts[i];
+      if (!Number.isFinite(v)) {
+        continue;
+      }
       if (v < minV) {
         minV = v;
       }
@@ -858,8 +932,13 @@ export struct InstrumentPanel {
         maxV = v;
       }
       sum += v;
+      count++;
     }
-    const avg = sum / volts.length;
+    if (count < 2) {
+      this.oscStatsText = '';
+      return;
+    }
+    const avg = sum / count;
     const m = this.appService.instruments.measureCursors(0, volts.length - 1);
     let freqText = '--';
     if (m.success && m.data !== undefined && m.data.frequency > 0) {
@@ -908,16 +987,14 @@ export struct InstrumentPanel {
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .width(32)
-          TextInput({ text: `${this.threshold}` })
-            .fontSize(11).fontColor(ProteusColors.TEXT_PRIMARY)
-            .layoutWeight(1)
-            .height(ProteusDimens.PARAM_ROW_HEIGHT)
-            .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .onChange((v: string) => {
+          ProteusTextInput({
+            text: `${this.threshold}`,
+            onChange: (v: string) => {
               this.threshold = parseInt(v) || 1500;
               this.appService.instruments.setThreshold(this.threshold);
-            })
+            }
+          })
+            .layoutWeight(1)
           Text('mV')
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_SECONDARY)
@@ -1043,44 +1120,104 @@ export struct InstrumentPanel {
     Column({ space: 8 }) {
       Row({ space: 6 }) {
         ProteusClassicBtn({ label: '正弦', widthVal: '48%',
-          onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.SINE); } })
+          onAction: () => {
+            this.statusMessage = this.appService.applySignalGenWaveform(
+              SignalWaveform.SINE, this.selectedComponentId);
+          } })
         ProteusClassicBtn({ label: '方波', widthVal: '48%',
-          onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.SQUARE); } })
+          onAction: () => {
+            this.statusMessage = this.appService.applySignalGenWaveform(
+              SignalWaveform.SQUARE, this.selectedComponentId);
+          } })
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
       Row({ space: 6 }) {
-        ProteusClassicBtn({ label: '三角', widthVal: '48%',
-          onAction: () => { this.appService.instruments.setWaveform(SignalWaveform.TRIANGLE); } })
+        ProteusClassicBtn({ label: '三角', widthVal: '32%',
+          onAction: () => {
+            this.statusMessage = this.appService.applySignalGenWaveform(
+              SignalWaveform.TRIANGLE, this.selectedComponentId);
+          } })
+        ProteusClassicBtn({ label: '锯齿', widthVal: '32%',
+          onAction: () => {
+            this.statusMessage = this.appService.applySignalGenWaveform(
+              SignalWaveform.SAW, this.selectedComponentId);
+          } })
+        ProteusClassicBtn({ label: '脉冲', widthVal: '32%',
+          onAction: () => {
+            this.statusMessage = this.appService.applySignalGenWaveform(
+              SignalWaveform.PULSE, this.selectedComponentId);
+          } })
+      }
+      .width('100%').padding({ left: 8, right: 8 })
+
+      Row({ space: 6 }) {
         ProteusClassicBtn({ label: 'Burst', widthVal: '48%',
           onAction: () => { this.appService.instruments.setBurstMode(true, 5); } })
       }
       .width('100%').padding({ left: 8, right: 8 })
 
-      Column({ space: 8 }) {
-        Text('频率')
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_LABEL)
-        TextInput({ text: this.freq })
-          .fontSize(16).fontColor(ProteusColors.TEXT_PRIMARY).fontFamily('monospace')
-          .width('70%').height(32).borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .textAlign(TextAlign.Center)
-          .onChange((v: string) => { this.freq = v; })
-        Text('振幅: 3.3V    偏置: 1.65V    占空比: 50%')
+      Column({ space: 6 }) {
+        Row({ space: 6 }) {
+          Text('频率').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
+          ProteusTextInput({
+            text: this.freq, mono: true,
+            onChange: (v: string) => { this.freq = v; }
+          }).layoutWeight(1).height(30)
+        }.width('92%').alignItems(VerticalAlign.Center)
+
+        Row({ space: 6 }) {
+          Text('振幅').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
+          ProteusTextInput({
+            text: this.sigAmp, mono: true,
+            onChange: (v: string) => { this.sigAmp = v; }
+          }).layoutWeight(1).height(30)
+        }.width('92%').alignItems(VerticalAlign.Center)
+
+        Row({ space: 6 }) {
+          Text('偏置').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
+          ProteusTextInput({
+            text: this.sigOffset, mono: true,
+            onChange: (v: string) => { this.sigOffset = v; }
+          }).layoutWeight(1).height(30)
+        }.width('92%').alignItems(VerticalAlign.Center)
+
+        Row({ space: 6 }) {
+          Text('占空比%').fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
+          ProteusTextInput({
+            text: this.sigDuty, mono: true,
+            onChange: (v: string) => { this.sigDuty = v; }
+          }).layoutWeight(1).height(30)
+        }.width('92%').alignItems(VerticalAlign.Center)
+
+        Text('占空比对方波有效；频率支持 1kHz / 500Hz 等写法')
           .fontSize(ProteusFonts.STATUS)
           .fontColor(ProteusColors.TEXT_SECONDARY)
+          .width('92%')
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
       ProteusClassicBtn({
         label: '应用参数', widthVal: '86%',
         onAction: () => {
-          this.appService.instruments.setParams({
-            frequency: 1000, amplitude: 3.3, offset: 1.65, dutyCycle: 50, phase: 0
-          });
-          this.statusMessage = '信号源参数已更新';
+          const fp = UnitParser.parseFrequency(this.freq);
+          const amp = parseFloat(this.sigAmp.replace(/[Vv]/g, ''));
+          const off = parseFloat(this.sigOffset.replace(/[Vv]/g, ''));
+          const duty = parseFloat(this.sigDuty.replace(/%/g, ''));
+          if (!fp.valid || fp.numeric <= 0) {
+            this.statusMessage = `频率无效: ${this.freq}`;
+            return;
+          }
+          if (!Number.isFinite(amp) || !Number.isFinite(off) || !Number.isFinite(duty)) {
+            this.statusMessage = '振幅/偏置/占空比无效';
+            return;
+          }
+          if (duty <= 0 || duty > 100) {
+            this.statusMessage = '占空比须在 1–100%';
+            return;
+          }
+          this.statusMessage = this.appService.applySignalGenParams(
+            fp.numeric, amp, off, duty, this.selectedComponentId);
         }
       })
       .margin({ left: 8, right: 8, bottom: 8 })
@@ -1093,12 +1230,12 @@ export struct InstrumentPanel {
   UartPanel() {
     Column({ space: 6 }) {
       Row({ space: 4 }) {
-        TextInput({ text: this.uartHex, placeholder: 'HEX: 55 AA' })
-          .fontSize(10).fontColor(ProteusColors.TEXT_PRIMARY)
-          .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT).borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.uartHex = v; })
+        ProteusTextInput({
+          text: this.uartHex,
+          placeholder: 'HEX: 55 AA',
+          onChange: (v: string) => { this.uartHex = v; }
+        })
+          .layoutWeight(1)
         ProteusClassicBtn({ label: '发', widthVal: 36,
           onAction: () => {
             this.appService.instruments.uartHexSend(this.uartHex);

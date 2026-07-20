@@ -14,7 +14,7 @@ import {
   ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle,
   ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer,
   ProteusSidebarTab, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow,
-  ProteusMenuEntry
+  ProteusMenuEntry, ProteusTextInput
 } from '../components/proteus/ProteusWidgets';
 import { ProteusIcon, ProteusIconName } from '../components/proteus/ProteusIcons';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
@@ -26,6 +26,7 @@ import {
   appVersionLabel, Logger, INSTR_TRACE_TAG
 } from 'common';
 import { SchematicEditorImpl, AlignType } from 'schematic_editor';
+import { SimulationKernelImpl } from 'simulation_kernel';
 import { EditorToolMode, toolModeLabel } from '../model/EditorToolMode';
 import { AppViewModel } from '../viewmodel/AppViewModel';
 import { common } from '@kit.AbilityKit';
@@ -50,6 +51,8 @@ struct Index {
   @State simWaveTick: number = 0;
   @State statusMessage: string = '';
   @State canvasVersion: number = 0;
+  /** 工程切换时递增，强制右侧栏面板 remount */
+  @State rightPanelRefreshKey: number = 0;
   @State selectedComponentId: string = '';
   @State searchKeyword: string = '';
   @State componentList: string[] = [];
@@ -140,8 +143,7 @@ struct Index {
       this.bumpCanvas();
     };
     this.appService.onProjectChanged = () => {
-      this.projectName = this.appService.currentProject?.name ?? 'Untitled';
-      this.canvasVersion++;
+      this.refreshUiAfterProjectChange();
     };
     this.appService.onWaveUpdate = (_waves) => {
       this.simWaveTick++;
@@ -182,81 +184,112 @@ struct Index {
     this.hookStartupWindowResize();
     void maximizeAppWindow(ctx);
 
-    // 优先从上次正式工程路径加载（含 AI API）；勿因 recovery/dirty 跳过导致 API 丢失
+    // 先读 recovery/session（仍保留上次 closedCleanly），再标记本次运行中
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
     const session = await this.appService.loadSession();
-    if (session !== null && session.lastPath.length > 0) {
-      const autoSavePath = `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
-      let ok = await this.appService.loadProject(session.lastPath);
-      if (!ok && session.lastPath !== autoSavePath) {
-        ok = await this.appService.loadProject(autoSavePath);
+    if (session !== null && session.lastProjectName.length > 0) {
+      const autoSavePath = session.autoSavePath !== undefined && session.autoSavePath.length > 0
+        ? session.autoSavePath
+        : `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
+      const pathsToTry: string[] = [];
+      if (!session.closedCleanly) {
+        for (let i = 0; i < this.recoveryFiles.length; i++) {
+          if (!pathsToTry.includes(this.recoveryFiles[i])) {
+            pathsToTry.push(this.recoveryFiles[i]);
+          }
+        }
+        if (session.lastPath.length > 0 && !pathsToTry.includes(session.lastPath)) {
+          pathsToTry.push(session.lastPath);
+        }
+        if (!pathsToTry.includes(autoSavePath)) {
+          pathsToTry.push(autoSavePath);
+        }
+      } else {
+        if (session.lastPath.length > 0) {
+          pathsToTry.push(session.lastPath);
+        }
+        if (!pathsToTry.includes(autoSavePath)) {
+          pathsToTry.push(autoSavePath);
+        }
+      }
+      let ok = false;
+      let loadedPath = '';
+      for (let i = 0; i < pathsToTry.length; i++) {
+        ok = await this.appService.loadProject(pathsToTry[i]);
+        if (ok) {
+          loadedPath = pathsToTry[i];
+          break;
+        }
       }
       if (ok) {
         this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
-        this.appService.enableAutoSave(autoSavePath, 120000);
-        this.resetAfterProjectChange();
-        this.refreshComponentList();
+        this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
         this.deferCanvasFit();
         this.appInitialized = true;
-        if (this.recoveryFiles.length > 0) {
+        if (!session.closedCleanly) {
+          const loadedFromWorkingCopy = loadedPath === autoSavePath ||
+            this.recoveryFiles.includes(loadedPath);
+          if (!loadedFromWorkingCopy && this.recoveryFiles.length > 0) {
+            this.showRecoveryDialog = true;
+            this.statusMessage = `已恢复工程: ${this.projectName}（检测到更新的工作副本）`;
+          } else {
+            this.statusMessage = `已从工作副本恢复: ${loadedPath}`;
+          }
+        } else if (this.recoveryFiles.length > 0) {
           this.showRecoveryDialog = true;
           this.statusMessage = `已恢复工程: ${this.projectName}（检测到额外恢复文件）`;
         } else {
           this.statusMessage = `已恢复上次工程: ${this.projectName}`;
         }
+        await this.appService.markSessionRunning();
         return;
       }
     }
 
     if (this.recoveryFiles.length > 0) {
       this.appService.newProject('Untitled');
-      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
+      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`,
+        AppService.AUTOSAVE_INTERVAL_MS);
       this.showRecoveryDialog = true;
       this.appInitialized = true;
       this.statusMessage = '检测到未正常关闭的工程，是否恢复？';
+      await this.appService.markSessionRunning();
       return;
     }
 
     // No recovery, no last session — show welcome dialog
     this.appService.newProject('Untitled');
-    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
+    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`,
+      AppService.AUTOSAVE_INTERVAL_MS);
     this.refreshComponentList();
     this.deferCanvasFit();
     this.appInitialized = true;
     this.showWelcomeDialog = true;
     this.statusMessage = '欢迎使用 AI 原理图仿真 — 请新建或打开工程';
+    await this.appService.markSessionRunning();
   }
 
   onPageHide(): void {
-    // Save recovery cache when page is hidden (app going to background)
-    void this.appService.saveRecoveryCache();
+    void this.appService.flushProjectProtection(false);
   }
 
   aboutToDisappear(): void {
-    // Save session state before exit — marks last project for auto-reload on next launch
-    void this.appService.saveSession(
-      this.appService.currentProjectPath,
-      this.projectName,
-      !this.unsavedChanges  // true = clean shutdown, next launch auto-loads; false = may trigger recovery
-    );
+    void this.appService.flushProjectProtection(!this.unsavedChanges);
   }
 
   onBackPress(): boolean {
     if (this.unsavedChanges) {
       this.showExitConfirmDialog = true;
-      return true; // consume the back event, keep app open
+      return true;
     }
-    void this.appService.saveSession(
-      this.appService.currentProjectPath,
-      this.projectName,
-      true
-    );
-    return false; // allow system to proceed with exit
+    void this.appService.flushProjectProtection(true);
+    return false;
   }
 
   onThemeRefresh(): void {
-    // 主题/无障碍变更后重绘画布（网格色、导线色、背景）
+    // 主题/无障碍变更后重绘画布（网格色、导线色、背景、符号描边）
     this.canvasVersion++;
+    this.navRefreshKey++;
   }
 
   loadUiState(): void {
@@ -287,6 +320,13 @@ struct Index {
     s.setExpandedCategories(this.expandedCategories);
   }
 
+  /** 仿真中可点击/拖动的交互器件 — 操作时不应切换右侧栏 */
+  private isInteractiveSimComponent(libraryId: string): boolean {
+    const lib = libraryId.toUpperCase();
+    return lib === 'SW_PUSH' || lib.includes('SWITCH_PUSH') || lib === 'BUTTON' ||
+      lib.startsWith('POT_') || lib.includes('POTENTIOMETER') || lib === 'POT' || lib.includes('_POT');
+  }
+
   updateContextualTabs(instUuid: string): void {
     const doc = this.appService.schematicEditor.getDocument();
     const comp = doc.components.find(c => c.id === instUuid);
@@ -297,6 +337,10 @@ struct Index {
     const isInstr = isInstrumentLibraryId(comp.libraryId);
     this.debugTabHasBadge = isMcu;
     this.instrTabHasBadge = isInstr;
+    // 仿真中点击开关/电位器等交互器件时，保持当前右侧面板不变
+    if (this.simRunning && this.isInteractiveSimComponent(comp.libraryId)) {
+      return;
+    }
     // 选中器件时展开右侧栏并跳到对应面板：MCU→调试、仪器→Instr、其余→属性
     if (this.rightCollapsed) {
       this.rightCollapsed = false;
@@ -412,6 +456,20 @@ struct Index {
     this.deferCanvasFit();
   }
 
+  /** 新建/打开/切换工程后同步右侧栏与仿真 UI 状态 */
+  private refreshUiAfterProjectChange(): void {
+    this.projectName = this.appService.currentProject?.name ?? 'Untitled';
+    const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+    if (kernel.isSimActive()) {
+      this.appService.stopSimulation();
+    }
+    this.simRunning = false;
+    this.simPaused = false;
+    this.resetAfterProjectChange();
+    this.refreshComponentList();
+    this.appService.runErc(false);
+  }
+
   resetAfterProjectChange(): void {
     this.selectedComponentId = '';
     this.selectedCount = 0;
@@ -422,6 +480,9 @@ struct Index {
     this.wireStartY = 0;
     this.toolMode = EditorToolMode.SELECT;
     this.unsavedChanges = false;
+    this.debugTabHasBadge = false;
+    this.instrTabHasBadge = false;
+    this.rightPanelRefreshKey++;
     this.bumpCanvas();
   }
 
@@ -528,10 +589,8 @@ struct Index {
     this.projectName = this.appService.currentProject?.name ?? this.projectNameFromPath(path);
     const name = this.projectName;
     this.appService.disableAutoSave();
-    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-    this.resetAfterProjectChange();
+    this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
     this.appService.schematicEditor.fitAllInView();
-    this.refreshComponentList();
     this.unsavedChanges = false;
     void this.appService.saveSession(path, name, false);
     this.statusMessage = `已加载: ${path}`;
@@ -573,13 +632,11 @@ struct Index {
       this.appService.disableAutoSave();
       this.appService.newProject(name);
       this.projectName = name;
-      this.resetAfterProjectChange();
-      this.refreshComponentList();
       this.appService.schematicEditor.fitAllInView();
       const ok = await this.appService.saveProject(path, true);
       if (ok) {
         const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
-        this.appService.enableAutoSave(autoSavePath, 120000);
+        this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
         void this.appService.saveProject(autoSavePath, false);
         await this.appService.saveSession(path, name, false);
         this.unsavedChanges = false;
@@ -605,8 +662,6 @@ struct Index {
     this.appService.disableAutoSave();
     this.appService.newProject(name);
     this.projectName = name;
-    this.resetAfterProjectChange();
-    this.refreshComponentList();
     this.appService.schematicEditor.fitAllInView();
     const projectPath = `${this.userProjectDir}/${name}.schsim`;
     const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
@@ -621,7 +676,7 @@ struct Index {
         this.statusMessage = `创建失败，请检查工程目录: ${this.userProjectDir}`;
       }
     });
-    this.appService.enableAutoSave(autoSavePath, 120000);
+    this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
   }
 
   /**
@@ -1028,9 +1083,9 @@ struct Index {
       }
       .width('100%')
       .height('100%')
-      // themeRefreshKey 参与 build：主题/字号/对比度变更后整页重读 ProteusColors/Fonts
+      // themeRefreshKey 参与 build：用 .key（非 .id）强制整页 remount，重读 ProteusColors
       .backgroundColor(ProteusColors.MENU_BG)
-      .id(`main_shell_${this.themeRefreshKey}`)
+      .key(`main_shell_${this.themeRefreshKey}`)
       .onKeyEvent((event: KeyEvent) => this.handleKeyEvent(event))
 
       // Overlay dialogs
@@ -1178,6 +1233,7 @@ struct Index {
     .backgroundColor(ProteusColors.MENU_BG)
     .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
     .alignItems(VerticalAlign.Center)
+    .key(`menu_bar_${this.themeRefreshKey}`)
   }
 
   fileMenuEntries(): ProteusMenuEntry[] {
@@ -1469,6 +1525,7 @@ struct Index {
     .height(ProteusDimens.TOOLBAR_HEIGHT)
     .backgroundColor(ProteusColors.TOOLBAR_BG)
     .border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER })
+    .key(`main_toolbar_${this.themeRefreshKey}`)
   }
 
   @Builder
@@ -1579,18 +1636,16 @@ struct Index {
             collapsed: false,
             onToggle: () => { this.leftLibCollapsed = true; this.uiState.leftLibCollapsed = true; }
           })
-          TextInput({ placeholder: $r('app.string.search_placeholder'), text: this.searchKeyword })
-            .height(ProteusDimens.SEARCH_HEIGHT)
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .borderRadius(0)
-            .border({ width: 1, color: ProteusColors.BORDER })
-            .margin({ left: 4, right: 4, top: 4, bottom: 2 })
-            .onChange((v: string) => {
+          ProteusTextInput({
+            placeholder: $r('app.string.search_placeholder'),
+            text: this.searchKeyword,
+            onChange: (v: string) => {
               this.searchKeyword = v;
               this.refreshComponentList();
-            })
+            }
+          })
+            .margin({ left: 4, right: 4, top: 4, bottom: 2 })
+            .width('100%')
 
           Scroll() {
             Column() {
@@ -1626,7 +1681,7 @@ struct Index {
           .width('100%')
           .scrollBar(BarState.Auto)
 
-          ComponentPreview({ libraryId: this.previewComponentId })
+          ComponentPreview({ libraryId: this.previewComponentId, themeRefreshKey: this.themeRefreshKey })
             .onClick(() => {
               if (this.previewComponentId) {
                 this.placeComponent(this.previewComponentId);
@@ -1709,6 +1764,7 @@ struct Index {
     .height('100%')
     .backgroundColor(ProteusColors.CANVAS_BG)
     .border({ width: { right: 1 }, color: ProteusColors.DIVIDER })
+    .key(`left_panel_${this.themeRefreshKey}`)
   }
 
   @Builder
@@ -1814,6 +1870,7 @@ struct Index {
     Stack({ alignContent: Alignment.BottomEnd }) {
       SchematicCanvas({
         canvasVersion: $canvasVersion,
+        themeRefreshKey: this.themeRefreshKey,
         selectedComponentId: $selectedComponentId,
         mouseX: $mouseX,
         mouseY: $mouseY,
@@ -1930,23 +1987,28 @@ struct Index {
               this.bumpCanvas();
             }
           })
+            .key(`prop-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`)
             .layoutWeight(1)
             .height('100%')
         } else if (this.activeRightTab === 4) {
           InstrumentPanel({
             statusMessage: $statusMessage,
             selectedComponentId: this.selectedComponentId,
-            simWaveTick: this.simWaveTick
+            simWaveTick: this.simWaveTick,
+            simRunning: this.simRunning
           })
+            .key(`instr-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`)
             .layoutWeight(1)
             .height('100%')
         } else if (this.activeRightTab === 7) {
           PlatformSettingsPanel({ statusMessage: $statusMessage, themeRefreshKey: $themeRefreshKey })
+            .key(`settings-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`)
             .layoutWeight(1)
             .height('100%')
             .width('100%')
         } else if (this.activeRightTab === 8) {
           InstrTraceLogPanel({ statusMessage: $statusMessage })
+            .key(`trace-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`)
             .layoutWeight(1)
             .height('100%')
         } else {
@@ -2075,30 +2137,35 @@ struct Index {
                 .alignItems(HorizontalAlign.Start)
                 .padding({ bottom: 8 })
               } else if (this.activeRightTab === 2) {
+                // API 配置挂全局金库：工程切换时勿用 rightPanelRefreshKey remount，避免面板状态被刷掉
                 AiSettingsPanel({
                   statusMessage: $statusMessage,
                   aiGenerating: $aiGenerating,
                   aiProgress: $aiProgress,
                   aiStage: $aiStage
                 })
+                  .key(`ai-settings-${this.themeRefreshKey}`)
                   .constraintSize({ minHeight: 280 })
               } else if (this.activeRightTab === 3) {
                 McuDebugPanel({
                   statusMessage: $statusMessage,
                   selectedComponentId: this.selectedComponentId
                 })
+                  .key(`mcu-${this.rightPanelRefreshKey}`)
                   .constraintSize({ minHeight: 320 })
               } else if (this.activeRightTab === 5) {
                 FaultInjectionPanel({
                   statusMessage: $statusMessage,
                   selectedComponentId: this.selectedComponentId
                 })
+                  .key(`fault-${this.rightPanelRefreshKey}`)
                   .constraintSize({ minHeight: 240 })
               } else if (this.activeRightTab === 6) {
                 TeachingPanel({
                   statusMessage: $statusMessage,
                   selectedComponentId: this.selectedComponentId
                 })
+                  .key(`teach-${this.rightPanelRefreshKey}`)
                   .constraintSize({ minHeight: 240 })
               }
             }
@@ -2176,6 +2243,7 @@ struct Index {
     .height('100%')
     .backgroundColor(ProteusColors.CANVAS_BG)
     .border({ width: { left: 1 }, color: ProteusColors.DIVIDER })
+    .key(`right_panel_${this.themeRefreshKey}`)
   }
 
   /** Welcome dialog — shown on first launch when no prior session exists */
@@ -2248,16 +2316,13 @@ struct Index {
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .maxLines(2)
           .margin({ bottom: 8 })
-        TextInput({ placeholder: 'MyProject', text: this.newProjectNameInput })
+        ProteusTextInput({
+          placeholder: 'MyProject',
+          text: this.newProjectNameInput,
+          onChange: (v: string) => { this.newProjectNameInput = v; },
+          onSubmit: () => { this.doCreateNewProject(); }
+        })
           .width('100%')
-          .height(32)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.newProjectNameInput = v; })
-          .onSubmit(() => { this.doCreateNewProject(); })
         Row({ space: 8 }) {
           ProteusClassicBtn({
             label: '取消',
@@ -2372,10 +2437,8 @@ struct Index {
       this.projectName = this.appService.currentProject?.name ?? 'Recovered';
       const name = this.projectName;
       this.appService.disableAutoSave();
-      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-      this.resetAfterProjectChange();
+      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
       this.appService.schematicEditor.fitAllInView();
-      this.refreshComponentList();
       this.showRecoveryDialog = false;
       this.statusMessage = `已恢复工程: ${name}`;
     } else {
@@ -2401,15 +2464,12 @@ struct Index {
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .maxLines(2)
           .margin({ bottom: 8 })
-        TextInput({ placeholder: `${this.userProjectDir}/MyProject.schsim`, text: this.openFilePath })
+        ProteusTextInput({
+          placeholder: `${this.userProjectDir}/MyProject.schsim`,
+          text: this.openFilePath,
+          onChange: (v: string) => { this.openFilePath = v; }
+        })
           .width('100%')
-          .height(32)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.openFilePath = v; })
         Row({ space: 8 }) {
           ProteusClassicBtn({
             label: '取消',
@@ -2462,15 +2522,12 @@ struct Index {
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .maxLines(2)
           .margin({ bottom: 8 })
-        TextInput({ placeholder: `${this.userProjectDir}/${this.projectName}.schsim`, text: this.saveAsPath })
+        ProteusTextInput({
+          placeholder: `${this.userProjectDir}/${this.projectName}.schsim`,
+          text: this.saveAsPath,
+          onChange: (v: string) => { this.saveAsPath = v; }
+        })
           .width('100%')
-          .height(32)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.saveAsPath = v; })
         Row({ space: 8 }) {
           ProteusClassicBtn({
             label: '取消',
@@ -2541,15 +2598,12 @@ struct Index {
 
         // File path input
         Row() {
-          TextInput({ placeholder: '/path/to/firmware.hex', text: this.burnFilePath })
+          ProteusTextInput({
+            placeholder: '/path/to/firmware.hex',
+            text: this.burnFilePath,
+            onChange: (v: string) => { this.burnFilePath = v; }
+          })
             .layoutWeight(1)
-            .height(32)
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .borderRadius(0)
-            .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .onChange((v: string) => { this.burnFilePath = v; })
           ProteusClassicBtn({
             label: '浏览',
             widthVal: 60,
@@ -2565,16 +2619,13 @@ struct Index {
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .width(64)
-          TextInput({ text: this.burnEntryPoint, placeholder: '0x0000' })
+          ProteusTextInput({
+            text: this.burnEntryPoint,
+            placeholder: '0x0000',
+            mono: true,
+            onChange: (v: string) => { this.burnEntryPoint = v; }
+          })
             .layoutWeight(1)
-            .height(28)
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .fontFamily('monospace')
-            .borderRadius(0)
-            .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .onChange((v: string) => { this.burnEntryPoint = v; })
         }
         .width('100%')
         .margin({ bottom: 6 })
@@ -2654,7 +2705,7 @@ struct Index {
             onAction: () => {
               this.unsavedChanges = false;
               this.showExitConfirmDialog = false;
-              void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+              void this.appService.flushProjectProtection(true);
             }
           })
           ProteusClassicBtn({
@@ -2664,7 +2715,7 @@ struct Index {
               this.showExitConfirmDialog = false;
               void this.handleSaveProject().then(() => {
                 if (!this.unsavedChanges) {
-                  void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+                  void this.appService.flushProjectProtection(true);
                 }
               });
             }
@@ -2754,5 +2805,6 @@ struct Index {
     .backgroundColor(ProteusColors.STATUS_BAR_BG)
     .border({ width: { top: 1 }, color: ProteusColors.DIVIDER })
     .alignItems(VerticalAlign.Center)
+    .key(`status_bar_${this.themeRefreshKey}`)
   }
 }

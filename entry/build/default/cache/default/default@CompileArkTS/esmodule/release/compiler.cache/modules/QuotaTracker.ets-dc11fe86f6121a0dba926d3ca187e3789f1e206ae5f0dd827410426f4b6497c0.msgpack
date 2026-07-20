@@ -1,352 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ /**
- * AI ç”¨é‡ç»Ÿè®¡ä¸é…é¢å‘Šè­¦
- */
-import { FeatureGate, LicenseManager, LicenseTier, ResultHelper } from 'common';
-export class QuotaTracker {
-    constructor() {
-        this.globalDailyCalls = 0;
-        this.globalDailyTokens = 0;
-        this.perApiCalls = new Map();
-        this.perApiTokens = new Map();
-        this.perApiNames = new Map();
-        this.lastCallTimes = new Map();
-        this.lastDate = '';
-        this.warnThreshold = 0.8;
-        this.warningTriggered = false;
-    }
-    static getInstance() {
-        if (!QuotaTracker.instance) {
-            QuotaTracker.instance = new QuotaTracker();
-        }
-        return QuotaTracker.instance;
-    }
-    setWarnThreshold(ratio) {
-        this.warnThreshold = Math.max(0.5, Math.min(1.0, ratio));
-    }
-    resetIfNewDay() {
-        const today = new Date().toISOString().substring(0, 10);
-        if (this.lastDate !== today) {
-            this.globalDailyCalls = 0;
-            this.globalDailyTokens = 0;
-            this.perApiCalls.clear();
-            this.perApiTokens.clear();
-            this.lastCallTimes.clear();
-            this.warningTriggered = false;
-            this.lastDate = today;
-        }
-    }
-    checkBeforeCall(apiId, providerName) {
-        this.resetIfNewDay();
-        const gate = FeatureGate.canUseAiCall(this.globalDailyCalls);
-        if (!gate.success)
-            return gate;
-        this.perApiNames.set(apiId, providerName);
-        return ResultHelper.ok();
-    }
-    recordCall(apiId, providerName, tokensUsed = 0) {
-        this.resetIfNewDay();
-        this.globalDailyCalls++;
-        this.globalDailyTokens += tokensUsed;
-        this.perApiCalls.set(apiId, (this.perApiCalls.get(apiId) ?? 0) + 1);
-        this.perApiTokens.set(apiId, (this.perApiTokens.get(apiId) ?? 0) + tokensUsed);
-        this.perApiNames.set(apiId, providerName);
-        this.lastCallTimes.set(apiId, new Date().toISOString());
-        const limit = FeatureGate.getFeatures().dailyAiCalls;
-        if (limit < Number.MAX_SAFE_INTEGER) {
-            const ratio = this.globalDailyCalls / limit;
-            if (ratio >= this.warnThreshold) {
-                this.warningTriggered = true;
-            }
-        }
-    }
-    getGlobalDailyCalls() {
-        this.resetIfNewDay();
-        return this.globalDailyCalls;
-    }
-    getDashboard() {
-        this.resetIfNewDay();
-        const limit = FeatureGate.getFeatures().dailyAiCalls;
-        const percent = limit >= Number.MAX_SAFE_INTEGER ? 0 :
-            Math.min(100, Math.round((this.globalDailyCalls / limit) * 100));
-        const perApi = [];
-        this.perApiCalls.forEach((calls, apiId) => {
-            perApi.push({
-                apiId,
-                providerName: this.perApiNames.get(apiId) ?? apiId,
-                dailyCalls: calls,
-                dailyTokens: this.perApiTokens.get(apiId) ?? 0,
-                lastCallAt: this.lastCallTimes.get(apiId) ?? ''
-            });
-        });
-        const tier = LicenseManager.getInstance().getTier();
-        let billingNote = 'æœ¬åœ° Ollama ä¸è®¡è´¹';
-        if (tier === LicenseTier.FREE) {
-            billingNote = `å…è´¹ç‰ˆæ¯æ—¥ AI ä¸Šé™ ${limit} æ¬¡`;
-        }
-        else if (tier === LicenseTier.ENTERPRISE) {
-            billingNote = 'ä¼ä¸šç‰ˆæ— è°ƒç”¨ä¸Šé™ï¼Œæ”¯æŒå•†ç”¨æˆæƒ';
-        }
-        return {
-            tier,
-            globalDailyCalls: this.globalDailyCalls,
-            globalDailyLimit: limit,
-            globalDailyTokens: this.globalDailyTokens,
-            usagePercent: percent,
-            warningTriggered: this.warningTriggered,
-            perApi,
-            billingNote
-        };
-    }
-    isWarningActive() {
-        return this.warningTriggered;
-    }
-}
-//# sourceMappingURL=QuotaTracker.js.mapÂ‘Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙZC:\Projects\ElecDraw_Harmony\features\ai_api_manager\src\main\ets\billing\QuotaTracker.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs®ai_api_managerÃÂÙ4C:\Projects\ElecDraw_Harmony\features\ai_api_manager¼C:\Projects\ElecDraw_Harmony®ai_api_manager¥1.0.0ÔrC’§pkgNameªpkgVersion®ai_api_manager¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ#./src/main/ets/billing/QuotaTracker®ai_api_managerD¶./billing/QuotaTracker®ai_api_managerÙ4C:\Projects\ElecDraw_Harmony\features\ai_api_managerÃÃÚË/**
- * AI ç”¨é‡ç»Ÿè®¡ä¸é…é¢å‘Šè­¦
- */
-import {
-  FeatureGate, LicenseManager, LicenseTier,
-  ApiUsageRecord, UsageDashboard, ErrCode, ResultHelper, ApiResult
-} from 'common';
-
-export class QuotaTracker {
-  private static instance: QuotaTracker;
-  private globalDailyCalls: number = 0;
-  private globalDailyTokens: number = 0;
-  private perApiCalls: Map<string, number> = new Map();
-  private perApiTokens: Map<string, number> = new Map();
-  private perApiNames: Map<string, string> = new Map();
-  private lastCallTimes: Map<string, string> = new Map();
-  private lastDate: string = '';
-  private warnThreshold: number = 0.8;
-  private warningTriggered: boolean = false;
-
-  static getInstance(): QuotaTracker {
-    if (!QuotaTracker.instance) {
-      QuotaTracker.instance = new QuotaTracker();
-    }
-    return QuotaTracker.instance;
-  }
-
-  setWarnThreshold(ratio: number): void {
-    this.warnThreshold = Math.max(0.5, Math.min(1.0, ratio));
-  }
-
-  resetIfNewDay(): void {
-    const today = new Date().toISOString().substring(0, 10);
-    if (this.lastDate !== today) {
-      this.globalDailyCalls = 0;
-      this.globalDailyTokens = 0;
-      this.perApiCalls.clear();
-      this.perApiTokens.clear();
-      this.lastCallTimes.clear();
-      this.warningTriggered = false;
-      this.lastDate = today;
-    }
-  }
-
-  checkBeforeCall(apiId: string, providerName: string): ApiResult<void> {
-    this.resetIfNewDay();
-    const gate = FeatureGate.canUseAiCall(this.globalDailyCalls);
-    if (!gate.success) return gate;
-    this.perApiNames.set(apiId, providerName);
-    return ResultHelper.ok();
-  }
-
-  recordCall(apiId: string, providerName: string, tokensUsed: number = 0): void {
-    this.resetIfNewDay();
-    this.globalDailyCalls++;
-    this.globalDailyTokens += tokensUsed;
-    this.perApiCalls.set(apiId, (this.perApiCalls.get(apiId) ?? 0) + 1);
-    this.perApiTokens.set(apiId, (this.perApiTokens.get(apiId) ?? 0) + tokensUsed);
-    this.perApiNames.set(apiId, providerName);
-    this.lastCallTimes.set(apiId, new Date().toISOString());
-    const limit = FeatureGate.getFeatures().dailyAiCalls;
-    if (limit < Number.MAX_SAFE_INTEGER) {
-      const ratio = this.globalDailyCalls / limit;
-      if (ratio >= this.warnThreshold) {
-        this.warningTriggered = true;
-      }
-    }
-  }
-
-  getGlobalDailyCalls(): number {
-    this.resetIfNewDay();
-    return this.globalDailyCalls;
-  }
-
-  getDashboard(): UsageDashboard {
-    this.resetIfNewDay();
-    const limit = FeatureGate.getFeatures().dailyAiCalls;
-    const percent = limit >= Number.MAX_SAFE_INTEGER ? 0 :
-      Math.min(100, Math.round((this.globalDailyCalls / limit) * 100));
-    const perApi: ApiUsageRecord[] = [];
-    this.perApiCalls.forEach((calls: number, apiId: string) => {
-      perApi.push({
-        apiId,
-        providerName: this.perApiNames.get(apiId) ?? apiId,
-        dailyCalls: calls,
-        dailyTokens: this.perApiTokens.get(apiId) ?? 0,
-        lastCallAt: this.lastCallTimes.get(apiId) ?? ''
-      });
-    });
-    const tier = LicenseManager.getInstance().getTier();
-    let billingNote = 'æœ¬åœ° Ollama ä¸è®¡è´¹';
-    if (tier === LicenseTier.FREE) {
-      billingNote = `å…è´¹ç‰ˆæ¯æ—¥ AI ä¸Šé™ ${limit} æ¬¡`;
-    } else if (tier === LicenseTier.ENTERPRISE) {
-      billingNote = 'ä¼ä¸šç‰ˆæ— è°ƒç”¨ä¸Šé™ï¼Œæ”¯æŒå•†ç”¨æˆæƒ';
-    }
-    return {
-      tier,
-      globalDailyCalls: this.globalDailyCalls,
-      globalDailyLimit: limit,
-      globalDailyTokens: this.globalDailyTokens,
-      usagePercent: percent,
-      warningTriggered: this.warningTriggered,
-      perApi,
-      billingNote
-    };
-  }
-
-  isWarningActive(): boolean {
-    return this.warningTriggered;
-  }
-}
-ÀÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings¯QuotaTracker.js ‘°QuotaTracker.etsÜ g‘”    ‘” ”   ” ”	 ” ” ”$ ”& ”1 *”3 +”? 7”ÌA ”ÌG ”ÌO ”ÌP ””   ” ” ” ‘”  •” 
-
-” 
-”  
-%”! 
-&”" 
-'•” 
-” ”! &”" '”# (—” 
-” ” -” 1”" 4”$ 6”% 7—” 
-” ” .”  2”# 5”% 7”& 8—” 
-” ” -” 1”" 4”$ 6”% 7—” 
-” ” /”! 3”$ 6”& 8”' 9•” 
-” ” ” ”  •” 
-” ” "”  %”! &•” 
-” ”  &”% +”& ,’” Ìo ” Ìo”” ”
- ” 	” —” ” ” 	” ” ”" ”$  ™” ” ” ”! ”$ ”( "”4 .”6 0”7 1‘”	 –” ” ” ” ”$  ”% !’” ” ”” ” ” ”  Ü ” ” ” 	” ” ”! ”" ”% !”& "”) %”+ '”/ +”0 ,”3 /”4 0”7 3”9 5”> :”? ;”Ì@ <”ÌA =’” ” ’” ” Ü ”  ”  
-”  ”  ”  ”  ”   ”!  ”,  (”.  *”/  +”8  4”9  5”:  6”<  8”>  :”?  ;”Ì@  <˜” !” !” !” !” !” !”# !”% !!—” "” "
-” "”! "”$ "”% "”& " —” #” #
-” #”" #”% #”& # ”' #!˜” $” $
-” $” $” $”" $”$ $”% $˜” %” %
-” %” %” %”# %”% %”& % ˜” &” &
-” &” &” &”$ &”& & ”' &!—” '” '
-” '”! '”$ '”) '#”* '$—” (” (
-” (” (” (”! (”" (‘”	 )’” *” *–” ,” ,” ,” ,” ,!”' ,5–” -” -” -	” -” -” -” .” .
-” .” .”  .”! .”- .)”. .*”2 ..”3 ./”ÌC .?”ÌD .Ì@”ÌE .ÌA–” /” /” /	” /” /” /”” /” /” /"” /#œ” 0” 0” 0	” 0” 0” 0” 0”" 0”$ 0 ”0 0,”1 0-”2 0.—” 1” 1” 1” 1” 1”  1”! 1’” 2” 2™” 4” 4” 4” 4” 4”" 40”$ 42”1 4ÌG”2 4ÌH–” 5” 5” 5	” 5” 5” 5–” 6” 6” 6	” 6” 6”  6—” 7” 7” 7	” 7”" 7”, 7(”- 7)Ü ” 8” 8” 8	” 8” 8” 8” 8”" 8”$ 8 ”% 8!”) 8%”* 8&”5 81”6 82”9 85”: 86”? 8;”Ì@ 8<”ÌD 8Ì@”ÌE 8ÌA”ÌF 8ÌB”ÌI 8ÌE”ÌJ 8ÌF”ÌK 8ÌG”ÌL 8ÌHÜ ” 9” 9” 9	” 9” 9” 9” 9”# 9”% 9!”& 9"”* 9&”+ 9'”7 93”8 94”; 97”< 98”ÌA 9=”ÌB 9>”ÌF 9ÌB”ÌG 9ÌC”ÌH 9ÌD”ÌK 9ÌG”ÌU 9ÌQ”ÌV 9ÌR”ÌW 9ÌSœ” :” :” :	” :” :” :” :”" :”$ : ”0 :,”1 :-”2 :.Ü ” ;” ;” ;	” ;” ;” ;” ;”$ ; ”& ;"”* ;&”. ;*”0 ;,”1 ;-”< ;8”> ;:”? ;;”Ì@ ;<›” <” <
-” <” <”! <”" <”- <)”/ <+”0 <,”< <8”= <9˜” =” =” =” =” =” =”+ ='”- =)š” >” >” >” >” >” >”/ >)”2 >,”7 >1”8 >2˜” ?” ?
-” ?” ?” ?” ?”+ ?%”- ?'—” Ì@” Ì@” Ì@”% Ì@”( Ì@ ”, Ì@$”- Ì@%‘” ÌA‘”	 ÌB’” ÌC” ÌC’” ÌE” ÌE–” ÌF” ÌF” ÌF	” ÌF” ÌF” ÌF–” ÌG” ÌG” ÌG” ÌG”$ ÌG ”% ÌG!’” ÌH” ÌH’” ÌJ” ÌJ–” ÌK” ÌK” ÌK	” ÌK” ÌK” ÌK›” ÌL” ÌL
-” ÌL” ÌL”! ÌL”" ÌL”- ÌL)”/ ÌL+”0 ÌL,”< ÌL8”= ÌL9Ÿ” ÌM” ÌM
-” ÌM” ÌM” ÌM”! ÌM”' ÌM#”( ÌM$”8 ÌM4”9 ÌM5”: ÌM6”; ÌM7”< ÌM8”= ÌM9”> ÌM:Ü ” ÌN” ÌN
-” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN”$ ÌN”% ÌN”& ÌN ”* ÌN$”+ ÌN%”; ÌN5”> ÌN8”ÌC ÌN=”ÌD ÌN>”ÌG ÌNÌA”ÌJ ÌNÌD”ÌK ÌNÌE”ÌL ÌNÌF”ÌM ÌNÌG–” ÌO” ÌO
-” ÌO” ÌO%” ÌO'” ÌO(” ÌP” ÌP” ÌP	” ÌP” ÌP”  ÌP”! ÌP”" ÌP”' ÌP+”) ÌP-”. ÌP:”0 ÌP<”2 ÌP>•” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ’” ÌR” ÌR” ÌS” ÌS” ÌS”" ÌS”# ÌS”. ÌS&”/ ÌS'”2 ÌS*”3 ÌS+”8 ÌS0”9 ÌS1”= ÌS5”ÌB ÌS:”” ÌT” ÌT” ÌT”! ÌT” ÌU” ÌU” ÌU”! ÌU”" ÌU”. ÌU&”/ ÌU'”2 ÌU*”3 ÌU+”8 ÌU0”9 ÌU1”= ÌU5”> ÌU6” ÌV” ÌV” ÌV”  ÌV”! ÌV”. ÌV&”/ ÌV'”2 ÌV*”3 ÌV+”8 ÌV0”9 ÌV1”= ÌV5”? ÌV7“” ÌW” ÌW” ÌW	”” ÌX”	 ÌX”
- ÌX” ÌXœ” ÌY” ÌY
-” ÌY” ÌY”# ÌY”$ ÌY ”/ ÌY+”1 ÌY-”2 ÌY.”9 ÌY5”; ÌY7”< ÌY8–” ÌZ” ÌZ” ÌZ” ÌZ”) ÌZ%”* ÌZ&˜” Ì[” Ì[” Ì[” Ì[”  Ì[”! Ì[”% Ì[!”' Ì[#—” Ì\” Ì\” Ì\”) Ì\#”. Ì\(”2 Ì\,”3 Ì\-‘”	 Ì]˜” Ì]” Ì]” Ì]” Ì]”% Ì]#”& Ì]$”0 Ì].”2 Ì]0•” Ì^” Ì^” Ì^”+ Ì^%”, Ì^&‘”	 Ì_’” Ì`” Ì`’” Ìa” Ìa
-–” Ìb” Ìb” Ìb”" Ìb”# Ìb”3 Ìb-”” Ìc” Ìc” Ìc”# Ìc–” Ìd” Ìd” Ìd”# Ìd”$ Ìd”5 Ìd/”” Ìe” Ìe” Ìe”! Ìe–” Ìf” Ìf” Ìf”" Ìf”# Ìf”3 Ìf-’” Ìg” Ìg’” Ìh” Ìh’”	 Ìi”
- Ìi’” Ìj” Ìj’” Ìl” Ìl–” Ìm” Ìm” Ìm” Ìm”$ Ìm ”% Ìm!’” Ìn” Ìn‘” ÌoÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ h‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌmÍ¬ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌtÍ¬ÔrM”¤type¥start£end¤nameªIdentifierÌzÌ†¬QuotaTrackerÀÔrN”¤type¥start£end¤body©ClassBodyÌ‡Í¬™ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌÍôÂÂMªIdentifierÌÌ™«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ™ÍôÀÂÂÂN®BlockStatementÌœÍô™ÔrQ”¤type¥start£endªexpression³ExpressionStatementÌ§ÌÁÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÌ§ÌÀ¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌ§Ì¼ÔrT“¤type¥start£end®ThisExpressionÌ§Ì«MªIdentifierÌ¬Ì¼°globalDailyCallsÂÂÔrU•¤type¥start£end¥value£raw§LiteralÌ¿ÌÀ ¡0Q³ExpressionStatementÌËÌæR´AssignmentExpressionÌËÌå¡=S°MemberExpressionÌËÌáT®ThisExpressionÌËÌÏMªIdentifierÌĞÌá±globalDailyTokensÂÂU§LiteralÌäÌå ¡0Q³ExpressionStatementÌğÍR´AssignmentExpressionÌğÍ¡=S°MemberExpressionÌğÍ T®ThisExpressionÌğÌôMªIdentifierÌõÍ «perApiCallsÂÂÔrV•¤type¥start£end¦callee©arguments­NewExpressionÍÍMªIdentifierÍÍ
-£MapQ³ExpressionStatementÍÍ5R´AssignmentExpressionÍÍ4¡=S°MemberExpressionÍÍ(T®ThisExpressionÍÍMªIdentifierÍÍ(¬perApiTokensÂÂV­NewExpressionÍ+Í4MªIdentifierÍ/Í2£MapQ³ExpressionStatementÍ?Í\R´AssignmentExpressionÍ?Í[¡=S°MemberExpressionÍ?ÍOT®ThisExpressionÍ?ÍCMªIdentifierÍDÍO«perApiNamesÂÂV­NewExpressionÍRÍ[MªIdentifierÍVÍY£MapQ³ExpressionStatementÍfÍ…R´AssignmentExpressionÍfÍ„¡=S°MemberExpressionÍfÍxT®ThisExpressionÍfÍjMªIdentifierÍkÍx­lastCallTimesÂÂV­NewExpressionÍ{Í„MªIdentifierÍÍ‚£MapQ³ExpressionStatementÍÍ¢R´AssignmentExpressionÍÍ¡¡=S°MemberExpressionÍÍœT®ThisExpressionÍÍ“MªIdentifierÍ”Íœ¨lastDateÂÂU§LiteralÍŸÍ¡ ¢''Q³ExpressionStatementÍ¬ÍÅR´AssignmentExpressionÍ¬ÍÄ¡=S°MemberExpressionÍ¬Í¾T®ThisExpressionÍ¬Í°MªIdentifierÍ±Í¾­warnThresholdÂÂU§LiteralÍÁÍÄË?é™™™™™š£0.8Q³ExpressionStatementÍÏÍíR´AssignmentExpressionÍÏÍì¡=S°MemberExpressionÍÏÍäT®ThisExpressionÍÏÍÓMªIdentifierÍÔÍä°warningTriggeredÂÂU§LiteralÍçÍìÂ¥falseO°MethodDefinitionÍúÍ©ÃÂMªIdentifierÍÍ«getInstance¦methodP²FunctionExpressionÍÍ©ÀÂÂÂN®BlockStatementÍÍ©’ÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍ{ÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ4¡!ÃS°MemberExpressionÍÍ4MªIdentifierÍÍ+¬QuotaTrackerMªIdentifierÍ,Í4¨instanceÂÂN®BlockStatementÍ6Í{‘Q³ExpressionStatementÍEÍpR´AssignmentExpressionÍEÍo¡=S°MemberExpressionÍEÍZMªIdentifierÍEÍQ¬QuotaTrackerMªIdentifierÍRÍZ¨instanceÂÂV­NewExpressionÍ]ÍoMªIdentifierÍaÍm¬QuotaTrackerÀÔrY”¤type¥start£end¨argument¯ReturnStatementÍ…Í¢S°MemberExpressionÍŒÍ¡MªIdentifierÍŒÍ˜¬QuotaTrackerMªIdentifierÍ™Í¡¨instanceÂÂO°MethodDefinitionÍ¯ÍÂÂMªIdentifierÍ¯Í¿°setWarnThreshold¦methodP²FunctionExpressionÍ¿ÍÀÂÂÂ‘MªIdentifierÍÀÍÅ¥ratioN®BlockStatementÍÇÍ‘Q³ExpressionStatementÍÒÍR´AssignmentExpressionÍÒÍ
-¡=S°MemberExpressionÍÒÍäT®ThisExpressionÍÒÍÖMªIdentifierÍ×Íä­warnThresholdÂÂÔrZ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍçÍ
-S°MemberExpressionÍçÍïMªIdentifierÍçÍë¤MathMªIdentifierÍìÍï£maxÂÂ’U§LiteralÍğÍóË?à      £0.5Z®CallExpressionÍõÍ	S°MemberExpressionÍõÍıMªIdentifierÍõÍù¤MathMªIdentifierÍúÍı£minÂÂ’U§LiteralÍşÍ£1.0MªIdentifierÍÍ¥ratioÂÂO°MethodDefinitionÍÍ¾ÂÂMªIdentifierÍÍ%­resetIfNewDay¦methodP²FunctionExpressionÍ%Í¾ÀÂÂÂN®BlockStatementÍ(Í¾’Ôr[•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ3Ík‘Ôr\•¤type¥start£end¢id¤init²VariableDeclaratorÍ9ÍjMªIdentifierÍ9Í>¥todayZ®CallExpressionÍAÍjS°MemberExpressionÍAÍcZ®CallExpressionÍAÍYS°MemberExpressionÍAÍWV­NewExpressionÍAÍKMªIdentifierÍEÍI¤DateMªIdentifierÍLÍW«toISOStringÂÂÂMªIdentifierÍZÍc©substringÂÂ’U§LiteralÍdÍe ¡0U§LiteralÍgÍi
-¢10Â¥constW«IfStatementÍuÍ·Ôr]–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍyÍS°MemberExpressionÍyÍ†T®ThisExpressionÍyÍ}MªIdentifierÍ~Í†¨lastDateÂÂ£!==MªIdentifierÍ‹Í¥todayN®BlockStatementÍ’Í·—Q³ExpressionStatementÍ¡Í»R´AssignmentExpressionÍ¡Íº¡=S°MemberExpressionÍ¡Í¶T®ThisExpressionÍ¡Í¥MªIdentifierÍ¦Í¶°globalDailyCallsÂÂU§LiteralÍ¹Íº ¡0Q³ExpressionStatementÍÉÍäR´AssignmentExpressionÍÉÍã¡=S°MemberExpressionÍÉÍßT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍß±globalDailyTokensÂÂU§LiteralÍâÍã ¡0Q³ExpressionStatementÍòÍZ®CallExpressionÍòÍ
-S°MemberExpressionÍòÍS°MemberExpressionÍòÍT®ThisExpressionÍòÍöMªIdentifierÍ÷Í«perApiCallsÂÂMªIdentifierÍÍ¥clearÂÂÂQ³ExpressionStatementÍÍ3Z®CallExpressionÍÍ2S°MemberExpressionÍÍ0S°MemberExpressionÍÍ*T®ThisExpressionÍÍMªIdentifierÍÍ*¬perApiTokensÂÂMªIdentifierÍ+Í0¥clearÂÂÂQ³ExpressionStatementÍAÍ\Z®CallExpressionÍAÍ[S°MemberExpressionÍAÍYS°MemberExpressionÍAÍST®ThisExpressionÍAÍEMªIdentifierÍFÍS­lastCallTimesÂÂMªIdentifierÍTÍY¥clearÂÂÂQ³ExpressionStatementÍjÍˆR´AssignmentExpressionÍjÍ‡¡=S°MemberExpressionÍjÍT®ThisExpressionÍjÍnMªIdentifierÍoÍ°warningTriggeredÂÂU§LiteralÍ‚Í‡Â¥falseQ³ExpressionStatementÍ–Í¬R´AssignmentExpressionÍ–Í«¡=S°MemberExpressionÍ–Í£T®ThisExpressionÍ–ÍšMªIdentifierÍ›Í£¨lastDateÂÂMªIdentifierÍ¦Í«¥todayÀO°MethodDefinitionÍÄÍäÂÂMªIdentifierÍÄÍÓ¯checkBeforeCall¦methodP²FunctionExpressionÍÓÍäÀÂÂÂ’MªIdentifierÍÔÍÙ¥apiIdMªIdentifierÍÛÍç¬providerNameN®BlockStatementÍéÍä•Q³ExpressionStatementÍôÍ	Z®CallExpressionÍôÍS°MemberExpressionÍôÍT®ThisExpressionÍôÍøMªIdentifierÍùÍ­resetIfNewDayÂÂÂ[³VariableDeclarationÍÍP‘\²VariableDeclaratorÍÍOMªIdentifierÍÍ¤gateZ®CallExpressionÍ ÍOS°MemberExpressionÍ Í8MªIdentifierÍ Í+«FeatureGateMªIdentifierÍ,Í8¬canUseAiCallÂÂ‘S°MemberExpressionÍ9ÍNT®ThisExpressionÍ9Í=MªIdentifierÍ>ÍN°globalDailyCallsÂÂÂ¥constW«IfStatementÍZÍ†X¯UnaryExpressionÍ^Ík¡!ÃS°MemberExpressionÍ_ÍkMªIdentifierÍ_Íc¤gateMªIdentifierÍdÍk§successÂÂY¯ReturnStatementÍzÍ†MªIdentifierÍÍ…¤gateÀQ³ExpressionStatementÍÍºZ®CallExpressionÍÍ¹S°MemberExpressionÍÍ¤S°MemberExpressionÍÍ T®ThisExpressionÍÍ”MªIdentifierÍ•Í «perApiNamesÂÂMªIdentifierÍ¡Í¤£setÂÂ’MªIdentifierÍ¥Íª¥apiIdMªIdentifierÍ¬Í¸¬providerNameÂY¯ReturnStatementÍÄÍİZ®CallExpressionÍËÍÜS°MemberExpressionÍËÍÚMªIdentifierÍËÍ×¬ResultHelperMªIdentifierÍØÍÚ¢okÂÂÂO°MethodDefinitionÍêÍÑÂÂMªIdentifierÍêÍôªrecordCall¦methodP²FunctionExpressionÍôÍÑÀÂÂÂ“MªIdentifierÍõÍú¥apiIdMªIdentifierÍüÍ¬providerNameÔr^•¤type¥start£end¤left¥right±AssignmentPatternÍ
-ÍMªIdentifierÍ
-ÍªtokensUsedU§LiteralÍÍ ¡0N®BlockStatementÍÍÑ™Q³ExpressionStatementÍ%Í:Z®CallExpressionÍ%Í9S°MemberExpressionÍ%Í7T®ThisExpressionÍ%Í)MªIdentifierÍ*Í7­resetIfNewDayÂÂÂQ³ExpressionStatementÍDÍ\X°UpdateExpressionÍDÍ[¢++ÂS°MemberExpressionÍDÍYT®ThisExpressionÍDÍHMªIdentifierÍIÍY°globalDailyCallsÂÂQ³ExpressionStatementÍfÍ‹R´AssignmentExpressionÍfÍŠ¢+=S°MemberExpressionÍfÍ|T®ThisExpressionÍfÍjMªIdentifierÍkÍ|±globalDailyTokensÂÂMªIdentifierÍ€ÍŠªtokensUsedQ³ExpressionStatementÍ•ÍÙZ®CallExpressionÍ•ÍØS°MemberExpressionÍ•Í©S°MemberExpressionÍ•Í¥T®ThisExpressionÍ•Í™MªIdentifierÍšÍ¥«perApiCallsÂÂMªIdentifierÍ¦Í©£setÂÂ’MªIdentifierÍªÍ¯¥apiId]°BinaryExpressionÍ±Í×]±LogicalExpressionÍ²ÍÒZ®CallExpressionÍ²ÍÍS°MemberExpressionÍ²ÍÆS°MemberExpressionÍ²ÍÂT®ThisExpressionÍ²Í¶MªIdentifierÍ·ÍÂ«perApiCallsÂÂMªIdentifierÍÃÍÆ£getÂÂ‘MªIdentifierÍÇÍÌ¥apiIdÂ¢??U§LiteralÍÑÍÒ ¡0¡+U§LiteralÍÖÍ×¡1ÂQ³ExpressionStatementÍãÍ2Z®CallExpressionÍãÍ1S°MemberExpressionÍãÍøS°MemberExpressionÍãÍôT®ThisExpressionÍãÍçMªIdentifierÍèÍô¬perApiTokensÂÂMªIdentifierÍõÍø£setÂÂ’MªIdentifierÍùÍş¥apiId]°BinaryExpressionÍ Í0]±LogicalExpressionÍÍ"Z®CallExpressionÍÍS°MemberExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ¬perApiTokensÂÂMªIdentifierÍÍ£getÂÂ‘MªIdentifierÍÍ¥apiIdÂ¢??U§LiteralÍ!Í" ¡0¡+MªIdentifierÍ&Í0ªtokensUsedÂQ³ExpressionStatementÍ<ÍfZ®CallExpressionÍ<ÍeS°MemberExpressionÍ<ÍPS°MemberExpressionÍ<ÍLT®ThisExpressionÍ<Í@MªIdentifierÍAÍL«perApiNamesÂÂMªIdentifierÍMÍP£setÂÂ’MªIdentifierÍQÍV¥apiIdMªIdentifierÍXÍd¬providerNameÂQ³ExpressionStatementÍpÍ¨Z®CallExpressionÍpÍ§S°MemberExpressionÍpÍ†S°MemberExpressionÍpÍ‚T®ThisExpressionÍpÍtMªIdentifierÍuÍ‚­lastCallTimesÂÂMªIdentifierÍƒÍ†£setÂÂ’MªIdentifierÍ‡ÍŒ¥apiIdZ®CallExpressionÍÍ¦S°MemberExpressionÍÍ¤V­NewExpressionÍÍ˜MªIdentifierÍ’Í–¤DateMªIdentifierÍ™Í¤«toISOStringÂÂÂÂ[³VariableDeclarationÍ²Íç‘\²VariableDeclaratorÍ¸ÍæMªIdentifierÍ¸Í½¥limitS°MemberExpressionÍÀÍæZ®CallExpressionÍÀÍÙS°MemberExpressionÍÀÍ×MªIdentifierÍÀÍË«FeatureGateMªIdentifierÍÌÍ×«getFeaturesÂÂÂMªIdentifierÍÚÍæ¬dailyAiCallsÂÂ¥constW«IfStatementÍñÍÊ]°BinaryExpressionÍõÍMªIdentifierÍõÍú¥limit¡<S°MemberExpressionÍıÍMªIdentifierÍıÍ¦NumberMªIdentifierÍÍ°MAX_SAFE_INTEGERÂÂN®BlockStatementÍÍÊ’[³VariableDeclarationÍ%ÍQ‘\²VariableDeclaratorÍ+ÍPMªIdentifierÍ+Í0¥ratio]°BinaryExpressionÍ3ÍPS°MemberExpressionÍ3ÍHT®ThisExpressionÍ3Í7MªIdentifierÍ8ÍH°globalDailyCallsÂÂ¡/MªIdentifierÍKÍP¥limit¥constW«IfStatementÍ_Í¿]°BinaryExpressionÍcÍ~MªIdentifierÍcÍh¥ratio¢>=S°MemberExpressionÍlÍ~T®ThisExpressionÍlÍpMªIdentifierÍqÍ~­warnThresholdÂÂN®BlockStatementÍ€Í¿‘Q³ExpressionStatementÍ“Í°R´AssignmentExpressionÍ“Í¯¡=S°MemberExpressionÍ“Í¨T®ThisExpressionÍ“Í—MªIdentifierÍ˜Í¨°warningTriggeredÂÂU§LiteralÍ«Í¯Ã¤trueÀÀO°MethodDefinitionÍ×Í	;ÂÂMªIdentifierÍ×Íê³getGlobalDailyCalls¦methodP²FunctionExpressionÍêÍ	;ÀÂÂÂN®BlockStatementÍíÍ	;’Q³ExpressionStatementÍøÍ	Z®CallExpressionÍøÍ	S°MemberExpressionÍøÍ	
-T®ThisExpressionÍøÍüMªIdentifierÍıÍ	
-­resetIfNewDayÂÂÂY¯ReturnStatementÍ	Í	4S°MemberExpressionÍ	Í	3T®ThisExpressionÍ	Í	"MªIdentifierÍ	#Í	3°globalDailyCallsÂÂO°MethodDefinitionÍ	AÍbÂÂMªIdentifierÍ	AÍ	M¬getDashboard¦methodP²FunctionExpressionÍ	MÍbÀÂÂÂN®BlockStatementÍ	PÍb™Q³ExpressionStatementÍ	[Í	pZ®CallExpressionÍ	[Í	oS°MemberExpressionÍ	[Í	mT®ThisExpressionÍ	[Í	_MªIdentifierÍ	`Í	m­resetIfNewDayÂÂÂ[³VariableDeclarationÍ	zÍ	¯‘\²VariableDeclaratorÍ	€Í	®MªIdentifierÍ	€Í	…¥limitS°MemberExpressionÍ	ˆÍ	®Z®CallExpressionÍ	ˆÍ	¡S°MemberExpressionÍ	ˆÍ	ŸMªIdentifierÍ	ˆÍ	“«FeatureGateMªIdentifierÍ	”Í	Ÿ«getFeaturesÂÂÂMªIdentifierÍ	¢Í	®¬dailyAiCallsÂÂ¥const[³VariableDeclarationÍ	¹Í
->‘\²VariableDeclaratorÍ	¿Í
-=MªIdentifierÍ	¿Í	Æ§percentWµConditionalExpressionÍ	ÉÍ
-=]°BinaryExpressionÍ	ÉÍ	éMªIdentifierÍ	ÉÍ	Î¥limit¢>=S°MemberExpressionÍ	ÒÍ	éMªIdentifierÍ	ÒÍ	Ø¦NumberMªIdentifierÍ	ÙÍ	é°MAX_SAFE_INTEGERÂÂU§LiteralÍ	ìÍ	í ¡0Z®CallExpressionÍ	ıÍ
-=S°MemberExpressionÍ	ıÍ
-MªIdentifierÍ	ıÍ
-¤MathMªIdentifierÍ
-Í
-£minÂÂ’U§LiteralÍ
-Í
-	Ìd£100Z®CallExpressionÍ
-Í
-<S°MemberExpressionÍ
-Í
-MªIdentifierÍ
-Í
-¤MathMªIdentifierÍ
-Í
-¥roundÂÂ‘]°BinaryExpressionÍ
-Í
-;]°BinaryExpressionÍ
-Í
-4S°MemberExpressionÍ
-Í
-,T®ThisExpressionÍ
-Í
-MªIdentifierÍ
-Í
-,°globalDailyCallsÂÂ¡/MªIdentifierÍ
-/Í
-4¥limit¡*U§LiteralÍ
-8Í
-;Ìd£100ÂÂ¥const[³VariableDeclarationÍ
-HÍ
-Z‘\²VariableDeclaratorÍ
-NÍ
-YMªIdentifierÍ
-NÍ
-T¦perApiÔr_”¤type¥start£end¨elements¯ArrayExpressionÍ
-WÍ
-Y¥constQ³ExpressionStatementÍ
-dÍÌZ®CallExpressionÍ
-dÍËS°MemberExpressionÍ
-dÍ
-|S°MemberExpressionÍ
-dÍ
-tT®ThisExpressionÍ
-dÍ
-hMªIdentifierÍ
-iÍ
-t«perApiCallsÂÂMªIdentifierÍ
-uÍ
-|§forEachÂÂ‘P·ArrowFunctionExpressionÍ
-}ÍÊÀÂÂÂ’MªIdentifierÍ
-~Í
-ƒ¥callsMªIdentifierÍ
-…Í
-Š¥apiIdN®BlockStatementÍ
-ÍÊ‘Q³ExpressionStatementÍ
-Í¿Z®CallExpressionÍ
-Í¾S°MemberExpressionÍ
-Í
-©MªIdentifierÍ
-Í
-¤¦perApiMªIdentifierÍ
-¥Í
-©¤pushÂÂ‘Ôr`”¤type¥start£endªproperties°ObjectExpressionÍ
-ªÍ½•Ôra™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ
-½Í
-ÂÂÃÂMªIdentifierÍ
-½Í
-Â¥apiId¤initMªIdentifierÍ
-½Í
-Â¥apiIdÔrb™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ
-ÕÍÂÂÂMªIdentifierÍ
-ÕÍ
-á¬providerName]±LogicalExpressionÍ
-ãÍZ®CallExpressionÍ
-ãÍ
-şS°MemberExpressionÍ
-ãÍ
-÷S°MemberExpressionÍ
-ãÍ
-óT®ThisExpressionÍ
-ãÍ
-çMªIdentifierÍ
-èÍ
-ó«perApiNamesÂÂMªIdentifierÍ
-ôÍ
-÷£getÂÂ‘MªIdentifierÍ
-øÍ
-ı¥apiIdÂ¢??MªIdentifierÍÍ¥apiId¤initb¨PropertyÍÍ+ÂÂÂMªIdentifierÍÍ$ªdailyCallsMªIdentifierÍ&Í+¥calls¤initb¨PropertyÍ>ÍlÂÂÂMªIdentifierÍ>ÍI«dailyTokens]±LogicalExpressionÍKÍlZ®CallExpressionÍKÍgS°MemberExpressionÍKÍ`S°MemberExpressionÍKÍ\T®ThisExpressionÍKÍOMªIdentifierÍPÍ\¬perApiTokensÂÂMªIdentifierÍ]Í`£getÂÂ‘MªIdentifierÍaÍf¥apiIdÂ¢??U§LiteralÍkÍl ¡0¤initb¨PropertyÍÍ®ÂÂÂMªIdentifierÍÍ‰ªlastCallAt]±LogicalExpressionÍ‹Í®Z®CallExpressionÍ‹Í¨S°MemberExpressionÍ‹Í¡S°MemberExpressionÍ‹ÍT®ThisExpressionÍ‹ÍMªIdentifierÍÍ­lastCallTimesÂÂMªIdentifierÍÍ¡£getÂÂ‘MªIdentifierÍ¢Í§¥apiIdÂ¢??U§LiteralÍ¬Í® ¢''¤initÂÂ[³VariableDeclarationÍÖÍ
-‘\²VariableDeclaratorÍÜÍ	MªIdentifierÍÜÍà¤tierZ®CallExpressionÍãÍ	S°MemberExpressionÍãÍZ®CallExpressionÍãÍÿS°MemberExpressionÍãÍıMªIdentifierÍãÍñ®LicenseManagerMªIdentifierÍòÍı«getInstanceÂÂÂMªIdentifierÍ Í§getTierÂÂÂ¥const[³VariableDeclarationÍÍ6‘\²VariableDeclaratorÍÍ5MªIdentifierÍÍ#«billingNoteU§LiteralÍ&Í5·æœ¬åœ° Ollama ä¸è®¡è´¹¹'æœ¬åœ° Ollama ä¸è®¡è´¹'£letW«IfStatementÍ@Í]°BinaryExpressionÍDÍ]MªIdentifierÍDÍH¤tier£===S°MemberExpressionÍMÍ]MªIdentifierÍMÍX«LicenseTierMªIdentifierÍYÍ]¤FREEÂÂN®BlockStatementÍ_Í ‘Q³ExpressionStatementÍnÍ•R´AssignmentExpressionÍnÍ”¡=MªIdentifierÍnÍy«billingNoteÔrc•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ|Í”‘MªIdentifierÍ‹Í¥limit’Ôrd•¤type¥start£end¥value¤tail¯TemplateElementÍ}Í‰Ôre’£raw¦cookedºå…è´¹ç‰ˆæ¯æ—¥ AI ä¸Šé™ ºå…è´¹ç‰ˆæ¯æ—¥ AI ä¸Šé™ Âd¯TemplateElementÍ‘Í“e¤ æ¬¡¤ æ¬¡ÃW«IfStatementÍ¯Í]°BinaryExpressionÍ³ÍÒMªIdentifierÍ³Í·¤tier£===S°MemberExpressionÍ¼ÍÒMªIdentifierÍ¼ÍÇ«LicenseTierMªIdentifierÍÈÍÒªENTERPRISEÂÂN®BlockStatementÍÔÍ‘Q³ExpressionStatementÍãÍR´AssignmentExpressionÍãÍ¡=MªIdentifierÍãÍî«billingNoteU§LiteralÍñÍÙ-ä¼ä¸šç‰ˆæ— è°ƒç”¨ä¸Šé™ï¼Œæ”¯æŒå•†ç”¨æˆæƒÙ/'ä¼ä¸šç‰ˆæ— è°ƒç”¨ä¸Šé™ï¼Œæ”¯æŒå•†ç”¨æˆæƒ'ÀY¯ReturnStatementÍÍ[`°ObjectExpressionÍÍZ˜a¨PropertyÍ.Í2ÂÃÂMªIdentifierÍ.Í2¤tier¤initMªIdentifierÍ.Í2¤tierb¨PropertyÍAÍhÂÂÂMªIdentifierÍAÍQ°globalDailyCallsS°MemberExpressionÍSÍhT®ThisExpressionÍSÍWMªIdentifierÍXÍh°globalDailyCallsÂÂ¤initb¨PropertyÍwÍÂÂÂMªIdentifierÍwÍ‡°globalDailyLimitMªIdentifierÍ‰Í¥limit¤initb¨PropertyÍÍÆÂÂÂMªIdentifierÍÍ®±globalDailyTokensS°MemberExpressionÍ°ÍÆT®ThisExpressionÍ°Í´MªIdentifierÍµÍÆ±globalDailyTokensÂÂ¤initb¨PropertyÍÕÍêÂÂÂMªIdentifierÍÕÍá¬usagePercentMªIdentifierÍãÍê§percent¤initb¨PropertyÍùÍ ÂÂÂMªIdentifierÍùÍ	°warningTriggeredS°MemberExpressionÍÍ T®ThisExpressionÍÍMªIdentifierÍÍ °warningTriggeredÂÂ¤inita¨PropertyÍ/Í5ÂÃÂMªIdentifierÍ/Í5¦perApi¤initMªIdentifierÍ/Í5¦perApia¨PropertyÍDÍOÂÃÂMªIdentifierÍDÍO«billingNote¤initMªIdentifierÍDÍO«billingNoteO°MethodDefinitionÍhÍ©ÂÂMªIdentifierÍhÍw¯isWarningActive¦methodP²FunctionExpressionÍwÍ©ÀÂÂÂN®BlockStatementÍzÍ©‘Y¯ReturnStatementÍ…Í¢S°MemberExpressionÍŒÍ¡T®ThisExpressionÍŒÍMªIdentifierÍ‘Í¡°warningTriggeredÂÂÀ‘Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclarationÌk”Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifier$/MªIdentifier$/«FeatureGateMªIdentifier$/«FeatureGateg¯ImportSpecifier1?MªIdentifier1?®LicenseManagerMªIdentifier1?®LicenseManagerg¯ImportSpecifierÌAÌLMªIdentifierÌAÌL«LicenseTierMªIdentifierÌAÌL«LicenseTierg¯ImportSpecifierÌNÌZMªIdentifierÌNÌZ¬ResultHelperMªIdentifierÌNÌZ¬ResultHelperU§LiteralÌbÌj¦common¨'common'

@@ -2,6 +2,7 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
     Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
 }
 interface PropertyPanel_Params {
+    themeRev?: number;
     selectedComponentId?: string;
     docVersion?: number;
     simWaveTick?: number;
@@ -45,8 +46,9 @@ import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/App
 import { UnitParser, paramMapGet, CouplingMode, MathChannelOp, LogicDecodeProtocol, MultimeterMode, McuFamily, VoltmeterType, traceUiRefresh, traceUiSelect, traceBurn, formatFirmwarePreview } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ComponentParamsUpdate, ComponentParamEntry } from 'schematic_editor';
-import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { OscilloscopeWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/OscilloscopeWaveCanvas";
 import { LogicAnalyzerWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/LogicAnalyzerWaveCanvas";
 import fs from "@ohos:file.fs";
@@ -58,6 +60,7 @@ export class PropertyPanel extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__selectedComponentId = new SynchedPropertySimpleOneWayPU(params.selectedComponentId, this, "selectedComponentId");
         this.__docVersion = new SynchedPropertySimpleOneWayPU(params.docVersion, this, "docVersion");
         this.__simWaveTick = new SynchedPropertySimpleOneWayPU(params.simWaveTick, this, "simWaveTick");
@@ -221,6 +224,7 @@ export class PropertyPanel extends ViewPU {
         this.__simWaveTick.reset(params.simWaveTick);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedComponentId.purgeDependencyOnElmtId(rmElmtId);
         this.__docVersion.purgeDependencyOnElmtId(rmElmtId);
         this.__simWaveTick.purgeDependencyOnElmtId(rmElmtId);
@@ -257,6 +261,7 @@ export class PropertyPanel extends ViewPU {
         this.__logicChannelCount.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__selectedComponentId.aboutToBeDeleted();
         this.__docVersion.aboutToBeDeleted();
         this.__simWaveTick.aboutToBeDeleted();
@@ -293,6 +298,14 @@ export class PropertyPanel extends ViewPU {
         this.__logicChannelCount.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 主题切换时重建，避免色板静态字段变更后子树仍缓存旧色 */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __selectedComponentId: SynchedPropertySimpleOneWayPU<string>;
     get selectedComponentId() {
@@ -563,6 +576,31 @@ export class PropertyPanel extends ViewPU {
             this.ensureInstrumentBinding();
             this.refreshInstrumentData();
         }
+        else {
+            this.resetInstrumentDisplay();
+            this.appService.setActiveInstrumentComponent(null);
+        }
+    }
+    private resetInstrumentDisplay(): void {
+        this.mmReading = '0.000';
+        this.vmReading = '0.00';
+        this.amReading = '0.00';
+        this.pmVoltage = '0.00';
+        this.pmCurrent = '0.00';
+        this.pmPower = '0.00';
+        this.pmPF = '0.00';
+        this.fcFreq = '0 Hz';
+        this.sigFreq = '1kHz';
+        this.sigAmp = '3.3V';
+        this.uartHex = '';
+        this.uartLog = '';
+        this.decodedFrames = '';
+        this.oscWaveData = [];
+        this.oscWaveDataCh2 = [];
+        this.logicChannelData = [];
+        this.hexPath = '';
+        this.hexRegisters = '';
+        this.hexState = 'stopped';
     }
     onSimWaveTick(): void {
         if (this.comp !== null) {
@@ -791,8 +829,8 @@ export class PropertyPanel extends ViewPU {
     loadComponent(): void {
         if (!this.selectedComponentId) {
             this.comp = null;
-            this.oscWaveData = [];
-            this.oscWaveDataCh2 = [];
+            this.paramEntries = [];
+            this.resetInstrumentDisplay();
             return;
         }
         const doc = this.appService.schematicEditor.getDocument();
@@ -836,13 +874,19 @@ export class PropertyPanel extends ViewPU {
         }
         const lib = this.comp.libraryId.toUpperCase();
         if (key === 'voltage') {
-            return lib === 'VCC' || lib.includes('VAC') || lib.includes('POWER') || lib.includes('VDC');
+            return lib === 'VCC' || lib === 'VEE' || lib.includes('VAC') ||
+                lib.includes('POWER') || lib.includes('VDC');
         }
         if (key === 'power') {
             return lib.startsWith('R_');
         }
         if (key === 'value') {
             return lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_');
+        }
+        // 信号发生器：波形 / 频率 / 幅值 / 偏置 / 占空比均可改
+        if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+            return key === 'waveform' || key === 'frequency' || key === 'amplitude' ||
+                key === 'offset' || key === 'dutyCycle' || key === 'duty';
         }
         return false;
     }
@@ -908,6 +952,7 @@ export class PropertyPanel extends ViewPU {
             Scroll.height('100%');
             Scroll.scrollBar(BarState.Auto);
             Scroll.backgroundColor(ProteusColors.CANVAS_BG);
+            Scroll.key(`prop_panel_${this.themeRev}`);
         }, Scroll);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 6 });
@@ -931,7 +976,7 @@ export class PropertyPanel extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusSectionTitle(this, { title: '器件信息' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 423, col: 13 });
+                                            let componentCall = new ProteusSectionTitle(this, { title: '器件信息' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 457, col: 13 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -950,7 +995,7 @@ export class PropertyPanel extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusParamRow(this, { label: '位号', value: this.comp.refDes, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 424, col: 13 });
+                                            let componentCall = new ProteusParamRow(this, { label: '位号', value: this.comp.refDes, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 458, col: 13 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -971,7 +1016,7 @@ export class PropertyPanel extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusParamRow(this, { label: '型号', value: this.comp.libraryId, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 425, col: 13 });
+                                            let componentCall = new ProteusParamRow(this, { label: '型号', value: this.comp.libraryId, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 459, col: 13 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -996,7 +1041,7 @@ export class PropertyPanel extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusParamRow(this, { label: 'X', value: `${this.comp.position.x}`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 427, col: 11 });
+                                let componentCall = new ProteusParamRow(this, { label: 'X', value: `${this.comp.position.x}`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 461, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1017,7 +1062,7 @@ export class PropertyPanel extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusParamRow(this, { label: 'Y', value: `${this.comp.position.y}`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 428, col: 11 });
+                                let componentCall = new ProteusParamRow(this, { label: 'Y', value: `${this.comp.position.y}`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 462, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1059,7 +1104,7 @@ export class PropertyPanel extends ViewPU {
                                                         value: this.paramDisplayValue(key),
                                                         editable: this.paramEditable(key),
                                                         onChange: (v: string) => { this.saveParam(key, v); }
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 434, col: 15 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 468, col: 15 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {
@@ -1235,16 +1280,36 @@ export class PropertyPanel extends ViewPU {
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: '参数名称', text: this.paramKey });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_KEY);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.onChange((v: string) => { this.paramKey = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: '参数名称',
+                                    text: this.paramKey,
+                                    onChange: (v: string) => { this.paramKey = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 528, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: '参数名称',
+                                        text: this.paramKey,
+                                        onChange: (v: string) => { this.paramKey = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: '参数名称',
+                                    text: this.paramKey
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create();
@@ -1259,16 +1324,36 @@ export class PropertyPanel extends ViewPU {
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: '参数值', text: this.paramValue });
-                        TextInput.layoutWeight(1);
-                        TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_VALUE);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.onChange((v: string) => { this.paramValue = v; });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.layoutWeight(1);
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: '参数值',
+                                    text: this.paramValue,
+                                    onChange: (v: string) => { this.paramValue = v; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 540, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: '参数值',
+                                        text: this.paramValue,
+                                        onChange: (v: string) => { this.paramValue = v; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: '参数值',
+                                    text: this.paramValue
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     Row.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create({ space: 6 });
@@ -1296,7 +1381,7 @@ export class PropertyPanel extends ViewPU {
                                             this.statusMessage = '参数已更新';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 516, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 550, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1342,7 +1427,7 @@ export class PropertyPanel extends ViewPU {
                                             this.loadComponent();
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 535, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 569, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1381,7 +1466,7 @@ export class PropertyPanel extends ViewPU {
                                             this.statusMessage = '器件已删除';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 546, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 580, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1493,7 +1578,7 @@ export class PropertyPanel extends ViewPU {
                         autoFit: true,
                         canvasHeight: 140,
                         showStats: true
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 609, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 644, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1547,7 +1632,7 @@ export class PropertyPanel extends ViewPU {
                                     autoFit: true,
                                     canvasHeight: 110,
                                     showStats: true
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 622, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 657, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1596,7 +1681,7 @@ export class PropertyPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'AC', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 636, col: 9 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 671, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1618,7 +1703,7 @@ export class PropertyPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'DC', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 638, col: 9 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 673, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1645,7 +1730,7 @@ export class PropertyPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'FFT', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 643, col: 9 });
+                        onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 678, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1673,7 +1758,7 @@ export class PropertyPanel extends ViewPU {
                                 this.statusMessage =
                                     `ΔV:${m.data.deltaVoltage.toFixed(2)}V ΔT:${m.data.deltaTime.toFixed(3)}ms`;
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 645, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 680, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1727,7 +1812,7 @@ export class PropertyPanel extends ViewPU {
                                     channelData: this.logicChannelData,
                                     channelCount: this.logicChannelCount,
                                     sampleCount: this.logicSampleCount
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 664, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 699, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1780,7 +1865,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200);
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 679, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 714, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1808,7 +1893,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C);
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 684, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 719, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1841,7 +1926,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI);
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 692, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 727, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1909,7 +1994,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.instruments.setMode(MultimeterMode.DCV);
                             this.mmMode = 'DCV';
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 716, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 751, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1938,7 +2023,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.setMode(MultimeterMode.ACV);
                             this.mmMode = 'ACV';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 722, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 757, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1972,7 +2057,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
                             this.mmMode = 'OHM';
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 730, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 765, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2001,7 +2086,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.autoRange();
                             this.refreshInstrumentData();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 736, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 771, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2087,7 +2172,7 @@ export class PropertyPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusParamRow(this, { label: '电压', value: `${this.pmVoltage} V`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 781, col: 7 });
+                    let componentCall = new ProteusParamRow(this, { label: '电压', value: `${this.pmVoltage} V`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 816, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2108,7 +2193,7 @@ export class PropertyPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusParamRow(this, { label: '电流', value: `${this.pmCurrent} mA`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 782, col: 7 });
+                    let componentCall = new ProteusParamRow(this, { label: '电流', value: `${this.pmCurrent} mA`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 817, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2129,7 +2214,7 @@ export class PropertyPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusParamRow(this, { label: '功率', value: `${this.pmPower} mW`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 783, col: 7 });
+                    let componentCall = new ProteusParamRow(this, { label: '功率', value: `${this.pmPower} mW`, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 818, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2150,7 +2235,7 @@ export class PropertyPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusParamRow(this, { label: '功率因数', value: this.pmPF, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 784, col: 7 });
+                    let componentCall = new ProteusParamRow(this, { label: '功率因数', value: this.pmPF, editable: false }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 819, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2199,13 +2284,17 @@ export class PropertyPanel extends ViewPU {
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             TextInput.create({ text: this.fcGate });
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
+            TextInput.fontSize(ProteusFonts.INPUT);
             TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
+            TextInput.placeholderFont({ size: ProteusFonts.INPUT });
+            TextInput.placeholderColor(ProteusColors.TEXT_SECONDARY);
+            TextInput.caretColor(ProteusColors.INPUT_FOCUS);
             TextInput.width(50);
             TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
             TextInput.borderRadius(0);
             TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
             TextInput.backgroundColor(ProteusColors.CANVAS_BG);
+            TextInput.padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H });
             TextInput.onChange((v: string) => { this.fcGate = v; });
         }, TextInput);
         {
@@ -2216,7 +2305,7 @@ export class PropertyPanel extends ViewPU {
                             const g = parseFloat(this.fcGate) || 1;
                             this.appService.instruments.freqCounterSetGateTime(g);
                             this.statusMessage = `闸门设为 ${g}s`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 806, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 845, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2256,16 +2345,36 @@ export class PropertyPanel extends ViewPU {
             Row.width('100%');
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: 'HEX: 55 AA', text: this.uartHex });
-            TextInput.layoutWeight(1);
-            TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.uartHex = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.layoutWeight(1);
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: 'HEX: 55 AA',
+                        text: this.uartHex,
+                        onChange: (v: string) => { this.uartHex = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 862, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: 'HEX: 55 AA',
+                            text: this.uartHex,
+                            onChange: (v: string) => { this.uartHex = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: 'HEX: 55 AA',
+                        text: this.uartHex
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
@@ -2274,7 +2383,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.instruments.uartHexSend(this.uartHex);
                             this.uartLog = this.appService.instruments.getUartLog();
                             this.statusMessage = `已发送: ${this.uartHex}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 829, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 868, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2303,7 +2412,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.uartLog = this.appService.instruments.getUartLog();
                             this.statusMessage = this.uartLog.length > 0 ? '已刷新接收日志' : '暂无数据';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 835, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 874, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2359,7 +2468,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.instruments.clearUartLog();
                             this.uartLog = '';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 850, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 889, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2387,7 +2496,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             void this.appService.instruments.exportUartLog('/data/storage/el2/base/uart_log.txt');
                             this.statusMessage = '日志已导出';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 855, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 894, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2420,21 +2529,41 @@ export class PropertyPanel extends ViewPU {
             Row.width('100%');
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: 'firmware.hex 路径', text: this.hexPath });
-            TextInput.layoutWeight(1);
-            TextInput.height(28);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.hexPath = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.layoutWeight(1);
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: 'firmware.hex 路径',
+                        text: this.hexPath,
+                        onChange: (v: string) => { this.hexPath = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 908, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: 'firmware.hex 路径',
+                            text: this.hexPath,
+                            onChange: (v: string) => { this.hexPath = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: 'firmware.hex 路径',
+                        text: this.hexPath
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '浏览', widthVal: 44,
-                        onAction: () => { void this.browseHexFile(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 875, col: 9 });
+                        onAction: () => { void this.browseHexFile(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 914, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2457,7 +2586,7 @@ export class PropertyPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '烧录 HEX', widthVal: '100%',
-                        onAction: () => { void this.burnHex(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 880, col: 7 });
+                        onAction: () => { void this.burnHex(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 919, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2488,7 +2617,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.hexDebugger.run();
                             this.hexState = 'running';
                             this.statusMessage = 'MCU 运行中';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 884, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 923, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2518,7 +2647,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.hexDebugger.pause();
                             this.hexState = 'paused';
                             this.statusMessage = 'MCU 已暂停';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 890, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 929, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2547,7 +2676,7 @@ export class PropertyPanel extends ViewPU {
                         onAction: () => {
                             this.appService.hexDebugger.step();
                             this.statusMessage = '单步执行';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 896, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 935, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2576,7 +2705,7 @@ export class PropertyPanel extends ViewPU {
                             this.appService.hexDebugger.reset();
                             this.hexState = 'stopped';
                             this.statusMessage = 'MCU 已复位';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 901, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 940, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2630,7 +2759,7 @@ export class PropertyPanel extends ViewPU {
                                 this.statusMessage = `加载失败: ${result.error}`;
                                 traceBurn('UI_BURN_FAIL', `source=property_sample err=${result.error}`);
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 913, col: 7 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/PropertyPanel.ets", line: 952, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

@@ -1,12 +1,12 @@
-import { ErcSeverity, IdUtil, TopologyAdapter, makeDeviceInst, stringMap1, getPinNetMap, Logger, DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WireConflictGeometry, mapAwareStringify, mapAwareParse, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { ErcSeverity, IdUtil, TopologyAdapter, makeDeviceInst, stringMap1, getPinNetMap, Logger, INSTR_TRACE_TAG, traceAiDiag, DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WireConflictGeometry, mapAwareStringify, mapAwareParse, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchTopology, NetNodeRef, Point2D, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary, ComponentDefinition } from 'component_library';
 import { FaultDiagnoser } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/FaultDiagnoser";
-import { SemanticNetBuilder } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
 import { ConstrainedWiringEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/ConstrainedWiringEngine";
 import type { CircuitIntent } from './CircuitIntent';
 import { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 import { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
+import { AiTopologyFixKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiTopologyFixKit";
 export interface ValidationIssue {
     type: 'missing_power' | 'instrument_topo' | 'wire_body' | 'wire_cross' | 'floating_pin' | 'pin_proximity' | 'erc';
     severity: 'error' | 'warning';
@@ -283,16 +283,47 @@ export class PostGenValidator {
                         desc: `电流表 ${dev.refName} I+/I- 在同一网络 → 短路!`, targetUuid: dev.instUuid });
                 }
             }
-            if (libId === 'VOLTMETER_DC') {
-                const vPlusNet = pinNets.get('V+') ?? pinNets.get('1');
+            if (libId === 'VOLTMETER_DC' || libId === 'VIRTUAL_METER') {
+                const vPlusNet = pinNets.get('V+') ?? pinNets.get('V') ?? pinNets.get('1');
                 const comNet = pinNets.get('COM') ?? pinNets.get('2');
                 if (!vPlusNet || !comNet) {
                     issues.push({ type: 'instrument_topo', severity: 'error',
-                        desc: `电压表 ${dev.refName} 引脚浮空 (V+或COM未入网)`, targetUuid: dev.instUuid });
+                        desc: `电压表 ${dev.refName} 引脚浮空 (V+/V 或 COM 未入网)`, targetUuid: dev.instUuid });
                 }
                 else if (vPlusNet === comNet) {
                     issues.push({ type: 'instrument_topo', severity: 'error',
                         desc: `电压表 ${dev.refName} V+/COM 在同一网络 → 读数为0!`, targetUuid: dev.instUuid });
+                }
+            }
+            if (libId.indexOf('OSCILLOSCOPE') >= 0) {
+                const ch1 = pinNets.get('CH1') ?? pinNets.get('1');
+                const gnd = pinNets.get('GND') ?? pinNets.get('5');
+                if (!ch1) {
+                    issues.push({ type: 'instrument_topo', severity: 'error',
+                        desc: `示波器 ${dev.refName} CH1 未入网 — 无法观测波形`, targetUuid: dev.instUuid });
+                }
+                if (!gnd) {
+                    issues.push({ type: 'instrument_topo', severity: 'error',
+                        desc: `示波器 ${dev.refName} GND 未入网 — 必须共地`, targetUuid: dev.instUuid });
+                }
+                if (ch1 && gnd && ch1 === gnd) {
+                    issues.push({ type: 'instrument_topo', severity: 'error',
+                        desc: `示波器 ${dev.refName} CH1 与 GND 同网 → 无差分信号`, targetUuid: dev.instUuid });
+                }
+                // 测量通道禁止挂在纯电源轨（恒压无意义）
+                const sensePins = ['CH1', 'CH2', 'CH3', 'CH4', '1', '2', '3', '4'];
+                for (let si = 0; si < sensePins.length; si++) {
+                    const sn = pinNets.get(sensePins[si]);
+                    if (!sn) {
+                        continue;
+                    }
+                    const net = doc.nets.find(n => n.id === sn);
+                    const nName = (net?.name ?? '').toUpperCase();
+                    if (nName === 'VCC' || nName === 'VDD' || nName === '+5V' || nName === '3V3') {
+                        issues.push({ type: 'instrument_topo', severity: 'error',
+                            desc: `示波器 ${dev.refName}.${sensePins[si]} 挂在电源网 ${nName} — 应接被测信号节点`,
+                            targetUuid: dev.instUuid });
+                    }
                 }
             }
         }
@@ -528,18 +559,46 @@ export class PostGenValidator {
     private checkCrossNetOverlaps(topo: SchTopology): ValidationIssue[] {
         const issues: ValidationIssue[] = [];
         const wires = topo.wireList;
+        let stubStubSkip = 0;
+        let conflictN = 0;
         for (let i = 0; i < wires.length; i++) {
             for (let j = i + 1; j < wires.length; j++) {
+                // 两侧都是短标号 stub：允许近距扇出视觉交叉，不算几何阻断
+                if (WireConflictGeometry.isShortStub(wires[i]) &&
+                    WireConflictGeometry.isShortStub(wires[j])) {
+                    stubStubSkip++;
+                    continue;
+                }
                 const conflict = WireConflictGeometry.wiresConflict(wires[i], wires[j]);
                 if (conflict === 'none') {
                     continue;
                 }
+                conflictN++;
                 const kind = conflict === 'orthogonal_cross' ? '正交交叉' : '共线重叠';
+                const desc = `不同网络导线${kind}: ${wires[i].netUuid} ↔ ${wires[j].netUuid}`;
+                // 两侧都记入，便于 demote 时一并改标号（只记一侧会残留 geoBlocking）
                 issues.push({
                     type: 'wire_cross', severity: 'error',
-                    desc: `不同网络导线${kind}: ${wires[i].netUuid} ↔ ${wires[j].netUuid}`,
+                    desc: desc,
                     targetUuid: wires[i].netUuid
                 });
+                issues.push({
+                    type: 'wire_cross', severity: 'error',
+                    desc: desc,
+                    targetUuid: wires[j].netUuid
+                });
+            }
+        }
+        if (stubStubSkip > 0 || conflictN > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_GEO] wire_cross check wires=${wires.length}` +
+                ` stubStubSkip=${stubStubSkip} conflictPairs=${conflictN}` +
+                ` issues=${issues.length}`);
+            if (conflictN > 0) {
+                const sample: string[] = [];
+                for (let k = 0; k < issues.length && sample.length < 8; k += 2) {
+                    sample.push(issues[k].desc);
+                }
+                traceAiDiag('AI_GEO', 'wire_cross', sample, 8);
             }
         }
         return issues;
@@ -599,38 +658,34 @@ export class PostGenValidator {
         const relayMissing = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') >= 0);
         const otherInstErrors = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') < 0);
         if (relayMissing.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] relay missing — rebuilding nets for SPDT topology`);
-            try {
-                const clone = this.deepClone(current);
-                clone.netList = [];
-                clone.netLabelList = [];
-                clone.wireList = [];
-                const semResult = new SemanticNetBuilder(this.library).build(clone);
-                current = semResult.topology;
-                fixed++;
-                const routeResult = this.wiringEngine.routeUntilClean(current, ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 3);
-                current.wireList = routeResult.routeLines;
-                fixed++;
-            }
-            catch (_e) {
-                Logger.warn('PostGenValidator', '[FIX] SemanticNetBuilder rebuild failed');
-            }
+            // 禁止 SemanticNetBuilder 清空 LLM 网；缺继电器交给 AI clear-loop add_component
+            Logger.warn('PostGenValidator', `[FIX] relay missing ×${relayMissing.length} — defer to AI add_component (no Semantic wipe)`);
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] PostGen FIX defer relay_missing×${relayMissing.length} (no Semantic wipe)`);
         }
         else if (otherInstErrors.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] instrument errors=${otherInstErrors.length} ` +
-                `[${otherInstErrors.map(e => e.desc).join('; ')}] — deferred to AI fix loop, skip Semantic wipe`);
+            // 仪器拓扑错误：确定性 rebuild，禁止只 defer 导致门禁永远 INCOMPLETE
+            const reb = AiTopologyFixKit.rebuildInstrument(current, this.wiringEngine);
+            if (reb.fixed > 0) {
+                fixed += reb.fixed;
+                Logger.info('PostGenValidator', `[FIX] instrument_topo rebuildInstrument fixed=${reb.fixed}` +
+                    ` issues=${otherInstErrors.length}`);
+                Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] PostGen FIX rebuild_instrument fixed=${reb.fixed}`);
+            }
+            else {
+                Logger.info('PostGenValidator', `[FIX] instrument errors=${otherInstErrors.length} ` +
+                    `[${otherInstErrors.map(e => e.desc).join('; ')}] — rebuild noop, AI loop next`);
+            }
         }
         const routeErrors = errors.filter(e => e.type === 'wire_body' || e.type === 'wire_cross' || e.type === 'pin_proximity');
-        if (routeErrors.length > 0 && relayMissing.length === 0) {
-            // 标号优先：先降级违例网，避免对无法清几何的网空转 A*
+        if (routeErrors.length > 0) {
+            // 缺 RELAY 时仍允许 demote/geo，禁止把几何问题拖到 clear-loop 用尽
             const bad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
             if (bad.size > 0) {
                 Logger.info('PostGenValidator', `[FIX] demote-first wire violations nets=${bad.size}`);
                 this.wiringEngine.demoteNetsToLabelStubs(current, bad);
                 fixed++;
             }
-            // 问题少时才轻量重布一轮；多问题时 demote 已足够
-            if (routeErrors.length <= 4) {
+            if (routeErrors.length <= 4 && relayMissing.length === 0) {
                 Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length}, light re-route (sync maxRounds=1)`);
                 const routeResult = this.wiringEngine.routeUntilClean(current, ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 1);
                 current.wireList = routeResult.routeLines;
@@ -641,9 +696,9 @@ export class PostGenValidator {
                 }
                 fixed++;
             }
-        }
-        else if (routeErrors.length > 0 && relayMissing.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length} deferred after instrument rebuild+route`);
+            else if (relayMissing.length > 0) {
+                Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length} demoted; re-route deferred (relay missing)`);
+            }
         }
         return { topo: current, fixed: fixed };
     }
@@ -655,37 +710,32 @@ export class PostGenValidator {
         const relayMissing = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') >= 0);
         const otherInstErrors = instErrors.filter(e => e.desc.indexOf('缺少 RELAY_SPDT') < 0);
         if (relayMissing.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] relay missing — rebuilding nets for SPDT topology`);
-            try {
-                const clone = this.deepClone(current);
-                clone.netList = [];
-                clone.netLabelList = [];
-                clone.wireList = [];
-                const semResult = new SemanticNetBuilder(this.library).build(clone);
-                current = semResult.topology;
-                fixed++;
-                await this.yieldMain();
-                const routeResult = await this.wiringEngine.routeUntilCleanAsync(current, ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 2);
-                current.wireList = routeResult.routeLines;
-                fixed++;
-            }
-            catch (_e) {
-                Logger.warn('PostGenValidator', '[FIX] SemanticNetBuilder rebuild failed');
-            }
+            // 禁止 SemanticNetBuilder 清空 LLM 网；缺继电器交给 AI clear-loop add_component
+            Logger.warn('PostGenValidator', `[FIX] relay missing ×${relayMissing.length} — defer to AI add_component (no Semantic wipe)`);
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] PostGen FIX defer relay_missing×${relayMissing.length} (no Semantic wipe)`);
         }
         else if (otherInstErrors.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] instrument errors=${otherInstErrors.length} ` +
-                `[${otherInstErrors.map(e => e.desc).join('; ')}] — deferred to AI fix loop, skip Semantic wipe`);
+            const reb = AiTopologyFixKit.rebuildInstrument(current, this.wiringEngine);
+            if (reb.fixed > 0) {
+                fixed += reb.fixed;
+                Logger.info('PostGenValidator', `[FIX] instrument_topo rebuildInstrument fixed=${reb.fixed}` +
+                    ` issues=${otherInstErrors.length}`);
+                Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] PostGen FIX rebuild_instrument fixed=${reb.fixed}`);
+            }
+            else {
+                Logger.info('PostGenValidator', `[FIX] instrument errors=${otherInstErrors.length} ` +
+                    `[${otherInstErrors.map(e => e.desc).join('; ')}] — rebuild noop, AI loop next`);
+            }
         }
         const routeErrors = errors.filter(e => e.type === 'wire_body' || e.type === 'wire_cross' || e.type === 'pin_proximity');
-        if (routeErrors.length > 0 && relayMissing.length === 0) {
+        if (routeErrors.length > 0) {
             const bad = this.wiringEngine.findViolatingNetUuids(current, current.wireList);
             if (bad.size > 0) {
                 Logger.info('PostGenValidator', `[FIX] demote-first wire violations nets=${bad.size}`);
                 this.wiringEngine.demoteNetsToLabelStubs(current, bad);
                 fixed++;
             }
-            if (routeErrors.length <= 4) {
+            if (routeErrors.length <= 4 && relayMissing.length === 0) {
                 Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length}, light re-route (async maxRounds=1)`);
                 await this.yieldMain();
                 const routeResult = await this.wiringEngine.routeUntilCleanAsync(current, ConstrainedWiringEngine.defaultConstraints(current), undefined, undefined, 1);
@@ -697,9 +747,9 @@ export class PostGenValidator {
                 }
                 fixed++;
             }
-        }
-        else if (routeErrors.length > 0 && relayMissing.length > 0) {
-            Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length} deferred after instrument rebuild+route`);
+            else if (relayMissing.length > 0) {
+                Logger.info('PostGenValidator', `[FIX] wire issues=${routeErrors.length} demoted; re-route deferred (relay missing)`);
+            }
         }
         return { topo: current, fixed: fixed };
     }

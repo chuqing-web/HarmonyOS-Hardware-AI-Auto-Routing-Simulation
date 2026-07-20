@@ -7,7 +7,7 @@ import { DeviceInst, RouteLine } from '../types/TopologyTypes';
 import { SymbolBounds, calcSymbolBounds } from './SymbolGeometry';
 
 /** 与 SchematicEditorImpl.HIT_PAD 保持一致 */
-export const SELECTION_HIT_PAD = 14;
+export const SELECTION_HIT_PAD = 22;
 
 /** 导线距无关引脚的最小安全距离 (mil) */
 export const FOREIGN_PIN_CLEARANCE = 20;

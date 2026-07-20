@@ -26,6 +26,8 @@ interface ProjectLockReleaseData {
 export interface SessionState {
     lastPath: string;
     lastProjectName: string;
+    /** 工作副本 autosave 路径（未保存到正式路径时使用） */
+    autoSavePath?: string;
     closedCleanly: boolean;
     timestamp: string;
 }
@@ -487,12 +489,13 @@ export class FilePersistenceImpl implements IFilePersistence {
     getSessionFilePath(): string {
         return `${this.appBaseDir}/session.json`;
     }
-    async saveSessionState(lastPath: string, lastProjectName: string, closedCleanly: boolean): Promise<void> {
+    async saveSessionState(lastPath: string, lastProjectName: string, closedCleanly: boolean, autoSavePath: string = ''): Promise<void> {
         if (!this.appBaseDir)
             return;
         const session: SessionState = {
             lastPath: lastPath,
             lastProjectName: lastProjectName,
+            autoSavePath: autoSavePath.length > 0 ? autoSavePath : undefined,
             closedCleanly: closedCleanly,
             timestamp: new Date().toISOString()
         };
@@ -519,41 +522,75 @@ export class FilePersistenceImpl implements IFilePersistence {
             return;
         const session = await this.loadSessionState();
         if (session !== null) {
-            await this.saveSessionState(session.lastPath, session.lastProjectName, true);
+            await this.saveSessionState(session.lastPath, session.lastProjectName, true, session.autoSavePath ?? '');
         }
     }
     async checkRecoveryFiles(): Promise<string[]> {
         const result: string[] = [];
         if (!this.appBaseDir)
             return result;
-        // Check for session-based clues of abnormal shutdown instead of dir listing
         const session = await this.loadSessionState();
-        if (session !== null && !session.closedCleanly) {
-            // Last session was not cleanly closed — check auto-save
-            const autoSavePath = `${this.appBaseDir}/autosave/${session.lastProjectName}.schsim`;
+        if (session === null) {
+            return result;
+        }
+        const autoSavePath = session.autoSavePath !== undefined && session.autoSavePath.length > 0
+            ? session.autoSavePath
+            : `${this.appBaseDir}/autosave/${session.lastProjectName}.schsim`;
+        if (!session.closedCleanly) {
             try {
                 fs.accessSync(autoSavePath);
                 result.push(autoSavePath);
             }
             catch (_e) { /* no auto-save found */ }
-            // Also check recovery dir — match the pattern used by saveRecoveryCacheWithPath
-            // saveRecoveryCacheWithPath saves as recovery_{name}_{timestamp}.schsim,
-            // so we scan the directory for any file matching recovery_{name}_*.schsim
-            try {
-                const recoveryDir = `${this.appBaseDir}/${RECOVERY_DIR}`;
-                fs.accessSync(recoveryDir);
-                const list = fs.listFileSync(recoveryDir);
-                const prefix = `recovery_${session.lastProjectName}_`;
-                for (let i = 0; i < list.length; i++) {
-                    if (list[i].startsWith(prefix) && list[i].endsWith('.schsim')) {
-                        result.push(`${recoveryDir}/${list[i]}`);
-                        break;
-                    }
-                }
+            const latestRecovery = FilePersistenceImpl.findLatestRecoveryFile(this.appBaseDir, session.lastProjectName);
+            if (latestRecovery.length > 0 && !result.includes(latestRecovery)) {
+                result.push(latestRecovery);
             }
-            catch (_e) { /* no recovery dir */ }
         }
         return result;
+    }
+    /** 返回最近一次 recovery 快照路径 */
+    private static findLatestRecoveryFile(baseDir: string, projectName: string): string {
+        const recoveryDir = `${baseDir}/${RECOVERY_DIR}`;
+        try {
+            fs.accessSync(recoveryDir);
+            const list = fs.listFileSync(recoveryDir);
+            const prefix = `recovery_${projectName}_`;
+            let bestPath = '';
+            let bestTs = 0;
+            for (let i = 0; i < list.length; i++) {
+                const name = list[i];
+                if (!name.startsWith(prefix) || !name.endsWith('.schsim')) {
+                    continue;
+                }
+                const full = `${recoveryDir}/${name}`;
+                const tsPart = name.substring(prefix.length, name.length - 7);
+                const ts = parseInt(tsPart, 10);
+                const mtime = Number.isFinite(ts) && ts > 0 ? ts : fs.statSync(full).mtime;
+                if (mtime >= bestTs) {
+                    bestTs = mtime;
+                    bestPath = full;
+                }
+            }
+            return bestPath;
+        }
+        catch (_e) {
+            return '';
+        }
+    }
+    getAutoSavePath(): string {
+        return this.autoSavePath;
+    }
+    async saveAutoSaveNow(): Promise<boolean> {
+        if (!this.autoSaveCallback || this.autoSavePath.length === 0) {
+            return false;
+        }
+        const project = this.autoSaveCallback();
+        if (project === null) {
+            return false;
+        }
+        const result = await this.saveProject(project, this.autoSavePath);
+        return result.success;
     }
     async saveRecoveryCacheWithPath(path: string, project: ProjectFile): Promise<Result<void>> {
         if (!this.appBaseDir) {
@@ -579,6 +616,7 @@ export class FilePersistenceImpl implements IFilePersistence {
         this.disableAutoSave();
         this.autoSavePath = savePath;
         this.autoSaveCallback = callback;
+        void this.saveAutoSaveNow();
         this.autoSaveTimer = setInterval(async () => {
             if (this.autoSaveCallback && this.autoSavePath) {
                 const project = this.autoSaveCallback();

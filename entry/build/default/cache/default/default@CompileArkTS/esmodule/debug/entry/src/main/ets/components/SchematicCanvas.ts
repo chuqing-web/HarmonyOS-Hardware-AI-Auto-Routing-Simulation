@@ -3,6 +3,7 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
 }
 interface SchematicCanvas_Params {
     canvasVersion?: number;
+    themeRefreshKey?: number;
     selectedComponentId?: string;
     mouseX?: number;
     mouseY?: number;
@@ -26,6 +27,7 @@ interface SchematicCanvas_Params {
     appService?: AppService;
     pointerDown?: boolean;
     dragComponentId?: string;
+    dragIds?: string[];
     dragStartPos?: Point2D;
     dragPreviewPos?: Point2D | null;
     lastPointerX?: number;
@@ -110,6 +112,7 @@ export class SchematicCanvas extends ViewPU {
             this.paramsGenerator_ = paramsLambda;
         }
         this.__canvasVersion = new SynchedPropertySimpleTwoWayPU(params.canvasVersion, this, "canvasVersion");
+        this.__themeRefreshKey = new SynchedPropertySimpleOneWayPU(params.themeRefreshKey, this, "themeRefreshKey");
         this.__selectedComponentId = new SynchedPropertySimpleTwoWayPU(params.selectedComponentId, this, "selectedComponentId");
         this.__mouseX = new SynchedPropertySimpleTwoWayPU(params.mouseX, this, "mouseX");
         this.__mouseY = new SynchedPropertySimpleTwoWayPU(params.mouseY, this, "mouseY");
@@ -133,6 +136,7 @@ export class SchematicCanvas extends ViewPU {
         this.appService = AppService.getInstance();
         this.pointerDown = false;
         this.dragComponentId = '';
+        this.dragIds = [];
         this.dragStartPos = { x: 0, y: 0 };
         this.dragPreviewPos = null;
         this.lastPointerX = 0;
@@ -219,9 +223,13 @@ export class SchematicCanvas extends ViewPU {
         };
         this.setInitiallyProvidedValue(params);
         this.declareWatch("canvasVersion", this.onCanvasVersionChange);
+        this.declareWatch("themeRefreshKey", this.onThemeRefreshChange);
         this.finalizeConstruction();
     }
     setInitiallyProvidedValue(params: SchematicCanvas_Params) {
+        if (params.themeRefreshKey === undefined) {
+            this.__themeRefreshKey.set(0);
+        }
         if (params.rulerVisible === undefined) {
             this.__rulerVisible.set(true);
         }
@@ -263,6 +271,9 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.dragComponentId !== undefined) {
             this.dragComponentId = params.dragComponentId;
+        }
+        if (params.dragIds !== undefined) {
+            this.dragIds = params.dragIds;
         }
         if (params.dragStartPos !== undefined) {
             this.dragStartPos = params.dragStartPos;
@@ -440,11 +451,13 @@ export class SchematicCanvas extends ViewPU {
         }
     }
     updateStateVars(params: SchematicCanvas_Params) {
+        this.__themeRefreshKey.reset(params.themeRefreshKey);
         this.__rulerVisible.reset(params.rulerVisible);
         this.__ercErrors.reset(params.ercErrors);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__canvasVersion.purgeDependencyOnElmtId(rmElmtId);
+        this.__themeRefreshKey.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedComponentId.purgeDependencyOnElmtId(rmElmtId);
         this.__mouseX.purgeDependencyOnElmtId(rmElmtId);
         this.__mouseY.purgeDependencyOnElmtId(rmElmtId);
@@ -466,6 +479,7 @@ export class SchematicCanvas extends ViewPU {
     }
     aboutToBeDeleted() {
         this.__canvasVersion.aboutToBeDeleted();
+        this.__themeRefreshKey.aboutToBeDeleted();
         this.__selectedComponentId.aboutToBeDeleted();
         this.__mouseX.aboutToBeDeleted();
         this.__mouseY.aboutToBeDeleted();
@@ -493,6 +507,14 @@ export class SchematicCanvas extends ViewPU {
     }
     set canvasVersion(newValue: number) {
         this.__canvasVersion.set(newValue);
+    }
+    /** 主题切换时递增，强制 Canvas 节点重绑背景色并重绘 */
+    private __themeRefreshKey: SynchedPropertySimpleOneWayPU<number>;
+    get themeRefreshKey() {
+        return this.__themeRefreshKey.get();
+    }
+    set themeRefreshKey(newValue: number) {
+        this.__themeRefreshKey.set(newValue);
     }
     private __selectedComponentId: SynchedPropertySimpleTwoWayPU<string>;
     get selectedComponentId() {
@@ -583,6 +605,8 @@ export class SchematicCanvas extends ViewPU {
     private appService: AppService;
     private pointerDown: boolean;
     private dragComponentId: string;
+    /** 本次拖动涉及的全部器件（多选一起移动） */
+    private dragIds: string[];
     private dragStartPos: Point2D;
     private dragPreviewPos: Point2D | null;
     private lastPointerX: number;
@@ -723,6 +747,15 @@ export class SchematicCanvas extends ViewPU {
     onCanvasVersionChange(): void {
         this.backgroundDirty = true;
         this.rulerDirty = true;
+        this.gridTile = null;
+        this.gridTileKey = '';
+        this.scheduleRedraw();
+    }
+    onThemeRefreshChange(): void {
+        this.backgroundDirty = true;
+        this.rulerDirty = true;
+        this.gridTile = null;
+        this.gridTileKey = '';
         this.scheduleRedraw();
     }
     private invalidateJuncCache(): void {
@@ -851,6 +884,7 @@ export class SchematicCanvas extends ViewPU {
                         Canvas.layoutWeight(1);
                         Canvas.height(ProteusDimens.RULER_SIZE);
                         Canvas.backgroundColor(ProteusColors.CANVAS_BG);
+                        Canvas.key(`ruler-h-${this.themeRefreshKey}`);
                         Canvas.border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER });
                         Canvas.onReady(() => this.drawHRuler());
                     }, Canvas);
@@ -878,6 +912,7 @@ export class SchematicCanvas extends ViewPU {
                         Canvas.width(ProteusDimens.RULER_SIZE);
                         Canvas.height('100%');
                         Canvas.backgroundColor(ProteusColors.CANVAS_BG);
+                        Canvas.key(`ruler-v-${this.themeRefreshKey}`);
                         Canvas.border({ width: { right: 1 }, color: ProteusColors.DIVIDER });
                         Canvas.onReady(() => this.drawVRuler());
                     }, Canvas);
@@ -904,6 +939,8 @@ export class SchematicCanvas extends ViewPU {
             Canvas.height('100%');
             // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.backgroundColor(ProteusColors.CANVAS_BG);
+            // Layer 0: Background — grid + components (static, rarely redrawn)
+            Canvas.key(`sch-bg-${this.themeRefreshKey}`);
             // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.hitTestBehavior(HitTestMode.Block);
             // Layer 0: Background — grid + components (static, rarely redrawn)
@@ -993,7 +1030,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onCopySelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 380, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 397, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1028,7 +1065,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onDeleteSelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 389, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 406, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1125,11 +1162,42 @@ export class SchematicCanvas extends ViewPU {
             this.onPointerUp(event.x, event.y);
         }
     }
-    private clearSelection(): void {
-        this.selectedComponentId = '';
+    private clearDragState(): void {
         this.dragComponentId = '';
+        this.dragIds = [];
         this.dragPreviewPos = null;
         this.dragBlocked = false;
+    }
+    private isDragId(id: string): boolean {
+        for (let i = 0; i < this.dragIds.length; i++) {
+            if (this.dragIds[i] === id) {
+                return true;
+            }
+        }
+        return id.length > 0 && id === this.dragComponentId;
+    }
+    private getDragDelta(): Point2D {
+        if (this.dragPreviewPos === null) {
+            return { x: 0, y: 0 };
+        }
+        return {
+            x: this.dragPreviewPos.x - this.dragStartPos.x,
+            y: this.dragPreviewPos.y - this.dragStartPos.y
+        };
+    }
+    private getDragDrawPos(comp: ComponentInstance): Point2D {
+        if (!this.isDragId(comp.id) || this.dragPreviewPos === null) {
+            return comp.position;
+        }
+        if (comp.id === this.dragComponentId) {
+            return this.dragPreviewPos;
+        }
+        const d = this.getDragDelta();
+        return { x: comp.position.x + d.x, y: comp.position.y + d.y };
+    }
+    private clearSelection(): void {
+        this.selectedComponentId = '';
+        this.clearDragState();
         this.toolMode = EditorToolMode.SELECT;
         this.appService.schematicEditor.setSelection([]);
         this.setWireStart(null);
@@ -1266,9 +1334,7 @@ export class SchematicCanvas extends ViewPU {
     }
     private cancelPointerInteraction(): void {
         this.pointerDown = false;
-        this.dragComponentId = '';
-        this.dragPreviewPos = null;
-        this.dragBlocked = false;
+        this.clearDragState();
         this.isBoxSelecting = false;
         this.previewWireEnd = null;
         this.alignGuideX = null;
@@ -1316,82 +1382,107 @@ export class SchematicCanvas extends ViewPU {
             this.toolMode === EditorToolMode.GROUND) {
             return;
         }
-        const hits = this.appService.schematicEditor.selectAt(world);
         const editor = this.appService.schematicEditor as SchematicEditorImpl;
-        const selectedNets = this.appService.schematicEditor.getSelectedNets();
+        // 先 hitTest，勿用 selectAt（会立刻把多选压成单选）
+        const hits = editor.hitTestAt(world);
         this.interactiveToggleCompId = '';
         this.potDragCompId = '';
-        if (this.toolMode === EditorToolMode.SELECT && (hits.length > 0 || selectedNets.length > 0)) {
-            if (hits.length > 0) {
-                if (this.shiftHeld) {
-                    const toggled = this.appService.schematicEditor.toggleSelection(hits[0]);
-                    this.selectedComponentId = toggled.length > 0 ? toggled[toggled.length - 1] : '';
-                    this.appService.schematicEditor.setSelection(toggled);
-                    this.onStatusChange(`已选择 ${toggled.length} 个器件`);
-                    return;
-                }
-                this.selectedComponentId = hits[0];
-                // Simulation: click SW_PUSH to press/release (no drag)
-                if (this.isSimulationActive() && this.isPushButtonComponent(hits[0])) {
-                    this.interactiveToggleCompId = hits[0];
-                    this.dragComponentId = '';
-                    this.dragPreviewPos = null;
-                    this.dragBlocked = true;
-                    this.appService.schematicEditor.setSelection([hits[0]]);
-                    this.onStatusChange('松开完成按键切换');
-                    return;
-                }
-                // Simulation: drag pot wiper along resistor body
-                if (this.isSimulationActive() && this.isPotentiometerComponent(hits[0])) {
-                    this.potDragCompId = hits[0];
-                    this.potDragLastWiper = -1;
-                    this.dragComponentId = '';
-                    this.dragPreviewPos = null;
-                    this.dragBlocked = true;
-                    this.appService.schematicEditor.setSelection([hits[0]]);
-                    this.applyPotWiperFromWorld(hits[0], world);
-                    this.onStatusChange('拖动调节滑动变阻器');
-                    return;
-                }
-                if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
-                    this.dragComponentId = '';
-                    this.dragPreviewPos = null;
-                    this.dragBlocked = true;
-                    this.onStatusChange('器件层已锁定');
-                }
-                else if (this.appService.schematicEditor.isComponentLocked(hits[0])) {
-                    this.dragComponentId = '';
-                    this.dragPreviewPos = null;
-                    this.dragBlocked = true;
-                    this.onStatusChange('器件已锁定，无法拖动');
-                }
-                else {
-                    this.dragComponentId = hits[0];
-                    this.dragBlocked = false;
-                    const doc = this.appService.schematicEditor.getDocument();
-                    const comp = doc.components.find(c => c.id === hits[0]);
-                    if (comp) {
-                        this.dragStartPos = { x: comp.position.x, y: comp.position.y };
-                        this.dragPreviewPos = { x: comp.position.x, y: comp.position.y };
-                    }
-                }
-                this.appService.schematicEditor.setSelection([hits[0]]);
-                this.onStatusChange(`已选择 ${hits[0]}`);
+        if (this.toolMode === EditorToolMode.SELECT && hits.length > 0) {
+            const hitId = hits[0];
+            if (this.shiftHeld) {
+                const toggled = this.appService.schematicEditor.toggleSelection(hitId);
+                this.selectedComponentId = toggled.length > 0 ? toggled[toggled.length - 1] : '';
+                this.onStatusChange(`已选择 ${toggled.length} 个器件`);
+                this.scheduleRedraw();
                 return;
             }
-            // Wire selected
-            this.selectedComponentId = '';
-            this.dragComponentId = '';
-            this.dragPreviewPos = null;
+            // Simulation: click SW_PUSH to press/release (no drag)
+            if (this.isSimulationActive() && this.isPushButtonComponent(hitId)) {
+                this.interactiveToggleCompId = hitId;
+                this.clearDragState();
+                this.appService.schematicEditor.setSelection([hitId]);
+                this.selectedComponentId = hitId;
+                this.onStatusChange('松开完成按键切换');
+                return;
+            }
+            // Simulation: drag pot wiper along resistor body
+            if (this.isSimulationActive() && this.isPotentiometerComponent(hitId)) {
+                this.potDragCompId = hitId;
+                this.potDragLastWiper = -1;
+                this.clearDragState();
+                this.appService.schematicEditor.setSelection([hitId]);
+                this.selectedComponentId = hitId;
+                this.applyPotWiperFromWorld(hitId, world);
+                this.onStatusChange('拖动调节滑动变阻器');
+                return;
+            }
+            const alreadySelected = editor.isComponentSelected(hitId);
+            let moveIds: string[] = [];
+            if (alreadySelected) {
+                const docSel = this.appService.schematicEditor.getDocument().components;
+                for (let i = 0; i < docSel.length; i++) {
+                    if (editor.isComponentSelected(docSel[i].id)) {
+                        moveIds.push(docSel[i].id);
+                    }
+                }
+            }
+            if (alreadySelected && moveIds.length > 1) {
+                // 点在已选集合内：保持多选，整组拖动
+                this.selectedComponentId = hitId;
+            }
+            else {
+                this.appService.schematicEditor.setSelection([hitId]);
+                moveIds = [hitId];
+                this.selectedComponentId = hitId;
+            }
+            if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
+                this.clearDragState();
+                this.dragBlocked = true;
+                this.onStatusChange('器件层已锁定');
+                this.scheduleRedraw();
+                return;
+            }
+            let anyLocked = false;
+            for (let i = 0; i < moveIds.length; i++) {
+                if (this.appService.schematicEditor.isComponentLocked(moveIds[i])) {
+                    anyLocked = true;
+                    break;
+                }
+            }
+            if (anyLocked) {
+                this.clearDragState();
+                this.dragBlocked = true;
+                this.onStatusChange(moveIds.length > 1 ? '选中含锁定器件，无法拖动' : '器件已锁定，无法拖动');
+                this.scheduleRedraw();
+                return;
+            }
+            this.dragIds = moveIds;
+            this.dragComponentId = hitId;
             this.dragBlocked = false;
-            this.onStatusChange('已选择导线');
+            const doc = this.appService.schematicEditor.getDocument();
+            const comp = doc.components.find(c => c.id === hitId);
+            if (comp) {
+                this.dragStartPos = { x: comp.position.x, y: comp.position.y };
+                this.dragPreviewPos = { x: comp.position.x, y: comp.position.y };
+            }
+            this.onStatusChange(moveIds.length > 1
+                ? `已选择 ${moveIds.length} 个器件（可拖动）`
+                : `已选择 ${hitId}`);
+            this.scheduleRedraw();
             return;
         }
-        else if (this.toolMode === EditorToolMode.SELECT) {
+        if (this.toolMode === EditorToolMode.SELECT) {
+            const wireNet = editor.hitTestWireAt(world);
+            if (wireNet !== null && wireNet.length > 0) {
+                editor.selectAt(world);
+                this.selectedComponentId = '';
+                this.clearDragState();
+                this.onStatusChange('已选择导线');
+                this.scheduleRedraw();
+                return;
+            }
             this.selectedComponentId = '';
-            this.dragComponentId = '';
-            this.dragPreviewPos = null;
-            this.dragBlocked = false;
+            this.clearDragState();
             this.isBoxSelecting = true;
             this.boxSelectStart = world;
             this.boxSelectEnd = world;
@@ -1490,9 +1581,7 @@ export class SchematicCanvas extends ViewPU {
             }
             this.isBoxSelecting = false;
             this.pointerDown = false;
-            this.dragComponentId = '';
-            this.dragPreviewPos = null;
-            this.dragBlocked = false;
+            this.clearDragState();
             this.scheduleRedraw();
             return;
         }
@@ -1505,9 +1594,7 @@ export class SchematicCanvas extends ViewPU {
             this.backgroundDirty = true;
             this.isBoxSelecting = false;
             this.pointerDown = false;
-            this.dragComponentId = '';
-            this.dragPreviewPos = null;
-            this.dragBlocked = false;
+            this.clearDragState();
             this.scheduleRedraw();
             return;
         }
@@ -1527,7 +1614,14 @@ export class SchematicCanvas extends ViewPU {
         }
         else if (this.dragComponentId.length > 0 && this.isSelectMode()) {
             if (this.dragPreviewPos !== null) {
-                this.appService.schematicEditor.moveComponent(this.dragComponentId, this.dragPreviewPos);
+                const delta = this.getDragDelta();
+                if (this.dragIds.length > 1) {
+                    this.appService.schematicEditor.moveComponents(this.dragIds, delta);
+                    this.onStatusChange(`已移动 ${this.dragIds.length} 个器件`);
+                }
+                else if (Math.abs(delta.x) > 0 || Math.abs(delta.y) > 0) {
+                    this.appService.schematicEditor.moveComponent(this.dragComponentId, this.dragPreviewPos);
+                }
             }
         }
         else if (this.isBoxSelecting && this.isSelectMode()) {
@@ -1550,9 +1644,7 @@ export class SchematicCanvas extends ViewPU {
         }
         this.isBoxSelecting = false;
         this.pointerDown = false;
-        this.dragComponentId = '';
-        this.dragPreviewPos = null;
-        this.dragBlocked = false;
+        this.clearDragState();
         this.previewWireEnd = null;
         this.alignGuideX = null;
         this.alignGuideY = null;
@@ -1890,8 +1982,7 @@ export class SchematicCanvas extends ViewPU {
                     }
                     this.toolMode = EditorToolMode.WIRE;
                     this.selectedComponentId = '';
-                    this.dragComponentId = '';
-                    this.dragPreviewPos = null;
+                    this.clearDragState();
                     this.appService.schematicEditor.setSelection([]);
                     this.wireWaypoints = [nearPin];
                     this.setWireStart(nearPin);
@@ -1917,7 +2008,7 @@ export class SchematicCanvas extends ViewPU {
     }
     private updateHover(world: Point2D): void {
         const editor = this.appService.schematicEditor as SchematicEditorImpl;
-        const hits = editor.hitTestAt(world);
+        const hits = editor.hitTestNear(world);
         if (hits.length > 0) {
             this.hoverComponentId = hits[0];
             this.hoverWireNetId = '';
@@ -2055,6 +2146,7 @@ export class SchematicCanvas extends ViewPU {
         if (this.alignGuideX !== null || this.alignGuideY !== null) {
             this.drawAlignGuides(ctx, bounds);
         }
+        this.drawSelectionOverlays(ctx, doc, editor);
         this.drawHoverOverlays(ctx, doc, editor);
         this.drawLitLedOverlays(ctx, doc);
         this.drawActiveBuzzerOverlays(ctx, doc);
@@ -2064,52 +2156,63 @@ export class SchematicCanvas extends ViewPU {
         }
     }
     private drawDraggedComponentPreview(ctx: CanvasRenderingContext2D, components: ComponentInstance[]): void {
-        if (this.dragPreviewPos === null) {
+        if (this.dragPreviewPos === null || this.dragIds.length === 0) {
             return;
         }
+        const delta = this.getDragDelta();
         for (let i = 0; i < components.length; i++) {
-            if (components[i].id !== this.dragComponentId) {
+            const comp = components[i];
+            if (!this.isDragId(comp.id)) {
                 continue;
             }
-            const comp = components[i];
             const def = this.getCachedCompDef(comp.libraryId);
             if (def === null) {
                 continue;
             }
+            let pos: Point2D = this.dragPreviewPos;
+            if (comp.id !== this.dragComponentId) {
+                const offsetPos: Point2D = {
+                    x: comp.position.x + delta.x,
+                    y: comp.position.y + delta.y
+                };
+                pos = offsetPos;
+            }
             const style: SymbolDrawStyle = {
                 strokeColor: ProteusColors.SELECTED,
-                fillColor: ProteusColors.CANVAS_BG,
-                lineWidth: 2,
+                fillColor: ProteusColors.COMPONENT_BODY_FILL,
+                lineWidth: 2.8,
                 selected: true,
                 hovered: false
             };
-            SchematicSymbolRenderer.drawComponent(ctx, this.dragPreviewPos.x, this.dragPreviewPos.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
-            break;
+            SchematicSymbolRenderer.drawComponent(ctx, pos.x, pos.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
         }
     }
     private ensureGridTile(vp: ViewportState): void {
         const g = vp.gridSize;
-        const key = `${g}_${ProteusColors.GRID_DOT}`;
+        const key = `${g}_${ProteusColors.GRID_DOT}_${ProteusColors.CANVAS_BG}`;
         if (this.gridTile !== null && this.gridTileKey === key) {
             return;
         }
         const cells = 16;
         const tileW = g * cells;
         const tileH = g * cells;
-        const rgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
-        this.gridTile = this.buildGridTileImage(tileW, tileH, g, rgb);
+        const dotRgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
+        const bgRgb = SchematicCanvas.parseGridColor(ProteusColors.CANVAS_BG);
+        this.gridTile = this.buildGridTileImage(tileW, tileH, g, dotRgb, bgRgb);
         this.gridTileKey = key;
         this.gridTileWorldW = tileW;
         this.gridTileWorldH = tileH;
     }
-    private buildGridTileImage(tileW: number, tileH: number, step: number, rgb: RgbColor): ImageData {
+    private buildGridTileImage(tileW: number, tileH: number, step: number, dotRgb: RgbColor, bgRgb: RgbColor): ImageData {
         const img = this.context.createImageData(tileW, tileH);
+        // HarmonyOS createImageData 默认可能为不透明白底；putImageData 会整块覆盖，须先铺画布底色
+        SchematicCanvas.fillImageData(img, bgRgb, 255);
         for (let x = 0; x < tileW; x += step) {
             for (let y = 0; y < tileH; y += step) {
                 const idx = (y * tileW + x) * 4;
-                img.data[idx] = rgb.r;
-                img.data[idx + 1] = rgb.g;
-                img.data[idx + 2] = rgb.b;
+                img.data[idx] = dotRgb.r;
+                img.data[idx + 1] = dotRgb.g;
+                img.data[idx + 2] = dotRgb.b;
                 img.data[idx + 3] = 255;
             }
         }
@@ -2267,17 +2370,19 @@ export class SchematicCanvas extends ViewPU {
         const worldW = endX - startX + 1;
         const worldH = endY - startY + 1;
         if (worldW > 0 && worldH > 0 && worldW * worldH <= 250000) {
-            const rgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
+            const dotRgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
+            const bgRgb = SchematicCanvas.parseGridColor(ProteusColors.CANVAS_BG);
             const img = ctx.createImageData(worldW, worldH);
+            SchematicCanvas.fillImageData(img, bgRgb, 255);
             for (let x = startX; x <= endX; x += step) {
                 for (let y = startY; y <= endY; y += step) {
                     const px = x - startX;
                     const py = y - startY;
                     if (px >= 0 && py >= 0 && px < worldW && py < worldH) {
                         const idx = (py * worldW + px) * 4;
-                        img.data[idx] = rgb.r;
-                        img.data[idx + 1] = rgb.g;
-                        img.data[idx + 2] = rgb.b;
+                        img.data[idx] = dotRgb.r;
+                        img.data[idx + 1] = dotRgb.g;
+                        img.data[idx + 2] = dotRgb.b;
                         img.data[idx + 3] = 255;
                     }
                 }
@@ -2303,6 +2408,15 @@ export class SchematicCanvas extends ViewPU {
         }
         return { r: 80, g: 80, b: 96 };
     }
+    private static fillImageData(img: ImageData, rgb: RgbColor, alpha: number): void {
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+            d[i] = rgb.r;
+            d[i + 1] = rgb.g;
+            d[i + 2] = rgb.b;
+            d[i + 3] = alpha;
+        }
+    }
     private drawPlacementGhost(ctx: CanvasRenderingContext2D, pos: Point2D): void {
         const g = this.appService.schematicEditor.getViewport().gridSize;
         const sx = Math.round(pos.x / g) * g;
@@ -2324,7 +2438,7 @@ export class SchematicCanvas extends ViewPU {
         const compCount = components.length;
         for (let i = 0; i < compCount; i++) {
             const comp = components[i];
-            if (skipDragPreview && comp.id === this.dragComponentId) {
+            if (skipDragPreview && this.isDragId(comp.id)) {
                 continue;
             }
             const cx = comp.position.x;
@@ -2341,16 +2455,15 @@ export class SchematicCanvas extends ViewPU {
                 this.drawFallbackComponent(ctx, comp, selected, hovered);
                 continue;
             }
-            const drawPos = comp.id === this.dragComponentId && this.dragPreviewPos !== null
-                ? this.dragPreviewPos : comp.position;
+            const drawPos = this.getDragDrawPos(comp);
             // Draw IC body backdrop directly on canvas for components with many pins
             this.drawComponentBodyBackdrop(ctx, drawPos, comp, def);
             const swPressed = this.isPushButtonPressed(comp);
             const potWiper = this.isPotentiometerComponent(comp.id) ? this.parsePotWiper(comp) : undefined;
             const style: SymbolDrawStyle = {
                 strokeColor: selected ? ProteusColors.SELECTED : ProteusColors.COMPONENT_STROKE,
-                fillColor: ProteusColors.CANVAS_BG,
-                lineWidth: selected ? 2.0 : 1.2,
+                fillColor: ProteusColors.COMPONENT_BODY_FILL,
+                lineWidth: selected ? 2.8 : 1.2,
                 selected: selected,
                 hovered: false,
                 ledDisplayColor: this.isLedComponent(comp, def) ? '' : undefined,
@@ -2403,18 +2516,18 @@ export class SchematicCanvas extends ViewPU {
         const cy = (pinBounds.minY + pinBounds.maxY) / 2;
         const w = pinBounds.width;
         const h = pinBounds.height;
-        // Filled body with visible color
-        ctx.fillStyle = '#EBEEF2';
+        // Filled body with visible color — follow active theme
+        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
         ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
         // Bold border
-        ctx.strokeStyle = '#222222';
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
         ctx.lineWidth = 2;
         ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
         // Component name label
         if (def.name.length > 0) {
             const shortName = def.name.length > 14 ? def.name.substring(0, 12) + '..' : def.name;
             ctx.font = '11px sans-serif';
-            ctx.fillStyle = '#444444';
+            ctx.fillStyle = ProteusColors.TEXT_LABEL;
             ctx.textAlign = 'center';
             ctx.fillText(shortName, 0, 4);
             ctx.textAlign = 'start';
@@ -2568,14 +2681,115 @@ export class SchematicCanvas extends ViewPU {
         return def;
     }
     private drawHitHoverOverlay(ctx: CanvasRenderingContext2D, editor: SchematicEditorImpl, comp: ComponentInstance): void {
-        const rect = editor.getComponentHitRect(comp);
-        ctx.fillStyle = 'rgba(0, 170, 255, 0.18)';
+        const rect = editor.getComponentHoverRect(comp);
+        const zoom = Math.max(this.appService.schematicEditor.getZoom(), 0.35);
+        const lw = 2 / zoom;
+        ctx.fillStyle = 'rgba(0, 170, 255, 0.16)';
         ctx.strokeStyle = ProteusColors.HOVER_PREVIEW;
-        ctx.lineWidth = 1.5 / Math.max(this.appService.schematicEditor.getZoom(), 0.5);
-        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = lw;
+        ctx.setLineDash([7 / zoom, 4 / zoom]);
         ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
         ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
         ctx.setLineDash([]);
+        // 四角短角标，让“可选中区”更醒目
+        this.drawCornerBrackets(ctx, rect, ProteusColors.HOVER_PREVIEW, lw, 10 / zoom);
+    }
+    private drawSelectionOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument, editor: SchematicEditorImpl): void {
+        const zoom = Math.max(this.appService.schematicEditor.getZoom(), 0.35);
+        const lw = Math.max(2.4 / zoom, 1.6);
+        let groupMinX = Number.POSITIVE_INFINITY;
+        let groupMinY = Number.POSITIVE_INFINITY;
+        let groupMaxX = Number.NEGATIVE_INFINITY;
+        let groupMaxY = Number.NEGATIVE_INFINITY;
+        let selectedCount = 0;
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            if (!editor.isComponentSelected(comp.id)) {
+                continue;
+            }
+            selectedCount++;
+            const rect = editor.getComponentSelectRect(comp);
+            // 拖动预览时选中框跟随
+            if (this.isDragId(comp.id) && this.dragPreviewPos !== null) {
+                const d = this.getDragDelta();
+                rect.x += d.x;
+                rect.y += d.y;
+            }
+            groupMinX = Math.min(groupMinX, rect.x);
+            groupMinY = Math.min(groupMinY, rect.y);
+            groupMaxX = Math.max(groupMaxX, rect.x + rect.width);
+            groupMaxY = Math.max(groupMaxY, rect.y + rect.height);
+            ctx.fillStyle = 'rgba(0, 102, 204, 0.18)';
+            ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+            ctx.strokeStyle = ProteusColors.SELECTED;
+            ctx.lineWidth = lw;
+            ctx.setLineDash([]);
+            ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+            this.drawCornerBrackets(ctx, rect, ProteusColors.SELECTED, lw + 0.5 / zoom, 12 / zoom);
+            // 角点小方块手柄
+            const hs = 4.5 / zoom;
+            const corners: number[][] = [
+                [rect.x, rect.y],
+                [rect.x + rect.width, rect.y],
+                [rect.x + rect.width, rect.y + rect.height],
+                [rect.x, rect.y + rect.height]
+            ];
+            ctx.fillStyle = ProteusColors.SELECTED;
+            for (let c = 0; c < corners.length; c++) {
+                ctx.fillRect(corners[c][0] - hs, corners[c][1] - hs, hs * 2, hs * 2);
+            }
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1 / zoom;
+            for (let c = 0; c < corners.length; c++) {
+                ctx.strokeRect(corners[c][0] - hs, corners[c][1] - hs, hs * 2, hs * 2);
+            }
+        }
+        // 多选：外层虚线包围盒
+        if (selectedCount > 1 && Number.isFinite(groupMinX)) {
+            const pad = 6 / zoom;
+            const gx = groupMinX - pad;
+            const gy = groupMinY - pad;
+            const gw = groupMaxX - groupMinX + pad * 2;
+            const gh = groupMaxY - groupMinY + pad * 2;
+            ctx.strokeStyle = ProteusColors.SELECTED;
+            ctx.lineWidth = 1.5 / zoom;
+            ctx.setLineDash([8 / zoom, 5 / zoom]);
+            ctx.strokeRect(gx, gy, gw, gh);
+            ctx.setLineDash([]);
+            ctx.fillStyle = ProteusColors.SELECTED;
+            ctx.font = `bold ${Math.max(11 / zoom, 9)}px sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${selectedCount} 个已选`, gx, gy - 4 / zoom);
+            ctx.textAlign = 'start';
+        }
+    }
+    private drawCornerBrackets(ctx: CanvasRenderingContext2D, rect: Rect2D, color: string, lineWidth: number, arm: number): void {
+        const x1 = rect.x;
+        const y1 = rect.y;
+        const x2 = rect.x + rect.width;
+        const y2 = rect.y + rect.height;
+        const a = Math.min(arm, Math.min(rect.width, rect.height) * 0.35);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        // TL
+        ctx.moveTo(x1, y1 + a);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x1 + a, y1);
+        // TR
+        ctx.moveTo(x2 - a, y1);
+        ctx.lineTo(x2, y1);
+        ctx.lineTo(x2, y1 + a);
+        // BR
+        ctx.moveTo(x2, y2 - a);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x2 - a, y2);
+        // BL
+        ctx.moveTo(x1 + a, y2);
+        ctx.lineTo(x1, y2);
+        ctx.lineTo(x1, y2 - a);
+        ctx.stroke();
     }
     private drawHoverOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument, editor: SchematicEditorImpl): void {
         if (!this.isSelectMode() || this.hoverComponentId.length === 0) {
@@ -2699,7 +2913,7 @@ export class SchematicCanvas extends ViewPU {
         }
         for (let i = 0; i < doc.components.length; i++) {
             const comp = doc.components[i];
-            if (comp.id === this.dragComponentId) {
+            if (this.isDragId(comp.id)) {
                 continue;
             }
             const def = this.getCachedCompDef(comp.libraryId);
@@ -2712,7 +2926,7 @@ export class SchematicCanvas extends ViewPU {
             }
             const style: SymbolDrawStyle = {
                 strokeColor: ProteusColors.COMPONENT_STROKE,
-                fillColor: ProteusColors.CANVAS_BG,
+                fillColor: ProteusColors.COMPONENT_BODY_FILL,
                 lineWidth: 1.2,
                 selected: false,
                 hovered: false,
@@ -2763,7 +2977,7 @@ export class SchematicCanvas extends ViewPU {
         }
         for (let i = 0; i < doc.components.length; i++) {
             const comp = doc.components[i];
-            if (comp.id === this.dragComponentId) {
+            if (this.isDragId(comp.id)) {
                 continue;
             }
             const def = this.getCachedCompDef(comp.libraryId);
@@ -2788,10 +3002,26 @@ export class SchematicCanvas extends ViewPU {
         const cx = comp.position.x;
         const cy = comp.position.y;
         ctx.strokeStyle = selected ? ProteusColors.SELECTED : ProteusColors.COMPONENT_STROKE;
-        ctx.lineWidth = selected ? 2 : 1.2;
-        ctx.fillStyle = '#F8F8FC';
+        ctx.lineWidth = selected ? 2.8 : 1.2;
+        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
         ctx.fillRect(cx - 30, cy - 20, 60, 40);
         ctx.strokeRect(cx - 30, cy - 20, 60, 40);
+        if (selected) {
+            ctx.fillStyle = 'rgba(0, 102, 204, 0.16)';
+            ctx.fillRect(cx - 34, cy - 24, 68, 48);
+            ctx.strokeStyle = ProteusColors.SELECTED;
+            ctx.lineWidth = 2.4;
+            ctx.strokeRect(cx - 34, cy - 24, 68, 48);
+        }
+        else if (_hovered) {
+            ctx.fillStyle = 'rgba(0, 170, 255, 0.12)';
+            ctx.fillRect(cx - 36, cy - 26, 72, 52);
+            ctx.strokeStyle = ProteusColors.HOVER_PREVIEW;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(cx - 36, cy - 26, 72, 52);
+            ctx.setLineDash([]);
+        }
         ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
         ctx.font = `bold ${ProteusFonts.CANVAS_LABEL}px sans-serif`;
         ctx.textAlign = 'center';
@@ -2858,30 +3088,30 @@ export class SchematicCanvas extends ViewPU {
         const simState = this.appService.simulationKernel.getState();
         const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
         const nodeVoltages = simActive ? this.getSimNodeVoltages() : new Map<string, number>();
-        // If dragging a component, compute drag offset for wire endpoints that
-        // are connected to the dragged component's pins
-        let dragComp: ComponentInstance | null = null;
+        // If dragging components, compute drag offset for wire endpoints connected to their pins
         let dragDx = 0;
         let dragDy = 0;
         let dragPinPositions: Point2D[] = [];
-        if (this.dragComponentId.length > 0 && this.dragPreviewPos !== null) {
+        let multiDragActive = false;
+        if (this.dragIds.length > 0 && this.dragPreviewPos !== null) {
+            multiDragActive = true;
+            const d = this.getDragDelta();
+            dragDx = d.x;
+            dragDy = d.y;
             const doc = this.appService.schematicEditor.getDocument();
             for (let i = 0; i < doc.components.length; i++) {
-                if (doc.components[i].id === this.dragComponentId) {
-                    dragComp = doc.components[i];
-                    break;
+                const dragComp = doc.components[i];
+                if (!this.isDragId(dragComp.id)) {
+                    continue;
                 }
-            }
-            if (dragComp !== null) {
-                dragDx = this.dragPreviewPos.x - dragComp.position.x;
-                dragDy = this.dragPreviewPos.y - dragComp.position.y;
                 const def = this.getCachedCompDef(dragComp.libraryId);
-                if (def !== null) {
-                    for (let j = 0; j < def.pins.length; j++) {
-                        const pin = def.pins[j];
-                        const local = this.transformPinOffset(pin.position, dragComp.rotation, dragComp.mirrored);
-                        dragPinPositions.push({ x: dragComp.position.x + local.x, y: dragComp.position.y + local.y });
-                    }
+                if (def === null) {
+                    continue;
+                }
+                for (let j = 0; j < def.pins.length; j++) {
+                    const pin = def.pins[j];
+                    const local = this.transformPinOffset(pin.position, dragComp.rotation, dragComp.mirrored);
+                    dragPinPositions.push({ x: dragComp.position.x + local.x, y: dragComp.position.y + local.y });
                 }
             }
         }
@@ -2896,7 +3126,7 @@ export class SchematicCanvas extends ViewPU {
             for (let j = 0; j < pts.length; j++) {
                 const pt = pts[j];
                 let match = false;
-                if (dragComp !== null && dragPinPositions.length > 0) {
+                if (multiDragActive && dragPinPositions.length > 0) {
                     for (let k = 0; k < dragPinPositions.length; k++) {
                         const pp = dragPinPositions[k];
                         if (Math.abs(pt.x - pp.x) <= 3 && Math.abs(pt.y - pp.y) <= 3) {
@@ -2908,7 +3138,7 @@ export class SchematicCanvas extends ViewPU {
                 isPinMask.push(match);
             }
             const shiftMask: boolean[] = isPinMask.slice();
-            if (dragComp !== null) {
+            if (multiDragActive) {
                 for (let j = 0; j < pts.length; j++) {
                     if (isPinMask[j]) {
                         if (j > 0) {
@@ -2938,7 +3168,7 @@ export class SchematicCanvas extends ViewPU {
                     drawPts.push({ x: pt.x, y: pt.y });
                 }
             }
-            if (drawPts.length === 3 && dragComp !== null && (shiftMask[0] || shiftMask[2])) {
+            if (drawPts.length === 3 && multiDragActive && (shiftMask[0] || shiftMask[2])) {
                 drawPts[1] = this.smartMidpoint(drawPts[0], drawPts[2], this.dragComponentId);
             }
             const wireSelected = selectedWireSet.has(wire.netId);

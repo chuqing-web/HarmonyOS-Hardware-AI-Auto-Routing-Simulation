@@ -10,7 +10,7 @@ import { PromptVarEntry } from '../internal/AiEngineTypes';
 import { applyPromptVars } from '../internal/AiEngineHelpers';
 import { TemplateSchematicKit } from '../algorithms/TemplateSchematicKit';
 import { PromptTemplate } from './PromptTypes';
-import { TOPOLOGY_ANTIPATTERN_GUARD } from './templates/SharedPromptRules';
+import { TOPOLOGY_ANTIPATTERN_GUARD, JSON_ONLY_OUTPUT_RULE } from './templates/SharedPromptRules';
 import { DEVICE_SELECT_PROMPT } from './templates/DeviceSelectPrompt';
 import { LAYOUT_PROMPT } from './templates/LayoutPrompt';
 import { NET_PLAN_PROMPT } from './templates/NetPlanPrompt';
@@ -34,6 +34,11 @@ export interface RenderEnrichOptions {
   includeLibIds?: boolean;
   /** 按意图组装 system（device_select / net_plan） */
   intent?: CircuitIntent;
+  /**
+   * 模块并行子选型：按 prompt 提到的 libDevId 过滤全脚目录（大幅缩短 prompt）。
+   * 仍附带完整 libDevId 清单，避免锁死选型。
+   */
+  filterPinsByPrompt?: string;
 }
 
 interface ClusterInfo {
@@ -77,16 +82,118 @@ function buildCompactCatalog(library: IComponentLibrary): string {
 
 /** 全库器件 + 每个引脚 id/name/局部坐标 — 选型阶段强制注入 */
 function buildFullCatalogWithPins(library: IComponentLibrary): string {
+  return formatCatalogWithPins(library, null);
+}
+
+/** 从 prompt 提取提到的库内 libDevId（含 libDevId=XXX） */
+function collectMentionedLibIds(library: IComponentLibrary, prompt: string): Set<string> {
+  const want = new Set<string>();
+  const allIds = listAllLibIds(library);
+  const text = prompt ?? '';
+  const textU = text.toUpperCase();
+  // 显式 libDevId=XXX
+  const re = /libDevId\s*=\s*([A-Za-z0-9_.-]+)/gi;
+  let m: RegExpExecArray | null = re.exec(text);
+  while (m) {
+    const id = (m[1] ?? '').trim();
+    if (id.length > 0) {
+      want.add(id);
+    }
+    m = re.exec(text);
+  }
+  for (let i = 0; i < allIds.length; i++) {
+    const id = allIds[i];
+    if (id.length < 2) {
+      continue;
+    }
+    if (textU.indexOf(id.toUpperCase()) >= 0) {
+      want.add(id);
+    }
+  }
+  // 电源与常见激励始终带上
+  const always = ['VCC', 'GND', 'VAC', 'SW_PUSH'];
+  for (let ai = 0; ai < always.length; ai++) {
+    want.add(always[ai]);
+  }
+  // 提到示波器/电压表等中文时补仪器
+  if (text.indexOf('示波器') >= 0 || textU.indexOf('OSC') >= 0) {
+    want.add('OSCILLOSCOPE');
+  }
+  if (text.indexOf('电压表') >= 0) {
+    want.add('VOLTMETER_DC');
+  }
+  if (text.indexOf('电流表') >= 0) {
+    want.add('AMMETER_DC');
+  }
+  if (text.indexOf('电位器') >= 0 || textU.indexOf('POT') >= 0 ||
+    textU.indexOf('RV1') >= 0 || textU.indexOf('RV2') >= 0) {
+    want.add('POT_1k');
+    want.add('POT_10k');
+    want.add('POT_100k');
+  }
+  // 被动件族：提到 R_/C_ 任一则补常用档，避免 τ 选型卡死
+  let needR = false;
+  let needC = false;
+  for (const id of want) {
+    if (id.indexOf('R_') === 0) {
+      needR = true;
+    }
+    if (id.indexOf('C_') === 0) {
+      needC = true;
+    }
+  }
+  if (text.indexOf('电阻') >= 0 || needR) {
+    const rs = ['R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k'];
+    for (let ri = 0; ri < rs.length; ri++) {
+      want.add(rs[ri]);
+    }
+  }
+  if (text.indexOf('电容') >= 0 || needC) {
+    const cs = ['C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF'];
+    for (let ci = 0; ci < cs.length; ci++) {
+      want.add(cs[ci]);
+    }
+  }
+  return want;
+}
+
+function listAllLibIds(library: IComponentLibrary): string[] {
+  const ids: string[] = [];
+  const categories = library.getCategories();
+  for (const cat of categories) {
+    const result = library.listByCategory(cat, 1, 200);
+    for (const d of result.items) {
+      ids.push(d.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * 全脚目录；filterIds 非空时只展开这些器件的引脚（仍适合模块子选型）。
+ */
+function formatCatalogWithPins(library: IComponentLibrary, filterIds: Set<string> | null): string {
   const lines: string[] = [];
-  lines.push('【完整器件库 — 只能选用下列 libDevId；引脚必须使用下列 pinId/pinName】');
+  if (filterIds !== null) {
+    lines.push('【本模块相关器件引脚 — 优先选用；引脚必须使用下列 pinId/pinName】');
+    lines.push('（完整可用 libDevId 清单见文末；未列全脚的器件仍可选，但须用库内真脚）');
+  } else {
+    lines.push('【完整器件库 — 只能选用下列 libDevId；引脚必须使用下列 pinId/pinName】');
+  }
   const categories = library.getCategories();
   for (const cat of categories) {
     const result = library.listByCategory(cat, 1, 200);
     if (result.items.length === 0) {
       continue;
     }
+    const items = filterIds !== null
+      ? result.items.filter(d => filterIds.has(d.id))
+      : result.items;
+    if (items.length === 0) {
+      continue;
+    }
     lines.push(`\n## ${cat}`);
-    for (const d of result.items) {
+    for (const d of items) {
       const pins = d.pins ?? [];
       lines.push(`${d.id} | ${d.name} | pins=${pins.length}`);
       if (pins.length === 0) {
@@ -118,15 +225,46 @@ function buildFullCatalogWithPins(library: IComponentLibrary): string {
 }
 
 function buildLibIdList(library: IComponentLibrary): string {
-  const ids: string[] = [];
-  const categories = library.getCategories();
-  for (const cat of categories) {
-    const result = library.listByCategory(cat, 1, 200);
-    for (const d of result.items) {
-      ids.push(d.id);
+  return listAllLibIds(library).join(', ');
+}
+
+/** 从器件库动态生成仪器/电位器真脚速查（禁止硬编码脚名表） */
+function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
+  const focus = [
+    'OSCILLOSCOPE', 'VOLTMETER_DC', 'AMMETER_DC', 'UART_TERMINAL',
+    'LOGIC_ANALYZER', 'POWER_METER', 'FREQ_COUNTER', 'VIRTUAL_METER',
+    'POT_1k', 'POT_10k', 'POT_100k', 'RELAY_SPDT'
+  ];
+  const lines: string[] = ['【库内真脚速查 — 禁止假设脚名】:'];
+  for (let i = 0; i < focus.length; i++) {
+    const id = focus[i];
+    const bits: string[] = [];
+    try {
+      const comp = library.getComponent(id);
+      if (comp.success && comp.data && comp.data.pins && comp.data.pins.length > 0) {
+        for (let pi = 0; pi < comp.data.pins.length; pi++) {
+          const p = comp.data.pins[pi];
+          bits.push(`${p.id}`);
+        }
+      } else {
+        const meta = library.getDeviceMeta(id);
+        if (meta.success && meta.data && meta.data.pin_list) {
+          for (let pi = 0; pi < meta.data.pin_list.length; pi++) {
+            bits.push(`${meta.data.pin_list[pi].pin_id}`);
+          }
+        }
+      }
+    } catch (_e) {
+      // skip
+    }
+    if (bits.length > 0) {
+      lines.push(`- ${id}: ${bits.join(', ')}`);
     }
   }
-  return ids.join(', ');
+  if (lines.length <= 1) {
+    return '';
+  }
+  return `\n${lines.join('\n')}`;
 }
 
 export class PromptLoader {
@@ -180,7 +318,7 @@ export class PromptLoader {
 
   static render(template: PromptTemplate, vars: PromptVarEntry[]): string {
     const user = applyPromptVars(template.userTemplate, vars);
-    return `${template.system}\n\n${user}`;
+    return `${template.system}${JSON_ONLY_OUTPUT_RULE}\n\n${user}`;
   }
 
   /**
@@ -205,7 +343,23 @@ export class PromptLoader {
     if (options?.includeFullPins && cachedFullPinCatalog.length === 0) {
       cachedFullPinCatalog = buildFullCatalogWithPins(library);
     }
-    const catalogForUser = options?.includeFullPins ? cachedFullPinCatalog : cachedCatalogSummary;
+    let catalogForUser = options?.includeFullPins ? cachedFullPinCatalog : cachedCatalogSummary;
+    const filterHint = options?.filterPinsByPrompt ?? '';
+    if (options?.includeFullPins && filterHint.length > 0) {
+      const mentioned = collectMentionedLibIds(library, filterHint);
+      // 至少命中 1 个非电源器件才过滤，否则回退全库避免空目录
+      let nonPwr = 0;
+      const mentIds = Array.from(mentioned);
+      for (let mi = 0; mi < mentIds.length; mi++) {
+        const id = mentIds[mi];
+        if (id !== 'VCC' && id !== 'GND' && id !== 'VAC' && id !== 'SW_PUSH') {
+          nonPwr++;
+        }
+      }
+      if (nonPwr >= 1) {
+        catalogForUser = formatCatalogWithPins(library, mentioned);
+      }
+    }
     let enrichedUser = effective.userTemplate;
     if (enrichedUser.includes('{{library_catalog}}')) {
       enrichedUser = enrichedUser.replace('{{library_catalog}}', catalogForUser);
@@ -216,19 +370,26 @@ export class PromptLoader {
     }
     const user = applyPromptVars(enrichedUser, vars);
 
-    // 反模式警示始终注入 — 所有阶段都需要电路安全规则
-    // 库 ID：选型开 includeFullPins；modular_plan 开 includeLibIds（只要清单）
-    const pinRule = options?.includeFullPins
+    // layout / route：短 JSON 填空，禁止拓扑反模式（易诱使长文）；其余阶段保留反模式
+    // 全阶段强制注入 JSON_ONLY
+    const isLayout = effective.id.indexOf('layout') >= 0;
+    const isRoute = effective.id.indexOf('route') >= 0;
+    const skipTopoGuard = isLayout || isRoute;
+    const guard = skipTopoGuard ? '' : TOPOLOGY_ANTIPATTERN_GUARD;
+    const pinRule = skipTopoGuard ? '' : (options?.includeFullPins
       ? '\n【选型铁律】explicitModel 必须是上方清单中的精确 libDevId；引脚连接只能使用该器件列出的 pinId/pinName；禁止编造库外型号。'
       : (options?.includeLibIds
         ? '\n【库约束 — 硬性】modules[].prompt 中的器件必须是上方清单中的精确 libDevId；禁止 2N3906/BC547 等库外型号；555 定时器用 LM555。'
-        : '');
-    const wantLibIds = !!(options?.includeFullPins || options?.includeLibIds);
+        : ''));
+    const wantLibIds = !skipTopoGuard && !!(options?.includeFullPins || options?.includeLibIds);
     const idHint = wantLibIds
       ? `\n\n【可用器件 libDevId 清单 — 只能使用下列 ID】:\n${cachedCatalogLibIds}${pinRule}`
       : pinRule;
+    const instrumentHint = !skipTopoGuard && (options?.includeLibIds || options?.includeFullPins)
+      ? buildInstrumentPinCheatsheet(library)
+      : '';
 
-    return `${effective.system}${TOPOLOGY_ANTIPATTERN_GUARD}${idHint}\n\n${user}`;
+    return `${effective.system}${JSON_ONLY_OUTPUT_RULE}${guard}${instrumentHint}${idHint}\n\n${user}`;
   }
 
   static clearCatalogCache(): void {
@@ -273,11 +434,74 @@ export class PromptLoader {
       try {
         return JSON.parse(trimmed.substring(start, end + 1)) as T;
       } catch (_e3) {
-        // continue
+        // 截断 JSON：尝试闭合 brackets
+        const repaired = PromptLoader.tryRepairTruncatedJson(trimmed.substring(start));
+        if (repaired) {
+          try {
+            return JSON.parse(repaired) as T;
+          } catch (_e4) {
+            // continue
+          }
+        }
       }
     }
 
     return null;
+  }
+
+  /** 尽力闭合被截断的 JSON（positions 数组常见） */
+  private static tryRepairTruncatedJson(fragment: string): string | null {
+    if (!fragment || fragment.indexOf('{') < 0) {
+      return null;
+    }
+    let s = fragment.trim();
+    // 去掉末尾残缺键值
+    const lastComma = s.lastIndexOf(',');
+    const lastBrace = s.lastIndexOf('}');
+    const lastBracket = s.lastIndexOf(']');
+    if (lastComma > lastBrace && lastComma > lastBracket) {
+      s = s.substring(0, lastComma);
+    }
+    let openBrace = 0;
+    let openBracket = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s.charAt(i);
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === '\\') {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+      } else if (ch === '{') {
+        openBrace++;
+      } else if (ch === '}') {
+        openBrace--;
+      } else if (ch === '[') {
+        openBracket++;
+      } else if (ch === ']') {
+        openBracket--;
+      }
+    }
+    if (inStr) {
+      s += '"';
+    }
+    while (openBracket > 0) {
+      s += ']';
+      openBracket--;
+    }
+    while (openBrace > 0) {
+      s += '}';
+      openBrace--;
+    }
+    return s;
   }
 
   static getCachedLibIds(): string {
@@ -317,6 +541,8 @@ export class PromptLoader {
       }
       lines.push(
         `[${i + 1}] libDevId=${d.libDevId} name=${d.name} zone=${d.moduleZone} pins=${pinN}`);
+      lines.push(
+        `  deviceId 可用: "${d.libDevId}" 或位号风格(R1/C1/OSC1/SW1，须与型号前缀一致)`);
       lines.push(
         `  选中区尺寸 rot0=${w0}×${h0}  rot90=${w90}×${h90}  ` +
         `(中心间距至少 ≈ 半宽之和+80 / 半高之和+80)`);

@@ -24,6 +24,6 @@ export const GEN_SCH_PROMPT: PromptTemplate = {
 
 【互斥双色】开/闭双色指示必须含 RELAY_SPDT；COM→GND；NC绿 / NO红。
 
-输出纯 JSON，符合 SchTopology 结构。禁止 markdown 包裹。`,
-  userTemplate: '需求：{{user_prompt}}\n\n可用器件库摘要：{{library_summary}}'
+输出纯 JSON，符合 SchTopology 结构。禁止 markdown；第一字符 { 最后字符 }。`,
+  userTemplate: '需求：{{user_prompt}}\n\n可用器件库摘要：{{library_summary}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };

@@ -726,6 +726,20 @@ export class K {
     if (libraryId === 'VCC') return { x: 0, y: 10 };
     if (libraryId === 'GND') return { x: 0, y: -10 };
     if (libraryId === 'VAC') return pinId === '1' ? { x: -20, y: 0 } : { x: 20, y: 0 };
+    if (libraryId === 'LM555' || libraryId === 'NE555') {
+      // DIP-8 与 BuiltinComponents.ic555 / TemplateSchematicKit 对齐
+      switch (pinId) {
+        case 'GND': case '1': return { x: -40, y: -30 };
+        case 'TRIG': case '2': return { x: -40, y: -10 };
+        case 'OUT': case '3': return { x: -40, y: 10 };
+        case 'RESET': case '4': return { x: -40, y: 30 };
+        case 'CTRL': case '5': return { x: 40, y: 30 };
+        case 'THRES': case '6': return { x: 40, y: 10 };
+        case 'DISCH': case '7': return { x: 40, y: -10 };
+        case 'VCC': case '8': return { x: 40, y: -30 };
+        default: return { x: 0, y: 0 };
+      }
+    }
     if (libraryId === 'UA741') {
       switch (pinId) {
         case 'IN+': return { x: -30, y: -10 };

@@ -8,7 +8,9 @@ export { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_eng
 export { SemanticNetBuilder } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
 export type { SemanticNetBuildResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
 export { NetPlanExecutor } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/NetPlanExecutor";
-export type { NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/NetPlanExecutor";
+export type { NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints, WiredCompactPair } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/NetPlanExecutor";
+export { AiTopologyFixKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiTopologyFixKit";
+export type { TopologyFixResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiTopologyFixKit";
 export { LlmJsonNormalizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LlmJsonNormalizer";
 export { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 export { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiResultCache";

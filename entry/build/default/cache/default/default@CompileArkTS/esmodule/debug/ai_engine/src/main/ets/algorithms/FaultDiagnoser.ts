@@ -1,5 +1,5 @@
-import { ErcSeverity, ErcRuleType, IdUtil, paramMapGet, NetType } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { SchematicDocument, ErcViolation, Net } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { ErcSeverity, ErcRuleType, IdUtil, paramMapGet, NetType, parsePinRef } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchematicDocument, ErcViolation, Net, ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ErcEngine } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 const MCU_IDS = new Set([
     'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
@@ -63,26 +63,23 @@ export class FaultDiagnoser {
     private static checkParamMismatch(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
         for (const comp of doc.components) {
+            // 仅检查与 LED 真正共网、且另一端接电源/地/驱动的串联限流电阻
             if (comp.libraryId.startsWith('R_')) {
-                const val = paramMapGet(comp.parameters, 'value', comp.libraryId.replace('R_', ''));
-                // LED 限流电阻检查
-                const ledsNearby = doc.components.filter(c => c.libraryId.includes('LED') &&
-                    Math.abs(c.position.x - comp.position.x) < 200 &&
-                    Math.abs(c.position.y - comp.position.y) < 150);
-                if (ledsNearby.length > 0) {
-                    const ohmStr = val.replace(/[kKmMgG]/, '000').replace(/[^0-9]/g, '');
-                    const ohm = parseInt(ohmStr) || 0;
+                const ledsOnPath = FaultDiagnoser.ledsLikelyLimitedByResistor(doc, comp);
+                if (ledsOnPath.length > 0) {
+                    const val = paramMapGet(comp.parameters, 'value', comp.libraryId.replace('R_', ''));
+                    const ohm = FaultDiagnoser.parseOhmRough(val);
                     if (ohm > 10000) {
                         result.push({
                             id: IdUtil.generate('erc'),
-                            severity: ErcSeverity.ERROR,
+                            severity: ErcSeverity.INFO,
                             ruleType: ErcRuleType.PARAM_MISMATCH,
                             message: `${comp.refDes}(${val}) 作为 LED 限流电阻过大，LED 可能不亮`,
                             componentId: comp.id,
                             fixSuggestion: 'LED 限流电阻建议 220Ω~1kΩ，推荐 R_330'
                         });
                     }
-                    else if (ohm < 100 && ohm > 0) {
+                    else if (ohm > 0 && ohm < 100) {
                         result.push({
                             id: IdUtil.generate('erc'),
                             severity: ErcSeverity.ERROR,
@@ -94,7 +91,6 @@ export class FaultDiagnoser {
                     }
                 }
             }
-            // 电容耐压检查
             const voltageParam = comp.parameters.get('voltage');
             if (comp.libraryId.startsWith('C_') && voltageParam !== undefined) {
                 const v = parseInt(voltageParam);
@@ -115,40 +111,18 @@ export class FaultDiagnoser {
     private static checkIoRisks(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
         const leds = doc.components.filter(c => c.libraryId.includes('LED'));
-        const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
         for (const led of leds) {
-            // 检查是否在同一个 net 中有串联电阻
-            const ledNets = doc.nets.filter(n => n.pinIds.some(p => p.includes(led.id)));
-            let hasSeriesR = false;
-            for (const net of ledNets) {
-                for (const pinRef of net.pinIds) {
-                    if (resistors.some(r => pinRef.includes(r.id))) {
-                        hasSeriesR = true;
-                        break;
-                    }
-                }
-                if (hasSeriesR) {
-                    break;
-                }
+            if (FaultDiagnoser.ledHasSeriesResistor(doc, led.id)) {
+                continue;
             }
-            if (!hasSeriesR) {
-                // 再按距离判断
-                const hasResistor = resistors.some(r => {
-                    const dx = Math.abs(r.position.x - led.position.x);
-                    const dy = Math.abs(r.position.y - led.position.y);
-                    return dx < 100 && dy < 100;
-                });
-                if (!hasResistor) {
-                    result.push({
-                        id: IdUtil.generate('erc'),
-                        severity: ErcSeverity.ERROR,
-                        ruleType: ErcRuleType.IO_OVERCURRENT,
-                        message: `LED ${led.refDes} 缺少限流电阻，可能烧毁`,
-                        componentId: led.id,
-                        fixSuggestion: '串联 220Ω~1kΩ 电阻（推荐 R_330）'
-                    });
-                }
-            }
+            result.push({
+                id: IdUtil.generate('erc'),
+                severity: ErcSeverity.ERROR,
+                ruleType: ErcRuleType.IO_OVERCURRENT,
+                message: `LED ${led.refDes} 缺少限流电阻，可能烧毁`,
+                componentId: led.id,
+                fixSuggestion: '串联 220Ω~1kΩ 电阻（推荐 R_330）'
+            });
         }
         return result;
     }
@@ -193,8 +167,9 @@ export class FaultDiagnoser {
             }
         }
         for (const comp of doc.components) {
-            // 跳过电源符号
-            if (comp.libraryId === 'VCC' || comp.libraryId === 'GND' || comp.libraryId === 'VAC') {
+            // 跳过电源/激励符号
+            if (comp.libraryId === 'VCC' || comp.libraryId === 'GND' || comp.libraryId === 'VAC' ||
+                comp.libraryId === 'VEE' || comp.libraryId === 'SIGNAL_GEN') {
                 continue;
             }
             // MCU: 检查关键引脚
@@ -217,24 +192,28 @@ export class FaultDiagnoser {
                     });
                 }
             }
-            // 运放: 检查反馈
+            // 运放: 反馈或有意开环比较器（双输入已接且 OUT 有负载/观测）
             if (comp.libraryId === 'LM358' || comp.libraryId === 'UA741' ||
                 comp.libraryId === 'TL082') {
-                const compNets = doc.nets.filter(n => n.pinIds.some(p => p.startsWith(comp.id)));
-                const hasFeedback = compNets.some(n => {
-                    const pins = n.pinIds.filter(p => p.startsWith(comp.id));
-                    const hasOut = pins.some(p => p.includes('OUT'));
-                    const hasInMinus = pins.some(p => p.includes('IN-'));
-                    return hasOut && hasInMinus;
-                });
-                if (!hasFeedback) {
+                const fb = FaultDiagnoser.classifyOpAmpFeedback(doc, comp.id);
+                if (fb === 'open') {
                     result.push({
                         id: IdUtil.generate('erc'),
                         severity: ErcSeverity.ERROR,
                         ruleType: ErcRuleType.PARAM_MISMATCH,
                         message: `运放 ${comp.refDes} 可能开环（无反馈路径）`,
                         componentId: comp.id,
-                        fixSuggestion: '添加反馈电阻连接 OUT 到 IN-'
+                        fixSuggestion: '添加反馈：OUT→R→IN-（放大）或 OUT→R→IN+（迟滞比较）'
+                    });
+                }
+                else if (fb === 'comparator') {
+                    result.push({
+                        id: IdUtil.generate('erc'),
+                        severity: ErcSeverity.INFO,
+                        ruleType: ErcRuleType.PARAM_MISMATCH,
+                        message: `运放 ${comp.refDes} 为开环比较器（双输入已接，若非有意请加反馈）`,
+                        componentId: comp.id,
+                        fixSuggestion: '比较器可保持开环；放大器请加 OUT→IN- 反馈'
                     });
                 }
             }
@@ -286,25 +265,23 @@ export class FaultDiagnoser {
         }
         return result;
     }
-    /** 扇出过载检测 */
+    /** 扇出过载检测 — 仅提示，避免把电源聚合网 / 多标号网误判为 GPIO 过载 */
     private static checkFanout(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
         for (const net of doc.nets) {
+            if (FaultDiagnoser.netLooksLikePowerRail(doc, net)) {
+                continue;
+            }
             const loadCount = net.pinIds.length;
-            // 单个 GPIO 驱动 > 6 个负载
-            if (loadCount > 6) {
-                // 检查是否为电源网络
-                if (!VCC_NAMES.has((net.name ?? '').toUpperCase()) &&
-                    !GND_NAMES.has((net.name ?? '').toUpperCase())) {
-                    result.push({
-                        id: IdUtil.generate('erc'),
-                        severity: ErcSeverity.WARNING,
-                        ruleType: ErcRuleType.PARAM_MISMATCH,
-                        message: `网络 "${net.name}" 连接 ${loadCount} 个引脚，可能存在扇出过载`,
-                        netId: net.id,
-                        fixSuggestion: '使用缓冲器(74HC04)或减少负载数'
-                    });
-                }
+            if (loadCount > 10) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.INFO,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `网络 "${net.name}" 连接 ${loadCount} 个引脚，可能存在扇出过载`,
+                    netId: net.id,
+                    fixSuggestion: '使用缓冲器(74HC04)或减少负载数'
+                });
             }
         }
         return result;
@@ -333,11 +310,10 @@ export class FaultDiagnoser {
                     ruleType: ErcRuleType.UNCONNECTED_PIN,
                     message: `电流表 ${am.refDes} 引脚未完全连接`,
                     componentId: am.id,
-                    fixSuggestion: 'I+ 接 VCC, I- 接负载电阻'
+                    fixSuggestion: '电流表须串联切入回路：I+ / I- 分属不同网络'
                 });
                 continue;
             }
-            // 检1: I+ 和 I- 必须在不同网络 (串联), 不能在同一网络 (并联短路)
             if (iPlusNet.id === iMinusNet.id) {
                 result.push({
                     id: IdUtil.generate('erc'),
@@ -345,40 +321,107 @@ export class FaultDiagnoser {
                     ruleType: ErcRuleType.PARAM_MISMATCH,
                     message: `电流表 ${am.refDes} I+/I- 在同一网络 — 短路！应为串联`,
                     componentId: am.id,
-                    fixSuggestion: '电流表必须串联: VCC→I+→I-→负载, I+/I- 分属不同网络'
+                    fixSuggestion: '电流表必须串联: 电源→I+→I-→负载, I+/I- 分属不同网络'
                 });
                 continue;
             }
-            // 检2: I+ 网络必须包含 VCC (或电源), I- 网络必须包含负载电阻
-            const iPlusComps = FaultDiagnoser.netComponentIds(iPlusNet, doc);
-            const iMinusComps = FaultDiagnoser.netComponentIds(iMinusNet, doc);
-            const hasVccOnPlus = iPlusComps.some(id => {
-                const c = doc.components.find(x => x.id === id);
-                return c !== undefined && (c.libraryId === 'VCC' || VCC_NAMES.has((c.libraryId ?? '').toUpperCase()));
-            });
-            const hasLoadOnMinus = iMinusComps.some(id => {
-                const c = doc.components.find(x => x.id === id);
-                return c !== undefined && (c.libraryId.startsWith('R_') || c.libraryId.startsWith('LED_'));
-            });
-            if (!hasVccOnPlus) {
+            // 两侧网须有其它器件；不强制 I+ 必须挂 VCC（回线测流 / 支路测流合法）
+            const plusOthers = FaultDiagnoser.netComponentIds(iPlusNet, doc)
+                .filter(id => id !== am.id);
+            const minusOthers = FaultDiagnoser.netComponentIds(iMinusNet, doc)
+                .filter(id => id !== am.id);
+            if (plusOthers.length === 0 || minusOthers.length === 0) {
                 result.push({
                     id: IdUtil.generate('erc'),
                     severity: ErcSeverity.ERROR,
                     ruleType: ErcRuleType.PARAM_MISMATCH,
-                    message: `电流表 ${am.refDes} I+ 未接 VCC — 可能未串联在电源回路`,
+                    message: `电流表 ${am.refDes} 一侧网络无其它器件 — 未真正串联切入回路`,
                     componentId: am.id,
-                    fixSuggestion: 'I+ 应连接 VCC 或电源正极'
+                    fixSuggestion: '将电流表串入电源→负载完整回路'
+                });
+                continue;
+            }
+            const plusHasSrc = FaultDiagnoser.netHasPowerSource(doc, iPlusNet) ||
+                FaultDiagnoser.netHasPowerSource(doc, iMinusNet);
+            const hasLoad = FaultDiagnoser.netHasCurrentLoad(doc, iPlusNet) ||
+                FaultDiagnoser.netHasCurrentLoad(doc, iMinusNet);
+            if (!plusHasSrc && !hasLoad) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.INFO,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `电流表 ${am.refDes} 两侧未见电源或负载 — 请确认已串入供电回路`,
+                    componentId: am.id,
+                    fixSuggestion: '常见接法: VCC→I+→I-→R/LED→GND，或负载回线测流'
                 });
             }
-            if (!hasLoadOnMinus && iMinusComps.length > 0) {
+        }
+        // ---- 示波器拓扑 ----
+        const scopes = doc.components.filter(c => (c.libraryId ?? '').toUpperCase().indexOf('OSCILLOSCOPE') >= 0);
+        for (const sc of scopes) {
+            const findPinNet = (pinHint: string): string | undefined => {
+                const h = pinHint.toUpperCase();
+                const n = doc.nets.find(net => net.pinIds.some(p => {
+                    const parts = p.split(':');
+                    if (parts[0] !== sc.id) {
+                        return false;
+                    }
+                    const pin = (parts[1] ?? '').toUpperCase();
+                    return pin === h || pin.indexOf(h) === 0;
+                }));
+                return n?.id;
+            };
+            const ch1 = findPinNet('CH1') ?? findPinNet('1');
+            const gnd = findPinNet('GND') ?? findPinNet('5');
+            if (ch1 === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `示波器 ${sc.refDes} CH1 未连接 — 无法观测波形`,
+                    componentId: sc.id,
+                    fixSuggestion: '将 CH1 接到被测信号节点（如 RC 中点），GND 接系统地'
+                });
+            }
+            if (gnd === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `示波器 ${sc.refDes} GND 未连接 — 必须与电路共地`,
+                    componentId: sc.id,
+                    fixSuggestion: '将示波器 GND 接到 GND 网络'
+                });
+            }
+            if (ch1 !== undefined && gnd !== undefined && ch1 === gnd) {
                 result.push({
                     id: IdUtil.generate('erc'),
                     severity: ErcSeverity.ERROR,
                     ruleType: ErcRuleType.PARAM_MISMATCH,
-                    message: `电流表 ${am.refDes} I- 未接负载 — 电流未流经测量器件`,
-                    componentId: am.id,
-                    fixSuggestion: 'I- 应连接负载电阻，使电流流经电流表后进入负载'
+                    message: `示波器 ${sc.refDes} CH1 与 GND 同网 — 无有效差分信号`,
+                    componentId: sc.id,
+                    fixSuggestion: 'CH1 接信号节点，GND 接系统地，二者不得同网'
                 });
+            }
+            // CH* 挂电源轨：测纹波合法，降为 INFO 避免误阻生图
+            const senseHints = ['CH1', 'CH2', 'CH3', 'CH4'];
+            for (let hi = 0; hi < senseHints.length; hi++) {
+                const sid = findPinNet(senseHints[hi]);
+                if (sid === undefined) {
+                    continue;
+                }
+                const net = doc.nets.find(n => n.id === sid);
+                if (net !== undefined && FaultDiagnoser.netLooksLikePowerRail(doc, net)) {
+                    const nName = (net.name ?? '').toUpperCase();
+                    result.push({
+                        id: IdUtil.generate('erc'),
+                        severity: ErcSeverity.INFO,
+                        ruleType: ErcRuleType.PARAM_MISMATCH,
+                        message: `示波器 ${sc.refDes}.${senseHints[hi]} 挂在电源网 ${nName} — 恒压无观测意义（测纹波可忽略）`,
+                        componentId: sc.id,
+                        fixSuggestion: '一般将通道接到被测信号节点；测电源纹波时可保留'
+                    });
+                }
             }
         }
         // ---- 电压表同节点检测 ----
@@ -404,7 +447,7 @@ export class FaultDiagnoser {
                 if (allSame && vmNodePairs[0].length > 0) {
                     result.push({
                         id: IdUtil.generate('erc'),
-                        severity: ErcSeverity.ERROR,
+                        severity: ErcSeverity.INFO,
                         ruleType: ErcRuleType.PARAM_MISMATCH,
                         message: `${voltmeters.length} 块电压表全部测量同一节点对 — 应分布在分压链不同节点`,
                         fixSuggestion: '电压表应分别测量不同电阻的压降 (VCC↔SENSE 和 SENSE↔GND)'
@@ -436,7 +479,7 @@ export class FaultDiagnoser {
                 if (!hasResistorBetween && !gnHasLoad && vnComps.length > 0) {
                     result.push({
                         id: IdUtil.generate('erc'),
-                        severity: ErcSeverity.WARNING,
+                        severity: ErcSeverity.INFO,
                         ruleType: ErcRuleType.PARAM_MISMATCH,
                         message: 'VCC 与 GND 之间无负载电阻 — 可能存在电流直通路径',
                         fixSuggestion: '确保 VCC 与 GND 之间有分压电阻或负载'
@@ -458,31 +501,46 @@ export class FaultDiagnoser {
         return ids;
     }
     // ---- L2.6: 命名违规 + 全浮空器件 + GPIO直连电源 ----
-    /** 信号网络使用保留电源名 → 致命错误 */
+    /** 信号网络使用保留电源名 → 致命错误（真电源轨误标 SIGNAL 则豁免） */
     private static checkPowerNameAbuse(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
-        const reserved = new Set(['VCC', 'VDD', 'GND', 'VSS', '3V3', '3.3V', '5V', '12V']);
+        const reserved = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '3V3', '3.3V', '5V', '12V']);
         for (const net of doc.nets) {
             const upper = (net.name ?? '').toUpperCase();
-            if (reserved.has(upper) && net.type !== NetType.POWER && net.type !== NetType.GROUND) {
-                result.push({
-                    id: IdUtil.generate('erc'),
-                    severity: ErcSeverity.ERROR,
-                    ruleType: ErcRuleType.PARAM_MISMATCH,
-                    message: `信号网络 "${net.name}" 使用了保留电源名 — 将导致仿真 Netlist 错误合并`,
-                    netId: net.id,
-                    fixSuggestion: `将网络名改为 "${net.name}_SIG" 或其他描述性名称`
-                });
+            if (!reserved.has(upper)) {
+                continue;
             }
+            if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+                continue;
+            }
+            // 网上已有对应电源符号 → 仅 type 标错，不误报
+            if (FaultDiagnoser.netLooksLikePowerRail(doc, net)) {
+                continue;
+            }
+            result.push({
+                id: IdUtil.generate('erc'),
+                severity: ErcSeverity.ERROR,
+                ruleType: ErcRuleType.PARAM_MISMATCH,
+                message: `信号网络 "${net.name}" 使用了保留电源名 — 将导致仿真 Netlist 错误合并`,
+                netId: net.id,
+                fixSuggestion: `将网络名改为 "${net.name}_SIG" 或其他描述性名称`
+            });
         }
         return result;
     }
-    /** 器件完全无连接 → 致命错误 */
+    /** 器件完全无连接 → 致命错误（仪器/激励符号豁免） */
     private static checkFullyFloatingComponent(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
-        const skipIds = new Set(['VCC', 'GND', 'VAC']);
+        const skipIds = new Set([
+            'VCC', 'GND', 'VAC', 'VEE', 'SIGNAL_GEN',
+            'OSCILLOSCOPE', 'LOGIC_ANALYZER', 'FREQ_COUNTER', 'POWER_METER',
+            'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER', 'UART_TERMINAL',
+            'LCD1602', 'OLED_12864'
+        ]);
         for (const comp of doc.components) {
-            if (skipIds.has(comp.libraryId)) {
+            const libU = (comp.libraryId ?? '').toUpperCase();
+            if (skipIds.has(comp.libraryId) || skipIds.has(libU) ||
+                libU.indexOf('OSCILLOSCOPE') >= 0 || libU.indexOf('METER') >= 0) {
                 continue;
             }
             let connected = false;
@@ -534,7 +592,10 @@ export class FaultDiagnoser {
                     if (upperPin.includes('VDD') || upperPin.includes('VCC') ||
                         upperPin.includes('VSS') || upperPin.includes('GND') ||
                         upperPin.includes('AVDD') || upperPin.includes('AVSS') ||
-                        upperPin === 'EA' || upperPin === 'BOOT0') {
+                        upperPin.includes('XTAL') || upperPin.includes('OSC') ||
+                        upperPin.includes('PH0') || upperPin.includes('PH1') ||
+                        upperPin === 'EA' || upperPin === 'BOOT0' || upperPin === 'BOOT1' ||
+                        upperPin === 'RST' || upperPin === 'NRST' || upperPin === 'RESET') {
                         continue;
                     }
                     // 检测 GPIO/IO 引脚连接到电源
@@ -581,5 +642,280 @@ export class FaultDiagnoser {
             }
         }
         return result;
+    }
+    /**
+     * 运放反馈分类：
+     * - closed: 负/正反馈（同网或经 R/C）
+     * - comparator: 双输入已接且 OUT 已接、无反馈 → 有意开环比较器
+     * - open: 真开环（缺输入或 OUT 悬空等）
+     */
+    private static classifyOpAmpFeedback(doc: SchematicDocument, opAmpId: string): 'closed' | 'comparator' | 'open' {
+        if (FaultDiagnoser.opAmpHasFeedbackPath(doc, opAmpId)) {
+            return 'closed';
+        }
+        const channels: string[] = ['', '1', '2'];
+        let sawChannel = false;
+        for (let ci = 0; ci < channels.length; ci++) {
+            const suf = channels[ci];
+            const outNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `OUT${suf}`);
+            const innNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `IN-${suf}`);
+            const inpNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `IN+${suf}`);
+            if (outNet.length === 0 && innNet.length === 0 && inpNet.length === 0) {
+                continue;
+            }
+            sawChannel = true;
+            if (outNet.length > 0 && innNet.length > 0 && inpNet.length > 0 &&
+                innNet !== inpNet) {
+                return 'comparator';
+            }
+        }
+        return sawChannel ? 'open' : 'closed';
+    }
+    /**
+     * 运放是否有反馈路径：
+     * - OUT 与 IN- 或 IN+ 同网（跟随 / 迟滞直接反馈）
+     * - 经 R_* / C_* 桥接 OUT 网与任一输入网（反相放大 / 迟滞比较器）
+     */
+    private static opAmpHasFeedbackPath(doc: SchematicDocument, opAmpId: string): boolean {
+        const channels: string[] = ['', '1', '2'];
+        let anyChannelPresent = false;
+        for (let ci = 0; ci < channels.length; ci++) {
+            const suf = channels[ci];
+            const outNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `OUT${suf}`);
+            const innNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `IN-${suf}`);
+            const inpNet = FaultDiagnoser.findPinNetId(doc, opAmpId, `IN+${suf}`);
+            if (outNet.length === 0 && innNet.length === 0 && inpNet.length === 0) {
+                continue;
+            }
+            anyChannelPresent = true;
+            if (outNet.length === 0) {
+                continue;
+            }
+            if ((innNet.length > 0 && outNet === innNet) ||
+                (inpNet.length > 0 && outNet === inpNet)) {
+                return true;
+            }
+            if (FaultDiagnoser.passiveBridgesNets(doc, outNet, innNet) ||
+                FaultDiagnoser.passiveBridgesNets(doc, outNet, inpNet)) {
+                return true;
+            }
+        }
+        return !anyChannelPresent;
+    }
+    private static findPinNetId(doc: SchematicDocument, compId: string, pinLabel: string): string {
+        const want = pinLabel.toUpperCase();
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const net = doc.nets[ni];
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                const pr = parsePinRef(net.pinIds[pi]);
+                if (pr === null || pr.compId !== compId) {
+                    continue;
+                }
+                const name = (pr.pinName || pr.pinId).toUpperCase();
+                const id = (pr.pinId || '').toUpperCase();
+                if (name === want || id === want) {
+                    return net.id;
+                }
+            }
+        }
+        return '';
+    }
+    /** R_/C_ 两脚是否分别落在 netA 与 netB */
+    private static passiveBridgesNets(doc: SchematicDocument, netA: string, netB: string): boolean {
+        if (netA.length === 0 || netB.length === 0 || netA === netB) {
+            return false;
+        }
+        for (let ci = 0; ci < doc.components.length; ci++) {
+            const c = doc.components[ci];
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (!lib.startsWith('R_') && !lib.startsWith('C_')) {
+                continue;
+            }
+            const netsOnComp = FaultDiagnoser.componentNetIds(doc, c.id);
+            if (netsOnComp.indexOf(netA) >= 0 && netsOnComp.indexOf(netB) >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    private static componentNetIds(doc: SchematicDocument, compId: string): string[] {
+        const netsOnComp: string[] = [];
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const net = doc.nets[ni];
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                const pr = parsePinRef(net.pinIds[pi]);
+                if (pr !== null && pr.compId === compId && netsOnComp.indexOf(net.id) < 0) {
+                    netsOnComp.push(net.id);
+                }
+            }
+        }
+        return netsOnComp;
+    }
+    private static parseOhmRough(val: string): number {
+        const s = (val ?? '').trim().replace(/\s+/g, '');
+        if (s.length === 0) {
+            return 0;
+        }
+        const m = s.match(/^([\d.]+)\s*([kKmMgG]?)/);
+        if (m === null) {
+            const digits = s.replace(/[^0-9.]/g, '');
+            return parseFloat(digits) || 0;
+        }
+        let n = parseFloat(m[1]);
+        if (!Number.isFinite(n)) {
+            return 0;
+        }
+        const u = (m[2] ?? '').toLowerCase();
+        if (u === 'k') {
+            n *= 1e3;
+        }
+        else if (u === 'm') {
+            n *= 1e6;
+        }
+        else if (u === 'g') {
+            n *= 1e9;
+        }
+        return n;
+    }
+    /** LED 是否与某电阻共网（串联限流） */
+    private static ledHasSeriesResistor(doc: SchematicDocument, ledId: string): boolean {
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const net = doc.nets[ni];
+            let hasLed = false;
+            let hasR = false;
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                const pr = parsePinRef(net.pinIds[pi]);
+                if (pr === null) {
+                    continue;
+                }
+                if (pr.compId === ledId) {
+                    hasLed = true;
+                }
+                const c = doc.components.find(x => x.id === pr.compId);
+                if (c !== undefined && (c.libraryId ?? '').startsWith('R_')) {
+                    hasR = true;
+                }
+            }
+            if (hasLed && hasR) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /** 该电阻是否作为 LED 串联限流（共网 + 另一端接电源/地/驱动） */
+    private static ledsLikelyLimitedByResistor(doc: SchematicDocument, rComp: ComponentInstance): string[] {
+        const rNets = FaultDiagnoser.componentNetIds(doc, rComp.id);
+        if (rNets.length < 2) {
+            return [];
+        }
+        const ledIds: string[] = [];
+        for (let i = 0; i < rNets.length; i++) {
+            const net = doc.nets.find(n => n.id === rNets[i]);
+            if (net === undefined) {
+                continue;
+            }
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                const pr = parsePinRef(net.pinIds[pi]);
+                if (pr === null || pr.compId === rComp.id) {
+                    continue;
+                }
+                const c = doc.components.find(x => x.id === pr.compId);
+                if (c === undefined || !(c.libraryId ?? '').includes('LED')) {
+                    continue;
+                }
+                // 电阻另一网须像电源/地/开关/MCU，才视为限流而非反馈旁路
+                let otherIsDrive = false;
+                for (let j = 0; j < rNets.length; j++) {
+                    if (j === i) {
+                        continue;
+                    }
+                    const other = doc.nets.find(n => n.id === rNets[j]);
+                    if (other !== undefined &&
+                        (FaultDiagnoser.netLooksLikePowerRail(doc, other) ||
+                            FaultDiagnoser.netHasDriver(doc, other))) {
+                        otherIsDrive = true;
+                    }
+                }
+                if (otherIsDrive && ledIds.indexOf(c.id) < 0) {
+                    ledIds.push(c.id);
+                }
+            }
+        }
+        return ledIds;
+    }
+    private static netLooksLikePowerRail(doc: SchematicDocument, net: Net): boolean {
+        const upper = (net.name ?? '').toUpperCase();
+        if (VCC_NAMES.has(upper) || GND_NAMES.has(upper) || upper === 'VEE' ||
+            upper === '-12V' || upper === '-5V') {
+            return true;
+        }
+        if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+            return true;
+        }
+        const ids = FaultDiagnoser.netComponentIds(net, doc);
+        for (let i = 0; i < ids.length; i++) {
+            const c = doc.components.find(x => x.id === ids[i]);
+            if (c === undefined) {
+                continue;
+            }
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (lib === 'VCC' || lib === 'GND' || lib === 'VEE' ||
+                VCC_NAMES.has(lib) || GND_NAMES.has(lib) ||
+                lib.startsWith('LM78') || lib.startsWith('AMS')) {
+                return true;
+            }
+        }
+        return false;
+    }
+    private static netHasPowerSource(doc: SchematicDocument, net: Net): boolean {
+        const ids = FaultDiagnoser.netComponentIds(net, doc);
+        for (let i = 0; i < ids.length; i++) {
+            const c = doc.components.find(x => x.id === ids[i]);
+            if (c === undefined) {
+                continue;
+            }
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (lib === 'VCC' || lib === 'VEE' || lib === 'VAC' || lib === 'SIGNAL_GEN' ||
+                VCC_NAMES.has(lib) || lib.startsWith('LM78') || lib.startsWith('AMS')) {
+                return true;
+            }
+        }
+        return FaultDiagnoser.netLooksLikePowerRail(doc, net);
+    }
+    private static netHasCurrentLoad(doc: SchematicDocument, net: Net): boolean {
+        const ids = FaultDiagnoser.netComponentIds(net, doc);
+        for (let i = 0; i < ids.length; i++) {
+            const c = doc.components.find(x => x.id === ids[i]);
+            if (c === undefined) {
+                continue;
+            }
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (lib.startsWith('R_') || lib.startsWith('LED') || lib.startsWith('L_') ||
+                lib.indexOf('BUZZER') >= 0 || lib.indexOf('RELAY') >= 0 ||
+                lib.indexOf('NPN') >= 0 || lib.indexOf('PNP') >= 0 ||
+                lib.indexOf('NMOS') >= 0 || lib.indexOf('PMOS') >= 0 ||
+                MCU_IDS.has(c.libraryId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    private static netHasDriver(doc: SchematicDocument, net: Net): boolean {
+        if (FaultDiagnoser.netHasPowerSource(doc, net)) {
+            return true;
+        }
+        const ids = FaultDiagnoser.netComponentIds(net, doc);
+        for (let i = 0; i < ids.length; i++) {
+            const c = doc.components.find(x => x.id === ids[i]);
+            if (c === undefined) {
+                continue;
+            }
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (lib === 'SW_PUSH' || lib.indexOf('RELAY') >= 0 || MCU_IDS.has(c.libraryId) ||
+                lib.indexOf('74HC') >= 0 || lib.indexOf('GATE_') >= 0) {
+                return true;
+            }
+        }
+        return false;
     }
 }

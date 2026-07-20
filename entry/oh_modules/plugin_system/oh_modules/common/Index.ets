@@ -46,7 +46,7 @@ export {
   traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo,
-  traceAiPayload, traceAiOp, traceAiDiag
+  traceAiPayload, traceAiOp, traceAiDiag, traceAiStage
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {

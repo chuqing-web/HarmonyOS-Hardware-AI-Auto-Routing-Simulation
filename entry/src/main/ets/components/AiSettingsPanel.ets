@@ -3,7 +3,7 @@
  */
 import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from 'common';
-import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -176,35 +176,26 @@ export struct AiSettingsPanel {
         .width('100%')
         .padding({ left: 8, right: 8, bottom: 4 })
 
-      TextArea({
+      ProteusTextArea({
         placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
-        text: this.promptText
+        text: this.promptText,
+        areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
+        isEnabled: !this.aiGenerating,
+        onChange: (v: string) => { this.promptText = v; }
       })
-        .height(72)
-        .width('100%')
-        .fontSize(ProteusFonts.PARAM_KEY)
-        .fontColor(ProteusColors.TEXT_PRIMARY)
-        .backgroundColor(ProteusColors.CANVAS_BG)
-        .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-        .borderRadius(0)
-        .padding(6)
         .margin({ left: 8, right: 8 })
-        .enabled(!this.aiGenerating)
-        .onChange((v: string) => {
-          this.promptText = v;
-        })
 
       Row({ space: 6 }) {
         ProteusClassicBtn({
           label: this.aiGenerating ? '取消' : '生成整图',
-          widthVal: '46%',
+          widthVal: '34%',
           onAction: () => {
             this.requestGenerate();
           }
         })
         ProteusClassicBtn({
           label: 'AI自检修复',
-          widthVal: '28%',
+          widthVal: '42%',
           onAction: () => {
             if (this.aiGenerating) {
               this.statusMessage = '请等待当前任务结束';
@@ -215,7 +206,7 @@ export struct AiSettingsPanel {
         })
         ProteusClassicBtn({
           label: '清空',
-          widthVal: '20%',
+          widthVal: '18%',
           onAction: () => {
             this.appService.clearAiGenLogs();
           }
@@ -453,63 +444,66 @@ export struct AiSettingsPanel {
             Text('官网链接')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
-            TextInput({ placeholder: 'https://example.com （可选）', text: this.newApiUrl })
-              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT).fontSize(ProteusFonts.PARAM_KEY).borderRadius(0)
-              .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .onChange((v: string) => { this.newApiUrl = v; })
-          }.width('100%').alignItems(VerticalAlign.Center)
+            ProteusTextInput({
+              placeholder: 'https://example.com （可选）',
+              text: this.newApiUrl,
+              onChange: (v: string) => { this.newApiUrl = v; }
+            })
+              .layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           Row() {
             Text('API Key')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
-            TextInput({ placeholder: 'sk-...', text: this.newApiKey })
-              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT).fontSize(ProteusFonts.PARAM_KEY).borderRadius(0)
-              .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .type(InputType.Password)
-              .onChange((v: string) => { this.newApiKey = v; })
-          }.width('100%').alignItems(VerticalAlign.Center)
+            ProteusTextInput({
+              placeholder: 'sk-...',
+              text: this.newApiKey,
+              password: true,
+              onChange: (v: string) => { this.newApiKey = v; }
+            })
+              .layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           Row() {
             Text('API 格式')
-              .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
             Select(this.buildApiFormatOptions())
               .selected(this.apiFormatIdx)
               .value(this.apiFormats[this.apiFormatIdx].label)
-              .font({ size: 10 }).fontColor(ProteusColors.TEXT_PRIMARY)
+              .font({ size: ProteusFonts.INPUT }).fontColor(ProteusColors.TEXT_PRIMARY)
               .backgroundColor(ProteusColors.CANVAS_BG)
-              .layoutWeight(1).height(26)
+              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT)
               .onSelect((idx: number) => {
                 this.apiFormatIdx = idx;
                 this.newApiFormat = this.apiFormats[idx].value;
               })
-          }.width('100%').alignItems(VerticalAlign.Center)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           Row() {
             Text('认证字段')
-              .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
-            TextInput({ placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）', text: this.newAuthField })
-              .layoutWeight(1).height(26).fontSize(10).borderRadius(0)
-              .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .onChange((v: string) => { this.newAuthField = v; })
-          }.width('100%').alignItems(VerticalAlign.Center)
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
+            ProteusTextInput({
+              placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）',
+              text: this.newAuthField,
+              onChange: (v: string) => { this.newAuthField = v; }
+            })
+              .layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           Row() {
             Text('模型名称')
-              .fontSize(10).fontColor(ProteusColors.TEXT_LABEL).width(52)
-            TextInput({ placeholder: 'claude-sonnet-4-6', text: this.newApiModel })
-              .layoutWeight(1).height(26).fontSize(10).borderRadius(0)
-              .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .onChange((v: string) => { this.newApiModel = v; })
-          }.width('100%').alignItems(VerticalAlign.Center)
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
+            ProteusTextInput({
+              placeholder: 'claude-sonnet-4-6',
+              text: this.newApiModel,
+              onChange: (v: string) => { this.newApiModel = v; }
+            })
+              .layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           ProteusClassicBtn({
             label: '保存 API',

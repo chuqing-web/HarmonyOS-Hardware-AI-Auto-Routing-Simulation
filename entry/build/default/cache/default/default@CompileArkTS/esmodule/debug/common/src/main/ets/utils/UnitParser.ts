@@ -55,6 +55,49 @@ export class UnitParser {
     }
     static normalizeParam(key: string, value: string): ParsedValue {
         const v = value.trim().replace(/\s+/g, '');
+        const keyL = key.toLowerCase();
+        if (keyL === 'waveform' || keyL === 'wave') {
+            const wf = v.toLowerCase();
+            const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
+                wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
+                wf === 'pulse' || wf === '正弦' || wf === '方波' || wf === '三角' || wf === '锯齿' ||
+                wf === '脉冲';
+            let norm = wf;
+            if (wf === 'sin' || wf === '正弦') {
+                norm = 'sine';
+            }
+            else if (wf === 'sq' || wf === '方波') {
+                norm = 'square';
+            }
+            else if (wf === 'tri' || wf === '三角' || wf === '三角波') {
+                norm = 'triangle';
+            }
+            else if (wf === 'sawtooth' || wf === '锯齿') {
+                norm = 'saw';
+            }
+            else if (wf === '脉冲') {
+                norm = 'pulse';
+            }
+            return {
+                numeric: 0, unit: '', normalized: norm, valid: ok,
+                errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+            };
+        }
+        if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
+            let s = v.replace(/%/g, '');
+            const n = parseFloat(s);
+            if (!Number.isFinite(n) || n < 0 || n > 100) {
+                return {
+                    numeric: 50, unit: '%', normalized: '50%', valid: false,
+                    errCode: ErrCode.ERR_PARAM_INVALID
+                };
+            }
+            // 0–1 小数 → 百分比；>1 视为已是百分比
+            const pct = n > 0 && n <= 1 ? n * 100 : n;
+            return {
+                numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
+            };
+        }
         if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Ω')) {
             return UnitParser.parseResistance(v);
         }

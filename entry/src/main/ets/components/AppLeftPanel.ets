@@ -4,7 +4,8 @@
 import { AppService } from '../services/AppService';
 import { ComponentPreview } from './ComponentPreview';
 import {
-  ProteusPanelTitle, ProteusNavTab, ProteusTreeRow, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow
+  ProteusPanelTitle, ProteusNavTab, ProteusTreeRow, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow,
+  ProteusTextInput
 } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import {
@@ -49,18 +50,16 @@ export struct AppLeftPanel {
             collapsed: false,
             onToggle: () => { this.leftLibCollapsed = true; }
           })
-          TextInput({ placeholder: $r('app.string.search_placeholder'), text: this.searchKeyword })
-            .height(ProteusDimens.SEARCH_HEIGHT)
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .backgroundColor(ProteusColors.CANVAS_BG)
-            .borderRadius(0)
-            .border({ width: 1, color: ProteusColors.BORDER })
-            .margin({ left: 4, right: 4, top: 4, bottom: 2 })
-            .onChange((v: string) => {
+          ProteusTextInput({
+            placeholder: $r('app.string.search_placeholder'),
+            text: this.searchKeyword,
+            onChange: (v: string) => {
               this.searchKeyword = v;
               this.onRefreshList();
-            })
+            }
+          })
+            .margin({ left: 4, right: 4, top: 4, bottom: 2 })
+            .width('100%')
 
           Scroll() {
             Column() {

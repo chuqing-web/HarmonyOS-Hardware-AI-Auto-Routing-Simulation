@@ -38,7 +38,9 @@ export struct TeachingPanel {
   aboutToAppear(): void {
     this.templateDir = this.appService.getTemplateDir();
     this.hexDir = this.appService.getHexDir();
-    this.refreshTemplates();
+    void this.appService.ensureTemplatesReady().then(() => {
+      this.refreshTemplates();
+    });
   }
 
   private refreshTemplates(): void {
@@ -193,12 +195,16 @@ export struct TeachingPanel {
               label: '插入',
               widthVal: 52,
               onAction: () => {
-                void this.appService.loadLabTemplate(tpl.id).then((r) => {
-                  if (!r) {
-                    this.statusMessage =
-                      `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
-                  }
-                });
+                void this.appService.ensureTemplatesReady()
+                  .then(() => this.appService.loadLabTemplate(tpl.id))
+                  .then((r) => {
+                    if (!r) {
+                      this.statusMessage =
+                        `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
+                    } else {
+                      this.refreshTemplates();
+                    }
+                  });
               }
             })
           }

@@ -8,6 +8,7 @@ interface Index_Params {
     simWaveTick?: number;
     statusMessage?: string;
     canvasVersion?: number;
+    rightPanelRefreshKey?: number;
     selectedComponentId?: string;
     searchKeyword?: string;
     componentList?: string[];
@@ -83,7 +84,7 @@ import { FaultInjectionPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/com
 import { TeachingPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/components/TeachingPanel";
 import { InstrTraceLogPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/components/InstrTraceLogPanel";
 import { ComponentPreview } from "@bundle:com.elecdraw.aischsim/entry/ets/components/ComponentPreview";
-import { ProteusVDivider, ProteusPanelTitle, ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle, ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer, ProteusSidebarTab, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusVDivider, ProteusPanelTitle, ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle, ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer, ProteusSidebarTab, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import type { ProteusMenuEntry } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusIconName } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusIcons";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
@@ -91,6 +92,7 @@ import { UiStateStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/UiSt
 import { CallbackRegistry, ComponentCategory, EventBus, ModuleEvent, McuFamily, isInstrumentLibraryId, traceBurn, formatFirmwarePreview, appVersionLabel, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ErcError, ProgressInfo, ComponentInstance, SchematicDocument, ModuleEventPayload } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchematicEditorImpl, AlignType } from 'schematic_editor';
+import type { SimulationKernelImpl } from 'simulation_kernel';
 import { EditorToolMode, toolModeLabel } from "@bundle:com.elecdraw.aischsim/entry/ets/model/EditorToolMode";
 import { AppViewModel } from "@bundle:com.elecdraw.aischsim/entry/ets/viewmodel/AppViewModel";
 import type common from "@ohos:app.ability.common";
@@ -116,6 +118,7 @@ class Index extends ViewPU {
         this.__simWaveTick = new ObservedPropertySimplePU(0, this, "simWaveTick");
         this.__statusMessage = new ObservedPropertySimplePU('', this, "statusMessage");
         this.__canvasVersion = new ObservedPropertySimplePU(0, this, "canvasVersion");
+        this.__rightPanelRefreshKey = new ObservedPropertySimplePU(0, this, "rightPanelRefreshKey");
         this.__selectedComponentId = new ObservedPropertySimplePU('', this, "selectedComponentId");
         this.__searchKeyword = new ObservedPropertySimplePU('', this, "searchKeyword");
         this.__componentList = new ObservedPropertyObjectPU([], this, "componentList");
@@ -205,6 +208,9 @@ class Index extends ViewPU {
         }
         if (params.canvasVersion !== undefined) {
             this.canvasVersion = params.canvasVersion;
+        }
+        if (params.rightPanelRefreshKey !== undefined) {
+            this.rightPanelRefreshKey = params.rightPanelRefreshKey;
         }
         if (params.selectedComponentId !== undefined) {
             this.selectedComponentId = params.selectedComponentId;
@@ -405,6 +411,7 @@ class Index extends ViewPU {
         this.__simWaveTick.purgeDependencyOnElmtId(rmElmtId);
         this.__statusMessage.purgeDependencyOnElmtId(rmElmtId);
         this.__canvasVersion.purgeDependencyOnElmtId(rmElmtId);
+        this.__rightPanelRefreshKey.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedComponentId.purgeDependencyOnElmtId(rmElmtId);
         this.__searchKeyword.purgeDependencyOnElmtId(rmElmtId);
         this.__componentList.purgeDependencyOnElmtId(rmElmtId);
@@ -466,6 +473,7 @@ class Index extends ViewPU {
         this.__simWaveTick.aboutToBeDeleted();
         this.__statusMessage.aboutToBeDeleted();
         this.__canvasVersion.aboutToBeDeleted();
+        this.__rightPanelRefreshKey.aboutToBeDeleted();
         this.__selectedComponentId.aboutToBeDeleted();
         this.__searchKeyword.aboutToBeDeleted();
         this.__componentList.aboutToBeDeleted();
@@ -563,6 +571,14 @@ class Index extends ViewPU {
     }
     set canvasVersion(newValue: number) {
         this.__canvasVersion.set(newValue);
+    }
+    /** 工程切换时递增，强制右侧栏面板 remount */
+    private __rightPanelRefreshKey: ObservedPropertySimplePU<number>;
+    get rightPanelRefreshKey() {
+        return this.__rightPanelRefreshKey.get();
+    }
+    set rightPanelRefreshKey(newValue: number) {
+        this.__rightPanelRefreshKey.set(newValue);
     }
     private __selectedComponentId: ObservedPropertySimplePU<string>;
     get selectedComponentId() {
@@ -970,8 +986,7 @@ class Index extends ViewPU {
             this.bumpCanvas();
         };
         this.appService.onProjectChanged = () => {
-            this.projectName = this.appService.currentProject?.name ?? 'Untitled';
-            this.canvasVersion++;
+            this.refreshUiAfterProjectChange();
         };
         this.appService.onWaveUpdate = (_waves) => {
             this.simWaveTick++;
@@ -1009,69 +1024,108 @@ class Index extends ViewPU {
         this.initCategoryTree();
         this.hookStartupWindowResize();
         void maximizeAppWindow(ctx);
-        // 优先从上次正式工程路径加载（含 AI API）；勿因 recovery/dirty 跳过导致 API 丢失
+        // 先读 recovery/session（仍保留上次 closedCleanly），再标记本次运行中
         this.recoveryFiles = await this.appService.checkRecoveryFiles();
         const session = await this.appService.loadSession();
-        if (session !== null && session.lastPath.length > 0) {
-            const autoSavePath = `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
-            let ok = await this.appService.loadProject(session.lastPath);
-            if (!ok && session.lastPath !== autoSavePath) {
-                ok = await this.appService.loadProject(autoSavePath);
+        if (session !== null && session.lastProjectName.length > 0) {
+            const autoSavePath = session.autoSavePath !== undefined && session.autoSavePath.length > 0
+                ? session.autoSavePath
+                : `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
+            const pathsToTry: string[] = [];
+            if (!session.closedCleanly) {
+                for (let i = 0; i < this.recoveryFiles.length; i++) {
+                    if (!pathsToTry.includes(this.recoveryFiles[i])) {
+                        pathsToTry.push(this.recoveryFiles[i]);
+                    }
+                }
+                if (session.lastPath.length > 0 && !pathsToTry.includes(session.lastPath)) {
+                    pathsToTry.push(session.lastPath);
+                }
+                if (!pathsToTry.includes(autoSavePath)) {
+                    pathsToTry.push(autoSavePath);
+                }
+            }
+            else {
+                if (session.lastPath.length > 0) {
+                    pathsToTry.push(session.lastPath);
+                }
+                if (!pathsToTry.includes(autoSavePath)) {
+                    pathsToTry.push(autoSavePath);
+                }
+            }
+            let ok = false;
+            let loadedPath = '';
+            for (let i = 0; i < pathsToTry.length; i++) {
+                ok = await this.appService.loadProject(pathsToTry[i]);
+                if (ok) {
+                    loadedPath = pathsToTry[i];
+                    break;
+                }
             }
             if (ok) {
                 this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
-                this.appService.enableAutoSave(autoSavePath, 120000);
-                this.resetAfterProjectChange();
-                this.refreshComponentList();
+                this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
                 this.deferCanvasFit();
                 this.appInitialized = true;
-                if (this.recoveryFiles.length > 0) {
+                if (!session.closedCleanly) {
+                    const loadedFromWorkingCopy = loadedPath === autoSavePath ||
+                        this.recoveryFiles.includes(loadedPath);
+                    if (!loadedFromWorkingCopy && this.recoveryFiles.length > 0) {
+                        this.showRecoveryDialog = true;
+                        this.statusMessage = `已恢复工程: ${this.projectName}（检测到更新的工作副本）`;
+                    }
+                    else {
+                        this.statusMessage = `已从工作副本恢复: ${loadedPath}`;
+                    }
+                }
+                else if (this.recoveryFiles.length > 0) {
                     this.showRecoveryDialog = true;
                     this.statusMessage = `已恢复工程: ${this.projectName}（检测到额外恢复文件）`;
                 }
                 else {
                     this.statusMessage = `已恢复上次工程: ${this.projectName}`;
                 }
+                await this.appService.markSessionRunning();
                 return;
             }
         }
         if (this.recoveryFiles.length > 0) {
             this.appService.newProject('Untitled');
-            this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
+            this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
             this.showRecoveryDialog = true;
             this.appInitialized = true;
             this.statusMessage = '检测到未正常关闭的工程，是否恢复？';
+            await this.appService.markSessionRunning();
             return;
         }
         // No recovery, no last session — show welcome dialog
         this.appService.newProject('Untitled');
-        this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, 120000);
+        this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
         this.refreshComponentList();
         this.deferCanvasFit();
         this.appInitialized = true;
         this.showWelcomeDialog = true;
         this.statusMessage = '欢迎使用 AI 原理图仿真 — 请新建或打开工程';
+        await this.appService.markSessionRunning();
     }
     onPageHide(): void {
-        // Save recovery cache when page is hidden (app going to background)
-        void this.appService.saveRecoveryCache();
+        void this.appService.flushProjectProtection(false);
     }
     aboutToDisappear(): void {
-        // Save session state before exit — marks last project for auto-reload on next launch
-        void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, !this.unsavedChanges // true = clean shutdown, next launch auto-loads; false = may trigger recovery
-        );
+        void this.appService.flushProjectProtection(!this.unsavedChanges);
     }
     onBackPress(): boolean {
         if (this.unsavedChanges) {
             this.showExitConfirmDialog = true;
-            return true; // consume the back event, keep app open
+            return true;
         }
-        void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
-        return false; // allow system to proceed with exit
+        void this.appService.flushProjectProtection(true);
+        return false;
     }
     onThemeRefresh(): void {
-        // 主题/无障碍变更后重绘画布（网格色、导线色、背景）
+        // 主题/无障碍变更后重绘画布（网格色、导线色、背景、符号描边）
         this.canvasVersion++;
+        this.navRefreshKey++;
     }
     loadUiState(): void {
         const s = this.uiState;
@@ -1099,6 +1153,12 @@ class Index extends ViewPU {
         s.toolMode = this.toolMode;
         s.setExpandedCategories(this.expandedCategories);
     }
+    /** 仿真中可点击/拖动的交互器件 — 操作时不应切换右侧栏 */
+    private isInteractiveSimComponent(libraryId: string): boolean {
+        const lib = libraryId.toUpperCase();
+        return lib === 'SW_PUSH' || lib.includes('SWITCH_PUSH') || lib === 'BUTTON' ||
+            lib.startsWith('POT_') || lib.includes('POTENTIOMETER') || lib === 'POT' || lib.includes('_POT');
+    }
     updateContextualTabs(instUuid: string): void {
         const doc = this.appService.schematicEditor.getDocument();
         const comp = doc.components.find(c => c.id === instUuid);
@@ -1110,6 +1170,10 @@ class Index extends ViewPU {
         const isInstr = isInstrumentLibraryId(comp.libraryId);
         this.debugTabHasBadge = isMcu;
         this.instrTabHasBadge = isInstr;
+        // 仿真中点击开关/电位器等交互器件时，保持当前右侧面板不变
+        if (this.simRunning && this.isInteractiveSimComponent(comp.libraryId)) {
+            return;
+        }
         // 选中器件时展开右侧栏并跳到对应面板：MCU→调试、仪器→Instr、其余→属性
         if (this.rightCollapsed) {
             this.rightCollapsed = false;
@@ -1219,6 +1283,19 @@ class Index extends ViewPU {
         this.hookStartupWindowResize();
         this.deferCanvasFit();
     }
+    /** 新建/打开/切换工程后同步右侧栏与仿真 UI 状态 */
+    private refreshUiAfterProjectChange(): void {
+        this.projectName = this.appService.currentProject?.name ?? 'Untitled';
+        const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+        if (kernel.isSimActive()) {
+            this.appService.stopSimulation();
+        }
+        this.simRunning = false;
+        this.simPaused = false;
+        this.resetAfterProjectChange();
+        this.refreshComponentList();
+        this.appService.runErc(false);
+    }
     resetAfterProjectChange(): void {
         this.selectedComponentId = '';
         this.selectedCount = 0;
@@ -1229,6 +1306,9 @@ class Index extends ViewPU {
         this.wireStartY = 0;
         this.toolMode = EditorToolMode.SELECT;
         this.unsavedChanges = false;
+        this.debugTabHasBadge = false;
+        this.instrTabHasBadge = false;
+        this.rightPanelRefreshKey++;
         this.bumpCanvas();
     }
     private lockEditingForSimulation(): void {
@@ -1337,10 +1417,8 @@ class Index extends ViewPU {
         this.projectName = this.appService.currentProject?.name ?? this.projectNameFromPath(path);
         const name = this.projectName;
         this.appService.disableAutoSave();
-        this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-        this.resetAfterProjectChange();
+        this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
         this.appService.schematicEditor.fitAllInView();
-        this.refreshComponentList();
         this.unsavedChanges = false;
         void this.appService.saveSession(path, name, false);
         this.statusMessage = `已加载: ${path}`;
@@ -1380,13 +1458,11 @@ class Index extends ViewPU {
             this.appService.disableAutoSave();
             this.appService.newProject(name);
             this.projectName = name;
-            this.resetAfterProjectChange();
-            this.refreshComponentList();
             this.appService.schematicEditor.fitAllInView();
             const ok = await this.appService.saveProject(path, true);
             if (ok) {
                 const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
-                this.appService.enableAutoSave(autoSavePath, 120000);
+                this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
                 void this.appService.saveProject(autoSavePath, false);
                 await this.appService.saveSession(path, name, false);
                 this.unsavedChanges = false;
@@ -1413,8 +1489,6 @@ class Index extends ViewPU {
         this.appService.disableAutoSave();
         this.appService.newProject(name);
         this.projectName = name;
-        this.resetAfterProjectChange();
-        this.refreshComponentList();
         this.appService.schematicEditor.fitAllInView();
         const projectPath = `${this.userProjectDir}/${name}.schsim`;
         const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
@@ -1430,7 +1504,7 @@ class Index extends ViewPU {
                 this.statusMessage = `创建失败，请检查工程目录: ${this.userProjectDir}`;
             }
         });
-        this.appService.enableAutoSave(autoSavePath, 120000);
+        this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
     }
     /**
      * 打开：直接打开系统文件管理（默认定位到 project 目录）
@@ -1792,7 +1866,7 @@ class Index extends ViewPU {
             Column.width('100%');
             Column.height('100%');
             Column.backgroundColor(ProteusColors.MENU_BG);
-            Column.id(`main_shell_${this.themeRefreshKey}`);
+            Column.key(`main_shell_${this.themeRefreshKey}`);
             Column.onKeyEvent((event: KeyEvent) => this.handleKeyEvent(event));
         }, Column);
         this.MenuBar.bind(this)();
@@ -1836,7 +1910,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusResizer(this, { side: 'left', onDrag: (d: number) => this.onLeftPanelResize(d) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1013, col: 13 });
+                                let componentCall = new ProteusResizer(this, { side: 'left', onDrag: (d: number) => this.onLeftPanelResize(d) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1068, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1869,7 +1943,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusResizer(this, { side: 'right', onDrag: (d: number) => this.onRightPanelResize(d) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1017, col: 13 });
+                                let componentCall = new ProteusResizer(this, { side: 'right', onDrag: (d: number) => this.onRightPanelResize(d) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1072, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2123,6 +2197,7 @@ class Index extends ViewPU {
             Row.backgroundColor(ProteusColors.MENU_BG);
             Row.border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER });
             Row.alignItems(VerticalAlign.Center);
+            Row.key(`menu_bar_${this.themeRefreshKey}`);
         }, Row);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2130,7 +2205,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886094, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.fileMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1136, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1191, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2153,7 +2228,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886093, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.editMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1140, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1195, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2176,7 +2251,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886100, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.viewMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1144, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1199, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2199,7 +2274,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886097, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.placeMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1148, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1203, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2222,7 +2297,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886099, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.simMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1152, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1207, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2245,7 +2320,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886096, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.libraryMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1156, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1211, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2268,7 +2343,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886098, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.projectMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1160, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1215, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2291,7 +2366,7 @@ class Index extends ViewPU {
                     let componentCall = new ProteusMenuTrigger(this, {
                         label: { "id": 83886095, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         entries: this.helpMenuEntries()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1164, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1219, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2325,9 +2400,9 @@ class Index extends ViewPU {
     }
     fileMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886154, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+N', icon: ProteusIconName.NEW, action: () => { void this.handleNewProject(); } },
-            { label: { "id": 83886155, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
-            { label: { "id": 83886161, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } },
+            { label: { "id": 83886155, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+N', icon: ProteusIconName.NEW, action: () => { void this.handleNewProject(); } },
+            { label: { "id": 83886156, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
+            { label: { "id": 83886162, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } },
             { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: () => { void this.handleSaveAs(); } },
             { label: '', separator: true, action: () => { } },
             { label: 'Export...', action: () => { this.statusMessage = 'Export: not yet implemented'; } }
@@ -2335,55 +2410,55 @@ class Index extends ViewPU {
     }
     editMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886165, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+Z', icon: ProteusIconName.UNDO, action: () => {
+            { label: { "id": 83886166, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+Z', icon: ProteusIconName.UNDO, action: () => {
                     const r = this.appService.schematicEditor.undo();
                     this.statusMessage = r.success ? 'Undone' : 'Nothing to undo';
                     this.bumpCanvas();
                 } },
-            { label: { "id": 83886159, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+Y', icon: ProteusIconName.REDO, action: () => {
+            { label: { "id": 83886160, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+Y', icon: ProteusIconName.REDO, action: () => {
                     const r = this.appService.schematicEditor.redo();
                     this.statusMessage = r.success ? 'Redone' : 'Nothing to redo';
                     this.bumpCanvas();
                 } },
             { label: '', separator: true, action: () => { } },
-            { label: { "id": 83886145, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+C', icon: ProteusIconName.COPY, action: () => this.handleCopy() },
-            { label: { "id": 83886156, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+V', icon: ProteusIconName.PASTE, action: () => this.handlePaste() },
+            { label: { "id": 83886146, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+C', icon: ProteusIconName.COPY, action: () => this.handleCopy() },
+            { label: { "id": 83886157, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+V', icon: ProteusIconName.PASTE, action: () => this.handlePaste() },
             { label: 'Delete', shortcut: 'Del', icon: ProteusIconName.TRASH, action: () => this.handleDeleteSelected() }
         ];
     }
     viewMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886167, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '+', icon: ProteusIconName.ZOOM_IN, action: () => {
+            { label: { "id": 83886168, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '+', icon: ProteusIconName.ZOOM_IN, action: () => {
                     this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
                     this.bumpCanvas();
                 } },
-            { label: { "id": 83886168, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '-', icon: ProteusIconName.ZOOM_OUT, action: () => {
+            { label: { "id": 83886169, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '-', icon: ProteusIconName.ZOOM_OUT, action: () => {
                     this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
                     this.bumpCanvas();
                 } },
-            { label: { "id": 83886149, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+0', icon: ProteusIconName.FIT, action: () => {
+            { label: { "id": 83886150, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+0', icon: ProteusIconName.FIT, action: () => {
                     this.appService.schematicEditor.fitAllInView();
                     this.bumpCanvas();
                 } },
             { label: '', separator: true, action: () => { } },
-            { label: { "id": 83886150, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'G', icon: ProteusIconName.GRID, action: () => this.toggleGrid() },
+            { label: { "id": 83886151, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'G', icon: ProteusIconName.GRID, action: () => this.toggleGrid() },
             { label: 'Toggle Ruler', shortcut: 'R', icon: ProteusIconName.RULER, action: () => this.toggleRuler() }
         ];
     }
     placeMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886157, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'P', icon: ProteusIconName.COMPONENT, action: () => this.setToolMode(EditorToolMode.PLACE) },
-            { label: { "id": 83886166, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'W', icon: ProteusIconName.WIRE, action: () => this.setToolMode(EditorToolMode.WIRE) },
-            { label: { "id": 83886144, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'B', icon: ProteusIconName.BUS, action: () => this.setToolMode(EditorToolMode.BUS) },
-            { label: { "id": 83886152, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'L', icon: ProteusIconName.LABEL, action: () => this.setToolMode(EditorToolMode.LABEL) },
+            { label: { "id": 83886158, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'P', icon: ProteusIconName.COMPONENT, action: () => this.setToolMode(EditorToolMode.PLACE) },
+            { label: { "id": 83886167, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'W', icon: ProteusIconName.WIRE, action: () => this.setToolMode(EditorToolMode.WIRE) },
+            { label: { "id": 83886145, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'B', icon: ProteusIconName.BUS, action: () => this.setToolMode(EditorToolMode.BUS) },
+            { label: { "id": 83886153, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'L', icon: ProteusIconName.LABEL, action: () => this.setToolMode(EditorToolMode.LABEL) },
             { label: '', separator: true, action: () => { } },
-            { label: { "id": 83886158, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+P', icon: ProteusIconName.POWER, action: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') },
-            { label: { "id": 83886151, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+G', icon: ProteusIconName.GROUND, action: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }
+            { label: { "id": 83886159, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+P', icon: ProteusIconName.POWER, action: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') },
+            { label: { "id": 83886152, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+G', icon: ProteusIconName.GROUND, action: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }
         ];
     }
     simMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886163, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F5', icon: ProteusIconName.PLAY, action: async () => {
+            { label: { "id": 83886164, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F5', icon: ProteusIconName.PLAY, action: async () => {
                     if (this.simRunning) {
                         this.appService.stopSimulation();
                         this.simRunning = false;
@@ -2392,16 +2467,16 @@ class Index extends ViewPU {
                         this.applySimStartResult(this.appService.startSimulation());
                     }
                 } },
-            { label: { "id": 83886162, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F6', icon: ProteusIconName.PAUSE, action: () => {
+            { label: { "id": 83886163, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F6', icon: ProteusIconName.PAUSE, action: () => {
                     this.toggleSimPause();
                 } },
-            { label: { "id": 83886164, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+F5', icon: ProteusIconName.STOP, action: () => {
+            { label: { "id": 83886165, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Shift+F5', icon: ProteusIconName.STOP, action: () => {
                     this.appService.stopSimulation();
                     this.simRunning = false;
                     this.simPaused = false;
                 } },
             { label: '', separator: true, action: () => { } },
-            { label: { "id": 83886148, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F7', icon: ProteusIconName.ERC, action: () => {
+            { label: { "id": 83886149, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'F7', icon: ProteusIconName.ERC, action: () => {
                     const errors = this.appService.runErc(false);
                     this.ercErrors = errors;
                     const errN = errors.filter(e => e.severity === 'error' || e.severity === 'critical').length;
@@ -2425,9 +2500,9 @@ class Index extends ViewPU {
     }
     projectMenuEntries(): ProteusMenuEntry[] {
         return [
-            { label: { "id": 83886154, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+N', icon: ProteusIconName.NEW, action: () => { void this.handleNewProject(); } },
-            { label: { "id": 83886155, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
-            { label: { "id": 83886161, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } }
+            { label: { "id": 83886155, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+N', icon: ProteusIconName.NEW, action: () => { void this.handleNewProject(); } },
+            { label: { "id": 83886156, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
+            { label: { "id": 83886162, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } }
         ];
     }
     helpMenuEntries(): ProteusMenuEntry[] {
@@ -2455,6 +2530,7 @@ class Index extends ViewPU {
             Row.height(ProteusDimens.TOOLBAR_HEIGHT);
             Row.backgroundColor(ProteusColors.TOOLBAR_BG);
             Row.border({ width: { bottom: 1 }, color: ProteusColors.DIVIDER });
+            Row.key(`main_toolbar_${this.themeRefreshKey}`);
         }, Row);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2465,7 +2541,7 @@ class Index extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1317, col: 9 });
+                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1373, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2487,7 +2563,7 @@ class Index extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1318, col: 9 });
+                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1374, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2509,7 +2585,7 @@ class Index extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1319, col: 9 });
+                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1375, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2529,7 +2605,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1316, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1372, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2538,7 +2614,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1317, col: 9 });
+                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1373, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2560,7 +2636,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1318, col: 9 });
+                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1374, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2582,7 +2658,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1319, col: 9 });
+                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1375, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2626,7 +2702,7 @@ class Index extends ViewPU {
                                                 const r = this.appService.schematicEditor.undo();
                                                 this.statusMessage = r.success ? 'Undone' : 'Nothing to undo';
                                                 this.bumpCanvas();
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1323, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1379, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2656,7 +2732,7 @@ class Index extends ViewPU {
                                                 const r = this.appService.schematicEditor.redo();
                                                 this.statusMessage = r.success ? 'Redone' : 'Nothing to redo';
                                                 this.bumpCanvas();
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1328, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1384, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2684,7 +2760,7 @@ class Index extends ViewPU {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.TRASH, tooltip: '删除 (Del)', showLabel: false,
                                             disabled: this.selectedCount === 0 && !this.selectedWireActive,
-                                            onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1333, col: 9 });
+                                            onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1389, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2706,7 +2782,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1322, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1378, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2719,7 +2795,7 @@ class Index extends ViewPU {
                                                     const r = this.appService.schematicEditor.undo();
                                                     this.statusMessage = r.success ? 'Undone' : 'Nothing to undo';
                                                     this.bumpCanvas();
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1323, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1379, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2749,7 +2825,7 @@ class Index extends ViewPU {
                                                     const r = this.appService.schematicEditor.redo();
                                                     this.statusMessage = r.success ? 'Redone' : 'Nothing to redo';
                                                     this.bumpCanvas();
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1328, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1384, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2777,7 +2853,7 @@ class Index extends ViewPU {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.TRASH, tooltip: '删除 (Del)', showLabel: false,
                                                 disabled: this.selectedCount === 0 && !this.selectedWireActive,
-                                                onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1333, col: 9 });
+                                                onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1389, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2820,7 +2896,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.COPY, tooltip: '复制 (Ctrl+C)', showLabel: false,
-                                            disabled: this.selectedCount === 0, onAction: () => this.handleCopy() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1339, col: 9 });
+                                            disabled: this.selectedCount === 0, onAction: () => this.handleCopy() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1395, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2844,7 +2920,7 @@ class Index extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PASTE, tooltip: '粘贴 (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1341, col: 9 });
+                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PASTE, tooltip: '粘贴 (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1397, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2864,7 +2940,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1338, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1394, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2874,7 +2950,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.COPY, tooltip: '复制 (Ctrl+C)', showLabel: false,
-                                                disabled: this.selectedCount === 0, onAction: () => this.handleCopy() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1339, col: 9 });
+                                                disabled: this.selectedCount === 0, onAction: () => this.handleCopy() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1395, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2898,7 +2974,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PASTE, tooltip: '粘贴 (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1341, col: 9 });
+                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PASTE, tooltip: '粘贴 (Ctrl+V)', showLabel: false, onAction: () => this.handlePaste() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1397, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2941,7 +3017,7 @@ class Index extends ViewPU {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
                                                 this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
                                                 this.bumpCanvas();
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1345, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1401, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2969,7 +3045,7 @@ class Index extends ViewPU {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
                                                 this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
                                                 this.bumpCanvas();
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1349, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1405, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2997,7 +3073,7 @@ class Index extends ViewPU {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.FIT, tooltip: '适应窗口 (Ctrl+0)', showLabel: false, onAction: () => {
                                                 this.appService.schematicEditor.fitAllInView();
                                                 this.bumpCanvas();
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1353, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1409, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3023,7 +3099,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.GRID, tooltip: '显示/隐藏网格 (G)', showLabel: false,
-                                            active: this.gridVisible, onAction: () => this.toggleGrid() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1357, col: 9 });
+                                            active: this.gridVisible, onAction: () => this.toggleGrid() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1413, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3045,7 +3121,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1344, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1400, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3057,7 +3133,7 @@ class Index extends ViewPU {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
                                                     this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
                                                     this.bumpCanvas();
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1345, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1401, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3085,7 +3161,7 @@ class Index extends ViewPU {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
                                                     this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
                                                     this.bumpCanvas();
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1349, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1405, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3113,7 +3189,7 @@ class Index extends ViewPU {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.FIT, tooltip: '适应窗口 (Ctrl+0)', showLabel: false, onAction: () => {
                                                     this.appService.schematicEditor.fitAllInView();
                                                     this.bumpCanvas();
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1353, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1409, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3139,7 +3215,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.GRID, tooltip: '显示/隐藏网格 (G)', showLabel: false,
-                                                active: this.gridVisible, onAction: () => this.toggleGrid() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1357, col: 9 });
+                                                active: this.gridVisible, onAction: () => this.toggleGrid() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1413, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3182,7 +3258,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.COMPONENT, tooltip: '放置器件 (P)', showLabel: false,
-                                            active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1362, col: 9 });
+                                            active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1418, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3209,7 +3285,7 @@ class Index extends ViewPU {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)', showLabel: false,
                                             active: this.toolMode === EditorToolMode.WIRE,
                                             disabled: this.simRunning,
-                                            onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1364, col: 9 });
+                                            onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1420, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3238,7 +3314,7 @@ class Index extends ViewPU {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.BUS, tooltip: '总线 (B)', showLabel: false,
                                             active: this.toolMode === EditorToolMode.BUS,
                                             disabled: this.simRunning,
-                                            onAction: () => this.setToolMode(EditorToolMode.BUS) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1368, col: 9 });
+                                            onAction: () => this.setToolMode(EditorToolMode.BUS) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1424, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3265,7 +3341,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.LABEL, tooltip: '网络标签 (L)', showLabel: false,
-                                            active: this.toolMode === EditorToolMode.LABEL, onAction: () => this.setToolMode(EditorToolMode.LABEL) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1372, col: 9 });
+                                            active: this.toolMode === EditorToolMode.LABEL, onAction: () => this.setToolMode(EditorToolMode.LABEL) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1428, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3290,7 +3366,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.POWER, tooltip: '放置 VCC (Shift+P)', showLabel: false,
-                                            onAction: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1374, col: 9 });
+                                            onAction: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1430, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3313,7 +3389,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.GROUND, tooltip: '放置 GND (Shift+G)', showLabel: false,
-                                            onAction: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1376, col: 9 });
+                                            onAction: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1432, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3333,7 +3409,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1361, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1417, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3343,7 +3419,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.COMPONENT, tooltip: '放置器件 (P)', showLabel: false,
-                                                active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1362, col: 9 });
+                                                active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1418, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3370,7 +3446,7 @@ class Index extends ViewPU {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)', showLabel: false,
                                                 active: this.toolMode === EditorToolMode.WIRE,
                                                 disabled: this.simRunning,
-                                                onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1364, col: 9 });
+                                                onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1420, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3399,7 +3475,7 @@ class Index extends ViewPU {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.BUS, tooltip: '总线 (B)', showLabel: false,
                                                 active: this.toolMode === EditorToolMode.BUS,
                                                 disabled: this.simRunning,
-                                                onAction: () => this.setToolMode(EditorToolMode.BUS) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1368, col: 9 });
+                                                onAction: () => this.setToolMode(EditorToolMode.BUS) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1424, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3426,7 +3502,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.LABEL, tooltip: '网络标签 (L)', showLabel: false,
-                                                active: this.toolMode === EditorToolMode.LABEL, onAction: () => this.setToolMode(EditorToolMode.LABEL) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1372, col: 9 });
+                                                active: this.toolMode === EditorToolMode.LABEL, onAction: () => this.setToolMode(EditorToolMode.LABEL) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1428, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3451,7 +3527,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.POWER, tooltip: '放置 VCC (Shift+P)', showLabel: false,
-                                                onAction: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1374, col: 9 });
+                                                onAction: () => this.setToolMode(EditorToolMode.PLACE, 'VCC') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1430, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3474,7 +3550,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.GROUND, tooltip: '放置 GND (Shift+G)', showLabel: false,
-                                                onAction: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1376, col: 9 });
+                                                onAction: () => this.setToolMode(EditorToolMode.PLACE, 'GND') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1432, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3515,7 +3591,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_LEFT, tooltip: '左对齐', showLabel: false,
-                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('left') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1381, col: 9 });
+                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('left') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1437, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3540,7 +3616,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_RIGHT, tooltip: '右对齐', showLabel: false,
-                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('right') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1383, col: 9 });
+                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('right') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1439, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3565,7 +3641,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_TOP, tooltip: '顶对齐', showLabel: false,
-                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('top') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1385, col: 9 });
+                                            disabled: this.selectedCount < 2, onAction: () => this.handleAlign('top') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1441, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3601,7 +3677,7 @@ class Index extends ViewPU {
                                                 else {
                                                     this.statusMessage = 'Select at least 3 components';
                                                 }
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1387, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1443, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3637,7 +3713,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ROTATE, tooltip: '旋转 (R)', showLabel: false,
-                                            disabled: this.selectedComponentId.length === 0, onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1399, col: 9 });
+                                            disabled: this.selectedComponentId.length === 0, onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1455, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3662,7 +3738,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.MIRROR, tooltip: '镜像 (M)', showLabel: false,
-                                            disabled: this.selectedComponentId.length === 0, onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1401, col: 9 });
+                                            disabled: this.selectedComponentId.length === 0, onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1457, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3684,7 +3760,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1380, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1436, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3694,7 +3770,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_LEFT, tooltip: '左对齐', showLabel: false,
-                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('left') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1381, col: 9 });
+                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('left') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1437, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3719,7 +3795,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_RIGHT, tooltip: '右对齐', showLabel: false,
-                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('right') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1383, col: 9 });
+                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('right') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1439, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3744,7 +3820,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ALIGN_TOP, tooltip: '顶对齐', showLabel: false,
-                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('top') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1385, col: 9 });
+                                                disabled: this.selectedCount < 2, onAction: () => this.handleAlign('top') }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1441, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3780,7 +3856,7 @@ class Index extends ViewPU {
                                                     else {
                                                         this.statusMessage = 'Select at least 3 components';
                                                     }
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1387, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1443, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3816,7 +3892,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ROTATE, tooltip: '旋转 (R)', showLabel: false,
-                                                disabled: this.selectedComponentId.length === 0, onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1399, col: 9 });
+                                                disabled: this.selectedComponentId.length === 0, onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1455, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3841,7 +3917,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.MIRROR, tooltip: '镜像 (M)', showLabel: false,
-                                                disabled: this.selectedComponentId.length === 0, onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1401, col: 9 });
+                                                disabled: this.selectedComponentId.length === 0, onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1457, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3898,7 +3974,7 @@ class Index extends ViewPU {
                                                     this.simPaused = false;
                                                 }
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1406, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1462, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3934,7 +4010,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PAUSE, tooltip: '暂停仿真 (F6)', showLabel: false,
-                                            disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1420, col: 9 });
+                                            disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1476, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3965,7 +4041,7 @@ class Index extends ViewPU {
                                                 this.ercCount = errors.length;
                                                 this.navTab = 3;
                                                 this.statusMessage = `ERC: ${errors.length} issues (${errN} errors)`;
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1422, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1478, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3992,7 +4068,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1405, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1461, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4016,7 +4092,7 @@ class Index extends ViewPU {
                                                         this.simPaused = false;
                                                     }
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1406, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1462, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4052,7 +4128,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.PAUSE, tooltip: '暂停仿真 (F6)', showLabel: false,
-                                                disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1420, col: 9 });
+                                                disabled: !this.simRunning, onAction: () => { this.toggleSimPause(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1476, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4083,7 +4159,7 @@ class Index extends ViewPU {
                                                     this.ercCount = errors.length;
                                                     this.navTab = 3;
                                                     this.statusMessage = `ERC: ${errors.length} issues (${errN} errors)`;
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1422, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1478, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4138,7 +4214,7 @@ class Index extends ViewPU {
                                                     this.bumpCanvas();
                                                     this.statusMessage = 'AI routing complete';
                                                 }
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1433, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1489, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4175,7 +4251,7 @@ class Index extends ViewPU {
                                                     this.bumpCanvas();
                                                     this.statusMessage = 'AI layout optimized';
                                                 }
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1442, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1498, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4211,7 +4287,7 @@ class Index extends ViewPU {
                                                 this.ercCount = errors.length;
                                                 this.navTab = 3;
                                                 this.statusMessage = `AI diagnosis: ${errors.length} issues`;
-                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1451, col: 9 });
+                                            } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1507, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4237,7 +4313,7 @@ class Index extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1432, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1488, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4254,7 +4330,7 @@ class Index extends ViewPU {
                                                         this.bumpCanvas();
                                                         this.statusMessage = 'AI routing complete';
                                                     }
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1433, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1489, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4291,7 +4367,7 @@ class Index extends ViewPU {
                                                         this.bumpCanvas();
                                                         this.statusMessage = 'AI layout optimized';
                                                     }
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1442, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1498, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4327,7 +4403,7 @@ class Index extends ViewPU {
                                                     this.ercCount = errors.length;
                                                     this.navTab = 3;
                                                     this.statusMessage = `AI diagnosis: ${errors.length} issues`;
-                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1451, col: 9 });
+                                                } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1507, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4372,7 +4448,7 @@ class Index extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.MORE, tooltip: '更多工具', showLabel: false,
-                        onAction: () => { this.statusMessage = 'All tools available in menus'; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1463, col: 7 });
+                        onAction: () => { this.statusMessage = 'All tools available in menus'; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1519, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4490,6 +4566,7 @@ class Index extends ViewPU {
             Column.height('100%');
             Column.backgroundColor(ProteusColors.CANVAS_BG);
             Column.border({ width: { right: 1 }, color: ProteusColors.DIVIDER });
+            Column.key(`left_panel_${this.themeRefreshKey}`);
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
@@ -4550,7 +4627,7 @@ class Index extends ViewPU {
                                     title: { "id": 83886091, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                     collapsed: false,
                                     onToggle: () => { this.leftLibCollapsed = true; this.uiState.leftLibCollapsed = true; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1577, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1634, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4570,19 +4647,43 @@ class Index extends ViewPU {
                         }, { name: "ProteusPanelTitle" });
                     }
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        TextInput.create({ placeholder: { "id": 83886130, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, text: this.searchKeyword });
-                        TextInput.height(ProteusDimens.SEARCH_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_KEY);
-                        TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-                        TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-                        TextInput.borderRadius(0);
-                        TextInput.border({ width: 1, color: ProteusColors.BORDER });
-                        TextInput.margin({ left: 4, right: 4, top: 4, bottom: 2 });
-                        TextInput.onChange((v: string) => {
-                            this.searchKeyword = v;
-                            this.refreshComponentList();
-                        });
-                    }, TextInput);
+                        __Common__.create();
+                        __Common__.margin({ left: 4, right: 4, top: 4, bottom: 2 });
+                        __Common__.width('100%');
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: { "id": 83886131, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                    text: this.searchKeyword,
+                                    onChange: (v: string) => {
+                                        this.searchKeyword = v;
+                                        this.refreshComponentList();
+                                    }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1639, col: 11 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: { "id": 83886131, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                        text: this.searchKeyword,
+                                        onChange: (v: string) => {
+                                            this.searchKeyword = v;
+                                            this.refreshComponentList();
+                                        }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: { "id": 83886131, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                    text: this.searchKeyword
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Scroll.create();
                         Scroll.layoutWeight(1);
@@ -4609,7 +4710,7 @@ class Index extends ViewPU {
                                                         selected: this.selectedTreeItem === item,
                                                         onClickRow: () => this.selectLibraryItem(item),
                                                         onDoubleClick: () => this.placeComponent(item.split('|')[0])
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1599, col: 19 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1654, col: 19 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {
@@ -4653,7 +4754,7 @@ class Index extends ViewPU {
                                                         expanded: this.expandedCategories.has(node.cat),
                                                         onToggleExpand: () => { this.toggleCategory(node.cat); },
                                                         onClickRow: () => { this.toggleCategory(node.cat); }
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1609, col: 21 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1664, col: 21 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {
@@ -4716,18 +4817,19 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ComponentPreview(this, { libraryId: this.previewComponentId }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1629, col: 11 });
+                                let componentCall = new ComponentPreview(this, { libraryId: this.previewComponentId, themeRefreshKey: this.themeRefreshKey }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1684, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
-                                        libraryId: this.previewComponentId
+                                        libraryId: this.previewComponentId,
+                                        themeRefreshKey: this.themeRefreshKey
                                     };
                                 };
                                 componentCall.paramsGenerator_ = paramsLambda;
                             }
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    libraryId: this.previewComponentId
+                                    libraryId: this.previewComponentId, themeRefreshKey: this.themeRefreshKey
                                 });
                             }
                         }, { name: "ComponentPreview" });
@@ -4802,7 +4904,7 @@ class Index extends ViewPU {
                                     title: { "id": 83886092, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                     collapsed: false,
                                     onToggle: () => { this.leftNavCollapsed = true; this.uiState.leftNavCollapsed = true; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1670, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1725, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4829,7 +4931,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886106, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 0, onSelect: () => { this.navTab = 0; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1676, col: 13 });
+                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886106, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 0, onSelect: () => { this.navTab = 0; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1731, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4850,7 +4952,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886102, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 1, onSelect: () => { this.navTab = 1; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1677, col: 13 });
+                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886102, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 1, onSelect: () => { this.navTab = 1; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1732, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4871,7 +4973,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886104, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 2, onSelect: () => { this.navTab = 2; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1678, col: 13 });
+                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886104, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 2, onSelect: () => { this.navTab = 2; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1733, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4892,7 +4994,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886103, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 3, onSelect: () => { this.navTab = 3; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1679, col: 13 });
+                                let componentCall = new ProteusNavTab(this, { label: { "id": 83886103, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, selected: this.navTab === 3, onSelect: () => { this.navTab = 3; } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1734, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -4973,7 +5075,7 @@ class Index extends ViewPU {
                                 selected: this.selectedTreeItem === item,
                                 onClickRow: () => this.selectLibraryItem(item),
                                 onDoubleClick: () => this.placeComponent(item.split('|')[0])
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1717, col: 7 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1773, col: 7 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -5015,7 +5117,7 @@ class Index extends ViewPU {
                         selected: true,
                         onClickRow: () => { },
                         onToggleExpand: () => { }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1734, col: 5 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1790, col: 5 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5047,7 +5149,7 @@ class Index extends ViewPU {
                         depth: 1,
                         selected: false,
                         onClickRow: () => { }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1742, col: 5 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1798, col: 5 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5085,7 +5187,7 @@ class Index extends ViewPU {
                                     this.selectedComponentId = comp.id;
                                     this.appService.schematicEditor.setSelection([comp.id]);
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1753, col: 7 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1809, col: 7 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -5128,7 +5230,7 @@ class Index extends ViewPU {
                             let componentCall = new ProteusNavNetRow(this, {
                                 label: `NET ${idx + 1}`,
                                 onAction: () => { }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1772, col: 7 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1828, col: 7 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -5193,7 +5295,7 @@ class Index extends ViewPU {
                                                 ProteusColors.ERC_ERR : ProteusColors.ERC_WARN,
                                             desc: err.desc,
                                             onAction: () => { }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1801, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1857, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -5242,6 +5344,7 @@ class Index extends ViewPU {
                 if (isInitialRender) {
                     let componentCall = new SchematicCanvas(this, {
                         canvasVersion: this.__canvasVersion,
+                        themeRefreshKey: this.themeRefreshKey,
                         selectedComponentId: this.__selectedComponentId,
                         mouseX: this.__mouseX,
                         mouseY: this.__mouseY,
@@ -5257,11 +5360,12 @@ class Index extends ViewPU {
                         onDocumentChanged: () => { this.bumpCanvas(); },
                         onCopySelected: () => { this.handleCopy(); },
                         onDeleteSelected: () => { this.handleDeleteSelected(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1815, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1871, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             canvasVersion: this.canvasVersion,
+                            themeRefreshKey: this.themeRefreshKey,
                             selectedComponentId: this.selectedComponentId,
                             mouseX: this.mouseX,
                             mouseY: this.mouseY,
@@ -5283,6 +5387,7 @@ class Index extends ViewPU {
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
+                        themeRefreshKey: this.themeRefreshKey,
                         rulerVisible: this.rulerVisible,
                         ercErrors: this.ercErrors
                     });
@@ -5367,7 +5472,7 @@ class Index extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ROTATE, tooltip: '旋转 (R)', showLabel: false,
-                        onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1875, col: 7 });
+                        onAction: () => this.handleRotate() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1932, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5390,7 +5495,7 @@ class Index extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.MIRROR, tooltip: '镜像 (M)', showLabel: false,
-                        onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1877, col: 7 });
+                        onAction: () => this.handleMirror() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1934, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5413,7 +5518,7 @@ class Index extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.TRASH, tooltip: '删除 (Del)', showLabel: false,
-                        onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1879, col: 7 });
+                        onAction: () => this.handleDeleteSelected() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1936, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5440,7 +5545,7 @@ class Index extends ViewPU {
                             this.rightCollapsed = false;
                             this.uiState.rightCollapsed = false;
                             this.setActiveRightTab(0);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1881, col: 7 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1938, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5485,7 +5590,7 @@ class Index extends ViewPU {
                                             this.burnFilePath = '';
                                             this.showBurnDialog = true;
                                         }
-                                    } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1888, col: 9 });
+                                    } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1945, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -5535,6 +5640,7 @@ class Index extends ViewPU {
             Column.height('100%');
             Column.backgroundColor(ProteusColors.CANVAS_BG);
             Column.border({ width: { left: 1 }, color: ProteusColors.DIVIDER });
+            Column.key(`right_panel_${this.themeRefreshKey}`);
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -5543,7 +5649,7 @@ class Index extends ViewPU {
                         title: { "id": 83886113, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                         collapsed: false,
                         onToggle: () => { this.rightCollapsed = true; this.uiState.rightCollapsed = true; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1914, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1971, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5574,6 +5680,7 @@ class Index extends ViewPU {
                 this.ifElseBranchUpdateFunction(0, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
+                        __Common__.key(`prop-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`);
                         __Common__.layoutWeight(1);
                         __Common__.height('100%');
                     }, __Common__);
@@ -5590,7 +5697,7 @@ class Index extends ViewPU {
                                         this.selectedCount = 0;
                                         this.bumpCanvas();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1922, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1979, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -5623,6 +5730,7 @@ class Index extends ViewPU {
                 this.ifElseBranchUpdateFunction(1, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
+                        __Common__.key(`instr-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`);
                         __Common__.layoutWeight(1);
                         __Common__.height('100%');
                     }, __Common__);
@@ -5632,14 +5740,16 @@ class Index extends ViewPU {
                                 let componentCall = new InstrumentPanel(this, {
                                     statusMessage: this.__statusMessage,
                                     selectedComponentId: this.selectedComponentId,
-                                    simWaveTick: this.simWaveTick
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1936, col: 11 });
+                                    simWaveTick: this.simWaveTick,
+                                    simRunning: this.simRunning
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1994, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
                                         statusMessage: this.statusMessage,
                                         selectedComponentId: this.selectedComponentId,
-                                        simWaveTick: this.simWaveTick
+                                        simWaveTick: this.simWaveTick,
+                                        simRunning: this.simRunning
                                     };
                                 };
                                 componentCall.paramsGenerator_ = paramsLambda;
@@ -5647,7 +5757,8 @@ class Index extends ViewPU {
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
                                     selectedComponentId: this.selectedComponentId,
-                                    simWaveTick: this.simWaveTick
+                                    simWaveTick: this.simWaveTick,
+                                    simRunning: this.simRunning
                                 });
                             }
                         }, { name: "InstrumentPanel" });
@@ -5659,6 +5770,7 @@ class Index extends ViewPU {
                 this.ifElseBranchUpdateFunction(2, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
+                        __Common__.key(`settings-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`);
                         __Common__.layoutWeight(1);
                         __Common__.height('100%');
                         __Common__.width('100%');
@@ -5666,7 +5778,7 @@ class Index extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new PlatformSettingsPanel(this, { statusMessage: this.__statusMessage, themeRefreshKey: this.__themeRefreshKey }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1944, col: 11 });
+                                let componentCall = new PlatformSettingsPanel(this, { statusMessage: this.__statusMessage, themeRefreshKey: this.__themeRefreshKey }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2004, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -5688,13 +5800,14 @@ class Index extends ViewPU {
                 this.ifElseBranchUpdateFunction(3, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
+                        __Common__.key(`trace-${this.rightPanelRefreshKey}-${this.themeRefreshKey}`);
                         __Common__.layoutWeight(1);
                         __Common__.height('100%');
                     }, __Common__);
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new InstrTraceLogPanel(this, { statusMessage: this.__statusMessage }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1949, col: 11 });
+                                let componentCall = new InstrTraceLogPanel(this, { statusMessage: this.__statusMessage }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2010, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -5735,7 +5848,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusSectionTitle(this, { title: '仿真控制' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1957, col: 19 });
+                                            let componentCall = new ProteusSectionTitle(this, { title: '仿真控制' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2019, col: 19 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -5801,7 +5914,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusClassicBtn(this, {
-                                                label: this.simRunning ? { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                label: this.simRunning ? { "id": 83886135, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                 tooltip: this.simRunning ? '停止仿真' : '运行仿真',
                                                 widthVal: '42%',
                                                 onAction: async () => {
@@ -5813,11 +5926,11 @@ class Index extends ViewPU {
                                                         this.applySimStartResult(this.appService.startSimulation());
                                                     }
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1980, col: 21 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2042, col: 21 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
-                                                    label: this.simRunning ? { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                    label: this.simRunning ? { "id": 83886135, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                     tooltip: this.simRunning ? '停止仿真' : '运行仿真',
                                                     widthVal: '42%',
                                                     onAction: async () => {
@@ -5835,7 +5948,7 @@ class Index extends ViewPU {
                                         }
                                         else {
                                             this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                label: this.simRunning ? { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                label: this.simRunning ? { "id": 83886135, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" } : { "id": 83886134, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                 tooltip: this.simRunning ? '停止仿真' : '运行仿真',
                                                 widthVal: '42%'
                                             });
@@ -5846,15 +5959,15 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusClassicBtn(this, {
-                                                label: { "id": 83886132, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                label: { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                 tooltip: '暂停/恢复仿真',
                                                 widthVal: '42%',
                                                 onAction: () => { this.toggleSimPause(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1993, col: 21 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2055, col: 21 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
-                                                    label: { "id": 83886132, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                    label: { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                     tooltip: '暂停/恢复仿真',
                                                     widthVal: '42%',
                                                     onAction: () => { this.toggleSimPause(); }
@@ -5864,7 +5977,7 @@ class Index extends ViewPU {
                                         }
                                         else {
                                             this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                label: { "id": 83886132, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
+                                                label: { "id": 83886133, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" },
                                                 tooltip: '暂停/恢复仿真',
                                                 widthVal: '42%'
                                             });
@@ -5927,7 +6040,7 @@ class Index extends ViewPU {
                                                     this.navTab = 3;
                                                     this.statusMessage = `ERC: ${errors.length} issues (${errN} errors)`;
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2027, col: 19 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2089, col: 19 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -6018,17 +6131,20 @@ class Index extends ViewPU {
                             this.ifElseBranchUpdateFunction(1, () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     __Common__.create();
+                                    __Common__.key(`ai-settings-${this.themeRefreshKey}`);
                                     __Common__.constraintSize({ minHeight: 280 });
                                 }, __Common__);
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new AiSettingsPanel(this, {
+                                            let componentCall = new 
+                                            // API 配置挂全局金库：工程切换时勿用 rightPanelRefreshKey remount，避免面板状态被刷掉
+                                            AiSettingsPanel(this, {
                                                 statusMessage: this.__statusMessage,
                                                 aiGenerating: this.__aiGenerating,
                                                 aiProgress: this.__aiProgress,
                                                 aiStage: this.__aiStage
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2078, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2141, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -6052,6 +6168,7 @@ class Index extends ViewPU {
                             this.ifElseBranchUpdateFunction(2, () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     __Common__.create();
+                                    __Common__.key(`mcu-${this.rightPanelRefreshKey}`);
                                     __Common__.constraintSize({ minHeight: 320 });
                                 }, __Common__);
                                 {
@@ -6060,7 +6177,7 @@ class Index extends ViewPU {
                                             let componentCall = new McuDebugPanel(this, {
                                                 statusMessage: this.__statusMessage,
                                                 selectedComponentId: this.selectedComponentId
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2086, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2150, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -6084,6 +6201,7 @@ class Index extends ViewPU {
                             this.ifElseBranchUpdateFunction(3, () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     __Common__.create();
+                                    __Common__.key(`fault-${this.rightPanelRefreshKey}`);
                                     __Common__.constraintSize({ minHeight: 240 });
                                 }, __Common__);
                                 {
@@ -6092,7 +6210,7 @@ class Index extends ViewPU {
                                             let componentCall = new FaultInjectionPanel(this, {
                                                 statusMessage: this.__statusMessage,
                                                 selectedComponentId: this.selectedComponentId
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2092, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2157, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -6116,6 +6234,7 @@ class Index extends ViewPU {
                             this.ifElseBranchUpdateFunction(4, () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     __Common__.create();
+                                    __Common__.key(`teach-${this.rightPanelRefreshKey}`);
                                     __Common__.constraintSize({ minHeight: 240 });
                                 }, __Common__);
                                 {
@@ -6124,7 +6243,7 @@ class Index extends ViewPU {
                                             let componentCall = new TeachingPanel(this, {
                                                 statusMessage: this.__statusMessage,
                                                 selectedComponentId: this.selectedComponentId
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2098, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2164, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -6175,7 +6294,7 @@ class Index extends ViewPU {
                         label: '属性', tooltip: '属性面板', icon: ProteusIconName.SETTINGS,
                         selected: this.activeRightTab === 0,
                         onSelect: () => { this.setActiveRightTab(0); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2113, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2180, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6203,7 +6322,7 @@ class Index extends ViewPU {
                         label: '仿真', tooltip: '仿真控制', icon: ProteusIconName.PLAY,
                         selected: this.activeRightTab === 1,
                         onSelect: () => { this.setActiveRightTab(1); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2118, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2185, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6231,7 +6350,7 @@ class Index extends ViewPU {
                         label: 'AI', tooltip: 'AI 助手', icon: ProteusIconName.AI_ROUTE,
                         selected: this.activeRightTab === 2,
                         onSelect: () => { this.setActiveRightTab(2); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2123, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2190, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6262,7 +6381,7 @@ class Index extends ViewPU {
                         label: '调试', tooltip: 'MCU 调试', icon: ProteusIconName.COMPONENT,
                         selected: this.activeRightTab === 3,
                         onSelect: () => { this.setActiveRightTab(3); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2129, col: 13 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2196, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6310,7 +6429,7 @@ class Index extends ViewPU {
                         label: '仪器', tooltip: '虚拟仪器', icon: ProteusIconName.ZOOM_IN,
                         selected: this.activeRightTab === 4,
                         onSelect: () => { this.setActiveRightTab(4); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2141, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2208, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6338,7 +6457,7 @@ class Index extends ViewPU {
                         label: '故障', tooltip: '故障注入', icon: ProteusIconName.WARNING,
                         selected: this.activeRightTab === 5,
                         onSelect: () => { this.setActiveRightTab(5); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2146, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2213, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6366,7 +6485,7 @@ class Index extends ViewPU {
                         label: '教学', tooltip: '教学助手', icon: ProteusIconName.LABEL,
                         selected: this.activeRightTab === 6,
                         onSelect: () => { this.setActiveRightTab(6); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2151, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2218, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6394,7 +6513,7 @@ class Index extends ViewPU {
                         label: '设置', tooltip: '平台设置', icon: ProteusIconName.GRID,
                         selected: this.activeRightTab === 7,
                         onSelect: () => { this.setActiveRightTab(7); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2156, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2223, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6422,7 +6541,7 @@ class Index extends ViewPU {
                         label: '日志', tooltip: 'instr_trace 运行日志', icon: ProteusIconName.SEARCH,
                         selected: this.activeRightTab === 8,
                         onSelect: () => { this.setActiveRightTab(8); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2161, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2228, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6500,7 +6619,7 @@ class Index extends ViewPU {
                         label: '新建工程',
                         widthVal: '48%',
                         onAction: () => { void this.handleNewProject(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2201, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2269, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6526,7 +6645,7 @@ class Index extends ViewPU {
                         label: '打开工程',
                         widthVal: '48%',
                         onAction: () => { void this.handleOpenProject(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2206, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2274, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6597,17 +6716,38 @@ class Index extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: 'MyProject', text: this.newProjectNameInput });
-            TextInput.width('100%');
-            TextInput.height(32);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.newProjectNameInput = v; });
-            TextInput.onSubmit(() => { this.doCreateNewProject(); });
-        }, TextInput);
+            __Common__.create();
+            __Common__.width('100%');
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: 'MyProject',
+                        text: this.newProjectNameInput,
+                        onChange: (v: string) => { this.newProjectNameInput = v; },
+                        onSubmit: () => { this.doCreateNewProject(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2319, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: 'MyProject',
+                            text: this.newProjectNameInput,
+                            onChange: (v: string) => { this.newProjectNameInput = v; },
+                            onSubmit: () => { this.doCreateNewProject(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: 'MyProject',
+                        text: this.newProjectNameInput
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
             Row.width('100%');
@@ -6623,7 +6763,7 @@ class Index extends ViewPU {
                             this.showNewProjectDialog = false;
                             this.showWelcomeDialog = true;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2262, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2327, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6652,7 +6792,7 @@ class Index extends ViewPU {
                         label: '创建',
                         widthVal: '48%',
                         onAction: () => { this.doCreateNewProject(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2270, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2335, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6778,7 +6918,7 @@ class Index extends ViewPU {
                             this.showRecoveryDialog = false;
                             this.showWelcomeDialog = true;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2327, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2392, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6809,7 +6949,7 @@ class Index extends ViewPU {
                         onAction: () => {
                             void this.doRecoverLatest();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2335, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2400, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6840,7 +6980,7 @@ class Index extends ViewPU {
                             this.showRecoveryDialog = false;
                             void this.handleNewProject();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2342, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2407, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6876,10 +7016,8 @@ class Index extends ViewPU {
             this.projectName = this.appService.currentProject?.name ?? 'Recovered';
             const name = this.projectName;
             this.appService.disableAutoSave();
-            this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, 120000);
-            this.resetAfterProjectChange();
+            this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`, AppService.AUTOSAVE_INTERVAL_MS);
             this.appService.schematicEditor.fitAllInView();
-            this.refreshComponentList();
             this.showRecoveryDialog = false;
             this.statusMessage = `已恢复工程: ${name}`;
         }
@@ -6929,16 +7067,36 @@ class Index extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: `${this.userProjectDir}/MyProject.schsim`, text: this.openFilePath });
-            TextInput.width('100%');
-            TextInput.height(32);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.openFilePath = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.width('100%');
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: `${this.userProjectDir}/MyProject.schsim`,
+                        text: this.openFilePath,
+                        onChange: (v: string) => { this.openFilePath = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2467, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: `${this.userProjectDir}/MyProject.schsim`,
+                            text: this.openFilePath,
+                            onChange: (v: string) => { this.openFilePath = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: `${this.userProjectDir}/MyProject.schsim`,
+                        text: this.openFilePath
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
             Row.width('100%');
@@ -6951,7 +7109,7 @@ class Index extends ViewPU {
                         label: '取消',
                         widthVal: '32%',
                         onAction: () => { this.showOpenDialog = false; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2414, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2474, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -6977,7 +7135,7 @@ class Index extends ViewPU {
                         label: '浏览',
                         widthVal: '32%',
                         onAction: () => { void this.handleOpenFromPicker(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2419, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2479, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7003,7 +7161,7 @@ class Index extends ViewPU {
                         label: '打开',
                         widthVal: '32%',
                         onAction: () => { void this.doOpenFromPath(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2424, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2484, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7068,16 +7226,36 @@ class Index extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: `${this.userProjectDir}/${this.projectName}.schsim`, text: this.saveAsPath });
-            TextInput.width('100%');
-            TextInput.height(32);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.saveAsPath = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.width('100%');
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: `${this.userProjectDir}/${this.projectName}.schsim`,
+                        text: this.saveAsPath,
+                        onChange: (v: string) => { this.saveAsPath = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2525, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: `${this.userProjectDir}/${this.projectName}.schsim`,
+                            text: this.saveAsPath,
+                            onChange: (v: string) => { this.saveAsPath = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: `${this.userProjectDir}/${this.projectName}.schsim`,
+                        text: this.saveAsPath
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
             Row.width('100%');
@@ -7090,7 +7268,7 @@ class Index extends ViewPU {
                         label: '取消',
                         widthVal: '48%',
                         onAction: () => { this.showSaveAsDialog = false; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2475, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2532, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7116,7 +7294,7 @@ class Index extends ViewPU {
                         label: '保存',
                         widthVal: '48%',
                         onAction: () => { void this.doSaveAsFromPath(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2480, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2537, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7194,7 +7372,7 @@ class Index extends ViewPU {
                         label: '8051',
                         widthVal: 52,
                         onAction: () => { this.burnMcuFamily = '8051'; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2523, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2580, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7220,7 +7398,7 @@ class Index extends ViewPU {
                         label: 'STM32',
                         widthVal: 52,
                         onAction: () => { this.burnMcuFamily = 'STM32'; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2528, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2585, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7258,16 +7436,36 @@ class Index extends ViewPU {
             Row.margin({ bottom: 6 });
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ placeholder: '/path/to/firmware.hex', text: this.burnFilePath });
-            TextInput.layoutWeight(1);
-            TextInput.height(32);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.burnFilePath = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.layoutWeight(1);
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        placeholder: '/path/to/firmware.hex',
+                        text: this.burnFilePath,
+                        onChange: (v: string) => { this.burnFilePath = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2601, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            placeholder: '/path/to/firmware.hex',
+                            text: this.burnFilePath,
+                            onChange: (v: string) => { this.burnFilePath = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        placeholder: '/path/to/firmware.hex',
+                        text: this.burnFilePath
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
@@ -7275,7 +7473,7 @@ class Index extends ViewPU {
                         label: '浏览',
                         widthVal: 60,
                         onAction: () => { void this.doBrowseHexFile(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2553, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2607, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7312,17 +7510,39 @@ class Index extends ViewPU {
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            TextInput.create({ text: this.burnEntryPoint, placeholder: '0x0000' });
-            TextInput.layoutWeight(1);
-            TextInput.height(28);
-            TextInput.fontSize(ProteusFonts.PARAM_KEY);
-            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
-            TextInput.fontFamily('monospace');
-            TextInput.borderRadius(0);
-            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
-            TextInput.onChange((v: string) => { this.burnEntryPoint = v; });
-        }, TextInput);
+            __Common__.create();
+            __Common__.layoutWeight(1);
+        }, __Common__);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusTextInput(this, {
+                        text: this.burnEntryPoint,
+                        placeholder: '0x0000',
+                        mono: true,
+                        onChange: (v: string) => { this.burnEntryPoint = v; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2622, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            text: this.burnEntryPoint,
+                            placeholder: '0x0000',
+                            mono: true,
+                            onChange: (v: string) => { this.burnEntryPoint = v; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        text: this.burnEntryPoint,
+                        placeholder: '0x0000',
+                        mono: true
+                    });
+                }
+            }, { name: "ProteusTextInput" });
+        }
+        __Common__.pop();
         // Reset vector / Entry point
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -7371,7 +7591,7 @@ class Index extends ViewPU {
                             this.showBurnDialog = false;
                             this.burnFirmwareInfo = '';
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2600, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2651, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7400,7 +7620,7 @@ class Index extends ViewPU {
                         label: '烧录',
                         widthVal: '48%',
                         onAction: () => { void this.doBurnHex(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2608, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2659, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7469,7 +7689,7 @@ class Index extends ViewPU {
                         label: '取消',
                         widthVal: '30%',
                         onAction: () => { this.showExitConfirmDialog = false; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2646, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2697, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7497,9 +7717,9 @@ class Index extends ViewPU {
                         onAction: () => {
                             this.unsavedChanges = false;
                             this.showExitConfirmDialog = false;
-                            void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+                            void this.appService.flushProjectProtection(true);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2651, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2702, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7508,7 +7728,7 @@ class Index extends ViewPU {
                             onAction: () => {
                                 this.unsavedChanges = false;
                                 this.showExitConfirmDialog = false;
-                                void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+                                void this.appService.flushProjectProtection(true);
                             }
                         };
                     };
@@ -7532,11 +7752,11 @@ class Index extends ViewPU {
                             this.showExitConfirmDialog = false;
                             void this.handleSaveProject().then(() => {
                                 if (!this.unsavedChanges) {
-                                    void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+                                    void this.appService.flushProjectProtection(true);
                                 }
                             });
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2660, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2711, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -7546,7 +7766,7 @@ class Index extends ViewPU {
                                 this.showExitConfirmDialog = false;
                                 void this.handleSaveProject().then(() => {
                                     if (!this.unsavedChanges) {
-                                        void this.appService.saveSession(this.appService.currentProjectPath, this.projectName, true);
+                                        void this.appService.flushProjectProtection(true);
                                     }
                                 });
                             }
@@ -7575,6 +7795,7 @@ class Index extends ViewPU {
             Row.backgroundColor(ProteusColors.STATUS_BAR_BG);
             Row.border({ width: { top: 1 }, color: ProteusColors.DIVIDER });
             Row.alignItems(VerticalAlign.Center);
+            Row.key(`status_bar_${this.themeRefreshKey}`);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             // Left group: mode + coords + grid + sel
@@ -7612,7 +7833,7 @@ class Index extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusVDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2711, col: 7 });
+                    let componentCall = new ProteusVDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2762, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -7664,7 +7885,7 @@ class Index extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusVDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2728, col: 7 });
+                    let componentCall = new ProteusVDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 2779, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};

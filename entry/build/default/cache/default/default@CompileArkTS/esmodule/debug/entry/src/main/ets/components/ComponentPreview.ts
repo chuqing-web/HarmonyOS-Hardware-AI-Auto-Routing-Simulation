@@ -3,6 +3,7 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
 }
 interface ComponentPreview_Params {
     libraryId?: string;
+    themeRefreshKey?: number;
     previewVersion?: number;
     pressed?: boolean;
     settings?: RenderingContextSettings;
@@ -24,6 +25,7 @@ export class ComponentPreview extends ViewPU {
             this.paramsGenerator_ = paramsLambda;
         }
         this.__libraryId = new SynchedPropertySimpleOneWayPU(params.libraryId, this, "libraryId");
+        this.__themeRefreshKey = new SynchedPropertySimpleOneWayPU(params.themeRefreshKey, this, "themeRefreshKey");
         this.__previewVersion = new ObservedPropertySimplePU(0, this, "previewVersion");
         this.__pressed = new ObservedPropertySimplePU(false, this, "pressed");
         this.settings = new RenderingContextSettings(true);
@@ -33,11 +35,15 @@ export class ComponentPreview extends ViewPU {
         this.canvasH = ProteusDimens.PREVIEW_HEIGHT - 28;
         this.setInitiallyProvidedValue(params);
         this.declareWatch("libraryId", this.onLibraryIdChange);
+        this.declareWatch("themeRefreshKey", this.onThemeRefreshChange);
         this.finalizeConstruction();
     }
     setInitiallyProvidedValue(params: ComponentPreview_Params) {
         if (params.libraryId === undefined) {
             this.__libraryId.set('');
+        }
+        if (params.themeRefreshKey === undefined) {
+            this.__themeRefreshKey.set(0);
         }
         if (params.previewVersion !== undefined) {
             this.previewVersion = params.previewVersion;
@@ -63,14 +69,17 @@ export class ComponentPreview extends ViewPU {
     }
     updateStateVars(params: ComponentPreview_Params) {
         this.__libraryId.reset(params.libraryId);
+        this.__themeRefreshKey.reset(params.themeRefreshKey);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__libraryId.purgeDependencyOnElmtId(rmElmtId);
+        this.__themeRefreshKey.purgeDependencyOnElmtId(rmElmtId);
         this.__previewVersion.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__libraryId.aboutToBeDeleted();
+        this.__themeRefreshKey.aboutToBeDeleted();
         this.__previewVersion.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
@@ -82,6 +91,13 @@ export class ComponentPreview extends ViewPU {
     }
     set libraryId(newValue: string) {
         this.__libraryId.set(newValue);
+    }
+    private __themeRefreshKey: SynchedPropertySimpleOneWayPU<number>;
+    get themeRefreshKey() {
+        return this.__themeRefreshKey.get();
+    }
+    set themeRefreshKey(newValue: number) {
+        this.__themeRefreshKey.set(newValue);
     }
     private __previewVersion: ObservedPropertySimplePU<number>;
     get previewVersion() {
@@ -103,6 +119,10 @@ export class ComponentPreview extends ViewPU {
     private canvasW: number;
     private canvasH: number;
     onLibraryIdChange(): void {
+        this.previewVersion++;
+        this.redraw();
+    }
+    onThemeRefreshChange(): void {
         this.previewVersion++;
         this.redraw();
     }
@@ -130,6 +150,7 @@ export class ComponentPreview extends ViewPU {
             Canvas.width('100%');
             Canvas.height(ProteusDimens.PREVIEW_HEIGHT - 28);
             Canvas.backgroundColor(ProteusColors.PREVIEW_BG);
+            Canvas.key(`prev-${this.themeRefreshKey}-${this.previewVersion}`);
             Canvas.border({ width: 1, color: ProteusColors.DIVIDER, style: BorderStyle.Solid });
             Canvas.onReady(() => this.redraw());
             Canvas.onAreaChange((_old, area) => {

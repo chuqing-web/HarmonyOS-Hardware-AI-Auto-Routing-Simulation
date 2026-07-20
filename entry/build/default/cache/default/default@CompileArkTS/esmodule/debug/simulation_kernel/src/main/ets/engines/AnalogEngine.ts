@@ -328,8 +328,41 @@ export class AnalogEngine {
                 const nO = this.resolveOpAmpSignalNode(comp, pinNets, netNodeMap, 'out', ['OUT1', 'OUT', 'OUTPUT']);
                 const nP = this.resolveOpAmpSignalNode(comp, pinNets, netNodeMap, 'inp', ['IN+1', 'IN+', '+', 'VIP']);
                 const nN = this.resolveOpAmpSignalNode(comp, pinNets, netNodeMap, 'inn', ['IN-1', 'IN-', '-', 'VIN']);
-                nl += `X${xCount} ${nP} ${nN} ${nO} VCC GND OPA\n`;
+                const rails = this.resolveOpAmpRails(comp, pinNets, netNodeMap);
+                nl += `X${xCount} ${nP} ${nN} ${nO} ${rails[0]} ${rails[1]} OPA\n`;
                 xCount++;
+            }
+            else if (libId === 'SIGNAL_GEN' || libId.startsWith('SIGNAL_GEN')) {
+                const nOut = this.resolveCompNode(comp, 'OUT', pinNets, netNodeMap);
+                const nA = this.isFloatingNode(nOut) ? this.resolveCompNode(comp, '1', pinNets, netNodeMap) : nOut;
+                const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+                const nB = this.isFloatingNode(nGnd) ? this.resolveCompNode(comp, '2', pinNets, netNodeMap) : nGnd;
+                const amp = parseVoltageVolts(paramMapGet(comp.parameters, 'amplitude', '1V'), 1);
+                const freq = UnitParser.parseFrequency(paramMapGet(comp.parameters, 'frequency', '1kHz')).numeric;
+                const off = parseVoltageVolts(paramMapGet(comp.parameters, 'offset', '0'), 0);
+                const wf = AnalogEngine.normalizeWaveformName(paramMapGet(comp.parameters, 'waveform', 'sine'));
+                const dutyRaw = paramMapGet(comp.parameters, 'dutyCycle', '50');
+                let duty = 0.5;
+                const dutyN = parseFloat(dutyRaw.replace(/%/g, ''));
+                if (Number.isFinite(dutyN)) {
+                    duty = dutyN > 1 ? dutyN / 100 : dutyN;
+                }
+                duty = Math.max(0.01, Math.min(0.99, duty));
+                const period = 1 / Math.max(freq, 1e-9);
+                const pw = duty * period;
+                if (wf === 'sin') {
+                    nl += `V${rCount} ${nA} ${nB} SIN(${off} ${amp} ${freq})\n`;
+                }
+                else if (wf === 'square' || wf === 'pulse') {
+                    const vLo = wf === 'pulse' ? off : (off - amp);
+                    const vHi = wf === 'pulse' ? (off + amp) : (off + amp);
+                    nl += `V${rCount} ${nA} ${nB} PULSE(${vLo} ${vHi} 0 1n 1n ${pw} ${period})\n`;
+                }
+                else {
+                    // triangle/saw → 近似正弦网表；MNA 路径按真实波形注入
+                    nl += `V${rCount} ${nA} ${nB} SIN(${off} ${amp} ${freq})\n`;
+                }
+                rCount++;
             }
             else if (libId === 'VAC' || libId.startsWith('VAC')) {
                 const nPlus = this.resolveCompNode(comp, 'AC+', pinNets, netNodeMap);
@@ -358,9 +391,12 @@ export class AnalogEngine {
                 rCount++;
             }
             else if (AnalogEngine.isDcRailSupply(libId)) {
-                const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, 'VCC');
-                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
-                nl += `V${rCount} ${supplyNode} GND DC ${vNum}\n`;
+                const defHint = AnalogEngine.isNegativeDcRail(libId) ? 'VEE' : 'VCC';
+                const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, defHint);
+                const defV = AnalogEngine.isNegativeDcRail(libId) ? '-12V' : '5V';
+                const defNum = AnalogEngine.isNegativeDcRail(libId) ? -12 : 5;
+                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
+                nl += `V${rCount} ${supplyNode} 0 DC ${vNum}\n`;
                 rCount++;
             }
             else if (libId.includes('GND')) {
@@ -381,12 +417,16 @@ export class AnalogEngine {
         for (const net of doc.nets) {
             const isGnd = net.name === 'GND' || net.name === '0';
             const isVcc = net.name === 'VCC' || net.name === 'VDD' || net.name === 'V+';
+            const isVee = net.name === 'VEE' || net.name === 'V-';
             let nodeName: string;
             if (isGnd) {
                 nodeName = '0';
             }
             else if (isVcc) {
                 nodeName = 'VCC';
+            }
+            else if (isVee) {
+                nodeName = 'VEE';
             }
             else if (net.name.length > 0) {
                 nodeName = net.name;
@@ -501,12 +541,34 @@ export class AnalogEngine {
      * POWER_METER must NOT match — `includes('POWER')` previously stamped it as 5V Vsrc.
      */
     private static isDcRailSupply(libId: string): boolean {
-        if (libId.includes('METER') || libId.includes('WATT') || libId.includes('AMMETER')) {
+        if (libId.includes('METER') || libId.includes('WATT') || libId.includes('AMMETER') ||
+            libId === 'VAC' || libId.startsWith('VAC') || libId === 'SIGNAL_GEN') {
             return false;
         }
-        return libId === 'VCC' || libId === 'VDD' || libId === 'POWER' ||
-            libId.startsWith('VCC') || libId.startsWith('VDD') ||
+        return libId === 'VCC' || libId === 'VDD' || libId === 'VEE' || libId === 'POWER' ||
+            libId.startsWith('VCC') || libId.startsWith('VDD') || libId.startsWith('VEE') ||
             (libId.includes('POWER') && !libId.includes('METER'));
+    }
+    private static isNegativeDcRail(libId: string): boolean {
+        const u = (libId ?? '').toUpperCase();
+        return u === 'VEE' || u.startsWith('VEE');
+    }
+    /** sine|square|triangle|saw|pulse → AnalogEngine waveform 名 */
+    private static normalizeWaveformName(raw: string): string {
+        const u = (raw ?? '').trim().toLowerCase();
+        if (u === 'square' || u === '方波' || u === 'sq') {
+            return 'square';
+        }
+        if (u === 'triangle' || u === '三角' || u === '三角波' || u === 'tri') {
+            return 'triangle';
+        }
+        if (u === 'saw' || u === 'sawtooth' || u === '锯齿') {
+            return 'sawtooth';
+        }
+        if (u === 'pulse' || u === '脉冲') {
+            return 'pulse';
+        }
+        return 'sin';
     }
     /** First wired node among pin-name hints (V+/V/COM/V- aliases). */
     private resolveFirstWiredNode(comp: ComponentInstance, pinNets: PinNetMapping[], netNodeMap: Map<string, string>, hints: string[]): string {
@@ -547,7 +609,7 @@ export class AnalogEngine {
     }
     /** Single-pin supply symbols (VCC/GND) — match by pin name or ID; must be wire-connected. */
     private resolveSupplyNode(comp: ComponentInstance, pinNets: PinNetMapping[], netNodeMap: Map<string, string>, defaultName: string): string {
-        for (const hint of ['VCC', 'VDD', 'V+', 'GND', '1', 'A']) {
+        for (const hint of ['VCC', 'VDD', 'VEE', 'V+', 'V-', 'GND', '1', 'A']) {
             const node = this.resolveCompNode(comp, hint, pinNets, netNodeMap);
             if (!this.isFloatingNode(node)) {
                 return node;
@@ -988,27 +1050,53 @@ export class AnalogEngine {
             else if (AnalogEngine.isTimer555Lib(libId)) {
                 rIdx = this.stampTimer555(comp, pinNets, netNodeMap, rIdx);
             }
-            else if (libId === 'VAC' || libId.startsWith('VAC')) {
-                const nPlus = this.resolveCompNode(comp, 'AC+', pinNets, netNodeMap);
-                const nA = this.isFloatingNode(nPlus) ? this.resolveCompNode(comp, '1', pinNets, netNodeMap) : nPlus;
-                const nMinus = this.resolveCompNode(comp, 'AC-', pinNets, netNodeMap);
-                const nB = this.isFloatingNode(nMinus) ? this.resolveCompNode(comp, '2', pinNets, netNodeMap) : nMinus;
+            else if (libId === 'VAC' || libId.startsWith('VAC') ||
+                libId === 'SIGNAL_GEN' || libId.startsWith('SIGNAL_GEN')) {
+                const isSig = libId === 'SIGNAL_GEN' || libId.startsWith('SIGNAL_GEN');
+                let nA: string;
+                let nB: string;
+                if (isSig) {
+                    const nOut = this.resolveCompNode(comp, 'OUT', pinNets, netNodeMap);
+                    nA = this.isFloatingNode(nOut) ? this.resolveCompNode(comp, '1', pinNets, netNodeMap) : nOut;
+                    const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+                    nB = this.isFloatingNode(nGnd) ? this.resolveCompNode(comp, '2', pinNets, netNodeMap) : nGnd;
+                }
+                else {
+                    const nPlus = this.resolveCompNode(comp, 'AC+', pinNets, netNodeMap);
+                    nA = this.isFloatingNode(nPlus) ? this.resolveCompNode(comp, '1', pinNets, netNodeMap) : nPlus;
+                    const nMinus = this.resolveCompNode(comp, 'AC-', pinNets, netNodeMap);
+                    nB = this.isFloatingNode(nMinus) ? this.resolveCompNode(comp, '2', pinNets, netNodeMap) : nMinus;
+                }
                 if (!this.areTerminalsConnected(nA, nB)) {
-                    Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: VAC pin(s) not wired`);
+                    Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ${isSig ? 'SIGNAL_GEN' : 'VAC'} pin(s) not wired`);
                     continue;
                 }
-                const amp = parseVoltageVolts(paramMapGet(comp.parameters, 'amplitude', '220V'), 220);
-                const freqParsed = UnitParser.parseFrequency(paramMapGet(comp.parameters, 'frequency', '50Hz'));
-                const freq = freqParsed.numeric > 0 ? freqParsed.numeric : 50;
+                const defAmp = isSig ? '1V' : '220V';
+                const defFreq = isSig ? '1kHz' : '50Hz';
+                const amp = parseVoltageVolts(paramMapGet(comp.parameters, 'amplitude', defAmp), isSig ? 1 : 220);
+                const freqParsed = UnitParser.parseFrequency(paramMapGet(comp.parameters, 'frequency', defFreq));
+                const freq = freqParsed.numeric > 0 ? freqParsed.numeric : (isSig ? 1000 : 50);
                 const off = parseVoltageVolts(paramMapGet(comp.parameters, 'offset', paramMapGet(comp.parameters, 'voltage', '0')), 0);
+                const wf = isSig
+                    ? AnalogEngine.normalizeWaveformName(paramMapGet(comp.parameters, 'waveform', 'sine'))
+                    : 'sin';
+                const dutyRaw = paramMapGet(comp.parameters, 'dutyCycle', '50');
+                let dutyCycle = 0.5;
+                const dutyN = parseFloat(dutyRaw.replace(/%/g, ''));
+                if (Number.isFinite(dutyN)) {
+                    dutyCycle = dutyN > 1 ? dutyN / 100 : dutyN;
+                }
+                dutyCycle = Math.max(0.01, Math.min(0.99, dutyCycle));
                 const devId = `V${this.voltageSources.length}`;
                 this.voltageSources.push({
                     id: devId, nodeA: nA, nodeB: nB,
-                    voltage: off, waveform: 'sin', freq: freq, amplitude: amp, phase: 0,
-                    dutyCycle: 0.5, riseTime: 0, fallTime: 0
+                    voltage: off, waveform: wf, freq: freq, amplitude: amp, phase: 0,
+                    dutyCycle: dutyCycle, riseTime: 0, fallTime: 0
                 });
                 this.compUuidToDevId.set(comp.id, [devId]);
-                traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nA, nB, `VAC offset=${off}V amp=${amp}V f=${freq}Hz pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nA, nB, `${isSig ? 'SIGGEN' : 'VAC'} wf=${wf} offset=${off}V amp=${amp}V f=${freq}Hz` +
+                    ` duty=${(dutyCycle * 100).toFixed(0)}%` +
+                    ` pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
                 for (const m of pinNets) {
                     const node = netNodeMap.get(m.netId);
                     if (node)
@@ -1016,12 +1104,15 @@ export class AnalogEngine {
                 }
             }
             else if (AnalogEngine.isDcRailSupply(libId)) {
-                const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, 'VCC');
+                const defHint = AnalogEngine.isNegativeDcRail(libId) ? 'VEE' : 'VCC';
+                const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, defHint);
                 if (this.isFloatingNode(supplyNode)) {
                     Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: supply pin not wired`);
                     continue;
                 }
-                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
+                const defV = AnalogEngine.isNegativeDcRail(libId) ? '-12V' : '5V';
+                const defNum = AnalogEngine.isNegativeDcRail(libId) ? -12 : 5;
+                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
                 const devId = `V${this.voltageSources.length}`;
                 this.voltageSources.push({
                     id: devId, nodeA: supplyNode, nodeB: '0',
@@ -1197,6 +1288,17 @@ export class AnalogEngine {
     }
     getNodeVoltage(node: string): number { return this.nodeVoltages.get(node) ?? 0; }
     getTotalIterations(): number { return this.newtonIterations; }
+    /** Highest time-varying source frequency (Hz); 0 if only DC. Used to size scope sim bursts. */
+    getMaxAcFrequency(): number {
+        let maxF = 0;
+        for (let i = 0; i < this.voltageSources.length; i++) {
+            const vs = this.voltageSources[i];
+            if (vs.freq > maxF && vs.amplitude !== 0) {
+                maxF = vs.freq;
+            }
+        }
+        return maxF;
+    }
     private runOpAnalysis(): void {
         // On LU failure keep the previous iterate (do not snap back) — restoring
         // every singular step freezes VAC-driven circuits near op-amp rails.

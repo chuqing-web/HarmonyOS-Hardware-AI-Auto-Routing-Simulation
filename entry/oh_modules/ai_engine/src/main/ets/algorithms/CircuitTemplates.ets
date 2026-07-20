@@ -135,8 +135,16 @@ export class CircuitTemplates {
     if (lower.includes('uart') || lower.includes('串口')) {
       return 'lab_uart';
     }
+    if (lower.includes('电位器') || lower.includes('滑动变阻') || lower.includes('potentiometer') ||
+      lower.includes('pot_')) {
+      return 'lab_potentiometer';
+    }
     if (lower.includes('无源') && (lower.includes('电阻') || lower.includes('电容') || lower.includes('实验'))) {
       return 'lab_passive';
+    }
+    if (lower.includes('555') || lower.includes('多谐') || lower.includes('无稳态') ||
+      lower.includes('astable')) {
+      return 'lab_analog_ic';
     }
     if (lower.includes('分立') || lower.includes('三极管') || lower.includes('mosfet')) {
       return 'lab_discrete';

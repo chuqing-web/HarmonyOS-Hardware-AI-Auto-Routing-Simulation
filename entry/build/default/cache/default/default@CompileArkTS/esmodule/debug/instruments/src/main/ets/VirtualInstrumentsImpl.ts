@@ -45,6 +45,19 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         if (compId === this.activeCompId) {
             this.applyActiveBinding();
         }
+        else {
+            let hasScope = false;
+            for (let i = 0; i < binding.scopeProbes.length; i++) {
+                if (binding.scopeProbes[i].length > 0) {
+                    hasScope = true;
+                    break;
+                }
+            }
+            if (hasScope) {
+                // 新注册的示波器探针即使当前未选中也要立刻生效，供 DisplayPump 采样
+                this.applyScopeProbesFromAllBindings();
+            }
+        }
     }
     setActiveInstrumentComponent(compId: string | null): void {
         const changed = compId !== this.activeCompId;
@@ -68,12 +81,19 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         }
         return this.componentBindings.get(this.activeCompId) ?? null;
     }
-    /** Apply active component's readers and scope probes to the shared engines */
+    /** Apply active component's readers; scope probes always merge from ALL bindings. */
     private applyActiveBinding(): void {
         const binding = this.getActiveBinding();
         if (binding === null) {
-            Logger.debug(INSTR_TRACE_TAG, 'applyBinding: cleared (no active component)');
-            this.clearLegacyReaders();
+            Logger.debug(INSTR_TRACE_TAG, 'applyBinding: no active component (meters cleared, scope probes kept)');
+            this.multimeter.setReadingReader(null);
+            this.voltmeter.setVoltageReader(null);
+            this.ammeter.setCurrentReader(null);
+            this.powerMeter.setVoltageReader(null);
+            this.powerMeter.setCurrentReader(null);
+            this.freqCounter.setFreqReader(null);
+            // 关键：不要清空示波器探针 — DisplayPump 在无选中时也必须继续采 NET_4
+            this.applyScopeProbesFromAllBindings();
             return;
         }
         Logger.debug(INSTR_TRACE_TAG, `applyBinding active=${this.activeCompId} scope=[${binding.scopeProbes.join('|')}] ` +
@@ -84,9 +104,35 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         this.powerMeter.setVoltageReader(binding.powerVoltageReader);
         this.powerMeter.setCurrentReader(binding.powerCurrentReader);
         this.freqCounter.setFreqReader(binding.freqReader);
+        // 示波器探针：合并所有绑定（避免切到电压表时把 CH1 探针清掉）
+        this.applyScopeProbesFromAllBindings();
+    }
+    /**
+     * Merge scope probes from every registered instrument binding.
+     * Prefer the active OSC binding's probes when present.
+     */
+    private applyScopeProbesFromAllBindings(): void {
+        const merged: string[] = ['', '', '', ''];
+        const active = this.getActiveBinding();
+        if (active !== null) {
+            for (let ch = 0; ch < 4; ch++) {
+                if (ch < active.scopeProbes.length && active.scopeProbes[ch].length > 0) {
+                    merged[ch] = active.scopeProbes[ch];
+                }
+            }
+        }
+        this.componentBindings.forEach((b: ComponentInstrumentBinding) => {
+            for (let ch = 0; ch < 4; ch++) {
+                if (merged[ch].length > 0) {
+                    continue;
+                }
+                if (ch < b.scopeProbes.length && b.scopeProbes[ch].length > 0) {
+                    merged[ch] = b.scopeProbes[ch];
+                }
+            }
+        });
         for (let ch = 0; ch < 4; ch++) {
-            const probe = ch < binding.scopeProbes.length ? binding.scopeProbes[ch] : '';
-            this.oscilloscope.setChannelProbe(ch, probe);
+            this.oscilloscope.setChannelProbe(ch, merged[ch]);
         }
     }
     private clearLegacyReaders(): void {
@@ -331,6 +377,8 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     }
     /** Feed a time snapshot for building oscilloscope time-domain waveforms */
     feedScopeTimeSnapshot(time: number, voltages: Map<string, number>): void {
+        // 每次喂数前恢复示波器探针（防止 active=null / 电压表抢绑清空 CH）
+        this.applyScopeProbesFromAllBindings();
         this.oscilloscope.feedTimeSnapshot(time, voltages);
     }
     /** Rewrite scope history probe voltages after interactive DC edits (pot/switch). */

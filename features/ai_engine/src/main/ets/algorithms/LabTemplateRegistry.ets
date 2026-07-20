@@ -6,7 +6,7 @@ import {
   buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart,
   buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital,
   buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral,
-  buildLabSensor, buildLabInstruments
+  buildLabSensor, buildLabInstruments, buildLabPotentiometer
 } from './LabTemplateBuilders';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
 
@@ -38,6 +38,7 @@ export interface LabTemplateDef {
 export const ALL_CATALOG_LIBRARY_IDS: string[] = [
   'VCC', 'GND', 'VAC',
   'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k',
+  'POT_1k', 'POT_10k', 'POT_100k',
   'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF',
   'L_10uH', 'XTAL_11M', 'XTAL_8M', 'FUSE_1A',
   '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
@@ -77,10 +78,11 @@ const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB
   'XTAL_8M', 'C_100nF', 'C_10uF', 'R_10k', 'VCC', 'GND'];
 const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
   'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
-const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'R_4.7k', 'R_10k',
-  'C_100nF', 'VCC', 'GND'];
-const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
+const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 'R_4.7k', 'R_10k',
+  'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
   'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
+const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
 
 export class LabTemplateRegistry {
   private static extraTemplates: LabTemplateDef[] = [];
@@ -130,8 +132,8 @@ export class LabTemplateRegistry {
     },
     {
       id: 'lab_analog_ic', name: '模拟IC检测', category: 'analog',
-      description: '运放 + 全部稳压/开关电源 IC',
-      knowledgePoints: ['运放', 'LDO', 'Buck'],
+      description: '运放 + LM555 无稳态 + 全部稳压/开关电源 IC',
+      knowledgePoints: ['运放', '555振荡', 'LDO', 'Buck'],
       libraryIds: ANALOG_IC_LIBS, build: buildLabAnalogIc
     },
     {
@@ -176,6 +178,12 @@ export class LabTemplateRegistry {
       description: '全部虚拟仪器接入分压测试点',
       knowledgePoints: ['电压表', '电流表', '示波器'],
       libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
+    },
+    {
+      id: 'lab_potentiometer', name: '滑动变阻器实验', category: 'passive',
+      description: 'POT_1k/10k/100k 三档分压 + 电压表',
+      knowledgePoints: ['分压比', '滑臂调节', '线性电位器'],
+      libraryIds: POT_LIBS, build: buildLabPotentiometer
     }
   ];
 

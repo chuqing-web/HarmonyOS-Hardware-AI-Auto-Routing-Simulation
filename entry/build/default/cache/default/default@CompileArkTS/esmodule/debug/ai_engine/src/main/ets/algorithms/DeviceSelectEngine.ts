@@ -2,6 +2,7 @@ import type { IComponentLibrary, ComponentDefinition } from 'component_library';
 import { Logger, emptyStringMap, makeDeviceRequirement, stringMap1, copyStringMap } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { DeviceRequirement, DeviceSelectLlmOutput, MatchedDevice, DeviceSelectResult, DeviceMeta, LibDevice, LibDevicePin, SimModelInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { RagKnowledgeBase } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/RagKnowledgeBase";
+import { classifyCircuitIntent } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";
 import type { AlternativeEntry, MatchLevel, ModuleZoneType, ParamValidationResult } from '../internal/AiEngineTypes';
 import { alternativesToMap, copyParamsFromRecord, getCategoriesForDevType, getDomesticAlt, getPlacementPriority, joinParamConstraintValues } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/internal/AiEngineHelpers";
 export class DeviceSelectEngine {
@@ -27,6 +28,7 @@ export class DeviceSelectEngine {
                 llm.oodFlags.push('EMPTY_REQUIRE_LIST');
             }
         }
+        let matchedRequireCount = 0;
         for (let i = 0; i < requirements.length; i++) {
             const req = requirements[i];
             const matched = this.matchOne(req);
@@ -43,6 +45,7 @@ export class DeviceSelectEngine {
                 }
             }
             if (matched) {
+                matchedRequireCount++;
                 devices.push(matched);
                 alternativeEntries.push({
                     libDevId: matched.libDevId,
@@ -76,14 +79,21 @@ export class DeviceSelectEngine {
             devices: devices,
             alternatives: alternativesToMap(alternativeEntries),
             oodDetected: oodDetected,
-            ragTemplateId: ragTemplateId
+            ragTemplateId: ragTemplateId,
+            matchedRequireCount: matchedRequireCount
         };
-        // 仅在已有有效匹配时补 VCC/GND；空 BOM 不得靠电源符号假装选型成功
+        // 仅在已有有效匹配时补 VCC/GND/VEE/SIGNAL_GEN；空 BOM 不得靠电源符号假装选型成功
         if (devices.length > 0) {
+            const intent = classifyCircuitIntent(prompt);
             const hasVcc = devices.some(d => d.libDevId === 'VCC');
             const hasGnd = devices.some(d => d.libDevId === 'GND');
+            const hasVee = devices.some(d => d.libDevId === 'VEE');
+            const hasSig = devices.some(d => d.libDevId === 'SIGNAL_GEN');
             if (!hasVcc) {
                 const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
+                if (intent.preferredVccVoltage.length > 0) {
+                    vccReq.paramConstraint = stringMap1('voltage', intent.preferredVccVoltage);
+                }
                 devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
                 Logger.info('DeviceSelect', 'Auto-added VCC (LLM omitted it)');
             }
@@ -91,6 +101,49 @@ export class DeviceSelectEngine {
                 const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
                 devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
                 Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+            }
+            if (intent.dualSupply && !hasVee) {
+                const veeV = intent.preferredVeeVoltage.length > 0 ? intent.preferredVeeVoltage : '-12V';
+                const veeReq = makeDeviceRequirement('VEE', 'power_supply', 2, stringMap1('voltage', veeV), 'VEE');
+                devices.push(this.buildMatched(veeReq, 'VEE', 'VEE Negative', 'exact'));
+                Logger.info('DeviceSelect', `Auto-added VEE voltage=${veeV}`);
+            }
+            if (intent.needsSignalGen && !hasSig) {
+                const sigMap = stringMap1('waveform', intent.signalWaveform || 'sine');
+                sigMap.set('amplitude', '1V');
+                sigMap.set('frequency', intent.preferredSignalFrequency.length > 0 ? intent.preferredSignalFrequency : '1kHz');
+                sigMap.set('offset', '0V');
+                sigMap.set('dutyCycle', intent.preferredSignalDuty.length > 0 ? intent.preferredSignalDuty : '50%');
+                const sigReq = makeDeviceRequirement('信号发生器', 'instrument', 5, sigMap, 'SIGNAL_GEN');
+                devices.push(this.buildMatched(sigReq, 'SIGNAL_GEN', 'Signal Generator', 'exact'));
+                Logger.info('DeviceSelect', `Auto-added SIGNAL_GEN waveform=${intent.signalWaveform}` +
+                    ` f=${sigMap.get('frequency')} duty=${sigMap.get('dutyCycle')}`);
+            }
+            // 将意图电压写回已匹配的 VCC/VEE
+            for (let di = 0; di < devices.length; di++) {
+                const d = devices[di];
+                if (d.libDevId === 'VCC' && intent.preferredVccVoltage.length > 0) {
+                    d.params.set('voltage', intent.preferredVccVoltage);
+                }
+                if (d.libDevId === 'VEE') {
+                    const vv = intent.preferredVeeVoltage.length > 0 ? intent.preferredVeeVoltage : '-12V';
+                    d.params.set('voltage', vv);
+                }
+                if (d.libDevId === 'SIGNAL_GEN') {
+                    // LLM paramConstraint 优先；intent 仅填补空缺（避免「输出方波」覆盖正弦激励）
+                    const curWf = (d.params.get('waveform') ?? '').trim();
+                    if (curWf.length === 0 && intent.signalWaveform.length > 0) {
+                        d.params.set('waveform', intent.signalWaveform);
+                    }
+                    const curF = (d.params.get('frequency') ?? '').trim();
+                    if (curF.length === 0 && intent.preferredSignalFrequency.length > 0) {
+                        d.params.set('frequency', intent.preferredSignalFrequency);
+                    }
+                    const curDuty = (d.params.get('dutyCycle') ?? '').trim();
+                    if (curDuty.length === 0 && intent.preferredSignalDuty.length > 0) {
+                        d.params.set('dutyCycle', intent.preferredSignalDuty);
+                    }
+                }
             }
         }
         return result;
@@ -282,7 +335,11 @@ export class DeviceSelectEngine {
             if (val === undefined) {
                 continue;
             }
-            if (key === 'value' || key.includes('output') || key.includes('voltage')) {
+            if (key === 'voltage' || key === 'amplitude' || key === 'frequency' ||
+                key === 'offset' || key === 'waveform' || key === 'dutyCycle') {
+                params.set(key, val);
+            }
+            else if (key === 'value' || key.includes('output')) {
                 params.set('value', val);
             }
         }

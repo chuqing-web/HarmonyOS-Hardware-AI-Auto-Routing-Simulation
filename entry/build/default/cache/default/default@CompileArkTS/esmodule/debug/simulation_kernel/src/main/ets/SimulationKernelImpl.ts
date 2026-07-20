@@ -528,19 +528,42 @@ export class SimulationKernelImpl implements ISimulationKernel {
      * Time-budgeted sim slice for Worker / fallback pump.
      * Hard caps are intentional: one slow SPICE step can exceed Date.now() budget and
      * starve the UI event loop (APP_INPUT_BLOCK / THREAD_BLOCK_*).
+     *
+     * IMPORTANT: must advance enough *sim* time per UI frame for AC scope.
+     * Previously maxSpice=1 @ ~1µs/step × 40ms/frame → 1kHz needed minutes to fill
+     * a 10ms display window (looked like flat DC with tiny last-V drift).
      */
     runBudgetSteps(budgetMs: number = 3): number {
         if (this.state !== SimulationState.RUNNING) {
             return 0;
         }
-        // Hard wall + hard step count: Newton OP can still exceed a soft clock mid-step
-        const deadline = Date.now() + Math.max(1, Math.min(budgetMs, 4));
+        const acFreq = this.analogEngine.getMaxAcFrequency();
+        const wallCap = acFreq > 0 ? 12 : 4;
         // Sample KEY/net voltages into GPIO IDR before firmware reads inputs
         this.syncSpiceToGpioInputs();
         this.tickMcuCore();
+        if (this.scheduler !== null && acFreq > 0) {
+            // ≥40 samples/period so 1kHz sine is smooth; never coarser than 50µs
+            const acMax = Math.max(1e-6, Math.min(1.0 / (acFreq * 40), 5e-5));
+            this.scheduler.setMaxStepCap(acMax);
+            this.scheduler.bumpStepToward(acMax);
+        }
+        else if (this.scheduler !== null) {
+            this.scheduler.setMaxStepCap(0);
+        }
+        // Target sim advance: ≥2 AC periods (capped), else a small DC nudge
+        const targetAdvance = acFreq > 0
+            ? Math.min(2e-3, Math.max(2.0 / acFreq, 2e-4))
+            : 5e-5;
+        // MCU firmware needs UV time; pure analog can burst harder for the scope
+        const maxSpice = this.mcuLoaded ? (acFreq > 0 ? 24 : 4) : (acFreq > 0 ? 160 : 24);
+        // AC labs need a longer wall slice than the default 3ms Worker budget
+        const sliceMs = acFreq > 0 ? Math.max(budgetMs, 8) : budgetMs;
+        const deadline = Date.now() + Math.max(1, Math.min(sliceMs, wallCap));
+        const t0 = this.globalTime;
         let steps = 0;
-        const maxSpice = 1;
-        while (steps < maxSpice && Date.now() < deadline) {
+        while (steps < maxSpice && Date.now() < deadline &&
+            (this.globalTime - t0) < targetAdvance) {
             this.runSpiceStep();
             if (this.analogEngine.updateRelayContactsFromCoil()) {
                 this.analogEngine.reSolveOp();
@@ -1888,17 +1911,52 @@ export class SimulationKernelImpl implements ISimulationKernel {
             }
         }
     }
-    private static readonly MAX_WAVE_POINTS = 16384;
+    private static readonly MAX_WAVE_POINTS = 8192;
+    /** Keep ~100ms of samples for scope (10× a 10ms display window at 1ms/div). */
+    private static readonly MAX_WAVE_SPAN_SEC = 0.1;
     private resolveNetUuidForNode(nodeName: string): string {
-        let netUuid = nodeName;
+        if (nodeName.length === 0) {
+            return nodeName;
+        }
+        // Already a schematic net UUID key in the map
+        if (this.spiceNodeMap.has(nodeName) &&
+            (nodeName.startsWith('net_') || nodeName.startsWith('net'))) {
+            return nodeName;
+        }
+        let bestUuid = '';
         this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
-            if (spiceNode === nodeName) {
-                netUuid = uuid;
+            // AnalogEngine names (NET_4) and Spice N4 both appear as values after merge
+            if (spiceNode !== nodeName) {
+                return;
+            }
+            if (uuid.startsWith('net_') || uuid.startsWith('net')) {
+                bestUuid = uuid;
+            }
+            else if (bestUuid.length === 0) {
+                bestUuid = uuid;
             }
         });
-        return netUuid;
+        if (bestUuid.length > 0) {
+            return bestUuid;
+        }
+        // Reverse: nodeName is display name stored as map key (NET_4 → N4)
+        const asKey = this.spiceNodeMap.get(nodeName);
+        if (asKey !== undefined) {
+            this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
+                if (spiceNode === asKey && (uuid.startsWith('net_') || uuid.startsWith('net'))) {
+                    bestUuid = uuid;
+                }
+            });
+            if (bestUuid.length > 0) {
+                return bestUuid;
+            }
+        }
+        return nodeName;
     }
     private updateWaveData(probeName: string, time: number, voltage: number, current: number): void {
+        if (!(time === time) || !Number.isFinite(time) || !(voltage === voltage) || !Number.isFinite(voltage)) {
+            return;
+        }
         let wave = this.waveDataList.find(w => w.probeName === probeName);
         if (!wave) {
             const netUuid = this.resolveNetUuidForNode(probeName);
@@ -1915,16 +1973,41 @@ export class SimulationKernelImpl implements ISimulationKernel {
             };
             this.waveDataList.push(wave);
         }
-        // Ring buffer: drop a chunk (cheaper than per-sample shift) when full
-        if (wave.timeAxis.length >= SimulationKernelImpl.MAX_WAVE_POINTS) {
-            const drop = Math.floor(SimulationKernelImpl.MAX_WAVE_POINTS / 8);
-            wave.timeAxis.splice(0, drop);
-            wave.voltageAxis.splice(0, drop);
-            wave.currentAxis.splice(0, drop);
+        // Reject non-monotonic timestamps (would scramble scope resampling / windowing)
+        if (wave.timeAxis.length > 0) {
+            const lastT = wave.timeAxis[wave.timeAxis.length - 1];
+            if (time <= lastT) {
+                return;
+            }
         }
         wave.timeAxis.push(time);
         wave.voltageAxis.push(voltage);
         wave.currentAxis.push(current);
+        // Prefer time-window trim (stable density) over blunt point-count splice mid-ring
+        const n = wave.timeAxis.length;
+        if (n >= 8) {
+            const tEnd = wave.timeAxis[n - 1];
+            const tKeep = tEnd - SimulationKernelImpl.MAX_WAVE_SPAN_SEC;
+            if (wave.timeAxis[0] < tKeep) {
+                let cut = 0;
+                while (cut < n - 4 && wave.timeAxis[cut] < tKeep) {
+                    cut++;
+                }
+                if (cut > 0) {
+                    wave.timeAxis.splice(0, cut);
+                    wave.voltageAxis.splice(0, cut);
+                    wave.currentAxis.splice(0, cut);
+                }
+            }
+        }
+        if (wave.timeAxis.length >= SimulationKernelImpl.MAX_WAVE_POINTS) {
+            const drop = wave.timeAxis.length - SimulationKernelImpl.MAX_WAVE_POINTS + 64;
+            if (drop > 0) {
+                wave.timeAxis.splice(0, drop);
+                wave.voltageAxis.splice(0, drop);
+                wave.currentAxis.splice(0, drop);
+            }
+        }
     }
     private accumulateResult(stepResult: SchedulerStepResult): void {
         if (!this.result) {

@@ -1,9 +1,10 @@
-import { IdUtil, makeDeviceInst, DeviceHitGeometry, SELECTION_HIT_PAD } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { IdUtil, makeDeviceInst, DeviceHitGeometry, SELECTION_HIT_PAD, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchTopology, DeviceInst, LayoutLlmOutput, LayoutConstraintRule, MatchedDevice, PlacementCandidate, PlacementResult, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary } from 'component_library';
 import { getModuleGroupLists, moduleGroupToRecord, positionsFromChromosome, positionsToRecord, getModuleGroupValues } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/internal/AiEngineHelpers";
 import { runPlacementGaAsync } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PlacementGaWorker";
 import type { GaWorkerInput } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PlacementGaWorker";
+import type { WiredCompactPair } from './NetPlanExecutor';
 interface Gene {
     x: number;
     y: number;
@@ -29,6 +30,128 @@ export class PlacementOptimizer {
     /** 公开：按选中区 AABB 消解重叠（AI 坐标布局后调用） */
     resolveSelectionOverlaps(topo: SchTopology): void {
         this.resolveOverlaps(topo);
+    }
+    /**
+     * 将 joinWired 小网器件对拉近到约 targetDist（默认 120mil，snap 20mil）。
+     * 优先精确位号；同型号多实例不误绑；仪器/大封装不移动；近者优先。
+     */
+    compactDevicesForWiredNets(topo: SchTopology, pairs: WiredCompactPair[], targetDist: number = 120): number {
+        if (!pairs || pairs.length === 0) {
+            return 0;
+        }
+        const SNAP = 20;
+        const alreadyMoved = new Set<string>();
+        const scored: WiredCompactPair[] = pairs.slice();
+        scored.sort((p1: WiredCompactPair, p2: WiredCompactPair) => {
+            const a1 = this.findDeviceByRef(topo, p1.refA);
+            const b1 = this.findDeviceByRef(topo, p1.refB);
+            const a2 = this.findDeviceByRef(topo, p2.refA);
+            const b2 = this.findDeviceByRef(topo, p2.refB);
+            const d1 = (a1 && b1) ? Math.hypot(b1.x - a1.x, b1.y - a1.y) : 1e9;
+            const d2 = (a2 && b2) ? Math.hypot(b2.x - a2.x, b2.y - a2.y) : 1e9;
+            return d1 - d2;
+        });
+        let moved = 0;
+        let skipped = 0;
+        for (let pi = 0; pi < scored.length; pi++) {
+            const pair = scored[pi];
+            const a = this.findDeviceByRef(topo, pair.refA);
+            const b = this.findDeviceByRef(topo, pair.refB);
+            if (!a || !b || a.instUuid === b.instUuid) {
+                skipped++;
+                continue;
+            }
+            const aInstr = this.isInstrumentLib(a.libDevId);
+            const bInstr = this.isInstrumentLib(b.libDevId);
+            if (aInstr && bInstr) {
+                skipped++;
+                continue;
+            }
+            if (this.isBulkyLib(a.libDevId) || this.isBulkyLib(b.libDevId)) {
+                skipped++;
+                continue;
+            }
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= targetDist + SNAP || dist < 1) {
+                continue;
+            }
+            const scale = targetDist / dist;
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            if (!aInstr && !alreadyMoved.has(a.instUuid)) {
+                a.x = this.snapTo(mx + (a.x - mx) * scale, SNAP);
+                a.y = this.snapTo(my + (a.y - my) * scale, SNAP);
+                a.x = Math.max(40, Math.min(CANVAS_W - 40, a.x));
+                a.y = Math.max(40, Math.min(CANVAS_H - 40, a.y));
+                alreadyMoved.add(a.instUuid);
+                moved++;
+            }
+            if (!bInstr && !alreadyMoved.has(b.instUuid)) {
+                b.x = this.snapTo(mx + (b.x - mx) * scale, SNAP);
+                b.y = this.snapTo(my + (b.y - my) * scale, SNAP);
+                b.x = Math.max(40, Math.min(CANVAS_W - 40, b.x));
+                b.y = Math.max(40, Math.min(CANVAS_H - 40, b.y));
+                alreadyMoved.add(b.instUuid);
+                moved++;
+            }
+        }
+        if (moved > 0) {
+            this.resolveOverlaps(topo);
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] compact_wired pairs=${pairs.length} moved=${moved}` +
+                ` skipped=${skipped} target=${targetDist}`);
+        }
+        return moved;
+    }
+    private snapTo(v: number, grid: number): number {
+        return Math.round(v / grid) * grid;
+    }
+    /**
+     * 解析器件：优先精确/忽略大小写的 refName；仅当该 libDevId 全局唯一时才回退型号。
+     */
+    private findDeviceByRef(topo: SchTopology, ref: string): DeviceInst | null {
+        if (!ref || ref.length === 0) {
+            return null;
+        }
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            if (d.refName === ref) {
+                return d;
+            }
+        }
+        const up = ref.toUpperCase();
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            if ((d.refName ?? '').toUpperCase() === up) {
+                return d;
+            }
+        }
+        let only: DeviceInst | null = null;
+        let hits = 0;
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            if ((d.libDevId ?? '').toUpperCase() === up) {
+                hits++;
+                only = d;
+            }
+        }
+        return hits === 1 ? only : null;
+    }
+    private isInstrumentLib(libDevId: string): boolean {
+        const id = (libDevId ?? '').toUpperCase();
+        return id.indexOf('OSCILLOSCOPE') >= 0 || id.indexOf('VOLTMETER') >= 0 ||
+            id.indexOf('AMMETER') >= 0 || id.indexOf('VIRTUAL_METER') >= 0 ||
+            id.indexOf('FREQ_COUNTER') >= 0 || id.indexOf('UART_TERMINAL') >= 0 ||
+            id.indexOf('LOGIC_ANALYZER') >= 0 || id.indexOf('POWER_METER') >= 0 ||
+            id.indexOf('SIGNAL_GEN') >= 0;
+    }
+    private isBulkyLib(libDevId: string): boolean {
+        const id = (libDevId ?? '').toUpperCase();
+        return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 ||
+            id.indexOf('STC89') >= 0 || id.indexOf('STC15') >= 0 ||
+            id.indexOf('LM358') >= 0 || id.indexOf('LM324') >= 0 ||
+            id.indexOf('OP07') >= 0;
     }
     optimize(matched: MatchedDevice[], constraints: LayoutLlmOutput, lockedUuids: string[] = [], existingTopo?: SchTopology): PlacementResult {
         const deviceIds = matched.map((_, i) => `dev_${i}`);

@@ -3,6 +3,15 @@
 > 对应运行时：`SharedPromptRules.ets`  
 > 来源：`skill/SKILL.md` §4–§7 + DeviceHitGeometry
 
+## 输出铁律（renderEnriched 全阶段注入）
+
+```
+1. 只输出一个 JSON 对象：第一字符 { ，最后字符 }
+2. 禁止 JSON 外任何文字（说明/推理/markdown/代码围栏）
+3. 可内部思考，不得写入回复正文
+4. layout / route：另关 thinking，且不注入拓扑反模式（防长文）
+```
+
 ## 仪器拓扑铁律
 
 ```
@@ -25,13 +34,11 @@
 ## 连接方式摘要
 
 ```
-强制 joinWired: 晶振/去耦、LED+限流、同区短距非仪器
-强制 joinByLabel: 仪器、跨区远距、多脚(>4)、局部拥塞
+标号优先；≤3脚小网可升级导线；仪器/大电源扇出保持标号
 【硬】同一引脚物理导线端点 ≤2；第3根起必须用网络标号(joinByLabel)
-电源轨: 标号优先，就近可短导线
 ```
 
-## 拓扑反模式（renderEnriched 注入）
+## 拓扑反模式（renderEnriched 注入；layout/route 跳过）
 
 ```
 1. 电流表 I+/I- 同网 → 短路
@@ -41,12 +48,21 @@
 5. 信号网命名为 VCC/GND
 6. GPIO 直连 VCC/GND
 7. 导线侵入选中区或碰无关脚
+8. 编造脚名（假设为A、IN、SIG）
+9. 将引脚「悬空」当作完成态
+```
+
+## 库内真脚速查（PromptLoader 从器件库动态生成）
+
+```
+OSCILLOSCOPE / VOLTMETER_DC / AMMETER_DC / POT_* / … 以 library.getComponent.pins 为准
+禁止硬编码脚名表作为唯一真相
 ```
 
 ## 完整生图门禁
 
 ```
-阻断: ERC error/critical + 功能影响 warning + 几何 error(wire_body/pin_proximity/wire_cross=正交交叉或共线重叠)
+阻断: ERC error/critical + 功能影响 warning + 几何 error(wire_body/pin_proximity/wire_cross)
 软性可保留: 去耦余量、入口电解、耐压余量、连线拥挤 warning
 ```
 

@@ -11,8 +11,9 @@ import {
 import {
   ComponentParamsUpdate, ComponentParamEntry
 } from 'schematic_editor';
-import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
+import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
+import { PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
 import fs from '@ohos.file.fs';
@@ -21,6 +22,8 @@ import util from '@ohos.util';
 
 @Component
 export struct PropertyPanel {
+  /** 主题切换时重建，避免色板静态字段变更后子树仍缓存旧色 */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
   @Prop @Watch('onDocVersionChange') docVersion: number = 0;
   @Prop @Watch('onSimWaveTick') simWaveTick: number = 0;
@@ -90,7 +93,32 @@ export struct PropertyPanel {
       this.appService.invalidateInstrumentBinding(this.comp.id);
       this.ensureInstrumentBinding();
       this.refreshInstrumentData();
+    } else {
+      this.resetInstrumentDisplay();
+      this.appService.setActiveInstrumentComponent(null);
     }
+  }
+
+  private resetInstrumentDisplay(): void {
+    this.mmReading = '0.000';
+    this.vmReading = '0.00';
+    this.amReading = '0.00';
+    this.pmVoltage = '0.00';
+    this.pmCurrent = '0.00';
+    this.pmPower = '0.00';
+    this.pmPF = '0.00';
+    this.fcFreq = '0 Hz';
+    this.sigFreq = '1kHz';
+    this.sigAmp = '3.3V';
+    this.uartHex = '';
+    this.uartLog = '';
+    this.decodedFrames = '';
+    this.oscWaveData = [];
+    this.oscWaveDataCh2 = [];
+    this.logicChannelData = [];
+    this.hexPath = '';
+    this.hexRegisters = '';
+    this.hexState = 'stopped';
   }
 
   onSimWaveTick(): void {
@@ -305,8 +333,8 @@ export struct PropertyPanel {
   loadComponent(): void {
     if (!this.selectedComponentId) {
       this.comp = null;
-      this.oscWaveData = [];
-      this.oscWaveDataCh2 = [];
+      this.paramEntries = [];
+      this.resetInstrumentDisplay();
       return;
     }
     const doc = this.appService.schematicEditor.getDocument();
@@ -351,13 +379,19 @@ export struct PropertyPanel {
     }
     const lib = this.comp.libraryId.toUpperCase();
     if (key === 'voltage') {
-      return lib === 'VCC' || lib.includes('VAC') || lib.includes('POWER') || lib.includes('VDC');
+      return lib === 'VCC' || lib === 'VEE' || lib.includes('VAC') ||
+        lib.includes('POWER') || lib.includes('VDC');
     }
     if (key === 'power') {
       return lib.startsWith('R_');
     }
     if (key === 'value') {
       return lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_');
+    }
+    // 信号发生器：波形 / 频率 / 幅值 / 偏置 / 占空比均可改
+    if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+      return key === 'waveform' || key === 'frequency' || key === 'amplitude' ||
+        key === 'offset' || key === 'dutyCycle' || key === 'duty';
     }
     return false;
   }
@@ -491,24 +525,24 @@ export struct PropertyPanel {
           Row() {
             Text('名称:')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
-            TextInput({ placeholder: '参数名称', text: this.paramKey })
-              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT)
-              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_PRIMARY)
-              .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .onChange((v: string) => { this.paramKey = v; })
+            ProteusTextInput({
+              placeholder: '参数名称',
+              text: this.paramKey,
+              onChange: (v: string) => { this.paramKey = v; }
+            })
+              .layoutWeight(1)
           }
           .width('100%').alignItems(VerticalAlign.Center)
 
           Row() {
             Text('数值:')
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL).width(48)
-            TextInput({ placeholder: '参数值', text: this.paramValue })
-              .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT)
-              .fontSize(ProteusFonts.PARAM_VALUE).fontColor(ProteusColors.TEXT_PRIMARY)
-              .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
-              .backgroundColor(ProteusColors.CANVAS_BG)
-              .onChange((v: string) => { this.paramValue = v; })
+            ProteusTextInput({
+              placeholder: '参数值',
+              text: this.paramValue,
+              onChange: (v: string) => { this.paramValue = v; }
+            })
+              .layoutWeight(1)
           }
           .width('100%').alignItems(VerticalAlign.Center)
 
@@ -577,6 +611,7 @@ export struct PropertyPanel {
     .height('100%')
     .scrollBar(BarState.Auto)
     .backgroundColor(ProteusColors.CANVAS_BG)
+    .key(`prop_panel_${this.themeRev}`)
   }
 
   @Builder
@@ -798,10 +833,14 @@ export struct PropertyPanel {
         Text('闸门:')
           .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
         TextInput({ text: this.fcGate })
-          .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontSize(ProteusFonts.INPUT).fontColor(ProteusColors.TEXT_PRIMARY)
+          .placeholderFont({ size: ProteusFonts.INPUT })
+          .placeholderColor(ProteusColors.TEXT_SECONDARY)
+          .caretColor(ProteusColors.INPUT_FOCUS)
           .width(50).height(ProteusDimens.PARAM_ROW_HEIGHT)
           .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
           .backgroundColor(ProteusColors.CANVAS_BG)
+          .padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H })
           .onChange((v: string) => { this.fcGate = v; })
         ProteusClassicBtn({ label: '设置', widthVal: 40,
           onAction: () => {
@@ -820,12 +859,12 @@ export struct PropertyPanel {
       Text('串口终端')
         .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
       Row() {
-        TextInput({ placeholder: 'HEX: 55 AA', text: this.uartHex })
-          .layoutWeight(1).height(ProteusDimens.PARAM_ROW_HEIGHT)
-          .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.uartHex = v; })
+        ProteusTextInput({
+          placeholder: 'HEX: 55 AA',
+          text: this.uartHex,
+          onChange: (v: string) => { this.uartHex = v; }
+        })
+          .layoutWeight(1)
         ProteusClassicBtn({ label: '发', widthVal: 36,
           onAction: () => {
             this.appService.instruments.uartHexSend(this.uartHex);
@@ -866,12 +905,12 @@ export struct PropertyPanel {
   McuBurnSection() {
     Column({ space: 4 }) {
       Row() {
-        TextInput({ placeholder: 'firmware.hex 路径', text: this.hexPath })
-          .layoutWeight(1).height(28)
-          .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0).border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.hexPath = v; })
+        ProteusTextInput({
+          placeholder: 'firmware.hex 路径',
+          text: this.hexPath,
+          onChange: (v: string) => { this.hexPath = v; }
+        })
+          .layoutWeight(1)
         ProteusClassicBtn({ label: '浏览', widthVal: 44,
           onAction: () => { void this.browseHexFile(); } })
       }

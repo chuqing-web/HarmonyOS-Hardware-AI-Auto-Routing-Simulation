@@ -36,6 +36,16 @@ export function params3(k1: string, v1: string, k2: string, v2: string, k3: stri
     m.set(k3, v3);
     return m;
 }
+export function params4(k1: string, v1: string, k2: string, v2: string, k3: string, v3: string, k4: string, v4: string): Map<string, string> {
+    const m = params3(k1, v1, k2, v2, k3, v3);
+    m.set(k4, v4);
+    return m;
+}
+export function params5(k1: string, v1: string, k2: string, v2: string, k3: string, v3: string, k4: string, v4: string, k5: string, v5: string): Map<string, string> {
+    const m = params4(k1, v1, k2, v2, k3, v3, k4, v4);
+    m.set(k5, v5);
+    return m;
+}
 export function copyParamMap(source: Map<string, string>): Map<string, string> {
     const copy = new Map<string, string>();
     source.forEach((value: string, key: string) => {

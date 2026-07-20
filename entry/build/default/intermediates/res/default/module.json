@@ -46,10 +46,10 @@
 						"actions":	["action.system.home"]
 					}],
 				"descriptionId":	83886083,
-				"iconId":	83886173,
+				"iconId":	83886174,
 				"labelId":	83886084,
-				"startWindowIconId":	83886175,
-				"startWindowBackgroundId":	83886170
+				"startWindowIconId":	83886176,
+				"startWindowBackgroundId":	83886171
 			}],
 		"requestPermissions":	[{
 				"name":	"ohos.permission.sec.ACCESS_UDID",
@@ -58,9 +58,17 @@
 					"abilities":	["EntryAbility"],
 					"when":	"inuse"
 				},
-				"reasonId":	83886169
+				"reasonId":	83886170
 			}, {
 				"name":	"ohos.permission.INTERNET",
+				"reason":	"$string:internet_permission_reason",
+				"usedScene":	{
+					"abilities":	["EntryAbility"],
+					"when":	"inuse"
+				},
+				"reasonId":	83886088
+			}, {
+				"name":	"ohos.permission.GET_NETWORK_INFO",
 				"reason":	"$string:internet_permission_reason",
 				"usedScene":	{
 					"abilities":	["EntryAbility"],

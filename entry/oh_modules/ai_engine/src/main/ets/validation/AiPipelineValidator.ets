@@ -93,8 +93,9 @@ export class AiPipelineValidator {
     } else {
       checks.push('libId-as-RefDes 识别 OK');
     }
-    if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1')) {
-      failures.push('looksLikeLibIdAsRefDes 误伤正常位号 U1/D1/LED1');
+    if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1') ||
+      looksLikeLibIdAsRefDes('SCOPE1') || looksLikeLibIdAsRefDes('AM1') || looksLikeLibIdAsRefDes('VM1')) {
+      failures.push('looksLikeLibIdAsRefDes 误伤正常位号 U1/D1/LED1/SCOPE1/AM1/VM1');
     } else {
       checks.push('正常位号豁免 OK');
     }
@@ -125,6 +126,77 @@ export class AiPipelineValidator {
       failures.push('critiqueModularPlan 未拒收把 LM555/LED_RED 当 RefDes');
     } else {
       checks.push(`plan 门禁拒收型号当位号 (${critique.length} issues)`);
+    }
+
+    // 通用忠实度：用户未要求的重大有源/假脚须拒收
+    const creepMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: '激励',
+      prompt: '放置 U1（libDevId=LM555）产生方波，边界 U1.3',
+      boundaryPins: ['U1.3', 'U1.8', 'U1.1']
+    };
+    const creepMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: '测量',
+      prompt: '放置 RV1（libDevId=POT_10k）与 OSC1（libDevId=OSCILLOSCOPE），' +
+        'OSC1 信号输入引脚（假设为A），RV1 端脚悬空',
+      boundaryPins: ['RV1.1', 'OSC1.CH1']
+    };
+    const creepPlan: ModularPlan = {
+      systemOverview: '555方波驱动负载并用示波器观测',
+      modules: [creepMod1, creepMod2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.U1.8' },
+        { from: 'POWER.GND', to: 'M1.U1.1' },
+        { from: 'M1.U1.3', to: 'M2.RV1.1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.CH1' }
+      ]
+    };
+    const simpleUser = '电阻分压电路测中点电压';
+    const creepCritique = critiqueModularPlan(creepPlan, this.library, simpleUser);
+    const creepHit = creepCritique.some(s => s.indexOf('擅自') >= 0);
+    const pinHit = creepCritique.some(s => s.indexOf('假设') >= 0 || s.indexOf('悬空') >= 0 ||
+      s.indexOf('不属于') >= 0);
+    if (!creepHit) {
+      failures.push('critiqueModularPlan 未拒收用户未要求的重大器件扩容');
+    } else {
+      checks.push('通用忠实度门禁 OK');
+    }
+    if (!pinHit) {
+      failures.push('critiqueModularPlan 未拒收假设脚/悬空/库外脚');
+    } else {
+      checks.push('库脚/假脚门禁 OK');
+    }
+
+    // 合法无源+示波 plan（用户点名观测）应通过
+    const good1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'RC网络',
+      prompt: '放置 R1（libDevId=R_10k）与 C1（libDevId=C_10uF）：VCC—R1—电容节点—C1—GND',
+      boundaryPins: ['R1.1', 'C1.2', 'R1.2']
+    };
+    const good2: ModularModuleSpec = {
+      id: 'M2',
+      title: '示波观测',
+      prompt: '放置 OSC1（libDevId=OSCILLOSCOPE）：OSC1.CH1 接电容节点，OSC1.GND 接系统地',
+      boundaryPins: ['OSC1.CH1', 'OSC1.GND']
+    };
+    const goodPlan: ModularPlan = {
+      systemOverview: '无源 RC：VCC经R对C充电，示波器CH1观测电容电压',
+      modules: [good1, good2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.R1.1' },
+        { from: 'POWER.GND', to: 'M1.C1.2' },
+        { from: 'M1.R1.2', to: 'M2.OSC1.CH1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.GND' }
+      ]
+    };
+    const goodUser = 'RC 充放电电路观测指数波形';
+    const goodCritique = critiqueModularPlan(goodPlan, this.library, goodUser);
+    if (goodCritique.length > 0) {
+      failures.push(`合法 plan 被误拒: ${goodCritique.join('; ')}`);
+    } else {
+      checks.push('合法 plan 通过门禁');
     }
 
     const m1 = AiPipelineValidator.makeModuleTopo('U1', 'LM555', 'net_vcc_m1', 'net_gnd_m1');

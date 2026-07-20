@@ -6,7 +6,7 @@ import fs from '@ohos.file.fs';
 import { picker } from '@kit.CoreFileKit';
 import { AppService } from '../services/AppService';
 import { McuFamily, SimulationState, traceBurn, formatFirmwarePreview } from 'common';
-import { ProteusClassicBtn, ProteusSectionTitle } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 @Component
@@ -300,15 +300,12 @@ export struct McuDebugPanel {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       Column() {
-        TextInput({ placeholder: '固件路径…', text: this.hexFilePath })
+        ProteusTextInput({
+          placeholder: '固件路径…',
+          text: this.hexFilePath,
+          onChange: (v: string) => { this.hexFilePath = v; }
+        })
           .width('100%')
-          .height(28)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.hexFilePath = v; })
       }
       .width('100%')
       .padding({ left: 8, right: 8 })
@@ -461,15 +458,12 @@ export struct McuDebugPanel {
         .alignSelf(ItemAlign.Start)
 
       Row({ space: 4 }) {
-        TextInput({ placeholder: '输入 UART 数据', text: this.hexInput })
+        ProteusTextInput({
+          placeholder: '输入 UART 数据',
+          text: this.hexInput,
+          onChange: (v: string) => { this.hexInput = v; }
+        })
           .layoutWeight(1)
-          .height(28)
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .borderRadius(0)
-          .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .backgroundColor(ProteusColors.CANVAS_BG)
-          .onChange((v: string) => { this.hexInput = v; })
         ProteusClassicBtn({
           label: '发送',
           widthVal: 56,

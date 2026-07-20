@@ -1,7 +1,8 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { AppService } from '../services/AppService';
+import { ThemeManager } from '../theme/ThemeManager';
 import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 
 const DOMAIN = 0x0000;
@@ -9,14 +10,18 @@ const TAG = 'AISchSim';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 不写死深色：ColorMode 由 ThemeManager 按用户偏好同步（浅/深）
     try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      ThemeManager.getInstance().bindApplicationContext(this.context.getApplicationContext());
     } catch (_e) { /* ignore */ }
     hilog.info(DOMAIN, TAG, 'AI-SCH Simulator started');
   }
 
   onDestroy(): void {
     hilog.info(DOMAIN, TAG, 'AI-SCH Simulator destroyed');
+    try {
+      void AppService.getInstance().flushProjectProtection(true);
+    } catch (_e) { /* best-effort */ }
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -32,6 +37,9 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     hilog.info(DOMAIN, TAG, 'Window stage destroyed');
+    try {
+      void AppService.getInstance().flushProjectProtection(true);
+    } catch (_e) { /* best-effort */ }
   }
 
   onForeground(): void {
@@ -40,16 +48,8 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(DOMAIN, TAG, 'App background');
-    // 仅写恢复缓存；勿把 session 标成 dirty，否则下次启动会跳过正式工程导致 API 丢失
     try {
-      const appService: AppService = AppService.getInstance();
-      void appService.saveRecoveryCache();
-      if (appService.currentProjectPath.length > 0) {
-        void appService.saveSession(appService.currentProjectPath,
-          appService.currentProject?.name ?? 'Untitled', true);
-      }
-    } catch (e) {
-      // Best-effort save, ignore errors
-    }
+      void AppService.getInstance().flushProjectProtection(false);
+    } catch (_e) { /* best-effort */ }
   }
 }

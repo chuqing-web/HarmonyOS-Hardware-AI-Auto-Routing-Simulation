@@ -19,9 +19,9 @@ export class ErcEngine {
         for (let i = 0; i < doc.nets.length; i++) {
             const net = doc.nets[i];
             if (ErcEngine.isPowerOrGroundNet(net)) {
-                // 电源/地网络：仅接符号未接电路时单独提示，不算普通信号悬空
+                // 电源/地网络：仅接符号未接电路时 INFO，不挡门禁
                 if (net.pinIds.length <= 1) {
-                    result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.FLOATING_NET, `电源/地网络 "${net.name}" 未连接到其他器件（仅 ${net.pinIds.length} 处连接）`, net.id, undefined, undefined, '将 GND/VCC 符号用导线连接到 MCU、电阻等器件引脚'));
+                    result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.FLOATING_NET, `电源/地网络 "${net.name}" 仅符号入网（待接负载）`, net.id, undefined, undefined, '将 GND/VCC/VEE 符号用导线连接到器件电源脚'));
                 }
                 continue;
             }
@@ -29,7 +29,15 @@ export class ErcEngine {
                 continue;
             }
             if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.FLOATING_NET, `网络 "${net.name}" 仅有一处连接（悬空）`, net.id, undefined, undefined, '添加网络标号或连接到器件引脚'));
+                const nm = (net.name ?? '').trim();
+                const isAuto = nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm);
+                if (!isAuto) {
+                    // 有意义网名仅 1 脚：多为标号未并网 / 混合 mode 分裂 → 挡 AI 门禁
+                    result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.FLOATING_NET, `信号网络 "${nm}" 未完全连接（仅 1 脚，标号可能未并网）`, net.id, undefined, undefined, '检查同名网络标号是否落在同一几何网，或改为导线直连'));
+                }
+                else {
+                    result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.FLOATING_NET, `网络 "${net.name}" 仅有一处连接（待并网/标号）`, net.id, undefined, undefined, '添加网络标号或连接到器件引脚'));
+                }
             }
         }
         return result;
@@ -41,7 +49,8 @@ export class ErcEngine {
         }
         const upper = (net.name ?? '').toUpperCase();
         return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
-            upper === 'VCC' || upper === 'VDD' || upper === '0';
+            upper === 'VCC' || upper === 'VDD' || upper === '0' ||
+            upper === '-12V' || upper === '-5V';
     }
     private static checkDuplicateNetNames(doc: SchematicDocument): ErcViolation[] {
         const result: ErcViolation[] = [];
@@ -52,7 +61,7 @@ export class ErcEngine {
                 continue;
             }
             if (names.has(net.name)) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.DUPLICATE_NET, `重复网络标号 "${net.name}"`, net.id, undefined, undefined, '为每个网络使用唯一标号'));
+                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.DUPLICATE_NET, `重复网络标号 "${net.name}"（同名将并网；若非有意请改名）`, net.id, undefined, undefined, '为每个独立网络使用唯一标号，或确认同名并网意图'));
             }
             else {
                 names.set(net.name, net.id);
@@ -81,7 +90,8 @@ export class ErcEngine {
         }
         for (let i = 0; i < doc.components.length; i++) {
             const comp = doc.components[i];
-            if (comp.libraryId.includes('OSCILLOSCOPE')) {
+            if (comp.libraryId.includes('OSCILLOSCOPE') ||
+                comp.libraryId === 'LOGIC_ANALYZER') {
                 continue;
             }
             const pinDefs = ErcEngine.resolvePinIds(comp.libraryId, pinResolver);
@@ -119,7 +129,7 @@ export class ErcEngine {
             const hasCap = doc.components.filter(c => c.libraryId.startsWith('C_')).length >= 2;
             const hasResistor = doc.components.some(c => c.libraryId.startsWith('R_'));
             if (!hasCrystal) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.MISSING_CRYSTAL, `MCU ${mcu.refDes} 缺少晶振电路`, undefined, mcu.id, undefined, '添加晶振及负载电容（通常 11.0592MHz 或 8MHz）'));
+                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL, `MCU ${mcu.refDes} 缺少晶振电路`, undefined, mcu.id, undefined, '外置晶振或确认使用内部时钟（STC/部分 STM32）'));
             }
             if (!hasCap) {
                 result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET, `MCU ${mcu.refDes} 可能缺少去耦/复位电容`, undefined, mcu.id, undefined, '添加 100nF 去耦电容和 10kΩ 上拉电阻'));
@@ -134,6 +144,8 @@ export class ErcEngine {
         const result: ErcViolation[] = [];
         let hasVcc = false;
         let hasGnd = false;
+        let hasAltSource = false;
+        let hasMcuOrDigital = false;
         for (let i = 0; i < doc.nets.length; i++) {
             const net = doc.nets[i];
             if (net.type === NetType.POWER || net.name === 'VCC' || net.name === 'VDD') {
@@ -143,7 +155,6 @@ export class ErcEngine {
                 hasGnd = true;
             }
         }
-        // 拓扑重建可能改名网络，但电源/地符号仍在时不应误报「缺少电源」
         for (let ci = 0; ci < doc.components.length; ci++) {
             const lib = doc.components[ci].libraryId;
             if (lib === 'VCC') {
@@ -152,12 +163,20 @@ export class ErcEngine {
             if (lib === 'GND') {
                 hasGnd = true;
             }
+            if (lib === 'VAC' || lib === 'SIGNAL_GEN' || lib === 'VEE') {
+                hasAltSource = true;
+            }
+            if (lib.includes('AT89') || lib.includes('STC') || lib.includes('STM32') ||
+                lib.includes('74HC') || lib.includes('GATE_')) {
+                hasMcuOrDigital = true;
+            }
         }
-        if (!hasVcc) {
-            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, '原理图缺少电源网络 (VCC/VDD)', undefined, undefined, undefined, '添加电源符号并连接到 MCU VCC 引脚'));
+        // 纯交流/信号源实验可不强制 VCC；有 MCU/数字则仍要求正电源
+        if (!hasVcc && (hasMcuOrDigital || !hasAltSource)) {
+            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, '原理图缺少电源网络 (VCC/VDD)', undefined, undefined, undefined, '添加电源符号并连接到器件电源脚'));
         }
         if (!hasGnd) {
-            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, '原理图缺少地网络 (GND/VSS)', undefined, undefined, undefined, '添加地符号并连接到 MCU GND 引脚'));
+            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, '原理图缺少地网络 (GND/VSS)', undefined, undefined, undefined, '添加地符号并连接到电路 GND'));
         }
         return result;
     }
@@ -179,6 +198,9 @@ export class ErcEngine {
             libraryId.startsWith('FUSE_')) {
             return ['1', '2'];
         }
+        if (libraryId.startsWith('POT_')) {
+            return ['1', '2', 'W'];
+        }
         // LEDs and diodes
         if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
             libraryId === '1N4007' || libraryId === '1N5819') {
@@ -199,8 +221,12 @@ export class ErcEngine {
             return ['1'];
         if (libraryId === 'GND')
             return ['1'];
+        if (libraryId === 'VEE')
+            return ['1'];
         if (libraryId === 'VAC')
             return ['1', '2'];
+        if (libraryId === 'SIGNAL_GEN')
+            return ['OUT', 'GND'];
         // Op-amps
         if (libraryId === 'UA741')
             return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
@@ -224,11 +250,45 @@ export class ErcEngine {
         if (libraryId.includes('AT89') || libraryId.includes('STC')) {
             return ErcEngine.buildPinArray(40, 'P');
         }
-        // Peripherals
+        // Peripherals / instruments — 可选通道不强制全连
         if (libraryId === 'UART_TERMINAL')
             return ['TX', 'RX', 'GND'];
+        if (libraryId === 'VOLTMETER_DC' || libraryId === 'VIRTUAL_METER')
+            return ['V+', 'COM'];
+        if (libraryId === 'AMMETER_DC')
+            return ['I+', 'I-'];
+        if (libraryId === 'FREQ_COUNTER')
+            return ['IN', 'GND'];
+        if (libraryId === 'LOGIC_ANALYZER')
+            return [];
+        if (libraryId === 'POWER_METER')
+            return ['V+', 'V-', 'I+', 'I-'];
         if (libraryId === 'LCD1602') {
             return ErcEngine.buildPinArray(16, '');
+        }
+        if (libraryId === 'OLED_12864') {
+            return ['VCC', 'GND', 'SCL', 'SDA'];
+        }
+        // 三极管 / MOS
+        if (libraryId.includes('2N3904') || libraryId.includes('2N3906') ||
+            libraryId.includes('BC547') || libraryId.includes('BC557') ||
+            libraryId.includes('NPN') || libraryId.includes('PNP')) {
+            return ['B', 'C', 'E'];
+        }
+        if (libraryId.includes('2N7000') || libraryId.includes('IRF') ||
+            libraryId.includes('NMOS') || libraryId.includes('PMOS') || libraryId.includes('MOSFET')) {
+            return ['G', 'D', 'S'];
+        }
+        // 二极管（非 LED）
+        if (libraryId === '1N4148' || libraryId === '1N4007' || libraryId === '1N5819') {
+            return ['A', 'K'];
+        }
+        // 传感器简脚
+        if (libraryId.includes('LDR') || libraryId.includes('NTC') || libraryId.includes('PTC')) {
+            return ['1', '2'];
+        }
+        if (libraryId.includes('DHT11') || libraryId.includes('DS18B20')) {
+            return ['VCC', 'DATA', 'GND'];
         }
         // 74HC gates only expose functional pins (A, B, Y, GND, VCC), not all 14 package pins
         if (libraryId.includes('74HC04')) {

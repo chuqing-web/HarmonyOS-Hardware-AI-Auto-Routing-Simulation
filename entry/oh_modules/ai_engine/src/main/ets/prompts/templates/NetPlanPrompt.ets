@@ -4,15 +4,15 @@
 import { PromptTemplate } from '../PromptTypes';
 
 export const NET_PLAN_PROMPT: PromptTemplate = {
-  id: 'net_plan_v5',
-  version: '5.0.0',
+  id: 'net_plan_v6',
+  version: '6.0.0',
   system: `你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
 
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
 2. 为每个网络分配合理的名称和类型
-3. 【关键】由你自主决定每个连接的 mode (joinWired vs joinByLabel) — 参考拥挤度分析 + 位置关系
-4. 【关键】由你决定每根 joinWired 导线的走向（routeWaypoints），并自检：不穿选中区、不碰无关脚、不与异网交叉
+3. 【关键】可建议每个连接的 mode；系统默认标号优先，再按脚预算≤2 升级导线并对并拉近
+4. 【关键】为可能升级的 joinWired 网给出 routeWaypoints，并自检：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整的 netPlan JSON
 
 【你必须遵循的拓扑铁律 — 违反即为错误】:
@@ -32,29 +32,26 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 任何仪器引脚不得浮空
    - 仪器的 GND/COM 必须最终连到 GND 网络
 
-4. 连接方式选择规则 — 导线优先原则:
-   【基本原则】能用导线直连就用导线，只在导线会造成视觉混乱、穿过选中区或碰无关脚时才使用标号。
+4. 连接方式选择规则 — 标号优先原则:
+   【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
+   >3 脚网络、电源别名扇出（VCC/GND/VCC_AM/AVDD…）、仪器脚（含 COM）一律保持标号。
 
-   强制 joinWired（导线直连）:
-   - 电源符号 VCC/GND → 相邻负载器件 → 导线直连
-   - 晶振/去耦电容 → 最短路径导线，不跨越其他器件
-   - LED+限流电阻 → 导线局部直连
-   - 简单分压电路（≤5个器件，无MCU）→ 全部使用导线连接
-   - 同一功能组的就近器件对 → 导线连接（即使距离>150mil，只要路径清晰无遮挡即可）
-   - 2~4个引脚的小网络且引脚在同一区域 → 导线
+   适合升级为 joinWired（导线直连）的场景:
+   - 2～3 脚小信号网（LED+R、晶振负载、相邻分压段）
+   - 电源符号↔单负载（连接数≤2）
+   - 线圈短驱动网可保留导线
 
-   使用 joinByLabel（网络标号）的场景（仅在以下情况）:
-   - 【硬】同一引脚上若已有 2 根物理导线端点，再增加连接必须用标号（禁止单脚星形扇出 >2）
-   - MCU 多引脚（≥8个GPIO）分散连接多个外设 → 标号避免导线交叉混乱
-   - 同网络 ≥6个引脚分布在 ≥3个不同区域的器件上 → 标号管理
-   - 信号需要跨越其他大型器件选中区（如MCU封装）→ 用标号代替长导线
-   - 仪器仪表的 GND/COM 共用引脚需要合并到全局 GND → 标号合并
-   - 仪器测量引脚 → 强制标号
+   必须保持 joinByLabel:
+   - 【硬】同脚 joinWired 已达 2 次
+   - 【硬】网脚数 >3
+   - 【硬】电源轨别名且连接数 >2
+   - 仪器测量脚 CH*/V+/I+/COM/PROBE
+   - MCU 多外设 / 跨区长跨
 
    严格禁止:
-   - 简单3~5器件电路过度使用标号 → 浪费空间、严重降低可读性
-   - 仅2~3个引脚的短距网络使用标号 → 必须用导线
-   - 将 joinByLabel 当作默认选择 → 导线才是默认选择
+   - 仪器脚走长导线
+   - 大网满屏 A* 导线
+   - 假设「导线优先」
 
 5. 网络命名规则:
    - 电源网络: VCC, GND（不允许信号网络使用这些名字）
@@ -88,11 +85,24 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - compRef 必须使用器件列表中的精确 refDes（R1/R2/D1），禁止两颗电阻共用一个模糊名
 
 8. 运放规则:
-   - 必须有反馈路径（闭环），不允许开环
+   - 必须有反馈路径（闭环）：OUT→IN-（负反馈）或 OUT→IN+（迟滞正反馈）；不允许真开环
    - 同相/反相输入不可浮空
-   - V+ 接 VCC, V- 接 GND
+   - 单电源: V+/VCC→VCC，V-/VEE→GND
+   - 双电源: V+/VCC→VCC，V-/VEE→VEE（板上须有 VEE 符号）
+   - 【滞回/施密特】正反馈分压节点须同一网名（如 HYST_NODE）：OUT→Rf→HYST_NODE、HYST_NODE→Rg→GND（或 VCC）、运放 IN+→HYST_NODE；三脚必须同 mode（全 joinByLabel 或全 joinWired），禁止混用导致断网
+   - 激励为正弦时 SIGNAL_GEN 输入网接 IN-（或 IN+），示波器 CH1 观测 OUT、CH2 观测激励；勿把「输出方波」写成激励波形
 
-9. 导线走向与排布规则（硬门禁）:
+9. SIGNAL_GEN: OUT→激励信号网，GND→GND；waveform=sine|square|triangle|saw|pulse；frequency/dutyCycle 可调
+   - waveform 以用户「输入/激励」为准；「整形输出方波」不是信号源波形
+
+10. 【串联 RC 充放电铁律】板上有 R_* + C_*（且无双色 LED 互斥）时:
+   - 正确充电路径: VCC → (可选 SW.1/SW.2) → R.1 → R.2 与 C.1 同网名 RC_MID → C.2 → GND
+   - 示波器: CH1 入 RC_MID；GND 入 GND；禁止 CH1 挂 VCC；未用 CH2/3/4 不入网
+   - 电流表串联: VCC→AM.I+ ，AM.I-→VCC_AM→(SW)→R.1；禁止 I+/I- 同网
+   - 【硬禁】禁止用 RELAY_SPDT 冒充充放电开关；线圈不得直连 VCC/GND
+   - 禁止 R 与 C 并联到 VCC-GND（无中点）；禁止 C 两端都浮空
+
+11. 导线走向与排布规则（硬门禁）:
    - 导线只能正交走线（水平+垂直），禁止斜向
    - 【硬】导线不得进入任何器件的「选中命中区」(与编辑器 HIT_PAD=14 一致)；规划时必须对照器件选中区 AABB
    - 【硬】导线不得贴近/碰到无关引脚（安全距≥20mil）；只能连到本网络引脚
@@ -103,7 +113,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 规划 joinWired 网络时，路径不得穿越任何器件选中区（含本网器件体）；无法绕开则改用 joinByLabel
    - routeWaypoints 弯折点必须落在所有器件选中区之外
 
-【输出格式 — 严格 JSON，无 markdown 包裹】:
+【输出格式 — 严格 JSON；第一字符 { 最后字符 }；禁止 JSON 外任何文字】:
 
 {
   "nets": [
@@ -128,7 +138,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
     "forceLabel": []
   },
   "routeStrategy": {"VCC":"avoid_cross","SENSE":"direct"},
-  "topologyNotes": "全导线直连分压电路，2个90°弯折点避开电阻选中区"
+  "topologyNotes": "一句话备注（可选，必须写在 JSON 字段内）"
 }
 
 每个 net 至少包含 2 个 connections。
@@ -158,5 +168,5 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 === 器件位置总览 ===
 {{position_summary}}
 
-请根据以上信息，推理电路拓扑并输出完整的 netPlan JSON。`
+请根据以上信息输出完整 netPlan JSON。现在立即只输出 JSON，不要任何其它文字：`
 };

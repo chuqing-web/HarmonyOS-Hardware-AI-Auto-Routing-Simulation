@@ -39,6 +39,15 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
     if (lib === 'GND' || lib.endsWith('/GND')) {
         return [{ id: '1', name: 'GND', x: 0, y: -10 }];
     }
+    if (lib === 'VEE' || lib.endsWith('/VEE')) {
+        return [{ id: '1', name: 'VEE', x: 0, y: -10 }];
+    }
+    if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+        return [
+            { id: 'OUT', name: 'OUT', x: -30, y: 0 },
+            { id: 'GND', name: 'GND', x: 30, y: 0 }
+        ];
+    }
     if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
         return [
             { id: 'V+', name: 'V+', x: -30, y: -25 },

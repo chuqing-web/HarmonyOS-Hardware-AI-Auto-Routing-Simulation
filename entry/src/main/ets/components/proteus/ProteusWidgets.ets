@@ -2,6 +2,7 @@
  * Proteus 风格可复用 UI 组件 — 使用 Button 确保 2in1/鼠标点击可靠
  */
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../../theme/ProteusTheme';
+import { PROTEUS_THEME_REV_KEY } from '../../theme/ThemeManager';
 import { ProteusIcon, ProteusIconName } from './ProteusIcons';
 
 /** 经典凹陷边框：抬起=亮上左/暗下右；按下=反转 */
@@ -47,6 +48,8 @@ export interface ProteusMenuEntry {
 
 @Component
 export struct ProteusPanelTitle {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop title: ResourceStr = '';
   @Prop collapsed: boolean = false;
   @Prop tooltip: string = '';
@@ -126,6 +129,8 @@ export struct ProteusPanelTitle {
 
 @Component
 export struct ProteusVDivider {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   build() {
     Column()
       .width(1)
@@ -137,6 +142,8 @@ export struct ProteusVDivider {
 
 @Component
 export struct ProteusToolBtn {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: string = '';
   @Prop active: boolean = false;
   onAction: () => void = () => {};
@@ -176,6 +183,8 @@ export struct ProteusToolBtn {
 
 @Component
 export struct ProteusClassicBtn {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   @Prop widthVal: string | number = 'auto';
   @Prop heightVal: number = ProteusDimens.PARAM_ROW_HEIGHT;
@@ -241,6 +250,8 @@ export struct ProteusClassicBtn {
 /** 面板内分段标题 */
 @Component
 export struct ProteusSectionTitle {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop title: string = '';
 
   build() {
@@ -256,6 +267,8 @@ export struct ProteusSectionTitle {
 /** 仪器/面板子标签芯片 — 选中蓝底白字，支持等宽铺满一行 */
 @Component
 export struct ProteusChipTab {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: string = '';
   @Prop selected: boolean = false;
   @Prop fillWidth: boolean = false;
@@ -305,6 +318,8 @@ export struct ProteusChipTab {
 /** 芯片按钮网格 — 按列数自动换行向下排列，无需横向滑动 */
 @Component
 export struct ProteusChipGrid {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop labels: string[] = [];
   @Prop selectedIdx: number = -1;
   @Prop colsPerRow: number = 3;
@@ -349,6 +364,8 @@ export struct ProteusChipGrid {
 
 @Component
 export struct ProteusMenuItem {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   @State pressed: boolean = false;
   @State hovered: boolean = false;
@@ -376,6 +393,8 @@ export struct ProteusMenuItem {
 
 @Component
 export struct ProteusNavTab {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   @Prop selected: boolean = false;
   onSelect: () => void = () => {};
@@ -417,6 +436,8 @@ export struct ProteusNavTab {
 
 @Component
 export struct ProteusCollapsibleSection {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop title: ResourceStr = '';
   @Link expanded: boolean;
   @BuilderParam content: () => void;
@@ -443,6 +464,8 @@ export struct ProteusCollapsibleSection {
 
 @Component
 export struct ProteusTreeRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   @Prop depth: number = 0;
   @Prop selected: boolean = false;
@@ -511,6 +534,8 @@ export struct ProteusTreeRow {
 
 @Component
 export struct ProteusParamRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   @Prop value: string = '';
   @Prop editable: boolean = false;
@@ -528,22 +553,25 @@ export struct ProteusParamRow {
         TextInput({ text: this.value })
           .layoutWeight(1)
           .height(ProteusDimens.PARAM_ROW_HEIGHT)
-          .fontSize(ProteusFonts.PARAM_VALUE)
+          .fontSize(ProteusFonts.INPUT)
           .fontColor(ProteusColors.TEXT_PRIMARY)
+          .placeholderFont({ size: ProteusFonts.INPUT })
+          .placeholderColor(ProteusColors.TEXT_SECONDARY)
+          .caretColor(ProteusColors.INPUT_FOCUS)
           .backgroundColor(ProteusColors.CANVAS_BG)
           .borderRadius(0)
           .border({ width: 1, color: ProteusColors.INPUT_BORDER })
-          .padding({ left: 4, right: 4 })
+          .padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H })
           .onChange((v: string) => this.onChange(v))
       } else {
         Text(this.value)
           .layoutWeight(1)
-          .fontSize(ProteusFonts.PARAM_VALUE)
+          .fontSize(ProteusFonts.INPUT)
           .fontColor(ProteusColors.TEXT_PRIMARY)
           .height(ProteusDimens.PARAM_ROW_HEIGHT)
           .backgroundColor(ProteusColors.INPUT_READONLY_BG)
           .border({ width: 1, color: ProteusColors.DIVIDER })
-          .padding({ left: 4, right: 4 })
+          .padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -554,11 +582,80 @@ export struct ProteusParamRow {
   }
 }
 
+/** 统一单行输入：占位符与正文同字号、同行高、同内边距 */
+@Component
+export struct ProteusTextInput {
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
+  @Prop text: string = '';
+  @Prop placeholder: ResourceStr = '';
+  @Prop password: boolean = false;
+  @Prop isEnabled: boolean = true;
+  @Prop mono: boolean = false;
+  @Prop center: boolean = false;
+  onChange: (v: string) => void = () => {};
+  onSubmit: () => void = () => {};
+
+  build() {
+    TextInput({ text: this.text, placeholder: this.placeholder })
+      .height(ProteusDimens.PARAM_ROW_HEIGHT)
+      .fontSize(ProteusFonts.INPUT)
+      .fontColor(ProteusColors.TEXT_PRIMARY)
+      .fontFamily(this.mono ? 'monospace' : 'sans-serif')
+      .placeholderFont({ size: ProteusFonts.INPUT, weight: FontWeight.Normal })
+      .placeholderColor(ProteusColors.TEXT_SECONDARY)
+      .caretColor(ProteusColors.INPUT_FOCUS)
+      .backgroundColor(ProteusColors.CANVAS_BG)
+      .borderRadius(0)
+      .border({ width: 1, color: ProteusColors.INPUT_BORDER })
+      .padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H })
+      .textAlign(this.center ? TextAlign.Center : TextAlign.Start)
+      .type(this.password ? InputType.Password : InputType.Normal)
+      .enabled(this.isEnabled)
+      .onChange((v: string) => this.onChange(v))
+      .onSubmit(() => this.onSubmit())
+  }
+}
+
+/** 统一多行输入：占位符与正文同字号 */
+@Component
+export struct ProteusTextArea {
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
+  @Prop text: string = '';
+  @Prop placeholder: ResourceStr = '';
+  @Prop areaHeight: number = ProteusDimens.TEXTAREA_MIN_HEIGHT;
+  @Prop isEnabled: boolean = true;
+  onChange: (v: string) => void = () => {};
+
+  build() {
+    TextArea({ text: this.text, placeholder: this.placeholder })
+      .height(this.areaHeight)
+      .width('100%')
+      .fontSize(ProteusFonts.INPUT)
+      .fontColor(ProteusColors.TEXT_PRIMARY)
+      .placeholderFont({ size: ProteusFonts.INPUT, weight: FontWeight.Normal })
+      .placeholderColor(ProteusColors.TEXT_SECONDARY)
+      .caretColor(ProteusColors.INPUT_FOCUS)
+      .backgroundColor(ProteusColors.CANVAS_BG)
+      .borderRadius(0)
+      .border({ width: 1, color: ProteusColors.INPUT_BORDER })
+      .padding({
+        left: ProteusDimens.INPUT_PAD_H,
+        right: ProteusDimens.INPUT_PAD_H,
+        top: 8,
+        bottom: 8
+      })
+      .enabled(this.isEnabled)
+      .onChange((v: string) => this.onChange(v))
+  }
+}
+
 /**
  * 图标+标签工具按钮 — 用于工具栏，支持 active 高亮、tooltip、可选纯图标
  */
 @Component
 export struct ProteusToolButton {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop iconName: ProteusIconName = ProteusIconName.SEARCH;
   @Prop label: ResourceStr = '';
   @Prop showLabel: boolean = true;
@@ -653,6 +750,8 @@ export struct ProteusToolButton {
  */
 @Component
 export struct ProteusMenuTrigger {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   entries: ProteusMenuEntry[] = [];
   @State open: boolean = false;
@@ -769,6 +868,8 @@ struct ProteusMenuEntryRow {
  */
 @Component
 export struct ProteusSidebarTab {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: string = '';
   @Prop tooltip: string = '';
   @Prop icon: ProteusIconName = ProteusIconName.SETTINGS;
@@ -858,6 +959,8 @@ export struct ProteusSidebarTab {
  */
 @Component
 export struct ProteusToolGroup {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop title: string = '';
   @BuilderParam content: () => void;
 
@@ -885,6 +988,8 @@ export struct ProteusToolGroup {
  */
 @Component
 export struct ProteusResizer {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop side: 'left' | 'right' = 'right';
   onDrag: (delta: number) => void = () => {};
   @State hovered: boolean = false;
@@ -940,6 +1045,8 @@ export struct ProteusResizer {
  */
 @Component
 export struct ProteusPressRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop selected: boolean = false;
   @Prop heightVal: number = ProteusDimens.NAV_ROW_HEIGHT;
   @Prop showDivider: boolean = true;
@@ -987,6 +1094,8 @@ export struct ProteusPressRow {
 /** 器件导航行：refDes + libraryId */
 @Component
 export struct ProteusNavCompRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop refDes: string = '';
   @Prop libraryId: string = '';
   @Prop selected: boolean = false;
@@ -1042,6 +1151,8 @@ export struct ProteusNavCompRow {
 /** 网络列表行 */
 @Component
 export struct ProteusNavNetRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: string = '';
   onAction: () => void = () => {};
   @State private pressed: boolean = false;
@@ -1078,6 +1189,8 @@ export struct ProteusNavNetRow {
 /** ERC 错误列表行 */
 @Component
 export struct ProteusErcRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop mark: string = '⚠';
   @Prop markColor: string = ProteusColors.ERC_WARN;
   @Prop desc: string = '';
@@ -1121,6 +1234,8 @@ export struct ProteusErcRow {
 /** 键值设置行：左侧强调色键名 + 描述 */
 @Component
 export struct ProteusKeyDescRow {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop keyLabel: string = '';
   @Prop description: string = '';
   @Prop keyWidth: number = 72;
@@ -1161,6 +1276,8 @@ export struct ProteusKeyDescRow {
  */
 @Component
 export struct ProteusSwitch {
+  /** 订阅主题版本：色板变更后强制本组件 rebuild */
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop isOn: boolean = false;
   @Prop onColor: string = '';
   @Prop widthVp: number = 48;

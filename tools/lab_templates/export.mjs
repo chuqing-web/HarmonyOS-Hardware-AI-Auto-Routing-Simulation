@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 导出 15 个实验模板为 .schsim 工程文件
+ * 导出全部实验模板为 .schsim 工程文件
  * 用法: node tools/lab_templates/export.mjs
  */
 import { createHash } from 'node:crypto';

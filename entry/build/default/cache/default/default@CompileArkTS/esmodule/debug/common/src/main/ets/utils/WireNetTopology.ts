@@ -104,6 +104,15 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
     if (lib === 'GND' || lib.endsWith('/GND')) {
         return [makePinGeometry('1', 'GND', 0, -10)];
     }
+    if (lib === 'VEE' || lib.endsWith('/VEE')) {
+        return [makePinGeometry('1', 'VEE', 0, -10)];
+    }
+    if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+        return [
+            makePinGeometry('OUT', 'OUT', -30, 0),
+            makePinGeometry('GND', 'GND', 30, 0)
+        ];
+    }
     if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
         return [
             makePinGeometry('1', 'IN', -40, 0),
@@ -542,6 +551,37 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     ensureNet(doc, gndNetId, 'GND', NetType.GROUND);
     let signalIdx = 0;
     const signalNetForRep = new Map<string, string>();
+    // 重建前：wire.netId → 有意义网名（非 NET_*），用于信号分量继承，避免 HYST_NODE 被改成 NET_13
+    const nameByOldNetId = new Map<string, string>();
+    for (let i = 0; i < doc.nets.length; i++) {
+        const n = doc.nets[i];
+        const nm = (n.name ?? '').trim();
+        if (nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm)) {
+            continue;
+        }
+        nameByOldNetId.set(n.id, nm);
+    }
+    const inheritedNameForRep = new Map<string, string>();
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const w = doc.wires[wi];
+        if (w.points.length < 2 || w.netId.length === 0) {
+            continue;
+        }
+        const inherited = nameByOldNetId.get(w.netId);
+        if (inherited === undefined) {
+            continue;
+        }
+        const k0 = roundKey(w.points[0]);
+        const rep = uf.find(k0);
+        const prev = inheritedNameForRep.get(rep);
+        if (prev === undefined) {
+            inheritedNameForRep.set(rep, inherited);
+        }
+        else if (prev !== inherited) {
+            // 同几何分量冲突多名 → 放弃继承，走 NET_N
+            inheritedNameForRep.set(rep, '');
+        }
+    }
     const wireKindForEndpoints = (k0: string, k1: string): JunctionKind => {
         const j0 = finalKind.get(k0) ?? JunctionKind.SIGNAL;
         const j1 = finalKind.get(k1) ?? JunctionKind.SIGNAL;
@@ -567,9 +607,23 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
         }
         let sid = signalNetForRep.get(rep);
         if (sid === undefined) {
-            signalIdx++;
-            sid = `net_topo_sig_${signalIdx}`;
-            ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+            const keepName = inheritedNameForRep.get(rep) ?? '';
+            if (keepName.length > 0) {
+                const existing = findNetByName(doc, keepName);
+                if (existing !== null) {
+                    sid = existing;
+                }
+                else {
+                    signalIdx++;
+                    sid = `net_topo_sig_${signalIdx}`;
+                    ensureNet(doc, sid, keepName, NetType.SIGNAL);
+                }
+            }
+            else {
+                signalIdx++;
+                sid = `net_topo_sig_${signalIdx}`;
+                ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+            }
             signalNetForRep.set(rep, sid);
         }
         return sid;

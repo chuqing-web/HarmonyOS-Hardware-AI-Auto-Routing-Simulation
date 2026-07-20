@@ -12,8 +12,23 @@ interface ResourceManagerLike {
 }
 
 export class TemplateProjectBootstrap {
+  private static readyPromise: Promise<void> | null = null;
 
-  static async ensure(context: common.UIAbilityContext, baseDir: string): Promise<void> {
+  /** 启动时调用一次；重复调用返回同一 Promise */
+  static ensure(context: common.UIAbilityContext, baseDir: string): Promise<void> {
+    if (TemplateProjectBootstrap.readyPromise === null) {
+      TemplateProjectBootstrap.readyPromise =
+        TemplateProjectBootstrap.runEnsure(context, baseDir);
+    }
+    return TemplateProjectBootstrap.readyPromise;
+  }
+
+  /** 模板/固件沙箱复制完成后再读盘，避免首次插入撞上未就绪文件 */
+  static whenReady(): Promise<void> {
+    return TemplateProjectBootstrap.readyPromise ?? Promise.resolve();
+  }
+
+  private static async runEnsure(context: common.UIAbilityContext, baseDir: string): Promise<void> {
     TemplateProjectBootstrap.mkdirSafe(baseDir);
     TemplateProjectBootstrap.mkdirSafe(`${baseDir}/${ProjectPaths.AUTOSAVE_DIR}`);
     TemplateProjectBootstrap.mkdirSafe(ProjectPaths.userProjectRoot(baseDir));
@@ -66,14 +81,18 @@ export class TemplateProjectBootstrap {
         try {
           const data = await rm.getRawFileContent(rawPath);
           // 始终覆盖：模板 .schsim 会迭代（如加入 netLabelList），旧文件不能永久 skip
+          // 先写 .tmp 再 rename，避免 unlink→write 窗口内插入读到缺失/半写文件
+          const tmpPath = `${outPath}.tmp`;
+          const file = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+          fs.writeSync(file.fd, data.buffer);
+          fs.closeSync(file);
           try {
             fs.accessSync(outPath);
             fs.unlinkSync(outPath);
           } catch (_exist) { /* new file */ }
-          const file = fs.openSync(outPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-          fs.writeSync(file.fd, data.buffer);
-          fs.closeSync(file);
+          fs.renameSync(tmpPath, outPath);
         } catch (_e) {
+          try { fs.unlinkSync(`${outPath}.tmp`); } catch (_cleanup) { /* ignore */ }
           Logger.info('AISchSim', `copy skip: ${outPath}`);
         }
       }

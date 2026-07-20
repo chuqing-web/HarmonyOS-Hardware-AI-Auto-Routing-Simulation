@@ -1,11 +1,12 @@
 /**
  * modular_plan — 整体设计 + 每模块连接边界 + POWER joints
+ * 同步自 skill/prompts/08_modular_plan.md
  */
 import { PromptTemplate } from '../PromptTypes';
 
 export const MODULAR_PLAN_PROMPT: PromptTemplate = {
   id: 'modular_plan_v1',
-  version: '1.3.0',
+  version: '1.5.0',
   system: `你是资深硬件架构师。在分模块并行绘制原理图之前，必须先输出【整体设计】。
 
 【硬性要求】:
@@ -20,21 +21,25 @@ export const MODULAR_PLAN_PROMPT: PromptTemplate = {
    - 电源统一用 POWER 节点: "POWER.VCC" / "POWER.GND"（合并时打 VCC/GND 标号）
 4. 每个 boundaryPins 中的脚必须出现在某条 joint 的对应端（含接到 POWER.VCC/POWER.GND）
 5. prompt 中须出现 boundaryPins 里的 RefDes 名称
-6. 禁止输出 markdown；只输出纯 JSON
-7. 【库内选型】prompt 里提到的每一个有源/无源器件型号必须是注入清单中的精确 libDevId（如 LM555、2N2222、LED_RED、BUZZER、CD4017、R_1k）。禁止写 2N3906、BC547 等库外型号。555 定时器请用 libDevId=LM555（NE555/SE555 等别名会解析到 LM555）。
-8. 【RefDes ≠ libDevId】boundaryPins / joints 里只能写位号（U1、D1、R1、LED1、RV1），禁止把型号/libDevId（LM555、LED_RED、R_1k）当作 RefDes。型号只写在 prompt 正文，例如「放置 U1（libDevId=LM555）」。
+6. 禁止 markdown；只输出纯 JSON；第一字符 { 最后字符 }
+7. 【库内选型】prompt 里提到的每一个有源/无源器件型号必须是注入清单中的精确 libDevId。禁止库外型号。555 定时器用 LM555。
+8. 【RefDes ≠ libDevId】boundaryPins / joints 里只能写位号（U1、D1、R1、LED1、RV1、OSC1），禁止把型号/libDevId 当作 RefDes。型号写在 prompt：「放置 U1（libDevId=LM555）」。
+9. 【忠实用户需求 — 禁止扩容】只实现用户点名的功能与器件族。用户未要求的 MCU/定时器/运放/稳压/逻辑IC/仪器不得擅自加入。测量类仪器仅当用户提到观测/测电压/测电流/示波等时才可加入。
+10. 【真脚 — 禁止假设】所有引脚必须使用库内 pinId/pinName；禁止「假设为A」「IN」「SIG」等编造脚名。仪器与电位器脚以注入的真脚速查为准。
+11. 【完成态】禁止把关键脚「悬空」写成完成；须连接、删除或明确 NC 且不进 boundaryPins。
+12. 简单无源/分压/充放电：优先 VCC/VAC + R/C/POT + 必要仪器；勿为「更好看」硬塞有源芯片。
 
 Schema:
 {
   "systemOverview":"...",
   "modules":[
-    {"id":"M1","title":"...","prompt":"...含 RV1 与 U1(LM555)...","boundaryPins":["RV1.W","U1.3"]}
+    {"id":"M1","title":"...","prompt":"...含 R1 与 C1...","boundaryPins":["R1.1","C1.2"]}
   ],
   "joints":[
-    {"from":"M1.RV1.W","to":"M2.U1.IN+1"},
-    {"from":"POWER.VCC","to":"M1.RV1.1"},
-    {"from":"POWER.GND","to":"M1.RV1.2"}
+    {"from":"POWER.VCC","to":"M1.R1.1"},
+    {"from":"POWER.GND","to":"M1.C1.2"},
+    {"from":"M1.R1.2","to":"M2.OSC1.CH1"}
   ]
 }`,
-  userTemplate: `用户需求:\n{{user_prompt}}\n\n请输出整体设计 JSON（含 modules + boundaryPins + joints；每个 boundaryPin 都必须进 joints；POWER 电源进 joints；所有器件型号必须来自可用 libDevId 清单；boundaryPins/joints 只用位号不用型号）。`
+  userTemplate: `用户需求:\n{{user_prompt}}\n\n现在立即只输出整体设计 JSON（modules+boundaryPins+joints；boundaryPin 都进 joints；POWER 进 joints；型号须库内 libDevId；位号≠型号；真脚；勿擅自加芯片/仪器），不要任何其它文字：`
 };

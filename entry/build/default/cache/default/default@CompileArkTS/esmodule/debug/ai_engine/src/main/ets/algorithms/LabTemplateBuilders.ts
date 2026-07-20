@@ -365,6 +365,38 @@ export function buildLabAnalogIc(doc: SchematicDocument): void {
     K.join(doc, 'BUCK_OUT', NetType.POWER, [
         p(lBuck, '2'), p(cBout, '1'), p(buck, '4'), p(buck, '5'), p(rBfb, '1')
     ]);
+    // U5 LM555 无稳态：独立岛（x≥1400），远离 Buck；信号用标号并网
+    // 根因1：kit 缺 555 脚偏移 → 全脚落中心 → VCC∪GND 短路
+    // 根因2：DISCH 水平线 y=TRIG → T 结并入 555_CAP
+    const t555 = K.place(doc, 'LM555', 'U5', { x: 1560, y: 160 });
+    const ra = R(doc, 'R_1k', 'RA', 1400, 60);
+    const rb = R(doc, 'R_10k', 'RB', 1400, 200);
+    const ct = C(doc, 'C_10uF', 'CT', 1400, 320);
+    const cDec555 = C(doc, 'C_100nF', 'CD555', 1720, 40);
+    const cCtrl = C(doc, 'C_100nF', 'CC555', 1720, 300);
+    const rLed = R(doc, 'R_330', 'RLED', 1780, 160);
+    const led555 = K.place(doc, 'LED_RED', 'D555', { x: 1920, y: 160 });
+    K.joinByLabel(doc, 'VCC', NetType.POWER, [
+        p(vcc, '1', 'VCC'), p(t555, 'VCC', 'VCC'), p(t555, 'RESET', 'RESET'),
+        p(ra, '1'), p(cDec555, '1')
+    ]);
+    K.joinByLabel(doc, 'DISCH', NetType.SIGNAL, [
+        p(ra, '2'), p(rb, '1'), p(t555, 'DISCH', 'DISCH')
+    ]);
+    K.joinByLabel(doc, '555_CAP', NetType.SIGNAL, [
+        p(rb, '2'), p(t555, 'THRES', 'THRES'), p(t555, 'TRIG', 'TRIG'), p(ct, '1')
+    ]);
+    K.joinByLabel(doc, 'LM555_OUT', NetType.SIGNAL, [
+        p(t555, 'OUT', 'OUT'), p(rLed, '1')
+    ]);
+    K.series2(doc, 'LED555', p(rLed, '2'), p(led555, 'A', 'A'));
+    K.joinByLabel(doc, 'CTRL', NetType.SIGNAL, [
+        p(t555, 'CTRL', 'CTRL'), p(cCtrl, '1')
+    ]);
+    K.joinByLabel(doc, 'GND', NetType.GROUND, [
+        p(gnd, '1', 'GND'), p(t555, 'GND', 'GND'), p(ct, '2'),
+        p(cDec555, '2'), p(cCtrl, '2'), p(led555, 'K', 'K')
+    ]);
 }
 /** lab_digital: 门电路激励 + LA 探头 */
 export function buildLabDigital(doc: SchematicDocument): void {
@@ -717,4 +749,21 @@ export function buildLabInstruments(doc: SchematicDocument): void {
     K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(osc, 'CH2', 'CH2')]);
     // stub+标号：GND 母线横穿 OSC 易把 CH4 并地（与滤波电容接地同一策略）
     K.stubLabel(doc, p(osc, 'GND', 'GND'), 'GND', NetType.GROUND);
+}
+/** lab_potentiometer: 三档滑动变阻器分压 + 电压表（补齐 POT_1k/10k/100k 覆盖） */
+export function buildLabPotentiometer(doc: SchematicDocument): void {
+    const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
+    const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 420 });
+    const potIds = ['POT_1k', 'POT_10k', 'POT_100k'];
+    for (let i = 0; i < potIds.length; i++) {
+        const ox = 200 + i * 280;
+        const pot = K.place(doc, potIds[i], `RV${i + 1}`, { x: ox, y: 200 });
+        pot.parameters.set('wiper', '0.5');
+        const vm = K.place(doc, 'VOLTMETER_DC', `M${i + 1}`, { x: ox + 120, y: 80 });
+        K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(pot, '1')]);
+        K.join(doc, `WIPER${i + 1}`, NetType.SIGNAL, [p(pot, 'W', 'W'), p(vm, 'V+', 'V+')]);
+        K.join(doc, 'GND', NetType.GROUND, [
+            p(gnd, '1', 'GND'), p(pot, '2'), p(vm, 'COM', 'COM')
+        ]);
+    }
 }

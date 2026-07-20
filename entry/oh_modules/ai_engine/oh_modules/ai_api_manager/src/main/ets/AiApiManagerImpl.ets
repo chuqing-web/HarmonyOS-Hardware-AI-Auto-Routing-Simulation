@@ -22,12 +22,22 @@ import {
 /** 流水线输出上限；配合 disableThinking，避免推理占满额度 */
 const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
 
-/**
- * 复杂原理图 LLM 单次回复可能极慢（深推理/长 JSON）。
- * 必须耐心等待：连接超时 2min，读超时 30min。
- */
+/** 复杂原理图 LLM 单次回复可能极慢（深推理/长 JSON）。 */
 const AI_HTTP_CONNECT_TIMEOUT_MS = 120000;
 const AI_HTTP_READ_TIMEOUT_MS = 1800000;
+/** 连接测试用短超时，避免 DNS/代理失败时干等 */
+const AI_HTTP_TEST_CONNECT_TIMEOUT_MS = 20000;
+const AI_HTTP_TEST_READ_TIMEOUT_MS = 60000;
+
+/** 公共 DNS（直连 DNS 失败时兜底） */
+const AI_PUBLIC_DNS_SERVERS: string[] = ['223.5.5.5', '119.29.29.29', '8.8.8.8'];
+
+interface HttpTransportOpts {
+  usingProxy: boolean;
+  usePublicDns: boolean;
+  connectTimeoutMs: number;
+  readTimeoutMs: number;
+}
 
 /** HarmonyOS http / BusinessError 常不是 Error 实例，`${e}` 会变成 [object Object] */
 function formatCaughtError(e: Object | string | number | boolean | Error | null | undefined): string {
@@ -43,7 +53,6 @@ function formatCaughtError(e: Object | string | number | boolean | Error | null 
   if (e instanceof Error) {
     return e.message.length > 0 ? e.message : e.name;
   }
-  // BusinessError / 普通对象：优先 code+message
   try {
     const anyErr = e as Record<string, Object>;
     const code = anyErr['code'];
@@ -65,6 +74,35 @@ function formatCaughtError(e: Object | string | number | boolean | Error | null 
   } catch (_jsonFail) {
     return 'unprintable error';
   }
+}
+
+function isDnsOrHostResolveError(errMsg: string): boolean {
+  const m = errMsg.toLowerCase();
+  return m.indexOf('2300006') >= 0
+    || m.indexOf('resolve the host') >= 0
+    || m.indexOf('resolve host') >= 0
+    || m.indexOf('couldn\'t resolve') >= 0
+    || m.indexOf('could not resolve') >= 0
+    || m.indexOf('name not resolved') >= 0;
+}
+
+function humanizeHttpError(errMsg: string, triedProxy: boolean): string {
+  if (isDnsOrHostResolveError(errMsg)) {
+    if (triedProxy) {
+      return '域名解析失败(DNS)。已尝试系统代理仍失败：请确认 Clash/VPN 已开启且系统代理可用，或到「平台设置」清空全局代理后直连重试';
+    }
+    return '域名解析失败(DNS)。请检查设备能否上网；若使用 Clash/VPN，请在「平台设置」填写任意非空代理开关以启用系统代理后重试';
+  }
+  if (errMsg.indexOf('401') >= 0 || errMsg.toLowerCase().indexOf('unauthorized') >= 0) {
+    return '认证失败(401)：请检查 API Key 是否正确、是否过期';
+  }
+  if (errMsg.indexOf('429') >= 0) {
+    return '触发限流(429)：请稍后重试或更换额度充足的 Key';
+  }
+  if (errMsg.toLowerCase().indexOf('timeout') >= 0 || errMsg.indexOf('2300029') >= 0) {
+    return '请求超时：网络过慢或服务无响应，请检查代理/网络后重试';
+  }
+  return errMsg;
 }
 
 export class AiApiManagerImpl implements IAiApiManager {
@@ -299,21 +337,31 @@ export class AiApiManagerImpl implements IAiApiManager {
       Logger.error(INSTR_TRACE_TAG, `[AI_API] testConnection FAIL id=${id} not found`);
       return { success: false, error: 'API not found' };
     }
+    if (!this.networkMode.shouldAllowCloudApi() && api.provider !== AiProviderType.OLLAMA) {
+      Logger.warn(INSTR_TRACE_TAG, `[AI_API] testConnection REJECT offline id=${id}`);
+      return { success: false, error: '离线模式已开启：禁止测试云端 API，请先关闭离线模式' };
+    }
 
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] testConnection START id=${id} name=${api.name}` +
-      ` provider=${api.provider} model=${api.model} url=${api.baseUrl}`);
-    const result = await this.sendRequest(api, CIRCUIT_TEST_PROMPT, { maxTokens: 50 });
+      ` provider=${api.provider} model=${api.model} url=${api.baseUrl}` +
+      ` preferProxy=${this.shouldUseSystemProxy(api.id)}`);
+    const result = await this.sendRequest(api, CIRCUIT_TEST_PROMPT, {
+      maxTokens: 50,
+      connectTimeoutMs: AI_HTTP_TEST_CONNECT_TIMEOUT_MS,
+      readTimeoutMs: AI_HTTP_TEST_READ_TIMEOUT_MS
+    });
+    const err = result.error ?? '';
     const status = result.success ? ApiConnectionStatus.OK :
-      (result.error?.includes('401') ? ApiConnectionStatus.AUTH_ERROR :
-        result.error?.includes('429') ? ApiConnectionStatus.RATE_LIMIT :
-          result.error?.includes('timeout') ? ApiConnectionStatus.TIMEOUT :
-            ApiConnectionStatus.NETWORK_ERROR);
+      (err.indexOf('401') >= 0 ? ApiConnectionStatus.AUTH_ERROR :
+        err.indexOf('429') >= 0 ? ApiConnectionStatus.RATE_LIMIT :
+          (err.indexOf('超时') >= 0 || err.toLowerCase().indexOf('timeout') >= 0) ?
+            ApiConnectionStatus.TIMEOUT : ApiConnectionStatus.NETWORK_ERROR);
 
     this.updateApi(id, { lastStatus: status, lastTestedAt: new Date().toISOString() });
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] testConnection END id=${id} ok=${result.success}` +
-      ` status=${status} err=${result.error ?? ''}` +
+      ` status=${status} err=${err}` +
       ` respPreview=${result.data ? result.data.substring(0, 80) : ''}`);
     return { success: result.success, data: result.success, error: result.error };
   }
@@ -451,159 +499,220 @@ export class AiApiManagerImpl implements IAiApiManager {
     const apiKey = this.getDecryptedKey(api.id);
     const template = getTemplate(api.provider);
     const chatPath = template?.chatPath ?? '/chat/completions';
-    const url = `${api.baseUrl}${chatPath}`;
+    const base = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
+    const url = `${base}${chatPath}`;
 
     const maxTokens = this.resolveMaxTokens(api, options);
+    const connectTimeoutMs = options?.connectTimeoutMs !== undefined
+      ? options.connectTimeoutMs : AI_HTTP_CONNECT_TIMEOUT_MS;
+    const readTimeoutMs = options?.readTimeoutMs !== undefined
+      ? options.readTimeoutMs : AI_HTTP_READ_TIMEOUT_MS;
+    const preferProxy = this.shouldUseSystemProxy(api.id);
+
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] HTTP POST id=${api.id} url=${url} model=${api.model}` +
       ` keyLen=${apiKey.length} promptLen=${prompt.length}` +
       ` maxTokens=${maxTokens}` +
       ` temp=${options?.temperature ?? api.temperature}` +
       ` disableThinking=${options?.disableThinking === true}` +
-      ` connectTimeoutMs=${AI_HTTP_CONNECT_TIMEOUT_MS}` +
-      ` readTimeoutMs=${AI_HTTP_READ_TIMEOUT_MS}`);
+      ` preferProxy=${preferProxy}` +
+      ` connectTimeoutMs=${connectTimeoutMs}` +
+      ` readTimeoutMs=${readTimeoutMs}`);
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] WAIT long reply — complex prompts may take many minutes, do not cancel`);
     traceAiPayload('AI_API', 'PROMPT', prompt,
       `id=${api.id} model=${api.model} cap=${options?.capability ?? 'any'}`);
 
+    const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
+    const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
+    const body = JSON.stringify(buildChatRequestBody(
+      api.model, messages, maxTokens,
+      options?.temperature ?? api.temperature,
+      options?.disableThinking
+    ));
+
+    // 本机系统 DNS 常失败：优先公共 DNS 直连，再回退代理/系统 DNS
+    const attempts: HttpTransportOpts[] = [
+      { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
+      { usingProxy: preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs },
+      { usingProxy: !preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs }
+    ];
+
+    let lastErr = '';
+    let usedProxy = preferProxy;
+    for (let i = 0; i < attempts.length; i++) {
+      const opt = attempts[i];
+      if (i > 0 && opt.usingProxy === attempts[i - 1].usingProxy &&
+        opt.usePublicDns === attempts[i - 1].usePublicDns) {
+        continue;
+      }
+      usedProxy = opt.usingProxy;
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] HTTP attempt#${i + 1} id=${api.id} usingProxy=${opt.usingProxy}` +
+        ` publicDns=${opt.usePublicDns}`);
+      const attempt = await this.executeHttpPost(url, headers, body, opt);
+      if (attempt.success && attempt.data !== undefined) {
+        return this.parseChatHttpSuccess(api, attempt.data);
+      }
+      lastErr = attempt.error ?? 'unknown';
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_API] HTTP attempt#${i + 1} FAIL id=${api.id}: ${lastErr}`);
+      // 业务错误（401/429 等）不再翻代理
+      if (lastErr.indexOf('API returned') >= 0) {
+        if (lastErr.indexOf('401') >= 0) {
+          const backupKey = this.encryptedKeys.get(`${api.id}_backup`);
+          if (backupKey) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] retry with backup key id=${api.id}`);
+            return this.sendRequestWithKey(api, prompt, CryptoUtil.decrypt(backupKey), options);
+          }
+          this.failedApiIds.add(api.id);
+        } else if (lastErr.indexOf('API returned 4') >= 0) {
+          this.failedApiIds.add(api.id);
+        }
+        break;
+      }
+      if (!isDnsOrHostResolveError(lastErr)) {
+        // 非 DNS 传输错误：仍尝试下一档（代理翻转）一次
+        continue;
+      }
+    }
+
+    return {
+      success: false,
+      error: humanizeHttpError(lastErr, usedProxy)
+    };
+  }
+
+  private async executeHttpPost(
+    url: string,
+    headers: Record<string, string>,
+    body: string,
+    opt: HttpTransportOpts
+  ): Promise<Result<string>> {
+    let httpRequest: http.HttpRequest | null = null;
     try {
-      const httpRequest = http.createHttp();
-      const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
-
-      const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-      const body = JSON.stringify(buildChatRequestBody(
-        api.model, messages, maxTokens,
-        options?.temperature ?? api.temperature,
-        options?.disableThinking
-      ));
-
-      const useProxy = this.shouldUseSystemProxy(api.id);
-      const response = await httpRequest.request(url, {
+      httpRequest = http.createHttp();
+      const reqOptions: http.HttpRequestOptions = {
         method: http.RequestMethod.POST,
         header: headers,
         extraData: body,
-        connectTimeout: AI_HTTP_CONNECT_TIMEOUT_MS,
-        readTimeout: AI_HTTP_READ_TIMEOUT_MS,
-        usingProxy: useProxy
-      });
-      httpRequest.destroy();
-
+        connectTimeout: opt.connectTimeoutMs,
+        readTimeout: opt.readTimeoutMs,
+        usingProxy: opt.usingProxy
+      };
+      if (opt.usePublicDns) {
+        // API 11+：指定公共 DNS，缓解本机 DNS/代理劫持导致的 2300006
+        (reqOptions as http.HttpRequestOptions).dnsServers = AI_PUBLIC_DNS_SERVERS;
+      }
+      const response = await httpRequest.request(url, reqOptions);
       if (response.responseCode === 200) {
-        this.failedApiIds.delete(api.id);
-        const rawBody = response.result as string;
-        const parsed = JSON.parse(rawBody) as ChatCompletionResponse;
-        if (parsed.choices && parsed.choices.length > 0) {
-          const content = extractChoiceContent(parsed.choices[0]);
-          Logger.info(INSTR_TRACE_TAG,
-            `[AI_API] HTTP 200 id=${api.id} contentLen=${content.length}`);
-          traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} model=${api.model}`);
-          if (content.length === 0) {
-            let finishReason = 'unknown';
-            const fr = parsed.choices[0].finish_reason;
-            if (fr !== undefined && fr !== null && fr.length > 0) {
-              finishReason = fr;
-            }
-            Logger.warn(INSTR_TRACE_TAG,
-              `[AI_API] HTTP 200 id=${api.id} empty content finish_reason=${finishReason}`);
-            return { success: false,
-              error: `LLM returned empty content (finish_reason=${finishReason})` };
-          }
-          return { success: true, data: content };
-        }
-        Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} raw body (no choices)`);
-        traceAiPayload('AI_API', 'REPLY', rawBody, `id=${api.id} raw=true`);
-        if (rawBody.length === 0) {
-          Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} empty response body`);
-          return { success: false, error: 'LLM returned empty response body' };
-        }
+        const rawBody = typeof response.result === 'string'
+          ? response.result : `${response.result}`;
         return { success: true, data: rawBody };
       }
-
       const errBody = typeof response.result === 'string' ? response.result : `${response.result}`;
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_API] HTTP ${response.responseCode} id=${api.id}`);
-      traceAiPayload('AI_API', 'REPLY_ERR', errBody,
-        `id=${api.id} code=${response.responseCode}`);
-      if (response.responseCode === 401) {
-        const backupKey = this.encryptedKeys.get(`${api.id}_backup`);
-        if (backupKey) {
-          Logger.info(INSTR_TRACE_TAG, `[AI_API] retry with backup key id=${api.id}`);
-          return this.sendRequestWithKey(api, prompt, CryptoUtil.decrypt(backupKey), options);
-        }
-      }
-
-      // Only blacklist on permanent client errors (4xx); 5xx/network errors are transient
-      if (response.responseCode >= 400 && response.responseCode < 500) {
-        this.failedApiIds.add(api.id);
-      }
+        `[AI_API] HTTP ${response.responseCode} bodyPreview=${errBody.substring(0, 160)}`);
+      traceAiPayload('AI_API', 'REPLY_ERR', errBody, `code=${response.responseCode}`);
       return { success: false, error: `API returned ${response.responseCode}` };
     } catch (e) {
-      // Network exceptions are transient — do NOT blacklist, allow retries
       const errMsg = formatCaughtError(e);
       Logger.error(INSTR_TRACE_TAG,
-        `[AI_API] HTTP exception id=${api.id} url=${url}: ${errMsg}`);
+        `[AI_API] HTTP exception url=${url} proxy=${opt.usingProxy} dns=${opt.usePublicDns}: ${errMsg}`);
       return { success: false, error: `Request failed: ${errMsg}` };
+    } finally {
+      if (httpRequest !== null) {
+        httpRequest.destroy();
+      }
     }
+  }
+
+  private parseChatHttpSuccess(api: AiApiConfig, rawBody: string): Result<string> {
+    this.failedApiIds.delete(api.id);
+    try {
+      const parsed = JSON.parse(rawBody) as ChatCompletionResponse;
+      if (parsed.choices && parsed.choices.length > 0) {
+        const content = extractChoiceContent(parsed.choices[0]);
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_API] HTTP 200 id=${api.id} contentLen=${content.length}`);
+        traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} model=${api.model}`);
+        if (content.length === 0) {
+          let finishReason = 'unknown';
+          const fr = parsed.choices[0].finish_reason;
+          if (fr !== undefined && fr !== null && fr.length > 0) {
+            finishReason = fr;
+          }
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_API] HTTP 200 id=${api.id} empty content finish_reason=${finishReason}`);
+          return {
+            success: false,
+            error: `LLM returned empty content (finish_reason=${finishReason})`
+          };
+        }
+        return { success: true, data: content };
+      }
+    } catch (_parseErr) {
+      // fall through
+    }
+    Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} raw body (no choices)`);
+    traceAiPayload('AI_API', 'REPLY', rawBody, `id=${api.id} raw=true`);
+    if (rawBody.length === 0) {
+      return { success: false, error: 'LLM returned empty response body' };
+    }
+    return { success: true, data: rawBody };
   }
 
   private async sendRequestWithKey(api: AiApiConfig, prompt: string, apiKey: string,
     options?: ChatOptions): Promise<Result<string>> {
     const template = getTemplate(api.provider);
-    const url = `${api.baseUrl}${template?.chatPath ?? '/chat/completions'}`;
+    const base = api.baseUrl.endsWith('/') ? api.baseUrl.substring(0, api.baseUrl.length - 1) : api.baseUrl;
+    const url = `${base}${template?.chatPath ?? '/chat/completions'}`;
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] HTTP POST (backupKey) id=${api.id} url=${url} model=${api.model}` +
       ` promptLen=${prompt.length}`);
     traceAiPayload('AI_API', 'PROMPT', prompt, `id=${api.id} backupKey=true`);
     const maxTokens = this.resolveMaxTokens(api, options);
-    try {
-      const httpRequest = http.createHttp();
-      const reqHeaders: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
-      const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-      const body = JSON.stringify(buildChatRequestBody(
-        api.model, messages, maxTokens,
-        options?.temperature ?? api.temperature,
-        options?.disableThinking
-      ));
-      const useProxy = this.shouldUseSystemProxy(api.id);
-      const response = await httpRequest.request(url, {
-        method: http.RequestMethod.POST,
-        header: reqHeaders,
-        extraData: body,
-        connectTimeout: AI_HTTP_CONNECT_TIMEOUT_MS,
-        readTimeout: AI_HTTP_READ_TIMEOUT_MS,
-        usingProxy: useProxy
-      });
-      httpRequest.destroy();
-      if (response.responseCode === 200) {
-        const parsed = JSON.parse(response.result as string) as ChatCompletionResponse;
-        const choices = parsed.choices;
-        if (choices && choices.length > 0) {
-          const content = extractChoiceContent(choices[0]);
-          traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} backupKey=true`);
-          return { success: true, data: content };
-        }
-        return { success: false, error: 'Empty response' };
+    const connectTimeoutMs = options?.connectTimeoutMs !== undefined
+      ? options.connectTimeoutMs : AI_HTTP_CONNECT_TIMEOUT_MS;
+    const readTimeoutMs = options?.readTimeoutMs !== undefined
+      ? options.readTimeoutMs : AI_HTTP_READ_TIMEOUT_MS;
+    const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
+    const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
+    const body = JSON.stringify(buildChatRequestBody(
+      api.model, messages, maxTokens,
+      options?.temperature ?? api.temperature,
+      options?.disableThinking
+    ));
+    const preferProxy = this.shouldUseSystemProxy(api.id);
+    const attempts: HttpTransportOpts[] = [
+      { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
+      { usingProxy: preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs },
+      { usingProxy: !preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs }
+    ];
+    let lastErr = '';
+    let usedProxy = preferProxy;
+    for (let i = 0; i < attempts.length; i++) {
+      const opt = attempts[i];
+      usedProxy = opt.usingProxy;
+      const attempt = await this.executeHttpPost(url, headers, body, opt);
+      if (attempt.success && attempt.data !== undefined) {
+        return this.parseChatHttpSuccess(api, attempt.data);
       }
-      const errBody = typeof response.result === 'string' ? response.result : `${response.result}`;
-      traceAiPayload('AI_API', 'REPLY_ERR', errBody,
-        `id=${api.id} backupKey=true code=${response.responseCode}`);
-      return { success: false, error: `Backup key failed: ${response.responseCode}` };
-    } catch (e) {
-      const errMsg = formatCaughtError(e);
-      Logger.error(INSTR_TRACE_TAG,
-        `[AI_API] HTTP exception backupKey id=${api.id} url=${url}: ${errMsg}`);
-      return { success: false, error: `Backup request failed: ${errMsg}` };
+      lastErr = attempt.error ?? 'unknown';
+      if (lastErr.indexOf('API returned') >= 0) {
+        break;
+      }
     }
+    return { success: false, error: humanizeHttpError(lastErr, usedProxy) };
   }
 
-  /** 用户配置了全局/API 代理时启用 HTTP 系统代理 */
+  /** 用户配置了全局代理时启用 HTTP 系统代理（鸿蒙应用默认不走系统代理） */
   private shouldUseSystemProxy(apiId: string): boolean {
     const cfg = this.networkMode.getConfig();
     if (cfg.offlineMode) {
       return false;
     }
-    if (cfg.globalProxy.trim().length > 0) {
+    if (cfg.systemProxy || cfg.globalProxy.trim().length > 0) {
       return true;
     }
     const effective = this.networkMode.getEffectiveProxy(apiId);

@@ -2,6 +2,7 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
     Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
 }
 interface ProteusSwitch_Params {
+    themeRev?: number;
     isOn?: boolean;
     onColor?: string;
     widthVp?: number;
@@ -9,6 +10,7 @@ interface ProteusSwitch_Params {
     onChange?: (on: boolean) => void;
 }
 interface ProteusKeyDescRow_Params {
+    themeRev?: number;
     keyLabel?: string;
     description?: string;
     keyWidth?: number;
@@ -17,6 +19,7 @@ interface ProteusKeyDescRow_Params {
     hovered?: boolean;
 }
 interface ProteusErcRow_Params {
+    themeRev?: number;
     mark?: string;
     markColor?: string;
     desc?: string;
@@ -25,12 +28,14 @@ interface ProteusErcRow_Params {
     hovered?: boolean;
 }
 interface ProteusNavNetRow_Params {
+    themeRev?: number;
     label?: string;
     onAction?: () => void;
     pressed?: boolean;
     hovered?: boolean;
 }
 interface ProteusNavCompRow_Params {
+    themeRev?: number;
     refDes?: string;
     libraryId?: string;
     selected?: boolean;
@@ -39,6 +44,7 @@ interface ProteusNavCompRow_Params {
     hovered?: boolean;
 }
 interface ProteusPressRow_Params {
+    themeRev?: number;
     selected?: boolean;
     heightVal?: number;
     showDivider?: boolean;
@@ -50,6 +56,7 @@ interface ProteusPressRow_Params {
     hovered?: boolean;
 }
 interface ProteusResizer_Params {
+    themeRev?: number;
     side?: 'left' | 'right';
     onDrag?: (delta: number) => void;
     hovered?: boolean;
@@ -58,10 +65,12 @@ interface ProteusResizer_Params {
     lastOffset?: number;
 }
 interface ProteusToolGroup_Params {
+    themeRev?: number;
     title?: string;
     content?: () => void;
 }
 interface ProteusSidebarTab_Params {
+    themeRev?: number;
     label?: string;
     tooltip?: string;
     icon?: ProteusIconName;
@@ -79,12 +88,14 @@ interface ProteusMenuEntryRow_Params {
     hovered?: boolean;
 }
 interface ProteusMenuTrigger_Params {
+    themeRev?: number;
     label?: ResourceStr;
     entries?: ProteusMenuEntry[];
     open?: boolean;
     pressed?: boolean;
 }
 interface ProteusToolButton_Params {
+    themeRev?: number;
     iconName?: ProteusIconName;
     label?: ResourceStr;
     showLabel?: boolean;
@@ -96,13 +107,34 @@ interface ProteusToolButton_Params {
     tipVisible?: boolean;
     pressed?: boolean;
 }
+interface ProteusTextArea_Params {
+    themeRev?: number;
+    text?: string;
+    placeholder?: ResourceStr;
+    areaHeight?: number;
+    isEnabled?: boolean;
+    onChange?: (v: string) => void;
+}
+interface ProteusTextInput_Params {
+    themeRev?: number;
+    text?: string;
+    placeholder?: ResourceStr;
+    password?: boolean;
+    isEnabled?: boolean;
+    mono?: boolean;
+    center?: boolean;
+    onChange?: (v: string) => void;
+    onSubmit?: () => void;
+}
 interface ProteusParamRow_Params {
+    themeRev?: number;
     label?: ResourceStr;
     value?: string;
     editable?: boolean;
     onChange?: (v: string) => void;
 }
 interface ProteusTreeRow_Params {
+    themeRev?: number;
     label?: ResourceStr;
     depth?: number;
     selected?: boolean;
@@ -115,29 +147,34 @@ interface ProteusTreeRow_Params {
     onToggleExpand?: () => void;
 }
 interface ProteusCollapsibleSection_Params {
+    themeRev?: number;
     title?: ResourceStr;
     expanded?: boolean;
     content?: () => void;
 }
 interface ProteusNavTab_Params {
+    themeRev?: number;
     label?: ResourceStr;
     selected?: boolean;
     onSelect?: () => void;
     pressed?: boolean;
 }
 interface ProteusMenuItem_Params {
+    themeRev?: number;
     label?: ResourceStr;
     pressed?: boolean;
     hovered?: boolean;
     onAction?: () => void;
 }
 interface ProteusChipGrid_Params {
+    themeRev?: number;
     labels?: string[];
     selectedIdx?: number;
     colsPerRow?: number;
     onSelect?: (idx: number) => void;
 }
 interface ProteusChipTab_Params {
+    themeRev?: number;
     label?: string;
     selected?: boolean;
     fillWidth?: boolean;
@@ -145,9 +182,11 @@ interface ProteusChipTab_Params {
     pressed?: boolean;
 }
 interface ProteusSectionTitle_Params {
+    themeRev?: number;
     title?: string;
 }
 interface ProteusClassicBtn_Params {
+    themeRev?: number;
     label?: ResourceStr;
     widthVal?: string | number;
     heightVal?: number;
@@ -157,14 +196,17 @@ interface ProteusClassicBtn_Params {
     pressed?: boolean;
 }
 interface ProteusToolBtn_Params {
+    themeRev?: number;
     label?: string;
     active?: boolean;
     onAction?: () => void;
     pressed?: boolean;
 }
 interface ProteusVDivider_Params {
+    themeRev?: number;
 }
 interface ProteusPanelTitle_Params {
+    themeRev?: number;
     title?: ResourceStr;
     collapsed?: boolean;
     tooltip?: string;
@@ -173,6 +215,7 @@ interface ProteusPanelTitle_Params {
     pressed?: boolean;
 }
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { ProteusIcon, ProteusIconName } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusIcons";
 /** 经典凹陷边框：抬起=亮上左/暗下右；按下=反转 */
 function proteusBtnBorder(pressed: boolean): BorderOptions {
@@ -223,6 +266,7 @@ export class ProteusPanelTitle extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__title = new SynchedPropertyObjectOneWayPU(params.title, this, "title");
         this.__collapsed = new SynchedPropertySimpleOneWayPU(params.collapsed, this, "collapsed");
         this.__tooltip = new SynchedPropertySimpleOneWayPU(params.tooltip, this, "tooltip");
@@ -258,6 +302,7 @@ export class ProteusPanelTitle extends ViewPU {
         this.__tooltip.reset(params.tooltip);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__title.purgeDependencyOnElmtId(rmElmtId);
         this.__collapsed.purgeDependencyOnElmtId(rmElmtId);
         this.__tooltip.purgeDependencyOnElmtId(rmElmtId);
@@ -265,6 +310,7 @@ export class ProteusPanelTitle extends ViewPU {
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__title.aboutToBeDeleted();
         this.__collapsed.aboutToBeDeleted();
         this.__tooltip.aboutToBeDeleted();
@@ -272,6 +318,14 @@ export class ProteusPanelTitle extends ViewPU {
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __title: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get title() {
@@ -404,6 +458,7 @@ export class ProteusVDivider extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -412,10 +467,20 @@ export class ProteusVDivider extends ViewPU {
     updateStateVars(params: ProteusVDivider_Params) {
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -437,6 +502,7 @@ export class ProteusToolBtn extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertySimpleOneWayPU(params.label, this, "label");
         this.__active = new SynchedPropertySimpleOneWayPU(params.active, this, "active");
         this.onAction = () => { };
@@ -463,16 +529,26 @@ export class ProteusToolBtn extends ViewPU {
         this.__active.reset(params.active);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__active.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__active.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<string>;
     get label() {
@@ -541,6 +617,7 @@ export class ProteusClassicBtn extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__widthVal = new SynchedPropertySimpleOneWayPU(params.widthVal, this, "widthVal");
         this.__heightVal = new SynchedPropertySimpleOneWayPU(params.heightVal, this, "heightVal");
@@ -581,6 +658,7 @@ export class ProteusClassicBtn extends ViewPU {
         this.__tooltip.reset(params.tooltip);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__widthVal.purgeDependencyOnElmtId(rmElmtId);
         this.__heightVal.purgeDependencyOnElmtId(rmElmtId);
@@ -589,6 +667,7 @@ export class ProteusClassicBtn extends ViewPU {
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__widthVal.aboutToBeDeleted();
         this.__heightVal.aboutToBeDeleted();
@@ -597,6 +676,14 @@ export class ProteusClassicBtn extends ViewPU {
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -706,6 +793,7 @@ export class ProteusSectionTitle extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__title = new SynchedPropertySimpleOneWayPU(params.title, this, "title");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
@@ -719,12 +807,22 @@ export class ProteusSectionTitle extends ViewPU {
         this.__title.reset(params.title);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__title.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__title.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __title: SynchedPropertySimpleOneWayPU<string>;
     get title() {
@@ -754,6 +852,7 @@ export class ProteusChipTab extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertySimpleOneWayPU(params.label, this, "label");
         this.__selected = new SynchedPropertySimpleOneWayPU(params.selected, this, "selected");
         this.__fillWidth = new SynchedPropertySimpleOneWayPU(params.fillWidth, this, "fillWidth");
@@ -785,18 +884,28 @@ export class ProteusChipTab extends ViewPU {
         this.__fillWidth.reset(params.fillWidth);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__selected.purgeDependencyOnElmtId(rmElmtId);
         this.__fillWidth.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__selected.aboutToBeDeleted();
         this.__fillWidth.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<string>;
     get label() {
@@ -880,6 +989,7 @@ export class ProteusChipGrid extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__labels = new SynchedPropertyObjectOneWayPU(params.labels, this, "labels");
         this.__selectedIdx = new SynchedPropertySimpleOneWayPU(params.selectedIdx, this, "selectedIdx");
         this.__colsPerRow = new SynchedPropertySimpleOneWayPU(params.colsPerRow, this, "colsPerRow");
@@ -907,16 +1017,26 @@ export class ProteusChipGrid extends ViewPU {
         this.__colsPerRow.reset(params.colsPerRow);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__labels.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedIdx.purgeDependencyOnElmtId(rmElmtId);
         this.__colsPerRow.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__labels.aboutToBeDeleted();
         this.__selectedIdx.aboutToBeDeleted();
         this.__colsPerRow.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __labels: SynchedPropertySimpleOneWayPU<string[]>;
     get labels() {
@@ -980,7 +1100,7 @@ export class ProteusChipGrid extends ViewPU {
                                         selected: this.selectedIdx === start + offset,
                                         fillWidth: true,
                                         onSelect: () => { this.onSelect(start + offset); }
-                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 335, col: 13 });
+                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 350, col: 13 });
                                     ViewPU.create(componentCall);
                                     let paramsLambda = () => {
                                         return {
@@ -1022,6 +1142,7 @@ export class ProteusMenuItem extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__pressed = new ObservedPropertySimplePU(false, this, "pressed");
         this.__hovered = new ObservedPropertySimplePU(false, this, "hovered");
@@ -1047,16 +1168,26 @@ export class ProteusMenuItem extends ViewPU {
         this.__label.reset(params.label);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -1115,6 +1246,7 @@ export class ProteusNavTab extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__selected = new SynchedPropertySimpleOneWayPU(params.selected, this, "selected");
         this.onSelect = () => { };
@@ -1141,16 +1273,26 @@ export class ProteusNavTab extends ViewPU {
         this.__selected.reset(params.selected);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__selected.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__selected.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -1219,6 +1361,7 @@ export class ProteusCollapsibleSection extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__title = new SynchedPropertyObjectOneWayPU(params.title, this, "title");
         this.__expanded = new SynchedPropertySimpleTwoWayPU(params.expanded, this, "expanded");
         this.content = undefined;
@@ -1237,14 +1380,24 @@ export class ProteusCollapsibleSection extends ViewPU {
         this.__title.reset(params.title);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__title.purgeDependencyOnElmtId(rmElmtId);
         this.__expanded.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__title.aboutToBeDeleted();
         this.__expanded.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __title: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get title() {
@@ -1273,7 +1426,7 @@ export class ProteusCollapsibleSection extends ViewPU {
                         title: this.title,
                         collapsed: !this.expanded,
                         onToggle: () => { this.expanded = !this.expanded; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 426, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 447, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1324,6 +1477,7 @@ export class ProteusTreeRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__depth = new SynchedPropertySimpleOneWayPU(params.depth, this, "depth");
         this.__selected = new SynchedPropertySimpleOneWayPU(params.selected, this, "selected");
@@ -1377,6 +1531,7 @@ export class ProteusTreeRow extends ViewPU {
         this.__expanded.reset(params.expanded);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__depth.purgeDependencyOnElmtId(rmElmtId);
         this.__selected.purgeDependencyOnElmtId(rmElmtId);
@@ -1386,6 +1541,7 @@ export class ProteusTreeRow extends ViewPU {
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__depth.aboutToBeDeleted();
         this.__selected.aboutToBeDeleted();
@@ -1395,6 +1551,14 @@ export class ProteusTreeRow extends ViewPU {
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -1537,6 +1701,7 @@ export class ProteusParamRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__value = new SynchedPropertySimpleOneWayPU(params.value, this, "value");
         this.__editable = new SynchedPropertySimpleOneWayPU(params.editable, this, "editable");
@@ -1564,16 +1729,26 @@ export class ProteusParamRow extends ViewPU {
         this.__editable.reset(params.editable);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__value.purgeDependencyOnElmtId(rmElmtId);
         this.__editable.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__value.aboutToBeDeleted();
         this.__editable.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -1621,12 +1796,15 @@ export class ProteusParamRow extends ViewPU {
                         TextInput.create({ text: this.value });
                         TextInput.layoutWeight(1);
                         TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
-                        TextInput.fontSize(ProteusFonts.PARAM_VALUE);
+                        TextInput.fontSize(ProteusFonts.INPUT);
                         TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
+                        TextInput.placeholderFont({ size: ProteusFonts.INPUT });
+                        TextInput.placeholderColor(ProteusColors.TEXT_SECONDARY);
+                        TextInput.caretColor(ProteusColors.INPUT_FOCUS);
                         TextInput.backgroundColor(ProteusColors.CANVAS_BG);
                         TextInput.borderRadius(0);
                         TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
-                        TextInput.padding({ left: 4, right: 4 });
+                        TextInput.padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H });
                         TextInput.onChange((v: string) => this.onChange(v));
                     }, TextInput);
                 });
@@ -1636,12 +1814,12 @@ export class ProteusParamRow extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create(this.value);
                         Text.layoutWeight(1);
-                        Text.fontSize(ProteusFonts.PARAM_VALUE);
+                        Text.fontSize(ProteusFonts.INPUT);
                         Text.fontColor(ProteusColors.TEXT_PRIMARY);
                         Text.height(ProteusDimens.PARAM_ROW_HEIGHT);
                         Text.backgroundColor(ProteusColors.INPUT_READONLY_BG);
                         Text.border({ width: 1, color: ProteusColors.DIVIDER });
-                        Text.padding({ left: 4, right: 4 });
+                        Text.padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H });
                         Text.maxLines(1);
                         Text.textOverflow({ overflow: TextOverflow.Ellipsis });
                     }, Text);
@@ -1656,12 +1834,278 @@ export class ProteusParamRow extends ViewPU {
         this.updateDirtyElements();
     }
 }
+export class ProteusTextInput extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
+        this.__text = new SynchedPropertySimpleOneWayPU(params.text, this, "text");
+        this.__placeholder = new SynchedPropertyObjectOneWayPU(params.placeholder, this, "placeholder");
+        this.__password = new SynchedPropertySimpleOneWayPU(params.password, this, "password");
+        this.__isEnabled = new SynchedPropertySimpleOneWayPU(params.isEnabled, this, "isEnabled");
+        this.__mono = new SynchedPropertySimpleOneWayPU(params.mono, this, "mono");
+        this.__center = new SynchedPropertySimpleOneWayPU(params.center, this, "center");
+        this.onChange = () => { };
+        this.onSubmit = () => { };
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params: ProteusTextInput_Params) {
+        if (params.text === undefined) {
+            this.__text.set('');
+        }
+        if (params.placeholder === undefined) {
+            this.__placeholder.set('');
+        }
+        if (params.password === undefined) {
+            this.__password.set(false);
+        }
+        if (params.isEnabled === undefined) {
+            this.__isEnabled.set(true);
+        }
+        if (params.mono === undefined) {
+            this.__mono.set(false);
+        }
+        if (params.center === undefined) {
+            this.__center.set(false);
+        }
+        if (params.onChange !== undefined) {
+            this.onChange = params.onChange;
+        }
+        if (params.onSubmit !== undefined) {
+            this.onSubmit = params.onSubmit;
+        }
+    }
+    updateStateVars(params: ProteusTextInput_Params) {
+        this.__text.reset(params.text);
+        this.__placeholder.reset(params.placeholder);
+        this.__password.reset(params.password);
+        this.__isEnabled.reset(params.isEnabled);
+        this.__mono.reset(params.mono);
+        this.__center.reset(params.center);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
+        this.__text.purgeDependencyOnElmtId(rmElmtId);
+        this.__placeholder.purgeDependencyOnElmtId(rmElmtId);
+        this.__password.purgeDependencyOnElmtId(rmElmtId);
+        this.__isEnabled.purgeDependencyOnElmtId(rmElmtId);
+        this.__mono.purgeDependencyOnElmtId(rmElmtId);
+        this.__center.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
+        this.__text.aboutToBeDeleted();
+        this.__placeholder.aboutToBeDeleted();
+        this.__password.aboutToBeDeleted();
+        this.__isEnabled.aboutToBeDeleted();
+        this.__mono.aboutToBeDeleted();
+        this.__center.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
+    }
+    private __text: SynchedPropertySimpleOneWayPU<string>;
+    get text() {
+        return this.__text.get();
+    }
+    set text(newValue: string) {
+        this.__text.set(newValue);
+    }
+    private __placeholder: SynchedPropertySimpleOneWayPU<ResourceStr>;
+    get placeholder() {
+        return this.__placeholder.get();
+    }
+    set placeholder(newValue: ResourceStr) {
+        this.__placeholder.set(newValue);
+    }
+    private __password: SynchedPropertySimpleOneWayPU<boolean>;
+    get password() {
+        return this.__password.get();
+    }
+    set password(newValue: boolean) {
+        this.__password.set(newValue);
+    }
+    private __isEnabled: SynchedPropertySimpleOneWayPU<boolean>;
+    get isEnabled() {
+        return this.__isEnabled.get();
+    }
+    set isEnabled(newValue: boolean) {
+        this.__isEnabled.set(newValue);
+    }
+    private __mono: SynchedPropertySimpleOneWayPU<boolean>;
+    get mono() {
+        return this.__mono.get();
+    }
+    set mono(newValue: boolean) {
+        this.__mono.set(newValue);
+    }
+    private __center: SynchedPropertySimpleOneWayPU<boolean>;
+    get center() {
+        return this.__center.get();
+    }
+    set center(newValue: boolean) {
+        this.__center.set(newValue);
+    }
+    private onChange: (v: string) => void;
+    private onSubmit: () => void;
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            TextInput.create({ text: this.text, placeholder: this.placeholder });
+            TextInput.height(ProteusDimens.PARAM_ROW_HEIGHT);
+            TextInput.fontSize(ProteusFonts.INPUT);
+            TextInput.fontColor(ProteusColors.TEXT_PRIMARY);
+            TextInput.fontFamily(this.mono ? 'monospace' : 'sans-serif');
+            TextInput.placeholderFont({ size: ProteusFonts.INPUT, weight: FontWeight.Normal });
+            TextInput.placeholderColor(ProteusColors.TEXT_SECONDARY);
+            TextInput.caretColor(ProteusColors.INPUT_FOCUS);
+            TextInput.backgroundColor(ProteusColors.CANVAS_BG);
+            TextInput.borderRadius(0);
+            TextInput.border({ width: 1, color: ProteusColors.INPUT_BORDER });
+            TextInput.padding({ left: ProteusDimens.INPUT_PAD_H, right: ProteusDimens.INPUT_PAD_H });
+            TextInput.textAlign(this.center ? TextAlign.Center : TextAlign.Start);
+            TextInput.type(this.password ? InputType.Password : InputType.Normal);
+            TextInput.enabled(this.isEnabled);
+            TextInput.onChange((v: string) => this.onChange(v));
+            TextInput.onSubmit(() => this.onSubmit());
+        }, TextInput);
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
+export class ProteusTextArea extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
+        this.__text = new SynchedPropertySimpleOneWayPU(params.text, this, "text");
+        this.__placeholder = new SynchedPropertyObjectOneWayPU(params.placeholder, this, "placeholder");
+        this.__areaHeight = new SynchedPropertySimpleOneWayPU(params.areaHeight, this, "areaHeight");
+        this.__isEnabled = new SynchedPropertySimpleOneWayPU(params.isEnabled, this, "isEnabled");
+        this.onChange = () => { };
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params: ProteusTextArea_Params) {
+        if (params.text === undefined) {
+            this.__text.set('');
+        }
+        if (params.placeholder === undefined) {
+            this.__placeholder.set('');
+        }
+        if (params.areaHeight === undefined) {
+            this.__areaHeight.set(ProteusDimens.TEXTAREA_MIN_HEIGHT);
+        }
+        if (params.isEnabled === undefined) {
+            this.__isEnabled.set(true);
+        }
+        if (params.onChange !== undefined) {
+            this.onChange = params.onChange;
+        }
+    }
+    updateStateVars(params: ProteusTextArea_Params) {
+        this.__text.reset(params.text);
+        this.__placeholder.reset(params.placeholder);
+        this.__areaHeight.reset(params.areaHeight);
+        this.__isEnabled.reset(params.isEnabled);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
+        this.__text.purgeDependencyOnElmtId(rmElmtId);
+        this.__placeholder.purgeDependencyOnElmtId(rmElmtId);
+        this.__areaHeight.purgeDependencyOnElmtId(rmElmtId);
+        this.__isEnabled.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
+        this.__text.aboutToBeDeleted();
+        this.__placeholder.aboutToBeDeleted();
+        this.__areaHeight.aboutToBeDeleted();
+        this.__isEnabled.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
+    }
+    private __text: SynchedPropertySimpleOneWayPU<string>;
+    get text() {
+        return this.__text.get();
+    }
+    set text(newValue: string) {
+        this.__text.set(newValue);
+    }
+    private __placeholder: SynchedPropertySimpleOneWayPU<ResourceStr>;
+    get placeholder() {
+        return this.__placeholder.get();
+    }
+    set placeholder(newValue: ResourceStr) {
+        this.__placeholder.set(newValue);
+    }
+    private __areaHeight: SynchedPropertySimpleOneWayPU<number>;
+    get areaHeight() {
+        return this.__areaHeight.get();
+    }
+    set areaHeight(newValue: number) {
+        this.__areaHeight.set(newValue);
+    }
+    private __isEnabled: SynchedPropertySimpleOneWayPU<boolean>;
+    get isEnabled() {
+        return this.__isEnabled.get();
+    }
+    set isEnabled(newValue: boolean) {
+        this.__isEnabled.set(newValue);
+    }
+    private onChange: (v: string) => void;
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            TextArea.create({ text: this.text, placeholder: this.placeholder });
+            TextArea.height(this.areaHeight);
+            TextArea.width('100%');
+            TextArea.fontSize(ProteusFonts.INPUT);
+            TextArea.fontColor(ProteusColors.TEXT_PRIMARY);
+            TextArea.placeholderFont({ size: ProteusFonts.INPUT, weight: FontWeight.Normal });
+            TextArea.placeholderColor(ProteusColors.TEXT_SECONDARY);
+            TextArea.caretColor(ProteusColors.INPUT_FOCUS);
+            TextArea.backgroundColor(ProteusColors.CANVAS_BG);
+            TextArea.borderRadius(0);
+            TextArea.border({ width: 1, color: ProteusColors.INPUT_BORDER });
+            TextArea.padding({
+                left: ProteusDimens.INPUT_PAD_H,
+                right: ProteusDimens.INPUT_PAD_H,
+                top: 8,
+                bottom: 8
+            });
+            TextArea.enabled(this.isEnabled);
+            TextArea.onChange((v: string) => this.onChange(v));
+        }, TextArea);
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
 export class ProteusToolButton extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__iconName = new SynchedPropertySimpleOneWayPU(params.iconName, this, "iconName");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__showLabel = new SynchedPropertySimpleOneWayPU(params.showLabel, this, "showLabel");
@@ -1717,6 +2161,7 @@ export class ProteusToolButton extends ViewPU {
         this.__btnSize.reset(params.btnSize);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__iconName.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__showLabel.purgeDependencyOnElmtId(rmElmtId);
@@ -1728,6 +2173,7 @@ export class ProteusToolButton extends ViewPU {
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__iconName.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__showLabel.aboutToBeDeleted();
@@ -1739,6 +2185,14 @@ export class ProteusToolButton extends ViewPU {
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __iconName: SynchedPropertySimpleOneWayPU<ProteusIconName>;
     get iconName() {
@@ -1869,7 +2323,7 @@ export class ProteusToolButton extends ViewPU {
                         iconSize: 14,
                         color: this.disabled ? ProteusColors.TEXT_SECONDARY :
                             (this.active ? ProteusColors.BTN_FOCUS : ProteusColors.TEXT_PRIMARY)
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 586, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 683, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1930,6 +2384,7 @@ export class ProteusMenuTrigger extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.entries = [];
         this.__open = new ObservedPropertySimplePU(false, this, "open");
@@ -1955,16 +2410,26 @@ export class ProteusMenuTrigger extends ViewPU {
         this.__label.reset(params.label);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__open.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__open.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<ResourceStr>;
     get label() {
@@ -2025,7 +2490,7 @@ export class ProteusMenuTrigger extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 667, col: 9 });
+                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 766, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2083,7 +2548,7 @@ export class ProteusMenuTrigger extends ViewPU {
                                                 this.open = false;
                                                 e.action();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 696, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 795, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2287,6 +2752,7 @@ export class ProteusSidebarTab extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertySimpleOneWayPU(params.label, this, "label");
         this.__tooltip = new SynchedPropertySimpleOneWayPU(params.tooltip, this, "tooltip");
         this.__icon = new SynchedPropertySimpleOneWayPU(params.icon, this, "icon");
@@ -2327,6 +2793,7 @@ export class ProteusSidebarTab extends ViewPU {
         this.__selected.reset(params.selected);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__tooltip.purgeDependencyOnElmtId(rmElmtId);
         this.__icon.purgeDependencyOnElmtId(rmElmtId);
@@ -2335,6 +2802,7 @@ export class ProteusSidebarTab extends ViewPU {
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__tooltip.aboutToBeDeleted();
         this.__icon.aboutToBeDeleted();
@@ -2343,6 +2811,14 @@ export class ProteusSidebarTab extends ViewPU {
         this.__pressed.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<string>;
     get label() {
@@ -2449,7 +2925,7 @@ export class ProteusSidebarTab extends ViewPU {
                         iconSize: 16,
                         color: this.selected ?
                             ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 794, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 895, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2497,6 +2973,7 @@ export class ProteusToolGroup extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__title = new SynchedPropertySimpleOneWayPU(params.title, this, "title");
         this.content = undefined;
         this.setInitiallyProvidedValue(params);
@@ -2514,12 +2991,22 @@ export class ProteusToolGroup extends ViewPU {
         this.__title.reset(params.title);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__title.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__title.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __title: SynchedPropertySimpleOneWayPU<string>;
     get title() {
@@ -2564,6 +3051,7 @@ export class ProteusResizer extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__side = new SynchedPropertySimpleOneWayPU(params.side, this, "side");
         this.onDrag = () => { };
         this.__hovered = new ObservedPropertySimplePU(false, this, "hovered");
@@ -2597,16 +3085,26 @@ export class ProteusResizer extends ViewPU {
         this.__side.reset(params.side);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__side.purgeDependencyOnElmtId(rmElmtId);
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
         this.__tipVisible.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__side.aboutToBeDeleted();
         this.__hovered.aboutToBeDeleted();
         this.__tipVisible.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __side: SynchedPropertySimpleOneWayPU<'left' | 'right'>;
     get side() {
@@ -2685,6 +3183,7 @@ export class ProteusPressRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__selected = new SynchedPropertySimpleOneWayPU(params.selected, this, "selected");
         this.__heightVal = new SynchedPropertySimpleOneWayPU(params.heightVal, this, "heightVal");
         this.__showDivider = new SynchedPropertySimpleOneWayPU(params.showDivider, this, "showDivider");
@@ -2734,6 +3233,7 @@ export class ProteusPressRow extends ViewPU {
         this.__padRight.reset(params.padRight);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__selected.purgeDependencyOnElmtId(rmElmtId);
         this.__heightVal.purgeDependencyOnElmtId(rmElmtId);
         this.__showDivider.purgeDependencyOnElmtId(rmElmtId);
@@ -2743,6 +3243,7 @@ export class ProteusPressRow extends ViewPU {
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__selected.aboutToBeDeleted();
         this.__heightVal.aboutToBeDeleted();
         this.__showDivider.aboutToBeDeleted();
@@ -2752,6 +3253,14 @@ export class ProteusPressRow extends ViewPU {
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __selected: SynchedPropertySimpleOneWayPU<boolean>;
     get selected() {
@@ -2848,6 +3357,7 @@ export class ProteusNavCompRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__refDes = new SynchedPropertySimpleOneWayPU(params.refDes, this, "refDes");
         this.__libraryId = new SynchedPropertySimpleOneWayPU(params.libraryId, this, "libraryId");
         this.__selected = new SynchedPropertySimpleOneWayPU(params.selected, this, "selected");
@@ -2883,6 +3393,7 @@ export class ProteusNavCompRow extends ViewPU {
         this.__selected.reset(params.selected);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__refDes.purgeDependencyOnElmtId(rmElmtId);
         this.__libraryId.purgeDependencyOnElmtId(rmElmtId);
         this.__selected.purgeDependencyOnElmtId(rmElmtId);
@@ -2890,6 +3401,7 @@ export class ProteusNavCompRow extends ViewPU {
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__refDes.aboutToBeDeleted();
         this.__libraryId.aboutToBeDeleted();
         this.__selected.aboutToBeDeleted();
@@ -2897,6 +3409,14 @@ export class ProteusNavCompRow extends ViewPU {
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __refDes: SynchedPropertySimpleOneWayPU<string>;
     get refDes() {
@@ -2995,6 +3515,7 @@ export class ProteusNavNetRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertySimpleOneWayPU(params.label, this, "label");
         this.onAction = () => { };
         this.__pressed = new ObservedPropertySimplePU(false, this, "pressed");
@@ -3020,16 +3541,26 @@ export class ProteusNavNetRow extends ViewPU {
         this.__label.reset(params.label);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __label: SynchedPropertySimpleOneWayPU<string>;
     get label() {
@@ -3095,6 +3626,7 @@ export class ProteusErcRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__mark = new SynchedPropertySimpleOneWayPU(params.mark, this, "mark");
         this.__markColor = new SynchedPropertySimpleOneWayPU(params.markColor, this, "markColor");
         this.__desc = new SynchedPropertySimpleOneWayPU(params.desc, this, "desc");
@@ -3130,6 +3662,7 @@ export class ProteusErcRow extends ViewPU {
         this.__desc.reset(params.desc);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__mark.purgeDependencyOnElmtId(rmElmtId);
         this.__markColor.purgeDependencyOnElmtId(rmElmtId);
         this.__desc.purgeDependencyOnElmtId(rmElmtId);
@@ -3137,6 +3670,7 @@ export class ProteusErcRow extends ViewPU {
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__mark.aboutToBeDeleted();
         this.__markColor.aboutToBeDeleted();
         this.__desc.aboutToBeDeleted();
@@ -3144,6 +3678,14 @@ export class ProteusErcRow extends ViewPU {
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __mark: SynchedPropertySimpleOneWayPU<string>;
     get mark() {
@@ -3231,6 +3773,7 @@ export class ProteusKeyDescRow extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__keyLabel = new SynchedPropertySimpleOneWayPU(params.keyLabel, this, "keyLabel");
         this.__description = new SynchedPropertySimpleOneWayPU(params.description, this, "description");
         this.__keyWidth = new SynchedPropertySimpleOneWayPU(params.keyWidth, this, "keyWidth");
@@ -3266,6 +3809,7 @@ export class ProteusKeyDescRow extends ViewPU {
         this.__keyWidth.reset(params.keyWidth);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__keyLabel.purgeDependencyOnElmtId(rmElmtId);
         this.__description.purgeDependencyOnElmtId(rmElmtId);
         this.__keyWidth.purgeDependencyOnElmtId(rmElmtId);
@@ -3273,6 +3817,7 @@ export class ProteusKeyDescRow extends ViewPU {
         this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__keyLabel.aboutToBeDeleted();
         this.__description.aboutToBeDeleted();
         this.__keyWidth.aboutToBeDeleted();
@@ -3280,6 +3825,14 @@ export class ProteusKeyDescRow extends ViewPU {
         this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __keyLabel: SynchedPropertySimpleOneWayPU<string>;
     get keyLabel() {
@@ -3362,6 +3915,7 @@ export class ProteusSwitch extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__isOn = new SynchedPropertySimpleOneWayPU(params.isOn, this, "isOn");
         this.__onColor = new SynchedPropertySimpleOneWayPU(params.onColor, this, "onColor");
         this.__widthVp = new SynchedPropertySimpleOneWayPU(params.widthVp, this, "widthVp");
@@ -3394,18 +3948,28 @@ export class ProteusSwitch extends ViewPU {
         this.__heightVp.reset(params.heightVp);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__isOn.purgeDependencyOnElmtId(rmElmtId);
         this.__onColor.purgeDependencyOnElmtId(rmElmtId);
         this.__widthVp.purgeDependencyOnElmtId(rmElmtId);
         this.__heightVp.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
         this.__isOn.aboutToBeDeleted();
         this.__onColor.aboutToBeDeleted();
         this.__widthVp.aboutToBeDeleted();
         this.__heightVp.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    /** 订阅主题版本：色板变更后强制本组件 rebuild */
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
     }
     private __isOn: SynchedPropertySimpleOneWayPU<boolean>;
     get isOn() {

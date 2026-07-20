@@ -130,8 +130,9 @@ const DARK: ProteusThemePalette = {
   MENU_BG: '#2D2D30',
   TOOLBAR_BG: '#333337',
   PANEL_TITLE_BG: '#252526',
-  STATUS_BAR_BG: '#007ACC',
-  CANVAS_BG: '#1E1E1E',
+  // 状态栏与面板同系，避免刺眼蓝条抢走画布对比
+  STATUS_BAR_BG: '#252526',
+  CANVAS_BG: '#1A1A1E',
   PREVIEW_BG: '#252526',
   INPUT_READONLY_BG: '#2D2D30',
   MENU_HOVER: '#3E3E42',
@@ -144,20 +145,22 @@ const DARK: ProteusThemePalette = {
   INPUT_BORDER: '#555555',
   INPUT_FOCUS: '#007ACC',
   WINDOW_BORDER: '#555555',
-  TEXT_PRIMARY: '#CCCCCC',
-  TEXT_LABEL: '#AAAAAA',
-  TEXT_SECONDARY: '#858585',
-  GRID_DOT: '#3C3C3C',
-  GRID_LINE: '#333337',
-  WIRE: '#569CD6',
+  TEXT_PRIMARY: '#E0E0E0',
+  TEXT_LABEL: '#B0B0B0',
+  TEXT_SECONDARY: '#8A8A8A',
+  // 网格需在深色底上可辨
+  GRID_DOT: '#4A4A52',
+  GRID_LINE: '#2E2E36',
+  WIRE: '#6CB6FF',
   BUS: '#4EC9B0',
-  COMPONENT_STROKE: '#D4D4D4',
-  COMPONENT_BODY_FILL: '#2D2D30',
-  SELECTED: '#007ACC',
+  COMPONENT_STROKE: '#E6E6E6',
+  // 器件体填充与画布拉开对比，避免“黑底黑框”
+  COMPONENT_BODY_FILL: '#2F3340',
+  SELECTED: '#3B9EFF',
   HOVER_PREVIEW: '#3794FF',
   POWER: '#CE9178',
-  GROUND: '#858585',
-  ANALOG: '#569CD6',
+  GROUND: '#9A9A9A',
+  ANALOG: '#6CB6FF',
   DIGITAL: '#6A9955',
   CLOCK: '#F44747',
   DIALOG_TITLE: '#007ACC',
@@ -171,7 +174,7 @@ const DARK: ProteusThemePalette = {
   SIDEBAR_BG: '#252526',
   SIDEBAR_TAB_IDLE_BG: '#3E3E42',
   SIDEBAR_TAB_IDLE_TEXT: '#CCCCCC',
-  SIDEBAR_TAB_ACTIVE_BG: '#1E1E1E',
+  SIDEBAR_TAB_ACTIVE_BG: '#1A1A1E',
   SIDEBAR_TAB_ACTIVE_TEXT: '#FFFFFF',
   SIDEBAR_TAB_BORDER: '#555555',
   TAB_CHIP_IDLE_BG: '#3E3E42',
@@ -361,12 +364,15 @@ export class ProteusDimens {
   static readonly LEFT_PANEL_WIDTH: number = 220;
   static readonly RIGHT_PANEL_WIDTH: number = 240;
   static readonly PANEL_TITLE_HEIGHT: number = 22;
-  static readonly SEARCH_HEIGHT: number = 24;
+  static readonly SEARCH_HEIGHT: number = 30;
   static readonly TREE_ROW_HEIGHT: number = 20;
   static readonly NAV_ROW_HEIGHT: number = 18;
   static readonly PREVIEW_HEIGHT: number = 260;
-  static readonly PARAM_ROW_HEIGHT: number = 28;
+  /** 单行输入：12px 字号 + 留白，占位符/正文同高 */
+  static readonly PARAM_ROW_HEIGHT: number = 30;
   static readonly PARAM_GAP: number = 6;
+  static readonly INPUT_PAD_H: number = 8;
+  static readonly TEXTAREA_MIN_HEIGHT: number = 80;
   static readonly TAB_BAR_HEIGHT: number = 38;
   static readonly TAB_CHIP_HEIGHT: number = 30;
   static readonly PARAM_LABEL_WIDTH: number = 52;
@@ -394,7 +400,9 @@ export class ProteusFonts {
   static get TOOLBAR(): number { return ProteusFonts.sz(11); }
   static get TITLE(): number { return ProteusFonts.sz(12); }
   static get PARAM_KEY(): number { return ProteusFonts.sz(11); }
+  /** 输入框正文与占位符统一用此字号 */
   static get PARAM_VALUE(): number { return ProteusFonts.sz(12); }
+  static get INPUT(): number { return ProteusFonts.PARAM_VALUE; }
   static get STATUS(): number { return ProteusFonts.sz(10); }
   static get TAB_CHIP(): number { return ProteusFonts.sz(11); }
   static get BTN_LABEL(): number { return ProteusFonts.sz(12); }

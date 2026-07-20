@@ -1,378 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ /**
- * ç”µå‹è¡¨ä»¿çœŸå¼•æ“ â€” æ”¯æŒ DC / AC (True-RMS)
- */
-import { VoltmeterType } from 'common';
-const DC_RANGES = [0.2, 2, 20, 200, 1000];
-const AC_RANGES = [0.2, 2, 20, 200, 750];
-// AC RMS needs multiple samples over time to compute true RMS
-const RMS_WINDOW_SAMPLES = 16;
-export class VoltmeterEngine {
-    constructor() {
-        this.type = VoltmeterType.DC;
-        this.rangeIndex = 2;
-        this.lastReading = 0;
-        this.lastRms = 0;
-        this.autoRangeOn = true;
-        this.voltageReader = null;
-        this.globalFallback = null;
-        // RMS sample buffer for AC mode
-        this.rmsSampleBuffer = [];
-        this.rmsSampleIndex = 0;
-        this.dcOffset = 0;
-    }
-    setType(t) {
-        this.type = t;
-        this.rangeIndex = 1;
-        this.rmsSampleBuffer = [];
-        this.rmsSampleIndex = 0;
-        this.dcOffset = 0;
-    }
-    getType() { return this.type; }
-    setVoltageReader(reader) {
-        this.voltageReader = reader;
-        // Reset RMS buffer when reader changes
-        this.rmsSampleBuffer = [];
-        this.rmsSampleIndex = 0;
-    }
-    /** Set a global fallback reader that works even when no explicit reader is configured */
-    setGlobalFallback(reader) {
-        this.globalFallback = reader;
-    }
-    setRange(idx) {
-        const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-        if (idx >= 0 && idx < ranges.length) {
-            this.rangeIndex = idx;
-        }
-        this.autoRangeOn = false;
-    }
-    getRange() {
-        const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-        return ranges[this.rangeIndex] ?? 20;
-    }
-    autoRange() {
-        this.autoRangeOn = true;
-        const r = this.type === VoltmeterType.AC ? this.lastRms : this.lastReading;
-        const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-        for (let i = 0; i < ranges.length; i++) {
-            if (Math.abs(r) <= ranges[i]) {
-                this.rangeIndex = i;
-                return;
-            }
-        }
-        this.rangeIndex = ranges.length - 1;
-    }
-    measure() {
-        const raw = this.simulate();
-        if (this.type === VoltmeterType.AC) {
-            this.updateRmsBuffer(raw);
-            this.lastReading = raw;
-            return this.lastRms;
-        }
-        if (this.autoRangeOn)
-            this.autoRange();
-        const max = this.getRange();
-        this.lastReading = Math.min(Math.abs(raw), max) * (raw < 0 ? -1 : 1);
-        return this.lastReading;
-    }
-    getLastReading() { return this.type === VoltmeterType.AC ? this.lastRms : this.lastReading; }
-    getUnit() { return this.type === VoltmeterType.DC ? 'V DC' : 'Vrms AC'; }
-    getRangeLabel() {
-        return `${this.getRange()}V`;
-    }
-    simulate() {
-        if (this.voltageReader !== null) {
-            return this.voltageReader();
-        }
-        if (this.globalFallback !== null) {
-            return this.globalFallback();
-        }
-        return 0;
-    }
-    /** Update sliding RMS buffer and compute true-RMS */
-    updateRmsBuffer(raw) {
-        if (this.rmsSampleBuffer.length < RMS_WINDOW_SAMPLES) {
-            this.rmsSampleBuffer.push(raw);
-            this.rmsSampleIndex = this.rmsSampleBuffer.length;
-        }
-        else {
-            this.rmsSampleBuffer[this.rmsSampleIndex % RMS_WINDOW_SAMPLES] = raw;
-            this.rmsSampleIndex = (this.rmsSampleIndex + 1) % (RMS_WINDOW_SAMPLES * 2);
-        }
-        // Compute DC offset first
-        if (this.rmsSampleBuffer.length >= 2) {
-            let sum = 0;
-            for (const v of this.rmsSampleBuffer)
-                sum += v;
-            this.dcOffset = sum / this.rmsSampleBuffer.length;
-        }
-        // Compute true RMS (AC component only: subtract DC offset)
-        if (this.rmsSampleBuffer.length >= 2) {
-            let sumSq = 0;
-            for (const v of this.rmsSampleBuffer) {
-                const ac = v - this.dcOffset;
-                sumSq += ac * ac;
-            }
-            this.lastRms = Math.sqrt(sumSq / this.rmsSampleBuffer.length);
-        }
-    }
-}
-//# sourceMappingURL=VoltmeterEngine.js.mapÂ‘Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙZC:\Projects\ElecDraw_Harmony\features\instruments\src\main\ets\engines\VoltmeterEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs«instrumentsÃÂÙ1C:\Projects\ElecDraw_Harmony\features\instruments¼C:\Projects\ElecDraw_Harmony«instruments¥1.0.0ÔrC’§pkgNameªpkgVersion«instruments¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¹./engines/VoltmeterEngine«instrumentsÙ1C:\Projects\ElecDraw_Harmony\features\instrumentsÃÃÚ×/**
- * ç”µå‹è¡¨ä»¿çœŸå¼•æ“ â€” æ”¯æŒ DC / AC (True-RMS)
- */
-import { VoltmeterType } from 'common';
-
-const DC_RANGES = [0.2, 2, 20, 200, 1000];
-const AC_RANGES = [0.2, 2, 20, 200, 750];
-// AC RMS needs multiple samples over time to compute true RMS
-const RMS_WINDOW_SAMPLES = 16;
-
-export class VoltmeterEngine {
-  private type: VoltmeterType = VoltmeterType.DC;
-  private rangeIndex: number = 2;
-  private lastReading: number = 0;
-  private lastRms: number = 0;
-  private autoRangeOn: boolean = true;
-  private voltageReader: (() => number) | null = null;
-  private globalFallback: (() => number) | null = null;
-  // RMS sample buffer for AC mode
-  private rmsSampleBuffer: number[] = [];
-  private rmsSampleIndex: number = 0;
-  private dcOffset: number = 0;
-
-  setType(t: VoltmeterType): void {
-    this.type = t;
-    this.rangeIndex = 1;
-    this.rmsSampleBuffer = [];
-    this.rmsSampleIndex = 0;
-    this.dcOffset = 0;
-  }
-
-  getType(): VoltmeterType { return this.type; }
-
-  setVoltageReader(reader: (() => number) | null): void {
-    this.voltageReader = reader;
-    // Reset RMS buffer when reader changes
-    this.rmsSampleBuffer = [];
-    this.rmsSampleIndex = 0;
-  }
-
-  /** Set a global fallback reader that works even when no explicit reader is configured */
-  setGlobalFallback(reader: (() => number) | null): void {
-    this.globalFallback = reader;
-  }
-
-  setRange(idx: number): void {
-    const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-    if (idx >= 0 && idx < ranges.length) {
-      this.rangeIndex = idx;
-    }
-    this.autoRangeOn = false;
-  }
-
-  getRange(): number {
-    const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-    return ranges[this.rangeIndex] ?? 20;
-  }
-
-  autoRange(): void {
-    this.autoRangeOn = true;
-    const r = this.type === VoltmeterType.AC ? this.lastRms : this.lastReading;
-    const ranges = this.type === VoltmeterType.DC ? DC_RANGES : AC_RANGES;
-    for (let i = 0; i < ranges.length; i++) {
-      if (Math.abs(r) <= ranges[i]) { this.rangeIndex = i; return; }
-    }
-    this.rangeIndex = ranges.length - 1;
-  }
-
-  measure(): number {
-    const raw = this.simulate();
-    if (this.type === VoltmeterType.AC) {
-      this.updateRmsBuffer(raw);
-      this.lastReading = raw;
-      return this.lastRms;
-    }
-    if (this.autoRangeOn) this.autoRange();
-    const max = this.getRange();
-    this.lastReading = Math.min(Math.abs(raw), max) * (raw < 0 ? -1 : 1);
-    return this.lastReading;
-  }
-
-  getLastReading(): number { return this.type === VoltmeterType.AC ? this.lastRms : this.lastReading; }
-
-  getUnit(): string { return this.type === VoltmeterType.DC ? 'V DC' : 'Vrms AC'; }
-
-  getRangeLabel(): string {
-    return `${this.getRange()}V`;
-  }
-
-  private simulate(): number {
-    if (this.voltageReader !== null) {
-      return this.voltageReader();
-    }
-    if (this.globalFallback !== null) {
-      return this.globalFallback();
-    }
-    return 0;
-  }
-
-  /** Update sliding RMS buffer and compute true-RMS */
-  private updateRmsBuffer(raw: number): void {
-    if (this.rmsSampleBuffer.length < RMS_WINDOW_SAMPLES) {
-      this.rmsSampleBuffer.push(raw);
-      this.rmsSampleIndex = this.rmsSampleBuffer.length;
-    } else {
-      this.rmsSampleBuffer[this.rmsSampleIndex % RMS_WINDOW_SAMPLES] = raw;
-      this.rmsSampleIndex = (this.rmsSampleIndex + 1) % (RMS_WINDOW_SAMPLES * 2);
-    }
-    // Compute DC offset first
-    if (this.rmsSampleBuffer.length >= 2) {
-      let sum = 0;
-      for (const v of this.rmsSampleBuffer) sum += v;
-      this.dcOffset = sum / this.rmsSampleBuffer.length;
-    }
-    // Compute true RMS (AC component only: subtract DC offset)
-    if (this.rmsSampleBuffer.length >= 2) {
-      let sumSq = 0;
-      for (const v of this.rmsSampleBuffer) {
-        const ac = v - this.dcOffset;
-        sumSq += ac * ac;
-      }
-      this.lastRms = Math.sqrt(sumSq / this.rmsSampleBuffer.length);
-    }
-  }
-}
-ÀÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings²VoltmeterEngine.js ‘³VoltmeterEngine.etsÜ v‘”    ‘” ˜”   ” ”	 	” ” ” ”& &”' 'Ü ”   ” ” ” ” ” ” ” ” ” ” ”" "”$ $”( (”) )”* *Ü ”   ” ” ” ” ” ” ” ” ” ” ”" "”$ $”' '”( (”) )’”   ”> >–”   ” ” ” ” ” ””  
- ” 
-” 
-” 
-‘” 
- —” 
-” ”  ”! -”" .”$ 0”% 1•” 
-” ” ”  ” !•” 
-” ”  ” !” "•” 
-” ” ” ” •” 
-” ” !” %”  &•” 
-” ” 1”! 5”" 6•” 
-” ” 2”" 6”# 7’” ”( "•” 
-” ” &”! (”" )•” 
-” ” #” $”  %•” 
-” ” ” ” ’” Ì| ” Ì|”” ” 	” 
-” —” ” ” 	” ” ” ” —” ” ” 	” ” ” ” —” ” ” 	” ” ”! ”" —” ” ” 	” ” ” ”  —” ” ” 	” ” ” ” ’” ” š” ” 	” ” $” (” )”  -”! .”" /”# 0”” !” !” !” !0—” "” "” "	” "” "”# "”$ " ’” #”/ #+—” $” $” $	” $” $”! $”" $—” %” %” %	” %” %” %”  %’” &” &’” (”Ì] (Ì[”” )” )” )” )1—” *” *” *	” *” *”$ * ”% *!’” +” +”” -” -
-” -” -Ü ” .” .
-” .” .” .” .”  .”% .!”2 ..”3 ./”5 .1”6 .2”7 .3”8 .4”ÌA .=”ÌB .>”ÌC .?”ÌD .Ì@”ÌM .ÌI”ÌN .ÌJœ” /” /” /” /” /” /” /” /”$ / ”% /!”+ /'”- /)—” 0” 0
-” 0” 0” 0”! 0”" 0‘”	 1—” 2” 2” 2	” 2” 2”  2”! 2’” 3” 3’” 5” 5
-Ü ” 6” 6
-” 6” 6” 6” 6”  6”% 6!”2 6.”3 6/”5 61”6 62”7 63”8 64”ÌA 6=”ÌB 6>”ÌC 6?”ÌD 6Ì@”ÌM 6ÌI”ÌN 6ÌJ›” 7” 7” 7” 7” 7” 7”% 7!”& 7"”* 7&”, 7(”- 7)’” 8” 8’” :” :—” ;” ;” ;	” ;” ;” ;”  ;Ü ” <” <
-” <” <” <” <” <”  <”- <)”. <*”0 <,”1 <-”2 <.”3 </”7 <3”8 <4”? <;”Ì@ <<”ÌA <=”ÌB <>”ÌF <ÌB”ÌG <ÌC”ÌR <ÌN”ÌS <ÌOÜ ” =” =
-” =” =” =” =”  =”% =!”2 =.”3 =/”5 =1”6 =2”7 =3”8 =4”ÌA ==”ÌB =>”ÌC =?”ÌD =Ì@”ÌM =ÌI”ÌN =ÌJÜ ” >” >	” >” >” >” >” >” >” >”" >”# >”) >%”+ >'”, >(”. >*”0 >,” ?” ?
-” ?” ?” ?” ?” ?” ?” ?”% ?”& ? ”' ?!”( ?"”* ?$—” ?&” ?*” ?+” ?5”" ?8”# ?9”$ ?:’” ?;” ?ÌB‘” ?ÌD‘”	 Ì@›” ÌA” ÌA” ÌA	” ÌA” ÌA”  ÌA”! ÌA”' ÌA#”* ÌA&”+ ÌA'”, ÌA(’” ÌB” ÌB’” ÌD” ÌD	™” ÌE” ÌE
-” ÌE” ÌE” ÌE” ÌE”! ÌE”# ÌE”$ ÌE š” ÌF” ÌF” ÌF” ÌF” ÌF” ÌF”' ÌF#”( ÌF$”* ÌF&”, ÌF(˜” ÌG” ÌG
-” ÌG”  ÌG”! ÌG”$ ÌG”% ÌG”& ÌG —” ÌH” ÌH
-” ÌH” ÌH” ÌH”" ÌH”# ÌH–” ÌI” ÌI” ÌI” ÌI” ÌI”  ÌI‘”	 ÌJ•” ÌK” ÌK” ÌK” ÌK” ÌK–” ÌK” ÌK” ÌK” ÌK(” ÌK*” ÌK+™” ÌL” ÌL
-” ÌL” ÌL” ÌL” ÌL”! ÌL”# ÌL”$ ÌL Ü "” ÌM” ÌM” ÌM	” ÌM” ÌM” ÌM”  ÌM”# ÌM”$ ÌM ”( ÌM$”) ÌM%”, ÌM(”- ÌM)”0 ÌM,”1 ÌM-”3 ÌM/”6 ÌM2”7 ÌM3”: ÌM6”; ÌM7”> ÌM:”ÌA ÌM=”ÌB ÌM>”ÌC ÌM?”ÌD ÌMÌ@”ÌE ÌMÌA”ÌF ÌMÌB”ÌG ÌMÌC”ÌH ÌMÌD”ÌI ÌMÌE”ÌJ ÌMÌF”ÌK ÌMÌG”ÌL ÌMÌH”ÌM ÌMÌI–” ÌN” ÌN” ÌN” ÌN” ÌN”  ÌN’” ÌO” ÌOÜ ” ÌQ” ÌQ” ÌQ” ÌQ$”" ÌQ(”# ÌQ)”' ÌQ-”, ÌQ2”9 ÌQ?”: ÌQÌ@”< ÌQÌB”= ÌQÌC”> ÌQÌD”? ÌQÌE”ÌC ÌQÌI”ÌD ÌQÌJ”ÌK ÌQÌQ”ÌL ÌQÌR”ÌM ÌQÌS”ÌN ÌQÌT”ÌR ÌQÌX”ÌS ÌQÌY”Ì^ ÌQÌd”Ì_ ÌQÌe”Ì` ÌQÌf”Ìa ÌQÌgÜ ” ÌS” ÌS	” ÌS” ÌS” ÌS!” ÌS"”  ÌS&”% ÌS+”2 ÌS8”3 ÌS9”5 ÌS;”6 ÌS<”7 ÌS=”8 ÌS>”> ÌSÌD”? ÌSÌE”Ì@ ÌSÌF”ÌA ÌSÌG”ÌJ ÌSÌP”ÌK ÌSÌQ”ÌL ÌSÌR”ÌM ÌSÌS’” ÌU” ÌU™” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”! ÌV”$ ÌV ”% ÌV!’” ÌW” ÌW’” ÌY
-” ÌY˜” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”# ÌZ”' ÌZ#”) ÌZ%—” Ì[” Ì[” Ì[” Ì[”% Ì[”' Ì[!”( Ì["‘”	 Ì\˜” Ì]” Ì]” Ì]” Ì]” Ì]”$ Ì] ”( Ì]$”* Ì]&—” Ì^” Ì^” Ì^” Ì^”& Ì^ ”( Ì^"”) Ì^#‘”	 Ì_”” Ì`” Ì`” Ì`” Ì`’” Ìa” Ìa’” Ìc”9 Ìc7”” Ìd
-” Ìd” Ìd” Ìd%š” Ìe” Ìe” Ìe” Ìe”  Ìe”! Ìe”' Ìe#”* Ìe&”< Ìe8”> Ìe:š” Ìf” Ìf
-” Ìf”  Ìf”! Ìf”% Ìf”& Ìf ”) Ìf#”* Ìf$”+ Ìf%›” Ìg” Ìg
-” Ìg” Ìg”" Ìg”& Ìg ”' Ìg!”6 Ìg0”7 Ìg1”= Ìg7”> Ìg8‘”	 Ìh‘” Ìh” Ìi” Ìi
-” Ìi”  Ìi”! Ìi”% Ìi”& Ìi ”4 Ìi.”7 Ìi1”ÌI ÌiÌC”ÌJ ÌiÌD”ÌM ÌiÌG”ÌP ÌiÌJ”ÌQ ÌiÌKÜ ” Ìj” Ìj
-” Ìj” Ìj”" Ìj”# Ìj”' Ìj!”( Ìj"”6 Ìj0”9 Ìj3”: Ìj4”; Ìj5”> Ìj8”? Ìj9”ÌQ ÌjÌK”ÌT ÌjÌN”ÌU ÌjÌO”ÌV ÌjÌP”ÌW ÌjÌQ‘”	 Ìk’” Ìl”" Ìlš” Ìm” Ìm” Ìm” Ìm”  Ìm”! Ìm”' Ìm#”+ Ìm'”, Ìm(”. Ìm*–” Ìn” Ìn
-” Ìn” Ìn” Ìn” Ìn˜” Ìo” Ìo” Ìo” Ìo” Ìo”  Ìo”! Ìo”0 Ìo*•” Ìo,” Ìo/” Ìo3” Ìo4” Ìo5” Ìp” Ìp
-” Ìp” Ìp” Ìp” Ìp”" Ìp”& Ìp ”' Ìp!”6 Ìp0”7 Ìp1”= Ìp7”> Ìp8‘”	 Ìq’” Ìr”ÌC Ìr?š” Ìs” Ìs” Ìs” Ìs”  Ìs”! Ìs”' Ìs#”+ Ìs'”, Ìs(”. Ìs*–” Ìt” Ìt
-” Ìt” Ìt” Ìt” Ìt™” Ìu” Ìu” Ìu” Ìu” Ìu”  Ìu”! Ìu”0 Ìu*”2 Ìu,š” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv”# Ìv”$ Ìv”, Ìv$”- Ìv%—” Ìw” Ìw” Ìw” Ìw” Ìw”  Ìw”! Ìw‘” ÌxÜ ” Ìy” Ìy
-” Ìy” Ìy” Ìy” Ìy”  Ìy”$ Ìy”% Ìy”* Ìy$”- Ìy'”1 Ìy+”2 Ìy,”ÌA Ìy;”ÌB Ìy<”ÌH ÌyÌB”ÌI ÌyÌC”ÌJ ÌyÌD‘”	 Ìz’” Ì{” Ì{‘” Ì|ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ w‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍ_ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍ_ÔrM”¤type¥start£end¤nameªIdentifierÍÍ*¯VoltmeterEngineÀÔrN”¤type¥start£end¤body©ClassBodyÍ+Í_ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ2Í¾ÂÂMªIdentifierÍ2Í=«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ=Í¾ÀÂÂÂN®BlockStatementÍ@Í¾šÔrQ”¤type¥start£endªexpression³ExpressionStatementÍKÍhÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍKÍg¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍKÍTÔrT“¤type¥start£end®ThisExpressionÍKÍOMªIdentifierÍPÍT¤typeÂÂS°MemberExpressionÍWÍgMªIdentifierÍWÍd­VoltmeterTypeMªIdentifierÍeÍg¢DCÂÂQ³ExpressionStatementÍrÍ†R´AssignmentExpressionÍrÍ…¡=S°MemberExpressionÍrÍT®ThisExpressionÍrÍvMªIdentifierÍwÍªrangeIndexÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍ„Í…¡2Q³ExpressionStatementÍÍ¥R´AssignmentExpressionÍÍ¤¡=S°MemberExpressionÍÍ T®ThisExpressionÍÍ”MªIdentifierÍ•Í «lastReadingÂÂU§LiteralÍ£Í¤ ¡0Q³ExpressionStatementÍ¯ÍÀR´AssignmentExpressionÍ¯Í¿¡=S°MemberExpressionÍ¯Í»T®ThisExpressionÍ¯Í³MªIdentifierÍ´Í»§lastRmsÂÂU§LiteralÍ¾Í¿ ¡0Q³ExpressionStatementÍÊÍâR´AssignmentExpressionÍÊÍá¡=S°MemberExpressionÍÊÍÚT®ThisExpressionÍÊÍÎMªIdentifierÍÏÍÚ«autoRangeOnÂÂU§LiteralÍİÍáÃ¤trueQ³ExpressionStatementÍìÍR´AssignmentExpressionÍìÍ¡=S°MemberExpressionÍìÍşT®ThisExpressionÍìÍğMªIdentifierÍñÍş­voltageReaderÂÂU§LiteralÍÍÀ¤nullQ³ExpressionStatementÍÍ+R´AssignmentExpressionÍÍ*¡=S°MemberExpressionÍÍ#T®ThisExpressionÍÍMªIdentifierÍÍ#®globalFallbackÂÂU§LiteralÍ&Í*À¤nullQ³ExpressionStatementÍ_ÍyR´AssignmentExpressionÍ_Íx¡=S°MemberExpressionÍ_ÍsT®ThisExpressionÍ_ÍcMªIdentifierÍdÍs¯rmsSampleBufferÂÂÔrV”¤type¥start£end¨elements¯ArrayExpressionÍvÍxQ³ExpressionStatementÍƒÍ›R´AssignmentExpressionÍƒÍš¡=S°MemberExpressionÍƒÍ–T®ThisExpressionÍƒÍ‡MªIdentifierÍˆÍ–®rmsSampleIndexÂÂU§LiteralÍ™Íš ¡0Q³ExpressionStatementÍ¥Í·R´AssignmentExpressionÍ¥Í¶¡=S°MemberExpressionÍ¥Í²T®ThisExpressionÍ¥Í©MªIdentifierÍªÍ²¨dcOffsetÂÂU§LiteralÍµÍ¶ ¡0O°MethodDefinitionÍÄÍoÂÂMªIdentifierÍÄÍË§setType¦methodP²FunctionExpressionÍËÍoÀÂÂÂ‘MªIdentifierÍÌÍÍ¡tN®BlockStatementÍÏÍo•Q³ExpressionStatementÍÚÍèR´AssignmentExpressionÍÚÍç¡=S°MemberExpressionÍÚÍãT®ThisExpressionÍÚÍŞMªIdentifierÍßÍã¤typeÂÂMªIdentifierÍæÍç¡tQ³ExpressionStatementÍòÍR´AssignmentExpressionÍòÍ¡=S°MemberExpressionÍòÍT®ThisExpressionÍòÍöMªIdentifierÍ÷ÍªrangeIndexÂÂU§LiteralÍÍ¡1Q³ExpressionStatementÍÍ*R´AssignmentExpressionÍÍ)¡=S°MemberExpressionÍÍ$T®ThisExpressionÍÍMªIdentifierÍÍ$¯rmsSampleBufferÂÂV¯ArrayExpressionÍ'Í)Q³ExpressionStatementÍ4ÍLR´AssignmentExpressionÍ4ÍK¡=S°MemberExpressionÍ4ÍGT®ThisExpressionÍ4Í8MªIdentifierÍ9ÍG®rmsSampleIndexÂÂU§LiteralÍJÍK ¡0Q³ExpressionStatementÍVÍhR´AssignmentExpressionÍVÍg¡=S°MemberExpressionÍVÍcT®ThisExpressionÍVÍZMªIdentifierÍ[Íc¨dcOffsetÂÂU§LiteralÍfÍg ¡0O°MethodDefinitionÍuÍ”ÂÂMªIdentifierÍuÍ|§getType¦methodP²FunctionExpressionÍ|Í”ÀÂÂÂN®BlockStatementÍÍ”‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍÍ’S°MemberExpressionÍˆÍ‘T®ThisExpressionÍˆÍŒMªIdentifierÍÍ‘¤typeÂÂO°MethodDefinitionÍšÍXÂÂMªIdentifierÍšÍª°setVoltageReader¦methodP²FunctionExpressionÍªÍXÀÂÂÂ‘MªIdentifierÍ«Í±¦readerN®BlockStatementÍ³ÍX“Q³ExpressionStatementÍ¾ÍÚR´AssignmentExpressionÍ¾ÍÙ¡=S°MemberExpressionÍ¾ÍĞT®ThisExpressionÍ¾ÍÂMªIdentifierÍÃÍĞ­voltageReaderÂÂMªIdentifierÍÓÍÙ¦readerQ³ExpressionStatementÍÍ/R´AssignmentExpressionÍÍ.¡=S°MemberExpressionÍÍ)T®ThisExpressionÍÍMªIdentifierÍÍ)¯rmsSampleBufferÂÂV¯ArrayExpressionÍ,Í.Q³ExpressionStatementÍ9ÍQR´AssignmentExpressionÍ9ÍP¡=S°MemberExpressionÍ9ÍLT®ThisExpressionÍ9Í=MªIdentifierÍ>ÍL®rmsSampleIndexÂÂU§LiteralÍOÍP ¡0O°MethodDefinitionÍ½ÍÂÂMªIdentifierÍ½ÍÎ±setGlobalFallback¦methodP²FunctionExpressionÍÎÍÀÂÂÂ‘MªIdentifierÍÏÍÕ¦readerN®BlockStatementÍ×Í‘Q³ExpressionStatementÍâÍÿR´AssignmentExpressionÍâÍş¡=S°MemberExpressionÍâÍõT®ThisExpressionÍâÍæMªIdentifierÍçÍõ®globalFallbackÂÂMªIdentifierÍøÍş¦readerO°MethodDefinitionÍÍôÂÂMªIdentifierÍÍ¨setRange¦methodP²FunctionExpressionÍÍôÀÂÂÂ‘MªIdentifierÍÍ£idxN®BlockStatementÍÍô“ÔrX•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ%Ík‘ÔrY•¤type¥start£end¢id¤init²VariableDeclaratorÍ+ÍjMªIdentifierÍ+Í1¦rangesÔrZ–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍ4ÍjÔr[–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ4ÍRS°MemberExpressionÍ4Í=T®ThisExpressionÍ4Í8MªIdentifierÍ9Í=¤typeÂÂ£===S°MemberExpressionÍBÍRMªIdentifierÍBÍO­VoltmeterTypeMªIdentifierÍPÍR¢DCÂÂMªIdentifierÍUÍ^©DC_RANGESMªIdentifierÍaÍj©AC_RANGES¥constZ«IfStatementÍuÍÊ[±LogicalExpressionÍyÍ˜[°BinaryExpressionÍyÍMªIdentifierÍyÍ|£idx¢>=U§LiteralÍ€Í ¡0¢&&[°BinaryExpressionÍ…Í˜MªIdentifierÍ…Íˆ£idx¡<S°MemberExpressionÍ‹Í˜MªIdentifierÍ‹Í‘¦rangesMªIdentifierÍ’Í˜¦lengthÂÂN®BlockStatementÍšÍÊ‘Q³ExpressionStatementÍ©Í¿R´AssignmentExpressionÍ©Í¾¡=S°MemberExpressionÍ©Í¸T®ThisExpressionÍ©Í­MªIdentifierÍ®Í¸ªrangeIndexÂÂMªIdentifierÍ»Í¾£idxÀQ³ExpressionStatementÍÔÍíR´AssignmentExpressionÍÔÍì¡=S°MemberExpressionÍÔÍäT®ThisExpressionÍÔÍØMªIdentifierÍÙÍä«autoRangeOnÂÂU§LiteralÍçÍìÂ¥falseO°MethodDefinitionÍúÍŒÂÂMªIdentifierÍúÍ¨getRange¦methodP²FunctionExpressionÍÍŒÀÂÂÂN®BlockStatementÍÍŒ’X³VariableDeclarationÍÍV‘Y²VariableDeclaratorÍÍUMªIdentifierÍÍ¦rangesZµConditionalExpressionÍÍU[°BinaryExpressionÍÍ=S°MemberExpressionÍÍ(T®ThisExpressionÍÍ#MªIdentifierÍ$Í(¤typeÂÂ£===S°MemberExpressionÍ-Í=MªIdentifierÍ-Í:­VoltmeterTypeMªIdentifierÍ;Í=¢DCÂÂMªIdentifierÍ@ÍI©DC_RANGESMªIdentifierÍLÍU©AC_RANGES¥constW¯ReturnStatementÍ`Í…[±LogicalExpressionÍgÍ„S°MemberExpressionÍgÍ~MªIdentifierÍgÍm¦rangesS°MemberExpressionÍnÍ}T®ThisExpressionÍnÍrMªIdentifierÍsÍ}ªrangeIndexÂÂÃÂ¢??U§LiteralÍ‚Í„¢20O°MethodDefinitionÍ’ÍTÂÂMªIdentifierÍ’Í›©autoRange¦methodP²FunctionExpressionÍ›ÍTÀÂÂÂN®BlockStatementÍÍT•Q³ExpressionStatementÍ©ÍÁR´AssignmentExpressionÍ©ÍÀ¡=S°MemberExpressionÍ©Í¹T®ThisExpressionÍ©Í­MªIdentifierÍ®Í¹«autoRangeOnÂÂU§LiteralÍ¼ÍÀÃ¤trueX³VariableDeclarationÍËÍ‘Y²VariableDeclaratorÍÑÍMªIdentifierÍÑÍÒ¡rZµConditionalExpressionÍÕÍ[°BinaryExpressionÍÕÍóS°MemberExpressionÍÕÍŞT®ThisExpressionÍÕÍÙMªIdentifierÍÚÍŞ¤typeÂÂ£===S°MemberExpressionÍãÍóMªIdentifierÍãÍğ­VoltmeterTypeMªIdentifierÍñÍó¢ACÂÂS°MemberExpressionÍöÍT®ThisExpressionÍöÍúMªIdentifierÍûÍ§lastRmsÂÂS°MemberExpressionÍÍT®ThisExpressionÍÍ	MªIdentifierÍ
-Í«lastReadingÂÂ¥constX³VariableDeclarationÍ Íf‘Y²VariableDeclaratorÍ&ÍeMªIdentifierÍ&Í,¦rangesZµConditionalExpressionÍ/Íe[°BinaryExpressionÍ/ÍMS°MemberExpressionÍ/Í8T®ThisExpressionÍ/Í3MªIdentifierÍ4Í8¤typeÂÂ£===S°MemberExpressionÍ=ÍMMªIdentifierÍ=ÍJ­VoltmeterTypeMªIdentifierÍKÍM¢DCÂÂMªIdentifierÍPÍY©DC_RANGESMªIdentifierÍ\Íe©AC_RANGES¥constÔr\—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍpÍX³VariableDeclarationÍuÍ~‘Y²VariableDeclaratorÍyÍ~MªIdentifierÍyÍz¡iU§LiteralÍ}Í~ ¡0£let[°BinaryExpressionÍ€Í‘MªIdentifierÍ€Í¡i¡<S°MemberExpressionÍ„Í‘MªIdentifierÍ„ÍŠ¦rangesMªIdentifierÍ‹Í‘¦lengthÂÂÔr]–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ“Í–¢++ÂMªIdentifierÍ“Í”¡iN®BlockStatementÍ˜Í‘Z«IfStatementÍ§Í[°BinaryExpressionÍ«ÍÃÔr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ«Í¶S°MemberExpressionÍ«Í³MªIdentifierÍ«Í¯¤MathMªIdentifierÍ°Í³£absÂÂ‘MªIdentifierÍ´Íµ¡rÂ¢<=S°MemberExpressionÍºÍÃMªIdentifierÍºÍÀ¦rangesMªIdentifierÍÁÍÂ¡iÃÂN®BlockStatementÍÅÍ’Q³ExpressionStatementÍØÍìR´AssignmentExpressionÍØÍë¡=S°MemberExpressionÍØÍçT®ThisExpressionÍØÍÜMªIdentifierÍİÍçªrangeIndexÂÂMªIdentifierÍêÍë¡iW¯ReturnStatementÍşÍÀÀQ³ExpressionStatementÍ)ÍMR´AssignmentExpressionÍ)ÍL¡=S°MemberExpressionÍ)Í8T®ThisExpressionÍ)Í-MªIdentifierÍ.Í8ªrangeIndexÂÂ[°BinaryExpressionÍ;ÍLS°MemberExpressionÍ;ÍHMªIdentifierÍ;ÍA¦rangesMªIdentifierÍBÍH¦lengthÂÂ¡-U§LiteralÍKÍL¡1O°MethodDefinitionÍZÍ
-ÂÂMªIdentifierÍZÍa§measure¦methodP²FunctionExpressionÍaÍ
-ÀÂÂÂN®BlockStatementÍdÍ
-–X³VariableDeclarationÍoÍ‹‘Y²VariableDeclaratorÍuÍŠMªIdentifierÍuÍx£raw^®CallExpressionÍ{ÍŠS°MemberExpressionÍ{ÍˆT®ThisExpressionÍ{ÍMªIdentifierÍ€Íˆ¨simulateÂÂÂ¥constZ«IfStatementÍ•Í	4[°BinaryExpressionÍ™Í·S°MemberExpressionÍ™Í¢T®ThisExpressionÍ™ÍMªIdentifierÍÍ¢¤typeÂÂ£===S°MemberExpressionÍ§Í·MªIdentifierÍ§Í´­VoltmeterTypeMªIdentifierÍµÍ·¢ACÂÂN®BlockStatementÍ¹Í	4“Q³ExpressionStatementÍÈÍâ^®CallExpressionÍÈÍáS°MemberExpressionÍÈÍÜT®ThisExpressionÍÈÍÌMªIdentifierÍÍÍÜ¯updateRmsBufferÂÂ‘MªIdentifierÍİÍà£rawÂQ³ExpressionStatementÍğÍ	R´AssignmentExpressionÍğÍ	¡=S°MemberExpressionÍğÍ	 T®ThisExpressionÍğÍôMªIdentifierÍõÍ	 «lastReadingÂÂMªIdentifierÍ	Í	£rawW¯ReturnStatementÍ	Í	)S°MemberExpressionÍ	Í	(T®ThisExpressionÍ	Í	 MªIdentifierÍ	!Í	(§lastRmsÂÂÀZ«IfStatementÍ	>Í	rS°MemberExpressionÍ	BÍ	RT®ThisExpressionÍ	BÍ	FMªIdentifierÍ	GÍ	R«autoRangeOnÂÂQ³ExpressionStatementÍ	aÍ	r^®CallExpressionÍ	aÍ	qS°MemberExpressionÍ	aÍ	oT®ThisExpressionÍ	aÍ	eMªIdentifierÍ	fÍ	o©autoRangeÂÂÂÀX³VariableDeclarationÍ	|Í	˜‘Y²VariableDeclaratorÍ	‚Í	—MªIdentifierÍ	‚Í	…£max^®CallExpressionÍ	ˆÍ	—S°MemberExpressionÍ	ˆÍ	•T®ThisExpressionÍ	ˆÍ	ŒMªIdentifierÍ	Í	•¨getRangeÂÂÂ¥constQ³ExpressionStatementÍ	¢Í	çR´AssignmentExpressionÍ	¢Í	æ¡=S°MemberExpressionÍ	¢Í	²T®ThisExpressionÍ	¢Í	¦MªIdentifierÍ	§Í	²«lastReadingÂÂ[°BinaryExpressionÍ	µÍ	æ^®CallExpressionÍ	µÍ	ÑS°MemberExpressionÍ	µÍ	½MªIdentifierÍ	µÍ	¹¤MathMªIdentifierÍ	ºÍ	½£minÂÂ’^®CallExpressionÍ	¾Í	ËS°MemberExpressionÍ	¾Í	ÆMªIdentifierÍ	¾Í	Â¤MathMªIdentifierÍ	ÃÍ	Æ£absÂÂ‘MªIdentifierÍ	ÇÍ	Ê£rawÂMªIdentifierÍ	ÍÍ	Ğ£maxÂ¡*ZµConditionalExpressionÍ	ÕÍ	å[°BinaryExpressionÍ	ÕÍ	ÜMªIdentifierÍ	ÕÍ	Ø£raw¡<U§LiteralÍ	ÛÍ	Ü ¡0]¯UnaryExpressionÍ	ßÍ	á¡-ÃU§LiteralÍ	àÍ	á¡1U§LiteralÍ	äÍ	å¡1W¯ReturnStatementÍ	ñÍ
-	S°MemberExpressionÍ	øÍ
-T®ThisExpressionÍ	øÍ	üMªIdentifierÍ	ıÍ
-«lastReadingÂÂO°MethodDefinitionÍ
-Í
-sÂÂMªIdentifierÍ
-Í
-$®getLastReading¦methodP²FunctionExpressionÍ
-$Í
-sÀÂÂÂN®BlockStatementÍ
-'Í
-s‘W¯ReturnStatementÍ
-)Í
-qZµConditionalExpressionÍ
-0Í
-p[°BinaryExpressionÍ
-0Í
-NS°MemberExpressionÍ
-0Í
-9T®ThisExpressionÍ
-0Í
-4MªIdentifierÍ
-5Í
-9¤typeÂÂ£===S°MemberExpressionÍ
->Í
-NMªIdentifierÍ
->Í
-K­VoltmeterTypeMªIdentifierÍ
-LÍ
-N¢ACÂÂS°MemberExpressionÍ
-QÍ
-]T®ThisExpressionÍ
-QÍ
-UMªIdentifierÍ
-VÍ
-]§lastRmsÂÂS°MemberExpressionÍ
-`Í
-pT®ThisExpressionÍ
-`Í
-dMªIdentifierÍ
-eÍ
-p«lastReadingÂÂO°MethodDefinitionÍ
-yÍ
-ÂÂÂMªIdentifierÍ
-yÍ
-€§getUnit¦methodP²FunctionExpressionÍ
-€Í
-ÂÀÂÂÂN®BlockStatementÍ
-ƒÍ
-Â‘W¯ReturnStatementÍ
-…Í
-ÀZµConditionalExpressionÍ
-ŒÍ
-¿[°BinaryExpressionÍ
-ŒÍ
-ªS°MemberExpressionÍ
-ŒÍ
-•T®ThisExpressionÍ
-ŒÍ
-MªIdentifierÍ
-‘Í
-•¤typeÂÂ£===S°MemberExpressionÍ
-šÍ
-ªMªIdentifierÍ
-šÍ
-§­VoltmeterTypeMªIdentifierÍ
-¨Í
-ª¢DCÂÂU§LiteralÍ
-­Í
-³¤V DC¦'V DC'U§LiteralÍ
-¶Í
-¿§Vrms AC©'Vrms AC'O°MethodDefinitionÍ
-ÈÍÂÂMªIdentifierÍ
-ÈÍ
-Õ­getRangeLabel¦methodP²FunctionExpressionÍ
-ÕÍÀÂÂÂN®BlockStatementÍ
-ØÍ‘W¯ReturnStatementÍ
-ãÍ Ôr_•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ
-êÍ
-ÿ‘^®CallExpressionÍ
-íÍ
-üS°MemberExpressionÍ
-íÍ
-úT®ThisExpressionÍ
-íÍ
-ñMªIdentifierÍ
-òÍ
-ú¨getRangeÂÂÂ’Ôr`•¤type¥start£end¥value¤tail¯TemplateElementÍ
-ëÍ
-ëÔra’£raw¦cooked  Â`¯TemplateElementÍ
-ıÍ
-şa¡V¡VÃO°MethodDefinitionÍÍ÷ÂÂMªIdentifierÍÍ¨simulate¦methodP²FunctionExpressionÍÍ÷ÀÂÂÂN®BlockStatementÍÍ÷“Z«IfStatementÍ#Íz[°BinaryExpressionÍ'ÍBS°MemberExpressionÍ'Í9T®ThisExpressionÍ'Í+MªIdentifierÍ,Í9­voltageReaderÂÂ£!==U§LiteralÍ>ÍBÀ¤nullN®BlockStatementÍDÍz‘W¯ReturnStatementÍSÍo^®CallExpressionÍZÍnS°MemberExpressionÍZÍlT®ThisExpressionÍZÍ^MªIdentifierÍ_Íl­voltageReaderÂÂÂÀZ«IfStatementÍ„Íİ[°BinaryExpressionÍˆÍ¤S°MemberExpressionÍˆÍ›T®ThisExpressionÍˆÍŒMªIdentifierÍÍ›®globalFallbackÂÂ£!==U§LiteralÍ Í¤À¤nullN®BlockStatementÍ¦Íİ‘W¯ReturnStatementÍµÍÒ^®CallExpressionÍ¼ÍÑS°MemberExpressionÍ¼ÍÏT®ThisExpressionÍ¼ÍÀMªIdentifierÍÁÍÏ®globalFallbackÂÂÂÀW¯ReturnStatementÍçÍğU§LiteralÍîÍï ¡0O°MethodDefinitionÍ8Í\ÂÂMªIdentifierÍ8ÍG¯updateRmsBuffer¦methodP²FunctionExpressionÍGÍ\ÀÂÂÂ‘MªIdentifierÍHÍK£rawN®BlockStatementÍMÍ\“Z«IfStatementÍXÍÎ[°BinaryExpressionÍ\ÍŒS°MemberExpressionÍ\ÍwS°MemberExpressionÍ\ÍpT®ThisExpressionÍ\Í`MªIdentifierÍaÍp¯rmsSampleBufferÂÂMªIdentifierÍqÍw¦lengthÂÂ¡<MªIdentifierÍzÍŒ²RMS_WINDOW_SAMPLESN®BlockStatementÍÍ’Q³ExpressionStatementÍÍ¼^®CallExpressionÍÍ»S°MemberExpressionÍÍ¶S°MemberExpressionÍÍ±T®ThisExpressionÍÍ¡MªIdentifierÍ¢Í±¯rmsSampleBufferÂÂMªIdentifierÍ²Í¶¤pushÂÂ‘MªIdentifierÍ·Íº£rawÂQ³ExpressionStatementÍÊÍüR´AssignmentExpressionÍÊÍû¡=S°MemberExpressionÍÊÍİT®ThisExpressionÍÊÍÎMªIdentifierÍÏÍİ®rmsSampleIndexÂÂS°MemberExpressionÍàÍûS°MemberExpressionÍàÍôT®ThisExpressionÍàÍäMªIdentifierÍåÍô¯rmsSampleBufferÂÂMªIdentifierÍõÍû¦lengthÂÂN®BlockStatementÍÍÎ’Q³ExpressionStatementÍ%ÍjR´AssignmentExpressionÍ%Íi¡=S°MemberExpressionÍ%ÍcS°MemberExpressionÍ%Í9T®ThisExpressionÍ%Í)MªIdentifierÍ*Í9¯rmsSampleBufferÂÂ[°BinaryExpressionÍ:ÍbS°MemberExpressionÍ:ÍMT®ThisExpressionÍ:Í>MªIdentifierÍ?ÍM®rmsSampleIndexÂÂ¡%MªIdentifierÍPÍb²RMS_WINDOW_SAMPLESÃÂMªIdentifierÍfÍi£rawQ³ExpressionStatementÍxÍÃR´AssignmentExpressionÍxÍÂ¡=S°MemberExpressionÍxÍ‹T®ThisExpressionÍxÍ|MªIdentifierÍ}Í‹®rmsSampleIndexÂÂ[°BinaryExpressionÍÍÂ[°BinaryExpressionÍÍ¦S°MemberExpressionÍÍ¢T®ThisExpressionÍÍ“MªIdentifierÍ”Í¢®rmsSampleIndexÂÂ¡+U§LiteralÍ¥Í¦¡1¡%[°BinaryExpressionÍ«ÍÁMªIdentifierÍ«Í½²RMS_WINDOW_SAMPLES¡*U§LiteralÍÀÍÁ¡2Z«IfStatementÍüÍÖ[°BinaryExpressionÍ Í S°MemberExpressionÍ ÍS°MemberExpressionÍ ÍT®ThisExpressionÍ ÍMªIdentifierÍÍ¯rmsSampleBufferÂÂMªIdentifierÍÍ¦lengthÂÂ¢>=U§LiteralÍÍ ¡2N®BlockStatementÍ"ÍÖ“X³VariableDeclarationÍ1Í=‘Y²VariableDeclaratorÍ5Í<MªIdentifierÍ5Í8£sumU§LiteralÍ;Í< ¡0£letÔrb—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍKÍ‹ÂX³VariableDeclarationÍPÍW‘Y²VariableDeclaratorÍVÍWMªIdentifierÍVÍW¡vÀ¥constS°MemberExpressionÍ[ÍoT®ThisExpressionÍ[Í_MªIdentifierÍ`Ío¯rmsSampleBufferÂÂQ³ExpressionStatementÍ‚Í‹R´AssignmentExpressionÍ‚ÍŠ¢+=MªIdentifierÍ‚Í…£sumMªIdentifierÍ‰ÍŠ¡vQ³ExpressionStatementÍ™ÍËR´AssignmentExpressionÍ™ÍÊ¡=S°MemberExpressionÍ™Í¦T®ThisExpressionÍ™ÍMªIdentifierÍÍ¦¨dcOffsetÂÂ[°BinaryExpressionÍ©ÍÊMªIdentifierÍ©Í¬£sum¡/S°MemberExpressionÍ¯ÍÊS°MemberExpressionÍ¯ÍÃT®ThisExpressionÍ¯Í³MªIdentifierÍ´ÍÃ¯rmsSampleBufferÂÂMªIdentifierÍÄÍÊ¦lengthÂÂÀZ«IfStatementÍ%ÍU[°BinaryExpressionÍ)ÍIS°MemberExpressionÍ)ÍDS°MemberExpressionÍ)Í=T®ThisExpressionÍ)Í-MªIdentifierÍ.Í=¯rmsSampleBufferÂÂMªIdentifierÍ>ÍD¦lengthÂÂ¢>=U§LiteralÍHÍI¡2N®BlockStatementÍKÍU“X³VariableDeclarationÍZÍh‘Y²VariableDeclaratorÍ^ÍgMªIdentifierÍ^Íc¥sumSqU§LiteralÍfÍg ¡0£letb®ForOfStatementÍvÍşÂX³VariableDeclarationÍ{Í‚‘Y²VariableDeclaratorÍÍ‚MªIdentifierÍÍ‚¡vÀ¥constS°MemberExpressionÍ†ÍšT®ThisExpressionÍ†ÍŠMªIdentifierÍ‹Íš¯rmsSampleBufferÂÂN®BlockStatementÍœÍş’X³VariableDeclarationÍ¯ÍÌ‘Y²VariableDeclaratorÍµÍËMªIdentifierÍµÍ·¢ac[°BinaryExpressionÍºÍËMªIdentifierÍºÍ»¡v¡-S°MemberExpressionÍ¾ÍËT®ThisExpressionÍ¾ÍÂMªIdentifierÍÃÍË¨dcOffsetÂÂ¥constQ³ExpressionStatementÍŞÍïR´AssignmentExpressionÍŞÍî¢+=MªIdentifierÍŞÍã¥sumSq[°BinaryExpressionÍçÍîMªIdentifierÍçÍé¢ac¡*MªIdentifierÍìÍî¢acQ³ExpressionStatementÍÍJR´AssignmentExpressionÍÍI¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§lastRmsÂÂ^®CallExpressionÍÍIS°MemberExpressionÍÍ$MªIdentifierÍÍ¤MathMªIdentifierÍ Í$¤sqrtÂÂ‘[°BinaryExpressionÍ%ÍHMªIdentifierÍ%Í*¥sumSq¡/S°MemberExpressionÍ-ÍHS°MemberExpressionÍ-ÍAT®ThisExpressionÍ-Í1MªIdentifierÍ2ÍA¯rmsSampleBufferÂÂMªIdentifierÍBÍH¦lengthÂÂÂÀÀ‘Ôrc•¤type¥start£endªspecifiers¦source±ImportDeclaration.ÌU‘Ôrd•¤type¥start£end¨imported¥local¯ImportSpecifier7ÌDMªIdentifier7ÌD­VoltmeterTypeMªIdentifier7ÌD­VoltmeterTypeU§LiteralÌLÌT¦common¨'common'

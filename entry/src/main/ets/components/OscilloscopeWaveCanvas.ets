@@ -1,16 +1,20 @@
 /**
- * 示波器波形 Canvas — CRT 风格网格 / 刻度 / 统计 HUD / 平滑迹线
+ * 示波器波形 Canvas — CRT 风格网格 / 刻度 / 统计 HUD / 折线迹线
+ * 注意：Harmony Canvas 必须在 onReady 之后绘制，否则迹线会丢。
  */
 
 @Component
 export struct OscilloscopeWaveCanvas {
   @Prop @Watch('onDataChanged') timeData: number[] = [];
   @Prop @Watch('onDataChanged') voltageData: number[] = [];
+  /** 父组件每次刷新递增，强制触发重绘（绕过 @Prop 数组有时不触发 Watch） */
+  @Prop @Watch('onDataChanged') frameId: number = 0;
   @Prop channelLabel: string = 'CH1';
   @Prop waveColor: string = '#00e676';
-  @Prop vPerDiv: number = 1;
+  @Prop @Watch('onDataChanged') vPerDiv: number = 1;
+  @Prop tPerDiv: number = 1e-3;
   @Prop triggerLevel: number = 0;
-  @Prop autoFit: boolean = true;
+  @Prop @Watch('onDataChanged') autoFit: boolean = true;
   @Prop canvasHeight: number = 160;
   @Prop showStats: boolean = true;
   @State canvasW: number = 360;
@@ -20,13 +24,14 @@ export struct OscilloscopeWaveCanvas {
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
   private readonly cols: number = 10;
   private readonly rows: number = 8;
+  private canvasReady: boolean = false;
   /** EMA of Y window — stops autoFit from jumping every frame */
   private emaVMin: number = 0;
   private emaVMax: number = 1;
   private scaleInit: boolean = false;
 
   onDataChanged(): void {
-    this.drawWaveform();
+    this.scheduleDraw();
   }
 
   build() {
@@ -35,22 +40,40 @@ export struct OscilloscopeWaveCanvas {
       .height(this.canvasHeight)
       .backgroundColor('#07070d')
       .border({ width: 1, color: '#1e2738' })
-      .onAreaChange((_old: Area, newArea: Area) => {
-        this.canvasW = Number(newArea.width);
-        this.canvasH = Number(newArea.height);
-        this.drawWaveform();
-      })
-      .onAppear(() => {
+      .onReady(() => {
+        this.canvasReady = true;
         this.canvasH = this.canvasHeight;
         this.drawWaveform();
       })
+      .onAreaChange((_old: Area, newArea: Area) => {
+        const w = Number(newArea.width);
+        const h = Number(newArea.height);
+        if (w > 1) {
+          this.canvasW = w;
+        }
+        if (h > 1) {
+          this.canvasH = h;
+        }
+        this.scheduleDraw();
+      })
+      .onAppear(() => {
+        this.canvasH = this.canvasHeight;
+        this.scheduleDraw();
+      })
+  }
+
+  private scheduleDraw(): void {
+    if (!this.canvasReady) {
+      return;
+    }
+    this.drawWaveform();
   }
 
   private drawWaveform(): void {
     const ctx = this.ctx;
     const w = this.canvasW;
     const h = this.canvasH;
-    if (w <= 0 || h <= 0) {
+    if (w <= 1 || h <= 1) {
       return;
     }
 
@@ -67,7 +90,7 @@ export struct OscilloscopeWaveCanvas {
     const scale = this.computeScale(n);
     this.drawZeroLine(ctx, w, h, scale.vMin, scale.vMax);
     this.drawTrigger(ctx, w, h, scale.vMin, scale.vMax);
-    this.drawSmoothWave(ctx, w, h, n, scale.vMin, scale.vMax, scale.tMin, scale.tMax);
+    this.drawTrace(ctx, w, h, n, scale.vMin, scale.vMax);
     this.drawHudHeaders(ctx, w, h, n, scale.vMin, scale.vMax, scale.tMin, scale.tMax);
   }
 
@@ -150,37 +173,48 @@ export struct OscilloscopeWaveCanvas {
   private computeScale(n: number): ScaleWindow {
     const rows = this.rows;
     const vDiv = Math.max(this.vPerDiv, 1e-6);
-    let vMin = -vDiv * (rows / 2);
-    let vMax = vDiv * (rows / 2);
 
-    let dataMin = this.voltageData[0];
-    let dataMax = this.voltageData[0];
-    for (let i = 1; i < n; i++) {
+    let dataMin = Number.POSITIVE_INFINITY;
+    let dataMax = Number.NEGATIVE_INFINITY;
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < n; i++) {
       const v = this.voltageData[i];
+      if (!Number.isFinite(v)) {
+        continue;
+      }
       if (v < dataMin) {
         dataMin = v;
       }
       if (v > dataMax) {
         dataMax = v;
       }
+      sum += v;
+      count++;
     }
+    if (count < 1 || !Number.isFinite(dataMin) || !Number.isFinite(dataMax)) {
+      dataMin = -vDiv * (rows / 2);
+      dataMax = vDiv * (rows / 2);
+      sum = 0;
+      count = 1;
+    }
+    const mean = sum / count;
+    const vpp = Math.max(dataMax - dataMin, 1e-6);
+
+    let vMin: number;
+    let vMax: number;
 
     if (this.autoFit) {
-      const span = Math.max(dataMax - dataMin, vDiv * 0.25, 1e-6);
-      const pad = span * 0.18;
-      let targetMin = Math.min(dataMin - pad, 0);
-      let targetMax = Math.max(dataMax + pad, 0);
-      if (targetMax - targetMin < vDiv) {
-        const mid = (dataMin + dataMax) / 2;
-        targetMin = mid - vDiv * (rows / 4);
-        targetMax = mid + vDiv * (rows / 4);
-      }
+      // 以信号中心为基准，不要强行把 0V 拉进画面（否则 2.2V 正弦会被压到顶部）
+      const half = Math.max(vpp * 0.65, vDiv * 1.5, 0.05);
+      let targetMin = mean - half;
+      let targetMax = mean + half;
       if (!this.scaleInit) {
         this.emaVMin = targetMin;
         this.emaVMax = targetMax;
         this.scaleInit = true;
       } else {
-        const a = 0.18;
+        const a = 0.28;
         this.emaVMin = a * targetMin + (1 - a) * this.emaVMin;
         this.emaVMax = a * targetMax + (1 - a) * this.emaVMax;
       }
@@ -188,23 +222,19 @@ export struct OscilloscopeWaveCanvas {
       vMax = this.emaVMax;
     } else {
       this.scaleInit = false;
-      const mid = (dataMin + dataMax) / 2;
+      // 固定档：按 V/div × 格数，中心对齐信号均值
       const half = vDiv * (rows / 2);
-      vMin = mid - half;
-      vMax = mid + half;
-      if (dataMin < vMin) {
-        vMin = dataMin - vDiv * 0.25;
-      }
-      if (dataMax > vMax) {
-        vMax = dataMax + vDiv * 0.25;
-      }
+      vMin = mean - half;
+      vMax = mean + half;
     }
 
+    const t0 = Number.isFinite(this.timeData[0]) ? this.timeData[0] : 0;
+    const t1 = Number.isFinite(this.timeData[n - 1]) ? this.timeData[n - 1] : t0;
     return {
       vMin: vMin,
       vMax: vMax,
-      tMin: this.timeData[0],
-      tMax: this.timeData[n - 1]
+      tMin: t0,
+      tMax: t1
     };
   }
 
@@ -247,40 +277,49 @@ export struct OscilloscopeWaveCanvas {
   }
 
   /**
-   * Downsample to ~1 point/pixel, then Catmull-Rom → cubic Bezier.
-   * Avoids the old min/max envelope which painted vertical spikes on every bucket.
+   * 引擎已重采样为均匀时间轴 → 按索引映射 X。
+   * 过密时每像素取中点（不做 max/min 交替，避免长时间显示成锯齿乱线）。
    */
-  private drawSmoothWave(ctx: CanvasRenderingContext2D, w: number, h: number, n: number,
-    vMin: number, vMax: number, tMin: number, tMax: number): void {
-    const tRange = Math.max(tMax - tMin, 1e-15);
-    const targetPts = Math.max(Math.min(Math.floor(w), 480), 64);
+  private drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, n: number,
+    vMin: number, vMax: number): void {
     const xs: number[] = [];
     const ys: number[] = [];
 
-    if (n <= targetPts) {
+    if (n <= Math.floor(w) + 2) {
       for (let i = 0; i < n; i++) {
-        xs.push(((this.timeData[i] - tMin) / tRange) * w);
-        ys.push(this.voltageToY(this.voltageData[i], h, vMin, vMax));
+        const v = this.voltageData[i];
+        if (!Number.isFinite(v)) {
+          continue;
+        }
+        const x = n > 1 ? (i / (n - 1)) * w : 0;
+        xs.push(x);
+        ys.push(this.voltageToY(v, h, vMin, vMax));
       }
     } else {
-      for (let p = 0; p < targetPts; p++) {
-        const tNorm = targetPts > 1 ? p / (targetPts - 1) : 0;
-        const tAbs = tMin + tNorm * tRange;
-        // binary-ish scan via index map
-        let lo = 0;
-        let hi = n - 1;
-        while (hi - lo > 1) {
-          const mid = Math.floor((lo + hi) / 2);
-          if (this.timeData[mid] < tAbs) {
-            lo = mid;
-          } else {
-            hi = mid;
+      const buckets = Math.max(Math.floor(w), 64);
+      for (let b = 0; b < buckets; b++) {
+        const i0 = Math.floor((b / buckets) * n);
+        const i1 = Math.min(n, Math.floor(((b + 1) / buckets) * n));
+        if (i1 <= i0) {
+          continue;
+        }
+        const mid = i0 + ((i1 - i0) >> 1);
+        let v = this.voltageData[mid];
+        if (!Number.isFinite(v)) {
+          // fall back to first finite in bucket
+          v = Number.NaN;
+          for (let i = i0; i < i1; i++) {
+            if (Number.isFinite(this.voltageData[i])) {
+              v = this.voltageData[i];
+              break;
+            }
           }
         }
-        const dt = Math.max(this.timeData[hi] - this.timeData[lo], 1e-15);
-        const f = Math.max(0, Math.min(1, (tAbs - this.timeData[lo]) / dt));
-        const v = this.voltageData[lo] + f * (this.voltageData[hi] - this.voltageData[lo]);
-        xs.push(tNorm * w);
+        if (!Number.isFinite(v)) {
+          continue;
+        }
+        const x = buckets > 1 ? (b / (buckets - 1)) * w : 0;
+        xs.push(x);
         ys.push(this.voltageToY(v, h, vMin, vMax));
       }
     }
@@ -289,48 +328,22 @@ export struct OscilloscopeWaveCanvas {
       return;
     }
 
-    // Soft glow
-    ctx.strokeStyle = this.withAlpha(this.waveColor, 0.2);
-    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = this.withAlpha(this.waveColor, 0.25);
+    ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    this.strokeCatmullRom(ctx, xs, ys);
+    this.strokePolyline(ctx, xs, ys);
 
-    // Main trace
     ctx.strokeStyle = this.waveColor;
-    ctx.lineWidth = 1.6;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    this.strokeCatmullRom(ctx, xs, ys);
+    ctx.lineWidth = 1.7;
+    this.strokePolyline(ctx, xs, ys);
   }
 
-  private strokeCatmullRom(ctx: CanvasRenderingContext2D, xs: number[], ys: number[]): void {
-    const n = xs.length;
+  private strokePolyline(ctx: CanvasRenderingContext2D, xs: number[], ys: number[]): void {
     ctx.beginPath();
     ctx.moveTo(xs[0], ys[0]);
-    if (n === 2) {
-      ctx.lineTo(xs[1], ys[1]);
-      ctx.stroke();
-      return;
-    }
-    for (let i = 0; i < n - 1; i++) {
-      const i0 = Math.max(i - 1, 0);
-      const i1 = i;
-      const i2 = i + 1;
-      const i3 = Math.min(i + 2, n - 1);
-      const p0x = xs[i0];
-      const p0y = ys[i0];
-      const p1x = xs[i1];
-      const p1y = ys[i1];
-      const p2x = xs[i2];
-      const p2y = ys[i2];
-      const p3x = xs[i3];
-      const p3y = ys[i3];
-      const c1x = p1x + (p2x - p0x) / 6;
-      const c1y = p1y + (p2y - p0y) / 6;
-      const c2x = p2x - (p3x - p1x) / 6;
-      const c2y = p2y - (p3y - p1y) / 6;
-      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2x, p2y);
+    for (let i = 1; i < xs.length; i++) {
+      ctx.lineTo(xs[i], ys[i]);
     }
     ctx.stroke();
   }
@@ -346,13 +359,19 @@ export struct OscilloscopeWaveCanvas {
     ctx.font = '9px monospace';
     ctx.fillText(`${this.formatVoltage(vMax)}`, w - 54, 12);
     ctx.fillText(`${this.formatVoltage(vMin)}`, w - 54, h - 6);
-    ctx.fillText(this.formatTime(tMin), 8, h - 6);
-    ctx.fillText(this.formatTime(tMax), w / 2 - 20, h - 6);
+    // 横轴显示窗宽（相对时间），不是仿真绝对时刻
+    const span = Math.max(tMax - tMin, 0);
+    ctx.fillText('0', 8, h - 6);
+    ctx.fillText(this.formatTime(span), w / 2 - 20, h - 6);
+    ctx.fillText(`${this.formatTime(this.tPerDiv)}/div`, w - 62, h - 6);
 
     if (!this.showStats) {
       return;
     }
-    const nowV = this.voltageData[n - 1];
+    let nowV = this.voltageData[n - 1];
+    if (!Number.isFinite(nowV)) {
+      nowV = stats.avg;
+    }
     const line = `Vpp ${this.formatVoltage(stats.vpp)}  ` +
       `Avg ${this.formatVoltage(stats.avg)}  ` +
       `f ${this.formatFreq(stats.freq)}  ` +
@@ -367,11 +386,15 @@ export struct OscilloscopeWaveCanvas {
   }
 
   private computeStats(n: number): WaveStats {
-    let minV = this.voltageData[0];
-    let maxV = this.voltageData[0];
+    let minV = Number.POSITIVE_INFINITY;
+    let maxV = Number.NEGATIVE_INFINITY;
     let sum = 0;
+    let count = 0;
     for (let i = 0; i < n; i++) {
       const v = this.voltageData[i];
+      if (!Number.isFinite(v)) {
+        continue;
+      }
       if (v < minV) {
         minV = v;
       }
@@ -379,14 +402,23 @@ export struct OscilloscopeWaveCanvas {
         maxV = v;
       }
       sum += v;
+      count++;
     }
-    const avg = sum / n;
+    if (count < 1) {
+      return { vpp: 0, avg: 0, freq: 0, minV: 0, maxV: 0 };
+    }
+    const avg = sum / count;
     let crossings = 0;
     let firstT = -1;
     let lastT = -1;
     const thr = avg;
     for (let i = 1; i < n; i++) {
-      if (this.voltageData[i - 1] <= thr && this.voltageData[i] > thr) {
+      const a = this.voltageData[i - 1];
+      const b = this.voltageData[i];
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        continue;
+      }
+      if (a <= thr && b > thr) {
         if (firstT < 0) {
           firstT = this.timeData[i];
         } else {
@@ -404,10 +436,20 @@ export struct OscilloscopeWaveCanvas {
 
   private voltageToY(v: number, h: number, vMin: number, vMax: number): number {
     const range = Math.max(vMax - vMin, 1e-15);
-    return h - ((v - vMin) / range) * h;
+    const y = h - ((v - vMin) / range) * h;
+    if (y < 0) {
+      return 0;
+    }
+    if (y > h) {
+      return h;
+    }
+    return y;
   }
 
   private formatVoltage(v: number): string {
+    if (!Number.isFinite(v)) {
+      return '--';
+    }
     const a = Math.abs(v);
     if (a >= 100) {
       return `${v.toFixed(0)}V`;
@@ -422,6 +464,9 @@ export struct OscilloscopeWaveCanvas {
   }
 
   private formatTime(t: number): string {
+    if (!Number.isFinite(t)) {
+      return '--';
+    }
     const a = Math.abs(t);
     if (a >= 1) {
       return `${t.toFixed(3)}s`;

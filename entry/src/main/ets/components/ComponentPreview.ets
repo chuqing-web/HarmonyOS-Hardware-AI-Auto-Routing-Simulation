@@ -11,6 +11,7 @@ import { ComponentDefinition } from 'component_library';
 @Component
 export struct ComponentPreview {
   @Prop @Watch('onLibraryIdChange') libraryId: string = '';
+  @Prop @Watch('onThemeRefreshChange') themeRefreshKey: number = 0;
   @State private previewVersion: number = 0;
   @State private pressed: boolean = false;
 
@@ -25,12 +26,18 @@ export struct ComponentPreview {
     this.redraw();
   }
 
+  onThemeRefreshChange(): void {
+    this.previewVersion++;
+    this.redraw();
+  }
+
   build() {
     Column({ space: 2 }) {
       Canvas(this.context)
         .width('100%')
         .height(ProteusDimens.PREVIEW_HEIGHT - 28)
         .backgroundColor(ProteusColors.PREVIEW_BG)
+        .key(`prev-${this.themeRefreshKey}-${this.previewVersion}`)
         .border({ width: 1, color: ProteusColors.DIVIDER, style: BorderStyle.Solid })
         .onReady(() => this.redraw())
         .onAreaChange((_old, area) => {
