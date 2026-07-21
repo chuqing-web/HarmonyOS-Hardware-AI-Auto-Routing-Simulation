@@ -29,6 +29,10 @@ body = body.replace(
   'function placeXtalCaps(doc: SchematicDocument, xtalX: number, xtalY: number, tag: string): XtalCaps {'
 );
 body = body.replace(
+  /function tieUnusedDualOpAmpB\(doc, opa\) \{/,
+  'function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance): void {'
+);
+body = body.replace(
   /return \{ c1, c2 \};/,
   'const out: XtalCaps = { c1: c1, c2: c2 };\n  return out;'
 );

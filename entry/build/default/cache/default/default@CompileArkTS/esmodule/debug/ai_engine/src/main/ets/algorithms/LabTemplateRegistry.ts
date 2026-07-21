@@ -55,7 +55,7 @@ const DISCRETE_LIBS = ['VCC', 'GND', '1N4148', '1N4007', '1N5819', 'LED_RED', 'L
     'R_330', 'R_1k', 'R_10k', '2N2222', '2N2907', '2N7000', 'IRF540'];
 const ANALOG_IC_LIBS = ['VCC', 'GND', 'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3',
     'LM2596', 'R_10k', 'R_47k', 'R_1k', 'C_10uF', 'C_100nF', 'LED_RED', 'R_330'];
-const DIGITAL_LIBS = ['VCC', 'GND', '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74',
+const DIGITAL_LIBS = ['VCC', 'GND', 'SIGNAL_GEN', '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74',
     'CD4017', 'LOGIC_ANALYZER'];
 const MEMORY_LIBS = ['STM32F103RC', '2764', '62256', '24C02', 'W25Q64', 'VCC', 'GND',
     'C_100nF', 'R_10k'];
@@ -128,7 +128,7 @@ export class LabTemplateRegistry {
         },
         {
             id: 'lab_digital', name: '数字逻辑检测', category: 'digital',
-            description: '全部 74HC 逻辑门 + CD4017 + 逻辑分析仪',
+            description: '74HC 门真值(平线) + 10Hz 脉冲时钟驱动 CD4017 + LA(CH8=CLK)',
             knowledgePoints: ['门电路', '计数器', '逻辑分析'],
             libraryIds: DIGITAL_LIBS, build: buildLabDigital
         },

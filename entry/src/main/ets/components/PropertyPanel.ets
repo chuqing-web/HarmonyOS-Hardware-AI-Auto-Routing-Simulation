@@ -701,7 +701,7 @@ export struct PropertyPanel {
           channelCount: this.logicChannelCount,
           sampleCount: this.logicSampleCount
         })
-          .width('100%').height(80)
+          .width('100%').height(192)
           .border({ width: 1, color: ProteusColors.DIVIDER })
       } else {
         Text('(运行仿真后显示逻辑波形)')

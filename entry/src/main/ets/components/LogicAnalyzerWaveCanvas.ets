@@ -10,7 +10,7 @@ export struct LogicAnalyzerWaveCanvas {
   @Prop @Watch('onDataChanged') channelCount: number = 8;
   @Prop sampleCount: number = 128;
   @State canvasW: number = 320;
-  @State canvasH: number = 80;
+  @State canvasH: number = 192;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -22,7 +22,7 @@ export struct LogicAnalyzerWaveCanvas {
   build() {
     Canvas(this.ctx)
       .width('100%')
-      .height(80)
+      .height(192)
       .backgroundColor('#0a0a12')
       .onAreaChange((old: Area, newArea: Area) => {
         this.canvasW = newArea.width as number;

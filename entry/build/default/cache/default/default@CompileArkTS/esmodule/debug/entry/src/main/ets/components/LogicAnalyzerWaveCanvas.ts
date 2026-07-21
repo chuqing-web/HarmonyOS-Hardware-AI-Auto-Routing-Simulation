@@ -20,7 +20,7 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.__channelCount = new SynchedPropertySimpleOneWayPU(params.channelCount, this, "channelCount");
         this.__sampleCount = new SynchedPropertySimpleOneWayPU(params.sampleCount, this, "sampleCount");
         this.__canvasW = new ObservedPropertySimplePU(320, this, "canvasW");
-        this.__canvasH = new ObservedPropertySimplePU(80, this, "canvasH");
+        this.__canvasH = new ObservedPropertySimplePU(192, this, "canvasH");
         this.settings = new RenderingContextSettings(true);
         this.ctx = new CanvasRenderingContext2D(this.settings);
         this.setInitiallyProvidedValue(params);
@@ -116,7 +116,7 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Canvas.create(this.ctx);
             Canvas.width('100%');
-            Canvas.height(80);
+            Canvas.height(192);
             Canvas.backgroundColor('#0a0a12');
             Canvas.onAreaChange((old: Area, newArea: Area) => {
                 this.canvasW = newArea.width as number;

@@ -529,16 +529,20 @@ export class SimulationKernelImpl implements ISimulationKernel {
       };
     }
     const prevAnalog = copyNumberMap(this.nodeVoltages);
-    // Stamp previous DIG levels into AE before this step's SPICE solve
-    this.analogEngine.pinVoltageSources();
+    // Keep VAC/SIGGEN at simTime — default pinVoltageSources() uses inTransientStep=false
+    // between steps and snaps pulse CLK back to DC offset (kills CD4017 edges).
+    this.analogEngine.pinVoltageSources(false);
     const stepResult = this.scheduler.step(this.mcuPc, this.mcuRegs);
     this.globalTime = stepResult.time;
 
-    // 1.3.11 数字→模拟: Thevenin 源注入
-    this.applyDigitalToAnalogThevenin(stepResult.digitalStates);
-
-    // 1.3.12 模拟→数字: 阈值检测反馈
+    // 1.3.12 模拟→数字 first: threshold events must land before Thevenin / instruments
     this.applyAnalogToDigitalThresholds(prevAnalog, stepResult.analogSignals);
+    // Drain gate tPLH/tPHL (CD4017 Q updates) that land a few ns after the clock event
+    let digitalNow = this.digitalEngine.processEvents(this.globalTime);
+    digitalNow = this.digitalEngine.processEvents(this.globalTime + 100e-9);
+
+    // 1.3.11 数字→模拟: Thevenin 源注入（用本步 A→D 之后的电平）
+    this.applyDigitalToAnalogThevenin(digitalNow);
 
     // Populate node voltages with BOTH node names and net UUIDs for instrument lookup
     stepResult.analogSignals.forEach((val: number, name: string) => {
@@ -551,6 +555,10 @@ export class SimulationKernelImpl implements ISimulationKernel {
       const voltage = this.nodeVoltages.get(nodeName);
       if (voltage !== undefined) {
         this.nodeVoltages.set(netUuid, voltage);
+        // LA probes bind by UUID — keep a parallel wave so captureChannelsForProbes matches
+        if (netUuid !== nodeName) {
+          this.updateWaveData(netUuid, stepResult.time, voltage, 0);
+        }
       } else {
         const aeV = this.analogEngine.getVoltage(netUuid);
         this.nodeVoltages.set(netUuid, aeV);
@@ -562,8 +570,13 @@ export class SimulationKernelImpl implements ISimulationKernel {
     // Also copy from spiceNodeMap
     this.spiceNodeMap.forEach((nodeName: string, netUuid: string) => {
       const voltage = this.nodeVoltages.get(nodeName);
-      if (voltage !== undefined && !this.nodeVoltages.has(netUuid)) {
-        this.nodeVoltages.set(netUuid, voltage);
+      if (voltage !== undefined) {
+        if (!this.nodeVoltages.has(netUuid)) {
+          this.nodeVoltages.set(netUuid, voltage);
+        }
+        if (netUuid !== nodeName) {
+          this.updateWaveData(netUuid, stepResult.time, voltage, 0);
+        }
       }
     });
     // Digital gate outputs win: Thevenin / dig levels must survive SPICE float=0 on LA nets
@@ -637,23 +650,29 @@ export class SimulationKernelImpl implements ISimulationKernel {
     this.syncSpiceToGpioInputs();
     this.tickMcuCore();
 
-    if (this.scheduler !== null && acFreq > 0) {
-      // ≥40 samples/period so 1kHz sine is smooth; never coarser than 50µs
-      const acMax = Math.max(1e-6, Math.min(1.0 / (acFreq * 40), 5e-5));
-      this.scheduler.setMaxStepCap(acMax);
-      this.scheduler.bumpStepToward(acMax);
-    } else if (this.scheduler !== null && has555) {
-      // RC astable edges are ms-scale; allow up to 1ms steps so Hz–kHz 555 can move
+    // 555 RC 优先：同板有 VAC 时若仍用 25µs AC 步长，定时电容充不到 ⅔VCC，LED 会卡在亮
+    if (this.scheduler !== null && has555) {
+      // RC astable edges are ms-scale; allow up to 1ms steps so Hz-range 555 can move
       this.scheduler.setMaxStepCap(1e-3);
       this.scheduler.bumpStepToward(5e-4);
+    } else if (this.scheduler !== null && acFreq > 0) {
+      // ≥40 samples/period; low-f clocks (10Hz lab) need ms-scale steps or edges never arrive
+      const perSample = 1.0 / (acFreq * 40);
+      const acCeil = acFreq < 100 ? 5e-4 : 5e-5;
+      const acMax = Math.max(1e-6, Math.min(perSample, acCeil));
+      this.scheduler.setMaxStepCap(acMax);
+      this.scheduler.bumpStepToward(acMax);
     } else if (this.scheduler !== null) {
       this.scheduler.setMaxStepCap(0);
     }
 
-    // Target sim advance: ≥2 AC periods (capped); 555 ≈ near-realtime; else DC nudge
-    const targetAdvance = acFreq > 0
-      ? Math.min(2e-3, Math.max(2.0 / acFreq, 2e-4))
-      : (has555 ? 4e-2 : 5e-5);
+    // Target sim advance: 555 ≈ near-realtime; else ≥2 AC periods (≤50ms); else DC nudge
+    // Old Math.min(2e-3, …) starved 10Hz SIGGEN (half-period 50ms) → CLK looked stuck
+    const targetAdvance = has555
+      ? 4e-2
+      : (acFreq > 0
+        ? Math.min(5e-2, Math.max(2.0 / acFreq, 2e-4))
+        : 5e-5);
     // MCU firmware needs UV time; pure analog / 555 can burst harder for the scope
     const maxSpice = has555
       ? 80
@@ -1782,6 +1801,36 @@ export class SimulationKernelImpl implements ISimulationKernel {
     this.crossCoupledNets.set(digitalNetId, analogNetId);
   }
 
+  /**
+   * Resolve live analog voltage for a schematic net UUID from the step snapshot / AE.
+   * SpiceMatrixBuilder may alias CLK→N3 while AnalogEngine keeps node "CLK" — try all keys.
+   */
+  private resolveAnalogVoltageForNet(netUuid: string, currAnalog: Map<string, number>): number {
+    const aeName = this.analogEngine.getNodeNameForNetUuid(netUuid);
+    const spice = this.spiceNodeMap.get(netUuid) ?? '';
+    const keys: string[] = [netUuid, aeName, spice];
+    if (this.schematic) {
+      for (let i = 0; i < this.schematic.nets.length; i++) {
+        const n = this.schematic.nets[i];
+        if (n.id === netUuid && n.name.length > 0) {
+          keys.push(n.name);
+          break;
+        }
+      }
+    }
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (k.length === 0) {
+        continue;
+      }
+      const fromSnap = currAnalog.get(k);
+      if (fromSnap !== undefined) {
+        return fromSnap;
+      }
+    }
+    return this.analogEngine.getVoltage(netUuid);
+  }
+
   // ---- 1.3.12 D/A 阈值检测: 模拟电压 → 数字事件（含直流电平种子，不仅边沿） ----
   private applyAnalogToDigitalThresholds(_prevAnalog: Map<string, number>,
                                          currAnalog: Map<string, number>): void {
@@ -1789,30 +1838,71 @@ export class SimulationKernelImpl implements ISimulationKernel {
     const vil = vcc > 4.0 ? VIL_CMOS_5V : VIL_CMOS_3V3;
     const vih = vcc > 4.0 ? VIH_CMOS_5V : VIH_CMOS_3V3;
     currAnalog.forEach((voltage: number, nodeId: string) => {
-      const netKeys = this.expandAnalogNodeKeys(nodeId);
-      for (let i = 0; i < netKeys.length; i++) {
-        const key = netKeys[i];
-        const cur = this.digitalEngine.getState(key);
-        if (voltage >= vih && cur !== LogicState.HIGH) {
-          this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.HIGH);
-        } else if (voltage <= vil && cur !== LogicState.LOW) {
-          this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.LOW);
-        }
-      }
       this.nodeVoltages.set(nodeId, voltage);
     });
+    // Drive digital from gate pin UUIDs (not SPICE key expand) so CD4017.CLK always sees SIGGEN
+    const participants = this.digitalEngine.getLogicParticipantNetIds();
+    for (let i = 0; i < participants.length; i++) {
+      const key = participants[i];
+      if (!this.digitalEngine.hasNode(key)) {
+        continue;
+      }
+      const voltage = this.resolveAnalogVoltageForNet(key, currAnalog);
+      const cur = this.digitalEngine.getState(key);
+      if (voltage >= vih && cur !== LogicState.HIGH) {
+        this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.HIGH);
+      } else if (voltage <= vil && cur !== LogicState.LOW) {
+        this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.LOW);
+      }
+    }
   }
 
-  /** Map SPICE node name / net UUID / net name onto all keys DigitalEngine may use. */
+  /**
+   * Map SPICE node / net UUID / display name onto every DigitalEngine key for that net.
+   * CLK→N3 and net_*→N3 must collapse to the same UUID CD4017.CLK was registered with.
+   */
   private expandAnalogNodeKeys(nodeId: string): string[] {
-    const keys: string[] = [nodeId];
+    const keys: string[] = [];
+    const add = (k: string): void => {
+      if (k.length > 0 && keys.indexOf(k) < 0) {
+        keys.push(k);
+      }
+    };
+    add(nodeId);
+    let spiceAlias = '';
     this.spiceNodeMap.forEach((spiceNode: string, netUuid: string) => {
       if (spiceNode === nodeId || netUuid === nodeId) {
-        if (keys.indexOf(netUuid) < 0) {
-          keys.push(netUuid);
+        add(netUuid);
+        add(spiceNode);
+        if (spiceNode.length > 0) {
+          spiceAlias = spiceNode;
         }
-        if (keys.indexOf(spiceNode) < 0) {
-          keys.push(spiceNode);
+      }
+    });
+    // Fan-in all UUIDs that share the same SPICE node (CLK / N3 / net_*)
+    if (spiceAlias.length > 0) {
+      this.spiceNodeMap.forEach((spiceNode: string, netUuid: string) => {
+        if (spiceNode === spiceAlias) {
+          add(netUuid);
+          add(spiceNode);
+        }
+      });
+    }
+    const aeMap = this.analogEngine.getNetUuidMapping();
+    aeMap.forEach((nodeName: string, netUuid: string) => {
+      if (nodeName === nodeId || netUuid === nodeId ||
+        (spiceAlias.length > 0 && nodeName === spiceAlias)) {
+        add(netUuid);
+        add(nodeName);
+        const sp = this.spiceNodeMap.get(netUuid);
+        if (sp !== undefined && sp.length > 0) {
+          spiceAlias = spiceAlias.length > 0 ? spiceAlias : sp;
+          this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
+            if (spiceNode === sp) {
+              add(uuid);
+              add(spiceNode);
+            }
+          });
         }
       }
     });
@@ -1820,8 +1910,22 @@ export class SimulationKernelImpl implements ISimulationKernel {
       for (let i = 0; i < this.schematic.nets.length; i++) {
         const n = this.schematic.nets[i];
         if (n.id === nodeId || n.name === nodeId) {
-          if (keys.indexOf(n.id) < 0) {
-            keys.push(n.id);
+          add(n.id);
+          add(n.name);
+          const sp = this.spiceNodeMap.get(n.id) ?? aeMap.get(n.id);
+          if (sp !== undefined && sp.length > 0) {
+            this.spiceNodeMap.forEach((spiceNode: string, uuid: string) => {
+              if (spiceNode === sp) {
+                add(uuid);
+                add(spiceNode);
+              }
+            });
+            aeMap.forEach((nodeName: string, uuid: string) => {
+              if (nodeName === sp || uuid === n.id) {
+                add(uuid);
+                add(nodeName);
+              }
+            });
           }
         }
       }
@@ -1972,7 +2076,8 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
       }
     });
-    this.analogEngine.pinVoltageSources();
+    // Do not snap VAC/SIGGEN back to .OP offset — only pin DIG DC + AC-at-simTime
+    this.analogEngine.pinVoltageSources(false);
     traceDigitalThevenin(thevParts);
   }
 
@@ -2297,34 +2402,4 @@ export class SimulationKernelImpl implements ISimulationKernel {
       const empty: StatsSnapshot = { mean: 0, stdDev: 0, min: 0, max: 0, cp: 0, cpk: 0 };
       return empty;
     }
-    let sum = 0; let min = values[0]; let max = values[0];
-    for (let i = 0; i < values.length; i++) {
-      sum += values[i];
-      if (values[i] < min) min = values[i];
-      if (values[i] > max) max = values[i];
-    }
-    const mean = sum / values.length;
-    let varSum = 0;
-    for (let i = 0; i < values.length; i++) {
-      const diff = values[i] - mean;
-      varSum += diff * diff;
-    }
-    const stdDev = Math.sqrt(varSum / values.length);
-    const usl = mean + 3 * stdDev;
-    const lsl = mean - 3 * stdDev;
-    const cp = stdDev > 0 ? (usl - lsl) / (6 * stdDev) : 0;
-    const cpk = stdDev > 0 ? Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev)) : 0;
-    return { mean, stdDev, min, max, cp, cpk };
-  }
-
-  private static resolveSupplyVoltage(doc: SchematicDocument): number {
-    for (let i = 0; i < doc.components.length; i++) {
-      const comp = doc.components[i];
-      const lib = comp.libraryId.toUpperCase();
-      if (lib === 'VCC' || lib.endsWith('/VCC')) {
-        return parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', '5V'), 5);
-      }
-    }
-    return 5;
-  }
-}
+    let sum = 

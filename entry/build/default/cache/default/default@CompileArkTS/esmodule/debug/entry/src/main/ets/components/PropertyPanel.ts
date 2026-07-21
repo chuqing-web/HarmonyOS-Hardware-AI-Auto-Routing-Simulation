@@ -1802,7 +1802,7 @@ export class PropertyPanel extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
                         __Common__.width('100%');
-                        __Common__.height(80);
+                        __Common__.height(192);
                         __Common__.border({ width: 1, color: ProteusColors.DIVIDER });
                     }, __Common__);
                     {

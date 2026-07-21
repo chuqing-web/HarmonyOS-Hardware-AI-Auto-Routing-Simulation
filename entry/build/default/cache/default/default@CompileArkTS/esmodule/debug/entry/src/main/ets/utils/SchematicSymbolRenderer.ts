@@ -55,12 +55,18 @@ export class SchematicSymbolRenderer {
         // Draw body backdrop for IC-type components so the ghost has a visible border,
         // matching how the canvas renders real components
         const pinBounds = calcSymbolBounds(def.pins, 0);
-        const skipGhostBackdrop = def.behaviorModel === 'regulator';
-        if (!skipGhostBackdrop && def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40)) {
-            const cx = (pinBounds.minX + pinBounds.maxX) / 2;
-            const cy = (pinBounds.minY + pinBounds.maxY) / 2;
-            const bodyW = Math.max(pinBounds.width, 12);
-            const bodyH = Math.max(pinBounds.height, 12);
+        const isRegulator = def.behaviorModel === 'regulator';
+        if (isRegulator || (def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40))) {
+            let cx = (pinBounds.minX + pinBounds.maxX) / 2;
+            let cy = (pinBounds.minY + pinBounds.maxY) / 2;
+            let bodyW = Math.max(pinBounds.width, 12);
+            let bodyH = Math.max(pinBounds.height, 12);
+            if (isRegulator) {
+                bodyW = Math.max(bodyW, 70);
+                bodyH = Math.max(bodyH, 50);
+                cx = 0;
+                cy = 10;
+            }
             ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
             ctx.fillRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH);
             ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
@@ -467,16 +473,12 @@ export class SchematicSymbolRenderer {
         ctx.fillText('−', -14, 12);
     }
     private static drawRegulator(ctx: CanvasRenderingContext2D): void {
-        // Compact TO-220 body; pin function names drawn by drawPins (IN/GND/OUT).
-        // Keep a single short chip mark so U1 / 5V from drawLabels stay readable.
-        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
-        ctx.fillRect(-22, -16, 44, 32);
-        ctx.strokeRect(-22, -16, 44, 32);
+        // 大黑框由 canvas backdrop 绘制；这里只标 REG，避免双重描边叠字。
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('REG', 0, 0);
+        ctx.fillText('REG', 0, 8);
         ctx.textAlign = 'start';
         ctx.textBaseline = 'alphabetic';
     }

@@ -669,6 +669,8 @@ export class AnalogEngine {
                 }
             }
         }
+        // Fuzzy: prefer channel-1 (OUT1/IN+1/IN-1) over channel-2 on dual packages
+        let fallback: string | null = null;
         for (const m of pinNets) {
             if (this.isOpAmpRailPin(m.pinName, m.pinId)) {
                 continue;
@@ -684,11 +686,18 @@ export class AnalogEngine {
             else if (role === 'inn') {
                 hit = pn.indexOf('IN-') >= 0 || (pn.indexOf('-') >= 0 && pn.indexOf('IN+') < 0);
             }
-            if (hit) {
-                return netNodeMap.get(m.netId) ?? `NC_${comp.id}_${role}`;
+            if (!hit) {
+                continue;
+            }
+            const node = netNodeMap.get(m.netId) ?? `NC_${comp.id}_${role}`;
+            if (pn.endsWith('1') || pn === 'OUT' || pn === 'IN+' || pn === 'IN-') {
+                return node;
+            }
+            if (fallback === null) {
+                fallback = node;
             }
         }
-        return `NC_${comp.id}_${role}`;
+        return fallback ?? `NC_${comp.id}_${role}`;
     }
     private resolveOpAmpRails(comp: ComponentInstance, pinNets: PinNetMapping[], netNodeMap: Map<string, string>): [
         string,
@@ -1384,9 +1393,21 @@ export class AnalogEngine {
         this.inTransientStep = false;
         this.syncGroundAlias();
     }
-    /** Pin ideal VSRC nodes after registerSignalSource (before next Newton OP). */
-    pinVoltageSources(): void {
+    /**
+     * Pin ideal VSRC nodes after registerSignalSource / DIG Thevenin.
+     * holdAcAtOffset=true (default): VAC/SIGGEN snap to DC offset — correct for .OP / load.
+     * holdAcAtOffset=false: keep instantaneous AC at simTime so mid-run DIG THEV stamps
+     * do not freeze SIGGEN at offset (lab_digital CLK stuck at 2.5V / no CD4017 edges).
+     */
+    pinVoltageSources(holdAcAtOffset: boolean = true): void {
+        if (holdAcAtOffset) {
+            this.enforceVoltageSources();
+            return;
+        }
+        const prev = this.inTransientStep;
+        this.inTransientStep = true;
         this.enforceVoltageSources();
+        this.inTransientStep = prev;
     }
     /** Re-run DC OP after live param / GPIO Thevenin changes (e.g. SW press). */
     reSolveOp(): void {

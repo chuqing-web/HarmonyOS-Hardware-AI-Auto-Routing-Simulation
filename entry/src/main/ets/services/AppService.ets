@@ -433,12 +433,16 @@ export class AppService {
       let anyConnected = false;
       let hasSignalPin = false;
       let hasGndPin = false;
+      const isVac = lib === 'VAC' || lib.startsWith('VAC');
       for (let pi = 0; pi < pins.length; pi++) {
         const key = `${comp.id}:${pins[pi].id}`;
         if (connectedPins.has(key)) {
           anyConnected = true;
           const pname = (pinNameByKey.get(key) ?? pins[pi].name ?? pins[pi].id).toUpperCase();
-          if (pname === 'GND' || pname === 'COM' || pname === 'V-' || pname === '0' || pname === 'VSS') {
+          // VAC 回线脚名是 AC-（不是 GND/COM）；电流表 I- 同理
+          if (pname === 'GND' || pname === 'COM' || pname === 'V-' || pname === '0' ||
+            pname === 'VSS' || pname === 'AC-' || pname === 'I-' ||
+            (isVac && (pins[pi].id === '2' || pname === 'AC-'))) {
             hasGndPin = true;
           } else {
             hasSignalPin = true;

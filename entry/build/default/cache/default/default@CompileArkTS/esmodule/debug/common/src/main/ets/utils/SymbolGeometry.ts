@@ -34,11 +34,15 @@ export function coverOriginCenteredBody(minX: number, maxX: number, minY: number
         }
     }
     else if (!spansBothY) {
-        // 左右已有脚（如 TO-220 稳压：IN/OUT + 底 GND）— 只把 Y 扩到盖住原点附近主体，
-        // 禁止套用仪器半宽下限，否则边界飙到 ±50，位号/参数/脚名叠成一团。
-        const bodyHalfY = 20;
-        outMinY = Math.min(outMinY, -bodyHalfY);
-        outMaxY = Math.max(outMaxY, bodyHalfY);
+        // 左右已有脚 + 另有竖直方向引脚（如 TO-220：IN/OUT + 底 GND）。
+        // 仅在存在竖直脚伸出时扩 Y；R/C 等纯水平双脚（pinHalfY≈0）不得扩，
+        // 否则 height≥40 会误触发 IC backdrop 画出大黑框。
+        const pinHalfY = Math.max(Math.abs(minY), Math.abs(maxY));
+        if (pinHalfY >= 18) {
+            const bodyHalfY = 20;
+            outMinY = Math.min(outMinY, -bodyHalfY);
+            outMaxY = Math.max(outMaxY, bodyHalfY);
+        }
     }
     return {
         minX: outMinX,

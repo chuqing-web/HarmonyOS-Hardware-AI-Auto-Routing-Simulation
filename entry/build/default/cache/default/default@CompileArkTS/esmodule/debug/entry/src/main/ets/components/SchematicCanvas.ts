@@ -2499,14 +2499,12 @@ export class SchematicCanvas extends ViewPU {
         if (def.pins.length === 0) {
             return;
         }
-        // TO-220 稳压器等有独立符号体，再叠 IC backdrop + 全名会与 REG/位号挤成一团
-        if (def.behaviorModel === 'regulator') {
-            return;
-        }
+        const isRegulator = def.behaviorModel === 'regulator';
         const pinBounds = calcSymbolBounds(def.pins, 0);
         // Only draw backdrop for IC-type components (wide/tall pin spread)
         // Skip small 2-pin components like resistors, capacitors, diodes
-        if (pinBounds.width < 50 || pinBounds.height < 40) {
+        // 稳压器：强制画大边框（用户可见 TO-220 主体），不依赖 height 门禁
+        if (!isRegulator && (pinBounds.width < 50 || pinBounds.height < 40)) {
             return;
         }
         ctx.save();
@@ -2517,10 +2515,17 @@ export class SchematicCanvas extends ViewPU {
         if (comp.mirrored) {
             ctx.scale(-1, 1);
         }
-        const cx = (pinBounds.minX + pinBounds.maxX) / 2;
-        const cy = (pinBounds.minY + pinBounds.maxY) / 2;
-        const w = pinBounds.width;
-        const h = pinBounds.height;
+        let cx = (pinBounds.minX + pinBounds.maxX) / 2;
+        let cy = (pinBounds.minY + pinBounds.maxY) / 2;
+        let w = pinBounds.width;
+        let h = pinBounds.height;
+        // 稳压器引脚 AABB 偏扁时，仍用固定大框保证可见边界
+        if (isRegulator) {
+            w = Math.max(w, 70);
+            h = Math.max(h, 50);
+            cx = 0;
+            cy = 10; // 略偏下，盖住底脚方向主体
+        }
         // Filled body with visible color — follow active theme
         ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
         ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
@@ -2528,8 +2533,8 @@ export class SchematicCanvas extends ViewPU {
         ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
         ctx.lineWidth = 2;
         ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
-        // Component name label
-        if (def.name.length > 0) {
+        // Component name label — 稳压器跳过全名，避免与 REG / 位号挤成一团
+        if (!isRegulator && def.name.length > 0) {
             const shortName = def.name.length > 14 ? def.name.substring(0, 12) + '..' : def.name;
             ctx.font = '11px sans-serif';
             ctx.fillStyle = ProteusColors.TEXT_LABEL;

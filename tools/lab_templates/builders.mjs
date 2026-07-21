@@ -42,6 +42,7 @@ export function buildLabAmp(doc) {
   const rf = R(doc, 'R_100k', 'Rf', 340, 60);
   const rg = R(doc, 'R_10k', 'Rg', 240, 300);
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 340, y: 20 });
+  vcc.parameters.voltage = '5V';
   const gnd = K.place(doc, 'GND', 'GND1', { x: 240, y: 400 });
   const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 520, y: 140 });
   const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 520, y: 300 });
@@ -60,6 +61,18 @@ export function buildLabAmp(doc) {
     p(gnd, '1', 'GND'), p(vac, '2'), p(opa, 'V-', 'V-'), p(rg, '2'),
     p(vm, 'COM', 'COM'), p(osc, 'GND', 'GND')
   ]);
+  // 未用 B 通道：跟随器 + IN+ 接地，避免浮空
+  tieUnusedDualOpAmpB(doc, opa);
+}
+
+/** 双运放未用通道：OUT2↔IN-2 跟随，IN+2→GND（标号并网，避免挤占 A 通道布线） */
+function tieUnusedDualOpAmpB(doc, opa) {
+  K.joinByLabel(doc, `${opa.refDes}_B_FB`, NetType.SIGNAL, [
+    p(opa, 'OUT2', 'OUT2'), p(opa, 'IN-2', 'IN-2')
+  ]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(opa, 'IN+2', 'IN+2')
+  ]);
 }
 
 /** lab_filter: RC 低通 + LM358 电压跟随 */
@@ -72,6 +85,7 @@ export function buildLabFilter(doc) {
   const c1 = C(doc, 'C_100nF', 'C1', 260, 260);
   const opa = K.place(doc, 'LM358', 'U1', { x: 400, y: 180 });
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 400, y: 20 });
+  vcc.parameters.voltage = '5V';
   const gnd = K.place(doc, 'GND', 'GND1', { x: 260, y: 400 });
   const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 560, y: 140 });
   const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 560, y: 300 });
@@ -89,6 +103,7 @@ export function buildLabFilter(doc) {
     p(gnd, '1', 'GND'), p(vac, '2'), p(c1, '2'), p(opa, 'V-', 'V-'),
     p(vm, 'COM', 'COM'), p(osc, 'GND', 'GND')
   ]);
+  tieUnusedDualOpAmpB(doc, opa);
 }
 
 /** 晶振负载电容：左右分列；间距 <80 以满足 DeepErcEngine 邻近检测 */
@@ -336,6 +351,7 @@ export function buildLabAnalogIc(doc) {
   ]);
   K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(tl, 'V+', 'V+')]);
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(tl, 'V-', 'V-')]);
+  tieUnusedDualOpAmpB(doc, tl);
 
   // U3 LM358 同相增益 1+Rf/Rg=11 → DC≈2.2V（0.2V 偏置）
   const lm = K.place(doc, 'LM358', 'U3', { x: 720, y: 140 });
@@ -348,6 +364,7 @@ export function buildLabAnalogIc(doc) {
   K.join(doc, 'LM_OUT', NetType.SIGNAL, [p(lm, 'OUT1', 'OUT1'), p(rf3, '2')]);
   K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(lm, 'V+', 'V+')]);
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(lm, 'V-', 'V-'), p(rg3, '2')]);
+  tieUnusedDualOpAmpB(doc, lm);
 
   const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 840, y: 100 });
   K.join(doc, 'LM_OUT', NetType.SIGNAL, [p(vm, 'V+', 'V+')]);
@@ -387,10 +404,11 @@ export function buildLabAnalogIc(doc) {
   // U5 LM555 无稳态：独立岛（x≥1400），远离 Buck；信号用标号并网
   // 根因1：kit 缺 555 脚偏移 → 全脚落中心 → VCC∪GND 短路
   // 根因2：DISCH 水平线 y=TRIG → T 结并入 555_CAP
+  // CT=100µF → f≈0.69Hz（RA=1k RB=10k），肉眼可见闪烁；1µF≈69Hz 会被视觉暂留看成常亮
   const t555 = K.place(doc, 'LM555', 'U5', { x: 1560, y: 160 });
   const ra = R(doc, 'R_1k', 'RA', 1400, 60);
   const rb = R(doc, 'R_10k', 'RB', 1400, 200);
-  const ct = C(doc, 'C_1uF', 'CT', 1400, 320);
+  const ct = C(doc, 'C_100uF', 'CT', 1400, 320);
   const cDec555 = C(doc, 'C_100nF', 'CD555', 1720, 40);
   const cCtrl = C(doc, 'C_100nF', 'CC555', 1720, 300);
   const rLed = R(doc, 'R_330', 'RLED', 1780, 160);
@@ -418,16 +436,28 @@ export function buildLabAnalogIc(doc) {
   ]);
 }
 
-/** lab_digital: 门电路激励 + LA 探头 */
+/**
+ * lab_digital: 门电路静态真值 + 方波时钟驱动 CD4017 + LA
+ * CH1–6：门输出（H/L 固定，平线）；CH7=Q0（十分频脉冲）；CH8=CLK（~10Hz 方波）
+ */
 export function buildLabDigital(doc) {
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
   const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 460 });
+  // 0–5V 脉冲（OP=0V 种子为 L，暂态边沿干净）；10Hz → LA 可见，Q0≈1Hz
+  const clk = K.place(doc, 'SIGNAL_GEN', 'SG1', { x: 40, y: 340 });
+  clk.parameters.waveform = 'pulse';
+  clk.parameters.amplitude = '5V';
+  clk.parameters.frequency = '10Hz';
+  clk.parameters.offset = '0V';
+  clk.parameters.dutyCycle = '50%';
 
   const rHi = R(doc, 'R_10k', 'RHI', 120, 80);
   const rLo = R(doc, 'R_10k', 'RLO', 120, 220);
   K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rHi, '1')]);
   K.join(doc, 'LOGIC_H', NetType.SIGNAL, [p(rHi, '2')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(rLo, '2')]);
+  K.join(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(rLo, '2'), p(clk, 'GND', 'GND')
+  ]);
   K.join(doc, 'LOGIC_L', NetType.SIGNAL, [p(rLo, '1')]);
 
   const gateDefs = [
@@ -458,7 +488,10 @@ export function buildLabDigital(doc) {
   const cnt = K.place(doc, 'CD4017', 'U7', { x: 1180, y: 180 });
   K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(cnt, 'VDD', 'VDD')]);
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(cnt, 'VSS', 'VSS')]);
-  K.join(doc, 'LOGIC_H', NetType.SIGNAL, [p(rHi, '2'), p(cnt, 'CLK', 'CLK')]);
+  // CLK 用标号并网：避免与门电路 LOGIC_H 水平廊道误并
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [
+    p(clk, 'OUT', 'OUT'), p(cnt, 'CLK', 'CLK')
+  ]);
   K.join(doc, 'LOGIC_L', NetType.SIGNAL, [p(rLo, '1'), p(cnt, 'EN', 'EN')]);
   // RST 用标号并网：物理布线在拓扑重建后易拆成孤立 NET_xx
   K.joinByLabel(doc, 'LOGIC_L', NetType.SIGNAL, [p(cnt, 'RST', 'RST')]);
@@ -466,11 +499,13 @@ export function buildLabDigital(doc) {
 
   const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1180, y: 400 });
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(la, 'GND', 'GND')]);
-  for (let ch = 0; ch < Math.min(outs.length, 8); ch++) {
+  for (let ch = 0; ch < Math.min(outs.length, 7); ch++) {
     K.join(doc, `LA_CH${ch + 1}`, NetType.SIGNAL, [
       p(la, `CH${ch + 1}`, `CH${ch + 1}`), outs[ch]
     ]);
   }
+  // CH8 看时钟方波
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(la, 'CH8', 'CH8')]);
 }
 
 /** lab_memory: MCU + I2C/SPI/并行存储器接口 */
@@ -950,7 +985,7 @@ export const TEMPLATE_DEFS = [
   { id: 'lab_passive', name: '无源器件检测', description: '全部电阻/电容/电感/LC/交流源', build: buildLabPassive },
   { id: 'lab_discrete', name: '分立器件检测', description: '二极管/LED/三极管/MOSFET 典型接法', build: buildLabDiscrete },
   { id: 'lab_analog_ic', name: '模拟IC检测', description: '运放 + LM555 无稳态 + 全部稳压/开关电源 IC', build: buildLabAnalogIc },
-  { id: 'lab_digital', name: '数字逻辑检测', description: '全部 74HC 逻辑门 + CD4017 + 逻辑分析仪', build: buildLabDigital },
+  { id: 'lab_digital', name: '数字逻辑检测', description: '74HC 门真值(平线) + 10Hz 脉冲时钟驱动 CD4017 + LA(CH8=CLK)', build: buildLabDigital },
   { id: 'lab_memory', name: '存储器接口', description: 'EPROM/SRAM/EEPROM/Flash 与 MCU 连接', build: buildLabMemory },
   { id: 'lab_mcu_8051', name: '8051全系列', description: 'AT89/STC 四款 MCU 最小系统', build: buildLabMcu8051 },
   { id: 'lab_mcu_stm32', name: 'STM32全系列', description: '五款 STM32 最小系统并排', build: buildLabMcuStm32 },

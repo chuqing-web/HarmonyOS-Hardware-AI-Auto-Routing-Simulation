@@ -543,6 +543,10 @@ export class DigitalEngine {
     getState(pinId: string): LogicState {
         return this.nodes.get(pinId)?.state ?? LogicState.UNKNOWN;
     }
+    /** True if a digital node was registered (gate pin / ensureNode) — not a bare SPICE alias. */
+    hasNode(pinId: string): boolean {
+        return pinId.length > 0 && this.nodes.has(pinId);
+    }
     setInput(pinId: string, state: LogicState): void {
         this.scheduleEvent(this.currentTime, pinId, state);
     }
