@@ -34,11 +34,12 @@ export class UnifiedErcEngine {
     const mcuIds = opts?.mcuLibraryIds ?? DEFAULT_MCU_IDS;
     let violations: ErcViolation[] = [];
 
-    if (mode === 'static' || mode === 'full') {
+    if (mode === 'static') {
       appendArray(violations, ErcEngine.run(doc, mcuIds, opts?.pinResolver));
     }
 
     if (mode === 'deep' || mode === 'full') {
+      // DeepErcEngine.runFull 已内含 ErcEngine.run，full 勿再重复静态遍
       appendArray(violations, DeepErcEngine.runFull(doc, opts?.pinResolver));
     }
 
@@ -64,10 +65,23 @@ export class UnifiedErcEngine {
     // 规则→修复动作 映射表
     const fixMap: Record<string, (doc: SchematicDocument, v: ErcViolation) => boolean> = {
       'FLOATING_INPUT': (d, v) => {
-        // 添加上拉电阻
+        const targetId = v.componentId ?? '';
+        const target = targetId.length > 0
+          ? d.components.find(c => c.id === targetId)
+          : undefined;
+        const nearPullup = target !== undefined && d.components.some(c =>
+          c.libraryId.startsWith('R_') &&
+          (c.parameters.get('value') === '10k' || c.libraryId.includes('10k')) &&
+          Math.hypot(c.position.x - target.position.x, c.position.y - target.position.y) < 200);
+        if (nearPullup) {
+          return true;
+        }
         const hasPullup = d.components.some(c =>
-          c.libraryId.startsWith('R_') && c.parameters.get('value') === '10k');
+          c.libraryId.startsWith('R_') &&
+          (c.parameters.get('value') === '10k' || c.libraryId.includes('10k')));
         if (!hasPullup) {
+          const px = target ? target.position.x + 40 : 80;
+          const py = target ? target.position.y : 80;
           d.components.push({
             id: IdUtil.generate('inst'),
             libraryId: 'R_10k',
@@ -75,7 +89,7 @@ export class UnifiedErcEngine {
             name: 'R_PU',
             pinIds: [IdUtil.generate('pin'), IdUtil.generate('pin')],
             parameters: new Map([['value', '10k']]),
-            position: { x: 0, y: 0 },
+            position: { x: px, y: py },
             rotation: 0,
             mirrored: false
           });
@@ -83,18 +97,32 @@ export class UnifiedErcEngine {
         }
         return false;
       },
-      'MISSING_DECOUPLING': (d, _v) => {
+      'MISSING_DECOUPLING': (d, v) => {
+        const targetId = v.componentId ?? '';
+        const target = targetId.length > 0
+          ? d.components.find(c => c.id === targetId)
+          : undefined;
+        const nearCap = target !== undefined && d.components.some(c =>
+          c.libraryId.startsWith('C_') &&
+          (c.libraryId.includes('100n') || c.parameters.get('value') === '100n') &&
+          Math.hypot(c.position.x - target.position.x, c.position.y - target.position.y) < 200);
+        if (nearCap) {
+          return true;
+        }
         const hasCap = d.components.some(c =>
-          c.libraryId.startsWith('C_') && c.parameters.get('value') === '100n');
+          c.libraryId.startsWith('C_') &&
+          (c.libraryId.includes('100n') || c.parameters.get('value') === '100n'));
         if (!hasCap) {
+          const px = target ? target.position.x + 40 : 80;
+          const py = target ? target.position.y + 40 : 120;
           d.components.push({
             id: IdUtil.generate('inst'),
-            libraryId: 'C_100n',
+            libraryId: 'C_100nF',
             refDes: 'C?',
             name: 'C_DEC',
             pinIds: [IdUtil.generate('pin'), IdUtil.generate('pin')],
             parameters: new Map([['value', '100n']]),
-            position: { x: 0, y: 0 },
+            position: { x: px, y: py },
             rotation: 0,
             mirrored: false
           });

@@ -333,11 +333,23 @@ export class RotateCommand implements IEditCommand {
     private compId: string;
     private oldRot: Rotation;
     private newRot: Rotation;
+    private beforeWirePts: Map<string, Point2D[]> = new Map();
+    private afterWirePts: Map<string, Point2D[]> = new Map();
+    private beforeLabelPos: Map<string, Point2D> = new Map();
+    private afterLabelPos: Map<string, Point2D> = new Map();
+    private hasGeometry: boolean = false;
     constructor(doc: SchematicDocument, compId: string, oldRot: Rotation, newRot: Rotation) {
         this.doc = doc;
         this.compId = compId;
         this.oldRot = oldRot;
         this.newRot = newRot;
+    }
+    captureGeometry(beforeWires: Map<string, Point2D[]>, afterWires: Map<string, Point2D[]>, beforeLabels: Map<string, Point2D>, afterLabels: Map<string, Point2D>): void {
+        this.beforeWirePts = beforeWires;
+        this.afterWirePts = afterWires;
+        this.beforeLabelPos = beforeLabels;
+        this.afterLabelPos = afterLabels;
+        this.hasGeometry = true;
     }
     execute(): void {
         for (let i = 0; i < this.doc.components.length; i++) {
@@ -345,6 +357,10 @@ export class RotateCommand implements IEditCommand {
                 this.doc.components[i].rotation = this.newRot;
                 break;
             }
+        }
+        if (this.hasGeometry) {
+            applyCapturedWirePts(this.doc, this.afterWirePts);
+            applyCapturedLabelPos(this.doc, this.afterLabelPos);
         }
     }
     undo(): void {
@@ -354,19 +370,37 @@ export class RotateCommand implements IEditCommand {
                 break;
             }
         }
+        if (this.hasGeometry) {
+            applyCapturedWirePts(this.doc, this.beforeWirePts);
+            applyCapturedLabelPos(this.doc, this.beforeLabelPos);
+        }
     }
-    getMemoryEstimate(): number { return 16; }
+    getMemoryEstimate(): number {
+        return 64 + this.beforeWirePts.size * 48 + this.afterWirePts.size * 48;
+    }
 }
 export class MirrorCommand implements IEditCommand {
     private doc: SchematicDocument;
     private compId: string;
     private oldMirrored: boolean;
     private newMirrored: boolean;
+    private beforeWirePts: Map<string, Point2D[]> = new Map();
+    private afterWirePts: Map<string, Point2D[]> = new Map();
+    private beforeLabelPos: Map<string, Point2D> = new Map();
+    private afterLabelPos: Map<string, Point2D> = new Map();
+    private hasGeometry: boolean = false;
     constructor(doc: SchematicDocument, compId: string, oldMirrored: boolean, newMirrored: boolean) {
         this.doc = doc;
         this.compId = compId;
         this.oldMirrored = oldMirrored;
         this.newMirrored = newMirrored;
+    }
+    captureGeometry(beforeWires: Map<string, Point2D[]>, afterWires: Map<string, Point2D[]>, beforeLabels: Map<string, Point2D>, afterLabels: Map<string, Point2D>): void {
+        this.beforeWirePts = beforeWires;
+        this.afterWirePts = afterWires;
+        this.beforeLabelPos = beforeLabels;
+        this.afterLabelPos = afterLabels;
+        this.hasGeometry = true;
     }
     execute(): void {
         for (let i = 0; i < this.doc.components.length; i++) {
@@ -374,6 +408,10 @@ export class MirrorCommand implements IEditCommand {
                 this.doc.components[i].mirrored = this.newMirrored;
                 break;
             }
+        }
+        if (this.hasGeometry) {
+            applyCapturedWirePts(this.doc, this.afterWirePts);
+            applyCapturedLabelPos(this.doc, this.afterLabelPos);
         }
     }
     undo(): void {
@@ -383,8 +421,40 @@ export class MirrorCommand implements IEditCommand {
                 break;
             }
         }
+        if (this.hasGeometry) {
+            applyCapturedWirePts(this.doc, this.beforeWirePts);
+            applyCapturedLabelPos(this.doc, this.beforeLabelPos);
+        }
     }
-    getMemoryEstimate(): number { return 8; }
+    getMemoryEstimate(): number {
+        return 64 + this.beforeWirePts.size * 48 + this.afterWirePts.size * 48;
+    }
+}
+function applyCapturedWirePts(doc: SchematicDocument, pts: Map<string, Point2D[]>): void {
+    pts.forEach((points: Point2D[], wireId: string) => {
+        for (let i = 0; i < doc.wires.length; i++) {
+            if (doc.wires[i].id !== wireId) {
+                continue;
+            }
+            const cloned: Point2D[] = [];
+            for (let j = 0; j < points.length; j++) {
+                cloned.push({ x: points[j].x, y: points[j].y });
+            }
+            doc.wires[i].points = cloned;
+            break;
+        }
+    });
+}
+function applyCapturedLabelPos(doc: SchematicDocument, pos: Map<string, Point2D>): void {
+    const labels = doc.netLabels ?? [];
+    pos.forEach((p: Point2D, labelId: string) => {
+        for (let i = 0; i < labels.length; i++) {
+            if (labels[i].id === labelId) {
+                labels[i].position = { x: p.x, y: p.y };
+                break;
+            }
+        }
+    });
 }
 function cloneWire(w: Wire): Wire {
     const pts: Point2D[] = [];

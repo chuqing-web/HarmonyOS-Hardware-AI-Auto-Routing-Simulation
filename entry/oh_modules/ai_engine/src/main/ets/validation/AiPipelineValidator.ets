@@ -12,6 +12,8 @@ import {
   mergeModularTopologies, critiqueModularPlan, looksLikeLibIdAsRefDes
 } from '../algorithms/ModularParallelMerge';
 import { IComponentLibrary } from 'component_library';
+import { DeviceUsageManual } from '../algorithms/DeviceUsageManual';
+import { PromptLoader } from '../prompts/PromptLoader';
 
 export interface AiValidationResult {
   passed: boolean;
@@ -260,6 +262,60 @@ export class AiPipelineValidator {
       failures,
       topology: mergeOut.topology
     };
+  }
+
+  /**
+   * 全库手册覆盖 + 选型后注入块非空 + 精确条目脚串↔库 pin.id
+   */
+  validateUsageManualCoverage(): AiValidationResult {
+    const checks: string[] = [];
+    const failures: string[] = [];
+    const cov = DeviceUsageManual.coverageReport();
+    if (cov.missing.length > 0) {
+      failures.push(`手册未覆盖: ${cov.missing.join(',')}`);
+    } else {
+      checks.push(`手册全库覆盖 ${cov.covered.length}/${cov.total} (${cov.percent}%)`);
+    }
+    const sample = ['LM555', 'STM32F103C8', 'R_10k', 'OSCILLOSCOPE', 'AMMETER_DC'];
+    const built = PromptLoader.buildDeviceUsageBlock(sample, 'full', this.library);
+    if (built.text.indexOf('【本次选型器件使用说明') < 0) {
+      failures.push('usage block 缺少标题头');
+    } else {
+      checks.push(`usage block chars=${built.charCount} devices=${built.deviceCount}`);
+    }
+    for (let i = 0; i < sample.length; i++) {
+      if (built.text.indexOf(sample[i]) < 0) {
+        failures.push(`usage block 缺少 ${sample[i]}`);
+      }
+    }
+    if (failures.length === 0) {
+      checks.push('sample libDevIds 均注入');
+    }
+    const pinAudit = DeviceUsageManual.auditExactPinsAgainstLibrary(this.library);
+    for (let i = 0; i < pinAudit.length; i++) {
+      failures.push(pinAudit[i]);
+    }
+    if (pinAudit.length === 0) {
+      checks.push('精确手册脚串与库 pin.id 一致');
+    }
+    // 稳压/555 关键句式抽查
+    const e7805 = DeviceUsageManual.resolve('LM7805');
+    if (e7805 && e7805.pins.indexOf('1=IN') < 0) {
+      failures.push('LM7805 手册须含 1=IN（库 pinId=1/2/3）');
+    }
+    const e555 = DeviceUsageManual.resolve('LM555');
+    if (e555 && (e555.pins.indexOf('GND') < 0 || e555.typicalWiring.indexOf('DISCH') < 0)) {
+      failures.push('LM555 手册须用具名脚 GND/DISCH（禁止裸数字接法）');
+    }
+    if (built.criticalMissIds && built.criticalMissIds.length > 0) {
+      failures.push(`sample 出现 criticalMiss: ${built.criticalMissIds.join(',')}`);
+    } else {
+      checks.push('sample 无 criticalMiss');
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateUsageManualCoverage passed=${failures.length === 0}` +
+      ` miss=${cov.missing.length} pinAudit=${pinAudit.length} chars=${built.charCount}`);
+    return { passed: failures.length === 0, checks, failures };
   }
 
   private static makeDev(libDevId: string, refName: string, x: number, y: number): DeviceInst {

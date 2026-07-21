@@ -18,13 +18,14 @@ export class DynamicErcEngine {
                 sum += wave.voltageAxis[i];
             }
             const avg = sum / wave.voltageAxis.length;
-            if (max > 5.5) {
+            if (max > 12.5) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.ERROR, `持续过压: ${wave.probeName} 峰值 ${max.toFixed(2)}V`, wave.netName, '检查电源电压或添加限压保护'));
             }
-            if (Math.abs(avg) > 4.5 && wave.waveType === 'voltage') {
+            // 饱和判定：相对本通道动态范围，避免 3.3V 轨误报
+            if (Math.abs(avg) > Math.max(4.5, max * 0.92) && wave.waveType === 'voltage' && max > 4.0) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING, `运放可能饱和: ${wave.probeName} 平均 ${avg.toFixed(2)}V`, wave.netName, '调整增益或偏置'));
             }
-            if (max - min < 0.01 && max > 0.1) {
+            if (max - min < 0.01 && max > 0.1 && max < 0.5) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING, `振荡可能不起振: ${wave.probeName} 幅度过小`, wave.netName, '检查晶振参数与负载电容'));
             }
             if (wave.timeAxis.length >= 4) {

@@ -1,962 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ7v/**
- * Sim Worker å®¿ä¸» â€” ä¼˜å…ˆ ThreadWorkerï¼›å¤±è´¥åˆ™ä¸»çº¿ç¨‹æ—¶é—´é¢„ç®—å›é€€æ³µ
- *
- * ANR æ³¨æ„ï¼šå›é€€æ³µç»ä¸èƒ½ç”¨ setTimeout(0) å¿™ç­‰ï¼Œå¦åˆ™ä¼šå æ»¡ä¸»çº¿ç¨‹ UVï¼Œ
- * WorkerHostOnMessageTask(READY/FRAME) æ’ä¸ä¸Šé˜Ÿ â†’ Worker æ°¸è¿œå‡ä¸ä¸Šå» â†’ THREAD_BLOCK_6Sã€‚
- */
-import worker from "@ohos.worker";
-/**
- * Sim Worker å®¿ä¸» â€” ä¼˜å…ˆ ThreadWorkerï¼›å¤±è´¥åˆ™ä¸»çº¿ç¨‹æ—¶é—´é¢„ç®—å›é€€æ³µ
- *
- * ANR æ³¨æ„ï¼šå›é€€æ³µç»ä¸èƒ½ç”¨ setTimeout(0) å¿™ç­‰ï¼Œå¦åˆ™ä¼šå æ»¡ä¸»çº¿ç¨‹ UVï¼Œ
- * WorkerHostOnMessageTask(READY/FRAME) æ’ä¸ä¸Šé˜Ÿ â†’ Worker æ°¸è¿œå‡ä¸ä¸Šå» â†’ THREAD_BLOCK_6Sã€‚
- */
-import util from "@ohos.util";
-import { SimulationState, mapAwareStringify, Logger, traceUart, formatUartBytesHex } from 'common';
-import { SimCmdType, SimMsgType, emptySimFrame, makeSimHostCommand, makeUartRxCommand, toSimFramePlain } from './SimProtocol';
-import { SimFrameStore } from './SimFrameStore';
-const TAG = 'SimWorkerHost';
-const WORKER_SCRIPT = 'entry/ets/workers/SimWorker.ets';
-/**
- * Emulator APP_INPUT_BLOCK root cause: Worker FRAME floods â†’ WorkerHostOnMessageTask
- * queues starve MMI. Keep ThreadWorker opt-in until frame payload is dictionary-diffed.
- * Fallback pump @16ms + hard spice cap keeps UI alive.
- */
-const ENABLE_THREAD_WORKER = false;
-/** ä¸»çº¿ç¨‹å›é€€æ³µé—´éš”ï¼šå‹¿ä¸è§¦æ‘¸/ç»˜åˆ¶æŠ¢ UIï¼ˆ16msÃ—SPICE æ˜“ THREAD_BLOCKï¼‰ */
-const FALLBACK_INTERVAL_MS = 40;
-/** ç­‰å¾… Worker READY è¶…æ—¶åå†ä¸Šä¸»çº¿ç¨‹å›é€€æ³µ */
-const WORKER_READY_WAIT_MS = 280;
-export class SimWorkerHost {
-    constructor() {
-        this.tw = null;
-        this.store = new SimFrameStore();
-        this.workerReady = false;
-        this.workerMode = false;
-        this.fallbackActive = false;
-        this.fallbackTimer = -1;
-        this.fallbackGen = 0;
-        this.readyWaitTimer = -1;
-        this.budgetMs = 3;
-        this.localKernel = null;
-        this.pendingFirmware = null;
-        this.pendingFirmwareOffset = 0;
-        this.pendingFirmwareFamily = '8051';
-        this.pendingTopoJson = '';
-        this.pendingDocJson = '';
-        this.pendingCfgJson = '';
-        this.hasPendingStart = false;
-        this.onError = () => { };
-        /** UI pinch/pan â€” skip spice budget ticks so UV can drain MMI */
-        this.uiGestureBusy = false;
-    }
-    setErrorHandler(handler) {
-        this.onError = handler;
-    }
-    setUiGestureBusy(busy) {
-        this.uiGestureBusy = busy;
-    }
-    getFrameStore() {
-        return this.store;
-    }
-    isWorkerMode() {
-        return this.workerMode && this.workerReady;
-    }
-    isFallbackMode() {
-        return this.fallbackActive;
-    }
-    ensureStarted() {
-        if (!ENABLE_THREAD_WORKER) {
-            return;
-        }
-        if (this.tw !== null) {
-            return;
-        }
-        try {
-            const instance = new worker.ThreadWorker(WORKER_SCRIPT);
-            instance.onmessage = (e) => {
-                this.handleWorkerMessage(e.data);
-            };
-            instance.onerror = (err) => {
-                Logger.warn(TAG, `worker onerror: ${err.message}`);
-                this.downgradeToFallback(`worker error: ${err.message}`);
-            };
-            instance.onexit = (_code) => {
-                Logger.info(TAG, 'worker exited');
-                this.workerReady = false;
-                this.workerMode = false;
-            };
-            this.tw = instance;
-            this.workerMode = true;
-            this.postToWorker(makeSimHostCommand(SimCmdType.INIT, this.budgetMs));
-        }
-        catch (e) {
-            const msg = e instanceof Error ? e.message : 'ThreadWorker create failed';
-            Logger.warn(TAG, msg);
-            this.downgradeToFallback(msg);
-        }
-    }
-    postToWorker(cmd) {
-        if (this.tw === null) {
-            return;
-        }
-        try {
-            this.tw.postMessage(cmd);
-        }
-        catch (e) {
-            const msg = e instanceof Error ? e.message : 'postMessage failed';
-            Logger.warn(TAG, msg);
-        }
-    }
-    clearReadyWait() {
-        if (this.readyWaitTimer >= 0) {
-            clearTimeout(this.readyWaitTimer);
-            this.readyWaitTimer = -1;
-        }
-    }
-    handleWorkerMessage(msg) {
-        if (msg === undefined || msg === null || msg.type === undefined) {
-            return;
-        }
-        if (msg.type === SimMsgType.READY) {
-            this.workerReady = true;
-            this.workerMode = true;
-            this.clearReadyWait();
-            this.stopFallbackPump();
-            Logger.info(TAG, 'worker READY');
-            if (this.hasPendingStart) {
-                this.upgradeToWorkerWithPending();
-            }
-            return;
-        }
-        if (msg.type === SimMsgType.FRAME && msg.frame !== undefined) {
-            this.store.publish(msg.frame);
-            return;
-        }
-        if (msg.type === SimMsgType.ERROR) {
-            Logger.warn(TAG, `worker ERROR: ${msg.message ?? ''}`);
-            this.onError(msg.message ?? 'sim worker error');
-            this.downgradeToFallback(msg.message ?? 'sim worker error');
-            return;
-        }
-    }
-    downgradeToFallback(reason) {
-        Logger.warn(TAG, `fallback compute pump: ${reason}`);
-        this.workerMode = false;
-        this.workerReady = false;
-        this.clearReadyWait();
-        if (this.tw !== null) {
-            try {
-                this.tw.terminate();
-            }
-            catch (_e) {
-                // ignore
-            }
-            this.tw = null;
-        }
-        if (this.localKernel !== null &&
-            this.localKernel.getState() === SimulationState.RUNNING) {
-            this.startFallbackPump();
-        }
-    }
-    upgradeToWorkerWithPending() {
-        if (this.tw === null || !this.workerReady || !this.hasPendingStart) {
-            return;
-        }
-        this.stopFallbackPump();
-        this.workerMode = true;
-        this.fallbackActive = false;
-        this.postToWorker(makeSimHostCommand(SimCmdType.START, this.budgetMs, this.pendingTopoJson, this.pendingDocJson, this.pendingCfgJson));
-        if (this.pendingFirmware !== null) {
-            this.postFirmwareToWorker(this.pendingFirmware, this.pendingFirmwareOffset, this.pendingFirmwareFamily);
-        }
-        this.hasPendingStart = false;
-        Logger.info(TAG, 'upgraded to ThreadWorker compute path');
-    }
-    /**
-     * Prefer ThreadWorker. Do NOT run a main-thread busy pump until READY has had a chance
-     * to arrive â€” otherwise UV is starved and WorkerHostOnMessageTask never runs (ANR).
-     */
-    startRemote(topo, cfg, doc, localKernel) {
-        this.localKernel = localKernel;
-        this.stopFallbackPump();
-        this.clearReadyWait();
-        this.hasPendingStart = false;
-        this.workerMode = false;
-        if (!ENABLE_THREAD_WORKER) {
-            Logger.info(TAG, `ThreadWorker disabled â€” budget fallback @${FALLBACK_INTERVAL_MS}ms (anti-ANR)`);
-            this.startFallbackPump();
-            return;
-        }
-        this.ensureStarted();
-        this.hasPendingStart = true;
-        this.workerMode = this.workerReady;
-        // Yield so INITâ†”READY can land before heavy stringify / START
-        setTimeout(() => {
-            try {
-                this.pendingTopoJson = mapAwareStringify(topo);
-                this.pendingDocJson = mapAwareStringify(doc);
-                this.pendingCfgJson = mapAwareStringify(cfg);
-            }
-            catch (e) {
-                const msg = e instanceof Error ? e.message : 'stringify failed';
-                Logger.warn(TAG, msg);
-                this.downgradeToFallback(msg);
-                return;
-            }
-            if (this.workerReady) {
-                this.upgradeToWorkerWithPending();
-                return;
-            }
-            this.readyWaitTimer = setTimeout(() => {
-                this.readyWaitTimer = -1;
-                if (this.workerReady) {
-                    this.upgradeToWorkerWithPending();
-                }
-                else {
-                    Logger.info(TAG, `Worker not READY in ${WORKER_READY_WAIT_MS}ms â€” budget fallback @${FALLBACK_INTERVAL_MS}ms`);
-                    this.workerMode = false;
-                    this.startFallbackPump();
-                }
-            }, WORKER_READY_WAIT_MS);
-        }, 16);
-    }
-    startFallbackPump() {
-        if (this.localKernel === null) {
-            return;
-        }
-        if (this.workerMode && this.workerReady) {
-            return;
-        }
-        this.fallbackActive = true;
-        this.fallbackGen++;
-        const gen = this.fallbackGen;
-        const tick = () => {
-            if (gen !== this.fallbackGen || !this.fallbackActive || this.localKernel === null) {
-                return;
-            }
-            // Worker took over mid-flight
-            if (this.workerMode && this.workerReady) {
-                this.fallbackActive = false;
-                this.fallbackTimer = -1;
-                return;
-            }
-            if (this.localKernel.getState() !== SimulationState.RUNNING) {
-                this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-                return;
-            }
-            if (this.uiGestureBusy) {
-                this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-                return;
-            }
-            this.localKernel.runBudgetSteps(this.budgetMs);
-            const snap = this.localKernel.buildFrameSnapshot();
-            this.store.publish(this.toPlain(snap));
-            this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-        };
-        if (this.fallbackTimer >= 0) {
-            clearTimeout(this.fallbackTimer);
-        }
-        this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-        Logger.info(TAG, `fallback compute pump started @${FALLBACK_INTERVAL_MS}ms`);
-    }
-    stopFallbackPump() {
-        this.fallbackGen++;
-        this.fallbackActive = false;
-        if (this.fallbackTimer >= 0) {
-            clearTimeout(this.fallbackTimer);
-            this.fallbackTimer = -1;
-        }
-    }
-    toPlain(snap) {
-        const uart = snap.uartBytes !== undefined ? snap.uartBytes : [];
-        return toSimFramePlain(snap.t, snap.stepCount, snap.netKeys, snap.voltages, snap.branchKeys, snap.currents, snap.mcuFamily, snap.mcuPc, snap.mcuP1, snap.gpioWords, snap.state, uart);
-    }
-    pause() {
-        if (this.tw !== null && this.workerReady) {
-            this.postToWorker(makeSimHostCommand(SimCmdType.PAUSE));
-        }
-        this.stopFallbackPump();
-    }
-    resume(localKernel) {
-        this.localKernel = localKernel;
-        if (this.tw !== null && this.workerReady && this.workerMode) {
-            this.postToWorker(makeSimHostCommand(SimCmdType.RESUME));
-            return;
-        }
-        this.startFallbackPump();
-    }
-    stop() {
-        this.hasPendingStart = false;
-        this.clearReadyWait();
-        if (this.tw !== null) {
-            this.postToWorker(makeSimHostCommand(SimCmdType.STOP));
-        }
-        this.stopFallbackPump();
-        this.store.clear();
-    }
-    loadMcu(data, offset, family, localKernel) {
-        this.localKernel = localKernel;
-        this.pendingFirmware = data;
-        this.pendingFirmwareOffset = offset;
-        this.pendingFirmwareFamily = family;
-        // Always load locally so mirror/debug panels work in fallback
-        localKernel.loadMcuProgram(data, offset, family);
-        if (this.tw !== null && this.workerReady && this.workerMode) {
-            this.postFirmwareToWorker(data, offset, family);
-        }
-    }
-    /**
-     * Terminal TX â†’ MCU USART RX (local kernel + worker if active).
-     * UI frames come from the Worker kernel â€” UART_RX must reach the Worker;
-     * Worker loop must not use setTimeout(0) (starves onmessage).
-     */
-    injectUsartRx(bytes, localKernel) {
-        if (bytes.length === 0) {
-            return;
-        }
-        const toWorker = this.tw !== null && this.workerReady && this.workerMode;
-        traceUart('HOST_RX_FWD', `n=${bytes.length} hex=${formatUartBytesHex(bytes)} ` +
-            `workerMode=${this.workerMode ? 1 : 0} workerReady=${this.workerReady ? 1 : 0} ` +
-            `postWorker=${toWorker ? 1 : 0} (UI frames come from ${toWorker ? 'worker' : 'local'} kernel)`);
-        this.localKernel = localKernel;
-        localKernel.injectUsartRx(bytes);
-        if (toWorker) {
-            let hex = '';
-            for (let i = 0; i < bytes.length; i++) {
-                hex += (bytes[i] & 0xFF).toString(16).toUpperCase().padStart(2, '0');
-            }
-            this.postToWorker(makeUartRxCommand(hex));
-            traceUart('HOST_RX_WORKER_POST', `uartHex=${hex}`);
-        }
-    }
-    postFirmwareToWorker(data, offset, family) {
-        if (this.tw === null) {
-            return;
-        }
-        try {
-            const helper = new util.Base64Helper();
-            const b64 = helper.encodeToStringSync(data);
-            this.postToWorker(makeSimHostCommand(SimCmdType.LOAD_MCU, undefined, undefined, undefined, undefined, family, offset, b64));
-        }
-        catch (e) {
-            const msg = e instanceof Error ? e.message : 'encode firmware failed';
-            Logger.warn(TAG, msg);
-        }
-    }
-    consumeLatest() {
-        return this.store.consumeLatest();
-    }
-    peek() {
-        return this.store.peek() ?? emptySimFrame();
-    }
-    shutdown() {
-        this.stop();
-        if (this.tw !== null) {
-            this.postToWorker(makeSimHostCommand(SimCmdType.SHUTDOWN));
-            try {
-                this.tw.terminate();
-            }
-            catch (_e) {
-                // ignore
-            }
-            this.tw = null;
-        }
-        this.workerReady = false;
-        this.workerMode = false;
-    }
-}
-//# sourceMappingURL=SimWorkerHost.js.mapÂ•Ùf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.worker.d.tsÙd hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.util.d.tsÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsÙLC:\Projects\ElecDraw_Harmony\entry\src\main\ets\services\sim\SimProtocol.etsÙNC:\Projects\ElecDraw_Harmony\entry\src\main\ets\services\sim\SimFrameStore.etsÙNC:\Projects\ElecDraw_Harmony\entry\src\main\ets\services\sim\SimWorkerHost.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¥entryÃÂÙ"C:\Projects\ElecDraw_Harmony\entry¼C:\Projects\ElecDraw_Harmony¥entry¥1.0.0Ô  ‘ÔrC’²hostDependencyName®hostModuleName³./sim/SimWorkerHost¥entryÙ"C:\Projects\ElecDraw_Harmony\entryÃÃÚ3]/**
- * Sim Worker å®¿ä¸» â€” ä¼˜å…ˆ ThreadWorkerï¼›å¤±è´¥åˆ™ä¸»çº¿ç¨‹æ—¶é—´é¢„ç®—å›é€€æ³µ
- *
- * ANR æ³¨æ„ï¼šå›é€€æ³µç»ä¸èƒ½ç”¨ setTimeout(0) å¿™ç­‰ï¼Œå¦åˆ™ä¼šå æ»¡ä¸»çº¿ç¨‹ UVï¼Œ
- * WorkerHostOnMessageTask(READY/FRAME) æ’ä¸ä¸Šé˜Ÿ â†’ Worker æ°¸è¿œå‡ä¸ä¸Šå» â†’ THREAD_BLOCK_6Sã€‚
- */
-import { worker, MessageEvents, ErrorEvent, util } from '@kit.ArkTS';
-import { SimulationKernelImpl, KernelFrameSnapshot } from 'simulation_kernel';
-import {
-  SchTopology, SimConfig, SchematicDocument, SimulationState,
-  mapAwareStringify, Logger, traceUart, formatUartBytesHex
-} from 'common';
-import {
-  SimCmdType, SimFramePlain, SimHostCommand, SimMsgType, SimWorkerMessage,
-  emptySimFrame, makeSimHostCommand, makeUartRxCommand, toSimFramePlain
-} from './SimProtocol';
-import { SimFrameStore } from './SimFrameStore';
-
-const TAG = 'SimWorkerHost';
-const WORKER_SCRIPT = 'entry/ets/workers/SimWorker.ets';
-/**
- * Emulator APP_INPUT_BLOCK root cause: Worker FRAME floods â†’ WorkerHostOnMessageTask
- * queues starve MMI. Keep ThreadWorker opt-in until frame payload is dictionary-diffed.
- * Fallback pump @16ms + hard spice cap keeps UI alive.
- */
-const ENABLE_THREAD_WORKER: boolean = false;
-/** ä¸»çº¿ç¨‹å›é€€æ³µé—´éš”ï¼šå‹¿ä¸è§¦æ‘¸/ç»˜åˆ¶æŠ¢ UIï¼ˆ16msÃ—SPICE æ˜“ THREAD_BLOCKï¼‰ */
-const FALLBACK_INTERVAL_MS = 40;
-/** ç­‰å¾… Worker READY è¶…æ—¶åå†ä¸Šä¸»çº¿ç¨‹å›é€€æ³µ */
-const WORKER_READY_WAIT_MS = 280;
-export class SimWorkerHost {
-  private tw: worker.ThreadWorker | null = null;
-  private store: SimFrameStore = new SimFrameStore();
-  private workerReady: boolean = false;
-  private workerMode: boolean = false;
-  private fallbackActive: boolean = false;
-  private fallbackTimer: number = -1;
-  private fallbackGen: number = 0;
-  private readyWaitTimer: number = -1;
-  private budgetMs: number = 3;
-  private localKernel: SimulationKernelImpl | null = null;
-  private pendingFirmware: Uint8Array | null = null;
-  private pendingFirmwareOffset: number = 0;
-  private pendingFirmwareFamily: string = '8051';
-  private pendingTopoJson: string = '';
-  private pendingDocJson: string = '';
-  private pendingCfgJson: string = '';
-  private hasPendingStart: boolean = false;
-  private onError: (msg: string) => void = () => {};
-  /** UI pinch/pan â€” skip spice budget ticks so UV can drain MMI */
-  private uiGestureBusy: boolean = false;
-
-  setErrorHandler(handler: (msg: string) => void): void {
-    this.onError = handler;
-  }
-
-  setUiGestureBusy(busy: boolean): void {
-    this.uiGestureBusy = busy;
-  }
-
-  getFrameStore(): SimFrameStore {
-    return this.store;
-  }
-
-  isWorkerMode(): boolean {
-    return this.workerMode && this.workerReady;
-  }
-
-  isFallbackMode(): boolean {
-    return this.fallbackActive;
-  }
-
-  ensureStarted(): void {
-    if (!ENABLE_THREAD_WORKER) {
-      return;
-    }
-    if (this.tw !== null) {
-      return;
-    }
-    try {
-      const instance = new worker.ThreadWorker(WORKER_SCRIPT);
-      instance.onmessage = (e: MessageEvents): void => {
-        this.handleWorkerMessage(e.data as SimWorkerMessage);
-      };
-      instance.onerror = (err: ErrorEvent): void => {
-        Logger.warn(TAG, `worker onerror: ${err.message}`);
-        this.downgradeToFallback(`worker error: ${err.message}`);
-      };
-      instance.onexit = (_code: number): void => {
-        Logger.info(TAG, 'worker exited');
-        this.workerReady = false;
-        this.workerMode = false;
-      };
-      this.tw = instance;
-      this.workerMode = true;
-      this.postToWorker(makeSimHostCommand(SimCmdType.INIT, this.budgetMs));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'ThreadWorker create failed';
-      Logger.warn(TAG, msg);
-      this.downgradeToFallback(msg);
-    }
-  }
-
-  private postToWorker(cmd: SimHostCommand): void {
-    if (this.tw === null) {
-      return;
-    }
-    try {
-      this.tw.postMessage(cmd);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'postMessage failed';
-      Logger.warn(TAG, msg);
-    }
-  }
-
-  private clearReadyWait(): void {
-    if (this.readyWaitTimer >= 0) {
-      clearTimeout(this.readyWaitTimer);
-      this.readyWaitTimer = -1;
-    }
-  }
-
-  private handleWorkerMessage(msg: SimWorkerMessage): void {
-    if (msg === undefined || msg === null || msg.type === undefined) {
-      return;
-    }
-    if (msg.type === SimMsgType.READY) {
-      this.workerReady = true;
-      this.workerMode = true;
-      this.clearReadyWait();
-      this.stopFallbackPump();
-      Logger.info(TAG, 'worker READY');
-      if (this.hasPendingStart) {
-        this.upgradeToWorkerWithPending();
-      }
-      return;
-    }
-    if (msg.type === SimMsgType.FRAME && msg.frame !== undefined) {
-      this.store.publish(msg.frame);
-      return;
-    }
-    if (msg.type === SimMsgType.ERROR) {
-      Logger.warn(TAG, `worker ERROR: ${msg.message ?? ''}`);
-      this.onError(msg.message ?? 'sim worker error');
-      this.downgradeToFallback(msg.message ?? 'sim worker error');
-      return;
-    }
-  }
-
-  private downgradeToFallback(reason: string): void {
-    Logger.warn(TAG, `fallback compute pump: ${reason}`);
-    this.workerMode = false;
-    this.workerReady = false;
-    this.clearReadyWait();
-    if (this.tw !== null) {
-      try {
-        this.tw.terminate();
-      } catch (_e) {
-        // ignore
-      }
-      this.tw = null;
-    }
-    if (this.localKernel !== null &&
-        this.localKernel.getState() === SimulationState.RUNNING) {
-      this.startFallbackPump();
-    }
-  }
-
-  private upgradeToWorkerWithPending(): void {
-    if (this.tw === null || !this.workerReady || !this.hasPendingStart) {
-      return;
-    }
-    this.stopFallbackPump();
-    this.workerMode = true;
-    this.fallbackActive = false;
-    this.postToWorker(makeSimHostCommand(
-      SimCmdType.START, this.budgetMs,
-      this.pendingTopoJson, this.pendingDocJson, this.pendingCfgJson));
-    if (this.pendingFirmware !== null) {
-      this.postFirmwareToWorker(this.pendingFirmware, this.pendingFirmwareOffset,
-        this.pendingFirmwareFamily);
-    }
-    this.hasPendingStart = false;
-    Logger.info(TAG, 'upgraded to ThreadWorker compute path');
-  }
-
-  /**
-   * Prefer ThreadWorker. Do NOT run a main-thread busy pump until READY has had a chance
-   * to arrive â€” otherwise UV is starved and WorkerHostOnMessageTask never runs (ANR).
-   */
-  startRemote(topo: SchTopology, cfg: SimConfig, doc: SchematicDocument,
-    localKernel: SimulationKernelImpl): void {
-    this.localKernel = localKernel;
-    this.stopFallbackPump();
-    this.clearReadyWait();
-    this.hasPendingStart = false;
-    this.workerMode = false;
-
-    if (!ENABLE_THREAD_WORKER) {
-      Logger.info(TAG, `ThreadWorker disabled â€” budget fallback @${FALLBACK_INTERVAL_MS}ms (anti-ANR)`);
-      this.startFallbackPump();
-      return;
-    }
-
-    this.ensureStarted();
-    this.hasPendingStart = true;
-    this.workerMode = this.workerReady;
-
-    // Yield so INITâ†”READY can land before heavy stringify / START
-    setTimeout((): void => {
-      try {
-        this.pendingTopoJson = mapAwareStringify(topo as Object);
-        this.pendingDocJson = mapAwareStringify(doc as Object);
-        this.pendingCfgJson = mapAwareStringify(cfg as Object);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'stringify failed';
-        Logger.warn(TAG, msg);
-        this.downgradeToFallback(msg);
-        return;
-      }
-      if (this.workerReady) {
-        this.upgradeToWorkerWithPending();
-        return;
-      }
-      this.readyWaitTimer = setTimeout((): void => {
-        this.readyWaitTimer = -1;
-        if (this.workerReady) {
-          this.upgradeToWorkerWithPending();
-        } else {
-          Logger.info(TAG, `Worker not READY in ${WORKER_READY_WAIT_MS}ms â€” budget fallback @${FALLBACK_INTERVAL_MS}ms`);
-          this.workerMode = false;
-          this.startFallbackPump();
-        }
-      }, WORKER_READY_WAIT_MS);
-    }, 16);
-  }
-
-  private startFallbackPump(): void {
-    if (this.localKernel === null) {
-      return;
-    }
-    if (this.workerMode && this.workerReady) {
-      return;
-    }
-    this.fallbackActive = true;
-    this.fallbackGen++;
-    const gen = this.fallbackGen;
-    const tick = (): void => {
-      if (gen !== this.fallbackGen || !this.fallbackActive || this.localKernel === null) {
-        return;
-      }
-      // Worker took over mid-flight
-      if (this.workerMode && this.workerReady) {
-        this.fallbackActive = false;
-        this.fallbackTimer = -1;
-        return;
-      }
-      if (this.localKernel.getState() !== SimulationState.RUNNING) {
-        this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-        return;
-      }
-      if (this.uiGestureBusy) {
-        this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-        return;
-      }
-      this.localKernel.runBudgetSteps(this.budgetMs);
-      const snap: KernelFrameSnapshot = this.localKernel.buildFrameSnapshot();
-      this.store.publish(this.toPlain(snap));
-      this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-    };
-    if (this.fallbackTimer >= 0) {
-      clearTimeout(this.fallbackTimer);
-    }
-    this.fallbackTimer = setTimeout(tick, FALLBACK_INTERVAL_MS);
-    Logger.info(TAG, `fallback compute pump started @${FALLBACK_INTERVAL_MS}ms`);
-  }
-
-  private stopFallbackPump(): void {
-    this.fallbackGen++;
-    this.fallbackActive = false;
-    if (this.fallbackTimer >= 0) {
-      clearTimeout(this.fallbackTimer);
-      this.fallbackTimer = -1;
-    }
-  }
-
-  private toPlain(snap: KernelFrameSnapshot): SimFramePlain {
-    const uart: number[] = snap.uartBytes !== undefined ? snap.uartBytes : [];
-    return toSimFramePlain(
-      snap.t,
-      snap.stepCount,
-      snap.netKeys,
-      snap.voltages,
-      snap.branchKeys,
-      snap.currents,
-      snap.mcuFamily,
-      snap.mcuPc,
-      snap.mcuP1,
-      snap.gpioWords,
-      snap.state,
-      uart
-    );
-  }
-
-  pause(): void {
-    if (this.tw !== null && this.workerReady) {
-      this.postToWorker(makeSimHostCommand(SimCmdType.PAUSE));
-    }
-    this.stopFallbackPump();
-  }
-
-  resume(localKernel: SimulationKernelImpl): void {
-    this.localKernel = localKernel;
-    if (this.tw !== null && this.workerReady && this.workerMode) {
-      this.postToWorker(makeSimHostCommand(SimCmdType.RESUME));
-      return;
-    }
-    this.startFallbackPump();
-  }
-
-  stop(): void {
-    this.hasPendingStart = false;
-    this.clearReadyWait();
-    if (this.tw !== null) {
-      this.postToWorker(makeSimHostCommand(SimCmdType.STOP));
-    }
-    this.stopFallbackPump();
-    this.store.clear();
-  }
-
-  loadMcu(data: Uint8Array, offset: number, family: string, localKernel: SimulationKernelImpl): void {
-    this.localKernel = localKernel;
-    this.pendingFirmware = data;
-    this.pendingFirmwareOffset = offset;
-    this.pendingFirmwareFamily = family;
-    // Always load locally so mirror/debug panels work in fallback
-    localKernel.loadMcuProgram(data, offset, family);
-    if (this.tw !== null && this.workerReady && this.workerMode) {
-      this.postFirmwareToWorker(data, offset, family);
-    }
-  }
-
-  /**
-   * Terminal TX â†’ MCU USART RX (local kernel + worker if active).
-   * UI frames come from the Worker kernel â€” UART_RX must reach the Worker;
-   * Worker loop must not use setTimeout(0) (starves onmessage).
-   */
-  injectUsartRx(bytes: number[], localKernel: SimulationKernelImpl): void {
-    if (bytes.length === 0) {
-      return;
-    }
-    const toWorker = this.tw !== null && this.workerReady && this.workerMode;
-    traceUart('HOST_RX_FWD',
-      `n=${bytes.length} hex=${formatUartBytesHex(bytes)} ` +
-      `workerMode=${this.workerMode ? 1 : 0} workerReady=${this.workerReady ? 1 : 0} ` +
-      `postWorker=${toWorker ? 1 : 0} (UI frames come from ${toWorker ? 'worker' : 'local'} kernel)`);
-    this.localKernel = localKernel;
-    localKernel.injectUsartRx(bytes);
-    if (toWorker) {
-      let hex = '';
-      for (let i = 0; i < bytes.length; i++) {
-        hex += (bytes[i] & 0xFF).toString(16).toUpperCase().padStart(2, '0');
-      }
-      this.postToWorker(makeUartRxCommand(hex));
-      traceUart('HOST_RX_WORKER_POST', `uartHex=${hex}`);
-    }
-  }
-
-  private postFirmwareToWorker(data: Uint8Array, offset: number, family: string): void {
-    if (this.tw === null) {
-      return;
-    }
-    try {
-      const helper = new util.Base64Helper();
-      const b64 = helper.encodeToStringSync(data);
-      this.postToWorker(makeSimHostCommand(
-        SimCmdType.LOAD_MCU, undefined, undefined, undefined, undefined,
-        family, offset, b64));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'encode firmware failed';
-      Logger.warn(TAG, msg);
-    }
-  }
-
-  consumeLatest(): SimFramePlain | null {
-    return this.store.consumeLatest();
-  }
-
-  peek(): SimFramePlain {
-    return this.store.peek() ?? emptySimFrame();
-  }
-
-  shutdown(): void {
-    this.stop();
-    if (this.tw !== null) {
-      this.postToWorker(makeSimHostCommand(SimCmdType.SHUTDOWN));
-      try {
-        this.tw.terminate();
-      } catch (_e) {
-        // ignore
-      }
-      this.tw = null;
-    }
-    this.workerReady = false;
-    this.workerMode = false;
-  }
-}
-ÀÔrD•¬@ohos.workerª@ohos.util­./SimProtocol¦common¯./SimFrameStoreÔrE—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.worker.d.tsAÃªoh-resolveÂEAÃÙd hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.util.d.tsAÃªoh-resolveÂEAÂÙLC:\Projects\ElecDraw_Harmony\entry\src\main\ets\services\sim\SimProtocol.etsAÃªoh-resolveÂEAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂEAÂÙNC:\Projects\ElecDraw_Harmony\entry\src\main\ets\services\sim\SimFrameStore.etsAÃªoh-resolveÂ“ÔrF–§version¤fileªsourceRoot§sources¥names¨mappings°SimWorkerHost.js ‘±SimWorkerHost.etsÜp‘”    ‘” –”   ” 	” ” 8”! ÌD”" ÌE‘”    ‘” –”   ” ,” 0” 8” ÌD” ÌEÜ ”   ” ”	 	-” 	<” 
-”+ 
-”- 
-”3 
-”5 
-”> 
-&”Ì@ 
-(”ÌR 
-:”ÌT ”ÌZ ”Ìb ”Ìc Ü ”   ” ”	 ” ” -” 7”! ”. ”0 ”ÌB #”ÌD %”ÌU 6”ÌW 8”Ìf ÌG”Ìh ”Ìn ”Ì} ”Ì~ ˜”   ” ”	 	” ” ” ”/ /”0 0–”   ” ”	 	” ” ” –”   ” ” ” ”7 7”8 8‘”   ‘” –”   ” ” ” &”" +”# ,’”   ”6 6–”   ” ” ” ” ”   ’”   ”" "–”   ” ” ” ”   ”! !””   ” ” ” ‘”  •” 
-” ” +” /” 0—”  
-”  ”  !”  %”&  2”(  4”)  5•” !
-” !” !!”  !&”! !'•” "
-” "” " ” "%”  "&•” #
-” #” #$”# #)”$ #*–” $
-” $” $"” $#” $$”  $%•” %
-” %” % ” %!” %"–” &
-” &” &#” &$”  &%”! &&•” '
-” '” '” '” '•” (
-” (” (5” (9”  (:•” )
-” )” )/”# )3”$ )4•” *
-”" *”% **”& *+”' *,•” +
-”" +”% +*”+ +0”, +1•” ,
-” ,” ,$”! ,&”" ,'•” -
-” -” -#”  -%”! -&•” .
-” .” .#”  .%”! .&•” /
-” /” /%”$ /*”% /+˜” 0
-” 0” 0+” 0.” 00” 02”  03”! 04’” 1”ÌI 1ÌC•” 2
-” 2” 2#”" 2(”# 2)’” Í– ” Í–”” 4” 4” 4” 40—” 5” 5” 5	” 5” 5” 5” 5’” 6” 6”” 8” 8” 8” 8 —” 9” 9” 9	” 9” 9”! 9”" 9’” :” :’” <” <–” =” =” =” =” =” =’” >” >’” Ì@” Ì@š” ÌA” ÌA” ÌA” ÌA” ÌA”" ÌA”& ÌA"”' ÌA#”2 ÌA.”3 ÌA/’” ÌB” ÌB’” ÌD” ÌD–” ÌE” ÌE” ÌE” ÌE”" ÌE”# ÌE’” ÌF” ÌF’” ÌH” ÌH•” ÌI” ÌI” ÌI	”! ÌI”# ÌI’” ÌJ” ÌJ‘”	 ÌK˜” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL’” ÌM” ÌM‘”	 ÌN’” ÌO” ÌOœ” ÌP” ÌP” ÌP” ÌP”! ÌP”' ÌP!”( ÌP"”4 ÌP.”5 ÌP/”ÌB ÌP<”ÌC ÌP=”ÌD ÌP>™” ÌQ” ÌQ” ÌQ” ÌQ”! ÌQ”" ÌQ”# ÌQ,”% ÌQ4”' ÌQ6š” ÌR” ÌR” ÌR”( ÌR ”) ÌR!”* ÌR"”+ ÌR#”/ ÌR;”0 ÌR<”1 ÌR=“” ÌS” ÌS” ÌS™” ÌT” ÌT” ÌT” ÌT” ÌT”  ÌT”# ÌT)”% ÌT1”' ÌT3” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU”! ÌU”4 ÌU,”7 ÌU/”8 ÌU0”? ÌU7”ÌA ÌU9”ÌB ÌU:”ÌC ÌU;œ” ÌV” ÌV” ÌV”( ÌV ”) ÌV!”: ÌV2”= ÌV5”> ÌV6”ÌE ÌV=”ÌG ÌV?”ÌH ÌVÌ@”ÌI ÌVÌA“” ÌW” ÌW” ÌW™” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”$ ÌX&”& ÌX.”( ÌX0š” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”! ÌY”0 ÌY(”1 ÌY)”2 ÌY*—” ÌZ” ÌZ” ÌZ”  ÌZ”# ÌZ”( ÌZ ”) ÌZ!—” Ì[” Ì[” Ì[” Ì[”" Ì[”' Ì[”( Ì[ “” Ì\” Ì\” Ì\—” Ì]” Ì]
-” Ì]” Ì]” Ì]” Ì]” Ì]—” Ì^” Ì^
-” Ì^” Ì^” Ì^”" Ì^”# Ì^Ü ” Ì_” Ì_
-” Ì_” Ì_” Ì_”0 Ì_*”1 Ì_+”; Ì_5”< Ì_6”Ì@ Ì_:”ÌB Ì_<”ÌF Ì_Ì@”ÌG Ì_ÌA”ÌO Ì_ÌI”ÌP Ì_ÌJ”ÌQ Ì_ÌK”ÌR Ì_ÌL‘”	 Ì`”” Ì`” Ì`” Ì`” Ì`Ü ” Ìa” Ìa” Ìa” Ìa” Ìa”% Ìa”* Ìa$”+ Ìa%”, Ìa&”- Ìa'”. Ìa(”/ Ìa)”6 Ìa0”7 Ìa1”8 Ìa2”9 Ìa3”ÌU ÌaÌO”ÌV ÌaÌPš” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb”  Ìb”! Ìb”" Ìb˜” Ìc” Ìc
-” Ìc”$ Ìc”% Ìc”( Ìc"”) Ìc#”* Ìc$‘”	 Ìd’” Ìe” Ìe”” Ìg
-” Ìg” Ìg” Ìg*˜” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh’” Ìi” Ìi‘”	 Ìj’” Ìk” Ìkš” Ìl” Ìl
-” Ìl” Ìl” Ìl” Ìl”  Ìl”# Ìl”$ Ìl”% Ìl‘”	 Ìm”” Ìm” Ìm” Ìm” ÌmÜ ” Ìn” Ìn” Ìn” Ìn” Ìn”% Ìn”* Ìn$”+ Ìn%”, Ìn&”- Ìn'”. Ìn(”/ Ìn)”6 Ìn0”7 Ìn1”8 Ìn2”9 Ìn3”ÌM ÌnÌG”ÌN ÌnÌHš” Ìo” Ìo” Ìo” Ìo” Ìo” Ìo” Ìo”  Ìo”! Ìo”" Ìo‘”	 Ìp’” Ìq” Ìq’” Ìs
-” Ìs˜” Ìt” Ìt” Ìt” Ìt” Ìt”# Ìt”$ Ìt ”& Ìt"˜” Ìu” Ìu” Ìu” Ìu” Ìu”, Ìu&”- Ìu'”. Ìu(˜” Ìv” Ìv
-” Ìv” Ìv”" Ìv”# Ìv”$ Ìv”% Ìv‘”	 Ìw’” Ìx” Ìx”” Ìz
-” Ìz” Ìz” Ìz3Ü ” Ì{” Ì{” Ì{” Ì{” Ì{”! Ì{”$ Ì{ ”) Ì{%”- Ì{)”1 Ì{-”4 Ì{0”5 Ì{1”9 Ì{5”> Ì{:”ÌG Ì{ÌC”ÌI Ì{ÌE’” Ì|” Ì|‘”	 Ì}š” Ì~” Ì~” Ì~” Ì~” Ì~” Ì~”# Ì~”$ Ì~ ”) Ì~%”+ Ì~'—” Ì” Ì
-” Ì” Ì” Ì”# Ì”$ Ì—” Ì€” Ì€
-” Ì€” Ì€” Ì€”" Ì€”# Ì€–” Ì” Ì
-” Ì” Ì”! Ì”" Ì–” Ì‚” Ì‚
-” Ì‚”! Ì‚”# Ì‚”$ Ì‚š” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”+ Ìƒ%”, Ìƒ&”- Ìƒ'–” Ì„” Ì„
-” Ì„” Ì„”$ Ì„”& Ì„ –” Ì…” Ì…” Ì…”/ Ì…'”1 Ì…)”2 Ì…*‘” Ì†’” Ì‡” Ì‡‘”	 ÌˆÜ ” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”# Ì‰”$ Ì‰ ”) Ì‰%”- Ì‰)”0 Ì‰,”1 Ì‰-”6 Ì‰2”; Ì‰7”ÌD Ì‰Ì@”ÌF Ì‰ÌBœ” ÌŠ” ÌŠ
-” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ”" ÌŠ”# ÌŠ”( ÌŠ"”) ÌŠ#”* ÌŠ$’” Ì‹” Ì‹‘”	 ÌŒš” Ì” Ì” Ì” Ì” Ì” Ì”# Ì”$ Ì ”) Ì%”+ Ì'Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì”. Ì(”1 Ì+”2 Ì,”9 Ì3”= Ì7”? Ì9”ÌA Ì;”ÌB Ì<”ÌC Ì=œ” Ì” Ì
-” Ì” Ì” Ì” Ì” Ì”$ Ì”( Ì"”: Ì4”; Ì5”< Ì6œ” Ì” Ì
-” Ì”$ Ì”% Ì”( Ì"”) Ì#”0 Ì*”4 Ì.”ÌF ÌÌ@”ÌG ÌÌA”ÌH ÌÌB’” Ì‘” Ì‘‘”	 Ì’’” Ì“” Ì“”” Ì•
-” Ì•” Ì•” Ì•,œ” Ì–” Ì–
-” Ì–” Ì–” Ì–” Ì–” Ì–”3 Ì–/”9 Ì–5”; Ì–7”< Ì–8”= Ì–9—” Ì—” Ì—” Ì—	” Ì—” Ì—” Ì—”  Ì——” Ì˜” Ì˜” Ì˜	” Ì˜” Ì˜”  Ì˜”! Ì˜–” Ì™” Ì™” Ì™	” Ì™” Ì™” Ì™˜” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš’” Ì›” Ì›
-˜” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”! Ìœ”# Ìœ”$ Ìœ‘” Ì”” Ì” Ì” Ì” Ì’” Ì” Ì‘” ÌŸ—” Ì ” Ì 
-” Ì ” Ì ” Ì ” Ì ” Ì ‘”	 Ì¡—” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”! Ì¢”% Ì¢!œ” Ì£” Ì£” Ì£” Ì£” Ì£”% Ì£!”' Ì£#”, Ì£(”; Ì£7”< Ì£8”ÌC Ì£?”ÌE Ì£ÌA–” Ì¤” Ì¤
-” Ì¤”" Ì¤”$ Ì¤”% Ì¤‘”	 Ì¥’” Ì¦” Ì¦’” Ì¨
-” Ì¨$Ü ” Ì©” Ì©” Ì©” Ì©” Ì©” Ì©” Ì©”  Ì©”! Ì©”% Ì©!”& Ì©"”1 Ì©-”5 Ì©1”6 Ì©2”: Ì©6”; Ì©7”ÌJ Ì©ÌF”ÌL Ì©ÌH’” Ìª” Ìª‘”	 Ì«–” Ì¬” Ì¬” Ì¬	” Ì¬” Ì¬”  Ì¬—” Ì­” Ì­” Ì­	” Ì­” Ì­” Ì­” Ì­—” Ì®” Ì®” Ì®	” Ì®” Ì®”# Ì®”$ Ì® Ü ” Ì¯” Ì¯” Ì¯	” Ì¯” Ì¯”, Ì¯(”- Ì°”7 Ì°”8 Ì°”= Ì°”? Ì°”ÌC Ì°”ÌD Ì°”ÌL Ì°%”ÌN Ì±”ÌR Ì±
-”ÌS Ì±”Ìb Ì±”Ìd Ì±”Ìh Ì± ”Ìi Ì±!”Ìw Ì±/”Ìy Ì±1”Ì} Ì±5”Ì~ Ì±6”ÌŒ Ì±ÌD”Ì Ì±ÌE”Ì Ì±ÌF”Ì Ì±ÌG˜” Ì²” Ì²” Ì²” Ì²”  Ì²”% Ì²!”) Ì²%”+ Ì²'Ü ” Ì³” Ì³
-” Ì³”% Ì³”& Ì³ ”* Ì³$”+ Ì³%”: Ì³4”< Ì³6”Ì@ Ì³:”ÌA Ì³;”ÌV Ì³ÌP”ÌX Ì´”Ì\ Ì´”Ì] Ì´”Ìr Ì´"”Ìs Ì´#”Ìt Ì´$‘”	 Ìµ—” Ì¶” Ì¶” Ì¶	” Ì¶” Ì¶”$ Ì¶ ”% Ì¶!š” Ì·” Ì·
-” Ì·” Ì·” Ì·” Ì·” Ì·”Ì@ Ì·<”ÌA Ì·=”ÌB Ì·>’” Ì¸” Ì¸‘” Ìº‘” Ì½š” Ì¾” Ì¾” Ì¾” Ì¾” Ì¾!” Ì¾/” Ì¾1” Ì¾ÌG”  Ì¿”+ Ì¿%—” ÌÀ” ÌÀ” ÌÀ	” ÌÀ” ÌÀ”& ÌÀ"”' ÌÀ#–” ÌÁ” ÌÁ” ÌÁ	” ÌÁ” ÌÁ”  ÌÁ–” ÌÂ” ÌÂ” ÌÂ	” ÌÂ” ÌÂ” ÌÂ—” ÌÃ” ÌÃ” ÌÃ	” ÌÃ” ÌÃ”$ ÌÃ ”% ÌÃ!—” ÌÄ” ÌÄ” ÌÄ	” ÌÄ” ÌÄ” ÌÄ”  ÌÄ•” ÌÆ” ÌÆ” ÌÆ	”! ÌÆ”# ÌÆœ” ÌÇ” ÌÇ” ÌÇ” ÌÇ” ÌÇ” ÌÇ” ÌÇ”ÌI ÌÇÌC”Ì] ÌÇÌW”Ìl ÌÇÌf”Ìm ÌÇÌg”Ìn ÌÇÌh–” ÌÈ” ÌÈ
-” ÌÈ”" ÌÈ”$ ÌÈ”% ÌÈ’” ÌÉ” ÌÉ‘”	 ÌÊ–” ÌÌ” ÌÌ” ÌÌ	” ÌÌ” ÌÌ” ÌÌ—” ÌÍ” ÌÍ” ÌÍ	” ÌÍ” ÌÍ”# ÌÍ”$ ÌÍ ™” ÌÎ” ÌÎ” ÌÎ	” ÌÎ” ÌÎ” ÌÎ” ÌÎ”* ÌÎ&”+ ÌÎ'’” ÌĞ”ÌF ÌĞÌB•” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ’” ÌÒ” ÌÒ
-š” ÌÓ” ÌÓ” ÌÓ”$ ÌÓ”' ÌÓ”8 ÌÓ0”9 ÌÓ1”= ÌÓ?”> ÌÓÌ@”? ÌÓÌAš” ÌÔ” ÌÔ” ÌÔ”# ÌÔ”& ÌÔ”7 ÌÔ/”8 ÌÔ0”; ÌÔ=”< ÌÔ>”= ÌÔ?š” ÌÕ” ÌÕ” ÌÕ”# ÌÕ”& ÌÕ”7 ÌÕ/”8 ÌÕ0”; ÌÕ=”< ÌÕ>”= ÌÕ?‘” ÌÖ”” ÌÖ” ÌÖ” ÌÖ” ÌÖÜ ” Ì×” Ì×” Ì×” Ì×” Ì×”) Ì×!”. Ì×&”/ Ì×'”0 Ì×(”1 Ì×)”2 Ì×*”3 Ì×+”: Ì×2”; Ì×3”< Ì×4”= Ì×5”ÌO Ì×ÌG”ÌP Ì×ÌHš” ÌØ” ÌØ” ÌØ” ÌØ” ÌØ” ÌØ”! ÌØ”$ ÌØ”% ÌØ”& ÌØ˜” ÌÙ” ÌÙ” ÌÙ”( ÌÙ ”) ÌÙ!”, ÌÙ$”- ÌÙ%”. ÌÙ&’” ÌÚ” ÌÚ‘” ÌÛ–” ÌÜ” ÌÜ
-” ÌÜ” ÌÜ”  ÌÜ”" ÌÜ–” Ìİ” Ìİ” Ìİ”/ Ìİ'”1 Ìİ)”2 Ìİ*’” ÌŞ” ÌŞ‘” Ìß™” Ìà” Ìà
-” Ìà” Ìà”" Ìà”, Ìà&”- Ìà'”0 Ìà0”2 Ìà2˜” Ìá” Ìá” Ìá”# Ìá”& Ìá”' Ìá”( Ìá ”) Ìá!–” Ìâ” Ìâ” Ìâ” Ìâ”$ Ìâ”& Ìâ–” Ìã
-” Ìã” Ìã”3 Ìã)”5 Ìã+”6 Ìã,‘” Ìä	‘” Ìä” Ìå
-” Ìå” Ìå” Ìå”  Ìå”# Ìå”% Ìå”< Ìå2”ÌP ÌåÌF”Ìi ÌåÌ_”Ì} ÌåÌs”Ì ÌåÌw”Ì‚ ÌåÌx”Ìƒ ÌåÌy—” Ìæ
-” Ìæ” Ìæ”# Ìæ”& Ìæ”+ Ìæ!”, Ìæ"–” Ìç
-” Ìç” Ìç”* Ìç ”, Ìç"”- Ìç#‘” Ìè	–” Ìé” Ìé” Ìé	”# Ìé”$ Ìé”% Ìé–” Ìê”	 Ìê” Ìê” Ìê	” Ìê
-” Ìê’” Ìë” Ìë’” Ìí
-” Ìí˜” Ìî” Ìî” Ìî” Ìî” Ìî”! Ìî”% Ìî!”' Ìî#’” Ìï” Ìï‘”	 Ìğš” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ”# Ìñ”$ Ìñ ”/ Ìñ+”1 Ìñ-’” Ìò” Ìò‘”	 Ìó—” Ìô” Ìô” Ìô	” Ìô” Ìô”" Ìô”# Ìô–” Ìõ” Ìõ” Ìõ	” Ìõ” Ìõ” Ìõ˜” Ìö” Ìö
-” Ìö” Ìö” Ìö” Ìö”$ Ìö ”% Ìö!–” Ì÷” Ì÷
-” Ì÷” Ì÷” Ì÷” Ì÷Ü ” Ìø” Ìø
-” Ìø” Ìø” Ìø” Ìø”( Ìø"”, Ìø&”- Ìø'”1 Ìø+”2 Ìø,”Ì@ Ìø:”ÌD Ìø>”ÌH ÌøÌB”ÌI ÌøÌC”ÌT ÌøÌN”ÌY ÌøÌS”Ì] ÌøÌW”Ì_ ÌøÌY’” Ìù” Ìù‘” Ìú’” Ìû”* Ìû$š” Ìü” Ìü
-” Ìü” Ìü” Ìü”# Ìü”' Ìü!”( Ìü"”3 Ìü-”5 Ìü/—” Ìı” Ìı” Ìı”# Ìı”& Ìı”+ Ìı#”, Ìı$˜” Ìş” Ìş” Ìş”" Ìş”% Ìş”& Ìş”' Ìş”( Ìş ’” Ìÿ” Ìÿ‘” Í ” Í” Í
-” Í” Í”  Í”! Í”) Í#”+ Í%”0 Í*”? Í9”Ì@ Í:”ÌG ÍÌA”ÌI ÍÌCœ” Í” Í” Í”" Í”% Í”/ Í'”0 Í(”4 Í,”6 Í.”ÌJ ÍÌB”ÌK ÍÌC”ÌL ÍÌD’” Í” Í‘” Í–” Í” Í
-” Í” Í”" Í”$ Íœ” Í” Í” Í”" Í”% Í”/ Í'”0 Í(”4 Í,”6 Í.”ÌJ ÍÌB”ÌK ÍÌC”ÌL ÍÌD’” Í” Í‘” Íœ” Í	” Í	
-” Í	” Í	” Í	”+ Í	%”, Í	&”0 Í	*”1 Í	+”9 Í	3”: Í	4”; Í	5›” Í
-” Í
-” Í
-” Í
-(” Í
-,” Í
--”) Í
-8”* Í
-9”< Í
-ÌK”> Í
-ÌM”? Í
-ÌNŸ” Í” Í
-” Í” Í” Í” Í” Í”# Í”$ Í”+ Í%”, Í&”0 Í*”1 Í+”2 Í,”3 Í-œ” Í” Í
-” Í” Í”! Í”+ Í%”, Í&”0 Í*”2 Í,”ÌF ÍÌ@”ÌG ÍÌA”ÌH ÍÌB“” Í”	 Í”
- Í˜” Í” Í” Í” Í” Í”" Í”# Í”% Í!˜” Í” Í” Í” Í” Í”+ Í%”, Í&”- Í'‘”	 Íœ” Í” Í” Í	” Í” Í”' Í#”( Í$”, Í(”. Í*”ÌB Í>”ÌC Í?”ÌD ÍÌ@œ” Í” Í
-” Í” Í” Í” Í” Í”; Í7”ÌO ÍÌK”ÌS ÍÌO”ÌT ÍÌP”ÌU ÍÌQ’” Í” Í’” Í
-” Í–” Í” Í” Í	” Í” Í” Í—” Í” Í” Í	” Í” Í”# Í”$ Í ˜” Í” Í” Í” Í” Í”" Í”# Í”% Í!˜” Í” Í” Í” Í” Í”+ Í%”, Í&”- Í'˜” Í” Í
-” Í” Í”! Í”" Í”# Í”$ Í‘”	 Í’” Í” Í”” Í
-” Í” Í” Í+Ü ” Í” Í
-” Í” Í” Í” Í ”# Í)”( Í.”1 Í7”2 Í8”3 Í9”4 Í:”8 Í>”9 Í?”ÌB ÍÌH”ÌC ÍÌI”ÌD ÍÌJ”ÌE ÍÌK”ÌG ÍÌM”ÌH ÍÌNÜ 3” Í ” Í ” Í ” Í!”# Í!
-”$ Í!”% Í!”' Í"”+ Í"
-”, Í"”5 Í"”7 Í#”; Í#
-”< Í#”ÌC Í#”ÌE Í$”ÌI Í$
-”ÌJ Í$”ÌR Í$”ÌT Í%”ÌX Í%
-”ÌY Í%”Ìc Í%”Ìe Í&”Ìi Í&
-”Ìj Í&”Ìr Í&”Ìt Í'”Ìx Í'
-”Ìy Í'”Ì‚ Í'”Ì„ Í(”Ìˆ Í(
-”Ì‰ Í(”Ì Í(”Ì Í)”Ì” Í)
-”Ì• Í)”Ìš Í)”Ìœ Í*”Ì  Í*
-”Ì¡ Í*”Ìª Í*”Ì¬ Í+”Ì° Í+
-”Ì± Í+”Ì¶ Í+”Ì¸ Í,”Ì¼ Í,
-”Ì½ Í-”Ì¾ Í-’” Í.” Í.’” Í0”	 Í0œ” Í1” Í1” Í1” Í1” Í1” Í1” Í1”  Í1”$ Í1 ”% Í1!”0 Í1,”2 Í1.” Í2” Í2
-” Í2” Í2” Í2”0 Í2*”1 Í2+”; Í25”< Í26”ÌA Í2;”ÌB Í2<”ÌC Í2=”ÌD Í2>‘”	 Í3–” Í4” Í4” Í4	” Í4” Í4”  Í4’” Í5” Í5”” Í7”
- Í7” Í7	” Í7*—” Í8” Í8” Í8	” Í8” Í8”& Í8"”' Í8#Ü ” Í9” Í9” Í9” Í9” Í9” Í9” Í9”  Í9”$ Í9 ”% Í9!”0 Í9,”4 Í90”8 Í94”9 Í95”ÌC Í9?”ÌE Í9ÌA” Í:” Í:
-” Í:” Í:” Í:”0 Í:*”1 Í:+”; Í:5”< Í:6”ÌB Í:<”ÌC Í:=”ÌD Í:>”ÌE Í:?’” Í;” Í;‘”	 Í<–” Í=” Í=” Í=	” Í=”  Í=”! Í=’” Í>” Í>’” Í@” Í@—” ÍA” ÍA” ÍA	” ÍA” ÍA”$ ÍA ”% ÍA!–” ÍB” ÍB” ÍB	” ÍB” ÍB” ÍB˜” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍD” ÍD
-” ÍD” ÍD” ÍD”0 ÍD*”1 ÍD+”; ÍD5”< ÍD6”Ì@ ÍD:”ÌA ÍD;”ÌB ÍD<”ÌC ÍD=‘”	 ÍE–” ÍF” ÍF” ÍF	” ÍF” ÍF”  ÍF˜” ÍG” ÍG” ÍG	” ÍG” ÍG” ÍG” ÍG” ÍG’” ÍH” ÍHš” ÍJ” ÍJ	” ÍJ
-” ÍJ” ÍJ” ÍJ*” ÍJ,”  ÍJ:”" ÍJ<”- ÍJÌ]—” ÍK” ÍK” ÍK	” ÍK” ÍK”& ÍK"”' ÍK#—” ÍL” ÍL” ÍL	” ÍL” ÍL”# ÍL”$ ÍL —” ÍM” ÍM” ÍM	”" ÍM”% ÍM!”+ ÍM'”, ÍM(—” ÍN” ÍN” ÍN	”" ÍN”% ÍN!”+ ÍN'”, ÍN(’” ÍO”ÌF ÍOÌBœ” ÍP” ÍP” ÍP”" ÍP”# ÍP”' ÍP#”) ÍP%”/ ÍP+”1 ÍP-”7 ÍP3”8 ÍP4”9 ÍP5Ü ” ÍQ” ÍQ” ÍQ” ÍQ” ÍQ” ÍQ” ÍQ”  ÍQ”$ ÍQ ”% ÍQ!”0 ÍQ,”4 ÍQ0”8 ÍQ4”9 ÍQ5”ÌC ÍQ?”ÌE ÍQÌAœ” ÍR” ÍR
-” ÍR”% ÍR”& ÍR ”* ÍR$”, ÍR&”2 ÍR,”4 ÍR.”: ÍR4”; ÍR5”< ÍR6‘”	 ÍS’” ÍT” ÍT‘” ÍV‘” ÍZ–” Í[” Í[” Í[” Í[” Í[!”$ Í[ÌB˜” Í\” Í\” Í\” Í\” Í\” Í\” Í\”  Í\’” Í]” Í]‘”	 Í^Ü ” Í_” Í_
-” Í_” Í_” Í_” Í_”  Í_”% Í_!”) Í_%”- Í_)”1 Í_-”2 Í_.”= Í_9”ÌA Í_=”ÌE Í_ÌA”ÌF Í_ÌB”ÌP Í_ÌL”ÌQ Í_ÌMŸ” Í`” Í`” Í`” Í`”! Ía”& Ía”+ Ía”, Ía”2 Ía”: Ía”ÌL Ía1”ÌM Ía2”ÌR Ía7”ÌS Ía8”ÌV Ía;Ü ” Íb” Íb” Íb” Íb”) Íb#”* Íb$”+ Íb%”, Íb&”- Íb'”. Íb(”/ Íb)”0 Íb*”1 Íb+”ÌA Íb;”ÌE Íb?”ÌF ÍbÌ@”ÌQ ÍbÌK”ÌR ÍbÌL”ÌS ÍbÌM”ÌT ÍbÌN”ÌU ÍbÌO”ÌV ÍbÌP”ÌW ÍbÌQ”ÌX ÍbÌR”ÌY ÍbÌS”Ì\ ÍbÌVÜ ” Íc” Íc”" Íc”# Íc”$ Íc”% Íc”& Íc ”' Íc!”( Íc"”) Íc#”* Íc$”ÌC Íc=”ÌK ÍcÌE”ÌL ÍcÌF”ÌM ÍcÌG”ÌN ÍcÌH”ÌV ÍcÌP”ÌW ÍcÌQ”ÌX ÍcÌR”ÌY ÍcÌS”Ì` ÍcÌZ”Ìj ÍcÌd”Ìk ÍcÌe”Ìl ÍcÌf—” Íd” Íd” Íd	” Íd” Íd”& Íd"”' Íd#˜” Íe” Íe” Íe”! Íe”" Íe”' Íe#”( Íe$”) Íe%”” Íf” Íf” Íf” Íf–” Íg” Íg
-” Íg” Íg” Íg” ÍgÜ ” Íh” Íh” Íh” Íh” Íh” Íh” Íh” Íh”  Íh”% Íh”& Íh ”, Íh&”. Íh(”/ Íh)”1 Íh+”3 Íh-Ü ” Íi” Íi” Íi” Íi” Íi” Íi” Íi”  Íi”# Íi”' Íi”( Íi ”) Íi!”1 Íi)”2 Íi*”4 Íi,”5 Íi-”6 Íi.”ÌA Íi9”ÌC Íi;”ÌD Íi<”ÌL ÍiÌD”ÌM ÍiÌE”ÌN ÍiÌF”ÌP ÍiÌH”ÌS ÍiÌK”ÌT ÍiÌL”ÌU ÍiÌM‘” Íj›” Ík” Ík
-” Ík” Ík” Ík”/ Ík)”0 Ík*”3 Ík-”4 Ík.”5 Ík/”6 Ík0š” Íl” Íl” Íl”+ Íl%”- Íl'”8 Íl2”; Íl5”= Íl7”> Íl8”? Íl9‘”	 Ím’” Ín” Ín˜” Íp
-” Íp” Íp” Íp/” Íp1”% Íp?”' ÍpÌA”- ÍpÌO˜” Íq” Íq” Íq” Íq” Íq” Íq” Íq” Íq’” Ír” Ír‘”	 Ís’” Ít” Ítš” Íu” Íu” Íu” Íu” Íu”# Íu”$ Íu”0 Íu*”2 Íu,”3 Íu-›” Ív” Ív” Ív” Ív” Ív” Ív”1 Ív+”2 Ív,”6 Ív0”7 Ív1”8 Ív2Ü ” Íw” Íw
-” Íw” Íw” Íw”0 Íw*”1 Íx”; Íx”< Íx”ÌD Íx”ÌF Íx”ÌO Íx&”ÌQ Íx(”ÌZ Íx1”Ì\ Íx3”Ìe Íx<”Ìg Íx>”Ìp ÍxÌG”Ìr Íy”Ìx Íy”Ìz Íy”Ì€ Íy”Ì‚ Íy”Ì… Íy”Ì† Íy”Ì‡ Íy”Ìˆ Íy‘”	 Íz”” Íz” Íz” Íz” ÍzÜ ” Í{” Í{” Í{” Í{” Í{”% Í{”* Í{$”+ Í{%”, Í{&”- Í{'”. Í{(”/ Í{)”6 Í{0”7 Í{1”8 Í{2”9 Í{3”ÌQ Í{ÌK”ÌR Í{ÌLš” Í|” Í|” Í|” Í|” Í|” Í|” Í|”  Í|”! Í|”" Í|‘”	 Í}’” Í~” Í~’” Í€” Í€™” Í” Í” Í” Í” Í” Í”' Í#”) Í%”* Í&’” Í‚” Í‚’” Í„” Í„œ” Í…” Í…” Í…” Í…” Í…” Í…” Í…”  Í…”$ Í… ”1 Í…-”3 Í…/”4 Í…0’” Í†” Í†’” Íˆ” Íˆ
-–” Í‰” Í‰” Í‰	” Í‰” Í‰” Í‰˜” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” Í‹” Í‹
-” Í‹” Í‹” Í‹”0 Í‹*”1 Í‹+”; Í‹5”< Í‹6”ÌD Í‹>”ÌE Í‹?”ÌF Í‹Ì@”ÌG Í‹ÌA’” ÍŒ” ÍŒ
-˜” Í” Í” Í” Í” Í”! Í”# Í”$ Í‘” Í”” Í” Í” Í” Í’” Í” Í‘” Í—” Í‘” Í‘
-” Í‘” Í‘” Í‘” Í‘” Í‘‘”	 Í’—” Í“” Í“” Í“	” Í“” Í“”  Í“”! Í“—” Í”” Í”” Í”	” Í”” Í”” Í””  Í”’” Í•” Í•‘” Í–ÔrG–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜq‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
- ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ÔrH’§missing¦pluginÃ¦genAbcÂÔ  ÔrI”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrJ–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍñÍ6"ÔrK–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍøÍ6"ÔrL”¤type¥start£end¤nameªIdentifierÍşÍ­SimWorkerHostÀÔrM”¤type¥start£end¤body©ClassBodyÍÍ6"Ü ÔrN˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍÍÂÂLªIdentifierÍÍ«constructor«constructorÔrO™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍÍÀÂÂÂM®BlockStatementÍ!ÍÜ ÔrP”¤type¥start£endªexpression³ExpressionStatementÍ,Í;ÔrQ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ,Í:¡=ÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ,Í3ÔrS“¤type¥start£end®ThisExpressionÍ,Í0LªIdentifierÍ1Í3¢twÂÂÔrT•¤type¥start£end¥value£raw§LiteralÍ6Í:À¤nullP³ExpressionStatementÍEÍfQ´AssignmentExpressionÍEÍe¡=R°MemberExpressionÍEÍOS®ThisExpressionÍEÍILªIdentifierÍJÍO¥storeÂÂÔrU•¤type¥start£end¦callee©arguments­NewExpressionÍRÍeLªIdentifierÍVÍc­SimFrameStoreP³ExpressionStatementÍpÍ‰Q´AssignmentExpressionÍpÍˆ¡=R°MemberExpressionÍpÍ€S®ThisExpressionÍpÍtLªIdentifierÍuÍ€«workerReadyÂÂT§LiteralÍƒÍˆÂ¥falseP³ExpressionStatementÍ“Í«Q´AssignmentExpressionÍ“Íª¡=R°MemberExpressionÍ“Í¢S®ThisExpressionÍ“Í—LªIdentifierÍ˜Í¢ªworkerModeÂÂT§LiteralÍ¥ÍªÂ¥falseP³ExpressionStatementÍµÍÑQ´AssignmentExpressionÍµÍĞ¡=R°MemberExpressionÍµÍÈS®ThisExpressionÍµÍ¹LªIdentifierÍºÍÈ®fallbackActiveÂÂT§LiteralÍËÍĞÂ¥falseP³ExpressionStatementÍÛÍóQ´AssignmentExpressionÍÛÍò¡=R°MemberExpressionÍÛÍíS®ThisExpressionÍÛÍßLªIdentifierÍàÍí­fallbackTimerÂÂÔrV–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍğÍò¡-ÃT§LiteralÍñÍò¡1P³ExpressionStatementÍıÍQ´AssignmentExpressionÍıÍ¡=R°MemberExpressionÍıÍS®ThisExpressionÍıÍLªIdentifierÍÍ«fallbackGenÂÂT§LiteralÍÍ ¡0P³ExpressionStatementÍÍ5Q´AssignmentExpressionÍÍ4¡=R°MemberExpressionÍÍ/S®ThisExpressionÍÍ LªIdentifierÍ!Í/®readyWaitTimerÂÂV¯UnaryExpressionÍ2Í4¡-ÃT§LiteralÍ3Í4¡1P³ExpressionStatementÍ?ÍQQ´AssignmentExpressionÍ?ÍP¡=R°MemberExpressionÍ?ÍLS®ThisExpressionÍ?ÍCLªIdentifierÍDÍL¨budgetMsÂÂT§LiteralÍOÍP¡3P³ExpressionStatementÍ[ÍsQ´AssignmentExpressionÍ[Ír¡=R°MemberExpressionÍ[ÍkS®ThisExpressionÍ[Í_LªIdentifierÍ`Ík«localKernelÂÂT§LiteralÍnÍrÀ¤nullP³ExpressionStatementÍ}Í™Q´AssignmentExpressionÍ}Í˜¡=R°MemberExpressionÍ}Í‘S®ThisExpressionÍ}ÍLªIdentifierÍ‚Í‘¯pendingFirmwareÂÂT§LiteralÍ”Í˜À¤nullP³ExpressionStatementÍ£ÍÂQ´AssignmentExpressionÍ£ÍÁ¡=R°MemberExpressionÍ£Í½S®ThisExpressionÍ£Í§LªIdentifierÍ¨Í½µpendingFirmwareOffsetÂÂT§LiteralÍÀÍÁ ¡0P³ExpressionStatementÍÌÍğQ´AssignmentExpressionÍÌÍï¡=R°MemberExpressionÍÌÍæS®ThisExpressionÍÌÍĞLªIdentifierÍÑÍæµpendingFirmwareFamilyÂÂT§LiteralÍéÍï¤8051¦'8051'P³ExpressionStatementÍúÍQ´AssignmentExpressionÍúÍ¡=R°MemberExpressionÍúÍS®ThisExpressionÍúÍşLªIdentifierÍÿÍ¯pendingTopoJsonÂÂT§LiteralÍÍ ¢''P³ExpressionStatementÍÍ7Q´AssignmentExpressionÍÍ6¡=R°MemberExpressionÍÍ1S®ThisExpressionÍÍ"LªIdentifierÍ#Í1®pendingDocJsonÂÂT§LiteralÍ4Í6 ¢''P³ExpressionStatementÍAÍZQ´AssignmentExpressionÍAÍY¡=R°MemberExpressionÍAÍTS®ThisExpressionÍAÍELªIdentifierÍFÍT®pendingCfgJsonÂÂT§LiteralÍWÍY ¢''P³ExpressionStatementÍdÍQ´AssignmentExpressionÍdÍ€¡=R°MemberExpressionÍdÍxS®ThisExpressionÍdÍhLªIdentifierÍiÍx¯hasPendingStartÂÂT§LiteralÍ{Í€Â¥falseP³ExpressionStatementÍ‹Í¤Q´AssignmentExpressionÍ‹Í£¡=R°MemberExpressionÍ‹Í—S®ThisExpressionÍ‹ÍLªIdentifierÍÍ—§onErrorÂÂO·ArrowFunctionExpressionÍšÍ£ÀÂÂÂM®BlockStatementÍ Í£P³ExpressionStatementÍùÍQ´AssignmentExpressionÍùÍ¡=R°MemberExpressionÍùÍS®ThisExpressionÍùÍıLªIdentifierÍşÍ­uiGestureBusyÂÂT§LiteralÍÍÂ¥falseN°MethodDefinitionÍ!ÍcÂÂLªIdentifierÍ!Í0¯setErrorHandler¦methodO²FunctionExpressionÍ0ÍcÀÂÂÂ‘LªIdentifierÍ1Í8§handlerM®BlockStatementÍ:Íc‘P³ExpressionStatementÍEÍ\Q´AssignmentExpressionÍEÍ[¡=R°MemberExpressionÍEÍQS®ThisExpressionÍEÍILªIdentifierÍJÍQ§onErrorÂÂLªIdentifierÍTÍ[§handlerN°MethodDefinitionÍiÍ¬ÂÂLªIdentifierÍiÍy°setUiGestureBusy¦methodO²FunctionExpressionÍyÍ¬ÀÂÂÂ‘LªIdentifierÍzÍ~¤busyM®BlockStatementÍ€Í¬‘P³ExpressionStatementÍ‹Í¥Q´AssignmentExpressionÍ‹Í¤¡=R°MemberExpressionÍ‹ÍS®ThisExpressionÍ‹ÍLªIdentifierÍÍ­uiGestureBusyÂÂLªIdentifierÍ Í¤¤busyN°MethodDefinitionÍ²ÍæÂÂLªIdentifierÍ²Í¿­getFrameStore¦methodO²FunctionExpressionÍ¿ÍæÀÂÂÂM®BlockStatementÍÂÍæ‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍÍÍßR°MemberExpressionÍÔÍŞS®ThisExpressionÍÔÍØLªIdentifierÍÙÍŞ¥storeÂÂN°MethodDefinitionÍìÍ	8ÂÂLªIdentifierÍìÍø¬isWorkerMode¦methodO²FunctionExpressionÍøÍ	8ÀÂÂÂM®BlockStatementÍûÍ	8‘W¯ReturnStatementÍ	Í	1ÔrX–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ	Í	0R°MemberExpressionÍ	Í	S®ThisExpressionÍ	Í	LªIdentifierÍ	Í	ªworkerModeÂÂ¢&&R°MemberExpressionÍ	 Í	0S®ThisExpressionÍ	 Í	$LªIdentifierÍ	%Í	0«workerReadyÂÂN°MethodDefinitionÍ	>Í	|ÂÂLªIdentifierÍ	>Í	L®isFallbackMode¦methodO²FunctionExpressionÍ	LÍ	|ÀÂÂÂM®BlockStatementÍ	OÍ	|‘W¯ReturnStatementÍ	ZÍ	uR°MemberExpressionÍ	aÍ	tS®ThisExpressionÍ	aÍ	eLªIdentifierÍ	fÍ	t®fallbackActiveÂÂN°MethodDefinitionÍ	‚ÍáÂÂLªIdentifierÍ	‚Í	­ensureStarted¦methodO²FunctionExpressionÍ	ÍáÀÂÂÂM®BlockStatementÍ	’Íá“ÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ	Í	ÙV¯UnaryExpressionÍ	¡Í	¶¡!ÃLªIdentifierÍ	¢Í	¶´ENABLE_THREAD_WORKERM®BlockStatementÍ	¸Í	Ù‘W¯ReturnStatementÍ	ÇÍ	ÎÀÀY«IfStatementÍ	ãÍ
-X°BinaryExpressionÍ	çÍ	÷R°MemberExpressionÍ	çÍ	îS®ThisExpressionÍ	çÍ	ëLªIdentifierÍ	ìÍ	î¢twÂÂ£!==T§LiteralÍ	óÍ	÷À¤nullM®BlockStatementÍ	ùÍ
-‘W¯ReturnStatementÍ
-Í
-ÀÀÔrZ–¤type¥start£end¥block§handler©finalizer¬TryStatementÍ
-$ÍÚM®BlockStatementÍ
-(Í—Ôr[•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ
-7Í
-o‘Ôr\•¤type¥start£end¢id¤init²VariableDeclaratorÍ
-=Í
-nLªIdentifierÍ
-=Í
-E¨instanceU­NewExpressionÍ
-HÍ
-nR°MemberExpressionÍ
-LÍ
-_LªIdentifierÍ
-LÍ
-R¦workerLªIdentifierÍ
-SÍ
-_¬ThreadWorkerÂÂ‘LªIdentifierÍ
-`Í
-m­WORKER_SCRIPT¥constP³ExpressionStatementÍ
-}Í
-İQ´AssignmentExpressionÍ
-}Í
-Ü¡=R°MemberExpressionÍ
-}Í
-LªIdentifierÍ
-}Í
-…¨instanceLªIdentifierÍ
-†Í
-©onmessageÂÂO·ArrowFunctionExpressionÍ
-’Í
-ÜÀÂÂÂ‘LªIdentifierÍ
-“Í
-”¡eM®BlockStatementÍ
-™Í
-Ü‘P³ExpressionStatementÍ
-¬Í
-ÍÔr]–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ
-¬Í
-ÌR°MemberExpressionÍ
-¬Í
-ÄS®ThisExpressionÍ
-¬Í
-°LªIdentifierÍ
-±Í
-Ä³handleWorkerMessageÂÂ‘R°MemberExpressionÍ
-ÅÍ
-ËLªIdentifierÍ
-ÅÍ
-Æ¡eLªIdentifierÍ
-ÇÍ
-Ë¤dataÂÂÂP³ExpressionStatementÍ
-ëÍ¨Q´AssignmentExpressionÍ
-ëÍ§¡=R°MemberExpressionÍ
-ëÍ
-ûLªIdentifierÍ
-ëÍ
-ó¨instanceLªIdentifierÍ
-ôÍ
-û§onerrorÂÂO·ArrowFunctionExpressionÍ
-şÍ§ÀÂÂÂ‘LªIdentifierÍ
-ÿÍ£errM®BlockStatementÍÍ§’P³ExpressionStatementÍÍM]®CallExpressionÍÍLR°MemberExpressionÍÍ%LªIdentifierÍÍ ¦LoggerLªIdentifierÍ!Í%¤warnÂÂ’LªIdentifierÍ&Í)£TAGÔr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ+ÍK‘R°MemberExpressionÍ>ÍILªIdentifierÍ>ÍA£errLªIdentifierÍBÍI§messageÂÂ’Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍ,Í<Ôr`’£raw¦cooked°worker onerror: °worker onerror: Â_¯TemplateElementÍJÍJ`  ÃÂP³ExpressionStatementÍ_Í˜]®CallExpressionÍ_Í—R°MemberExpressionÍ_ÍwS®ThisExpressionÍ_ÍcLªIdentifierÍdÍw³downgradeToFallbackÂÂ‘^¯TemplateLiteralÍxÍ–‘R°MemberExpressionÍ‰Í”LªIdentifierÍ‰ÍŒ£errLªIdentifierÍÍ”§messageÂÂ’_¯TemplateElementÍyÍ‡`®worker error: ®worker error: Â_¯TemplateElementÍ•Í•`  ÃÂP³ExpressionStatementÍ¶ÍmQ´AssignmentExpressionÍ¶Íl¡=R°MemberExpressionÍ¶ÍÅLªIdentifierÍ¶Í¾¨instanceLªIdentifierÍ¿ÍÅ¦onexitÂÂO·ArrowFunctionExpressionÍÈÍlÀÂÂÂ‘LªIdentifierÍÉÍÎ¥_codeM®BlockStatementÍÓÍl“P³ExpressionStatementÍæÍ]®CallExpressionÍæÍR°MemberExpressionÍæÍñLªIdentifierÍæÍì¦LoggerLªIdentifierÍíÍñ¤infoÂÂ’LªIdentifierÍòÍõ£TAGT§LiteralÍ÷Í­worker exited¯'worker exited'ÂP³ExpressionStatementÍÍ3Q´AssignmentExpressionÍÍ2¡=R°MemberExpressionÍÍ*S®ThisExpressionÍÍLªIdentifierÍÍ*«workerReadyÂÂT§LiteralÍ-Í2Â¥falseP³ExpressionStatementÍEÍ]Q´AssignmentExpressionÍEÍ\¡=R°MemberExpressionÍEÍTS®ThisExpressionÍEÍILªIdentifierÍJÍTªworkerModeÂÂT§LiteralÍWÍ\Â¥falseP³ExpressionStatementÍ{ÍQ´AssignmentExpressionÍ{Í¡=R°MemberExpressionÍ{Í‚S®ThisExpressionÍ{ÍLªIdentifierÍ€Í‚¢twÂÂLªIdentifierÍ…Í¨instanceP³ExpressionStatementÍœÍ³Q´AssignmentExpressionÍœÍ²¡=R°MemberExpressionÍœÍ«S®ThisExpressionÍœÍ LªIdentifierÍ¡Í«ªworkerModeÂÂT§LiteralÍ®Í²Ã¤trueP³ExpressionStatementÍÁÍ]®CallExpressionÍÁÍR°MemberExpressionÍÁÍÒS®ThisExpressionÍÁÍÅLªIdentifierÍÆÍÒ¬postToWorkerÂÂ‘]®CallExpressionÍÓÍLªIdentifierÍÓÍå²makeSimHostCommand’R°MemberExpressionÍæÍõLªIdentifierÍæÍğªSimCmdTypeLªIdentifierÍñÍõ¤INITÂÂR°MemberExpressionÍ÷ÍS®ThisExpressionÍ÷ÍûLªIdentifierÍüÍ¨budgetMsÂÂÂÂÔra•¤type¥start£end¥param¤body«CatchClauseÍÍÚLªIdentifierÍ#Í$¡eM®BlockStatementÍ&ÍÚ“[³VariableDeclarationÍ5Í‘\²VariableDeclaratorÍ;Í~LªIdentifierÍ;Í>£msgYµConditionalExpressionÍAÍ~X°BinaryExpressionÍAÍSLªIdentifierÍAÍB¡eªinstanceofLªIdentifierÍNÍS¥ErrorR°MemberExpressionÍVÍ_LªIdentifierÍVÍW¡eLªIdentifierÍXÍ_§messageÂÂT§LiteralÍbÍ~ºThreadWorker create failed¼'ThreadWorker create failed'¥constP³ExpressionStatementÍÍ£]®CallExpressionÍÍ¢R°MemberExpressionÍÍ˜LªIdentifierÍÍ“¦LoggerLªIdentifierÍ”Í˜¤warnÂÂ’LªIdentifierÍ™Íœ£TAGLªIdentifierÍÍ¡£msgÂP³ExpressionStatementÍ±ÍÏ]®CallExpressionÍ±ÍÎR°MemberExpressionÍ±ÍÉS®ThisExpressionÍ±ÍµLªIdentifierÍ¶ÍÉ³downgradeToFallbackÂÂ‘LªIdentifierÍÊÍÍ£msgÂÀN°MethodDefinitionÍçÍÂÂLªIdentifierÍçÍó¬postToWorker¦methodO²FunctionExpressionÍóÍÀÂÂÂ‘LªIdentifierÍôÍ÷£cmdM®BlockStatementÍùÍ’Y«IfStatementÍÍ;X°BinaryExpressionÍÍR°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍÍ¢twÂÂ£===T§LiteralÍÍÀ¤nullM®BlockStatementÍÍ;‘W¯ReturnStatementÍ)Í0ÀÀZ¬TryStatementÍEÍM®BlockStatementÍIÍ|‘P³ExpressionStatementÍXÍq]®CallExpressionÍXÍpR°MemberExpressionÍXÍkR°MemberExpressionÍXÍ_S®ThisExpressionÍXÍ\LªIdentifierÍ]Í_¢twÂÂLªIdentifierÍ`Ík«postMessageÂÂ‘LªIdentifierÍlÍo£cmdÂa«CatchClauseÍ†ÍLªIdentifierÍÍ¡eM®BlockStatementÍÍ’[³VariableDeclarationÍŸÍá‘\²VariableDeclaratorÍ¥ÍàLªIdentifierÍ¥Í¨£msgYµConditionalExpressionÍ«ÍàX°BinaryExpressionÍ«Í½LªIdentifierÍ«Í¬¡eªinstanceofLªIdentifierÍ¸Í½¥ErrorR°MemberExpressionÍÀÍÉLªIdentifierÍÀÍÁ¡eLªIdentifierÍÂÍÉ§messageÂÂT§LiteralÍÌÍà²postMessage failed´'postMessage failed'¥constP³ExpressionStatementÍïÍ]®CallExpressionÍïÍR°MemberExpressionÍïÍúLªIdentifierÍïÍõ¦LoggerLªIdentifierÍöÍú¤warnÂÂ’LªIdentifierÍûÍş£TAGLªIdentifierÍ Í£msgÂÀN°MethodDefinitionÍÍÁÂÂLªIdentifierÍÍ+®clearReadyWait¦methodO²FunctionExpressionÍ+ÍÁÀÂÂÂM®BlockStatementÍ.ÍÁ‘Y«IfStatementÍ9ÍºX°BinaryExpressionÍ=ÍUR°MemberExpressionÍ=ÍPS®ThisExpressionÍ=ÍALªIdentifierÍBÍP®readyWaitTimerÂÂ¢>=T§LiteralÍTÍU ¡0M®BlockStatementÍWÍº’P³ExpressionStatementÍfÍˆ]®CallExpressionÍfÍ‡LªIdentifierÍfÍr¬clearTimeout‘R°MemberExpressionÍsÍ†S®ThisExpressionÍsÍwLªIdentifierÍxÍ†®readyWaitTimerÂÂÂP³ExpressionStatementÍ–Í¯Q´AssignmentExpressionÍ–Í®¡=R°MemberExpressionÍ–Í©S®ThisExpressionÍ–ÍšLªIdentifierÍ›Í©®readyWaitTimerÂÂV¯UnaryExpressionÍ¬Í®¡-ÃT§LiteralÍ­Í®¡1ÀN°MethodDefinitionÍÇÍ‚ÂÂLªIdentifierÍÇÍÚ³handleWorkerMessage¦methodO²FunctionExpressionÍÚÍ‚ÀÂÂÂ‘LªIdentifierÍÛÍŞ£msgM®BlockStatementÍàÍ‚”Y«IfStatementÍëÍMX±LogicalExpressionÍïÍ*X±LogicalExpressionÍïÍX°BinaryExpressionÍïÍ LªIdentifierÍïÍò£msg£===LªIdentifierÍ÷Í ©undefined¢||X°BinaryExpressionÍÍLªIdentifierÍÍ£msg£===T§LiteralÍÍÀ¤null¢||X°BinaryExpressionÍÍ*R°MemberExpressionÍÍLªIdentifierÍÍ£msgLªIdentifierÍÍ¤typeÂÂ£===LªIdentifierÍ!Í*©undefinedM®BlockStatementÍ,ÍM‘W¯ReturnStatementÍ;ÍBÀÀY«IfStatementÍWÍËX°BinaryExpressionÍ[ÍxR°MemberExpressionÍ[ÍcLªIdentifierÍ[Í^£msgLªIdentifierÍ_Íc¤typeÂÂ£===R°MemberExpressionÍhÍxLªIdentifierÍhÍrªSimMsgTypeLªIdentifierÍsÍx¥READYÂÂM®BlockStatementÍzÍË—P³ExpressionStatementÍ‰Í¡Q´AssignmentExpressionÍ‰Í ¡=R°MemberExpressionÍ‰Í™S®ThisExpressionÍ‰ÍLªIdentifierÍÍ™«workerReadyÂÂT§LiteralÍœÍ Ã¤trueP³ExpressionStatementÍ¯ÍÆQ´AssignmentExpressionÍ¯ÍÅ¡=R°MemberExpressionÍ¯Í¾S®ThisExpressionÍ¯Í³LªIdentifierÍ´Í¾ªworkerModeÂÂT§LiteralÍÁÍÅÃ¤trueP³ExpressionStatementÍÔÍê]®CallExpressionÍÔÍéR°MemberExpressionÍÔÍçS®ThisExpressionÍÔÍØLªIdentifierÍÙÍç®clearReadyWaitÂÂÂP³ExpressionStatementÍøÍ]®CallExpressionÍøÍR°MemberExpressionÍøÍS®ThisExpressionÍøÍüLªIdentifierÍıÍ°stopFallbackPumpÂÂÂP³ExpressionStatementÍÍ?]®CallExpressionÍÍ>R°MemberExpressionÍÍ)LªIdentifierÍÍ$¦LoggerLªIdentifierÍ%Í)¤infoÂÂ’LªIdentifierÍ*Í-£TAGT§LiteralÍ/Í=¬worker READY®'worker READY'ÂY«IfStatementÍMÍ«R°MemberExpressionÍQÍeS®ThisExpressionÍQÍULªIdentifierÍVÍe¯hasPendingStartÂÂM®BlockStatementÍgÍ«‘P³ExpressionStatementÍzÍœ]®CallExpressionÍzÍ›R°MemberExpressionÍzÍ™S®ThisExpressionÍzÍ~LªIdentifierÍÍ™ºupgradeToWorkerWithPendingÂÂÂÀW¯ReturnStatementÍ¹ÍÀÀÀY«IfStatementÍÕÍ`X±LogicalExpressionÍÙÍX°BinaryExpressionÍÙÍöR°MemberExpressionÍÙÍáLªIdentifierÍÙÍÜ£msgLªIdentifierÍİÍá¤typeÂÂ£===R°MemberExpressionÍæÍöLªIdentifierÍæÍğªSimMsgTypeLªIdentifierÍñÍö¥FRAMEÂÂ¢&&X°BinaryExpressionÍúÍR°MemberExpressionÍúÍLªIdentifierÍúÍı£msgLªIdentifierÍşÍ¥frameÂÂ£!==LªIdentifierÍÍ©undefinedM®BlockStatementÍÍ`’P³ExpressionStatementÍ"Í@]®CallExpressionÍ"Í?R°MemberExpressionÍ"Í4R°MemberExpressionÍ"Í,S®ThisExpressionÍ"Í&LªIdentifierÍ'Í,¥storeÂÂLªIdentifierÍ-Í4§publishÂÂ‘R°MemberExpressionÍ5Í>LªIdentifierÍ5Í8£msgLªIdentifierÍ9Í>¥frameÂÂÂW¯ReturnStatementÍNÍUÀÀY«IfStatementÍjÍ{X°BinaryExpressionÍnÍ‹R°MemberExpressionÍnÍvLªIdentifierÍnÍq£msgLªIdentifierÍrÍv¤typeÂÂ£===R°MemberExpressionÍ{Í‹LªIdentifierÍ{Í…ªSimMsgTypeLªIdentifierÍ†Í‹¥ERRORÂÂM®BlockStatementÍÍ{”P³ExpressionStatementÍœÍÓ]®CallExpressionÍœÍÒR°MemberExpressionÍœÍ§LªIdentifierÍœÍ¢¦LoggerLªIdentifierÍ£Í§¤warnÂÂ’LªIdentifierÍ¨Í«£TAG^¯TemplateLiteralÍ­ÍÑ‘X±LogicalExpressionÍ¾ÍÏR°MemberExpressionÍ¾ÍÉLªIdentifierÍ¾ÍÁ£msgLªIdentifierÍÂÍÉ§messageÂÂ¢??T§LiteralÍÍÍÏ ¢''’_¯TemplateElementÍ®Í¼`®worker ERROR: ®worker ERROR: Â_¯TemplateElementÍĞÍĞ`  ÃÂP³ExpressionStatementÍáÍ]®CallExpressionÍáÍR°MemberExpressionÍáÍíS®ThisExpressionÍáÍåLªIdentifierÍæÍí§onErrorÂÂ‘X±LogicalExpressionÍîÍR°MemberExpressionÍîÍùLªIdentifierÍîÍñ£msgLªIdentifierÍòÍù§messageÂÂ¢??T§LiteralÍıÍ°sim worker error²'sim worker error'ÂP³ExpressionStatementÍÍ[]®CallExpressionÍÍZR°MemberExpressionÍÍ7S®ThisExpressionÍÍ#LªIdentifierÍ$Í7³downgradeToFallbackÂÂ‘X±LogicalExpressionÍ8ÍYR°MemberExpressionÍ8ÍCLªIdentifierÍ8Í;£msgLªIdentifierÍ<ÍC§messageÂÂ¢??T§LiteralÍGÍY°sim worker error²'sim worker error'ÂW¯ReturnStatementÍiÍpÀÀN°MethodDefinitionÍˆÍÉÂÂLªIdentifierÍˆÍ›³downgradeToFallback¦methodO²FunctionExpressionÍ›ÍÉÀÂÂÂ‘LªIdentifierÍœÍ¢¦reasonM®BlockStatementÍ¤ÍÉ–P³ExpressionStatementÍ¯Íä]®CallExpressionÍ¯ÍãR°MemberExpressionÍ¯ÍºLªIdentifierÍ¯Íµ¦LoggerLªIdentifierÍ¶Íº¤warnÂÂ’LªIdentifierÍ»Í¾£TAG^¯TemplateLiteralÍÀÍâ‘LªIdentifierÍÚÍà¦reason’_¯TemplateElementÍÁÍØ`·fallback compute pump: ·fallback compute pump: Â_¯TemplateElementÍáÍá`  ÃÂP³ExpressionStatementÍîÍQ´AssignmentExpressionÍîÍ¡=R°MemberExpressionÍîÍıS®ThisExpressionÍîÍòLªIdentifierÍóÍıªworkerModeÂÂT§LiteralÍ ÍÂ¥falseP³ExpressionStatementÍÍ)Q´AssignmentExpressionÍÍ(¡=R°MemberExpressionÍÍ S®ThisExpressionÍÍLªIdentifierÍÍ «workerReadyÂÂT§LiteralÍ#Í(Â¥falseP³ExpressionStatementÍ3ÍI]®CallExpressionÍ3ÍHR°MemberExpressionÍ3ÍFS®ThisExpressionÍ3Í7LªIdentifierÍ8ÍF®clearReadyWaitÂÂÂY«IfStatementÍSÍX°BinaryExpressionÍWÍgR°MemberExpressionÍWÍ^S®ThisExpressionÍWÍ[LªIdentifierÍ\Í^¢twÂÂ£!==T§LiteralÍcÍgÀ¤nullM®BlockStatementÍiÍ’Z¬TryStatementÍxÍöM®BlockStatementÍ|Í²‘P³ExpressionStatementÍÍ£]®CallExpressionÍÍ¢R°MemberExpressionÍÍ R°MemberExpressionÍÍ–S®ThisExpressionÍÍ“LªIdentifierÍ”Í–¢twÂÂLªIdentifierÍ—Í ©terminateÂÂÂa«CatchClauseÍÀÍöLªIdentifierÍÇÍÉ¢_eM®BlockStatementÍËÍöÀP³ExpressionStatementÍÍQ´AssignmentExpressionÍÍ¡=R°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍ	Í¢twÂÂT§LiteralÍÍÀ¤nullÀY«IfStatementÍ(ÍÂX±LogicalExpressionÍ,ÍX°BinaryExpressionÍ,ÍER°MemberExpressionÍ,Í<S®ThisExpressionÍ,Í0LªIdentifierÍ1Í<«localKernelÂÂ£!==T§LiteralÍAÍEÀ¤null¢&&X°BinaryExpressionÍVÍ]®CallExpressionÍVÍqR°MemberExpressionÍVÍoR°MemberExpressionÍVÍfS®ThisExpressionÍVÍZLªIdentifierÍ[Íf«localKernelÂÂLªIdentifierÍgÍo¨getStateÂÂÂ£===R°MemberExpressionÍvÍLªIdentifierÍvÍ…¯SimulationStateLªIdentifierÍ†Í§RUNNINGÂÂM®BlockStatementÍÍÂ‘P³ExpressionStatementÍÍ·]®CallExpressionÍÍ¶R°MemberExpressionÍÍ´S®ThisExpressionÍÍ¢LªIdentifierÍ£Í´±startFallbackPumpÂÂÂÀN°MethodDefinitionÍÏÍwÂÂLªIdentifierÍÏÍéºupgradeToWorkerWithPending¦methodO²FunctionExpressionÍéÍwÀÂÂÂM®BlockStatementÍìÍw˜Y«IfStatementÍ÷Í\X±LogicalExpressionÍûÍ9X±LogicalExpressionÍûÍ X°BinaryExpressionÍûÍR°MemberExpressionÍûÍS®ThisExpressionÍûÍÿLªIdentifierÍ Í¢twÂÂ£===T§LiteralÍÍÀ¤null¢||V¯UnaryExpressionÍÍ ¡!ÃR°MemberExpressionÍÍ S®ThisExpressionÍÍLªIdentifierÍÍ «workerReadyÂÂ¢||V¯UnaryExpressionÍ$Í9¡!ÃR°MemberExpressionÍ%Í9S®ThisExpressionÍ%Í)LªIdentifierÍ*Í9¯hasPendingStartÂÂM®BlockStatementÍ;Í\‘W¯ReturnStatementÍJÍQÀÀP³ExpressionStatementÍfÍ~]®CallExpressionÍfÍ}R°MemberExpressionÍfÍ{S®ThisExpressionÍfÍjLªIdentifierÍkÍ{°stopFallbackPumpÂÂÂP³ExpressionStatementÍˆÍŸQ´AssignmentExpressionÍˆÍ¡=R°MemberExpressionÍˆÍ—S®ThisExpressionÍˆÍŒLªIdentifierÍÍ—ªworkerModeÂÂT§LiteralÍšÍÃ¤trueP³ExpressionStatementÍ©ÍÅQ´AssignmentExpressionÍ©ÍÄ¡=R°MemberExpressionÍ©Í¼S®ThisExpressionÍ©Í­LªIdentifierÍ®Í¼®fallbackActiveÂÂT§LiteralÍ¿ÍÄÂ¥falseP³ExpressionStatementÍÏÍV]®CallExpressionÍÏÍUR°MemberExpressionÍÏÍàS®ThisExpressionÍÏÍÓLªIdentifierÍÔÍà¬postToWorkerÂÂ‘]®CallExpressionÍáÍTLªIdentifierÍáÍó²makeSimHostCommand•R°MemberExpressionÍôÍLªIdentifierÍôÍşªSimCmdTypeLªIdentifierÍÿÍ¥STARTÂÂR°MemberExpressionÍÍS®ThisExpressionÍÍ
-LªIdentifierÍÍ¨budgetMsÂÂR°MemberExpressionÍÍ)S®ThisExpressionÍÍLªIdentifierÍÍ)¯pendingTopoJsonÂÂR°MemberExpressionÍ+Í>S®ThisExpressionÍ+Í/LªIdentifierÍ0Í>®pendingDocJsonÂÂR°MemberExpressionÍ@ÍSS®ThisExpressionÍ@ÍDLªIdentifierÍEÍS®pendingCfgJsonÂÂÂÂY«IfStatementÍ`ÍX°BinaryExpressionÍdÍR°MemberExpressionÍdÍxS®ThisExpressionÍdÍhLªIdentifierÍiÍx¯pendingFirmwareÂÂ£!==T§LiteralÍ}ÍÀ¤nullM®BlockStatementÍƒÍ‘P³ExpressionStatementÍ’Íú]®CallExpressionÍ’ÍùR°MemberExpressionÍ’Í«S®ThisExpressionÍ’Í–LªIdentifierÍ—Í«´postFirmwareToWorkerÂÂ“R°MemberExpressionÍ¬ÍÀS®ThisExpressionÍ¬Í°LªIdentifierÍ±ÍÀ¯pendingFirmwareÂÂR°MemberExpressionÍÂÍÜS®ThisExpressionÍÂÍÆLªIdentifierÍÇÍÜµpendingFirmwareOffsetÂÂR°MemberExpressionÍŞÍøS®ThisExpressionÍŞÍâLªIdentifierÍãÍøµpendingFirmwareFamilyÂÂÂÀP³ExpressionStatementÍÍ,Q´AssignmentExpressionÍÍ+¡=R°MemberExpressionÍÍ#S®ThisExpressionÍÍLªIdentifierÍÍ#¯hasPendingStartÂÂT§LiteralÍ&Í+Â¥falseP³ExpressionStatementÍ6Íp]®CallExpressionÍ6ÍoR°MemberExpressionÍ6ÍALªIdentifierÍ6Í<¦LoggerLªIdentifierÍ=ÍA¤infoÂÂ’LªIdentifierÍBÍE£TAGT§LiteralÍGÍnÙ%upgraded to ThreadWorker compute pathÙ''upgraded to ThreadWorker compute path'ÂN°MethodDefinitionÍFÍ EÂÂLªIdentifierÍFÍQ«startRemote¦methodO²FunctionExpressionÍQÍ EÀÂÂÂ”LªIdentifierÍRÍV¤topoLªIdentifierÍXÍ[£cfgLªIdentifierÍ]Í`£docLªIdentifierÍbÍm«localKernelM®BlockStatementÍoÍ EšP³ExpressionStatementÍzÍ™Q´AssignmentExpressionÍzÍ˜¡=R°MemberExpressionÍzÍŠS®ThisExpressionÍzÍ~LªIdentifierÍÍŠ«localKernelÂÂLªIdentifierÍÍ˜«localKernelP³ExpressionStatementÍ£Í»]®CallExpressionÍ£ÍºR°MemberExpressionÍ£Í¸S®ThisExpressionÍ£Í§LªIdentifierÍ¨Í¸°stopFallbackPumpÂÂÂP³ExpressionStatementÍÅÍÛ]®CallExpressionÍÅÍÚR°MemberExpressionÍÅÍØS®ThisExpressionÍÅÍÉLªIdentifierÍÊÍØ®clearReadyWaitÂÂÂP³ExpressionStatementÍåÍQ´AssignmentExpressionÍåÍ¡=R°MemberExpressionÍåÍùS®ThisExpressionÍåÍéLªIdentifierÍêÍù¯hasPendingStartÂÂT§LiteralÍüÍÂ¥falseP³ExpressionStatementÍÍ$Q´AssignmentExpressionÍÍ#¡=R°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍÍªworkerModeÂÂT§LiteralÍÍ#Â¥falseY«IfStatementÍ.ÍV¯UnaryExpressionÍ2ÍG¡!ÃLªIdentifierÍ3ÍG´ENABLE_THREAD_WORKERM®BlockStatementÍIÍ“P³ExpressionStatementÍXÍº]®CallExpressionÍXÍ¹R°MemberExpressionÍXÍcLªIdentifierÍXÍ^¦LoggerLªIdentifierÍ_Íc¤infoÂÂ’LªIdentifierÍdÍg£TAG^¯TemplateLiteralÍiÍ¸‘LªIdentifierÍ•Í©´FALLBACK_INTERVAL_MS’_¯TemplateElementÍjÍ“`Ù+ThreadWorker disabled â€” budget fallback @Ù+ThreadWorker disabled â€” budget fallback @Â_¯TemplateElementÍªÍ·`­ms (anti-ANR)­ms (anti-ANR)ÃÂP³ExpressionStatementÍÈÍá]®CallExpressionÍÈÍàR°MemberExpressionÍÈÍŞS®ThisExpressionÍÈÍÌLªIdentifierÍÍÍŞ±startFallbackPumpÂÂÂW¯ReturnStatementÍïÍöÀÀP³ExpressionStatementÍÍ ]®CallExpressionÍÍR°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍÍ­ensureStartedÂÂÂP³ExpressionStatementÍ*ÍFQ´AssignmentExpressionÍ*ÍE¡=R°MemberExpressionÍ*Í>S®ThisExpressionÍ*Í.LªIdentifierÍ/Í>¯hasPendingStartÂÂT§LiteralÍAÍEÃ¤trueP³ExpressionStatementÍPÍsQ´AssignmentExpressionÍPÍr¡=R°MemberExpressionÍPÍ_S®ThisExpressionÍPÍTLªIdentifierÍUÍ_ªworkerModeÂÂR°MemberExpressionÍbÍrS®ThisExpressionÍbÍfLªIdentifierÍgÍr«workerReadyÂÂP³ExpressionStatementÍÅÍ >]®CallExpressionÍÅÍ =LªIdentifierÍÅÍÏªsetTimeout’O·ArrowFunctionExpressionÍĞÍ 8ÀÂÂÂM®BlockStatementÍÖÍ 8“Z¬TryStatementÍåÍ£M®BlockStatementÍéÍ¸“P³ExpressionStatementÍüÍ+Q´AssignmentExpressionÍüÍ*¡=R°MemberExpressionÍüÍS®ThisExpressionÍüÍ LªIdentifierÍÍ¯pendingTopoJsonÂÂ]®CallExpressionÍÍ*LªIdentifierÍÍ$±mapAwareStringify‘LªIdentifierÍ%Í)¤topoÂP³ExpressionStatementÍ=ÍjQ´AssignmentExpressionÍ=Íi¡=R°MemberExpressionÍ=ÍPS®ThisExpressionÍ=ÍALªIdentifierÍBÍP®pendingDocJsonÂÂ]®CallExpressionÍSÍiLªIdentifierÍSÍd±mapAwareStringify‘LªIdentifierÍeÍh£docÂP³ExpressionStatementÍ|Í©Q´AssignmentExpressionÍ|Í¨¡=R°MemberExpressionÍ|ÍS®ThisExpressionÍ|Í€LªIdentifierÍÍ®pendingCfgJsonÂÂ]®CallExpressionÍ’Í¨LªIdentifierÍ’Í£±mapAwareStringify‘LªIdentifierÍ¤Í§£cfgÂa«CatchClauseÍÆÍ£LªIdentifierÍÍÍÎ¡eM®BlockStatementÍĞÍ£”[³VariableDeclarationÍãÍ#‘\²VariableDeclaratorÍéÍ"LªIdentifierÍéÍì£msgYµConditionalExpressionÍïÍ"X°BinaryExpressionÍïÍLªIdentifierÍïÍğ¡eªinstanceofLªIdentifierÍüÍ¥ErrorR°MemberExpressionÍÍLªIdentifierÍÍ¡eLªIdentifierÍÍ§messageÂÂT§LiteralÍÍ"°stringify failed²'stringify failed'¥constP³ExpressionStatementÍ5ÍK]®CallExpressionÍ5ÍJR°MemberExpressionÍ5Í@LªIdentifierÍ5Í;¦LoggerLªIdentifierÍ<Í@¤warnÂÂ’LªIdentifierÍAÍD£TAGLªIdentifierÍFÍI£msgÂP³ExpressionStatementÍ]Í{]®CallExpressionÍ]ÍzR°MemberExpressionÍ]ÍuS®ThisExpressionÍ]ÍaLªIdentifierÍbÍu³downgradeToFallbackÂÂ‘LªIdentifierÍvÍy£msgÂW¯ReturnStatementÍÍ”ÀÀY«IfStatementÍ±Í$R°MemberExpressionÍµÍÅS®ThisExpressionÍµÍ¹LªIdentifierÍºÍÅ«workerReadyÂÂM®BlockStatementÍÇÍ$’P³ExpressionStatementÍÚÍü]®CallExpressionÍÚÍûR°MemberExpressionÍÚÍùS®ThisExpressionÍÚÍŞLªIdentifierÍßÍùºupgradeToWorkerWithPendingÂÂÂW¯ReturnStatementÍÍÀÀP³ExpressionStatementÍ2Í -Q´AssignmentExpressionÍ2Í ,¡=R°MemberExpressionÍ2ÍES®ThisExpressionÍ2Í6LªIdentifierÍ7ÍE®readyWaitTimerÂÂ]®CallExpressionÍHÍ ,LªIdentifierÍHÍRªsetTimeout’O·ArrowFunctionExpressionÍSÍ ÀÂÂÂM®BlockStatementÍYÍ ’P³ExpressionStatementÍlÍ…Q´AssignmentExpressionÍlÍ„¡=R°MemberExpressionÍlÍS®ThisExpressionÍlÍpLªIdentifierÍqÍ®readyWaitTimerÂÂV¯UnaryExpressionÍ‚Í„¡-ÃT§LiteralÍƒÍ„¡1Y«IfStatementÍ—Í R°MemberExpressionÍ›Í«S®ThisExpressionÍ›ÍŸLªIdentifierÍ Í««workerReadyÂÂM®BlockStatementÍ­Íù‘P³ExpressionStatementÍÄÍæ]®CallExpressionÍÄÍåR°MemberExpressionÍÄÍãS®ThisExpressionÍÄÍÈLªIdentifierÍÉÍãºupgradeToWorkerWithPendingÂÂÂM®BlockStatementÍÍ “P³ExpressionStatementÍ'Í–]®CallExpressionÍ'Í•R°MemberExpressionÍ'Í2LªIdentifierÍ'Í-¦LoggerLªIdentifierÍ.Í2¤infoÂÂ’LªIdentifierÍ3Í6£TAG^¯TemplateLiteralÍ8Í”’LªIdentifierÍOÍc´WORKER_READY_WAIT_MSLªIdentifierÍ|Í´FALLBACK_INTERVAL_MS“_¯TemplateElementÍ9ÍM`´Worker not READY in ´Worker not READY in Â_¯TemplateElementÍdÍz`¸ms â€” budget fallback @¸ms â€” budget fallback @Â_¯TemplateElementÍ‘Í“`¢ms¢msÃÂP³ExpressionStatementÍ¬ÍÄQ´AssignmentExpressionÍ¬ÍÃ¡=R°MemberExpressionÍ¬Í»S®ThisExpressionÍ¬Í°LªIdentifierÍ±Í»ªworkerModeÂÂT§LiteralÍ¾ÍÃÂ¥falseP³ExpressionStatementÍÚÍó]®CallExpressionÍÚÍòR°MemberExpressionÍÚÍğS®ThisExpressionÍÚÍŞLªIdentifierÍßÍğ±startFallbackPumpÂÂÂLªIdentifierÍ Í +´WORKER_READY_WAIT_MSÂT§LiteralÍ :Í <¢16ÂN°MethodDefinitionÍ KÍ&aÂÂLªIdentifierÍ KÍ \±startFallbackPump¦methodO²FunctionExpressionÍ \Í&aÀÂÂÂM®BlockStatementÍ _Í&a™Y«IfStatementÍ jÍ ªX°BinaryExpressionÍ nÍ ‡R°MemberExpressionÍ nÍ ~S®ThisExpressionÍ nÍ rLªIdentifierÍ sÍ ~«localKernelÂÂ£===T§LiteralÍ ƒÍ ‡À¤nullM®BlockStatementÍ ‰Í ª‘W¯ReturnStatementÍ ˜Í ŸÀÀY«IfStatementÍ ´Í şX±LogicalExpressionÍ ¸Í ÛR°MemberExpressionÍ ¸Í ÇS®ThisExpressionÍ ¸Í ¼LªIdentifierÍ ½Í ÇªworkerModeÂÂ¢&&R°MemberExpressionÍ ËÍ ÛS®ThisExpressionÍ ËÍ ÏLªIdentifierÍ ĞÍ Û«workerReadyÂÂM®BlockStatementÍ İÍ ş‘W¯ReturnStatementÍ ìÍ óÀÀP³ExpressionStatementÍ!Í!#Q´AssignmentExpressionÍ!Í!"¡=R°MemberExpressionÍ!Í!S®ThisExpressionÍ!Í!LªIdentifierÍ!Í!®fallbackActiveÂÂT§LiteralÍ!Í!"Ã¤trueP³ExpressionStatementÍ!-Í!@V°UpdateExpressionÍ!-Í!?¢++ÂR°MemberExpressionÍ!-Í!=S®ThisExpressionÍ!-Í!1LªIdentifierÍ!2Í!=«fallbackGenÂÂ[³VariableDeclarationÍ!JÍ!g‘\²VariableDeclaratorÍ!PÍ!fLªIdentifierÍ!PÍ!S£genR°MemberExpressionÍ!VÍ!fS®ThisExpressionÍ!VÍ!ZLªIdentifierÍ![Í!f«fallbackGenÂÂ¥const[³VariableDeclarationÍ!qÍ%[‘\²VariableDeclaratorÍ!wÍ%ZLªIdentifierÍ!wÍ!{¤tickO·ArrowFunctionExpressionÍ!~Í%ZÀÂÂÂM®BlockStatementÍ!„Í%Z˜Y«IfStatementÍ!“Í"X±LogicalExpressionÍ!—Í!äX±LogicalExpressionÍ!—Í!ÇX°BinaryExpressionÍ!—Í!¯LªIdentifierÍ!—Í!š£gen£!==R°MemberExpressionÍ!ŸÍ!¯S®ThisExpressionÍ!ŸÍ!£LªIdentifierÍ!¤Í!¯«fallbackGenÂÂ¢||V¯UnaryExpressionÍ!³Í!Ç¡!ÃR°MemberExpressionÍ!´Í!ÇS®ThisExpressionÍ!´Í!¸LªIdentifierÍ!¹Í!Ç®fallbackActiveÂÂ¢||X°BinaryExpressionÍ!ËÍ!äR°MemberExpressionÍ!ËÍ!ÛS®ThisExpressionÍ!ËÍ!ÏLªIdentifierÍ!ĞÍ!Û«localKernelÂÂ£===T§LiteralÍ!àÍ!äÀ¤nullM®BlockStatementÍ!æÍ"‘W¯ReturnStatementÍ!ùÍ" ÀÀY«IfStatementÍ"IÍ"óX±LogicalExpressionÍ"MÍ"pR°MemberExpressionÍ"MÍ"\S®ThisExpressionÍ"MÍ"QLªIdentifierÍ"RÍ"\ªworkerModeÂÂ¢&&R°MemberExpressionÍ"`Í"pS®ThisExpressionÍ"`Í"dLªIdentifierÍ"eÍ"p«workerReadyÂÂM®BlockStatementÍ"rÍ"ó“P³ExpressionStatementÍ"…Í"¡Q´AssignmentExpressionÍ"…Í" ¡=R°MemberExpressionÍ"…Í"˜S®ThisExpressionÍ"…Í"‰LªIdentifierÍ"ŠÍ"˜®fallbackActiveÂÂT§LiteralÍ"›Í" Â¥falseP³ExpressionStatementÍ"³Í"ËQ´AssignmentExpressionÍ"³Í"Ê¡=R°MemberExpressionÍ"³Í"ÅS®ThisExpressionÍ"³Í"·LªIdentifierÍ"¸Í"Å­fallbackTimerÂÂV¯UnaryExpressionÍ"ÈÍ"Ê¡-ÃT§LiteralÍ"ÉÍ"Ê¡1W¯ReturnStatementÍ"İÍ"äÀÀY«IfStatementÍ#Í#µX°BinaryExpressionÍ#Í#<]®CallExpressionÍ#Í# R°MemberExpressionÍ#Í#R°MemberExpressionÍ#Í#S®ThisExpressionÍ#Í#	LªIdentifierÍ#
-Í#«localKernelÂÂLªIdentifierÍ#Í#¨getStateÂÂÂ£!==R°MemberExpressionÍ#%Í#<LªIdentifierÍ#%Í#4¯SimulationStateLªIdentifierÍ#5Í#<§RUNNINGÂÂM®BlockStatementÍ#>Í#µ’P³ExpressionStatementÍ#QÍ#Q´AssignmentExpressionÍ#QÍ#Œ¡=R°MemberExpressionÍ#QÍ#cS®ThisExpressionÍ#QÍ#ULªIdentifierÍ#VÍ#c­fallbackTimerÂÂ]®CallExpressionÍ#fÍ#ŒLªIdentifierÍ#fÍ#pªsetTimeout’LªIdentifierÍ#qÍ#u¤tickLªIdentifierÍ#wÍ#‹´FALLBACK_INTERVAL_MSÂW¯ReturnStatementÍ#ŸÍ#¦ÀÀY«IfStatementÍ#ÃÍ$RR°MemberExpressionÍ#ÇÍ#ÙS®ThisExpressionÍ#ÇÍ#ËLªIdentifierÍ#ÌÍ#Ù­uiGestureBusyÂÂM®BlockStatementÍ#ÛÍ$R’P³ExpressionStatementÍ#îÍ$*Q´AssignmentExpressionÍ#îÍ$)¡=R°MemberExpressionÍ#îÍ$ S®ThisExpressionÍ#îÍ#òLªIdentifierÍ#óÍ$ ­fallbackTimerÂÂ]®CallExpressionÍ$Í$)LªIdentifierÍ$Í$ªsetTimeout’LªIdentifierÍ$Í$¤tickLªIdentifierÍ$Í$(´FALLBACK_INTERVAL_MSÂW¯ReturnStatementÍ$<Í$CÀÀP³ExpressionStatementÍ$`Í$]®CallExpressionÍ$`Í$R°MemberExpressionÍ$`Í$R°MemberExpressionÍ$`Í$pS®ThisExpressionÍ$`Í$dLªIdentifierÍ$eÍ$p«localKernelÂÂLªIdentifierÍ$qÍ$®runBudgetStepsÂÂ‘R°MemberExpressionÍ$€Í$S®ThisExpressionÍ$€Í$„LªIdentifierÍ$…Í$¨budgetMsÂÂÂ[³VariableDeclarationÍ$Í$Ğ‘\²VariableDeclaratorÍ$£Í$ÏLªIdentifierÍ$£Í$§¤snap]®CallExpressionÍ$ªÍ$ÏR°MemberExpressionÍ$ªÍ$ÍR°MemberExpressionÍ$ªÍ$ºS®ThisExpressionÍ$ªÍ$®LªIdentifierÍ$¯Í$º«localKernelÂÂLªIdentifierÍ$»Í$Í²buildFrameSnapshotÂÂÂ¥constP³ExpressionStatementÍ$ŞÍ%]®CallExpressionÍ$ŞÍ%R°MemberExpressionÍ$ŞÍ$ğR°MemberExpressionÍ$ŞÍ$èS®ThisExpressionÍ$ŞÍ$âLªIdentifierÍ$ãÍ$è¥storeÂÂLªIdentifierÍ$éÍ$ğ§publishÂÂ‘]®CallExpressionÍ$ñÍ%R°MemberExpressionÍ$ñÍ$ıS®ThisExpressionÍ$ñÍ$õLªIdentifierÍ$öÍ$ı§toPlainÂÂ‘LªIdentifierÍ$şÍ%¤snapÂÂP³ExpressionStatementÍ%Í%OQ´AssignmentExpressionÍ%Í%N¡=R°MemberExpressionÍ%Í%%S®ThisExpressionÍ%Í%LªIdentifierÍ%Í%%­fallbackTimerÂÂ]®CallExpressionÍ%(Í%NLªIdentifierÍ%(Í%2ªsetTimeout’LªIdentifierÍ%3Í%7¤tickLªIdentifierÍ%9Í%M´FALLBACK_INTERVAL_MSÂ¥constY«IfStatementÍ%eÍ%½X°BinaryExpressionÍ%iÍ%€R°MemberExpressionÍ%iÍ%{S®ThisExpressionÍ%iÍ%mLªIdentifierÍ%nÍ%{­fallbackTimerÂÂ¢>=T§LiteralÍ%Í%€ ¡0M®BlockStatementÍ%‚Í%½‘P³ExpressionStatementÍ%‘Í%²]®CallExpressionÍ%‘Í%±LªIdentifierÍ%‘Í%¬clearTimeout‘R°MemberExpressionÍ%Í%°S®ThisExpressionÍ%Í%¢LªIdentifierÍ%£Í%°­fallbackTimerÂÂÂÀP³ExpressionStatementÍ%ÇÍ&Q´AssignmentExpressionÍ%ÇÍ&¡=R°MemberExpressionÍ%ÇÍ%ÙS®ThisExpressionÍ%ÇÍ%ËLªIdentifierÍ%ÌÍ%Ù­fallbackTimerÂÂ]®CallExpressionÍ%ÜÍ&LªIdentifierÍ%ÜÍ%æªsetTimeout’LªIdentifierÍ%çÍ%ë¤tickLªIdentifierÍ%íÍ&´FALLBACK_INTERVAL_MSÂP³ExpressionStatementÍ&Í&Z]®CallExpressionÍ&Í&YR°MemberExpressionÍ&Í&LªIdentifierÍ&Í&¦LoggerLªIdentifierÍ&Í&¤infoÂÂ’LªIdentifierÍ&Í&£TAG^¯TemplateLiteralÍ&Í&X‘LªIdentifierÍ&@Í&T´FALLBACK_INTERVAL_MS’_¯TemplateElementÍ&Í&>`¿fallback compute pump started @¿fallback compute pump started @Â_¯TemplateElementÍ&UÍ&W`¢ms¢msÃÂN°MethodDefinitionÍ&gÍ'MÂÂLªIdentifierÍ&gÍ&w°stopFallbackPump¦methodO²FunctionExpressionÍ&wÍ'MÀÂÂÂM®BlockStatementÍ&zÍ'M“P³ExpressionStatementÍ&…Í&˜V°UpdateExpressionÍ&…Í&—¢++ÂR°MemberExpressionÍ&…Í&•S®ThisExpressionÍ&…Í&‰LªIdentifierÍ&ŠÍ&•«fallbackGenÂÂP³ExpressionStatementÍ&¢Í&¾Q´AssignmentExpressionÍ&¢Í&½¡=R°MemberExpressionÍ&¢Í&µS®ThisExpressionÍ&¢Í&¦LªIdentifierÍ&§Í&µ®fallbackActiveÂÂT§LiteralÍ&¸Í&½Â¥falseY«IfStatementÍ&ÈÍ'FX°BinaryExpressionÍ&ÌÍ&ãR°MemberExpressionÍ&ÌÍ&ŞS®ThisExpressionÍ&ÌÍ&ĞLªIdentifierÍ&ÑÍ&Ş­fallbackTimerÂÂ¢>=T§LiteralÍ&âÍ&ã ¡0M®BlockStatementÍ&åÍ'F’P³ExpressionStatementÍ&ôÍ']®CallExpressionÍ&ôÍ'LªIdentifierÍ&ôÍ' ¬clearTimeout‘R°MemberExpressionÍ'Í'S®ThisExpressionÍ'Í'LªIdentifierÍ'Í'­fallbackTimerÂÂÂP³ExpressionStatementÍ'#Í';Q´AssignmentExpressionÍ'#Í':¡=R°MemberExpressionÍ'#Í'5S®ThisExpressionÍ'#Í''LªIdentifierÍ'(Í'5­fallbackTimerÂÂV¯UnaryExpressionÍ'8Í':¡-ÃT§LiteralÍ'9Í':¡1ÀN°MethodDefinitionÍ'SÍ(sÂÂLªIdentifierÍ'SÍ'Z§toPlain¦methodO²FunctionExpressionÍ'ZÍ(sÀÂÂÂ‘LªIdentifierÍ'[Í'_¤snapM®BlockStatementÍ'aÍ(s’[³VariableDeclarationÍ'lÍ'¬‘\²VariableDeclaratorÍ'rÍ'«LªIdentifierÍ'rÍ'v¤uartYµConditionalExpressionÍ'yÍ'«X°BinaryExpressionÍ'yÍ'•R°MemberExpressionÍ'yÍ'‡LªIdentifierÍ'yÍ'}¤snapLªIdentifierÍ'~Í'‡©uartBytesÂÂ£!==LªIdentifierÍ'ŒÍ'•©undefinedR°MemberExpressionÍ'˜Í'¦LªIdentifierÍ'˜Í'œ¤snapLªIdentifierÍ'Í'¦©uartBytesÂÂÔrb”¤type¥start£end¨elements¯ArrayExpressionÍ'©Í'«¥constW¯ReturnStatementÍ'¶Í(l]®CallExpressionÍ'½Í(kLªIdentifierÍ'½Í'Ì¯toSimFramePlainœR°MemberExpressionÍ'ÍÍ'ÓLªIdentifierÍ'ÍÍ'Ñ¤snapLªIdentifierÍ'ÒÍ'Ó¡tÂÂR°MemberExpressionÍ'ÕÍ'ãLªIdentifierÍ'ÕÍ'Ù¤snapLªIdentifierÍ'ÚÍ'ã©stepCountÂÂR°MemberExpressionÍ'åÍ'ñLªIdentifierÍ'åÍ'é¤snapLªIdentifierÍ'êÍ'ñ§netKeysÂÂR°MemberExpressionÍ'óÍ( LªIdentifierÍ'óÍ'÷¤snapLªIdentifierÍ'øÍ( ¨voltagesÂÂR°MemberExpressionÍ(Í(LªIdentifierÍ(Í(¤snapLªIdentifierÍ(Í(ªbranchKeysÂÂR°MemberExpressionÍ(Í( LªIdentifierÍ(Í(¤snapLªIdentifierÍ(Í( ¨currentsÂÂR°MemberExpressionÍ("Í(0LªIdentifierÍ("Í(&¤snapLªIdentifierÍ('Í(0©mcuFamilyÂÂR°MemberExpressionÍ(2Í(<LªIdentifierÍ(2Í(6¤snapLªIdentifierÍ(7Í(<¥mcuPcÂÂR°MemberExpressionÍ(>Í(HLªIdentifierÍ(>Í(B¤snapLªIdentifierÍ(CÍ(H¥mcuP1ÂÂR°MemberExpressionÍ(JÍ(XLªIdentifierÍ(JÍ(N¤snapLªIdentifierÍ(OÍ(X©gpioWordsÂÂR°MemberExpressionÍ(ZÍ(dLªIdentifierÍ(ZÍ(^¤snapLªIdentifierÍ(_Í(d¥stateÂÂLªIdentifierÍ(fÍ(j¤uartÂN°MethodDefinitionÍ(yÍ)1ÂÂLªIdentifierÍ(yÍ(~¥pause¦methodO²FunctionExpressionÍ(~Í)1ÀÂÂÂM®BlockStatementÍ(Í)1’Y«IfStatementÍ(ŒÍ)X±LogicalExpressionÍ(Í(´X°BinaryExpressionÍ(Í( R°MemberExpressionÍ(Í(—S®ThisExpressionÍ(Í(”LªIdentifierÍ(•Í(—¢twÂÂ£!==T§LiteralÍ(œÍ( À¤null¢&&R°MemberExpressionÍ(¤Í(´S®ThisExpressionÍ(¤Í(¨LªIdentifierÍ(©Í(´«workerReadyÂÂM®BlockStatementÍ(¶Í)‘P³ExpressionStatementÍ(ÅÍ(ı]®CallExpressionÍ(ÅÍ(üR°MemberExpressionÍ(ÅÍ(ÖS®ThisExpressionÍ(ÅÍ(ÉLªIdentifierÍ(ÊÍ(Ö¬postToWorkerÂÂ‘]®CallExpressionÍ(×Í(ûLªIdentifierÍ(×Í(é²makeSimHostCommand‘R°MemberExpressionÍ(êÍ(úLªIdentifierÍ(êÍ(ôªSimCmdTypeLªIdentifierÍ(õÍ(ú¥PAUSEÂÂÂÂÀP³ExpressionStatementÍ)Í)*]®CallExpressionÍ)Í))R°MemberExpressionÍ)Í)'S®ThisExpressionÍ)Í)LªIdentifierÍ)Í)'°stopFallbackPumpÂÂÂN°MethodDefinitionÍ)7Í*NÂÂLªIdentifierÍ)7Í)=¦resume¦methodO²FunctionExpressionÍ)=Í*NÀÂÂÂ‘LªIdentifierÍ)>Í)I«localKernelM®BlockStatementÍ)KÍ*N“P³ExpressionStatementÍ)VÍ)uQ´AssignmentExpressionÍ)VÍ)t¡=R°MemberExpressionÍ)VÍ)fS®ThisExpressionÍ)VÍ)ZLªIdentifierÍ)[Í)f«localKernelÂÂLªIdentifierÍ)iÍ)t«localKernelY«IfStatementÍ)Í*$X±LogicalExpressionÍ)ƒÍ)ºX±LogicalExpressionÍ)ƒÍ)§X°BinaryExpressionÍ)ƒÍ)“R°MemberExpressionÍ)ƒÍ)ŠS®ThisExpressionÍ)ƒÍ)‡LªIdentifierÍ)ˆÍ)Š¢twÂÂ£!==T§LiteralÍ)Í)“À¤null¢&&R°MemberExpressionÍ)—Í)§S®ThisExpressionÍ)—Í)›LªIdentifierÍ)œÍ)§«workerReadyÂÂ¢&&R°MemberExpressionÍ)«Í)ºS®ThisExpressionÍ)«Í)¯LªIdentifierÍ)°Í)ºªworkerModeÂÂM®BlockStatementÍ)¼Í*$’P³ExpressionStatementÍ)ËÍ*]®CallExpressionÍ)ËÍ*R°MemberExpressionÍ)ËÍ)ÜS®ThisExpressionÍ)ËÍ)ÏLªIdentifierÍ)ĞÍ)Ü¬postToWorkerÂÂ‘]®CallExpressionÍ)İÍ*LªIdentifierÍ)İÍ)ï²makeSimHostCommand‘R°MemberExpressionÍ)ğÍ*LªIdentifierÍ)ğÍ)úªSimCmdTypeLªIdentifierÍ)ûÍ*¦RESUMEÂÂÂÂW¯ReturnStatementÍ*Í*ÀÀP³ExpressionStatementÍ*.Í*G]®CallExpressionÍ*.Í*FR°MemberExpressionÍ*.Í*DS®ThisExpressionÍ*.Í*2LªIdentifierÍ*3Í*D±startFallbackPumpÂÂÂN°MethodDefinitionÍ*TÍ+ZÂÂLªIdentifierÍ*TÍ*X¤stop¦methodO²FunctionExpressionÍ*XÍ+ZÀÂÂÂM®BlockStatementÍ*[Í+Z•P³ExpressionStatementÍ*fÍ*ƒQ´AssignmentExpressionÍ*fÍ*‚¡=R°MemberExpressionÍ*fÍ*zS®ThisExpressionÍ*fÍ*jLªIdentifierÍ*kÍ*z¯hasPendingStartÂÂT§LiteralÍ*}Í*‚Â¥falseP³ExpressionStatementÍ*Í*£]®CallExpressionÍ*Í*¢R°MemberExpressionÍ*Í* S®ThisExpressionÍ*Í*‘LªIdentifierÍ*’Í* ®clearReadyWaitÂÂÂY«IfStatementÍ*­Í+X°BinaryExpressionÍ*±Í*ÁR°MemberExpressionÍ*±Í*¸S®ThisExpressionÍ*±Í*µLªIdentifierÍ*¶Í*¸¢twÂÂ£!==T§LiteralÍ*½Í*ÁÀ¤nullM®BlockStatementÍ*ÃÍ+‘P³ExpressionStatementÍ*ÒÍ+	]®CallExpressionÍ*ÒÍ+R°MemberExpressionÍ*ÒÍ*ãS®ThisExpressionÍ*ÒÍ*ÖLªIdentifierÍ*×Í*ã¬postToWorkerÂÂ‘]®CallExpressionÍ*äÍ+LªIdentifierÍ*äÍ*ö²makeSimHostCommand‘R°MemberExpressionÍ*÷Í+LªIdentifierÍ*÷Í+ªSimCmdTypeLªIdentifierÍ+Í+¤STOPÂÂÂÂÀP³ExpressionStatementÍ+Í+6]®CallExpressionÍ+Í+5R°MemberExpressionÍ+Í+3S®ThisExpressionÍ+Í+"LªIdentifierÍ+#Í+3°stopFallbackPumpÂÂÂP³ExpressionStatementÍ+@Í+S]®CallExpressionÍ+@Í+RR°MemberExpressionÍ+@Í+PR°MemberExpressionÍ+@Í+JS®ThisExpressionÍ+@Í+DLªIdentifierÍ+EÍ+J¥storeÂÂLªIdentifierÍ+KÍ+P¥clearÂÂÂN°MethodDefinitionÍ+`Í-RÂÂLªIdentifierÍ+`Í+g§loadMcu¦methodO²FunctionExpressionÍ+gÍ-RÀÂÂÂ”LªIdentifierÍ+hÍ+l¤dataLªIdentifierÍ+nÍ+t¦offsetLªIdentifierÍ+vÍ+|¦familyLªIdentifierÍ+~Í+‰«localKernelM®BlockStatementÍ+‹Í-R–P³ExpressionStatementÍ+–Í+µQ´AssignmentExpressionÍ+–Í+´¡=R°MemberExpressionÍ+–Í+¦S®ThisExpressionÍ+–Í+šLªIdentifierÍ+›Í+¦«localKernelÂÂLªIdentifierÍ+©Í+´«localKernelP³ExpressionStatementÍ+¿Í+ÛQ´AssignmentExpressionÍ+¿Í+Ú¡=R°MemberExpressionÍ+¿Í+ÓS®ThisExpressionÍ+¿Í+ÃLªIdentifierÍ+ÄÍ+Ó¯pendingFirmwareÂÂLªIdentifierÍ+ÖÍ+Ú¤dataP³ExpressionStatementÍ+åÍ,	Q´AssignmentExpressionÍ+åÍ,¡=R°MemberExpressionÍ+åÍ+ÿS®ThisExpressionÍ+åÍ+éLªIdentifierÍ+êÍ+ÿµpendingFirmwareOffsetÂÂLªIdentifierÍ,Í,¦offsetP³ExpressionStatementÍ,Í,7Q´AssignmentExpressionÍ,Í,6¡=R°MemberExpressionÍ,Í,-S®ThisExpressionÍ,Í,LªIdentifierÍ,Í,-µpendingFirmwareFamilyÂÂLªIdentifierÍ,0Í,6¦familyP³ExpressionStatementÍ,‰Í,º]®CallExpressionÍ,‰Í,¹R°MemberExpressionÍ,‰Í,£LªIdentifierÍ,‰Í,”«localKernelLªIdentifierÍ,•Í,£®loadMcuProgramÂÂ“LªIdentifierÍ,¤Í,¨¤dataLªIdentifierÍ,ªÍ,°¦offsetLªIdentifierÍ,²Í,¸¦familyÂY«IfStatementÍ,ÄÍ-KX±LogicalExpressionÍ,ÈÍ,ÿX±LogicalExpressionÍ,ÈÍ,ìX°BinaryExpressionÍ,ÈÍ,ØR°MemberExpressionÍ,ÈÍ,ÏS®ThisExpressionÍ,ÈÍ,ÌLªIdentifierÍ,ÍÍ,Ï¢twÂÂ£!==T§LiteralÍ,ÔÍ,ØÀ¤null¢&&R°MemberExpressionÍ,ÜÍ,ìS®ThisExpressionÍ,ÜÍ,àLªIdentifierÍ,áÍ,ì«workerReadyÂÂ¢&&R°MemberExpressionÍ,ğÍ,ÿS®ThisExpressionÍ,ğÍ,ôLªIdentifierÍ,õÍ,ÿªworkerModeÂÂM®BlockStatementÍ-Í-K‘P³ExpressionStatementÍ-Í-@]®CallExpressionÍ-Í-?R°MemberExpressionÍ-Í-)S®ThisExpressionÍ-Í-LªIdentifierÍ-Í-)´postFirmwareToWorkerÂÂ“LªIdentifierÍ-*Í-.¤dataLªIdentifierÍ-0Í-6¦offsetLªIdentifierÍ-8Í->¦familyÂÀN°MethodDefinitionÍ.CÍ1ÓÂÂLªIdentifierÍ.CÍ.P­injectUsartRx¦methodO²FunctionExpressionÍ.PÍ1ÓÀÂÂÂ’LªIdentifierÍ.QÍ.V¥bytesLªIdentifierÍ.XÍ.c«localKernelM®BlockStatementÍ.eÍ1Ó–Y«IfStatementÍ.pÍ.©X°BinaryExpressionÍ.tÍ.†R°MemberExpressionÍ.tÍ.€LªIdentifierÍ.tÍ.y¥bytesLªIdentifierÍ.zÍ.€¦lengthÂÂ£===T§LiteralÍ.…Í.† ¡0M®BlockStatementÍ.ˆÍ.©‘W¯ReturnStatementÍ.—Í.ÀÀ[³VariableDeclarationÍ.³Í.ü‘\²VariableDeclaratorÍ.¹Í.ûLªIdentifierÍ.¹Í.Á¨toWorkerX±LogicalExpressionÍ.ÄÍ.ûX±LogicalExpressionÍ.ÄÍ.èX°BinaryExpressionÍ.ÄÍ.ÔR°MemberExpressionÍ.ÄÍ.ËS®ThisExpressionÍ.ÄÍ.ÈLªIdentifierÍ.ÉÍ.Ë¢twÂÂ£!==T§LiteralÍ.ĞÍ.ÔÀ¤null¢&&R°MemberExpressionÍ.ØÍ.èS®ThisExpressionÍ.ØÍ.ÜLªIdentifierÍ.İÍ.è«workerReadyÂÂ¢&&R°MemberExpressionÍ.ìÍ.ûS®ThisExpressionÍ.ìÍ.ğLªIdentifierÍ.ñÍ.ûªworkerModeÂÂ¥constP³ExpressionStatementÍ/Í0$]®CallExpressionÍ/Í0#LªIdentifierÍ/Í/©traceUart’T§LiteralÍ/Í/«HOST_RX_FWD­'HOST_RX_FWD'X°BinaryExpressionÍ/Í0"X°BinaryExpressionÍ/Í/´^¯TemplateLiteralÍ/Í/T’R°MemberExpressionÍ/$Í/0LªIdentifierÍ/$Í/)¥bytesLªIdentifierÍ/*Í/0¦lengthÂÂ]®CallExpressionÍ/8Í/QLªIdentifierÍ/8Í/J²formatUartBytesHex‘LªIdentifierÍ/KÍ/P¥bytesÂ“_¯TemplateElementÍ/ Í/"`¢n=¢n=Â_¯TemplateElementÍ/1Í/6`¥ hex=¥ hex=Â_¯TemplateElementÍ/RÍ/S`¡ ¡ Ã¡+^¯TemplateLiteralÍ/dÍ/´’YµConditionalExpressionÍ/rÍ/‰R°MemberExpressionÍ/rÍ/S®ThisExpressionÍ/rÍ/vLªIdentifierÍ/wÍ/ªworkerModeÂÂT§LiteralÍ/„Í/…¡1T§LiteralÍ/ˆÍ/‰ ¡0YµConditionalExpressionÍ/™Í/±R°MemberExpressionÍ/™Í/©S®ThisExpressionÍ/™Í/LªIdentifierÍ/Í/©«workerReadyÂÂT§LiteralÍ/¬Í/­¡1T§LiteralÍ/°Í/± ¡0“_¯TemplateElementÍ/eÍ/p`«workerMode=«workerMode=Â_¯TemplateElementÍ/ŠÍ/—`­ workerReady=­ workerReady=Â_¯TemplateElementÍ/²Í/³`¡ ¡ Ã¡+^¯TemplateLiteralÍ/ÄÍ0"’YµConditionalExpressionÍ/ÒÍ/âLªIdentifierÍ/ÒÍ/Ú¨toWorkerT§LiteralÍ/İÍ/Ş¡1T§LiteralÍ/áÍ/â ¡0YµConditionalExpressionÍ/ûÍ0LªIdentifierÍ/ûÍ0¨toWorkerT§LiteralÍ0Í0¦worker¨'worker'T§LiteralÍ0Í0¥local§'local'“_¯TemplateElementÍ/ÅÍ/Ğ`«postWorker=«postWorker=Â_¯TemplateElementÍ/ãÍ/ù`¶ (UI frames come from ¶ (UI frames come from Â_¯TemplateElementÍ0Í0!`¨ kernel)¨ kernel)ÃÂP³ExpressionStatementÍ0.Í0MQ´AssignmentExpressionÍ0.Í0L¡=R°MemberExpressionÍ0.Í0>S®ThisExpressionÍ0.Í02LªIdentifierÍ03Í0>«localKernelÂÂLªIdentifierÍ0AÍ0L«localKernelP³ExpressionStatementÍ0WÍ0x]®CallExpressionÍ0WÍ0wR°MemberExpressionÍ0WÍ0pLªIdentifierÍ0WÍ0b«localKernelLªIdentifierÍ0cÍ0p­injectUsartRxÂÂ‘LªIdentifierÍ0qÍ0v¥bytesÂY«IfStatementÍ0‚Í1ÌLªIdentifierÍ0†Í0¨toWorkerM®BlockStatementÍ0Í1Ì”[³VariableDeclarationÍ0ŸÍ0¬‘\²VariableDeclaratorÍ0£Í0«LªIdentifierÍ0£Í0¦£hexT§LiteralÍ0©Í0« ¢''£letÔrc—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ0ºÍ1H[³VariableDeclarationÍ0¿Í0È‘\²VariableDeclaratorÍ0ÃÍ0ÈLªIdentifierÍ0ÃÍ0Ä¡iT§LiteralÍ0ÇÍ0È ¡0£letX°BinaryExpressionÍ0ÊÍ0ÚLªIdentifierÍ0ÊÍ0Ë¡i¡<R°MemberExpressionÍ0ÎÍ0ÚLªIdentifierÍ0ÎÍ0Ó¥bytesLªIdentifierÍ0ÔÍ0Ú¦lengthÂÂV°UpdateExpressionÍ0ÜÍ0ß¢++ÂLªIdentifierÍ0ÜÍ0İ¡iM®BlockStatementÍ0áÍ1H‘P³ExpressionStatementÍ0ôÍ19Q´AssignmentExpressionÍ0ôÍ18¢+=LªIdentifierÍ0ôÍ0÷£hex]®CallExpressionÍ0ûÍ18R°MemberExpressionÍ0ûÍ10]®CallExpressionÍ0ûÍ1'R°MemberExpressionÍ0ûÍ1%]®CallExpressionÍ0ûÍ1R°MemberExpressionÍ0ûÍ1X°BinaryExpressionÍ0üÍ1R°MemberExpressionÍ0üÍ1LªIdentifierÍ0üÍ1¥bytesLªIdentifierÍ1Í1¡iÃÂ¡&T§LiteralÍ1Í1Ìÿ¤0xFFLªIdentifierÍ1Í1¨toStringÂÂ‘T§LiteralÍ1Í1¢16ÂLªIdentifierÍ1Í1%«toUpperCaseÂÂÂLªIdentifierÍ1(Í10¨padStartÂÂ’T§LiteralÍ11Í12¡2T§LiteralÍ14Í17¡0£'0'ÂP³ExpressionStatementÍ1VÍ1€]®CallExpressionÍ1VÍ1R°MemberExpressionÍ1VÍ1gS®ThisExpressionÍ1VÍ1ZLªIdentifierÍ1[Í1g¬postToWorkerÂÂ‘]®CallExpressionÍ1hÍ1~LªIdentifierÍ1hÍ1y±makeUartRxCommand‘LªIdentifierÍ1zÍ1}£hexÂÂP³ExpressionStatementÍ1Í1Á]®CallExpressionÍ1Í1ÀLªIdentifierÍ1Í1—©traceUart’T§LiteralÍ1˜Í1­³HOST_RX_WORKER_POSTµ'HOST_RX_WORKER_POST'^¯TemplateLiteralÍ1¯Í1¿‘LªIdentifierÍ1ºÍ1½£hex’_¯TemplateElementÍ1°Í1¸`¨uartHex=¨uartHex=Â_¯TemplateElementÍ1¾Í1¾`  ÃÂÀN°MethodDefinitionÍ1ÙÍ3øÂÂLªIdentifierÍ1ÙÍ1í´postFirmwareToWorker¦methodO²FunctionExpressionÍ1íÍ3øÀÂÂÂ“LªIdentifierÍ1îÍ1ò¤dataLªIdentifierÍ1ôÍ1ú¦offsetLªIdentifierÍ1üÍ2¦familyM®BlockStatementÍ2Í3ø’Y«IfStatementÍ2Í2FX°BinaryExpressionÍ2Í2#R°MemberExpressionÍ2Í2S®ThisExpressionÍ2Í2LªIdentifierÍ2Í2¢twÂÂ£===T§LiteralÍ2Í2#À¤nullM®BlockStatementÍ2%Í2F‘W¯ReturnStatementÍ24Í2;ÀÀZ¬TryStatementÍ2PÍ3ñM®BlockStatementÍ2TÍ3Y“[³VariableDeclarationÍ2cÍ2Š‘\²VariableDeclaratorÍ2iÍ2‰LªIdentifierÍ2iÍ2o¦helperU­NewExpressionÍ2rÍ2‰R°MemberExpressionÍ2vÍ2‡LªIdentifierÍ2vÍ2z¤utilLªIdentifierÍ2{Í2‡¬Base64HelperÂÂ¥const[³VariableDeclarationÍ2˜Í2Ä‘\²VariableDeclaratorÍ2Í2ÃLªIdentifierÍ2Í2¡£b64]®CallExpressionÍ2¤Í2ÃR°MemberExpressionÍ2¤Í2½LªIdentifierÍ2¤Í2ª¦helperLªIdentifierÍ2«Í2½²encodeToStringSyncÂÂ‘LªIdentifierÍ2¾Í2Â¤dataÂ¥constP³ExpressionStatementÍ2ÒÍ3N]®CallExpressionÍ2ÒÍ3MR°MemberExpressionÍ2ÒÍ2ãS®ThisExpressionÍ2ÒÍ2ÖLªIdentifierÍ2×Í2ã¬postToWorkerÂÂ‘]®CallExpressionÍ2äÍ3LLªIdentifierÍ2äÍ2ö²makeSimHostCommand˜R°MemberExpressionÍ2÷Í3
-LªIdentifierÍ2÷Í3ªSimCmdTypeLªIdentifierÍ3Í3
-¨LOAD_MCUÂÂLªIdentifierÍ3Í3©undefinedLªIdentifierÍ3Í3 ©undefinedLªIdentifierÍ3"Í3+©undefinedLªIdentifierÍ3-Í36©undefinedLªIdentifierÍ38Í3>¦familyLªIdentifierÍ3@Í3F¦offsetLªIdentifierÍ3HÍ3K£b64ÂÂa«CatchClauseÍ3cÍ3ñLªIdentifierÍ3jÍ3k¡eM®BlockStatementÍ3mÍ3ñ’[³VariableDeclarationÍ3|Í3Â‘\²VariableDeclaratorÍ3‚Í3ÁLªIdentifierÍ3‚Í3…£msgYµConditionalExpressionÍ3ˆÍ3ÁX°BinaryExpressionÍ3ˆÍ3šLªIdentifierÍ3ˆÍ3‰¡eªinstanceofLªIdentifierÍ3•Í3š¥ErrorR°MemberExpressionÍ3Í3¦LªIdentifierÍ3Í3¡eLªIdentifierÍ3ŸÍ3¦§messageÂÂT§LiteralÍ3©Í3Á¶encode firmware failed¸'encode firmware failed'¥constP³ExpressionStatementÍ3ĞÍ3æ]®CallExpressionÍ3ĞÍ3åR°MemberExpressionÍ3ĞÍ3ÛLªIdentifierÍ3ĞÍ3Ö¦LoggerLªIdentifierÍ3×Í3Û¤warnÂÂ’LªIdentifierÍ3ÜÍ3ß£TAGLªIdentifierÍ3áÍ3ä£msgÂÀN°MethodDefinitionÍ3şÍ4BÂÂLªIdentifierÍ3şÍ4­consumeLatest¦methodO²FunctionExpressionÍ4Í4BÀÂÂÂM®BlockStatementÍ4Í4B‘W¯ReturnStatementÍ4Í4;]®CallExpressionÍ4 Í4:R°MemberExpressionÍ4 Í48R°MemberExpressionÍ4 Í4*S®ThisExpressionÍ4 Í4$LªIdentifierÍ4%Í4*¥storeÂÂLªIdentifierÍ4+Í48­consumeLatestÂÂÂN°MethodDefinitionÍ4HÍ4ÂÂLªIdentifierÍ4HÍ4L¤peek¦methodO²FunctionExpressionÍ4LÍ4ÀÂÂÂM®BlockStatementÍ4OÍ4‘W¯ReturnStatementÍ4ZÍ4†X±LogicalExpressionÍ4aÍ4…]®CallExpressionÍ4aÍ4rR°MemberExpressionÍ4aÍ4pR°MemberExpressionÍ4aÍ4kS®ThisExpressionÍ4aÍ4eLªIdentifierÍ4fÍ4k¥storeÂÂLªIdentifierÍ4lÍ4p¤peekÂÂÂ¢??]®CallExpressionÍ4vÍ4…LªIdentifierÍ4vÍ4ƒ­emptySimFrameÂN°MethodDefinitionÍ4“Í6ÂÂLªIdentifierÍ4“Í4›¨shutdown¦methodO²FunctionExpressionÍ4›Í6ÀÂÂÂM®BlockStatementÍ4Í6”P³ExpressionStatementÍ4©Í4µ]®CallExpressionÍ4©Í4´R°MemberExpressionÍ4©Í4²S®ThisExpressionÍ4©Í4­LªIdentifierÍ4®Í4²¤stopÂÂÂY«IfStatementÍ4¿Í5ÓX°BinaryExpressionÍ4ÃÍ4ÓR°MemberExpressionÍ4ÃÍ4ÊS®ThisExpressionÍ4ÃÍ4ÇLªIdentifierÍ4ÈÍ4Ê¢twÂÂ£!==T§LiteralÍ4ÏÍ4ÓÀ¤nullM®BlockStatementÍ4ÕÍ5Ó“P³ExpressionStatementÍ4äÍ5]®CallExpressionÍ4äÍ5R°MemberExpressionÍ4äÍ4õS®ThisExpressionÍ4äÍ4èLªIdentifierÍ4éÍ4õ¬postToWorkerÂÂ‘]®CallExpressionÍ4öÍ5LªIdentifierÍ4öÍ5²makeSimHostCommand‘R°MemberExpressionÍ5	Í5LªIdentifierÍ5	Í5ªSimCmdTypeLªIdentifierÍ5Í5¨SHUTDOWNÂÂÂÂZ¬TryStatementÍ5-Í5«M®BlockStatementÍ51Í5g‘P³ExpressionStatementÍ5DÍ5X]®CallExpressionÍ5DÍ5WR°MemberExpressionÍ5DÍ5UR°MemberExpressionÍ5DÍ5KS®ThisExpressionÍ5DÍ5HLªIdentifierÍ5IÍ5K¢twÂÂLªIdentifierÍ5LÍ5U©terminateÂÂÂa«CatchClauseÍ5uÍ5«LªIdentifierÍ5|Í5~¢_eM®BlockStatementÍ5€Í5«ÀP³ExpressionStatementÍ5¹Í5ÈQ´AssignmentExpressionÍ5¹Í5Ç¡=R°MemberExpressionÍ5¹Í5ÀS®ThisExpressionÍ5¹Í5½LªIdentifierÍ5¾Í5À¢twÂÂT§LiteralÍ5ÃÍ5ÇÀ¤nullÀP³ExpressionStatementÍ5İÍ5öQ´AssignmentExpressionÍ5İÍ5õ¡=R°MemberExpressionÍ5İÍ5íS®ThisExpressionÍ5İÍ5áLªIdentifierÍ5âÍ5í«workerReadyÂÂT§LiteralÍ5ğÍ5õÂ¥falseP³ExpressionStatementÍ6 Í6Q´AssignmentExpressionÍ6 Í6¡=R°MemberExpressionÍ6 Í6S®ThisExpressionÍ6 Í6LªIdentifierÍ6Í6ªworkerModeÂÂT§LiteralÍ6Í6Â¥falseÀ•Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclarationÌÂÌä‘Ôre”¤type¥start£end¥local¶ImportDefaultSpecifierÌÉÌÏLªIdentifierÌÉÌÏ¦workerT§LiteralÌÕÌã¬@ohos.worker®"@ohos.worker"d±ImportDeclarationÍ¨ÍÆ‘e¶ImportDefaultSpecifierÍ¯Í³LªIdentifierÍ¯Í³¤utilT§LiteralÍ¹ÍÅª@ohos.util¬"@ohos.util"d±ImportDeclarationÍÈÍ+•Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifierÍÑÍàLªIdentifierÍÑÍà¯SimulationStateLªIdentifierÍÑÍà¯SimulationStatef¯ImportSpecifierÍâÍóLªIdentifierÍâÍó±mapAwareStringifyLªIdentifierÍâÍó±mapAwareStringifyf¯ImportSpecifierÍõÍûLªIdentifierÍõÍû¦LoggerLªIdentifierÍõÍû¦Loggerf¯ImportSpecifierÍıÍLªIdentifierÍıÍ©traceUartLªIdentifierÍıÍ©traceUartf¯ImportSpecifierÍÍLªIdentifierÍÍ²formatUartBytesHexLªIdentifierÍÍ²formatUartBytesHexT§LiteralÍ"Í*¦common¨'common'd±ImportDeclarationÍ-Í«–f¯ImportSpecifierÍ6Í@LªIdentifierÍ6Í@ªSimCmdTypeLªIdentifierÍ6Í@ªSimCmdTypef¯ImportSpecifierÍBÍLLªIdentifierÍBÍLªSimMsgTypeLªIdentifierÍBÍLªSimMsgTypef¯ImportSpecifierÍNÍ[LªIdentifierÍNÍ[­emptySimFrameLªIdentifierÍNÍ[­emptySimFramef¯ImportSpecifierÍ]ÍoLªIdentifierÍ]Ío²makeSimHostCommandLªIdentifierÍ]Ío²makeSimHostCommandf¯ImportSpecifierÍqÍ‚LªIdentifierÍqÍ‚±makeUartRxCommandLªIdentifierÍqÍ‚±makeUartRxCommandf¯ImportSpecifierÍ„Í“LªIdentifierÍ„Í“¯toSimFramePlainLªIdentifierÍ„Í“¯toSimFramePlainT§LiteralÍ›Íª­./SimProtocol¯'./SimProtocol'd±ImportDeclarationÍ­Íİ‘f¯ImportSpecifierÍ¶ÍÃLªIdentifierÍ¶ÍÃ­SimFrameStoreLªIdentifierÍ¶ÍÃ­SimFrameStoreT§LiteralÍËÍÜ¯./SimFrameStore±'./SimFrameStore'

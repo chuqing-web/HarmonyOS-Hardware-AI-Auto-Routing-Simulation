@@ -170,12 +170,7 @@ export class DeepErcEngine {
    * a resistor whose other end is on VCC/VDD (topology may rename the net to NET_N).
    */
   private static hasStm32ResetPullUp(doc: SchematicDocument, mcu: ComponentInstance): boolean {
-    if (doc.nets.some(n => {
-      const u = n.name.toUpperCase();
-      return u.includes('NRST') || u.includes('RESET') || u === 'RST';
-    })) {
-      return true;
-    }
+    // 禁止「任意 NRST 网名存在 → 全板 STM32 通过」；按本 MCU 实例查脚网
     const pinNets = getPinNetMap(mcu.id, doc.nets);
     const resetNetId = pinNets.get('NRST') ?? pinNets.get('RST') ?? pinNets.get('RESET') ??
       pinNets.get('P7');

@@ -7,7 +7,16 @@ import { picker } from '@kit.CoreFileKit';
 import { AppService } from '../services/AppService';
 import { McuFamily, SimulationState, traceBurn, formatFirmwarePreview } from 'common';
 import { ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from './proteus/ProteusWidgets';
-import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
+import { ProteusColors, ProteusFonts } from '../theme/ProteusTheme';
+
+/** 寄存器行：名称与值拆开，便于窄栏双列对齐 */
+interface McuRegEntry {
+  name: string;
+  valueHex: string;
+}
+
+const MCU_REG_PRIORITY: string[] =
+  ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3'];
 
 @Component
 export struct McuDebugPanel {
@@ -15,7 +24,7 @@ export struct McuDebugPanel {
   @Prop @Watch('onSelectionChange') selectedComponentId: string = '';
   @State debugState: string = 'reset';
   @State pcValue: string = '0x0000';
-  @State registers: string[] = [];
+  @State regEntries: McuRegEntry[] = [];
   @State uartOutput: string = '';
   @State hexInput: string = '';
   @State hexFilePath: string = '';
@@ -29,6 +38,28 @@ export struct McuDebugPanel {
   private autoRefreshTimer: number = -1;
 
   private appService: AppService = AppService.getInstance();
+
+  private buildRegEntries(regs: Map<string, number>): McuRegEntry[] {
+    const entries: McuRegEntry[] = [];
+    regs.forEach((value: number, key: string) => {
+      const width = (key === 'PC' || key === 'DPTR' || value > 0xFF) ? 4 : 2;
+      entries.push({
+        name: key,
+        valueHex: `0x${value.toString(16).toUpperCase().padStart(width, '0')}`
+      });
+    });
+    entries.sort((a: McuRegEntry, b: McuRegEntry) => {
+      const ia = MCU_REG_PRIORITY.indexOf(a.name);
+      const ib = MCU_REG_PRIORITY.indexOf(b.name);
+      const pa = ia >= 0 ? ia : 100;
+      const pb = ib >= 0 ? ib : 100;
+      if (pa !== pb) {
+        return pa - pb;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return entries;
+  }
 
   aboutToAppear(): void {
     this.hexDir = this.appService.getHexDir();
@@ -117,11 +148,7 @@ export struct McuDebugPanel {
       const pcVal = simSnap.registers.get('PC');
       const pcNum = pcVal !== undefined ? pcVal : 0;
       this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
-      const regs: string[] = [];
-      simSnap.registers.forEach((value: number, key: string) => {
-        regs.push(`${key}: 0x${value.toString(16).toUpperCase().padStart(2, '0')}`);
-      });
-      this.registers = regs;
+      this.regEntries = this.buildRegEntries(simSnap.registers);
       this.uartOutput = this.appService.hexDebugger.getUartOutput();
       return;
     }
@@ -132,11 +159,7 @@ export struct McuDebugPanel {
       const pcVal = snap.registers.get('PC');
       const pcNum = pcVal !== undefined ? pcVal : 0;
       this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
-      const regs: string[] = [];
-      snap.registers.forEach((value: number, key: string) => {
-        regs.push(`${key}: 0x${value.toString(16).toUpperCase().padStart(2, '0')}`);
-      });
-      this.registers = regs;
+      this.regEntries = this.buildRegEntries(snap.registers);
     }
     this.uartOutput = this.appService.hexDebugger.getUartOutput();
   }
@@ -403,81 +426,138 @@ export struct McuDebugPanel {
       .width('100%')
       .padding({ left: 8, right: 8, top: 4 })
 
-      Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4 })
+      Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 6, bottom: 2 })
 
-      Text('寄存器组')
-        .fontSize(ProteusFonts.TITLE)
-        .fontColor(ProteusColors.TEXT_LABEL)
-        .fontWeight(FontWeight.Medium)
-        .margin({ left: 8, top: 4 })
-        .alignSelf(ItemAlign.Start)
+      // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
+      Column({ space: 4 }) {
+        Text('寄存器组')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .fontWeight(FontWeight.Medium)
+          .width('100%')
+          .textAlign(TextAlign.Start)
 
-      Column({ space: 2 }) {
-        ForEach(this.registers, (reg: string) => {
-          Text(reg)
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .fontFamily('monospace')
+        if (this.regEntries.length === 0) {
+          Text('(无寄存器数据)')
+            .fontSize(ProteusFonts.STATUS)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
             .width('100%')
-            .padding({ top: 2, bottom: 2 })
-        }, (reg: string) => reg)
+            .padding({ top: 4, bottom: 4 })
+        } else {
+          Scroll() {
+            Flex({
+              wrap: FlexWrap.Wrap,
+              justifyContent: FlexAlign.SpaceBetween
+            }) {
+              ForEach(this.regEntries, (reg: McuRegEntry) => {
+                Row({ space: 2 }) {
+                  Text(reg.name)
+                    .fontSize(ProteusFonts.STATUS)
+                    .fontColor(ProteusColors.TEXT_LABEL)
+                    .width(36)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(reg.valueHex)
+                    .fontSize(ProteusFonts.STATUS)
+                    .fontColor(ProteusColors.TEXT_PRIMARY)
+                    .fontFamily('monospace')
+                    .layoutWeight(1)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Clip })
+                    .textAlign(TextAlign.End)
+                }
+                .width('48%')
+                .height(20)
+                .padding({ left: 4, right: 4 })
+                .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+                .border({ width: 1, color: ProteusColors.DIVIDER })
+                .margin({ bottom: 3 })
+                .alignItems(VerticalAlign.Center)
+              }, (reg: McuRegEntry) => reg.name)
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .constraintSize({ maxHeight: 128 })
+          .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.None)
+        }
       }
       .width('100%')
-      .padding({ left: 8, right: 8 })
+      .padding({ left: 8, right: 8, top: 2 })
       .alignItems(HorizontalAlign.Start)
 
-      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
+      Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4, bottom: 2 })
 
-      Text('UART 输出')
-        .fontSize(ProteusFonts.TITLE)
-        .fontColor(ProteusColors.TEXT_LABEL)
-        .fontWeight(FontWeight.Medium)
-        .margin({ left: 8, top: 4 })
-        .alignSelf(ItemAlign.Start)
-
-      Column() {
-        Text(this.uartOutput || '(无输出)')
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_PRIMARY)
-          .fontFamily('monospace')
-          .width('100%')
-          .height(56)
-          .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-          .padding(6)
-          .border({ width: 1, color: ProteusColors.DIVIDER })
-          .borderRadius(0)
-      }
-      .width('100%')
-      .padding({ left: 8, right: 8 })
-
-      Text('UART 发送')
-        .fontSize(ProteusFonts.TITLE)
-        .fontColor(ProteusColors.TEXT_LABEL)
-        .fontWeight(FontWeight.Medium)
-        .margin({ left: 8, top: 4 })
-        .alignSelf(ItemAlign.Start)
-
-      Row({ space: 4 }) {
-        ProteusTextInput({
-          placeholder: '输入 UART 数据',
-          text: this.hexInput,
-          onChange: (v: string) => { this.hexInput = v; }
-        })
-          .layoutWeight(1)
-        ProteusClassicBtn({
-          label: '发送',
-          widthVal: 56,
-          onAction: () => {
-            this.appService.hexDebugger.sendUartInput(this.hexInput);
-            this.refreshState();
+      // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+      Column({ space: 4 }) {
+        Row() {
+          Text('UART 输出')
+            .fontSize(ProteusFonts.TITLE)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .fontWeight(FontWeight.Medium)
+          Blank()
+          if (this.uartOutput.length > 0) {
+            Text('清空')
+              .fontSize(ProteusFonts.STATUS)
+              .fontColor(ProteusColors.TEXT_SECONDARY)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .onClick(() => {
+                this.appService.hexDebugger.clearUartLog();
+                this.uartOutput = '';
+              })
           }
-        })
+        }
+        .width('100%')
+
+        Scroll() {
+          Text(this.uartOutput.length > 0 ? this.uartOutput : '(无输出)')
+            .fontSize(ProteusFonts.STATUS)
+            .fontColor(this.uartOutput.length > 0 ?
+              ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
+            .fontFamily('monospace')
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        }
+        .width('100%')
+        .height(96)
+        .padding(6)
+        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+        .border({ width: 1, color: ProteusColors.DIVIDER })
+        .scrollBar(BarState.Auto)
+        .align(Alignment.TopStart)
+        .edgeEffect(EdgeEffect.None)
+
+        Text('UART 发送')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .fontWeight(FontWeight.Medium)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+
+        Row({ space: 4 }) {
+          ProteusTextInput({
+            placeholder: '输入 UART 数据',
+            text: this.hexInput,
+            onChange: (v: string) => { this.hexInput = v; }
+          })
+            .layoutWeight(1)
+          ProteusClassicBtn({
+            label: '发送',
+            widthVal: 56,
+            onAction: () => {
+              this.appService.hexDebugger.sendUartInput(this.hexInput);
+              this.refreshState();
+            }
+          })
+        }
+        .width('100%')
       }
       .width('100%')
-      .padding({ left: 8, right: 8 })
+      .padding({ left: 8, right: 8, top: 2 })
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .height('100%')
     .backgroundColor(ProteusColors.CANVAS_BG)
     .padding({ bottom: 8 })
   }

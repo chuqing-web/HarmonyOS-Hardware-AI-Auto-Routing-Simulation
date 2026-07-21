@@ -1,0 +1,1000 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ3î/**
+ * ERC æ·±åº¦é™æ€è§„åˆ™å¼•æ“ï¼ˆæ–‡æ¡£ç¬¬ä¸‰èŠ‚å®Œæ•´ç»†åˆ†ï¼‰
+ */
+import { ErcSeverity, ErcRuleType, NetType } from '../types/CommonTypes';
+import { ErcEngine } from './ErcEngine';
+import { UnitParser } from './UnitParser';
+import { IdUtil } from './IdUtil';
+import { appendArray, paramMapGet, parseVoltageVolts } from './MapHelpers';
+import { getPinNetMap } from './PinRefUtil';
+const MCU_IDS = new Set([
+    'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+    'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'
+]);
+export class DeepErcEngine {
+    static runFull(doc, pinResolver) {
+        const violations = ErcEngine.run(doc, MCU_IDS, pinResolver);
+        appendArray(violations, DeepErcEngine.checkPowerErrors(doc));
+        appendArray(violations, DeepErcEngine.checkPinErrors(doc));
+        appendArray(violations, DeepErcEngine.checkParamErrors(doc));
+        return violations;
+    }
+    static checkPowerErrors(doc) {
+        const result = [];
+        const hasMcu = doc.components.some(c => MCU_IDS.has(c.libraryId) ||
+            c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
+        // Check both parameter value AND library ID for decoupling caps,
+        // since template-generated components may use emptyStringMap().
+        const decoupling = doc.components.filter(c => {
+            if (!c.libraryId.startsWith('C_')) {
+                return false;
+            }
+            const value = paramMapGet(c.parameters, 'value', '');
+            return value.includes('100n') || value.includes('0.1u') ||
+                c.libraryId.includes('100n') || c.libraryId.includes('0.1u');
+        });
+        if (hasMcu && decoupling.length === 0) {
+            result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH, 'MCU VDD/VCC ç¼ºå°‘ 0.1uF æ»¤æ³¢ç”µå®¹', undefined, undefined, 'æ¯ä¸ª MCU ç”µæºå¼•è„šé™„è¿‘æ·»åŠ  100nF å»è€¦ç”µå®¹'));
+        }
+        const hasAnalog = doc.components.some(c => c.libraryId.includes('LM358') || c.libraryId.includes('UA741'));
+        const hasDigital = doc.components.some(c => c.libraryId.includes('74HC'));
+        if (hasAnalog && hasDigital) {
+            const avdd = doc.nets.some(n => n.name.includes('AVDD') || n.name.includes('VDDA'));
+            if (!avdd) {
+                result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.POWER_REVERSED, 'æ¨¡æ‹Ÿä¸æ•°å­—ç”µæºå¯èƒ½æœªéš”ç¦»', undefined, undefined, 'æ¨¡æ‹Ÿç”µæºä¸æ•°å­—ç”µæºåº”é€šè¿‡ç£ç æˆ–ç‹¬ç«‹ LDO éš”ç¦»'));
+            }
+        }
+        return result;
+    }
+    static checkPinErrors(doc) {
+        const result = [];
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            if (comp.libraryId.includes('AT89') || comp.libraryId.includes('STC')) {
+                const hasPullUp = doc.components.some(c => c.libraryId.startsWith('R_') &&
+                    Math.abs(c.position.x - comp.position.x) < 150);
+                if (!hasPullUp) {
+                    result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN, `51 å•ç‰‡æœº ${comp.refDes} P0 å£å¯èƒ½æ— å¤–éƒ¨ä¸Šæ‹‰`, comp.id, undefined, '51 P0 å£æ— å†…éƒ¨ä¸Šæ‹‰ï¼Œéœ€å¤–æ¥ 10kÎ© æ’é˜»'));
+                }
+            }
+            if (comp.libraryId.includes('STM32')) {
+                if (!DeepErcEngine.hasStm32ResetPullUp(doc, comp)) {
+                    result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET, `STM32 ${comp.refDes} å¤ä½å¼•è„šå¯èƒ½æ‚¬ç©º`, comp.id, undefined, 'NRST æ·»åŠ  10kÎ© ä¸Šæ‹‰ + 100nF ç”µå®¹'));
+                }
+            }
+            // LED_RED ç­‰ï¼›å‹¿åŒ¹é… OLED_12864
+            if (comp.libraryId.startsWith('LED_') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+                result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT, `LED ${comp.refDes} æ— é™æµç”µé˜»`, comp.id, undefined, 'ä¸²è” 220Î©~1kÎ© é™æµç”µé˜»'));
+            }
+        }
+        const crystals = doc.components.filter(c => c.libraryId.includes('XTAL'));
+        for (let i = 0; i < crystals.length; i++) {
+            const xtal = crystals[i];
+            const loadCaps = doc.components.filter(c => c.libraryId.startsWith('C_') &&
+                Math.abs(c.position.x - xtal.position.x) < 80);
+            if (loadCaps.length < 2) {
+                result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL, `æ™¶æŒ¯ ${xtal.refDes} è´Ÿè½½ç”µå®¹ä¸è¶³`, xtal.id, undefined, 'æ™¶æŒ¯ä¸¤ä¾§å„æ·»åŠ è´Ÿè½½ç”µå®¹ï¼ˆé€šå¸¸ 10~30pFï¼‰'));
+            }
+        }
+        return result;
+    }
+    static checkParamErrors(doc) {
+        const result = [];
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            if (comp.libraryId.startsWith('R_')) {
+                let val = paramMapGet(comp.parameters, 'value', '');
+                if (val.length === 0) {
+                    val = comp.libraryId.replace('R_', '');
+                }
+                const parsed = UnitParser.parseResistance(val.endsWith('Î©') ? val : `${val}Î©`);
+                const powerStr = paramMapGet(comp.parameters, 'power', '0.25W');
+                const powerParsed = UnitParser.parsePower(powerStr.length > 0 ? powerStr : '0.25W');
+                const powerW = powerParsed.valid ? powerParsed.numeric : 0.25;
+                if (parsed.valid && parsed.numeric > 0) {
+                    const supplyV = DeepErcEngine.estimateSupplyVoltage(doc);
+                    const estPower = supplyV * supplyV / parsed.numeric;
+                    if (estPower > powerW * 0.8) {
+                        result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH, `${comp.refDes} ç”µé˜»åŠŸç‡å¯èƒ½ä¸è¶³ (ä¼°ç®— ${estPower.toFixed(3)}W @ ${supplyV}V, ` +
+                            `é˜»å€¼ ${parsed.normalized}, é¢å®š ${powerW}W)`, comp.id, undefined, 'é™ä½ç”µæºç”µå‹ã€å¢å¤§é˜»å€¼æˆ–é€‰ç”¨æ›´å¤§åŠŸç‡ç”µé˜»ï¼ˆä¿®æ”¹ power å‚æ•°ï¼‰'));
+                    }
+                }
+            }
+            if (comp.libraryId.startsWith('C_')) {
+                const voltageStr = paramMapGet(comp.parameters, 'voltage', '50');
+                const voltage = parseFloat(voltageStr) || 50;
+                if (voltage < 16) {
+                    result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH, `${comp.refDes} ç”µå®¹è€å‹ ${voltage}V å¯èƒ½ä½äºå·¥ä½œç”µå‹`, comp.id, undefined, 'é€‰ç”¨ 50V åŠä»¥ä¸Šè€å‹'));
+                }
+            }
+            // 2N7000 / IRF* ç­‰ MOSFET å‹¿å½“ BJTï¼ˆlibraryId å« 2N ä¼šè¯¯æŠ¥â€œåŸºææ— åç½®â€ï¼‰
+            const libUpper = comp.libraryId.toUpperCase();
+            const looksLikeMos = libUpper.includes('MOS') || libUpper.includes('IRF') ||
+                libUpper.includes('2N7000') || libUpper.includes('FET');
+            if (!looksLikeMos && (comp.libraryId.includes('2N') || comp.libraryId.includes('BC'))) {
+                // é¡»ä¸ä¸‰æç®¡å…±ç½‘æ‰ç®—åç½®ï¼Œç¦æ­¢çº¯è·ç¦»è¯¯æŠ¥
+                const hasBaseRes = DeepErcEngine.hasNetSharedResistor(doc, comp);
+                if (!hasBaseRes) {
+                    result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH, `ä¸‰æç®¡ ${comp.refDes} åŸºæå¯èƒ½æ— åç½®ç”µé˜»`, comp.id, undefined, 'æ·»åŠ åŸºæåˆ†å‹æˆ–é™æµç”µé˜»'));
+                }
+            }
+        }
+        return result;
+    }
+    static estimateSupplyVoltage(doc) {
+        for (let i = 0; i < doc.components.length; i++) {
+            const comp = doc.components[i];
+            const lib = comp.libraryId.toUpperCase();
+            if (lib === 'VCC' || lib.endsWith('/VCC') || lib.includes('POWER_5V') ||
+                lib.includes('VDC') || lib.includes('VAC') || lib.includes('POWER')) {
+                const v = paramMapGet(comp.parameters, 'voltage', '5V');
+                return parseVoltageVolts(v, 5);
+            }
+        }
+        return 5;
+    }
+    /**
+     * STM32 NRST is OK when named NRST/RESET, or MCU P7/NRST/RST shares a net with
+     * a resistor whose other end is on VCC/VDD (topology may rename the net to NET_N).
+     */
+    static hasStm32ResetPullUp(doc, mcu) {
+        // ç¦æ­¢ã€Œä»»æ„ NRST ç½‘åå­˜åœ¨ â†’ å…¨æ¿ STM32 é€šè¿‡ã€ï¼›æŒ‰æœ¬ MCU å®ä¾‹æŸ¥è„šç½‘
+        const pinNets = getPinNetMap(mcu.id, doc.nets);
+        const resetNetId = pinNets.get('NRST') ?? pinNets.get('RST') ?? pinNets.get('RESET') ??
+            pinNets.get('P7');
+        if (resetNetId === undefined || resetNetId.length === 0) {
+            return false;
+        }
+        const resetNet = doc.nets.find(n => n.id === resetNetId);
+        if (resetNet !== undefined) {
+            const u = resetNet.name.toUpperCase();
+            if (u.includes('NRST') || u.includes('RESET') || u === 'RST') {
+                return true;
+            }
+        }
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            if (!c.libraryId.startsWith('R_') || c.id === mcu.id) {
+                continue;
+            }
+            const rNets = getPinNetMap(c.id, doc.nets);
+            const r1 = rNets.get('1');
+            const r2 = rNets.get('2');
+            if (r1 === undefined || r2 === undefined) {
+                continue;
+            }
+            let otherNetId = '';
+            if (r1 === resetNetId) {
+                otherNetId = r2;
+            }
+            else if (r2 === resetNetId) {
+                otherNetId = r1;
+            }
+            else {
+                continue;
+            }
+            if (DeepErcEngine.isPowerPullNet(doc, otherNetId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    static isPowerPullNet(doc, netId) {
+        const net = doc.nets.find(n => n.id === netId);
+        if (net === undefined) {
+            return false;
+        }
+        if (net.type === NetType.POWER) {
+            return true;
+        }
+        const u = net.name.toUpperCase();
+        return u === 'VCC' || u === 'VDD' || u === '3V3' || u === '3.3V' || u === '5V';
+    }
+    /** True when some resistor shares the LED anode or cathode net (series path). */
+    static hasSeriesLimitResistor(doc, led) {
+        const ledNets = getPinNetMap(led.id, doc.nets);
+        const anodeNet = ledNets.get('A') ?? ledNets.get('1');
+        const cathodeNet = ledNets.get('K') ?? ledNets.get('2');
+        if (anodeNet === undefined || cathodeNet === undefined) {
+            return false;
+        }
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            if (!c.libraryId.startsWith('R_') || c.id === led.id) {
+                continue;
+            }
+            const rNets = getPinNetMap(c.id, doc.nets);
+            const rNet1 = rNets.get('1');
+            const rNet2 = rNets.get('2');
+            if (rNet1 === undefined || rNet2 === undefined) {
+                continue;
+            }
+            if ((rNet1 === anodeNet && rNet2 !== cathodeNet) || (rNet2 === anodeNet && rNet1 !== cathodeNet)) {
+                return true;
+            }
+            if ((rNet1 === cathodeNet && rNet2 !== anodeNet) || (rNet2 === cathodeNet && rNet1 !== anodeNet)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /** True when some resistor shares any net with the device (bias / series). */
+    static hasNetSharedResistor(doc, device) {
+        const devNets = getPinNetMap(device.id, doc.nets);
+        const netIds = [];
+        devNets.forEach((nid, _pin) => {
+            if (nid.length > 0 && netIds.indexOf(nid) < 0) {
+                netIds.push(nid);
+            }
+        });
+        if (netIds.length === 0) {
+            return false;
+        }
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            if (!c.libraryId.startsWith('R_') || c.id === device.id) {
+                continue;
+            }
+            const rNets = getPinNetMap(c.id, doc.nets);
+            let shared = false;
+            rNets.forEach((rid, _pin) => {
+                if (!shared) {
+                    for (let j = 0; j < netIds.length; j++) {
+                        if (rid === netIds[j]) {
+                            shared = true;
+                            break;
+                        }
+                    }
+                }
+            });
+            if (shared) {
+                return true;
+            }
+        }
+        return false;
+    }
+    static violation(severity, ruleType, message, componentId, netId, fix) {
+        return {
+            id: IdUtil.generate('erc'),
+            severity: severity,
+            ruleType: ruleType,
+            message: message,
+            componentId: componentId,
+            netId: netId,
+            fixSuggestion: fix
+        };
+    }
+}
+//# sourceMappingURL=DeepErcEngine.js.mapÂ–ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙDC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ErcEngine.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeepErcEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName¯./DeepErcEngine¦commonCÙ"./src/main/ets/utils/DeepErcEngine¦commonÃÚ01/**
+ * ERC æ·±åº¦é™æ€è§„åˆ™å¼•æ“ï¼ˆæ–‡æ¡£ç¬¬ä¸‰èŠ‚å®Œæ•´ç»†åˆ†ï¼‰
+ */
+import {
+  SchematicDocument, ErcViolation, ErcSeverity, ErcRuleType, ComponentInstance, NetType
+} from '../types/CommonTypes';
+import { ErcEngine, PinResolverFn } from './ErcEngine';
+import { UnitParser } from './UnitParser';
+import { IdUtil } from './IdUtil';
+import { appendArray, paramMapGet, parseVoltageVolts } from './MapHelpers';
+import { getPinNetMap } from './PinRefUtil';
+
+const MCU_IDS = new Set([
+  'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+  'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'
+]);
+
+export class DeepErcEngine {
+  static runFull(doc: SchematicDocument, pinResolver?: PinResolverFn): ErcViolation[] {
+    const violations = ErcEngine.run(doc, MCU_IDS, pinResolver);
+    appendArray(violations, DeepErcEngine.checkPowerErrors(doc));
+    appendArray(violations, DeepErcEngine.checkPinErrors(doc));
+    appendArray(violations, DeepErcEngine.checkParamErrors(doc));
+    return violations;
+  }
+
+  private static checkPowerErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+    const hasMcu = doc.components.some(c => MCU_IDS.has(c.libraryId) ||
+      c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
+    // Check both parameter value AND library ID for decoupling caps,
+    // since template-generated components may use emptyStringMap().
+    const decoupling = doc.components.filter(c => {
+      if (!c.libraryId.startsWith('C_')) {
+        return false;
+      }
+      const value = paramMapGet(c.parameters, 'value', '');
+      return value.includes('100n') || value.includes('0.1u') ||
+        c.libraryId.includes('100n') || c.libraryId.includes('0.1u');
+    });
+
+    if (hasMcu && decoupling.length === 0) {
+      result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
+        'MCU VDD/VCC ç¼ºå°‘ 0.1uF æ»¤æ³¢ç”µå®¹', undefined, undefined, 'æ¯ä¸ª MCU ç”µæºå¼•è„šé™„è¿‘æ·»åŠ  100nF å»è€¦ç”µå®¹'));
+    }
+
+    const hasAnalog = doc.components.some(c => c.libraryId.includes('LM358') || c.libraryId.includes('UA741'));
+    const hasDigital = doc.components.some(c => c.libraryId.includes('74HC'));
+    if (hasAnalog && hasDigital) {
+      const avdd = doc.nets.some(n => n.name.includes('AVDD') || n.name.includes('VDDA'));
+      if (!avdd) {
+        result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.POWER_REVERSED,
+          'æ¨¡æ‹Ÿä¸æ•°å­—ç”µæºå¯èƒ½æœªéš”ç¦»', undefined, undefined, 'æ¨¡æ‹Ÿç”µæºä¸æ•°å­—ç”µæºåº”é€šè¿‡ç£ç æˆ–ç‹¬ç«‹ LDO éš”ç¦»'));
+      }
+    }
+
+    return result;
+  }
+
+  private static checkPinErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      if (comp.libraryId.includes('AT89') || comp.libraryId.includes('STC')) {
+        const hasPullUp = doc.components.some(c => c.libraryId.startsWith('R_') &&
+          Math.abs(c.position.x - comp.position.x) < 150);
+        if (!hasPullUp) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN,
+            `51 å•ç‰‡æœº ${comp.refDes} P0 å£å¯èƒ½æ— å¤–éƒ¨ä¸Šæ‹‰`, comp.id, undefined,
+            '51 P0 å£æ— å†…éƒ¨ä¸Šæ‹‰ï¼Œéœ€å¤–æ¥ 10kÎ© æ’é˜»'));
+        }
+      }
+
+      if (comp.libraryId.includes('STM32')) {
+        if (!DeepErcEngine.hasStm32ResetPullUp(doc, comp)) {
+          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
+            `STM32 ${comp.refDes} å¤ä½å¼•è„šå¯èƒ½æ‚¬ç©º`, comp.id, undefined, 'NRST æ·»åŠ  10kÎ© ä¸Šæ‹‰ + 100nF ç”µå®¹'));
+        }
+      }
+
+      // LED_RED ç­‰ï¼›å‹¿åŒ¹é… OLED_12864
+      if (comp.libraryId.startsWith('LED_') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+        result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT,
+          `LED ${comp.refDes} æ— é™æµç”µé˜»`, comp.id, undefined, 'ä¸²è” 220Î©~1kÎ© é™æµç”µé˜»'));
+      }
+    }
+
+    const crystals = doc.components.filter(c => c.libraryId.includes('XTAL'));
+    for (let i = 0; i < crystals.length; i++) {
+      const xtal = crystals[i];
+      const loadCaps = doc.components.filter(c => c.libraryId.startsWith('C_') &&
+        Math.abs(c.position.x - xtal.position.x) < 80);
+      if (loadCaps.length < 2) {
+        result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL,
+          `æ™¶æŒ¯ ${xtal.refDes} è´Ÿè½½ç”µå®¹ä¸è¶³`, xtal.id, undefined, 'æ™¶æŒ¯ä¸¤ä¾§å„æ·»åŠ è´Ÿè½½ç”µå®¹ï¼ˆé€šå¸¸ 10~30pFï¼‰'));
+      }
+    }
+
+    return result;
+  }
+
+  private static checkParamErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      if (comp.libraryId.startsWith('R_')) {
+        let val = paramMapGet(comp.parameters, 'value', '');
+        if (val.length === 0) {
+          val = comp.libraryId.replace('R_', '');
+        }
+        const parsed = UnitParser.parseResistance(val.endsWith('Î©') ? val : `${val}Î©`);
+        const powerStr = paramMapGet(comp.parameters, 'power', '0.25W');
+        const powerParsed = UnitParser.parsePower(powerStr.length > 0 ? powerStr : '0.25W');
+        const powerW = powerParsed.valid ? powerParsed.numeric : 0.25;
+        if (parsed.valid && parsed.numeric > 0) {
+          const supplyV = DeepErcEngine.estimateSupplyVoltage(doc);
+          const estPower = supplyV * supplyV / parsed.numeric;
+          if (estPower > powerW * 0.8) {
+            result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+              `${comp.refDes} ç”µé˜»åŠŸç‡å¯èƒ½ä¸è¶³ (ä¼°ç®— ${estPower.toFixed(3)}W @ ${supplyV}V, ` +
+                `é˜»å€¼ ${parsed.normalized}, é¢å®š ${powerW}W)`,
+              comp.id, undefined, 'é™ä½ç”µæºç”µå‹ã€å¢å¤§é˜»å€¼æˆ–é€‰ç”¨æ›´å¤§åŠŸç‡ç”µé˜»ï¼ˆä¿®æ”¹ power å‚æ•°ï¼‰'));
+          }
+        }
+      }
+
+      if (comp.libraryId.startsWith('C_')) {
+        const voltageStr = paramMapGet(comp.parameters, 'voltage', '50');
+        const voltage = parseFloat(voltageStr) || 50;
+        if (voltage < 16) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+            `${comp.refDes} ç”µå®¹è€å‹ ${voltage}V å¯èƒ½ä½äºå·¥ä½œç”µå‹`, comp.id, undefined, 'é€‰ç”¨ 50V åŠä»¥ä¸Šè€å‹'));
+        }
+      }
+
+      // 2N7000 / IRF* ç­‰ MOSFET å‹¿å½“ BJTï¼ˆlibraryId å« 2N ä¼šè¯¯æŠ¥â€œåŸºææ— åç½®â€ï¼‰
+      const libUpper = comp.libraryId.toUpperCase();
+      const looksLikeMos = libUpper.includes('MOS') || libUpper.includes('IRF') ||
+        libUpper.includes('2N7000') || libUpper.includes('FET');
+      if (!looksLikeMos && (comp.libraryId.includes('2N') || comp.libraryId.includes('BC'))) {
+        // é¡»ä¸ä¸‰æç®¡å…±ç½‘æ‰ç®—åç½®ï¼Œç¦æ­¢çº¯è·ç¦»è¯¯æŠ¥
+        const hasBaseRes = DeepErcEngine.hasNetSharedResistor(doc, comp);
+        if (!hasBaseRes) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+            `ä¸‰æç®¡ ${comp.refDes} åŸºæå¯èƒ½æ— åç½®ç”µé˜»`, comp.id, undefined, 'æ·»åŠ åŸºæåˆ†å‹æˆ–é™æµç”µé˜»'));
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private static estimateSupplyVoltage(doc: SchematicDocument): number {
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      const lib = comp.libraryId.toUpperCase();
+      if (lib === 'VCC' || lib.endsWith('/VCC') || lib.includes('POWER_5V') ||
+          lib.includes('VDC') || lib.includes('VAC') || lib.includes('POWER')) {
+        const v = paramMapGet(comp.parameters, 'voltage', '5V');
+        return parseVoltageVolts(v, 5);
+      }
+    }
+    return 5;
+  }
+
+  /**
+   * STM32 NRST is OK when named NRST/RESET, or MCU P7/NRST/RST shares a net with
+   * a resistor whose other end is on VCC/VDD (topology may rename the net to NET_N).
+   */
+  private static hasStm32ResetPullUp(doc: SchematicDocument, mcu: ComponentInstance): boolean {
+    // ç¦æ­¢ã€Œä»»æ„ NRST ç½‘åå­˜åœ¨ â†’ å…¨æ¿ STM32 é€šè¿‡ã€ï¼›æŒ‰æœ¬ MCU å®ä¾‹æŸ¥è„šç½‘
+    const pinNets = getPinNetMap(mcu.id, doc.nets);
+    const resetNetId = pinNets.get('NRST') ?? pinNets.get('RST') ?? pinNets.get('RESET') ??
+      pinNets.get('P7');
+    if (resetNetId === undefined || resetNetId.length === 0) {
+      return false;
+    }
+    const resetNet = doc.nets.find(n => n.id === resetNetId);
+    if (resetNet !== undefined) {
+      const u = resetNet.name.toUpperCase();
+      if (u.includes('NRST') || u.includes('RESET') || u === 'RST') {
+        return true;
+      }
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === mcu.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      const r1 = rNets.get('1');
+      const r2 = rNets.get('2');
+      if (r1 === undefined || r2 === undefined) {
+        continue;
+      }
+      let otherNetId = '';
+      if (r1 === resetNetId) {
+        otherNetId = r2;
+      } else if (r2 === resetNetId) {
+        otherNetId = r1;
+      } else {
+        continue;
+      }
+      if (DeepErcEngine.isPowerPullNet(doc, otherNetId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static isPowerPullNet(doc: SchematicDocument, netId: string): boolean {
+    const net = doc.nets.find(n => n.id === netId);
+    if (net === undefined) {
+      return false;
+    }
+    if (net.type === NetType.POWER) {
+      return true;
+    }
+    const u = net.name.toUpperCase();
+    return u === 'VCC' || u === 'VDD' || u === '3V3' || u === '3.3V' || u === '5V';
+  }
+
+  /** True when some resistor shares the LED anode or cathode net (series path). */
+  private static hasSeriesLimitResistor(doc: SchematicDocument, led: ComponentInstance): boolean {
+    const ledNets = getPinNetMap(led.id, doc.nets);
+    const anodeNet = ledNets.get('A') ?? ledNets.get('1');
+    const cathodeNet = ledNets.get('K') ?? ledNets.get('2');
+    if (anodeNet === undefined || cathodeNet === undefined) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === led.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      const rNet1 = rNets.get('1');
+      const rNet2 = rNets.get('2');
+      if (rNet1 === undefined || rNet2 === undefined) {
+        continue;
+      }
+      if ((rNet1 === anodeNet && rNet2 !== cathodeNet) || (rNet2 === anodeNet && rNet1 !== cathodeNet)) {
+        return true;
+      }
+      if ((rNet1 === cathodeNet && rNet2 !== anodeNet) || (rNet2 === cathodeNet && rNet1 !== anodeNet)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True when some resistor shares any net with the device (bias / series). */
+  private static hasNetSharedResistor(doc: SchematicDocument, device: ComponentInstance): boolean {
+    const devNets = getPinNetMap(device.id, doc.nets);
+    const netIds: string[] = [];
+    devNets.forEach((nid: string, _pin: string) => {
+      if (nid.length > 0 && netIds.indexOf(nid) < 0) {
+        netIds.push(nid);
+      }
+    });
+    if (netIds.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === device.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      let shared = false;
+      rNets.forEach((rid: string, _pin: string) => {
+        if (!shared) {
+          for (let j = 0; j < netIds.length; j++) {
+            if (rid === netIds[j]) {
+              shared = true;
+              break;
+            }
+          }
+        }
+      });
+      if (shared) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static violation(severity: ErcSeverity, ruleType: ErcRuleType, message: string,
+    componentId?: string, netId?: string, fix?: string): ErcViolation {
+    return {
+      id: IdUtil.generate('erc'),
+      severity: severity,
+      ruleType: ruleType,
+      message: message,
+      componentId: componentId,
+      netId: netId,
+      fixSuggestion: fix
+    };
+  }
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ‘”    ‘”  ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”  ‘”  ‘”  ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  "‘”  #‘”  $‘”  %‘”  &‘”  '‘”  )‘”  ,‘”  .‘”  1‘”  5‘”  6‘”  8‘”  >‘”  Ì@‘”  ÌA‘”  ÌB
+‘”  ÌD
+‘”  ÌG	‘”  ÌH‘”  ÌL
+‘”  ÌN	‘”  ÌO‘”  ÌR‘”  ÌS‘”  ÌU‘”  ÌV‘”  ÌY‘”  ÌZ‘”  Ì[‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì`‘”  Ìa‘”  Ìc‘”  Ìi‘”  Ìl‘”  Ìm‘”  Ìo	‘”  Ìq‘”  Ìs‘”  Ìw
+‘”  Ìx‘”  Ìz‘”  Ì|‘”  Ì}	‘”  Ì~‘”  Ì‘”  Ì„
+‘”  Ì†	‘”  Ì‡‘”  Ì‹‘”  ÌŒ‘”  Ì‘
+‘”  Ì“	‘”  Ì”‘”  Ì•‘”  Ì—‘”  Ì›‘”  Ì‘”  ÌŸ
+‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì§‘”  Ìª‘”  Ì«
+‘”  Ì­‘”  Ì¯‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì¶‘”  Ì·‘”  Ì¸‘”  Ì¹‘”  Ìº‘”  Ì¼‘”  Ì¾‘”  Ì¿‘”  ÌÂ‘”  ÌÄ‘”  ÌÈ‘”  ÌÊ‘”  ÌÊ‘”  ÌÌ‘”  ÌÎ‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ‘”  ÌÔ
+‘”  ÌÕ‘”  Ì×‘”  ÌØ‘”  ÌÙ‘”  ÌÚ‘”  ÌÛ‘”  Ìİ‘”  Ìá
+‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìç‘”  Ìè‘”  Ìê‘”  Ìì‘”  Ìí‘”  Ìğ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìõ‘”  Ìö‘”  Ì÷‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìş
+‘”  Ìÿ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í!
+‘”  Í$‘”  Í%‘”  Í&‘”  Í'‘”  Í(‘”  Í)‘”  Í*‘”  Í-‘ÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeepErcEngine.ets‘Ú01/**
+ * ERC æ·±åº¦é™æ€è§„åˆ™å¼•æ“ï¼ˆæ–‡æ¡£ç¬¬ä¸‰èŠ‚å®Œæ•´ç»†åˆ†ï¼‰
+ */
+import {
+  SchematicDocument, ErcViolation, ErcSeverity, ErcRuleType, ComponentInstance, NetType
+} from '../types/CommonTypes';
+import { ErcEngine, PinResolverFn } from './ErcEngine';
+import { UnitParser } from './UnitParser';
+import { IdUtil } from './IdUtil';
+import { appendArray, paramMapGet, parseVoltageVolts } from './MapHelpers';
+import { getPinNetMap } from './PinRefUtil';
+
+const MCU_IDS = new Set([
+  'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+  'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'
+]);
+
+export class DeepErcEngine {
+  static runFull(doc: SchematicDocument, pinResolver?: PinResolverFn): ErcViolation[] {
+    const violations = ErcEngine.run(doc, MCU_IDS, pinResolver);
+    appendArray(violations, DeepErcEngine.checkPowerErrors(doc));
+    appendArray(violations, DeepErcEngine.checkPinErrors(doc));
+    appendArray(violations, DeepErcEngine.checkParamErrors(doc));
+    return violations;
+  }
+
+  private static checkPowerErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+    const hasMcu = doc.components.some(c => MCU_IDS.has(c.libraryId) ||
+      c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
+    // Check both parameter value AND library ID for decoupling caps,
+    // since template-generated components may use emptyStringMap().
+    const decoupling = doc.components.filter(c => {
+      if (!c.libraryId.startsWith('C_')) {
+        return false;
+      }
+      const value = paramMapGet(c.parameters, 'value', '');
+      return value.includes('100n') || value.includes('0.1u') ||
+        c.libraryId.includes('100n') || c.libraryId.includes('0.1u');
+    });
+
+    if (hasMcu && decoupling.length === 0) {
+      result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.PARAM_MISMATCH,
+        'MCU VDD/VCC ç¼ºå°‘ 0.1uF æ»¤æ³¢ç”µå®¹', undefined, undefined, 'æ¯ä¸ª MCU ç”µæºå¼•è„šé™„è¿‘æ·»åŠ  100nF å»è€¦ç”µå®¹'));
+    }
+
+    const hasAnalog = doc.components.some(c => c.libraryId.includes('LM358') || c.libraryId.includes('UA741'));
+    const hasDigital = doc.components.some(c => c.libraryId.includes('74HC'));
+    if (hasAnalog && hasDigital) {
+      const avdd = doc.nets.some(n => n.name.includes('AVDD') || n.name.includes('VDDA'));
+      if (!avdd) {
+        result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.POWER_REVERSED,
+          'æ¨¡æ‹Ÿä¸æ•°å­—ç”µæºå¯èƒ½æœªéš”ç¦»', undefined, undefined, 'æ¨¡æ‹Ÿç”µæºä¸æ•°å­—ç”µæºåº”é€šè¿‡ç£ç æˆ–ç‹¬ç«‹ LDO éš”ç¦»'));
+      }
+    }
+
+    return result;
+  }
+
+  private static checkPinErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      if (comp.libraryId.includes('AT89') || comp.libraryId.includes('STC')) {
+        const hasPullUp = doc.components.some(c => c.libraryId.startsWith('R_') &&
+          Math.abs(c.position.x - comp.position.x) < 150);
+        if (!hasPullUp) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN,
+            `51 å•ç‰‡æœº ${comp.refDes} P0 å£å¯èƒ½æ— å¤–éƒ¨ä¸Šæ‹‰`, comp.id, undefined,
+            '51 P0 å£æ— å†…éƒ¨ä¸Šæ‹‰ï¼Œéœ€å¤–æ¥ 10kÎ© æ’é˜»'));
+        }
+      }
+
+      if (comp.libraryId.includes('STM32')) {
+        if (!DeepErcEngine.hasStm32ResetPullUp(doc, comp)) {
+          result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
+            `STM32 ${comp.refDes} å¤ä½å¼•è„šå¯èƒ½æ‚¬ç©º`, comp.id, undefined, 'NRST æ·»åŠ  10kÎ© ä¸Šæ‹‰ + 100nF ç”µå®¹'));
+        }
+      }
+
+      // LED_RED ç­‰ï¼›å‹¿åŒ¹é… OLED_12864
+      if (comp.libraryId.startsWith('LED_') && !DeepErcEngine.hasSeriesLimitResistor(doc, comp)) {
+        result.push(DeepErcEngine.violation(ErcSeverity.ERROR, ErcRuleType.IO_OVERCURRENT,
+          `LED ${comp.refDes} æ— é™æµç”µé˜»`, comp.id, undefined, 'ä¸²è” 220Î©~1kÎ© é™æµç”µé˜»'));
+      }
+    }
+
+    const crystals = doc.components.filter(c => c.libraryId.includes('XTAL'));
+    for (let i = 0; i < crystals.length; i++) {
+      const xtal = crystals[i];
+      const loadCaps = doc.components.filter(c => c.libraryId.startsWith('C_') &&
+        Math.abs(c.position.x - xtal.position.x) < 80);
+      if (loadCaps.length < 2) {
+        result.push(DeepErcEngine.violation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL,
+          `æ™¶æŒ¯ ${xtal.refDes} è´Ÿè½½ç”µå®¹ä¸è¶³`, xtal.id, undefined, 'æ™¶æŒ¯ä¸¤ä¾§å„æ·»åŠ è´Ÿè½½ç”µå®¹ï¼ˆé€šå¸¸ 10~30pFï¼‰'));
+      }
+    }
+
+    return result;
+  }
+
+  private static checkParamErrors(doc: SchematicDocument): ErcViolation[] {
+    const result: ErcViolation[] = [];
+
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      if (comp.libraryId.startsWith('R_')) {
+        let val = paramMapGet(comp.parameters, 'value', '');
+        if (val.length === 0) {
+          val = comp.libraryId.replace('R_', '');
+        }
+        const parsed = UnitParser.parseResistance(val.endsWith('Î©') ? val : `${val}Î©`);
+        const powerStr = paramMapGet(comp.parameters, 'power', '0.25W');
+        const powerParsed = UnitParser.parsePower(powerStr.length > 0 ? powerStr : '0.25W');
+        const powerW = powerParsed.valid ? powerParsed.numeric : 0.25;
+        if (parsed.valid && parsed.numeric > 0) {
+          const supplyV = DeepErcEngine.estimateSupplyVoltage(doc);
+          const estPower = supplyV * supplyV / parsed.numeric;
+          if (estPower > powerW * 0.8) {
+            result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+              `${comp.refDes} ç”µé˜»åŠŸç‡å¯èƒ½ä¸è¶³ (ä¼°ç®— ${estPower.toFixed(3)}W @ ${supplyV}V, ` +
+                `é˜»å€¼ ${parsed.normalized}, é¢å®š ${powerW}W)`,
+              comp.id, undefined, 'é™ä½ç”µæºç”µå‹ã€å¢å¤§é˜»å€¼æˆ–é€‰ç”¨æ›´å¤§åŠŸç‡ç”µé˜»ï¼ˆä¿®æ”¹ power å‚æ•°ï¼‰'));
+          }
+        }
+      }
+
+      if (comp.libraryId.startsWith('C_')) {
+        const voltageStr = paramMapGet(comp.parameters, 'voltage', '50');
+        const voltage = parseFloat(voltageStr) || 50;
+        if (voltage < 16) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+            `${comp.refDes} ç”µå®¹è€å‹ ${voltage}V å¯èƒ½ä½äºå·¥ä½œç”µå‹`, comp.id, undefined, 'é€‰ç”¨ 50V åŠä»¥ä¸Šè€å‹'));
+        }
+      }
+
+      // 2N7000 / IRF* ç­‰ MOSFET å‹¿å½“ BJTï¼ˆlibraryId å« 2N ä¼šè¯¯æŠ¥â€œåŸºææ— åç½®â€ï¼‰
+      const libUpper = comp.libraryId.toUpperCase();
+      const looksLikeMos = libUpper.includes('MOS') || libUpper.includes('IRF') ||
+        libUpper.includes('2N7000') || libUpper.includes('FET');
+      if (!looksLikeMos && (comp.libraryId.includes('2N') || comp.libraryId.includes('BC'))) {
+        // é¡»ä¸ä¸‰æç®¡å…±ç½‘æ‰ç®—åç½®ï¼Œç¦æ­¢çº¯è·ç¦»è¯¯æŠ¥
+        const hasBaseRes = DeepErcEngine.hasNetSharedResistor(doc, comp);
+        if (!hasBaseRes) {
+          result.push(DeepErcEngine.violation(ErcSeverity.INFO, ErcRuleType.PARAM_MISMATCH,
+            `ä¸‰æç®¡ ${comp.refDes} åŸºæå¯èƒ½æ— åç½®ç”µé˜»`, comp.id, undefined, 'æ·»åŠ åŸºæåˆ†å‹æˆ–é™æµç”µé˜»'));
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private static estimateSupplyVoltage(doc: SchematicDocument): number {
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
+      const lib = comp.libraryId.toUpperCase();
+      if (lib === 'VCC' || lib.endsWith('/VCC') || lib.includes('POWER_5V') ||
+          lib.includes('VDC') || lib.includes('VAC') || lib.includes('POWER')) {
+        const v = paramMapGet(comp.parameters, 'voltage', '5V');
+        return parseVoltageVolts(v, 5);
+      }
+    }
+    return 5;
+  }
+
+  /**
+   * STM32 NRST is OK when named NRST/RESET, or MCU P7/NRST/RST shares a net with
+   * a resistor whose other end is on VCC/VDD (topology may rename the net to NET_N).
+   */
+  private static hasStm32ResetPullUp(doc: SchematicDocument, mcu: ComponentInstance): boolean {
+    // ç¦æ­¢ã€Œä»»æ„ NRST ç½‘åå­˜åœ¨ â†’ å…¨æ¿ STM32 é€šè¿‡ã€ï¼›æŒ‰æœ¬ MCU å®ä¾‹æŸ¥è„šç½‘
+    const pinNets = getPinNetMap(mcu.id, doc.nets);
+    const resetNetId = pinNets.get('NRST') ?? pinNets.get('RST') ?? pinNets.get('RESET') ??
+      pinNets.get('P7');
+    if (resetNetId === undefined || resetNetId.length === 0) {
+      return false;
+    }
+    const resetNet = doc.nets.find(n => n.id === resetNetId);
+    if (resetNet !== undefined) {
+      const u = resetNet.name.toUpperCase();
+      if (u.includes('NRST') || u.includes('RESET') || u === 'RST') {
+        return true;
+      }
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === mcu.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      const r1 = rNets.get('1');
+      const r2 = rNets.get('2');
+      if (r1 === undefined || r2 === undefined) {
+        continue;
+      }
+      let otherNetId = '';
+      if (r1 === resetNetId) {
+        otherNetId = r2;
+      } else if (r2 === resetNetId) {
+        otherNetId = r1;
+      } else {
+        continue;
+      }
+      if (DeepErcEngine.isPowerPullNet(doc, otherNetId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static isPowerPullNet(doc: SchematicDocument, netId: string): boolean {
+    const net = doc.nets.find(n => n.id === netId);
+    if (net === undefined) {
+      return false;
+    }
+    if (net.type === NetType.POWER) {
+      return true;
+    }
+    const u = net.name.toUpperCase();
+    return u === 'VCC' || u === 'VDD' || u === '3V3' || u === '3.3V' || u === '5V';
+  }
+
+  /** True when some resistor shares the LED anode or cathode net (series path). */
+  private static hasSeriesLimitResistor(doc: SchematicDocument, led: ComponentInstance): boolean {
+    const ledNets = getPinNetMap(led.id, doc.nets);
+    const anodeNet = ledNets.get('A') ?? ledNets.get('1');
+    const cathodeNet = ledNets.get('K') ?? ledNets.get('2');
+    if (anodeNet === undefined || cathodeNet === undefined) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === led.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      const rNet1 = rNets.get('1');
+      const rNet2 = rNets.get('2');
+      if (rNet1 === undefined || rNet2 === undefined) {
+        continue;
+      }
+      if ((rNet1 === anodeNet && rNet2 !== cathodeNet) || (rNet2 === anodeNet && rNet1 !== cathodeNet)) {
+        return true;
+      }
+      if ((rNet1 === cathodeNet && rNet2 !== anodeNet) || (rNet2 === cathodeNet && rNet1 !== anodeNet)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True when some resistor shares any net with the device (bias / series). */
+  private static hasNetSharedResistor(doc: SchematicDocument, device: ComponentInstance): boolean {
+    const devNets = getPinNetMap(device.id, doc.nets);
+    const netIds: string[] = [];
+    devNets.forEach((nid: string, _pin: string) => {
+      if (nid.length > 0 && netIds.indexOf(nid) < 0) {
+        netIds.push(nid);
+      }
+    });
+    if (netIds.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      if (!c.libraryId.startsWith('R_') || c.id === device.id) {
+        continue;
+      }
+      const rNets = getPinNetMap(c.id, doc.nets);
+      let shared = false;
+      rNets.forEach((rid: string, _pin: string) => {
+        if (!shared) {
+          for (let j = 0; j < netIds.length; j++) {
+            if (rid === netIds[j]) {
+              shared = true;
+              break;
+            }
+          }
+        }
+      });
+      if (shared) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static violation(severity: ErcSeverity, ruleType: ErcRuleType, message: string,
+    componentId?: string, netId?: string, fix?: string): ErcViolation {
+    return {
+      id: IdUtil.generate('erc'),
+      severity: severity,
+      ruleType: ruleType,
+      message: message,
+      componentId: componentId,
+      netId: netId,
+      fixSuggestion: fix
+    };
+  }
+}
+ÔrE–«./ErcEngine¨./IdUtil¬./UnitParser¬./MapHelpers´../types/CommonTypes¬./PinRefUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙDC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ErcEngine.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍ1ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍ1ÔrK”¤type¥start£end¤nameªIdentifierÍÍ%­DeepErcEngineÀÔrL”¤type¥start£end¤body©ClassBodyÍ&Í1šÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ-Í‹ÃÂKªIdentifierÍ4Í;§runFull¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ;Í‹ÀÂÂÂ’KªIdentifierÍ<Í?£docKªIdentifierÍAÍL«pinResolverL®BlockStatementÍNÍ‹•ÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍYÍ•‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍ_Í”KªIdentifierÍ_ÍiªviolationsÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍlÍ”ÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍlÍyKªIdentifierÍlÍu©ErcEngineKªIdentifierÍvÍy£runÂÂ“KªIdentifierÍzÍ}£docKªIdentifierÍÍ†§MCU_IDSKªIdentifierÍˆÍ“«pinResolverÂ¥constÔrS”¤type¥start£endªexpression³ExpressionStatementÍŸÍÜQ®CallExpressionÍŸÍÛKªIdentifierÍŸÍª«appendArray’KªIdentifierÍ«ÍµªviolationsQ®CallExpressionÍ·ÍÚR°MemberExpressionÍ·ÍÕKªIdentifierÍ·ÍÄ­DeepErcEngineKªIdentifierÍÅÍÕ°checkPowerErrorsÂÂ‘KªIdentifierÍÖÍÙ£docÂÂS³ExpressionStatementÍæÍ!Q®CallExpressionÍæÍ KªIdentifierÍæÍñ«appendArray’KªIdentifierÍòÍüªviolationsQ®CallExpressionÍşÍR°MemberExpressionÍşÍKªIdentifierÍşÍ­DeepErcEngineKªIdentifierÍÍ®checkPinErrorsÂÂ‘KªIdentifierÍÍ£docÂÂS³ExpressionStatementÍ+ÍhQ®CallExpressionÍ+ÍgKªIdentifierÍ+Í6«appendArray’KªIdentifierÍ7ÍAªviolationsQ®CallExpressionÍCÍfR°MemberExpressionÍCÍaKªIdentifierÍCÍP­DeepErcEngineKªIdentifierÍQÍa°checkParamErrorsÂÂ‘KªIdentifierÍbÍe£docÂÂÔrT”¤type¥start£end¨argument¯ReturnStatementÍrÍ„KªIdentifierÍyÍƒªviolationsM°MethodDefinitionÍ‘Í	ØÃÂKªIdentifierÍ˜Í¨°checkPowerErrors¦methodN²FunctionExpressionÍ¨Í	ØÀÂÂÂ‘KªIdentifierÍ©Í¬£docL®BlockStatementÍ®Í	Ø˜O³VariableDeclarationÍ¹ÍË‘P²VariableDeclaratorÍ¿ÍÊKªIdentifierÍ¿ÍÅ¦resultÔrU”¤type¥start£end¨elements¯ArrayExpressionÍÈÍÊ¥constO³VariableDeclarationÍÕÍ„‘P²VariableDeclaratorÍÛÍƒKªIdentifierÍÛÍá¦hasMcuQ®CallExpressionÍäÍƒR°MemberExpressionÍäÍ÷R°MemberExpressionÍäÍòKªIdentifierÍäÍç£docKªIdentifierÍèÍòªcomponentsÂÂKªIdentifierÍóÍ÷¤someÂÂ‘N·ArrowFunctionExpressionÍøÍ‚ÀÃÂÂ‘KªIdentifierÍøÍù¡cÔrV–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍıÍ‚V±LogicalExpressionÍıÍcV±LogicalExpressionÍıÍCQ®CallExpressionÍıÍR°MemberExpressionÍıÍKªIdentifierÍıÍ§MCU_IDSKªIdentifierÍÍ£hasÂÂ‘R°MemberExpressionÍ	ÍKªIdentifierÍ	Í
+¡cKªIdentifierÍÍ©libraryIdÂÂÂ¢||Q®CallExpressionÍ&ÍCR°MemberExpressionÍ&Í:R°MemberExpressionÍ&Í1KªIdentifierÍ&Í'¡cKªIdentifierÍ(Í1©libraryIdÂÂKªIdentifierÍ2Í:¨includesÂÂ‘ÔrW•¤type¥start£end¥value£raw§LiteralÍ;ÍB¥STM32§'STM32'Â¢||Q®CallExpressionÍGÍcR°MemberExpressionÍGÍ[R°MemberExpressionÍGÍRKªIdentifierÍGÍH¡cKªIdentifierÍIÍR©libraryIdÂÂKªIdentifierÍSÍ[¨includesÂÂ‘W§LiteralÍ\Íb¤AT89¦'AT89'Â¢||Q®CallExpressionÍgÍ‚R°MemberExpressionÍgÍ{R°MemberExpressionÍgÍrKªIdentifierÍgÍh¡cKªIdentifierÍiÍr©libraryIdÂÂKªIdentifierÍsÍ{¨includesÂÂ‘W§LiteralÍ|Í£STC¥'STC'ÂÂ¥constO³VariableDeclarationÍ#Í™‘P²VariableDeclaratorÍ)Í˜KªIdentifierÍ)Í3ªdecouplingQ®CallExpressionÍ6Í˜R°MemberExpressionÍ6ÍKR°MemberExpressionÍ6ÍDKªIdentifierÍ6Í9£docKªIdentifierÍ:ÍDªcomponentsÂÂKªIdentifierÍEÍK¦filterÂÂ‘N·ArrowFunctionExpressionÍLÍ—ÀÂÂÂ‘KªIdentifierÍLÍM¡cL®BlockStatementÍQÍ—“ÔrX–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ`Í²ÔrY–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍdÍ¡!ÃQ®CallExpressionÍeÍR°MemberExpressionÍeÍ{R°MemberExpressionÍeÍpKªIdentifierÍeÍf¡cKªIdentifierÍgÍp©libraryIdÂÂKªIdentifierÍqÍ{ªstartsWithÂÂ‘W§LiteralÍ|Í€¢C_¤'C_'ÂL®BlockStatementÍƒÍ²‘T¯ReturnStatementÍ–Í£W§LiteralÍÍ¢Â¥falseÀO³VariableDeclarationÍÀÍõ‘P²VariableDeclaratorÍÆÍôKªIdentifierÍÆÍË¥valueQ®CallExpressionÍÎÍôKªIdentifierÍÎÍÙ«paramMapGet“R°MemberExpressionÍÚÍæKªIdentifierÍÚÍÛ¡cKªIdentifierÍÜÍæªparametersÂÂW§LiteralÍèÍï¥value§'value'W§LiteralÍñÍó ¢''Â¥constT¯ReturnStatementÍÍŒV±LogicalExpressionÍ
+Í‹V±LogicalExpressionÍ
+ÍkV±LogicalExpressionÍ
+Í:Q®CallExpressionÍ
+Í R°MemberExpressionÍ
+ÍKªIdentifierÍ
+Í¥valueKªIdentifierÍÍ¨includesÂÂ‘W§LiteralÍÍ¤100n¦'100n'Â¢||Q®CallExpressionÍ$Í:R°MemberExpressionÍ$Í2KªIdentifierÍ$Í)¥valueKªIdentifierÍ*Í2¨includesÂÂ‘W§LiteralÍ3Í9¤0.1u¦'0.1u'Â¢||Q®CallExpressionÍOÍkR°MemberExpressionÍOÍcR°MemberExpressionÍOÍZKªIdentifierÍOÍP¡cKªIdentifierÍQÍZ©libraryIdÂÂKªIdentifierÍ[Íc¨includesÂÂ‘W§LiteralÍdÍj¤100n¦'100n'Â¢||Q®CallExpressionÍoÍ‹R°MemberExpressionÍoÍƒR°MemberExpressionÍoÍzKªIdentifierÍoÍp¡cKªIdentifierÍqÍz©libraryIdÂÂKªIdentifierÍ{Íƒ¨includesÂÂ‘W§LiteralÍ„ÍŠ¤0.1u¦'0.1u'ÂÂ¥constX«IfStatementÍ£Í‹V±LogicalExpressionÍ§ÍÈKªIdentifierÍ§Í­¦hasMcu¢&&V°BinaryExpressionÍ±ÍÈR°MemberExpressionÍ±ÍÂKªIdentifierÍ±Í»ªdecouplingKªIdentifierÍ¼ÍÂ¦lengthÂÂ£===W§LiteralÍÇÍÈ ¡0L®BlockStatementÍÊÍ‹‘S³ExpressionStatementÍÙÍ€Q®CallExpressionÍÙÍR°MemberExpressionÍÙÍäKªIdentifierÍÙÍß¦resultKªIdentifierÍàÍä¤pushÂÂ‘Q®CallExpressionÍåÍ~R°MemberExpressionÍåÍüKªIdentifierÍåÍò­DeepErcEngineKªIdentifierÍóÍü©violationÂÂ–R°MemberExpressionÍıÍKªIdentifierÍıÍ«ErcSeverityKªIdentifierÍ	Í§WARNINGÂÂR°MemberExpressionÍÍ,KªIdentifierÍÍ«ErcRuleTypeKªIdentifierÍÍ,®PARAM_MISMATCHÂÂW§LiteralÍ.ÍIÙ%MCU VDD/VCC ç¼ºå°‘ 0.1uF æ»¤æ³¢ç”µå®¹Ù''MCU VDD/VCC ç¼ºå°‘ 0.1uF æ»¤æ³¢ç”µå®¹'KªIdentifierÍKÍT©undefinedKªIdentifierÍVÍ_©undefinedW§LiteralÍaÍ}Ù6æ¯ä¸ª MCU ç”µæºå¼•è„šé™„è¿‘æ·»åŠ  100nF å»è€¦ç”µå®¹Ù8'æ¯ä¸ª MCU ç”µæºå¼•è„šé™„è¿‘æ·»åŠ  100nF å»è€¦ç”µå®¹'ÂÂÀO³VariableDeclarationÍ•Í ‘P²VariableDeclaratorÍ›ÍÿKªIdentifierÍ›Í¤©hasAnalogQ®CallExpressionÍ§ÍÿR°MemberExpressionÍ§ÍºR°MemberExpressionÍ§ÍµKªIdentifierÍ§Íª£docKªIdentifierÍ«ÍµªcomponentsÂÂKªIdentifierÍ¶Íº¤someÂÂ‘N·ArrowFunctionExpressionÍ»ÍşÀÃÂÂ‘KªIdentifierÍ»Í¼¡cV±LogicalExpressionÍÀÍşQ®CallExpressionÍÀÍİR°MemberExpressionÍÀÍÔR°MemberExpressionÍÀÍËKªIdentifierÍÀÍÁ¡cKªIdentifierÍÂÍË©libraryIdÂÂKªIdentifierÍÌÍÔ¨includesÂÂ‘W§LiteralÍÕÍÜ¥LM358§'LM358'Â¢||Q®CallExpressionÍáÍşR°MemberExpressionÍáÍõR°MemberExpressionÍáÍìKªIdentifierÍáÍâ¡cKªIdentifierÍãÍì©libraryIdÂÂKªIdentifierÍíÍõ¨includesÂÂ‘W§LiteralÍöÍı¥UA741§'UA741'ÂÂ¥constO³VariableDeclarationÍ
+ÍT‘P²VariableDeclaratorÍÍSKªIdentifierÍÍªhasDigitalQ®CallExpressionÍÍSR°MemberExpressionÍÍ0R°MemberExpressionÍÍ+KªIdentifierÍÍ £docKªIdentifierÍ!Í+ªcomponentsÂÂKªIdentifierÍ,Í0¤someÂÂ‘N·ArrowFunctionExpressionÍ1ÍRÀÃÂÂ‘KªIdentifierÍ1Í2¡cQ®CallExpressionÍ6ÍRR°MemberExpressionÍ6ÍJR°MemberExpressionÍ6ÍAKªIdentifierÍ6Í7¡cKªIdentifierÍ8ÍA©libraryIdÂÂKªIdentifierÍBÍJ¨includesÂÂ‘W§LiteralÍKÍQ¤74HC¦'74HC'ÂÂ¥constX«IfStatementÍ^Í	¹V±LogicalExpressionÍbÍyKªIdentifierÍbÍk©hasAnalog¢&&KªIdentifierÍoÍyªhasDigitalL®BlockStatementÍ{Í	¹’O³VariableDeclarationÍŠÍŞ‘P²VariableDeclaratorÍÍİKªIdentifierÍÍ”¤avddQ®CallExpressionÍ—ÍİR°MemberExpressionÍ—Í¤R°MemberExpressionÍ—ÍŸKªIdentifierÍ—Íš£docKªIdentifierÍ›ÍŸ¤netsÂÂKªIdentifierÍ Í¤¤someÂÂ‘N·ArrowFunctionExpressionÍ¥ÍÜÀÃÂÂ‘KªIdentifierÍ¥Í¦¡nV±LogicalExpressionÍªÍÜQ®CallExpressionÍªÍÁR°MemberExpressionÍªÍ¹R°MemberExpressionÍªÍ°KªIdentifierÍªÍ«¡nKªIdentifierÍ¬Í°¤nameÂÂKªIdentifierÍ±Í¹¨includesÂÂ‘W§LiteralÍºÍÀ¤AVDD¦'AVDD'Â¢||Q®CallExpressionÍÅÍÜR°MemberExpressionÍÅÍÔR°MemberExpressionÍÅÍËKªIdentifierÍÅÍÆ¡nKªIdentifierÍÇÍË¤nameÂÂKªIdentifierÍÌÍÔ¨includesÂÂ‘W§LiteralÍÕÍÛ¤VDDA¦'VDDA'ÂÂ¥constX«IfStatementÍìÍ	®Y¯UnaryExpressionÍğÍõ¡!ÃKªIdentifierÍñÍõ¤avddL®BlockStatementÍ÷Í	®‘S³ExpressionStatementÍ	
+Í	ŸQ®CallExpressionÍ	
+Í	R°MemberExpressionÍ	
+Í	KªIdentifierÍ	
+Í	¦resultKªIdentifierÍ	Í	¤pushÂÂ‘Q®CallExpressionÍ	Í	R°MemberExpressionÍ	Í	-KªIdentifierÍ	Í	#­DeepErcEngineKªIdentifierÍ	$Í	-©violationÂÂ–R°MemberExpressionÍ	.Í	>KªIdentifierÍ	.Í	9«ErcSeverityKªIdentifierÍ	:Í	>¤INFOÂÂR°MemberExpressionÍ	@Í	ZKªIdentifierÍ	@Í	K«ErcRuleTypeKªIdentifierÍ	LÍ	Z®POWER_REVERSEDÂÂW§LiteralÍ	\Í	jÙ$æ¨¡æ‹Ÿä¸æ•°å­—ç”µæºå¯èƒ½æœªéš”ç¦»Ù&'æ¨¡æ‹Ÿä¸æ•°å­—ç”µæºå¯èƒ½æœªéš”ç¦»'KªIdentifierÍ	lÍ	u©undefinedKªIdentifierÍ	wÍ	€©undefinedW§LiteralÍ	‚Í	œÙ>æ¨¡æ‹Ÿç”µæºä¸æ•°å­—ç”µæºåº”é€šè¿‡ç£ç æˆ–ç‹¬ç«‹ LDO éš”ç¦»Ù@'æ¨¡æ‹Ÿç”µæºä¸æ•°å­—ç”µæºåº”é€šè¿‡ç£ç æˆ–ç‹¬ç«‹ LDO éš”ç¦»'ÂÂÀÀT¯ReturnStatementÍ	ÃÍ	ÑKªIdentifierÍ	ÊÍ	Ğ¦resultM°MethodDefinitionÍ	ŞÍ‹ÃÂKªIdentifierÍ	åÍ	ó®checkPinErrors¦methodN²FunctionExpressionÍ	óÍ‹ÀÂÂÂ‘KªIdentifierÍ	ôÍ	÷£docL®BlockStatementÍ	ùÍ‹•O³VariableDeclarationÍ
+Í
+‘P²VariableDeclaratorÍ
+
+Í
+KªIdentifierÍ
+
+Í
+¦resultU¯ArrayExpressionÍ
+Í
+¥constÔrZ—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ
+ Í,O³VariableDeclarationÍ
+%Í
+.‘P²VariableDeclaratorÍ
+)Í
+.KªIdentifierÍ
+)Í
+*¡iW§LiteralÍ
+-Í
+. ¡0£letV°BinaryExpressionÍ
+0Í
+IKªIdentifierÍ
+0Í
+1¡i¡<R°MemberExpressionÍ
+4Í
+IR°MemberExpressionÍ
+4Í
+BKªIdentifierÍ
+4Í
+7£docKªIdentifierÍ
+8Í
+BªcomponentsÂÂKªIdentifierÍ
+CÍ
+I¦lengthÂÂY°UpdateExpressionÍ
+KÍ
+N¢++ÂKªIdentifierÍ
+KÍ
+L¡iL®BlockStatementÍ
+PÍ,”O³VariableDeclarationÍ
+_Í
+~‘P²VariableDeclaratorÍ
+eÍ
+}KªIdentifierÍ
+eÍ
+i¤compR°MemberExpressionÍ
+lÍ
+}R°MemberExpressionÍ
+lÍ
+zKªIdentifierÍ
+lÍ
+o£docKªIdentifierÍ
+pÍ
+zªcomponentsÂÂKªIdentifierÍ
+{Í
+|¡iÃÂ¥constX«IfStatementÍ
+ŒÍzV±LogicalExpressionÍ
+Í
+ÑQ®CallExpressionÍ
+Í
+¯R°MemberExpressionÍ
+Í
+§R°MemberExpressionÍ
+Í
+KªIdentifierÍ
+Í
+”¤compKªIdentifierÍ
+•Í
+©libraryIdÂÂKªIdentifierÍ
+ŸÍ
+§¨includesÂÂ‘W§LiteralÍ
+¨Í
+®¤AT89¦'AT89'Â¢||Q®CallExpressionÍ
+³Í
+ÑR°MemberExpressionÍ
+³Í
+ÊR°MemberExpressionÍ
+³Í
+ÁKªIdentifierÍ
+³Í
+·¤compKªIdentifierÍ
+¸Í
+Á©libraryIdÂÂKªIdentifierÍ
+ÂÍ
+Ê¨includesÂÂ‘W§LiteralÍ
+ËÍ
+Ğ£STC¥'STC'ÂL®BlockStatementÍ
+ÓÍz’O³VariableDeclarationÍ
+æÍv‘P²VariableDeclaratorÍ
+ìÍuKªIdentifierÍ
+ìÍ
+õ©hasPullUpQ®CallExpressionÍ
+øÍuR°MemberExpressionÍ
+øÍR°MemberExpressionÍ
+øÍKªIdentifierÍ
+øÍ
+û£docKªIdentifierÍ
+üÍªcomponentsÂÂKªIdentifierÍÍ¤someÂÂ‘N·ArrowFunctionExpressionÍÍtÀÃÂÂ‘KªIdentifierÍÍ¡cV±LogicalExpressionÍÍtQ®CallExpressionÍÍ-R°MemberExpressionÍÍ'R°MemberExpressionÍÍKªIdentifierÍÍ¡cKªIdentifierÍÍ©libraryIdÂÂKªIdentifierÍÍ'ªstartsWithÂÂ‘W§LiteralÍ(Í,¢R_¤'R_'Â¢&&V°BinaryExpressionÍFÍtQ®CallExpressionÍFÍnR°MemberExpressionÍFÍNKªIdentifierÍFÍJ¤MathKªIdentifierÍKÍN£absÂÂ‘V°BinaryExpressionÍOÍmR°MemberExpressionÍOÍ[R°MemberExpressionÍOÍYKªIdentifierÍOÍP¡cKªIdentifierÍQÍY¨positionÂÂKªIdentifierÍZÍ[¡xÂÂ¡-R°MemberExpressionÍ^ÍmR°MemberExpressionÍ^ÍkKªIdentifierÍ^Íb¤compKªIdentifierÍcÍk¨positionÂÂKªIdentifierÍlÍm¡xÂÂÂ¡<W§LiteralÍqÍtÌ–£150Â¥constX«IfStatementÍˆÍkY¯UnaryExpressionÍŒÍ–¡!ÃKªIdentifierÍÍ–©hasPullUpL®BlockStatementÍ˜Ík‘S³ExpressionStatementÍ¯ÍXQ®CallExpressionÍ¯ÍWR°MemberExpressionÍ¯ÍºKªIdentifierÍ¯Íµ¦resultKªIdentifierÍ¶Íº¤pushÂÂ‘Q®CallExpressionÍ»ÍVR°MemberExpressionÍ»ÍÒKªIdentifierÍ»ÍÈ­DeepErcEngineKªIdentifierÍÉÍÒ©violationÂÂ–R°MemberExpressionÍÓÍãKªIdentifierÍÓÍŞ«ErcSeverityKªIdentifierÍßÍã¤INFOÂÂR°MemberExpressionÍåÍ KªIdentifierÍåÍğ«ErcRuleTypeKªIdentifierÍñÍ ¯UNCONNECTED_PINÂÂÔr[•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍ%‘R°MemberExpressionÍÍKªIdentifierÍÍ¤compKªIdentifierÍÍ¦refDesÂÂ’Ôr\•¤type¥start£end¥value¤tail¯TemplateElementÍÍ
+Ôr]’£raw¦cooked­51 å•ç‰‡æœº ­51 å•ç‰‡æœº Â\¯TemplateElementÍÍ$]¼ P0 å£å¯èƒ½æ— å¤–éƒ¨ä¸Šæ‹‰¼ P0 å£å¯èƒ½æ— å¤–éƒ¨ä¸Šæ‹‰ÃR°MemberExpressionÍ'Í.KªIdentifierÍ'Í+¤compKªIdentifierÍ,Í.¢idÂÂKªIdentifierÍ0Í9©undefinedW§LiteralÍ;ÍUÙ151 P0 å£æ— å†…éƒ¨ä¸Šæ‹‰ï¼Œéœ€å¤–æ¥ 10kÎ© æ’é˜»Ù3'51 P0 å£æ— å†…éƒ¨ä¸Šæ‹‰ï¼Œéœ€å¤–æ¥ 10kÎ© æ’é˜»'ÂÂÀÀX«IfStatementÍˆÍÕQ®CallExpressionÍŒÍ¬R°MemberExpressionÍŒÍ£R°MemberExpressionÍŒÍšKªIdentifierÍŒÍ¤compKªIdentifierÍ‘Íš©libraryIdÂÂKªIdentifierÍ›Í£¨includesÂÂ‘W§LiteralÍ¤Í«¥STM32§'STM32'ÂL®BlockStatementÍ®ÍÕ‘X«IfStatementÍÁÍÆY¯UnaryExpressionÍÅÍò¡!ÃQ®CallExpressionÍÆÍòR°MemberExpressionÍÆÍçKªIdentifierÍÆÍÓ­DeepErcEngineKªIdentifierÍÔÍç³hasStm32ResetPullUpÂÂ’KªIdentifierÍèÍë£docKªIdentifierÍíÍñ¤compÂL®BlockStatementÍôÍÆ‘S³ExpressionStatementÍÍ³Q®CallExpressionÍÍ²R°MemberExpressionÍÍKªIdentifierÍÍ¦resultKªIdentifierÍÍ¤pushÂÂ‘Q®CallExpressionÍÍ±R°MemberExpressionÍÍ.KªIdentifierÍÍ$­DeepErcEngineKªIdentifierÍ%Í.©violationÂÂ–R°MemberExpressionÍ/ÍBKªIdentifierÍ/Í:«ErcSeverityKªIdentifierÍ;ÍB§WARNINGÂÂR°MemberExpressionÍDÍ]KªIdentifierÍDÍO«ErcRuleTypeKªIdentifierÍPÍ]­MISSING_RESETÂÂ[¯TemplateLiteralÍ_Í~‘R°MemberExpressionÍhÍsKªIdentifierÍhÍl¤compKªIdentifierÍmÍs¦refDesÂÂ’\¯TemplateElementÍ`Íf]¦STM32 ¦STM32 Â\¯TemplateElementÍtÍ}]¹ å¤ä½å¼•è„šå¯èƒ½æ‚¬ç©º¹ å¤ä½å¼•è„šå¯èƒ½æ‚¬ç©ºÃR°MemberExpressionÍ€Í‡KªIdentifierÍ€Í„¤compKªIdentifierÍ…Í‡¢idÂÂKªIdentifierÍ‰Í’©undefinedW§LiteralÍ”Í°Ù'NRST æ·»åŠ  10kÎ© ä¸Šæ‹‰ + 100nF ç”µå®¹Ù)'NRST æ·»åŠ  10kÎ© ä¸Šæ‹‰ + 100nF ç”µå®¹'ÂÂÀÀX«IfStatementÍÍ!V±LogicalExpressionÍÍeQ®CallExpressionÍÍ1R°MemberExpressionÍÍ)R°MemberExpressionÍÍKªIdentifierÍÍ¤compKªIdentifierÍÍ©libraryIdÂÂKªIdentifierÍÍ)ªstartsWithÂÂ‘W§LiteralÍ*Í0¤LED_¦'LED_'Â¢&&Y¯UnaryExpressionÍ5Íe¡!ÃQ®CallExpressionÍ6ÍeR°MemberExpressionÍ6ÍZKªIdentifierÍ6ÍC­DeepErcEngineKªIdentifierÍDÍZ¶hasSeriesLimitResistorÂÂ’KªIdentifierÍ[Í^£docKªIdentifierÍ`Íd¤compÂL®BlockStatementÍgÍ!‘S³ExpressionStatementÍzÍQ®CallExpressionÍzÍR°MemberExpressionÍzÍ…KªIdentifierÍzÍ€¦resultKªIdentifierÍÍ…¤pushÂÂ‘Q®CallExpressionÍ†ÍR°MemberExpressionÍ†ÍKªIdentifierÍ†Í“­DeepErcEngineKªIdentifierÍ”Í©violationÂÂ–R°MemberExpressionÍÍ¯KªIdentifierÍÍ©«ErcSeverityKªIdentifierÍªÍ¯¥ERRORÂÂR°MemberExpressionÍ±ÍËKªIdentifierÍ±Í¼«ErcRuleTypeKªIdentifierÍ½ÍË®IO_OVERCURRENTÂÂ[¯TemplateLiteralÍÍÍç‘R°MemberExpressionÍÔÍßKªIdentifierÍÔÍØ¤compKªIdentifierÍÙÍß¦refDesÂÂ’\¯TemplateElementÍÎÍÒ]¤LED ¤LED Â\¯TemplateElementÍàÍæ]° æ— é™æµç”µé˜»° æ— é™æµç”µé˜»ÃR°MemberExpressionÍéÍğKªIdentifierÍéÍí¤compKªIdentifierÍîÍğ¢idÂÂKªIdentifierÍòÍû©undefinedW§LiteralÍıÍ¾ä¸²è” 220Î©~1kÎ© é™æµç”µé˜»Ù 'ä¸²è” 220Î©~1kÎ© é™æµç”µé˜»'ÂÂÀO³VariableDeclarationÍ6Í€‘P²VariableDeclaratorÍ<ÍKªIdentifierÍ<ÍD¨crystalsQ®CallExpressionÍGÍR°MemberExpressionÍGÍ\R°MemberExpressionÍGÍUKªIdentifierÍGÍJ£docKªIdentifierÍKÍUªcomponentsÂÂKªIdentifierÍVÍ\¦filterÂÂ‘N·ArrowFunctionExpressionÍ]Í~ÀÃÂÂ‘KªIdentifierÍ]Í^¡cQ®CallExpressionÍbÍ~R°MemberExpressionÍbÍvR°MemberExpressionÍbÍmKªIdentifierÍbÍc¡cKªIdentifierÍdÍm©libraryIdÂÂKªIdentifierÍnÍv¨includesÂÂ‘W§LiteralÍwÍ}¤XTAL¦'XTAL'ÂÂ¥constZ¬ForStatementÍŠÍlO³VariableDeclarationÍÍ˜‘P²VariableDeclaratorÍ“Í˜KªIdentifierÍ“Í”¡iW§LiteralÍ—Í˜ ¡0£letV°BinaryExpressionÍšÍ­KªIdentifierÍšÍ›¡i¡<R°MemberExpressionÍÍ­KªIdentifierÍÍ¦¨crystalsKªIdentifierÍ§Í­¦lengthÂÂY°UpdateExpressionÍ¯Í²¢++ÂKªIdentifierÍ¯Í°¡iL®BlockStatementÍ´Íl“O³VariableDeclarationÍÃÍÜ‘P²VariableDeclaratorÍÉÍÛKªIdentifierÍÉÍÍ¤xtalR°MemberExpressionÍĞÍÛKªIdentifierÍĞÍØ¨crystalsKªIdentifierÍÙÍÚ¡iÃÂ¥constO³VariableDeclarationÍêÍv‘P²VariableDeclaratorÍğÍuKªIdentifierÍğÍø¨loadCapsQ®CallExpressionÍûÍuR°MemberExpressionÍûÍR°MemberExpressionÍûÍ	KªIdentifierÍûÍş£docKªIdentifierÍÿÍ	ªcomponentsÂÂKªIdentifierÍ
+Í¦filterÂÂ‘N·ArrowFunctionExpressionÍÍtÀÃÂÂ‘KªIdentifierÍÍ¡cV±LogicalExpressionÍÍtQ®CallExpressionÍÍ2R°MemberExpressionÍÍ,R°MemberExpressionÍÍ!KªIdentifierÍÍ¡cKªIdentifierÍÍ!©libraryIdÂÂKªIdentifierÍ"Í,ªstartsWithÂÂ‘W§LiteralÍ-Í1¢C_¤'C_'Â¢&&V°BinaryExpressionÍGÍtQ®CallExpressionÍGÍoR°MemberExpressionÍGÍOKªIdentifierÍGÍK¤MathKªIdentifierÍLÍO£absÂÂ‘V°BinaryExpressionÍPÍnR°MemberExpressionÍPÍ\R°MemberExpressionÍPÍZKªIdentifierÍPÍQ¡cKªIdentifierÍRÍZ¨positionÂÂKªIdentifierÍ[Í\¡xÂÂ¡-R°MemberExpressionÍ_ÍnR°MemberExpressionÍ_ÍlKªIdentifierÍ_Íc¤xtalKªIdentifierÍdÍl¨positionÂÂKªIdentifierÍmÍn¡xÂÂÂ¡<W§LiteralÍrÍtÌP¢80Â¥constX«IfStatementÍ„ÍaV°BinaryExpressionÍˆÍ›R°MemberExpressionÍˆÍ—KªIdentifierÍˆÍ¨loadCapsKªIdentifierÍ‘Í—¦lengthÂÂ¡<W§LiteralÍšÍ›¡2L®BlockStatementÍÍa‘S³ExpressionStatementÍ°ÍRQ®CallExpressionÍ°ÍQR°MemberExpressionÍ°Í»KªIdentifierÍ°Í¶¦resultKªIdentifierÍ·Í»¤pushÂÂ‘Q®CallExpressionÍ¼ÍPR°MemberExpressionÍ¼ÍÓKªIdentifierÍ¼ÍÉ­DeepErcEngineKªIdentifierÍÊÍÓ©violationÂÂ–R°MemberExpressionÍÔÍçKªIdentifierÍÔÍß«ErcSeverityKªIdentifierÍàÍç§WARNINGÂÂR°MemberExpressionÍéÍKªIdentifierÍéÍô«ErcRuleTypeKªIdentifierÍõÍ¯MISSING_CRYSTALÂÂ[¯TemplateLiteralÍÍ ‘R°MemberExpressionÍÍKªIdentifierÍÍ¤xtalKªIdentifierÍÍ¦refDesÂÂ’\¯TemplateElementÍÍ
+]§æ™¶æŒ¯ §æ™¶æŒ¯ Â\¯TemplateElementÍÍ]³ è´Ÿè½½ç”µå®¹ä¸è¶³³ è´Ÿè½½ç”µå®¹ä¸è¶³ÃR°MemberExpressionÍ"Í)KªIdentifierÍ"Í&¤xtalKªIdentifierÍ'Í)¢idÂÂKªIdentifierÍ+Í4©undefinedW§LiteralÍ6ÍOÙ5æ™¶æŒ¯ä¸¤ä¾§å„æ·»åŠ è´Ÿè½½ç”µå®¹ï¼ˆé€šå¸¸ 10~30pFï¼‰Ù7'æ™¶æŒ¯ä¸¤ä¾§å„æ·»åŠ è´Ÿè½½ç”µå®¹ï¼ˆé€šå¸¸ 10~30pFï¼‰'ÂÂÀT¯ReturnStatementÍvÍ„KªIdentifierÍ}Íƒ¦resultM°MethodDefinitionÍ‘ÍòÃÂKªIdentifierÍ˜Í¨°checkParamErrors¦methodN²FunctionExpressionÍ¨ÍòÀÂÂÂ‘KªIdentifierÍ©Í¬£docL®BlockStatementÍ®Íò“O³VariableDeclarationÍ¹ÍË‘P²VariableDeclaratorÍ¿ÍÊKªIdentifierÍ¿ÍÅ¦resultU¯ArrayExpressionÍÈÍÊ¥constZ¬ForStatementÍÕÍÓO³VariableDeclarationÍÚÍã‘P²VariableDeclaratorÍŞÍãKªIdentifierÍŞÍß¡iW§LiteralÍâÍã ¡0£letV°BinaryExpressionÍåÍşKªIdentifierÍåÍæ¡i¡<R°MemberExpressionÍéÍşR°MemberExpressionÍéÍ÷KªIdentifierÍéÍì£docKªIdentifierÍíÍ÷ªcomponentsÂÂKªIdentifierÍøÍş¦lengthÂÂY°UpdateExpressionÍ Í¢++ÂKªIdentifierÍ Í¡iL®BlockStatementÍÍÓ–O³VariableDeclarationÍÍ3‘P²VariableDeclaratorÍÍ2KªIdentifierÍÍ¤compR°MemberExpressionÍ!Í2R°MemberExpressionÍ!Í/KªIdentifierÍ!Í$£docKªIdentifierÍ%Í/ªcomponentsÂÂKªIdentifierÍ0Í1¡iÃÂ¥constX«IfStatementÍAÍQ®CallExpressionÍEÍdR°MemberExpressionÍEÍ^R°MemberExpressionÍEÍSKªIdentifierÍEÍI¤compKªIdentifierÍJÍS©libraryIdÂÂKªIdentifierÍTÍ^ªstartsWithÂÂ‘W§LiteralÍ_Íc¢R_¤'R_'ÂL®BlockStatementÍfÍ—O³VariableDeclarationÍyÍ­‘P²VariableDeclaratorÍ}Í¬KªIdentifierÍ}Í€£valQ®CallExpressionÍƒÍ¬KªIdentifierÍƒÍ«paramMapGet“R°MemberExpressionÍÍKªIdentifierÍÍ“¤compKªIdentifierÍ”ÍªparametersÂÂW§LiteralÍ Í§¥value§'value'W§LiteralÍ©Í« ¢''Â£letX«IfStatementÍ¿Í&V°BinaryExpressionÍÃÍÓR°MemberExpressionÍÃÍÍKªIdentifierÍÃÍÆ£valKªIdentifierÍÇÍÍ¦lengthÂÂ£===W§LiteralÍÒÍÓ ¡0L®BlockStatementÍÕÍ&‘S³ExpressionStatementÍìÍÔr^–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍìÍ¡=KªIdentifierÍìÍï£valQ®CallExpressionÍòÍR°MemberExpressionÍòÍR°MemberExpressionÍòÍ KªIdentifierÍòÍö¤compKªIdentifierÍ÷Í ©libraryIdÂÂKªIdentifierÍÍ§replaceÂÂ’W§LiteralÍ	Í¢R_¤'R_'W§LiteralÍÍ ¢''ÂÀO³VariableDeclarationÍ8Í‡‘P²VariableDeclaratorÍ>Í†KªIdentifierÍ>ÍD¦parsedQ®CallExpressionÍGÍ†R°MemberExpressionÍGÍaKªIdentifierÍGÍQªUnitParserKªIdentifierÍRÍa¯parseResistanceÂÂ‘XµConditionalExpressionÍbÍ…Q®CallExpressionÍbÍsR°MemberExpressionÍbÍnKªIdentifierÍbÍe£valKªIdentifierÍfÍn¨endsWithÂÂ‘W§LiteralÍoÍr¢Î©¤'Î©'ÂKªIdentifierÍvÍy£val[¯TemplateLiteralÍ|Í…‘KªIdentifierÍÍ‚£val’\¯TemplateElementÍ}Í}]  Â\¯TemplateElementÍƒÍ„]¢Î©¢Î©ÃÂ¥constO³VariableDeclarationÍ™ÍÙ‘P²VariableDeclaratorÍŸÍØKªIdentifierÍŸÍ§¨powerStrQ®CallExpressionÍªÍØKªIdentifierÍªÍµ«paramMapGet“R°MemberExpressionÍ¶ÍÅKªIdentifierÍ¶Íº¤compKªIdentifierÍ»ÍÅªparametersÂÂW§LiteralÍÇÍÎ¥power§'power'W§LiteralÍĞÍ×¥0.25W§'0.25W'Â¥constO³VariableDeclarationÍëÍ?‘P²VariableDeclaratorÍñÍ>KªIdentifierÍñÍü«powerParsedQ®CallExpressionÍÿÍ>R°MemberExpressionÍÿÍKªIdentifierÍÿÍ	ªUnitParserKªIdentifierÍ
+ÍªparsePowerÂÂ‘XµConditionalExpressionÍÍ=V°BinaryExpressionÍÍ(R°MemberExpressionÍÍ$KªIdentifierÍÍ¨powerStrKªIdentifierÍÍ$¦lengthÂÂ¡>W§LiteralÍ'Í( ¡0KªIdentifierÍ+Í3¨powerStrW§LiteralÍ6Í=¥0.25W§'0.25W'Â¥constO³VariableDeclarationÍQÍ‘P²VariableDeclaratorÍWÍKªIdentifierÍWÍ]¦powerWXµConditionalExpressionÍ`ÍR°MemberExpressionÍ`ÍqKªIdentifierÍ`Ík«powerParsedKªIdentifierÍlÍq¥validÂÂR°MemberExpressionÍtÍ‡KªIdentifierÍtÍ«powerParsedKªIdentifierÍ€Í‡§numericÂÂW§LiteralÍŠÍË?Ğ      ¤0.25¥constX«IfStatementÍ¡Í÷V±LogicalExpressionÍ¥ÍÇR°MemberExpressionÍ¥Í±KªIdentifierÍ¥Í«¦parsedKªIdentifierÍ¬Í±¥validÂÂ¢&&V°BinaryExpressionÍµÍÇR°MemberExpressionÍµÍÃKªIdentifierÍµÍ»¦parsedKªIdentifierÍ¼ÍÃ§numericÂÂ¡>W§LiteralÍÆÍÇ ¡0L®BlockStatementÍÉÍ÷“O³VariableDeclarationÍàÍ‘P²VariableDeclaratorÍæÍKªIdentifierÍæÍí§supplyVQ®CallExpressionÍğÍR°MemberExpressionÍğÍKªIdentifierÍğÍı­DeepErcEngineKªIdentifierÍşÍµestimateSupplyVoltageÂÂ‘KªIdentifierÍÍ£docÂ¥constO³VariableDeclarationÍ/Íc‘P²VariableDeclaratorÍ5ÍbKªIdentifierÍ5Í=¨estPowerV°BinaryExpressionÍ@ÍbV°BinaryExpressionÍ@ÍQKªIdentifierÍ@ÍG§supplyV¡*KªIdentifierÍJÍQ§supplyV¡/R°MemberExpressionÍTÍbKªIdentifierÍTÍZ¦parsedKªIdentifierÍ[Íb§numericÂÂ¥constX«IfStatementÍyÍäV°BinaryExpressionÍ}Í”KªIdentifierÍ}Í…¨estPower¡>V°BinaryExpressionÍˆÍ”KªIdentifierÍˆÍ¦powerW¡*W§LiteralÍ‘Í”Ë?é™™™™™š£0.8L®BlockStatementÍ–Íä‘S³ExpressionStatementÍ±ÍÍQ®CallExpressionÍ±ÍÌR°MemberExpressionÍ±Í¼KªIdentifierÍ±Í·¦resultKªIdentifierÍ¸Í¼¤pushÂÂ‘Q®CallExpressionÍ½ÍËR°MemberExpressionÍ½ÍÔKªIdentifierÍ½ÍÊ­DeepErcEngineKªIdentifierÍËÍÔ©violationÂÂ–R°MemberExpressionÍÕÍåKªIdentifierÍÕÍà«ErcSeverityKªIdentifierÍáÍå¤INFOÂÂR°MemberExpressionÍçÍKªIdentifierÍçÍò«ErcRuleTypeKªIdentifierÍóÍ®PARAM_MISMATCHÂÂV°BinaryExpressionÍÍ‘[¯TemplateLiteralÍÍH“R°MemberExpressionÍÍKªIdentifierÍÍ
+¤compKªIdentifierÍÍ¦refDesÂÂQ®CallExpressionÍ"Í5R°MemberExpressionÍ"Í2KªIdentifierÍ"Í*¨estPowerKªIdentifierÍ+Í2§toFixedÂÂ‘W§LiteralÍ3Í4¡3ÂKªIdentifierÍ<ÍC§supplyV”\¯TemplateElementÍÍ]  Â\¯TemplateElementÍÍ ]Ù" ç”µé˜»åŠŸç‡å¯èƒ½ä¸è¶³ (ä¼°ç®— Ù" ç”µé˜»åŠŸç‡å¯èƒ½ä¸è¶³ (ä¼°ç®— Â\¯TemplateElementÍ6Í:]¤W @ ¤W @ Â\¯TemplateElementÍDÍG]£V, £V, Ã¡+[¯TemplateLiteralÍhÍ‘’R°MemberExpressionÍnÍKªIdentifierÍnÍt¦parsedKªIdentifierÍuÍªnormalizedÂÂKªIdentifierÍ‡Í¦powerW“\¯TemplateElementÍiÍl]§é˜»å€¼ §é˜»å€¼ Â\¯TemplateElementÍ€Í…]©, é¢å®š ©, é¢å®š Â\¯TemplateElementÍÍ]¢W)¢W)ÃR°MemberExpressionÍ“ÍšKªIdentifierÍ“Í—¤compKªIdentifierÍ˜Íš¢idÂÂKªIdentifierÍœÍ¥©undefinedW§LiteralÍ§ÍÊÙUé™ä½ç”µæºç”µå‹ã€å¢å¤§é˜»å€¼æˆ–é€‰ç”¨æ›´å¤§åŠŸç‡ç”µé˜»ï¼ˆä¿®æ”¹ power å‚æ•°ï¼‰ÙW'é™ä½ç”µæºç”µå‹ã€å¢å¤§é˜»å€¼æˆ–é€‰ç”¨æ›´å¤§åŠŸç‡ç”µé˜»ï¼ˆä¿®æ”¹ power å‚æ•°ï¼‰'ÂÂÀÀÀX«IfStatementÍÍÌQ®CallExpressionÍÍ7R°MemberExpressionÍÍ1R°MemberExpressionÍÍ&KªIdentifierÍÍ¤compKªIdentifierÍÍ&©libraryIdÂÂKªIdentifierÍ'Í1ªstartsWithÂÂ‘W§LiteralÍ2Í6¢C_¤'C_'ÂL®BlockStatementÍ9ÍÌ“O³VariableDeclarationÍLÍ‘P²VariableDeclaratorÍRÍŒKªIdentifierÍRÍ\ªvoltageStrQ®CallExpressionÍ_ÍŒKªIdentifierÍ_Íj«paramMapGet“R°MemberExpressionÍkÍzKªIdentifierÍkÍo¤compKªIdentifierÍpÍzªparametersÂÂW§LiteralÍ|Í…§voltage©'voltage'W§LiteralÍ‡Í‹¢50¤'50'Â¥constO³VariableDeclarationÍŸÍÌ‘P²VariableDeclaratorÍ¥ÍËKªIdentifierÍ¥Í¬§voltageV±LogicalExpressionÍ¯ÍËQ®CallExpressionÍ¯ÍÅKªIdentifierÍ¯Í¹ªparseFloat‘KªIdentifierÍºÍÄªvoltageStrÂ¢||W§LiteralÍÉÍË2¢50¥constX«IfStatementÍŞÍ½V°BinaryExpressionÍâÍîKªIdentifierÍâÍé§voltage¡<W§LiteralÍìÍî¢16L®BlockStatementÍğÍ½‘S³ExpressionStatementÍÍªQ®CallExpressionÍÍ©R°MemberExpressionÍÍKªIdentifierÍÍ¦resultKªIdentifierÍÍ¤pushÂÂ‘Q®CallExpressionÍÍ¨R°MemberExpressionÍÍ*KªIdentifierÍÍ ­DeepErcEngineKªIdentifierÍ!Í*©violationÂÂ–R°MemberExpressionÍ+Í;KªIdentifierÍ+Í6«ErcSeverityKªIdentifierÍ7Í;¤INFOÂÂR°MemberExpressionÍ=ÍWKªIdentifierÍ=ÍH«ErcRuleTypeKªIdentifierÍIÍW®PARAM_MISMATCHÂÂ[¯TemplateLiteralÍYÍƒ’R°MemberExpressionÍ\ÍgKªIdentifierÍ\Í`¤compKªIdentifierÍaÍg¦refDesÂÂKªIdentifierÍpÍw§voltage“\¯TemplateElementÍZÍZ]  Â\¯TemplateElementÍhÍn]® ç”µå®¹è€å‹ ® ç”µå®¹è€å‹ Â\¯TemplateElementÍxÍ‚]ºV å¯èƒ½ä½äºå·¥ä½œç”µå‹ºV å¯èƒ½ä½äºå·¥ä½œç”µå‹ÃR°MemberExpressionÍ…ÍŒKªIdentifierÍ…Í‰¤compKªIdentifierÍŠÍŒ¢idÂÂKªIdentifierÍÍ—©undefinedW§LiteralÍ™Í§ºé€‰ç”¨ 50V åŠä»¥ä¸Šè€å‹¼'é€‰ç”¨ 50V åŠä»¥ä¸Šè€å‹'ÂÂÀÀO³VariableDeclarationÍ#ÍQ‘P²VariableDeclaratorÍ)ÍPKªIdentifierÍ)Í1¨libUpperQ®CallExpressionÍ4ÍPR°MemberExpressionÍ4ÍNR°MemberExpressionÍ4ÍBKªIdentifierÍ4Í8¤compKªIdentifierÍ9ÍB©libraryIdÂÂKªIdentifierÍCÍN«toUpperCaseÂÂÂ¥constO³VariableDeclarationÍ_Íõ‘P²VariableDeclaratorÍeÍôKªIdentifierÍeÍq¬looksLikeMosV±LogicalExpressionÍtÍôV±LogicalExpressionÍtÍØV±LogicalExpressionÍtÍ¨Q®CallExpressionÍtÍŒR°MemberExpressionÍtÍ…KªIdentifierÍtÍ|¨libUpperKªIdentifierÍ}Í…¨includesÂÂ‘W§LiteralÍ†Í‹£MOS¥'MOS'Â¢||Q®CallExpressionÍÍ¨R°MemberExpressionÍÍ¡KªIdentifierÍÍ˜¨libUpperKªIdentifierÍ™Í¡¨includesÂÂ‘W§LiteralÍ¢Í§£IRF¥'IRF'Â¢||Q®CallExpressionÍ½ÍØR°MemberExpressionÍ½ÍÎKªIdentifierÍ½ÍÅ¨libUpperKªIdentifierÍÆÍÎ¨includesÂÂ‘W§LiteralÍÏÍ×¦2N7000¨'2N7000'Â¢||Q®CallExpressionÍÜÍôR°MemberExpressionÍÜÍíKªIdentifierÍÜÍä¨libUpperKªIdentifierÍåÍí¨includesÂÂ‘W§LiteralÍîÍó£FET¥'FET'Â¥constX«IfStatementÍÍÈV±LogicalExpressionÍÍXY¯UnaryExpressionÍÍ¡!ÃKªIdentifierÍÍ¬looksLikeMos¢&&V±LogicalExpressionÍÍWQ®CallExpressionÍÍ6R°MemberExpressionÍÍ0R°MemberExpressionÍÍ'KªIdentifierÍÍ¤compKªIdentifierÍÍ'©libraryIdÂÂKªIdentifierÍ(Í0¨includesÂÂ‘W§LiteralÍ1Í5¢2N¤'2N'Â¢||Q®CallExpressionÍ:ÍWR°MemberExpressionÍ:ÍQR°MemberExpressionÍ:ÍHKªIdentifierÍ:Í>¤compKªIdentifierÍ?ÍH©libraryIdÂÂKªIdentifierÍIÍQ¨includesÂÂ‘W§LiteralÍRÍV¢BC¤'BC'ÂL®BlockStatementÍZÍÈ’O³VariableDeclarationÍ•ÍÖ‘P²VariableDeclaratorÍ›ÍÕKªIdentifierÍ›Í¥ªhasBaseResQ®CallExpressionÍ¨ÍÕR°MemberExpressionÍ¨ÍÊKªIdentifierÍ¨Íµ­DeepErcEngineKªIdentifierÍ¶ÍÊ´hasNetSharedResistorÂÂ’KªIdentifierÍËÍÎ£docKªIdentifierÍĞÍÔ¤compÂ¥constX«IfStatementÍèÍ¹Y¯UnaryExpressionÍìÍ÷¡!ÃKªIdentifierÍíÍ÷ªhasBaseResL®BlockStatementÍùÍ¹‘S³ExpressionStatementÍÍ¦Q®CallExpressionÍÍ¥R°MemberExpressionÍÍKªIdentifierÍÍ¦resultKªIdentifierÍÍ¤pushÂÂ‘Q®CallExpressionÍÍ¤R°MemberExpressionÍÍ3KªIdentifierÍÍ)­DeepErcEngineKªIdentifierÍ*Í3©violationÂÂ–R°MemberExpressionÍ4ÍDKªIdentifierÍ4Í?«ErcSeverityKªIdentifierÍ@ÍD¤INFOÂÂR°MemberExpressionÍFÍ`KªIdentifierÍFÍQ«ErcRuleTypeKªIdentifierÍRÍ`®PARAM_MISMATCHÂÂ[¯TemplateLiteralÍbÍ€‘R°MemberExpressionÍiÍtKªIdentifierÍiÍm¤compKªIdentifierÍnÍt¦refDesÂÂ’\¯TemplateElementÍcÍg]ªä¸‰æç®¡ ªä¸‰æç®¡ Â\¯TemplateElementÍuÍ]¼ åŸºæå¯èƒ½æ— åç½®ç”µé˜»¼ åŸºæå¯èƒ½æ— åç½®ç”µé˜»ÃR°MemberExpressionÍ‚Í‰KªIdentifierÍ‚Í†¤compKªIdentifierÍ‡Í‰¢idÂÂKªIdentifierÍ‹Í”©undefinedW§LiteralÍ–Í£Ù!æ·»åŠ åŸºæåˆ†å‹æˆ–é™æµç”µé˜»Ù#'æ·»åŠ åŸºæåˆ†å‹æˆ–é™æµç”µé˜»'ÂÂÀÀT¯ReturnStatementÍİÍëKªIdentifierÍäÍê¦resultM°MethodDefinitionÍøÍÃÂKªIdentifierÍÿÍµestimateSupplyVoltage¦methodN²FunctionExpressionÍÍÀÂÂÂ‘KªIdentifierÍÍ£docL®BlockStatementÍÍ’Z¬ForStatementÍ%ÍıO³VariableDeclarationÍ*Í3‘P²VariableDeclaratorÍ.Í3KªIdentifierÍ.Í/¡iW§LiteralÍ2Í3 ¡0£letV°BinaryExpressionÍ5ÍNKªIdentifierÍ5Í6¡i¡<R°MemberExpressionÍ9ÍNR°MemberExpressionÍ9ÍGKªIdentifierÍ9Í<£docKªIdentifierÍ=ÍGªcomponentsÂÂKªIdentifierÍHÍN¦lengthÂÂY°UpdateExpressionÍPÍS¢++ÂKªIdentifierÍPÍQ¡iL®BlockStatementÍUÍı“O³VariableDeclarationÍdÍƒ‘P²VariableDeclaratorÍjÍ‚KªIdentifierÍjÍn¤compR°MemberExpressionÍqÍ‚R°MemberExpressionÍqÍKªIdentifierÍqÍt£docKªIdentifierÍuÍªcomponentsÂÂKªIdentifierÍ€Í¡iÃÂ¥constO³VariableDeclarationÍ‘Íº‘P²VariableDeclaratorÍ—Í¹KªIdentifierÍ—Íš£libQ®CallExpressionÍÍ¹R°MemberExpressionÍÍ·R°MemberExpressionÍÍ«KªIdentifierÍÍ¡¤compKªIdentifierÍ¢Í«©libraryIdÂÂKªIdentifierÍ¬Í·«toUpperCaseÂÂÂ¥constX«IfStatementÍÈÍòV±LogicalExpressionÍÌÍeV±LogicalExpressionÍÌÍLV±LogicalExpressionÍÌÍ5V±LogicalExpressionÍÌÍV±LogicalExpressionÍÌÍñV°BinaryExpressionÍÌÍÙKªIdentifierÍÌÍÏ£lib£===W§LiteralÍÔÍÙ£VCC¥'VCC'¢||Q®CallExpressionÍİÍñR°MemberExpressionÍİÍéKªIdentifierÍİÍà£libKªIdentifierÍáÍé¨endsWithÂÂ‘W§LiteralÍêÍğ¤/VCC¦'/VCC'Â¢||Q®CallExpressionÍõÍR°MemberExpressionÍõÍKªIdentifierÍõÍø£libKªIdentifierÍùÍ¨includesÂÂ‘W§LiteralÍÍ¨POWER_5Vª'POWER_5V'Â¢||Q®CallExpressionÍ"Í5R°MemberExpressionÍ"Í.KªIdentifierÍ"Í%£libKªIdentifierÍ&Í.¨includesÂÂ‘W§LiteralÍ/Í4£VDC¥'VDC'Â¢||Q®CallExpressionÍ9ÍLR°MemberExpressionÍ9ÍEKªIdentifierÍ9Í<£libKªIdentifierÍ=ÍE¨includesÂÂ‘W§LiteralÍFÍK£VAC¥'VAC'Â¢||Q®CallExpressionÍPÍeR°MemberExpressionÍPÍ\KªIdentifierÍPÍS£libKªIdentifierÍTÍ\¨includesÂÂ‘W§LiteralÍ]Íd¥POWER§'POWER'ÂL®BlockStatementÍgÍò’O³VariableDeclarationÍzÍ²‘P²VariableDeclaratorÍ€Í±KªIdentifierÍ€Í¡vQ®CallExpressionÍ„Í±KªIdentifierÍ„Í«paramMapGet“R°MemberExpressionÍÍŸKªIdentifierÍÍ”¤compKªIdentifierÍ•ÍŸªparametersÂÂW§LiteralÍ¡Íª§voltage©'voltage'W§LiteralÍ¬Í°¢5V¤'5V'Â¥constT¯ReturnStatementÍÄÍãQ®CallExpressionÍËÍâKªIdentifierÍËÍÜ±parseVoltageVolts’KªIdentifierÍİÍŞ¡vW§LiteralÍàÍá¡5ÂÀT¯ReturnStatementÍÍW§LiteralÍÍ¡5M°MethodDefinitionÍİÍ$íÃÂKªIdentifierÍäÍ÷³hasStm32ResetPullUp¦methodN²FunctionExpressionÍ÷Í$íÀÂÂÂ’KªIdentifierÍøÍû£docKªIdentifierÍıÍ £mcuL®BlockStatementÍÍ$í—O³VariableDeclarationÍEÍt‘P²VariableDeclaratorÍKÍsKªIdentifierÍKÍR§pinNetsQ®CallExpressionÍUÍsKªIdentifierÍUÍa¬getPinNetMap’R°MemberExpressionÍbÍhKªIdentifierÍbÍe£mcuKªIdentifierÍfÍh¢idÂÂR°MemberExpressionÍjÍrKªIdentifierÍjÍm£docKªIdentifierÍnÍr¤netsÂÂÂ¥constO³VariableDeclarationÍ~Íõ‘P²VariableDeclaratorÍ„ÍôKªIdentifierÍ„ÍªresetNetIdV±LogicalExpressionÍ‘ÍôV±LogicalExpressionÍ‘ÍÒV±LogicalExpressionÍ‘ÍºQ®CallExpressionÍ‘Í¤R°MemberExpressionÍ‘ÍœKªIdentifierÍ‘Í˜§pinNetsKªIdentifierÍ™Íœ£getÂÂ‘W§LiteralÍÍ£¤NRST¦'NRST'Â¢??Q®CallExpressionÍ¨ÍºR°MemberExpressionÍ¨Í³KªIdentifierÍ¨Í¯§pinNetsKªIdentifierÍ°Í³£getÂÂ‘W§LiteralÍ´Í¹£RST¥'RST'Â¢??Q®CallExpressionÍ¾ÍÒR°MemberExpressionÍ¾ÍÉKªIdentifierÍ¾ÍÅ§pinNetsKªIdentifierÍÆÍÉ£getÂÂ‘W§LiteralÍÊÍÑ¥RESET§'RESET'Â¢??Q®CallExpressionÍãÍôR°MemberExpressionÍãÍîKªIdentifierÍãÍê§pinNetsKªIdentifierÍëÍî£getÂÂ‘W§LiteralÍïÍó¢P7¤'P7'Â¥constX«IfStatementÍÿÍ _V±LogicalExpressionÍ Í 6V°BinaryExpressionÍ Í KªIdentifierÍ Í ªresetNetId£===KªIdentifierÍ Í ©undefined¢||V°BinaryExpressionÍ Í 6R°MemberExpressionÍ Í 0KªIdentifierÍ Í )ªresetNetIdKªIdentifierÍ *Í 0¦lengthÂÂ£===W§LiteralÍ 5Í 6 ¡0L®BlockStatementÍ 8Í _‘T¯ReturnStatementÍ GÍ TW§LiteralÍ NÍ SÂ¥falseÀO³VariableDeclarationÍ iÍ ¢‘P²VariableDeclaratorÍ oÍ ¡KªIdentifierÍ oÍ w¨resetNetQ®CallExpressionÍ zÍ ¡R°MemberExpressionÍ zÍ ‡R°MemberExpressionÍ zÍ ‚KªIdentifierÍ zÍ }£docKªIdentifierÍ ~Í ‚¤netsÂÂKªIdentifierÍ ƒÍ ‡¤findÂÂ‘N·ArrowFunctionExpressionÍ ˆÍ  ÀÃÂÂ‘KªIdentifierÍ ˆÍ ‰¡nV°BinaryExpressionÍ Í  R°MemberExpressionÍ Í ‘KªIdentifierÍ Í ¡nKªIdentifierÍ Í ‘¢idÂÂ£===KªIdentifierÍ –Í  ªresetNetIdÂ¥constX«IfStatementÍ ¬Í!‚V°BinaryExpressionÍ °Í ÆKªIdentifierÍ °Í ¸¨resetNet£!==KªIdentifierÍ ½Í Æ©undefinedL®BlockStatementÍ ÈÍ!‚’O³VariableDeclarationÍ ×Í ı‘P²VariableDeclaratorÍ İÍ üKªIdentifierÍ İÍ Ş¡uQ®CallExpressionÍ áÍ üR°MemberExpressionÍ áÍ úR°MemberExpressionÍ áÍ îKªIdentifierÍ áÍ é¨resetNetKªIdentifierÍ êÍ î¤nameÂÂKªIdentifierÍ ïÍ ú«toUpperCaseÂÂÂ¥constX«IfStatementÍ!Í!wV±LogicalExpressionÍ!Í!GV±LogicalExpressionÍ!Í!8Q®CallExpressionÍ!Í!!R°MemberExpressionÍ!Í!KªIdentifierÍ!Í!¡uKªIdentifierÍ!Í!¨includesÂÂ‘W§LiteralÍ!Í! ¤NRST¦'NRST'Â¢||Q®CallExpressionÍ!%Í!8R°MemberExpressionÍ!%Í!/KªIdentifierÍ!%Í!&¡uKªIdentifierÍ!'Í!/¨includesÂÂ‘W§LiteralÍ!0Í!7¥RESET§'RESET'Â¢||V°BinaryExpressionÍ!<Í!GKªIdentifierÍ!<Í!=¡u£===W§LiteralÍ!BÍ!G£RST¥'RST'L®BlockStatementÍ!IÍ!w‘T¯ReturnStatementÍ!\Í!hW§LiteralÍ!cÍ!gÃ¤trueÀÀZ¬ForStatementÍ!ŒÍ$ÏO³VariableDeclarationÍ!‘Í!š‘P²VariableDeclaratorÍ!•Í!šKªIdentifierÍ!•Í!–¡iW§LiteralÍ!™Í!š ¡0£letV°BinaryExpressionÍ!œÍ!µKªIdentifierÍ!œÍ!¡i¡<R°MemberExpressionÍ! Í!µR°MemberExpressionÍ! Í!®KªIdentifierÍ! Í!££docKªIdentifierÍ!¤Í!®ªcomponentsÂÂKªIdentifierÍ!¯Í!µ¦lengthÂÂY°UpdateExpressionÍ!·Í!º¢++ÂKªIdentifierÍ!·Í!¸¡iL®BlockStatementÍ!¼Í$Ï™O³VariableDeclarationÍ!ËÍ!ç‘P²VariableDeclaratorÍ!ÑÍ!æKªIdentifierÍ!ÑÍ!Ò¡cR°MemberExpressionÍ!ÕÍ!æR°MemberExpressionÍ!ÕÍ!ãKªIdentifierÍ!ÕÍ!Ø£docKªIdentifierÍ!ÙÍ!ãªcomponentsÂÂKªIdentifierÍ!äÍ!å¡iÃÂ¥constX«IfStatementÍ!õÍ"VV±LogicalExpressionÍ!ùÍ")Y¯UnaryExpressionÍ!ùÍ"¡!ÃQ®CallExpressionÍ!úÍ"R°MemberExpressionÍ!úÍ"R°MemberExpressionÍ!úÍ"KªIdentifierÍ!úÍ!û¡cKªIdentifierÍ!üÍ"©libraryIdÂÂKªIdentifierÍ"Í"ªstartsWithÂÂ‘W§LiteralÍ"Í"¢R_¤'R_'Â¢||V°BinaryExpressionÍ"Í")R°MemberExpressionÍ"Í"KªIdentifierÍ"Í"¡cKªIdentifierÍ"Í"¢idÂÂ£===R°MemberExpressionÍ"#Í")KªIdentifierÍ"#Í"&£mcuKªIdentifierÍ"'Í")¢idÂÂL®BlockStatementÍ"+Í"V‘Ôr_”¤type¥start£end¥label±ContinueStatementÍ">Í"GÀÀO³VariableDeclarationÍ"dÍ"‘P²VariableDeclaratorÍ"jÍ"KªIdentifierÍ"jÍ"o¥rNetsQ®CallExpressionÍ"rÍ"KªIdentifierÍ"rÍ"~¬getPinNetMap’R°MemberExpressionÍ"Í"ƒKªIdentifierÍ"Í"€¡cKªIdentifierÍ"Í"ƒ¢idÂÂR°MemberExpressionÍ"…Í"KªIdentifierÍ"…Í"ˆ£docKªIdentifierÍ"‰Í"¤netsÂÂÂ¥constO³VariableDeclarationÍ"Í"·‘P²VariableDeclaratorÍ"£Í"¶KªIdentifierÍ"£Í"¥¢r1Q®CallExpressionÍ"¨Í"¶R°MemberExpressionÍ"¨Í"±KªIdentifierÍ"¨Í"­¥rNetsKªIdentifierÍ"®Í"±£getÂÂ‘W§LiteralÍ"²Í"µ¡1£'1'Â¥constO³VariableDeclarationÍ"ÅÍ"ß‘P²VariableDeclaratorÍ"ËÍ"ŞKªIdentifierÍ"ËÍ"Í¢r2Q®CallExpressionÍ"ĞÍ"ŞR°MemberExpressionÍ"ĞÍ"ÙKªIdentifierÍ"ĞÍ"Õ¥rNetsKªIdentifierÍ"ÖÍ"Ù£getÂÂ‘W§LiteralÍ"ÚÍ"İ¡2£'2'Â¥constX«IfStatementÍ"íÍ#BV±LogicalExpressionÍ"ñÍ#V°BinaryExpressionÍ"ñÍ#KªIdentifierÍ"ñÍ"ó¢r1£===KªIdentifierÍ"øÍ#©undefined¢||V°BinaryExpressionÍ#Í#KªIdentifierÍ#Í#¢r2£===KªIdentifierÍ#Í#©undefinedL®BlockStatementÍ#Í#B‘_±ContinueStatementÍ#*Í#3ÀÀO³VariableDeclarationÍ#PÍ#d‘P²VariableDeclaratorÍ#TÍ#cKªIdentifierÍ#TÍ#^ªotherNetIdW§LiteralÍ#aÍ#c ¢''£letX«IfStatementÍ#rÍ$UV°BinaryExpressionÍ#vÍ#‡KªIdentifierÍ#vÍ#x¢r1£===KªIdentifierÍ#}Í#‡ªresetNetIdL®BlockStatementÍ#‰Í#»‘S³ExpressionStatementÍ#œÍ#¬^´AssignmentExpressionÍ#œÍ#«¡=KªIdentifierÍ#œÍ#¦ªotherNetIdKªIdentifierÍ#©Í#«¢r2X«IfStatementÍ#ÎÍ$UV°BinaryExpressionÍ#ÒÍ#ãKªIdentifierÍ#ÒÍ#Ô¢r2£===KªIdentifierÍ#ÙÍ#ãªresetNetIdL®BlockStatementÍ#åÍ$‘S³ExpressionStatementÍ#øÍ$^´AssignmentExpressionÍ#øÍ$¡=KªIdentifierÍ#øÍ$ªotherNetIdKªIdentifierÍ$Í$¢r1L®BlockStatementÍ$*Í$U‘_±ContinueStatementÍ$=Í$FÀX«IfStatementÍ$cÍ$ÄQ®CallExpressionÍ$gÍ$”R°MemberExpressionÍ$gÍ$ƒKªIdentifierÍ$gÍ$t­DeepErcEngineKªIdentifierÍ$uÍ$ƒ®isPowerPullNetÂÂ’KªIdentifierÍ$„Í$‡£docKªIdentifierÍ$‰Í$“ªotherNetIdÂL®BlockStatementÍ$–Í$Ä‘T¯ReturnStatementÍ$©Í$µW§LiteralÍ$°Í$´Ã¤trueÀT¯ReturnStatementÍ$ÙÍ$æW§LiteralÍ$àÍ$åÂ¥falseM°MethodDefinitionÍ$óÍ&rÃÂKªIdentifierÍ$úÍ%®isPowerPullNet¦methodN²FunctionExpressionÍ%Í&rÀÂÂÂ’KªIdentifierÍ%	Í%£docKªIdentifierÍ%Í%¥netIdL®BlockStatementÍ%Í&r•O³VariableDeclarationÍ% Í%O‘P²VariableDeclaratorÍ%&Í%NKªIdentifierÍ%&Í%)£netQ®CallExpressionÍ%,Í%NR°MemberExpressionÍ%,Í%9R°MemberExpressionÍ%,Í%4KªIdentifierÍ%,Í%/£docKªIdentifierÍ%0Í%4¤netsÂÂKªIdentifierÍ%5Í%9¤findÂÂ‘N·ArrowFunctionExpressionÍ%:Í%MÀÃÂÂ‘KªIdentifierÍ%:Í%;¡nV°BinaryExpressionÍ%?Í%MR°MemberExpressionÍ%?Í%CKªIdentifierÍ%?Í%@¡nKªIdentifierÍ%AÍ%C¢idÂÂ£===KªIdentifierÍ%HÍ%M¥netIdÂ¥constX«IfStatementÍ%YÍ%—V°BinaryExpressionÍ%]Í%nKªIdentifierÍ%]Í%`£net£===KªIdentifierÍ%eÍ%n©undefinedL®BlockStatementÍ%pÍ%—‘T¯ReturnStatementÍ%Í%ŒW§LiteralÍ%†Í%‹Â¥falseÀX«IfStatementÍ%¡Í%çV°BinaryExpressionÍ%¥Í%¿R°MemberExpressionÍ%¥Í%­KªIdentifierÍ%¥Í%¨£netKªIdentifierÍ%©Í%­¤typeÂÂ£===R°MemberExpressionÍ%²Í%¿KªIdentifierÍ%²Í%¹§NetTypeKªIdentifierÍ%ºÍ%¿¥POWERÂÂL®BlockStatementÍ%ÁÍ%ç‘T¯ReturnStatementÍ%ĞÍ%ÜW§LiteralÍ%×Í%ÛÃ¤trueÀO³VariableDeclarationÍ%ñÍ&‘P²VariableDeclaratorÍ%÷Í&KªIdentifierÍ%÷Í%ø¡uQ®CallExpressionÍ%ûÍ&R°MemberExpressionÍ%ûÍ&R°MemberExpressionÍ%ûÍ&KªIdentifierÍ%ûÍ%ş£netKªIdentifierÍ%ÿÍ&¤nameÂÂKªIdentifierÍ&Í&«toUpperCaseÂÂÂ¥constT¯ReturnStatementÍ&Í&kV±LogicalExpressionÍ&#Í&jV±LogicalExpressionÍ&#Í&\V±LogicalExpressionÍ&#Í&LV±LogicalExpressionÍ&#Í&=V°BinaryExpressionÍ&#Í&.KªIdentifierÍ&#Í&$¡u£===W§LiteralÍ&)Í&.£VCC¥'VCC'¢||V°BinaryExpressionÍ&2Í&=KªIdentifierÍ&2Í&3¡u£===W§LiteralÍ&8Í&=£VDD¥'VDD'¢||V°BinaryExpressionÍ&AÍ&LKªIdentifierÍ&AÍ&B¡u£===W§LiteralÍ&GÍ&L£3V3¥'3V3'¢||V°BinaryExpressionÍ&PÍ&\KªIdentifierÍ&PÍ&Q¡u£===W§LiteralÍ&VÍ&\¤3.3V¦'3.3V'¢||V°BinaryExpressionÍ&`Í&jKªIdentifierÍ&`Í&a¡u£===W§LiteralÍ&fÍ&j¢5V¤'5V'M°MethodDefinitionÍ&ÏÍ+MÃÂKªIdentifierÍ&ÖÍ&ì¶hasSeriesLimitResistor¦methodN²FunctionExpressionÍ&ìÍ+MÀÂÂÂ’KªIdentifierÍ&íÍ&ğ£docKªIdentifierÍ&òÍ&õ£ledL®BlockStatementÍ&÷Í+M–O³VariableDeclarationÍ'Í'1‘P²VariableDeclaratorÍ'Í'0KªIdentifierÍ'Í'§ledNetsQ®CallExpressionÍ'Í'0KªIdentifierÍ'Í'¬getPinNetMap’R°MemberExpressionÍ'Í'%KªIdentifierÍ'Í'"£ledKªIdentifierÍ'#Í'%¢idÂÂR°MemberExpressionÍ''Í'/KªIdentifierÍ''Í'*£docKªIdentifierÍ'+Í'/¤netsÂÂÂ¥constO³VariableDeclarationÍ';Í'q‘P²VariableDeclaratorÍ'AÍ'pKªIdentifierÍ'AÍ'I¨anodeNetV±LogicalExpressionÍ'LÍ'pQ®CallExpressionÍ'LÍ'\R°MemberExpressionÍ'LÍ'WKªIdentifierÍ'LÍ'S§ledNetsKªIdentifierÍ'TÍ'W£getÂÂ‘W§LiteralÍ'XÍ'[¡A£'A'Â¢??Q®CallExpressionÍ'`Í'pR°MemberExpressionÍ'`Í'kKªIdentifierÍ'`Í'g§ledNetsKªIdentifierÍ'hÍ'k£getÂÂ‘W§LiteralÍ'lÍ'o¡1£'1'Â¥constO³VariableDeclarationÍ'{Í'³‘P²VariableDeclaratorÍ'Í'²KªIdentifierÍ'Í'‹ªcathodeNetV±LogicalExpressionÍ'Í'²Q®CallExpressionÍ'Í'R°MemberExpressionÍ'Í'™KªIdentifierÍ'Í'•§ledNetsKªIdentifierÍ'–Í'™£getÂÂ‘W§LiteralÍ'šÍ'¡K£'K'Â¢??Q®CallExpressionÍ'¢Í'²R°MemberExpressionÍ'¢Í'­KªIdentifierÍ'¢Í'©§ledNetsKªIdentifierÍ'ªÍ'­£getÂÂ‘W§LiteralÍ'®Í'±¡2£'2'Â¥constX«IfStatementÍ'½Í(V±LogicalExpressionÍ'ÁÍ'óV°BinaryExpressionÍ'ÁÍ'×KªIdentifierÍ'ÁÍ'É¨anodeNet£===KªIdentifierÍ'ÎÍ'×©undefined¢||V°BinaryExpressionÍ'ÛÍ'óKªIdentifierÍ'ÛÍ'åªcathodeNet£===KªIdentifierÍ'êÍ'ó©undefinedL®BlockStatementÍ'õÍ(‘T¯ReturnStatementÍ(Í(W§LiteralÍ(Í(Â¥falseÀZ¬ForStatementÍ(&Í+/O³VariableDeclarationÍ(+Í(4‘P²VariableDeclaratorÍ(/Í(4KªIdentifierÍ(/Í(0¡iW§LiteralÍ(3Í(4 ¡0£letV°BinaryExpressionÍ(6Í(OKªIdentifierÍ(6Í(7¡i¡<R°MemberExpressionÍ(:Í(OR°MemberExpressionÍ(:Í(HKªIdentifierÍ(:Í(=£docKªIdentifierÍ(>Í(HªcomponentsÂÂKªIdentifierÍ(IÍ(O¦lengthÂÂY°UpdateExpressionÍ(QÍ(T¢++ÂKªIdentifierÍ(QÍ(R¡iL®BlockStatementÍ(VÍ+/˜O³VariableDeclarationÍ(eÍ(‘P²VariableDeclaratorÍ(kÍ(€KªIdentifierÍ(kÍ(l¡cR°MemberExpressionÍ(oÍ(€R°MemberExpressionÍ(oÍ(}KªIdentifierÍ(oÍ(r£docKªIdentifierÍ(sÍ(}ªcomponentsÂÂKªIdentifierÍ(~Í(¡iÃÂ¥constX«IfStatementÍ(Í(ğV±LogicalExpressionÍ(“Í(ÃY¯UnaryExpressionÍ(“Í(°¡!ÃQ®CallExpressionÍ(”Í(°R°MemberExpressionÍ(”Í(ªR°MemberExpressionÍ(”Í(ŸKªIdentifierÍ(”Í(•¡cKªIdentifierÍ(–Í(Ÿ©libraryIdÂÂKªIdentifierÍ( Í(ªªstartsWithÂÂ‘W§LiteralÍ(«Í(¯¢R_¤'R_'Â¢||V°BinaryExpressionÍ(´Í(ÃR°MemberExpressionÍ(´Í(¸KªIdentifierÍ(´Í(µ¡cKªIdentifierÍ(¶Í(¸¢idÂÂ£===R°MemberExpressionÍ(½Í(ÃKªIdentifierÍ(½Í(À£ledKªIdentifierÍ(ÁÍ(Ã¢idÂÂL®BlockStatementÍ(ÅÍ(ğ‘_±ContinueStatementÍ(ØÍ(áÀÀO³VariableDeclarationÍ(şÍ))‘P²VariableDeclaratorÍ)Í)(KªIdentifierÍ)Í)	¥rNetsQ®CallExpressionÍ)Í)(KªIdentifierÍ)Í)¬getPinNetMap’R°MemberExpressionÍ)Í)KªIdentifierÍ)Í)¡cKªIdentifierÍ)Í)¢idÂÂR°MemberExpressionÍ)Í)'KªIdentifierÍ)Í)"£docKªIdentifierÍ)#Í)'¤netsÂÂÂ¥constO³VariableDeclarationÍ)7Í)T‘P²VariableDeclaratorÍ)=Í)SKªIdentifierÍ)=Í)B¥rNet1Q®CallExpressionÍ)EÍ)SR°MemberExpressionÍ)EÍ)NKªIdentifierÍ)EÍ)J¥rNetsKªIdentifierÍ)KÍ)N£getÂÂ‘W§LiteralÍ)OÍ)R¡1£'1'Â¥constO³VariableDeclarationÍ)bÍ)‘P²VariableDeclaratorÍ)hÍ)~KªIdentifierÍ)hÍ)m¥rNet2Q®CallExpressionÍ)pÍ)~R°MemberExpressionÍ)pÍ)yKªIdentifierÍ)pÍ)u¥rNetsKªIdentifierÍ)vÍ)y£getÂÂ‘W§LiteralÍ)zÍ)}¡2£'2'Â¥constX«IfStatementÍ)Í)èV±LogicalExpressionÍ)‘Í)»V°BinaryExpressionÍ)‘Í)¤KªIdentifierÍ)‘Í)–¥rNet1£===KªIdentifierÍ)›Í)¤©undefined¢||V°BinaryExpressionÍ)¨Í)»KªIdentifierÍ)¨Í)­¥rNet2£===KªIdentifierÍ)²Í)»©undefinedL®BlockStatementÍ)½Í)è‘_±ContinueStatementÍ)ĞÍ)ÙÀÀX«IfStatementÍ)öÍ*†V±LogicalExpressionÍ)úÍ*VV±LogicalExpressionÍ)ûÍ*%V°BinaryExpressionÍ)ûÍ*KªIdentifierÍ)ûÍ* ¥rNet1£===KªIdentifierÍ*Í*¨anodeNet¢&&V°BinaryExpressionÍ*Í*%KªIdentifierÍ*Í*¥rNet2£!==KªIdentifierÍ*Í*%ªcathodeNet¢||V±LogicalExpressionÍ*+Í*UV°BinaryExpressionÍ*+Í*=KªIdentifierÍ*+Í*0¥rNet2£===KªIdentifierÍ*5Í*=¨anodeNet¢&&V°BinaryExpressionÍ*AÍ*UKªIdentifierÍ*AÍ*F¥rNet1£!==KªIdentifierÍ*KÍ*UªcathodeNetL®BlockStatementÍ*XÍ*†‘T¯ReturnStatementÍ*kÍ*wW§LiteralÍ*rÍ*vÃ¤trueÀX«IfStatementÍ*”Í+$V±LogicalExpressionÍ*˜Í*ôV±LogicalExpressionÍ*™Í*ÃV°BinaryExpressionÍ*™Í*­KªIdentifierÍ*™Í*¥rNet1£===KªIdentifierÍ*£Í*­ªcathodeNet¢&&V°BinaryExpressionÍ*±Í*ÃKªIdentifierÍ*±Í*¶¥rNet2£!==KªIdentifierÍ*»Í*Ã¨anodeNet¢||V±LogicalExpressionÍ*ÉÍ*óV°BinaryExpressionÍ*ÉÍ*İKªIdentifierÍ*ÉÍ*Î¥rNet2£===KªIdentifierÍ*ÓÍ*İªcathodeNet¢&&V°BinaryExpressionÍ*áÍ*óKªIdentifierÍ*áÍ*æ¥rNet1£!==KªIdentifierÍ*ëÍ*ó¨anodeNetL®BlockStatementÍ*öÍ+$‘T¯ReturnStatementÍ+	Í+W§LiteralÍ+Í+Ã¤trueÀT¯ReturnStatementÍ+9Í+FW§LiteralÍ+@Í+EÂ¥falseM°MethodDefinitionÍ+§Í0ÃÂKªIdentifierÍ+®Í+Â´hasNetSharedResistor¦methodN²FunctionExpressionÍ+ÂÍ0ÀÂÂÂ’KªIdentifierÍ+ÃÍ+Æ£docKªIdentifierÍ+ÈÍ+Î¦deviceL®BlockStatementÍ+ĞÍ0–O³VariableDeclarationÍ+ÛÍ,‘P²VariableDeclaratorÍ+áÍ,KªIdentifierÍ+áÍ+è§devNetsQ®CallExpressionÍ+ëÍ,KªIdentifierÍ+ëÍ+÷¬getPinNetMap’R°MemberExpressionÍ+øÍ,KªIdentifierÍ+øÍ+ş¦deviceKªIdentifierÍ+ÿÍ,¢idÂÂR°MemberExpressionÍ,Í,KªIdentifierÍ,Í,£docKªIdentifierÍ,Í,¤netsÂÂÂ¥constO³VariableDeclarationÍ,Í,)‘P²VariableDeclaratorÍ,Í,(KªIdentifierÍ,Í,#¦netIdsU¯ArrayExpressionÍ,&Í,(¥constS³ExpressionStatementÍ,3Í,ĞQ®CallExpressionÍ,3Í,ÏR°MemberExpressionÍ,3Í,BKªIdentifierÍ,3Í,:§devNetsKªIdentifierÍ,;Í,B§forEachÂÂ‘N·ArrowFunctionExpressionÍ,CÍ,ÎÀÂÂÂ’KªIdentifierÍ,DÍ,G£nidKªIdentifierÍ,IÍ,M¤_pinL®BlockStatementÍ,RÍ,Î‘X«IfStatementÍ,aÍ,ÃV±LogicalExpressionÍ,eÍ,V°BinaryExpressionÍ,eÍ,sR°MemberExpressionÍ,eÍ,oKªIdentifierÍ,eÍ,h£nidKªIdentifierÍ,iÍ,o¦lengthÂÂ¡>W§LiteralÍ,rÍ,s ¡0¢&&V°BinaryExpressionÍ,wÍ,Q®CallExpressionÍ,wÍ,ŠR°MemberExpressionÍ,wÍ,…KªIdentifierÍ,wÍ,}¦netIdsKªIdentifierÍ,~Í,…§indexOfÂÂ‘KªIdentifierÍ,†Í,‰£nidÂ¡<W§LiteralÍ,Í, ¡0L®BlockStatementÍ,Í,Ã‘S³ExpressionStatementÍ,£Í,´Q®CallExpressionÍ,£Í,³R°MemberExpressionÍ,£Í,®KªIdentifierÍ,£Í,©¦netIdsKªIdentifierÍ,ªÍ,®¤pushÂÂ‘KªIdentifierÍ,¯Í,²£nidÂÀÂX«IfStatementÍ,ÚÍ-V°BinaryExpressionÍ,ŞÍ,ñR°MemberExpressionÍ,ŞÍ,ëKªIdentifierÍ,ŞÍ,ä¦netIdsKªIdentifierÍ,åÍ,ë¦lengthÂÂ£===W§LiteralÍ,ğÍ,ñ ¡0L®BlockStatementÍ,óÍ-‘T¯ReturnStatementÍ-Í-W§LiteralÍ-	Í-Â¥falseÀZ¬ForStatementÍ-$Í0O³VariableDeclarationÍ-)Í-2‘P²VariableDeclaratorÍ--Í-2KªIdentifierÍ--Í-.¡iW§LiteralÍ-1Í-2 ¡0£letV°BinaryExpressionÍ-4Í-MKªIdentifierÍ-4Í-5¡i¡<R°MemberExpressionÍ-8Í-MR°MemberExpressionÍ-8Í-FKªIdentifierÍ-8Í-;£docKªIdentifierÍ-<Í-FªcomponentsÂÂKªIdentifierÍ-GÍ-M¦lengthÂÂY°UpdateExpressionÍ-OÍ-R¢++ÂKªIdentifierÍ-OÍ-P¡iL®BlockStatementÍ-TÍ0–O³VariableDeclarationÍ-cÍ-‘P²VariableDeclaratorÍ-iÍ-~KªIdentifierÍ-iÍ-j¡cR°MemberExpressionÍ-mÍ-~R°MemberExpressionÍ-mÍ-{KªIdentifierÍ-mÍ-p£docKªIdentifierÍ-qÍ-{ªcomponentsÂÂKªIdentifierÍ-|Í-}¡iÃÂ¥constX«IfStatementÍ-Í-ñV±LogicalExpressionÍ-‘Í-ÄY¯UnaryExpressionÍ-‘Í-®¡!ÃQ®CallExpressionÍ-’Í-®R°MemberExpressionÍ-’Í-¨R°MemberExpressionÍ-’Í-KªIdentifierÍ-’Í-“¡cKªIdentifierÍ-”Í-©libraryIdÂÂKªIdentifierÍ-Í-¨ªstartsWithÂÂ‘W§LiteralÍ-©Í-­¢R_¤'R_'Â¢||V°BinaryExpressionÍ-²Í-ÄR°MemberExpressionÍ-²Í-¶KªIdentifierÍ-²Í-³¡cKªIdentifierÍ-´Í-¶¢idÂÂ£===R°MemberExpressionÍ-»Í-ÄKªIdentifierÍ-»Í-Á¦deviceKªIdentifierÍ-ÂÍ-Ä¢idÂÂL®BlockStatementÍ-ÆÍ-ñ‘_±ContinueStatementÍ-ÙÍ-âÀÀO³VariableDeclarationÍ-ÿÍ.*‘P²VariableDeclaratorÍ.Í.)KªIdentifierÍ.Í.
+¥rNetsQ®CallExpressionÍ.Í.)KªIdentifierÍ.Í.¬getPinNetMap’R°MemberExpressionÍ.Í.KªIdentifierÍ.Í.¡cKªIdentifierÍ.Í.¢idÂÂR°MemberExpressionÍ. Í.(KªIdentifierÍ. Í.#£docKªIdentifierÍ.$Í.(¤netsÂÂÂ¥constO³VariableDeclarationÍ.8Í.K‘P²VariableDeclaratorÍ.<Í.JKªIdentifierÍ.<Í.B¦sharedW§LiteralÍ.EÍ.JÂ¥false£letS³ExpressionStatementÍ.YÍ/®Q®CallExpressionÍ.YÍ/­R°MemberExpressionÍ.YÍ.fKªIdentifierÍ.YÍ.^¥rNetsKªIdentifierÍ._Í.f§forEachÂÂ‘N·ArrowFunctionExpressionÍ.gÍ/¬ÀÂÂÂ’KªIdentifierÍ.hÍ.k£ridKªIdentifierÍ.mÍ.q¤_pinL®BlockStatementÍ.vÍ/¬‘X«IfStatementÍ.‰Í/Y¯UnaryExpressionÍ.Í.”¡!ÃKªIdentifierÍ.Í.”¦sharedL®BlockStatementÍ.–Í/‘Z¬ForStatementÍ.­Í/ŠO³VariableDeclarationÍ.²Í.»‘P²VariableDeclaratorÍ.¶Í.»KªIdentifierÍ.¶Í.·¡jW§LiteralÍ.ºÍ.» ¡0£letV°BinaryExpressionÍ.½Í.ÎKªIdentifierÍ.½Í.¾¡j¡<R°MemberExpressionÍ.ÁÍ.ÎKªIdentifierÍ.ÁÍ.Ç¦netIdsKªIdentifierÍ.ÈÍ.Î¦lengthÂÂY°UpdateExpressionÍ.ĞÍ.Ó¢++ÂKªIdentifierÍ.ĞÍ.Ñ¡jL®BlockStatementÍ.ÕÍ/Š‘X«IfStatementÍ.ğÍ/sV°BinaryExpressionÍ.ôÍ/KªIdentifierÍ.ôÍ.÷£rid£===R°MemberExpressionÍ.üÍ/KªIdentifierÍ.üÍ/¦netIdsKªIdentifierÍ/Í/¡jÃÂL®BlockStatementÍ/Í/s’S³ExpressionStatementÍ/&Í/4^´AssignmentExpressionÍ/&Í/3¡=KªIdentifierÍ/&Í/,¦sharedW§LiteralÍ//Í/3Ã¤true_®BreakStatementÍ/RÍ/XÀÀÀÂX«IfStatementÍ/¼Í/öKªIdentifierÍ/ÀÍ/Æ¦sharedL®BlockStatementÍ/ÈÍ/ö‘T¯ReturnStatementÍ/ÛÍ/çW§LiteralÍ/âÍ/æÃ¤trueÀT¯ReturnStatementÍ0Í0W§LiteralÍ0Í0Â¥falseM°MethodDefinitionÍ0%Í1~ÃÂKªIdentifierÍ0,Í05©violation¦methodN²FunctionExpressionÍ05Í1~ÀÂÂÂ–KªIdentifierÍ06Í0>¨severityKªIdentifierÍ0@Í0H¨ruleTypeKªIdentifierÍ0JÍ0Q§messageKªIdentifierÍ0SÍ0^«componentIdKªIdentifierÍ0`Í0e¥netIdKªIdentifierÍ0gÍ0j£fixL®BlockStatementÍ0lÍ1~‘T¯ReturnStatementÍ0wÍ1wÔr`”¤type¥start£endªproperties°ObjectExpressionÍ0~Í1v—Ôra™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ0Í0§ÂÂÂKªIdentifierÍ0Í0¢idQ®CallExpressionÍ0‘Í0§R°MemberExpressionÍ0‘Í0 KªIdentifierÍ0‘Í0—¦IdUtilKªIdentifierÍ0˜Í0 ¨generateÂÂ‘W§LiteralÍ0¡Í0¦£erc¥'erc'Â¤inita¨PropertyÍ0¶Í0ÈÂÂÂKªIdentifierÍ0¶Í0¾¨severityKªIdentifierÍ0ÀÍ0È¨severity¤inita¨PropertyÍ0×Í0éÂÂÂKªIdentifierÍ0×Í0ß¨ruleTypeKªIdentifierÍ0áÍ0é¨ruleType¤inita¨PropertyÍ0øÍ1ÂÂÂKªIdentifierÍ0øÍ0ÿ§messageKªIdentifierÍ1Í1§message¤inita¨PropertyÍ1Í1/ÂÂÂKªIdentifierÍ1Í1"«componentIdKªIdentifierÍ1$Í1/«componentId¤inita¨PropertyÍ1>Í1JÂÂÂKªIdentifierÍ1>Í1C¥netIdKªIdentifierÍ1EÍ1J¥netId¤inita¨PropertyÍ1YÍ1kÂÂÂKªIdentifierÍ1YÍ1f­fixSuggestionKªIdentifierÍ1hÍ1k£fix¤initÀ–Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclaration&Ìo“Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifier/:KªIdentifier/:«ErcSeverityKªIdentifier/:«ErcSeverityc¯ImportSpecifier<ÌGKªIdentifier<ÌG«ErcRuleTypeKªIdentifier<ÌG«ErcRuleTypec¯ImportSpecifierÌIÌPKªIdentifierÌIÌP§NetTypeKªIdentifierÌIÌP§NetTypeW§LiteralÌXÌn´../types/CommonTypes¶'../types/CommonTypes'b±ImportDeclarationÌqÌ™‘c¯ImportSpecifierÌzÌƒKªIdentifierÌzÌƒ©ErcEngineKªIdentifierÌzÌƒ©ErcEngineW§LiteralÌ‹Ì˜«./ErcEngine­'./ErcEngine'b±ImportDeclarationÌ›ÌÅ‘c¯ImportSpecifierÌ¤Ì®KªIdentifierÌ¤Ì®ªUnitParserKªIdentifierÌ¤Ì®ªUnitParserW§LiteralÌ¶ÌÄ¬./UnitParser®'./UnitParser'b±ImportDeclarationÌÇÌé‘c¯ImportSpecifierÌĞÌÖKªIdentifierÌĞÌÖ¦IdUtilKªIdentifierÌĞÌÖ¦IdUtilW§LiteralÌŞÌè¨./IdUtilª'./IdUtil'b±ImportDeclarationÌëÍ6“c¯ImportSpecifierÌôÌÿKªIdentifierÌôÌÿ«appendArrayKªIdentifierÌôÌÿ«appendArrayc¯ImportSpecifierÍÍKªIdentifierÍÍ«paramMapGetKªIdentifierÍÍ«paramMapGetc¯ImportSpecifierÍÍKªIdentifierÍÍ±parseVoltageVoltsKªIdentifierÍÍ±parseVoltageVoltsW§LiteralÍ'Í5¬./MapHelpers®'./MapHelpers'b±ImportDeclarationÍ8Íd‘c¯ImportSpecifierÍAÍMKªIdentifierÍAÍM¬getPinNetMapKªIdentifierÍAÍM¬getPinNetMapW§LiteralÍUÍc¬./PinRefUtil®'./PinRefUtil'

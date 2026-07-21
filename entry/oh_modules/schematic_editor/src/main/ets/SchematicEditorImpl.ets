@@ -293,6 +293,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.probes = SchematicEditorImpl.copyProbeList(topo.probeList);
     this.buses = SchematicEditorImpl.copyBusList(topo.busList);
     this.rebuildRefDesCounters();
+    this.rebuildNetPinConnectivity();
+    // rebuild 后 document 已变；必须同步 topology，否则 AI 门禁读到陈旧 SchTopology
+    this.syncTopologyFromDoc();
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -425,6 +428,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     routeData.crossCount = EditorInternals.calcRouteCrossCount(routeData);
     routeData.totalLineLength = EditorInternals.calcTotalLength(routeData);
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ErrCode.OK;
   }
@@ -549,7 +553,21 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     const oldRot = comp.rotation;
     const newRot = SchematicEditorImpl.normalizeRotation(angle);
-    this.commandHistory.push(new RotateCommand(this.document, instUuid, oldRot, newRot));
+    const oldPinPositions = this.getComponentPinWorldPositions(comp);
+    const beforeWires = this.snapshotWirePointsNearPins(oldPinPositions);
+    const beforeLabels = this.snapshotLabelPositionsNearPins(oldPinPositions);
+    const cmd = new RotateCommand(this.document, instUuid, oldRot, newRot);
+    this.commandHistory.push(cmd);
+    this.updateWiresForComponentMove(instUuid, oldPinPositions);
+    this.remapLabelsForPinMove(oldPinPositions, this.getComponentPinWorldPositions(comp));
+    const newPins = this.getComponentPinWorldPositions(comp);
+    cmd.captureGeometry(
+      beforeWires,
+      this.snapshotWirePointsNearPins(newPins, beforeWires),
+      beforeLabels,
+      this.snapshotLabelPositionsNearPins(newPins, beforeLabels)
+    );
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -564,10 +582,91 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     if (horizontal) {
       const oldM = comp.mirrored;
-      this.commandHistory.push(new MirrorCommand(this.document, instUuid, oldM, !oldM));
+      const oldPinPositions = this.getComponentPinWorldPositions(comp);
+      const beforeWires = this.snapshotWirePointsNearPins(oldPinPositions);
+      const beforeLabels = this.snapshotLabelPositionsNearPins(oldPinPositions);
+      const cmd = new MirrorCommand(this.document, instUuid, oldM, !oldM);
+      this.commandHistory.push(cmd);
+      this.updateWiresForComponentMove(instUuid, oldPinPositions);
+      this.remapLabelsForPinMove(oldPinPositions, this.getComponentPinWorldPositions(comp));
+      const newPins = this.getComponentPinWorldPositions(comp);
+      cmd.captureGeometry(
+        beforeWires,
+        this.snapshotWirePointsNearPins(newPins, beforeWires),
+        beforeLabels,
+        this.snapshotLabelPositionsNearPins(newPins, beforeLabels)
+      );
+      this.rebuildNetPinConnectivity();
       this.notifyChange();
     }
     return ResultHelper.ok();
+  }
+
+  /** Snapshot wire polylines near pins (and optionally keep ids from a prior snapshot). */
+  private snapshotWirePointsNearPins(
+    pinPositions: Map<string, Point2D>,
+    includeIds?: Map<string, Point2D[]>
+  ): Map<string, Point2D[]> {
+    const doc = this.getDocument();
+    const out = new Map<string, Point2D[]>();
+    const threshold = 80;
+    const pinList: Point2D[] = [];
+    pinPositions.forEach((p: Point2D) => { pinList.push(p); });
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const wire = doc.wires[wi];
+      let include = includeIds !== undefined && includeIds.has(wire.id);
+      if (!include) {
+        for (let pi = 0; pi < wire.points.length && !include; pi++) {
+          const pt = wire.points[pi];
+          for (let k = 0; k < pinList.length; k++) {
+            if (Math.abs(pt.x - pinList[k].x) <= threshold &&
+              Math.abs(pt.y - pinList[k].y) <= threshold) {
+              include = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!include) {
+        continue;
+      }
+      const pts: Point2D[] = [];
+      for (let j = 0; j < wire.points.length; j++) {
+        pts.push({ x: wire.points[j].x, y: wire.points[j].y });
+      }
+      out.set(wire.id, pts);
+    }
+    return out;
+  }
+
+  private snapshotLabelPositionsNearPins(
+    pinPositions: Map<string, Point2D>,
+    includeIds?: Map<string, Point2D>
+  ): Map<string, Point2D> {
+    const doc = this.getDocument();
+    const out = new Map<string, Point2D>();
+    const threshold = 80;
+    const pinList: Point2D[] = [];
+    pinPositions.forEach((p: Point2D) => { pinList.push(p); });
+    const labels = doc.netLabels ?? [];
+    for (let li = 0; li < labels.length; li++) {
+      const label = labels[li];
+      let include = includeIds !== undefined && includeIds.has(label.id);
+      if (!include) {
+        for (let k = 0; k < pinList.length; k++) {
+          if (Math.abs(label.position.x - pinList[k].x) <= threshold &&
+            Math.abs(label.position.y - pinList[k].y) <= threshold) {
+            include = true;
+            break;
+          }
+        }
+      }
+      if (!include) {
+        continue;
+      }
+      out.set(label.id, { x: label.position.x, y: label.position.y });
+    }
+    return out;
   }
 
   batchAddDevice(devList: BatchDeviceItem[]): number {
@@ -598,13 +697,23 @@ export class SchematicEditorImpl implements ISchematicEditor {
         if (!this.isComponentLocked(instUuidList[i])) deletable.push(instUuidList[i]);
       }
       if (deletable.length > 0) {
-        const wireIds = this.collectWireIdsTouchingComponents(deletable);
-        const labelIds = this.collectNetLabelIdsForDelete(deletable, wireIds);
+        const clearingAll = this.willClearAllComponents(doc, deletable);
+        const wireIds = clearingAll
+          ? this.collectAllWireIds(doc)
+          : this.collectWireIdsTouchingComponents(deletable);
+        const labelIds = clearingAll
+          ? this.collectAllNetLabelIds(doc)
+          : this.collectNetLabelIdsForDelete(deletable, wireIds);
         this.commandHistory.push(new BatchDeleteCommand(this.document, deletable, wireIds, labelIds));
       }
     } else {
-      const wireIds = this.collectWireIdsTouchingComponents(instUuidList);
-      const labelIds = this.collectNetLabelIdsForDelete(instUuidList, wireIds);
+      const clearingAll = this.willClearAllComponents(doc, instUuidList);
+      const wireIds = clearingAll
+        ? this.collectAllWireIds(doc)
+        : this.collectWireIdsTouchingComponents(instUuidList);
+      const labelIds = clearingAll
+        ? this.collectAllNetLabelIds(doc)
+        : this.collectNetLabelIdsForDelete(instUuidList, wireIds);
       const wireRemove = new Set<string>();
       for (let i = 0; i < wireIds.length; i++) {
         wireRemove.add(wireIds[i]);
@@ -652,6 +761,40 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.rebuildNetPinConnectivity();
     this.notifyChange();
     return before - doc.components.length;
+  }
+
+  /** True when every component in the document is in the delete set. */
+  private willClearAllComponents(doc: SchematicDocument, deleteIds: string[]): boolean {
+    if (doc.components.length === 0 || deleteIds.length === 0) {
+      return false;
+    }
+    const idSet = new Set<string>();
+    for (let i = 0; i < deleteIds.length; i++) {
+      idSet.add(deleteIds[i]);
+    }
+    for (let i = 0; i < doc.components.length; i++) {
+      if (!idSet.has(doc.components[i].id)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private collectAllWireIds(doc: SchematicDocument): string[] {
+    const ids: string[] = [];
+    for (let i = 0; i < doc.wires.length; i++) {
+      ids.push(doc.wires[i].id);
+    }
+    return ids;
+  }
+
+  private collectAllNetLabelIds(doc: SchematicDocument): string[] {
+    const labels = doc.netLabels ?? [];
+    const ids: string[] = [];
+    for (let i = 0; i < labels.length; i++) {
+      ids.push(labels[i].id);
+    }
+    return ids;
   }
 
   /**
@@ -704,9 +847,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   /**
-   * Collect net-label IDs owned by components being deleted.
-   * A label is removed when it sits near a deleted pin / deleted stub wire,
-   * and is not still anchored by any remaining wire (shared power labels stay).
+   * Collect net-label IDs that should go with the deleted components.
+   * Remove when the label is tied to deleted pins/wires and not anchored by
+   * remaining geometry; also drop floating orphans (e.g. leftover GND text)
+   * that have no remaining pin/wire nearby.
    */
   private collectNetLabelIdsForDelete(compIds: string[], wireIdsToRemove: string[]): string[] {
     const doc = this.getDocument();
@@ -714,34 +858,46 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (labels.length === 0) {
       return [];
     }
-    const pinPositions: Point2D[] = [];
+    const deleteCompSet = new Set<string>();
     for (let i = 0; i < compIds.length; i++) {
-      const comp = this.findComponent(compIds[i]);
-      if (comp === undefined) {
-        continue;
-      }
+      deleteCompSet.add(compIds[i]);
+    }
+    const deletedPinPositions: Point2D[] = [];
+    const remainingPinPositions: Point2D[] = [];
+    for (let i = 0; i < doc.components.length; i++) {
+      const comp = doc.components[i];
       const pinMap = this.getComponentPinWorldPositions(comp);
+      const into = deleteCompSet.has(comp.id) ? deletedPinPositions : remainingPinPositions;
       pinMap.forEach((pos: Point2D) => {
-        pinPositions.push({ x: pos.x, y: pos.y });
+        into.push({ x: pos.x, y: pos.y });
       });
     }
     const deletedWireIds = new Set<string>();
     for (let i = 0; i < wireIdsToRemove.length; i++) {
       deletedWireIds.add(wireIdsToRemove[i]);
     }
-    // Same proximity as updateLabelsForComponentMove (stub ~20–60px + margin)
-    const threshold = 45;
+    // Covers AI stub labels (stubPad+40 ≈ 60) plus margin
+    const threshold = 80;
     const hitIds: string[] = [];
     const seen = new Set<string>();
 
     for (let li = 0; li < labels.length; li++) {
       const label = labels[li];
       let nearDeletedPin = false;
-      for (let pi = 0; pi < pinPositions.length; pi++) {
-        const dx = label.position.x - pinPositions[pi].x;
-        const dy = label.position.y - pinPositions[pi].y;
+      for (let pi = 0; pi < deletedPinPositions.length; pi++) {
+        const dx = label.position.x - deletedPinPositions[pi].x;
+        const dy = label.position.y - deletedPinPositions[pi].y;
         if (Math.abs(dx) <= threshold && Math.abs(dy) <= threshold) {
           nearDeletedPin = true;
+          break;
+        }
+      }
+      let nearRemainingPin = false;
+      for (let pi = 0; pi < remainingPinPositions.length; pi++) {
+        const dx = label.position.x - remainingPinPositions[pi].x;
+        const dy = label.position.y - remainingPinPositions[pi].y;
+        if (Math.abs(dx) <= threshold && Math.abs(dy) <= threshold) {
+          nearRemainingPin = true;
           break;
         }
       }
@@ -753,8 +909,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
         if (wire.points.length === 0) {
           continue;
         }
-        const nearWire = SchematicEditorImpl.labelNearWire(label.position, wire, threshold);
-        if (!nearWire) {
+        if (!SchematicEditorImpl.labelNearWire(label.position, wire, threshold)) {
           continue;
         }
         if (deletedWireIds.has(wire.id)) {
@@ -764,9 +919,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
       }
 
-      // Only drop labels that belonged to the deleted device/stub and are not shared
-      const shouldRemove =
-        (nearDeletedPin || touchedByDeletedWire) && !touchedByRemainingWire;
+      const anchoredToRemaining = nearRemainingPin || touchedByRemainingWire;
+      const tiedToDeleted = nearDeletedPin || touchedByDeletedWire;
+      // Shared power labels on remaining wires stay; orphans / deleted-only labels go
+      const shouldRemove = !anchoredToRemaining &&
+        (tiedToDeleted || remainingPinPositions.length === 0);
       if (shouldRemove && !seen.has(label.id)) {
         seen.add(label.id);
         hitIds.push(label.id);
@@ -1030,9 +1187,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
     let net: Net | undefined = this.findNetByName(doc, netName);
     if (net === undefined) {
       let netType: NetType = NetType.SIGNAL;
-      if (netName === 'VCC' || netName === 'VDD') {
+      const upper = netName.toUpperCase();
+      if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE') {
         netType = NetType.POWER;
-      } else if (netName === 'GND') {
+      } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
         netType = NetType.GROUND;
       }
       net = {
@@ -1045,12 +1203,15 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     const labelId: string = IdUtil.generate('label');
     const labelPos: Point2D = { x: x, y: y };
+    const upperName = netName.toUpperCase();
+    const isRail = upperName === 'GND' || upperName === 'VCC' || upperName === 'VDD' ||
+      upperName === 'V+' || upperName === 'VSS' || upperName === 'VEE' || upperName === '0';
     const label: NetLabel = {
       id: labelId,
       netId: net.id,
       text: netName,
       position: labelPos,
-      global: netName === 'GND' || netName === 'VCC'
+      global: isRail
     };
     doc.netLabels.push(label);
     this.notifyChange();
@@ -1467,10 +1628,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
     // Capture old pin world positions before the move
     const oldPinPositions = this.getComponentPinWorldPositions(comp);
     this.commandHistory.push(new MoveCommand(this.document, componentId, oldPos, newPos));
-    // Update wire endpoints that were at the component's old pin positions
-    this.updateWiresForComponentMove(componentId, oldPinPositions);
-    // Update net labels near the component's pins to follow the move
-    this.updateLabelsForComponentMove(oldPinPositions, delta);
+    // Update wire endpoints / stubs that were at the component's old pin positions
+    const stubEnds = this.updateWiresForComponentMove(componentId, oldPinPositions);
+    // Update net labels near pins or translated stub free ends
+    this.updateLabelsForComponentMove(oldPinPositions, delta, stubEnds);
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok();
   }
@@ -1497,6 +1659,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
    * Updates wire endpoints that were connected to a moved component's pins.
    * After the component moves, any wire endpoint that was at a pin's old
    * world position gets moved to the pin's new world position.
+   * Short dangling stubs (pin → free end with net label) translate as a whole
+   * so the free end and label stay attached.
    * For 3-point orthogonal wires, recalculates the midpoint using an L-shape
    * that avoids: (a) intersecting component bodies (except endpoint components),
    * and (b) collinear overlap with wires of other nets.
@@ -1504,15 +1668,19 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private updateWiresForComponentMove(
     compId: string,
     oldPinPositions: Map<string, Point2D>
-  ): void {
+  ): Point2D[] {
     const comp = this.findComponent(compId);
+    const movedStubFreeEnds: Point2D[] = [];
     if (comp === undefined) {
-      return;
+      return movedStubFreeEnds;
     }
     const newPinPositions = this.getComponentPinWorldPositions(comp);
     const doc = this.getDocument();
     const threshold = 3;
     let updatedCount = 0;
+    // World positions of every pin on every component (after this move) —
+    // used to detect dangling stub free ends.
+    const allPinWorlds = this.collectAllPinWorldPositions();
 
     for (let wi = 0; wi < doc.wires.length; wi++) {
       const wire = doc.wires[wi];
@@ -1521,9 +1689,12 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
       let changed = false;
       let newPoints: Point2D[] = [];
+      // Which endpoints snapped to a moved pin (and that pin's delta)
+      const endPinDelta: Array<Point2D | null> = [];
       for (let pi = 0; pi < wire.points.length; pi++) {
         const pt = wire.points[pi];
         let updated: Point2D | null = null;
+        let pinDelta: Point2D | null = null;
         oldPinPositions.forEach((oldPos: Point2D, pinId: string) => {
           if (updated !== null) {
             return;
@@ -1534,9 +1705,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
             const newPos = newPinPositions.get(pinId);
             if (newPos !== undefined) {
               updated = { x: newPos.x, y: newPos.y };
+              pinDelta = { x: newPos.x - oldPos.x, y: newPos.y - oldPos.y };
             }
           }
         });
+        endPinDelta.push(pinDelta);
         if (updated !== null) {
           newPoints.push(updated);
           changed = true;
@@ -1544,11 +1717,47 @@ export class SchematicEditorImpl implements ISchematicEditor {
           newPoints.push({ x: pt.x, y: pt.y });
         }
       }
+
+      // Stub / leave-package lead: one end on moved pin, remaining points not on
+      // any device pin → translate the whole dangling path (keeps label stubs intact)
+      let pinEndCount = 0;
+      let pinDelta: Point2D | null = null;
+      for (let ei = 0; ei < endPinDelta.length; ei++) {
+        if (endPinDelta[ei] !== null) {
+          pinEndCount++;
+          pinDelta = endPinDelta[ei];
+        }
+      }
+      let danglingTranslated = false;
+      if (pinEndCount === 1 && pinDelta !== null && newPoints.length >= 2) {
+        let dangling = true;
+        for (let pi = 0; pi < wire.points.length; pi++) {
+          if (endPinDelta[pi] !== null) {
+            continue;
+          }
+          if (this.isNearAnyPinWorld(wire.points[pi], allPinWorlds, threshold)) {
+            dangling = false;
+            break;
+          }
+        }
+        if (dangling) {
+          for (let pi = 0; pi < newPoints.length; pi++) {
+            if (endPinDelta[pi] !== null) {
+              continue;
+            }
+            const freeOld = wire.points[pi];
+            movedStubFreeEnds.push({ x: freeOld.x, y: freeOld.y });
+            newPoints[pi] = { x: freeOld.x + pinDelta.x, y: freeOld.y + pinDelta.y };
+            changed = true;
+          }
+          danglingTranslated = true;
+        }
+      }
+
       if (changed) {
-        if (newPoints.length === 3) {
-          newPoints = this.recalcMidForMovedWire(
-            newPoints, wire, compId
-          );
+        // Routed wire with far end fixed on another pin: rebuild L-bend midpoint
+        if (newPoints.length === 3 && !danglingTranslated) {
+          newPoints = this.recalcMidForMovedWire(newPoints, wire, compId);
         }
         wire.points = newPoints;
         updatedCount++;
@@ -1557,6 +1766,30 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (updatedCount > 0) {
       Logger.info('schematic_editor', `updateWiresForComponentMove: updated ${updatedCount} wires for comp ${compId}`);
     }
+    return movedStubFreeEnds;
+  }
+
+  /** World positions of every pin on every component (after current move applied). */
+  private collectAllPinWorldPositions(): Point2D[] {
+    const doc = this.getDocument();
+    const out: Point2D[] = [];
+    for (let ci = 0; ci < doc.components.length; ci++) {
+      const pins = this.getComponentPinWorldPositions(doc.components[ci]);
+      pins.forEach((p: Point2D) => {
+        out.push(p);
+      });
+    }
+    return out;
+  }
+
+  private isNearAnyPinWorld(pt: Point2D, pinWorlds: Point2D[], threshold: number): boolean {
+    for (let i = 0; i < pinWorlds.length; i++) {
+      const p = pinWorlds[i];
+      if (Math.abs(pt.x - p.x) <= threshold && Math.abs(pt.y - p.y) <= threshold) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -1646,43 +1879,97 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   /**
-   * Moves net labels that are positioned near a component's pins.
-   * Labels within 40px of any old pin position are shifted by the move delta
-   * so they follow the component instead of being left behind.
+   * Moves net labels that sit near a component's pins or near stub free ends
+   * that were translated with the move.
    */
   private updateLabelsForComponentMove(
     oldPinPositions: Map<string, Point2D>,
-    delta: Point2D
+    delta: Point2D,
+    stubFreeEnds: Point2D[] = [],
+    alreadyMoved: Set<string> | null = null
   ): void {
     if (delta.x === 0 && delta.y === 0) {
       return;
     }
     const doc = this.getDocument();
-    const proximityThreshold = 40; // covers 30px stub offset + 10px margin
+    const proximityThreshold = 80;
     let updatedCount = 0;
+
+    const anchors: Point2D[] = [];
+    oldPinPositions.forEach((oldPinPos: Point2D) => {
+      anchors.push(oldPinPos);
+    });
+    for (let i = 0; i < stubFreeEnds.length; i++) {
+      anchors.push(stubFreeEnds[i]);
+    }
 
     for (let li = 0; li < doc.netLabels.length; li++) {
       const label = doc.netLabels[li];
-      let nearPin = false;
-      oldPinPositions.forEach((oldPinPos: Point2D) => {
-        if (nearPin) {
-          return;
-        }
-        const dx = label.position.x - oldPinPos.x;
-        const dy = label.position.y - oldPinPos.y;
+      if (alreadyMoved !== null && alreadyMoved.has(label.id)) {
+        continue;
+      }
+      let nearAnchor = false;
+      for (let ai = 0; ai < anchors.length; ai++) {
+        const a = anchors[ai];
+        const dx = label.position.x - a.x;
+        const dy = label.position.y - a.y;
         if (Math.abs(dx) <= proximityThreshold && Math.abs(dy) <= proximityThreshold) {
-          nearPin = true;
+          nearAnchor = true;
+          break;
         }
-      });
-      if (nearPin) {
+      }
+      if (nearAnchor) {
         label.position.x += delta.x;
         label.position.y += delta.y;
+        if (alreadyMoved !== null) {
+          alreadyMoved.add(label.id);
+        }
         updatedCount++;
       }
     }
 
     if (updatedCount > 0) {
       Logger.info('schematic_editor', `updateLabelsForComponentMove: moved ${updatedCount} labels by (${delta.x},${delta.y})`);
+    }
+  }
+
+  /**
+   * Remap labels after rotate/mirror: each label near an old pin follows that pin's delta.
+   */
+  private remapLabelsForPinMove(
+    oldPinPositions: Map<string, Point2D>,
+    newPinPositions: Map<string, Point2D>
+  ): void {
+    const doc = this.getDocument();
+    const proximityThreshold = 80;
+    let updatedCount = 0;
+    for (let li = 0; li < doc.netLabels.length; li++) {
+      const label = doc.netLabels[li];
+      let bestPinId: string | null = null;
+      let bestDist = proximityThreshold + 1;
+      oldPinPositions.forEach((oldPos: Point2D, pinId: string) => {
+        const dx = Math.abs(label.position.x - oldPos.x);
+        const dy = Math.abs(label.position.y - oldPos.y);
+        const d = Math.max(dx, dy);
+        if (d <= proximityThreshold && d < bestDist) {
+          bestDist = d;
+          bestPinId = pinId;
+        }
+      });
+      if (bestPinId === null) {
+        continue;
+      }
+      const oldPos = oldPinPositions.get(bestPinId);
+      const newPos = newPinPositions.get(bestPinId);
+      if (oldPos === undefined || newPos === undefined) {
+        continue;
+      }
+      label.position.x += newPos.x - oldPos.x;
+      label.position.y += newPos.y - oldPos.y;
+      updatedCount++;
+    }
+    if (updatedCount > 0) {
+      Logger.info('schematic_editor', `remapLabelsForPinMove: remapped ${updatedCount} labels`);
     }
   }
 
@@ -2006,19 +2293,18 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (this.boundsResolver !== null) {
       const resolved = this.boundsResolver(libraryId);
       if (resolved !== null) {
-        // Enforce minimum hit area — components whose pins cluster on one side
-        // (e.g. instruments: OSCILLOSCOPE, VIRTUAL_METER) would otherwise have
-        // very narrow bounds, making them unclickable.
+        // 最小命中区：向原点对称扩展，勿以引脚中心为锚（否则仪器主体右半仍在区外）
         if (resolved.width < SchematicEditorImpl.MIN_HIT_W ||
             resolved.height < SchematicEditorImpl.MIN_HIT_H) {
-          const cx = (resolved.minX + resolved.maxX) / 2;
-          const cy = (resolved.minY + resolved.maxY) / 2;
           const w = Math.max(resolved.width, SchematicEditorImpl.MIN_HIT_W);
           const h = Math.max(resolved.height, SchematicEditorImpl.MIN_HIT_H);
+          const minX = Math.min(resolved.minX, -w / 2);
+          const maxX = Math.max(resolved.maxX, w / 2);
+          const minY = Math.min(resolved.minY, -h / 2);
+          const maxY = Math.max(resolved.maxY, h / 2);
           return {
-            minX: cx - w / 2, maxX: cx + w / 2,
-            minY: cy - h / 2, maxY: cy + h / 2,
-            width: w, height: h
+            minX, maxX, minY, maxY,
+            width: maxX - minX, height: maxY - minY
           };
         }
         return resolved;
@@ -2199,7 +2485,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
       return out;
     };
-    rebuildAllNetPinConnectivity(doc, this.viewport.gridSize, resolver);
+    rebuildAllNetPinConnectivity(doc, Math.min(this.viewport.gridSize, 10), resolver);
     this.mergeDuplicateNamedNets();
   }
 
@@ -2211,7 +2497,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
    */
   private mergeNetsAtSharedWireEndpoints(): void {
     const doc = this.getDocument();
-    const junctionRadius = Math.max(2, this.viewport.gridSize * 0.5);
+    // Match WireNetTopology cap: must stay < half of MCU 10px pin pitch
+    const junctionRadius = Math.min(Math.max(2, this.viewport.gridSize * 0.5), 5);
     // Collect endpoint → {point, wireIndex} pairs
     interface EndpointEntry { pt: Point2D; wireIdx: number; }
     const endpoints: EndpointEntry[] = [];
@@ -2308,12 +2595,12 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
       }
     }
-    // Merge non-rail nets that share the same name (including auto-named nets like NET_xxx)
+    // Merge non-rail nets that share the same intentional name（排除空名与自动 NET_*）
     const nameCanonical = new Map<string, string>();
     for (let ni = 0; ni < doc.nets.length; ni++) {
       const net = doc.nets[ni];
       const key = net.name.toUpperCase();
-      if (key.length === 0) {
+      if (key.length === 0 || /^NET_\d+$/i.test(key) || /^NET_TOPO/i.test(key)) {
         continue;
       }
       if (nameCanonical.has(key)) {
@@ -2925,19 +3212,29 @@ export class SchematicEditorImpl implements ISchematicEditor {
    *  Checks both pin-to-net membership and wire-to-net proximity. */
   private inheritNetAtPosition(pos: Point2D): string | null {
     const doc = this.getDocument();
-    const junctionRadius = Math.max(2, this.viewport.gridSize * 0.5);
+    const junctionRadius = Math.min(Math.max(2, this.viewport.gridSize * 0.5), 5);
     // 1) Check if any component pin at this position is already on a net
     for (const net of doc.nets) {
-      if (net.pinIds.length === 0) continue;
+      if (net.pinIds.length === 0) {
+        continue;
+      }
       for (const pinRef of net.pinIds) {
         const parts = pinRef.split(':');
-        if (parts.length < 2) continue;
+        if (parts.length < 2) {
+          continue;
+        }
         const comp = this.findComponent(parts[0]);
-        if (comp === undefined) continue;
+        if (comp === undefined) {
+          continue;
+        }
         const pins = this.resolvePins(comp.libraryId);
-        if (pins === null) continue;
+        if (pins === null) {
+          continue;
+        }
         for (const pin of pins) {
-          if (pin.id !== parts[1]) continue;
+          if (pin.id !== parts[1]) {
+            continue;
+          }
           const local = this.transformPinOffsetForConnect(pin.position, comp.rotation, comp.mirrored);
           const wx = comp.position.x + local.x;
           const wy = comp.position.y + local.y;
@@ -2949,7 +3246,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     // 2) Check if the position lies on an existing wire segment
     for (const wire of doc.wires) {
-      if (wire.points.length < 2) continue;
+      if (wire.points.length < 2) {
+        continue;
+      }
       for (let i = 1; i < wire.points.length; i++) {
         const a = wire.points[i - 1];
         const b = wire.points[i];
@@ -3268,13 +3567,15 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.commandHistory.push(new MoveCommand(this.document, comp.id, oldPos, newPos));
     }
     // Update wire endpoints and labels for all moved components
+    const movedLabels = new Set<string>();
     oldPinMaps.forEach((oldPins: Map<string, Point2D>, compId: string) => {
-      this.updateWiresForComponentMove(compId, oldPins);
+      const stubEnds = this.updateWiresForComponentMove(compId, oldPins);
       const d = deltas.get(compId);
       if (d !== undefined) {
-        this.updateLabelsForComponentMove(oldPins, d);
+        this.updateLabelsForComponentMove(oldPins, d, stubEnds, movedLabels);
       }
     });
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok();
   }

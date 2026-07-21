@@ -7,10 +7,11 @@ export function detectInstrumentKind(libraryId: string): string {
         return '';
     }
     const id = libraryId.toUpperCase();
-    if (id.includes('OSC') || id.includes('SCOPE')) {
+    if (id === 'OSCILLOSCOPE' || id.includes('OSCILLOSCOPE') ||
+        (id.includes('SCOPE') && !id.includes('MICROSCOPE'))) {
         return 'osc';
     }
-    if (id.includes('LOGIC') || id.includes('ANALYZER') || id.startsWith('LA')) {
+    if (id.includes('LOGIC_ANALYZER') || id === 'LA' || id.startsWith('LA_')) {
         return 'logic';
     }
     if (id.includes('VIRTUAL_METER') || id === 'MULTIMETER') {
@@ -19,19 +20,20 @@ export function detectInstrumentKind(libraryId: string): string {
     if (id.includes('VOLTMETER')) {
         return 'vm';
     }
-    if (id.includes('AMMETER') || (id.includes('AMP') && id.includes('METER'))) {
+    if (id.includes('AMMETER') || id === 'AMP_METER') {
         return 'am';
     }
-    if (id.includes('POWER') || id.includes('WATT')) {
+    if (id === 'POWER_METER' || id.includes('POWER_METER') || id.includes('WATTMETER')) {
         return 'power';
     }
-    if (id.includes('FREQ') || id.includes('COUNTER')) {
+    if (id.includes('FREQ_COUNTER') || id === 'FREQ_COUNTER') {
         return 'freq';
     }
-    if (id.includes('UART') || id.includes('TERMINAL')) {
+    if (id.includes('UART_TERMINAL') || id === 'UART_TERMINAL') {
         return 'uart';
     }
-    if (id.includes('SIGNAL') || id.includes('GEN') || id.includes('FUNC')) {
+    // 禁止裸 GEN：会误伤 GENERIC_* 等
+    if (id === 'SIGNAL_GEN' || id.startsWith('SIGNAL_GEN') || id.includes('FUNC_GEN')) {
         return 'sig';
     }
     return '';

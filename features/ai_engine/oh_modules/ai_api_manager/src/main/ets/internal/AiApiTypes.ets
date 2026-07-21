@@ -53,8 +53,19 @@ export interface ChatRequestBody {
   model: string;
   messages: ChatRequestMessage[];
   max_tokens: number;
-  temperature: number;
+  temperature?: number;
   thinking?: ThinkingParam;
+}
+
+/** Anthropic /messages 响应片段 */
+export interface AnthropicContentBlock {
+  type?: string;
+  text?: string;
+}
+
+export interface AnthropicMessagesResponse {
+  content?: AnthropicContentBlock[];
+  stop_reason?: string;
 }
 
 export function buildChatRequestBody(model: string, messages: ChatRequestMessage[],
@@ -72,14 +83,46 @@ export function buildChatRequestBody(model: string, messages: ChatRequestMessage
   return body;
 }
 
+/** Claude Messages API：与 OpenAI Chat Completions 字段相近，但勿带 thinking，且需 anthropic-version 头 */
+export function buildAnthropicMessagesBody(model: string, messages: ChatRequestMessage[],
+  maxTokens: number, temperature: number): ChatRequestBody {
+  const body: ChatRequestBody = {
+    model: model,
+    messages: messages,
+    max_tokens: maxTokens,
+    temperature: temperature
+  };
+  return body;
+}
+
+export function extractAnthropicText(parsed: AnthropicMessagesResponse): string {
+  const blocks = parsed.content;
+  if (!blocks || blocks.length === 0) {
+    return '';
+  }
+  const parts: string[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b && b.type === 'text' && typeof b.text === 'string' && b.text.length > 0) {
+      parts.push(b.text);
+    }
+  }
+  return parts.join('');
+}
+
 export function extractChoiceContent(choice: ChatCompletionChoice): string {
   const msg = choice.message;
   const content = msg.content ?? '';
   if (content.length > 0) {
     return content;
   }
-  const reasoning = msg.reasoning_content ?? '';
-  return reasoning;
+  // content 空时：仅当 reasoning 本身像 JSON 对象才回退，禁止把中文推理当正文
+  const reasoning = (msg.reasoning_content ?? '').trim();
+  if (reasoning.length > 0 && reasoning.charAt(0) === '{' &&
+    reasoning.charAt(reasoning.length - 1) === '}') {
+    return reasoning;
+  }
+  return '';
 }
 
 export function maskApiConfig(api: AiApiConfig): AiApiConfig {
@@ -157,18 +200,47 @@ export function mergeAiApiConfig(existing: AiApiConfig, updates: AiApiConfigUpda
   };
 }
 
-export function buildRequestHeaders(apiKey: string, customHeaders?: Record<string, string>): Record<string, string> {
+export function buildRequestHeaders(apiKey: string, customHeaders?: Record<string, string>,
+  provider?: AiProviderType): Record<string, string> {
   const headers: Record<string, string> = {};
   headers['Content-Type'] = 'application/json';
-  headers['Authorization'] = `Bearer ${apiKey}`;
+  let customHasAuth = false;
   if (customHeaders) {
     const keys = Object.keys(customHeaders);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
+      const lower = key.toLowerCase();
+      if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') {
+        customHasAuth = true;
+      }
       headers[key] = customHeaders[key];
     }
   }
+  if (provider === AiProviderType.CLAUDE) {
+    headers['anthropic-version'] = '2023-06-01';
+    if (!customHasAuth && apiKey.length > 0) {
+      headers['x-api-key'] = apiKey;
+    }
+    return headers;
+  }
+  // Claude 等用 x-api-key；仅当自定义头未带认证时才默认 Bearer
+  if (!customHasAuth && apiKey.length > 0) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
   return headers;
+}
+
+/** capabilityBinding: capability → apiId；按能力键查找，禁止取任意第一个 value */
+export function getBoundApiIdForCapability(binding: Record<string, string>,
+  capability: string): string | undefined {
+  if (!capability || capability.length === 0) {
+    return undefined;
+  }
+  const v = binding[capability];
+  if (typeof v === 'string' && v.length > 0) {
+    return v;
+  }
+  return undefined;
 }
 
 export function getFirstBoundCapabilityId(binding: Record<string, string>): string | undefined {

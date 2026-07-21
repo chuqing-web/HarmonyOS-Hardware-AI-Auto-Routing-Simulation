@@ -343,11 +343,16 @@ export function joinParamConstraintValues(params: Map<string, string>): string {
   return parts.join(' ');
 }
 
+function escapeRegExpKey(key: string): string {
+  return key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function applyPromptVars(template: string, vars: PromptVarEntry[]): string {
   let user = template;
   for (let i = 0; i < vars.length; i++) {
     const entry = vars[i];
-    user = user.replace(new RegExp(`\\{\\{${entry.key}\\}\\}`, 'g'), entry.value);
+    const safeKey = escapeRegExpKey(entry.key);
+    user = user.replace(new RegExp(`\\{\\{${safeKey}\\}\\}`, 'g'), entry.value);
   }
   return user;
 }

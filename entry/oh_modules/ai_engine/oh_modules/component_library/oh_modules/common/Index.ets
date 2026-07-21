@@ -22,7 +22,11 @@ export {
   PinGeometryResolver, PinGeometry
 } from './src/main/ets/utils/NetPinRebuildUtil';
 
-export { applyNetLabelConnectivity, isAutoNetLabelText } from './src/main/ets/utils/NetLabelConnectivity';
+export {
+  applyNetLabelConnectivity, isAutoNetLabelText, isPowerRailLabelText,
+  isGroundLabelText, isPowerSupplyLabelText, normalizePowerLabelFlags,
+  canonicalizeRailLabelText, mergeNetInto
+} from './src/main/ets/utils/NetLabelConnectivity';
 
 export { rebuildWireNetTopology } from './src/main/ets/utils/WireNetTopology';
 
@@ -87,7 +91,9 @@ export { ResultHelper, ApiResult } from './src/main/ets/utils/ResultHelper';
 
 export { TopologyAdapter } from './src/main/ets/utils/TopologyAdapter';
 
-export { calcSymbolBounds, pointInSymbolBounds, resolveSymbolKey, SymbolBounds } from './src/main/ets/utils/SymbolGeometry';
+export {
+  calcSymbolBounds, coverOriginCenteredBody, pointInSymbolBounds, resolveSymbolKey, SymbolBounds
+} from './src/main/ets/utils/SymbolGeometry';
 
 export { CallbackRegistry } from './src/main/ets/utils/CallbackRegistry';
 

@@ -1,12 +1,12 @@
 import type { IAiApiManager, ChatOptions } from './api/IAiApiManager';
 import { PROVIDER_TEMPLATES, CIRCUIT_TEST_PROMPT, getTemplate } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/config/ProviderTemplates";
-import { AiProviderType, LoadBalanceMode, ApiConnectionStatus, CryptoUtil, IdUtil, ErrCode, ResultHelper, FeatureGate, AiContextSanitizer, Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { AiApiConfig, AiCapability, Result, AiTaskType, AiTestResult, ApiResult, UsageDashboard } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { AiProviderType, AiCapability, LoadBalanceMode, ApiConnectionStatus, CryptoUtil, IdUtil, AiTaskType, ErrCode, ResultHelper, FeatureGate, AiContextSanitizer, Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { AiApiConfig, Result, AiTestResult, ApiResult, UsageDashboard } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { QuotaTracker } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/billing/QuotaTracker";
 import http from "@ohos:net.http";
 import { NetworkModeManager } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/NetworkModeManager";
-import { buildChatRequestBody, buildRequestHeaders, cloneAiApiConfig, extractChoiceContent, getFirstBoundCapabilityId, maskApiConfig, mergeAiApiConfig } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/internal/AiApiTypes";
-import type { AiApiConfigUpdate, ChatCompletionResponse, ChatRequestMessage } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/internal/AiApiTypes";
+import { buildChatRequestBody, buildAnthropicMessagesBody, buildRequestHeaders, cloneAiApiConfig, extractChoiceContent, extractAnthropicText, getBoundApiIdForCapability, maskApiConfig, mergeAiApiConfig } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/internal/AiApiTypes";
+import type { AiApiConfigUpdate, ChatCompletionResponse, ChatRequestMessage, AnthropicMessagesResponse } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/ets/internal/AiApiTypes";
 /** 流水线输出上限；配合 disableThinking，避免推理占满额度 */
 const DEFAULT_MAX_OUTPUT_TOKENS = 65536;
 /** 复杂原理图 LLM 单次回复可能极慢（深推理/长 JSON）。 */
@@ -100,6 +100,9 @@ export class AiApiManagerImpl implements IAiApiManager {
     private quotaTracker: QuotaTracker = QuotaTracker.getInstance();
     readonly networkMode: NetworkModeManager = new NetworkModeManager();
     private networkFailCount: number = 0;
+    /** 用户取消：中止 in-flight HTTP，并阻止重试 */
+    private chatCancelRequested: boolean = false;
+    private activeHttpRequests: http.HttpRequest[] = [];
     // ---- v2 API ----
     getAllApiConfig(): AiApiConfig[] {
         return this.listApis();
@@ -147,18 +150,20 @@ export class AiApiManagerImpl implements IAiApiManager {
             return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT, '离线模式：仅本地 Ollama 可用');
         }
         const taskKey = `task_${taskType}`;
+        const capability = taskTypeToCapability(taskType);
         const enabled = Array.from(this.apis.values()).filter(a => a.enabled && !this.failedApiIds.has(a.id));
         for (let i = 0; i < enabled.length; i++) {
             const api = enabled[i];
             if (api.taskBind && api.taskBind[taskKey]) {
                 return ResultHelper.ok(maskApiConfig(api));
             }
-            if (api.capabilityBinding) {
-                const bound = getFirstBoundCapabilityId(api.capabilityBinding);
-                if (bound) {
-                    const b = this.apis.get(bound);
-                    if (b)
+            if (capability && api.capabilityBinding) {
+                const boundId = getBoundApiIdForCapability(api.capabilityBinding, capability);
+                if (boundId) {
+                    const b = this.apis.get(boundId);
+                    if (b && b.enabled && !this.failedApiIds.has(b.id)) {
                         return ResultHelper.ok(maskApiConfig(b));
+                    }
                 }
             }
         }
@@ -233,6 +238,7 @@ export class AiApiManagerImpl implements IAiApiManager {
             }
         }
         this.apis.set(config.id, stored);
+        this.failedApiIds.delete(config.id);
         if (!this.defaultApiId && config.enabled)
             this.defaultApiId = config.id;
         Logger.info(INSTR_TRACE_TAG, `[AI_API] addApi OK id=${config.id} name=${config.name}` +
@@ -246,6 +252,7 @@ export class AiApiManagerImpl implements IAiApiManager {
             return { success: false, error: 'API not found' };
         this.encryptedKeys.delete(id);
         this.encryptedKeys.delete(`${id}_backup`);
+        this.failedApiIds.delete(id);
         if (this.defaultApiId === id)
             this.defaultApiId = '';
         return { success: true };
@@ -256,9 +263,11 @@ export class AiApiManagerImpl implements IAiApiManager {
             return { success: false, error: 'API not found' };
         if (updates.apiKey && updates.apiKey !== '***') {
             this.encryptedKeys.set(id, CryptoUtil.encryptWithHuks(updates.apiKey));
+            this.failedApiIds.delete(id);
         }
         if (updates.backupApiKey) {
             this.encryptedKeys.set(`${id}_backup`, CryptoUtil.encryptWithHuks(updates.backupApiKey));
+            this.failedApiIds.delete(id);
         }
         const updated = mergeAiApiConfig(existing, updates);
         this.apis.set(id, updated);
@@ -335,7 +344,36 @@ export class AiApiManagerImpl implements IAiApiManager {
             ` respPreview=${result.data ? result.data.substring(0, 80) : ''}`);
         return { success: result.success, data: result.success, error: result.error };
     }
+    cancelPendingChat(): void {
+        this.chatCancelRequested = true;
+        const n = this.activeHttpRequests.length;
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] CANCEL pending chat requests n=${n}`);
+        traceAiOp('AI_API', 'cancel_pending', `n=${n}`);
+        const snapshot = this.activeHttpRequests.slice();
+        this.activeHttpRequests = [];
+        for (let i = 0; i < snapshot.length; i++) {
+            try {
+                snapshot[i].destroy();
+            }
+            catch (_e) {
+                // destroy 可能对已结束请求抛错，忽略
+            }
+        }
+    }
+    clearChatCancel(): void {
+        this.chatCancelRequested = false;
+    }
+    isChatCancelled(): boolean {
+        return this.chatCancelRequested;
+    }
     async chat(prompt: string, options?: ChatOptions): Promise<Result<string>> {
+        if (this.chatCancelRequested) {
+            return {
+                success: false,
+                errCode: ErrCode.ERR_ASYNC_CANCEL,
+                error: 'cancelled'
+            };
+        }
         if (!this.networkMode.shouldAllowCloudApi()) {
             const local = this.selectApi(options?.capability);
             const isLocal = local !== null && local.provider === AiProviderType.OLLAMA;
@@ -379,8 +417,13 @@ export class AiApiManagerImpl implements IAiApiManager {
             }
             else {
                 const enc = this.encryptedKeys.get(api.id);
-                if (enc)
+                if (enc) {
                     copy.apiKey = CryptoUtil.decrypt(enc);
+                }
+                const encBak = this.encryptedKeys.get(`${api.id}_backup`);
+                if (encBak) {
+                    copy.backupApiKey = CryptoUtil.decrypt(encBak);
+                }
             }
             configs.push(copy);
         });
@@ -394,8 +437,38 @@ export class AiApiManagerImpl implements IAiApiManager {
                 const config = configs[i];
                 if (!config.id)
                     config.id = IdUtil.generate('api');
-                this.addApi(config);
-                count++;
+                const existing = this.apis.get(config.id);
+                if (existing) {
+                    const upd = this.updateApi(config.id, {
+                        name: config.name,
+                        provider: config.provider,
+                        baseUrl: config.baseUrl,
+                        apiKey: config.apiKey,
+                        backupApiKey: config.backupApiKey,
+                        model: config.model,
+                        enabled: config.enabled,
+                        priority: config.priority,
+                        maxTokens: config.maxTokens,
+                        temperature: config.temperature,
+                        contextLimit: config.contextLimit,
+                        proxyUrl: config.proxyUrl,
+                        customHeaders: config.customHeaders,
+                        capabilityBinding: config.capabilityBinding,
+                        remark: config.remark
+                    });
+                    if (upd.success) {
+                        count++;
+                    }
+                }
+                else {
+                    const addRes = this.addApi(config);
+                    if (addRes.success) {
+                        count++;
+                    }
+                    else {
+                        Logger.warn(INSTR_TRACE_TAG, `[AI_API] importConfigs skip id=${config.id}: ${addRes.error}`);
+                    }
+                }
             }
             return { success: true, data: count };
         }
@@ -404,6 +477,8 @@ export class AiApiManagerImpl implements IAiApiManager {
         }
     }
     clearAllConfigs(): Result<void> {
+        // 仅供 vault→manager 整表重载；禁止在未随后 addApi 时单独调用清空金库镜像
+        Logger.warn(INSTR_TRACE_TAG, `[AI_API] clearAllConfigs wiping in-memory manager (count=${this.apis.size})`);
         this.apis.clear();
         this.encryptedKeys.clear();
         this.defaultApiId = '';
@@ -477,11 +552,15 @@ export class AiApiManagerImpl implements IAiApiManager {
             ` preferProxy=${preferProxy}` +
             ` connectTimeoutMs=${connectTimeoutMs}` +
             ` readTimeoutMs=${readTimeoutMs}`);
-        Logger.info(INSTR_TRACE_TAG, `[AI_API] WAIT long reply — complex prompts may take many minutes, do not cancel`);
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] WAIT long reply — complex prompts may take minutes; user cancel aborts HTTP`);
         traceAiPayload('AI_API', 'PROMPT', prompt, `id=${api.id} model=${api.model} cap=${options?.capability ?? 'any'}`);
-        const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
+        const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders, api.provider);
         const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-        const body = JSON.stringify(buildChatRequestBody(api.model, messages, maxTokens, options?.temperature ?? api.temperature, options?.disableThinking));
+        const temp = options?.temperature ?? api.temperature;
+        const reqBody = api.provider === AiProviderType.CLAUDE
+            ? buildAnthropicMessagesBody(api.model, messages, maxTokens, temp)
+            : buildChatRequestBody(api.model, messages, maxTokens, temp, options?.disableThinking);
+        const body = JSON.stringify(reqBody);
         // 本机系统 DNS 常失败：优先公共 DNS 直连，再回退代理/系统 DNS
         const attempts: HttpTransportOpts[] = [
             { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
@@ -491,6 +570,13 @@ export class AiApiManagerImpl implements IAiApiManager {
         let lastErr = '';
         let usedProxy = preferProxy;
         for (let i = 0; i < attempts.length; i++) {
+            if (this.chatCancelRequested) {
+                return {
+                    success: false,
+                    errCode: ErrCode.ERR_ASYNC_CANCEL,
+                    error: 'cancelled'
+                };
+            }
             const opt = attempts[i];
             if (i > 0 && opt.usingProxy === attempts[i - 1].usingProxy &&
                 opt.usePublicDns === attempts[i - 1].usePublicDns) {
@@ -500,7 +586,16 @@ export class AiApiManagerImpl implements IAiApiManager {
             Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP attempt#${i + 1} id=${api.id} usingProxy=${opt.usingProxy}` +
                 ` publicDns=${opt.usePublicDns}`);
             const attempt = await this.executeHttpPost(url, headers, body, opt);
+            if (this.chatCancelRequested ||
+                (attempt.error ?? '').indexOf('cancelled') >= 0) {
+                return {
+                    success: false,
+                    errCode: ErrCode.ERR_ASYNC_CANCEL,
+                    error: 'cancelled'
+                };
+            }
             if (attempt.success && attempt.data !== undefined) {
+                this.networkFailCount = 0;
                 return this.parseChatHttpSuccess(api, attempt.data);
             }
             lastErr = attempt.error ?? 'unknown';
@@ -525,15 +620,29 @@ export class AiApiManagerImpl implements IAiApiManager {
                 continue;
             }
         }
+        this.networkFailCount++;
+        const policy = this.networkMode.handleNetworkFailure(this.networkFailCount);
+        Logger.warn(INSTR_TRACE_TAG, `[AI_API] network policy failCount=${this.networkFailCount} action=${policy}`);
+        if (policy === 'offline') {
+            this.networkMode.setOfflineMode(true);
+            return {
+                success: false,
+                error: humanizeHttpError(lastErr, usedProxy) + '（连续失败，已建议离线模式）'
+            };
+        }
         return {
             success: false,
             error: humanizeHttpError(lastErr, usedProxy)
         };
     }
     private async executeHttpPost(url: string, headers: Record<string, string>, body: string, opt: HttpTransportOpts): Promise<Result<string>> {
+        if (this.chatCancelRequested) {
+            return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+        }
         let httpRequest: http.HttpRequest | null = null;
         try {
             httpRequest = http.createHttp();
+            this.activeHttpRequests.push(httpRequest);
             const reqOptions: http.HttpRequestOptions = {
                 method: http.RequestMethod.POST,
                 header: headers,
@@ -547,6 +656,9 @@ export class AiApiManagerImpl implements IAiApiManager {
                 (reqOptions as http.HttpRequestOptions).dnsServers = AI_PUBLIC_DNS_SERVERS;
             }
             const response = await httpRequest.request(url, reqOptions);
+            if (this.chatCancelRequested) {
+                return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+            }
             if (response.responseCode === 200) {
                 const rawBody = typeof response.result === 'string'
                     ? response.result : `${response.result}`;
@@ -558,19 +670,46 @@ export class AiApiManagerImpl implements IAiApiManager {
             return { success: false, error: `API returned ${response.responseCode}` };
         }
         catch (e) {
+            if (this.chatCancelRequested) {
+                Logger.info(INSTR_TRACE_TAG, '[AI_API] HTTP aborted by user cancel');
+                return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+            }
             const errMsg = formatCaughtError(e);
             Logger.error(INSTR_TRACE_TAG, `[AI_API] HTTP exception url=${url} proxy=${opt.usingProxy} dns=${opt.usePublicDns}: ${errMsg}`);
             return { success: false, error: `Request failed: ${errMsg}` };
         }
         finally {
             if (httpRequest !== null) {
-                httpRequest.destroy();
+                const idx = this.activeHttpRequests.indexOf(httpRequest);
+                if (idx >= 0) {
+                    this.activeHttpRequests.splice(idx, 1);
+                }
+                try {
+                    httpRequest.destroy();
+                }
+                catch (_d) {
+                    // ignore
+                }
             }
         }
     }
     private parseChatHttpSuccess(api: AiApiConfig, rawBody: string): Result<string> {
         this.failedApiIds.delete(api.id);
         try {
+            if (api.provider === AiProviderType.CLAUDE) {
+                const anth = JSON.parse(rawBody) as AnthropicMessagesResponse;
+                const content = extractAnthropicText(anth);
+                Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP 200 id=${api.id} anthropic contentLen=${content.length}`);
+                traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} model=${api.model}`);
+                if (content.length === 0) {
+                    const stop = anth.stop_reason ?? 'unknown';
+                    return {
+                        success: false,
+                        error: `LLM returned empty content (stop_reason=${stop})`
+                    };
+                }
+                return { success: true, data: content };
+            }
             const parsed = JSON.parse(rawBody) as ChatCompletionResponse;
             if (parsed.choices && parsed.choices.length > 0) {
                 const content = extractChoiceContent(parsed.choices[0]);
@@ -613,9 +752,13 @@ export class AiApiManagerImpl implements IAiApiManager {
             ? options.connectTimeoutMs : AI_HTTP_CONNECT_TIMEOUT_MS;
         const readTimeoutMs = options?.readTimeoutMs !== undefined
             ? options.readTimeoutMs : AI_HTTP_READ_TIMEOUT_MS;
-        const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders);
+        const headers: Record<string, string> = buildRequestHeaders(apiKey, api.customHeaders, api.provider);
         const messages: ChatRequestMessage[] = [{ role: 'user', content: prompt }];
-        const body = JSON.stringify(buildChatRequestBody(api.model, messages, maxTokens, options?.temperature ?? api.temperature, options?.disableThinking));
+        const temp = options?.temperature ?? api.temperature;
+        const reqBody = api.provider === AiProviderType.CLAUDE
+            ? buildAnthropicMessagesBody(api.model, messages, maxTokens, temp)
+            : buildChatRequestBody(api.model, messages, maxTokens, temp, options?.disableThinking);
+        const body = JSON.stringify(reqBody);
         const preferProxy = this.shouldUseSystemProxy(api.id);
         const attempts: HttpTransportOpts[] = [
             { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
@@ -691,5 +834,31 @@ export class AiApiManagerImpl implements IAiApiManager {
             return CryptoUtil.decrypt(enc);
         const api = this.apis.get(id);
         return api?.apiKey ?? '';
+    }
+}
+/** AiTaskType → AiCapability 字符串（与 capabilityBinding 键一致） */
+function taskTypeToCapability(taskType: AiTaskType): string | undefined {
+    switch (taskType) {
+        case AiTaskType.TASK_AUTO_ROUTE_GLOBAL:
+        case AiTaskType.TASK_AUTO_ROUTE_SELECT:
+        case AiTaskType.TASK_ROUTE_OPTIMIZE:
+        case AiTaskType.TASK_LAYOUT_PLACE:
+            return AiCapability.AUTO_WIRING;
+        case AiTaskType.TASK_CIRCUIT_DIAG_STATIC:
+        case AiTaskType.TASK_CIRCUIT_DIAG_DYNAMIC:
+            return AiCapability.FAULT_DIAGNOSIS;
+        case AiTaskType.TASK_GEN_SCH_FULL:
+        case AiTaskType.TASK_GEN_SUB_CIRCUIT:
+        case AiTaskType.TASK_FULL_PIPELINE:
+            return AiCapability.CIRCUIT_GENERATION;
+        case AiTaskType.TASK_WAVE_ANALYZE:
+            return AiCapability.WAVEFORM_ANALYSIS;
+        case AiTaskType.TASK_COMPONENT_REC:
+        case AiTaskType.TASK_COMPONENT_REPLACE:
+        case AiTaskType.TASK_BOM_OPTIMIZE:
+        case AiTaskType.TASK_DEVICE_SELECT:
+            return AiCapability.COMPONENT_RECOMMEND;
+        default:
+            return undefined;
     }
 }

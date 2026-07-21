@@ -78,6 +78,7 @@ struct Index {
   @State debugTabHasBadge: boolean = false;
   @State instrTabHasBadge: boolean = false;
   @State categoryNodes: CategoryNode[] = [];
+  @State libRefreshKey: number = 0;
   @State @Watch('onThemeRefresh') themeRefreshKey: number = 0;
   @State expandedCategories: Set<ComponentCategory> = new Set();
   @State selectedTreeItem: string = '';
@@ -106,6 +107,8 @@ struct Index {
   @State appInitialized: boolean = false;
   @State unsavedChanges: boolean = false;
   @State showExitConfirmDialog: boolean = false;
+  @State showSimFailDialog: boolean = false;
+  @State simFailMessage: string = '';
 
   private clipboardLibId: string = '';
   private clipboardDeviceIds: string[] = [];
@@ -181,6 +184,13 @@ struct Index {
     this.themeRefreshKey++;
     this.getEditorImpl().setGridVisible(this.gridVisible);
     this.initCategoryTree();
+    this.appService.onLibraryLoaded = (_total: number) => {
+      this.initCategoryTree();
+      this.libRefreshKey++;
+      if (this.searchKeyword.trim().length > 0) {
+        this.refreshComponentList();
+      }
+    };
     this.hookStartupWindowResize();
     void maximizeAppWindow(ctx);
 
@@ -382,12 +392,31 @@ struct Index {
     const expanded = new Set<ComponentCategory>();
     for (let i = 0; i < cats.length; i++) {
       const cat = cats[i];
-      nodes.push({ cat: cat, label: labels.get(cat) ?? cat, expanded: false });
+      const count = this.appService.componentLibrary.listAllByCategory(cat).length;
+      const base = labels.get(cat) ?? cat;
+      nodes.push({
+        cat: cat,
+        label: count > 0 ? `${base} (${count})` : base,
+        expanded: false
+      });
       if (i === 0) {
         expanded.add(cat);
       }
     }
     this.categoryNodes = nodes;
+    // Preserve already-expanded categories across library reload
+    if (this.expandedCategories.size > 0) {
+      const keep = new Set<ComponentCategory>();
+      this.expandedCategories.forEach((c: ComponentCategory) => {
+        if (cats.indexOf(c) >= 0) {
+          keep.add(c);
+        }
+      });
+      if (keep.size > 0) {
+        this.expandedCategories = keep;
+        return;
+      }
+    }
     this.expandedCategories = expanded;
   }
 
@@ -404,8 +433,27 @@ struct Index {
   refreshComponentList(): void {
     const kw = this.searchKeyword.trim();
     if (kw.length > 0) {
-      const result = this.appService.componentLibrary.search(kw, 1, 50);
-      this.componentList = result.items.map(c => `${c.id}|${c.name}`);
+      // 拉全部分页结果，避免库很大时只显示前 50 条
+      const pageSize = 200;
+      let page = 1;
+      const rows: string[] = [];
+      let total = 0;
+      while (true) {
+        const result = this.appService.componentLibrary.search(kw, page, pageSize);
+        total = result.total;
+        for (let i = 0; i < result.items.length; i++) {
+          const c = result.items[i];
+          rows.push(`${c.id}|${c.name}`);
+        }
+        if (rows.length >= total || result.items.length === 0) {
+          break;
+        }
+        page++;
+        if (page > 50) {
+          break;
+        }
+      }
+      this.componentList = rows;
     } else {
       this.componentList = [];
     }
@@ -467,7 +515,16 @@ struct Index {
     this.simPaused = false;
     this.resetAfterProjectChange();
     this.refreshComponentList();
-    this.appService.runErc(false);
+    // Defer ERC — template insert used to block MMI 3s+ with sync DeepErc + log flood
+    this.appService.scheduleRuntimeErc(80);
+  }
+
+  private async startSimFromUi(): Promise<void> {
+    const ok = await this.appService.startSimulation();
+    this.applySimStartResult(ok);
+    if (ok) {
+      this.simPaused = false;
+    }
   }
 
   resetAfterProjectChange(): void {
@@ -501,7 +558,11 @@ struct Index {
     this.simRunning = ok;
     if (ok) {
       this.lockEditingForSimulation();
+      return;
     }
+    const reason = this.appService.getLastSimStartFailReason();
+    this.simFailMessage = reason.length > 0 ? reason : '仿真启动失败，请检查电路连接后重试';
+    this.showSimFailDialog = true;
   }
 
   setToolMode(mode: EditorToolMode, pendingId: string = ''): void {
@@ -1110,6 +1171,9 @@ struct Index {
       if (this.showExitConfirmDialog) {
         this.ExitConfirmDialog()
       }
+      if (this.showSimFailDialog) {
+        this.SimFailDialog()
+      }
     }
     .width('100%')
     .height('100%')
@@ -1153,7 +1217,7 @@ struct Index {
         this.appService.stopSimulation();
         this.simRunning = false;
       } else {
-        this.applySimStartResult(this.appService.startSimulation());
+        void this.startSimFromUi();
       }
       return true;
     }
@@ -1305,7 +1369,7 @@ struct Index {
           this.appService.stopSimulation();
           this.simRunning = false;
         } else {
-          this.applySimStartResult(this.appService.startSimulation());
+          await this.startSimFromUi();
         }
       }},
       { label: $r('app.string.toolbar_sim_pause'), shortcut: 'F6', icon: ProteusIconName.PAUSE, action: () => {
@@ -1469,8 +1533,7 @@ struct Index {
               this.simRunning = false;
               this.simPaused = false;
             } else {
-              this.applySimStartResult(this.appService.startSimulation());
-              this.simPaused = false;
+              await this.startSimFromUi();
             }
           }})
         ProteusToolButton({ iconName: ProteusIconName.PAUSE, tooltip: '暂停仿真 (F6)', showLabel: false,
@@ -1672,7 +1735,7 @@ struct Index {
                       this.CategoryItems(node.cat)
                     }
                   }
-                }, (node: CategoryNode) => node.cat)
+                }, (node: CategoryNode) => `${node.cat}_${this.libRefreshKey}_${node.label}`)
               }
             }
             .width('100%')
@@ -1777,12 +1840,12 @@ struct Index {
         onClickRow: () => this.selectLibraryItem(item),
         onDoubleClick: () => this.placeComponent(item.split('|')[0])
       })
-    }, (item: string) => item)
+    }, (item: string) => `${item}_${this.libRefreshKey}`)
   }
 
   getCategoryItems(cat: ComponentCategory): string[] {
-    const result = this.appService.componentLibrary.listByCategory(cat, 1, 30);
-    return result.items.map(c => `${c.id}|${c.name}`);
+    const items = this.appService.componentLibrary.listAllByCategory(cat);
+    return items.map(c => `${c.id}|${c.name}`);
   }
 
   @Builder
@@ -2048,7 +2111,7 @@ struct Index {
                           this.appService.stopSimulation();
                           this.simRunning = false;
                         } else {
-                          this.applySimStartResult(this.appService.startSimulation());
+                          await this.startSimFromUi();
                         }
                       }
                     })
@@ -2346,7 +2409,6 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
-      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
@@ -2495,7 +2557,6 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
-      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
@@ -2548,7 +2609,6 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
-      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
@@ -2670,7 +2730,6 @@ struct Index {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 8, color: '#00000040' })
-      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
@@ -2728,14 +2787,55 @@ struct Index {
       .padding(24)
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
+      .borderRadius(8)
       .shadow({ radius: 8, color: '#00000040' })
-      .hitTestBehavior(HitTestMode.Block)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#00000060')
+  }
+
+  /** 仿真启动失败提示 */
+  @Builder
+  SimFailDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#00000060')
+        .onClick(() => { this.showSimFailDialog = false; })
+      Column() {
+        Text('无法启动仿真')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.ERC_WARN)
+          .fontWeight(FontWeight.Medium)
+          .margin({ bottom: 8 })
+        Text(this.simFailMessage)
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 16 })
+        Row() {
+          ProteusClassicBtn({
+            label: '确定',
+            widthVal: '40%',
+            onAction: () => { this.showSimFailDialog = false; }
+          })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ top: 8 })
+      }
+      .width(400)
+      .padding(24)
+      .backgroundColor(ProteusColors.CANVAS_BG)
+      .border({ width: 1, color: ProteusColors.DIVIDER })
+      .borderRadius(8)
+      .shadow({ radius: 8, color: '#00000040' })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder

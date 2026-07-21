@@ -17,6 +17,15 @@ interface HistoryEntry {
   voltages: Map<string, number>;
 }
 
+/** Result of autoAdjustToSignal — panel syncs Select indices from these. */
+export interface OscAutoScaleResult {
+  changed: boolean;
+  timebase: OscTimebase;
+  voltageScale: OscVoltageScale;
+  frequencyHz: number;
+  vpp: number;
+}
+
 const DIVISIONS = 10;
 const SAMPLE_POINTS = 1024;
 
@@ -70,6 +79,9 @@ export class OscilloscopeEngine {
   /** Keep ≥100ms @ 1µs/step — enough for 10+ cycles at 1kHz on 10ms/div timebase */
   private historyMaxSize: number = 100000;
   private lastSimTime: number = 0;
+  /** Auto-scale hysteresis: require 2 identical recommendations before applying */
+  private autoScalePendingKey: string = '';
+  private autoScalePendingCount: number = 0;
 
   feedSimulationWaves(waves: WaveData[]): void {
     // Deep-copy axes — kernel mutates live WaveData; sharing refs scrambled long runs
@@ -268,6 +280,161 @@ export class OscilloscopeEngine {
     while (this.voltageScales.length <= channel) this.voltageScales.push(OscVoltageScale.V_1);
     this.voltageScales[channel] = scale;
   }
+
+  /**
+   * Auto-pick timebase + V/div from CH signal (≈2–4 periods on screen, Vpp ≈ 60% FS).
+   * Hysteresis avoids thrashing; returns whether scales changed.
+   */
+  autoAdjustToSignal(channel: number = 0): OscAutoScaleResult {
+    const empty: OscAutoScaleResult = {
+      changed: false,
+      timebase: this.timebase,
+      voltageScale: channel < this.voltageScales.length ? this.voltageScales[channel] : OscVoltageScale.V_1,
+      frequencyHz: 0,
+      vpp: 0
+    };
+    const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
+    let times: number[] = [];
+    let volts: number[] = [];
+    if (probeName.length > 0) {
+      const matched = this.findCachedWave(probeName);
+      if (matched !== undefined && matched.voltageAxis.length >= 8) {
+        times = matched.timeAxis;
+        volts = matched.voltageAxis;
+      }
+      if (times.length < 8 && this.historyBuffer.length >= 8) {
+        const hist = this.buildWaveFromHistory(probeName, channel);
+        if (hist.voltageAxis.length >= 8) {
+          times = hist.timeAxis;
+          volts = hist.voltageAxis;
+        }
+      }
+    }
+    if (times.length < 8) {
+      return empty;
+    }
+    const n = Math.min(times.length, volts.length);
+    let minV = volts[0];
+    let maxV = volts[0];
+    for (let i = 1; i < n; i++) {
+      if (volts[i] < minV) {
+        minV = volts[i];
+      }
+      if (volts[i] > maxV) {
+        maxV = volts[i];
+      }
+    }
+    const vpp = maxV - minV;
+    const freq = OscilloscopeEngine.estimateFreqLocal(times, volts, 0, n);
+    const span = Math.max(times[n - 1] - times[0], 1e-15);
+
+    // Target ~3 periods across 10 divisions; fallback to half of captured span
+    let wantWindow = freq > 0.5 ? (3.0 / freq) : Math.max(span * 0.8, 1e-3);
+    wantWindow = Math.min(Math.max(wantWindow, 1e-8), 100);
+    const wantDiv = wantWindow / DIVISIONS;
+    const nextTb = OscilloscopeEngine.pickTimebase(wantDiv);
+
+    // V/div: Vpp fills ~6 of 10 divisions (leave headroom)
+    const wantVDiv = vpp > 1e-4 ? (vpp / 6.0) : Math.max(Math.abs(maxV), Math.abs(minV), 0.5) / 4.0;
+    const nextVs = OscilloscopeEngine.pickVoltageScale(wantVDiv);
+
+    const curTb = this.timebase;
+    const curVs = channel < this.voltageScales.length ? this.voltageScales[channel] : OscVoltageScale.V_1;
+    const curWindow = getTimebaseSec(curTb) * DIVISIONS;
+    const periodsOnScreen = freq > 0.5 ? (curWindow * freq) : -1;
+    const curVDiv = getVoltageScaleFactor(curVs);
+    const divsUsed = curVDiv > 0 ? (vpp / curVDiv) : 0;
+
+    // Hysteresis: only change when clearly too zoomed in/out
+    let needTb = nextTb !== curTb;
+    if (needTb && periodsOnScreen > 0) {
+      needTb = periodsOnScreen < 1.2 || periodsOnScreen > 8.0;
+    } else if (needTb && freq <= 0.5) {
+      // DC / slow: change if window differs by >2.5×
+      const ratio = wantWindow / Math.max(curWindow, 1e-15);
+      needTb = ratio < 0.4 || ratio > 2.5;
+    }
+    let needVs = nextVs !== curVs;
+    if (needVs) {
+      needVs = divsUsed < 2.0 || divsUsed > 9.5 || vpp < 1e-4;
+    }
+
+    // Require two consecutive identical recommendations before applying
+    const key = `${channel}|${needTb ? nextTb : curTb}|${needVs ? nextVs : curVs}`;
+    if (key !== this.autoScalePendingKey) {
+      this.autoScalePendingKey = key;
+      this.autoScalePendingCount = 1;
+      return {
+        changed: false,
+        timebase: curTb,
+        voltageScale: curVs,
+        frequencyHz: freq,
+        vpp: vpp
+      };
+    }
+    this.autoScalePendingCount++;
+    if (this.autoScalePendingCount < 2) {
+      return {
+        changed: false,
+        timebase: curTb,
+        voltageScale: curVs,
+        frequencyHz: freq,
+        vpp: vpp
+      };
+    }
+
+    let changed = false;
+    if (needTb) {
+      this.timebase = nextTb;
+      changed = true;
+    }
+    if (needVs) {
+      this.setVoltageScale(channel, nextVs);
+      changed = true;
+    }
+    if (changed && vpp > 1e-4) {
+      this.triggerLevel = (minV + maxV) / 2;
+    }
+    if (changed) {
+      this.autoScalePendingCount = 0;
+      this.autoScalePendingKey = '';
+    }
+    return {
+      changed: changed,
+      timebase: this.timebase,
+      voltageScale: channel < this.voltageScales.length ? this.voltageScales[channel] : nextVs,
+      frequencyHz: freq,
+      vpp: vpp
+    };
+  }
+
+  private static pickTimebase(wantSecPerDiv: number): OscTimebase {
+    const order: OscTimebase[] = [
+      OscTimebase.NS_10, OscTimebase.US_1, OscTimebase.US_100,
+      OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.S_1, OscTimebase.S_10
+    ];
+    for (let i = 0; i < order.length; i++) {
+      if (getTimebaseSec(order[i]) >= wantSecPerDiv * 0.85) {
+        return order[i];
+      }
+    }
+    return OscTimebase.S_10;
+  }
+
+  private static pickVoltageScale(wantVPerDiv: number): OscVoltageScale {
+    const order: OscVoltageScale[] = [
+      OscVoltageScale.MV_1, OscVoltageScale.MV_50, OscVoltageScale.MV_100,
+      OscVoltageScale.MV_200, OscVoltageScale.MV_500,
+      OscVoltageScale.V_1, OscVoltageScale.V_2, OscVoltageScale.V_5,
+      OscVoltageScale.V_10, OscVoltageScale.V_100
+    ];
+    for (let i = 0; i < order.length; i++) {
+      if (getVoltageScaleFactor(order[i]) >= wantVPerDiv * 0.9) {
+        return order[i];
+      }
+    }
+    return OscVoltageScale.V_100;
+  }
   setCoupling(channel: number, mode: CouplingMode): void {
     while (this.coupling.length <= channel) this.coupling.push(CouplingMode.DC);
     this.coupling[channel] = mode;
@@ -288,35 +455,40 @@ export class OscilloscopeEngine {
 
   /** Auto-assign simulation probes to channels based on active wave data */
   autoAssignProbes(): void {
-    for (let i = 0; i < Math.min(4, this.simulationWaveCache.length); i++) {
-      if (i < this.channelProbes.length && this.channelProbes[i].length > 0) {
+    // Only fill empty CH0 from wave cache. Never invent CH1–CH3 from random nets —
+    // leftover VCC/DISCH/prior-template UUIDs pollute the scope (CH2 ghost traces).
+    if (this.channelProbes.length > 0 && this.channelProbes[0].length > 0) {
+      return;
+    }
+    for (let i = 0; i < this.simulationWaveCache.length; i++) {
+      const wave = this.simulationWaveCache[i];
+      if (!wave || wave.voltageAxis.length < 2) {
         continue;
       }
-      const wave = this.simulationWaveCache[i];
-      if (wave && wave.voltageAxis.length > 0) {
-        while (this.channelProbes.length <= i) {
-          this.channelProbes.push('');
-        }
-        this.channelProbes[i] = wave.probeName.length > 0 ? wave.probeName : wave.netName;
+      const name = wave.probeName.length > 0 ? wave.probeName : wave.netName;
+      const upper = name.toUpperCase();
+      if (upper === '0' || upper === 'GND' || upper === 'VCC' || upper === 'VEE' ||
+          upper === 'VDD' || upper === 'VSS') {
+        continue;
       }
+      while (this.channelProbes.length < 1) {
+        this.channelProbes.push('');
+      }
+      this.channelProbes[0] = name;
+      return;
     }
-    // Fallback: assign from node voltage map for empty channels only
-    let ch = 0;
-    this.lastNodeVoltages.forEach((_v: number, name: string) => {
-      if (ch >= 4) {
-        return;
-      }
-      while (ch < 4 && ch < this.channelProbes.length && this.channelProbes[ch].length > 0) {
-        ch++;
-      }
-      if (ch < 4 && name !== '0' && name !== 'GND' && name !== 'VCC') {
-        while (this.channelProbes.length <= ch) {
-          this.channelProbes.push('');
-        }
-        this.channelProbes[ch] = name;
-        ch++;
-      }
-    });
+  }
+
+  /** Drop history / wave cache and unbound CH2+ (call on sim start / template load). */
+  clearCaptureBuffers(): void {
+    this.historyBuffer = [];
+    this.simulationWaveCache = [];
+    this.simDataAge = 0;
+    this.autoScalePendingKey = '';
+    this.autoScalePendingCount = 0;
+    for (let i = 1; i < this.channelProbes.length; i++) {
+      this.channelProbes[i] = '';
+    }
   }
 
   getTimebase(): OscTimebase { return this.timebase; }

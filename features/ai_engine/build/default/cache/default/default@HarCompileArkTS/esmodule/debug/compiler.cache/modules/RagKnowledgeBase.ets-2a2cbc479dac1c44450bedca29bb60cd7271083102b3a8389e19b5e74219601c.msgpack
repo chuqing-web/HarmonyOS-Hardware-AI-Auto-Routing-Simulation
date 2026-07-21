@@ -1,0 +1,574 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ!{/**
+ * RAG æ ‡å‡†å­ç”µè·¯çŸ¥è¯†åº“ â€” æˆç†Ÿæ¨¡æ¿å™¨ä»¶ç»„åˆå…œåº•
+ */
+import { emptyStringMap, makeDeviceRequirement, stringMap1 } from 'common';
+function buildTemplates() {
+    const stm32Hints = [
+        makeDeviceRequirement('3.3Vç¨³å‹', 'ldo', 1, stringMap1('output', '3.3V')),
+        makeDeviceRequirement('MCUä¸»æ§', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8'),
+        makeDeviceRequirement('8Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '8MHz')),
+        makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 8, stringMap1('value', '100nF')),
+        makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 7, stringMap1('value', '10k')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const m51Hints = [
+        makeDeviceRequirement('MCUä¸»æ§', 'mcu_51', 10, emptyStringMap(), 'AT89C51'),
+        makeDeviceRequirement('11Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '11.0592MHz')),
+        makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 8, stringMap1('value', '10k')),
+        makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const lcdHints = [
+        makeDeviceRequirement('LCD1602', 'lcd', 5, emptyStringMap()),
+        makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 4, stringMap1('value', '220'))
+    ];
+    const ledHints = [
+        makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+        makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const instrumentHints = [
+        makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 8, emptyStringMap(), 'VOLTMETER_DC'),
+        makeDeviceRequirement('ç”µæµè¡¨', 'ammeter', 7, emptyStringMap(), 'AMMETER_DC'),
+        makeDeviceRequirement('ç¤ºæ³¢å™¨', 'oscilloscope', 9, emptyStringMap(), 'OSCILLOSCOPE'),
+        makeDeviceRequirement('ä¸‡ç”¨è¡¨', 'multimeter', 6, emptyStringMap(), 'VIRTUAL_METER'),
+        makeDeviceRequirement('è´Ÿè½½ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const opampHints = [
+        makeDeviceRequirement('è¿æ”¾', 'opamp', 9, emptyStringMap(), 'UA741'),
+        makeDeviceRequirement('åé¦ˆç”µé˜»', 'resistor', 6, stringMap1('value', '10k')),
+        makeDeviceRequirement('è¾“å…¥ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const timer555Hints = [
+        makeDeviceRequirement('555å®šæ—¶å™¨', 'timer', 10, emptyStringMap(), 'LM555'),
+        makeDeviceRequirement('å®šæ—¶ç”µé˜»Ra', 'resistor', 8, stringMap1('value', '1k')),
+        makeDeviceRequirement('å®šæ—¶ç”µé˜»Rb', 'resistor', 8, stringMap1('value', '10k')),
+        makeDeviceRequirement('å®šæ—¶ç”µå®¹', 'cap', 8, stringMap1('value', '10uF')),
+        makeDeviceRequirement('æ§åˆ¶ç«¯æ—è·¯', 'cap', 5, stringMap1('value', '100nF')),
+        makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+        makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    const powerHints = [
+        makeDeviceRequirement('7805ç¨³å‹', 'ldo', 10, emptyStringMap(), 'LM7805'),
+        makeDeviceRequirement('æ»¤æ³¢ç”µå®¹', 'cap', 8, stringMap1('value', '100uF')),
+        makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+        makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 5, emptyStringMap(), 'VOLTMETER_DC'),
+        makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+        makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+    ];
+    return [
+        {
+            id: 'stm32_min_sys',
+            keywords: ['stm32', 'æœ€å°ç³»ç»Ÿ', 'min sys', 'f103'],
+            mcuFamily: 'STM32',
+            modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ', 'æ—¶é’Ÿå¤ä½'],
+            deviceHints: stm32Hints
+        },
+        {
+            id: '51_min_sys',
+            keywords: ['8051', 'at89', 'stc89', 'å•ç‰‡æœºæœ€å°'],
+            mcuFamily: '8051',
+            modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ'],
+            deviceHints: m51Hints
+        },
+        {
+            id: 'lcd1602_periph',
+            keywords: ['lcd', 'lcd1602', 'æ˜¾ç¤º'],
+            mcuFamily: 'any',
+            modules: ['æ˜¾ç¤ºå¤–è®¾'],
+            deviceHints: lcdHints
+        },
+        {
+            id: 'led_basic',
+            keywords: ['led', 'é—ªçƒ', 'æŒ‡ç¤ºç¯', 'æµæ°´ç¯'],
+            mcuFamily: 'any',
+            modules: ['LEDæŒ‡ç¤º'],
+            deviceHints: ledHints
+        },
+        {
+            id: 'instruments_lab',
+            keywords: ['ç¤ºæ³¢å™¨', 'ä¸‡ç”¨è¡¨', 'ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ä»ªå™¨', 'æµ‹é‡'],
+            mcuFamily: 'any',
+            modules: ['è™šæ‹Ÿä»ªå™¨'],
+            deviceHints: instrumentHints
+        },
+        {
+            id: 'opamp_basic',
+            keywords: ['è¿æ”¾', 'æ”¾å¤§', 'ua741', 'åŒç›¸', 'åç›¸'],
+            mcuFamily: 'any',
+            modules: ['æ¨¡æ‹Ÿè¿æ”¾'],
+            deviceHints: opampHints
+        },
+        {
+            id: 'timer555_astable',
+            keywords: ['555', 'ne555', 'lm555', 'å¤šè°', 'æ— ç¨³æ€', 'æŒ¯è¡å™¨', 'å®šæ—¶å™¨'],
+            mcuFamily: 'any',
+            modules: ['555æŒ¯è¡'],
+            deviceHints: timer555Hints
+        },
+        {
+            id: 'power_7805',
+            keywords: ['7805', 'ç¨³å‹', 'ç”µæº'],
+            mcuFamily: 'any',
+            modules: ['ç”µæº'],
+            deviceHints: powerHints
+        }
+    ];
+}
+const TEMPLATES = buildTemplates();
+export class RagKnowledgeBase {
+    static search(prompt) {
+        const lower = prompt.toLowerCase();
+        const wantStm = lower.indexOf('stm32') >= 0 || lower.indexOf('f103') >= 0;
+        const want51 = lower.indexOf('8051') >= 0 || lower.indexOf('at89') >= 0 ||
+            lower.indexOf('stc') >= 0 || (lower.indexOf('51') >= 0 && lower.indexOf('stm') < 0);
+        let best = null;
+        let bestScore = 0;
+        for (let ti = 0; ti < TEMPLATES.length; ti++) {
+            const t = TEMPLATES[ti];
+            if (t.mcuFamily === 'STM32' && want51 && !wantStm) {
+                continue;
+            }
+            if (t.mcuFamily === '8051' && wantStm && !want51) {
+                continue;
+            }
+            let score = 0;
+            for (let ki = 0; ki < t.keywords.length; ki++) {
+                const kw = t.keywords[ki];
+                if (kw.length < 2) {
+                    continue;
+                }
+                if (lower.includes(kw.toLowerCase())) {
+                    score += kw.length >= 4 ? 2 : 1;
+                }
+            }
+            if (t.mcuFamily === 'STM32' && wantStm) {
+                score += 3;
+            }
+            if (t.mcuFamily === '8051' && want51) {
+                score += 3;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = t;
+            }
+            else if (score === bestScore && best !== null && score > 0) {
+                // å¹³åˆ†ï¼šåå¥½å…³é”®è¯æ›´å¤šçš„æ›´å…·ä½“æ¨¡æ¿
+                if (t.keywords.length > best.keywords.length) {
+                    best = t;
+                }
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+    static getTemplate(id) {
+        for (let i = 0; i < TEMPLATES.length; i++) {
+            if (TEMPLATES[i].id === id) {
+                return TEMPLATES[i];
+            }
+        }
+        return null;
+    }
+}
+//# sourceMappingURL=RagKnowledgeBase.js.mapÂ‘¦commonÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\RagKnowledgeBase.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  ‘ÔrC’²hostDependencyName®hostModuleName²./RagKnowledgeBase©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ/**
+ * RAG æ ‡å‡†å­ç”µè·¯çŸ¥è¯†åº“ â€” æˆç†Ÿæ¨¡æ¿å™¨ä»¶ç»„åˆå…œåº•
+ */
+import {
+  DeviceRequirement, emptyStringMap, makeDeviceRequirement, stringMap1
+} from 'common';
+
+export interface RagTemplate {
+  id: string;
+  keywords: string[];
+  mcuFamily: '8051' | 'STM32' | 'any';
+  modules: string[];
+  deviceHints: DeviceRequirement[];
+}
+
+function buildTemplates(): RagTemplate[] {
+  const stm32Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('3.3Vç¨³å‹', 'ldo', 1, stringMap1('output', '3.3V')),
+    makeDeviceRequirement('MCUä¸»æ§', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8'),
+    makeDeviceRequirement('8Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '8MHz')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 8, stringMap1('value', '100nF')),
+    makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 7, stringMap1('value', '10k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const m51Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('MCUä¸»æ§', 'mcu_51', 10, emptyStringMap(), 'AT89C51'),
+    makeDeviceRequirement('11Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '11.0592MHz')),
+    makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 8, stringMap1('value', '10k')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const lcdHints: DeviceRequirement[] = [
+    makeDeviceRequirement('LCD1602', 'lcd', 5, emptyStringMap()),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 4, stringMap1('value', '220'))
+  ];
+  const ledHints: DeviceRequirement[] = [
+    makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const instrumentHints: DeviceRequirement[] = [
+    makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 8, emptyStringMap(), 'VOLTMETER_DC'),
+    makeDeviceRequirement('ç”µæµè¡¨', 'ammeter', 7, emptyStringMap(), 'AMMETER_DC'),
+    makeDeviceRequirement('ç¤ºæ³¢å™¨', 'oscilloscope', 9, emptyStringMap(), 'OSCILLOSCOPE'),
+    makeDeviceRequirement('ä¸‡ç”¨è¡¨', 'multimeter', 6, emptyStringMap(), 'VIRTUAL_METER'),
+    makeDeviceRequirement('è´Ÿè½½ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const opampHints: DeviceRequirement[] = [
+    makeDeviceRequirement('è¿æ”¾', 'opamp', 9, emptyStringMap(), 'UA741'),
+    makeDeviceRequirement('åé¦ˆç”µé˜»', 'resistor', 6, stringMap1('value', '10k')),
+    makeDeviceRequirement('è¾“å…¥ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const timer555Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('555å®šæ—¶å™¨', 'timer', 10, emptyStringMap(), 'LM555'),
+    makeDeviceRequirement('å®šæ—¶ç”µé˜»Ra', 'resistor', 8, stringMap1('value', '1k')),
+    makeDeviceRequirement('å®šæ—¶ç”µé˜»Rb', 'resistor', 8, stringMap1('value', '10k')),
+    makeDeviceRequirement('å®šæ—¶ç”µå®¹', 'cap', 8, stringMap1('value', '10uF')),
+    makeDeviceRequirement('æ§åˆ¶ç«¯æ—è·¯', 'cap', 5, stringMap1('value', '100nF')),
+    makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const powerHints: DeviceRequirement[] = [
+    makeDeviceRequirement('7805ç¨³å‹', 'ldo', 10, emptyStringMap(), 'LM7805'),
+    makeDeviceRequirement('æ»¤æ³¢ç”µå®¹', 'cap', 8, stringMap1('value', '100uF')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+    makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 5, emptyStringMap(), 'VOLTMETER_DC'),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+
+  return [
+    {
+      id: 'stm32_min_sys',
+      keywords: ['stm32', 'æœ€å°ç³»ç»Ÿ', 'min sys', 'f103'],
+      mcuFamily: 'STM32',
+      modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ', 'æ—¶é’Ÿå¤ä½'],
+      deviceHints: stm32Hints
+    },
+    {
+      id: '51_min_sys',
+      keywords: ['8051', 'at89', 'stc89', 'å•ç‰‡æœºæœ€å°'],
+      mcuFamily: '8051',
+      modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ'],
+      deviceHints: m51Hints
+    },
+    {
+      id: 'lcd1602_periph',
+      keywords: ['lcd', 'lcd1602', 'æ˜¾ç¤º'],
+      mcuFamily: 'any',
+      modules: ['æ˜¾ç¤ºå¤–è®¾'],
+      deviceHints: lcdHints
+    },
+    {
+      id: 'led_basic',
+      keywords: ['led', 'é—ªçƒ', 'æŒ‡ç¤ºç¯', 'æµæ°´ç¯'],
+      mcuFamily: 'any',
+      modules: ['LEDæŒ‡ç¤º'],
+      deviceHints: ledHints
+    },
+    {
+      id: 'instruments_lab',
+      keywords: ['ç¤ºæ³¢å™¨', 'ä¸‡ç”¨è¡¨', 'ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ä»ªå™¨', 'æµ‹é‡'],
+      mcuFamily: 'any',
+      modules: ['è™šæ‹Ÿä»ªå™¨'],
+      deviceHints: instrumentHints
+    },
+    {
+      id: 'opamp_basic',
+      keywords: ['è¿æ”¾', 'æ”¾å¤§', 'ua741', 'åŒç›¸', 'åç›¸'],
+      mcuFamily: 'any',
+      modules: ['æ¨¡æ‹Ÿè¿æ”¾'],
+      deviceHints: opampHints
+    },
+    {
+      id: 'timer555_astable',
+      keywords: ['555', 'ne555', 'lm555', 'å¤šè°', 'æ— ç¨³æ€', 'æŒ¯è¡å™¨', 'å®šæ—¶å™¨'],
+      mcuFamily: 'any',
+      modules: ['555æŒ¯è¡'],
+      deviceHints: timer555Hints
+    },
+    {
+      id: 'power_7805',
+      keywords: ['7805', 'ç¨³å‹', 'ç”µæº'],
+      mcuFamily: 'any',
+      modules: ['ç”µæº'],
+      deviceHints: powerHints
+    }
+  ];
+}
+
+const TEMPLATES: RagTemplate[] = buildTemplates();
+
+export class RagKnowledgeBase {
+  static search(prompt: string): RagTemplate | null {
+    const lower = prompt.toLowerCase();
+    const wantStm = lower.indexOf('stm32') >= 0 || lower.indexOf('f103') >= 0;
+    const want51 = lower.indexOf('8051') >= 0 || lower.indexOf('at89') >= 0 ||
+      lower.indexOf('stc') >= 0 || (lower.indexOf('51') >= 0 && lower.indexOf('stm') < 0);
+    let best: RagTemplate | null = null;
+    let bestScore = 0;
+    for (let ti = 0; ti < TEMPLATES.length; ti++) {
+      const t = TEMPLATES[ti];
+      if (t.mcuFamily === 'STM32' && want51 && !wantStm) {
+        continue;
+      }
+      if (t.mcuFamily === '8051' && wantStm && !want51) {
+        continue;
+      }
+      let score = 0;
+      for (let ki = 0; ki < t.keywords.length; ki++) {
+        const kw = t.keywords[ki];
+        if (kw.length < 2) {
+          continue;
+        }
+        if (lower.includes(kw.toLowerCase())) {
+          score += kw.length >= 4 ? 2 : 1;
+        }
+      }
+      if (t.mcuFamily === 'STM32' && wantStm) {
+        score += 3;
+      }
+      if (t.mcuFamily === '8051' && want51) {
+        score += 3;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = t;
+      } else if (score === bestScore && best !== null && score > 0) {
+        // å¹³åˆ†ï¼šåå¥½å…³é”®è¯æ›´å¤šçš„æ›´å…·ä½“æ¨¡æ¿
+        if (t.keywords.length > best.keywords.length) {
+          best = t;
+        }
+      }
+    }
+    return bestScore > 0 ? best : null;
+  }
+
+  static getTemplate(id: string): RagTemplate | null {
+    for (let i = 0; i < TEMPLATES.length; i++) {
+      if (TEMPLATES[i].id === id) {
+        return TEMPLATES[i];
+      }
+    }
+    return null;
+  }
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ ¶‘”    ‘”  ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  !‘”  #‘”  %‘”  '‘”  +‘”  0‘”  4‘”  6‘”  7‘”  ;‘”  =‘”  >‘”  ?‘”  Ì@‘”  ÌB‘”  ÌF‘”  ÌH‘”  ÌI‘”  ÌP‘”  ÌQ‘”  ÌS‘”  ÌT‘”  ÌU‘”  ÌV‘”  ÌW‘”  ÌX‘”  ÌZ‘”  Ì[‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì`‘”  Ìa‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìh‘”  Ìj‘”  Ìk‘”  Ìl‘”  Ìm‘”  Ìn‘”  Ìo‘”  Ìq‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìv‘”  Ìx‘”  Ìy‘”  Ìz‘”  Ì{‘”  Ì|‘”  Ì}‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì†‘”  Ì‡‘”  Ì‰ ‘”  Ì‹ ‘”  Ì ‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì•‘”  Ì–‘”  Ì™‘”  Ìœ‘”  Ì‘”  Ì ‘”  Ì¢	‘”  Ì¤
+‘”  Ì¥	‘”  Ì¦‘”  Ì§‘”  Ì©‘”  Ìª‘”  Ì¬‘”  Ì°‘”  Ì´	‘”  Ìµ‘”  Ì¶‘”  Ì»‘”  Ì½‘”  Ì¾‘”  Ì¿‘”  ÌÀ‘”  ÌÂ‘Ù\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\RagKnowledgeBase.ets‘Ú/**
+ * RAG æ ‡å‡†å­ç”µè·¯çŸ¥è¯†åº“ â€” æˆç†Ÿæ¨¡æ¿å™¨ä»¶ç»„åˆå…œåº•
+ */
+import {
+  DeviceRequirement, emptyStringMap, makeDeviceRequirement, stringMap1
+} from 'common';
+
+export interface RagTemplate {
+  id: string;
+  keywords: string[];
+  mcuFamily: '8051' | 'STM32' | 'any';
+  modules: string[];
+  deviceHints: DeviceRequirement[];
+}
+
+function buildTemplates(): RagTemplate[] {
+  const stm32Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('3.3Vç¨³å‹', 'ldo', 1, stringMap1('output', '3.3V')),
+    makeDeviceRequirement('MCUä¸»æ§', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8'),
+    makeDeviceRequirement('8Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '8MHz')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 8, stringMap1('value', '100nF')),
+    makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 7, stringMap1('value', '10k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const m51Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('MCUä¸»æ§', 'mcu_51', 10, emptyStringMap(), 'AT89C51'),
+    makeDeviceRequirement('11Mæ™¶æŒ¯', 'crystal', 9, stringMap1('freq', '11.0592MHz')),
+    makeDeviceRequirement('å¤ä½ä¸Šæ‹‰', 'resistor', 8, stringMap1('value', '10k')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const lcdHints: DeviceRequirement[] = [
+    makeDeviceRequirement('LCD1602', 'lcd', 5, emptyStringMap()),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 4, stringMap1('value', '220'))
+  ];
+  const ledHints: DeviceRequirement[] = [
+    makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const instrumentHints: DeviceRequirement[] = [
+    makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 8, emptyStringMap(), 'VOLTMETER_DC'),
+    makeDeviceRequirement('ç”µæµè¡¨', 'ammeter', 7, emptyStringMap(), 'AMMETER_DC'),
+    makeDeviceRequirement('ç¤ºæ³¢å™¨', 'oscilloscope', 9, emptyStringMap(), 'OSCILLOSCOPE'),
+    makeDeviceRequirement('ä¸‡ç”¨è¡¨', 'multimeter', 6, emptyStringMap(), 'VIRTUAL_METER'),
+    makeDeviceRequirement('è´Ÿè½½ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const opampHints: DeviceRequirement[] = [
+    makeDeviceRequirement('è¿æ”¾', 'opamp', 9, emptyStringMap(), 'UA741'),
+    makeDeviceRequirement('åé¦ˆç”µé˜»', 'resistor', 6, stringMap1('value', '10k')),
+    makeDeviceRequirement('è¾“å…¥ç”µé˜»', 'resistor', 5, stringMap1('value', '1k')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const timer555Hints: DeviceRequirement[] = [
+    makeDeviceRequirement('555å®šæ—¶å™¨', 'timer', 10, emptyStringMap(), 'LM555'),
+    makeDeviceRequirement('å®šæ—¶ç”µé˜»Ra', 'resistor', 8, stringMap1('value', '1k')),
+    makeDeviceRequirement('å®šæ—¶ç”µé˜»Rb', 'resistor', 8, stringMap1('value', '10k')),
+    makeDeviceRequirement('å®šæ—¶ç”µå®¹', 'cap', 8, stringMap1('value', '10uF')),
+    makeDeviceRequirement('æ§åˆ¶ç«¯æ—è·¯', 'cap', 5, stringMap1('value', '100nF')),
+    makeDeviceRequirement('LEDæŒ‡ç¤º', 'led', 6, emptyStringMap(), 'LED_RED'),
+    makeDeviceRequirement('é™æµç”µé˜»', 'resistor', 5, stringMap1('value', '330')),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+  const powerHints: DeviceRequirement[] = [
+    makeDeviceRequirement('7805ç¨³å‹', 'ldo', 10, emptyStringMap(), 'LM7805'),
+    makeDeviceRequirement('æ»¤æ³¢ç”µå®¹', 'cap', 8, stringMap1('value', '100uF')),
+    makeDeviceRequirement('å»è€¦ç”µå®¹', 'cap', 7, stringMap1('value', '100nF')),
+    makeDeviceRequirement('ç”µå‹è¡¨', 'voltmeter', 5, emptyStringMap(), 'VOLTMETER_DC'),
+    makeDeviceRequirement('ç”µæºæ­£æ', 'instrument', 2, emptyStringMap(), 'VCC'),
+    makeDeviceRequirement('ç”µæºåœ°', 'instrument', 2, emptyStringMap(), 'GND')
+  ];
+
+  return [
+    {
+      id: 'stm32_min_sys',
+      keywords: ['stm32', 'æœ€å°ç³»ç»Ÿ', 'min sys', 'f103'],
+      mcuFamily: 'STM32',
+      modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ', 'æ—¶é’Ÿå¤ä½'],
+      deviceHints: stm32Hints
+    },
+    {
+      id: '51_min_sys',
+      keywords: ['8051', 'at89', 'stc89', 'å•ç‰‡æœºæœ€å°'],
+      mcuFamily: '8051',
+      modules: ['ç”µæºæ¨¡å—', 'MCUæœ€å°ç³»ç»Ÿ'],
+      deviceHints: m51Hints
+    },
+    {
+      id: 'lcd1602_periph',
+      keywords: ['lcd', 'lcd1602', 'æ˜¾ç¤º'],
+      mcuFamily: 'any',
+      modules: ['æ˜¾ç¤ºå¤–è®¾'],
+      deviceHints: lcdHints
+    },
+    {
+      id: 'led_basic',
+      keywords: ['led', 'é—ªçƒ', 'æŒ‡ç¤ºç¯', 'æµæ°´ç¯'],
+      mcuFamily: 'any',
+      modules: ['LEDæŒ‡ç¤º'],
+      deviceHints: ledHints
+    },
+    {
+      id: 'instruments_lab',
+      keywords: ['ç¤ºæ³¢å™¨', 'ä¸‡ç”¨è¡¨', 'ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ä»ªå™¨', 'æµ‹é‡'],
+      mcuFamily: 'any',
+      modules: ['è™šæ‹Ÿä»ªå™¨'],
+      deviceHints: instrumentHints
+    },
+    {
+      id: 'opamp_basic',
+      keywords: ['è¿æ”¾', 'æ”¾å¤§', 'ua741', 'åŒç›¸', 'åç›¸'],
+      mcuFamily: 'any',
+      modules: ['æ¨¡æ‹Ÿè¿æ”¾'],
+      deviceHints: opampHints
+    },
+    {
+      id: 'timer555_astable',
+      keywords: ['555', 'ne555', 'lm555', 'å¤šè°', 'æ— ç¨³æ€', 'æŒ¯è¡å™¨', 'å®šæ—¶å™¨'],
+      mcuFamily: 'any',
+      modules: ['555æŒ¯è¡'],
+      deviceHints: timer555Hints
+    },
+    {
+      id: 'power_7805',
+      keywords: ['7805', 'ç¨³å‹', 'ç”µæº'],
+      mcuFamily: 'any',
+      modules: ['ç”µæº'],
+      deviceHints: powerHints
+    }
+  ];
+}
+
+const TEMPLATES: RagTemplate[] = buildTemplates();
+
+export class RagKnowledgeBase {
+  static search(prompt: string): RagTemplate | null {
+    const lower = prompt.toLowerCase();
+    const wantStm = lower.indexOf('stm32') >= 0 || lower.indexOf('f103') >= 0;
+    const want51 = lower.indexOf('8051') >= 0 || lower.indexOf('at89') >= 0 ||
+      lower.indexOf('stc') >= 0 || (lower.indexOf('51') >= 0 && lower.indexOf('stm') < 0);
+    let best: RagTemplate | null = null;
+    let bestScore = 0;
+    for (let ti = 0; ti < TEMPLATES.length; ti++) {
+      const t = TEMPLATES[ti];
+      if (t.mcuFamily === 'STM32' && want51 && !wantStm) {
+        continue;
+      }
+      if (t.mcuFamily === '8051' && wantStm && !want51) {
+        continue;
+      }
+      let score = 0;
+      for (let ki = 0; ki < t.keywords.length; ki++) {
+        const kw = t.keywords[ki];
+        if (kw.length < 2) {
+          continue;
+        }
+        if (lower.includes(kw.toLowerCase())) {
+          score += kw.length >= 4 ? 2 : 1;
+        }
+      }
+      if (t.mcuFamily === 'STM32' && wantStm) {
+        score += 3;
+      }
+      if (t.mcuFamily === '8051' && want51) {
+        score += 3;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = t;
+      } else if (score === bestScore && best !== null && score > 0) {
+        // å¹³åˆ†ï¼šåå¥½å…³é”®è¯æ›´å¤šçš„æ›´å…·ä½“æ¨¡æ¿
+        if (t.keywords.length > best.keywords.length) {
+          best = t;
+        }
+      }
+    }
+    return bestScore > 0 ? best : null;
+  }
+
+  static getTemplate(id: string): RagTemplate | null {
+    for (let i = 0; i < TEMPLATES.length; i++) {
+      if (TEMPLATES[i].id === id) {
+        return TEMPLATES[i];
+      }
+    }
+    return null;
+  }
+}
+ÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃ¦commonAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ…ÍÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍŒÍÔrK”¤type¥start£end¤nameªIdentifierÍ’Í¢°RagKnowledgeBaseÀÔrL”¤type¥start£end¤body©ClassBodyÍ£Í’ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍªÍ<ÃÂKªIdentifierÍ±Í·¦search¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ·Í<ÀÂÂÂ‘KªIdentifierÍ¸Í¾¦promptL®BlockStatementÍÀÍ<—ÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍËÍî‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍÑÍíKªIdentifierÍÑÍÖ¥lowerÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÙÍíÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÙÍëKªIdentifierÍÙÍß¦promptKªIdentifierÍàÍë«toLowerCaseÂÂÂ¥constO³VariableDeclarationÍøÍB‘P²VariableDeclaratorÍşÍAKªIdentifierÍşÍ§wantStmÔrS–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍÍAS°BinaryExpressionÍÍ#Q®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¥lowerKªIdentifierÍÍ§indexOfÂÂ‘ÔrT•¤type¥start£end¥value£raw§LiteralÍÍ¥stm32§'stm32'Â¢>=T§LiteralÍ"Í# ¡0¢||S°BinaryExpressionÍ'ÍAQ®CallExpressionÍ'Í<R°MemberExpressionÍ'Í4KªIdentifierÍ'Í,¥lowerKªIdentifierÍ-Í4§indexOfÂÂ‘T§LiteralÍ5Í;¤f103¦'f103'Â¢>=T§LiteralÍ@ÍA ¡0¥constO³VariableDeclarationÍLÍø‘P²VariableDeclaratorÍRÍ÷KªIdentifierÍRÍX¦want51S±LogicalExpressionÍ[Í÷S±LogicalExpressionÍ[Í½S±LogicalExpressionÍ[Í“S°BinaryExpressionÍ[ÍuQ®CallExpressionÍ[ÍpR°MemberExpressionÍ[ÍhKªIdentifierÍ[Í`¥lowerKªIdentifierÍaÍh§indexOfÂÂ‘T§LiteralÍiÍo¤8051¦'8051'Â¢>=T§LiteralÍtÍu ¡0¢||S°BinaryExpressionÍyÍ“Q®CallExpressionÍyÍR°MemberExpressionÍyÍ†KªIdentifierÍyÍ~¥lowerKªIdentifierÍÍ†§indexOfÂÂ‘T§LiteralÍ‡Í¤at89¦'at89'Â¢>=T§LiteralÍ’Í“ ¡0¢||S°BinaryExpressionÍ¤Í½Q®CallExpressionÍ¤Í¸R°MemberExpressionÍ¤Í±KªIdentifierÍ¤Í©¥lowerKªIdentifierÍªÍ±§indexOfÂÂ‘T§LiteralÍ²Í·£stc¥'stc'Â¢>=T§LiteralÍ¼Í½ ¡0¢||S±LogicalExpressionÍÂÍöS°BinaryExpressionÍÂÍÚQ®CallExpressionÍÂÍÕR°MemberExpressionÍÂÍÏKªIdentifierÍÂÍÇ¥lowerKªIdentifierÍÈÍÏ§indexOfÂÂ‘T§LiteralÍĞÍÔ¢51¤'51'Â¢>=T§LiteralÍÙÍÚ ¡0¢&&S°BinaryExpressionÍŞÍöQ®CallExpressionÍŞÍòR°MemberExpressionÍŞÍëKªIdentifierÍŞÍã¥lowerKªIdentifierÍäÍë§indexOfÂÂ‘T§LiteralÍìÍñ£stm¥'stm'Â¡<T§LiteralÍõÍö ¡0¥constO³VariableDeclarationÍÍ‘P²VariableDeclaratorÍÍKªIdentifierÍÍ
+¤bestT§LiteralÍÍÀ¤null£letO³VariableDeclarationÍÍ.‘P²VariableDeclaratorÍ Í-KªIdentifierÍ Í)©bestScoreT§LiteralÍ,Í- ¡0£letÔrU—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ8ÍO³VariableDeclarationÍ=ÍG‘P²VariableDeclaratorÍAÍGKªIdentifierÍAÍC¢tiT§LiteralÍFÍG ¡0£letS°BinaryExpressionÍIÍ^KªIdentifierÍIÍK¢ti¡<R°MemberExpressionÍNÍ^KªIdentifierÍNÍW©TEMPLATESKªIdentifierÍXÍ^¦lengthÂÂÔrV–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ`Íd¢++ÂKªIdentifierÍ`Íb¢tiL®BlockStatementÍfÍ˜O³VariableDeclarationÍuÍ‘P²VariableDeclaratorÍ{ÍŒKªIdentifierÍ{Í|¡tR°MemberExpressionÍÍŒKªIdentifierÍÍˆ©TEMPLATESKªIdentifierÍ‰Í‹¢tiÃÂ¥constÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ›ÍùS±LogicalExpressionÍŸÍÌS±LogicalExpressionÍŸÍÀS°BinaryExpressionÍŸÍ¶R°MemberExpressionÍŸÍªKªIdentifierÍŸÍ ¡tKªIdentifierÍ¡Íª©mcuFamilyÂÂ£===T§LiteralÍ¯Í¶¥STM32§'STM32'¢&&KªIdentifierÍºÍÀ¦want51¢&&V¯UnaryExpressionÍÄÍÌ¡!ÃKªIdentifierÍÅÍÌ§wantStmL®BlockStatementÍÎÍù‘ÔrX”¤type¥start£end¥label±ContinueStatementÍáÍêÀÀW«IfStatementÍÍdS±LogicalExpressionÍÍ7S±LogicalExpressionÍÍ,S°BinaryExpressionÍÍ!R°MemberExpressionÍÍKªIdentifierÍÍ¡tKªIdentifierÍÍ©mcuFamilyÂÂ£===T§LiteralÍÍ!¤8051¦'8051'¢&&KªIdentifierÍ%Í,§wantStm¢&&V¯UnaryExpressionÍ0Í7¡!ÃKªIdentifierÍ1Í7¦want51L®BlockStatementÍ9Íd‘X±ContinueStatementÍLÍUÀÀO³VariableDeclarationÍrÍ€‘P²VariableDeclaratorÍvÍKªIdentifierÍvÍ{¥scoreT§LiteralÍ~Í ¡0£letU¬ForStatementÍÍÓO³VariableDeclarationÍ“Í‘P²VariableDeclaratorÍ—ÍKªIdentifierÍ—Í™¢kiT§LiteralÍœÍ ¡0£letS°BinaryExpressionÍŸÍµKªIdentifierÍŸÍ¡¢ki¡<R°MemberExpressionÍ¤ÍµR°MemberExpressionÍ¤Í®KªIdentifierÍ¤Í¥¡tKªIdentifierÍ¦Í®¨keywordsÂÂKªIdentifierÍ¯Íµ¦lengthÂÂV°UpdateExpressionÍ·Í»¢++ÂKªIdentifierÍ·Í¹¢kiL®BlockStatementÍ½ÍÓ“O³VariableDeclarationÍĞÍê‘P²VariableDeclaratorÍÖÍéKªIdentifierÍÖÍØ¢kwR°MemberExpressionÍÛÍéR°MemberExpressionÍÛÍåKªIdentifierÍÛÍÜ¡tKªIdentifierÍİÍå¨keywordsÂÂKªIdentifierÍæÍè¢kiÃÂ¥constW«IfStatementÍüÍBS°BinaryExpressionÍ ÍR°MemberExpressionÍ Í	KªIdentifierÍ Í¢kwKªIdentifierÍÍ	¦lengthÂÂ¡<T§LiteralÍÍ¡2L®BlockStatementÍÍB‘X±ContinueStatementÍ&Í/ÀÀW«IfStatementÍTÍÄQ®CallExpressionÍXÍxR°MemberExpressionÍXÍfKªIdentifierÍXÍ]¥lowerKªIdentifierÍ^Íf¨includesÂÂ‘Q®CallExpressionÍgÍwR°MemberExpressionÍgÍuKªIdentifierÍgÍi¢kwKªIdentifierÍjÍu«toLowerCaseÂÂÂÂL®BlockStatementÍzÍÄ‘ÔrY”¤type¥start£endªexpression³ExpressionStatementÍ‘Í±ÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ‘Í°¢+=KªIdentifierÍ‘Í–¥scoreWµConditionalExpressionÍšÍ°S°BinaryExpressionÍšÍ¨R°MemberExpressionÍšÍ£KªIdentifierÍšÍœ¢kwKªIdentifierÍÍ£¦lengthÂÂ¢>=T§LiteralÍ§Í¨¡4T§LiteralÍ«Í¬¡2T§LiteralÍ¯Í°¡1ÀW«IfStatementÍáÍ6S±LogicalExpressionÍåÍS°BinaryExpressionÍåÍüR°MemberExpressionÍåÍğKªIdentifierÍåÍæ¡tKªIdentifierÍçÍğ©mcuFamilyÂÂ£===T§LiteralÍõÍü¥STM32§'STM32'¢&&KªIdentifierÍ Í§wantStmL®BlockStatementÍ	Í6‘Y³ExpressionStatementÍÍ'Z´AssignmentExpressionÍÍ&¢+=KªIdentifierÍÍ!¥scoreT§LiteralÍ%Í&¡3ÀW«IfStatementÍDÍ—S±LogicalExpressionÍHÍhS°BinaryExpressionÍHÍ^R°MemberExpressionÍHÍSKªIdentifierÍHÍI¡tKªIdentifierÍJÍS©mcuFamilyÂÂ£===T§LiteralÍXÍ^¤8051¦'8051'¢&&KªIdentifierÍbÍh¦want51L®BlockStatementÍjÍ—‘Y³ExpressionStatementÍ}ÍˆZ´AssignmentExpressionÍ}Í‡¢+=KªIdentifierÍ}Í‚¥scoreT§LiteralÍ†Í‡¡3ÀW«IfStatementÍ¥ÍıS°BinaryExpressionÍ©ÍºKªIdentifierÍ©Í®¥score¡>KªIdentifierÍ±Íº©bestScoreL®BlockStatementÍ¼Í’Y³ExpressionStatementÍÏÍáZ´AssignmentExpressionÍÏÍà¡=KªIdentifierÍÏÍØ©bestScoreKªIdentifierÍÛÍà¥scoreY³ExpressionStatementÍóÍüZ´AssignmentExpressionÍóÍû¡=KªIdentifierÍóÍ÷¤bestKªIdentifierÍúÍû¡tW«IfStatementÍÍıS±LogicalExpressionÍ"ÍSS±LogicalExpressionÍ"ÍFS°BinaryExpressionÍ"Í5KªIdentifierÍ"Í'¥score£===KªIdentifierÍ,Í5©bestScore¢&&S°BinaryExpressionÍ9ÍFKªIdentifierÍ9Í=¤best£!==T§LiteralÍBÍFÀ¤null¢&&S°BinaryExpressionÍJÍSKªIdentifierÍJÍO¥score¡>T§LiteralÍRÍS ¡0L®BlockStatementÍUÍı‘W«IfStatementÍÍîS°BinaryExpressionÍ‘Í¹R°MemberExpressionÍ‘Í¢R°MemberExpressionÍ‘Í›KªIdentifierÍ‘Í’¡tKªIdentifierÍ“Í›¨keywordsÂÂKªIdentifierÍœÍ¢¦lengthÂÂ¡>R°MemberExpressionÍ¥Í¹R°MemberExpressionÍ¥Í²KªIdentifierÍ¥Í©¤bestKªIdentifierÍªÍ²¨keywordsÂÂKªIdentifierÍ³Í¹¦lengthÂÂL®BlockStatementÍ»Íî‘Y³ExpressionStatementÍÒÍÛZ´AssignmentExpressionÍÒÍÚ¡=KªIdentifierÍÒÍÖ¤bestKªIdentifierÍÙÍÚ¡tÀÀÔr[”¤type¥start£end¨argument¯ReturnStatementÍÍ5WµConditionalExpressionÍÍ4S°BinaryExpressionÍÍ&KªIdentifierÍÍ"©bestScore¡>T§LiteralÍ%Í& ¡0KªIdentifierÍ)Í-¤bestT§LiteralÍ0Í4À¤nullM°MethodDefinitionÍBÍÃÂKªIdentifierÍIÍT«getTemplate¦methodN²FunctionExpressionÍTÍÀÂÂÂ‘KªIdentifierÍUÍW¢idL®BlockStatementÍYÍ’U¬ForStatementÍdÍûO³VariableDeclarationÍiÍr‘P²VariableDeclaratorÍmÍrKªIdentifierÍmÍn¡iT§LiteralÍqÍr ¡0£letS°BinaryExpressionÍtÍˆKªIdentifierÍtÍu¡i¡<R°MemberExpressionÍxÍˆKªIdentifierÍxÍ©TEMPLATESKªIdentifierÍ‚Íˆ¦lengthÂÂV°UpdateExpressionÍŠÍ¢++ÂKªIdentifierÍŠÍ‹¡iL®BlockStatementÍÍû‘W«IfStatementÍÍğS°BinaryExpressionÍ¢Í¸R°MemberExpressionÍ¢Í±R°MemberExpressionÍ¢Í®KªIdentifierÍ¢Í«©TEMPLATESKªIdentifierÍ¬Í­¡iÃÂKªIdentifierÍ¯Í±¢idÂÂ£===KªIdentifierÍ¶Í¸¢idL®BlockStatementÍºÍğ‘[¯ReturnStatementÍÍÍáR°MemberExpressionÍÔÍàKªIdentifierÍÔÍİ©TEMPLATESKªIdentifierÍŞÍß¡iÃÂÀ[¯ReturnStatementÍÍT§LiteralÍÍÀ¤nullÀ‘Ôr\•¤type¥start£endªspecifiers¦source±ImportDeclaration(Ìs“Ôr]•¤type¥start£end¨imported¥local¯ImportSpecifier1?KªIdentifier1?®emptyStringMapKªIdentifier1?®emptyStringMap]¯ImportSpecifierÌAÌVKªIdentifierÌAÌVµmakeDeviceRequirementKªIdentifierÌAÌVµmakeDeviceRequirement]¯ImportSpecifierÌXÌbKªIdentifierÌXÌbªstringMap1KªIdentifierÌXÌbªstringMap1T§LiteralÌjÌr¦common¨'common'

@@ -34,7 +34,22 @@ export class CryptoUtil {
       const decoder = new util.TextDecoder('utf-8');
       return decoder.decodeToString(decrypted);
     } catch (_e) {
+      // 调用方须区分：空串可能是失败；vault 层应尝试 .bak
       return '';
+    }
+  }
+
+  /** 解密失败返回 null（与空明文区分） */
+  static tryDecrypt(cipherText: string): string | null {
+    if (!cipherText || cipherText.length === 0) {
+      return '';
+    }
+    try {
+      const out = CryptoUtil.decrypt(cipherText);
+      // XOR 失败时 decode 也可能得到乱码；无法可靠区分，仅 catch 路径用 null
+      return out;
+    } catch (_e) {
+      return null;
     }
   }
 
@@ -43,12 +58,15 @@ export class CryptoUtil {
     return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
   }
 
-  /** RSA-2048 风格签名桩：SHA-256(signBody + salt) 确定性摘要 */
+  /** 确定性摘要桩（非真实 RSA；勿当安全签名） */
   static signLicensePayload(signBody: string): string {
-    return CryptoUtil.sha256(`RSA2048:${signBody}:${SALT}`);
+    return CryptoUtil.sha256(`SOFT_SIGN:${signBody}:${SALT}`);
   }
 
-  /** HUKS 硬件密钥库加密 — 不可用时降级 XOR+Base64 */
+  /**
+   * 密钥混淆存储（XOR+Base64）。
+   * 命名保留 Huks 以兼容调用方；当前非硬件密钥库，勿当安全边界。
+   */
   static encryptWithHuks(plainText: string, _alias: string = 'elecdraw_api_key'): string {
     return CryptoUtil.encrypt(plainText);
   }

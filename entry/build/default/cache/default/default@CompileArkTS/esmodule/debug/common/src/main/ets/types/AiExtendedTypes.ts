@@ -36,6 +36,10 @@ export interface AiTaskResult {
     topology?: SchTopology;
     diagErrors?: DiagError[];
     analysisText?: string;
+    /** 结构化：是否真实走过 LLM（禁止仅靠 analysisText 子串判断） */
+    usedLlm?: boolean;
+    /** 结构化：ERC/几何仍有阻断但已尽力交付 */
+    deliveredWithResidual?: boolean;
     progress: ProgressInfo;
 }
 export interface AiTestResult {
@@ -200,4 +204,6 @@ export interface AiPipelineResult {
     ercClean: boolean;
     /** 几何阻断项数量（wire_body / pin_proximity / wire_cross） */
     geoBlocking?: number;
+    /** oneshot 带残留交付时为 true；ercClean 仍须反映真实门禁 */
+    deliveredWithResidual?: boolean;
 }

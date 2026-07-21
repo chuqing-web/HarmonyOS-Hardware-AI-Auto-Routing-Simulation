@@ -1,7 +1,7 @@
 /**
  * 引脚世界坐标 — Kit pinOffset + 旋转/镜像（与 WireNetTopology 一致）
  */
-import { Point2D, DeviceInst, ComponentInstance } from 'common';
+import { Point2D, DeviceInst, ComponentInstance, Logger, INSTR_TRACE_TAG } from 'common';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
 
 export class PinWorldResolver {
@@ -26,7 +26,13 @@ export class PinWorldResolver {
 
   static forDevice(libDevId: string, x: number, y: number, rotate: number,
     mirrorH: boolean, pinId: string, pinName: string): Point2D {
+    const known = TemplateSchematicKit.validatePinExists(libDevId, pinId)
+      || (pinName.length > 0 && TemplateSchematicKit.validatePinExists(libDevId, pinName));
     const local = TemplateSchematicKit.pinOffset(libDevId, pinId, pinName);
+    if (!known && local.x === 0 && local.y === 0) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_PIN] unknown pin ${libDevId}.${pinId}/${pinName} — world falls at device center`);
+    }
     const t = PinWorldResolver.transformLocal(local, rotate, mirrorH);
     return { x: x + t.x, y: y + t.y };
   }

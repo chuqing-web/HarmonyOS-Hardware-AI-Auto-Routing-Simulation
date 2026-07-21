@@ -1,5 +1,5 @@
 /**
- * 导线冲突几何 — 异网正交交叉 / 共线重合统一判定
+ * 导线冲突几何 — 异网正交交叉 / 共线重合 / 斜线相交统一判定
  * 供 ConstrainedWiringEngine / PostGenValidator / 门禁共用
  */
 import { Point2D } from '../types/CommonTypes';
@@ -7,11 +7,22 @@ import { RouteLine } from '../types/TopologyTypes';
 
 export type WireSegmentConflict = 'none' | 'orthogonal_cross' | 'collinear_overlap';
 
+const COORD_EPS = 0.75;
+
 export class WireConflictGeometry {
-  /** 两正交/共线段冲突类型（异网禁用共线重合；正交交叉亦视为冲突需绕开） */
+  private static nearlyEq(a: number, b: number): boolean {
+    return Math.abs(a - b) <= COORD_EPS;
+  }
+
+  /** 两正交/共线/斜线段冲突类型 */
   static segmentConflict(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): WireSegmentConflict {
+    const aVert = WireConflictGeometry.nearlyEq(a1.x, a2.x);
+    const aHoriz = WireConflictGeometry.nearlyEq(a1.y, a2.y);
+    const bVert = WireConflictGeometry.nearlyEq(b1.x, b2.x);
+    const bHoriz = WireConflictGeometry.nearlyEq(b1.y, b2.y);
+
     // 正交穿越
-    if (a1.x === a2.x && b1.y === b2.y) {
+    if (aVert && bHoriz) {
       const x = a1.x;
       const y = b1.y;
       if (WireConflictGeometry.between(y, Math.min(a1.y, a2.y), Math.max(a1.y, a2.y)) &&
@@ -19,7 +30,7 @@ export class WireConflictGeometry {
         return 'orthogonal_cross';
       }
     }
-    if (a1.y === a2.y && b1.x === b2.x) {
+    if (aHoriz && bVert) {
       const x = b1.x;
       const y = a1.y;
       if (WireConflictGeometry.between(x, Math.min(a1.x, a2.x), Math.max(a1.x, a2.x)) &&
@@ -27,30 +38,56 @@ export class WireConflictGeometry {
         return 'orthogonal_cross';
       }
     }
-    // 共线重叠（长度 > 1mil）
-    if (a1.x === a2.x && b1.x === b2.x && a1.x === b1.x) {
+    // 共线重叠（长度 > 网格一半）
+    if (aVert && bVert && WireConflictGeometry.nearlyEq(a1.x, b1.x)) {
       const aMin = Math.min(a1.y, a2.y);
       const aMax = Math.max(a1.y, a2.y);
       const bMin = Math.min(b1.y, b2.y);
       const bMax = Math.max(b1.y, b2.y);
-      if (Math.min(aMax, bMax) - Math.max(aMin, bMin) > 1) {
+      if (Math.min(aMax, bMax) - Math.max(aMin, bMin) > 5) {
         return 'collinear_overlap';
       }
     }
-    if (a1.y === a2.y && b1.y === b2.y && a1.y === b1.y) {
+    if (aHoriz && bHoriz && WireConflictGeometry.nearlyEq(a1.y, b1.y)) {
       const aMin = Math.min(a1.x, a2.x);
       const aMax = Math.max(a1.x, a2.x);
       const bMin = Math.min(b1.x, b2.x);
       const bMax = Math.max(b1.x, b2.x);
-      if (Math.min(aMax, bMax) - Math.max(aMin, bMin) > 1) {
+      if (Math.min(aMax, bMax) - Math.max(aMin, bMin) > 5) {
         return 'collinear_overlap';
+      }
+    }
+    // 非曼哈顿斜线：标准线段相交（不含仅端点相接）
+    if ((!aVert && !aHoriz) || (!bVert && !bHoriz)) {
+      if (WireConflictGeometry.segmentsProperIntersect(a1, a2, b1, b2)) {
+        return 'orthogonal_cross';
       }
     }
     return 'none';
   }
 
+  /** 严格相交（端点共点不算冲突，避免 T 结误报） */
+  private static segmentsProperIntersect(p1: Point2D, p2: Point2D, q1: Point2D, q2: Point2D): boolean {
+    const o1 = WireConflictGeometry.orient(p1, p2, q1);
+    const o2 = WireConflictGeometry.orient(p1, p2, q2);
+    const o3 = WireConflictGeometry.orient(q1, q2, p1);
+    const o4 = WireConflictGeometry.orient(q1, q2, p2);
+    if (o1 === 0 || o2 === 0 || o3 === 0 || o4 === 0) {
+      return false;
+    }
+    return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+  }
+
+  private static orient(a: Point2D, b: Point2D, c: Point2D): number {
+    const v = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    if (Math.abs(v) < 1e-6) {
+      return 0;
+    }
+    return v > 0 ? 1 : -1;
+  }
+
   static between(v: number, lo: number, hi: number): boolean {
-    return v >= lo - 0.5 && v <= hi + 0.5;
+    return v >= lo - COORD_EPS && v <= hi + COORD_EPS;
   }
 
   /** 两根导线是否异网冲突（调用方保证已排除同 net） */
@@ -82,16 +119,15 @@ export class WireConflictGeometry {
     return len;
   }
 
-  /** 短 stub（标号引线）保留，不强制 A* 重布；含选中区逃逸的 stub 可到 ~90mil */
+  /** 短 stub（标号引线）保留；阈值收紧避免 90mil 总线段被豁免 */
   static isShortStub(wire: RouteLine): boolean {
     const len = WireConflictGeometry.pathLength(wire.points);
-    // 单段/两段正交引出视为 stub（即使略长于旧阈值 45）
-    if (wire.points.length <= 2 && len <= 90) {
+    if (wire.points.length <= 2 && len <= 55) {
       return true;
     }
-    if (wire.points.length <= 3 && len <= 70) {
+    if (wire.points.length <= 3 && len <= 45) {
       return true;
     }
-    return len <= 45;
+    return len <= 35;
   }
 }

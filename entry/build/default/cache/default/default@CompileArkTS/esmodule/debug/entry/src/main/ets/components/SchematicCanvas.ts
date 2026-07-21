@@ -90,7 +90,7 @@ interface SchematicCanvas_Params {
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { SchematicSymbolRenderer } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/SchematicSymbolRenderer";
 import type { SymbolDrawStyle } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/SchematicSymbolRenderer";
-import { ModuleEvent, EventBus, calcSymbolBounds, SimulationState, getPinNetMap, findNetForPinLabel } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { ModuleEvent, EventBus, calcSymbolBounds, SimulationState, getPinNetMap, findNetForPinLabel, isPowerSupplyLabelText, isGroundLabelText } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchematicDocument, ComponentInstance, Wire, ViewportState, Point2D, WorldRect, Rect2D, ModuleEventPayload, ErcError } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SimulationKernelImpl } from 'simulation_kernel';
 import type { ComponentDefinition } from 'component_library';
@@ -2131,6 +2131,7 @@ export class SchematicCanvas extends ViewPU {
             // Draw wire-to-pin connection markers on top of everything
             if (this.dragComponentId.length === 0) {
                 this.drawWireConnectionMarkers(ctx);
+                this.drawDanglingWireEnds(ctx);
             }
         }
         if (this.dragComponentId.length > 0 && editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
@@ -2496,6 +2497,10 @@ export class SchematicCanvas extends ViewPU {
      */
     private drawComponentBodyBackdrop(ctx: CanvasRenderingContext2D, drawPos: Point2D, comp: ComponentInstance, def: ComponentDefinition): void {
         if (def.pins.length === 0) {
+            return;
+        }
+        // TO-220 稳压器等有独立符号体，再叠 IC backdrop + 全名会与 REG/位号挤成一团
+        if (def.behaviorModel === 'regulator') {
             return;
         }
         const pinBounds = calcSymbolBounds(def.pins, 0);
@@ -3234,44 +3239,61 @@ export class SchematicCanvas extends ViewPU {
             this.renderJuncPoints(ctx, this.juncCache);
             return;
         }
-        // Build junction map — count vertex occurrences across all wires
+        // Only count co-located vertices / T-hits among wires that share a netId
+        // (avoids false dots where VCC and GND cross visually but are not joined).
         const counts = new Map<string, number>();
         for (let i = 0; i < wires.length; i++) {
             const w = wires[i];
+            if (w.netId.length === 0) {
+                continue;
+            }
             for (let j = 0; j < w.points.length; j++) {
                 const p = w.points[j];
-                const key = `${Math.round(p.x)},${Math.round(p.y)}`;
+                const key = `${Math.round(p.x)},${Math.round(p.y)}|${w.netId}`;
                 counts.set(key, (counts.get(key) ?? 0) + 1);
             }
         }
-        // Detect T-junctions: a vertex of wire A lies on a segment of wire B
         for (let i = 0; i < wires.length; i++) {
             const wA = wires[i];
-            if (wA.points.length < 2)
+            if (wA.points.length < 2 || wA.netId.length === 0) {
                 continue;
+            }
             for (let j = 0; j < wires.length; j++) {
-                if (i === j)
+                if (i === j) {
                     continue;
+                }
                 const wB = wires[j];
+                if (wB.netId !== wA.netId) {
+                    continue;
+                }
                 for (let v = 0; v < wB.points.length; v++) {
                     const pt = wB.points[v];
                     for (let s = 0; s < wA.points.length - 1; s++) {
                         const a = wA.points[s];
                         const b = wA.points[s + 1];
-                        const key = `${Math.round(pt.x)},${Math.round(pt.y)}`;
-                        // Skip if already counted as a vertex junction
-                        if ((counts.get(key) ?? 0) >= 2)
+                        const key = `${Math.round(pt.x)},${Math.round(pt.y)}|${wA.netId}`;
+                        if ((counts.get(key) ?? 0) >= 2) {
                             continue;
+                        }
                         if (this.pointOnSegment(pt, a, b)) {
-                            counts.set(key, (counts.get(key) ?? 0) + 2); // mark as T-junction
+                            counts.set(key, (counts.get(key) ?? 0) + 2);
                         }
                     }
                 }
             }
         }
-        this.juncCache = counts;
+        // Flatten to xy-only keys for rendering (same physical point, same net)
+        const renderCounts = new Map<string, number>();
+        counts.forEach((count: number, key: string) => {
+            const xy = key.split('|')[0];
+            const prev = renderCounts.get(xy) ?? 0;
+            if (count > prev) {
+                renderCounts.set(xy, count);
+            }
+        });
+        this.juncCache = renderCounts;
         this.juncCacheKey = cacheKey;
-        this.renderJuncPoints(ctx, counts);
+        this.renderJuncPoints(ctx, renderCounts);
     }
     /** Check if point p lies on segment ab within tolerance */
     private pointOnSegment(p: Point2D, a: Point2D, b: Point2D, tolerance: number = 4): boolean {
@@ -3319,15 +3341,16 @@ export class SchematicCanvas extends ViewPU {
     }
     /**
      * Draws filled dots at wire endpoints that connect to component pins.
-     * This makes wire-to-pin connections clearly visible regardless of draw order.
+     * Uses the same tolerance as connectWireEndpoints so visual matches topology.
      */
     private drawWireConnectionMarkers(ctx: CanvasRenderingContext2D): void {
         const doc = this.appService.schematicEditor.getDocument();
         if (doc.wires.length === 0) {
             return;
         }
-        // Build set of all pin world positions across all components
-        const pinSet = new Set<string>();
+        const gridSize = doc.metadata.gridSize || 10;
+        const threshold = Math.max(gridSize * 2.5, 20);
+        const pinWorlds: Point2D[] = [];
         for (let ci = 0; ci < doc.components.length; ci++) {
             const comp = doc.components[ci];
             const def = this.getCachedCompDef(comp.libraryId);
@@ -3337,9 +3360,7 @@ export class SchematicCanvas extends ViewPU {
             for (let pi = 0; pi < def.pins.length; pi++) {
                 const pin = def.pins[pi];
                 const local = this.transformPinOffset(pin.position, comp.rotation, comp.mirrored);
-                const px = Math.round(comp.position.x + local.x);
-                const py = Math.round(comp.position.y + local.y);
-                pinSet.add(`${px},${py}`);
+                pinWorlds.push({ x: comp.position.x + local.x, y: comp.position.y + local.y });
             }
         }
         ctx.fillStyle = ProteusColors.WIRE;
@@ -3352,13 +3373,106 @@ export class SchematicCanvas extends ViewPU {
             const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
             for (let ei = 0; ei < endpoints.length; ei++) {
                 const ep = endpoints[ei];
-                const key = `${Math.round(ep.x)},${Math.round(ep.y)}`;
-                if (pinSet.has(key) && !drawn.has(key)) {
-                    drawn.add(key);
-                    ctx.beginPath();
-                    ctx.arc(ep.x, ep.y, 3, 0, Math.PI * 2);
-                    ctx.fill();
+                let hit = false;
+                for (let pi = 0; pi < pinWorlds.length; pi++) {
+                    const dx = Math.abs(ep.x - pinWorlds[pi].x);
+                    const dy = Math.abs(ep.y - pinWorlds[pi].y);
+                    if (dx <= threshold && dy <= threshold) {
+                        hit = true;
+                        break;
+                    }
                 }
+                if (!hit) {
+                    continue;
+                }
+                const key = `${Math.round(ep.x)},${Math.round(ep.y)}`;
+                if (drawn.has(key)) {
+                    continue;
+                }
+                drawn.add(key);
+                ctx.beginPath();
+                ctx.arc(ep.x, ep.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+    /** Open circle on wire tips that are neither on a pin nor a same-net junction. */
+    private drawDanglingWireEnds(ctx: CanvasRenderingContext2D): void {
+        const doc = this.appService.schematicEditor.getDocument();
+        if (doc.wires.length === 0) {
+            return;
+        }
+        const gridSize = doc.metadata.gridSize || 10;
+        const pinTol = Math.max(gridSize * 2.5, 20);
+        const juncTol = 4;
+        const pinWorlds: Point2D[] = [];
+        for (let ci = 0; ci < doc.components.length; ci++) {
+            const comp = doc.components[ci];
+            const def = this.getCachedCompDef(comp.libraryId);
+            if (def === null) {
+                continue;
+            }
+            for (let pi = 0; pi < def.pins.length; pi++) {
+                const pin = def.pins[pi];
+                const local = this.transformPinOffset(pin.position, comp.rotation, comp.mirrored);
+                pinWorlds.push({ x: comp.position.x + local.x, y: comp.position.y + local.y });
+            }
+        }
+        ctx.strokeStyle = 'rgba(220, 80, 60, 0.85)';
+        ctx.lineWidth = 1.2;
+        for (let wi = 0; wi < doc.wires.length; wi++) {
+            const wire = doc.wires[wi];
+            if (wire.points.length < 2) {
+                continue;
+            }
+            const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+            for (let ei = 0; ei < endpoints.length; ei++) {
+                const ep = endpoints[ei];
+                let onPin = false;
+                for (let pi = 0; pi < pinWorlds.length; pi++) {
+                    if (Math.abs(ep.x - pinWorlds[pi].x) <= pinTol &&
+                        Math.abs(ep.y - pinWorlds[pi].y) <= pinTol) {
+                        onPin = true;
+                        break;
+                    }
+                }
+                if (onPin) {
+                    continue;
+                }
+                let onJunction = false;
+                for (let wj = 0; wj < doc.wires.length; wj++) {
+                    if (wj === wi) {
+                        continue;
+                    }
+                    const other = doc.wires[wj];
+                    if (other.netId.length === 0 || other.netId !== wire.netId) {
+                        continue;
+                    }
+                    for (let pj = 0; pj < other.points.length; pj++) {
+                        const op = other.points[pj];
+                        if (Math.abs(ep.x - op.x) <= juncTol && Math.abs(ep.y - op.y) <= juncTol) {
+                            onJunction = true;
+                            break;
+                        }
+                    }
+                    if (!onJunction && other.points.length >= 2) {
+                        for (let s = 0; s < other.points.length - 1; s++) {
+                            if (this.pointOnSegment(ep, other.points[s], other.points[s + 1], juncTol)) {
+                                onJunction = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (onJunction) {
+                        break;
+                    }
+                }
+                if (onJunction) {
+                    continue;
+                }
+                ctx.beginPath();
+                ctx.arc(ep.x, ep.y, 3.5, 0, Math.PI * 2);
+                ctx.stroke();
             }
         }
     }
@@ -3370,20 +3484,24 @@ export class SchematicCanvas extends ViewPU {
             const label = doc.netLabels[i];
             const x = label.position.x;
             const y = label.position.y;
-            // global=true：电源/地符号级标号；模板 stub 标号用文字（Proteus LBL）
-            const isPower = label.global &&
-                (label.text === 'VCC' || label.text === 'VDD' || label.text === 'V+');
-            const isGnd = label.global && label.text === 'GND';
-            if (isPower) {
+            // Draw by text semantics (AI stubs often have global=false)
+            if (isPowerSupplyLabelText(label.text)) {
                 this.drawPowerSymbol(ctx, x, y, label.text);
             }
-            else if (isGnd) {
+            else if (isGroundLabelText(label.text)) {
                 this.drawGroundSymbol(ctx, x, y);
             }
             else {
+                // Signal label: short anchor stub + text
+                ctx.strokeStyle = ProteusColors.TEXT_PRIMARY;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x - 4, y);
+                ctx.lineTo(x + 2, y);
+                ctx.stroke();
                 ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
                 ctx.font = `${ProteusFonts.CANVAS_LABEL}px sans-serif`;
-                ctx.fillText(label.text, x, y);
+                ctx.fillText(label.text, x + 4, y + 4);
             }
         }
     }

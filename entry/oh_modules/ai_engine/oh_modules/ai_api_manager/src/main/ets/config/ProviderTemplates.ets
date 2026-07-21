@@ -24,7 +24,8 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   { provider: AiProviderType.SILICONFLOW, displayName: '硅基流动', defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'deepseek-ai/DeepSeek-V2.5', chatPath: '/chat/completions', authHeader: 'Bearer' },
   { provider: AiProviderType.OPENAI, displayName: 'OpenAI GPT', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o', chatPath: '/chat/completions', authHeader: 'Bearer' },
   { provider: AiProviderType.CLAUDE, displayName: 'Claude', defaultBaseUrl: 'https://api.anthropic.com/v1', defaultModel: 'claude-3-5-sonnet-20241022', chatPath: '/messages', authHeader: 'x-api-key' },
-  { provider: AiProviderType.GEMINI, displayName: 'Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta', defaultModel: 'gemini-pro', chatPath: '/models', authHeader: 'Bearer' },
+  // Gemini OpenAI 兼容代理常用 /chat/completions；原生 generateContent 需另拼 model 路径
+  { provider: AiProviderType.GEMINI, displayName: 'Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultModel: 'gemini-2.0-flash', chatPath: '/chat/completions', authHeader: 'Bearer' },
   { provider: AiProviderType.MISTRAL, displayName: 'Mistral', defaultBaseUrl: 'https://api.mistral.ai/v1', defaultModel: 'mistral-large-latest', chatPath: '/chat/completions', authHeader: 'Bearer' },
   { provider: AiProviderType.GROQ, displayName: 'Groq', defaultBaseUrl: 'https://api.groq.com/openai/v1', defaultModel: 'llama-3.3-70b-versatile', chatPath: '/chat/completions', authHeader: 'Bearer' },
   { provider: AiProviderType.OPENROUTER, displayName: 'OpenRouter', defaultBaseUrl: 'https://openrouter.ai/api/v1', defaultModel: 'openai/gpt-4o', chatPath: '/chat/completions', authHeader: 'Bearer' },

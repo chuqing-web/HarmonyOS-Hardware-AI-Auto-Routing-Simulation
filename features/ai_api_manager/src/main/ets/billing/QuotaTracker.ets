@@ -30,7 +30,13 @@ export class QuotaTracker {
   }
 
   resetIfNewDay(): void {
-    const today = new Date().toISOString().substring(0, 10);
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    const mm = m < 10 ? `0${m}` : `${m}`;
+    const dd = d < 10 ? `0${d}` : `${d}`;
+    const today = `${y}-${mm}-${dd}`;
     if (this.lastDate !== today) {
       this.globalDailyCalls = 0;
       this.globalDailyTokens = 0;

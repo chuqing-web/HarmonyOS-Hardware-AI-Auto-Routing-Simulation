@@ -168,8 +168,8 @@ export struct AppLeftPanel {
   }
 
   getCategoryItems(cat: ComponentCategory): string[] {
-    const result = this.appService.componentLibrary.listByCategory(cat, 1, 30);
-    return result.items.map(c => `${c.id}|${c.name}`);
+    const items = this.appService.componentLibrary.listAllByCategory(cat);
+    return items.map(c => `${c.id}|${c.name}`);
   }
 
   @Builder

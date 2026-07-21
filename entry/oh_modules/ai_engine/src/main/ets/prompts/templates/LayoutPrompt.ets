@@ -28,5 +28,5 @@ export const LAYOUT_PROMPT: PromptTemplate = {
 【JSON 格式】:
 必须含 positions，长度=器件数。其它字段可选。
 {"positions":[{"deviceId":"libDevId或位号","x":200,"y":200,"rotate":0}]}`,
-  userTemplate: '=== 待摆放器件 ===\n{{device_list}}\n\n约束：{{circuit_constraint}}\nMCU：{{mcu_family}}\n\n现在立即只输出 JSON，不要任何其它文字：'
+  userTemplate: '=== 待摆放器件 ===\n{{device_list}}\n\n=== 器件使用说明（摘要，内心遵守勿写入回复） ===\n{{device_usage}}\n\n约束：{{circuit_constraint}}\nMCU：{{mcu_family}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };

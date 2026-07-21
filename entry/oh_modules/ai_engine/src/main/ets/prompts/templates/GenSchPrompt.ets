@@ -15,12 +15,14 @@ export const GEN_SCH_PROMPT: PromptTemplate = {
 4. STM32: BOOT0→GND, 每个 VDD→100nF→GND
 5. 8051: EA→VCC, RST→10kΩ→VCC+10uF→GND
 6. 所有器件必须来自可用器件库
-7. 导线不得侵入器件选中命中区(HIT_PAD=14)，不得贴近无关引脚(≥20mil)
+7. 导线不得侵入器件选中命中区(HIT_PAD=22)，不得贴近无关引脚(≥20mil)
 
 【仪器拓扑铁律】:
 - 电流表串联: VCC→I+→I-→负载 (绝不在同一网络)
 - 电压表分布: 多块表分别测不同电阻的压降
+- 示波器: CH1/GND 必须入网；未用 CH2–4 可悬空，禁止接到 GND/NC
 - 仪器用网络标号: joinByLabel, 不用长导线
+- 未要求测量时禁止擅自加 OSC/电压表
 
 【互斥双色】开/闭双色指示必须含 RELAY_SPDT；COM→GND；NC绿 / NO红。
 

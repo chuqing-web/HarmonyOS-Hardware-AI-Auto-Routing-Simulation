@@ -1,7 +1,8 @@
-import { IdUtil, makeRouteLine, DeviceHitGeometry, SELECTION_HIT_PAD, Logger, INSTR_TRACE_TAG, traceAiDiag } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { IdUtil, makeRouteLine, DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, Logger, INSTR_TRACE_TAG, traceAiDiag } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchTopology, NetInfo, NetLabelInfo, DeviceInst, NetNodeRef, Point2D, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
+import { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
 export interface NetPlanWiringHints {
     priorityOrder: string[];
     forceWire: string[];
@@ -68,6 +69,10 @@ export interface WiredCompactPair {
     netName: string;
 }
 export class NetPlanExecutor {
+    private static library: IComponentLibrary | null = null;
+    static setComponentLibrary(library: IComponentLibrary | null): void {
+        NetPlanExecutor.library = library;
+    }
     /** 将 LLM 原始 JSON 规范成可安全使用的 NetPlanResult（防 undefined.toUpperCase） */
     static normalizeLlmPlan(raw: Object | null): NetPlanResult | null {
         if (!raw || typeof raw !== 'object') {
@@ -527,6 +532,57 @@ export class NetPlanExecutor {
         return fixes;
     }
     /**
+     * 按器件库类型把别名/DIP 数字脚规范到库 pinId（555/双运放/三端稳压）。
+     * 须在 validatePinsAgainstLibrary 之前调用。
+     */
+    static canonicalizeLibPinsInPlan(plan: NetPlanResult, topo: SchTopology): number {
+        if (!plan.nets || plan.nets.length === 0) {
+            return 0;
+        }
+        const libOf = (ref: string): string => {
+            const want = (ref ?? '').toUpperCase();
+            const d = topo.deviceList.find(x => (x.refName ?? '').toUpperCase() === want);
+            return d ? (d.libDevId ?? '') : '';
+        };
+        let fixes = 0;
+        const samples: string[] = [];
+        for (let ni = 0; ni < plan.nets.length; ni++) {
+            const conns = plan.nets[ni].connections ?? [];
+            for (let ci = 0; ci < conns.length; ci++) {
+                const c = conns[ci];
+                const lib = (libOf(c.compRef ?? '') ?? '').toUpperCase();
+                if (lib.length === 0) {
+                    continue;
+                }
+                const before = c.pinId;
+                let canon = '';
+                if (lib === 'LM555' || lib === 'NE555' || lib.indexOf('555') >= 0) {
+                    canon = TemplateSchematicKit.canonicalize555Pin(c.pinId, c.pinName);
+                }
+                else if (lib === 'LM358' || lib === 'TL082' || lib === 'LM324') {
+                    canon = TemplateSchematicKit.canonicalizeDualOpAmpPin(c.pinId, c.pinName);
+                }
+                else if (lib === 'LM7805' || lib === 'LM7812' || lib === 'AMS1117_3V3' ||
+                    lib.indexOf('AMS1117') >= 0 || lib.indexOf('7805') >= 0 || lib.indexOf('7812') >= 0) {
+                    canon = TemplateSchematicKit.canonicalizeRegulatorPin(c.pinId, c.pinName);
+                }
+                if (canon.length > 0 && canon !== before) {
+                    c.pinId = canon;
+                    c.pinName = canon;
+                    fixes++;
+                    if (samples.length < 10) {
+                        samples.push(`${c.compRef}:${before}→${canon}(${lib})`);
+                    }
+                }
+            }
+        }
+        if (fixes > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] net_plan canonicalizeLibPins fixes=${fixes}`);
+            traceAiDiag('AI_PIPE', 'net_plan_pin_canonicalize', samples, 10);
+        }
+        return fixes;
+    }
+    /**
      * 仪器测量脚误挂 VCC/GND 时：从电源网剥离并并入最大的非电源信号网（或新建 SIG 网）。
      * 避免 critique HARD 反复拒收后 LLM 改用 deviceRef 等破坏性变体。
      */
@@ -654,6 +710,7 @@ export class NetPlanExecutor {
         }
         let fixes = 0;
         fixes += NetPlanExecutor.sanitizePinIdsInPlan(plan);
+        fixes += NetPlanExecutor.canonicalizeLibPinsInPlan(plan, topo);
         fixes += NetPlanExecutor.stripInstrumentSenseFromPowerNets(plan, topo);
         fixes += NetPlanExecutor.sanitizeUnknownDeviceRefs(plan, topo);
         fixes += NetPlanExecutor.stripUnusedOscChannels(plan);
@@ -973,8 +1030,9 @@ export class NetPlanExecutor {
             ` devices=${topo.deviceList.length}` +
             ` forceLabel=${plan.wiringHints?.forceLabel?.length ?? 0}` +
             ` forceWire=${plan.wiringHints?.forceWire?.length ?? 0}`);
-        // 执行前再清洗 pinId / 仪器误挂电源 / 未用 CH（防止未走 sanitizeDuplicatePins 的调用路径）
+        // 执行前再清洗 pinId / 库别名 / 仪器误挂电源 / 未用 CH
         NetPlanExecutor.sanitizePinIdsInPlan(plan);
+        NetPlanExecutor.canonicalizeLibPinsInPlan(plan, topo);
         NetPlanExecutor.stripInstrumentSenseFromPowerNets(plan, topo);
         NetPlanExecutor.stripUnusedOscChannels(plan);
         // 队列索引：同名/同 libDevId 多实例按出现顺序消费，禁止 Map 覆盖丢器件
@@ -1079,6 +1137,26 @@ export class NetPlanExecutor {
                     continue;
                 }
             }
+            // 安全检查: VCC 符号脚与 GND 符号脚绝不可同网
+            {
+                let hasVccSym = false;
+                let hasGndSym = false;
+                for (let ni = 0; ni < nodeList.length; ni++) {
+                    const nd = nodeList[ni];
+                    const d = topo.deviceList.find(x => x.instUuid === nd.devUuid);
+                    const lib = (d?.libDevId ?? '').toUpperCase();
+                    if (lib === 'VCC' || lib === 'VDD') {
+                        hasVccSym = true;
+                    }
+                    if (lib === 'GND' || lib === 'VSS') {
+                        hasGndSym = true;
+                    }
+                }
+                if (hasVccSym && hasGndSym) {
+                    failures.push(`VCC 与 GND 符号同网 "${netPlan.name}" → 短路！拒绝执行`);
+                    continue;
+                }
+            }
             // 确定网络类型
             const isPower = netPlan.type === 'power' || netPlan.type === 'ground';
             const netName = netPlan.name;
@@ -1102,8 +1180,8 @@ export class NetPlanExecutor {
                 const labelEntry = plan.labels.find(l => l.netName === netPlan.name && l.atComp === lp.dev.refName && l.atPin === lp.pinId);
                 const text = labelEntry ? labelEntry.text : netPlan.name;
                 const pinPos = PinWorldResolver.forDeviceInst(lp.dev, lp.pinId, lp.pinName);
-                // 沿最近边逃逸引出，禁止 L 折线穿选中区
-                const labelPos = NetPlanExecutor.stubLabelOutside(lp.dev, pinPos);
+                // 沿最近边逃逸引出，避开异器件选中区与无关脚
+                const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos);
                 // 创建标号数据
                 const labelInfo: NetLabelInfo = {
                     id: IdUtil.generate('lbl'),
@@ -1121,9 +1199,9 @@ export class NetPlanExecutor {
                 stubWireCount++;
             }
         }
-        // 无 LLM 计划的 fallback: 最少保证 VCC/GND 网络存在
+        // 生产路径：空网不注入假 VCC/GND；由编排器 ABORT
         if (topo.netList.length === 0 && topo.deviceList.length > 0) {
-            NetPlanExecutor.ensureMinimumNets(topo, failures);
+            failures.push('LLM netPlan 执行后无有效网络（已拒绝最小电源网静默回退）');
         }
         const notes = plan.topologyNotes.length > 0
             ? `LLM拓扑推理: ${plan.topologyNotes}`
@@ -1216,39 +1294,51 @@ export class NetPlanExecutor {
     }
     /**
      * 同一网络内 joinWired / joinByLabel 必须全有或全无。
-     * 任一脚仍为标号（含仪器脚预算、fanout 降级）→ 整网压回 joinByLabel。
+     * 2～3 脚小信号网：多数为 joinWired → 整网升为 joinWired（稳定 pin-to-pin）。
+     * 其余（电源/大网/标号占优）→ 整网压回 joinByLabel。
      */
     private static homogenizeNetConnectionModes(plan: NetPlanResult): void {
-        let netsFixed = 0;
+        let netsToLabel = 0;
+        let netsToWire = 0;
         let connsFixed = 0;
         for (let ni = 0; ni < plan.nets.length; ni++) {
-            const conns = plan.nets[ni].connections ?? [];
+            const net = plan.nets[ni];
+            const conns = net.connections ?? [];
             if (conns.length < 2) {
                 continue;
             }
-            let hasLabel = false;
-            let hasWire = false;
+            let labelN = 0;
+            let wireN = 0;
             for (let ci = 0; ci < conns.length; ci++) {
                 if (conns[ci].mode === 'joinByLabel') {
-                    hasLabel = true;
+                    labelN++;
                 }
                 else if (conns[ci].mode === 'joinWired') {
-                    hasWire = true;
+                    wireN++;
                 }
             }
-            if (!hasLabel || !hasWire) {
+            if (labelN === 0 || wireN === 0) {
                 continue;
             }
+            const nameUp = (net.name ?? '').toUpperCase();
+            const isPower = NetPlanExecutor.isPowerRailName(nameUp);
+            const preferWire = !isPower && conns.length <= 3 && wireN >= labelN;
+            const target: 'joinWired' | 'joinByLabel' = preferWire ? 'joinWired' : 'joinByLabel';
             for (let ci = 0; ci < conns.length; ci++) {
-                if (conns[ci].mode !== 'joinByLabel') {
-                    conns[ci].mode = 'joinByLabel';
+                if (conns[ci].mode !== target) {
+                    conns[ci].mode = target;
                     connsFixed++;
                 }
             }
-            netsFixed++;
+            if (preferWire) {
+                netsToWire++;
+            }
+            else {
+                netsToLabel++;
+            }
         }
-        if (netsFixed > 0) {
-            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] label_first homogenize mixed→allLabel nets=${netsFixed} conns=${connsFixed}`);
+        if (netsToLabel > 0 || netsToWire > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] homogenize mixed→wire=${netsToWire} →label=${netsToLabel} conns=${connsFixed}`);
         }
     }
     /** 收集需拉近的 joinWired 小网器件对（连接数 2～3） */
@@ -1532,11 +1622,35 @@ export class NetPlanExecutor {
             }
         }
     }
-    /** 标号 stub 终点：沿器件选中区最近边引出 */
-    private static stubLabelOutside(dev: DeviceInst, pinPos: Point2D): Point2D {
-        const halfW = Math.max(Math.abs(pinPos.x - dev.x), 30) + SELECTION_HIT_PAD;
-        const halfH = Math.max(Math.abs(pinPos.y - dev.y), 20) + SELECTION_HIT_PAD;
-        const rect: WorldHitRect = {
+    /**
+     * 标号 stub 终点：库/估选中区 + 避开异器件选中区与无关脚（与 ConstrainedWiringEngine demote 对齐）
+     */
+    private static stubLabelOutside(topo: SchTopology, dev: DeviceInst, pinPos: Point2D): Point2D {
+        const hitRects = NetPlanExecutor.buildApproxHitRects(topo);
+        let own = hitRects.find(r => r.instUuid === dev.instUuid);
+        if (!own) {
+            own = NetPlanExecutor.approxHitRectForDev(dev, pinPos);
+        }
+        const foreignPins = NetPlanExecutor.collectForeignPinWorlds(topo, pinPos);
+        return DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, own, hitRects, FOREIGN_PIN_CLEARANCE, foreignPins);
+    }
+    private static approxHitRectForDev(dev: DeviceInst, pinPosHint?: Point2D): WorldHitRect {
+        const lib = NetPlanExecutor.library;
+        if (lib) {
+            const r = lib.getComponent(dev.libDevId);
+            if (r.success && r.data && r.data.pins && r.data.pins.length > 0) {
+                return DeviceHitGeometry.hitRectFromDeviceInst(dev, r.data.pins, SELECTION_HIT_PAD);
+            }
+        }
+        const hx = pinPosHint !== undefined
+            ? Math.max(Math.abs(pinPosHint.x - dev.x), 30)
+            : 55;
+        const hy = pinPosHint !== undefined
+            ? Math.max(Math.abs(pinPosHint.y - dev.y), 20)
+            : 30;
+        const halfW = hx + SELECTION_HIT_PAD;
+        const halfH = hy + SELECTION_HIT_PAD;
+        return {
             x: dev.x - halfW,
             y: dev.y - halfH,
             w: halfW * 2,
@@ -1545,7 +1659,51 @@ export class NetPlanExecutor {
             instUuid: dev.instUuid,
             libDevId: dev.libDevId
         };
-        return DeviceHitGeometry.stubLabelOutsidePin(pinPos, rect, 20);
+    }
+    private static buildApproxHitRects(topo: SchTopology): WorldHitRect[] {
+        const rects: WorldHitRect[] = [];
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            rects.push(NetPlanExecutor.approxHitRectForDev(topo.deviceList[i]));
+        }
+        return rects;
+    }
+    private static collectForeignPinWorlds(topo: SchTopology, excludePin: Point2D): Point2D[] {
+        const out: Point2D[] = [];
+        const lib = NetPlanExecutor.library;
+        for (let di = 0; di < topo.deviceList.length; di++) {
+            const d = topo.deviceList[di];
+            let ids: string[] = [];
+            if (lib) {
+                const r = lib.getComponent(d.libDevId);
+                if (r.success && r.data && r.data.pins) {
+                    for (let pi = 0; pi < r.data.pins.length; pi++) {
+                        const p = r.data.pins[pi];
+                        ids.push(p.id);
+                        if (p.name && p.name.length > 0 && p.name !== p.id) {
+                            ids.push(p.name);
+                        }
+                    }
+                }
+            }
+            if (ids.length === 0) {
+                ids = [
+                    '1', '2', '3', '4', '5', '6', '7', '8',
+                    'A', 'K', 'COM', 'NO', 'NC', 'IN+', 'IN-', 'OUT',
+                    'V+', 'V-', 'VCC', 'GND', 'CH1', 'CH2', 'I+', 'I-', 'PROBE'
+                ];
+            }
+            for (let pi = 0; pi < ids.length; pi++) {
+                const pw = PinWorldResolver.forDeviceInst(d, ids[pi], ids[pi]);
+                if (Math.hypot(pw.x - excludePin.x, pw.y - excludePin.y) < 1) {
+                    continue;
+                }
+                if (Math.hypot(pw.x - d.x, pw.y - d.y) < 2 && ids[pi] !== '1') {
+                    continue;
+                }
+                out.push(pw);
+            }
+        }
+        return out;
     }
     /**
      * 同一引脚（compRef+pinId）最多 2 次 joinWired；超出改为 joinByLabel。
@@ -1697,41 +1855,5 @@ export class NetPlanExecutor {
             case 'bottom':
             default: return { x: pinPos.x, y: pinPos.y + stubLen };
         }
-    }
-    /** 最小网络保障: 无LLM计划时确保 VCC/GND 存在 */
-    private static ensureMinimumNets(topo: SchTopology, failures: string[]): void {
-        const hasVcc = topo.deviceList.some(d => d.libDevId === 'VCC');
-        const hasGnd = topo.deviceList.some(d => d.libDevId === 'GND');
-        if (hasVcc) {
-            topo.netList.push({
-                netUuid: IdUtil.generate('net'),
-                netName: 'VCC',
-                displayName: 'VCC',
-                nodeList: [],
-                isPower: true,
-                isAnalog: false,
-                isBusMember: false,
-                busParentUuid: '',
-                defaultVoltage: 5.0,
-                ercWarning: false,
-                connectedProbeIds: []
-            });
-        }
-        if (hasGnd) {
-            topo.netList.push({
-                netUuid: IdUtil.generate('net'),
-                netName: 'GND',
-                displayName: 'GND',
-                nodeList: [],
-                isPower: true,
-                isAnalog: false,
-                isBusMember: false,
-                busParentUuid: '',
-                defaultVoltage: 0.0,
-                ercWarning: false,
-                connectedProbeIds: []
-            });
-        }
-        failures.push('LLM netPlan 为空或无效，已创建最小 VCC/GND 网络');
     }
 }

@@ -55,7 +55,8 @@ export class SchematicSymbolRenderer {
         // Draw body backdrop for IC-type components so the ghost has a visible border,
         // matching how the canvas renders real components
         const pinBounds = calcSymbolBounds(def.pins, 0);
-        if (def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40)) {
+        const skipGhostBackdrop = def.behaviorModel === 'regulator';
+        if (!skipGhostBackdrop && def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40)) {
             const cx = (pinBounds.minX + pinBounds.maxX) / 2;
             const cy = (pinBounds.minY + pinBounds.maxY) / 2;
             const bodyW = Math.max(pinBounds.width, 12);
@@ -466,10 +467,18 @@ export class SchematicSymbolRenderer {
         ctx.fillText('−', -14, 12);
     }
     private static drawRegulator(ctx: CanvasRenderingContext2D): void {
-        ctx.strokeRect(-25, -20, 50, 40);
+        // Compact TO-220 body; pin function names drawn by drawPins (IN/GND/OUT).
+        // Keep a single short chip mark so U1 / 5V from drawLabels stay readable.
+        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
+        ctx.fillRect(-22, -16, 44, 32);
+        ctx.strokeRect(-22, -16, 44, 32);
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
-        ctx.fillText('REG', -12, 4);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('REG', 0, 0);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
     }
     private static drawGateNot(ctx: CanvasRenderingContext2D): void {
         ctx.beginPath();
@@ -1049,12 +1058,14 @@ export class SchematicSymbolRenderer {
             }
             // Draw pin number/label at extension point
             if (showLabels) {
-                const label = pin.number || pin.name;
+                // 少脚器件优先显示功能名（IN/OUT/GND），避免与位号叠数字且更易读
+                const preferName = pins.length <= 6 && pin.name.length > 0 && pin.name !== pin.number;
+                const label = preferName ? pin.name : (pin.number || pin.name);
                 ctx.fillStyle = ProteusColors.TEXT_LABEL;
-                ctx.font = '10px sans-serif';
+                ctx.font = '9px sans-serif';
                 // Position label just beyond extension point
-                const tx = ext.x + (px - ext.x > 0 ? 2 : px - ext.x < 0 ? -2 : 0);
-                const ty = ext.y + (py - ext.y > 0 ? 2 : py - ext.y < 0 ? -2 : 0);
+                const tx = ext.x + (px - ext.x > 0 ? 4 : px - ext.x < 0 ? -4 : 0);
+                const ty = ext.y + (py - ext.y > 0 ? 4 : py - ext.y < 0 ? -4 : 0);
                 // Align label based on extension direction (horizontal if ext.x changed, vertical if ext.y changed)
                 if (ext.x !== px) {
                     ctx.textAlign = px < 0 ? 'end' : 'start';
@@ -1157,17 +1168,26 @@ export class SchematicSymbolRenderer {
     }
     private static drawLabels(ctx: CanvasRenderingContext2D, def: ComponentDefinition, refDes: string, style: SymbolDrawStyle): void {
         const bounds = calcSymbolBounds(def.pins, 4);
+        const isRegulator = def.behaviorModel === 'regulator';
+        // 稳压器底脚有 GND 名，参数下移避免与脚名重叠；位号略上提
+        const refY = bounds.minY - (isRegulator ? 10 : 4);
+        const valY = bounds.maxY + (isRegulator ? 20 : 10);
         ctx.fillStyle = style.selected ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY;
         ctx.font = `${ProteusFonts.CANVAS_LABEL}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText(refDes, 0, bounds.minY - 4);
+        ctx.fillText(refDes, 0, refY);
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         const valueKey = def.defaultParams.has('value') ? 'value' :
             (def.defaultParams.has('output') ? 'output' : '');
-        const valueText = valueKey.length > 0 ? (def.defaultParams.get(valueKey) ?? '') : def.id;
-        const shortVal = valueText.length > 12 ? valueText.substring(0, 10) + '..' : valueText;
-        ctx.fillText(shortVal, 0, bounds.maxY + 10);
+        // 稳压器参数旁带短型号，便于辨认且不与体内 REG 抢位
+        let valueText = valueKey.length > 0 ? (def.defaultParams.get(valueKey) ?? '') : def.id;
+        if (isRegulator && valueKey === 'output' && def.id.length > 0) {
+            const shortId = def.id.length > 8 ? def.id.substring(0, 8) : def.id;
+            valueText = `${shortId} ${valueText}`;
+        }
+        const shortVal = valueText.length > 14 ? valueText.substring(0, 12) + '..' : valueText;
+        ctx.fillText(shortVal, 0, valY);
         ctx.textAlign = 'start';
     }
 }

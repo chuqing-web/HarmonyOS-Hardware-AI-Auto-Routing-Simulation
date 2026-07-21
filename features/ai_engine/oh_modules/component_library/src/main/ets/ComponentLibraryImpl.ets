@@ -175,6 +175,17 @@ export class ComponentLibraryImpl implements IComponentLibrary {
   }
 
   listByCategory(category: ComponentCategory, page: number = 1, pageSize: number = 50): PaginatedResult<ComponentDefinition> {
+    const filtered = this.collectByCategory(category);
+    const start = (page - 1) * pageSize;
+    return { items: filtered.slice(start, start + pageSize), total: filtered.length, page: page, pageSize: pageSize };
+  }
+
+  /** 返回某分类下全部器件（左侧库面板用，避免分页截断） */
+  listAllByCategory(category: ComponentCategory): ComponentDefinition[] {
+    return this.collectByCategory(category);
+  }
+
+  private collectByCategory(category: ComponentCategory): ComponentDefinition[] {
     const all = Array.from(this.components.values());
     const filtered: ComponentDefinition[] = [];
     for (let i = 0; i < all.length; i++) {
@@ -182,8 +193,16 @@ export class ComponentLibraryImpl implements IComponentLibrary {
         filtered.push(all[i]);
       }
     }
-    const start = (page - 1) * pageSize;
-    return { items: filtered.slice(start, start + pageSize), total: filtered.length, page: page, pageSize: pageSize };
+    filtered.sort((a: ComponentDefinition, b: ComponentDefinition) => {
+      if (a.name < b.name) {
+        return -1;
+      }
+      if (a.name > b.name) {
+        return 1;
+      }
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    });
+    return filtered;
   }
 
   search(keyword: string, page: number = 1, pageSize: number = 50): PaginatedResult<ComponentDefinition> {

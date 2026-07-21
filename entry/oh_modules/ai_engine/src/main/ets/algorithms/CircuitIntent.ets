@@ -26,6 +26,12 @@ export interface CircuitIntent {
   preferredSignalFrequency: string;
   /** SIGNAL_GEN 占空比文案（如 50% / 25），空=默认 50%；方波/脉冲有效 */
   preferredSignalDuty: string;
+  /** SIGNAL_GEN 幅度文案（如 5V / 2V），空=默认 1V；滞回整形默认≥5V */
+  preferredSignalAmplitude: string;
+  /** 滞回/施密特比较器整形：激励峰值须越过 ±β·|Vsat| */
+  needsHysteresisComparator: boolean;
+  /** 运放积分器（方波→三角等）：反相积分 + 双电源 + SIGNAL_GEN */
+  needsOpAmpIntegrator: boolean;
   hasInstruments: boolean;
   needsLedSeriesR: boolean;
   needsI2cPullup: boolean;
@@ -54,6 +60,9 @@ export function defaultCircuitIntent(): CircuitIntent {
     signalWaveform: 'sine',
     preferredSignalFrequency: '',
     preferredSignalDuty: '',
+    preferredSignalAmplitude: '',
+    needsHysteresisComparator: false,
+    needsOpAmpIntegrator: false,
     hasInstruments: false,
     needsLedSeriesR: false,
     needsI2cPullup: false,
@@ -61,6 +70,77 @@ export function defaultCircuitIntent(): CircuitIntent {
     passiveOnly: false,
     reasons: []
   };
+}
+
+/** 解析幅度文案为伏特峰值；无法解析返回 NaN */
+export function parseSignalAmplitudeVolts(text: string): number {
+  const s = (text ?? '').trim();
+  if (s.length === 0) {
+    return Number.NaN;
+  }
+  const m = s.match(/^([\d.]+)\s*[Vv]?$/);
+  if (!m) {
+    return Number.NaN;
+  }
+  const n = parseFloat(m[1]);
+  return Number.isFinite(n) ? n : Number.NaN;
+}
+
+/** 滞回整形激励最小可靠峰值（Rf/Rg≈10:1、±12V 时 |Vth|≈1V，1V 峰会锁死） */
+export const HYSTERESIS_MIN_SIGNAL_AMP_V: number = 2;
+/** 滞回整形推荐峰值（余量充足） */
+export const HYSTERESIS_RECOMMENDED_SIGNAL_AMP: string = '5V';
+
+/** 当前幅度过小或不合法时返回推荐文案，否则原样（空→推荐） */
+export function resolveHysteresisSafeAmplitude(ampText: string): string {
+  const curV = parseSignalAmplitudeVolts(ampText);
+  if (!Number.isFinite(curV) || curV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+    return HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
+  }
+  return (ampText ?? '').trim().length > 0 ? ampText.trim() : HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
+}
+
+/** 画布上是否具备滞回整形常见 BOM（运放+信号源） */
+export function schematicLikelyHysteresisComparator(libDevIds: string[]): boolean {
+  let hasOp = false;
+  let hasSig = false;
+  for (let i = 0; i < libDevIds.length; i++) {
+    const u = (libDevIds[i] ?? '').toUpperCase();
+    if (u.indexOf('UA741') >= 0 || u.indexOf('LM358') >= 0 || u.indexOf('TL082') >= 0 ||
+      u.indexOf('LM324') >= 0 || u.indexOf('LM741') >= 0 || u === 'OPAMP') {
+      hasOp = true;
+    }
+    if (u.indexOf('SIGNAL_GEN') >= 0) {
+      hasSig = true;
+    }
+  }
+  return hasOp && hasSig;
+}
+
+function isOpAmpIntegratorPrompt(prompt: string): boolean {
+  const zh = prompt ?? '';
+  const lower = zh.toLowerCase();
+  if (zh.indexOf('积分') >= 0 || lower.indexOf('integrator') >= 0 ||
+    lower.indexOf('integrat') >= 0) {
+    return true;
+  }
+  // 方波入 → 三角出（经典积分示教）
+  const hasSquareIn = zh.indexOf('方波') >= 0 || lower.indexOf('square') >= 0;
+  const hasTriOut = zh.indexOf('三角') >= 0 || lower.indexOf('triangle') >= 0 ||
+    lower.indexOf('ramp') >= 0;
+  const hasOp = zh.indexOf('运放') >= 0 || lower.indexOf('opamp') >= 0 ||
+    zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0 || zh.indexOf('LM358') >= 0;
+  return hasOp && hasSquareIn && hasTriOut;
+}
+
+function isHysteresisComparatorPrompt(prompt: string): boolean {
+  const zh = prompt ?? '';
+  const lower = zh.toLowerCase();
+  return zh.indexOf('滞回') >= 0 || zh.indexOf('施密特') >= 0 ||
+    lower.indexOf('schmitt') >= 0 || lower.indexOf('hysteresis') >= 0 ||
+    (zh.indexOf('比较器') >= 0 && (zh.indexOf('整形') >= 0 || zh.indexOf('正反馈') >= 0 ||
+      zh.indexOf('方波') >= 0)) ||
+    (zh.indexOf('整形') >= 0 && (zh.indexOf('正弦') >= 0 || zh.indexOf('方波') >= 0));
 }
 
 /** 串联 RC 充放电 / τ 观测（禁套互斥继电器） */
@@ -95,9 +175,6 @@ function isBlinkLike(zh: string, lower: string): boolean {
 function isMutualLedSwitchPrompt(prompt: string): boolean {
   const zh = prompt ?? '';
   const lower = zh.toLowerCase();
-  if (isBlinkLike(zh, lower)) {
-    return false;
-  }
   const dualColor =
     (zh.indexOf('绿') >= 0 && zh.indexOf('红') >= 0) ||
     (lower.indexOf('green') >= 0 && lower.indexOf('red') >= 0) ||
@@ -110,8 +187,15 @@ function isMutualLedSwitchPrompt(prompt: string): boolean {
     (lower.indexOf('open') >= 0 && lower.indexOf('close') >= 0) ||
     zh.indexOf('互斥') >= 0 ||
     ((zh.indexOf('常开') >= 0 || zh.indexOf('常闭') >= 0) && dualColor);
-  return mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 ||
-    zh.indexOf('灯') >= 0);
+  // 互斥双色优先于 blink：红绿灯闪烁仍可能是 SPDT 互斥指示
+  if (mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 ||
+    zh.indexOf('灯') >= 0)) {
+    return true;
+  }
+  if (isBlinkLike(zh, lower)) {
+    return false;
+  }
+  return false;
 }
 
 /** 选型前：仅根据用户提示粗分意图 */
@@ -120,16 +204,32 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
   const zh = prompt ?? '';
   const lower = zh.toLowerCase();
 
-  if (isBlinkLike(zh, lower)) {
+  if (isMutualLedSwitchPrompt(prompt)) {
+    intent.mutualLedIndicator = true;
+    intent.relayContactTopo = true;
+    intent.blinkOscillator = false;
+    pushReason(intent, 'mutual_led_switch');
+  } else if (isBlinkLike(zh, lower)) {
     intent.blinkOscillator = true;
     pushReason(intent, 'blink_keyword');
   }
+  // 555 无稳态
+  if (zh.indexOf('555') >= 0 || lower.indexOf('lm555') >= 0) {
+    pushReason(intent, '555_astable');
+    if (zh.indexOf('多谐') >= 0 || zh.indexOf('振荡') >= 0 || zh.indexOf('闪烁') >= 0 ||
+      zh.indexOf('方波') >= 0 || lower.indexOf('astable') >= 0) {
+      intent.blinkOscillator = true;
+    }
+  }
 
   if (isSeriesRcChargePrompt(prompt)) {
-    intent.seriesRcCharge = true;
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-    pushReason(intent, 'series_rc_charge');
+    // 运放积分不是串联 RC 充放电
+    if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0) {
+      intent.seriesRcCharge = true;
+      intent.mutualLedIndicator = false;
+      intent.relayContactTopo = false;
+      pushReason(intent, 'series_rc_charge');
+    }
   }
 
   if (isMutualLedSwitchPrompt(prompt) && !intent.seriesRcCharge) {
@@ -162,12 +262,57 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
 
   if (zh.indexOf('运放') >= 0 || zh.indexOf('放大器') >= 0 || lower.indexOf('opamp') >= 0 ||
     lower.indexOf('op-amp') >= 0 || zh.indexOf('LM358') >= 0 || zh.indexOf('LM324') >= 0 ||
-    zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0) {
+    zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0 || zh.indexOf('比较器') >= 0 ||
+    zh.indexOf('滞回') >= 0 || zh.indexOf('施密特') >= 0 || lower.indexOf('schmitt') >= 0) {
     intent.needsOpAmpFeedback = true;
     pushReason(intent, 'opamp_keyword');
   }
+  if (isHysteresisComparatorPrompt(prompt)) {
+    intent.needsHysteresisComparator = true;
+    intent.needsOpAmpFeedback = true;
+    intent.dualSupply = true;
+    pushReason(intent, 'hysteresis_comparator');
+  }
+  if (isOpAmpIntegratorPrompt(prompt)) {
+    intent.needsOpAmpIntegrator = true;
+    intent.needsOpAmpFeedback = true;
+    intent.dualSupply = true;
+    intent.needsSignalGen = true;
+    intent.hasInstruments = true;
+    if (intent.signalWaveform.length === 0 || intent.signalWaveform === 'sine') {
+      // 积分示教默认方波激励（可被用户显式波形覆盖，见 applyPowerAndSignalIntent）
+      intent.signalWaveform = 'square';
+    }
+    if (intent.preferredSignalAmplitude.length === 0) {
+      intent.preferredSignalAmplitude = '5V';
+    }
+    pushReason(intent, 'opamp_integrator');
+  }
 
   applyPowerAndSignalIntent(intent, prompt);
+
+  // 积分器：激励波形以方波为准（「三角」是输出观测，不是信号源）
+  if (intent.needsOpAmpIntegrator) {
+    intent.dualSupply = true;
+    intent.needsSignalGen = true;
+    const zh2 = prompt ?? '';
+    const lower2 = zh2.toLowerCase();
+    const userSaidSineExcite =
+      (zh2.indexOf('正弦') >= 0 || lower2.indexOf('sine') >= 0) &&
+      (zh2.indexOf('输入') >= 0 || zh2.indexOf('激励') >= 0 || zh2.indexOf('信号源') >= 0);
+    if (!userSaidSineExcite) {
+      intent.signalWaveform = 'square';
+    }
+    if (intent.preferredSignalAmplitude.length === 0) {
+      intent.preferredSignalAmplitude = '5V';
+    }
+    if (intent.preferredVccVoltage.length === 0) {
+      intent.preferredVccVoltage = '12V';
+    }
+    if (intent.preferredVeeVoltage.length === 0) {
+      intent.preferredVeeVoltage = '-12V';
+    }
+  }
 
   if (zh.indexOf('电压表') >= 0 || zh.indexOf('电流表') >= 0 || zh.indexOf('示波器') >= 0 ||
     zh.indexOf('逻辑分析') >= 0 || zh.indexOf('测电流') >= 0 || zh.indexOf('测电压') >= 0 ||
@@ -208,27 +353,53 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
     intent.needsPowerRails = true;
     pushReason(intent, 'dual_supply');
   }
-  // 运放默认倾向双电源（可被单电源提示覆盖）
+  // 运放默认双电源（教学场景）；仅当用户明确「单电源」时保持单供
   if (intent.needsOpAmpFeedback && !intent.dualSupply) {
     if (zh.indexOf('单电源') >= 0 || lower.indexOf('single supply') >= 0 ||
       zh.indexOf('单供') >= 0) {
-      // 保持单电源
-    } else if (zh.indexOf('双电源') >= 0 || zh.indexOf('±') >= 0 || zh.indexOf('VEE') >= 0) {
+      pushReason(intent, 'opamp_single_supply');
+    } else {
       intent.dualSupply = true;
-      pushReason(intent, 'opamp_dual');
+      intent.needsPowerRails = true;
+      pushReason(intent, 'opamp_dual_default');
+    }
+  }
+  // 积分器：强制双电源 + 方波激励缺省
+  if (intent.needsOpAmpIntegrator) {
+    intent.dualSupply = true;
+    intent.needsPowerRails = true;
+    intent.needsSignalGen = true;
+    if (intent.signalWaveform !== 'sine' && intent.signalWaveform !== 'triangle' &&
+      intent.signalWaveform !== 'saw' && intent.signalWaveform !== 'pulse') {
+      intent.signalWaveform = 'square';
+    }
+    if (intent.preferredSignalAmplitude.length === 0) {
+      intent.preferredSignalAmplitude = '5V';
     }
   }
 
   // VCC 电压
-  const vccM = zh.match(/(?:VCC|VDD|电源|供电)\s*(?:=|为|:|：)?\s*(3\.3|5|12)\s*V/i) ||
-    zh.match(/\b(3\.3|5|12)\s*V\b/i);
+  const dualRailM = zh.match(/[±]\s*(15|12|5)\s*[Vv]/);
+  if (dualRailM) {
+    intent.dualSupply = true;
+    intent.preferredVccVoltage = `${dualRailM[1]}V`;
+    intent.preferredVeeVoltage = `-${dualRailM[1]}V`;
+    pushReason(intent, `dualRail=±${dualRailM[1]}V`);
+  }
+  const vccM = zh.match(/(?:VCC|VDD|电源|供电)\s*(?:=|为|:|：)?\s*(3\.3|5|12|15)\s*V/i);
   if (vccM) {
     intent.preferredVccVoltage = `${vccM[1]}V`;
     pushReason(intent, `vcc=${intent.preferredVccVoltage}`);
+  } else if (!dualRailM) {
+    const bareV = zh.match(/\b(3\.3|5|12|15)\s*V\b/i);
+    if (bareV) {
+      intent.preferredVccVoltage = `${bareV[1]}V`;
+      pushReason(intent, `vcc=${intent.preferredVccVoltage}`);
+    }
   }
   // VEE 电压
-  const veeM = zh.match(/(?:VEE|负压|负电源)\s*(?:=|为|:|：)?\s*(-?1?2|-?5)\s*V/i) ||
-    zh.match(/(-\s*12|-\s*5)\s*V/i);
+  const veeM = zh.match(/(?:VEE|负压|负电源)\s*(?:=|为|:|：)?\s*(-?1?5|-?1?2|-?5)\s*V/i) ||
+    zh.match(/(-\s*15|-\s*12|-\s*5)\s*V/i);
   if (veeM) {
     let v = veeM[1].replace(/\s/g, '');
     if (!v.startsWith('-')) {
@@ -239,6 +410,13 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
     pushReason(intent, `vee=${intent.preferredVeeVoltage}`);
   } else if (intent.dualSupply && intent.preferredVeeVoltage.length === 0) {
     intent.preferredVeeVoltage = '-12V';
+  }
+  // 双电源：未指定正轨时与 |VEE| 对称
+  if (intent.dualSupply && intent.preferredVccVoltage.length === 0) {
+    const veeN = parseFloat((intent.preferredVeeVoltage || '-12').replace(/[Vv]/g, ''));
+    const abs = Number.isFinite(veeN) ? Math.abs(veeN) : 12;
+    intent.preferredVccVoltage = `${abs > 0 ? abs : 12}V`;
+    pushReason(intent, `vccSym=${intent.preferredVccVoltage}`);
   }
 
   // 信号发生器
@@ -327,6 +505,28 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
       }
     }
   }
+  // 幅度：幅度5V / amp=2V / ±5V（作峰峰值时取一半？此处按峰值文案）
+  const ampM = zh.match(/(?:幅度|幅值|amplitude|amp)\s*(?:=|为|:|：)?\s*([\d.]+)\s*[Vv]?/i) ||
+    zh.match(/[±]\s*([\d.]+)\s*[Vv]/);
+  if (ampM) {
+    const n = parseFloat(ampM[1]);
+    if (Number.isFinite(n) && n > 0) {
+      intent.preferredSignalAmplitude = `${n}V`;
+      pushReason(intent, `sigAmp=${intent.preferredSignalAmplitude}`);
+    }
+  }
+  // 滞回整形：激励须 >|Vth|；未指定或过小则抬到推荐 5V
+  if (intent.needsHysteresisComparator) {
+    intent.needsSignalGen = true;
+    if (intent.signalWaveform.length === 0) {
+      intent.signalWaveform = 'sine';
+    }
+    const curV = parseSignalAmplitudeVolts(intent.preferredSignalAmplitude);
+    if (!Number.isFinite(curV) || curV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+      intent.preferredSignalAmplitude = HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
+      pushReason(intent, `sigAmpHyst=${HYSTERESIS_RECOMMENDED_SIGNAL_AMP}`);
+    }
+  }
 }
 
 function collectBomIds(out: DeviceSelectLlmOutput): string[] {
@@ -380,10 +580,12 @@ export function refineCircuitIntent(
   const hasR = ids.some(m => m.startsWith('R_'));
   const hasC = ids.some(m => m.startsWith('C_'));
   if (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt))) {
-    intent.seriesRcCharge = true;
-    intent.relayContactTopo = false;
-    intent.mutualLedIndicator = false;
-    pushReason(intent, 'series_rc_bom');
+    if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0) {
+      intent.seriesRcCharge = true;
+      intent.relayContactTopo = false;
+      intent.mutualLedIndicator = false;
+      pushReason(intent, 'series_rc_bom');
+    }
   }
   if (hasRelay && intent.mutualLedIndicator && !intent.seriesRcCharge) {
     intent.relayContactTopo = true;
@@ -408,10 +610,26 @@ export function refineCircuitIntent(
   }
 
   const hasOp = ids.some(m =>
-    m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OPAMP') >= 0);
+    m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OPAMP') >= 0 ||
+    m.indexOf('UA741') >= 0 || m.indexOf('TL082') >= 0 || m.indexOf('LM741') >= 0);
   if (hasOp) {
     intent.needsOpAmpFeedback = true;
     pushReason(intent, 'opamp_bom');
+  }
+  if (isHysteresisComparatorPrompt(prompt) ||
+    (hasOp && intent.needsSignalGen && (prompt.indexOf('整形') >= 0 ||
+      prompt.indexOf('滞回') >= 0 || prompt.indexOf('比较器') >= 0))) {
+    intent.needsHysteresisComparator = true;
+    intent.needsOpAmpFeedback = true;
+    pushReason(intent, 'hysteresis_bom');
+  }
+  if (isOpAmpIntegratorPrompt(prompt) ||
+    (hasOp && intent.needsSignalGen && prompt.indexOf('积分') >= 0)) {
+    intent.needsOpAmpIntegrator = true;
+    intent.needsOpAmpFeedback = true;
+    intent.dualSupply = true;
+    intent.needsSignalGen = true;
+    pushReason(intent, 'integrator_bom');
   }
 
   const hasInstr = ids.some(m =>
@@ -434,38 +652,101 @@ export function refineCircuitIntent(
     intent.dualSupply = true;
     pushReason(intent, 'vee_bom');
   }
+  // BOM 显式收获 VCC/VEE/SIGNAL_GEN 电参（AI 选型决定值优先于启发式）
+  const bomList = out.deviceRequireList ?? [];
+  for (let bi = 0; bi < bomList.length; bi++) {
+    const id = `${bomList[bi].explicitModel ?? ''} ${bomList[bi].devType ?? ''}`.toUpperCase();
+    const pc = bomList[bi].paramConstraint;
+    if (id.indexOf('VCC') >= 0 && id.indexOf('VEE') < 0) {
+      const vv = (pc?.get('voltage') ?? '').trim();
+      if (vv.length > 0) {
+        intent.preferredVccVoltage = vv;
+        pushReason(intent, `vccBom=${vv}`);
+      }
+    }
+    if (id.indexOf('VEE') >= 0) {
+      const vv = (pc?.get('voltage') ?? '').trim();
+      if (vv.length > 0) {
+        intent.preferredVeeVoltage = vv;
+        intent.dualSupply = true;
+        pushReason(intent, `veeBom=${vv}`);
+      }
+    }
+  }
+  // 双电源：空 VEE/VCC 才补对称默认；已写不对称（如 5/-12）由 HARD critique 逼 AI 改，不本地改写
+  if (intent.dualSupply) {
+    if (intent.preferredVeeVoltage.length === 0) {
+      intent.preferredVeeVoltage = '-12V';
+    }
+    if (intent.preferredVccVoltage.length === 0) {
+      const veeN = parseFloat(intent.preferredVeeVoltage.replace(/[Vv]/g, ''));
+      const absVee = Number.isFinite(veeN) ? Math.abs(veeN) : 12;
+      intent.preferredVccVoltage = `${absVee > 0 ? absVee : 12}V`;
+      pushReason(intent, `vccSymBom=${intent.preferredVccVoltage}`);
+    }
+  }
   if (hasSig) {
     intent.needsSignalGen = true;
     intent.hasInstruments = true;
     pushReason(intent, 'signal_gen_bom');
     // BOM 显式 waveform 覆盖启发式（避免「输出方波」误判激励）
-    const list = out.deviceRequireList ?? [];
-    for (let i = 0; i < list.length; i++) {
-      const id = `${list[i].explicitModel ?? ''} ${list[i].devType ?? ''}`.toUpperCase();
+    for (let i = 0; i < bomList.length; i++) {
+      const id = `${bomList[i].explicitModel ?? ''} ${bomList[i].devType ?? ''}`.toUpperCase();
       if (id.indexOf('SIGNAL_GEN') < 0) {
         continue;
       }
-      const wf = (list[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
+      const wf = (bomList[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
       if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
         intent.signalWaveform = wf;
         pushReason(intent, `sigWfBom=${wf}`);
       }
-      const freq = (list[i].paramConstraint?.get('frequency') ?? '').trim();
+      const freq = (bomList[i].paramConstraint?.get('frequency') ?? '').trim();
       if (freq.length > 0) {
         intent.preferredSignalFrequency = freq;
       }
-      const duty = (list[i].paramConstraint?.get('dutyCycle') ?? '').trim();
+      const duty = (bomList[i].paramConstraint?.get('dutyCycle') ?? '').trim();
       if (duty.length > 0) {
         intent.preferredSignalDuty = duty;
+      }
+      const amp = (bomList[i].paramConstraint?.get('amplitude') ?? '').trim();
+      if (amp.length > 0) {
+        intent.preferredSignalAmplitude = amp;
+        pushReason(intent, `sigAmpBom=${amp}`);
       }
       break;
     }
   }
-  // 运放 BOM + 未声明单电源 → 倾向双电源
-  if (intent.needsOpAmpFeedback && !intent.dualSupply) {
+  // 滞回：BOM 幅度过小则抬到推荐值（避免 1V 峰锁死单轨）
+  if (intent.needsHysteresisComparator) {
+    intent.needsSignalGen = true;
+    const curV = parseSignalAmplitudeVolts(intent.preferredSignalAmplitude);
+    if (!Number.isFinite(curV) || curV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+      intent.preferredSignalAmplitude = HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
+      pushReason(intent, `sigAmpHystBump=${HYSTERESIS_RECOMMENDED_SIGNAL_AMP}`);
+    }
+  }
+  // 运放 / 积分：未声明单电源 → 意图标记双电源（供 Prompt 注入）；具体电压由 LLM 写出
+  if (intent.needsOpAmpFeedback || intent.needsOpAmpIntegrator) {
     const zh = prompt ?? '';
     if (zh.indexOf('单电源') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
-      // 不强制 dual，仅当提示含双电源/± 时已在 classify 设置
+      intent.dualSupply = true;
+      // 仅当 BOM 未写电压时给意图默认，供空字段补齐；已有 vccBom/veeBom 不覆盖
+      if (intent.preferredVeeVoltage.length === 0) {
+        intent.preferredVeeVoltage = '-12V';
+      }
+      if (intent.preferredVccVoltage.length === 0) {
+        intent.preferredVccVoltage = '12V';
+        pushReason(intent, 'vccOpAmpDefault=12V');
+      }
+    }
+  }
+  if (intent.needsOpAmpIntegrator) {
+    intent.needsSignalGen = true;
+    if (intent.signalWaveform !== 'sine' && intent.signalWaveform !== 'pulse') {
+      intent.signalWaveform = 'square';
+    }
+    if (intent.preferredSignalAmplitude.length === 0) {
+      intent.preferredSignalAmplitude = '5V';
     }
   }
 
@@ -523,6 +804,9 @@ export function copyIntent(src: CircuitIntent): CircuitIntent {
     signalWaveform: src.signalWaveform,
     preferredSignalFrequency: src.preferredSignalFrequency,
     preferredSignalDuty: src.preferredSignalDuty,
+    preferredSignalAmplitude: src.preferredSignalAmplitude,
+    needsHysteresisComparator: src.needsHysteresisComparator,
+    needsOpAmpIntegrator: src.needsOpAmpIntegrator,
     hasInstruments: src.hasInstruments,
     needsLedSeriesR: src.needsLedSeriesR,
     needsI2cPullup: src.needsI2cPullup,
@@ -538,7 +822,9 @@ export function formatIntentLog(intent: CircuitIntent): string {
     ` relayTopo=${intent.relayContactTopo} seriesRc=${intent.seriesRcCharge}` +
     ` dual=${intent.dualSupply} vcc=${intent.preferredVccVoltage || '-'}` +
     ` vee=${intent.preferredVeeVoltage || '-'} sig=${intent.needsSignalGen}/${intent.signalWaveform}` +
-    `@${intent.preferredSignalFrequency || '1kHz'}/duty=${intent.preferredSignalDuty || '50%'}` +
+    `@${intent.preferredSignalFrequency || '1kHz'}/amp=${intent.preferredSignalAmplitude || '1V'}` +
+    `/duty=${intent.preferredSignalDuty || '50%'}` +
+    ` hyst=${intent.needsHysteresisComparator} integ=${intent.needsOpAmpIntegrator}` +
     ` instr=${intent.hasInstruments}` +
     ` ledR=${intent.needsLedSeriesR} i2c=${intent.needsI2cPullup}` +
     ` opamp=${intent.needsOpAmpFeedback} reasons=${intent.reasons.join(',')}`;

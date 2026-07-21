@@ -7,7 +7,7 @@
 import {
   SchTopology, NetInfo, NetLabelInfo, NetNodeRef, DeviceInst, Point2D,
   IdUtil, makeRouteLine, Logger, INSTR_TRACE_TAG, traceAiDiag,
-  DeviceHitGeometry, WorldHitRect
+  DeviceHitGeometry, WorldHitRect, SELECTION_HIT_PAD
 } from 'common';
 import { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from './PinWorldResolver';
@@ -24,6 +24,8 @@ export interface TopologyFixResult {
 export interface FinalizeGateOpts {
   seriesRcCharge?: boolean;
   mutualLedIndicator?: boolean;
+  /** 模块边界脚键（RefDes.Pin 大写），单脚网不得 prune */
+  preserveBoundaryKeys?: string[];
 }
 
 /** stripInstrSenseFromPowerNets 暂存项 */
@@ -150,6 +152,12 @@ export class AiTopologyFixKit {
     if (!dev) {
       Logger.warn(INSTR_TRACE_TAG,
         `[AI_FIX] reconnect_pin miss device=${ref}`);
+      return AiTopologyFixKit.emptyResult();
+    }
+    // 禁止挂库外假脚（UA741 无 V+/V-，挂上后 stub 从器件中心引出 → pin_proximity 死循环）
+    if (!AiTopologyFixKit.deviceHasPin(dev, pinId)) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_FIX] reconnect_pin skip unknown pin ${ref}.${pinId} lib=${dev.libDevId}`);
       return AiTopologyFixKit.emptyResult();
     }
 
@@ -479,7 +487,7 @@ export class AiTopologyFixKit {
   }
 
   /**
-   * 根据 auditCriticalElectrical 结果做确定性拆短路。
+   * 根据 auditCriticalElectrical 结果做确定性拆短路（仅修复命中器件，禁止全图重接）。
    */
   static healCriticalElectricalShorts(topo: SchTopology,
     wiring: ConstrainedWiringEngine): TopologyFixResult {
@@ -489,40 +497,65 @@ export class AiTopologyFixKit {
     if (errs.length === 0) {
       return AiTopologyFixKit.emptyResult();
     }
-    // 电源符号同网
-    const split = AiTopologyFixKit.splitMergedPowerRails(topo);
-    fixed += split.fixed;
-    notes.push(...split.notes);
+    const hitRefs = new Set<string>();
+    let hasPowerMerge = false;
+    let hasInstrument = false;
+    for (let ei = 0; ei < errs.length; ei++) {
+      const e = errs[ei];
+      const colon = e.indexOf(':');
+      if (colon > 0) {
+        hitRefs.add(e.substring(0, colon).trim());
+      }
+      if (e.indexOf('电源') >= 0 || e.indexOf('VCC') >= 0 && e.indexOf('GND') >= 0) {
+        hasPowerMerge = true;
+      }
+      if (e.indexOf('电流表') >= 0 || e.indexOf('电压表') >= 0 || e.indexOf('示波器') >= 0) {
+        hasInstrument = true;
+      }
+    }
+    if (hasPowerMerge || errs.some(e => e.indexOf('同网') >= 0 && e.indexOf('电源') >= 0)) {
+      const split = AiTopologyFixKit.splitMergedPowerRails(topo);
+      fixed += split.fixed;
+      notes.push(...split.notes);
+    }
 
     for (let di = 0; di < topo.deviceList.length; di++) {
       const d = topo.deviceList[di];
+      if (!hitRefs.has(d.refName)) {
+        continue;
+      }
       const lib = (d.libDevId ?? '').toUpperCase();
       if (lib.indexOf('AMMETER') >= 0) {
-        // I+ → VCC, I- → VCC_AM（串联中间点）
-        const r1 = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'I+', 'VCC');
-        const r2 = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'I-', 'VCC_AM');
-        fixed += r1.fixed + r2.fixed;
+        // 仅拆 I+/I- 同网：I- 改挂独立中间网，禁止误把好表硬接到 VCC
+        const r2 = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'I-',
+          `AM_MID_${(d.refName ?? 'AM').toUpperCase()}`);
+        fixed += r2.fixed;
+        notes.push(`${d.refName}: split I+/I-`);
       }
       if (lib.startsWith('LED_')) {
         const rA = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'A',
           `LED_A_${(d.refName ?? 'D').toUpperCase()}`);
         const rK = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'K', 'GND');
         fixed += rA.fixed + rK.fixed;
+        notes.push(`${d.refName}: split A/K`);
       }
       if (lib.indexOf('POT') >= 0 || lib.indexOf('POTENTIOMETER') >= 0 ||
         lib.startsWith('RV_')) {
         const pot = AiTopologyFixKit.wirePotentiometer(topo, wiring);
         fixed += pot.fixed;
         notes.push(...pot.notes);
-        break;
       }
     }
-    const reb = AiTopologyFixKit.rebuildInstrument(topo, wiring);
-    fixed += reb.fixed;
-    notes.push(...reb.notes);
+    // 仅当审计命中仪器类短路时才 rebuild，避免毁掉已正确串联测流/限流拓扑
+    if (hasInstrument) {
+      const reb = AiTopologyFixKit.rebuildInstrument(topo, wiring);
+      fixed += reb.fixed;
+      notes.push(...reb.notes);
+    }
     if (fixed > 0) {
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_FIX] healCriticalElectricalShorts fixed=${fixed} errsWas=${errs.length}`);
+        `[AI_FIX] healCriticalElectricalShorts fixed=${fixed} hitRefs=${hitRefs.size}` +
+        ` errsWas=${errs.length}`);
     }
     return { fixed, needReroute: fixed > 0, notes };
   }
@@ -563,11 +596,17 @@ export class AiTopologyFixKit {
         lib.indexOf('TL08') < 0 && lib.indexOf('OPAMP') < 0 && lib.indexOf('OP_AMP') < 0) {
         continue;
       }
-      // 单运放常见脚名
-      rc(d.refName, 'VCC', 'VCC');
-      rc(d.refName, 'V+', 'VCC');
-      rc(d.refName, 'VEE', 'VEE');
-      rc(d.refName, 'V-', 'VEE');
+      // 仅挂库内真实电源脚：UA741=VCC/VEE；双运放常为 V+/V-。禁止同时挂别名假脚。
+      if (AiTopologyFixKit.deviceHasPin(d, 'VCC')) {
+        rc(d.refName, 'VCC', 'VCC');
+      } else if (AiTopologyFixKit.deviceHasPin(d, 'V+')) {
+        rc(d.refName, 'V+', 'VCC');
+      }
+      if (AiTopologyFixKit.deviceHasPin(d, 'VEE')) {
+        rc(d.refName, 'VEE', 'VEE');
+      } else if (AiTopologyFixKit.deviceHasPin(d, 'V-')) {
+        rc(d.refName, 'V-', 'VEE');
+      }
     }
     // SIGNAL_GEN：GND→GND
     for (let i = 0; i < topo.deviceList.length; i++) {
@@ -624,9 +663,8 @@ export class AiTopologyFixKit {
           AiTopologyFixKit.passiveBridgesNetNames(topo, outNet, inpNet)) {
           continue;
         }
-        // 双输入已接且不同网 → 有意比较器，不改成跟随
-        if (innNet.length > 0 && inpNet.length > 0 &&
-          innNet.toUpperCase() !== inpNet.toUpperCase()) {
+        // 任一输入已入网：可能是反相放大/比较器，禁止强行 IN-→OUT 跟随
+        if (innNet.length > 0 || inpNet.length > 0) {
           continue;
         }
         const r = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, innPin, outNet);
@@ -741,6 +779,8 @@ export class AiTopologyFixKit {
     const notes: string[] = [];
     const intent = opts ?? {};
     AiTopologyFixKit.sanitizeTopoPinIds(topo);
+    const phantoms = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+    fixed += phantoms.fixed;
 
     const split = AiTopologyFixKit.splitMergedPowerRails(topo);
     fixed += split.fixed;
@@ -764,6 +804,9 @@ export class AiTopologyFixKit {
     if (hasVee) {
       const dual = AiTopologyFixKit.wireDualSupplyRails(topo, wiring);
       fixed += dual.fixed;
+      // 再次剥离：防止历史拓扑里残留 V+/V- 假脚
+      const phantoms2 = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+      fixed += phantoms2.fixed;
     }
     // 运放开环 → 跟随闭环（比较器双输入已接则跳过）
     const opa = AiTopologyFixKit.wireOpAmpFeedback(topo, wiring);
@@ -792,8 +835,12 @@ export class AiTopologyFixKit {
     const prune = AiTopologyFixKit.pruneSingletonOrphanNets(topo);
     fixed += prune.fixed;
 
-    // 二次剪：任意仅 1 节点且非电源的网（开路 ERC）
-    const prune2 = AiTopologyFixKit.pruneAllSingletonSignalNets(topo);
+    const oscNc = AiTopologyFixKit.pruneUnusedOscChannelNets(topo);
+    fixed += oscNc.fixed;
+
+    // 二次剪：任意仅 1 节点且非电源的网（开路 ERC）；保留模块边界单脚
+    const prune2 = AiTopologyFixKit.pruneAllSingletonSignalNets(topo,
+      intent.preserveBoundaryKeys);
     fixed += prune2.fixed;
 
     if (fixed > 0) {
@@ -804,13 +851,23 @@ export class AiTopologyFixKit {
   }
 
   /**
-   * 修剪所有单脚信号网（保留 VCC/GND/VDD/VSS），消除开路 ERC。
-   * 单脚电源网不删（符号自身）。
+   * 修剪所有单脚信号网（保留 VCC/GND/VDD/VSS/VEE 与模块边界脚），消除开路 ERC。
+   * preserveBoundaryKeys: RefDes.Pin 大写，如 R1.1 / OSC1.CH1
    */
-  static pruneAllSingletonSignalNets(topo: SchTopology): TopologyFixResult {
+  static pruneAllSingletonSignalNets(topo: SchTopology,
+    preserveBoundaryKeys?: string[]): TopologyFixResult {
     const notes: string[] = [];
     let fixed = 0;
     const drop = new Set<string>();
+    const preserve = new Set<string>();
+    if (preserveBoundaryKeys) {
+      for (let i = 0; i < preserveBoundaryKeys.length; i++) {
+        const k = (preserveBoundaryKeys[i] ?? '').toUpperCase();
+        if (k.length > 0) {
+          preserve.add(k);
+        }
+      }
+    }
     for (let ni = 0; ni < topo.netList.length; ni++) {
       const net = topo.netList[ni];
       if ((net.nodeList?.length ?? 0) !== 1) {
@@ -823,9 +880,25 @@ export class AiTopologyFixKit {
         const node = net.nodeList[0];
         const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
         const lib = (dev?.libDevId ?? '').toUpperCase();
-        if (lib === 'VCC' || lib === 'GND' || lib === 'VDD' || lib === 'VSS') {
+        if (lib === 'VCC' || lib === 'GND' || lib === 'VDD' || lib === 'VSS' ||
+          lib === 'VEE') {
           continue;
         }
+      }
+      // 模块边界单脚 / 已有同名标号 stub：合并阶段依赖，禁止剪
+      const node0 = net.nodeList[0];
+      const bdev = topo.deviceList.find(d => d.instUuid === node0.devUuid);
+      if (bdev) {
+        const pinU = (node0.pinId ?? node0.pinName ?? '').toUpperCase();
+        const key = `${(bdev.refName ?? '').toUpperCase()}.${pinU}`;
+        if (preserve.has(key)) {
+          continue;
+        }
+      }
+      const hasLabel = topo.netLabelList.some(l => l.netUuid === net.netUuid);
+      if (hasLabel) {
+        // 带标号的单脚网多为 joinByLabel stub（含非 modular 路径），禁止剪
+        continue;
       }
       drop.add(net.netUuid);
       notes.push(net.netName ?? net.netUuid);
@@ -834,12 +907,12 @@ export class AiTopologyFixKit {
     if (drop.size === 0) {
       return AiTopologyFixKit.emptyResult();
     }
-    // 从电源/信号网摘掉该单脚节点即可（删网）
     topo.netList = topo.netList.filter(n => !drop.has(n.netUuid));
     topo.wireList = topo.wireList.filter(w => !drop.has(w.netUuid));
     topo.netLabelList = topo.netLabelList.filter(l => !drop.has(l.netUuid));
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_FIX] pruneAllSingletonSignalNets fixed=${fixed} | ${notes.slice(0, 8).join('; ')}`);
+      `[AI_FIX] pruneAllSingletonSignalNets fixed=${fixed} preserve=${preserve.size}` +
+      ` | ${notes.slice(0, 8).join('; ')}`);
     return { fixed, needReroute: false, notes };
   }
 
@@ -1045,6 +1118,311 @@ export class AiTopologyFixKit {
       traceAiDiag('AI_FIX', 'topo_pin_sanitize', samples, 8);
     }
     return fixes;
+  }
+
+  /**
+   * 器件是否具备该引脚（优先组件库；否则 TemplateSchematicKit 已知表）。
+   * 未知脚不得 reconnect —— pinOffset 默认 (0,0) 会在器件中心造 stub。
+   */
+  private static deviceHasPin(dev: DeviceInst, pinId: string): boolean {
+    const want = (pinId ?? '').toUpperCase();
+    if (want.length === 0) {
+      return false;
+    }
+    const fromLib = AiTopologyFixKit.libraryPinIds(dev.libDevId);
+    if (fromLib.length > 0) {
+      return fromLib.indexOf(want) >= 0;
+    }
+    const known = AiTopologyFixKit.templateKnownPinIds(dev.libDevId);
+    if (known.length > 0) {
+      return known.indexOf(want) >= 0;
+    }
+    // 无清单时拒绝（未知 IC 不得假连通）；被动双端由 templateKnownPinIds 覆盖
+    return false;
+  }
+
+  private static templateKnownPinIds(libDevId: string): string[] {
+    const lib = (libDevId ?? '').toUpperCase();
+    if (lib === 'UA741') {
+      return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
+    }
+    if (lib.indexOf('LM358') >= 0 || lib.indexOf('TL08') >= 0 || lib.indexOf('LM324') >= 0) {
+      return ['OUT1', 'IN-1', 'IN+1', 'V-', 'IN+2', 'IN-2', 'OUT2', 'V+',
+        'OUT', 'IN-', 'IN+', 'VCC', 'VEE'];
+    }
+    if (lib === 'SIGNAL_GEN') {
+      return ['OUT', 'GND'];
+    }
+    if (lib.indexOf('OSCILLOSCOPE') >= 0) {
+      return ['CH1', 'CH2', 'CH3', 'CH4', 'GND'];
+    }
+    if (lib === 'VCC' || lib === 'GND' || lib === 'VEE' || lib === 'VDD' || lib === 'VSS') {
+      return ['1'];
+    }
+    // 常见被动双端
+    if (lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_') ||
+      lib.startsWith('POT_') || lib.startsWith('XTAL')) {
+      return ['1', '2'];
+    }
+    if (lib.startsWith('LED_') || lib.indexOf('DIODE') >= 0 || lib.startsWith('1N')) {
+      return ['A', 'K', '1', '2'];
+    }
+    return [];
+  }
+
+  /**
+   * 剥离库外假脚节点（如 UA741 上的 V+/V-），避免中心 stub 触发 pin_proximity。
+   */
+  static stripUnknownDevicePinNodes(topo: SchTopology): TopologyFixResult {
+    const notes: string[] = [];
+    let fixed = 0;
+    for (let ni = 0; ni < topo.netList.length; ni++) {
+      const net = topo.netList[ni];
+      const keep: NetNodeRef[] = [];
+      for (let ki = 0; ki < net.nodeList.length; ki++) {
+        const node = net.nodeList[ki];
+        const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
+        if (!dev) {
+          keep.push(node);
+          continue;
+        }
+        const pinId = node.pinId ?? '';
+        if (AiTopologyFixKit.deviceHasPin(dev, pinId)) {
+          keep.push(node);
+          continue;
+        }
+        fixed++;
+        notes.push(`${dev.refName}.${pinId}@${net.netName ?? ''}`);
+      }
+      net.nodeList = keep;
+    }
+    if (fixed > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_FIX] stripUnknownDevicePinNodes n=${fixed} | ${notes.slice(0, 8).join('; ')}`);
+    }
+    return { fixed, needReroute: fixed > 0, notes };
+  }
+
+  /**
+   * 拆除「示波器未用通道互连」网（CH3↔CH4 / NC），保持通道悬空。
+   * 避免 self-review 反复 rebuild_instrument。
+   */
+  static pruneUnusedOscChannelNets(topo: SchTopology): TopologyFixResult {
+    const notes: string[] = [];
+    let fixed = 0;
+    const drop = new Set<string>();
+    const isUnusedOscCh = (pinId: string): boolean => {
+      const p = (pinId ?? '').toUpperCase();
+      return /^CH[2-9]$/.test(p) || /^CH\d{2,}$/.test(p);
+    };
+    for (let ni = 0; ni < topo.netList.length; ni++) {
+      const net = topo.netList[ni];
+      if ((net.nodeList?.length ?? 0) < 1) {
+        continue;
+      }
+      let ok = true;
+      for (let ki = 0; ki < net.nodeList.length; ki++) {
+        const node = net.nodeList[ki];
+        if (!isUnusedOscCh(node.pinId ?? '')) {
+          ok = false;
+          break;
+        }
+        const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
+        if (!dev || (dev.libDevId ?? '').toUpperCase().indexOf('OSCILLOSCOPE') < 0) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) {
+        continue;
+      }
+      drop.add(net.netUuid);
+      notes.push(`${net.netName ?? net.netUuid}#${net.nodeList.length}`);
+      fixed++;
+    }
+    if (drop.size === 0) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    topo.netList = topo.netList.filter(n => !drop.has(n.netUuid));
+    topo.wireList = topo.wireList.filter(w => !drop.has(w.netUuid));
+    topo.netLabelList = topo.netLabelList.filter(l => !drop.has(l.netUuid));
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_FIX] pruneUnusedOscChannelNets fixed=${fixed} | ${notes.slice(0, 8).join('; ')}`);
+    return { fixed, needReroute: fixed > 0, notes };
+  }
+
+  /**
+   * 将引脚从所有网络拆除并清除近邻 stub（用于未用示波器通道悬空、断错误连）。
+   */
+  static disconnectPin(topo: SchTopology, wiring: ConstrainedWiringEngine,
+    refName: string, pinIdRaw: string): TopologyFixResult {
+    const ref = (refName ?? '').trim();
+    if (ref.length === 0 || !(pinIdRaw ?? '').trim()) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const tok = NetPlanExecutor.sanitizePinToken(pinIdRaw, pinIdRaw);
+    const pinId = tok.pinId;
+    const pinName = tok.pinName;
+    const dev = topo.deviceList.find(d =>
+      (d.refName ?? '').toUpperCase() === ref.toUpperCase());
+    if (!dev) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    let removed = 0;
+    const emptyNets = new Set<string>();
+    for (let ni = 0; ni < topo.netList.length; ni++) {
+      const net = topo.netList[ni];
+      const before = net.nodeList.length;
+      net.nodeList = net.nodeList.filter(n =>
+        !(n.devUuid === dev.instUuid &&
+          (n.pinId ?? '').toUpperCase() === pinId.toUpperCase()));
+      if (net.nodeList.length < before) {
+        removed += before - net.nodeList.length;
+        if (net.nodeList.length === 0) {
+          emptyNets.add(net.netUuid);
+        }
+      }
+    }
+    AiTopologyFixKit.removeWiresNearPin(topo, dev, pinId, pinName);
+    if (emptyNets.size > 0) {
+      topo.netList = topo.netList.filter(n => !emptyNets.has(n.netUuid));
+      topo.wireList = topo.wireList.filter(w => !emptyNets.has(w.netUuid));
+      topo.netLabelList = topo.netLabelList.filter(l => !emptyNets.has(l.netUuid));
+    }
+    if (removed > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_FIX] disconnect_pin ${ref}.${pinId} removed=${removed}`);
+    }
+    return { fixed: removed, needReroute: removed > 0, notes: [`${ref}.${pinId}`] };
+  }
+
+  /** VCC/VEE/GND/VDD/VSS 电源轨整网标号化（密集区电源 stub 贴脚时高效） */
+  static demotePowerRails(topo: SchTopology, wiring: ConstrainedWiringEngine): TopologyFixResult {
+    const names = ['VCC', 'VEE', 'GND', 'VDD', 'VSS', '+5V', '3V3'];
+    const uuids = new Set<string>();
+    for (let i = 0; i < topo.netList.length; i++) {
+      const n = topo.netList[i];
+      const u = (n.netName ?? '').toUpperCase();
+      if (names.indexOf(u) >= 0 || n.isPower) {
+        // 仅标准电源名，避免误伤 SIG_VCC 等
+        if (names.indexOf(u) >= 0) {
+          uuids.add(n.netUuid);
+        }
+      }
+    }
+    if (uuids.size === 0) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const stubs = wiring.demoteNetsToLabelStubs(topo, uuids);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_FIX] demote_power_rails nets=${uuids.size} stubs=${stubs}`);
+    return { fixed: stubs > 0 ? uuids.size : 0, needReroute: true, notes: [`powerNets=${uuids.size}`] };
+  }
+
+  /** 移动器件（坐标 20mil 栅格）；用于拉开碰撞/贴脚 */
+  static moveDevice(topo: SchTopology, refName: string,
+    x?: number, y?: number, dx?: number, dy?: number): TopologyFixResult {
+    const ref = (refName ?? '').trim();
+    if (ref.length === 0) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const dev = topo.deviceList.find(d =>
+      (d.refName ?? '').toUpperCase() === ref.toUpperCase());
+    if (!dev) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const snap = (v: number): number => Math.round(v / 20) * 20;
+    let nx = dev.x;
+    let ny = dev.y;
+    if (x !== undefined && !isNaN(x)) {
+      nx = snap(x);
+    } else if (dx !== undefined && !isNaN(dx)) {
+      nx = snap(dev.x + dx);
+    }
+    if (y !== undefined && !isNaN(y)) {
+      ny = snap(y);
+    } else if (dy !== undefined && !isNaN(dy)) {
+      ny = snap(dev.y + dy);
+    }
+    nx = Math.max(40, Math.min(1200, nx));
+    ny = Math.max(40, Math.min(800, ny));
+    if (nx === dev.x && ny === dev.y) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_FIX] move_device ${ref} (${dev.x},${dev.y})→(${nx},${ny})`);
+    dev.x = nx;
+    dev.y = ny;
+    return { fixed: 1, needReroute: true, notes: [`${ref}@(${nx},${ny})`] };
+  }
+
+  /** 旋转器件 0/90/180/270（或相对 +90） */
+  static rotateDevice(topo: SchTopology, refName: string, rotate?: number): TopologyFixResult {
+    const ref = (refName ?? '').trim();
+    if (ref.length === 0) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const dev = topo.deviceList.find(d =>
+      (d.refName ?? '').toUpperCase() === ref.toUpperCase());
+    if (!dev) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    let next = 90;
+    if (rotate !== undefined && !isNaN(rotate)) {
+      next = ((Math.round(rotate / 90) * 90) % 360 + 360) % 360;
+    } else {
+      next = (dev.rotate + 90) % 360;
+    }
+    if (next === dev.rotate) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_FIX] rotate_device ${ref} ${dev.rotate}→${next}`);
+    dev.rotate = next;
+    return { fixed: 1, needReroute: true, notes: [`${ref} rot=${next}`] };
+  }
+
+  /** SIGNAL_GEN：OUT 保持入网；GND→GND（缺则补） */
+  static ensureSignalGenWired(topo: SchTopology,
+    wiring: ConstrainedWiringEngine): TopologyFixResult {
+    let fixed = 0;
+    const notes: string[] = [];
+    const gnd = topo.deviceList.find(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u === 'GND' || u === 'VSS';
+    });
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const d = topo.deviceList[i];
+      if ((d.libDevId ?? '').toUpperCase() !== 'SIGNAL_GEN') {
+        continue;
+      }
+      if (gnd) {
+        const r = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'GND', 'GND');
+        fixed += r.fixed;
+        notes.push(...r.notes);
+        const rg = AiTopologyFixKit.reconnectPin(topo, wiring, gnd.refName, '1', 'GND');
+        fixed += rg.fixed;
+      }
+      // OUT 若完全未入网：挂到已有信号网或新建 SIG_IN
+      let outOnNet = false;
+      for (let ni = 0; ni < topo.netList.length; ni++) {
+        if (topo.netList[ni].nodeList.some(n =>
+          n.devUuid === d.instUuid && (n.pinId ?? '').toUpperCase() === 'OUT')) {
+          outOnNet = true;
+          break;
+        }
+      }
+      if (!outOnNet) {
+        const r = AiTopologyFixKit.reconnectPin(topo, wiring, d.refName, 'OUT', 'SIG_IN');
+        fixed += r.fixed;
+        notes.push(...r.notes);
+      }
+    }
+    if (fixed > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_FIX] ensure_signal_gen fixed=${fixed}`);
+    }
+    return { fixed, needReroute: fixed > 0, notes };
   }
 
   /**
@@ -1492,17 +1870,18 @@ export class AiTopologyFixKit {
       }
     }
 
-    // R/C 串联 RC：若存在电容，R.2 与 C.1 共用 RC_MID
-    const hasCap = topo.deviceList.some(d => (d.libDevId ?? '').startsWith('C_'));
-    const hasRes = topo.deviceList.some(d => (d.libDevId ?? '').startsWith('R_'));
+    // R/C：仅当恰好 1R+1C 时才假定串联 RC_MID；多被动件勿盲绑 VCC
+    const resistors = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('R_'));
+    const caps = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('C_'));
+    const seriesRc = resistors.length === 1 && caps.length === 1;
     if (lib.startsWith('R_')) {
-      if (hasCap) {
+      if (seriesRc) {
         return pinU === '1' ? 'VCC' : 'RC_MID';
       }
       return pinU === '1' ? 'VCC' : largestSignal();
     }
     if (lib.startsWith('C_')) {
-      if (hasRes) {
+      if (seriesRc) {
         return pinU === '2' ? 'GND' : 'RC_MID';
       }
       return pinU === '2' ? 'GND' : largestSignal();
@@ -1560,6 +1939,11 @@ export class AiTopologyFixKit {
       if (!isOrphanName && !isUnusedOscCh) {
         continue;
       }
+      // 带标号的单脚网可能是 joinByLabel stub，禁止剪
+      const hasLabel = topo.netLabelList.some(l => l.netUuid === net.netUuid);
+      if (hasLabel) {
+        continue;
+      }
       drop.add(net.netUuid);
       notes.push(`${net.netName ?? net.netUuid}#1`);
       fixed++;
@@ -1594,21 +1978,11 @@ export class AiTopologyFixKit {
   private static addLabelStubForPin(topo: SchTopology, wiring: ConstrainedWiringEngine,
     net: NetInfo, dev: DeviceInst, pinId: string, pinName: string): void {
     const pinPos = PinWorldResolver.forDeviceInst(dev, pinId, pinName);
-    // 粗算 hit：用 SELECTION_HIT_PAD 扩一圈
-    const hit: WorldHitRect = {
-      x: pinPos.x - 40,
-      y: pinPos.y - 30,
-      w: 80,
-      h: 60,
-      refName: dev.refName,
-      instUuid: dev.instUuid,
-      libDevId: dev.libDevId
-    };
-    // 尽量用引擎 demote 单网（会重建该网全部 stub，副作用可接受）
+    // 尽量用引擎 demote 单网（会重建该网全部 stub，含真实 hitRects）
     const one = new Set<string>();
     one.add(net.netUuid);
     wiring.demoteNetsToLabelStubs(topo, one);
-    // 若仍无近邻 stub，手动补一条
+    // 若仍无近邻 stub，手动补一条（foreign 矩形 + 无关脚齐全）
     const TOL = 12;
     const has = topo.wireList.some(w => {
       if (w.netUuid !== net.netUuid || w.points.length === 0) {
@@ -1622,8 +1996,35 @@ export class AiTopologyFixKit {
     if (has) {
       return;
     }
+    const hitRects: WorldHitRect[] = [];
+    const foreignPins: Point2D[] = [];
+    for (let di = 0; di < topo.deviceList.length; di++) {
+      const d = topo.deviceList[di];
+      let pinIds = AiTopologyFixKit.libraryPinIds(d.libDevId);
+      if (pinIds.length === 0) {
+        pinIds = ['1', '2', 'A', 'K', 'IN+', 'IN-', 'OUT', 'V+', 'V-', 'COM', 'NO', 'NC'];
+      }
+      const locals: Point2D[] = [];
+      for (let pi = 0; pi < pinIds.length; pi++) {
+        const pw = PinWorldResolver.forDeviceInst(d, pinIds[pi], pinIds[pi]);
+        locals.push({ x: pw.x - d.x, y: pw.y - d.y });
+        if (Math.hypot(pw.x - pinPos.x, pw.y - pinPos.y) >= 1) {
+          foreignPins.push(pw);
+        }
+      }
+      hitRects.push(DeviceHitGeometry.hitRectFromLocalPoints(
+        locals, d.x, d.y, d.rotate, d.mirrorH, SELECTION_HIT_PAD,
+        d.refName, d.instUuid, d.libDevId));
+    }
+    let own = hitRects.find(r => r.instUuid === dev.instUuid);
+    if (!own) {
+      own = {
+        x: pinPos.x - 40, y: pinPos.y - 30, w: 80, h: 60,
+        refName: dev.refName, instUuid: dev.instUuid, libDevId: dev.libDevId
+      };
+    }
     const labelPos = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(
-      pinPos, hit, [], 20);
+      pinPos, own, hitRects, 20, foreignPins);
     const label: NetLabelInfo = {
       id: IdUtil.generate('lbl'),
       netUuid: net.netUuid,

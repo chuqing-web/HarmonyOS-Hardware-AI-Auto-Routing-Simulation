@@ -4,7 +4,7 @@
  * 检查项:
  *   1. VCC/GND 存在性
  *   2. 仪器拓扑正确性 (电流表串联/电压表并联)
- *   3. 导线侵入器件选中命中区 (HIT_PAD=14)
+ *   3. 导线侵入器件选中命中区 (HIT_PAD=22)
  *   4. 导线贴近无关引脚
  *   5. 跨网络导线重叠
  *   6. 浮空引脚 (委托 FaultDiagnoser)
@@ -22,13 +22,15 @@ import {
 import { IComponentLibrary, ComponentDefinition } from 'component_library';
 import { FaultDiagnoser } from './FaultDiagnoser';
 import { ConstrainedWiringEngine } from './ConstrainedWiringEngine';
-import { CircuitIntent } from './CircuitIntent';
+import { CircuitIntent, resolveHysteresisSafeAmplitude, parseSignalAmplitudeVolts,
+  HYSTERESIS_MIN_SIGNAL_AMP_V, schematicLikelyHysteresisComparator
+} from './CircuitIntent';
 import { PinWorldResolver } from './PinWorldResolver';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
 import { AiTopologyFixKit } from './AiTopologyFixKit';
 
 export interface ValidationIssue {
-  type: 'missing_power' | 'instrument_topo' | 'wire_body' | 'wire_cross' | 'floating_pin' | 'pin_proximity' | 'erc';
+  type: 'missing_power' | 'instrument_topo' | 'wire_body' | 'wire_cross' | 'floating_pin' | 'pin_proximity' | 'erc' | 'signal_amp';
   severity: 'error' | 'warning';
   desc: string;
   targetUuid?: string;
@@ -204,6 +206,7 @@ export class PostGenValidator {
     const all: ValidationIssue[] = [];
     all.push(...this.checkPowerSymbols(topo));
     all.push(...this.checkInstrumentTopology(topo));
+    all.push(...this.checkHysteresisSignalAmplitude(topo));
     all.push(...this.checkWireBodyCollisions(topo));
     all.push(...this.checkWirePinProximity(topo));
     all.push(...this.checkCrossNetOverlaps(topo));
@@ -322,6 +325,39 @@ export class PostGenValidator {
     if (!hasGnd) {
       issues.push({ type: 'missing_power', severity: 'error',
         desc: '缺少 GND 接地符号 — 电路必须有地' });
+    }
+    return issues;
+  }
+
+  // ─── 检查 1b: 滞回整形 SIGNAL_GEN 幅度 ───
+
+  private checkHysteresisSignalAmplitude(topo: SchTopology): ValidationIssue[] {
+    const issues: ValidationIssue[] = [];
+    const ids = topo.deviceList.map(d => d.libDevId ?? '');
+    // 有意图时以意图为准，避免误伤「运放+信号源」小信号放大
+    if (this.circuitIntent !== null) {
+      if (!this.circuitIntent.needsHysteresisComparator) {
+        return issues;
+      }
+    } else if (!schematicLikelyHysteresisComparator(ids)) {
+      return issues;
+    }
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const d = topo.deviceList[i];
+      if ((d.libDevId ?? '').toUpperCase().indexOf('SIGNAL_GEN') < 0) {
+        continue;
+      }
+      const ampText = (d.params.get('amplitude') ?? '').trim();
+      const ampV = parseSignalAmplitudeVolts(ampText);
+      if (!Number.isFinite(ampV) || ampV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+        issues.push({
+          type: 'signal_amp',
+          severity: 'error',
+          desc: `滞回整形 SIGNAL_GEN ${d.refName} amplitude=${ampText || '(空)'} ` +
+            `过小（须≥${HYSTERESIS_MIN_SIGNAL_AMP_V}V，推荐 5V），否则输出会锁死单轨`,
+          targetUuid: d.instUuid
+        });
+      }
     }
     return issues;
   }
@@ -724,11 +760,15 @@ export class PostGenValidator {
         current.deviceList.push(makeDeviceInst(
           IdUtil.generate('inst'), 'VCC', 'VCC', 60, 80, 0, stringMap1('voltage', '5.0')));
         fixed++;
+        Logger.info('PostGenValidator',
+          '[FIX] added VCC symbol — rail wiring deferred to clear-loop / ensureNetPin');
       }
       if (!hasGnd) {
         current.deviceList.push(makeDeviceInst(
           IdUtil.generate('inst'), 'GND', 'GND', 60, 500, 0, new Map()));
         fixed++;
+        Logger.info('PostGenValidator',
+          '[FIX] added GND symbol — rail wiring deferred to clear-loop / ensureNetPin');
       }
     }
 
@@ -742,6 +782,24 @@ export class PostGenValidator {
         fixed += before - current.deviceList.length;
         Logger.info('PostGenValidator',
           `[FIX] removed ${before - current.deviceList.length} floating optional caps`);
+      }
+    }
+
+    const ampIssues = errors.filter(e => e.type === 'signal_amp');
+    if (ampIssues.length > 0) {
+      for (let i = 0; i < current.deviceList.length; i++) {
+        const d = current.deviceList[i];
+        if ((d.libDevId ?? '').toUpperCase().indexOf('SIGNAL_GEN') < 0) {
+          continue;
+        }
+        const beforeAmp = (d.params.get('amplitude') ?? '').trim();
+        const safe = resolveHysteresisSafeAmplitude(beforeAmp);
+        if (safe !== beforeAmp) {
+          d.params.set('amplitude', safe);
+          fixed++;
+          Logger.info('PostGenValidator',
+            `[FIX] SIGNAL_GEN ${d.refName} amplitude ${beforeAmp || '(empty)'}→${safe} (hysteresis)`);
+        }
       }
     }
 

@@ -10,7 +10,7 @@ import { HexDebuggerImpl, McuBehaviorSimulator } from "@bundle:com.elecdraw.aisc
 import type { IHexDebugger } from "@bundle:com.elecdraw.aischsim/entry@hex_debugger/Index";
 import { AiApiManagerImpl } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/Index";
 import type { IAiApiManager } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/Index";
-import { AiEngineImpl, SemanticNetBuilder } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/Index";
+import { AiEngineImpl, FaultDiagnoser, classifyCircuitIntent, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator, parseSignalAmplitudeVolts } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/Index";
 import type { IAiEngine, TeachingService, LabTemplate, ChatHistoryEntry } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/Index";
 import { FilePersistenceImpl, CrashGuard } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { IFilePersistence, BomLookup, SessionState } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -29,7 +29,7 @@ import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/Them
 import { ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PlatformPrefsStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/PlatformPrefsStore";
 import { AiApiVaultStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiApiVaultStore";
-import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, ErrCode, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -47,6 +47,15 @@ interface AiPostGenerateIssues {
     needAsk: boolean;
     count: number;
     summary: string;
+}
+interface SimConnectivityGate {
+    netCount: number;
+    railCount: number;
+    labelCount: number;
+    pinRefCount: number;
+    floatingPinCount: number;
+    duplicateRailNames: string[];
+    hardUnconnected: string[];
 }
 interface SimStepData {
     waves: WaveData[];
@@ -108,6 +117,12 @@ export class AppService {
     private readonly SCHEMATIC_DEBOUNCE_MS: number = 150;
     private persistDebounceTimer: number = -1;
     private readonly PERSIST_DEBOUNCE_MS: number = 2000;
+    /** 防止连点模板重复合并导致器件翻倍 + 主线程叠加重活 */
+    private templateLoadBusy: boolean = false;
+    /** 防止连点启动仿真叠加重活 */
+    private simStartBusy: boolean = false;
+    /** 工程变更后延迟 ERC，与仿真启动共用，避免重复全量检查 */
+    private scheduledErcTimer: number = -1;
     /** 当前工作副本 autosave 路径（含未保存的 Untitled 工程） */
     private workingAutoSavePath: string = '';
     static readonly AUTOSAVE_INTERVAL_MS: number = 30000;
@@ -116,20 +131,26 @@ export class AppService {
     private appBaseDir: string = '';
     private templateBootstrapPromise: Promise<void> | null = null;
     private aiGenerating: boolean = false;
+    /** 用户点取消后保持为 true，直到该次 await 收尾（禁止 endAiGenerate 提前清掉） */
+    private aiGenCancelRequested: boolean = false;
+    /** 每次 begin/cancel 递增；await 返回后若 session 过期则丢弃结果 */
+    private aiGenEpoch: number = 0;
     private aiGenLogs: AiGenLogEntry[] = [];
     private aiGenLogSeq: number = 0;
-    private aiGenCancelRequested: boolean = false;
     private aiSelfCheckPromptPending: boolean = false;
     private lastAiPrompt: string = '';
     private aiConversationHistory: ChatHistoryEntry[] = [];
     onProjectChanged: () => void = () => { };
     onStatusMessage: (msg: string) => void = () => { };
+    /** 最近一次仿真启动失败原因（供 UI 弹窗）；成功启动时清空 */
+    private lastSimStartFailReason: string = '';
     onErcUpdate: (errors: ErcError[]) => void = () => { };
     onWaveUpdate: (waves: WaveData[]) => void = () => { };
     onAiProgress: (p: ProgressInfo) => void = () => { };
     onAiGeneratingChanged: (busy: boolean) => void = () => { };
     onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => { };
     onAiSelfCheckNeeded: (issueCount: number, summary: string) => void = () => { };
+    onLibraryLoaded: (totalCount: number) => void = () => { };
     wireToolToggleHandler: () => void = () => { };
     copyHandler: () => void = () => { };
     pasteHandler: () => void = () => { };
@@ -147,6 +168,8 @@ export class AppService {
         this.teachingService = (this.aiEngine as AiEngineImpl).teachingService;
         this.mcuBehavior = new McuBehaviorSimulator();
         this.crashGuard = new CrashGuard();
+        // Kernel rebuilds pinIds on load/start — must use library geometry (MCU P1..Pn)
+        (this.simulationKernel as SimulationKernelImpl).setPinGeometryResolver(this.pinGeometryResolver());
         (this.instruments as VirtualInstrumentsImpl).setUartTxSink((bytes: number[]) => {
             traceUart('APP_TX_SINK', `n=${bytes.length} hex=${formatUartBytesHex(bytes)} → simHost.injectUsartRx`);
             this.simHost.injectUsartRx(bytes, this.simulationKernel as SimulationKernelImpl);
@@ -263,7 +286,11 @@ export class AppService {
         editor.loadAnnotations([]);
         editor.setReadOnly(false);
         this.schematicEditor.loadDocument(this.currentProject.schematic);
-        this.simulationKernel.loadSchematic(this.currentProject.schematic);
+        // Always stamp kernel from editor doc (LoadDocumentCommand may clone identity)
+        const doc = editor.getDocument();
+        this.currentProject.schematic = doc;
+        ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
+        this.simulationKernel.loadSchematic(doc);
         this.onProjectChanged();
         this.onStatusMessage(`新建工程: ${name}`);
     }
@@ -278,7 +305,22 @@ export class AppService {
         }
         (this.schematicEditor as SchematicEditorImpl).rebuildNetPinConnectivity();
         const doc = this.schematicEditor.getDocument();
+        if (this.currentProject !== null) {
+            this.currentProject.schematic = doc;
+        }
         ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
+        const gate = this.evaluateSimConnectivityGate(doc);
+        Logger.info(INSTR_TRACE_TAG, `[SIM_RELOAD_CONN] nets=${gate.netCount} rails=${gate.railCount} pinRefs=${gate.pinRefCount} ` +
+            `floating=${gate.floatingPinCount} dup=${gate.duplicateRailNames.join(',') || 'none'} ` +
+            `hard=${gate.hardUnconnected.join(',') || 'none'}`);
+        if (gate.duplicateRailNames.length > 0 || gate.hardUnconnected.length > 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[SIM_RELOAD_BLOCKED] dupRails=${gate.duplicateRailNames.join(',')} hard=${gate.hardUnconnected.join(',')}`);
+            this.onStatusMessage(gate.duplicateRailNames.length > 0
+                ? `热重载已拒绝: 电源轨未合并 ${gate.duplicateRailNames.join(',')}`
+                : `热重载已拒绝: 关键脚未连 ${gate.hardUnconnected.slice(0, 3).join('; ')}`);
+            // Keep previous MNA netlist — do not stamp a known-false topology mid-run
+            return;
+        }
         this.bindingPinHash.clear();
         kernel.loadSchematic(doc);
         this.autoWireAllInstruments();
@@ -289,6 +331,115 @@ export class AppService {
             this.refreshInstrumentReaderForComponent(activeComp);
             this.setActiveInstrumentComponent(activeComp);
         }
+    }
+    /**
+     * Post-rebuild connectivity gate for simulation truthfulness.
+     * Duplicate rails and hard-unconnected power/instrument pins block start.
+     */
+    private evaluateSimConnectivityGate(doc: SchematicDocument): SimConnectivityGate {
+        // After alias merge, only canonical rails should remain; duplicates mean merge failed
+        const railNames = ['VCC', 'GND', 'VEE'];
+        const railCountByName = new Map<string, number>();
+        let pinRefCount = 0;
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            pinRefCount += doc.nets[ni].pinIds.length;
+            const upper = doc.nets[ni].name.toUpperCase();
+            // Count aliases as their canonical form for duplicate detection
+            let canon = upper;
+            if (upper === 'VDD' || upper === 'V+') {
+                canon = 'VCC';
+            }
+            else if (upper === 'VSS' || upper === '0') {
+                canon = 'GND';
+            }
+            else if (upper === 'V-') {
+                canon = 'VEE';
+            }
+            if (railNames.indexOf(canon) >= 0) {
+                railCountByName.set(canon, (railCountByName.get(canon) ?? 0) + 1);
+            }
+        }
+        const duplicateRailNames: string[] = [];
+        railCountByName.forEach((count: number, name: string) => {
+            if (count > 1) {
+                duplicateRailNames.push(name);
+            }
+        });
+        const connectedPins = new Set<string>();
+        const pinNameByKey = new Map<string, string>();
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            for (let pi = 0; pi < doc.nets[ni].pinIds.length; pi++) {
+                const ref = doc.nets[ni].pinIds[pi];
+                const parts = ref.split(':');
+                if (parts.length >= 2) {
+                    const key = `${parts[0]}:${parts[1]}`;
+                    connectedPins.add(key);
+                    if (parts.length >= 3 && parts[2].length > 0) {
+                        pinNameByKey.set(key, parts[2]);
+                    }
+                }
+            }
+        }
+        let floatingPinCount = 0;
+        const hardUnconnected: string[] = [];
+        for (let ci = 0; ci < doc.components.length; ci++) {
+            const comp = doc.components[ci];
+            const lib = comp.libraryId.toUpperCase();
+            const pins = this.pinGeometryResolver()(comp.libraryId);
+            if (pins === null || pins.length === 0) {
+                continue;
+            }
+            const isPowerSym = lib === 'VCC' || lib === 'GND' || lib === 'VEE' ||
+                lib.endsWith('/VCC') || lib.endsWith('/GND') || lib.endsWith('/VEE');
+            const isScope = lib === 'OSCILLOSCOPE' || lib.startsWith('OSCILLOSCOPE');
+            const isSigGen = lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN') || lib === 'VAC' || lib.startsWith('VAC');
+            const isMeter = lib === 'AMMETER' || lib.startsWith('AMMETER') ||
+                lib === 'VOLTMETER' || lib.startsWith('VOLTMETER') ||
+                lib === 'VIRTUAL_METER' || lib.startsWith('VIRTUAL_METER') ||
+                lib === 'POWER_METER' || lib.startsWith('POWER_METER') ||
+                lib === 'DMM' || lib.startsWith('DMM');
+            const isInstrument = isScope || isSigGen || isMeter ||
+                lib === 'LOGIC_ANALYZER' || lib.startsWith('LOGIC_ANALYZER') ||
+                lib === 'FREQ_COUNTER' || lib.startsWith('FREQ_COUNTER') ||
+                lib === 'UART_TERMINAL' || lib.startsWith('UART_TERMINAL');
+            let anyConnected = false;
+            let hasSignalPin = false;
+            let hasGndPin = false;
+            for (let pi = 0; pi < pins.length; pi++) {
+                const key = `${comp.id}:${pins[pi].id}`;
+                if (connectedPins.has(key)) {
+                    anyConnected = true;
+                    const pname = (pinNameByKey.get(key) ?? pins[pi].name ?? pins[pi].id).toUpperCase();
+                    if (pname === 'GND' || pname === 'COM' || pname === 'V-' || pname === '0' || pname === 'VSS') {
+                        hasGndPin = true;
+                    }
+                    else {
+                        hasSignalPin = true;
+                    }
+                }
+                else {
+                    floatingPinCount++;
+                }
+            }
+            if ((isPowerSym || isInstrument) && !anyConnected) {
+                hardUnconnected.push(comp.refDes);
+            }
+            else if ((isScope || isSigGen || isMeter) && hasSignalPin && !hasGndPin) {
+                // Probe without return path → false waveforms
+                hardUnconnected.push(`${comp.refDes}(缺GND/COM)`);
+            }
+        }
+        let railCount = 0;
+        railCountByName.forEach((c: number) => { railCount += c; });
+        return {
+            netCount: doc.nets.length,
+            railCount: railCount,
+            labelCount: doc.netLabels?.length ?? 0,
+            pinRefCount: pinRefCount,
+            floatingPinCount: floatingPinCount,
+            duplicateRailNames: duplicateRailNames,
+            hardUnconnected: hardUnconnected
+        };
     }
     /** Toggle pause/resume during active simulation; returns true if now paused */
     toggleSimulationPause(): boolean {
@@ -381,8 +532,18 @@ export class AppService {
         if (comp === null) {
             return '未找到信号发生器器件';
         }
+        let ampUse = amplitude;
+        let ampNote = '';
+        if (this.documentLikelyHysteresisComparator()) {
+            const safe = resolveHysteresisSafeAmplitude(`${amplitude}V`);
+            const safeV = parseSignalAmplitudeVolts(safe);
+            if (Number.isFinite(safeV) && safeV > amplitude + 1e-9) {
+                ampUse = safeV;
+                ampNote = `（滞回整形幅度过小已抬至 ${safe}）`;
+            }
+        }
         const freqStr = `${frequency}`;
-        const ampStr = `${amplitude}V`;
+        const ampStr = `${ampUse}V`;
         const offStr = `${offset}V`;
         const dutyStr = `${dutyCycle}%`;
         const fOk = UnitParser.validateParam('frequency', freqStr);
@@ -397,12 +558,108 @@ export class AppService {
         this.schematicEditor.setDeviceParam(comp.id, 'offset', oOk.normalized);
         this.schematicEditor.setDeviceParam(comp.id, 'dutyCycle', dOk.normalized);
         this.instruments.setParams({
-            frequency, amplitude, offset, dutyCycle, phase: 0
+            frequency, amplitude: ampUse, offset, dutyCycle, phase: 0
         });
         this.syncComponentParamToSimulation(comp.id, 'frequency', fOk.normalized);
         Logger.info(INSTR_TRACE_TAG, `[SIGGEN] apply params ref=${comp.refDes} f=${fOk.normalized} amp=${aOk.normalized} ` +
-            `off=${oOk.normalized} duty=${dOk.normalized}`);
-        return `${comp.refDes} f=${fOk.normalized} amp=${aOk.normalized} duty=${dOk.normalized}`;
+            `off=${oOk.normalized} duty=${dOk.normalized}${ampNote}`);
+        return `${comp.refDes} f=${fOk.normalized} amp=${aOk.normalized} duty=${dOk.normalized}${ampNote}`;
+    }
+    /** 画布是否像滞回比较器（运放 + SIGNAL_GEN） */
+    private documentLikelyHysteresisComparator(): boolean {
+        const doc = this.schematicEditor.getDocument();
+        const ids: string[] = [];
+        for (let i = 0; i < doc.components.length; i++) {
+            ids.push(doc.components[i].libraryId);
+        }
+        return schematicLikelyHysteresisComparator(ids);
+    }
+    /**
+     * AI 全权驱动落盘：只补空字段 + 滞回幅度物理安全底线。
+     * 不覆盖 LLM 已写入的 voltage/waveform/amplitude（错配由选型 HARD critique 逼重试）。
+     */
+    enforceElectricalParamsFromPrompt(prompt: string): number {
+        const intent = classifyCircuitIntent(prompt);
+        const doc = this.schematicEditor.getDocument();
+        let fixed = 0;
+        for (let i = 0; i < doc.components.length; i++) {
+            const c = doc.components[i];
+            const lib = (c.libraryId ?? '').toUpperCase();
+            if (lib === 'VCC' || lib.startsWith('VCC')) {
+                const before = paramMapGet(c.parameters, 'voltage', '').trim();
+                if (before.length === 0) {
+                    const want = intent.preferredVccVoltage.length > 0
+                        ? intent.preferredVccVoltage
+                        : (intent.dualSupply ? '12V' : '');
+                    if (want.length > 0) {
+                        this.schematicEditor.setDeviceParam(c.id, 'voltage', want);
+                        fixed++;
+                        Logger.info(INSTR_TRACE_TAG, `[AI_DRIVE] VCC voltage (empty)→${want} ref=${c.refDes}`);
+                    }
+                }
+            }
+            if (lib === 'VEE' || lib.startsWith('VEE')) {
+                const before = paramMapGet(c.parameters, 'voltage', '').trim();
+                if (before.length === 0) {
+                    const want = intent.preferredVeeVoltage.length > 0
+                        ? intent.preferredVeeVoltage
+                        : (intent.dualSupply ? '-12V' : '');
+                    if (want.length > 0) {
+                        this.schematicEditor.setDeviceParam(c.id, 'voltage', want);
+                        fixed++;
+                        Logger.info(INSTR_TRACE_TAG, `[AI_DRIVE] VEE voltage (empty)→${want} ref=${c.refDes}`);
+                    }
+                }
+            }
+            if (lib.indexOf('SIGNAL_GEN') >= 0) {
+                const beforeWf = paramMapGet(c.parameters, 'waveform', '').trim();
+                if (beforeWf.length === 0 && intent.signalWaveform.length > 0) {
+                    this.schematicEditor.setDeviceParam(c.id, 'waveform', intent.signalWaveform);
+                    fixed++;
+                    Logger.info(INSTR_TRACE_TAG, `[AI_DRIVE] SIGGEN waveform (empty)→${intent.signalWaveform} ref=${c.refDes}`);
+                }
+                const beforeAmp = paramMapGet(c.parameters, 'amplitude', '').trim();
+                if (beforeAmp.length === 0) {
+                    let fill = intent.preferredSignalAmplitude;
+                    if (fill.length === 0 && intent.needsOpAmpIntegrator) {
+                        fill = '5V';
+                    }
+                    if (fill.length === 0 && intent.needsHysteresisComparator) {
+                        fill = resolveHysteresisSafeAmplitude('');
+                    }
+                    if (fill.length > 0) {
+                        this.schematicEditor.setDeviceParam(c.id, 'amplitude', fill);
+                        fixed++;
+                        Logger.info(INSTR_TRACE_TAG, `[AI_DRIVE] SIGGEN amp (empty)→${fill} ref=${c.refDes}`);
+                    }
+                }
+                else if (intent.needsHysteresisComparator || this.documentLikelyHysteresisComparator()) {
+                    const safe = resolveHysteresisSafeAmplitude(beforeAmp);
+                    if (safe !== beforeAmp) {
+                        this.schematicEditor.setDeviceParam(c.id, 'amplitude', safe);
+                        fixed++;
+                        Logger.info(INSTR_TRACE_TAG, `[AI_DRIVE] SIGGEN amp ${beforeAmp}→${safe} (hysteresis safety) ref=${c.refDes}`);
+                    }
+                }
+                if (intent.preferredSignalFrequency.length > 0) {
+                    const before = paramMapGet(c.parameters, 'frequency', '').trim();
+                    if (before.length === 0) {
+                        this.schematicEditor.setDeviceParam(c.id, 'frequency', intent.preferredSignalFrequency);
+                        fixed++;
+                    }
+                }
+            }
+        }
+        if (fixed > 0) {
+            this.autoWireSignalGenerators();
+        }
+        return fixed;
+    }
+    /**
+     * @deprecated 使用 enforceElectricalParamsFromPrompt；保留兼容调用
+     */
+    enforceHysteresisSignalAmplitudeFromPrompt(prompt: string): number {
+        return this.enforceElectricalParamsFromPrompt(prompt);
     }
     /** Set which component instance drives Props/Instr instrument readouts */
     setActiveInstrumentComponent(compInstId: string | null): void {
@@ -1111,7 +1368,9 @@ export class AppService {
         editor.loadDocument(this.currentProject.schematic);
         editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
         editor.rebuildNetPinConnectivity();
-        const doc = this.currentProject.schematic;
+        // Editor doc is source of truth after LoadDocumentCommand (may not be same ref)
+        const doc = editor.getDocument();
+        this.currentProject.schematic = doc;
         ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
         this.simulationKernel.loadSchematic(doc);
         traceProjectOpenAudit(path, this.currentProject.name, doc, editor.getViewport());
@@ -1135,6 +1394,13 @@ export class AppService {
     private loadAiApiVaultOnStartup(): void {
         const vault = AiApiVaultStore.getInstance();
         const configs = vault.loadConfigs();
+        if (configs.length === 0) {
+            // 禁止空金库清空已有 manager（避免重启/竞态把 Key 冲掉）
+            const existing = this.aiApiManager.listApis();
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] vault empty — keep manager configs=${existing.length}` +
+                ` path=${vault.getVaultPath()}`);
+            return;
+        }
         this.aiApiManager.clearAllConfigs();
         for (let i = 0; i < configs.length; i++) {
             const cfg = configs[i];
@@ -1166,7 +1432,23 @@ export class AppService {
             this.persistAiApiVaultFromManager();
         }
         else {
-            Logger.info(INSTR_TRACE_TAG, `[AI_API] skip project aiConfigs (vault has ${vaultCfgs.length}, project ${projectCfgs.length})`);
+            // 金库已有配置：按 id 合并缺失项，禁止静默丢弃工程内 Key
+            let merged = 0;
+            for (let i = 0; i < projectCfgs.length; i++) {
+                const cfg = projectCfgs[i];
+                const existing = this.aiApiManager.getApi(cfg.id);
+                if (!existing.success) {
+                    const addRes = this.aiApiManager.addApi(cfg);
+                    if (addRes.success) {
+                        merged++;
+                    }
+                }
+            }
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] merge project→vault added=${merged}` +
+                ` (vault had ${vaultCfgs.length}, project ${projectCfgs.length})`);
+            if (merged > 0) {
+                this.persistAiApiVaultFromManager();
+            }
         }
         this.currentProject.aiConfigs = [];
     }
@@ -1349,8 +1631,36 @@ export class AppService {
             .saveRecoveryCacheWithPath(this.currentProjectPath, this.currentProject);
     }
     runErc(autoFix: boolean = false): ErcError[] {
+        this.cancelScheduledErc();
         const topo = this.getTopology();
         const errors = this.schematicEditor.runERC(topo, true);
+        // 与 AI 流水线对齐：合并 FaultDiagnoser（短路/GPIO/仪器等 DeepErc 未覆盖项）
+        const doc = this.schematicEditor.getDocument();
+        const violations = FaultDiagnoser.diagnose(doc);
+        for (let i = 0; i < violations.length; i++) {
+            const v = violations[i];
+            const target = v.componentId !== undefined && v.componentId.length > 0
+                ? v.componentId
+                : (v.netId ?? '');
+            const already = errors.some(e => e.desc === v.message && e.targetUuid === target);
+            if (already) {
+                continue;
+            }
+            let severity: 'error' | 'warning' | 'info' | 'critical' = 'info';
+            if (v.severity === 'error') {
+                severity = 'error';
+            }
+            else if (v.severity === 'warning') {
+                severity = 'warning';
+            }
+            errors.push({
+                errType: v.ruleType,
+                targetUuid: target,
+                desc: v.message,
+                suggest: v.fixSuggestion ?? '',
+                severity: severity
+            });
+        }
         if (autoFix && errors.length > 0) {
             const fixed = this.schematicEditor.autoFixERC(topo, errors);
             this.onStatusMessage(`ERC: ${errors.length} 项, 自动修复 ${fixed} 项`);
@@ -1361,6 +1671,23 @@ export class AppService {
         }
         this.onErcUpdate(errors);
         return errors;
+    }
+    /** 工程切换后延迟 ERC，避免与模板加载/画布刷新叠在同一 MMITask */
+    scheduleRuntimeErc(delayMs: number = 80): void {
+        this.cancelScheduledErc();
+        this.scheduledErcTimer = setTimeout((): void => {
+            this.scheduledErcTimer = -1;
+            void (async (): Promise<void> => {
+                await MainThreadYield.yield();
+                this.runErc(false);
+            })();
+        }, delayMs);
+    }
+    private cancelScheduledErc(): void {
+        if (this.scheduledErcTimer >= 0) {
+            clearTimeout(this.scheduledErcTimer);
+            this.scheduledErcTimer = -1;
+        }
     }
     /** Resolve pin world positions from component library for net connectivity rebuild */
     private pinGeometryResolver(): PinGeometryResolver {
@@ -1379,63 +1706,106 @@ export class AppService {
             return pins;
         };
     }
-    startSimulation(): boolean {
-        (this.schematicEditor as SchematicEditorImpl).rebuildNetPinConnectivity();
-        const pinResolver = this.pinGeometryResolver();
-        let doc = this.schematicEditor.getDocument();
-        ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, pinResolver);
-        // runERC rebuilds pin connectivity — capture topology AFTER it completes
-        const ercErrors = this.schematicEditor.runERC();
-        const critical = ercErrors.filter(e => e.severity === 'error' || e.severity === 'critical');
-        if (critical.some(e => e.desc.includes('短路'))) {
-            this.onStatusMessage('存在短路错误，禁止启动仿真');
-            return false;
+    /** 最近一次仿真启动失败文案（供弹窗）；无失败则为空串 */
+    getLastSimStartFailReason(): string {
+        return this.lastSimStartFailReason;
+    }
+    private failSimStart(reason: string): boolean {
+        this.lastSimStartFailReason = reason;
+        this.onStatusMessage(reason);
+        return false;
+    }
+    async startSimulation(): Promise<boolean> {
+        if (this.simStartBusy) {
+            return this.failSimStart('仿真正在启动，请稍候');
         }
-        doc = this.schematicEditor.getDocument();
-        const topo = this.getTopology();
-        const cfg = defaultSimConfig();
-        // Pass editor doc so MNA sees OUT1/AC+ pin names (topo round-trip alone loses them)
-        const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
-            this.onAiProgress(p);
-        }, doc);
-        if (!result.success) {
-            Logger.warn(INSTR_TRACE_TAG, `[SIM_START_FAIL] ${result.error ?? 'unknown'}`);
-            this.onStatusMessage(`仿真启动失败: ${result.error}`);
-            return false;
-        }
-        this.schematicEditor.setSimBusy(true);
-        this.simStepCount = 0;
-        this.onStatusMessage('仿真运行中...');
-        // Set up global instrument fallbacks so instruments show data even without a selected component
-        this.setupInstrumentGlobalFallbacks();
-        // Re-bind all instruments now that simulation is active (refresh pin-hash cache)
-        const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
-        this.refreshAllInstrumentBindings();
-        if (activeComp !== null && activeComp.length > 0) {
-            this.setActiveInstrumentComponent(activeComp);
-        }
-        // Auto-connect signal generators to analog engine
-        this.autoWireSignalGenerators();
-        const kernel = this.simulationKernel as SimulationKernelImpl;
-        // AC warm-up: previously 1 step/frame left the scope flat for minutes; pre-fill a few ms
-        kernel.runBudgetSteps(10);
-        kernel.runBudgetSteps(10);
-        // Time-budget pump (Worker disabled by default — FRAME flood caused APP_INPUT_BLOCK)
-        this.simHost.startRemote(topo, cfg, doc, kernel);
-        Logger.info(INSTR_TRACE_TAG, '仿真已启动 — DisplayPump@~30fps + 轻量 Worker/预算泵; setInstrTraceSimStep(true) 开启逐步采样');
-        this.onStatusMessage('仿真运行中…');
-        this.startDisplayPump();
-        // Heavy PINCONN audit after yielding — keeps main thread responsive for Worker READY
-        setTimeout((): void => {
-            if (this.simulationKernel.getState() !== SimulationState.RUNNING &&
-                this.simulationKernel.getState() !== SimulationState.PAUSED) {
-                return;
+        this.simStartBusy = true;
+        this.cancelScheduledErc();
+        this.lastSimStartFailReason = '';
+        try {
+            // Let MMI/watchdog breathe before heavy sync work
+            await MainThreadYield.yield();
+            // runERC rebuilds pin connectivity once — do not triple-rebuild before it
+            const ercErrors = this.schematicEditor.runERC();
+            const critical = ercErrors.filter(e => e.severity === 'error' || e.severity === 'critical');
+            if (critical.some(e => e.desc.includes('短路'))) {
+                return this.failSimStart('存在短路错误，禁止启动仿真');
             }
-            traceSimStartupAudit(doc, this.simulationKernel.getState(), this.simStepCount, (netId: string) => kernel.getNetVoltageByUuid(netId), (netId: string) => kernel.getNetCurrentByUuid(netId), kernel.getNodeVoltageMap(), kernel.getBranchCurrentMap(), kernel.getAllWaveData(), kernel.netToSpiceNodeMap(), activeComp, (compId: string) => kernel.getBranchCurrent(compId));
-            const modeHint = this.simHost.isWorkerMode() ? 'Worker线程' : '时间预算泵';
-            this.onStatusMessage(`仿真运行中 (${modeHint} · ~30fps UI)`);
-        }, 200);
-        return true;
+            await MainThreadYield.yield();
+            let doc = this.schematicEditor.getDocument();
+            const gate = this.evaluateSimConnectivityGate(doc);
+            Logger.info(INSTR_TRACE_TAG, `[SIM_CONN] nets=${gate.netCount} rails=${gate.railCount} labels=${gate.labelCount} ` +
+                `pinRefs=${gate.pinRefCount} floatingPins=${gate.floatingPinCount} ` +
+                `dupRails=${gate.duplicateRailNames.join(',') || 'none'}`);
+            if (gate.duplicateRailNames.length > 0) {
+                Logger.warn(INSTR_TRACE_TAG, `[SIM_CONN_BLOCK] dupRails=${gate.duplicateRailNames.join(',')}`);
+                return this.failSimStart(`电源轨重复未合并: ${gate.duplicateRailNames.join(', ')}，禁止启动仿真`);
+            }
+            if (gate.hardUnconnected.length > 0) {
+                Logger.warn(INSTR_TRACE_TAG, `[SIM_CONN_BLOCK] hard=${gate.hardUnconnected.join(',')}`);
+                const hints = gate.hardUnconnected.slice(0, 3).map((h: string): string => {
+                    if (h.includes('缺GND') || h.includes('缺COM')) {
+                        return `${h}（示波器/信号源/表计须接 GND/COM 回线）`;
+                    }
+                    return h;
+                });
+                return this.failSimStart(`关键脚未连网: ${hints.join('; ')}，禁止启动仿真`);
+            }
+            if (gate.floatingPinCount > 0) {
+                this.onStatusMessage(`拓扑已重建，${gate.floatingPinCount} 脚未连（可运行，结果可能不准）`);
+            }
+            const topo = this.getTopology();
+            const cfg = defaultSimConfig();
+            await MainThreadYield.yield();
+            // Pass editor doc so MNA sees OUT1/AC+ pin names (topo round-trip alone loses them)
+            const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
+                this.onAiProgress(p);
+            }, doc);
+            if (!result.success) {
+                Logger.warn(INSTR_TRACE_TAG, `[SIM_START_FAIL] ${result.error ?? 'unknown'}`);
+                return this.failSimStart(`仿真启动失败: ${result.error ?? '未知错误'}`);
+            }
+            this.schematicEditor.setSimBusy(true);
+            this.simStepCount = 0;
+            this.onStatusMessage('仿真运行中...');
+            // Drop stale scope history / CH2 ghost probes from prior templates
+            this.instruments.clearOscilloscopeCapture();
+            // Set up global instrument fallbacks so instruments show data even without a selected component
+            this.setupInstrumentGlobalFallbacks();
+            // Re-bind all instruments now that simulation is active (refresh pin-hash cache)
+            const activeComp = (this.instruments as VirtualInstrumentsImpl).getActiveInstrumentComponent();
+            this.refreshAllInstrumentBindings();
+            if (activeComp !== null && activeComp.length > 0) {
+                this.setActiveInstrumentComponent(activeComp);
+            }
+            // Auto-connect signal generators to analog engine
+            this.autoWireSignalGenerators();
+            const kernel = this.simulationKernel as SimulationKernelImpl;
+            // AC warm-up: previously 1 step/frame left the scope flat for minutes; pre-fill a few ms
+            await MainThreadYield.yield();
+            kernel.runBudgetSteps(10);
+            await MainThreadYield.yield();
+            kernel.runBudgetSteps(10);
+            // Time-budget pump (Worker disabled by default — FRAME flood caused APP_INPUT_BLOCK)
+            this.simHost.startRemote(topo, cfg, doc, kernel);
+            Logger.info(INSTR_TRACE_TAG, '仿真已启动 — DisplayPump@~30fps + 轻量 Worker/预算泵; setInstrTraceSimStep(true) 开启逐步采样');
+            this.onStatusMessage('仿真运行中…');
+            this.startDisplayPump();
+            // Heavy PINCONN audit after yielding — keeps main thread responsive for Worker READY
+            setTimeout((): void => {
+                if (this.simulationKernel.getState() !== SimulationState.RUNNING &&
+                    this.simulationKernel.getState() !== SimulationState.PAUSED) {
+                    return;
+                }
+                traceSimStartupAudit(doc, this.simulationKernel.getState(), this.simStepCount, (netId: string) => kernel.getNetVoltageByUuid(netId), (netId: string) => kernel.getNetCurrentByUuid(netId), kernel.getNodeVoltageMap(), kernel.getBranchCurrentMap(), kernel.getAllWaveData(), kernel.netToSpiceNodeMap(), activeComp, (compId: string) => kernel.getBranchCurrent(compId));
+                const modeHint = this.simHost.isWorkerMode() ? 'Worker线程' : '时间预算泵';
+                this.onStatusMessage(`仿真运行中 (${modeHint} · ~30fps UI)`);
+            }, 200);
+            return true;
+        }
+        finally {
+            this.simStartBusy = false;
+        }
     }
     /** 60fps UI pump — never runs spice/MCU; only consumes latest frame */
     private startDisplayPump(): void {
@@ -1686,7 +2056,8 @@ export class AppService {
                 });
             }
             Logger.info(INSTR_TRACE_TAG, `[SIGGEN] sync UI←schematic ref=${comp.refDes} wf=${wfNorm} ` +
-                `f=${paramMapGet(comp.parameters, 'frequency', '1kHz')}`);
+                `f=${paramMapGet(comp.parameters, 'frequency', '1kHz')} ` +
+                `amp=${paramMapGet(comp.parameters, 'amplitude', '1V')}`);
         }
     }
     stopSimulation(): void {
@@ -1745,13 +2116,22 @@ export class AppService {
         return true;
     }
     cancelAiGenerate(): void {
-        if (!this.aiGenerating) {
+        if (!this.aiGenerating && !this.aiGenCancelRequested) {
             return;
         }
         this.aiGenCancelRequested = true;
+        this.aiGenEpoch++;
         this.aiEngine.cancelAiTask();
-        this.appendAiGenLog('system', '正在取消…');
-        this.onStatusMessage('正在取消 AI 生成…');
+        Logger.info(INSTR_TRACE_TAG, '[AI_GEN] CANCEL immediate — unlock UI + abort HTTP');
+        traceAiOp('AI_GEN', 'cancel_immediate', 'unlock+abort');
+        // 立刻解锁 UI，不等待当前 LLM HTTP 自然结束
+        if (this.aiGenerating) {
+            this.aiGenerating = false;
+            (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+            this.onAiGeneratingChanged(false);
+        }
+        this.appendAiGenLog('assistant', '已取消生成');
+        this.onStatusMessage('AI 生成已取消');
     }
     isAiSelfCheckPromptPending(): boolean {
         return this.aiSelfCheckPromptPending;
@@ -1795,24 +2175,11 @@ export class AppService {
             const after = this.runErc(true);
             const afterErr = after.filter(e => e.severity === 'error' || e.severity === 'critical').length;
             this.appendAiGenLog('assistant', `自动修复后 ERC: ${after.length} 条（错误 ${afterErr}，此前 ${beforeErr}）`);
-            // 语义再建网：补仪器/电源脚线
+            // 语义再建网：生产自检禁止 SemanticNetBuilder（会覆盖/冒充 LLM 网表）
             const beforeWires = editor.getDocument().wires.length;
             const beforeNets = editor.getDocument().nets.length;
-            const rebuilt = new SemanticNetBuilder(this.componentLibrary).build(this.getTopology());
-            if (rebuilt.topology.wireList.length > beforeWires ||
-                rebuilt.topology.netList.length > beforeNets) {
-                editor.loadTopology(rebuilt.topology);
-                editor.rebuildNetPinConnectivity();
-                doc = editor.getDocument();
-                ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
-                editor.loadDocument(doc);
-                this.appendAiGenLog('assistant', `语义再建网: ${rebuilt.summary}`);
-                traceAiOp('AI_GEN', 'self_check_rebuild_net', rebuilt.summary);
-            }
-            else {
-                this.appendAiGenLog('assistant', '语义再建网：无新增连接（保持现状）');
-                traceAiOp('AI_GEN', 'self_check_rebuild_net', 'no change');
-            }
+            this.appendAiGenLog('assistant', `跳过 SemanticNetBuilder（nets=${beforeNets} wires=${beforeWires}；自检仅 ERC/FixKit/ensureNetPin）`);
+            traceAiOp('AI_GEN', 'self_check_rebuild_net', 'skipped_refuse_semantic_rebuild');
             const afterNet = this.runErc(false);
             const afterNetErr = afterNet.filter(e => e.severity === 'error' || e.severity === 'critical').length;
             // 诊断器补充
@@ -1914,21 +2281,21 @@ export class AppService {
             this.appendAiGenLog('system', 'AI 用量已达 80%，请注意额度');
         }
         this.beginAiGenerate(trimmed, mode);
+        const genSession = this.aiGenEpoch;
         this.lastAiPrompt = trimmed;
         Logger.info(INSTR_TRACE_TAG, `[AI_GEN] START mode=${mode} strategy=${strategy} promptLen=${trimmed.length}` +
             ` apis=${this.aiApiManager.listApis().length}`);
         traceAiPayload('AI_GEN', 'USER', trimmed, `mode=${mode} strategy=${strategy}`);
         traceAiOp('AI_GEN', 'generate_start', `mode=${mode} strategy=${strategy} apis=${this.aiApiManager.listApis().length}`);
         try {
+            // 模块并行始终 create：清多轮历史，避免被编辑模式改成 oneshot
+            if (strategy === 'modular' && this.aiConversationHistory.length > 0) {
+                this.aiConversationHistory = [];
+                Logger.info(INSTR_TRACE_TAG, '[AI_GEN] conversation cleared for modular strategy');
+            }
             const hasHistory = this.aiConversationHistory.length > 0;
             const isEditMode = hasHistory;
-            // 首期：编辑模式强制 oneshot（增量整体设计留二期）
-            let effectiveStrategy: AiGenerateStrategy = strategy;
-            if (isEditMode && strategy === 'modular') {
-                effectiveStrategy = 'oneshot';
-                this.appendAiGenLog('system', '多轮编辑模式暂用整图一次（模块并行二期支持）');
-                Logger.warn(INSTR_TRACE_TAG, '[AI_GEN] modular forced→oneshot in edit mode');
-            }
+            const effectiveStrategy: AiGenerateStrategy = strategy;
             let runTopo: SchTopology;
             if (isEditMode) {
                 // 编辑模式: 基于当前画布拓扑进行增量修改
@@ -1955,10 +2322,17 @@ export class AppService {
                 conversationHistory: isEditMode ? [...this.aiConversationHistory] : undefined,
                 generationMode: isEditMode ? 'edit' : 'create'
             }, (p) => this.handleAiGenProgress(p));
-            if (this.aiGenCancelRequested) {
-                this.appendAiGenLog('assistant', '已取消生成');
-                traceAiOp('AI_GEN', 'generate_cancel', 'user cancelled');
-                this.endAiGenerate(false);
+            if (genSession !== this.aiGenEpoch || this.aiGenCancelRequested ||
+                result.errCode === ErrCode.ERR_ASYNC_CANCEL ||
+                (result.errMsg ?? '').indexOf('cancelled') >= 0 ||
+                (result.errMsg ?? '').indexOf('取消') >= 0) {
+                if (this.aiGenerating) {
+                    this.endAiGenerate(false);
+                }
+                else {
+                    this.aiGenCancelRequested = false;
+                }
+                traceAiOp('AI_GEN', 'generate_cancel', genSession !== this.aiGenEpoch ? 'stale session' : 'user cancelled');
                 this.onStatusMessage('AI 生成已取消');
                 return false;
             }
@@ -1980,8 +2354,8 @@ export class AppService {
                 return false;
             }
             const analysis = result.analysisText ?? '';
-            // 必须来自真实 LLM：拒绝模板/本地算法静默落图
-            if (analysis.indexOf('LLM:false') >= 0 || analysis.indexOf('LLM: false') >= 0) {
+            // 必须来自真实 LLM：结构化 usedLlm（禁止仅靠 analysisText 子串）
+            if (result.usedLlm === false) {
                 const msg = 'AI API 未返回有效结果（已禁用模板回退）。请检查 API 配置与连通性测试。';
                 this.appendAiGenLog('assistant', msg);
                 Logger.error(INSTR_TRACE_TAG, `[AI_GEN] REJECT non-LLM topology | ${analysis}`);
@@ -1991,8 +2365,10 @@ export class AppService {
                 return false;
             }
             Logger.info(INSTR_TRACE_TAG, `[AI_GEN] OK devices=${result.topology.deviceList.length}` +
-                ` wires=${result.topology.wireList.length} | ${analysis}`);
-            traceAiPayload('AI_GEN', 'ASSISTANT', analysis, `devices=${result.topology.deviceList.length} wires=${result.topology.wireList.length}`);
+                ` wires=${result.topology.wireList.length}` +
+                ` residual=${!!result.deliveredWithResidual} | ${analysis}`);
+            traceAiPayload('AI_GEN', 'ASSISTANT', analysis, `devices=${result.topology.deviceList.length} wires=${result.topology.wireList.length}` +
+                ` residual=${!!result.deliveredWithResidual}`);
             this.appendTopologySummary(result.topology, analysis);
             if (mode === 'replace') {
                 traceAiOp('AI_GEN', 'load_topology', 'mode=replace');
@@ -2040,6 +2416,11 @@ export class AppService {
             // 无论仿真是否已开：先绑定仪器网脚，再尝试 reload
             this.bindingPinHash.clear();
             this.autoWireAllInstruments();
+            // AI 全权驱动：只补空电参 + 滞回幅度安全底线，再同步仪器引擎/面板
+            const elecFixed = this.enforceElectricalParamsFromPrompt(trimmed);
+            if (elecFixed > 0) {
+                this.appendAiGenLog('system', `已补齐空电参/滞回安全幅度（共 ${elecFixed} 处；未覆盖 AI 已写值）`);
+            }
             this.autoWireSignalGenerators();
             Logger.info(INSTR_TRACE_TAG, '[AI_GEN] post-load instrument bindings refreshed (all instruments)');
             this.reloadSimulationFromSchematic();
@@ -2085,6 +2466,16 @@ export class AppService {
             return true;
         }
         catch (e) {
+            if (genSession !== this.aiGenEpoch || this.aiGenCancelRequested) {
+                if (this.aiGenerating) {
+                    this.endAiGenerate(false);
+                }
+                else {
+                    this.aiGenCancelRequested = false;
+                }
+                this.onStatusMessage('AI 生成已取消');
+                return false;
+            }
             const msg = e instanceof Error ? (e.message || `${e}`) : `${e}`;
             const stack = e instanceof Error ? (e.stack ?? '') : '';
             this.appendAiGenLog('assistant', `异常: ${msg}`);
@@ -2106,6 +2497,7 @@ export class AppService {
         }
     }
     private beginAiGenerate(prompt: string, mode: AiGenerateMode): void {
+        this.aiGenEpoch++;
         this.aiGenerating = true;
         this.aiGenCancelRequested = false;
         (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
@@ -2146,6 +2538,9 @@ export class AppService {
         this.schematicEditor.loadTopology(cloned);
     }
     private handleAiGenProgress(p: ProgressInfo): void {
+        if (this.aiGenCancelRequested) {
+            return;
+        }
         this.onAiProgress(p);
         if (p.stage.length === 0) {
             return;
@@ -2394,63 +2789,81 @@ export class AppService {
         return out;
     }
     async loadLabTemplate(templateId: string): Promise<boolean> {
-        await this.ensureTemplatesReady();
-        const templatePath = ProjectPaths.templateFile(this.appBaseDir, templateId);
-        if (!TemplateProjectBootstrap.fileExists(templatePath)) {
-            this.onStatusMessage(`模板工程不存在: ${templatePath}`);
+        if (this.templateLoadBusy) {
+            this.onStatusMessage('模板加载中，请稍候…');
             return false;
         }
-        if (this.currentProject === null) {
-            this.newProject('Untitled');
-        }
-        const loadResult = await (this.filePersistence as FilePersistenceImpl).loadProjectData(templatePath);
-        if (!loadResult.success || loadResult.data === undefined) {
-            this.onStatusMessage(`读取模板失败: ${loadResult.error ?? templatePath}`);
-            return false;
-        }
-        const templateDoc = TopologyAdapter.fromTopology(loadResult.data.topology);
-        const editor = this.schematicEditor as SchematicEditorImpl;
-        const currentDoc = editor.getDocument();
-        TemplateMergeUtil.mergeTemplateInto(currentDoc, templateDoc);
-        editor.loadDocument(currentDoc);
-        editor.rebuildNetPinConnectivity();
-        const grid = currentDoc.metadata.gridSize || 10;
-        ensureNetPinConnectivity(currentDoc, grid, this.pinGeometryResolver());
-        this.syncProjectFromModules();
-        this.reloadSimulationFromSchematic();
-        editor.fitAllInView();
-        this.onProjectChanged();
-        const def = this.teachingService.listTemplates().find(t => t.id === templateId);
-        const tplName = def !== undefined ? def.name : templateId;
-        const hexName = this.teachingService.getTemplateHexFileName(templateId);
-        const hexPath = this.getTemplateHexPath(templateId);
-        if (hexPath !== null && hexName !== null) {
-            const exists = TemplateProjectBootstrap.fileExists(hexPath);
-            if (exists) {
-                const fwHint = this.teachingService.getTemplateFirmware(templateId);
-                const mcuFamily = (fwHint !== null && fwHint.mcuFamily === 'STM32')
-                    ? McuFamily.MCU_STM32F1
-                    : McuFamily.MCU_8051;
-                const autoLoaded = this.loadHexFileIntoSim(hexPath, mcuFamily);
-                if (autoLoaded) {
-                    this.onStatusMessage(`已将实验「${tplName}」插入并预装 ${hexName}（可在 MCU 面板重选烧录）`);
-                    traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=true`);
+        this.templateLoadBusy = true;
+        try {
+            await this.ensureTemplatesReady();
+            const templatePath = ProjectPaths.templateFile(this.appBaseDir, templateId);
+            if (!TemplateProjectBootstrap.fileExists(templatePath)) {
+                this.onStatusMessage(`模板工程不存在: ${templatePath}`);
+                return false;
+            }
+            if (this.currentProject === null) {
+                this.newProject('Untitled');
+            }
+            const loadResult = await (this.filePersistence as FilePersistenceImpl).loadProjectData(templatePath);
+            if (!loadResult.success || loadResult.data === undefined) {
+                this.onStatusMessage(`读取模板失败: ${loadResult.error ?? templatePath}`);
+                return false;
+            }
+            await MainThreadYield.yield();
+            const templateDoc = TopologyAdapter.fromTopology(loadResult.data.topology);
+            const editor = this.schematicEditor as SchematicEditorImpl;
+            const currentDoc = editor.getDocument();
+            TemplateMergeUtil.mergeTemplateInto(currentDoc, templateDoc);
+            editor.loadDocument(currentDoc);
+            await MainThreadYield.yield();
+            // rebuildAll already includes ensureNetPinConnectivity — do not double-rebuild
+            editor.rebuildNetPinConnectivity();
+            await MainThreadYield.yield();
+            this.syncProjectFromModules();
+            this.reloadSimulationFromSchematic();
+            editor.fitAllInView();
+            await MainThreadYield.yield();
+            this.onProjectChanged();
+            const def = this.teachingService.listTemplates().find(t => t.id === templateId);
+            const tplName = def !== undefined ? def.name : templateId;
+            const hexName = this.teachingService.getTemplateHexFileName(templateId);
+            const hexPath = this.getTemplateHexPath(templateId);
+            if (hexPath !== null && hexName !== null) {
+                const exists = TemplateProjectBootstrap.fileExists(hexPath);
+                if (exists) {
+                    const fwHint = this.teachingService.getTemplateFirmware(templateId);
+                    const mcuFamily = (fwHint !== null && fwHint.mcuFamily === 'STM32')
+                        ? McuFamily.MCU_STM32F1
+                        : McuFamily.MCU_8051;
+                    await MainThreadYield.yield();
+                    const autoLoaded = this.loadHexFileIntoSim(hexPath, mcuFamily);
+                    if (autoLoaded) {
+                        this.onStatusMessage(`已将实验「${tplName}」插入并预装 ${hexName}（可在 MCU 面板重选烧录）`);
+                        traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=true`);
+                    }
+                    else {
+                        this.onStatusMessage(`已将实验「${tplName}」插入；请在 MCU 调试面板烧录 ${hexName}`);
+                        traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=false`);
+                    }
                 }
                 else {
-                    this.onStatusMessage(`已将实验「${tplName}」插入；请在 MCU 调试面板烧录 ${hexName}`);
-                    traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=true autoload=false`);
+                    this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexName}`);
+                    traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=false`);
                 }
             }
             else {
-                this.onStatusMessage(`已将实验「${tplName}」插入；固件缺失: ${hexName}`);
-                traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=false`);
+                this.onStatusMessage(`已将实验「${tplName}」插入当前工程空白区域`);
+                traceBurn('TEMPLATE_HEX', `template=${templateId} path=(none)`);
             }
+            // 555 等慢信号由示波器「自适应」自动选时基；这里只清脏缓存
+            if (templateId === 'lab_555_astable') {
+                this.instruments.clearOscilloscopeCapture();
+            }
+            return true;
         }
-        else {
-            this.onStatusMessage(`已将实验「${tplName}」插入当前工程空白区域`);
-            traceBurn('TEMPLATE_HEX', `template=${templateId} path=(none)`);
+        finally {
+            this.templateLoadBusy = false;
         }
-        return true;
     }
     /**
      * Parse Intel HEX from sandbox path and load binary into debugger + sim kernel.
@@ -2525,8 +2938,11 @@ export class AppService {
     }
     private wireCallbacks(): void {
         CallbackRegistry.getInstance().onErcUpdate((errors) => {
-            traceErcErrorList(errors, 'RUNTIME_ERC');
+            // UI first; defer log so emitErc does not inflate the same MMITask
             this.onErcUpdate(errors);
+            setTimeout((): void => {
+                traceErcErrorList(errors, 'RUNTIME_ERC');
+            }, 1);
         });
         CallbackRegistry.getInstance().onBreakpointHit((mcuUuid, addr) => {
             this.onStatusMessage(`断点命中: MCU ${mcuUuid} @ 0x${addr.toString(16)}`);
@@ -2580,11 +2996,14 @@ export class AppService {
     private initDeviceLibrary(targetPath: string): void {
         const lib = this.componentLibrary as ComponentLibraryImpl;
         const result = lib.initFromDeviceLibrary(targetPath);
+        const total = lib.getTotalCount();
         if (result.success && result.data !== undefined && result.data > 0) {
-            this.onStatusMessage(`精确器件库已加载 ${result.data} 项 (v${lib.getLibraryVersion()})`);
-            return;
+            this.onStatusMessage(`精确器件库已加载 ${result.data} 项 · 合计 ${total} (v${lib.getLibraryVersion()})`);
         }
-        Logger.info('component_library', `DeviceLibrary 未从 ${targetPath} 加载，使用内置库`);
+        else {
+            Logger.info('component_library', `DeviceLibrary 未从 ${targetPath} 加载，使用内置库 (${total})`);
+        }
+        this.onLibraryLoaded(total);
     }
     private async loadProteusAliases(context: common.UIAbilityContext): Promise<void> {
         try {

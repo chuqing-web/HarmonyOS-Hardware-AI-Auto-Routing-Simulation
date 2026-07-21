@@ -34,6 +34,9 @@ runtime_key: layout
 === 待摆放器件 ===
 {{device_list}}
 
+=== 器件使用说明（摘要，内心遵守勿写入回复） ===
+{{device_usage}}
+
 约束：{{circuit_constraint}}
 MCU：{{mcu_family}}
 

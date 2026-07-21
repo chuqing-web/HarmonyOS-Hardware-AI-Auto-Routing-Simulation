@@ -19,7 +19,8 @@ import {
   traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceUart, formatUartBytesHex, traceUartTxDrain, traceDataFlow,
   traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap,
-  Logger, INSTR_TRACE_TAG
+  Logger, INSTR_TRACE_TAG,
+  ensureNetPinConnectivity, PinGeometryResolver
 } from 'common';
 import { FaultInjectionEngine } from './engines/FaultInjectionEngine';
 import { Mcu8051Simulator } from './engines/Mcu8051Simulator';
@@ -118,8 +119,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
   private faultEngine: FaultInjectionEngine = new FaultInjectionEngine();
   private dynamicErcViolations: ErcViolation[] = [];
   private mcu8051: Mcu8051Simulator = new Mcu8051Simulator();
-  private mcuLoaded: boolean = false;
+  /** 8051 core has firmware — independent of STM32/QEMU. */
+  private mcu8051Loaded: boolean = false;
   private qemuBridge: QemuMcuBridge = new QemuMcuBridge();
+  /** STM32/QEMU core has firmware — independent of 8051. */
+  private mcuStm32Loaded: boolean = false;
+  /** Last STM32 family string (e.g. STM32F1); used in dual-core status label. */
+  private mcuStm32Family: string = 'STM32F1';
+  /**
+   * Status label for UI / frame snapshot.
+   * May be "8051", "STM32F1", or "8051+STM32F1" when both cores are loaded.
+   */
   private mcuFamily: string = '8051';
   private paramScanDefaults: Map<string, Map<string, string>> = new Map();
   /** Last traced GPIO port values — debounce [MCU] GPIO_SYNC spam */
@@ -127,11 +137,21 @@ export class SimulationKernelImpl implements ISimulationKernel {
   private mcuTickCount: number = 0;
   /** Accumulated spice/digital steps for frame telemetry */
   private budgetStepCount: number = 0;
+  /**
+   * Optional library pin resolver — AppService injects this so loadSchematic /
+   * startSimulation do not treat MCU as 2-pin passives (GPIO_MISS).
+   */
+  private pinGeometryResolver: PinGeometryResolver | undefined = undefined;
 
   // ---- 混合信号耦合状态 (1.3.11-1.3.14) ----
   private theveninSources: TheveninSource[] = [];
   private powerState: PowerIntegrityState = { lastTotalCurrent: 0, lastTime: 0, vccNoise: 0, gndBounce: 0 };
   private crossCoupledNets: Map<string, string> = new Map(); // digital_net → analog_node
+
+  /** Inject component-library pin geometry for connectivity rebuild. */
+  setPinGeometryResolver(resolver: PinGeometryResolver): void {
+    this.pinGeometryResolver = resolver;
+  }
 
   // ---- v2 API ----
 
@@ -141,6 +161,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
     this.simConfig = config;
     // Prefer editor doc (full pinId:pinName). fromTopology alone used to drop AC+/OUT1 names.
     const doc = schematicDoc !== undefined ? schematicDoc : TopologyAdapter.fromTopology(topo);
+    // Always rebuild pinIds before MNA — topology-only path and stale docs are unsafe
+    const grid = doc.metadata !== undefined && doc.metadata.gridSize > 0 ? doc.metadata.gridSize : 10;
+    ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver);
     this.schematic = doc;
     this.config = this.toLegacyConfig(config);
     this.state = SimulationState.IDLE;
@@ -176,18 +199,21 @@ export class SimulationKernelImpl implements ISimulationKernel {
     // DC seed: push analog rail levels into digital nets, then settle gates
     this.seedDigitalFromAnalogDc();
     // loadSchematic cleared GPIO Thevenin sources — re-apply if firmware already loaded
-    if (this.mcuLoaded) {
-      if (this.mcuFamily.startsWith('STM32')) {
+    if (this.isAnyMcuLoaded()) {
+      if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
         this.syncStm32GpioToSpice();
-      } else {
+      }
+      if (this.mcu8051Loaded) {
         this.syncMcuPinsToSpice();
       }
-      this.analogEngine.pinVoltageSources();
-      this.analogEngine.reSolveOp();
-      if (this.analogEngine.updateRelayContactsFromCoil()) {
-        this.analogEngine.reSolveOp();
-      }
     }
+    // Settle behavioral switches (555 power-on: TRIG low → Q high). At t=0 DC OP is OK.
+    this.analogEngine.pinVoltageSources();
+    this.analogEngine.reSolveOp();
+    if (this.analogEngine.updateRelayContactsFromCoil()) {
+      this.analogEngine.reSolveOp();
+    }
+    this.syncVoltagesFromAnalogEngine();
     // Always dump SW/REL/LED so DNO/DNC diagnosis is visible without waiting for GPIO_SYNC
     this.tracePeripheralIndicators('sim-start');
     onProgress?.(makeProgress(100, 'Simulation started', true));
@@ -251,7 +277,11 @@ export class SimulationKernelImpl implements ISimulationKernel {
     this.tickMcuCore();
     const spice = this.runSpiceStep();
     if (this.analogEngine.updateRelayContactsFromCoil()) {
-      this.analogEngine.reSolveOp();
+      if (this.analogEngine.needsDcResolveAfterSwitch()) {
+        this.analogEngine.reSolveOp();
+      } else {
+        this.analogEngine.pinVoltageSources();
+      }
     }
     this.syncSpiceToGpioInputs();
     this.tickDigitalLogic();
@@ -592,13 +622,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
    * IMPORTANT: must advance enough *sim* time per UI frame for AC scope.
    * Previously maxSpice=1 @ ~1µs/step × 40ms/frame → 1kHz needed minutes to fill
    * a 10ms display window (looked like flat DC with tiny last-V drift).
+   *
+   * 555 astable (no VAC): same class of bug — default DC nudge was 50µs/frame, so a
+   * 10µF/7Hz timing cap never reached ⅔VCC and the scope looked stuck high.
    */
   runBudgetSteps(budgetMs: number = 3): number {
     if (this.state !== SimulationState.RUNNING) {
       return 0;
     }
     const acFreq = this.analogEngine.getMaxAcFrequency();
-    const wallCap = acFreq > 0 ? 12 : 4;
+    const has555 = this.analogEngine.getTimer555Count() > 0;
+    const wallCap = (acFreq > 0 || has555) ? 12 : 4;
     // Sample KEY/net voltages into GPIO IDR before firmware reads inputs
     this.syncSpiceToGpioInputs();
     this.tickMcuCore();
@@ -608,18 +642,24 @@ export class SimulationKernelImpl implements ISimulationKernel {
       const acMax = Math.max(1e-6, Math.min(1.0 / (acFreq * 40), 5e-5));
       this.scheduler.setMaxStepCap(acMax);
       this.scheduler.bumpStepToward(acMax);
+    } else if (this.scheduler !== null && has555) {
+      // RC astable edges are ms-scale; allow up to 1ms steps so Hz–kHz 555 can move
+      this.scheduler.setMaxStepCap(1e-3);
+      this.scheduler.bumpStepToward(5e-4);
     } else if (this.scheduler !== null) {
       this.scheduler.setMaxStepCap(0);
     }
 
-    // Target sim advance: ≥2 AC periods (capped), else a small DC nudge
+    // Target sim advance: ≥2 AC periods (capped); 555 ≈ near-realtime; else DC nudge
     const targetAdvance = acFreq > 0
       ? Math.min(2e-3, Math.max(2.0 / acFreq, 2e-4))
-      : 5e-5;
-    // MCU firmware needs UV time; pure analog can burst harder for the scope
-    const maxSpice = this.mcuLoaded ? (acFreq > 0 ? 24 : 4) : (acFreq > 0 ? 160 : 24);
-    // AC labs need a longer wall slice than the default 3ms Worker budget
-    const sliceMs = acFreq > 0 ? Math.max(budgetMs, 8) : budgetMs;
+      : (has555 ? 4e-2 : 5e-5);
+    // MCU firmware needs UV time; pure analog / 555 can burst harder for the scope
+    const maxSpice = has555
+      ? 80
+      : (this.isAnyMcuLoaded() ? (acFreq > 0 ? 24 : 4) : (acFreq > 0 ? 160 : 24));
+    // AC / 555 labs need a longer wall slice than the default 3ms Worker budget
+    const sliceMs = (acFreq > 0 || has555) ? Math.max(budgetMs, 8) : budgetMs;
     const deadline = Date.now() + Math.max(1, Math.min(sliceMs, wallCap));
 
     const t0 = this.globalTime;
@@ -628,7 +668,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
       (this.globalTime - t0) < targetAdvance) {
       this.runSpiceStep();
       if (this.analogEngine.updateRelayContactsFromCoil()) {
-        this.analogEngine.reSolveOp();
+        if (this.analogEngine.needsDcResolveAfterSwitch()) {
+          this.analogEngine.reSolveOp();
+        } else {
+          // 555-only: pin OUT immediately; keep C companions for next transient step
+          this.analogEngine.pinVoltageSources();
+        }
       }
       this.syncSpiceToGpioInputs();
       this.tickDigitalLogic();
@@ -652,12 +697,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
       currents.push(c);
     });
     let mcuP1 = 0;
-    if (this.mcuLoaded && !this.mcuFamily.startsWith('STM32')) {
+    if (this.mcu8051Loaded) {
       mcuP1 = this.mcu8051.getPort1();
     }
     const gpioWords: number[] = [];
     let uartBytes: number[] = [];
-    if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+    if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
       // GPIOA..E ODR snapshot for UI LEDs
       const bases: number[] = [0x40010800, 0x40010C00, 0x40011000, 0x40011400, 0x40011800];
       for (let i = 0; i < bases.length; i++) {
@@ -723,22 +768,29 @@ export class SimulationKernelImpl implements ISimulationKernel {
   }
 
   tickMcuCore(): void {
-    if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
-      this.mcuTickCount++;
+    let anyTicked = false;
+
+    // STM32/QEMU — do not early-return; 8051 may also be loaded on the same board.
+    if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
+      anyTicked = true;
       // lab_uart init ~20 instr + TXE poll; batch enough for USART activity per pump tick
       const step = this.qemuBridge.step(256);
       if (step.success && step.data !== undefined) {
-        this.mcuPc = step.data;
-        this.mcuRegs.set('PC', this.mcuPc);
+        // Prefer 8051 PC in dual-core status when both run; else expose STM32 PC.
+        if (!this.mcu8051Loaded) {
+          this.mcuPc = step.data;
+          this.mcuRegs.set('PC', this.mcuPc);
+        }
       }
       this.syncStm32GpioToSpice();
       if (this.mcuTickCount <= 3 || this.mcuTickCount % 50 === 0) {
-        traceMcuTick('STM32', `pc=0x${this.mcuPc.toString(16)} ticks=${this.mcuTickCount}`);
+        const stmPc = (step.success && step.data !== undefined) ? step.data : this.mcuPc;
+        traceMcuTick('STM32', `pc=0x${stmPc.toString(16)} ticks=${this.mcuTickCount + 1}`);
       }
-      return;
     }
-    if (this.mcuLoaded) {
-      this.mcuTickCount++;
+
+    if (this.mcu8051Loaded) {
+      anyTicked = true;
       // lab_51_led delay ≈ 8×255 DJNZ ≈ 2k instr / LED. Budget steps per UI tick so
       // one Port1 bit spans several frames (smooth chase) without a 12k main-thread burst.
       // Stop early when P1 changes so we never skip a bit inside one batch.
@@ -763,24 +815,48 @@ export class SimulationKernelImpl implements ISimulationKernel {
       if (this.mcuTickCount <= 5 || this.mcuTickCount % 25 === 0) {
         traceMcuTick('8051',
           `pc=0x${this.mcuPc.toString(16)} steps=${steps} P1=0x${(p1 & 0xFF).toString(16)} ` +
-          `ACC=0x${(acc & 0xFF).toString(16)} ticks=${this.mcuTickCount}`);
+          `ACC=0x${(acc & 0xFF).toString(16)} ticks=${this.mcuTickCount + 1}`);
       }
+    }
+
+    if (anyTicked) {
+      this.mcuTickCount++;
     } else {
       this.mcuPc += 1;
       this.mcuRegs.set('PC', this.mcuPc);
     }
   }
 
+  /** True if at least one MCU backend has firmware loaded. */
+  private isAnyMcuLoaded(): boolean {
+    return this.mcu8051Loaded || this.mcuStm32Loaded;
+  }
+
+  /** Refresh status label after load/unload of either core. */
+  private refreshMcuFamilyLabel(): void {
+    if (this.mcu8051Loaded && this.mcuStm32Loaded) {
+      this.mcuFamily = `8051+${this.mcuStm32Family}`;
+    } else if (this.mcuStm32Loaded) {
+      this.mcuFamily = this.mcuStm32Family;
+    } else if (this.mcu8051Loaded) {
+      this.mcuFamily = '8051';
+    }
+  }
+
   loadMcuProgram(data: Uint8Array, offset: number = 0, family: string = '8051'): void {
-    this.mcuFamily = family.toUpperCase();
+    const fam = family.toUpperCase();
     this.mcuTickCount = 0;
     this.lastTracedGpio.clear();
     traceBurn('SIM_LOAD_MCU',
-      `family=${this.mcuFamily} offset=${offset} bytes=${data.length} preview=${formatFirmwarePreview(data)}`);
-    if (this.mcuFamily.startsWith('STM32')) {
+      `family=${fam} offset=${offset} bytes=${data.length} preview=${formatFirmwarePreview(data)} ` +
+      `prev8051=${this.mcu8051Loaded ? 1 : 0} prevStm32=${this.mcuStm32Loaded ? 1 : 0}`);
+    if (fam.startsWith('STM32')) {
+      this.mcuStm32Family = fam;
       this.qemuBridge.loadFirmware(data);
       this.qemuBridge.start('firmware.hex', 'stm32f103');
-      this.mcuLoaded = true;
+      this.mcuStm32Loaded = true;
+      // Keep any already-loaded 8051 firmware; dual-core boards need both ticking.
+      this.refreshMcuFamilyLabel();
       if (this.topology) {
         for (let bit = 0; bit < 8; bit++) {
           const digitalNetId = `mcu0_GPIO${bit}`;
@@ -789,7 +865,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
       }
       this.syncStm32GpioToSpice();
-      traceBurn('SIM_LOAD_MCU_OK', `backend=qemu machine=stm32f103 bytes=${data.length}`);
+      traceBurn('SIM_LOAD_MCU_OK',
+        `backend=qemu machine=stm32f103 bytes=${data.length} ` +
+        `keep8051=${this.mcu8051Loaded ? 1 : 0} familyLabel=${this.mcuFamily}`);
       return;
     }
     // Sanity: Intel HEX text starts with ':' (0x3A) — must not load as machine code
@@ -799,13 +877,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
     }
     this.mcu8051.loadProgram(data, offset);
     this.mcu8051.reset();
-    this.mcuLoaded = true;
+    this.mcu8051Loaded = true;
+    // Keep any already-running STM32/QEMU core.
+    this.refreshMcuFamilyLabel();
     this.syncMcuPinsToSpice();
     const mem = this.mcu8051.getMemory();
     const peek = `${(mem[0] ?? 0).toString(16)} ${(mem[1] ?? 0).toString(16)} ${(mem[2] ?? 0).toString(16)} ` +
       `| @100 ${(mem[0x100] ?? 0).toString(16)} ${(mem[0x101] ?? 0).toString(16)} ${(mem[0x102] ?? 0).toString(16)}`;
     traceBurn('SIM_LOAD_MCU_OK',
-      `backend=8051 offset=${offset} bytes=${data.length} pc=0x${this.mcu8051.getPc().toString(16)} mem=[${peek}]`);
+      `backend=8051 offset=${offset} bytes=${data.length} pc=0x${this.mcu8051.getPc().toString(16)} ` +
+      `mem=[${peek}] keepStm32=${this.mcuStm32Loaded ? 1 : 0} familyLabel=${this.mcuFamily}`);
   }
 
   injectUsartRx(bytes: number[]): void {
@@ -813,16 +894,15 @@ export class SimulationKernelImpl implements ISimulationKernel {
       return;
     }
     const fam = this.mcuFamily.length > 0 ? this.mcuFamily : '(empty)';
-    const stm32 = this.mcuFamily.startsWith('STM32');
     const running = this.qemuBridge.isRunning();
-    if (stm32 && this.mcuLoaded) {
+    if (this.mcuStm32Loaded && running) {
       traceUart('KERNEL_RX_INJECT',
-        `family=${fam} loaded=1 qemuRun=${running ? 1 : 0} n=${bytes.length} ` +
+        `family=${fam} loaded=1 qemuRun=1 n=${bytes.length} ` +
         `hex=${formatUartBytesHex(bytes)}`);
       this.qemuBridge.injectUsartRx(bytes);
     } else {
       traceUart('KERNEL_RX_DROP',
-        `family=${fam} stm32=${stm32 ? 1 : 0} loaded=${this.mcuLoaded ? 1 : 0} ` +
+        `family=${fam} stm32=${this.mcuStm32Loaded ? 1 : 0} ` +
         `qemuRun=${running ? 1 : 0} n=${bytes.length} hex=${formatUartBytesHex(bytes)} — not forwarded to USART`);
     }
   }
@@ -852,7 +932,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
         if (level > 0) {
           portVal |= (1 << bit);
         }
-        const candidates: string[] = [`P${bit + 1}`, `P1.${bit}`, `P1_${bit}`];
+        const candidates: string[] = [`P1.${bit}`, `P1_${bit}`, `P${bit + 1}`];
         const nodeName = this.findMcuPinSpiceNode(comp.id, candidates);
         if (nodeName === null || nodeName.length === 0 || nodeName === '0') {
           missPins.push(candidates[0]);
@@ -1136,7 +1216,11 @@ export class SimulationKernelImpl implements ISimulationKernel {
           if (odrChanged && drives.length > 0) {
             this.analogEngine.reSolveOp();
             if (this.analogEngine.updateRelayContactsFromCoil()) {
-              this.analogEngine.reSolveOp();
+              if (this.analogEngine.needsDcResolveAfterSwitch()) {
+                this.analogEngine.reSolveOp();
+              } else {
+                this.analogEngine.pinVoltageSources();
+              }
             }
           }
         }
@@ -1173,7 +1257,8 @@ export class SimulationKernelImpl implements ISimulationKernel {
             if (net.name.length > 0) {
               return net.name;
             }
-            return null;
+            // Pin is on an unnamed net — still driveable via uuid / synthetic node
+            return net.id.length > 0 ? net.id : null;
           }
         }
       }
@@ -1312,6 +1397,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
 
   loadSchematic(doc: SchematicDocument): Result<void> {
     const prevState = this.state;
+    // Rebuild connectivity before stamping — caller docs may be stale
+    const grid = doc.metadata !== undefined && doc.metadata.gridSize > 0 ? doc.metadata.gridSize : 10;
+    ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver);
     this.schematic = doc;
     this.topology = TopologyAdapter.toTopology(doc);
     this.digitalEngine.loadSchematic(doc);
@@ -1390,7 +1478,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
 
     const stepResult = this.scheduler.step(this.mcuPc, this.mcuRegs);
     this.tickMcuCore();
-    this.mcuPc = this.mcu8051.getPc();
+    if (this.mcu8051Loaded) {
+      this.mcuPc = this.mcu8051.getPc();
+    }
     this.globalTime = stepResult.time;
     this.accumulateResult(stepResult);
     this.dynamicErcViolations = DynamicErcEngine.analyze(
@@ -1452,15 +1542,20 @@ export class SimulationKernelImpl implements ISimulationKernel {
           this.buildSpiceNodeMap(this.topology);
         }
         // rebuild cleared Thevenin GPIO sources — re-drive outputs, then sample inputs
-        if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+        if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
           this.syncStm32GpioToSpice();
-        } else if (this.mcuLoaded) {
+        }
+        if (this.mcu8051Loaded) {
           this.syncMcuPinsToSpice();
         }
         this.analogEngine.pinVoltageSources();
         this.analogEngine.reSolveOp();
         if (this.analogEngine.updateRelayContactsFromCoil()) {
-          this.analogEngine.reSolveOp();
+          if (this.analogEngine.needsDcResolveAfterSwitch()) {
+            this.analogEngine.reSolveOp();
+          } else {
+            this.analogEngine.pinVoltageSources();
+          }
         }
         // OP lives in AE — mirror into kernel map so instruments / wire colors update immediately
         this.syncVoltagesFromAnalogEngine();
@@ -1565,15 +1660,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
    * 8051: setPinLevel on Port1 bits from package P1..P8 nets.
    */
   syncSpiceToGpioInputs(): void {
-    if (!this.schematic || !this.mcuLoaded) {
+    if (!this.schematic || !this.isAnyMcuLoaded()) {
       return;
     }
     const vinHl = 2.0; // ≥2.0V → logic 1 (5V KEY 与 3.3V GPIO 兼容)
-    if (this.mcuFamily.startsWith('STM32') && this.qemuBridge.isRunning()) {
+    if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
       this.syncStm32SpiceToIdr(vinHl);
-      return;
     }
-    this.sync8051SpiceToPins(vinHl);
+    if (this.mcu8051Loaded) {
+      this.sync8051SpiceToPins(vinHl);
+    }
   }
 
   private syncStm32SpiceToIdr(vinHl: number): void {
@@ -1656,7 +1752,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
         continue;
       }
       for (let bit = 0; bit < 8; bit++) {
-        const candidates: string[] = [`P${bit + 1}`, `P1.${bit}`, `P1_${bit}`];
+        const candidates: string[] = [`P1.${bit}`, `P1_${bit}`, `P${bit + 1}`];
         const nodeName = this.findMcuPinSpiceNode(comp.id, candidates);
         if (nodeName === null || nodeName.length === 0) {
           continue;
@@ -2023,7 +2119,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
 
   private static readonly MAX_WAVE_POINTS = 8192;
   /** Keep ~100ms of samples for scope (10× a 10ms display window at 1ms/div). */
-  private static readonly MAX_WAVE_SPAN_SEC = 0.1;
+  private static readonly MAX_WAVE_SPAN_SEC = 1.0;
 
   private resolveNetUuidForNode(nodeName: string): string {
     if (nodeName.length === 0) {

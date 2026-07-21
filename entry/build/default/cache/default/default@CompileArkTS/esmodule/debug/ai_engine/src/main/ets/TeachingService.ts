@@ -2,6 +2,7 @@ import { mapAwareStringify, mapAwareParse } from "@bundle:com.elecdraw.aischsim/
 import type { SchTopology } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { LabTemplateRegistry, ALL_CATALOG_LIBRARY_IDS } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 import type { LabTemplateDef, LabCoverageReport } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
+import { DeviceUsageManual } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceUsageManual";
 /** 模板关联的固件信息 */
 export interface TemplateFirmware {
     hexText: string;
@@ -26,13 +27,6 @@ export interface KnowledgeTip {
     content: string;
 }
 export class TeachingService {
-    private static tips: KnowledgeTip[] = [
-        { componentType: 'LM358', title: '双运放 LM358', content: '双路运放，单电源可用；IN+ 与 IN- 虚短虚断' },
-        { componentType: 'UA741', title: '运算放大器', content: '经典单运放；注意 VCC/VEE 双电源或单电源偏置' },
-        { componentType: 'AT89C51', title: '51单片机', content: '4组IO口(P0~P3)，P0需外部上拉，EA 接 VCC 用内部程序' },
-        { componentType: 'STM32F103', title: 'STM32', content: 'Cortex-M3，72MHz；USART1 常用 PA9/PA10 或 P10/P11' },
-        { componentType: '74HC', title: 'CMOS 逻辑', content: '未用输入不可悬空；VCC 去耦 100nF 靠近芯片' },
-    ];
     private static readonly FW_51: TemplateFirmware = {
         mcuFamily: '8051',
         hexText: ':03000000020100FA\n' +
@@ -108,13 +102,18 @@ export class TeachingService {
         }
         return null;
     }
+    /** 知识点：读全库手册 */
     getKnowledgeTip(libraryId: string): KnowledgeTip | null {
-        for (const tip of TeachingService.tips) {
-            if (libraryId.includes(tip.componentType)) {
-                return tip;
-            }
+        const manual = DeviceUsageManual.resolve(libraryId);
+        if (!manual) {
+            return null;
         }
-        return null;
+        return {
+            componentType: libraryId,
+            title: `${manual.libDevId} — ${manual.title}`,
+            content: `${manual.summary}\n真脚: ${manual.pins}\n典型接法: ${manual.typicalWiring}\n` +
+                `禁例: ${manual.forbidden}\n参数: ${manual.params}\n仿真: ${manual.simNotes}`
+        };
     }
     stepPowerOnSequence(topo: SchTopology, stepIndex: number): SchTopology {
         const result = mapAwareParse<SchTopology>(mapAwareStringify(topo));
@@ -129,6 +128,31 @@ export class TeachingService {
         if (!dev) {
             return '请解释当前电路的工作原理';
         }
-        return `请解释电路中 ${dev.refName}(${dev.libDevId}) 的作用，以及 surrounding 连接关系`;
+        const miss: string[] = [];
+        const usage = DeviceUsageManual.resolveWithLibraryFallback(dev.libDevId, null, miss);
+        const neighbors: string[] = [];
+        for (let i = 0; i < topo.netList.length; i++) {
+            const n = topo.netList[i];
+            let hit = false;
+            for (let j = 0; j < (n.nodeList?.length ?? 0); j++) {
+                if (n.nodeList[j].devUuid === selectedUuid) {
+                    hit = true;
+                    break;
+                }
+            }
+            if (!hit) {
+                continue;
+            }
+            const pins: string[] = [];
+            for (let j = 0; j < (n.nodeList?.length ?? 0) && pins.length < 8; j++) {
+                const node = n.nodeList[j];
+                const d2 = topo.deviceList.find(x => x.instUuid === node.devUuid);
+                pins.push(`${d2?.refName ?? '?'}.${node.pinId}`);
+            }
+            neighbors.push(`${n.netName}: ${pins.join(', ')}`);
+        }
+        return `请结合下列官方使用说明，解释电路中 ${dev.refName}(${dev.libDevId}) 的作用与连接。\n\n` +
+            `【器件使用说明】\n${DeviceUsageManual.formatEntry(usage, 'full')}\n\n` +
+            `【相关网络】\n${neighbors.length > 0 ? neighbors.join('\n') : '(无连接信息)'}`;
     }
 }

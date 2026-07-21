@@ -111,6 +111,8 @@ export class TemplateMergeUtil {
           const upper = srcLb.text.toUpperCase();
           if (upper === 'VCC' || upper === 'VDD') {
             netType = NetType.POWER;
+          } else if (upper === 'VEE' || upper === 'V-') {
+            netType = NetType.POWER;
           } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
             netType = NetType.GROUND;
           }

@@ -6,7 +6,7 @@ interface McuDebugPanel_Params {
     selectedComponentId?: string;
     debugState?: string;
     pcValue?: string;
-    registers?: string[];
+    regEntries?: McuRegEntry[];
     uartOutput?: string;
     hexInput?: string;
     hexFilePath?: string;
@@ -27,6 +27,12 @@ import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/App
 import { McuFamily, SimulationState, traceBurn, formatFirmwarePreview } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+/** 寄存器行：名称与值拆开，便于窄栏双列对齐 */
+interface McuRegEntry {
+    name: string;
+    valueHex: string;
+}
+const MCU_REG_PRIORITY: string[] = ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3'];
 export class McuDebugPanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -37,7 +43,7 @@ export class McuDebugPanel extends ViewPU {
         this.__selectedComponentId = new SynchedPropertySimpleOneWayPU(params.selectedComponentId, this, "selectedComponentId");
         this.__debugState = new ObservedPropertySimplePU('reset', this, "debugState");
         this.__pcValue = new ObservedPropertySimplePU('0x0000', this, "pcValue");
-        this.__registers = new ObservedPropertyObjectPU([], this, "registers");
+        this.__regEntries = new ObservedPropertyObjectPU([], this, "regEntries");
         this.__uartOutput = new ObservedPropertySimplePU('', this, "uartOutput");
         this.__hexInput = new ObservedPropertySimplePU('', this, "hexInput");
         this.__hexFilePath = new ObservedPropertySimplePU('', this, "hexFilePath");
@@ -64,8 +70,8 @@ export class McuDebugPanel extends ViewPU {
         if (params.pcValue !== undefined) {
             this.pcValue = params.pcValue;
         }
-        if (params.registers !== undefined) {
-            this.registers = params.registers;
+        if (params.regEntries !== undefined) {
+            this.regEntries = params.regEntries;
         }
         if (params.uartOutput !== undefined) {
             this.uartOutput = params.uartOutput;
@@ -112,7 +118,7 @@ export class McuDebugPanel extends ViewPU {
         this.__selectedComponentId.purgeDependencyOnElmtId(rmElmtId);
         this.__debugState.purgeDependencyOnElmtId(rmElmtId);
         this.__pcValue.purgeDependencyOnElmtId(rmElmtId);
-        this.__registers.purgeDependencyOnElmtId(rmElmtId);
+        this.__regEntries.purgeDependencyOnElmtId(rmElmtId);
         this.__uartOutput.purgeDependencyOnElmtId(rmElmtId);
         this.__hexInput.purgeDependencyOnElmtId(rmElmtId);
         this.__hexFilePath.purgeDependencyOnElmtId(rmElmtId);
@@ -129,7 +135,7 @@ export class McuDebugPanel extends ViewPU {
         this.__selectedComponentId.aboutToBeDeleted();
         this.__debugState.aboutToBeDeleted();
         this.__pcValue.aboutToBeDeleted();
-        this.__registers.aboutToBeDeleted();
+        this.__regEntries.aboutToBeDeleted();
         this.__uartOutput.aboutToBeDeleted();
         this.__hexInput.aboutToBeDeleted();
         this.__hexFilePath.aboutToBeDeleted();
@@ -171,12 +177,12 @@ export class McuDebugPanel extends ViewPU {
     set pcValue(newValue: string) {
         this.__pcValue.set(newValue);
     }
-    private __registers: ObservedPropertyObjectPU<string[]>;
-    get registers() {
-        return this.__registers.get();
+    private __regEntries: ObservedPropertyObjectPU<McuRegEntry[]>;
+    get regEntries() {
+        return this.__regEntries.get();
     }
-    set registers(newValue: string[]) {
-        this.__registers.set(newValue);
+    set regEntries(newValue: McuRegEntry[]) {
+        this.__regEntries.set(newValue);
     }
     private __uartOutput: ObservedPropertySimplePU<string>;
     get uartOutput() {
@@ -250,6 +256,27 @@ export class McuDebugPanel extends ViewPU {
     }
     private autoRefreshTimer: number;
     private appService: AppService;
+    private buildRegEntries(regs: Map<string, number>): McuRegEntry[] {
+        const entries: McuRegEntry[] = [];
+        regs.forEach((value: number, key: string) => {
+            const width = (key === 'PC' || key === 'DPTR' || value > 0xFF) ? 4 : 2;
+            entries.push({
+                name: key,
+                valueHex: `0x${value.toString(16).toUpperCase().padStart(width, '0')}`
+            });
+        });
+        entries.sort((a: McuRegEntry, b: McuRegEntry) => {
+            const ia = MCU_REG_PRIORITY.indexOf(a.name);
+            const ib = MCU_REG_PRIORITY.indexOf(b.name);
+            const pa = ia >= 0 ? ia : 100;
+            const pb = ib >= 0 ? ib : 100;
+            if (pa !== pb) {
+                return pa - pb;
+            }
+            return a.name.localeCompare(b.name);
+        });
+        return entries;
+    }
     aboutToAppear(): void {
         this.hexDir = this.appService.getHexDir();
         this.sandboxHexFiles = this.appService.listHexFiles();
@@ -333,11 +360,7 @@ export class McuDebugPanel extends ViewPU {
             const pcVal = simSnap.registers.get('PC');
             const pcNum = pcVal !== undefined ? pcVal : 0;
             this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
-            const regs: string[] = [];
-            simSnap.registers.forEach((value: number, key: string) => {
-                regs.push(`${key}: 0x${value.toString(16).toUpperCase().padStart(2, '0')}`);
-            });
-            this.registers = regs;
+            this.regEntries = this.buildRegEntries(simSnap.registers);
             this.uartOutput = this.appService.hexDebugger.getUartOutput();
             return;
         }
@@ -348,11 +371,7 @@ export class McuDebugPanel extends ViewPU {
             const pcVal = snap.registers.get('PC');
             const pcNum = pcVal !== undefined ? pcVal : 0;
             this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
-            const regs: string[] = [];
-            snap.registers.forEach((value: number, key: string) => {
-                regs.push(`${key}: 0x${value.toString(16).toUpperCase().padStart(2, '0')}`);
-            });
-            this.registers = regs;
+            this.regEntries = this.buildRegEntries(snap.registers);
         }
         this.uartOutput = this.appService.hexDebugger.getUartOutput();
     }
@@ -441,14 +460,13 @@ export class McuDebugPanel extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 6 });
             Column.width('100%');
-            Column.height('100%');
             Column.backgroundColor(ProteusColors.CANVAS_BG);
             Column.padding({ bottom: 8 });
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusSectionTitle(this, { title: 'MCU 调试' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 229, col: 7 });
+                    let componentCall = new ProteusSectionTitle(this, { title: 'MCU 调试' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 252, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -609,7 +627,7 @@ export class McuDebugPanel extends ViewPU {
                         placeholder: '固件路径…',
                         text: this.hexFilePath,
                         onChange: (v: string) => { this.hexFilePath = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 303, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 326, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -643,7 +661,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '浏览',
                         widthVal: '48%',
                         onAction: () => { void this.browseHexFile(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 314, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 337, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -669,7 +687,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '烧录',
                         widthVal: '48%',
                         onAction: () => { void this.burnHex(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 319, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 342, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -729,7 +747,7 @@ export class McuDebugPanel extends ViewPU {
                                                 this.hexFilePath = hexPath;
                                                 void this.burnHex();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 342, col: 13 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 365, col: 13 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -779,7 +797,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '▶ 运行', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.run();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 359, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 382, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -806,7 +824,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '⏸ 暂停', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.pause();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 363, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 386, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -833,7 +851,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↷ 单步', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.step();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 367, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 390, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -860,7 +878,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↺ 复位', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.reset();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 371, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 394, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -911,7 +929,7 @@ export class McuDebugPanel extends ViewPU {
                             }
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 381, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 404, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -953,88 +971,194 @@ export class McuDebugPanel extends ViewPU {
             Divider.color(ProteusColors.DIVIDER);
             Divider.height(1);
             Divider.width('100%');
-            Divider.margin({ top: 4 });
+            Divider.margin({ top: 6, bottom: 2 });
         }, Divider);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
+            Column.create({ space: 4 });
+            // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
+            Column.width('100%');
+            // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
+            Column.padding({ left: 8, right: 8, top: 2 });
+            // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('寄存器组');
             Text.fontSize(ProteusFonts.TITLE);
             Text.fontColor(ProteusColors.TEXT_LABEL);
             Text.fontWeight(FontWeight.Medium);
-            Text.margin({ left: 8, top: 4 });
-            Text.alignSelf(ItemAlign.Start);
+            Text.width('100%');
+            Text.textAlign(TextAlign.Start);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create({ space: 2 });
-            Column.width('100%');
-            Column.padding({ left: 8, right: 8 });
-            Column.alignItems(HorizontalAlign.Start);
-        }, Column);
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            ForEach.create();
-            const forEachItemGenFunction = _item => {
-                const reg = _item;
-                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                    Text.create(reg);
-                    Text.fontSize(ProteusFonts.PARAM_KEY);
-                    Text.fontColor(ProteusColors.TEXT_PRIMARY);
-                    Text.fontFamily('monospace');
-                    Text.width('100%');
-                    Text.padding({ top: 2, bottom: 2 });
-                }, Text);
-                Text.pop();
-            };
-            this.forEachUpdateFunction(elmtId, this.registers, forEachItemGenFunction, (reg: string) => reg, false, false);
-        }, ForEach);
-        ForEach.pop();
+            If.create();
+            if (this.regEntries.length === 0) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('(无寄存器数据)');
+                        Text.fontSize(ProteusFonts.STATUS);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width('100%');
+                        Text.padding({ top: 4, bottom: 4 });
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Scroll.create();
+                        Scroll.width('100%');
+                        Scroll.constraintSize({ maxHeight: 128 });
+                        Scroll.scrollBar(BarState.Auto);
+                        Scroll.edgeEffect(EdgeEffect.None);
+                    }, Scroll);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Flex.create({
+                            wrap: FlexWrap.Wrap,
+                            justifyContent: FlexAlign.SpaceBetween
+                        });
+                        Flex.width('100%');
+                    }, Flex);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        ForEach.create();
+                        const forEachItemGenFunction = _item => {
+                            const reg = _item;
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Row.create({ space: 2 });
+                                Row.width('48%');
+                                Row.height(20);
+                                Row.padding({ left: 4, right: 4 });
+                                Row.backgroundColor(ProteusColors.INPUT_READONLY_BG);
+                                Row.border({ width: 1, color: ProteusColors.DIVIDER });
+                                Row.margin({ bottom: 3 });
+                                Row.alignItems(VerticalAlign.Center);
+                            }, Row);
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Text.create(reg.name);
+                                Text.fontSize(ProteusFonts.STATUS);
+                                Text.fontColor(ProteusColors.TEXT_LABEL);
+                                Text.width(36);
+                                Text.maxLines(1);
+                                Text.textOverflow({ overflow: TextOverflow.Ellipsis });
+                            }, Text);
+                            Text.pop();
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Text.create(reg.valueHex);
+                                Text.fontSize(ProteusFonts.STATUS);
+                                Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                                Text.fontFamily('monospace');
+                                Text.layoutWeight(1);
+                                Text.maxLines(1);
+                                Text.textOverflow({ overflow: TextOverflow.Clip });
+                                Text.textAlign(TextAlign.End);
+                            }, Text);
+                            Text.pop();
+                            Row.pop();
+                        };
+                        this.forEachUpdateFunction(elmtId, this.regEntries, forEachItemGenFunction, (reg: McuRegEntry) => reg.name, false, false);
+                    }, ForEach);
+                    ForEach.pop();
+                    Flex.pop();
+                    Scroll.pop();
+                });
+            }
+        }, If);
+        If.pop();
+        // 寄存器：双列网格 + 固定最大高度，避免运行时纵向撑爆挤乱 UART
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Divider.create();
             Divider.color(ProteusColors.DIVIDER);
             Divider.height(1);
             Divider.width('100%');
+            Divider.margin({ top: 4, bottom: 2 });
         }, Divider);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+            Column.create({ space: 4 });
+            // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+            Column.width('100%');
+            // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+            Column.padding({ left: 8, right: 8, top: 2 });
+            // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create();
+            Row.width('100%');
+        }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('UART 输出');
             Text.fontSize(ProteusFonts.TITLE);
             Text.fontColor(ProteusColors.TEXT_LABEL);
             Text.fontWeight(FontWeight.Medium);
-            Text.margin({ left: 8, top: 4 });
-            Text.alignSelf(ItemAlign.Start);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
-            Column.width('100%');
-            Column.padding({ left: 8, right: 8 });
-        }, Column);
+            Blank.create();
+        }, Blank);
+        Blank.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(this.uartOutput || '(无输出)');
-            Text.fontSize(ProteusFonts.PARAM_KEY);
-            Text.fontColor(ProteusColors.TEXT_PRIMARY);
+            If.create();
+            if (this.uartOutput.length > 0) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('清空');
+                        Text.fontSize(ProteusFonts.STATUS);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.padding({ left: 6, right: 6, top: 2, bottom: 2 });
+                        Text.onClick(() => {
+                            this.appService.hexDebugger.clearUartLog();
+                            this.uartOutput = '';
+                        });
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create();
+            Scroll.width('100%');
+            Scroll.height(96);
+            Scroll.padding(6);
+            Scroll.backgroundColor(ProteusColors.INPUT_READONLY_BG);
+            Scroll.border({ width: 1, color: ProteusColors.DIVIDER });
+            Scroll.scrollBar(BarState.Auto);
+            Scroll.align(Alignment.TopStart);
+            Scroll.edgeEffect(EdgeEffect.None);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.uartOutput.length > 0 ? this.uartOutput : '(无输出)');
+            Text.fontSize(ProteusFonts.STATUS);
+            Text.fontColor(this.uartOutput.length > 0 ?
+                ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY);
             Text.fontFamily('monospace');
             Text.width('100%');
-            Text.height(56);
-            Text.backgroundColor(ProteusColors.INPUT_READONLY_BG);
-            Text.padding(6);
-            Text.border({ width: 1, color: ProteusColors.DIVIDER });
-            Text.borderRadius(0);
+            Text.textAlign(TextAlign.Start);
         }, Text);
         Text.pop();
-        Column.pop();
+        Scroll.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create('UART 发送');
             Text.fontSize(ProteusFonts.TITLE);
             Text.fontColor(ProteusColors.TEXT_LABEL);
             Text.fontWeight(FontWeight.Medium);
-            Text.margin({ left: 8, top: 4 });
-            Text.alignSelf(ItemAlign.Start);
+            Text.width('100%');
+            Text.textAlign(TextAlign.Start);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 4 });
             Row.width('100%');
-            Row.padding({ left: 8, right: 8 });
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             __Common__.create();
@@ -1047,7 +1171,7 @@ export class McuDebugPanel extends ViewPU {
                         placeholder: '输入 UART 数据',
                         text: this.hexInput,
                         onChange: (v: string) => { this.hexInput = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 461, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 539, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1077,7 +1201,7 @@ export class McuDebugPanel extends ViewPU {
                             this.appService.hexDebugger.sendUartInput(this.hexInput);
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 467, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 545, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1100,6 +1224,8 @@ export class McuDebugPanel extends ViewPU {
             }, { name: "ProteusClassicBtn" });
         }
         Row.pop();
+        // UART：独立滚动视口，与寄存器分区，运行时不再互相挤压错位
+        Column.pop();
         Column.pop();
     }
     rerender() {

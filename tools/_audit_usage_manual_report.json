@@ -1,0 +1,245 @@
+{
+  "summary": {
+    "builtinCount": 82,
+    "catalogCount": 82,
+    "exactManualCount": 45,
+    "familyTemplateCount": 9,
+    "idLayer": "PASS锛欱uiltin 鈫?Catalog 鈫?Manual 鍙В鏋愶紝82/82",
+    "pinLayer": "FAIL锛?3 绫昏剼鍚?妯″瀷涓嶄竴鑷达紙鎵嬪唽鍐欏姛鑳藉悕锛屽簱澶氫负鏁板瓧鑴氭垨绠€鍖栬剼锛?
+  },
+  "idDiff": {
+    "inLibNotCat": [],
+    "inCatNotLib": [],
+    "libNoManual": [],
+    "catalogNoManual": [],
+    "exactOrphan": []
+  },
+  "pinMismatches": [
+    {
+      "id": "DS18B20",
+      "issue": "鎵嬪唽鍐?DQ/VDD/GND锛屽簱涓?twoPin 1/2",
+      "libPins": [
+        "1",
+        "2"
+      ],
+      "claimed": [
+        "DQ",
+        "VDD",
+        "GND"
+      ]
+    },
+    {
+      "id": "HALL_SENSOR",
+      "issue": "鎵嬪唽鍐?VCC/GND/OUT锛屽簱涓?twoPin 1/2",
+      "libPins": [
+        "1",
+        "2"
+      ],
+      "claimed": [
+        "VCC",
+        "GND",
+        "OUT"
+      ]
+    }
+  ],
+  "structural": [
+    {
+      "id": "LM358",
+      "issue": "搴撲负鍙岃繍鏀捐剼 OUT1/IN卤1/IN卤2/V+/V-锛涙墜鍐屽啓 IN+/IN-/OUT/VCC/GND",
+      "libPins": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ]
+    },
+    {
+      "id": "TL082",
+      "issue": "搴撲负鍙岃繍鏀捐剼 OUT1/IN卤1/IN卤2/V+/V-锛涙墜鍐屽啓 IN+/IN-/OUT/VCC/GND",
+      "libPins": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ]
+    },
+    {
+      "id": "LM2596",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "CD4017",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "LCD1602",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "2764",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "62256",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "24C02",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "W25Q64",
+      "issue": "搴撲负 genPins 鏁板瓧鑴?1..N)锛涙墜鍐屽啓鍔熻兘鑴氬悕锛圴IN/CLK/RS/SDA 绛夛級",
+      "libPins": "numeric genPins"
+    },
+    {
+      "id": "STM32*/AT89*/STC*",
+      "issue": "搴?genMcuPins 鈫?P1..PN锛涙墜鍐屽啓 VDD/NRST/BOOT0/P0.. 绛夊叿鍚嶈剼",
+      "libPins": "P1..Pn"
+    },
+    {
+      "id": "DS18B20/HALL_SENSOR",
+      "issue": "搴?twoPin 浠?1/2锛涙墜鍐屽啓 DQ/VDD/OUT 绛変笁绔剼鍚?,
+      "libPins": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "issue": "搴?CH1..CH8+GND锛涙墜鍐屽啓 D0..D7",
+      "libPins": []
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "issue": "搴?V/COM锛涙墜鍐岃〃杩板惈 V/I 妯″紡鑴?,
+      "libPins": [
+        "V",
+        "COM",
+        "GND"
+      ]
+    }
+  ],
+  "textIssues": [
+    "LOGIC_ANALYZER: D0..D7 鈮?CH1..CH8",
+    "VIRTUAL_METER: 妯＄硦 V/I锛屽簱浠?V/COM",
+    "DS18B20: DQ/VDD/GND 鈮?1/2",
+    "HALL_SENSOR: VCC/GND/OUT 鈮?1/2",
+    "CD4017: 鍔熻兘鑴氬悕 鈮?genPins(16)",
+    "LM2596: VIN/FB 鈮?genPins(5)",
+    "LCD1602: RS/E/D4 鈮?genPins(16)"
+  ],
+  "mcuPinIssues": [
+    {
+      "family": "STM32*",
+      "issue": "鎵嬪唽鍐?VDD/NRST/BOOT0/OSC_IN 绛夊叿鍚嶈剼锛涘簱 makeStm32Mcu鈫抔enMcuPins(N) 涓烘暟瀛楄剼 1..N"
+    },
+    {
+      "family": "AT89*/STC*",
+      "issue": "鎵嬪唽鍐?P0..P3/EA/RST/XTAL锛涘簱 make8051Mcu鈫抔enMcuPins(40) 涓烘暟瀛楄剼 1..40"
+    },
+    {
+      "family": "74HC*",
+      "issue": "鎵嬪唽鎸夐棬鍔熻兘鎻忚堪锛涘簱鑴?id 涓?1/2/3/7/14锛坣ame=A/B/Y锛夛紝澶т綋鍙槧灏?
+    }
+  ],
+  "instrumentPinCheck": [
+    {
+      "id": "VOLTMETER_DC",
+      "match": true,
+      "libPins": "V+,COM",
+      "expect": "V+,COM"
+    },
+    {
+      "id": "AMMETER_DC",
+      "match": true,
+      "libPins": "I+,I-",
+      "expect": "I+,I-"
+    },
+    {
+      "id": "POWER_METER",
+      "match": true,
+      "libPins": "V+,V-,I+,I-",
+      "expect": "V+,V-,I+,I-"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "match": true,
+      "libPins": "IN,GND",
+      "expect": "IN,GND"
+    },
+    {
+      "id": "OSCILLOSCOPE",
+      "match": true,
+      "libPins": "CH1,CH2,CH3,CH4,GND",
+      "expect": "CH1,CH2,CH3,CH4,GND"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "match": true,
+      "libPins": "TX,RX,GND",
+      "expect": "TX,RX,GND"
+    },
+    {
+      "id": "LM555",
+      "match": false,
+      "libPins": "1,2,3",
+      "expect": "GND,TRIG,OUT,RESET,CTRL,THRES,DISCH,VCC"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "match": true,
+      "libPins": "1,2,COM,NO,NC",
+      "expect": "1,2,COM,NO,NC"
+    },
+    {
+      "id": "SIGNAL_GEN",
+      "match": true,
+      "libPins": "OUT,GND",
+      "expect": "OUT,GND"
+    },
+    {
+      "id": "OLED_12864",
+      "match": true,
+      "libPins": "VCC,GND,SDA,SCL",
+      "expect": "VCC,GND,SDA,SCL"
+    },
+    {
+      "id": "UA741",
+      "match": true,
+      "libPins": "IN+,IN-,OUT,VCC,VEE",
+      "expect": "IN+,IN-,OUT,VCC,VEE"
+    },
+    {
+      "id": "LM7805",
+      "match": true,
+      "libPins": "1,2,3",
+      "expect": "1,2,3"
+    }
+  ],
+  "families": [
+    "R_",
+    "C_",
+    "POT_",
+    "LED_",
+    "XTAL_",
+    "74HC",
+    "STM32",
+    "AT89",
+    "STC"
+  ]
+}

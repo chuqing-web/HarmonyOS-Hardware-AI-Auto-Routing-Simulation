@@ -356,7 +356,7 @@ export class ConstrainedWiringEngine {
   /** 网内有引脚完全未被任何导线端点触及 */
   private findNetsWithUnwiredPins(topo: SchTopology): Set<string> {
     const out = new Set<string>();
-    const PIN_TOL = 8;
+    const PIN_TOL = 12;
     for (let ni = 0; ni < topo.netList.length; ni++) {
       const net = topo.netList[ni];
       if (net.nodeList.length < 2) {
@@ -410,7 +410,7 @@ export class ConstrainedWiringEngine {
    */
   enforceMaxWiresPerPin(topo: SchTopology, maxWires: number = 2): number {
     this.buildDeviceGeometryCache(topo);
-    const PIN_TOL = 8;
+    const PIN_TOL = 12;
     // pinKey → 触及该脚的导线下标列表
     const pinToWires = new Map<string, number[]>();
     const wireLen: number[] = [];
@@ -507,7 +507,8 @@ export class ConstrainedWiringEngine {
     if (!net) {
       return;
     }
-    const PIN_TOL = 8;
+    this.buildDeviceGeometryCache(topo);
+    const PIN_TOL = 12;
     let added = 0;
     for (let i = 0; i < net.nodeList.length; i++) {
       const node = net.nodeList[i];
@@ -541,23 +542,9 @@ export class ConstrainedWiringEngine {
         continue;
       }
       const hit = this.resolveHitRect(dev);
-      const cx = hit.x + hit.w / 2;
-      const cy = hit.y + hit.h / 2;
-      const dx = pinPos.x - cx;
-      const dy = pinPos.y - cy;
-      const stubPad = 20;
-      let labelPos: Point2D;
-      if (Math.abs(dx) >= Math.abs(dy)) {
-        labelPos = {
-          x: dx >= 0 ? (hit.x + hit.w + stubPad) : (hit.x - stubPad),
-          y: pinPos.y
-        };
-      } else {
-        labelPos = {
-          x: pinPos.x,
-          y: dy >= 0 ? (hit.y + hit.h + stubPad) : (hit.y - stubPad)
-        };
-      }
+      const foreignPins = this.collectForeignPinWorlds(pinPos);
+      const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(
+        pinPos, hit, this.hitRects, 20, foreignPins);
       const label: NetLabelInfo = {
         id: IdUtil.generate('lbl'),
         netUuid: netUuid,
@@ -618,8 +605,9 @@ export class ConstrainedWiringEngine {
         continue;
       }
       const hit = this.resolveHitRect(dev);
+      const foreignPins = this.collectForeignPinWorlds(pinPos);
       const labelPos = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(
-        pinPos, hit, this.hitRects, 20);
+        pinPos, hit, this.hitRects, 20, foreignPins);
       topo.netLabelList.push({
         id: IdUtil.generate('lbl'),
         netUuid: netUuid,
@@ -629,6 +617,19 @@ export class ConstrainedWiringEngine {
         global: false
       });
     }
+  }
+
+  /** 除本脚外的全部引脚世界坐标（含同芯片邻脚），供 stub 避让 pin_proximity */
+  private collectForeignPinWorlds(excludePin: Point2D): Point2D[] {
+    const out: Point2D[] = [];
+    for (let i = 0; i < this.pinWorldCache.length; i++) {
+      const pw = this.pinWorldCache[i];
+      if (Math.hypot(pw.x - excludePin.x, pw.y - excludePin.y) < 1) {
+        continue;
+      }
+      out.push(pw);
+    }
+    return out;
   }
 
   /**
@@ -749,7 +750,7 @@ export class ConstrainedWiringEngine {
 
   /**
    * 将冲突网改为标号连接：删长线，为每个引脚建 stub+NetLabel。
-   * stub 终点避开异器件选中区。
+   * stub 终点避开异器件选中区与无关脚（含同芯片邻脚）。
    */
   demoteNetsToLabelStubs(topo: SchTopology, netUuids: Set<string>): number {
     if (netUuids.size === 0) {
@@ -777,8 +778,9 @@ export class ConstrainedWiringEngine {
         const pinName = (node.pinName !== undefined && node.pinName.length > 0) ? node.pinName : pinId;
         const pinPos = PinWorldResolver.forDeviceInst(dev, pinId, pinName);
         const hit = this.resolveHitRect(dev);
+        const foreignPins = this.collectForeignPinWorlds(pinPos);
         const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(
-          pinPos, hit, this.hitRects, 20);
+          pinPos, hit, this.hitRects, 20, foreignPins);
         const label: NetLabelInfo = {
           id: IdUtil.generate('lbl'),
           netUuid: netUuid,
@@ -972,6 +974,13 @@ export class ConstrainedWiringEngine {
     const lib = (dev.libDevId ?? '').toUpperCase();
     if (lib === 'LM555' || lib === 'NE555' || lib.indexOf('555') >= 0) {
       return TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
+    }
+    if (lib === 'LM358' || lib === 'TL082' || lib === 'LM324') {
+      return TemplateSchematicKit.canonicalizeDualOpAmpPin(pinId, pinName);
+    }
+    if (lib === 'LM7805' || lib === 'LM7812' || lib === 'AMS1117_3V3' ||
+      lib.indexOf('AMS1117') >= 0 || lib.indexOf('7805') >= 0 || lib.indexOf('7812') >= 0) {
+      return TemplateSchematicKit.canonicalizeRegulatorPin(pinId, pinName);
     }
     return '';
   }
@@ -1400,14 +1409,9 @@ export class ConstrainedWiringEngine {
           }
         }
       } else {
-        const fallback = ['1', '2', 'A', 'K'];
-        for (let i = 0; i < fallback.length; i++) {
-          const world = PinWorldResolver.forDeviceInst(dev, fallback[i], fallback[i]);
-          const key = `${dev.instUuid}:${fallback[i]}`;
-          this.allPinWorld.set(key, world);
-          this.pinKeysCache.push(key);
-          this.pinWorldCache.push(world);
-        }
+        // 禁止伪造 1/2/A/K 世界坐标：无库 pin 时跳过，避免假路径与错 demote
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_ROUTE] no pins for ${dev.refName}/${dev.libDevId} — skip fake pin geometry`);
       }
     }
   }

@@ -1,5 +1,5 @@
 import type { SchematicDocument } from 'common';
-import { buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart, buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital, buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral, buildLabSensor, buildLabInstruments, buildLabPotentiometer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateBuilders";
+import { buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart, buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital, buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral, buildLabSensor, buildLabInstruments, buildLabPotentiometer, buildLabSchmitt, buildLabIntegrator, buildLab555Astable } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateBuilders";
 import { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
 export type LabTemplateBuilder = (doc: SchematicDocument) => void;
 export interface LabCoverageReport {
@@ -24,7 +24,7 @@ export interface LabTemplateDef {
 }
 /** 内置器件库全部 libraryId（与 BuiltinComponents 同步） */
 export const ALL_CATALOG_LIBRARY_IDS: string[] = [
-    'VCC', 'GND', 'VAC',
+    'VCC', 'GND', 'VEE', 'VAC', 'SIGNAL_GEN',
     'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k',
     'POT_1k', 'POT_10k', 'POT_100k',
     'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF',
@@ -70,6 +70,11 @@ const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 
 const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
     'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
 const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
+const SCHMITT_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_100k', 'R_10k', 'SIGNAL_GEN', 'OSCILLOSCOPE'];
+const INTEGRATOR_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_10k', 'R_100k', 'C_100nF', 'SIGNAL_GEN',
+    'OSCILLOSCOPE'];
+const ASTABLE_555_LIBS = ['VCC', 'GND', 'LM555', 'R_1k', 'R_10k', 'R_330', 'C_1uF', 'C_100nF',
+    'LED_RED', 'OSCILLOSCOPE'];
 export class LabTemplateRegistry {
     private static extraTemplates: LabTemplateDef[] = [];
     private static readonly BUILTIN: LabTemplateDef[] = [
@@ -169,6 +174,24 @@ export class LabTemplateRegistry {
             description: 'POT_1k/10k/100k 三档分压 + 电压表',
             knowledgePoints: ['分压比', '滑臂调节', '线性电位器'],
             libraryIds: POT_LIBS, build: buildLabPotentiometer
+        },
+        {
+            id: 'lab_schmitt', name: '运放滞回比较器整形', category: 'analog',
+            description: 'UA741 正反馈滞回 + 正弦激励，示波器观测整形方波',
+            knowledgePoints: ['滞回比较器', '正反馈', '正弦整形方波', '双电源'],
+            libraryIds: SCHMITT_LIBS, build: buildLabSchmitt
+        },
+        {
+            id: 'lab_integrator', name: 'RC积分电路', category: 'analog',
+            description: 'UA741 反相积分 + 方波激励，示波器观测三角波',
+            knowledgePoints: ['反相积分', 'RC 时间常数', '方波变三角', '双电源'],
+            libraryIds: INTEGRATOR_LIBS, build: buildLabIntegrator
+        },
+        {
+            id: 'lab_555_astable', name: '555多谐振荡器', category: 'analog',
+            description: 'LM555 无稳态振荡(~69Hz) + LED，示波器 10ms/div 观测方波',
+            knowledgePoints: ['多谐振荡', 'RC 定时', '方波输出', 'LED 限流'],
+            libraryIds: ASTABLE_555_LIBS, build: buildLab555Astable
         }
     ];
     static listTemplates(): LabTemplateDef[] {

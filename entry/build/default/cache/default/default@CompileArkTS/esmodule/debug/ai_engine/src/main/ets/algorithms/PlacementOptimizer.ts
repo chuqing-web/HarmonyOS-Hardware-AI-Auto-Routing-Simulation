@@ -157,7 +157,17 @@ export class PlacementOptimizer {
         const deviceIds = matched.map((_, i) => `dev_${i}`);
         const idToLib = new Map<string, MatchedDevice>();
         deviceIds.forEach((id, i) => idToLib.set(id, matched[i]));
-        const locked = new Set(lockedUuids);
+        // lockedUuids 是 instUuid；GA 键是 dev_N — 映射到 gene key
+        const locked = new Set<string>();
+        const uuidSet = new Set(lockedUuids);
+        if (existingTopo && uuidSet.size > 0) {
+            for (let i = 0; i < matched.length; i++) {
+                const ed = existingTopo.deviceList[i];
+                if (ed && uuidSet.has(ed.instUuid)) {
+                    locked.add(deviceIds[i]);
+                }
+            }
+        }
         let population = this.initPopulation(deviceIds, locked, existingTopo, idToLib);
         for (let gen = 0; gen < GENERATIONS; gen++) {
             const scored: ScoredChromosome[] = [];
@@ -245,8 +255,23 @@ export class PlacementOptimizer {
             if (workerOut.bestGenes.length < matched.length * 3) {
                 return this.optimize(matched, constraints, lockedUuids, existingTopo);
             }
+            const lockedIdx = new Set<number>();
+            const uuidSet = new Set(lockedUuids);
+            if (existingTopo && uuidSet.size > 0) {
+                for (let i = 0; i < matched.length; i++) {
+                    const ed = existingTopo.deviceList[i];
+                    if (ed && uuidSet.has(ed.instUuid)) {
+                        lockedIdx.add(i);
+                    }
+                }
+            }
             const chrom: Chromosome = new Map();
             for (let i = 0; i < deviceIds.length; i++) {
+                if (lockedIdx.has(i) && existingTopo?.deviceList[i]) {
+                    const ed = existingTopo.deviceList[i];
+                    chrom.set(deviceIds[i], { x: ed.x, y: ed.y, rotate: 0 });
+                    continue;
+                }
                 const gene: Gene = {
                     x: this.snap(workerOut.bestGenes[i * 3]),
                     y: this.snap(workerOut.bestGenes[i * 3 + 1]),
@@ -415,8 +440,8 @@ export class PlacementOptimizer {
             for (let j = 0; j < deviceIds.length; j++) {
                 const id = deviceIds[j];
                 const existingDev = existing?.deviceList[j];
-                if (locked.has(existingDev?.instUuid ?? '')) {
-                    chrom.set(id, { x: existingDev!.x, y: existingDev!.y, rotate: 0 });
+                if (locked.has(id) && existingDev) {
+                    chrom.set(id, { x: existingDev.x, y: existingDev.y, rotate: 0 });
                 }
                 else {
                     const seed = seedBase.get(id);
@@ -865,6 +890,19 @@ export class PlacementOptimizer {
     }
     private findGeneByLabel(chrom: Chromosome, ids: string[], label: string, idToLib: Map<string, MatchedDevice>): Gene | null {
         const upper = label.toUpperCase();
+        // 精确匹配 libDevId / name 优先，避免 "LED" 子串绑到所有 LED
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            const m = idToLib.get(id);
+            if (!m) {
+                continue;
+            }
+            const libUpper = (m.libDevId ?? '').toUpperCase();
+            const nameUpper = (m.name ?? '').toUpperCase();
+            if (libUpper === upper || nameUpper === upper) {
+                return chrom.get(id) ?? null;
+            }
+        }
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
             const m = idToLib.get(id);
@@ -884,7 +922,9 @@ export class PlacementOptimizer {
         const child: Chromosome = new Map();
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
-            const source = Math.random() < 0.5 ? p1.get(id) : p2.get(id);
+            const source = locked.has(id)
+                ? (p1.get(id) ?? p2.get(id))
+                : (Math.random() < 0.5 ? p1.get(id) : p2.get(id));
             if (source) {
                 const cloned: Gene = { x: source.x, y: source.y, rotate: source.rotate };
                 child.set(id, cloned);
@@ -894,6 +934,7 @@ export class PlacementOptimizer {
     }
     private mutate(chrom: Chromosome, ids: string[], locked: Set<string>): void {
         const id = ids[Math.floor(Math.random() * ids.length)];
+        // locked 存的是 gene key（dev_N），与 chrom/ids 一致
         if (locked.has(id)) {
             return;
         }

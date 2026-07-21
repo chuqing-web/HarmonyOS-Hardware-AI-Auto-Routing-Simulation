@@ -7,6 +7,7 @@ import { SchematicDocument, ComponentInstance, NetType, Point2D, Wire } from '..
 import { PinGeometry, PinGeometryResolver } from './NetPinRebuildUtil';
 import { Logger } from './Logger';
 import { INSTR_TRACE_TAG } from './InstrumentTraceLog';
+import { namedMcuPinGeoms, namedDevicePinGeoms } from './NamedDevicePinDefaults';
 
 // Re-export helper access — defaultPinsForLib is not exported from NetPinRebuildUtil,
 // duplicate minimal pin lookup inline via resolver pattern.
@@ -14,6 +15,7 @@ import { INSTR_TRACE_TAG } from './InstrumentTraceLog';
 enum JunctionKind {
   VCC = 'vcc',
   GND = 'gnd',
+  VEE = 'vee',
   SIGNAL = 'signal',
   UNKNOWN = 'unknown'
 }
@@ -69,18 +71,54 @@ function roundKey(p: Point2D): string {
 
 function isVccLib(lib: string): boolean {
   const u = lib.toUpperCase();
-  return u === 'VCC' || u.endsWith('/VCC') || u.includes('VDD');
+  return u === 'VCC' || u.endsWith('/VCC') || u === 'VDD' || u.endsWith('/VDD');
 }
 
 function isGndLib(lib: string): boolean {
   const u = lib.toUpperCase();
-  return u === 'GND' || u.endsWith('/GND') || u === 'VSS' || u === '0';
+  return u === 'GND' || u.endsWith('/GND') || u === 'VSS' || u.endsWith('/VSS') || u === '0';
+}
+
+function isVeeLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'VEE' || u.endsWith('/VEE');
 }
 
 function isPassiveLib(lib: string): boolean {
   const u = lib.toUpperCase();
   return u.startsWith('R_') || u.includes('RESISTOR') || u.startsWith('C_') ||
     u.includes('CAP') || u.startsWith('L_') || u.includes('INDUCTOR');
+}
+
+/**
+ * Dense multi-pin packages (MCU / logic IC). Their pin junctions must count as
+ * SIGNAL barriers so VCC/GND BFS cannot paint Port pins → GPIO_MISS / LED always-on.
+ */
+function isDenseSignalLib(lib: string): boolean {
+  const u = (lib ?? '').toUpperCase();
+  if (u.includes('AT89') || u.includes('STC89') || u.includes('STC15') ||
+    u.includes('8051') || u.includes('MCS51') || u.includes('STM32')) {
+    return true;
+  }
+  if (u.startsWith('74HC') || u.startsWith('74LS') || u.startsWith('CD4') ||
+    u.includes('LM555') || u.includes('NE555') || u === '555') {
+    return true;
+  }
+  return false;
+}
+
+/** True if both junctions carry different pins of the same component (do not UF-merge). */
+function sameComponentDistinctPins(a: Junction, b: Junction): boolean {
+  for (let i = 0; i < a.pinRefs.length; i++) {
+    const pa = a.pinRefs[i];
+    for (let j = 0; j < b.pinRefs.length; j++) {
+      const pb = b.pinRefs[j];
+      if (pa.compId === pb.compId && pa.pinId !== pb.pinId) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function transformPin(local: Point2D, rotation: number, mirrored: boolean): Point2D {
@@ -155,6 +193,41 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
       makePinGeometry('I-', 'I-', -30, 20)
     ];
   }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push(makePinGeometry(`CH${i + 1}`, `CH${i + 1}`, -40, -40 + i * 10));
+    }
+    pins.push(makePinGeometry('GND', 'GND', -40, 40));
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL')) {
+    return [
+      makePinGeometry('TX', 'TX', -40, -10),
+      makePinGeometry('RX', 'RX', -40, 10),
+      makePinGeometry('GND', 'GND', -40, 30)
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      makePinGeometry('V+', 'V+', -40, -20),
+      makePinGeometry('V-', 'V-', -40, 0),
+      makePinGeometry('I+', 'I+', -40, 20),
+      makePinGeometry('I-', 'I-', -40, 40)
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      makePinGeometry('IN', 'IN', -30, -10),
+      makePinGeometry('GND', 'GND', -30, 10)
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      makePinGeometry('V', 'V', -30, -25),
+      makePinGeometry('COM', 'COM', -30, 25)
+    ];
+  }
   if (lib === 'VAC' || lib.startsWith('VAC')) {
     return [
       makePinGeometry('1', 'AC+', -20, 0),
@@ -187,18 +260,41 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
   }
   if (lib.includes('OSCILLOSCOPE')) {
     return [
-      makePinGeometry('CH1', 'CH1', -40, -20),
+      makePinGeometry('CH1', 'CH1', -40, -30),
       makePinGeometry('CH2', 'CH2', -40, -10),
       makePinGeometry('CH3', 'CH3', -40, 10),
-      makePinGeometry('CH4', 'CH4', -40, 20),
-      // GND opposite channels — avoid CH4↔GND column merge during topo rebuild
-      makePinGeometry('GND', 'GND', 40, 40)
+      makePinGeometry('CH4', 'CH4', -40, 30),
+      makePinGeometry('GND', 'GND', -40, 50)
     ];
+  }
+  const namedDev = namedDevicePinGeoms(lib);
+  if (namedDev.length > 0) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < namedDev.length; i++) {
+      const s = namedDev[i];
+      pins.push(makePinGeometry(s.id, s.name, s.x, s.y));
+    }
+    return pins;
+  }
+  // MCU DIP — 具名脚（与 NamedDevicePins 对齐）
+  const mcuPins = mcuInternalDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
   }
   return [
     makePinGeometry('1', '1', -30, 0),
     makePinGeometry('2', '2', 30, 0)
   ];
+}
+
+function mcuInternalDefaultPins(libUpper: string): PinGeometry[] {
+  const src = namedMcuPinGeoms(libUpper);
+  const pins: PinGeometry[] = [];
+  for (let i = 0; i < src.length; i++) {
+    const s = src[i];
+    pins.push(makePinGeometry(s.id, s.name, s.x, s.y));
+  }
+  return pins;
 }
 
 function findOrCreateJunction(junctions: Map<string, Junction>, key: string, pt: Point2D): Junction {
@@ -255,24 +351,39 @@ class UnionFind {
 function classifyJunction(j: Junction): JunctionKind {
   let hasVccSym = false;
   let hasGndSym = false;
+  let hasVeeSym = false;
   let hasPassive = false;
+  let hasDenseSignal = false;
   for (let i = 0; i < j.pinRefs.length; i++) {
     const p = j.pinRefs[i];
     if (isVccLib(p.libraryId)) {
       hasVccSym = true;
     } else if (isGndLib(p.libraryId)) {
       hasGndSym = true;
+    } else if (isVeeLib(p.libraryId)) {
+      hasVeeSym = true;
     } else if (isPassiveLib(p.libraryId)) {
       hasPassive = true;
+    } else if (isDenseSignalLib(p.libraryId)) {
+      hasDenseSignal = true;
     }
   }
-  if (hasVccSym && !hasGndSym) {
+  // Mixed rails at one point → unknown (do not pick a winner)
+  const railCount = (hasVccSym ? 1 : 0) + (hasGndSym ? 1 : 0) + (hasVeeSym ? 1 : 0);
+  if (railCount > 1) {
+    return JunctionKind.UNKNOWN;
+  }
+  if (hasVccSym) {
     return JunctionKind.VCC;
   }
-  if (hasGndSym && !hasVccSym) {
+  if (hasGndSym) {
     return JunctionKind.GND;
   }
-  if (hasPassive) {
+  if (hasVeeSym) {
+    return JunctionKind.VEE;
+  }
+  // Passives + MCU/IC pins block rail BFS (UNKNOWN previously allowed GND to paint P1..P8)
+  if (hasPassive || hasDenseSignal) {
     return JunctionKind.SIGNAL;
   }
   return JunctionKind.UNKNOWN;
@@ -282,7 +393,7 @@ function kindPriority(k: JunctionKind): number {
   if (k === JunctionKind.SIGNAL) {
     return 3;
   }
-  if (k === JunctionKind.VCC) {
+  if (k === JunctionKind.VCC || k === JunctionKind.VEE) {
     return 2;
   }
   if (k === JunctionKind.GND) {
@@ -308,7 +419,7 @@ function findNetByName(doc: SchematicDocument, name: string): string | null {
   return null;
 }
 
-/** VCC vs GND by template net name/type — never T-junction-merge the rails. */
+/** Rail kind by template net name/type — never T-junction-merge distinct rails. */
 function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind {
   for (let i = 0; i < doc.nets.length; i++) {
     const net = doc.nets[i];
@@ -316,11 +427,15 @@ function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind
       continue;
     }
     const name = net.name.toUpperCase();
-    if (net.type === NetType.GROUND || name === 'GND' || name === 'VSS' || name === 'VEE') {
+    if (name === 'GND' || name === 'VSS' || name === '0' ||
+      (net.type === NetType.GROUND && name !== 'VEE')) {
       return JunctionKind.GND;
     }
+    if (name === 'VEE' || name === 'V-') {
+      return JunctionKind.VEE;
+    }
     if (net.type === NetType.POWER || name === 'VCC' || name === 'VDD' ||
-      name === '+5V' || name === '+3V3') {
+      name === 'V+' || name === '+5V' || name === '+3V3') {
       return JunctionKind.VCC;
     }
     return JunctionKind.UNKNOWN;
@@ -328,16 +443,15 @@ function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind
   return JunctionKind.UNKNOWN;
 }
 
-/** Skip T-junction union when rails would short each other or a rail would absorb a signal. */
+/** Skip T-junction union when distinct rails would short (VCC/GND/VEE). */
 function railsWouldShort(a: JunctionKind, b: JunctionKind): boolean {
-  if ((a === JunctionKind.VCC && b === JunctionKind.GND) ||
-    (a === JunctionKind.GND && b === JunctionKind.VCC)) {
+  const isRail = (k: JunctionKind): boolean =>
+    k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE;
+  if (isRail(a) && isRail(b) && a !== b) {
     return true;
   }
-  const aRail = a === JunctionKind.VCC || a === JunctionKind.GND;
-  const bRail = b === JunctionKind.VCC || b === JunctionKind.GND;
-  // 布局 stub 与电源轨擦边：禁止把信号网并进 VCC/GND
-  if (aRail !== bRail) {
+  // Layout stub rubbing a rail: do not absorb signal into rail
+  if (isRail(a) !== isRail(b)) {
     return true;
   }
   return false;
@@ -361,8 +475,10 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     return 0;
   }
 
-  const junctionRadius = Math.max(2, gridSize * 0.5);
-  const tJunctionTol = Math.max(3, gridSize * 0.4);
+  // Cap snap radii: MCU/DIP pin pitch is 10px. junctionRadius≥10 (e.g. gridSize=20)
+  // would UF-merge P1..P8+NRST into one net → lab_51_led GPIO all drive NET_1, LEDs stay off.
+  const junctionRadius = Math.min(Math.max(2, gridSize * 0.5), 5);
+  const tJunctionTol = Math.min(Math.max(3, gridSize * 0.4), 4);
   const pinThreshold = Math.max(gridSize * 1.5, 15);
 
   const junctions = new Map<string, Junction>();
@@ -392,7 +508,8 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     uf.union(k0, k1);
   }
 
-  // Co-locate nearby junction keys (endpoint snap groups)
+  // Co-locate nearby junction keys (endpoint snap groups).
+  // Never glue two different pins of the same dense IC (10px pitch column).
   const keys = Array.from(junctions.keys());
   for (let i = 0; i < keys.length; i++) {
     const ji = junctions.get(keys[i])!;
@@ -400,9 +517,13 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
       const jj = junctions.get(keys[j])!;
       const dx = ji.x - jj.x;
       const dy = ji.y - jj.y;
-      if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
-        uf.union(keys[i], keys[j]);
+      if (Math.abs(dx) > junctionRadius || Math.abs(dy) > junctionRadius) {
+        continue;
       }
+      if (sameComponentDistinctPins(ji, jj)) {
+        continue;
+      }
+      uf.union(keys[i], keys[j]);
     }
   }
 
@@ -429,15 +550,28 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
         }
         for (let si = 0; si < wB.points.length - 1; si++) {
           if (pointOnSegment(ep, wB.points[si], wB.points[si + 1], tJunctionTol)) {
-            const midKey = roundKey({
-              x: (wB.points[si].x + wB.points[si + 1].x) / 2,
-              y: (wB.points[si].y + wB.points[si + 1].y) / 2
-            });
+            // 在线段上取投影点（非中点），避免错误并网
+            const a = wB.points[si];
+            const b = wB.points[si + 1];
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            const len2 = abx * abx + aby * aby;
+            let t = 0;
+            if (len2 > 1e-6) {
+              t = ((ep.x - a.x) * abx + (ep.y - a.y) * aby) / len2;
+              if (t < 0) {
+                t = 0;
+              } else if (t > 1) {
+                t = 1;
+              }
+            }
+            const foot: Point2D = { x: a.x + t * abx, y: a.y + t * aby };
+            const footKey = roundKey(foot);
             findOrCreateJunction(junctions, epKey, ep);
-            findOrCreateJunction(junctions, midKey, wB.points[si]);
-            uf.union(epKey, midKey);
-            uf.union(midKey, roundKey(wB.points[si]));
-            uf.union(midKey, roundKey(wB.points[si + 1]));
+            findOrCreateJunction(junctions, footKey, foot);
+            uf.union(epKey, footKey);
+            uf.union(footKey, roundKey(a));
+            uf.union(footKey, roundKey(b));
           }
         }
       }
@@ -501,7 +635,7 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   const seeds: string[] = [];
   junctions.forEach((j: Junction, key: string) => {
     const k = classifyJunction(j);
-    if (k === JunctionKind.VCC || k === JunctionKind.GND) {
+    if (k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE) {
       seeds.push(key);
       rootKind.set(uf.find(key), k);
     }
@@ -557,7 +691,7 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   for (let si = 0; si < seeds.length; si++) {
     const rep = uf.find(seeds[si]);
     const sk = classifyJunction(junctions.get(seeds[si])!);
-    if (sk === JunctionKind.VCC || sk === JunctionKind.GND) {
+    if (sk === JunctionKind.VCC || sk === JunctionKind.GND || sk === JunctionKind.VEE) {
       repKind.set(rep, sk);
       queue.push(rep);
     }
@@ -575,6 +709,24 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
       if (repKind.get(n) !== JunctionKind.UNKNOWN) {
         return;
       }
+      // 禁止电源轨 BFS 涂到纯信号/无源结（经被动器件体「吞掉」信号网）
+      let neighborHasRailSym = false;
+      let neighborHasSignal = false;
+      junctions.forEach((j: Junction, key: string) => {
+        if (uf.find(key) !== n) {
+          return;
+        }
+        const ck = classifyJunction(j);
+        if (ck === JunctionKind.VCC || ck === JunctionKind.GND || ck === JunctionKind.VEE) {
+          neighborHasRailSym = true;
+        } else if (ck === JunctionKind.SIGNAL) {
+          neighborHasSignal = true;
+        }
+      });
+      if (neighborHasSignal && !neighborHasRailSym &&
+        (curK === JunctionKind.VCC || curK === JunctionKind.GND || curK === JunctionKind.VEE)) {
+        return;
+      }
       repKind.set(n, curK);
       queue.push(n);
     });
@@ -585,7 +737,7 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   junctions.forEach((j: Junction, key: string) => {
     const rep = uf.find(key);
     const bfsK = repKind.get(rep);
-    if (bfsK === JunctionKind.VCC || bfsK === JunctionKind.GND) {
+    if (bfsK === JunctionKind.VCC || bfsK === JunctionKind.GND || bfsK === JunctionKind.VEE) {
       finalKind.set(key, bfsK);
       return;
     }
@@ -600,8 +752,10 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   // Resolve net IDs for each kind
   const vccNetId = findNetByName(doc, 'VCC') ?? `net_topo_vcc_${doc.nets.length}`;
   const gndNetId = findNetByName(doc, 'GND') ?? `net_topo_gnd_${doc.nets.length + 1}`;
+  const veeNetId = findNetByName(doc, 'VEE') ?? `net_topo_vee_${doc.nets.length + 2}`;
   ensureNet(doc, vccNetId, 'VCC', NetType.POWER);
   ensureNet(doc, gndNetId, 'GND', NetType.GROUND);
+  ensureNet(doc, veeNetId, 'VEE', NetType.POWER);
 
   let signalIdx = 0;
   const signalNetForRep = new Map<string, string>();
@@ -640,13 +794,15 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   const wireKindForEndpoints = (k0: string, k1: string): JunctionKind => {
     const j0 = finalKind.get(k0) ?? JunctionKind.SIGNAL;
     const j1 = finalKind.get(k1) ?? JunctionKind.SIGNAL;
-    // Never collapse a VCC–GND straddling wire onto one rail.
+    // Never collapse distinct rails onto one net.
     if (railsWouldShort(j0, j1)) {
       return JunctionKind.SIGNAL;
     }
-    // Any endpoint on a GND/VCC rail pulls the whole wire onto that rail.
     if (j0 === JunctionKind.GND || j1 === JunctionKind.GND) {
       return JunctionKind.GND;
+    }
+    if (j0 === JunctionKind.VEE || j1 === JunctionKind.VEE) {
+      return JunctionKind.VEE;
     }
     if (j0 === JunctionKind.VCC || j1 === JunctionKind.VCC) {
       return JunctionKind.VCC;
@@ -660,6 +816,9 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     }
     if (kind === JunctionKind.GND) {
       return gndNetId;
+    }
+    if (kind === JunctionKind.VEE) {
+      return veeNetId;
     }
     let sid = signalNetForRep.get(rep);
     if (sid === undefined) {

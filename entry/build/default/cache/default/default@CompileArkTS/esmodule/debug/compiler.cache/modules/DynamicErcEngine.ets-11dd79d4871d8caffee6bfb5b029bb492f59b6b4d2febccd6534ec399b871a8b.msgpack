@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚvimport { ErcSeverity, ErcRuleType } from '../types/CommonTypes';
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚúimport { ErcSeverity, ErcRuleType } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
 import { arrayMin, arrayMax } from './MapHelpers';
 export class DynamicErcEngine {
@@ -16,13 +16,14 @@ export class DynamicErcEngine {
                 sum += wave.voltageAxis[i];
             }
             const avg = sum / wave.voltageAxis.length;
-            if (max > 5.5) {
+            if (max > 12.5) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.ERROR, `æŒç»­è¿‡å‹: ${wave.probeName} å³°å€¼ ${max.toFixed(2)}V`, wave.netName, 'æ£€æŸ¥ç”µæºç”µå‹æˆ–æ·»åŠ é™å‹ä¿æŠ¤'));
             }
-            if (Math.abs(avg) > 4.5 && wave.waveType === 'voltage') {
+            // é¥±å’Œåˆ¤å®šï¼šç›¸å¯¹æœ¬é€šé“åŠ¨æ€èŒƒå›´ï¼Œé¿å… 3.3V è½¨è¯¯æŠ¥
+            if (Math.abs(avg) > Math.max(4.5, max * 0.92) && wave.waveType === 'voltage' && max > 4.0) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING, `è¿æ”¾å¯èƒ½é¥±å’Œ: ${wave.probeName} å¹³å‡ ${avg.toFixed(2)}V`, wave.netName, 'è°ƒæ•´å¢ç›Šæˆ–åç½®'));
             }
-            if (max - min < 0.01 && max > 0.1) {
+            if (max - min < 0.01 && max > 0.1 && max < 0.5) {
                 violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING, `æŒ¯è¡å¯èƒ½ä¸èµ·æŒ¯: ${wave.probeName} å¹…åº¦è¿‡å°`, wave.netName, 'æ£€æŸ¥æ™¶æŒ¯å‚æ•°ä¸è´Ÿè½½ç”µå®¹'));
             }
             if (wave.timeAxis.length >= 4) {
@@ -76,7 +77,7 @@ export class DynamicErcEngine {
         return (crossings / 2) / duration;
     }
 }
-//# sourceMappingURL=DynamicErcEngine.js.mapÂ“ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DynamicErcEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ%./src/main/ets/utils/DynamicErcEngine¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚå/**
+//# sourceMappingURL=DynamicErcEngine.js.mapÂ“ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DynamicErcEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ%./src/main/ets/utils/DynamicErcEngine¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚc/**
 
  * åŠ¨æ€ ERC - ä»¿çœŸè¿è¡Œä¸­å®æ—¶æ£€æµ‹
 
@@ -126,7 +127,7 @@ export class DynamicErcEngine {
 
 
 
-      if (max > 5.5) {
+      if (max > 12.5) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.ERROR,
 
@@ -136,7 +137,8 @@ export class DynamicErcEngine {
 
       }
 
-      if (Math.abs(avg) > 4.5 && wave.waveType === 'voltage') {
+      // é¥±å’Œåˆ¤å®šï¼šç›¸å¯¹æœ¬é€šé“åŠ¨æ€èŒƒå›´ï¼Œé¿å… 3.3V è½¨è¯¯æŠ¥
+      if (Math.abs(avg) > Math.max(4.5, max * 0.92) && wave.waveType === 'voltage' && max > 4.0) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING,
 
@@ -146,7 +148,7 @@ export class DynamicErcEngine {
 
       }
 
-      if (max - min < 0.01 && max > 0.1) {
+      if (max - min < 0.01 && max > 0.1 && max < 0.5) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING,
 
@@ -241,7 +243,7 @@ export class DynamicErcEngine {
 
 }
 
-ÀÔrE“´../types/CommonTypes¬./MapHelpers¨./IdUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings³DynamicErcEngine.js ‘´DynamicErcEngine.etsÜ Nš”   ” ”	 ” "” $”! /”# 1”) 7”? ÌM”Ì@ ÌN˜”  
+ÀÔrE“´../types/CommonTypes¨./IdUtil¬./MapHelpersÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings³DynamicErcEngine.js ‘´DynamicErcEngine.etsÜ Oš”   ” ”	 ” "” $”! /”# 1”) 7”? ÌM”Ì@ ÌN˜”  
  ” 
 ”	 
 	” 
@@ -254,105 +256,113 @@ export class DynamicErcEngine {
 ” ” '” )” *Ü ” ” 	” ” ” ” ” ” ” ”! ”" ”( $”* &”+ '”- )”/ +™” ” ” ” ” ” ”  ”! ”" š” ” 
 ” ” ”  ”! ”' !”* $”+ %”- '’” ” ‘”  ›” "” "” "” "”  "”! "”% "”& " ”1 "+”2 ",”3 "-›” $” $” $” $”  $”! $”% $”& $ ”1 $+”2 $,”3 $-–” &” &
 ” &” &” &” &Ü ” (” (” (” (” (” (” (” (”  (”$ (”% (”0 (*”1 (+”7 (1”9 (3”: (4”< (6”> (8š” *” *” *” *” *”' *”( * ”) *!”* *"”+ *#‘” ,œ” .” .” .” .” .” .”" .”# .”. .(”/ .)”5 ./”6 .0–” 2” 2
-” 2” 2” 2” 2Ü "” 4” 4” 4” 4”  4”0 4(”1 4)”: 42”; 43”ÌF 4>”ÌG 4?”ÌL 4ÌD”ÌN 6
+” 2” 2” 2” 2Ü "” 4” 4” 4” 4”  4”0 4(”1 4)”: 42”; 43”ÌF 4>”ÌG 4?”ÌL 4ÌD”ÌN 6
 ”ÌW 6”Ì[ 6”Ì\ 6”Ìe 6!”Ìl 6(”Ìo 6+”Ìp 6,”Ìw 63”Ìx 64”Ìy 65”Ìz 66”Ì} 69”Ì 6;”Ìƒ 6?”Ì„ 6Ì@”Ì‹ 6ÌG”Ì 8
-”Ìœ 8”Ì 8”Ì 8”ÌŸ 8‘” :Ü ” <” <
-” <” <” <” <” <” <”  <”# <”' <!”+ <%”, <&”4 <.”9 <3”ÌB <<”ÌD <>Ü "” >” >” >” >”  >”0 >(”1 >)”: >2”; >3”ÌF >>”ÌG >?”ÌN >ÌF”ÌP Ì@
-”Ì[ Ì@”Ì_ Ì@”Ì` Ì@”Ìi Ì@#”Ìp Ì@*”Ìs Ì@-”Ìt Ì@.”Ì{ Ì@5”Ì| Ì@6”Ì} Ì@7”Ì~ Ì@8”Ì Ì@;”Ìƒ Ì@=”Ì‡ Ì@ÌA”Ìˆ Ì@ÌB”Ì Ì@ÌI”Ì‘ ÌB
-”Ìš ÌB”Ì› ÌB”Ìœ ÌB”Ì ÌB‘” ÌDœ” ÌF” ÌF
-” ÌF” ÌF” ÌF” ÌF”  ÌF”$ ÌF”' ÌF!”* ÌF$”- ÌF'”/ ÌF)Ü ” ÌH” ÌH” ÌH” ÌH”  ÌH”0 ÌH(”1 ÌH)”: ÌH2”; ÌH3”ÌF ÌH>”ÌG ÌH?”ÌN ÌHÌF”ÌP ÌJ
-”Ì\ ÌJ”Ì` ÌJ”Ìa ÌJ”Ìj ÌJ$”Ìq ÌJ+”Ìs ÌJ-”Ìw ÌJ1”Ìx ÌJ2”Ì ÌJ9”Ì ÌL
-”Ì ÌL”Ì ÌL”Ì ÌL”Ì‘ ÌL‘” ÌNš” ÌP” ÌP
-” ÌP” ÌP” ÌP” ÌP”$ ÌP”( ÌP"”) ÌP#”+ ÌP%›” ÌQ” ÌQ” ÌQ” ÌQ”- ÌQ%”. ÌQ&”? ÌQ7”Ì@ ÌQ8”ÌD ÌQ<”ÌE ÌQ=”ÌF ÌQ>š” ÌR” ÌR” ÌR” ÌR” ÌR”  ÌR”$ ÌR”' ÌR”) ÌR!”+ ÌR#Ü "” ÌS
-” ÌS” ÌS”# ÌS”$ ÌS”4 ÌS*”5 ÌS+”> ÌS4”? ÌS5”ÌJ ÌSÌ@”ÌK ÌSÌA”ÌR ÌSÌH”ÌT ÌT”Ì_ ÌT”Ìc ÌT”Ìd ÌT”Ìm ÌT%”Ìs ÌT+”Ìw ÌT/”Ìx ÌT0”Ì ÌT7”Ì€ ÌT8”Ì ÌT9”Ì‚ ÌT:”Ì† ÌT>”Ìˆ ÌTÌ@”ÌŒ ÌTÌD”Ì ÌTÌE”Ì” ÌTÌL”Ì– ÌU”Ì¦ ÌU”Ì§ ÌU”Ì¨ ÌU”Ì© ÌU‘” ÌV	–” ÌW” ÌW” ÌW” ÌW” ÌW”! ÌWÜ &” ÌX
-” ÌX” ÌX”# ÌX”$ ÌX”4 ÌX*”5 ÌX+”> ÌX4”? ÌX5”ÌJ ÌXÌ@”ÌK ÌXÌA”ÌP ÌXÌF”ÌR ÌY”Ì] ÌY”Ìa ÌY”Ìb ÌY”Ìk ÌY%”Ìq ÌY+”Ìr ÌY,”Ìv ÌY0”Ìy ÌY3”Ì| ÌY6”Ì} ÌY7”Ì~ ÌY8”Ì… ÌY?”Ì† ÌYÌ@”Ì‡ ÌYÌA”Ìˆ ÌYÌB”Ì ÌYÌG”Ì ÌYÌI”Ì“ ÌYÌM”Ì” ÌYÌN”Ì› ÌYÌU”Ì ÌZ”Ì« ÌZ”Ì¬ ÌZ”Ì­ ÌZ”Ì® ÌZ‘” Ì[	‘” Ì\Ü ” Ì^” Ì^
-” Ì^” Ì^” Ì^”" Ì^”+ Ì^%”/ Ì^)”3 Ì^-”4 Ì^.”? Ì^9”Ì@ Ì^:”ÌF Ì^Ì@”ÌI Ì^ÌC”ÌJ Ì^ÌD”ÌL Ì^ÌFÜ ” Ì_” Ì_” Ì_” Ì_”% Ì_”& Ì_”* Ì_"”+ Ì_#”6 Ì_.”7 Ì_/”= Ì_5”Ì@ Ì_8”ÌA Ì_9”ÌB Ì_:”ÌC Ì_;”ÌD Ì_<”ÌH Ì_Ì@”ÌI Ì_ÌA”ÌT Ì_ÌL”ÌU Ì_ÌM”ÌV Ì_ÌN”ÌW Ì_ÌO”Ì[ Ì_ÌS”Ì\ Ì_ÌT”Ìg Ì_Ì_”Ìh Ì_Ì`”Ìi Ì_Ìa–” Ì`” Ì`” Ì`” Ì`” Ì`”  Ì`Ü "” Ìa
-” Ìa” Ìa”# Ìa”$ Ìa”4 Ìa*”5 Ìa+”> Ìa4”? Ìa5”ÌJ ÌaÌ@”ÌK ÌaÌA”ÌP ÌaÌF”ÌR Ìb”Ì[ Ìb”Ì_ Ìb”Ì` Ìb”Ìi Ìb#”Ìp Ìb*”Ìt Ìb.”Ìu Ìb/”Ì| Ìb6”Ì} Ìb7”Ì~ Ìb8”Ì Ìb9”Ì‚ Ìb<”Ì„ Ìb>”Ìˆ ÌbÌB”Ì‰ ÌbÌC”Ì ÌbÌJ”Ì’ Ìc”ÌŸ Ìc”Ì  Ìc”Ì¡ Ìc”Ì¢ Ìc‘” Ìd	‘” Ìe‘”	 Ìg›” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”$ Ìk(”& Ìk*”+ Ìk7”- Ìk9”/ Ìk;š” Ìm” Ìm
-” Ìm” Ìm” Ìm”! Ìm”& Ìm ”+ Ìm%”5 Ìm/”7 Ìm1Ü ” Ìo” Ìo” Ìo” Ìo”  Ìo”0 Ìo(”1 Ìo)”: Ìo2”; Ìo3”ÌF Ìo>”ÌG Ìo?”ÌL ÌoÌD”ÌN Ìq
-”Ì^ Ìq”Ìc Ìq”Ìe Ìq!”Ìg Ìq#”Ìl Ìq(”Ìn Ìq*”Ìx Ìq4”Ìy Ìq5”Ìz Ìq6”Ì{ Ìq7‘” Ìs”” Ìu”	 Ìu”
- Ìu” Ìu”” Ìy” Ìy” Ìy” Ìy’” Ì{” Ì{œ” Ì
+”Ìœ 8”Ì 8”Ì 8”ÌŸ 8‘” :’” <”) <#Ü ” =” =
+” =” =” =” =” =” =”  =”$ =”% =”( ="”) =#”, =&”. =(”1 =+”4 =.”8 =2”9 =3”= =7”ÌA =;”ÌB =<”ÌJ =ÌD”ÌO =ÌI”ÌX =ÌR”Ì\ =ÌV”Ì_ =ÌY”Ìb =Ì\”Ìe =Ì_”Ìg =ÌaÜ "” ?” ?” ?” ?”  ?”0 ?(”1 ?)”: ?2”; ?3”ÌF ?>”ÌG ??”ÌN ?ÌF”ÌP ÌA
+”Ì[ ÌA”Ì_ ÌA”Ì` ÌA”Ìi ÌA#”Ìp ÌA*”Ìs ÌA-”Ìt ÌA.”Ì{ ÌA5”Ì| ÌA6”Ì} ÌA7”Ì~ ÌA8”Ì ÌA;”Ìƒ ÌA=”Ì‡ ÌAÌA”Ìˆ ÌAÌB”Ì ÌAÌI”Ì‘ ÌC
+”Ìš ÌC”Ì› ÌC”Ìœ ÌC”Ì ÌC‘” ÌEÜ ” ÌG” ÌG
+” ÌG” ÌG” ÌG” ÌG”  ÌG”$ ÌG”' ÌG!”* ÌG$”- ÌG'”1 ÌG+”4 ÌG.”7 ÌG1”: ÌG4”< ÌG6Ü ” ÌI” ÌI” ÌI” ÌI”  ÌI”0 ÌI(”1 ÌI)”: ÌI2”; ÌI3”ÌF ÌI>”ÌG ÌI?”ÌN ÌIÌF”ÌP ÌK
+”Ì\ ÌK”Ì` ÌK”Ìa ÌK”Ìj ÌK$”Ìq ÌK+”Ìs ÌK-”Ìw ÌK1”Ìx ÌK2”Ì ÌK9”Ì ÌM
+”Ì ÌM”Ì ÌM”Ì ÌM”Ì‘ ÌM‘” ÌOš” ÌQ” ÌQ
+” ÌQ” ÌQ” ÌQ” ÌQ”$ ÌQ”( ÌQ"”) ÌQ#”+ ÌQ%›” ÌR” ÌR” ÌR” ÌR”- ÌR%”. ÌR&”? ÌR7”Ì@ ÌR8”ÌD ÌR<”ÌE ÌR=”ÌF ÌR>š” ÌS” ÌS” ÌS” ÌS” ÌS”  ÌS”$ ÌS”' ÌS”) ÌS!”+ ÌS#Ü "” ÌT
+” ÌT” ÌT”# ÌT”$ ÌT”4 ÌT*”5 ÌT+”> ÌT4”? ÌT5”ÌJ ÌTÌ@”ÌK ÌTÌA”ÌR ÌTÌH”ÌT ÌU”Ì_ ÌU”Ìc ÌU”Ìd ÌU”Ìm ÌU%”Ìs ÌU+”Ìw ÌU/”Ìx ÌU0”Ì ÌU7”Ì€ ÌU8”Ì ÌU9”Ì‚ ÌU:”Ì† ÌU>”Ìˆ ÌUÌ@”ÌŒ ÌUÌD”Ì ÌUÌE”Ì” ÌUÌL”Ì– ÌV”Ì¦ ÌV”Ì§ ÌV”Ì¨ ÌV”Ì© ÌV‘” ÌW	–” ÌX” ÌX” ÌX” ÌX” ÌX”! ÌXÜ &” ÌY
+” ÌY” ÌY”# ÌY”$ ÌY”4 ÌY*”5 ÌY+”> ÌY4”? ÌY5”ÌJ ÌYÌ@”ÌK ÌYÌA”ÌP ÌYÌF”ÌR ÌZ”Ì] ÌZ”Ìa ÌZ”Ìb ÌZ”Ìk ÌZ%”Ìq ÌZ+”Ìr ÌZ,”Ìv ÌZ0”Ìy ÌZ3”Ì| ÌZ6”Ì} ÌZ7”Ì~ ÌZ8”Ì… ÌZ?”Ì† ÌZÌ@”Ì‡ ÌZÌA”Ìˆ ÌZÌB”Ì ÌZÌG”Ì ÌZÌI”Ì“ ÌZÌM”Ì” ÌZÌN”Ì› ÌZÌU”Ì Ì[”Ì« Ì[”Ì¬ Ì[”Ì­ Ì[”Ì® Ì[‘” Ì\	‘” Ì]Ü ” Ì_” Ì_
+” Ì_” Ì_” Ì_”" Ì_”+ Ì_%”/ Ì_)”3 Ì_-”4 Ì_.”? Ì_9”Ì@ Ì_:”ÌF Ì_Ì@”ÌI Ì_ÌC”ÌJ Ì_ÌD”ÌL Ì_ÌFÜ ” Ì`” Ì`” Ì`” Ì`”% Ì`”& Ì`”* Ì`"”+ Ì`#”6 Ì`.”7 Ì`/”= Ì`5”Ì@ Ì`8”ÌA Ì`9”ÌB Ì`:”ÌC Ì`;”ÌD Ì`<”ÌH Ì`Ì@”ÌI Ì`ÌA”ÌT Ì`ÌL”ÌU Ì`ÌM”ÌV Ì`ÌN”ÌW Ì`ÌO”Ì[ Ì`ÌS”Ì\ Ì`ÌT”Ìg Ì`Ì_”Ìh Ì`Ì`”Ìi Ì`Ìa–” Ìa” Ìa” Ìa” Ìa” Ìa”  ÌaÜ "” Ìb
+” Ìb” Ìb”# Ìb”$ Ìb”4 Ìb*”5 Ìb+”> Ìb4”? Ìb5”ÌJ ÌbÌ@”ÌK ÌbÌA”ÌP ÌbÌF”ÌR Ìc”Ì[ Ìc”Ì_ Ìc”Ì` Ìc”Ìi Ìc#”Ìp Ìc*”Ìt Ìc.”Ìu Ìc/”Ì| Ìc6”Ì} Ìc7”Ì~ Ìc8”Ì Ìc9”Ì‚ Ìc<”Ì„ Ìc>”Ìˆ ÌcÌB”Ì‰ ÌcÌC”Ì ÌcÌJ”Ì’ Ìd”ÌŸ Ìd”Ì  Ìd”Ì¡ Ìd”Ì¢ Ìd‘” Ìe	‘” Ìf‘”	 Ìh›” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl”$ Ìl(”& Ìl*”+ Ìl7”- Ìl9”/ Ìl;š” Ìn” Ìn
+” Ìn” Ìn” Ìn”! Ìn”& Ìn ”+ Ìn%”5 Ìn/”7 Ìn1Ü ” Ìp” Ìp” Ìp” Ìp”  Ìp”0 Ìp(”1 Ìp)”: Ìp2”; Ìp3”ÌF Ìp>”ÌG Ìp?”ÌL ÌpÌD”ÌN Ìr
+”Ì^ Ìr”Ìc Ìr”Ìe Ìr!”Ìg Ìr#”Ìl Ìr(”Ìn Ìr*”Ìx Ìr4”Ìy Ìr5”Ìz Ìr6”Ì{ Ìr7‘” Ìt”” Ìv”	 Ìv”
+ Ìv” Ìv”” Ìz” Ìz” Ìz” Ìz’” Ì|” Ì|œ” Ì€
 ”
- Ì” Ì” Ì” Ì” Ì0” Ì2”& ÌÌA”( ÌÌC”. ÌÌQ”0 ÌÌS”3 ÌÌ^’” Ì” Ì™” Ìƒ” Ìƒ” Ìƒ
-” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”& Ìƒ ”' Ìƒ!”” Ì…” Ì…” Ì…” Ì…–” Ì‡” Ì‡” Ì‡”! Ì‡”" Ì‡”. Ì‡(”” Ì‰” Ì‰” Ì‰” Ì‰”” Ì‹” Ì‹” Ì‹” Ì‹”” Ì” Ì” Ì” Ì’”	 Ì”
- Ì’” Ì‘” Ì‘–” Ì“
+ Ì€” Ì€” Ì€” Ì€” Ì€0” Ì€2”& Ì€ÌA”( Ì€ÌC”. Ì€ÌQ”0 Ì€ÌS”3 Ì€Ì^’” Ì‚” Ì‚™” Ì„” Ì„” Ì„
+” Ì„” Ì„” Ì„”  Ì„”& Ì„ ”' Ì„!”” Ì†” Ì†” Ì†” Ì†–” Ìˆ” Ìˆ” Ìˆ”! Ìˆ”" Ìˆ”. Ìˆ(”” ÌŠ” ÌŠ” ÌŠ” ÌŠ”” ÌŒ” ÌŒ” ÌŒ” ÌŒ”” Ì” Ì” Ì” Ì’”	 Ì”
+ Ì’” Ì’” Ì’–” Ì”
 ”
- Ì“” Ì“” Ì“"” Ì“#”! Ì“1˜” Ì”” Ì”
-” Ì”” Ì”” Ì”” Ì””" Ì””# Ì”˜” Ì•” Ì•
-” Ì•” Ì•” Ì•” Ì•” Ì•”  Ì•” Ì–” Ì–” Ì–	” Ì–
-” Ì–” Ì–” Ì–” Ì–” Ì–” Ì–”$ Ì– ”' Ì–#”( Ì–$”” Ì–&” Ì–-” Ì–.” Ì–/Ü ” Ì—” Ì—
-” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—”  Ì—”# Ì—”+ Ì—'”, Ì—(”- Ì—)”. Ì—*”/ Ì—+”2 Ì—.”3 Ì—/”4 Ì—0–” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜Ü ” Ì™” Ì™	” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™”$ Ì™ ”& Ì™"”' Ì™#”) Ì™%”+ Ì™'Ü &” Ìš” Ìš
-” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”# Ìš”$ Ìš”% Ìš”& Ìš ”' Ìš!”+ Ìš%”. Ìš(”/ Ìš)”3 Ìš-”4 Ìš.”5 Ìš/”6 Ìš0”7 Ìš1”: Ìš4”; Ìš5”< Ìš6”Ì@ Ìš:”ÌC Ìš=”ÌG ÌšÌA”ÌH ÌšÌB”ÌI ÌšÌC”ÌJ ÌšÌD”ÌK ÌšÌE”ÌN ÌšÌH”ÌQ ÌšÌK”ÌR ÌšÌL”ÌT ÌšÌN”” Ì›” Ì›” Ì›” Ì›‘” Ìœ‘”	 ÌÜ ” Ì” Ì
-” Ì” Ì” Ì” Ì” Ì” Ì”# Ì”& Ì"”' Ì#”( Ì$”+ Ì'”, Ì(”- Ì)”. Ì*”/ Ì+”0 Ì,™” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”& ÌŸ"”) ÌŸ%”* ÌŸ&”” ÌŸ(” ÌŸ/” ÌŸ0” ÌŸ1š” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ”! Ì ”) Ì %”* Ì &’” Ì¡” Ì¡‘” Ì£ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ O‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌšÍRÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌ¡ÍRÔrM”¤type¥start£end¤nameªIdentifierÌ§Ì·°DynamicErcEngineÀÔrN”¤type¥start£end¤body©ClassBodyÌ¸ÍR“ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌ¿Í
-´ÃÂMªIdentifierÌÆÌÍ§analyze¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌÍÍ
-´ÀÂÂÂ’MªIdentifierÌÎÌÓ¥wavesMªIdentifierÌÕÌâ­digitalStatesN®BlockStatementÌäÍ
-´”ÔrQ•¤type¥start£end¬declarations¤kind³VariableDeclarationÌïÍ‘ÔrR•¤type¥start£end¢id¤init²VariableDeclaratorÌõÍMªIdentifierÌõÌÿªviolationsÔrS”¤type¥start£end¨elements¯ArrayExpressionÍÍ¥constÔrT—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÍ	‹Q³VariableDeclarationÍÍ‘R²VariableDeclaratorÍÍMªIdentifierÍÍ¡wÔrU•¤type¥start£end¥value£raw§LiteralÍÍ ¡0£letÔrV–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍÍ/MªIdentifierÍÍ ¡w¡<ÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ#Í/MªIdentifierÍ#Í(¥wavesMªIdentifierÍ)Í/¦lengthÂÂÔrX–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ1Í4¢++ÂMªIdentifierÍ1Í2¡wN®BlockStatementÍ6Í	‹œQ³VariableDeclarationÍEÍ[‘R²VariableDeclaratorÍKÍZMªIdentifierÍKÍO¤waveW°MemberExpressionÍRÍZMªIdentifierÍRÍW¥wavesMªIdentifierÍXÍY¡wÃÂ¥constÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍiÍµV°BinaryExpressionÍmÍˆW°MemberExpressionÍmÍ„W°MemberExpressionÍmÍ}MªIdentifierÍmÍq¤waveMªIdentifierÍrÍ}«voltageAxisÂÂMªIdentifierÍ~Í„¦lengthÂÂ¡<U§LiteralÍ‡Íˆ¡2N®BlockStatementÍŠÍµ‘ÔrZ”¤type¥start£end¥label±ContinueStatementÍÍ¦ÀÀQ³VariableDeclarationÍÃÍê‘R²VariableDeclaratorÍÉÍéMªIdentifierÍÉÍÌ£minÔr[–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÏÍéMªIdentifierÍÏÍ×¨arrayMin‘W°MemberExpressionÍØÍèMªIdentifierÍØÍÜ¤waveMªIdentifierÍİÍè«voltageAxisÂÂÂ¥constQ³VariableDeclarationÍøÍ‘R²VariableDeclaratorÍşÍMªIdentifierÍşÍ£max[®CallExpressionÍÍMªIdentifierÍÍ¨arrayMax‘W°MemberExpressionÍÍMªIdentifierÍÍ¤waveMªIdentifierÍÍ«voltageAxisÂÂÂ¥constQ³VariableDeclarationÍ-Í9‘R²VariableDeclaratorÍ1Í8MªIdentifierÍ1Í4£sumU§LiteralÍ7Í8 ¡0£letT¬ForStatementÍGÍ¶Q³VariableDeclarationÍLÍU‘R²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍrMªIdentifierÍWÍX¡i¡<W°MemberExpressionÍ[ÍrW°MemberExpressionÍ[ÍkMªIdentifierÍ[Í_¤waveMªIdentifierÍ`Ík«voltageAxisÂÂMªIdentifierÍlÍr¦lengthÂÂX°UpdateExpressionÍtÍw¢++ÂMªIdentifierÍtÍu¡iN®BlockStatementÍyÍ¶‘Ôr\”¤type¥start£endªexpression³ExpressionStatementÍŒÍ§Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍŒÍ¦¢+=MªIdentifierÍŒÍ£sumW°MemberExpressionÍ“Í¦W°MemberExpressionÍ“Í£MªIdentifierÍ“Í—¤waveMªIdentifierÍ˜Í£«voltageAxisÂÂMªIdentifierÍ¤Í¥¡iÃÂQ³VariableDeclarationÍÄÍî‘R²VariableDeclaratorÍÊÍíMªIdentifierÍÊÍÍ£avgV°BinaryExpressionÍĞÍíMªIdentifierÍĞÍÓ£sum¡/W°MemberExpressionÍÖÍíW°MemberExpressionÍÖÍæMªIdentifierÍÖÍÚ¤waveMªIdentifierÍÛÍæ«voltageAxisÂÂMªIdentifierÍçÍí¦lengthÂÂ¥constY«IfStatementÍüÍ¼V°BinaryExpressionÍ Í	MªIdentifierÍ Í£max¡>U§LiteralÍÍ	Ë@      £5.5N®BlockStatementÍÍ¼‘\³ExpressionStatementÍÍ­[®CallExpressionÍÍ¬W°MemberExpressionÍÍ-MªIdentifierÍÍ(ªviolationsMªIdentifierÍ)Í-¤pushÂÂ‘[®CallExpressionÍ.Í«W°MemberExpressionÍ.ÍHMªIdentifierÍ.Í>°DynamicErcEngineMªIdentifierÍ?ÍH©violationÂÂ”W°MemberExpressionÍIÍZMªIdentifierÍIÍT«ErcSeverityMªIdentifierÍUÍZ¥ERRORÂÂÔr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ\Í‹’W°MemberExpressionÍeÍsMªIdentifierÍeÍi¤waveMªIdentifierÍjÍs©probeNameÂÂ[®CallExpressionÍzÍˆW°MemberExpressionÍzÍ…MªIdentifierÍzÍ}£maxMªIdentifierÍ~Í…§toFixedÂÂ‘U§LiteralÍ†Í‡¡2Â“Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍ]ÍcÔr`’£raw¦cooked®æŒç»­è¿‡å‹: ®æŒç»­è¿‡å‹: Â_¯TemplateElementÍtÍx`¨ å³°å€¼ ¨ å³°å€¼ Â_¯TemplateElementÍ‰ÍŠ`¡V¡VÃW°MemberExpressionÍÍ™MªIdentifierÍÍ‘¤waveMªIdentifierÍ’Í™§netNameÂÂU§LiteralÍ›ÍªÙ'æ£€æŸ¥ç”µæºç”µå‹æˆ–æ·»åŠ é™å‹ä¿æŠ¤Ù)'æ£€æŸ¥ç”µæºç”µå‹æˆ–æ·»åŠ é™å‹ä¿æŠ¤'ÂÂÀY«IfStatementÍÊÍ±V±LogicalExpressionÍÎÍ V°BinaryExpressionÍÎÍá[®CallExpressionÍÎÍÛW°MemberExpressionÍÎÍÖMªIdentifierÍÎÍÒ¤MathMªIdentifierÍÓÍÖ£absÂÂ‘MªIdentifierÍ×ÍÚ£avgÂ¡>U§LiteralÍŞÍáË@      £4.5¢&&V°BinaryExpressionÍåÍ W°MemberExpressionÍåÍòMªIdentifierÍåÍé¤waveMªIdentifierÍêÍò¨waveTypeÂÂ£===U§LiteralÍ÷Í §voltage©'voltage'N®BlockStatementÍÍ±‘\³ExpressionStatementÍÍ¢[®CallExpressionÍÍ¡W°MemberExpressionÍÍ$MªIdentifierÍÍªviolationsMªIdentifierÍ Í$¤pushÂÂ‘[®CallExpressionÍ%Í W°MemberExpressionÍ%Í?MªIdentifierÍ%Í5°DynamicErcEngineMªIdentifierÍ6Í?©violationÂÂ”W°MemberExpressionÍ@ÍSMªIdentifierÍ@ÍK«ErcSeverityMªIdentifierÍLÍS§WARNINGÂÂ^¯TemplateLiteralÍUÍ†’W°MemberExpressionÍ`ÍnMªIdentifierÍ`Íd¤waveMªIdentifierÍeÍn©probeNameÂÂ[®CallExpressionÍuÍƒW°MemberExpressionÍuÍ€MªIdentifierÍuÍx£avgMªIdentifierÍyÍ€§toFixedÂÂ‘U§LiteralÍÍ‚¡2Â“_¯TemplateElementÍVÍ^`´è¿æ”¾å¯èƒ½é¥±å’Œ: ´è¿æ”¾å¯èƒ½é¥±å’Œ: Â_¯TemplateElementÍoÍs`¨ å¹³å‡ ¨ å¹³å‡ Â_¯TemplateElementÍ„Í…`¡V¡VÃW°MemberExpressionÍˆÍ”MªIdentifierÍˆÍŒ¤waveMªIdentifierÍÍ”§netNameÂÂU§LiteralÍ–ÍŸµè°ƒæ•´å¢ç›Šæˆ–åç½®·'è°ƒæ•´å¢ç›Šæˆ–åç½®'ÂÂÀY«IfStatementÍ¿Í…V±LogicalExpressionÍÃÍàV°BinaryExpressionÍÃÍÓV°BinaryExpressionÍÃÍÌMªIdentifierÍÃÍÆ£max¡-MªIdentifierÍÉÍÌ£min¡<U§LiteralÍÏÍÓË?„záG®{¤0.01¢&&V°BinaryExpressionÍ×ÍàMªIdentifierÍ×ÍÚ£max¡>U§LiteralÍİÍàË?¹™™™™™š£0.1N®BlockStatementÍâÍ…‘\³ExpressionStatementÍõÍv[®CallExpressionÍõÍuW°MemberExpressionÍõÍMªIdentifierÍõÍÿªviolationsMªIdentifierÍ Í¤pushÂÂ‘[®CallExpressionÍÍtW°MemberExpressionÍÍMªIdentifierÍÍ°DynamicErcEngineMªIdentifierÍÍ©violationÂÂ”W°MemberExpressionÍ Í3MªIdentifierÍ Í+«ErcSeverityMªIdentifierÍ,Í3§WARNINGÂÂ^¯TemplateLiteralÍ5ÍV‘W°MemberExpressionÍAÍOMªIdentifierÍAÍE¤waveMªIdentifierÍFÍO©probeNameÂÂ’_¯TemplateElementÍ6Í?`·æŒ¯è¡å¯èƒ½ä¸èµ·æŒ¯: ·æŒ¯è¡å¯èƒ½ä¸èµ·æŒ¯: Â_¯TemplateElementÍPÍU`­ å¹…åº¦è¿‡å°­ å¹…åº¦è¿‡å°ÃW°MemberExpressionÍXÍdMªIdentifierÍXÍ\¤waveMªIdentifierÍ]Íd§netNameÂÂU§LiteralÍfÍsÙ!æ£€æŸ¥æ™¶æŒ¯å‚æ•°ä¸è´Ÿè½½ç”µå®¹Ù#'æ£€æŸ¥æ™¶æŒ¯å‚æ•°ä¸è´Ÿè½½ç”µå®¹'ÂÂÀY«IfStatementÍ“ÍİV°BinaryExpressionÍ—Í°W°MemberExpressionÍ—Í«W°MemberExpressionÍ—Í¤MªIdentifierÍ—Í›¤waveMªIdentifierÍœÍ¤¨timeAxisÂÂMªIdentifierÍ¥Í«¦lengthÂÂ¢>=U§LiteralÍ¯Í°¡4N®BlockStatementÍ²Íİ“Q³VariableDeclarationÍÅÍû‘R²VariableDeclaratorÍËÍúMªIdentifierÍËÍÏ¤freq[®CallExpressionÍÒÍúW°MemberExpressionÍÒÍôMªIdentifierÍÒÍâ°DynamicErcEngineMªIdentifierÍãÍô±estimateFrequencyÂÂ‘MªIdentifierÍõÍù¤waveÂ¥constY«IfStatementÍÍçV±LogicalExpressionÍÍ&V°BinaryExpressionÍÍMªIdentifierÍÍ¤freq¡>U§LiteralÍÍ ¡0¢&&V°BinaryExpressionÍÍ&MªIdentifierÍÍ!¤freq¡<U§LiteralÍ$Í&
-¢10N®BlockStatementÍ(Íç‘\³ExpressionStatementÍ?ÍÔ[®CallExpressionÍ?ÍÓW°MemberExpressionÍ?ÍNMªIdentifierÍ?ÍIªviolationsMªIdentifierÍJÍN¤pushÂÂ‘[®CallExpressionÍOÍÒW°MemberExpressionÍOÍiMªIdentifierÍOÍ_°DynamicErcEngineMªIdentifierÍ`Íi©violationÂÂ”W°MemberExpressionÍjÍ}MªIdentifierÍjÍu«ErcSeverityMªIdentifierÍvÍ}§WARNINGÂÂ^¯TemplateLiteralÍÍ±’W°MemberExpressionÍŠÍ˜MªIdentifierÍŠÍ¤waveMªIdentifierÍÍ˜©probeNameÂÂ[®CallExpressionÍÍ­W°MemberExpressionÍÍªMªIdentifierÍÍ¢¤freqMªIdentifierÍ£Íª§toFixedÂÂ‘U§LiteralÍ«Í¬¡1Â“_¯TemplateElementÍ€Íˆ`´é¢‘ç‡å¼‚å¸¸åä½: ´é¢‘ç‡å¼‚å¸¸åä½: Â_¯TemplateElementÍ™Íœ`¥ â‰ˆ ¥ â‰ˆ Â_¯TemplateElementÍ®Í°`¢Hz¢HzÃW°MemberExpressionÍ³Í¿MªIdentifierÍ³Í·¤waveMªIdentifierÍ¸Í¿§netNameÂÂU§LiteralÍÁÍÑÙ"æ£€æŸ¥æ—¶é’Ÿæºæˆ– RC æ—¶é—´å¸¸æ•°Ù$'æ£€æŸ¥æ—¶é’Ÿæºæˆ– RC æ—¶é—´å¸¸æ•°'ÂÂÀY«IfStatementÍùÍÎV°BinaryExpressionÍıÍMªIdentifierÍıÍ¤freq¡>U§LiteralÍÍÎúğ€¤50e6N®BlockStatementÍ
-ÍÎ‘\³ExpressionStatementÍ!Í»[®CallExpressionÍ!ÍºW°MemberExpressionÍ!Í0MªIdentifierÍ!Í+ªviolationsMªIdentifierÍ,Í0¤pushÂÂ‘[®CallExpressionÍ1Í¹W°MemberExpressionÍ1ÍKMªIdentifierÍ1ÍA°DynamicErcEngineMªIdentifierÍBÍK©violationÂÂ”W°MemberExpressionÍLÍ]MªIdentifierÍLÍW«ErcSeverityMªIdentifierÍXÍ]¥ERRORÂÂ^¯TemplateLiteralÍ_Íš’W°MemberExpressionÍjÍxMªIdentifierÍjÍn¤waveMªIdentifierÍoÍx©probeNameÂÂ[®CallExpressionÍ~Í•W°MemberExpressionÍ~Í’V°BinaryExpressionÍÍ‰MªIdentifierÍÍƒ¤freq¡/U§LiteralÍ†Í‰Î B@£1e6MªIdentifierÍ‹Í’§toFixedÂÂ‘U§LiteralÍ“Í”¡1Â“_¯TemplateElementÍ`Íh`´é¢‘ç‡å¼‚å¸¸åé«˜: ´é¢‘ç‡å¼‚å¸¸åé«˜: Â_¯TemplateElementÍyÍ|`¥ â‰ˆ ¥ â‰ˆ Â_¯TemplateElementÍ–Í™`£MHz£MHzÃW°MemberExpressionÍœÍ¨MªIdentifierÍœÍ ¤waveMªIdentifierÍ¡Í¨§netNameÂÂU§LiteralÍªÍ¸¼æ£€æŸ¥ä¿¡å·å®Œæ•´æ€§æˆ– EMI¾'æ£€æŸ¥ä¿¡å·å®Œæ•´æ€§æˆ– EMI'ÂÂÀÀY«IfStatementÍëÍ	€V±LogicalExpressionÍïÍ)V°BinaryExpressionÍïÍ
-W°MemberExpressionÍïÍüMªIdentifierÍïÍó¤waveMªIdentifierÍôÍü¨waveTypeÂÂ£===U§LiteralÍÍ
-§current©'current'¢||V°BinaryExpressionÍÍ)W°MemberExpressionÍÍ%W°MemberExpressionÍÍMªIdentifierÍÍ¤waveMªIdentifierÍÍ«currentAxisÂÂMªIdentifierÍÍ%¦lengthÂÂ¡>U§LiteralÍ(Í) ¡0N®BlockStatementÍ+Í	€’Q³VariableDeclarationÍ>Í—‘R²VariableDeclaratorÍDÍ–MªIdentifierÍDÍH¤iMax[®CallExpressionÍKÍ–MªIdentifierÍKÍS¨arrayMax‘YµConditionalExpressionÍTÍ•V°BinaryExpressionÍTÍoW°MemberExpressionÍTÍkW°MemberExpressionÍTÍdMªIdentifierÍTÍX¤waveMªIdentifierÍYÍd«currentAxisÂÂMªIdentifierÍeÍk¦lengthÂÂ¡>U§LiteralÍnÍo ¡0W°MemberExpressionÍrÍ‚MªIdentifierÍrÍv¤waveMªIdentifierÍwÍ‚«currentAxisÂÂW°MemberExpressionÍ…Í•MªIdentifierÍ…Í‰¤waveMªIdentifierÍŠÍ•«voltageAxisÂÂÂ¥constY«IfStatementÍ©Í	qV°BinaryExpressionÍ­Í·MªIdentifierÍ­Í±¤iMax¡>U§LiteralÍ´Í·Ë?à      £0.5N®BlockStatementÍ¹Í	q‘\³ExpressionStatementÍĞÍ	^[®CallExpressionÍĞÍ	]W°MemberExpressionÍĞÍßMªIdentifierÍĞÍÚªviolationsMªIdentifierÍÛÍß¤pushÂÂ‘[®CallExpressionÍàÍ	\W°MemberExpressionÍàÍúMªIdentifierÍàÍğ°DynamicErcEngineMªIdentifierÍñÍú©violationÂÂ”W°MemberExpressionÍûÍ	MªIdentifierÍûÍ	«ErcSeverityMªIdentifierÍ	Í	¥ERRORÂÂ^¯TemplateLiteralÍ	Í	>’W°MemberExpressionÍ	Í	%MªIdentifierÍ	Í	¤waveMªIdentifierÍ	Í	%©probeNameÂÂ[®CallExpressionÍ	,Í	;W°MemberExpressionÍ	,Í	8MªIdentifierÍ	,Í	0¤iMaxMªIdentifierÍ	1Í	8§toFixedÂÂ‘U§LiteralÍ	9Í	:¡3Â“_¯TemplateElementÍ	Í	`®è¿‡æµæ£€æµ‹: ®è¿‡æµæ£€æµ‹: Â_¯TemplateElementÍ	&Í	*`¨ å³°å€¼ ¨ å³°å€¼ Â_¯TemplateElementÍ	<Í	=`¡A¡AÃW°MemberExpressionÍ	@Í	LMªIdentifierÍ	@Í	D¤waveMªIdentifierÍ	EÍ	L§netNameÂÂU§LiteralÍ	NÍ	[Ù!æ£€æŸ¥è´Ÿè½½çŸ­è·¯æˆ–é™æµç”µé˜»Ù#'æ£€æŸ¥è´Ÿè½½çŸ­è·¯æˆ–é™æµç”µé˜»'ÂÂÀÀ\³ExpressionStatementÍ	•Í
-‘[®CallExpressionÍ	•Í
-W°MemberExpressionÍ	•Í	ªMªIdentifierÍ	•Í	¢­digitalStatesMªIdentifierÍ	£Í	ª§forEachÂÂ‘P·ArrowFunctionExpressionÍ	«Í
-ÀÂÂÂ’MªIdentifierÍ	¬Í	±¥stateMªIdentifierÍ	³Í	¸¥pinIdN®BlockStatementÍ	½Í
-‘Y«IfStatementÍ	ÌÍ
-„V±LogicalExpressionÍ	ĞÍ	õV°BinaryExpressionÍ	ĞÍ	İMªIdentifierÍ	ĞÍ	Õ¥state£===U§LiteralÍ	ÚÍ	İ¡X£'X'¢||V°BinaryExpressionÍ	áÍ	õMªIdentifierÍ	áÍ	æ¥state£===U§LiteralÍ	ëÍ	õ¨conflictª'conflict'N®BlockStatementÍ	÷Í
-„‘\³ExpressionStatementÍ
-
-Í
-u[®CallExpressionÍ
-
-Í
-tW°MemberExpressionÍ
-
-Í
-MªIdentifierÍ
-
-Í
-ªviolationsMªIdentifierÍ
-Í
-¤pushÂÂ‘[®CallExpressionÍ
-Í
-sW°MemberExpressionÍ
-Í
-4MªIdentifierÍ
-Í
-*°DynamicErcEngineMªIdentifierÍ
-+Í
-4©violationÂÂ”W°MemberExpressionÍ
-5Í
-FMªIdentifierÍ
-5Í
-@«ErcSeverityMªIdentifierÍ
-AÍ
-F¥ERRORÂÂ^¯TemplateLiteralÍ
-HÍ
-_‘MªIdentifierÍ
-XÍ
-]¥pinId’_¯TemplateElementÍ
-IÍ
-V`Ù!æ•°å­—æ€»çº¿å†²çª/é«˜é˜»å¼‚å¸¸: Ù!æ•°å­—æ€»çº¿å†²çª/é«˜é˜»å¼‚å¸¸: Â_¯TemplateElementÍ
-^Í
-^`  ÃMªIdentifierÍ
-aÍ
-f¥pinIdU§LiteralÍ
-hÍ
-r¸æ£€æŸ¥è¾“å‡ºå¼•è„šçŸ­æ¥º'æ£€æŸ¥è¾“å‡ºå¼•è„šçŸ­æ¥'ÂÂÀÂÔra”¤type¥start£end¨argument¯ReturnStatementÍ
-›Í
-­MªIdentifierÍ
-¢Í
-¬ªviolationsO°MethodDefinitionÍ
-ºÍèÃÂMªIdentifierÍ
-ÁÍ
-Ê©violation¦methodP²FunctionExpressionÍ
-ÊÍèÀÂÂÂ”MªIdentifierÍ
-ËÍ
-Ó¨severityMªIdentifierÍ
-ÕÍ
-Ü§messageMªIdentifierÍ
-ŞÍ
-ä¦targetMªIdentifierÍ
-æÍ
-é£fixN®BlockStatementÍ
-ëÍè‘a¯ReturnStatementÍ
-öÍáÔrb”¤type¥start£endªproperties°ObjectExpressionÍ
-ıÍà–Ôrc™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍ'ÂÂÂMªIdentifierÍÍ¢id[®CallExpressionÍÍ'W°MemberExpressionÍÍMªIdentifierÍÍ¦IdUtilMªIdentifierÍÍ¨generateÂÂ‘U§LiteralÍ Í&¤derc¦'derc'Â¤initc¨PropertyÍ6ÍHÂÂÂMªIdentifierÍ6Í>¨severityMªIdentifierÍ@ÍH¨severity¤initc¨PropertyÍWÍyÂÂÂMªIdentifierÍWÍ_¨ruleTypeW°MemberExpressionÍaÍyMªIdentifierÍaÍl«ErcRuleTypeMªIdentifierÍmÍy¬PIN_CONFLICTÂÂ¤initc¨PropertyÍˆÍ˜ÂÂÂMªIdentifierÍˆÍ§messageMªIdentifierÍ‘Í˜§message¤initc¨PropertyÍ§Í´ÂÂÂMªIdentifierÍ§Í¬¥netIdMªIdentifierÍ®Í´¦target¤initc¨PropertyÍÃÍÕÂÂÂMªIdentifierÍÃÍĞ­fixSuggestionMªIdentifierÍÒÍÕ£fix¤initO°MethodDefinitionÍîÍOÃÂMªIdentifierÍõÍ±estimateFrequency¦methodP²FunctionExpressionÍÍOÀÂÂÂ‘MªIdentifierÍÍ¤waveN®BlockStatementÍÍO™Q³VariableDeclarationÍÍ3‘R²VariableDeclaratorÍÍ2MªIdentifierÍÍ¡vW°MemberExpressionÍ"Í2MªIdentifierÍ"Í&¤waveMªIdentifierÍ'Í2«voltageAxisÂÂ¥constQ³VariableDeclarationÍ=ÍU‘R²VariableDeclaratorÍCÍTMªIdentifierÍCÍD¡tW°MemberExpressionÍGÍTMªIdentifierÍGÍK¤waveMªIdentifierÍLÍT¨timeAxisÂÂ¥constY«IfStatementÍ_Í—V±LogicalExpressionÍcÍV°BinaryExpressionÍcÍoW°MemberExpressionÍcÍkMªIdentifierÍcÍd¡vMªIdentifierÍeÍk¦lengthÂÂ¡<U§LiteralÍnÍo¡4¢||V°BinaryExpressionÍsÍW°MemberExpressionÍsÍ{MªIdentifierÍsÍt¡tMªIdentifierÍuÍ{¦lengthÂÂ¡<U§LiteralÍ~Í¡4a¯ReturnStatementÍÍ—U§LiteralÍ•Í– ¡0ÀQ³VariableDeclarationÍ¡ÍÍ‘R²VariableDeclaratorÍ§ÍÌMªIdentifierÍ§Íª£midV°BinaryExpressionÍ­ÍÌV°BinaryExpressionÍ®ÍÇ[®CallExpressionÍ®Í¹MªIdentifierÍ®Í¶¨arrayMin‘MªIdentifierÍ·Í¸¡vÂ¡+[®CallExpressionÍ¼ÍÇMªIdentifierÍ¼ÍÄ¨arrayMax‘MªIdentifierÍÅÍÆ¡vÂ¡/U§LiteralÍËÍÌ¡2¥constQ³VariableDeclarationÍ×Íé‘R²VariableDeclaratorÍÛÍèMªIdentifierÍÛÍä©crossingsU§LiteralÍçÍè ¡0£letT¬ForStatementÍóÍ¦Q³VariableDeclarationÍøÍ‘R²VariableDeclaratorÍüÍMªIdentifierÍüÍı¡iU§LiteralÍ Í¡1£letV°BinaryExpressionÍÍMªIdentifierÍÍ¡i¡<W°MemberExpressionÍÍMªIdentifierÍÍ¡vMªIdentifierÍ	Í¦lengthÂÂX°UpdateExpressionÍÍ¢++ÂMªIdentifierÍÍ¡iN®BlockStatementÍÍ¦‘Y«IfStatementÍ%Í›V±LogicalExpressionÍ)ÍkV±LogicalExpressionÍ*ÍGV°BinaryExpressionÍ*Í8W°MemberExpressionÍ*Í2MªIdentifierÍ*Í+¡vV°BinaryExpressionÍ,Í1MªIdentifierÍ,Í-¡i¡-U§LiteralÍ0Í1¡1ÃÂ¡<MªIdentifierÍ5Í8£mid¢&&V°BinaryExpressionÍ<ÍGW°MemberExpressionÍ<Í@MªIdentifierÍ<Í=¡vMªIdentifierÍ>Í?¡iÃÂ¢>=MªIdentifierÍDÍG£mid¢||V±LogicalExpressionÍMÍjV°BinaryExpressionÍMÍ\W°MemberExpressionÍMÍUMªIdentifierÍMÍN¡vV°BinaryExpressionÍOÍTMªIdentifierÍOÍP¡i¡-U§LiteralÍSÍT¡1ÃÂ¢>=MªIdentifierÍYÍ\£mid¢&&V°BinaryExpressionÍ`ÍjW°MemberExpressionÍ`ÍdMªIdentifierÍ`Ía¡vMªIdentifierÍbÍc¡iÃÂ¡<MªIdentifierÍgÍj£midN®BlockStatementÍmÍ›‘\³ExpressionStatementÍ€ÍŒX°UpdateExpressionÍ€Í‹¢++ÂMªIdentifierÍ€Í‰©crossingsÀQ³VariableDeclarationÍ°ÍØ‘R²VariableDeclaratorÍ¶Í×MªIdentifierÍ¶Í¾¨durationV°BinaryExpressionÍÁÍ×W°MemberExpressionÍÁÍĞMªIdentifierÍÁÍÂ¡tV°BinaryExpressionÍÃÍÏW°MemberExpressionÍÃÍËMªIdentifierÍÃÍÄ¡tMªIdentifierÍÅÍË¦lengthÂÂ¡-U§LiteralÍÎÍÏ¡1ÃÂ¡-W°MemberExpressionÍÓÍ×MªIdentifierÍÓÍÔ¡tU§LiteralÍÕÍÖ ¡0ÃÂ¥constY«IfStatementÍâÍV±LogicalExpressionÍæÍV°BinaryExpressionÍæÍóMªIdentifierÍæÍî¨duration¢<=U§LiteralÍòÍó ¡0¢||V°BinaryExpressionÍ÷ÍMªIdentifierÍ÷Í ©crossings¡<U§LiteralÍÍ¡2a¯ReturnStatementÍÍU§LiteralÍÍ ¡0Àa¯ReturnStatementÍ&ÍHV°BinaryExpressionÍ-ÍGV°BinaryExpressionÍ.Í;MªIdentifierÍ.Í7©crossings¡/U§LiteralÍ:Í;¡2¡/MªIdentifierÍ?ÍG¨durationÀ“Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration Ì@’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	«ErcSeverityMªIdentifier	«ErcSeveritye¯ImportSpecifier!MªIdentifier!«ErcRuleTypeMªIdentifier!«ErcRuleTypeU§Literal)?´../types/CommonTypes¶'../types/CommonTypes'd±ImportDeclarationÌBÌd‘e¯ImportSpecifierÌKÌQMªIdentifierÌKÌQ¦IdUtilMªIdentifierÌKÌQ¦IdUtilU§LiteralÌYÌc¨./IdUtilª'./IdUtil'd±ImportDeclarationÌfÌ˜’e¯ImportSpecifierÌoÌwMªIdentifierÌoÌw¨arrayMinMªIdentifierÌoÌw¨arrayMine¯ImportSpecifierÌyÌMªIdentifierÌyÌ¨arrayMaxMªIdentifierÌyÌ¨arrayMaxU§LiteralÌ‰Ì—¬./MapHelpers®'./MapHelpers'
+ Ì”” Ì”” Ì”"” Ì”#”! Ì”1˜” Ì•” Ì•
+” Ì•” Ì•” Ì•” Ì•”" Ì•”# Ì•˜” Ì–” Ì–
+” Ì–” Ì–” Ì–” Ì–” Ì–”  Ì–” Ì—” Ì—” Ì—	” Ì—
+” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—”$ Ì— ”' Ì—#”( Ì—$”” Ì—&” Ì—-” Ì—.” Ì—/Ü ” Ì˜” Ì˜
+” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”  Ì˜”# Ì˜”+ Ì˜'”, Ì˜(”- Ì˜)”. Ì˜*”/ Ì˜+”2 Ì˜.”3 Ì˜/”4 Ì˜0–” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™Ü ” Ìš” Ìš	” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”$ Ìš ”& Ìš"”' Ìš#”) Ìš%”+ Ìš'Ü &” Ì›” Ì›
+” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›”# Ì›”$ Ì›”% Ì›”& Ì› ”' Ì›!”+ Ì›%”. Ì›(”/ Ì›)”3 Ì›-”4 Ì›.”5 Ì›/”6 Ì›0”7 Ì›1”: Ì›4”; Ì›5”< Ì›6”Ì@ Ì›:”ÌC Ì›=”ÌG Ì›ÌA”ÌH Ì›ÌB”ÌI Ì›ÌC”ÌJ Ì›ÌD”ÌK Ì›ÌE”ÌN Ì›ÌH”ÌQ Ì›ÌK”ÌR Ì›ÌL”ÌT Ì›ÌN”” Ìœ” Ìœ” Ìœ” Ìœ‘” Ì‘”	 ÌÜ ” ÌŸ” ÌŸ
+” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”# ÌŸ”& ÌŸ"”' ÌŸ#”( ÌŸ$”+ ÌŸ'”, ÌŸ(”- ÌŸ)”. ÌŸ*”/ ÌŸ+”0 ÌŸ,™” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ”& Ì "”) Ì %”* Ì &”” Ì (” Ì /” Ì 0” Ì 1š” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡”! Ì¡”) Ì¡%”* Ì¡&’” Ì¢” Ì¢‘” Ì¤ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ P‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌšÍ®ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌ¡Í®ÔrM”¤type¥start£end¤nameªIdentifierÌ§Ì·°DynamicErcEngineÀÔrN”¤type¥start£end¤body©ClassBodyÌ¸Í®“ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌ¿ÍÃÂMªIdentifierÌÆÌÍ§analyze¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌÍÍÀÂÂÂ’MªIdentifierÌÎÌÓ¥wavesMªIdentifierÌÕÌâ­digitalStatesN®BlockStatementÌäÍ”ÔrQ•¤type¥start£end¬declarations¤kind³VariableDeclarationÌïÍ‘ÔrR•¤type¥start£end¢id¤init²VariableDeclaratorÌõÍMªIdentifierÌõÌÿªviolationsÔrS”¤type¥start£end¨elements¯ArrayExpressionÍÍ¥constÔrT—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÍ	çQ³VariableDeclarationÍÍ‘R²VariableDeclaratorÍÍMªIdentifierÍÍ¡wÔrU•¤type¥start£end¥value£raw§LiteralÍÍ ¡0£letÔrV–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍÍ/MªIdentifierÍÍ ¡w¡<ÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ#Í/MªIdentifierÍ#Í(¥wavesMªIdentifierÍ)Í/¦lengthÂÂÔrX–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ1Í4¢++ÂMªIdentifierÍ1Í2¡wN®BlockStatementÍ6Í	çœQ³VariableDeclarationÍEÍ[‘R²VariableDeclaratorÍKÍZMªIdentifierÍKÍO¤waveW°MemberExpressionÍRÍZMªIdentifierÍRÍW¥wavesMªIdentifierÍXÍY¡wÃÂ¥constÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍiÍµV°BinaryExpressionÍmÍˆW°MemberExpressionÍmÍ„W°MemberExpressionÍmÍ}MªIdentifierÍmÍq¤waveMªIdentifierÍrÍ}«voltageAxisÂÂMªIdentifierÍ~Í„¦lengthÂÂ¡<U§LiteralÍ‡Íˆ¡2N®BlockStatementÍŠÍµ‘ÔrZ”¤type¥start£end¥label±ContinueStatementÍÍ¦ÀÀQ³VariableDeclarationÍÃÍê‘R²VariableDeclaratorÍÉÍéMªIdentifierÍÉÍÌ£minÔr[–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÏÍéMªIdentifierÍÏÍ×¨arrayMin‘W°MemberExpressionÍØÍèMªIdentifierÍØÍÜ¤waveMªIdentifierÍİÍè«voltageAxisÂÂÂ¥constQ³VariableDeclarationÍøÍ‘R²VariableDeclaratorÍşÍMªIdentifierÍşÍ£max[®CallExpressionÍÍMªIdentifierÍÍ¨arrayMax‘W°MemberExpressionÍÍMªIdentifierÍÍ¤waveMªIdentifierÍÍ«voltageAxisÂÂÂ¥constQ³VariableDeclarationÍ-Í9‘R²VariableDeclaratorÍ1Í8MªIdentifierÍ1Í4£sumU§LiteralÍ7Í8 ¡0£letT¬ForStatementÍGÍ¶Q³VariableDeclarationÍLÍU‘R²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍrMªIdentifierÍWÍX¡i¡<W°MemberExpressionÍ[ÍrW°MemberExpressionÍ[ÍkMªIdentifierÍ[Í_¤waveMªIdentifierÍ`Ík«voltageAxisÂÂMªIdentifierÍlÍr¦lengthÂÂX°UpdateExpressionÍtÍw¢++ÂMªIdentifierÍtÍu¡iN®BlockStatementÍyÍ¶‘Ôr\”¤type¥start£endªexpression³ExpressionStatementÍŒÍ§Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍŒÍ¦¢+=MªIdentifierÍŒÍ£sumW°MemberExpressionÍ“Í¦W°MemberExpressionÍ“Í£MªIdentifierÍ“Í—¤waveMªIdentifierÍ˜Í£«voltageAxisÂÂMªIdentifierÍ¤Í¥¡iÃÂQ³VariableDeclarationÍÄÍî‘R²VariableDeclaratorÍÊÍíMªIdentifierÍÊÍÍ£avgV°BinaryExpressionÍĞÍíMªIdentifierÍĞÍÓ£sum¡/W°MemberExpressionÍÖÍíW°MemberExpressionÍÖÍæMªIdentifierÍÖÍÚ¤waveMªIdentifierÍÛÍæ«voltageAxisÂÂMªIdentifierÍçÍí¦lengthÂÂ¥constY«IfStatementÍüÍ½V°BinaryExpressionÍ Í
+MªIdentifierÍ Í£max¡>U§LiteralÍÍ
+Ë@)      ¤12.5N®BlockStatementÍÍ½‘\³ExpressionStatementÍÍ®[®CallExpressionÍÍ­W°MemberExpressionÍÍ.MªIdentifierÍÍ)ªviolationsMªIdentifierÍ*Í.¤pushÂÂ‘[®CallExpressionÍ/Í¬W°MemberExpressionÍ/ÍIMªIdentifierÍ/Í?°DynamicErcEngineMªIdentifierÍ@ÍI©violationÂÂ”W°MemberExpressionÍJÍ[MªIdentifierÍJÍU«ErcSeverityMªIdentifierÍVÍ[¥ERRORÂÂÔr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ]ÍŒ’W°MemberExpressionÍfÍtMªIdentifierÍfÍj¤waveMªIdentifierÍkÍt©probeNameÂÂ[®CallExpressionÍ{Í‰W°MemberExpressionÍ{Í†MªIdentifierÍ{Í~£maxMªIdentifierÍÍ†§toFixedÂÂ‘U§LiteralÍ‡Íˆ¡2Â“Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍ^ÍdÔr`’£raw¦cooked®æŒç»­è¿‡å‹: ®æŒç»­è¿‡å‹: Â_¯TemplateElementÍuÍy`¨ å³°å€¼ ¨ å³°å€¼ Â_¯TemplateElementÍŠÍ‹`¡V¡VÃW°MemberExpressionÍÍšMªIdentifierÍÍ’¤waveMªIdentifierÍ“Íš§netNameÂÂU§LiteralÍœÍ«Ù'æ£€æŸ¥ç”µæºç”µå‹æˆ–æ·»åŠ é™å‹ä¿æŠ¤Ù)'æ£€æŸ¥ç”µæºç”µå‹æˆ–æ·»åŠ é™å‹ä¿æŠ¤'ÂÂÀY«IfStatementÍöÍ V±LogicalExpressionÍúÍOV±LogicalExpressionÍúÍBV°BinaryExpressionÍúÍ#[®CallExpressionÍúÍW°MemberExpressionÍúÍMªIdentifierÍúÍş¤MathMªIdentifierÍÿÍ£absÂÂ‘MªIdentifierÍÍ£avgÂ¡>[®CallExpressionÍ
+Í#W°MemberExpressionÍ
+ÍMªIdentifierÍ
+Í¤MathMªIdentifierÍÍ£maxÂÂ’U§LiteralÍÍË@      £4.5V°BinaryExpressionÍÍ"MªIdentifierÍÍ£max¡*U§LiteralÍÍ"Ë?íp£×
+=q¤0.92Â¢&&V°BinaryExpressionÍ'ÍBW°MemberExpressionÍ'Í4MªIdentifierÍ'Í+¤waveMªIdentifierÍ,Í4¨waveTypeÂÂ£===U§LiteralÍ9ÍB§voltage©'voltage'¢&&V°BinaryExpressionÍFÍOMªIdentifierÍFÍI£max¡>U§LiteralÍLÍO£4.0N®BlockStatementÍQÍ ‘\³ExpressionStatementÍdÍñ[®CallExpressionÍdÍğW°MemberExpressionÍdÍsMªIdentifierÍdÍnªviolationsMªIdentifierÍoÍs¤pushÂÂ‘[®CallExpressionÍtÍïW°MemberExpressionÍtÍMªIdentifierÍtÍ„°DynamicErcEngineMªIdentifierÍ…Í©violationÂÂ”W°MemberExpressionÍÍ¢MªIdentifierÍÍš«ErcSeverityMªIdentifierÍ›Í¢§WARNINGÂÂ^¯TemplateLiteralÍ¤ÍÕ’W°MemberExpressionÍ¯Í½MªIdentifierÍ¯Í³¤waveMªIdentifierÍ´Í½©probeNameÂÂ[®CallExpressionÍÄÍÒW°MemberExpressionÍÄÍÏMªIdentifierÍÄÍÇ£avgMªIdentifierÍÈÍÏ§toFixedÂÂ‘U§LiteralÍĞÍÑ¡2Â“_¯TemplateElementÍ¥Í­`´è¿æ”¾å¯èƒ½é¥±å’Œ: ´è¿æ”¾å¯èƒ½é¥±å’Œ: Â_¯TemplateElementÍ¾ÍÂ`¨ å¹³å‡ ¨ å¹³å‡ Â_¯TemplateElementÍÓÍÔ`¡V¡VÃW°MemberExpressionÍ×ÍãMªIdentifierÍ×ÍÛ¤waveMªIdentifierÍÜÍã§netNameÂÂU§LiteralÍåÍîµè°ƒæ•´å¢ç›Šæˆ–åç½®·'è°ƒæ•´å¢ç›Šæˆ–åç½®'ÂÂÀY«IfStatementÍÍáV±LogicalExpressionÍÍ<V±LogicalExpressionÍÍ/V°BinaryExpressionÍÍ"V°BinaryExpressionÍÍMªIdentifierÍÍ£max¡-MªIdentifierÍÍ£min¡<U§LiteralÍÍ"Ë?„záG®{¤0.01¢&&V°BinaryExpressionÍ&Í/MªIdentifierÍ&Í)£max¡>U§LiteralÍ,Í/Ë?¹™™™™™š£0.1¢&&V°BinaryExpressionÍ3Í<MªIdentifierÍ3Í6£max¡<U§LiteralÍ9Í<Ë?à      £0.5N®BlockStatementÍ>Íá‘\³ExpressionStatementÍQÍÒ[®CallExpressionÍQÍÑW°MemberExpressionÍQÍ`MªIdentifierÍQÍ[ªviolationsMªIdentifierÍ\Í`¤pushÂÂ‘[®CallExpressionÍaÍĞW°MemberExpressionÍaÍ{MªIdentifierÍaÍq°DynamicErcEngineMªIdentifierÍrÍ{©violationÂÂ”W°MemberExpressionÍ|ÍMªIdentifierÍ|Í‡«ErcSeverityMªIdentifierÍˆÍ§WARNINGÂÂ^¯TemplateLiteralÍ‘Í²‘W°MemberExpressionÍÍ«MªIdentifierÍÍ¡¤waveMªIdentifierÍ¢Í«©probeNameÂÂ’_¯TemplateElementÍ’Í›`·æŒ¯è¡å¯èƒ½ä¸èµ·æŒ¯: ·æŒ¯è¡å¯èƒ½ä¸èµ·æŒ¯: Â_¯TemplateElementÍ¬Í±`­ å¹…åº¦è¿‡å°­ å¹…åº¦è¿‡å°ÃW°MemberExpressionÍ´ÍÀMªIdentifierÍ´Í¸¤waveMªIdentifierÍ¹ÍÀ§netNameÂÂU§LiteralÍÂÍÏÙ!æ£€æŸ¥æ™¶æŒ¯å‚æ•°ä¸è´Ÿè½½ç”µå®¹Ù#'æ£€æŸ¥æ™¶æŒ¯å‚æ•°ä¸è´Ÿè½½ç”µå®¹'ÂÂÀY«IfStatementÍïÍ9V°BinaryExpressionÍóÍW°MemberExpressionÍóÍW°MemberExpressionÍóÍ MªIdentifierÍóÍ÷¤waveMªIdentifierÍøÍ ¨timeAxisÂÂMªIdentifierÍÍ¦lengthÂÂ¢>=U§LiteralÍÍ¡4N®BlockStatementÍÍ9“Q³VariableDeclarationÍ!ÍW‘R²VariableDeclaratorÍ'ÍVMªIdentifierÍ'Í+¤freq[®CallExpressionÍ.ÍVW°MemberExpressionÍ.ÍPMªIdentifierÍ.Í>°DynamicErcEngineMªIdentifierÍ?ÍP±estimateFrequencyÂÂ‘MªIdentifierÍQÍU¤waveÂ¥constY«IfStatementÍiÍCV±LogicalExpressionÍmÍ‚V°BinaryExpressionÍmÍuMªIdentifierÍmÍq¤freq¡>U§LiteralÍtÍu ¡0¢&&V°BinaryExpressionÍyÍ‚MªIdentifierÍyÍ}¤freq¡<U§LiteralÍ€Í‚
+¢10N®BlockStatementÍ„ÍC‘\³ExpressionStatementÍ›Í0[®CallExpressionÍ›Í/W°MemberExpressionÍ›ÍªMªIdentifierÍ›Í¥ªviolationsMªIdentifierÍ¦Íª¤pushÂÂ‘[®CallExpressionÍ«Í.W°MemberExpressionÍ«ÍÅMªIdentifierÍ«Í»°DynamicErcEngineMªIdentifierÍ¼ÍÅ©violationÂÂ”W°MemberExpressionÍÆÍÙMªIdentifierÍÆÍÑ«ErcSeverityMªIdentifierÍÒÍÙ§WARNINGÂÂ^¯TemplateLiteralÍÛÍ’W°MemberExpressionÍæÍôMªIdentifierÍæÍê¤waveMªIdentifierÍëÍô©probeNameÂÂ[®CallExpressionÍúÍ	W°MemberExpressionÍúÍMªIdentifierÍúÍş¤freqMªIdentifierÍÿÍ§toFixedÂÂ‘U§LiteralÍÍ¡1Â“_¯TemplateElementÍÜÍä`´é¢‘ç‡å¼‚å¸¸åä½: ´é¢‘ç‡å¼‚å¸¸åä½: Â_¯TemplateElementÍõÍø`¥ â‰ˆ ¥ â‰ˆ Â_¯TemplateElementÍ
+Í`¢Hz¢HzÃW°MemberExpressionÍÍMªIdentifierÍÍ¤waveMªIdentifierÍÍ§netNameÂÂU§LiteralÍÍ-Ù"æ£€æŸ¥æ—¶é’Ÿæºæˆ– RC æ—¶é—´å¸¸æ•°Ù$'æ£€æŸ¥æ—¶é’Ÿæºæˆ– RC æ—¶é—´å¸¸æ•°'ÂÂÀY«IfStatementÍUÍ*V°BinaryExpressionÍYÍdMªIdentifierÍYÍ]¤freq¡>U§LiteralÍ`ÍdÎúğ€¤50e6N®BlockStatementÍfÍ*‘\³ExpressionStatementÍ}Í[®CallExpressionÍ}ÍW°MemberExpressionÍ}ÍŒMªIdentifierÍ}Í‡ªviolationsMªIdentifierÍˆÍŒ¤pushÂÂ‘[®CallExpressionÍÍW°MemberExpressionÍÍ§MªIdentifierÍÍ°DynamicErcEngineMªIdentifierÍÍ§©violationÂÂ”W°MemberExpressionÍ¨Í¹MªIdentifierÍ¨Í³«ErcSeverityMªIdentifierÍ´Í¹¥ERRORÂÂ^¯TemplateLiteralÍ»Íö’W°MemberExpressionÍÆÍÔMªIdentifierÍÆÍÊ¤waveMªIdentifierÍËÍÔ©probeNameÂÂ[®CallExpressionÍÚÍñW°MemberExpressionÍÚÍîV°BinaryExpressionÍÛÍåMªIdentifierÍÛÍß¤freq¡/U§LiteralÍâÍåÎ B@£1e6MªIdentifierÍçÍî§toFixedÂÂ‘U§LiteralÍïÍğ¡1Â“_¯TemplateElementÍ¼ÍÄ`´é¢‘ç‡å¼‚å¸¸åé«˜: ´é¢‘ç‡å¼‚å¸¸åé«˜: Â_¯TemplateElementÍÕÍØ`¥ â‰ˆ ¥ â‰ˆ Â_¯TemplateElementÍòÍõ`£MHz£MHzÃW°MemberExpressionÍøÍMªIdentifierÍøÍü¤waveMªIdentifierÍıÍ§netNameÂÂU§LiteralÍÍ¼æ£€æŸ¥ä¿¡å·å®Œæ•´æ€§æˆ– EMI¾'æ£€æŸ¥ä¿¡å·å®Œæ•´æ€§æˆ– EMI'ÂÂÀÀY«IfStatementÍGÍ	ÜV±LogicalExpressionÍKÍ…V°BinaryExpressionÍKÍfW°MemberExpressionÍKÍXMªIdentifierÍKÍO¤waveMªIdentifierÍPÍX¨waveTypeÂÂ£===U§LiteralÍ]Íf§current©'current'¢||V°BinaryExpressionÍjÍ…W°MemberExpressionÍjÍW°MemberExpressionÍjÍzMªIdentifierÍjÍn¤waveMªIdentifierÍoÍz«currentAxisÂÂMªIdentifierÍ{Í¦lengthÂÂ¡>U§LiteralÍ„Í… ¡0N®BlockStatementÍ‡Í	Ü’Q³VariableDeclarationÍšÍó‘R²VariableDeclaratorÍ ÍòMªIdentifierÍ Í¤¤iMax[®CallExpressionÍ§ÍòMªIdentifierÍ§Í¯¨arrayMax‘YµConditionalExpressionÍ°ÍñV°BinaryExpressionÍ°ÍËW°MemberExpressionÍ°ÍÇW°MemberExpressionÍ°ÍÀMªIdentifierÍ°Í´¤waveMªIdentifierÍµÍÀ«currentAxisÂÂMªIdentifierÍÁÍÇ¦lengthÂÂ¡>U§LiteralÍÊÍË ¡0W°MemberExpressionÍÎÍŞMªIdentifierÍÎÍÒ¤waveMªIdentifierÍÓÍŞ«currentAxisÂÂW°MemberExpressionÍáÍñMªIdentifierÍáÍå¤waveMªIdentifierÍæÍñ«voltageAxisÂÂÂ¥constY«IfStatementÍ	Í	ÍV°BinaryExpressionÍ		Í	MªIdentifierÍ		Í	¤iMax¡>U§LiteralÍ	Í	Ë?à      £0.5N®BlockStatementÍ	Í	Í‘\³ExpressionStatementÍ	,Í	º[®CallExpressionÍ	,Í	¹W°MemberExpressionÍ	,Í	;MªIdentifierÍ	,Í	6ªviolationsMªIdentifierÍ	7Í	;¤pushÂÂ‘[®CallExpressionÍ	<Í	¸W°MemberExpressionÍ	<Í	VMªIdentifierÍ	<Í	L°DynamicErcEngineMªIdentifierÍ	MÍ	V©violationÂÂ”W°MemberExpressionÍ	WÍ	hMªIdentifierÍ	WÍ	b«ErcSeverityMªIdentifierÍ	cÍ	h¥ERRORÂÂ^¯TemplateLiteralÍ	jÍ	š’W°MemberExpressionÍ	sÍ	MªIdentifierÍ	sÍ	w¤waveMªIdentifierÍ	xÍ	©probeNameÂÂ[®CallExpressionÍ	ˆÍ	—W°MemberExpressionÍ	ˆÍ	”MªIdentifierÍ	ˆÍ	Œ¤iMaxMªIdentifierÍ	Í	”§toFixedÂÂ‘U§LiteralÍ	•Í	–¡3Â“_¯TemplateElementÍ	kÍ	q`®è¿‡æµæ£€æµ‹: ®è¿‡æµæ£€æµ‹: Â_¯TemplateElementÍ	‚Í	†`¨ å³°å€¼ ¨ å³°å€¼ Â_¯TemplateElementÍ	˜Í	™`¡A¡AÃW°MemberExpressionÍ	œÍ	¨MªIdentifierÍ	œÍ	 ¤waveMªIdentifierÍ	¡Í	¨§netNameÂÂU§LiteralÍ	ªÍ	·Ù!æ£€æŸ¥è´Ÿè½½çŸ­è·¯æˆ–é™æµç”µé˜»Ù#'æ£€æŸ¥è´Ÿè½½çŸ­è·¯æˆ–é™æµç”µé˜»'ÂÂÀÀ\³ExpressionStatementÍ	ñÍ
+í[®CallExpressionÍ	ñÍ
+ìW°MemberExpressionÍ	ñÍ
+MªIdentifierÍ	ñÍ	ş­digitalStatesMªIdentifierÍ	ÿÍ
+§forEachÂÂ‘P·ArrowFunctionExpressionÍ
+Í
+ëÀÂÂÂ’MªIdentifierÍ
+Í
+¥stateMªIdentifierÍ
+Í
+¥pinIdN®BlockStatementÍ
+Í
+ë‘Y«IfStatementÍ
+(Í
+àV±LogicalExpressionÍ
+,Í
+QV°BinaryExpressionÍ
+,Í
+9MªIdentifierÍ
+,Í
+1¥state£===U§LiteralÍ
+6Í
+9¡X£'X'¢||V°BinaryExpressionÍ
+=Í
+QMªIdentifierÍ
+=Í
+B¥state£===U§LiteralÍ
+GÍ
+Q¨conflictª'conflict'N®BlockStatementÍ
+SÍ
+à‘\³ExpressionStatementÍ
+fÍ
+Ñ[®CallExpressionÍ
+fÍ
+ĞW°MemberExpressionÍ
+fÍ
+uMªIdentifierÍ
+fÍ
+pªviolationsMªIdentifierÍ
+qÍ
+u¤pushÂÂ‘[®CallExpressionÍ
+vÍ
+ÏW°MemberExpressionÍ
+vÍ
+MªIdentifierÍ
+vÍ
+†°DynamicErcEngineMªIdentifierÍ
+‡Í
+©violationÂÂ”W°MemberExpressionÍ
+‘Í
+¢MªIdentifierÍ
+‘Í
+œ«ErcSeverityMªIdentifierÍ
+Í
+¢¥ERRORÂÂ^¯TemplateLiteralÍ
+¤Í
+»‘MªIdentifierÍ
+´Í
+¹¥pinId’_¯TemplateElementÍ
+¥Í
+²`Ù!æ•°å­—æ€»çº¿å†²çª/é«˜é˜»å¼‚å¸¸: Ù!æ•°å­—æ€»çº¿å†²çª/é«˜é˜»å¼‚å¸¸: Â_¯TemplateElementÍ
+ºÍ
+º`  ÃMªIdentifierÍ
+½Í
+Â¥pinIdU§LiteralÍ
+ÄÍ
+Î¸æ£€æŸ¥è¾“å‡ºå¼•è„šçŸ­æ¥º'æ£€æŸ¥è¾“å‡ºå¼•è„šçŸ­æ¥'ÂÂÀÂÔra”¤type¥start£end¨argument¯ReturnStatementÍ
+÷Í	MªIdentifierÍ
+şÍªviolationsO°MethodDefinitionÍÍDÃÂMªIdentifierÍÍ&©violation¦methodP²FunctionExpressionÍ&ÍDÀÂÂÂ”MªIdentifierÍ'Í/¨severityMªIdentifierÍ1Í8§messageMªIdentifierÍ:Í@¦targetMªIdentifierÍBÍE£fixN®BlockStatementÍGÍD‘a¯ReturnStatementÍRÍ=Ôrb”¤type¥start£endªproperties°ObjectExpressionÍYÍ<–Ôrc™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍhÍƒÂÂÂMªIdentifierÍhÍj¢id[®CallExpressionÍlÍƒW°MemberExpressionÍlÍ{MªIdentifierÍlÍr¦IdUtilMªIdentifierÍsÍ{¨generateÂÂ‘U§LiteralÍ|Í‚¤derc¦'derc'Â¤initc¨PropertyÍ’Í¤ÂÂÂMªIdentifierÍ’Íš¨severityMªIdentifierÍœÍ¤¨severity¤initc¨PropertyÍ³ÍÕÂÂÂMªIdentifierÍ³Í»¨ruleTypeW°MemberExpressionÍ½ÍÕMªIdentifierÍ½ÍÈ«ErcRuleTypeMªIdentifierÍÉÍÕ¬PIN_CONFLICTÂÂ¤initc¨PropertyÍäÍôÂÂÂMªIdentifierÍäÍë§messageMªIdentifierÍíÍô§message¤initc¨PropertyÍÍÂÂÂMªIdentifierÍÍ¥netIdMªIdentifierÍ
+Í¦target¤initc¨PropertyÍÍ1ÂÂÂMªIdentifierÍÍ,­fixSuggestionMªIdentifierÍ.Í1£fix¤initO°MethodDefinitionÍJÍ«ÃÂMªIdentifierÍQÍb±estimateFrequency¦methodP²FunctionExpressionÍbÍ«ÀÂÂÂ‘MªIdentifierÍcÍg¤waveN®BlockStatementÍiÍ«™Q³VariableDeclarationÍtÍ‘R²VariableDeclaratorÍzÍMªIdentifierÍzÍ{¡vW°MemberExpressionÍ~ÍMªIdentifierÍ~Í‚¤waveMªIdentifierÍƒÍ«voltageAxisÂÂ¥constQ³VariableDeclarationÍ™Í±‘R²VariableDeclaratorÍŸÍ°MªIdentifierÍŸÍ ¡tW°MemberExpressionÍ£Í°MªIdentifierÍ£Í§¤waveMªIdentifierÍ¨Í°¨timeAxisÂÂ¥constY«IfStatementÍ»ÍóV±LogicalExpressionÍ¿ÍÛV°BinaryExpressionÍ¿ÍËW°MemberExpressionÍ¿ÍÇMªIdentifierÍ¿ÍÀ¡vMªIdentifierÍÁÍÇ¦lengthÂÂ¡<U§LiteralÍÊÍË¡4¢||V°BinaryExpressionÍÏÍÛW°MemberExpressionÍÏÍ×MªIdentifierÍÏÍĞ¡tMªIdentifierÍÑÍ×¦lengthÂÂ¡<U§LiteralÍÚÍÛ¡4a¯ReturnStatementÍêÍóU§LiteralÍñÍò ¡0ÀQ³VariableDeclarationÍıÍ)‘R²VariableDeclaratorÍÍ(MªIdentifierÍÍ£midV°BinaryExpressionÍ	Í(V°BinaryExpressionÍ
+Í#[®CallExpressionÍ
+ÍMªIdentifierÍ
+Í¨arrayMin‘MªIdentifierÍÍ¡vÂ¡+[®CallExpressionÍÍ#MªIdentifierÍÍ ¨arrayMax‘MªIdentifierÍ!Í"¡vÂ¡/U§LiteralÍ'Í(¡2¥constQ³VariableDeclarationÍ3ÍE‘R²VariableDeclaratorÍ7ÍDMªIdentifierÍ7Í@©crossingsU§LiteralÍCÍD ¡0£letT¬ForStatementÍOÍQ³VariableDeclarationÍTÍ]‘R²VariableDeclaratorÍXÍ]MªIdentifierÍXÍY¡iU§LiteralÍ\Í]¡1£letV°BinaryExpressionÍ_ÍkMªIdentifierÍ_Í`¡i¡<W°MemberExpressionÍcÍkMªIdentifierÍcÍd¡vMªIdentifierÍeÍk¦lengthÂÂX°UpdateExpressionÍmÍp¢++ÂMªIdentifierÍmÍn¡iN®BlockStatementÍrÍ‘Y«IfStatementÍÍ÷V±LogicalExpressionÍ…ÍÇV±LogicalExpressionÍ†Í£V°BinaryExpressionÍ†Í”W°MemberExpressionÍ†ÍMªIdentifierÍ†Í‡¡vV°BinaryExpressionÍˆÍMªIdentifierÍˆÍ‰¡i¡-U§LiteralÍŒÍ¡1ÃÂ¡<MªIdentifierÍ‘Í”£mid¢&&V°BinaryExpressionÍ˜Í£W°MemberExpressionÍ˜ÍœMªIdentifierÍ˜Í™¡vMªIdentifierÍšÍ›¡iÃÂ¢>=MªIdentifierÍ Í££mid¢||V±LogicalExpressionÍ©ÍÆV°BinaryExpressionÍ©Í¸W°MemberExpressionÍ©Í±MªIdentifierÍ©Íª¡vV°BinaryExpressionÍ«Í°MªIdentifierÍ«Í¬¡i¡-U§LiteralÍ¯Í°¡1ÃÂ¢>=MªIdentifierÍµÍ¸£mid¢&&V°BinaryExpressionÍ¼ÍÆW°MemberExpressionÍ¼ÍÀMªIdentifierÍ¼Í½¡vMªIdentifierÍ¾Í¿¡iÃÂ¡<MªIdentifierÍÃÍÆ£midN®BlockStatementÍÉÍ÷‘\³ExpressionStatementÍÜÍèX°UpdateExpressionÍÜÍç¢++ÂMªIdentifierÍÜÍå©crossingsÀQ³VariableDeclarationÍÍ4‘R²VariableDeclaratorÍÍ3MªIdentifierÍÍ¨durationV°BinaryExpressionÍÍ3W°MemberExpressionÍÍ,MªIdentifierÍÍ¡tV°BinaryExpressionÍÍ+W°MemberExpressionÍÍ'MªIdentifierÍÍ ¡tMªIdentifierÍ!Í'¦lengthÂÂ¡-U§LiteralÍ*Í+¡1ÃÂ¡-W°MemberExpressionÍ/Í3MªIdentifierÍ/Í0¡tU§LiteralÍ1Í2 ¡0ÃÂ¥constY«IfStatementÍ>ÍxV±LogicalExpressionÍBÍ`V°BinaryExpressionÍBÍOMªIdentifierÍBÍJ¨duration¢<=U§LiteralÍNÍO ¡0¢||V°BinaryExpressionÍSÍ`MªIdentifierÍSÍ\©crossings¡<U§LiteralÍ_Í`¡2a¯ReturnStatementÍoÍxU§LiteralÍvÍw ¡0Àa¯ReturnStatementÍ‚Í¤V°BinaryExpressionÍ‰Í£V°BinaryExpressionÍŠÍ—MªIdentifierÍŠÍ“©crossings¡/U§LiteralÍ–Í—¡2¡/MªIdentifierÍ›Í£¨durationÀ“Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration Ì@’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	«ErcSeverityMªIdentifier	«ErcSeveritye¯ImportSpecifier!MªIdentifier!«ErcRuleTypeMªIdentifier!«ErcRuleTypeU§Literal)?´../types/CommonTypes¶'../types/CommonTypes'd±ImportDeclarationÌBÌd‘e¯ImportSpecifierÌKÌQMªIdentifierÌKÌQ¦IdUtilMªIdentifierÌKÌQ¦IdUtilU§LiteralÌYÌc¨./IdUtilª'./IdUtil'd±ImportDeclarationÌfÌ˜’e¯ImportSpecifierÌoÌwMªIdentifierÌoÌw¨arrayMinMªIdentifierÌoÌw¨arrayMine¯ImportSpecifierÌyÌMªIdentifierÌyÌ¨arrayMaxMªIdentifierÌyÌ¨arrayMaxU§LiteralÌ‰Ì—¬./MapHelpers®'./MapHelpers'

@@ -120,6 +120,8 @@ export interface RouteLine {
   netUuid: string;
   points: Point2D[];
   isBus: boolean;
+  /** 与 SchematicDocument.Wire.id 对应；往返时保留 */
+  uuid?: string;
 }
 
 export interface SpacingIssue {

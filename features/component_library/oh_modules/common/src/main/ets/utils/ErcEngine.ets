@@ -310,28 +310,47 @@ export class ErcEngine {
     if (libraryId === 'LM7805' || libraryId === 'LM7812' || libraryId === 'AMS1117_3V3') {
       return ['1', '2', '3'];
     }
-    // MCUs (genMcuPins)
+    // MCUs — 具名脚（与 NamedDevicePins / BuiltinComponents 对齐）
     if (libraryId.includes('STM32F407')) {
-      return ErcEngine.buildPinArray(100, 'P');
+      return ErcEngine.stm32Pins100();
+    }
+    if (libraryId.includes('STM32F030')) {
+      return ErcEngine.stm32Pins32();
     }
     if (libraryId.includes('STM32')) {
-      return ErcEngine.buildPinArray(48, 'P');
+      return ErcEngine.stm32Pins48();
     }
     if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-      return ErcEngine.buildPinArray(40, 'P');
+      return ErcEngine.pins8051();
     }
     // Peripherals / instruments — 可选通道不强制全连
     if (libraryId === 'UART_TERMINAL') return ['TX', 'RX', 'GND'];
-    if (libraryId === 'VOLTMETER_DC' || libraryId === 'VIRTUAL_METER') return ['V+', 'COM'];
+    if (libraryId === 'VOLTMETER_DC') return ['V+', 'COM'];
+    if (libraryId === 'VIRTUAL_METER') return ['V', 'COM'];
     if (libraryId === 'AMMETER_DC') return ['I+', 'I-'];
     if (libraryId === 'FREQ_COUNTER') return ['IN', 'GND'];
     if (libraryId === 'LOGIC_ANALYZER') return [];
     if (libraryId === 'POWER_METER') return ['V+', 'V-', 'I+', 'I-'];
     if (libraryId === 'LCD1602') {
-      return ErcEngine.buildPinArray(16, '');
+      return ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7', 'A', 'K'];
     }
     if (libraryId === 'OLED_12864') {
       return ['VCC', 'GND', 'SCL', 'SDA'];
+    }
+    if (libraryId === '24C02') {
+      return ['VCC', 'VSS', 'SDA', 'SCL'];
+    }
+    if (libraryId === 'W25Q64') {
+      return ['VCC', 'GND', 'CS', 'CLK', 'DI', 'DO'];
+    }
+    if (libraryId === '2764' || libraryId === '62256') {
+      return ['VCC', 'GND', 'CE', 'OE'];
+    }
+    if (libraryId === 'CD4017') {
+      return ['VDD', 'VSS', 'CLK', 'RST', 'Q0'];
+    }
+    if (libraryId === 'LM2596') {
+      return ['VIN', 'OUT', 'GND', 'FB', 'ON'];
     }
     // 三极管 / MOS
     if (libraryId.includes('2N3904') || libraryId.includes('2N3906') ||
@@ -347,12 +366,15 @@ export class ErcEngine {
     if (libraryId === '1N4148' || libraryId === '1N4007' || libraryId === '1N5819') {
       return ['A', 'K'];
     }
-    // 传感器简脚
+    // 传感器
     if (libraryId.includes('LDR') || libraryId.includes('NTC') || libraryId.includes('PTC')) {
       return ['1', '2'];
     }
     if (libraryId.includes('DHT11') || libraryId.includes('DS18B20')) {
-      return ['VCC', 'DATA', 'GND'];
+      return ['VDD', 'DQ', 'GND'];
+    }
+    if (libraryId.includes('HALL')) {
+      return ['VCC', 'OUT', 'GND'];
     }
     // 74HC gates only expose functional pins (A, B, Y, GND, VCC), not all 14 package pins
     if (libraryId.includes('74HC04')) {
@@ -363,8 +385,8 @@ export class ErcEngine {
     }
     // Oscilloscope — skip
     if (libraryId.includes('OSCILLOSCOPE')) return [];
-    // Default: two generic pins
-    return ['1', '2'];
+    // 未知库 ID：禁止默认假脚 1/2（会让多脚 IC ERC 假通过）
+    return [];
   }
 
   private static buildPinArray(count: number, prefix: string): string[] {
@@ -373,6 +395,56 @@ export class ErcEngine {
       result.push(`${prefix}${i + 1}`);
     }
     return result;
+  }
+
+  private static gpioBank(letter: string, n: number): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+      out.push(`P${letter}${i}`);
+    }
+    return out;
+  }
+
+  private static stm32Pins48(): string[] {
+    return ['VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT']
+      .concat(ErcEngine.gpioBank('A', 16))
+      .concat(ErcEngine.gpioBank('B', 16))
+      .concat(ErcEngine.gpioBank('C', 8));
+  }
+
+  private static stm32Pins32(): string[] {
+    return ['VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT']
+      .concat(ErcEngine.gpioBank('A', 16))
+      .concat(ErcEngine.gpioBank('B', 10));
+  }
+
+  private static stm32Pins100(): string[] {
+    return ErcEngine.stm32Pins48()
+      .concat(ErcEngine.gpioBank('D', 16))
+      .concat(ErcEngine.gpioBank('E', 16))
+      .concat(['PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14', 'PC15'])
+      .concat(ErcEngine.gpioBank('F', 12));
+  }
+
+  private static pins8051(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      out.push(`P1.${i}`);
+    }
+    out.push('RST');
+    for (let i = 0; i < 8; i++) {
+      out.push(`P3.${i}`);
+    }
+    out.push('XTAL2', 'XTAL1', 'GND');
+    for (let i = 0; i < 8; i++) {
+      out.push(`P2.${i}`);
+    }
+    out.push('PSEN', 'ALE', 'EA');
+    for (let i = 7; i >= 0; i--) {
+      out.push(`P0.${i}`);
+    }
+    out.push('VCC');
+    return out;
   }
 
   private static estimatePinCount(libraryId: string): number {
@@ -384,6 +456,12 @@ export class ErcEngine {
     }
     if (libraryId.includes('74HC')) {
       return 14;
+    }
+    if (libraryId.includes('DS18B20') || libraryId.includes('HALL')) {
+      return 3;
+    }
+    if (libraryId.includes('STM32F030')) {
+      return 32;
     }
     if (libraryId.includes('STM32F407')) {
       return 100;

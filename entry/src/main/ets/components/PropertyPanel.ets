@@ -878,13 +878,22 @@ export struct PropertyPanel {
           } })
       }
       .width('100%')
-      if (this.uartLog.length > 0) {
-        Text(this.uartLog)
-          .fontSize(9).fontColor('#CCCCCC')
+      Scroll() {
+        Text(this.uartLog.length > 0 ? this.uartLog : '等待接收数据...')
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(this.uartLog.length > 0 ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
           .fontFamily('monospace')
-          .backgroundColor('#0a0a12')
-          .padding(4).width('100%').maxLines(16)
+          .width('100%')
+          .textAlign(TextAlign.Start)
       }
+      .width('100%')
+      .height(96)
+      .padding(6)
+      .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+      .border({ width: 1, color: ProteusColors.DIVIDER })
+      .scrollBar(BarState.Auto)
+      .align(Alignment.TopStart)
+      .edgeEffect(EdgeEffect.None)
       Row({ space: 4 }) {
         ProteusClassicBtn({ label: '清空', widthVal: '48%',
           onAction: () => {

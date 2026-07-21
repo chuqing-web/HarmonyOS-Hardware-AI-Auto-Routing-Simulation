@@ -22,4 +22,7 @@ runtime_key: route
 拓扑摘要：{{topology_summary}}
 网络列表：{{net_list}}
 
+=== 器件使用说明（摘要） ===
+{{device_usage}}
+
 现在立即只输出 JSON，不要任何其它文字：

@@ -1029,6 +1029,7 @@ function findDevice(topo: SchTopology, moduleId: string, refDes: string): Device
     }
   }
   // 回退：plan 误用 libDevId 当 RefDes（M1.LM555 → 模块内 lib=LM555）
+  // 仅当模块内唯一匹配时回退，避免同型号多实例误绑
   const wantLib = normalizeLibAlias(want);
   const prefUpper = pref.toUpperCase();
   const byLibInMod: DeviceInst[] = [];
@@ -1043,8 +1044,12 @@ function findDevice(topo: SchTopology, moduleId: string, refDes: string): Device
       byLibInMod.push(d);
     }
   }
-  if (byLibInMod.length >= 1) {
+  if (byLibInMod.length === 1) {
     return byLibInMod[0];
+  }
+  if (byLibInMod.length > 1) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[AI_PIPE] findDevice ambiguous lib=${wantLib} in ${moduleId} count=${byLibInMod.length} — refuse`);
   }
   // 禁止跨模块 libDevId 唯一性回退：多模块同型号会误绑他模块器件 → jointFail/错脚
   return null;
@@ -1471,6 +1476,7 @@ export function alignTopoRefsToBoundaryPins(topo: SchTopology, boundaryPins: str
     // 边界误写 libDevId：按库型号对齐到该器件，并改成边界中的「伪位号」以便 joints 精确匹配
     if (looksLikeLibIdAsRefDes(want)) {
       const wantLib = normalizeLibAlias(want);
+      const candidates: DeviceInst[] = [];
       for (let i = 0; i < topo.deviceList.length; i++) {
         const d = topo.deviceList[i];
         if (desiredSet.has(d.refName)) {
@@ -1480,9 +1486,14 @@ export function alignTopoRefsToBoundaryPins(topo: SchTopology, boundaryPins: str
           continue;
         }
         if (normalizeLibAlias(d.libDevId) === wantLib) {
-          donor = d;
-          break;
+          candidates.push(d);
         }
+      }
+      if (candidates.length === 1) {
+        donor = candidates[0];
+      } else if (candidates.length > 1) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] boundary_ref_align skip ambiguous lib=${wantLib} count=${candidates.length}`);
       }
     } else {
       const letter = want.replace(/\d+$/, '');

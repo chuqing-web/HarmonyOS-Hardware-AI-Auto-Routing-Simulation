@@ -64,26 +64,33 @@ export class DeviceMetaAdapter {
         return result;
     }
     static mapCategory(category: string): ComponentCategory {
-        if (category.startsWith('passive'))
+        const lower = category.toLowerCase();
+        if (lower.startsWith('passive'))
             return ComponentCategory.PASSIVE;
-        if (category.startsWith('discrete'))
+        if (lower.startsWith('discrete'))
             return ComponentCategory.DISCRETE;
-        if (category.startsWith('analog'))
+        if (lower.startsWith('analog'))
             return ComponentCategory.ANALOG_IC;
-        if (category.startsWith('digital'))
+        if (lower.startsWith('digital'))
             return ComponentCategory.DIGITAL_IC;
-        if (category === 'memory')
+        if (lower === 'memory' || lower.startsWith('memory'))
             return ComponentCategory.MEMORY;
-        if (category.startsWith('mcu_51') || category === 'mcs51')
+        if (lower.startsWith('mcu_51') || lower === 'mcs51' || lower.startsWith('mcu_8051')) {
             return ComponentCategory.MCU_8051;
-        if (category.startsWith('mcu_stm32'))
+        }
+        if (lower.startsWith('mcu_stm32') || lower.startsWith('stm32')) {
             return ComponentCategory.MCU_STM32;
-        if (category.startsWith('sensor'))
+        }
+        if (lower.startsWith('sensor'))
             return ComponentCategory.SENSOR;
-        if (category.startsWith('peripheral'))
+        if (lower.startsWith('peripheral'))
             return ComponentCategory.PERIPHERAL;
-        if (category === 'instrument')
+        if (lower === 'instrument' || lower.startsWith('instrument')) {
             return ComponentCategory.INSTRUMENT;
+        }
+        if (lower.startsWith('power') || lower === 'power_supply' || lower === 'supply') {
+            return ComponentCategory.POWER_SUPPLY;
+        }
         return ComponentCategory.PASSIVE;
     }
     static mapPinType(pinType: string): PinType {

@@ -133,14 +133,22 @@ const TEMPLATES: RagTemplate[] = buildTemplates();
 export class RagKnowledgeBase {
     static search(prompt: string): RagTemplate | null {
         const lower = prompt.toLowerCase();
+        const wantStm = lower.indexOf('stm32') >= 0 || lower.indexOf('f103') >= 0;
+        const want51 = lower.indexOf('8051') >= 0 || lower.indexOf('at89') >= 0 ||
+            lower.indexOf('stc') >= 0 || (lower.indexOf('51') >= 0 && lower.indexOf('stm') < 0);
         let best: RagTemplate | null = null;
         let bestScore = 0;
         for (let ti = 0; ti < TEMPLATES.length; ti++) {
             const t = TEMPLATES[ti];
+            if (t.mcuFamily === 'STM32' && want51 && !wantStm) {
+                continue;
+            }
+            if (t.mcuFamily === '8051' && wantStm && !want51) {
+                continue;
+            }
             let score = 0;
             for (let ki = 0; ki < t.keywords.length; ki++) {
                 const kw = t.keywords[ki];
-                // 避免单字误触：长度>=2 或特定词
                 if (kw.length < 2) {
                     continue;
                 }
@@ -148,9 +156,21 @@ export class RagKnowledgeBase {
                     score += kw.length >= 4 ? 2 : 1;
                 }
             }
+            if (t.mcuFamily === 'STM32' && wantStm) {
+                score += 3;
+            }
+            if (t.mcuFamily === '8051' && want51) {
+                score += 3;
+            }
             if (score > bestScore) {
                 bestScore = score;
                 best = t;
+            }
+            else if (score === bestScore && best !== null && score > 0) {
+                // 平分：偏好关键词更多的更具体模板
+                if (t.keywords.length > best.keywords.length) {
+                    best = t;
+                }
             }
         }
         return bestScore > 0 ? best : null;

@@ -5,10 +5,14 @@
  */
 import { IComponentLibrary } from 'component_library';
 import { SchTopology, DeviceInst, DeviceHitGeometry,
-  SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, MatchedDevice, Point2D } from 'common';
+  SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, MatchedDevice, Point2D,
+  Logger, INSTR_TRACE_TAG } from 'common';
 import { PromptVarEntry } from '../internal/AiEngineTypes';
 import { applyPromptVars } from '../internal/AiEngineHelpers';
 import { TemplateSchematicKit } from '../algorithms/TemplateSchematicKit';
+import {
+  DeviceUsageManual, UsageManualMode, DeviceUsageBuildResult
+} from '../algorithms/DeviceUsageManual';
 import { PromptTemplate } from './PromptTypes';
 import { TOPOLOGY_ANTIPATTERN_GUARD, JSON_ONLY_OUTPUT_RULE } from './templates/SharedPromptRules';
 import { DEVICE_SELECT_PROMPT } from './templates/DeviceSelectPrompt';
@@ -176,9 +180,11 @@ function formatCatalogWithPins(library: IComponentLibrary, filterIds: Set<string
   const lines: string[] = [];
   if (filterIds !== null) {
     lines.push('【本模块相关器件引脚 — 优先选用；引脚必须使用下列 pinId/pinName】');
+    lines.push('格式: pinId(pinName):type@local(x,y)；type=电气角色(input/output/power/ground/…)；连线须尊重 type 语义');
     lines.push('（完整可用 libDevId 清单见文末；未列全脚的器件仍可选，但须用库内真脚）');
   } else {
     lines.push('【完整器件库 — 只能选用下列 libDevId；引脚必须使用下列 pinId/pinName】');
+    lines.push('格式: pinId(pinName):type@local(x,y)；type=电气角色(input/output/power/ground/…)；连线须尊重 type 语义');
   }
   const categories = library.getCategories();
   for (const cat of categories) {
@@ -203,7 +209,10 @@ function formatCatalogWithPins(library: IComponentLibrary, filterIds: Set<string
           const bits: string[] = [];
           for (let i = 0; i < metaPins.length; i++) {
             const mp = metaPins[i];
-            bits.push(`${mp.pin_id}(${mp.pin_label ?? mp.pin_id})`);
+            const px = Math.round(mp.x ?? 0);
+            const py = Math.round(mp.y ?? 0);
+            const ptype = mp.pin_type ?? 'passive';
+            bits.push(`${mp.pin_id}(${mp.pin_label ?? mp.pin_id}):${ptype}@local(${px},${py})`);
           }
           lines.push(`  引脚: ${bits.join(', ')}`);
         } else {
@@ -215,7 +224,8 @@ function formatCatalogWithPins(library: IComponentLibrary, filterIds: Set<string
           const p = pins[i];
           const px = Math.round(p.position?.x ?? 0);
           const py = Math.round(p.position?.y ?? 0);
-          bits.push(`${p.id}(${p.name})@local(${px},${py})`);
+          const ptype = `${p.type ?? 'passive'}`;
+          bits.push(`${p.id}(${p.name}):${ptype}@local(${px},${py})`);
         }
         lines.push(`  引脚: ${bits.join(', ')}`);
       }
@@ -244,13 +254,14 @@ function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
       if (comp.success && comp.data && comp.data.pins && comp.data.pins.length > 0) {
         for (let pi = 0; pi < comp.data.pins.length; pi++) {
           const p = comp.data.pins[pi];
-          bits.push(`${p.id}`);
+          bits.push(`${p.id}:${p.type ?? 'passive'}`);
         }
       } else {
         const meta = library.getDeviceMeta(id);
         if (meta.success && meta.data && meta.data.pin_list) {
           for (let pi = 0; pi < meta.data.pin_list.length; pi++) {
-            bits.push(`${meta.data.pin_list[pi].pin_id}`);
+            const mp = meta.data.pin_list[pi];
+            bits.push(`${mp.pin_id}:${mp.pin_type ?? 'passive'}`);
           }
         }
       }
@@ -288,18 +299,26 @@ export class PromptLoader {
       case 'modular_plan':
         return MODULAR_PLAN_PROMPT;
       default:
-        return DEVICE_SELECT_PROMPT;
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_PROMPT] unknown template name="${name}" — refuse silent DEVICE_SELECT fallback`);
+        // 返回空模板迫使调用方失败，禁止静默错用 device_select
+        return {
+          id: 'unknown',
+          version: '0',
+          system: '',
+          userTemplate: ''
+        };
     }
   }
 
   /** 按 CircuitIntent 替换 device_select / net_plan 的 system */
-  static loadForIntent(name: string, intent: CircuitIntent): PromptTemplate {
+  static loadForIntent(name: string, intent: CircuitIntent, userPrompt: string = ''): PromptTemplate {
     const base = PromptLoader.load(name);
     if (name === 'device_select') {
       const t: PromptTemplate = {
         id: base.id,
         version: base.version,
-        system: assembleDeviceSelectSystem(intent),
+        system: assembleDeviceSelectSystem(intent, userPrompt),
         userTemplate: base.userTemplate
       };
       return t;
@@ -317,6 +336,11 @@ export class PromptLoader {
   }
 
   static render(template: PromptTemplate, vars: PromptVarEntry[]): string {
+    if (!template.system || template.system.length === 0) {
+      Logger.error(INSTR_TRACE_TAG,
+        `[AI_PROMPT] refuse render empty template id=${template.id}`);
+      return '';
+    }
     const user = applyPromptVars(template.userTemplate, vars);
     return `${template.system}${JSON_ONLY_OUTPUT_RULE}\n\n${user}`;
   }
@@ -330,8 +354,17 @@ export class PromptLoader {
     library: IComponentLibrary, options?: RenderEnrichOptions): string {
     let effective = template;
     if (options?.intent) {
+      let userPromptHint = options.filterPinsByPrompt ?? '';
+      if (userPromptHint.length === 0 && vars) {
+        for (let vi = 0; vi < vars.length; vi++) {
+          if (vars[vi].key === 'user_prompt') {
+            userPromptHint = vars[vi].value ?? '';
+            break;
+          }
+        }
+      }
       if (template.id.indexOf('device_select') >= 0) {
-        effective = PromptLoader.loadForIntent('device_select', options.intent);
+        effective = PromptLoader.loadForIntent('device_select', options.intent, userPromptHint);
       } else if (template.id.indexOf('net_plan') >= 0) {
         effective = PromptLoader.loadForIntent('net_plan', options.intent);
       }
@@ -449,6 +482,55 @@ export class PromptLoader {
     return null;
   }
 
+  /**
+   * 严格纯 JSON 对象正文：trim 后必须以 { 开头 } 结尾，且整段可 parse，禁止 markdown 围栏。
+   * 用于检测 LLM 是否违反「只出 JSON」；可抽取解析成功但 impure 时触发 critique 重试。
+   */
+  static isStrictJsonObjectReply(content: string): boolean {
+    if (!content) {
+      return false;
+    }
+    const t = content.trim();
+    if (t.length < 2) {
+      return false;
+    }
+    if (t.charAt(0) !== '{' || t.charAt(t.length - 1) !== '}') {
+      return false;
+    }
+    if (t.indexOf('```') >= 0) {
+      return false;
+    }
+    try {
+      const v: Object = JSON.parse(t) as Object;
+      return v !== null && typeof v === 'object' && !Array.isArray(v);
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /** 杂质摘要（日志/critique 用） */
+  static describeJsonImpurity(content: string): string {
+    if (!content || content.trim().length === 0) {
+      return 'empty';
+    }
+    const t = content.trim();
+    const bits: string[] = [];
+    if (t.charAt(0) !== '{') {
+      bits.push('not_start_{');
+    }
+    if (t.charAt(t.length - 1) !== '}') {
+      bits.push('not_end_}');
+    }
+    if (t.indexOf('```') >= 0) {
+      bits.push('markdown_fence');
+    }
+    const pre = t.indexOf('{');
+    if (pre > 0) {
+      bits.push(`preamble_chars=${pre}`);
+    }
+    return bits.length > 0 ? bits.join(',') : 'parse_fail';
+  }
+
   /** 尽力闭合被截断的 JSON（positions 数组常见） */
   private static tryRepairTruncatedJson(fragment: string): string | null {
     if (!fragment || fragment.indexOf('{') < 0) {
@@ -550,6 +632,30 @@ export class PromptLoader {
         `  例: 若 rot=0，中心至少相距 dx≥${Math.round(w0 / 2 + 40)} 或 dy≥${Math.round(h0 / 2 + 40)} 才够通道`);
     }
     return lines.join('\n');
+  }
+
+  /**
+   * 选型后器件用法手册注入（full=net_plan，compact=layout/route）
+   */
+  static buildDeviceUsageBlock(libDevIds: string[], mode: UsageManualMode,
+    library: IComponentLibrary | null): DeviceUsageBuildResult {
+    return DeviceUsageManual.buildForLibIds(libDevIds, mode, library);
+  }
+
+  static libIdsFromMatched(devices: MatchedDevice[]): string[] {
+    const ids: string[] = [];
+    for (let i = 0; i < devices.length; i++) {
+      ids.push(devices[i].libDevId);
+    }
+    return ids;
+  }
+
+  static libIdsFromTopo(topo: SchTopology): string[] {
+    const ids: string[] = [];
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      ids.push(topo.deviceList[i].libDevId);
+    }
+    return ids;
   }
 
   static buildDeviceDetailForNetPlan(topo: SchTopology, library: IComponentLibrary): string {
@@ -700,7 +806,7 @@ export class PromptLoader {
     lines.push('  器件上方(y小)区域 → 适合走电源线 VCC');
     lines.push('  器件下方(y大)区域 → 适合走地线 GND');
     lines.push('  器件左右两侧 → 适合走信号线');
-    lines.push('  导线不应穿过任何器件的选中命中区(HIT_PAD=14，与编辑器选中范围一致)');
+    lines.push(`  导线不应穿过任何器件的选中命中区(HIT_PAD=${SELECTION_HIT_PAD}，与编辑器选中范围一致)`);
     lines.push(`  导线距无关引脚安全距离 ≥${FOREIGN_PIN_CLEARANCE}mil`);
 
     lines.push('');
@@ -727,7 +833,7 @@ export class PromptLoader {
     if (totalWireEstimate > 10) {
       lines.push(`  预估导线数>${totalWireEstimate} → 建议对跨区域信号优先使用 joinByLabel 标号管理`);
     }
-    lines.push('  标号决策原则: 你(LLM)决定每个连接的 mode。密集区优先标号，稀疏区优先导线。');
+    lines.push('  标号决策原则: 默认标号优先；仅本地≤3脚且预算允许时可升级导线；密集区必须标号。');
 
     lines.push('');
     lines.push('=== 引脚密度分析（预测连线拥挤区域，帮助决定标号使用） ===');

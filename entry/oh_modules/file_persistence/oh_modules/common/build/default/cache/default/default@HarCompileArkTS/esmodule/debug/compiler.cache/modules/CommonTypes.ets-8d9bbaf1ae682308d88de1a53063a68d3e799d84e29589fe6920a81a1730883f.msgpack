@@ -1,0 +1,1153 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ Z// ==================== ç”µæ°”åŸºç¡€ç±»å‹ ====================
+export var PinType;
+(function (PinType) {
+    PinType["INPUT"] = "input";
+    PinType["OUTPUT"] = "output";
+    PinType["BIDIRECTIONAL"] = "bidirectional";
+    PinType["POWER"] = "power";
+    PinType["GROUND"] = "ground";
+    PinType["PASSIVE"] = "passive";
+    PinType["OPEN_COLLECTOR"] = "open_collector";
+    PinType["ANALOG"] = "analog";
+})(PinType || (PinType = {}));
+export var NetType;
+(function (NetType) {
+    NetType["SIGNAL"] = "signal";
+    NetType["POWER"] = "power";
+    NetType["GROUND"] = "ground";
+    NetType["BUS"] = "bus";
+})(NetType || (NetType = {}));
+export var LogicState;
+(function (LogicState) {
+    LogicState["LOW"] = "0";
+    LogicState["HIGH"] = "1";
+    LogicState["UNKNOWN"] = "X";
+    LogicState["HIGH_Z"] = "Z";
+})(LogicState || (LogicState = {}));
+export var BusWidth;
+(function (BusWidth) {
+    BusWidth[BusWidth["BUS_8"] = 8] = "BUS_8";
+    BusWidth[BusWidth["BUS_16"] = 16] = "BUS_16";
+    BusWidth[BusWidth["BUS_32"] = 32] = "BUS_32";
+})(BusWidth || (BusWidth = {}));
+export var WireStyle;
+(function (WireStyle) {
+    WireStyle["ORTHOGONAL"] = "orthogonal";
+    WireStyle["DIAGONAL_45"] = "diagonal_45";
+    WireStyle["FREE"] = "free";
+})(WireStyle || (WireStyle = {}));
+// ==================== å™¨ä»¶ç±»å‹ ====================
+export var ComponentCategory;
+(function (ComponentCategory) {
+    ComponentCategory["PASSIVE"] = "passive";
+    ComponentCategory["DISCRETE"] = "discrete";
+    ComponentCategory["ANALOG_IC"] = "analog_ic";
+    ComponentCategory["DIGITAL_IC"] = "digital_ic";
+    ComponentCategory["MEMORY"] = "memory";
+    ComponentCategory["SENSOR"] = "sensor";
+    ComponentCategory["PERIPHERAL"] = "peripheral";
+    ComponentCategory["MCU_8051"] = "mcu_8051";
+    ComponentCategory["MCU_STM32"] = "mcu_stm32";
+    ComponentCategory["INSTRUMENT"] = "instrument";
+    ComponentCategory["POWER_SUPPLY"] = "power_supply";
+})(ComponentCategory || (ComponentCategory = {}));
+// ==================== ä»¿çœŸç±»å‹ ====================
+export var SimulationMode;
+(function (SimulationMode) {
+    SimulationMode["DC"] = "dc";
+    SimulationMode["AC"] = "ac";
+    SimulationMode["TRANSIENT"] = "transient";
+    SimulationMode["NOISE"] = "noise";
+    SimulationMode["PARAMETER_SWEEP"] = "parameter_sweep";
+    SimulationMode["MONTE_CARLO"] = "monte_carlo";
+    SimulationMode["MIXED"] = "mixed";
+})(SimulationMode || (SimulationMode = {}));
+export var SimulationState;
+(function (SimulationState) {
+    SimulationState["IDLE"] = "idle";
+    SimulationState["RUNNING"] = "running";
+    SimulationState["PAUSED"] = "paused";
+    SimulationState["STOPPED"] = "stopped";
+    SimulationState["ERROR"] = "error";
+})(SimulationState || (SimulationState = {}));
+// ==================== HEXè°ƒè¯•ç±»å‹ ====================
+export var McuFamily;
+(function (McuFamily) {
+    McuFamily["MCU_8051"] = "8051";
+    McuFamily["MCU_STM32F1"] = "STM32F1";
+    McuFamily["MCU_STM32F4"] = "STM32F4";
+    McuFamily["MCU_STM32L4"] = "STM32L4";
+})(McuFamily || (McuFamily = {}));
+export var DebugState;
+(function (DebugState) {
+    DebugState["RESET"] = "reset";
+    DebugState["RUNNING"] = "running";
+    DebugState["PAUSED"] = "paused";
+    DebugState["HALTED"] = "halted";
+    DebugState["BREAKPOINT"] = "breakpoint";
+})(DebugState || (DebugState = {}));
+// ==================== AIç±»å‹ ====================
+export var AiCapability;
+(function (AiCapability) {
+    AiCapability["AUTO_WIRING"] = "auto_wiring";
+    AiCapability["FAULT_DIAGNOSIS"] = "fault_diagnosis";
+    AiCapability["COMPONENT_RECOMMEND"] = "component_recommend";
+    AiCapability["CIRCUIT_GENERATION"] = "circuit_generation";
+    AiCapability["WAVEFORM_ANALYSIS"] = "waveform_analysis";
+})(AiCapability || (AiCapability = {}));
+export var AiProviderType;
+(function (AiProviderType) {
+    AiProviderType["DOUBAO"] = "doubao";
+    AiProviderType["QWEN"] = "qwen";
+    AiProviderType["DEEPSEEK"] = "deepseek";
+    AiProviderType["WENXIN"] = "wenxin";
+    AiProviderType["ZHIPU"] = "zhipu";
+    AiProviderType["KIMI"] = "kimi";
+    AiProviderType["YI"] = "yi";
+    AiProviderType["BAICHUAN"] = "baichuan";
+    AiProviderType["SILICONFLOW"] = "siliconflow";
+    AiProviderType["OPENAI"] = "openai";
+    AiProviderType["CLAUDE"] = "claude";
+    AiProviderType["GEMINI"] = "gemini";
+    AiProviderType["MISTRAL"] = "mistral";
+    AiProviderType["GROQ"] = "groq";
+    AiProviderType["OPENROUTER"] = "openrouter";
+    AiProviderType["OLLAMA"] = "ollama";
+    AiProviderType["CUSTOM"] = "custom";
+})(AiProviderType || (AiProviderType = {}));
+export var LoadBalanceMode;
+(function (LoadBalanceMode) {
+    LoadBalanceMode["SINGLE_DEFAULT"] = "single_default";
+    LoadBalanceMode["PRIORITY"] = "priority";
+    LoadBalanceMode["ROUND_ROBIN"] = "round_robin";
+    LoadBalanceMode["FAILOVER"] = "failover";
+    LoadBalanceMode["CAPABILITY_BINDING"] = "capability_binding";
+})(LoadBalanceMode || (LoadBalanceMode = {}));
+export var ApiConnectionStatus;
+(function (ApiConnectionStatus) {
+    ApiConnectionStatus["UNKNOWN"] = "unknown";
+    ApiConnectionStatus["OK"] = "ok";
+    ApiConnectionStatus["AUTH_ERROR"] = "auth_error";
+    ApiConnectionStatus["RATE_LIMIT"] = "rate_limit";
+    ApiConnectionStatus["TIMEOUT"] = "timeout";
+    ApiConnectionStatus["NETWORK_ERROR"] = "network_error";
+})(ApiConnectionStatus || (ApiConnectionStatus = {}));
+// ==================== æ–‡ä»¶æŒä¹…åŒ–ç±»å‹ ====================
+export var FileFormat;
+(function (FileFormat) {
+    FileFormat["SCHSIM"] = "schsim";
+    FileFormat["PROTEUS_SCH"] = "proteus_sch";
+    FileFormat["PROTEUS_LIB"] = "proteus_lib";
+    FileFormat["LTSPICE"] = "ltspice";
+    FileFormat["KICAD"] = "kicad";
+    FileFormat["NETLIST"] = "netlist";
+    FileFormat["BOM"] = "bom";
+    FileFormat["PDF"] = "pdf";
+    FileFormat["PNG"] = "png";
+    FileFormat["SVG"] = "svg";
+    FileFormat["CSV"] = "csv";
+})(FileFormat || (FileFormat = {}));
+// ==================== ERCç”µæ°”è§„åˆ™æ£€æŸ¥ ====================
+export var ErcSeverity;
+(function (ErcSeverity) {
+    ErcSeverity["ERROR"] = "error";
+    ErcSeverity["WARNING"] = "warning";
+    ErcSeverity["INFO"] = "info";
+})(ErcSeverity || (ErcSeverity = {}));
+export var ErcRuleType;
+(function (ErcRuleType) {
+    ErcRuleType["PIN_CONFLICT"] = "pin_conflict";
+    ErcRuleType["FLOATING_NET"] = "floating_net";
+    ErcRuleType["DUPLICATE_NET"] = "duplicate_net";
+    ErcRuleType["UNCONNECTED_PIN"] = "unconnected_pin";
+    ErcRuleType["MISSING_CRYSTAL"] = "missing_crystal";
+    ErcRuleType["MISSING_RESET"] = "missing_reset";
+    ErcRuleType["POWER_REVERSED"] = "power_reversed";
+    ErcRuleType["IO_OVERCURRENT"] = "io_overcurrent";
+    ErcRuleType["PARAM_MISMATCH"] = "param_mismatch";
+    ErcRuleType["PORT_MISMATCH"] = "port_mismatch";
+})(ErcRuleType || (ErcRuleType = {}));
+// ==================== æ¨¡å—äº‹ä»¶æ€»çº¿ ====================
+export var ModuleEvent;
+(function (ModuleEvent) {
+    ModuleEvent["SCHEMATIC_CHANGED"] = "schematic_changed";
+    ModuleEvent["SIMULATION_STARTED"] = "simulation_started";
+    ModuleEvent["SIMULATION_STOPPED"] = "simulation_stopped";
+    ModuleEvent["SIMULATION_STEP"] = "simulation_step";
+    ModuleEvent["MCU_STATE_CHANGED"] = "mcu_state_changed";
+    ModuleEvent["AI_REQUEST_COMPLETED"] = "ai_request_completed";
+    ModuleEvent["FILE_SAVED"] = "file_saved";
+    ModuleEvent["FILE_LOADED"] = "file_loaded";
+    ModuleEvent["ERC_COMPLETED"] = "erc_completed";
+    ModuleEvent["VIEWPORT_CHANGED"] = "viewport_changed";
+    ModuleEvent["SELECTION_CHANGED"] = "selection_changed";
+    ModuleEvent["AI_TASK_PROGRESS"] = "ai_task_progress";
+    ModuleEvent["WAVE_REFRESH"] = "wave_refresh";
+    ModuleEvent["BREAKPOINT_HIT"] = "breakpoint_hit";
+    ModuleEvent["UART_RECV"] = "uart_recv";
+    ModuleEvent["LICENSE_CHANGED"] = "license_changed";
+    ModuleEvent["ANNOTATION_CHANGED"] = "annotation_changed";
+    ModuleEvent["SNAPSHOT_CREATED"] = "snapshot_created";
+    ModuleEvent["PROJECT_LOCK_CHANGED"] = "project_lock_changed";
+})(ModuleEvent || (ModuleEvent = {}));
+//# sourceMappingURL=CommonTypes.js.mapÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName´../types/CommonTypes¦commonCÙ ./src/main/ets/types/CommonTypes¦commonÃÚ(ÿ/**
+ * AI-SCHä»¿çœŸå™¨ - å…¬å…±ç±»å‹å®šä¹‰
+ * ä¸ƒå¤§æ¨¡å—é—´é€šä¿¡çš„æ ‡å‡†æ•°æ®ç»“æ„
+ */
+import { ErrCode } from './ErrCode';
+import { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+
+// ==================== åŸºç¡€å‡ ä½•ç±»å‹ ====================
+
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+export interface Rect2D {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface WorldRect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export type Rotation = 0 | 90 | 180 | 270;
+
+export interface ViewportState {
+  zoom: number;
+  panOffset: Point2D;
+  gridVisible: boolean;
+  gridSize: number;
+  snapToGrid: boolean;
+}
+
+// ==================== ç”µæ°”åŸºç¡€ç±»å‹ ====================
+
+export enum PinType {
+  INPUT = 'input',
+  OUTPUT = 'output',
+  BIDIRECTIONAL = 'bidirectional',
+  POWER = 'power',
+  GROUND = 'ground',
+  PASSIVE = 'passive',
+  OPEN_COLLECTOR = 'open_collector',
+  ANALOG = 'analog'
+}
+
+export enum NetType {
+  SIGNAL = 'signal',
+  POWER = 'power',
+  GROUND = 'ground',
+  BUS = 'bus'
+}
+
+export enum LogicState {
+  LOW = '0',
+  HIGH = '1',
+  UNKNOWN = 'X',
+  HIGH_Z = 'Z'
+}
+
+export enum BusWidth {
+  BUS_8 = 8,
+  BUS_16 = 16,
+  BUS_32 = 32
+}
+
+export enum WireStyle {
+  ORTHOGONAL = 'orthogonal',
+  DIAGONAL_45 = 'diagonal_45',
+  FREE = 'free'
+}
+
+export interface Pin {
+  id: string;
+  name: string;
+  number: string;
+  type: PinType;
+  position: Point2D;
+  netId?: string;
+  defaultLevel?: LogicState;
+  pullType?: 'none' | 'pull_up' | 'pull_down';
+}
+
+export interface Net {
+  id: string;
+  name: string;
+  type: NetType;
+  pinIds: string[];
+  busWidth?: BusWidth;
+  branchIndex?: number;
+}
+
+export interface NetLabel {
+  id: string;
+  netId: string;
+  text: string;
+  position: Point2D;
+  global: boolean;
+}
+
+export interface Wire {
+  id: string;
+  netId: string;
+  points: Point2D[];
+  style: WireStyle;
+}
+
+export interface Port {
+  id: string;
+  name: string;
+  type: PinType;
+  direction: 'input' | 'output' | 'bidirectional';
+  position: Point2D;
+}
+
+// ==================== å™¨ä»¶ç±»å‹ ====================
+
+export enum ComponentCategory {
+  PASSIVE = 'passive',
+  DISCRETE = 'discrete',
+  ANALOG_IC = 'analog_ic',
+  DIGITAL_IC = 'digital_ic',
+  MEMORY = 'memory',
+  SENSOR = 'sensor',
+  PERIPHERAL = 'peripheral',
+  MCU_8051 = 'mcu_8051',
+  MCU_STM32 = 'mcu_stm32',
+  INSTRUMENT = 'instrument',
+  POWER_SUPPLY = 'power_supply'
+}
+
+export interface ComponentInstance {
+  id: string;
+  libraryId: string;
+  refDes: string;
+  name?: string;
+  position: Point2D;
+  rotation: Rotation;
+  mirrored: boolean;
+  x?: number;
+  y?: number;
+  parameters: Map<string, string>;
+  pinIds?: string[];
+  attributes?: Map<string, string>;
+  pinOverrides?: Map<string, string>;
+  subcircuitId?: string;
+}
+
+// ==================== åŸç†å›¾æ–‡æ¡£ ====================
+
+export interface SchematicDocument {
+  id: string;
+  name: string;
+  version: string;
+  components: ComponentInstance[];
+  wires: Wire[];
+  nets: Net[];
+  netLabels: NetLabel[];
+  subcircuits: SubcircuitRef[];
+  metadata: SchematicMetadata;
+  annotations?: SchematicAnnotation[];
+  probes?: ProbeMeta[];
+  simulationConfig?: SimulationConfig;
+}
+
+export interface ProbeMeta {
+  id: string;
+  netId: string;
+  label: string;
+  color: string;
+}
+
+export interface SubcircuitRef {
+  id: string;
+  name: string;
+  documentId: string;
+  position: Point2D;
+  ports: Port[];
+  embeddedDocument?: SchematicDocument;
+}
+
+export interface SchematicMetadata {
+  author: string;
+  createdAt: string;
+  modifiedAt: string;
+  description: string;
+  gridSize: number;
+  units: 'mm' | 'mil' | 'inch';
+  undoLimit: number;
+}
+
+// ==================== ä»¿çœŸç±»å‹ ====================
+
+export enum SimulationMode {
+  DC = 'dc',
+  AC = 'ac',
+  TRANSIENT = 'transient',
+  NOISE = 'noise',
+  PARAMETER_SWEEP = 'parameter_sweep',
+  MONTE_CARLO = 'monte_carlo',
+  MIXED = 'mixed'
+}
+
+export enum SimulationState {
+  IDLE = 'idle',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  STOPPED = 'stopped',
+  ERROR = 'error'
+}
+
+export interface SimulationConfig {
+  mode: SimulationMode;
+  startTime: number;
+  stopTime: number;
+  stepSize: number;
+  maxStep: number;
+  temperature: number;
+  convergence: number;
+  mcuClockHz?: number;
+}
+
+export interface SimulationResult {
+  time: number[];
+  signals: Map<string, number[]>;
+  digitalStates: Map<string, LogicState[]>;
+  mcuRegisters?: McuRegisterSnapshot[];
+}
+
+export interface McuRegisterSnapshot {
+  timestamp: number;
+  registers: Map<string, number>;
+  memory: Uint8Array;
+  pinStates: Map<string, number>;
+}
+
+// ==================== HEXè°ƒè¯•ç±»å‹ ====================
+
+export enum McuFamily {
+  MCU_8051 = '8051',
+  MCU_STM32F1 = 'STM32F1',
+  MCU_STM32F4 = 'STM32F4',
+  MCU_STM32L4 = 'STM32L4'
+}
+
+export enum DebugState {
+  RESET = 'reset',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  HALTED = 'halted',
+  BREAKPOINT = 'breakpoint'
+}
+
+export interface HexFirmware {
+  filePath: string;
+  mcuFamily: McuFamily;
+  entryPoint: number;
+  data: Uint8Array;
+  checksum: string;
+  segments: HexSegment[];
+}
+
+export interface HexSegment {
+  address: number;
+  data: Uint8Array;
+}
+
+export interface McuDebugConfig {
+  mcuFamily: McuFamily;
+  crystalFreq: number;
+  bootPin: number;
+  bootPin1?: number;
+  resetVector: number;
+  firmware?: HexFirmware;
+  externalMemory?: boolean;
+  watchdogEnabled?: boolean;
+  maxRunSteps?: number;
+}
+
+// ==================== AIç±»å‹ ====================
+
+export enum AiCapability {
+  AUTO_WIRING = 'auto_wiring',
+  FAULT_DIAGNOSIS = 'fault_diagnosis',
+  COMPONENT_RECOMMEND = 'component_recommend',
+  CIRCUIT_GENERATION = 'circuit_generation',
+  WAVEFORM_ANALYSIS = 'waveform_analysis'
+}
+
+export enum AiProviderType {
+  DOUBAO = 'doubao',
+  QWEN = 'qwen',
+  DEEPSEEK = 'deepseek',
+  WENXIN = 'wenxin',
+  ZHIPU = 'zhipu',
+  KIMI = 'kimi',
+  YI = 'yi',
+  BAICHUAN = 'baichuan',
+  SILICONFLOW = 'siliconflow',
+  OPENAI = 'openai',
+  CLAUDE = 'claude',
+  GEMINI = 'gemini',
+  MISTRAL = 'mistral',
+  GROQ = 'groq',
+  OPENROUTER = 'openrouter',
+  OLLAMA = 'ollama',
+  CUSTOM = 'custom'
+}
+
+export enum LoadBalanceMode {
+  SINGLE_DEFAULT = 'single_default',
+  PRIORITY = 'priority',
+  ROUND_ROBIN = 'round_robin',
+  FAILOVER = 'failover',
+  CAPABILITY_BINDING = 'capability_binding'
+}
+
+export enum ApiConnectionStatus {
+  UNKNOWN = 'unknown',
+  OK = 'ok',
+  AUTH_ERROR = 'auth_error',
+  RATE_LIMIT = 'rate_limit',
+  TIMEOUT = 'timeout',
+  NETWORK_ERROR = 'network_error'
+}
+
+export interface AiApiConfig {
+  id: string;
+  name: string;
+  provider: AiProviderType;
+  baseUrl: string;
+  apiKey: string;
+  backupApiKey?: string;
+  model: string;
+  enabled: boolean;
+  priority: number;
+  maxTokens: number;
+  temperature: number;
+  contextLimit?: number;
+  proxyUrl?: string;
+  customHeaders?: Record<string, string>;
+  capabilityBinding?: Record<string, string>;
+  remark?: string;
+  lastStatus?: ApiConnectionStatus;
+  lastTestedAt?: string;
+  dailyCallCount?: number;
+  taskBind?: Map<string, boolean>;
+}
+
+export interface AiRequest {
+  capability: AiCapability;
+  prompt: string;
+  context?: Record<string, Object>;
+  schematic?: SchematicDocument;
+}
+
+export interface AiResponse {
+  success: boolean;
+  content: string;
+  provider: string;
+  tokensUsed: number;
+  latencyMs: number;
+  error?: string;
+}
+
+// ==================== æ–‡ä»¶æŒä¹…åŒ–ç±»å‹ ====================
+
+export enum FileFormat {
+  SCHSIM = 'schsim',
+  PROTEUS_SCH = 'proteus_sch',
+  PROTEUS_LIB = 'proteus_lib',
+  LTSPICE = 'ltspice',
+  KICAD = 'kicad',
+  NETLIST = 'netlist',
+  BOM = 'bom',
+  PDF = 'pdf',
+  PNG = 'png',
+  SVG = 'svg',
+  CSV = 'csv'
+}
+
+export interface ProjectFile {
+  version: string;
+  name: string;
+  schematic: SchematicDocument;
+  simulationConfig: SimulationConfig;
+  mcuDebugConfig?: McuDebugConfig;
+  aiConfigs: AiApiConfig[];
+  createdAt: string;
+  modifiedAt: string;
+  autoSavePath?: string;
+  collaboration?: CollaborationData;
+}
+
+// ==================== ERCç”µæ°”è§„åˆ™æ£€æŸ¥ ====================
+
+export enum ErcSeverity {
+  ERROR = 'error',
+  WARNING = 'warning',
+  INFO = 'info'
+}
+
+export enum ErcRuleType {
+  PIN_CONFLICT = 'pin_conflict',
+  FLOATING_NET = 'floating_net',
+  DUPLICATE_NET = 'duplicate_net',
+  UNCONNECTED_PIN = 'unconnected_pin',
+  MISSING_CRYSTAL = 'missing_crystal',
+  MISSING_RESET = 'missing_reset',
+  POWER_REVERSED = 'power_reversed',
+  IO_OVERCURRENT = 'io_overcurrent',
+  PARAM_MISMATCH = 'param_mismatch',
+  PORT_MISMATCH = 'port_mismatch'
+}
+
+export interface ErcViolation {
+  id: string;
+  severity: ErcSeverity;
+  ruleType: ErcRuleType;
+  message: string;
+  componentId?: string;
+  netId?: string;
+  pinId?: string;
+  position?: Point2D;
+  fixSuggestion?: string;
+}
+
+// ==================== æ¨¡å—äº‹ä»¶æ€»çº¿ ====================
+
+export enum ModuleEvent {
+  SCHEMATIC_CHANGED = 'schematic_changed',
+  SIMULATION_STARTED = 'simulation_started',
+  SIMULATION_STOPPED = 'simulation_stopped',
+  SIMULATION_STEP = 'simulation_step',
+  MCU_STATE_CHANGED = 'mcu_state_changed',
+  AI_REQUEST_COMPLETED = 'ai_request_completed',
+  FILE_SAVED = 'file_saved',
+  FILE_LOADED = 'file_loaded',
+  ERC_COMPLETED = 'erc_completed',
+  VIEWPORT_CHANGED = 'viewport_changed',
+  SELECTION_CHANGED = 'selection_changed',
+  AI_TASK_PROGRESS = 'ai_task_progress',
+  WAVE_REFRESH = 'wave_refresh',
+  BREAKPOINT_HIT = 'breakpoint_hit',
+  UART_RECV = 'uart_recv',
+  LICENSE_CHANGED = 'license_changed',
+  ANNOTATION_CHANGED = 'annotation_changed',
+  SNAPSHOT_CREATED = 'snapshot_created',
+  PROJECT_LOCK_CHANGED = 'project_lock_changed'
+}
+
+export interface ModuleEventPayload {
+  event: ModuleEvent;
+  source: string;
+  timestamp: number;
+  data: Object;
+}
+
+export type ModuleEventHandler = (payload: ModuleEventPayload) => void;
+
+// ==================== é€šç”¨ç»“æœç±»å‹ ====================
+
+export interface Result<T> {
+  success: boolean;
+  errCode?: ErrCode;
+  data?: T;
+  error?: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ Á‘”  & ‘”  ( ‘”  ( ‘”  )‘”  *‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  0‘”  1 ‘”  3 ‘”  3 ‘”  4‘”  5‘”  6‘”  7‘”  8 ‘”  : ‘”  : ‘”  ;‘”  <‘”  =‘”  >‘”  ? ‘”  ÌA ‘”  ÌA ‘”  ÌB‘”  ÌC‘”  ÌD‘”  ÌE ‘”  ÌG ‘”  ÌG ‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌK ‘”  Ìx ‘”  Ìz ‘”  Ìz ‘”  Ì{‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì† ‘”  ÌÄ ‘”  ÌÆ ‘”  ÌÆ ‘”  ÌÇ‘”  ÌÈ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ ‘”  ÌĞ ‘”  ÌĞ ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ ‘”  Ìñ ‘”  Ìó ‘”  Ìó ‘”  Ìô‘”  Ìõ‘”  Ìö‘”  Ì÷‘”  Ìø ‘”  Ìú ‘”  Ìú ‘”  Ìû‘”  Ìü‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í$ ‘”  Í& ‘”  Í& ‘”  Í'‘”  Í(‘”  Í)‘”  Í*‘”  Í+‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í0‘”  Í1‘”  Í2‘”  Í3‘”  Í4‘”  Í5‘”  Í6‘”  Í7‘”  Í8 ‘”  Í: ‘”  Í: ‘”  Í;‘”  Í<‘”  Í=‘”  Í>‘”  Í?‘”  Í@ ‘”  ÍB ‘”  ÍB ‘”  ÍC‘”  ÍD‘”  ÍE‘”  ÍF‘”  ÍG‘”  ÍH‘”  ÍI ‘”  Ír ‘”  Ít ‘”  Ít ‘”  Íu‘”  Ív‘”  Íw‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í|‘”  Í}‘”  Í~‘”  Í‘”  Í€ ‘”  Í ‘”  Í‘ ‘”  Í‘ ‘”  Í’‘”  Í“‘”  Í”‘”  Í• ‘”  Í— ‘”  Í— ‘”  Í˜‘”  Í™‘”  Íš‘”  Í›‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¡‘”  Í¢ ‘”  Í° ‘”  Í² ‘”  Í² ‘”  Í³‘”  Í´‘”  Íµ‘”  Í¶‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÀ‘”  ÍÁ‘”  ÍÂ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ ‘ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.ets‘Ú(ÿ/**
+ * AI-SCHä»¿çœŸå™¨ - å…¬å…±ç±»å‹å®šä¹‰
+ * ä¸ƒå¤§æ¨¡å—é—´é€šä¿¡çš„æ ‡å‡†æ•°æ®ç»“æ„
+ */
+import { ErrCode } from './ErrCode';
+import { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+
+// ==================== åŸºç¡€å‡ ä½•ç±»å‹ ====================
+
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+export interface Rect2D {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface WorldRect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export type Rotation = 0 | 90 | 180 | 270;
+
+export interface ViewportState {
+  zoom: number;
+  panOffset: Point2D;
+  gridVisible: boolean;
+  gridSize: number;
+  snapToGrid: boolean;
+}
+
+// ==================== ç”µæ°”åŸºç¡€ç±»å‹ ====================
+
+export enum PinType {
+  INPUT = 'input',
+  OUTPUT = 'output',
+  BIDIRECTIONAL = 'bidirectional',
+  POWER = 'power',
+  GROUND = 'ground',
+  PASSIVE = 'passive',
+  OPEN_COLLECTOR = 'open_collector',
+  ANALOG = 'analog'
+}
+
+export enum NetType {
+  SIGNAL = 'signal',
+  POWER = 'power',
+  GROUND = 'ground',
+  BUS = 'bus'
+}
+
+export enum LogicState {
+  LOW = '0',
+  HIGH = '1',
+  UNKNOWN = 'X',
+  HIGH_Z = 'Z'
+}
+
+export enum BusWidth {
+  BUS_8 = 8,
+  BUS_16 = 16,
+  BUS_32 = 32
+}
+
+export enum WireStyle {
+  ORTHOGONAL = 'orthogonal',
+  DIAGONAL_45 = 'diagonal_45',
+  FREE = 'free'
+}
+
+export interface Pin {
+  id: string;
+  name: string;
+  number: string;
+  type: PinType;
+  position: Point2D;
+  netId?: string;
+  defaultLevel?: LogicState;
+  pullType?: 'none' | 'pull_up' | 'pull_down';
+}
+
+export interface Net {
+  id: string;
+  name: string;
+  type: NetType;
+  pinIds: string[];
+  busWidth?: BusWidth;
+  branchIndex?: number;
+}
+
+export interface NetLabel {
+  id: string;
+  netId: string;
+  text: string;
+  position: Point2D;
+  global: boolean;
+}
+
+export interface Wire {
+  id: string;
+  netId: string;
+  points: Point2D[];
+  style: WireStyle;
+}
+
+export interface Port {
+  id: string;
+  name: string;
+  type: PinType;
+  direction: 'input' | 'output' | 'bidirectional';
+  position: Point2D;
+}
+
+// ==================== å™¨ä»¶ç±»å‹ ====================
+
+export enum ComponentCategory {
+  PASSIVE = 'passive',
+  DISCRETE = 'discrete',
+  ANALOG_IC = 'analog_ic',
+  DIGITAL_IC = 'digital_ic',
+  MEMORY = 'memory',
+  SENSOR = 'sensor',
+  PERIPHERAL = 'peripheral',
+  MCU_8051 = 'mcu_8051',
+  MCU_STM32 = 'mcu_stm32',
+  INSTRUMENT = 'instrument',
+  POWER_SUPPLY = 'power_supply'
+}
+
+export interface ComponentInstance {
+  id: string;
+  libraryId: string;
+  refDes: string;
+  name?: string;
+  position: Point2D;
+  rotation: Rotation;
+  mirrored: boolean;
+  x?: number;
+  y?: number;
+  parameters: Map<string, string>;
+  pinIds?: string[];
+  attributes?: Map<string, string>;
+  pinOverrides?: Map<string, string>;
+  subcircuitId?: string;
+}
+
+// ==================== åŸç†å›¾æ–‡æ¡£ ====================
+
+export interface SchematicDocument {
+  id: string;
+  name: string;
+  version: string;
+  components: ComponentInstance[];
+  wires: Wire[];
+  nets: Net[];
+  netLabels: NetLabel[];
+  subcircuits: SubcircuitRef[];
+  metadata: SchematicMetadata;
+  annotations?: SchematicAnnotation[];
+  probes?: ProbeMeta[];
+  simulationConfig?: SimulationConfig;
+}
+
+export interface ProbeMeta {
+  id: string;
+  netId: string;
+  label: string;
+  color: string;
+}
+
+export interface SubcircuitRef {
+  id: string;
+  name: string;
+  documentId: string;
+  position: Point2D;
+  ports: Port[];
+  embeddedDocument?: SchematicDocument;
+}
+
+export interface SchematicMetadata {
+  author: string;
+  createdAt: string;
+  modifiedAt: string;
+  description: string;
+  gridSize: number;
+  units: 'mm' | 'mil' | 'inch';
+  undoLimit: number;
+}
+
+// ==================== ä»¿çœŸç±»å‹ ====================
+
+export enum SimulationMode {
+  DC = 'dc',
+  AC = 'ac',
+  TRANSIENT = 'transient',
+  NOISE = 'noise',
+  PARAMETER_SWEEP = 'parameter_sweep',
+  MONTE_CARLO = 'monte_carlo',
+  MIXED = 'mixed'
+}
+
+export enum SimulationState {
+  IDLE = 'idle',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  STOPPED = 'stopped',
+  ERROR = 'error'
+}
+
+export interface SimulationConfig {
+  mode: SimulationMode;
+  startTime: number;
+  stopTime: number;
+  stepSize: number;
+  maxStep: number;
+  temperature: number;
+  convergence: number;
+  mcuClockHz?: number;
+}
+
+export interface SimulationResult {
+  time: number[];
+  signals: Map<string, number[]>;
+  digitalStates: Map<string, LogicState[]>;
+  mcuRegisters?: McuRegisterSnapshot[];
+}
+
+export interface McuRegisterSnapshot {
+  timestamp: number;
+  registers: Map<string, number>;
+  memory: Uint8Array;
+  pinStates: Map<string, number>;
+}
+
+// ==================== HEXè°ƒè¯•ç±»å‹ ====================
+
+export enum McuFamily {
+  MCU_8051 = '8051',
+  MCU_STM32F1 = 'STM32F1',
+  MCU_STM32F4 = 'STM32F4',
+  MCU_STM32L4 = 'STM32L4'
+}
+
+export enum DebugState {
+  RESET = 'reset',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  HALTED = 'halted',
+  BREAKPOINT = 'breakpoint'
+}
+
+export interface HexFirmware {
+  filePath: string;
+  mcuFamily: McuFamily;
+  entryPoint: number;
+  data: Uint8Array;
+  checksum: string;
+  segments: HexSegment[];
+}
+
+export interface HexSegment {
+  address: number;
+  data: Uint8Array;
+}
+
+export interface McuDebugConfig {
+  mcuFamily: McuFamily;
+  crystalFreq: number;
+  bootPin: number;
+  bootPin1?: number;
+  resetVector: number;
+  firmware?: HexFirmware;
+  externalMemory?: boolean;
+  watchdogEnabled?: boolean;
+  maxRunSteps?: number;
+}
+
+// ==================== AIç±»å‹ ====================
+
+export enum AiCapability {
+  AUTO_WIRING = 'auto_wiring',
+  FAULT_DIAGNOSIS = 'fault_diagnosis',
+  COMPONENT_RECOMMEND = 'component_recommend',
+  CIRCUIT_GENERATION = 'circuit_generation',
+  WAVEFORM_ANALYSIS = 'waveform_analysis'
+}
+
+export enum AiProviderType {
+  DOUBAO = 'doubao',
+  QWEN = 'qwen',
+  DEEPSEEK = 'deepseek',
+  WENXIN = 'wenxin',
+  ZHIPU = 'zhipu',
+  KIMI = 'kimi',
+  YI = 'yi',
+  BAICHUAN = 'baichuan',
+  SILICONFLOW = 'siliconflow',
+  OPENAI = 'openai',
+  CLAUDE = 'claude',
+  GEMINI = 'gemini',
+  MISTRAL = 'mistral',
+  GROQ = 'groq',
+  OPENROUTER = 'openrouter',
+  OLLAMA = 'ollama',
+  CUSTOM = 'custom'
+}
+
+export enum LoadBalanceMode {
+  SINGLE_DEFAULT = 'single_default',
+  PRIORITY = 'priority',
+  ROUND_ROBIN = 'round_robin',
+  FAILOVER = 'failover',
+  CAPABILITY_BINDING = 'capability_binding'
+}
+
+export enum ApiConnectionStatus {
+  UNKNOWN = 'unknown',
+  OK = 'ok',
+  AUTH_ERROR = 'auth_error',
+  RATE_LIMIT = 'rate_limit',
+  TIMEOUT = 'timeout',
+  NETWORK_ERROR = 'network_error'
+}
+
+export interface AiApiConfig {
+  id: string;
+  name: string;
+  provider: AiProviderType;
+  baseUrl: string;
+  apiKey: string;
+  backupApiKey?: string;
+  model: string;
+  enabled: boolean;
+  priority: number;
+  maxTokens: number;
+  temperature: number;
+  contextLimit?: number;
+  proxyUrl?: string;
+  customHeaders?: Record<string, string>;
+  capabilityBinding?: Record<string, string>;
+  remark?: string;
+  lastStatus?: ApiConnectionStatus;
+  lastTestedAt?: string;
+  dailyCallCount?: number;
+  taskBind?: Map<string, boolean>;
+}
+
+export interface AiRequest {
+  capability: AiCapability;
+  prompt: string;
+  context?: Record<string, Object>;
+  schematic?: SchematicDocument;
+}
+
+export interface AiResponse {
+  success: boolean;
+  content: string;
+  provider: string;
+  tokensUsed: number;
+  latencyMs: number;
+  error?: string;
+}
+
+// ==================== æ–‡ä»¶æŒä¹…åŒ–ç±»å‹ ====================
+
+export enum FileFormat {
+  SCHSIM = 'schsim',
+  PROTEUS_SCH = 'proteus_sch',
+  PROTEUS_LIB = 'proteus_lib',
+  LTSPICE = 'ltspice',
+  KICAD = 'kicad',
+  NETLIST = 'netlist',
+  BOM = 'bom',
+  PDF = 'pdf',
+  PNG = 'png',
+  SVG = 'svg',
+  CSV = 'csv'
+}
+
+export interface ProjectFile {
+  version: string;
+  name: string;
+  schematic: SchematicDocument;
+  simulationConfig: SimulationConfig;
+  mcuDebugConfig?: McuDebugConfig;
+  aiConfigs: AiApiConfig[];
+  createdAt: string;
+  modifiedAt: string;
+  autoSavePath?: string;
+  collaboration?: CollaborationData;
+}
+
+// ==================== ERCç”µæ°”è§„åˆ™æ£€æŸ¥ ====================
+
+export enum ErcSeverity {
+  ERROR = 'error',
+  WARNING = 'warning',
+  INFO = 'info'
+}
+
+export enum ErcRuleType {
+  PIN_CONFLICT = 'pin_conflict',
+  FLOATING_NET = 'floating_net',
+  DUPLICATE_NET = 'duplicate_net',
+  UNCONNECTED_PIN = 'unconnected_pin',
+  MISSING_CRYSTAL = 'missing_crystal',
+  MISSING_RESET = 'missing_reset',
+  POWER_REVERSED = 'power_reversed',
+  IO_OVERCURRENT = 'io_overcurrent',
+  PARAM_MISMATCH = 'param_mismatch',
+  PORT_MISMATCH = 'port_mismatch'
+}
+
+export interface ErcViolation {
+  id: string;
+  severity: ErcSeverity;
+  ruleType: ErcRuleType;
+  message: string;
+  componentId?: string;
+  netId?: string;
+  pinId?: string;
+  position?: Point2D;
+  fixSuggestion?: string;
+}
+
+// ==================== æ¨¡å—äº‹ä»¶æ€»çº¿ ====================
+
+export enum ModuleEvent {
+  SCHEMATIC_CHANGED = 'schematic_changed',
+  SIMULATION_STARTED = 'simulation_started',
+  SIMULATION_STOPPED = 'simulation_stopped',
+  SIMULATION_STEP = 'simulation_step',
+  MCU_STATE_CHANGED = 'mcu_state_changed',
+  AI_REQUEST_COMPLETED = 'ai_request_completed',
+  FILE_SAVED = 'file_saved',
+  FILE_LOADED = 'file_loaded',
+  ERC_COMPLETED = 'erc_completed',
+  VIEWPORT_CHANGED = 'viewport_changed',
+  SELECTION_CHANGED = 'selection_changed',
+  AI_TASK_PROGRESS = 'ai_task_progress',
+  WAVE_REFRESH = 'wave_refresh',
+  BREAKPOINT_HIT = 'breakpoint_hit',
+  UART_RECV = 'uart_recv',
+  LICENSE_CHANGED = 'license_changed',
+  ANNOTATION_CHANGED = 'annotation_changed',
+  SNAPSHOT_CREATED = 'snapshot_created',
+  PROJECT_LOCK_CHANGED = 'project_lock_changed'
+}
+
+export interface ModuleEventPayload {
+  event: ModuleEvent;
+  source: string;
+  timestamp: number;
+  data: Object;
+}
+
+export type ModuleEventHandler = (payload: ModuleEventPayload) => void;
+
+// ==================== é€šç”¨ç»“æœç±»å‹ ====================
+
+export interface Result<T> {
+  success: boolean;
+  errCode?: ErrCode;
+  data?: T;
+  error?: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+A‘ÔrE’§missing¦pluginÃ¦genAbcÂÔ  ÔrF”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrG–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration5ÌHÔrH•¤type¥start£end¬declarations¤kind³VariableDeclaration<ÌH‘ÔrI•¤type¥start£end¢id¤init²VariableDeclaratorÌ@ÌGÔrJ”¤type¥start£end¤nameªIdentifierÌ@ÌG§PinTypeÀ£varÀG¶ExportNamedDeclarationÍµÍÈH³VariableDeclarationÍ¼ÍÈ‘I²VariableDeclaratorÍÀÍÇJªIdentifierÍÀÍÇ§NetTypeÀ£varÀG¶ExportNamedDeclarationÍ…Í›H³VariableDeclarationÍŒÍ›‘I²VariableDeclaratorÍÍšJªIdentifierÍÍšªLogicStateÀ£varÀG¶ExportNamedDeclarationÍ]ÍqH³VariableDeclarationÍdÍq‘I²VariableDeclaratorÍhÍpJªIdentifierÍhÍp¨BusWidthÀ£varÀG¶ExportNamedDeclarationÍCÍXH³VariableDeclarationÍJÍX‘I²VariableDeclaratorÍNÍWJªIdentifierÍNÍW©WireStyleÀ£varÀG¶ExportNamedDeclarationÍGÍdH³VariableDeclarationÍNÍd‘I²VariableDeclaratorÍRÍcJªIdentifierÍRÍc±ComponentCategoryÀ£varÀG¶ExportNamedDeclarationÍÍ1H³VariableDeclarationÍÍ1‘I²VariableDeclaratorÍ"Í0JªIdentifierÍ"Í0®SimulationModeÀ£varÀG¶ExportNamedDeclarationÍ	³Í	ÎH³VariableDeclarationÍ	ºÍ	Î‘I²VariableDeclaratorÍ	¾Í	ÍJªIdentifierÍ	¾Í	Í¯SimulationStateÀ£varÀG¶ExportNamedDeclarationÍ*Í?H³VariableDeclarationÍ1Í?‘I²VariableDeclaratorÍ5Í>JªIdentifierÍ5Í>©McuFamilyÀ£varÀG¶ExportNamedDeclarationÍ$Í:H³VariableDeclarationÍ+Í:‘I²VariableDeclaratorÍ/Í9JªIdentifierÍ/Í9ªDebugStateÀ£varÀG¶ExportNamedDeclarationÍuÍH³VariableDeclarationÍ|Í‘I²VariableDeclaratorÍ€ÍŒJªIdentifierÍ€ÍŒ¬AiCapabilityÀ£varÀG¶ExportNamedDeclarationÍÍH³VariableDeclarationÍÍ‘I²VariableDeclaratorÍÍJªIdentifierÍÍ®AiProviderTypeÀ£varÀG¶ExportNamedDeclarationÍ9ÍTH³VariableDeclarationÍ@ÍT‘I²VariableDeclaratorÍDÍSJªIdentifierÍDÍS¯LoadBalanceModeÀ£varÀG¶ExportNamedDeclarationÍ¶ÍÕH³VariableDeclarationÍ½ÍÕ‘I²VariableDeclaratorÍÁÍÔJªIdentifierÍÁÍÔ³ApiConnectionStatusÀ£varÀG¶ExportNamedDeclarationÍœÍ²H³VariableDeclarationÍ£Í²‘I²VariableDeclaratorÍ§Í±JªIdentifierÍ§Í±ªFileFormatÀ£varÀG¶ExportNamedDeclarationÍÆÍİH³VariableDeclarationÍÍÍİ‘I²VariableDeclaratorÍÑÍÜJªIdentifierÍÑÍÜ«ErcSeverityÀ£varÀG¶ExportNamedDeclarationÍ“ÍªH³VariableDeclarationÍšÍª‘I²VariableDeclaratorÍÍ©JªIdentifierÍÍ©«ErcRuleTypeÀ£varÀG¶ExportNamedDeclarationÍ@ÍWH³VariableDeclarationÍGÍW‘I²VariableDeclaratorÍKÍVJªIdentifierÍKÍV«ModuleEventÀ£varÀ

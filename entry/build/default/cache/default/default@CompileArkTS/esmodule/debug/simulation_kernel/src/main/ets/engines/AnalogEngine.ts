@@ -114,6 +114,10 @@ interface OpAmpModel {
     nodeVee: string;
     gain: number;
     bw: number;
+    /** OUT↔IN+ resistive path and no OUT↔IN- path → Schmitt / pos-FB comparator. */
+    comparatorMode: boolean;
+    /** Latched output polarity for comparatorMode (hysteresis memory). */
+    compHigh: boolean;
 }
 interface VoltageSourceEntry {
     id: string;
@@ -165,6 +169,8 @@ export class AnalogEngine {
     private compUuidToDevId: Map<string, string[]> = new Map();
     private relayContacts: RelayContactEntry[] = [];
     private timer555s: Timer555Entry[] = [];
+    /** Last updateRelayContactsFromCoil(): true if a relay NO/NC contact changed. */
+    private lastRelayFlipped: boolean = false;
     /** Suppress per-device MNA flood during live pot/switch edits */
     private quietLoad: boolean = false;
     setQuietLoad(quiet: boolean): void {
@@ -395,7 +401,11 @@ export class AnalogEngine {
                 const supplyNode = this.resolveSupplyNode(comp, pinNets, netNodeMap, defHint);
                 const defV = AnalogEngine.isNegativeDcRail(libId) ? '-12V' : '5V';
                 const defNum = AnalogEngine.isNegativeDcRail(libId) ? -12 : 5;
-                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
+                let vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
+                // VEE 参数常写成 "12V"；负轨必须为负电压
+                if (AnalogEngine.isNegativeDcRail(libId) && vNum > 0) {
+                    vNum = -vNum;
+                }
                 nl += `V${rCount} ${supplyNode} 0 DC ${vNum}\n`;
                 rCount++;
             }
@@ -415,9 +425,11 @@ export class AnalogEngine {
         map.set('GND', '0');
         let unnamedIdx = 1;
         for (const net of doc.nets) {
-            const isGnd = net.name === 'GND' || net.name === '0';
-            const isVcc = net.name === 'VCC' || net.name === 'VDD' || net.name === 'V+';
-            const isVee = net.name === 'VEE' || net.name === 'V-';
+            const upper = (net.name ?? '').toUpperCase();
+            // Case-insensitive rails — 'gnd'/'Vss' must map to 0, not a floating signal node
+            const isGnd = upper === 'GND' || upper === '0' || upper === 'VSS';
+            const isVcc = upper === 'VCC' || upper === 'VDD' || upper === 'V+';
+            const isVee = upper === 'VEE' || upper === 'V-';
             let nodeName: string;
             if (isGnd) {
                 nodeName = '0';
@@ -437,9 +449,11 @@ export class AnalogEngine {
             map.set(net.id, nodeName);
             this.netUuidToNode.set(net.id, nodeName);
         }
-        // Also store reverse: node name → UUID for GND and VCC
         this.netUuidToNode.set('GND', '0');
         this.netUuidToNode.set('0', '0');
+        this.netUuidToNode.set('VSS', '0');
+        this.netUuidToNode.set('VCC', 'VCC');
+        this.netUuidToNode.set('VDD', 'VCC');
         return map;
     }
     private getPinNetConnections(compId: string, doc: SchematicDocument): PinNetMapping[] {
@@ -476,15 +490,26 @@ export class AnalogEngine {
                 return netNodeMap.get(m.netId) ?? `NC_${comp.id}_${pinHint}`;
             }
         }
-        // Fallback: numeric index (1-based or 0-based) or alphabetic index
+        // Fallback: numeric index only. Alphabetic index disabled when named pins exist
+        // (prevents BJT/opamp/555 silent wrong-node stamps via 'B'→index 1).
         if (pinNets.length > 0) {
             const numIdx = parseInt(pinHint);
             if (!isNaN(numIdx) && numIdx >= 1 && numIdx <= pinNets.length) {
                 return netNodeMap.get(pinNets[numIdx - 1].netId) ?? `N_${comp.id}_${pinHint}`;
             }
-            const alphaIdx = pinHint.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
-            if (alphaIdx >= 0 && alphaIdx < pinNets.length) {
-                return netNodeMap.get(pinNets[alphaIdx].netId) ?? `N_${comp.id}_${pinHint}`;
+            let hasNamedPins = false;
+            for (let i = 0; i < pinNets.length; i++) {
+                const pn = pinNets[i].pinName;
+                if (pn.length > 0 && !/^\d+$/.test(pn) && pn.toUpperCase() !== pinNets[i].pinId.toUpperCase()) {
+                    hasNamedPins = true;
+                    break;
+                }
+            }
+            if (!hasNamedPins) {
+                const alphaIdx = pinHint.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
+                if (alphaIdx >= 0 && alphaIdx < pinNets.length) {
+                    return netNodeMap.get(pinNets[alphaIdx].netId) ?? `N_${comp.id}_${pinHint}`;
+                }
             }
         }
         return `N_${comp.id}_${pinHint}`;
@@ -1037,7 +1062,8 @@ export class AnalogEngine {
                 this.opamps.push({
                     // A=1e4 is still ≫ closed-loop gain of lab circuits; 1e5 Ill-conditions the MNA.
                     id: devId, nodeOut: nO, nodeInP: nP, nodeInN: nN,
-                    nodeVcc: rails[0], nodeVee: rails[1], gain: 10000, bw: 1e6
+                    nodeVcc: rails[0], nodeVee: rails[1], gain: 10000, bw: 1e6,
+                    comparatorMode: false, compHigh: false
                 });
                 this.compUuidToDevId.set(comp.id, [devId]);
                 Logger.info(INSTR_TRACE_TAG, `[MNA] ${comp.refDes} ${devId} lib=${comp.libraryId} OUT=${nO} IN+=${nP} IN-=${nN} V+=${rails[0]} V-=${rails[1]}`);
@@ -1112,7 +1138,11 @@ export class AnalogEngine {
                 }
                 const defV = AnalogEngine.isNegativeDcRail(libId) ? '-12V' : '5V';
                 const defNum = AnalogEngine.isNegativeDcRail(libId) ? -12 : 5;
-                const vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
+                let vNum = parseVoltageVolts(paramMapGet(comp.parameters, 'voltage', defV), defNum);
+                // VEE 参数常写成 "12V"；负轨必须为负电压
+                if (AnalogEngine.isNegativeDcRail(libId) && vNum > 0) {
+                    vNum = -vNum;
+                }
                 const devId = `V${this.voltageSources.length}`;
                 this.voltageSources.push({
                     id: devId, nodeA: supplyNode, nodeB: '0',
@@ -1224,6 +1254,7 @@ export class AnalogEngine {
                 }
             }
         }
+        this.classifyOpAmpFeedbackModes();
         const rStamps: AnalogResistorStamp[] = [];
         for (let ri = 0; ri < this.resistors.length; ri++) {
             const r = this.resistors[ri];
@@ -1299,6 +1330,18 @@ export class AnalogEngine {
         }
         return maxF;
     }
+    /** Count of behavioral 555 timers in the loaded netlist (astable/monostable). */
+    getTimer555Count(): number {
+        return this.timer555s.length;
+    }
+    /**
+     * After updateRelayContactsFromCoil(): whether a DC re-solve is required.
+     * Relay contact changes need OP; 555 OUT/DISCH updates must NOT run DC OP mid-transient
+     * (capacitors go open and wipe timing-cap voltage — kills astable oscillation).
+     */
+    needsDcResolveAfterSwitch(): boolean {
+        return this.lastRelayFlipped;
+    }
     private runOpAnalysis(): void {
         // On LU failure keep the previous iterate (do not snap back) — restoring
         // every singular step freezes VAC-driven circuits near op-amp rails.
@@ -1351,6 +1394,46 @@ export class AnalogEngine {
         this.runOpAnalysis();
         this.syncGroundAlias();
     }
+    /**
+     * Instantaneous VAC/SIGGEN voltage at simTime.
+     * DC OP must use offset only (SPICE-like): square at t=0 is +amp, which with
+     * capacitors open turns a lossy integrator into a saturated inverting amp
+     * (lab_integrator: Vout→−rail, Cf seeded wrong → no triangle on CH2).
+     */
+    private instantaneousSourceVoltage(vs: VoltageSourceEntry): number {
+        if (vs.freq <= 0) {
+            return vs.voltage;
+        }
+        // Bias / .OP: hold AC sources at their DC offset
+        if (!this.inTransientStep) {
+            return vs.voltage;
+        }
+        const omega = 2 * Math.PI * vs.freq;
+        const period = 1.0 / vs.freq;
+        const phase = ((this.simTime % period) + period) % period / period;
+        switch (vs.waveform) {
+            case 'sin':
+                return vs.voltage + vs.amplitude * Math.sin(omega * this.simTime + vs.phase);
+            case 'square': {
+                const sqPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
+                return vs.voltage + (sqPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : -vs.amplitude);
+            }
+            case 'triangle': {
+                const triPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
+                return vs.voltage + vs.amplitude * (4 * Math.abs(triPhase - 0.5) - 1);
+            }
+            case 'sawtooth': {
+                const sawPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
+                return vs.voltage + vs.amplitude * (2 * sawPhase - 1);
+            }
+            case 'pulse': {
+                const pPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
+                return vs.voltage + (pPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : 0);
+            }
+            default:
+                return vs.voltage;
+        }
+    }
     /** Force VSRC/VAC nodes to their analytic values at simTime (MNA may leave them stale). */
     private enforceVoltageSources(): void {
         for (let i = 0; i < this.voltageSources.length; i++) {
@@ -1361,39 +1444,7 @@ export class AnalogEngine {
                 vs.nodeB !== '0' && vs.nodeB !== 'GND') {
                 continue;
             }
-            let vVal = vs.voltage;
-            if (vs.freq > 0) {
-                const omega = 2 * Math.PI * vs.freq;
-                const period = 1.0 / vs.freq;
-                const phase = ((this.simTime % period) + period) % period / period;
-                switch (vs.waveform) {
-                    case 'sin':
-                        vVal = vs.voltage + vs.amplitude * Math.sin(omega * this.simTime + vs.phase);
-                        break;
-                    case 'square': {
-                        const sqPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + (sqPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : -vs.amplitude);
-                        break;
-                    }
-                    case 'triangle': {
-                        const triPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + vs.amplitude * (4 * Math.abs(triPhase - 0.5) - 1);
-                        break;
-                    }
-                    case 'sawtooth': {
-                        const sawPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + vs.amplitude * (2 * sawPhase - 1);
-                        break;
-                    }
-                    case 'pulse': {
-                        const pPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + (pPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : 0);
-                        break;
-                    }
-                    default:
-                        break;
-                }
-            }
+            const vVal = this.instantaneousSourceVoltage(vs);
             const vB = this.nodeVoltages.get(vs.nodeB) ?? 0;
             if (vs.nodeB === '0' || vs.nodeB === 'GND') {
                 this.nodeVoltages.set(vs.nodeA, vVal);
@@ -1559,40 +1610,8 @@ export class AnalogEngine {
             if (ni === undefined || nj === undefined)
                 continue;
             const row = n + vsIdx;
-            let vVal = vs.voltage;
-            if (!isAc && vs.freq > 0) {
-                const omega = 2 * Math.PI * vs.freq;
-                const period = 1.0 / vs.freq;
-                const phase = ((this.simTime % period) + period) % period / period; // 0..1
-                switch (vs.waveform) {
-                    case 'sin':
-                        vVal = vs.voltage + vs.amplitude * Math.sin(omega * this.simTime + vs.phase);
-                        break;
-                    case 'square': {
-                        const sqPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + (sqPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : -vs.amplitude);
-                        break;
-                    }
-                    case 'triangle': {
-                        const triPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + vs.amplitude * (4 * Math.abs(triPhase - 0.5) - 1);
-                        break;
-                    }
-                    case 'sawtooth': {
-                        const sawPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + vs.amplitude * (2 * sawPhase - 1);
-                        break;
-                    }
-                    case 'pulse': {
-                        const pPhase = (phase + vs.phase / (2 * Math.PI) + 1) % 1;
-                        vVal = vs.voltage + (pPhase < (vs.dutyCycle || 0.5) ? vs.amplitude : 0);
-                        break;
-                    }
-                    default:
-                        vVal = vs.voltage;
-                        break;
-                }
-            }
+            // AC small-signal: stamp DC offset as bias; transient uses instantaneous value
+            const vVal = isAc ? vs.voltage : this.instantaneousSourceVoltage(vs);
             this.mnaG[ni * totalSize + row] = 1;
             this.mnaG[nj * totalSize + row] = -1;
             this.mnaG[row * totalSize + ni] = 1;
@@ -1818,21 +1837,102 @@ export class AnalogEngine {
         return libId.includes('PNP') || libId.includes('2N2907') || libId.includes('2N3906') ||
             libId.includes('BC557') || libId.includes('BC558');
     }
+    /**
+     * Positive-feedback (Schmitt) paths OUT↔IN+ without OUT↔IN- make the linear VCVS
+     * admit an unstable mid-point (Vout≈Vin/β). Detect that topology and use a
+     * latched rail comparator instead; keep linear+soft-rail for negative-FB amps.
+     */
+    private classifyOpAmpFeedbackModes(): void {
+        for (let i = 0; i < this.opamps.length; i++) {
+            const opa = this.opamps[i];
+            const negFb = this.nodesResistivelyCoupled(opa.nodeOut, opa.nodeInN);
+            const posFb = this.nodesResistivelyCoupled(opa.nodeOut, opa.nodeInP);
+            opa.comparatorMode = posFb && !negFb;
+            if (opa.comparatorMode && !this.quietLoad) {
+                Logger.info(INSTR_TRACE_TAG, `[MNA] ${opa.id} comparatorMode (pos-FB Schmitt) OUT=${opa.nodeOut} IN+=${opa.nodeInP}`);
+            }
+        }
+    }
+    /** True if two nodes are the same or linked by resistors (R < 1e11Ω). */
+    private nodesResistivelyCoupled(a: string, b: string): boolean {
+        if (a.length === 0 || b.length === 0) {
+            return false;
+        }
+        if (a === b) {
+            return true;
+        }
+        const adj = new Map<string, string[]>();
+        for (let i = 0; i < this.resistors.length; i++) {
+            const r = this.resistors[i];
+            if (r.resistance >= 1e11) {
+                continue;
+            }
+            let la = adj.get(r.nodeA);
+            if (!la) {
+                la = [];
+                adj.set(r.nodeA, la);
+            }
+            la.push(r.nodeB);
+            let lb = adj.get(r.nodeB);
+            if (!lb) {
+                lb = [];
+                adj.set(r.nodeB, lb);
+            }
+            lb.push(r.nodeA);
+        }
+        const seen = new Set<string>();
+        const queue: string[] = [a];
+        seen.add(a);
+        while (queue.length > 0) {
+            const cur = queue.shift() as string;
+            if (cur === b) {
+                return true;
+            }
+            const nbrs = adj.get(cur);
+            if (!nbrs) {
+                continue;
+            }
+            for (let j = 0; j < nbrs.length; j++) {
+                const n = nbrs[j];
+                if (!seen.has(n)) {
+                    seen.add(n);
+                    queue.push(n);
+                }
+            }
+        }
+        return false;
+    }
     private stampOpAmp(no: number, np: number, nn: number, opa: OpAmpModel, size: number): void {
-        // Linear VCVS: gOut*(A*(vp−vn) − vout) = 0 ⇒ vout ≈ A*(vp−vn).
-        // Soft rails act on the OUTPUT node (not A*vDiff): early Newton has huge open-loop
-        // A*vDiff before feedback settles; clamping on that killed the Jacobian (lab_analog_ic).
         const gOut = 1e-2;
         const vcc = this.nodeVoltages.get(opa.nodeVcc) ?? this.nodeVoltages.get('VCC') ?? 5;
         const vee = this.nodeVoltages.get(opa.nodeVee) ?? this.nodeVoltages.get('0') ?? 0;
+        const vSatLo = vee + 0.1;
+        const vSatHi = Math.max(vSatLo + 0.2, vcc - 1.5);
+        const vp = this.nodeVoltages.get(opa.nodeInP) ?? 0;
+        const vn = this.nodeVoltages.get(opa.nodeInN) ?? 0;
+        const vDiff = vp - vn;
+        // Schmitt / pos-FB: latch to rails (breaks unstable Vout≈Vin/β saddle).
+        if (opa.comparatorMode) {
+            const eps = 1e-4;
+            if (vDiff > eps) {
+                opa.compHigh = true;
+            }
+            else if (vDiff < -eps) {
+                opa.compHigh = false;
+            }
+            const vTarget = opa.compHigh ? vSatHi : vSatLo;
+            this.mnaG[no * size + no] += gOut;
+            this.mnaRhs[no] += gOut * vTarget;
+            return;
+        }
+        // Linear VCVS: gOut*(A*(vp−vn) − vout) = 0 ⇒ vout ≈ A*(vp−vn).
+        // Soft rails act on the OUTPUT node (not A*vDiff): early Newton has huge open-loop
+        // A*vDiff before feedback settles; clamping on that killed the Jacobian (lab_analog_ic).
         const A = opa.gain;
         this.mnaG[no * size + no] += gOut;
         this.mnaG[no * size + np] -= gOut * A;
         this.mnaG[no * size + nn] += gOut * A;
-        // Soft pull toward rails when output is already outside LM358-like headroom
         const vOut = this.nodeVoltages.get(opa.nodeOut) ?? 0;
-        const vSatLo = vee + 0.1;
-        const vSatHi = Math.max(vSatLo + 0.2, vcc - 1.5);
         if (vOut < vSatLo) {
             const over = Math.min(vSatLo - vOut, 3);
             const gd = 0.5 + 20 * over;
@@ -2062,10 +2162,13 @@ export class AnalogEngine {
     /**
      * After each SPICE step: refresh relay NO/NC contact resistances from coil voltage.
      * Also updates behavioral 555 OUT/DISCH from TRIG/THRES/RESET.
-     * Returns true if any contact/FF state flipped (caller may want to re-solve OP).
+     * Returns true if any contact/FF state flipped.
+     * Call needsDcResolveAfterSwitch() before reSolveOp — 555-only flips must not DC-OP
+     * (opens C and destroys timing-cap state).
      */
     updateRelayContactsFromCoil(): boolean {
-        let flipped = false;
+        this.lastRelayFlipped = false;
+        let timer555Flipped = false;
         for (let i = 0; i < this.relayContacts.length; i++) {
             const rc = this.relayContacts[i];
             const vA = this.getVoltage(rc.coilNodeA);
@@ -2077,16 +2180,16 @@ export class AnalogEngine {
                 continue;
             }
             rc.energized = on;
-            flipped = true;
+            this.lastRelayFlipped = true;
             this.setResistorOhms(rc.noDevId, on ? RELAY_CONTACT_CLOSED_OHMS : RELAY_CONTACT_OPEN_OHMS);
             this.setResistorOhms(rc.ncDevId, on ? RELAY_CONTACT_OPEN_OHMS : RELAY_CONTACT_CLOSED_OHMS);
             Logger.info(INSTR_TRACE_TAG, `[RELAY] ${rc.compId} coil=${vCoil.toFixed(2)}V → ${on ? 'ENERGIZED' : 'RELEASED'} ` +
                 `(NO=${on ? 'ON' : 'OFF'} NC=${on ? 'OFF' : 'ON'})`);
         }
         if (this.updateTimer555State()) {
-            flipped = true;
+            timer555Flipped = true;
         }
-        return flipped;
+        return this.lastRelayFlipped || timer555Flipped;
     }
     /** Readable relay coil/contact snapshot lines for instr_trace [REL]. */
     getRelayTraceLines(): string[] {

@@ -7,6 +7,48 @@ export interface SymbolBounds {
     width: number;
     height: number;
 }
+/** 仪器类符号主体半宽下限（示波器 70×80、逻辑分析仪 64×100） */
+const INSTRUMENT_BODY_HALF_MIN = 50;
+/**
+ * 单侧引脚簇（示波器/电压表等）：符号主体画在原点附近，
+ * 若仅用引脚 AABB，选中区会偏到引脚一侧，主体右半落在区外。
+ * 将 AABB 扩到覆盖原点对称主体。
+ */
+export function coverOriginCenteredBody(minX: number, maxX: number, minY: number, maxY: number): SymbolBounds {
+    const spansBothX = minX < -8 && maxX > 8;
+    const spansBothY = minY < -8 && maxY > 8;
+    let outMinX = minX;
+    let outMaxX = maxX;
+    let outMinY = minY;
+    let outMaxY = maxY;
+    if (!spansBothX) {
+        const pinHalfX = Math.max(Math.abs(minX), Math.abs(maxX));
+        // 引脚距原点 ≥18：覆盖小仪器/表头（±20/±30）；VCC 单脚通常 <15
+        if (pinHalfX >= 18) {
+            const halfX = Math.max(pinHalfX, INSTRUMENT_BODY_HALF_MIN);
+            const halfY = Math.max(Math.abs(minY), Math.abs(maxY), INSTRUMENT_BODY_HALF_MIN);
+            outMinX = Math.min(outMinX, -halfX);
+            outMaxX = Math.max(outMaxX, halfX);
+            outMinY = Math.min(outMinY, -halfY);
+            outMaxY = Math.max(outMaxY, halfY);
+        }
+    }
+    else if (!spansBothY) {
+        // 左右已有脚（如 TO-220 稳压：IN/OUT + 底 GND）— 只把 Y 扩到盖住原点附近主体，
+        // 禁止套用仪器半宽下限，否则边界飙到 ±50，位号/参数/脚名叠成一团。
+        const bodyHalfY = 20;
+        outMinY = Math.min(outMinY, -bodyHalfY);
+        outMaxY = Math.max(outMaxY, bodyHalfY);
+    }
+    return {
+        minX: outMinX,
+        maxX: outMaxX,
+        minY: outMinY,
+        maxY: outMaxY,
+        width: outMaxX - outMinX,
+        height: outMaxY - outMinY
+    };
+}
 export function calcSymbolBounds(pins: Pin[], padding: number = 10): SymbolBounds {
     if (pins.length === 0) {
         const b: SymbolBounds = { minX: -30, maxX: 30, minY: -20, maxY: 20, width: 60, height: 40 };
@@ -23,13 +65,14 @@ export function calcSymbolBounds(pins: Pin[], padding: number = 10): SymbolBound
         minY = Math.min(minY, p.y);
         maxY = Math.max(maxY, p.y);
     }
+    const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
     const result: SymbolBounds = {
-        minX: minX - padding,
-        maxX: maxX + padding,
-        minY: minY - padding,
-        maxY: maxY + padding,
-        width: maxX - minX + padding * 2,
-        height: maxY - minY + padding * 2
+        minX: covered.minX - padding,
+        maxX: covered.maxX + padding,
+        minY: covered.minY - padding,
+        maxY: covered.maxY + padding,
+        width: covered.width + padding * 2,
+        height: covered.height + padding * 2
     };
     return result;
 }
@@ -110,8 +153,11 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
         return 'memory';
     if (id === 'sw_push')
         return 'switch';
-    if (id === 'relay_spdt')
+    if (id === 'relay_spdt' || id.startsWith('relay_'))
         return 'relay';
+    if (id === 'signal_gen' || svg.includes('signal_gen') || behavior === 'signal_gen') {
+        return 'signal_gen';
+    }
     if (id === 'buzzer')
         return 'buzzer';
     if (id === 'ds18b20' || id === 'hall_sensor' || id === 'ldr')

@@ -16,4 +16,9 @@ export { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/
 export { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiResultCache";
 export { AiPipelineValidator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/validation/AiPipelineValidator";
 export type { AiValidationResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/validation/AiPipelineValidator";
+export { FaultDiagnoser } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/FaultDiagnoser";
 export type { ChatHistoryEntry } from './src/main/ets/internal/AiEngineTypes';
+export { DeviceUsageManual } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceUsageManual";
+export type { DeviceUsageEntry, DeviceUsageBuildResult, UsageManualMode } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceUsageManual";
+export { defaultCircuitIntent, classifyCircuitIntent, refineCircuitIntent, HYSTERESIS_MIN_SIGNAL_AMP_V, HYSTERESIS_RECOMMENDED_SIGNAL_AMP, parseSignalAmplitudeVolts, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";
+export type { CircuitIntent } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";

@@ -5,7 +5,6 @@ import { IAiEngine } from './api/IAiEngine';
 import { AutoWiringEngine } from './algorithms/AutoWiringEngine';
 import { ConstrainedWiringEngine } from './algorithms/ConstrainedWiringEngine';
 import { FaultDiagnoser } from './algorithms/FaultDiagnoser';
-import { CircuitTemplates } from './algorithms/CircuitTemplates';
 import { AiPipelineOrchestrator, PipelineOptions } from './algorithms/AiPipelineOrchestrator';
 import { DeviceSelectEngine } from './algorithms/DeviceSelectEngine';
 import { PlacementOptimizer } from './algorithms/PlacementOptimizer';
@@ -68,6 +67,8 @@ export class AiEngineImpl implements IAiEngine {
   async runAiTask(taskType: AiTaskType, topo: SchTopology, extra?: AiTaskExtra,
     onProgress?: ProgressCallback): Promise<AiTaskResult> {
     this.cancelled = false;
+    this.pipeline?.clearCancel();
+    this.apiManager.clearChatCancel();
     const quota = this.apiManager.checkGlobalAiQuota();
     if (!quota.success) {
       return {
@@ -209,16 +210,31 @@ export class AiEngineImpl implements IAiEngine {
             result.analysisText =
               `LLM:${pipe.data.usedLlm} degraded:${pipe.data.degradedMode}` +
               ` ercClean:${pipe.data.ercClean}` +
+              ` residual:${!!pipe.data.deliveredWithResidual}` +
               ` devices:${nDev} nets:${nNet} wires:${nWire}` +
               (matchBits.length > 0 ? ` match=[${matchBits.join(',')}]` : '') +
               (pipe.data.selectResult?.ragTemplateId ?
                 ` rag:${pipe.data.selectResult.ragTemplateId}` : '');
-            // 整图生成必须走 LLM；禁止模板静默落图
-            if (!extra?.skipLlm && !pipe.data.usedLlm) {
+            result.usedLlm = pipe.data.usedLlm;
+            result.deliveredWithResidual = !!pipe.data.deliveredWithResidual || !pipe.data.ercClean;
+            const cancelHit = this.cancelled ||
+              (pipe.data.ercErrors ?? []).some(e => e.errType === 'cancelled');
+            if (cancelHit) {
+              result.success = false;
+              result.errCode = ErrCode.ERR_ASYNC_CANCEL;
+              result.errMsg = 'Task cancelled';
+              result.topology = undefined;
+              result.usedLlm = false;
+              result.deliveredWithResidual = false;
+              Logger.info(INSTR_TRACE_TAG, '[AI_TASK] FULL_PIPELINE CANCELLED');
+            } else if (!extra?.skipLlm && !pipe.data.usedLlm) {
+              // 整图生成必须走 LLM；禁止模板静默落图（结构化 usedLlm，禁止仅靠 analysisText）
               result.success = false;
               result.errCode = ErrCode.ERR_API_TIMEOUT;
               result.errMsg = 'AI API 不可用或未正确配置，已拒绝模板回退';
               result.topology = undefined;
+              result.usedLlm = false;
+              result.deliveredWithResidual = false;
               Logger.error(INSTR_TRACE_TAG,
                 `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
             } else if (!pipe.data.ercClean) {
@@ -232,7 +248,8 @@ export class AiEngineImpl implements IAiEngine {
               for (let ei = 0; ei < errs.length; ei++) {
                 const et = errs[ei].errType;
                 if (et === 'modular_plan' || et === 'modular_parallel' ||
-                  et === 'device_select' || et === 'net_plan' || et === 'library_match') {
+                  et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
+                  et === 'modular_joint') {
                   modularHard = true;
                   if (errs[ei].suggest.length > 0) {
                     modularSuggest = errs[ei].suggest;
@@ -249,6 +266,7 @@ export class AiEngineImpl implements IAiEngine {
                 result.success = false;
                 result.errCode = ErrCode.ERR_PARAM_INVALID;
                 result.topology = undefined;
+                result.deliveredWithResidual = false;
                 if (!result.errMsg || result.errMsg.length === 0) {
                   result.errMsg = emptyTopo
                     ? '模块并行失败：无有效拓扑'
@@ -258,15 +276,17 @@ export class AiEngineImpl implements IAiEngine {
                   `[AI_TASK] FULL_PIPELINE FAIL modularHard=${modularHard} empty=${emptyTopo}` +
                   ` | ${result.analysisText}`);
               } else {
-                // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付
+                // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付，结构化标记 residual
                 result.success = true;
                 result.topology = pipe.data.topology;
+                result.deliveredWithResidual = true;
                 Logger.warn(INSTR_TRACE_TAG,
                   `[AI_TASK] FULL_PIPELINE DELIVER residualErc=${hardN} residualGeo=${geoN}` +
                   (hint.length > 0 ? ` (${hint})` : '') +
                   ` | ${result.analysisText}`);
               }
             } else {
+              result.deliveredWithResidual = false;
               Logger.info(INSTR_TRACE_TAG,
                 `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
             }
@@ -318,6 +338,10 @@ export class AiEngineImpl implements IAiEngine {
 
   cancelAiTask(): ApiResult<void> {
     this.cancelled = true;
+    this.pipeline?.requestCancel();
+    this.apiManager.cancelPendingChat();
+    Logger.info(INSTR_TRACE_TAG, '[AI_TASK] CANCEL requested — abort HTTP + pipeline');
+    traceAiOp('AI_TASK', 'cancel', 'http+pipeline');
     return ResultHelper.ok();
   }
 
@@ -488,12 +512,18 @@ export class AiEngineImpl implements IAiEngine {
       temperature: 0.08,
       disableThinking: false
     });
-    let llmOut: DeviceSelectLlmOutput;
-    if (api.success && api.data) {
-      llmOut = PromptLoader.extractJson<DeviceSelectLlmOutput>(api.data) ??
-        DeviceSelectEngine.buildLocalLlmOutput(prompt);
-    } else {
-      llmOut = DeviceSelectEngine.buildLocalLlmOutput(prompt);
+    if (!api.success || !api.data) {
+      Logger.error(INSTR_TRACE_TAG,
+        '[AI_TASK] aiSelectDevices ABORT: LLM unavailable — refuse local/template fallback');
+      return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT,
+        '器件选型 LLM 失败，已拒绝本地/模板回退');
+    }
+    const llmOut = PromptLoader.extractJson<DeviceSelectLlmOutput>(api.data);
+    if (!llmOut) {
+      Logger.error(INSTR_TRACE_TAG,
+        '[AI_TASK] aiSelectDevices ABORT: LLM JSON invalid — refuse local fallback');
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
+        '器件选型 LLM JSON 无效，已拒绝本地回退');
     }
     return ResultHelper.ok(engine.matchFromLlmOutput(llmOut, prompt));
   }
@@ -531,13 +561,11 @@ export class AiEngineImpl implements IAiEngine {
     return ConstrainedWiringEngine.defaultConstraints(topo);
   }
 
-  async aiGenSubCircuit(prompt: string, parentTopo: SchTopology): Promise<ApiResult<SchTopology>> {
-    const doc = CircuitTemplates.generate(prompt);
-    const wired = this.wiringEngine.autoWire(doc);
-    const subTopo = TopologyAdapter.toTopology(wired);
-    subTopo.schName = `Sub: ${prompt.substring(0, 30)}`;
-    subTopo.layerDepth = parentTopo.layerDepth + 1;
-    return ResultHelper.ok(subTopo);
+  async aiGenSubCircuit(_prompt: string, _parentTopo: SchTopology): Promise<ApiResult<SchTopology>> {
+    Logger.error(INSTR_TRACE_TAG,
+      '[AI_TASK] aiGenSubCircuit ABORT: legacy template path disabled — use TASK_FULL_PIPELINE');
+    return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
+      '遗留子电路模板路径已禁用；请使用整图流水线 TASK_FULL_PIPELINE');
   }
 
   async aiAnalyzeWave(waves: WaveData[]): Promise<ApiResult<string>> {
@@ -654,10 +682,14 @@ export class AiEngineImpl implements IAiEngine {
     return { success: true, errCode: ErrCode.OK, data: localRecs };
   }
 
-  async generateCircuit(prompt: string, mcuFamily?: string): Promise<Result<SchematicDocument>> {
-    const template = CircuitTemplates.generate(prompt, mcuFamily);
-    const wired = this.wiringEngine.autoWire(template);
-    return { success: true, errCode: ErrCode.OK, data: wired };
+  async generateCircuit(_prompt: string, _mcuFamily?: string): Promise<Result<SchematicDocument>> {
+    Logger.error(INSTR_TRACE_TAG,
+      '[AI_TASK] generateCircuit ABORT: CircuitTemplates disabled — use TASK_FULL_PIPELINE');
+    return {
+      success: false,
+      errCode: ErrCode.ERR_PARAM_INVALID,
+      error: '遗留模板生图已禁用；请使用整图流水线 TASK_FULL_PIPELINE'
+    };
   }
 
   async analyzeWaveform(result: SimulationResult): Promise<Result<string>> {
@@ -783,6 +815,7 @@ export class AiEngineImpl implements IAiEngine {
     const ood = validator.validateHallucinationChip();
     const noFallback = await validator.validateApiFailureFallback();
     const modularMerge = validator.validateModularMerge();
+    const usageManual = validator.validateUsageManualCoverage();
     const lines: string[] = [];
     lines.push(`[LED最小系统] ${led.passed ? 'PASS' : 'FAIL'}: ${led.checks.join('; ')}`);
     if (led.failures.length > 0) lines.push(`  失败: ${led.failures.join('; ')}`);
@@ -792,6 +825,10 @@ export class AiEngineImpl implements IAiEngine {
     lines.push(`[模块并行合并] ${modularMerge.passed ? 'PASS' : 'FAIL'}: ${modularMerge.checks.join('; ')}`);
     if (modularMerge.failures.length > 0) {
       lines.push(`  失败: ${modularMerge.failures.join('; ')}`);
+    }
+    lines.push(`[器件用法手册] ${usageManual.passed ? 'PASS' : 'FAIL'}: ${usageManual.checks.join('; ')}`);
+    if (usageManual.failures.length > 0) {
+      lines.push(`  失败: ${usageManual.failures.join('; ')}`);
     }
     Logger.info(INSTR_TRACE_TAG, `[AI_VAL] runValidationSuite END\n${lines.join('\n')}`);
     return lines.join('\n');

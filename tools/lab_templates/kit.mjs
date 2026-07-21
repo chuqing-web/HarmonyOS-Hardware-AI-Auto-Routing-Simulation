@@ -128,9 +128,13 @@ function enumerateCompPins(comp) {
   const ids = [];
   if (lib.startsWith('R_') || lib.startsWith('C_') || lib.startsWith('L_') ||
     lib.startsWith('XTAL') || lib.startsWith('FUSE') ||
-    lib === 'DS18B20' || lib === 'HALL_SENSOR' || lib === 'LDR' ||
+    lib === 'LDR' ||
     lib === 'BUZZER' || lib === 'SW_PUSH') {
     ids.push('1', '2');
+  } else if (lib === 'DS18B20') {
+    ids.push('GND', 'DQ', 'VDD');
+  } else if (lib === 'HALL_SENSOR') {
+    ids.push('VCC', 'OUT', 'GND');
   } else if (lib === 'RELAY_SPDT') {
     ids.push('1', '2', 'COM', 'NO', 'NC');
   } else if (lib.startsWith('LED_') || lib === '1N4148' || lib === '1N4007' || lib === '1N5819') {
@@ -148,14 +152,15 @@ function enumerateCompPins(comp) {
   } else if (lib.startsWith('74HC')) {
     ids.push('1', '2', '3', '7', '14');
   } else if (lib.startsWith('STM32') || lib.startsWith('AT89') || lib.startsWith('STC')) {
-    const n = lib.includes('F407') ? 100 : (lib.startsWith('AT89') || lib.startsWith('STC') ? 40 : 48);
-    for (let i = 1; i <= n; i++) ids.push(`P${i}`);
+    ids.push(...K.namedPinIdsForLib(lib));
   } else if (lib === '2N2222' || lib === '2N2907') {
     ids.push('B', 'C', 'E');
   } else if (lib === '2N7000' || lib === 'IRF540') {
     ids.push('G', 'D', 'S');
-  } else if (lib === 'VOLTMETER_DC' || lib === 'VIRTUAL_METER') {
-    ids.push('V+', 'V', 'COM');
+  } else if (lib === 'VOLTMETER_DC') {
+    ids.push('V+', 'COM');
+  } else if (lib === 'VIRTUAL_METER') {
+    ids.push('V', 'COM');
   } else if (lib === 'AMMETER_DC') {
     ids.push('I+', 'I-');
   } else if (lib === 'OSCILLOSCOPE') {
@@ -170,17 +175,21 @@ function enumerateCompPins(comp) {
   } else if (lib === 'FREQ_COUNTER') {
     ids.push('IN', 'GND');
   } else if (lib === 'LCD1602') {
-    for (let i = 1; i <= 16; i++) ids.push(String(i));
+    ids.push(...K.LCD1602_PINS);
   } else if (lib === 'OLED_12864') {
     ids.push('VCC', 'GND', 'SDA', 'SCL');
   } else if (lib === 'CD4017') {
-    for (let i = 1; i <= 16; i++) ids.push(String(i));
-  } else if (lib === '2764' || lib === '62256') {
-    for (let i = 1; i <= 28; i++) ids.push(String(i));
-  } else if (lib === '24C02' || lib === 'W25Q64') {
-    for (let i = 1; i <= 8; i++) ids.push(String(i));
+    ids.push(...K.CD4017_PINS);
+  } else if (lib === '2764') {
+    ids.push(...K.PINS_2764);
+  } else if (lib === '62256') {
+    ids.push(...K.PINS_62256);
+  } else if (lib === '24C02') {
+    ids.push(...K.PINS_24C02);
+  } else if (lib === 'W25Q64') {
+    ids.push(...K.PINS_W25Q64);
   } else if (lib === 'LM2596') {
-    for (let i = 1; i <= 5; i++) ids.push(String(i));
+    ids.push(...K.LM2596_PINS);
   }
   const out = [];
   const seen = new Set();
@@ -269,7 +278,7 @@ function pickRoute(doc, netId, a, b, channel = 0) {
 }
 
 function isRailLib(libraryId) {
-  return libraryId === 'VCC' || libraryId === 'GND';
+  return libraryId === 'VCC' || libraryId === 'GND' || libraryId === 'VEE';
 }
 
 /** 把 VCC/GND 符号脚提到 hub，减少负载脚做星心时的横穿短路 */
@@ -550,7 +559,14 @@ export class K {
     const world = K.pinWorld(pin.comp, pin.pinId, pin.pinName);
     // 密排脚错开 stub 长度，降低端点被 WireNetTopology 并短路的概率
     const pinNum = parseInt(String(pin.pinId).replace(/\D/g, ''), 10);
-    const baseLen = stubLen + ((!Number.isNaN(pinNum) ? pinNum % 3 : 0) * 10);
+    const libU = String(pin.comp.libraryId || '').toUpperCase();
+    const denseMcu = libU.includes('AT89') || libU.includes('STC') ||
+      libU.includes('STM32') || libU.includes('8051');
+    // MCU 10px 脚距：用更大错开，避免 8 路 GPIO stub 端点落在同一竖线上被并网
+    const stagger = denseMcu
+      ? ((!Number.isNaN(pinNum) ? pinNum % 8 : 0) * 12)
+      : ((!Number.isNaN(pinNum) ? pinNum % 3 : 0) * 10);
+    const baseLen = stubLen + stagger;
     const selfKey = `${pin.comp.id}:${pin.pinId}`;
     let end = labelStubEnd(pin.comp, world, baseLen, name);
     for (let len = baseLen; len <= baseLen + 40; len += 10) {
@@ -713,11 +729,22 @@ export class K {
     }
     if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
       libraryId.startsWith('XTAL_') || libraryId.startsWith('L_') ||
-      libraryId.startsWith('FUSE_') || libraryId === 'DS18B20' ||
-      libraryId === 'HALL_SENSOR' || libraryId === 'LDR' ||
+      libraryId.startsWith('FUSE_') || libraryId === 'LDR' ||
       libraryId === 'BUZZER' ||
       libraryId === 'SW_PUSH') {
       return pinId === '1' ? { x: -30, y: 0 } : { x: 30, y: 0 };
+    }
+    if (libraryId === 'DS18B20') {
+      if (pinId === 'GND') return { x: -30, y: 0 };
+      if (pinId === 'DQ') return { x: 0, y: 28 };
+      if (pinId === 'VDD') return { x: 30, y: 0 };
+      return { x: 0, y: 0 };
+    }
+    if (libraryId === 'HALL_SENSOR') {
+      if (pinId === 'VCC') return { x: -30, y: -10 };
+      if (pinId === 'OUT') return { x: 30, y: 0 };
+      if (pinId === 'GND') return { x: -30, y: 10 };
+      return { x: 0, y: 0 };
     }
     if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
       libraryId === '1N4007' || libraryId === '1N5819') {
@@ -725,7 +752,13 @@ export class K {
     }
     if (libraryId === 'VCC') return { x: 0, y: 10 };
     if (libraryId === 'GND') return { x: 0, y: -10 };
+    if (libraryId === 'VEE') return { x: 0, y: -10 };
     if (libraryId === 'VAC') return pinId === '1' ? { x: -20, y: 0 } : { x: 20, y: 0 };
+    if (libraryId === 'SIGNAL_GEN') {
+      if (pinId === 'OUT' || pinId === '1') return { x: -30, y: 0 };
+      if (pinId === 'GND' || pinId === '2') return { x: 30, y: 0 };
+      return { x: 0, y: 0 };
+    }
     if (libraryId === 'LM555' || libraryId === 'NE555') {
       // DIP-8 与 BuiltinComponents.ic555 / TemplateSchematicKit 对齐
       switch (pinId) {
@@ -770,7 +803,14 @@ export class K {
       if (pinId === '3') return { x: 40, y: 0 };
       return { x: 0, y: 0 };
     }
-    if (libraryId === 'LM2596') return K.genPinOffset(5, pinId, 40);
+    if (libraryId === 'LM2596') {
+      if (pinId === 'VIN') return { x: -40, y: -20 };
+      if (pinId === 'OUT') return { x: 40, y: -20 };
+      if (pinId === 'GND') return { x: 0, y: 40 };
+      if (pinId === 'FB') return { x: 40, y: 10 };
+      if (pinId === 'ON') return { x: -40, y: 10 };
+      return { x: 0, y: 0 };
+    }
     if (libraryId.startsWith('74HC')) {
       if (pinId === '14') return { x: 0, y: -40 };
       if (pinId === '7') return { x: 0, y: 40 };
@@ -784,15 +824,13 @@ export class K {
       }
       return { x: 0, y: 0 };
     }
-    if (libraryId === 'CD4017') return K.genPinOffset(16, pinId, 40);
-    if (libraryId === '2764' || libraryId === '62256') return K.genPinOffset(28, pinId, 40);
-    if (libraryId === '24C02' || libraryId === 'W25Q64') return K.genPinOffset(8, pinId, 40);
-    if (libraryId.startsWith('STM32')) {
-      const pinCount = libraryId.includes('F407') ? 100 : 48;
-      return K.mcuPinOffset(pinCount, pinId);
-    }
-    if (libraryId === 'AT89C51' || libraryId === 'AT89C52' || libraryId.startsWith('STC')) {
-      return K.mcuPinOffset(40, pinId);
+    if (libraryId === 'CD4017') return K.namedDipOffset(pinId, K.CD4017_PINS, 40);
+    if (libraryId === '2764') return K.namedDipOffset(pinId, K.PINS_2764, 40);
+    if (libraryId === '62256') return K.namedDipOffset(pinId, K.PINS_62256, 40);
+    if (libraryId === '24C02') return K.namedDipOffset(pinId, K.PINS_24C02, 40);
+    if (libraryId === 'W25Q64') return K.namedDipOffset(pinId, K.PINS_W25Q64, 40);
+    if (libraryId.startsWith('STM32') || libraryId.startsWith('AT89') || libraryId.startsWith('STC')) {
+      return K.namedDipOffset(pinId, K.namedPinIdsForLib(libraryId), 50);
     }
     if (libraryId === '2N2222' || libraryId === '2N2907') {
       if (pinId === 'B') return { x: -30, y: 0 };
@@ -806,9 +844,13 @@ export class K {
       if (pinId === 'S') return { x: 30, y: 10 };
       return { x: 0, y: 0 };
     }
-    if (libraryId === 'VOLTMETER_DC' || libraryId === 'VIRTUAL_METER') {
-      // 脚距加大，避免 stub 标号在吸附时 V+/COM 互抢（原 ±10）
-      if (pinId === 'V+' || pinId === 'V') return { x: -30, y: -25 };
+    if (libraryId === 'VOLTMETER_DC') {
+      if (pinId === 'V+') return { x: -30, y: -25 };
+      if (pinId === 'COM') return { x: -30, y: 25 };
+      return { x: 0, y: 0 };
+    }
+    if (libraryId === 'VIRTUAL_METER') {
+      if (pinId === 'V') return { x: -30, y: -25 };
       if (pinId === 'COM') return { x: -30, y: 25 };
       return { x: 0, y: 0 };
     }
@@ -823,11 +865,11 @@ export class K {
       return { x: 0, y: 0 };
     }
     if (libraryId === 'OSCILLOSCOPE') {
-      if (pinId === 'CH1') return { x: -40, y: -20 };
+      if (pinId === 'CH1') return { x: -40, y: -30 };
       if (pinId === 'CH2') return { x: -40, y: -10 };
       if (pinId === 'CH3') return { x: -40, y: 10 };
-      if (pinId === 'CH4') return { x: -40, y: 20 };
-      if (pinId === 'GND') return { x: 40, y: 40 };
+      if (pinId === 'CH4') return { x: -40, y: 30 };
+      if (pinId === 'GND') return { x: -40, y: 50 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'LOGIC_ANALYZER') {
@@ -849,7 +891,7 @@ export class K {
       if (pinId === 'GND') return { x: -40, y: 30 };
       return { x: 0, y: 0 };
     }
-    if (libraryId === 'LCD1602') return K.genPinOffset(16, pinId, 40);
+    if (libraryId === 'LCD1602') return K.namedDipOffset(pinId, K.LCD1602_PINS, 40);
     if (libraryId === 'OLED_12864') {
       switch (pinId) {
         case 'VCC': return { x: -30, y: -10 };
@@ -861,14 +903,14 @@ export class K {
     }
     const pinNum = parseInt(pinId, 10);
     if (!isNaN(pinNum)) return K.genPinOffset(16, pinId, 40);
-    if (pinId.startsWith('P')) {
+    if (pinId.startsWith('P') && !pinId.includes('.')) {
       const n = parseInt(pinId.substring(1), 10);
       if (!isNaN(n)) return K.mcuPinOffset(48, pinId);
     }
     return { x: 0, y: 0 };
   }
 
-  /** 与 BuiltinComponents.genPins 一致 */
+  /** 与 BuiltinComponents.genPins / NamedDevicePins.layoutNamedPins 一致 */
   static genPinOffset(count, pinId, bodyX) {
     const pinNum = parseInt(pinId, 10);
     const leftCount = Math.ceil(count / 2);
@@ -880,6 +922,15 @@ export class K {
     return { x: bodyX, y: rightIdx * 10 - bodyHalf };
   }
 
+  static namedDipOffset(pinId, order, bodyX) {
+    const idx = order.indexOf(pinId);
+    if (idx < 0) return { x: 0, y: 0 };
+    const leftCount = Math.ceil(order.length / 2);
+    const bodyHalf = Math.max(leftCount, Math.floor(order.length / 2)) * 10 / 2;
+    if (idx < leftCount) return { x: -bodyX, y: idx * 10 - bodyHalf };
+    return { x: bodyX, y: (idx - leftCount) * 10 - bodyHalf };
+  }
+
   static mcuPinOffset(count, pinId) {
     const n = parseInt(pinId.substring(1), 10);
     const leftCount = Math.ceil(count / 2);
@@ -889,6 +940,79 @@ export class K {
     if (idx < leftCount) return { x: -50, y: idx * 10 - bodyHalf };
     const rightIdx = idx - leftCount;
     return { x: 50, y: rightIdx * 10 - bodyHalf };
+  }
+
+  // —— 与 NamedDevicePins.ets 同步的脚序 ——
+  static LCD1602_PINS = [
+    'VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D0', 'D1',
+    'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'A', 'K'
+  ];
+  static CD4017_PINS = [
+    'Q5', 'Q1', 'Q0', 'Q2', 'Q6', 'Q7', 'Q3', 'VSS',
+    'Q8', 'Q4', 'Q9', 'CO', 'CLK', 'EN', 'RST', 'VDD'
+  ];
+  static LM2596_PINS = ['VIN', 'OUT', 'GND', 'FB', 'ON'];
+  static PINS_24C02 = ['A0', 'A1', 'A2', 'VSS', 'SDA', 'SCL', 'WP', 'VCC'];
+  static PINS_W25Q64 = ['CS', 'DO', 'WP', 'GND', 'DI', 'CLK', 'HOLD', 'VCC'];
+  static PINS_2764 = (() => {
+    const d = ['VPP'];
+    for (let i = 0; i < 8; i++) d.push(`A${i}`);
+    for (let i = 0; i < 8; i++) d.push(`D${i}`);
+    d.push('GND', 'CE', 'OE');
+    for (let i = 8; i < 13; i++) d.push(`A${i}`);
+    d.push('VCC');
+    while (d.length < 28) d.push(`NC${d.length}`);
+    return d.slice(0, 28);
+  })();
+  static PINS_62256 = (() => {
+    const d = ['A14'];
+    for (let i = 0; i < 8; i++) d.push(`A${i}`);
+    for (let i = 0; i < 8; i++) d.push(`D${i}`);
+    d.push('GND', 'CE', 'OE');
+    for (let i = 8; i < 14; i++) d.push(`A${i}`);
+    d.push('WE', 'VCC');
+    while (d.length < 28) d.push(`NC${d.length}`);
+    return d.slice(0, 28);
+  })();
+  static PINS_8051 = [
+    'P1.0', 'P1.1', 'P1.2', 'P1.3', 'P1.4', 'P1.5', 'P1.6', 'P1.7', 'RST',
+    'P3.0', 'P3.1', 'P3.2', 'P3.3', 'P3.4', 'P3.5', 'P3.6', 'P3.7',
+    'XTAL2', 'XTAL1', 'GND',
+    'P2.0', 'P2.1', 'P2.2', 'P2.3', 'P2.4', 'P2.5', 'P2.6', 'P2.7',
+    'PSEN', 'ALE', 'EA',
+    'P0.7', 'P0.6', 'P0.5', 'P0.4', 'P0.3', 'P0.2', 'P0.1', 'P0.0', 'VCC'
+  ];
+  static PINS_STM32_48 = (() => {
+    const d = ['VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT'];
+    for (let i = 0; i < 16; i++) d.push(`PA${i}`);
+    for (let i = 0; i < 16; i++) d.push(`PB${i}`);
+    for (let i = 0; i < 8; i++) d.push(`PC${i}`);
+    return d;
+  })();
+  static PINS_STM32_32 = (() => {
+    const d = ['VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT'];
+    for (let i = 0; i < 16; i++) d.push(`PA${i}`);
+    for (let i = 0; i < 10; i++) d.push(`PB${i}`);
+    return d;
+  })();
+  static PINS_STM32_100 = null; // built lazily in namedPinIdsForLib
+
+  static namedPinIdsForLib(lib) {
+    if (lib.includes('F407')) {
+      if (!K.PINS_STM32_100) {
+        const d = K.PINS_STM32_48.slice();
+        for (let i = 0; i < 16; i++) d.push(`PD${i}`);
+        for (let i = 0; i < 16; i++) d.push(`PE${i}`);
+        for (let i = 8; i < 16; i++) d.push(`PC${i}`);
+        for (let i = 0; i < 12; i++) d.push(`PF${i}`);
+        K.PINS_STM32_100 = d;
+      }
+      return K.PINS_STM32_100;
+    }
+    if (lib.includes('F030')) return K.PINS_STM32_32;
+    if (lib.startsWith('STM32')) return K.PINS_STM32_48;
+    if (lib.startsWith('AT89') || lib.startsWith('STC')) return K.PINS_8051;
+    return [];
   }
 }
 

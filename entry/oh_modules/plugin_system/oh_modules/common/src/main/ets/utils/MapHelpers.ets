@@ -57,17 +57,22 @@ export function paramMapGet(params: Map<string, string>, key: string, fallback: 
   return fallback;
 }
 
-/** 解析 "5V" / "3.3" 等为伏特数值 */
+/** 解析 "5V" / "-12V" / "3.3" / "0" 等为伏特数值（保留符号；允许 0） */
 export function parseVoltageVolts(value: string, fallback: number = 5): number {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     return fallback;
   }
-  const numeric = parseFloat(trimmed.replace(/[^\d.]/g, ''));
-  if (isNaN(numeric) || numeric <= 0) {
+  // 统一 Unicode 负号，避免 "-12V" 被剥成 +12
+  const normalized = trimmed.replace(/[\u2212\uFF0D]/g, '-');
+  const neg = normalized.charAt(0) === '-';
+  const pos = normalized.charAt(0) === '+';
+  const body = (neg || pos) ? normalized.substring(1) : normalized;
+  const numeric = parseFloat(body.replace(/[^\d.]/g, ''));
+  if (isNaN(numeric)) {
     return fallback;
   }
-  return numeric;
+  return neg ? -numeric : numeric;
 }
 
 export function appendArray<T>(target: T[], source: T[]): void {
@@ -163,8 +168,12 @@ export function stringMap2(k1: string, v1: string, k2: string, v2: string): Map<
   return m;
 }
 
-export function makeRouteLine(netUuid: string, points: Point2D[], isBus: boolean): RouteLine {
+export function makeRouteLine(netUuid: string, points: Point2D[], isBus: boolean,
+  uuid?: string): RouteLine {
   const line: RouteLine = { netUuid: netUuid, points: points, isBus: isBus };
+  if (uuid !== undefined && uuid.length > 0) {
+    line.uuid = uuid;
+  }
   return line;
 }
 

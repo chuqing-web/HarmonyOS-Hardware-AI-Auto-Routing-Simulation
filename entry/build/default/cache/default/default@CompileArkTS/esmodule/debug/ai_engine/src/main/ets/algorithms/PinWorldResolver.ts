@@ -1,4 +1,5 @@
-import type { Point2D, DeviceInst, ComponentInstance } from 'common';
+import { Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { Point2D, DeviceInst, ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
 export class PinWorldResolver {
     static transformLocal(local: Point2D, rotation: number, mirrored: boolean): Point2D {
@@ -20,7 +21,12 @@ export class PinWorldResolver {
         return { x: x, y: y };
     }
     static forDevice(libDevId: string, x: number, y: number, rotate: number, mirrorH: boolean, pinId: string, pinName: string): Point2D {
+        const known = TemplateSchematicKit.validatePinExists(libDevId, pinId)
+            || (pinName.length > 0 && TemplateSchematicKit.validatePinExists(libDevId, pinName));
         const local = TemplateSchematicKit.pinOffset(libDevId, pinId, pinName);
+        if (!known && local.x === 0 && local.y === 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIN] unknown pin ${libDevId}.${pinId}/${pinName} — world falls at device center`);
+        }
         const t = PinWorldResolver.transformLocal(local, rotate, mirrorH);
         return { x: x + t.x, y: y + t.y };
     }

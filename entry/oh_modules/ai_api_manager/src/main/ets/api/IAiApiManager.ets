@@ -55,6 +55,12 @@ export interface IAiApiManager {
   setDefaultApi(id: string): Result<void>;
   testConnection(id: string): Promise<Result<boolean>>;
   chat(prompt: string, options?: ChatOptions): Promise<Result<string>>;
+  /** 立刻中止进行中的 HTTP 聊天请求（用户点取消） */
+  cancelPendingChat(): void;
+  /** 新任务开始前清除取消态 */
+  clearChatCancel(): void;
+  /** 是否已请求取消（流水线各阶段轮询） */
+  isChatCancelled(): boolean;
   exportConfigs(hideKeys?: boolean): Result<string>;
   importConfigs(json: string): Result<number>;
   clearAllConfigs(): Result<void>;

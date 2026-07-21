@@ -15,9 +15,10 @@ export const MODULAR_PLAN_PROMPT: PromptTemplate = {
    - id: M1/M2/…（唯一）
    - title: 短标题
    - prompt: 该模块独立生图用的完整中文需求（只含本模块器件与内部连线；不要写跨模块导线）
-   - boundaryPins: 本模块对外暴露的引脚列表，格式 "RefDes.Pin"（可附 =说明），至少 1 个
+   - boundaryPins: 本模块对外暴露的引脚，格式仅 "RefDes.Pin"（不要写 ModuleId 前缀），至少 1 个
 3. joints: 模块间 pin↔pin 清单（合并时按此用【同名网络标号】并网，不拉跨模块长线）
    - from / to 格式: "{ModuleId}.{RefDes}.{Pin}" 例如 "M1.RV1.W"、"M1.U1.3"
+   - 【对照】boundary 写 "R1.1"，joints 对应端写 "M1.R1.1"（多 ModuleId 前缀）
    - 电源统一用 POWER 节点: "POWER.VCC" / "POWER.GND"（合并时打 VCC/GND 标号）
 4. 每个 boundaryPins 中的脚必须出现在某条 joint 的对应端（含接到 POWER.VCC/POWER.GND）
 5. prompt 中须出现 boundaryPins 里的 RefDes 名称

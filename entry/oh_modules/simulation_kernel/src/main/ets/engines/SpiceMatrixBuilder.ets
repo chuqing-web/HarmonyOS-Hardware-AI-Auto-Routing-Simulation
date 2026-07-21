@@ -36,22 +36,26 @@ export class SpiceMatrixBuilder {
     const pinMap = new Map<string, string>();
     let nodeIdx = 1; // Start from 1, 0 is GND
 
-    // Map nets to SPICE nodes
+    // Map nets to SPICE nodes (case-insensitive rails; VSS→0 not VEE)
     for (const net of topo.netList) {
-      const name = net.netName.length > 0 ? net.netName : net.netUuid;
-      if (name === 'GND' || name === '0') {
+      const raw = net.netName.length > 0 ? net.netName : net.netUuid;
+      const name = raw.toUpperCase();
+      if (name === 'GND' || name === '0' || name === 'VSS') {
         nodeMap.set(net.netUuid, '0');
+        nodeMap.set(raw, '0');
         nodeMap.set(name, '0');
-      } else if (name === 'VCC' || name === 'VDD' || name === 'VDD_5V' || name === '+5V') {
+      } else if (name === 'VCC' || name === 'VDD' || name === 'V+' || name === 'VDD_5V' || name === '+5V') {
         nodeMap.set(net.netUuid, 'VCC');
+        nodeMap.set(raw, 'VCC');
         nodeMap.set(name, 'VCC');
-      } else if (name === 'VEE' || name === 'VSS' || name === '-5V') {
+      } else if (name === 'VEE' || name === 'V-' || name === '-5V') {
         nodeMap.set(net.netUuid, 'VEE');
+        nodeMap.set(raw, 'VEE');
         nodeMap.set(name, 'VEE');
       } else {
         const spiceNode = `N${nodeIdx++}`;
         nodeMap.set(net.netUuid, spiceNode);
-        nodeMap.set(name, spiceNode);
+        nodeMap.set(raw, spiceNode);
       }
       // Map pin references on this net
       for (let ni = 0; ni < net.nodeList.length; ni++) {

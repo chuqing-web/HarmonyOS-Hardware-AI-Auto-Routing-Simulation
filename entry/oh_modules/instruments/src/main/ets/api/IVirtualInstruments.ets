@@ -31,6 +31,13 @@ export interface TimedScriptCommand {
 export interface IVirtualInstruments {
   // ---- Oscilloscope ----
   setTimebase(timebase: OscTimebase): ApiResult<void>;
+  /** Clear scope history / CH2+ ghost probes (sim start or template switch). */
+  clearOscilloscopeCapture(): ApiResult<void>;
+  /**
+   * Auto timebase + V/div from live CH signal. No-op when signal too flat / too short.
+   * Panel should sync Select indices when result.changed.
+   */
+  autoAdjustOscilloscope(channel?: number): ApiResult<OscAutoScaleView>;
   setVoltageScale(channel: number, scale: OscVoltageScale): ApiResult<void>;
   setCoupling(channel: number, mode: CouplingMode): ApiResult<void>;
   setTrigger(mode: TriggerMode, level: number, channel: number): ApiResult<void>;
@@ -166,6 +173,15 @@ export interface OscilloscopeView {
   captureMode: CaptureMode;
   mathOp: MathChannelOp;
   fftLogScale: boolean;
+}
+
+/** Result of autoAdjustOscilloscope */
+export interface OscAutoScaleView {
+  changed: boolean;
+  timebase: OscTimebase;
+  voltageScale: OscVoltageScale;
+  frequencyHz: number;
+  vpp: number;
 }
 
 export interface LogicAnalyzerView {

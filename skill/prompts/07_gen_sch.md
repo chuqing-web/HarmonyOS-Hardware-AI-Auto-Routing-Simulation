@@ -15,7 +15,7 @@ runtime_key: gen_sch
 4. STM32: BOOT0→GND, 每个 VDD→100nF→GND
 5. 8051: EA→VCC, RST→10kΩ→VCC+10uF→GND
 6. 所有器件必须来自可用器件库
-7. 导线不得侵入器件选中命中区(HIT_PAD=14)，不得贴近无关引脚(≥20mil)
+7. 导线不得侵入器件选中命中区(HIT_PAD=22)，不得贴近无关引脚(≥20mil)
 
 【仪器拓扑铁律】:
 - 电流表串联: VCC→I+→I-→负载 (绝不在同一网络)

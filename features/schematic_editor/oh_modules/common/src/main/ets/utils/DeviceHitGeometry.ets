@@ -4,7 +4,7 @@
  */
 import { Pin, Point2D } from '../types/CommonTypes';
 import { DeviceInst, RouteLine } from '../types/TopologyTypes';
-import { SymbolBounds, calcSymbolBounds } from './SymbolGeometry';
+import { SymbolBounds, calcSymbolBounds, coverOriginCenteredBody } from './SymbolGeometry';
 
 /** 与 SchematicEditorImpl.HIT_PAD 保持一致 */
 export const SELECTION_HIT_PAD = 22;
@@ -136,13 +136,15 @@ export class DeviceHitGeometry {
       minY = Math.min(minY, locals[i].y);
       maxY = Math.max(maxY, locals[i].y);
     }
+    // 与 calcSymbolBounds 一致：单侧引脚须覆盖原点符号主体
+    const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
     const local: SymbolBounds = {
-      minX: minX - 8 - pad,
-      maxX: maxX + 8 + pad,
-      minY: minY - 8 - pad,
-      maxY: maxY + 8 + pad,
-      width: (maxX - minX) + 16 + pad * 2,
-      height: (maxY - minY) + 16 + pad * 2
+      minX: covered.minX - 8 - pad,
+      maxX: covered.maxX + 8 + pad,
+      minY: covered.minY - 8 - pad,
+      maxY: covered.maxY + 8 + pad,
+      width: covered.width + 16 + pad * 2,
+      height: covered.height + 16 + pad * 2
     };
     return DeviceHitGeometry.localToWorldAabb(
       ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
@@ -199,14 +201,17 @@ export class DeviceHitGeometry {
   }
 
   /**
-   * 选出不穿透异器件选中区的 stub 终点；优先最近边，再试其余三边与更大 pad。
+   * 选出不穿透异器件选中区、且距无关脚≥FOREIGN_PIN_CLEARANCE 的 stub 终点。
+   * foreignPins：调用方排除本脚后的全部引脚世界坐标（含同芯片邻脚）。
    */
   static stubLabelOutsidePinAvoidForeign(
     pin: Point2D,
     own: WorldHitRect,
     foreign: WorldHitRect[],
-    stubPad: number = 20
+    stubPad: number = 20,
+    foreignPins?: Point2D[]
   ): Point2D {
+    const pinClear: Point2D[] = foreignPins !== undefined ? foreignPins : [];
     const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
     const order: string[] = [preferred];
     const all = ['L', 'R', 'T', 'B'];
@@ -215,7 +220,10 @@ export class DeviceHitGeometry {
         order.push(all[i]);
       }
     }
-    const pads = [stubPad, stubPad + 16, stubPad + 32];
+    const pads = [stubPad, stubPad + 16, stubPad + 32, stubPad + 48, stubPad + 64,
+      stubPad + 80, stubPad + 112, stubPad + 144];
+    let bestLabel: Point2D | null = null;
+    let bestMinDist = -1;
     for (let pi = 0; pi < pads.length; pi++) {
       for (let ei = 0; ei < order.length; ei++) {
         const label = DeviceHitGeometry.stubLabelOnEdge(pin, own, order[ei], pads[pi]);
@@ -234,12 +242,68 @@ export class DeviceHitGeometry {
             break;
           }
         }
-        if (!hitsForeign) {
+        if (hitsForeign) {
+          continue;
+        }
+        const clearOk = DeviceHitGeometry.segmentClearsForeignPins(
+          pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
+        if (clearOk) {
           return label;
+        }
+        const minD = DeviceHitGeometry.minDistToForeignPins(pin, label, pinClear);
+        if (minD > bestMinDist) {
+          bestMinDist = minD;
+          bestLabel = label;
         }
       }
     }
+    // 仅返回满足 FOREIGN_PIN_CLEARANCE 的标号端；否则返回 null 语义用远距兜底前先拒绝
+    if (bestLabel !== null && bestMinDist >= FOREIGN_PIN_CLEARANCE) {
+      return bestLabel;
+    }
+    // 无合格候选：仍用标准 stub（调用方应 demote），勿返回 clearance 不足的 best
     return DeviceHitGeometry.stubLabelOutsidePin(pin, own, stubPad + 40);
+  }
+
+  /** 线段与标号端点到无关脚的最小距离均 ≥ clearance（两端点 ENDPOINT_EXEMPT 内豁免，与门禁一致） */
+  static segmentClearsForeignPins(
+    a: Point2D, b: Point2D, foreignPins: Point2D[], clearance: number
+  ): boolean {
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      if (DeviceHitGeometry.pointSegmentDistance(fp, a, b) < clearance) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 线段到无关脚的最小距离（无无关脚或均在端点豁免内时视为 Infinity） */
+  static minDistToForeignPins(a: Point2D, b: Point2D, foreignPins: Point2D[]): number {
+    if (foreignPins.length === 0) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    let minD = Number.POSITIVE_INFINITY;
+    let any = false;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      any = true;
+      const d = DeviceHitGeometry.pointSegmentDistance(fp, a, b);
+      if (d < minD) {
+        minD = d;
+      }
+    }
+    return any ? minD : Number.POSITIVE_INFINITY;
   }
 
   /**

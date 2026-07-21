@@ -2,6 +2,7 @@ import { ComponentCategory, PinType } from "@bundle:com.elecdraw.aischsim/entry@
 import type { Pin } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ComponentDefinition } from '../api/IComponentLibrary';
 import { appendComponents, emptyParams, makePin, params1, params2, params3, params5 } from "@bundle:com.elecdraw.aischsim/entry@component_library/ets/internal/ComponentLibHelpers";
+import { pins8051Dip40, pinsStm32Teaching48, pinsStm32Teaching100, pinsStm32Teaching32, pinsLcd1602, pins24C02, pinsW25Q64, pins2764, pins62256, pinsDs18b20, pinsHallSensor, pinsCd4017, pinsLm2596 } from "@bundle:com.elecdraw.aischsim/entry@component_library/ets/data/NamedDevicePins";
 export function getAllBuiltinComponents(): ComponentDefinition[] {
     const list: ComponentDefinition[] = [];
     appendComponents(list, makePowerSupplies());
@@ -215,9 +216,33 @@ function makeRelaySpdt(): ComponentDefinition {
 }
 function makeSensors(): ComponentDefinition[] {
     return [
-        twoPin('DS18B20', 'DS18B20 Temperature', ComponentCategory.SENSOR, params2('range', '-55~125°C', 'interface', '1-Wire'), '', ['one-wire']),
-        twoPin('HALL_SENSOR', 'Hall Sensor', ComponentCategory.SENSOR, params1('type', 'digital'), '', ['input']),
-        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input']),
+        {
+            id: 'DS18B20',
+            name: 'DS18B20 Temperature',
+            category: ComponentCategory.SENSOR,
+            manufacturer: 'Maxim',
+            description: '1-Wire 温度传感器（GND/DQ/VDD）',
+            pins: pinsDs18b20(),
+            defaultParams: params2('range', '-55~125°C', 'interface', '1-Wire'),
+            spiceModel: '',
+            behaviorModel: 'ds18b20',
+            svgSymbol: 'ds18b20.svg',
+            aiWiringRules: ['one-wire', 'pull-up']
+        },
+        {
+            id: 'HALL_SENSOR',
+            name: 'Hall Sensor',
+            category: ComponentCategory.SENSOR,
+            manufacturer: 'Generic',
+            description: '霍尔开关（VCC/OUT/GND）',
+            pins: pinsHallSensor(),
+            defaultParams: params1('type', 'digital'),
+            spiceModel: '',
+            behaviorModel: 'hall',
+            svgSymbol: 'hall.svg',
+            aiWiringRules: ['input', 'pull-up']
+        },
+        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input'])
     ];
 }
 function makeInstruments(): ComponentDefinition[] {
@@ -414,7 +439,7 @@ function icRegulator(id: string, name: string, pinCount: number): ComponentDefin
             makePin('2', 'GND', '2', PinType.GROUND, 0, 40),
             makePin('3', 'OUT', '3', PinType.OUTPUT, 40, 0)
         ]
-        : genPins(pinCount);
+        : (id === 'LM2596' ? pinsLm2596() : genPins(pinCount));
     const def: ComponentDefinition = {
         id: id,
         name: name,
@@ -431,13 +456,26 @@ function icRegulator(id: string, name: string, pinCount: number): ComponentDefin
     return def;
 }
 function memChip(id: string, name: string, cat: ComponentCategory, pinCount: number): ComponentDefinition {
+    let pins = genPins(pinCount);
+    if (id === '24C02') {
+        pins = pins24C02();
+    }
+    else if (id === 'W25Q64') {
+        pins = pinsW25Q64();
+    }
+    else if (id === '2764') {
+        pins = pins2764();
+    }
+    else if (id === '62256') {
+        pins = pins62256();
+    }
     const def: ComponentDefinition = {
         id: id,
         name: name,
         category: cat,
         manufacturer: 'Generic',
         description: name,
-        pins: genPins(pinCount),
+        pins: pins,
         defaultParams: emptyParams(),
         spiceModel: '',
         behaviorModel: `mem_${id.toLowerCase()}`,
@@ -487,7 +525,7 @@ function makeCd4017(): ComponentDefinition {
         category: ComponentCategory.DIGITAL_IC,
         manufacturer: 'TI',
         description: 'Johnson Decade Counter',
-        pins: genPins(16),
+        pins: pinsCd4017(),
         defaultParams: params1('family', '4000'),
         spiceModel: '',
         behaviorModel: 'cd4017',
@@ -507,7 +545,7 @@ function make8051Mcu(id: string): ComponentDefinition {
         category: ComponentCategory.MCU_8051,
         manufacturer: manufacturer,
         description: `8051 MCU ${id}`,
-        pins: genMcuPins(40),
+        pins: pins8051Dip40(),
         defaultParams: params1('clock', '11.0592MHz'),
         spiceModel: '',
         behaviorModel: '8051_behavioral',
@@ -517,11 +555,15 @@ function make8051Mcu(id: string): ComponentDefinition {
     return def;
 }
 function makeStm32Mcu(id: string): ComponentDefinition {
-    let pinCount = 48;
+    let pins = pinsStm32Teaching48();
     let clock = '72MHz';
     if (id.includes('F407')) {
-        pinCount = 100;
+        pins = pinsStm32Teaching100();
         clock = '168MHz';
+    }
+    else if (id.includes('F030')) {
+        pins = pinsStm32Teaching32();
+        clock = '48MHz';
     }
     const def: ComponentDefinition = {
         id: id,
@@ -529,7 +571,7 @@ function makeStm32Mcu(id: string): ComponentDefinition {
         category: ComponentCategory.MCU_STM32,
         manufacturer: 'STMicroelectronics',
         description: `STM32 MCU ${id}`,
-        pins: genMcuPins(pinCount),
+        pins: pins,
         defaultParams: params1('clock', clock),
         spiceModel: '',
         behaviorModel: 'stm32_behavioral',
@@ -545,7 +587,7 @@ function makeLcd1602(): ComponentDefinition {
         category: ComponentCategory.PERIPHERAL,
         manufacturer: 'Generic',
         description: '16x2 Character LCD',
-        pins: genPins(16),
+        pins: pinsLcd1602(),
         defaultParams: params1('interface', 'parallel'),
         spiceModel: '',
         behaviorModel: 'lcd1602',
@@ -583,11 +625,12 @@ function makeOscilloscope(): ComponentDefinition {
         manufacturer: 'AI-SCH',
         description: '4-channel virtual oscilloscope',
         pins: [
-            makePin('CH1', 'CH1', '1', PinType.INPUT, -40, -20),
+            // 与 DeviceLibrary/OSCILLOSCOPE 一致：全部左插，主体在原点右侧
+            makePin('CH1', 'CH1', '1', PinType.INPUT, -40, -30),
             makePin('CH2', 'CH2', '2', PinType.INPUT, -40, -10),
             makePin('CH3', 'CH3', '3', PinType.INPUT, -40, 10),
-            makePin('CH4', 'CH4', '4', PinType.INPUT, -40, 20),
-            makePin('GND', 'GND', '5', PinType.GROUND, 40, 40)
+            makePin('CH4', 'CH4', '4', PinType.INPUT, -40, 30),
+            makePin('GND', 'GND', '5', PinType.GROUND, -40, 50)
         ],
         defaultParams: params2('channels', '4', 'sampleRate', '1MHz'),
         spiceModel: '',

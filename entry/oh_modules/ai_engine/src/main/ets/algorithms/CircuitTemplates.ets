@@ -21,14 +21,13 @@ export class CircuitTemplates {
     return LabTemplateRegistry.generateById(templateId);
   }
 
-  static generate(prompt: string, mcuFamily?: string): SchematicDocument {
+  static generate(prompt: string, mcuFamily?: string): SchematicDocument | null {
     const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
     if (match !== null) {
-      return CircuitTemplates.generateById(match.templateId) ??
-        CircuitTemplates.fallbackDoc(prompt);
+      return CircuitTemplates.generateById(match.templateId);
     }
-    return CircuitTemplates.generateById('lab_power') ??
-      CircuitTemplates.fallbackDoc(prompt);
+    // 禁止静默 lab_power 兜底（生产路径不得调用本方法）
+    return null;
   }
 
   /**
@@ -54,7 +53,7 @@ export class CircuitTemplates {
       // 分压电路默认配1块电压表（需轮换测量），N个电阻则推荐N块
       instruments.push('VOLTMETER_DC');
     }
-    if (lower.includes('示波器') || lower.includes('波形') || lower.includes('观察')) {
+    if (lower.includes('示波器') || lower.includes('波形') || lower.includes('oscilloscope')) {
       instruments.push('OSCILLOSCOPE');
     }
     if (lower.includes('逻辑分析仪') || lower.includes('时序')) {
@@ -63,7 +62,7 @@ export class CircuitTemplates {
 
     // 复合场景匹配: 电路类型 + 仪器
     // "分压" 或 "电阻分压" + 仪器 → lab_passive + instruments
-    if ((lower.includes('分压') || lower.includes('电阻') && lower.includes('串联')) &&
+    if ((lower.includes('分压') || (lower.includes('电阻') && lower.includes('串联'))) &&
       instruments.length > 0) {
       return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
     }
@@ -71,11 +70,18 @@ export class CircuitTemplates {
     if ((lower.includes('led') || lower.includes('灯') || lower.includes('流水')) &&
       instruments.some(i => i.includes('AMMETER'))) {
       const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
-        lower.includes('8051') || lower.includes('51') || lower.includes('stc');
+        lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+        lower.includes('stc') || /\b51\b/.test(lower);
       return {
         templateId: is51 ? 'lab_51_led' : 'lab_digital',
         instrumentsNeeded: instruments, isCompound: true
       };
+    }
+    // "积分/方波→三角" + 示波器 → lab_integrator
+    if ((lower.includes('积分') || lower.includes('integrator') ||
+      (lower.includes('方波') && lower.includes('三角'))) &&
+      instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+      return { templateId: 'lab_integrator', instrumentsNeeded: instruments, isCompound: true };
     }
     // "运放/放大" + 示波器 → lab_amp + scope
     if ((lower.includes('运放') || lower.includes('放大') || lower.includes('同相')) &&
@@ -122,13 +128,19 @@ export class CircuitTemplates {
     if (lower.includes('7805') || lower.includes('稳压')) {
       return 'lab_power';
     }
+    // 须先于「运放/反相/rc」，避免积分被误分到 amp/filter
+    if (lower.includes('积分') || lower.includes('integrator') ||
+      (lower.includes('方波') && lower.includes('三角'))) {
+      return 'lab_integrator';
+    }
     if (lower.includes('运放') || lower.includes('放大') || lower.includes('同相') || lower.includes('反相')) {
       return 'lab_amp';
     }
     if (lower.includes('rc') || lower.includes('滤波')) {
       return 'lab_filter';
     }
-    if ((lower.includes('51') || lower.includes('stc')) &&
+    if ((lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+      lower.includes('stc') || /\b51\b/.test(lower)) &&
       (lower.includes('流水') || lower.includes('led') || lower.includes('灯'))) {
       return 'lab_51_led';
     }

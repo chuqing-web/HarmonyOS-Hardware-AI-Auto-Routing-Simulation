@@ -10,19 +10,21 @@ export interface AiTaskExtra {
   requirement?: string;
   scene?: 'text_gen' | 'partial_assist';
   lockedUuids?: string[];
+  /** 仅验收/单测可 true；生产 text_gen 禁止 */
   skipLlm?: boolean;
   routingWeights?: RoutingWeightPrefs;
+  /** 流式预览拓扑；非最终交付，勿当 ERC 已通过 */
   onStreamSnapshot?: (topo: SchTopology, stage: string) => void;
   /** 多轮对话历史，用于 LLM 上下文继承 */
   conversationHistory?: ChatHistoryEntry[];
   /** 生成模式: create=从零创建, edit=基于现有电路修改 */
   generationMode?: 'create' | 'edit';
-  /** oneshot=整图一次；modular=整体设计+边界后真并行合并 */
+  /** oneshot=整图一次；modular=整体设计+边界后真并行合并；默认 oneshot */
   generateStrategy?: 'oneshot' | 'modular';
 }
 
 export interface ChatHistoryEntry {
-  role: string;
+  role: 'user' | 'assistant' | 'system' | string;
   content: string;
 }
 

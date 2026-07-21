@@ -1,0 +1,726 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ*Eimport { buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart, buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital, buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral, buildLabSensor, buildLabInstruments, buildLabPotentiometer } from './LabTemplateBuilders';
+import { TemplateSchematicKit } from './TemplateSchematicKit';
+/** å†…ç½®å™¨ä»¶åº“å…¨éƒ¨ libraryIdï¼ˆä¸ BuiltinComponents åŒæ­¥ï¼‰ */
+export const ALL_CATALOG_LIBRARY_IDS = [
+    'VCC', 'GND', 'VAC',
+    'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k',
+    'POT_1k', 'POT_10k', 'POT_100k',
+    'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF',
+    'L_10uH', 'XTAL_11M', 'XTAL_8M', 'FUSE_1A',
+    '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+    '2N2222', '2N2907', '2N7000', 'IRF540',
+    'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+    '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74', 'CD4017',
+    '2764', '62256', '24C02', 'W25Q64',
+    'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+    'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+    'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+    'DS18B20', 'HALL_SENSOR', 'LDR',
+    'OSCILLOSCOPE', 'VIRTUAL_METER', 'VOLTMETER_DC', 'AMMETER_DC',
+    'POWER_METER', 'FREQ_COUNTER', 'LOGIC_ANALYZER', 'UART_TERMINAL'
+];
+const POWER_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+    'C_100uF', 'C_10uF', 'C_100nF', 'R_10k', 'VOLTMETER_DC'];
+const ANALOG_LIBS = ['LM358', 'R_10k', 'R_100k', 'R_1k', 'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU51_LIBS = ['AT89C51', 'XTAL_11M', 'C_100nF', 'R_10k', 'R_330', 'LED_RED', 'LED_GREEN',
+    'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU_UART_LIBS = ['STM32F103C8', 'XTAL_8M', 'C_100nF', 'R_10k', 'R_1k', 'LED_GREEN',
+    'UART_TERMINAL', 'VCC', 'GND', 'VOLTMETER_DC'];
+const PASSIVE_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k',
+    'R_10k', 'R_47k', 'R_100k', 'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF',
+    'C_10uF', 'C_100uF', 'L_10uH', 'AMMETER_DC'];
+const DISCRETE_LIBS = ['VCC', 'GND', '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+    'R_330', 'R_1k', 'R_10k', '2N2222', '2N2907', '2N7000', 'IRF540'];
+const ANALOG_IC_LIBS = ['VCC', 'GND', 'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3',
+    'LM2596', 'R_10k', 'R_47k', 'R_1k', 'C_10uF', 'C_100nF', 'LED_RED', 'R_330'];
+const DIGITAL_LIBS = ['VCC', 'GND', '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74',
+    'CD4017', 'LOGIC_ANALYZER'];
+const MEMORY_LIBS = ['STM32F103RC', '2764', '62256', '24C02', 'W25Q64', 'VCC', 'GND',
+    'C_100nF', 'R_10k'];
+const MCU8051_ALL = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS', 'XTAL_11M', 'XTAL_8M',
+    'C_100nF', 'R_10k', 'VCC', 'GND'];
+const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+    'XTAL_8M', 'C_100nF', 'C_10uF', 'R_10k', 'VCC', 'GND'];
+const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+    'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
+const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 'R_4.7k', 'R_10k',
+    'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
+    'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
+const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
+export class LabTemplateRegistry {
+    static listTemplates() {
+        return LabTemplateRegistry.BUILTIN.concat(LabTemplateRegistry.extraTemplates);
+    }
+    static findById(id) {
+        return LabTemplateRegistry.listTemplates().find(t => t.id === id);
+    }
+    /** è¿è¡Œæ—¶æ³¨å†Œæ–°å®éªŒæ¨¡æ¿ */
+    static registerTemplate(def) {
+        const idx = LabTemplateRegistry.extraTemplates.findIndex(t => t.id === def.id);
+        if (idx >= 0) {
+            LabTemplateRegistry.extraTemplates[idx] = def;
+        }
+        else {
+            LabTemplateRegistry.extraTemplates.push(def);
+        }
+    }
+    static generateById(templateId) {
+        const def = LabTemplateRegistry.findById(templateId);
+        if (def === undefined) {
+            return null;
+        }
+        const doc = TemplateSchematicKit.createDoc(def.name, def.description);
+        def.build(doc);
+        return doc;
+    }
+    /** å…¨åº“å™¨ä»¶è¦†ç›–ç»Ÿè®¡ */
+    static getCoverageReport() {
+        const coveredSet = new Set();
+        for (const tpl of LabTemplateRegistry.listTemplates()) {
+            for (let i = 0; i < tpl.libraryIds.length; i++) {
+                coveredSet.add(tpl.libraryIds[i]);
+            }
+        }
+        const covered = [];
+        const missing = [];
+        for (let i = 0; i < ALL_CATALOG_LIBRARY_IDS.length; i++) {
+            const id = ALL_CATALOG_LIBRARY_IDS[i];
+            if (coveredSet.has(id)) {
+                covered.push(id);
+            }
+            else {
+                missing.push(id);
+            }
+        }
+        const total = ALL_CATALOG_LIBRARY_IDS.length;
+        const percent = total > 0 ? Math.round(covered.length / total * 100) : 0;
+        const result = {
+            covered: covered,
+            missing: missing,
+            total: total,
+            percent: percent
+        };
+        return result;
+    }
+    static listCategories() {
+        const cats = new Set();
+        for (const t of LabTemplateRegistry.listTemplates()) {
+            cats.add(t.category);
+        }
+        return Array.from(cats);
+    }
+}
+LabTemplateRegistry.extraTemplates = [];
+LabTemplateRegistry.BUILTIN = [
+    {
+        id: 'lab_power', name: 'ç›´æµç”µæºç”µè·¯', category: 'power',
+        description: 'LM7805 ç¨³å‹ç”µæº + æ»¤æ³¢ + è´Ÿè½½æµ‹é‡',
+        knowledgePoints: ['ç¨³å‹åŸç†', 'æ»¤æ³¢ç”µå®¹', 'ç†”æ–­ä¿æŠ¤'],
+        libraryIds: POWER_LIBS, build: buildLabPower
+    },
+    {
+        id: 'lab_amp', name: 'è¿ç®—æ”¾å¤§ç”µè·¯', category: 'analog',
+        description: 'LM358 åŒç›¸æ”¾å¤§å™¨ï¼ˆå¯ MNA ä»¿çœŸï¼‰',
+        knowledgePoints: ['è™šçŸ­è™šæ–­', 'å¢ç›Šè®¡ç®—'],
+        libraryIds: ANALOG_LIBS, build: buildLabAmp
+    },
+    {
+        id: 'lab_filter', name: 'RCæ»¤æ³¢ç”µè·¯', category: 'analog',
+        description: 'RC ä½é€š + LM358 ç¼“å†²è¾“å‡º',
+        knowledgePoints: ['æˆªæ­¢é¢‘ç‡', 'ç¼“å†²è·Ÿéš'],
+        libraryIds: ANALOG_LIBS, build: buildLabFilter
+    },
+    {
+        id: 'lab_51_led', name: '51æµæ°´ç¯', category: 'mcu',
+        description: 'AT89C51 æµæ°´ç¯ + æ™¶æŒ¯å¤ä½ï¼›éœ€çƒ§å½• lab_51_led.hex',
+        knowledgePoints: ['IOå£', 'å®šæ—¶å™¨', 'é™æµç”µé˜»'],
+        libraryIds: MCU51_LIBS, firmware: '8051', hexFile: 'lab_51_led.hex', build: buildLab51Led
+    },
+    {
+        id: 'lab_uart', name: 'ä¸²å£é€šä¿¡', category: 'mcu',
+        description: 'STM32F103 UART + ç»ˆç«¯ï¼›éœ€çƒ§å½• lab_uart.hex',
+        knowledgePoints: ['æ³¢ç‰¹ç‡', 'å¸§æ ¼å¼', 'TX/RX äº¤å‰'],
+        libraryIds: MCU_UART_LIBS, firmware: 'STM32', hexFile: 'lab_uart.hex', build: buildLabUart
+    },
+    {
+        id: 'lab_passive', name: 'æ— æºå™¨ä»¶æ£€æµ‹', category: 'passive',
+        description: 'å…¨éƒ¨ç”µé˜»/ç”µå®¹/ç”µæ„Ÿ/LC/äº¤æµæº',
+        knowledgePoints: ['åˆ†å‹', 'å»è€¦', 'LCè°æŒ¯'],
+        libraryIds: PASSIVE_LIBS, build: buildLabPassive
+    },
+    {
+        id: 'lab_discrete', name: 'åˆ†ç«‹å™¨ä»¶æ£€æµ‹', category: 'discrete',
+        description: 'äºŒæç®¡/LED/ä¸‰æç®¡/MOSFET å…¸å‹æ¥æ³•',
+        knowledgePoints: ['æ•´æµ', 'å¼€å…³', 'é™æµ'],
+        libraryIds: DISCRETE_LIBS, build: buildLabDiscrete
+    },
+    {
+        id: 'lab_analog_ic', name: 'æ¨¡æ‹ŸICæ£€æµ‹', category: 'analog',
+        description: 'è¿æ”¾ + LM555 æ— ç¨³æ€ + å…¨éƒ¨ç¨³å‹/å¼€å…³ç”µæº IC',
+        knowledgePoints: ['è¿æ”¾', '555æŒ¯è¡', 'LDO', 'Buck'],
+        libraryIds: ANALOG_IC_LIBS, build: buildLabAnalogIc
+    },
+    {
+        id: 'lab_digital', name: 'æ•°å­—é€»è¾‘æ£€æµ‹', category: 'digital',
+        description: 'å…¨éƒ¨ 74HC é€»è¾‘é—¨ + CD4017 + é€»è¾‘åˆ†æä»ª',
+        knowledgePoints: ['é—¨ç”µè·¯', 'è®¡æ•°å™¨', 'é€»è¾‘åˆ†æ'],
+        libraryIds: DIGITAL_LIBS, build: buildLabDigital
+    },
+    {
+        id: 'lab_memory', name: 'å­˜å‚¨å™¨æ¥å£', category: 'memory',
+        description: 'EPROM/SRAM/EEPROM/Flash ä¸ MCU è¿æ¥',
+        knowledgePoints: ['å¹¶è¡Œæ€»çº¿', 'I2C', 'SPI'],
+        libraryIds: MEMORY_LIBS, build: buildLabMemory
+    },
+    {
+        id: 'lab_mcu_8051', name: '8051å…¨ç³»åˆ—', category: 'mcu',
+        description: 'AT89/STC å››æ¬¾ MCU æœ€å°ç³»ç»Ÿï¼›éœ€çƒ§å½• lab_mcu_8051.hex',
+        knowledgePoints: ['æœ€å°ç³»ç»Ÿ', 'æ™¶æŒ¯', 'å¤ä½'],
+        libraryIds: MCU8051_ALL, firmware: '8051', hexFile: 'lab_mcu_8051.hex', build: buildLabMcu8051
+    },
+    {
+        id: 'lab_mcu_stm32', name: 'STM32å…¨ç³»åˆ—', category: 'mcu',
+        description: 'äº”æ¬¾ STM32 æœ€å°ç³»ç»Ÿå¹¶æ’ï¼›éœ€çƒ§å½• lab_mcu_stm32.hex',
+        knowledgePoints: ['Cortex-M', 'HSE', 'NRST'],
+        libraryIds: MCU_STM32_ALL, firmware: 'STM32', hexFile: 'lab_mcu_stm32.hex', build: buildLabMcuStm32
+    },
+    {
+        id: 'lab_peripheral', name: 'å¤–è®¾æ¥å£å®éªŒ', category: 'peripheral',
+        description: 'æŒ‰é”®/ç»§ç”µå™¨è§¦ç‚¹æŒ‡ç¤º/èœ‚é¸£å™¨/LCD/OLEDï¼›éœ€çƒ§å½• lab_peripheral.hex',
+        knowledgePoints: ['GPIO', 'ç»§ç”µå™¨è§¦ç‚¹', 'äººæœºäº¤äº’', 'æ˜¾ç¤º'],
+        libraryIds: PERIPH_LIBS, firmware: 'STM32', hexFile: 'lab_peripheral.hex',
+        build: buildLabPeripheral
+    },
+    {
+        id: 'lab_sensor', name: 'ä¼ æ„Ÿå™¨å®éªŒ', category: 'sensor',
+        description: 'DS18B20/éœå°”/å…‰æ• æ¥å…¥ MCU',
+        knowledgePoints: ['1-Wire', 'æ•°å­—è¾“å…¥', 'ADC'],
+        libraryIds: SENSOR_LIBS, build: buildLabSensor
+    },
+    {
+        id: 'lab_instruments', name: 'ä»ªå™¨ä»ªè¡¨æ£€æµ‹', category: 'instrument',
+        description: 'å…¨éƒ¨è™šæ‹Ÿä»ªå™¨æ¥å…¥åˆ†å‹æµ‹è¯•ç‚¹',
+        knowledgePoints: ['ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ç¤ºæ³¢å™¨'],
+        libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
+    },
+    {
+        id: 'lab_potentiometer', name: 'æ»‘åŠ¨å˜é˜»å™¨å®éªŒ', category: 'passive',
+        description: 'POT_1k/10k/100k ä¸‰æ¡£åˆ†å‹ + ç”µå‹è¡¨',
+        knowledgePoints: ['åˆ†å‹æ¯”', 'æ»‘è‡‚è°ƒèŠ‚', 'çº¿æ€§ç”µä½å™¨'],
+        libraryIds: POT_LIBS, build: buildLabPotentiometer
+    }
+];
+//# sourceMappingURL=LabTemplateRegistry.js.mapÂ’Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateBuilders.etsÙ`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\TemplateSchematicKit.etsÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  Ù/C:\Projects\ElecDraw_Harmony\features\ai_engineÃ“ÔrC’²hostDependencyName®hostModuleNameÙ ./algorithms/LabTemplateRegistry©ai_engineCµ./LabTemplateRegistry©ai_engineCÙ-./src/main/ets/algorithms/LabTemplateRegistry©ai_engineÃÚ+6/**
+ * å®éªŒæ¨¡æ¿æ³¨å†Œè¡¨ â€” å¯æ‰©å±•ã€å…¨å™¨ä»¶è¦†ç›–æ£€æµ‹
+ */
+import { SchematicDocument } from 'common';
+import {
+  buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart,
+  buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital,
+  buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral,
+  buildLabSensor, buildLabInstruments, buildLabPotentiometer
+} from './LabTemplateBuilders';
+import { TemplateSchematicKit } from './TemplateSchematicKit';
+
+export type LabTemplateBuilder = (doc: SchematicDocument) => void;
+
+export interface LabCoverageReport {
+  covered: string[];
+  missing: string[];
+  total: number;
+  percent: number;
+}
+
+export interface LabTemplateDef {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  knowledgePoints: string[];
+  /** æœ¬æ¨¡æ¿ä½¿ç”¨çš„ libraryId åˆ—è¡¨ï¼ˆç”¨äºè¦†ç›–æ£€æµ‹ï¼‰ */
+  libraryIds: string[];
+  /** å…³è”å›ºä»¶: '8051' | 'STM32' | undefined */
+  firmware?: string;
+  /** hex_files ç›®å½•ä¸‹çš„æ–‡ä»¶å */
+  hexFile?: string;
+  build: LabTemplateBuilder;
+}
+
+/** å†…ç½®å™¨ä»¶åº“å…¨éƒ¨ libraryIdï¼ˆä¸ BuiltinComponents åŒæ­¥ï¼‰ */
+export const ALL_CATALOG_LIBRARY_IDS: string[] = [
+  'VCC', 'GND', 'VAC',
+  'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k',
+  'POT_1k', 'POT_10k', 'POT_100k',
+  'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF',
+  'L_10uH', 'XTAL_11M', 'XTAL_8M', 'FUSE_1A',
+  '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+  '2N2222', '2N2907', '2N7000', 'IRF540',
+  'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+  '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74', 'CD4017',
+  '2764', '62256', '24C02', 'W25Q64',
+  'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+  'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+  'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+  'DS18B20', 'HALL_SENSOR', 'LDR',
+  'OSCILLOSCOPE', 'VIRTUAL_METER', 'VOLTMETER_DC', 'AMMETER_DC',
+  'POWER_METER', 'FREQ_COUNTER', 'LOGIC_ANALYZER', 'UART_TERMINAL'
+];
+
+const POWER_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+  'C_100uF', 'C_10uF', 'C_100nF', 'R_10k', 'VOLTMETER_DC'];
+const ANALOG_LIBS = ['LM358', 'R_10k', 'R_100k', 'R_1k', 'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU51_LIBS = ['AT89C51', 'XTAL_11M', 'C_100nF', 'R_10k', 'R_330', 'LED_RED', 'LED_GREEN',
+  'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU_UART_LIBS = ['STM32F103C8', 'XTAL_8M', 'C_100nF', 'R_10k', 'R_1k', 'LED_GREEN',
+  'UART_TERMINAL', 'VCC', 'GND', 'VOLTMETER_DC'];
+const PASSIVE_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k',
+  'R_10k', 'R_47k', 'R_100k', 'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF',
+  'C_10uF', 'C_100uF', 'L_10uH', 'AMMETER_DC'];
+const DISCRETE_LIBS = ['VCC', 'GND', '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+  'R_330', 'R_1k', 'R_10k', '2N2222', '2N2907', '2N7000', 'IRF540'];
+const ANALOG_IC_LIBS = ['VCC', 'GND', 'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3',
+  'LM2596', 'R_10k', 'R_47k', 'R_1k', 'C_10uF', 'C_100nF', 'LED_RED', 'R_330'];
+const DIGITAL_LIBS = ['VCC', 'GND', '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74',
+  'CD4017', 'LOGIC_ANALYZER'];
+const MEMORY_LIBS = ['STM32F103RC', '2764', '62256', '24C02', 'W25Q64', 'VCC', 'GND',
+  'C_100nF', 'R_10k'];
+const MCU8051_ALL = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS', 'XTAL_11M', 'XTAL_8M',
+  'C_100nF', 'R_10k', 'VCC', 'GND'];
+const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+  'XTAL_8M', 'C_100nF', 'C_10uF', 'R_10k', 'VCC', 'GND'];
+const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+  'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
+const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 'R_4.7k', 'R_10k',
+  'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
+  'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
+const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
+
+export class LabTemplateRegistry {
+  private static extraTemplates: LabTemplateDef[] = [];
+
+  private static readonly BUILTIN: LabTemplateDef[] = [
+    {
+      id: 'lab_power', name: 'ç›´æµç”µæºç”µè·¯', category: 'power',
+      description: 'LM7805 ç¨³å‹ç”µæº + æ»¤æ³¢ + è´Ÿè½½æµ‹é‡',
+      knowledgePoints: ['ç¨³å‹åŸç†', 'æ»¤æ³¢ç”µå®¹', 'ç†”æ–­ä¿æŠ¤'],
+      libraryIds: POWER_LIBS, build: buildLabPower
+    },
+    {
+      id: 'lab_amp', name: 'è¿ç®—æ”¾å¤§ç”µè·¯', category: 'analog',
+      description: 'LM358 åŒç›¸æ”¾å¤§å™¨ï¼ˆå¯ MNA ä»¿çœŸï¼‰',
+      knowledgePoints: ['è™šçŸ­è™šæ–­', 'å¢ç›Šè®¡ç®—'],
+      libraryIds: ANALOG_LIBS, build: buildLabAmp
+    },
+    {
+      id: 'lab_filter', name: 'RCæ»¤æ³¢ç”µè·¯', category: 'analog',
+      description: 'RC ä½é€š + LM358 ç¼“å†²è¾“å‡º',
+      knowledgePoints: ['æˆªæ­¢é¢‘ç‡', 'ç¼“å†²è·Ÿéš'],
+      libraryIds: ANALOG_LIBS, build: buildLabFilter
+    },
+    {
+      id: 'lab_51_led', name: '51æµæ°´ç¯', category: 'mcu',
+      description: 'AT89C51 æµæ°´ç¯ + æ™¶æŒ¯å¤ä½ï¼›éœ€çƒ§å½• lab_51_led.hex',
+      knowledgePoints: ['IOå£', 'å®šæ—¶å™¨', 'é™æµç”µé˜»'],
+      libraryIds: MCU51_LIBS, firmware: '8051', hexFile: 'lab_51_led.hex', build: buildLab51Led
+    },
+    {
+      id: 'lab_uart', name: 'ä¸²å£é€šä¿¡', category: 'mcu',
+      description: 'STM32F103 UART + ç»ˆç«¯ï¼›éœ€çƒ§å½• lab_uart.hex',
+      knowledgePoints: ['æ³¢ç‰¹ç‡', 'å¸§æ ¼å¼', 'TX/RX äº¤å‰'],
+      libraryIds: MCU_UART_LIBS, firmware: 'STM32', hexFile: 'lab_uart.hex', build: buildLabUart
+    },
+    {
+      id: 'lab_passive', name: 'æ— æºå™¨ä»¶æ£€æµ‹', category: 'passive',
+      description: 'å…¨éƒ¨ç”µé˜»/ç”µå®¹/ç”µæ„Ÿ/LC/äº¤æµæº',
+      knowledgePoints: ['åˆ†å‹', 'å»è€¦', 'LCè°æŒ¯'],
+      libraryIds: PASSIVE_LIBS, build: buildLabPassive
+    },
+    {
+      id: 'lab_discrete', name: 'åˆ†ç«‹å™¨ä»¶æ£€æµ‹', category: 'discrete',
+      description: 'äºŒæç®¡/LED/ä¸‰æç®¡/MOSFET å…¸å‹æ¥æ³•',
+      knowledgePoints: ['æ•´æµ', 'å¼€å…³', 'é™æµ'],
+      libraryIds: DISCRETE_LIBS, build: buildLabDiscrete
+    },
+    {
+      id: 'lab_analog_ic', name: 'æ¨¡æ‹ŸICæ£€æµ‹', category: 'analog',
+      description: 'è¿æ”¾ + LM555 æ— ç¨³æ€ + å…¨éƒ¨ç¨³å‹/å¼€å…³ç”µæº IC',
+      knowledgePoints: ['è¿æ”¾', '555æŒ¯è¡', 'LDO', 'Buck'],
+      libraryIds: ANALOG_IC_LIBS, build: buildLabAnalogIc
+    },
+    {
+      id: 'lab_digital', name: 'æ•°å­—é€»è¾‘æ£€æµ‹', category: 'digital',
+      description: 'å…¨éƒ¨ 74HC é€»è¾‘é—¨ + CD4017 + é€»è¾‘åˆ†æä»ª',
+      knowledgePoints: ['é—¨ç”µè·¯', 'è®¡æ•°å™¨', 'é€»è¾‘åˆ†æ'],
+      libraryIds: DIGITAL_LIBS, build: buildLabDigital
+    },
+    {
+      id: 'lab_memory', name: 'å­˜å‚¨å™¨æ¥å£', category: 'memory',
+      description: 'EPROM/SRAM/EEPROM/Flash ä¸ MCU è¿æ¥',
+      knowledgePoints: ['å¹¶è¡Œæ€»çº¿', 'I2C', 'SPI'],
+      libraryIds: MEMORY_LIBS, build: buildLabMemory
+    },
+    {
+      id: 'lab_mcu_8051', name: '8051å…¨ç³»åˆ—', category: 'mcu',
+      description: 'AT89/STC å››æ¬¾ MCU æœ€å°ç³»ç»Ÿï¼›éœ€çƒ§å½• lab_mcu_8051.hex',
+      knowledgePoints: ['æœ€å°ç³»ç»Ÿ', 'æ™¶æŒ¯', 'å¤ä½'],
+      libraryIds: MCU8051_ALL, firmware: '8051', hexFile: 'lab_mcu_8051.hex', build: buildLabMcu8051
+    },
+    {
+      id: 'lab_mcu_stm32', name: 'STM32å…¨ç³»åˆ—', category: 'mcu',
+      description: 'äº”æ¬¾ STM32 æœ€å°ç³»ç»Ÿå¹¶æ’ï¼›éœ€çƒ§å½• lab_mcu_stm32.hex',
+      knowledgePoints: ['Cortex-M', 'HSE', 'NRST'],
+      libraryIds: MCU_STM32_ALL, firmware: 'STM32', hexFile: 'lab_mcu_stm32.hex', build: buildLabMcuStm32
+    },
+    {
+      id: 'lab_peripheral', name: 'å¤–è®¾æ¥å£å®éªŒ', category: 'peripheral',
+      description: 'æŒ‰é”®/ç»§ç”µå™¨è§¦ç‚¹æŒ‡ç¤º/èœ‚é¸£å™¨/LCD/OLEDï¼›éœ€çƒ§å½• lab_peripheral.hex',
+      knowledgePoints: ['GPIO', 'ç»§ç”µå™¨è§¦ç‚¹', 'äººæœºäº¤äº’', 'æ˜¾ç¤º'],
+      libraryIds: PERIPH_LIBS, firmware: 'STM32', hexFile: 'lab_peripheral.hex',
+      build: buildLabPeripheral
+    },
+    {
+      id: 'lab_sensor', name: 'ä¼ æ„Ÿå™¨å®éªŒ', category: 'sensor',
+      description: 'DS18B20/éœå°”/å…‰æ• æ¥å…¥ MCU',
+      knowledgePoints: ['1-Wire', 'æ•°å­—è¾“å…¥', 'ADC'],
+      libraryIds: SENSOR_LIBS, build: buildLabSensor
+    },
+    {
+      id: 'lab_instruments', name: 'ä»ªå™¨ä»ªè¡¨æ£€æµ‹', category: 'instrument',
+      description: 'å…¨éƒ¨è™šæ‹Ÿä»ªå™¨æ¥å…¥åˆ†å‹æµ‹è¯•ç‚¹',
+      knowledgePoints: ['ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ç¤ºæ³¢å™¨'],
+      libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
+    },
+    {
+      id: 'lab_potentiometer', name: 'æ»‘åŠ¨å˜é˜»å™¨å®éªŒ', category: 'passive',
+      description: 'POT_1k/10k/100k ä¸‰æ¡£åˆ†å‹ + ç”µå‹è¡¨',
+      knowledgePoints: ['åˆ†å‹æ¯”', 'æ»‘è‡‚è°ƒèŠ‚', 'çº¿æ€§ç”µä½å™¨'],
+      libraryIds: POT_LIBS, build: buildLabPotentiometer
+    }
+  ];
+
+  static listTemplates(): LabTemplateDef[] {
+    return LabTemplateRegistry.BUILTIN.concat(LabTemplateRegistry.extraTemplates);
+  }
+
+  static findById(id: string): LabTemplateDef | undefined {
+    return LabTemplateRegistry.listTemplates().find(t => t.id === id);
+  }
+
+  /** è¿è¡Œæ—¶æ³¨å†Œæ–°å®éªŒæ¨¡æ¿ */
+  static registerTemplate(def: LabTemplateDef): void {
+    const idx = LabTemplateRegistry.extraTemplates.findIndex(t => t.id === def.id);
+    if (idx >= 0) {
+      LabTemplateRegistry.extraTemplates[idx] = def;
+    } else {
+      LabTemplateRegistry.extraTemplates.push(def);
+    }
+  }
+
+  static generateById(templateId: string): SchematicDocument | null {
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined) {
+      return null;
+    }
+    const doc = TemplateSchematicKit.createDoc(def.name, def.description);
+    def.build(doc);
+    return doc;
+  }
+
+  /** å…¨åº“å™¨ä»¶è¦†ç›–ç»Ÿè®¡ */
+  static getCoverageReport(): LabCoverageReport {
+    const coveredSet = new Set<string>();
+    for (const tpl of LabTemplateRegistry.listTemplates()) {
+      for (let i = 0; i < tpl.libraryIds.length; i++) {
+        coveredSet.add(tpl.libraryIds[i]);
+      }
+    }
+    const covered: string[] = [];
+    const missing: string[] = [];
+    for (let i = 0; i < ALL_CATALOG_LIBRARY_IDS.length; i++) {
+      const id = ALL_CATALOG_LIBRARY_IDS[i];
+      if (coveredSet.has(id)) {
+        covered.push(id);
+      } else {
+        missing.push(id);
+      }
+    }
+    const total = ALL_CATALOG_LIBRARY_IDS.length;
+    const percent = total > 0 ? Math.round(covered.length / total * 100) : 0;
+    const result: LabCoverageReport = {
+      covered: covered,
+      missing: missing,
+      total: total,
+      percent: percent
+    };
+    return result;
+  }
+
+  static listCategories(): string[] {
+    const cats = new Set<string>();
+    for (const t of LabTemplateRegistry.listTemplates()) {
+      cats.add(t.category);
+    }
+    return Array.from(cats);
+  }
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ Ö‘”   ‘”  
+ ‘”  $ ‘”  % ‘”  '‘”  )‘”  *‘”  ,‘”  -‘”  /‘”  0‘”  1‘”  2‘”  4‘”  5‘”  8 ‘”  : ‘”  ; ‘”  <‘”  = ‘”  >‘”  ? ‘”  Ì@‘”  ÌA‘”  ÌB ‘”  ÌC‘”  ÌD ‘”  ÌE‘”  ÌF ‘”  ÌH ‘”  ÌJ ‘”  ÌK‘”  ÌL ‘”  ÌN ‘”  ÌO‘”  ÌP ‘”  ÌQ‘”  ÌR ‘”  ÌS‘”  ÌT ‘”  ÌV ‘”  Ì½‘”  ÌÂ‘”  ÌÉ‘”  ÌÊ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ‘”  ÌÚ‘”  ÌÛ‘”  ÌÜ‘”  Ìİ‘”  Ìß‘”  Ìà‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìç‘”  Ìç‘”  Ìè‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìí‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìó‘”  Ìö‘”  Ì÷‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìû‘”  ÌW‘”  ÌY‘”  ÌZ‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì`‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìh‘”  Ìi‘”  Ìj‘”  Ìk‘”  Ìl‘”  Ìn‘”  Ìo‘”  Ìp‘”  Ìq‘”  Ìr‘”  Ìt‘”  Ìu‘”  Ìv‘”  Ìw‘”  Ìx‘”  Ìz‘”  Ì{‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì†‘”  Ìˆ‘”  Ì‰‘”  ÌŠ‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì•‘”  Ì–‘”  Ì˜‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì¤‘”  Ì§‘”  Ì¨‘”  Ì©‘”  Ì«‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ‘”  Ì·‘”  Ì¸‘”  Ì¹‘”  Ìº‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.ets‘Ú+6/**
+ * å®éªŒæ¨¡æ¿æ³¨å†Œè¡¨ â€” å¯æ‰©å±•ã€å…¨å™¨ä»¶è¦†ç›–æ£€æµ‹
+ */
+import { SchematicDocument } from 'common';
+import {
+  buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart,
+  buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital,
+  buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral,
+  buildLabSensor, buildLabInstruments, buildLabPotentiometer
+} from './LabTemplateBuilders';
+import { TemplateSchematicKit } from './TemplateSchematicKit';
+
+export type LabTemplateBuilder = (doc: SchematicDocument) => void;
+
+export interface LabCoverageReport {
+  covered: string[];
+  missing: string[];
+  total: number;
+  percent: number;
+}
+
+export interface LabTemplateDef {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  knowledgePoints: string[];
+  /** æœ¬æ¨¡æ¿ä½¿ç”¨çš„ libraryId åˆ—è¡¨ï¼ˆç”¨äºè¦†ç›–æ£€æµ‹ï¼‰ */
+  libraryIds: string[];
+  /** å…³è”å›ºä»¶: '8051' | 'STM32' | undefined */
+  firmware?: string;
+  /** hex_files ç›®å½•ä¸‹çš„æ–‡ä»¶å */
+  hexFile?: string;
+  build: LabTemplateBuilder;
+}
+
+/** å†…ç½®å™¨ä»¶åº“å…¨éƒ¨ libraryIdï¼ˆä¸ BuiltinComponents åŒæ­¥ï¼‰ */
+export const ALL_CATALOG_LIBRARY_IDS: string[] = [
+  'VCC', 'GND', 'VAC',
+  'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k', 'R_10k', 'R_47k', 'R_100k',
+  'POT_1k', 'POT_10k', 'POT_100k',
+  'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF',
+  'L_10uH', 'XTAL_11M', 'XTAL_8M', 'FUSE_1A',
+  '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+  '2N2222', '2N2907', '2N7000', 'IRF540',
+  'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+  '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74', 'CD4017',
+  '2764', '62256', '24C02', 'W25Q64',
+  'AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS',
+  'STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+  'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+  'DS18B20', 'HALL_SENSOR', 'LDR',
+  'OSCILLOSCOPE', 'VIRTUAL_METER', 'VOLTMETER_DC', 'AMMETER_DC',
+  'POWER_METER', 'FREQ_COUNTER', 'LOGIC_ANALYZER', 'UART_TERMINAL'
+];
+
+const POWER_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'LM7805', 'LM7812', 'AMS1117_3V3', 'LM2596',
+  'C_100uF', 'C_10uF', 'C_100nF', 'R_10k', 'VOLTMETER_DC'];
+const ANALOG_LIBS = ['LM358', 'R_10k', 'R_100k', 'R_1k', 'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU51_LIBS = ['AT89C51', 'XTAL_11M', 'C_100nF', 'R_10k', 'R_330', 'LED_RED', 'LED_GREEN',
+  'VCC', 'GND', 'VOLTMETER_DC'];
+const MCU_UART_LIBS = ['STM32F103C8', 'XTAL_8M', 'C_100nF', 'R_10k', 'R_1k', 'LED_GREEN',
+  'UART_TERMINAL', 'VCC', 'GND', 'VOLTMETER_DC'];
+const PASSIVE_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k',
+  'R_10k', 'R_47k', 'R_100k', 'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF',
+  'C_10uF', 'C_100uF', 'L_10uH', 'AMMETER_DC'];
+const DISCRETE_LIBS = ['VCC', 'GND', '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
+  'R_330', 'R_1k', 'R_10k', '2N2222', '2N2907', '2N7000', 'IRF540'];
+const ANALOG_IC_LIBS = ['VCC', 'GND', 'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3',
+  'LM2596', 'R_10k', 'R_47k', 'R_1k', 'C_10uF', 'C_100nF', 'LED_RED', 'R_330'];
+const DIGITAL_LIBS = ['VCC', 'GND', '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74',
+  'CD4017', 'LOGIC_ANALYZER'];
+const MEMORY_LIBS = ['STM32F103RC', '2764', '62256', '24C02', 'W25Q64', 'VCC', 'GND',
+  'C_100nF', 'R_10k'];
+const MCU8051_ALL = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS', 'XTAL_11M', 'XTAL_8M',
+  'C_100nF', 'R_10k', 'VCC', 'GND'];
+const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4',
+  'XTAL_8M', 'C_100nF', 'C_10uF', 'R_10k', 'VCC', 'GND'];
+const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
+  'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
+const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 'R_4.7k', 'R_10k',
+  'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
+const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
+  'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
+const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
+
+export class LabTemplateRegistry {
+  private static extraTemplates: LabTemplateDef[] = [];
+
+  private static readonly BUILTIN: LabTemplateDef[] = [
+    {
+      id: 'lab_power', name: 'ç›´æµç”µæºç”µè·¯', category: 'power',
+      description: 'LM7805 ç¨³å‹ç”µæº + æ»¤æ³¢ + è´Ÿè½½æµ‹é‡',
+      knowledgePoints: ['ç¨³å‹åŸç†', 'æ»¤æ³¢ç”µå®¹', 'ç†”æ–­ä¿æŠ¤'],
+      libraryIds: POWER_LIBS, build: buildLabPower
+    },
+    {
+      id: 'lab_amp', name: 'è¿ç®—æ”¾å¤§ç”µè·¯', category: 'analog',
+      description: 'LM358 åŒç›¸æ”¾å¤§å™¨ï¼ˆå¯ MNA ä»¿çœŸï¼‰',
+      knowledgePoints: ['è™šçŸ­è™šæ–­', 'å¢ç›Šè®¡ç®—'],
+      libraryIds: ANALOG_LIBS, build: buildLabAmp
+    },
+    {
+      id: 'lab_filter', name: 'RCæ»¤æ³¢ç”µè·¯', category: 'analog',
+      description: 'RC ä½é€š + LM358 ç¼“å†²è¾“å‡º',
+      knowledgePoints: ['æˆªæ­¢é¢‘ç‡', 'ç¼“å†²è·Ÿéš'],
+      libraryIds: ANALOG_LIBS, build: buildLabFilter
+    },
+    {
+      id: 'lab_51_led', name: '51æµæ°´ç¯', category: 'mcu',
+      description: 'AT89C51 æµæ°´ç¯ + æ™¶æŒ¯å¤ä½ï¼›éœ€çƒ§å½• lab_51_led.hex',
+      knowledgePoints: ['IOå£', 'å®šæ—¶å™¨', 'é™æµç”µé˜»'],
+      libraryIds: MCU51_LIBS, firmware: '8051', hexFile: 'lab_51_led.hex', build: buildLab51Led
+    },
+    {
+      id: 'lab_uart', name: 'ä¸²å£é€šä¿¡', category: 'mcu',
+      description: 'STM32F103 UART + ç»ˆç«¯ï¼›éœ€çƒ§å½• lab_uart.hex',
+      knowledgePoints: ['æ³¢ç‰¹ç‡', 'å¸§æ ¼å¼', 'TX/RX äº¤å‰'],
+      libraryIds: MCU_UART_LIBS, firmware: 'STM32', hexFile: 'lab_uart.hex', build: buildLabUart
+    },
+    {
+      id: 'lab_passive', name: 'æ— æºå™¨ä»¶æ£€æµ‹', category: 'passive',
+      description: 'å…¨éƒ¨ç”µé˜»/ç”µå®¹/ç”µæ„Ÿ/LC/äº¤æµæº',
+      knowledgePoints: ['åˆ†å‹', 'å»è€¦', 'LCè°æŒ¯'],
+      libraryIds: PASSIVE_LIBS, build: buildLabPassive
+    },
+    {
+      id: 'lab_discrete', name: 'åˆ†ç«‹å™¨ä»¶æ£€æµ‹', category: 'discrete',
+      description: 'äºŒæç®¡/LED/ä¸‰æç®¡/MOSFET å…¸å‹æ¥æ³•',
+      knowledgePoints: ['æ•´æµ', 'å¼€å…³', 'é™æµ'],
+      libraryIds: DISCRETE_LIBS, build: buildLabDiscrete
+    },
+    {
+      id: 'lab_analog_ic', name: 'æ¨¡æ‹ŸICæ£€æµ‹', category: 'analog',
+      description: 'è¿æ”¾ + LM555 æ— ç¨³æ€ + å…¨éƒ¨ç¨³å‹/å¼€å…³ç”µæº IC',
+      knowledgePoints: ['è¿æ”¾', '555æŒ¯è¡', 'LDO', 'Buck'],
+      libraryIds: ANALOG_IC_LIBS, build: buildLabAnalogIc
+    },
+    {
+      id: 'lab_digital', name: 'æ•°å­—é€»è¾‘æ£€æµ‹', category: 'digital',
+      description: 'å…¨éƒ¨ 74HC é€»è¾‘é—¨ + CD4017 + é€»è¾‘åˆ†æä»ª',
+      knowledgePoints: ['é—¨ç”µè·¯', 'è®¡æ•°å™¨', 'é€»è¾‘åˆ†æ'],
+      libraryIds: DIGITAL_LIBS, build: buildLabDigital
+    },
+    {
+      id: 'lab_memory', name: 'å­˜å‚¨å™¨æ¥å£', category: 'memory',
+      description: 'EPROM/SRAM/EEPROM/Flash ä¸ MCU è¿æ¥',
+      knowledgePoints: ['å¹¶è¡Œæ€»çº¿', 'I2C', 'SPI'],
+      libraryIds: MEMORY_LIBS, build: buildLabMemory
+    },
+    {
+      id: 'lab_mcu_8051', name: '8051å…¨ç³»åˆ—', category: 'mcu',
+      description: 'AT89/STC å››æ¬¾ MCU æœ€å°ç³»ç»Ÿï¼›éœ€çƒ§å½• lab_mcu_8051.hex',
+      knowledgePoints: ['æœ€å°ç³»ç»Ÿ', 'æ™¶æŒ¯', 'å¤ä½'],
+      libraryIds: MCU8051_ALL, firmware: '8051', hexFile: 'lab_mcu_8051.hex', build: buildLabMcu8051
+    },
+    {
+      id: 'lab_mcu_stm32', name: 'STM32å…¨ç³»åˆ—', category: 'mcu',
+      description: 'äº”æ¬¾ STM32 æœ€å°ç³»ç»Ÿå¹¶æ’ï¼›éœ€çƒ§å½• lab_mcu_stm32.hex',
+      knowledgePoints: ['Cortex-M', 'HSE', 'NRST'],
+      libraryIds: MCU_STM32_ALL, firmware: 'STM32', hexFile: 'lab_mcu_stm32.hex', build: buildLabMcuStm32
+    },
+    {
+      id: 'lab_peripheral', name: 'å¤–è®¾æ¥å£å®éªŒ', category: 'peripheral',
+      description: 'æŒ‰é”®/ç»§ç”µå™¨è§¦ç‚¹æŒ‡ç¤º/èœ‚é¸£å™¨/LCD/OLEDï¼›éœ€çƒ§å½• lab_peripheral.hex',
+      knowledgePoints: ['GPIO', 'ç»§ç”µå™¨è§¦ç‚¹', 'äººæœºäº¤äº’', 'æ˜¾ç¤º'],
+      libraryIds: PERIPH_LIBS, firmware: 'STM32', hexFile: 'lab_peripheral.hex',
+      build: buildLabPeripheral
+    },
+    {
+      id: 'lab_sensor', name: 'ä¼ æ„Ÿå™¨å®éªŒ', category: 'sensor',
+      description: 'DS18B20/éœå°”/å…‰æ• æ¥å…¥ MCU',
+      knowledgePoints: ['1-Wire', 'æ•°å­—è¾“å…¥', 'ADC'],
+      libraryIds: SENSOR_LIBS, build: buildLabSensor
+    },
+    {
+      id: 'lab_instruments', name: 'ä»ªå™¨ä»ªè¡¨æ£€æµ‹', category: 'instrument',
+      description: 'å…¨éƒ¨è™šæ‹Ÿä»ªå™¨æ¥å…¥åˆ†å‹æµ‹è¯•ç‚¹',
+      knowledgePoints: ['ç”µå‹è¡¨', 'ç”µæµè¡¨', 'ç¤ºæ³¢å™¨'],
+      libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
+    },
+    {
+      id: 'lab_potentiometer', name: 'æ»‘åŠ¨å˜é˜»å™¨å®éªŒ', category: 'passive',
+      description: 'POT_1k/10k/100k ä¸‰æ¡£åˆ†å‹ + ç”µå‹è¡¨',
+      knowledgePoints: ['åˆ†å‹æ¯”', 'æ»‘è‡‚è°ƒèŠ‚', 'çº¿æ€§ç”µä½å™¨'],
+      libraryIds: POT_LIBS, build: buildLabPotentiometer
+    }
+  ];
+
+  static listTemplates(): LabTemplateDef[] {
+    return LabTemplateRegistry.BUILTIN.concat(LabTemplateRegistry.extraTemplates);
+  }
+
+  static findById(id: string): LabTemplateDef | undefined {
+    return LabTemplateRegistry.listTemplates().find(t => t.id === id);
+  }
+
+  /** è¿è¡Œæ—¶æ³¨å†Œæ–°å®éªŒæ¨¡æ¿ */
+  static registerTemplate(def: LabTemplateDef): void {
+    const idx = LabTemplateRegistry.extraTemplates.findIndex(t => t.id === def.id);
+    if (idx >= 0) {
+      LabTemplateRegistry.extraTemplates[idx] = def;
+    } else {
+      LabTemplateRegistry.extraTemplates.push(def);
+    }
+  }
+
+  static generateById(templateId: string): SchematicDocument | null {
+    const def = LabTemplateRegistry.findById(templateId);
+    if (def === undefined) {
+      return null;
+    }
+    const doc = TemplateSchematicKit.createDoc(def.name, def.description);
+    def.build(doc);
+    return doc;
+  }
+
+  /** å…¨åº“å™¨ä»¶è¦†ç›–ç»Ÿè®¡ */
+  static getCoverageReport(): LabCoverageReport {
+    const coveredSet = new Set<string>();
+    for (const tpl of LabTemplateRegistry.listTemplates()) {
+      for (let i = 0; i < tpl.libraryIds.length; i++) {
+        coveredSet.add(tpl.libraryIds[i]);
+      }
+    }
+    const covered: string[] = [];
+    const missing: string[] = [];
+    for (let i = 0; i < ALL_CATALOG_LIBRARY_IDS.length; i++) {
+      const id = ALL_CATALOG_LIBRARY_IDS[i];
+      if (coveredSet.has(id)) {
+        covered.push(id);
+      } else {
+        missing.push(id);
+      }
+    }
+    const total = ALL_CATALOG_LIBRARY_IDS.length;
+    const percent = total > 0 ? Math.round(covered.length / total * 100) : 0;
+    const result: LabCoverageReport = {
+      covered: covered,
+      missing: missing,
+      total: total,
+      percent: percent
+    };
+    return result;
+  }
+
+  static listCategories(): string[] {
+    const cats = new Set<string>();
+    for (const t of LabTemplateRegistry.listTemplates()) {
+      cats.add(t.category);
+    }
+    return Array.from(cats);
+  }
+}
+ÔrE’¶./TemplateSchematicKitµ./LabTemplateBuildersÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\TemplateSchematicKit.etsAÃªoh-resolveÂFAÂÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateBuilders.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ­Í¢ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ´Í¢‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍºÍ¡ÔrL”¤type¥start£end¤nameªIdentifierÍºÍÑ·ALL_CATALOG_LIBRARY_IDSÔrM”¤type¥start£end¨elements¯ArrayExpressionÍÔÍ¡Ü PÔrN•¤type¥start£end¥value£raw§LiteralÍÛÍà£VCC¥'VCC'N§LiteralÍâÍç£GND¥'GND'N§LiteralÍéÍî£VAC¥'VAC'N§LiteralÍõÍû¤R_10¦'R_10'N§LiteralÍıÍ¥R_100§'R_100'N§LiteralÍÍ¥R_330§'R_330'N§LiteralÍÍ¤R_1k¦'R_1k'N§LiteralÍÍ¦R_4.7k¨'R_4.7k'N§LiteralÍ!Í(¥R_10k§'R_10k'N§LiteralÍ*Í1¥R_47k§'R_47k'N§LiteralÍ3Í;¦R_100k¨'R_100k'N§LiteralÍBÍJ¦POT_1k¨'POT_1k'N§LiteralÍLÍU§POT_10k©'POT_10k'N§LiteralÍWÍa¨POT_100kª'POT_100k'N§LiteralÍhÍp¦C_10pF¨'C_10pF'N§LiteralÍrÍ{§C_100pF©'C_100pF'N§LiteralÍ}Í„¥C_1nF§'C_1nF'N§LiteralÍ†Í¦C_10nF¨'C_10nF'N§LiteralÍÍ™§C_100nF©'C_100nF'N§LiteralÍ›Í¢¥C_1uF§'C_1uF'N§LiteralÍ¤Í¬¦C_10uF¨'C_10uF'N§LiteralÍ®Í·§C_100uF©'C_100uF'N§LiteralÍ¾ÍÆ¦L_10uH¨'L_10uH'N§LiteralÍÈÍÒ¨XTAL_11Mª'XTAL_11M'N§LiteralÍÔÍİ§XTAL_8M©'XTAL_8M'N§LiteralÍßÍè§FUSE_1A©'FUSE_1A'N§LiteralÍïÍ÷¦1N4148¨'1N4148'N§LiteralÍùÍ¦1N4007¨'1N4007'N§LiteralÍÍ¦1N5819¨'1N5819'N§LiteralÍÍ§LED_RED©'LED_RED'N§LiteralÍÍ#©LED_GREEN«'LED_GREEN'N§LiteralÍ%Í/¨LED_BLUEª'LED_BLUE'N§LiteralÍ6Í>¦2N2222¨'2N2222'N§LiteralÍ@ÍH¦2N2907¨'2N2907'N§LiteralÍJÍR¦2N7000¨'2N7000'N§LiteralÍTÍ\¦IRF540¨'IRF540'N§LiteralÍcÍj¥UA741§'UA741'N§LiteralÍlÍs¥LM358§'LM358'N§LiteralÍuÍ|¥TL082§'TL082'N§LiteralÍ~Í…¥LM555§'LM555'N§LiteralÍ‡Í¦LM7805¨'LM7805'N§LiteralÍ‘Í™¦LM7812¨'LM7812'N§LiteralÍ›Í¨«AMS1117_3V3­'AMS1117_3V3'N§LiteralÍªÍ²¦LM2596¨'LM2596'N§LiteralÍ¹ÍÁ¦74HC00¨'74HC00'N§LiteralÍÃÍË¦74HC02¨'74HC02'N§LiteralÍÍÍÕ¦74HC04¨'74HC04'N§LiteralÍ×Íß¦74HC08¨'74HC08'N§LiteralÍáÍé¦74HC32¨'74HC32'N§LiteralÍëÍó¦74HC74¨'74HC74'N§LiteralÍõÍı¦CD4017¨'CD4017'N§LiteralÍÍ
+¤2764¦'2764'N§LiteralÍÍ¥62256§'62256'N§LiteralÍÍ¥24C02§'24C02'N§LiteralÍÍ&¦W25Q64¨'W25Q64'N§LiteralÍ-Í6§AT89C51©'AT89C51'N§LiteralÍ8ÍA§AT89C52©'AT89C52'N§LiteralÍCÍM¨STC89C52ª'STC89C52'N§LiteralÍOÍ\«STC15W408AS­'STC15W408AS'N§LiteralÍcÍp«STM32F103C8­'STM32F103C8'N§LiteralÍrÍ«STM32F103RC­'STM32F103RC'N§LiteralÍÍ«STM32F407VG­'STM32F407VG'N§LiteralÍÍ«STM32L431CB­'STM32L431CB'N§LiteralÍŸÍ¬«STM32F030F4­'STM32F030F4'N§LiteralÍ³Í¼§SW_PUSH©'SW_PUSH'N§LiteralÍ¾ÍÊªRELAY_SPDT¬'RELAY_SPDT'N§LiteralÍÌÍÔ¦BUZZER¨'BUZZER'N§LiteralÍÖÍß§LCD1602©'LCD1602'N§LiteralÍáÍíªOLED_12864¬'OLED_12864'N§LiteralÍôÍı§DS18B20©'DS18B20'N§LiteralÍÿÍ«HALL_SENSOR­'HALL_SENSOR'N§LiteralÍÍ£LDR¥'LDR'N§LiteralÍÍ(¬OSCILLOSCOPE®'OSCILLOSCOPE'N§LiteralÍ*Í9­VIRTUAL_METER¯'VIRTUAL_METER'N§LiteralÍ;ÍI¬VOLTMETER_DC®'VOLTMETER_DC'N§LiteralÍKÍWªAMMETER_DC¬'AMMETER_DC'N§LiteralÍ^Ík«POWER_METER­'POWER_METER'N§LiteralÍmÍ{¬FREQ_COUNTER®'FREQ_COUNTER'N§LiteralÍ}Í®LOGIC_ANALYZER°'LOGIC_ANALYZER'N§LiteralÍÍ­UART_TERMINAL¯'UART_TERMINAL'¥constÀI¶ExportNamedDeclarationÍÍºÔrO–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍˆÍºLªIdentifierÍÍ¡³LabTemplateRegistryÀÔrP”¤type¥start£end¤body©ClassBodyÍ¢Íº–ÔrQ˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ©Í ÃÂLªIdentifierÍ°Í½­listTemplates¦methodÔrR™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ½Í ÀÂÂÂP®BlockStatementÍÀÍ ‘ÔrS”¤type¥start£end¨argument¯ReturnStatementÍËÍÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÒÍÔrU—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÒÍôU°MemberExpressionÍÒÍíLªIdentifierÍÒÍå³LabTemplateRegistryLªIdentifierÍæÍí§BUILTINÂÂLªIdentifierÍîÍô¦concatÂÂ‘U°MemberExpressionÍõÍLªIdentifierÍõÍ³LabTemplateRegistryLªIdentifierÍ	Í®extraTemplatesÂÂÂQ°MethodDefinitionÍ&ÍÃÂLªIdentifierÍ-Í5¨findById¦methodR²FunctionExpressionÍ5ÍÀÂÂÂ‘LªIdentifierÍ6Í8¢idP®BlockStatementÍ:Í‘S¯ReturnStatementÍEÍ‡T®CallExpressionÍLÍ†U°MemberExpressionÍLÍtT®CallExpressionÍLÍoU°MemberExpressionÍLÍmLªIdentifierÍLÍ_³LabTemplateRegistryLªIdentifierÍ`Ím­listTemplatesÂÂÂLªIdentifierÍpÍt¤findÂÂ‘R·ArrowFunctionExpressionÍuÍ…ÀÃÂÂ‘LªIdentifierÍuÍv¡tÔrV–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍzÍ…U°MemberExpressionÍzÍ~LªIdentifierÍzÍ{¡tLªIdentifierÍ|Í~¢idÂÂ£===LªIdentifierÍƒÍ…¢idÂQ°MethodDefinitionÍ«ÍßÃÂLªIdentifierÍ²ÍÂ°registerTemplate¦methodR²FunctionExpressionÍÂÍßÀÂÂÂ‘LªIdentifierÍÃÍÆ£defP®BlockStatementÍÈÍß’J³VariableDeclarationÍÓÍ"‘K²VariableDeclaratorÍÙÍ!LªIdentifierÍÙÍÜ£idxT®CallExpressionÍßÍ!U°MemberExpressionÍßÍU°MemberExpressionÍßÍLªIdentifierÍßÍò³LabTemplateRegistryLªIdentifierÍóÍ®extraTemplatesÂÂLªIdentifierÍÍ©findIndexÂÂ‘R·ArrowFunctionExpressionÍÍ ÀÃÂÂ‘LªIdentifierÍÍ¡tV°BinaryExpressionÍÍ U°MemberExpressionÍÍLªIdentifierÍÍ¡tLªIdentifierÍÍ¢idÂÂ£===U°MemberExpressionÍÍ LªIdentifierÍÍ£defLªIdentifierÍÍ ¢idÂÂÂ¥constÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ,ÍØV°BinaryExpressionÍ0Í8LªIdentifierÍ0Í3£idx¢>=N§LiteralÍ7Í8 ¡0P®BlockStatementÍ:Í‚‘ÔrX”¤type¥start£endªexpression³ExpressionStatementÍIÍwÔrY–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍIÍv¡=U°MemberExpressionÍIÍpU°MemberExpressionÍIÍkLªIdentifierÍIÍ\³LabTemplateRegistryLªIdentifierÍ]Ík®extraTemplatesÂÂLªIdentifierÍlÍo£idxÃÂLªIdentifierÍsÍv£defP®BlockStatementÍ‘ÍØ‘X³ExpressionStatementÍ ÍÍT®CallExpressionÍ ÍÌU°MemberExpressionÍ ÍÇU°MemberExpressionÍ ÍÂLªIdentifierÍ Í³³LabTemplateRegistryLªIdentifierÍ´ÍÂ®extraTemplatesÂÂLªIdentifierÍÃÍÇ¤pushÂÂ‘LªIdentifierÍÈÍË£defÂQ°MethodDefinitionÍåÍÃÂLªIdentifierÍìÍø¬generateById¦methodR²FunctionExpressionÍøÍÀÂÂÂ‘LªIdentifierÍùÍªtemplateIdP®BlockStatementÍÍ•J³VariableDeclarationÍÍE‘K²VariableDeclaratorÍÍDLªIdentifierÍÍ£defT®CallExpressionÍÍDU°MemberExpressionÍÍ8LªIdentifierÍÍ/³LabTemplateRegistryLªIdentifierÍ0Í8¨findByIdÂÂ‘LªIdentifierÍ9ÍCªtemplateIdÂ¥constW«IfStatementÍOÍŒV°BinaryExpressionÍSÍdLªIdentifierÍSÍV£def£===LªIdentifierÍ[Íd©undefinedP®BlockStatementÍfÍŒ‘S¯ReturnStatementÍuÍN§LiteralÍ|Í€À¤nullÀJ³VariableDeclarationÍ–ÍÜ‘K²VariableDeclaratorÍœÍÛLªIdentifierÍœÍŸ£docT®CallExpressionÍ¢ÍÛU°MemberExpressionÍ¢ÍÀLªIdentifierÍ¢Í¶´TemplateSchematicKitLªIdentifierÍ·ÍÀ©createDocÂÂ’U°MemberExpressionÍÁÍÉLªIdentifierÍÁÍÄ£defLªIdentifierÍÅÍÉ¤nameÂÂU°MemberExpressionÍËÍÚLªIdentifierÍËÍÎ£defLªIdentifierÍÏÍÚ«descriptionÂÂÂ¥constX³ExpressionStatementÍæÍõT®CallExpressionÍæÍôU°MemberExpressionÍæÍïLªIdentifierÍæÍé£defLªIdentifierÍêÍï¥buildÂÂ‘LªIdentifierÍğÍó£docÂS¯ReturnStatementÍÿÍ
+LªIdentifierÍÍ	£docQ°MethodDefinitionÍ,ÍàÃÂLªIdentifierÍ3ÍD±getCoverageReport¦methodR²FunctionExpressionÍDÍàÀÂÂÂP®BlockStatementÍGÍà™J³VariableDeclarationÍRÍo‘K²VariableDeclaratorÍXÍnLªIdentifierÍXÍbªcoveredSetÔrZ•¤type¥start£end¦callee©arguments­NewExpressionÍeÍnLªIdentifierÍiÍl£Set¥constÔr[—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍyÍ>ÂJ³VariableDeclarationÍ~Í‡‘K²VariableDeclaratorÍ„Í‡LªIdentifierÍ„Í‡£tplÀ¥constT®CallExpressionÍ‹Í®U°MemberExpressionÍ‹Í¬LªIdentifierÍ‹Í³LabTemplateRegistryLªIdentifierÍŸÍ¬­listTemplatesÂÂÂP®BlockStatementÍ°Í>‘Ôr\—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ¿Í3J³VariableDeclarationÍÄÍÍ‘K²VariableDeclaratorÍÈÍÍLªIdentifierÍÈÍÉ¡iN§LiteralÍÌÍÍ ¡0£letV°BinaryExpressionÍÏÍèLªIdentifierÍÏÍĞ¡i¡<U°MemberExpressionÍÓÍèU°MemberExpressionÍÓÍáLªIdentifierÍÓÍÖ£tplLªIdentifierÍ×ÍáªlibraryIdsÂÂLªIdentifierÍâÍè¦lengthÂÂÔr]–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍêÍí¢++ÂLªIdentifierÍêÍë¡iP®BlockStatementÍïÍ3‘X³ExpressionStatementÍÍ$T®CallExpressionÍÍ#U°MemberExpressionÍÍLªIdentifierÍÍªcoveredSetLªIdentifierÍÍ£addÂÂ‘U°MemberExpressionÍÍ"U°MemberExpressionÍÍLªIdentifierÍÍ£tplLªIdentifierÍÍªlibraryIdsÂÂLªIdentifierÍ Í!¡iÃÂÂJ³VariableDeclarationÍHÍ[‘K²VariableDeclaratorÍNÍZLªIdentifierÍNÍU§coveredM¯ArrayExpressionÍXÍZ¥constJ³VariableDeclarationÍeÍx‘K²VariableDeclaratorÍkÍwLªIdentifierÍkÍr§missingM¯ArrayExpressionÍuÍw¥const\¬ForStatementÍ‚ÍšJ³VariableDeclarationÍ‡Í‘K²VariableDeclaratorÍ‹ÍLªIdentifierÍ‹ÍŒ¡iN§LiteralÍÍ ¡0£letV°BinaryExpressionÍ’Í´LªIdentifierÍ’Í“¡i¡<U°MemberExpressionÍ–Í´LªIdentifierÍ–Í­·ALL_CATALOG_LIBRARY_IDSLªIdentifierÍ®Í´¦lengthÂÂ]°UpdateExpressionÍ¶Í¹¢++ÂLªIdentifierÍ¶Í·¡iP®BlockStatementÍ»Íš’J³VariableDeclarationÍÊÍğ‘K²VariableDeclaratorÍĞÍïLªIdentifierÍĞÍÒ¢idU°MemberExpressionÍÕÍïLªIdentifierÍÕÍì·ALL_CATALOG_LIBRARY_IDSLªIdentifierÍíÍî¡iÃÂ¥constW«IfStatementÍşÍT®CallExpressionÍÍU°MemberExpressionÍÍLªIdentifierÍÍªcoveredSetLªIdentifierÍÍ£hasÂÂ‘LªIdentifierÍÍ¢idÂP®BlockStatementÍÍI‘X³ExpressionStatementÍ)Í:T®CallExpressionÍ)Í9U°MemberExpressionÍ)Í5LªIdentifierÍ)Í0§coveredLªIdentifierÍ1Í5¤pushÂÂ‘LªIdentifierÍ6Í8¢idÂP®BlockStatementÍ\Í‘X³ExpressionStatementÍoÍ€T®CallExpressionÍoÍU°MemberExpressionÍoÍ{LªIdentifierÍoÍv§missingLªIdentifierÍwÍ{¤pushÂÂ‘LªIdentifierÍ|Í~¢idÂJ³VariableDeclarationÍ¤ÍÑ‘K²VariableDeclaratorÍªÍĞLªIdentifierÍªÍ¯¥totalU°MemberExpressionÍ²ÍĞLªIdentifierÍ²ÍÉ·ALL_CATALOG_LIBRARY_IDSLªIdentifierÍÊÍĞ¦lengthÂÂ¥constJ³VariableDeclarationÍÛÍ$‘K²VariableDeclaratorÍáÍ#LªIdentifierÍáÍè§percentWµConditionalExpressionÍëÍ#V°BinaryExpressionÍëÍôLªIdentifierÍëÍğ¥total¡>N§LiteralÍóÍô ¡0T®CallExpressionÍ÷ÍU°MemberExpressionÍ÷ÍLªIdentifierÍ÷Íû¤MathLªIdentifierÍüÍ¥roundÂÂ‘V°BinaryExpressionÍÍV°BinaryExpressionÍÍU°MemberExpressionÍÍLªIdentifierÍÍ	§coveredLªIdentifierÍ
+Í¦lengthÂÂ¡/LªIdentifierÍÍ¥total¡*N§LiteralÍÍÌd£100ÂN§LiteralÍ"Í# ¡0¥constJ³VariableDeclarationÍ.ÍÁ‘K²VariableDeclaratorÍ4ÍÀLªIdentifierÍ4Í:¦resultÔr^”¤type¥start£endªproperties°ObjectExpressionÍ=ÍÀ”Ôr_™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍLÍ\ÂÂÂLªIdentifierÍLÍS§coveredLªIdentifierÍUÍ\§covered¤init_¨PropertyÍkÍ{ÂÂÂLªIdentifierÍkÍr§missingLªIdentifierÍtÍ{§missing¤init_¨PropertyÍŠÍ–ÂÂÂLªIdentifierÍŠÍ¥totalLªIdentifierÍ‘Í–¥total¤init_¨PropertyÍ¥ÍµÂÂÂLªIdentifierÍ¥Í¬§percentLªIdentifierÍ®Íµ§percent¤init¥constS¯ReturnStatementÍËÍÙLªIdentifierÍÒÍØ¦resultQ°MethodDefinitionÍæÍ·ÃÂLªIdentifierÍíÍû®listCategories¦methodR²FunctionExpressionÍûÍ·ÀÂÂÂP®BlockStatementÍşÍ·“J³VariableDeclarationÍ	Í ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ¤catsZ­NewExpressionÍÍLªIdentifierÍÍ£Set¥const[®ForOfStatementÍ*ÍÂJ³VariableDeclarationÍ/Í6‘K²VariableDeclaratorÍ5Í6LªIdentifierÍ5Í6¡tÀ¥constT®CallExpressionÍ:Í]U°MemberExpressionÍ:Í[LªIdentifierÍ:ÍM³LabTemplateRegistryLªIdentifierÍNÍ[­listTemplatesÂÂÂP®BlockStatementÍ_Í‘X³ExpressionStatementÍnÍƒT®CallExpressionÍnÍ‚U°MemberExpressionÍnÍvLªIdentifierÍnÍr¤catsLªIdentifierÍsÍv£addÂÂ‘U°MemberExpressionÍwÍLªIdentifierÍwÍx¡tLªIdentifierÍyÍ¨categoryÂÂÂS¯ReturnStatementÍ˜Í°T®CallExpressionÍŸÍ¯U°MemberExpressionÍŸÍ©LªIdentifierÍŸÍ¤¥ArrayLªIdentifierÍ¥Í©¤fromÂÂ‘LªIdentifierÍªÍ®¤catsÂÀ’Ôr`•¤type¥start£endªspecifiers¦source±ImportDeclaration Í9Ü Ôra•¤type¥start£end¨imported¥local¯ImportSpecifier	LªIdentifier	­buildLabPowerLªIdentifier	­buildLabPowera¯ImportSpecifier#LªIdentifier#«buildLabAmpLªIdentifier#«buildLabAmpa¯ImportSpecifier%3LªIdentifier%3®buildLabFilterLªIdentifier%3®buildLabFiltera¯ImportSpecifier5ÌBLªIdentifier5ÌB­buildLab51LedLªIdentifier5ÌB­buildLab51Leda¯ImportSpecifierÌDÌPLªIdentifierÌDÌP¬buildLabUartLªIdentifierÌDÌP¬buildLabUarta¯ImportSpecifierÌRÌaLªIdentifierÌRÌa¯buildLabPassiveLªIdentifierÌRÌa¯buildLabPassivea¯ImportSpecifierÌcÌsLªIdentifierÌcÌs°buildLabDiscreteLªIdentifierÌcÌs°buildLabDiscretea¯ImportSpecifierÌuÌ…LªIdentifierÌuÌ…°buildLabAnalogIcLªIdentifierÌuÌ…°buildLabAnalogIca¯ImportSpecifierÌ‡Ì–LªIdentifierÌ‡Ì–¯buildLabDigitalLªIdentifierÌ‡Ì–¯buildLabDigitala¯ImportSpecifierÌ˜Ì¦LªIdentifierÌ˜Ì¦®buildLabMemoryLªIdentifierÌ˜Ì¦®buildLabMemorya¯ImportSpecifierÌ¨Ì·LªIdentifierÌ¨Ì·¯buildLabMcu8051LªIdentifierÌ¨Ì·¯buildLabMcu8051a¯ImportSpecifierÌ¹ÌÉLªIdentifierÌ¹ÌÉ°buildLabMcuStm32LªIdentifierÌ¹ÌÉ°buildLabMcuStm32a¯ImportSpecifierÌËÌİLªIdentifierÌËÌİ²buildLabPeripheralLªIdentifierÌËÌİ²buildLabPeripherala¯ImportSpecifierÌßÌíLªIdentifierÌßÌí®buildLabSensorLªIdentifierÌßÌí®buildLabSensora¯ImportSpecifierÌïÍLªIdentifierÌïÍ³buildLabInstrumentsLªIdentifierÌïÍ³buildLabInstrumentsa¯ImportSpecifierÍÍLªIdentifierÍÍµbuildLabPotentiometerLªIdentifierÍÍµbuildLabPotentiometerN§LiteralÍ!Í8µ./LabTemplateBuilders·'./LabTemplateBuilders'`±ImportDeclarationÍ;Íy‘a¯ImportSpecifierÍDÍXLªIdentifierÍDÍX´TemplateSchematicKitLªIdentifierÍDÍX´TemplateSchematicKitN§LiteralÍ`Íx¶./TemplateSchematicKit¸'./TemplateSchematicKit'

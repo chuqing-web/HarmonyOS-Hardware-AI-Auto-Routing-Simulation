@@ -158,8 +158,7 @@ export class FaultDiagnoser {
         .filter(id => id.length > 0);
 
       const hasVcc = compLibIds.some(id =>
-        VCC_NAMES.has(id.toUpperCase()) || id === 'VCC' ||
-        id.startsWith('LM78') || id.startsWith('AMS'));
+        VCC_NAMES.has(id.toUpperCase()) || id === 'VCC');
       const hasGnd = compLibIds.some(id =>
         GND_NAMES.has(id.toUpperCase()) || id === 'GND');
 
@@ -216,7 +215,8 @@ export class FaultDiagnoser {
       }
       // 运放: 反馈或有意开环比较器（双输入已接且 OUT 有负载/观测）
       if (comp.libraryId === 'LM358' || comp.libraryId === 'UA741' ||
-        comp.libraryId === 'TL082') {
+        comp.libraryId === 'TL082' || comp.libraryId === 'TL072' ||
+        comp.libraryId === 'LM324' || (comp.libraryId ?? '').toUpperCase().indexOf('OPAMP') >= 0) {
         const fb = FaultDiagnoser.classifyOpAmpFeedback(doc, comp.id);
         if (fb === 'open') {
           result.push({
@@ -235,6 +235,27 @@ export class FaultDiagnoser {
             message: `运放 ${comp.refDes} 为开环比较器（双输入已接，若非有意请加反馈）`,
             componentId: comp.id,
             fixSuggestion: '比较器可保持开环；放大器请加 OUT→IN- 反馈'
+          });
+        }
+      }
+      // 被动双端：完全未入网则报错（补全「仅 MCU/运放」漏检）
+      const libUp = (comp.libraryId ?? '').toUpperCase();
+      if (libUp.startsWith('R_') || libUp.startsWith('C_') || libUp.startsWith('L_') ||
+        libUp.startsWith('LED_') || libUp.indexOf('DIODE') >= 0 || libUp.startsWith('POT_')) {
+        let pinHits = 0;
+        for (const pr of connectedPinRefs) {
+          if (pr.startsWith(`${comp.id}:`)) {
+            pinHits++;
+          }
+        }
+        if (pinHits === 0) {
+          result.push({
+            id: IdUtil.generate('erc'),
+            severity: ErcSeverity.ERROR,
+            ruleType: ErcRuleType.PARAM_MISMATCH,
+            message: `${comp.refDes} 完全未连接（无任何引脚入网）`,
+            componentId: comp.id,
+            fixSuggestion: '检查 net_plan / 导线端点是否触及器件脚'
           });
         }
       }
@@ -721,7 +742,7 @@ export class FaultDiagnoser {
         return 'comparator';
       }
     }
-    return sawChannel ? 'open' : 'closed';
+    return sawChannel ? 'open' : 'open';
   }
 
   /**
@@ -753,7 +774,8 @@ export class FaultDiagnoser {
         return true;
       }
     }
-    return !anyChannelPresent;
+    // 无任何通道有脚入网时，不得视为「已有反馈」（否则浮空运报 closed）
+    return false;
   }
 
   private static findPinNetId(doc: SchematicDocument, compId: string, pinLabel: string): string {

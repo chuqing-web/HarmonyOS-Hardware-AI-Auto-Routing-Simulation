@@ -489,13 +489,10 @@ export class TeachingPanel extends ViewPU {
                                     void this.appService.ensureTemplatesReady()
                                         .then(() => this.appService.loadLabTemplate(tpl.id))
                                         .then((r) => {
-                                        if (!r) {
-                                            this.statusMessage =
-                                                `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
-                                        }
-                                        else {
+                                        if (r) {
                                             this.refreshTemplates();
                                         }
+                                        // 失败文案由 AppService.onStatusMessage 给出（含连点拒绝）
                                     });
                                 }
                             }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 194, col: 13 });
@@ -508,13 +505,10 @@ export class TeachingPanel extends ViewPU {
                                         void this.appService.ensureTemplatesReady()
                                             .then(() => this.appService.loadLabTemplate(tpl.id))
                                             .then((r) => {
-                                            if (!r) {
-                                                this.statusMessage =
-                                                    `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
-                                            }
-                                            else {
+                                            if (r) {
                                                 this.refreshTemplates();
                                             }
+                                            // 失败文案由 AppService.onStatusMessage 给出（含连点拒绝）
                                         });
                                     }
                                 };
@@ -575,7 +569,7 @@ export class TeachingPanel extends ViewPU {
                             }
                             this.appService.stepPowerOn(this.stepIndex);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 236, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 234, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -619,7 +613,7 @@ export class TeachingPanel extends ViewPU {
                             this.appService.stepPowerOn(this.stepIndex);
                             this.statusMessage = `分步上电: 步骤 ${this.stepIndex + 1}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 252, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 250, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -681,7 +675,7 @@ export class TeachingPanel extends ViewPU {
                                             this.tip = this.appService.teachingService.getKnowledgeTip(dev.libDevId);
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 276, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 274, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -717,7 +711,7 @@ export class TeachingPanel extends ViewPU {
                                         this.statusMessage = `AI 提问: ${q.substring(0, 40)}...`;
                                         await this.appService.aiGenerateCircuit(q);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 287, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/TeachingPanel.ets", line: 285, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {

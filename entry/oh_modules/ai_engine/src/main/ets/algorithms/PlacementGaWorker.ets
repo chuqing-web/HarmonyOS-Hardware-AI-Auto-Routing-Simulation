@@ -166,9 +166,28 @@ function runGaWorker(input: GaWorkerInput): GaWorkerOutput {
     population = next;
   }
 
-  // 最终再清旋转
+  // 最终再清旋转，并栅格对齐/钳制到画布
+  const g = input.grid > 0 ? input.grid : 20;
   for (let di = 0; di < n; di++) {
     best[di * 3 + 2] = 0;
+    let bx = best[di * 3];
+    let by = best[di * 3 + 1];
+    bx = Math.round(bx / g) * g;
+    by = Math.round(by / g) * g;
+    if (bx < g) {
+      bx = g;
+    }
+    if (by < g) {
+      by = g;
+    }
+    if (bx > input.canvasW - g) {
+      bx = Math.max(g, Math.round((input.canvasW - g) / g) * g);
+    }
+    if (by > input.canvasH - g) {
+      by = Math.max(g, Math.round((input.canvasH - g) / g) * g);
+    }
+    best[di * 3] = bx;
+    best[di * 3 + 1] = by;
   }
   return { bestGenes: best, bestFitness: bestFit };
 }

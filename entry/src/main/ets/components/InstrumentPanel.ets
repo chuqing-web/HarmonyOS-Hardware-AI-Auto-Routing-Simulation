@@ -94,7 +94,7 @@ export struct InstrumentPanel {
   @State selectionRefDes: string = '';
   @State selectionLibraryId: string = '';
   @State timebaseIdx: number = 3; // MS_1 — good default for lab 1kHz AC
-  @State voltageScaleIdx: number = 3;
+  @State voltageScaleIdx: number = 5; // V_1 — matches expanded scale list
   @State triggerLevel: number = 2.0;
   @State logicChannels: number = 8;
   @State threshold: number = 1500;
@@ -150,13 +150,19 @@ export struct InstrumentPanel {
   ];
   private voltageScales: OscVoltageScale[] = [
     OscVoltageScale.MV_1, OscVoltageScale.MV_50, OscVoltageScale.MV_100,
-    OscVoltageScale.V_1, OscVoltageScale.V_10, OscVoltageScale.V_100
+    OscVoltageScale.MV_200, OscVoltageScale.MV_500,
+    OscVoltageScale.V_1, OscVoltageScale.V_2, OscVoltageScale.V_5,
+    OscVoltageScale.V_10, OscVoltageScale.V_100
   ];
-  private voltagePerDiv: number[] = [0.001, 0.05, 0.1, 1, 10, 100];
-  private voltageScaleLabels: string[] = ['1mV', '50mV', '100mV', '1V', '10V', '100V'];
+  private voltagePerDiv: number[] = [0.001, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 100];
+  private voltageScaleLabels: string[] = [
+    '1mV', '50mV', '100mV', '200mV', '500mV', '1V', '2V', '5V', '10V', '100V'
+  ];
   private selVScale: SelectValueOption[] = [
     { value: '1mV' }, { value: '50mV' }, { value: '100mV' },
-    { value: '1V' }, { value: '10V' }, { value: '100V' }
+    { value: '200mV' }, { value: '500mV' },
+    { value: '1V' }, { value: '2V' }, { value: '5V' },
+    { value: '10V' }, { value: '100V' }
   ];
   private selLogicCh: SelectValueOption[] = [
     { value: '8' }, { value: '16' }, { value: '32' }
@@ -172,11 +178,19 @@ export struct InstrumentPanel {
     this.updateSelectionHeader();
     this.syncSubTabFromSelection();
     this.syncInstrumentContext();
+    // Prefer engine timebase (e.g. lab_555 sets MS_10) over panel default MS_1
+    const snapTb = this.appService.instruments.getInstrumentSnapshot().oscilloscope.timebase;
+    let tbIdx = this.timebases.indexOf(snapTb);
+    if (tbIdx < 0) {
+      tbIdx = this.timebaseIdx;
+    }
+    this.timebaseIdx = tbIdx;
     this.appService.instruments.setTimebase(this.timebases[this.timebaseIdx]);
     this.appService.instruments.setVoltageScale(0, this.voltageScales[this.voltageScaleIdx]);
     this.appService.instruments.setTrigger(TriggerMode.EDGE, this.triggerLevel, 0);
     this.appService.instruments.setCaptureMode(
       this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
+    this.syncSignalGenFieldsFromEngine();
     this.lastRefreshWallMs = Date.now();
     this.refreshTickCount = 0;
     this.autoRefreshReadings('appear');
@@ -262,6 +276,34 @@ export struct InstrumentPanel {
       }
     } else {
       this.appService.setActiveInstrumentComponent(null);
+    }
+    this.syncSignalGenFieldsFromEngine();
+  }
+
+  /** AI/原理图写回后：面板振幅不得残留默认 1V，否则「应用参数」会盖掉正确幅度 */
+  private syncSignalGenFieldsFromEngine(): void {
+    const snap = this.appService.instruments.getInstrumentSnapshot();
+    const sg = snap.signalGen;
+    if (sg === undefined) {
+      return;
+    }
+    if (Number.isFinite(sg.frequency) && sg.frequency > 0) {
+      if (sg.frequency >= 1000) {
+        const khz = sg.frequency / 1000;
+        this.freq = (Math.abs(khz - Math.round(khz)) < 1e-6)
+          ? `${Math.round(khz)}kHz` : `${khz}kHz`;
+      } else {
+        this.freq = `${sg.frequency}Hz`;
+      }
+    }
+    if (Number.isFinite(sg.amplitude)) {
+      this.sigAmp = `${sg.amplitude}V`;
+    }
+    if (Number.isFinite(sg.offset)) {
+      this.sigOffset = `${sg.offset}V`;
+    }
+    if (Number.isFinite(sg.dutyCycle)) {
+      this.sigDuty = `${sg.dutyCycle}`;
     }
   }
 
@@ -443,6 +485,9 @@ export struct InstrumentPanel {
           this.amUnit = acfg.data.unit ?? 'mA DC';
         }
       } else if (instrKind === 'osc') {
+        if (this.oscAutoFit) {
+          this.applyOscAutoScale();
+        }
         const osc = this.appService.instruments.getOscilloscopeWave(0);
         if (osc.success && osc.data) {
           this.waveTimeData = osc.data.timeAxis.slice();
@@ -715,6 +760,7 @@ export struct InstrumentPanel {
             .height(ProteusDimens.PARAM_ROW_HEIGHT)
             .onSelect((idx: number) => {
               this.timebaseIdx = idx;
+              this.oscAutoFit = false;
               this.appService.instruments.setTimebase(this.timebases[idx]);
             })
         }
@@ -735,6 +781,7 @@ export struct InstrumentPanel {
             .height(ProteusDimens.PARAM_ROW_HEIGHT)
             .onSelect((idx: number) => {
               this.voltageScaleIdx = idx;
+              this.oscAutoFit = false;
               this.appService.instruments.setVoltageScale(0, this.voltageScales[idx]);
               this.appService.instruments.setVoltageScale(1, this.voltageScales[idx]);
             })
@@ -750,7 +797,13 @@ export struct InstrumentPanel {
           ProteusClassicBtn({
             label: this.oscAutoFit ? '自适应' : '固定档',
             widthVal: '24%',
-            onAction: () => { this.oscAutoFit = !this.oscAutoFit; }
+            onAction: () => {
+              this.oscAutoFit = !this.oscAutoFit;
+              if (this.oscAutoFit) {
+                this.applyOscAutoScale();
+                this.captureWave();
+              }
+            }
           })
           ProteusClassicBtn({
             label: this.oscTriggerHold ? '触发锁' : '滚动',
@@ -866,6 +919,22 @@ export struct InstrumentPanel {
   private timebaseSecPerDiv(): number {
     const secs: number[] = [10e-9, 1e-6, 100e-6, 1e-3, 10e-3, 1, 10];
     return this.timebaseIdx < secs.length ? secs[this.timebaseIdx] : 1e-3;
+  }
+
+  /** Sync panel Select + engine when 自适应 is on (freq / Vpp driven). */
+  private applyOscAutoScale(): void {
+    const r = this.appService.instruments.autoAdjustOscilloscope(0);
+    if (!r.success || r.data === undefined || !r.data.changed) {
+      return;
+    }
+    const tbIdx = this.timebases.indexOf(r.data.timebase);
+    if (tbIdx >= 0) {
+      this.timebaseIdx = tbIdx;
+    }
+    const vsIdx = this.voltageScales.indexOf(r.data.voltageScale);
+    if (vsIdx >= 0) {
+      this.voltageScaleIdx = vsIdx;
+    }
   }
 
   private captureWave(): void {
@@ -1251,19 +1320,45 @@ export struct InstrumentPanel {
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
-      Column() {
-        Text(this.uartLog.length > 0 ? this.uartLog : '等待接收数据...')
-          .fontSize(10)
-          .fontColor(this.uartLog.length > 0 ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
-          .fontFamily('monospace').width('100%')
-          .constraintSize({ minHeight: 80 })
-          .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-          .padding(6).border({ width: 1, color: ProteusColors.DIVIDER })
-          .maxLines(24)
+      Row() {
+        Text('接收日志')
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(ProteusColors.TEXT_LABEL)
+        Blank()
+        if (this.uartLog.length > 0) {
+          Text('清空')
+            .fontSize(ProteusFonts.STATUS)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .onClick(() => {
+              this.appService.instruments.clearUartLog();
+              this.uartLog = '';
+            })
+        }
       }
-      .layoutWeight(1).width('100%').padding({ left: 8, right: 8, bottom: 8 })
+      .width('100%')
+      .padding({ left: 8, right: 8 })
+
+      // 独立滚动视口：日志变长时不撑爆右侧栏，也不与发送行互相挤压
+      Scroll() {
+        Text(this.uartLog.length > 0 ? this.uartLog : '等待接收数据...')
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(this.uartLog.length > 0 ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
+          .fontFamily('monospace')
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+      .width('100%')
+      .height(120)
+      .padding(6)
+      .margin({ left: 8, right: 8, bottom: 8 })
+      .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+      .border({ width: 1, color: ProteusColors.DIVIDER })
+      .scrollBar(BarState.Auto)
+      .align(Alignment.TopStart)
+      .edgeEffect(EdgeEffect.None)
     }
-    .width('100%').height('100%')
+    .width('100%')
   }
 
   // ==================== Voltmeter ====================

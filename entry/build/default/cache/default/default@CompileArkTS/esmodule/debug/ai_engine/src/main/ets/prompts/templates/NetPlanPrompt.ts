@@ -24,9 +24,11 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 多块电压表绝不能全部测量同一对节点！
    - 每块表的 V+ 接被测高点，COM 接被测低点或 GND
 
-3. 所有仪器引脚(电压表V+/COM、电流表I+/I-、示波器CH1/GND等)必须入网:
-   - 任何仪器引脚不得浮空
-   - 仪器的 GND/COM 必须最终连到 GND 网络
+3. 仪器引脚入网规则（与 SelfReview 一致）:
+   - 【硬】CH1 / V+ / I+ / COM / 示波器 GND 必须入网并接到正确被测/系统地
+   - 【硬】未使用的 CH2/CH3/CH4 保持悬空即可，禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
+   - 仪器的 COM / 示波器 GND 必须最终连到 GND 网络（禁止挂 VCC 电源轨）
+   - 禁止仪器脚走跨板长导线：用 joinByLabel 同名并网
 
 4. 连接方式选择规则 — 标号优先原则:
    【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
@@ -50,7 +52,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 假设「导线优先」
 
 5. 网络命名规则:
-   - 电源网络: VCC, GND（不允许信号网络使用这些名字）
+   - 电源网络: VCC, GND, VEE（不允许信号网络使用这些名字）
    - 分压中点: SENSE, SENSE_1, SENSE_2, ...
    - 电流表后网络: VCC_AM
    - 信号网络: 描述性名称，如 LED_DRV, CMP1_OUT, UART_TX
@@ -86,7 +88,8 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 单电源: V+/VCC→VCC，V-/VEE→GND
    - 双电源: V+/VCC→VCC，V-/VEE→VEE（板上须有 VEE 符号）
    - 【滞回/施密特】正反馈分压节点须同一网名（如 HYST_NODE）：OUT→Rf→HYST_NODE、HYST_NODE→Rg→GND（或 VCC）、运放 IN+→HYST_NODE；三脚必须同 mode（全 joinByLabel 或全 joinWired），禁止混用导致断网
-   - 激励为正弦时 SIGNAL_GEN 输入网接 IN-（或 IN+），示波器 CH1 观测 OUT、CH2 观测激励；勿把「输出方波」写成激励波形
+   - 【滞回阈值】阈值 ≈ ±β·|Vsat|，β=Rg/(Rf+Rg)。须 β·|Vsat| < 激励峰值，否则正弦进不了翻转窗、看不到方波。推荐 Rf=100k / Rg=10k（β≈0.09）或激励 amplitude≥5V；双电源 VCC 与 VEE 须对称（如 ±12V），禁止 VCC=+5 配 VEE=-12
+   - 激励为正弦时 SIGNAL_GEN 输入网接 IN-（或 IN+），示波器 CH1 观测激励、CH2 观测 OUT；勿把「输出方波」写成激励波形
 
 9. SIGNAL_GEN: OUT→激励信号网，GND→GND；waveform=sine|square|triangle|saw|pulse；frequency/dutyCycle 可调
    - waveform 以用户「输入/激励」为准；「整形输出方波」不是信号源波形
@@ -100,7 +103,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
 
 11. 导线走向与排布规则（硬门禁）:
    - 导线只能正交走线（水平+垂直），禁止斜向
-   - 【硬】导线不得进入任何器件的「选中命中区」(与编辑器 HIT_PAD=14 一致)；规划时必须对照器件选中区 AABB
+   - 【硬】导线不得进入任何器件的「选中命中区」(与编辑器 HIT_PAD=22 一致)；规划时必须对照器件选中区 AABB
    - 【硬】导线不得贴近/碰到无关引脚（安全距≥20mil）；只能连到本网络引脚
    - 不同网络的导线禁止在任何位置共线重叠（同网络导线允许汇合）
    - 减少不必要的导线交叉: 利用正交弯折绕开已有走线与选中区
@@ -160,6 +163,9 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 
 === 已放置器件列表（含完整引脚信息与选中区AABB） ===
 {{device_detail}}
+
+=== 本次选型器件使用说明（手册级，建网必须遵守） ===
+{{device_usage}}
 
 === 器件位置总览 ===
 {{position_summary}}

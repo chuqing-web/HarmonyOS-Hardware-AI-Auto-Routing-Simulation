@@ -50,4 +50,4 @@ runtime_key: device_select
 
 - [ ] 改完 `00_shared_rules.md` → 更新 `SharedPromptRules.ets` + 各引用阶段
 - [ ] 改完某阶段 md → 更新对应 `*Prompt.ets` 的 `system` / `userTemplate`
-- [ ] 几何常量与 `DeviceHitGeometry` 一致：`HIT_PAD=14`，无关脚 `≥20mil`
+- [ ] 几何常量与 `DeviceHitGeometry` 一致：`HIT_PAD=22`，无关脚 `≥20mil`

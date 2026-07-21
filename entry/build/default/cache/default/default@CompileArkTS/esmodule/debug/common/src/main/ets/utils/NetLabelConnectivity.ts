@@ -6,6 +6,13 @@ function dist2(a: Point2D, b: Point2D): number {
     const dy = a.y - b.y;
     return dx * dx + dy * dy;
 }
+function wirePathLength(wirePoints: Point2D[]): number {
+    let len = 0;
+    for (let i = 1; i < wirePoints.length; i++) {
+        len += Math.hypot(wirePoints[i].x - wirePoints[i - 1].x, wirePoints[i].y - wirePoints[i - 1].y);
+    }
+    return len;
+}
 /** Perp distance from point to segment; -1 if projection outside segment pad. */
 function perpDistToSegment(p: Point2D, a: Point2D, b: Point2D, endPad: number): number {
     const dx = b.x - a.x;
@@ -37,14 +44,67 @@ export function isAutoNetLabelText(text: string): boolean {
     }
     return false;
 }
+/** Power / ground rail label texts (display as symbols, merge as rails). */
+export function isPowerRailLabelText(text: string): boolean {
+    const upper = text.toUpperCase();
+    return upper === 'VCC' || upper === 'VDD' || upper === 'V+' ||
+        upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0';
+}
+export function isGroundLabelText(text: string): boolean {
+    const upper = text.toUpperCase();
+    return upper === 'GND' || upper === 'VSS' || upper === '0';
+}
+export function isPowerSupplyLabelText(text: string): boolean {
+    const upper = text.toUpperCase();
+    return upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE';
+}
+/** Canonical rail text for sim merge (case-insensitive aliases → one name). */
+export function canonicalizeRailLabelText(text: string): string | null {
+    const upper = text.toUpperCase();
+    if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+        return 'GND';
+    }
+    if (upper === 'VCC' || upper === 'VDD' || upper === 'V+') {
+        return 'VCC';
+    }
+    if (upper === 'VEE' || upper === 'V-') {
+        return 'VEE';
+    }
+    return null;
+}
+/** Normalize AI/template stubs so power names use global flag for round-trips. */
+export function normalizePowerLabelFlags(doc: SchematicDocument): number {
+    if (doc.netLabels === undefined) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < doc.netLabels.length; i++) {
+        const label = doc.netLabels[i];
+        const canon = canonicalizeRailLabelText(label.text);
+        if (canon !== null) {
+            if (label.text !== canon) {
+                label.text = canon;
+                n++;
+            }
+            if (!label.global) {
+                label.global = true;
+                n++;
+            }
+        }
+    }
+    return n;
+}
 /**
- * Nearest wire net for a label. Prefer endpoints; mid-segment only with tight
- * perpendicular distance so adjacent parallel stubs (e.g. V+/COM) do not steal.
+ * Nearest wire net for a label. Prefer endpoints (especially short stubs);
+ * mid-segment only with tight perpendicular distance so adjacent parallel
+ * stubs (e.g. V+/COM) do not steal.
  */
 function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: number): string | null {
     let bestId: string | null = null;
-    let bestD2 = endTol * endTol;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const endTol2 = endTol * endTol;
     const segPerpTol = Math.min(4, endTol * 0.25);
+    const stubLenMax = Math.max(endTol * 4, 80);
     for (let wi = 0; wi < doc.wires.length; wi++) {
         const wire = doc.wires[wi];
         if (wire.points.length < 2 || wire.netId.length === 0) {
@@ -52,10 +112,17 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
         }
         const p0 = wire.points[0];
         const p1 = wire.points[wire.points.length - 1];
-        const dEnd = Math.min(dist2(pos, p0), dist2(pos, p1));
-        if (dEnd < bestD2) {
-            bestD2 = dEnd;
-            bestId = wire.netId;
+        const d0 = dist2(pos, p0);
+        const d1 = dist2(pos, p1);
+        const dEnd = Math.min(d0, d1);
+        if (dEnd <= endTol2) {
+            const pathLen = wirePathLength(wire.points);
+            // Prefer short stubs over long routes when both endpoints are in range
+            const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : endTol * 0.5);
+            if (score < bestScore) {
+                bestScore = score;
+                bestId = wire.netId;
+            }
         }
         for (let si = 0; si < wire.points.length - 1; si++) {
             const a = wire.points[si];
@@ -64,9 +131,10 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
             if (perp < 0 || perp > segPerpTol) {
                 continue;
             }
-            const d2 = perp * perp;
-            if (d2 < bestD2) {
-                bestD2 = d2;
+            // Mid-segment hits are secondary to endpoint/stub matches
+            const score = perp + endTol;
+            if (score < bestScore) {
+                bestScore = score;
                 bestId = wire.netId;
             }
         }
@@ -77,28 +145,34 @@ function findNet(doc: SchematicDocument, netId: string): Net | undefined {
     return doc.nets.find(n => n.id === netId);
 }
 function ensureNamedNet(doc: SchematicDocument, text: string): Net {
-    let net = doc.nets.find(n => n.name === text);
+    const canon = canonicalizeRailLabelText(text);
+    const name = canon !== null ? canon : text;
+    let net = doc.nets.find(n => n.name === name ||
+        (canon !== null && n.name.toUpperCase() === name.toUpperCase()));
     if (net !== undefined) {
+        if (canon !== null && net.name !== canon) {
+            net.name = canon;
+        }
         return net;
     }
     let netType = NetType.SIGNAL;
-    const upper = text.toUpperCase();
-    if (upper === 'VCC' || upper === 'VDD') {
+    if (canon === 'VCC' || canon === 'VEE') {
         netType = NetType.POWER;
     }
-    else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+    else if (canon === 'GND') {
         netType = NetType.GROUND;
     }
     net = {
         id: IdUtil.generate('net'),
-        name: text,
+        name: name,
         type: netType,
         pinIds: []
     };
     doc.nets.push(net);
     return net;
 }
-function mergeNetInto(doc: SchematicDocument, fromId: string, toId: string): void {
+/** Full net merge: wires + labels + pinIds + drop from-net. */
+export function mergeNetInto(doc: SchematicDocument, fromId: string, toId: string): void {
     if (fromId === toId) {
         return;
     }
@@ -112,9 +186,11 @@ function mergeNetInto(doc: SchematicDocument, fromId: string, toId: string): voi
             doc.wires[wi].netId = toId;
         }
     }
-    for (let li = 0; li < doc.netLabels.length; li++) {
-        if (doc.netLabels[li].netId === fromId) {
-            doc.netLabels[li].netId = toId;
+    if (doc.netLabels !== undefined) {
+        for (let li = 0; li < doc.netLabels.length; li++) {
+            if (doc.netLabels[li].netId === fromId) {
+                doc.netLabels[li].netId = toId;
+            }
         }
     }
     if (fromNet !== undefined) {
@@ -136,8 +212,9 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     if (doc.netLabels === undefined || doc.netLabels.length === 0) {
         return 0;
     }
+    normalizePowerLabelFlags(doc);
     // Tight endpoint snap — loose mid-segment previously pulled COM→V+ (20px apart)
-    const endTol = Math.max(gridSize * 1.2, 10);
+    const endTol = Math.max(gridSize * 1.5, 12);
     let mergeCount = 0;
     for (let li = 0; li < doc.netLabels.length; li++) {
         const label = doc.netLabels[li];
@@ -166,11 +243,15 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     // text → exclusive geo-nets (no conflicting other texts)
     const netIdsByText = new Map<string, string[]>();
     textsOnNet.forEach((texts: Set<string>, netId: string) => {
+        // 多文案冲突：不静默选字典序赢家并网；仅单文案网参与同名合并
         if (texts.size !== 1) {
             return;
         }
         let only = '';
         texts.forEach((t: string) => { only = t; });
+        if (only.length === 0) {
+            return;
+        }
         let list = netIdsByText.get(only);
         if (list === undefined) {
             list = [];
@@ -190,7 +271,6 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
         }
         for (let li = 0; li < doc.netLabels.length; li++) {
             if (doc.netLabels[li].text === text && !isAutoNetLabelText(text)) {
-                // Only retarget labels whose geo-net is exclusive to this text (or already canonical)
                 const nid = doc.netLabels[li].netId;
                 const claim = textsOnNet.get(nid);
                 if (nid === canonical.id || (claim !== undefined && claim.size === 1 && claim.has(text))) {
@@ -199,10 +279,10 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
             }
         }
         canonical.name = text;
-        if (text === 'VCC' || text === 'VDD') {
+        if (isPowerSupplyLabelText(text)) {
             canonical.type = NetType.POWER;
         }
-        else if (text === 'GND' || text === 'VSS' || text === '0') {
+        else if (isGroundLabelText(text)) {
             canonical.type = NetType.GROUND;
         }
     });

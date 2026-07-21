@@ -1,0 +1,1244 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ(D/**
+
+ * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
+
+ * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
+
+ */
+import { ErrCode } from '../types/ErrCode';
+export class UnitParser {
+    static parseResistance(input) {
+        return UnitParser.parseGeneric(input, 'Î©', UnitParser.getResistanceMultipliers());
+    }
+    static parseCapacitance(input) {
+        return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
+    }
+    static parseInductance(input) {
+        return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
+    }
+    static parseFrequency(input) {
+        // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
+        let s = input.trim().replace(/\s+/g, '');
+        if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
+            s = s.substring(0, s.length - 2);
+        }
+        return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
+    }
+    /** Parse power rating: 0.25W / 250mW / 1W */
+    static parsePower(input) {
+        const v = input.trim().replace(/\s+/g, '');
+        if (v.length === 0) {
+            return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
+        }
+        const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
+        if (mwMatch) {
+            const w = parseFloat(mwMatch[1]) / 1000;
+            if (!isNaN(w) && w > 0) {
+                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+            }
+        }
+        const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
+        if (kwMatch) {
+            const w = parseFloat(kwMatch[1]) * 1000;
+            if (!isNaN(w) && w > 0) {
+                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+            }
+        }
+        const wMatch = v.match(/^([\d.]+)\s*W?$/i);
+        if (wMatch) {
+            const w = parseFloat(wMatch[1]);
+            if (!isNaN(w) && w > 0) {
+                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+            }
+        }
+        return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+    }
+    static normalizeParam(key, value) {
+        const v = value.trim().replace(/\s+/g, '');
+        const keyL = key.toLowerCase();
+        if (keyL === 'waveform' || keyL === 'wave') {
+            const wf = v.toLowerCase();
+            const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
+                wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
+                wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
+                wf === 'è„‰å†²';
+            let norm = wf;
+            if (wf === 'sin' || wf === 'æ­£å¼¦') {
+                norm = 'sine';
+            }
+            else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
+                norm = 'square';
+            }
+            else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
+                norm = 'triangle';
+            }
+            else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
+                norm = 'saw';
+            }
+            else if (wf === 'è„‰å†²') {
+                norm = 'pulse';
+            }
+            return {
+                numeric: 0, unit: '', normalized: norm, valid: ok,
+                errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+            };
+        }
+        if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
+            let s = v.replace(/%/g, '');
+            const n = parseFloat(s);
+            if (!Number.isFinite(n) || n < 0 || n > 100) {
+                return {
+                    numeric: 50, unit: '%', normalized: '50%', valid: false,
+                    errCode: ErrCode.ERR_PARAM_INVALID
+                };
+            }
+            // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
+            const pct = n > 0 && n <= 1 ? n * 100 : n;
+            return {
+                numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
+            };
+        }
+        if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
+            return UnitParser.parseResistance(v);
+        }
+        if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
+            return UnitParser.parseCapacitance(v);
+        }
+        if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
+            return UnitParser.parseFrequency(v);
+        }
+        if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
+            return UnitParser.parsePower(v);
+        }
+        return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
+    }
+    static validateParam(key, value, min, max) {
+        const parsed = UnitParser.normalizeParam(key, value);
+        if (!parsed.valid) {
+            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+            return parsed;
+        }
+        if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
+            parsed.valid = false;
+            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+        }
+        if (min !== undefined && parsed.numeric < min) {
+            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+        }
+        if (max !== undefined && parsed.numeric > max) {
+            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+        }
+        return parsed;
+    }
+    static convertLength(value, from, to) {
+        let mm = value;
+        if (from === 'mil') {
+            mm = value * 0.0254;
+        }
+        else if (from === 'inch') {
+            mm = value * 25.4;
+        }
+        if (to === 'mil') {
+            return mm / 0.0254;
+        }
+        if (to === 'inch') {
+            return mm / 25.4;
+        }
+        return mm;
+    }
+    static getResistanceMultipliers() {
+        const m = new Map();
+        m.set('R', 1);
+        m.set('Î©', 1);
+        m.set('K', 1e3);
+        m.set('k', 1e3);
+        m.set('M', 1e6);
+        m.set('m', 1e6);
+        return m;
+    }
+    static getCapMultipliers() {
+        const m = new Map();
+        m.set('F', 1);
+        m.set('p', 1e-12);
+        m.set('P', 1e-12);
+        m.set('n', 1e-9);
+        m.set('N', 1e-9);
+        m.set('u', 1e-6);
+        m.set('U', 1e-6);
+        m.set('Âµ', 1e-6);
+        m.set('m', 1e-3);
+        return m;
+    }
+    static getIndMultipliers() {
+        const m = new Map();
+        m.set('H', 1);
+        m.set('m', 1e-3);
+        m.set('u', 1e-6);
+        m.set('n', 1e-9);
+        return m;
+    }
+    static getFreqMultipliers() {
+        const m = new Map();
+        m.set('Hz', 1);
+        m.set('hz', 1);
+        m.set('K', 1e3);
+        m.set('k', 1e3);
+        m.set('M', 1e6);
+        m.set('m', 1e6);
+        m.set('G', 1e9);
+        return m;
+    }
+    static parseGeneric(input, baseUnit, multipliers) {
+        // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
+        let s = input.trim().replace(/\s+/g, '');
+        if (s.indexOf('Î©') >= 0) {
+            s = s.replace(/Î©/g, '');
+            if (/^\d+\.?\d*$/.test(s)) {
+                s = `${s}R`;
+            }
+        }
+        if (s.length === 0) {
+            return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+        }
+        const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
+        if (sciMatch) {
+            const num = parseFloat(sciMatch[1]);
+            let suffix = sciMatch[2] ?? '';
+            // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
+            if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
+                if (suffix.toUpperCase().endsWith('OHM')) {
+                    suffix = suffix.substring(0, suffix.length - 3);
+                }
+                else {
+                    suffix = suffix.substring(0, suffix.length - 1);
+                }
+            }
+            let mult = 1;
+            if (suffix.length > 0) {
+                const lastChar = suffix.charAt(suffix.length - 1);
+                const prefix = suffix.substring(0, suffix.length - 1);
+                if (multipliers.has(suffix)) {
+                    mult = multipliers.get(suffix);
+                }
+                else if (multipliers.has(lastChar)) {
+                    mult = multipliers.get(lastChar);
+                }
+                else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
+                    mult = multipliers.get(prefix + lastChar);
+                }
+            }
+            const numeric = num * mult;
+            if (numeric < 0) {
+                return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+            }
+            return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
+        }
+        const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
+        if (numMatch) {
+            const num = parseFloat(numMatch[1]);
+            const suffix = numMatch[2] || '';
+            let mult = 1;
+            if (suffix.length > 0 && multipliers.has(suffix)) {
+                mult = multipliers.get(suffix);
+            }
+            const numeric = num * mult;
+            return {
+                numeric: numeric, unit: baseUnit,
+                normalized: `${numeric}${baseUnit}`,
+                valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+            };
+        }
+        return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+    }
+}
+//# sourceMappingURL=UnitParser.js.mapÂ‘ÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  ’ÔrC’²hostDependencyName®hostModuleName¬./UnitParser¦commonC¿./src/main/ets/utils/UnitParser¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ%a/**
+
+ * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
+
+ * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
+
+ */
+
+import { ErrCode } from '../types/ErrCode';
+
+
+
+export interface ParsedValue {
+
+  numeric: number;
+
+  unit: string;
+
+  normalized: string;
+
+  valid: boolean;
+
+  errCode: ErrCode;
+
+}
+
+
+
+export class UnitParser {
+
+  static parseResistance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'Î©', UnitParser.getResistanceMultipliers());
+
+  }
+
+
+
+  static parseCapacitance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
+
+  }
+
+
+
+  static parseInductance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
+
+  }
+
+
+
+  static parseFrequency(input: string): ParsedValue {
+    // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
+    let s = input.trim().replace(/\s+/g, '');
+    if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
+      s = s.substring(0, s.length - 2);
+    }
+    return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
+  }
+
+  /** Parse power rating: 0.25W / 250mW / 1W */
+  static parsePower(input: string): ParsedValue {
+    const v = input.trim().replace(/\s+/g, '');
+    if (v.length === 0) {
+      return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
+    }
+    const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
+    if (mwMatch) {
+      const w = parseFloat(mwMatch[1]) / 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
+    if (kwMatch) {
+      const w = parseFloat(kwMatch[1]) * 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const wMatch = v.match(/^([\d.]+)\s*W?$/i);
+    if (wMatch) {
+      const w = parseFloat(wMatch[1]);
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+  }
+
+
+
+  static normalizeParam(key: string, value: string): ParsedValue {
+
+    const v = value.trim().replace(/\s+/g, '');
+    const keyL = key.toLowerCase();
+
+    if (keyL === 'waveform' || keyL === 'wave') {
+      const wf = v.toLowerCase();
+      const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
+        wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
+        wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
+        wf === 'è„‰å†²';
+      let norm = wf;
+      if (wf === 'sin' || wf === 'æ­£å¼¦') {
+        norm = 'sine';
+      } else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
+        norm = 'square';
+      } else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
+        norm = 'triangle';
+      } else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
+        norm = 'saw';
+      } else if (wf === 'è„‰å†²') {
+        norm = 'pulse';
+      }
+      return {
+        numeric: 0, unit: '', normalized: norm, valid: ok,
+        errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+      };
+    }
+
+    if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
+      let s = v.replace(/%/g, '');
+      const n = parseFloat(s);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return {
+          numeric: 50, unit: '%', normalized: '50%', valid: false,
+          errCode: ErrCode.ERR_PARAM_INVALID
+        };
+      }
+      // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
+      const pct = n > 0 && n <= 1 ? n * 100 : n;
+      return {
+        numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
+      };
+    }
+
+    if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
+
+      return UnitParser.parseResistance(v);
+
+    }
+
+    if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
+
+      return UnitParser.parseCapacitance(v);
+
+    }
+
+    if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
+
+      return UnitParser.parseFrequency(v);
+
+    }
+
+    if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
+      return UnitParser.parsePower(v);
+    }
+
+    return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
+
+  }
+
+
+
+  static validateParam(key: string, value: string, min?: number, max?: number): ParsedValue {
+
+    const parsed = UnitParser.normalizeParam(key, value);
+
+    if (!parsed.valid) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+      return parsed;
+
+    }
+
+    if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
+
+      parsed.valid = false;
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    if (min !== undefined && parsed.numeric < min) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    if (max !== undefined && parsed.numeric > max) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    return parsed;
+
+  }
+
+
+
+  static convertLength(value: number, from: 'mil' | 'mm' | 'inch', to: 'mil' | 'mm' | 'inch'): number {
+
+    let mm = value;
+
+    if (from === 'mil') {
+
+      mm = value * 0.0254;
+
+    } else if (from === 'inch') {
+
+      mm = value * 25.4;
+
+    }
+
+    if (to === 'mil') {
+
+      return mm / 0.0254;
+
+    }
+
+    if (to === 'inch') {
+
+      return mm / 25.4;
+
+    }
+
+    return mm;
+
+  }
+
+
+
+  private static getResistanceMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('R', 1);
+
+    m.set('Î©', 1);
+
+    m.set('K', 1e3);
+
+    m.set('k', 1e3);
+
+    m.set('M', 1e6);
+
+    m.set('m', 1e6);
+
+    return m;
+
+  }
+
+
+
+  private static getCapMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('F', 1);
+
+    m.set('p', 1e-12);
+
+    m.set('P', 1e-12);
+
+    m.set('n', 1e-9);
+
+    m.set('N', 1e-9);
+
+    m.set('u', 1e-6);
+
+    m.set('U', 1e-6);
+
+    m.set('Âµ', 1e-6);
+
+    m.set('m', 1e-3);
+
+    return m;
+
+  }
+
+
+
+  private static getIndMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('H', 1);
+
+    m.set('m', 1e-3);
+
+    m.set('u', 1e-6);
+
+    m.set('n', 1e-9);
+
+    return m;
+
+  }
+
+
+
+  private static getFreqMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('Hz', 1);
+
+    m.set('hz', 1);
+
+    m.set('K', 1e3);
+
+    m.set('k', 1e3);
+
+    m.set('M', 1e6);
+
+    m.set('m', 1e6);
+
+    m.set('G', 1e9);
+
+    return m;
+
+  }
+
+
+
+  private static parseGeneric(input: string, baseUnit: string,
+
+    multipliers: Map<string, number>): ParsedValue {
+
+    // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
+    let s = input.trim().replace(/\s+/g, '');
+    if (s.indexOf('Î©') >= 0) {
+      s = s.replace(/Î©/g, '');
+      if (/^\d+\.?\d*$/.test(s)) {
+        s = `${s}R`;
+      }
+    }
+
+    if (s.length === 0) {
+
+      return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+    }
+
+
+
+    const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
+
+    if (sciMatch) {
+
+      const num = parseFloat(sciMatch[1]);
+
+      let suffix = sciMatch[2] ?? '';
+
+      // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
+      if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
+        if (suffix.toUpperCase().endsWith('OHM')) {
+          suffix = suffix.substring(0, suffix.length - 3);
+        } else {
+          suffix = suffix.substring(0, suffix.length - 1);
+        }
+      }
+
+      let mult = 1;
+
+      if (suffix.length > 0) {
+
+        const lastChar = suffix.charAt(suffix.length - 1);
+
+        const prefix = suffix.substring(0, suffix.length - 1);
+
+        if (multipliers.has(suffix)) {
+
+          mult = multipliers.get(suffix) as number;
+
+        } else if (multipliers.has(lastChar)) {
+
+          mult = multipliers.get(lastChar) as number;
+
+        } else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
+
+          mult = multipliers.get(prefix + lastChar) as number;
+
+        }
+
+      }
+
+      const numeric = num * mult;
+
+      if (numeric < 0) {
+
+        return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+      }
+
+      return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
+
+    }
+
+
+
+    const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
+
+    if (numMatch) {
+
+      const num = parseFloat(numMatch[1]);
+
+      const suffix = numMatch[2] || '';
+
+      let mult = 1;
+
+      if (suffix.length > 0 && multipliers.has(suffix)) {
+
+        mult = multipliers.get(suffix) as number;
+
+      }
+
+      const numeric = num * mult;
+
+      return {
+
+        numeric: numeric, unit: baseUnit,
+
+        normalized: `${numeric}${baseUnit}`,
+
+        valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+
+      };
+
+    }
+
+
+
+    return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+  }
+
+}
+
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ ş‘”    ‘”  ‘”   ‘”   ‘”   ‘”  (‘”  0‘”  8‘”  9‘”  :‘”  ;‘”  <‘”  ÌA‘”  ÌB‘”  ÌD‘”  ÌF‘”  ÌJ‘”  ÌK‘”  ÌM‘”  ÌQ‘”  ÌR‘”  ÌT‘”  ÌX‘”  ÌY‘”  Ì_‘”  Ìa‘”  Ìb‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìk‘”  Ìm‘”  Ìm‘”  Ìo‘”  Ìq‘”  Ìq‘”  Ìs‘”  Ìu‘”  Ìw‘”  Ìx‘”  Ìz‘”  Ì~‘”  Ì‘”  Ì
+‘”  Ì„‘”  Ì†‘”  ÌŠ‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì’‘”  Ì”‘”  Ì–‘”  Ìš‘”  Ìœ‘”  ÌŸ‘”  Ì ‘”  Ì¢‘”  Ì¬‘”  Ì®‘”  Ì°‘”  Ì²‘”  Ì¶‘”  Ì¸‘”  Ìº‘”  Ì¾‘”  ÌÀ‘”  ÌÄ‘”  ÌÆ‘”  ÌÈ‘”  ÌÎ‘”  ÌÔ‘”  ÌÖ‘”  ÌØ‘”  ÌÚ‘”  Ìà‘”  Ìæ‘”  Ìè‘”  Ìî
+‘”  Ìğ‘”  Ìò‘”  Ìô‘”  Ìö‘”  Ìø‘”  Ìú‘”  Ìü‘”  Ìş‘”  Í
+‘”  Í‘”  Í‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í 
+‘”  Í"‘”  Í$‘”  Í&‘”  Í(‘”  Í*‘”  Í,‘”  Í2
+‘”  Í4‘”  Í6‘”  Í8‘”  Í:‘”  Í<‘”  Í>‘”  Í@‘”  ÍB‘”  ÍD‘”  ÍJ
+‘”  ÍO‘”  ÍR‘”  ÍS‘”  ÍT‘”  ÍU‘”  ÍW‘”  Í[‘”  Ía‘”  Íj
+‘”  Ík	‘”  Ík‘”  Íl
+‘”  Ím	‘”  Ín‘”  Ír‘”  Ít‘”  Ív‘”  Íx‘”  Íz
+‘”  Í|	‘”  Í|‘”  Í~
+‘”  Í€	‘”  Í€‘”  Í„	‘”  Í†‘”  Íˆ‘”  Í‘”  Í’‘”  Í˜‘”  Í ‘”  Í¢‘”  Í¤‘”  Í¦‘”  Íª‘”  Í¬‘”  Í²‘”  Íº‘ÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.ets‘Ú%a/**
+
+ * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
+
+ * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
+
+ */
+
+import { ErrCode } from '../types/ErrCode';
+
+
+
+export interface ParsedValue {
+
+  numeric: number;
+
+  unit: string;
+
+  normalized: string;
+
+  valid: boolean;
+
+  errCode: ErrCode;
+
+}
+
+
+
+export class UnitParser {
+
+  static parseResistance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'Î©', UnitParser.getResistanceMultipliers());
+
+  }
+
+
+
+  static parseCapacitance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
+
+  }
+
+
+
+  static parseInductance(input: string): ParsedValue {
+
+    return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
+
+  }
+
+
+
+  static parseFrequency(input: string): ParsedValue {
+    // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
+    let s = input.trim().replace(/\s+/g, '');
+    if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
+      s = s.substring(0, s.length - 2);
+    }
+    return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
+  }
+
+  /** Parse power rating: 0.25W / 250mW / 1W */
+  static parsePower(input: string): ParsedValue {
+    const v = input.trim().replace(/\s+/g, '');
+    if (v.length === 0) {
+      return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
+    }
+    const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
+    if (mwMatch) {
+      const w = parseFloat(mwMatch[1]) / 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
+    if (kwMatch) {
+      const w = parseFloat(kwMatch[1]) * 1000;
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    const wMatch = v.match(/^([\d.]+)\s*W?$/i);
+    if (wMatch) {
+      const w = parseFloat(wMatch[1]);
+      if (!isNaN(w) && w > 0) {
+        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
+      }
+    }
+    return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+  }
+
+
+
+  static normalizeParam(key: string, value: string): ParsedValue {
+
+    const v = value.trim().replace(/\s+/g, '');
+    const keyL = key.toLowerCase();
+
+    if (keyL === 'waveform' || keyL === 'wave') {
+      const wf = v.toLowerCase();
+      const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
+        wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
+        wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
+        wf === 'è„‰å†²';
+      let norm = wf;
+      if (wf === 'sin' || wf === 'æ­£å¼¦') {
+        norm = 'sine';
+      } else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
+        norm = 'square';
+      } else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
+        norm = 'triangle';
+      } else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
+        norm = 'saw';
+      } else if (wf === 'è„‰å†²') {
+        norm = 'pulse';
+      }
+      return {
+        numeric: 0, unit: '', normalized: norm, valid: ok,
+        errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+      };
+    }
+
+    if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
+      let s = v.replace(/%/g, '');
+      const n = parseFloat(s);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return {
+          numeric: 50, unit: '%', normalized: '50%', valid: false,
+          errCode: ErrCode.ERR_PARAM_INVALID
+        };
+      }
+      // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
+      const pct = n > 0 && n <= 1 ? n * 100 : n;
+      return {
+        numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
+      };
+    }
+
+    if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
+
+      return UnitParser.parseResistance(v);
+
+    }
+
+    if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
+
+      return UnitParser.parseCapacitance(v);
+
+    }
+
+    if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
+
+      return UnitParser.parseFrequency(v);
+
+    }
+
+    if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
+      return UnitParser.parsePower(v);
+    }
+
+    return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
+
+  }
+
+
+
+  static validateParam(key: string, value: string, min?: number, max?: number): ParsedValue {
+
+    const parsed = UnitParser.normalizeParam(key, value);
+
+    if (!parsed.valid) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+      return parsed;
+
+    }
+
+    if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
+
+      parsed.valid = false;
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    if (min !== undefined && parsed.numeric < min) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    if (max !== undefined && parsed.numeric > max) {
+
+      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
+
+    }
+
+    return parsed;
+
+  }
+
+
+
+  static convertLength(value: number, from: 'mil' | 'mm' | 'inch', to: 'mil' | 'mm' | 'inch'): number {
+
+    let mm = value;
+
+    if (from === 'mil') {
+
+      mm = value * 0.0254;
+
+    } else if (from === 'inch') {
+
+      mm = value * 25.4;
+
+    }
+
+    if (to === 'mil') {
+
+      return mm / 0.0254;
+
+    }
+
+    if (to === 'inch') {
+
+      return mm / 25.4;
+
+    }
+
+    return mm;
+
+  }
+
+
+
+  private static getResistanceMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('R', 1);
+
+    m.set('Î©', 1);
+
+    m.set('K', 1e3);
+
+    m.set('k', 1e3);
+
+    m.set('M', 1e6);
+
+    m.set('m', 1e6);
+
+    return m;
+
+  }
+
+
+
+  private static getCapMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('F', 1);
+
+    m.set('p', 1e-12);
+
+    m.set('P', 1e-12);
+
+    m.set('n', 1e-9);
+
+    m.set('N', 1e-9);
+
+    m.set('u', 1e-6);
+
+    m.set('U', 1e-6);
+
+    m.set('Âµ', 1e-6);
+
+    m.set('m', 1e-3);
+
+    return m;
+
+  }
+
+
+
+  private static getIndMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('H', 1);
+
+    m.set('m', 1e-3);
+
+    m.set('u', 1e-6);
+
+    m.set('n', 1e-9);
+
+    return m;
+
+  }
+
+
+
+  private static getFreqMultipliers(): Map<string, number> {
+
+    const m = new Map<string, number>();
+
+    m.set('Hz', 1);
+
+    m.set('hz', 1);
+
+    m.set('K', 1e3);
+
+    m.set('k', 1e3);
+
+    m.set('M', 1e6);
+
+    m.set('m', 1e6);
+
+    m.set('G', 1e9);
+
+    return m;
+
+  }
+
+
+
+  private static parseGeneric(input: string, baseUnit: string,
+
+    multipliers: Map<string, number>): ParsedValue {
+
+    // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
+    let s = input.trim().replace(/\s+/g, '');
+    if (s.indexOf('Î©') >= 0) {
+      s = s.replace(/Î©/g, '');
+      if (/^\d+\.?\d*$/.test(s)) {
+        s = `${s}R`;
+      }
+    }
+
+    if (s.length === 0) {
+
+      return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+    }
+
+
+
+    const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
+
+    if (sciMatch) {
+
+      const num = parseFloat(sciMatch[1]);
+
+      let suffix = sciMatch[2] ?? '';
+
+      // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
+      if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
+        if (suffix.toUpperCase().endsWith('OHM')) {
+          suffix = suffix.substring(0, suffix.length - 3);
+        } else {
+          suffix = suffix.substring(0, suffix.length - 1);
+        }
+      }
+
+      let mult = 1;
+
+      if (suffix.length > 0) {
+
+        const lastChar = suffix.charAt(suffix.length - 1);
+
+        const prefix = suffix.substring(0, suffix.length - 1);
+
+        if (multipliers.has(suffix)) {
+
+          mult = multipliers.get(suffix) as number;
+
+        } else if (multipliers.has(lastChar)) {
+
+          mult = multipliers.get(lastChar) as number;
+
+        } else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
+
+          mult = multipliers.get(prefix + lastChar) as number;
+
+        }
+
+      }
+
+      const numeric = num * mult;
+
+      if (numeric < 0) {
+
+        return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+      }
+
+      return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
+
+    }
+
+
+
+    const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
+
+    if (numMatch) {
+
+      const num = parseFloat(numMatch[1]);
+
+      const suffix = numMatch[2] || '';
+
+      let mult = 1;
+
+      if (suffix.length > 0 && multipliers.has(suffix)) {
+
+        mult = multipliers.get(suffix) as number;
+
+      }
+
+      const numeric = num * mult;
+
+      return {
+
+        numeric: numeric, unit: baseUnit,
+
+        normalized: `${numeric}${baseUnit}`,
+
+        valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
+
+      };
+
+    }
+
+
+
+    return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
+
+  }
+
+}
+
+ÔrE‘°../types/ErrCodeÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ|Í'-ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌƒÍ'-ÔrK”¤type¥start£end¤nameªIdentifierÌ‰Ì“ªUnitParserÀÔrL”¤type¥start£end¤body©ClassBodyÌ”Í'-ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌ›ÍÃÂKªIdentifierÌ¢Ì±¯parseResistance¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ±ÍÀÂÂÂ‘KªIdentifierÌ²Ì·¥inputL®BlockStatementÌ¹Í‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÌÄÍÔrP–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌËÍÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌËÌâKªIdentifierÌËÌÕªUnitParserKªIdentifierÌÖÌâ¬parseGenericÂÂ“KªIdentifierÌãÌè¥inputÔrR•¤type¥start£end¥value£raw§LiteralÌêÌí¢Î©¤'Î©'P®CallExpressionÌïÍQ°MemberExpressionÌïÍKªIdentifierÌïÌùªUnitParserKªIdentifierÌúÍ¸getResistanceMultipliersÂÂÂÂM°MethodDefinitionÍ#ÍŸÃÂKªIdentifierÍ*Í:°parseCapacitance¦methodN²FunctionExpressionÍ:ÍŸÀÂÂÂ‘KªIdentifierÍ;Í@¥inputL®BlockStatementÍBÍŸ‘O¯ReturnStatementÍMÍ˜P®CallExpressionÍTÍ—Q°MemberExpressionÍTÍkKªIdentifierÍTÍ^ªUnitParserKªIdentifierÍ_Ík¬parseGenericÂÂ“KªIdentifierÍlÍq¥inputR§LiteralÍsÍv¡F£'F'P®CallExpressionÍxÍ–Q°MemberExpressionÍxÍ”KªIdentifierÍxÍ‚ªUnitParserKªIdentifierÍƒÍ”±getCapMultipliersÂÂÂÂM°MethodDefinitionÍ¥Í ÃÂKªIdentifierÍ¬Í»¯parseInductance¦methodN²FunctionExpressionÍ»Í ÀÂÂÂ‘KªIdentifierÍ¼ÍÁ¥inputL®BlockStatementÍÃÍ ‘O¯ReturnStatementÍÎÍP®CallExpressionÍÕÍQ°MemberExpressionÍÕÍìKªIdentifierÍÕÍßªUnitParserKªIdentifierÍàÍì¬parseGenericÂÂ“KªIdentifierÍíÍò¥inputR§LiteralÍôÍ÷¡H£'H'P®CallExpressionÍùÍQ°MemberExpressionÍùÍKªIdentifierÍùÍªUnitParserKªIdentifierÍÍ±getIndMultipliersÂÂÂÂM°MethodDefinitionÍ&ÍªÃÂKªIdentifierÍ-Í;®parseFrequency¦methodN²FunctionExpressionÍ;ÍªÀÂÂÂ‘KªIdentifierÍ<ÍA¥inputL®BlockStatementÍCÍª“ÔrS•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ‘Íº‘ÔrT•¤type¥start£end¢id¤init²VariableDeclaratorÍ•Í¹KªIdentifierÍ•Í–¡sP®CallExpressionÍ™Í¹Q°MemberExpressionÍ™Í­P®CallExpressionÍ™Í¥Q°MemberExpressionÍ™Í£KªIdentifierÍ™Í¥inputKªIdentifierÍŸÍ£¤trimÂÂÂKªIdentifierÍ¦Í­§replaceÂÂ’ÔrU–¤type¥start£end¥value£raw¥regex§LiteralÍ®Í´’£\s+¡g¦/\s+/gÔrV’§pattern¥flags£\s+¡gR§LiteralÍ¶Í¸ ¢''Â£letÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÄÍPÔrX–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍÈÍX°BinaryExpressionÍÈÍÕQ°MemberExpressionÍÈÍĞKªIdentifierÍÈÍÉ¡sKªIdentifierÍÊÍĞ¦lengthÂÂ¢>=R§LiteralÍÔÍÕ¡2¢&&X±LogicalExpressionÍÚÍX±LogicalExpressionÍÚÍşP®CallExpressionÍÚÍêQ°MemberExpressionÍÚÍäKªIdentifierÍÚÍÛ¡sKªIdentifierÍÜÍä¨endsWithÂÂ‘R§LiteralÍåÍé¢Hz¤'Hz'Â¢||P®CallExpressionÍîÍşQ°MemberExpressionÍîÍøKªIdentifierÍîÍï¡sKªIdentifierÍğÍø¨endsWithÂÂ‘R§LiteralÍùÍı¢hz¤'hz'Â¢||P®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¡sKªIdentifierÍÍ¨endsWithÂÂ‘R§LiteralÍÍ¢HZ¤'HZ'ÂL®BlockStatementÍÍP‘ÔrY”¤type¥start£endªexpression³ExpressionStatementÍ$ÍEÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ$ÍD¡=KªIdentifierÍ$Í%¡sP®CallExpressionÍ(ÍDQ°MemberExpressionÍ(Í3KªIdentifierÍ(Í)¡sKªIdentifierÍ*Í3©substringÂÂ’R§LiteralÍ4Í5 ¡0X°BinaryExpressionÍ7ÍCQ°MemberExpressionÍ7Í?KªIdentifierÍ7Í8¡sKªIdentifierÍ9Í?¦lengthÂÂ¡-R§LiteralÍBÍC¡2ÂÀO¯ReturnStatementÍZÍ£P®CallExpressionÍaÍ¢Q°MemberExpressionÍaÍxKªIdentifierÍaÍkªUnitParserKªIdentifierÍlÍx¬parseGenericÂÂ“KªIdentifierÍyÍz¡sR§LiteralÍ|Í€¢Hz¤'Hz'P®CallExpressionÍ‚Í¡Q°MemberExpressionÍ‚ÍŸKªIdentifierÍ‚ÍŒªUnitParserKªIdentifierÍÍŸ²getFreqMultipliersÂÂÂÂM°MethodDefinitionÍãÍÄÃÂKªIdentifierÍêÍôªparsePower¦methodN²FunctionExpressionÍôÍÄÀÂÂÂ‘KªIdentifierÍõÍú¥inputL®BlockStatementÍüÍÄ™S³VariableDeclarationÍÍ2‘T²VariableDeclaratorÍÍ1KªIdentifierÍÍ¡vP®CallExpressionÍÍ1Q°MemberExpressionÍÍ%P®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¥inputKªIdentifierÍÍ¤trimÂÂÂKªIdentifierÍÍ%§replaceÂÂ’U§LiteralÍ&Í,’£\s+¡g¦/\s+/gV£\s+¡gR§LiteralÍ.Í0 ¢''Â¥constW«IfStatementÍ<ÍÅX°BinaryExpressionÍ@ÍNQ°MemberExpressionÍ@ÍHKªIdentifierÍ@ÍA¡vKªIdentifierÍBÍH¦lengthÂÂ£===R§LiteralÍMÍN ¡0L®BlockStatementÍPÍÅ‘O¯ReturnStatementÍ_ÍºÔr[”¤type¥start£endªproperties°ObjectExpressionÍfÍ¹•Ôr\™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍhÍuÂÂÂKªIdentifierÍhÍo§numericR§LiteralÍqÍuË?Ğ      ¤0.25¤init\¨PropertyÍwÍ€ÂÂÂKªIdentifierÍwÍ{¤unitR§LiteralÍ}Í€¡W£'W'¤init\¨PropertyÍ‚Í•ÂÂÂKªIdentifierÍ‚ÍŒªnormalizedR§LiteralÍÍ•¥0.25W§'0.25W'¤init\¨PropertyÍ—Í¢ÂÂÂKªIdentifierÍ—Íœ¥validR§LiteralÍÍ¢Ã¤true¤init\¨PropertyÍ¤Í·ÂÂÂKªIdentifierÍ¤Í«§errCodeQ°MemberExpressionÍ­Í·KªIdentifierÍ­Í´§ErrCodeKªIdentifierÍµÍ·¢OKÂÂ¤initÀS³VariableDeclarationÍÏÍû‘T²VariableDeclaratorÍÕÍúKªIdentifierÍÕÍÜ§mwMatchP®CallExpressionÍßÍúQ°MemberExpressionÍßÍæKªIdentifierÍßÍà¡vKªIdentifierÍáÍæ¥matchÂÂ‘U§LiteralÍçÍù’¯^([\d.]+)\s*mw$¡i²/^([\d.]+)\s*mw$/iV¯^([\d.]+)\s*mw$¡iÂ¥constW«IfStatementÍÍôKªIdentifierÍ	Í§mwMatchL®BlockStatementÍÍô’S³VariableDeclarationÍ!ÍI‘T²VariableDeclaratorÍ'ÍHKªIdentifierÍ'Í(¡wX°BinaryExpressionÍ+ÍHP®CallExpressionÍ+ÍAKªIdentifierÍ+Í5ªparseFloat‘Q°MemberExpressionÍ6Í@KªIdentifierÍ6Í=§mwMatchR§LiteralÍ>Í?¡1ÃÂÂ¡/R§LiteralÍDÍHÍè¤1000¥constW«IfStatementÍWÍéX±LogicalExpressionÍ[ÍmÔr]–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ[Íd¡!ÃP®CallExpressionÍ\ÍdKªIdentifierÍ\Ía¥isNaN‘KªIdentifierÍbÍc¡wÂ¢&&X°BinaryExpressionÍhÍmKªIdentifierÍhÍi¡w¡>R§LiteralÍlÍm ¡0L®BlockStatementÍoÍé‘O¯ReturnStatementÍ‚ÍÚ[°ObjectExpressionÍ‰ÍÙ•\¨PropertyÍ‹Í•ÂÂÂKªIdentifierÍ‹Í’§numericKªIdentifierÍ”Í•¡w¤init\¨PropertyÍ—Í ÂÂÂKªIdentifierÍ—Í›¤unitR§LiteralÍÍ ¡W£'W'¤init\¨PropertyÍ¢ÍµÂÂÂKªIdentifierÍ¢Í¬ªnormalizedÔr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ®Íµ‘KªIdentifierÍ±Í²¡w’Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍ¯Í¯Ôr`’£raw¦cooked  Â_¯TemplateElementÍ³Í´`¡W¡WÃ¤init\¨PropertyÍ·ÍÂÂÂÂKªIdentifierÍ·Í¼¥validR§LiteralÍ¾ÍÂÃ¤true¤init\¨PropertyÍÄÍ×ÂÂÂKªIdentifierÍÄÍË§errCodeQ°MemberExpressionÍÍÍ×KªIdentifierÍÍÍÔ§ErrCodeKªIdentifierÍÕÍ×¢OKÂÂ¤initÀÀS³VariableDeclarationÍşÍ*‘T²VariableDeclaratorÍÍ)KªIdentifierÍÍ§kwMatchP®CallExpressionÍÍ)Q°MemberExpressionÍÍKªIdentifierÍÍ¡vKªIdentifierÍÍ¥matchÂÂ‘U§LiteralÍÍ(’¯^([\d.]+)\s*kw$¡i²/^([\d.]+)\s*kw$/iV¯^([\d.]+)\s*kw$¡iÂ¥constW«IfStatementÍ4Í#KªIdentifierÍ8Í?§kwMatchL®BlockStatementÍAÍ#’S³VariableDeclarationÍPÍx‘T²VariableDeclaratorÍVÍwKªIdentifierÍVÍW¡wX°BinaryExpressionÍZÍwP®CallExpressionÍZÍpKªIdentifierÍZÍdªparseFloat‘Q°MemberExpressionÍeÍoKªIdentifierÍeÍl§kwMatchR§LiteralÍmÍn¡1ÃÂÂ¡*R§LiteralÍsÍwÍè¤1000¥constW«IfStatementÍ†ÍX±LogicalExpressionÍŠÍœ]¯UnaryExpressionÍŠÍ“¡!ÃP®CallExpressionÍ‹Í“KªIdentifierÍ‹Í¥isNaN‘KªIdentifierÍ‘Í’¡wÂ¢&&X°BinaryExpressionÍ—ÍœKªIdentifierÍ—Í˜¡w¡>R§LiteralÍ›Íœ ¡0L®BlockStatementÍÍ‘O¯ReturnStatementÍ±Í	[°ObjectExpressionÍ¸Í•\¨PropertyÍºÍÄÂÂÂKªIdentifierÍºÍÁ§numericKªIdentifierÍÃÍÄ¡w¤init\¨PropertyÍÆÍÏÂÂÂKªIdentifierÍÆÍÊ¤unitR§LiteralÍÌÍÏ¡W£'W'¤init\¨PropertyÍÑÍäÂÂÂKªIdentifierÍÑÍÛªnormalized^¯TemplateLiteralÍİÍä‘KªIdentifierÍàÍá¡w’_¯TemplateElementÍŞÍŞ`  Â_¯TemplateElementÍâÍã`¡W¡WÃ¤init\¨PropertyÍæÍñÂÂÂKªIdentifierÍæÍë¥validR§LiteralÍíÍñÃ¤true¤init\¨PropertyÍóÍÂÂÂKªIdentifierÍóÍú§errCodeQ°MemberExpressionÍüÍKªIdentifierÍüÍ§ErrCodeKªIdentifierÍÍ¢OKÂÂ¤initÀÀS³VariableDeclarationÍ-ÍX‘T²VariableDeclaratorÍ3ÍWKªIdentifierÍ3Í9¦wMatchP®CallExpressionÍ<ÍWQ°MemberExpressionÍ<ÍCKªIdentifierÍ<Í=¡vKªIdentifierÍ>ÍC¥matchÂÂ‘U§LiteralÍDÍV’¯^([\d.]+)\s*W?$¡i²/^([\d.]+)\s*W?$/iV¯^([\d.]+)\s*W?$¡iÂ¥constW«IfStatementÍbÍHKªIdentifierÍfÍl¦wMatchL®BlockStatementÍnÍH’S³VariableDeclarationÍ}Í‘T²VariableDeclaratorÍƒÍœKªIdentifierÍƒÍ„¡wP®CallExpressionÍ‡ÍœKªIdentifierÍ‡Í‘ªparseFloat‘Q°MemberExpressionÍ’Í›KªIdentifierÍ’Í˜¦wMatchR§LiteralÍ™Íš¡1ÃÂÂ¥constW«IfStatementÍ«Í=X±LogicalExpressionÍ¯ÍÁ]¯UnaryExpressionÍ¯Í¸¡!ÃP®CallExpressionÍ°Í¸KªIdentifierÍ°Íµ¥isNaN‘KªIdentifierÍ¶Í·¡wÂ¢&&X°BinaryExpressionÍ¼ÍÁKªIdentifierÍ¼Í½¡w¡>R§LiteralÍÀÍÁ ¡0L®BlockStatementÍÃÍ=‘O¯ReturnStatementÍÖÍ.[°ObjectExpressionÍİÍ-•\¨PropertyÍßÍéÂÂÂKªIdentifierÍßÍæ§numericKªIdentifierÍèÍé¡w¤init\¨PropertyÍëÍôÂÂÂKªIdentifierÍëÍï¤unitR§LiteralÍñÍô¡W£'W'¤init\¨PropertyÍöÍ	ÂÂÂKªIdentifierÍöÍ ªnormalized^¯TemplateLiteralÍÍ	‘KªIdentifierÍÍ¡w’_¯TemplateElementÍÍ`  Â_¯TemplateElementÍÍ`¡W¡WÃ¤init\¨PropertyÍÍÂÂÂKªIdentifierÍÍ¥validR§LiteralÍÍÃ¤true¤init\¨PropertyÍÍ+ÂÂÂKªIdentifierÍÍ§errCodeQ°MemberExpressionÍ!Í+KªIdentifierÍ!Í(§ErrCodeKªIdentifierÍ)Í+¢OKÂÂ¤initÀÀO¯ReturnStatementÍRÍ½[°ObjectExpressionÍYÍ¼•\¨PropertyÍ[ÍhÂÂÂKªIdentifierÍ[Íb§numericR§LiteralÍdÍhË?Ğ      ¤0.25¤init\¨PropertyÍjÍsÂÂÂKªIdentifierÍjÍn¤unitR§LiteralÍpÍs¡W£'W'¤init\¨PropertyÍuÍˆÂÂÂKªIdentifierÍuÍªnormalizedR§LiteralÍÍˆ¥0.25W§'0.25W'¤init\¨PropertyÍŠÍ–ÂÂÂKªIdentifierÍŠÍ¥validR§LiteralÍ‘Í–Â¥false¤init\¨PropertyÍ˜ÍºÂÂÂKªIdentifierÍ˜ÍŸ§errCodeQ°MemberExpressionÍ¡ÍºKªIdentifierÍ¡Í¨§ErrCodeKªIdentifierÍ©Íº±ERR_PARAM_INVALIDÂÂ¤initM°MethodDefinitionÍÊÍ\ÃÂKªIdentifierÍÑÍß®normalizeParam¦methodN²FunctionExpressionÍßÍ\ÀÂÂÂ’KªIdentifierÍàÍã£keyKªIdentifierÍåÍê¥valueL®BlockStatementÍìÍ\™S³VariableDeclarationÍ÷Í	"‘T²VariableDeclaratorÍıÍ	!KªIdentifierÍıÍş¡vP®CallExpressionÍ	Í	!Q°MemberExpressionÍ	Í	P®CallExpressionÍ	Í	Q°MemberExpressionÍ	Í	KªIdentifierÍ	Í	¥valueKªIdentifierÍ	Í	¤trimÂÂÂKªIdentifierÍ	Í	§replaceÂÂ’U§LiteralÍ	Í	’£\s+¡g¦/\s+/gV£\s+¡gR§LiteralÍ	Í	  ¢''Â¥constS³VariableDeclarationÍ	,Í	K‘T²VariableDeclaratorÍ	2Í	JKªIdentifierÍ	2Í	6¤keyLP®CallExpressionÍ	9Í	JQ°MemberExpressionÍ	9Í	HKªIdentifierÍ	9Í	<£keyKªIdentifierÍ	=Í	H«toLowerCaseÂÂÂ¥constW«IfStatementÍ	UÍ®X±LogicalExpressionÍ	YÍ	X°BinaryExpressionÍ	YÍ	lKªIdentifierÍ	YÍ	]¤keyL£===R§LiteralÍ	bÍ	l¨waveformª'waveform'¢||X°BinaryExpressionÍ	pÍ	KªIdentifierÍ	pÍ	t¤keyL£===R§LiteralÍ	yÍ	¤wave¦'wave'L®BlockStatementÍ	Í®•S³VariableDeclarationÍ	Í	«‘T²VariableDeclaratorÍ	–Í	ªKªIdentifierÍ	–Í	˜¢wfP®CallExpressionÍ	›Í	ªQ°MemberExpressionÍ	›Í	¨KªIdentifierÍ	›Í	œ¡vKªIdentifierÍ	Í	¨«toLowerCaseÂÂÂ¥constS³VariableDeclarationÍ	¹Í
+Ş‘T²VariableDeclaratorÍ	¿Í
+İKªIdentifierÍ	¿Í	Á¢okX±LogicalExpressionÍ	ÄÍ
+İX±LogicalExpressionÍ	ÄÍ
+½X±LogicalExpressionÍ	ÄÍ
+®X±LogicalExpressionÍ	ÄÍ
+ŸX±LogicalExpressionÍ	ÄÍ
+X±LogicalExpressionÍ	ÄÍ
+X±LogicalExpressionÍ	ÄÍ
+^X±LogicalExpressionÍ	ÄÍ
+IX±LogicalExpressionÍ	ÄÍ
+9X±LogicalExpressionÍ	ÄÍ
+)X±LogicalExpressionÍ	ÄÍ
+X±LogicalExpressionÍ	ÄÍ	ôX±LogicalExpressionÍ	ÄÍ	áX°BinaryExpressionÍ	ÄÍ	ÑKªIdentifierÍ	ÄÍ	Æ¢wf£===R§LiteralÍ	ËÍ	Ñ¤sine¦'sine'¢||X°BinaryExpressionÍ	ÕÍ	áKªIdentifierÍ	ÕÍ	×¢wf£===R§LiteralÍ	ÜÍ	á£sin¥'sin'¢||X°BinaryExpressionÍ	åÍ	ôKªIdentifierÍ	åÍ	ç¢wf£===R§LiteralÍ	ìÍ	ô¦square¨'square'¢||X°BinaryExpressionÍ	øÍ
+KªIdentifierÍ	øÍ	ú¢wf£===R§LiteralÍ	ÿÍ
+¢sq¤'sq'¢||X°BinaryExpressionÍ
+Í
+)KªIdentifierÍ
+Í
+¢wf£===R§LiteralÍ
+Í
+)¨triangleª'triangle'¢||X°BinaryExpressionÍ
+-Í
+9KªIdentifierÍ
+-Í
+/¢wf£===R§LiteralÍ
+4Í
+9£tri¥'tri'¢||X°BinaryExpressionÍ
+=Í
+IKªIdentifierÍ
+=Í
+?¢wf£===R§LiteralÍ
+DÍ
+I£saw¥'saw'¢||X°BinaryExpressionÍ
+MÍ
+^KªIdentifierÍ
+MÍ
+O¢wf£===R§LiteralÍ
+TÍ
+^¨sawtoothª'sawtooth'¢||X°BinaryExpressionÍ
+sÍ
+KªIdentifierÍ
+sÍ
+u¢wf£===R§LiteralÍ
+zÍ
+¥pulse§'pulse'¢||X°BinaryExpressionÍ
+…Í
+KªIdentifierÍ
+…Í
+‡¢wf£===R§LiteralÍ
+ŒÍ
+¦æ­£å¼¦¨'æ­£å¼¦'¢||X°BinaryExpressionÍ
+”Í
+ŸKªIdentifierÍ
+”Í
+–¢wf£===R§LiteralÍ
+›Í
+Ÿ¦æ–¹æ³¢¨'æ–¹æ³¢'¢||X°BinaryExpressionÍ
+£Í
+®KªIdentifierÍ
+£Í
+¥¢wf£===R§LiteralÍ
+ªÍ
+®¦ä¸‰è§’¨'ä¸‰è§’'¢||X°BinaryExpressionÍ
+²Í
+½KªIdentifierÍ
+²Í
+´¢wf£===R§LiteralÍ
+¹Í
+½¦é”¯é½¿¨'é”¯é½¿'¢||X°BinaryExpressionÍ
+ÒÍ
+İKªIdentifierÍ
+ÒÍ
+Ô¢wf£===R§LiteralÍ
+ÙÍ
+İ¦è„‰å†²¨'è„‰å†²'¥constS³VariableDeclarationÍ
+ìÍ
+ú‘T²VariableDeclaratorÍ
+ğÍ
+ùKªIdentifierÍ
+ğÍ
+ô¤normKªIdentifierÍ
+÷Í
+ù¢wf£letW«IfStatementÍÍóX±LogicalExpressionÍÍ'X°BinaryExpressionÍÍKªIdentifierÍÍ¢wf£===R§LiteralÍÍ£sin¥'sin'¢||X°BinaryExpressionÍÍ'KªIdentifierÍÍ¢wf£===R§LiteralÍ#Í'¦æ­£å¼¦¨'æ­£å¼¦'L®BlockStatementÍ)ÍY‘Y³ExpressionStatementÍ<ÍJZ´AssignmentExpressionÍ<ÍI¡=KªIdentifierÍ<Í@¤normR§LiteralÍCÍI¤sine¦'sine'W«IfStatementÍlÍóX±LogicalExpressionÍpÍŠX°BinaryExpressionÍpÍ{KªIdentifierÍpÍr¢wf£===R§LiteralÍwÍ{¢sq¤'sq'¢||X°BinaryExpressionÍÍŠKªIdentifierÍÍ¢wf£===R§LiteralÍ†ÍŠ¦æ–¹æ³¢¨'æ–¹æ³¢'L®BlockStatementÍŒÍ¾‘Y³ExpressionStatementÍŸÍ¯Z´AssignmentExpressionÍŸÍ®¡=KªIdentifierÍŸÍ£¤normR§LiteralÍ¦Í®¦square¨'square'W«IfStatementÍÑÍóX±LogicalExpressionÍÕÍ X±LogicalExpressionÍÕÍğX°BinaryExpressionÍÕÍáKªIdentifierÍÕÍ×¢wf£===R§LiteralÍÜÍá£tri¥'tri'¢||X°BinaryExpressionÍåÍğKªIdentifierÍåÍç¢wf£===R§LiteralÍìÍğ¦ä¸‰è§’¨'ä¸‰è§’'¢||X°BinaryExpressionÍôÍ KªIdentifierÍôÍö¢wf£===R§LiteralÍûÍ ©ä¸‰è§’æ³¢«'ä¸‰è§’æ³¢'L®BlockStatementÍÍ6‘Y³ExpressionStatementÍÍ'Z´AssignmentExpressionÍÍ&¡=KªIdentifierÍÍ¤normR§LiteralÍÍ&¨triangleª'triangle'W«IfStatementÍIÍóX±LogicalExpressionÍMÍmX°BinaryExpressionÍMÍ^KªIdentifierÍMÍO¢wf£===R§LiteralÍTÍ^¨sawtoothª'sawtooth'¢||X°BinaryExpressionÍbÍmKªIdentifierÍbÍd¢wf£===R§LiteralÍiÍm¦é”¯é½¿¨'é”¯é½¿'L®BlockStatementÍoÍ‘Y³ExpressionStatementÍ‚ÍZ´AssignmentExpressionÍ‚Í¡=KªIdentifierÍ‚Í†¤normR§LiteralÍ‰Í£saw¥'saw'W«IfStatementÍ±ÍóX°BinaryExpressionÍµÍÀKªIdentifierÍµÍ·¢wf£===R§LiteralÍ¼ÍÀ¦è„‰å†²¨'è„‰å†²'L®BlockStatementÍÂÍó‘Y³ExpressionStatementÍÕÍäZ´AssignmentExpressionÍÕÍã¡=KªIdentifierÍÕÍÙ¤normR§LiteralÍÜÍã¥pulse§'pulse'ÀO¯ReturnStatementÍÍ£[°ObjectExpressionÍÍ¢•\¨PropertyÍÍ%ÂÂÂKªIdentifierÍÍ"§numericR§LiteralÍ$Í% ¡0¤init\¨PropertyÍ'Í/ÂÂÂKªIdentifierÍ'Í+¤unitR§LiteralÍ-Í/ ¢''¤init\¨PropertyÍ1ÍAÂÂÂKªIdentifierÍ1Í;ªnormalizedKªIdentifierÍ=ÍA¤norm¤init\¨PropertyÍCÍLÂÂÂKªIdentifierÍCÍH¥validKªIdentifierÍJÍL¢ok¤init\¨PropertyÍ_Í“ÂÂÂKªIdentifierÍ_Íf§errCodeWµConditionalExpressionÍhÍ“KªIdentifierÍhÍj¢okQ°MemberExpressionÍmÍwKªIdentifierÍmÍt§ErrCodeKªIdentifierÍuÍw¢OKÂÂQ°MemberExpressionÍzÍ“KªIdentifierÍzÍ§ErrCodeKªIdentifierÍ‚Í“±ERR_PARAM_INVALIDÂÂ¤initÀW«IfStatementÍ¸ÍAX±LogicalExpressionÍ¼ÍüX±LogicalExpressionÍ¼ÍãX°BinaryExpressionÍ¼ÍĞKªIdentifierÍ¼ÍÀ¤keyL£===R§LiteralÍÅÍĞ©dutycycle«'dutycycle'¢||X°BinaryExpressionÍÔÍãKªIdentifierÍÔÍØ¤keyL£===R§LiteralÍİÍã¤duty¦'duty'¢||X°BinaryExpressionÍçÍüKªIdentifierÍçÍë¤keyL£===R§LiteralÍğÍüªduty_cycle¬'duty_cycle'L®BlockStatementÍşÍA•S³VariableDeclarationÍÍ)‘T²VariableDeclaratorÍÍ(KªIdentifierÍÍ¡sP®CallExpressionÍÍ(Q°MemberExpressionÍÍKªIdentifierÍÍ¡vKªIdentifierÍÍ§replaceÂÂ’U§LiteralÍÍ#’¡%¡g¤/%/gV¡%¡gR§LiteralÍ%Í' ¢''Â£letS³VariableDeclarationÍ7ÍO‘T²VariableDeclaratorÍ=ÍNKªIdentifierÍ=Í>¡nP®CallExpressionÍAÍNKªIdentifierÍAÍKªparseFloat‘KªIdentifierÍLÍM¡sÂ¥constW«IfStatementÍ]ÍNX±LogicalExpressionÍaÍˆX±LogicalExpressionÍaÍ}]¯UnaryExpressionÍaÍt¡!ÃP®CallExpressionÍbÍtQ°MemberExpressionÍbÍqKªIdentifierÍbÍh¦NumberKªIdentifierÍiÍq¨isFiniteÂÂ‘KªIdentifierÍrÍs¡nÂ¢||X°BinaryExpressionÍxÍ}KªIdentifierÍxÍy¡n¡<R§LiteralÍ|Í} ¡0¢||X°BinaryExpressionÍÍˆKªIdentifierÍÍ‚¡n¡>R§LiteralÍ…ÍˆÌd£100L®BlockStatementÍŠÍN‘O¯ReturnStatementÍÍ?[°ObjectExpressionÍ¤Í>•\¨PropertyÍ»ÍÆÂÂÂKªIdentifierÍ»ÍÂ§numericR§LiteralÍÄÍÆ2¢50¤init\¨PropertyÍÈÍÑÂÂÂKªIdentifierÍÈÍÌ¤unitR§LiteralÍÎÍÑ¡%£'%'¤init\¨PropertyÍÓÍäÂÂÂKªIdentifierÍÓÍİªnormalizedR§LiteralÍßÍä£50%¥'50%'¤init\¨PropertyÍæÍòÂÂÂKªIdentifierÍæÍë¥validR§LiteralÍíÍòÂ¥false¤init\¨PropertyÍ	Í+ÂÂÂKªIdentifierÍ	Í§errCodeQ°MemberExpressionÍÍ+KªIdentifierÍÍ§ErrCodeKªIdentifierÍÍ+±ERR_PARAM_INVALIDÂÂ¤initÀS³VariableDeclarationÍ„Í®‘T²VariableDeclaratorÍŠÍ­KªIdentifierÍŠÍ£pctWµConditionalExpressionÍÍ­X±LogicalExpressionÍÍŸX°BinaryExpressionÍÍ•KªIdentifierÍÍ‘¡n¡>R§LiteralÍ”Í• ¡0¢&&X°BinaryExpressionÍ™ÍŸKªIdentifierÍ™Íš¡n¢<=R§LiteralÍÍŸ¡1X°BinaryExpressionÍ¢Í©KªIdentifierÍ¢Í£¡n¡*R§LiteralÍ¦Í©Ìd£100KªIdentifierÍ¬Í­¡n¥constO¯ReturnStatementÍ¼Í6[°ObjectExpressionÍÃÍ5•\¨PropertyÍÖÍâÂÂÂKªIdentifierÍÖÍİ§numericKªIdentifierÍßÍâ£pct¤init\¨PropertyÍäÍíÂÂÂKªIdentifierÍäÍè¤unitR§LiteralÍêÍí¡%£'%'¤init\¨PropertyÍïÍÂÂÂKªIdentifierÍïÍùªnormalized^¯TemplateLiteralÍûÍ‘KªIdentifierÍşÍ£pct’_¯TemplateElementÍüÍü`  Â_¯TemplateElementÍÍ`¡%¡%Ã¤init\¨PropertyÍÍÂÂÂKªIdentifierÍÍ¥validR§LiteralÍÍÃ¤true¤init\¨PropertyÍÍ&ÂÂÂKªIdentifierÍÍ§errCodeQ°MemberExpressionÍÍ&KªIdentifierÍÍ#§ErrCodeKªIdentifierÍ$Í&¢OKÂÂ¤initÀW«IfStatementÍKÍïX±LogicalExpressionÍOÍ®X±LogicalExpressionÍOÍ›X±LogicalExpressionÍOÍˆP®CallExpressionÍOÍbQ°MemberExpressionÍOÍ[KªIdentifierÍOÍR£keyKªIdentifierÍSÍ[¨includesÂÂ‘R§LiteralÍ\Ía£res¥'res'Â¢||X±LogicalExpressionÍfÍˆX°BinaryExpressionÍfÍuKªIdentifierÍfÍi£key£===R§LiteralÍnÍu¥value§'value'¢&&P®CallExpressionÍyÍˆQ°MemberExpressionÍyÍƒKªIdentifierÍyÍz¡vKªIdentifierÍ{Íƒ¨includesÂÂ‘R§LiteralÍ„Í‡¡k£'k'Â¢||P®CallExpressionÍŒÍ›Q°MemberExpressionÍŒÍ–KªIdentifierÍŒÍ¡vKªIdentifierÍÍ–¨includesÂÂ‘R§LiteralÍ—Íš¡R£'R'Â¢||P®CallExpressionÍŸÍ®Q°MemberExpressionÍŸÍ©KªIdentifierÍŸÍ ¡vKªIdentifierÍ¡Í©¨includesÂÂ‘R§LiteralÍªÍ­¢Î©¤'Î©'ÂL®BlockStatementÍ°Íï‘O¯ReturnStatementÍ¿ÍäP®CallExpressionÍÆÍãQ°MemberExpressionÍÆÍàKªIdentifierÍÆÍĞªUnitParserKªIdentifierÍÑÍà¯parseResistanceÂÂ‘KªIdentifierÍáÍâ¡vÂÀW«IfStatementÍùÍX±LogicalExpressionÍıÍ\X±LogicalExpressionÍıÍIX±LogicalExpressionÍıÍ6X±LogicalExpressionÍıÍ#P®CallExpressionÍıÍQ°MemberExpressionÍıÍ	KªIdentifierÍıÍ £keyKªIdentifierÍÍ	¨includesÂÂ‘R§LiteralÍ
+Í£cap¥'cap'Â¢||P®CallExpressionÍÍ#Q°MemberExpressionÍÍKªIdentifierÍÍ¡vKªIdentifierÍÍ¨includesÂÂ‘R§LiteralÍÍ"¡F£'F'Â¢||P®CallExpressionÍ'Í6Q°MemberExpressionÍ'Í1KªIdentifierÍ'Í(¡vKªIdentifierÍ)Í1¨includesÂÂ‘R§LiteralÍ2Í5¡p£'p'Â¢||P®CallExpressionÍ:ÍIQ°MemberExpressionÍ:ÍDKªIdentifierÍ:Í;¡vKªIdentifierÍ<ÍD¨includesÂÂ‘R§LiteralÍEÍH¡u£'u'Â¢||P®CallExpressionÍMÍ\Q°MemberExpressionÍMÍWKªIdentifierÍMÍN¡vKªIdentifierÍOÍW¨includesÂÂ‘R§LiteralÍXÍ[¡n£'n'ÂL®BlockStatementÍ^Í‘O¯ReturnStatementÍmÍ“P®CallExpressionÍtÍ’Q°MemberExpressionÍtÍKªIdentifierÍtÍ~ªUnitParserKªIdentifierÍÍ°parseCapacitanceÂÂ‘KªIdentifierÍÍ‘¡vÂÀW«IfStatementÍ¨Í@X±LogicalExpressionÍ¬Í X±LogicalExpressionÍ¬ÍíX±LogicalExpressionÍ¬ÍÙP®CallExpressionÍ¬ÍÀQ°MemberExpressionÍ¬Í¸KªIdentifierÍ¬Í¯£keyKªIdentifierÍ°Í¸¨includesÂÂ‘R§LiteralÍ¹Í¿¤freq¦'freq'Â¢||P®CallExpressionÍÄÍÙQ°MemberExpressionÍÄÍĞKªIdentifierÍÄÍÇ£keyKªIdentifierÍÈÍĞ¨includesÂÂ‘R§LiteralÍÑÍØ¥clock§'clock'Â¢||P®CallExpressionÍİÍíQ°MemberExpressionÍİÍçKªIdentifierÍİÍŞ¡vKªIdentifierÍßÍç¨includesÂÂ‘R§LiteralÍèÍì¢Hz¤'Hz'Â¢||P®CallExpressionÍñÍ Q°MemberExpressionÍñÍûKªIdentifierÍñÍò¡vKªIdentifierÍóÍû¨includesÂÂ‘R§LiteralÍüÍÿ¡M£'M'ÂL®BlockStatementÍÍ@‘O¯ReturnStatementÍÍ5P®CallExpressionÍÍ4Q°MemberExpressionÍÍ1KªIdentifierÍÍ"ªUnitParserKªIdentifierÍ#Í1®parseFrequencyÂÂ‘KªIdentifierÍ2Í3¡vÂÀW«IfStatementÍJÍØX±LogicalExpressionÍNÍœX±LogicalExpressionÍNÍ{P®CallExpressionÍNÍcQ°MemberExpressionÍNÍZKªIdentifierÍNÍQ£keyKªIdentifierÍRÍZ¨includesÂÂ‘R§LiteralÍ[Íb¥power§'power'Â¢||P®CallExpressionÍgÍ{Q°MemberExpressionÍgÍsKªIdentifierÍgÍj£keyKªIdentifierÍkÍs¨includesÂÂ‘R§LiteralÍtÍz¤watt¦'watt'Â¢||P®CallExpressionÍÍœQ°MemberExpressionÍÍ—P®CallExpressionÍÍQ°MemberExpressionÍÍŒKªIdentifierÍÍ€¡vKªIdentifierÍÍŒ«toUpperCaseÂÂÂKªIdentifierÍÍ—¨endsWithÂÂ‘R§LiteralÍ˜Í›¡W£'W'ÂL®BlockStatementÍÍØ‘O¯ReturnStatementÍ­ÍÍP®CallExpressionÍ´ÍÌQ°MemberExpressionÍ´ÍÉKªIdentifierÍ´Í¾ªUnitParserKªIdentifierÍ¿ÍÉªparsePowerÂÂ‘KªIdentifierÍÊÍË¡vÂÀO¯ReturnStatementÍâÍU[°ObjectExpressionÍéÍT•\¨PropertyÍëÍÂÂÂKªIdentifierÍëÍò§numericX±LogicalExpressionÍôÍP®CallExpressionÍôÍKªIdentifierÍôÍşªparseFloat‘KªIdentifierÍÿÍ ¡vÂ¢||R§LiteralÍÍ ¡0¤init\¨PropertyÍÍÂÂÂKªIdentifierÍÍ¤unitR§LiteralÍÍ ¢''¤init\¨PropertyÍÍÂÂÂKªIdentifierÍÍªnormalizedKªIdentifierÍÍ¡v¤init\¨PropertyÍ!Í=ÂÂÂKªIdentifierÍ!Í&¥valid]¯UnaryExpressionÍ(Í=¡!ÃP®CallExpressionÍ)Í=KªIdentifierÍ)Í.¥isNaN‘P®CallExpressionÍ/Í<KªIdentifierÍ/Í9ªparseFloat‘KªIdentifierÍ:Í;¡vÂÂ¤init\¨PropertyÍ?ÍRÂÂÂKªIdentifierÍ?ÍF§errCodeQ°MemberExpressionÍHÍRKªIdentifierÍHÍO§ErrCodeKªIdentifierÍPÍR¢OKÂÂ¤initM°MethodDefinitionÍbÍ ÃÂKªIdentifierÍiÍv­validateParam¦methodN²FunctionExpressionÍvÍ ÀÂÂÂ”KªIdentifierÍwÍz£keyKªIdentifierÍ|Í¥valueKªIdentifierÍƒÍ†£minKªIdentifierÍˆÍ‹£maxL®BlockStatementÍÍ –S³VariableDeclarationÍ˜ÍÍ‘T²VariableDeclaratorÍÍÌKªIdentifierÍÍ¤¦parsedP®CallExpressionÍ§ÍÌQ°MemberExpressionÍ§ÍÀKªIdentifierÍ§Í±ªUnitParserKªIdentifierÍ²ÍÀ®normalizeParamÂÂ’KªIdentifierÍÁÍÄ£keyKªIdentifierÍÆÍË¥valueÂ¥constW«IfStatementÍ×ÍK]¯UnaryExpressionÍÛÍè¡!ÃQ°MemberExpressionÍÜÍèKªIdentifierÍÜÍâ¦parsedKªIdentifierÍãÍè¥validÂÂL®BlockStatementÍêÍK’Y³ExpressionStatementÍùÍ$Z´AssignmentExpressionÍùÍ#¡=Q°MemberExpressionÍùÍKªIdentifierÍùÍÿ¦parsedKªIdentifierÍ Í§errCodeÂÂQ°MemberExpressionÍ
+Í#KªIdentifierÍ
+Í§ErrCodeKªIdentifierÍÍ#±ERR_PARAM_INVALIDÂÂO¯ReturnStatementÍ2Í@KªIdentifierÍ9Í?¦parsedÀW«IfStatementÍUÍX±LogicalExpressionÍYÍ›X°BinaryExpressionÍYÍkQ°MemberExpressionÍYÍgKªIdentifierÍYÍ_¦parsedKªIdentifierÍ`Íg§numericÂÂ¡<R§LiteralÍjÍk ¡0¢&&X±LogicalExpressionÍpÍšP®CallExpressionÍpÍƒQ°MemberExpressionÍpÍ|KªIdentifierÍpÍs£keyKªIdentifierÍtÍ|¨includesÂÂ‘R§LiteralÍ}Í‚£res¥'res'Â¢||P®CallExpressionÍ‡ÍšQ°MemberExpressionÍ‡Í“KªIdentifierÍ‡ÍŠ£keyKªIdentifierÍ‹Í“¨includesÂÂ‘R§LiteralÍ”Í™£cap¥'cap'ÂL®BlockStatementÍÍ’Y³ExpressionStatementÍ¬ÍÁZ´AssignmentExpressionÍ¬ÍÀ¡=Q°MemberExpressionÍ¬Í¸KªIdentifierÍ¬Í²¦parsedKªIdentifierÍ³Í¸¥validÂÂR§LiteralÍ»ÍÀÂ¥falseY³ExpressionStatementÍÏÍúZ´AssignmentExpressionÍÏÍù¡=Q°MemberExpressionÍÏÍİKªIdentifierÍÏÍÕ¦parsedKªIdentifierÍÖÍİ§errCodeÂÂQ°MemberExpressionÍàÍùKªIdentifierÍàÍç§ErrCodeKªIdentifierÍèÍù±ERR_PARAM_INVALIDÂÂÀW«IfStatementÍÍƒX±LogicalExpressionÍÍ<X°BinaryExpressionÍÍ$KªIdentifierÍÍ£min£!==KªIdentifierÍÍ$©undefined¢&&X°BinaryExpressionÍ(Í<Q°MemberExpressionÍ(Í6KªIdentifierÍ(Í.¦parsedKªIdentifierÍ/Í6§numericÂÂ¡<KªIdentifierÍ9Í<£minL®BlockStatementÍ>Íƒ‘Y³ExpressionStatementÍMÍxZ´AssignmentExpressionÍMÍw¡=Q°MemberExpressionÍMÍ[KªIdentifierÍMÍS¦parsedKªIdentifierÍTÍ[§errCodeÂÂQ°MemberExpressionÍ^ÍwKªIdentifierÍ^Íe§ErrCodeKªIdentifierÍfÍw±ERR_PARAM_INVALIDÂÂÀW«IfStatementÍÍX±LogicalExpressionÍ‘ÍºX°BinaryExpressionÍ‘Í¢KªIdentifierÍ‘Í”£max£!==KªIdentifierÍ™Í¢©undefined¢&&X°BinaryExpressionÍ¦ÍºQ°MemberExpressionÍ¦Í´KªIdentifierÍ¦Í¬¦parsedKªIdentifierÍ­Í´§numericÂÂ¡>KªIdentifierÍ·Íº£maxL®BlockStatementÍ¼Í‘Y³ExpressionStatementÍËÍöZ´AssignmentExpressionÍËÍõ¡=Q°MemberExpressionÍËÍÙKªIdentifierÍËÍÑ¦parsedKªIdentifierÍÒÍÙ§errCodeÂÂQ°MemberExpressionÍÜÍõKªIdentifierÍÜÍã§ErrCodeKªIdentifierÍäÍõ±ERR_PARAM_INVALIDÂÂÀO¯ReturnStatementÍÍKªIdentifierÍÍ¦parsedM°MethodDefinitionÍ&Í®ÃÂKªIdentifierÍ-Í:­convertLength¦methodN²FunctionExpressionÍ:Í®ÀÂÂÂ“KªIdentifierÍ;Í@¥valueKªIdentifierÍBÍF¤fromKªIdentifierÍHÍJ¢toL®BlockStatementÍLÍ®•S³VariableDeclarationÍWÍf‘T²VariableDeclaratorÍ[ÍeKªIdentifierÍ[Í]¢mmKªIdentifierÍ`Íe¥value£letW«IfStatementÍpÍX°BinaryExpressionÍtÍ‚KªIdentifierÍtÍx¤from£===R§LiteralÍ}Í‚£mil¥'mil'L®BlockStatementÍ„Í²‘Y³ExpressionStatementÍ“Í§Z´AssignmentExpressionÍ“Í¦¡=KªIdentifierÍ“Í•¢mmX°BinaryExpressionÍ˜Í¦KªIdentifierÍ˜Í¥value¡*R§LiteralÍ Í¦Ë?šu%F
+¦¦0.0254W«IfStatementÍÁÍX°BinaryExpressionÍÅÍÔKªIdentifierÍÅÍÉ¤from£===R§LiteralÍÎÍÔ¤inch¦'inch'L®BlockStatementÍÖÍ‘Y³ExpressionStatementÍåÍ÷Z´AssignmentExpressionÍåÍö¡=KªIdentifierÍåÍç¢mmX°BinaryExpressionÍêÍöKªIdentifierÍêÍï¥value¡*R§LiteralÍòÍöË@9ffffff¤25.4ÀW«IfStatementÍÍKX°BinaryExpressionÍÍKªIdentifierÍÍ¢to£===R§LiteralÍÍ£mil¥'mil'L®BlockStatementÍÍK‘O¯ReturnStatementÍ-Í@X°BinaryExpressionÍ4Í?KªIdentifierÍ4Í6¢mm¡/R§LiteralÍ9Í?Ë?šu%F
+¦¦0.0254ÀW«IfStatementÍUÍ“X°BinaryExpressionÍYÍfKªIdentifierÍYÍ[¢to£===R§LiteralÍ`Íf¤inch¦'inch'L®BlockStatementÍhÍ“‘O¯ReturnStatementÍwÍˆX°BinaryExpressionÍ~Í‡KªIdentifierÍ~Í€¢mm¡/R§LiteralÍƒÍ‡Ë@9ffffff¤25.4ÀO¯ReturnStatementÍÍ§KªIdentifierÍ¤Í¦¢mmM°MethodDefinitionÍ´Í§ÃÂKªIdentifierÍ»ÍÓ¸getResistanceMultipliers¦methodN²FunctionExpressionÍÓÍ§ÀÂÂÂL®BlockStatementÍÖÍ§˜S³VariableDeclarationÍáÍõ‘T²VariableDeclaratorÍçÍôKªIdentifierÍçÍè¡mÔra•¤type¥start£end¦callee©arguments­NewExpressionÍëÍôKªIdentifierÍïÍò£Map¥constY³ExpressionStatementÍÿÍP®CallExpressionÍÿÍQ°MemberExpressionÍÿÍKªIdentifierÍÿÍ ¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍÍ¡R£'R'R§LiteralÍ
+Í¡1ÂY³ExpressionStatementÍÍ%P®CallExpressionÍÍ$Q°MemberExpressionÍÍKªIdentifierÍÍ¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍÍ ¢Î©¤'Î©'R§LiteralÍ"Í#¡1ÂY³ExpressionStatementÍ/Í?P®CallExpressionÍ/Í>Q°MemberExpressionÍ/Í4KªIdentifierÍ/Í0¡mKªIdentifierÍ1Í4£setÂÂ’R§LiteralÍ5Í8¡K£'K'R§LiteralÍ:Í=Íè£1e3ÂY³ExpressionStatementÍIÍYP®CallExpressionÍIÍXQ°MemberExpressionÍIÍNKªIdentifierÍIÍJ¡mKªIdentifierÍKÍN£setÂÂ’R§LiteralÍOÍR¡k£'k'R§LiteralÍTÍWÍè£1e3ÂY³ExpressionStatementÍcÍsP®CallExpressionÍcÍrQ°MemberExpressionÍcÍhKªIdentifierÍcÍd¡mKªIdentifierÍeÍh£setÂÂ’R§LiteralÍiÍl¡M£'M'R§LiteralÍnÍqÎ B@£1e6ÂY³ExpressionStatementÍ}ÍP®CallExpressionÍ}ÍŒQ°MemberExpressionÍ}Í‚KªIdentifierÍ}Í~¡mKªIdentifierÍÍ‚£setÂÂ’R§LiteralÍƒÍ†¡m£'m'R§LiteralÍˆÍ‹Î B@£1e6ÂO¯ReturnStatementÍ—Í KªIdentifierÍÍŸ¡mM°MethodDefinitionÍ­ÍóÃÂKªIdentifierÍ´ÍÅ±getCapMultipliers¦methodN²FunctionExpressionÍÅÍóÀÂÂÂL®BlockStatementÍÈÍó›S³VariableDeclarationÍÓÍç‘T²VariableDeclaratorÍÙÍæKªIdentifierÍÙÍÚ¡ma­NewExpressionÍİÍæKªIdentifierÍáÍä£Map¥constY³ExpressionStatementÍñÍÿP®CallExpressionÍñÍşQ°MemberExpressionÍñÍöKªIdentifierÍñÍò¡mKªIdentifierÍóÍö£setÂÂ’R§LiteralÍ÷Íú¡F£'F'R§LiteralÍüÍı¡1ÂY³ExpressionStatementÍ	ÍP®CallExpressionÍ	ÍQ°MemberExpressionÍ	ÍKªIdentifierÍ	Í
+¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍÍ¡p£'p'R§LiteralÍÍË=q—™-ê¥1e-12ÂY³ExpressionStatementÍ%Í7P®CallExpressionÍ%Í6Q°MemberExpressionÍ%Í*KªIdentifierÍ%Í&¡mKªIdentifierÍ'Í*£setÂÂ’R§LiteralÍ+Í.¡P£'P'R§LiteralÍ0Í5Ë=q—™-ê¥1e-12ÂY³ExpressionStatementÍAÍRP®CallExpressionÍAÍQQ°MemberExpressionÍAÍFKªIdentifierÍAÍB¡mKªIdentifierÍCÍF£setÂÂ’R§LiteralÍGÍJ¡n£'n'R§LiteralÍLÍPË>.è&Ö•¤1e-9ÂY³ExpressionStatementÍ\ÍmP®CallExpressionÍ\ÍlQ°MemberExpressionÍ\ÍaKªIdentifierÍ\Í]¡mKªIdentifierÍ^Ía£setÂÂ’R§LiteralÍbÍe¡N£'N'R§LiteralÍgÍkË>.è&Ö•¤1e-9ÂY³ExpressionStatementÍwÍˆP®CallExpressionÍwÍ‡Q°MemberExpressionÍwÍ|KªIdentifierÍwÍx¡mKªIdentifierÍyÍ|£setÂÂ’R§LiteralÍ}Í€¡u£'u'R§LiteralÍ‚Í†Ë>°Æ÷ µí¤1e-6ÂY³ExpressionStatementÍ’Í£P®CallExpressionÍ’Í¢Q°MemberExpressionÍ’Í—KªIdentifierÍ’Í“¡mKªIdentifierÍ”Í—£setÂÂ’R§LiteralÍ˜Í›¡U£'U'R§LiteralÍÍ¡Ë>°Æ÷ µí¤1e-6ÂY³ExpressionStatementÍ­Í¾P®CallExpressionÍ­Í½Q°MemberExpressionÍ­Í²KªIdentifierÍ­Í®¡mKªIdentifierÍ¯Í²£setÂÂ’R§LiteralÍ³Í¶¢Âµ¤'Âµ'R§LiteralÍ¸Í¼Ë>°Æ÷ µí¤1e-6ÂY³ExpressionStatementÍÈÍÙP®CallExpressionÍÈÍØQ°MemberExpressionÍÈÍÍKªIdentifierÍÈÍÉ¡mKªIdentifierÍÊÍÍ£setÂÂ’R§LiteralÍÎÍÑ¡m£'m'R§LiteralÍÓÍ×Ë?PbMÒñ©ü¤1e-3ÂO¯ReturnStatementÍãÍìKªIdentifierÍêÍë¡mM°MethodDefinitionÍùÍ¶ÃÂKªIdentifierÍ Í±getIndMultipliers¦methodN²FunctionExpressionÍÍ¶ÀÂÂÂL®BlockStatementÍÍ¶–S³VariableDeclarationÍÍ3‘T²VariableDeclaratorÍ%Í2KªIdentifierÍ%Í&¡ma­NewExpressionÍ)Í2KªIdentifierÍ-Í0£Map¥constY³ExpressionStatementÍ=ÍKP®CallExpressionÍ=ÍJQ°MemberExpressionÍ=ÍBKªIdentifierÍ=Í>¡mKªIdentifierÍ?ÍB£setÂÂ’R§LiteralÍCÍF¡H£'H'R§LiteralÍHÍI¡1ÂY³ExpressionStatementÍUÍfP®CallExpressionÍUÍeQ°MemberExpressionÍUÍZKªIdentifierÍUÍV¡mKªIdentifierÍWÍZ£setÂÂ’R§LiteralÍ[Í^¡m£'m'R§LiteralÍ`ÍdË?PbMÒñ©ü¤1e-3ÂY³ExpressionStatementÍpÍP®CallExpressionÍpÍ€Q°MemberExpressionÍpÍuKªIdentifierÍpÍq¡mKªIdentifierÍrÍu£setÂÂ’R§LiteralÍvÍy¡u£'u'R§LiteralÍ{ÍË>°Æ÷ µí¤1e-6ÂY³ExpressionStatementÍ‹ÍœP®CallExpressionÍ‹Í›Q°MemberExpressionÍ‹ÍKªIdentifierÍ‹ÍŒ¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍ‘Í”¡n£'n'R§LiteralÍ–ÍšË>.è&Ö•¤1e-9ÂO¯ReturnStatementÍ¦Í¯KªIdentifierÍ­Í®¡mM°MethodDefinitionÍ¼ÍÅÃÂKªIdentifierÍÃÍÕ²getFreqMultipliers¦methodN²FunctionExpressionÍÕÍÅÀÂÂÂL®BlockStatementÍØÍÅ™S³VariableDeclarationÍãÍ÷‘T²VariableDeclaratorÍéÍöKªIdentifierÍéÍê¡ma­NewExpressionÍíÍöKªIdentifierÍñÍô£Map¥constY³ExpressionStatementÍÍP®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍÍ¢Hz¤'Hz'R§LiteralÍÍ¡1ÂY³ExpressionStatementÍÍ)P®CallExpressionÍÍ(Q°MemberExpressionÍÍKªIdentifierÍÍ¡mKªIdentifierÍÍ£setÂÂ’R§LiteralÍ Í$¢hz¤'hz'R§LiteralÍ&Í'¡1ÂY³ExpressionStatementÍ3ÍCP®CallExpressionÍ3ÍBQ°MemberExpressionÍ3Í8KªIdentifierÍ3Í4¡mKªIdentifierÍ5Í8£setÂÂ’R§LiteralÍ9Í<¡K£'K'R§LiteralÍ>ÍAÍè£1e3ÂY³ExpressionStatementÍMÍ]P®CallExpressionÍMÍ\Q°MemberExpressionÍMÍRKªIdentifierÍMÍN¡mKªIdentifierÍOÍR£setÂÂ’R§LiteralÍSÍV¡k£'k'R§LiteralÍXÍ[Íè£1e3ÂY³ExpressionStatementÍgÍwP®CallExpressionÍgÍvQ°MemberExpressionÍgÍlKªIdentifierÍgÍh¡mKªIdentifierÍiÍl£setÂÂ’R§LiteralÍmÍp¡M£'M'R§LiteralÍrÍuÎ B@£1e6ÂY³ExpressionStatementÍÍ‘P®CallExpressionÍÍQ°MemberExpressionÍÍ†KªIdentifierÍÍ‚¡mKªIdentifierÍƒÍ†£setÂÂ’R§LiteralÍ‡ÍŠ¡m£'m'R§LiteralÍŒÍÎ B@£1e6ÂY³ExpressionStatementÍ›Í«P®CallExpressionÍ›ÍªQ°MemberExpressionÍ›Í KªIdentifierÍ›Íœ¡mKªIdentifierÍÍ £setÂÂ’R§LiteralÍ¡Í¤¡G£'G'R§LiteralÍ¦Í©Î;šÊ £1e9ÂO¯ReturnStatementÍµÍ¾KªIdentifierÍ¼Í½¡mM°MethodDefinitionÍËÍ'*ÃÂKªIdentifierÍÒÍŞ¬parseGeneric¦methodN²FunctionExpressionÍŞÍ'*ÀÂÂÂ“KªIdentifierÍßÍä¥inputKªIdentifierÍæÍî¨baseUnitKªIdentifierÍğÍû«multipliersL®BlockStatementÍıÍ'*˜S³VariableDeclarationÍRÍ{‘T²VariableDeclaratorÍVÍzKªIdentifierÍVÍW¡sP®CallExpressionÍZÍzQ°MemberExpressionÍZÍnP®CallExpressionÍZÍfQ°MemberExpressionÍZÍdKªIdentifierÍZÍ_¥inputKªIdentifierÍ`Íd¤trimÂÂÂKªIdentifierÍgÍn§replaceÂÂ’U§LiteralÍoÍu’£\s+¡g¦/\s+/gV£\s+¡gR§LiteralÍwÍy ¢''Â£letW«IfStatementÍ…Í'X°BinaryExpressionÍ‰ÍœP®CallExpressionÍ‰Í—Q°MemberExpressionÍ‰Í’KªIdentifierÍ‰ÍŠ¡sKªIdentifierÍ‹Í’§indexOfÂÂ‘R§LiteralÍ“Í–¢Î©¤'Î©'Â¢>=R§LiteralÍ›Íœ ¡0L®BlockStatementÍÍ'’Y³ExpressionStatementÍ­ÍÅZ´AssignmentExpressionÍ­ÍÄ¡=KªIdentifierÍ­Í®¡sP®CallExpressionÍ±ÍÄQ°MemberExpressionÍ±ÍºKªIdentifierÍ±Í²¡sKªIdentifierÍ³Íº§replaceÂÂ’U§LiteralÍ»Í¿’¢Î©¡g¥/Î©/gV¢Î©¡gR§LiteralÍÁÍÃ ¢''ÂW«IfStatementÍÓÍP®CallExpressionÍ×ÍìQ°MemberExpressionÍ×ÍéU§LiteralÍ×Íä’«^\d+\.?\d*$ ­/^\d+\.?\d*$/V«^\d+\.?\d*$ KªIdentifierÍåÍé¤testÂÂ‘KªIdentifierÍêÍë¡sÂL®BlockStatementÍîÍ‘Y³ExpressionStatementÍÍZ´AssignmentExpressionÍÍ¡=KªIdentifierÍÍ¡s^¯TemplateLiteralÍÍ‘KªIdentifierÍÍ	¡s’_¯TemplateElementÍÍ`  Â_¯TemplateElementÍ
+Í`¡R¡RÃÀÀW«IfStatementÍ1ÍÇX°BinaryExpressionÍ5ÍCQ°MemberExpressionÍ5Í=KªIdentifierÍ5Í6¡sKªIdentifierÍ7Í=¦lengthÂÂ£===R§LiteralÍBÍC ¡0L®BlockStatementÍEÍÇ‘O¯ReturnStatementÍTÍ¼[°ObjectExpressionÍ[Í»•\¨PropertyÍ]ÍgÂÂÂKªIdentifierÍ]Íd§numericR§LiteralÍfÍg ¡0¤init\¨PropertyÍiÍwÂÂÂKªIdentifierÍiÍm¤unitKªIdentifierÍoÍw¨baseUnit¤init\¨PropertyÍyÍ‡ÂÂÂKªIdentifierÍyÍƒªnormalizedR§LiteralÍ…Í‡ ¢''¤init\¨PropertyÍ‰Í•ÂÂÂKªIdentifierÍ‰Í¥validR§LiteralÍÍ•Â¥false¤init\¨PropertyÍ—Í¹ÂÂÂKªIdentifierÍ—Í§errCodeQ°MemberExpressionÍ Í¹KªIdentifierÍ Í§§ErrCodeKªIdentifierÍ¨Í¹±ERR_PARAM_INVALIDÂÂ¤initÀS³VariableDeclarationÍÑÍ!‘T²VariableDeclaratorÍ×Í KªIdentifierÍ×Íß¨sciMatchP®CallExpressionÍâÍ Q°MemberExpressionÍâÍéKªIdentifierÍâÍã¡sKªIdentifierÍäÍé¥matchÂÂ‘U§LiteralÍêÍ’Ù4^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$ Ù6/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/VÙ4^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$ Â¥constW«IfStatementÍ+Í$&KªIdentifierÍ/Í7¨sciMatchL®BlockStatementÍ9Í$&˜S³VariableDeclarationÍHÍl‘T²VariableDeclaratorÍNÍkKªIdentifierÍNÍQ£numP®CallExpressionÍTÍkKªIdentifierÍTÍ^ªparseFloat‘Q°MemberExpressionÍ_ÍjKªIdentifierÍ_Íg¨sciMatchR§LiteralÍhÍi¡1ÃÂÂ¥constS³VariableDeclarationÍzÍ™‘T²VariableDeclaratorÍ~Í˜KªIdentifierÍ~Í„¦suffixX±LogicalExpressionÍ‡Í˜Q°MemberExpressionÍ‡Í’KªIdentifierÍ‡Í¨sciMatchR§LiteralÍÍ‘¡2ÃÂ¢??R§LiteralÍ–Í˜ ¢''£letW«IfStatementÍÖÍ FX±LogicalExpressionÍÚÍ-X°BinaryExpressionÍÚÍëQ°MemberExpressionÍÚÍçKªIdentifierÍÚÍà¦suffixKªIdentifierÍáÍç¦lengthÂÂ¡>R§LiteralÍêÍë¡1¢&&X±LogicalExpressionÍğÍ,P®CallExpressionÍğÍQ°MemberExpressionÍğÍÿKªIdentifierÍğÍö¦suffixKªIdentifierÍ÷Íÿ¨endsWithÂÂ‘R§LiteralÍ Í¡R£'R'Â¢||P®CallExpressionÍÍ,Q°MemberExpressionÍÍ%P®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¦suffixKªIdentifierÍÍ«toUpperCaseÂÂÂKªIdentifierÍÍ%¨endsWithÂÂ‘R§LiteralÍ&Í+£OHM¥'OHM'ÂL®BlockStatementÍ/Í F‘W«IfStatementÍBÍ 7P®CallExpressionÍFÍjQ°MemberExpressionÍFÍcP®CallExpressionÍFÍZQ°MemberExpressionÍFÍXKªIdentifierÍFÍL¦suffixKªIdentifierÍMÍX«toUpperCaseÂÂÂKªIdentifierÍ[Íc¨endsWithÂÂ‘R§LiteralÍdÍi£OHM¥'OHM'ÂL®BlockStatementÍlÍÆ‘Y³ExpressionStatementÍƒÍ³Z´AssignmentExpressionÍƒÍ²¡=KªIdentifierÍƒÍ‰¦suffixP®CallExpressionÍŒÍ²Q°MemberExpressionÍŒÍœKªIdentifierÍŒÍ’¦suffixKªIdentifierÍ“Íœ©substringÂÂ’R§LiteralÍÍ ¡0X°BinaryExpressionÍ Í±Q°MemberExpressionÍ Í­KªIdentifierÍ Í¦¦suffixKªIdentifierÍ§Í­¦lengthÂÂ¡-R§LiteralÍ°Í±¡3ÂL®BlockStatementÍİÍ 7‘Y³ExpressionStatementÍôÍ $Z´AssignmentExpressionÍôÍ #¡=KªIdentifierÍôÍú¦suffixP®CallExpressionÍıÍ #Q°MemberExpressionÍıÍ KªIdentifierÍıÍ ¦suffixKªIdentifierÍ Í ©substringÂÂ’R§LiteralÍ Í  ¡0X°BinaryExpressionÍ Í "Q°MemberExpressionÍ Í KªIdentifierÍ Í ¦suffixKªIdentifierÍ Í ¦lengthÂÂ¡-R§LiteralÍ !Í "¡1ÂÀS³VariableDeclarationÍ TÍ a‘T²VariableDeclaratorÍ XÍ `KªIdentifierÍ XÍ \¤multR§LiteralÍ _Í `¡1£letW«IfStatementÍ oÍ"ÃX°BinaryExpressionÍ sÍ „Q°MemberExpressionÍ sÍ €KªIdentifierÍ sÍ y¦suffixKªIdentifierÍ zÍ €¦lengthÂÂ¡>R§LiteralÍ ƒÍ „ ¡0L®BlockStatementÍ †Í"Ã“S³VariableDeclarationÍ ™Í Ë‘T²VariableDeclaratorÍ ŸÍ ÊKªIdentifierÍ ŸÍ §¨lastCharP®CallExpressionÍ ªÍ ÊQ°MemberExpressionÍ ªÍ ·KªIdentifierÍ ªÍ °¦suffixKªIdentifierÍ ±Í ·¦charAtÂÂ‘X°BinaryExpressionÍ ¸Í ÉQ°MemberExpressionÍ ¸Í ÅKªIdentifierÍ ¸Í ¾¦suffixKªIdentifierÍ ¿Í Å¦lengthÂÂ¡-R§LiteralÍ ÈÍ É¡1Â¥constS³VariableDeclarationÍ İÍ!‘T²VariableDeclaratorÍ ãÍ!KªIdentifierÍ ãÍ é¦prefixP®CallExpressionÍ ìÍ!Q°MemberExpressionÍ ìÍ üKªIdentifierÍ ìÍ ò¦suffixKªIdentifierÍ óÍ ü©substringÂÂ’R§LiteralÍ ıÍ ş ¡0X°BinaryExpressionÍ! Í!Q°MemberExpressionÍ! Í!KªIdentifierÍ! Í!¦suffixKªIdentifierÍ!Í!¦lengthÂÂ¡-R§LiteralÍ!Í!¡1Â¥constW«IfStatementÍ!%Í"´P®CallExpressionÍ!)Í!@Q°MemberExpressionÍ!)Í!8KªIdentifierÍ!)Í!4«multipliersKªIdentifierÍ!5Í!8£hasÂÂ‘KªIdentifierÍ!9Í!?¦suffixÂL®BlockStatementÍ!BÍ!‹‘Y³ExpressionStatementÍ!YÍ!xZ´AssignmentExpressionÍ!YÍ!w¡=KªIdentifierÍ!YÍ!]¤multP®CallExpressionÍ!`Í!wQ°MemberExpressionÍ!`Í!oKªIdentifierÍ!`Í!k«multipliersKªIdentifierÍ!lÍ!o£getÂÂ‘KªIdentifierÍ!pÍ!v¦suffixÂW«IfStatementÍ!¢Í"´P®CallExpressionÍ!¦Í!¿Q°MemberExpressionÍ!¦Í!µKªIdentifierÍ!¦Í!±«multipliersKªIdentifierÍ!²Í!µ£hasÂÂ‘KªIdentifierÍ!¶Í!¾¨lastCharÂL®BlockStatementÍ!ÁÍ"‘Y³ExpressionStatementÍ!ØÍ!ùZ´AssignmentExpressionÍ!ØÍ!ø¡=KªIdentifierÍ!ØÍ!Ü¤multP®CallExpressionÍ!ßÍ!øQ°MemberExpressionÍ!ßÍ!îKªIdentifierÍ!ßÍ!ê«multipliersKªIdentifierÍ!ëÍ!î£getÂÂ‘KªIdentifierÍ!ïÍ!÷¨lastCharÂW«IfStatementÍ"#Í"´X±LogicalExpressionÍ"'Í"^X°BinaryExpressionÍ"'Í"8Q°MemberExpressionÍ"'Í"4KªIdentifierÍ"'Í"-¦prefixKªIdentifierÍ".Í"4¦lengthÂÂ¡>R§LiteralÍ"7Í"8 ¡0¢&&P®CallExpressionÍ"<Í"^Q°MemberExpressionÍ"<Í"KKªIdentifierÍ"<Í"G«multipliersKªIdentifierÍ"HÍ"K£hasÂÂ‘X°BinaryExpressionÍ"LÍ"]KªIdentifierÍ"LÍ"R¦prefix¡+KªIdentifierÍ"UÍ"]¨lastCharÂL®BlockStatementÍ"`Í"´‘Y³ExpressionStatementÍ"wÍ"¡Z´AssignmentExpressionÍ"wÍ" ¡=KªIdentifierÍ"wÍ"{¤multP®CallExpressionÍ"~Í" Q°MemberExpressionÍ"~Í"KªIdentifierÍ"~Í"‰«multipliersKªIdentifierÍ"ŠÍ"£getÂÂ‘X°BinaryExpressionÍ"Í"ŸKªIdentifierÍ"Í"”¦prefix¡+KªIdentifierÍ"—Í"Ÿ¨lastCharÂÀÀS³VariableDeclarationÍ"ÑÍ"ì‘T²VariableDeclaratorÍ"×Í"ëKªIdentifierÍ"×Í"Ş§numericX°BinaryExpressionÍ"áÍ"ëKªIdentifierÍ"áÍ"ä£num¡*KªIdentifierÍ"çÍ"ë¤mult¥constW«IfStatementÍ"úÍ#šX°BinaryExpressionÍ"şÍ#	KªIdentifierÍ"şÍ#§numeric¡<R§LiteralÍ#Í#	 ¡0L®BlockStatementÍ#Í#š‘O¯ReturnStatementÍ#Í#‹[°ObjectExpressionÍ#%Í#Š•\¨PropertyÍ#'Í#7ÂÂÂKªIdentifierÍ#'Í#.§numericKªIdentifierÍ#0Í#7§numeric¤init\¨PropertyÍ#9Í#GÂÂÂKªIdentifierÍ#9Í#=¤unitKªIdentifierÍ#?Í#G¨baseUnit¤init\¨PropertyÍ#IÍ#VÂÂÂKªIdentifierÍ#IÍ#SªnormalizedKªIdentifierÍ#UÍ#V¡s¤init\¨PropertyÍ#XÍ#dÂÂÂKªIdentifierÍ#XÍ#]¥validR§LiteralÍ#_Í#dÂ¥false¤init\¨PropertyÍ#fÍ#ˆÂÂÂKªIdentifierÍ#fÍ#m§errCodeQ°MemberExpressionÍ#oÍ#ˆKªIdentifierÍ#oÍ#v§ErrCodeKªIdentifierÍ#wÍ#ˆ±ERR_PARAM_INVALIDÂÂ¤initÀO¯ReturnStatementÍ#¨Í$[°ObjectExpressionÍ#¯Í$•\¨PropertyÍ#±Í#ÁÂÂÂKªIdentifierÍ#±Í#¸§numericKªIdentifierÍ#ºÍ#Á§numeric¤init\¨PropertyÍ#ÃÍ#ÑÂÂÂKªIdentifierÍ#ÃÍ#Ç¤unitKªIdentifierÍ#ÉÍ#Ñ¨baseUnit¤init\¨PropertyÍ#ÓÍ#öÂÂÂKªIdentifierÍ#ÓÍ#İªnormalized^¯TemplateLiteralÍ#ßÍ#ö’KªIdentifierÍ#âÍ#é§numericKªIdentifierÍ#ìÍ#ô¨baseUnit“_¯TemplateElementÍ#àÍ#à`  Â_¯TemplateElementÍ#êÍ#ê`  Â_¯TemplateElementÍ#õÍ#õ`  Ã¤init\¨PropertyÍ#øÍ$ÂÂÂKªIdentifierÍ#øÍ#ı¥validR§LiteralÍ#ÿÍ$Ã¤true¤init\¨PropertyÍ$Í$ÂÂÂKªIdentifierÍ$Í$§errCodeQ°MemberExpressionÍ$Í$KªIdentifierÍ$Í$§ErrCodeKªIdentifierÍ$Í$¢OKÂÂ¤initÀS³VariableDeclarationÍ$0Í$t‘T²VariableDeclaratorÍ$6Í$sKªIdentifierÍ$6Í$>¨numMatchP®CallExpressionÍ$AÍ$sQ°MemberExpressionÍ$AÍ$HKªIdentifierÍ$AÍ$B¡sKªIdentifierÍ$CÍ$H¥matchÂÂ‘U§LiteralÍ$IÍ$r’Ù(^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$ Ù*/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/VÙ(^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$ Â¥constW«IfStatementÍ$~Í&²KªIdentifierÍ$‚Í$Š¨numMatchL®BlockStatementÍ$ŒÍ&²–S³VariableDeclarationÍ$›Í$¿‘T²VariableDeclaratorÍ$¡Í$¾KªIdentifierÍ$¡Í$¤£numP®CallExpressionÍ$§Í$¾KªIdentifierÍ$§Í$±ªparseFloat‘Q°MemberExpressionÍ$²Í$½KªIdentifierÍ$²Í$º¨numMatchR§LiteralÍ$»Í$¼¡1ÃÂÂ¥constS³VariableDeclarationÍ$ÍÍ$î‘T²VariableDeclaratorÍ$ÓÍ$íKªIdentifierÍ$ÓÍ$Ù¦suffixX±LogicalExpressionÍ$ÜÍ$íQ°MemberExpressionÍ$ÜÍ$çKªIdentifierÍ$ÜÍ$ä¨numMatchR§LiteralÍ$åÍ$æ¡2ÃÂ¢||R§LiteralÍ$ëÍ$í ¢''¥constS³VariableDeclarationÍ$üÍ%	‘T²VariableDeclaratorÍ% Í%KªIdentifierÍ% Í%¤multR§LiteralÍ%Í%¡1£letW«IfStatementÍ%Í%ŠX±LogicalExpressionÍ%Í%GX°BinaryExpressionÍ%Í%,Q°MemberExpressionÍ%Í%(KªIdentifierÍ%Í%!¦suffixKªIdentifierÍ%"Í%(¦lengthÂÂ¡>R§LiteralÍ%+Í%, ¡0¢&&P®CallExpressionÍ%0Í%GQ°MemberExpressionÍ%0Í%?KªIdentifierÍ%0Í%;«multipliersKªIdentifierÍ%<Í%?£hasÂÂ‘KªIdentifierÍ%@Í%F¦suffixÂL®BlockStatementÍ%IÍ%Š‘Y³ExpressionStatementÍ%\Í%{Z´AssignmentExpressionÍ%\Í%z¡=KªIdentifierÍ%\Í%`¤multP®CallExpressionÍ%cÍ%zQ°MemberExpressionÍ%cÍ%rKªIdentifierÍ%cÍ%n«multipliersKªIdentifierÍ%oÍ%r£getÂÂ‘KªIdentifierÍ%sÍ%y¦suffixÂÀS³VariableDeclarationÍ%˜Í%³‘T²VariableDeclaratorÍ%Í%²KªIdentifierÍ%Í%¥§numericX°BinaryExpressionÍ%¨Í%²KªIdentifierÍ%¨Í%«£num¡*KªIdentifierÍ%®Í%²¤mult¥constO¯ReturnStatementÍ%ÁÍ&§[°ObjectExpressionÍ%ÈÍ&¦•\¨PropertyÍ%ÛÍ%ëÂÂÂKªIdentifierÍ%ÛÍ%â§numericKªIdentifierÍ%äÍ%ë§numeric¤init\¨PropertyÍ%íÍ%ûÂÂÂKªIdentifierÍ%íÍ%ñ¤unitKªIdentifierÍ%óÍ%û¨baseUnit¤init\¨PropertyÍ&Í&1ÂÂÂKªIdentifierÍ&Í&ªnormalized^¯TemplateLiteralÍ&Í&1’KªIdentifierÍ&Í&$§numericKªIdentifierÍ&'Í&/¨baseUnit“_¯TemplateElementÍ&Í&`  Â_¯TemplateElementÍ&%Í&%`  Â_¯TemplateElementÍ&0Í&0`  Ã¤init\¨PropertyÍ&DÍ&WÂÂÂKªIdentifierÍ&DÍ&I¥validX°BinaryExpressionÍ&KÍ&WKªIdentifierÍ&KÍ&R§numeric¢>=R§LiteralÍ&VÍ&W ¡0¤init\¨PropertyÍ&YÍ&—ÂÂÂKªIdentifierÍ&YÍ&`§errCodeWµConditionalExpressionÍ&bÍ&—X°BinaryExpressionÍ&bÍ&nKªIdentifierÍ&bÍ&i§numeric¢>=R§LiteralÍ&mÍ&n ¡0Q°MemberExpressionÍ&qÍ&{KªIdentifierÍ&qÍ&x§ErrCodeKªIdentifierÍ&yÍ&{¢OKÂÂQ°MemberExpressionÍ&~Í&—KªIdentifierÍ&~Í&…§ErrCodeKªIdentifierÍ&†Í&—±ERR_PARAM_INVALIDÂÂ¤initÀO¯ReturnStatementÍ&¼Í'#[°ObjectExpressionÍ&ÃÍ'"•\¨PropertyÍ&ÅÍ&ÏÂÂÂKªIdentifierÍ&ÅÍ&Ì§numericR§LiteralÍ&ÎÍ&Ï ¡0¤init\¨PropertyÍ&ÑÍ&ßÂÂÂKªIdentifierÍ&ÑÍ&Õ¤unitKªIdentifierÍ&×Í&ß¨baseUnit¤init\¨PropertyÍ&áÍ&îÂÂÂKªIdentifierÍ&áÍ&ëªnormalizedKªIdentifierÍ&íÍ&î¡s¤init\¨PropertyÍ&ğÍ&üÂÂÂKªIdentifierÍ&ğÍ&õ¥validR§LiteralÍ&÷Í&üÂ¥false¤init\¨PropertyÍ&şÍ' ÂÂÂKªIdentifierÍ&şÍ'§errCodeQ°MemberExpressionÍ'Í' KªIdentifierÍ'Í'§ErrCodeKªIdentifierÍ'Í' ±ERR_PARAM_INVALIDÂÂ¤initÀ‘Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclarationÌOÌz‘Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifierÌXÌ_KªIdentifierÌXÌ_§ErrCodeKªIdentifierÌXÌ_§ErrCodeR§LiteralÌgÌy°../types/ErrCode²'../types/ErrCode'

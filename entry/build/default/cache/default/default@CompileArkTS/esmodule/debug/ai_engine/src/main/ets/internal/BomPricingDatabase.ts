@@ -40,7 +40,10 @@ const BASE_PRICES: Map<string, number> = new Map([
 ]);
 export class BomPricingDatabase {
     static getUnitPrice(libDevId: string, qty: number = 1): number {
-        const base = BASE_PRICES.get(libDevId) ?? BASE_PRICES.get(libDevId.toUpperCase()) ?? 0.05;
+        const base = BASE_PRICES.get(libDevId) ?? BASE_PRICES.get(libDevId.toUpperCase());
+        if (base === undefined) {
+            return 0;
+        }
         if (qty >= 1000)
             return base * 0.7;
         if (qty >= 100)
@@ -61,6 +64,11 @@ export class BomPricingDatabase {
             const replacement = BomPricingDatabase.getDomesticReplacement(id);
             optimized += BomPricingDatabase.getUnitPrice(replacement ?? id);
         }
-        return { original: original, optimized: optimized, savings: original - optimized };
+        const savings = original - optimized;
+        return {
+            original: original,
+            optimized: optimized,
+            savings: savings > 0 ? savings : 0
+        };
     }
 }

@@ -39,21 +39,34 @@ export class AiApiVaultStore {
     getVaultPath(): string {
         return this.vaultPath;
     }
-    /** 解密读取；失败或空返回 [] */
+    /** 解密读取；失败或空返回 []（corrupt 会尝试 .bak） */
     loadConfigs(): AiApiConfig[] {
         if (this.vaultPath.length === 0) {
             return [];
         }
+        const primary = this.loadConfigsFromPath(this.vaultPath);
+        if (primary !== null) {
+            return primary;
+        }
+        const bakPath = `${this.vaultPath}.bak`;
+        const bak = this.loadConfigsFromPath(bakPath);
+        if (bak !== null) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] vault primary corrupt — restored from .bak count=${bak.length}`);
+            return bak;
+        }
+        Logger.info(INSTR_TRACE_TAG, '[AI_API] vault empty (no file or unreadable)');
+        return [];
+    }
+    private loadConfigsFromPath(path: string): AiApiConfig[] | null {
         try {
-            fs.accessSync(this.vaultPath);
+            fs.accessSync(path);
         }
         catch (_e) {
-            Logger.info(INSTR_TRACE_TAG, '[AI_API] vault empty (no file)');
-            return [];
+            return null;
         }
         try {
-            const file = fs.openSync(this.vaultPath, fs.OpenMode.READ_ONLY);
-            const stat = fs.statSync(this.vaultPath);
+            const file = fs.openSync(path, fs.OpenMode.READ_ONLY);
+            const stat = fs.statSync(path);
             const buf = new ArrayBuffer(stat.size);
             fs.readSync(file.fd, buf);
             fs.closeSync(file);
@@ -64,24 +77,24 @@ export class AiApiVaultStore {
             }
             const env = JSON.parse(text) as VaultFileEnvelope;
             if (!env || typeof env.cipher !== 'string' || env.cipher.length === 0) {
-                Logger.warn(INSTR_TRACE_TAG, '[AI_API] vault invalid envelope');
-                return [];
+                Logger.warn(INSTR_TRACE_TAG, `[AI_API] vault invalid envelope path=${path}`);
+                return null;
             }
             const plain = CryptoUtil.decrypt(env.cipher);
             if (plain.length === 0) {
-                Logger.warn(INSTR_TRACE_TAG, '[AI_API] vault decrypt empty');
-                return [];
+                Logger.warn(INSTR_TRACE_TAG, `[AI_API] vault decrypt empty path=${path}`);
+                return null;
             }
             const configs = JSON.parse(plain) as AiApiConfig[];
             if (!Array.isArray(configs)) {
-                return [];
+                return null;
             }
-            Logger.info(INSTR_TRACE_TAG, `[AI_API] vault load OK count=${configs.length} path=${this.vaultPath}`);
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] vault load OK count=${configs.length} path=${path}`);
             return configs;
         }
         catch (e) {
-            Logger.error(INSTR_TRACE_TAG, `[AI_API] vault load FAILED: ${e}`);
-            return [];
+            Logger.error(INSTR_TRACE_TAG, `[AI_API] vault load FAILED path=${path}: ${e}`);
+            return null;
         }
     }
     /**
@@ -129,9 +142,45 @@ export class AiApiVaultStore {
                 updatedAt: new Date().toISOString()
             };
             const text = JSON.stringify(env);
-            const file = fs.openSync(this.vaultPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-            fs.writeSync(file.fd, text);
-            fs.closeSync(file);
+            const tmpPath = `${this.vaultPath}.tmp`;
+            const bakPath = `${this.vaultPath}.bak`;
+            // 原子写：先写 tmp，再备份旧文件，最后 rename 覆盖
+            const tmpFile = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+            fs.writeSync(tmpFile.fd, text);
+            fs.closeSync(tmpFile);
+            try {
+                fs.accessSync(this.vaultPath);
+                try {
+                    fs.unlinkSync(bakPath);
+                }
+                catch (_noBak) {
+                    /* ok */
+                }
+                try {
+                    fs.renameSync(this.vaultPath, bakPath);
+                }
+                catch (_renameBak) {
+                    /* 部分平台无 rename：继续直接覆盖 */
+                }
+            }
+            catch (_noOld) {
+                /* first save */
+            }
+            try {
+                fs.renameSync(tmpPath, this.vaultPath);
+            }
+            catch (_renameFinal) {
+                // rename 失败则直接写目标（仍优于半截 truncate）
+                const file = fs.openSync(this.vaultPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+                fs.writeSync(file.fd, text);
+                fs.closeSync(file);
+                try {
+                    fs.unlinkSync(tmpPath);
+                }
+                catch (_u) {
+                    /* ok */
+                }
+            }
             Logger.info(INSTR_TRACE_TAG, `[AI_API] vault save OK count=${configs.length} path=${this.vaultPath}`);
             return true;
         }

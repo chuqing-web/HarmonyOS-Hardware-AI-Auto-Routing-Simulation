@@ -10,7 +10,12 @@ export class ExportPostProcessor {
         const merged: Map<string, BomMergeEntry> = new Map();
         for (let i = 0; i < topo.deviceList.length; i++) {
             const dev = topo.deviceList[i];
-            const key = `${dev.libDevId}|${JSON.stringify(Array.from(dev.params.entries()))}`;
+            const keyEntries: string[] = [];
+            dev.params.forEach((val: string, k: string) => {
+                keyEntries.push(`${k}=${val}`);
+            });
+            keyEntries.sort();
+            const key = `${dev.libDevId}|${keyEntries.join(';')}`;
             if (!merged.has(key)) {
                 merged.set(key, { refs: [], params: copyStringMap(dev.params) });
             }

@@ -21,8 +21,11 @@ export interface ComponentDefinition {
 }
 
 export interface IComponentLibrary {
-  /** 按分类获取器件列表 */
+  /** 按分类获取器件列表（分页） */
   listByCategory(category: ComponentCategory, page?: number, pageSize?: number): PaginatedResult<ComponentDefinition>;
+
+  /** 按分类获取全部器件（不分页，供库面板完整展示） */
+  listAllByCategory(category: ComponentCategory): ComponentDefinition[];
 
   /** 搜索器件 */
   search(keyword: string, page?: number, pageSize?: number): PaginatedResult<ComponentDefinition>;

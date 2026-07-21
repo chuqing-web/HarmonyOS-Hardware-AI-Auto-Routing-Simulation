@@ -13,6 +13,10 @@ export class AiContextSanitizer {
     }
     /** 拓扑 JSON 导出到非布局上下文时，可抹坐标（布局 chat 勿用） */
     static sanitizeTopologyJson(json: string): string {
+        // 含 positions 的布局回复禁止抹坐标，否则摆放约束失效
+        if (json.indexOf('"positions"') >= 0 || json.indexOf('"x"') < 0) {
+            return AiContextSanitizer.sanitizePrompt(json);
+        }
         return AiContextSanitizer.sanitizePrompt(json)
             .replace(/"x"\s*:\s*[\d.]+/g, '"x":0')
             .replace(/"y"\s*:\s*[\d.]+/g, '"y":0');

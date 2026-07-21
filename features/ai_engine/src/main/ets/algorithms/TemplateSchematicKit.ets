@@ -93,8 +93,15 @@ export class TemplateSchematicKit {
   }
 
   static netId(doc: SchematicDocument, name: string): string {
-    const net = doc.nets.find(n => n.name === name);
-    return net !== undefined ? net.id : name;
+    const safe = TemplateSchematicKit.sanitizeNetName(name, NetType.SIGNAL);
+    let net = doc.nets.find(n => n.name === safe || n.name === name);
+    if (net === undefined) {
+      // 再按电源/地规则尝试
+      const asPower = TemplateSchematicKit.sanitizeNetName(name, NetType.POWER);
+      const asGnd = TemplateSchematicKit.sanitizeNetName(name, NetType.GROUND);
+      net = doc.nets.find(n => n.name === asPower || n.name === asGnd);
+    }
+    return net !== undefined ? net.id : '';
   }
 
   static addWire(doc: SchematicDocument, netId: string, ...pts: Point2D[]): void {
@@ -117,12 +124,12 @@ export class TemplateSchematicKit {
     return [a, { x: b.x, y: a.y }, b];
   }
 
-  /** VCC/GND 符号提到 hub，减少负载脚作星心时的横穿 */
+  /** VCC/GND/VEE 符号提到 hub，减少负载脚作星心时的横穿 */
   private static promoteRailHub(pins: PinSpec[]): PinSpec[] {
     let railIdx = -1;
     for (let i = 0; i < pins.length; i++) {
       const lib = pins[i].comp.libraryId;
-      if (lib === 'VCC' || lib === 'GND') {
+      if (lib === 'VCC' || lib === 'GND' || lib === 'VEE') {
         railIdx = i;
         break;
       }
@@ -164,15 +171,12 @@ export class TemplateSchematicKit {
 
   /** 校验引脚是否存在于器件引脚表中 */
   static validatePinExists(libDevId: string, pinId: string): boolean {
-    const local = TemplateSchematicKit.pinOffset(libDevId, pinId, pinId);
-    // pinOffset 对未知引脚返回 {x:0, y:0}, 但有效引脚也可能在原点
-    // 使用 commonPinIds 做精确校验
     const knownPins = TemplateSchematicKit.commonPinIds(libDevId);
     if (knownPins.length > 0) {
       return knownPins.includes(pinId);
     }
-    // 如果 commonPinIds 为空 (未注册器件), 信任调用方
-    return true;
+    // 未注册器件：拒绝默认真脚，避免假连通
+    return false;
   }
 
   /** 统计文档中每个器件的已连接引脚数，返回 [compId, connectedCount][] */
@@ -208,7 +212,8 @@ export class TemplateSchematicKit {
   /** 本次脚之间 + 相对同名网最近已有脚 的跨距 */
   private static joinSpan(doc: SchematicDocument, netName: string, pins: PinSpec[]): number {
     let span = TemplateSchematicKit.pinSpan(pins);
-    const existing = doc.nets.find(n => n.name === netName);
+    const safe = TemplateSchematicKit.sanitizeNetName(netName, NetType.SIGNAL);
+    const existing = doc.nets.find(n => n.name === safe || n.name === netName);
     if (existing === undefined || existing.pinIds.length === 0) {
       return span;
     }
@@ -257,7 +262,9 @@ export class TemplateSchematicKit {
     const span = TemplateSchematicKit.joinSpan(doc, netName, pins);
     const nameUp = netName.toUpperCase();
     const isClock = nameUp.includes('XTAL') || nameUp.includes('CLK');
-    const isDecoupling = nameUp.includes('VDD') || nameUp.includes('DECOUPLE');
+    // 仅去耦类网名强制导线；勿因任意含 VDD 的电源名（如 MCU_VDD）误强制
+    const isDecoupling = nameUp.includes('DECOUPLE') || nameUp.includes('BYPASS') ||
+      nameUp === 'VDD_DECAP' || nameUp.endsWith('_DECAP');
 
     // 强制导线: 晶振/去耦 (最短路径)
     if (isClock || isDecoupling) {
@@ -281,7 +288,8 @@ export class TemplateSchematicKit {
 
   /** 强制物理正交布线 */
   static joinWired(doc: SchematicDocument, netName: string, type: NetType, pins: PinSpec[]): string {
-    const existing = doc.nets.find(n => n.name === netName);
+    const safeName = TemplateSchematicKit.sanitizeNetName(netName, type);
+    const existing = doc.nets.find(n => n.name === safeName || n.name === netName);
     const priorRefs: string[] = existing !== undefined ? existing.pinIds.slice() : [];
     let routePins = TemplateSchematicKit.promoteRailHub(pins);
 
@@ -382,7 +390,14 @@ export class TemplateSchematicKit {
     const nid = TemplateSchematicKit.addNet(doc, name, type, [ref]);
     const world = TemplateSchematicKit.pinWorld(pin.comp, pin.pinId, pin.pinName);
     const pinNum = parseInt(String(pin.pinId).replace(/\D/g, ''), 10);
-    const baseLen = stubLen + ((!Number.isNaN(pinNum) ? (pinNum % 3) : 0) * 10);
+    const libU = (pin.comp.libraryId || '').toUpperCase();
+    const denseMcu = libU.includes('AT89') || libU.includes('STC') ||
+      libU.includes('STM32') || libU.includes('8051');
+    // MCU 10px 脚距：更大错开，避免多路 GPIO stub 端点共线被 WireNetTopology 并网
+    const stagger = denseMcu
+      ? ((!Number.isNaN(pinNum) ? (pinNum % 8) : 0) * 12)
+      : ((!Number.isNaN(pinNum) ? (pinNum % 3) : 0) * 10);
+    const baseLen = stubLen + stagger;
     const selfKey = `${pin.comp.id}:${pin.pinId}`;
     let end = TemplateSchematicKit.labelStubEnd(pin.comp, world, baseLen, name);
     for (let len = baseLen; len <= baseLen + 40; len += 10) {
@@ -508,7 +523,8 @@ export class TemplateSchematicKit {
     const isPowerRail = type === NetType.POWER || type === NetType.GROUND;
     const nameUp = netName.toUpperCase();
     const isClock = nameUp.includes('XTAL') || nameUp.includes('CLK');
-    const isDecoupling = nameUp.includes('VDD') || nameUp.includes('DECOUPLE');
+    const isDecoupling = nameUp.includes('DECOUPLE') || nameUp.includes('BYPASS') ||
+      nameUp === 'VDD_DECAP' || nameUp.endsWith('_DECAP');
 
     // 晶振/去耦强制导线(最短路径)
     if (isClock || isDecoupling) {
@@ -745,18 +761,27 @@ export class TemplateSchematicKit {
     if (libraryId === 'AMMETER_DC') {
       return ['I+', 'I-'];
     }
-    if (libraryId === 'VOLTMETER_DC' || libraryId === 'VIRTUAL_METER') {
+    if (libraryId === 'VOLTMETER_DC') {
       return ['V+', 'COM'];
+    }
+    if (libraryId === 'VIRTUAL_METER') {
+      return ['V', 'COM'];
     }
     if (libraryId === 'VAC') {
       return ['1', '2'];
     }
     if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
       libraryId.startsWith('L_') || libraryId.startsWith('FUSE_') ||
-      libraryId.startsWith('XTAL_')) {
+      libraryId.startsWith('XTAL_') || libraryId.startsWith('POT_') ||
+      libraryId.startsWith('SW_')) {
       return ['1', '2'];
     }
-    return ['1', '2'];
+    if (libraryId.startsWith('LED_') || libraryId.indexOf('DIODE') >= 0 ||
+      libraryId.startsWith('1N')) {
+      return ['A', 'K', '1', '2'];
+    }
+    // 未知库：空列表 → validatePinExists 拒绝默认真脚
+    return [];
   }
 
   /**
@@ -837,6 +862,30 @@ export class TemplateSchematicKit {
     return tryCanon(pinName);
   }
 
+  /**
+   * 三端稳压：LLM/手册常写 IN/GND/OUT，库 pinId 为 1/2/3。
+   */
+  static canonicalizeRegulatorPin(pinId: string, pinName: string): string {
+    const tryCanon = (raw: string): string => {
+      const u = raw.trim().toUpperCase();
+      if (u === '1' || u === 'IN' || u === 'VIN' || u === 'INPUT') {
+        return '1';
+      }
+      if (u === '2' || u === 'GND' || u === 'GROUND' || u === 'ADJ') {
+        return '2';
+      }
+      if (u === '3' || u === 'OUT' || u === 'VOUT' || u === 'OUTPUT') {
+        return '3';
+      }
+      return '';
+    };
+    const a = tryCanon(pinId);
+    if (a.length > 0) {
+      return a;
+    }
+    return tryCanon(pinName);
+  }
+
   static pinOffset(libraryId: string, pinId: string, _pinName: string): Point2D {
     // LLM 常写 "1(VCC)" — 剥成精确 pinId 再查表（否则 R/C 非 "1" 会落到 pin2）
     const mPin = /^([A-Za-z0-9_+-]+)\s*\([^)]*\)\s*$/.exec(pinId ?? '');
@@ -876,11 +925,22 @@ export class TemplateSchematicKit {
     }
     if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
       libraryId.startsWith('XTAL_') || libraryId.startsWith('L_') ||
-      libraryId.startsWith('FUSE_') || libraryId === 'DS18B20' ||
-      libraryId === 'HALL_SENSOR' || libraryId === 'LDR' ||
+      libraryId.startsWith('FUSE_') || libraryId === 'LDR' ||
       libraryId === 'BUZZER' ||
       libraryId === 'SW_PUSH') {
       return pinId === '1' ? { x: -30, y: 0 } : { x: 30, y: 0 };
+    }
+    if (libraryId === 'DS18B20') {
+      if (pinId === 'GND') return { x: -30, y: 0 };
+      if (pinId === 'DQ') return { x: 0, y: 28 };
+      if (pinId === 'VDD') return { x: 30, y: 0 };
+      return { x: 0, y: 0 };
+    }
+    if (libraryId === 'HALL_SENSOR') {
+      if (pinId === 'VCC') return { x: -30, y: -10 };
+      if (pinId === 'OUT') return { x: 30, y: 0 };
+      if (pinId === 'GND') return { x: -30, y: 10 };
+      return { x: 0, y: 0 };
     }
     if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
       libraryId === '1N4007' || libraryId === '1N5819') {
@@ -949,20 +1009,33 @@ export class TemplateSchematicKit {
     }
     if (libraryId === 'LM7805' || libraryId === 'LM7812' ||
       libraryId === 'AMS1117_3V3') {
-      // TO-220：IN 左 / GND 下 / OUT 右（与 BuiltinComponents.icRegulator 对齐）
-      if (pinId === '1') {
+      // TO-220：IN 左 / GND 下 / OUT 右；别名 IN/GND/OUT → 1/2/3
+      const regPin = TemplateSchematicKit.canonicalizeRegulatorPin(pinId, _pinName);
+      const rid = regPin.length > 0 ? regPin : pinId;
+      if (rid === '1') {
         return { x: -40, y: 0 };
       }
-      if (pinId === '2') {
+      if (rid === '2') {
         return { x: 0, y: 40 };
       }
-      if (pinId === '3') {
+      if (rid === '3') {
         return { x: 40, y: 0 };
       }
       return { x: 0, y: 0 };
     }
     if (libraryId === 'LM2596') {
-      return TemplateSchematicKit.genPinOffset(5, pinId, 40);
+      if (pinId === 'VIN') return { x: -40, y: -20 };
+      if (pinId === 'OUT') return { x: 40, y: -20 };
+      if (pinId === 'GND') return { x: 0, y: 40 };
+      if (pinId === 'FB') return { x: 40, y: 10 };
+      if (pinId === 'ON') return { x: -40, y: 10 };
+      return { x: 0, y: 0 };
+    }
+    if (libraryId === 'CD4017') {
+      return TemplateSchematicKit.namedDipOffset(pinId, [
+        'Q5', 'Q1', 'Q0', 'Q2', 'Q6', 'Q7', 'Q3', 'VSS',
+        'Q8', 'Q4', 'Q9', 'CO', 'CLK', 'EN', 'RST', 'VDD'
+      ], 40);
     }
     if (libraryId.startsWith('74HC')) {
       if (pinId === '14') {
@@ -1036,11 +1109,12 @@ export class TemplateSchematicKit {
       return { x: 0, y: 0 };
     }
     if (libraryId === 'OSCILLOSCOPE') {
-      if (pinId === 'CH1') return { x: -40, y: -20 };
+      // 与 BuiltinComponents.makeOscilloscope 一致：全部左插
+      if (pinId === 'CH1') return { x: -40, y: -30 };
       if (pinId === 'CH2') return { x: -40, y: -10 };
       if (pinId === 'CH3') return { x: -40, y: 10 };
-      if (pinId === 'CH4') return { x: -40, y: 20 };
-      if (pinId === 'GND') return { x: 40, y: 40 };
+      if (pinId === 'CH4') return { x: -40, y: 30 };
+      if (pinId === 'GND') return { x: -40, y: 50 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'LOGIC_ANALYZER') {
@@ -1063,7 +1137,20 @@ export class TemplateSchematicKit {
       return { x: 0, y: 0 };
     }
     if (libraryId === 'LCD1602') {
-      return TemplateSchematicKit.genPinOffset(16, pinId, 40);
+      return TemplateSchematicKit.namedDipOffset(pinId, [
+        'VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D0', 'D1',
+        'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'A', 'K'
+      ], 40);
+    }
+    if (libraryId === '24C02') {
+      return TemplateSchematicKit.namedDipOffset(pinId, [
+        'A0', 'A1', 'A2', 'VSS', 'SDA', 'SCL', 'WP', 'VCC'
+      ], 40);
+    }
+    if (libraryId === 'W25Q64') {
+      return TemplateSchematicKit.namedDipOffset(pinId, [
+        'CS', 'DO', 'WP', 'GND', 'DI', 'CLK', 'HOLD', 'VCC'
+      ], 40);
     }
     if (libraryId === 'OLED_12864') {
       switch (pinId) {
@@ -1078,6 +1165,29 @@ export class TemplateSchematicKit {
     if (!isNaN(pinNum)) {
       return TemplateSchematicKit.genPinOffset(16, pinId, 40);
     }
+    // 具名 MCU / GPIO
+    if (pinId.indexOf('P1.') === 0 || pinId.indexOf('P0.') === 0 ||
+      pinId.indexOf('P2.') === 0 || pinId.indexOf('P3.') === 0 ||
+      pinId === 'RST' || pinId === 'EA' || pinId === 'XTAL1' || pinId === 'XTAL2' ||
+      pinId === 'ALE' || pinId === 'PSEN' || pinId === 'VCC' || pinId === 'GND') {
+      const defs8051 = [
+        'P1.0', 'P1.1', 'P1.2', 'P1.3', 'P1.4', 'P1.5', 'P1.6', 'P1.7', 'RST',
+        'P3.0', 'P3.1', 'P3.2', 'P3.3', 'P3.4', 'P3.5', 'P3.6', 'P3.7',
+        'XTAL2', 'XTAL1', 'GND',
+        'P2.0', 'P2.1', 'P2.2', 'P2.3', 'P2.4', 'P2.5', 'P2.6', 'P2.7',
+        'PSEN', 'ALE', 'EA',
+        'P0.7', 'P0.6', 'P0.5', 'P0.4', 'P0.3', 'P0.2', 'P0.1', 'P0.0', 'VCC'
+      ];
+      if (libraryId.includes('AT89') || libraryId.includes('STC') || libraryId.includes('8051')) {
+        return TemplateSchematicKit.namedDipOffset(pinId, defs8051, 50);
+      }
+    }
+    if (pinId.startsWith('PA') || pinId.startsWith('PB') || pinId.startsWith('PC') ||
+      pinId.startsWith('PD') || pinId.startsWith('PE') || pinId.startsWith('PF') ||
+      pinId === 'NRST' || pinId === 'BOOT0' || pinId === 'OSC_IN' || pinId === 'OSC_OUT' ||
+      pinId === 'VDD' || pinId === 'VSS' || pinId === 'VDDA' || pinId === 'VSSA') {
+      return TemplateSchematicKit.stm32NamedOffset(libraryId, pinId);
+    }
     if (pinId.startsWith('P')) {
       const n = parseInt(pinId.substring(1));
       if (!isNaN(n)) {
@@ -1085,6 +1195,54 @@ export class TemplateSchematicKit {
       }
     }
     return { x: 0, y: 0 };
+  }
+
+  private static namedDipOffset(pinId: string, order: string[], bodyX: number): Point2D {
+    let idx = -1;
+    for (let i = 0; i < order.length; i++) {
+      if (order[i] === pinId) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx < 0) {
+      return { x: 0, y: 0 };
+    }
+    const leftCount = Math.ceil(order.length / 2);
+    const bodyHalf = Math.max(leftCount, Math.floor(order.length / 2)) * 10 / 2;
+    if (idx < leftCount) {
+      return { x: -bodyX, y: idx * 10 - bodyHalf };
+    }
+    return { x: bodyX, y: (idx - leftCount) * 10 - bodyHalf };
+  }
+
+  private static stm32NamedOffset(libraryId: string, pinId: string): Point2D {
+    const order48 = [
+      'VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT',
+      'PA0', 'PA1', 'PA2', 'PA3', 'PA4', 'PA5', 'PA6', 'PA7',
+      'PA8', 'PA9', 'PA10', 'PA11', 'PA12', 'PA13', 'PA14', 'PA15',
+      'PB0', 'PB1', 'PB2', 'PB3', 'PB4', 'PB5', 'PB6', 'PB7',
+      'PB8', 'PB9', 'PB10', 'PB11', 'PB12', 'PB13', 'PB14', 'PB15',
+      'PC0', 'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7'
+    ];
+    if (libraryId.includes('F030')) {
+      const order32 = [
+        'VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT',
+        'PA0', 'PA1', 'PA2', 'PA3', 'PA4', 'PA5', 'PA6', 'PA7',
+        'PA8', 'PA9', 'PA10', 'PA11', 'PA12', 'PA13', 'PA14', 'PA15',
+        'PB0', 'PB1', 'PB2', 'PB3', 'PB4', 'PB5', 'PB6', 'PB7', 'PB8', 'PB9'
+      ];
+      return TemplateSchematicKit.namedDipOffset(pinId, order32, 50);
+    }
+    if (libraryId.includes('F407')) {
+      const order100 = order48.slice();
+      for (let i = 0; i < 16; i++) order100.push(`PD${i}`);
+      for (let i = 0; i < 16; i++) order100.push(`PE${i}`);
+      for (let i = 8; i < 16; i++) order100.push(`PC${i}`);
+      for (let i = 0; i < 12; i++) order100.push(`PF${i}`);
+      return TemplateSchematicKit.namedDipOffset(pinId, order100, 50);
+    }
+    return TemplateSchematicKit.namedDipOffset(pinId, order48, 50);
   }
 
   private static genPinOffset(count: number, pinId: string, bodyX: number): Point2D {

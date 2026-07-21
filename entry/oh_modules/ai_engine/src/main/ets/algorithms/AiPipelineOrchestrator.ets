@@ -13,7 +13,7 @@ import {
   EventBus, ModuleEvent, ModuleEventPayload,
   Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp, traceAiDiag, traceAiStage, AiErcGateUtil,
   DeviceHitGeometry, emptySchTopology, mapAwareStringify, mapAwareParse, ensureStringMap,
-  MainThreadYield, DeviceRequirement
+  MainThreadYield, DeviceRequirement, ErrCode
 } from 'common';
 import { PromptLoader } from '../prompts/PromptLoader';
 import { PromptVarEntry, ChatHistoryEntry } from '../internal/AiEngineTypes';
@@ -25,12 +25,13 @@ import { LlmJsonNormalizer } from './LlmJsonNormalizer';
 import { NetPlanExecutor, NetPlanResult, NetPlanExecutionResult } from './NetPlanExecutor';
 import { SemanticNetBuilder } from './SemanticNetBuilder';
 import { PostGenValidator, ValidationIssue } from './PostGenValidator';
-import { AiTopologyFixKit } from './AiTopologyFixKit';
+import { AiTopologyFixKit, FinalizeGateOpts, TopologyFixResult } from './AiTopologyFixKit';
 import {
   CircuitIntent, CritiqueSplit, classifyCircuitIntent, refineCircuitIntent,
   refineIntentFromTopo, formatIntentLog, hardResidualFingerprint,
   splitEmpty, allCritiqueLines, intentIsMutualLedSwitch,
-  defaultCircuitIntent
+  defaultCircuitIntent, parseSignalAmplitudeVolts,
+  HYSTERESIS_MIN_SIGNAL_AMP_V, HYSTERESIS_RECOMMENDED_SIGNAL_AMP
 } from './CircuitIntent';
 import {
   ModularPlan, normalizeModularPlan, healModularPlan, critiqueModularPlan,
@@ -95,6 +96,7 @@ interface ChatResult {
   success: boolean;
   data?: string;
   error?: string;
+  errCode?: number;
 }
 
 interface EarlyStopStableResult {
@@ -108,6 +110,11 @@ interface AiFixDetail {
   refName?: string;
   x?: number;
   y?: number;
+  /** nudge_device 相对位移 */
+  dx?: number;
+  dy?: number;
+  /** rotate_device 目标角度 0/90/180/270；省略则 +90 */
+  rotate?: number;
   paramKey?: string;
   paramValue?: string;
   reason?: string;
@@ -233,6 +240,8 @@ export class AiPipelineOrchestrator {
   private stageT0: number = 0;
   /** 当前 STAGE 名（与 diagStage 同步） */
   private stageName: string = 'idle';
+  /** 用户取消：各阶段与 chatWithRetry 轮询 */
+  private cancelled: boolean = false;
 
   constructor(apiManager: IAiApiManager, library: IComponentLibrary, moduleTag: string = '') {
     this.apiManager = apiManager;
@@ -263,6 +272,23 @@ export class AiPipelineOrchestrator {
 
   getDiagStage(): string {
     return this.diagStage;
+  }
+
+  requestCancel(): void {
+    this.cancelled = true;
+    Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] ${this.logTag()}CANCEL requested`);
+  }
+
+  clearCancel(): void {
+    this.cancelled = false;
+  }
+
+  private isCancelRequested(): boolean {
+    return this.cancelled || this.apiManager.isChatCancelled();
+  }
+
+  private cancelPipelineResult(): AiPipelineResult {
+    return abortPipelineResult('cancelled', '用户已取消生成', '可重新发起生成');
   }
 
   private logTag(): string {
@@ -353,6 +379,10 @@ export class AiPipelineOrchestrator {
   async runFullPipeline(opts: PipelineOptions, onProgress?: ProgressCallback): Promise<AiPipelineResult> {
     let usedLlm = false;
     let degradedMode = false;
+    // 子模块 fork 后继承父级取消态；oneshot 在 AiEngine.runAiTask 已 clear
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
 
     this.markStage('intent');
     this.activeIntent = opts.circuitIntent ?? classifyCircuitIntent(opts.prompt);
@@ -376,12 +406,21 @@ export class AiPipelineOrchestrator {
     this.markStage('device_select');
     traceAiOp('AI_PIPE', 'device_select', 'fetch LLM JSON');
     let selectLlm = await this.fetchDeviceSelectLlm(opts);
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
     for (let outer = 0; !selectLlm.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
+      if (this.isCancelRequested()) {
+        return this.cancelPipelineResult();
+      }
       this.stageAbortOrRetry('RETRY', `outer=${outer + 1}/${NEVER_ABORT_OUTER}`);
       Logger.warn(INSTR_TRACE_TAG,
         `[AI_PIPE] KEEP_RETRY device_select outer=${outer + 1}/${NEVER_ABORT_OUTER}`);
       onProgress?.(makeProgress(5, `器件选型重试 ${outer + 1}`));
       selectLlm = await this.fetchDeviceSelectLlm(opts);
+    }
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
     }
     if (selectLlm.fromLlm) {
       usedLlm = true;
@@ -390,10 +429,11 @@ export class AiPipelineOrchestrator {
       this.stageMetric('bom',
         `fromLlm=true requireN=${reqN0} ood=${(selectLlm.output.oodFlags ?? []).length}`);
       try {
-        traceAiPayload('AI_PIPE', 'SELECT_JSON', JSON.stringify(selectLlm.output),
+        traceAiPayload('AI_PIPE', 'SELECT_JSON', mapAwareStringify(selectLlm.output),
           'stage=device_select');
       } catch (_e) {
-        Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] SELECT_JSON stringify failed');
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] SELECT_JSON stringify failed: ${_e instanceof Error ? _e.message : String(_e)}`);
       }
       this.endStage(true, `requireN=${reqN0}`);
     } else if (!opts.skipLlm) {
@@ -466,15 +506,30 @@ export class AiPipelineOrchestrator {
     }
     this.endStage(true, `matchedRequire=${matchedReq}/${requireN} devices=${selectResult.devices.length}`);
     onProgress?.(makeProgress(28, `匹配 ${selectResult.devices.length}: ${matchHint}`));
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
 
     this.activeIntent = refineCircuitIntent(opts.prompt, selectLlm.output, selectResult.devices);
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] intent refined | ${formatIntentLog(this.activeIntent)}`);
-
+    // 精修后只补空电参（LLM 已写值不覆盖；错配靠选型 HARD 重试）
+    const elecN = this.selectEngine.applyElectricalSourceParams(
+      selectResult.devices, this.activeIntent);
+    if (elecN > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] electrical fill-empty n=${elecN} ` +
+        `vcc=${this.activeIntent.preferredVccVoltage || '-'} ` +
+        `vee=${this.activeIntent.preferredVeeVoltage || '-'} ` +
+        `amp=${this.activeIntent.preferredSignalAmplitude || '-'}`);
+    }
     onProgress?.(makeProgress(35, '获取布局约束'));
     this.markStage('layout');
     traceAiOp('AI_PIPE', 'layout_constraints', 'fetch LLM or default');
     let layoutLlm = await this.fetchLayoutLlm(selectResult.devices, selectLlm.output.circuitConstraint, opts);
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
     for (let outer = 0;
       (!layoutLlm.fromLlm || !(layoutLlm.output.positions && layoutLlm.output.positions.length > 0)) &&
       !opts.skipLlm && selectResult.devices.length > 0 && outer < SOFT_OUTER; outer++) {
@@ -492,7 +547,8 @@ export class AiPipelineOrchestrator {
         traceAiPayload('AI_PIPE', 'LAYOUT_JSON', JSON.stringify(layoutLlm.output),
           'stage=layout');
       } catch (_e) {
-        Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] LAYOUT_JSON stringify failed');
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] LAYOUT_JSON stringify failed: ${_e instanceof Error ? _e.message : String(_e)}`);
       }
       this.endStage(true, `positions=${layoutLlm.output.positions?.length ?? 0}`);
     } else if (!opts.skipLlm) {
@@ -545,6 +601,9 @@ export class AiPipelineOrchestrator {
     this.stageMetric('placed', placeHint);
     this.endStage(true, `devices=${placement.topology.deviceList.length}`);
     this.logTopoFieldDiag('placement', placement.topology);
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
 
     // 流式快照 #1: 器件已摆放，尚无网络/导线
     opts.onStreamSnapshot?.(placement.topology, 'placement');
@@ -554,7 +613,13 @@ export class AiPipelineOrchestrator {
     this.markStage('net_plan');
     traceAiOp('AI_PIPE', 'net_plan', 'LLM net_plan + NetPlanExecutor');
     let netPlanResult = await this.fetchNetPlanLlm(placement.topology, opts);
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
     for (let outer = 0; !netPlanResult.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
+      if (this.isCancelRequested()) {
+        return this.cancelPipelineResult();
+      }
       Logger.warn(INSTR_TRACE_TAG,
         `[AI_PIPE] KEEP_RETRY net_plan outer=${outer + 1}/${NEVER_ABORT_OUTER}`);
       onProgress?.(makeProgress(62, `网络规划重试 ${outer + 1}`));
@@ -562,11 +627,8 @@ export class AiPipelineOrchestrator {
     }
     let topoWithNets: SchTopology;
     let netPlanNotes = '';
-    if (netPlanResult.fromLlm ||
-      (netPlanResult.output.nets && netPlanResult.output.nets.length > 0)) {
-      if (netPlanResult.fromLlm) {
-        usedLlm = true;
-      }
+    if (netPlanResult.fromLlm) {
+      usedLlm = true;
       NetPlanExecutor.sanitizeDuplicatePins(netPlanResult.output, placement.topology);
       const execResult = this.executeNetPlanLabelFirst(placement.topology, netPlanResult.output);
       topoWithNets = execResult.topology;
@@ -588,7 +650,7 @@ export class AiPipelineOrchestrator {
           `[AI_PIPE] KEEP_RETRY netPlan exec failures: ${execResult.failures.join('; ')}`);
         traceAiDiag('AI_PIPE', 'net_plan_exec_fail', execResult.failures.slice(0, 12), 12);
         this.stageMetric('exec_fail', execResult.failures.slice(0, 4).join(' | '));
-        // 生产路径：建网失败 — 清洗别名后重执行；仅电气致命/网过少才 ABORT
+        // 生产路径：建网失败 — 清洗后重执行；致命/softMiss/网过少 → ABORT（禁止带洞交付）
         if (!opts.skipLlm) {
           const critical = execResult.failures.filter(f =>
             f.indexOf('短路') >= 0 ||
@@ -604,7 +666,10 @@ export class AiPipelineOrchestrator {
               f.indexOf('短路') >= 0 ||
               (f.indexOf('VCC') >= 0 && f.indexOf('GND') >= 0) ||
               f.indexOf('只有') >= 0);
-            if (retryExec.netCount >= 2 && retryFatal.length === 0) {
+            const retrySoft = retryExec.failures.filter(f =>
+              f.indexOf('找不到') >= 0 || f.indexOf('跳过') >= 0);
+            // 重试后仍有 softMiss / 致命 / 网过少 → ABORT（禁止带洞交付）
+            if (retryExec.netCount >= 2 && retryFatal.length === 0 && retrySoft.length === 0) {
               topoWithNets = retryExec.topology;
               if (retryExec.failures.length > 0) {
                 degradedMode = true;
@@ -613,15 +678,16 @@ export class AiPipelineOrchestrator {
                 `[AI_PIPE] net_plan exec recovered nets=${retryExec.netCount}` +
                 ` failLeft=${retryExec.failures.length}`);
             } else {
+              const abortReasons = retryFatal.length > 0 ? retryFatal :
+                (retrySoft.length > 0 ? retrySoft : critical);
               this.stageAbortOrRetry('ABORT',
-                `exec critical=${Math.max(critical.length, retryFatal.length)} nets=${retryExec.netCount}`);
+                `exec fatal=${retryFatal.length} soft=${retrySoft.length} nets=${retryExec.netCount}`);
               this.endStage(false, `failures=${retryExec.failures.length}`);
               Logger.error(INSTR_TRACE_TAG,
-                `[AI_PIPE] ABORT: net_plan exec critical failures=` +
-                `${Math.max(critical.length, retryFatal.length)} nets=${retryExec.netCount}`);
+                `[AI_PIPE] ABORT: net_plan exec failures=` +
+                `fatal=${retryFatal.length} soft=${retrySoft.length} nets=${retryExec.netCount}`);
               return abortPipelineResult('net_plan',
-                `网络计划执行失败(${(critical.length > 0 ? critical : retryFatal)
-                  .slice(0, 3).join('; ') || execResult.failures[0]})`,
+                `网络计划执行失败(${abortReasons.slice(0, 3).join('; ') || execResult.failures[0]})`,
                 '检查 net_plan 的 compRef/pinId 是否与板上器件一致后重试');
             }
           }
@@ -644,7 +710,8 @@ export class AiPipelineOrchestrator {
         topoWithNets = clone;
         degradedMode = true;
         netPlanNotes = 'skipLlm SemanticNetBuilder failed';
-        Logger.error(INSTR_TRACE_TAG, `[AI_PIPE] SemanticNetBuilder skipLlm failed`);
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_PIPE] SemanticNetBuilder skipLlm failed: ${_e instanceof Error ? _e.message : String(_e)}`);
         this.notifyDegraded('网络规划');
       }
     } else {
@@ -702,19 +769,27 @@ export class AiPipelineOrchestrator {
         traceAiPayload('AI_PIPE', 'ROUTE_JSON', JSON.stringify(routeLlm.output),
           'stage=route');
       } catch (_e) {
-        Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] ROUTE_JSON stringify failed');
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] ROUTE_JSON stringify failed: ${_e instanceof Error ? _e.message : String(_e)}`);
       }
       this.endStage(true,
         `forceLabel=${routeLlm.output.forceLabelNets?.length ?? 0}` +
         ` forceWire=${routeLlm.output.forceWireNets?.length ?? 0}`);
     } else if (!(netPlanResult.fromLlm && hintN > 0)) {
-      Logger.warn(INSTR_TRACE_TAG,
-        '[AI_PIPE] routing use defaultConstraints (degraded, usedLlm 不伪造)');
-      routeLlm = {
-        output: ConstrainedWiringEngine.defaultConstraints(topoWithNets),
-        fromLlm: false
-      };
-      this.mergeNetPlanHintsIntoRouting(routeLlm.output, netPlanResult);
+      const hasModes = ((routeLlm.output?.forceLabelNets?.length ?? 0) > 0) ||
+        ((routeLlm.output?.forceWireNets?.length ?? 0) > 0);
+      if (!hasModes) {
+        Logger.warn(INSTR_TRACE_TAG,
+          '[AI_PIPE] routing use defaultConstraints (degraded, usedLlm 不伪造)');
+        routeLlm = {
+          output: ConstrainedWiringEngine.defaultConstraints(topoWithNets),
+          fromLlm: false
+        };
+        this.mergeNetPlanHintsIntoRouting(routeLlm.output, netPlanResult);
+      } else {
+        Logger.warn(INSTR_TRACE_TAG,
+          '[AI_PIPE] routing residual/degraded keep sanitized constraints (degraded)');
+      }
       this.lastRoutingConstraints = routeLlm.output;
       degradedMode = true;
       this.endStage(false, 'degraded defaultConstraints');
@@ -849,6 +924,7 @@ export class AiPipelineOrchestrator {
     const finalGeoIssues = cleared.geoIssues;
     const finalErcWarns = ercErrors.filter(e => e.severity === 'warning').length;
     const ercClean = ercHardFinal === 0 && geoHard === 0;
+    // selfReviewPassed 不再伪装成 ercClean；无独立 review 结果时与 ercClean 同值但日志区分
     const selfReviewPassed = ercClean;
     const fixDesc = ercClean
       ? (aiFixApplied > 0 ? `门禁通过 · AI修复${aiFixApplied}处` : '门禁通过(ERC+几何)')
@@ -883,7 +959,8 @@ export class AiPipelineOrchestrator {
       `[AI_PIPE] END usedLlm=${usedLlm} degraded=${degradedMode}` +
       ` devices=${topoWithNets.deviceList.length} wires=${topoWithNets.wireList.length}` +
       ` ercBlocking=${ercHardFinal} ercWarn=${finalErcWarns} ercClean=${ercClean}` +
-      ` geoIssues=${finalGeoIssues.length} reviewPassed=${selfReviewPassed}`);
+      ` geoIssues=${finalGeoIssues.length} reviewPassed=${selfReviewPassed}` +
+      ` residual=${!ercClean}`);
     traceAiOp('AI_PIPE', 'pipeline_end',
       `usedLlm=${usedLlm} degraded=${degradedMode}` +
       ` devices=${topoWithNets.deviceList.length} wires=${topoWithNets.wireList.length}` +
@@ -894,7 +971,7 @@ export class AiPipelineOrchestrator {
       ` ercBlocking=${ercHardFinal} geoBlocking=${geoHard} aiFixes=${aiFixApplied}`);
     this.logTopoFieldDiag('pipeline_end', topoWithNets);
 
-    // 用户硬要求：必须交付完整过程（不以「生图未完成」中止）；残留已尽力强力收尾
+    // oneshot：尽力交付拓扑；但 ercClean/geoBlocking 必须反映真实门禁（模块并行依赖此标志验收子模块）
     onProgress?.(makeProgress(100, ercClean ? '闭环完成' : '已交付（强力收尾后残留已尽力）', true));
     return {
       selectResult,
@@ -904,9 +981,9 @@ export class AiPipelineOrchestrator {
       topology: topoWithNets,
       usedLlm,
       degradedMode,
-      // 交付门禁：有有效 LLM 拓扑即视为过程完成（真实阻断数仍在 ercErrors 日志）
-      ercClean: true,
-      geoBlocking: 0
+      ercClean,
+      geoBlocking: geoHard,
+      deliveredWithResidual: !ercClean
     };
   }
 
@@ -918,6 +995,9 @@ export class AiPipelineOrchestrator {
    */
   async runModularParallelPipeline(opts: PipelineOptions,
     onProgress?: ProgressCallback): Promise<AiPipelineResult> {
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
     this.markStage('modular_plan');
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] modular_plan START promptLen=${opts.prompt.length}`);
@@ -925,14 +1005,19 @@ export class AiPipelineOrchestrator {
     onProgress?.(makeProgress(5, '整体设计中…'));
 
     const plan = await this.fetchModularPlanLlm(opts);
+    if (this.isCancelRequested()) {
+      return this.cancelPipelineResult();
+    }
     if (!plan) {
       this.endStage(false, 'no valid plan');
       Logger.error(INSTR_TRACE_TAG, '[AI_PIPE] modular_plan FAIL — no valid plan');
       return {
         topology: emptySchTopology(),
-        usedLlm: true,
+        // 无有效 plan 不得伪称 usedLlm=true（上层会误判为「已用 LLM」）
+        usedLlm: false,
         degradedMode: false,
         ercClean: false,
+        deliveredWithResidual: false,
         ercErrors: [{
           errType: 'modular_plan',
           targetUuid: '',
@@ -1006,7 +1091,8 @@ export class AiPipelineOrchestrator {
           onProgress?.(makeProgress(pct,
             `并行生成模块 ${completedCount}/${moduleCount} · ${mod.id} ${p.stage}`));
         });
-        if (last.topology && last.topology.deviceList.length > 0 && last.usedLlm && last.ercClean) {
+        if (last.topology && last.topology.deviceList.length > 0 && last.usedLlm &&
+          last.ercClean && !this.isPipelineAbortResult(last)) {
           const n = alignTopoRefsToBoundaryPins(last.topology, mod.boundaryPins);
           if (n > 0) {
             Logger.info(INSTR_TRACE_TAG,
@@ -1014,6 +1100,12 @@ export class AiPipelineOrchestrator {
           }
           emitModularStream(modIdx, last.topology, 'routing');
           break;
+        }
+        if (last.topology && last.topology.deviceList.length > 0 && last.usedLlm &&
+          !last.ercClean) {
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PIPE] modular ${mod.id} reject residual ercClean=false` +
+            ` geoBlocking=${last.geoBlocking ?? 0} — retry`);
         }
         Logger.warn(INSTR_TRACE_TAG,
           `[AI_PIPE] modular_parallel retry module=${mod.id} attempt=${attempt + 1}` +
@@ -1075,7 +1167,8 @@ export class AiPipelineOrchestrator {
       if (r.degradedMode) {
         degradedMode = true;
       }
-      if (r.topology && r.topology.deviceList.length > 0 && r.usedLlm && r.ercClean) {
+      if (r.topology && r.topology.deviceList.length > 0 && r.usedLlm &&
+        r.ercClean && !this.isPipelineAbortResult(r)) {
         moduleTopos.push(r.topology);
       } else {
         failedIds.push(plan.modules[i].id);
@@ -1246,7 +1339,7 @@ export class AiPipelineOrchestrator {
     if (mergeOut.jointFailReasons.length > 0) {
       traceAiDiag('AI_PIPE', 'modular_joint_fail', mergeOut.jointFailReasons, 16);
     }
-    // joints 失败仍属硬失败（边界未并上）；其余门禁走强力收尾后交付
+    // joints 失败仍属硬失败（边界未并上）；ercClean 必须真实，供上层判定
     const deliverOk = mergeOut.jointFail === 0 && merged.deviceList.length > 0;
     onProgress?.(makeProgress(100,
       deliverOk
@@ -1256,9 +1349,10 @@ export class AiPipelineOrchestrator {
       topology: deliverOk ? merged : emptySchTopology(),
       usedLlm,
       degradedMode: false,
-      ercClean: deliverOk,
+      ercClean: deliverOk && ercClean,
+      deliveredWithResidual: deliverOk && !ercClean,
       ercErrors,
-      geoBlocking: deliverOk ? 0 : geoHard
+      geoBlocking: geoHard
     };
   }
 
@@ -1292,16 +1386,15 @@ export class AiPipelineOrchestrator {
     let aiFixApplied = 0;
     let clearRound = 0;
     let stallKitTried = 0;
+    let lastGeoFingerprint = '';
+    let geoStallRounds = 0;
 
     // 提速：门禁前先跑确定性 kit；已干净则跳过全部 self-review LLM
     const preLooksRc = this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo);
     if (preLooksRc && !this.activeIntent.mutualLedIndicator) {
       this.stripStrayRelaysForSeriesRc(topo);
     }
-    const preFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-      seriesRcCharge: preLooksRc && !this.activeIntent.mutualLedIndicator,
-      mutualLedIndicator: this.activeIntent.mutualLedIndicator
-    });
+    const preFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, preLooksRc));
     if (preFin.fixed > 0) {
       aiFixApplied += preFin.fixed;
       Logger.info(INSTR_TRACE_TAG,
@@ -1369,7 +1462,21 @@ export class AiPipelineOrchestrator {
         }
       }
 
-      const reviewResult = await this.fetchSelfReviewLlm(topo, ercErrors, geoIssues, opts);
+      // 几何指纹不变：跳过昂贵 self-review LLM，避免 demote↔LLM 空转
+      const geoFpPreLlm = this.buildGeoBlockingFingerprint(geoIssues);
+      const skipSelfReviewLlm = ercHard === 0 && geoFpPreLlm.length > 0 &&
+        geoFpPreLlm === lastGeoFingerprint;
+      let reviewResult: LlmFetchResult<AiSelfReviewResult> = {
+        fromLlm: false,
+        output: { passed: false, issues: [], summary: '' }
+      };
+      if (skipSelfReviewLlm) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] skip self-review LLM r${clearRound} — geo fingerprint unchanged`);
+        reviewResult.output = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
+      } else {
+        reviewResult = await this.fetchSelfReviewLlm(topo, ercErrors, geoIssues, opts);
+      }
       if (reviewResult.fromLlm) {
         usedLlm = true;
         Logger.info(INSTR_TRACE_TAG,
@@ -1443,7 +1550,7 @@ export class AiPipelineOrchestrator {
           `round=${clearRound} fixed=${valResult.fixedCount}`);
       }
       // 每轮剪单脚信号网，避免 PIN_CONNECTIVITY 拖到门禁
-      const pruneR = AiTopologyFixKit.pruneAllSingletonSignalNets(topo);
+      const pruneR = this.pruneSingletonsPreservingBoundary(topo, opts);
       if (pruneR.fixed > 0) {
         aiFixApplied += pruneR.fixed;
         Logger.info(INSTR_TRACE_TAG,
@@ -1459,6 +1566,27 @@ export class AiPipelineOrchestrator {
         `[AI_PIPE] after clear-round ${clearRound}: ercBlocking=${ercHard}` +
         ` geoBlocking=${geoHardNow} fixesTotal=${aiFixApplied}` +
         ` needReroute=${roundNeedReroute}`);
+      if (geoHardNow > 0) {
+        const geoSummary: string[] = [];
+        for (let gi = 0; gi < geoIssues.length && geoSummary.length < 4; gi++) {
+          const g = geoIssues[gi];
+          if (g.severity !== 'error') {
+            continue;
+          }
+          let netHint = g.targetUuid ?? '';
+          if (g.targetUuid && g.targetUuid.length > 0) {
+            const net = topo.netList.find(n => n.netUuid === g.targetUuid);
+            if (net && (net.netName ?? '').length > 0) {
+              netHint = net.netName;
+            }
+          }
+          const descShort = (g.desc ?? '').substring(0, 80);
+          geoSummary.push(`${g.type}@${netHint}:${descShort}`);
+        }
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_PIPE] geoBlocking detail r${clearRound}: ${geoSummary.join(' | ')}`);
+        traceAiDiag('AI_PIPE', `geo_blocking_r${clearRound}`, geoSummary, 4);
+      }
       traceAiStage('AI_PIPE', 'self_review_clear', 'METRIC',
         `${this.logTag()}round=${clearRound} ercBlocking=${ercHard}` +
         ` geoBlocking=${geoHardNow} fixesTotal=${aiFixApplied}`);
@@ -1468,6 +1596,27 @@ export class AiPipelineOrchestrator {
           `[AI_PIPE] ERC+GEO CLEAN after round=${clearRound} — generation gate passed`);
         break;
       }
+
+      // 几何阻断指纹不变：demote/rebuild 假进度 → 尽快 FORCE_COMPLETE，禁止空转 LLM
+      const geoFpNow = this.buildGeoBlockingFingerprint(geoIssues);
+      if (ercHard === 0 && geoHardNow > 0) {
+        if (geoFpNow.length > 0 && geoFpNow === lastGeoFingerprint) {
+          geoStallRounds++;
+        } else {
+          geoStallRounds = 0;
+          lastGeoFingerprint = geoFpNow;
+        }
+        if (geoStallRounds >= 2) {
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PIPE] clear geo-stall r${clearRound} fingerprint unchanged×${geoStallRounds}` +
+            ` geoBlocking=${geoHardNow} — enter force-complete`);
+          break;
+        }
+      } else {
+        geoStallRounds = 0;
+        lastGeoFingerprint = '';
+      }
+
       // 本轮有实质修复或仅 reroute → 继续下一轮
       if (roundFixCount > 0 || valResult.fixedCount > 0 || roundNeedReroute || pruneR.fixed > 0) {
         continue;
@@ -1493,10 +1642,7 @@ export class AiPipelineOrchestrator {
           stallKitTried++;
           const stallDet = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
           const stallExec = this.executeAiFixes(topo, stallDet.issues, opts);
-          const stallFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-            seriesRcCharge: this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo),
-            mutualLedIndicator: this.activeIntent.mutualLedIndicator
-          });
+          const stallFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
           const stallFixed = stallExec.fixCount + stallFin.fixed;
           if (stallFixed > 0) {
             aiFixApplied += stallFixed;
@@ -1558,10 +1704,8 @@ export class AiPipelineOrchestrator {
         if (looksRcNuke && !this.activeIntent.mutualLedIndicator) {
           this.stripStrayRelaysForSeriesRc(topo);
         }
-        const nukeFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-          seriesRcCharge: looksRcNuke && !this.activeIntent.mutualLedIndicator,
-          mutualLedIndicator: this.activeIntent.mutualLedIndicator
-        });
+        const nukeFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine,
+          this.buildFinalizeGateOpts(opts, looksRcNuke));
         if (nukeFin.fixed > 0) {
           Logger.warn(INSTR_TRACE_TAG,
             `[AI_FIX] nuclear finalizeForGate fixed=${nukeFin.fixed}`);
@@ -1580,10 +1724,7 @@ export class AiPipelineOrchestrator {
     if (looksRc && !this.activeIntent.mutualLedIndicator) {
       this.stripStrayRelaysForSeriesRc(topo);
     }
-    const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-      seriesRcCharge: looksRc && !this.activeIntent.mutualLedIndicator,
-      mutualLedIndicator: this.activeIntent.mutualLedIndicator
-    });
+    const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
     if (fin.fixed > 0) {
       aiFixApplied += fin.fixed;
       Logger.info(INSTR_TRACE_TAG,
@@ -1609,7 +1750,7 @@ export class AiPipelineOrchestrator {
     if (pinExtra.length > 0) {
       // 先确定性补救再决定是否注入阻断
       const healPin = AiTopologyFixKit.healFloatingPins(topo, this.wiringEngine);
-      const prunePin = AiTopologyFixKit.pruneAllSingletonSignalNets(topo);
+      const prunePin = this.pruneSingletonsPreservingBoundary(topo, opts);
       if (healPin.fixed + prunePin.fixed > 0) {
         aiFixApplied += healPin.fixed + prunePin.fixed;
       }
@@ -1720,10 +1861,7 @@ export class AiPipelineOrchestrator {
 
       // 策略轮换
       if (assault === 1 || assault === 4) {
-        const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-          seriesRcCharge: looksRc && !this.activeIntent.mutualLedIndicator,
-          mutualLedIndicator: this.activeIntent.mutualLedIndicator
-        });
+        const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         aiFixApplied += fin.fixed;
         const opa = AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
         aiFixApplied += opa.fixed;
@@ -1746,15 +1884,12 @@ export class AiPipelineOrchestrator {
         // 几何核打击：全网标号化 + 再挂关键拓扑
         const all = AiTopologyFixKit.demoteAllToLabels(topo, this.wiringEngine);
         aiFixApplied += all.fixed;
-        const fin2 = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-          seriesRcCharge: looksRc && !this.activeIntent.mutualLedIndicator,
-          mutualLedIndicator: this.activeIntent.mutualLedIndicator
-        });
+        const fin2 = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         aiFixApplied += fin2.fixed;
         AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
         AiTopologyFixKit.healCriticalElectricalShorts(topo, this.wiringEngine);
         AiTopologyFixKit.dropFullyFloatingDevices(topo);
-        AiTopologyFixKit.pruneAllSingletonSignalNets(topo);
+        this.pruneSingletonsPreservingBoundary(topo, opts);
       }
 
       // 每轮尝试 LLM 自检（真修复，非模板）
@@ -1798,10 +1933,7 @@ export class AiPipelineOrchestrator {
           AiTopologyFixKit.demoteAllToLabels(topo, this.wiringEngine);
         }
         AiTopologyFixKit.rebuildInstrument(topo, this.wiringEngine);
-        AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-          seriesRcCharge: looksRc && !this.activeIntent.mutualLedIndicator,
-          mutualLedIndicator: this.activeIntent.mutualLedIndicator
-        });
+        AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         geoIssues = this.collectGeometricIssues(topo);
         geoHard = this.countGeoBlocking(geoIssues);
         ercErrors = this.collectErc(topo);
@@ -1828,11 +1960,7 @@ export class AiPipelineOrchestrator {
     // 最终兜底：几何必须清零；再跑一轮 finalize + 运放/浮空清理
     if (geoHard > 0) {
       AiTopologyFixKit.demoteAllToLabels(topo, this.wiringEngine);
-      AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, {
-        seriesRcCharge: (this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)) &&
-          !this.activeIntent.mutualLedIndicator,
-        mutualLedIndicator: this.activeIntent.mutualLedIndicator
-      });
+      AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
       AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
       AiTopologyFixKit.dropFullyFloatingDevices(topo);
       geoIssues = this.collectGeometricIssues(topo);
@@ -1846,7 +1974,7 @@ export class AiPipelineOrchestrator {
       AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
       AiTopologyFixKit.healFloatingPins(topo, this.wiringEngine);
       AiTopologyFixKit.dropFullyFloatingDevices(topo);
-      AiTopologyFixKit.pruneAllSingletonSignalNets(topo);
+      this.pruneSingletonsPreservingBoundary(topo, opts);
       ercErrors = this.collectErc(topo);
       topo.ercErrorList = ercErrors;
       ercHard = this.countPipelineBlocking(ercErrors, opts, topo);
@@ -1959,6 +2087,7 @@ export class AiPipelineOrchestrator {
    */
   private executeNetPlanLabelFirst(topo: SchTopology,
     plan: NetPlanResult): NetPlanExecutionResult {
+    NetPlanExecutor.setComponentLibrary(this.componentLibrary);
     NetPlanExecutor.prepareModes(plan);
     const pairs = NetPlanExecutor.collectWiredCompactPairs(plan);
     if (pairs.length > 0) {
@@ -2326,11 +2455,14 @@ export class AiPipelineOrchestrator {
         continue;
       }
       geoErrN++;
-      if (g.type === 'wire_cross' || g.type === 'wire_body') {
+      if (g.type === 'wire_cross' || g.type === 'wire_body' || g.type === 'pin_proximity') {
         if (g.targetUuid && g.targetUuid.length > 0) {
           const net = topo.netList.find(n => n.netUuid === g.targetUuid);
           if (net) {
-            demoteNets.add(net.netName ?? '');
+            const nm = net.netName ?? '';
+            if (nm.length > 0) {
+              demoteNets.add(nm);
+            }
           }
         }
       }
@@ -2429,13 +2561,30 @@ export class AiPipelineOrchestrator {
         });
       }
     }
-    if (issues.length === 0 && (ercErrors.length > 0 || geoErrN > 0)) {
+    // 纯几何残留：优先一次性 demote_geo_nets
+    if (issues.length === 0 && geoErrN > 0) {
       issues.push({
         type: 'wire_layout',
         severity: 'error',
-        desc: '残留阻断 — rebuild_instrument',
+        desc: '几何残留 — demote_geo_nets',
         targetDevice: '',
-        fixAction: 'rebuild_instrument'
+        fixAction: 'demote_geo_nets',
+        fixDetail: { reason: 'deterministic geo residual' }
+      });
+      issues.push({
+        type: 'wire_layout',
+        severity: 'error',
+        desc: '几何残留 — strip_phantom_pins',
+        targetDevice: '',
+        fixAction: 'strip_phantom_pins'
+      });
+    } else if (issues.length === 0 && ercErrors.length > 0) {
+      issues.push({
+        type: 'floating_pin',
+        severity: 'error',
+        desc: '残留 ERC — heal_floating',
+        targetDevice: '',
+        fixAction: 'heal_floating'
       });
     }
     return {
@@ -2683,6 +2832,25 @@ export class AiPipelineOrchestrator {
     return n;
   }
 
+  /** 几何阻断指纹：用于 clear-loop 检测 demote 假进度 */
+  private buildGeoBlockingFingerprint(issues: ValidationIssue[]): string {
+    const parts: string[] = [];
+    for (let i = 0; i < issues.length; i++) {
+      const g = issues[i];
+      if (g.severity !== 'error') {
+        continue;
+      }
+      if (g.type !== 'wire_body' && g.type !== 'wire_cross' && g.type !== 'pin_proximity') {
+        continue;
+      }
+      // 去掉动态 netUuid 数字噪声，保留 type+网名提示
+      const desc = (g.desc ?? '').replace(/net_\d+/g, 'net_*').substring(0, 96);
+      parts.push(`${g.type}|${desc}`);
+    }
+    parts.sort();
+    return parts.join(';;');
+  }
+
   /** 连线拥挤检测: 50mil网格, 统计每格导线数, >4条不同网络→拥挤 */
   private collectCongestionIssues(topo: SchTopology): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
@@ -2762,10 +2930,12 @@ export class AiPipelineOrchestrator {
       return { output: fallback, fromLlm: false };
     }
 
-    // 规范化
+    // 规范化 + 纠错工具选择（几何≠rebuild_instrument）
+    const rawIssues: AiReviewIssue[] =
+      Array.isArray(raw.issues) ? raw.issues as AiReviewIssue[] : [];
     const result: AiSelfReviewResult = {
-      passed: raw.passed !== undefined ? raw.passed : (raw.issues?.length ?? 0) === 0,
-      issues: Array.isArray(raw.issues) ? raw.issues as AiReviewIssue[] : [],
+      passed: raw.passed !== undefined ? raw.passed : rawIssues.length === 0,
+      issues: this.sanitizeReviewFixActions(rawIssues, topo),
       summary: raw.summary ?? ''
     };
     try {
@@ -2775,6 +2945,239 @@ export class AiPipelineOrchestrator {
       // ignore
     }
     return { output: result, fromLlm: true };
+  }
+
+  /**
+   * 按问题类型纠错 fixAction：布线/几何只能用 demote/reroute/join，
+   * 禁止对纯几何问题选 rebuild_instrument / heal / 拓扑 kit。
+   */
+  private sanitizeReviewFixActions(issues: AiReviewIssue[],
+    topo: SchTopology): AiReviewIssue[] {
+    const out: AiReviewIssue[] = [];
+    for (let i = 0; i < issues.length; i++) {
+      const iss = issues[i];
+      const action = (iss.fixAction ?? '').trim().toLowerCase();
+      const typ = (iss.type ?? '').toLowerCase();
+      const desc = iss.desc ?? '';
+      const descU = desc.toUpperCase();
+
+      const isInstrument = typ === 'instrument_topo' ||
+        desc.indexOf('示波器') >= 0 || desc.indexOf('电流表') >= 0 ||
+        desc.indexOf('电压表') >= 0 || desc.indexOf('仪器') >= 0 ||
+        descU.indexOf('OSC') >= 0;
+      const isUnusedOscCh = desc.indexOf('未用') >= 0 || desc.indexOf('未使用') >= 0 ||
+        (descU.indexOf('CH3') >= 0 && descU.indexOf('CH4') >= 0) ||
+        (descU.indexOf('NC') >= 0 && descU.indexOf('CH') >= 0);
+      // 未用通道互连：禁止 rebuild_instrument 空转，改 prune_unused_osc_channels
+      if (isUnusedOscCh && (action === 'rebuild_instrument' || action === 'rebuild')) {
+        Logger.info(INSTR_TRACE_TAG,
+          '[AI_FIX] tool_select remap rebuild→prune_unused_osc_channels');
+        out.push({
+          type: 'instrument_topo',
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: 'prune_unused_osc_channels',
+          fixDetail: { reason: 'unused OSC CH → prune NC bridge' }
+        });
+        continue;
+      }
+      const isGeo = typ === 'wire_layout' ||
+        desc.indexOf('选中区') >= 0 || desc.indexOf('安全间距') >= 0 ||
+        desc.indexOf('穿') >= 0 || desc.indexOf('重叠') >= 0 ||
+        desc.indexOf('碰无关') >= 0 || desc.indexOf('贴近') >= 0 ||
+        descU.indexOf('WIRE_BODY') >= 0 || descU.indexOf('PIN_PROXIMITY') >= 0 ||
+        descU.indexOf('WIRE_CROSS') >= 0;
+
+      const geoOk = action === 'demote_to_label' || action === 'force_label' ||
+        action === 'demote_all_labels' || action === 'label_all' ||
+        action === 'join_by_label' || action === 'reroute' ||
+        action === 'demote_geo_nets' || action === 'demote_power_rails' ||
+        action === 'move_device' || action === 'nudge_device' || action === 'rotate_device' ||
+        action === 'strip_phantom_pins';
+      // 纯几何多网：优先 demote_geo_nets
+      if (isGeo && !isInstrument &&
+        (action === 'rebuild_instrument' || action === 'heal_floating' ||
+          action === 'wire_series_rc' || action === 'wire_relay')) {
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_FIX] tool_select remap ${action}→demote_geo_nets (geo≠topo)`);
+        const remapped: AiReviewIssue = {
+          type: 'wire_layout',
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: 'demote_geo_nets',
+          fixDetail: {
+            reason: `remap ${action}→demote_geo_nets (geo≠topo)`
+          }
+        };
+        out.push(remapped);
+        continue;
+      }
+      // 纯几何：强制几何工具
+      if (isGeo && !isInstrument && !geoOk) {
+        const netName = this.extractFixNetName(iss, topo);
+        const detail = this.cloneFixDetail(iss.fixDetail);
+        if (netName.length > 0) {
+          detail.netName = netName;
+        }
+        detail.reason = `remap ${action}→${netName.length > 0 ? 'demote_to_label' : 'demote_geo_nets'} (geo≠topo)`;
+        const remapped: AiReviewIssue = {
+          type: 'wire_layout',
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: netName.length > 0 ? 'demote_to_label' : 'demote_geo_nets',
+          fixDetail: detail
+        };
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_FIX] tool_select remap ${action}→${remapped.fixAction}` +
+          ` net=${netName || '-'} type=${typ}`);
+        out.push(remapped);
+        continue;
+      }
+
+      // RC / 互斥意图纠错：选错拓扑 kit
+      if ((action === 'wire_relay' || action === 'wire_relay_spdt') &&
+        (this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)) &&
+        !this.activeIntent.mutualLedIndicator) {
+        Logger.info(INSTR_TRACE_TAG,
+          '[AI_FIX] tool_select remap wire_relay→wire_series_rc (RC intent)');
+        const detail = this.cloneFixDetail(iss.fixDetail);
+        detail.reason = 'remap wire_relay→wire_series_rc';
+        out.push({
+          type: iss.type,
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: 'wire_series_rc',
+          fixDetail: detail
+        });
+        continue;
+      }
+      if ((action === 'wire_series_rc' || action === 'wire_rc') &&
+        this.activeIntent.mutualLedIndicator) {
+        Logger.info(INSTR_TRACE_TAG,
+          '[AI_FIX] tool_select remap wire_series_rc→wire_relay (mutual LED)');
+        const detail = this.cloneFixDetail(iss.fixDetail);
+        detail.reason = 'remap wire_series_rc→wire_relay';
+        out.push({
+          type: iss.type,
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: 'wire_relay',
+          fixDetail: detail
+        });
+        continue;
+      }
+
+      // demote 缺网名：尽量补全，否则降为 reroute
+      if ((action === 'demote_to_label' || action === 'force_label') &&
+        !(iss.fixDetail?.netName ?? iss.fixDetail?.toNet ?? '').length) {
+        const netName = this.extractFixNetName(iss, topo);
+        if (netName.length > 0) {
+          const detail = this.cloneFixDetail(iss.fixDetail);
+          detail.netName = netName;
+          out.push({
+            type: iss.type,
+            severity: iss.severity,
+            desc: iss.desc,
+            targetDevice: iss.targetDevice,
+            fixAction: 'demote_to_label',
+            fixDetail: detail
+          });
+          continue;
+        }
+        Logger.info(INSTR_TRACE_TAG,
+          '[AI_FIX] tool_select demote缺网名 → reroute');
+        const detail = this.cloneFixDetail(iss.fixDetail);
+        detail.reason = 'demote缺网名→reroute';
+        out.push({
+          type: 'wire_layout',
+          severity: iss.severity,
+          desc: iss.desc,
+          targetDevice: iss.targetDevice,
+          fixAction: 'reroute',
+          fixDetail: detail
+        });
+        continue;
+      }
+
+      out.push(iss);
+    }
+    return out;
+  }
+
+  private cloneFixDetail(src?: AiFixDetail): AiFixDetail {
+    const d: AiFixDetail = {};
+    if (!src) {
+      return d;
+    }
+    if (src.libDevId !== undefined) {
+      d.libDevId = src.libDevId;
+    }
+    if (src.refName !== undefined) {
+      d.refName = src.refName;
+    }
+    if (src.x !== undefined) {
+      d.x = src.x;
+    }
+    if (src.y !== undefined) {
+      d.y = src.y;
+    }
+    if (src.paramKey !== undefined) {
+      d.paramKey = src.paramKey;
+    }
+    if (src.paramValue !== undefined) {
+      d.paramValue = src.paramValue;
+    }
+    if (src.reason !== undefined) {
+      d.reason = src.reason;
+    }
+    if (src.netName !== undefined) {
+      d.netName = src.netName;
+    }
+    if (src.pinId !== undefined) {
+      d.pinId = src.pinId;
+    }
+    if (src.fromNet !== undefined) {
+      d.fromNet = src.fromNet;
+    }
+    if (src.toNet !== undefined) {
+      d.toNet = src.toNet;
+    }
+    return d;
+  }
+
+  /** 从 fixDetail / desc / 目标器件推断网名 */
+  private extractFixNetName(iss: AiReviewIssue, topo: SchTopology): string {
+    const d = iss.fixDetail;
+    if (d) {
+      const n = (d.netName ?? d.toNet ?? '').trim();
+      if (n.length > 0) {
+        return n;
+      }
+    }
+    const desc = iss.desc ?? '';
+    // 「导线 xxx (VCC)」或「网 VCC」
+    const paren = desc.match(/\(([A-Za-z][A-Za-z0-9_]*)\)/);
+    if (paren && paren[1]) {
+      const cand = paren[1];
+      if (topo.netList.some(n => (n.netName ?? '') === cand)) {
+        return cand;
+      }
+      // 即使板上暂无此名，常见电源轨也保留
+      const u = cand.toUpperCase();
+      if (u === 'VCC' || u === 'GND' || u === 'VEE' || u === 'VDD' || u === 'VSS') {
+        return cand;
+      }
+    }
+    const named = desc.match(/(?:网|net)\s*[=:]?\s*([A-Za-z][A-Za-z0-9_]*)/i);
+    if (named && named[1]) {
+      return named[1];
+    }
+    return '';
   }
 
   private buildSelfReviewVars(topo: SchTopology, ercErrors: ErcError[],
@@ -2860,11 +3263,23 @@ export class AiPipelineOrchestrator {
     opts?: PipelineOptions): AiFixExecResult {
     const seenKeys = new Set<string>();
     const state: AiFixExecState = { fixCount: 0, needReroute: false, needTopoKit: false };
+    // 确定性/LLM 出口统一纠错工具选择
+    const normalized = this.sanitizeReviewFixActions(issues, topo);
 
     // 任何一轮修复前先清洗脏 pinId + 拆电源短接（确定性，不依赖 LLM）
     const preSanitize = AiTopologyFixKit.sanitizeTopoPinIds(topo);
     if (preSanitize > 0) {
       state.fixCount += preSanitize;
+      state.needReroute = true;
+    }
+    const prePhantom = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+    if (prePhantom.fixed > 0) {
+      state.fixCount += prePhantom.fixed;
+      state.needReroute = true;
+    }
+    const preOscNc = AiTopologyFixKit.pruneUnusedOscChannelNets(topo);
+    if (preOscNc.fixed > 0) {
+      state.fixCount += preOscNc.fixed;
       state.needReroute = true;
     }
     const preSplit = AiTopologyFixKit.splitMergedPowerRails(topo);
@@ -2884,7 +3299,7 @@ export class AiPipelineOrchestrator {
     }
 
     // 修复顺序：拆短路 → 重建仪器 → 删多余 → 加器件 → heal → 重挂 → 标号并网 → demote
-    const sorted = issues.slice().sort((a, b) =>
+    const sorted = normalized.slice().sort((a, b) =>
       AiPipelineOrchestrator.fixActionPriority(a.fixAction) -
       AiPipelineOrchestrator.fixActionPriority(b.fixAction));
 
@@ -2898,10 +3313,14 @@ export class AiPipelineOrchestrator {
       }
     }
 
-    // 若审查提到浮空/网络完整性且尚未 heal，补一轮
-    const needHeal = issues.some(i => {
+    // 若审查提到浮空/网络完整性且尚未 heal，补一轮（纯几何 demote/reroute 不触发）
+    const needHeal = normalized.some(i => {
       const t = (i.type ?? '').toLowerCase();
       const a = (i.fixAction ?? '').toLowerCase();
+      if (t === 'wire_layout' || a === 'demote_to_label' || a === 'reroute' ||
+        a === 'demote_all_labels' || a === 'join_by_label') {
+        return false;
+      }
       return t.indexOf('float') >= 0 || t.indexOf('net_integrity') >= 0 ||
         t.indexOf('unconnected') >= 0 || a.indexOf('heal') >= 0 ||
         a === 'rebuild_instrument';
@@ -2996,7 +3415,7 @@ export class AiPipelineOrchestrator {
     Logger.info(INSTR_TRACE_TAG,
       `[AI_FIX] executeAiFixes done fixCount=${state.fixCount}` +
       ` needReroute=${state.needReroute} needTopoKit=${state.needTopoKit}` +
-      ` issues=${issues.length}`);
+      ` issues=${normalized.length}`);
     const out: AiFixExecResult = {
       fixCount: state.fixCount,
       needReroute: state.needReroute,
@@ -3011,18 +3430,27 @@ export class AiPipelineOrchestrator {
     if (a.indexOf('split_power') >= 0) {
       return 0;
     }
+    if (a === 'strip_phantom_pins' || a === 'prune_unused_osc_channels' ||
+      a === 'prune_singleton_nets') {
+      return 0;
+    }
     if (a.indexOf('rebuild_instrument') >= 0) {
       return 1;
     }
-    if (a === 'remove_component') {
+    if (a === 'remove_component' || a === 'disconnect_pin') {
       return 2;
     }
     if (a === 'add_component') {
       return 3;
     }
     if (a === 'wire_series_rc' || a === 'wire_relay' ||
-      a === 'wire_potentiometer' || a === 'heal_electrical') {
+      a === 'wire_potentiometer' || a === 'heal_electrical' ||
+      a === 'wire_dual_supply' || a === 'wire_opamp_feedback' ||
+      a === 'ensure_signal_gen') {
       return 3;
+    }
+    if (a === 'move_device' || a === 'nudge_device' || a === 'rotate_device') {
+      return 4;
     }
     if (a.indexOf('heal') >= 0) {
       return 4;
@@ -3032,6 +3460,9 @@ export class AiPipelineOrchestrator {
     }
     if (a.indexOf('join_by_label') >= 0) {
       return 6;
+    }
+    if (a === 'demote_geo_nets' || a === 'demote_power_rails') {
+      return 7;
     }
     if (a === 'reroute') {
       return 7;
@@ -3205,6 +3636,93 @@ export class AiPipelineOrchestrator {
       }
       return;
     }
+    if (action === 'wire_dual_supply' || action === 'wire_dual_rails') {
+      if (!seenKeys.has('wire_dual_supply|*')) {
+        seenKeys.add('wire_dual_supply|*');
+        const r = AiTopologyFixKit.wireDualSupplyRails(topo, this.wiringEngine);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+        state.needTopoKit = state.needTopoKit || r.fixed > 0;
+      }
+      return;
+    }
+    if (action === 'wire_opamp_feedback' || action === 'opamp_feedback') {
+      if (!seenKeys.has('wire_opamp_feedback|*')) {
+        seenKeys.add('wire_opamp_feedback|*');
+        const r = AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+        state.needTopoKit = state.needTopoKit || r.fixed > 0;
+      }
+      return;
+    }
+    if (action === 'ensure_signal_gen') {
+      if (!seenKeys.has('ensure_signal_gen|*')) {
+        seenKeys.add('ensure_signal_gen|*');
+        const r = AiTopologyFixKit.ensureSignalGenWired(topo, this.wiringEngine);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+      }
+      return;
+    }
+    if (action === 'strip_phantom_pins' || action === 'sanitize_pins') {
+      if (!seenKeys.has('strip_phantom_pins|*')) {
+        seenKeys.add('strip_phantom_pins|*');
+        const r = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+      }
+      return;
+    }
+    if (action === 'prune_unused_osc_channels' || action === 'break_nc_bridge') {
+      if (!seenKeys.has('prune_unused_osc|*')) {
+        seenKeys.add('prune_unused_osc|*');
+        const r = AiTopologyFixKit.pruneUnusedOscChannelNets(topo);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+      }
+      return;
+    }
+    if (action === 'prune_singleton_nets') {
+      if (!seenKeys.has('prune_singleton|*')) {
+        seenKeys.add('prune_singleton|*');
+        const r1 = AiTopologyFixKit.pruneSingletonOrphanNets(topo);
+        const r2 = AiTopologyFixKit.pruneAllSingletonSignalNets(topo,
+          opts ? this.buildFinalizeGateOpts(opts, false).preserveBoundaryKeys : undefined);
+        state.fixCount += r1.fixed + r2.fixed;
+        state.needReroute = state.needReroute || r1.needReroute || r2.needReroute;
+      }
+      return;
+    }
+    if (action === 'demote_power_rails') {
+      if (!seenKeys.has('demote_power_rails|*')) {
+        seenKeys.add('demote_power_rails|*');
+        const r = AiTopologyFixKit.demotePowerRails(topo, this.wiringEngine);
+        state.fixCount += r.fixed;
+        state.needReroute = state.needReroute || r.needReroute;
+      }
+      return;
+    }
+    if (action === 'demote_geo_nets') {
+      if (!seenKeys.has('demote_geo_nets|*')) {
+        seenKeys.add('demote_geo_nets|*');
+        const geo = this.collectGeometricIssues(topo);
+        const bad = this.collectGeoBadNetUuids(geo);
+        if (bad.size > 0) {
+          const n = this.wiringEngine.demoteNetsToLabelStubs(topo, bad);
+          state.fixCount += n > 0 ? bad.size : 0;
+          state.needReroute = true;
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_FIX] demote_geo_nets nets=${bad.size} stubs=${n}`);
+        } else {
+          // 无当前几何指纹时退化为电源轨标号
+          const r = AiTopologyFixKit.demotePowerRails(topo, this.wiringEngine);
+          state.fixCount += r.fixed;
+          state.needReroute = state.needReroute || r.needReroute;
+        }
+      }
+      return;
+    }
 
     // ── split_power_short ──
     if (action === 'split_power' || action === 'split_power_short') {
@@ -3297,6 +3815,58 @@ export class AiPipelineOrchestrator {
       }
       seenKeys.add(dedupe);
       const r = AiTopologyFixKit.reconnectPin(topo, this.wiringEngine, ref, pinId, netName);
+      state.fixCount += r.fixed;
+      state.needReroute = state.needReroute || r.needReroute;
+      return;
+    }
+
+    // ── disconnect_pin：拆除错误连接 / 未用通道悬空 ──
+    if (action === 'disconnect_pin' || action === 'float_pin') {
+      const ref = detail.refName ?? issue.targetDevice ?? '';
+      const pinId = detail.pinId ?? '';
+      if (ref.length === 0 || pinId.length === 0) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_FIX] disconnect_pin missing ref/pinId ref=${ref} pin=${pinId}`);
+        return;
+      }
+      const dedupe = `disconnect|${ref}|${pinId}`;
+      if (seenKeys.has(dedupe)) {
+        return;
+      }
+      seenKeys.add(dedupe);
+      const r = AiTopologyFixKit.disconnectPin(topo, this.wiringEngine, ref, pinId);
+      state.fixCount += r.fixed;
+      state.needReroute = state.needReroute || r.needReroute;
+      return;
+    }
+
+    // ── move_device / nudge_device / rotate_device ──
+    if (action === 'move_device' || action === 'nudge_device') {
+      const ref = detail.refName ?? issue.targetDevice ?? '';
+      if (ref.length === 0) {
+        return;
+      }
+      const dedupe = `move|${ref}|${detail.x ?? ''}|${detail.y ?? ''}|${detail.dx ?? ''}|${detail.dy ?? ''}`;
+      if (seenKeys.has(dedupe)) {
+        return;
+      }
+      seenKeys.add(dedupe);
+      const r = AiTopologyFixKit.moveDevice(topo, ref, detail.x, detail.y, detail.dx, detail.dy);
+      state.fixCount += r.fixed;
+      state.needReroute = state.needReroute || r.needReroute;
+      return;
+    }
+    if (action === 'rotate_device') {
+      const ref = detail.refName ?? issue.targetDevice ?? '';
+      if (ref.length === 0) {
+        return;
+      }
+      const dedupe = `rotate|${ref}|${detail.rotate ?? 'rel90'}`;
+      if (seenKeys.has(dedupe)) {
+        return;
+      }
+      seenKeys.add(dedupe);
+      const r = AiTopologyFixKit.rotateDevice(topo, ref, detail.rotate);
       state.fixCount += r.fixed;
       state.needReroute = state.needReroute || r.needReroute;
       return;
@@ -3569,6 +4139,38 @@ export class AiPipelineOrchestrator {
       return true;
     }
     return (opts.prompt ?? '').indexOf('【模块并行约束') >= 0;
+  }
+
+  /** 选型/建网/库匹配等硬中止：空拓扑或 abort 类 errType，残留 ERC 不算 abort */
+  private isPipelineAbortResult(r: AiPipelineResult): boolean {
+    if (!r.topology || r.topology.deviceList.length === 0) {
+      return true;
+    }
+    const errs = r.ercErrors ?? [];
+    for (let i = 0; i < errs.length; i++) {
+      const et = errs[i].errType ?? '';
+      if (et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
+        et === 'modular_plan' || et === 'modular_parallel' || et === 'placement') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** finalize/prune 共用：带上模块边界脚白名单，禁止剪掉跨模块 joinByLabel 单脚网 */
+  private buildFinalizeGateOpts(opts: PipelineOptions, seriesRc: boolean): FinalizeGateOpts {
+    const gateOpts: FinalizeGateOpts = {
+      seriesRcCharge: seriesRc && !this.activeIntent.mutualLedIndicator,
+      mutualLedIndicator: this.activeIntent.mutualLedIndicator,
+      preserveBoundaryKeys: this.resolveModularBoundaryKeys(opts)
+    };
+    return gateOpts;
+  }
+
+  private pruneSingletonsPreservingBoundary(topo: SchTopology,
+    opts: PipelineOptions): TopologyFixResult {
+    return AiTopologyFixKit.pruneAllSingletonSignalNets(topo,
+      this.resolveModularBoundaryKeys(opts));
   }
 
   private resolveModularBoundaryKeys(opts: PipelineOptions): string[] {
@@ -3980,6 +4582,62 @@ export class AiPipelineOrchestrator {
         split.hard.push('需要 SIGNAL_GEN 信号发生器（waveform=sine|square|triangle）');
       }
     }
+    if (intent.needsOpAmpIntegrator) {
+      const hasOp = allIds.some(m =>
+        m.indexOf('UA741') >= 0 || m.indexOf('TL082') >= 0 || m.indexOf('LM358') >= 0 ||
+        m.indexOf('LM324') >= 0 || m.indexOf('741') >= 0);
+      const hasR = models.some(m => m.startsWith('R_'));
+      const hasC = models.some(m => m.startsWith('C_'));
+      const hasSig = allIds.some(m => m.indexOf('SIGNAL_GEN') >= 0);
+      const hasVee = allIds.some(m => m === 'VEE');
+      if (!hasOp) {
+        split.hard.push('积分电路必须含运放（UA741/TL082/LM358 等库内型号）');
+      }
+      if (!hasR || !hasC) {
+        split.hard.push('积分电路必须含积分电阻 R_* 与反馈电容 C_*');
+      }
+      if (!hasSig) {
+        split.hard.push('积分电路必须含 SIGNAL_GEN（方波激励）');
+      }
+      if (!hasVee) {
+        split.hard.push('积分电路必须双电源：输出 VEE（voltage=-12V）与 VCC=12V');
+      }
+      // 波形：方波激励
+      for (let ii = 0; ii < list.length; ii++) {
+        const id = `${list[ii].explicitModel ?? ''}`.toUpperCase();
+        if (id.indexOf('SIGNAL_GEN') < 0) {
+          continue;
+        }
+        const wf = (list[ii].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
+        if (wf.length === 0 || (wf !== 'square' && wf !== 'pulse')) {
+          split.hard.push(
+            '积分电路 SIGNAL_GEN.waveform 必须为 square（三角是运放输出观测，禁止写成信号源 waveform）');
+        }
+        const amp = (list[ii].paramConstraint?.get('amplitude') ?? '').trim();
+        if (amp.length === 0) {
+          split.hard.push('积分电路 SIGNAL_GEN 必须写 param_constraint.amplitude（推荐 "5V"）');
+        }
+        break;
+      }
+    }
+
+    // 滞回：幅度过小 → HARD（逼 AI 重出，禁止默默用 1V）
+    if (intent.needsHysteresisComparator) {
+      for (let hi = 0; hi < list.length; hi++) {
+        const id = `${list[hi].explicitModel ?? ''}`.toUpperCase();
+        if (id.indexOf('SIGNAL_GEN') < 0) {
+          continue;
+        }
+        const amp = (list[hi].paramConstraint?.get('amplitude') ?? '').trim();
+        const ampV = parseSignalAmplitudeVolts(amp);
+        if (!Number.isFinite(ampV) || ampV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+          split.hard.push(
+            `滞回比较器 SIGNAL_GEN.amplitude 须≥${HYSTERESIS_MIN_SIGNAL_AMP_V}V` +
+            `（推荐 ${HYSTERESIS_RECOMMENDED_SIGNAL_AMP}）；禁止 ${amp.length > 0 ? amp : '空/1V'} — 过小会锁死负饱和`);
+        }
+        break;
+      }
+    }
 
     const ledN = models.filter(m => m.indexOf('LED') >= 0).length;
     const rN = models.filter(m => m.startsWith('R_')).length;
@@ -4051,6 +4709,65 @@ export class AiPipelineOrchestrator {
       }
       if (!hasSw) {
         split.soft.push('RC 充放电建议含 SW_PUSH 控制充电启动（VCC→SW→R→RC_MID→C→GND）');
+      }
+    }
+
+    // 555 无稳态：强制库内 LM555；缺 CTRL/去耦 → HARD（AI 重出，禁止本地静默补件）
+    const has555 = allIds.some(m => m.indexOf('LM555') >= 0 || m === '555');
+    const prompt555 = prompt.indexOf('555') >= 0 || prompt.toLowerCase().indexOf('lm555') >= 0;
+    if (has555 || prompt555) {
+      const hasNe = models.some(m => m.indexOf('NE555') >= 0);
+      if (hasNe) {
+        split.hard.push('禁止 NE555 等库外型号 — 必须用 explicitModel=LM555');
+      }
+      if (has555) {
+        const hasDecap = models.some(m => m === 'C_100nF' || m === 'C_100NF' || m === 'C_10nF');
+        if (!hasDecap) {
+          split.hard.push('555 电路必须含 C_100nF（CTRL 旁路到 GND；可再加 VCC 去耦）— 请在 BOM 中输出');
+        }
+        const hasRa = models.some(m => m.startsWith('R_'));
+        const hasCt = models.some(m =>
+          m.startsWith('C_') && m.indexOf('100NF') < 0 && m.indexOf('10NF') < 0);
+        if (!hasRa || !hasCt) {
+          split.hard.push('555 无稳态必须含定时电阻(R_*)与定时电容(C_1uF/C_10uF/C_100uF)');
+        }
+      }
+    }
+
+    // 双电源：缺 voltage / 不对称 → HARD，逼 LLM 改，不本地改电压
+    if (intent.dualSupply) {
+      let vccBom = '';
+      let veeBom = '';
+      let hasVccSym = false;
+      let hasVeeSym = false;
+      for (let bi = 0; bi < list.length; bi++) {
+        const id = `${list[bi].explicitModel ?? ''} ${list[bi].devType ?? ''}`.toUpperCase();
+        const vv = (list[bi].paramConstraint?.get('voltage') ?? '').trim();
+        if (id.indexOf('VEE') >= 0) {
+          hasVeeSym = true;
+          if (vv.length > 0) {
+            veeBom = vv;
+          }
+        }
+        if (id.indexOf('VCC') >= 0 && id.indexOf('VEE') < 0) {
+          hasVccSym = true;
+          if (vv.length > 0) {
+            vccBom = vv;
+          }
+        }
+      }
+      if (hasVccSym && vccBom.length === 0) {
+        split.hard.push('双电源 VCC 必须写 param_constraint.voltage（如 "12V"）');
+      }
+      if (hasVeeSym && veeBom.length === 0) {
+        split.hard.push('双电源 VEE 必须写 param_constraint.voltage（如 "-12V"）');
+      }
+      const vccN = parseFloat(vccBom.replace(/[Vv]/g, ''));
+      const veeN = parseFloat(veeBom.replace(/[Vv]/g, ''));
+      const absVee = Number.isFinite(veeN) ? Math.abs(veeN) : 0;
+      if (Number.isFinite(vccN) && vccN === 5 && absVee >= 12) {
+        split.hard.push(
+          `双电源禁止 VCC=${vccBom} 配 VEE=${veeBom} — 请改为对称轨（如 VCC=12V 与 VEE=-12V）`);
       }
     }
 
@@ -4519,8 +5236,12 @@ export class AiPipelineOrchestrator {
   /**
    * 生图各阶段均开启 thinking（选型/建网/布局/布线/自检），提升推理正确率。
    */
+  /**
+   * DeepSeek V4 等模型的 thinking 会把推理泄漏进 content，破坏「只出 JSON」。
+   * 流水线各阶段均为结构化 JSON → 一律关闭 thinking。
+   */
   private static needsThinking(_capability: string): boolean {
-    return true;
+    return false;
   }
 
   private static maxTokensForStage(stage: string): number {
@@ -4555,11 +5276,17 @@ export class AiPipelineOrchestrator {
   private async chatWithRetry(prompt: string, capability: string, extraOpts?: ChatOptions): Promise<ChatResult> {
     let lastError = '';
     const tag = this.logTag();
+    if (this.isCancelRequested()) {
+      return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+    }
     traceAiOp('AI_PIPE', 'llm_chat',
       `${tag}cap=${capability} promptLen=${prompt.length} maxRetries=${LLM_MAX_RETRIES}`);
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] ${tag}WAIT LLM cap=${capability} promptLen=${prompt.length} — complex replies may take a long time`);
     for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+      if (this.isCancelRequested()) {
+        return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+      }
       Logger.info(INSTR_TRACE_TAG,
         `[AI_PIPE] ${tag}chat attempt=${attempt + 1}/${LLM_MAX_RETRIES + 1} cap=${capability}`);
       const useThinking = AiPipelineOrchestrator.needsThinking(capability);
@@ -4575,6 +5302,11 @@ export class AiPipelineOrchestrator {
         chatOpts.disableThinking = extraOpts.disableThinking;
       }
       const result = await this.apiManager.chat(prompt, chatOpts);
+      if (this.isCancelRequested() ||
+        result.errCode === ErrCode.ERR_ASYNC_CANCEL ||
+        (result.error ?? '').indexOf('cancelled') >= 0) {
+        return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+      }
       if (result.success && result.data) {
         Logger.info(INSTR_TRACE_TAG,
           `[AI_PIPE] ${tag}chat OK cap=${capability} len=${result.data.length}`);
@@ -4604,6 +5336,9 @@ export class AiPipelineOrchestrator {
         Logger.info(INSTR_TRACE_TAG,
           `[AI_PIPE] WAIT backoff ${delay}ms before retry cap=${capability}`);
         await new Promise<void>(r => setTimeout(r, delay));
+        if (this.isCancelRequested()) {
+          return { success: false, errCode: ErrCode.ERR_ASYNC_CANCEL, error: 'cancelled' };
+        }
       }
     }
     return { success: false, error: lastError };
@@ -4614,6 +5349,10 @@ export class AiPipelineOrchestrator {
     const violations = FaultDiagnoser.diagnose(doc);
     let fixes = 0;
     const diag: DiagError[] = [];
+    const usedRefs = new Set<string>();
+    for (let di = 0; di < topo.deviceList.length; di++) {
+      usedRefs.add((topo.deviceList[di].refName ?? '').toUpperCase());
+    }
     for (let i = 0; i < violations.length; i++) {
       const v = violations[i];
       diag.push({
@@ -4627,17 +5366,22 @@ export class AiPipelineOrchestrator {
       if (v.fixSuggestion?.includes('pull') || v.message.includes('上拉')) {
         const hasR = topo.deviceList.some(d => d.libDevId.startsWith('R_'));
         if (!hasR) {
+          // 仅追加器件，禁止 SemanticNetBuilder 整网重建（会覆盖 LLM net_plan）
+          const refName = this.allocUniqueRefName('R_10k', usedRefs);
+          usedRefs.add(refName.toUpperCase());
           topo.deviceList.push(makeDeviceInst(
-            IdUtil.generate('inst'), 'R_10k', `R${topo.deviceList.length + 1}`,
+            IdUtil.generate('inst'), 'R_10k', refName,
             400, 300, 0, stringMap1('value', '10k')
           ));
           fixes++;
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_PIPE] diagnose add pull-up ${refName} without SemanticNetBuilder wipe`);
         }
       }
     }
     if (fixes > 0) {
-      const routed = new SemanticNetBuilder(this.componentLibrary).build(topo);
-      topo = routed.topology;
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_PIPE] diagnose added ${fixes} devices — nets preserved (no SemanticNetBuilder)`);
     }
     return { topo, fixes, diag };
   }
@@ -4727,14 +5471,45 @@ export class AiPipelineOrchestrator {
         : prompt;
       const api = await this.chatWithRetry(roundPrompt, AiCapability.COMPONENT_RECOMMEND,
         { temperature: AiPipelineOrchestrator.temperatureForStage('device_select'),
-          maxTokens: AiPipelineOrchestrator.maxTokensForStage('device_select') });
+          maxTokens: AiPipelineOrchestrator.maxTokensForStage('device_select'),
+          disableThinking: true });
       if (api.success && api.data) {
+        const pure = PromptLoader.isStrictJsonObjectReply(api.data);
+        if (!pure) {
+          const impurity = PromptLoader.describeJsonImpurity(api.data);
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PIPE] device_select JSON impurity=${impurity} round=${round + 1} — critique retry`);
+          critique =
+            '【硬】上次回复违反「只出 JSON」：正文必须以 { 开头、以 } 结尾；' +
+            '禁止中文/英文推理、说明、markdown、``` 代码围栏。请重出完整纯 JSON。' +
+            `（检测到: ${impurity}）`;
+          // 仍尝试抽取，作末轮兜底
+          const rawLoose = PromptLoader.extractJson<Object>(api.data);
+          const parsedLoose = LlmJsonNormalizer.normalizeDeviceSelect(rawLoose);
+          if (parsedLoose && (parsedLoose.deviceRequireList?.length ?? 0) > 0) {
+            lastParsed = parsedLoose;
+          }
+          if (round < CRITIQUE_INNER_ROUNDS) {
+            continue;
+          }
+          // 末轮：已抽取则接受并告警，避免因杂质空跑
+          if (lastParsed) {
+            Logger.warn(INSTR_TRACE_TAG,
+              '[AI_PIPE] device_select accept impure JSON on last round (extracted)');
+            if (!isEdit) {
+              this.cacheSet(cacheKey, lastParsed);
+            }
+            return { output: lastParsed, fromLlm: true };
+          }
+        }
         const raw = PromptLoader.extractJson<Object>(api.data);
         const parsed = LlmJsonNormalizer.normalizeDeviceSelect(raw);
         const score = this.scoreLlmJson(parsed, LlmJsonNormalizer.deviceSelectScoreFields());
         Logger.info(INSTR_TRACE_TAG,
-          `[AI_PIPE] device_select parse score=${score.toFixed(2)} round=${round + 1}`);
-        if (parsed && score >= QUALITY_MIN_FILL_RATE) {
+          `[AI_PIPE] device_select parse score=${score.toFixed(2)} round=${round + 1}` +
+          ` pureJson=${pure}`);
+        if (parsed && (parsed.deviceRequireList?.length ?? 0) > 0 &&
+          score >= QUALITY_MIN_FILL_RATE) {
           lastParsed = parsed;
           const split = this.critiqueDeviceSelectSplit(parsed, opts.prompt, this.activeIntent);
           Logger.info(INSTR_TRACE_TAG,
@@ -4823,8 +5598,15 @@ export class AiPipelineOrchestrator {
 
     const tpl = PromptLoader.load('layout');
     const deviceList = PromptLoader.buildLayoutDeviceHitSummary(devices, this.componentLibrary);
+    const usage = PromptLoader.buildDeviceUsageBlock(
+      PromptLoader.libIdsFromMatched(devices), 'compact', this.componentLibrary);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] usage_manual stage=layout devices=${usage.deviceCount} ` +
+      `included=${usage.includedCount} miss=${usage.missIds.length} chars=${usage.charCount}` +
+      (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : ''));
     const basePrompt = PromptLoader.renderEnriched(tpl, [
       { key: 'device_list', value: deviceList },
+      { key: 'device_usage', value: usage.text },
       { key: 'circuit_constraint', value: constraint },
       { key: 'mcu_family', value: opts.mcuFamily ?? 'auto' }
     ], this.componentLibrary);
@@ -4850,6 +5632,31 @@ export class AiPipelineOrchestrator {
           break;
         }
         continue;
+      }
+      if (!PromptLoader.isStrictJsonObjectReply(api.data)) {
+        const impurity = PromptLoader.describeJsonImpurity(api.data);
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] layout JSON impurity=${impurity} round=${round + 1} — critique retry`);
+        critique =
+          '【硬】上次回复违反「只出 JSON」：正文必须以 { 开头、以 } 结尾；' +
+          '禁止中文/英文推理、说明、markdown、``` 代码围栏。请重出完整纯 JSON（含 positions[]）。' +
+          `（检测到: ${impurity}）`;
+        const rawLoose = PromptLoader.extractJson<Object>(api.data);
+        if (rawLoose) {
+          const parsedLoose = LlmJsonNormalizer.normalizeLayout(rawLoose);
+          if (parsedLoose && (parsedLoose.positions?.length ?? 0) > 0) {
+            this.sanitizeLayoutPositions(parsedLoose);
+            lastParsed = parsedLoose;
+          }
+        }
+        if (round < LAYOUT_INNER_ROUNDS) {
+          continue;
+        }
+        if (lastParsed) {
+          Logger.warn(INSTR_TRACE_TAG,
+            '[AI_PIPE] layout accept impure JSON on last round (extracted)');
+          return { output: lastParsed, fromLlm: true };
+        }
       }
       const raw = PromptLoader.extractJson<Object>(api.data);
       if (!raw) {
@@ -5067,10 +5874,20 @@ export class AiPipelineOrchestrator {
     const tpl = PromptLoader.load('net_plan');
     const deviceDetail = PromptLoader.buildDeviceDetailForNetPlan(topo, this.componentLibrary);
     const posSummary = PromptLoader.buildPositionSummary(topo, this.componentLibrary);
+    const usage = PromptLoader.buildDeviceUsageBlock(
+      PromptLoader.libIdsFromTopo(topo), 'full', this.componentLibrary);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] usage_manual stage=net_plan devices=${usage.deviceCount} ` +
+      `included=${usage.includedCount} miss=${usage.missIds.length} ` +
+      `criticalMiss=${usage.criticalMissIds.length} chars=${usage.charCount}` +
+      (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : '') +
+      (usage.criticalMissIds.length > 0
+        ? ` criticalMissIds=${usage.criticalMissIds.slice(0, 8).join(',')}` : ''));
 
     const prompt = PromptLoader.renderEnriched(tpl, [
       { key: 'user_prompt', value: opts.prompt },
       { key: 'device_detail', value: deviceDetail },
+      { key: 'device_usage', value: usage.text },
       { key: 'position_summary', value: posSummary }
     ], this.componentLibrary, { intent: this.activeIntent });
 
@@ -5086,7 +5903,8 @@ export class AiPipelineOrchestrator {
         : prompt;
       const api = await this.chatWithRetry(roundPrompt, AiCapability.COMPONENT_RECOMMEND,
         { temperature: AiPipelineOrchestrator.temperatureForStage('net_plan'),
-          maxTokens: AiPipelineOrchestrator.maxTokensForStage('net_plan') });
+          maxTokens: AiPipelineOrchestrator.maxTokensForStage('net_plan'),
+          disableThinking: true });
       if (!api.success) {
         Logger.warn(INSTR_TRACE_TAG,
           `[AI_PIPE] KEEP_RETRY net_plan API failed: ${api.error ?? 'no error info'} round=${round + 1}`);
@@ -5097,7 +5915,24 @@ export class AiPipelineOrchestrator {
           `[AI_PIPE] KEEP_RETRY net_plan empty data round=${round + 1}`);
         continue;
       }
-
+      if (!PromptLoader.isStrictJsonObjectReply(api.data)) {
+        const impurity = PromptLoader.describeJsonImpurity(api.data);
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] net_plan JSON impurity=${impurity} round=${round + 1}`);
+        critique =
+          '【硬】上次回复违反「只出 JSON」：必须以 { 开头、} 结尾，禁止推理/markdown/代码围栏。' +
+          `（${impurity}）`;
+        const rawLoose = PromptLoader.extractJson<Object>(api.data);
+        const planLoose = NetPlanExecutor.normalizeLlmPlan(rawLoose);
+        if (planLoose && planLoose.nets && planLoose.nets.length > 0) {
+          lastPlan = planLoose;
+        }
+        if (round < CRITIQUE_INNER_ROUNDS) {
+          continue;
+        }
+        Logger.warn(INSTR_TRACE_TAG,
+          '[AI_PIPE] net_plan accept impure JSON on last round (will still validate)');
+      }
       const rawObj = PromptLoader.extractJson<Object>(api.data);
       const raw = NetPlanExecutor.normalizeLlmPlan(rawObj);
       if (!raw || !raw.nets || !Array.isArray(raw.nets) || raw.nets.length === 0) {
@@ -5119,6 +5954,12 @@ export class AiPipelineOrchestrator {
         raw, topo, this.componentLibrary);
       for (let phi = 0; phi < pinHard.length; phi++) {
         split.hard.push(pinHard[phi]);
+      }
+      // 关键器件无手册精确/族条目：禁止仅靠弱 description 兜底建网
+      if (usage.criticalMissIds.length > 0) {
+        split.hard.push(
+          `关键器件无手册条目: ${usage.criticalMissIds.slice(0, 6).join(',')}` +
+          ` — 请改用库内标准 libDevId 或补手册后再建网`);
       }
       Logger.info(INSTR_TRACE_TAG,
         `[AI_PIPE] critique HARD=${split.hard.length} SOFT=${split.soft.length}`);
@@ -5174,6 +6015,11 @@ export class AiPipelineOrchestrator {
         lastPlan, topo, this.componentLibrary);
       for (let phi = 0; phi < pinHard2.length; phi++) {
         stillSplit.hard.push(pinHard2[phi]);
+      }
+      if (usage.criticalMissIds.length > 0) {
+        stillSplit.hard.push(
+          `关键器件无手册条目: ${usage.criticalMissIds.slice(0, 6).join(',')}` +
+          ` — 请改用库内标准 libDevId 或补手册后再建网`);
       }
       if (stillSplit.hard.length === 0) {
         Logger.warn(INSTR_TRACE_TAG,
@@ -5279,12 +6125,19 @@ export class AiPipelineOrchestrator {
     const hintText = hints
       ? `forceLabel=[${(hints.forceLabel ?? []).join(',')}] forceWire=[${(hints.forceWire ?? []).join(',')}]`
       : '(无 net_plan wiringHints)';
+    const usage = PromptLoader.buildDeviceUsageBlock(
+      PromptLoader.libIdsFromTopo(topo), 'compact', this.componentLibrary);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] usage_manual stage=route devices=${usage.deviceCount} ` +
+      `included=${usage.includedCount} miss=${usage.missIds.length} chars=${usage.charCount}` +
+      (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : ''));
     const basePrompt = PromptLoader.renderEnriched(tpl, [
       {
         key: 'topology_summary',
         value: `${topo.deviceList.length} devices, ${topo.netList.length} nets | ${hintText}`
       },
-      { key: 'net_list', value: netDetailLines.join('\n') }
+      { key: 'net_list', value: netDetailLines.join('\n') },
+      { key: 'device_usage', value: usage.text }
     ], this.componentLibrary);
 
     let critique = '';
@@ -5337,11 +6190,13 @@ export class AiPipelineOrchestrator {
         this.cacheSet(cacheKey, lastParsed);
         return { output: lastParsed, fromLlm: true };
       }
-      // 残差：确定性清洗后仍有 HARD 时，以清洗后的约束 degraded 继续
+      // 残差 HARD：强制标号兜底，fromLlm=false 以免假绿；保留已清洗约束
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PIPE] route residual HARD=${still.length} — use last+hints (degraded): ` +
+        `[AI_PIPE] route residual HARD=${still.length} — forceLabel degrade (not LLM-clean): ` +
         `${still.slice(0, 3).join('; ')}`);
-      return { output: lastParsed, fromLlm: true };
+      this.forceRoutingLabelDegrade(lastParsed, topo, netPlanFetch);
+      this.sanitizeRoutingForceModes(lastParsed, topo);
+      return { output: lastParsed, fromLlm: false };
     }
     Logger.warn(INSTR_TRACE_TAG,
       '[AI_PIPE] route LLM fail — defaultConstraints with instrument forceLabel');
@@ -5414,6 +6269,44 @@ export class AiPipelineOrchestrator {
       }
     }
     return instrNetNames;
+  }
+
+  /**
+   * route residual HARD：把 forceWire 全部并入 forceLabel，并合并 default/hints，
+   * 避免残差仍当 LLM 成功。
+   */
+  private forceRoutingLabelDegrade(route: RoutingLlmOutput, topo: SchTopology,
+    netPlanFetch?: LlmFetchResult<NetPlanResult>): void {
+    const defaults = ConstrainedWiringEngine.defaultConstraints(topo);
+    if (netPlanFetch) {
+      this.mergeNetPlanHintsIntoRouting(route, netPlanFetch);
+    }
+    const fl = route.forceLabelNets ?? [];
+    const fw = route.forceWireNets ?? [];
+    const seen = new Set<string>();
+    const merged: string[] = [];
+    const push = (name: string): void => {
+      const up = (name ?? '').toUpperCase();
+      if (up.length === 0 || seen.has(up)) {
+        return;
+      }
+      seen.add(up);
+      merged.push(name);
+    };
+    for (let i = 0; i < fl.length; i++) {
+      push(fl[i] ?? '');
+    }
+    for (let i = 0; i < fw.length; i++) {
+      push(fw[i] ?? '');
+    }
+    const dFl = defaults.forceLabelNets ?? [];
+    for (let i = 0; i < dFl.length; i++) {
+      push(dFl[i] ?? '');
+    }
+    route.forceLabelNets = merged;
+    route.forceWireNets = [];
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PIPE] route forceLabel degrade n=${merged.length}`);
   }
 
   /**

@@ -171,8 +171,16 @@ export class LlmJsonNormalizer {
       if (arr[i] === null || arr[i] === undefined) {
         continue;
       }
-      const s = `${arr[i]}`.trim();
-      if (s.length > 0 && s !== 'undefined' && s !== 'null') {
+      const cell = arr[i];
+      let s = '';
+      if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') {
+        s = `${cell}`.trim();
+      } else if (typeof cell === 'object') {
+        s = LlmJsonNormalizer.objectToConstraintText(cell as Record<string, Object>).trim();
+      } else {
+        s = `${cell}`.trim();
+      }
+      if (s.length > 0 && s !== 'undefined' && s !== 'null' && s.indexOf('[object Object]') < 0) {
         out.push(s);
       }
     }
@@ -202,7 +210,17 @@ export class LlmJsonNormalizer {
       const ks: string[] = Object.keys(rec);
       for (let i = 0; i < ks.length; i++) {
         const cell: Object = rec[ks[i]] as Object;
-        if (cell !== undefined && cell !== null) {
+        if (cell === undefined || cell === null) {
+          continue;
+        }
+        if (typeof cell === 'string' || typeof cell === 'number' || typeof cell === 'boolean') {
+          map.set(ks[i], `${cell}`);
+        } else if (typeof cell === 'object') {
+          const flat = LlmJsonNormalizer.objectToConstraintText(cell as Record<string, Object>);
+          if (flat.length > 0 && flat.indexOf('[object Object]') < 0) {
+            map.set(ks[i], flat);
+          }
+        } else {
           map.set(ks[i], `${cell}`);
         }
       }
@@ -284,7 +302,8 @@ export class LlmJsonNormalizer {
     const oodFlags = LlmJsonNormalizer.asStringArray(
       LlmJsonNormalizer.firstDefined(src.oodFlags, src.ood_flags)
     );
-    if (deviceRequireList.length === 0 && functionModule.length === 0 && circuitConstraint.length === 0) {
+    if (deviceRequireList.length === 0) {
+      // 生产选型必须有 BOM；仅有模块名/约束不算有效 device_select
       return null;
     }
     const out: DeviceSelectLlmOutput = {
@@ -484,12 +503,12 @@ export class LlmJsonNormalizer {
   }
 
   static deviceSelectScoreFields(): string[] {
-    return ['deviceRequireList', 'circuitConstraint', 'functionModule'];
+    // 仅 BOM 非空才算有效；勿用默认 functionModule/circuitConstraint 虚高 fill-rate
+    return ['deviceRequireList'];
   }
 
   static layoutScoreFields(): string[] {
-    // AI 驱动布局以 positions 为准；其余字段可选，勿因缺 moduleGroup 判 no parse
-    return ['positions'];
+    return ['positions', 'constraintRules', 'moduleGroup'];
   }
 
   static routingScoreFields(): string[] {

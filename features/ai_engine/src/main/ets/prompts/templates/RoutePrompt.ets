@@ -15,6 +15,6 @@ export const ROUTE_PROMPT: PromptTemplate = {
 - 同脚导线端点≤2；含仪器脚的网一律 forceLabel
 
 【JSON 字段】netPriority / specialNetRules / globalConstraint / connectionModeHints(forceWire/forceLabel)
-禁止输出导线坐标点。`,
-  userTemplate: '拓扑摘要：{{topology_summary}}\n网络列表：{{net_list}}\n\n现在立即只输出 JSON，不要任何其它文字：'
+禁止输出导线坐标点（waypoints 由 A* 本地引擎生成；本阶段只填约束与 mode）。`,
+  userTemplate: '拓扑摘要：{{topology_summary}}\n网络列表：{{net_list}}\n\n=== 器件使用说明（摘要） ===\n{{device_usage}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };

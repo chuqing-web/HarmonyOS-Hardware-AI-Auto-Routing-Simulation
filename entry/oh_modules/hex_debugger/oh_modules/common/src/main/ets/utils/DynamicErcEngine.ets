@@ -48,7 +48,7 @@ export class DynamicErcEngine {
 
 
 
-      if (max > 5.5) {
+      if (max > 12.5) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.ERROR,
 
@@ -58,7 +58,8 @@ export class DynamicErcEngine {
 
       }
 
-      if (Math.abs(avg) > 4.5 && wave.waveType === 'voltage') {
+      // 饱和判定：相对本通道动态范围，避免 3.3V 轨误报
+      if (Math.abs(avg) > Math.max(4.5, max * 0.92) && wave.waveType === 'voltage' && max > 4.0) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING,
 
@@ -68,7 +69,7 @@ export class DynamicErcEngine {
 
       }
 
-      if (max - min < 0.01 && max > 0.1) {
+      if (max - min < 0.01 && max > 0.1 && max < 0.5) {
 
         violations.push(DynamicErcEngine.violation(ErcSeverity.WARNING,
 

@@ -39,15 +39,13 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - 用户要正弦/方波等激励时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
-【仪器自动追加规则 — 严格按用户需求】:
-- 电路含电阻分压/传感器 → 追加 VOLTMETER_DC
+【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
+- 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
-- 用户说"N个电压表"→ 必须输出N个 VOLTMETER_DC
-- 电路含 MCU+UART → 追加 UART_TERMINAL
-- 电路含运放/放大器 → 追加 OSCILLOSCOPE
-- 用户明确要求观测波形/示波/指数/充放电 → 追加 OSCILLOSCOPE
-- 电路含数字 IC → 追加 LOGIC_ANALYZER
-- 电路含电源/稳压 → 追加 VOLTMETER_DC
+- 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
+- 用户提到 UART/串口终端 → 追加 UART_TERMINAL
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER
+- 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:

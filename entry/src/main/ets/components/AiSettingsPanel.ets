@@ -32,10 +32,10 @@ export struct AiSettingsPanel {
   @State newApiKey: string = '';
   @State newApiModel: string = '';
   @State newApiUrl: string = '';
-  @State newApiFormat: string = 'anthropic';
-  @State newAuthField: string = 'ANTHROPIC_AUTH_TOKEN';
+  @State newApiFormat: string = 'openai';
+  @State newAuthField: string = '';
   @State selectedProvider: AiProviderType = AiProviderType.DEEPSEEK;
-  @State apiFormatIdx: number = 0;
+  @State apiFormatIdx: number = 2;
 
   private appService: AppService = AppService.getInstance();
   private providerIdx: number = 0;
@@ -96,6 +96,10 @@ export struct AiSettingsPanel {
   private pickStrategy(strategy: AiGenerateStrategy): void {
     this.pendingStrategy = strategy;
     this.showStrategyDialog = false;
+    // 模块并行始终从 create 起步（清多轮历史），避免被编辑模式强制改 oneshot
+    if (strategy === 'modular') {
+      this.appService.clearAiConversation();
+    }
     Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP modular_strategy | strategy=${strategy}`);
     this.showModeDialog = true;
   }
@@ -114,6 +118,8 @@ export struct AiSettingsPanel {
       `[AI_UI] OP run_generate_done | mode=${mode} strategy=${strategy} ok=${ok}`);
     if (ok) {
       this.statusMessage = strategy === 'modular' ? '模块并行生图完成' : 'AI 整图生成完成';
+    } else {
+      this.statusMessage = 'AI 生成失败，请检查 API 配置与 instr_trace 日志';
     }
   }
 
@@ -262,7 +268,7 @@ export struct AiSettingsPanel {
         .border({ width: 1, color: ProteusColors.ERC_WARN })
       }
 
-      // 生成策略：整图一次 / 模块并行
+      // 生成策略：整图一次 / 模块并行（每次必问，与设计一致）
       if (this.showStrategyDialog) {
         Column({ space: 8 }) {
           Text('请选择生成方式：')
@@ -270,7 +276,7 @@ export struct AiSettingsPanel {
             .fontColor(ProteusColors.TEXT_PRIMARY)
             .width('100%')
           Text(this.appService.getAiConversationRound() > 0
-            ? '当前为多轮编辑：仅支持「整图一次」（模块并行二期）。'
+            ? '复杂电路建议「模块并行」（将开启新一轮并行生图）。「整图一次」可继续多轮编辑。'
             : '复杂电路建议「模块并行」：先整体设计连接边界，再多路并行生图后合并。')
             .fontSize(9)
             .fontColor(ProteusColors.TEXT_SECONDARY)
@@ -282,15 +288,13 @@ export struct AiSettingsPanel {
               this.pickStrategy('oneshot');
             }
           })
-          if (this.appService.getAiConversationRound() === 0) {
-            ProteusClassicBtn({
-              label: '模块并行（先整体设计+边界）',
-              widthVal: '100%',
-              onAction: () => {
-                this.pickStrategy('modular');
-              }
-            })
-          }
+          ProteusClassicBtn({
+            label: '模块并行（先整体设计+边界）',
+            widthVal: '100%',
+            onAction: () => {
+              this.pickStrategy('modular');
+            }
+          })
           ProteusClassicBtn({
             label: '取消',
             widthVal: '100%',
@@ -434,6 +438,24 @@ export struct AiSettingsPanel {
                 this.newApiModel = tmpl.data.model;
                 this.newApiUrl = tmpl.data.baseUrl;
               }
+              // 按厂商同步协议与认证头，避免 DeepSeek 误带 ANTHROPIC_AUTH_TOKEN
+              if (this.selectedProvider === AiProviderType.CLAUDE) {
+                this.apiFormatIdx = 0;
+                this.newApiFormat = 'anthropic';
+                this.newAuthField = 'x-api-key';
+              } else if (this.selectedProvider === AiProviderType.OLLAMA) {
+                this.apiFormatIdx = 3;
+                this.newApiFormat = 'ollama';
+                this.newAuthField = '';
+              } else if (this.selectedProvider === AiProviderType.DEEPSEEK) {
+                this.apiFormatIdx = 2;
+                this.newApiFormat = 'deepseek';
+                this.newAuthField = '';
+              } else {
+                this.apiFormatIdx = 1;
+                this.newApiFormat = 'openai';
+                this.newAuthField = '';
+              }
             }
           })
           .padding({ left: 8, right: 8, top: 2, bottom: 4 })
@@ -486,7 +508,7 @@ export struct AiSettingsPanel {
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
             ProteusTextInput({
-              placeholder: 'ANTHROPIC_AUTH_TOKEN（默认）',
+              placeholder: 'x-api-key（Claude）或留空用 Bearer',
               text: this.newAuthField,
               onChange: (v: string) => { this.newAuthField = v; }
             })
@@ -521,10 +543,18 @@ export struct AiSettingsPanel {
               config.model = this.newApiModel || config.model;
               config.name = this.newApiName || config.name || 'New API';
               config.baseUrl = this.newApiUrl || config.baseUrl;
+              // 仅非 Bearer 类自定义认证头写入；Bearer 由 buildRequestHeaders 注入
               if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
-                const headers: Record<string, string> = {};
-                headers[this.newAuthField] = this.newApiKey;
-                config.customHeaders = headers;
+                const lower = this.newAuthField.toLowerCase();
+                if (lower !== 'bearer' && lower !== 'authorization') {
+                  const headers: Record<string, string> = {};
+                  headers[this.newAuthField] = this.newApiKey;
+                  config.customHeaders = headers;
+                }
+              }
+              // 把选择的协议记入 remark，便于排障（运行时仍以 provider.chatPath 为准）
+              if (this.newApiFormat.length > 0) {
+                config.remark = `apiFormat=${this.newApiFormat}`;
               }
               const addResult = this.appService.aiApiManager.addApi(config);
               if (!addResult.success) {
@@ -542,7 +572,7 @@ export struct AiSettingsPanel {
               this.showAddForm = false;
               this.newApiKey = '';
               this.newApiUrl = '';
-              this.newAuthField = 'ANTHROPIC_AUTH_TOKEN';
+              this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
               this.statusMessage = `已添加并同步 ${config.name}`;
             }
           })

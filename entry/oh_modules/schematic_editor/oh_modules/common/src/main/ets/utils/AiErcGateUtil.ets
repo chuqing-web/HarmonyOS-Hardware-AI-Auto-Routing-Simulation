@@ -35,7 +35,9 @@ export class AiErcGateUtil {
       '标号可能未并网',
       '直连电源', '直连 VCC', '直连 GND',
       '保留电源名', 'Netlist 错误',
-      'CH1 未连接', 'GND 未连接 — 必须', 'CH1 与 GND 同网'
+      'CH1 未连接', 'GND 未连接 — 必须', 'CH1 与 GND 同网',
+      '悬空', '仅有一处连接', '未连接到其他器件',
+      '重复网络标号'
     ];
     for (let i = 0; i < keys.length; i++) {
       if (text.indexOf(keys[i]) >= 0) {
@@ -72,9 +74,7 @@ export class AiErcGateUtil {
       '无负载电阻',
       '恒压无观测',
       '电源/地网络',
-      '未连接到其他器件',
-      '仅有一处连接',
-      '悬空）',
+      // 勿把「悬空/仅有一处连接/未连接到其他器件」当 soft — 属功能阻断
       '可能不亮',
       '全部测量同一节点',
       '模拟与数字电源',
@@ -86,8 +86,8 @@ export class AiErcGateUtil {
       '振荡可能不起振',
       '运放可能饱和',
       '频率异常',
-      '仅 1 个节点',
-      '重复网络标号'
+      '仅 1 个节点'
+      // 「重复网络标号」不再一律 soft：模块并行误标可能真断网
     ];
     for (let i = 0; i < softKeys.length; i++) {
       if (text.indexOf(softKeys[i]) >= 0) {

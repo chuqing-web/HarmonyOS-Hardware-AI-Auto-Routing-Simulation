@@ -33,8 +33,16 @@ export class AiDiagnosisReporter {
                 suggestions.push(`${w.probeName}: 过压 ${maxV.toFixed(2)}V — 检查电源/稳压`);
                 severity = 'error';
             }
-            if (maxV - minV < 0.01) {
+            // 稳态直流探头（均值接近两端）不报「波形平坦」
+            const mid = (maxV + minV) / 2;
+            const isSteadyDc = Math.abs(maxV - minV) < 0.05 && Math.abs(mid) > 0.2;
+            if (maxV - minV < 0.01 && !isSteadyDc) {
                 suggestions.push(`${w.probeName}: 波形平坦 — 检查探头/接地`);
+                if (severity === 'info')
+                    severity = 'warning';
+            }
+            else if (maxV - minV < 0.01 && Math.abs(mid) <= 0.05) {
+                suggestions.push(`${w.probeName}: 接近 0V 平坦 — 检查探头/接地`);
                 if (severity === 'info')
                     severity = 'warning';
             }

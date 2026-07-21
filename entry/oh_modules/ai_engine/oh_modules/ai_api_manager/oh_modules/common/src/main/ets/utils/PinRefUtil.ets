@@ -17,8 +17,11 @@ export function parsePinRef(pinRef: string): ParsedPinRef | null {
   if (pinRef.length === 0) return null;
   const parts = pinRef.split(':');
   if (parts.length < 2) {
-    // Legacy format: just a component ID — treat as compId only
-    return { compId: parts[0], pinId: '', pinName: '' };
+    // Legacy 单段无法定位脚 — 拒绝，避免空 pinId 误连
+    return null;
+  }
+  if (parts[0].length === 0 || parts[1].length === 0) {
+    return null;
   }
   return {
     compId: parts[0],

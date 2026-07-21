@@ -17,7 +17,10 @@ import {
 } from 'common';
 
 import { RagKnowledgeBase } from './RagKnowledgeBase';
-import { classifyCircuitIntent } from './CircuitIntent';
+import {
+  CircuitIntent, classifyCircuitIntent, parseSignalAmplitudeVolts,
+  HYSTERESIS_MIN_SIGNAL_AMP_V, HYSTERESIS_RECOMMENDED_SIGNAL_AMP
+} from './CircuitIntent';
 import {
 
   AlternativeEntry, MatchLevel, ModuleZoneType, ParamValidationResult
@@ -44,6 +47,54 @@ export class DeviceSelectEngine {
 
     this.library = library;
 
+  }
+
+  /** devType → 允许的库 ID 前缀（大写）；空数组表示不约束 */
+  static preferredIdPrefixes(devType: string): string[] {
+    const t = (devType ?? '').toLowerCase();
+    if (t.indexOf('capacitor') >= 0 || t === 'cap' || t.indexOf('电容') >= 0) {
+      return ['C_'];
+    }
+    if (t.indexOf('resistor') >= 0 || t === 'res' || t.indexOf('电阻') >= 0) {
+      return ['R_', 'POT_'];
+    }
+    if (t.indexOf('led') >= 0 || t.indexOf('发光') >= 0) {
+      return ['LED_'];
+    }
+    if (t.indexOf('diode') >= 0 || t.indexOf('二极管') >= 0) {
+      return ['D_', 'LED_', '1N'];
+    }
+    if (t.indexOf('inductor') >= 0 || t.indexOf('电感') >= 0) {
+      return ['L_'];
+    }
+    if (t.indexOf('relay') >= 0 || t.indexOf('继电器') >= 0) {
+      return ['RELAY'];
+    }
+    if (t.indexOf('switch') >= 0 || t.indexOf('开关') >= 0) {
+      return ['SW_'];
+    }
+    if (t.indexOf('potentiometer') >= 0 || t.indexOf('电位') >= 0) {
+      return ['POT_', 'RV_'];
+    }
+    if (t.indexOf('opamp') >= 0 || t.indexOf('op-amp') >= 0 || t.indexOf('运放') >= 0) {
+      return ['LM', 'OP', 'TL'];
+    }
+    if (t.indexOf('mcu') >= 0 || t.indexOf('microcontroller') >= 0) {
+      return ['AT89', 'STC', 'MCU'];
+    }
+    if (t.indexOf('oscilloscope') >= 0 || t.indexOf('示波') >= 0) {
+      return ['OSCILLOSCOPE'];
+    }
+    if (t.indexOf('voltmeter') >= 0 || t.indexOf('电压表') >= 0) {
+      return ['VOLTMETER'];
+    }
+    if (t.indexOf('ammeter') >= 0 || t.indexOf('电流表') >= 0) {
+      return ['AMMETER'];
+    }
+    if (t.indexOf('signal') >= 0 || t.indexOf('信号源') >= 0) {
+      return ['SIGNAL_GEN'];
+    }
+    return [];
   }
 
 
@@ -146,77 +197,101 @@ export class DeviceSelectEngine {
 
     };
 
-    // 仅在已有有效匹配时补 VCC/GND/VEE/SIGNAL_GEN；空 BOM 不得靠电源符号假装选型成功
+    // AI 全权：缺 VEE / SIGNAL_GEN / 去耦电容等一律由选型 HARD critique 逼 LLM 重出，禁止静默补件。
+    // 仅保留通用轨 VCC/GND 的最后兜底（HARD 已要求；此处防匹配丢符号导致整图无电源）。
     if (devices.length > 0) {
       const intent = classifyCircuitIntent(prompt);
       const hasVcc = devices.some(d => d.libDevId === 'VCC');
       const hasGnd = devices.some(d => d.libDevId === 'GND');
-      const hasVee = devices.some(d => d.libDevId === 'VEE');
-      const hasSig = devices.some(d => d.libDevId === 'SIGNAL_GEN');
       if (!hasVcc) {
         const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
-        if (intent.preferredVccVoltage.length > 0) {
-          vccReq.paramConstraint = stringMap1('voltage', intent.preferredVccVoltage);
+        let vccV = intent.preferredVccVoltage;
+        if (vccV.length === 0 && intent.dualSupply) {
+          vccV = '12V';
+        }
+        if (vccV.length > 0) {
+          vccReq.paramConstraint = stringMap1('voltage', vccV);
         }
         devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
-        Logger.info('DeviceSelect', 'Auto-added VCC (LLM omitted it)');
+        Logger.info('DeviceSelect', `Auto-added VCC voltage=${vccV || '(default)'}`);
       }
       if (!hasGnd) {
         const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
         devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
         Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
       }
-      if (intent.dualSupply && !hasVee) {
-        const veeV = intent.preferredVeeVoltage.length > 0 ? intent.preferredVeeVoltage : '-12V';
-        const veeReq = makeDeviceRequirement('VEE', 'power_supply', 2,
-          stringMap1('voltage', veeV), 'VEE');
-        devices.push(this.buildMatched(veeReq, 'VEE', 'VEE Negative', 'exact'));
-        Logger.info('DeviceSelect', `Auto-added VEE voltage=${veeV}`);
-      }
-      if (intent.needsSignalGen && !hasSig) {
-        const sigMap = stringMap1('waveform', intent.signalWaveform || 'sine');
-        sigMap.set('amplitude', '1V');
-        sigMap.set('frequency',
-          intent.preferredSignalFrequency.length > 0 ? intent.preferredSignalFrequency : '1kHz');
-        sigMap.set('offset', '0V');
-        sigMap.set('dutyCycle',
-          intent.preferredSignalDuty.length > 0 ? intent.preferredSignalDuty : '50%');
-        const sigReq = makeDeviceRequirement('信号发生器', 'instrument', 5, sigMap, 'SIGNAL_GEN');
-        devices.push(this.buildMatched(sigReq, 'SIGNAL_GEN', 'Signal Generator', 'exact'));
-        Logger.info('DeviceSelect',
-          `Auto-added SIGNAL_GEN waveform=${intent.signalWaveform}` +
-          ` f=${sigMap.get('frequency')} duty=${sigMap.get('dutyCycle')}`);
-      }
-      // 将意图电压写回已匹配的 VCC/VEE
-      for (let di = 0; di < devices.length; di++) {
-        const d = devices[di];
-        if (d.libDevId === 'VCC' && intent.preferredVccVoltage.length > 0) {
-          d.params.set('voltage', intent.preferredVccVoltage);
-        }
-        if (d.libDevId === 'VEE') {
-          const vv = intent.preferredVeeVoltage.length > 0 ? intent.preferredVeeVoltage : '-12V';
-          d.params.set('voltage', vv);
-        }
-        if (d.libDevId === 'SIGNAL_GEN') {
-          // LLM paramConstraint 优先；intent 仅填补空缺（避免「输出方波」覆盖正弦激励）
-          const curWf = (d.params.get('waveform') ?? '').trim();
-          if (curWf.length === 0 && intent.signalWaveform.length > 0) {
-            d.params.set('waveform', intent.signalWaveform);
-          }
-          const curF = (d.params.get('frequency') ?? '').trim();
-          if (curF.length === 0 && intent.preferredSignalFrequency.length > 0) {
-            d.params.set('frequency', intent.preferredSignalFrequency);
-          }
-          const curDuty = (d.params.get('dutyCycle') ?? '').trim();
-          if (curDuty.length === 0 && intent.preferredSignalDuty.length > 0) {
-            d.params.set('dutyCycle', intent.preferredSignalDuty);
-          }
-        }
-      }
+      // 电参：只补空；非空以 LLM paramConstraint 为准
+      this.applyElectricalSourceParams(devices, intent);
     }
 
     return result;
 
+  }
+
+  /**
+   * AI 全权落盘辅助：仅补空，不覆盖 LLM 已写电参。
+   * preferred* 在 refine 后应来自 BOM 收获（即 LLM 决定）；空缺才用意图默认。
+   * 滞回幅度下限为物理安全门（过小会锁死），其余错配走 critique 重试。
+   */
+  applyElectricalSourceParams(devices: MatchedDevice[], intent: CircuitIntent): number {
+    let touched = 0;
+    for (let di = 0; di < devices.length; di++) {
+      const d = devices[di];
+      if (d.libDevId === 'VCC') {
+        const cur = (d.params.get('voltage') ?? '').trim();
+        if (cur.length === 0 && intent.preferredVccVoltage.length > 0) {
+          d.params.set('voltage', intent.preferredVccVoltage);
+          touched++;
+          Logger.info('DeviceSelect', `VCC voltage (empty)→${intent.preferredVccVoltage} (fill)`);
+        }
+      }
+      if (d.libDevId === 'VEE') {
+        const cur = (d.params.get('voltage') ?? '').trim();
+        if (cur.length === 0) {
+          const vv = intent.preferredVeeVoltage.length > 0 ? intent.preferredVeeVoltage : '-12V';
+          d.params.set('voltage', vv);
+          touched++;
+          Logger.info('DeviceSelect', `VEE voltage (empty)→${vv} (fill)`);
+        }
+      }
+      if (d.libDevId === 'SIGNAL_GEN') {
+        const curWf = (d.params.get('waveform') ?? '').trim();
+        if (curWf.length === 0 && intent.signalWaveform.length > 0) {
+          d.params.set('waveform', intent.signalWaveform);
+          touched++;
+        }
+        const curF = (d.params.get('frequency') ?? '').trim();
+        if (curF.length === 0 && intent.preferredSignalFrequency.length > 0) {
+          d.params.set('frequency', intent.preferredSignalFrequency);
+          touched++;
+        }
+        const curDuty = (d.params.get('dutyCycle') ?? '').trim();
+        if (curDuty.length === 0 && intent.preferredSignalDuty.length > 0) {
+          d.params.set('dutyCycle', intent.preferredSignalDuty);
+          touched++;
+        }
+        const curAmp = (d.params.get('amplitude') ?? '').trim();
+        if (curAmp.length === 0 && intent.preferredSignalAmplitude.length > 0) {
+          d.params.set('amplitude', intent.preferredSignalAmplitude);
+          touched++;
+        }
+        // 滞回物理门：过小必锁死 — 抬升并记日志（非替 AI 选型）
+        if (intent.needsHysteresisComparator) {
+          const ampText = (d.params.get('amplitude') ?? '').trim();
+          const ampV = parseSignalAmplitudeVolts(ampText);
+          if (!Number.isFinite(ampV) || ampV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
+            const bump = intent.preferredSignalAmplitude.length > 0
+              ? intent.preferredSignalAmplitude
+              : HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
+            d.params.set('amplitude', bump);
+            touched++;
+            Logger.info('DeviceSelect',
+              `SIGNAL_GEN amplitude ${ampText || '(empty)'}→${bump} (hysteresis safety)`);
+          }
+        }
+      }
+    }
+    return touched;
   }
 
 
@@ -416,20 +491,51 @@ export class DeviceSelectEngine {
 
     let semantic = this.library.semanticSearch(query, 8);
 
-    // 电阻类器件优先匹配真实电阻 (R_*) 而非光敏/传感器类
-    const devTypeLower = req.devType.toLowerCase();
-    if (devTypeLower === 'resistor' || devTypeLower.includes('resistor')) {
-      const resistors: ComponentDefinition[] = [];
+    // 按 devType 约束库 ID 前缀，禁止首条无关 semantic 冒充
+    const typePref = DeviceSelectEngine.preferredIdPrefixes(req.devType);
+    if (typePref.length > 0) {
+      const preferred: ComponentDefinition[] = [];
       const others: ComponentDefinition[] = [];
       for (let i = 0; i < semantic.length; i++) {
         const c = semantic[i];
-        if (c.id.startsWith('R_') || c.id.startsWith('POT_')) {
-          resistors.push(c);
+        const idU = (c.id ?? '').toUpperCase();
+        let hit = false;
+        for (let pi = 0; pi < typePref.length; pi++) {
+          if (idU.startsWith(typePref[pi])) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          preferred.push(c);
         } else {
           others.push(c);
         }
       }
-      semantic = resistors.concat(others);
+      // 有类型匹配时只用 preferred；无匹配则保留 others 并标记（勿静默空列表导致选型失败无迹）
+      if (preferred.length > 0) {
+        semantic = preferred;
+      } else {
+        Logger.warn('DeviceSelect',
+          `[matchOne] typePref=${typePref.join(',')} hit=0 — keep semantic others=${others.length}`);
+        semantic = others;
+      }
+    } else {
+      // 电阻类器件优先匹配真实电阻 (R_*) 而非光敏/传感器类
+      const devTypeLower = req.devType.toLowerCase();
+      if (devTypeLower === 'resistor' || devTypeLower.includes('resistor')) {
+        const resistors: ComponentDefinition[] = [];
+        const others: ComponentDefinition[] = [];
+        for (let i = 0; i < semantic.length; i++) {
+          const c = semantic[i];
+          if (c.id.startsWith('R_') || c.id.startsWith('POT_')) {
+            resistors.push(c);
+          } else {
+            others.push(c);
+          }
+        }
+        semantic = resistors.concat(others);
+      }
     }
 
     for (let i = 0; i < semantic.length; i++) {
@@ -651,6 +757,8 @@ export class DeviceSelectEngine {
 
         if (!isNaN(reqV) && !isNaN(limV) && reqV > limV) {
 
+          params.set('voltage', String(limV));
+
           adjusted = true;
 
           reason = `耐压超限，已按 ${limV}V 限制修正`;
@@ -828,7 +936,7 @@ export class DeviceSelectEngine {
     if (isMcu) {
       modules.push('MCU 核心系统');
       if (lower.includes('stm32')) {
-        reqs.push(makeDeviceRequirement('MCU', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8T6'));
+        reqs.push(makeDeviceRequirement('MCU', 'mcu_stm32', 10, emptyStringMap(), 'STM32F103C8'));
         circuitConstraint = 'STM32 MCU居中,晶振紧邻,去耦电容每VDD配1个,BOOT0接GND';
       } else {
         reqs.push(makeDeviceRequirement('MCU', 'mcu_51', 10, emptyStringMap(), 'AT89C51'));
@@ -929,10 +1037,10 @@ export class DeviceSelectEngine {
       const hasVcc = reqs.some(r => r.explicitModel === 'VCC');
       const hasGnd = reqs.some(r => r.explicitModel === 'GND');
       if (!hasVcc) {
-        reqs.push(makeDeviceRequirement('VCC', 'instrument', 2, emptyStringMap(), 'VCC'));
+        reqs.push(makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC'));
       }
       if (!hasGnd) {
-        reqs.push(makeDeviceRequirement('GND', 'instrument', 2, emptyStringMap(), 'GND'));
+        reqs.push(makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND'));
       }
     }
 

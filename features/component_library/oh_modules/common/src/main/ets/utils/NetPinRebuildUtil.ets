@@ -6,7 +6,8 @@ import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from
 import { buildPinRef, parsePinRef } from './PinRefUtil';
 import { traceNetConnectivity } from './InstrumentTraceLog';
 import { rebuildWireNetTopology } from './WireNetTopology';
-import { applyNetLabelConnectivity } from './NetLabelConnectivity';
+import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
+import { namedMcuPinGeoms, namedDevicePinGeoms, DefaultPinGeom } from './NamedDevicePinDefaults';
 
 export interface PinGeometry {
   id: string;
@@ -67,6 +68,50 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
       { id: 'I-', name: 'I-', x: -30, y: 20 }
     ];
   }
+  if (lib.includes('OSCILLOSCOPE')) {
+    return [
+      { id: 'CH1', name: 'CH1', x: -40, y: -30 },
+      { id: 'CH2', name: 'CH2', x: -40, y: -10 },
+      { id: 'CH3', name: 'CH3', x: -40, y: 10 },
+      { id: 'CH4', name: 'CH4', x: -40, y: 30 },
+      { id: 'GND', name: 'GND', x: -40, y: 50 }
+    ];
+  }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push({ id: `CH${i + 1}`, name: `CH${i + 1}`, x: -40, y: -40 + i * 10 });
+    }
+    pins.push({ id: 'GND', name: 'GND', x: -40, y: 40 });
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL') || lib === 'UART_TERMINAL') {
+    return [
+      { id: 'TX', name: 'TX', x: -40, y: -10 },
+      { id: 'RX', name: 'RX', x: -40, y: 10 },
+      { id: 'GND', name: 'GND', x: -40, y: 30 }
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -40, y: -20 },
+      { id: 'V-', name: 'V-', x: -40, y: 0 },
+      { id: 'I+', name: 'I+', x: -40, y: 20 },
+      { id: 'I-', name: 'I-', x: -40, y: 40 }
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      { id: 'IN', name: 'IN', x: -30, y: -10 },
+      { id: 'GND', name: 'GND', x: -30, y: 10 }
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      { id: 'V', name: 'V', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
   if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
     return [
       { id: '1', name: 'IN', x: -40, y: 0 },
@@ -93,7 +138,8 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
       { id: 'V+', name: 'V+', x: 0, y: -50 }
     ];
   }
-  if (lib.includes('UA741') || lib.includes('OP')) {
+  if (lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_') ||
+    lib === 'LM741' || lib === 'TL081' || lib === 'TL071') {
     return [
       { id: 'IN+', name: 'IN+', x: -50, y: -20 },
       { id: 'IN-', name: 'IN-', x: -50, y: 20 },
@@ -114,6 +160,16 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
       { id: 'VCC', name: 'VCC', x: 40, y: -30 }
     ];
   }
+  // 具名封装回退（传感器/LCD/存储/buck/4017）
+  const namedDev = toPinGeometry(namedDevicePinGeoms(lib));
+  if (namedDev.length > 0) {
+    return namedDev;
+  }
+  // MCU DIP — 具名脚（与 NamedDevicePins 对齐）；禁止旧 P1..Pn
+  const mcuPins = mcuDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
+  }
   if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
     return [
       { id: 'A', name: 'A', x: -30, y: 0 },
@@ -125,6 +181,21 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
     { id: '1', name: '1', x: -30, y: 0 },
     { id: '2', name: '2', x: 30, y: 0 }
   ];
+}
+
+/** DIP MCU 具名脚：与 NamedDevicePins / BuiltinComponents 对齐 */
+function toPinGeometry(src: DefaultPinGeom[]): PinGeometry[] {
+  const out: PinGeometry[] = [];
+  for (let i = 0; i < src.length; i++) {
+    const s = src[i];
+    const g: PinGeometry = { id: s.id, name: s.name, x: s.x, y: s.y };
+    out.push(g);
+  }
+  return out;
+}
+
+function mcuDefaultPins(libUpper: string): PinGeometry[] {
+  return toPinGeometry(namedMcuPinGeoms(libUpper));
 }
 
 function countPinRefs(doc: SchematicDocument): number {
@@ -191,8 +262,26 @@ function countCompPinConnections(doc: SchematicDocument, compId: string): number
 
 function expectedPinCount(libraryId: string): number {
   const lib = (libraryId ?? '').toUpperCase();
-  if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND')) {
+  if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND') ||
+    lib === 'VEE' || lib.endsWith('/VEE')) {
     return 1;
+  }
+  // 多脚器件：needsWireRebuild 只要求「最小可用连通」，勿用满脚数（否则 MCU 永远触发重建）
+  if (lib.includes('OSCILLOSCOPE') || lib.includes('LOGIC_ANALYZER') ||
+    lib.includes('UART') || lib.includes('VOLTMETER') || lib.includes('AMMETER') ||
+    lib.includes('POWER_METER') || lib.includes('FREQ_COUNTER') || lib.includes('VIRTUAL_METER')) {
+    return 2;
+  }
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08') ||
+    lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_')) {
+    return 3;
+  }
+  if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+    return 4;
+  }
+  const mcu = mcuDefaultPins(lib);
+  if (mcu.length > 0) {
+    return 2;
   }
   return 2;
 }
@@ -213,7 +302,7 @@ function needsWireRebuild(doc: SchematicDocument): boolean {
 
 function connectWireEndpoints(doc: SchematicDocument, threshold: number,
   resolver?: PinGeometryResolver): number {
-  const junctionRadius = 2;
+  const junctionRadius = 4;
   // 松吸附阈值内不允许把电源/地符号脚吸到信号 stub 游离端（lab_passive DIV_TOP 根因）
   const strictSnap = Math.min(5, threshold);
   // Pre-collect all pin candidates with world positions
@@ -241,6 +330,9 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
     }
   }
 
+  // 已占用脚 → 所属 netId（本轮写入后更新），避免异网导线在松阈值夺脚
+  const pinOwnerNet = new Map<string, string>();
+
   let connected = 0;
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
@@ -259,11 +351,35 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
         const dx = ep.x - c.world.x;
         const dy = ep.y - c.world.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist >= bestDist) {
+        // Cap by half-distance to nearest sibling pin on same device (MCU pitch=10)
+        let maxDist = threshold;
+        for (let sj = 0; sj < allCandidates.length; sj++) {
+          if (sj === ci) {
+            continue;
+          }
+          const o = allCandidates[sj];
+          if (o.compId !== c.compId) {
+            continue;
+          }
+          const sdx = c.world.x - o.world.x;
+          const sdy = c.world.y - o.world.y;
+          const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+          if (half > 1 && half < maxDist) {
+            maxDist = half;
+          }
+        }
+        if (dist >= maxDist || dist >= bestDist) {
           continue;
         }
         // 宽松阈值：禁止掠夺电源/地符号脚（精确接触仍允许）
-        if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND')) {
+        if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND' ||
+          c.libraryId === 'VEE')) {
+          continue;
+        }
+        const pinKey = `${c.compId}:${c.pinId}`;
+        const owner = pinOwnerNet.get(pinKey);
+        if (owner !== undefined && owner !== wire.netId && dist > strictSnap) {
+          // 异网已占用：仅允许精确接触改绑，避免拥挤布局松吸附夺脚
           continue;
         }
         bestDist = dist;
@@ -273,6 +389,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
       if (bestIdx >= 0) {
         const best = allCandidates[bestIdx];
         addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+        pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
         connected++;
         // Also add co-located pins (junction)
         for (let ci = 0; ci < allCandidates.length; ci++) {
@@ -284,6 +401,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
           const dy = best.world.y - c.world.y;
           if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
             addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+            pinOwnerNet.set(`${c.compId}:${c.pinId}`, wire.netId);
             connected++;
           }
         }
@@ -303,10 +421,20 @@ function pruneOrphanNets(doc: SchematicDocument): number {
       wireNetIds.add(nid);
     }
   }
+  const labelNetIds = new Set<string>();
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const nid = doc.netLabels[li].netId;
+    if (nid.length > 0) {
+      labelNetIds.add(nid);
+    }
+  }
   const before = doc.nets.length;
   const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
   doc.nets = doc.nets.filter((net) => {
     if (wireNetIds.has(net.id)) {
+      return true;
+    }
+    if (labelNetIds.has(net.id)) {
       return true;
     }
     if (net.pinIds.length > 0) {
@@ -321,30 +449,58 @@ function pruneOrphanNets(doc: SchematicDocument): number {
   return before - doc.nets.length;
 }
 
+/**
+ * Merge power/ground rails into canonical nets for MNA truth:
+ * - same-name duplicates (case-insensitive)
+ * - aliases: VDD/V+ → VCC, VSS/0 → GND, V- → VEE
+ * Remaps wires, labels, and pinIds via mergeNetInto.
+ */
 function mergeRailNets(doc: SchematicDocument): void {
-  const rails = ['VCC', 'VDD', 'GND', 'VSS', '0'];
-  for (let ri = 0; ri < rails.length; ri++) {
-    const rail = rails[ri];
-    const canonical = findNetByName(doc, rail);
-    if (canonical === null) {
+  const groups: Array<RailAliasGroup> = [
+    // 勿把 V+ 并入 VCC：运放电源脚名 V+ 与网络名冲突时会误并网
+    { canonical: 'VCC', type: NetType.POWER, members: ['VCC', 'VDD'] },
+    { canonical: 'GND', type: NetType.GROUND, members: ['GND', 'VSS', '0'] },
+    { canonical: 'VEE', type: NetType.POWER, members: ['VEE'] }
+  ];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    const memberSet = new Set<string>();
+    for (let mi = 0; mi < group.members.length; mi++) {
+      memberSet.add(group.members[mi]);
+    }
+    const ids: string[] = [];
+    let preferredId: string | null = null;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const upper = doc.nets[ni].name.toUpperCase();
+      if (!memberSet.has(upper)) {
+        continue;
+      }
+      ids.push(doc.nets[ni].id);
+      if (preferredId === null && upper === group.canonical) {
+        preferredId = doc.nets[ni].id;
+      }
+    }
+    if (ids.length === 0) {
       continue;
     }
-    for (let ni = 0; ni < doc.nets.length; ni++) {
-      const net = doc.nets[ni];
-      if (net.id === canonical || net.name.toUpperCase() !== rail) {
-        continue;
-      }
-      const canonNet = doc.nets.find(n => n.id === canonical);
-      if (canonNet === undefined) {
-        continue;
-      }
-      for (let pi = 0; pi < net.pinIds.length; pi++) {
-        if (!canonNet.pinIds.includes(net.pinIds[pi])) {
-          canonNet.pinIds.push(net.pinIds[pi]);
-        }
+    const canonicalId = preferredId !== null ? preferredId : ids[0];
+    for (let i = 0; i < ids.length; i++) {
+      if (ids[i] !== canonicalId) {
+        mergeNetInto(doc, ids[i], canonicalId);
       }
     }
+    const canonNet = doc.nets.find(n => n.id === canonicalId);
+    if (canonNet !== undefined) {
+      canonNet.name = group.canonical;
+      canonNet.type = group.type;
+    }
   }
+}
+
+interface RailAliasGroup {
+  canonical: string;
+  type: NetType;
+  members: string[];
 }
 
 /**

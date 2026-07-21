@@ -642,8 +642,8 @@ export function formatFirmwarePreview(data: Uint8Array, maxBytes: number = 16): 
     }
     return parts.join(' ');
 }
-/** ERC / 运行时错误列表 — 与导航栏错误列表一致，输出到 instr_trace */
-export function traceErcErrorList(errors: ErcError[], context: string = 'ERC'): void {
+/** ERC / 运行时错误列表 — 摘要 + 少量明细，避免主线程刷屏触发 THREAD_BLOCK */
+export function traceErcErrorList(errors: ErcError[], context: string = 'ERC', maxDetail: number = 8): void {
     if (errors.length === 0) {
         Logger.info(INSTR_TRACE_TAG, `[${context}] errors=0`);
         return;
@@ -658,22 +658,33 @@ export function traceErcErrorList(errors: ErcError[], context: string = 'ERC'): 
             warnCount++;
         }
     }
-    Logger.info(INSTR_TRACE_TAG, `[${context}] errors=${errors.length} critical=${errCount} warn=${warnCount} ----------`);
-    for (let i = 0; i < errors.length; i++) {
-        const e = errors[i];
-        const target = e.targetUuid.length > 0 ? e.targetUuid : '-';
-        const line = `[${context}] #${i + 1} ${e.severity} type=${e.errType} target=${target} ${e.desc}`;
-        if (e.severity === 'error' || e.severity === 'critical') {
-            Logger.warn(INSTR_TRACE_TAG, line);
-        }
-        else {
-            Logger.info(INSTR_TRACE_TAG, line);
-        }
-        if (e.suggest.length > 0) {
-            Logger.info(INSTR_TRACE_TAG, `[${context}]     fix: ${e.suggest}`);
+    Logger.info(INSTR_TRACE_TAG, `[${context}] errors=${errors.length} critical=${errCount} warn=${warnCount}`);
+    // Prefer critical/error, then warning; skip info flood on main thread
+    let shown = 0;
+    for (let pass = 0; pass < 2 && shown < maxDetail; pass++) {
+        for (let i = 0; i < errors.length && shown < maxDetail; i++) {
+            const e = errors[i];
+            const isHard = e.severity === 'error' || e.severity === 'critical';
+            if (pass === 0 && !isHard) {
+                continue;
+            }
+            if (pass === 1 && (isHard || e.severity === 'info')) {
+                continue;
+            }
+            const target = e.targetUuid.length > 0 ? e.targetUuid : '-';
+            const line = `[${context}] #${i + 1} ${e.severity} type=${e.errType} target=${target} ${e.desc}`;
+            if (isHard) {
+                Logger.warn(INSTR_TRACE_TAG, line);
+            }
+            else {
+                Logger.info(INSTR_TRACE_TAG, line);
+            }
+            shown++;
         }
     }
-    Logger.info(INSTR_TRACE_TAG, `[${context}] ---------- END errors=${errors.length} ----------`);
+    if (errors.length > shown) {
+        Logger.info(INSTR_TRACE_TAG, `[${context}] ...+${errors.length - shown} more (UI list has full set)`);
+    }
 }
 /** MNA 器件 stamp（电阻/仪器等） */
 export function traceAnalogDeviceStamp(refDes: string, devId: string, libraryId: string, nodeA: string, nodeB: string, detail: string): void {

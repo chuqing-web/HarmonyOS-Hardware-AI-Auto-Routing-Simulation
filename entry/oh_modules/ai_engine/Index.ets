@@ -12,4 +12,14 @@ export { LlmJsonNormalizer } from './src/main/ets/algorithms/LlmJsonNormalizer';
 export { PinWorldResolver } from './src/main/ets/algorithms/PinWorldResolver';
 export { AiResultCache } from './src/main/ets/AiResultCache';
 export { AiPipelineValidator, AiValidationResult } from './src/main/ets/validation/AiPipelineValidator';
+export { FaultDiagnoser } from './src/main/ets/algorithms/FaultDiagnoser';
 export { ChatHistoryEntry } from './src/main/ets/internal/AiEngineTypes';
+export {
+  DeviceUsageManual, DeviceUsageEntry, DeviceUsageBuildResult, UsageManualMode
+} from './src/main/ets/algorithms/DeviceUsageManual';
+export {
+  CircuitIntent, defaultCircuitIntent, classifyCircuitIntent, refineCircuitIntent,
+  HYSTERESIS_MIN_SIGNAL_AMP_V, HYSTERESIS_RECOMMENDED_SIGNAL_AMP,
+  parseSignalAmplitudeVolts, resolveHysteresisSafeAmplitude,
+  schematicLikelyHysteresisComparator
+} from './src/main/ets/algorithms/CircuitIntent';

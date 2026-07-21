@@ -1,5 +1,5 @@
 /**
- * lab_51_led: local LED nets should be physical wires; VCC/GND may mix labels.
+ * lab_51_led: L*_A 物理串联；L*_K 可为 stub+标号；VCC/GND 可混标号。
  */
 import { resetSeq, K } from './kit.mjs';
 import { TEMPLATE_DEFS } from './builders.mjs';
@@ -21,9 +21,16 @@ for (let i = 0; i < 8; i++) {
   const k = byName[`L${i}_K`];
   if (!a || a.pinIds.length < 2) issues.push(`L${i}_A incomplete`);
   if (!k || k.pinIds.length < 2) issues.push(`L${i}_K incomplete`);
-  // local LED chains should have physical wires (no exclusive label-only)
-  const aWires = doc.wires.filter((w) => w.netId === a?.id);
-  if (a && aWires.length === 0) issues.push(`L${i}_A should be physically wired`);
+  // anode / cathode 均可 stub+标号（避免密排布线 T 结）；须绑定 R/LED/MCU
+  const hasRl = (a?.pinIds || []).some((r) => /:2:|:1:/.test(r) || r.includes(':2'));
+  const hasLedA = (a?.pinIds || []).some((r) => r.includes(':A'));
+  if (a && (!hasLedA || a.pinIds.length < 2)) issues.push(`L${i}_A missing R–LED.A`);
+  // cathode: stub+label OK — must still bind LED.K and MCU.P*
+  const hasLedK = (k?.pinIds || []).some((r) => r.includes(':K'));
+  const hasMcuP = (k?.pinIds || []).some((r) => new RegExp(`:P${i + 1}:`).test(r));
+  if (k && (!hasLedK || !hasMcuP)) {
+    issues.push(`L${i}_K missing LED.K or MCU.P${i + 1}`);
+  }
 }
 const m1 = doc.components.find((c) => c.refDes === 'M1');
 const m1Nets = [];

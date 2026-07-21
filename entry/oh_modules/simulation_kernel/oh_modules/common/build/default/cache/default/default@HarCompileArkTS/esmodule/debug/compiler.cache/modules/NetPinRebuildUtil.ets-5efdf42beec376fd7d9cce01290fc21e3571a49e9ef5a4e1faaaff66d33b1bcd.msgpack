@@ -1,0 +1,1599 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚKÀ/**
+ * Rebuild net.pinIds from wire geometry when pin refs are missing.
+ * Used by schematic editor and analog simulation so MNA sees real connectivity.
+ */
+import { NetType } from '../types/CommonTypes';
+import { buildPinRef, parsePinRef } from './PinRefUtil';
+import { traceNetConnectivity } from './InstrumentTraceLog';
+import { rebuildWireNetTopology } from './WireNetTopology';
+import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
+function transformPin(local, rotation, mirrored) {
+    let x = local.x;
+    let y = local.y;
+    if (mirrored) {
+        x = -x;
+    }
+    switch (rotation) {
+        case 90: return { x: -y, y: x };
+        case 180: return { x: -x, y: -y };
+        case 270: return { x: y, y: -x };
+        default: return { x: x, y: y };
+    }
+}
+function defaultPinsForLib(libraryId, resolver) {
+    if (resolver !== undefined) {
+        const resolved = resolver(libraryId);
+        if (resolved !== null && resolved.length > 0) {
+            return resolved;
+        }
+    }
+    const lib = (libraryId ?? '').toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC')) {
+        return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
+    }
+    if (lib === 'GND' || lib.endsWith('/GND')) {
+        return [{ id: '1', name: 'GND', x: 0, y: -10 }];
+    }
+    if (lib === 'VEE' || lib.endsWith('/VEE')) {
+        return [{ id: '1', name: 'VEE', x: 0, y: -10 }];
+    }
+    if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+        return [
+            { id: 'OUT', name: 'OUT', x: -30, y: 0 },
+            { id: 'GND', name: 'GND', x: 30, y: 0 }
+        ];
+    }
+    if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
+        return [
+            { id: 'V+', name: 'V+', x: -30, y: -25 },
+            { id: 'COM', name: 'COM', x: -30, y: 25 }
+        ];
+    }
+    if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
+        return [
+            { id: 'I+', name: 'I+', x: -30, y: 0 },
+            { id: 'I-', name: 'I-', x: -30, y: 20 }
+        ];
+    }
+    if (lib.includes('OSCILLOSCOPE')) {
+        return [
+            { id: 'CH1', name: 'CH1', x: -40, y: -30 },
+            { id: 'CH2', name: 'CH2', x: -40, y: -10 },
+            { id: 'CH3', name: 'CH3', x: -40, y: 10 },
+            { id: 'CH4', name: 'CH4', x: -40, y: 30 },
+            { id: 'GND', name: 'GND', x: -40, y: 50 }
+        ];
+    }
+    if (lib.includes('LOGIC_ANALYZER')) {
+        const pins = [];
+        for (let i = 0; i < 8; i++) {
+            pins.push({ id: `CH${i + 1}`, name: `CH${i + 1}`, x: -40, y: -40 + i * 10 });
+        }
+        pins.push({ id: 'GND', name: 'GND', x: -40, y: 40 });
+        return pins;
+    }
+    if (lib.includes('UART_TERMINAL') || lib === 'UART_TERMINAL') {
+        return [
+            { id: 'TX', name: 'TX', x: -40, y: -10 },
+            { id: 'RX', name: 'RX', x: -40, y: 10 },
+            { id: 'GND', name: 'GND', x: -40, y: 30 }
+        ];
+    }
+    if (lib.includes('POWER_METER')) {
+        return [
+            { id: 'V+', name: 'V+', x: -40, y: -20 },
+            { id: 'V-', name: 'V-', x: -40, y: 0 },
+            { id: 'I+', name: 'I+', x: -40, y: 20 },
+            { id: 'I-', name: 'I-', x: -40, y: 40 }
+        ];
+    }
+    if (lib.includes('FREQ_COUNTER')) {
+        return [
+            { id: 'IN', name: 'IN', x: -30, y: -10 },
+            { id: 'GND', name: 'GND', x: -30, y: 10 }
+        ];
+    }
+    if (lib.includes('VIRTUAL_METER')) {
+        return [
+            { id: 'V', name: 'V', x: -30, y: -25 },
+            { id: 'COM', name: 'COM', x: -30, y: 25 }
+        ];
+    }
+    if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+        return [
+            { id: '1', name: 'IN', x: -40, y: 0 },
+            { id: '2', name: 'GND', x: 0, y: 40 },
+            { id: '3', name: 'OUT', x: 40, y: 0 }
+        ];
+    }
+    if (lib === 'VAC' || lib.startsWith('VAC')) {
+        return [
+            { id: '1', name: 'AC+', x: -20, y: 0 },
+            { id: '2', name: 'AC-', x: 20, y: 0 }
+        ];
+    }
+    // Dual LM358/TL082 (match BuiltinComponents.genDualOpAmpPins / kit.mjs)
+    if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+        return [
+            { id: 'OUT1', name: 'OUT1', x: 50, y: -30 },
+            { id: 'IN-1', name: 'IN-1', x: -50, y: -20 },
+            { id: 'IN+1', name: 'IN+1', x: -50, y: -40 },
+            { id: 'V-', name: 'V-', x: 0, y: 50 },
+            { id: 'IN+2', name: 'IN+2', x: -50, y: 20 },
+            { id: 'IN-2', name: 'IN-2', x: -50, y: 40 },
+            { id: 'OUT2', name: 'OUT2', x: 50, y: 30 },
+            { id: 'V+', name: 'V+', x: 0, y: -50 }
+        ];
+    }
+    if (lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_') ||
+        lib === 'LM741' || lib === 'TL081' || lib === 'TL071') {
+        return [
+            { id: 'IN+', name: 'IN+', x: -50, y: -20 },
+            { id: 'IN-', name: 'IN-', x: -50, y: 20 },
+            { id: 'OUT', name: 'OUT', x: 50, y: 0 },
+            { id: 'VCC', name: 'VCC', x: 0, y: -50 },
+            { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+        ];
+    }
+    if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+        return [
+            { id: 'GND', name: 'GND', x: -40, y: -30 },
+            { id: 'TRIG', name: 'TRIG', x: -40, y: -10 },
+            { id: 'OUT', name: 'OUT', x: -40, y: 10 },
+            { id: 'RESET', name: 'RESET', x: -40, y: 30 },
+            { id: 'CTRL', name: 'CTRL', x: 40, y: 30 },
+            { id: 'THRES', name: 'THRES', x: 40, y: 10 },
+            { id: 'DISCH', name: 'DISCH', x: 40, y: -10 },
+            { id: 'VCC', name: 'VCC', x: 40, y: -30 }
+        ];
+    }
+    // MCU DIP (match BuiltinComponents.genMcuPins) â€” without this, kernel
+    // ensureNetPinConnectivity(doc, grid) treats AT89/STM32 as R/C 2-pin and
+    // drops P1..P8 â†’ [MCU] GPIO_MISS / LED will not animate.
+    const mcuPins = mcuDefaultPins(lib);
+    if (mcuPins.length > 0) {
+        return mcuPins;
+    }
+    if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
+        return [
+            { id: 'A', name: 'A', x: -30, y: 0 },
+            { id: 'K', name: 'K', x: 30, y: 0 }
+        ];
+    }
+    // Generic two-terminal passives (R/C/L/fuse/crystalâ€¦)
+    return [
+        { id: '1', name: '1', x: -30, y: 0 },
+        { id: '2', name: '2', x: 30, y: 0 }
+    ];
+}
+/** DIP MCU pin layout: left P1..Pn/2 @ x=-50, right rest @ x=+50, spacing 10. */
+function mcuDefaultPins(libUpper) {
+    let count = 0;
+    if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+        libUpper.includes('8051') || libUpper.includes('MCS51')) {
+        count = 40;
+    }
+    else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+        count = 100;
+    }
+    else if (libUpper.includes('STM32')) {
+        count = 48;
+    }
+    if (count <= 0) {
+        return [];
+    }
+    const pins = [];
+    const leftCount = Math.ceil(count / 2);
+    const rightCount = Math.floor(count / 2);
+    const spacing = 10;
+    const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+    for (let i = 0; i < leftCount; i++) {
+        const id = `P${i + 1}`;
+        pins.push({ id: id, name: id, x: -50, y: i * spacing - bodyHalf });
+    }
+    for (let i = 0; i < rightCount; i++) {
+        const id = `P${leftCount + i + 1}`;
+        pins.push({ id: id, name: id, x: 50, y: i * spacing - bodyHalf });
+    }
+    return pins;
+}
+function countPinRefs(doc) {
+    let total = 0;
+    for (let i = 0; i < doc.nets.length; i++) {
+        total += doc.nets[i].pinIds.length;
+    }
+    return total;
+}
+function findNetByName(doc, name) {
+    const upper = name.toUpperCase();
+    for (let i = 0; i < doc.nets.length; i++) {
+        if (doc.nets[i].name.toUpperCase() === upper) {
+            return doc.nets[i].id;
+        }
+    }
+    return null;
+}
+function ensureNet(doc, netId) {
+    if (doc.nets.some(n => n.id === netId)) {
+        return;
+    }
+    doc.nets.push({ id: netId, name: '', type: NetType.SIGNAL, pinIds: [] });
+}
+function addPinToNet(doc, netId, compId, pinId, pinName) {
+    ensureNet(doc, netId);
+    const net = doc.nets.find(n => n.id === netId);
+    if (net === undefined) {
+        return;
+    }
+    const pinRef = buildPinRef(compId, pinId, pinName);
+    if (net.pinIds.includes(pinRef)) {
+        return;
+    }
+    // Remove this pin from any other nets â€” a pin must belong to exactly one net
+    for (const other of doc.nets) {
+        if (other.id !== netId) {
+            const idx = other.pinIds.indexOf(pinRef);
+            if (idx >= 0) {
+                other.pinIds.splice(idx, 1);
+            }
+        }
+    }
+    net.pinIds.push(pinRef);
+}
+function countCompPinConnections(doc, compId) {
+    let count = 0;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+        const net = doc.nets[ni];
+        for (let pi = 0; pi < net.pinIds.length; pi++) {
+            const parsed = parsePinRef(net.pinIds[pi]);
+            if (parsed !== null && parsed.compId === compId) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+function expectedPinCount(libraryId) {
+    const lib = (libraryId ?? '').toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND') ||
+        lib === 'VEE' || lib.endsWith('/VEE')) {
+        return 1;
+    }
+    // å¤šè„šå™¨ä»¶ï¼šneedsWireRebuild åªè¦æ±‚ã€Œæœ€å°å¯ç”¨è¿é€šã€ï¼Œå‹¿ç”¨æ»¡è„šæ•°ï¼ˆå¦åˆ™ MCU æ°¸è¿œè§¦å‘é‡å»ºï¼‰
+    if (lib.includes('OSCILLOSCOPE') || lib.includes('LOGIC_ANALYZER') ||
+        lib.includes('UART') || lib.includes('VOLTMETER') || lib.includes('AMMETER') ||
+        lib.includes('POWER_METER') || lib.includes('FREQ_COUNTER') || lib.includes('VIRTUAL_METER')) {
+        return 2;
+    }
+    if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08') ||
+        lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_')) {
+        return 3;
+    }
+    if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+        return 4;
+    }
+    const mcu = mcuDefaultPins(lib);
+    if (mcu.length > 0) {
+        return 2;
+    }
+    return 2;
+}
+function needsWireRebuild(doc) {
+    if (countPinRefs(doc) < Math.max(2, doc.components.length)) {
+        return true;
+    }
+    for (let ci = 0; ci < doc.components.length; ci++) {
+        const comp = doc.components[ci];
+        const expected = expectedPinCount(comp.libraryId);
+        if (countCompPinConnections(doc, comp.id) < expected) {
+            return true;
+        }
+    }
+    return false;
+}
+function connectWireEndpoints(doc, threshold, resolver) {
+    const junctionRadius = 4;
+    // æ¾å¸é™„é˜ˆå€¼å†…ä¸å…è®¸æŠŠç”µæº/åœ°ç¬¦å·è„šå¸åˆ°ä¿¡å· stub æ¸¸ç¦»ç«¯ï¼ˆlab_passive DIV_TOP æ ¹å› ï¼‰
+    const strictSnap = Math.min(5, threshold);
+    const allCandidates = [];
+    for (let ci = 0; ci < doc.components.length; ci++) {
+        const comp = doc.components[ci];
+        const pins = defaultPinsForLib(comp.libraryId, resolver);
+        for (let pi = 0; pi < pins.length; pi++) {
+            const pin = pins[pi];
+            const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+            allCandidates.push({
+                compId: comp.id,
+                pinId: pin.id,
+                pinName: pin.name,
+                libraryId: comp.libraryId,
+                world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+            });
+        }
+    }
+    // å·²å ç”¨è„š â†’ æ‰€å± netIdï¼ˆæœ¬è½®å†™å…¥åæ›´æ–°ï¼‰ï¼Œé¿å…å¼‚ç½‘å¯¼çº¿åœ¨æ¾é˜ˆå€¼å¤ºè„š
+    const pinOwnerNet = new Map();
+    let connected = 0;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wire = doc.wires[wi];
+        if (wire.points.length < 2) {
+            continue;
+        }
+        ensureNet(doc, wire.netId);
+        const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+        for (let ei = 0; ei < endpoints.length; ei++) {
+            const ep = endpoints[ei];
+            let bestDist = threshold;
+            let bestIdx = -1;
+            for (let ci = 0; ci < allCandidates.length; ci++) {
+                const c = allCandidates[ci];
+                const dx = ep.x - c.world.x;
+                const dy = ep.y - c.world.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist >= bestDist) {
+                    continue;
+                }
+                // å®½æ¾é˜ˆå€¼ï¼šç¦æ­¢æ å¤ºç”µæº/åœ°ç¬¦å·è„šï¼ˆç²¾ç¡®æ¥è§¦ä»å…è®¸ï¼‰
+                if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND' ||
+                    c.libraryId === 'VEE')) {
+                    continue;
+                }
+                const pinKey = `${c.compId}:${c.pinId}`;
+                const owner = pinOwnerNet.get(pinKey);
+                if (owner !== undefined && owner !== wire.netId && dist > strictSnap) {
+                    // å¼‚ç½‘å·²å ç”¨ï¼šä»…å…è®¸ç²¾ç¡®æ¥è§¦æ”¹ç»‘ï¼Œé¿å…æ‹¥æŒ¤å¸ƒå±€æ¾å¸é™„å¤ºè„š
+                    continue;
+                }
+                bestDist = dist;
+                bestIdx = ci;
+            }
+            if (bestIdx >= 0) {
+                const best = allCandidates[bestIdx];
+                addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+                pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
+                connected++;
+                // Also add co-located pins (junction)
+                for (let ci = 0; ci < allCandidates.length; ci++) {
+                    if (ci === bestIdx) {
+                        continue;
+                    }
+                    const c = allCandidates[ci];
+                    const dx = best.world.x - c.world.x;
+                    const dy = best.world.y - c.world.y;
+                    if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+                        addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+                        pinOwnerNet.set(`${c.compId}:${c.pinId}`, wire.netId);
+                        connected++;
+                    }
+                }
+            }
+        }
+    }
+    return connected;
+}
+/** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc) {
+    const wireNetIds = new Set();
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const nid = doc.wires[wi].netId;
+        if (nid.length > 0) {
+            wireNetIds.add(nid);
+        }
+    }
+    const labelNetIds = new Set();
+    for (let li = 0; li < doc.netLabels.length; li++) {
+        const nid = doc.netLabels[li].netId;
+        if (nid.length > 0) {
+            labelNetIds.add(nid);
+        }
+    }
+    const before = doc.nets.length;
+    const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
+    doc.nets = doc.nets.filter((net) => {
+        if (wireNetIds.has(net.id)) {
+            return true;
+        }
+        if (labelNetIds.has(net.id)) {
+            return true;
+        }
+        if (net.pinIds.length > 0) {
+            return true;
+        }
+        // ä¿ç•™çœŸæ­£çš„ç”µæº/åœ°è½¨ï¼›ä¸¢å¼ƒæ‹“æ‰‘é‡å»ºåæ‚¬ç©ºçš„å‘½åç”µæºç½‘ï¼ˆå¦‚ç©º VOUTï¼‰
+        if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+            return railNames.has(net.name.toUpperCase());
+        }
+        return false;
+    });
+    return before - doc.nets.length;
+}
+/**
+ * Merge power/ground rails into canonical nets for MNA truth:
+ * - same-name duplicates (case-insensitive)
+ * - aliases: VDD/V+ â†’ VCC, VSS/0 â†’ GND, V- â†’ VEE
+ * Remaps wires, labels, and pinIds via mergeNetInto.
+ */
+function mergeRailNets(doc) {
+    const groups = [
+        // å‹¿æŠŠ V+ å¹¶å…¥ VCCï¼šè¿æ”¾ç”µæºè„šå V+ ä¸ç½‘ç»œåå†²çªæ—¶ä¼šè¯¯å¹¶ç½‘
+        { canonical: 'VCC', type: NetType.POWER, members: ['VCC', 'VDD'] },
+        { canonical: 'GND', type: NetType.GROUND, members: ['GND', 'VSS', '0'] },
+        { canonical: 'VEE', type: NetType.POWER, members: ['VEE'] }
+    ];
+    for (let gi = 0; gi < groups.length; gi++) {
+        const group = groups[gi];
+        const memberSet = new Set();
+        for (let mi = 0; mi < group.members.length; mi++) {
+            memberSet.add(group.members[mi]);
+        }
+        const ids = [];
+        let preferredId = null;
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const upper = doc.nets[ni].name.toUpperCase();
+            if (!memberSet.has(upper)) {
+                continue;
+            }
+            ids.push(doc.nets[ni].id);
+            if (preferredId === null && upper === group.canonical) {
+                preferredId = doc.nets[ni].id;
+            }
+        }
+        if (ids.length === 0) {
+            continue;
+        }
+        const canonicalId = preferredId !== null ? preferredId : ids[0];
+        for (let i = 0; i < ids.length; i++) {
+            if (ids[i] !== canonicalId) {
+                mergeNetInto(doc, ids[i], canonicalId);
+            }
+        }
+        const canonNet = doc.nets.find(n => n.id === canonicalId);
+        if (canonNet !== undefined) {
+            canonNet.name = group.canonical;
+            canonNet.type = group.type;
+        }
+    }
+}
+/**
+ * Ensure net.pinIds reflect wire connectivity only.
+ * Rebuilds wire netIds from geometry, then assigns pins at wire endpoints.
+ */
+export function ensureNetPinConnectivity(doc, gridSize = 10, resolver) {
+    const before = countPinRefs(doc);
+    rebuildWireNetTopology(doc, gridSize, resolver);
+    for (let i = 0; i < doc.nets.length; i++) {
+        doc.nets[i].pinIds = [];
+    }
+    const threshold = Math.max(gridSize * 2.5, 20);
+    const wired = connectWireEndpoints(doc, threshold, resolver);
+    // Proteus: same net-label text (case-sensitive) â‡’ same net â€” must run after geometry rebuild
+    applyNetLabelConnectivity(doc, gridSize);
+    mergeRailNets(doc);
+    pruneOrphanNets(doc);
+    const after = countPinRefs(doc);
+    traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+}
+/** Strip and rebuild all pinIds from wires (simulation reload). */
+export function rebuildAllNetPinConnectivity(doc, gridSize = 10, resolver) {
+    for (let i = 0; i < doc.nets.length; i++) {
+        doc.nets[i].pinIds = [];
+    }
+    ensureNetPinConnectivity(doc, gridSize, resolver);
+}
+export function summarizeNetPins(doc, maxNets = 6) {
+    const parts = [];
+    let count = 0;
+    for (let i = 0; i < doc.nets.length && count < maxNets; i++) {
+        const net = doc.nets[i];
+        if (net.pinIds.length === 0) {
+            continue;
+        }
+        parts.push(`${net.name || net.id}(${net.pinIds.length})`);
+        count++;
+    }
+    return parts.length > 0 ? parts.join(', ') : '(no pins)';
+}
+//# sourceMappingURL=NetPinRebuildUtil.js.mapÂ•ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.etsÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetPinRebuildUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/NetPinRebuildUtil¦commonÃÚG¸/**
+ * Rebuild net.pinIds from wire geometry when pin refs are missing.
+ * Used by schematic editor and analog simulation so MNA sees real connectivity.
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from '../types/CommonTypes';
+import { buildPinRef, parsePinRef } from './PinRefUtil';
+import { traceNetConnectivity } from './InstrumentTraceLog';
+import { rebuildWireNetTopology } from './WireNetTopology';
+import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
+
+export interface PinGeometry {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+}
+
+/** Optional callback to resolve real pin positions from component library. */
+export type PinGeometryResolver = (libraryId: string) => PinGeometry[] | null;
+
+function transformPin(local: Point2D, rotation: Rotation, mirrored: boolean): Point2D {
+  let x = local.x;
+  let y = local.y;
+  if (mirrored) {
+    x = -x;
+  }
+  switch (rotation) {
+    case 90: return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+    default: return { x: x, y: y };
+  }
+}
+
+function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): PinGeometry[] {
+  if (resolver !== undefined) {
+    const resolved = resolver(libraryId);
+    if (resolved !== null && resolved.length > 0) {
+      return resolved;
+    }
+  }
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC')) {
+    return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
+  }
+  if (lib === 'GND' || lib.endsWith('/GND')) {
+    return [{ id: '1', name: 'GND', x: 0, y: -10 }];
+  }
+  if (lib === 'VEE' || lib.endsWith('/VEE')) {
+    return [{ id: '1', name: 'VEE', x: 0, y: -10 }];
+  }
+  if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+    return [
+      { id: 'OUT', name: 'OUT', x: -30, y: 0 },
+      { id: 'GND', name: 'GND', x: 30, y: 0 }
+    ];
+  }
+  if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
+  if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
+    return [
+      { id: 'I+', name: 'I+', x: -30, y: 0 },
+      { id: 'I-', name: 'I-', x: -30, y: 20 }
+    ];
+  }
+  if (lib.includes('OSCILLOSCOPE')) {
+    return [
+      { id: 'CH1', name: 'CH1', x: -40, y: -30 },
+      { id: 'CH2', name: 'CH2', x: -40, y: -10 },
+      { id: 'CH3', name: 'CH3', x: -40, y: 10 },
+      { id: 'CH4', name: 'CH4', x: -40, y: 30 },
+      { id: 'GND', name: 'GND', x: -40, y: 50 }
+    ];
+  }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push({ id: `CH${i + 1}`, name: `CH${i + 1}`, x: -40, y: -40 + i * 10 });
+    }
+    pins.push({ id: 'GND', name: 'GND', x: -40, y: 40 });
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL') || lib === 'UART_TERMINAL') {
+    return [
+      { id: 'TX', name: 'TX', x: -40, y: -10 },
+      { id: 'RX', name: 'RX', x: -40, y: 10 },
+      { id: 'GND', name: 'GND', x: -40, y: 30 }
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -40, y: -20 },
+      { id: 'V-', name: 'V-', x: -40, y: 0 },
+      { id: 'I+', name: 'I+', x: -40, y: 20 },
+      { id: 'I-', name: 'I-', x: -40, y: 40 }
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      { id: 'IN', name: 'IN', x: -30, y: -10 },
+      { id: 'GND', name: 'GND', x: -30, y: 10 }
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      { id: 'V', name: 'V', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
+  if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+    return [
+      { id: '1', name: 'IN', x: -40, y: 0 },
+      { id: '2', name: 'GND', x: 0, y: 40 },
+      { id: '3', name: 'OUT', x: 40, y: 0 }
+    ];
+  }
+  if (lib === 'VAC' || lib.startsWith('VAC')) {
+    return [
+      { id: '1', name: 'AC+', x: -20, y: 0 },
+      { id: '2', name: 'AC-', x: 20, y: 0 }
+    ];
+  }
+  // Dual LM358/TL082 (match BuiltinComponents.genDualOpAmpPins / kit.mjs)
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+    return [
+      { id: 'OUT1', name: 'OUT1', x: 50, y: -30 },
+      { id: 'IN-1', name: 'IN-1', x: -50, y: -20 },
+      { id: 'IN+1', name: 'IN+1', x: -50, y: -40 },
+      { id: 'V-', name: 'V-', x: 0, y: 50 },
+      { id: 'IN+2', name: 'IN+2', x: -50, y: 20 },
+      { id: 'IN-2', name: 'IN-2', x: -50, y: 40 },
+      { id: 'OUT2', name: 'OUT2', x: 50, y: 30 },
+      { id: 'V+', name: 'V+', x: 0, y: -50 }
+    ];
+  }
+  if (lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_') ||
+    lib === 'LM741' || lib === 'TL081' || lib === 'TL071') {
+    return [
+      { id: 'IN+', name: 'IN+', x: -50, y: -20 },
+      { id: 'IN-', name: 'IN-', x: -50, y: 20 },
+      { id: 'OUT', name: 'OUT', x: 50, y: 0 },
+      { id: 'VCC', name: 'VCC', x: 0, y: -50 },
+      { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+    ];
+  }
+  if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+    return [
+      { id: 'GND', name: 'GND', x: -40, y: -30 },
+      { id: 'TRIG', name: 'TRIG', x: -40, y: -10 },
+      { id: 'OUT', name: 'OUT', x: -40, y: 10 },
+      { id: 'RESET', name: 'RESET', x: -40, y: 30 },
+      { id: 'CTRL', name: 'CTRL', x: 40, y: 30 },
+      { id: 'THRES', name: 'THRES', x: 40, y: 10 },
+      { id: 'DISCH', name: 'DISCH', x: 40, y: -10 },
+      { id: 'VCC', name: 'VCC', x: 40, y: -30 }
+    ];
+  }
+  // MCU DIP (match BuiltinComponents.genMcuPins) â€” without this, kernel
+  // ensureNetPinConnectivity(doc, grid) treats AT89/STM32 as R/C 2-pin and
+  // drops P1..P8 â†’ [MCU] GPIO_MISS / LED will not animate.
+  const mcuPins = mcuDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
+  }
+  if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
+    return [
+      { id: 'A', name: 'A', x: -30, y: 0 },
+      { id: 'K', name: 'K', x: 30, y: 0 }
+    ];
+  }
+  // Generic two-terminal passives (R/C/L/fuse/crystalâ€¦)
+  return [
+    { id: '1', name: '1', x: -30, y: 0 },
+    { id: '2', name: '2', x: 30, y: 0 }
+  ];
+}
+
+/** DIP MCU pin layout: left P1..Pn/2 @ x=-50, right rest @ x=+50, spacing 10. */
+function mcuDefaultPins(libUpper: string): PinGeometry[] {
+  let count = 0;
+  if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+    libUpper.includes('8051') || libUpper.includes('MCS51')) {
+    count = 40;
+  } else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+    count = 100;
+  } else if (libUpper.includes('STM32')) {
+    count = 48;
+  }
+  if (count <= 0) {
+    return [];
+  }
+  const pins: PinGeometry[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    const id = `P${i + 1}`;
+    pins.push({ id: id, name: id, x: -50, y: i * spacing - bodyHalf });
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const id = `P${leftCount + i + 1}`;
+    pins.push({ id: id, name: id, x: 50, y: i * spacing - bodyHalf });
+  }
+  return pins;
+}
+
+function countPinRefs(doc: SchematicDocument): number {
+  let total = 0;
+  for (let i = 0; i < doc.nets.length; i++) {
+    total += doc.nets[i].pinIds.length;
+  }
+  return total;
+}
+
+function findNetByName(doc: SchematicDocument, name: string): string | null {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < doc.nets.length; i++) {
+    if (doc.nets[i].name.toUpperCase() === upper) {
+      return doc.nets[i].id;
+    }
+  }
+  return null;
+}
+
+function ensureNet(doc: SchematicDocument, netId: string): void {
+  if (doc.nets.some(n => n.id === netId)) {
+    return;
+  }
+  doc.nets.push({ id: netId, name: '', type: NetType.SIGNAL, pinIds: [] });
+}
+
+function addPinToNet(doc: SchematicDocument, netId: string, compId: string,
+  pinId: string, pinName: string): void {
+  ensureNet(doc, netId);
+  const net = doc.nets.find(n => n.id === netId);
+  if (net === undefined) {
+    return;
+  }
+  const pinRef = buildPinRef(compId, pinId, pinName);
+  if (net.pinIds.includes(pinRef)) {
+    return;
+  }
+  // Remove this pin from any other nets â€” a pin must belong to exactly one net
+  for (const other of doc.nets) {
+    if (other.id !== netId) {
+      const idx = other.pinIds.indexOf(pinRef);
+      if (idx >= 0) {
+        other.pinIds.splice(idx, 1);
+      }
+    }
+  }
+  net.pinIds.push(pinRef);
+}
+
+function countCompPinConnections(doc: SchematicDocument, compId: string): number {
+  let count = 0;
+  for (let ni = 0; ni < doc.nets.length; ni++) {
+    const net = doc.nets[ni];
+    for (let pi = 0; pi < net.pinIds.length; pi++) {
+      const parsed = parsePinRef(net.pinIds[pi]);
+      if (parsed !== null && parsed.compId === compId) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+function expectedPinCount(libraryId: string): number {
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND') ||
+    lib === 'VEE' || lib.endsWith('/VEE')) {
+    return 1;
+  }
+  // å¤šè„šå™¨ä»¶ï¼šneedsWireRebuild åªè¦æ±‚ã€Œæœ€å°å¯ç”¨è¿é€šã€ï¼Œå‹¿ç”¨æ»¡è„šæ•°ï¼ˆå¦åˆ™ MCU æ°¸è¿œè§¦å‘é‡å»ºï¼‰
+  if (lib.includes('OSCILLOSCOPE') || lib.includes('LOGIC_ANALYZER') ||
+    lib.includes('UART') || lib.includes('VOLTMETER') || lib.includes('AMMETER') ||
+    lib.includes('POWER_METER') || lib.includes('FREQ_COUNTER') || lib.includes('VIRTUAL_METER')) {
+    return 2;
+  }
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08') ||
+    lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_')) {
+    return 3;
+  }
+  if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+    return 4;
+  }
+  const mcu = mcuDefaultPins(lib);
+  if (mcu.length > 0) {
+    return 2;
+  }
+  return 2;
+}
+
+function needsWireRebuild(doc: SchematicDocument): boolean {
+  if (countPinRefs(doc) < Math.max(2, doc.components.length)) {
+    return true;
+  }
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const expected = expectedPinCount(comp.libraryId);
+    if (countCompPinConnections(doc, comp.id) < expected) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function connectWireEndpoints(doc: SchematicDocument, threshold: number,
+  resolver?: PinGeometryResolver): number {
+  const junctionRadius = 4;
+  // æ¾å¸é™„é˜ˆå€¼å†…ä¸å…è®¸æŠŠç”µæº/åœ°ç¬¦å·è„šå¸åˆ°ä¿¡å· stub æ¸¸ç¦»ç«¯ï¼ˆlab_passive DIV_TOP æ ¹å› ï¼‰
+  const strictSnap = Math.min(5, threshold);
+  // Pre-collect all pin candidates with world positions
+  interface PinCandidate {
+    compId: string;
+    pinId: string;
+    pinName: string;
+    libraryId: string;
+    world: Point2D;
+  }
+  const allCandidates: PinCandidate[] = [];
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const pins = defaultPinsForLib(comp.libraryId, resolver);
+    for (let pi = 0; pi < pins.length; pi++) {
+      const pin = pins[pi];
+      const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+      allCandidates.push({
+        compId: comp.id,
+        pinId: pin.id,
+        pinName: pin.name,
+        libraryId: comp.libraryId,
+        world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+      });
+    }
+  }
+
+  // å·²å ç”¨è„š â†’ æ‰€å± netIdï¼ˆæœ¬è½®å†™å…¥åæ›´æ–°ï¼‰ï¼Œé¿å…å¼‚ç½‘å¯¼çº¿åœ¨æ¾é˜ˆå€¼å¤ºè„š
+  const pinOwnerNet = new Map<string, string>();
+
+  let connected = 0;
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    ensureNet(doc, wire.netId);
+    const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+
+    for (let ei = 0; ei < endpoints.length; ei++) {
+      const ep = endpoints[ei];
+      let bestDist = threshold;
+      let bestIdx = -1;
+      for (let ci = 0; ci < allCandidates.length; ci++) {
+        const c = allCandidates[ci];
+        const dx = ep.x - c.world.x;
+        const dy = ep.y - c.world.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= bestDist) {
+          continue;
+        }
+        // å®½æ¾é˜ˆå€¼ï¼šç¦æ­¢æ å¤ºç”µæº/åœ°ç¬¦å·è„šï¼ˆç²¾ç¡®æ¥è§¦ä»å…è®¸ï¼‰
+        if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND' ||
+          c.libraryId === 'VEE')) {
+          continue;
+        }
+        const pinKey = `${c.compId}:${c.pinId}`;
+        const owner = pinOwnerNet.get(pinKey);
+        if (owner !== undefined && owner !== wire.netId && dist > strictSnap) {
+          // å¼‚ç½‘å·²å ç”¨ï¼šä»…å…è®¸ç²¾ç¡®æ¥è§¦æ”¹ç»‘ï¼Œé¿å…æ‹¥æŒ¤å¸ƒå±€æ¾å¸é™„å¤ºè„š
+          continue;
+        }
+        bestDist = dist;
+        bestIdx = ci;
+      }
+
+      if (bestIdx >= 0) {
+        const best = allCandidates[bestIdx];
+        addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+        pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
+        connected++;
+        // Also add co-located pins (junction)
+        for (let ci = 0; ci < allCandidates.length; ci++) {
+          if (ci === bestIdx) {
+            continue;
+          }
+          const c = allCandidates[ci];
+          const dx = best.world.x - c.world.x;
+          const dy = best.world.y - c.world.y;
+          if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+            pinOwnerNet.set(`${c.compId}:${c.pinId}`, wire.netId);
+            connected++;
+          }
+        }
+      }
+    }
+  }
+  return connected;
+}
+
+/** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc: SchematicDocument): number {
+  const wireNetIds = new Set<string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const nid = doc.wires[wi].netId;
+    if (nid.length > 0) {
+      wireNetIds.add(nid);
+    }
+  }
+  const labelNetIds = new Set<string>();
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const nid = doc.netLabels[li].netId;
+    if (nid.length > 0) {
+      labelNetIds.add(nid);
+    }
+  }
+  const before = doc.nets.length;
+  const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
+  doc.nets = doc.nets.filter((net) => {
+    if (wireNetIds.has(net.id)) {
+      return true;
+    }
+    if (labelNetIds.has(net.id)) {
+      return true;
+    }
+    if (net.pinIds.length > 0) {
+      return true;
+    }
+    // ä¿ç•™çœŸæ­£çš„ç”µæº/åœ°è½¨ï¼›ä¸¢å¼ƒæ‹“æ‰‘é‡å»ºåæ‚¬ç©ºçš„å‘½åç”µæºç½‘ï¼ˆå¦‚ç©º VOUTï¼‰
+    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+      return railNames.has(net.name.toUpperCase());
+    }
+    return false;
+  });
+  return before - doc.nets.length;
+}
+
+/**
+ * Merge power/ground rails into canonical nets for MNA truth:
+ * - same-name duplicates (case-insensitive)
+ * - aliases: VDD/V+ â†’ VCC, VSS/0 â†’ GND, V- â†’ VEE
+ * Remaps wires, labels, and pinIds via mergeNetInto.
+ */
+function mergeRailNets(doc: SchematicDocument): void {
+  const groups: Array<RailAliasGroup> = [
+    // å‹¿æŠŠ V+ å¹¶å…¥ VCCï¼šè¿æ”¾ç”µæºè„šå V+ ä¸ç½‘ç»œåå†²çªæ—¶ä¼šè¯¯å¹¶ç½‘
+    { canonical: 'VCC', type: NetType.POWER, members: ['VCC', 'VDD'] },
+    { canonical: 'GND', type: NetType.GROUND, members: ['GND', 'VSS', '0'] },
+    { canonical: 'VEE', type: NetType.POWER, members: ['VEE'] }
+  ];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    const memberSet = new Set<string>();
+    for (let mi = 0; mi < group.members.length; mi++) {
+      memberSet.add(group.members[mi]);
+    }
+    const ids: string[] = [];
+    let preferredId: string | null = null;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const upper = doc.nets[ni].name.toUpperCase();
+      if (!memberSet.has(upper)) {
+        continue;
+      }
+      ids.push(doc.nets[ni].id);
+      if (preferredId === null && upper === group.canonical) {
+        preferredId = doc.nets[ni].id;
+      }
+    }
+    if (ids.length === 0) {
+      continue;
+    }
+    const canonicalId = preferredId !== null ? preferredId : ids[0];
+    for (let i = 0; i < ids.length; i++) {
+      if (ids[i] !== canonicalId) {
+        mergeNetInto(doc, ids[i], canonicalId);
+      }
+    }
+    const canonNet = doc.nets.find(n => n.id === canonicalId);
+    if (canonNet !== undefined) {
+      canonNet.name = group.canonical;
+      canonNet.type = group.type;
+    }
+  }
+}
+
+interface RailAliasGroup {
+  canonical: string;
+  type: NetType;
+  members: string[];
+}
+
+/**
+ * Ensure net.pinIds reflect wire connectivity only.
+ * Rebuilds wire netIds from geometry, then assigns pins at wire endpoints.
+ */
+export function ensureNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  const before = countPinRefs(doc);
+
+  rebuildWireNetTopology(doc, gridSize, resolver);
+
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+
+  const threshold = Math.max(gridSize * 2.5, 20);
+  const wired = connectWireEndpoints(doc, threshold, resolver);
+  // Proteus: same net-label text (case-sensitive) â‡’ same net â€” must run after geometry rebuild
+  applyNetLabelConnectivity(doc, gridSize);
+  mergeRailNets(doc);
+  pruneOrphanNets(doc);
+
+  const after = countPinRefs(doc);
+  traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+}
+
+/** Strip and rebuild all pinIds from wires (simulation reload). */
+export function rebuildAllNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+  ensureNetPinConnectivity(doc, gridSize, resolver);
+}
+
+export function summarizeNetPins(doc: SchematicDocument, maxNets: number = 6): string {
+  const parts: string[] = [];
+  let count = 0;
+  for (let i = 0; i < doc.nets.length && count < maxNets; i++) {
+    const net = doc.nets[i];
+    if (net.pinIds.length === 0) {
+      continue;
+    }
+    parts.push(`${net.name || net.id}(${net.pinIds.length})`);
+    count++;
+  }
+  return parts.length > 0 ? parts.join(', ') : '(no pins)';
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜñ‘”    ‘”  ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”    ‘”  " ‘”  $‘”  &‘”  '‘”  (‘”  +‘”  ,‘”  /‘”  2‘”  5‘”  6‘”  8‘”  ;‘”  <‘”  >‘”  ÌA‘”  ÌB‘”  ÌD‘”  ÌE‘”  ÌG‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌK‘”  ÌM‘”  ÌN‘”  ÌQ‘”  ÌR‘”  ÌT‘”  ÌU‘”  ÌX‘”  ÌY‘”  ÌZ‘”  Ì\‘”  Ì]‘”  Ì_‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìd‘”  Ìe‘”  Ìg‘”  Ìh‘”  Ìj‘”  Ìk‘”  Ìm‘”  Ìn‘”  Ìp‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìw‘”  Ìz‘”  Ì{‘”  Ì}‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ìˆ‘”  ÌŠ‘”  Ì‹‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì”‘”  Ì•‘”  Ì—‘”  Ì˜‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì‘”  Ì ‘”  Ì¤‘”  Ì¥‘”  Ì¦‘”  Ì§‘”  Ìª‘”  Ì«‘”  Ì­‘”  Ì°‘”  Ì±‘”  Ì³ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì¸‘”  Ì¹‘”  Ì»‘”  Ì»	‘”  Ì½‘”  Ì½	‘”  Ì¿‘”  ÌÁ‘”  ÌÂ‘”  ÌÇ‘”  ÌÉ‘”  ÌË‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ ‘”  ÌÓ ‘”  ÌÕ‘”  Ì×‘”  ÌØ‘”  ÌÙ ‘”  ÌÛ ‘”  ÌÜ‘”  Ìİ‘”  ÌŞ‘”  Ìà‘”  Ìá‘”  Ìâ‘”  Ìã ‘”  Ìå ‘”  Ìæ‘”  Ìè‘”  Ìê ‘”  Ìì ‘”  Ìî‘”  Ìï‘”  Ìò‘”  Ìö‘”  Ìø‘”  Ìù‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í$‘”  Í%‘”  Í&‘”  Í'‘”  Í(‘”  Í) ‘”  Í+ ‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í3‘”  Í4‘”  Í5‘”  Í6‘”  Í7 ‘”  Í9 ‘”  ÍG‘”  ÍJ‘”  ÍK‘”  ÍS‘”  ÍT‘”  ÍU‘”  ÍX‘”  Í[‘”  Í]‘”  Í_‘”  Í`‘”  Íc‘”  Íd‘”  Íf‘”  Íg‘”  Íh‘”  Ík‘”  Ín	‘”  Íp‘”  Íq
+‘”  Ís	‘”  Ív‘”  Íy	‘”  Í|‘”  Í‘”  Í€‘”  Í‘”  Í‚‘”  Í„‘”  Í‡‘”  Íˆ
+‘”  Í‰
+‘”  ÍŠ
+‘”  Í‹
+‘”  ÍŒ‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘‘”  Í’‘”  Í“‘”  Í”‘”  Í• ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš‘”  Í›‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¡‘”  Í¢‘”  Í¤‘”  Í¥‘”  Í¦‘”  Í§‘”  Í¨‘”  Í©‘”  Íª‘”  Í¬‘”  Í­‘”  Í¯‘”  Í°‘”  Í±‘”  Í²‘”  Í³‘”  Íµ‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í» ‘”  Í½ ‘”  ÍÂ‘”  ÍÃ ‘”  ÍÄ‘”  ÍÆ‘”  ÍÇ‘”  ÍÈ‘”  ÍÊ‘”  ÍË‘”  ÍÌ‘”  ÍÍ‘”  ÍÏ‘”  ÍÒ‘”  ÍÓ‘”  ÍÔ‘”  ÍÖ‘”  Í×‘”  ÍÚ‘”  ÍÛ‘”  ÍÜ‘”  ÍŞ‘”  Íß‘”  Íà‘”  Íá‘”  Íã‘”  Íä‘”  Íå‘”  Íç‘”  Íè‘”  Íé‘”  Íê‘”  Íë ‘”  Íó ‘”  Íö‘”  Í÷ ‘”  Íù‘”  Íû‘”  Íı‘”  Íÿ‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í! ‘ÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetPinRebuildUtil.ets‘ÚG¸/**
+ * Rebuild net.pinIds from wire geometry when pin refs are missing.
+ * Used by schematic editor and analog simulation so MNA sees real connectivity.
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from '../types/CommonTypes';
+import { buildPinRef, parsePinRef } from './PinRefUtil';
+import { traceNetConnectivity } from './InstrumentTraceLog';
+import { rebuildWireNetTopology } from './WireNetTopology';
+import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
+
+export interface PinGeometry {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+}
+
+/** Optional callback to resolve real pin positions from component library. */
+export type PinGeometryResolver = (libraryId: string) => PinGeometry[] | null;
+
+function transformPin(local: Point2D, rotation: Rotation, mirrored: boolean): Point2D {
+  let x = local.x;
+  let y = local.y;
+  if (mirrored) {
+    x = -x;
+  }
+  switch (rotation) {
+    case 90: return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+    default: return { x: x, y: y };
+  }
+}
+
+function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): PinGeometry[] {
+  if (resolver !== undefined) {
+    const resolved = resolver(libraryId);
+    if (resolved !== null && resolved.length > 0) {
+      return resolved;
+    }
+  }
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC')) {
+    return [{ id: '1', name: 'VCC', x: 0, y: 10 }];
+  }
+  if (lib === 'GND' || lib.endsWith('/GND')) {
+    return [{ id: '1', name: 'GND', x: 0, y: -10 }];
+  }
+  if (lib === 'VEE' || lib.endsWith('/VEE')) {
+    return [{ id: '1', name: 'VEE', x: 0, y: -10 }];
+  }
+  if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+    return [
+      { id: 'OUT', name: 'OUT', x: -30, y: 0 },
+      { id: 'GND', name: 'GND', x: 30, y: 0 }
+    ];
+  }
+  if (lib === 'VOLTMETER_DC' || lib.includes('VOLTMETER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
+  if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
+    return [
+      { id: 'I+', name: 'I+', x: -30, y: 0 },
+      { id: 'I-', name: 'I-', x: -30, y: 20 }
+    ];
+  }
+  if (lib.includes('OSCILLOSCOPE')) {
+    return [
+      { id: 'CH1', name: 'CH1', x: -40, y: -30 },
+      { id: 'CH2', name: 'CH2', x: -40, y: -10 },
+      { id: 'CH3', name: 'CH3', x: -40, y: 10 },
+      { id: 'CH4', name: 'CH4', x: -40, y: 30 },
+      { id: 'GND', name: 'GND', x: -40, y: 50 }
+    ];
+  }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push({ id: `CH${i + 1}`, name: `CH${i + 1}`, x: -40, y: -40 + i * 10 });
+    }
+    pins.push({ id: 'GND', name: 'GND', x: -40, y: 40 });
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL') || lib === 'UART_TERMINAL') {
+    return [
+      { id: 'TX', name: 'TX', x: -40, y: -10 },
+      { id: 'RX', name: 'RX', x: -40, y: 10 },
+      { id: 'GND', name: 'GND', x: -40, y: 30 }
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      { id: 'V+', name: 'V+', x: -40, y: -20 },
+      { id: 'V-', name: 'V-', x: -40, y: 0 },
+      { id: 'I+', name: 'I+', x: -40, y: 20 },
+      { id: 'I-', name: 'I-', x: -40, y: 40 }
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      { id: 'IN', name: 'IN', x: -30, y: -10 },
+      { id: 'GND', name: 'GND', x: -30, y: 10 }
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      { id: 'V', name: 'V', x: -30, y: -25 },
+      { id: 'COM', name: 'COM', x: -30, y: 25 }
+    ];
+  }
+  if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+    return [
+      { id: '1', name: 'IN', x: -40, y: 0 },
+      { id: '2', name: 'GND', x: 0, y: 40 },
+      { id: '3', name: 'OUT', x: 40, y: 0 }
+    ];
+  }
+  if (lib === 'VAC' || lib.startsWith('VAC')) {
+    return [
+      { id: '1', name: 'AC+', x: -20, y: 0 },
+      { id: '2', name: 'AC-', x: 20, y: 0 }
+    ];
+  }
+  // Dual LM358/TL082 (match BuiltinComponents.genDualOpAmpPins / kit.mjs)
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+    return [
+      { id: 'OUT1', name: 'OUT1', x: 50, y: -30 },
+      { id: 'IN-1', name: 'IN-1', x: -50, y: -20 },
+      { id: 'IN+1', name: 'IN+1', x: -50, y: -40 },
+      { id: 'V-', name: 'V-', x: 0, y: 50 },
+      { id: 'IN+2', name: 'IN+2', x: -50, y: 20 },
+      { id: 'IN-2', name: 'IN-2', x: -50, y: 40 },
+      { id: 'OUT2', name: 'OUT2', x: 50, y: 30 },
+      { id: 'V+', name: 'V+', x: 0, y: -50 }
+    ];
+  }
+  if (lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_') ||
+    lib === 'LM741' || lib === 'TL081' || lib === 'TL071') {
+    return [
+      { id: 'IN+', name: 'IN+', x: -50, y: -20 },
+      { id: 'IN-', name: 'IN-', x: -50, y: 20 },
+      { id: 'OUT', name: 'OUT', x: 50, y: 0 },
+      { id: 'VCC', name: 'VCC', x: 0, y: -50 },
+      { id: 'VEE', name: 'VEE', x: 0, y: 50 }
+    ];
+  }
+  if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+    return [
+      { id: 'GND', name: 'GND', x: -40, y: -30 },
+      { id: 'TRIG', name: 'TRIG', x: -40, y: -10 },
+      { id: 'OUT', name: 'OUT', x: -40, y: 10 },
+      { id: 'RESET', name: 'RESET', x: -40, y: 30 },
+      { id: 'CTRL', name: 'CTRL', x: 40, y: 30 },
+      { id: 'THRES', name: 'THRES', x: 40, y: 10 },
+      { id: 'DISCH', name: 'DISCH', x: 40, y: -10 },
+      { id: 'VCC', name: 'VCC', x: 40, y: -30 }
+    ];
+  }
+  // MCU DIP (match BuiltinComponents.genMcuPins) â€” without this, kernel
+  // ensureNetPinConnectivity(doc, grid) treats AT89/STM32 as R/C 2-pin and
+  // drops P1..P8 â†’ [MCU] GPIO_MISS / LED will not animate.
+  const mcuPins = mcuDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
+  }
+  if (lib.includes('DIODE') || lib.startsWith('1N') || lib.includes('LED')) {
+    return [
+      { id: 'A', name: 'A', x: -30, y: 0 },
+      { id: 'K', name: 'K', x: 30, y: 0 }
+    ];
+  }
+  // Generic two-terminal passives (R/C/L/fuse/crystalâ€¦)
+  return [
+    { id: '1', name: '1', x: -30, y: 0 },
+    { id: '2', name: '2', x: 30, y: 0 }
+  ];
+}
+
+/** DIP MCU pin layout: left P1..Pn/2 @ x=-50, right rest @ x=+50, spacing 10. */
+function mcuDefaultPins(libUpper: string): PinGeometry[] {
+  let count = 0;
+  if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+    libUpper.includes('8051') || libUpper.includes('MCS51')) {
+    count = 40;
+  } else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+    count = 100;
+  } else if (libUpper.includes('STM32')) {
+    count = 48;
+  }
+  if (count <= 0) {
+    return [];
+  }
+  const pins: PinGeometry[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    const id = `P${i + 1}`;
+    pins.push({ id: id, name: id, x: -50, y: i * spacing - bodyHalf });
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const id = `P${leftCount + i + 1}`;
+    pins.push({ id: id, name: id, x: 50, y: i * spacing - bodyHalf });
+  }
+  return pins;
+}
+
+function countPinRefs(doc: SchematicDocument): number {
+  let total = 0;
+  for (let i = 0; i < doc.nets.length; i++) {
+    total += doc.nets[i].pinIds.length;
+  }
+  return total;
+}
+
+function findNetByName(doc: SchematicDocument, name: string): string | null {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < doc.nets.length; i++) {
+    if (doc.nets[i].name.toUpperCase() === upper) {
+      return doc.nets[i].id;
+    }
+  }
+  return null;
+}
+
+function ensureNet(doc: SchematicDocument, netId: string): void {
+  if (doc.nets.some(n => n.id === netId)) {
+    return;
+  }
+  doc.nets.push({ id: netId, name: '', type: NetType.SIGNAL, pinIds: [] });
+}
+
+function addPinToNet(doc: SchematicDocument, netId: string, compId: string,
+  pinId: string, pinName: string): void {
+  ensureNet(doc, netId);
+  const net = doc.nets.find(n => n.id === netId);
+  if (net === undefined) {
+    return;
+  }
+  const pinRef = buildPinRef(compId, pinId, pinName);
+  if (net.pinIds.includes(pinRef)) {
+    return;
+  }
+  // Remove this pin from any other nets â€” a pin must belong to exactly one net
+  for (const other of doc.nets) {
+    if (other.id !== netId) {
+      const idx = other.pinIds.indexOf(pinRef);
+      if (idx >= 0) {
+        other.pinIds.splice(idx, 1);
+      }
+    }
+  }
+  net.pinIds.push(pinRef);
+}
+
+function countCompPinConnections(doc: SchematicDocument, compId: string): number {
+  let count = 0;
+  for (let ni = 0; ni < doc.nets.length; ni++) {
+    const net = doc.nets[ni];
+    for (let pi = 0; pi < net.pinIds.length; pi++) {
+      const parsed = parsePinRef(net.pinIds[pi]);
+      if (parsed !== null && parsed.compId === compId) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+function expectedPinCount(libraryId: string): number {
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC') || lib === 'GND' || lib.endsWith('/GND') ||
+    lib === 'VEE' || lib.endsWith('/VEE')) {
+    return 1;
+  }
+  // å¤šè„šå™¨ä»¶ï¼šneedsWireRebuild åªè¦æ±‚ã€Œæœ€å°å¯ç”¨è¿é€šã€ï¼Œå‹¿ç”¨æ»¡è„šæ•°ï¼ˆå¦åˆ™ MCU æ°¸è¿œè§¦å‘é‡å»ºï¼‰
+  if (lib.includes('OSCILLOSCOPE') || lib.includes('LOGIC_ANALYZER') ||
+    lib.includes('UART') || lib.includes('VOLTMETER') || lib.includes('AMMETER') ||
+    lib.includes('POWER_METER') || lib.includes('FREQ_COUNTER') || lib.includes('VIRTUAL_METER')) {
+    return 2;
+  }
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08') ||
+    lib.includes('UA741') || lib.includes('OPAMP') || lib.startsWith('OP_')) {
+    return 3;
+  }
+  if (lib.includes('LM555') || lib.includes('NE555') || lib === '555') {
+    return 4;
+  }
+  const mcu = mcuDefaultPins(lib);
+  if (mcu.length > 0) {
+    return 2;
+  }
+  return 2;
+}
+
+function needsWireRebuild(doc: SchematicDocument): boolean {
+  if (countPinRefs(doc) < Math.max(2, doc.components.length)) {
+    return true;
+  }
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const expected = expectedPinCount(comp.libraryId);
+    if (countCompPinConnections(doc, comp.id) < expected) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function connectWireEndpoints(doc: SchematicDocument, threshold: number,
+  resolver?: PinGeometryResolver): number {
+  const junctionRadius = 4;
+  // æ¾å¸é™„é˜ˆå€¼å†…ä¸å…è®¸æŠŠç”µæº/åœ°ç¬¦å·è„šå¸åˆ°ä¿¡å· stub æ¸¸ç¦»ç«¯ï¼ˆlab_passive DIV_TOP æ ¹å› ï¼‰
+  const strictSnap = Math.min(5, threshold);
+  // Pre-collect all pin candidates with world positions
+  interface PinCandidate {
+    compId: string;
+    pinId: string;
+    pinName: string;
+    libraryId: string;
+    world: Point2D;
+  }
+  const allCandidates: PinCandidate[] = [];
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    const pins = defaultPinsForLib(comp.libraryId, resolver);
+    for (let pi = 0; pi < pins.length; pi++) {
+      const pin = pins[pi];
+      const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+      allCandidates.push({
+        compId: comp.id,
+        pinId: pin.id,
+        pinName: pin.name,
+        libraryId: comp.libraryId,
+        world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
+      });
+    }
+  }
+
+  // å·²å ç”¨è„š â†’ æ‰€å± netIdï¼ˆæœ¬è½®å†™å…¥åæ›´æ–°ï¼‰ï¼Œé¿å…å¼‚ç½‘å¯¼çº¿åœ¨æ¾é˜ˆå€¼å¤ºè„š
+  const pinOwnerNet = new Map<string, string>();
+
+  let connected = 0;
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    ensureNet(doc, wire.netId);
+    const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
+
+    for (let ei = 0; ei < endpoints.length; ei++) {
+      const ep = endpoints[ei];
+      let bestDist = threshold;
+      let bestIdx = -1;
+      for (let ci = 0; ci < allCandidates.length; ci++) {
+        const c = allCandidates[ci];
+        const dx = ep.x - c.world.x;
+        const dy = ep.y - c.world.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= bestDist) {
+          continue;
+        }
+        // å®½æ¾é˜ˆå€¼ï¼šç¦æ­¢æ å¤ºç”µæº/åœ°ç¬¦å·è„šï¼ˆç²¾ç¡®æ¥è§¦ä»å…è®¸ï¼‰
+        if (dist > strictSnap && (c.libraryId === 'VCC' || c.libraryId === 'GND' ||
+          c.libraryId === 'VEE')) {
+          continue;
+        }
+        const pinKey = `${c.compId}:${c.pinId}`;
+        const owner = pinOwnerNet.get(pinKey);
+        if (owner !== undefined && owner !== wire.netId && dist > strictSnap) {
+          // å¼‚ç½‘å·²å ç”¨ï¼šä»…å…è®¸ç²¾ç¡®æ¥è§¦æ”¹ç»‘ï¼Œé¿å…æ‹¥æŒ¤å¸ƒå±€æ¾å¸é™„å¤ºè„š
+          continue;
+        }
+        bestDist = dist;
+        bestIdx = ci;
+      }
+
+      if (bestIdx >= 0) {
+        const best = allCandidates[bestIdx];
+        addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
+        pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
+        connected++;
+        // Also add co-located pins (junction)
+        for (let ci = 0; ci < allCandidates.length; ci++) {
+          if (ci === bestIdx) {
+            continue;
+          }
+          const c = allCandidates[ci];
+          const dx = best.world.x - c.world.x;
+          const dy = best.world.y - c.world.y;
+          if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+            pinOwnerNet.set(`${c.compId}:${c.pinId}`, wire.netId);
+            connected++;
+          }
+        }
+      }
+    }
+  }
+  return connected;
+}
+
+/** Merge pin refs that share the same comp:pin onto named VCC/GND nets when possible. */
+/** Drop signal nets no longer referenced by any wire (stale netId after topology rebuild). */
+function pruneOrphanNets(doc: SchematicDocument): number {
+  const wireNetIds = new Set<string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const nid = doc.wires[wi].netId;
+    if (nid.length > 0) {
+      wireNetIds.add(nid);
+    }
+  }
+  const labelNetIds = new Set<string>();
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const nid = doc.netLabels[li].netId;
+    if (nid.length > 0) {
+      labelNetIds.add(nid);
+    }
+  }
+  const before = doc.nets.length;
+  const railNames = new Set(['VCC', 'VDD', 'GND', 'VSS', 'VEE', '0']);
+  doc.nets = doc.nets.filter((net) => {
+    if (wireNetIds.has(net.id)) {
+      return true;
+    }
+    if (labelNetIds.has(net.id)) {
+      return true;
+    }
+    if (net.pinIds.length > 0) {
+      return true;
+    }
+    // ä¿ç•™çœŸæ­£çš„ç”µæº/åœ°è½¨ï¼›ä¸¢å¼ƒæ‹“æ‰‘é‡å»ºåæ‚¬ç©ºçš„å‘½åç”µæºç½‘ï¼ˆå¦‚ç©º VOUTï¼‰
+    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
+      return railNames.has(net.name.toUpperCase());
+    }
+    return false;
+  });
+  return before - doc.nets.length;
+}
+
+/**
+ * Merge power/ground rails into canonical nets for MNA truth:
+ * - same-name duplicates (case-insensitive)
+ * - aliases: VDD/V+ â†’ VCC, VSS/0 â†’ GND, V- â†’ VEE
+ * Remaps wires, labels, and pinIds via mergeNetInto.
+ */
+function mergeRailNets(doc: SchematicDocument): void {
+  const groups: Array<RailAliasGroup> = [
+    // å‹¿æŠŠ V+ å¹¶å…¥ VCCï¼šè¿æ”¾ç”µæºè„šå V+ ä¸ç½‘ç»œåå†²çªæ—¶ä¼šè¯¯å¹¶ç½‘
+    { canonical: 'VCC', type: NetType.POWER, members: ['VCC', 'VDD'] },
+    { canonical: 'GND', type: NetType.GROUND, members: ['GND', 'VSS', '0'] },
+    { canonical: 'VEE', type: NetType.POWER, members: ['VEE'] }
+  ];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    const memberSet = new Set<string>();
+    for (let mi = 0; mi < group.members.length; mi++) {
+      memberSet.add(group.members[mi]);
+    }
+    const ids: string[] = [];
+    let preferredId: string | null = null;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const upper = doc.nets[ni].name.toUpperCase();
+      if (!memberSet.has(upper)) {
+        continue;
+      }
+      ids.push(doc.nets[ni].id);
+      if (preferredId === null && upper === group.canonical) {
+        preferredId = doc.nets[ni].id;
+      }
+    }
+    if (ids.length === 0) {
+      continue;
+    }
+    const canonicalId = preferredId !== null ? preferredId : ids[0];
+    for (let i = 0; i < ids.length; i++) {
+      if (ids[i] !== canonicalId) {
+        mergeNetInto(doc, ids[i], canonicalId);
+      }
+    }
+    const canonNet = doc.nets.find(n => n.id === canonicalId);
+    if (canonNet !== undefined) {
+      canonNet.name = group.canonical;
+      canonNet.type = group.type;
+    }
+  }
+}
+
+interface RailAliasGroup {
+  canonical: string;
+  type: NetType;
+  members: string[];
+}
+
+/**
+ * Ensure net.pinIds reflect wire connectivity only.
+ * Rebuilds wire netIds from geometry, then assigns pins at wire endpoints.
+ */
+export function ensureNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  const before = countPinRefs(doc);
+
+  rebuildWireNetTopology(doc, gridSize, resolver);
+
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+
+  const threshold = Math.max(gridSize * 2.5, 20);
+  const wired = connectWireEndpoints(doc, threshold, resolver);
+  // Proteus: same net-label text (case-sensitive) â‡’ same net â€” must run after geometry rebuild
+  applyNetLabelConnectivity(doc, gridSize);
+  mergeRailNets(doc);
+  pruneOrphanNets(doc);
+
+  const after = countPinRefs(doc);
+  traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+}
+
+/** Strip and rebuild all pinIds from wires (simulation reload). */
+export function rebuildAllNetPinConnectivity(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): void {
+  for (let i = 0; i < doc.nets.length; i++) {
+    doc.nets[i].pinIds = [];
+  }
+  ensureNetPinConnectivity(doc, gridSize, resolver);
+}
+
+export function summarizeNetPins(doc: SchematicDocument, maxNets: number = 6): string {
+  const parts: string[] = [];
+  let count = 0;
+  for (let i = 0; i < doc.nets.length && count < maxNets; i++) {
+    const net = doc.nets[i];
+    if (net.pinIds.length === 0) {
+      continue;
+    }
+    parts.push(`${net.name || net.id}(${net.pinIds.length})`);
+    count++;
+  }
+  return parts.length > 0 ? parts.join(', ') : '(no pins)';
+}
+ÔrE•´../types/CommonTypes¬./PinRefUtil´./InstrumentTraceLog±./WireNetTopology¶./NetLabelConnectivityÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsAÃªoh-resolveÂFAÂÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.etsAÃªoh-resolveÂFAÂÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache“ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍDkÍG+ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍDrÍG+ÔrK”¤type¥start£end¤nameªIdentifierÍD{ÍD“¸ensureNetPinConnectivityÂÂÂ“KªIdentifierÍD”ÍD—£docÔrL•¤type¥start£end¤left¥right±AssignmentPatternÍD™ÍD¦KªIdentifierÍD™ÍD¡¨gridSizeÔrM•¤type¥start£end¥value£raw§LiteralÍD¤ÍD¦
+¢10KªIdentifierÍD¨ÍD°¨resolverÔrN”¤type¥start£end¤body®BlockStatementÍD²ÍG+šÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍD¹ÍDÚ‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍD¿ÍDÙKªIdentifierÍD¿ÍDÅ¦beforeÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍDÈÍDÙKªIdentifierÍDÈÍDÔ¬countPinRefs‘KªIdentifierÍDÕÍDØ£docÂ¥constÔrR”¤type¥start£endªexpression³ExpressionStatementÍDàÍEQ®CallExpressionÍDàÍEKªIdentifierÍDàÍDö¶rebuildWireNetTopology“KªIdentifierÍD÷ÍDú£docKªIdentifierÍDüÍE¨gridSizeKªIdentifierÍEÍE¨resolverÂÔrS—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍEÍEjO³VariableDeclarationÍEÍE$‘P²VariableDeclaratorÍEÍE$KªIdentifierÍEÍE ¡iM§LiteralÍE#ÍE$ ¡0£letÔrT–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍE&ÍE9KªIdentifierÍE&ÍE'¡i¡<ÔrU—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍE*ÍE9U°MemberExpressionÍE*ÍE2KªIdentifierÍE*ÍE-£docKªIdentifierÍE.ÍE2¤netsÂÂKªIdentifierÍE3ÍE9¦lengthÂÂÔrV–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍE;ÍE>¢++ÂKªIdentifierÍE;ÍE<¡iN®BlockStatementÍE@ÍEj‘R³ExpressionStatementÍEKÍEcÔrW–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍEKÍEb¡=U°MemberExpressionÍEKÍE]U°MemberExpressionÍEKÍEVU°MemberExpressionÍEKÍESKªIdentifierÍEKÍEN£docKªIdentifierÍEOÍES¤netsÂÂKªIdentifierÍETÍEU¡iÃÂKªIdentifierÍEWÍE]¦pinIdsÂÂÔrX”¤type¥start£end¨elements¯ArrayExpressionÍE`ÍEbO³VariableDeclarationÍEpÍEŸ‘P²VariableDeclaratorÍEvÍEKªIdentifierÍEvÍE©thresholdQ®CallExpressionÍE‚ÍEU°MemberExpressionÍE‚ÍEŠKªIdentifierÍE‚ÍE†¤MathKªIdentifierÍE‡ÍEŠ£maxÂÂ’T°BinaryExpressionÍE‹ÍE™KªIdentifierÍE‹ÍE“¨gridSize¡*M§LiteralÍE–ÍE™Ë@      £2.5M§LiteralÍE›ÍE¢20Â¥constO³VariableDeclarationÍE¥ÍEâ‘P²VariableDeclaratorÍE«ÍEáKªIdentifierÍE«ÍE°¥wiredQ®CallExpressionÍE³ÍEáKªIdentifierÍE³ÍEÇ´connectWireEndpoints“KªIdentifierÍEÈÍEË£docKªIdentifierÍEÍÍEÖ©thresholdKªIdentifierÍEØÍEà¨resolverÂ¥constR³ExpressionStatementÍFKÍFtQ®CallExpressionÍFKÍFsKªIdentifierÍFKÍFd¹applyNetLabelConnectivity’KªIdentifierÍFeÍFh£docKªIdentifierÍFjÍFr¨gridSizeÂR³ExpressionStatementÍFzÍFQ®CallExpressionÍFzÍFŒKªIdentifierÍFzÍF‡­mergeRailNets‘KªIdentifierÍFˆÍF‹£docÂR³ExpressionStatementÍF“ÍF¨Q®CallExpressionÍF“ÍF§KªIdentifierÍF“ÍF¢¯pruneOrphanNets‘KªIdentifierÍF£ÍF¦£docÂO³VariableDeclarationÍF®ÍFÎ‘P²VariableDeclaratorÍF´ÍFÍKªIdentifierÍF´ÍF¹¥afterQ®CallExpressionÍF¼ÍFÍKªIdentifierÍF¼ÍFÈ¬countPinRefs‘KªIdentifierÍFÉÍFÌ£docÂ¥constR³ExpressionStatementÍFÔÍG(Q®CallExpressionÍFÔÍG'KªIdentifierÍFÔÍFè´traceNetConnectivity•KªIdentifierÍFéÍFï¦beforeKªIdentifierÍFñÍFö¥afterKªIdentifierÍFøÍFı¥wiredU°MemberExpressionÍFÿÍGU°MemberExpressionÍFÿÍGKªIdentifierÍFÿÍG£docKªIdentifierÍGÍGªcomponentsÂÂKªIdentifierÍGÍG¦lengthÂÂU°MemberExpressionÍGÍG&U°MemberExpressionÍGÍGKªIdentifierÍGÍG£docKªIdentifierÍGÍG¥wiresÂÂKªIdentifierÍG ÍG&¦lengthÂÂÂÀI¶ExportNamedDeclarationÍGrÍHSJ³FunctionDeclarationÍGyÍHSKªIdentifierÍG‚ÍG¼rebuildAllNetPinConnectivityÂÂÂ“KªIdentifierÍGŸÍG¢£docL±AssignmentPatternÍG¤ÍG±KªIdentifierÍG¤ÍG¬¨gridSizeM§LiteralÍG¯ÍG±
+¢10KªIdentifierÍG³ÍG»¨resolverN®BlockStatementÍG½ÍHS’S¬ForStatementÍGÄÍHO³VariableDeclarationÍGÉÍGÒ‘P²VariableDeclaratorÍGÍÍGÒKªIdentifierÍGÍÍGÎ¡iM§LiteralÍGÑÍGÒ ¡0£letT°BinaryExpressionÍGÔÍGçKªIdentifierÍGÔÍGÕ¡i¡<U°MemberExpressionÍGØÍGçU°MemberExpressionÍGØÍGàKªIdentifierÍGØÍGÛ£docKªIdentifierÍGÜÍGà¤netsÂÂKªIdentifierÍGáÍGç¦lengthÂÂV°UpdateExpressionÍGéÍGì¢++ÂKªIdentifierÍGéÍGê¡iN®BlockStatementÍGîÍH‘R³ExpressionStatementÍGùÍHW´AssignmentExpressionÍGùÍH¡=U°MemberExpressionÍGùÍHU°MemberExpressionÍGùÍHU°MemberExpressionÍGùÍHKªIdentifierÍGùÍGü£docKªIdentifierÍGıÍH¤netsÂÂKªIdentifierÍHÍH¡iÃÂKªIdentifierÍHÍH¦pinIdsÂÂX¯ArrayExpressionÍHÍHR³ExpressionStatementÍHÍHPQ®CallExpressionÍHÍHOKªIdentifierÍHÍH6¸ensureNetPinConnectivity“KªIdentifierÍH7ÍH:£docKªIdentifierÍH<ÍHD¨gridSizeKªIdentifierÍHFÍHN¨resolverÂÀI¶ExportNamedDeclarationÍHUÍJJ³FunctionDeclarationÍH\ÍJKªIdentifierÍHeÍHu°summarizeNetPinsÂÂÂ’KªIdentifierÍHvÍHy£docL±AssignmentPatternÍH{ÍH†KªIdentifierÍH{ÍH‚§maxNetsM§LiteralÍH…ÍH†¡6N®BlockStatementÍHˆÍJ”O³VariableDeclarationÍHÍH ‘P²VariableDeclaratorÍH•ÍHŸKªIdentifierÍH•ÍHš¥partsX¯ArrayExpressionÍHÍHŸ¥constO³VariableDeclarationÍH¦ÍH´‘P²VariableDeclaratorÍHªÍH³KªIdentifierÍHªÍH¯¥countM§LiteralÍH²ÍH³ ¡0£letS¬ForStatementÍHºÍIÁO³VariableDeclarationÍH¿ÍHÈ‘P²VariableDeclaratorÍHÃÍHÈKªIdentifierÍHÃÍHÄ¡iM§LiteralÍHÇÍHÈ ¡0£letT±LogicalExpressionÍHÊÍHğT°BinaryExpressionÍHÊÍHİKªIdentifierÍHÊÍHË¡i¡<U°MemberExpressionÍHÎÍHİU°MemberExpressionÍHÎÍHÖKªIdentifierÍHÎÍHÑ£docKªIdentifierÍHÒÍHÖ¤netsÂÂKªIdentifierÍH×ÍHİ¦lengthÂÂ¢&&T°BinaryExpressionÍHáÍHğKªIdentifierÍHáÍHæ¥count¡<KªIdentifierÍHéÍHğ§maxNetsV°UpdateExpressionÍHòÍHõ¢++ÂKªIdentifierÍHòÍHó¡iN®BlockStatementÍH÷ÍIÁ”O³VariableDeclarationÍIÍI‘P²VariableDeclaratorÍIÍIKªIdentifierÍIÍI£netU°MemberExpressionÍIÍIU°MemberExpressionÍIÍIKªIdentifierÍIÍI£docKªIdentifierÍIÍI¤netsÂÂKªIdentifierÍIÍI¡iÃÂ¥constÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍI$ÍIdT°BinaryExpressionÍI(ÍI?U°MemberExpressionÍI(ÍI9U°MemberExpressionÍI(ÍI2KªIdentifierÍI(ÍI+£netKªIdentifierÍI,ÍI2¦pinIdsÂÂKªIdentifierÍI3ÍI9¦lengthÂÂ£===M§LiteralÍI>ÍI? ¡0N®BlockStatementÍIAÍId‘ÔrZ”¤type¥start£end¥label±ContinueStatementÍIPÍIYÀÀR³ExpressionStatementÍInÍI¨Q®CallExpressionÍInÍI§U°MemberExpressionÍInÍIxKªIdentifierÍInÍIs¥partsKªIdentifierÍItÍIx¤pushÂÂ‘Ôr[•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍIyÍI¦’T±LogicalExpressionÍI|ÍIU°MemberExpressionÍI|ÍI„KªIdentifierÍI|ÍI£netKªIdentifierÍI€ÍI„¤nameÂÂ¢||U°MemberExpressionÍIˆÍIKªIdentifierÍIˆÍI‹£netKªIdentifierÍIŒÍI¢idÂÂU°MemberExpressionÍI’ÍI£U°MemberExpressionÍI’ÍIœKªIdentifierÍI’ÍI•£netKªIdentifierÍI–ÍIœ¦pinIdsÂÂKªIdentifierÍIÍI£¦lengthÂÂ“Ôr\•¤type¥start£end¥value¤tail¯TemplateElementÍIzÍIzÔr]’£raw¦cooked  Â\¯TemplateElementÍIÍI]¡(¡(Â\¯TemplateElementÍI¤ÍI¥]¡)¡)ÃÂR³ExpressionStatementÍI²ÍIºV°UpdateExpressionÍI²ÍI¹¢++ÂKªIdentifierÍI²ÍI·¥countÔr^”¤type¥start£end¨argument¯ReturnStatementÍIÇÍJ YµConditionalExpressionÍIÎÍIÿT°BinaryExpressionÍIÎÍIŞU°MemberExpressionÍIÎÍIÚKªIdentifierÍIÎÍIÓ¥partsKªIdentifierÍIÔÍIÚ¦lengthÂÂ¡>M§LiteralÍIİÍIŞ ¡0Q®CallExpressionÍIáÍIñU°MemberExpressionÍIáÍIëKªIdentifierÍIáÍIæ¥partsKªIdentifierÍIçÍIë¤joinÂÂ‘M§LiteralÍIìÍIğ¢, ¤', 'ÂM§LiteralÍIôÍIÿ©(no pins)«'(no pins)'À•Ôr_•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ¡ÌĞ‘Ôr`•¤type¥start£end¨imported¥local¯ImportSpecifierÌªÌ±KªIdentifierÌªÌ±§NetTypeKªIdentifierÌªÌ±§NetTypeM§LiteralÌ¹ÌÏ´../types/CommonTypes¶'../types/CommonTypes'_±ImportDeclarationÌÒÍ
+’`¯ImportSpecifierÌÛÌæKªIdentifierÌÛÌæ«buildPinRefKªIdentifierÌÛÌæ«buildPinRef`¯ImportSpecifierÌèÌóKªIdentifierÌèÌó«parsePinRefKªIdentifierÌèÌó«parsePinRefM§LiteralÌûÍ	¬./PinRefUtil®'./PinRefUtil'_±ImportDeclarationÍÍH‘`¯ImportSpecifierÍÍ)KªIdentifierÍÍ)´traceNetConnectivityKªIdentifierÍÍ)´traceNetConnectivityM§LiteralÍ1ÍG´./InstrumentTraceLog¶'./InstrumentTraceLog'_±ImportDeclarationÍJÍ…‘`¯ImportSpecifierÍSÍiKªIdentifierÍSÍi¶rebuildWireNetTopologyKªIdentifierÍSÍi¶rebuildWireNetTopologyM§LiteralÍqÍ„±./WireNetTopology³'./WireNetTopology'_±ImportDeclarationÍ‡ÍØ’`¯ImportSpecifierÍÍ©KªIdentifierÍÍ©¹applyNetLabelConnectivityKªIdentifierÍÍ©¹applyNetLabelConnectivity`¯ImportSpecifierÍ«Í·KªIdentifierÍ«Í·¬mergeNetIntoKªIdentifierÍ«Í·¬mergeNetIntoM§LiteralÍ¿Í×¶./NetLabelConnectivity¸'./NetLabelConnectivity'

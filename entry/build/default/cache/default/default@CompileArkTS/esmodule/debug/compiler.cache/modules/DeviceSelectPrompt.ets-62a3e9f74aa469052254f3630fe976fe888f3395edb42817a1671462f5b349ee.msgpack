@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÛexport const DEVICE_SELECT_PROMPT = {
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚexport const DEVICE_SELECT_PROMPT = {
     id: 'device_select_v5',
     version: '5.0.0',
     system: `ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
@@ -38,15 +38,13 @@
 - ç”¨æˆ·è¦æ­£å¼¦/æ–¹æ³¢ç­‰æ¿€åŠ±æ—¶è¿½åŠ  SIGNAL_GENï¼›waveform ä»¥è¾“å…¥/æ¿€åŠ±ä¸ºå‡†ï¼ˆã€Œæ­£å¼¦è¾“å…¥+æ•´å½¢è¾“å‡ºæ–¹æ³¢ã€â†’ waveform=sineï¼‰
 - ç”µé˜»å™¨ä»¶å¿…é¡»å°½é‡æŒ‡å®š explicitModel (å¦‚ R_1k, R_10k, R_4.7k ç­‰)ï¼Œä¸è¦åªå†™ "Resistor"
 
-ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ã€‘:
-- ç”µè·¯å«ç”µé˜»åˆ†å‹/ä¼ æ„Ÿå™¨ â†’ è¿½åŠ  VOLTMETER_DC
+ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ï¼Œç¦æ­¢æ“…è‡ªåŠ ä»ªå™¨ã€‘:
+- ç”¨æˆ·æåˆ°"ç”µå‹è¡¨""æµ‹ç”µå‹""åˆ†å‹æµ‹é‡" â†’ è¿½åŠ  VOLTMETER_DCï¼ˆæ•°é‡æŒ‰ç”¨æˆ·è¯´çš„ Nï¼‰
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ""æ€»ç”µæµ" â†’ å¿…é¡»è¿½åŠ  AMMETER_DC
-- ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨"â†’ å¿…é¡»è¾“å‡ºNä¸ª VOLTMETER_DC
-- ç”µè·¯å« MCU+UART â†’ è¿½åŠ  UART_TERMINAL
-- ç”µè·¯å«è¿æ”¾/æ”¾å¤§å™¨ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”µè·¯å«æ•°å­— IC â†’ è¿½åŠ  LOGIC_ANALYZER
-- ç”µè·¯å«ç”µæº/ç¨³å‹ â†’ è¿½åŠ  VOLTMETER_DC
+- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ/Ï„ â†’ è¿½åŠ  OSCILLOSCOPE
+- ç”¨æˆ·æåˆ° UART/ä¸²å£ç»ˆç«¯ â†’ è¿½åŠ  UART_TERMINAL
+- ç”¨æˆ·æåˆ°é€»è¾‘åˆ†æ/æ•°å­—æ³¢å½¢ â†’ è¿½åŠ  LOGIC_ANALYZER
+- ã€ç¡¬ã€‘ç¦æ­¢å› ã€Œå«è¿æ”¾/å«ç”µæº/å«ç¨³å‹/å«æ•°å­— ICã€è‡ªåŠ¨è¿½åŠ ç¤ºæ³¢å™¨æˆ–ç”µå‹è¡¨
 - ç¦æ­¢æ“…è‡ªè¿½åŠ ç”¨æˆ·æœªè¦æ±‚çš„ MCU/å®šæ—¶å™¨/è¿æ”¾/ä»ªå™¨
 
 ã€é˜²å¹»è§‰è§„åˆ™ã€‘:
@@ -62,7 +60,7 @@
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`,
     userTemplate: '{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š\n{{user_prompt}}\n\nåœºæ™¯ï¼š{{scene}}\n\nå±€éƒ¨ç”µè·¯ï¼ˆå¯é€‰ï¼‰ï¼š\n{{partial_topo}}\n\nå¯ç”¨å™¨ä»¶åº“æ‘˜è¦ï¼š\n{{library_catalog}}\n\nç°åœ¨ç«‹å³åªè¾“å‡º JSONï¼Œä¸è¦ä»»ä½•å…¶å®ƒæ–‡å­—ï¼š'
 };
-//# sourceMappingURL=DeviceSelectPrompt.js.mapÂÙeC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¾./templates/DeviceSelectPrompt©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ*/**
+//# sourceMappingURL=DeviceSelectPrompt.js.mapÂÙeC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¾./templates/DeviceSelectPrompt©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚW/**
  * device_select â€” åŒæ­¥è‡ª skill/prompts/01_device_select.md
  */
 import { PromptTemplate } from '../PromptTypes';
@@ -107,15 +105,13 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - ç”¨æˆ·è¦æ­£å¼¦/æ–¹æ³¢ç­‰æ¿€åŠ±æ—¶è¿½åŠ  SIGNAL_GENï¼›waveform ä»¥è¾“å…¥/æ¿€åŠ±ä¸ºå‡†ï¼ˆã€Œæ­£å¼¦è¾“å…¥+æ•´å½¢è¾“å‡ºæ–¹æ³¢ã€â†’ waveform=sineï¼‰
 - ç”µé˜»å™¨ä»¶å¿…é¡»å°½é‡æŒ‡å®š explicitModel (å¦‚ R_1k, R_10k, R_4.7k ç­‰)ï¼Œä¸è¦åªå†™ "Resistor"
 
-ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ã€‘:
-- ç”µè·¯å«ç”µé˜»åˆ†å‹/ä¼ æ„Ÿå™¨ â†’ è¿½åŠ  VOLTMETER_DC
+ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ï¼Œç¦æ­¢æ“…è‡ªåŠ ä»ªå™¨ã€‘:
+- ç”¨æˆ·æåˆ°"ç”µå‹è¡¨""æµ‹ç”µå‹""åˆ†å‹æµ‹é‡" â†’ è¿½åŠ  VOLTMETER_DCï¼ˆæ•°é‡æŒ‰ç”¨æˆ·è¯´çš„ Nï¼‰
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ""æ€»ç”µæµ" â†’ å¿…é¡»è¿½åŠ  AMMETER_DC
-- ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨"â†’ å¿…é¡»è¾“å‡ºNä¸ª VOLTMETER_DC
-- ç”µè·¯å« MCU+UART â†’ è¿½åŠ  UART_TERMINAL
-- ç”µè·¯å«è¿æ”¾/æ”¾å¤§å™¨ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”µè·¯å«æ•°å­— IC â†’ è¿½åŠ  LOGIC_ANALYZER
-- ç”µè·¯å«ç”µæº/ç¨³å‹ â†’ è¿½åŠ  VOLTMETER_DC
+- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ/Ï„ â†’ è¿½åŠ  OSCILLOSCOPE
+- ç”¨æˆ·æåˆ° UART/ä¸²å£ç»ˆç«¯ â†’ è¿½åŠ  UART_TERMINAL
+- ç”¨æˆ·æåˆ°é€»è¾‘åˆ†æ/æ•°å­—æ³¢å½¢ â†’ è¿½åŠ  LOGIC_ANALYZER
+- ã€ç¡¬ã€‘ç¦æ­¢å› ã€Œå«è¿æ”¾/å«ç”µæº/å«ç¨³å‹/å«æ•°å­— ICã€è‡ªåŠ¨è¿½åŠ ç¤ºæ³¢å™¨æˆ–ç”µå‹è¡¨
 - ç¦æ­¢æ“…è‡ªè¿½åŠ ç”¨æˆ·æœªè¦æ±‚çš„ MCU/å®šæ—¶å™¨/è¿æ”¾/ä»ªå™¨
 
 ã€é˜²å¹»è§‰è§„åˆ™ã€‘:
@@ -131,14 +127,14 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`,
   userTemplate: '{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š\n{{user_prompt}}\n\nåœºæ™¯ï¼š{{scene}}\n\nå±€éƒ¨ç”µè·¯ï¼ˆå¯é€‰ï¼‰ï¼š\n{{partial_topo}}\n\nå¯ç”¨å™¨ä»¶åº“æ‘˜è¦ï¼š\n{{library_catalog}}\n\nç°åœ¨ç«‹å³åªè¾“å‡º JSONï¼Œä¸è¦ä»»ä½•å…¶å®ƒæ–‡å­—ï¼š'
 };
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsµDeviceSelectPrompt.js ‘¶DeviceSelectPrompt.etsÜ @–”   ” ” ” ”! !”$ 4”” ” ” ” ”” ” 	” ” “” ”
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsµDeviceSelectPrompt.js ‘¶DeviceSelectPrompt.etsÜ >–”   ” ” ” ”! !”$ 4”” ” ” ” ”” ” 	” ” “” ”
  ” 
-‘”ÌË ÌBÌË”” ÌC” ÌC” ÌC”Ì¿ ÌCÌ½’” ÌD” ÌDÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ A‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration Í
-¥ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ
-¥‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍ
-¤ÔrL”¤type¥start£end¤nameªIdentifier!´DEVICE_SELECT_PROMPTÔrM”¤type¥start£endªproperties°ObjectExpression$Í
-¤”ÔrN™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨Property+ÌAÂÂÂLªIdentifier+-¢idÔrO•¤type¥start£end¥value£raw§Literal/ÌA°device_select_v5²'device_select_v5'¤initN¨PropertyÌHÌXÂÂÂLªIdentifierÌHÌO§versionO§LiteralÌQÌX¥5.0.0§'5.0.0'¤initN¨PropertyÌ_Í	ßÂÂÂLªIdentifierÌ_Ìe¦systemÔrP•¤type¥start£end«expressions¦quasis¯TemplateLiteralÌgÍ	ß‘ÔrQ•¤type¥start£end¥value¤tail¯TemplateElementÌhÍ	ŞÔrR’£raw¦cookedÚ(ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
+‘”ÌË Ì@ÌË”” ÌA” ÌA” ÌA”Ì¿ ÌAÌ½’” ÌB” ÌBÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ?‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration Í
+•ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ
+•‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍ
+”ÔrL”¤type¥start£end¤nameªIdentifier!´DEVICE_SELECT_PROMPTÔrM”¤type¥start£endªproperties°ObjectExpression$Í
+””ÔrN™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨Property+ÌAÂÂÂLªIdentifier+-¢idÔrO•¤type¥start£end¥value£raw§Literal/ÌA°device_select_v5²'device_select_v5'¤initN¨PropertyÌHÌXÂÂÂLªIdentifierÌHÌO§versionO§LiteralÌQÌX¥5.0.0§'5.0.0'¤initN¨PropertyÌ_Í	ÏÂÂÂLªIdentifierÌ_Ìe¦systemÔrP•¤type¥start£end«expressions¦quasis¯TemplateLiteralÌgÍ	Ï‘ÔrQ•¤type¥start£end¥value¤tail¯TemplateElementÌhÍ	ÎÔrR’£raw¦cookedÚUä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
 
 ã€æ ¸å¿ƒæ‹“æ‰‘é“å¾‹ â€” ä¸¥ç¦è¿åã€‘:
 1. ç”µæµè¡¨(AMMETER_DC)å¿…é¡»ä¸²è”åœ¨ç”µæºå›è·¯: VCCâ†’I+â†’I-â†’è´Ÿè½½ã€‚ç»ä¸å¹¶è”ï¼
@@ -175,15 +171,13 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - ç”¨æˆ·è¦æ­£å¼¦/æ–¹æ³¢ç­‰æ¿€åŠ±æ—¶è¿½åŠ  SIGNAL_GENï¼›waveform ä»¥è¾“å…¥/æ¿€åŠ±ä¸ºå‡†ï¼ˆã€Œæ­£å¼¦è¾“å…¥+æ•´å½¢è¾“å‡ºæ–¹æ³¢ã€â†’ waveform=sineï¼‰
 - ç”µé˜»å™¨ä»¶å¿…é¡»å°½é‡æŒ‡å®š explicitModel (å¦‚ R_1k, R_10k, R_4.7k ç­‰)ï¼Œä¸è¦åªå†™ "Resistor"
 
-ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ã€‘:
-- ç”µè·¯å«ç”µé˜»åˆ†å‹/ä¼ æ„Ÿå™¨ â†’ è¿½åŠ  VOLTMETER_DC
+ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ï¼Œç¦æ­¢æ“…è‡ªåŠ ä»ªå™¨ã€‘:
+- ç”¨æˆ·æåˆ°"ç”µå‹è¡¨""æµ‹ç”µå‹""åˆ†å‹æµ‹é‡" â†’ è¿½åŠ  VOLTMETER_DCï¼ˆæ•°é‡æŒ‰ç”¨æˆ·è¯´çš„ Nï¼‰
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ""æ€»ç”µæµ" â†’ å¿…é¡»è¿½åŠ  AMMETER_DC
-- ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨"â†’ å¿…é¡»è¾“å‡ºNä¸ª VOLTMETER_DC
-- ç”µè·¯å« MCU+UART â†’ è¿½åŠ  UART_TERMINAL
-- ç”µè·¯å«è¿æ”¾/æ”¾å¤§å™¨ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”µè·¯å«æ•°å­— IC â†’ è¿½åŠ  LOGIC_ANALYZER
-- ç”µè·¯å«ç”µæº/ç¨³å‹ â†’ è¿½åŠ  VOLTMETER_DC
+- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ/Ï„ â†’ è¿½åŠ  OSCILLOSCOPE
+- ç”¨æˆ·æåˆ° UART/ä¸²å£ç»ˆç«¯ â†’ è¿½åŠ  UART_TERMINAL
+- ç”¨æˆ·æåˆ°é€»è¾‘åˆ†æ/æ•°å­—æ³¢å½¢ â†’ è¿½åŠ  LOGIC_ANALYZER
+- ã€ç¡¬ã€‘ç¦æ­¢å› ã€Œå«è¿æ”¾/å«ç”µæº/å«ç¨³å‹/å«æ•°å­— ICã€è‡ªåŠ¨è¿½åŠ ç¤ºæ³¢å™¨æˆ–ç”µå‹è¡¨
 - ç¦æ­¢æ“…è‡ªè¿½åŠ ç”¨æˆ·æœªè¦æ±‚çš„ MCU/å®šæ—¶å™¨/è¿æ”¾/ä»ªå™¨
 
 ã€é˜²å¹»è§‰è§„åˆ™ã€‘:
@@ -196,7 +190,7 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
 è¾“å‡ºè§„åˆ™ï¼ˆä¸å…¨å±€è¾“å‡ºé“å¾‹ä¸€è‡´ï¼‰: å›å¤æ­£æ–‡åªèƒ½æ˜¯ä¸€ä¸ª JSON å¯¹è±¡ï¼Œç¦æ­¢ä»»ä½•è¯´æ˜/markdownã€‚
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Ú(ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}ÚUä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—ä¸å™¨ä»¶éœ€æ±‚ã€‚
 
 ã€æ ¸å¿ƒæ‹“æ‰‘é“å¾‹ â€” ä¸¥ç¦è¿åã€‘:
 1. ç”µæµè¡¨(AMMETER_DC)å¿…é¡»ä¸²è”åœ¨ç”µæºå›è·¯: VCCâ†’I+â†’I-â†’è´Ÿè½½ã€‚ç»ä¸å¹¶è”ï¼
@@ -233,15 +227,13 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - ç”¨æˆ·è¦æ­£å¼¦/æ–¹æ³¢ç­‰æ¿€åŠ±æ—¶è¿½åŠ  SIGNAL_GENï¼›waveform ä»¥è¾“å…¥/æ¿€åŠ±ä¸ºå‡†ï¼ˆã€Œæ­£å¼¦è¾“å…¥+æ•´å½¢è¾“å‡ºæ–¹æ³¢ã€â†’ waveform=sineï¼‰
 - ç”µé˜»å™¨ä»¶å¿…é¡»å°½é‡æŒ‡å®š explicitModel (å¦‚ R_1k, R_10k, R_4.7k ç­‰)ï¼Œä¸è¦åªå†™ "Resistor"
 
-ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ã€‘:
-- ç”µè·¯å«ç”µé˜»åˆ†å‹/ä¼ æ„Ÿå™¨ â†’ è¿½åŠ  VOLTMETER_DC
+ã€ä»ªå™¨è‡ªåŠ¨è¿½åŠ è§„åˆ™ â€” ä¸¥æ ¼æŒ‰ç”¨æˆ·éœ€æ±‚ï¼Œç¦æ­¢æ“…è‡ªåŠ ä»ªå™¨ã€‘:
+- ç”¨æˆ·æåˆ°"ç”µå‹è¡¨""æµ‹ç”µå‹""åˆ†å‹æµ‹é‡" â†’ è¿½åŠ  VOLTMETER_DCï¼ˆæ•°é‡æŒ‰ç”¨æˆ·è¯´çš„ Nï¼‰
 - ç”¨æˆ·æåˆ°"ç”µæµè¡¨""æµ‹ç”µæµ""æ€»ç”µæµ" â†’ å¿…é¡»è¿½åŠ  AMMETER_DC
-- ç”¨æˆ·è¯´"Nä¸ªç”µå‹è¡¨"â†’ å¿…é¡»è¾“å‡ºNä¸ª VOLTMETER_DC
-- ç”µè·¯å« MCU+UART â†’ è¿½åŠ  UART_TERMINAL
-- ç”µè·¯å«è¿æ”¾/æ”¾å¤§å™¨ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ â†’ è¿½åŠ  OSCILLOSCOPE
-- ç”µè·¯å«æ•°å­— IC â†’ è¿½åŠ  LOGIC_ANALYZER
-- ç”µè·¯å«ç”µæº/ç¨³å‹ â†’ è¿½åŠ  VOLTMETER_DC
+- ç”¨æˆ·æ˜ç¡®è¦æ±‚è§‚æµ‹æ³¢å½¢/ç¤ºæ³¢/æŒ‡æ•°/å……æ”¾ç”µ/Ï„ â†’ è¿½åŠ  OSCILLOSCOPE
+- ç”¨æˆ·æåˆ° UART/ä¸²å£ç»ˆç«¯ â†’ è¿½åŠ  UART_TERMINAL
+- ç”¨æˆ·æåˆ°é€»è¾‘åˆ†æ/æ•°å­—æ³¢å½¢ â†’ è¿½åŠ  LOGIC_ANALYZER
+- ã€ç¡¬ã€‘ç¦æ­¢å› ã€Œå«è¿æ”¾/å«ç”µæº/å«ç¨³å‹/å«æ•°å­— ICã€è‡ªåŠ¨è¿½åŠ ç¤ºæ³¢å™¨æˆ–ç”µå‹è¡¨
 - ç¦æ­¢æ“…è‡ªè¿½åŠ ç”¨æˆ·æœªè¦æ±‚çš„ MCU/å®šæ—¶å™¨/è¿æ”¾/ä»ªå™¨
 
 ã€é˜²å¹»è§‰è§„åˆ™ã€‘:
@@ -254,9 +246,9 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - ä¿ç•™æœªæ¶‰åŠä¿®æ”¹çš„ç°æœ‰å™¨ä»¶
 
 è¾“å‡ºè§„åˆ™ï¼ˆä¸å…¨å±€è¾“å‡ºé“å¾‹ä¸€è‡´ï¼‰: å›å¤æ­£æ–‡åªèƒ½æ˜¯ä¸€ä¸ª JSON å¯¹è±¡ï¼Œç¦æ­¢ä»»ä½•è¯´æ˜/markdownã€‚
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Ã¤initN¨PropertyÍ	æÍ
-¡ÂÂÂLªIdentifierÍ	æÍ	ò¬userTemplateO§LiteralÍ	ôÍ
-¡Ùô{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}Ã¤initN¨PropertyÍ	ÖÍ
+‘ÂÂÂLªIdentifierÍ	ÖÍ	â¬userTemplateO§LiteralÍ	äÍ
+‘Ùô{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š
 {{user_prompt}}
 
 åœºæ™¯ï¼š{{scene}}

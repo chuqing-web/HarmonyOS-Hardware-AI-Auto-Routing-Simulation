@@ -28,7 +28,7 @@ export class TopologyAdapter {
             deviceList: doc.components.map(TopologyAdapter.toDeviceInst),
             netList: doc.nets.map(TopologyAdapter.toNetInfo),
             busList: [],
-            wireList: doc.wires.map(w => makeRouteLine(w.netId, w.points, false)),
+            wireList: doc.wires.map(w => makeRouteLine(w.netId, w.points, false, w.id)),
             subCircuitList: doc.subcircuits.map(TopologyAdapter.toSubBlock),
             probeList: [],
             textAnnotate: [],
@@ -59,7 +59,8 @@ export class TopologyAdapter {
             components: topo.deviceList.map(TopologyAdapter.toComponent),
             wires: topo.wireList.map((w, _i) => {
                 const wire: Wire = {
-                    id: IdUtil.generate('wire'),
+                    // 保留拓扑导线 ID，避免往返丢 id 导致仿真/撤销键失效
+                    id: (w.uuid && w.uuid.length > 0) ? w.uuid : IdUtil.generate('wire'),
                     netId: w.netUuid,
                     points: w.points,
                     style: WireStyle.ORTHOGONAL
@@ -123,13 +124,26 @@ export class TopologyAdapter {
                 if (parsed !== null && parsed.compId.length > 0 && parsed.pinId.length > 0) {
                     return makeNetNodeRef(parsed.compId, parsed.pinId, parsed.pinName);
                 }
-                return makeNetNodeRef('', pinRef, pinRef);
-            }),
+                // 坏 pinRef：丢弃空 devUuid 节点，避免假连通
+                return makeNetNodeRef('', '', '');
+            }).filter((node) => node.devUuid.length > 0 && node.pinId.length > 0),
             isPower: n.type === NetType.POWER || n.type === NetType.GROUND,
             isAnalog: false,
             isBusMember: n.type === NetType.BUS,
             busParentUuid: '',
-            defaultVoltage: n.type === NetType.POWER ? 5.0 : 0.0,
+            defaultVoltage: (() => {
+                const upper = (n.name ?? '').toUpperCase();
+                if (n.type === NetType.GROUND || upper === 'GND' || upper === 'VSS' || upper === '0') {
+                    return 0.0;
+                }
+                if (upper === 'VEE' || upper === 'V-') {
+                    return -5.0;
+                }
+                if (n.type === NetType.POWER) {
+                    return 5.0;
+                }
+                return 0.0;
+            })(),
             ercWarning: false,
             connectedProbeIds: []
         };
@@ -138,16 +152,16 @@ export class TopologyAdapter {
         const upper = (n.netName ?? '').toUpperCase();
         let netType = NetType.SIGNAL;
         if (n.isPower) {
-            netType = (upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0') ?
+            netType = (upper === 'GND' || upper === 'VSS' || upper === '0') ?
                 NetType.GROUND : NetType.POWER;
         }
         else if (n.isBusMember) {
             netType = NetType.BUS;
         }
-        else if (upper === 'GND' || upper === 'VSS' || upper === 'VEE') {
+        else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
             netType = NetType.GROUND;
         }
-        else if (upper === 'VCC' || upper === 'VDD') {
+        else if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' || upper === 'V-') {
             netType = NetType.POWER;
         }
         return {

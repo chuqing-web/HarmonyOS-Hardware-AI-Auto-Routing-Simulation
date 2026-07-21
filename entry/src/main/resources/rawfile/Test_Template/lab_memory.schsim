@@ -3,12 +3,12 @@
   "version": "2.0.0",
   "name": "存储器接口",
   "topology": {
-    "schUuid": "sch_1784510063654_1",
+    "schUuid": "sch_1784622098522_1",
     "schName": "存储器接口",
     "layerDepth": 0,
     "deviceList": [
       {
-        "instUuid": "comp_1784510063654_2",
+        "instUuid": "comp_1784622098523_2",
         "libDevId": "STM32F103RC",
         "refName": "U1",
         "x": 200,
@@ -27,7 +27,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_3",
+        "instUuid": "comp_1784622098523_3",
         "libDevId": "VCC",
         "refName": "PWR1",
         "x": 40,
@@ -47,7 +47,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_4",
+        "instUuid": "comp_1784622098523_4",
         "libDevId": "GND",
         "refName": "GND1",
         "x": 40,
@@ -66,7 +66,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_5",
+        "instUuid": "comp_1784622098523_5",
         "libDevId": "C_100nF",
         "refName": "C1",
         "x": 320,
@@ -87,7 +87,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_6",
+        "instUuid": "comp_1784622098523_6",
         "libDevId": "R_10k",
         "refName": "R1",
         "x": 20,
@@ -108,7 +108,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_7",
+        "instUuid": "comp_1784622098523_7",
         "libDevId": "XTAL_8M",
         "refName": "Y1",
         "x": 60,
@@ -127,7 +127,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_8",
+        "instUuid": "comp_1784622098523_8",
         "libDevId": "C_100nF",
         "refName": "CX1",
         "x": 0,
@@ -148,7 +148,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063654_9",
+        "instUuid": "comp_1784622098523_9",
         "libDevId": "C_100nF",
         "refName": "CX2",
         "x": 120,
@@ -169,7 +169,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_42",
+        "instUuid": "comp_1784622098525_46",
         "libDevId": "24C02",
         "refName": "M1",
         "x": 500,
@@ -188,7 +188,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_43",
+        "instUuid": "comp_1784622098525_47",
         "libDevId": "R_4.7k",
         "refName": "RSDA",
         "x": 400,
@@ -209,7 +209,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_44",
+        "instUuid": "comp_1784622098525_48",
         "libDevId": "R_4.7k",
         "refName": "RSCL",
         "x": 400,
@@ -230,7 +230,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_45",
+        "instUuid": "comp_1784622098525_49",
         "libDevId": "W25Q64",
         "refName": "M2",
         "x": 680,
@@ -249,7 +249,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_46",
+        "instUuid": "comp_1784622098525_50",
         "libDevId": "2764",
         "refName": "M3",
         "x": 900,
@@ -268,7 +268,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_47",
+        "instUuid": "comp_1784622098525_51",
         "libDevId": "62256",
         "refName": "M4",
         "x": 1100,
@@ -287,7 +287,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_48",
+        "instUuid": "comp_1784622098525_52",
         "libDevId": "GND",
         "refName": "GND_EEP",
         "x": 500,
@@ -306,7 +306,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_49",
+        "instUuid": "comp_1784622098525_53",
         "libDevId": "VCC",
         "refName": "VCC_EEP",
         "x": 500,
@@ -326,7 +326,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_50",
+        "instUuid": "comp_1784622098525_54",
         "libDevId": "GND",
         "refName": "GND_FL",
         "x": 680,
@@ -345,7 +345,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_51",
+        "instUuid": "comp_1784622098525_55",
         "libDevId": "VCC",
         "refName": "VCC_FL",
         "x": 680,
@@ -365,11 +365,11 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_52",
+        "instUuid": "comp_1784622098525_56",
         "libDevId": "GND",
         "refName": "GND_MCU_L",
-        "x": 60,
-        "y": 220,
+        "x": 80,
+        "y": 150,
         "rotate": 0,
         "mirrorH": false,
         "mirrorV": false,
@@ -384,7 +384,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063659_53",
+        "instUuid": "comp_1784622098525_57",
         "libDevId": "GND",
         "refName": "GND_MCU_R",
         "x": 360,
@@ -403,7 +403,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063683_237",
+        "instUuid": "comp_1784622098584_237",
         "libDevId": "GND",
         "refName": "GND_MEM",
         "x": 1250,
@@ -422,7 +422,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784510063683_238",
+        "instUuid": "comp_1784622098584_238",
         "libDevId": "VCC",
         "refName": "VCC_MEM",
         "x": 1250,
@@ -444,22 +444,22 @@
     ],
     "netList": [
       {
-        "netUuid": "net_1784510063654_10",
+        "netUuid": "net_1784622098523_10",
         "netName": "XTAL1",
         "displayName": "XTAL1",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_7",
+            "devUuid": "comp_1784622098523_7",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P5",
-            "pinName": "P5"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "OSC_IN",
+            "pinName": "OSC_IN"
           },
           {
-            "devUuid": "comp_1784510063654_8",
+            "devUuid": "comp_1784622098523_8",
             "pinId": "1",
             "pinName": "1"
           }
@@ -473,22 +473,22 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063655_14",
+        "netUuid": "net_1784622098524_14",
         "netName": "XTAL2",
         "displayName": "XTAL2",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_7",
+            "devUuid": "comp_1784622098523_7",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P6",
-            "pinName": "P6"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "OSC_OUT",
+            "pinName": "OSC_OUT"
           },
           {
-            "devUuid": "comp_1784510063654_9",
+            "devUuid": "comp_1784622098523_9",
             "pinId": "1",
             "pinName": "1"
           }
@@ -502,249 +502,104 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "netName": "GND",
         "displayName": "GND",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_4",
+            "devUuid": "comp_1784622098523_4",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_8",
+            "devUuid": "comp_1784622098523_8",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784510063654_9",
+            "devUuid": "comp_1784622098523_9",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P24",
-            "pinName": "P24"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "VSS",
+            "pinName": "VSS"
           },
           {
-            "devUuid": "comp_1784510063654_5",
+            "devUuid": "comp_1784622098523_5",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784510063659_48",
+            "devUuid": "comp_1784622098525_52",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "1",
-            "pinName": "1"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "A0",
+            "pinName": "A0"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "2",
-            "pinName": "2"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "A1",
+            "pinName": "A1"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "3",
-            "pinName": "3"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "A2",
+            "pinName": "A2"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "4",
-            "pinName": "4"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "VSS",
+            "pinName": "VSS"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "7",
-            "pinName": "7"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "WP",
+            "pinName": "WP"
           },
           {
-            "devUuid": "comp_1784510063659_50",
-            "pinId": "1",
-            "pinName": "GND"
-          },
-          {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "4",
-            "pinName": "4"
-          },
-          {
-            "devUuid": "comp_1784510063683_237",
+            "devUuid": "comp_1784622098525_54",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "14",
-            "pinName": "14"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "GND",
+            "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "14",
-            "pinName": "14"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "2",
-            "pinName": "2"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "21",
-            "pinName": "21"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "23",
-            "pinName": "23"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "24",
-            "pinName": "24"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "25",
-            "pinName": "25"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "26",
-            "pinName": "26"
-          },
-          {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "27",
-            "pinName": "27"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "1",
-            "pinName": "1"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "2",
-            "pinName": "2"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "21",
-            "pinName": "21"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "23",
-            "pinName": "23"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "24",
-            "pinName": "24"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "25",
-            "pinName": "25"
-          },
-          {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "26",
-            "pinName": "26"
-          },
-          {
-            "devUuid": "comp_1784510063659_52",
+            "devUuid": "comp_1784622098584_237",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P1",
-            "pinName": "P1"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "GND",
+            "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P2",
-            "pinName": "P2"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "GND",
+            "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P3",
-            "pinName": "P3"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P4",
-            "pinName": "P4"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P16",
-            "pinName": "P16"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P17",
-            "pinName": "P17"
-          },
-          {
-            "devUuid": "comp_1784510063659_53",
+            "devUuid": "comp_1784622098525_56",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P38",
-            "pinName": "P38"
+            "devUuid": "comp_1784622098525_57",
+            "pinId": "1",
+            "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P39",
-            "pinName": "P39"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P40",
-            "pinName": "P40"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P41",
-            "pinName": "P41"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P42",
-            "pinName": "P42"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P43",
-            "pinName": "P43"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P44",
-            "pinName": "P44"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P45",
-            "pinName": "P45"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P46",
-            "pinName": "P46"
-          },
-          {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P47",
-            "pinName": "P47"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "VSSA",
+            "pinName": "VSSA"
           }
         ],
         "isPower": true,
@@ -756,19 +611,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063656_25",
+        "netUuid": "net_1784622098524_25",
         "netName": "NRST",
         "displayName": "NRST",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_6",
+            "devUuid": "comp_1784622098523_6",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P7",
-            "pinName": "P7"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "NRST",
+            "pinName": "NRST"
           }
         ],
         "isPower": false,
@@ -780,89 +635,89 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "netName": "VCC",
         "displayName": "VCC",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_3",
+            "devUuid": "comp_1784622098523_3",
             "pinId": "1",
             "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P48",
-            "pinName": "P48"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "VDD",
+            "pinName": "VDD"
           },
           {
-            "devUuid": "comp_1784510063654_6",
+            "devUuid": "comp_1784622098523_6",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784510063654_5",
+            "devUuid": "comp_1784622098523_5",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784510063659_49",
+            "devUuid": "comp_1784622098525_53",
             "pinId": "1",
             "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "8",
-            "pinName": "8"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "VCC",
+            "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_43",
+            "devUuid": "comp_1784622098525_47",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784510063659_44",
+            "devUuid": "comp_1784622098525_48",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784510063659_51",
+            "devUuid": "comp_1784622098525_55",
             "pinId": "1",
             "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "8",
-            "pinName": "8"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "VCC",
+            "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "3",
-            "pinName": "3"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "WP",
+            "pinName": "WP"
           },
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "7",
-            "pinName": "7"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "HOLD",
+            "pinName": "HOLD"
           },
           {
-            "devUuid": "comp_1784510063683_238",
+            "devUuid": "comp_1784622098584_238",
             "pinId": "1",
             "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "28",
-            "pinName": "28"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "VCC",
+            "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "28",
-            "pinName": "28"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "VCC",
+            "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "1",
-            "pinName": "1"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "VPP",
+            "pinName": "VPP"
           }
         ],
         "isPower": true,
@@ -874,22 +729,22 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063659_54",
+        "netUuid": "net_1784622098525_58",
         "netName": "I2C_SDA",
         "displayName": "I2C_SDA",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P18",
-            "pinName": "P18"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB7",
+            "pinName": "PB7"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "5",
-            "pinName": "5"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "SDA",
+            "pinName": "SDA"
           },
           {
-            "devUuid": "comp_1784510063659_43",
+            "devUuid": "comp_1784622098525_47",
             "pinId": "2",
             "pinName": "2"
           }
@@ -903,22 +758,22 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063660_61",
+        "netUuid": "net_1784622098531_63",
         "netName": "I2C_SCL",
         "displayName": "I2C_SCL",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P19",
-            "pinName": "P19"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB6",
+            "pinName": "PB6"
           },
           {
-            "devUuid": "comp_1784510063659_42",
-            "pinId": "6",
-            "pinName": "6"
+            "devUuid": "comp_1784622098525_46",
+            "pinId": "SCL",
+            "pinName": "SCL"
           },
           {
-            "devUuid": "comp_1784510063659_44",
+            "devUuid": "comp_1784622098525_48",
             "pinId": "2",
             "pinName": "2"
           }
@@ -932,19 +787,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063660_68",
+        "netUuid": "net_1784622098535_68",
         "netName": "SPI_CS",
         "displayName": "SPI_CS",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "1",
-            "pinName": "1"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "CS",
+            "pinName": "CS"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P20",
-            "pinName": "P20"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA4",
+            "pinName": "PA4"
           }
         ],
         "isPower": false,
@@ -956,19 +811,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063661_73",
+        "netUuid": "net_1784622098536_73",
         "netName": "SPI_MISO",
         "displayName": "SPI_MISO",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "2",
-            "pinName": "2"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "DO",
+            "pinName": "DO"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P21",
-            "pinName": "P21"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA6",
+            "pinName": "PA6"
           }
         ],
         "isPower": false,
@@ -980,19 +835,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063661_78",
+        "netUuid": "net_1784622098538_78",
         "netName": "SPI_MOSI",
         "displayName": "SPI_MOSI",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "5",
-            "pinName": "5"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "DI",
+            "pinName": "DI"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P22",
-            "pinName": "P22"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA7",
+            "pinName": "PA7"
           }
         ],
         "isPower": false,
@@ -1004,19 +859,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063661_83",
+        "netUuid": "net_1784622098538_83",
         "netName": "SPI_SCK",
         "displayName": "SPI_SCK",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_45",
-            "pinId": "6",
-            "pinName": "6"
+            "devUuid": "comp_1784622098525_49",
+            "pinId": "CLK",
+            "pinName": "CLK"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P23",
-            "pinName": "P23"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA5",
+            "pinName": "PA5"
           }
         ],
         "isPower": false,
@@ -1028,19 +883,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063662_88",
+        "netUuid": "net_1784622098539_88",
         "netName": "MEM_CE",
         "displayName": "MEM_CE",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "20",
-            "pinName": "20"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "CE",
+            "pinName": "CE"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P25",
-            "pinName": "P25"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB8",
+            "pinName": "PB8"
           }
         ],
         "isPower": false,
@@ -1052,19 +907,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063662_93",
+        "netUuid": "net_1784622098540_93",
         "netName": "MEM_OE",
         "displayName": "MEM_OE",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "22",
-            "pinName": "22"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "OE",
+            "pinName": "OE"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P26",
-            "pinName": "P26"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB9",
+            "pinName": "PB9"
           }
         ],
         "isPower": false,
@@ -1076,19 +931,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063663_98",
+        "netUuid": "net_1784622098541_98",
         "netName": "SRAM_CE",
         "displayName": "SRAM_CE",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "20",
-            "pinName": "20"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "CE",
+            "pinName": "CE"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P28",
-            "pinName": "P28"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB10",
+            "pinName": "PB10"
           }
         ],
         "isPower": false,
@@ -1100,19 +955,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063663_103",
+        "netUuid": "net_1784622098541_103",
         "netName": "SRAM_OE",
         "displayName": "SRAM_OE",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "22",
-            "pinName": "22"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "OE",
+            "pinName": "OE"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P29",
-            "pinName": "P29"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB11",
+            "pinName": "PB11"
           }
         ],
         "isPower": false,
@@ -1124,19 +979,19 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063664_108",
+        "netUuid": "net_1784622098542_108",
         "netName": "SRAM_WE",
         "displayName": "SRAM_WE",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "27",
-            "pinName": "27"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "WE",
+            "pinName": "WE"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P30",
-            "pinName": "P30"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PB12",
+            "pinName": "PB12"
           }
         ],
         "isPower": false,
@@ -1148,24 +1003,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063665_113",
+        "netUuid": "net_1784622098543_113",
         "netName": "MEM_A0",
         "displayName": "MEM_A0",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "10",
-            "pinName": "10"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A0",
+            "pinName": "A0"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "10",
-            "pinName": "10"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A0",
+            "pinName": "A0"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P8",
-            "pinName": "P8"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC0",
+            "pinName": "PC0"
           }
         ],
         "isPower": false,
@@ -1177,24 +1032,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063665_120",
+        "netUuid": "net_1784622098544_120",
         "netName": "MEM_A1",
         "displayName": "MEM_A1",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "9",
-            "pinName": "9"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A1",
+            "pinName": "A1"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "9",
-            "pinName": "9"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A1",
+            "pinName": "A1"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P9",
-            "pinName": "P9"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC1",
+            "pinName": "PC1"
           }
         ],
         "isPower": false,
@@ -1206,24 +1061,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063666_127",
+        "netUuid": "net_1784622098546_127",
         "netName": "MEM_A2",
         "displayName": "MEM_A2",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "8",
-            "pinName": "8"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A2",
+            "pinName": "A2"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "8",
-            "pinName": "8"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A2",
+            "pinName": "A2"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P10",
-            "pinName": "P10"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC2",
+            "pinName": "PC2"
           }
         ],
         "isPower": false,
@@ -1235,24 +1090,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063667_134",
+        "netUuid": "net_1784622098547_134",
         "netName": "MEM_A3",
         "displayName": "MEM_A3",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "7",
-            "pinName": "7"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A3",
+            "pinName": "A3"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "7",
-            "pinName": "7"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A3",
+            "pinName": "A3"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P11",
-            "pinName": "P11"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC3",
+            "pinName": "PC3"
           }
         ],
         "isPower": false,
@@ -1264,24 +1119,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063667_141",
+        "netUuid": "net_1784622098548_141",
         "netName": "MEM_A4",
         "displayName": "MEM_A4",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "6",
-            "pinName": "6"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A4",
+            "pinName": "A4"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "6",
-            "pinName": "6"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A4",
+            "pinName": "A4"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P12",
-            "pinName": "P12"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC4",
+            "pinName": "PC4"
           }
         ],
         "isPower": false,
@@ -1293,24 +1148,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063668_148",
+        "netUuid": "net_1784622098550_148",
         "netName": "MEM_A5",
         "displayName": "MEM_A5",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "5",
-            "pinName": "5"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A5",
+            "pinName": "A5"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "5",
-            "pinName": "5"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A5",
+            "pinName": "A5"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P13",
-            "pinName": "P13"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC5",
+            "pinName": "PC5"
           }
         ],
         "isPower": false,
@@ -1322,24 +1177,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063669_155",
+        "netUuid": "net_1784622098552_155",
         "netName": "MEM_A6",
         "displayName": "MEM_A6",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "4",
-            "pinName": "4"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A6",
+            "pinName": "A6"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "4",
-            "pinName": "4"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A6",
+            "pinName": "A6"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P14",
-            "pinName": "P14"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC6",
+            "pinName": "PC6"
           }
         ],
         "isPower": false,
@@ -1351,24 +1206,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063670_162",
+        "netUuid": "net_1784622098553_162",
         "netName": "MEM_A7",
         "displayName": "MEM_A7",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "3",
-            "pinName": "3"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "A7",
+            "pinName": "A7"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "3",
-            "pinName": "3"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "A7",
+            "pinName": "A7"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P15",
-            "pinName": "P15"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PC7",
+            "pinName": "PC7"
           }
         ],
         "isPower": false,
@@ -1380,24 +1235,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063670_169",
+        "netUuid": "net_1784622098554_169",
         "netName": "MEM_D0",
         "displayName": "MEM_D0",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "11",
-            "pinName": "11"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D0",
+            "pinName": "D0"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "11",
-            "pinName": "11"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D0",
+            "pinName": "D0"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P27",
-            "pinName": "P27"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA8",
+            "pinName": "PA8"
           }
         ],
         "isPower": false,
@@ -1409,24 +1264,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063671_176",
+        "netUuid": "net_1784622098556_176",
         "netName": "MEM_D1",
         "displayName": "MEM_D1",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "12",
-            "pinName": "12"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D1",
+            "pinName": "D1"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "12",
-            "pinName": "12"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D1",
+            "pinName": "D1"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P31",
-            "pinName": "P31"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA9",
+            "pinName": "PA9"
           }
         ],
         "isPower": false,
@@ -1438,24 +1293,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063672_183",
+        "netUuid": "net_1784622098557_183",
         "netName": "MEM_D2",
         "displayName": "MEM_D2",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "13",
-            "pinName": "13"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D2",
+            "pinName": "D2"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "13",
-            "pinName": "13"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D2",
+            "pinName": "D2"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P32",
-            "pinName": "P32"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA10",
+            "pinName": "PA10"
           }
         ],
         "isPower": false,
@@ -1467,24 +1322,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063673_190",
+        "netUuid": "net_1784622098559_190",
         "netName": "MEM_D3",
         "displayName": "MEM_D3",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "15",
-            "pinName": "15"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D3",
+            "pinName": "D3"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "15",
-            "pinName": "15"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D3",
+            "pinName": "D3"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P33",
-            "pinName": "P33"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA11",
+            "pinName": "PA11"
           }
         ],
         "isPower": false,
@@ -1496,24 +1351,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063674_197",
+        "netUuid": "net_1784622098560_197",
         "netName": "MEM_D4",
         "displayName": "MEM_D4",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "16",
-            "pinName": "16"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D4",
+            "pinName": "D4"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "16",
-            "pinName": "16"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D4",
+            "pinName": "D4"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P34",
-            "pinName": "P34"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA12",
+            "pinName": "PA12"
           }
         ],
         "isPower": false,
@@ -1525,24 +1380,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063675_204",
+        "netUuid": "net_1784622098562_204",
         "netName": "MEM_D5",
         "displayName": "MEM_D5",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "17",
-            "pinName": "17"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D5",
+            "pinName": "D5"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "17",
-            "pinName": "17"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D5",
+            "pinName": "D5"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P35",
-            "pinName": "P35"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA13",
+            "pinName": "PA13"
           }
         ],
         "isPower": false,
@@ -1554,24 +1409,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063675_211",
+        "netUuid": "net_1784622098563_211",
         "netName": "MEM_D6",
         "displayName": "MEM_D6",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "18",
-            "pinName": "18"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D6",
+            "pinName": "D6"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "18",
-            "pinName": "18"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D6",
+            "pinName": "D6"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P36",
-            "pinName": "P36"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA14",
+            "pinName": "PA14"
           }
         ],
         "isPower": false,
@@ -1583,24 +1438,24 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784510063676_218",
+        "netUuid": "net_1784622098564_218",
         "netName": "MEM_D7",
         "displayName": "MEM_D7",
         "nodeList": [
           {
-            "devUuid": "comp_1784510063659_46",
-            "pinId": "19",
-            "pinName": "19"
+            "devUuid": "comp_1784622098525_50",
+            "pinId": "D7",
+            "pinName": "D7"
           },
           {
-            "devUuid": "comp_1784510063659_47",
-            "pinId": "19",
-            "pinName": "19"
+            "devUuid": "comp_1784622098525_51",
+            "pinId": "D7",
+            "pinName": "D7"
           },
           {
-            "devUuid": "comp_1784510063654_2",
-            "pinId": "P37",
-            "pinName": "P37"
+            "devUuid": "comp_1784622098523_2",
+            "pinId": "PA15",
+            "pinName": "PA15"
           }
         ],
         "isPower": false,
@@ -1615,39 +1470,39 @@
     "busList": [],
     "wireList": [
       {
-        "netUuid": "net_1784510063654_10",
+        "netUuid": "net_1784622098523_10",
         "points": [
           {
-            "x": 35,
-            "y": 180
+            "x": 23,
+            "y": 200
           },
           {
             "x": 150,
-            "y": 180
+            "y": 200
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063654_10",
+        "netUuid": "net_1784622098523_10",
         "points": [
           {
             "x": 30,
             "y": 50
           },
           {
-            "x": 35,
+            "x": 23,
             "y": 50
           },
           {
-            "x": 35,
-            "y": 180
+            "x": 23,
+            "y": 200
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063654_10",
+        "netUuid": "net_1784622098523_10",
         "points": [
           {
             "x": 30,
@@ -1665,43 +1520,39 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063655_14",
+        "netUuid": "net_1784622098524_14",
         "points": [
           {
-            "x": 23,
-            "y": 190
+            "x": 35,
+            "y": 210
           },
           {
             "x": 150,
-            "y": 190
+            "y": 210
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063655_14",
+        "netUuid": "net_1784622098524_14",
         "points": [
           {
             "x": 90,
             "y": 50
           },
           {
-            "x": 60,
+            "x": 35,
             "y": 50
           },
           {
-            "x": 60,
-            "y": 190
-          },
-          {
-            "x": 23,
-            "y": 190
+            "x": 35,
+            "y": 210
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063655_14",
+        "netUuid": "net_1784622098524_14",
         "points": [
           {
             "x": 90,
@@ -1715,7 +1566,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 40,
@@ -1729,7 +1580,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 30,
@@ -1743,7 +1594,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 150,
@@ -1757,39 +1608,35 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_25",
-        "points": [
-          {
-            "x": 95,
-            "y": 200
-          },
-          {
-            "x": 150,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_25",
+        "netUuid": "net_1784622098524_25",
         "points": [
           {
             "x": -10,
             "y": 400
           },
           {
-            "x": -10,
-            "y": 200
-          },
-          {
-            "x": 95,
-            "y": 200
+            "x": -40,
+            "y": 400
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098524_25",
+        "points": [
+          {
+            "x": 150,
+            "y": 190
+          },
+          {
+            "x": 130,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 40,
@@ -1803,21 +1650,21 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
-            "x": 250,
-            "y": 370
+            "x": 150,
+            "y": 140
           },
           {
-            "x": 270,
-            "y": 370
+            "x": 130,
+            "y": 140
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 50,
@@ -1831,7 +1678,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 290,
@@ -1845,21 +1692,21 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 150,
-            "y": 370
+            "y": 150
           },
           {
             "x": 130,
-            "y": 370
+            "y": 150
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 350,
@@ -1873,175 +1720,219 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063659_54",
+        "netUuid": "net_1784622098525_58",
         "points": [
           {
-            "x": 150,
-            "y": 310
+            "x": 250,
+            "y": 210
           },
           {
-            "x": 130,
-            "y": 310
+            "x": null,
+            "y": 210
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063659_54",
+        "netUuid": "net_1784622098525_58",
         "points": [
           {
-            "x": 540,
+            "x": null,
+            "y": 210
+          },
+          {
+            "x": null,
             "y": 120
           },
           {
-            "x": 580,
+            "x": 540,
             "y": 120
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063659_54",
+        "netUuid": "net_1784622098525_58",
         "points": [
+          {
+            "x": 250,
+            "y": 210
+          },
+          {
+            "x": null,
+            "y": 210
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098525_58",
+        "points": [
+          {
+            "x": null,
+            "y": 210
+          },
+          {
+            "x": null,
+            "y": 100
+          },
           {
             "x": 430,
             "y": 100
-          },
-          {
-            "x": 470,
-            "y": 100
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063660_61",
+        "netUuid": "net_1784622098531_63",
         "points": [
           {
-            "x": 150,
-            "y": 320
+            "x": 250,
+            "y": 200
           },
           {
-            "x": 120,
-            "y": 320
+            "x": null,
+            "y": 200
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063660_61",
+        "netUuid": "net_1784622098531_63",
         "points": [
+          {
+            "x": null,
+            "y": 200
+          },
+          {
+            "x": null,
+            "y": 130
+          },
           {
             "x": 540,
             "y": 130
-          },
-          {
-            "x": 560,
-            "y": 130
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063660_61",
+        "netUuid": "net_1784622098531_63",
         "points": [
+          {
+            "x": 250,
+            "y": 200
+          },
+          {
+            "x": null,
+            "y": 200
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098531_63",
+        "points": [
+          {
+            "x": null,
+            "y": 200
+          },
+          {
+            "x": 430,
+            "y": 200
+          },
           {
             "x": 430,
             "y": 180
-          },
-          {
-            "x": 470,
-            "y": 180
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063660_68",
+        "netUuid": "net_1784622098535_68",
         "points": [
           {
             "x": 640,
             "y": 120
           },
           {
-            "x": 610,
+            "x": 620,
             "y": 120
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063660_68",
+        "netUuid": "net_1784622098535_68",
         "points": [
           {
             "x": 150,
-            "y": 330
+            "y": 260
           },
           {
-            "x": 110,
-            "y": 330
+            "x": 82,
+            "y": 260
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_73",
+        "netUuid": "net_1784622098536_73",
         "points": [
           {
             "x": 640,
             "y": 130
           },
           {
-            "x": 600,
+            "x": 620,
             "y": 130
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_73",
+        "netUuid": "net_1784622098536_73",
         "points": [
           {
             "x": 150,
-            "y": 340
+            "y": 280
           },
           {
-            "x": 130,
-            "y": 340
+            "x": 58,
+            "y": 280
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_78",
+        "netUuid": "net_1784622098538_78",
         "points": [
           {
             "x": 720,
             "y": 120
           },
           {
-            "x": 760,
+            "x": 740,
             "y": 120
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_78",
+        "netUuid": "net_1784622098538_78",
         "points": [
           {
             "x": 150,
-            "y": 350
+            "y": 290
           },
           {
-            "x": 120,
-            "y": 350
+            "x": 46,
+            "y": 290
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_83",
+        "netUuid": "net_1784622098538_83",
         "points": [
           {
             "x": 720,
@@ -2055,833 +1946,833 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063661_83",
+        "netUuid": "net_1784622098538_83",
+        "points": [
+          {
+            "x": 150,
+            "y": 270
+          },
+          {
+            "x": 70,
+            "y": 270
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098539_88",
+        "points": [
+          {
+            "x": 940,
+            "y": 190
+          },
+          {
+            "x": 960,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098539_88",
+        "points": [
+          {
+            "x": 250,
+            "y": 220
+          },
+          {
+            "x": 270,
+            "y": 220
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098540_93",
+        "points": [
+          {
+            "x": 940,
+            "y": 200
+          },
+          {
+            "x": 960,
+            "y": 200
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098540_93",
+        "points": [
+          {
+            "x": 250,
+            "y": 230
+          },
+          {
+            "x": 282,
+            "y": 230
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098541_98",
+        "points": [
+          {
+            "x": 1140,
+            "y": 190
+          },
+          {
+            "x": 1160,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098541_98",
+        "points": [
+          {
+            "x": 250,
+            "y": 240
+          },
+          {
+            "x": 294,
+            "y": 240
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098541_103",
+        "points": [
+          {
+            "x": 1140,
+            "y": 200
+          },
+          {
+            "x": 1160,
+            "y": 200
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098541_103",
+        "points": [
+          {
+            "x": 250,
+            "y": 250
+          },
+          {
+            "x": 306,
+            "y": 250
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098542_108",
+        "points": [
+          {
+            "x": 1140,
+            "y": 270
+          },
+          {
+            "x": 1160,
+            "y": 270
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098542_108",
+        "points": [
+          {
+            "x": 250,
+            "y": 260
+          },
+          {
+            "x": 318,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098543_113",
+        "points": [
+          {
+            "x": 860,
+            "y": 160
+          },
+          {
+            "x": 840,
+            "y": 160
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098543_113",
+        "points": [
+          {
+            "x": 1060,
+            "y": 160
+          },
+          {
+            "x": 1040,
+            "y": 160
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098543_113",
+        "points": [
+          {
+            "x": 250,
+            "y": 300
+          },
+          {
+            "x": 270,
+            "y": 300
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098544_120",
+        "points": [
+          {
+            "x": 860,
+            "y": 170
+          },
+          {
+            "x": 830,
+            "y": 170
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098544_120",
+        "points": [
+          {
+            "x": 1060,
+            "y": 170
+          },
+          {
+            "x": 1030,
+            "y": 170
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098544_120",
+        "points": [
+          {
+            "x": 250,
+            "y": 310
+          },
+          {
+            "x": 282,
+            "y": 310
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098546_127",
+        "points": [
+          {
+            "x": 860,
+            "y": 180
+          },
+          {
+            "x": 820,
+            "y": 180
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098546_127",
+        "points": [
+          {
+            "x": 1060,
+            "y": 180
+          },
+          {
+            "x": 1020,
+            "y": 180
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098546_127",
+        "points": [
+          {
+            "x": 250,
+            "y": 320
+          },
+          {
+            "x": 294,
+            "y": 320
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098547_134",
+        "points": [
+          {
+            "x": 860,
+            "y": 190
+          },
+          {
+            "x": 840,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098547_134",
+        "points": [
+          {
+            "x": 1060,
+            "y": 190
+          },
+          {
+            "x": 1040,
+            "y": 190
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098547_134",
+        "points": [
+          {
+            "x": 250,
+            "y": 330
+          },
+          {
+            "x": 306,
+            "y": 330
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098548_141",
+        "points": [
+          {
+            "x": 860,
+            "y": 200
+          },
+          {
+            "x": 830,
+            "y": 200
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098548_141",
+        "points": [
+          {
+            "x": 1060,
+            "y": 200
+          },
+          {
+            "x": 1030,
+            "y": 200
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098548_141",
+        "points": [
+          {
+            "x": 250,
+            "y": 340
+          },
+          {
+            "x": 318,
+            "y": 340
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098550_148",
+        "points": [
+          {
+            "x": 860,
+            "y": 210
+          },
+          {
+            "x": 820,
+            "y": 210
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098550_148",
+        "points": [
+          {
+            "x": 1060,
+            "y": 210
+          },
+          {
+            "x": 1020,
+            "y": 210
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098550_148",
+        "points": [
+          {
+            "x": 250,
+            "y": 350
+          },
+          {
+            "x": 330,
+            "y": 350
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098552_155",
+        "points": [
+          {
+            "x": 860,
+            "y": 220
+          },
+          {
+            "x": 840,
+            "y": 220
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098552_155",
+        "points": [
+          {
+            "x": 1060,
+            "y": 220
+          },
+          {
+            "x": 1040,
+            "y": 220
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098552_155",
+        "points": [
+          {
+            "x": 250,
+            "y": 360
+          },
+          {
+            "x": 342,
+            "y": 360
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098553_162",
+        "points": [
+          {
+            "x": 860,
+            "y": 230
+          },
+          {
+            "x": 830,
+            "y": 230
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098553_162",
+        "points": [
+          {
+            "x": 1060,
+            "y": 230
+          },
+          {
+            "x": 1030,
+            "y": 230
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098553_162",
+        "points": [
+          {
+            "x": 250,
+            "y": 370
+          },
+          {
+            "x": 354,
+            "y": 370
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098554_169",
+        "points": [
+          {
+            "x": 860,
+            "y": 240
+          },
+          {
+            "x": 840,
+            "y": 240
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098554_169",
+        "points": [
+          {
+            "x": 1060,
+            "y": 240
+          },
+          {
+            "x": 1040,
+            "y": 240
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098554_169",
+        "points": [
+          {
+            "x": 150,
+            "y": 300
+          },
+          {
+            "x": 130,
+            "y": 300
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098556_176",
+        "points": [
+          {
+            "x": 860,
+            "y": 250
+          },
+          {
+            "x": 830,
+            "y": 250
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098556_176",
+        "points": [
+          {
+            "x": 1060,
+            "y": 250
+          },
+          {
+            "x": 1030,
+            "y": 250
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098556_176",
+        "points": [
+          {
+            "x": 150,
+            "y": 310
+          },
+          {
+            "x": 118,
+            "y": 310
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098557_183",
+        "points": [
+          {
+            "x": 860,
+            "y": 260
+          },
+          {
+            "x": 820,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098557_183",
+        "points": [
+          {
+            "x": 1060,
+            "y": 260
+          },
+          {
+            "x": 1020,
+            "y": 260
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098557_183",
+        "points": [
+          {
+            "x": 150,
+            "y": 320
+          },
+          {
+            "x": 106,
+            "y": 320
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098559_190",
+        "points": [
+          {
+            "x": 860,
+            "y": 270
+          },
+          {
+            "x": 840,
+            "y": 270
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098559_190",
+        "points": [
+          {
+            "x": 1060,
+            "y": 270
+          },
+          {
+            "x": 1040,
+            "y": 270
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098559_190",
+        "points": [
+          {
+            "x": 150,
+            "y": 330
+          },
+          {
+            "x": 94,
+            "y": 330
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098560_197",
+        "points": [
+          {
+            "x": 860,
+            "y": 280
+          },
+          {
+            "x": 830,
+            "y": 280
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098560_197",
+        "points": [
+          {
+            "x": 1060,
+            "y": 280
+          },
+          {
+            "x": 1030,
+            "y": 280
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098560_197",
+        "points": [
+          {
+            "x": 150,
+            "y": 340
+          },
+          {
+            "x": 82,
+            "y": 340
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098562_204",
+        "points": [
+          {
+            "x": 940,
+            "y": 150
+          },
+          {
+            "x": 980,
+            "y": 150
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098562_204",
+        "points": [
+          {
+            "x": 1140,
+            "y": 150
+          },
+          {
+            "x": 1180,
+            "y": 150
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098562_204",
+        "points": [
+          {
+            "x": 150,
+            "y": 350
+          },
+          {
+            "x": 70,
+            "y": 350
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098563_211",
+        "points": [
+          {
+            "x": 940,
+            "y": 160
+          },
+          {
+            "x": 960,
+            "y": 160
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098563_211",
+        "points": [
+          {
+            "x": 1140,
+            "y": 160
+          },
+          {
+            "x": 1160,
+            "y": 160
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098563_211",
         "points": [
           {
             "x": 150,
             "y": 360
           },
           {
-            "x": 110,
+            "x": 58,
             "y": 360
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063662_88",
+        "netUuid": "net_1784622098564_218",
         "points": [
           {
             "x": 940,
-            "y": 200
-          },
-          {
-            "x": 980,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063662_88",
-        "points": [
-          {
-            "x": 250,
-            "y": 140
-          },
-          {
-            "x": 280,
-            "y": 140
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063662_93",
-        "points": [
-          {
-            "x": 940,
-            "y": 220
+            "y": 170
           },
           {
             "x": 970,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063662_93",
-        "points": [
-          {
-            "x": 250,
-            "y": 150
-          },
-          {
-            "x": 290,
-            "y": 150
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063663_98",
-        "points": [
-          {
-            "x": 1140,
-            "y": 200
-          },
-          {
-            "x": 1180,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063663_98",
-        "points": [
-          {
-            "x": 250,
-            "y": 170
-          },
-          {
-            "x": 280,
             "y": 170
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063663_103",
+        "netUuid": "net_1784622098564_218",
         "points": [
           {
             "x": 1140,
-            "y": 220
+            "y": 170
           },
           {
             "x": 1170,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063663_103",
-        "points": [
-          {
-            "x": 250,
-            "y": 180
-          },
-          {
-            "x": 290,
-            "y": 180
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063664_108",
-        "points": [
-          {
-            "x": 1140,
-            "y": 270
-          },
-          {
-            "x": 1160,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063664_108",
-        "points": [
-          {
-            "x": 250,
-            "y": 190
-          },
-          {
-            "x": 270,
-            "y": 190
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_113",
-        "points": [
-          {
-            "x": 860,
-            "y": 240
-          },
-          {
-            "x": 830,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_113",
-        "points": [
-          {
-            "x": 1060,
-            "y": 240
-          },
-          {
-            "x": 1030,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_113",
-        "points": [
-          {
-            "x": 150,
-            "y": 210
-          },
-          {
-            "x": 110,
-            "y": 210
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_120",
-        "points": [
-          {
-            "x": 860,
-            "y": 230
-          },
-          {
-            "x": 840,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_120",
-        "points": [
-          {
-            "x": 1060,
-            "y": 230
-          },
-          {
-            "x": 1040,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063665_120",
-        "points": [
-          {
-            "x": 150,
-            "y": 220
-          },
-          {
-            "x": 130,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063666_127",
-        "points": [
-          {
-            "x": 860,
-            "y": 220
-          },
-          {
-            "x": 820,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063666_127",
-        "points": [
-          {
-            "x": 1060,
-            "y": 220
-          },
-          {
-            "x": 1020,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063666_127",
-        "points": [
-          {
-            "x": 150,
-            "y": 230
-          },
-          {
-            "x": 120,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_134",
-        "points": [
-          {
-            "x": 860,
-            "y": 210
-          },
-          {
-            "x": 830,
-            "y": 210
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_134",
-        "points": [
-          {
-            "x": 1060,
-            "y": 210
-          },
-          {
-            "x": 1030,
-            "y": 210
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_134",
-        "points": [
-          {
-            "x": 150,
-            "y": 240
-          },
-          {
-            "x": 110,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_141",
-        "points": [
-          {
-            "x": 860,
-            "y": 200
-          },
-          {
-            "x": 840,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_141",
-        "points": [
-          {
-            "x": 1060,
-            "y": 200
-          },
-          {
-            "x": 1040,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063667_141",
-        "points": [
-          {
-            "x": 150,
-            "y": 250
-          },
-          {
-            "x": 130,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063668_148",
-        "points": [
-          {
-            "x": 860,
-            "y": 190
-          },
-          {
-            "x": 820,
-            "y": 190
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063668_148",
-        "points": [
-          {
-            "x": 1060,
-            "y": 190
-          },
-          {
-            "x": 1020,
-            "y": 190
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063668_148",
-        "points": [
-          {
-            "x": 150,
-            "y": 260
-          },
-          {
-            "x": 120,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063669_155",
-        "points": [
-          {
-            "x": 860,
-            "y": 180
-          },
-          {
-            "x": 830,
-            "y": 180
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063669_155",
-        "points": [
-          {
-            "x": 1060,
-            "y": 180
-          },
-          {
-            "x": 1030,
-            "y": 180
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063669_155",
-        "points": [
-          {
-            "x": 150,
-            "y": 270
-          },
-          {
-            "x": 110,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063670_162",
-        "points": [
-          {
-            "x": 860,
-            "y": 170
-          },
-          {
-            "x": 840,
             "y": 170
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063670_162",
-        "points": [
-          {
-            "x": 1060,
-            "y": 170
-          },
-          {
-            "x": 1040,
-            "y": 170
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063670_162",
+        "netUuid": "net_1784622098564_218",
         "points": [
           {
             "x": 150,
-            "y": 280
+            "y": 370
           },
           {
-            "x": 130,
-            "y": 280
+            "x": 46,
+            "y": 370
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063670_169",
-        "points": [
-          {
-            "x": 860,
-            "y": 250
-          },
-          {
-            "x": 820,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063670_169",
-        "points": [
-          {
-            "x": 1060,
-            "y": 250
-          },
-          {
-            "x": 1020,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063670_169",
-        "points": [
-          {
-            "x": 250,
-            "y": 160
-          },
-          {
-            "x": 270,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063671_176",
-        "points": [
-          {
-            "x": 860,
-            "y": 260
-          },
-          {
-            "x": 840,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063671_176",
-        "points": [
-          {
-            "x": 1060,
-            "y": 260
-          },
-          {
-            "x": 1040,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063671_176",
-        "points": [
-          {
-            "x": 250,
-            "y": 200
-          },
-          {
-            "x": 280,
-            "y": 200
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063672_183",
-        "points": [
-          {
-            "x": 860,
-            "y": 270
-          },
-          {
-            "x": 830,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063672_183",
-        "points": [
-          {
-            "x": 1060,
-            "y": 270
-          },
-          {
-            "x": 1030,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063672_183",
-        "points": [
-          {
-            "x": 250,
-            "y": 210
-          },
-          {
-            "x": 290,
-            "y": 210
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063673_190",
-        "points": [
-          {
-            "x": 940,
-            "y": 150
-          },
-          {
-            "x": 960,
-            "y": 150
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063673_190",
-        "points": [
-          {
-            "x": 1140,
-            "y": 150
-          },
-          {
-            "x": 1160,
-            "y": 150
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063673_190",
-        "points": [
-          {
-            "x": 250,
-            "y": 220
-          },
-          {
-            "x": 270,
-            "y": 220
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063674_197",
-        "points": [
-          {
-            "x": 940,
-            "y": 160
-          },
-          {
-            "x": 970,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063674_197",
-        "points": [
-          {
-            "x": 1140,
-            "y": 160
-          },
-          {
-            "x": 1170,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063674_197",
-        "points": [
-          {
-            "x": 250,
-            "y": 230
-          },
-          {
-            "x": 280,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_204",
-        "points": [
-          {
-            "x": 940,
-            "y": 170
-          },
-          {
-            "x": 980,
-            "y": 170
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_204",
-        "points": [
-          {
-            "x": 1140,
-            "y": 170
-          },
-          {
-            "x": 1180,
-            "y": 170
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_204",
-        "points": [
-          {
-            "x": 250,
-            "y": 240
-          },
-          {
-            "x": 290,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_211",
-        "points": [
-          {
-            "x": 940,
-            "y": 180
-          },
-          {
-            "x": 960,
-            "y": 180
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_211",
-        "points": [
-          {
-            "x": 1140,
-            "y": 180
-          },
-          {
-            "x": 1160,
-            "y": 180
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063675_211",
-        "points": [
-          {
-            "x": 250,
-            "y": 250
-          },
-          {
-            "x": 270,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063676_218",
-        "points": [
-          {
-            "x": 940,
-            "y": 190
-          },
-          {
-            "x": 970,
-            "y": 190
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063676_218",
-        "points": [
-          {
-            "x": 1140,
-            "y": 190
-          },
-          {
-            "x": 1170,
-            "y": 190
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063676_218",
-        "points": [
-          {
-            "x": 250,
-            "y": 260
-          },
-          {
-            "x": 280,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 500,
@@ -2903,7 +2794,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 500,
@@ -2925,7 +2816,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 500,
@@ -2947,7 +2838,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 500,
@@ -2969,7 +2860,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 500,
@@ -2987,7 +2878,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 500,
@@ -3009,7 +2900,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 500,
@@ -3031,7 +2922,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 500,
@@ -3053,7 +2944,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 680,
@@ -3071,7 +2962,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 680,
@@ -3089,7 +2980,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 680,
@@ -3107,7 +2998,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 680,
@@ -3129,7 +3020,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 1250,
@@ -3143,231 +3034,35 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 860,
-            "y": 280
-          },
-          {
-            "x": 820,
-            "y": 280
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1060,
-            "y": 280
-          },
-          {
-            "x": 1020,
-            "y": 280
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 860,
-            "y": 160
-          },
-          {
-            "x": 820,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 940,
-            "y": 210
+            "y": 180
           },
           {
             "x": 960,
-            "y": 210
+            "y": 180
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 940,
-            "y": 230
-          },
-          {
-            "x": 980,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 940,
-            "y": 240
-          },
-          {
-            "x": 960,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 940,
-            "y": 250
-          },
-          {
-            "x": 970,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 940,
-            "y": 260
-          },
-          {
-            "x": 980,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 940,
-            "y": 270
-          },
-          {
-            "x": 960,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1060,
-            "y": 150
-          },
-          {
-            "x": 1030,
-            "y": 150
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1060,
-            "y": 160
-          },
-          {
-            "x": 1020,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
             "x": 1140,
-            "y": 210
+            "y": 180
           },
           {
             "x": 1160,
-            "y": 210
+            "y": 180
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1140,
-            "y": 230
-          },
-          {
-            "x": 1180,
-            "y": 230
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1140,
-            "y": 240
-          },
-          {
-            "x": 1160,
-            "y": 240
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1140,
-            "y": 250
-          },
-          {
-            "x": 1170,
-            "y": 250
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 1140,
-            "y": 260
-          },
-          {
-            "x": 1180,
-            "y": 260
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 1250,
@@ -3381,495 +3076,85 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 940,
-            "y": 280
+            "y": 260
           },
           {
-            "x": 970,
-            "y": 280
+            "x": 960,
+            "y": 260
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 1140,
             "y": 280
           },
           {
-            "x": 1170,
+            "x": 1160,
             "y": 280
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063657_28",
+        "netUuid": "net_1784622098525_32",
         "points": [
           {
             "x": 860,
             "y": 150
           },
           {
-            "x": 830,
+            "x": 840,
             "y": 150
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
-            "x": 60,
-            "y": 210
-          },
-          {
-            "x": 90,
-            "y": 210
-          },
-          {
-            "x": 90,
+            "x": 80,
             "y": 140
           },
           {
-            "x": 150,
-            "y": 140
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 60,
-            "y": 210
-          },
-          {
-            "x": 100,
-            "y": 210
-          },
-          {
-            "x": 100,
-            "y": 150
-          },
-          {
-            "x": 150,
-            "y": 150
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 60,
-            "y": 210
-          },
-          {
-            "x": 10,
-            "y": 210
-          },
-          {
-            "x": 10,
-            "y": 160
-          },
-          {
-            "x": 150,
-            "y": 160
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 60,
-            "y": 210
-          },
-          {
-            "x": 0,
-            "y": 210
-          },
-          {
-            "x": 0,
-            "y": 170
-          },
-          {
-            "x": 150,
+            "x": 80,
             "y": 170
           }
         ],
         "isBus": false
       },
       {
-        "netUuid": "net_1784510063656_18",
+        "netUuid": "net_1784622098524_18",
         "points": [
           {
-            "x": 71,
-            "y": 290
+            "x": 360,
+            "y": 390
           },
+          {
+            "x": 360,
+            "y": 420
+          }
+        ],
+        "isBus": false
+      },
+      {
+        "netUuid": "net_1784622098524_18",
+        "points": [
           {
             "x": 150,
-            "y": 290
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 60,
-            "y": 210
+            "y": 170
           },
           {
-            "x": 71,
-            "y": 210
-          },
-          {
-            "x": 71,
-            "y": 290
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 59,
-            "y": 300
-          },
-          {
-            "x": 150,
-            "y": 300
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 60,
-            "y": 210
-          },
-          {
-            "x": 59,
-            "y": 210
-          },
-          {
-            "x": 59,
-            "y": 300
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 341,
-            "y": 270
-          },
-          {
-            "x": 250,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 341,
-            "y": 390
-          },
-          {
-            "x": 341,
-            "y": 270
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 353,
-            "y": 280
-          },
-          {
-            "x": 250,
-            "y": 280
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 353,
-            "y": 390
-          },
-          {
-            "x": 353,
-            "y": 280
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 365,
-            "y": 290
-          },
-          {
-            "x": 250,
-            "y": 290
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 365,
-            "y": 390
-          },
-          {
-            "x": 365,
-            "y": 290
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 377,
-            "y": 300
-          },
-          {
-            "x": 250,
-            "y": 300
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 377,
-            "y": 390
-          },
-          {
-            "x": 377,
-            "y": 300
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 305,
-            "y": 310
-          },
-          {
-            "x": 250,
-            "y": 310
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 305,
-            "y": 390
-          },
-          {
-            "x": 305,
-            "y": 310
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 317,
-            "y": 320
-          },
-          {
-            "x": 250,
-            "y": 320
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 317,
-            "y": 390
-          },
-          {
-            "x": 317,
-            "y": 320
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 329,
-            "y": 330
-          },
-          {
-            "x": 250,
-            "y": 330
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 329,
-            "y": 390
-          },
-          {
-            "x": 329,
-            "y": 330
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 341,
-            "y": 340
-          },
-          {
-            "x": 250,
-            "y": 340
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 341,
-            "y": 390
-          },
-          {
-            "x": 341,
-            "y": 340
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 360,
-            "y": 350
-          },
-          {
-            "x": 250,
-            "y": 350
-          },
-          {
-            "x": 250,
-            "y": 350
-          }
-        ],
-        "isBus": false
-      },
-      {
-        "netUuid": "net_1784510063656_18",
-        "points": [
-          {
-            "x": 360,
-            "y": 390
-          },
-          {
-            "x": 360,
-            "y": 350
-          },
-          {
-            "x": 250,
-            "y": 350
-          },
-          {
-            "x": 250,
-            "y": 360
+            "x": 130,
+            "y": 170
           }
         ],
         "isBus": false
@@ -3880,896 +3165,784 @@
     "textAnnotate": [],
     "netLabelList": [
       {
-        "id": "lbl_1784510063656_20",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098524_20",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 40,
         "y": 520,
         "global": false
       },
       {
-        "id": "lbl_1784510063656_22",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098524_22",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 70,
         "y": 90,
         "global": false
       },
       {
-        "id": "lbl_1784510063656_24",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098524_24",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 190,
         "y": 90,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_30",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098524_29",
+        "netUuid": "net_1784622098524_25",
+        "text": "NRST",
+        "x": -40,
+        "y": 400,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098525_31",
+        "netUuid": "net_1784622098524_25",
+        "text": "NRST",
+        "x": 130,
+        "y": 190,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098525_34",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 40,
         "y": -10,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_32",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098525_36",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
-        "x": 270,
-        "y": 370,
+        "x": 130,
+        "y": 140,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_34",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098525_38",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 90,
         "y": 400,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_36",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098525_40",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 260,
         "y": 420,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_37",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098525_41",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 40,
         "y": 490,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_39",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098525_43",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 130,
-        "y": 370,
+        "y": 150,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_41",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098525_45",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 390,
         "y": 420,
         "global": false
       },
       {
-        "id": "lbl_1784510063659_56",
-        "netUuid": "net_1784510063659_54",
-        "text": "I2C_SDA",
-        "x": 130,
-        "y": 310,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063659_58",
-        "netUuid": "net_1784510063659_54",
-        "text": "I2C_SDA",
-        "x": 580,
+        "id": "lbl_1784622098536_70",
+        "netUuid": "net_1784622098535_68",
+        "text": "SPI_CS",
+        "x": 620,
         "y": 120,
         "global": false
       },
       {
-        "id": "lbl_1784510063660_60",
-        "netUuid": "net_1784510063659_54",
-        "text": "I2C_SDA",
-        "x": 470,
-        "y": 100,
+        "id": "lbl_1784622098536_72",
+        "netUuid": "net_1784622098535_68",
+        "text": "SPI_CS",
+        "x": 82,
+        "y": 260,
         "global": false
       },
       {
-        "id": "lbl_1784510063660_63",
-        "netUuid": "net_1784510063660_61",
-        "text": "I2C_SCL",
-        "x": 120,
-        "y": 320,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063660_65",
-        "netUuid": "net_1784510063660_61",
-        "text": "I2C_SCL",
-        "x": 560,
+        "id": "lbl_1784622098537_75",
+        "netUuid": "net_1784622098536_73",
+        "text": "SPI_MISO",
+        "x": 620,
         "y": 130,
         "global": false
       },
       {
-        "id": "lbl_1784510063660_67",
-        "netUuid": "net_1784510063660_61",
-        "text": "I2C_SCL",
-        "x": 470,
-        "y": 180,
+        "id": "lbl_1784622098538_77",
+        "netUuid": "net_1784622098536_73",
+        "text": "SPI_MISO",
+        "x": 58,
+        "y": 280,
         "global": false
       },
       {
-        "id": "lbl_1784510063660_70",
-        "netUuid": "net_1784510063660_68",
-        "text": "SPI_CS",
-        "x": 610,
+        "id": "lbl_1784622098538_80",
+        "netUuid": "net_1784622098538_78",
+        "text": "SPI_MOSI",
+        "x": 740,
         "y": 120,
         "global": false
       },
       {
-        "id": "lbl_1784510063661_72",
-        "netUuid": "net_1784510063660_68",
-        "text": "SPI_CS",
-        "x": 110,
-        "y": 330,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063661_75",
-        "netUuid": "net_1784510063661_73",
-        "text": "SPI_MISO",
-        "x": 600,
-        "y": 130,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063661_77",
-        "netUuid": "net_1784510063661_73",
-        "text": "SPI_MISO",
-        "x": 130,
-        "y": 340,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063661_80",
-        "netUuid": "net_1784510063661_78",
+        "id": "lbl_1784622098538_82",
+        "netUuid": "net_1784622098538_78",
         "text": "SPI_MOSI",
-        "x": 760,
-        "y": 120,
+        "x": 46,
+        "y": 290,
         "global": false
       },
       {
-        "id": "lbl_1784510063661_82",
-        "netUuid": "net_1784510063661_78",
-        "text": "SPI_MOSI",
-        "x": 120,
-        "y": 350,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063662_85",
-        "netUuid": "net_1784510063661_83",
+        "id": "lbl_1784622098539_85",
+        "netUuid": "net_1784622098538_83",
         "text": "SPI_SCK",
         "x": 740,
         "y": 130,
         "global": false
       },
       {
-        "id": "lbl_1784510063662_87",
-        "netUuid": "net_1784510063661_83",
+        "id": "lbl_1784622098539_87",
+        "netUuid": "net_1784622098538_83",
         "text": "SPI_SCK",
-        "x": 110,
+        "x": 70,
+        "y": 270,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098540_90",
+        "netUuid": "net_1784622098539_88",
+        "text": "MEM_CE",
+        "x": 960,
+        "y": 190,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098540_92",
+        "netUuid": "net_1784622098539_88",
+        "text": "MEM_CE",
+        "x": 270,
+        "y": 220,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098540_95",
+        "netUuid": "net_1784622098540_93",
+        "text": "MEM_OE",
+        "x": 960,
+        "y": 200,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098541_97",
+        "netUuid": "net_1784622098540_93",
+        "text": "MEM_OE",
+        "x": 282,
+        "y": 230,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098541_100",
+        "netUuid": "net_1784622098541_98",
+        "text": "SRAM_CE",
+        "x": 1160,
+        "y": 190,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098541_102",
+        "netUuid": "net_1784622098541_98",
+        "text": "SRAM_CE",
+        "x": 294,
+        "y": 240,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098542_105",
+        "netUuid": "net_1784622098541_103",
+        "text": "SRAM_OE",
+        "x": 1160,
+        "y": 200,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098542_107",
+        "netUuid": "net_1784622098541_103",
+        "text": "SRAM_OE",
+        "x": 306,
+        "y": 250,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098543_110",
+        "netUuid": "net_1784622098542_108",
+        "text": "SRAM_WE",
+        "x": 1160,
+        "y": 270,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098543_112",
+        "netUuid": "net_1784622098542_108",
+        "text": "SRAM_WE",
+        "x": 318,
+        "y": 260,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098544_115",
+        "netUuid": "net_1784622098543_113",
+        "text": "MEM_A0",
+        "x": 840,
+        "y": 160,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098544_117",
+        "netUuid": "net_1784622098543_113",
+        "text": "MEM_A0",
+        "x": 1040,
+        "y": 160,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098544_119",
+        "netUuid": "net_1784622098543_113",
+        "text": "MEM_A0",
+        "x": 270,
+        "y": 300,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098545_122",
+        "netUuid": "net_1784622098544_120",
+        "text": "MEM_A1",
+        "x": 830,
+        "y": 170,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098545_124",
+        "netUuid": "net_1784622098544_120",
+        "text": "MEM_A1",
+        "x": 1030,
+        "y": 170,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098546_126",
+        "netUuid": "net_1784622098544_120",
+        "text": "MEM_A1",
+        "x": 282,
+        "y": 310,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098546_129",
+        "netUuid": "net_1784622098546_127",
+        "text": "MEM_A2",
+        "x": 820,
+        "y": 180,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098547_131",
+        "netUuid": "net_1784622098546_127",
+        "text": "MEM_A2",
+        "x": 1020,
+        "y": 180,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098547_133",
+        "netUuid": "net_1784622098546_127",
+        "text": "MEM_A2",
+        "x": 294,
+        "y": 320,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098547_136",
+        "netUuid": "net_1784622098547_134",
+        "text": "MEM_A3",
+        "x": 840,
+        "y": 190,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098548_138",
+        "netUuid": "net_1784622098547_134",
+        "text": "MEM_A3",
+        "x": 1040,
+        "y": 190,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098548_140",
+        "netUuid": "net_1784622098547_134",
+        "text": "MEM_A3",
+        "x": 306,
+        "y": 330,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098549_143",
+        "netUuid": "net_1784622098548_141",
+        "text": "MEM_A4",
+        "x": 830,
+        "y": 200,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098549_145",
+        "netUuid": "net_1784622098548_141",
+        "text": "MEM_A4",
+        "x": 1030,
+        "y": 200,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098550_147",
+        "netUuid": "net_1784622098548_141",
+        "text": "MEM_A4",
+        "x": 318,
+        "y": 340,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098550_150",
+        "netUuid": "net_1784622098550_148",
+        "text": "MEM_A5",
+        "x": 820,
+        "y": 210,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098551_152",
+        "netUuid": "net_1784622098550_148",
+        "text": "MEM_A5",
+        "x": 1020,
+        "y": 210,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098552_154",
+        "netUuid": "net_1784622098550_148",
+        "text": "MEM_A5",
+        "x": 330,
+        "y": 350,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098552_157",
+        "netUuid": "net_1784622098552_155",
+        "text": "MEM_A6",
+        "x": 840,
+        "y": 220,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098553_159",
+        "netUuid": "net_1784622098552_155",
+        "text": "MEM_A6",
+        "x": 1040,
+        "y": 220,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098553_161",
+        "netUuid": "net_1784622098552_155",
+        "text": "MEM_A6",
+        "x": 342,
         "y": 360,
         "global": false
       },
       {
-        "id": "lbl_1784510063662_90",
-        "netUuid": "net_1784510063662_88",
-        "text": "MEM_CE",
-        "x": 980,
-        "y": 200,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063662_92",
-        "netUuid": "net_1784510063662_88",
-        "text": "MEM_CE",
-        "x": 280,
-        "y": 140,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063662_95",
-        "netUuid": "net_1784510063662_93",
-        "text": "MEM_OE",
-        "x": 970,
-        "y": 220,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063663_97",
-        "netUuid": "net_1784510063662_93",
-        "text": "MEM_OE",
-        "x": 290,
-        "y": 150,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063663_100",
-        "netUuid": "net_1784510063663_98",
-        "text": "SRAM_CE",
-        "x": 1180,
-        "y": 200,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063663_102",
-        "netUuid": "net_1784510063663_98",
-        "text": "SRAM_CE",
-        "x": 280,
-        "y": 170,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063664_105",
-        "netUuid": "net_1784510063663_103",
-        "text": "SRAM_OE",
-        "x": 1170,
-        "y": 220,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063664_107",
-        "netUuid": "net_1784510063663_103",
-        "text": "SRAM_OE",
-        "x": 290,
-        "y": 180,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063664_110",
-        "netUuid": "net_1784510063664_108",
-        "text": "SRAM_WE",
-        "x": 1160,
-        "y": 270,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063665_112",
-        "netUuid": "net_1784510063664_108",
-        "text": "SRAM_WE",
-        "x": 270,
-        "y": 190,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063665_115",
-        "netUuid": "net_1784510063665_113",
-        "text": "MEM_A0",
+        "id": "lbl_1784622098553_164",
+        "netUuid": "net_1784622098553_162",
+        "text": "MEM_A7",
         "x": 830,
-        "y": 240,
+        "y": 230,
         "global": false
       },
       {
-        "id": "lbl_1784510063665_117",
-        "netUuid": "net_1784510063665_113",
-        "text": "MEM_A0",
+        "id": "lbl_1784622098554_166",
+        "netUuid": "net_1784622098553_162",
+        "text": "MEM_A7",
         "x": 1030,
+        "y": 230,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098554_168",
+        "netUuid": "net_1784622098553_162",
+        "text": "MEM_A7",
+        "x": 354,
+        "y": 370,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098555_171",
+        "netUuid": "net_1784622098554_169",
+        "text": "MEM_D0",
+        "x": 840,
         "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784510063665_119",
-        "netUuid": "net_1784510063665_113",
-        "text": "MEM_A0",
-        "x": 110,
-        "y": 210,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063665_122",
-        "netUuid": "net_1784510063665_120",
-        "text": "MEM_A1",
-        "x": 840,
-        "y": 230,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063666_124",
-        "netUuid": "net_1784510063665_120",
-        "text": "MEM_A1",
+        "id": "lbl_1784622098556_173",
+        "netUuid": "net_1784622098554_169",
+        "text": "MEM_D0",
         "x": 1040,
-        "y": 230,
+        "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784510063666_126",
-        "netUuid": "net_1784510063665_120",
-        "text": "MEM_A1",
+        "id": "lbl_1784622098556_175",
+        "netUuid": "net_1784622098554_169",
+        "text": "MEM_D0",
         "x": 130,
-        "y": 220,
+        "y": 300,
         "global": false
       },
       {
-        "id": "lbl_1784510063666_129",
-        "netUuid": "net_1784510063666_127",
-        "text": "MEM_A2",
-        "x": 820,
-        "y": 220,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063666_131",
-        "netUuid": "net_1784510063666_127",
-        "text": "MEM_A2",
-        "x": 1020,
-        "y": 220,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063666_133",
-        "netUuid": "net_1784510063666_127",
-        "text": "MEM_A2",
-        "x": 120,
-        "y": 230,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063667_136",
-        "netUuid": "net_1784510063667_134",
-        "text": "MEM_A3",
+        "id": "lbl_1784622098557_178",
+        "netUuid": "net_1784622098556_176",
+        "text": "MEM_D1",
         "x": 830,
-        "y": 210,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063667_138",
-        "netUuid": "net_1784510063667_134",
-        "text": "MEM_A3",
-        "x": 1030,
-        "y": 210,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063667_140",
-        "netUuid": "net_1784510063667_134",
-        "text": "MEM_A3",
-        "x": 110,
-        "y": 240,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063668_143",
-        "netUuid": "net_1784510063667_141",
-        "text": "MEM_A4",
-        "x": 840,
-        "y": 200,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063668_145",
-        "netUuid": "net_1784510063667_141",
-        "text": "MEM_A4",
-        "x": 1040,
-        "y": 200,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063668_147",
-        "netUuid": "net_1784510063667_141",
-        "text": "MEM_A4",
-        "x": 130,
         "y": 250,
         "global": false
       },
       {
-        "id": "lbl_1784510063669_150",
-        "netUuid": "net_1784510063668_148",
-        "text": "MEM_A5",
+        "id": "lbl_1784622098557_180",
+        "netUuid": "net_1784622098556_176",
+        "text": "MEM_D1",
+        "x": 1030,
+        "y": 250,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098557_182",
+        "netUuid": "net_1784622098556_176",
+        "text": "MEM_D1",
+        "x": 118,
+        "y": 310,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098558_185",
+        "netUuid": "net_1784622098557_183",
+        "text": "MEM_D2",
         "x": 820,
-        "y": 190,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063669_152",
-        "netUuid": "net_1784510063668_148",
-        "text": "MEM_A5",
-        "x": 1020,
-        "y": 190,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063669_154",
-        "netUuid": "net_1784510063668_148",
-        "text": "MEM_A5",
-        "x": 120,
         "y": 260,
         "global": false
       },
       {
-        "id": "lbl_1784510063669_157",
-        "netUuid": "net_1784510063669_155",
-        "text": "MEM_A6",
-        "x": 830,
-        "y": 180,
+        "id": "lbl_1784622098558_187",
+        "netUuid": "net_1784622098557_183",
+        "text": "MEM_D2",
+        "x": 1020,
+        "y": 260,
         "global": false
       },
       {
-        "id": "lbl_1784510063670_159",
-        "netUuid": "net_1784510063669_155",
-        "text": "MEM_A6",
-        "x": 1030,
-        "y": 180,
+        "id": "lbl_1784622098559_189",
+        "netUuid": "net_1784622098557_183",
+        "text": "MEM_D2",
+        "x": 106,
+        "y": 320,
         "global": false
       },
       {
-        "id": "lbl_1784510063670_161",
-        "netUuid": "net_1784510063669_155",
-        "text": "MEM_A6",
-        "x": 110,
+        "id": "lbl_1784622098559_192",
+        "netUuid": "net_1784622098559_190",
+        "text": "MEM_D3",
+        "x": 840,
         "y": 270,
         "global": false
       },
       {
-        "id": "lbl_1784510063670_164",
-        "netUuid": "net_1784510063670_162",
-        "text": "MEM_A7",
-        "x": 840,
-        "y": 170,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063670_166",
-        "netUuid": "net_1784510063670_162",
-        "text": "MEM_A7",
+        "id": "lbl_1784622098560_194",
+        "netUuid": "net_1784622098559_190",
+        "text": "MEM_D3",
         "x": 1040,
-        "y": 170,
+        "y": 270,
         "global": false
       },
       {
-        "id": "lbl_1784510063670_168",
-        "netUuid": "net_1784510063670_162",
-        "text": "MEM_A7",
-        "x": 130,
+        "id": "lbl_1784622098560_196",
+        "netUuid": "net_1784622098559_190",
+        "text": "MEM_D3",
+        "x": 94,
+        "y": 330,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098561_199",
+        "netUuid": "net_1784622098560_197",
+        "text": "MEM_D4",
+        "x": 830,
         "y": 280,
         "global": false
       },
       {
-        "id": "lbl_1784510063671_171",
-        "netUuid": "net_1784510063670_169",
-        "text": "MEM_D0",
-        "x": 820,
-        "y": 250,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063671_173",
-        "netUuid": "net_1784510063670_169",
-        "text": "MEM_D0",
-        "x": 1020,
-        "y": 250,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063671_175",
-        "netUuid": "net_1784510063670_169",
-        "text": "MEM_D0",
-        "x": 270,
-        "y": 160,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063671_178",
-        "netUuid": "net_1784510063671_176",
-        "text": "MEM_D1",
-        "x": 840,
-        "y": 260,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063672_180",
-        "netUuid": "net_1784510063671_176",
-        "text": "MEM_D1",
-        "x": 1040,
-        "y": 260,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063672_182",
-        "netUuid": "net_1784510063671_176",
-        "text": "MEM_D1",
-        "x": 280,
-        "y": 200,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063672_185",
-        "netUuid": "net_1784510063672_183",
-        "text": "MEM_D2",
-        "x": 830,
-        "y": 270,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063672_187",
-        "netUuid": "net_1784510063672_183",
-        "text": "MEM_D2",
+        "id": "lbl_1784622098561_201",
+        "netUuid": "net_1784622098560_197",
+        "text": "MEM_D4",
         "x": 1030,
-        "y": 270,
+        "y": 280,
         "global": false
       },
       {
-        "id": "lbl_1784510063673_189",
-        "netUuid": "net_1784510063672_183",
-        "text": "MEM_D2",
-        "x": 290,
-        "y": 210,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063673_192",
-        "netUuid": "net_1784510063673_190",
-        "text": "MEM_D3",
-        "x": 960,
-        "y": 150,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063673_194",
-        "netUuid": "net_1784510063673_190",
-        "text": "MEM_D3",
-        "x": 1160,
-        "y": 150,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063674_196",
-        "netUuid": "net_1784510063673_190",
-        "text": "MEM_D3",
-        "x": 270,
-        "y": 220,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063674_199",
-        "netUuid": "net_1784510063674_197",
+        "id": "lbl_1784622098562_203",
+        "netUuid": "net_1784622098560_197",
         "text": "MEM_D4",
-        "x": 970,
-        "y": 160,
+        "x": 82,
+        "y": 340,
         "global": false
       },
       {
-        "id": "lbl_1784510063675_201",
-        "netUuid": "net_1784510063674_197",
-        "text": "MEM_D4",
-        "x": 1170,
-        "y": 160,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063675_203",
-        "netUuid": "net_1784510063674_197",
-        "text": "MEM_D4",
-        "x": 280,
-        "y": 230,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063675_206",
-        "netUuid": "net_1784510063675_204",
+        "id": "lbl_1784622098562_206",
+        "netUuid": "net_1784622098562_204",
         "text": "MEM_D5",
         "x": 980,
-        "y": 170,
+        "y": 150,
         "global": false
       },
       {
-        "id": "lbl_1784510063675_208",
-        "netUuid": "net_1784510063675_204",
+        "id": "lbl_1784622098563_208",
+        "netUuid": "net_1784622098562_204",
         "text": "MEM_D5",
         "x": 1180,
+        "y": 150,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098563_210",
+        "netUuid": "net_1784622098562_204",
+        "text": "MEM_D5",
+        "x": 70,
+        "y": 350,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098563_213",
+        "netUuid": "net_1784622098563_211",
+        "text": "MEM_D6",
+        "x": 960,
+        "y": 160,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098564_215",
+        "netUuid": "net_1784622098563_211",
+        "text": "MEM_D6",
+        "x": 1160,
+        "y": 160,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098564_217",
+        "netUuid": "net_1784622098563_211",
+        "text": "MEM_D6",
+        "x": 58,
+        "y": 360,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098565_220",
+        "netUuid": "net_1784622098564_218",
+        "text": "MEM_D7",
+        "x": 970,
         "y": 170,
         "global": false
       },
       {
-        "id": "lbl_1784510063675_210",
-        "netUuid": "net_1784510063675_204",
-        "text": "MEM_D5",
-        "x": 290,
-        "y": 240,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063675_213",
-        "netUuid": "net_1784510063675_211",
-        "text": "MEM_D6",
-        "x": 960,
-        "y": 180,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063676_215",
-        "netUuid": "net_1784510063675_211",
-        "text": "MEM_D6",
-        "x": 1160,
-        "y": 180,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063676_217",
-        "netUuid": "net_1784510063675_211",
-        "text": "MEM_D6",
-        "x": 270,
-        "y": 250,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063676_220",
-        "netUuid": "net_1784510063676_218",
-        "text": "MEM_D7",
-        "x": 970,
-        "y": 190,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063676_222",
-        "netUuid": "net_1784510063676_218",
+        "id": "lbl_1784622098565_222",
+        "netUuid": "net_1784622098564_218",
         "text": "MEM_D7",
         "x": 1170,
-        "y": 190,
+        "y": 170,
         "global": false
       },
       {
-        "id": "lbl_1784510063676_224",
-        "netUuid": "net_1784510063676_218",
+        "id": "lbl_1784622098566_224",
+        "netUuid": "net_1784622098564_218",
         "text": "MEM_D7",
-        "x": 280,
-        "y": 260,
+        "x": 46,
+        "y": 370,
         "global": false
       },
       {
-        "id": "lbl_1784510063683_240",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098584_240",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 1250,
         "y": 420,
         "global": false
       },
       {
-        "id": "lbl_1784510063683_242",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 820,
-        "y": 280,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063684_244",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1020,
-        "y": 280,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063684_246",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 820,
-        "y": 160,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063684_248",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098585_242",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 960,
-        "y": 210,
+        "y": 180,
         "global": false
       },
       {
-        "id": "lbl_1784510063684_250",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 980,
-        "y": 230,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063684_252",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 960,
-        "y": 240,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063685_254",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 970,
-        "y": 250,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063685_256",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 980,
-        "y": 260,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063685_258",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 960,
-        "y": 270,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063685_260",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1030,
-        "y": 150,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063686_262",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1020,
-        "y": 160,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063686_264",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098585_244",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 1160,
-        "y": 210,
+        "y": 180,
         "global": false
       },
       {
-        "id": "lbl_1784510063686_266",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1180,
-        "y": 230,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063686_268",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1160,
-        "y": 240,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063686_270",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1170,
-        "y": 250,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063687_272",
-        "netUuid": "net_1784510063656_18",
-        "text": "GND",
-        "x": 1180,
-        "y": 260,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063687_274",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098585_246",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 1250,
         "y": 20,
         "global": false
       },
       {
-        "id": "lbl_1784510063687_276",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098586_248",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
-        "x": 970,
+        "x": 960,
+        "y": 260,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098586_250",
+        "netUuid": "net_1784622098525_32",
+        "text": "VCC",
+        "x": 1160,
         "y": 280,
         "global": false
       },
       {
-        "id": "lbl_1784510063688_278",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098586_252",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
-        "x": 1170,
-        "y": 280,
-        "global": false
-      },
-      {
-        "id": "lbl_1784510063688_280",
-        "netUuid": "net_1784510063657_28",
-        "text": "VCC",
-        "x": 830,
+        "x": 840,
         "y": 150,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_307",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098586_254",
+        "netUuid": "net_1784622098524_18",
+        "text": "GND",
+        "x": 80,
+        "y": 170,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098586_255",
+        "netUuid": "net_1784622098524_18",
+        "text": "GND",
+        "x": 150,
+        "y": 150,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098587_257",
+        "netUuid": "net_1784622098524_18",
+        "text": "GND",
+        "x": 360,
+        "y": 420,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098587_259",
+        "netUuid": "net_1784622098524_18",
+        "text": "GND",
+        "x": 130,
+        "y": 170,
+        "global": false
+      },
+      {
+        "id": "lbl_1784622098588_260",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 500,
         "y": 290,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_308",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098588_261",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 680,
         "y": 290,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_309",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098588_262",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 1250,
         "y": 390,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_310",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098588_263",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
-        "x": 60,
-        "y": 210,
+        "x": 80,
+        "y": 140,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_311",
-        "netUuid": "net_1784510063656_18",
+        "id": "lbl_1784622098589_264",
+        "netUuid": "net_1784622098524_18",
         "text": "GND",
         "x": 360,
         "y": 390,
         "global": false
       },
       {
-        "id": "lbl_1784510063697_312",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098589_265",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 40,
         "y": 20,
         "global": false
       },
       {
-        "id": "lbl_1784510063698_313",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098589_266",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 500,
         "y": 30,
         "global": false
       },
       {
-        "id": "lbl_1784510063698_314",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098590_267",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 680,
         "y": 30,
         "global": false
       },
       {
-        "id": "lbl_1784510063698_315",
-        "netUuid": "net_1784510063657_28",
+        "id": "lbl_1784622098590_268",
+        "netUuid": "net_1784622098525_32",
         "text": "VCC",
         "x": 1250,
         "y": 50,
@@ -4803,12 +3976,12 @@
     "convergence": 0.000001
   },
   "aiConfigs": [],
-  "createdAt": "2026-07-20T01:14:23.654Z",
-  "modifiedAt": "2026-07-20T01:14:23.654Z",
+  "createdAt": "2026-07-21T08:21:38.522Z",
+  "modifiedAt": "2026-07-21T08:21:38.522Z",
   "collaboration": {
     "annotations": [],
     "snapshots": [],
     "changeLog": []
   },
-  "integrityHash": "11732ad1c10a602f80f2825858ed00aea533108758836f2ab0ed2cc564b65aea"
+  "integrityHash": "b3ab74ff48ea7af780a75e1ed8db68ac4a6ae784a64e3dfdf10e6c0040b6c17f"
 }

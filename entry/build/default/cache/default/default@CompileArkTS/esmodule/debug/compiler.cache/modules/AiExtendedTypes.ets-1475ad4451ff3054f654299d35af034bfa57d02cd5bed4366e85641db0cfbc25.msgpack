@@ -18,7 +18,7 @@
     /** é€‰å‹ â†’ æ‘†æ”¾ â†’ å¸ƒçº¿ â†’ ERC å…¨é—­ç¯ */
     AiTaskType[AiTaskType["TASK_FULL_PIPELINE"] = 13] = "TASK_FULL_PIPELINE";
 })(AiTaskType || (AiTaskType = {}));
-//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚŸimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
+//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚãimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
 
 import { ErrCode } from './ErrCode';
 
@@ -99,6 +99,12 @@ export interface AiTaskResult {
   diagErrors?: DiagError[];
 
   analysisText?: string;
+
+  /** ç»“æ„åŒ–ï¼šæ˜¯å¦çœŸå®èµ°è¿‡ LLMï¼ˆç¦æ­¢ä»…é  analysisText å­ä¸²åˆ¤æ–­ï¼‰ */
+  usedLlm?: boolean;
+
+  /** ç»“æ„åŒ–ï¼šERC/å‡ ä½•ä»æœ‰é˜»æ–­ä½†å·²å°½åŠ›äº¤ä»˜ */
+  deliveredWithResidual?: boolean;
 
   progress: ProgressInfo;
 
@@ -452,6 +458,9 @@ export interface AiPipelineResult {
 
   /** å‡ ä½•é˜»æ–­é¡¹æ•°é‡ï¼ˆwire_body / pin_proximity / wire_crossï¼‰ */
   geoBlocking?: number;
+
+  /** oneshot å¸¦æ®‹ç•™äº¤ä»˜æ—¶ä¸º trueï¼›ercClean ä»é¡»åæ˜ çœŸå®é—¨ç¦ */
+  deliveredWithResidual?: boolean;
 
 }
 

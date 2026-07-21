@@ -198,12 +198,10 @@ export struct TeachingPanel {
                 void this.appService.ensureTemplatesReady()
                   .then(() => this.appService.loadLabTemplate(tpl.id))
                   .then((r) => {
-                    if (!r) {
-                      this.statusMessage =
-                        `模板插入失败: ${this.templateDir}/${tpl.id}.schsim`;
-                    } else {
+                    if (r) {
                       this.refreshTemplates();
                     }
+                    // 失败文案由 AppService.onStatusMessage 给出（含连点拒绝）
                   });
               }
             })

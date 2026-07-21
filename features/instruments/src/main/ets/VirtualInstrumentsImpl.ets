@@ -3,7 +3,7 @@
  */
 import {
   IVirtualInstruments, SignalGroup, SignalGenParams, TimedScriptCommand,
-  InstrumentSnapshotView, ComponentInstrumentBinding
+  InstrumentSnapshotView, ComponentInstrumentBinding, OscAutoScaleView
 } from './api/IVirtualInstruments';
 import { OscilloscopeEngine } from './engines/OscilloscopeEngine';
 import { LogicAnalyzerEngine } from './engines/LogicAnalyzerEngine';
@@ -180,6 +180,23 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   setTimebase(timebase: OscTimebase): ApiResult<void> {
     this.oscilloscope.setTimebase(timebase);
     return ResultHelper.ok();
+  }
+
+  clearOscilloscopeCapture(): ApiResult<void> {
+    this.oscilloscope.clearCaptureBuffers();
+    return ResultHelper.ok();
+  }
+
+  autoAdjustOscilloscope(channel: number = 0): ApiResult<OscAutoScaleView> {
+    const r = this.oscilloscope.autoAdjustToSignal(channel);
+    const view: OscAutoScaleView = {
+      changed: r.changed,
+      timebase: r.timebase,
+      voltageScale: r.voltageScale,
+      frequencyHz: r.frequencyHz,
+      vpp: r.vpp
+    };
+    return ResultHelper.ok(view);
   }
 
   setVoltageScale(channel: number, scale: OscVoltageScale): ApiResult<void> {

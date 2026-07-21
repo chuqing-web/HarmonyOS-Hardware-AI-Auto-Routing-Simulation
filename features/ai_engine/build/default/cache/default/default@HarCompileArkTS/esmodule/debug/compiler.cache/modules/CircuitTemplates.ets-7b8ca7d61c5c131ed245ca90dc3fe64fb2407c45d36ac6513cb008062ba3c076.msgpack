@@ -1,0 +1,614 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ import { LabTemplateRegistry } from './LabTemplateRegistry';
+export class CircuitTemplates {
+    /** æŒ‰å®éªŒæ¨¡æ¿ ID ç”Ÿæˆï¼ˆæ•™å­¦é¢æ¿ä¸“ç”¨ï¼‰ */
+    static generateById(templateId) {
+        return LabTemplateRegistry.generateById(templateId);
+    }
+    static generate(prompt, mcuFamily) {
+        const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
+        if (match !== null) {
+            return CircuitTemplates.generateById(match.templateId);
+        }
+        // ç¦æ­¢é™é»˜ lab_power å…œåº•ï¼ˆç”Ÿäº§è·¯å¾„ä¸å¾—è°ƒç”¨æœ¬æ–¹æ³•ï¼‰
+        return null;
+    }
+    /**
+     * v3.0: å¸¦ä»ªå™¨æ„ŸçŸ¥çš„æ¨¡æ¿åŒ¹é… â€” æ£€æµ‹ç”µè·¯ç±»å‹ + éšå«çš„ä»ªå™¨éœ€æ±‚ã€‚
+     * è¿”å›åŒ¹é…ç»“æœï¼ˆå«ä»ªå™¨åˆ—è¡¨ï¼‰ï¼Œä¾›ä¸Šå±‚åœ¨å¸ƒçº¿/å¸ƒå±€æ—¶è¿½åŠ ä»ªå™¨å¤„ç†ã€‚
+     */
+    static matchWithInstruments(prompt, mcuFamily) {
+        const lower = prompt.toLowerCase();
+        const instruments = [];
+        // å…ˆæ£€æµ‹ä»ªå™¨éœ€æ±‚ï¼ˆç‹¬ç«‹äºç”µè·¯ç±»å‹ï¼‰
+        if (lower.includes('ç”µæµè¡¨') || lower.includes('æµ‹ç”µæµ') || lower.includes('æ€»ç”µæµ')) {
+            instruments.push('AMMETER_DC');
+        }
+        // æ£€æµ‹"Nä¸ªç”µå‹è¡¨"æˆ–"Nå—ç”µå‹è¡¨"
+        const vmMatch = lower.match(/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/);
+        if (vmMatch) {
+            const count = parseInt(vmMatch[1]);
+            for (let vi = 0; vi < count; vi++) {
+                instruments.push('VOLTMETER_DC');
+            }
+        }
+        else if (lower.includes('ç”µå‹è¡¨') || lower.includes('æµ‹ç”µå‹')) {
+            // åˆ†å‹ç”µè·¯é»˜è®¤é…1å—ç”µå‹è¡¨ï¼ˆéœ€è½®æ¢æµ‹é‡ï¼‰ï¼ŒNä¸ªç”µé˜»åˆ™æ¨èNå—
+            instruments.push('VOLTMETER_DC');
+        }
+        if (lower.includes('ç¤ºæ³¢å™¨') || lower.includes('æ³¢å½¢') || lower.includes('oscilloscope')) {
+            instruments.push('OSCILLOSCOPE');
+        }
+        if (lower.includes('é€»è¾‘åˆ†æä»ª') || lower.includes('æ—¶åº')) {
+            instruments.push('LOGIC_ANALYZER');
+        }
+        // å¤åˆåœºæ™¯åŒ¹é…: ç”µè·¯ç±»å‹ + ä»ªå™¨
+        // "åˆ†å‹" æˆ– "ç”µé˜»åˆ†å‹" + ä»ªå™¨ â†’ lab_passive + instruments
+        if ((lower.includes('åˆ†å‹') || (lower.includes('ç”µé˜»') && lower.includes('ä¸²è”'))) &&
+            instruments.length > 0) {
+            return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "LED" + ç”µæµè¡¨ â†’ lab_51_led + ammeter
+        if ((lower.includes('led') || lower.includes('ç¯') || lower.includes('æµæ°´')) &&
+            instruments.some(i => i.includes('AMMETER'))) {
+            const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+                lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+                lower.includes('stc') || /\b51\b/.test(lower);
+            return {
+                templateId: is51 ? 'lab_51_led' : 'lab_digital',
+                instrumentsNeeded: instruments, isCompound: true
+            };
+        }
+        // "è¿æ”¾/æ”¾å¤§" + ç¤ºæ³¢å™¨ â†’ lab_amp + scope
+        if ((lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸')) &&
+            instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+            return { templateId: 'lab_amp', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "ç¨³å‹/ç”µæº" + ç”µå‹è¡¨ â†’ lab_power + voltmeter
+        if ((lower.includes('7805') || lower.includes('ç¨³å‹') || lower.includes('ç”µæº')) &&
+            instruments.some(i => i.includes('VOLTMETER'))) {
+            return { templateId: 'lab_power', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // "ä¼ æ„Ÿå™¨" + ä»ªå™¨ â†’ lab_sensor + instruments
+        if (lower.includes('ä¼ æ„Ÿå™¨') && instruments.length > 0) {
+            return { templateId: 'lab_sensor', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // çº¯ä»ªå™¨åœºæ™¯ï¼ˆåªæœ‰ä»ªå™¨æ²¡æœ‰å…·ä½“ç”µè·¯ï¼‰
+        if (instruments.length >= 2 && !lower.includes('ç”µé˜»') && !lower.includes('è¿æ”¾') &&
+            !lower.includes('å•ç‰‡æœº') && !lower.includes('led')) {
+            return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+        }
+        // çº¯ä»ªå™¨åœºæ™¯ fallback
+        if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+            lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+            return { templateId: 'lab_instruments', instrumentsNeeded: instruments, isCompound: false };
+        }
+        // å¼ºå…³é”®è¯åŒ¹é…ç”µè·¯ç±»å‹ï¼ˆæ— ä»ªå™¨éœ€æ±‚ï¼‰
+        const baseId = CircuitTemplates.matchStrongTemplateId(prompt, mcuFamily);
+        if (baseId !== null) {
+            return { templateId: baseId, instrumentsNeeded: instruments, isCompound: instruments.length > 0 };
+        }
+        return null;
+    }
+    /**
+     * å¼ºå…³é”®è¯åŒ¹é…å®éªŒæ¨¡æ¿ IDï¼›æ— å‘½ä¸­è¿”å› nullï¼ˆä¸å›è½ lab_powerï¼‰ã€‚
+     * AI å…¨é—­ç¯ä»…åœ¨å¼ºå‘½ä¸­æ—¶èµ°æ¨¡æ¿æ·å¾„ã€‚
+     */
+    static matchStrongTemplateId(prompt, mcuFamily) {
+        const lower = prompt.toLowerCase();
+        if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
+            return 'lab_power';
+        }
+        if (lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸') || lower.includes('åç›¸')) {
+            return 'lab_amp';
+        }
+        if (lower.includes('rc') || lower.includes('æ»¤æ³¢')) {
+            return 'lab_filter';
+        }
+        if ((lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+            lower.includes('stc') || /\b51\b/.test(lower)) &&
+            (lower.includes('æµæ°´') || lower.includes('led') || lower.includes('ç¯'))) {
+            return 'lab_51_led';
+        }
+        if (lower.includes('uart') || lower.includes('ä¸²å£')) {
+            return 'lab_uart';
+        }
+        if (lower.includes('ç”µä½å™¨') || lower.includes('æ»‘åŠ¨å˜é˜»') || lower.includes('potentiometer') ||
+            lower.includes('pot_')) {
+            return 'lab_potentiometer';
+        }
+        if (lower.includes('æ— æº') && (lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹') || lower.includes('å®éªŒ'))) {
+            return 'lab_passive';
+        }
+        if (lower.includes('555') || lower.includes('å¤šè°') || lower.includes('æ— ç¨³æ€') ||
+            lower.includes('astable')) {
+            return 'lab_analog_ic';
+        }
+        if (lower.includes('åˆ†ç«‹') || lower.includes('ä¸‰æç®¡') || lower.includes('mosfet')) {
+            return 'lab_discrete';
+        }
+        if (lower.includes('74hc') || (lower.includes('é€»è¾‘') && lower.includes('é—¨'))) {
+            return 'lab_digital';
+        }
+        if (lower.includes('å­˜å‚¨') || lower.includes('eeprom') || lower.includes('flash')) {
+            return 'lab_memory';
+        }
+        if (lower.includes('ä¼ æ„Ÿå™¨') || lower.includes('ds18') || lower.includes('éœå°”')) {
+            return 'lab_sensor';
+        }
+        if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+            lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+            return 'lab_instruments';
+        }
+        const isStm32 = (mcuFamily !== undefined && mcuFamily.includes('STM32')) || lower.includes('stm32');
+        const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+            lower.includes('8051') || (lower.includes('stc') && lower.includes('å•ç‰‡æœº'));
+        if (is51 && (lower.includes('led') || lower.includes('ç¯') || lower.includes('æœ€å°ç³»ç»Ÿ'))) {
+            return 'lab_51_led';
+        }
+        if (isStm32 && (lower.includes('æœ€å°ç³»ç»Ÿ') || lower.includes('uart') || lower.includes('ä¸²å£'))) {
+            return 'lab_uart';
+        }
+        return null;
+    }
+    static fallbackDoc(prompt) {
+        const doc = LabTemplateRegistry.generateById('lab_power');
+        if (doc !== null) {
+            doc.metadata.description = prompt;
+            return doc;
+        }
+        throw new Error('No template available');
+    }
+}
+//# sourceMappingURL=CircuitTemplates.js.mapÂ‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitTemplates.etsÔrBšªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  Ù/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚö/**
+ * ç”µè·¯æ¨¡æ¿ç”Ÿæˆå™¨ v3.0 â€” AI å…³é”®è¯åˆ†æ´¾ + å®éªŒæ¨¡æ¿ ID åˆ†æ´¾ + ä»ªå™¨æ„ŸçŸ¥å¤åˆåŒ¹é…
+ * v3.0: å¤åˆä»ªå™¨æ£€æµ‹(å¦‚"åˆ†å‹+ç”µå‹è¡¨")ã€ä»ªå™¨éœ€æ±‚æ ‡è®°ã€æ¨¡æ¿ç»„åˆç­–ç•¥
+ */
+import { SchematicDocument } from 'common';
+import { LabTemplateRegistry } from './LabTemplateRegistry';
+
+/** v3.0: æ¨¡æ¿åŒ¹é…ç»“æœ â€” æºå¸¦ä»ªå™¨éœ€æ±‚æ ‡è®° */
+export interface TemplateMatchResult {
+  templateId: string;
+  /** ç”¨æˆ·éœ€æ±‚ä¸­éšå«çš„ä»ªå™¨ç±»å‹åˆ—è¡¨ */
+  instrumentsNeeded: string[];
+  /** æ˜¯å¦ä¸ºå¤åˆåœºæ™¯ï¼ˆå¦‚"åˆ†å‹+ç”µå‹è¡¨"ï¼‰ */
+  isCompound: boolean;
+}
+
+export class CircuitTemplates {
+
+  /** æŒ‰å®éªŒæ¨¡æ¿ ID ç”Ÿæˆï¼ˆæ•™å­¦é¢æ¿ä¸“ç”¨ï¼‰ */
+  static generateById(templateId: string): SchematicDocument | null {
+    return LabTemplateRegistry.generateById(templateId);
+  }
+
+  static generate(prompt: string, mcuFamily?: string): SchematicDocument | null {
+    const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
+    if (match !== null) {
+      return CircuitTemplates.generateById(match.templateId);
+    }
+    // ç¦æ­¢é™é»˜ lab_power å…œåº•ï¼ˆç”Ÿäº§è·¯å¾„ä¸å¾—è°ƒç”¨æœ¬æ–¹æ³•ï¼‰
+    return null;
+  }
+
+  /**
+   * v3.0: å¸¦ä»ªå™¨æ„ŸçŸ¥çš„æ¨¡æ¿åŒ¹é… â€” æ£€æµ‹ç”µè·¯ç±»å‹ + éšå«çš„ä»ªå™¨éœ€æ±‚ã€‚
+   * è¿”å›åŒ¹é…ç»“æœï¼ˆå«ä»ªå™¨åˆ—è¡¨ï¼‰ï¼Œä¾›ä¸Šå±‚åœ¨å¸ƒçº¿/å¸ƒå±€æ—¶è¿½åŠ ä»ªå™¨å¤„ç†ã€‚
+   */
+  static matchWithInstruments(prompt: string, mcuFamily?: string): TemplateMatchResult | null {
+    const lower = prompt.toLowerCase();
+    const instruments: string[] = [];
+
+    // å…ˆæ£€æµ‹ä»ªå™¨éœ€æ±‚ï¼ˆç‹¬ç«‹äºç”µè·¯ç±»å‹ï¼‰
+    if (lower.includes('ç”µæµè¡¨') || lower.includes('æµ‹ç”µæµ') || lower.includes('æ€»ç”µæµ')) {
+      instruments.push('AMMETER_DC');
+    }
+    // æ£€æµ‹"Nä¸ªç”µå‹è¡¨"æˆ–"Nå—ç”µå‹è¡¨"
+    const vmMatch = lower.match(/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/);
+    if (vmMatch) {
+      const count = parseInt(vmMatch[1]);
+      for (let vi = 0; vi < count; vi++) {
+        instruments.push('VOLTMETER_DC');
+      }
+    } else if (lower.includes('ç”µå‹è¡¨') || lower.includes('æµ‹ç”µå‹')) {
+      // åˆ†å‹ç”µè·¯é»˜è®¤é…1å—ç”µå‹è¡¨ï¼ˆéœ€è½®æ¢æµ‹é‡ï¼‰ï¼ŒNä¸ªç”µé˜»åˆ™æ¨èNå—
+      instruments.push('VOLTMETER_DC');
+    }
+    if (lower.includes('ç¤ºæ³¢å™¨') || lower.includes('æ³¢å½¢') || lower.includes('oscilloscope')) {
+      instruments.push('OSCILLOSCOPE');
+    }
+    if (lower.includes('é€»è¾‘åˆ†æä»ª') || lower.includes('æ—¶åº')) {
+      instruments.push('LOGIC_ANALYZER');
+    }
+
+    // å¤åˆåœºæ™¯åŒ¹é…: ç”µè·¯ç±»å‹ + ä»ªå™¨
+    // "åˆ†å‹" æˆ– "ç”µé˜»åˆ†å‹" + ä»ªå™¨ â†’ lab_passive + instruments
+    if ((lower.includes('åˆ†å‹') || (lower.includes('ç”µé˜»') && lower.includes('ä¸²è”'))) &&
+      instruments.length > 0) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "LED" + ç”µæµè¡¨ â†’ lab_51_led + ammeter
+    if ((lower.includes('led') || lower.includes('ç¯') || lower.includes('æµæ°´')) &&
+      instruments.some(i => i.includes('AMMETER'))) {
+      const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+        lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+        lower.includes('stc') || /\b51\b/.test(lower);
+      return {
+        templateId: is51 ? 'lab_51_led' : 'lab_digital',
+        instrumentsNeeded: instruments, isCompound: true
+      };
+    }
+    // "è¿æ”¾/æ”¾å¤§" + ç¤ºæ³¢å™¨ â†’ lab_amp + scope
+    if ((lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸')) &&
+      instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+      return { templateId: 'lab_amp', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ç¨³å‹/ç”µæº" + ç”µå‹è¡¨ â†’ lab_power + voltmeter
+    if ((lower.includes('7805') || lower.includes('ç¨³å‹') || lower.includes('ç”µæº')) &&
+      instruments.some(i => i.includes('VOLTMETER'))) {
+      return { templateId: 'lab_power', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ä¼ æ„Ÿå™¨" + ä»ªå™¨ â†’ lab_sensor + instruments
+    if (lower.includes('ä¼ æ„Ÿå™¨') && instruments.length > 0) {
+      return { templateId: 'lab_sensor', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ï¼ˆåªæœ‰ä»ªå™¨æ²¡æœ‰å…·ä½“ç”µè·¯ï¼‰
+    if (instruments.length >= 2 && !lower.includes('ç”µé˜»') && !lower.includes('è¿æ”¾') &&
+      !lower.includes('å•ç‰‡æœº') && !lower.includes('led')) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ fallback
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return { templateId: 'lab_instruments', instrumentsNeeded: instruments, isCompound: false };
+    }
+
+    // å¼ºå…³é”®è¯åŒ¹é…ç”µè·¯ç±»å‹ï¼ˆæ— ä»ªå™¨éœ€æ±‚ï¼‰
+    const baseId = CircuitTemplates.matchStrongTemplateId(prompt, mcuFamily);
+    if (baseId !== null) {
+      return { templateId: baseId, instrumentsNeeded: instruments, isCompound: instruments.length > 0 };
+    }
+    return null;
+  }
+
+  /**
+   * å¼ºå…³é”®è¯åŒ¹é…å®éªŒæ¨¡æ¿ IDï¼›æ— å‘½ä¸­è¿”å› nullï¼ˆä¸å›è½ lab_powerï¼‰ã€‚
+   * AI å…¨é—­ç¯ä»…åœ¨å¼ºå‘½ä¸­æ—¶èµ°æ¨¡æ¿æ·å¾„ã€‚
+   */
+  static matchStrongTemplateId(prompt: string, mcuFamily?: string): string | null {
+    const lower = prompt.toLowerCase();
+
+    if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
+      return 'lab_power';
+    }
+    if (lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸') || lower.includes('åç›¸')) {
+      return 'lab_amp';
+    }
+    if (lower.includes('rc') || lower.includes('æ»¤æ³¢')) {
+      return 'lab_filter';
+    }
+    if ((lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+      lower.includes('stc') || /\b51\b/.test(lower)) &&
+      (lower.includes('æµæ°´') || lower.includes('led') || lower.includes('ç¯'))) {
+      return 'lab_51_led';
+    }
+    if (lower.includes('uart') || lower.includes('ä¸²å£')) {
+      return 'lab_uart';
+    }
+    if (lower.includes('ç”µä½å™¨') || lower.includes('æ»‘åŠ¨å˜é˜»') || lower.includes('potentiometer') ||
+      lower.includes('pot_')) {
+      return 'lab_potentiometer';
+    }
+    if (lower.includes('æ— æº') && (lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹') || lower.includes('å®éªŒ'))) {
+      return 'lab_passive';
+    }
+    if (lower.includes('555') || lower.includes('å¤šè°') || lower.includes('æ— ç¨³æ€') ||
+      lower.includes('astable')) {
+      return 'lab_analog_ic';
+    }
+    if (lower.includes('åˆ†ç«‹') || lower.includes('ä¸‰æç®¡') || lower.includes('mosfet')) {
+      return 'lab_discrete';
+    }
+    if (lower.includes('74hc') || (lower.includes('é€»è¾‘') && lower.includes('é—¨'))) {
+      return 'lab_digital';
+    }
+    if (lower.includes('å­˜å‚¨') || lower.includes('eeprom') || lower.includes('flash')) {
+      return 'lab_memory';
+    }
+    if (lower.includes('ä¼ æ„Ÿå™¨') || lower.includes('ds18') || lower.includes('éœå°”')) {
+      return 'lab_sensor';
+    }
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return 'lab_instruments';
+    }
+
+    const isStm32 = (mcuFamily !== undefined && mcuFamily.includes('STM32')) || lower.includes('stm32');
+    const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+      lower.includes('8051') || (lower.includes('stc') && lower.includes('å•ç‰‡æœº'));
+    if (is51 && (lower.includes('led') || lower.includes('ç¯') || lower.includes('æœ€å°ç³»ç»Ÿ'))) {
+      return 'lab_51_led';
+    }
+    if (isStm32 && (lower.includes('æœ€å°ç³»ç»Ÿ') || lower.includes('uart') || lower.includes('ä¸²å£'))) {
+      return 'lab_uart';
+    }
+    return null;
+  }
+
+  private static fallbackDoc(prompt: string): SchematicDocument {
+    const doc = LabTemplateRegistry.generateById('lab_power');
+    if (doc !== null) {
+      doc.metadata.description = prompt;
+      return doc;
+    }
+    throw new Error('No template available');
+  }
+}
+ÔrC•§version¨mappings¥names§sources®sourcesContentÜ ¢‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”   ‘”  #‘”  $‘”  %‘”  *‘”  +‘”  .‘”  1‘”  2‘”  3‘”  3‘”  5‘”  6‘”  8‘”  9‘”  :‘”  ;‘”  <‘”  ÌA‘”  ÌB‘”  ÌC‘”  ÌF‘”  ÌG‘”  ÌH‘”  ÌI‘”  ÌL‘”  ÌN‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌV‘”  ÌW‘”  ÌX‘”  ÌZ‘”  Ì[‘”  Ì\‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìm‘”  Ìn‘”  Ìo‘”  Ìr‘”  Ìu‘”  Ìv‘”  Ìw‘”  Ìy‘”  Ìz‘”  Ì{‘”  Ì}‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ìƒ‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ìˆ‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì–‘”  Ì—‘”  Ì™‘”  Ìš‘”  Ìœ‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì§‘”  Ìª‘”  Ì«‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ìµ‘”  Ì¶‘”  Ì·‘”  Ì¸‘”  Ìº‘Ù\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitTemplates.ets‘Úö/**
+ * ç”µè·¯æ¨¡æ¿ç”Ÿæˆå™¨ v3.0 â€” AI å…³é”®è¯åˆ†æ´¾ + å®éªŒæ¨¡æ¿ ID åˆ†æ´¾ + ä»ªå™¨æ„ŸçŸ¥å¤åˆåŒ¹é…
+ * v3.0: å¤åˆä»ªå™¨æ£€æµ‹(å¦‚"åˆ†å‹+ç”µå‹è¡¨")ã€ä»ªå™¨éœ€æ±‚æ ‡è®°ã€æ¨¡æ¿ç»„åˆç­–ç•¥
+ */
+import { SchematicDocument } from 'common';
+import { LabTemplateRegistry } from './LabTemplateRegistry';
+
+/** v3.0: æ¨¡æ¿åŒ¹é…ç»“æœ â€” æºå¸¦ä»ªå™¨éœ€æ±‚æ ‡è®° */
+export interface TemplateMatchResult {
+  templateId: string;
+  /** ç”¨æˆ·éœ€æ±‚ä¸­éšå«çš„ä»ªå™¨ç±»å‹åˆ—è¡¨ */
+  instrumentsNeeded: string[];
+  /** æ˜¯å¦ä¸ºå¤åˆåœºæ™¯ï¼ˆå¦‚"åˆ†å‹+ç”µå‹è¡¨"ï¼‰ */
+  isCompound: boolean;
+}
+
+export class CircuitTemplates {
+
+  /** æŒ‰å®éªŒæ¨¡æ¿ ID ç”Ÿæˆï¼ˆæ•™å­¦é¢æ¿ä¸“ç”¨ï¼‰ */
+  static generateById(templateId: string): SchematicDocument | null {
+    return LabTemplateRegistry.generateById(templateId);
+  }
+
+  static generate(prompt: string, mcuFamily?: string): SchematicDocument | null {
+    const match = CircuitTemplates.matchWithInstruments(prompt, mcuFamily);
+    if (match !== null) {
+      return CircuitTemplates.generateById(match.templateId);
+    }
+    // ç¦æ­¢é™é»˜ lab_power å…œåº•ï¼ˆç”Ÿäº§è·¯å¾„ä¸å¾—è°ƒç”¨æœ¬æ–¹æ³•ï¼‰
+    return null;
+  }
+
+  /**
+   * v3.0: å¸¦ä»ªå™¨æ„ŸçŸ¥çš„æ¨¡æ¿åŒ¹é… â€” æ£€æµ‹ç”µè·¯ç±»å‹ + éšå«çš„ä»ªå™¨éœ€æ±‚ã€‚
+   * è¿”å›åŒ¹é…ç»“æœï¼ˆå«ä»ªå™¨åˆ—è¡¨ï¼‰ï¼Œä¾›ä¸Šå±‚åœ¨å¸ƒçº¿/å¸ƒå±€æ—¶è¿½åŠ ä»ªå™¨å¤„ç†ã€‚
+   */
+  static matchWithInstruments(prompt: string, mcuFamily?: string): TemplateMatchResult | null {
+    const lower = prompt.toLowerCase();
+    const instruments: string[] = [];
+
+    // å…ˆæ£€æµ‹ä»ªå™¨éœ€æ±‚ï¼ˆç‹¬ç«‹äºç”µè·¯ç±»å‹ï¼‰
+    if (lower.includes('ç”µæµè¡¨') || lower.includes('æµ‹ç”µæµ') || lower.includes('æ€»ç”µæµ')) {
+      instruments.push('AMMETER_DC');
+    }
+    // æ£€æµ‹"Nä¸ªç”µå‹è¡¨"æˆ–"Nå—ç”µå‹è¡¨"
+    const vmMatch = lower.match(/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/);
+    if (vmMatch) {
+      const count = parseInt(vmMatch[1]);
+      for (let vi = 0; vi < count; vi++) {
+        instruments.push('VOLTMETER_DC');
+      }
+    } else if (lower.includes('ç”µå‹è¡¨') || lower.includes('æµ‹ç”µå‹')) {
+      // åˆ†å‹ç”µè·¯é»˜è®¤é…1å—ç”µå‹è¡¨ï¼ˆéœ€è½®æ¢æµ‹é‡ï¼‰ï¼ŒNä¸ªç”µé˜»åˆ™æ¨èNå—
+      instruments.push('VOLTMETER_DC');
+    }
+    if (lower.includes('ç¤ºæ³¢å™¨') || lower.includes('æ³¢å½¢') || lower.includes('oscilloscope')) {
+      instruments.push('OSCILLOSCOPE');
+    }
+    if (lower.includes('é€»è¾‘åˆ†æä»ª') || lower.includes('æ—¶åº')) {
+      instruments.push('LOGIC_ANALYZER');
+    }
+
+    // å¤åˆåœºæ™¯åŒ¹é…: ç”µè·¯ç±»å‹ + ä»ªå™¨
+    // "åˆ†å‹" æˆ– "ç”µé˜»åˆ†å‹" + ä»ªå™¨ â†’ lab_passive + instruments
+    if ((lower.includes('åˆ†å‹') || (lower.includes('ç”µé˜»') && lower.includes('ä¸²è”'))) &&
+      instruments.length > 0) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "LED" + ç”µæµè¡¨ â†’ lab_51_led + ammeter
+    if ((lower.includes('led') || lower.includes('ç¯') || lower.includes('æµæ°´')) &&
+      instruments.some(i => i.includes('AMMETER'))) {
+      const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+        lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+        lower.includes('stc') || /\b51\b/.test(lower);
+      return {
+        templateId: is51 ? 'lab_51_led' : 'lab_digital',
+        instrumentsNeeded: instruments, isCompound: true
+      };
+    }
+    // "è¿æ”¾/æ”¾å¤§" + ç¤ºæ³¢å™¨ â†’ lab_amp + scope
+    if ((lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸')) &&
+      instruments.some(i => i.includes('OSCILLOSCOPE'))) {
+      return { templateId: 'lab_amp', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ç¨³å‹/ç”µæº" + ç”µå‹è¡¨ â†’ lab_power + voltmeter
+    if ((lower.includes('7805') || lower.includes('ç¨³å‹') || lower.includes('ç”µæº')) &&
+      instruments.some(i => i.includes('VOLTMETER'))) {
+      return { templateId: 'lab_power', instrumentsNeeded: instruments, isCompound: true };
+    }
+    // "ä¼ æ„Ÿå™¨" + ä»ªå™¨ â†’ lab_sensor + instruments
+    if (lower.includes('ä¼ æ„Ÿå™¨') && instruments.length > 0) {
+      return { templateId: 'lab_sensor', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ï¼ˆåªæœ‰ä»ªå™¨æ²¡æœ‰å…·ä½“ç”µè·¯ï¼‰
+    if (instruments.length >= 2 && !lower.includes('ç”µé˜»') && !lower.includes('è¿æ”¾') &&
+      !lower.includes('å•ç‰‡æœº') && !lower.includes('led')) {
+      return { templateId: 'lab_passive', instrumentsNeeded: instruments, isCompound: true };
+    }
+
+    // çº¯ä»ªå™¨åœºæ™¯ fallback
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return { templateId: 'lab_instruments', instrumentsNeeded: instruments, isCompound: false };
+    }
+
+    // å¼ºå…³é”®è¯åŒ¹é…ç”µè·¯ç±»å‹ï¼ˆæ— ä»ªå™¨éœ€æ±‚ï¼‰
+    const baseId = CircuitTemplates.matchStrongTemplateId(prompt, mcuFamily);
+    if (baseId !== null) {
+      return { templateId: baseId, instrumentsNeeded: instruments, isCompound: instruments.length > 0 };
+    }
+    return null;
+  }
+
+  /**
+   * å¼ºå…³é”®è¯åŒ¹é…å®éªŒæ¨¡æ¿ IDï¼›æ— å‘½ä¸­è¿”å› nullï¼ˆä¸å›è½ lab_powerï¼‰ã€‚
+   * AI å…¨é—­ç¯ä»…åœ¨å¼ºå‘½ä¸­æ—¶èµ°æ¨¡æ¿æ·å¾„ã€‚
+   */
+  static matchStrongTemplateId(prompt: string, mcuFamily?: string): string | null {
+    const lower = prompt.toLowerCase();
+
+    if (lower.includes('7805') || lower.includes('ç¨³å‹')) {
+      return 'lab_power';
+    }
+    if (lower.includes('è¿æ”¾') || lower.includes('æ”¾å¤§') || lower.includes('åŒç›¸') || lower.includes('åç›¸')) {
+      return 'lab_amp';
+    }
+    if (lower.includes('rc') || lower.includes('æ»¤æ³¢')) {
+      return 'lab_filter';
+    }
+    if ((lower.includes('8051') || lower.includes('at89') || lower.includes('stc89') ||
+      lower.includes('stc') || /\b51\b/.test(lower)) &&
+      (lower.includes('æµæ°´') || lower.includes('led') || lower.includes('ç¯'))) {
+      return 'lab_51_led';
+    }
+    if (lower.includes('uart') || lower.includes('ä¸²å£')) {
+      return 'lab_uart';
+    }
+    if (lower.includes('ç”µä½å™¨') || lower.includes('æ»‘åŠ¨å˜é˜»') || lower.includes('potentiometer') ||
+      lower.includes('pot_')) {
+      return 'lab_potentiometer';
+    }
+    if (lower.includes('æ— æº') && (lower.includes('ç”µé˜»') || lower.includes('ç”µå®¹') || lower.includes('å®éªŒ'))) {
+      return 'lab_passive';
+    }
+    if (lower.includes('555') || lower.includes('å¤šè°') || lower.includes('æ— ç¨³æ€') ||
+      lower.includes('astable')) {
+      return 'lab_analog_ic';
+    }
+    if (lower.includes('åˆ†ç«‹') || lower.includes('ä¸‰æç®¡') || lower.includes('mosfet')) {
+      return 'lab_discrete';
+    }
+    if (lower.includes('74hc') || (lower.includes('é€»è¾‘') && lower.includes('é—¨'))) {
+      return 'lab_digital';
+    }
+    if (lower.includes('å­˜å‚¨') || lower.includes('eeprom') || lower.includes('flash')) {
+      return 'lab_memory';
+    }
+    if (lower.includes('ä¼ æ„Ÿå™¨') || lower.includes('ds18') || lower.includes('éœå°”')) {
+      return 'lab_sensor';
+    }
+    if (lower.includes('ä»ªå™¨') || lower.includes('ç¤ºæ³¢å™¨') || lower.includes('ä¸‡ç”¨è¡¨') ||
+      lower.includes('ç”µæµè¡¨') || lower.includes('ç”µå‹è¡¨')) {
+      return 'lab_instruments';
+    }
+
+    const isStm32 = (mcuFamily !== undefined && mcuFamily.includes('STM32')) || lower.includes('stm32');
+    const is51 = (mcuFamily !== undefined && mcuFamily.includes('8051')) ||
+      lower.includes('8051') || (lower.includes('stc') && lower.includes('å•ç‰‡æœº'));
+    if (is51 && (lower.includes('led') || lower.includes('ç¯') || lower.includes('æœ€å°ç³»ç»Ÿ'))) {
+      return 'lab_51_led';
+    }
+    if (isStm32 && (lower.includes('æœ€å°ç³»ç»Ÿ') || lower.includes('uart') || lower.includes('ä¸²å£'))) {
+      return 'lab_uart';
+    }
+    return null;
+  }
+
+  private static fallbackDoc(prompt: string): SchematicDocument {
+    const doc = LabTemplateRegistry.generateById('lab_power');
+    if (doc !== null) {
+      doc.metadata.description = prompt;
+      return doc;
+    }
+    throw new Error('No template available');
+  }
+}
+ÔrD‘µ./LabTemplateRegistryÔrE—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\LabTemplateRegistry.etsAÃªoh-resolveÂ‘ÔrF’§missing¦pluginÃ¦genAbcÂÔ  ÔrG”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrH–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration>Í"ÔrI–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌEÍ"ÔrJ”¤type¥start£end¤nameªIdentifierÌKÌ[°CircuitTemplatesÀÔrK”¤type¥start£end¤body©ClassBodyÌ\Í"•ÔrL˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌƒÌéÃÂJªIdentifierÌŠÌ–¬generateById¦methodÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ–ÌéÀÂÂÂ‘JªIdentifierÌ—Ì¡ªtemplateIdK®BlockStatementÌ£Ìé‘ÔrN”¤type¥start£end¨argument¯ReturnStatementÌ®ÌâÔrO–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌµÌáÔrP—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌµÌÕJªIdentifierÌµÌÈ³LabTemplateRegistryJªIdentifierÌÉÌÕ¬generateByIdÂÂ‘JªIdentifierÌÖÌàªtemplateIdÂL°MethodDefinitionÌïÍÃÂJªIdentifierÌöÌş¨generate¦methodM²FunctionExpressionÌşÍÀÂÂÂ’JªIdentifierÌÿÍ¦promptJªIdentifierÍÍ©mcuFamilyK®BlockStatementÍÍ“ÔrQ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍd‘ÔrR•¤type¥start£end¢id¤init²VariableDeclaratorÍ#ÍcJªIdentifierÍ#Í(¥matchO®CallExpressionÍ+ÍcP°MemberExpressionÍ+ÍPJªIdentifierÍ+Í;°CircuitTemplatesJªIdentifierÍ<ÍP´matchWithInstrumentsÂÂ’JªIdentifierÍQÍW¦promptJªIdentifierÍYÍb©mcuFamilyÂ¥constÔrS–¤type¥start£end¤testªconsequent©alternate«IfStatementÍnÍÓÔrT–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍrÍ€JªIdentifierÍrÍw¥match£!==ÔrU•¤type¥start£end¥value£raw§LiteralÍ|Í€À¤nullK®BlockStatementÍ‚ÍÓ‘N¯ReturnStatementÍ‘ÍÈO®CallExpressionÍ˜ÍÇP°MemberExpressionÍ˜ÍµJªIdentifierÍ˜Í¨°CircuitTemplatesJªIdentifierÍ©Íµ¬generateByIdÂÂ‘P°MemberExpressionÍ¶ÍÆJªIdentifierÍ¶Í»¥matchJªIdentifierÍ¼ÍÆªtemplateIdÂÂÂÀN¯ReturnStatementÍÍU§LiteralÍÍÀ¤nullL°MethodDefinitionÍˆÍÃÂJªIdentifierÍÍ£´matchWithInstruments¦methodM²FunctionExpressionÍ£ÍÀÂÂÂ’JªIdentifierÍ¤Íª¦promptJªIdentifierÍ¬Íµ©mcuFamilyK®BlockStatementÍ·ÍÜ Q³VariableDeclarationÍÂÍå‘R²VariableDeclaratorÍÈÍäJªIdentifierÍÈÍÍ¥lowerO®CallExpressionÍĞÍäP°MemberExpressionÍĞÍâJªIdentifierÍĞÍÖ¦promptJªIdentifierÍ×Íâ«toLowerCaseÂÂÂ¥constQ³VariableDeclarationÍïÍ‘R²VariableDeclaratorÍõÍJªIdentifierÍõÍ «instrumentsÔrV”¤type¥start£end¨elements¯ArrayExpressionÍÍ¥constS«IfStatementÍ-Í³T±LogicalExpressionÍ1ÍxT±LogicalExpressionÍ1Í_O®CallExpressionÍ1ÍFP°MemberExpressionÍ1Í?JªIdentifierÍ1Í6¥lowerJªIdentifierÍ7Í?¨includesÂÂ‘U§LiteralÍ@ÍE©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||O®CallExpressionÍJÍ_P°MemberExpressionÍJÍXJªIdentifierÍJÍO¥lowerJªIdentifierÍPÍX¨includesÂÂ‘U§LiteralÍYÍ^©æµ‹ç”µæµ«'æµ‹ç”µæµ'Â¢||O®CallExpressionÍcÍxP°MemberExpressionÍcÍqJªIdentifierÍcÍh¥lowerJªIdentifierÍiÍq¨includesÂÂ‘U§LiteralÍrÍw©æ€»ç”µæµ«'æ€»ç”µæµ'ÂK®BlockStatementÍzÍ³‘ÔrW”¤type¥start£endªexpression³ExpressionStatementÍ‰Í¨O®CallExpressionÍ‰Í§P°MemberExpressionÍ‰Í™JªIdentifierÍ‰Í”«instrumentsJªIdentifierÍ•Í™¤pushÂÂ‘U§LiteralÍšÍ¦ªAMMETER_DC¬'AMMETER_DC'ÂÀQ³VariableDeclarationÍÛÍ‘R²VariableDeclaratorÍáÍJªIdentifierÍáÍè§vmMatchO®CallExpressionÍëÍP°MemberExpressionÍëÍöJªIdentifierÍëÍğ¥lowerJªIdentifierÍñÍö¥matchÂÂ‘ÔrX–¤type¥start£end¥value£raw¥regex§LiteralÍ÷Í’Ù"(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨ Ù$/(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨/ÔrY’§pattern¥flagsÙ"(\d+)\s*[ä¸ªå—åªå°]\s*ç”µå‹è¡¨ Â¥constS«IfStatementÍÍƒJªIdentifierÍÍ$§vmMatchK®BlockStatementÍ&Í×’Q³VariableDeclarationÍ5ÍX‘R²VariableDeclaratorÍ;ÍWJªIdentifierÍ;Í@¥countO®CallExpressionÍCÍWJªIdentifierÍCÍK¨parseInt‘P°MemberExpressionÍLÍVJªIdentifierÍLÍS§vmMatchU§LiteralÍTÍU¡1ÃÂÂ¥constÔrZ—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍfÍÌQ³VariableDeclarationÍkÍu‘R²VariableDeclaratorÍoÍuJªIdentifierÍoÍq¢viU§LiteralÍtÍu ¡0£letT°BinaryExpressionÍwÍJªIdentifierÍwÍy¢vi¡<JªIdentifierÍ|Í¥countÔr[–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍƒÍ‡¢++ÂJªIdentifierÍƒÍ…¢viK®BlockStatementÍ‰ÍÌ‘W³ExpressionStatementÍœÍ½O®CallExpressionÍœÍ¼P°MemberExpressionÍœÍ¬JªIdentifierÍœÍ§«instrumentsJªIdentifierÍ¨Í¬¤pushÂÂ‘U§LiteralÍ­Í»¬VOLTMETER_DC®'VOLTMETER_DC'ÂS«IfStatementÍæÍƒT±LogicalExpressionÍêÍO®CallExpressionÍêÍÿP°MemberExpressionÍêÍøJªIdentifierÍêÍï¥lowerJªIdentifierÍğÍø¨includesÂÂ‘U§LiteralÍùÍş©ç”µå‹è¡¨«'ç”µå‹è¡¨'Â¢||O®CallExpressionÍÍP°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍ	Í¨includesÂÂ‘U§LiteralÍÍ©æµ‹ç”µå‹«'æµ‹ç”µå‹'ÂK®BlockStatementÍÍƒ‘W³ExpressionStatementÍWÍxO®CallExpressionÍWÍwP°MemberExpressionÍWÍgJªIdentifierÍWÍb«instrumentsJªIdentifierÍcÍg¤pushÂÂ‘U§LiteralÍhÍv¬VOLTMETER_DC®'VOLTMETER_DC'ÂÀS«IfStatementÍÍT±LogicalExpressionÍ‘ÍàT±LogicalExpressionÍ‘Í¾O®CallExpressionÍ‘Í¦P°MemberExpressionÍ‘ÍŸJªIdentifierÍ‘Í–¥lowerJªIdentifierÍ—ÍŸ¨includesÂÂ‘U§LiteralÍ Í¥©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||O®CallExpressionÍªÍ¾P°MemberExpressionÍªÍ¸JªIdentifierÍªÍ¯¥lowerJªIdentifierÍ°Í¸¨includesÂÂ‘U§LiteralÍ¹Í½¦æ³¢å½¢¨'æ³¢å½¢'Â¢||O®CallExpressionÍÂÍàP°MemberExpressionÍÂÍĞJªIdentifierÍÂÍÇ¥lowerJªIdentifierÍÈÍĞ¨includesÂÂ‘U§LiteralÍÑÍß¬oscilloscope®'oscilloscope'ÂK®BlockStatementÍâÍ‘W³ExpressionStatementÍñÍO®CallExpressionÍñÍP°MemberExpressionÍñÍJªIdentifierÍñÍü«instrumentsJªIdentifierÍıÍ¤pushÂÂ‘U§LiteralÍÍ¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂÀS«IfStatementÍ'Í™T±LogicalExpressionÍ+ÍZO®CallExpressionÍ+ÍBP°MemberExpressionÍ+Í9JªIdentifierÍ+Í0¥lowerJªIdentifierÍ1Í9¨includesÂÂ‘U§LiteralÍ:ÍA¯é€»è¾‘åˆ†æä»ª±'é€»è¾‘åˆ†æä»ª'Â¢||O®CallExpressionÍFÍZP°MemberExpressionÍFÍTJªIdentifierÍFÍK¥lowerJªIdentifierÍLÍT¨includesÂÂ‘U§LiteralÍUÍY¦æ—¶åº¨'æ—¶åº'ÂK®BlockStatementÍ\Í™‘W³ExpressionStatementÍkÍO®CallExpressionÍkÍP°MemberExpressionÍkÍ{JªIdentifierÍkÍv«instrumentsJªIdentifierÍwÍ{¤pushÂÂ‘U§LiteralÍ|ÍŒ®LOGIC_ANALYZER°'LOGIC_ANALYZER'ÂÀS«IfStatementÍüÍâT±LogicalExpressionÍ ÍoT±LogicalExpressionÍÍGO®CallExpressionÍÍP°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ¦åˆ†å‹¨'åˆ†å‹'Â¢||T±LogicalExpressionÍÍFO®CallExpressionÍÍ.P°MemberExpressionÍÍ(JªIdentifierÍÍ¥lowerJªIdentifierÍ Í(¨includesÂÂ‘U§LiteralÍ)Í-¦ç”µé˜»¨'ç”µé˜»'Â¢&&O®CallExpressionÍ2ÍFP°MemberExpressionÍ2Í@JªIdentifierÍ2Í7¥lowerJªIdentifierÍ8Í@¨includesÂÂ‘U§LiteralÍAÍE¦ä¸²è”¨'ä¸²è”'Â¢&&T°BinaryExpressionÍYÍoP°MemberExpressionÍYÍkJªIdentifierÍYÍd«instrumentsJªIdentifierÍeÍk¦lengthÂÂ¡>U§LiteralÍnÍo ¡0K®BlockStatementÍqÍâ‘N¯ReturnStatementÍ€Í×Ôr\”¤type¥start£endªproperties°ObjectExpressionÍ‡ÍÖ“Ôr]™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ‰Í¢ÂÂÂJªIdentifierÍ‰Í“ªtemplateIdU§LiteralÍ•Í¢«lab_passive­'lab_passive'¤init]¨PropertyÍ¤ÍÂÂÂÂJªIdentifierÍ¤Íµ±instrumentsNeededJªIdentifierÍ·ÍÂ«instruments¤init]¨PropertyÍÄÍÔÂÂÂJªIdentifierÍÄÍÎªisCompoundU§LiteralÍĞÍÔÃ¤true¤initÀS«IfStatementÍÍ
+OT±LogicalExpressionÍÍ¢T±LogicalExpressionÍ ÍdT±LogicalExpressionÍ ÍLO®CallExpressionÍ Í5P°MemberExpressionÍ Í.JªIdentifierÍ Í%¥lowerJªIdentifierÍ&Í.¨includesÂÂ‘U§LiteralÍ/Í4£led¥'led'Â¢||O®CallExpressionÍ9ÍLP°MemberExpressionÍ9ÍGJªIdentifierÍ9Í>¥lowerJªIdentifierÍ?ÍG¨includesÂÂ‘U§LiteralÍHÍK£ç¯¥'ç¯'Â¢||O®CallExpressionÍPÍdP°MemberExpressionÍPÍ^JªIdentifierÍPÍU¥lowerJªIdentifierÍVÍ^¨includesÂÂ‘U§LiteralÍ_Íc¦æµæ°´¨'æµæ°´'Â¢&&O®CallExpressionÍvÍ¢P°MemberExpressionÍvÍ†JªIdentifierÍvÍ«instrumentsJªIdentifierÍ‚Í†¤someÂÂ‘M·ArrowFunctionExpressionÍ‡Í¡ÀÃÂÂ‘JªIdentifierÍ‡Íˆ¡iO®CallExpressionÍŒÍ¡P°MemberExpressionÍŒÍ–JªIdentifierÍŒÍ¡iJªIdentifierÍÍ–¨includesÂÂ‘U§LiteralÍ—Í §AMMETER©'AMMETER'ÂÂK®BlockStatementÍ¤Í
+O’Q³VariableDeclarationÍ³Í	š‘R²VariableDeclaratorÍ¹Í	™JªIdentifierÍ¹Í½¤is51T±LogicalExpressionÍÀÍ	™T±LogicalExpressionÍÀÍ	T±LogicalExpressionÍÀÍ	WT±LogicalExpressionÍÀÍ	<T±LogicalExpressionÍÀÍ	"T±LogicalExpressionÍÁÍöT°BinaryExpressionÍÁÍØJªIdentifierÍÁÍÊ©mcuFamily£!==JªIdentifierÍÏÍØ©undefined¢&&O®CallExpressionÍÜÍöP°MemberExpressionÍÜÍîJªIdentifierÍÜÍå©mcuFamilyJªIdentifierÍæÍî¨includesÂÂ‘U§LiteralÍïÍõ¤8051¦'8051'Â¢||O®CallExpressionÍ	Í	"P°MemberExpressionÍ	Í	JªIdentifierÍ	Í	¥lowerJªIdentifierÍ	Í	¨includesÂÂ‘U§LiteralÍ	Í	!¤8051¦'8051'Â¢||O®CallExpressionÍ	&Í	<P°MemberExpressionÍ	&Í	4JªIdentifierÍ	&Í	+¥lowerJªIdentifierÍ	,Í	4¨includesÂÂ‘U§LiteralÍ	5Í	;¤at89¦'at89'Â¢||O®CallExpressionÍ	@Í	WP°MemberExpressionÍ	@Í	NJªIdentifierÍ	@Í	E¥lowerJªIdentifierÍ	FÍ	N¨includesÂÂ‘U§LiteralÍ	OÍ	V¥stc89§'stc89'Â¢||O®CallExpressionÍ	lÍ	P°MemberExpressionÍ	lÍ	zJªIdentifierÍ	lÍ	q¥lowerJªIdentifierÍ	rÍ	z¨includesÂÂ‘U§LiteralÍ	{Í	€£stc¥'stc'Â¢||O®CallExpressionÍ	…Í	™P°MemberExpressionÍ	…Í	’X§LiteralÍ	…Í	’¦\b51\b ¨/\b51\b/Y¦\b51\b JªIdentifierÍ	Í	’¤testÂÂ‘JªIdentifierÍ	“Í	˜¥lowerÂ¥constN¯ReturnStatementÍ	¨Í
+D\°ObjectExpressionÍ	¯Í
+C“]¨PropertyÍ	ÂÍ	ñÂÂÂJªIdentifierÍ	ÂÍ	ÌªtemplateIdSµConditionalExpressionÍ	ÎÍ	ñJªIdentifierÍ	ÎÍ	Ò¤is51U§LiteralÍ	ÕÍ	áªlab_51_led¬'lab_51_led'U§LiteralÍ	äÍ	ñ«lab_digital­'lab_digital'¤init]¨PropertyÍ
+Í
+"ÂÂÂJªIdentifierÍ
+Í
+±instrumentsNeededJªIdentifierÍ
+Í
+"«instruments¤init]¨PropertyÍ
+$Í
+4ÂÂÂJªIdentifierÍ
+$Í
+.ªisCompoundU§LiteralÍ
+0Í
+4Ã¤true¤initÀS«IfStatementÍ
+…Í€T±LogicalExpressionÍ
+‰ÍT±LogicalExpressionÍ
+ŠÍ
+ÎT±LogicalExpressionÍ
+ŠÍ
+¶O®CallExpressionÍ
+ŠÍ
+P°MemberExpressionÍ
+ŠÍ
+˜JªIdentifierÍ
+ŠÍ
+¥lowerJªIdentifierÍ
+Í
+˜¨includesÂÂ‘U§LiteralÍ
+™Í
+¦è¿æ”¾¨'è¿æ”¾'Â¢||O®CallExpressionÍ
+¢Í
+¶P°MemberExpressionÍ
+¢Í
+°JªIdentifierÍ
+¢Í
+§¥lowerJªIdentifierÍ
+¨Í
+°¨includesÂÂ‘U§LiteralÍ
+±Í
+µ¦æ”¾å¤§¨'æ”¾å¤§'Â¢||O®CallExpressionÍ
+ºÍ
+ÎP°MemberExpressionÍ
+ºÍ
+ÈJªIdentifierÍ
+ºÍ
+¿¥lowerJªIdentifierÍ
+ÀÍ
+È¨includesÂÂ‘U§LiteralÍ
+ÉÍ
+Í¦åŒç›¸¨'åŒç›¸'Â¢&&O®CallExpressionÍ
+àÍP°MemberExpressionÍ
+àÍ
+ğJªIdentifierÍ
+àÍ
+ë«instrumentsJªIdentifierÍ
+ìÍ
+ğ¤someÂÂ‘M·ArrowFunctionExpressionÍ
+ñÍÀÃÂÂ‘JªIdentifierÍ
+ñÍ
+ò¡iO®CallExpressionÍ
+öÍP°MemberExpressionÍ
+öÍ JªIdentifierÍ
+öÍ
+÷¡iJªIdentifierÍ
+øÍ ¨includesÂÂ‘U§LiteralÍÍ¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂÂK®BlockStatementÍÍ€‘N¯ReturnStatementÍ"Íu\°ObjectExpressionÍ)Ít“]¨PropertyÍ+Í@ÂÂÂJªIdentifierÍ+Í5ªtemplateIdU§LiteralÍ7Í@§lab_amp©'lab_amp'¤init]¨PropertyÍBÍ`ÂÂÂJªIdentifierÍBÍS±instrumentsNeededJªIdentifierÍUÍ`«instruments¤init]¨PropertyÍbÍrÂÂÂJªIdentifierÍbÍlªisCompoundU§LiteralÍnÍrÃ¤true¤initÀS«IfStatementÍ¼Í¸T±LogicalExpressionÍÀÍGT±LogicalExpressionÍÁÍT±LogicalExpressionÍÁÍïO®CallExpressionÍÁÍ×P°MemberExpressionÍÁÍÏJªIdentifierÍÁÍÆ¥lowerJªIdentifierÍÇÍÏ¨includesÂÂ‘U§LiteralÍĞÍÖ¤7805¦'7805'Â¢||O®CallExpressionÍÛÍïP°MemberExpressionÍÛÍéJªIdentifierÍÛÍà¥lowerJªIdentifierÍáÍé¨includesÂÂ‘U§LiteralÍêÍî¦ç¨³å‹¨'ç¨³å‹'Â¢||O®CallExpressionÍóÍP°MemberExpressionÍóÍJªIdentifierÍóÍø¥lowerJªIdentifierÍùÍ¨includesÂÂ‘U§LiteralÍÍ¦ç”µæº¨'ç”µæº'Â¢&&O®CallExpressionÍÍGP°MemberExpressionÍÍ)JªIdentifierÍÍ$«instrumentsJªIdentifierÍ%Í)¤someÂÂ‘M·ArrowFunctionExpressionÍ*ÍFÀÃÂÂ‘JªIdentifierÍ*Í+¡iO®CallExpressionÍ/ÍFP°MemberExpressionÍ/Í9JªIdentifierÍ/Í0¡iJªIdentifierÍ1Í9¨includesÂÂ‘U§LiteralÍ:ÍE©VOLTMETER«'VOLTMETER'ÂÂK®BlockStatementÍIÍ¸‘N¯ReturnStatementÍXÍ­\°ObjectExpressionÍ_Í¬“]¨PropertyÍaÍxÂÂÂJªIdentifierÍaÍkªtemplateIdU§LiteralÍmÍx©lab_power«'lab_power'¤init]¨PropertyÍzÍ˜ÂÂÂJªIdentifierÍzÍ‹±instrumentsNeededJªIdentifierÍÍ˜«instruments¤init]¨PropertyÍšÍªÂÂÂJªIdentifierÍšÍ¤ªisCompoundU§LiteralÍ¦ÍªÃ¤true¤initÀS«IfStatementÍôÍ™T±LogicalExpressionÍøÍ'O®CallExpressionÍøÍP°MemberExpressionÍøÍJªIdentifierÍøÍı¥lowerJªIdentifierÍşÍ¨includesÂÂ‘U§LiteralÍÍ©ä¼ æ„Ÿå™¨«'ä¼ æ„Ÿå™¨'Â¢&&T°BinaryExpressionÍÍ'P°MemberExpressionÍÍ#JªIdentifierÍÍ«instrumentsJªIdentifierÍÍ#¦lengthÂÂ¡>U§LiteralÍ&Í' ¡0K®BlockStatementÍ)Í™‘N¯ReturnStatementÍ8Í\°ObjectExpressionÍ?Í“]¨PropertyÍAÍYÂÂÂJªIdentifierÍAÍKªtemplateIdU§LiteralÍMÍYªlab_sensor¬'lab_sensor'¤init]¨PropertyÍ[ÍyÂÂÂJªIdentifierÍ[Íl±instrumentsNeededJªIdentifierÍnÍy«instruments¤init]¨PropertyÍ{Í‹ÂÂÂJªIdentifierÍ{Í…ªisCompoundU§LiteralÍ‡Í‹Ã¤true¤initÀS«IfStatementÍÁÍÂT±LogicalExpressionÍÅÍOT±LogicalExpressionÍÅÍ5T±LogicalExpressionÍÅÍT±LogicalExpressionÍÅÍõT°BinaryExpressionÍÅÍÜP°MemberExpressionÍÅÍ×JªIdentifierÍÅÍĞ«instrumentsJªIdentifierÍÑÍ×¦lengthÂÂ¢>=U§LiteralÍÛÍÜ¡2¢&&[¯UnaryExpressionÍàÍõ¡!ÃO®CallExpressionÍáÍõP°MemberExpressionÍáÍïJªIdentifierÍáÍæ¥lowerJªIdentifierÍçÍï¨includesÂÂ‘U§LiteralÍğÍô¦ç”µé˜»¨'ç”µé˜»'Â¢&&[¯UnaryExpressionÍùÍ¡!ÃO®CallExpressionÍúÍP°MemberExpressionÍúÍJªIdentifierÍúÍÿ¥lowerJªIdentifierÍ Í¨includesÂÂ‘U§LiteralÍ	Í¦è¿æ”¾¨'è¿æ”¾'Â¢&&[¯UnaryExpressionÍÍ5¡!ÃO®CallExpressionÍ Í5P°MemberExpressionÍ Í.JªIdentifierÍ Í%¥lowerJªIdentifierÍ&Í.¨includesÂÂ‘U§LiteralÍ/Í4©å•ç‰‡æœº«'å•ç‰‡æœº'Â¢&&[¯UnaryExpressionÍ9ÍO¡!ÃO®CallExpressionÍ:ÍOP°MemberExpressionÍ:ÍHJªIdentifierÍ:Í?¥lowerJªIdentifierÍ@ÍH¨includesÂÂ‘U§LiteralÍIÍN£led¥'led'ÂK®BlockStatementÍQÍÂ‘N¯ReturnStatementÍ`Í·\°ObjectExpressionÍgÍ¶“]¨PropertyÍiÍ‚ÂÂÂJªIdentifierÍiÍsªtemplateIdU§LiteralÍuÍ‚«lab_passive­'lab_passive'¤init]¨PropertyÍ„Í¢ÂÂÂJªIdentifierÍ„Í•±instrumentsNeededJªIdentifierÍ—Í¢«instruments¤init]¨PropertyÍ¤Í´ÂÂÂJªIdentifierÍ¤Í®ªisCompoundU§LiteralÍ°Í´Ã¤true¤initÀS«IfStatementÍçÍèT±LogicalExpressionÍëÍpT±LogicalExpressionÍëÍWT±LogicalExpressionÍëÍ1T±LogicalExpressionÍëÍO®CallExpressionÍëÍÿP°MemberExpressionÍëÍùJªIdentifierÍëÍğ¥lowerJªIdentifierÍñÍù¨includesÂÂ‘U§LiteralÍúÍş¦ä»ªå™¨¨'ä»ªå™¨'Â¢||O®CallExpressionÍÍP°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍ	Í¨includesÂÂ‘U§LiteralÍÍ©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||O®CallExpressionÍÍ1P°MemberExpressionÍÍ*JªIdentifierÍÍ!¥lowerJªIdentifierÍ"Í*¨includesÂÂ‘U§LiteralÍ+Í0©ä¸‡ç”¨è¡¨«'ä¸‡ç”¨è¡¨'Â¢||O®CallExpressionÍBÍWP°MemberExpressionÍBÍPJªIdentifierÍBÍG¥lowerJªIdentifierÍHÍP¨includesÂÂ‘U§LiteralÍQÍV©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||O®CallExpressionÍ[ÍpP°MemberExpressionÍ[ÍiJªIdentifierÍ[Í`¥lowerJªIdentifierÍaÍi¨includesÂÂ‘U§LiteralÍjÍo©ç”µå‹è¡¨«'ç”µå‹è¡¨'ÂK®BlockStatementÍrÍè‘N¯ReturnStatementÍÍİ\°ObjectExpressionÍˆÍÜ“]¨PropertyÍŠÍ§ÂÂÂJªIdentifierÍŠÍ”ªtemplateIdU§LiteralÍ–Í§¯lab_instruments±'lab_instruments'¤init]¨PropertyÍ©ÍÇÂÂÂJªIdentifierÍ©Íº±instrumentsNeededJªIdentifierÍ¼ÍÇ«instruments¤init]¨PropertyÍÉÍÚÂÂÂJªIdentifierÍÉÍÓªisCompoundU§LiteralÍÕÍÚÂ¥false¤initÀQ³VariableDeclarationÍÍY‘R²VariableDeclaratorÍÍXJªIdentifierÍÍ¦baseIdO®CallExpressionÍÍXP°MemberExpressionÍÍEJªIdentifierÍÍ/°CircuitTemplatesJªIdentifierÍ0ÍEµmatchStrongTemplateIdÂÂ’JªIdentifierÍFÍL¦promptJªIdentifierÍNÍW©mcuFamilyÂ¥constS«IfStatementÍcÍôT°BinaryExpressionÍgÍvJªIdentifierÍgÍm¦baseId£!==U§LiteralÍrÍvÀ¤nullK®BlockStatementÍxÍô‘N¯ReturnStatementÍ‡Íé\°ObjectExpressionÍÍè“]¨PropertyÍÍ¢ÂÂÂJªIdentifierÍÍšªtemplateIdJªIdentifierÍœÍ¢¦baseId¤init]¨PropertyÍ¤ÍÂÂÂÂJªIdentifierÍ¤Íµ±instrumentsNeededJªIdentifierÍ·ÍÂ«instruments¤init]¨PropertyÍÄÍæÂÂÂJªIdentifierÍÄÍÎªisCompoundT°BinaryExpressionÍĞÍæP°MemberExpressionÍĞÍâJªIdentifierÍĞÍÛ«instrumentsJªIdentifierÍÜÍâ¦lengthÂÂ¡>U§LiteralÍåÍæ ¡0¤initÀN¯ReturnStatementÍşÍ
+U§LiteralÍÍ	À¤nullL°MethodDefinitionÍuÍÃÂJªIdentifierÍ|Í‘µmatchStrongTemplateId¦methodM²FunctionExpressionÍ‘ÍÀÂÂÂ’JªIdentifierÍ’Í˜¦promptJªIdentifierÍšÍ£©mcuFamilyK®BlockStatementÍ¥ÍÜ Q³VariableDeclarationÍ°ÍÓ‘R²VariableDeclaratorÍ¶ÍÒJªIdentifierÍ¶Í»¥lowerO®CallExpressionÍ¾ÍÒP°MemberExpressionÍ¾ÍĞJªIdentifierÍ¾ÍÄ¦promptJªIdentifierÍÅÍĞ«toLowerCaseÂÂÂ¥constS«IfStatementÍİÍ>T±LogicalExpressionÍáÍO®CallExpressionÍáÍ÷P°MemberExpressionÍáÍïJªIdentifierÍáÍæ¥lowerJªIdentifierÍçÍï¨includesÂÂ‘U§LiteralÍğÍö¤7805¦'7805'Â¢||O®CallExpressionÍûÍP°MemberExpressionÍûÍ	JªIdentifierÍûÍ ¥lowerJªIdentifierÍÍ	¨includesÂÂ‘U§LiteralÍ
+Í¦ç¨³å‹¨'ç¨³å‹'ÂK®BlockStatementÍÍ>‘N¯ReturnStatementÍ Í3U§LiteralÍ'Í2©lab_power«'lab_power'ÀS«IfStatementÍHÍÕT±LogicalExpressionÍLÍ¨T±LogicalExpressionÍLÍT±LogicalExpressionÍLÍxO®CallExpressionÍLÍ`P°MemberExpressionÍLÍZJªIdentifierÍLÍQ¥lowerJªIdentifierÍRÍZ¨includesÂÂ‘U§LiteralÍ[Í_¦è¿æ”¾¨'è¿æ”¾'Â¢||O®CallExpressionÍdÍxP°MemberExpressionÍdÍrJªIdentifierÍdÍi¥lowerJªIdentifierÍjÍr¨includesÂÂ‘U§LiteralÍsÍw¦æ”¾å¤§¨'æ”¾å¤§'Â¢||O®CallExpressionÍ|ÍP°MemberExpressionÍ|ÍŠJªIdentifierÍ|Í¥lowerJªIdentifierÍ‚ÍŠ¨includesÂÂ‘U§LiteralÍ‹Í¦åŒç›¸¨'åŒç›¸'Â¢||O®CallExpressionÍ”Í¨P°MemberExpressionÍ”Í¢JªIdentifierÍ”Í™¥lowerJªIdentifierÍšÍ¢¨includesÂÂ‘U§LiteralÍ£Í§¦åç›¸¨'åç›¸'ÂK®BlockStatementÍªÍÕ‘N¯ReturnStatementÍ¹ÍÊU§LiteralÍÀÍÉ§lab_amp©'lab_amp'ÀS«IfStatementÍßÍ?T±LogicalExpressionÍãÍO®CallExpressionÍãÍ÷P°MemberExpressionÍãÍñJªIdentifierÍãÍè¥lowerJªIdentifierÍéÍñ¨includesÂÂ‘U§LiteralÍòÍö¢rc¤'rc'Â¢||O®CallExpressionÍûÍP°MemberExpressionÍûÍ	JªIdentifierÍûÍ ¥lowerJªIdentifierÍÍ	¨includesÂÂ‘U§LiteralÍ
+Í¦æ»¤æ³¢¨'æ»¤æ³¢'ÂK®BlockStatementÍÍ?‘N¯ReturnStatementÍ Í4U§LiteralÍ'Í3ªlab_filter¬'lab_filter'ÀS«IfStatementÍIÍ_T±LogicalExpressionÍMÍ/T±LogicalExpressionÍNÍ×T±LogicalExpressionÍNÍ¿T±LogicalExpressionÍNÍ™T±LogicalExpressionÍNÍ~O®CallExpressionÍNÍdP°MemberExpressionÍNÍ\JªIdentifierÍNÍS¥lowerJªIdentifierÍTÍ\¨includesÂÂ‘U§LiteralÍ]Íc¤8051¦'8051'Â¢||O®CallExpressionÍhÍ~P°MemberExpressionÍhÍvJªIdentifierÍhÍm¥lowerJªIdentifierÍnÍv¨includesÂÂ‘U§LiteralÍwÍ}¤at89¦'at89'Â¢||O®CallExpressionÍ‚Í™P°MemberExpressionÍ‚ÍJªIdentifierÍ‚Í‡¥lowerJªIdentifierÍˆÍ¨includesÂÂ‘U§LiteralÍ‘Í˜¥stc89§'stc89'Â¢||O®CallExpressionÍªÍ¿P°MemberExpressionÍªÍ¸JªIdentifierÍªÍ¯¥lowerJªIdentifierÍ°Í¸¨includesÂÂ‘U§LiteralÍ¹Í¾£stc¥'stc'Â¢||O®CallExpressionÍÃÍ×P°MemberExpressionÍÃÍĞX§LiteralÍÃÍË’¦\b51\b ¨/\b51\b/Y¦\b51\b JªIdentifierÍÌÍĞ¤testÂÂ‘JªIdentifierÍÑÍÖ¥lowerÂ¢&&T±LogicalExpressionÍêÍ.T±LogicalExpressionÍêÍO®CallExpressionÍêÍşP°MemberExpressionÍêÍøJªIdentifierÍêÍï¥lowerJªIdentifierÍğÍø¨includesÂÂ‘U§LiteralÍùÍı¦æµæ°´¨'æµæ°´'Â¢||O®CallExpressionÍÍP°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ£led¥'led'Â¢||O®CallExpressionÍÍ.P°MemberExpressionÍÍ)JªIdentifierÍÍ ¥lowerJªIdentifierÍ!Í)¨includesÂÂ‘U§LiteralÍ*Í-£ç¯¥'ç¯'ÂK®BlockStatementÍ1Í_‘N¯ReturnStatementÍ@ÍTU§LiteralÍGÍSªlab_51_led¬'lab_51_led'ÀS«IfStatementÍiÍÉT±LogicalExpressionÍmÍ›O®CallExpressionÍmÍƒP°MemberExpressionÍmÍ{JªIdentifierÍmÍr¥lowerJªIdentifierÍsÍ{¨includesÂÂ‘U§LiteralÍ|Í‚¤uart¦'uart'Â¢||O®CallExpressionÍ‡Í›P°MemberExpressionÍ‡Í•JªIdentifierÍ‡ÍŒ¥lowerJªIdentifierÍÍ•¨includesÂÂ‘U§LiteralÍ–Íš¦ä¸²å£¨'ä¸²å£'ÂK®BlockStatementÍÍÉ‘N¯ReturnStatementÍ¬Í¾U§LiteralÍ³Í½¨lab_uartª'lab_uart'ÀS«IfStatementÍÓÍ‡T±LogicalExpressionÍ×ÍPT±LogicalExpressionÍ×Í)T±LogicalExpressionÍ×ÍO®CallExpressionÍ×ÍìP°MemberExpressionÍ×ÍåJªIdentifierÍ×ÍÜ¥lowerJªIdentifierÍİÍå¨includesÂÂ‘U§LiteralÍæÍë©ç”µä½å™¨«'ç”µä½å™¨'Â¢||O®CallExpressionÍğÍP°MemberExpressionÍğÍşJªIdentifierÍğÍõ¥lowerJªIdentifierÍöÍş¨includesÂÂ‘U§LiteralÍÿÍ¬æ»‘åŠ¨å˜é˜»®'æ»‘åŠ¨å˜é˜»'Â¢||O®CallExpressionÍ
+Í)P°MemberExpressionÍ
+ÍJªIdentifierÍ
+Í¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ(­potentiometer¯'potentiometer'Â¢||O®CallExpressionÍ:ÍPP°MemberExpressionÍ:ÍHJªIdentifierÍ:Í?¥lowerJªIdentifierÍ@ÍH¨includesÂÂ‘U§LiteralÍIÍO¤pot_¦'pot_'ÂK®BlockStatementÍRÍ‡‘N¯ReturnStatementÍaÍ|U§LiteralÍhÍ{±lab_potentiometer³'lab_potentiometer'ÀS«IfStatementÍ‘Í$T±LogicalExpressionÍ•ÍóO®CallExpressionÍ•Í©P°MemberExpressionÍ•Í£JªIdentifierÍ•Íš¥lowerJªIdentifierÍ›Í£¨includesÂÂ‘U§LiteralÍ¤Í¨¦æ— æº¨'æ— æº'Â¢&&T±LogicalExpressionÍ®ÍòT±LogicalExpressionÍ®ÍÚO®CallExpressionÍ®ÍÂP°MemberExpressionÍ®Í¼JªIdentifierÍ®Í³¥lowerJªIdentifierÍ´Í¼¨includesÂÂ‘U§LiteralÍ½ÍÁ¦ç”µé˜»¨'ç”µé˜»'Â¢||O®CallExpressionÍÆÍÚP°MemberExpressionÍÆÍÔJªIdentifierÍÆÍË¥lowerJªIdentifierÍÌÍÔ¨includesÂÂ‘U§LiteralÍÕÍÙ¦ç”µå®¹¨'ç”µå®¹'Â¢||O®CallExpressionÍŞÍòP°MemberExpressionÍŞÍìJªIdentifierÍŞÍã¥lowerJªIdentifierÍäÍì¨includesÂÂ‘U§LiteralÍíÍñ¦å®éªŒ¨'å®éªŒ'ÂK®BlockStatementÍõÍ$‘N¯ReturnStatementÍÍU§LiteralÍÍ«lab_passive­'lab_passive'ÀS«IfStatementÍ.ÍÕT±LogicalExpressionÍ2Í¢T±LogicalExpressionÍ2ÍxT±LogicalExpressionÍ2Í_O®CallExpressionÍ2ÍGP°MemberExpressionÍ2Í@JªIdentifierÍ2Í7¥lowerJªIdentifierÍ8Í@¨includesÂÂ‘U§LiteralÍAÍF£555¥'555'Â¢||O®CallExpressionÍKÍ_P°MemberExpressionÍKÍYJªIdentifierÍKÍP¥lowerJªIdentifierÍQÍY¨includesÂÂ‘U§LiteralÍZÍ^¦å¤šè°¨'å¤šè°'Â¢||O®CallExpressionÍcÍxP°MemberExpressionÍcÍqJªIdentifierÍcÍh¥lowerJªIdentifierÍiÍq¨includesÂÂ‘U§LiteralÍrÍw©æ— ç¨³æ€«'æ— ç¨³æ€'Â¢||O®CallExpressionÍ‰Í¢P°MemberExpressionÍ‰Í—JªIdentifierÍ‰Í¥lowerJªIdentifierÍÍ—¨includesÂÂ‘U§LiteralÍ˜Í¡§astable©'astable'ÂK®BlockStatementÍ¤ÍÕ‘N¯ReturnStatementÍ³ÍÊU§LiteralÍºÍÉ­lab_analog_ic¯'lab_analog_ic'ÀS«IfStatementÍßÍ^T±LogicalExpressionÍãÍ,T±LogicalExpressionÍãÍO®CallExpressionÍãÍ÷P°MemberExpressionÍãÍñJªIdentifierÍãÍè¥lowerJªIdentifierÍéÍñ¨includesÂÂ‘U§LiteralÍòÍö¦åˆ†ç«‹¨'åˆ†ç«‹'Â¢||O®CallExpressionÍûÍP°MemberExpressionÍûÍ	JªIdentifierÍûÍ ¥lowerJªIdentifierÍÍ	¨includesÂÂ‘U§LiteralÍ
+Í©ä¸‰æç®¡«'ä¸‰æç®¡'Â¢||O®CallExpressionÍÍ,P°MemberExpressionÍÍ"JªIdentifierÍÍ¥lowerJªIdentifierÍÍ"¨includesÂÂ‘U§LiteralÍ#Í+¦mosfet¨'mosfet'ÂK®BlockStatementÍ.Í^‘N¯ReturnStatementÍ=ÍSU§LiteralÍDÍR¬lab_discrete®'lab_discrete'ÀS«IfStatementÍhÍäT±LogicalExpressionÍlÍ³O®CallExpressionÍlÍ‚P°MemberExpressionÍlÍzJªIdentifierÍlÍq¥lowerJªIdentifierÍrÍz¨includesÂÂ‘U§LiteralÍ{Í¤74hc¦'74hc'Â¢||T±LogicalExpressionÍ‡Í²O®CallExpressionÍ‡Í›P°MemberExpressionÍ‡Í•JªIdentifierÍ‡ÍŒ¥lowerJªIdentifierÍÍ•¨includesÂÂ‘U§LiteralÍ–Íš¦é€»è¾‘¨'é€»è¾‘'Â¢&&O®CallExpressionÍŸÍ²P°MemberExpressionÍŸÍ­JªIdentifierÍŸÍ¤¥lowerJªIdentifierÍ¥Í­¨includesÂÂ‘U§LiteralÍ®Í±£é—¨¥'é—¨'ÂK®BlockStatementÍµÍä‘N¯ReturnStatementÍÄÍÙU§LiteralÍËÍØ«lab_digital­'lab_digital'ÀS«IfStatementÍîÍmT±LogicalExpressionÍòÍ=T±LogicalExpressionÍòÍ"O®CallExpressionÍòÍP°MemberExpressionÍòÍ JªIdentifierÍòÍ÷¥lowerJªIdentifierÍøÍ ¨includesÂÂ‘U§LiteralÍÍ¦å­˜å‚¨¨'å­˜å‚¨'Â¢||O®CallExpressionÍ
+Í"P°MemberExpressionÍ
+ÍJªIdentifierÍ
+Í¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ!¦eeprom¨'eeprom'Â¢||O®CallExpressionÍ&Í=P°MemberExpressionÍ&Í4JªIdentifierÍ&Í+¥lowerJªIdentifierÍ,Í4¨includesÂÂ‘U§LiteralÍ5Í<¥flash§'flash'ÂK®BlockStatementÍ?Ím‘N¯ReturnStatementÍNÍbU§LiteralÍUÍaªlab_memory¬'lab_memory'ÀS«IfStatementÍwÍòT±LogicalExpressionÍ{ÍÂT±LogicalExpressionÍ{ÍªO®CallExpressionÍ{ÍP°MemberExpressionÍ{Í‰JªIdentifierÍ{Í€¥lowerJªIdentifierÍÍ‰¨includesÂÂ‘U§LiteralÍŠÍ©ä¼ æ„Ÿå™¨«'ä¼ æ„Ÿå™¨'Â¢||O®CallExpressionÍ”ÍªP°MemberExpressionÍ”Í¢JªIdentifierÍ”Í™¥lowerJªIdentifierÍšÍ¢¨includesÂÂ‘U§LiteralÍ£Í©¤ds18¦'ds18'Â¢||O®CallExpressionÍ®ÍÂP°MemberExpressionÍ®Í¼JªIdentifierÍ®Í³¥lowerJªIdentifierÍ´Í¼¨includesÂÂ‘U§LiteralÍ½ÍÁ¦éœå°”¨'éœå°”'ÂK®BlockStatementÍÄÍò‘N¯ReturnStatementÍÓÍçU§LiteralÍÚÍæªlab_sensor¬'lab_sensor'ÀS«IfStatementÍüÍºT±LogicalExpressionÍ Í…T±LogicalExpressionÍ ÍlT±LogicalExpressionÍ ÍFT±LogicalExpressionÍ Í-O®CallExpressionÍ ÍP°MemberExpressionÍ ÍJªIdentifierÍ Í¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ¦ä»ªå™¨¨'ä»ªå™¨'Â¢||O®CallExpressionÍÍ-P°MemberExpressionÍÍ&JªIdentifierÍÍ¥lowerJªIdentifierÍÍ&¨includesÂÂ‘U§LiteralÍ'Í,©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢||O®CallExpressionÍ1ÍFP°MemberExpressionÍ1Í?JªIdentifierÍ1Í6¥lowerJªIdentifierÍ7Í?¨includesÂÂ‘U§LiteralÍ@ÍE©ä¸‡ç”¨è¡¨«'ä¸‡ç”¨è¡¨'Â¢||O®CallExpressionÍWÍlP°MemberExpressionÍWÍeJªIdentifierÍWÍ\¥lowerJªIdentifierÍ]Íe¨includesÂÂ‘U§LiteralÍfÍk©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢||O®CallExpressionÍpÍ…P°MemberExpressionÍpÍ~JªIdentifierÍpÍu¥lowerJªIdentifierÍvÍ~¨includesÂÂ‘U§LiteralÍÍ„©ç”µå‹è¡¨«'ç”µå‹è¡¨'ÂK®BlockStatementÍ‡Íº‘N¯ReturnStatementÍ–Í¯U§LiteralÍÍ®¯lab_instruments±'lab_instruments'ÀQ³VariableDeclarationÍÄÍ(‘R²VariableDeclaratorÍÊÍ'JªIdentifierÍÊÍÑ§isStm32T±LogicalExpressionÍÔÍ'T±LogicalExpressionÍÕÍT°BinaryExpressionÍÕÍìJªIdentifierÍÕÍŞ©mcuFamily£!==JªIdentifierÍãÍì©undefined¢&&O®CallExpressionÍğÍP°MemberExpressionÍğÍJªIdentifierÍğÍù©mcuFamilyJªIdentifierÍúÍ¨includesÂÂ‘U§LiteralÍÍ
+¥STM32§'STM32'Â¢||O®CallExpressionÍÍ'P°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ&¥stm32§'stm32'Â¥constQ³VariableDeclarationÍ2ÍÒ‘R²VariableDeclaratorÍ8ÍÑJªIdentifierÍ8Í<¤is51T±LogicalExpressionÍ?ÍÑT±LogicalExpressionÍ?ÍT±LogicalExpressionÍ@ÍuT°BinaryExpressionÍ@ÍWJªIdentifierÍ@ÍI©mcuFamily£!==JªIdentifierÍNÍW©undefined¢&&O®CallExpressionÍ[ÍuP°MemberExpressionÍ[ÍmJªIdentifierÍ[Íd©mcuFamilyJªIdentifierÍeÍm¨includesÂÂ‘U§LiteralÍnÍt¤8051¦'8051'Â¢||O®CallExpressionÍ‡ÍP°MemberExpressionÍ‡Í•JªIdentifierÍ‡ÍŒ¥lowerJªIdentifierÍÍ•¨includesÂÂ‘U§LiteralÍ–Íœ¤8051¦'8051'Â¢||T±LogicalExpressionÍ¢ÍĞO®CallExpressionÍ¢Í·P°MemberExpressionÍ¢Í°JªIdentifierÍ¢Í§¥lowerJªIdentifierÍ¨Í°¨includesÂÂ‘U§LiteralÍ±Í¶£stc¥'stc'Â¢&&O®CallExpressionÍ»ÍĞP°MemberExpressionÍ»ÍÉJªIdentifierÍ»ÍÀ¥lowerJªIdentifierÍÁÍÉ¨includesÂÂ‘U§LiteralÍÊÍÏ©å•ç‰‡æœº«'å•ç‰‡æœº'Â¥constS«IfStatementÍÜÍ`T±LogicalExpressionÍàÍ0JªIdentifierÍàÍä¤is51¢&&T±LogicalExpressionÍéÍ/T±LogicalExpressionÍéÍO®CallExpressionÍéÍşP°MemberExpressionÍéÍ÷JªIdentifierÍéÍî¥lowerJªIdentifierÍïÍ÷¨includesÂÂ‘U§LiteralÍøÍı£led¥'led'Â¢||O®CallExpressionÍÍP°MemberExpressionÍÍJªIdentifierÍÍ¥lowerJªIdentifierÍÍ¨includesÂÂ‘U§LiteralÍÍ£ç¯¥'ç¯'Â¢||O®CallExpressionÍÍ/P°MemberExpressionÍÍ'JªIdentifierÍÍ¥lowerJªIdentifierÍÍ'¨includesÂÂ‘U§LiteralÍ(Í.¬æœ€å°ç³»ç»Ÿ®'æœ€å°ç³»ç»Ÿ'ÂK®BlockStatementÍ2Í`‘N¯ReturnStatementÍAÍUU§LiteralÍHÍTªlab_51_led¬'lab_51_led'ÀS«IfStatementÍjÍñT±LogicalExpressionÍnÍÃJªIdentifierÍnÍu§isStm32¢&&T±LogicalExpressionÍzÍÂT±LogicalExpressionÍzÍªO®CallExpressionÍzÍP°MemberExpressionÍzÍˆJªIdentifierÍzÍ¥lowerJªIdentifierÍ€Íˆ¨includesÂÂ‘U§LiteralÍ‰Í¬æœ€å°ç³»ç»Ÿ®'æœ€å°ç³»ç»Ÿ'Â¢||O®CallExpressionÍ”ÍªP°MemberExpressionÍ”Í¢JªIdentifierÍ”Í™¥lowerJªIdentifierÍšÍ¢¨includesÂÂ‘U§LiteralÍ£Í©¤uart¦'uart'Â¢||O®CallExpressionÍ®ÍÂP°MemberExpressionÍ®Í¼JªIdentifierÍ®Í³¥lowerJªIdentifierÍ´Í¼¨includesÂÂ‘U§LiteralÍ½ÍÁ¦ä¸²å£¨'ä¸²å£'ÂK®BlockStatementÍÅÍñ‘N¯ReturnStatementÍÔÍæU§LiteralÍÛÍå¨lab_uartª'lab_uart'ÀN¯ReturnStatementÍûÍU§LiteralÍÍÀ¤nullL°MethodDefinitionÍÍÃÂJªIdentifierÍÍ&«fallbackDoc¦methodM²FunctionExpressionÍ&ÍÀÂÂÂ‘JªIdentifierÍ'Í-¦promptK®BlockStatementÍ/Í“Q³VariableDeclarationÍ:Ít‘R²VariableDeclaratorÍ@ÍsJªIdentifierÍ@ÍC£docO®CallExpressionÍFÍsP°MemberExpressionÍFÍfJªIdentifierÍFÍY³LabTemplateRegistryJªIdentifierÍZÍf¬generateByIdÂÂ‘U§LiteralÍgÍr©lab_power«'lab_power'Â¥constS«IfStatementÍ~ÍåT°BinaryExpressionÍ‚ÍJªIdentifierÍ‚Í…£doc£!==U§LiteralÍŠÍÀ¤nullK®BlockStatementÍÍå’W³ExpressionStatementÍŸÍÁÔr^–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍŸÍÀ¡=P°MemberExpressionÍŸÍ·P°MemberExpressionÍŸÍ«JªIdentifierÍŸÍ¢£docJªIdentifierÍ£Í«¨metadataÂÂJªIdentifierÍ¬Í·«descriptionÂÂJªIdentifierÍºÍÀ¦promptN¯ReturnStatementÍÏÍÚJªIdentifierÍÖÍÙ£docÀN®ThrowStatementÍïÍÔr_•¤type¥start£end¦callee©arguments­NewExpressionÍõÍJªIdentifierÍùÍş¥Error‘U§LiteralÍÿÍµNo template available·'No template available'À‘Ôr`•¤type¥start£endªspecifiers¦source±ImportDeclaration <‘Ôra•¤type¥start£end¨imported¥local¯ImportSpecifier	JªIdentifier	³LabTemplateRegistryJªIdentifier	³LabTemplateRegistryU§Literal$;µ./LabTemplateRegistry·'./LabTemplateRegistry'

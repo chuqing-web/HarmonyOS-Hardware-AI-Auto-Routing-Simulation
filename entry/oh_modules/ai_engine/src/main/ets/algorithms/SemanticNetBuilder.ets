@@ -538,10 +538,12 @@ export class SemanticNetBuilder {
       if (match) {
         return match.pin_id;
       }
-      // 包含匹配
-      match = pinList.find(p => (p.pin_label ?? p.pin_id).toUpperCase().includes(upper));
-      if (match) {
-        return match.pin_id;
+      // 短别名（如 GPIO）禁止 includes，避免 VDDGPIO 误命中
+      if (upper.length >= 4) {
+        match = pinList.find(p => (p.pin_label ?? p.pin_id).toUpperCase().includes(upper));
+        if (match) {
+          return match.pin_id;
+        }
       }
     }
     return null;
@@ -577,7 +579,8 @@ export class SemanticNetBuilder {
       return;
     }
     const i2cDevices = SemanticNetBuilder.findAllByLib(doc, (id) =>
-      id === '24C02' || id === 'OLED_12864' || id === 'W25Q64');
+      id === '24C02' || id === 'OLED_12864');
+    // W25Q64 为 SPI，不得当 I2C 触发上拉
     if (i2cDevices.length === 0) {
       // 检查是否有 I2C net (SDA/SCL)
       const hasI2c = doc.nets.some(n => {
@@ -618,16 +621,34 @@ export class SemanticNetBuilder {
         autoFixes.push('补放 R_4.7k 为 I2C SCL 上拉');
       }
     }
-    // 上拉到 VCC
-    TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [
-      { comp: vcc, pinId: '1', pinName: 'VCC' },
-      { comp: rSda, pinId: '1', pinName: '1' }
-    ]);
-    TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [
-      { comp: vcc, pinId: '1', pinName: 'VCC' },
-      { comp: rScl, pinId: '1', pinName: '1' }
-    ]);
-    notes.push('I2C 上拉: R_4.7k×2→VCC');
+    // 上拉到 VCC，另一端并入 SDA/SCL 总线（禁止只接 VCC 悬空下端）
+    if (rSda === null || rScl === null) {
+      return;
+    }
+    const vccPin: PinSpec = { comp: vcc, pinId: '1', pinName: 'VCC' };
+    const rSdaVcc: PinSpec = { comp: rSda, pinId: '1', pinName: '1' };
+    const rSclVcc: PinSpec = { comp: rScl, pinId: '1', pinName: '1' };
+    TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [vccPin, rSdaVcc]);
+    TemplateSchematicKit.join(doc, 'VCC', NetType.POWER, [vccPin, rSclVcc]);
+    const sdaPull: PinSpec = { comp: rSda, pinId: '2', pinName: '2' };
+    const sclPull: PinSpec = { comp: rScl, pinId: '2', pinName: '2' };
+    const sdaPins: PinSpec[] = [sdaPull];
+    const sclPins: PinSpec[] = [sclPull];
+    for (let di = 0; di < i2cDevices.length; di++) {
+      const dev = i2cDevices[di];
+      const meta = this.library.getDeviceMeta(dev.libraryId);
+      const pinList = meta.success && meta.data ? meta.data.pin_list : [];
+      const sdaId = this.resolvePin(pinList, ['SDA', 'SDA1', 'I2C_SDA']) ?? 'SDA';
+      const sclId = this.resolvePin(pinList, ['SCL', 'SCL1', 'I2C_SCL']) ?? 'SCL';
+      const sdaDevPin: PinSpec = { comp: dev, pinId: sdaId, pinName: sdaId };
+      const sclDevPin: PinSpec = { comp: dev, pinId: sclId, pinName: sclId };
+      sdaPins.push(sdaDevPin);
+      sclPins.push(sclDevPin);
+    }
+    // 若文档已有 SDA/SCL 网，把上拉脚并入同名标号网
+    TemplateSchematicKit.joinByLabel(doc, 'SDA', NetType.SIGNAL, sdaPins);
+    TemplateSchematicKit.joinByLabel(doc, 'SCL', NetType.SIGNAL, sclPins);
+    notes.push('I2C 上拉: R_4.7k×2 VCC↔SDA/SCL');
   }
 
   /**

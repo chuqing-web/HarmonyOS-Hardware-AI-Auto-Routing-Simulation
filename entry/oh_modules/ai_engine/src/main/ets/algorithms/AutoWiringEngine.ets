@@ -6,6 +6,7 @@ import {
   SchematicDocument, ComponentInstance, Wire, Net, Point2D,
   WireStyle, NetType, NetLabel, IdUtil
 } from 'common';
+import { PinWorldResolver } from './PinWorldResolver';
 
 interface WiringNode {
   x: number;
@@ -341,25 +342,31 @@ export class AutoWiringEngine {
     }
   }
 
-  /** 估算引脚世界坐标（基于器件位置+已知引脚偏移规则） */
+  /** 估算引脚世界坐标：优先 Kit/PinWorldResolver 真脚，再退回边沿启发 */
   private estimatePinPos(comp: ComponentInstance, edge: string, pinIndex: number): Point2D {
+    const pinName = this.pinNameForEdge(comp, edge, pinIndex);
+    if (pinName.length > 0) {
+      return PinWorldResolver.forComponent(comp, pinName, pinName);
+    }
     const p = comp.position;
-    // 常见器件尺寸: IC 80x50, R 60x20, C 40x30, 仪器 100x60
     const id = (comp.libraryId ?? '').toUpperCase();
-    let w = 60; let h = 40; // 默认
-
+    let w = 60; let h = 40;
     if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
       w = 100; h = 80;
     } else if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
       id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE')) {
       w = 100; h = 70;
-    } else if (id === 'VCC') { w = 30; h = 30; }
-    else if (id === 'GND') { w = 30; h = 30; }
-    else if (id.startsWith('R_')) { w = 60; h = 20; }
-    else if (id.startsWith('C_')) { w = 40; h = 30; }
-    else if (id.startsWith('LED_')) { w = 40; h = 40; }
-    else if (id.includes('XTAL')) { w = 50; h = 40; }
-
+    } else if (id === 'VCC' || id === 'GND' || id === 'VEE') {
+      w = 30; h = 30;
+    } else if (id.startsWith('R_')) {
+      w = 60; h = 20;
+    } else if (id.startsWith('C_')) {
+      w = 40; h = 30;
+    } else if (id.startsWith('LED_')) {
+      w = 40; h = 40;
+    } else if (id.includes('XTAL')) {
+      w = 50; h = 40;
+    }
     switch (edge) {
       case 'left': return { x: p.x, y: p.y + h / 2 };
       case 'right': return { x: p.x + w, y: p.y + h / 2 };
@@ -367,6 +374,30 @@ export class AutoWiringEngine {
       case 'bottom': return { x: p.x + w / 2, y: p.y + h };
       default: return { x: p.x + w / 2, y: p.y + h / 2 };
     }
+  }
+
+  private pinNameForEdge(comp: ComponentInstance, edge: string, _pinIndex: number): string {
+    const id = (comp.libraryId ?? '').toUpperCase();
+    if (id.includes('AMMETER')) {
+      if (edge === 'left') return 'I+';
+      if (edge === 'right') return 'I-';
+    }
+    if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
+      if (edge === 'left') return 'V+';
+      if (edge === 'bottom' || edge === 'right') return 'COM';
+    }
+    if (id.includes('OSCILLOSCOPE')) {
+      if (edge === 'left') return 'CH1';
+      if (edge === 'bottom') return 'GND';
+    }
+    if (id === 'VCC' || id === 'GND' || id === 'VEE') {
+      return '1';
+    }
+    if (id.startsWith('R_') || id.startsWith('C_') || id.startsWith('LED_') || id.startsWith('L_')) {
+      if (edge === 'top' || edge === 'left') return '1';
+      if (edge === 'bottom' || edge === 'right') return '2';
+    }
+    return '';
   }
 
   /** 正交布线: 源→拐点→目标，绕开障碍 */

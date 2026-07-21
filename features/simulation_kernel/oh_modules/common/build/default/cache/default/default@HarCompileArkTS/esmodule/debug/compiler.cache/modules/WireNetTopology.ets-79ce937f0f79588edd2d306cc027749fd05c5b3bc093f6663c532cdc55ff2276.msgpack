@@ -1,0 +1,2467 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚm/**
+ * Rebuild wire netId assignments from geometry + power-symbol reachability.
+ * Fixes cases where visually-correct wires were saved with wrong net UUIDs
+ * (e.g. R1â€“R2 series segment labelled GND).
+ */
+import { NetType } from '../types/CommonTypes';
+import { Logger } from './Logger';
+import { INSTR_TRACE_TAG } from './InstrumentTraceLog';
+// Re-export helper access â€” defaultPinsForLib is not exported from NetPinRebuildUtil,
+// duplicate minimal pin lookup inline via resolver pattern.
+var JunctionKind;
+(function (JunctionKind) {
+    JunctionKind["VCC"] = "vcc";
+    JunctionKind["GND"] = "gnd";
+    JunctionKind["VEE"] = "vee";
+    JunctionKind["SIGNAL"] = "signal";
+    JunctionKind["UNKNOWN"] = "unknown";
+})(JunctionKind || (JunctionKind = {}));
+function makePinGeometry(id, name, x, y) {
+    const geom = { id: id, name: name, x: x, y: y };
+    return geom;
+}
+function makePinWorldRef(compId, pinId, pinName, libraryId, worldX, worldY) {
+    const ref = {
+        compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId,
+        worldX: worldX, worldY: worldY
+    };
+    return ref;
+}
+function makeJunctionPinRef(compId, pinId, pinName, libraryId) {
+    const ref = {
+        compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId
+    };
+    return ref;
+}
+function roundKey(p) {
+    return `${Math.round(p.x)},${Math.round(p.y)}`;
+}
+function isVccLib(lib) {
+    const u = lib.toUpperCase();
+    return u === 'VCC' || u.endsWith('/VCC') || u === 'VDD' || u.endsWith('/VDD');
+}
+function isGndLib(lib) {
+    const u = lib.toUpperCase();
+    return u === 'GND' || u.endsWith('/GND') || u === 'VSS' || u.endsWith('/VSS') || u === '0';
+}
+function isVeeLib(lib) {
+    const u = lib.toUpperCase();
+    return u === 'VEE' || u.endsWith('/VEE');
+}
+function isPassiveLib(lib) {
+    const u = lib.toUpperCase();
+    return u.startsWith('R_') || u.includes('RESISTOR') || u.startsWith('C_') ||
+        u.includes('CAP') || u.startsWith('L_') || u.includes('INDUCTOR');
+}
+function transformPin(local, rotation, mirrored) {
+    let x = local.x;
+    let y = local.y;
+    if (mirrored) {
+        x = -x;
+    }
+    switch (rotation) {
+        case 90: return { x: -y, y: x };
+        case 180: return { x: -x, y: -y };
+        case 270: return { x: y, y: -x };
+        default: return { x: x, y: y };
+    }
+}
+function collectPins(doc, resolver) {
+    const pins = [];
+    for (let ci = 0; ci < doc.components.length; ci++) {
+        const comp = doc.components[ci];
+        let geoms = null;
+        if (resolver !== undefined) {
+            geoms = resolver(comp.libraryId);
+        }
+        if (geoms === null || geoms.length === 0) {
+            geoms = internalDefaultPins(comp.libraryId);
+        }
+        for (let pi = 0; pi < geoms.length; pi++) {
+            const pin = geoms[pi];
+            const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+            pins.push(makePinWorldRef(comp.id, pin.id, pin.name, comp.libraryId, comp.position.x + local.x, comp.position.y + local.y));
+        }
+    }
+    return pins;
+}
+function internalDefaultPins(libraryId) {
+    const lib = (libraryId ?? '').toUpperCase();
+    if (lib === 'VCC' || lib.endsWith('/VCC')) {
+        return [makePinGeometry('1', 'VCC', 0, 10)];
+    }
+    if (lib === 'GND' || lib.endsWith('/GND')) {
+        return [makePinGeometry('1', 'GND', 0, -10)];
+    }
+    if (lib === 'VEE' || lib.endsWith('/VEE')) {
+        return [makePinGeometry('1', 'VEE', 0, -10)];
+    }
+    if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+        return [
+            makePinGeometry('OUT', 'OUT', -30, 0),
+            makePinGeometry('GND', 'GND', 30, 0)
+        ];
+    }
+    if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+        return [
+            makePinGeometry('1', 'IN', -40, 0),
+            makePinGeometry('2', 'GND', 0, 40),
+            makePinGeometry('3', 'OUT', 40, 0)
+        ];
+    }
+    if (lib.includes('VOLTMETER')) {
+        return [
+            makePinGeometry('V+', 'V+', -30, -25),
+            makePinGeometry('COM', 'COM', -30, 25)
+        ];
+    }
+    if (lib.includes('AMMETER')) {
+        return [
+            makePinGeometry('I+', 'I+', -30, 0),
+            makePinGeometry('I-', 'I-', -30, 20)
+        ];
+    }
+    if (lib.includes('LOGIC_ANALYZER')) {
+        const pins = [];
+        for (let i = 0; i < 8; i++) {
+            pins.push(makePinGeometry(`CH${i + 1}`, `CH${i + 1}`, -40, -40 + i * 10));
+        }
+        pins.push(makePinGeometry('GND', 'GND', -40, 40));
+        return pins;
+    }
+    if (lib.includes('UART_TERMINAL')) {
+        return [
+            makePinGeometry('TX', 'TX', -40, -10),
+            makePinGeometry('RX', 'RX', -40, 10),
+            makePinGeometry('GND', 'GND', -40, 30)
+        ];
+    }
+    if (lib.includes('POWER_METER')) {
+        return [
+            makePinGeometry('V+', 'V+', -40, -20),
+            makePinGeometry('V-', 'V-', -40, 0),
+            makePinGeometry('I+', 'I+', -40, 20),
+            makePinGeometry('I-', 'I-', -40, 40)
+        ];
+    }
+    if (lib.includes('FREQ_COUNTER')) {
+        return [
+            makePinGeometry('IN', 'IN', -30, -10),
+            makePinGeometry('GND', 'GND', -30, 10)
+        ];
+    }
+    if (lib.includes('VIRTUAL_METER')) {
+        return [
+            makePinGeometry('V', 'V', -30, -25),
+            makePinGeometry('COM', 'COM', -30, 25)
+        ];
+    }
+    if (lib === 'VAC' || lib.startsWith('VAC')) {
+        return [
+            makePinGeometry('1', 'AC+', -20, 0),
+            makePinGeometry('2', 'AC-', 20, 0)
+        ];
+    }
+    if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+        return [
+            makePinGeometry('OUT1', 'OUT1', 50, -30),
+            makePinGeometry('IN-1', 'IN-1', -50, -20),
+            makePinGeometry('IN+1', 'IN+1', -50, -40),
+            makePinGeometry('V-', 'V-', 0, 50),
+            makePinGeometry('IN+2', 'IN+2', -50, 20),
+            makePinGeometry('IN-2', 'IN-2', -50, 40),
+            makePinGeometry('OUT2', 'OUT2', 50, 30),
+            makePinGeometry('V+', 'V+', 0, -50)
+        ];
+    }
+    if (lib.includes('LM555') || lib.includes('NE555')) {
+        return [
+            makePinGeometry('GND', 'GND', -40, -30),
+            makePinGeometry('TRIG', 'TRIG', -40, -10),
+            makePinGeometry('OUT', 'OUT', -40, 10),
+            makePinGeometry('RESET', 'RESET', -40, 30),
+            makePinGeometry('CTRL', 'CTRL', 40, 30),
+            makePinGeometry('THRES', 'THRES', 40, 10),
+            makePinGeometry('DISCH', 'DISCH', 40, -10),
+            makePinGeometry('VCC', 'VCC', 40, -30)
+        ];
+    }
+    if (lib.includes('OSCILLOSCOPE')) {
+        return [
+            makePinGeometry('CH1', 'CH1', -40, -30),
+            makePinGeometry('CH2', 'CH2', -40, -10),
+            makePinGeometry('CH3', 'CH3', -40, 10),
+            makePinGeometry('CH4', 'CH4', -40, 30),
+            makePinGeometry('GND', 'GND', -40, 50)
+        ];
+    }
+    // MCU DIP â€” same as BuiltinComponents.genMcuPins / NetPinRebuildUtil.mcuDefaultPins
+    const mcuPins = mcuInternalDefaultPins(lib);
+    if (mcuPins.length > 0) {
+        return mcuPins;
+    }
+    return [
+        makePinGeometry('1', '1', -30, 0),
+        makePinGeometry('2', '2', 30, 0)
+    ];
+}
+function mcuInternalDefaultPins(libUpper) {
+    let count = 0;
+    if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+        libUpper.includes('8051') || libUpper.includes('MCS51')) {
+        count = 40;
+    }
+    else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+        count = 100;
+    }
+    else if (libUpper.includes('STM32')) {
+        count = 48;
+    }
+    if (count <= 0) {
+        return [];
+    }
+    const pins = [];
+    const leftCount = Math.ceil(count / 2);
+    const rightCount = Math.floor(count / 2);
+    const spacing = 10;
+    const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+    for (let i = 0; i < leftCount; i++) {
+        const id = `P${i + 1}`;
+        pins.push(makePinGeometry(id, id, -50, i * spacing - bodyHalf));
+    }
+    for (let i = 0; i < rightCount; i++) {
+        const id = `P${leftCount + i + 1}`;
+        pins.push(makePinGeometry(id, id, 50, i * spacing - bodyHalf));
+    }
+    return pins;
+}
+function findOrCreateJunction(junctions, key, pt) {
+    let j = junctions.get(key);
+    if (j === undefined) {
+        j = { key: key, x: pt.x, y: pt.y, pinRefs: [] };
+        junctions.set(key, j);
+    }
+    return j;
+}
+function pointOnSegment(p, a, b, tol) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const segLen2 = dx * dx + dy * dy;
+    if (segLen2 < 1e-6) {
+        return Math.abs(p.x - a.x) <= tol && Math.abs(p.y - a.y) <= tol;
+    }
+    const cross = Math.abs(dx * (a.y - p.y) - (a.x - p.x) * dy);
+    const segLen = Math.sqrt(segLen2);
+    if (cross / segLen > tol) {
+        return false;
+    }
+    const dot = (p.x - a.x) * dx + (p.y - a.y) * dy;
+    return dot >= -tol && dot <= segLen2 + tol;
+}
+/** Union-Find for junction keys */
+class UnionFind {
+    constructor() {
+        this.parent = new Map();
+    }
+    find(k) {
+        let p = this.parent.get(k);
+        if (p === undefined) {
+            this.parent.set(k, k);
+            return k;
+        }
+        if (p !== k) {
+            p = this.find(p);
+            this.parent.set(k, p);
+        }
+        return p;
+    }
+    union(a, b) {
+        const ra = this.find(a);
+        const rb = this.find(b);
+        if (ra !== rb) {
+            this.parent.set(rb, ra);
+        }
+    }
+}
+function classifyJunction(j) {
+    let hasVccSym = false;
+    let hasGndSym = false;
+    let hasVeeSym = false;
+    let hasPassive = false;
+    for (let i = 0; i < j.pinRefs.length; i++) {
+        const p = j.pinRefs[i];
+        if (isVccLib(p.libraryId)) {
+            hasVccSym = true;
+        }
+        else if (isGndLib(p.libraryId)) {
+            hasGndSym = true;
+        }
+        else if (isVeeLib(p.libraryId)) {
+            hasVeeSym = true;
+        }
+        else if (isPassiveLib(p.libraryId)) {
+            hasPassive = true;
+        }
+    }
+    // Mixed rails at one point â†’ unknown (do not pick a winner)
+    const railCount = (hasVccSym ? 1 : 0) + (hasGndSym ? 1 : 0) + (hasVeeSym ? 1 : 0);
+    if (railCount > 1) {
+        return JunctionKind.UNKNOWN;
+    }
+    if (hasVccSym) {
+        return JunctionKind.VCC;
+    }
+    if (hasGndSym) {
+        return JunctionKind.GND;
+    }
+    if (hasVeeSym) {
+        return JunctionKind.VEE;
+    }
+    if (hasPassive) {
+        return JunctionKind.SIGNAL;
+    }
+    return JunctionKind.UNKNOWN;
+}
+function kindPriority(k) {
+    if (k === JunctionKind.SIGNAL) {
+        return 3;
+    }
+    if (k === JunctionKind.VCC || k === JunctionKind.VEE) {
+        return 2;
+    }
+    if (k === JunctionKind.GND) {
+        return 1;
+    }
+    return 0;
+}
+function mergeKind(a, b) {
+    if (kindPriority(a) >= kindPriority(b)) {
+        return a;
+    }
+    return b;
+}
+function findNetByName(doc, name) {
+    const upper = name.toUpperCase();
+    for (let i = 0; i < doc.nets.length; i++) {
+        if (doc.nets[i].name.toUpperCase() === upper) {
+            return doc.nets[i].id;
+        }
+    }
+    return null;
+}
+/** Rail kind by template net name/type â€” never T-junction-merge distinct rails. */
+function wireSupplyRailKind(doc, netId) {
+    for (let i = 0; i < doc.nets.length; i++) {
+        const net = doc.nets[i];
+        if (net.id !== netId) {
+            continue;
+        }
+        const name = net.name.toUpperCase();
+        if (name === 'GND' || name === 'VSS' || name === '0' ||
+            (net.type === NetType.GROUND && name !== 'VEE')) {
+            return JunctionKind.GND;
+        }
+        if (name === 'VEE' || name === 'V-') {
+            return JunctionKind.VEE;
+        }
+        if (net.type === NetType.POWER || name === 'VCC' || name === 'VDD' ||
+            name === 'V+' || name === '+5V' || name === '+3V3') {
+            return JunctionKind.VCC;
+        }
+        return JunctionKind.UNKNOWN;
+    }
+    return JunctionKind.UNKNOWN;
+}
+/** Skip T-junction union when distinct rails would short (VCC/GND/VEE). */
+function railsWouldShort(a, b) {
+    const isRail = (k) => k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE;
+    if (isRail(a) && isRail(b) && a !== b) {
+        return true;
+    }
+    // Layout stub rubbing a rail: do not absorb signal into rail
+    if (isRail(a) !== isRail(b)) {
+        return true;
+    }
+    return false;
+}
+function ensureNet(doc, netId, name, type) {
+    if (doc.nets.some(n => n.id === netId)) {
+        return;
+    }
+    doc.nets.push({ id: netId, name: name, type: type, pinIds: [] });
+}
+/**
+ * Reassign wire.netId from wire geometry and power-symbol reachability.
+ * Only VCC/GND **power symbols** seed rail propagation â€” instrument COM
+ * does not pull signal junctions onto GND.
+ */
+export function rebuildWireNetTopology(doc, gridSize = 10, resolver) {
+    if (doc.wires.length === 0) {
+        return 0;
+    }
+    const junctionRadius = Math.max(2, gridSize * 0.5);
+    const tJunctionTol = Math.max(3, gridSize * 0.4);
+    const pinThreshold = Math.max(gridSize * 1.5, 15);
+    const junctions = new Map();
+    const uf = new UnionFind();
+    // Map pins to nearest junction key
+    const pinList = collectPins(doc, resolver);
+    for (let i = 0; i < pinList.length; i++) {
+        const p = pinList[i];
+        const key = roundKey({ x: p.worldX, y: p.worldY });
+        const j = findOrCreateJunction(junctions, key, { x: p.worldX, y: p.worldY });
+        j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+    }
+    // Wire endpoints â†’ junctions + union
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wire = doc.wires[wi];
+        if (wire.points.length < 2) {
+            continue;
+        }
+        const p0 = wire.points[0];
+        const p1 = wire.points[wire.points.length - 1];
+        const k0 = roundKey(p0);
+        const k1 = roundKey(p1);
+        findOrCreateJunction(junctions, k0, p0);
+        findOrCreateJunction(junctions, k1, p1);
+        uf.union(k0, k1);
+    }
+    // Co-locate nearby junction keys (endpoint snap groups)
+    const keys = Array.from(junctions.keys());
+    for (let i = 0; i < keys.length; i++) {
+        const ji = junctions.get(keys[i]);
+        for (let j = i + 1; j < keys.length; j++) {
+            const jj = junctions.get(keys[j]);
+            const dx = ji.x - jj.x;
+            const dy = ji.y - jj.y;
+            if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+                uf.union(keys[i], keys[j]);
+            }
+        }
+    }
+    // T-junctions: wire endpoint on another wire's segment
+    // Skip VCCâ†”GND crossings â€” layout stub collisions must not short the rails.
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wA = doc.wires[wi];
+        if (wA.points.length < 2) {
+            continue;
+        }
+        const railA = wireSupplyRailKind(doc, wA.netId);
+        const epA = [wA.points[0], wA.points[wA.points.length - 1]];
+        for (let ei = 0; ei < 2; ei++) {
+            const ep = epA[ei];
+            const epKey = roundKey(ep);
+            for (let wj = 0; wj < doc.wires.length; wj++) {
+                if (wj === wi) {
+                    continue;
+                }
+                const wB = doc.wires[wj];
+                const railB = wireSupplyRailKind(doc, wB.netId);
+                if (railsWouldShort(railA, railB)) {
+                    continue;
+                }
+                for (let si = 0; si < wB.points.length - 1; si++) {
+                    if (pointOnSegment(ep, wB.points[si], wB.points[si + 1], tJunctionTol)) {
+                        // åœ¨çº¿æ®µä¸Šå–æŠ•å½±ç‚¹ï¼ˆéä¸­ç‚¹ï¼‰ï¼Œé¿å…é”™è¯¯å¹¶ç½‘
+                        const a = wB.points[si];
+                        const b = wB.points[si + 1];
+                        const abx = b.x - a.x;
+                        const aby = b.y - a.y;
+                        const len2 = abx * abx + aby * aby;
+                        let t = 0;
+                        if (len2 > 1e-6) {
+                            t = ((ep.x - a.x) * abx + (ep.y - a.y) * aby) / len2;
+                            if (t < 0) {
+                                t = 0;
+                            }
+                            else if (t > 1) {
+                                t = 1;
+                            }
+                        }
+                        const foot = { x: a.x + t * abx, y: a.y + t * aby };
+                        const footKey = roundKey(foot);
+                        findOrCreateJunction(junctions, epKey, ep);
+                        findOrCreateJunction(junctions, footKey, foot);
+                        uf.union(epKey, footKey);
+                        uf.union(footKey, roundKey(a));
+                        uf.union(footKey, roundKey(b));
+                    }
+                }
+            }
+        }
+    }
+    // Assign pins snapped to wire endpoints (within threshold).
+    // Cap threshold by half the distance to the nearest sibling pin so dense
+    // instrument pin rows (e.g. OSC CH4 vs GND at 20px) cannot steal each other's nets.
+    for (let i = 0; i < pinList.length; i++) {
+        const p = pinList[i];
+        let siblingHalf = pinThreshold;
+        for (let j = 0; j < pinList.length; j++) {
+            if (j === i) {
+                continue;
+            }
+            const o = pinList[j];
+            if (o.compId !== p.compId) {
+                continue;
+            }
+            const sdx = p.worldX - o.worldX;
+            const sdy = p.worldY - o.worldY;
+            const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+            if (half > 1 && half < siblingHalf) {
+                siblingHalf = half;
+            }
+        }
+        let bestKey = '';
+        let bestDist = siblingHalf;
+        junctions.forEach((j, key) => {
+            const dx = p.worldX - j.x;
+            const dy = p.worldY - j.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestKey = key;
+            }
+        });
+        if (bestKey.length > 0) {
+            const j = junctions.get(bestKey);
+            const exists = j.pinRefs.some(pr => pr.compId === p.compId && pr.pinId === p.pinId);
+            if (!exists) {
+                j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+            }
+            uf.union(roundKey({ x: p.worldX, y: p.worldY }), bestKey);
+        }
+    }
+    // Per-junction kind from local pins
+    const junctionKind = new Map();
+    junctions.forEach((j, key) => {
+        junctionKind.set(key, classifyJunction(j));
+    });
+    // BFS from VCC/GND power-symbol junctions along wire graph only
+    const rootKind = new Map();
+    junctions.forEach((_j, key) => {
+        rootKind.set(uf.find(key), JunctionKind.UNKNOWN);
+    });
+    const seeds = [];
+    junctions.forEach((j, key) => {
+        const k = classifyJunction(j);
+        if (k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE) {
+            seeds.push(key);
+            rootKind.set(uf.find(key), k);
+        }
+    });
+    // Build adjacency between junction keys via wires
+    const adj = new Map();
+    const addEdge = (a, b) => {
+        if (!adj.has(a)) {
+            adj.set(a, new Set());
+        }
+        adj.get(a).add(b);
+        if (!adj.has(b)) {
+            adj.set(b, new Set());
+        }
+        adj.get(b).add(a);
+    };
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wire = doc.wires[wi];
+        if (wire.points.length < 2) {
+            continue;
+        }
+        const k0 = roundKey(wire.points[0]);
+        const k1 = roundKey(wire.points[wire.points.length - 1]);
+        addEdge(k0, k1);
+    }
+    // Merge co-located keys in adjacency
+    const keyToRep = new Map();
+    junctions.forEach((_j, key) => {
+        keyToRep.set(key, uf.find(key));
+    });
+    const repAdj = new Map();
+    adj.forEach((neighbors, key) => {
+        const rep = uf.find(key);
+        if (!repAdj.has(rep)) {
+            repAdj.set(rep, new Set());
+        }
+        neighbors.forEach((n) => {
+            repAdj.get(rep).add(uf.find(n));
+        });
+    });
+    // BFS propagate VCC/GND from seeds
+    const repKind = new Map();
+    repAdj.forEach((_v, rep) => {
+        repKind.set(rep, JunctionKind.UNKNOWN);
+    });
+    const queue = [];
+    for (let si = 0; si < seeds.length; si++) {
+        const rep = uf.find(seeds[si]);
+        const sk = classifyJunction(junctions.get(seeds[si]));
+        if (sk === JunctionKind.VCC || sk === JunctionKind.GND || sk === JunctionKind.VEE) {
+            repKind.set(rep, sk);
+            queue.push(rep);
+        }
+    }
+    let qi = 0;
+    while (qi < queue.length) {
+        const cur = queue[qi++];
+        const curK = repKind.get(cur);
+        const neighbors = repAdj.get(cur);
+        if (neighbors === undefined) {
+            continue;
+        }
+        neighbors.forEach((n) => {
+            if (repKind.get(n) !== JunctionKind.UNKNOWN) {
+                return;
+            }
+            // ç¦æ­¢ç”µæºè½¨ BFS æ¶‚åˆ°çº¯ä¿¡å·/æ— æºç»“ï¼ˆç»è¢«åŠ¨å™¨ä»¶ä½“ã€Œåæ‰ã€ä¿¡å·ç½‘ï¼‰
+            let neighborHasRailSym = false;
+            let neighborHasSignal = false;
+            junctions.forEach((j, key) => {
+                if (uf.find(key) !== n) {
+                    return;
+                }
+                const ck = classifyJunction(j);
+                if (ck === JunctionKind.VCC || ck === JunctionKind.GND || ck === JunctionKind.VEE) {
+                    neighborHasRailSym = true;
+                }
+                else if (ck === JunctionKind.SIGNAL) {
+                    neighborHasSignal = true;
+                }
+            });
+            if (neighborHasSignal && !neighborHasRailSym &&
+                (curK === JunctionKind.VCC || curK === JunctionKind.GND || curK === JunctionKind.VEE)) {
+                return;
+            }
+            repKind.set(n, curK);
+            queue.push(n);
+        });
+    }
+    // Final junction kind: BFS rail > local passive=SIGNAL > unknown=SIGNAL
+    const finalKind = new Map();
+    junctions.forEach((j, key) => {
+        const rep = uf.find(key);
+        const bfsK = repKind.get(rep);
+        if (bfsK === JunctionKind.VCC || bfsK === JunctionKind.GND || bfsK === JunctionKind.VEE) {
+            finalKind.set(key, bfsK);
+            return;
+        }
+        const localK = classifyJunction(j);
+        if (localK === JunctionKind.SIGNAL || localK === JunctionKind.UNKNOWN) {
+            finalKind.set(key, JunctionKind.SIGNAL);
+        }
+        else {
+            finalKind.set(key, localK);
+        }
+    });
+    // Resolve net IDs for each kind
+    const vccNetId = findNetByName(doc, 'VCC') ?? `net_topo_vcc_${doc.nets.length}`;
+    const gndNetId = findNetByName(doc, 'GND') ?? `net_topo_gnd_${doc.nets.length + 1}`;
+    const veeNetId = findNetByName(doc, 'VEE') ?? `net_topo_vee_${doc.nets.length + 2}`;
+    ensureNet(doc, vccNetId, 'VCC', NetType.POWER);
+    ensureNet(doc, gndNetId, 'GND', NetType.GROUND);
+    ensureNet(doc, veeNetId, 'VEE', NetType.POWER);
+    let signalIdx = 0;
+    const signalNetForRep = new Map();
+    // é‡å»ºå‰ï¼šwire.netId â†’ æœ‰æ„ä¹‰ç½‘åï¼ˆé NET_*ï¼‰ï¼Œç”¨äºä¿¡å·åˆ†é‡ç»§æ‰¿ï¼Œé¿å… HYST_NODE è¢«æ”¹æˆ NET_13
+    const nameByOldNetId = new Map();
+    for (let i = 0; i < doc.nets.length; i++) {
+        const n = doc.nets[i];
+        const nm = (n.name ?? '').trim();
+        if (nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm)) {
+            continue;
+        }
+        nameByOldNetId.set(n.id, nm);
+    }
+    const inheritedNameForRep = new Map();
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const w = doc.wires[wi];
+        if (w.points.length < 2 || w.netId.length === 0) {
+            continue;
+        }
+        const inherited = nameByOldNetId.get(w.netId);
+        if (inherited === undefined) {
+            continue;
+        }
+        const k0 = roundKey(w.points[0]);
+        const rep = uf.find(k0);
+        const prev = inheritedNameForRep.get(rep);
+        if (prev === undefined) {
+            inheritedNameForRep.set(rep, inherited);
+        }
+        else if (prev !== inherited) {
+            // åŒå‡ ä½•åˆ†é‡å†²çªå¤šå â†’ æ”¾å¼ƒç»§æ‰¿ï¼Œèµ° NET_N
+            inheritedNameForRep.set(rep, '');
+        }
+    }
+    const wireKindForEndpoints = (k0, k1) => {
+        const j0 = finalKind.get(k0) ?? JunctionKind.SIGNAL;
+        const j1 = finalKind.get(k1) ?? JunctionKind.SIGNAL;
+        // Never collapse distinct rails onto one net.
+        if (railsWouldShort(j0, j1)) {
+            return JunctionKind.SIGNAL;
+        }
+        if (j0 === JunctionKind.GND || j1 === JunctionKind.GND) {
+            return JunctionKind.GND;
+        }
+        if (j0 === JunctionKind.VEE || j1 === JunctionKind.VEE) {
+            return JunctionKind.VEE;
+        }
+        if (j0 === JunctionKind.VCC || j1 === JunctionKind.VCC) {
+            return JunctionKind.VCC;
+        }
+        return mergeKind(j0, j1);
+    };
+    const netIdForKind = (kind, rep) => {
+        if (kind === JunctionKind.VCC) {
+            return vccNetId;
+        }
+        if (kind === JunctionKind.GND) {
+            return gndNetId;
+        }
+        if (kind === JunctionKind.VEE) {
+            return veeNetId;
+        }
+        let sid = signalNetForRep.get(rep);
+        if (sid === undefined) {
+            const keepName = inheritedNameForRep.get(rep) ?? '';
+            if (keepName.length > 0) {
+                const existing = findNetByName(doc, keepName);
+                if (existing !== null) {
+                    sid = existing;
+                }
+                else {
+                    signalIdx++;
+                    sid = `net_topo_sig_${signalIdx}`;
+                    ensureNet(doc, sid, keepName, NetType.SIGNAL);
+                }
+            }
+            else {
+                signalIdx++;
+                sid = `net_topo_sig_${signalIdx}`;
+                ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+            }
+            signalNetForRep.set(rep, sid);
+        }
+        return sid;
+    };
+    let reassignCount = 0;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+        const wire = doc.wires[wi];
+        if (wire.points.length < 2) {
+            continue;
+        }
+        const k0 = roundKey(wire.points[0]);
+        const k1 = roundKey(wire.points[wire.points.length - 1]);
+        const wKind = wireKindForEndpoints(k0, k1);
+        const rep = uf.find(k0);
+        const targetNet = netIdForKind(wKind, rep);
+        if (wire.netId !== targetNet) {
+            wire.netId = targetNet;
+            reassignCount++;
+        }
+    }
+    if (reassignCount > 0) {
+        Logger.info(INSTR_TRACE_TAG, `[TOPO] rebuilt wire nets: ${reassignCount} wires reassigned, ` +
+            `signalNets=${signalIdx} junctions=${junctions.size}`);
+    }
+    return reassignCount;
+}
+//# sourceMappingURL=WireNetTopology.js.mapÂ“ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\Logger.etsÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName±./WireNetTopology¦commonCÙ$./src/main/ets/utils/WireNetTopology¦commonÃÚeF/**
+ * Rebuild wire netId assignments from geometry + power-symbol reachability.
+ * Fixes cases where visually-correct wires were saved with wrong net UUIDs
+ * (e.g. R1â€“R2 series segment labelled GND).
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D, Wire } from '../types/CommonTypes';
+import { PinGeometry, PinGeometryResolver } from './NetPinRebuildUtil';
+import { Logger } from './Logger';
+import { INSTR_TRACE_TAG } from './InstrumentTraceLog';
+
+// Re-export helper access â€” defaultPinsForLib is not exported from NetPinRebuildUtil,
+// duplicate minimal pin lookup inline via resolver pattern.
+
+enum JunctionKind {
+  VCC = 'vcc',
+  GND = 'gnd',
+  VEE = 'vee',
+  SIGNAL = 'signal',
+  UNKNOWN = 'unknown'
+}
+
+interface JunctionPinRef {
+  compId: string;
+  pinId: string;
+  pinName: string;
+  libraryId: string;
+}
+
+interface PinWorldRef {
+  compId: string;
+  pinId: string;
+  pinName: string;
+  libraryId: string;
+  worldX: number;
+  worldY: number;
+}
+
+interface Junction {
+  key: string;
+  x: number;
+  y: number;
+  pinRefs: JunctionPinRef[];
+}
+
+function makePinGeometry(id: string, name: string, x: number, y: number): PinGeometry {
+  const geom: PinGeometry = { id: id, name: name, x: x, y: y };
+  return geom;
+}
+
+function makePinWorldRef(compId: string, pinId: string, pinName: string, libraryId: string,
+  worldX: number, worldY: number): PinWorldRef {
+  const ref: PinWorldRef = {
+    compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId,
+    worldX: worldX, worldY: worldY
+  };
+  return ref;
+}
+
+function makeJunctionPinRef(compId: string, pinId: string, pinName: string,
+  libraryId: string): JunctionPinRef {
+  const ref: JunctionPinRef = {
+    compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId
+  };
+  return ref;
+}
+
+function roundKey(p: Point2D): string {
+  return `${Math.round(p.x)},${Math.round(p.y)}`;
+}
+
+function isVccLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'VCC' || u.endsWith('/VCC') || u === 'VDD' || u.endsWith('/VDD');
+}
+
+function isGndLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'GND' || u.endsWith('/GND') || u === 'VSS' || u.endsWith('/VSS') || u === '0';
+}
+
+function isVeeLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'VEE' || u.endsWith('/VEE');
+}
+
+function isPassiveLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u.startsWith('R_') || u.includes('RESISTOR') || u.startsWith('C_') ||
+    u.includes('CAP') || u.startsWith('L_') || u.includes('INDUCTOR');
+}
+
+function transformPin(local: Point2D, rotation: number, mirrored: boolean): Point2D {
+  let x = local.x;
+  let y = local.y;
+  if (mirrored) {
+    x = -x;
+  }
+  switch (rotation) {
+    case 90: return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+    default: return { x: x, y: y };
+  }
+}
+
+function collectPins(doc: SchematicDocument, resolver?: PinGeometryResolver): PinWorldRef[] {
+  const pins: PinWorldRef[] = [];
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    let geoms: PinGeometry[] | null = null;
+    if (resolver !== undefined) {
+      geoms = resolver(comp.libraryId);
+    }
+    if (geoms === null || geoms.length === 0) {
+      geoms = internalDefaultPins(comp.libraryId);
+    }
+    for (let pi = 0; pi < geoms.length; pi++) {
+      const pin = geoms[pi];
+      const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+      pins.push(makePinWorldRef(
+        comp.id, pin.id, pin.name, comp.libraryId,
+        comp.position.x + local.x, comp.position.y + local.y));
+    }
+  }
+  return pins;
+}
+
+function internalDefaultPins(libraryId: string): PinGeometry[] {
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC')) {
+    return [makePinGeometry('1', 'VCC', 0, 10)];
+  }
+  if (lib === 'GND' || lib.endsWith('/GND')) {
+    return [makePinGeometry('1', 'GND', 0, -10)];
+  }
+  if (lib === 'VEE' || lib.endsWith('/VEE')) {
+    return [makePinGeometry('1', 'VEE', 0, -10)];
+  }
+  if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+    return [
+      makePinGeometry('OUT', 'OUT', -30, 0),
+      makePinGeometry('GND', 'GND', 30, 0)
+    ];
+  }
+  if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+    return [
+      makePinGeometry('1', 'IN', -40, 0),
+      makePinGeometry('2', 'GND', 0, 40),
+      makePinGeometry('3', 'OUT', 40, 0)
+    ];
+  }
+  if (lib.includes('VOLTMETER')) {
+    return [
+      makePinGeometry('V+', 'V+', -30, -25),
+      makePinGeometry('COM', 'COM', -30, 25)
+    ];
+  }
+  if (lib.includes('AMMETER')) {
+    return [
+      makePinGeometry('I+', 'I+', -30, 0),
+      makePinGeometry('I-', 'I-', -30, 20)
+    ];
+  }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push(makePinGeometry(`CH${i + 1}`, `CH${i + 1}`, -40, -40 + i * 10));
+    }
+    pins.push(makePinGeometry('GND', 'GND', -40, 40));
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL')) {
+    return [
+      makePinGeometry('TX', 'TX', -40, -10),
+      makePinGeometry('RX', 'RX', -40, 10),
+      makePinGeometry('GND', 'GND', -40, 30)
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      makePinGeometry('V+', 'V+', -40, -20),
+      makePinGeometry('V-', 'V-', -40, 0),
+      makePinGeometry('I+', 'I+', -40, 20),
+      makePinGeometry('I-', 'I-', -40, 40)
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      makePinGeometry('IN', 'IN', -30, -10),
+      makePinGeometry('GND', 'GND', -30, 10)
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      makePinGeometry('V', 'V', -30, -25),
+      makePinGeometry('COM', 'COM', -30, 25)
+    ];
+  }
+  if (lib === 'VAC' || lib.startsWith('VAC')) {
+    return [
+      makePinGeometry('1', 'AC+', -20, 0),
+      makePinGeometry('2', 'AC-', 20, 0)
+    ];
+  }
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+    return [
+      makePinGeometry('OUT1', 'OUT1', 50, -30),
+      makePinGeometry('IN-1', 'IN-1', -50, -20),
+      makePinGeometry('IN+1', 'IN+1', -50, -40),
+      makePinGeometry('V-', 'V-', 0, 50),
+      makePinGeometry('IN+2', 'IN+2', -50, 20),
+      makePinGeometry('IN-2', 'IN-2', -50, 40),
+      makePinGeometry('OUT2', 'OUT2', 50, 30),
+      makePinGeometry('V+', 'V+', 0, -50)
+    ];
+  }
+  if (lib.includes('LM555') || lib.includes('NE555')) {
+    return [
+      makePinGeometry('GND', 'GND', -40, -30),
+      makePinGeometry('TRIG', 'TRIG', -40, -10),
+      makePinGeometry('OUT', 'OUT', -40, 10),
+      makePinGeometry('RESET', 'RESET', -40, 30),
+      makePinGeometry('CTRL', 'CTRL', 40, 30),
+      makePinGeometry('THRES', 'THRES', 40, 10),
+      makePinGeometry('DISCH', 'DISCH', 40, -10),
+      makePinGeometry('VCC', 'VCC', 40, -30)
+    ];
+  }
+  if (lib.includes('OSCILLOSCOPE')) {
+    return [
+      makePinGeometry('CH1', 'CH1', -40, -30),
+      makePinGeometry('CH2', 'CH2', -40, -10),
+      makePinGeometry('CH3', 'CH3', -40, 10),
+      makePinGeometry('CH4', 'CH4', -40, 30),
+      makePinGeometry('GND', 'GND', -40, 50)
+    ];
+  }
+  // MCU DIP â€” same as BuiltinComponents.genMcuPins / NetPinRebuildUtil.mcuDefaultPins
+  const mcuPins = mcuInternalDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
+  }
+  return [
+    makePinGeometry('1', '1', -30, 0),
+    makePinGeometry('2', '2', 30, 0)
+  ];
+}
+
+function mcuInternalDefaultPins(libUpper: string): PinGeometry[] {
+  let count = 0;
+  if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+    libUpper.includes('8051') || libUpper.includes('MCS51')) {
+    count = 40;
+  } else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+    count = 100;
+  } else if (libUpper.includes('STM32')) {
+    count = 48;
+  }
+  if (count <= 0) {
+    return [];
+  }
+  const pins: PinGeometry[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    const id = `P${i + 1}`;
+    pins.push(makePinGeometry(id, id, -50, i * spacing - bodyHalf));
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const id = `P${leftCount + i + 1}`;
+    pins.push(makePinGeometry(id, id, 50, i * spacing - bodyHalf));
+  }
+  return pins;
+}
+
+function findOrCreateJunction(junctions: Map<string, Junction>, key: string, pt: Point2D): Junction {
+  let j = junctions.get(key);
+  if (j === undefined) {
+    j = { key: key, x: pt.x, y: pt.y, pinRefs: [] };
+    junctions.set(key, j);
+  }
+  return j;
+}
+
+function pointOnSegment(p: Point2D, a: Point2D, b: Point2D, tol: number): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const segLen2 = dx * dx + dy * dy;
+  if (segLen2 < 1e-6) {
+    return Math.abs(p.x - a.x) <= tol && Math.abs(p.y - a.y) <= tol;
+  }
+  const cross = Math.abs(dx * (a.y - p.y) - (a.x - p.x) * dy);
+  const segLen = Math.sqrt(segLen2);
+  if (cross / segLen > tol) {
+    return false;
+  }
+  const dot = (p.x - a.x) * dx + (p.y - a.y) * dy;
+  return dot >= -tol && dot <= segLen2 + tol;
+}
+
+/** Union-Find for junction keys */
+class UnionFind {
+  private parent: Map<string, string> = new Map();
+
+  find(k: string): string {
+    let p = this.parent.get(k);
+    if (p === undefined) {
+      this.parent.set(k, k);
+      return k;
+    }
+    if (p !== k) {
+      p = this.find(p);
+      this.parent.set(k, p);
+    }
+    return p;
+  }
+
+  union(a: string, b: string): void {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) {
+      this.parent.set(rb, ra);
+    }
+  }
+}
+
+function classifyJunction(j: Junction): JunctionKind {
+  let hasVccSym = false;
+  let hasGndSym = false;
+  let hasVeeSym = false;
+  let hasPassive = false;
+  for (let i = 0; i < j.pinRefs.length; i++) {
+    const p = j.pinRefs[i];
+    if (isVccLib(p.libraryId)) {
+      hasVccSym = true;
+    } else if (isGndLib(p.libraryId)) {
+      hasGndSym = true;
+    } else if (isVeeLib(p.libraryId)) {
+      hasVeeSym = true;
+    } else if (isPassiveLib(p.libraryId)) {
+      hasPassive = true;
+    }
+  }
+  // Mixed rails at one point â†’ unknown (do not pick a winner)
+  const railCount = (hasVccSym ? 1 : 0) + (hasGndSym ? 1 : 0) + (hasVeeSym ? 1 : 0);
+  if (railCount > 1) {
+    return JunctionKind.UNKNOWN;
+  }
+  if (hasVccSym) {
+    return JunctionKind.VCC;
+  }
+  if (hasGndSym) {
+    return JunctionKind.GND;
+  }
+  if (hasVeeSym) {
+    return JunctionKind.VEE;
+  }
+  if (hasPassive) {
+    return JunctionKind.SIGNAL;
+  }
+  return JunctionKind.UNKNOWN;
+}
+
+function kindPriority(k: JunctionKind): number {
+  if (k === JunctionKind.SIGNAL) {
+    return 3;
+  }
+  if (k === JunctionKind.VCC || k === JunctionKind.VEE) {
+    return 2;
+  }
+  if (k === JunctionKind.GND) {
+    return 1;
+  }
+  return 0;
+}
+
+function mergeKind(a: JunctionKind, b: JunctionKind): JunctionKind {
+  if (kindPriority(a) >= kindPriority(b)) {
+    return a;
+  }
+  return b;
+}
+
+function findNetByName(doc: SchematicDocument, name: string): string | null {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < doc.nets.length; i++) {
+    if (doc.nets[i].name.toUpperCase() === upper) {
+      return doc.nets[i].id;
+    }
+  }
+  return null;
+}
+
+/** Rail kind by template net name/type â€” never T-junction-merge distinct rails. */
+function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind {
+  for (let i = 0; i < doc.nets.length; i++) {
+    const net = doc.nets[i];
+    if (net.id !== netId) {
+      continue;
+    }
+    const name = net.name.toUpperCase();
+    if (name === 'GND' || name === 'VSS' || name === '0' ||
+      (net.type === NetType.GROUND && name !== 'VEE')) {
+      return JunctionKind.GND;
+    }
+    if (name === 'VEE' || name === 'V-') {
+      return JunctionKind.VEE;
+    }
+    if (net.type === NetType.POWER || name === 'VCC' || name === 'VDD' ||
+      name === 'V+' || name === '+5V' || name === '+3V3') {
+      return JunctionKind.VCC;
+    }
+    return JunctionKind.UNKNOWN;
+  }
+  return JunctionKind.UNKNOWN;
+}
+
+/** Skip T-junction union when distinct rails would short (VCC/GND/VEE). */
+function railsWouldShort(a: JunctionKind, b: JunctionKind): boolean {
+  const isRail = (k: JunctionKind): boolean =>
+    k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE;
+  if (isRail(a) && isRail(b) && a !== b) {
+    return true;
+  }
+  // Layout stub rubbing a rail: do not absorb signal into rail
+  if (isRail(a) !== isRail(b)) {
+    return true;
+  }
+  return false;
+}
+
+function ensureNet(doc: SchematicDocument, netId: string, name: string, type: NetType): void {
+  if (doc.nets.some(n => n.id === netId)) {
+    return;
+  }
+  doc.nets.push({ id: netId, name: name, type: type, pinIds: [] });
+}
+
+/**
+ * Reassign wire.netId from wire geometry and power-symbol reachability.
+ * Only VCC/GND **power symbols** seed rail propagation â€” instrument COM
+ * does not pull signal junctions onto GND.
+ */
+export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): number {
+  if (doc.wires.length === 0) {
+    return 0;
+  }
+
+  const junctionRadius = Math.max(2, gridSize * 0.5);
+  const tJunctionTol = Math.max(3, gridSize * 0.4);
+  const pinThreshold = Math.max(gridSize * 1.5, 15);
+
+  const junctions = new Map<string, Junction>();
+  const uf = new UnionFind();
+
+  // Map pins to nearest junction key
+  const pinList = collectPins(doc, resolver);
+  for (let i = 0; i < pinList.length; i++) {
+    const p = pinList[i];
+    const key = roundKey({ x: p.worldX, y: p.worldY });
+    const j = findOrCreateJunction(junctions, key, { x: p.worldX, y: p.worldY });
+    j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+  }
+
+  // Wire endpoints â†’ junctions + union
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const p0 = wire.points[0];
+    const p1 = wire.points[wire.points.length - 1];
+    const k0 = roundKey(p0);
+    const k1 = roundKey(p1);
+    findOrCreateJunction(junctions, k0, p0);
+    findOrCreateJunction(junctions, k1, p1);
+    uf.union(k0, k1);
+  }
+
+  // Co-locate nearby junction keys (endpoint snap groups)
+  const keys = Array.from(junctions.keys());
+  for (let i = 0; i < keys.length; i++) {
+    const ji = junctions.get(keys[i])!;
+    for (let j = i + 1; j < keys.length; j++) {
+      const jj = junctions.get(keys[j])!;
+      const dx = ji.x - jj.x;
+      const dy = ji.y - jj.y;
+      if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+        uf.union(keys[i], keys[j]);
+      }
+    }
+  }
+
+  // T-junctions: wire endpoint on another wire's segment
+  // Skip VCCâ†”GND crossings â€” layout stub collisions must not short the rails.
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wA = doc.wires[wi];
+    if (wA.points.length < 2) {
+      continue;
+    }
+    const railA = wireSupplyRailKind(doc, wA.netId);
+    const epA = [wA.points[0], wA.points[wA.points.length - 1]];
+    for (let ei = 0; ei < 2; ei++) {
+      const ep = epA[ei];
+      const epKey = roundKey(ep);
+      for (let wj = 0; wj < doc.wires.length; wj++) {
+        if (wj === wi) {
+          continue;
+        }
+        const wB = doc.wires[wj];
+        const railB = wireSupplyRailKind(doc, wB.netId);
+        if (railsWouldShort(railA, railB)) {
+          continue;
+        }
+        for (let si = 0; si < wB.points.length - 1; si++) {
+          if (pointOnSegment(ep, wB.points[si], wB.points[si + 1], tJunctionTol)) {
+            // åœ¨çº¿æ®µä¸Šå–æŠ•å½±ç‚¹ï¼ˆéä¸­ç‚¹ï¼‰ï¼Œé¿å…é”™è¯¯å¹¶ç½‘
+            const a = wB.points[si];
+            const b = wB.points[si + 1];
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            const len2 = abx * abx + aby * aby;
+            let t = 0;
+            if (len2 > 1e-6) {
+              t = ((ep.x - a.x) * abx + (ep.y - a.y) * aby) / len2;
+              if (t < 0) {
+                t = 0;
+              } else if (t > 1) {
+                t = 1;
+              }
+            }
+            const foot: Point2D = { x: a.x + t * abx, y: a.y + t * aby };
+            const footKey = roundKey(foot);
+            findOrCreateJunction(junctions, epKey, ep);
+            findOrCreateJunction(junctions, footKey, foot);
+            uf.union(epKey, footKey);
+            uf.union(footKey, roundKey(a));
+            uf.union(footKey, roundKey(b));
+          }
+        }
+      }
+    }
+  }
+
+  // Assign pins snapped to wire endpoints (within threshold).
+  // Cap threshold by half the distance to the nearest sibling pin so dense
+  // instrument pin rows (e.g. OSC CH4 vs GND at 20px) cannot steal each other's nets.
+  for (let i = 0; i < pinList.length; i++) {
+    const p = pinList[i];
+    let siblingHalf = pinThreshold;
+    for (let j = 0; j < pinList.length; j++) {
+      if (j === i) {
+        continue;
+      }
+      const o = pinList[j];
+      if (o.compId !== p.compId) {
+        continue;
+      }
+      const sdx = p.worldX - o.worldX;
+      const sdy = p.worldY - o.worldY;
+      const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+      if (half > 1 && half < siblingHalf) {
+        siblingHalf = half;
+      }
+    }
+    let bestKey = '';
+    let bestDist = siblingHalf;
+    junctions.forEach((j: Junction, key: string) => {
+      const dx = p.worldX - j.x;
+      const dy = p.worldY - j.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestKey = key;
+      }
+    });
+    if (bestKey.length > 0) {
+      const j = junctions.get(bestKey)!;
+      const exists = j.pinRefs.some(pr => pr.compId === p.compId && pr.pinId === p.pinId);
+      if (!exists) {
+        j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+      }
+      uf.union(roundKey({ x: p.worldX, y: p.worldY }), bestKey);
+    }
+  }
+
+  // Per-junction kind from local pins
+  const junctionKind = new Map<string, JunctionKind>();
+  junctions.forEach((j: Junction, key: string) => {
+    junctionKind.set(key, classifyJunction(j));
+  });
+
+  // BFS from VCC/GND power-symbol junctions along wire graph only
+  const rootKind = new Map<string, JunctionKind>();
+  junctions.forEach((_j: Junction, key: string) => {
+    rootKind.set(uf.find(key), JunctionKind.UNKNOWN);
+  });
+
+  const seeds: string[] = [];
+  junctions.forEach((j: Junction, key: string) => {
+    const k = classifyJunction(j);
+    if (k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE) {
+      seeds.push(key);
+      rootKind.set(uf.find(key), k);
+    }
+  });
+
+  // Build adjacency between junction keys via wires
+  const adj = new Map<string, Set<string>>();
+  const addEdge = (a: string, b: string): void => {
+    if (!adj.has(a)) {
+      adj.set(a, new Set());
+    }
+    adj.get(a)!.add(b);
+    if (!adj.has(b)) {
+      adj.set(b, new Set());
+    }
+    adj.get(b)!.add(a);
+  };
+
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const k0 = roundKey(wire.points[0]);
+    const k1 = roundKey(wire.points[wire.points.length - 1]);
+    addEdge(k0, k1);
+  }
+
+  // Merge co-located keys in adjacency
+  const keyToRep = new Map<string, string>();
+  junctions.forEach((_j: Junction, key: string) => {
+    keyToRep.set(key, uf.find(key));
+  });
+
+  const repAdj = new Map<string, Set<string>>();
+  adj.forEach((neighbors: Set<string>, key: string) => {
+    const rep = uf.find(key);
+    if (!repAdj.has(rep)) {
+      repAdj.set(rep, new Set());
+    }
+    neighbors.forEach((n: string) => {
+      repAdj.get(rep)!.add(uf.find(n));
+    });
+  });
+
+  // BFS propagate VCC/GND from seeds
+  const repKind = new Map<string, JunctionKind>();
+  repAdj.forEach((_v: Set<string>, rep: string) => {
+    repKind.set(rep, JunctionKind.UNKNOWN);
+  });
+
+  const queue: string[] = [];
+  for (let si = 0; si < seeds.length; si++) {
+    const rep = uf.find(seeds[si]);
+    const sk = classifyJunction(junctions.get(seeds[si])!);
+    if (sk === JunctionKind.VCC || sk === JunctionKind.GND || sk === JunctionKind.VEE) {
+      repKind.set(rep, sk);
+      queue.push(rep);
+    }
+  }
+
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    const curK = repKind.get(cur)!;
+    const neighbors = repAdj.get(cur);
+    if (neighbors === undefined) {
+      continue;
+    }
+    neighbors.forEach((n: string) => {
+      if (repKind.get(n) !== JunctionKind.UNKNOWN) {
+        return;
+      }
+      // ç¦æ­¢ç”µæºè½¨ BFS æ¶‚åˆ°çº¯ä¿¡å·/æ— æºç»“ï¼ˆç»è¢«åŠ¨å™¨ä»¶ä½“ã€Œåæ‰ã€ä¿¡å·ç½‘ï¼‰
+      let neighborHasRailSym = false;
+      let neighborHasSignal = false;
+      junctions.forEach((j: Junction, key: string) => {
+        if (uf.find(key) !== n) {
+          return;
+        }
+        const ck = classifyJunction(j);
+        if (ck === JunctionKind.VCC || ck === JunctionKind.GND || ck === JunctionKind.VEE) {
+          neighborHasRailSym = true;
+        } else if (ck === JunctionKind.SIGNAL) {
+          neighborHasSignal = true;
+        }
+      });
+      if (neighborHasSignal && !neighborHasRailSym &&
+        (curK === JunctionKind.VCC || curK === JunctionKind.GND || curK === JunctionKind.VEE)) {
+        return;
+      }
+      repKind.set(n, curK);
+      queue.push(n);
+    });
+  }
+
+  // Final junction kind: BFS rail > local passive=SIGNAL > unknown=SIGNAL
+  const finalKind = new Map<string, JunctionKind>();
+  junctions.forEach((j: Junction, key: string) => {
+    const rep = uf.find(key);
+    const bfsK = repKind.get(rep);
+    if (bfsK === JunctionKind.VCC || bfsK === JunctionKind.GND || bfsK === JunctionKind.VEE) {
+      finalKind.set(key, bfsK);
+      return;
+    }
+    const localK = classifyJunction(j);
+    if (localK === JunctionKind.SIGNAL || localK === JunctionKind.UNKNOWN) {
+      finalKind.set(key, JunctionKind.SIGNAL);
+    } else {
+      finalKind.set(key, localK);
+    }
+  });
+
+  // Resolve net IDs for each kind
+  const vccNetId = findNetByName(doc, 'VCC') ?? `net_topo_vcc_${doc.nets.length}`;
+  const gndNetId = findNetByName(doc, 'GND') ?? `net_topo_gnd_${doc.nets.length + 1}`;
+  const veeNetId = findNetByName(doc, 'VEE') ?? `net_topo_vee_${doc.nets.length + 2}`;
+  ensureNet(doc, vccNetId, 'VCC', NetType.POWER);
+  ensureNet(doc, gndNetId, 'GND', NetType.GROUND);
+  ensureNet(doc, veeNetId, 'VEE', NetType.POWER);
+
+  let signalIdx = 0;
+  const signalNetForRep = new Map<string, string>();
+
+  // é‡å»ºå‰ï¼šwire.netId â†’ æœ‰æ„ä¹‰ç½‘åï¼ˆé NET_*ï¼‰ï¼Œç”¨äºä¿¡å·åˆ†é‡ç»§æ‰¿ï¼Œé¿å… HYST_NODE è¢«æ”¹æˆ NET_13
+  const nameByOldNetId = new Map<string, string>();
+  for (let i = 0; i < doc.nets.length; i++) {
+    const n = doc.nets[i];
+    const nm = (n.name ?? '').trim();
+    if (nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm)) {
+      continue;
+    }
+    nameByOldNetId.set(n.id, nm);
+  }
+  const inheritedNameForRep = new Map<string, string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const w = doc.wires[wi];
+    if (w.points.length < 2 || w.netId.length === 0) {
+      continue;
+    }
+    const inherited = nameByOldNetId.get(w.netId);
+    if (inherited === undefined) {
+      continue;
+    }
+    const k0 = roundKey(w.points[0]);
+    const rep = uf.find(k0);
+    const prev = inheritedNameForRep.get(rep);
+    if (prev === undefined) {
+      inheritedNameForRep.set(rep, inherited);
+    } else if (prev !== inherited) {
+      // åŒå‡ ä½•åˆ†é‡å†²çªå¤šå â†’ æ”¾å¼ƒç»§æ‰¿ï¼Œèµ° NET_N
+      inheritedNameForRep.set(rep, '');
+    }
+  }
+
+  const wireKindForEndpoints = (k0: string, k1: string): JunctionKind => {
+    const j0 = finalKind.get(k0) ?? JunctionKind.SIGNAL;
+    const j1 = finalKind.get(k1) ?? JunctionKind.SIGNAL;
+    // Never collapse distinct rails onto one net.
+    if (railsWouldShort(j0, j1)) {
+      return JunctionKind.SIGNAL;
+    }
+    if (j0 === JunctionKind.GND || j1 === JunctionKind.GND) {
+      return JunctionKind.GND;
+    }
+    if (j0 === JunctionKind.VEE || j1 === JunctionKind.VEE) {
+      return JunctionKind.VEE;
+    }
+    if (j0 === JunctionKind.VCC || j1 === JunctionKind.VCC) {
+      return JunctionKind.VCC;
+    }
+    return mergeKind(j0, j1);
+  };
+
+  const netIdForKind = (kind: JunctionKind, rep: string): string => {
+    if (kind === JunctionKind.VCC) {
+      return vccNetId;
+    }
+    if (kind === JunctionKind.GND) {
+      return gndNetId;
+    }
+    if (kind === JunctionKind.VEE) {
+      return veeNetId;
+    }
+    let sid = signalNetForRep.get(rep);
+    if (sid === undefined) {
+      const keepName = inheritedNameForRep.get(rep) ?? '';
+      if (keepName.length > 0) {
+        const existing = findNetByName(doc, keepName);
+        if (existing !== null) {
+          sid = existing;
+        } else {
+          signalIdx++;
+          sid = `net_topo_sig_${signalIdx}`;
+          ensureNet(doc, sid, keepName, NetType.SIGNAL);
+        }
+      } else {
+        signalIdx++;
+        sid = `net_topo_sig_${signalIdx}`;
+        ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+      }
+      signalNetForRep.set(rep, sid);
+    }
+    return sid;
+  };
+
+  let reassignCount = 0;
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const k0 = roundKey(wire.points[0]);
+    const k1 = roundKey(wire.points[wire.points.length - 1]);
+    const wKind = wireKindForEndpoints(k0, k1);
+    const rep = uf.find(k0);
+    const targetNet = netIdForKind(wKind, rep);
+    if (wire.netId !== targetNet) {
+      wire.netId = targetNet;
+      reassignCount++;
+    }
+  }
+
+  if (reassignCount > 0) {
+    Logger.info(INSTR_TRACE_TAG,
+      `[TOPO] rebuilt wire nets: ${reassignCount} wires reassigned, ` +
+      `signalNets=${signalIdx} junctions=${junctions.size}`);
+  }
+
+  return reassignCount;
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜÿ‘”    ‘”  ‘”   ‘”   ‘”   ‘”  
+ ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”   ‘”  , ‘”  -‘”  .‘”  / ‘”  1 ‘”  3‘”  4‘”  5‘”  7‘”  8 ‘”  : ‘”  <‘”  =‘”  ?‘”  Ì@ ‘”  ÌB ‘”  ÌC‘”  ÌD ‘”  ÌF ‘”  ÌG‘”  ÌI ‘”  ÌK ‘”  ÌL‘”  ÌN ‘”  ÌP ‘”  ÌQ‘”  ÌS ‘”  ÌU ‘”  ÌV‘”  ÌW‘”  ÌX‘”  ÌY ‘”  Ì[ ‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg ‘”  Ìi ‘”  Ìk‘”  Ìo‘”  Ìp‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìw‘”  Ìz‘”  Ì{‘”  Ì|‘”  Ì} ‘”  Ì ‘”  Ì‚‘”  Ìƒ‘”  Ì…‘”  Ì†‘”  Ìˆ‘”  Ì‰‘”  Ì‘”  Ì–‘”  Ì—‘”  Ìœ‘”  Ì‘”  Ì¢‘”  Ì£‘”  Ì¦‘”  Ì§‘”  Ì¨‘”  Ì©‘”  Ìª‘”  Ì«‘”  Ì±‘”  Ì²‘”  Ì¹‘”  Ìº‘”  Ì¿‘”  ÌÀ‘”  ÌÅ‘”  ÌË‘”  Ì×‘”  ÌØ‘”  Ìã‘”  Ìä‘”  Ìì‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìö ‘”  Ìø ‘”  Ìú‘”  Ìû‘”  Ìı‘”  Ìı	‘”  Ìÿ‘”  Ìÿ	‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í#‘”  Í$‘”  Í%‘”  Í'‘”  Í(‘”  Í)‘”  Í, ‘”  Í. ‘”  Í/ ‘”  Í/ ‘”  Í0
+‘”  Í2‘”  Í6‘”  Í7‘”  Í9‘”  Í;‘”  Í<‘”  ÍD‘”  ÍF‘”  ÍH ‘”  ÍM‘”  ÍO‘”  ÍQ‘”  ÍQ‘”  ÍS‘”  ÍS‘”  ÍU‘”  ÍU‘”  ÍW‘”  ÍX‘”  ÍZ‘”  Í]‘”  Í^‘”  Í`‘”  Ía‘”  Íc‘”  Íd‘”  Íf‘”  Íg‘”  Íi‘”  Ík ‘”  Ím ‘”  Ín‘”  Ío‘”  Íp‘”  Ír‘”  Ís‘”  Ít‘”  Íu‘”  Ív‘”  Íw‘”  Íx ‘”  Íz ‘”  Í|‘”  Í}‘”  Í~‘”  Í ‘”  Í ‘”  Í‚‘”  Íƒ‘”  Í„‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‰ ‘”  Í‹ ‘”  ÍŒ ‘”  Í‘”  Í‘”  Í‘‘”  Í”‘”  Í–‘”  Í—‘”  Í™‘”  Íš‘”  Í‘”  ÍŸ‘”  Í¡ ‘”  Í£ ‘”  Í¤ ‘”  Í§‘”  Í¨‘”  Í©‘”  Í¬‘”  Í­‘”  Í®‘”  Í¯ ‘”  Í± ‘”  Í²‘”  Í´‘”  Í¶ ‘”  Í¸ ‘”  Í¼‘”  Í½ ‘”  Í¿‘”  ÍÀ‘”  ÍÁ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ‘”  ÍÇ‘”  ÍÈ‘”  ÍÌ‘”  ÍÍ‘”  ÍÎ‘”  ÍÑ‘”  ÍÔ‘”  ÍÖ‘”  ÍØ‘”  ÍÚ‘”  ÍÛ‘”  ÍÜ‘”  Íİ‘”  ÍŞ‘”  Íß‘”  Íà‘”  Íä‘”  Íæ‘”  Íê‘”  Íë‘”  Íì‘”  Íí‘”  Íî‘”  Íò‘”  Íô‘”  Íö‘”  Íú‘”  Íû‘”  Íü‘”  Íÿ	‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í ‘”  Í!‘”  Í&‘”  Í'‘”  Í)‘”  Í,‘”  Í-‘”  Í.‘”  Í0‘”  Í3‘”  Í4‘”  Í6‘”  Í7‘”  Í=‘”  ÍA‘”  ÍB‘”  ÍC‘”  ÍE‘”  ÍH‘”  ÍJ‘”  ÍK‘”  ÍN‘”  ÍQ‘”  ÍT‘”  ÍV‘”  ÍW‘”  Í[‘”  Í\‘”  Í]‘”  Í^‘”  Í_‘”  Í`‘”  Íc‘”  Íd‘”  Íe‘”  Íg‘”  Íi‘”  Ík‘”  Ím‘”  Ío‘”  Íq‘”  Ís‘”  Íu‘”  Ív‘”  Íw‘”  Íz‘”  Í|‘”  Í}‘”  Í‘”  Í‚‘”  Í„‘”  Í…‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‹‘”  Í‘”  Í‘‘”  Í“‘”  Í”‘”  Í•‘”  Í–‘”  Í—‘”  Í˜‘”  Í›‘”  Íœ‘”  Í¡‘”  Í¢‘”  Í¥‘”  Í¬	‘”  Í­‘”  Í®‘”  Í°	‘”  Í°‘”  Í²	‘”  Í³‘”  Íµ‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í»‘”  Í¾‘”  ÍÂ‘”  ÍÃ‘”  ÍÅ‘”  ÍÆ‘”  ÍÉ‘”  ÍÉ‘”  ÍÊ‘”  ÍË‘”  ÍÌ‘”  ÍÏ‘”  ÍĞ‘”  ÍÑ‘”  Í×‘”  ÍÚ‘”  ÍÛ‘”  Íİ‘”  ÍŞ‘”  Íà‘”  Íâ‘”  Íã‘”  Íä‘”  Íæ‘”  Íè‘”  Íì‘”  Íñ‘”  Íò‘”  Íô‘”  Íõ‘”  Íö‘”  Íø‘”  Íù‘”  Íú‘”  Íü‘”  Íş‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í
+‘”  Í
+‘”  Í 	‘”  Í!‘”  Í!‘”  Í"‘”  Í#‘”  Í$‘”  Í%‘”  Í&‘”  Í'‘”  Í(‘”  Í)‘”  Í,‘”  Í.‘”  Í0‘”  Í2‘”  Í6‘”  Í7‘”  Í8‘”  Í9‘”  Í:‘”  Í=‘”  Í?‘”  Í@‘”  ÍB‘”  ÍC ‘ÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireNetTopology.ets‘ÚeF/**
+ * Rebuild wire netId assignments from geometry + power-symbol reachability.
+ * Fixes cases where visually-correct wires were saved with wrong net UUIDs
+ * (e.g. R1â€“R2 series segment labelled GND).
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D, Wire } from '../types/CommonTypes';
+import { PinGeometry, PinGeometryResolver } from './NetPinRebuildUtil';
+import { Logger } from './Logger';
+import { INSTR_TRACE_TAG } from './InstrumentTraceLog';
+
+// Re-export helper access â€” defaultPinsForLib is not exported from NetPinRebuildUtil,
+// duplicate minimal pin lookup inline via resolver pattern.
+
+enum JunctionKind {
+  VCC = 'vcc',
+  GND = 'gnd',
+  VEE = 'vee',
+  SIGNAL = 'signal',
+  UNKNOWN = 'unknown'
+}
+
+interface JunctionPinRef {
+  compId: string;
+  pinId: string;
+  pinName: string;
+  libraryId: string;
+}
+
+interface PinWorldRef {
+  compId: string;
+  pinId: string;
+  pinName: string;
+  libraryId: string;
+  worldX: number;
+  worldY: number;
+}
+
+interface Junction {
+  key: string;
+  x: number;
+  y: number;
+  pinRefs: JunctionPinRef[];
+}
+
+function makePinGeometry(id: string, name: string, x: number, y: number): PinGeometry {
+  const geom: PinGeometry = { id: id, name: name, x: x, y: y };
+  return geom;
+}
+
+function makePinWorldRef(compId: string, pinId: string, pinName: string, libraryId: string,
+  worldX: number, worldY: number): PinWorldRef {
+  const ref: PinWorldRef = {
+    compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId,
+    worldX: worldX, worldY: worldY
+  };
+  return ref;
+}
+
+function makeJunctionPinRef(compId: string, pinId: string, pinName: string,
+  libraryId: string): JunctionPinRef {
+  const ref: JunctionPinRef = {
+    compId: compId, pinId: pinId, pinName: pinName, libraryId: libraryId
+  };
+  return ref;
+}
+
+function roundKey(p: Point2D): string {
+  return `${Math.round(p.x)},${Math.round(p.y)}`;
+}
+
+function isVccLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'VCC' || u.endsWith('/VCC') || u === 'VDD' || u.endsWith('/VDD');
+}
+
+function isGndLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'GND' || u.endsWith('/GND') || u === 'VSS' || u.endsWith('/VSS') || u === '0';
+}
+
+function isVeeLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u === 'VEE' || u.endsWith('/VEE');
+}
+
+function isPassiveLib(lib: string): boolean {
+  const u = lib.toUpperCase();
+  return u.startsWith('R_') || u.includes('RESISTOR') || u.startsWith('C_') ||
+    u.includes('CAP') || u.startsWith('L_') || u.includes('INDUCTOR');
+}
+
+function transformPin(local: Point2D, rotation: number, mirrored: boolean): Point2D {
+  let x = local.x;
+  let y = local.y;
+  if (mirrored) {
+    x = -x;
+  }
+  switch (rotation) {
+    case 90: return { x: -y, y: x };
+    case 180: return { x: -x, y: -y };
+    case 270: return { x: y, y: -x };
+    default: return { x: x, y: y };
+  }
+}
+
+function collectPins(doc: SchematicDocument, resolver?: PinGeometryResolver): PinWorldRef[] {
+  const pins: PinWorldRef[] = [];
+  for (let ci = 0; ci < doc.components.length; ci++) {
+    const comp = doc.components[ci];
+    let geoms: PinGeometry[] | null = null;
+    if (resolver !== undefined) {
+      geoms = resolver(comp.libraryId);
+    }
+    if (geoms === null || geoms.length === 0) {
+      geoms = internalDefaultPins(comp.libraryId);
+    }
+    for (let pi = 0; pi < geoms.length; pi++) {
+      const pin = geoms[pi];
+      const local = transformPin({ x: pin.x, y: pin.y }, comp.rotation, comp.mirrored);
+      pins.push(makePinWorldRef(
+        comp.id, pin.id, pin.name, comp.libraryId,
+        comp.position.x + local.x, comp.position.y + local.y));
+    }
+  }
+  return pins;
+}
+
+function internalDefaultPins(libraryId: string): PinGeometry[] {
+  const lib = (libraryId ?? '').toUpperCase();
+  if (lib === 'VCC' || lib.endsWith('/VCC')) {
+    return [makePinGeometry('1', 'VCC', 0, 10)];
+  }
+  if (lib === 'GND' || lib.endsWith('/GND')) {
+    return [makePinGeometry('1', 'GND', 0, -10)];
+  }
+  if (lib === 'VEE' || lib.endsWith('/VEE')) {
+    return [makePinGeometry('1', 'VEE', 0, -10)];
+  }
+  if (lib === 'SIGNAL_GEN' || lib.startsWith('SIGNAL_GEN')) {
+    return [
+      makePinGeometry('OUT', 'OUT', -30, 0),
+      makePinGeometry('GND', 'GND', 30, 0)
+    ];
+  }
+  if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
+    return [
+      makePinGeometry('1', 'IN', -40, 0),
+      makePinGeometry('2', 'GND', 0, 40),
+      makePinGeometry('3', 'OUT', 40, 0)
+    ];
+  }
+  if (lib.includes('VOLTMETER')) {
+    return [
+      makePinGeometry('V+', 'V+', -30, -25),
+      makePinGeometry('COM', 'COM', -30, 25)
+    ];
+  }
+  if (lib.includes('AMMETER')) {
+    return [
+      makePinGeometry('I+', 'I+', -30, 0),
+      makePinGeometry('I-', 'I-', -30, 20)
+    ];
+  }
+  if (lib.includes('LOGIC_ANALYZER')) {
+    const pins: PinGeometry[] = [];
+    for (let i = 0; i < 8; i++) {
+      pins.push(makePinGeometry(`CH${i + 1}`, `CH${i + 1}`, -40, -40 + i * 10));
+    }
+    pins.push(makePinGeometry('GND', 'GND', -40, 40));
+    return pins;
+  }
+  if (lib.includes('UART_TERMINAL')) {
+    return [
+      makePinGeometry('TX', 'TX', -40, -10),
+      makePinGeometry('RX', 'RX', -40, 10),
+      makePinGeometry('GND', 'GND', -40, 30)
+    ];
+  }
+  if (lib.includes('POWER_METER')) {
+    return [
+      makePinGeometry('V+', 'V+', -40, -20),
+      makePinGeometry('V-', 'V-', -40, 0),
+      makePinGeometry('I+', 'I+', -40, 20),
+      makePinGeometry('I-', 'I-', -40, 40)
+    ];
+  }
+  if (lib.includes('FREQ_COUNTER')) {
+    return [
+      makePinGeometry('IN', 'IN', -30, -10),
+      makePinGeometry('GND', 'GND', -30, 10)
+    ];
+  }
+  if (lib.includes('VIRTUAL_METER')) {
+    return [
+      makePinGeometry('V', 'V', -30, -25),
+      makePinGeometry('COM', 'COM', -30, 25)
+    ];
+  }
+  if (lib === 'VAC' || lib.startsWith('VAC')) {
+    return [
+      makePinGeometry('1', 'AC+', -20, 0),
+      makePinGeometry('2', 'AC-', 20, 0)
+    ];
+  }
+  if (lib.includes('LM358') || lib.includes('LM324') || lib.includes('TL08')) {
+    return [
+      makePinGeometry('OUT1', 'OUT1', 50, -30),
+      makePinGeometry('IN-1', 'IN-1', -50, -20),
+      makePinGeometry('IN+1', 'IN+1', -50, -40),
+      makePinGeometry('V-', 'V-', 0, 50),
+      makePinGeometry('IN+2', 'IN+2', -50, 20),
+      makePinGeometry('IN-2', 'IN-2', -50, 40),
+      makePinGeometry('OUT2', 'OUT2', 50, 30),
+      makePinGeometry('V+', 'V+', 0, -50)
+    ];
+  }
+  if (lib.includes('LM555') || lib.includes('NE555')) {
+    return [
+      makePinGeometry('GND', 'GND', -40, -30),
+      makePinGeometry('TRIG', 'TRIG', -40, -10),
+      makePinGeometry('OUT', 'OUT', -40, 10),
+      makePinGeometry('RESET', 'RESET', -40, 30),
+      makePinGeometry('CTRL', 'CTRL', 40, 30),
+      makePinGeometry('THRES', 'THRES', 40, 10),
+      makePinGeometry('DISCH', 'DISCH', 40, -10),
+      makePinGeometry('VCC', 'VCC', 40, -30)
+    ];
+  }
+  if (lib.includes('OSCILLOSCOPE')) {
+    return [
+      makePinGeometry('CH1', 'CH1', -40, -30),
+      makePinGeometry('CH2', 'CH2', -40, -10),
+      makePinGeometry('CH3', 'CH3', -40, 10),
+      makePinGeometry('CH4', 'CH4', -40, 30),
+      makePinGeometry('GND', 'GND', -40, 50)
+    ];
+  }
+  // MCU DIP â€” same as BuiltinComponents.genMcuPins / NetPinRebuildUtil.mcuDefaultPins
+  const mcuPins = mcuInternalDefaultPins(lib);
+  if (mcuPins.length > 0) {
+    return mcuPins;
+  }
+  return [
+    makePinGeometry('1', '1', -30, 0),
+    makePinGeometry('2', '2', 30, 0)
+  ];
+}
+
+function mcuInternalDefaultPins(libUpper: string): PinGeometry[] {
+  let count = 0;
+  if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
+    libUpper.includes('8051') || libUpper.includes('MCS51')) {
+    count = 40;
+  } else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
+    count = 100;
+  } else if (libUpper.includes('STM32')) {
+    count = 48;
+  }
+  if (count <= 0) {
+    return [];
+  }
+  const pins: PinGeometry[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    const id = `P${i + 1}`;
+    pins.push(makePinGeometry(id, id, -50, i * spacing - bodyHalf));
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const id = `P${leftCount + i + 1}`;
+    pins.push(makePinGeometry(id, id, 50, i * spacing - bodyHalf));
+  }
+  return pins;
+}
+
+function findOrCreateJunction(junctions: Map<string, Junction>, key: string, pt: Point2D): Junction {
+  let j = junctions.get(key);
+  if (j === undefined) {
+    j = { key: key, x: pt.x, y: pt.y, pinRefs: [] };
+    junctions.set(key, j);
+  }
+  return j;
+}
+
+function pointOnSegment(p: Point2D, a: Point2D, b: Point2D, tol: number): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const segLen2 = dx * dx + dy * dy;
+  if (segLen2 < 1e-6) {
+    return Math.abs(p.x - a.x) <= tol && Math.abs(p.y - a.y) <= tol;
+  }
+  const cross = Math.abs(dx * (a.y - p.y) - (a.x - p.x) * dy);
+  const segLen = Math.sqrt(segLen2);
+  if (cross / segLen > tol) {
+    return false;
+  }
+  const dot = (p.x - a.x) * dx + (p.y - a.y) * dy;
+  return dot >= -tol && dot <= segLen2 + tol;
+}
+
+/** Union-Find for junction keys */
+class UnionFind {
+  private parent: Map<string, string> = new Map();
+
+  find(k: string): string {
+    let p = this.parent.get(k);
+    if (p === undefined) {
+      this.parent.set(k, k);
+      return k;
+    }
+    if (p !== k) {
+      p = this.find(p);
+      this.parent.set(k, p);
+    }
+    return p;
+  }
+
+  union(a: string, b: string): void {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) {
+      this.parent.set(rb, ra);
+    }
+  }
+}
+
+function classifyJunction(j: Junction): JunctionKind {
+  let hasVccSym = false;
+  let hasGndSym = false;
+  let hasVeeSym = false;
+  let hasPassive = false;
+  for (let i = 0; i < j.pinRefs.length; i++) {
+    const p = j.pinRefs[i];
+    if (isVccLib(p.libraryId)) {
+      hasVccSym = true;
+    } else if (isGndLib(p.libraryId)) {
+      hasGndSym = true;
+    } else if (isVeeLib(p.libraryId)) {
+      hasVeeSym = true;
+    } else if (isPassiveLib(p.libraryId)) {
+      hasPassive = true;
+    }
+  }
+  // Mixed rails at one point â†’ unknown (do not pick a winner)
+  const railCount = (hasVccSym ? 1 : 0) + (hasGndSym ? 1 : 0) + (hasVeeSym ? 1 : 0);
+  if (railCount > 1) {
+    return JunctionKind.UNKNOWN;
+  }
+  if (hasVccSym) {
+    return JunctionKind.VCC;
+  }
+  if (hasGndSym) {
+    return JunctionKind.GND;
+  }
+  if (hasVeeSym) {
+    return JunctionKind.VEE;
+  }
+  if (hasPassive) {
+    return JunctionKind.SIGNAL;
+  }
+  return JunctionKind.UNKNOWN;
+}
+
+function kindPriority(k: JunctionKind): number {
+  if (k === JunctionKind.SIGNAL) {
+    return 3;
+  }
+  if (k === JunctionKind.VCC || k === JunctionKind.VEE) {
+    return 2;
+  }
+  if (k === JunctionKind.GND) {
+    return 1;
+  }
+  return 0;
+}
+
+function mergeKind(a: JunctionKind, b: JunctionKind): JunctionKind {
+  if (kindPriority(a) >= kindPriority(b)) {
+    return a;
+  }
+  return b;
+}
+
+function findNetByName(doc: SchematicDocument, name: string): string | null {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < doc.nets.length; i++) {
+    if (doc.nets[i].name.toUpperCase() === upper) {
+      return doc.nets[i].id;
+    }
+  }
+  return null;
+}
+
+/** Rail kind by template net name/type â€” never T-junction-merge distinct rails. */
+function wireSupplyRailKind(doc: SchematicDocument, netId: string): JunctionKind {
+  for (let i = 0; i < doc.nets.length; i++) {
+    const net = doc.nets[i];
+    if (net.id !== netId) {
+      continue;
+    }
+    const name = net.name.toUpperCase();
+    if (name === 'GND' || name === 'VSS' || name === '0' ||
+      (net.type === NetType.GROUND && name !== 'VEE')) {
+      return JunctionKind.GND;
+    }
+    if (name === 'VEE' || name === 'V-') {
+      return JunctionKind.VEE;
+    }
+    if (net.type === NetType.POWER || name === 'VCC' || name === 'VDD' ||
+      name === 'V+' || name === '+5V' || name === '+3V3') {
+      return JunctionKind.VCC;
+    }
+    return JunctionKind.UNKNOWN;
+  }
+  return JunctionKind.UNKNOWN;
+}
+
+/** Skip T-junction union when distinct rails would short (VCC/GND/VEE). */
+function railsWouldShort(a: JunctionKind, b: JunctionKind): boolean {
+  const isRail = (k: JunctionKind): boolean =>
+    k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE;
+  if (isRail(a) && isRail(b) && a !== b) {
+    return true;
+  }
+  // Layout stub rubbing a rail: do not absorb signal into rail
+  if (isRail(a) !== isRail(b)) {
+    return true;
+  }
+  return false;
+}
+
+function ensureNet(doc: SchematicDocument, netId: string, name: string, type: NetType): void {
+  if (doc.nets.some(n => n.id === netId)) {
+    return;
+  }
+  doc.nets.push({ id: netId, name: name, type: type, pinIds: [] });
+}
+
+/**
+ * Reassign wire.netId from wire geometry and power-symbol reachability.
+ * Only VCC/GND **power symbols** seed rail propagation â€” instrument COM
+ * does not pull signal junctions onto GND.
+ */
+export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number = 10,
+  resolver?: PinGeometryResolver): number {
+  if (doc.wires.length === 0) {
+    return 0;
+  }
+
+  const junctionRadius = Math.max(2, gridSize * 0.5);
+  const tJunctionTol = Math.max(3, gridSize * 0.4);
+  const pinThreshold = Math.max(gridSize * 1.5, 15);
+
+  const junctions = new Map<string, Junction>();
+  const uf = new UnionFind();
+
+  // Map pins to nearest junction key
+  const pinList = collectPins(doc, resolver);
+  for (let i = 0; i < pinList.length; i++) {
+    const p = pinList[i];
+    const key = roundKey({ x: p.worldX, y: p.worldY });
+    const j = findOrCreateJunction(junctions, key, { x: p.worldX, y: p.worldY });
+    j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+  }
+
+  // Wire endpoints â†’ junctions + union
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const p0 = wire.points[0];
+    const p1 = wire.points[wire.points.length - 1];
+    const k0 = roundKey(p0);
+    const k1 = roundKey(p1);
+    findOrCreateJunction(junctions, k0, p0);
+    findOrCreateJunction(junctions, k1, p1);
+    uf.union(k0, k1);
+  }
+
+  // Co-locate nearby junction keys (endpoint snap groups)
+  const keys = Array.from(junctions.keys());
+  for (let i = 0; i < keys.length; i++) {
+    const ji = junctions.get(keys[i])!;
+    for (let j = i + 1; j < keys.length; j++) {
+      const jj = junctions.get(keys[j])!;
+      const dx = ji.x - jj.x;
+      const dy = ji.y - jj.y;
+      if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+        uf.union(keys[i], keys[j]);
+      }
+    }
+  }
+
+  // T-junctions: wire endpoint on another wire's segment
+  // Skip VCCâ†”GND crossings â€” layout stub collisions must not short the rails.
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wA = doc.wires[wi];
+    if (wA.points.length < 2) {
+      continue;
+    }
+    const railA = wireSupplyRailKind(doc, wA.netId);
+    const epA = [wA.points[0], wA.points[wA.points.length - 1]];
+    for (let ei = 0; ei < 2; ei++) {
+      const ep = epA[ei];
+      const epKey = roundKey(ep);
+      for (let wj = 0; wj < doc.wires.length; wj++) {
+        if (wj === wi) {
+          continue;
+        }
+        const wB = doc.wires[wj];
+        const railB = wireSupplyRailKind(doc, wB.netId);
+        if (railsWouldShort(railA, railB)) {
+          continue;
+        }
+        for (let si = 0; si < wB.points.length - 1; si++) {
+          if (pointOnSegment(ep, wB.points[si], wB.points[si + 1], tJunctionTol)) {
+            // åœ¨çº¿æ®µä¸Šå–æŠ•å½±ç‚¹ï¼ˆéä¸­ç‚¹ï¼‰ï¼Œé¿å…é”™è¯¯å¹¶ç½‘
+            const a = wB.points[si];
+            const b = wB.points[si + 1];
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            const len2 = abx * abx + aby * aby;
+            let t = 0;
+            if (len2 > 1e-6) {
+              t = ((ep.x - a.x) * abx + (ep.y - a.y) * aby) / len2;
+              if (t < 0) {
+                t = 0;
+              } else if (t > 1) {
+                t = 1;
+              }
+            }
+            const foot: Point2D = { x: a.x + t * abx, y: a.y + t * aby };
+            const footKey = roundKey(foot);
+            findOrCreateJunction(junctions, epKey, ep);
+            findOrCreateJunction(junctions, footKey, foot);
+            uf.union(epKey, footKey);
+            uf.union(footKey, roundKey(a));
+            uf.union(footKey, roundKey(b));
+          }
+        }
+      }
+    }
+  }
+
+  // Assign pins snapped to wire endpoints (within threshold).
+  // Cap threshold by half the distance to the nearest sibling pin so dense
+  // instrument pin rows (e.g. OSC CH4 vs GND at 20px) cannot steal each other's nets.
+  for (let i = 0; i < pinList.length; i++) {
+    const p = pinList[i];
+    let siblingHalf = pinThreshold;
+    for (let j = 0; j < pinList.length; j++) {
+      if (j === i) {
+        continue;
+      }
+      const o = pinList[j];
+      if (o.compId !== p.compId) {
+        continue;
+      }
+      const sdx = p.worldX - o.worldX;
+      const sdy = p.worldY - o.worldY;
+      const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+      if (half > 1 && half < siblingHalf) {
+        siblingHalf = half;
+      }
+    }
+    let bestKey = '';
+    let bestDist = siblingHalf;
+    junctions.forEach((j: Junction, key: string) => {
+      const dx = p.worldX - j.x;
+      const dy = p.worldY - j.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestKey = key;
+      }
+    });
+    if (bestKey.length > 0) {
+      const j = junctions.get(bestKey)!;
+      const exists = j.pinRefs.some(pr => pr.compId === p.compId && pr.pinId === p.pinId);
+      if (!exists) {
+        j.pinRefs.push(makeJunctionPinRef(p.compId, p.pinId, p.pinName, p.libraryId));
+      }
+      uf.union(roundKey({ x: p.worldX, y: p.worldY }), bestKey);
+    }
+  }
+
+  // Per-junction kind from local pins
+  const junctionKind = new Map<string, JunctionKind>();
+  junctions.forEach((j: Junction, key: string) => {
+    junctionKind.set(key, classifyJunction(j));
+  });
+
+  // BFS from VCC/GND power-symbol junctions along wire graph only
+  const rootKind = new Map<string, JunctionKind>();
+  junctions.forEach((_j: Junction, key: string) => {
+    rootKind.set(uf.find(key), JunctionKind.UNKNOWN);
+  });
+
+  const seeds: string[] = [];
+  junctions.forEach((j: Junction, key: string) => {
+    const k = classifyJunction(j);
+    if (k === JunctionKind.VCC || k === JunctionKind.GND || k === JunctionKind.VEE) {
+      seeds.push(key);
+      rootKind.set(uf.find(key), k);
+    }
+  });
+
+  // Build adjacency between junction keys via wires
+  const adj = new Map<string, Set<string>>();
+  const addEdge = (a: string, b: string): void => {
+    if (!adj.has(a)) {
+      adj.set(a, new Set());
+    }
+    adj.get(a)!.add(b);
+    if (!adj.has(b)) {
+      adj.set(b, new Set());
+    }
+    adj.get(b)!.add(a);
+  };
+
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const k0 = roundKey(wire.points[0]);
+    const k1 = roundKey(wire.points[wire.points.length - 1]);
+    addEdge(k0, k1);
+  }
+
+  // Merge co-located keys in adjacency
+  const keyToRep = new Map<string, string>();
+  junctions.forEach((_j: Junction, key: string) => {
+    keyToRep.set(key, uf.find(key));
+  });
+
+  const repAdj = new Map<string, Set<string>>();
+  adj.forEach((neighbors: Set<string>, key: string) => {
+    const rep = uf.find(key);
+    if (!repAdj.has(rep)) {
+      repAdj.set(rep, new Set());
+    }
+    neighbors.forEach((n: string) => {
+      repAdj.get(rep)!.add(uf.find(n));
+    });
+  });
+
+  // BFS propagate VCC/GND from seeds
+  const repKind = new Map<string, JunctionKind>();
+  repAdj.forEach((_v: Set<string>, rep: string) => {
+    repKind.set(rep, JunctionKind.UNKNOWN);
+  });
+
+  const queue: string[] = [];
+  for (let si = 0; si < seeds.length; si++) {
+    const rep = uf.find(seeds[si]);
+    const sk = classifyJunction(junctions.get(seeds[si])!);
+    if (sk === JunctionKind.VCC || sk === JunctionKind.GND || sk === JunctionKind.VEE) {
+      repKind.set(rep, sk);
+      queue.push(rep);
+    }
+  }
+
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    const curK = repKind.get(cur)!;
+    const neighbors = repAdj.get(cur);
+    if (neighbors === undefined) {
+      continue;
+    }
+    neighbors.forEach((n: string) => {
+      if (repKind.get(n) !== JunctionKind.UNKNOWN) {
+        return;
+      }
+      // ç¦æ­¢ç”µæºè½¨ BFS æ¶‚åˆ°çº¯ä¿¡å·/æ— æºç»“ï¼ˆç»è¢«åŠ¨å™¨ä»¶ä½“ã€Œåæ‰ã€ä¿¡å·ç½‘ï¼‰
+      let neighborHasRailSym = false;
+      let neighborHasSignal = false;
+      junctions.forEach((j: Junction, key: string) => {
+        if (uf.find(key) !== n) {
+          return;
+        }
+        const ck = classifyJunction(j);
+        if (ck === JunctionKind.VCC || ck === JunctionKind.GND || ck === JunctionKind.VEE) {
+          neighborHasRailSym = true;
+        } else if (ck === JunctionKind.SIGNAL) {
+          neighborHasSignal = true;
+        }
+      });
+      if (neighborHasSignal && !neighborHasRailSym &&
+        (curK === JunctionKind.VCC || curK === JunctionKind.GND || curK === JunctionKind.VEE)) {
+        return;
+      }
+      repKind.set(n, curK);
+      queue.push(n);
+    });
+  }
+
+  // Final junction kind: BFS rail > local passive=SIGNAL > unknown=SIGNAL
+  const finalKind = new Map<string, JunctionKind>();
+  junctions.forEach((j: Junction, key: string) => {
+    const rep = uf.find(key);
+    const bfsK = repKind.get(rep);
+    if (bfsK === JunctionKind.VCC || bfsK === JunctionKind.GND || bfsK === JunctionKind.VEE) {
+      finalKind.set(key, bfsK);
+      return;
+    }
+    const localK = classifyJunction(j);
+    if (localK === JunctionKind.SIGNAL || localK === JunctionKind.UNKNOWN) {
+      finalKind.set(key, JunctionKind.SIGNAL);
+    } else {
+      finalKind.set(key, localK);
+    }
+  });
+
+  // Resolve net IDs for each kind
+  const vccNetId = findNetByName(doc, 'VCC') ?? `net_topo_vcc_${doc.nets.length}`;
+  const gndNetId = findNetByName(doc, 'GND') ?? `net_topo_gnd_${doc.nets.length + 1}`;
+  const veeNetId = findNetByName(doc, 'VEE') ?? `net_topo_vee_${doc.nets.length + 2}`;
+  ensureNet(doc, vccNetId, 'VCC', NetType.POWER);
+  ensureNet(doc, gndNetId, 'GND', NetType.GROUND);
+  ensureNet(doc, veeNetId, 'VEE', NetType.POWER);
+
+  let signalIdx = 0;
+  const signalNetForRep = new Map<string, string>();
+
+  // é‡å»ºå‰ï¼šwire.netId â†’ æœ‰æ„ä¹‰ç½‘åï¼ˆé NET_*ï¼‰ï¼Œç”¨äºä¿¡å·åˆ†é‡ç»§æ‰¿ï¼Œé¿å… HYST_NODE è¢«æ”¹æˆ NET_13
+  const nameByOldNetId = new Map<string, string>();
+  for (let i = 0; i < doc.nets.length; i++) {
+    const n = doc.nets[i];
+    const nm = (n.name ?? '').trim();
+    if (nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm)) {
+      continue;
+    }
+    nameByOldNetId.set(n.id, nm);
+  }
+  const inheritedNameForRep = new Map<string, string>();
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const w = doc.wires[wi];
+    if (w.points.length < 2 || w.netId.length === 0) {
+      continue;
+    }
+    const inherited = nameByOldNetId.get(w.netId);
+    if (inherited === undefined) {
+      continue;
+    }
+    const k0 = roundKey(w.points[0]);
+    const rep = uf.find(k0);
+    const prev = inheritedNameForRep.get(rep);
+    if (prev === undefined) {
+      inheritedNameForRep.set(rep, inherited);
+    } else if (prev !== inherited) {
+      // åŒå‡ ä½•åˆ†é‡å†²çªå¤šå â†’ æ”¾å¼ƒç»§æ‰¿ï¼Œèµ° NET_N
+      inheritedNameForRep.set(rep, '');
+    }
+  }
+
+  const wireKindForEndpoints = (k0: string, k1: string): JunctionKind => {
+    const j0 = finalKind.get(k0) ?? JunctionKind.SIGNAL;
+    const j1 = finalKind.get(k1) ?? JunctionKind.SIGNAL;
+    // Never collapse distinct rails onto one net.
+    if (railsWouldShort(j0, j1)) {
+      return JunctionKind.SIGNAL;
+    }
+    if (j0 === JunctionKind.GND || j1 === JunctionKind.GND) {
+      return JunctionKind.GND;
+    }
+    if (j0 === JunctionKind.VEE || j1 === JunctionKind.VEE) {
+      return JunctionKind.VEE;
+    }
+    if (j0 === JunctionKind.VCC || j1 === JunctionKind.VCC) {
+      return JunctionKind.VCC;
+    }
+    return mergeKind(j0, j1);
+  };
+
+  const netIdForKind = (kind: JunctionKind, rep: string): string => {
+    if (kind === JunctionKind.VCC) {
+      return vccNetId;
+    }
+    if (kind === JunctionKind.GND) {
+      return gndNetId;
+    }
+    if (kind === JunctionKind.VEE) {
+      return veeNetId;
+    }
+    let sid = signalNetForRep.get(rep);
+    if (sid === undefined) {
+      const keepName = inheritedNameForRep.get(rep) ?? '';
+      if (keepName.length > 0) {
+        const existing = findNetByName(doc, keepName);
+        if (existing !== null) {
+          sid = existing;
+        } else {
+          signalIdx++;
+          sid = `net_topo_sig_${signalIdx}`;
+          ensureNet(doc, sid, keepName, NetType.SIGNAL);
+        }
+      } else {
+        signalIdx++;
+        sid = `net_topo_sig_${signalIdx}`;
+        ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+      }
+      signalNetForRep.set(rep, sid);
+    }
+    return sid;
+  };
+
+  let reassignCount = 0;
+  for (let wi = 0; wi < doc.wires.length; wi++) {
+    const wire = doc.wires[wi];
+    if (wire.points.length < 2) {
+      continue;
+    }
+    const k0 = roundKey(wire.points[0]);
+    const k1 = roundKey(wire.points[wire.points.length - 1]);
+    const wKind = wireKindForEndpoints(k0, k1);
+    const rep = uf.find(k0);
+    const targetNet = netIdForKind(wKind, rep);
+    if (wire.netId !== targetNet) {
+      wire.netId = targetNet;
+      reassignCount++;
+    }
+  }
+
+  if (reassignCount > 0) {
+    Logger.info(INSTR_TRACE_TAG,
+      `[TOPO] rebuilt wire nets: ${reassignCount} wires reassigned, ` +
+      `signalNets=${signalIdx} junctions=${junctions.size}`);
+  }
+
+  return reassignCount;
+}
+ÔrE“´../types/CommonTypes¨./Logger´./InstrumentTraceLogÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\Logger.etsAÃªoh-resolveÂFAÂÙMC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\InstrumentTraceLog.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ4ÍlÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ4ÍlÔrK”¤type¥start£end¤nameªIdentifierÍ4Í4.¶rebuildWireNetTopologyÂÂÂ“KªIdentifierÍ4/Í42£docÔrL•¤type¥start£end¤left¥right±AssignmentPatternÍ44Í4AKªIdentifierÍ44Í4<¨gridSizeÔrM•¤type¥start£end¥value£raw§LiteralÍ4?Í4A
+¢10KªIdentifierÍ4CÍ4K¨resolverÔrN”¤type¥start£end¤body®BlockStatementÍ4MÍlÜ 4ÔrO–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ4TÍ4‹ÔrP–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ4XÍ4nÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ4XÍ4hQ°MemberExpressionÍ4XÍ4aKªIdentifierÍ4XÍ4[£docKªIdentifierÍ4\Í4a¥wiresÂÂKªIdentifierÍ4bÍ4h¦lengthÂÂ£===M§LiteralÍ4mÍ4n ¡0N®BlockStatementÍ4pÍ4‹‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÍ4{Í4„M§LiteralÍ4‚Í4ƒ ¡0ÀÔrS•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ4‘Í4Ä‘ÔrT•¤type¥start£end¢id¤init²VariableDeclaratorÍ4—Í4ÃKªIdentifierÍ4—Í4¥®junctionRadiusÔrU–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ4¨Í4ÃQ°MemberExpressionÍ4¨Í4°KªIdentifierÍ4¨Í4¬¤MathKªIdentifierÍ4­Í4°£maxÂÂ’M§LiteralÍ4±Í4²¡2P°BinaryExpressionÍ4´Í4ÂKªIdentifierÍ4´Í4¼¨gridSize¡*M§LiteralÍ4¿Í4ÂË?à      £0.5Â¥constS³VariableDeclarationÍ4ÊÍ4û‘T²VariableDeclaratorÍ4ĞÍ4úKªIdentifierÍ4ĞÍ4Ü¬tJunctionTolU®CallExpressionÍ4ßÍ4úQ°MemberExpressionÍ4ßÍ4çKªIdentifierÍ4ßÍ4ã¤MathKªIdentifierÍ4äÍ4ç£maxÂÂ’M§LiteralÍ4èÍ4é¡3P°BinaryExpressionÍ4ëÍ4ùKªIdentifierÍ4ëÍ4ó¨gridSize¡*M§LiteralÍ4öÍ4ùË?Ù™™™™™š£0.4Â¥constS³VariableDeclarationÍ5Í53‘T²VariableDeclaratorÍ5Í52KªIdentifierÍ5Í5¬pinThresholdU®CallExpressionÍ5Í52Q°MemberExpressionÍ5Í5KªIdentifierÍ5Í5¤MathKªIdentifierÍ5Í5£maxÂÂ’P°BinaryExpressionÍ5Í5-KªIdentifierÍ5Í5'¨gridSize¡*M§LiteralÍ5*Í5-Ë?ø      £1.5M§LiteralÍ5/Í51¢15Â¥constS³VariableDeclarationÍ59Í5U‘T²VariableDeclaratorÍ5?Í5TKªIdentifierÍ5?Í5H©junctionsÔrV•¤type¥start£end¦callee©arguments­NewExpressionÍ5KÍ5TKªIdentifierÍ5OÍ5R£Map¥constS³VariableDeclarationÍ5[Í5v‘T²VariableDeclaratorÍ5aÍ5uKªIdentifierÍ5aÍ5c¢ufV­NewExpressionÍ5fÍ5uKªIdentifierÍ5jÍ5s©UnionFind¥constS³VariableDeclarationÍ5¥Í5Ğ‘T²VariableDeclaratorÍ5«Í5ÏKªIdentifierÍ5«Í5²§pinListU®CallExpressionÍ5µÍ5ÏKªIdentifierÍ5µÍ5À«collectPins’KªIdentifierÍ5ÁÍ5Ä£docKªIdentifierÍ5ÆÍ5Î¨resolverÂ¥constÔrW—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ5ÖÍ7S³VariableDeclarationÍ5ÛÍ5ä‘T²VariableDeclaratorÍ5ßÍ5äKªIdentifierÍ5ßÍ5à¡iM§LiteralÍ5ãÍ5ä ¡0£letP°BinaryExpressionÍ5æÍ5øKªIdentifierÍ5æÍ5ç¡i¡<Q°MemberExpressionÍ5êÍ5øKªIdentifierÍ5êÍ5ñ§pinListKªIdentifierÍ5òÍ5ø¦lengthÂÂÔrX–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ5úÍ5ı¢++ÂKªIdentifierÍ5úÍ5û¡iN®BlockStatementÍ5ÿÍ7”S³VariableDeclarationÍ6
+Í6‘T²VariableDeclaratorÍ6Í6KªIdentifierÍ6Í6¡pQ°MemberExpressionÍ6Í6KªIdentifierÍ6Í6§pinListKªIdentifierÍ6Í6¡iÃÂ¥constS³VariableDeclarationÍ6)Í6\‘T²VariableDeclaratorÍ6/Í6[KªIdentifierÍ6/Í62£keyU®CallExpressionÍ65Í6[KªIdentifierÍ65Í6=¨roundKey‘ÔrY”¤type¥start£endªproperties°ObjectExpressionÍ6>Í6Z’ÔrZ™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ6@Í6KÂÂÂKªIdentifierÍ6@Í6A¡xQ°MemberExpressionÍ6CÍ6KKªIdentifierÍ6CÍ6D¡pKªIdentifierÍ6EÍ6K¦worldXÂÂ¤initZ¨PropertyÍ6MÍ6XÂÂÂKªIdentifierÍ6MÍ6N¡yQ°MemberExpressionÍ6PÍ6XKªIdentifierÍ6PÍ6Q¡pKªIdentifierÍ6RÍ6X¦worldYÂÂ¤initÂ¥constS³VariableDeclarationÍ6fÍ6³‘T²VariableDeclaratorÍ6lÍ6²KªIdentifierÍ6lÍ6m¡jU®CallExpressionÍ6pÍ6²KªIdentifierÍ6pÍ6„´findOrCreateJunction“KªIdentifierÍ6…Í6©junctionsKªIdentifierÍ6Í6“£keyY°ObjectExpressionÍ6•Í6±’Z¨PropertyÍ6—Í6¢ÂÂÂKªIdentifierÍ6—Í6˜¡xQ°MemberExpressionÍ6šÍ6¢KªIdentifierÍ6šÍ6›¡pKªIdentifierÍ6œÍ6¢¦worldXÂÂ¤initZ¨PropertyÍ6¤Í6¯ÂÂÂKªIdentifierÍ6¤Í6¥¡yQ°MemberExpressionÍ6§Í6¯KªIdentifierÍ6§Í6¨¡pKªIdentifierÍ6©Í6¯¦worldYÂÂ¤initÂ¥constÔr[”¤type¥start£endªexpression³ExpressionStatementÍ6½Í7U®CallExpressionÍ6½Í7
+Q°MemberExpressionÍ6½Í6ËQ°MemberExpressionÍ6½Í6ÆKªIdentifierÍ6½Í6¾¡jKªIdentifierÍ6¿Í6Æ§pinRefsÂÂKªIdentifierÍ6ÇÍ6Ë¤pushÂÂ‘U®CallExpressionÍ6ÌÍ7	KªIdentifierÍ6ÌÍ6Ş²makeJunctionPinRef”Q°MemberExpressionÍ6ßÍ6çKªIdentifierÍ6ßÍ6à¡pKªIdentifierÍ6áÍ6ç¦compIdÂÂQ°MemberExpressionÍ6éÍ6ğKªIdentifierÍ6éÍ6ê¡pKªIdentifierÍ6ëÍ6ğ¥pinIdÂÂQ°MemberExpressionÍ6òÍ6ûKªIdentifierÍ6òÍ6ó¡pKªIdentifierÍ6ôÍ6û§pinNameÂÂQ°MemberExpressionÍ6ıÍ7KªIdentifierÍ6ıÍ6ş¡pKªIdentifierÍ6ÿÍ7©libraryIdÂÂÂÂW¬ForStatementÍ7CÍ9S³VariableDeclarationÍ7HÍ7R‘T²VariableDeclaratorÍ7LÍ7RKªIdentifierÍ7LÍ7N¢wiM§LiteralÍ7QÍ7R ¡0£letP°BinaryExpressionÍ7TÍ7iKªIdentifierÍ7TÍ7V¢wi¡<Q°MemberExpressionÍ7YÍ7iQ°MemberExpressionÍ7YÍ7bKªIdentifierÍ7YÍ7\£docKªIdentifierÍ7]Í7b¥wiresÂÂKªIdentifierÍ7cÍ7i¦lengthÂÂX°UpdateExpressionÍ7kÍ7o¢++ÂKªIdentifierÍ7kÍ7m¢wiN®BlockStatementÍ7qÍ9™S³VariableDeclarationÍ7|Í7—‘T²VariableDeclaratorÍ7‚Í7–KªIdentifierÍ7‚Í7†¤wireQ°MemberExpressionÍ7‰Í7–Q°MemberExpressionÍ7‰Í7’KªIdentifierÍ7‰Í7Œ£docKªIdentifierÍ7Í7’¥wiresÂÂKªIdentifierÍ7“Í7•¢wiÃÂ¥constO«IfStatementÍ7¡Í7àP°BinaryExpressionÍ7¥Í7»Q°MemberExpressionÍ7¥Í7·Q°MemberExpressionÍ7¥Í7°KªIdentifierÍ7¥Í7©¤wireKªIdentifierÍ7ªÍ7°¦pointsÂÂKªIdentifierÍ7±Í7·¦lengthÂÂ¡<M§LiteralÍ7ºÍ7»¡2N®BlockStatementÍ7½Í7à‘Ôr\”¤type¥start£end¥label±ContinueStatementÍ7ÌÍ7ÕÀÀS³VariableDeclarationÍ7êÍ8‘T²VariableDeclaratorÍ7ğÍ8KªIdentifierÍ7ğÍ7ò¢p0Q°MemberExpressionÍ7õÍ8Q°MemberExpressionÍ7õÍ8 KªIdentifierÍ7õÍ7ù¤wireKªIdentifierÍ7úÍ8 ¦pointsÂÂM§LiteralÍ8Í8 ¡0ÃÂ¥constS³VariableDeclarationÍ8Í8=‘T²VariableDeclaratorÍ8Í8<KªIdentifierÍ8Í8¢p1Q°MemberExpressionÍ8Í8<Q°MemberExpressionÍ8Í8$KªIdentifierÍ8Í8¤wireKªIdentifierÍ8Í8$¦pointsÂÂP°BinaryExpressionÍ8%Í8;Q°MemberExpressionÍ8%Í87Q°MemberExpressionÍ8%Í80KªIdentifierÍ8%Í8)¤wireKªIdentifierÍ8*Í80¦pointsÂÂKªIdentifierÍ81Í87¦lengthÂÂ¡-M§LiteralÍ8:Í8;¡1ÃÂ¥constS³VariableDeclarationÍ8GÍ8_‘T²VariableDeclaratorÍ8MÍ8^KªIdentifierÍ8MÍ8O¢k0U®CallExpressionÍ8RÍ8^KªIdentifierÍ8RÍ8Z¨roundKey‘KªIdentifierÍ8[Í8]¢p0Â¥constS³VariableDeclarationÍ8iÍ8‘T²VariableDeclaratorÍ8oÍ8€KªIdentifierÍ8oÍ8q¢k1U®CallExpressionÍ8tÍ8€KªIdentifierÍ8tÍ8|¨roundKey‘KªIdentifierÍ8}Í8¢p1Â¥const[³ExpressionStatementÍ8‹Í8³U®CallExpressionÍ8‹Í8²KªIdentifierÍ8‹Í8Ÿ´findOrCreateJunction“KªIdentifierÍ8 Í8©©junctionsKªIdentifierÍ8«Í8­¢k0KªIdentifierÍ8¯Í8±¢p0Â[³ExpressionStatementÍ8½Í8åU®CallExpressionÍ8½Í8äKªIdentifierÍ8½Í8Ñ´findOrCreateJunction“KªIdentifierÍ8ÒÍ8Û©junctionsKªIdentifierÍ8İÍ8ß¢k1KªIdentifierÍ8áÍ8ã¢p1Â[³ExpressionStatementÍ8ïÍ9 U®CallExpressionÍ8ïÍ8ÿQ°MemberExpressionÍ8ïÍ8÷KªIdentifierÍ8ïÍ8ñ¢ufKªIdentifierÍ8òÍ8÷¥unionÂÂ’KªIdentifierÍ8øÍ8ú¢k0KªIdentifierÍ8üÍ8ş¢k1ÂS³VariableDeclarationÍ9KÍ9u‘T²VariableDeclaratorÍ9QÍ9tKªIdentifierÍ9QÍ9U¤keysU®CallExpressionÍ9XÍ9tQ°MemberExpressionÍ9XÍ9bKªIdentifierÍ9XÍ9]¥ArrayKªIdentifierÍ9^Í9b¤fromÂÂ‘U®CallExpressionÍ9cÍ9sQ°MemberExpressionÍ9cÍ9qKªIdentifierÍ9cÍ9l©junctionsKªIdentifierÍ9mÍ9q¤keysÂÂÂÂ¥constW¬ForStatementÍ9{Í; S³VariableDeclarationÍ9€Í9‰‘T²VariableDeclaratorÍ9„Í9‰KªIdentifierÍ9„Í9…¡iM§LiteralÍ9ˆÍ9‰ ¡0£letP°BinaryExpressionÍ9‹Í9šKªIdentifierÍ9‹Í9Œ¡i¡<Q°MemberExpressionÍ9Í9šKªIdentifierÍ9Í9“¤keysKªIdentifierÍ9”Í9š¦lengthÂÂX°UpdateExpressionÍ9œÍ9Ÿ¢++ÂKªIdentifierÍ9œÍ9¡iN®BlockStatementÍ9¡Í; ’S³VariableDeclarationÍ9¬Í9Î‘T²VariableDeclaratorÍ9²Í9ÍKªIdentifierÍ9²Í9´¢jiU®CallExpressionÍ9·Í9ÍQ°MemberExpressionÍ9·Í9ÄKªIdentifierÍ9·Í9À©junctionsKªIdentifierÍ9ÁÍ9Ä£getÂÂ‘Q°MemberExpressionÍ9ÅÍ9ÌKªIdentifierÍ9ÅÍ9É¤keysKªIdentifierÍ9ÊÍ9Ë¡iÃÂÂ¥constW¬ForStatementÍ9ØÍ;S³VariableDeclarationÍ9İÍ9ê‘T²VariableDeclaratorÍ9áÍ9êKªIdentifierÍ9áÍ9â¡jP°BinaryExpressionÍ9åÍ9êKªIdentifierÍ9åÍ9æ¡i¡+M§LiteralÍ9éÍ9ê¡1£letP°BinaryExpressionÍ9ìÍ9ûKªIdentifierÍ9ìÍ9í¡j¡<Q°MemberExpressionÍ9ğÍ9ûKªIdentifierÍ9ğÍ9ô¤keysKªIdentifierÍ9õÍ9û¦lengthÂÂX°UpdateExpressionÍ9ıÍ: ¢++ÂKªIdentifierÍ9ıÍ9ş¡jN®BlockStatementÍ:Í;”S³VariableDeclarationÍ:Í:3‘T²VariableDeclaratorÍ:Í:2KªIdentifierÍ:Í:¢jjU®CallExpressionÍ:Í:2Q°MemberExpressionÍ:Í:)KªIdentifierÍ:Í:%©junctionsKªIdentifierÍ:&Í:)£getÂÂ‘Q°MemberExpressionÍ:*Í:1KªIdentifierÍ:*Í:.¤keysKªIdentifierÍ:/Í:0¡jÃÂÂ¥constS³VariableDeclarationÍ:AÍ:X‘T²VariableDeclaratorÍ:GÍ:WKªIdentifierÍ:GÍ:I¢dxP°BinaryExpressionÍ:LÍ:WQ°MemberExpressionÍ:LÍ:PKªIdentifierÍ:LÍ:N¢jiKªIdentifierÍ:OÍ:P¡xÂÂ¡-Q°MemberExpressionÍ:SÍ:WKªIdentifierÍ:SÍ:U¢jjKªIdentifierÍ:VÍ:W¡xÂÂ¥constS³VariableDeclarationÍ:fÍ:}‘T²VariableDeclaratorÍ:lÍ:|KªIdentifierÍ:lÍ:n¢dyP°BinaryExpressionÍ:qÍ:|Q°MemberExpressionÍ:qÍ:uKªIdentifierÍ:qÍ:s¢jiKªIdentifierÍ:tÍ:u¡yÂÂ¡-Q°MemberExpressionÍ:xÍ:|KªIdentifierÍ:xÍ:z¢jjKªIdentifierÍ:{Í:|¡yÂÂ¥constO«IfStatementÍ:‹Í;P±LogicalExpressionÍ:Í:ÏP°BinaryExpressionÍ:Í:­U®CallExpressionÍ:Í:›Q°MemberExpressionÍ:Í:—KªIdentifierÍ:Í:“¤MathKªIdentifierÍ:”Í:—£absÂÂ‘KªIdentifierÍ:˜Í:š¢dxÂ¢<=KªIdentifierÍ:ŸÍ:­®junctionRadius¢&&P°BinaryExpressionÍ:±Í:ÏU®CallExpressionÍ:±Í:½Q°MemberExpressionÍ:±Í:¹KªIdentifierÍ:±Í:µ¤MathKªIdentifierÍ:¶Í:¹£absÂÂ‘KªIdentifierÍ:ºÍ:¼¢dyÂ¢<=KªIdentifierÍ:ÁÍ:Ï®junctionRadiusN®BlockStatementÍ:ÑÍ;‘[³ExpressionStatementÍ:äÍ:ÿU®CallExpressionÍ:äÍ:şQ°MemberExpressionÍ:äÍ:ìKªIdentifierÍ:äÍ:æ¢ufKªIdentifierÍ:çÍ:ì¥unionÂÂ’Q°MemberExpressionÍ:íÍ:ôKªIdentifierÍ:íÍ:ñ¤keysKªIdentifierÍ:òÍ:ó¡iÃÂQ°MemberExpressionÍ:öÍ:ıKªIdentifierÍ:öÍ:ú¤keysKªIdentifierÍ:ûÍ:ü¡jÃÂÂÀW¬ForStatementÍ;µÍD,S³VariableDeclarationÍ;ºÍ;Ä‘T²VariableDeclaratorÍ;¾Í;ÄKªIdentifierÍ;¾Í;À¢wiM§LiteralÍ;ÃÍ;Ä ¡0£letP°BinaryExpressionÍ;ÆÍ;ÛKªIdentifierÍ;ÆÍ;È¢wi¡<Q°MemberExpressionÍ;ËÍ;ÛQ°MemberExpressionÍ;ËÍ;ÔKªIdentifierÍ;ËÍ;Î£docKªIdentifierÍ;ÏÍ;Ô¥wiresÂÂKªIdentifierÍ;ÕÍ;Û¦lengthÂÂX°UpdateExpressionÍ;İÍ;á¢++ÂKªIdentifierÍ;İÍ;ß¢wiN®BlockStatementÍ;ãÍD,•S³VariableDeclarationÍ;îÍ<‘T²VariableDeclaratorÍ;ôÍ<KªIdentifierÍ;ôÍ;ö¢wAQ°MemberExpressionÍ;ùÍ<Q°MemberExpressionÍ;ùÍ<KªIdentifierÍ;ùÍ;ü£docKªIdentifierÍ;ıÍ<¥wiresÂÂKªIdentifierÍ<Í<¢wiÃÂ¥constO«IfStatementÍ<Í<NP°BinaryExpressionÍ<Í<)Q°MemberExpressionÍ<Í<%Q°MemberExpressionÍ<Í<KªIdentifierÍ<Í<¢wAKªIdentifierÍ<Í<¦pointsÂÂKªIdentifierÍ<Í<%¦lengthÂÂ¡<M§LiteralÍ<(Í<)¡2N®BlockStatementÍ<+Í<N‘\±ContinueStatementÍ<:Í<CÀÀS³VariableDeclarationÍ<XÍ<ˆ‘T²VariableDeclaratorÍ<^Í<‡KªIdentifierÍ<^Í<c¥railAU®CallExpressionÍ<fÍ<‡KªIdentifierÍ<fÍ<x²wireSupplyRailKind’KªIdentifierÍ<yÍ<|£docQ°MemberExpressionÍ<~Í<†KªIdentifierÍ<~Í<€¢wAKªIdentifierÍ<Í<†¥netIdÂÂÂ¥constS³VariableDeclarationÍ<’Í<Î‘T²VariableDeclaratorÍ<˜Í<ÍKªIdentifierÍ<˜Í<›£epAÔr]”¤type¥start£end¨elements¯ArrayExpressionÍ<Í<Í’Q°MemberExpressionÍ<ŸÍ<«Q°MemberExpressionÍ<ŸÍ<¨KªIdentifierÍ<ŸÍ<¡¢wAKªIdentifierÍ<¢Í<¨¦pointsÂÂM§LiteralÍ<©Í<ª ¡0ÃÂQ°MemberExpressionÍ<­Í<ÌQ°MemberExpressionÍ<­Í<¶KªIdentifierÍ<­Í<¯¢wAKªIdentifierÍ<°Í<¶¦pointsÂÂP°BinaryExpressionÍ<·Í<ËQ°MemberExpressionÍ<·Í<ÇQ°MemberExpressionÍ<·Í<ÀKªIdentifierÍ<·Í<¹¢wAKªIdentifierÍ<ºÍ<À¦pointsÂÂKªIdentifierÍ<ÁÍ<Ç¦lengthÂÂ¡-M§LiteralÍ<ÊÍ<Ë¡1ÃÂ¥constW¬ForStatementÍ<ØÍD%S³VariableDeclarationÍ<İÍ<ç‘T²VariableDeclaratorÍ<áÍ<çKªIdentifierÍ<áÍ<ã¢eiM§LiteralÍ<æÍ<ç ¡0£letP°BinaryExpressionÍ<éÍ<ïKªIdentifierÍ<éÍ<ë¢ei¡<M§LiteralÍ<îÍ<ï¡2X°UpdateExpressionÍ<ñÍ<õ¢++ÂKªIdentifierÍ<ñÍ<ó¢eiN®BlockStatementÍ<÷ÍD%“S³VariableDeclarationÍ=Í=‘T²VariableDeclaratorÍ=Í=KªIdentifierÍ=Í=¢epQ°MemberExpressionÍ=Í=KªIdentifierÍ=Í=£epAKªIdentifierÍ=Í=¢eiÃÂ¥constS³VariableDeclarationÍ='Í=B‘T²VariableDeclaratorÍ=-Í=AKªIdentifierÍ=-Í=2¥epKeyU®CallExpressionÍ=5Í=AKªIdentifierÍ=5Í==¨roundKey‘KªIdentifierÍ=>Í=@¢epÂ¥constW¬ForStatementÍ=PÍDS³VariableDeclarationÍ=UÍ=_‘T²VariableDeclaratorÍ=YÍ=_KªIdentifierÍ=YÍ=[¢wjM§LiteralÍ=^Í=_ ¡0£letP°BinaryExpressionÍ=aÍ=vKªIdentifierÍ=aÍ=c¢wj¡<Q°MemberExpressionÍ=fÍ=vQ°MemberExpressionÍ=fÍ=oKªIdentifierÍ=fÍ=i£docKªIdentifierÍ=jÍ=o¥wiresÂÂKªIdentifierÍ=pÍ=v¦lengthÂÂX°UpdateExpressionÍ=xÍ=|¢++ÂKªIdentifierÍ=xÍ=z¢wjN®BlockStatementÍ=~ÍD•O«IfStatementÍ=‘Í=ÓP°BinaryExpressionÍ=•Í=KªIdentifierÍ=•Í=—¢wj£===KªIdentifierÍ=œÍ=¢wiN®BlockStatementÍ= Í=Ó‘\±ContinueStatementÍ=·Í=ÀÀÀS³VariableDeclarationÍ=åÍ=ş‘T²VariableDeclaratorÍ=ëÍ=ıKªIdentifierÍ=ëÍ=í¢wBQ°MemberExpressionÍ=ğÍ=ıQ°MemberExpressionÍ=ğÍ=ùKªIdentifierÍ=ğÍ=ó£docKªIdentifierÍ=ôÍ=ù¥wiresÂÂKªIdentifierÍ=úÍ=ü¢wjÃÂ¥constS³VariableDeclarationÍ>Í>@‘T²VariableDeclaratorÍ>Í>?KªIdentifierÍ>Í>¥railBU®CallExpressionÍ>Í>?KªIdentifierÍ>Í>0²wireSupplyRailKind’KªIdentifierÍ>1Í>4£docQ°MemberExpressionÍ>6Í>>KªIdentifierÍ>6Í>8¢wBKªIdentifierÍ>9Í>>¥netIdÂÂÂ¥constO«IfStatementÍ>RÍ>¨U®CallExpressionÍ>VÍ>sKªIdentifierÍ>VÍ>e¯railsWouldShort’KªIdentifierÍ>fÍ>k¥railAKªIdentifierÍ>mÍ>r¥railBÂN®BlockStatementÍ>uÍ>¨‘\±ContinueStatementÍ>ŒÍ>•ÀÀW¬ForStatementÍ>ºÍDS³VariableDeclarationÍ>¿Í>É‘T²VariableDeclaratorÍ>ÃÍ>ÉKªIdentifierÍ>ÃÍ>Å¢siM§LiteralÍ>ÈÍ>É ¡0£letP°BinaryExpressionÍ>ËÍ>äKªIdentifierÍ>ËÍ>Í¢si¡<P°BinaryExpressionÍ>ĞÍ>äQ°MemberExpressionÍ>ĞÍ>àQ°MemberExpressionÍ>ĞÍ>ÙKªIdentifierÍ>ĞÍ>Ò¢wBKªIdentifierÍ>ÓÍ>Ù¦pointsÂÂKªIdentifierÍ>ÚÍ>à¦lengthÂÂ¡-M§LiteralÍ>ãÍ>ä¡1X°UpdateExpressionÍ>æÍ>ê¢++ÂKªIdentifierÍ>æÍ>è¢siN®BlockStatementÍ>ìÍD‘O«IfStatementÍ?ÍCøU®CallExpressionÍ?Í?IKªIdentifierÍ?Í?®pointOnSegment”KªIdentifierÍ?Í?¢epQ°MemberExpressionÍ?Í?'Q°MemberExpressionÍ?Í?#KªIdentifierÍ?Í?¢wBKªIdentifierÍ?Í?#¦pointsÂÂKªIdentifierÍ?$Í?&¢siÃÂQ°MemberExpressionÍ?)Í?:Q°MemberExpressionÍ?)Í?2KªIdentifierÍ?)Í?+¢wBKªIdentifierÍ?,Í?2¦pointsÂÂP°BinaryExpressionÍ?3Í?9KªIdentifierÍ?3Í?5¢si¡+M§LiteralÍ?8Í?9¡1ÃÂKªIdentifierÍ?<Í?H¬tJunctionTolÂN®BlockStatementÍ?KÍCøS³VariableDeclarationÍ?—Í?¯‘T²VariableDeclaratorÍ?Í?®KªIdentifierÍ?Í?¡aQ°MemberExpressionÍ?¡Í?®Q°MemberExpressionÍ?¡Í?ªKªIdentifierÍ?¡Í?£¢wBKªIdentifierÍ?¤Í?ª¦pointsÂÂKªIdentifierÍ?«Í?­¢siÃÂ¥constS³VariableDeclarationÍ?ÉÍ?å‘T²VariableDeclaratorÍ?ÏÍ?äKªIdentifierÍ?ÏÍ?Ğ¡bQ°MemberExpressionÍ?ÓÍ?äQ°MemberExpressionÍ?ÓÍ?ÜKªIdentifierÍ?ÓÍ?Õ¢wBKªIdentifierÍ?ÖÍ?Ü¦pointsÂÂP°BinaryExpressionÍ?İÍ?ãKªIdentifierÍ?İÍ?ß¢si¡+M§LiteralÍ?âÍ?ã¡1ÃÂ¥constS³VariableDeclarationÍ?ÿÍ@‘T²VariableDeclaratorÍ@Í@KªIdentifierÍ@Í@£abxP°BinaryExpressionÍ@Í@Q°MemberExpressionÍ@Í@KªIdentifierÍ@Í@¡bKªIdentifierÍ@Í@¡xÂÂ¡-Q°MemberExpressionÍ@Í@KªIdentifierÍ@Í@¡aKªIdentifierÍ@Í@¡xÂÂ¥constS³VariableDeclarationÍ@/Í@E‘T²VariableDeclaratorÍ@5Í@DKªIdentifierÍ@5Í@8£abyP°BinaryExpressionÍ@;Í@DQ°MemberExpressionÍ@;Í@>KªIdentifierÍ@;Í@<¡bKªIdentifierÍ@=Í@>¡yÂÂ¡-Q°MemberExpressionÍ@AÍ@DKªIdentifierÍ@AÍ@B¡aKªIdentifierÍ@CÍ@D¡yÂÂ¥constS³VariableDeclarationÍ@_Í@‚‘T²VariableDeclaratorÍ@eÍ@KªIdentifierÍ@eÍ@i¤len2P°BinaryExpressionÍ@lÍ@P°BinaryExpressionÍ@lÍ@uKªIdentifierÍ@lÍ@o£abx¡*KªIdentifierÍ@rÍ@u£abx¡+P°BinaryExpressionÍ@xÍ@KªIdentifierÍ@xÍ@{£aby¡*KªIdentifierÍ@~Í@£aby¥constS³VariableDeclarationÍ@œÍ@¦‘T²VariableDeclaratorÍ@ Í@¥KªIdentifierÍ@ Í@¡¡tM§LiteralÍ@¤Í@¥ ¡0£letO«IfStatementÍ@ÀÍB'P°BinaryExpressionÍ@ÄÍ@ÏKªIdentifierÍ@ÄÍ@È¤len2¡>M§LiteralÍ@ËÍ@ÏË>°Æ÷ µí¤1e-6N®BlockStatementÍ@ÑÍB'’[³ExpressionStatementÍ@ğÍA%Ôr^–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ@ğÍA$¡=KªIdentifierÍ@ğÍ@ñ¡tP°BinaryExpressionÍ@ôÍA$P°BinaryExpressionÍ@õÍAP°BinaryExpressionÍ@õÍAP°BinaryExpressionÍ@öÍA Q°MemberExpressionÍ@öÍ@úKªIdentifierÍ@öÍ@ø¢epKªIdentifierÍ@ùÍ@ú¡xÂÂ¡-Q°MemberExpressionÍ@ıÍA KªIdentifierÍ@ıÍ@ş¡aKªIdentifierÍ@ÿÍA ¡xÂÂ¡*KªIdentifierÍAÍA£abx¡+P°BinaryExpressionÍA
+ÍAP°BinaryExpressionÍAÍAQ°MemberExpressionÍAÍAKªIdentifierÍAÍA¢epKªIdentifierÍAÍA¡yÂÂ¡-Q°MemberExpressionÍAÍAKªIdentifierÍAÍA¡aKªIdentifierÍAÍA¡yÂÂ¡*KªIdentifierÍAÍA£aby¡/KªIdentifierÍA ÍA$¤len2O«IfStatementÍACÍBP°BinaryExpressionÍAGÍALKªIdentifierÍAGÍAH¡t¡<M§LiteralÍAKÍAL ¡0N®BlockStatementÍANÍA–‘[³ExpressionStatementÍAqÍAw^´AssignmentExpressionÍAqÍAv¡=KªIdentifierÍAqÍAr¡tM§LiteralÍAuÍAv ¡0O«IfStatementÍA¹ÍBP°BinaryExpressionÍA½ÍAÂKªIdentifierÍA½ÍA¾¡t¡>M§LiteralÍAÁÍAÂ¡1N®BlockStatementÍAÄÍB‘[³ExpressionStatementÍAçÍAí^´AssignmentExpressionÍAçÍAì¡=KªIdentifierÍAçÍAè¡tM§LiteralÍAëÍAì¡1ÀÀS³VariableDeclarationÍBAÍBu‘T²VariableDeclaratorÍBGÍBtKªIdentifierÍBGÍBK¤footY°ObjectExpressionÍBNÍBt’Z¨PropertyÍBPÍB`ÂÂÂKªIdentifierÍBPÍBQ¡xP°BinaryExpressionÍBSÍB`Q°MemberExpressionÍBSÍBVKªIdentifierÍBSÍBT¡aKªIdentifierÍBUÍBV¡xÂÂ¡+P°BinaryExpressionÍBYÍB`KªIdentifierÍBYÍBZ¡t¡*KªIdentifierÍB]ÍB`£abx¤initZ¨PropertyÍBbÍBrÂÂÂKªIdentifierÍBbÍBc¡yP°BinaryExpressionÍBeÍBrQ°MemberExpressionÍBeÍBhKªIdentifierÍBeÍBf¡aKªIdentifierÍBgÍBh¡yÂÂ¡+P°BinaryExpressionÍBkÍBrKªIdentifierÍBkÍBl¡t¡*KªIdentifierÍBoÍBr£aby¤init¥constS³VariableDeclarationÍBÍB®‘T²VariableDeclaratorÍB•ÍB­KªIdentifierÍB•ÍBœ§footKeyU®CallExpressionÍBŸÍB­KªIdentifierÍBŸÍB§¨roundKey‘KªIdentifierÍB¨ÍB¬¤footÂ¥const[³ExpressionStatementÍBÈÍBóU®CallExpressionÍBÈÍBòKªIdentifierÍBÈÍBÜ´findOrCreateJunction“KªIdentifierÍBİÍBæ©junctionsKªIdentifierÍBèÍBí¥epKeyKªIdentifierÍBïÍBñ¢epÂ[³ExpressionStatementÍCÍC<U®CallExpressionÍCÍC;KªIdentifierÍCÍC!´findOrCreateJunction“KªIdentifierÍC"ÍC+©junctionsKªIdentifierÍC-ÍC4§footKeyKªIdentifierÍC6ÍC:¤footÂ[³ExpressionStatementÍCVÍCoU®CallExpressionÍCVÍCnQ°MemberExpressionÍCVÍC^KªIdentifierÍCVÍCX¢ufKªIdentifierÍCYÍC^¥unionÂÂ’KªIdentifierÍC_ÍCd¥epKeyKªIdentifierÍCfÍCm§footKeyÂ[³ExpressionStatementÍC‰ÍC¨U®CallExpressionÍC‰ÍC§Q°MemberExpressionÍC‰ÍC‘KªIdentifierÍC‰ÍC‹¢ufKªIdentifierÍCŒÍC‘¥unionÂÂ’KªIdentifierÍC’ÍC™§footKeyU®CallExpressionÍC›ÍC¦KªIdentifierÍC›ÍC£¨roundKey‘KªIdentifierÍC¤ÍC¥¡aÂÂ[³ExpressionStatementÍCÂÍCáU®CallExpressionÍCÂÍCàQ°MemberExpressionÍCÂÍCÊKªIdentifierÍCÂÍCÄ¢ufKªIdentifierÍCÅÍCÊ¥unionÂÂ’KªIdentifierÍCËÍCÒ§footKeyU®CallExpressionÍCÔÍCßKªIdentifierÍCÔÍCÜ¨roundKey‘KªIdentifierÍCİÍCŞ¡bÂÂÀW¬ForStatementÍEÍJœS³VariableDeclarationÍE"ÍE+‘T²VariableDeclaratorÍE&ÍE+KªIdentifierÍE&ÍE'¡iM§LiteralÍE*ÍE+ ¡0£letP°BinaryExpressionÍE-ÍE?KªIdentifierÍE-ÍE.¡i¡<Q°MemberExpressionÍE1ÍE?KªIdentifierÍE1ÍE8§pinListKªIdentifierÍE9ÍE?¦lengthÂÂX°UpdateExpressionÍEAÍED¢++ÂKªIdentifierÍEAÍEB¡iN®BlockStatementÍEFÍJœ—S³VariableDeclarationÍEQÍEf‘T²VariableDeclaratorÍEWÍEeKªIdentifierÍEWÍEX¡pQ°MemberExpressionÍE[ÍEeKªIdentifierÍE[ÍEb§pinListKªIdentifierÍEcÍEd¡iÃÂ¥constS³VariableDeclarationÍEpÍE‘T²VariableDeclaratorÍEtÍEKªIdentifierÍEtÍE«siblingHalfKªIdentifierÍE‚ÍE¬pinThreshold£letW¬ForStatementÍE™ÍGS³VariableDeclarationÍEÍE§‘T²VariableDeclaratorÍE¢ÍE§KªIdentifierÍE¢ÍE£¡jM§LiteralÍE¦ÍE§ ¡0£letP°BinaryExpressionÍE©ÍE»KªIdentifierÍE©ÍEª¡j¡<Q°MemberExpressionÍE­ÍE»KªIdentifierÍE­ÍE´§pinListKªIdentifierÍEµÍE»¦lengthÂÂX°UpdateExpressionÍE½ÍEÀ¢++ÂKªIdentifierÍE½ÍE¾¡jN®BlockStatementÍEÂÍG—O«IfStatementÍEÑÍF	P°BinaryExpressionÍEÕÍEÜKªIdentifierÍEÕÍEÖ¡j£===KªIdentifierÍEÛÍEÜ¡iN®BlockStatementÍEŞÍF	‘\±ContinueStatementÍEñÍEúÀÀS³VariableDeclarationÍFÍF,‘T²VariableDeclaratorÍFÍF+KªIdentifierÍFÍF¡oQ°MemberExpressionÍF!ÍF+KªIdentifierÍF!ÍF(§pinListKªIdentifierÍF)ÍF*¡jÃÂ¥constO«IfStatementÍF:ÍF€P°BinaryExpressionÍF>ÍFSQ°MemberExpressionÍF>ÍFFKªIdentifierÍF>ÍF?¡oKªIdentifierÍF@ÍFF¦compIdÂÂ£!==Q°MemberExpressionÍFKÍFSKªIdentifierÍFKÍFL¡pKªIdentifierÍFMÍFS¦compIdÂÂN®BlockStatementÍFUÍF€‘\±ContinueStatementÍFhÍFqÀÀS³VariableDeclarationÍFÍF®‘T²VariableDeclaratorÍF”ÍF­KªIdentifierÍF”ÍF—£sdxP°BinaryExpressionÍFšÍF­Q°MemberExpressionÍFšÍF¢KªIdentifierÍFšÍF›¡pKªIdentifierÍFœÍF¢¦worldXÂÂ¡-Q°MemberExpressionÍF¥ÍF­KªIdentifierÍF¥ÍF¦¡oKªIdentifierÍF§ÍF­¦worldXÂÂ¥constS³VariableDeclarationÍF¼ÍFÜ‘T²VariableDeclaratorÍFÂÍFÛKªIdentifierÍFÂÍFÅ£sdyP°BinaryExpressionÍFÈÍFÛQ°MemberExpressionÍFÈÍFĞKªIdentifierÍFÈÍFÉ¡pKªIdentifierÍFÊÍFĞ¦worldYÂÂ¡-Q°MemberExpressionÍFÓÍFÛKªIdentifierÍFÓÍFÔ¡oKªIdentifierÍFÕÍFÛ¦worldYÂÂ¥constS³VariableDeclarationÍFêÍG‘T²VariableDeclaratorÍFğÍGKªIdentifierÍFğÍFô¤halfP°BinaryExpressionÍF÷ÍGU®CallExpressionÍF÷ÍGQ°MemberExpressionÍF÷ÍG KªIdentifierÍF÷ÍFû¤MathKªIdentifierÍFüÍG ¤sqrtÂÂ‘P°BinaryExpressionÍGÍGP°BinaryExpressionÍGÍG
+KªIdentifierÍGÍG£sdx¡*KªIdentifierÍGÍG
+£sdx¡+P°BinaryExpressionÍGÍGKªIdentifierÍGÍG£sdy¡*KªIdentifierÍGÍG£sdyÂ¡*M§LiteralÍGÍGË?à      £0.5¥constO«IfStatementÍG,ÍG…P±LogicalExpressionÍG0ÍGNP°BinaryExpressionÍG0ÍG8KªIdentifierÍG0ÍG4¤half¡>M§LiteralÍG7ÍG8¡1¢&&P°BinaryExpressionÍG<ÍGNKªIdentifierÍG<ÍG@¤half¡<KªIdentifierÍGCÍGN«siblingHalfN®BlockStatementÍGPÍG…‘[³ExpressionStatementÍGcÍGv^´AssignmentExpressionÍGcÍGu¡=KªIdentifierÍGcÍGn«siblingHalfKªIdentifierÍGqÍGu¤halfÀS³VariableDeclarationÍGšÍG«‘T²VariableDeclaratorÍGÍGªKªIdentifierÍGÍG¥§bestKeyM§LiteralÍG¨ÍGª ¢''£letS³VariableDeclarationÍGµÍGĞ‘T²VariableDeclaratorÍG¹ÍGÏKªIdentifierÍG¹ÍGÁ¨bestDistKªIdentifierÍGÄÍGÏ«siblingHalf£let[³ExpressionStatementÍGÚÍIU®CallExpressionÍGÚÍIQ°MemberExpressionÍGÚÍGëKªIdentifierÍGÚÍGã©junctionsKªIdentifierÍGäÍGë§forEachÂÂ‘J·ArrowFunctionExpressionÍGìÍIÀÂÂÂ’KªIdentifierÍGíÍGî¡jKªIdentifierÍGğÍGó£keyN®BlockStatementÍGøÍI”S³VariableDeclarationÍHÍH!‘T²VariableDeclaratorÍHÍH KªIdentifierÍHÍH¢dxP°BinaryExpressionÍHÍH Q°MemberExpressionÍHÍHKªIdentifierÍHÍH¡pKªIdentifierÍHÍH¦worldXÂÂ¡-Q°MemberExpressionÍHÍH KªIdentifierÍHÍH¡jKªIdentifierÍHÍH ¡xÂÂ¥constS³VariableDeclarationÍH/ÍHI‘T²VariableDeclaratorÍH5ÍHHKªIdentifierÍH5ÍH7¢dyP°BinaryExpressionÍH:ÍHHQ°MemberExpressionÍH:ÍHBKªIdentifierÍH:ÍH;¡pKªIdentifierÍH<ÍHB¦worldYÂÂ¡-Q°MemberExpressionÍHEÍHHKªIdentifierÍHEÍHF¡jKªIdentifierÍHGÍHH¡yÂÂ¥constS³VariableDeclarationÍHWÍH‘T²VariableDeclaratorÍH]ÍH€KªIdentifierÍH]ÍHa¤distU®CallExpressionÍHdÍH€Q°MemberExpressionÍHdÍHmKªIdentifierÍHdÍHh¤MathKªIdentifierÍHiÍHm¤sqrtÂÂ‘P°BinaryExpressionÍHnÍHP°BinaryExpressionÍHnÍHuKªIdentifierÍHnÍHp¢dx¡*KªIdentifierÍHsÍHu¢dx¡+P°BinaryExpressionÍHxÍHKªIdentifierÍHxÍHz¢dy¡*KªIdentifierÍH}ÍH¢dyÂ¥constO«IfStatementÍHÍHöP°BinaryExpressionÍH“ÍH¢KªIdentifierÍH“ÍH—¤dist¡<KªIdentifierÍHšÍH¢¨bestDistN®BlockStatementÍH¤ÍHö’[³ExpressionStatementÍH·ÍHÇ^´AssignmentExpressionÍH·ÍHÆ¡=KªIdentifierÍH·ÍH¿¨bestDistKªIdentifierÍHÂÍHÆ¤dist[³ExpressionStatementÍHÙÍHç^´AssignmentExpressionÍHÙÍHæ¡=KªIdentifierÍHÙÍHà§bestKeyKªIdentifierÍHãÍHæ£keyÀÂO«IfStatementÍIÍJ•P°BinaryExpressionÍIÍI#Q°MemberExpressionÍIÍIKªIdentifierÍIÍI§bestKeyKªIdentifierÍIÍI¦lengthÂÂ¡>M§LiteralÍI"ÍI# ¡0N®BlockStatementÍI%ÍJ•”S³VariableDeclarationÍI4ÍIU‘T²VariableDeclaratorÍI:ÍITKªIdentifierÍI:ÍI;¡jU®CallExpressionÍI>ÍITQ°MemberExpressionÍI>ÍIKKªIdentifierÍI>ÍIG©junctionsKªIdentifierÍIHÍIK£getÂÂ‘KªIdentifierÍILÍIS§bestKeyÂ¥constS³VariableDeclarationÍIcÍI·‘T²VariableDeclaratorÍIiÍI¶KªIdentifierÍIiÍIo¦existsU®CallExpressionÍIrÍI¶Q°MemberExpressionÍIrÍI€Q°MemberExpressionÍIrÍI{KªIdentifierÍIrÍIs¡jKªIdentifierÍItÍI{§pinRefsÂÂKªIdentifierÍI|ÍI€¤someÂÂ‘J·ArrowFunctionExpressionÍIÍIµÀÃÂÂ‘KªIdentifierÍIÍIƒ¢prP±LogicalExpressionÍI‡ÍIµP°BinaryExpressionÍI‡ÍIQ°MemberExpressionÍI‡ÍIKªIdentifierÍI‡ÍI‰¢prKªIdentifierÍIŠÍI¦compIdÂÂ£===Q°MemberExpressionÍI•ÍIKªIdentifierÍI•ÍI–¡pKªIdentifierÍI—ÍI¦compIdÂÂ¢&&P°BinaryExpressionÍI¡ÍIµQ°MemberExpressionÍI¡ÍI©KªIdentifierÍI¡ÍI£¢prKªIdentifierÍI¤ÍI©¥pinIdÂÂ£===Q°MemberExpressionÍI®ÍIµKªIdentifierÍI®ÍI¯¡pKªIdentifierÍI°ÍIµ¥pinIdÂÂÂ¥constO«IfStatementÍIÅÍJBX¯UnaryExpressionÍIÉÍIĞ¡!ÃKªIdentifierÍIÊÍIĞ¦existsN®BlockStatementÍIÒÍJB‘[³ExpressionStatementÍIåÍJ3U®CallExpressionÍIåÍJ2Q°MemberExpressionÍIåÍIóQ°MemberExpressionÍIåÍIîKªIdentifierÍIåÍIæ¡jKªIdentifierÍIçÍIî§pinRefsÂÂKªIdentifierÍIïÍIó¤pushÂÂ‘U®CallExpressionÍIôÍJ1KªIdentifierÍIôÍJ²makeJunctionPinRef”Q°MemberExpressionÍJÍJKªIdentifierÍJÍJ¡pKªIdentifierÍJ	ÍJ¦compIdÂÂQ°MemberExpressionÍJÍJKªIdentifierÍJÍJ¡pKªIdentifierÍJÍJ¥pinIdÂÂQ°MemberExpressionÍJÍJ#KªIdentifierÍJÍJ¡pKªIdentifierÍJÍJ#§pinNameÂÂQ°MemberExpressionÍJ%ÍJ0KªIdentifierÍJ%ÍJ&¡pKªIdentifierÍJ'ÍJ0©libraryIdÂÂÂÂÀ[³ExpressionStatementÍJPÍJŠU®CallExpressionÍJPÍJ‰Q°MemberExpressionÍJPÍJXKªIdentifierÍJPÍJR¢ufKªIdentifierÍJSÍJX¥unionÂÂ’U®CallExpressionÍJYÍJKªIdentifierÍJYÍJa¨roundKey‘Y°ObjectExpressionÍJbÍJ~’Z¨PropertyÍJdÍJoÂÂÂKªIdentifierÍJdÍJe¡xQ°MemberExpressionÍJgÍJoKªIdentifierÍJgÍJh¡pKªIdentifierÍJiÍJo¦worldXÂÂ¤initZ¨PropertyÍJqÍJ|ÂÂÂKªIdentifierÍJqÍJr¡yQ°MemberExpressionÍJtÍJ|KªIdentifierÍJtÍJu¡pKªIdentifierÍJvÍJ|¦worldYÂÂ¤initÂKªIdentifierÍJÍJˆ§bestKeyÂÀS³VariableDeclarationÍJÌÍJë‘T²VariableDeclaratorÍJÒÍJêKªIdentifierÍJÒÍJŞ¬junctionKindV­NewExpressionÍJáÍJêKªIdentifierÍJåÍJè£Map¥const[³ExpressionStatementÍJñÍKNU®CallExpressionÍJñÍKMQ°MemberExpressionÍJñÍKKªIdentifierÍJñÍJú©junctionsKªIdentifierÍJûÍK§forEachÂÂ‘J·ArrowFunctionExpressionÍKÍKLÀÂÂÂ’KªIdentifierÍKÍK¡jKªIdentifierÍKÍK
+£keyN®BlockStatementÍKÍKL‘[³ExpressionStatementÍKÍKEU®CallExpressionÍKÍKDQ°MemberExpressionÍKÍK*KªIdentifierÍKÍK&¬junctionKindKªIdentifierÍK'ÍK*£setÂÂ’KªIdentifierÍK+ÍK.£keyU®CallExpressionÍK0ÍKCKªIdentifierÍK0ÍK@°classifyJunction‘KªIdentifierÍKAÍKB¡jÂÂÂS³VariableDeclarationÍKšÍKµ‘T²VariableDeclaratorÍK ÍK´KªIdentifierÍK ÍK¨¨rootKindV­NewExpressionÍK«ÍK´KªIdentifierÍK¯ÍK²£Map¥const[³ExpressionStatementÍK»ÍLU®CallExpressionÍK»ÍLQ°MemberExpressionÍK»ÍKÌKªIdentifierÍK»ÍKÄ©junctionsKªIdentifierÍKÅÍKÌ§forEachÂÂ‘J·ArrowFunctionExpressionÍKÍÍLÀÂÂÂ’KªIdentifierÍKÎÍKĞ¢_jKªIdentifierÍKÒÍKÕ£keyN®BlockStatementÍKÚÍL‘[³ExpressionStatementÍKåÍLU®CallExpressionÍKåÍLQ°MemberExpressionÍKåÍKñKªIdentifierÍKåÍKí¨rootKindKªIdentifierÍKîÍKñ£setÂÂ’U®CallExpressionÍKòÍKşQ°MemberExpressionÍKòÍKùKªIdentifierÍKòÍKô¢ufKªIdentifierÍKõÍKù¤findÂÂ‘KªIdentifierÍKúÍKı£keyÂQ°MemberExpressionÍL ÍLKªIdentifierÍL ÍL¬JunctionKindKªIdentifierÍLÍL§UNKNOWNÂÂÂÂS³VariableDeclarationÍL%ÍL6‘T²VariableDeclaratorÍL+ÍL5KªIdentifierÍL+ÍL0¥seeds]¯ArrayExpressionÍL3ÍL5¥const[³ExpressionStatementÍL<ÍM<U®CallExpressionÍL<ÍM;Q°MemberExpressionÍL<ÍLMKªIdentifierÍL<ÍLE©junctionsKªIdentifierÍLFÍLM§forEachÂÂ‘J·ArrowFunctionExpressionÍLNÍM:ÀÂÂÂ’KªIdentifierÍLOÍLP¡jKªIdentifierÍLRÍLU£keyN®BlockStatementÍLZÍM:’S³VariableDeclarationÍLeÍLƒ‘T²VariableDeclaratorÍLkÍL‚KªIdentifierÍLkÍLl¡kU®CallExpressionÍLoÍL‚KªIdentifierÍLoÍL°classifyJunction‘KªIdentifierÍL€ÍL¡jÂ¥constO«IfStatementÍLÍM3P±LogicalExpressionÍL‘ÍLÛP±LogicalExpressionÍL‘ÍLÁP°BinaryExpressionÍL‘ÍL§KªIdentifierÍL‘ÍL’¡k£===Q°MemberExpressionÍL—ÍL§KªIdentifierÍL—ÍL£¬JunctionKindKªIdentifierÍL¤ÍL§£VCCÂÂ¢||P°BinaryExpressionÍL«ÍLÁKªIdentifierÍL«ÍL¬¡k£===Q°MemberExpressionÍL±ÍLÁKªIdentifierÍL±ÍL½¬JunctionKindKªIdentifierÍL¾ÍLÁ£GNDÂÂ¢||P°BinaryExpressionÍLÅÍLÛKªIdentifierÍLÅÍLÆ¡k£===Q°MemberExpressionÍLËÍLÛKªIdentifierÍLËÍL×¬JunctionKindKªIdentifierÍLØÍLÛ£VEEÂÂN®BlockStatementÍLİÍM3’[³ExpressionStatementÍLìÍLüU®CallExpressionÍLìÍLûQ°MemberExpressionÍLìÍLöKªIdentifierÍLìÍLñ¥seedsKªIdentifierÍLòÍLö¤pushÂÂ‘KªIdentifierÍL÷ÍLú£keyÂ[³ExpressionStatementÍM
+ÍM(U®CallExpressionÍM
+ÍM'Q°MemberExpressionÍM
+ÍMKªIdentifierÍM
+ÍM¨rootKindKªIdentifierÍMÍM£setÂÂ’U®CallExpressionÍMÍM#Q°MemberExpressionÍMÍMKªIdentifierÍMÍM¢ufKªIdentifierÍMÍM¤findÂÂ‘KªIdentifierÍMÍM"£keyÂKªIdentifierÍM%ÍM&¡kÂÀÂS³VariableDeclarationÍMzÍM‘T²VariableDeclaratorÍM€ÍMKªIdentifierÍM€ÍMƒ£adjV­NewExpressionÍM†ÍMKªIdentifierÍMŠÍM£Map¥constS³VariableDeclarationÍM–ÍN‡‘T²VariableDeclaratorÍMœÍN†KªIdentifierÍMœÍM£§addEdgeJ·ArrowFunctionExpressionÍM¦ÍN†ÀÂÂÂ’KªIdentifierÍM§ÍM¨¡aKªIdentifierÍMªÍM«¡bN®BlockStatementÍM°ÍN†”O«IfStatementÍM»ÍMüX¯UnaryExpressionÍM¿ÍMÊ¡!ÃU®CallExpressionÍMÀÍMÊQ°MemberExpressionÍMÀÍMÇKªIdentifierÍMÀÍMÃ£adjKªIdentifierÍMÄÍMÇ£hasÂÂ‘KªIdentifierÍMÈÍMÉ¡aÂN®BlockStatementÍMÌÍMü‘[³ExpressionStatementÍMÛÍMñU®CallExpressionÍMÛÍMğQ°MemberExpressionÍMÛÍMâKªIdentifierÍMÛÍMŞ£adjKªIdentifierÍMßÍMâ£setÂÂ’KªIdentifierÍMãÍMä¡aV­NewExpressionÍMæÍMïKªIdentifierÍMêÍMí£SetÂÀ[³ExpressionStatementÍNÍNU®CallExpressionÍNÍNQ°MemberExpressionÍNÍNU®CallExpressionÍNÍNQ°MemberExpressionÍNÍNKªIdentifierÍNÍN	£adjKªIdentifierÍN
+ÍN£getÂÂ‘KªIdentifierÍNÍN¡aÂKªIdentifierÍNÍN£addÂÂ‘KªIdentifierÍNÍN¡bÂO«IfStatementÍN"ÍNcX¯UnaryExpressionÍN&ÍN1¡!ÃU®CallExpressionÍN'ÍN1Q°MemberExpressionÍN'ÍN.KªIdentifierÍN'ÍN*£adjKªIdentifierÍN+ÍN.£hasÂÂ‘KªIdentifierÍN/ÍN0¡bÂN®BlockStatementÍN3ÍNc‘[³ExpressionStatementÍNBÍNXU®CallExpressionÍNBÍNWQ°MemberExpressionÍNBÍNIKªIdentifierÍNBÍNE£adjKªIdentifierÍNFÍNI£setÂÂ’KªIdentifierÍNJÍNK¡bV­NewExpressionÍNMÍNVKªIdentifierÍNQÍNT£SetÂÀ[³ExpressionStatementÍNmÍNU®CallExpressionÍNmÍN~Q°MemberExpressionÍNmÍN{U®CallExpressionÍNmÍNwQ°MemberExpressionÍNmÍNtKªIdentifierÍNmÍNp£adjKªIdentifierÍNqÍNt£getÂÂ‘KªIdentifierÍNuÍNv¡bÂKªIdentifierÍNxÍN{£addÂÂ‘KªIdentifierÍN|ÍN}¡aÂ¥constW¬ForStatementÍNÍO¼S³VariableDeclarationÍN’ÍNœ‘T²VariableDeclaratorÍN–ÍNœKªIdentifierÍN–ÍN˜¢wiM§LiteralÍN›ÍNœ ¡0£letP°BinaryExpressionÍNÍN³KªIdentifierÍNÍN ¢wi¡<Q°MemberExpressionÍN£ÍN³Q°MemberExpressionÍN£ÍN¬KªIdentifierÍN£ÍN¦£docKªIdentifierÍN§ÍN¬¥wiresÂÂKªIdentifierÍN­ÍN³¦lengthÂÂX°UpdateExpressionÍNµÍN¹¢++ÂKªIdentifierÍNµÍN·¢wiN®BlockStatementÍN»ÍO¼•S³VariableDeclarationÍNÆÍNá‘T²VariableDeclaratorÍNÌÍNàKªIdentifierÍNÌÍNĞ¤wireQ°MemberExpressionÍNÓÍNàQ°MemberExpressionÍNÓÍNÜKªIdentifierÍNÓÍNÖ£docKªIdentifierÍN×ÍNÜ¥wiresÂÂKªIdentifierÍNİÍNß¢wiÃÂ¥constO«IfStatementÍNëÍO*P°BinaryExpressionÍNïÍOQ°MemberExpressionÍNïÍOQ°MemberExpressionÍNïÍNúKªIdentifierÍNïÍNó¤wireKªIdentifierÍNôÍNú¦pointsÂÂKªIdentifierÍNûÍO¦lengthÂÂ¡<M§LiteralÍOÍO¡2N®BlockStatementÍOÍO*‘\±ContinueStatementÍOÍOÀÀS³VariableDeclarationÍO4ÍOX‘T²VariableDeclaratorÍO:ÍOWKªIdentifierÍO:ÍO<¢k0U®CallExpressionÍO?ÍOWKªIdentifierÍO?ÍOG¨roundKey‘Q°MemberExpressionÍOHÍOVQ°MemberExpressionÍOHÍOSKªIdentifierÍOHÍOL¤wireKªIdentifierÍOMÍOS¦pointsÂÂM§LiteralÍOTÍOU ¡0ÃÂÂ¥constS³VariableDeclarationÍObÍO›‘T²VariableDeclaratorÍOhÍOšKªIdentifierÍOhÍOj¢k1U®CallExpressionÍOmÍOšKªIdentifierÍOmÍOu¨roundKey‘Q°MemberExpressionÍOvÍO™Q°MemberExpressionÍOvÍOKªIdentifierÍOvÍOz¤wireKªIdentifierÍO{ÍO¦pointsÂÂP°BinaryExpressionÍO‚ÍO˜Q°MemberExpressionÍO‚ÍO”Q°MemberExpressionÍO‚ÍOKªIdentifierÍO‚ÍO†¤wireKªIdentifierÍO‡ÍO¦pointsÂÂKªIdentifierÍOÍO”¦lengthÂÂ¡-M§LiteralÍO—ÍO˜¡1ÃÂÂ¥const[³ExpressionStatementÍO¥ÍOµU®CallExpressionÍO¥ÍO´KªIdentifierÍO¥ÍO¬§addEdge’KªIdentifierÍO­ÍO¯¢k0KªIdentifierÍO±ÍO³¢k1ÂS³VariableDeclarationÍOíÍP‘T²VariableDeclaratorÍOóÍPKªIdentifierÍOóÍOû¨keyToRepV­NewExpressionÍOşÍPKªIdentifierÍPÍP£Map¥const[³ExpressionStatementÍPÍPaU®CallExpressionÍPÍP`Q°MemberExpressionÍPÍPKªIdentifierÍPÍP©junctionsKªIdentifierÍPÍP§forEachÂÂ‘J·ArrowFunctionExpressionÍP ÍP_ÀÂÂÂ’KªIdentifierÍP!ÍP#¢_jKªIdentifierÍP%ÍP(£keyN®BlockStatementÍP-ÍP_‘[³ExpressionStatementÍP8ÍPXU®CallExpressionÍP8ÍPWQ°MemberExpressionÍP8ÍPDKªIdentifierÍP8ÍP@¨keyToRepKªIdentifierÍPAÍPD£setÂÂ’KªIdentifierÍPEÍPH£keyU®CallExpressionÍPJÍPVQ°MemberExpressionÍPJÍPQKªIdentifierÍPJÍPL¢ufKªIdentifierÍPMÍPQ¤findÂÂ‘KªIdentifierÍPRÍPU£keyÂÂÂS³VariableDeclarationÍPgÍP€‘T²VariableDeclaratorÍPmÍPKªIdentifierÍPmÍPs¦repAdjV­NewExpressionÍPvÍPKªIdentifierÍPzÍP}£Map¥const[³ExpressionStatementÍP†ÍQ‡U®CallExpressionÍP†ÍQ†Q°MemberExpressionÍP†ÍP‘KªIdentifierÍP†ÍP‰£adjKªIdentifierÍPŠÍP‘§forEachÂÂ‘J·ArrowFunctionExpressionÍP’ÍQ…ÀÂÂÂ’KªIdentifierÍP“ÍPœ©neighborsKªIdentifierÍPÍP¡£keyN®BlockStatementÍP¦ÍQ…“S³VariableDeclarationÍP±ÍPÊ‘T²VariableDeclaratorÍP·ÍPÉKªIdentifierÍP·ÍPº£repU®CallExpressionÍP½ÍPÉQ°MemberExpressionÍP½ÍPÄKªIdentifierÍP½ÍP¿¢ufKªIdentifierÍPÀÍPÄ¤findÂÂ‘KªIdentifierÍPÅÍPÈ£keyÂ¥constO«IfStatementÍPÔÍQX¯UnaryExpressionÍPØÍPè¡!ÃU®CallExpressionÍPÙÍPèQ°MemberExpressionÍPÙÍPãKªIdentifierÍPÙÍPß¦repAdjKªIdentifierÍPàÍPã£hasÂÂ‘KªIdentifierÍPäÍPç£repÂN®BlockStatementÍPêÍQ‘[³ExpressionStatementÍPùÍQU®CallExpressionÍPùÍQQ°MemberExpressionÍPùÍQKªIdentifierÍPùÍPÿ¦repAdjKªIdentifierÍQ ÍQ£setÂÂ’KªIdentifierÍQÍQ£repV­NewExpressionÍQ	ÍQKªIdentifierÍQÍQ£SetÂÀ[³ExpressionStatementÍQ)ÍQ~U®CallExpressionÍQ)ÍQ}Q°MemberExpressionÍQ)ÍQ:KªIdentifierÍQ)ÍQ2©neighborsKªIdentifierÍQ3ÍQ:§forEachÂÂ‘J·ArrowFunctionExpressionÍQ;ÍQ|ÀÂÂÂ‘KªIdentifierÍQ<ÍQ=¡nN®BlockStatementÍQBÍQ|‘[³ExpressionStatementÍQQÍQqU®CallExpressionÍQQÍQpQ°MemberExpressionÍQQÍQdU®CallExpressionÍQQÍQ`Q°MemberExpressionÍQQÍQ[KªIdentifierÍQQÍQW¦repAdjKªIdentifierÍQXÍQ[£getÂÂ‘KªIdentifierÍQ\ÍQ_£repÂKªIdentifierÍQaÍQd£addÂÂ‘U®CallExpressionÍQeÍQoQ°MemberExpressionÍQeÍQlKªIdentifierÍQeÍQg¢ufKªIdentifierÍQhÍQl¤findÂÂ‘KªIdentifierÍQmÍQn¡nÂÂÂÂS³VariableDeclarationÍQ¶ÍQĞ‘T²VariableDeclaratorÍQ¼ÍQÏKªIdentifierÍQ¼ÍQÃ§repKindV­NewExpressionÍQÆÍQÏKªIdentifierÍQÊÍQÍ£Map¥const[³ExpressionStatementÍQÖÍR-U®CallExpressionÍQÖÍR,Q°MemberExpressionÍQÖÍQäKªIdentifierÍQÖÍQÜ¦repAdjKªIdentifierÍQİÍQä§forEachÂÂ‘J·ArrowFunctionExpressionÍQåÍR+ÀÂÂÂ’KªIdentifierÍQæÍQè¢_vKªIdentifierÍQêÍQí£repN®BlockStatementÍQòÍR+‘[³ExpressionStatementÍQıÍR$U®CallExpressionÍQıÍR#Q°MemberExpressionÍQıÍRKªIdentifierÍQıÍR§repKindKªIdentifierÍRÍR£setÂÂ’KªIdentifierÍR	ÍR£repQ°MemberExpressionÍRÍR"KªIdentifierÍRÍR¬JunctionKindKªIdentifierÍRÍR"§UNKNOWNÂÂÂÂS³VariableDeclarationÍR3ÍRD‘T²VariableDeclaratorÍR9ÍRCKªIdentifierÍR9ÍR>¥queue]¯ArrayExpressionÍRAÍRC¥constW¬ForStatementÍRJÍSS³VariableDeclarationÍROÍRY‘T²VariableDeclaratorÍRSÍRYKªIdentifierÍRSÍRU¢siM§LiteralÍRXÍRY ¡0£letP°BinaryExpressionÍR[ÍRlKªIdentifierÍR[ÍR]¢si¡<Q°MemberExpressionÍR`ÍRlKªIdentifierÍR`ÍRe¥seedsKªIdentifierÍRfÍRl¦lengthÂÂX°UpdateExpressionÍRnÍRr¢++ÂKªIdentifierÍRnÍRp¢siN®BlockStatementÍRtÍS“S³VariableDeclarationÍRÍR‘T²VariableDeclaratorÍR…ÍRKªIdentifierÍR…ÍRˆ£repU®CallExpressionÍR‹ÍRQ°MemberExpressionÍR‹ÍR’KªIdentifierÍR‹ÍR¢ufKªIdentifierÍRÍR’¤findÂÂ‘Q°MemberExpressionÍR“ÍRœKªIdentifierÍR“ÍR˜¥seedsKªIdentifierÍR™ÍR›¢siÃÂÂ¥constS³VariableDeclarationÍR¨ÍRŞ‘T²VariableDeclaratorÍR®ÍRİKªIdentifierÍR®ÍR°¢skU®CallExpressionÍR³ÍRİKªIdentifierÍR³ÍRÃ°classifyJunction‘U®CallExpressionÍRÄÍRÜQ°MemberExpressionÍRÄÍRÑKªIdentifierÍRÄÍRÍ©junctionsKªIdentifierÍRÎÍRÑ£getÂÂ‘Q°MemberExpressionÍRÒÍRÛKªIdentifierÍRÒÍR×¥seedsKªIdentifierÍRØÍRÚ¢siÃÂÂÂ¥constO«IfStatementÍRèÍSˆP±LogicalExpressionÍRìÍS9P±LogicalExpressionÍRìÍSP°BinaryExpressionÍRìÍSKªIdentifierÍRìÍRî¢sk£===Q°MemberExpressionÍRóÍSKªIdentifierÍRóÍRÿ¬JunctionKindKªIdentifierÍS ÍS£VCCÂÂ¢||P°BinaryExpressionÍSÍSKªIdentifierÍSÍS	¢sk£===Q°MemberExpressionÍSÍSKªIdentifierÍSÍS¬JunctionKindKªIdentifierÍSÍS£GNDÂÂ¢||P°BinaryExpressionÍS"ÍS9KªIdentifierÍS"ÍS$¢sk£===Q°MemberExpressionÍS)ÍS9KªIdentifierÍS)ÍS5¬JunctionKindKªIdentifierÍS6ÍS9£VEEÂÂN®BlockStatementÍS;ÍSˆ’[³ExpressionStatementÍSJÍS_U®CallExpressionÍSJÍS^Q°MemberExpressionÍSJÍSUKªIdentifierÍSJÍSQ§repKindKªIdentifierÍSRÍSU£setÂÂ’KªIdentifierÍSVÍSY£repKªIdentifierÍS[ÍS]¢skÂ[³ExpressionStatementÍSmÍS}U®CallExpressionÍSmÍS|Q°MemberExpressionÍSmÍSwKªIdentifierÍSmÍSr¥queueKªIdentifierÍSsÍSw¤pushÂÂ‘KªIdentifierÍSxÍS{£repÂÀS³VariableDeclarationÍS•ÍS ‘T²VariableDeclaratorÍS™ÍSŸKªIdentifierÍS™ÍS›¢qiM§LiteralÍSÍSŸ ¡0£letÔr_•¤type¥start£end¤test¤body®WhileStatementÍS¦ÍX¤P°BinaryExpressionÍS­ÍS¾KªIdentifierÍS­ÍS¯¢qi¡<Q°MemberExpressionÍS²ÍS¾KªIdentifierÍS²ÍS·¥queueKªIdentifierÍS¸ÍS¾¦lengthÂÂN®BlockStatementÍSÀÍX¤•S³VariableDeclarationÍSËÍSã‘T²VariableDeclaratorÍSÑÍSâKªIdentifierÍSÑÍSÔ£curQ°MemberExpressionÍS×ÍSâKªIdentifierÍS×ÍSÜ¥queueX°UpdateExpressionÍSİÍSá¢++ÂKªIdentifierÍSİÍSß¢qiÃÂ¥constS³VariableDeclarationÍSíÍT‘T²VariableDeclaratorÍSóÍT
+KªIdentifierÍSóÍS÷¤curKU®CallExpressionÍSúÍT
+Q°MemberExpressionÍSúÍTKªIdentifierÍSúÍT§repKindKªIdentifierÍTÍT£getÂÂ‘KªIdentifierÍTÍT	£curÂ¥constS³VariableDeclarationÍTÍT7‘T²VariableDeclaratorÍTÍT6KªIdentifierÍTÍT$©neighborsU®CallExpressionÍT'ÍT6Q°MemberExpressionÍT'ÍT1KªIdentifierÍT'ÍT-¦repAdjKªIdentifierÍT.ÍT1£getÂÂ‘KªIdentifierÍT2ÍT5£curÂ¥constO«IfStatementÍTAÍTP°BinaryExpressionÍTEÍT\KªIdentifierÍTEÍTN©neighbors£===KªIdentifierÍTSÍT\©undefinedN®BlockStatementÍT^ÍT‘\±ContinueStatementÍTmÍTvÀÀ[³ExpressionStatementÍT‹ÍXU®CallExpressionÍT‹ÍXœQ°MemberExpressionÍT‹ÍTœKªIdentifierÍT‹ÍT”©neighborsKªIdentifierÍT•ÍTœ§forEachÂÂ‘J·ArrowFunctionExpressionÍTÍX›ÀÂÂÂ‘KªIdentifierÍTÍTŸ¡nN®BlockStatementÍT¤ÍX›—O«IfStatementÍT³ÍU	P°BinaryExpressionÍT·ÍTŞU®CallExpressionÍT·ÍTÅQ°MemberExpressionÍT·ÍTÂKªIdentifierÍT·ÍT¾§repKindKªIdentifierÍT¿ÍTÂ£getÂÂ‘KªIdentifierÍTÃÍTÄ¡nÂ£!==Q°MemberExpressionÍTÊÍTŞKªIdentifierÍTÊÍTÖ¬JunctionKindKªIdentifierÍT×ÍTŞ§UNKNOWNÂÂN®BlockStatementÍTàÍU	‘R¯ReturnStatementÍTóÍTúÀÀS³VariableDeclarationÍUJÍUi‘T²VariableDeclaratorÍUNÍUhKªIdentifierÍUNÍU`²neighborHasRailSymM§LiteralÍUcÍUhÂ¥false£letS³VariableDeclarationÍUwÍU•‘T²VariableDeclaratorÍU{ÍU”KªIdentifierÍU{ÍUŒ±neighborHasSignalM§LiteralÍUÍU”Â¥false£let[³ExpressionStatementÍU£ÍW‚U®CallExpressionÍU£ÍWQ°MemberExpressionÍU£ÍU´KªIdentifierÍU£ÍU¬©junctionsKªIdentifierÍU­ÍU´§forEachÂÂ‘J·ArrowFunctionExpressionÍUµÍW€ÀÂÂÂ’KªIdentifierÍU¶ÍU·¡jKªIdentifierÍU¹ÍU¼£keyN®BlockStatementÍUÁÍW€“O«IfStatementÍUÔÍVP°BinaryExpressionÍUØÍUêU®CallExpressionÍUØÍUäQ°MemberExpressionÍUØÍUßKªIdentifierÍUØÍUÚ¢ufKªIdentifierÍUÛÍUß¤findÂÂ‘KªIdentifierÍUàÍUã£keyÂ£!==KªIdentifierÍUéÍUê¡nN®BlockStatementÍUìÍV‘R¯ReturnStatementÍVÍV
+ÀÀS³VariableDeclarationÍV/ÍVN‘T²VariableDeclaratorÍV5ÍVMKªIdentifierÍV5ÍV7¢ckU®CallExpressionÍV:ÍVMKªIdentifierÍV:ÍVJ°classifyJunction‘KªIdentifierÍVKÍVL¡jÂ¥constO«IfStatementÍV`ÍWqP±LogicalExpressionÍVdÍV±P±LogicalExpressionÍVdÍV–P°BinaryExpressionÍVdÍV{KªIdentifierÍVdÍVf¢ck£===Q°MemberExpressionÍVkÍV{KªIdentifierÍVkÍVw¬JunctionKindKªIdentifierÍVxÍV{£VCCÂÂ¢||P°BinaryExpressionÍVÍV–KªIdentifierÍVÍV¢ck£===Q°MemberExpressionÍV†ÍV–KªIdentifierÍV†ÍV’¬JunctionKindKªIdentifierÍV“ÍV–£GNDÂÂ¢||P°BinaryExpressionÍVšÍV±KªIdentifierÍVšÍVœ¢ck£===Q°MemberExpressionÍV¡ÍV±KªIdentifierÍV¡ÍV­¬JunctionKindKªIdentifierÍV®ÍV±£VEEÂÂN®BlockStatementÍV³ÍV÷‘[³ExpressionStatementÍVÊÍVä^´AssignmentExpressionÍVÊÍVã¡=KªIdentifierÍVÊÍVÜ²neighborHasRailSymM§LiteralÍVßÍVãÃ¤trueO«IfStatementÍWÍWqP°BinaryExpressionÍWÍW,KªIdentifierÍWÍW¢ck£===Q°MemberExpressionÍWÍW,KªIdentifierÍWÍW%¬JunctionKindKªIdentifierÍW&ÍW,¦SIGNALÂÂN®BlockStatementÍW.ÍWq‘[³ExpressionStatementÍWEÍW^^´AssignmentExpressionÍWEÍW]¡=KªIdentifierÍWEÍWV±neighborHasSignalM§LiteralÍWYÍW]Ã¤trueÀÂO«IfStatementÍWÍXQP±LogicalExpressionÍW”ÍX&P±LogicalExpressionÍW”ÍW¼KªIdentifierÍW”ÍW¥±neighborHasSignal¢&&X¯UnaryExpressionÍW©ÍW¼¡!ÃKªIdentifierÍWªÍW¼²neighborHasRailSym¢&&P±LogicalExpressionÍWÒÍX%P±LogicalExpressionÍWÒÍXP°BinaryExpressionÍWÒÍWëKªIdentifierÍWÒÍWÖ¤curK£===Q°MemberExpressionÍWÛÍWëKªIdentifierÍWÛÍWç¬JunctionKindKªIdentifierÍWèÍWë£VCCÂÂ¢||P°BinaryExpressionÍWïÍXKªIdentifierÍWïÍWó¤curK£===Q°MemberExpressionÍWøÍXKªIdentifierÍWøÍX¬JunctionKindKªIdentifierÍXÍX£GNDÂÂ¢||P°BinaryExpressionÍXÍX%KªIdentifierÍXÍX¤curK£===Q°MemberExpressionÍXÍX%KªIdentifierÍXÍX!¬JunctionKindKªIdentifierÍX"ÍX%£VEEÂÂN®BlockStatementÍX(ÍXQ‘R¯ReturnStatementÍX;ÍXBÀÀ[³ExpressionStatementÍX_ÍXtU®CallExpressionÍX_ÍXsQ°MemberExpressionÍX_ÍXjKªIdentifierÍX_ÍXf§repKindKªIdentifierÍXgÍXj£setÂÂ’KªIdentifierÍXkÍXl¡nKªIdentifierÍXnÍXr¤curKÂ[³ExpressionStatementÍX‚ÍXU®CallExpressionÍX‚ÍXQ°MemberExpressionÍX‚ÍXŒKªIdentifierÍX‚ÍX‡¥queueKªIdentifierÍXˆÍXŒ¤pushÂÂ‘KªIdentifierÍXÍX¡nÂÂS³VariableDeclarationÍXøÍY‘T²VariableDeclaratorÍXşÍYKªIdentifierÍXşÍY©finalKindV­NewExpressionÍY
+ÍYKªIdentifierÍYÍY£Map¥const[³ExpressionStatementÍYÍ[<U®CallExpressionÍYÍ[;Q°MemberExpressionÍYÍY+KªIdentifierÍYÍY#©junctionsKªIdentifierÍY$ÍY+§forEachÂÂ‘J·ArrowFunctionExpressionÍY,Í[:ÀÂÂÂ’KªIdentifierÍY-ÍY.¡jKªIdentifierÍY0ÍY3£keyN®BlockStatementÍY8Í[:•S³VariableDeclarationÍYCÍY\‘T²VariableDeclaratorÍYIÍY[KªIdentifierÍYIÍYL£repU®CallExpressionÍYOÍY[Q°MemberExpressionÍYOÍYVKªIdentifierÍYOÍYQ¢ufKªIdentifierÍYRÍYV¤findÂÂ‘KªIdentifierÍYWÍYZ£keyÂ¥constS³VariableDeclarationÍYfÍY„‘T²VariableDeclaratorÍYlÍYƒKªIdentifierÍYlÍYp¤bfsKU®CallExpressionÍYsÍYƒQ°MemberExpressionÍYsÍY~KªIdentifierÍYsÍYz§repKindKªIdentifierÍY{ÍY~£getÂÂ‘KªIdentifierÍYÍY‚£repÂ¥constO«IfStatementÍYÍZ/P±LogicalExpressionÍY’ÍYåP±LogicalExpressionÍY’ÍYÈP°BinaryExpressionÍY’ÍY«KªIdentifierÍY’ÍY–¤bfsK£===Q°MemberExpressionÍY›ÍY«KªIdentifierÍY›ÍY§¬JunctionKindKªIdentifierÍY¨ÍY«£VCCÂÂ¢||P°BinaryExpressionÍY¯ÍYÈKªIdentifierÍY¯ÍY³¤bfsK£===Q°MemberExpressionÍY¸ÍYÈKªIdentifierÍY¸ÍYÄ¬JunctionKindKªIdentifierÍYÅÍYÈ£GNDÂÂ¢||P°BinaryExpressionÍYÌÍYåKªIdentifierÍYÌÍYĞ¤bfsK£===Q°MemberExpressionÍYÕÍYåKªIdentifierÍYÕÍYá¬JunctionKindKªIdentifierÍYâÍYå£VEEÂÂN®BlockStatementÍYçÍZ/’[³ExpressionStatementÍYöÍZU®CallExpressionÍYöÍZQ°MemberExpressionÍYöÍZKªIdentifierÍYöÍYÿ©finalKindKªIdentifierÍZ ÍZ£setÂÂ’KªIdentifierÍZÍZ£keyKªIdentifierÍZ	ÍZ¤bfsKÂR¯ReturnStatementÍZÍZ$ÀÀS³VariableDeclarationÍZ9ÍZ\‘T²VariableDeclaratorÍZ?ÍZ[KªIdentifierÍZ?ÍZE¦localKU®CallExpressionÍZHÍZ[KªIdentifierÍZHÍZX°classifyJunction‘KªIdentifierÍZYÍZZ¡jÂ¥constO«IfStatementÍZfÍ[3P±LogicalExpressionÍZjÍZ«P°BinaryExpressionÍZjÍZˆKªIdentifierÍZjÍZp¦localK£===Q°MemberExpressionÍZuÍZˆKªIdentifierÍZuÍZ¬JunctionKindKªIdentifierÍZ‚ÍZˆ¦SIGNALÂÂ¢||P°BinaryExpressionÍZŒÍZ«KªIdentifierÍZŒÍZ’¦localK£===Q°MemberExpressionÍZ—ÍZ«KªIdentifierÍZ—ÍZ£¬JunctionKindKªIdentifierÍZ¤ÍZ«§UNKNOWNÂÂN®BlockStatementÍZ­ÍZï‘[³ExpressionStatementÍZ¼ÍZäU®CallExpressionÍZ¼ÍZãQ°MemberExpressionÍZ¼ÍZÉKªIdentifierÍZ¼ÍZÅ©finalKindKªIdentifierÍZÆÍZÉ£setÂÂ’KªIdentifierÍZÊÍZÍ£keyQ°MemberExpressionÍZÏÍZâKªIdentifierÍZÏÍZÛ¬JunctionKindKªIdentifierÍZÜÍZâ¦SIGNALÂÂÂN®BlockStatementÍZşÍ[3‘[³ExpressionStatementÍ[Í[(U®CallExpressionÍ[Í['Q°MemberExpressionÍ[Í[KªIdentifierÍ[Í[©finalKindKªIdentifierÍ[Í[£setÂÂ’KªIdentifierÍ[Í[£keyKªIdentifierÍ[ Í[&¦localKÂÂS³VariableDeclarationÍ[hÍ[¸‘T²VariableDeclaratorÍ[nÍ[·KªIdentifierÍ[nÍ[v¨vccNetIdP±LogicalExpressionÍ[yÍ[·U®CallExpressionÍ[yÍ[’KªIdentifierÍ[yÍ[†­findNetByName’KªIdentifierÍ[‡Í[Š£docM§LiteralÍ[ŒÍ[‘£VCC¥'VCC'Â¢??Ôr`•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ[–Í[·‘Q°MemberExpressionÍ[¦Í[µQ°MemberExpressionÍ[¦Í[®KªIdentifierÍ[¦Í[©£docKªIdentifierÍ[ªÍ[®¤netsÂÂKªIdentifierÍ[¯Í[µ¦lengthÂÂ’Ôra•¤type¥start£end¥value¤tail¯TemplateElementÍ[—Í[¤Ôrb’£raw¦cooked­net_topo_vcc_­net_topo_vcc_Âa¯TemplateElementÍ[¶Í[¶b  Ã¥constS³VariableDeclarationÍ[¾Í\‘T²VariableDeclaratorÍ[ÄÍ\KªIdentifierÍ[ÄÍ[Ì¨gndNetIdP±LogicalExpressionÍ[ÏÍ\U®CallExpressionÍ[ÏÍ[èKªIdentifierÍ[ÏÍ[Ü­findNetByName’KªIdentifierÍ[İÍ[à£docM§LiteralÍ[âÍ[ç£GND¥'GND'Â¢??`¯TemplateLiteralÍ[ìÍ\‘P°BinaryExpressionÍ[üÍ\Q°MemberExpressionÍ[üÍ\Q°MemberExpressionÍ[üÍ\KªIdentifierÍ[üÍ[ÿ£docKªIdentifierÍ\ Í\¤netsÂÂKªIdentifierÍ\Í\¦lengthÂÂ¡+M§LiteralÍ\Í\¡1’a¯TemplateElementÍ[íÍ[úb­net_topo_gnd_­net_topo_gnd_Âa¯TemplateElementÍ\Í\b  Ã¥constS³VariableDeclarationÍ\Í\l‘T²VariableDeclaratorÍ\Í\kKªIdentifierÍ\Í\&¨veeNetIdP±LogicalExpressionÍ\)Í\kU®CallExpressionÍ\)Í\BKªIdentifierÍ\)Í\6­findNetByName’KªIdentifierÍ\7Í\:£docM§LiteralÍ\<Í\A£VEE¥'VEE'Â¢??`¯TemplateLiteralÍ\FÍ\k‘P°BinaryExpressionÍ\VÍ\iQ°MemberExpressionÍ\VÍ\eQ°MemberExpressionÍ\VÍ\^KªIdentifierÍ\VÍ\Y£docKªIdentifierÍ\ZÍ\^¤netsÂÂKªIdentifierÍ\_Í\e¦lengthÂÂ¡+M§LiteralÍ\hÍ\i¡2’a¯TemplateElementÍ\GÍ\Tb­net_topo_vee_­net_topo_vee_Âa¯TemplateElementÍ\jÍ\jb  Ã¥const[³ExpressionStatementÍ\rÍ\¡U®CallExpressionÍ\rÍ\ KªIdentifierÍ\rÍ\{©ensureNet”KªIdentifierÍ\|Í\£docKªIdentifierÍ\Í\‰¨vccNetIdM§LiteralÍ\‹Í\£VCC¥'VCC'Q°MemberExpressionÍ\’Í\ŸKªIdentifierÍ\’Í\™§NetTypeKªIdentifierÍ\šÍ\Ÿ¥POWERÂÂÂ[³ExpressionStatementÍ\§Í\×U®CallExpressionÍ\§Í\ÖKªIdentifierÍ\§Í\°©ensureNet”KªIdentifierÍ\±Í\´£docKªIdentifierÍ\¶Í\¾¨gndNetIdM§LiteralÍ\ÀÍ\Å£GND¥'GND'Q°MemberExpressionÍ\ÇÍ\ÕKªIdentifierÍ\ÇÍ\Î§NetTypeKªIdentifierÍ\ÏÍ\Õ¦GROUNDÂÂÂ[³ExpressionStatementÍ\İÍ]U®CallExpressionÍ\İÍ]KªIdentifierÍ\İÍ\æ©ensureNet”KªIdentifierÍ\çÍ\ê£docKªIdentifierÍ\ìÍ\ô¨veeNetIdM§LiteralÍ\öÍ\û£VEE¥'VEE'Q°MemberExpressionÍ\ıÍ]
+KªIdentifierÍ\ıÍ]§NetTypeKªIdentifierÍ]Í]
+¥POWERÂÂÂS³VariableDeclarationÍ]Í]$‘T²VariableDeclaratorÍ]Í]#KªIdentifierÍ]Í]©signalIdxM§LiteralÍ]"Í]# ¡0£letS³VariableDeclarationÍ]*Í]L‘T²VariableDeclaratorÍ]0Í]KKªIdentifierÍ]0Í]?¯signalNetForRepV­NewExpressionÍ]BÍ]KKªIdentifierÍ]FÍ]I£Map¥constS³VariableDeclarationÍ]›Í]¼‘T²VariableDeclaratorÍ]¡Í]»KªIdentifierÍ]¡Í]¯®nameByOldNetIdV­NewExpressionÍ]²Í]»KªIdentifierÍ]¶Í]¹£Map¥constW¬ForStatementÍ]ÂÍ^ÚS³VariableDeclarationÍ]ÇÍ]Ğ‘T²VariableDeclaratorÍ]ËÍ]ĞKªIdentifierÍ]ËÍ]Ì¡iM§LiteralÍ]ÏÍ]Ğ ¡0£letP°BinaryExpressionÍ]ÒÍ]åKªIdentifierÍ]ÒÍ]Ó¡i¡<Q°MemberExpressionÍ]ÖÍ]åQ°MemberExpressionÍ]ÖÍ]ŞKªIdentifierÍ]ÖÍ]Ù£docKªIdentifierÍ]ÚÍ]Ş¤netsÂÂKªIdentifierÍ]ßÍ]å¦lengthÂÂX°UpdateExpressionÍ]çÍ]ê¢++ÂKªIdentifierÍ]çÍ]è¡iN®BlockStatementÍ]ìÍ^Ú”S³VariableDeclarationÍ]÷Í^‘T²VariableDeclaratorÍ]ıÍ^KªIdentifierÍ]ıÍ]ş¡nQ°MemberExpressionÍ^Í^Q°MemberExpressionÍ^Í^	KªIdentifierÍ^Í^£docKªIdentifierÍ^Í^	¤netsÂÂKªIdentifierÍ^
+Í^¡iÃÂ¥constS³VariableDeclarationÍ^Í^8‘T²VariableDeclaratorÍ^Í^7KªIdentifierÍ^Í^¢nmU®CallExpressionÍ^"Í^7Q°MemberExpressionÍ^"Í^5P±LogicalExpressionÍ^#Í^/Q°MemberExpressionÍ^#Í^)KªIdentifierÍ^#Í^$¡nKªIdentifierÍ^%Í^)¤nameÂÂ¢??M§LiteralÍ^-Í^/ ¢''KªIdentifierÍ^1Í^5¤trimÂÂÂ¥constO«IfStatementÍ^BÍ^¬P±LogicalExpressionÍ^FÍ^‡P±LogicalExpressionÍ^FÍ^nP°BinaryExpressionÍ^FÍ^UQ°MemberExpressionÍ^FÍ^OKªIdentifierÍ^FÍ^H¢nmKªIdentifierÍ^IÍ^O¦lengthÂÂ£===M§LiteralÍ^TÍ^U ¡0¢||U®CallExpressionÍ^YÍ^nQ°MemberExpressionÍ^YÍ^jÔrc–¤type¥start£end¥value£raw¥regex§LiteralÍ^YÍ^e’©^NET_\d+$¡i¬/^NET_\d+$/iÔrd’§pattern¥flags©^NET_\d+$¡iKªIdentifierÍ^fÍ^j¤testÂÂ‘KªIdentifierÍ^kÍ^m¢nmÂ¢||U®CallExpressionÍ^rÍ^‡Q°MemberExpressionÍ^rÍ^ƒc§LiteralÍ^rÍ^~’©^net_topo¡i¬/^net_topo/id©^net_topo¡iKªIdentifierÍ^Í^ƒ¤testÂÂ‘KªIdentifierÍ^„Í^†¢nmÂN®BlockStatementÍ^‰Í^¬‘\±ContinueStatementÍ^˜Í^¡ÀÀ[³ExpressionStatementÍ^¶Í^ÓU®CallExpressionÍ^¶Í^ÒQ°MemberExpressionÍ^¶Í^ÈKªIdentifierÍ^¶Í^Ä®nameByOldNetIdKªIdentifierÍ^ÅÍ^È£setÂÂ’Q°MemberExpressionÍ^ÉÍ^ÍKªIdentifierÍ^ÉÍ^Ê¡nKªIdentifierÍ^ËÍ^Í¢idÂÂKªIdentifierÍ^ÏÍ^Ñ¢nmÂS³VariableDeclarationÍ^àÍ_‘T²VariableDeclaratorÍ^æÍ_KªIdentifierÍ^æÍ^ù³inheritedNameForRepV­NewExpressionÍ^üÍ_KªIdentifierÍ_ Í_£Map¥constW¬ForStatementÍ_Ía´S³VariableDeclarationÍ_Í_‘T²VariableDeclaratorÍ_Í_KªIdentifierÍ_Í_¢wiM§LiteralÍ_Í_ ¡0£letP°BinaryExpressionÍ_Í_2KªIdentifierÍ_Í_¢wi¡<Q°MemberExpressionÍ_"Í_2Q°MemberExpressionÍ_"Í_+KªIdentifierÍ_"Í_%£docKªIdentifierÍ_&Í_+¥wiresÂÂKªIdentifierÍ_,Í_2¦lengthÂÂX°UpdateExpressionÍ_4Í_8¢++ÂKªIdentifierÍ_4Í_6¢wiN®BlockStatementÍ_:Ía´˜S³VariableDeclarationÍ_EÍ_]‘T²VariableDeclaratorÍ_KÍ_\KªIdentifierÍ_KÍ_L¡wQ°MemberExpressionÍ_OÍ_\Q°MemberExpressionÍ_OÍ_XKªIdentifierÍ_OÍ_R£docKªIdentifierÍ_SÍ_X¥wiresÂÂKªIdentifierÍ_YÍ_[¢wiÃÂ¥constO«IfStatementÍ_gÍ_»P±LogicalExpressionÍ_kÍ_–P°BinaryExpressionÍ_kÍ_~Q°MemberExpressionÍ_kÍ_zQ°MemberExpressionÍ_kÍ_sKªIdentifierÍ_kÍ_l¡wKªIdentifierÍ_mÍ_s¦pointsÂÂKªIdentifierÍ_tÍ_z¦lengthÂÂ¡<M§LiteralÍ_}Í_~¡2¢||P°BinaryExpressionÍ_‚Í_–Q°MemberExpressionÍ_‚Í_Q°MemberExpressionÍ_‚Í_‰KªIdentifierÍ_‚Í_ƒ¡wKªIdentifierÍ_„Í_‰¥netIdÂÂKªIdentifierÍ_ŠÍ_¦lengthÂÂ£===M§LiteralÍ_•Í_– ¡0N®BlockStatementÍ_˜Í_»‘\±ContinueStatementÍ_§Í_°ÀÀS³VariableDeclarationÍ_ÅÍ_ó‘T²VariableDeclaratorÍ_ËÍ_òKªIdentifierÍ_ËÍ_Ô©inheritedU®CallExpressionÍ_×Í_òQ°MemberExpressionÍ_×Í_éKªIdentifierÍ_×Í_å®nameByOldNetIdKªIdentifierÍ_æÍ_é£getÂÂ‘Q°MemberExpressionÍ_êÍ_ñKªIdentifierÍ_êÍ_ë¡wKªIdentifierÍ_ìÍ_ñ¥netIdÂÂÂ¥constO«IfStatementÍ_ıÍ`=P°BinaryExpressionÍ`Í`KªIdentifierÍ`Í`
+©inherited£===KªIdentifierÍ`Í`©undefinedN®BlockStatementÍ`Í`=‘\±ContinueStatementÍ`)Í`2ÀÀS³VariableDeclarationÍ`GÍ`h‘T²VariableDeclaratorÍ`MÍ`gKªIdentifierÍ`MÍ`O¢k0U®CallExpressionÍ`RÍ`gKªIdentifierÍ`RÍ`Z¨roundKey‘Q°MemberExpressionÍ`[Í`fQ°MemberExpressionÍ`[Í`cKªIdentifierÍ`[Í`\¡wKªIdentifierÍ`]Í`c¦pointsÂÂM§LiteralÍ`dÍ`e ¡0ÃÂÂ¥constS³VariableDeclarationÍ`rÍ`Š‘T²VariableDeclaratorÍ`xÍ`‰KªIdentifierÍ`xÍ`{£repU®CallExpressionÍ`~Í`‰Q°MemberExpressionÍ`~Í`…KªIdentifierÍ`~Í`€¢ufKªIdentifierÍ`Í`…¤findÂÂ‘KªIdentifierÍ`†Í`ˆ¢k0Â¥constS³VariableDeclarationÍ`”Í`¾‘T²VariableDeclaratorÍ`šÍ`½KªIdentifierÍ`šÍ`¤prevU®CallExpressionÍ`¡Í`½Q°MemberExpressionÍ`¡Í`¸KªIdentifierÍ`¡Í`´³inheritedNameForRepKªIdentifierÍ`µÍ`¸£getÂÂ‘KªIdentifierÍ`¹Í`¼£repÂ¥constO«IfStatementÍ`ÈÍa­P°BinaryExpressionÍ`ÌÍ`ŞKªIdentifierÍ`ÌÍ`Ğ¤prev£===KªIdentifierÍ`ÕÍ`Ş©undefinedN®BlockStatementÍ`àÍa"‘[³ExpressionStatementÍ`ïÍaU®CallExpressionÍ`ïÍaQ°MemberExpressionÍ`ïÍaKªIdentifierÍ`ïÍa³inheritedNameForRepKªIdentifierÍaÍa£setÂÂ’KªIdentifierÍaÍa
+£repKªIdentifierÍaÍa©inheritedÂO«IfStatementÍa1Ía­P°BinaryExpressionÍa5ÍaGKªIdentifierÍa5Ía9¤prev£!==KªIdentifierÍa>ÍaG©inheritedN®BlockStatementÍaIÍa­‘[³ExpressionStatementÍaÍa¢U®CallExpressionÍaÍa¡Q°MemberExpressionÍaÍa˜KªIdentifierÍaÍa”³inheritedNameForRepKªIdentifierÍa•Ía˜£setÂÂ’KªIdentifierÍa™Íaœ£repM§LiteralÍaÍa  ¢''ÂÀS³VariableDeclarationÍaºÍd{‘T²VariableDeclaratorÍaÀÍdzKªIdentifierÍaÀÍaÔ´wireKindForEndpointsJ·ArrowFunctionExpressionÍa×ÍdzÀÂÂÂ’KªIdentifierÍaØÍaÚ¢k0KªIdentifierÍaÜÍaŞ¢k1N®BlockStatementÍaãÍdz—S³VariableDeclarationÍaîÍb"‘T²VariableDeclaratorÍaôÍb!KªIdentifierÍaôÍaö¢j0P±LogicalExpressionÍaùÍb!U®CallExpressionÍaùÍb
+Q°MemberExpressionÍaùÍbKªIdentifierÍaùÍb©finalKindKªIdentifierÍbÍb£getÂÂ‘KªIdentifierÍbÍb	¢k0Â¢??Q°MemberExpressionÍbÍb!KªIdentifierÍbÍb¬JunctionKindKªIdentifierÍbÍb!¦SIGNALÂÂ¥constS³VariableDeclarationÍb,Íb`‘T²VariableDeclaratorÍb2Íb_KªIdentifierÍb2Íb4¢j1P±LogicalExpressionÍb7Íb_U®CallExpressionÍb7ÍbHQ°MemberExpressionÍb7ÍbDKªIdentifierÍb7Íb@©finalKindKªIdentifierÍbAÍbD£getÂÂ‘KªIdentifierÍbEÍbG¢k1Â¢??Q°MemberExpressionÍbLÍb_KªIdentifierÍbLÍbX¬JunctionKindKªIdentifierÍbYÍb_¦SIGNALÂÂ¥constO«IfStatementÍb¢ÍbôU®CallExpressionÍb¦Íb½KªIdentifierÍb¦Íbµ¯railsWouldShort’KªIdentifierÍb¶Íb¸¢j0KªIdentifierÍbºÍb¼¢j1ÂN®BlockStatementÍb¿Íbô‘R¯ReturnStatementÍbÎÍbéQ°MemberExpressionÍbÕÍbèKªIdentifierÍbÕÍbá¬JunctionKindKªIdentifierÍbâÍbè¦SIGNALÂÂÀO«IfStatementÍbşÍchP±LogicalExpressionÍcÍc4P°BinaryExpressionÍcÍcKªIdentifierÍcÍc¢j0£===Q°MemberExpressionÍc	ÍcKªIdentifierÍc	Íc¬JunctionKindKªIdentifierÍcÍc£GNDÂÂ¢||P°BinaryExpressionÍcÍc4KªIdentifierÍcÍc¢j1£===Q°MemberExpressionÍc$Íc4KªIdentifierÍc$Íc0¬JunctionKindKªIdentifierÍc1Íc4£GNDÂÂN®BlockStatementÍc6Ích‘R¯ReturnStatementÍcEÍc]Q°MemberExpressionÍcLÍc\KªIdentifierÍcLÍcX¬JunctionKindKªIdentifierÍcYÍc\£GNDÂÂÀO«IfStatementÍcrÍcÜP±LogicalExpressionÍcvÍc¨P°BinaryExpressionÍcvÍcKªIdentifierÍcvÍcx¢j0£===Q°MemberExpressionÍc}ÍcKªIdentifierÍc}Íc‰¬JunctionKindKªIdentifierÍcŠÍc£VEEÂÂ¢||P°BinaryExpressionÍc‘Íc¨KªIdentifierÍc‘Íc“¢j1£===Q°MemberExpressionÍc˜Íc¨KªIdentifierÍc˜Íc¤¬JunctionKindKªIdentifierÍc¥Íc¨£VEEÂÂN®BlockStatementÍcªÍcÜ‘R¯ReturnStatementÍc¹ÍcÑQ°MemberExpressionÍcÀÍcĞKªIdentifierÍcÀÍcÌ¬JunctionKindKªIdentifierÍcÍÍcĞ£VEEÂÂÀO«IfStatementÍcæÍdPP±LogicalExpressionÍcêÍdP°BinaryExpressionÍcêÍdKªIdentifierÍcêÍcì¢j0£===Q°MemberExpressionÍcñÍdKªIdentifierÍcñÍcı¬JunctionKindKªIdentifierÍcşÍd£VCCÂÂ¢||P°BinaryExpressionÍdÍdKªIdentifierÍdÍd¢j1£===Q°MemberExpressionÍdÍdKªIdentifierÍdÍd¬JunctionKindKªIdentifierÍdÍd£VCCÂÂN®BlockStatementÍdÍdP‘R¯ReturnStatementÍd-ÍdEQ°MemberExpressionÍd4ÍdDKªIdentifierÍd4Íd@¬JunctionKindKªIdentifierÍdAÍdD£VCCÂÂÀR¯ReturnStatementÍdZÍdsU®CallExpressionÍdaÍdrKªIdentifierÍdaÍdj©mergeKind’KªIdentifierÍdkÍdm¢j0KªIdentifierÍdoÍdq¢j1Â¥constS³VariableDeclarationÍdÍhå‘T²VariableDeclaratorÍd‡ÍhäKªIdentifierÍd‡Íd“¬netIdForKindJ·ArrowFunctionExpressionÍd–ÍhäÀÂÂÂ’KªIdentifierÍd—Íd›¤kindKªIdentifierÍdÍd £repN®BlockStatementÍd¥Íhä–O«IfStatementÍd°ÍdùP°BinaryExpressionÍd´ÍdÍKªIdentifierÍd´Íd¸¤kind£===Q°MemberExpressionÍd½ÍdÍKªIdentifierÍd½ÍdÉ¬JunctionKindKªIdentifierÍdÊÍdÍ£VCCÂÂN®BlockStatementÍdÏÍdù‘R¯ReturnStatementÍdŞÍdîKªIdentifierÍdåÍdí¨vccNetIdÀO«IfStatementÍeÍeLP°BinaryExpressionÍeÍe KªIdentifierÍeÍe¤kind£===Q°MemberExpressionÍeÍe KªIdentifierÍeÍe¬JunctionKindKªIdentifierÍeÍe £GNDÂÂN®BlockStatementÍe"ÍeL‘R¯ReturnStatementÍe1ÍeAKªIdentifierÍe8Íe@¨gndNetIdÀO«IfStatementÍeVÍeŸP°BinaryExpressionÍeZÍesKªIdentifierÍeZÍe^¤kind£===Q°MemberExpressionÍecÍesKªIdentifierÍecÍeo¬JunctionKindKªIdentifierÍepÍes£VEEÂÂN®BlockStatementÍeuÍeŸ‘R¯ReturnStatementÍe„Íe”KªIdentifierÍe‹Íe“¨veeNetIdÀS³VariableDeclarationÍe©ÍeÌ‘T²VariableDeclaratorÍe­ÍeËKªIdentifierÍe­Íe°£sidU®CallExpressionÍe³ÍeËQ°MemberExpressionÍe³ÍeÆKªIdentifierÍe³ÍeÂ¯signalNetForRepKªIdentifierÍeÃÍeÆ£getÂÂ‘KªIdentifierÍeÇÍeÊ£repÂ£letO«IfStatementÍeÖÍhÈP°BinaryExpressionÍeÚÍeëKªIdentifierÍeÚÍeİ£sid£===KªIdentifierÍeâÍeë©undefinedN®BlockStatementÍeíÍhÈ“S³VariableDeclarationÍeüÍf0‘T²VariableDeclaratorÍfÍf/KªIdentifierÍfÍf
+¨keepNameP±LogicalExpressionÍfÍf/U®CallExpressionÍfÍf)Q°MemberExpressionÍfÍf$KªIdentifierÍfÍf ³inheritedNameForRepKªIdentifierÍf!Íf$£getÂÂ‘KªIdentifierÍf%Íf(£repÂ¢??M§LiteralÍf-Íf/ ¢''¥constO«IfStatementÍf>Íh‘P°BinaryExpressionÍfBÍfUQ°MemberExpressionÍfBÍfQKªIdentifierÍfBÍfJ¨keepNameKªIdentifierÍfKÍfQ¦lengthÂÂ¡>M§LiteralÍfTÍfU ¡0N®BlockStatementÍfWÍgÒ’S³VariableDeclarationÍfjÍf˜‘T²VariableDeclaratorÍfpÍf—KªIdentifierÍfpÍfx¨existingU®CallExpressionÍf{Íf—KªIdentifierÍf{Ífˆ­findNetByName’KªIdentifierÍf‰ÍfŒ£docKªIdentifierÍfÍf–¨keepNameÂ¥constO«IfStatementÍfªÍgÃP°BinaryExpressionÍf®Íf¿KªIdentifierÍf®Íf¶¨existing£!==M§LiteralÍf»Íf¿À¤nullN®BlockStatementÍfÁÍfú‘[³ExpressionStatementÍfØÍfç^´AssignmentExpressionÍfØÍfæ¡=KªIdentifierÍfØÍfÛ£sidKªIdentifierÍfŞÍfæ¨existingN®BlockStatementÍgÍgÃ“[³ExpressionStatementÍg(Íg4X°UpdateExpressionÍg(Íg3¢++ÂKªIdentifierÍg(Íg1©signalIdx[³ExpressionStatementÍgJÍgl^´AssignmentExpressionÍgJÍgk¡=KªIdentifierÍgJÍgM£sid`¯TemplateLiteralÍgPÍgk‘KªIdentifierÍg`Ígi©signalIdx’a¯TemplateElementÍgQÍg^b­net_topo_sig_­net_topo_sig_Âa¯TemplateElementÍgjÍgjb  Ã[³ExpressionStatementÍg‚Íg°U®CallExpressionÍg‚Íg¯KªIdentifierÍg‚Íg‹©ensureNet”KªIdentifierÍgŒÍg£docKªIdentifierÍg‘Íg”£sidKªIdentifierÍg–Íg¨keepNameQ°MemberExpressionÍg Íg®KªIdentifierÍg Íg§§NetTypeKªIdentifierÍg¨Íg®¦SIGNALÂÂÂN®BlockStatementÍgåÍh‘“[³ExpressionStatementÍgøÍhX°UpdateExpressionÍgøÍh¢++ÂKªIdentifierÍgøÍh©signalIdx[³ExpressionStatementÍhÍh8^´AssignmentExpressionÍhÍh7¡=KªIdentifierÍhÍh£sid`¯TemplateLiteralÍhÍh7‘KªIdentifierÍh,Íh5©signalIdx’a¯TemplateElementÍhÍh*b­net_topo_sig_­net_topo_sig_Âa¯TemplateElementÍh6Íh6b  Ã[³ExpressionStatementÍhJÍh‚U®CallExpressionÍhJÍhKªIdentifierÍhJÍhS©ensureNet”KªIdentifierÍhTÍhW£docKªIdentifierÍhYÍh\£sid`¯TemplateLiteralÍh^Íhp‘KªIdentifierÍheÍhn©signalIdx’a¯TemplateElementÍh_Íhcb¤NET_¤NET_Âa¯TemplateElementÍhoÍhob  ÃQ°MemberExpressionÍhrÍh€KªIdentifierÍhrÍhy§NetTypeKªIdentifierÍhzÍh€¦SIGNALÂÂÂ[³ExpressionStatementÍhŸÍh½U®CallExpressionÍhŸÍh¼Q°MemberExpressionÍhŸÍh²KªIdentifierÍhŸÍh®¯signalNetForRepKªIdentifierÍh¯Íh²£setÂÂ’KªIdentifierÍh³Íh¶£repKªIdentifierÍh¸Íh»£sidÂÀR¯ReturnStatementÍhÒÍhİKªIdentifierÍhÙÍhÜ£sid¥constS³VariableDeclarationÍhëÍi‘T²VariableDeclaratorÍhïÍi KªIdentifierÍhïÍhü­reassignCountM§LiteralÍhÿÍi  ¡0£letW¬ForStatementÍiÍkS³VariableDeclarationÍiÍi‘T²VariableDeclaratorÍiÍiKªIdentifierÍiÍi¢wiM§LiteralÍiÍi ¡0£letP°BinaryExpressionÍiÍi-KªIdentifierÍiÍi¢wi¡<Q°MemberExpressionÍiÍi-Q°MemberExpressionÍiÍi&KªIdentifierÍiÍi £docKªIdentifierÍi!Íi&¥wiresÂÂKªIdentifierÍi'Íi-¦lengthÂÂX°UpdateExpressionÍi/Íi3¢++ÂKªIdentifierÍi/Íi1¢wiN®BlockStatementÍi5Ík˜S³VariableDeclarationÍi@Íi[‘T²VariableDeclaratorÍiFÍiZKªIdentifierÍiFÍiJ¤wireQ°MemberExpressionÍiMÍiZQ°MemberExpressionÍiMÍiVKªIdentifierÍiMÍiP£docKªIdentifierÍiQÍiV¥wiresÂÂKªIdentifierÍiWÍiY¢wiÃÂ¥constO«IfStatementÍieÍi¤P°BinaryExpressionÍiiÍiQ°MemberExpressionÍiiÍi{Q°MemberExpressionÍiiÍitKªIdentifierÍiiÍim¤wireKªIdentifierÍinÍit¦pointsÂÂKªIdentifierÍiuÍi{¦lengthÂÂ¡<M§LiteralÍi~Íi¡2N®BlockStatementÍiÍi¤‘\±ContinueStatementÍiÍi™ÀÀS³VariableDeclarationÍi®ÍiÒ‘T²VariableDeclaratorÍi´ÍiÑKªIdentifierÍi´Íi¶¢k0U®CallExpressionÍi¹ÍiÑKªIdentifierÍi¹ÍiÁ¨roundKey‘Q°MemberExpressionÍiÂÍiĞQ°MemberExpressionÍiÂÍiÍKªIdentifierÍiÂÍiÆ¤wireKªIdentifierÍiÇÍiÍ¦pointsÂÂM§LiteralÍiÎÍiÏ ¡0ÃÂÂ¥constS³VariableDeclarationÍiÜÍj‘T²VariableDeclaratorÍiâÍjKªIdentifierÍiâÍiä¢k1U®CallExpressionÍiçÍjKªIdentifierÍiçÍiï¨roundKey‘Q°MemberExpressionÍiğÍjQ°MemberExpressionÍiğÍiûKªIdentifierÍiğÍiô¤wireKªIdentifierÍiõÍiû¦pointsÂÂP°BinaryExpressionÍiüÍjQ°MemberExpressionÍiüÍjQ°MemberExpressionÍiüÍjKªIdentifierÍiüÍj ¤wireKªIdentifierÍjÍj¦pointsÂÂKªIdentifierÍjÍj¦lengthÂÂ¡-M§LiteralÍjÍj¡1ÃÂÂ¥constS³VariableDeclarationÍjÍjJ‘T²VariableDeclaratorÍj%ÍjIKªIdentifierÍj%Íj*¥wKindU®CallExpressionÍj-ÍjIKªIdentifierÍj-ÍjA´wireKindForEndpoints’KªIdentifierÍjBÍjD¢k0KªIdentifierÍjFÍjH¢k1Â¥constS³VariableDeclarationÍjTÍjl‘T²VariableDeclaratorÍjZÍjkKªIdentifierÍjZÍj]£repU®CallExpressionÍj`ÍjkQ°MemberExpressionÍj`ÍjgKªIdentifierÍj`Íjb¢ufKªIdentifierÍjcÍjg¤findÂÂ‘KªIdentifierÍjhÍjj¢k0Â¥constS³VariableDeclarationÍjvÍj¡‘T²VariableDeclaratorÍj|Íj KªIdentifierÍj|Íj…©targetNetU®CallExpressionÍjˆÍj KªIdentifierÍjˆÍj”¬netIdForKind’KªIdentifierÍj•Íjš¥wKindKªIdentifierÍjœÍjŸ£repÂ¥constO«IfStatementÍj«ÍkP°BinaryExpressionÍj¯ÍjÇQ°MemberExpressionÍj¯Íj¹KªIdentifierÍj¯Íj³¤wireKªIdentifierÍj´Íj¹¥netIdÂÂ£!==KªIdentifierÍj¾ÍjÇ©targetNetN®BlockStatementÍjÉÍk’[³ExpressionStatementÍjØÍjï^´AssignmentExpressionÍjØÍjî¡=Q°MemberExpressionÍjØÍjâKªIdentifierÍjØÍjÜ¤wireKªIdentifierÍjİÍjâ¥netIdÂÂKªIdentifierÍjåÍjî©targetNet[³ExpressionStatementÍjıÍkX°UpdateExpressionÍjıÍk¢++ÂKªIdentifierÍjıÍk
+­reassignCountÀO«IfStatementÍk%ÍkñP°BinaryExpressionÍk)Ík:KªIdentifierÍk)Ík6­reassignCount¡>M§LiteralÍk9Ík: ¡0N®BlockStatementÍk<Íkñ‘[³ExpressionStatementÍkGÍkêU®CallExpressionÍkGÍkéQ°MemberExpressionÍkGÍkRKªIdentifierÍkGÍkM¦LoggerKªIdentifierÍkNÍkR¤infoÂÂ’KªIdentifierÍkSÍkb¯INSTR_TRACE_TAGP°BinaryExpressionÍkdÍkè`¯TemplateLiteralÍkdÍk£‘KªIdentifierÍkÍk­reassignCount’a¯TemplateElementÍkeÍkbº[TOPO] rebuilt wire nets: º[TOPO] rebuilt wire nets: Âa¯TemplateElementÍkÍk¢b³ wires reassigned, ³ wires reassigned, Ã¡+`¯TemplateLiteralÍk³Íkè’KªIdentifierÍkÁÍkÊ©signalIdxQ°MemberExpressionÍkØÍkæKªIdentifierÍkØÍká©junctionsKªIdentifierÍkâÍkæ¤sizeÂÂ“a¯TemplateElementÍk´Ík¿b«signalNets=«signalNets=Âa¯TemplateElementÍkËÍkÖb« junctions=« junctions=Âa¯TemplateElementÍkçÍkçb  ÃÂÀR¯ReturnStatementÍk÷ÍlKªIdentifierÍkşÍl­reassignCountÀ“Ôre•¤type¥start£endªspecifiers¦source±ImportDeclarationÌÓÍ‘Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifierÌÜÌãKªIdentifierÌÜÌã§NetTypeKªIdentifierÌÜÌã§NetTypeM§LiteralÌëÍ´../types/CommonTypes¶'../types/CommonTypes'e±ImportDeclarationÍÍ&‘f¯ImportSpecifierÍÍKªIdentifierÍÍ¦LoggerKªIdentifierÍÍ¦LoggerM§LiteralÍÍ%¨./Loggerª'./Logger'e±ImportDeclarationÍ(Í_‘f¯ImportSpecifierÍ1Í@KªIdentifierÍ1Í@¯INSTR_TRACE_TAGKªIdentifierÍ1Í@¯INSTR_TRACE_TAGM§LiteralÍHÍ^´./InstrumentTraceLog¶'./InstrumentTraceLog'

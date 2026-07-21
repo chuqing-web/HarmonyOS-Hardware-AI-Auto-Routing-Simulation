@@ -1,0 +1,1068 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ7’/**
+ * AI Pipeline ç«¯åˆ°ç«¯éªŒè¯å™¨ â€” æœ¬åœ°å¯è¿è¡ŒéªŒæ”¶æµ‹è¯•
+ */
+import { ErrCode, ResultHelper, Logger, INSTR_TRACE_TAG, IdUtil, emptySchTopology, makeDeviceInst } from 'common';
+import { DeviceSelectEngine } from '../algorithms/DeviceSelectEngine';
+import { mergeModularTopologies, critiqueModularPlan, looksLikeLibIdAsRefDes } from '../algorithms/ModularParallelMerge';
+export class AiPipelineValidator {
+    constructor(library, orchestrator) {
+        this.library = library;
+        this.orchestrator = orchestrator;
+        this.deviceSelect = new DeviceSelectEngine(library);
+    }
+    async validateMinSystemLed() {
+        const checks = [];
+        const failures = [];
+        const prompt = 'STM32F103 æœ€å°ç³»ç»Ÿ + LED';
+        Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateMinSystemLed START skipLlm=true`);
+        const result = await this.orchestrator.runFullPipeline({ prompt, skipLlm: true });
+        if (!result.topology || result.topology.deviceList.length === 0) {
+            failures.push('æ‹“æ‰‘ä¸ºç©º');
+            Logger.error(INSTR_TRACE_TAG, '[AI_VAL] validateMinSystemLed FAIL empty topo');
+            return { passed: false, checks, failures };
+        }
+        const topo = result.topology;
+        checks.push(`å™¨ä»¶æ•°: ${topo.deviceList.length}`);
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const dev = topo.deviceList[i];
+            const r = this.library.getComponent(dev.libDevId);
+            if (!r.success)
+                failures.push(`å™¨ä»¶ä¸åœ¨åº“: ${dev.libDevId}`);
+            else
+                checks.push(`åº“åŒ¹é…: ${dev.libDevId}`);
+        }
+        const mcu = topo.deviceList.find(d => d.libDevId.includes('STM32') || d.libDevId.includes('AT89'));
+        const xtal = topo.deviceList.find(d => d.libDevId.includes('XTAL') || d.libDevId.includes('æ™¶æŒ¯'));
+        if (mcu && xtal) {
+            const dist = Math.abs(mcu.x - xtal.x) + Math.abs(mcu.y - xtal.y);
+            if (dist <= 120)
+                checks.push(`æ™¶æŒ¯è·ç¦»: ${dist}mil`);
+            else
+                failures.push(`æ™¶æŒ¯è·ç¦»è¿‡å¤§: ${dist}mil > 120`);
+        }
+        if (topo.wireList.length > 0)
+            checks.push(`å¸ƒçº¿æ•°: ${topo.wireList.length}`);
+        else
+            failures.push('æ— å¸ƒçº¿');
+        Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateMinSystemLed END passed=${failures.length === 0}` +
+            ` devices=${topo.deviceList.length} wires=${topo.wireList.length}`);
+        return { passed: failures.length === 0, checks, failures, topology: topo };
+    }
+    validateHallucinationChip() {
+        const prompt = 'ä½¿ç”¨ XYZ-99999 èŠ¯ç‰‡';
+        const local = DeviceSelectEngine.buildLocalLlmOutput(prompt);
+        const match = this.deviceSelect.matchFromLlmOutput(local, prompt);
+        if (!match.oodDetected) {
+            Logger.error(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD not detected');
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'æœªæ£€æµ‹åˆ° OOD');
+        }
+        Logger.info(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD OK');
+        return ResultHelper.ok(true);
+    }
+    /**
+     * æ¨¡å—å¹¶è¡Œåˆå¹¶ï¼šåŒåç”µæºç½‘é¡»åˆå¹¶ï¼›joints å¯ç”¨ libDevId å›é€€åŒ¹é…ä½å·ã€‚
+     */
+    validateModularMerge() {
+        const checks = [];
+        const failures = [];
+        if (!looksLikeLibIdAsRefDes('LM555') || !looksLikeLibIdAsRefDes('LED_RED')) {
+            failures.push('looksLikeLibIdAsRefDes åº”è¯†åˆ« LM555/LED_RED');
+        }
+        else {
+            checks.push('libId-as-RefDes è¯†åˆ« OK');
+        }
+        if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1') ||
+            looksLikeLibIdAsRefDes('SCOPE1') || looksLikeLibIdAsRefDes('AM1') || looksLikeLibIdAsRefDes('VM1')) {
+            failures.push('looksLikeLibIdAsRefDes è¯¯ä¼¤æ­£å¸¸ä½å· U1/D1/LED1/SCOPE1/AM1/VM1');
+        }
+        else {
+            checks.push('æ­£å¸¸ä½å·è±å… OK');
+        }
+        const badMod1 = {
+            id: 'M1',
+            title: 'æŒ¯è¡',
+            prompt: 'æ”¾ç½® LM555 ä¸é˜»å®¹æ„æˆæ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.OUT',
+            boundaryPins: ['LM555.OUT']
+        };
+        const badMod2 = {
+            id: 'M2',
+            title: 'æŒ‡ç¤º',
+            prompt: 'æ”¾ç½® LED_RED é™æµç”µé˜»ï¼Œè¾¹ç•Œ D1.A',
+            boundaryPins: ['LED_RED.A']
+        };
+        const badJoint0 = { from: 'M1.LM555.OUT', to: 'M2.LED_RED.A' };
+        const badJoint1 = { from: 'POWER.VCC', to: 'M1.LM555.OUT' };
+        const badJoint2 = { from: 'POWER.GND', to: 'M2.LED_RED.A' };
+        const badPlan = {
+            systemOverview: '555 æ— ç¨³æ€æŒ¯è¡é©±åŠ¨ LEDï¼Œç”µæºæ¥ VCC/GND',
+            modules: [badMod1, badMod2],
+            joints: [badJoint0, badJoint1, badJoint2]
+        };
+        const critique = critiqueModularPlan(badPlan, this.library);
+        const libAsRefHit = critique.some(s => s.indexOf('libDevId') >= 0 || s.indexOf('å‹å·') >= 0);
+        if (!libAsRefHit) {
+            failures.push('critiqueModularPlan æœªæ‹’æ”¶æŠŠ LM555/LED_RED å½“ RefDes');
+        }
+        else {
+            checks.push(`plan é—¨ç¦æ‹’æ”¶å‹å·å½“ä½å· (${critique.length} issues)`);
+        }
+        // é€šç”¨å¿ å®åº¦ï¼šç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§æœ‰æº/å‡è„šé¡»æ‹’æ”¶
+        const creepMod1 = {
+            id: 'M1',
+            title: 'æ¿€åŠ±',
+            prompt: 'æ”¾ç½® U1ï¼ˆlibDevId=LM555ï¼‰äº§ç”Ÿæ–¹æ³¢ï¼Œè¾¹ç•Œ U1.3',
+            boundaryPins: ['U1.3', 'U1.8', 'U1.1']
+        };
+        const creepMod2 = {
+            id: 'M2',
+            title: 'æµ‹é‡',
+            prompt: 'æ”¾ç½® RV1ï¼ˆlibDevId=POT_10kï¼‰ä¸ OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼Œ' +
+                'OSC1 ä¿¡å·è¾“å…¥å¼•è„šï¼ˆå‡è®¾ä¸ºAï¼‰ï¼ŒRV1 ç«¯è„šæ‚¬ç©º',
+            boundaryPins: ['RV1.1', 'OSC1.CH1']
+        };
+        const creepPlan = {
+            systemOverview: '555æ–¹æ³¢é©±åŠ¨è´Ÿè½½å¹¶ç”¨ç¤ºæ³¢å™¨è§‚æµ‹',
+            modules: [creepMod1, creepMod2],
+            joints: [
+                { from: 'POWER.VCC', to: 'M1.U1.8' },
+                { from: 'POWER.GND', to: 'M1.U1.1' },
+                { from: 'M1.U1.3', to: 'M2.RV1.1' },
+                { from: 'POWER.GND', to: 'M2.OSC1.CH1' }
+            ]
+        };
+        const simpleUser = 'ç”µé˜»åˆ†å‹ç”µè·¯æµ‹ä¸­ç‚¹ç”µå‹';
+        const creepCritique = critiqueModularPlan(creepPlan, this.library, simpleUser);
+        const creepHit = creepCritique.some(s => s.indexOf('æ“…è‡ª') >= 0);
+        const pinHit = creepCritique.some(s => s.indexOf('å‡è®¾') >= 0 || s.indexOf('æ‚¬ç©º') >= 0 ||
+            s.indexOf('ä¸å±äº') >= 0);
+        if (!creepHit) {
+            failures.push('critiqueModularPlan æœªæ‹’æ”¶ç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§å™¨ä»¶æ‰©å®¹');
+        }
+        else {
+            checks.push('é€šç”¨å¿ å®åº¦é—¨ç¦ OK');
+        }
+        if (!pinHit) {
+            failures.push('critiqueModularPlan æœªæ‹’æ”¶å‡è®¾è„š/æ‚¬ç©º/åº“å¤–è„š');
+        }
+        else {
+            checks.push('åº“è„š/å‡è„šé—¨ç¦ OK');
+        }
+        // åˆæ³•æ— æº+ç¤ºæ³¢ planï¼ˆç”¨æˆ·ç‚¹åè§‚æµ‹ï¼‰åº”é€šè¿‡
+        const good1 = {
+            id: 'M1',
+            title: 'RCç½‘ç»œ',
+            prompt: 'æ”¾ç½® R1ï¼ˆlibDevId=R_10kï¼‰ä¸ C1ï¼ˆlibDevId=C_10uFï¼‰ï¼šVCCâ€”R1â€”ç”µå®¹èŠ‚ç‚¹â€”C1â€”GND',
+            boundaryPins: ['R1.1', 'C1.2', 'R1.2']
+        };
+        const good2 = {
+            id: 'M2',
+            title: 'ç¤ºæ³¢è§‚æµ‹',
+            prompt: 'æ”¾ç½® OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼šOSC1.CH1 æ¥ç”µå®¹èŠ‚ç‚¹ï¼ŒOSC1.GND æ¥ç³»ç»Ÿåœ°',
+            boundaryPins: ['OSC1.CH1', 'OSC1.GND']
+        };
+        const goodPlan = {
+            systemOverview: 'æ— æº RCï¼šVCCç»Rå¯¹Cå……ç”µï¼Œç¤ºæ³¢å™¨CH1è§‚æµ‹ç”µå®¹ç”µå‹',
+            modules: [good1, good2],
+            joints: [
+                { from: 'POWER.VCC', to: 'M1.R1.1' },
+                { from: 'POWER.GND', to: 'M1.C1.2' },
+                { from: 'M1.R1.2', to: 'M2.OSC1.CH1' },
+                { from: 'POWER.GND', to: 'M2.OSC1.GND' }
+            ]
+        };
+        const goodUser = 'RC å……æ”¾ç”µç”µè·¯è§‚æµ‹æŒ‡æ•°æ³¢å½¢';
+        const goodCritique = critiqueModularPlan(goodPlan, this.library, goodUser);
+        if (goodCritique.length > 0) {
+            failures.push(`åˆæ³• plan è¢«è¯¯æ‹’: ${goodCritique.join('; ')}`);
+        }
+        else {
+            checks.push('åˆæ³• plan é€šè¿‡é—¨ç¦');
+        }
+        const m1 = AiPipelineValidator.makeModuleTopo('U1', 'LM555', 'net_vcc_m1', 'net_gnd_m1');
+        const m2 = AiPipelineValidator.makeModuleTopo('D1', 'LED_RED', 'net_vcc_m2', 'net_gnd_m2');
+        const goodMod1 = {
+            id: 'M1',
+            title: 'æŒ¯è¡',
+            prompt: 'æ”¾ç½® U1=LM555 æ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.3',
+            boundaryPins: ['U1.3']
+        };
+        const goodMod2 = {
+            id: 'M2',
+            title: 'æŒ‡ç¤º',
+            prompt: 'æ”¾ç½® D1=LED_REDï¼Œè¾¹ç•Œ D1.A',
+            boundaryPins: ['D1.A']
+        };
+        const goodJoint0 = { from: 'M1.LM555.3', to: 'M2.LED_RED.A' };
+        const goodJoint1 = { from: 'POWER.VCC', to: 'M1.U1.3' };
+        const goodJoint2 = { from: 'POWER.GND', to: 'M2.D1.A' };
+        const plan = {
+            systemOverview: '555 é©±åŠ¨ LED æŒ‡ç¤ºç¯ï¼ŒåŒæ¨¡å—ç”µæºå…±äº«',
+            modules: [goodMod1, goodMod2],
+            joints: [goodJoint0, goodJoint1, goodJoint2]
+        };
+        const mergeOut = mergeModularTopologies([m1, m2], plan, (_lib, hint) => {
+            return hint && hint.length > 0 ? '1' : '1';
+        });
+        const vccNets = mergeOut.topology.netList.filter(n => (n.netName ?? '').toUpperCase() === 'VCC');
+        const gndNets = mergeOut.topology.netList.filter(n => (n.netName ?? '').toUpperCase() === 'GND');
+        if (vccNets.length !== 1) {
+            failures.push(`åˆå¹¶å VCC ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${vccNets.length}`);
+        }
+        else {
+            checks.push('VCC ç½‘å”¯ä¸€');
+        }
+        if (gndNets.length !== 1) {
+            failures.push(`åˆå¹¶å GND ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${gndNets.length}`);
+        }
+        else {
+            checks.push('GND ç½‘å”¯ä¸€');
+        }
+        if (mergeOut.jointFail > 0) {
+            failures.push(`joints åº”æŒ‰ libDevId å›é€€å‘½ä¸­ï¼Œfail=${mergeOut.jointFail}: ` +
+                mergeOut.jointFailReasons.join('; '));
+        }
+        else {
+            checks.push(`joints ok=${mergeOut.jointOk}`);
+        }
+        const labelN = mergeOut.topology.netLabelList?.length ?? 0;
+        if (mergeOut.jointOk > 0 && labelN < 2) {
+            failures.push(`è·¨æ¨¡å—åº”ä½¿ç”¨ç½‘ç»œæ ‡å·å¹¶ç½‘ï¼Œlabels=${labelN}`);
+        }
+        else if (mergeOut.jointOk > 0) {
+            checks.push(`ç½‘ç»œæ ‡å· labels=${labelN}`);
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateModularMerge passed=${failures.length === 0}` +
+            ` checks=${checks.length} failures=${failures.length}`);
+        return {
+            passed: failures.length === 0,
+            checks,
+            failures,
+            topology: mergeOut.topology
+        };
+    }
+    static makeDev(libDevId, refName, x, y) {
+        return makeDeviceInst(IdUtil.generate('d'), libDevId, refName, x, y, 0, new Map());
+    }
+    static makeNet(uuid, name, nodes, isPower) {
+        const nodeList = [];
+        for (let i = 0; i < nodes.length; i++) {
+            const node = {
+                devUuid: nodes[i].instUuid,
+                pinId: '1',
+                pinName: '1'
+            };
+            nodeList.push(node);
+        }
+        const net = {
+            netUuid: uuid,
+            netName: name,
+            displayName: name,
+            nodeList: nodeList,
+            isPower,
+            isAnalog: false,
+            isBusMember: false,
+            busParentUuid: '',
+            defaultVoltage: 0,
+            ercWarning: false,
+            connectedProbeIds: []
+        };
+        return net;
+    }
+    static makeModuleTopo(chipRef, chipLib, vccNetId, gndNetId) {
+        const topo = emptySchTopology();
+        const chip = AiPipelineValidator.makeDev(chipLib, chipRef, 200, 200);
+        const vcc = AiPipelineValidator.makeDev('VCC', 'VCC', 60, 80);
+        const gnd = AiPipelineValidator.makeDev('GND', 'GND', 60, 400);
+        topo.deviceList.push(chip, vcc, gnd);
+        topo.netList.push(AiPipelineValidator.makeNet(vccNetId, 'VCC', [vcc, chip], true), AiPipelineValidator.makeNet(gndNetId, 'GND', [gnd, chip], true));
+        return topo;
+    }
+    /**
+     * éªŒè¯ï¼šç”Ÿäº§è·¯å¾„ï¼ˆskipLlm=falseï¼‰åœ¨æ— å¯ç”¨ LLM æ—¶ä¸å¾—é™é»˜è¾“å‡ºæ¨¡æ¿æ‹“æ‰‘ã€‚
+     */
+    async validateApiFailureFallback() {
+        const checks = [];
+        const failures = [];
+        Logger.info(INSTR_TRACE_TAG, '[AI_VAL] validateNoTemplateFallback START skipLlm=false');
+        const result = await this.orchestrator.runFullPipeline({
+            prompt: 'STM32F103 æœ€å°ç³»ç»Ÿ',
+            skipLlm: false
+        });
+        if (result.usedLlm) {
+            checks.push('LLM å¯ç”¨å¹¶å®Œæˆé€‰å‹');
+            if (!result.topology || result.topology.deviceList.length < 1) {
+                failures.push('LLM æˆåŠŸä½†æ‹“æ‰‘ä¸ºç©º');
+            }
+            else {
+                checks.push(`LLM å™¨ä»¶: ${result.topology.deviceList.length}`);
+            }
+        }
+        else if (!result.topology || result.topology.deviceList.length === 0) {
+            checks.push('API ä¸å¯ç”¨æ—¶æ‹’ç»è½å›¾(æ— æ¨¡æ¿å›é€€)');
+        }
+        else {
+            failures.push('API ä¸å¯ç”¨æ—¶ä»è¾“å‡ºäº†æ‹“æ‰‘(å­˜åœ¨å›é€€)');
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateNoTemplateFallback END passed=${failures.length === 0}` +
+            ` usedLlm=${result.usedLlm} devices=${result.topology?.deviceList.length ?? 0}`);
+        return { passed: failures.length === 0, checks, failures, topology: result.topology };
+    }
+}
+//# sourceMappingURL=AiPipelineValidator.js.mapÂ“¦commonÙ^C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\DeviceSelectEngine.etsÙ`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\ModularParallelMerge.etsÙ_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\validation\AiPipelineValidator.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  ’ÔrC’²hostDependencyName®hostModuleNameÙ ./validation/AiPipelineValidator©ai_engineCÙ-./src/main/ets/validation/AiPipelineValidator©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ5D/**
+ * AI Pipeline ç«¯åˆ°ç«¯éªŒè¯å™¨ â€” æœ¬åœ°å¯è¿è¡ŒéªŒæ”¶æµ‹è¯•
+ */
+import {
+  SchTopology, DeviceInst, NetInfo, NetNodeRef, ErrCode, ResultHelper, ApiResult,
+  Logger, INSTR_TRACE_TAG, IdUtil, emptySchTopology, makeDeviceInst
+} from 'common';
+import { AiPipelineOrchestrator } from '../algorithms/AiPipelineOrchestrator';
+import { DeviceSelectEngine } from '../algorithms/DeviceSelectEngine';
+import {
+  ModularPlan, ModularModuleSpec, ModularJointSpec,
+  mergeModularTopologies, critiqueModularPlan, looksLikeLibIdAsRefDes
+} from '../algorithms/ModularParallelMerge';
+import { IComponentLibrary } from 'component_library';
+
+export interface AiValidationResult {
+  passed: boolean;
+  checks: string[];
+  failures: string[];
+  topology?: SchTopology;
+}
+
+export class AiPipelineValidator {
+  private library: IComponentLibrary;
+  private orchestrator: AiPipelineOrchestrator;
+  private deviceSelect: DeviceSelectEngine;
+
+  constructor(library: IComponentLibrary, orchestrator: AiPipelineOrchestrator) {
+    this.library = library;
+    this.orchestrator = orchestrator;
+    this.deviceSelect = new DeviceSelectEngine(library);
+  }
+
+  async validateMinSystemLed(): Promise<AiValidationResult> {
+    const checks: string[] = [];
+    const failures: string[] = [];
+    const prompt = 'STM32F103 æœ€å°ç³»ç»Ÿ + LED';
+    Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateMinSystemLed START skipLlm=true`);
+    const result = await this.orchestrator.runFullPipeline({ prompt, skipLlm: true });
+    if (!result.topology || result.topology.deviceList.length === 0) {
+      failures.push('æ‹“æ‰‘ä¸ºç©º');
+      Logger.error(INSTR_TRACE_TAG, '[AI_VAL] validateMinSystemLed FAIL empty topo');
+      return { passed: false, checks, failures };
+    }
+    const topo = result.topology;
+    checks.push(`å™¨ä»¶æ•°: ${topo.deviceList.length}`);
+
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const dev = topo.deviceList[i];
+      const r = this.library.getComponent(dev.libDevId);
+      if (!r.success) failures.push(`å™¨ä»¶ä¸åœ¨åº“: ${dev.libDevId}`);
+      else checks.push(`åº“åŒ¹é…: ${dev.libDevId}`);
+    }
+
+    const mcu = topo.deviceList.find(d => d.libDevId.includes('STM32') || d.libDevId.includes('AT89'));
+    const xtal = topo.deviceList.find(d => d.libDevId.includes('XTAL') || d.libDevId.includes('æ™¶æŒ¯'));
+    if (mcu && xtal) {
+      const dist = Math.abs(mcu.x - xtal.x) + Math.abs(mcu.y - xtal.y);
+      if (dist <= 120) checks.push(`æ™¶æŒ¯è·ç¦»: ${dist}mil`);
+      else failures.push(`æ™¶æŒ¯è·ç¦»è¿‡å¤§: ${dist}mil > 120`);
+    }
+
+    if (topo.wireList.length > 0) checks.push(`å¸ƒçº¿æ•°: ${topo.wireList.length}`);
+    else failures.push('æ— å¸ƒçº¿');
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateMinSystemLed END passed=${failures.length === 0}` +
+      ` devices=${topo.deviceList.length} wires=${topo.wireList.length}`);
+    return { passed: failures.length === 0, checks, failures, topology: topo };
+  }
+
+  validateHallucinationChip(): ApiResult<boolean> {
+    const prompt = 'ä½¿ç”¨ XYZ-99999 èŠ¯ç‰‡';
+    const local = DeviceSelectEngine.buildLocalLlmOutput(prompt);
+    const match = this.deviceSelect.matchFromLlmOutput(local, prompt);
+    if (!match.oodDetected) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD not detected');
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'æœªæ£€æµ‹åˆ° OOD');
+    }
+    Logger.info(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD OK');
+    return ResultHelper.ok(true);
+  }
+
+  /**
+   * æ¨¡å—å¹¶è¡Œåˆå¹¶ï¼šåŒåç”µæºç½‘é¡»åˆå¹¶ï¼›joints å¯ç”¨ libDevId å›é€€åŒ¹é…ä½å·ã€‚
+   */
+  validateModularMerge(): AiValidationResult {
+    const checks: string[] = [];
+    const failures: string[] = [];
+
+    if (!looksLikeLibIdAsRefDes('LM555') || !looksLikeLibIdAsRefDes('LED_RED')) {
+      failures.push('looksLikeLibIdAsRefDes åº”è¯†åˆ« LM555/LED_RED');
+    } else {
+      checks.push('libId-as-RefDes è¯†åˆ« OK');
+    }
+    if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1') ||
+      looksLikeLibIdAsRefDes('SCOPE1') || looksLikeLibIdAsRefDes('AM1') || looksLikeLibIdAsRefDes('VM1')) {
+      failures.push('looksLikeLibIdAsRefDes è¯¯ä¼¤æ­£å¸¸ä½å· U1/D1/LED1/SCOPE1/AM1/VM1');
+    } else {
+      checks.push('æ­£å¸¸ä½å·è±å… OK');
+    }
+
+    const badMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æŒ¯è¡',
+      prompt: 'æ”¾ç½® LM555 ä¸é˜»å®¹æ„æˆæ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.OUT',
+      boundaryPins: ['LM555.OUT']
+    };
+    const badMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æŒ‡ç¤º',
+      prompt: 'æ”¾ç½® LED_RED é™æµç”µé˜»ï¼Œè¾¹ç•Œ D1.A',
+      boundaryPins: ['LED_RED.A']
+    };
+    const badJoint0: ModularJointSpec = { from: 'M1.LM555.OUT', to: 'M2.LED_RED.A' };
+    const badJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.LM555.OUT' };
+    const badJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.LED_RED.A' };
+    const badPlan: ModularPlan = {
+      systemOverview: '555 æ— ç¨³æ€æŒ¯è¡é©±åŠ¨ LEDï¼Œç”µæºæ¥ VCC/GND',
+      modules: [badMod1, badMod2],
+      joints: [badJoint0, badJoint1, badJoint2]
+    };
+    const critique = critiqueModularPlan(badPlan, this.library);
+    const libAsRefHit = critique.some(s => s.indexOf('libDevId') >= 0 || s.indexOf('å‹å·') >= 0);
+    if (!libAsRefHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶æŠŠ LM555/LED_RED å½“ RefDes');
+    } else {
+      checks.push(`plan é—¨ç¦æ‹’æ”¶å‹å·å½“ä½å· (${critique.length} issues)`);
+    }
+
+    // é€šç”¨å¿ å®åº¦ï¼šç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§æœ‰æº/å‡è„šé¡»æ‹’æ”¶
+    const creepMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æ¿€åŠ±',
+      prompt: 'æ”¾ç½® U1ï¼ˆlibDevId=LM555ï¼‰äº§ç”Ÿæ–¹æ³¢ï¼Œè¾¹ç•Œ U1.3',
+      boundaryPins: ['U1.3', 'U1.8', 'U1.1']
+    };
+    const creepMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æµ‹é‡',
+      prompt: 'æ”¾ç½® RV1ï¼ˆlibDevId=POT_10kï¼‰ä¸ OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼Œ' +
+        'OSC1 ä¿¡å·è¾“å…¥å¼•è„šï¼ˆå‡è®¾ä¸ºAï¼‰ï¼ŒRV1 ç«¯è„šæ‚¬ç©º',
+      boundaryPins: ['RV1.1', 'OSC1.CH1']
+    };
+    const creepPlan: ModularPlan = {
+      systemOverview: '555æ–¹æ³¢é©±åŠ¨è´Ÿè½½å¹¶ç”¨ç¤ºæ³¢å™¨è§‚æµ‹',
+      modules: [creepMod1, creepMod2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.U1.8' },
+        { from: 'POWER.GND', to: 'M1.U1.1' },
+        { from: 'M1.U1.3', to: 'M2.RV1.1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.CH1' }
+      ]
+    };
+    const simpleUser = 'ç”µé˜»åˆ†å‹ç”µè·¯æµ‹ä¸­ç‚¹ç”µå‹';
+    const creepCritique = critiqueModularPlan(creepPlan, this.library, simpleUser);
+    const creepHit = creepCritique.some(s => s.indexOf('æ“…è‡ª') >= 0);
+    const pinHit = creepCritique.some(s => s.indexOf('å‡è®¾') >= 0 || s.indexOf('æ‚¬ç©º') >= 0 ||
+      s.indexOf('ä¸å±äº') >= 0);
+    if (!creepHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶ç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§å™¨ä»¶æ‰©å®¹');
+    } else {
+      checks.push('é€šç”¨å¿ å®åº¦é—¨ç¦ OK');
+    }
+    if (!pinHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶å‡è®¾è„š/æ‚¬ç©º/åº“å¤–è„š');
+    } else {
+      checks.push('åº“è„š/å‡è„šé—¨ç¦ OK');
+    }
+
+    // åˆæ³•æ— æº+ç¤ºæ³¢ planï¼ˆç”¨æˆ·ç‚¹åè§‚æµ‹ï¼‰åº”é€šè¿‡
+    const good1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'RCç½‘ç»œ',
+      prompt: 'æ”¾ç½® R1ï¼ˆlibDevId=R_10kï¼‰ä¸ C1ï¼ˆlibDevId=C_10uFï¼‰ï¼šVCCâ€”R1â€”ç”µå®¹èŠ‚ç‚¹â€”C1â€”GND',
+      boundaryPins: ['R1.1', 'C1.2', 'R1.2']
+    };
+    const good2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'ç¤ºæ³¢è§‚æµ‹',
+      prompt: 'æ”¾ç½® OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼šOSC1.CH1 æ¥ç”µå®¹èŠ‚ç‚¹ï¼ŒOSC1.GND æ¥ç³»ç»Ÿåœ°',
+      boundaryPins: ['OSC1.CH1', 'OSC1.GND']
+    };
+    const goodPlan: ModularPlan = {
+      systemOverview: 'æ— æº RCï¼šVCCç»Rå¯¹Cå……ç”µï¼Œç¤ºæ³¢å™¨CH1è§‚æµ‹ç”µå®¹ç”µå‹',
+      modules: [good1, good2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.R1.1' },
+        { from: 'POWER.GND', to: 'M1.C1.2' },
+        { from: 'M1.R1.2', to: 'M2.OSC1.CH1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.GND' }
+      ]
+    };
+    const goodUser = 'RC å……æ”¾ç”µç”µè·¯è§‚æµ‹æŒ‡æ•°æ³¢å½¢';
+    const goodCritique = critiqueModularPlan(goodPlan, this.library, goodUser);
+    if (goodCritique.length > 0) {
+      failures.push(`åˆæ³• plan è¢«è¯¯æ‹’: ${goodCritique.join('; ')}`);
+    } else {
+      checks.push('åˆæ³• plan é€šè¿‡é—¨ç¦');
+    }
+
+    const m1 = AiPipelineValidator.makeModuleTopo('U1', 'LM555', 'net_vcc_m1', 'net_gnd_m1');
+    const m2 = AiPipelineValidator.makeModuleTopo('D1', 'LED_RED', 'net_vcc_m2', 'net_gnd_m2');
+    const goodMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æŒ¯è¡',
+      prompt: 'æ”¾ç½® U1=LM555 æ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.3',
+      boundaryPins: ['U1.3']
+    };
+    const goodMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æŒ‡ç¤º',
+      prompt: 'æ”¾ç½® D1=LED_REDï¼Œè¾¹ç•Œ D1.A',
+      boundaryPins: ['D1.A']
+    };
+    const goodJoint0: ModularJointSpec = { from: 'M1.LM555.3', to: 'M2.LED_RED.A' };
+    const goodJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.U1.3' };
+    const goodJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.D1.A' };
+    const plan: ModularPlan = {
+      systemOverview: '555 é©±åŠ¨ LED æŒ‡ç¤ºç¯ï¼ŒåŒæ¨¡å—ç”µæºå…±äº«',
+      modules: [goodMod1, goodMod2],
+      joints: [goodJoint0, goodJoint1, goodJoint2]
+    };
+    const mergeOut = mergeModularTopologies([m1, m2], plan, (_lib: string, hint: string) => {
+      return hint && hint.length > 0 ? '1' : '1';
+    });
+    const vccNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'VCC');
+    const gndNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'GND');
+    if (vccNets.length !== 1) {
+      failures.push(`åˆå¹¶å VCC ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${vccNets.length}`);
+    } else {
+      checks.push('VCC ç½‘å”¯ä¸€');
+    }
+    if (gndNets.length !== 1) {
+      failures.push(`åˆå¹¶å GND ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${gndNets.length}`);
+    } else {
+      checks.push('GND ç½‘å”¯ä¸€');
+    }
+    if (mergeOut.jointFail > 0) {
+      failures.push(`joints åº”æŒ‰ libDevId å›é€€å‘½ä¸­ï¼Œfail=${mergeOut.jointFail}: ` +
+        mergeOut.jointFailReasons.join('; '));
+    } else {
+      checks.push(`joints ok=${mergeOut.jointOk}`);
+    }
+    const labelN = mergeOut.topology.netLabelList?.length ?? 0;
+    if (mergeOut.jointOk > 0 && labelN < 2) {
+      failures.push(`è·¨æ¨¡å—åº”ä½¿ç”¨ç½‘ç»œæ ‡å·å¹¶ç½‘ï¼Œlabels=${labelN}`);
+    } else if (mergeOut.jointOk > 0) {
+      checks.push(`ç½‘ç»œæ ‡å· labels=${labelN}`);
+    }
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateModularMerge passed=${failures.length === 0}` +
+      ` checks=${checks.length} failures=${failures.length}`);
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      topology: mergeOut.topology
+    };
+  }
+
+  private static makeDev(libDevId: string, refName: string, x: number, y: number): DeviceInst {
+    return makeDeviceInst(IdUtil.generate('d'), libDevId, refName, x, y, 0, new Map<string, string>());
+  }
+
+  private static makeNet(uuid: string, name: string, nodes: DeviceInst[], isPower: boolean): NetInfo {
+    const nodeList: NetNodeRef[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node: NetNodeRef = {
+        devUuid: nodes[i].instUuid,
+        pinId: '1',
+        pinName: '1'
+      };
+      nodeList.push(node);
+    }
+    const net: NetInfo = {
+      netUuid: uuid,
+      netName: name,
+      displayName: name,
+      nodeList: nodeList,
+      isPower,
+      isAnalog: false,
+      isBusMember: false,
+      busParentUuid: '',
+      defaultVoltage: 0,
+      ercWarning: false,
+      connectedProbeIds: []
+    };
+    return net;
+  }
+
+  private static makeModuleTopo(
+    chipRef: string, chipLib: string, vccNetId: string, gndNetId: string
+  ): SchTopology {
+    const topo = emptySchTopology();
+    const chip = AiPipelineValidator.makeDev(chipLib, chipRef, 200, 200);
+    const vcc = AiPipelineValidator.makeDev('VCC', 'VCC', 60, 80);
+    const gnd = AiPipelineValidator.makeDev('GND', 'GND', 60, 400);
+    topo.deviceList.push(chip, vcc, gnd);
+    topo.netList.push(
+      AiPipelineValidator.makeNet(vccNetId, 'VCC', [vcc, chip], true),
+      AiPipelineValidator.makeNet(gndNetId, 'GND', [gnd, chip], true)
+    );
+    return topo;
+  }
+
+  /**
+   * éªŒè¯ï¼šç”Ÿäº§è·¯å¾„ï¼ˆskipLlm=falseï¼‰åœ¨æ— å¯ç”¨ LLM æ—¶ä¸å¾—é™é»˜è¾“å‡ºæ¨¡æ¿æ‹“æ‰‘ã€‚
+   */
+  async validateApiFailureFallback(): Promise<AiValidationResult> {
+    const checks: string[] = [];
+    const failures: string[] = [];
+    Logger.info(INSTR_TRACE_TAG,
+      '[AI_VAL] validateNoTemplateFallback START skipLlm=false');
+    const result = await this.orchestrator.runFullPipeline({
+      prompt: 'STM32F103 æœ€å°ç³»ç»Ÿ',
+      skipLlm: false
+    });
+    if (result.usedLlm) {
+      checks.push('LLM å¯ç”¨å¹¶å®Œæˆé€‰å‹');
+      if (!result.topology || result.topology.deviceList.length < 1) {
+        failures.push('LLM æˆåŠŸä½†æ‹“æ‰‘ä¸ºç©º');
+      } else {
+        checks.push(`LLM å™¨ä»¶: ${result.topology.deviceList.length}`);
+      }
+    } else if (!result.topology || result.topology.deviceList.length === 0) {
+      checks.push('API ä¸å¯ç”¨æ—¶æ‹’ç»è½å›¾(æ— æ¨¡æ¿å›é€€)');
+    } else {
+      failures.push('API ä¸å¯ç”¨æ—¶ä»è¾“å‡ºäº†æ‹“æ‰‘(å­˜åœ¨å›é€€)');
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateNoTemplateFallback END passed=${failures.length === 0}` +
+      ` usedLlm=${result.usedLlm} devices=${result.topology?.deviceList.length ?? 0}`);
+    return { passed: failures.length === 0, checks, failures, topology: result.topology };
+  }
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ7‘”    ‘”  ‘”   ‘”   ‘”  	 ‘”   ‘”  ‘”  ‘”  !‘”  %‘”  &‘”  '‘”  (‘”  )‘”  +‘”  ,‘”  /‘”  1‘”  4‘”  6‘”  7‘”  :‘”  ;‘”  <‘”  >‘”  ?	‘”  ÌC‘”  ÌD‘”  ÌJ‘”  ÌK‘”  ÌL‘”  ÌN‘”  ÌO‘”  ÌP‘”  ÌS‘”  ÌU‘”  Ì[‘”  Ì\‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìi‘”  Ìl‘”  Ìm‘”  Ìn‘”  Ìo‘”  Ìu‘”  Ìv‘”  Ìw‘”  Ìx‘”  Ì{‘”  Ì}‘”  Ì~‘”  Ì~‘”  Ì€‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì•‘”  Ì–‘”  Ì—‘”  Ì˜‘”  Ì›‘”  Ìœ‘”  Ì ‘”  Ì¡‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¥‘”  Ì¦‘”  Ì¦‘”  Ì§‘”  Ì¨‘”  Ì«‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ‘”  Ì·‘”  Ì¸‘”  Ì¹‘”  Ìº‘”  Ì»‘”  Ì¼‘”  Ì½‘”  Ì¾‘”  Ì¿‘”  ÌÂ‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÅ‘”  ÌÆ‘”  ÌÇ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÚ‘”  ÌÛ‘”  ÌÜ‘”  Ìİ‘”  Ìß‘”  Ìà‘”  Ìá‘”  Ìæ‘”  Ìè‘”  Ìè‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìí‘”  Ìí‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìó‘”  Ìó‘”  Ìõ‘”  Ìø‘”  Ìù‘”  Ìù‘”  Ìú‘”  Ìû‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í!‘”  Í#‘”  Í)‘”  Í*‘”  Í+‘”  Í,‘”  Í.‘”  Í2‘”  Í5‘”  Í7‘”  Í8‘”  Í;‘”  Í>‘”  Í?‘”  Í@‘”  ÍB‘”  ÍC‘”  ÍD‘”  ÍE‘”  ÍE‘”  ÍF‘”  ÍG‘”  ÍH‘”  ÍH‘”  ÍI‘”  ÍJ‘”  ÍJ‘”  ÍK‘”  ÍL‘”  ÍO‘”  ÍP‘”  ÍR‘Ù_C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\validation\AiPipelineValidator.ets‘Ú5D/**
+ * AI Pipeline ç«¯åˆ°ç«¯éªŒè¯å™¨ â€” æœ¬åœ°å¯è¿è¡ŒéªŒæ”¶æµ‹è¯•
+ */
+import {
+  SchTopology, DeviceInst, NetInfo, NetNodeRef, ErrCode, ResultHelper, ApiResult,
+  Logger, INSTR_TRACE_TAG, IdUtil, emptySchTopology, makeDeviceInst
+} from 'common';
+import { AiPipelineOrchestrator } from '../algorithms/AiPipelineOrchestrator';
+import { DeviceSelectEngine } from '../algorithms/DeviceSelectEngine';
+import {
+  ModularPlan, ModularModuleSpec, ModularJointSpec,
+  mergeModularTopologies, critiqueModularPlan, looksLikeLibIdAsRefDes
+} from '../algorithms/ModularParallelMerge';
+import { IComponentLibrary } from 'component_library';
+
+export interface AiValidationResult {
+  passed: boolean;
+  checks: string[];
+  failures: string[];
+  topology?: SchTopology;
+}
+
+export class AiPipelineValidator {
+  private library: IComponentLibrary;
+  private orchestrator: AiPipelineOrchestrator;
+  private deviceSelect: DeviceSelectEngine;
+
+  constructor(library: IComponentLibrary, orchestrator: AiPipelineOrchestrator) {
+    this.library = library;
+    this.orchestrator = orchestrator;
+    this.deviceSelect = new DeviceSelectEngine(library);
+  }
+
+  async validateMinSystemLed(): Promise<AiValidationResult> {
+    const checks: string[] = [];
+    const failures: string[] = [];
+    const prompt = 'STM32F103 æœ€å°ç³»ç»Ÿ + LED';
+    Logger.info(INSTR_TRACE_TAG, `[AI_VAL] validateMinSystemLed START skipLlm=true`);
+    const result = await this.orchestrator.runFullPipeline({ prompt, skipLlm: true });
+    if (!result.topology || result.topology.deviceList.length === 0) {
+      failures.push('æ‹“æ‰‘ä¸ºç©º');
+      Logger.error(INSTR_TRACE_TAG, '[AI_VAL] validateMinSystemLed FAIL empty topo');
+      return { passed: false, checks, failures };
+    }
+    const topo = result.topology;
+    checks.push(`å™¨ä»¶æ•°: ${topo.deviceList.length}`);
+
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const dev = topo.deviceList[i];
+      const r = this.library.getComponent(dev.libDevId);
+      if (!r.success) failures.push(`å™¨ä»¶ä¸åœ¨åº“: ${dev.libDevId}`);
+      else checks.push(`åº“åŒ¹é…: ${dev.libDevId}`);
+    }
+
+    const mcu = topo.deviceList.find(d => d.libDevId.includes('STM32') || d.libDevId.includes('AT89'));
+    const xtal = topo.deviceList.find(d => d.libDevId.includes('XTAL') || d.libDevId.includes('æ™¶æŒ¯'));
+    if (mcu && xtal) {
+      const dist = Math.abs(mcu.x - xtal.x) + Math.abs(mcu.y - xtal.y);
+      if (dist <= 120) checks.push(`æ™¶æŒ¯è·ç¦»: ${dist}mil`);
+      else failures.push(`æ™¶æŒ¯è·ç¦»è¿‡å¤§: ${dist}mil > 120`);
+    }
+
+    if (topo.wireList.length > 0) checks.push(`å¸ƒçº¿æ•°: ${topo.wireList.length}`);
+    else failures.push('æ— å¸ƒçº¿');
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateMinSystemLed END passed=${failures.length === 0}` +
+      ` devices=${topo.deviceList.length} wires=${topo.wireList.length}`);
+    return { passed: failures.length === 0, checks, failures, topology: topo };
+  }
+
+  validateHallucinationChip(): ApiResult<boolean> {
+    const prompt = 'ä½¿ç”¨ XYZ-99999 èŠ¯ç‰‡';
+    const local = DeviceSelectEngine.buildLocalLlmOutput(prompt);
+    const match = this.deviceSelect.matchFromLlmOutput(local, prompt);
+    if (!match.oodDetected) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD not detected');
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'æœªæ£€æµ‹åˆ° OOD');
+    }
+    Logger.info(INSTR_TRACE_TAG, '[AI_VAL] hallucination OOD OK');
+    return ResultHelper.ok(true);
+  }
+
+  /**
+   * æ¨¡å—å¹¶è¡Œåˆå¹¶ï¼šåŒåç”µæºç½‘é¡»åˆå¹¶ï¼›joints å¯ç”¨ libDevId å›é€€åŒ¹é…ä½å·ã€‚
+   */
+  validateModularMerge(): AiValidationResult {
+    const checks: string[] = [];
+    const failures: string[] = [];
+
+    if (!looksLikeLibIdAsRefDes('LM555') || !looksLikeLibIdAsRefDes('LED_RED')) {
+      failures.push('looksLikeLibIdAsRefDes åº”è¯†åˆ« LM555/LED_RED');
+    } else {
+      checks.push('libId-as-RefDes è¯†åˆ« OK');
+    }
+    if (looksLikeLibIdAsRefDes('U1') || looksLikeLibIdAsRefDes('D1') || looksLikeLibIdAsRefDes('LED1') ||
+      looksLikeLibIdAsRefDes('SCOPE1') || looksLikeLibIdAsRefDes('AM1') || looksLikeLibIdAsRefDes('VM1')) {
+      failures.push('looksLikeLibIdAsRefDes è¯¯ä¼¤æ­£å¸¸ä½å· U1/D1/LED1/SCOPE1/AM1/VM1');
+    } else {
+      checks.push('æ­£å¸¸ä½å·è±å… OK');
+    }
+
+    const badMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æŒ¯è¡',
+      prompt: 'æ”¾ç½® LM555 ä¸é˜»å®¹æ„æˆæ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.OUT',
+      boundaryPins: ['LM555.OUT']
+    };
+    const badMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æŒ‡ç¤º',
+      prompt: 'æ”¾ç½® LED_RED é™æµç”µé˜»ï¼Œè¾¹ç•Œ D1.A',
+      boundaryPins: ['LED_RED.A']
+    };
+    const badJoint0: ModularJointSpec = { from: 'M1.LM555.OUT', to: 'M2.LED_RED.A' };
+    const badJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.LM555.OUT' };
+    const badJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.LED_RED.A' };
+    const badPlan: ModularPlan = {
+      systemOverview: '555 æ— ç¨³æ€æŒ¯è¡é©±åŠ¨ LEDï¼Œç”µæºæ¥ VCC/GND',
+      modules: [badMod1, badMod2],
+      joints: [badJoint0, badJoint1, badJoint2]
+    };
+    const critique = critiqueModularPlan(badPlan, this.library);
+    const libAsRefHit = critique.some(s => s.indexOf('libDevId') >= 0 || s.indexOf('å‹å·') >= 0);
+    if (!libAsRefHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶æŠŠ LM555/LED_RED å½“ RefDes');
+    } else {
+      checks.push(`plan é—¨ç¦æ‹’æ”¶å‹å·å½“ä½å· (${critique.length} issues)`);
+    }
+
+    // é€šç”¨å¿ å®åº¦ï¼šç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§æœ‰æº/å‡è„šé¡»æ‹’æ”¶
+    const creepMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æ¿€åŠ±',
+      prompt: 'æ”¾ç½® U1ï¼ˆlibDevId=LM555ï¼‰äº§ç”Ÿæ–¹æ³¢ï¼Œè¾¹ç•Œ U1.3',
+      boundaryPins: ['U1.3', 'U1.8', 'U1.1']
+    };
+    const creepMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æµ‹é‡',
+      prompt: 'æ”¾ç½® RV1ï¼ˆlibDevId=POT_10kï¼‰ä¸ OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼Œ' +
+        'OSC1 ä¿¡å·è¾“å…¥å¼•è„šï¼ˆå‡è®¾ä¸ºAï¼‰ï¼ŒRV1 ç«¯è„šæ‚¬ç©º',
+      boundaryPins: ['RV1.1', 'OSC1.CH1']
+    };
+    const creepPlan: ModularPlan = {
+      systemOverview: '555æ–¹æ³¢é©±åŠ¨è´Ÿè½½å¹¶ç”¨ç¤ºæ³¢å™¨è§‚æµ‹',
+      modules: [creepMod1, creepMod2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.U1.8' },
+        { from: 'POWER.GND', to: 'M1.U1.1' },
+        { from: 'M1.U1.3', to: 'M2.RV1.1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.CH1' }
+      ]
+    };
+    const simpleUser = 'ç”µé˜»åˆ†å‹ç”µè·¯æµ‹ä¸­ç‚¹ç”µå‹';
+    const creepCritique = critiqueModularPlan(creepPlan, this.library, simpleUser);
+    const creepHit = creepCritique.some(s => s.indexOf('æ“…è‡ª') >= 0);
+    const pinHit = creepCritique.some(s => s.indexOf('å‡è®¾') >= 0 || s.indexOf('æ‚¬ç©º') >= 0 ||
+      s.indexOf('ä¸å±äº') >= 0);
+    if (!creepHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶ç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§å™¨ä»¶æ‰©å®¹');
+    } else {
+      checks.push('é€šç”¨å¿ å®åº¦é—¨ç¦ OK');
+    }
+    if (!pinHit) {
+      failures.push('critiqueModularPlan æœªæ‹’æ”¶å‡è®¾è„š/æ‚¬ç©º/åº“å¤–è„š');
+    } else {
+      checks.push('åº“è„š/å‡è„šé—¨ç¦ OK');
+    }
+
+    // åˆæ³•æ— æº+ç¤ºæ³¢ planï¼ˆç”¨æˆ·ç‚¹åè§‚æµ‹ï¼‰åº”é€šè¿‡
+    const good1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'RCç½‘ç»œ',
+      prompt: 'æ”¾ç½® R1ï¼ˆlibDevId=R_10kï¼‰ä¸ C1ï¼ˆlibDevId=C_10uFï¼‰ï¼šVCCâ€”R1â€”ç”µå®¹èŠ‚ç‚¹â€”C1â€”GND',
+      boundaryPins: ['R1.1', 'C1.2', 'R1.2']
+    };
+    const good2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'ç¤ºæ³¢è§‚æµ‹',
+      prompt: 'æ”¾ç½® OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼šOSC1.CH1 æ¥ç”µå®¹èŠ‚ç‚¹ï¼ŒOSC1.GND æ¥ç³»ç»Ÿåœ°',
+      boundaryPins: ['OSC1.CH1', 'OSC1.GND']
+    };
+    const goodPlan: ModularPlan = {
+      systemOverview: 'æ— æº RCï¼šVCCç»Rå¯¹Cå……ç”µï¼Œç¤ºæ³¢å™¨CH1è§‚æµ‹ç”µå®¹ç”µå‹',
+      modules: [good1, good2],
+      joints: [
+        { from: 'POWER.VCC', to: 'M1.R1.1' },
+        { from: 'POWER.GND', to: 'M1.C1.2' },
+        { from: 'M1.R1.2', to: 'M2.OSC1.CH1' },
+        { from: 'POWER.GND', to: 'M2.OSC1.GND' }
+      ]
+    };
+    const goodUser = 'RC å……æ”¾ç”µç”µè·¯è§‚æµ‹æŒ‡æ•°æ³¢å½¢';
+    const goodCritique = critiqueModularPlan(goodPlan, this.library, goodUser);
+    if (goodCritique.length > 0) {
+      failures.push(`åˆæ³• plan è¢«è¯¯æ‹’: ${goodCritique.join('; ')}`);
+    } else {
+      checks.push('åˆæ³• plan é€šè¿‡é—¨ç¦');
+    }
+
+    const m1 = AiPipelineValidator.makeModuleTopo('U1', 'LM555', 'net_vcc_m1', 'net_gnd_m1');
+    const m2 = AiPipelineValidator.makeModuleTopo('D1', 'LED_RED', 'net_vcc_m2', 'net_gnd_m2');
+    const goodMod1: ModularModuleSpec = {
+      id: 'M1',
+      title: 'æŒ¯è¡',
+      prompt: 'æ”¾ç½® U1=LM555 æ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.3',
+      boundaryPins: ['U1.3']
+    };
+    const goodMod2: ModularModuleSpec = {
+      id: 'M2',
+      title: 'æŒ‡ç¤º',
+      prompt: 'æ”¾ç½® D1=LED_REDï¼Œè¾¹ç•Œ D1.A',
+      boundaryPins: ['D1.A']
+    };
+    const goodJoint0: ModularJointSpec = { from: 'M1.LM555.3', to: 'M2.LED_RED.A' };
+    const goodJoint1: ModularJointSpec = { from: 'POWER.VCC', to: 'M1.U1.3' };
+    const goodJoint2: ModularJointSpec = { from: 'POWER.GND', to: 'M2.D1.A' };
+    const plan: ModularPlan = {
+      systemOverview: '555 é©±åŠ¨ LED æŒ‡ç¤ºç¯ï¼ŒåŒæ¨¡å—ç”µæºå…±äº«',
+      modules: [goodMod1, goodMod2],
+      joints: [goodJoint0, goodJoint1, goodJoint2]
+    };
+    const mergeOut = mergeModularTopologies([m1, m2], plan, (_lib: string, hint: string) => {
+      return hint && hint.length > 0 ? '1' : '1';
+    });
+    const vccNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'VCC');
+    const gndNets = mergeOut.topology.netList.filter(
+      n => (n.netName ?? '').toUpperCase() === 'GND');
+    if (vccNets.length !== 1) {
+      failures.push(`åˆå¹¶å VCC ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${vccNets.length}`);
+    } else {
+      checks.push('VCC ç½‘å”¯ä¸€');
+    }
+    if (gndNets.length !== 1) {
+      failures.push(`åˆå¹¶å GND ç½‘åº”å”¯ä¸€ï¼Œå®é™… ${gndNets.length}`);
+    } else {
+      checks.push('GND ç½‘å”¯ä¸€');
+    }
+    if (mergeOut.jointFail > 0) {
+      failures.push(`joints åº”æŒ‰ libDevId å›é€€å‘½ä¸­ï¼Œfail=${mergeOut.jointFail}: ` +
+        mergeOut.jointFailReasons.join('; '));
+    } else {
+      checks.push(`joints ok=${mergeOut.jointOk}`);
+    }
+    const labelN = mergeOut.topology.netLabelList?.length ?? 0;
+    if (mergeOut.jointOk > 0 && labelN < 2) {
+      failures.push(`è·¨æ¨¡å—åº”ä½¿ç”¨ç½‘ç»œæ ‡å·å¹¶ç½‘ï¼Œlabels=${labelN}`);
+    } else if (mergeOut.jointOk > 0) {
+      checks.push(`ç½‘ç»œæ ‡å· labels=${labelN}`);
+    }
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateModularMerge passed=${failures.length === 0}` +
+      ` checks=${checks.length} failures=${failures.length}`);
+    return {
+      passed: failures.length === 0,
+      checks,
+      failures,
+      topology: mergeOut.topology
+    };
+  }
+
+  private static makeDev(libDevId: string, refName: string, x: number, y: number): DeviceInst {
+    return makeDeviceInst(IdUtil.generate('d'), libDevId, refName, x, y, 0, new Map<string, string>());
+  }
+
+  private static makeNet(uuid: string, name: string, nodes: DeviceInst[], isPower: boolean): NetInfo {
+    const nodeList: NetNodeRef[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node: NetNodeRef = {
+        devUuid: nodes[i].instUuid,
+        pinId: '1',
+        pinName: '1'
+      };
+      nodeList.push(node);
+    }
+    const net: NetInfo = {
+      netUuid: uuid,
+      netName: name,
+      displayName: name,
+      nodeList: nodeList,
+      isPower,
+      isAnalog: false,
+      isBusMember: false,
+      busParentUuid: '',
+      defaultVoltage: 0,
+      ercWarning: false,
+      connectedProbeIds: []
+    };
+    return net;
+  }
+
+  private static makeModuleTopo(
+    chipRef: string, chipLib: string, vccNetId: string, gndNetId: string
+  ): SchTopology {
+    const topo = emptySchTopology();
+    const chip = AiPipelineValidator.makeDev(chipLib, chipRef, 200, 200);
+    const vcc = AiPipelineValidator.makeDev('VCC', 'VCC', 60, 80);
+    const gnd = AiPipelineValidator.makeDev('GND', 'GND', 60, 400);
+    topo.deviceList.push(chip, vcc, gnd);
+    topo.netList.push(
+      AiPipelineValidator.makeNet(vccNetId, 'VCC', [vcc, chip], true),
+      AiPipelineValidator.makeNet(gndNetId, 'GND', [gnd, chip], true)
+    );
+    return topo;
+  }
+
+  /**
+   * éªŒè¯ï¼šç”Ÿäº§è·¯å¾„ï¼ˆskipLlm=falseï¼‰åœ¨æ— å¯ç”¨ LLM æ—¶ä¸å¾—é™é»˜è¾“å‡ºæ¨¡æ¿æ‹“æ‰‘ã€‚
+   */
+  async validateApiFailureFallback(): Promise<AiValidationResult> {
+    const checks: string[] = [];
+    const failures: string[] = [];
+    Logger.info(INSTR_TRACE_TAG,
+      '[AI_VAL] validateNoTemplateFallback START skipLlm=false');
+    const result = await this.orchestrator.runFullPipeline({
+      prompt: 'STM32F103 æœ€å°ç³»ç»Ÿ',
+      skipLlm: false
+    });
+    if (result.usedLlm) {
+      checks.push('LLM å¯ç”¨å¹¶å®Œæˆé€‰å‹');
+      if (!result.topology || result.topology.deviceList.length < 1) {
+        failures.push('LLM æˆåŠŸä½†æ‹“æ‰‘ä¸ºç©º');
+      } else {
+        checks.push(`LLM å™¨ä»¶: ${result.topology.deviceList.length}`);
+      }
+    } else if (!result.topology || result.topology.deviceList.length === 0) {
+      checks.push('API ä¸å¯ç”¨æ—¶æ‹’ç»è½å›¾(æ— æ¨¡æ¿å›é€€)');
+    } else {
+      failures.push('API ä¸å¯ç”¨æ—¶ä»è¾“å‡ºäº†æ‹“æ‰‘(å­˜åœ¨å›é€€)');
+    }
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_VAL] validateNoTemplateFallback END passed=${failures.length === 0}` +
+      ` usedLlm=${result.usedLlm} devices=${result.topology?.deviceList.length ?? 0}`);
+    return { passed: failures.length === 0, checks, failures, topology: result.topology };
+  }
+}
+ÔrE“Ù ../algorithms/DeviceSelectEngineÙ"../algorithms/ModularParallelMerge¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ^C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\DeviceSelectEngine.etsAÃªoh-resolveÂFAÂÙ`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\ModularParallelMerge.etsAÃªoh-resolveÂFAÃ¦commonAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍdÍ37ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍkÍ37ÔrK”¤type¥start£end¤nameªIdentifierÍqÍ„³AiPipelineValidatorÀÔrL”¤type¥start£end¤body©ClassBodyÍ…Í37˜ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍŒÍAÂÂKªIdentifierÍŒÍ—«constructor«constructorÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ—ÍAÀÂÂÂ’KªIdentifierÍ˜ÍŸ§libraryKªIdentifierÍ¡Í­¬orchestratorL®BlockStatementÍ¯ÍA“ÔrO”¤type¥start£endªexpression³ExpressionStatementÍºÍÑÔrP–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍºÍĞ¡=ÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍºÍÆÔrR“¤type¥start£end®ThisExpressionÍºÍ¾KªIdentifierÍ¿ÍÆ§libraryÂÂKªIdentifierÍÉÍĞ§libraryO³ExpressionStatementÍÛÍüP´AssignmentExpressionÍÛÍû¡=Q°MemberExpressionÍÛÍìR®ThisExpressionÍÛÍßKªIdentifierÍàÍì¬orchestratorÂÂKªIdentifierÍïÍû¬orchestratorO³ExpressionStatementÍÍ:P´AssignmentExpressionÍÍ9¡=Q°MemberExpressionÍÍR®ThisExpressionÍÍ
+KªIdentifierÍÍ¬deviceSelectÂÂÔrS•¤type¥start£end¦callee©arguments­NewExpressionÍÍ9KªIdentifierÍÍ0²DeviceSelectEngine‘KªIdentifierÍ1Í8§libraryM°MethodDefinitionÍGÍ	áÂÂKªIdentifierÍMÍa´validateMinSystemLed¦methodN²FunctionExpressionÍaÍ	áÀÂÂÃL®BlockStatementÍdÍ	áŸÔrT•¤type¥start£end¬declarations¤kind³VariableDeclarationÍoÍ‘ÔrU•¤type¥start£end¢id¤init²VariableDeclaratorÍuÍ€KªIdentifierÍuÍ{¦checksÔrV”¤type¥start£end¨elements¯ArrayExpressionÍ~Í€¥constT³VariableDeclarationÍ‹ÍŸ‘U²VariableDeclaratorÍ‘ÍKªIdentifierÍ‘Í™¨failuresV¯ArrayExpressionÍœÍ¥constT³VariableDeclarationÍ©ÍÏ‘U²VariableDeclaratorÍ¯ÍÎKªIdentifierÍ¯Íµ¦promptÔrW•¤type¥start£end¥value£raw§LiteralÍ¸ÍÎ¼STM32F103 æœ€å°ç³»ç»Ÿ + LED¾'STM32F103 æœ€å°ç³»ç»Ÿ + LED'¥constO³ExpressionStatementÍÙÍ*ÔrX–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÙÍ)Q°MemberExpressionÍÙÍäKªIdentifierÍÙÍß¦LoggerKªIdentifierÍàÍä¤infoÂÂ’KªIdentifierÍåÍô¯INSTR_TRACE_TAGÔrY•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍöÍ(‘ÔrZ•¤type¥start£end¥value¤tail¯TemplateElementÍ÷Í'Ôr[’£raw¦cookedÙ0[AI_VAL] validateMinSystemLed START skipLlm=trueÙ0[AI_VAL] validateMinSystemLed START skipLlm=trueÃÂT³VariableDeclarationÍ4Í†‘U²VariableDeclaratorÍ:Í…KªIdentifierÍ:Í@¦resultÔr\”¤type¥start£end¨argument¯AwaitExpressionÍCÍ…X®CallExpressionÍIÍ…Q°MemberExpressionÍIÍjQ°MemberExpressionÍIÍZR®ThisExpressionÍIÍMKªIdentifierÍNÍZ¬orchestratorÂÂKªIdentifierÍ[Íj¯runFullPipelineÂÂ‘Ôr]”¤type¥start£endªproperties°ObjectExpressionÍkÍ„’Ôr^™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍmÍsÂÃÂKªIdentifierÍmÍs¦prompt¤initKªIdentifierÍmÍs¦promptÔr_™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍuÍ‚ÂÂÂKªIdentifierÍuÍ|§skipLlmW§LiteralÍ~Í‚Ã¤true¤initÂ¥constÔr`–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍ—Ôra–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ”ÍÏÔrb–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ”Í¤¡!ÃQ°MemberExpressionÍ•Í¤KªIdentifierÍ•Í›¦resultKªIdentifierÍœÍ¤¨topologyÂÂ¢||a°BinaryExpressionÍ¨ÍÏQ°MemberExpressionÍ¨ÍÉQ°MemberExpressionÍ¨ÍÂQ°MemberExpressionÍ¨Í·KªIdentifierÍ¨Í®¦resultKªIdentifierÍ¯Í·¨topologyÂÂKªIdentifierÍ¸ÍÂªdeviceListÂÂKªIdentifierÍÃÍÉ¦lengthÂÂ£===W§LiteralÍÎÍÏ ¡0L®BlockStatementÍÑÍ—“O³ExpressionStatementÍàÍöX®CallExpressionÍàÍõQ°MemberExpressionÍàÍíKªIdentifierÍàÍè¨failuresKªIdentifierÍéÍí¤pushÂÂ‘W§LiteralÍîÍô¬æ‹“æ‰‘ä¸ºç©º®'æ‹“æ‰‘ä¸ºç©º'ÂO³ExpressionStatementÍÍSX®CallExpressionÍÍRQ°MemberExpressionÍÍKªIdentifierÍÍ
+¦LoggerKªIdentifierÍÍ¥errorÂÂ’KªIdentifierÍÍ ¯INSTR_TRACE_TAGW§LiteralÍ"ÍQÙ-[AI_VAL] validateMinSystemLed FAIL empty topoÙ/'[AI_VAL] validateMinSystemLed FAIL empty topo'Â\¯ReturnStatementÍaÍŒ]°ObjectExpressionÍhÍ‹“_¨PropertyÍjÍwÂÂÂKªIdentifierÍjÍp¦passedW§LiteralÍrÍwÂ¥false¤init^¨PropertyÍyÍÂÃÂKªIdentifierÍyÍ¦checks¤initKªIdentifierÍyÍ¦checks^¨PropertyÍÍ‰ÂÃÂKªIdentifierÍÍ‰¨failures¤initKªIdentifierÍÍ‰¨failuresÀT³VariableDeclarationÍ¡Í¾‘U²VariableDeclaratorÍ§Í½KªIdentifierÍ§Í«¤topoQ°MemberExpressionÍ®Í½KªIdentifierÍ®Í´¦resultKªIdentifierÍµÍ½¨topologyÂÂ¥constO³ExpressionStatementÍÈÍöX®CallExpressionÍÈÍõQ°MemberExpressionÍÈÍÓKªIdentifierÍÈÍÎ¦checksKªIdentifierÍÏÍÓ¤pushÂÂ‘Y¯TemplateLiteralÍÔÍô‘Q°MemberExpressionÍÜÍòQ°MemberExpressionÍÜÍëKªIdentifierÍÜÍà¤topoKªIdentifierÍáÍëªdeviceListÂÂKªIdentifierÍìÍò¦lengthÂÂ’Z¯TemplateElementÍÕÍÚ[«å™¨ä»¶æ•°: «å™¨ä»¶æ•°: ÂZ¯TemplateElementÍóÍó[  ÃÂÔrc—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ ÍIT³VariableDeclarationÍÍ‘U²VariableDeclaratorÍ	ÍKªIdentifierÍ	Í
+¡iW§LiteralÍÍ ¡0£leta°BinaryExpressionÍÍ*KªIdentifierÍÍ¡i¡<Q°MemberExpressionÍÍ*Q°MemberExpressionÍÍ#KªIdentifierÍÍ¤topoKªIdentifierÍÍ#ªdeviceListÂÂKªIdentifierÍ$Í*¦lengthÂÂb°UpdateExpressionÍ,Í/¢++ÂKªIdentifierÍ,Í-¡iL®BlockStatementÍ1ÍI“T³VariableDeclarationÍ@Í_‘U²VariableDeclaratorÍFÍ^KªIdentifierÍFÍI£devQ°MemberExpressionÍLÍ^Q°MemberExpressionÍLÍ[KªIdentifierÍLÍP¤topoKªIdentifierÍQÍ[ªdeviceListÂÂKªIdentifierÍ\Í]¡iÃÂ¥constT³VariableDeclarationÍmÍŸ‘U²VariableDeclaratorÍsÍKªIdentifierÍsÍt¡rX®CallExpressionÍwÍQ°MemberExpressionÍwÍQ°MemberExpressionÍwÍƒR®ThisExpressionÍwÍ{KªIdentifierÍ|Íƒ§libraryÂÂKªIdentifierÍ„Í¬getComponentÂÂ‘Q°MemberExpressionÍ‘ÍKªIdentifierÍ‘Í”£devKªIdentifierÍ•Í¨libDevIdÂÂÂ¥const`«IfStatementÍ­Í>b¯UnaryExpressionÍ±Í»¡!ÃQ°MemberExpressionÍ²Í»KªIdentifierÍ²Í³¡rKªIdentifierÍ´Í»§successÂÂO³ExpressionStatementÍÎÍöX®CallExpressionÍÎÍõQ°MemberExpressionÍÎÍÛKªIdentifierÍÎÍÖ¨failuresKªIdentifierÍ×ÍÛ¤pushÂÂ‘Y¯TemplateLiteralÍÜÍô‘Q°MemberExpressionÍæÍòKªIdentifierÍæÍé£devKªIdentifierÍêÍò¨libDevIdÂÂ’Z¯TemplateElementÍİÍä[±å™¨ä»¶ä¸åœ¨åº“: ±å™¨ä»¶ä¸åœ¨åº“: ÂZ¯TemplateElementÍóÍó[  ÃÂO³ExpressionStatementÍÍ>X®CallExpressionÍÍ=Q°MemberExpressionÍÍ%KªIdentifierÍÍ ¦checksKªIdentifierÍ!Í%¤pushÂÂ‘Y¯TemplateLiteralÍ&Í<‘Q°MemberExpressionÍ.Í:KªIdentifierÍ.Í1£devKªIdentifierÍ2Í:¨libDevIdÂÂ’Z¯TemplateElementÍ'Í,[«åº“åŒ¹é…: «åº“åŒ¹é…: ÂZ¯TemplateElementÍ;Í;[  ÃÂT³VariableDeclarationÍSÍ¶‘U²VariableDeclaratorÍYÍµKªIdentifierÍYÍ\£mcuX®CallExpressionÍ_ÍµQ°MemberExpressionÍ_ÍsQ°MemberExpressionÍ_ÍnKªIdentifierÍ_Íc¤topoKªIdentifierÍdÍnªdeviceListÂÂKªIdentifierÍoÍs¤findÂÂ‘N·ArrowFunctionExpressionÍtÍ´ÀÃÂÂ‘KªIdentifierÍtÍu¡da±LogicalExpressionÍyÍ´X®CallExpressionÍyÍ•Q°MemberExpressionÍyÍŒQ°MemberExpressionÍyÍƒKªIdentifierÍyÍz¡dKªIdentifierÍ{Íƒ¨libDevIdÂÂKªIdentifierÍ„ÍŒ¨includesÂÂ‘W§LiteralÍÍ”¥STM32§'STM32'Â¢||X®CallExpressionÍ™Í´Q°MemberExpressionÍ™Í¬Q°MemberExpressionÍ™Í£KªIdentifierÍ™Íš¡dKªIdentifierÍ›Í£¨libDevIdÂÂKªIdentifierÍ¤Í¬¨includesÂÂ‘W§LiteralÍ­Í³¤AT89¦'AT89'ÂÂ¥constT³VariableDeclarationÍÀÍ!‘U²VariableDeclaratorÍÆÍ KªIdentifierÍÆÍÊ¤xtalX®CallExpressionÍÍÍ Q°MemberExpressionÍÍÍáQ°MemberExpressionÍÍÍÜKªIdentifierÍÍÍÑ¤topoKªIdentifierÍÒÍÜªdeviceListÂÂKªIdentifierÍİÍá¤findÂÂ‘N·ArrowFunctionExpressionÍâÍÀÃÂÂ‘KªIdentifierÍâÍã¡da±LogicalExpressionÍçÍX®CallExpressionÍçÍQ°MemberExpressionÍçÍúQ°MemberExpressionÍçÍñKªIdentifierÍçÍè¡dKªIdentifierÍéÍñ¨libDevIdÂÂKªIdentifierÍòÍú¨includesÂÂ‘W§LiteralÍûÍ¤XTAL¦'XTAL'Â¢||X®CallExpressionÍÍQ°MemberExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¡dKªIdentifierÍÍ¨libDevIdÂÂKªIdentifierÍÍ¨includesÂÂ‘W§LiteralÍÍ¦æ™¶æŒ¯¨'æ™¶æŒ¯'ÂÂ¥const`«IfStatementÍ+Í5a±LogicalExpressionÍ/Í:KªIdentifierÍ/Í2£mcu¢&&KªIdentifierÍ6Í:¤xtalL®BlockStatementÍ<Í5’T³VariableDeclarationÍKÍŒ‘U²VariableDeclaratorÍQÍ‹KªIdentifierÍQÍU¤dista°BinaryExpressionÍXÍ‹X®CallExpressionÍXÍpQ°MemberExpressionÍXÍ`KªIdentifierÍXÍ\¤MathKªIdentifierÍ]Í`£absÂÂ‘a°BinaryExpressionÍaÍoQ°MemberExpressionÍaÍfKªIdentifierÍaÍd£mcuKªIdentifierÍeÍf¡xÂÂ¡-Q°MemberExpressionÍiÍoKªIdentifierÍiÍm¤xtalKªIdentifierÍnÍo¡xÂÂÂ¡+X®CallExpressionÍsÍ‹Q°MemberExpressionÍsÍ{KªIdentifierÍsÍw¤MathKªIdentifierÍxÍ{£absÂÂ‘a°BinaryExpressionÍ|ÍŠQ°MemberExpressionÍ|ÍKªIdentifierÍ|Í£mcuKªIdentifierÍ€Í¡yÂÂ¡-Q°MemberExpressionÍ„ÍŠKªIdentifierÍ„Íˆ¤xtalKªIdentifierÍ‰ÍŠ¡yÂÂÂ¥const`«IfStatementÍšÍ*a°BinaryExpressionÍÍ©KªIdentifierÍÍ¢¤dist¢<=W§LiteralÍ¦Í©Ìx£120O³ExpressionStatementÍ¼ÍÜX®CallExpressionÍ¼ÍÛQ°MemberExpressionÍ¼ÍÇKªIdentifierÍ¼ÍÂ¦checksKªIdentifierÍÃÍÇ¤pushÂÂ‘Y¯TemplateLiteralÍÈÍÚ‘KªIdentifierÍÑÍÕ¤dist’Z¯TemplateElementÍÉÍÏ[®æ™¶æŒ¯è·ç¦»: ®æ™¶æŒ¯è·ç¦»: ÂZ¯TemplateElementÍÖÍÙ[£mil£milÃÂO³ExpressionStatementÍ Í*X®CallExpressionÍ Í)Q°MemberExpressionÍ ÍKªIdentifierÍ Í¨failuresKªIdentifierÍ	Í¤pushÂÂ‘Y¯TemplateLiteralÍÍ(‘KªIdentifierÍÍ¤dist’Z¯TemplateElementÍÍ[´æ™¶æŒ¯è·ç¦»è¿‡å¤§: ´æ™¶æŒ¯è·ç¦»è¿‡å¤§: ÂZ¯TemplateElementÍÍ'[©mil > 120©mil > 120ÃÂÀ`«IfStatementÍ?ÍÇa°BinaryExpressionÍCÍ[Q°MemberExpressionÍCÍWQ°MemberExpressionÍCÍPKªIdentifierÍCÍG¤topoKªIdentifierÍHÍP¨wireListÂÂKªIdentifierÍQÍW¦lengthÂÂ¡>W§LiteralÍZÍ[ ¡0O³ExpressionStatementÍjÍ–X®CallExpressionÍjÍ•Q°MemberExpressionÍjÍuKªIdentifierÍjÍp¦checksKªIdentifierÍqÍu¤pushÂÂ‘Y¯TemplateLiteralÍvÍ”‘Q°MemberExpressionÍ~Í’Q°MemberExpressionÍ~Í‹KªIdentifierÍ~Í‚¤topoKªIdentifierÍƒÍ‹¨wireListÂÂKªIdentifierÍŒÍ’¦lengthÂÂ’Z¯TemplateElementÍwÍ|[«å¸ƒçº¿æ•°: «å¸ƒçº¿æ•°: ÂZ¯TemplateElementÍ“Í“[  ÃÂO³ExpressionStatementÍ²ÍÇX®CallExpressionÍ²ÍÆQ°MemberExpressionÍ²Í¿KªIdentifierÍ²Íº¨failuresKªIdentifierÍ»Í¿¤pushÂÂ‘W§LiteralÍÀÍÅ©æ— å¸ƒçº¿«'æ— å¸ƒçº¿'ÂO³ExpressionStatementÍÑÍ	…X®CallExpressionÍÑÍ	„Q°MemberExpressionÍÑÍÜKªIdentifierÍÑÍ×¦LoggerKªIdentifierÍØÍÜ¤infoÂÂ’KªIdentifierÍİÍì¯INSTR_TRACE_TAGa°BinaryExpressionÍîÍ	ƒY¯TemplateLiteralÍîÍ	1‘a°BinaryExpressionÍ	Í	/Q°MemberExpressionÍ	Í	)KªIdentifierÍ	Í	"¨failuresKªIdentifierÍ	#Í	)¦lengthÂÂ£===W§LiteralÍ	.Í	/ ¡0’Z¯TemplateElementÍïÍ	[Ù)[AI_VAL] validateMinSystemLed END passed=Ù)[AI_VAL] validateMinSystemLed END passed=ÂZ¯TemplateElementÍ	0Í	0[  Ã¡+Y¯TemplateLiteralÍ	AÍ	ƒ’Q°MemberExpressionÍ	MÍ	cQ°MemberExpressionÍ	MÍ	\KªIdentifierÍ	MÍ	Q¤topoKªIdentifierÍ	RÍ	\ªdeviceListÂÂKªIdentifierÍ	]Í	c¦lengthÂÂQ°MemberExpressionÍ	mÍ	Q°MemberExpressionÍ	mÍ	zKªIdentifierÍ	mÍ	q¤topoKªIdentifierÍ	rÍ	z¨wireListÂÂKªIdentifierÍ	{Í	¦lengthÂÂ“Z¯TemplateElementÍ	BÍ	K[© devices=© devices=ÂZ¯TemplateElementÍ	dÍ	k[§ wires=§ wires=ÂZ¯TemplateElementÍ	‚Í	‚[  ÃÂ\¯ReturnStatementÍ	Í	Ú]°ObjectExpressionÍ	–Í	Ù”_¨PropertyÍ	˜Í	µÂÂÂKªIdentifierÍ	˜Í	¦passeda°BinaryExpressionÍ	 Í	µQ°MemberExpressionÍ	 Í	¯KªIdentifierÍ	 Í	¨¨failuresKªIdentifierÍ	©Í	¯¦lengthÂÂ£===W§LiteralÍ	´Í	µ ¡0¤init^¨PropertyÍ	·Í	½ÂÃÂKªIdentifierÍ	·Í	½¦checks¤initKªIdentifierÍ	·Í	½¦checks^¨PropertyÍ	¿Í	ÇÂÃÂKªIdentifierÍ	¿Í	Ç¨failures¤initKªIdentifierÍ	¿Í	Ç¨failures_¨PropertyÍ	ÉÍ	×ÂÂÂKªIdentifierÍ	ÉÍ	Ñ¨topologyKªIdentifierÍ	ÓÍ	×¤topo¤initM°MethodDefinitionÍ	çÍÂÂKªIdentifierÍ	çÍ
+ ¹validateHallucinationChip¦methodN²FunctionExpressionÍ
+ ÍÀÂÂÂL®BlockStatementÍ
+Í–T³VariableDeclarationÍ
+Í
+/‘U²VariableDeclaratorÍ
+Í
+.KªIdentifierÍ
+Í
+¦promptW§LiteralÍ
+Í
+.·ä½¿ç”¨ XYZ-99999 èŠ¯ç‰‡¹'ä½¿ç”¨ XYZ-99999 èŠ¯ç‰‡'¥constT³VariableDeclarationÍ
+9Í
+v‘U²VariableDeclaratorÍ
+?Í
+uKªIdentifierÍ
+?Í
+D¥localX®CallExpressionÍ
+GÍ
+uQ°MemberExpressionÍ
+GÍ
+mKªIdentifierÍ
+GÍ
+Y²DeviceSelectEngineKªIdentifierÍ
+ZÍ
+m³buildLocalLlmOutputÂÂ‘KªIdentifierÍ
+nÍ
+t¦promptÂ¥constT³VariableDeclarationÍ
+€Í
+Â‘U²VariableDeclaratorÍ
+†Í
+ÁKªIdentifierÍ
+†Í
+‹¥matchX®CallExpressionÍ
+Í
+ÁQ°MemberExpressionÍ
+Í
+²Q°MemberExpressionÍ
+Í
+ŸR®ThisExpressionÍ
+Í
+’KªIdentifierÍ
+“Í
+Ÿ¬deviceSelectÂÂKªIdentifierÍ
+ Í
+²²matchFromLlmOutputÂÂ’KªIdentifierÍ
+³Í
+¸¥localKªIdentifierÍ
+ºÍ
+À¦promptÂ¥const`«IfStatementÍ
+ÌÍ•b¯UnaryExpressionÍ
+ĞÍ
+â¡!ÃQ°MemberExpressionÍ
+ÑÍ
+âKªIdentifierÍ
+ÑÍ
+Ö¥matchKªIdentifierÍ
+×Í
+â«oodDetectedÂÂL®BlockStatementÍ
+äÍ•’O³ExpressionStatementÍ
+óÍ<X®CallExpressionÍ
+óÍ;Q°MemberExpressionÍ
+óÍ
+ÿKªIdentifierÍ
+óÍ
+ù¦LoggerKªIdentifierÍ
+úÍ
+ÿ¥errorÂÂ’KªIdentifierÍ Í¯INSTR_TRACE_TAGW§LiteralÍÍ:Ù'[AI_VAL] hallucination OOD not detectedÙ)'[AI_VAL] hallucination OOD not detected'Â\¯ReturnStatementÍJÍŠX®CallExpressionÍQÍ‰Q°MemberExpressionÍQÍbKªIdentifierÍQÍ]¬ResultHelperKªIdentifierÍ^Íb¤failÂÂ’Q°MemberExpressionÍcÍ|KªIdentifierÍcÍj§ErrCodeKªIdentifierÍkÍ|±ERR_PARAM_INVALIDÂÂW§LiteralÍ~Íˆ°æœªæ£€æµ‹åˆ° OOD²'æœªæ£€æµ‹åˆ° OOD'ÂÀO³ExpressionStatementÍŸÍİX®CallExpressionÍŸÍÜQ°MemberExpressionÍŸÍªKªIdentifierÍŸÍ¥¦LoggerKªIdentifierÍ¦Íª¤infoÂÂ’KªIdentifierÍ«Íº¯INSTR_TRACE_TAGW§LiteralÍ¼ÍÛ½[AI_VAL] hallucination OOD OK¿'[AI_VAL] hallucination OOD OK'Â\¯ReturnStatementÍçÍX®CallExpressionÍîÍQ°MemberExpressionÍîÍıKªIdentifierÍîÍú¬ResultHelperKªIdentifierÍûÍı¢okÂÂ‘W§LiteralÍşÍÃ¤trueÂM°MethodDefinitionÍVÍ(•ÂÂKªIdentifierÍVÍj´validateModularMerge¦methodN²FunctionExpressionÍjÍ(•ÀÂÂÂL®BlockStatementÍmÍ(•Ü .T³VariableDeclarationÍxÍŠ‘U²VariableDeclaratorÍ~Í‰KªIdentifierÍ~Í„¦checksV¯ArrayExpressionÍ‡Í‰¥constT³VariableDeclarationÍ”Í¨‘U²VariableDeclaratorÍšÍ§KªIdentifierÍšÍ¢¨failuresV¯ArrayExpressionÍ¥Í§¥const`«IfStatementÍ²Í a±LogicalExpressionÍ¶Íüb¯UnaryExpressionÍ¶ÍÖ¡!ÃX®CallExpressionÍ·ÍÖKªIdentifierÍ·ÍÍ¶looksLikeLibIdAsRefDes‘W§LiteralÍÎÍÕ¥LM555§'LM555'Â¢||b¯UnaryExpressionÍÚÍü¡!ÃX®CallExpressionÍÛÍüKªIdentifierÍÛÍñ¶looksLikeLibIdAsRefDes‘W§LiteralÍòÍû§LED_RED©'LED_RED'ÂL®BlockStatementÍşÍR‘O³ExpressionStatementÍÍGX®CallExpressionÍÍFQ°MemberExpressionÍÍKªIdentifierÍÍ¨failuresKªIdentifierÍÍ¤pushÂÂ‘W§LiteralÍÍEÙ.looksLikeLibIdAsRefDes åº”è¯†åˆ« LM555/LED_REDÙ0'looksLikeLibIdAsRefDes åº”è¯†åˆ« LM555/LED_RED'ÂL®BlockStatementÍaÍ ‘O³ExpressionStatementÍpÍ•X®CallExpressionÍpÍ”Q°MemberExpressionÍpÍ{KªIdentifierÍpÍv¦checksKªIdentifierÍwÍ{¤pushÂÂ‘W§LiteralÍ|Í“¹libId-as-RefDes è¯†åˆ« OK»'libId-as-RefDes è¯†åˆ« OK'Â`«IfStatementÍªÍ&a±LogicalExpressionÍ®Ía±LogicalExpressionÍ®Í^a±LogicalExpressionÍ®Í=a±LogicalExpressionÍ®Ía±LogicalExpressionÍ®ÍêX®CallExpressionÍ®ÍÊKªIdentifierÍ®ÍÄ¶looksLikeLibIdAsRefDes‘W§LiteralÍÅÍÉ¢U1¤'U1'Â¢||X®CallExpressionÍÎÍêKªIdentifierÍÎÍä¶looksLikeLibIdAsRefDes‘W§LiteralÍåÍé¢D1¤'D1'Â¢||X®CallExpressionÍîÍKªIdentifierÍîÍ¶looksLikeLibIdAsRefDes‘W§LiteralÍÍ¤LED1¦'LED1'Â¢||X®CallExpressionÍÍ=KªIdentifierÍÍ3¶looksLikeLibIdAsRefDes‘W§LiteralÍ4Í<¦SCOPE1¨'SCOPE1'Â¢||X®CallExpressionÍAÍ^KªIdentifierÍAÍW¶looksLikeLibIdAsRefDes‘W§LiteralÍXÍ]£AM1¥'AM1'Â¢||X®CallExpressionÍbÍKªIdentifierÍbÍx¶looksLikeLibIdAsRefDes‘W§LiteralÍyÍ~£VM1¥'VM1'ÂL®BlockStatementÍÍä‘O³ExpressionStatementÍÍÙX®CallExpressionÍÍØQ°MemberExpressionÍÍKªIdentifierÍÍ˜¨failuresKªIdentifierÍ™Í¤pushÂÂ‘W§LiteralÍÍ×ÙClooksLikeLibIdAsRefDes è¯¯ä¼¤æ­£å¸¸ä½å· U1/D1/LED1/SCOPE1/AM1/VM1ÙE'looksLikeLibIdAsRefDes è¯¯ä¼¤æ­£å¸¸ä½å· U1/D1/LED1/SCOPE1/AM1/VM1'ÂL®BlockStatementÍóÍ&‘O³ExpressionStatementÍÍX®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ¦checksKªIdentifierÍ	Í¤pushÂÂ‘W§LiteralÍÍµæ­£å¸¸ä½å·è±å… OK·'æ­£å¸¸ä½å·è±å… OK'ÂT³VariableDeclarationÍ0ÍÛ‘U²VariableDeclaratorÍ6ÍÚKªIdentifierÍ6Í=§badMod1]°ObjectExpressionÍ@ÍÚ”_¨PropertyÍOÍWÂÂÂKªIdentifierÍOÍQ¢idW§LiteralÍSÍW¢M1¤'M1'¤init_¨PropertyÍfÍqÂÂÂKªIdentifierÍfÍk¥titleW§LiteralÍmÍq¦æŒ¯è¡¨'æŒ¯è¡'¤init_¨PropertyÍ€Í¥ÂÂÂKªIdentifierÍ€Í†¦promptW§LiteralÍˆÍ¥Ù5æ”¾ç½® LM555 ä¸é˜»å®¹æ„æˆæ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.OUTÙ7'æ”¾ç½® LM555 ä¸é˜»å®¹æ„æˆæ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.OUT'¤init_¨PropertyÍ´ÍÏÂÂÂKªIdentifierÍ´ÍÀ¬boundaryPinsV¯ArrayExpressionÍÂÍÏ‘W§LiteralÍÃÍÎ©LM555.OUT«'LM555.OUT'¤init¥constT³VariableDeclarationÍåÍŒ‘U²VariableDeclaratorÍëÍ‹KªIdentifierÍëÍò§badMod2]°ObjectExpressionÍõÍ‹”_¨PropertyÍÍÂÂÂKªIdentifierÍÍ¢idW§LiteralÍÍ¢M2¤'M2'¤init_¨PropertyÍÍ&ÂÂÂKªIdentifierÍÍ ¥titleW§LiteralÍ"Í&¦æŒ‡ç¤º¨'æŒ‡ç¤º'¤init_¨PropertyÍ5ÍVÂÂÂKªIdentifierÍ5Í;¦promptW§LiteralÍ=ÍVÙ)æ”¾ç½® LED_RED é™æµç”µé˜»ï¼Œè¾¹ç•Œ D1.AÙ+'æ”¾ç½® LED_RED é™æµç”µé˜»ï¼Œè¾¹ç•Œ D1.A'¤init_¨PropertyÍeÍ€ÂÂÂKªIdentifierÍeÍq¬boundaryPinsV¯ArrayExpressionÍsÍ€‘W§LiteralÍtÍ©LED_RED.A«'LED_RED.A'¤init¥constT³VariableDeclarationÍ–ÍÕ‘U²VariableDeclaratorÍœÍÔKªIdentifierÍœÍ¥©badJoint0]°ObjectExpressionÍ¨ÍÔ’_¨PropertyÍªÍ¾ÂÂÂKªIdentifierÍªÍ®¤fromW§LiteralÍ°Í¾¬M1.LM555.OUT®'M1.LM555.OUT'¤init_¨PropertyÍÀÍÒÂÂÂKªIdentifierÍÀÍÂ¢toW§LiteralÍÄÍÒ¬M2.LED_RED.A®'M2.LED_RED.A'¤init¥constT³VariableDeclarationÍßÍ‘U²VariableDeclaratorÍåÍKªIdentifierÍåÍî©badJoint1]°ObjectExpressionÍñÍ’_¨PropertyÍóÍÂÂÂKªIdentifierÍóÍ÷¤fromW§LiteralÍùÍ©POWER.VCC«'POWER.VCC'¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ¢toW§LiteralÍ
+Í¬M1.LM555.OUT®'M1.LM555.OUT'¤init¥constT³VariableDeclarationÍ%Ía‘U²VariableDeclaratorÍ+Í`KªIdentifierÍ+Í4©badJoint2]°ObjectExpressionÍ7Í`’_¨PropertyÍ9ÍJÂÂÂKªIdentifierÍ9Í=¤fromW§LiteralÍ?ÍJ©POWER.GND«'POWER.GND'¤init_¨PropertyÍLÍ^ÂÂÂKªIdentifierÍLÍN¢toW§LiteralÍPÍ^¬M2.LED_RED.A®'M2.LED_RED.A'¤init¥constT³VariableDeclarationÍkÍ%‘U²VariableDeclaratorÍqÍ$KªIdentifierÍqÍx§badPlan]°ObjectExpressionÍ{Í$“_¨PropertyÍŠÍ·ÂÂÂKªIdentifierÍŠÍ˜®systemOverviewW§LiteralÍšÍ·Ù1555 æ— ç¨³æ€æŒ¯è¡é©±åŠ¨ LEDï¼Œç”µæºæ¥ VCC/GNDÙ3'555 æ— ç¨³æ€æŒ¯è¡é©±åŠ¨ LEDï¼Œç”µæºæ¥ VCC/GND'¤init_¨PropertyÍÆÍáÂÂÂKªIdentifierÍÆÍÍ§modulesV¯ArrayExpressionÍÏÍá’KªIdentifierÍĞÍ×§badMod1KªIdentifierÍÙÍà§badMod2¤init_¨PropertyÍğÍÂÂÂKªIdentifierÍğÍö¦jointsV¯ArrayExpressionÍøÍ“KªIdentifierÍùÍ©badJoint0KªIdentifierÍÍ©badJoint1KªIdentifierÍÍ©badJoint2¤init¥constT³VariableDeclarationÍ/Ík‘U²VariableDeclaratorÍ5ÍjKªIdentifierÍ5Í=¨critiqueX®CallExpressionÍ@ÍjKªIdentifierÍ@ÍS³critiqueModularPlan’KªIdentifierÍTÍ[§badPlanQ°MemberExpressionÍ]ÍiR®ThisExpressionÍ]ÍaKªIdentifierÍbÍi§libraryÂÂÂ¥constT³VariableDeclarationÍuÍĞ‘U²VariableDeclaratorÍ{ÍÏKªIdentifierÍ{Í†«libAsRefHitX®CallExpressionÍ‰ÍÏQ°MemberExpressionÍ‰Í–KªIdentifierÍ‰Í‘¨critiqueKªIdentifierÍ’Í–¤someÂÂ‘N·ArrowFunctionExpressionÍ—ÍÎÀÃÂÂ‘KªIdentifierÍ—Í˜¡sa±LogicalExpressionÍœÍÎa°BinaryExpressionÍœÍ¶X®CallExpressionÍœÍ±Q°MemberExpressionÍœÍ¥KªIdentifierÍœÍ¡sKªIdentifierÍÍ¥§indexOfÂÂ‘W§LiteralÍ¦Í°¨libDevIdª'libDevId'Â¢>=W§LiteralÍµÍ¶ ¡0¢||a°BinaryExpressionÍºÍÎX®CallExpressionÍºÍÉQ°MemberExpressionÍºÍÃKªIdentifierÍºÍ»¡sKªIdentifierÍ¼ÍÃ§indexOfÂÂ‘W§LiteralÍÄÍÈ¦å‹å·¨'å‹å·'Â¢>=W§LiteralÍÍÍÎ ¡0Â¥const`«IfStatementÍÚÍªb¯UnaryExpressionÍŞÍê¡!ÃKªIdentifierÍßÍê«libAsRefHitL®BlockStatementÍìÍG‘O³ExpressionStatementÍûÍ<X®CallExpressionÍûÍ;Q°MemberExpressionÍûÍKªIdentifierÍûÍ¨failuresKªIdentifierÍÍ¤pushÂÂ‘W§LiteralÍ	Í:Ù9critiqueModularPlan æœªæ‹’æ”¶æŠŠ LM555/LED_RED å½“ RefDesÙ;'critiqueModularPlan æœªæ‹’æ”¶æŠŠ LM555/LED_RED å½“ RefDes'ÂL®BlockStatementÍVÍª‘O³ExpressionStatementÍeÍŸX®CallExpressionÍeÍQ°MemberExpressionÍeÍpKªIdentifierÍeÍk¦checksKªIdentifierÍlÍp¤pushÂÂ‘Y¯TemplateLiteralÍqÍ‘Q°MemberExpressionÍ„Í“KªIdentifierÍ„ÍŒ¨critiqueKªIdentifierÍÍ“¦lengthÂÂ’Z¯TemplateElementÍrÍ‚[Ù"plan é—¨ç¦æ‹’æ”¶å‹å·å½“ä½å· (Ù"plan é—¨ç¦æ‹’æ”¶å‹å·å½“ä½å· (ÂZ¯TemplateElementÍ”Íœ[¨ issues)¨ issues)ÃÂT³VariableDeclarationÍ×Í•‘U²VariableDeclaratorÍİÍ”KªIdentifierÍİÍæ©creepMod1]°ObjectExpressionÍéÍ””_¨PropertyÍøÍ ÂÂÂKªIdentifierÍøÍú¢idW§LiteralÍüÍ ¢M1¤'M1'¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ¥titleW§LiteralÍÍ¦æ¿€åŠ±¨'æ¿€åŠ±'¤init_¨PropertyÍ)ÍTÂÂÂKªIdentifierÍ)Í/¦promptW§LiteralÍ1ÍTÙ7æ”¾ç½® U1ï¼ˆlibDevId=LM555ï¼‰äº§ç”Ÿæ–¹æ³¢ï¼Œè¾¹ç•Œ U1.3Ù9'æ”¾ç½® U1ï¼ˆlibDevId=LM555ï¼‰äº§ç”Ÿæ–¹æ³¢ï¼Œè¾¹ç•Œ U1.3'¤init_¨PropertyÍcÍ‰ÂÂÂKªIdentifierÍcÍo¬boundaryPinsV¯ArrayExpressionÍqÍ‰“W§LiteralÍrÍx¤U1.3¦'U1.3'W§LiteralÍzÍ€¤U1.8¦'U1.8'W§LiteralÍ‚Íˆ¤U1.1¦'U1.1'¤init¥constT³VariableDeclarationÍŸÍŸ‘U²VariableDeclaratorÍ¥ÍKªIdentifierÍ¥Í®©creepMod2]°ObjectExpressionÍ±Í”_¨PropertyÍÀÍÈÂÂÂKªIdentifierÍÀÍÂ¢idW§LiteralÍÄÍÈ¢M2¤'M2'¤init_¨PropertyÍ×ÍâÂÂÂKªIdentifierÍ×ÍÜ¥titleW§LiteralÍŞÍâ¦æµ‹é‡¨'æµ‹é‡'¤init_¨PropertyÍñÍaÂÂÂKªIdentifierÍñÍ÷¦prompta°BinaryExpressionÍùÍaW§LiteralÍùÍ1ÙFæ”¾ç½® RV1ï¼ˆlibDevId=POT_10kï¼‰ä¸ OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼ŒÙH'æ”¾ç½® RV1ï¼ˆlibDevId=POT_10kï¼‰ä¸ OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼Œ'¡+W§LiteralÍEÍaÙ:OSC1 ä¿¡å·è¾“å…¥å¼•è„šï¼ˆå‡è®¾ä¸ºAï¼‰ï¼ŒRV1 ç«¯è„šæ‚¬ç©ºÙ<'OSC1 ä¿¡å·è¾“å…¥å¼•è„šï¼ˆå‡è®¾ä¸ºAï¼‰ï¼ŒRV1 ç«¯è„šæ‚¬ç©º'¤init_¨PropertyÍpÍ“ÂÂÂKªIdentifierÍpÍ|¬boundaryPinsV¯ArrayExpressionÍ~Í“’W§LiteralÍÍ†¥RV1.1§'RV1.1'W§LiteralÍˆÍ’¨OSC1.CH1ª'OSC1.CH1'¤init¥constT³VariableDeclarationÍ©Í+‘U²VariableDeclaratorÍ¯Í*KªIdentifierÍ¯Í¸©creepPlan]°ObjectExpressionÍ»Í*“_¨PropertyÍÊÍìÂÂÂKªIdentifierÍÊÍØ®systemOverviewW§LiteralÍÚÍìÙ*555æ–¹æ³¢é©±åŠ¨è´Ÿè½½å¹¶ç”¨ç¤ºæ³¢å™¨è§‚æµ‹Ù,'555æ–¹æ³¢é©±åŠ¨è´Ÿè½½å¹¶ç”¨ç¤ºæ³¢å™¨è§‚æµ‹'¤init_¨PropertyÍûÍÂÂÂKªIdentifierÍûÍ§modulesV¯ArrayExpressionÍÍ’KªIdentifierÍÍ©creepMod1KªIdentifierÍÍ©creepMod2¤init_¨PropertyÍ)ÍÂÂÂKªIdentifierÍ)Í/¦jointsV¯ArrayExpressionÍ1Í”]°ObjectExpressionÍDÍh’_¨PropertyÍFÍWÂÂÂKªIdentifierÍFÍJ¤fromW§LiteralÍLÍW©POWER.VCC«'POWER.VCC'¤init_¨PropertyÍYÍfÂÂÂKªIdentifierÍYÍ[¢toW§LiteralÍ]Íf§M1.U1.8©'M1.U1.8'¤init]°ObjectExpressionÍ{ÍŸ’_¨PropertyÍ}ÍÂÂÂKªIdentifierÍ}Í¤fromW§LiteralÍƒÍ©POWER.GND«'POWER.GND'¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ’¢toW§LiteralÍ”Í§M1.U1.1©'M1.U1.1'¤init]°ObjectExpressionÍ²ÍÕ’_¨PropertyÍ´ÍÃÂÂÂKªIdentifierÍ´Í¸¤fromW§LiteralÍºÍÃ§M1.U1.3©'M1.U1.3'¤init_¨PropertyÍÅÍÓÂÂÂKªIdentifierÍÅÍÇ¢toW§LiteralÍÉÍÓ¨M2.RV1.1ª'M2.RV1.1'¤init]°ObjectExpressionÍèÍ’_¨PropertyÍêÍûÂÂÂKªIdentifierÍêÍî¤fromW§LiteralÍğÍû©POWER.GND«'POWER.GND'¤init_¨PropertyÍıÍÂÂÂKªIdentifierÍıÍÿ¢toW§LiteralÍÍ«M2.OSC1.CH1­'M2.OSC1.CH1'¤init¤init¥constT³VariableDeclarationÍ5ÍV‘U²VariableDeclaratorÍ;ÍUKªIdentifierÍ;ÍEªsimpleUserW§LiteralÍHÍUÙ!ç”µé˜»åˆ†å‹ç”µè·¯æµ‹ä¸­ç‚¹ç”µå‹Ù#'ç”µé˜»åˆ†å‹ç”µè·¯æµ‹ä¸­ç‚¹ç”µå‹'¥constT³VariableDeclarationÍ`Í¯‘U²VariableDeclaratorÍfÍ®KªIdentifierÍfÍs­creepCritiqueX®CallExpressionÍvÍ®KªIdentifierÍvÍ‰³critiqueModularPlan“KªIdentifierÍŠÍ“©creepPlanQ°MemberExpressionÍ•Í¡R®ThisExpressionÍ•Í™KªIdentifierÍšÍ¡§libraryÂÂKªIdentifierÍ£Í­ªsimpleUserÂ¥constT³VariableDeclarationÍ¹Íø‘U²VariableDeclaratorÍ¿Í÷KªIdentifierÍ¿ÍÇ¨creepHitX®CallExpressionÍÊÍ÷Q°MemberExpressionÍÊÍÜKªIdentifierÍÊÍ×­creepCritiqueKªIdentifierÍØÍÜ¤someÂÂ‘N·ArrowFunctionExpressionÍİÍöÀÃÂÂ‘KªIdentifierÍİÍŞ¡sa°BinaryExpressionÍâÍöX®CallExpressionÍâÍñQ°MemberExpressionÍâÍëKªIdentifierÍâÍã¡sKªIdentifierÍäÍë§indexOfÂÂ‘W§LiteralÍìÍğ¦æ“…è‡ª¨'æ“…è‡ª'Â¢>=W§LiteralÍõÍö ¡0Â¥constT³VariableDeclarationÍÍ}‘U²VariableDeclaratorÍÍ|KªIdentifierÍÍ¦pinHitX®CallExpressionÍÍ|Q°MemberExpressionÍÍ#KªIdentifierÍÍ­creepCritiqueKªIdentifierÍÍ#¤someÂÂ‘N·ArrowFunctionExpressionÍ$Í{ÀÃÂÂ‘KªIdentifierÍ$Í%¡sa±LogicalExpressionÍ)Í{a±LogicalExpressionÍ)ÍUa°BinaryExpressionÍ)Í=X®CallExpressionÍ)Í8Q°MemberExpressionÍ)Í2KªIdentifierÍ)Í*¡sKªIdentifierÍ+Í2§indexOfÂÂ‘W§LiteralÍ3Í7¦å‡è®¾¨'å‡è®¾'Â¢>=W§LiteralÍ<Í= ¡0¢||a°BinaryExpressionÍAÍUX®CallExpressionÍAÍPQ°MemberExpressionÍAÍJKªIdentifierÍAÍB¡sKªIdentifierÍCÍJ§indexOfÂÂ‘W§LiteralÍKÍO¦æ‚¬ç©º¨'æ‚¬ç©º'Â¢>=W§LiteralÍTÍU ¡0¢||a°BinaryExpressionÍfÍ{X®CallExpressionÍfÍvQ°MemberExpressionÍfÍoKªIdentifierÍfÍg¡sKªIdentifierÍhÍo§indexOfÂÂ‘W§LiteralÍpÍu©ä¸å±äº«'ä¸å±äº'Â¢>=W§LiteralÍzÍ{ ¡0Â¥const`«IfStatementÍ‡Í(b¯UnaryExpressionÍ‹Í”¡!ÃKªIdentifierÍŒÍ”¨creepHitL®BlockStatementÍ–Íå‘O³ExpressionStatementÍ¥ÍÚX®CallExpressionÍ¥ÍÙQ°MemberExpressionÍ¥Í²KªIdentifierÍ¥Í­¨failuresKªIdentifierÍ®Í²¤pushÂÂ‘W§LiteralÍ³ÍØÙAcritiqueModularPlan æœªæ‹’æ”¶ç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§å™¨ä»¶æ‰©å®¹ÙC'critiqueModularPlan æœªæ‹’æ”¶ç”¨æˆ·æœªè¦æ±‚çš„é‡å¤§å™¨ä»¶æ‰©å®¹'ÂL®BlockStatementÍôÍ(‘O³ExpressionStatementÍÍX®CallExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ	¦checksKªIdentifierÍ
+Í¤pushÂÂ‘W§LiteralÍÍ¸é€šç”¨å¿ å®åº¦é—¨ç¦ OKº'é€šç”¨å¿ å®åº¦é—¨ç¦ OK'Â`«IfStatementÍ2ÍÏb¯UnaryExpressionÍ6Í=¡!ÃKªIdentifierÍ7Í=¦pinHitL®BlockStatementÍ?ÍŒ‘O³ExpressionStatementÍNÍX®CallExpressionÍNÍ€Q°MemberExpressionÍNÍ[KªIdentifierÍNÍV¨failuresKªIdentifierÍWÍ[¤pushÂÂ‘W§LiteralÍ\ÍÙ7critiqueModularPlan æœªæ‹’æ”¶å‡è®¾è„š/æ‚¬ç©º/åº“å¤–è„šÙ9'critiqueModularPlan æœªæ‹’æ”¶å‡è®¾è„š/æ‚¬ç©º/åº“å¤–è„š'ÂL®BlockStatementÍ›ÍÏ‘O³ExpressionStatementÍªÍÄX®CallExpressionÍªÍÃQ°MemberExpressionÍªÍµKªIdentifierÍªÍ°¦checksKªIdentifierÍ±Íµ¤pushÂÂ‘W§LiteralÍ¶ÍÂ¶åº“è„š/å‡è„šé—¨ç¦ OK¸'åº“è„š/å‡è„šé—¨ç¦ OK'ÂT³VariableDeclarationÍıÍÕ‘U²VariableDeclaratorÍÍÔKªIdentifierÍÍ¥good1]°ObjectExpressionÍÍÔ”_¨PropertyÍÍ"ÂÂÂKªIdentifierÍÍ¢idW§LiteralÍÍ"¢M1¤'M1'¤init_¨PropertyÍ1Í>ÂÂÂKªIdentifierÍ1Í6¥titleW§LiteralÍ8Í>¨RCç½‘ç»œª'RCç½‘ç»œ'¤init_¨PropertyÍMÍ”ÂÂÂKªIdentifierÍMÍS¦promptW§LiteralÍUÍ”Ù]æ”¾ç½® R1ï¼ˆlibDevId=R_10kï¼‰ä¸ C1ï¼ˆlibDevId=C_10uFï¼‰ï¼šVCCâ€”R1â€”ç”µå®¹èŠ‚ç‚¹â€”C1â€”GNDÙ_'æ”¾ç½® R1ï¼ˆlibDevId=R_10kï¼‰ä¸ C1ï¼ˆlibDevId=C_10uFï¼‰ï¼šVCCâ€”R1â€”ç”µå®¹èŠ‚ç‚¹â€”C1â€”GND'¤init_¨PropertyÍ£ÍÉÂÂÂKªIdentifierÍ£Í¯¬boundaryPinsV¯ArrayExpressionÍ±ÍÉ“W§LiteralÍ²Í¸¤R1.1¦'R1.1'W§LiteralÍºÍÀ¤C1.2¦'C1.2'W§LiteralÍÂÍÈ¤R1.2¦'R1.2'¤init¥constT³VariableDeclarationÍßÍµ‘U²VariableDeclaratorÍåÍ´KªIdentifierÍåÍê¥good2]°ObjectExpressionÍíÍ´”_¨PropertyÍüÍÂÂÂKªIdentifierÍüÍş¢idW§LiteralÍ Í¢M2¤'M2'¤init_¨PropertyÍÍ ÂÂÂKªIdentifierÍÍ¥titleW§LiteralÍÍ ¬ç¤ºæ³¢è§‚æµ‹®'ç¤ºæ³¢è§‚æµ‹'¤init_¨PropertyÍ/ÍtÂÂÂKªIdentifierÍ/Í5¦promptW§LiteralÍ7ÍtÙYæ”¾ç½® OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼šOSC1.CH1 æ¥ç”µå®¹èŠ‚ç‚¹ï¼ŒOSC1.GND æ¥ç³»ç»Ÿåœ°Ù['æ”¾ç½® OSC1ï¼ˆlibDevId=OSCILLOSCOPEï¼‰ï¼šOSC1.CH1 æ¥ç”µå®¹èŠ‚ç‚¹ï¼ŒOSC1.GND æ¥ç³»ç»Ÿåœ°'¤init_¨PropertyÍƒÍ©ÂÂÂKªIdentifierÍƒÍ¬boundaryPinsV¯ArrayExpressionÍ‘Í©’W§LiteralÍ’Íœ¨OSC1.CH1ª'OSC1.CH1'W§LiteralÍÍ¨¨OSC1.GNDª'OSC1.GND'¤init¥constT³VariableDeclarationÍ¿ÍG‘U²VariableDeclaratorÍÅÍFKªIdentifierÍÅÍÍ¨goodPlan]°ObjectExpressionÍĞÍF“_¨PropertyÍßÍÂÂÂKªIdentifierÍßÍí®systemOverviewW§LiteralÍïÍÙ>æ— æº RCï¼šVCCç»Rå¯¹Cå……ç”µï¼Œç¤ºæ³¢å™¨CH1è§‚æµ‹ç”µå®¹ç”µå‹Ù@'æ— æº RCï¼šVCCç»Rå¯¹Cå……ç”µï¼Œç¤ºæ³¢å™¨CH1è§‚æµ‹ç”µå®¹ç”µå‹'¤init_¨PropertyÍÍ3ÂÂÂKªIdentifierÍÍ#§modulesV¯ArrayExpressionÍ%Í3’KªIdentifierÍ&Í+¥good1KªIdentifierÍ-Í2¥good2¤init_¨PropertyÍBÍ;ÂÂÂKªIdentifierÍBÍH¦jointsV¯ArrayExpressionÍJÍ;”]°ObjectExpressionÍ]Í’_¨PropertyÍ_ÍpÂÂÂKªIdentifierÍ_Íc¤fromW§LiteralÍeÍp©POWER.VCC«'POWER.VCC'¤init_¨PropertyÍrÍÂÂÂKªIdentifierÍrÍt¢toW§LiteralÍvÍ§M1.R1.1©'M1.R1.1'¤init]°ObjectExpressionÍ”Í¸’_¨PropertyÍ–Í§ÂÂÂKªIdentifierÍ–Íš¤fromW§LiteralÍœÍ§©POWER.GND«'POWER.GND'¤init_¨PropertyÍ©Í¶ÂÂÂKªIdentifierÍ©Í«¢toW§LiteralÍ­Í¶§M1.C1.2©'M1.C1.2'¤init]°ObjectExpressionÍËÍñ’_¨PropertyÍÍÍÜÂÂÂKªIdentifierÍÍÍÑ¤fromW§LiteralÍÓÍÜ§M1.R1.2©'M1.R1.2'¤init_¨PropertyÍŞÍïÂÂÂKªIdentifierÍŞÍà¢toW§LiteralÍâÍï«M2.OSC1.CH1­'M2.OSC1.CH1'¤init]°ObjectExpressionÍÍ,’_¨PropertyÍÍÂÂÂKªIdentifierÍÍ
+¤fromW§LiteralÍÍ©POWER.GND«'POWER.GND'¤init_¨PropertyÍÍ*ÂÂÂKªIdentifierÍÍ¢toW§LiteralÍÍ*«M2.OSC1.GND­'M2.OSC1.GND'¤init¤init¥constT³VariableDeclarationÍQÍs‘U²VariableDeclaratorÍWÍrKªIdentifierÍWÍ_¨goodUserW§LiteralÍbÍrÙ$RC å……æ”¾ç”µç”µè·¯è§‚æµ‹æŒ‡æ•°æ³¢å½¢Ù&'RC å……æ”¾ç”µç”µè·¯è§‚æµ‹æŒ‡æ•°æ³¢å½¢'¥constT³VariableDeclarationÍ}ÍÈ‘U²VariableDeclaratorÍƒÍÇKªIdentifierÍƒÍ¬goodCritiqueX®CallExpressionÍ’ÍÇKªIdentifierÍ’Í¥³critiqueModularPlan“KªIdentifierÍ¦Í®¨goodPlanQ°MemberExpressionÍ°Í¼R®ThisExpressionÍ°Í´KªIdentifierÍµÍ¼§libraryÂÂKªIdentifierÍ¾ÍÆ¨goodUserÂ¥const`«IfStatementÍÒÍ‡a°BinaryExpressionÍÖÍíQ°MemberExpressionÍÖÍéKªIdentifierÍÖÍâ¬goodCritiqueKªIdentifierÍãÍé¦lengthÂÂ¡>W§LiteralÍìÍí ¡0L®BlockStatementÍïÍB‘O³ExpressionStatementÍşÍ7X®CallExpressionÍşÍ6Q°MemberExpressionÍşÍKªIdentifierÍşÍ¨failuresKªIdentifierÍÍ¤pushÂÂ‘Y¯TemplateLiteralÍÍ5‘X®CallExpressionÍÍ3Q°MemberExpressionÍÍ-KªIdentifierÍÍ(¬goodCritiqueKªIdentifierÍ)Í-¤joinÂÂ‘W§LiteralÍ.Í2¢; ¤'; 'Â’Z¯TemplateElementÍÍ[·åˆæ³• plan è¢«è¯¯æ‹’: ·åˆæ³• plan è¢«è¯¯æ‹’: ÂZ¯TemplateElementÍ4Í4[  ÃÂL®BlockStatementÍQÍ‡‘O³ExpressionStatementÍ`Í|X®CallExpressionÍ`Í{Q°MemberExpressionÍ`ÍkKªIdentifierÍ`Íf¦checksKªIdentifierÍgÍk¤pushÂÂ‘W§LiteralÍlÍz¸åˆæ³• plan é€šè¿‡é—¨ç¦º'åˆæ³• plan é€šè¿‡é—¨ç¦'ÂT³VariableDeclarationÍ‘Íê‘U²VariableDeclaratorÍ—ÍéKªIdentifierÍ—Í™¢m1X®CallExpressionÍœÍéQ°MemberExpressionÍœÍ¾KªIdentifierÍœÍ¯³AiPipelineValidatorKªIdentifierÍ°Í¾®makeModuleTopoÂÂ”W§LiteralÍ¿ÍÃ¢U1¤'U1'W§LiteralÍÅÍÌ¥LM555§'LM555'W§LiteralÍÎÍÚªnet_vcc_m1¬'net_vcc_m1'W§LiteralÍÜÍèªnet_gnd_m1¬'net_gnd_m1'Â¥constT³VariableDeclarationÍôÍO‘U²VariableDeclaratorÍúÍNKªIdentifierÍúÍü¢m2X®CallExpressionÍÿÍNQ°MemberExpressionÍÿÍ!KªIdentifierÍÿÍ³AiPipelineValidatorKªIdentifierÍÍ!®makeModuleTopoÂÂ”W§LiteralÍ"Í&¢D1¤'D1'W§LiteralÍ(Í1§LED_RED©'LED_RED'W§LiteralÍ3Í?ªnet_vcc_m2¬'net_vcc_m2'W§LiteralÍAÍMªnet_gnd_m2¬'net_gnd_m2'Â¥constT³VariableDeclarationÍYÍü‘U²VariableDeclaratorÍ_ÍûKªIdentifierÍ_Íg¨goodMod1]°ObjectExpressionÍjÍû”_¨PropertyÍyÍÂÂÂKªIdentifierÍyÍ{¢idW§LiteralÍ}Í¢M1¤'M1'¤init_¨PropertyÍÍ›ÂÂÂKªIdentifierÍÍ•¥titleW§LiteralÍ—Í›¦æŒ¯è¡¨'æŒ¯è¡'¤init_¨PropertyÍªÍËÂÂÂKªIdentifierÍªÍ°¦promptW§LiteralÍ²ÍËÙ'æ”¾ç½® U1=LM555 æ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.3Ù)'æ”¾ç½® U1=LM555 æ— ç¨³æ€ï¼Œè¾¹ç•Œ U1.3'¤init_¨PropertyÍÚÍğÂÂÂKªIdentifierÍÚÍæ¬boundaryPinsV¯ArrayExpressionÍèÍğ‘W§LiteralÍéÍï¤U1.3¦'U1.3'¤init¥constT³VariableDeclarationÍ Í §‘U²VariableDeclaratorÍ Í ¦KªIdentifierÍ Í ¨goodMod2]°ObjectExpressionÍ Í ¦”_¨PropertyÍ &Í .ÂÂÂKªIdentifierÍ &Í (¢idW§LiteralÍ *Í .¢M2¤'M2'¤init_¨PropertyÍ =Í HÂÂÂKªIdentifierÍ =Í B¥titleW§LiteralÍ DÍ H¦æŒ‡ç¤º¨'æŒ‡ç¤º'¤init_¨PropertyÍ WÍ vÂÂÂKªIdentifierÍ WÍ ]¦promptW§LiteralÍ _Í v¿æ”¾ç½® D1=LED_REDï¼Œè¾¹ç•Œ D1.AÙ!'æ”¾ç½® D1=LED_REDï¼Œè¾¹ç•Œ D1.A'¤init_¨PropertyÍ …Í ›ÂÂÂKªIdentifierÍ …Í ‘¬boundaryPinsV¯ArrayExpressionÍ “Í ›‘W§LiteralÍ ”Í š¤D1.A¦'D1.A'¤init¥constT³VariableDeclarationÍ ±Í ï‘U²VariableDeclaratorÍ ·Í îKªIdentifierÍ ·Í ÁªgoodJoint0]°ObjectExpressionÍ ÄÍ î’_¨PropertyÍ ÆÍ ØÂÂÂKªIdentifierÍ ÆÍ Ê¤fromW§LiteralÍ ÌÍ ØªM1.LM555.3¬'M1.LM555.3'¤init_¨PropertyÍ ÚÍ ìÂÂÂKªIdentifierÍ ÚÍ Ü¢toW§LiteralÍ ŞÍ ì¬M2.LED_RED.A®'M2.LED_RED.A'¤init¥constT³VariableDeclarationÍ ùÍ!1‘U²VariableDeclaratorÍ ÿÍ!0KªIdentifierÍ ÿÍ!	ªgoodJoint1]°ObjectExpressionÍ!Í!0’_¨PropertyÍ!Í!ÂÂÂKªIdentifierÍ!Í!¤fromW§LiteralÍ!Í!©POWER.VCC«'POWER.VCC'¤init_¨PropertyÍ!!Í!.ÂÂÂKªIdentifierÍ!!Í!#¢toW§LiteralÍ!%Í!.§M1.U1.3©'M1.U1.3'¤init¥constT³VariableDeclarationÍ!;Í!s‘U²VariableDeclaratorÍ!AÍ!rKªIdentifierÍ!AÍ!KªgoodJoint2]°ObjectExpressionÍ!NÍ!r’_¨PropertyÍ!PÍ!aÂÂÂKªIdentifierÍ!PÍ!T¤fromW§LiteralÍ!VÍ!a©POWER.GND«'POWER.GND'¤init_¨PropertyÍ!cÍ!pÂÂÂKªIdentifierÍ!cÍ!e¢toW§LiteralÍ!gÍ!p§M2.D1.A©'M2.D1.A'¤init¥constT³VariableDeclarationÍ!}Í"4‘U²VariableDeclaratorÍ!ƒÍ"3KªIdentifierÍ!ƒÍ!‡¤plan]°ObjectExpressionÍ!ŠÍ"3“_¨PropertyÍ!™Í!ÁÂÂÂKªIdentifierÍ!™Í!§®systemOverviewW§LiteralÍ!©Í!ÁÙ0555 é©±åŠ¨ LED æŒ‡ç¤ºç¯ï¼ŒåŒæ¨¡å—ç”µæºå…±äº«Ù2'555 é©±åŠ¨ LED æŒ‡ç¤ºç¯ï¼ŒåŒæ¨¡å—ç”µæºå…±äº«'¤init_¨PropertyÍ!ĞÍ!íÂÂÂKªIdentifierÍ!ĞÍ!×§modulesV¯ArrayExpressionÍ!ÙÍ!í’KªIdentifierÍ!ÚÍ!â¨goodMod1KªIdentifierÍ!äÍ!ì¨goodMod2¤init_¨PropertyÍ!üÍ"(ÂÂÂKªIdentifierÍ!üÍ"¦jointsV¯ArrayExpressionÍ"Í"(“KªIdentifierÍ"Í"ªgoodJoint0KªIdentifierÍ"Í"ªgoodJoint1KªIdentifierÍ"Í"'ªgoodJoint2¤init¥constT³VariableDeclarationÍ">Í"Í‘U²VariableDeclaratorÍ"DÍ"ÌKªIdentifierÍ"DÍ"L¨mergeOutX®CallExpressionÍ"OÍ"ÌKªIdentifierÍ"OÍ"e¶mergeModularTopologies“V¯ArrayExpressionÍ"fÍ"n’KªIdentifierÍ"gÍ"i¢m1KªIdentifierÍ"kÍ"m¢m2KªIdentifierÍ"pÍ"t¤planN·ArrowFunctionExpressionÍ"vÍ"ËÀÂÂÂ’KªIdentifierÍ"wÍ"{¤_libKªIdentifierÍ"}Í"¤hintL®BlockStatementÍ"†Í"Ë‘\¯ReturnStatementÍ"•Í"À`µConditionalExpressionÍ"œÍ"¿a±LogicalExpressionÍ"œÍ"³KªIdentifierÍ"œÍ" ¤hint¢&&a°BinaryExpressionÍ"¤Í"³Q°MemberExpressionÍ"¤Í"¯KªIdentifierÍ"¤Í"¨¤hintKªIdentifierÍ"©Í"¯¦lengthÂÂ¡>W§LiteralÍ"²Í"³ ¡0W§LiteralÍ"¶Í"¹¡1£'1'W§LiteralÍ"¼Í"¿¡1£'1'Â¥constT³VariableDeclarationÍ"×Í#8‘U²VariableDeclaratorÍ"İÍ#7KªIdentifierÍ"İÍ"ä§vccNetsX®CallExpressionÍ"çÍ#7Q°MemberExpressionÍ"çÍ#Q°MemberExpressionÍ"çÍ# Q°MemberExpressionÍ"çÍ"øKªIdentifierÍ"çÍ"ï¨mergeOutKªIdentifierÍ"ğÍ"ø¨topologyÂÂKªIdentifierÍ"ùÍ# §netListÂÂKªIdentifierÍ#Í#¦filterÂÂ‘N·ArrowFunctionExpressionÍ#Í#6ÀÃÂÂ‘KªIdentifierÍ#Í#	¡na°BinaryExpressionÍ#Í#6X®CallExpressionÍ#Í#,Q°MemberExpressionÍ#Í#*a±LogicalExpressionÍ#Í#Q°MemberExpressionÍ#Í#KªIdentifierÍ#Í#¡nKªIdentifierÍ#Í#§netNameÂÂ¢??W§LiteralÍ#Í# ¢''KªIdentifierÍ#Í#*«toUpperCaseÂÂÂ£===W§LiteralÍ#1Í#6£VCC¥'VCC'Â¥constT³VariableDeclarationÍ#BÍ#£‘U²VariableDeclaratorÍ#HÍ#¢KªIdentifierÍ#HÍ#O§gndNetsX®CallExpressionÍ#RÍ#¢Q°MemberExpressionÍ#RÍ#rQ°MemberExpressionÍ#RÍ#kQ°MemberExpressionÍ#RÍ#cKªIdentifierÍ#RÍ#Z¨mergeOutKªIdentifierÍ#[Í#c¨topologyÂÂKªIdentifierÍ#dÍ#k§netListÂÂKªIdentifierÍ#lÍ#r¦filterÂÂ‘N·ArrowFunctionExpressionÍ#sÍ#¡ÀÃÂÂ‘KªIdentifierÍ#sÍ#t¡na°BinaryExpressionÍ#xÍ#¡X®CallExpressionÍ#xÍ#—Q°MemberExpressionÍ#xÍ#•a±LogicalExpressionÍ#yÍ#ˆQ°MemberExpressionÍ#yÍ#‚KªIdentifierÍ#yÍ#z¡nKªIdentifierÍ#{Í#‚§netNameÂÂ¢??W§LiteralÍ#†Í#ˆ ¢''KªIdentifierÍ#ŠÍ#•«toUpperCaseÂÂÂ£===W§LiteralÍ#œÍ#¡£GND¥'GND'Â¥const`«IfStatementÍ#­Í$Ta°BinaryExpressionÍ#±Í#ÅQ°MemberExpressionÍ#±Í#¿KªIdentifierÍ#±Í#¸§vccNetsKªIdentifierÍ#¹Í#¿¦lengthÂÂ£!==W§LiteralÍ#ÄÍ#Å¡1L®BlockStatementÍ#ÇÍ$‘O³ExpressionStatementÍ#ÖÍ$	X®CallExpressionÍ#ÖÍ$Q°MemberExpressionÍ#ÖÍ#ãKªIdentifierÍ#ÖÍ#Ş¨failuresKªIdentifierÍ#ßÍ#ã¤pushÂÂ‘Y¯TemplateLiteralÍ#äÍ$‘Q°MemberExpressionÍ#÷Í$KªIdentifierÍ#÷Í#ş§vccNetsKªIdentifierÍ#ÿÍ$¦lengthÂÂ’Z¯TemplateElementÍ#åÍ#õ[Ù$åˆå¹¶å VCC ç½‘åº”å”¯ä¸€ï¼Œå®é™… Ù$åˆå¹¶å VCC ç½‘åº”å”¯ä¸€ï¼Œå®é™… ÂZ¯TemplateElementÍ$Í$[  ÃÂL®BlockStatementÍ$#Í$T‘O³ExpressionStatementÍ$2Í$IX®CallExpressionÍ$2Í$HQ°MemberExpressionÍ$2Í$=KªIdentifierÍ$2Í$8¦checksKªIdentifierÍ$9Í$=¤pushÂÂ‘W§LiteralÍ$>Í$G­VCC ç½‘å”¯ä¸€¯'VCC ç½‘å”¯ä¸€'Â`«IfStatementÍ$^Í%a°BinaryExpressionÍ$bÍ$vQ°MemberExpressionÍ$bÍ$pKªIdentifierÍ$bÍ$i§gndNetsKªIdentifierÍ$jÍ$p¦lengthÂÂ£!==W§LiteralÍ$uÍ$v¡1L®BlockStatementÍ$xÍ$Å‘O³ExpressionStatementÍ$‡Í$ºX®CallExpressionÍ$‡Í$¹Q°MemberExpressionÍ$‡Í$”KªIdentifierÍ$‡Í$¨failuresKªIdentifierÍ$Í$”¤pushÂÂ‘Y¯TemplateLiteralÍ$•Í$¸‘Q°MemberExpressionÍ$¨Í$¶KªIdentifierÍ$¨Í$¯§gndNetsKªIdentifierÍ$°Í$¶¦lengthÂÂ’Z¯TemplateElementÍ$–Í$¦[Ù$åˆå¹¶å GND ç½‘åº”å”¯ä¸€ï¼Œå®é™… Ù$åˆå¹¶å GND ç½‘åº”å”¯ä¸€ï¼Œå®é™… ÂZ¯TemplateElementÍ$·Í$·[  ÃÂL®BlockStatementÍ$ÔÍ%‘O³ExpressionStatementÍ$ãÍ$úX®CallExpressionÍ$ãÍ$ùQ°MemberExpressionÍ$ãÍ$îKªIdentifierÍ$ãÍ$é¦checksKªIdentifierÍ$êÍ$î¤pushÂÂ‘W§LiteralÍ$ïÍ$ø­GND ç½‘å”¯ä¸€¯'GND ç½‘å”¯ä¸€'Â`«IfStatementÍ%Í&a°BinaryExpressionÍ%Í%)Q°MemberExpressionÍ%Í%%KªIdentifierÍ%Í%¨mergeOutKªIdentifierÍ%Í%%©jointFailÂÂ¡>W§LiteralÍ%(Í%) ¡0L®BlockStatementÍ%+Í%Ã‘O³ExpressionStatementÍ%:Í%¸X®CallExpressionÍ%:Í%·Q°MemberExpressionÍ%:Í%GKªIdentifierÍ%:Í%B¨failuresKªIdentifierÍ%CÍ%G¤pushÂÂ‘a°BinaryExpressionÍ%HÍ%¶Y¯TemplateLiteralÍ%HÍ%~‘Q°MemberExpressionÍ%hÍ%zKªIdentifierÍ%hÍ%p¨mergeOutKªIdentifierÍ%qÍ%z©jointFailÂÂ’Z¯TemplateElementÍ%IÍ%f[Ù+joints åº”æŒ‰ libDevId å›é€€å‘½ä¸­ï¼Œfail=Ù+joints åº”æŒ‰ libDevId å›é€€å‘½ä¸­ï¼Œfail=ÂZ¯TemplateElementÍ%{Í%}[¢: ¢: Ã¡+X®CallExpressionÍ%’Í%¶Q°MemberExpressionÍ%’Í%°Q°MemberExpressionÍ%’Í%«KªIdentifierÍ%’Í%š¨mergeOutKªIdentifierÍ%›Í%«°jointFailReasonsÂÂKªIdentifierÍ%¬Í%°¤joinÂÂ‘W§LiteralÍ%±Í%µ¢; ¤'; 'ÂÂL®BlockStatementÍ%ÒÍ&‘O³ExpressionStatementÍ%áÍ&X®CallExpressionÍ%áÍ&Q°MemberExpressionÍ%áÍ%ìKªIdentifierÍ%áÍ%ç¦checksKªIdentifierÍ%èÍ%ì¤pushÂÂ‘Y¯TemplateLiteralÍ%íÍ&‘Q°MemberExpressionÍ%úÍ&
+KªIdentifierÍ%úÍ&¨mergeOutKªIdentifierÍ&Í&
+§jointOkÂÂ’Z¯TemplateElementÍ%îÍ%ø[ªjoints ok=ªjoints ok=ÂZ¯TemplateElementÍ&Í&[  ÃÂT³VariableDeclarationÍ&#Í&^‘U²VariableDeclaratorÍ&)Í&]KªIdentifierÍ&)Í&/¦labelNa±LogicalExpressionÍ&2Í&]O¯ChainExpressionÍ&2Í&XQ°MemberExpressionÍ&2Í&XQ°MemberExpressionÍ&2Í&PQ°MemberExpressionÍ&2Í&CKªIdentifierÍ&2Í&:¨mergeOutKªIdentifierÍ&;Í&C¨topologyÂÂKªIdentifierÍ&DÍ&P¬netLabelListÂÂKªIdentifierÍ&RÍ&X¦lengthÂÃ¢??W§LiteralÍ&\Í&] ¡0¥const`«IfStatementÍ&hÍ'Aa±LogicalExpressionÍ&lÍ&a°BinaryExpressionÍ&lÍ&€Q°MemberExpressionÍ&lÍ&|KªIdentifierÍ&lÍ&t¨mergeOutKªIdentifierÍ&uÍ&|§jointOkÂÂ¡>W§LiteralÍ&Í&€ ¡0¢&&a°BinaryExpressionÍ&„Í&KªIdentifierÍ&„Í&Š¦labelN¡<W§LiteralÍ&Í&¡2L®BlockStatementÍ&Í&Ù‘O³ExpressionStatementÍ&ŸÍ&ÎX®CallExpressionÍ&ŸÍ&ÍQ°MemberExpressionÍ&ŸÍ&¬KªIdentifierÍ&ŸÍ&§¨failuresKªIdentifierÍ&¨Í&¬¤pushÂÂ‘Y¯TemplateLiteralÍ&­Í&Ì‘KªIdentifierÍ&ÄÍ&Ê¦labelN’Z¯TemplateElementÍ&®Í&Â[Ù.è·¨æ¨¡å—åº”ä½¿ç”¨ç½‘ç»œæ ‡å·å¹¶ç½‘ï¼Œlabels=Ù.è·¨æ¨¡å—åº”ä½¿ç”¨ç½‘ç»œæ ‡å·å¹¶ç½‘ï¼Œlabels=ÂZ¯TemplateElementÍ&ËÍ&Ë[  ÃÂ`«IfStatementÍ&èÍ'Aa°BinaryExpressionÍ&ìÍ' Q°MemberExpressionÍ&ìÍ&üKªIdentifierÍ&ìÍ&ô¨mergeOutKªIdentifierÍ&õÍ&ü§jointOkÂÂ¡>W§LiteralÍ&ÿÍ'  ¡0L®BlockStatementÍ'Í'A‘O³ExpressionStatementÍ'Í'6X®CallExpressionÍ'Í'5Q°MemberExpressionÍ'Í'KªIdentifierÍ'Í'¦checksKªIdentifierÍ'Í'¤pushÂÂ‘Y¯TemplateLiteralÍ'Í'4‘KªIdentifierÍ',Í'2¦labelN’Z¯TemplateElementÍ'Í'*[´ç½‘ç»œæ ‡å· labels=´ç½‘ç»œæ ‡å· labels=ÂZ¯TemplateElementÍ'3Í'3[  ÃÂÀO³ExpressionStatementÍ'KÍ'ïX®CallExpressionÍ'KÍ'îQ°MemberExpressionÍ'KÍ'VKªIdentifierÍ'KÍ'Q¦LoggerKªIdentifierÍ'RÍ'V¤infoÂÂ’KªIdentifierÍ'WÍ'f¯INSTR_TRACE_TAGa°BinaryExpressionÍ'hÍ'íY¯TemplateLiteralÍ'hÍ'§‘a°BinaryExpressionÍ'Í'¥Q°MemberExpressionÍ'Í'ŸKªIdentifierÍ'Í'˜¨failuresKªIdentifierÍ'™Í'Ÿ¦lengthÂÂ£===W§LiteralÍ'¤Í'¥ ¡0’Z¯TemplateElementÍ'iÍ'[Ù%[AI_VAL] validateModularMerge passed=Ù%[AI_VAL] validateModularMerge passed=ÂZ¯TemplateElementÍ'¦Í'¦[  Ã¡+Y¯TemplateLiteralÍ'·Í'í’Q°MemberExpressionÍ'ÂÍ'ÏKªIdentifierÍ'ÂÍ'È¦checksKªIdentifierÍ'ÉÍ'Ï¦lengthÂÂQ°MemberExpressionÍ'ÜÍ'ëKªIdentifierÍ'ÜÍ'ä¨failuresKªIdentifierÍ'åÍ'ë¦lengthÂÂ“Z¯TemplateElementÍ'¸Í'À[¨ checks=¨ checks=ÂZ¯TemplateElementÍ'ĞÍ'Ú[ª failures=ª failures=ÂZ¯TemplateElementÍ'ìÍ'ì[  ÃÂ\¯ReturnStatementÍ'ùÍ(]°ObjectExpressionÍ( Í(”_¨PropertyÍ(Í(,ÂÂÂKªIdentifierÍ(Í(¦passeda°BinaryExpressionÍ(Í(,Q°MemberExpressionÍ(Í(&KªIdentifierÍ(Í(¨failuresKªIdentifierÍ( Í(&¦lengthÂÂ£===W§LiteralÍ(+Í(, ¡0¤init^¨PropertyÍ(;Í(AÂÃÂKªIdentifierÍ(;Í(A¦checks¤initKªIdentifierÍ(;Í(A¦checks^¨PropertyÍ(PÍ(XÂÃÂKªIdentifierÍ(PÍ(X¨failures¤initKªIdentifierÍ(PÍ(X¨failures_¨PropertyÍ(gÍ(‚ÂÂÂKªIdentifierÍ(gÍ(o¨topologyQ°MemberExpressionÍ(qÍ(‚KªIdentifierÍ(qÍ(y¨mergeOutKªIdentifierÍ(zÍ(‚¨topologyÂÂ¤initM°MethodDefinitionÍ(›Í)(ÃÂKªIdentifierÍ(¢Í(©§makeDev¦methodN²FunctionExpressionÍ(©Í)(ÀÂÂÂ”KªIdentifierÍ(ªÍ(²¨libDevIdKªIdentifierÍ(´Í(»§refNameKªIdentifierÍ(½Í(¾¡xKªIdentifierÍ(ÀÍ(Á¡yL®BlockStatementÍ(ÃÍ)(‘\¯ReturnStatementÍ(ÎÍ)!X®CallExpressionÍ(ÕÍ) KªIdentifierÍ(ÕÍ(ã®makeDeviceInst—X®CallExpressionÍ(äÍ(øQ°MemberExpressionÍ(äÍ(óKªIdentifierÍ(äÍ(ê¦IdUtilKªIdentifierÍ(ëÍ(ó¨generateÂÂ‘W§LiteralÍ(ôÍ(÷¡d£'d'ÂKªIdentifierÍ(úÍ)¨libDevIdKªIdentifierÍ)Í)§refNameKªIdentifierÍ)Í)¡xKªIdentifierÍ)Í)¡yW§LiteralÍ)Í) ¡0S­NewExpressionÍ)Í)KªIdentifierÍ)Í)£MapÂM°MethodDefinitionÍ).Í+ûÃÂKªIdentifierÍ)5Í)<§makeNet¦methodN²FunctionExpressionÍ)<Í+ûÀÂÂÂ”KªIdentifierÍ)=Í)A¤uuidKªIdentifierÍ)CÍ)G¤nameKªIdentifierÍ)IÍ)N¥nodesKªIdentifierÍ)PÍ)W§isPowerL®BlockStatementÍ)YÍ+û”T³VariableDeclarationÍ)dÍ)x‘U²VariableDeclaratorÍ)jÍ)wKªIdentifierÍ)jÍ)r¨nodeListV¯ArrayExpressionÍ)uÍ)w¥constc¬ForStatementÍ)‚Í*kT³VariableDeclarationÍ)‡Í)‘U²VariableDeclaratorÍ)‹Í)KªIdentifierÍ)‹Í)Œ¡iW§LiteralÍ)Í) ¡0£leta°BinaryExpressionÍ)’Í)¢KªIdentifierÍ)’Í)“¡i¡<Q°MemberExpressionÍ)–Í)¢KªIdentifierÍ)–Í)›¥nodesKªIdentifierÍ)œÍ)¢¦lengthÂÂb°UpdateExpressionÍ)¤Í)§¢++ÂKªIdentifierÍ)¤Í)¥¡iL®BlockStatementÍ)©Í*k’T³VariableDeclarationÍ)¸Í*>‘U²VariableDeclaratorÍ)¾Í*=KªIdentifierÍ)¾Í)Â¤node]°ObjectExpressionÍ)ÅÍ*=“_¨PropertyÍ)ØÍ)òÂÂÂKªIdentifierÍ)ØÍ)ß§devUuidQ°MemberExpressionÍ)áÍ)òQ°MemberExpressionÍ)áÍ)éKªIdentifierÍ)áÍ)æ¥nodesKªIdentifierÍ)çÍ)è¡iÃÂKªIdentifierÍ)êÍ)ò¨instUuidÂÂ¤init_¨PropertyÍ*Í*ÂÂÂKªIdentifierÍ*Í*
+¥pinIdW§LiteralÍ*Í*¡1£'1'¤init_¨PropertyÍ*"Í*.ÂÂÂKªIdentifierÍ*"Í*)§pinNameW§LiteralÍ*+Í*.¡1£'1'¤init¥constO³ExpressionStatementÍ*LÍ*`X®CallExpressionÍ*LÍ*_Q°MemberExpressionÍ*LÍ*YKªIdentifierÍ*LÍ*T¨nodeListKªIdentifierÍ*UÍ*Y¤pushÂÂ‘KªIdentifierÍ*ZÍ*^¤nodeÂT³VariableDeclarationÍ*uÍ+ß‘U²VariableDeclaratorÍ*{Í+ŞKªIdentifierÍ*{Í*~£net]°ObjectExpressionÍ*Í+Ş›_¨PropertyÍ*Í*ÂÂÂKªIdentifierÍ*Í*—§netUuidKªIdentifierÍ*™Í*¤uuid¤init_¨PropertyÍ*¬Í*¹ÂÂÂKªIdentifierÍ*¬Í*³§netNameKªIdentifierÍ*µÍ*¹¤name¤init_¨PropertyÍ*ÈÍ*ÙÂÂÂKªIdentifierÍ*ÈÍ*Ó«displayNameKªIdentifierÍ*ÕÍ*Ù¤name¤init_¨PropertyÍ*èÍ*úÂÂÂKªIdentifierÍ*èÍ*ğ¨nodeListKªIdentifierÍ*òÍ*ú¨nodeList¤init^¨PropertyÍ+	Í+ÂÃÂKªIdentifierÍ+	Í+§isPower¤initKªIdentifierÍ+	Í+§isPower_¨PropertyÍ+Í+.ÂÂÂKªIdentifierÍ+Í+'¨isAnalogW§LiteralÍ+)Í+.Â¥false¤init_¨PropertyÍ+=Í+OÂÂÂKªIdentifierÍ+=Í+H«isBusMemberW§LiteralÍ+JÍ+OÂ¥false¤init_¨PropertyÍ+^Í+oÂÂÂKªIdentifierÍ+^Í+k­busParentUuidW§LiteralÍ+mÍ+o ¢''¤init_¨PropertyÍ+~Í+ÂÂÂKªIdentifierÍ+~Í+Œ®defaultVoltageW§LiteralÍ+Í+ ¡0¤init_¨PropertyÍ+Í+¯ÂÂÂKªIdentifierÍ+Í+¨ªercWarningW§LiteralÍ+ªÍ+¯Â¥false¤init_¨PropertyÍ+¾Í+ÓÂÂÂKªIdentifierÍ+¾Í+Ï±connectedProbeIdsV¯ArrayExpressionÍ+ÑÍ+Ó¤init¥const\¯ReturnStatementÍ+éÍ+ôKªIdentifierÍ+ğÍ+ó£netM°MethodDefinitionÍ,Í.2ÃÂKªIdentifierÍ,Í,®makeModuleTopo¦methodN²FunctionExpressionÍ,Í.2ÀÂÂÂ”KªIdentifierÍ,Í,§chipRefKªIdentifierÍ, Í,'§chipLibKªIdentifierÍ,)Í,1¨vccNetIdKªIdentifierÍ,3Í,;¨gndNetIdL®BlockStatementÍ,=Í.2—T³VariableDeclarationÍ,HÍ,h‘U²VariableDeclaratorÍ,NÍ,gKªIdentifierÍ,NÍ,R¤topoX®CallExpressionÍ,UÍ,gKªIdentifierÍ,UÍ,e°emptySchTopologyÂ¥constT³VariableDeclarationÍ,rÍ,·‘U²VariableDeclaratorÍ,xÍ,¶KªIdentifierÍ,xÍ,|¤chipX®CallExpressionÍ,Í,¶Q°MemberExpressionÍ,Í,šKªIdentifierÍ,Í,’³AiPipelineValidatorKªIdentifierÍ,“Í,š§makeDevÂÂ”KªIdentifierÍ,›Í,¢§chipLibKªIdentifierÍ,¤Í,«§chipRefW§LiteralÍ,­Í,°ÌÈ£200W§LiteralÍ,²Í,µÌÈ£200Â¥constT³VariableDeclarationÍ,ÁÍ,ÿ‘U²VariableDeclaratorÍ,ÇÍ,şKªIdentifierÍ,ÇÍ,Ê£vccX®CallExpressionÍ,ÍÍ,şQ°MemberExpressionÍ,ÍÍ,èKªIdentifierÍ,ÍÍ,à³AiPipelineValidatorKªIdentifierÍ,áÍ,è§makeDevÂÂ”W§LiteralÍ,éÍ,î£VCC¥'VCC'W§LiteralÍ,ğÍ,õ£VCC¥'VCC'W§LiteralÍ,÷Í,ù<¢60W§LiteralÍ,ûÍ,ıÌP¢80Â¥constT³VariableDeclarationÍ-	Í-H‘U²VariableDeclaratorÍ-Í-GKªIdentifierÍ-Í-£gndX®CallExpressionÍ-Í-GQ°MemberExpressionÍ-Í-0KªIdentifierÍ-Í-(³AiPipelineValidatorKªIdentifierÍ-)Í-0§makeDevÂÂ”W§LiteralÍ-1Í-6£GND¥'GND'W§LiteralÍ-8Í-=£GND¥'GND'W§LiteralÍ-?Í-A<¢60W§LiteralÍ-CÍ-FÍ£400Â¥constO³ExpressionStatementÍ-RÍ-wX®CallExpressionÍ-RÍ-vQ°MemberExpressionÍ-RÍ-fQ°MemberExpressionÍ-RÍ-aKªIdentifierÍ-RÍ-V¤topoKªIdentifierÍ-WÍ-aªdeviceListÂÂKªIdentifierÍ-bÍ-f¤pushÂÂ“KªIdentifierÍ-gÍ-k¤chipKªIdentifierÍ-mÍ-p£vccKªIdentifierÍ-rÍ-u£gndÂO³ExpressionStatementÍ-Í.X®CallExpressionÍ-Í.Q°MemberExpressionÍ-Í-’Q°MemberExpressionÍ-Í-KªIdentifierÍ-Í-…¤topoKªIdentifierÍ-†Í-§netListÂÂKªIdentifierÍ-Í-’¤pushÂÂ’X®CallExpressionÍ-“Í-ÒQ°MemberExpressionÍ-“Í-®KªIdentifierÍ-“Í-¦³AiPipelineValidatorKªIdentifierÍ-§Í-®§makeNetÂÂ”KªIdentifierÍ-¯Í-·¨vccNetIdW§LiteralÍ-¹Í-¾£VCC¥'VCC'V¯ArrayExpressionÍ-ÀÍ-Ë’KªIdentifierÍ-ÁÍ-Ä£vccKªIdentifierÍ-ÆÍ-Ê¤chipW§LiteralÍ-ÍÍ-ÑÃ¤trueÂX®CallExpressionÍ-ÔÍ.Q°MemberExpressionÍ-ÔÍ-ïKªIdentifierÍ-ÔÍ-ç³AiPipelineValidatorKªIdentifierÍ-èÍ-ï§makeNetÂÂ”KªIdentifierÍ-ğÍ-ø¨gndNetIdW§LiteralÍ-úÍ-ÿ£GND¥'GND'V¯ArrayExpressionÍ.Í.’KªIdentifierÍ.Í.£gndKªIdentifierÍ.Í.¤chipW§LiteralÍ.Í.Ã¤trueÂÂ\¯ReturnStatementÍ.Í.+KªIdentifierÍ.&Í.*¤topoM°MethodDefinitionÍ.~Í34ÂÂKªIdentifierÍ.„Í.ºvalidateApiFailureFallback¦methodN²FunctionExpressionÍ.Í34ÀÂÂÃL®BlockStatementÍ.¡Í34—T³VariableDeclarationÍ.¬Í.¾‘U²VariableDeclaratorÍ.²Í.½KªIdentifierÍ.²Í.¸¦checksV¯ArrayExpressionÍ.»Í.½¥constT³VariableDeclarationÍ.ÈÍ.Ü‘U²VariableDeclaratorÍ.ÎÍ.ÛKªIdentifierÍ.ÎÍ.Ö¨failuresV¯ArrayExpressionÍ.ÙÍ.Û¥constO³ExpressionStatementÍ.æÍ/>X®CallExpressionÍ.æÍ/=Q°MemberExpressionÍ.æÍ.ñKªIdentifierÍ.æÍ.ì¦LoggerKªIdentifierÍ.íÍ.ñ¤infoÂÂ’KªIdentifierÍ.òÍ/¯INSTR_TRACE_TAGW§LiteralÍ/Í/<Ù7[AI_VAL] validateNoTemplateFallback START skipLlm=falseÙ9'[AI_VAL] validateNoTemplateFallback START skipLlm=false'ÂT³VariableDeclarationÍ/HÍ/Ğ‘U²VariableDeclaratorÍ/NÍ/ÏKªIdentifierÍ/NÍ/T¦result\¯AwaitExpressionÍ/WÍ/ÏX®CallExpressionÍ/]Í/ÏQ°MemberExpressionÍ/]Í/~Q°MemberExpressionÍ/]Í/nR®ThisExpressionÍ/]Í/aKªIdentifierÍ/bÍ/n¬orchestratorÂÂKªIdentifierÍ/oÍ/~¯runFullPipelineÂÂ‘]°ObjectExpressionÍ/Í/Î’_¨PropertyÍ/Í/¦ÂÂÂKªIdentifierÍ/Í/”¦promptW§LiteralÍ/–Í/¦¶STM32F103 æœ€å°ç³»ç»Ÿ¸'STM32F103 æœ€å°ç³»ç»Ÿ'¤init_¨PropertyÍ/µÍ/ÃÂÂÂKªIdentifierÍ/µÍ/¼§skipLlmW§LiteralÍ/¾Í/ÃÂ¥false¤initÂ¥const`«IfStatementÍ/ÚÍ1üQ°MemberExpressionÍ/ŞÍ/ìKªIdentifierÍ/ŞÍ/ä¦resultKªIdentifierÍ/åÍ/ì§usedLlmÂÂL®BlockStatementÍ/îÍ1 ’O³ExpressionStatementÍ/ıÍ0X®CallExpressionÍ/ıÍ0Q°MemberExpressionÍ/ıÍ0KªIdentifierÍ/ıÍ0¦checksKªIdentifierÍ0Í0¤pushÂÂ‘W§LiteralÍ0	Í0¹LLM å¯ç”¨å¹¶å®Œæˆé€‰å‹»'LLM å¯ç”¨å¹¶å®Œæˆé€‰å‹'Â`«IfStatementÍ0&Í1a±LogicalExpressionÍ0*Í0cb¯UnaryExpressionÍ0*Í0:¡!ÃQ°MemberExpressionÍ0+Í0:KªIdentifierÍ0+Í01¦resultKªIdentifierÍ02Í0:¨topologyÂÂ¢||a°BinaryExpressionÍ0>Í0cQ°MemberExpressionÍ0>Í0_Q°MemberExpressionÍ0>Í0XQ°MemberExpressionÍ0>Í0MKªIdentifierÍ0>Í0D¦resultKªIdentifierÍ0EÍ0M¨topologyÂÂKªIdentifierÍ0NÍ0XªdeviceListÂÂKªIdentifierÍ0YÍ0_¦lengthÂÂ¡<W§LiteralÍ0bÍ0c¡1L®BlockStatementÍ0eÍ0¤‘O³ExpressionStatementÍ0xÍ0•X®CallExpressionÍ0xÍ0”Q°MemberExpressionÍ0xÍ0…KªIdentifierÍ0xÍ0€¨failuresKªIdentifierÍ0Í0…¤pushÂÂ‘W§LiteralÍ0†Í0“¹LLM æˆåŠŸä½†æ‹“æ‰‘ä¸ºç©º»'LLM æˆåŠŸä½†æ‹“æ‰‘ä¸ºç©º'ÂL®BlockStatementÍ0·Í1‘O³ExpressionStatementÍ0ÊÍ1X®CallExpressionÍ0ÊÍ1Q°MemberExpressionÍ0ÊÍ0ÕKªIdentifierÍ0ÊÍ0Ğ¦checksKªIdentifierÍ0ÑÍ0Õ¤pushÂÂ‘Y¯TemplateLiteralÍ0ÖÍ1‘Q°MemberExpressionÍ0áÍ1Q°MemberExpressionÍ0áÍ0ûQ°MemberExpressionÍ0áÍ0ğKªIdentifierÍ0áÍ0ç¦resultKªIdentifierÍ0èÍ0ğ¨topologyÂÂKªIdentifierÍ0ñÍ0ûªdeviceListÂÂKªIdentifierÍ0üÍ1¦lengthÂÂ’Z¯TemplateElementÍ0×Í0ß[¬LLM å™¨ä»¶: ¬LLM å™¨ä»¶: ÂZ¯TemplateElementÍ1Í1[  ÃÂ`«IfStatementÍ1/Í1üa±LogicalExpressionÍ13Í1nb¯UnaryExpressionÍ13Í1C¡!ÃQ°MemberExpressionÍ14Í1CKªIdentifierÍ14Í1:¦resultKªIdentifierÍ1;Í1C¨topologyÂÂ¢||a°BinaryExpressionÍ1GÍ1nQ°MemberExpressionÍ1GÍ1hQ°MemberExpressionÍ1GÍ1aQ°MemberExpressionÍ1GÍ1VKªIdentifierÍ1GÍ1M¦resultKªIdentifierÍ1NÍ1V¨topologyÂÂKªIdentifierÍ1WÍ1aªdeviceListÂÂKªIdentifierÍ1bÍ1h¦lengthÂÂ£===W§LiteralÍ1mÍ1n ¡0L®BlockStatementÍ1pÍ1­‘O³ExpressionStatementÍ1Í1¢X®CallExpressionÍ1Í1¡Q°MemberExpressionÍ1Í1ŠKªIdentifierÍ1Í1…¦checksKªIdentifierÍ1†Í1Š¤pushÂÂ‘W§LiteralÍ1‹Í1 Ù-API ä¸å¯ç”¨æ—¶æ‹’ç»è½å›¾(æ— æ¨¡æ¿å›é€€)Ù/'API ä¸å¯ç”¨æ—¶æ‹’ç»è½å›¾(æ— æ¨¡æ¿å›é€€)'ÂL®BlockStatementÍ1¼Í1ü‘O³ExpressionStatementÍ1ËÍ1ñX®CallExpressionÍ1ËÍ1ğQ°MemberExpressionÍ1ËÍ1ØKªIdentifierÍ1ËÍ1Ó¨failuresKªIdentifierÍ1ÔÍ1Ø¤pushÂÂ‘W§LiteralÍ1ÙÍ1ïÙ0API ä¸å¯ç”¨æ—¶ä»è¾“å‡ºäº†æ‹“æ‰‘(å­˜åœ¨å›é€€)Ù2'API ä¸å¯ç”¨æ—¶ä»è¾“å‡ºäº†æ‹“æ‰‘(å­˜åœ¨å›é€€)'ÂO³ExpressionStatementÍ2Í2ÍX®CallExpressionÍ2Í2ÌQ°MemberExpressionÍ2Í2KªIdentifierÍ2Í2¦LoggerKªIdentifierÍ2Í2¤infoÂÂ’KªIdentifierÍ2Í2!¯INSTR_TRACE_TAGa°BinaryExpressionÍ2#Í2ËY¯TemplateLiteralÍ2#Í2l‘a°BinaryExpressionÍ2UÍ2jQ°MemberExpressionÍ2UÍ2dKªIdentifierÍ2UÍ2]¨failuresKªIdentifierÍ2^Í2d¦lengthÂÂ£===W§LiteralÍ2iÍ2j ¡0’Z¯TemplateElementÍ2$Í2S[Ù/[AI_VAL] validateNoTemplateFallback END passed=Ù/[AI_VAL] validateNoTemplateFallback END passed=ÂZ¯TemplateElementÍ2kÍ2k[  Ã¡+Y¯TemplateLiteralÍ2|Í2Ë’Q°MemberExpressionÍ2ˆÍ2–KªIdentifierÍ2ˆÍ2¦resultKªIdentifierÍ2Í2–§usedLlmÂÂa±LogicalExpressionÍ2¢Í2ÉO¯ChainExpressionÍ2¢Í2ÄQ°MemberExpressionÍ2¢Í2ÄQ°MemberExpressionÍ2¢Í2½Q°MemberExpressionÍ2¢Í2±KªIdentifierÍ2¢Í2¨¦resultKªIdentifierÍ2©Í2±¨topologyÂÂKªIdentifierÍ2³Í2½ªdeviceListÂÃKªIdentifierÍ2¾Í2Ä¦lengthÂÂ¢??W§LiteralÍ2ÈÍ2É ¡0“Z¯TemplateElementÍ2}Í2†[© usedLlm=© usedLlm=ÂZ¯TemplateElementÍ2—Í2 [© devices=© devices=ÂZ¯TemplateElementÍ2ÊÍ2Ê[  ÃÂ\¯ReturnStatementÍ2×Í3-]°ObjectExpressionÍ2ŞÍ3,”_¨PropertyÍ2àÍ2ıÂÂÂKªIdentifierÍ2àÍ2æ¦passeda°BinaryExpressionÍ2èÍ2ıQ°MemberExpressionÍ2èÍ2÷KªIdentifierÍ2èÍ2ğ¨failuresKªIdentifierÍ2ñÍ2÷¦lengthÂÂ£===W§LiteralÍ2üÍ2ı ¡0¤init^¨PropertyÍ2ÿÍ3ÂÃÂKªIdentifierÍ2ÿÍ3¦checks¤initKªIdentifierÍ2ÿÍ3¦checks^¨PropertyÍ3Í3ÂÃÂKªIdentifierÍ3Í3¨failures¤initKªIdentifierÍ3Í3¨failures_¨PropertyÍ3Í3*ÂÂÂKªIdentifierÍ3Í3¨topologyQ°MemberExpressionÍ3Í3*KªIdentifierÍ3Í3!¦resultKªIdentifierÍ3"Í3*¨topologyÂÂ¤initÀ“Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration-ÌŸ—Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier6=KªIdentifier6=§ErrCodeKªIdentifier6=§ErrCodee¯ImportSpecifier?ÌKKªIdentifier?ÌK¬ResultHelperKªIdentifier?ÌK¬ResultHelpere¯ImportSpecifierÌMÌSKªIdentifierÌMÌS¦LoggerKªIdentifierÌMÌS¦Loggere¯ImportSpecifierÌUÌdKªIdentifierÌUÌd¯INSTR_TRACE_TAGKªIdentifierÌUÌd¯INSTR_TRACE_TAGe¯ImportSpecifierÌfÌlKªIdentifierÌfÌl¦IdUtilKªIdentifierÌfÌl¦IdUtile¯ImportSpecifierÌnÌ~KªIdentifierÌnÌ~°emptySchTopologyKªIdentifierÌnÌ~°emptySchTopologye¯ImportSpecifierÌ€ÌKªIdentifierÌ€Ì®makeDeviceInstKªIdentifierÌ€Ì®makeDeviceInstW§LiteralÌ–Ì¦common¨'common'd±ImportDeclarationÌ¡Ìç‘e¯ImportSpecifierÌªÌ¼KªIdentifierÌªÌ¼²DeviceSelectEngineKªIdentifierÌªÌ¼²DeviceSelectEngineW§LiteralÌÄÌæÙ ../algorithms/DeviceSelectEngineÙ"'../algorithms/DeviceSelectEngine'd±ImportDeclarationÌéÍb“e¯ImportSpecifierÌòÍKªIdentifierÌòÍ¶mergeModularTopologiesKªIdentifierÌòÍ¶mergeModularTopologiese¯ImportSpecifierÍ
+ÍKªIdentifierÍ
+Í³critiqueModularPlanKªIdentifierÍ
+Í³critiqueModularPlane¯ImportSpecifierÍÍ5KªIdentifierÍÍ5¶looksLikeLibIdAsRefDesKªIdentifierÍÍ5¶looksLikeLibIdAsRefDesW§LiteralÍ=ÍaÙ"../algorithms/ModularParallelMergeÙ$'../algorithms/ModularParallelMerge'

@@ -1,0 +1,1379 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ<İimport { calcSymbolBounds, coverOriginCenteredBody } from './SymbolGeometry';
+/** ä¸ SchematicEditorImpl.HIT_PAD ä¿æŒä¸€è‡´ */
+export const SELECTION_HIT_PAD = 22;
+/** å¯¼çº¿è·æ— å…³å¼•è„šçš„æœ€å°å®‰å…¨è·ç¦» (mil) */
+export const FOREIGN_PIN_CLEARANCE = 20;
+export class DeviceHitGeometry {
+    static expandLocal(bounds, pad) {
+        return {
+            minX: bounds.minX - pad,
+            maxX: bounds.maxX + pad,
+            minY: bounds.minY - pad,
+            maxY: bounds.maxY + pad,
+            width: bounds.width + pad * 2,
+            height: bounds.height + pad * 2
+        };
+    }
+    static transformLocal(local, rotate, mirrorH) {
+        let lx = local.x;
+        let ly = local.y;
+        if (mirrorH) {
+            lx = -lx;
+        }
+        const rot = ((rotate % 360) + 360) % 360;
+        if (rot === 90) {
+            return { x: -ly, y: lx };
+        }
+        if (rot === 180) {
+            return { x: -lx, y: -ly };
+        }
+        if (rot === 270) {
+            return { x: ly, y: -lx };
+        }
+        return { x: lx, y: ly };
+    }
+    /** å±€éƒ¨ SymbolBounds â†’ ä¸–ç•Œ AABBï¼ˆå«æ—‹è½¬é•œåƒï¼‰ */
+    static localToWorldAabb(ox, oy, rotate, mirrorH, bounds, refName = '', instUuid = '', libDevId = '') {
+        const corners = [
+            { x: bounds.minX, y: bounds.minY },
+            { x: bounds.maxX, y: bounds.minY },
+            { x: bounds.maxX, y: bounds.maxY },
+            { x: bounds.minX, y: bounds.maxY }
+        ];
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (let i = 0; i < corners.length; i++) {
+            const t = DeviceHitGeometry.transformLocal(corners[i], rotate, mirrorH);
+            const wx = ox + t.x;
+            const wy = oy + t.y;
+            if (wx < minX) {
+                minX = wx;
+            }
+            if (wy < minY) {
+                minY = wy;
+            }
+            if (wx > maxX) {
+                maxX = wx;
+            }
+            if (wy > maxY) {
+                maxY = wy;
+            }
+        }
+        return {
+            x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+            refName, instUuid, libDevId
+        };
+    }
+    /** ç”±åº“å¼•è„šè®¡ç®—é€‰ä¸­å‘½ä¸­åŒºï¼ˆä¸ç¼–è¾‘å™¨é€‰ä¸­èŒƒå›´ä¸€è‡´ï¼‰ */
+    static hitRectFromPins(pins, ox, oy, rotate, mirrorH, pad = SELECTION_HIT_PAD, refName = '', instUuid = '', libDevId = '') {
+        const local = DeviceHitGeometry.expandLocal(calcSymbolBounds(pins, 8), pad);
+        return DeviceHitGeometry.localToWorldAabb(ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+    }
+    /** ç”±å±€éƒ¨å¼•è„šåæ ‡ç‚¹ä¼°ç®—ï¼ˆæ— å®Œæ•´ Pin[] æ—¶ï¼‰ */
+    static hitRectFromLocalPoints(locals, ox, oy, rotate, mirrorH, pad = SELECTION_HIT_PAD, refName = '', instUuid = '', libDevId = '') {
+        if (locals.length === 0) {
+            const fallback = {
+                minX: -40 - pad, maxX: 40 + pad, minY: -30 - pad, maxY: 30 + pad,
+                width: 80 + pad * 2, height: 60 + pad * 2
+            };
+            return DeviceHitGeometry.localToWorldAabb(ox, oy, rotate, mirrorH, fallback, refName, instUuid, libDevId);
+        }
+        let minX = locals[0].x;
+        let maxX = locals[0].x;
+        let minY = locals[0].y;
+        let maxY = locals[0].y;
+        for (let i = 1; i < locals.length; i++) {
+            minX = Math.min(minX, locals[i].x);
+            maxX = Math.max(maxX, locals[i].x);
+            minY = Math.min(minY, locals[i].y);
+            maxY = Math.max(maxY, locals[i].y);
+        }
+        // ä¸ calcSymbolBounds ä¸€è‡´ï¼šå•ä¾§å¼•è„šé¡»è¦†ç›–åŸç‚¹ç¬¦å·ä¸»ä½“
+        const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
+        const local = {
+            minX: covered.minX - 8 - pad,
+            maxX: covered.maxX + 8 + pad,
+            minY: covered.minY - 8 - pad,
+            maxY: covered.maxY + 8 + pad,
+            width: covered.width + 16 + pad * 2,
+            height: covered.height + 16 + pad * 2
+        };
+        return DeviceHitGeometry.localToWorldAabb(ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+    }
+    static hitRectFromDeviceInst(dev, pins, pad = SELECTION_HIT_PAD) {
+        return DeviceHitGeometry.hitRectFromPins(pins, dev.x, dev.y, dev.rotate, dev.mirrorH, pad, dev.refName, dev.instUuid, dev.libDevId);
+    }
+    static pointInRect(px, py, r) {
+        return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+    }
+    /** å¼•è„šåˆ°é€‰ä¸­åŒºå››è¾¹è·ç¦»æœ€çŸ­çš„é€ƒé€¸æ–¹å‘ */
+    static nearestEscapeEdge(pinX, pinY, r) {
+        const distL = pinX - r.x;
+        const distR = (r.x + r.w) - pinX;
+        const distT = pinY - r.y;
+        const distB = (r.y + r.h) - pinY;
+        const min = Math.min(distL, distR, distT, distB);
+        if (min === distL) {
+            return 'L';
+        }
+        if (min === distR) {
+            return 'R';
+        }
+        if (min === distT) {
+            return 'T';
+        }
+        return 'B';
+    }
+    /** æ ‡å· stub ç»ˆç‚¹ï¼šæ²¿æœ€è¿‘è¾¹å‚ç›´å¼•å‡ºåˆ°åŒºå¤– stubPad */
+    static stubLabelOutsidePin(pin, r, stubPad = 20) {
+        const edge = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, r);
+        return DeviceHitGeometry.stubLabelOnEdge(pin, r, edge, stubPad);
+    }
+    static stubLabelOnEdge(pin, r, edge, stubPad) {
+        if (edge === 'L') {
+            return { x: r.x - stubPad, y: pin.y };
+        }
+        if (edge === 'R') {
+            return { x: r.x + r.w + stubPad, y: pin.y };
+        }
+        if (edge === 'T') {
+            return { x: pin.x, y: r.y - stubPad };
+        }
+        return { x: pin.x, y: r.y + r.h + stubPad };
+    }
+    /**
+     * é€‰å‡ºä¸ç©¿é€å¼‚å™¨ä»¶é€‰ä¸­åŒºã€ä¸”è·æ— å…³è„šâ‰¥FOREIGN_PIN_CLEARANCE çš„ stub ç»ˆç‚¹ã€‚
+     * foreignPinsï¼šè°ƒç”¨æ–¹æ’é™¤æœ¬è„šåçš„å…¨éƒ¨å¼•è„šä¸–ç•Œåæ ‡ï¼ˆå«åŒèŠ¯ç‰‡é‚»è„šï¼‰ã€‚
+     */
+    static stubLabelOutsidePinAvoidForeign(pin, own, foreign, stubPad = 20, foreignPins) {
+        const pinClear = foreignPins !== undefined ? foreignPins : [];
+        const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
+        const order = [preferred];
+        const all = ['L', 'R', 'T', 'B'];
+        for (let i = 0; i < all.length; i++) {
+            if (all[i] !== preferred) {
+                order.push(all[i]);
+            }
+        }
+        const pads = [stubPad, stubPad + 16, stubPad + 32, stubPad + 48, stubPad + 64,
+            stubPad + 80, stubPad + 112, stubPad + 144];
+        let bestLabel = null;
+        let bestMinDist = -1;
+        for (let pi = 0; pi < pads.length; pi++) {
+            for (let ei = 0; ei < order.length; ei++) {
+                const label = DeviceHitGeometry.stubLabelOnEdge(pin, own, order[ei], pads[pi]);
+                let hitsForeign = false;
+                for (let fi = 0; fi < foreign.length; fi++) {
+                    const fr = foreign[fi];
+                    if (fr.instUuid === own.instUuid) {
+                        continue;
+                    }
+                    if (DeviceHitGeometry.segmentIntersectsRect(pin, label, fr)) {
+                        hitsForeign = true;
+                        break;
+                    }
+                    if (DeviceHitGeometry.pointInRect(label.x, label.y, fr)) {
+                        hitsForeign = true;
+                        break;
+                    }
+                }
+                if (hitsForeign) {
+                    continue;
+                }
+                const clearOk = DeviceHitGeometry.segmentClearsForeignPins(pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
+                if (clearOk) {
+                    return label;
+                }
+                const minD = DeviceHitGeometry.minDistToForeignPins(pin, label, pinClear);
+                if (minD > bestMinDist) {
+                    bestMinDist = minD;
+                    bestLabel = label;
+                }
+            }
+        }
+        // ä»…è¿”å›æ»¡è¶³ FOREIGN_PIN_CLEARANCE çš„æ ‡å·ç«¯ï¼›å¦åˆ™è¿”å› null è¯­ä¹‰ç”¨è¿œè·å…œåº•å‰å…ˆæ‹’ç»
+        if (bestLabel !== null && bestMinDist >= FOREIGN_PIN_CLEARANCE) {
+            return bestLabel;
+        }
+        // æ— åˆæ ¼å€™é€‰ï¼šä»ç”¨æ ‡å‡† stubï¼ˆè°ƒç”¨æ–¹åº” demoteï¼‰ï¼Œå‹¿è¿”å› clearance ä¸è¶³çš„ best
+        return DeviceHitGeometry.stubLabelOutsidePin(pin, own, stubPad + 40);
+    }
+    /** çº¿æ®µä¸æ ‡å·ç«¯ç‚¹åˆ°æ— å…³è„šçš„æœ€å°è·ç¦»å‡ â‰¥ clearanceï¼ˆä¸¤ç«¯ç‚¹ ENDPOINT_EXEMPT å†…è±å…ï¼Œä¸é—¨ç¦ä¸€è‡´ï¼‰ */
+    static segmentClearsForeignPins(a, b, foreignPins, clearance) {
+        const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+        for (let i = 0; i < foreignPins.length; i++) {
+            const fp = foreignPins[i];
+            if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+                Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+                continue;
+            }
+            if (DeviceHitGeometry.pointSegmentDistance(fp, a, b) < clearance) {
+                return false;
+            }
+        }
+        return true;
+    }
+    /** çº¿æ®µåˆ°æ— å…³è„šçš„æœ€å°è·ç¦»ï¼ˆæ— æ— å…³è„šæˆ–å‡åœ¨ç«¯ç‚¹è±å…å†…æ—¶è§†ä¸º Infinityï¼‰ */
+    static minDistToForeignPins(a, b, foreignPins) {
+        if (foreignPins.length === 0) {
+            return Number.POSITIVE_INFINITY;
+        }
+        const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+        let minD = Number.POSITIVE_INFINITY;
+        let any = false;
+        for (let i = 0; i < foreignPins.length; i++) {
+            const fp = foreignPins[i];
+            if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+                Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+                continue;
+            }
+            any = true;
+            const d = DeviceHitGeometry.pointSegmentDistance(fp, a, b);
+            if (d < minD) {
+                minD = d;
+            }
+        }
+        return any ? minD : Number.POSITIVE_INFINITY;
+    }
+    /**
+     * å¼•è„šé€ƒé€¸èµ°å»Šï¼šæœ¬å™¨ä»¶é€‰ä¸­åŒºå†…ï¼Œä»…å…è®¸ä»å¼•è„šæ²¿ã€Œåˆ°æœ€è¿‘è¾¹ã€çš„æ­£äº¤çŸ­å»Šèµ°åˆ°åŒºå¤–ã€‚
+     * ç¦æ­¢æ–œç©¿/æ¨ªç©¿å™¨ä»¶ä½“ï¼›èµ°å»ŠåŠå®½é»˜è®¤ â‰ˆ 1 gridã€‚
+     */
+    static pointInPinEscapeCorridor(px, py, pinX, pinY, r, halfWidth = 12) {
+        const hw = Math.max(halfWidth, 8);
+        // è„šå·²åœ¨åŒºå¤–ï¼šä»…è„šç‚¹é‚»åŸŸæ”¾è¡Œ
+        if (!DeviceHitGeometry.pointInRect(pinX, pinY, r)) {
+            return Math.abs(px - pinX) <= hw && Math.abs(py - pinY) <= hw;
+        }
+        // ç‚¹ä¸åœ¨æœ¬åŒºä¸”ä¸åœ¨èµ°å»Šå¤–å»¶ï¼šä¸ç®—æœ¬è„šé€ƒé€¸ï¼ˆå¤–å±‚å†åˆ¤å…¶ä»–åŒºï¼‰
+        const edge = DeviceHitGeometry.nearestEscapeEdge(pinX, pinY, r);
+        if (edge === 'L') {
+            return px >= (r.x - hw) && px <= (pinX + hw) && Math.abs(py - pinY) <= hw;
+        }
+        if (edge === 'R') {
+            return px >= (pinX - hw) && px <= (r.x + r.w + hw) && Math.abs(py - pinY) <= hw;
+        }
+        if (edge === 'T') {
+            return py >= (r.y - hw) && py <= (pinY + hw) && Math.abs(px - pinX) <= hw;
+        }
+        return py >= (pinY - hw) && py <= (r.y + r.h + hw) && Math.abs(px - pinX) <= hw;
+    }
+    /** ç‚¹æ˜¯å¦è½åœ¨ä»»ä¸€å¼•è„šç›¸å¯¹è¯¥é€‰ä¸­åŒºçš„é€ƒé€¸èµ°å»Šå†… */
+    static pointInAnyPinEscapeCorridor(px, py, pinPositions, r, halfWidth = 12) {
+        for (let i = 0; i < pinPositions.length; i++) {
+            const p = pinPositions[i];
+            if (DeviceHitGeometry.pointInPinEscapeCorridor(px, py, p.x, p.y, r, halfWidth)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    static segmentIntersectsRect(a, b, r) {
+        if (a.x === b.x) {
+            const x = a.x;
+            if (x < r.x || x > r.x + r.w) {
+                return false;
+            }
+            const yMin = Math.min(a.y, b.y);
+            const yMax = Math.max(a.y, b.y);
+            return !(yMax < r.y || yMin > r.y + r.h);
+        }
+        if (a.y === b.y) {
+            const y = a.y;
+            if (y < r.y || y > r.y + r.h) {
+                return false;
+            }
+            const xMin = Math.min(a.x, b.x);
+            const xMax = Math.max(a.x, b.x);
+            return !(xMax < r.x || xMin > r.x + r.w);
+        }
+        // éæ­£äº¤ï¼šé‡‡æ ·æ£€æµ‹
+        const samples = DeviceHitGeometry.sampleSegment(a, b, 10);
+        for (let i = 0; i < samples.length; i++) {
+            if (DeviceHitGeometry.pointInRect(samples[i].x, samples[i].y, r)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    static pointSegmentDistance(p, a, b) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        if (dx === 0 && dy === 0) {
+            return Math.hypot(p.x - a.x, p.y - a.y);
+        }
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+        return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    }
+    static sampleSegment(a, b, step) {
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len < 1e-6) {
+            return [{ x: a.x, y: a.y }];
+        }
+        const n = Math.max(1, Math.ceil(len / Math.max(1, step)));
+        const out = [];
+        for (let i = 0; i <= n; i++) {
+            const t = i / n;
+            out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        }
+        return out;
+    }
+    static wireCoverage(wire) {
+        const pts = wire.points;
+        let length = 0;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+            if (i > 0) {
+                length += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+            }
+        }
+        if (pts.length === 0) {
+            minX = 0;
+            minY = 0;
+            maxX = 0;
+            maxY = 0;
+        }
+        return {
+            netUuid: wire.netUuid,
+            pointCount: pts.length,
+            points: pts.slice(),
+            segmentCount: Math.max(0, pts.length - 1),
+            lengthMil: Math.round(length),
+            bbox: {
+                x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+                refName: '', instUuid: '', libDevId: ''
+            }
+        };
+    }
+    static formatHitRect(r) {
+        return `${r.refName || r.instUuid}[${r.libDevId}] é€‰ä¸­åŒºAABB=(${Math.round(r.x)},${Math.round(r.y)},` +
+            `${Math.round(r.w)}Ã—${Math.round(r.h)})`;
+    }
+    static formatWireCoverage(c, maxPts = 12) {
+        const show = c.points.slice(0, maxPts)
+            .map(p => `(${Math.round(p.x)},${Math.round(p.y)})`)
+            .join('â†’');
+        const more = c.points.length > maxPts ? `â€¦(+${c.points.length - maxPts})` : '';
+        return `net=${c.netUuid} segs=${c.segmentCount} len=${c.lengthMil}mil ` +
+            `bbox=(${Math.round(c.bbox.x)},${Math.round(c.bbox.y)},${Math.round(c.bbox.w)}Ã—${Math.round(c.bbox.h)}) ` +
+            `path=${show}${more}`;
+    }
+}
+//# sourceMappingURL=DeviceHitGeometry.js.mapÂ‘ÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\SymbolGeometry.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeviceHitGeometry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/DeviceHitGeometry¦commonÃÚ;–/**
+ * å™¨ä»¶é€‰ä¸­å‘½ä¸­åŒº + å¯¼çº¿å‡ ä½• â€” ä¸ SchematicEditorImpl.HIT_PAD å¯¹é½ï¼Œ
+ * ä¾› AI å¸ƒçº¿ / æ ¡éªŒ / Prompt æ³¨å…¥å…±ç”¨ã€‚
+ */
+import { Pin, Point2D } from '../types/CommonTypes';
+import { DeviceInst, RouteLine } from '../types/TopologyTypes';
+import { SymbolBounds, calcSymbolBounds, coverOriginCenteredBody } from './SymbolGeometry';
+
+/** ä¸ SchematicEditorImpl.HIT_PAD ä¿æŒä¸€è‡´ */
+export const SELECTION_HIT_PAD = 22;
+
+/** å¯¼çº¿è·æ— å…³å¼•è„šçš„æœ€å°å®‰å…¨è·ç¦» (mil) */
+export const FOREIGN_PIN_CLEARANCE = 20;
+
+export interface WorldHitRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  refName: string;
+  instUuid: string;
+  libDevId: string;
+}
+
+export interface WirePathCoverage {
+  netUuid: string;
+  pointCount: number;
+  points: Point2D[];
+  segmentCount: number;
+  lengthMil: number;
+  bbox: WorldHitRect;
+}
+
+export class DeviceHitGeometry {
+  static expandLocal(bounds: SymbolBounds, pad: number): SymbolBounds {
+    return {
+      minX: bounds.minX - pad,
+      maxX: bounds.maxX + pad,
+      minY: bounds.minY - pad,
+      maxY: bounds.maxY + pad,
+      width: bounds.width + pad * 2,
+      height: bounds.height + pad * 2
+    };
+  }
+
+  static transformLocal(local: Point2D, rotate: number, mirrorH: boolean): Point2D {
+    let lx = local.x;
+    let ly = local.y;
+    if (mirrorH) {
+      lx = -lx;
+    }
+    const rot = ((rotate % 360) + 360) % 360;
+    if (rot === 90) {
+      return { x: -ly, y: lx };
+    }
+    if (rot === 180) {
+      return { x: -lx, y: -ly };
+    }
+    if (rot === 270) {
+      return { x: ly, y: -lx };
+    }
+    return { x: lx, y: ly };
+  }
+
+  /** å±€éƒ¨ SymbolBounds â†’ ä¸–ç•Œ AABBï¼ˆå«æ—‹è½¬é•œåƒï¼‰ */
+  static localToWorldAabb(
+    ox: number, oy: number, rotate: number, mirrorH: boolean,
+    bounds: SymbolBounds, refName: string = '', instUuid: string = '',
+    libDevId: string = ''
+  ): WorldHitRect {
+    const corners: Point2D[] = [
+      { x: bounds.minX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.maxY },
+      { x: bounds.minX, y: bounds.maxY }
+    ];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < corners.length; i++) {
+      const t = DeviceHitGeometry.transformLocal(corners[i], rotate, mirrorH);
+      const wx = ox + t.x;
+      const wy = oy + t.y;
+      if (wx < minX) {
+        minX = wx;
+      }
+      if (wy < minY) {
+        minY = wy;
+      }
+      if (wx > maxX) {
+        maxX = wx;
+      }
+      if (wy > maxY) {
+        maxY = wy;
+      }
+    }
+    return {
+      x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+      refName, instUuid, libDevId
+    };
+  }
+
+  /** ç”±åº“å¼•è„šè®¡ç®—é€‰ä¸­å‘½ä¸­åŒºï¼ˆä¸ç¼–è¾‘å™¨é€‰ä¸­èŒƒå›´ä¸€è‡´ï¼‰ */
+  static hitRectFromPins(
+    pins: Pin[], ox: number, oy: number, rotate: number, mirrorH: boolean,
+    pad: number = SELECTION_HIT_PAD,
+    refName: string = '', instUuid: string = '', libDevId: string = ''
+  ): WorldHitRect {
+    const local = DeviceHitGeometry.expandLocal(calcSymbolBounds(pins, 8), pad);
+    return DeviceHitGeometry.localToWorldAabb(
+      ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+  }
+
+  /** ç”±å±€éƒ¨å¼•è„šåæ ‡ç‚¹ä¼°ç®—ï¼ˆæ— å®Œæ•´ Pin[] æ—¶ï¼‰ */
+  static hitRectFromLocalPoints(
+    locals: Point2D[], ox: number, oy: number, rotate: number, mirrorH: boolean,
+    pad: number = SELECTION_HIT_PAD,
+    refName: string = '', instUuid: string = '', libDevId: string = ''
+  ): WorldHitRect {
+    if (locals.length === 0) {
+      const fallback: SymbolBounds = {
+        minX: -40 - pad, maxX: 40 + pad, minY: -30 - pad, maxY: 30 + pad,
+        width: 80 + pad * 2, height: 60 + pad * 2
+      };
+      return DeviceHitGeometry.localToWorldAabb(
+        ox, oy, rotate, mirrorH, fallback, refName, instUuid, libDevId);
+    }
+    let minX = locals[0].x;
+    let maxX = locals[0].x;
+    let minY = locals[0].y;
+    let maxY = locals[0].y;
+    for (let i = 1; i < locals.length; i++) {
+      minX = Math.min(minX, locals[i].x);
+      maxX = Math.max(maxX, locals[i].x);
+      minY = Math.min(minY, locals[i].y);
+      maxY = Math.max(maxY, locals[i].y);
+    }
+    // ä¸ calcSymbolBounds ä¸€è‡´ï¼šå•ä¾§å¼•è„šé¡»è¦†ç›–åŸç‚¹ç¬¦å·ä¸»ä½“
+    const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
+    const local: SymbolBounds = {
+      minX: covered.minX - 8 - pad,
+      maxX: covered.maxX + 8 + pad,
+      minY: covered.minY - 8 - pad,
+      maxY: covered.maxY + 8 + pad,
+      width: covered.width + 16 + pad * 2,
+      height: covered.height + 16 + pad * 2
+    };
+    return DeviceHitGeometry.localToWorldAabb(
+      ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+  }
+
+  static hitRectFromDeviceInst(
+    dev: DeviceInst, pins: Pin[], pad: number = SELECTION_HIT_PAD
+  ): WorldHitRect {
+    return DeviceHitGeometry.hitRectFromPins(
+      pins, dev.x, dev.y, dev.rotate, dev.mirrorH, pad,
+      dev.refName, dev.instUuid, dev.libDevId);
+  }
+
+  static pointInRect(px: number, py: number, r: WorldHitRect): boolean {
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  /** å¼•è„šåˆ°é€‰ä¸­åŒºå››è¾¹è·ç¦»æœ€çŸ­çš„é€ƒé€¸æ–¹å‘ */
+  static nearestEscapeEdge(pinX: number, pinY: number, r: WorldHitRect): string {
+    const distL = pinX - r.x;
+    const distR = (r.x + r.w) - pinX;
+    const distT = pinY - r.y;
+    const distB = (r.y + r.h) - pinY;
+    const min = Math.min(distL, distR, distT, distB);
+    if (min === distL) {
+      return 'L';
+    }
+    if (min === distR) {
+      return 'R';
+    }
+    if (min === distT) {
+      return 'T';
+    }
+    return 'B';
+  }
+
+  /** æ ‡å· stub ç»ˆç‚¹ï¼šæ²¿æœ€è¿‘è¾¹å‚ç›´å¼•å‡ºåˆ°åŒºå¤– stubPad */
+  static stubLabelOutsidePin(pin: Point2D, r: WorldHitRect, stubPad: number = 20): Point2D {
+    const edge = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, r);
+    return DeviceHitGeometry.stubLabelOnEdge(pin, r, edge, stubPad);
+  }
+
+  static stubLabelOnEdge(pin: Point2D, r: WorldHitRect, edge: string, stubPad: number): Point2D {
+    if (edge === 'L') {
+      return { x: r.x - stubPad, y: pin.y };
+    }
+    if (edge === 'R') {
+      return { x: r.x + r.w + stubPad, y: pin.y };
+    }
+    if (edge === 'T') {
+      return { x: pin.x, y: r.y - stubPad };
+    }
+    return { x: pin.x, y: r.y + r.h + stubPad };
+  }
+
+  /**
+   * é€‰å‡ºä¸ç©¿é€å¼‚å™¨ä»¶é€‰ä¸­åŒºã€ä¸”è·æ— å…³è„šâ‰¥FOREIGN_PIN_CLEARANCE çš„ stub ç»ˆç‚¹ã€‚
+   * foreignPinsï¼šè°ƒç”¨æ–¹æ’é™¤æœ¬è„šåçš„å…¨éƒ¨å¼•è„šä¸–ç•Œåæ ‡ï¼ˆå«åŒèŠ¯ç‰‡é‚»è„šï¼‰ã€‚
+   */
+  static stubLabelOutsidePinAvoidForeign(
+    pin: Point2D,
+    own: WorldHitRect,
+    foreign: WorldHitRect[],
+    stubPad: number = 20,
+    foreignPins?: Point2D[]
+  ): Point2D {
+    const pinClear: Point2D[] = foreignPins !== undefined ? foreignPins : [];
+    const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
+    const order: string[] = [preferred];
+    const all = ['L', 'R', 'T', 'B'];
+    for (let i = 0; i < all.length; i++) {
+      if (all[i] !== preferred) {
+        order.push(all[i]);
+      }
+    }
+    const pads = [stubPad, stubPad + 16, stubPad + 32, stubPad + 48, stubPad + 64,
+      stubPad + 80, stubPad + 112, stubPad + 144];
+    let bestLabel: Point2D | null = null;
+    let bestMinDist = -1;
+    for (let pi = 0; pi < pads.length; pi++) {
+      for (let ei = 0; ei < order.length; ei++) {
+        const label = DeviceHitGeometry.stubLabelOnEdge(pin, own, order[ei], pads[pi]);
+        let hitsForeign = false;
+        for (let fi = 0; fi < foreign.length; fi++) {
+          const fr = foreign[fi];
+          if (fr.instUuid === own.instUuid) {
+            continue;
+          }
+          if (DeviceHitGeometry.segmentIntersectsRect(pin, label, fr)) {
+            hitsForeign = true;
+            break;
+          }
+          if (DeviceHitGeometry.pointInRect(label.x, label.y, fr)) {
+            hitsForeign = true;
+            break;
+          }
+        }
+        if (hitsForeign) {
+          continue;
+        }
+        const clearOk = DeviceHitGeometry.segmentClearsForeignPins(
+          pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
+        if (clearOk) {
+          return label;
+        }
+        const minD = DeviceHitGeometry.minDistToForeignPins(pin, label, pinClear);
+        if (minD > bestMinDist) {
+          bestMinDist = minD;
+          bestLabel = label;
+        }
+      }
+    }
+    // ä»…è¿”å›æ»¡è¶³ FOREIGN_PIN_CLEARANCE çš„æ ‡å·ç«¯ï¼›å¦åˆ™è¿”å› null è¯­ä¹‰ç”¨è¿œè·å…œåº•å‰å…ˆæ‹’ç»
+    if (bestLabel !== null && bestMinDist >= FOREIGN_PIN_CLEARANCE) {
+      return bestLabel;
+    }
+    // æ— åˆæ ¼å€™é€‰ï¼šä»ç”¨æ ‡å‡† stubï¼ˆè°ƒç”¨æ–¹åº” demoteï¼‰ï¼Œå‹¿è¿”å› clearance ä¸è¶³çš„ best
+    return DeviceHitGeometry.stubLabelOutsidePin(pin, own, stubPad + 40);
+  }
+
+  /** çº¿æ®µä¸æ ‡å·ç«¯ç‚¹åˆ°æ— å…³è„šçš„æœ€å°è·ç¦»å‡ â‰¥ clearanceï¼ˆä¸¤ç«¯ç‚¹ ENDPOINT_EXEMPT å†…è±å…ï¼Œä¸é—¨ç¦ä¸€è‡´ï¼‰ */
+  static segmentClearsForeignPins(
+    a: Point2D, b: Point2D, foreignPins: Point2D[], clearance: number
+  ): boolean {
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      if (DeviceHitGeometry.pointSegmentDistance(fp, a, b) < clearance) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** çº¿æ®µåˆ°æ— å…³è„šçš„æœ€å°è·ç¦»ï¼ˆæ— æ— å…³è„šæˆ–å‡åœ¨ç«¯ç‚¹è±å…å†…æ—¶è§†ä¸º Infinityï¼‰ */
+  static minDistToForeignPins(a: Point2D, b: Point2D, foreignPins: Point2D[]): number {
+    if (foreignPins.length === 0) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    let minD = Number.POSITIVE_INFINITY;
+    let any = false;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      any = true;
+      const d = DeviceHitGeometry.pointSegmentDistance(fp, a, b);
+      if (d < minD) {
+        minD = d;
+      }
+    }
+    return any ? minD : Number.POSITIVE_INFINITY;
+  }
+
+  /**
+   * å¼•è„šé€ƒé€¸èµ°å»Šï¼šæœ¬å™¨ä»¶é€‰ä¸­åŒºå†…ï¼Œä»…å…è®¸ä»å¼•è„šæ²¿ã€Œåˆ°æœ€è¿‘è¾¹ã€çš„æ­£äº¤çŸ­å»Šèµ°åˆ°åŒºå¤–ã€‚
+   * ç¦æ­¢æ–œç©¿/æ¨ªç©¿å™¨ä»¶ä½“ï¼›èµ°å»ŠåŠå®½é»˜è®¤ â‰ˆ 1 gridã€‚
+   */
+  static pointInPinEscapeCorridor(
+    px: number, py: number,
+    pinX: number, pinY: number,
+    r: WorldHitRect,
+    halfWidth: number = 12
+  ): boolean {
+    const hw = Math.max(halfWidth, 8);
+    // è„šå·²åœ¨åŒºå¤–ï¼šä»…è„šç‚¹é‚»åŸŸæ”¾è¡Œ
+    if (!DeviceHitGeometry.pointInRect(pinX, pinY, r)) {
+      return Math.abs(px - pinX) <= hw && Math.abs(py - pinY) <= hw;
+    }
+    // ç‚¹ä¸åœ¨æœ¬åŒºä¸”ä¸åœ¨èµ°å»Šå¤–å»¶ï¼šä¸ç®—æœ¬è„šé€ƒé€¸ï¼ˆå¤–å±‚å†åˆ¤å…¶ä»–åŒºï¼‰
+    const edge = DeviceHitGeometry.nearestEscapeEdge(pinX, pinY, r);
+    if (edge === 'L') {
+      return px >= (r.x - hw) && px <= (pinX + hw) && Math.abs(py - pinY) <= hw;
+    }
+    if (edge === 'R') {
+      return px >= (pinX - hw) && px <= (r.x + r.w + hw) && Math.abs(py - pinY) <= hw;
+    }
+    if (edge === 'T') {
+      return py >= (r.y - hw) && py <= (pinY + hw) && Math.abs(px - pinX) <= hw;
+    }
+    return py >= (pinY - hw) && py <= (r.y + r.h + hw) && Math.abs(px - pinX) <= hw;
+  }
+
+  /** ç‚¹æ˜¯å¦è½åœ¨ä»»ä¸€å¼•è„šç›¸å¯¹è¯¥é€‰ä¸­åŒºçš„é€ƒé€¸èµ°å»Šå†… */
+  static pointInAnyPinEscapeCorridor(
+    px: number, py: number,
+    pinPositions: Point2D[],
+    r: WorldHitRect,
+    halfWidth: number = 12
+  ): boolean {
+    for (let i = 0; i < pinPositions.length; i++) {
+      const p = pinPositions[i];
+      if (DeviceHitGeometry.pointInPinEscapeCorridor(px, py, p.x, p.y, r, halfWidth)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static segmentIntersectsRect(a: Point2D, b: Point2D, r: WorldHitRect): boolean {
+    if (a.x === b.x) {
+      const x = a.x;
+      if (x < r.x || x > r.x + r.w) {
+        return false;
+      }
+      const yMin = Math.min(a.y, b.y);
+      const yMax = Math.max(a.y, b.y);
+      return !(yMax < r.y || yMin > r.y + r.h);
+    }
+    if (a.y === b.y) {
+      const y = a.y;
+      if (y < r.y || y > r.y + r.h) {
+        return false;
+      }
+      const xMin = Math.min(a.x, b.x);
+      const xMax = Math.max(a.x, b.x);
+      return !(xMax < r.x || xMin > r.x + r.w);
+    }
+    // éæ­£äº¤ï¼šé‡‡æ ·æ£€æµ‹
+    const samples = DeviceHitGeometry.sampleSegment(a, b, 10);
+    for (let i = 0; i < samples.length; i++) {
+      if (DeviceHitGeometry.pointInRect(samples[i].x, samples[i].y, r)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static pointSegmentDistance(p: Point2D, a: Point2D, b: Point2D): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) {
+      return Math.hypot(p.x - a.x, p.y - a.y);
+    }
+    const t = Math.max(0, Math.min(1,
+      ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+
+  static sampleSegment(a: Point2D, b: Point2D, step: number): Point2D[] {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) {
+      return [{ x: a.x, y: a.y }];
+    }
+    const n = Math.max(1, Math.ceil(len / Math.max(1, step)));
+    const out: Point2D[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+    return out;
+  }
+
+  static wireCoverage(wire: RouteLine): WirePathCoverage {
+    const pts = wire.points;
+    let length = 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+      if (i > 0) {
+        length += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+      }
+    }
+    if (pts.length === 0) {
+      minX = 0;
+      minY = 0;
+      maxX = 0;
+      maxY = 0;
+    }
+    return {
+      netUuid: wire.netUuid,
+      pointCount: pts.length,
+      points: pts.slice(),
+      segmentCount: Math.max(0, pts.length - 1),
+      lengthMil: Math.round(length),
+      bbox: {
+        x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+        refName: '', instUuid: '', libDevId: ''
+      }
+    };
+  }
+
+  static formatHitRect(r: WorldHitRect): string {
+    return `${r.refName || r.instUuid}[${r.libDevId}] é€‰ä¸­åŒºAABB=(${Math.round(r.x)},${Math.round(r.y)},` +
+      `${Math.round(r.w)}Ã—${Math.round(r.h)})`;
+  }
+
+  static formatWireCoverage(c: WirePathCoverage, maxPts: number = 12): string {
+    const show = c.points.slice(0, maxPts)
+      .map(p => `(${Math.round(p.x)},${Math.round(p.y)})`)
+      .join('â†’');
+    const more = c.points.length > maxPts ? `â€¦(+${c.points.length - maxPts})` : '';
+    return `net=${c.netUuid} segs=${c.segmentCount} len=${c.lengthMil}mil ` +
+      `bbox=(${Math.round(c.bbox.x)},${Math.round(c.bbox.y)},${Math.round(c.bbox.w)}Ã—${Math.round(c.bbox.h)}) ` +
+      `path=${show}${more}`;
+  }
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜt‘”   ‘”   ‘”  	 ‘”   ‘”   ‘”  ! ‘”  "‘”  $‘”  %‘”  &‘”  '‘”  (‘”  )‘”  -‘”  .‘”  /‘”  0‘”  2‘”  3‘”  6‘”  9‘”  <‘”  ÌF‘”  ÌN‘”  ÌO‘”  ÌP‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌV‘”  ÌY‘”  Ì\‘”  Ì_‘”  Ì`‘”  Ìb‘”  Ìm‘”  Ìx‘”  Ìy‘”  Ì{‘”  Ì‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ìˆ‘”  Ì‰‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘”  Ì›‘”  Ì ‘”  Ì¡‘”  Ì¥‘”  Ì¦‘”  Ì§‘”  Ì¨‘”  Ì©‘”  Ìª‘”  Ì¬‘”  Ì­‘”  Ì¯‘”  Ì°‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ì¹‘”  Ìº‘”  Ì¿‘”  ÌÀ‘”  ÌÂ‘”  ÌÃ‘”  ÌÅ‘”  ÌÆ‘”  ÌÇ‘”  ÌÊ‘”  ÌÍ‘”  ÌÎ‘”  ÌÕ‘”  ÌÖ‘”  Ì×‘”  ÌÙ‘”  ÌÚ‘”  ÌÜ‘”  Ìİ‘”  ÌŞ‘”  Ìá‘”  Ìâ‘”  Ìã‘”  Ìæ‘”  Ìç
+‘”  Ìè
+‘”  Ìê‘”  Ìî‘”  Ìï
+‘”  Ìò‘”  Ìó	‘”  Ìô‘”  Ìö	‘”  Ì÷‘”  Ìù‘”  Ìú
+‘”  Ìû	‘”  Ìü‘”  Í 	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í!‘”  Í#‘”  Í%‘”  Í&‘”  Í*‘”  Í,‘”  Í/‘”  Í0‘”  Í4‘”  Í7‘”  Í8‘”  ÍB‘”  ÍD‘”  ÍF‘”  ÍG‘”  ÍI‘”  ÍJ‘”  ÍL‘”  ÍM‘”  ÍN‘”  ÍR‘”  ÍX‘”  ÍY‘”  Í[‘”  Í\‘”  Í]‘”  Í^‘”  Ía‘”  Íb‘”  Íc‘”  Íd‘”  Íe‘”  Íf‘”  Íg‘”  Íh‘”  Íi‘”  Íj‘”  Ík‘”  Íl‘”  Ím‘”  Ín‘”  Ío‘”  Íp‘”  Íq‘”  Ír‘”  Ís‘”  Íu‘”  Ív‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í~‘”  Í‘”  Íƒ‘”  Í†‘”  Í‰‘”  ÍŒ‘”  Í‘”  Í‘‘”  Í’‘”  Í“‘”  Í”‘”  Í˜‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í¥‘”  Í¦‘”  Í§‘”  Í¨‘”  Í­‘”  Í±‘”  Í²‘”  Í³‘”  Í´‘”  Íµ‘”  Í·‘”  Í¼‘”  Í½‘”  ÍÀ‘”  ÍÅ‘”  ÍÆ‘”  ÍÇ‘”  ÍÉ‘ÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeviceHitGeometry.ets‘Ú;–/**
+ * å™¨ä»¶é€‰ä¸­å‘½ä¸­åŒº + å¯¼çº¿å‡ ä½• â€” ä¸ SchematicEditorImpl.HIT_PAD å¯¹é½ï¼Œ
+ * ä¾› AI å¸ƒçº¿ / æ ¡éªŒ / Prompt æ³¨å…¥å…±ç”¨ã€‚
+ */
+import { Pin, Point2D } from '../types/CommonTypes';
+import { DeviceInst, RouteLine } from '../types/TopologyTypes';
+import { SymbolBounds, calcSymbolBounds, coverOriginCenteredBody } from './SymbolGeometry';
+
+/** ä¸ SchematicEditorImpl.HIT_PAD ä¿æŒä¸€è‡´ */
+export const SELECTION_HIT_PAD = 22;
+
+/** å¯¼çº¿è·æ— å…³å¼•è„šçš„æœ€å°å®‰å…¨è·ç¦» (mil) */
+export const FOREIGN_PIN_CLEARANCE = 20;
+
+export interface WorldHitRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  refName: string;
+  instUuid: string;
+  libDevId: string;
+}
+
+export interface WirePathCoverage {
+  netUuid: string;
+  pointCount: number;
+  points: Point2D[];
+  segmentCount: number;
+  lengthMil: number;
+  bbox: WorldHitRect;
+}
+
+export class DeviceHitGeometry {
+  static expandLocal(bounds: SymbolBounds, pad: number): SymbolBounds {
+    return {
+      minX: bounds.minX - pad,
+      maxX: bounds.maxX + pad,
+      minY: bounds.minY - pad,
+      maxY: bounds.maxY + pad,
+      width: bounds.width + pad * 2,
+      height: bounds.height + pad * 2
+    };
+  }
+
+  static transformLocal(local: Point2D, rotate: number, mirrorH: boolean): Point2D {
+    let lx = local.x;
+    let ly = local.y;
+    if (mirrorH) {
+      lx = -lx;
+    }
+    const rot = ((rotate % 360) + 360) % 360;
+    if (rot === 90) {
+      return { x: -ly, y: lx };
+    }
+    if (rot === 180) {
+      return { x: -lx, y: -ly };
+    }
+    if (rot === 270) {
+      return { x: ly, y: -lx };
+    }
+    return { x: lx, y: ly };
+  }
+
+  /** å±€éƒ¨ SymbolBounds â†’ ä¸–ç•Œ AABBï¼ˆå«æ—‹è½¬é•œåƒï¼‰ */
+  static localToWorldAabb(
+    ox: number, oy: number, rotate: number, mirrorH: boolean,
+    bounds: SymbolBounds, refName: string = '', instUuid: string = '',
+    libDevId: string = ''
+  ): WorldHitRect {
+    const corners: Point2D[] = [
+      { x: bounds.minX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.minY },
+      { x: bounds.maxX, y: bounds.maxY },
+      { x: bounds.minX, y: bounds.maxY }
+    ];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < corners.length; i++) {
+      const t = DeviceHitGeometry.transformLocal(corners[i], rotate, mirrorH);
+      const wx = ox + t.x;
+      const wy = oy + t.y;
+      if (wx < minX) {
+        minX = wx;
+      }
+      if (wy < minY) {
+        minY = wy;
+      }
+      if (wx > maxX) {
+        maxX = wx;
+      }
+      if (wy > maxY) {
+        maxY = wy;
+      }
+    }
+    return {
+      x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+      refName, instUuid, libDevId
+    };
+  }
+
+  /** ç”±åº“å¼•è„šè®¡ç®—é€‰ä¸­å‘½ä¸­åŒºï¼ˆä¸ç¼–è¾‘å™¨é€‰ä¸­èŒƒå›´ä¸€è‡´ï¼‰ */
+  static hitRectFromPins(
+    pins: Pin[], ox: number, oy: number, rotate: number, mirrorH: boolean,
+    pad: number = SELECTION_HIT_PAD,
+    refName: string = '', instUuid: string = '', libDevId: string = ''
+  ): WorldHitRect {
+    const local = DeviceHitGeometry.expandLocal(calcSymbolBounds(pins, 8), pad);
+    return DeviceHitGeometry.localToWorldAabb(
+      ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+  }
+
+  /** ç”±å±€éƒ¨å¼•è„šåæ ‡ç‚¹ä¼°ç®—ï¼ˆæ— å®Œæ•´ Pin[] æ—¶ï¼‰ */
+  static hitRectFromLocalPoints(
+    locals: Point2D[], ox: number, oy: number, rotate: number, mirrorH: boolean,
+    pad: number = SELECTION_HIT_PAD,
+    refName: string = '', instUuid: string = '', libDevId: string = ''
+  ): WorldHitRect {
+    if (locals.length === 0) {
+      const fallback: SymbolBounds = {
+        minX: -40 - pad, maxX: 40 + pad, minY: -30 - pad, maxY: 30 + pad,
+        width: 80 + pad * 2, height: 60 + pad * 2
+      };
+      return DeviceHitGeometry.localToWorldAabb(
+        ox, oy, rotate, mirrorH, fallback, refName, instUuid, libDevId);
+    }
+    let minX = locals[0].x;
+    let maxX = locals[0].x;
+    let minY = locals[0].y;
+    let maxY = locals[0].y;
+    for (let i = 1; i < locals.length; i++) {
+      minX = Math.min(minX, locals[i].x);
+      maxX = Math.max(maxX, locals[i].x);
+      minY = Math.min(minY, locals[i].y);
+      maxY = Math.max(maxY, locals[i].y);
+    }
+    // ä¸ calcSymbolBounds ä¸€è‡´ï¼šå•ä¾§å¼•è„šé¡»è¦†ç›–åŸç‚¹ç¬¦å·ä¸»ä½“
+    const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
+    const local: SymbolBounds = {
+      minX: covered.minX - 8 - pad,
+      maxX: covered.maxX + 8 + pad,
+      minY: covered.minY - 8 - pad,
+      maxY: covered.maxY + 8 + pad,
+      width: covered.width + 16 + pad * 2,
+      height: covered.height + 16 + pad * 2
+    };
+    return DeviceHitGeometry.localToWorldAabb(
+      ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
+  }
+
+  static hitRectFromDeviceInst(
+    dev: DeviceInst, pins: Pin[], pad: number = SELECTION_HIT_PAD
+  ): WorldHitRect {
+    return DeviceHitGeometry.hitRectFromPins(
+      pins, dev.x, dev.y, dev.rotate, dev.mirrorH, pad,
+      dev.refName, dev.instUuid, dev.libDevId);
+  }
+
+  static pointInRect(px: number, py: number, r: WorldHitRect): boolean {
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  /** å¼•è„šåˆ°é€‰ä¸­åŒºå››è¾¹è·ç¦»æœ€çŸ­çš„é€ƒé€¸æ–¹å‘ */
+  static nearestEscapeEdge(pinX: number, pinY: number, r: WorldHitRect): string {
+    const distL = pinX - r.x;
+    const distR = (r.x + r.w) - pinX;
+    const distT = pinY - r.y;
+    const distB = (r.y + r.h) - pinY;
+    const min = Math.min(distL, distR, distT, distB);
+    if (min === distL) {
+      return 'L';
+    }
+    if (min === distR) {
+      return 'R';
+    }
+    if (min === distT) {
+      return 'T';
+    }
+    return 'B';
+  }
+
+  /** æ ‡å· stub ç»ˆç‚¹ï¼šæ²¿æœ€è¿‘è¾¹å‚ç›´å¼•å‡ºåˆ°åŒºå¤– stubPad */
+  static stubLabelOutsidePin(pin: Point2D, r: WorldHitRect, stubPad: number = 20): Point2D {
+    const edge = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, r);
+    return DeviceHitGeometry.stubLabelOnEdge(pin, r, edge, stubPad);
+  }
+
+  static stubLabelOnEdge(pin: Point2D, r: WorldHitRect, edge: string, stubPad: number): Point2D {
+    if (edge === 'L') {
+      return { x: r.x - stubPad, y: pin.y };
+    }
+    if (edge === 'R') {
+      return { x: r.x + r.w + stubPad, y: pin.y };
+    }
+    if (edge === 'T') {
+      return { x: pin.x, y: r.y - stubPad };
+    }
+    return { x: pin.x, y: r.y + r.h + stubPad };
+  }
+
+  /**
+   * é€‰å‡ºä¸ç©¿é€å¼‚å™¨ä»¶é€‰ä¸­åŒºã€ä¸”è·æ— å…³è„šâ‰¥FOREIGN_PIN_CLEARANCE çš„ stub ç»ˆç‚¹ã€‚
+   * foreignPinsï¼šè°ƒç”¨æ–¹æ’é™¤æœ¬è„šåçš„å…¨éƒ¨å¼•è„šä¸–ç•Œåæ ‡ï¼ˆå«åŒèŠ¯ç‰‡é‚»è„šï¼‰ã€‚
+   */
+  static stubLabelOutsidePinAvoidForeign(
+    pin: Point2D,
+    own: WorldHitRect,
+    foreign: WorldHitRect[],
+    stubPad: number = 20,
+    foreignPins?: Point2D[]
+  ): Point2D {
+    const pinClear: Point2D[] = foreignPins !== undefined ? foreignPins : [];
+    const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
+    const order: string[] = [preferred];
+    const all = ['L', 'R', 'T', 'B'];
+    for (let i = 0; i < all.length; i++) {
+      if (all[i] !== preferred) {
+        order.push(all[i]);
+      }
+    }
+    const pads = [stubPad, stubPad + 16, stubPad + 32, stubPad + 48, stubPad + 64,
+      stubPad + 80, stubPad + 112, stubPad + 144];
+    let bestLabel: Point2D | null = null;
+    let bestMinDist = -1;
+    for (let pi = 0; pi < pads.length; pi++) {
+      for (let ei = 0; ei < order.length; ei++) {
+        const label = DeviceHitGeometry.stubLabelOnEdge(pin, own, order[ei], pads[pi]);
+        let hitsForeign = false;
+        for (let fi = 0; fi < foreign.length; fi++) {
+          const fr = foreign[fi];
+          if (fr.instUuid === own.instUuid) {
+            continue;
+          }
+          if (DeviceHitGeometry.segmentIntersectsRect(pin, label, fr)) {
+            hitsForeign = true;
+            break;
+          }
+          if (DeviceHitGeometry.pointInRect(label.x, label.y, fr)) {
+            hitsForeign = true;
+            break;
+          }
+        }
+        if (hitsForeign) {
+          continue;
+        }
+        const clearOk = DeviceHitGeometry.segmentClearsForeignPins(
+          pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
+        if (clearOk) {
+          return label;
+        }
+        const minD = DeviceHitGeometry.minDistToForeignPins(pin, label, pinClear);
+        if (minD > bestMinDist) {
+          bestMinDist = minD;
+          bestLabel = label;
+        }
+      }
+    }
+    // ä»…è¿”å›æ»¡è¶³ FOREIGN_PIN_CLEARANCE çš„æ ‡å·ç«¯ï¼›å¦åˆ™è¿”å› null è¯­ä¹‰ç”¨è¿œè·å…œåº•å‰å…ˆæ‹’ç»
+    if (bestLabel !== null && bestMinDist >= FOREIGN_PIN_CLEARANCE) {
+      return bestLabel;
+    }
+    // æ— åˆæ ¼å€™é€‰ï¼šä»ç”¨æ ‡å‡† stubï¼ˆè°ƒç”¨æ–¹åº” demoteï¼‰ï¼Œå‹¿è¿”å› clearance ä¸è¶³çš„ best
+    return DeviceHitGeometry.stubLabelOutsidePin(pin, own, stubPad + 40);
+  }
+
+  /** çº¿æ®µä¸æ ‡å·ç«¯ç‚¹åˆ°æ— å…³è„šçš„æœ€å°è·ç¦»å‡ â‰¥ clearanceï¼ˆä¸¤ç«¯ç‚¹ ENDPOINT_EXEMPT å†…è±å…ï¼Œä¸é—¨ç¦ä¸€è‡´ï¼‰ */
+  static segmentClearsForeignPins(
+    a: Point2D, b: Point2D, foreignPins: Point2D[], clearance: number
+  ): boolean {
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      if (DeviceHitGeometry.pointSegmentDistance(fp, a, b) < clearance) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** çº¿æ®µåˆ°æ— å…³è„šçš„æœ€å°è·ç¦»ï¼ˆæ— æ— å…³è„šæˆ–å‡åœ¨ç«¯ç‚¹è±å…å†…æ—¶è§†ä¸º Infinityï¼‰ */
+  static minDistToForeignPins(a: Point2D, b: Point2D, foreignPins: Point2D[]): number {
+    if (foreignPins.length === 0) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const ENDPOINT_EXEMPT = FOREIGN_PIN_CLEARANCE;
+    let minD = Number.POSITIVE_INFINITY;
+    let any = false;
+    for (let i = 0; i < foreignPins.length; i++) {
+      const fp = foreignPins[i];
+      if (Math.hypot(fp.x - a.x, fp.y - a.y) <= ENDPOINT_EXEMPT ||
+        Math.hypot(fp.x - b.x, fp.y - b.y) <= ENDPOINT_EXEMPT) {
+        continue;
+      }
+      any = true;
+      const d = DeviceHitGeometry.pointSegmentDistance(fp, a, b);
+      if (d < minD) {
+        minD = d;
+      }
+    }
+    return any ? minD : Number.POSITIVE_INFINITY;
+  }
+
+  /**
+   * å¼•è„šé€ƒé€¸èµ°å»Šï¼šæœ¬å™¨ä»¶é€‰ä¸­åŒºå†…ï¼Œä»…å…è®¸ä»å¼•è„šæ²¿ã€Œåˆ°æœ€è¿‘è¾¹ã€çš„æ­£äº¤çŸ­å»Šèµ°åˆ°åŒºå¤–ã€‚
+   * ç¦æ­¢æ–œç©¿/æ¨ªç©¿å™¨ä»¶ä½“ï¼›èµ°å»ŠåŠå®½é»˜è®¤ â‰ˆ 1 gridã€‚
+   */
+  static pointInPinEscapeCorridor(
+    px: number, py: number,
+    pinX: number, pinY: number,
+    r: WorldHitRect,
+    halfWidth: number = 12
+  ): boolean {
+    const hw = Math.max(halfWidth, 8);
+    // è„šå·²åœ¨åŒºå¤–ï¼šä»…è„šç‚¹é‚»åŸŸæ”¾è¡Œ
+    if (!DeviceHitGeometry.pointInRect(pinX, pinY, r)) {
+      return Math.abs(px - pinX) <= hw && Math.abs(py - pinY) <= hw;
+    }
+    // ç‚¹ä¸åœ¨æœ¬åŒºä¸”ä¸åœ¨èµ°å»Šå¤–å»¶ï¼šä¸ç®—æœ¬è„šé€ƒé€¸ï¼ˆå¤–å±‚å†åˆ¤å…¶ä»–åŒºï¼‰
+    const edge = DeviceHitGeometry.nearestEscapeEdge(pinX, pinY, r);
+    if (edge === 'L') {
+      return px >= (r.x - hw) && px <= (pinX + hw) && Math.abs(py - pinY) <= hw;
+    }
+    if (edge === 'R') {
+      return px >= (pinX - hw) && px <= (r.x + r.w + hw) && Math.abs(py - pinY) <= hw;
+    }
+    if (edge === 'T') {
+      return py >= (r.y - hw) && py <= (pinY + hw) && Math.abs(px - pinX) <= hw;
+    }
+    return py >= (pinY - hw) && py <= (r.y + r.h + hw) && Math.abs(px - pinX) <= hw;
+  }
+
+  /** ç‚¹æ˜¯å¦è½åœ¨ä»»ä¸€å¼•è„šç›¸å¯¹è¯¥é€‰ä¸­åŒºçš„é€ƒé€¸èµ°å»Šå†… */
+  static pointInAnyPinEscapeCorridor(
+    px: number, py: number,
+    pinPositions: Point2D[],
+    r: WorldHitRect,
+    halfWidth: number = 12
+  ): boolean {
+    for (let i = 0; i < pinPositions.length; i++) {
+      const p = pinPositions[i];
+      if (DeviceHitGeometry.pointInPinEscapeCorridor(px, py, p.x, p.y, r, halfWidth)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static segmentIntersectsRect(a: Point2D, b: Point2D, r: WorldHitRect): boolean {
+    if (a.x === b.x) {
+      const x = a.x;
+      if (x < r.x || x > r.x + r.w) {
+        return false;
+      }
+      const yMin = Math.min(a.y, b.y);
+      const yMax = Math.max(a.y, b.y);
+      return !(yMax < r.y || yMin > r.y + r.h);
+    }
+    if (a.y === b.y) {
+      const y = a.y;
+      if (y < r.y || y > r.y + r.h) {
+        return false;
+      }
+      const xMin = Math.min(a.x, b.x);
+      const xMax = Math.max(a.x, b.x);
+      return !(xMax < r.x || xMin > r.x + r.w);
+    }
+    // éæ­£äº¤ï¼šé‡‡æ ·æ£€æµ‹
+    const samples = DeviceHitGeometry.sampleSegment(a, b, 10);
+    for (let i = 0; i < samples.length; i++) {
+      if (DeviceHitGeometry.pointInRect(samples[i].x, samples[i].y, r)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static pointSegmentDistance(p: Point2D, a: Point2D, b: Point2D): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx === 0 && dy === 0) {
+      return Math.hypot(p.x - a.x, p.y - a.y);
+    }
+    const t = Math.max(0, Math.min(1,
+      ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+
+  static sampleSegment(a: Point2D, b: Point2D, step: number): Point2D[] {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) {
+      return [{ x: a.x, y: a.y }];
+    }
+    const n = Math.max(1, Math.ceil(len / Math.max(1, step)));
+    const out: Point2D[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+    return out;
+  }
+
+  static wireCoverage(wire: RouteLine): WirePathCoverage {
+    const pts = wire.points;
+    let length = 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+      if (i > 0) {
+        length += Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y);
+      }
+    }
+    if (pts.length === 0) {
+      minX = 0;
+      minY = 0;
+      maxX = 0;
+      maxY = 0;
+    }
+    return {
+      netUuid: wire.netUuid,
+      pointCount: pts.length,
+      points: pts.slice(),
+      segmentCount: Math.max(0, pts.length - 1),
+      lengthMil: Math.round(length),
+      bbox: {
+        x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+        refName: '', instUuid: '', libDevId: ''
+      }
+    };
+  }
+
+  static formatHitRect(r: WorldHitRect): string {
+    return `${r.refName || r.instUuid}[${r.libDevId}] é€‰ä¸­åŒºAABB=(${Math.round(r.x)},${Math.round(r.y)},` +
+      `${Math.round(r.w)}Ã—${Math.round(r.h)})`;
+  }
+
+  static formatWireCoverage(c: WirePathCoverage, maxPts: number = 12): string {
+    const show = c.points.slice(0, maxPts)
+      .map(p => `(${Math.round(p.x)},${Math.round(p.y)})`)
+      .join('â†’');
+    const more = c.points.length > maxPts ? `â€¦(+${c.points.length - maxPts})` : '';
+    return `net=${c.netUuid} segs=${c.segmentCount} len=${c.lengthMil}mil ` +
+      `bbox=(${Math.round(c.bbox.x)},${Math.round(c.bbox.y)},${Math.round(c.bbox.w)}Ã—${Math.round(c.bbox.h)}) ` +
+      `path=${show}${more}`;
+  }
+}
+ÔrE‘°./SymbolGeometryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\SymbolGeometry.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache“ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌzÌÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÌÌ‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÌ‡ÌÔrL”¤type¥start£end¤nameªIdentifierÌ‡Ì˜±SELECTION_HIT_PADÔrM•¤type¥start£end¥value£raw§LiteralÌ›Ì¢22¥constÀI¶ExportNamedDeclarationÌ½ÌåJ³VariableDeclarationÌÄÌå‘K²VariableDeclaratorÌÊÌäLªIdentifierÌÊÌßµFOREIGN_PIN_CLEARANCEM§LiteralÌâÌä¢20¥constÀI¶ExportNamedDeclarationÌçÍ9|ÔrN–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌîÍ9|LªIdentifierÌôÍ±DeviceHitGeometryÀÔrO”¤type¥start£end¤body©ClassBodyÍÍ9|Ü ÔrP˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍÍDÃÂLªIdentifierÍÍ«expandLocal¦methodÔrQ™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍÍDÀÂÂÂ’LªIdentifierÍ Í&¦boundsLªIdentifierÍ(Í+£padO®BlockStatementÍ-ÍD‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÍ8Í=ÔrS”¤type¥start£endªproperties°ObjectExpressionÍ?Í<–ÔrT™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍNÍeÂÂÂLªIdentifierÍNÍR¤minXÔrU–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍTÍeÔrV—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍTÍ_LªIdentifierÍTÍZ¦boundsLªIdentifierÍ[Í_¤minXÂÂ¡-LªIdentifierÍbÍe£pad¤initT¨PropertyÍtÍ‹ÂÂÂLªIdentifierÍtÍx¤maxXU°BinaryExpressionÍzÍ‹V°MemberExpressionÍzÍ…LªIdentifierÍzÍ€¦boundsLªIdentifierÍÍ…¤maxXÂÂ¡+LªIdentifierÍˆÍ‹£pad¤initT¨PropertyÍšÍ±ÂÂÂLªIdentifierÍšÍ¤minYU°BinaryExpressionÍ Í±V°MemberExpressionÍ Í«LªIdentifierÍ Í¦¦boundsLªIdentifierÍ§Í«¤minYÂÂ¡-LªIdentifierÍ®Í±£pad¤initT¨PropertyÍÀÍ×ÂÂÂLªIdentifierÍÀÍÄ¤maxYU°BinaryExpressionÍÆÍ×V°MemberExpressionÍÆÍÑLªIdentifierÍÆÍÌ¦boundsLªIdentifierÍÍÍÑ¤maxYÂÂ¡+LªIdentifierÍÔÍ×£pad¤initT¨PropertyÍæÍÂÂÂLªIdentifierÍæÍë¥widthU°BinaryExpressionÍíÍV°MemberExpressionÍíÍùLªIdentifierÍíÍó¦boundsLªIdentifierÍôÍù¥widthÂÂ¡+U°BinaryExpressionÍüÍLªIdentifierÍüÍÿ£pad¡*M§LiteralÍÍ¡2¤initT¨PropertyÍÍ1ÂÂÂLªIdentifierÍÍ¦heightU°BinaryExpressionÍÍ1V°MemberExpressionÍÍ'LªIdentifierÍÍ ¦boundsLªIdentifierÍ!Í'¦heightÂÂ¡+U°BinaryExpressionÍ*Í1LªIdentifierÍ*Í-£pad¡*M§LiteralÍ0Í1¡2¤initP°MethodDefinitionÍJÍ/ÃÂLªIdentifierÍQÍ_®transformLocal¦methodQ²FunctionExpressionÍ_Í/ÀÂÂÂ“LªIdentifierÍ`Íe¥localLªIdentifierÍgÍm¦rotateLªIdentifierÍoÍv§mirrorHO®BlockStatementÍxÍ/˜J³VariableDeclarationÍƒÍ”‘K²VariableDeclaratorÍ‡Í“LªIdentifierÍ‡Í‰¢lxV°MemberExpressionÍŒÍ“LªIdentifierÍŒÍ‘¥localLªIdentifierÍ’Í“¡xÂÂ£letJ³VariableDeclarationÍÍ¯‘K²VariableDeclaratorÍ¢Í®LªIdentifierÍ¢Í¤¢lyV°MemberExpressionÍ§Í®LªIdentifierÍ§Í¬¥localLªIdentifierÍ­Í®¡yÂÂ£letÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ¹ÍéLªIdentifierÍ½ÍÄ§mirrorHO®BlockStatementÍÆÍé‘ÔrX”¤type¥start£endªexpression³ExpressionStatementÍÕÍŞÔrY–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÕÍİ¡=LªIdentifierÍÕÍ×¢lxÔrZ–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÚÍİ¡-ÃLªIdentifierÍÛÍİ¢lxÀJ³VariableDeclarationÍóÍ‘K²VariableDeclaratorÍùÍLªIdentifierÍùÍü£rotU°BinaryExpressionÍÿÍU°BinaryExpressionÍ ÍU°BinaryExpressionÍÍLªIdentifierÍÍ¦rotate¡%M§LiteralÍ
+ÍÍh£360¡+M§LiteralÍÍÍh£360¡%M§LiteralÍÍÍh£360¥constW«IfStatementÍ&ÍiU°BinaryExpressionÍ*Í4LªIdentifierÍ*Í-£rot£===M§LiteralÍ2Í4ÌZ¢90O®BlockStatementÍ6Íi‘R¯ReturnStatementÍEÍ^S°ObjectExpressionÍLÍ]’T¨PropertyÍNÍTÂÂÂLªIdentifierÍNÍO¡xZ¯UnaryExpressionÍQÍT¡-ÃLªIdentifierÍRÍT¢ly¤initT¨PropertyÍVÍ[ÂÂÂLªIdentifierÍVÍW¡yLªIdentifierÍYÍ[¢lx¤initÀW«IfStatementÍsÍ¸U°BinaryExpressionÍwÍ‚LªIdentifierÍwÍz£rot£===M§LiteralÍÍ‚Ì´£180O®BlockStatementÍ„Í¸‘R¯ReturnStatementÍ“Í­S°ObjectExpressionÍšÍ¬’T¨PropertyÍœÍ¢ÂÂÂLªIdentifierÍœÍ¡xZ¯UnaryExpressionÍŸÍ¢¡-ÃLªIdentifierÍ Í¢¢lx¤initT¨PropertyÍ¤ÍªÂÂÂLªIdentifierÍ¤Í¥¡yZ¯UnaryExpressionÍ§Íª¡-ÃLªIdentifierÍ¨Íª¢ly¤initÀW«IfStatementÍÂÍU°BinaryExpressionÍÆÍÑLªIdentifierÍÆÍÉ£rot£===M§LiteralÍÎÍÑÍ£270O®BlockStatementÍÓÍ‘R¯ReturnStatementÍâÍûS°ObjectExpressionÍéÍú’T¨PropertyÍëÍğÂÂÂLªIdentifierÍëÍì¡xLªIdentifierÍîÍğ¢ly¤initT¨PropertyÍòÍøÂÂÂLªIdentifierÍòÍó¡yZ¯UnaryExpressionÍõÍø¡-ÃLªIdentifierÍöÍø¢lx¤initÀR¯ReturnStatementÍÍ(S°ObjectExpressionÍÍ'’T¨PropertyÍÍÂÂÂLªIdentifierÍÍ¡xLªIdentifierÍÍ¢lx¤initT¨PropertyÍ Í%ÂÂÂLªIdentifierÍ Í!¡yLªIdentifierÍ#Í%¢ly¤initP°MethodDefinitionÍbÍ¶ÃÂLªIdentifierÍiÍy°localToWorldAabb¦methodQ²FunctionExpressionÍyÍ¶ÀÂÂÂ˜LªIdentifierÍzÍ|¢oxLªIdentifierÍ~Í€¢oyLªIdentifierÍ‚Íˆ¦rotateLªIdentifierÍŠÍ‘§mirrorHLªIdentifierÍ“Í™¦boundsÔr[•¤type¥start£end¤left¥right±AssignmentPatternÍ›Í§LªIdentifierÍ›Í¢§refNameM§LiteralÍ¥Í§ ¢''[±AssignmentPatternÍ©Í¶LªIdentifierÍ©Í±¨instUuidM§LiteralÍ´Í¶ ¢''[±AssignmentPatternÍ¸ÍÅLªIdentifierÍ¸ÍÀ¨libDevIdM§LiteralÍÃÍÅ ¢''O®BlockStatementÍÇÍ¶—J³VariableDeclarationÍÒÍ²‘K²VariableDeclaratorÍØÍ±LªIdentifierÍØÍß§cornersÔr\”¤type¥start£end¨elements¯ArrayExpressionÍâÍ±”S°ObjectExpressionÍñÍ’T¨PropertyÍóÍÂÂÂLªIdentifierÍóÍô¡xV°MemberExpressionÍöÍLªIdentifierÍöÍü¦boundsLªIdentifierÍıÍ¤minXÂÂ¤initT¨PropertyÍÍÂÂÂLªIdentifierÍÍ¡yV°MemberExpressionÍÍLªIdentifierÍÍ¦boundsLªIdentifierÍÍ¤minYÂÂ¤initS°ObjectExpressionÍ"ÍD’T¨PropertyÍ$Í2ÂÂÂLªIdentifierÍ$Í%¡xV°MemberExpressionÍ'Í2LªIdentifierÍ'Í-¦boundsLªIdentifierÍ.Í2¤maxXÂÂ¤initT¨PropertyÍ4ÍBÂÂÂLªIdentifierÍ4Í5¡yV°MemberExpressionÍ7ÍBLªIdentifierÍ7Í=¦boundsLªIdentifierÍ>ÍB¤minYÂÂ¤initS°ObjectExpressionÍSÍu’T¨PropertyÍUÍcÂÂÂLªIdentifierÍUÍV¡xV°MemberExpressionÍXÍcLªIdentifierÍXÍ^¦boundsLªIdentifierÍ_Íc¤maxXÂÂ¤initT¨PropertyÍeÍsÂÂÂLªIdentifierÍeÍf¡yV°MemberExpressionÍhÍsLªIdentifierÍhÍn¦boundsLªIdentifierÍoÍs¤maxYÂÂ¤initS°ObjectExpressionÍ„Í¦’T¨PropertyÍ†Í”ÂÂÂLªIdentifierÍ†Í‡¡xV°MemberExpressionÍ‰Í”LªIdentifierÍ‰Í¦boundsLªIdentifierÍÍ”¤minXÂÂ¤initT¨PropertyÍ–Í¤ÂÂÂLªIdentifierÍ–Í—¡yV°MemberExpressionÍ™Í¤LªIdentifierÍ™ÍŸ¦boundsLªIdentifierÍ Í¤¤maxYÂÂ¤init¥constJ³VariableDeclarationÍ¼ÍĞ‘K²VariableDeclaratorÍÀÍÏLªIdentifierÍÀÍÄ¤minXLªIdentifierÍÇÍÏ¨Infinity£letJ³VariableDeclarationÍÚÍî‘K²VariableDeclaratorÍŞÍíLªIdentifierÍŞÍâ¤minYLªIdentifierÍåÍí¨Infinity£letJ³VariableDeclarationÍøÍ‘K²VariableDeclaratorÍüÍLªIdentifierÍüÍ ¤maxXZ¯UnaryExpressionÍÍ¡-ÃLªIdentifierÍÍ¨Infinity£letJ³VariableDeclarationÍÍ,‘K²VariableDeclaratorÍÍ+LªIdentifierÍÍ¤maxYZ¯UnaryExpressionÍ"Í+¡-ÃLªIdentifierÍ#Í+¨Infinity£letÔr]—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ6Í)J³VariableDeclarationÍ;ÍD‘K²VariableDeclaratorÍ?ÍDLªIdentifierÍ?Í@¡iM§LiteralÍCÍD ¡0£letU°BinaryExpressionÍFÍXLªIdentifierÍFÍG¡i¡<V°MemberExpressionÍJÍXLªIdentifierÍJÍQ§cornersLªIdentifierÍRÍX¦lengthÂÂZ°UpdateExpressionÍZÍ]¢++ÂLªIdentifierÍZÍ[¡iO®BlockStatementÍ_Í)—J³VariableDeclarationÍnÍ¶‘K²VariableDeclaratorÍtÍµLªIdentifierÍtÍu¡tÔr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍxÍµV°MemberExpressionÍxÍ˜LªIdentifierÍxÍ‰±DeviceHitGeometryLªIdentifierÍŠÍ˜®transformLocalÂÂ“V°MemberExpressionÍ™Í£LªIdentifierÍ™Í §cornersLªIdentifierÍ¡Í¢¡iÃÂLªIdentifierÍ¥Í«¦rotateLªIdentifierÍ­Í´§mirrorHÂ¥constJ³VariableDeclarationÍÄÍØ‘K²VariableDeclaratorÍÊÍ×LªIdentifierÍÊÍÌ¢wxU°BinaryExpressionÍÏÍ×LªIdentifierÍÏÍÑ¢ox¡+V°MemberExpressionÍÔÍ×LªIdentifierÍÔÍÕ¡tLªIdentifierÍÖÍ×¡xÂÂ¥constJ³VariableDeclarationÍæÍú‘K²VariableDeclaratorÍìÍùLªIdentifierÍìÍî¢wyU°BinaryExpressionÍñÍùLªIdentifierÍñÍó¢oy¡+V°MemberExpressionÍöÍùLªIdentifierÍöÍ÷¡tLªIdentifierÍøÍù¡yÂÂ¥constW«IfStatementÍÍCU°BinaryExpressionÍÍLªIdentifierÍÍ¢wx¡<LªIdentifierÍÍ¤minXO®BlockStatementÍÍC‘X³ExpressionStatementÍ*Í4Y´AssignmentExpressionÍ*Í3¡=LªIdentifierÍ*Í.¤minXLªIdentifierÍ1Í3¢wxÀW«IfStatementÍQÍŒU°BinaryExpressionÍUÍ^LªIdentifierÍUÍW¢wy¡<LªIdentifierÍZÍ^¤minYO®BlockStatementÍ`ÍŒ‘X³ExpressionStatementÍsÍ}Y´AssignmentExpressionÍsÍ|¡=LªIdentifierÍsÍw¤minYLªIdentifierÍzÍ|¢wyÀW«IfStatementÍšÍÕU°BinaryExpressionÍÍ§LªIdentifierÍÍ ¢wx¡>LªIdentifierÍ£Í§¤maxXO®BlockStatementÍ©ÍÕ‘X³ExpressionStatementÍ¼ÍÆY´AssignmentExpressionÍ¼ÍÅ¡=LªIdentifierÍ¼ÍÀ¤maxXLªIdentifierÍÃÍÅ¢wxÀW«IfStatementÍãÍU°BinaryExpressionÍçÍğLªIdentifierÍçÍé¢wy¡>LªIdentifierÍìÍğ¤maxYO®BlockStatementÍòÍ‘X³ExpressionStatementÍÍY´AssignmentExpressionÍÍ¡=LªIdentifierÍÍ	¤maxYLªIdentifierÍÍ¢wyÀR¯ReturnStatementÍ3Í¯S°ObjectExpressionÍ:Í®—T¨PropertyÍIÍPÂÂÂLªIdentifierÍIÍJ¡xLªIdentifierÍLÍP¤minX¤initT¨PropertyÍRÍYÂÂÂLªIdentifierÍRÍS¡yLªIdentifierÍUÍY¤minY¤initT¨PropertyÍ[ÍiÂÂÂLªIdentifierÍ[Í\¡wU°BinaryExpressionÍ^ÍiLªIdentifierÍ^Íb¤maxX¡-LªIdentifierÍeÍi¤minX¤initT¨PropertyÍkÍyÂÂÂLªIdentifierÍkÍl¡hU°BinaryExpressionÍnÍyLªIdentifierÍnÍr¤maxY¡-LªIdentifierÍuÍy¤minY¤initÔr_™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍˆÍÂÃÂLªIdentifierÍˆÍ§refName¤initLªIdentifierÍˆÍ§refName_¨PropertyÍ‘Í™ÂÃÂLªIdentifierÍ‘Í™¨instUuid¤initLªIdentifierÍ‘Í™¨instUuid_¨PropertyÍ›Í£ÂÃÂLªIdentifierÍ›Í£¨libDevId¤initLªIdentifierÍ›Í£¨libDevIdP°MethodDefinitionÍàÍ
+*ÃÂLªIdentifierÍçÍö¯hitRectFromPins¦methodQ²FunctionExpressionÍöÍ
+*ÀÂÂÂ™LªIdentifierÍ÷Íû¤pinsLªIdentifierÍıÍÿ¢oxLªIdentifierÍ	Í	¢oyLªIdentifierÍ	Í	¦rotateLªIdentifierÍ	Í	§mirrorH[±AssignmentPatternÍ	Í	-LªIdentifierÍ	Í	£padLªIdentifierÍ	Í	-±SELECTION_HIT_PAD[±AssignmentPatternÍ	/Í	;LªIdentifierÍ	/Í	6§refNameM§LiteralÍ	9Í	; ¢''[±AssignmentPatternÍ	=Í	JLªIdentifierÍ	=Í	E¨instUuidM§LiteralÍ	HÍ	J ¢''[±AssignmentPatternÍ	LÍ	YLªIdentifierÍ	LÍ	T¨libDevIdM§LiteralÍ	WÍ	Y ¢''O®BlockStatementÍ	[Í
+*’J³VariableDeclarationÍ	fÍ	²‘K²VariableDeclaratorÍ	lÍ	±LªIdentifierÍ	lÍ	q¥local^®CallExpressionÍ	tÍ	±V°MemberExpressionÍ	tÍ	‘LªIdentifierÍ	tÍ	…±DeviceHitGeometryLªIdentifierÍ	†Í	‘«expandLocalÂÂ’^®CallExpressionÍ	’Í	«LªIdentifierÍ	’Í	¢°calcSymbolBounds’LªIdentifierÍ	£Í	§¤pinsM§LiteralÍ	©Í	ª¡8ÂLªIdentifierÍ	­Í	°£padÂ¥constR¯ReturnStatementÍ	¼Í
+#^®CallExpressionÍ	ÃÍ
+"V°MemberExpressionÍ	ÃÍ	åLªIdentifierÍ	ÃÍ	Ô±DeviceHitGeometryLªIdentifierÍ	ÕÍ	å°localToWorldAabbÂÂ˜LªIdentifierÍ	æÍ	è¢oxLªIdentifierÍ	êÍ	ì¢oyLªIdentifierÍ	îÍ	ô¦rotateLªIdentifierÍ	öÍ	ı§mirrorHLªIdentifierÍ	ÿÍ
+¥localLªIdentifierÍ
+Í
+§refNameLªIdentifierÍ
+Í
+¨instUuidLªIdentifierÍ
+Í
+!¨libDevIdÂP°MethodDefinitionÍ
+TÍìÃÂLªIdentifierÍ
+[Í
+q¶hitRectFromLocalPoints¦methodQ²FunctionExpressionÍ
+qÍìÀÂÂÂ™LªIdentifierÍ
+rÍ
+x¦localsLªIdentifierÍ
+zÍ
+|¢oxLªIdentifierÍ
+~Í
+€¢oyLªIdentifierÍ
+‚Í
+ˆ¦rotateLªIdentifierÍ
+ŠÍ
+‘§mirrorH[±AssignmentPatternÍ
+“Í
+ªLªIdentifierÍ
+“Í
+–£padLªIdentifierÍ
+™Í
+ª±SELECTION_HIT_PAD[±AssignmentPatternÍ
+¬Í
+¸LªIdentifierÍ
+¬Í
+³§refNameM§LiteralÍ
+¶Í
+¸ ¢''[±AssignmentPatternÍ
+ºÍ
+ÇLªIdentifierÍ
+ºÍ
+Â¨instUuidM§LiteralÍ
+ÅÍ
+Ç ¢''[±AssignmentPatternÍ
+ÉÍ
+ÖLªIdentifierÍ
+ÉÍ
+Ñ¨libDevIdM§LiteralÍ
+ÔÍ
+Ö ¢''O®BlockStatementÍ
+ØÍì™W«IfStatementÍ
+ãÍ>U°BinaryExpressionÍ
+çÍ
+úV°MemberExpressionÍ
+çÍ
+ôLªIdentifierÍ
+çÍ
+í¦localsLªIdentifierÍ
+îÍ
+ô¦lengthÂÂ£===M§LiteralÍ
+ùÍ
+ú ¡0O®BlockStatementÍ
+üÍ>’J³VariableDeclarationÍÍ»‘K²VariableDeclaratorÍÍºLªIdentifierÍÍ¨fallbackS°ObjectExpressionÍÍº–T¨PropertyÍ/Í>ÂÂÂLªIdentifierÍ/Í3¤minXU°BinaryExpressionÍ5Í>Z¯UnaryExpressionÍ5Í8¡-ÃM§LiteralÍ6Í8(¢40¡-LªIdentifierÍ;Í>£pad¤initT¨PropertyÍ@ÍNÂÂÂLªIdentifierÍ@ÍD¤maxXU°BinaryExpressionÍFÍNM§LiteralÍFÍH(¢40¡+LªIdentifierÍKÍN£pad¤initT¨PropertyÍPÍ_ÂÂÂLªIdentifierÍPÍT¤minYU°BinaryExpressionÍVÍ_Z¯UnaryExpressionÍVÍY¡-ÃM§LiteralÍWÍY¢30¡-LªIdentifierÍ\Í_£pad¤initT¨PropertyÍaÍoÂÂÂLªIdentifierÍaÍe¤maxYU°BinaryExpressionÍgÍoM§LiteralÍgÍi¢30¡+LªIdentifierÍlÍo£pad¤initT¨PropertyÍ‚Í•ÂÂÂLªIdentifierÍ‚Í‡¥widthU°BinaryExpressionÍ‰Í•M§LiteralÍ‰Í‹ÌP¢80¡+U°BinaryExpressionÍÍ•LªIdentifierÍÍ‘£pad¡*M§LiteralÍ”Í•¡2¤initT¨PropertyÍ—Í«ÂÂÂLªIdentifierÍ—Í¦heightU°BinaryExpressionÍŸÍ«M§LiteralÍŸÍ¡<¢60¡+U°BinaryExpressionÍ¤Í«LªIdentifierÍ¤Í§£pad¡*M§LiteralÍªÍ«¡2¤init¥constR¯ReturnStatementÍÉÍ3^®CallExpressionÍĞÍ2V°MemberExpressionÍĞÍòLªIdentifierÍĞÍá±DeviceHitGeometryLªIdentifierÍâÍò°localToWorldAabbÂÂ˜LªIdentifierÍóÍõ¢oxLªIdentifierÍ÷Íù¢oyLªIdentifierÍûÍ¦rotateLªIdentifierÍÍ
+§mirrorHLªIdentifierÍÍ¨fallbackLªIdentifierÍÍ§refNameLªIdentifierÍÍ'¨instUuidLªIdentifierÍ)Í1¨libDevIdÂÀJ³VariableDeclarationÍHÍ_‘K²VariableDeclaratorÍLÍ^LªIdentifierÍLÍP¤minXV°MemberExpressionÍSÍ^V°MemberExpressionÍSÍ\LªIdentifierÍSÍY¦localsM§LiteralÍZÍ[ ¡0ÃÂLªIdentifierÍ]Í^¡xÂÂ£letJ³VariableDeclarationÍiÍ€‘K²VariableDeclaratorÍmÍLªIdentifierÍmÍq¤maxXV°MemberExpressionÍtÍV°MemberExpressionÍtÍ}LªIdentifierÍtÍz¦localsM§LiteralÍ{Í| ¡0ÃÂLªIdentifierÍ~Í¡xÂÂ£letJ³VariableDeclarationÍŠÍ¡‘K²VariableDeclaratorÍÍ LªIdentifierÍÍ’¤minYV°MemberExpressionÍ•Í V°MemberExpressionÍ•ÍLªIdentifierÍ•Í›¦localsM§LiteralÍœÍ ¡0ÃÂLªIdentifierÍŸÍ ¡yÂÂ£letJ³VariableDeclarationÍ«ÍÂ‘K²VariableDeclaratorÍ¯ÍÁLªIdentifierÍ¯Í³¤maxYV°MemberExpressionÍ¶ÍÁV°MemberExpressionÍ¶Í¿LªIdentifierÍ¶Í¼¦localsM§LiteralÍ½Í¾ ¡0ÃÂLªIdentifierÍÀÍÁ¡yÂÂ£let]¬ForStatementÍÌÍÄJ³VariableDeclarationÍÑÍÚ‘K²VariableDeclaratorÍÕÍÚLªIdentifierÍÕÍÖ¡iM§LiteralÍÙÍÚ¡1£letU°BinaryExpressionÍÜÍíLªIdentifierÍÜÍİ¡i¡<V°MemberExpressionÍàÍíLªIdentifierÍàÍæ¦localsLªIdentifierÍçÍí¦lengthÂÂZ°UpdateExpressionÍïÍò¢++ÂLªIdentifierÍïÍğ¡iO®BlockStatementÍôÍÄ”X³ExpressionStatementÍÍ&Y´AssignmentExpressionÍÍ%¡=LªIdentifierÍÍ¤minX^®CallExpressionÍ
+Í%V°MemberExpressionÍ
+ÍLªIdentifierÍ
+Í¤MathLªIdentifierÍÍ£minÂÂ’LªIdentifierÍÍ¤minXV°MemberExpressionÍÍ$V°MemberExpressionÍÍ"LªIdentifierÍÍ¦localsLªIdentifierÍ Í!¡iÃÂLªIdentifierÍ#Í$¡xÂÂÂX³ExpressionStatementÍ4ÍWY´AssignmentExpressionÍ4ÍV¡=LªIdentifierÍ4Í8¤maxX^®CallExpressionÍ;ÍVV°MemberExpressionÍ;ÍCLªIdentifierÍ;Í?¤MathLªIdentifierÍ@ÍC£maxÂÂ’LªIdentifierÍDÍH¤maxXV°MemberExpressionÍJÍUV°MemberExpressionÍJÍSLªIdentifierÍJÍP¦localsLªIdentifierÍQÍR¡iÃÂLªIdentifierÍTÍU¡xÂÂÂX³ExpressionStatementÍeÍˆY´AssignmentExpressionÍeÍ‡¡=LªIdentifierÍeÍi¤minY^®CallExpressionÍlÍ‡V°MemberExpressionÍlÍtLªIdentifierÍlÍp¤MathLªIdentifierÍqÍt£minÂÂ’LªIdentifierÍuÍy¤minYV°MemberExpressionÍ{Í†V°MemberExpressionÍ{Í„LªIdentifierÍ{Í¦localsLªIdentifierÍ‚Íƒ¡iÃÂLªIdentifierÍ…Í†¡yÂÂÂX³ExpressionStatementÍ–Í¹Y´AssignmentExpressionÍ–Í¸¡=LªIdentifierÍ–Íš¤maxY^®CallExpressionÍÍ¸V°MemberExpressionÍÍ¥LªIdentifierÍÍ¡¤MathLªIdentifierÍ¢Í¥£maxÂÂ’LªIdentifierÍ¦Íª¤maxYV°MemberExpressionÍ¬Í·V°MemberExpressionÍ¬ÍµLªIdentifierÍ¬Í²¦localsLªIdentifierÍ³Í´¡iÃÂLªIdentifierÍ¶Í·¡yÂÂÂJ³VariableDeclarationÍşÍ>‘K²VariableDeclaratorÍÍ=LªIdentifierÍÍ§covered^®CallExpressionÍÍ=LªIdentifierÍÍ%·coverOriginCenteredBody”LªIdentifierÍ&Í*¤minXLªIdentifierÍ,Í0¤maxXLªIdentifierÍ2Í6¤minYLªIdentifierÍ8Í<¤maxYÂ¥constJ³VariableDeclarationÍHÍt‘K²VariableDeclaratorÍNÍsLªIdentifierÍNÍS¥localS°ObjectExpressionÍVÍs–T¨PropertyÍeÍÂÂÂLªIdentifierÍeÍi¤minXU°BinaryExpressionÍkÍU°BinaryExpressionÍkÍ{V°MemberExpressionÍkÍwLªIdentifierÍkÍr§coveredLªIdentifierÍsÍw¤minXÂÂ¡-M§LiteralÍzÍ{¡8¡-LªIdentifierÍ~Í£pad¤initT¨PropertyÍÍ¬ÂÂÂLªIdentifierÍÍ”¤maxXU°BinaryExpressionÍ–Í¬U°BinaryExpressionÍ–Í¦V°MemberExpressionÍ–Í¢LªIdentifierÍ–Í§coveredLªIdentifierÍÍ¢¤maxXÂÂ¡+M§LiteralÍ¥Í¦¡8¡+LªIdentifierÍ©Í¬£pad¤initT¨PropertyÍ»Í×ÂÂÂLªIdentifierÍ»Í¿¤minYU°BinaryExpressionÍÁÍ×U°BinaryExpressionÍÁÍÑV°MemberExpressionÍÁÍÍLªIdentifierÍÁÍÈ§coveredLªIdentifierÍÉÍÍ¤minYÂÂ¡-M§LiteralÍĞÍÑ¡8¡-LªIdentifierÍÔÍ×£pad¤initT¨PropertyÍæÍÂÂÂLªIdentifierÍæÍê¤maxYU°BinaryExpressionÍìÍU°BinaryExpressionÍìÍüV°MemberExpressionÍìÍøLªIdentifierÍìÍó§coveredLªIdentifierÍôÍø¤maxYÂÂ¡+M§LiteralÍûÍü¡8¡+LªIdentifierÍÿÍ£pad¤initT¨PropertyÍÍ4ÂÂÂLªIdentifierÍÍ¥widthU°BinaryExpressionÍÍ4U°BinaryExpressionÍÍ*V°MemberExpressionÍÍ%LªIdentifierÍÍ§coveredLªIdentifierÍ Í%¥widthÂÂ¡+M§LiteralÍ(Í*¢16¡+U°BinaryExpressionÍ-Í4LªIdentifierÍ-Í0£pad¡*M§LiteralÍ3Í4¡2¤initT¨PropertyÍCÍhÂÂÂLªIdentifierÍCÍI¦heightU°BinaryExpressionÍKÍhU°BinaryExpressionÍKÍ^V°MemberExpressionÍKÍYLªIdentifierÍKÍR§coveredLªIdentifierÍSÍY¦heightÂÂ¡+M§LiteralÍ\Í^¢16¡+U°BinaryExpressionÍaÍhLªIdentifierÍaÍd£pad¡*M§LiteralÍgÍh¡2¤init¥constR¯ReturnStatementÍ~Íå^®CallExpressionÍ…ÍäV°MemberExpressionÍ…Í§LªIdentifierÍ…Í–±DeviceHitGeometryLªIdentifierÍ—Í§°localToWorldAabbÂÂ˜LªIdentifierÍ¨Íª¢oxLªIdentifierÍ¬Í®¢oyLªIdentifierÍ°Í¶¦rotateLªIdentifierÍ¸Í¿§mirrorHLªIdentifierÍÁÍÆ¥localLªIdentifierÍÈÍÏ§refNameLªIdentifierÍÑÍÙ¨instUuidLªIdentifierÍÛÍã¨libDevIdÂP°MethodDefinitionÍòÍÉÃÂLªIdentifierÍùÍµhitRectFromDeviceInst¦methodQ²FunctionExpressionÍÍÉÀÂÂÂ“LªIdentifierÍÍ£devLªIdentifierÍÍ¤pins[±AssignmentPatternÍÍ1LªIdentifierÍÍ£padLªIdentifierÍ Í1±SELECTION_HIT_PADO®BlockStatementÍ3ÍÉ‘R¯ReturnStatementÍ>ÍÂ^®CallExpressionÍEÍÁV°MemberExpressionÍEÍfLªIdentifierÍEÍV±DeviceHitGeometryLªIdentifierÍWÍf¯hitRectFromPinsÂÂ™LªIdentifierÍgÍk¤pinsV°MemberExpressionÍmÍrLªIdentifierÍmÍp£devLªIdentifierÍqÍr¡xÂÂV°MemberExpressionÍtÍyLªIdentifierÍtÍw£devLªIdentifierÍxÍy¡yÂÂV°MemberExpressionÍ{Í…LªIdentifierÍ{Í~£devLªIdentifierÍÍ…¦rotateÂÂV°MemberExpressionÍ‡Í’LªIdentifierÍ‡ÍŠ£devLªIdentifierÍ‹Í’§mirrorHÂÂLªIdentifierÍ”Í—£padV°MemberExpressionÍ™Í¤LªIdentifierÍ™Íœ£devLªIdentifierÍÍ¤§refNameÂÂV°MemberExpressionÍ¦Í²LªIdentifierÍ¦Í©£devLªIdentifierÍªÍ²¨instUuidÂÂV°MemberExpressionÍ´ÍÀLªIdentifierÍ´Í·£devLªIdentifierÍ¸ÍÀ¨libDevIdÂÂÂP°MethodDefinitionÍÏÍCÃÂLªIdentifierÍÖÍá«pointInRect¦methodQ²FunctionExpressionÍáÍCÀÂÂÂ“LªIdentifierÍâÍä¢pxLªIdentifierÍæÍè¢pyLªIdentifierÍêÍë¡rO®BlockStatementÍíÍC‘R¯ReturnStatementÍøÍ<U±LogicalExpressionÍÿÍ;U±LogicalExpressionÍÿÍ(U±LogicalExpressionÍÿÍU°BinaryExpressionÍÿÍLªIdentifierÍÿÍ¢px¢>=V°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡xÂÂ¢&&U°BinaryExpressionÍÍLªIdentifierÍÍ¢px¢<=U°BinaryExpressionÍÍV°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡xÂÂ¡+V°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡wÂÂ¢&&U°BinaryExpressionÍÍ(LªIdentifierÍÍ!¢py¢>=V°MemberExpressionÍ%Í(LªIdentifierÍ%Í&¡rLªIdentifierÍ'Í(¡yÂÂ¢&&U°BinaryExpressionÍ,Í;LªIdentifierÍ,Í.¢py¢<=U°BinaryExpressionÍ2Í;V°MemberExpressionÍ2Í5LªIdentifierÍ2Í3¡rLªIdentifierÍ4Í5¡yÂÂ¡+V°MemberExpressionÍ8Í;LªIdentifierÍ8Í9¡rLªIdentifierÍ:Í;¡hÂÂP°MethodDefinitionÍgÍIÃÂLªIdentifierÍnÍ±nearestEscapeEdge¦methodQ²FunctionExpressionÍÍIÀÂÂÂ“LªIdentifierÍ€Í„¤pinXLªIdentifierÍ†ÍŠ¤pinYLªIdentifierÍŒÍ¡rO®BlockStatementÍÍI™J³VariableDeclarationÍšÍ³‘K²VariableDeclaratorÍ Í²LªIdentifierÍ Í¥¥distLU°BinaryExpressionÍ¨Í²LªIdentifierÍ¨Í¬¤pinX¡-V°MemberExpressionÍ¯Í²LªIdentifierÍ¯Í°¡rLªIdentifierÍ±Í²¡xÂÂ¥constJ³VariableDeclarationÍ½ÍŞ‘K²VariableDeclaratorÍÃÍİLªIdentifierÍÃÍÈ¥distRU°BinaryExpressionÍËÍİU°BinaryExpressionÍÌÍÕV°MemberExpressionÍÌÍÏLªIdentifierÍÌÍÍ¡rLªIdentifierÍÎÍÏ¡xÂÂ¡+V°MemberExpressionÍÒÍÕLªIdentifierÍÒÍÓ¡rLªIdentifierÍÔÍÕ¡wÂÂ¡-LªIdentifierÍÙÍİ¤pinX¥constJ³VariableDeclarationÍèÍ‘K²VariableDeclaratorÍîÍ LªIdentifierÍîÍó¥distTU°BinaryExpressionÍöÍ LªIdentifierÍöÍú¤pinY¡-V°MemberExpressionÍıÍ LªIdentifierÍıÍş¡rLªIdentifierÍÿÍ ¡yÂÂ¥constJ³VariableDeclarationÍÍ,‘K²VariableDeclaratorÍÍ+LªIdentifierÍÍ¥distBU°BinaryExpressionÍÍ+U°BinaryExpressionÍÍ#V°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡yÂÂ¡+V°MemberExpressionÍ Í#LªIdentifierÍ Í!¡rLªIdentifierÍ"Í#¡hÂÂ¡-LªIdentifierÍ'Í+¤pinY¥constJ³VariableDeclarationÍ6Íg‘K²VariableDeclaratorÍ<ÍfLªIdentifierÍ<Í?£min^®CallExpressionÍBÍfV°MemberExpressionÍBÍJLªIdentifierÍBÍF¤MathLªIdentifierÍGÍJ£minÂÂ”LªIdentifierÍKÍP¥distLLªIdentifierÍRÍW¥distRLªIdentifierÍYÍ^¥distTLªIdentifierÍ`Íe¥distBÂ¥constW«IfStatementÍqÍ©U°BinaryExpressionÍuÍ‚LªIdentifierÍuÍx£min£===LªIdentifierÍ}Í‚¥distLO®BlockStatementÍ„Í©‘R¯ReturnStatementÍ“ÍM§LiteralÍšÍ¡L£'L'ÀW«IfStatementÍ³ÍëU°BinaryExpressionÍ·ÍÄLªIdentifierÍ·Íº£min£===LªIdentifierÍ¿ÍÄ¥distRO®BlockStatementÍÆÍë‘R¯ReturnStatementÍÕÍàM§LiteralÍÜÍß¡R£'R'ÀW«IfStatementÍõÍ-U°BinaryExpressionÍùÍLªIdentifierÍùÍü£min£===LªIdentifierÍÍ¥distTO®BlockStatementÍÍ-‘R¯ReturnStatementÍÍ"M§LiteralÍÍ!¡T£'T'ÀR¯ReturnStatementÍ7ÍBM§LiteralÍ>ÍA¡B£'B'P°MethodDefinitionÍzÍIÃÂLªIdentifierÍÍ”³stubLabelOutsidePin¦methodQ²FunctionExpressionÍ”ÍIÀÂÂÂ“LªIdentifierÍ•Í˜£pinLªIdentifierÍšÍ›¡r[±AssignmentPatternÍÍ©LªIdentifierÍÍ¤§stubPadM§LiteralÍ§Í©¢20O®BlockStatementÍ«ÍI’J³VariableDeclarationÍ¶Íø‘K²VariableDeclaratorÍ¼Í÷LªIdentifierÍ¼ÍÀ¤edge^®CallExpressionÍÃÍ÷V°MemberExpressionÍÃÍæLªIdentifierÍÃÍÔ±DeviceHitGeometryLªIdentifierÍÕÍæ±nearestEscapeEdgeÂÂ“V°MemberExpressionÍçÍìLªIdentifierÍçÍê£pinLªIdentifierÍëÍì¡xÂÂV°MemberExpressionÍîÍóLªIdentifierÍîÍñ£pinLªIdentifierÍòÍó¡yÂÂLªIdentifierÍõÍö¡rÂ¥constR¯ReturnStatementÍÍB^®CallExpressionÍ	ÍAV°MemberExpressionÍ	Í*LªIdentifierÍ	Í±DeviceHitGeometryLªIdentifierÍÍ*¯stubLabelOnEdgeÂÂ”LªIdentifierÍ+Í.£pinLªIdentifierÍ0Í1¡rLªIdentifierÍ3Í7¤edgeLªIdentifierÍ9Í@§stubPadÂP°MethodDefinitionÍOÍÕÃÂLªIdentifierÍVÍe¯stubLabelOnEdge¦methodQ²FunctionExpressionÍeÍÕÀÂÂÂ”LªIdentifierÍfÍi£pinLªIdentifierÍkÍl¡rLªIdentifierÍnÍr¤edgeLªIdentifierÍtÍ{§stubPadO®BlockStatementÍ}ÍÕ”W«IfStatementÍˆÍÚU°BinaryExpressionÍŒÍ˜LªIdentifierÍŒÍ¤edge£===M§LiteralÍ•Í˜¡L£'L'O®BlockStatementÍšÍÚ‘R¯ReturnStatementÍ©ÍÏS°ObjectExpressionÍ°ÍÎ’T¨PropertyÍ²ÍÂÂÂÂLªIdentifierÍ²Í³¡xU°BinaryExpressionÍµÍÂV°MemberExpressionÍµÍ¸LªIdentifierÍµÍ¶¡rLªIdentifierÍ·Í¸¡xÂÂ¡-LªIdentifierÍ»ÍÂ§stubPad¤initT¨PropertyÍÄÍÌÂÂÂLªIdentifierÍÄÍÅ¡yV°MemberExpressionÍÇÍÌLªIdentifierÍÇÍÊ£pinLªIdentifierÍËÍÌ¡yÂÂ¤initÀW«IfStatementÍäÍ<U°BinaryExpressionÍèÍôLªIdentifierÍèÍì¤edge£===M§LiteralÍñÍô¡R£'R'O®BlockStatementÍöÍ<‘R¯ReturnStatementÍÍ1S°ObjectExpressionÍÍ0’T¨PropertyÍÍ$ÂÂÂLªIdentifierÍÍ¡xU°BinaryExpressionÍÍ$U°BinaryExpressionÍÍV°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡xÂÂ¡+V°MemberExpressionÍÍLªIdentifierÍÍ¡rLªIdentifierÍÍ¡wÂÂ¡+LªIdentifierÍÍ$§stubPad¤initT¨PropertyÍ&Í.ÂÂÂLªIdentifierÍ&Í'¡yV°MemberExpressionÍ)Í.LªIdentifierÍ)Í,£pinLªIdentifierÍ-Í.¡yÂÂ¤initÀW«IfStatementÍFÍ˜U°BinaryExpressionÍJÍVLªIdentifierÍJÍN¤edge£===M§LiteralÍSÍV¡T£'T'O®BlockStatementÍXÍ˜‘R¯ReturnStatementÍgÍS°ObjectExpressionÍnÍŒ’T¨PropertyÍpÍxÂÂÂLªIdentifierÍpÍq¡xV°MemberExpressionÍsÍxLªIdentifierÍsÍv£pinLªIdentifierÍwÍx¡xÂÂ¤initT¨PropertyÍzÍŠÂÂÂLªIdentifierÍzÍ{¡yU°BinaryExpressionÍ}ÍŠV°MemberExpressionÍ}Í€LªIdentifierÍ}Í~¡rLªIdentifierÍÍ€¡yÂÂ¡-LªIdentifierÍƒÍŠ§stubPad¤initÀR¯ReturnStatementÍ¢ÍÎS°ObjectExpressionÍ©ÍÍ’T¨PropertyÍ«Í³ÂÂÂLªIdentifierÍ«Í¬¡xV°MemberExpressionÍ®Í³LªIdentifierÍ®Í±£pinLªIdentifierÍ²Í³¡xÂÂ¤initT¨PropertyÍµÍËÂÂÂLªIdentifierÍµÍ¶¡yU°BinaryExpressionÍ¸ÍËU°BinaryExpressionÍ¸ÍÁV°MemberExpressionÍ¸Í»LªIdentifierÍ¸Í¹¡rLªIdentifierÍºÍ»¡yÂÂ¡+V°MemberExpressionÍ¾ÍÁLªIdentifierÍ¾Í¿¡rLªIdentifierÍÀÍÁ¡hÂÂ¡+LªIdentifierÍÄÍË§stubPad¤initP°MethodDefinitionÍWÍÎÃÂLªIdentifierÍ^Í}¿stubLabelOutsidePinAvoidForeign¦methodQ²FunctionExpressionÍ}ÍÎÀÂÂÂ•LªIdentifierÍ~Í£pinLªIdentifierÍƒÍ†£ownLªIdentifierÍˆÍ§foreign[±AssignmentPatternÍ‘ÍLªIdentifierÍ‘Í˜§stubPadM§LiteralÍ›Í¢20LªIdentifierÍŸÍª«foreignPinsO®BlockStatementÍ¬ÍÎ›J³VariableDeclarationÍ·Íõ‘K²VariableDeclaratorÍ½ÍôLªIdentifierÍ½ÍÅ¨pinClearWµConditionalExpressionÍÈÍôU°BinaryExpressionÍÈÍáLªIdentifierÍÈÍÓ«foreignPins£!==LªIdentifierÍØÍá©undefinedLªIdentifierÍäÍï«foreignPins\¯ArrayExpressionÍòÍô¥constJ³VariableDeclarationÍÿÍH‘K²VariableDeclaratorÍÍGLªIdentifierÍÍ©preferred^®CallExpressionÍÍGV°MemberExpressionÍÍ4LªIdentifierÍÍ"±DeviceHitGeometryLªIdentifierÍ#Í4±nearestEscapeEdgeÂÂ“V°MemberExpressionÍ5Í:LªIdentifierÍ5Í8£pinLªIdentifierÍ9Í:¡xÂÂV°MemberExpressionÍ<ÍALªIdentifierÍ<Í?£pinLªIdentifierÍ@ÍA¡yÂÂLªIdentifierÍCÍF£ownÂ¥constJ³VariableDeclarationÍRÍl‘K²VariableDeclaratorÍXÍkLªIdentifierÍXÍ]¥order\¯ArrayExpressionÍ`Ík‘LªIdentifierÍaÍj©preferred¥constJ³VariableDeclarationÍvÍ—‘K²VariableDeclaratorÍ|Í–LªIdentifierÍ|Í£all\¯ArrayExpressionÍ‚Í–”M§LiteralÍƒÍ†¡L£'L'M§LiteralÍˆÍ‹¡R£'R'M§LiteralÍÍ¡T£'T'M§LiteralÍ’Í•¡B£'B'¥const]¬ForStatementÍ¡Í/J³VariableDeclarationÍ¦Í¯‘K²VariableDeclaratorÍªÍ¯LªIdentifierÍªÍ«¡iM§LiteralÍ®Í¯ ¡0£letU°BinaryExpressionÍ±Í¿LªIdentifierÍ±Í²¡i¡<V°MemberExpressionÍµÍ¿LªIdentifierÍµÍ¸£allLªIdentifierÍ¹Í¿¦lengthÂÂZ°UpdateExpressionÍÁÍÄ¢++ÂLªIdentifierÍÁÍÂ¡iO®BlockStatementÍÆÍ/‘W«IfStatementÍÕÍ$U°BinaryExpressionÍÙÍíV°MemberExpressionÍÙÍßLªIdentifierÍÙÍÜ£allLªIdentifierÍİÍŞ¡iÃÂ£!==LªIdentifierÍäÍí©preferredO®BlockStatementÍïÍ$‘X³ExpressionStatementÍÍ^®CallExpressionÍÍV°MemberExpressionÍÍLªIdentifierÍÍ¥orderLªIdentifierÍÍ¤pushÂÂ‘V°MemberExpressionÍÍLªIdentifierÍÍ£allLªIdentifierÍÍ¡iÃÂÂÀJ³VariableDeclarationÍ9ÍÁ‘K²VariableDeclaratorÍ?ÍÀLªIdentifierÍ?ÍC¤pads\¯ArrayExpressionÍFÍÀ˜LªIdentifierÍGÍN§stubPadU°BinaryExpressionÍPÍ\LªIdentifierÍPÍW§stubPad¡+M§LiteralÍZÍ\¢16U°BinaryExpressionÍ^ÍjLªIdentifierÍ^Íe§stubPad¡+M§LiteralÍhÍj ¢32U°BinaryExpressionÍlÍxLªIdentifierÍlÍs§stubPad¡+M§LiteralÍvÍx0¢48U°BinaryExpressionÍzÍ†LªIdentifierÍzÍ§stubPad¡+M§LiteralÍ„Í†Ì@¢64U°BinaryExpressionÍ•Í¡LªIdentifierÍ•Íœ§stubPad¡+M§LiteralÍŸÍ¡ÌP¢80U°BinaryExpressionÍ£Í°LªIdentifierÍ£Íª§stubPad¡+M§LiteralÍ­Í°Ìp£112U°BinaryExpressionÍ²Í¿LªIdentifierÍ²Í¹§stubPad¡+M§LiteralÍ¼Í¿Ì£144¥constJ³VariableDeclarationÍËÍà‘K²VariableDeclaratorÍÏÍßLªIdentifierÍÏÍØ©bestLabelM§LiteralÍÛÍßÀ¤null£letJ³VariableDeclarationÍêÍÿ‘K²VariableDeclaratorÍîÍşLªIdentifierÍîÍù«bestMinDistZ¯UnaryExpressionÍüÍş¡-ÃM§LiteralÍıÍş¡1£let]¬ForStatementÍ	Í€J³VariableDeclarationÍÍ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ¢piM§LiteralÍÍ ¡0£letU°BinaryExpressionÍÍ*LªIdentifierÍÍ¢pi¡<V°MemberExpressionÍÍ*LªIdentifierÍÍ#¤padsLªIdentifierÍ$Í*¦lengthÂÂZ°UpdateExpressionÍ,Í0¢++ÂLªIdentifierÍ,Í.¢piO®BlockStatementÍ2Í€‘]¬ForStatementÍAÍuJ³VariableDeclarationÍFÍP‘K²VariableDeclaratorÍJÍPLªIdentifierÍJÍL¢eiM§LiteralÍOÍP ¡0£letU°BinaryExpressionÍRÍcLªIdentifierÍRÍT¢ei¡<V°MemberExpressionÍWÍcLªIdentifierÍWÍ\¥orderLªIdentifierÍ]Íc¦lengthÂÂZ°UpdateExpressionÍeÍi¢++ÂLªIdentifierÍeÍg¢eiO®BlockStatementÍkÍu˜J³VariableDeclarationÍ~ÍÍ‘K²VariableDeclaratorÍ„ÍÌLªIdentifierÍ„Í‰¥label^®CallExpressionÍŒÍÌV°MemberExpressionÍŒÍ­LªIdentifierÍŒÍ±DeviceHitGeometryLªIdentifierÍÍ­¯stubLabelOnEdgeÂÂ”LªIdentifierÍ®Í±£pinLªIdentifierÍ³Í¶£ownV°MemberExpressionÍ¸ÍÁLªIdentifierÍ¸Í½¥orderLªIdentifierÍ¾ÍÀ¢eiÃÂV°MemberExpressionÍÃÍËLªIdentifierÍÃÍÇ¤padsLªIdentifierÍÈÍÊ¢piÃÂÂ¥constJ³VariableDeclarationÍßÍ÷‘K²VariableDeclaratorÍãÍöLªIdentifierÍãÍî«hitsForeignM§LiteralÍñÍöÂ¥false£let]¬ForStatementÍ	ÍUJ³VariableDeclarationÍÍ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ¢fiM§LiteralÍÍ ¡0£letU°BinaryExpressionÍÍ-LªIdentifierÍÍ¢fi¡<V°MemberExpressionÍÍ-LªIdentifierÍÍ&§foreignLªIdentifierÍ'Í-¦lengthÂÂZ°UpdateExpressionÍ/Í3¢++ÂLªIdentifierÍ/Í1¢fiO®BlockStatementÍ5ÍU”J³VariableDeclarationÍLÍc‘K²VariableDeclaratorÍRÍbLªIdentifierÍRÍT¢frV°MemberExpressionÍWÍbLªIdentifierÍWÍ^§foreignLªIdentifierÍ_Ía¢fiÃÂ¥constW«IfStatementÍyÍÖU°BinaryExpressionÍ}Í™V°MemberExpressionÍ}ÍˆLªIdentifierÍ}Í¢frLªIdentifierÍ€Íˆ¨instUuidÂÂ£===V°MemberExpressionÍÍ™LªIdentifierÍÍ£ownLªIdentifierÍ‘Í™¨instUuidÂÂO®BlockStatementÍ›ÍÖ‘Ôr`”¤type¥start£end¥label±ContinueStatementÍ¶Í¿ÀÀW«IfStatementÍìÍ^®CallExpressionÍğÍ'V°MemberExpressionÍğÍLªIdentifierÍğÍ±DeviceHitGeometryLªIdentifierÍÍµsegmentIntersectsRectÂÂ“LªIdentifierÍÍ£pinLªIdentifierÍÍ"¥labelLªIdentifierÍ$Í&¢frÂO®BlockStatementÍ)Í’X³ExpressionStatementÍDÍWY´AssignmentExpressionÍDÍV¡=LªIdentifierÍDÍO«hitsForeignM§LiteralÍRÍVÃ¤true`®BreakStatementÍqÍwÀÀW«IfStatementÍ¤ÍB^®CallExpressionÍ¨ÍÛV°MemberExpressionÍ¨ÍÅLªIdentifierÍ¨Í¹±DeviceHitGeometryLªIdentifierÍºÍÅ«pointInRectÂÂ“V°MemberExpressionÍÆÍÍLªIdentifierÍÆÍË¥labelLªIdentifierÍÌÍÍ¡xÂÂV°MemberExpressionÍÏÍÖLªIdentifierÍÏÍÔ¥labelLªIdentifierÍÕÍÖ¡yÂÂLªIdentifierÍØÍÚ¢frÂO®BlockStatementÍİÍB’X³ExpressionStatementÍøÍY´AssignmentExpressionÍøÍ
+¡=LªIdentifierÍøÍ«hitsForeignM§LiteralÍÍ
+Ã¤true`®BreakStatementÍ%Í+ÀÀW«IfStatementÍgÍ«LªIdentifierÍkÍv«hitsForeignO®BlockStatementÍxÍ«‘`±ContinueStatementÍÍ˜ÀÀJ³VariableDeclarationÍ½Í%‘K²VariableDeclaratorÍÃÍ$LªIdentifierÍÃÍÊ§clearOk^®CallExpressionÍÍÍ$V°MemberExpressionÍÍÍ÷LªIdentifierÍÍÍŞ±DeviceHitGeometryLªIdentifierÍßÍ÷¸segmentClearsForeignPinsÂÂ”LªIdentifierÍøÍû£pinLªIdentifierÍıÍ¥labelLªIdentifierÍÍ¨pinClearLªIdentifierÍÍ#µFOREIGN_PIN_CLEARANCEÂ¥constW«IfStatementÍ7Í{LªIdentifierÍ;ÍB§clearOkO®BlockStatementÍDÍ{‘R¯ReturnStatementÍ[ÍhLªIdentifierÍbÍg¥labelÀJ³VariableDeclarationÍÍ×‘K²VariableDeclaratorÍ“ÍÖLªIdentifierÍ“Í—¤minD^®CallExpressionÍšÍÖV°MemberExpressionÍšÍÀLªIdentifierÍšÍ«±DeviceHitGeometryLªIdentifierÍ¬ÍÀ´minDistToForeignPinsÂÂ“LªIdentifierÍÁÍÄ£pinLªIdentifierÍÆÍË¥labelLªIdentifierÍÍÍÕ¨pinClearÂ¥constW«IfStatementÍéÍfU°BinaryExpressionÍíÍÿLªIdentifierÍíÍñ¤minD¡>LªIdentifierÍôÍÿ«bestMinDistO®BlockStatementÍÍf’X³ExpressionStatementÍÍ+Y´AssignmentExpressionÍÍ*¡=LªIdentifierÍÍ#«bestMinDistLªIdentifierÍ&Í*¤minDX³ExpressionStatementÍAÍSY´AssignmentExpressionÍAÍR¡=LªIdentifierÍAÍJ©bestLabelLªIdentifierÍMÍR¥labelÀW«IfStatementÍÍÍ8U±LogicalExpressionÍÑÍU°BinaryExpressionÍÑÍãLªIdentifierÍÑÍÚ©bestLabel£!==M§LiteralÍßÍãÀ¤null¢&&U°BinaryExpressionÍçÍLªIdentifierÍçÍò«bestMinDist¢>=LªIdentifierÍöÍµFOREIGN_PIN_CLEARANCEO®BlockStatementÍÍ8‘R¯ReturnStatementÍÍ-LªIdentifierÍ#Í,©bestLabelÀR¯ReturnStatementÍ‚ÍÇ^®CallExpressionÍ‰ÍÆV°MemberExpressionÍ‰Í®LªIdentifierÍ‰Íš±DeviceHitGeometryLªIdentifierÍ›Í®³stubLabelOutsidePinÂÂ“LªIdentifierÍ¯Í²£pinLªIdentifierÍ´Í·£ownU°BinaryExpressionÍ¹ÍÅLªIdentifierÍ¹ÍÀ§stubPad¡+M§LiteralÍÃÍÅ(¢40ÂP°MethodDefinitionÍ Í"YÃÂLªIdentifierÍ $Í <¸segmentClearsForeignPins¦methodQ²FunctionExpressionÍ <Í"YÀÂÂÂ”LªIdentifierÍ =Í >¡aLªIdentifierÍ @Í A¡bLªIdentifierÍ CÍ N«foreignPinsLªIdentifierÍ PÍ Y©clearanceO®BlockStatementÍ [Í"Y“J³VariableDeclarationÍ fÍ ”‘K²VariableDeclaratorÍ lÍ “LªIdentifierÍ lÍ {¯ENDPOINT_EXEMPTLªIdentifierÍ ~Í “µFOREIGN_PIN_CLEARANCE¥const]¬ForStatementÍ Í"<J³VariableDeclarationÍ £Í ¬‘K²VariableDeclaratorÍ §Í ¬LªIdentifierÍ §Í ¨¡iM§LiteralÍ «Í ¬ ¡0£letU°BinaryExpressionÍ ®Í ÄLªIdentifierÍ ®Í ¯¡i¡<V°MemberExpressionÍ ²Í ÄLªIdentifierÍ ²Í ½«foreignPinsLªIdentifierÍ ¾Í Ä¦lengthÂÂZ°UpdateExpressionÍ ÆÍ É¢++ÂLªIdentifierÍ ÆÍ Ç¡iO®BlockStatementÍ ËÍ"<“J³VariableDeclarationÍ ÚÍ ô‘K²VariableDeclaratorÍ àÍ óLªIdentifierÍ àÍ â¢fpV°MemberExpressionÍ åÍ óLªIdentifierÍ åÍ ğ«foreignPinsLªIdentifierÍ ñÍ ò¡iÃÂ¥constW«IfStatementÍ!Í!²U±LogicalExpressionÍ!Í!…U°BinaryExpressionÍ!Í!;^®CallExpressionÍ!Í!(V°MemberExpressionÍ!Í!LªIdentifierÍ!Í!
+¤MathLªIdentifierÍ!Í!¥hypotÂÂ’U°BinaryExpressionÍ!Í!V°MemberExpressionÍ!Í!LªIdentifierÍ!Í!¢fpLªIdentifierÍ!Í!¡xÂÂ¡-V°MemberExpressionÍ!Í!LªIdentifierÍ!Í!¡aLªIdentifierÍ!Í!¡xÂÂU°BinaryExpressionÍ!Í!'V°MemberExpressionÍ!Í!!LªIdentifierÍ!Í!¢fpLªIdentifierÍ! Í!!¡yÂÂ¡-V°MemberExpressionÍ!$Í!'LªIdentifierÍ!$Í!%¡aLªIdentifierÍ!&Í!'¡yÂÂÂ¢<=LªIdentifierÍ!,Í!;¯ENDPOINT_EXEMPT¢||U°BinaryExpressionÍ!PÍ!…^®CallExpressionÍ!PÍ!rV°MemberExpressionÍ!PÍ!ZLªIdentifierÍ!PÍ!T¤MathLªIdentifierÍ!UÍ!Z¥hypotÂÂ’U°BinaryExpressionÍ![Í!eV°MemberExpressionÍ![Í!_LªIdentifierÍ![Í!]¢fpLªIdentifierÍ!^Í!_¡xÂÂ¡-V°MemberExpressionÍ!bÍ!eLªIdentifierÍ!bÍ!c¡bLªIdentifierÍ!dÍ!e¡xÂÂU°BinaryExpressionÍ!gÍ!qV°MemberExpressionÍ!gÍ!kLªIdentifierÍ!gÍ!i¢fpLªIdentifierÍ!jÍ!k¡yÂÂ¡-V°MemberExpressionÍ!nÍ!qLªIdentifierÍ!nÍ!o¡bLªIdentifierÍ!pÍ!q¡yÂÂÂ¢<=LªIdentifierÍ!vÍ!…¯ENDPOINT_EXEMPTO®BlockStatementÍ!‡Í!²‘`±ContinueStatementÍ!šÍ!£ÀÀW«IfStatementÍ!ÀÍ"1U°BinaryExpressionÍ!ÄÍ" ^®CallExpressionÍ!ÄÍ!ôV°MemberExpressionÍ!ÄÍ!êLªIdentifierÍ!ÄÍ!Õ±DeviceHitGeometryLªIdentifierÍ!ÖÍ!ê´pointSegmentDistanceÂÂ“LªIdentifierÍ!ëÍ!í¢fpLªIdentifierÍ!ïÍ!ğ¡aLªIdentifierÍ!òÍ!ó¡bÂ¡<LªIdentifierÍ!÷Í" ©clearanceO®BlockStatementÍ"Í"1‘R¯ReturnStatementÍ"Í""M§LiteralÍ"Í"!Â¥falseÀR¯ReturnStatementÍ"FÍ"RM§LiteralÍ"MÍ"QÃ¤trueP°MethodDefinitionÍ"‘Í%³ÃÂLªIdentifierÍ"˜Í"¬´minDistToForeignPins¦methodQ²FunctionExpressionÍ"¬Í%³ÀÂÂÂ“LªIdentifierÍ"­Í"®¡aLªIdentifierÍ"°Í"±¡bLªIdentifierÍ"³Í"¾«foreignPinsO®BlockStatementÍ"ÀÍ%³–W«IfStatementÍ"ËÍ##U°BinaryExpressionÍ"ÏÍ"çV°MemberExpressionÍ"ÏÍ"áLªIdentifierÍ"ÏÍ"Ú«foreignPinsLªIdentifierÍ"ÛÍ"á¦lengthÂÂ£===M§LiteralÍ"æÍ"ç ¡0O®BlockStatementÍ"éÍ##‘R¯ReturnStatementÍ"øÍ#V°MemberExpressionÍ"ÿÍ#LªIdentifierÍ"ÿÍ#¦NumberLªIdentifierÍ#Í#±POSITIVE_INFINITYÂÂÀJ³VariableDeclarationÍ#-Í#[‘K²VariableDeclaratorÍ#3Í#ZLªIdentifierÍ#3Í#B¯ENDPOINT_EXEMPTLªIdentifierÍ#EÍ#ZµFOREIGN_PIN_CLEARANCE¥constJ³VariableDeclarationÍ#eÍ#‰‘K²VariableDeclaratorÍ#iÍ#ˆLªIdentifierÍ#iÍ#m¤minDV°MemberExpressionÍ#pÍ#ˆLªIdentifierÍ#pÍ#v¦NumberLªIdentifierÍ#wÍ#ˆ±POSITIVE_INFINITYÂÂ£letJ³VariableDeclarationÍ#“Í#£‘K²VariableDeclaratorÍ#—Í#¢LªIdentifierÍ#—Í#š£anyM§LiteralÍ#Í#¢Â¥false£let]¬ForStatementÍ#­Í%uJ³VariableDeclarationÍ#²Í#»‘K²VariableDeclaratorÍ#¶Í#»LªIdentifierÍ#¶Í#·¡iM§LiteralÍ#ºÍ#» ¡0£letU°BinaryExpressionÍ#½Í#ÓLªIdentifierÍ#½Í#¾¡i¡<V°MemberExpressionÍ#ÁÍ#ÓLªIdentifierÍ#ÁÍ#Ì«foreignPinsLªIdentifierÍ#ÍÍ#Ó¦lengthÂÂZ°UpdateExpressionÍ#ÕÍ#Ø¢++ÂLªIdentifierÍ#ÕÍ#Ö¡iO®BlockStatementÍ#ÚÍ%u•J³VariableDeclarationÍ#éÍ$‘K²VariableDeclaratorÍ#ïÍ$LªIdentifierÍ#ïÍ#ñ¢fpV°MemberExpressionÍ#ôÍ$LªIdentifierÍ#ôÍ#ÿ«foreignPinsLªIdentifierÍ$ Í$¡iÃÂ¥constW«IfStatementÍ$Í$ÁU±LogicalExpressionÍ$Í$”U°BinaryExpressionÍ$Í$J^®CallExpressionÍ$Í$7V°MemberExpressionÍ$Í$LªIdentifierÍ$Í$¤MathLªIdentifierÍ$Í$¥hypotÂÂ’U°BinaryExpressionÍ$ Í$*V°MemberExpressionÍ$ Í$$LªIdentifierÍ$ Í$"¢fpLªIdentifierÍ$#Í$$¡xÂÂ¡-V°MemberExpressionÍ$'Í$*LªIdentifierÍ$'Í$(¡aLªIdentifierÍ$)Í$*¡xÂÂU°BinaryExpressionÍ$,Í$6V°MemberExpressionÍ$,Í$0LªIdentifierÍ$,Í$.¢fpLªIdentifierÍ$/Í$0¡yÂÂ¡-V°MemberExpressionÍ$3Í$6LªIdentifierÍ$3Í$4¡aLªIdentifierÍ$5Í$6¡yÂÂÂ¢<=LªIdentifierÍ$;Í$J¯ENDPOINT_EXEMPT¢||U°BinaryExpressionÍ$_Í$”^®CallExpressionÍ$_Í$V°MemberExpressionÍ$_Í$iLªIdentifierÍ$_Í$c¤MathLªIdentifierÍ$dÍ$i¥hypotÂÂ’U°BinaryExpressionÍ$jÍ$tV°MemberExpressionÍ$jÍ$nLªIdentifierÍ$jÍ$l¢fpLªIdentifierÍ$mÍ$n¡xÂÂ¡-V°MemberExpressionÍ$qÍ$tLªIdentifierÍ$qÍ$r¡bLªIdentifierÍ$sÍ$t¡xÂÂU°BinaryExpressionÍ$vÍ$€V°MemberExpressionÍ$vÍ$zLªIdentifierÍ$vÍ$x¢fpLªIdentifierÍ$yÍ$z¡yÂÂ¡-V°MemberExpressionÍ$}Í$€LªIdentifierÍ$}Í$~¡bLªIdentifierÍ$Í$€¡yÂÂÂ¢<=LªIdentifierÍ$…Í$”¯ENDPOINT_EXEMPTO®BlockStatementÍ$–Í$Á‘`±ContinueStatementÍ$©Í$²ÀÀX³ExpressionStatementÍ$ÏÍ$ÚY´AssignmentExpressionÍ$ÏÍ$Ù¡=LªIdentifierÍ$ÏÍ$Ò£anyM§LiteralÍ$ÕÍ$ÙÃ¤trueJ³VariableDeclarationÍ$èÍ%#‘K²VariableDeclaratorÍ$îÍ%"LªIdentifierÍ$îÍ$ï¡d^®CallExpressionÍ$òÍ%"V°MemberExpressionÍ$òÍ%LªIdentifierÍ$òÍ%±DeviceHitGeometryLªIdentifierÍ%Í%´pointSegmentDistanceÂÂ“LªIdentifierÍ%Í%¢fpLªIdentifierÍ%Í%¡aLªIdentifierÍ% Í%!¡bÂ¥constW«IfStatementÍ%1Í%jU°BinaryExpressionÍ%5Í%=LªIdentifierÍ%5Í%6¡d¡<LªIdentifierÍ%9Í%=¤minDO®BlockStatementÍ%?Í%j‘X³ExpressionStatementÍ%RÍ%[Y´AssignmentExpressionÍ%RÍ%Z¡=LªIdentifierÍ%RÍ%V¤minDLªIdentifierÍ%YÍ%Z¡dÀR¯ReturnStatementÍ%Í%¬WµConditionalExpressionÍ%†Í%«LªIdentifierÍ%†Í%‰£anyLªIdentifierÍ%ŒÍ%¤minDV°MemberExpressionÍ%“Í%«LªIdentifierÍ%“Í%™¦NumberLªIdentifierÍ%šÍ%«±POSITIVE_INFINITYÂÂP°MethodDefinitionÍ&Í)›ÃÂLªIdentifierÍ&%Í&=¸pointInPinEscapeCorridor¦methodQ²FunctionExpressionÍ&=Í)›ÀÂÂÂ–LªIdentifierÍ&>Í&@¢pxLªIdentifierÍ&BÍ&D¢pyLªIdentifierÍ&FÍ&J¤pinXLªIdentifierÍ&LÍ&P¤pinYLªIdentifierÍ&RÍ&S¡r[±AssignmentPatternÍ&UÍ&cLªIdentifierÍ&UÍ&^©halfWidthM§LiteralÍ&aÍ&c¢12O®BlockStatementÍ&eÍ)›—J³VariableDeclarationÍ&pÍ&’‘K²VariableDeclaratorÍ&vÍ&‘LªIdentifierÍ&vÍ&x¢hw^®CallExpressionÍ&{Í&‘V°MemberExpressionÍ&{Í&ƒLªIdentifierÍ&{Í&¤MathLªIdentifierÍ&€Í&ƒ£maxÂÂ’LªIdentifierÍ&„Í&©halfWidthM§LiteralÍ&Í&¡8Â¥constW«IfStatementÍ&¶Í'AZ¯UnaryExpressionÍ&ºÍ&ç¡!Ã^®CallExpressionÍ&»Í&çV°MemberExpressionÍ&»Í&ØLªIdentifierÍ&»Í&Ì±DeviceHitGeometryLªIdentifierÍ&ÍÍ&Ø«pointInRectÂÂ“LªIdentifierÍ&ÙÍ&İ¤pinXLªIdentifierÍ&ßÍ&ã¤pinYLªIdentifierÍ&åÍ&æ¡rÂO®BlockStatementÍ&éÍ'A‘R¯ReturnStatementÍ&øÍ'6U±LogicalExpressionÍ&ÿÍ'5U°BinaryExpressionÍ&ÿÍ'^®CallExpressionÍ&ÿÍ'V°MemberExpressionÍ&ÿÍ'LªIdentifierÍ&ÿÍ'¤MathLªIdentifierÍ'Í'£absÂÂ‘U°BinaryExpressionÍ'Í'LªIdentifierÍ'Í'
+¢px¡-LªIdentifierÍ'Í'¤pinXÂ¢<=LªIdentifierÍ'Í'¢hw¢&&U°BinaryExpressionÍ'Í'5^®CallExpressionÍ'Í'/V°MemberExpressionÍ'Í'$LªIdentifierÍ'Í' ¤MathLªIdentifierÍ'!Í'$£absÂÂ‘U°BinaryExpressionÍ'%Í'.LªIdentifierÍ'%Í''¢py¡-LªIdentifierÍ'*Í'.¤pinYÂ¢<=LªIdentifierÍ'3Í'5¢hwÀJ³VariableDeclarationÍ'tÍ'´‘K²VariableDeclaratorÍ'zÍ'³LªIdentifierÍ'zÍ'~¤edge^®CallExpressionÍ'Í'³V°MemberExpressionÍ'Í'¤LªIdentifierÍ'Í'’±DeviceHitGeometryLªIdentifierÍ'“Í'¤±nearestEscapeEdgeÂÂ“LªIdentifierÍ'¥Í'©¤pinXLªIdentifierÍ'«Í'¯¤pinYLªIdentifierÍ'±Í'²¡rÂ¥constW«IfStatementÍ'¾Í(4U°BinaryExpressionÍ'ÂÍ'ÎLªIdentifierÍ'ÂÍ'Æ¤edge£===M§LiteralÍ'ËÍ'Î¡L£'L'O®BlockStatementÍ'ĞÍ(4‘R¯ReturnStatementÍ'ßÍ()U±LogicalExpressionÍ'æÍ((U±LogicalExpressionÍ'æÍ(U°BinaryExpressionÍ'æÍ'öLªIdentifierÍ'æÍ'è¢px¢>=U°BinaryExpressionÍ'íÍ'õV°MemberExpressionÍ'íÍ'ğLªIdentifierÍ'íÍ'î¡rLªIdentifierÍ'ïÍ'ğ¡xÂÂ¡-LªIdentifierÍ'óÍ'õ¢hw¢&&U°BinaryExpressionÍ'úÍ(LªIdentifierÍ'úÍ'ü¢px¢<=U°BinaryExpressionÍ(Í(
+LªIdentifierÍ(Í(¤pinX¡+LªIdentifierÍ(Í(
+¢hw¢&&U°BinaryExpressionÍ(Í((^®CallExpressionÍ(Í("V°MemberExpressionÍ(Í(LªIdentifierÍ(Í(¤MathLªIdentifierÍ(Í(£absÂÂ‘U°BinaryExpressionÍ(Í(!LªIdentifierÍ(Í(¢py¡-LªIdentifierÍ(Í(!¤pinYÂ¢<=LªIdentifierÍ(&Í((¢hwÀW«IfStatementÍ(>Í(ºU°BinaryExpressionÍ(BÍ(NLªIdentifierÍ(BÍ(F¤edge£===M§LiteralÍ(KÍ(N¡R£'R'O®BlockStatementÍ(PÍ(º‘R¯ReturnStatementÍ(_Í(¯U±LogicalExpressionÍ(fÍ(®U±LogicalExpressionÍ(fÍ(‘U°BinaryExpressionÍ(fÍ(wLªIdentifierÍ(fÍ(h¢px¢>=U°BinaryExpressionÍ(mÍ(vLªIdentifierÍ(mÍ(q¤pinX¡-LªIdentifierÍ(tÍ(v¢hw¢&&U°BinaryExpressionÍ({Í(‘LªIdentifierÍ({Í(}¢px¢<=U°BinaryExpressionÍ(‚Í(U°BinaryExpressionÍ(‚Í(‹V°MemberExpressionÍ(‚Í(…LªIdentifierÍ(‚Í(ƒ¡rLªIdentifierÍ(„Í(…¡xÂÂ¡+V°MemberExpressionÍ(ˆÍ(‹LªIdentifierÍ(ˆÍ(‰¡rLªIdentifierÍ(ŠÍ(‹¡wÂÂ¡+LªIdentifierÍ(Í(¢hw¢&&U°BinaryExpressionÍ(•Í(®^®CallExpressionÍ(•Í(¨V°MemberExpressionÍ(•Í(LªIdentifierÍ(•Í(™¤MathLªIdentifierÍ(šÍ(£absÂÂ‘U°BinaryExpressionÍ(Í(§LªIdentifierÍ(Í( ¢py¡-LªIdentifierÍ(£Í(§¤pinYÂ¢<=LªIdentifierÍ(¬Í(®¢hwÀW«IfStatementÍ(ÄÍ):U°BinaryExpressionÍ(ÈÍ(ÔLªIdentifierÍ(ÈÍ(Ì¤edge£===M§LiteralÍ(ÑÍ(Ô¡T£'T'O®BlockStatementÍ(ÖÍ):‘R¯ReturnStatementÍ(åÍ)/U±LogicalExpressionÍ(ìÍ).U±LogicalExpressionÍ(ìÍ)U°BinaryExpressionÍ(ìÍ(üLªIdentifierÍ(ìÍ(î¢py¢>=U°BinaryExpressionÍ(óÍ(ûV°MemberExpressionÍ(óÍ(öLªIdentifierÍ(óÍ(ô¡rLªIdentifierÍ(õÍ(ö¡yÂÂ¡-LªIdentifierÍ(ùÍ(û¢hw¢&&U°BinaryExpressionÍ) Í)LªIdentifierÍ) Í)¢py¢<=U°BinaryExpressionÍ)Í)LªIdentifierÍ)Í)¤pinY¡+LªIdentifierÍ)Í)¢hw¢&&U°BinaryExpressionÍ)Í).^®CallExpressionÍ)Í)(V°MemberExpressionÍ)Í)LªIdentifierÍ)Í)¤MathLªIdentifierÍ)Í)£absÂÂ‘U°BinaryExpressionÍ)Í)'LªIdentifierÍ)Í) ¢px¡-LªIdentifierÍ)#Í)'¤pinXÂ¢<=LªIdentifierÍ),Í).¢hwÀR¯ReturnStatementÍ)DÍ)”U±LogicalExpressionÍ)KÍ)“U±LogicalExpressionÍ)KÍ)vU°BinaryExpressionÍ)KÍ)\LªIdentifierÍ)KÍ)M¢py¢>=U°BinaryExpressionÍ)RÍ)[LªIdentifierÍ)RÍ)V¤pinY¡-LªIdentifierÍ)YÍ)[¢hw¢&&U°BinaryExpressionÍ)`Í)vLªIdentifierÍ)`Í)b¢py¢<=U°BinaryExpressionÍ)gÍ)uU°BinaryExpressionÍ)gÍ)pV°MemberExpressionÍ)gÍ)jLªIdentifierÍ)gÍ)h¡rLªIdentifierÍ)iÍ)j¡yÂÂ¡+V°MemberExpressionÍ)mÍ)pLªIdentifierÍ)mÍ)n¡rLªIdentifierÍ)oÍ)p¡hÂÂ¡+LªIdentifierÍ)sÍ)u¢hw¢&&U°BinaryExpressionÍ)zÍ)“^®CallExpressionÍ)zÍ)V°MemberExpressionÍ)zÍ)‚LªIdentifierÍ)zÍ)~¤MathLªIdentifierÍ)Í)‚£absÂÂ‘U°BinaryExpressionÍ)ƒÍ)ŒLªIdentifierÍ)ƒÍ)…¢px¡-LªIdentifierÍ)ˆÍ)Œ¤pinXÂ¢<=LªIdentifierÍ)‘Í)“¢hwP°MethodDefinitionÍ)ÃÍ+&ÃÂLªIdentifierÍ)ÊÍ)å»pointInAnyPinEscapeCorridor¦methodQ²FunctionExpressionÍ)åÍ+&ÀÂÂÂ•LªIdentifierÍ)æÍ)è¢pxLªIdentifierÍ)êÍ)ì¢pyLªIdentifierÍ)îÍ)ú¬pinPositionsLªIdentifierÍ)üÍ)ı¡r[±AssignmentPatternÍ)ÿÍ*LªIdentifierÍ)ÿÍ*©halfWidthM§LiteralÍ*Í*¢12O®BlockStatementÍ*Í+&’]¬ForStatementÍ*Í+J³VariableDeclarationÍ*Í*(‘K²VariableDeclaratorÍ*#Í*(LªIdentifierÍ*#Í*$¡iM§LiteralÍ*'Í*( ¡0£letU°BinaryExpressionÍ**Í*ALªIdentifierÍ**Í*+¡i¡<V°MemberExpressionÍ*.Í*ALªIdentifierÍ*.Í*:¬pinPositionsLªIdentifierÍ*;Í*A¦lengthÂÂZ°UpdateExpressionÍ*CÍ*F¢++ÂLªIdentifierÍ*CÍ*D¡iO®BlockStatementÍ*HÍ+’J³VariableDeclarationÍ*WÍ*q‘K²VariableDeclaratorÍ*]Í*pLªIdentifierÍ*]Í*^¡pV°MemberExpressionÍ*aÍ*pLªIdentifierÍ*aÍ*m¬pinPositionsLªIdentifierÍ*nÍ*o¡iÃÂ¥constW«IfStatementÍ*Í*ı^®CallExpressionÍ*ƒÍ*ÍV°MemberExpressionÍ*ƒÍ*­LªIdentifierÍ*ƒÍ*”±DeviceHitGeometryLªIdentifierÍ*•Í*­¸pointInPinEscapeCorridorÂÂ–LªIdentifierÍ*®Í*°¢pxLªIdentifierÍ*²Í*´¢pyV°MemberExpressionÍ*¶Í*¹LªIdentifierÍ*¶Í*·¡pLªIdentifierÍ*¸Í*¹¡xÂÂV°MemberExpressionÍ*»Í*¾LªIdentifierÍ*»Í*¼¡pLªIdentifierÍ*½Í*¾¡yÂÂLªIdentifierÍ*ÀÍ*Á¡rLªIdentifierÍ*ÃÍ*Ì©halfWidthÂO®BlockStatementÍ*ÏÍ*ı‘R¯ReturnStatementÍ*âÍ*îM§LiteralÍ*éÍ*íÃ¤trueÀR¯ReturnStatementÍ+Í+M§LiteralÍ+Í+Â¥falseP°MethodDefinitionÍ+,Í.éÃÂLªIdentifierÍ+3Í+HµsegmentIntersectsRect¦methodQ²FunctionExpressionÍ+HÍ.éÀÂÂÂ“LªIdentifierÍ+IÍ+J¡aLªIdentifierÍ+LÍ+M¡bLªIdentifierÍ+OÍ+P¡rO®BlockStatementÍ+RÍ.é•W«IfStatementÍ+]Í,„U°BinaryExpressionÍ+aÍ+lV°MemberExpressionÍ+aÍ+dLªIdentifierÍ+aÍ+b¡aLªIdentifierÍ+cÍ+d¡xÂÂ£===V°MemberExpressionÍ+iÍ+lLªIdentifierÍ+iÍ+j¡bLªIdentifierÍ+kÍ+l¡xÂÂO®BlockStatementÍ+nÍ,„•J³VariableDeclarationÍ+}Í+‹‘K²VariableDeclaratorÍ+ƒÍ+ŠLªIdentifierÍ+ƒÍ+„¡xV°MemberExpressionÍ+‡Í+ŠLªIdentifierÍ+‡Í+ˆ¡aLªIdentifierÍ+‰Í+Š¡xÂÂ¥constW«IfStatementÍ+™Í+æU±LogicalExpressionÍ+Í+µU°BinaryExpressionÍ+Í+¤LªIdentifierÍ+Í+¡x¡<V°MemberExpressionÍ+¡Í+¤LªIdentifierÍ+¡Í+¢¡rLªIdentifierÍ+£Í+¤¡xÂÂ¢||U°BinaryExpressionÍ+¨Í+µLªIdentifierÍ+¨Í+©¡x¡>U°BinaryExpressionÍ+¬Í+µV°MemberExpressionÍ+¬Í+¯LªIdentifierÍ+¬Í+­¡rLªIdentifierÍ+®Í+¯¡xÂÂ¡+V°MemberExpressionÍ+²Í+µLªIdentifierÍ+²Í+³¡rLªIdentifierÍ+´Í+µ¡wÂÂO®BlockStatementÍ+·Í+æ‘R¯ReturnStatementÍ+ÊÍ+×M§LiteralÍ+ÑÍ+ÖÂ¥falseÀJ³VariableDeclarationÍ+ôÍ,‘K²VariableDeclaratorÍ+úÍ,LªIdentifierÍ+úÍ+ş¤yMin^®CallExpressionÍ,Í,V°MemberExpressionÍ,Í,	LªIdentifierÍ,Í,¤MathLªIdentifierÍ,Í,	£minÂÂ’V°MemberExpressionÍ,
+Í,LªIdentifierÍ,
+Í,¡aLªIdentifierÍ,Í,¡yÂÂV°MemberExpressionÍ,Í,LªIdentifierÍ,Í,¡bLªIdentifierÍ,Í,¡yÂÂÂ¥constJ³VariableDeclarationÍ,"Í,B‘K²VariableDeclaratorÍ,(Í,ALªIdentifierÍ,(Í,,¤yMax^®CallExpressionÍ,/Í,AV°MemberExpressionÍ,/Í,7LªIdentifierÍ,/Í,3¤MathLªIdentifierÍ,4Í,7£maxÂÂ’V°MemberExpressionÍ,8Í,;LªIdentifierÍ,8Í,9¡aLªIdentifierÍ,:Í,;¡yÂÂV°MemberExpressionÍ,=Í,@LªIdentifierÍ,=Í,>¡bLªIdentifierÍ,?Í,@¡yÂÂÂ¥constR¯ReturnStatementÍ,PÍ,yZ¯UnaryExpressionÍ,WÍ,x¡!ÃU±LogicalExpressionÍ,YÍ,wU°BinaryExpressionÍ,YÍ,cLªIdentifierÍ,YÍ,]¤yMax¡<V°MemberExpressionÍ,`Í,cLªIdentifierÍ,`Í,a¡rLªIdentifierÍ,bÍ,c¡yÂÂ¢||U°BinaryExpressionÍ,gÍ,wLªIdentifierÍ,gÍ,k¤yMin¡>U°BinaryExpressionÍ,nÍ,wV°MemberExpressionÍ,nÍ,qLªIdentifierÍ,nÍ,o¡rLªIdentifierÍ,pÍ,q¡yÂÂ¡+V°MemberExpressionÍ,tÍ,wLªIdentifierÍ,tÍ,u¡rLªIdentifierÍ,vÍ,w¡hÂÂÀW«IfStatementÍ,Í-µU°BinaryExpressionÍ,’Í,V°MemberExpressionÍ,’Í,•LªIdentifierÍ,’Í,“¡aLªIdentifierÍ,”Í,•¡yÂÂ£===V°MemberExpressionÍ,šÍ,LªIdentifierÍ,šÍ,›¡bLªIdentifierÍ,œÍ,¡yÂÂO®BlockStatementÍ,ŸÍ-µ•J³VariableDeclarationÍ,®Í,¼‘K²VariableDeclaratorÍ,´Í,»LªIdentifierÍ,´Í,µ¡yV°MemberExpressionÍ,¸Í,»LªIdentifierÍ,¸Í,¹¡aLªIdentifierÍ,ºÍ,»¡yÂÂ¥constW«IfStatementÍ,ÊÍ-U±LogicalExpressionÍ,ÎÍ,æU°BinaryExpressionÍ,ÎÍ,ÕLªIdentifierÍ,ÎÍ,Ï¡y¡<V°MemberExpressionÍ,ÒÍ,ÕLªIdentifierÍ,ÒÍ,Ó¡rLªIdentifierÍ,ÔÍ,Õ¡yÂÂ¢||U°BinaryExpressionÍ,ÙÍ,æLªIdentifierÍ,ÙÍ,Ú¡y¡>U°BinaryExpressionÍ,İÍ,æV°MemberExpressionÍ,İÍ,àLªIdentifierÍ,İÍ,Ş¡rLªIdentifierÍ,ßÍ,à¡yÂÂ¡+V°MemberExpressionÍ,ãÍ,æLªIdentifierÍ,ãÍ,ä¡rLªIdentifierÍ,åÍ,æ¡hÂÂO®BlockStatementÍ,èÍ-‘R¯ReturnStatementÍ,ûÍ-M§LiteralÍ-Í-Â¥falseÀJ³VariableDeclarationÍ-%Í-E‘K²VariableDeclaratorÍ-+Í-DLªIdentifierÍ-+Í-/¤xMin^®CallExpressionÍ-2Í-DV°MemberExpressionÍ-2Í-:LªIdentifierÍ-2Í-6¤MathLªIdentifierÍ-7Í-:£minÂÂ’V°MemberExpressionÍ-;Í->LªIdentifierÍ-;Í-<¡aLªIdentifierÍ-=Í->¡xÂÂV°MemberExpressionÍ-@Í-CLªIdentifierÍ-@Í-A¡bLªIdentifierÍ-BÍ-C¡xÂÂÂ¥constJ³VariableDeclarationÍ-SÍ-s‘K²VariableDeclaratorÍ-YÍ-rLªIdentifierÍ-YÍ-]¤xMax^®CallExpressionÍ-`Í-rV°MemberExpressionÍ-`Í-hLªIdentifierÍ-`Í-d¤MathLªIdentifierÍ-eÍ-h£maxÂÂ’V°MemberExpressionÍ-iÍ-lLªIdentifierÍ-iÍ-j¡aLªIdentifierÍ-kÍ-l¡xÂÂV°MemberExpressionÍ-nÍ-qLªIdentifierÍ-nÍ-o¡bLªIdentifierÍ-pÍ-q¡xÂÂÂ¥constR¯ReturnStatementÍ-Í-ªZ¯UnaryExpressionÍ-ˆÍ-©¡!ÃU±LogicalExpressionÍ-ŠÍ-¨U°BinaryExpressionÍ-ŠÍ-”LªIdentifierÍ-ŠÍ-¤xMax¡<V°MemberExpressionÍ-‘Í-”LªIdentifierÍ-‘Í-’¡rLªIdentifierÍ-“Í-”¡xÂÂ¢||U°BinaryExpressionÍ-˜Í-¨LªIdentifierÍ-˜Í-œ¤xMin¡>U°BinaryExpressionÍ-ŸÍ-¨V°MemberExpressionÍ-ŸÍ-¢LªIdentifierÍ-ŸÍ- ¡rLªIdentifierÍ-¡Í-¢¡xÂÂ¡+V°MemberExpressionÍ-¥Í-¨LªIdentifierÍ-¥Í-¦¡rLªIdentifierÍ-§Í-¨¡wÂÂÀJ³VariableDeclarationÍ-ÔÍ.‘K²VariableDeclaratorÍ-ÚÍ.LªIdentifierÍ-ÚÍ-á§samples^®CallExpressionÍ-äÍ.V°MemberExpressionÍ-äÍ.LªIdentifierÍ-äÍ-õ±DeviceHitGeometryLªIdentifierÍ-öÍ.­sampleSegmentÂÂ“LªIdentifierÍ.Í.¡aLªIdentifierÍ.Í.¡bM§LiteralÍ.
+Í.
+¢10Â¥const]¬ForStatementÍ.Í.ËJ³VariableDeclarationÍ.Í.&‘K²VariableDeclaratorÍ.!Í.&LªIdentifierÍ.!Í."¡iM§LiteralÍ.%Í.& ¡0£letU°BinaryExpressionÍ.(Í.:LªIdentifierÍ.(Í.)¡i¡<V°MemberExpressionÍ.,Í.:LªIdentifierÍ.,Í.3§samplesLªIdentifierÍ.4Í.:¦lengthÂÂZ°UpdateExpressionÍ.<Í.?¢++ÂLªIdentifierÍ.<Í.=¡iO®BlockStatementÍ.AÍ.Ë‘W«IfStatementÍ.PÍ.À^®CallExpressionÍ.TÍ.V°MemberExpressionÍ.TÍ.qLªIdentifierÍ.TÍ.e±DeviceHitGeometryLªIdentifierÍ.fÍ.q«pointInRectÂÂ“V°MemberExpressionÍ.rÍ.~V°MemberExpressionÍ.rÍ.|LªIdentifierÍ.rÍ.y§samplesLªIdentifierÍ.zÍ.{¡iÃÂLªIdentifierÍ.}Í.~¡xÂÂV°MemberExpressionÍ.€Í.ŒV°MemberExpressionÍ.€Í.ŠLªIdentifierÍ.€Í.‡§samplesLªIdentifierÍ.ˆÍ.‰¡iÃÂLªIdentifierÍ.‹Í.Œ¡yÂÂLªIdentifierÍ.Í.¡rÂO®BlockStatementÍ.’Í.À‘R¯ReturnStatementÍ.¥Í.±M§LiteralÍ.¬Í.°Ã¤trueÀR¯ReturnStatementÍ.ÕÍ.âM§LiteralÍ.ÜÍ.áÂ¥falseP°MethodDefinitionÍ.ïÍ0rÃÂLªIdentifierÍ.öÍ/
+´pointSegmentDistance¦methodQ²FunctionExpressionÍ/
+Í0rÀÂÂÂ“LªIdentifierÍ/Í/¡pLªIdentifierÍ/Í/¡aLªIdentifierÍ/Í/¡bO®BlockStatementÍ/Í0r•J³VariableDeclarationÍ/Í/4‘K²VariableDeclaratorÍ/%Í/3LªIdentifierÍ/%Í/'¢dxU°BinaryExpressionÍ/*Í/3V°MemberExpressionÍ/*Í/-LªIdentifierÍ/*Í/+¡bLªIdentifierÍ/,Í/-¡xÂÂ¡-V°MemberExpressionÍ/0Í/3LªIdentifierÍ/0Í/1¡aLªIdentifierÍ/2Í/3¡xÂÂ¥constJ³VariableDeclarationÍ/>Í/S‘K²VariableDeclaratorÍ/DÍ/RLªIdentifierÍ/DÍ/F¢dyU°BinaryExpressionÍ/IÍ/RV°MemberExpressionÍ/IÍ/LLªIdentifierÍ/IÍ/J¡bLªIdentifierÍ/KÍ/L¡yÂÂ¡-V°MemberExpressionÍ/OÍ/RLªIdentifierÍ/OÍ/P¡aLªIdentifierÍ/QÍ/R¡yÂÂ¥constW«IfStatementÍ/]Í/¹U±LogicalExpressionÍ/aÍ/uU°BinaryExpressionÍ/aÍ/iLªIdentifierÍ/aÍ/c¢dx£===M§LiteralÍ/hÍ/i ¡0¢&&U°BinaryExpressionÍ/mÍ/uLªIdentifierÍ/mÍ/o¢dy£===M§LiteralÍ/tÍ/u ¡0O®BlockStatementÍ/wÍ/¹‘R¯ReturnStatementÍ/†Í/®^®CallExpressionÍ/Í/­V°MemberExpressionÍ/Í/—LªIdentifierÍ/Í/‘¤MathLªIdentifierÍ/’Í/—¥hypotÂÂ’U°BinaryExpressionÍ/˜Í/¡V°MemberExpressionÍ/˜Í/›LªIdentifierÍ/˜Í/™¡pLªIdentifierÍ/šÍ/›¡xÂÂ¡-V°MemberExpressionÍ/Í/¡LªIdentifierÍ/Í/Ÿ¡aLªIdentifierÍ/ Í/¡¡xÂÂU°BinaryExpressionÍ/£Í/¬V°MemberExpressionÍ/£Í/¦LªIdentifierÍ/£Í/¤¡pLªIdentifierÍ/¥Í/¦¡yÂÂ¡-V°MemberExpressionÍ/©Í/¬LªIdentifierÍ/©Í/ª¡aLªIdentifierÍ/«Í/¬¡yÂÂÂÀJ³VariableDeclarationÍ/ÃÍ0#‘K²VariableDeclaratorÍ/ÉÍ0"LªIdentifierÍ/ÉÍ/Ê¡t^®CallExpressionÍ/ÍÍ0"V°MemberExpressionÍ/ÍÍ/ÕLªIdentifierÍ/ÍÍ/Ñ¤MathLªIdentifierÍ/ÒÍ/Õ£maxÂÂ’M§LiteralÍ/ÖÍ/× ¡0^®CallExpressionÍ/ÙÍ0!V°MemberExpressionÍ/ÙÍ/áLªIdentifierÍ/ÙÍ/İ¤MathLªIdentifierÍ/ŞÍ/á£minÂÂ’M§LiteralÍ/âÍ/ã¡1U°BinaryExpressionÍ/åÍ0 U°BinaryExpressionÍ/æÍ0	U°BinaryExpressionÍ/æÍ/öU°BinaryExpressionÍ/çÍ/ğV°MemberExpressionÍ/çÍ/êLªIdentifierÍ/çÍ/è¡pLªIdentifierÍ/éÍ/ê¡xÂÂ¡-V°MemberExpressionÍ/íÍ/ğLªIdentifierÍ/íÍ/î¡aLªIdentifierÍ/ïÍ/ğ¡xÂÂ¡*LªIdentifierÍ/ôÍ/ö¢dx¡+U°BinaryExpressionÍ/ùÍ0	U°BinaryExpressionÍ/úÍ0V°MemberExpressionÍ/úÍ/ıLªIdentifierÍ/úÍ/û¡pLªIdentifierÍ/üÍ/ı¡yÂÂ¡-V°MemberExpressionÍ0 Í0LªIdentifierÍ0 Í0¡aLªIdentifierÍ0Í0¡yÂÂ¡*LªIdentifierÍ0Í0	¢dy¡/U°BinaryExpressionÍ0Í0U°BinaryExpressionÍ0Í0LªIdentifierÍ0Í0¢dx¡*LªIdentifierÍ0Í0¢dx¡+U°BinaryExpressionÍ0Í0LªIdentifierÍ0Í0¢dy¡*LªIdentifierÍ0Í0¢dyÂÂ¥constR¯ReturnStatementÍ0-Í0k^®CallExpressionÍ04Í0jV°MemberExpressionÍ04Í0>LªIdentifierÍ04Í08¤MathLªIdentifierÍ09Í0>¥hypotÂÂ’U°BinaryExpressionÍ0?Í0SV°MemberExpressionÍ0?Í0BLªIdentifierÍ0?Í0@¡pLªIdentifierÍ0AÍ0B¡xÂÂ¡-U°BinaryExpressionÍ0FÍ0RV°MemberExpressionÍ0FÍ0ILªIdentifierÍ0FÍ0G¡aLªIdentifierÍ0HÍ0I¡xÂÂ¡+U°BinaryExpressionÍ0LÍ0RLªIdentifierÍ0LÍ0M¡t¡*LªIdentifierÍ0PÍ0R¢dxU°BinaryExpressionÍ0UÍ0iV°MemberExpressionÍ0UÍ0XLªIdentifierÍ0UÍ0V¡pLªIdentifierÍ0WÍ0X¡yÂÂ¡-U°BinaryExpressionÍ0\Í0hV°MemberExpressionÍ0\Í0_LªIdentifierÍ0\Í0]¡aLªIdentifierÍ0^Í0_¡yÂÂ¡+U°BinaryExpressionÍ0bÍ0hLªIdentifierÍ0bÍ0c¡t¡*LªIdentifierÍ0fÍ0h¢dyÂP°MethodDefinitionÍ0xÍ2:ÃÂLªIdentifierÍ0Í0Œ­sampleSegment¦methodQ²FunctionExpressionÍ0ŒÍ2:ÀÂÂÂ“LªIdentifierÍ0Í0¡aLªIdentifierÍ0Í0‘¡bLªIdentifierÍ0“Í0—¤stepO®BlockStatementÍ0™Í2:–J³VariableDeclarationÍ0¤Í0Ñ‘K²VariableDeclaratorÍ0ªÍ0ĞLªIdentifierÍ0ªÍ0­£len^®CallExpressionÍ0°Í0ĞV°MemberExpressionÍ0°Í0ºLªIdentifierÍ0°Í0´¤MathLªIdentifierÍ0µÍ0º¥hypotÂÂ’U°BinaryExpressionÍ0»Í0ÄV°MemberExpressionÍ0»Í0¾LªIdentifierÍ0»Í0¼¡bLªIdentifierÍ0½Í0¾¡xÂÂ¡-V°MemberExpressionÍ0ÁÍ0ÄLªIdentifierÍ0ÁÍ0Â¡aLªIdentifierÍ0ÃÍ0Ä¡xÂÂU°BinaryExpressionÍ0ÆÍ0ÏV°MemberExpressionÍ0ÆÍ0ÉLªIdentifierÍ0ÆÍ0Ç¡bLªIdentifierÍ0ÈÍ0É¡yÂÂ¡-V°MemberExpressionÍ0ÌÍ0ÏLªIdentifierÍ0ÌÍ0Í¡aLªIdentifierÍ0ÎÍ0Ï¡yÂÂÂ¥constW«IfStatementÍ0ÛÍ1!U°BinaryExpressionÍ0ßÍ0éLªIdentifierÍ0ßÍ0â£len¡<M§LiteralÍ0åÍ0éË>°Æ÷ µí¤1e-6O®BlockStatementÍ0ëÍ1!‘R¯ReturnStatementÍ0úÍ1\¯ArrayExpressionÍ1Í1‘S°ObjectExpressionÍ1Í1’T¨PropertyÍ1Í1
+ÂÂÂLªIdentifierÍ1Í1¡xV°MemberExpressionÍ1Í1
+LªIdentifierÍ1Í1¡aLªIdentifierÍ1	Í1
+¡xÂÂ¤initT¨PropertyÍ1Í1ÂÂÂLªIdentifierÍ1Í1¡yV°MemberExpressionÍ1Í1LªIdentifierÍ1Í1¡aLªIdentifierÍ1Í1¡yÂÂ¤initÀJ³VariableDeclarationÍ1+Í1e‘K²VariableDeclaratorÍ11Í1dLªIdentifierÍ11Í12¡n^®CallExpressionÍ15Í1dV°MemberExpressionÍ15Í1=LªIdentifierÍ15Í19¤MathLªIdentifierÍ1:Í1=£maxÂÂ’M§LiteralÍ1>Í1?¡1^®CallExpressionÍ1AÍ1cV°MemberExpressionÍ1AÍ1JLªIdentifierÍ1AÍ1E¤MathLªIdentifierÍ1FÍ1J¤ceilÂÂ‘U°BinaryExpressionÍ1KÍ1bLªIdentifierÍ1KÍ1N£len¡/^®CallExpressionÍ1QÍ1bV°MemberExpressionÍ1QÍ1YLªIdentifierÍ1QÍ1U¤MathLªIdentifierÍ1VÍ1Y£maxÂÂ’M§LiteralÍ1ZÍ1[¡1LªIdentifierÍ1]Í1a¤stepÂÂÂ¥constJ³VariableDeclarationÍ1oÍ1~‘K²VariableDeclaratorÍ1uÍ1}LªIdentifierÍ1uÍ1x£out\¯ArrayExpressionÍ1{Í1}¥const]¬ForStatementÍ1ˆÍ2J³VariableDeclarationÍ1Í1–‘K²VariableDeclaratorÍ1‘Í1–LªIdentifierÍ1‘Í1’¡iM§LiteralÍ1•Í1– ¡0£letU°BinaryExpressionÍ1˜Í1LªIdentifierÍ1˜Í1™¡i¢<=LªIdentifierÍ1Í1¡nZ°UpdateExpressionÍ1 Í1£¢++ÂLªIdentifierÍ1 Í1¡¡iO®BlockStatementÍ1¥Í2’J³VariableDeclarationÍ1´Í1Ä‘K²VariableDeclaratorÍ1ºÍ1ÃLªIdentifierÍ1ºÍ1»¡tU°BinaryExpressionÍ1¾Í1ÃLªIdentifierÍ1¾Í1¿¡i¡/LªIdentifierÍ1ÂÍ1Ã¡n¥constX³ExpressionStatementÍ1ÒÍ2^®CallExpressionÍ1ÒÍ2V°MemberExpressionÍ1ÒÍ1ÚLªIdentifierÍ1ÒÍ1Õ£outLªIdentifierÍ1ÖÍ1Ú¤pushÂÂ‘S°ObjectExpressionÍ1ÛÍ2’T¨PropertyÍ1İÍ1õÂÂÂLªIdentifierÍ1İÍ1Ş¡xU°BinaryExpressionÍ1àÍ1õV°MemberExpressionÍ1àÍ1ãLªIdentifierÍ1àÍ1á¡aLªIdentifierÍ1âÍ1ã¡xÂÂ¡+U°BinaryExpressionÍ1æÍ1õU°BinaryExpressionÍ1çÍ1ğV°MemberExpressionÍ1çÍ1êLªIdentifierÍ1çÍ1è¡bLªIdentifierÍ1éÍ1ê¡xÂÂ¡-V°MemberExpressionÍ1íÍ1ğLªIdentifierÍ1íÍ1î¡aLªIdentifierÍ1ïÍ1ğ¡xÂÂ¡*LªIdentifierÍ1ôÍ1õ¡t¤initT¨PropertyÍ1÷Í2ÂÂÂLªIdentifierÍ1÷Í1ø¡yU°BinaryExpressionÍ1úÍ2V°MemberExpressionÍ1úÍ1ıLªIdentifierÍ1úÍ1û¡aLªIdentifierÍ1üÍ1ı¡yÂÂ¡+U°BinaryExpressionÍ2 Í2U°BinaryExpressionÍ2Í2
+V°MemberExpressionÍ2Í2LªIdentifierÍ2Í2¡bLªIdentifierÍ2Í2¡yÂÂ¡-V°MemberExpressionÍ2Í2
+LªIdentifierÍ2Í2¡aLªIdentifierÍ2	Í2
+¡yÂÂ¡*LªIdentifierÍ2Í2¡t¤initÂR¯ReturnStatementÍ2(Í23LªIdentifierÍ2/Í22£outP°MethodDefinitionÍ2@Í6¢ÃÂLªIdentifierÍ2GÍ2S¬wireCoverage¦methodQ²FunctionExpressionÍ2SÍ6¢ÀÂÂÂ‘LªIdentifierÍ2TÍ2X¤wireO®BlockStatementÍ2ZÍ6¢™J³VariableDeclarationÍ2eÍ2}‘K²VariableDeclaratorÍ2kÍ2|LªIdentifierÍ2kÍ2n£ptsV°MemberExpressionÍ2qÍ2|LªIdentifierÍ2qÍ2u¤wireLªIdentifierÍ2vÍ2|¦pointsÂÂ¥constJ³VariableDeclarationÍ2‡Í2–‘K²VariableDeclaratorÍ2‹Í2•LªIdentifierÍ2‹Í2‘¦lengthM§LiteralÍ2”Í2• ¡0£letJ³VariableDeclarationÍ2 Í2´‘K²VariableDeclaratorÍ2¤Í2³LªIdentifierÍ2¤Í2¨¤minXLªIdentifierÍ2«Í2³¨Infinity£letJ³VariableDeclarationÍ2¾Í2Ò‘K²VariableDeclaratorÍ2ÂÍ2ÑLªIdentifierÍ2ÂÍ2Æ¤minYLªIdentifierÍ2ÉÍ2Ñ¨Infinity£letJ³VariableDeclarationÍ2ÜÍ2ñ‘K²VariableDeclaratorÍ2àÍ2ğLªIdentifierÍ2àÍ2ä¤maxXZ¯UnaryExpressionÍ2çÍ2ğ¡-ÃLªIdentifierÍ2èÍ2ğ¨Infinity£letJ³VariableDeclarationÍ2ûÍ3‘K²VariableDeclaratorÍ2ÿÍ3LªIdentifierÍ2ÿÍ3¤maxYZ¯UnaryExpressionÍ3Í3¡-ÃLªIdentifierÍ3Í3¨Infinity£let]¬ForStatementÍ3Í4†J³VariableDeclarationÍ3Í3(‘K²VariableDeclaratorÍ3#Í3(LªIdentifierÍ3#Í3$¡iM§LiteralÍ3'Í3( ¡0£letU°BinaryExpressionÍ3*Í38LªIdentifierÍ3*Í3+¡i¡<V°MemberExpressionÍ3.Í38LªIdentifierÍ3.Í31£ptsLªIdentifierÍ32Í38¦lengthÂÂZ°UpdateExpressionÍ3:Í3=¢++ÂLªIdentifierÍ3:Í3;¡iO®BlockStatementÍ3?Í4†–J³VariableDeclarationÍ3NÍ3_‘K²VariableDeclaratorÍ3TÍ3^LªIdentifierÍ3TÍ3U¡pV°MemberExpressionÍ3XÍ3^LªIdentifierÍ3XÍ3[£ptsLªIdentifierÍ3\Í3]¡iÃÂ¥constX³ExpressionStatementÍ3mÍ3ˆY´AssignmentExpressionÍ3mÍ3‡¡=LªIdentifierÍ3mÍ3q¤minX^®CallExpressionÍ3tÍ3‡V°MemberExpressionÍ3tÍ3|LªIdentifierÍ3tÍ3x¤MathLªIdentifierÍ3yÍ3|£minÂÂ’LªIdentifierÍ3}Í3¤minXV°MemberExpressionÍ3ƒÍ3†LªIdentifierÍ3ƒÍ3„¡pLªIdentifierÍ3…Í3†¡xÂÂÂX³ExpressionStatementÍ3–Í3±Y´AssignmentExpressionÍ3–Í3°¡=LªIdentifierÍ3–Í3š¤minY^®CallExpressionÍ3Í3°V°MemberExpressionÍ3Í3¥LªIdentifierÍ3Í3¡¤MathLªIdentifierÍ3¢Í3¥£minÂÂ’LªIdentifierÍ3¦Í3ª¤minYV°MemberExpressionÍ3¬Í3¯LªIdentifierÍ3¬Í3­¡pLªIdentifierÍ3®Í3¯¡yÂÂÂX³ExpressionStatementÍ3¿Í3ÚY´AssignmentExpressionÍ3¿Í3Ù¡=LªIdentifierÍ3¿Í3Ã¤maxX^®CallExpressionÍ3ÆÍ3ÙV°MemberExpressionÍ3ÆÍ3ÎLªIdentifierÍ3ÆÍ3Ê¤MathLªIdentifierÍ3ËÍ3Î£maxÂÂ’LªIdentifierÍ3ÏÍ3Ó¤maxXV°MemberExpressionÍ3ÕÍ3ØLªIdentifierÍ3ÕÍ3Ö¡pLªIdentifierÍ3×Í3Ø¡xÂÂÂX³ExpressionStatementÍ3èÍ4Y´AssignmentExpressionÍ3èÍ4¡=LªIdentifierÍ3èÍ3ì¤maxY^®CallExpressionÍ3ïÍ4V°MemberExpressionÍ3ïÍ3÷LªIdentifierÍ3ïÍ3ó¤MathLªIdentifierÍ3ôÍ3÷£maxÂÂ’LªIdentifierÍ3øÍ3ü¤maxYV°MemberExpressionÍ3şÍ4LªIdentifierÍ3şÍ3ÿ¡pLªIdentifierÍ4 Í4¡yÂÂÂW«IfStatementÍ4Í4{U°BinaryExpressionÍ4Í4LªIdentifierÍ4Í4¡i¡>M§LiteralÍ4Í4 ¡0O®BlockStatementÍ4Í4{‘X³ExpressionStatementÍ4/Í4lY´AssignmentExpressionÍ4/Í4k¢+=LªIdentifierÍ4/Í45¦length^®CallExpressionÍ49Í4kV°MemberExpressionÍ49Í4CLªIdentifierÍ49Í4=¤MathLªIdentifierÍ4>Í4C¥hypotÂÂ’U°BinaryExpressionÍ4DÍ4VV°MemberExpressionÍ4DÍ4GLªIdentifierÍ4DÍ4E¡pLªIdentifierÍ4FÍ4G¡xÂÂ¡-V°MemberExpressionÍ4JÍ4VV°MemberExpressionÍ4JÍ4TLªIdentifierÍ4JÍ4M£ptsU°BinaryExpressionÍ4NÍ4SLªIdentifierÍ4NÍ4O¡i¡-M§LiteralÍ4RÍ4S¡1ÃÂLªIdentifierÍ4UÍ4V¡xÂÂU°BinaryExpressionÍ4XÍ4jV°MemberExpressionÍ4XÍ4[LªIdentifierÍ4XÍ4Y¡pLªIdentifierÍ4ZÍ4[¡yÂÂ¡-V°MemberExpressionÍ4^Í4jV°MemberExpressionÍ4^Í4hLªIdentifierÍ4^Í4a£ptsU°BinaryExpressionÍ4bÍ4gLªIdentifierÍ4bÍ4c¡i¡-M§LiteralÍ4fÍ4g¡1ÃÂLªIdentifierÍ4iÍ4j¡yÂÂÂÀW«IfStatementÍ4Í5U°BinaryExpressionÍ4”Í4¤V°MemberExpressionÍ4”Í4LªIdentifierÍ4”Í4—£ptsLªIdentifierÍ4˜Í4¦lengthÂÂ£===M§LiteralÍ4£Í4¤ ¡0O®BlockStatementÍ4¦Í5”X³ExpressionStatementÍ4µÍ4¾Y´AssignmentExpressionÍ4µÍ4½¡=LªIdentifierÍ4µÍ4¹¤minXM§LiteralÍ4¼Í4½ ¡0X³ExpressionStatementÍ4ÌÍ4ÕY´AssignmentExpressionÍ4ÌÍ4Ô¡=LªIdentifierÍ4ÌÍ4Ğ¤minYM§LiteralÍ4ÓÍ4Ô ¡0X³ExpressionStatementÍ4ãÍ4ìY´AssignmentExpressionÍ4ãÍ4ë¡=LªIdentifierÍ4ãÍ4ç¤maxXM§LiteralÍ4êÍ4ë ¡0X³ExpressionStatementÍ4úÍ5Y´AssignmentExpressionÍ4úÍ5¡=LªIdentifierÍ4úÍ4ş¤maxYM§LiteralÍ5Í5 ¡0ÀR¯ReturnStatementÍ5Í6›S°ObjectExpressionÍ5Í6š–T¨PropertyÍ5.Í5CÂÂÂLªIdentifierÍ5.Í55§netUuidV°MemberExpressionÍ57Í5CLªIdentifierÍ57Í5;¤wireLªIdentifierÍ5<Í5C§netUuidÂÂ¤initT¨PropertyÍ5RÍ5hÂÂÂLªIdentifierÍ5RÍ5\ªpointCountV°MemberExpressionÍ5^Í5hLªIdentifierÍ5^Í5a£ptsLªIdentifierÍ5bÍ5h¦lengthÂÂ¤initT¨PropertyÍ5wÍ5ŠÂÂÂLªIdentifierÍ5wÍ5}¦points^®CallExpressionÍ5Í5ŠV°MemberExpressionÍ5Í5ˆLªIdentifierÍ5Í5‚£ptsLªIdentifierÍ5ƒÍ5ˆ¥sliceÂÂÂ¤initT¨PropertyÍ5™Í5ÂÂÂÂLªIdentifierÍ5™Í5¥¬segmentCount^®CallExpressionÍ5§Í5ÂV°MemberExpressionÍ5§Í5¯LªIdentifierÍ5§Í5«¤MathLªIdentifierÍ5¬Í5¯£maxÂÂ’M§LiteralÍ5°Í5± ¡0U°BinaryExpressionÍ5³Í5ÁV°MemberExpressionÍ5³Í5½LªIdentifierÍ5³Í5¶£ptsLªIdentifierÍ5·Í5½¦lengthÂÂ¡-M§LiteralÍ5ÀÍ5Á¡1Â¤initT¨PropertyÍ5ÑÍ5îÂÂÂLªIdentifierÍ5ÑÍ5Ú©lengthMil^®CallExpressionÍ5ÜÍ5îV°MemberExpressionÍ5ÜÍ5æLªIdentifierÍ5ÜÍ5à¤MathLªIdentifierÍ5áÍ5æ¥roundÂÂ‘LªIdentifierÍ5çÍ5í¦lengthÂ¤initT¨PropertyÍ5ıÍ6ÂÂÂLªIdentifierÍ5ıÍ6¤bboxS°ObjectExpressionÍ6Í6—T¨PropertyÍ6Í6ÂÂÂLªIdentifierÍ6Í6¡xLªIdentifierÍ6Í6¤minX¤initT¨PropertyÍ6Í6&ÂÂÂLªIdentifierÍ6Í6 ¡yLªIdentifierÍ6"Í6&¤minY¤initT¨PropertyÍ6(Í66ÂÂÂLªIdentifierÍ6(Í6)¡wU°BinaryExpressionÍ6+Í66LªIdentifierÍ6+Í6/¤maxX¡-LªIdentifierÍ62Í66¤minX¤initT¨PropertyÍ68Í6FÂÂÂLªIdentifierÍ68Í69¡hU°BinaryExpressionÍ6;Í6FLªIdentifierÍ6;Í6?¤maxY¡-LªIdentifierÍ6BÍ6F¤minY¤initT¨PropertyÍ6YÍ6dÂÂÂLªIdentifierÍ6YÍ6`§refNameM§LiteralÍ6bÍ6d ¢''¤initT¨PropertyÍ6fÍ6rÂÂÂLªIdentifierÍ6fÍ6n¨instUuidM§LiteralÍ6pÍ6r ¢''¤initT¨PropertyÍ6tÍ6€ÂÂÂLªIdentifierÍ6tÍ6|¨libDevIdM§LiteralÍ6~Í6€ ¢''¤init¤initP°MethodDefinitionÍ6¨Í7mÃÂLªIdentifierÍ6¯Í6¼­formatHitRect¦methodQ²FunctionExpressionÍ6¼Í7mÀÂÂÂ‘LªIdentifierÍ6½Í6¾¡rO®BlockStatementÍ6ÀÍ7m‘R¯ReturnStatementÍ6ËÍ7fU°BinaryExpressionÍ6ÒÍ7eÔra•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ6ÒÍ7-”U±LogicalExpressionÍ6ÕÍ6ìV°MemberExpressionÍ6ÕÍ6ŞLªIdentifierÍ6ÕÍ6Ö¡rLªIdentifierÍ6×Í6Ş§refNameÂÂ¢||V°MemberExpressionÍ6âÍ6ìLªIdentifierÍ6âÍ6ã¡rLªIdentifierÍ6äÍ6ì¨instUuidÂÂV°MemberExpressionÍ6ğÍ6úLªIdentifierÍ6ğÍ6ñ¡rLªIdentifierÍ6òÍ6ú¨libDevIdÂÂ^®CallExpressionÍ7Í7V°MemberExpressionÍ7Í7LªIdentifierÍ7Í7¤MathLªIdentifierÍ7Í7¥roundÂÂ‘V°MemberExpressionÍ7Í7LªIdentifierÍ7Í7¡rLªIdentifierÍ7Í7¡xÂÂÂ^®CallExpressionÍ7Í7*V°MemberExpressionÍ7Í7%LªIdentifierÍ7Í7¤MathLªIdentifierÍ7 Í7%¥roundÂÂ‘V°MemberExpressionÍ7&Í7)LªIdentifierÍ7&Í7'¡rLªIdentifierÍ7(Í7)¡yÂÂÂ•Ôrb•¤type¥start£end¥value¤tail¯TemplateElementÍ6ÓÍ6ÓÔrc’£raw¦cooked  Âb¯TemplateElementÍ6íÍ6îc¡[¡[Âb¯TemplateElementÍ6ûÍ7c±] é€‰ä¸­åŒºAABB=(±] é€‰ä¸­åŒºAABB=(Âb¯TemplateElementÍ7Í7c¡,¡,Âb¯TemplateElementÍ7+Í7,c¡,¡,Ã¡+a¯TemplateLiteralÍ7=Í7e’^®CallExpressionÍ7@Í7OV°MemberExpressionÍ7@Í7JLªIdentifierÍ7@Í7D¤MathLªIdentifierÍ7EÍ7J¥roundÂÂ‘V°MemberExpressionÍ7KÍ7NLªIdentifierÍ7KÍ7L¡rLªIdentifierÍ7MÍ7N¡wÂÂÂ^®CallExpressionÍ7SÍ7bV°MemberExpressionÍ7SÍ7]LªIdentifierÍ7SÍ7W¤MathLªIdentifierÍ7XÍ7]¥roundÂÂ‘V°MemberExpressionÍ7^Í7aLªIdentifierÍ7^Í7_¡rLªIdentifierÍ7`Í7a¡hÂÂÂ“b¯TemplateElementÍ7>Í7>c  Âb¯TemplateElementÍ7PÍ7Qc¢Ã—¢Ã—Âb¯TemplateElementÍ7cÍ7dc¡)¡)ÃP°MethodDefinitionÍ7sÍ9yÃÂLªIdentifierÍ7zÍ7Œ²formatWireCoverage¦methodQ²FunctionExpressionÍ7ŒÍ9yÀÂÂÂ’LªIdentifierÍ7Í7¡c[±AssignmentPatternÍ7Í7›LªIdentifierÍ7Í7–¦maxPtsM§LiteralÍ7™Í7›¢12O®BlockStatementÍ7Í9y“J³VariableDeclarationÍ7¨Í8)‘K²VariableDeclaratorÍ7®Í8(LªIdentifierÍ7®Í7²¤show^®CallExpressionÍ7µÍ8(V°MemberExpressionÍ7µÍ8#^®CallExpressionÍ7µÍ8V°MemberExpressionÍ7µÍ7à^®CallExpressionÍ7µÍ7ÎV°MemberExpressionÍ7µÍ7ÃV°MemberExpressionÍ7µÍ7½LªIdentifierÍ7µÍ7¶¡cLªIdentifierÍ7·Í7½¦pointsÂÂLªIdentifierÍ7¾Í7Ã¥sliceÂÂ’M§LiteralÍ7ÄÍ7Å ¡0LªIdentifierÍ7ÇÍ7Í¦maxPtsÂLªIdentifierÍ7İÍ7à£mapÂÂ‘Q·ArrowFunctionExpressionÍ7áÍ8ÀÃÂÂ‘LªIdentifierÍ7áÍ7â¡pa¯TemplateLiteralÍ7æÍ8’^®CallExpressionÍ7êÍ7ùV°MemberExpressionÍ7êÍ7ôLªIdentifierÍ7êÍ7î¤MathLªIdentifierÍ7ïÍ7ô¥roundÂÂ‘V°MemberExpressionÍ7õÍ7øLªIdentifierÍ7õÍ7ö¡pLªIdentifierÍ7÷Í7ø¡xÂÂÂ^®CallExpressionÍ7ıÍ8V°MemberExpressionÍ7ıÍ8LªIdentifierÍ7ıÍ8¤MathLªIdentifierÍ8Í8¥roundÂÂ‘V°MemberExpressionÍ8Í8LªIdentifierÍ8Í8	¡pLªIdentifierÍ8
+Í8¡yÂÂÂ“b¯TemplateElementÍ7çÍ7èc¡(¡(Âb¯TemplateElementÍ7úÍ7ûc¡,¡,Âb¯TemplateElementÍ8Í8c¡)¡)ÃÂLªIdentifierÍ8Í8#¤joinÂÂ‘M§LiteralÍ8$Í8'£â†’¥'â†’'Â¥constJ³VariableDeclarationÍ83Í8‚‘K²VariableDeclaratorÍ89Í8LªIdentifierÍ89Í8=¤moreWµConditionalExpressionÍ8@Í8U°BinaryExpressionÍ8@Í8XV°MemberExpressionÍ8@Í8OV°MemberExpressionÍ8@Í8HLªIdentifierÍ8@Í8A¡cLªIdentifierÍ8BÍ8H¦pointsÂÂLªIdentifierÍ8IÍ8O¦lengthÂÂ¡>LªIdentifierÍ8RÍ8X¦maxPtsa¯TemplateLiteralÍ8[Í8|‘U°BinaryExpressionÍ8aÍ8yV°MemberExpressionÍ8aÍ8pV°MemberExpressionÍ8aÍ8iLªIdentifierÍ8aÍ8b¡cLªIdentifierÍ8cÍ8i¦pointsÂÂLªIdentifierÍ8jÍ8p¦lengthÂÂ¡-LªIdentifierÍ8sÍ8y¦maxPts’b¯TemplateElementÍ8\Í8_c¥â€¦(+¥â€¦(+Âb¯TemplateElementÍ8zÍ8{c¡)¡)ÃM§LiteralÍ8Í8 ¢''¥constR¯ReturnStatementÍ8ŒÍ9rU°BinaryExpressionÍ8“Í9qU°BinaryExpressionÍ8“Í9La¯TemplateLiteralÍ8“Í8Ó“V°MemberExpressionÍ8šÍ8£LªIdentifierÍ8šÍ8›¡cLªIdentifierÍ8œÍ8£§netUuidÂÂV°MemberExpressionÍ8¬Í8ºLªIdentifierÍ8¬Í8­¡cLªIdentifierÍ8®Í8º¬segmentCountÂÂV°MemberExpressionÍ8ÂÍ8ÍLªIdentifierÍ8ÂÍ8Ã¡cLªIdentifierÍ8ÄÍ8Í©lengthMilÂÂ”b¯TemplateElementÍ8”Í8˜c¤net=¤net=Âb¯TemplateElementÍ8¤Í8ªc¦ segs=¦ segs=Âb¯TemplateElementÍ8»Í8Àc¥ len=¥ len=Âb¯TemplateElementÍ8ÎÍ8Òc¤mil ¤mil Ã¡+a¯TemplateLiteralÍ8ãÍ9L”^®CallExpressionÍ8ìÍ9 V°MemberExpressionÍ8ìÍ8öLªIdentifierÍ8ìÍ8ğ¤MathLªIdentifierÍ8ñÍ8ö¥roundÂÂ‘V°MemberExpressionÍ8÷Í8ÿV°MemberExpressionÍ8÷Í8ıLªIdentifierÍ8÷Í8ø¡cLªIdentifierÍ8ùÍ8ı¤bboxÂÂLªIdentifierÍ8şÍ8ÿ¡xÂÂÂ^®CallExpressionÍ9Í9V°MemberExpressionÍ9Í9LªIdentifierÍ9Í9¤MathLªIdentifierÍ9	Í9¥roundÂÂ‘V°MemberExpressionÍ9Í9V°MemberExpressionÍ9Í9LªIdentifierÍ9Í9¡cLªIdentifierÍ9Í9¤bboxÂÂLªIdentifierÍ9Í9¡yÂÂÂ^®CallExpressionÍ9Í90V°MemberExpressionÍ9Í9&LªIdentifierÍ9Í9 ¤MathLªIdentifierÍ9!Í9&¥roundÂÂ‘V°MemberExpressionÍ9'Í9/V°MemberExpressionÍ9'Í9-LªIdentifierÍ9'Í9(¡cLªIdentifierÍ9)Í9-¤bboxÂÂLªIdentifierÍ9.Í9/¡wÂÂÂ^®CallExpressionÍ94Í9HV°MemberExpressionÍ94Í9>LªIdentifierÍ94Í98¤MathLªIdentifierÍ99Í9>¥roundÂÂ‘V°MemberExpressionÍ9?Í9GV°MemberExpressionÍ9?Í9ELªIdentifierÍ9?Í9@¡cLªIdentifierÍ9AÍ9E¤bboxÂÂLªIdentifierÍ9FÍ9G¡hÂÂÂ•b¯TemplateElementÍ8äÍ8êc¦bbox=(¦bbox=(Âb¯TemplateElementÍ9Í9c¡,¡,Âb¯TemplateElementÍ9Í9c¡,¡,Âb¯TemplateElementÍ91Í92c¢Ã—¢Ã—Âb¯TemplateElementÍ9IÍ9Kc¢) ¢) Ã¡+a¯TemplateLiteralÍ9\Í9q’LªIdentifierÍ9dÍ9h¤showLªIdentifierÍ9kÍ9o¤more“b¯TemplateElementÍ9]Í9bc¥path=¥path=Âb¯TemplateElementÍ9iÍ9ic  Âb¯TemplateElementÍ9pÍ9pc  ÃÀ‘Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration ÌM’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	LªIdentifier	°calcSymbolBoundsLªIdentifier	°calcSymbolBoundse¯ImportSpecifier2LªIdentifier2·coverOriginCenteredBodyLªIdentifier2·coverOriginCenteredBodyM§Literal:ÌL°./SymbolGeometry²'./SymbolGeometry'
