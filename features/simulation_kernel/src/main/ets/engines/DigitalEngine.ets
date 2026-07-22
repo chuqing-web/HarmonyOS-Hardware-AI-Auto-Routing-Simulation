@@ -2,7 +2,9 @@
  * 数字逻辑事件驱动仿真引擎 — 四值逻辑 + 74HC 门级模型 + 二叉堆事件队列
  * v2.0: 真实时序模型 (tPLH/tPHL/fanout/setup-hold/glitch-filter/路径追踪)
  */
-import { LogicState, SchematicDocument, MinHeap, getPinNetMap } from 'common';
+import {
+  LogicState, SchematicDocument, MinHeap, getPinNetMap, traceCd4017
+} from 'common';
 
 // ---- 74HC 系列典型时序参数 (Vcc=5V, 25°C) ----
 interface HcTimingEntry {
@@ -392,6 +394,30 @@ export class DigitalEngine {
     this.syncSequentialClocks();
   }
 
+  /** CD4017 count / CLK / Q0 for A→D instr_trace snapshots. */
+  formatCd4017Trace(): string {
+    if (this.cd4017States.size === 0) {
+      return 'CD4017=(none)';
+    }
+    const parts: string[] = [];
+    this.cd4017States.forEach((st: Cd4017State, compId: string) => {
+      let clkNet = '';
+      for (let i = 0; i < this.gates.length; i++) {
+        const g = this.gates[i];
+        if (g.compId === compId && g.gateType === 'CD4017' && g.inputIds.length > 0) {
+          clkNet = g.inputIds[0];
+          break;
+        }
+      }
+      const clk = clkNet.length > 0 ? this.logicChar(this.getState(clkNet)) : '?';
+      const q0 = st.qNetIds.length > 0 ? this.logicChar(this.getState(st.qNetIds[0])) : '?';
+      const last = this.logicChar(st.lastClk);
+      const shortId = compId.length > 12 ? compId.substring(compId.length - 12) : compId;
+      parts.push(`${shortId} cnt=${st.count} clk=${clk} lastClk=${last} Q0=${q0}`);
+    });
+    return `CD4017={${parts.join('; ')}}`;
+  }
+
   /** Human-readable gate summary for instr_trace. */
   formatGateSummary(maxGates: number = 12): string {
     const parts: string[] = [];
@@ -522,7 +548,9 @@ export class DigitalEngine {
   }
 
   processEvents(untilTime: number): Map<string, LogicState> {
-    while (!this.eventHeap.isEmpty) {
+    // MinHeap.isEmpty is a method — must call it. Bare `.isEmpty` is always truthy,
+    // so `!heap.isEmpty` was permanently false and events never drained (CLK stuck L).
+    while (!this.eventHeap.isEmpty()) {
       const peek = this.eventHeap.peek();
       if (peek === null || peek.time > untilTime) {
         break;
@@ -848,11 +876,22 @@ export class DigitalEngine {
     const clk = this.getState(gate.inputIds[0]);
     const en = gate.inputIds.length > 1 ? this.getState(gate.inputIds[1]) : LogicState.LOW;
     const rst = gate.inputIds.length > 2 ? this.getState(gate.inputIds[2]) : LogicState.LOW;
+    const prevClk = state.lastClk;
+    const shortId = gate.compId.length > 12 ? gate.compId.substring(gate.compId.length - 12) : gate.compId;
     if (rst === LogicState.HIGH) {
+      const q0Before = state.qNetIds.length > 0 ? this.getState(state.qNetIds[0]) : LogicState.UNKNOWN;
+      const cntBefore = state.count;
       state.count = 0;
       for (let q = 0; q < state.qNetIds.length; q++) {
-        this.scheduleEvent(this.currentTime + gate.tPLH, state.qNetIds[q],
-          q === 0 ? LogicState.HIGH : LogicState.LOW);
+        const st = q === 0 ? LogicState.HIGH : LogicState.LOW;
+        // Commit immediately — delayed-only Q left THEV stuck at Q0=H across budget steps
+        this.forceSetLevel(state.qNetIds[q], st);
+        this.scheduleEvent(this.currentTime + gate.tPLH, state.qNetIds[q], st);
+      }
+      if (cntBefore !== 0 || q0Before !== LogicState.HIGH || prevClk !== clk) {
+        traceCd4017(
+          `RST ${shortId} clk=${this.logicChar(clk)} en=${this.logicChar(en)} ` +
+          `cnt ${cntBefore}→0 Q0=H t=${this.currentTime.toExponential(3)}s`);
       }
       state.lastClk = clk;
       return LogicState.HIGH;
@@ -860,9 +899,27 @@ export class DigitalEngine {
     if (state.lastClk === LogicState.LOW && clk === LogicState.HIGH && en !== LogicState.HIGH) {
       state.count = (state.count + 1) % 10;
       for (let q = 0; q < state.qNetIds.length; q++) {
-        this.scheduleEvent(this.currentTime + gate.tPLH, state.qNetIds[q],
-          q === state.count ? LogicState.HIGH : LogicState.LOW);
+        const st = q === state.count ? LogicState.HIGH : LogicState.LOW;
+        this.forceSetLevel(state.qNetIds[q], st);
+        this.scheduleEvent(this.currentTime + gate.tPLH, state.qNetIds[q], st);
       }
+      const q0 = state.qNetIds.length > 0 ? this.logicChar(this.getState(state.qNetIds[0])) : '?';
+      traceCd4017(
+        `EDGE ${shortId} ↑ clk L→H cnt=${state.count} Q0=${q0} ` +
+        `t=${this.currentTime.toExponential(3)}s`);
+    } else if (prevClk !== clk) {
+      // Clock level changed but no decade step — show why (for instr_trace)
+      let why = 'no_rise';
+      if (prevClk === LogicState.HIGH && clk === LogicState.LOW) {
+        why = 'fall_ok';
+      } else if (clk === LogicState.HIGH && en === LogicState.HIGH) {
+        why = 'blocked_EN';
+      } else if (prevClk === LogicState.HIGH && clk === LogicState.HIGH) {
+        why = 'already_H';
+      }
+      traceCd4017(
+        `CLK ${shortId} ${this.logicChar(prevClk)}→${this.logicChar(clk)} why=${why} ` +
+        `en=${this.logicChar(en)} cnt=${state.count} t=${this.currentTime.toExponential(3)}s`);
     }
     state.lastClk = clk;
     return state.count === 0 ? LogicState.HIGH : LogicState.LOW;

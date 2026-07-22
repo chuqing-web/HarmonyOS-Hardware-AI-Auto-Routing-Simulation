@@ -1,4 +1,4 @@
-�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��export const DEVICE_SELECT_PROMPT = {
+�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��export const DEVICE_SELECT_PROMPT = {
     id: 'device_select_v5',
     version: '5.0.0',
     system: `你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
@@ -8,9 +8,11 @@
 2. 电压表(VOLTMETER_DC)必须分布在不同节点: N块表各自测量不同电阻的压降
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
-3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号
-5. 电源名(VCC/GND)绝不能用于非电源网络
+3. POWER_METER: V 并 / I 串；禁止 I 与 V 同节点对
+4. VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）；档位 DCV/ACV/OHM/AMP/DIODE
+5. 所有仪器统一使用网络标号(joinByLabel)，禁止长导线；【SIM_CONN】缺 GND/COM 回线阻断
+6. 每个电路必须包含VCC和GND符号
+7. 电源名(VCC/GND)绝不能用于非电源网络
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -41,14 +43,18 @@
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
 - 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
+- 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
+- 用户提到"功率表""测功率" → 追加 POWER_METER
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
-- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
+- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
+- 仪器真脚以库为准：VIRTUAL_METER 用 V 不是 V+；LA 用 CH1 不是 D0/CH0
 - 不确定的器件放入 oodFlags，不要猜测
 
 【多轮对话编辑模式】:
@@ -60,7 +66,7 @@
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`,
     userTemplate: '{{conversation_history}}{{generation_mode}}用户需求：\n{{user_prompt}}\n\n场景：{{scene}}\n\n局部电路（可选）：\n{{partial_topo}}\n\n可用器件库摘要：\n{{library_catalog}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };
-//# sourceMappingURL=DeviceSelectPrompt.js.map�eC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/DeviceSelectPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���W/**
+//# sourceMappingURL=DeviceSelectPrompt.js.map�eC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/DeviceSelectPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���k/**
  * device_select — 同步自 skill/prompts/01_device_select.md
  */
 import { PromptTemplate } from '../PromptTypes';
@@ -75,9 +81,11 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 2. 电压表(VOLTMETER_DC)必须分布在不同节点: N块表各自测量不同电阻的压降
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
-3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号
-5. 电源名(VCC/GND)绝不能用于非电源网络
+3. POWER_METER: V 并 / I 串；禁止 I 与 V 同节点对
+4. VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）；档位 DCV/ACV/OHM/AMP/DIODE
+5. 所有仪器统一使用网络标号(joinByLabel)，禁止长导线；【SIM_CONN】缺 GND/COM 回线阻断
+6. 每个电路必须包含VCC和GND符号
+7. 电源名(VCC/GND)绝不能用于非电源网络
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -108,14 +116,18 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
 - 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
+- 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
+- 用户提到"功率表""测功率" → 追加 POWER_METER
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
-- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
+- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
+- 仪器真脚以库为准：VIRTUAL_METER 用 V 不是 V+；LA 用 CH1 不是 D0/CH0
 - 不确定的器件放入 oodFlags，不要猜测
 
 【多轮对话编辑模式】:
@@ -127,23 +139,21 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}`,
   userTemplate: '{{conversation_history}}{{generation_mode}}用户需求：\n{{user_prompt}}\n\n场景：{{scene}}\n\n局部电路（可选）：\n{{partial_topo}}\n\n可用器件库摘要：\n{{library_catalog}}\n\n现在立即只输出 JSON，不要任何其它文字：'
 };
-�A��rE��version�file�sourceRoot�sources�names�mappings�DeviceSelectPrompt.js���DeviceSelectPrompt.ets�� >��   � � � �! !�$ 4�� � � � �� � 	� � �� �
+�A��rE��version�file�sourceRoot�sources�names�mappings�DeviceSelectPrompt.js���DeviceSelectPrompt.ets�� D��   � � � �! !�$ 4�� � � � �� � 	� � �� �
  � 
-����������������������������������������������������������� �@�˔� �A� �A� �A�̿ �A̽�� �B� �B�rF��version�file�sources�sourcesContent�names�mappings������� ?��    ��   ��   ��   ��   ��   ��   ��   ��   ��  	 ��  
- ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration �
-��rJ��type�start�end�declarations�kind�VariableDeclaration�
-���rK��type�start�end�id�init�VariableDeclarator�
-��rL��type�start�end�name�Identifier!�DEVICE_SELECT_PROMPT�rM��type�start�end�properties�ObjectExpression$�
-���rN��type�start�end�method�shorthand�computed�key�value�kind�Property+�A���L�Identifier+-�id�rO��type�start�end�value�raw�Literal/�A�device_select_v5�'device_select_v5'�initN�Property�H�X���L�Identifier�H�O�versionO�Literal�Q�X�5.0.0�'5.0.0'�initN�Property�_�	����L�Identifier�_�e�system�rP��type�start�end�expressions�quasis�TemplateLiteral�g�	ϐ��rQ��type�start�end�value�tail�TemplateElement�h�	��rR��raw�cooked�U你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
+����������������������������������������������������������������� �F�˔� �G� �G� �G�̿ �G̽�� �H� �H�rF��version�file�sources�sourcesContent�names�mappings������� E��    ��   ��   ��   ��   ��   ��   ��   ��   ��  	 ��  
+ ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > ��  ? ��  �@ ��  �A ��  �B ��  �C ��  �D �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration ���rJ��type�start�end�declarations�kind�VariableDeclaration���rK��type�start�end�id�init�VariableDeclarator���rL��type�start�end�name�Identifier!�DEVICE_SELECT_PROMPT�rM��type�start�end�properties�ObjectExpression$���rN��type�start�end�method�shorthand�computed�key�value�kind�Property+�A���L�Identifier+-�id�rO��type�start�end�value�raw�Literal/�A�device_select_v5�'device_select_v5'�initN�Property�H�X���L�Identifier�H�O�versionO�Literal�Q�X�5.0.0�'5.0.0'�initN�Property�_�'���L�Identifier�_�e�system�rP��type�start�end�expressions�quasis�TemplateLiteral�g�'���rQ��type�start�end�value�tail�TemplateElement�h�&�rR��raw�cooked�i你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
 
 【核心拓扑铁律 — 严禁违反】:
 1. 电流表(AMMETER_DC)必须串联在电源回路: VCC→I+→I-→负载。绝不并联！
 2. 电压表(VOLTMETER_DC)必须分布在不同节点: N块表各自测量不同电阻的压降
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
-3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号
-5. 电源名(VCC/GND)绝不能用于非电源网络
+3. POWER_METER: V 并 / I 串；禁止 I 与 V 同节点对
+4. VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）；档位 DCV/ACV/OHM/AMP/DIODE
+5. 所有仪器统一使用网络标号(joinByLabel)，禁止长导线；【SIM_CONN】缺 GND/COM 回线阻断
+6. 每个电路必须包含VCC和GND符号
+7. 电源名(VCC/GND)绝不能用于非电源网络
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -174,14 +184,18 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
 - 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
+- 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
+- 用户提到"功率表""测功率" → 追加 POWER_METER
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
-- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
+- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
+- 仪器真脚以库为准：VIRTUAL_METER 用 V 不是 V+；LA 用 CH1 不是 D0/CH0
 - 不确定的器件放入 oodFlags，不要猜测
 
 【多轮对话编辑模式】:
@@ -190,16 +204,18 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - 保留未涉及修改的现有器件
 
 输出规则（与全局输出铁律一致）: 回复正文只能是一个 JSON 对象，禁止任何说明/markdown。
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}�U你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}�i你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
 
 【核心拓扑铁律 — 严禁违反】:
 1. 电流表(AMMETER_DC)必须串联在电源回路: VCC→I+→I-→负载。绝不并联！
 2. 电压表(VOLTMETER_DC)必须分布在不同节点: N块表各自测量不同电阻的压降
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
-3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号
-5. 电源名(VCC/GND)绝不能用于非电源网络
+3. POWER_METER: V 并 / I 串；禁止 I 与 V 同节点对
+4. VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）；档位 DCV/ACV/OHM/AMP/DIODE
+5. 所有仪器统一使用网络标号(joinByLabel)，禁止长导线；【SIM_CONN】缺 GND/COM 回线阻断
+6. 每个电路必须包含VCC和GND符号
+7. 电源名(VCC/GND)绝不能用于非电源网络
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -230,14 +246,18 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
 - 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
+- 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
+- 用户提到"功率表""测功率" → 追加 POWER_METER
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
-- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
+- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
+- 仪器真脚以库为准：VIRTUAL_METER 用 V 不是 V+；LA 用 CH1 不是 D0/CH0
 - 不确定的器件放入 oodFlags，不要猜测
 
 【多轮对话编辑模式】:
@@ -246,9 +266,7 @@ Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_typ
 - 保留未涉及修改的现有器件
 
 输出规则（与全局输出铁律一致）: 回复正文只能是一个 JSON 对象，禁止任何说明/markdown。
-Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}äinitN�Property�	��
-����L�Identifier�	��	�userTemplateO�Literal�	��
-���{{conversation_history}}{{generation_mode}}用户需求：
+Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"..."|null}],"circuit_constraint":"...","oodFlags":["..."]}äinitN�Property�.�����L�Identifier�.�:�userTemplateO�Literal�<����{{conversation_history}}{{generation_mode}}用户需求：
 {{user_prompt}}
 
 场景：{{scene}}

@@ -5,7 +5,7 @@ import { AppService } from '../services/AppService';
 import {
   OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode,
   MathChannelOp, MultimeterMode, SignalWaveform, LogicDecodeProtocol,
-  VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect, traceInstrUi,
+  VoltmeterType, AmmeterType, traceUiRefresh, traceUiSelect, traceInstrUi, traceLaUiChannels,
   detectInstrumentKind, instrumentSubTabForKind, UnitParser
 } from 'common';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from './proteus/ProteusWidgets';
@@ -404,11 +404,11 @@ export struct InstrumentPanel {
           readId = this.appService.findFirstSchematicInstrumentId('dmm');
         }
         if (readId.length > 0) {
-          const delta = this.appService.readVoltmeterDeltaForComponent(readId);
-          if (delta !== null) {
+          const raw = this.appService.readMultimeterRawForComponent(readId);
+          if (raw !== null) {
             // Instantaneous — pot drag / live edits (avoid rolling-average lag)
-            this.appService.instruments.multimeterSnapReading(delta);
-            this.mmReading = delta.toFixed(3);
+            this.appService.instruments.multimeterSnapReading(raw);
+            this.mmReading = this.formatMmReading(raw);
             refreshed = true;
             dataPath = selectionMatches ? 'delta' : 'schematic_dmm';
           }
@@ -548,18 +548,33 @@ export struct InstrumentPanel {
         const logic = this.appService.instruments.getLogicWaveData();
         if (logic.success && logic.data !== undefined) {
           const channels: number[][] = [];
+          const edgeParts: string[] = [];
           for (let i = 0; i < logic.data.length; i++) {
             const wave = logic.data[i];
             const bits: number[] = [];
+            let edges = 0;
             for (let j = 0; j < wave.voltageAxis.length; j++) {
-              bits.push(wave.voltageAxis[j] > 0.5 ? 1 : 0);
+              const bit = wave.voltageAxis[j] > 0.5 ? 1 : 0;
+              bits.push(bit);
+              if (j > 0 && bits[j] !== bits[j - 1]) {
+                edges++;
+              }
             }
             channels.push(bits.slice());
+            // lab_digital: D0–D6=Q, D7=CLK；lab_memory: D0–7=SCL/SDA/SCK/CS/MOSI/CE/CE/A0
+            // 有边沿的通道 + CH1/CH8 必打（便于对照空闲/活动）
+            if (edges > 0 || i === 7 || i === 0) {
+              const last = bits.length > 0 ? bits[bits.length - 1] : -1;
+              edgeParts.push(`D${i} n=${bits.length} e=${edges} last=${last}`);
+            }
           }
           this.logicChannelData = channels;
           this.logicSampleCount = channels.length > 0 ? channels[0].length : 128;
           if (channels.length > 0) {
             this.logicChannels = channels.length;
+          }
+          if (edgeParts.length > 0) {
+            traceLaUiChannels(edgeParts.join('; '));
           }
           dataPath = `ch=${channels.length}`;
         } else {
@@ -638,6 +653,25 @@ export struct InstrumentPanel {
       case MultimeterMode.DIODE: return 'DIODE';
       default: return 'DCV';
     }
+  }
+
+  private formatMmReading(raw: number): string {
+    if (this.mmMode === 'AMP') {
+      return `${(raw * 1000).toFixed(3)} mA`;
+    }
+    if (this.mmMode === 'OHM') {
+      if (raw >= 1e8) {
+        return 'OL';
+      }
+      if (raw >= 1000) {
+        return `${(raw / 1000).toFixed(3)} kΩ`;
+      }
+      return `${raw.toFixed(1)} Ω`;
+    }
+    if (this.mmMode === 'DIODE') {
+      return `${raw.toFixed(3)} V`;
+    }
+    return `${raw.toFixed(3)} V`;
   }
 
   build() {
@@ -1152,10 +1186,21 @@ export struct InstrumentPanel {
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
       Row({ space: 6 }) {
-        ProteusClassicBtn({ label: 'OHM', widthVal: '48%',
-          onAction: () => { this.mmMode = 'OHM'; this.appService.instruments.setMode(MultimeterMode.RESISTANCE); } })
-        ProteusClassicBtn({ label: 'AMP', widthVal: '48%',
-          onAction: () => { this.mmMode = 'AMP'; this.appService.instruments.setMode(MultimeterMode.CURRENT); } })
+        ProteusClassicBtn({ label: 'OHM', widthVal: '32%',
+          onAction: () => {
+            this.mmMode = 'OHM';
+            this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
+          } })
+        ProteusClassicBtn({ label: 'AMP', widthVal: '32%',
+          onAction: () => {
+            this.mmMode = 'AMP';
+            this.appService.instruments.setMode(MultimeterMode.CURRENT);
+          } })
+        ProteusClassicBtn({ label: 'DIODE', widthVal: '32%',
+          onAction: () => {
+            this.mmMode = 'DIODE';
+            this.appService.instruments.setMode(MultimeterMode.DIODE);
+          } })
       }
       .width('100%').padding({ left: 8, right: 8 })
 
@@ -1309,7 +1354,10 @@ export struct InstrumentPanel {
           onAction: () => {
             this.appService.instruments.uartHexSend(this.uartHex);
             this.uartLog = this.appService.instruments.getUartLog();
-            this.statusMessage = `已发送: ${this.uartHex}`;
+            const looped = this.appService.instruments.isUartLoopback();
+            this.statusMessage = looped
+              ? `环回已回显: ${this.uartHex}`
+              : `已发送: ${this.uartHex}`;
           } })
         ProteusClassicBtn({ label: '收', widthVal: 36,
           onAction: () => {

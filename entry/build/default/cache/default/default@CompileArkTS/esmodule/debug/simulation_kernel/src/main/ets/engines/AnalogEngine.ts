@@ -310,6 +310,14 @@ export class AnalogEngine {
                 nl += `R${rCount} ${nA} ${nB} ${this.toSpiceValue(val)}\n`;
                 rCount++;
             }
+            else if (libId === 'DS18B20' || libId.includes('DS18B20')) {
+                const nDq = this.resolveCompNode(comp, 'DQ', pinNets, netNodeMap);
+                const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+                const tempC = AnalogEngine.parseTempCelsius(paramMapGet(comp.parameters, 'temp_c', '25'));
+                const vTeach = AnalogEngine.tempCToTeachVolts(tempC);
+                nl += `V${rCount} ${nDq} ${nGnd} ${vTeach}\n`;
+                rCount++;
+            }
             else if (libId.startsWith('FUSE') || libId.includes('FUSE')) {
                 nl += `R${rCount} ${nA} ${nB} 0.01\n`;
                 rCount++;
@@ -895,6 +903,66 @@ export class AnalogEngine {
                         this.netUuidToNode.set(m.netId, node);
                 }
             }
+            else if (libId === 'DS18B20' || libId.includes('DS18B20')) {
+                // Teaching analog: DQ→GND voltage tracks temp_c (−55°C→0V … 125°C→5V).
+                // Real 1-Wire protocol is not modelled; canvas slider drives this Vsrc.
+                // Firmware must keep PA3 as GPIO input so it does not fight this source.
+                const nDq = this.resolveCompNode(comp, 'DQ', pinNets, netNodeMap);
+                const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+                if (this.isFloatingNode(nDq) || this.isFloatingNode(nGnd)) {
+                    if (!this.quietLoad) {
+                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: DS18B20 DQ/GND not wired`);
+                    }
+                    continue;
+                }
+                const tempC = AnalogEngine.parseTempCelsius(paramMapGet(comp.parameters, 'temp_c', '25'));
+                const vTeach = AnalogEngine.tempCToTeachVolts(tempC);
+                const devId = `V${this.voltageSources.length}`;
+                this.voltageSources.push({
+                    id: devId, nodeA: nDq, nodeB: nGnd,
+                    voltage: vTeach, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+                    dutyCycle: 0.5, riseTime: 0, fallTime: 0
+                });
+                this.compUuidToDevId.set(comp.id, [devId]);
+                if (!this.quietLoad) {
+                    Logger.info(INSTR_TRACE_TAG, `analog DS18B20 ${comp.refDes} temp_c=${tempC.toFixed(1)}°C → DQ=${vTeach.toFixed(3)}V`);
+                    traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nDq, nGnd, `DS18B20 teach ${tempC.toFixed(1)}°C→${vTeach.toFixed(3)}V`);
+                }
+                for (const m of pinNets) {
+                    const node = netNodeMap.get(m.netId);
+                    if (node)
+                        this.netUuidToNode.set(m.netId, node);
+                }
+            }
+            else if (libId === 'HALL_SENSOR' || libId.includes('HALL')) {
+                // Open-collector: active(magnet)=1 → OUT short to GND; else high-Z (external pull-up).
+                const nOut = this.resolveCompNode(comp, 'OUT', pinNets, netNodeMap);
+                const nGnd = this.resolveCompNode(comp, 'GND', pinNets, netNodeMap);
+                if (this.isFloatingNode(nOut) || this.isFloatingNode(nGnd)) {
+                    if (!this.quietLoad) {
+                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: HALL OUT/GND not wired`);
+                    }
+                    continue;
+                }
+                const active = AnalogEngine.isTruthyParam(paramMapGet(comp.parameters, 'active', '0'));
+                if (active) {
+                    const devId = `R${rIdx++}`;
+                    this.resistors.push({ id: devId, nodeA: nOut, nodeB: nGnd, resistance: 10 });
+                    this.compUuidToDevId.set(comp.id, [devId]);
+                    if (!this.quietLoad) {
+                        Logger.info(INSTR_TRACE_TAG, `analog HALL ${comp.refDes} active=1 OUT→GND 10Ω`);
+                        traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nOut, nGnd, 'HALL magnet ON');
+                    }
+                }
+                else if (!this.quietLoad) {
+                    Logger.info(INSTR_TRACE_TAG, `analog HALL ${comp.refDes} active=0 (open / pull-up)`);
+                }
+                for (const m of pinNets) {
+                    const node = netNodeMap.get(m.netId);
+                    if (node)
+                        this.netUuidToNode.set(m.netId, node);
+                }
+            }
             else if (libId.startsWith('FUSE') || libId.includes('FUSE')) {
                 if (!this.areTerminalsConnected(nA, nB)) {
                     Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: fuse pin(s) not wired`);
@@ -1206,23 +1274,95 @@ export class AnalogEngine {
                 // MCU, instruments, etc. — inject characteristic impedance so nodes don't float
                 const libUpper = libId.toUpperCase();
                 if (libUpper.includes('POWER_METER') || (libUpper.includes('WATT') && libUpper.includes('METER'))) {
-                    // Observer only: high-Z across voltage terminals (never a rail Vsrc).
-                    const pm = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
-                    if (!this.areTerminalsConnected(pm[0], pm[1])) {
-                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: power-meter V+/V- not wired`);
-                    }
-                    else {
-                        const devId = `R${rIdx++}`;
-                        this.resistors.push({ id: devId, nodeA: pm[0], nodeB: pm[1], resistance: 10e6 });
-                        this.compUuidToDevId.set(comp.id, [devId]);
+                    // V 路：高阻并测；I 路：0V 理想串联（与电流表相同），否则 I+/I- 分网会开路。
+                    const nVp = this.resolveFirstWiredNode(comp, pinNets, netNodeMap, ['V+', 'VP', 'PLUS', '+']);
+                    const nVm = this.resolveFirstWiredNode(comp, pinNets, netNodeMap, ['V-', 'COM', 'GND', '-']);
+                    const nIp = this.resolveCompNode(comp, 'I+', pinNets, netNodeMap);
+                    const nIm = this.resolveCompNode(comp, 'I-', pinNets, netNodeMap);
+                    const devIds: string[] = [];
+                    if (this.areTerminalsConnected(nIp, nIm) && nIp !== nIm &&
+                        !this.isFloatingNode(nIp) && !this.isFloatingNode(nIm)) {
+                        const iDev = `V${this.voltageSources.length}`;
+                        this.voltageSources.push({
+                            id: iDev, nodeA: nIp, nodeB: nIm,
+                            voltage: 0, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+                            dutyCycle: 0.5, riseTime: 0, fallTime: 0
+                        });
+                        // VSRC 放首位：getCurrentForComponent 取 branch I(V*)
+                        devIds.push(iDev);
                         if (!this.quietLoad) {
-                            traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, pm[0], pm[1], `10MΩ PM pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                            traceAnalogDeviceStamp(comp.refDes, iDev, comp.libraryId, nIp, nIm, `0V Ideal-PM-I pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
                         }
                     }
+                    else if (!this.quietLoad) {
+                        Logger.info(INSTR_TRACE_TAG, `analog ${comp.refDes}: power-meter I+/I- not series-wired (skip I stamp)`);
+                    }
+                    if (this.areTerminalsConnected(nVp, nVm) && !this.isFloatingNode(nVp) && !this.isFloatingNode(nVm)) {
+                        const rDev = `R${rIdx++}`;
+                        this.resistors.push({ id: rDev, nodeA: nVp, nodeB: nVm, resistance: 10e6 });
+                        devIds.push(rDev);
+                        if (!this.quietLoad) {
+                            traceAnalogDeviceStamp(comp.refDes, rDev, comp.libraryId, nVp, nVm, `10MΩ PM-V pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                        }
+                    }
+                    else if (!this.quietLoad) {
+                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: power-meter V+/V- not wired`);
+                    }
+                    if (devIds.length > 0) {
+                        this.compUuidToDevId.set(comp.id, devIds);
+                    }
                 }
-                else if (libUpper.includes('VOLTMETER') || libUpper.includes('VIRTUAL_METER') ||
-                    libUpper === 'MULTIMETER' ||
-                    (libUpper.includes('METER') && !libUpper.includes('AMMETER') && !libUpper.includes('POWER'))) {
+                else if (libUpper.includes('VIRTUAL_METER') || libUpper === 'MULTIMETER') {
+                    // 四端 DMM：V-COM 高阻；A-COM 理想串联；OHM-COM 戴维南感测 1V+1kΩ
+                    const nV = this.resolveCompNode(comp, 'V', pinNets, netNodeMap);
+                    const nA = this.resolveCompNode(comp, 'A', pinNets, netNodeMap);
+                    const nOhm = this.resolveCompNode(comp, 'OHM', pinNets, netNodeMap);
+                    const nCom = this.resolveCompNode(comp, 'COM', pinNets, netNodeMap);
+                    const dmmDevs: string[] = [];
+                    if (!this.isFloatingNode(nA) && !this.isFloatingNode(nCom) && nA !== nCom) {
+                        const aDev = `V${this.voltageSources.length}`;
+                        this.voltageSources.push({
+                            id: aDev, nodeA: nA, nodeB: nCom,
+                            voltage: 0, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+                            dutyCycle: 0.5, riseTime: 0, fallTime: 0
+                        });
+                        dmmDevs.push(aDev);
+                        if (!this.quietLoad) {
+                            traceAnalogDeviceStamp(comp.refDes, aDev, comp.libraryId, nA, nCom, `0V DMM-A pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                        }
+                    }
+                    if (!this.isFloatingNode(nV) && !this.isFloatingNode(nCom) && nV !== nCom) {
+                        const vDev = `R${rIdx++}`;
+                        this.resistors.push({ id: vDev, nodeA: nV, nodeB: nCom, resistance: 10e6 });
+                        dmmDevs.push(vDev);
+                        if (!this.quietLoad) {
+                            traceAnalogDeviceStamp(comp.refDes, vDev, comp.libraryId, nV, nCom, `10MΩ DMM-V pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                        }
+                    }
+                    if (!this.isFloatingNode(nOhm) && !this.isFloatingNode(nCom) && nOhm !== nCom) {
+                        const nInt = `DMM_OHM_${comp.id}`;
+                        const ohmV = `V${this.voltageSources.length}`;
+                        this.voltageSources.push({
+                            id: ohmV, nodeA: nInt, nodeB: nCom,
+                            voltage: 1, waveform: 'dc', freq: 0, amplitude: 0, phase: 0,
+                            dutyCycle: 0.5, riseTime: 0, fallTime: 0
+                        });
+                        const ohmR = `R${rIdx++}`;
+                        this.resistors.push({ id: ohmR, nodeA: nInt, nodeB: nOhm, resistance: 1000 });
+                        dmmDevs.push(ohmV);
+                        dmmDevs.push(ohmR);
+                        if (!this.quietLoad) {
+                            traceAnalogDeviceStamp(comp.refDes, ohmV, comp.libraryId, nInt, nCom, `1V DMM-OHM Thevenin pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+                            traceAnalogDeviceStamp(comp.refDes, ohmR, comp.libraryId, nInt, nOhm, '1kΩ DMM-OHM Rsense');
+                        }
+                    }
+                    if (dmmDevs.length > 0) {
+                        this.compUuidToDevId.set(comp.id, dmmDevs);
+                    }
+                }
+                else if (libUpper.includes('VOLTMETER') ||
+                    (libUpper.includes('METER') && !libUpper.includes('AMMETER') && !libUpper.includes('POWER') &&
+                        !libUpper.includes('VIRTUAL'))) {
                     const vm = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
                     if (!this.areTerminalsConnected(vm[0], vm[1])) {
                         Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: voltmeter pin(s) not wired`);
@@ -2446,6 +2586,34 @@ export class AnalogEngine {
             return 0.999;
         }
         return n;
+    }
+    /** Parse DS18B20 temp_c (°C), clamp to datasheet range −55…125. */
+    static parseTempCelsius(raw: string): number {
+        let s = raw.trim().replace(/\s+/g, '');
+        if (s.endsWith('°C') || s.endsWith('℃')) {
+            s = s.substring(0, s.length - 2);
+        }
+        else if (s.length > 1 && (s.endsWith('C') || s.endsWith('c'))) {
+            const before = s.charAt(s.length - 2);
+            if (before === '-' || before === '.' || (before >= '0' && before <= '9')) {
+                s = s.substring(0, s.length - 1);
+            }
+        }
+        let n = parseFloat(s);
+        if (isNaN(n)) {
+            return 25;
+        }
+        if (n < -55) {
+            return -55;
+        }
+        if (n > 125) {
+            return 125;
+        }
+        return n;
+    }
+    /** Teaching map: −55°C→0V, 125°C→5V (linear). */
+    static tempCToTeachVolts(tempC: number): number {
+        return ((tempC + 55) / 180) * 5;
     }
     /** Get all node voltages for display/export */
     getNodeVoltageMap(): Map<string, number> {

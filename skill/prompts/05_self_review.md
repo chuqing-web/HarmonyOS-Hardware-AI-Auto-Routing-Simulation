@@ -15,8 +15,12 @@ runtime_key: self_review
 2. 仪器拓扑:
    - 电流表是否串联(I+/I-在不同网络)? 同网=短路
    - 电压表V+/COM是否分布在不同测量节点?
-   - 示波器: CH1(或CH2)必须入被测信号网；GND必须入系统地；禁止 CH* 挂 VCC/电源轨；禁止 CH 与 GND 同网
-   - 未使用的 CH2/CH3/CH4 保持悬空即可，禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
+   - 功率表 POWER_METER: V+/V- 并测；I+/I- 串联；I 路≠V 路节点对
+   - 万用表 VIRTUAL_METER: 真脚 V,A,OHM,COM；按档位 V∥ / A串 / OHM阻或二极管；COM→GND
+   - 示波器: CH1–4+GND；至少 CH1 入被测信号网；GND→系统地（stubLabel）；禁止 CH* 挂 VCC；禁止 CH 与 GND 同网
+   - 逻辑分析仪: CH1–CH8+GND（禁止 CH0/D0）；【SIM_CONN】缺 GND/COM 回线视为硬错误
+   - 未使用的 CH2/CH3/CH4：一般保持悬空；教学全套仪器场景应接满通道
+   - 禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
 3. 导线布局（硬门禁 — 必须逐根检查）:
    - 导线不得进入任何器件的「选中命中区」(HIT_PAD=22，与编辑器 SELECTION_HIT_PAD 一致)
    - 导线不得贴近/碰到无关引脚（安全距 ≥20mil）；不得错误连到无关引脚

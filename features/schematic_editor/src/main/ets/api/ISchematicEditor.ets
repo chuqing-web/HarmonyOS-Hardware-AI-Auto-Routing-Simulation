@@ -102,6 +102,8 @@ export interface ISchematicEditor {
   zoomCanvas(scale: number): void;
   moveView(dx: number, dy: number): void;
   fitAllInView(): void;
+  /** 将指定世界坐标矩形适配到视口（区域放大） */
+  fitRectInView(rect: Rect2D): void;
   setZoom(scale: number): void;
   getZoom(): number;
   panBy(dx: number, dy: number): void;

@@ -20,7 +20,10 @@ runtime_key: gen_sch
 【仪器拓扑铁律】:
 - 电流表串联: VCC→I+→I-→负载 (绝不在同一网络)
 - 电压表分布: 多块表分别测不同电阻的压降
-- 仪器用网络标号: joinByLabel, 不用长导线
+- 功率表 POWER_METER: V+/V- 跨负载；I+/I- 串联；禁止 I 与 V 同节点对
+- 万用表 VIRTUAL_METER: V,A,OHM,COM（DCV/ACV/OHM/AMP/DIODE）
+- 示波器 CH1–4+GND；LA CH1–8+GND（禁 CH0/D0）
+- 仪器用网络标号: joinByLabel；【SIM_CONN】缺回线阻断
 
 【互斥双色】开/闭双色指示必须含 RELAY_SPDT；COM→GND；NC绿 / NO红。
 

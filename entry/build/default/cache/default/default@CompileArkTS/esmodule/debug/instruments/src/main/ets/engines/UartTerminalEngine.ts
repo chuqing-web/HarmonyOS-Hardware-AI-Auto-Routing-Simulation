@@ -11,10 +11,18 @@ export class UartTerminalEngine {
     private rxBuffer: string = '';
     private logLines: string[] = [];
     private scriptRunning: boolean = false;
+    /** TX/RX 同网环回（如 lab_instruments）时，终端自发自收 */
+    private loopback: boolean = false;
     /** 空闲固件 TX 0x55 刷屏：累计后合并成一行，避免淹没回显 */
     private pendingIdle55: number = 0;
     private static readonly IDLE55_FLUSH = 48;
     private static readonly LOG_CAP = 200;
+    setLoopback(enabled: boolean): void {
+        this.loopback = enabled;
+    }
+    isLoopback(): boolean {
+        return this.loopback;
+    }
     setAutoNewline(enabled: boolean): void {
         this.config.autoNewline = enabled;
     }
@@ -34,7 +42,16 @@ export class UartTerminalEngine {
         this.flushIdle55();
         this.txBuffer += cleaned;
         this.appendLog(`TX: ${this.formatHex(cleaned)}`);
-        // Real RX comes from MCU USART TX (ingestMcuTxBytes), not a local +1 stub.
+        if (this.loopback) {
+            // Schematic TX↔RX short: immediate echo (skip MCU idle-0x55 coalescing)
+            this.rxBuffer += cleaned;
+            if (this.rxBuffer.length > 512) {
+                this.rxBuffer = this.rxBuffer.substring(this.rxBuffer.length - 512);
+            }
+            this.appendLog(`RX: ${this.formatHex(cleaned)}`);
+            return;
+        }
+        // Crossed TX/RX to MCU: RX arrives via ingestMcuTxBytes from USART TX
     }
     /** MCU USART DR TX bytes arrive as terminal RX (crossing TX/RX wires). */
     ingestMcuTxBytes(bytes: number[]): void {

@@ -1,6 +1,6 @@
 /**
- * Schematic Canvas 2D renderer — viewport culling + throttled redraw + snapshot caching
- * Performance: offscreen grid tile, cached component defs, pre-computed wire junctions
+ * Schematic Canvas 2D renderer — viewport culling + throttled redraw
+ * Performance: vector adaptive grid (CTM-safe), cached component defs, pre-computed wire junctions
  */
 import { AppService } from '../services/AppService';
 import { SchematicSymbolRenderer, SymbolDrawStyle } from '../utils/SchematicSymbolRenderer';
@@ -16,12 +16,6 @@ import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusThem
 import { ProteusClassicBtn } from './proteus/ProteusWidgets';
 import { ThemeManager } from '../theme/ThemeManager';
 import { SchematicEditorImpl, SchematicLayerId } from 'schematic_editor';
-
-interface RgbColor {
-  r: number;
-  g: number;
-  b: number;
-}
 
 @Component
 export struct SchematicCanvas {
@@ -86,6 +80,9 @@ export struct SchematicCanvas {
   /** Sim-time potentiometer drag — horizontal local-X maps to wiper 0..1 */
   private potDragCompId: string = '';
   private potDragLastWiper: number = -1;
+  /** Sim-time DS18B20 temp drag — horizontal local-X maps to −55…125°C */
+  private tempDragCompId: string = '';
+  private tempDragLastC: number = Number.NaN;
   private lastDownTime: number = 0;
   private lastUpTime: number = 0;
   private middlePanning: boolean = false;
@@ -93,10 +90,6 @@ export struct SchematicCanvas {
   private middlePanLastY: number = 0;
   private simFrameDirty: boolean = false;
   private backgroundDirty: boolean = true;
-  private gridTile: ImageData | null = null;
-  private gridTileKey: string = '';
-  private gridTileWorldW: number = 0;
-  private gridTileWorldH: number = 0;
   private compDefCache: Map<string, ComponentDefinition | null> = new Map();
   private juncCache: Map<string, number> | null = null;
   private juncCacheKey: string = '';
@@ -157,16 +150,12 @@ export struct SchematicCanvas {
   onCanvasVersionChange(): void {
     this.backgroundDirty = true;
     this.rulerDirty = true;
-    this.gridTile = null;
-    this.gridTileKey = '';
     this.scheduleRedraw();
   }
 
   onThemeRefreshChange(): void {
     this.backgroundDirty = true;
     this.rulerDirty = true;
-    this.gridTile = null;
-    this.gridTileKey = '';
     this.scheduleRedraw();
   }
 
@@ -717,6 +706,17 @@ export struct SchematicCanvas {
       return;
     }
 
+    // 区域放大：按下即开始拖框，不走器件命中
+    if (this.toolMode === EditorToolMode.ZOOM_REGION) {
+      this.clearDragState();
+      this.isBoxSelecting = true;
+      this.boxSelectStart = world;
+      this.boxSelectEnd = world;
+      this.onStatusChange('拖框指定放大区域');
+      this.scheduleRedraw();
+      return;
+    }
+
     // Skip hit testing for wire/bus/label modes — nothing to select on down
     if (this.toolMode === EditorToolMode.WIRE ||
       this.toolMode === EditorToolMode.BUS ||
@@ -749,6 +749,15 @@ export struct SchematicCanvas {
         this.onStatusChange('松开完成按键切换');
         return;
       }
+      // Simulation: click HALL to toggle magnet field
+      if (this.isSimulationActive() && this.isHallSensorComponent(hitId)) {
+        this.interactiveToggleCompId = hitId;
+        this.clearDragState();
+        this.appService.schematicEditor.setSelection([hitId]);
+        this.selectedComponentId = hitId;
+        this.onStatusChange('松开切换霍尔磁场');
+        return;
+      }
       // Simulation: drag pot wiper along resistor body
       if (this.isSimulationActive() && this.isPotentiometerComponent(hitId)) {
         this.potDragCompId = hitId;
@@ -758,6 +767,17 @@ export struct SchematicCanvas {
         this.selectedComponentId = hitId;
         this.applyPotWiperFromWorld(hitId, world);
         this.onStatusChange('拖动调节滑动变阻器');
+        return;
+      }
+      // Simulation: drag DS18B20 temperature slider
+      if (this.isSimulationActive() && this.isDs18b20Component(hitId)) {
+        this.tempDragCompId = hitId;
+        this.tempDragLastC = Number.NaN;
+        this.clearDragState();
+        this.appService.schematicEditor.setSelection([hitId]);
+        this.selectedComponentId = hitId;
+        this.applySensorTempFromWorld(hitId, world);
+        this.onStatusChange('拖动调节实验温度');
         return;
       }
 
@@ -886,6 +906,10 @@ export struct SchematicCanvas {
       this.applyPotWiperFromWorld(this.potDragCompId, world);
       return;
     }
+    if (this.tempDragCompId.length > 0 && this.isSimulationActive()) {
+      this.applySensorTempFromWorld(this.tempDragCompId, world);
+      return;
+    }
 
     if (this.dragComponentId.length > 0 && moved && this.isSelectMode()) {
       const editor = this.appService.schematicEditor as SchematicEditorImpl;
@@ -900,7 +924,8 @@ export struct SchematicCanvas {
       };
       this.dragPreviewPos = this.computeDragSnap(this.dragComponentId, raw);
       this.scheduleRedraw();
-    } else if (this.isBoxSelecting && moved && this.isSelectMode()) {
+    } else if (this.isBoxSelecting && moved &&
+      (this.isSelectMode() || this.toolMode === EditorToolMode.ZOOM_REGION)) {
       this.boxSelectEnd = world;
       this.scheduleRedraw();
     }
@@ -921,18 +946,27 @@ export struct SchematicCanvas {
     const totalDy = sy - this.downPointerY;
     const moved = Math.abs(totalDx) > SchematicCanvas.MOVE_THRESHOLD || Math.abs(totalDy) > SchematicCanvas.MOVE_THRESHOLD;
 
-    // Sim pushbutton: short click toggles pressed → KEY shorts to GND
+    // Sim pushbutton / hall: short click toggles
     if (this.interactiveToggleCompId.length > 0) {
       const swId = this.interactiveToggleCompId;
       this.interactiveToggleCompId = '';
       if (!moved || this.isTapSlop(totalDx, totalDy)) {
-        const next = this.appService.toggleInteractiveSwitch(swId);
-        if (next.length > 0) {
-          this.onStatusChange(next === '1' ? 'SW CLOSED (KEY=GND)' : 'SW OPEN (KEY 上拉)');
-          // Switch/LED symbols live on the cached background layer — must dirty it
-          this.backgroundDirty = true;
+        if (this.isHallSensorComponent(swId)) {
+          const next = this.appService.toggleInteractiveHall(swId);
+          if (next.length > 0) {
+            this.onStatusChange(next === '1' ? 'HALL 磁场 ON（OUT 拉低）' : 'HALL 磁场 OFF（上拉）');
+            this.backgroundDirty = true;
+          } else {
+            this.onStatusChange('霍尔切换失败（是否在仿真中？）');
+          }
         } else {
-          this.onStatusChange('按键切换失败（是否在仿真中？）');
+          const next = this.appService.toggleInteractiveSwitch(swId);
+          if (next.length > 0) {
+            this.onStatusChange(next === '1' ? 'SW CLOSED (KEY=GND)' : 'SW OPEN (KEY 上拉)');
+            this.backgroundDirty = true;
+          } else {
+            this.onStatusChange('按键切换失败（是否在仿真中？）');
+          }
         }
       }
       this.isBoxSelecting = false;
@@ -955,6 +989,19 @@ export struct SchematicCanvas {
       this.scheduleRedraw();
       return;
     }
+    // Sim DS18B20: finish temp drag
+    if (this.tempDragCompId.length > 0) {
+      const tempId = this.tempDragCompId;
+      this.applySensorTempFromWorld(tempId, world);
+      this.tempDragCompId = '';
+      this.tempDragLastC = Number.NaN;
+      this.backgroundDirty = true;
+      this.isBoxSelecting = false;
+      this.pointerDown = false;
+      this.clearDragState();
+      this.scheduleRedraw();
+      return;
+    }
 
     // Wire/Bus/Label/Power/Ground modes always process as a tap regardless of move distance
     if (this.toolMode === EditorToolMode.WIRE ||
@@ -965,6 +1012,16 @@ export struct SchematicCanvas {
       this.handleTap(world);
     } else if (this.toolMode === EditorToolMode.PLACE) {
       this.tryPlaceComponent(world);
+    } else if (this.toolMode === EditorToolMode.ZOOM_REGION && this.isBoxSelecting) {
+      this.boxSelectEnd = world;
+      const rect = this.normalizeRect(this.boxSelectStart, this.boxSelectEnd);
+      if (rect.width > 4 && rect.height > 4) {
+        this.appService.schematicEditor.fitRectInView(rect);
+        this.toolMode = EditorToolMode.SELECT;
+        this.onStatusChange('已放大选定区域');
+      } else {
+        this.onStatusChange('拖框过小，未放大');
+      }
     } else if (!moved || this.isTapSlop(totalDx, totalDy)) {
       this.handleTap(world);
     } else if (this.dragComponentId.length > 0 && this.isSelectMode()) {
@@ -1118,6 +1175,29 @@ export struct SchematicCanvas {
     return lib.startsWith('POT_') || lib.includes('POTENTIOMETER') || lib === 'POT';
   }
 
+  private isDs18b20Component(compId: string): boolean {
+    const doc = this.appService.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compId);
+    if (comp === undefined) {
+      return false;
+    }
+    return comp.libraryId.toUpperCase().includes('DS18B20');
+  }
+
+  private isHallSensorComponent(compId: string): boolean {
+    const doc = this.appService.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compId);
+    if (comp === undefined) {
+      return false;
+    }
+    return comp.libraryId.toUpperCase().includes('HALL');
+  }
+
+  private isHallActive(comp: ComponentInstance): boolean {
+    const v = (comp.parameters.get('active') ?? '0').trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'on' || v === 'yes';
+  }
+
   /** On-canvas live ΔV / I for meters during sim */
   private drawLiveMeterReading(ctx: CanvasRenderingContext2D, drawPos: Point2D, comp: ComponentInstance): void {
     const lib = comp.libraryId.toUpperCase();
@@ -1209,6 +1289,59 @@ export struct SchematicCanvas {
     this.potDragLastWiper = t;
     this.backgroundDirty = true;
     this.onStatusChange(`${comp.refDes} 滑臂 ${(t * 100).toFixed(0)}%`);
+    this.scheduleRedraw();
+  }
+
+  private parseSensorTempC(comp: ComponentInstance): number {
+    let s = (comp.parameters.get('temp_c') ?? '25').trim().replace(/\s+/g, '');
+    if (s.endsWith('°C') || s.endsWith('℃')) {
+      s = s.substring(0, s.length - 2);
+    } else if (s.toLowerCase().endsWith('c') && s.length > 1) {
+      s = s.substring(0, s.length - 1);
+    }
+    let n = parseFloat(s);
+    if (isNaN(n)) {
+      return 25;
+    }
+    if (n < -55) {
+      return -55;
+    }
+    if (n > 125) {
+      return 125;
+    }
+    return n;
+  }
+
+  /** Map pointer → DS18B20 temp_c along local X (−22…+22 → −55…125°C). */
+  private applySensorTempFromWorld(compId: string, world: Point2D): void {
+    const doc = this.appService.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compId);
+    if (comp === undefined) {
+      return;
+    }
+    const dx = world.x - comp.position.x;
+    const dy = world.y - comp.position.y;
+    let loc = this.inverseRotateLocal(dx, dy, comp.rotation);
+    if (comp.mirrored) {
+      loc = { x: -loc.x, y: loc.y };
+    }
+    let t = (loc.x + 22) / 44;
+    if (t < 0) {
+      t = 0;
+    } else if (t > 1) {
+      t = 1;
+    }
+    const tempC = -55 + t * 180;
+    if (!isNaN(this.tempDragLastC) && Math.abs(tempC - this.tempDragLastC) < 0.8) {
+      return;
+    }
+    const next = this.appService.setInteractiveSensorTemp(compId, tempC);
+    if (next.length === 0) {
+      return;
+    }
+    this.tempDragLastC = tempC;
+    this.backgroundDirty = true;
+    this.onStatusChange(`${comp.refDes} 温度 ${Math.round(tempC)}°C`);
     this.scheduleRedraw();
   }
 
@@ -1465,10 +1598,8 @@ export struct SchematicCanvas {
     editor: SchematicEditorImpl
   ): void {
     if (vp.gridVisible) {
-      this.drawCachedGrid(ctx, vp, bounds);
-      if (vp.zoom >= 0.8) {
-        this.drawGridLines(ctx, vp, bounds);
-      }
+      // putImageData 不受 CTM 影响；必须在 scale/translate 下用矢量网格
+      this.drawAdaptiveGrid(ctx, vp, bounds);
     }
     if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
       this.drawBackgroundGridOnEmpty(ctx, vp, bounds, doc.wires.length);
@@ -1523,7 +1654,7 @@ export struct SchematicCanvas {
       this.drawPlacementGhost(ctx, this.placementPreview);
     }
     if (this.isBoxSelecting) {
-      this.drawSelectionBox(ctx);
+      this.drawSelectionBox(ctx, this.toolMode === EditorToolMode.ZOOM_REGION);
     }
     if (this.alignGuideX !== null || this.alignGuideY !== null) {
       this.drawAlignGuides(ctx, bounds);
@@ -1871,6 +2002,8 @@ export struct SchematicCanvas {
       this.drawComponentBodyBackdrop(ctx, drawPos, comp, def);
       const swPressed = this.isPushButtonPressed(comp);
       const potWiper = this.isPotentiometerComponent(comp.id) ? this.parsePotWiper(comp) : undefined;
+      const sensorTempC = this.isDs18b20Component(comp.id) ? this.parseSensorTempC(comp) : undefined;
+      const hallActive = this.isHallSensorComponent(comp.id) ? this.isHallActive(comp) : undefined;
       const style: SymbolDrawStyle = {
         strokeColor: selected ? ProteusColors.SELECTED : ProteusColors.COMPONENT_STROKE,
         fillColor: ProteusColors.COMPONENT_BODY_FILL,
@@ -1879,7 +2012,9 @@ export struct SchematicCanvas {
         hovered: false,
         ledDisplayColor: this.isLedComponent(comp, def) ? '' : undefined,
         switchPressed: swPressed,
-        potWiper: potWiper
+        potWiper: potWiper,
+        sensorTempC: sensorTempC,
+        hallActive: hallActive
       };
       SchematicSymbolRenderer.drawComponent(
         ctx, drawPos.x, drawPos.y, def,

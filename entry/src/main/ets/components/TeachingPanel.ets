@@ -176,6 +176,12 @@ export struct TeachingPanel {
                 .fontSize(ProteusFonts.PARAM_KEY)
                 .fontColor(ProteusColors.TEXT_LABEL)
                 .maxLines(2)
+              if (tpl.knowledgePoints !== undefined && tpl.knowledgePoints.length > 0) {
+                Text(tpl.knowledgePoints.join(' · '))
+                  .fontSize(9)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+                  .maxLines(3)
+              }
               if (tpl.libraryIds !== undefined && tpl.libraryIds.length > 0) {
                 Text(`${tpl.libraryIds.length} 种器件`)
                   .fontSize(9)

@@ -250,7 +250,7 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | `lab_discrete` | 分立器件检测 | 整流、开关、限流 | — |
 | `lab_analog_ic` | 模拟 IC 检测 | 运放、LDO、Buck | — |
 | `lab_digital` | 数字逻辑检测 | 门电路、计数、LA | — |
-| `lab_memory` | 存储器接口 | 并行 / I2C / SPI | — |
+| `lab_memory` | 存储器接口 | 并行 / I2C / SPI + LA | ✓ |
 | `lab_mcu_8051` | 8051 全系列 | 最小系统、晶振、复位 | ✓ |
 | `lab_mcu_stm32` | STM32 全系列 | Cortex-M、HSE、NRST | ✓ |
 | `lab_peripheral` | 外设接口 | GPIO、继电器、显示 | ✓ |

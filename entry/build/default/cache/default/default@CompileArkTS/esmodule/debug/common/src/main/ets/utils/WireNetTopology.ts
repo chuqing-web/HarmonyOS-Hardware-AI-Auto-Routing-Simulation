@@ -198,8 +198,10 @@ function internalDefaultPins(libraryId: string): PinGeometry[] {
     }
     if (lib.includes('VIRTUAL_METER')) {
         return [
-            makePinGeometry('V', 'V', -30, -25),
-            makePinGeometry('COM', 'COM', -30, 25)
+            makePinGeometry('V', 'V', -30, -30),
+            makePinGeometry('A', 'A', -30, -10),
+            makePinGeometry('OHM', 'OHM', -30, 10),
+            makePinGeometry('COM', 'COM', -30, 30)
         ];
     }
     if (lib === 'VAC' || lib.startsWith('VAC')) {

@@ -765,7 +765,7 @@ export class TemplateSchematicKit {
       return ['V+', 'COM'];
     }
     if (libraryId === 'VIRTUAL_METER') {
-      return ['V', 'COM'];
+      return ['V', 'A', 'OHM', 'COM'];
     }
     if (libraryId === 'VAC') {
       return ['1', '2'];
@@ -1093,9 +1093,16 @@ export class TemplateSchematicKit {
       if (pinId === 'S') return { x: 30, y: 10 };
       return { x: 0, y: 0 };
     }
-    if (libraryId === 'VOLTMETER_DC' || libraryId === 'VIRTUAL_METER') {
+    if (libraryId === 'VOLTMETER_DC') {
       if (pinId === 'V+' || pinId === 'V') return { x: -30, y: -25 };
       if (pinId === 'COM') return { x: -30, y: 25 };
+      return { x: 0, y: 0 };
+    }
+    if (libraryId === 'VIRTUAL_METER') {
+      if (pinId === 'V') return { x: -30, y: -30 };
+      if (pinId === 'A') return { x: -30, y: -10 };
+      if (pinId === 'OHM') return { x: -30, y: 10 };
+      if (pinId === 'COM') return { x: -30, y: 30 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'AMMETER_DC') {

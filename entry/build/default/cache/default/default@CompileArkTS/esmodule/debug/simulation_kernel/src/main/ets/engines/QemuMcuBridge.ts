@@ -10,7 +10,6 @@ const CMD_STEP = 0x05;
 const CMD_GET_STATE = 0x06;
 const CMD_RESET = 0x07;
 const CMD_INTERRUPT = 0x08;
-const IPC_TIMEOUT_MS = 5000;
 const MAX_PAYLOAD_LEN = 4096;
 // ---- STM32F103 外设基地址 ----
 const PERIPH_BASE = 0x40000000;
@@ -313,9 +312,43 @@ export class QemuMcuBridge {
         this.lastCommandTime = Date.now();
         return ResultHelper.ok();
     }
-    /** 检查连接是否超时 */
+    /**
+     * Local Thumb interpreter is in-process — do NOT treat idle gaps as IPC death.
+     * Old IPC_TIMEOUT_MS(5s) made isRunning() false after burn→start delays (>5s),
+     * so tickMcuCore never stepped and GPIO stayed reset (lab_memory LA flat).
+     */
     isConnectionAlive(): boolean {
-        return this.connected && (Date.now() - this.lastCommandTime) < IPC_TIMEOUT_MS;
+        return this.connected;
+    }
+    /** Refresh heartbeat (diagnostics / future real-QEMU path). */
+    touch(): void {
+        if (this.connected) {
+            this.lastCommandTime = Date.now();
+        }
+    }
+    /** Seconds since last step/reg access (-1 if never). */
+    idleMs(): number {
+        if (this.lastCommandTime <= 0) {
+            return -1;
+        }
+        return Date.now() - this.lastCommandTime;
+    }
+    /**
+     * Re-arm interpreter after false IPC death or PC OOB halt, without wiping firmware.
+     * Re-applies reset vector so PC returns to entry.
+     */
+    ensureRunning(): boolean {
+        if (this.firmware.length < 8) {
+            return false;
+        }
+        const wasRunning = this.state.running && this.connected;
+        this.connected = true;
+        this.state.running = true;
+        this.lastCommandTime = Date.now();
+        if (!wasRunning) {
+            this.applyResetVector();
+        }
+        return true;
     }
     readPeriph(addr: number): number {
         return this.readPeriphInternal(addr);
@@ -340,6 +373,7 @@ export class QemuMcuBridge {
     isRunning(): boolean { return this.state.running && this.isConnectionAlive(); }
     getPc(): number { return this.state.pc; }
     getState(): QemuMcuState { return this.state; }
+    getFirmwareSize(): number { return this.firmware.length; }
     // ---- 内部: 外设寄存器读/写 ----
     private readPeriphInternal(addr: number): number {
         if (addr === USART1_BASE + USART_DR || addr === USART2_BASE + USART_DR ||
@@ -656,11 +690,41 @@ export class QemuMcuBridge {
             this.setReg(rt, this.readByte(this.reg(rn) + imm5));
             this.state.pc = pc + 2;
         }
-        else if ((hw & 0xFFC0) === 0x4200) {
-            // TST Rn, Rm
-            const rn = hw & 0x7;
+        else if ((hw & 0xFC00) === 0x4000) {
+            // Data-processing: 010000 ooooo Rm Rd  (AND/EOR/TST/CMP/ORR/BIC/MVN/…)
+            // lab_sensor.hex uses ORR Rd,Rm — missing this made ODR stay 0 (ORR was a silent NOP).
+            const dpOp = (hw >> 6) & 0x1F;
+            const rd = hw & 0x7;
             const rm = (hw >> 3) & 0x7;
-            this.zFlag = ((this.reg(rn) & this.reg(rm)) >>> 0) === 0;
+            const a = this.reg(rd) >>> 0;
+            const b = this.reg(rm) >>> 0;
+            if (dpOp === 0x8) {
+                this.zFlag = ((a & b) >>> 0) === 0; // TST
+            }
+            else if (dpOp === 0xA) {
+                this.zFlag = (((a - b) | 0) === 0); // CMP (Z only)
+            }
+            else if (dpOp === 0x0 || dpOp === 0x1 || dpOp === 0xC || dpOp === 0xE || dpOp === 0xF) {
+                let val = a;
+                if (dpOp === 0x0) {
+                    val = (a & b) >>> 0;
+                }
+                else if (dpOp === 0x1) {
+                    val = (a ^ b) >>> 0;
+                }
+                else if (dpOp === 0xC) {
+                    val = (a | b) >>> 0;
+                }
+                else if (dpOp === 0xE) {
+                    val = (a & (~b >>> 0)) >>> 0;
+                }
+                else {
+                    val = (~b) >>> 0;
+                }
+                this.setReg(rd, val);
+                this.zFlag = val === 0;
+            }
+            // else: unsupported dp op — advance PC only
             this.state.pc = pc + 2;
         }
         else if ((hw & 0xF000) === 0xD000) {

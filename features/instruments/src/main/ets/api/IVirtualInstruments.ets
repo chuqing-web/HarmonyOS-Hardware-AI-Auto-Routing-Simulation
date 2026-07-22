@@ -57,6 +57,7 @@ export interface IVirtualInstruments {
 
   // ---- Multimeter ----
   setMode(mode: MultimeterMode): ApiResult<void>;
+  getMultimeterMode(): MultimeterMode;
   measure(): ApiResult<number>;
   autoRange(): ApiResult<void>;
   setMultimeterReader(reader: (() => number) | null): void;
@@ -78,6 +79,8 @@ export interface IVirtualInstruments {
   clearUartLog(): void;
   /** MCU → 虚拟串口终端 RX */
   uartIngestMcuTx(bytes: number[]): void;
+  /** TX/RX 同网环回（无 MCU 自发自收） */
+  isUartLoopback(): boolean;
 
   // ---- Voltmeter ----
   setVoltmeterType(type: VoltmeterType): ApiResult<void>;

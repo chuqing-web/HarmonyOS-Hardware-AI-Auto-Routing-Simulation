@@ -1,6 +1,9 @@
 # AI Prompt 权威源（skill/prompts）
 
-> **版本**: 5.0 | **同步目标**: `features/ai_engine/src/main/ets/prompts/templates/*.ets`
+> **版本**: 5.1 | **同步目标**: `features/ai_engine/src/main/ets/prompts/templates/*.ets`
+>
+> **v5.1 / 仪器 v4.0**: 对齐四端万用表 `VIRTUAL_METER(V,A,OHM,COM)`、功率表 V并/I串、
+> OSC/LA 真脚与 `SIM_CONN` 回线规则；改仪器相关条文后务必同步 md↔ets。
 
 ## 原则
 

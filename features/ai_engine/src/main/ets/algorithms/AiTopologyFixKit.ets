@@ -416,7 +416,8 @@ export class AiTopologyFixKit {
       (d.libDevId ?? '').toUpperCase().indexOf('VOLTMETER') >= 0 ||
       (d.libDevId ?? '').toUpperCase() === 'VIRTUAL_METER');
     if (vm) {
-      rc(vm.refName, 'V+', 'RC_MID');
+      const sensePin = (vm.libDevId ?? '').toUpperCase().indexOf('VIRTUAL_METER') >= 0 ? 'V' : 'V+';
+      rc(vm.refName, sensePin, 'RC_MID');
       rc(vm.refName, 'COM', 'GND');
     }
 
@@ -475,7 +476,8 @@ export class AiTopologyFixKit {
         return u.indexOf('VOLTMETER') >= 0 || u === 'VIRTUAL_METER';
       });
       if (vm && i === 0) {
-        rc(vm.refName, 'V+', wiper);
+        const sensePin = (vm.libDevId ?? '').toUpperCase().indexOf('VIRTUAL_METER') >= 0 ? 'V' : 'V+';
+        rc(vm.refName, sensePin, wiper);
         rc(vm.refName, 'COM', 'GND');
       }
     }
@@ -1523,9 +1525,10 @@ export class AiTopologyFixKit {
         }
         const pinU = (node.pinName ?? node.pinId ?? '').toUpperCase();
         const isSense = /^CH\d+$/.test(pinU) || pinU === 'V+' || pinU === 'V' ||
-          pinU === 'IN' || pinU === 'I+' || pinU === 'I-' || pinU === 'PROBE';
+          pinU === 'A' || pinU === 'OHM' || pinU === 'I+' || pinU === 'I-' ||
+          pinU === 'IN' || pinU === 'OUT' || pinU === 'TX' || pinU === 'RX' || pinU === 'PROBE';
         // 仪器 GND/COM 应在 GND 网
-        if (pinU === 'GND' || pinU === 'COM') {
+        if (pinU === 'GND' || pinU === 'COM' || pinU === 'V-') {
           if (nameUp === 'GND' || nameUp === 'VSS') {
             kept.push(node);
           } else {
@@ -1717,8 +1720,11 @@ export class AiTopologyFixKit {
     if (lib.indexOf('OSCILLOSCOPE') >= 0) {
       return ['CH1', 'GND'];
     }
-    if (lib.indexOf('VOLTMETER') >= 0 || lib === 'VIRTUAL_METER') {
+    if (lib.indexOf('VOLTMETER') >= 0) {
       return ['V+', 'COM'];
+    }
+    if (lib === 'VIRTUAL_METER' || lib.indexOf('VIRTUAL_METER') >= 0) {
+      return ['V', 'COM'];
     }
     if (lib.indexOf('AMMETER') >= 0) {
       return ['I+', 'I-'];
@@ -1734,7 +1740,7 @@ export class AiTopologyFixKit {
       return ['TX', 'RX', 'GND'];
     }
     if (lib.indexOf('LOGIC_ANALYZER') >= 0) {
-      return ['D0', 'GND'];
+      return ['CH1', 'GND'];
     }
     if (lib.indexOf('XTAL') >= 0 || lib.indexOf('CRYSTAL') >= 0) {
       return ['1', '2'];
@@ -1890,18 +1896,23 @@ export class AiTopologyFixKit {
       return pinU === '2' ? largestSignal() : 'VCC';
     }
 
-    // 仪器：I+/I- 必须异网；仅 CH1/V+ → 信号；未用 CH2+ 保持悬空
+    // 仪器：I+/I- 异网；V/V+/CH1/IN→信号；A→串联支路；OHM→阻测；COM/GND→GND
+    // 未用 OSC CH2+ / LA CH2+ 保持悬空（教学全套仪器另由模板接满）
     if (AiTopologyFixKit.isInstrumentLib(lib)) {
-      if (pinU === 'I+') {
-        return 'VCC';
+      if (pinU === 'I+' || pinU === 'A') {
+        return pinU === 'A' ? 'DMM_A' : 'VCC';
       }
       if (pinU === 'I-') {
         return 'VCC_AM';
       }
+      if (pinU === 'OHM') {
+        return 'DMM_OHM';
+      }
       if (/^CH[2-9]$/.test(pinU) || /^CH\d{2,}$/.test(pinU)) {
         return '';
       }
-      if (pinU === 'CH1' || pinU === 'V+' || pinU === 'IN' || pinU === 'PROBE') {
+      if (pinU === 'CH1' || pinU === 'V+' || pinU === 'V' || pinU === 'IN' || pinU === 'PROBE' ||
+        pinU === 'OUT' || pinU === 'TX' || pinU === 'RX') {
         if (hasNamedNet('RC_MID')) {
           return 'RC_MID';
         }

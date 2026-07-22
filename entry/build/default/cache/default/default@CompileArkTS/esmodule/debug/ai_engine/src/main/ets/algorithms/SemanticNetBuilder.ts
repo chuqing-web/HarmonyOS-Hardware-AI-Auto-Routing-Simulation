@@ -407,9 +407,12 @@ export class SemanticNetBuilder {
             ['AMMETER_DC', ['I+', 'I-']],
             ['VOLTMETER_DC', ['V+', 'COM']],
             ['VIRTUAL_METER', ['V', 'COM']],
-            ['OSCILLOSCOPE', ['CH1']],
+            ['POWER_METER', ['V+', 'V-', 'I+', 'I-']],
+            ['OSCILLOSCOPE', ['CH1', 'GND']],
             ['FREQ_COUNTER', ['IN', 'GND']],
+            ['LOGIC_ANALYZER', ['CH1', 'GND']],
             ['UART_TERMINAL', ['TX', 'RX', 'GND']],
+            ['SIGNAL_GEN', ['OUT', 'GND']],
         ];
         for (let ip = 0; ip < instrumentPins.length; ip++) {
             const libId = instrumentPins[ip][0];
@@ -1062,6 +1065,34 @@ export class SemanticNetBuilder {
                     gndPin, { comp: c, pinId: 'GND', pinName: 'GND' }
                 ]);
                 notes.push(`UART 终端 ${c.refDes} (TX↔RX 交叉)`);
+                count++;
+            }
+            else if (id === 'LOGIC_ANALYZER' && signalHub !== null) {
+                TemplateSchematicKit.joinByLabel(doc, signalHub.net, NetType.SIGNAL, [
+                    signalHub.pin, { comp: c, pinId: 'CH1', pinName: 'CH1' }
+                ]);
+                TemplateSchematicKit.stubLabel(doc, { comp: c, pinId: 'GND', pinName: 'GND' }, 'GND');
+                notes.push(`逻辑分析仪 CH1→${signalHub.net}`);
+                count++;
+            }
+            else if (id === 'SIGNAL_GEN' && signalHub !== null && gndPin !== null) {
+                TemplateSchematicKit.joinByLabel(doc, signalHub.net, NetType.SIGNAL, [
+                    { comp: c, pinId: 'OUT', pinName: 'OUT' }, signalHub.pin
+                ]);
+                TemplateSchematicKit.joinByLabel(doc, 'GND', NetType.GROUND, [
+                    gndPin, { comp: c, pinId: 'GND', pinName: 'GND' }
+                ]);
+                notes.push(`信号源 OUT→${signalHub.net}`);
+                count++;
+            }
+            else if ((id === 'VIRTUAL_METER') && signalHub !== null && gndPin !== null) {
+                TemplateSchematicKit.joinByLabel(doc, signalHub.net, NetType.SIGNAL, [
+                    signalHub.pin, { comp: c, pinId: 'V', pinName: 'V' }
+                ]);
+                TemplateSchematicKit.joinByLabel(doc, 'GND', NetType.GROUND, [
+                    gndPin, { comp: c, pinId: 'COM', pinName: 'COM' }
+                ]);
+                notes.push(`万用表 V→${signalHub.net}`);
                 count++;
             }
         }

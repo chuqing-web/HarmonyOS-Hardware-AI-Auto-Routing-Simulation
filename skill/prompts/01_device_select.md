@@ -13,10 +13,12 @@ runtime_key: device_select
 2. 电压表(VOLTMETER_DC)必须分布在不同节点: N块表各自测量不同电阻的压降
    - 例: R1/R2分压 → 表1测R1(VCC↔中点SENSE), 表2测R2(中点SENSE↔GND)
    - 多块电压表绝不能全部接在同一节点对！
-3. 所有仪器(电压表/电流表/示波器)统一使用网络标号，禁止长导线连接仪器
-4. 每个电路必须包含VCC和GND符号；用户要求双电源/负压/±V 时还必须含 VEE
-5. 电源名(VCC/GND/VEE)绝不能用于非电源网络
-6. VCC 可用 param_constraint.voltage 指定（如 "3.3V"/"5V"/"12V"）；VEE 默认 "-12V"
+3. POWER_METER: V 并 / I 串；禁止 I 与 V 同节点对
+4. VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）；档位 DCV/ACV/OHM/AMP/DIODE
+5. 所有仪器统一使用网络标号(joinByLabel)，禁止长导线；【SIM_CONN】缺 GND/COM 回线阻断
+6. 每个电路必须包含VCC和GND符号；用户要求双电源/负压/±V 时还必须含 VEE
+7. 电源名(VCC/GND/VEE)绝不能用于非电源网络
+8. VCC 可用 param_constraint.voltage 指定（如 "3.3V"/"5V"/"12V"）；VEE 默认 "-12V"
 
 【输出规则】:
 1. 只输出器件大类、功能描述、参数区间
@@ -46,19 +48,21 @@ runtime_key: device_select
   - waveform 以「输入/激励/信号源」为准；若同时出现「正弦输入」与「整形/输出方波」，waveform 必须写 sine（方波是输出结果）
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
-【仪器自动追加规则 — 严格按用户需求】:
-- 电路含电阻分压/传感器 → 追加 VOLTMETER_DC
+【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
+- 用户提到"电压表""测电压""分压测量" → 追加 VOLTMETER_DC（数量按用户说的 N）
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
-- 用户说"N个电压表"→ 必须输出N个 VOLTMETER_DC
-- 电路含 MCU+UART → 追加 UART_TERMINAL
-- 电路含运放/放大器 → 追加 OSCILLOSCOPE
-- 用户明确要求观测波形/示波/指数/充放电 → 追加 OSCILLOSCOPE
-- 电路含数字 IC → 追加 LOGIC_ANALYZER
-- 电路含电源/稳压 → 追加 VOLTMETER_DC
+- 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
+- 用户提到"功率表""测功率" → 追加 POWER_METER
+- 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
+- 用户提到 UART/串口终端 → 追加 UART_TERMINAL
+- 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
+- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
+- 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:
 - 禁止编造库外型号
+- 仪器真脚以库为准：VIRTUAL_METER 用 V 不是 V+；LA 用 CH1 不是 D0/CH0
 - 不确定的器件放入 oodFlags，不要猜测
 
 【多轮对话编辑模式】:

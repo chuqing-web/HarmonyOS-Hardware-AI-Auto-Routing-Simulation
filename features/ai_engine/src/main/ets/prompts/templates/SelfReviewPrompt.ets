@@ -15,8 +15,12 @@ export const SELF_REVIEW_PROMPT: PromptTemplate = {
 2. 仪器拓扑:
    - 电流表是否串联(I+/I-在不同网络)? 同网=短路
    - 电压表V+/COM是否分布在不同测量节点?
-   - 示波器: CH1(或CH2)必须入被测信号网；GND必须入系统地；禁止 CH* 挂 VCC/电源轨；禁止 CH 与 GND 同网
-   - 未使用的 CH2/CH3/CH4 保持悬空即可，禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
+   - 功率表: V+/V- 跨负载；I+/I- 串联；禁止 I 与 V 完全同节点对
+   - 万用表 VIRTUAL_METER: 真脚 V,A,OHM,COM；按档位 V∥ / A串 / OHM阻或二极管；COM→GND
+   - 示波器: 至少 CH1+GND 入被测信号网；教学优先 CH1–CH4；GND stubLabel；禁止 CH* 挂电源轨；禁止 CH 与 GND 同网
+   - 一般电路未用 CH2/CH3/CH4 可悬空；禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
+   - 逻辑分析仪: CH1–CH8+GND（禁止 CH0/D0）；UART/FREQ/SIGNAL_GEN 有信号必有 GND
+   - 【SIM_CONN】缺 GND/COM 回线视为硬错误
 3. 导线布局（硬门禁 — 必须逐根检查）:
    - 导线不得进入任何器件的「选中命中区」(HIT_PAD=22，与编辑器 SELECTION_HIT_PAD 一致)
    - 导线不得贴近/碰到无关引脚（安全距 ≥20mil）；不得错误连到无关引脚
@@ -26,7 +30,7 @@ export const SELF_REVIEW_PROMPT: PromptTemplate = {
 4. 器件选型: 板上每个 libDevId 是否都在库内？是否缺关键器件（VCC/GND/VEE/限流R/SIGNAL_GEN）？
 5. 器件参数: 限流电阻值是否合理(LED≥220Ω)? 上拉电阻(I2C=4.7k, RST=10k)?
 6. MCU最小系统: 晶振+去耦电容+RST上拉是否完整?
-7. 浮空引脚: 关键引脚(MCU RST/VDD, 运放输入, R/C/SW 两端, 示波器CH1/GND)是否浮空?
+7. 浮空引脚: 关键引脚(MCU RST/VDD, 运放输入, R/C/SW 两端, 示波器CH1/GND, 万用表COM, 功率表四脚)是否浮空?
 8. 网络完整性: 每个网络是否至少连接2个引脚?
 9. LED: 每颗 LED 是否已有串联限流电阻(R_330 等)? 不要在已有足够电阻时再加电阻
 10. 【互斥双色开关】用户要「打开绿灯/闭合红灯」时:

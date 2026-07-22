@@ -157,14 +157,14 @@ export struct PropertyPanel {
     }
     try {
       if (libId.includes('VIRTUAL_METER') || libId === 'MULTIMETER') {
-        const delta = this.appService.readVoltmeterDeltaForComponent(this.comp.id);
-        if (delta !== null) {
-          this.appService.instruments.multimeterSnapReading(delta);
-          this.mmReading = delta.toFixed(3);
+        const raw = this.appService.readMultimeterRawForComponent(this.comp.id);
+        if (raw !== null) {
+          this.appService.instruments.multimeterSnapReading(raw);
+          this.mmReading = this.formatDmmReading(raw);
         } else {
           const r = this.appService.instruments.measure();
           if (r.success && r.data !== undefined) {
-            this.mmReading = Number(r.data).toFixed(3);
+            this.mmReading = this.formatDmmReading(Number(r.data));
           }
         }
         const snap = this.appService.instruments.getInstrumentSnapshot();
@@ -438,6 +438,22 @@ export struct PropertyPanel {
       case MultimeterMode.DIODE: return 'DIODE';
       default: return 'DCV';
     }
+  }
+
+  private formatDmmReading(raw: number): string {
+    if (this.mmMode === 'AMP') {
+      return `${(raw * 1000).toFixed(3)} mA`;
+    }
+    if (this.mmMode === 'OHM') {
+      if (raw >= 1e8) {
+        return 'OL';
+      }
+      if (raw >= 1000) {
+        return `${(raw / 1000).toFixed(3)} kΩ`;
+      }
+      return `${raw.toFixed(1)} Ω`;
+    }
+    return `${raw.toFixed(3)} V`;
   }
 
   private isMcu(): boolean {
@@ -758,16 +774,32 @@ export struct PropertyPanel {
           onAction: () => {
             this.appService.instruments.setMode(MultimeterMode.ACV);
             this.mmMode = 'ACV';
+            this.refreshInstrumentData();
           } })
       }
       .width('100%')
       Row({ space: 6 }) {
-        ProteusClassicBtn({ label: 'Ω', widthVal: '48%',
+        ProteusClassicBtn({ label: 'Ω', widthVal: '32%',
           onAction: () => {
             this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
             this.mmMode = 'OHM';
             this.refreshInstrumentData();
           } })
+        ProteusClassicBtn({ label: 'A', widthVal: '32%',
+          onAction: () => {
+            this.appService.instruments.setMode(MultimeterMode.CURRENT);
+            this.mmMode = 'AMP';
+            this.refreshInstrumentData();
+          } })
+        ProteusClassicBtn({ label: '二极管', widthVal: '32%',
+          onAction: () => {
+            this.appService.instruments.setMode(MultimeterMode.DIODE);
+            this.mmMode = 'DIODE';
+            this.refreshInstrumentData();
+          } })
+      }
+      .width('100%')
+      Row({ space: 6 }) {
         ProteusClassicBtn({ label: 'Auto', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.autoRange();

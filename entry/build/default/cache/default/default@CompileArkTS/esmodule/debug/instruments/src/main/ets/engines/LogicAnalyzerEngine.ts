@@ -1,4 +1,4 @@
-import { IdUtil, LogicDecodeProtocol } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { IdUtil, LogicDecodeProtocol, traceLaCapture } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { WaveData, DecodedFrame } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SignalGroup } from '../api/IVirtualInstruments';
 const MAX_SAMPLES = 16384;
@@ -50,10 +50,12 @@ export class LogicAnalyzerEngine {
     /** Capture channels bound to specific probe net UUIDs */
     captureChannelsForProbes(probeNets: string[]): WaveData[] {
         const waves: WaveData[] = [];
+        const diagParts: string[] = [];
         const count = Math.min(this.channelCount, probeNets.length);
         for (let ch = 0; ch < count; ch++) {
             const probeNet = probeNets[ch];
             if (probeNet.length === 0) {
+                diagParts.push(`CH${ch + 1}=empty`);
                 continue;
             }
             let matched: WaveData | undefined = undefined;
@@ -66,6 +68,27 @@ export class LogicAnalyzerEngine {
             }
             if (matched !== undefined && matched.voltageAxis.length > 0) {
                 const digitized = matched.voltageAxis.map(v => v > this.threshold ? 3.3 : 0);
+                let edges = 0;
+                let minV = matched.voltageAxis[0];
+                let maxV = matched.voltageAxis[0];
+                for (let j = 0; j < matched.voltageAxis.length; j++) {
+                    const v = matched.voltageAxis[j];
+                    if (v < minV)
+                        minV = v;
+                    if (v > maxV)
+                        maxV = v;
+                    if (j > 0) {
+                        const prevH = matched.voltageAxis[j - 1] > this.threshold;
+                        const curH = v > this.threshold;
+                        if (prevH !== curH)
+                            edges++;
+                    }
+                }
+                const shortNet = probeNet.length > 16 ? probeNet.substring(probeNet.length - 12) : probeNet;
+                const shortProbe = matched.probeName.length > 14
+                    ? matched.probeName.substring(0, 14) : matched.probeName;
+                diagParts.push(`CH${ch + 1}@${shortProbe}/…${shortNet} n=${matched.voltageAxis.length} ` +
+                    `e=${edges} V=${minV.toFixed(2)}..${maxV.toFixed(2)}`);
                 waves.push({
                     waveId: IdUtil.generate('la'),
                     probeName: `D${ch}`,
@@ -80,6 +103,8 @@ export class LogicAnalyzerEngine {
             }
             else if (this.digitalStates.size > 0) {
                 const level = (this.digitalStates.get(probeNet) ?? this.digitalStates.get(`D${ch}`) ?? 0) > 0.5 ? 3.3 : 0;
+                const shortNet = probeNet.length > 16 ? probeNet.substring(probeNet.length - 12) : probeNet;
+                diagParts.push(`CH${ch + 1}@FALLBACK/…${shortNet} lvl=${level > 0 ? 'H' : 'L'}`);
                 waves.push({
                     waveId: IdUtil.generate('la'),
                     probeName: `D${ch}`,
@@ -92,6 +117,22 @@ export class LogicAnalyzerEngine {
                     holdTime: 1e-3
                 });
             }
+            else {
+                const shortNet = probeNet.length > 16 ? probeNet.substring(probeNet.length - 12) : probeNet;
+                diagParts.push(`CH${ch + 1}@MISS/…${shortNet} waves=${this.simulationWaves.length}`);
+            }
+        }
+        if (diagParts.length > 0) {
+            // Prefer CH7/CH8 (Q0/CLK) when present — those are the lab_digital focus
+            const focus: string[] = [];
+            for (let i = 0; i < diagParts.length; i++) {
+                if (diagParts[i].startsWith('CH7') || diagParts[i].startsWith('CH8') ||
+                    diagParts[i].startsWith('CH1')) {
+                    focus.push(diagParts[i]);
+                }
+            }
+            const body = focus.length > 0 ? focus.join('; ') : diagParts.slice(0, 4).join('; ');
+            traceLaCapture(`${body} | simWaves=${this.simulationWaves.length}`);
         }
         if (waves.length > 0) {
             return waves;

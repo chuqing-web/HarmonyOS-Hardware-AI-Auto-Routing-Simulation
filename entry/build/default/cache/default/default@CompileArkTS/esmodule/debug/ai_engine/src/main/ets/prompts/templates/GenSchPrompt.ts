@@ -16,9 +16,12 @@ export const GEN_SCH_PROMPT: PromptTemplate = {
 【仪器拓扑铁律】:
 - 电流表串联: VCC→I+→I-→负载 (绝不在同一网络)
 - 电压表分布: 多块表分别测不同电阻的压降
-- 示波器: CH1/GND 必须入网；未用 CH2–4 可悬空，禁止接到 GND/NC
-- 仪器用网络标号: joinByLabel, 不用长导线
-- 未要求测量时禁止擅自加 OSC/电压表
+- 功率表: V 并测 / I 串联；禁止 I 与 V 同节点对
+- 万用表 VIRTUAL_METER: V,A,OHM,COM（DCV/ACV/OHM/AMP/DIODE）
+- 示波器: 至少 CH1/GND 入网；教学优先 CH1–4；GND stubLabel；未用通道勿接 GND/NC
+- LA: CH1–CH8+GND；UART/FREQ/SIG 有信号必有 GND
+- 仪器用网络标号: joinByLabel；【SIM_CONN】缺回线阻断
+- 未要求测量时禁止擅自加 OSC/电压表/万用表
 
 【互斥双色】开/闭双色指示必须含 RELAY_SPDT；COM→GND；NC绿 / NO红。
 

@@ -4,7 +4,7 @@ import type { HazardReport } from "@bundle:com.elecdraw.aischsim/entry@simulatio
 import { AnalogEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/AnalogEngine";
 import { GlobalScheduler } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
 import type { SchedulerStepResult } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/GlobalScheduler";
-import { SimulationState, SimulationMode, LogicState, EventBus, ModuleEvent, ErrCode, ResultHelper, TopologyAdapter, makeProgress, IdUtil, DynamicErcEngine, copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts, traceLoadSchematic, traceBurn, formatFirmwarePreview, traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample, traceUart, formatUartBytesHex, traceUartTxDrain, traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap, Logger, INSTR_TRACE_TAG, ensureNetPinConnectivity } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { SimulationState, SimulationMode, LogicState, EventBus, ModuleEvent, ErrCode, ResultHelper, TopologyAdapter, makeProgress, IdUtil, DynamicErcEngine, copyNumberMap, copyStringMap, RandomUtil, paramMapGet, parseVoltageVolts, traceLoadSchematic, traceBurn, formatFirmwarePreview, traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample, traceUart, formatUartBytesHex, traceUartTxDrain, traceDigitalLogic, traceDigitalAd, traceDigitalAdSnapshot, traceDigitalThevenin, traceLogicAnalyzerChannels, getPinNetMap, Logger, INSTR_TRACE_TAG, ensureNetPinConnectivity } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchematicDocument, SimulationConfig, SimulationResult, Result, McuRegisterSnapshot, SchTopology, SimConfig, WaveData, FreqNoiseData, SimStatResult, SpiceResult, ProgressCallback, ApiResult, ErcViolation, FaultInjection, FaultScanResult, FaultType, PinGeometryResolver } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { FaultInjectionEngine } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/FaultInjectionEngine";
 import { Mcu8051Simulator } from "@bundle:com.elecdraw.aischsim/entry@simulation_kernel/ets/engines/Mcu8051Simulator";
@@ -168,7 +168,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
         this.seedDigitalFromAnalogDc();
         // loadSchematic cleared GPIO Thevenin sources — re-apply if firmware already loaded
         if (this.isAnyMcuLoaded()) {
-            if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
+            if (this.mcuStm32Loaded) {
+                // Re-arm after burn→idle (local interpreter; no real IPC)
+                if (!this.qemuBridge.isRunning()) {
+                    this.qemuBridge.ensureRunning();
+                    Logger.info(INSTR_TRACE_TAG, `[MCU] SIM_START revive STM32 pc=0x${this.qemuBridge.getPc().toString(16)} ` +
+                        `fw=${this.qemuBridge.getFirmwareSize()}`);
+                }
+                else {
+                    this.qemuBridge.touch();
+                }
                 this.syncStm32GpioToSpice();
             }
             if (this.mcu8051Loaded) {
@@ -473,13 +482,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
             };
         }
         const prevAnalog = copyNumberMap(this.nodeVoltages);
-        // Stamp previous DIG levels into AE before this step's SPICE solve
-        this.analogEngine.pinVoltageSources();
+        // Keep VAC/SIGGEN at simTime — default pinVoltageSources() uses inTransientStep=false
+        // between steps and snaps pulse CLK back to DC offset (kills CD4017 edges).
+        this.analogEngine.pinVoltageSources(false);
         const stepResult = this.scheduler.step(this.mcuPc, this.mcuRegs);
         this.globalTime = stepResult.time;
         // 1.3.12 模拟→数字 first: threshold events must land before Thevenin / instruments
         this.applyAnalogToDigitalThresholds(prevAnalog, stepResult.analogSignals);
-        const digitalNow = this.digitalEngine.processEvents(this.globalTime);
+        // Drain gate tPLH/tPHL (CD4017 Q updates) that land a few ns after the clock event
+        let digitalNow = this.digitalEngine.processEvents(this.globalTime);
+        digitalNow = this.digitalEngine.processEvents(this.globalTime + 100e-9);
         // 1.3.11 数字→模拟: Thevenin 源注入（用本步 A→D 之后的电平）
         this.applyDigitalToAnalogThevenin(digitalNow);
         // Populate node voltages with BOTH node names and net UUIDs for instrument lookup
@@ -527,6 +539,13 @@ export class SimulationKernelImpl implements ISimulationKernel {
         for (let i = 0; i < this.theveninSources.length; i++) {
             const src = this.theveninSources[i];
             this.nodeVoltages.set(src.netId, src.voltage);
+            // Push THEV into wave ring at this step time (same-t overwrite of SPICE float)
+            this.updateWaveData(src.netId, stepResult.time, src.voltage, 0);
+            const spiceAlias = this.spiceNodeMap.get(src.netId);
+            if (spiceAlias !== undefined && spiceAlias !== src.netId) {
+                this.nodeVoltages.set(spiceAlias, src.voltage);
+                this.updateWaveData(spiceAlias, stepResult.time, src.voltage, 0);
+            }
         }
         stepResult.digitalStates.forEach((state: LogicState, nodeId: string) => {
             if (!drivenNets.has(nodeId)) {
@@ -537,9 +556,11 @@ export class SimulationKernelImpl implements ISimulationKernel {
             }
             const v = state === LogicState.HIGH ? VOH_HC_5V : 0;
             this.nodeVoltages.set(nodeId, v);
+            this.updateWaveData(nodeId, stepResult.time, v, 0);
             const spice = this.spiceNodeMap.get(nodeId);
             if (spice !== undefined) {
                 this.nodeVoltages.set(spice, v);
+                this.updateWaveData(spice, stepResult.time, v, 0);
             }
         });
         const branchCurrents = this.analogEngine.getBranchCurrents();
@@ -630,6 +651,10 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 }
             }
             this.syncSpiceToGpioInputs();
+            // Interleave MCU with SPICE so bit-bang edges land in wave buffers within the same frame
+            if (this.isAnyMcuLoaded() && (steps & 1) === 1) {
+                this.tickMcuCore();
+            }
             this.tickDigitalLogic();
             steps++;
             this.budgetStepCount++;
@@ -719,11 +744,16 @@ export class SimulationKernelImpl implements ISimulationKernel {
     }
     tickMcuCore(): void {
         let anyTicked = false;
-        // STM32/QEMU — do not early-return; 8051 may also be loaded on the same board.
+        // STM32 local interpreter — revive if false-dead (old IPC timeout) or PC OOB halt
+        if (this.mcuStm32Loaded && !this.qemuBridge.isRunning()) {
+            const revived = this.qemuBridge.ensureRunning();
+            traceMcuTick('STM32', `REVIVE ok=${revived ? 1 : 0} idleMs=${this.qemuBridge.idleMs()} ` +
+                `pc=0x${this.qemuBridge.getPc().toString(16)} fw=${this.qemuBridge.getFirmwareSize()}`);
+        }
         if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
             anyTicked = true;
-            // lab_uart init ~20 instr + TXE poll; batch enough for USART activity per pump tick
-            const step = this.qemuBridge.step(256);
+            // lab_uart init ~20 instr + TXE poll; lab_memory bit-bang needs larger slices
+            const step = this.qemuBridge.step(512);
             if (step.success && step.data !== undefined) {
                 // Prefer 8051 PC in dual-core status when both run; else expose STM32 PC.
                 if (!this.mcu8051Loaded) {
@@ -732,9 +762,18 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 }
             }
             this.syncStm32GpioToSpice();
-            if (this.mcuTickCount <= 3 || this.mcuTickCount % 50 === 0) {
+            if (this.mcuTickCount <= 5 || this.mcuTickCount % 25 === 0) {
                 const stmPc = (step.success && step.data !== undefined) ? step.data : this.mcuPc;
-                traceMcuTick('STM32', `pc=0x${stmPc.toString(16)} ticks=${this.mcuTickCount + 1}`);
+                const cra = this.qemuBridge.readPeriph(0x40010800);
+                const crb = this.qemuBridge.readPeriph(0x40010C00);
+                const crc = this.qemuBridge.readPeriph(0x40011000);
+                const oa = this.qemuBridge.readPeriph(0x4001080C);
+                const ob = this.qemuBridge.readPeriph(0x40010C0C);
+                const oc = this.qemuBridge.readPeriph(0x4001100C);
+                traceMcuTick('STM32', `pc=0x${stmPc.toString(16)} ticks=${this.mcuTickCount + 1} ` +
+                    `CRL_A=0x${(cra >>> 0).toString(16)} ODR_A=0x${(oa & 0xFFFF).toString(16)} ` +
+                    `CRL_B=0x${(crb >>> 0).toString(16)} ODR_B=0x${(ob & 0xFFFF).toString(16)} ` +
+                    `CRL_C=0x${(crc >>> 0).toString(16)} ODR_C=0x${(oc & 0xFFFF).toString(16)}`);
             }
         }
         if (this.mcu8051Loaded) {
@@ -1449,8 +1488,8 @@ export class SimulationKernelImpl implements ISimulationKernel {
             return { success: false, errCode: ErrCode.ERR_DEVICE_NOT_EXIST, error: 'Component not found' };
         comp.parameters.set(param, value);
         if (this.isSimActive()) {
-            // Live pot/switch edits re-stamp the full MNA every tick — suppress stamp flood.
-            const quiet = param === 'wiper' || param === 'pressed';
+            // Live pot/switch/temp edits re-stamp the full MNA every tick — suppress stamp flood.
+            const quiet = param === 'wiper' || param === 'pressed' || param === 'temp_c' || param === 'active';
             if (quiet) {
                 this.analogEngine.setQuietLoad(true);
             }
@@ -1569,6 +1608,82 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
         Logger.info(INSTR_TRACE_TAG, `[POT] ${comp.refDes} wiper=${next} (${(t * 100).toFixed(0)}%)`);
         return next;
+    }
+    /**
+     * 仿真中拖动 DS18B20 温度滑条。tempC ∈ [−55,125]，成功返回 "xx.x"，失败返回 ''。
+     * 教学模型：DQ 电压 = (temp+55)/180×5V。
+     */
+    setInteractiveSensorTemp(componentId: string, tempC: number): string {
+        if (!this.isSimActive() || !this.schematic) {
+            return '';
+        }
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp) {
+            return '';
+        }
+        if (!comp.libraryId.toUpperCase().includes('DS18B20')) {
+            return '';
+        }
+        let t = tempC;
+        if (t < -55) {
+            t = -55;
+        }
+        else if (t > 125) {
+            t = 125;
+        }
+        const next = t.toFixed(1);
+        const prev = (comp.parameters.get('temp_c') ?? '').trim();
+        if (prev === next) {
+            return next;
+        }
+        const r = this.setComponentParameter(componentId, 'temp_c', next);
+        if (!r.success) {
+            return '';
+        }
+        const vTeach = ((t + 55) / 180) * 5;
+        Logger.info(INSTR_TRACE_TAG, `[SENSOR] ${comp.refDes} temp_c=${next}°C teachDQ=${vTeach.toFixed(3)}V`);
+        return next;
+    }
+    /**
+     * 仿真中点击霍尔传感器切换磁场。成功返回 "0"|"1"，失败返回 ''。
+     */
+    toggleInteractiveHall(componentId: string): string {
+        if (!this.isSimActive() || !this.schematic) {
+            return '';
+        }
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp) {
+            return '';
+        }
+        if (!comp.libraryId.toUpperCase().includes('HALL')) {
+            return '';
+        }
+        const prev = (comp.parameters.get('active') ?? '0').trim();
+        const next = (prev === '1' || prev.toLowerCase() === 'true') ? '0' : '1';
+        const r = this.setComponentParameter(componentId, 'active', next);
+        if (!r.success) {
+            return '';
+        }
+        Logger.info(INSTR_TRACE_TAG, `[HALL] ${comp.refDes} active=${next} (${next === '1' ? 'magnet ON → OUT low' : 'magnet OFF / pull-up'})`);
+        return next;
+    }
+    /** Unload all MCU firmwares (STM32 + 8051) so leftover GPIO drives do not fight sensors. */
+    unloadAllMcuFirmware(): void {
+        const had = this.mcu8051Loaded || this.mcuStm32Loaded;
+        if (this.mcuStm32Loaded) {
+            this.qemuBridge.stop();
+            this.mcuStm32Loaded = false;
+        }
+        if (this.mcu8051Loaded) {
+            this.mcu8051.reset();
+            this.mcu8051Loaded = false;
+        }
+        this.mcuTickCount = 0;
+        this.lastTracedGpio.clear();
+        this.mcuFamily = '';
+        if (had) {
+            traceBurn('SIM_UNLOAD_MCU', 'all cores cleared (no-hex template / sensor teach)');
+        }
     }
     /**
      * Sample schematic net voltages into MCU GPIO input state.
@@ -1693,29 +1808,112 @@ export class SimulationKernelImpl implements ISimulationKernel {
     registerCrossCoupledNet(digitalNetId: string, analogNetId: string): void {
         this.crossCoupledNets.set(digitalNetId, analogNetId);
     }
+    /** Prefer schematic net.name for instr_trace (CLK / LA_CH1 / …). */
+    private netDisplayName(netUuid: string): string {
+        if (this.schematic) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const n = this.schematic.nets[i];
+                if (n.id === netUuid) {
+                    return n.name.length > 0 ? n.name : netUuid;
+                }
+            }
+        }
+        const ae = this.analogEngine.getNodeNameForNetUuid(netUuid);
+        return ae.length > 0 ? ae : netUuid;
+    }
+    /**
+     * Resolve live analog voltage for a schematic net UUID from the step snapshot / AE.
+     * SpiceMatrixBuilder may alias CLK→N3 while AnalogEngine keeps node "CLK" — try all keys.
+     */
+    private resolveAnalogVoltageForNet(netUuid: string, currAnalog: Map<string, number>): number {
+        const aeName = this.analogEngine.getNodeNameForNetUuid(netUuid);
+        const spice = this.spiceNodeMap.get(netUuid) ?? '';
+        const keys: string[] = [netUuid, aeName, spice];
+        if (this.schematic) {
+            for (let i = 0; i < this.schematic.nets.length; i++) {
+                const n = this.schematic.nets[i];
+                if (n.id === netUuid && n.name.length > 0) {
+                    keys.push(n.name);
+                    break;
+                }
+            }
+        }
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            if (k.length === 0) {
+                continue;
+            }
+            const fromSnap = currAnalog.get(k);
+            if (fromSnap !== undefined) {
+                return fromSnap;
+            }
+        }
+        return this.analogEngine.getVoltage(netUuid);
+    }
+    private logicStateChar(s: LogicState): string {
+        if (s === LogicState.HIGH) {
+            return 'H';
+        }
+        if (s === LogicState.LOW) {
+            return 'L';
+        }
+        if (s === LogicState.HIGH_Z) {
+            return 'Z';
+        }
+        return 'X';
+    }
     // ---- 1.3.12 D/A 阈值检测: 模拟电压 → 数字事件（含直流电平种子，不仅边沿） ----
     private applyAnalogToDigitalThresholds(_prevAnalog: Map<string, number>, currAnalog: Map<string, number>): void {
         const vcc = 5.0;
         const vil = vcc > 4.0 ? VIL_CMOS_5V : VIL_CMOS_3V3;
         const vih = vcc > 4.0 ? VIH_CMOS_5V : VIH_CMOS_3V3;
         currAnalog.forEach((voltage: number, nodeId: string) => {
-            const netKeys = this.expandAnalogNodeKeys(nodeId);
-            for (let i = 0; i < netKeys.length; i++) {
-                const key = netKeys[i];
-                // Skip orphan aliases (e.g. bare "CLK") — CD4017 listens on net UUID only
-                if (!this.digitalEngine.hasNode(key)) {
-                    continue;
-                }
-                const cur = this.digitalEngine.getState(key);
-                if (voltage >= vih && cur !== LogicState.HIGH) {
-                    this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.HIGH);
-                }
-                else if (voltage <= vil && cur !== LogicState.LOW) {
-                    this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.LOW);
-                }
-            }
             this.nodeVoltages.set(nodeId, voltage);
         });
+        // Only drive gate *inputs* from analog. Re-driving outputs (Q0/Y) from DIG Thevenin
+        // voltages re-asserts H after CD4017 edges and freezes the decade counter.
+        const driven = new Set<string>();
+        const drivenIds = this.digitalEngine.getDrivenNetIds();
+        for (let di = 0; di < drivenIds.length; di++) {
+            driven.add(drivenIds[di]);
+        }
+        const participants = this.digitalEngine.getLogicParticipantNetIds();
+        const changeParts: string[] = [];
+        const snapParts: string[] = [];
+        for (let i = 0; i < participants.length; i++) {
+            const key = participants[i];
+            if (driven.has(key) || !this.digitalEngine.hasNode(key)) {
+                continue;
+            }
+            const name = this.netDisplayName(key);
+            const aeName = this.analogEngine.getNodeNameForNetUuid(key);
+            const spice = this.spiceNodeMap.get(key) ?? '';
+            const voltage = this.resolveAnalogVoltageForNet(key, currAnalog);
+            const cur = this.digitalEngine.getState(key);
+            const curCh = this.logicStateChar(cur);
+            // Always include CLK / LOGIC_* in periodic snapshot; others only when interesting
+            const isClockish = name === 'CLK' || name.indexOf('LOGIC_') === 0 ||
+                name.indexOf('CLK') >= 0;
+            if (isClockish || snapParts.length < 8) {
+                snapParts.push(`${name}=${voltage.toFixed(2)}V/${curCh}` +
+                    `(ae=${aeName.length > 0 ? aeName : '-'},sp=${spice.length > 0 ? spice : '-'})`);
+            }
+            if (voltage >= vih && cur !== LogicState.HIGH) {
+                this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.HIGH);
+                changeParts.push(`${name}:${curCh}→H@${voltage.toFixed(2)}V`);
+            }
+            else if (voltage <= vil && cur !== LogicState.LOW) {
+                this.digitalEngine.scheduleEvent(this.globalTime, key, LogicState.LOW);
+                changeParts.push(`${name}:${curCh}→L@${voltage.toFixed(2)}V`);
+            }
+        }
+        if (changeParts.length > 0) {
+            traceDigitalAd(`t=${this.globalTime.toExponential(3)}s sched=[${changeParts.join(', ')}]`);
+        }
+        if (snapParts.length > 0) {
+            traceDigitalAdSnapshot(`t=${this.globalTime.toExponential(3)}s ` +
+                `inputs=[${snapParts.join('; ')}] | ${this.digitalEngine.formatCd4017Trace()}`);
+        }
     }
     /**
      * Map SPICE node / net UUID / display name onto every DigitalEngine key for that net.
@@ -1916,8 +2114,10 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 return;
             if (!driven.has(nodeId))
                 return;
+            // Prefer AnalogEngine node names (CLK/LA_CH1) over SpiceMatrixBuilder N* aliases
+            const aeName = this.analogEngine.getNodeNameForNetUuid(nodeId);
             const analogNode = this.crossCoupledNets.get(nodeId) ??
-                (this.spiceNodeMap.get(nodeId) ?? nodeId);
+                (aeName.length > 0 ? aeName : (this.spiceNodeMap.get(nodeId) ?? nodeId));
             const voltage = state === LogicState.HIGH ? VOH_HC_5V : 0;
             this.theveninSources.push({ netId: analogNode, voltage: voltage, resistance: ROUT_HC });
             // Also index by net UUID so getNetVoltageByUuid finds DIG levels
@@ -2023,6 +2223,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
         const aeNetMap = this.analogEngine.getNetUuidMapping();
         aeNetMap.forEach((nodeName: string, netUuid: string) => {
             build.nodeMap.set(netUuid, nodeName);
+            // Keep display-name aliases on the AE node (not stale N*) so A→D / THEV agree
+            if (this.schematic) {
+                for (let i = 0; i < this.schematic.nets.length; i++) {
+                    const n = this.schematic.nets[i];
+                    if (n.id === netUuid && n.name.length > 0) {
+                        build.nodeMap.set(n.name, nodeName);
+                        build.nodeMap.set(n.name.toUpperCase(), nodeName);
+                        break;
+                    }
+                }
+            }
         });
         this.spiceNodeMap = build.nodeMap;
         this.autoRegisterCrossCouplings(topo);
@@ -2137,10 +2348,18 @@ export class SimulationKernelImpl implements ISimulationKernel {
             };
             this.waveDataList.push(wave);
         }
-        // Reject non-monotonic timestamps (would scramble scope resampling / windowing)
+        // Reject non-monotonic timestamps (would scramble scope resampling / windowing).
+        // Same-t overwrite: THEV / digital settle must replace SPICE float recorded earlier
+        // in the same runSpiceStep — otherwise LA CH7/Q* waves stay stuck at pre-THEV 0V.
         if (wave.timeAxis.length > 0) {
             const lastT = wave.timeAxis[wave.timeAxis.length - 1];
-            if (time <= lastT) {
+            if (time < lastT) {
+                return;
+            }
+            if (time === lastT) {
+                const li = wave.voltageAxis.length - 1;
+                wave.voltageAxis[li] = voltage;
+                wave.currentAxis[li] = current;
                 return;
             }
         }

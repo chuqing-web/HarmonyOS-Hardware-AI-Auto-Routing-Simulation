@@ -36,7 +36,7 @@
 | 滤波器 | RC滤波, 低通, 高通 | lab_filter | 中 |
 | 分立元件 | 三极管, MOSFET, 开关 | lab_discrete | 中 |
 | 存储器 | EEPROM, Flash, 24C02, W25Q | lab_memory | 中 |
-| 虚拟仪器 | 示波器, 万用表, 电压表, 电流表 | lab_instruments | 简单 |
+| 虚拟仪器 | 示波器, 万用表, 功率表, 频率计, 逻辑分析仪, UART | lab_instruments | 中 |
 | 混合电路 | 多类型组合 | - | 复杂 |
 
 ### 1.2 复杂度评估
@@ -104,14 +104,19 @@ L4 → 参数校验: 耐压/功率/封装是否符合约束
 连接: VCC/GPIO → R_330(pin1) → R_330(pin2) → LED(A) → LED(K) → GND
 ```
 
-### 2.5 仪器自动追加规则
+### 2.5 仪器追加规则（与 DeviceSelectPrompt 对齐 — 禁止擅自加仪器）
 
 ```
-电路含 LED/电阻分压/传感器 → 追加 VOLTMETER_DC
-电路含 MCU+UART → 追加 UART_TERMINAL
-电路含运放/放大器 → 追加 OSCILLOSCOPE
-电路含数字 IC → 追加 LOGIC_ANALYZER
-电路含电源/稳压 → 追加 VOLTMETER_DC
+仅当用户明确要求或测量意图时追加：
+  电压表/测电压 → VOLTMETER_DC
+  电流表/测电流 → AMMETER_DC
+  万用表/电阻档/二极管档 → VIRTUAL_METER（V,A,OHM,COM）
+  功率表 → POWER_METER（V并/I串）
+  示波器/波形 → OSCILLOSCOPE
+  逻辑分析仪 → LOGIC_ANALYZER（CH1–CH8）
+  频率计 → FREQ_COUNTER；信号源 → SIGNAL_GEN
+  UART/串口终端 → UART_TERMINAL
+禁止因「含运放/电源/数字IC」自动追加示波器或电压表
 每个电路必须至少有 VCC 和 GND
 ```
 
@@ -181,25 +186,28 @@ POP_SIZE=60, GENERATIONS=50, GRID=10mil
 10. ★ 后验: 仪器引脚完整性 + MCU关键引脚连接验证
 ```
 
-### 4.2 仪器拓扑铁律 (v3.0 新增 — 严禁违反)
+### 4.2 仪器拓扑铁律 (v4.0 — 严禁违反)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 铁律 1: 电流表 = 串联，绝不并联                                  │
-│   ✓ VCC → I+ → I- → VCC_AM → R1                               │
-│   ✗ I+→VCC, I-→R1 (两者形成并联旁路)                             │
+│ 铁律 1: 电流表 AMMETER_DC = 串联，绝不并联                        │
+│   ✓ VCC → I+ → I- → 负载 → GND                                  │
+│   ✗ I+/I- 同网；或 I+→VCC、I-→负载却形成旁路并联                  │
 │                                                                 │
-│ 铁律 2: 电压表 = 分布在分压链不同节点对                           │
-│   ✓ 电压表1: V+→VCC, COM→SENSE (测R1压降)                       │
-│   ✓ 电压表2: V+→SENSE, COM→GND (测R2压降)                       │
-│   ✗ 两块电压表都接 SENSE↔GND (测同一节点)                        │
+│ 铁律 2: 电压表 VOLTMETER_DC = 并联测节点对；多表不同节点对         │
+│   ✓ VM1: V+→VCC, COM→SENSE；VM2: V+→SENSE, COM→GND             │
+│   ✗ 多表测同一 high-low 对                                      │
 │                                                                 │
-│ 铁律 3: 分压链 VCC 端必须先经过电流表再进入电阻                    │
-│   ✓ VCC → Ammeter.I+ → Ammeter.I- → R1.1                       │
-│   ✗ VCC → R1.1 (电流表旁路)                                     │
+│ 铁律 3: POWER_METER — V 并 / I 串；I 路≠V 路节点对               │
+│   ✓ V+/V- 跨负载；I+/I- 切入电源支路                             │
 │                                                                 │
-│ 铁律 4: 仪器全部使用 Net Label (joinByLabel/ stubLabel)          │
-│         不允许仪器引脚走长导线                                    │
+│ 铁律 4: VIRTUAL_METER 四端 V,A,OHM,COM（勿写 V+）                │
+│   DCV/ACV→V∥COM；AMP→A串；OHM/DIODE→OHM∥COM                     │
+│                                                                 │
+│ 铁律 5: OSC CH1–4+GND（GND=stubLabel）；LA CH1–8+GND（禁CH0/D0）│
+│   UART TX/RX/GND；FREQ IN/GND；SIGNAL_GEN OUT/GND               │
+│                                                                 │
+│ 铁律 6: 探针一律 joinByLabel；【SIM_CONN】有信号必有 GND/COM      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

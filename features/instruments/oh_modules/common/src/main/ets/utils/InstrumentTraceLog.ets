@@ -262,6 +262,27 @@ export function traceDigitalLogic(
 
 
 
+/** A→D / CD4017 时钟排查（电平变化或显式 force 时打 info） */
+export function traceDigitalAd(detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] A2D | ${detail}`);
+}
+
+/** A→D 周期快照（默认 ~5Hz，避免刷屏） */
+let _adSnapLastMs = 0;
+export function traceDigitalAdSnapshot(detail: string, minIntervalMs: number = 200): void {
+  const now = Date.now();
+  if (now - _adSnapLastMs < minIntervalMs && !INSTR_TRACE_SIM_STEP) {
+    return;
+  }
+  _adSnapLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] A2D_SNAP | ${detail}`);
+}
+
+/** CD4017 边沿 / 阻塞原因 */
+export function traceCd4017(detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] CD4017 | ${detail}`);
+}
+
 /** 数字→模拟 Thevenin 注入摘要 */
 
 export function traceDigitalThevenin(parts: string[]): void {
@@ -292,6 +313,30 @@ export function traceLogicAnalyzerChannels(
 
   Logger.info(INSTR_TRACE_TAG, `[LA] ${refDes} | ${channels.join(' ')}`);
 
+}
+
+/** LA 捕获路径：probe 匹配 / 边沿数 / 电压跨度（限流） */
+let _laCaptureLastMs: number = 0;
+
+export function traceLaCapture(detail: string, minIntervalMs: number = 400): void {
+  const now = Date.now();
+  if (now - _laCaptureLastMs < minIntervalMs) {
+    return;
+  }
+  _laCaptureLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[LA] CAPTURE | ${detail}`);
+}
+
+/** LA UI 刷新：各通道边沿摘要（限流） */
+let _laUiLastMs: number = 0;
+
+export function traceLaUiChannels(detail: string, minIntervalMs: number = 500): void {
+  const now = Date.now();
+  if (now - _laUiLastMs < minIntervalMs) {
+    return;
+  }
+  _laUiLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[LA] UI | ${detail}`);
 }
 
 
@@ -573,6 +618,30 @@ export function traceInstrumentWiringIssues(doc: SchematicDocument): void {
       if (iPlus !== null && iMinus !== null && iPlus === iMinus) {
         Logger.warn(INSTR_TRACE_TAG,
           `[INSTR_SHORT] ${comp.refDes} I+ and I- on same net ${netName(iPlus)} — reading will be 0A`);
+      }
+    } else if (kind === 'power') {
+      const vPlus = findNet(['V+', 'VP', 'PLUS', '+']);
+      const vMinus = findNet(['V-', 'COM', 'GND', '-']);
+      const iPlus = findNet(['I+', 'IP']);
+      const iMinus = findNet(['I-', 'IM']);
+      if (vPlus !== null && vMinus !== null && vPlus === vMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} V+/V- on same net ${netName(vPlus)} — power V=0`);
+      }
+      if (iPlus !== null && iMinus !== null && iPlus === iMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} I+/I- on same net ${netName(iPlus)} — not series`);
+      } else if (iPlus !== null && iMinus !== null && vPlus !== null && vMinus !== null &&
+        iPlus === vPlus && iMinus === vMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_WIRING] ${comp.refDes} I path identical to V path — current not series-inserted`);
+      }
+    } else if (kind === 'freq' || kind === 'osc' || kind === 'logic') {
+      const sig = kind === 'freq' ? findNet(['IN', 'SIG', 'INPUT']) : findNet(['CH1', 'IN1', '1']);
+      const gnd = findNet(['GND', 'COM', 'VSS']);
+      if (sig !== null && gnd !== null && sig === gnd) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} signal and GND on same net ${netName(sig)}`);
       }
     }
   }
@@ -1693,7 +1762,7 @@ export function traceInteractiveInstrumentLive(
   activeRefOrId: string,
   force: boolean = false
 ): void {
-  const prefer = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', 'GND'];
+  const prefer = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', '1WIRE', 'HALL', 'GND'];
   const netParts: string[] = [];
   for (let i = 0; i < prefer.length; i++) {
     const n = prefer[i];

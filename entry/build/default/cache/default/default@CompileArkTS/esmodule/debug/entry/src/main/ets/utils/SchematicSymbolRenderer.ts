@@ -19,6 +19,10 @@ export interface SymbolDrawStyle {
     switchPressed?: boolean;
     /** Potentiometer wiper fraction 0..1 (arrow along track) */
     potWiper?: number;
+    /** DS18B20 teaching temperature °C (−55…125); undefined = generic sensor glyph */
+    sensorTempC?: number;
+    /** Hall sensor magnet field active */
+    hallActive?: boolean;
 }
 export class SchematicSymbolRenderer {
     static drawComponent(ctx: CanvasRenderingContext2D, originX: number, originY: number, def: ComponentDefinition, refDes: string, rotation: Rotation, mirrored: boolean, style: SymbolDrawStyle): SymbolBounds {
@@ -31,7 +35,7 @@ export class SchematicSymbolRenderer {
             ctx.scale(-1, 1);
         }
         const symbolKey = resolveSymbolKey(def.id, def.svgSymbol, def.behaviorModel);
-        SchematicSymbolRenderer.drawSymbolBody(ctx, symbolKey, def, style.ledDisplayColor ?? '', style.buzzerActive === true, style.switchPressed === true, style.potWiper !== undefined ? style.potWiper : 0.5);
+        SchematicSymbolRenderer.drawSymbolBody(ctx, symbolKey, def, style.ledDisplayColor ?? '', style.buzzerActive === true, style.switchPressed === true, style.potWiper !== undefined ? style.potWiper : 0.5, style.sensorTempC !== undefined ? style.sensorTempC : Number.NaN, style.hallActive === true);
         SchematicSymbolRenderer.drawPins(ctx, def.pins, style.strokeColor);
         SchematicSymbolRenderer.drawLabels(ctx, def, refDes, style);
         if (style.hovered && !style.selected) {
@@ -78,7 +82,7 @@ export class SchematicSymbolRenderer {
         SchematicSymbolRenderer.drawPins(ctx, def.pins, ProteusColors.HOVER_PREVIEW);
         ctx.restore();
     }
-    private static drawSymbolBody(ctx: CanvasRenderingContext2D, key: string, def: ComponentDefinition, ledDisplayColor: string = '', buzzerActive: boolean = false, switchPressed: boolean = false, potWiper: number = 0.5): void {
+    private static drawSymbolBody(ctx: CanvasRenderingContext2D, key: string, def: ComponentDefinition, ledDisplayColor: string = '', buzzerActive: boolean = false, switchPressed: boolean = false, potWiper: number = 0.5, sensorTempC: number = Number.NaN, hallActive: boolean = false): void {
         ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
         ctx.fillStyle = ProteusColors.CANVAS_BG;
         ctx.lineWidth = 1.2;
@@ -194,7 +198,16 @@ export class SchematicSymbolRenderer {
                 SchematicSymbolRenderer.drawBuzzer(ctx, buzzerActive);
                 break;
             case 'sensor':
-                SchematicSymbolRenderer.drawSensor(ctx);
+                if (def.id.toUpperCase().includes('DS18B20') || def.behaviorModel === 'ds18b20') {
+                    const tC = Number.isFinite(sensorTempC) ? sensorTempC : 25;
+                    SchematicSymbolRenderer.drawDs18b20(ctx, tC);
+                }
+                else if (def.id.toUpperCase().includes('HALL') || def.behaviorModel === 'hall') {
+                    SchematicSymbolRenderer.drawHallSensor(ctx, hallActive);
+                }
+                else {
+                    SchematicSymbolRenderer.drawSensor(ctx);
+                }
                 break;
             case 'counter':
             case 'mcu_8051':
@@ -574,37 +587,36 @@ export class SchematicSymbolRenderer {
         ctx.fillText('SCOPE', -16, -h / 2 - 4);
     }
     private static drawMultimeter(ctx: CanvasRenderingContext2D): void {
-        // Pins at x=-30, y={-10,10} — body covers y=-32..32
-        const w = 54;
-        const h = 64;
+        // Pins at x=-30: V=-30 A=-10 OHM=10 COM=30
+        const w = 56;
+        const h = 72;
         ctx.strokeRect(-w / 2, -h / 2, w, h);
-        // LCD display area
         ctx.fillStyle = '#C8E6C0';
-        ctx.fillRect(-w / 2 + 6, -h / 2 + 6, w - 12, 16);
+        ctx.fillRect(-w / 2 + 6, -h / 2 + 6, w - 12, 14);
         ctx.strokeStyle = '#666';
         ctx.lineWidth = 0.5;
-        ctx.strokeRect(-w / 2 + 6, -h / 2 + 6, w - 12, 16);
-        // 7-segment style reading
+        ctx.strokeRect(-w / 2 + 6, -h / 2 + 6, w - 12, 14);
         ctx.fillStyle = '#333';
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText('3.297', -18, -h / 2 + 19);
-        // Mode label
-        ctx.font = '7px monospace';
-        ctx.fillText('DCV', -7, -h / 2 + 25);
-        // Dial circle
-        const cy = h / 2 - 14;
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('3.297', -16, -h / 2 + 17);
+        ctx.font = '6px monospace';
+        ctx.fillText('DCV', -6, -h / 2 + 24);
+        const cy = 8;
         ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(0, cy, 10, 0, Math.PI * 2);
+        ctx.arc(0, cy, 9, 0, Math.PI * 2);
         ctx.stroke();
-        // Dial pointer
         ctx.beginPath();
         ctx.moveTo(0, cy);
-        ctx.lineTo(6, cy - 6);
+        ctx.lineTo(5, cy - 5);
         ctx.stroke();
-        // Title
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.font = '5px sans-serif';
+        ctx.fillText('V', -w / 2 + 2, -28);
+        ctx.fillText('A', -w / 2 + 2, -8);
+        ctx.fillText('Ω', -w / 2 + 2, 12);
+        ctx.fillText('COM', -w / 2 + 2, 32);
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         ctx.fillText('DMM', -12, -h / 2 - 4);
     }
@@ -1002,6 +1014,100 @@ export class SchematicSymbolRenderer {
         ctx.moveTo(0, -6);
         ctx.lineTo(0, 6);
         ctx.stroke();
+    }
+    /**
+     * Hall：传感器框 + 顶部「磁场」切换钮（仿按键 CLOSED/OPEN 可点感）。
+     * active=有磁 → OUT 开漏拉低。
+     */
+    private static drawHallSensor(ctx: CanvasRenderingContext2D, active: boolean): void {
+        SchematicSymbolRenderer.drawSensor(ctx);
+        // Toggle button above body (same vertical band as DS18B20 slider)
+        const bx = -24;
+        const by = -34;
+        const bw = 48;
+        const bh = 16;
+        if (active) {
+            ctx.fillStyle = 'rgba(196, 92, 38, 0.22)';
+            ctx.strokeStyle = '#c45c26';
+            ctx.lineWidth = 1.4;
+            ctx.fillRect(bx, by, bw, bh);
+            ctx.strokeRect(bx, by, bw, bh);
+            // Pressed plunger
+            ctx.fillStyle = '#c45c26';
+            ctx.fillRect(-6, by + 2, 12, 5);
+            ctx.strokeStyle = '#8a3a12';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-6, by + 2, 12, 5);
+            ctx.fillStyle = '#8a3a12';
+            ctx.font = 'bold 8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('MAG ON', 0, by + bh - 2);
+        }
+        else {
+            ctx.fillStyle = 'rgba(80, 100, 120, 0.10)';
+            ctx.strokeStyle = '#607080';
+            ctx.lineWidth = 1.4;
+            ctx.fillRect(bx, by, bw, bh);
+            ctx.strokeRect(bx, by, bw, bh);
+            // Raised plunger
+            ctx.fillStyle = '#8a9aaa';
+            ctx.fillRect(-6, by - 2, 12, 5);
+            ctx.strokeStyle = '#607080';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-6, by - 2, 12, 5);
+            ctx.fillStyle = '#607080';
+            ctx.font = 'bold 8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('MAG OFF', 0, by + bh - 2);
+        }
+        ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.font = '7px sans-serif';
+        ctx.fillText('点按切换', 0, by - 4);
+        ctx.textAlign = 'start';
+    }
+    /**
+     * DS18B20：传感器框 + 顶部温度滑条（仿电位器）。
+     * t 映射：−55°C … 125°C → 滑块位置 0…1。
+     */
+    private static drawDs18b20(ctx: CanvasRenderingContext2D, tempC: number = 25): void {
+        SchematicSymbolRenderer.drawSensor(ctx);
+        let tC = tempC;
+        if (tC < -55) {
+            tC = -55;
+        }
+        else if (tC > 125) {
+            tC = 125;
+        }
+        const t = (tC + 55) / 180;
+        const railL = -22;
+        const railR = 22;
+        const railY = -22;
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(railL, railY);
+        ctx.lineTo(railR, railY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(railL, railY - 4);
+        ctx.lineTo(railL, railY + 4);
+        ctx.moveTo(railR, railY - 4);
+        ctx.lineTo(railR, railY + 4);
+        ctx.stroke();
+        const wx = railL + t * (railR - railL);
+        ctx.fillStyle = '#c45c26';
+        ctx.strokeStyle = '#8a3a12';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.rect(wx - 4, railY - 7, 8, 14);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.font = '8px sans-serif';
+        ctx.textAlign = 'center';
+        const label = `${tC >= 0 ? '' : '−'}${Math.abs(Math.round(tC))}°C`;
+        ctx.fillText(label, 0, railY - 12);
+        ctx.textAlign = 'start';
     }
     private static drawCounter(ctx: CanvasRenderingContext2D): void {
         SchematicSymbolRenderer.drawIcBody(ctx, [], '4017');

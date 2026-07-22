@@ -160,7 +160,7 @@ function enumerateCompPins(comp) {
   } else if (lib === 'VOLTMETER_DC') {
     ids.push('V+', 'COM');
   } else if (lib === 'VIRTUAL_METER') {
-    ids.push('V', 'COM');
+    ids.push('V', 'A', 'OHM', 'COM');
   } else if (lib === 'AMMETER_DC') {
     ids.push('I+', 'I-');
   } else if (lib === 'OSCILLOSCOPE') {
@@ -850,8 +850,10 @@ export class K {
       return { x: 0, y: 0 };
     }
     if (libraryId === 'VIRTUAL_METER') {
-      if (pinId === 'V') return { x: -30, y: -25 };
-      if (pinId === 'COM') return { x: -30, y: 25 };
+      if (pinId === 'V') return { x: -30, y: -30 };
+      if (pinId === 'A') return { x: -30, y: -10 };
+      if (pinId === 'OHM') return { x: -30, y: 10 };
+      if (pinId === 'COM') return { x: -30, y: 30 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'AMMETER_DC') {

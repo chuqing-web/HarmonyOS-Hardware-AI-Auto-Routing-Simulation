@@ -348,33 +348,41 @@ MCU(PA1) — R_330 — LED_RED(A) — LED_RED(K) — GND
 
 ## 13. lab_instruments — 仪器测量实验
 
-**关键词**: 仪器, 示波器, 万用表, 电流表, 电压表, 频率计
+**关键词**: 仪器, 示波器, 万用表, 电流表, 电压表, 频率计, 功率表, 逻辑分析仪, UART, 信号发生器
 
 **器件清单**:
 | 器件 | libDevId | 数量 | 备注 |
 |------|----------|------|------|
-| 任意被测电路器件 | (根据需求) | 按需 | 需要有测量对象 |
-| 电压表 | VOLTMETER_DC | ≥1 | |
-| 电流表 | AMMETER_DC | ≥1 | |
-| 示波器 | OSCILLOSCOPE | ≥1 | |
+| 信号发生器 | SIGNAL_GEN | 1 | 1kHz 方波 → CLK |
+| 电流表 | AMMETER_DC | 1 | 串联 |
+| 功率表 | POWER_METER | 1 | I 串联 + V 跨负载 |
+| 分压 | R_10k, POT_10k | 各1 | |
+| 万用表 | VIRTUAL_METER | 1 | 四端 V/A/OHM/COM：DCV·ACV·Ω·AMP·二极管 |
+| 频率计 | FREQ_COUNTER | 1 | IN→CLK |
+| 示波器 | OSCILLOSCOPE | 1 | CH1–4 全接 |
+| 十进制计数 | CD4017 | 1 | LA 激励 |
+| 逻辑分析仪 | LOGIC_ANALYZER | 1 | CH1–7=Q0–Q6, CH8=CLK |
+| 串口终端 | UART_TERMINAL | 1 | TX↔RX 环回 |
 | 电源 | VCC, GND | 各1 | |
 
-**网络拓扑（纯仪器示例：分压+全仪器）**:
+**网络拓扑（功能台）**:
 ```
-VCC — AMMETER_DC(I+) — AMMETER_DC(I-) — VCC_AM — R_1k — SENSE_1 — R_10k — GND
-                                              |          |
-                                    VOLTMETER_DC#1(V+)  VOLTMETER_DC#2(V+)
-                                    VOLTMETER_DC#1(COM)  VOLTMETER_DC#2(COM)
-                                              |          |
-                                            GND        GND
+VCC → A1.I+→I- → AM_OUT → PM.I+→I- → HI → R10k → TOP → POT → GND
+                                      PM.V+↗          MID(W)→M1
+                                      PM.V-→GND       TOP→VM1
+SG1.OUT ── CLK ── FC.IN / OSC.CH1 / LA.CH8 / CD4017.CLK / VM1.V
+VM1: V=CLK(DCV/ACV)  A=LED串联(AMP)  OHM=R_1k∥二极管(Ω/DIODE)  COM=GND
+OSC: CH2=HI CH3=MID CH4=TOP GND=GND
+LA: CH1..7 = Q0..Q6；UART TERM TX↔RX 环回 + GND
 ```
 
 **仪器拓扑铁律（不可违反）**:
-1. **电流表串联**: VCC→I+→I-→负载电阻。I+/I-绝不在同一网络！
-2. **电压表分布**: N块电压表各测不同节点。表1测R1(VCC_AM↔SENSE_1)，表2测R2(SENSE_1↔GND)
-3. **示波器高阻并联**: CH1探针→被测节点(标号)，GND clip→GND(标号)
-4. **所有仪器 GND/COM 必须接电路 GND**，否则浮空→测量无效
-5. **仪器用标号连接**: 仪器与被测点之间用 netLabel，禁止长导线
+1. **电流表串联**: VCC→I+→I-→…→负载。I+/I- 绝不同网
+2. **功率表**: I+/I- 串联切入；V+/V- 跨负载；禁止 I 路与 V 路完全同节点对
+3. **万用表四端**: V 测电压；A-COM 串联测流；OHM-COM 测电阻/二极管；COM 共地
+4. **示波器**: 至少 CH1+GND；教学台应接满 CH1–4；GND 用 stub+标号防并脚
+5. **频率计 / LA / UART / 信号源**: 有信号脚必须有 GND/COM 回线
+6. **仪器优先 joinByLabel**: 探针与被测点用同名标号，避免廊道误并
 
 ---
 
@@ -472,60 +480,57 @@ AT89C51(GND=P20) — GND
 2. 输入端不可浮空
 3. 模拟信号路径远离数字/时钟线
 
-### 仪器连接规则 (v3.0 完整版)
+### 仪器连接规则 (v4.0 — 与 BuiltinComponents / SIM_CONN 对齐)
 
 #### 电压表 (VOLTMETER_DC)
 ```
-连接方式: 并联 — V+ 通过标号接被测高点，COM 通过标号接被测低点/GND
-连接模式: joinByLabel（强制标号，禁止长导线）
-命名规范: SENSE_<节点描述>  (如 SENSE_R1, SENSE_VOUT)
-引脚完整性: V+ 和 COM 必须都连接，否则测量无效
-分布规则: N块电压表各测不同节点对，不允许全部测同一对节点
+并联 — V+→被测高点，COM→低点/GND；joinByLabel；多表不同节点对
 ```
-**反模式**: 电压表 V+ 和 COM 都接 VCC → 读数为零；电压表 V+ 接 GND → 极性反
 
 #### 电流表 (AMMETER_DC)
 ```
-连接方式: 串联 — I+ 接 VCC（或前级），I- 接负载电阻
-中间网络: VCC_AM（VCC After Meter），电流表插入后形成
-连接模式: I+ 侧短导线(joinWired)，I- 侧标号(joinByLabel)到 VCC_AM
-命名规范: 中间网络名 VCC_AM
-引脚完整性: I+ 和 I- 必须在不同网络，绝不在同一网络！
+串联 — VCC→I+→I-→负载；I+/I- 异网；joinByLabel 优先
 ```
-**反模式**: I+ 和 I- 在同一网络 → 短路！电流表 I+ 直接接 GND → 短路！
+
+#### 四端万用表 (VIRTUAL_METER)
+```
+引脚: V, A, OHM, COM
+档位: DCV / ACV / OHM / AMP / DIODE
+- DCV/ACV: V∥被测，COM→GND
+- AMP: A–COM 串联测流（勿并联）
+- OHM/DIODE: OHM–COM 跨被测电阻/二极管（勿跨电源）
+```
+
+#### 功率表 (POWER_METER)
+```
+V+/V- 跨负载并测；I+/I- 串联切入供电回路
+禁止 I 路与 V 路完全同节点对（典型错误：四脚全跨电源两端）
+```
 
 #### 示波器 (OSCILLOSCOPE)
 ```
-连接方式: 高阻并联 — CH1/CH2 探针通过标号接被测节点
-连接模式: joinByLabel（强制标号），GND clip 接电路 GND（标号）
-命名规范: CH1_PROBE, CH2_PROBE
-引脚完整性: 至少 CH1 和 GND_clip 连接；CH2 可选
+CH1–CH4 探针 joinByLabel→被测节点；GND 用 stubLabel→GND
+至少 CH1+GND；教学/全套仪器优先接满四通道
+禁止 CH* 挂电源轨（测纹波除外）；禁止 CH 与 GND 同网
 ```
-**反模式**: 示波器探针悬空 → 噪声波形；GND clip 不接 → 测量浮空，波形异常
 
 #### 逻辑分析仪 (LOGIC_ANALYZER)
 ```
-连接方式: 多通道标号 — CH0/CH1/.../CH7 各接一个被测数字信号
-连接模式: joinByLabel（强制标号），GND 接电路 GND
-命名规范: LA_CH0, LA_CH1, ..., LA_CH7
+CH1–CH8 + GND（禁止 CH0/D0）；joinByLabel；GND 必接
 ```
 
-#### UART 终端 (UART_TERMINAL)
+#### 信号发生器 / 频率计 / UART
 ```
-连接方式: 标号交叉 — TX↔RX, RX↔TX
-连接模式: joinByLabel（强制标号），GND 接电路 GND
-命名规范: UART_TX, UART_RX
-```
-
-#### 频率计 (FREQ_COUNTER)
-```
-连接方式: 标号接被测信号节点，GND 接电路 GND
-连接模式: joinByLabel
-命名规范: FC_INPUT
+SIGNAL_GEN: OUT,GND
+FREQ_COUNTER: IN,GND
+UART_TERMINAL: TX,RX,GND（交叉或环回）
+有 OUT/IN/TX 则必须有 GND
 ```
 
-### 仪器通用反模式 (v3.0)
-1. **仪器 GND/COM 浮空** → 所有测量无效！必须接电路 GND
-2. **对仪器引脚走长导线** → 用标号代替，仪器与电路用标号耦合
-3. **仪器 V+/I+ 同时接 VCC 和 GND** → 短路或读数异常
-4. **纯标号网络无 stub 导线** → 每个标号至少配 10mil stub 导线
+### 仪器通用反模式 (v4.0)
+1. **仪器 GND/COM 浮空** → SIM_CONN 阻断 / 测量无效
+2. **对仪器引脚走长导线** → 用 joinByLabel
+3. **功率表 I 与 V 同节点对** → 电流未串联
+4. **万用表 A 并联 / OHM 跨 VCC** → 档位接法错误
+5. **逻辑分析仪写 CH0/D0** → 库脚为 CH1–CH8
+6. **示波器 GND 母线横穿 CH 脚列** → 用 stubLabel

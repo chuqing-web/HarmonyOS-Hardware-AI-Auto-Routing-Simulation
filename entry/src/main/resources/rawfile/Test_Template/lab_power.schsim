@@ -3,12 +3,12 @@
   "version": "2.0.0",
   "name": "直流电源电路",
   "topology": {
-    "schUuid": "sch_1784625956335_1",
+    "schUuid": "sch_1784687546807_1",
     "schName": "直流电源电路",
     "layerDepth": 0,
     "deviceList": [
       {
-        "instUuid": "comp_1784625956335_2",
+        "instUuid": "comp_1784687546807_2",
         "libDevId": "VCC",
         "refName": "PWR1",
         "x": 40,
@@ -28,7 +28,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_3",
+        "instUuid": "comp_1784687546807_3",
         "libDevId": "FUSE_1A",
         "refName": "F1",
         "x": 100,
@@ -47,7 +47,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_4",
+        "instUuid": "comp_1784687546807_4",
         "libDevId": "C_100uF",
         "refName": "C1",
         "x": 180,
@@ -68,7 +68,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_5",
+        "instUuid": "comp_1784687546807_5",
         "libDevId": "LM7805",
         "refName": "U1",
         "x": 280,
@@ -88,7 +88,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_6",
+        "instUuid": "comp_1784687546807_6",
         "libDevId": "C_10uF",
         "refName": "C2",
         "x": 400,
@@ -109,7 +109,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_7",
+        "instUuid": "comp_1784687546807_7",
         "libDevId": "R_10k",
         "refName": "R1",
         "x": 560,
@@ -130,7 +130,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_8",
+        "instUuid": "comp_1784687546807_8",
         "libDevId": "VOLTMETER_DC",
         "refName": "M1",
         "x": 700,
@@ -149,7 +149,7 @@
         "ercErrorMsg": ""
       },
       {
-        "instUuid": "comp_1784625956335_9",
+        "instUuid": "comp_1784687546807_9",
         "libDevId": "GND",
         "refName": "GND1",
         "x": 280,
@@ -170,17 +170,17 @@
     ],
     "netList": [
       {
-        "netUuid": "net_1784625956336_10",
+        "netUuid": "net_1784687546808_10",
         "netName": "VIN_SRC",
         "displayName": "VIN_SRC",
         "nodeList": [
           {
-            "devUuid": "comp_1784625956335_2",
+            "devUuid": "comp_1784687546807_2",
             "pinId": "1",
             "pinName": "VCC"
           },
           {
-            "devUuid": "comp_1784625956335_3",
+            "devUuid": "comp_1784687546807_3",
             "pinId": "1",
             "pinName": "1"
           }
@@ -194,22 +194,22 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784625956337_12",
+        "netUuid": "net_1784687546810_12",
         "netName": "REG_IN",
         "displayName": "REG_IN",
         "nodeList": [
           {
-            "devUuid": "comp_1784625956335_3",
+            "devUuid": "comp_1784687546807_3",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784625956335_4",
+            "devUuid": "comp_1784687546807_4",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784625956335_5",
+            "devUuid": "comp_1784687546807_5",
             "pinId": "1",
             "pinName": "1"
           }
@@ -223,27 +223,27 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784625956338_15",
+        "netUuid": "net_1784687546811_15",
         "netName": "VOUT",
         "displayName": "VOUT",
         "nodeList": [
           {
-            "devUuid": "comp_1784625956335_5",
+            "devUuid": "comp_1784687546807_5",
             "pinId": "3",
             "pinName": "3"
           },
           {
-            "devUuid": "comp_1784625956335_6",
+            "devUuid": "comp_1784687546807_6",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784625956335_7",
+            "devUuid": "comp_1784687546807_7",
             "pinId": "1",
             "pinName": "1"
           },
           {
-            "devUuid": "comp_1784625956335_8",
+            "devUuid": "comp_1784687546807_8",
             "pinId": "V+",
             "pinName": "V+"
           }
@@ -257,37 +257,37 @@
         "connectedProbeIds": []
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "netName": "GND",
         "displayName": "GND",
         "nodeList": [
           {
-            "devUuid": "comp_1784625956335_9",
+            "devUuid": "comp_1784687546807_9",
             "pinId": "1",
             "pinName": "GND"
           },
           {
-            "devUuid": "comp_1784625956335_5",
+            "devUuid": "comp_1784687546807_5",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784625956335_4",
+            "devUuid": "comp_1784687546807_4",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784625956335_6",
+            "devUuid": "comp_1784687546807_6",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784625956335_7",
+            "devUuid": "comp_1784687546807_7",
             "pinId": "2",
             "pinName": "2"
           },
           {
-            "devUuid": "comp_1784625956335_8",
+            "devUuid": "comp_1784687546807_8",
             "pinId": "COM",
             "pinName": "COM"
           }
@@ -304,7 +304,7 @@
     "busList": [],
     "wireList": [
       {
-        "netUuid": "net_1784625956336_10",
+        "netUuid": "net_1784687546808_10",
         "points": [
           {
             "x": 40,
@@ -322,7 +322,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956337_12",
+        "netUuid": "net_1784687546810_12",
         "points": [
           {
             "x": 130,
@@ -340,7 +340,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956337_12",
+        "netUuid": "net_1784687546810_12",
         "points": [
           {
             "x": 130,
@@ -354,7 +354,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956338_15",
+        "netUuid": "net_1784687546811_15",
         "points": [
           {
             "x": 320,
@@ -372,7 +372,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956338_15",
+        "netUuid": "net_1784687546811_15",
         "points": [
           {
             "x": 320,
@@ -390,7 +390,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956338_15",
+        "netUuid": "net_1784687546811_15",
         "points": [
           {
             "x": 320,
@@ -408,7 +408,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 280,
@@ -422,7 +422,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 280,
@@ -436,7 +436,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 210,
@@ -450,7 +450,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 430,
@@ -464,7 +464,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 590,
@@ -478,7 +478,7 @@
         "isBus": false
       },
       {
-        "netUuid": "net_1784625956339_19",
+        "netUuid": "net_1784687546811_19",
         "points": [
           {
             "x": 670,
@@ -497,48 +497,48 @@
     "textAnnotate": [],
     "netLabelList": [
       {
-        "id": "lbl_1784625956339_21",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546811_21",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 280,
         "y": 360,
         "global": false
       },
       {
-        "id": "lbl_1784625956339_23",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546812_23",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 280,
         "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784625956339_25",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546812_25",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 250,
         "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784625956339_27",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546812_27",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 470,
         "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784625956339_29",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546812_29",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 630,
         "y": 240,
         "global": false
       },
       {
-        "id": "lbl_1784625956339_31",
-        "netUuid": "net_1784625956339_19",
+        "id": "lbl_1784687546812_31",
+        "netUuid": "net_1784687546811_19",
         "text": "GND",
         "x": 650,
         "y": 195,
@@ -572,12 +572,12 @@
     "convergence": 0.000001
   },
   "aiConfigs": [],
-  "createdAt": "2026-07-21T09:25:56.328Z",
-  "modifiedAt": "2026-07-21T09:25:56.328Z",
+  "createdAt": "2026-07-22T02:32:26.805Z",
+  "modifiedAt": "2026-07-22T02:32:26.805Z",
   "collaboration": {
     "annotations": [],
     "snapshots": [],
     "changeLog": []
   },
-  "integrityHash": "17003e91d8ed78be847da129f22cf947c10fd6a528400f58ca01ac46164d63a3"
+  "integrityHash": "faed0457ecb7ee3f23de7a12bca8fcb40679a2cf1b279ff157464f38061b9e73"
 }

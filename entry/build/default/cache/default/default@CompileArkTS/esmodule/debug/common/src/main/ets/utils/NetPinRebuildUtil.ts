@@ -102,8 +102,10 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
     }
     if (lib.includes('VIRTUAL_METER')) {
         return [
-            { id: 'V', name: 'V', x: -30, y: -25 },
-            { id: 'COM', name: 'COM', x: -30, y: 25 }
+            { id: 'V', name: 'V', x: -30, y: -30 },
+            { id: 'A', name: 'A', x: -30, y: -10 },
+            { id: 'OHM', name: 'OHM', x: -30, y: 10 },
+            { id: 'COM', name: 'COM', x: -30, y: 30 }
         ];
     }
     if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {

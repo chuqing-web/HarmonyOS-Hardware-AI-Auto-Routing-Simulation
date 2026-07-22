@@ -28,11 +28,15 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 多块电压表绝不能全部测量同一对节点！
    - 每块表的 V+ 接被测高点，COM 接被测低点或 GND
 
-3. 仪器引脚入网规则（与 SelfReview 一致）:
-   - 【硬】CH1 / V+ / I+ / COM / 示波器 GND 必须入网并接到正确被测/系统地
-   - 【硬】未使用的 CH2/CH3/CH4 保持悬空即可，禁止接到 GND / NC / 另建 OSC_CH*_SIG 单脚网
-   - 仪器的 COM / 示波器 GND 必须最终连到 GND 网络（禁止挂 VCC 电源轨）
-   - 禁止仪器脚走跨板长导线：用 joinByLabel 同名并网
+3. 仪器引脚入网规则（与 SelfReview / SIM_CONN 一致）:
+   - 【硬】关键脚必须入网: OSC CH1+GND；VOLTMETER V+/COM；AMMETER I+/I-；
+     VIRTUAL_METER 按所用档位接 V/A/OHM + COM；POWER_METER 四脚齐全且 I≠V 节点对；
+     FREQ IN+GND；LA 至少 CH1+GND；UART TX/RX/GND；SIGNAL_GEN OUT+GND
+   - 教学/全套仪器：示波器优先接满 CH1–CH4；LA 按需接 CH1–CH8
+   - 一般电路：未用 OSC/LA 通道可悬空，禁止接到 GND/NC/另建单脚网
+   - COM / 示波器 GND / LA GND 必须到系统地（禁止挂 VCC）；GND 优先 stubLabel
+   - 仪器探针一律 joinByLabel；测量脚并入被测信号网同名（禁止另建 PROBE_* 重复 DUT 脚）
+   - VIRTUAL_METER 真脚为 V,A,OHM,COM（不是 V+）；LA 真脚为 CH1–CH8（禁止 CH0/D0）
 
 4. 连接方式选择规则 — 标号优先原则:
    【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
@@ -47,7 +51,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 【硬】同脚 joinWired 已达 2 次
    - 【硬】网脚数 >3
    - 【硬】电源轨别名且连接数 >2
-   - 仪器测量脚 CH*/V+/I+/COM/PROBE
+   - 仪器测量脚 CH*/V+/V/A/OHM/I+/COM/PROBE/IN/OUT/TX/RX
    - MCU 多外设 / 跨区长跨
 
    严格禁止:
@@ -60,11 +64,14 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 分压中点: SENSE, SENSE_1, SENSE_2, ...
    - 电流表后网络: VCC_AM
    - 信号网络: 描述性名称，如 LED_DRV, CMP1_OUT, UART_TX
-   - 【硬·仪器入网】示波器 CH*/GND、电压表 V+/COM 必须直接加入被测信号网（与被测脚同一 name）。
+   - 【硬·仪器入网】示波器 CH*/GND、电压表 V+/COM、万用表 V/A/OHM/COM、功率表 V±/I±
+     必须直接加入正确网络（与被测脚同一 name 或串联中点）。
      禁止另建 PROBE_*/OSC_CH* 网并再次列出被测器件脚（一脚只能属一网）。
-     正确: net "CMP1_OUT" 含 U2:1 + M1:CH1；错误: 再建 PROBE_1 也含 U2:1
+     正确: net "CMP1_OUT" 含 U2:1 + OSC1:CH1；错误: 再建 PROBE_1 也含 U2:1
    - 【硬】一脚一网：任何 pin 不得出现在两个不同 name 的 nets 中；若仪器要测某脚，把仪器脚并入该网即可
    - 【硬】NPN 驱动管：基极 B 只接一路驱动；LED 支路与蜂鸣器支路不得共用同一 B 脚
+   - 【硬】POWER_METER：I+/I- 所在网与 V+/V- 节点对不得完全相同
+   - 【硬】示波器 GND：优先 stubLabel('GND')，避免 GND 母线并 CH4
 
 6. MCU 最小系统规则:
    - 每个 VDD 引脚 → 连接 VCC + 就近 100nF 去耦电容到 GND（去耦电容用导线，VCC/GND用标号）
@@ -100,7 +107,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
 
 10. 【串联 RC 充放电铁律】板上有 R_* + C_*（且无双色 LED 互斥）时:
    - 正确充电路径: VCC → (可选 SW.1/SW.2) → R.1 → R.2 与 C.1 同网名 RC_MID → C.2 → GND
-   - 示波器: CH1 入 RC_MID；GND 入 GND；禁止 CH1 挂 VCC；未用 CH2/3/4 不入网
+   - 示波器: CH1 入 RC_MID；GND stubLabel→GND；禁止 CH1 挂 VCC；一般电路未用 CH2/3/4 可不入网；教学全套仪器应接满 CH1–4
    - 电流表串联: VCC→AM.I+ ，AM.I-→VCC_AM→(SW)→R.1；禁止 I+/I- 同网
    - 【硬禁】禁止用 RELAY_SPDT 冒充充放电开关；线圈不得直连 VCC/GND
    - 禁止 R 与 C 并联到 VCC-GND（无中点）；禁止 C 两端都浮空

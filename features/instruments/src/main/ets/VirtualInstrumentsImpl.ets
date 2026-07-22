@@ -39,10 +39,46 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   private componentBindings: Map<string, ComponentInstrumentBinding> = new Map();
   private activeCompId: string | null = null;
   private uartTxSink: ((bytes: number[]) => void) | null = null;
+  /** Explicit TX/RX same-net loopback (set by AppService on UART bind) */
+  private uartLoopback: boolean = false;
 
   /** Forward terminal TX hex into the simulation kernel USART RX path. */
   setUartTxSink(sink: ((bytes: number[]) => void) | null): void {
     this.uartTxSink = sink;
+  }
+
+  /** Enable terminal self-echo when schematic TX and RX share one net. */
+  setUartLoopback(enabled: boolean): void {
+    if (this.uartLoopback === enabled && this.uartTerminal.isLoopback() === enabled) {
+      return;
+    }
+    this.uartLoopback = enabled;
+    this.uartTerminal.setLoopback(enabled);
+    traceUart('LOOPBACK', `enabled=${enabled ? 1 : 0}`);
+  }
+
+  isUartLoopback(): boolean {
+    return this.uartLoopback || this.detectLoopbackFromBindings();
+  }
+
+  /** Infer loopback from instrument bindings (TX probe net === RX probe net). */
+  private detectLoopbackFromBindings(): boolean {
+    let found = false;
+    this.componentBindings.forEach((binding: ComponentInstrumentBinding) => {
+      if (found) {
+        return;
+      }
+      const id = (binding.libraryId ?? '').toUpperCase();
+      if (!id.includes('UART')) {
+        return;
+      }
+      const tx = binding.scopeProbes.length > 0 ? binding.scopeProbes[0] : '';
+      const rx = binding.scopeProbes.length > 1 ? binding.scopeProbes[1] : '';
+      if (tx.length > 0 && rx.length > 0 && tx === rx) {
+        found = true;
+      }
+    });
+    return found;
   }
 
   registerComponentBinding(compId: string, binding: ComponentInstrumentBinding): void {
@@ -91,6 +127,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
   clearComponentBindings(): void {
     this.componentBindings.clear();
     this.activeCompId = null;
+    this.setUartLoopback(false);
     this.clearLegacyReaders();
   }
 
@@ -316,6 +353,10 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     return ResultHelper.ok();
   }
 
+  getMultimeterMode(): MultimeterMode {
+    return this.multimeter.getMode();
+  }
+
   measure(): ApiResult<number> {
     this.ensureActiveBindingApplied();
     return ResultHelper.ok(this.multimeter.measure());
@@ -367,6 +408,9 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     if (!hex || hex.trim().length === 0) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Hex string is empty');
     }
+    const loopback = this.isUartLoopback();
+    // Keep engine flag in sync (bindings may appear after first send)
+    this.uartTerminal.setLoopback(loopback);
     this.uartTerminal.hexSend(hex);
     const cleaned = hex.replace(/\s+/g, '').toUpperCase();
     if (!/^[0-9A-F]*$/.test(cleaned) || cleaned.length % 2 !== 0) {
@@ -376,6 +420,12 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     const bytes: number[] = [];
     for (let i = 0; i < cleaned.length; i += 2) {
       bytes.push(parseInt(cleaned.substring(i, i + 2), 16));
+    }
+    if (loopback) {
+      traceUart('TERM_TX_LOOPBACK',
+        `hex=${cleaned} n=${bytes.length} bytes=[${formatUartBytesHex(bytes)}] (TX↔RX same net)`);
+      // Echo already applied inside uartTerminal.hexSend — do not inject MCU
+      return ResultHelper.ok();
     }
     const sinkOk = this.uartTxSink !== null;
     traceUart('TERM_TX',

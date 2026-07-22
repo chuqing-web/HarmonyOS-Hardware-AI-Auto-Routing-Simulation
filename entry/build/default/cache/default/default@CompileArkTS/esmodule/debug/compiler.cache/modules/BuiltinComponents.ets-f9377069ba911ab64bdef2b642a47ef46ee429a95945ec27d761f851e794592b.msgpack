@@ -1,0 +1,1922 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚv’/**
+ * å†…ç½®å™¨ä»¶åº“æ•°æ® - è¦†ç›–æ— æº/åˆ†ç«‹/æ¨¡æ‹Ÿ/æ•°å­—/å­˜å‚¨/MCU/å¤–è®¾/ä»ªå™¨
+ */
+import { ComponentCategory, PinType } from 'common';
+import { appendComponents, emptyParams, makePin, params1, params2, params3, params5 } from '../internal/ComponentLibHelpers';
+import { pins8051Dip40, pinsStm32Teaching48, pinsStm32Teaching100, pinsStm32Teaching32, pinsLcd1602, pins24C02, pinsW25Q64, pins2764, pins62256, pinsDs18b20, pinsHallSensor, pinsCd4017, pinsLm2596 } from './NamedDevicePins';
+export function getAllBuiltinComponents() {
+    const list = [];
+    appendComponents(list, makePowerSupplies());
+    appendComponents(list, makePassives());
+    appendComponents(list, makeDiscretes());
+    appendComponents(list, makeAnalogIcs());
+    appendComponents(list, makeDigitalIcs());
+    appendComponents(list, makeMemory());
+    appendComponents(list, makeMcus());
+    appendComponents(list, makePeripherals());
+    appendComponents(list, makeSensors());
+    appendComponents(list, makeInstruments());
+    return list;
+}
+function makePowerSupplies() {
+    return [
+        {
+            id: 'VCC',
+            name: 'VCC ç”µæº',
+            category: ComponentCategory.POWER_SUPPLY,
+            manufacturer: 'Generic',
+            description: 'æ­£ç”µæº VCC / VDDï¼ˆvoltage å¯è°ƒï¼Œå¦‚ 5V/3.3V/12Vï¼‰',
+            pins: [
+                makePin('1', 'VCC', '1', PinType.POWER, 0, 10)
+            ],
+            defaultParams: params1('voltage', '5V'),
+            spiceModel: '',
+            behaviorModel: 'vcc',
+            svgSymbol: 'vcc.svg',
+            aiWiringRules: ['power-rail']
+        },
+        {
+            id: 'VEE',
+            name: 'VEE è´Ÿç”µæº',
+            category: ComponentCategory.POWER_SUPPLY,
+            manufacturer: 'Generic',
+            description: 'è´Ÿç”µæº VEEï¼ˆvoltage ä¸ºè´Ÿå€¼ï¼Œå¦‚ -5V/-12Vï¼›è¿æ”¾åŒç”µæºå¿…å¤‡ï¼‰',
+            pins: [
+                makePin('1', 'VEE', '1', PinType.POWER, 0, -10)
+            ],
+            defaultParams: params1('voltage', '-12V'),
+            spiceModel: '',
+            behaviorModel: 'vee',
+            svgSymbol: 'gnd.svg',
+            aiWiringRules: ['power-rail', 'negative-rail']
+        },
+        {
+            id: 'GND',
+            name: 'GND æ¥åœ°',
+            category: ComponentCategory.POWER_SUPPLY,
+            manufacturer: 'Generic',
+            description: 'åœ° GND / VSS',
+            pins: [
+                makePin('1', 'GND', '1', PinType.GROUND, 0, -10)
+            ],
+            defaultParams: emptyParams(),
+            spiceModel: '',
+            behaviorModel: 'gnd',
+            svgSymbol: 'gnd.svg',
+            aiWiringRules: ['ground']
+        },
+        {
+            id: 'VAC',
+            name: 'VAC äº¤æµç”µæº',
+            category: ComponentCategory.POWER_SUPPLY,
+            manufacturer: 'Generic',
+            description: 'äº¤æµç”µå‹æº (æ­£å¼¦æ³¢)',
+            pins: [
+                makePin('1', 'AC+', '1', PinType.POWER, -20, 0),
+                makePin('2', 'AC-', '2', PinType.POWER, 20, 0)
+            ],
+            defaultParams: params2('amplitude', '220V', 'frequency', '50Hz'),
+            spiceModel: 'V{name} {AC+} {AC-} SIN(0 {amplitude} {frequency})',
+            behaviorModel: 'ac_source',
+            svgSymbol: 'vac.svg',
+            aiWiringRules: ['ac-power']
+        },
+        {
+            id: 'SIGNAL_GEN',
+            name: 'ä¿¡å·å‘ç”Ÿå™¨',
+            category: ComponentCategory.INSTRUMENT,
+            manufacturer: 'AI-SCH',
+            description: 'å‡½æ•°ä¿¡å·æºï¼šæ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²ï¼›frequency ä¸ dutyCycle(æ–¹æ³¢/è„‰å†²)å¯è°ƒ',
+            pins: [
+                makePin('OUT', 'OUT', '1', PinType.OUTPUT, -30, 0),
+                makePin('GND', 'GND', '2', PinType.GROUND, 30, 0)
+            ],
+            defaultParams: params5('waveform', 'sine', 'amplitude', '1V', 'frequency', '1kHz', 'offset', '0V', 'dutyCycle', '50%'),
+            spiceModel: '',
+            behaviorModel: 'signal_gen',
+            svgSymbol: 'vac.svg',
+            aiWiringRules: ['signal-source', 'series-gnd']
+        }
+    ];
+}
+function makePassives() {
+    const items = [];
+    const resistors = ['10', '100', '330', '1k', '4.7k', '10k', '47k', '100k'];
+    for (let i = 0; i < resistors.length; i++) {
+        const v = resistors[i];
+        items.push(twoPin(`R_${v}`, `Resistor ${v}Î©`, ComponentCategory.PASSIVE, params3('value', `${v}Î©`, 'tolerance', '5%', 'power', '0.25W'), `R{name} {1} {2} {value}`, ['pull-up', 'pull-down', 'voltage-divider']));
+    }
+    const pots = ['1k', '10k', '100k'];
+    for (let i = 0; i < pots.length; i++) {
+        const v = pots[i];
+        items.push(makePotentiometer(`POT_${v}`, `æ»‘åŠ¨å˜é˜»å™¨ ${v}Î©`, v));
+    }
+    const caps = ['10pF', '100pF', '1nF', '10nF', '100nF', '1uF', '10uF', '100uF'];
+    for (let i = 0; i < caps.length; i++) {
+        const v = caps[i];
+        items.push(twoPin(`C_${v}`, `Capacitor ${v}`, ComponentCategory.PASSIVE, params2('value', v, 'voltage', '50V'), `C{name} {1} {2} {value}`, ['decoupling', 'filter']));
+    }
+    items.push(twoPin('L_10uH', 'Inductor 10uH', ComponentCategory.PASSIVE, params2('value', '10uH', 'current', '1A'), `L{name} {1} {2} 10u`, ['filter', 'power']));
+    items.push(twoPin('XTAL_11M', 'Crystal 11.0592MHz', ComponentCategory.PASSIVE, params2('frequency', '11.0592MHz', 'loadCap', '30pF'), '', ['mcu-crystal']));
+    items.push(twoPin('XTAL_8M', 'Crystal 8MHz', ComponentCategory.PASSIVE, params2('frequency', '8MHz', 'loadCap', '20pF'), '', ['mcu-crystal']));
+    items.push(twoPin('FUSE_1A', 'Fuse 1A', ComponentCategory.PASSIVE, params1('rating', '1A'), '', []));
+    return items;
+}
+function makeDiscretes() {
+    return [
+        diode('1N4148', 'Signal Diode'),
+        diode('1N4007', 'Rectifier Diode'),
+        diode('1N5819', 'Schottky Diode'),
+        led('LED_RED', 'Red LED', 'red'),
+        led('LED_GREEN', 'Green LED', 'green'),
+        led('LED_BLUE', 'Blue LED', 'blue'),
+        transistor('2N2222', 'NPN Transistor', 'npn'),
+        transistor('2N2907', 'PNP Transistor', 'pnp'),
+        mosfet('2N7000', 'N-MOSFET', 'nmos'),
+        mosfet('IRF540', 'N-MOSFET Power', 'nmos'),
+    ];
+}
+function makeAnalogIcs() {
+    return [
+        icOpAmp('UA741', 'UA741 Op-Amp'),
+        icOpAmp('LM358', 'LM358 Dual Op-Amp'),
+        icOpAmp('TL082', 'TL082 JFET Op-Amp'),
+        ic555(),
+        icRegulator('LM7805', '5V Regulator', 3),
+        icRegulator('LM7812', '12V Regulator', 3),
+        icRegulator('AMS1117_3V3', '3.3V LDO', 3),
+        icRegulator('LM2596', 'Buck Converter', 5),
+    ];
+}
+function makeDigitalIcs() {
+    const gates = ['00:NAND', '02:NOR', '04:NOT', '08:AND', '32:OR', '74:XOR'];
+    const items = [];
+    for (let i = 0; i < gates.length; i++) {
+        const g = gates[i];
+        const parts = g.split(':');
+        const num = parts[0];
+        const type = parts[1];
+        items.push(makeDigitalGate(num, type));
+    }
+    items.push(makeCd4017());
+    return items;
+}
+function makeMemory() {
+    return [
+        memChip('2764', 'EPROM 8Kx8', ComponentCategory.MEMORY, 28),
+        memChip('62256', 'SRAM 32Kx8', ComponentCategory.MEMORY, 28),
+        memChip('24C02', 'I2C EEPROM 256B', ComponentCategory.MEMORY, 8),
+        memChip('W25Q64', 'SPI Flash 64Mbit', ComponentCategory.MEMORY, 8),
+    ];
+}
+function makeMcus() {
+    const mcus = [];
+    const ids8051 = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS'];
+    for (let i = 0; i < ids8051.length; i++) {
+        const id = ids8051[i];
+        mcus.push(make8051Mcu(id));
+    }
+    const idsStm32 = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'];
+    for (let i = 0; i < idsStm32.length; i++) {
+        const id = idsStm32[i];
+        mcus.push(makeStm32Mcu(id));
+    }
+    return mcus;
+}
+function makePeripherals() {
+    return [
+        twoPin('SW_PUSH', 'Push Button', ComponentCategory.PERIPHERAL, params2('type', 'momentary', 'pressed', '0'), '', ['input']),
+        makeRelaySpdt(),
+        twoPin('BUZZER', 'Buzzer', ComponentCategory.PERIPHERAL, params1('voltage', '5V'), '', ['output']),
+        makeLcd1602(),
+        makeOled12864(),
+    ];
+}
+/** Coil = pins 1/2 (template wiring); optional COM/NO/NC for contact model. */
+function makeRelaySpdt() {
+    const def = {
+        id: 'RELAY_SPDT',
+        name: 'SPDT Relay',
+        category: ComponentCategory.PERIPHERAL,
+        manufacturer: 'Generic',
+        description: 'çº¿åœˆ 1/2 + è§¦ç‚¹ COM/NO/NC',
+        pins: [
+            makePin('1', '1', '1', PinType.PASSIVE, -30, -10),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, -10),
+            makePin('COM', 'COM', '3', PinType.PASSIVE, 0, 20),
+            makePin('NO', 'NO', '4', PinType.PASSIVE, 20, 20),
+            makePin('NC', 'NC', '5', PinType.PASSIVE, -20, 20)
+        ],
+        defaultParams: params1('coilVoltage', '5V'),
+        spiceModel: '',
+        behaviorModel: 'relay_spdt',
+        svgSymbol: 'RELAY_SPDT.svg',
+        aiWiringRules: ['output']
+    };
+    return def;
+}
+function makeSensors() {
+    return [
+        {
+            id: 'DS18B20',
+            name: 'DS18B20 Temperature',
+            category: ComponentCategory.SENSOR,
+            manufacturer: 'Maxim',
+            description: '1-Wire æ¸©åº¦ä¼ æ„Ÿå™¨ï¼ˆGND/DQ/VDDï¼‰ï¼›ä»¿çœŸä¸­å¯æ‹–æ»‘æ¡è°ƒèŠ‚ temp_c',
+            pins: pinsDs18b20(),
+            defaultParams: params3('range', '-55~125Â°C', 'interface', '1-Wire', 'temp_c', '25'),
+            spiceModel: '',
+            behaviorModel: 'ds18b20',
+            svgSymbol: 'ds18b20.svg',
+            aiWiringRules: ['one-wire', 'pull-up']
+        },
+        {
+            id: 'HALL_SENSOR',
+            name: 'Hall Sensor',
+            category: ComponentCategory.SENSOR,
+            manufacturer: 'Generic',
+            description: 'éœå°”å¼€å…³ï¼ˆVCC/OUT/GNDï¼‰ï¼›ä»¿çœŸä¸­ç‚¹æŒ‰é¡¶éƒ¨ MAG ON/OFF é’®åˆ‡æ¢ç£åœº',
+            pins: pinsHallSensor(),
+            defaultParams: params2('type', 'digital', 'active', '0'),
+            spiceModel: '',
+            behaviorModel: 'hall',
+            svgSymbol: 'hall.svg',
+            aiWiringRules: ['input', 'pull-up']
+        },
+        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input'])
+    ];
+}
+function makeInstruments() {
+    return [
+        makeOscilloscope(),
+        makeVirtualMeter(),
+        makeLogicAnalyzer(),
+        makeUartTerminal(),
+        makeVoltmeter(),
+        makeAmmeter(),
+        makePowerMeter(),
+        makeFrequencyCounter(),
+    ];
+}
+function twoPin(id, name, cat, params, spice, rules) {
+    const def = {
+        id: id,
+        name: name,
+        category: cat,
+        manufacturer: 'Generic',
+        description: name,
+        pins: [
+            makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, 0)
+        ],
+        defaultParams: params,
+        spiceModel: spice,
+        behaviorModel: '',
+        svgSymbol: `${id}.svg`,
+        aiWiringRules: rules
+    };
+    return def;
+}
+/** ä¸‰ç«¯æ»‘åŠ¨å˜é˜»å™¨ï¼š1/2 ä¸ºç«¯ï¼ŒW ä¸ºæŠ½å¤´ï¼ˆwiper 0~1ï¼‰ */
+function makePotentiometer(id, name, value) {
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.PASSIVE,
+        manufacturer: 'Generic',
+        description: `${name}ï¼Œå¯è°ƒæŠ½å¤´åˆ†å‹`,
+        pins: [
+            makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, 0),
+            makePin('W', 'W', '3', PinType.PASSIVE, 0, 28)
+        ],
+        defaultParams: params3('value', `${value}Î©`, 'wiper', '0.5', 'power', '0.25W'),
+        spiceModel: 'R{name}A {1} {W} {value}*{wiper}\nR{name}B {W} {2} {value}*(1-{wiper})',
+        behaviorModel: 'potentiometer',
+        svgSymbol: 'potentiometer.svg',
+        aiWiringRules: ['voltage-divider', 'adjustable']
+    };
+    return def;
+}
+function diode(id, desc) {
+    const def = {
+        id: id,
+        name: id,
+        category: ComponentCategory.DISCRETE,
+        manufacturer: 'Generic',
+        description: desc,
+        pins: [
+            makePin('A', 'A', '1', PinType.PASSIVE, -30, 0),
+            makePin('K', 'K', '2', PinType.PASSIVE, 30, 0)
+        ],
+        defaultParams: params1('type', 'signal'),
+        spiceModel: `D{name} {A} {K}`,
+        behaviorModel: 'diode',
+        svgSymbol: 'diode.svg',
+        aiWiringRules: ['rectifier']
+    };
+    return def;
+}
+function led(id, name, color) {
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.DISCRETE,
+        manufacturer: 'Generic',
+        description: name,
+        pins: [
+            makePin('A', 'A', '1', PinType.PASSIVE, -30, 0),
+            makePin('K', 'K', '2', PinType.PASSIVE, 30, 0)
+        ],
+        defaultParams: params2('color', color, 'forwardVoltage', '2.0V'),
+        spiceModel: 'D{name} {A} {K} LED',
+        behaviorModel: 'led',
+        svgSymbol: 'led.svg',
+        aiWiringRules: ['led-indicator']
+    };
+    return def;
+}
+function transistor(id, name, type) {
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.DISCRETE,
+        manufacturer: 'Generic',
+        description: name,
+        pins: [
+            makePin('B', 'B', '1', PinType.INPUT, -30, 0),
+            makePin('C', 'C', '2', PinType.OUTPUT, 30, -20),
+            makePin('E', 'E', '3', PinType.PASSIVE, 30, 20)
+        ],
+        defaultParams: params1('type', type),
+        spiceModel: `Q{name} {C} {B} {E}`,
+        behaviorModel: type,
+        svgSymbol: 'transistor.svg',
+        aiWiringRules: ['switching']
+    };
+    return def;
+}
+function mosfet(id, name, type) {
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.DISCRETE,
+        manufacturer: 'Generic',
+        description: name,
+        pins: [
+            makePin('G', 'G', '1', PinType.INPUT, -30, 0),
+            makePin('D', 'D', '2', PinType.OUTPUT, 30, -10),
+            makePin('S', 'S', '3', PinType.PASSIVE, 30, 10)
+        ],
+        defaultParams: params1('type', type),
+        spiceModel: '',
+        behaviorModel: type,
+        svgSymbol: 'mosfet.svg',
+        aiWiringRules: ['power-switch']
+    };
+    return def;
+}
+function icOpAmp(id, name) {
+    const isDual = id === 'LM358' || id === 'TL082';
+    const pins = isDual ? genDualOpAmpPins() : [
+        makePin('IN+', 'IN+', '3', PinType.INPUT, -30, -10),
+        makePin('IN-', 'IN-', '2', PinType.INPUT, -30, 10),
+        makePin('OUT', 'OUT', '6', PinType.OUTPUT, 30, 0),
+        makePin('VCC', 'VCC', '7', PinType.POWER, 0, -40),
+        makePin('VEE', 'VEE', '4', PinType.GROUND, 0, 40)
+    ];
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.ANALOG_IC,
+        manufacturer: 'Generic',
+        description: name,
+        pins: pins,
+        defaultParams: params1('gain', '100dB'),
+        spiceModel: `X{name} {IN+} {IN-} {OUT} opamp`,
+        behaviorModel: 'opamp',
+        svgSymbol: 'opamp.svg',
+        aiWiringRules: ['analog-signal']
+    };
+    return def;
+}
+/** LM555 å®šæ—¶å™¨ DIP-8ï¼šå·¦ GND/TRIG/OUT/RESETï¼Œå³ VCC/DISCH/THRES/CTRL */
+function ic555() {
+    const pins = [
+        makePin('GND', 'GND', '1', PinType.GROUND, -40, -30),
+        makePin('TRIG', 'TRIG', '2', PinType.INPUT, -40, -10),
+        makePin('OUT', 'OUT', '3', PinType.OUTPUT, -40, 10),
+        makePin('RESET', 'RESET', '4', PinType.INPUT, -40, 30),
+        makePin('CTRL', 'CTRL', '5', PinType.INPUT, 40, 30),
+        makePin('THRES', 'THRES', '6', PinType.INPUT, 40, 10),
+        makePin('DISCH', 'DISCH', '7', PinType.BIDIRECTIONAL, 40, -10),
+        makePin('VCC', 'VCC', '8', PinType.POWER, 40, -30)
+    ];
+    const def = {
+        id: 'LM555',
+        name: 'LM555 Timer',
+        category: ComponentCategory.ANALOG_IC,
+        manufacturer: 'TI',
+        description: '555 Timer (astable/monostable)',
+        pins: pins,
+        defaultParams: emptyParams(),
+        spiceModel: '',
+        behaviorModel: 'timer555',
+        svgSymbol: 'timer555.svg',
+        aiWiringRules: ['timer', 'oscillator']
+    };
+    return def;
+}
+function icRegulator(id, name, pinCount) {
+    let output = '5V';
+    if (name.includes('3V3')) {
+        output = '3.3V';
+    }
+    // 3-pin linearï¼šTO-220 å¼ç¬¦å·ï¼ˆIN å·¦ / GND ä¸‹ / OUT å³ï¼‰ï¼Œé¿å… genPins(3)
+    // æŠŠ 1ã€2 å åœ¨å·¦ä¾§å¯¼è‡´æ­£äº¤èµ°çº¿å¼¯ç‚¹è½åœ¨é‚»è„šä¸Šã€æ‹“æ‰‘é‡å»ºæ—¶å¹¶ç½‘çŸ­è·¯ã€‚
+    const pins = pinCount === 3
+        ? [
+            makePin('1', 'IN', '1', PinType.INPUT, -40, 0),
+            makePin('2', 'GND', '2', PinType.GROUND, 0, 40),
+            makePin('3', 'OUT', '3', PinType.OUTPUT, 40, 0)
+        ]
+        : (id === 'LM2596' ? pinsLm2596() : genPins(pinCount));
+    const def = {
+        id: id,
+        name: name,
+        category: ComponentCategory.ANALOG_IC,
+        manufacturer: 'Generic',
+        description: name,
+        pins: pins,
+        defaultParams: params1('output', output),
+        spiceModel: '',
+        behaviorModel: 'regulator',
+        svgSymbol: 'regulator.svg',
+        aiWiringRules: ['power-rail']
+    };
+    return def;
+}
+function memChip(id, name, cat, pinCount) {
+    let pins = genPins(pinCount);
+    if (id === '24C02') {
+        pins = pins24C02();
+    }
+    else if (id === 'W25Q64') {
+        pins = pinsW25Q64();
+    }
+    else if (id === '2764') {
+        pins = pins2764();
+    }
+    else if (id === '62256') {
+        pins = pins62256();
+    }
+    const def = {
+        id: id,
+        name: name,
+        category: cat,
+        manufacturer: 'Generic',
+        description: name,
+        pins: pins,
+        defaultParams: emptyParams(),
+        spiceModel: '',
+        behaviorModel: `mem_${id.toLowerCase()}`,
+        svgSymbol: 'memory.svg',
+        aiWiringRules: ['bus']
+    };
+    return def;
+}
+function makeDigitalGate(num, type) {
+    let pins;
+    if (type === 'NOT') {
+        pins = [
+            makePin('1', 'A', '1', PinType.INPUT, -40, 0),
+            makePin('2', 'Y', '2', PinType.OUTPUT, 40, 0),
+            makePin('7', 'GND', '7', PinType.GROUND, 0, 40),
+            makePin('14', 'VCC', '14', PinType.POWER, 0, -40)
+        ];
+    }
+    else {
+        pins = [
+            makePin('1', 'A', '1', PinType.INPUT, -40, -10),
+            makePin('2', 'B', '2', PinType.INPUT, -40, 10),
+            makePin('3', 'Y', '3', PinType.OUTPUT, 40, 0),
+            makePin('7', 'GND', '7', PinType.GROUND, 0, 40),
+            makePin('14', 'VCC', '14', PinType.POWER, 0, -40)
+        ];
+    }
+    const def = {
+        id: `74HC${num}`,
+        name: `74HC${num} ${type}`,
+        category: ComponentCategory.DIGITAL_IC,
+        manufacturer: 'TI',
+        description: `${type} Gate`,
+        pins: pins,
+        defaultParams: params1('family', 'HC'),
+        spiceModel: '',
+        behaviorModel: `74hc_${type.toLowerCase()}`,
+        svgSymbol: `gate_${type.toLowerCase()}.svg`,
+        aiWiringRules: ['logic-input', 'logic-output']
+    };
+    return def;
+}
+function makeCd4017() {
+    const def = {
+        id: 'CD4017',
+        name: 'CD4017 Decade Counter',
+        category: ComponentCategory.DIGITAL_IC,
+        manufacturer: 'TI',
+        description: 'Johnson Decade Counter',
+        pins: pinsCd4017(),
+        defaultParams: params1('family', '4000'),
+        spiceModel: '',
+        behaviorModel: 'cd4017',
+        svgSymbol: 'cd4017.svg',
+        aiWiringRules: ['counter']
+    };
+    return def;
+}
+function make8051Mcu(id) {
+    let manufacturer = 'Atmel';
+    if (id.startsWith('STC')) {
+        manufacturer = 'STC';
+    }
+    const def = {
+        id: id,
+        name: id,
+        category: ComponentCategory.MCU_8051,
+        manufacturer: manufacturer,
+        description: `8051 MCU ${id}`,
+        pins: pins8051Dip40(),
+        defaultParams: params1('clock', '11.0592MHz'),
+        spiceModel: '',
+        behaviorModel: '8051_behavioral',
+        svgSymbol: 'mcu_8051.svg',
+        aiWiringRules: ['mcu-reset', 'mcu-crystal', 'mcu-power', 'mcu-uart']
+    };
+    return def;
+}
+function makeStm32Mcu(id) {
+    let pins = pinsStm32Teaching48();
+    let clock = '72MHz';
+    if (id.includes('F407')) {
+        pins = pinsStm32Teaching100();
+        clock = '168MHz';
+    }
+    else if (id.includes('F030')) {
+        pins = pinsStm32Teaching32();
+        clock = '48MHz';
+    }
+    const def = {
+        id: id,
+        name: id,
+        category: ComponentCategory.MCU_STM32,
+        manufacturer: 'STMicroelectronics',
+        description: `STM32 MCU ${id}`,
+        pins: pins,
+        defaultParams: params1('clock', clock),
+        spiceModel: '',
+        behaviorModel: 'stm32_behavioral',
+        svgSymbol: 'mcu_stm32.svg',
+        aiWiringRules: ['mcu-reset', 'mcu-crystal', 'mcu-power', 'mcu-swdebug']
+    };
+    return def;
+}
+function makeLcd1602() {
+    const def = {
+        id: 'LCD1602',
+        name: 'LCD1602',
+        category: ComponentCategory.PERIPHERAL,
+        manufacturer: 'Generic',
+        description: '16x2 Character LCD',
+        pins: pinsLcd1602(),
+        defaultParams: params1('interface', 'parallel'),
+        spiceModel: '',
+        behaviorModel: 'lcd1602',
+        svgSymbol: 'lcd1602.svg',
+        aiWiringRules: ['lcd-data', 'lcd-control']
+    };
+    return def;
+}
+function makeOled12864() {
+    const def = {
+        id: 'OLED_12864',
+        name: 'OLED 128x64',
+        category: ComponentCategory.PERIPHERAL,
+        manufacturer: 'Generic',
+        description: '128x64 OLED Display',
+        pins: [
+            makePin('VCC', 'VCC', '1', PinType.POWER, -30, -10),
+            makePin('GND', 'GND', '2', PinType.GROUND, -30, 10),
+            makePin('SDA', 'SDA', '3', PinType.BIDIRECTIONAL, 30, -10),
+            makePin('SCL', 'SCL', '4', PinType.INPUT, 30, 10)
+        ],
+        defaultParams: params1('interface', 'I2C'),
+        spiceModel: '',
+        behaviorModel: 'oled',
+        svgSymbol: 'oled.svg',
+        aiWiringRules: ['i2c-bus']
+    };
+    return def;
+}
+function makeOscilloscope() {
+    const def = {
+        id: 'OSCILLOSCOPE',
+        name: 'Virtual Oscilloscope',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: '4-channel virtual oscilloscope',
+        pins: [
+            // ä¸ DeviceLibrary/OSCILLOSCOPE ä¸€è‡´ï¼šå…¨éƒ¨å·¦æ’ï¼Œä¸»ä½“åœ¨åŸç‚¹å³ä¾§
+            makePin('CH1', 'CH1', '1', PinType.INPUT, -40, -30),
+            makePin('CH2', 'CH2', '2', PinType.INPUT, -40, -10),
+            makePin('CH3', 'CH3', '3', PinType.INPUT, -40, 10),
+            makePin('CH4', 'CH4', '4', PinType.INPUT, -40, 30),
+            makePin('GND', 'GND', '5', PinType.GROUND, -40, 50)
+        ],
+        defaultParams: params2('channels', '4', 'sampleRate', '1MHz'),
+        spiceModel: '',
+        behaviorModel: 'oscilloscope',
+        svgSymbol: 'oscilloscope.svg',
+        aiWiringRules: []
+    };
+    return def;
+}
+function makeVirtualMeter() {
+    const def = {
+        id: 'VIRTUAL_METER',
+        name: 'Virtual Multimeter',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'å››ç«¯ä¸‡ç”¨è¡¨ï¼šV(ç”µå‹)/A(ç”µæµ)/OHM(ç”µé˜»Â·äºŒæç®¡)/COM',
+        pins: [
+            makePin('V', 'V', '1', PinType.INPUT, -30, -30),
+            makePin('A', 'A', '2', PinType.INPUT, -30, -10),
+            makePin('OHM', 'OHM', '3', PinType.INPUT, -30, 10),
+            makePin('COM', 'COM', '4', PinType.GROUND, -30, 30)
+        ],
+        defaultParams: params1('modes', 'DCV,ACV,OHM,AMP,DIODE'),
+        spiceModel: '',
+        behaviorModel: 'multimeter',
+        svgSymbol: 'multimeter.svg',
+        aiWiringRules: []
+    };
+    return def;
+}
+function makeLogicAnalyzer() {
+    const pins = [];
+    for (let i = 0; i < 8; i++) {
+        pins.push(makePin(`CH${i + 1}`, `CH${i + 1}`, `${i + 1}`, PinType.INPUT, -40, -40 + i * 10));
+    }
+    pins.push(makePin('GND', 'GND', '9', PinType.GROUND, -40, 40));
+    const def = {
+        id: 'LOGIC_ANALYZER',
+        name: 'Logic Analyzer',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: '8-channel logic analyzer',
+        pins: pins,
+        defaultParams: params1('channels', '8'),
+        spiceModel: '',
+        behaviorModel: 'logic_analyzer',
+        svgSymbol: 'logic_analyzer.svg',
+        aiWiringRules: []
+    };
+    return def;
+}
+function makeUartTerminal() {
+    const def = {
+        id: 'UART_TERMINAL',
+        name: 'UART Virtual Terminal',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'Serial virtual terminal',
+        pins: [
+            makePin('TX', 'TX', '1', PinType.INPUT, -40, -10),
+            makePin('RX', 'RX', '2', PinType.OUTPUT, -40, 10),
+            makePin('GND', 'GND', '3', PinType.GROUND, -40, 30)
+        ],
+        defaultParams: params1('baudRate', '9600'),
+        spiceModel: '',
+        behaviorModel: 'uart_terminal',
+        svgSymbol: 'uart_terminal.svg',
+        aiWiringRules: ['mcu-uart']
+    };
+    return def;
+}
+function genPins(count) {
+    const pins = [];
+    const leftCount = Math.ceil(count / 2);
+    const rightCount = Math.floor(count / 2);
+    const spacing = 10;
+    const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+    for (let i = 0; i < leftCount; i++) {
+        pins.push(makePin(`${i + 1}`, `${i + 1}`, `${i + 1}`, PinType.BIDIRECTIONAL, -40, i * spacing - bodyHalf));
+    }
+    for (let i = 0; i < rightCount; i++) {
+        const pinNum = leftCount + i + 1;
+        pins.push(makePin(`${pinNum}`, `${pinNum}`, `${pinNum}`, PinType.BIDIRECTIONAL, 40, i * spacing - bodyHalf));
+    }
+    return pins;
+}
+function genMcuPins(count) {
+    const pins = [];
+    const leftCount = Math.ceil(count / 2);
+    const rightCount = Math.floor(count / 2);
+    const spacing = 10;
+    const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+    for (let i = 0; i < leftCount; i++) {
+        pins.push(makePin(`P${i + 1}`, `P${i + 1}`, `${i + 1}`, PinType.BIDIRECTIONAL, -50, i * spacing - bodyHalf));
+    }
+    for (let i = 0; i < rightCount; i++) {
+        const pinNum = leftCount + i + 1;
+        pins.push(makePin(`P${pinNum}`, `P${pinNum}`, `${pinNum}`, PinType.BIDIRECTIONAL, 50, i * spacing - bodyHalf));
+    }
+    return pins;
+}
+function genDualOpAmpPins() {
+    return [
+        makePin('OUT1', 'OUT1', '1', PinType.OUTPUT, 50, -30),
+        makePin('IN-1', 'IN-1', '2', PinType.INPUT, -50, -20),
+        makePin('IN+1', 'IN+1', '3', PinType.INPUT, -50, -40),
+        makePin('V-', 'V-', '4', PinType.GROUND, 0, 50),
+        makePin('IN+2', 'IN+2', '5', PinType.INPUT, -50, 20),
+        makePin('IN-2', 'IN-2', '6', PinType.INPUT, -50, 40),
+        makePin('OUT2', 'OUT2', '7', PinType.OUTPUT, 50, 30),
+        makePin('V+', 'V+', '8', PinType.POWER, 0, -50)
+    ];
+}
+function makeVoltmeter() {
+    return {
+        id: 'VOLTMETER_DC',
+        name: 'DC ç”µå‹è¡¨',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'ç›´æµç”µå‹è¡¨ â€” å¹¶è”æµ‹é‡ DC ç”µå‹',
+        pins: [
+            makePin('V+', 'V+', '1', PinType.INPUT, -30, -25),
+            makePin('COM', 'COM', '2', PinType.GROUND, -30, 25)
+        ],
+        defaultParams: params2('type', 'dc', 'range', '20V'),
+        spiceModel: '',
+        behaviorModel: 'voltmeter_dc',
+        svgSymbol: 'voltmeter.svg',
+        aiWiringRules: ['voltage-probe']
+    };
+}
+function makeAmmeter() {
+    return {
+        id: 'AMMETER_DC',
+        name: 'DC ç”µæµè¡¨',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'ç›´æµç”µæµè¡¨ â€” ä¸²è”æµ‹é‡ DC ç”µæµ',
+        pins: [
+            makePin('I+', 'I+', '1', PinType.INPUT, -30, 0),
+            makePin('I-', 'I-', '2', PinType.OUTPUT, -30, 20)
+        ],
+        defaultParams: params2('type', 'dc', 'range', '200mA'),
+        spiceModel: '',
+        behaviorModel: 'ammeter_dc',
+        svgSymbol: 'ammeter.svg',
+        aiWiringRules: ['current-sense']
+    };
+}
+function makePowerMeter() {
+    return {
+        id: 'POWER_METER',
+        name: 'åŠŸç‡è¡¨',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'åŠŸç‡è¡¨ â€” åŒæ—¶æµ‹é‡ç”µå‹ã€ç”µæµã€åŠŸç‡ã€åŠŸç‡å› æ•°',
+        pins: [
+            makePin('V+', 'V+', '1', PinType.INPUT, -40, -20),
+            makePin('V-', 'V-', '2', PinType.INPUT, -40, 0),
+            makePin('I+', 'I+', '3', PinType.INPUT, -40, 20),
+            makePin('I-', 'I-', '4', PinType.OUTPUT, -40, 40)
+        ],
+        defaultParams: params1('range', '1000V/10A'),
+        spiceModel: '',
+        behaviorModel: 'power_meter',
+        svgSymbol: 'power_meter.svg',
+        aiWiringRules: ['power-measure']
+    };
+}
+function makeFrequencyCounter() {
+    return {
+        id: 'FREQ_COUNTER',
+        name: 'é¢‘ç‡è®¡',
+        category: ComponentCategory.INSTRUMENT,
+        manufacturer: 'AI-SCH',
+        description: 'é¢‘ç‡è®¡ â€” æµ‹é‡ä¿¡å·é¢‘ç‡',
+        pins: [
+            makePin('IN', 'IN', '1', PinType.INPUT, -30, -10),
+            makePin('GND', 'GND', '2', PinType.GROUND, -30, 10)
+        ],
+        defaultParams: params2('gateTime', '1s', 'range', '10MHz'),
+        spiceModel: '',
+        behaviorModel: 'freq_counter',
+        svgSymbol: 'freq_counter.svg',
+        aiWiringRules: ['freq-measure']
+    };
+}
+//# sourceMappingURL=BuiltinComponents.js.mapÂ“Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙeC:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets\internal\ComponentLibHelpers.etsÙ]C:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets\data\NamedDevicePins.etsÙ_C:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets\data\BuiltinComponents.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs±component_libraryÃÂÙ7C:\Projects\ElecDraw_Harmony\features\component_library¼C:\Projects\ElecDraw_Harmony±component_library¥1.0.0ÔrC’§pkgNameªpkgVersion±component_library¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¸./data/BuiltinComponents±component_libraryÙ7C:\Projects\ElecDraw_Harmony\features\component_libraryÃÃÚoB/**
+ * å†…ç½®å™¨ä»¶åº“æ•°æ® - è¦†ç›–æ— æº/åˆ†ç«‹/æ¨¡æ‹Ÿ/æ•°å­—/å­˜å‚¨/MCU/å¤–è®¾/ä»ªå™¨
+ */
+import { ComponentCategory, Pin, PinType } from 'common';
+import { ComponentDefinition } from '../api/IComponentLibrary';
+import {
+  appendComponents, emptyParams, makePin, params1, params2, params3, params4, params5
+} from '../internal/ComponentLibHelpers';
+import {
+  pins8051Dip40, pinsStm32Teaching48, pinsStm32Teaching100, pinsStm32Teaching32,
+  pinsLcd1602, pins24C02, pinsW25Q64, pins2764, pins62256,
+  pinsDs18b20, pinsHallSensor, pinsCd4017, pinsLm2596
+} from './NamedDevicePins';
+
+export function getAllBuiltinComponents(): ComponentDefinition[] {
+  const list: ComponentDefinition[] = [];
+  appendComponents(list, makePowerSupplies());
+  appendComponents(list, makePassives());
+  appendComponents(list, makeDiscretes());
+  appendComponents(list, makeAnalogIcs());
+  appendComponents(list, makeDigitalIcs());
+  appendComponents(list, makeMemory());
+  appendComponents(list, makeMcus());
+  appendComponents(list, makePeripherals());
+  appendComponents(list, makeSensors());
+  appendComponents(list, makeInstruments());
+  return list;
+}
+
+function makePowerSupplies(): ComponentDefinition[] {
+  return [
+    {
+      id: 'VCC',
+      name: 'VCC ç”µæº',
+      category: ComponentCategory.POWER_SUPPLY,
+      manufacturer: 'Generic',
+      description: 'æ­£ç”µæº VCC / VDDï¼ˆvoltage å¯è°ƒï¼Œå¦‚ 5V/3.3V/12Vï¼‰',
+      pins: [
+        makePin('1', 'VCC', '1', PinType.POWER, 0, 10)
+      ],
+      defaultParams: params1('voltage', '5V'),
+      spiceModel: '',
+      behaviorModel: 'vcc',
+      svgSymbol: 'vcc.svg',
+      aiWiringRules: ['power-rail']
+    },
+    {
+      id: 'VEE',
+      name: 'VEE è´Ÿç”µæº',
+      category: ComponentCategory.POWER_SUPPLY,
+      manufacturer: 'Generic',
+      description: 'è´Ÿç”µæº VEEï¼ˆvoltage ä¸ºè´Ÿå€¼ï¼Œå¦‚ -5V/-12Vï¼›è¿æ”¾åŒç”µæºå¿…å¤‡ï¼‰',
+      pins: [
+        makePin('1', 'VEE', '1', PinType.POWER, 0, -10)
+      ],
+      defaultParams: params1('voltage', '-12V'),
+      spiceModel: '',
+      behaviorModel: 'vee',
+      svgSymbol: 'gnd.svg',
+      aiWiringRules: ['power-rail', 'negative-rail']
+    },
+    {
+      id: 'GND',
+      name: 'GND æ¥åœ°',
+      category: ComponentCategory.POWER_SUPPLY,
+      manufacturer: 'Generic',
+      description: 'åœ° GND / VSS',
+      pins: [
+        makePin('1', 'GND', '1', PinType.GROUND, 0, -10)
+      ],
+      defaultParams: emptyParams(),
+      spiceModel: '',
+      behaviorModel: 'gnd',
+      svgSymbol: 'gnd.svg',
+      aiWiringRules: ['ground']
+    },
+    {
+      id: 'VAC',
+      name: 'VAC äº¤æµç”µæº',
+      category: ComponentCategory.POWER_SUPPLY,
+      manufacturer: 'Generic',
+      description: 'äº¤æµç”µå‹æº (æ­£å¼¦æ³¢)',
+      pins: [
+        makePin('1', 'AC+', '1', PinType.POWER, -20, 0),
+        makePin('2', 'AC-', '2', PinType.POWER, 20, 0)
+      ],
+      defaultParams: params2('amplitude', '220V', 'frequency', '50Hz'),
+      spiceModel: 'V{name} {AC+} {AC-} SIN(0 {amplitude} {frequency})',
+      behaviorModel: 'ac_source',
+      svgSymbol: 'vac.svg',
+      aiWiringRules: ['ac-power']
+    },
+    {
+      id: 'SIGNAL_GEN',
+      name: 'ä¿¡å·å‘ç”Ÿå™¨',
+      category: ComponentCategory.INSTRUMENT,
+      manufacturer: 'AI-SCH',
+      description: 'å‡½æ•°ä¿¡å·æºï¼šæ­£å¼¦/æ–¹æ³¢/ä¸‰è§’/é”¯é½¿/è„‰å†²ï¼›frequency ä¸ dutyCycle(æ–¹æ³¢/è„‰å†²)å¯è°ƒ',
+      pins: [
+        makePin('OUT', 'OUT', '1', PinType.OUTPUT, -30, 0),
+        makePin('GND', 'GND', '2', PinType.GROUND, 30, 0)
+      ],
+      defaultParams: params5('waveform', 'sine', 'amplitude', '1V', 'frequency', '1kHz',
+        'offset', '0V', 'dutyCycle', '50%'),
+      spiceModel: '',
+      behaviorModel: 'signal_gen',
+      svgSymbol: 'vac.svg',
+      aiWiringRules: ['signal-source', 'series-gnd']
+    }
+  ];
+}
+
+function makePassives(): ComponentDefinition[] {
+  const items: ComponentDefinition[] = [];
+  const resistors = ['10', '100', '330', '1k', '4.7k', '10k', '47k', '100k'];
+  for (let i = 0; i < resistors.length; i++) {
+    const v = resistors[i];
+    items.push(twoPin(`R_${v}`, `Resistor ${v}Î©`, ComponentCategory.PASSIVE,
+      params3('value', `${v}Î©`, 'tolerance', '5%', 'power', '0.25W'),
+      `R{name} {1} {2} {value}`, ['pull-up', 'pull-down', 'voltage-divider']));
+  }
+  const pots = ['1k', '10k', '100k'];
+  for (let i = 0; i < pots.length; i++) {
+    const v = pots[i];
+    items.push(makePotentiometer(`POT_${v}`, `æ»‘åŠ¨å˜é˜»å™¨ ${v}Î©`, v));
+  }
+  const caps = ['10pF', '100pF', '1nF', '10nF', '100nF', '1uF', '10uF', '100uF'];
+  for (let i = 0; i < caps.length; i++) {
+    const v = caps[i];
+    items.push(twoPin(`C_${v}`, `Capacitor ${v}`, ComponentCategory.PASSIVE,
+      params2('value', v, 'voltage', '50V'), `C{name} {1} {2} {value}`, ['decoupling', 'filter']));
+  }
+  items.push(twoPin('L_10uH', 'Inductor 10uH', ComponentCategory.PASSIVE,
+    params2('value', '10uH', 'current', '1A'), `L{name} {1} {2} 10u`, ['filter', 'power']));
+  items.push(twoPin('XTAL_11M', 'Crystal 11.0592MHz', ComponentCategory.PASSIVE,
+    params2('frequency', '11.0592MHz', 'loadCap', '30pF'), '', ['mcu-crystal']));
+  items.push(twoPin('XTAL_8M', 'Crystal 8MHz', ComponentCategory.PASSIVE,
+    params2('frequency', '8MHz', 'loadCap', '20pF'), '', ['mcu-crystal']));
+  items.push(twoPin('FUSE_1A', 'Fuse 1A', ComponentCategory.PASSIVE,
+    params1('rating', '1A'), '', []));
+  return items;
+}
+
+function makeDiscretes(): ComponentDefinition[] {
+  return [
+    diode('1N4148', 'Signal Diode'),
+    diode('1N4007', 'Rectifier Diode'),
+    diode('1N5819', 'Schottky Diode'),
+    led('LED_RED', 'Red LED', 'red'),
+    led('LED_GREEN', 'Green LED', 'green'),
+    led('LED_BLUE', 'Blue LED', 'blue'),
+    transistor('2N2222', 'NPN Transistor', 'npn'),
+    transistor('2N2907', 'PNP Transistor', 'pnp'),
+    mosfet('2N7000', 'N-MOSFET', 'nmos'),
+    mosfet('IRF540', 'N-MOSFET Power', 'nmos'),
+  ];
+}
+
+function makeAnalogIcs(): ComponentDefinition[] {
+  return [
+    icOpAmp('UA741', 'UA741 Op-Amp'),
+    icOpAmp('LM358', 'LM358 Dual Op-Amp'),
+    icOpAmp('TL082', 'TL082 JFET Op-Amp'),
+    ic555(),
+    icRegulator('LM7805', '5V Regulator', 3),
+    icRegulator('LM7812', '12V Regulator', 3),
+    icRegulator('AMS1117_3V3', '3.3V LDO', 3),
+    icRegulator('LM2596', 'Buck Converter', 5),
+  ];
+}
+
+function makeDigitalIcs(): ComponentDefinition[] {
+  const gates = ['00:NAND', '02:NOR', '04:NOT', '08:AND', '32:OR', '74:XOR'];
+  const items: ComponentDefinition[] = [];
+  for (let i = 0; i < gates.length; i++) {
+    const g = gates[i];
+    const parts = g.split(':');
+    const num = parts[0];
+    const type = parts[1];
+    items.push(makeDigitalGate(num, type));
+  }
+  items.push(makeCd4017());
+  return items;
+}
+
+function makeMemory(): ComponentDefinition[] {
+  return [
+    memChip('2764', 'EPROM 8Kx8', ComponentCategory.MEMORY, 28),
+    memChip('62256', 'SRAM 32Kx8', ComponentCategory.MEMORY, 28),
+    memChip('24C02', 'I2C EEPROM 256B', ComponentCategory.MEMORY, 8),
+    memChip('W25Q64', 'SPI Flash 64Mbit', ComponentCategory.MEMORY, 8),
+  ];
+}
+
+function makeMcus(): ComponentDefinition[] {
+  const mcus: ComponentDefinition[] = [];
+  const ids8051 = ['AT89C51', 'AT89C52', 'STC89C52', 'STC15W408AS'];
+  for (let i = 0; i < ids8051.length; i++) {
+    const id = ids8051[i];
+    mcus.push(make8051Mcu(id));
+  }
+  const idsStm32 = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB', 'STM32F030F4'];
+  for (let i = 0; i < idsStm32.length; i++) {
+    const id = idsStm32[i];
+    mcus.push(makeStm32Mcu(id));
+  }
+  return mcus;
+}
+
+function makePeripherals(): ComponentDefinition[] {
+  return [
+    twoPin('SW_PUSH', 'Push Button', ComponentCategory.PERIPHERAL,
+      params2('type', 'momentary', 'pressed', '0'), '', ['input']),
+    makeRelaySpdt(),
+    twoPin('BUZZER', 'Buzzer', ComponentCategory.PERIPHERAL,
+      params1('voltage', '5V'), '', ['output']),
+    makeLcd1602(),
+    makeOled12864(),
+  ];
+}
+
+/** Coil = pins 1/2 (template wiring); optional COM/NO/NC for contact model. */
+function makeRelaySpdt(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'RELAY_SPDT',
+    name: 'SPDT Relay',
+    category: ComponentCategory.PERIPHERAL,
+    manufacturer: 'Generic',
+    description: 'çº¿åœˆ 1/2 + è§¦ç‚¹ COM/NO/NC',
+    pins: [
+      makePin('1', '1', '1', PinType.PASSIVE, -30, -10),
+      makePin('2', '2', '2', PinType.PASSIVE, 30, -10),
+      makePin('COM', 'COM', '3', PinType.PASSIVE, 0, 20),
+      makePin('NO', 'NO', '4', PinType.PASSIVE, 20, 20),
+      makePin('NC', 'NC', '5', PinType.PASSIVE, -20, 20)
+    ],
+    defaultParams: params1('coilVoltage', '5V'),
+    spiceModel: '',
+    behaviorModel: 'relay_spdt',
+    svgSymbol: 'RELAY_SPDT.svg',
+    aiWiringRules: ['output']
+  };
+  return def;
+}
+
+function makeSensors(): ComponentDefinition[] {
+  return [
+    {
+      id: 'DS18B20',
+      name: 'DS18B20 Temperature',
+      category: ComponentCategory.SENSOR,
+      manufacturer: 'Maxim',
+      description: '1-Wire æ¸©åº¦ä¼ æ„Ÿå™¨ï¼ˆGND/DQ/VDDï¼‰ï¼›ä»¿çœŸä¸­å¯æ‹–æ»‘æ¡è°ƒèŠ‚ temp_c',
+      pins: pinsDs18b20(),
+      defaultParams: params3('range', '-55~125Â°C', 'interface', '1-Wire', 'temp_c', '25'),
+      spiceModel: '',
+      behaviorModel: 'ds18b20',
+      svgSymbol: 'ds18b20.svg',
+      aiWiringRules: ['one-wire', 'pull-up']
+    },
+    {
+      id: 'HALL_SENSOR',
+      name: 'Hall Sensor',
+      category: ComponentCategory.SENSOR,
+      manufacturer: 'Generic',
+      description: 'éœå°”å¼€å…³ï¼ˆVCC/OUT/GNDï¼‰ï¼›ä»¿çœŸä¸­ç‚¹æŒ‰é¡¶éƒ¨ MAG ON/OFF é’®åˆ‡æ¢ç£åœº',
+      pins: pinsHallSensor(),
+      defaultParams: params2('type', 'digital', 'active', '0'),
+      spiceModel: '',
+      behaviorModel: 'hall',
+      svgSymbol: 'hall.svg',
+      aiWiringRules: ['input', 'pull-up']
+    },
+    twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR,
+      params2('type', 'analog', 'value', '50k'), '', ['adc-input'])
+  ];
+}
+
+function makeInstruments(): ComponentDefinition[] {
+  return [
+    makeOscilloscope(),
+    makeVirtualMeter(),
+    makeLogicAnalyzer(),
+    makeUartTerminal(),
+    makeVoltmeter(),
+    makeAmmeter(),
+    makePowerMeter(),
+    makeFrequencyCounter(),
+  ];
+}
+
+function twoPin(id: string, name: string, cat: ComponentCategory,
+  params: Map<string, string>, spice: string, rules: string[]): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: cat,
+    manufacturer: 'Generic',
+    description: name,
+    pins: [
+      makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
+      makePin('2', '2', '2', PinType.PASSIVE, 30, 0)
+    ],
+    defaultParams: params,
+    spiceModel: spice,
+    behaviorModel: '',
+    svgSymbol: `${id}.svg`,
+    aiWiringRules: rules
+  };
+  return def;
+}
+
+/** ä¸‰ç«¯æ»‘åŠ¨å˜é˜»å™¨ï¼š1/2 ä¸ºç«¯ï¼ŒW ä¸ºæŠ½å¤´ï¼ˆwiper 0~1ï¼‰ */
+function makePotentiometer(id: string, name: string, value: string): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.PASSIVE,
+    manufacturer: 'Generic',
+    description: `${name}ï¼Œå¯è°ƒæŠ½å¤´åˆ†å‹`,
+    pins: [
+      makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
+      makePin('2', '2', '2', PinType.PASSIVE, 30, 0),
+      makePin('W', 'W', '3', PinType.PASSIVE, 0, 28)
+    ],
+    defaultParams: params3('value', `${value}Î©`, 'wiper', '0.5', 'power', '0.25W'),
+    spiceModel: 'R{name}A {1} {W} {value}*{wiper}\nR{name}B {W} {2} {value}*(1-{wiper})',
+    behaviorModel: 'potentiometer',
+    svgSymbol: 'potentiometer.svg',
+    aiWiringRules: ['voltage-divider', 'adjustable']
+  };
+  return def;
+}
+
+function diode(id: string, desc: string): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: id,
+    category: ComponentCategory.DISCRETE,
+    manufacturer: 'Generic',
+    description: desc,
+    pins: [
+      makePin('A', 'A', '1', PinType.PASSIVE, -30, 0),
+      makePin('K', 'K', '2', PinType.PASSIVE, 30, 0)
+    ],
+    defaultParams: params1('type', 'signal'),
+    spiceModel: `D{name} {A} {K}`,
+    behaviorModel: 'diode',
+    svgSymbol: 'diode.svg',
+    aiWiringRules: ['rectifier']
+  };
+  return def;
+}
+
+function led(id: string, name: string, color: string): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.DISCRETE,
+    manufacturer: 'Generic',
+    description: name,
+    pins: [
+      makePin('A', 'A', '1', PinType.PASSIVE, -30, 0),
+      makePin('K', 'K', '2', PinType.PASSIVE, 30, 0)
+    ],
+    defaultParams: params2('color', color, 'forwardVoltage', '2.0V'),
+    spiceModel: 'D{name} {A} {K} LED',
+    behaviorModel: 'led',
+    svgSymbol: 'led.svg',
+    aiWiringRules: ['led-indicator']
+  };
+  return def;
+}
+
+function transistor(id: string, name: string, type: string): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.DISCRETE,
+    manufacturer: 'Generic',
+    description: name,
+    pins: [
+      makePin('B', 'B', '1', PinType.INPUT, -30, 0),
+      makePin('C', 'C', '2', PinType.OUTPUT, 30, -20),
+      makePin('E', 'E', '3', PinType.PASSIVE, 30, 20)
+    ],
+    defaultParams: params1('type', type),
+    spiceModel: `Q{name} {C} {B} {E}`,
+    behaviorModel: type,
+    svgSymbol: 'transistor.svg',
+    aiWiringRules: ['switching']
+  };
+  return def;
+}
+
+function mosfet(id: string, name: string, type: string): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.DISCRETE,
+    manufacturer: 'Generic',
+    description: name,
+    pins: [
+      makePin('G', 'G', '1', PinType.INPUT, -30, 0),
+      makePin('D', 'D', '2', PinType.OUTPUT, 30, -10),
+      makePin('S', 'S', '3', PinType.PASSIVE, 30, 10)
+    ],
+    defaultParams: params1('type', type),
+    spiceModel: '',
+    behaviorModel: type,
+    svgSymbol: 'mosfet.svg',
+    aiWiringRules: ['power-switch']
+  };
+  return def;
+}
+
+function icOpAmp(id: string, name: string): ComponentDefinition {
+  const isDual = id === 'LM358' || id === 'TL082';
+  const pins: Pin[] = isDual ? genDualOpAmpPins() : [
+    makePin('IN+', 'IN+', '3', PinType.INPUT, -30, -10),
+    makePin('IN-', 'IN-', '2', PinType.INPUT, -30, 10),
+    makePin('OUT', 'OUT', '6', PinType.OUTPUT, 30, 0),
+    makePin('VCC', 'VCC', '7', PinType.POWER, 0, -40),
+    makePin('VEE', 'VEE', '4', PinType.GROUND, 0, 40)
+  ];
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.ANALOG_IC,
+    manufacturer: 'Generic',
+    description: name,
+    pins: pins,
+    defaultParams: params1('gain', '100dB'),
+    spiceModel: `X{name} {IN+} {IN-} {OUT} opamp`,
+    behaviorModel: 'opamp',
+    svgSymbol: 'opamp.svg',
+    aiWiringRules: ['analog-signal']
+  };
+  return def;
+}
+
+/** LM555 å®šæ—¶å™¨ DIP-8ï¼šå·¦ GND/TRIG/OUT/RESETï¼Œå³ VCC/DISCH/THRES/CTRL */
+function ic555(): ComponentDefinition {
+  const pins: Pin[] = [
+    makePin('GND', 'GND', '1', PinType.GROUND, -40, -30),
+    makePin('TRIG', 'TRIG', '2', PinType.INPUT, -40, -10),
+    makePin('OUT', 'OUT', '3', PinType.OUTPUT, -40, 10),
+    makePin('RESET', 'RESET', '4', PinType.INPUT, -40, 30),
+    makePin('CTRL', 'CTRL', '5', PinType.INPUT, 40, 30),
+    makePin('THRES', 'THRES', '6', PinType.INPUT, 40, 10),
+    makePin('DISCH', 'DISCH', '7', PinType.BIDIRECTIONAL, 40, -10),
+    makePin('VCC', 'VCC', '8', PinType.POWER, 40, -30)
+  ];
+  const def: ComponentDefinition = {
+    id: 'LM555',
+    name: 'LM555 Timer',
+    category: ComponentCategory.ANALOG_IC,
+    manufacturer: 'TI',
+    description: '555 Timer (astable/monostable)',
+    pins: pins,
+    defaultParams: emptyParams(),
+    spiceModel: '',
+    behaviorModel: 'timer555',
+    svgSymbol: 'timer555.svg',
+    aiWiringRules: ['timer', 'oscillator']
+  };
+  return def;
+}
+
+function icRegulator(id: string, name: string, pinCount: number): ComponentDefinition {
+  let output = '5V';
+  if (name.includes('3V3')) {
+    output = '3.3V';
+  }
+  // 3-pin linearï¼šTO-220 å¼ç¬¦å·ï¼ˆIN å·¦ / GND ä¸‹ / OUT å³ï¼‰ï¼Œé¿å… genPins(3)
+  // æŠŠ 1ã€2 å åœ¨å·¦ä¾§å¯¼è‡´æ­£äº¤èµ°çº¿å¼¯ç‚¹è½åœ¨é‚»è„šä¸Šã€æ‹“æ‰‘é‡å»ºæ—¶å¹¶ç½‘çŸ­è·¯ã€‚
+  const pins = pinCount === 3
+    ? [
+      makePin('1', 'IN', '1', PinType.INPUT, -40, 0),
+      makePin('2', 'GND', '2', PinType.GROUND, 0, 40),
+      makePin('3', 'OUT', '3', PinType.OUTPUT, 40, 0)
+    ]
+    : (id === 'LM2596' ? pinsLm2596() : genPins(pinCount));
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: ComponentCategory.ANALOG_IC,
+    manufacturer: 'Generic',
+    description: name,
+    pins: pins,
+    defaultParams: params1('output', output),
+    spiceModel: '',
+    behaviorModel: 'regulator',
+    svgSymbol: 'regulator.svg',
+    aiWiringRules: ['power-rail']
+  };
+  return def;
+}
+
+function memChip(id: string, name: string, cat: ComponentCategory, pinCount: number): ComponentDefinition {
+  let pins = genPins(pinCount);
+  if (id === '24C02') {
+    pins = pins24C02();
+  } else if (id === 'W25Q64') {
+    pins = pinsW25Q64();
+  } else if (id === '2764') {
+    pins = pins2764();
+  } else if (id === '62256') {
+    pins = pins62256();
+  }
+  const def: ComponentDefinition = {
+    id: id,
+    name: name,
+    category: cat,
+    manufacturer: 'Generic',
+    description: name,
+    pins: pins,
+    defaultParams: emptyParams(),
+    spiceModel: '',
+    behaviorModel: `mem_${id.toLowerCase()}`,
+    svgSymbol: 'memory.svg',
+    aiWiringRules: ['bus']
+  };
+  return def;
+}
+
+function makeDigitalGate(num: string, type: string): ComponentDefinition {
+  let pins: Pin[];
+  if (type === 'NOT') {
+    pins = [
+      makePin('1', 'A', '1', PinType.INPUT, -40, 0),
+      makePin('2', 'Y', '2', PinType.OUTPUT, 40, 0),
+      makePin('7', 'GND', '7', PinType.GROUND, 0, 40),
+      makePin('14', 'VCC', '14', PinType.POWER, 0, -40)
+    ];
+  } else {
+    pins = [
+      makePin('1', 'A', '1', PinType.INPUT, -40, -10),
+      makePin('2', 'B', '2', PinType.INPUT, -40, 10),
+      makePin('3', 'Y', '3', PinType.OUTPUT, 40, 0),
+      makePin('7', 'GND', '7', PinType.GROUND, 0, 40),
+      makePin('14', 'VCC', '14', PinType.POWER, 0, -40)
+    ];
+  }
+  const def: ComponentDefinition = {
+    id: `74HC${num}`,
+    name: `74HC${num} ${type}`,
+    category: ComponentCategory.DIGITAL_IC,
+    manufacturer: 'TI',
+    description: `${type} Gate`,
+    pins: pins,
+    defaultParams: params1('family', 'HC'),
+    spiceModel: '',
+    behaviorModel: `74hc_${type.toLowerCase()}`,
+    svgSymbol: `gate_${type.toLowerCase()}.svg`,
+    aiWiringRules: ['logic-input', 'logic-output']
+  };
+  return def;
+}
+
+function makeCd4017(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'CD4017',
+    name: 'CD4017 Decade Counter',
+    category: ComponentCategory.DIGITAL_IC,
+    manufacturer: 'TI',
+    description: 'Johnson Decade Counter',
+    pins: pinsCd4017(),
+    defaultParams: params1('family', '4000'),
+    spiceModel: '',
+    behaviorModel: 'cd4017',
+    svgSymbol: 'cd4017.svg',
+    aiWiringRules: ['counter']
+  };
+  return def;
+}
+
+function make8051Mcu(id: string): ComponentDefinition {
+  let manufacturer = 'Atmel';
+  if (id.startsWith('STC')) {
+    manufacturer = 'STC';
+  }
+  const def: ComponentDefinition = {
+    id: id,
+    name: id,
+    category: ComponentCategory.MCU_8051,
+    manufacturer: manufacturer,
+    description: `8051 MCU ${id}`,
+    pins: pins8051Dip40(),
+    defaultParams: params1('clock', '11.0592MHz'),
+    spiceModel: '',
+    behaviorModel: '8051_behavioral',
+    svgSymbol: 'mcu_8051.svg',
+    aiWiringRules: ['mcu-reset', 'mcu-crystal', 'mcu-power', 'mcu-uart']
+  };
+  return def;
+}
+
+function makeStm32Mcu(id: string): ComponentDefinition {
+  let pins = pinsStm32Teaching48();
+  let clock = '72MHz';
+  if (id.includes('F407')) {
+    pins = pinsStm32Teaching100();
+    clock = '168MHz';
+  } else if (id.includes('F030')) {
+    pins = pinsStm32Teaching32();
+    clock = '48MHz';
+  }
+  const def: ComponentDefinition = {
+    id: id,
+    name: id,
+    category: ComponentCategory.MCU_STM32,
+    manufacturer: 'STMicroelectronics',
+    description: `STM32 MCU ${id}`,
+    pins: pins,
+    defaultParams: params1('clock', clock),
+    spiceModel: '',
+    behaviorModel: 'stm32_behavioral',
+    svgSymbol: 'mcu_stm32.svg',
+    aiWiringRules: ['mcu-reset', 'mcu-crystal', 'mcu-power', 'mcu-swdebug']
+  };
+  return def;
+}
+
+function makeLcd1602(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'LCD1602',
+    name: 'LCD1602',
+    category: ComponentCategory.PERIPHERAL,
+    manufacturer: 'Generic',
+    description: '16x2 Character LCD',
+    pins: pinsLcd1602(),
+    defaultParams: params1('interface', 'parallel'),
+    spiceModel: '',
+    behaviorModel: 'lcd1602',
+    svgSymbol: 'lcd1602.svg',
+    aiWiringRules: ['lcd-data', 'lcd-control']
+  };
+  return def;
+}
+
+function makeOled12864(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'OLED_12864',
+    name: 'OLED 128x64',
+    category: ComponentCategory.PERIPHERAL,
+    manufacturer: 'Generic',
+    description: '128x64 OLED Display',
+    pins: [
+      makePin('VCC', 'VCC', '1', PinType.POWER, -30, -10),
+      makePin('GND', 'GND', '2', PinType.GROUND, -30, 10),
+      makePin('SDA', 'SDA', '3', PinType.BIDIRECTIONAL, 30, -10),
+      makePin('SCL', 'SCL', '4', PinType.INPUT, 30, 10)
+    ],
+    defaultParams: params1('interface', 'I2C'),
+    spiceModel: '',
+    behaviorModel: 'oled',
+    svgSymbol: 'oled.svg',
+    aiWiringRules: ['i2c-bus']
+  };
+  return def;
+}
+
+function makeOscilloscope(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'OSCILLOSCOPE',
+    name: 'Virtual Oscilloscope',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: '4-channel virtual oscilloscope',
+    pins: [
+      // ä¸ DeviceLibrary/OSCILLOSCOPE ä¸€è‡´ï¼šå…¨éƒ¨å·¦æ’ï¼Œä¸»ä½“åœ¨åŸç‚¹å³ä¾§
+      makePin('CH1', 'CH1', '1', PinType.INPUT, -40, -30),
+      makePin('CH2', 'CH2', '2', PinType.INPUT, -40, -10),
+      makePin('CH3', 'CH3', '3', PinType.INPUT, -40, 10),
+      makePin('CH4', 'CH4', '4', PinType.INPUT, -40, 30),
+      makePin('GND', 'GND', '5', PinType.GROUND, -40, 50)
+    ],
+    defaultParams: params2('channels', '4', 'sampleRate', '1MHz'),
+    spiceModel: '',
+    behaviorModel: 'oscilloscope',
+    svgSymbol: 'oscilloscope.svg',
+    aiWiringRules: []
+  };
+  return def;
+}
+
+function makeVirtualMeter(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'VIRTUAL_METER',
+    name: 'Virtual Multimeter',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'å››ç«¯ä¸‡ç”¨è¡¨ï¼šV(ç”µå‹)/A(ç”µæµ)/OHM(ç”µé˜»Â·äºŒæç®¡)/COM',
+    pins: [
+      makePin('V', 'V', '1', PinType.INPUT, -30, -30),
+      makePin('A', 'A', '2', PinType.INPUT, -30, -10),
+      makePin('OHM', 'OHM', '3', PinType.INPUT, -30, 10),
+      makePin('COM', 'COM', '4', PinType.GROUND, -30, 30)
+    ],
+    defaultParams: params1('modes', 'DCV,ACV,OHM,AMP,DIODE'),
+    spiceModel: '',
+    behaviorModel: 'multimeter',
+    svgSymbol: 'multimeter.svg',
+    aiWiringRules: []
+  };
+  return def;
+}
+
+function makeLogicAnalyzer(): ComponentDefinition {
+  const pins: Pin[] = [];
+  for (let i = 0; i < 8; i++) {
+    pins.push(makePin(`CH${i + 1}`, `CH${i + 1}`, `${i + 1}`, PinType.INPUT, -40, -40 + i * 10));
+  }
+  pins.push(makePin('GND', 'GND', '9', PinType.GROUND, -40, 40));
+  const def: ComponentDefinition = {
+    id: 'LOGIC_ANALYZER',
+    name: 'Logic Analyzer',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: '8-channel logic analyzer',
+    pins: pins,
+    defaultParams: params1('channels', '8'),
+    spiceModel: '',
+    behaviorModel: 'logic_analyzer',
+    svgSymbol: 'logic_analyzer.svg',
+    aiWiringRules: []
+  };
+  return def;
+}
+
+function makeUartTerminal(): ComponentDefinition {
+  const def: ComponentDefinition = {
+    id: 'UART_TERMINAL',
+    name: 'UART Virtual Terminal',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'Serial virtual terminal',
+    pins: [
+      makePin('TX', 'TX', '1', PinType.INPUT, -40, -10),
+      makePin('RX', 'RX', '2', PinType.OUTPUT, -40, 10),
+      makePin('GND', 'GND', '3', PinType.GROUND, -40, 30)
+    ],
+    defaultParams: params1('baudRate', '9600'),
+    spiceModel: '',
+    behaviorModel: 'uart_terminal',
+    svgSymbol: 'uart_terminal.svg',
+    aiWiringRules: ['mcu-uart']
+  };
+  return def;
+}
+
+function genPins(count: number): Pin[] {
+  const pins: Pin[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    pins.push(makePin(`${i + 1}`, `${i + 1}`, `${i + 1}`, PinType.BIDIRECTIONAL, -40, i * spacing - bodyHalf));
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const pinNum = leftCount + i + 1;
+    pins.push(makePin(`${pinNum}`, `${pinNum}`, `${pinNum}`, PinType.BIDIRECTIONAL, 40, i * spacing - bodyHalf));
+  }
+  return pins;
+}
+
+function genMcuPins(count: number): Pin[] {
+  const pins: Pin[] = [];
+  const leftCount = Math.ceil(count / 2);
+  const rightCount = Math.floor(count / 2);
+  const spacing = 10;
+  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
+  for (let i = 0; i < leftCount; i++) {
+    pins.push(makePin(`P${i + 1}`, `P${i + 1}`, `${i + 1}`, PinType.BIDIRECTIONAL, -50, i * spacing - bodyHalf));
+  }
+  for (let i = 0; i < rightCount; i++) {
+    const pinNum = leftCount + i + 1;
+    pins.push(makePin(`P${pinNum}`, `P${pinNum}`, `${pinNum}`, PinType.BIDIRECTIONAL, 50, i * spacing - bodyHalf));
+  }
+  return pins;
+}
+
+function genDualOpAmpPins(): Pin[] {
+  return [
+    makePin('OUT1', 'OUT1', '1', PinType.OUTPUT, 50, -30),
+    makePin('IN-1', 'IN-1', '2', PinType.INPUT, -50, -20),
+    makePin('IN+1', 'IN+1', '3', PinType.INPUT, -50, -40),
+    makePin('V-', 'V-', '4', PinType.GROUND, 0, 50),
+    makePin('IN+2', 'IN+2', '5', PinType.INPUT, -50, 20),
+    makePin('IN-2', 'IN-2', '6', PinType.INPUT, -50, 40),
+    makePin('OUT2', 'OUT2', '7', PinType.OUTPUT, 50, 30),
+    makePin('V+', 'V+', '8', PinType.POWER, 0, -50)
+  ];
+}
+
+function makeVoltmeter(): ComponentDefinition {
+  return {
+    id: 'VOLTMETER_DC',
+    name: 'DC ç”µå‹è¡¨',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'ç›´æµç”µå‹è¡¨ â€” å¹¶è”æµ‹é‡ DC ç”µå‹',
+    pins: [
+      makePin('V+', 'V+', '1', PinType.INPUT, -30, -25),
+      makePin('COM', 'COM', '2', PinType.GROUND, -30, 25)
+    ],
+    defaultParams: params2('type', 'dc', 'range', '20V'),
+    spiceModel: '',
+    behaviorModel: 'voltmeter_dc',
+    svgSymbol: 'voltmeter.svg',
+    aiWiringRules: ['voltage-probe']
+  };
+}
+
+function makeAmmeter(): ComponentDefinition {
+  return {
+    id: 'AMMETER_DC',
+    name: 'DC ç”µæµè¡¨',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'ç›´æµç”µæµè¡¨ â€” ä¸²è”æµ‹é‡ DC ç”µæµ',
+    pins: [
+      makePin('I+', 'I+', '1', PinType.INPUT, -30, 0),
+      makePin('I-', 'I-', '2', PinType.OUTPUT, -30, 20)
+    ],
+    defaultParams: params2('type', 'dc', 'range', '200mA'),
+    spiceModel: '',
+    behaviorModel: 'ammeter_dc',
+    svgSymbol: 'ammeter.svg',
+    aiWiringRules: ['current-sense']
+  };
+}
+
+function makePowerMeter(): ComponentDefinition {
+  return {
+    id: 'POWER_METER',
+    name: 'åŠŸç‡è¡¨',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'åŠŸç‡è¡¨ â€” åŒæ—¶æµ‹é‡ç”µå‹ã€ç”µæµã€åŠŸç‡ã€åŠŸç‡å› æ•°',
+    pins: [
+      makePin('V+', 'V+', '1', PinType.INPUT, -40, -20),
+      makePin('V-', 'V-', '2', PinType.INPUT, -40, 0),
+      makePin('I+', 'I+', '3', PinType.INPUT, -40, 20),
+      makePin('I-', 'I-', '4', PinType.OUTPUT, -40, 40)
+    ],
+    defaultParams: params1('range', '1000V/10A'),
+    spiceModel: '',
+    behaviorModel: 'power_meter',
+    svgSymbol: 'power_meter.svg',
+    aiWiringRules: ['power-measure']
+  };
+}
+
+function makeFrequencyCounter(): ComponentDefinition {
+  return {
+    id: 'FREQ_COUNTER',
+    name: 'é¢‘ç‡è®¡',
+    category: ComponentCategory.INSTRUMENT,
+    manufacturer: 'AI-SCH',
+    description: 'é¢‘ç‡è®¡ â€” æµ‹é‡ä¿¡å·é¢‘ç‡',
+    pins: [
+      makePin('IN', 'IN', '1', PinType.INPUT, -30, -10),
+      makePin('GND', 'GND', '2', PinType.GROUND, -30, 10)
+    ],
+    defaultParams: params2('gateTime', '1s', 'range', '10MHz'),
+    spiceModel: '',
+    behaviorModel: 'freq_counter',
+    svgSymbol: 'freq_counter.svg',
+    aiWiringRules: ['freq-measure']
+  };
+}
+ÀÔrE“¿../internal/ComponentLibHelpers±./NamedDevicePins¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙeC:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets\internal\ComponentLibHelpers.etsAÃªoh-resolveÂFAÂÙ]C:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets\data\NamedDevicePins.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings´BuiltinComponents.js ‘µBuiltinComponents.etsÜ5‘”    ‘” š”   ” ”	 	” ” !”# (”% *”+ 0”3 8”4 9Ü ”   ” ”	 ” ” ”& ”( !”/ (”1 *”8 1”: 3”ÌA :”ÌC <”ÌJ ÌC”ÌL ÌN”ÌS ÌU”ÌU ”Ì[ ”Ì| (”Ì} )Ü  ”   ” ”	 	” 	” 	”+ 	$”- 	&”ÌA 	:”ÌC 	<”ÌV 	ÌO”ÌX 
+”Ìc 
+”Ìe 
+”Ìn 
+”Ìp 
+”Ìz 
+$”Ì| 
+&”Ì„ 
+.”Ì† 
+0”Ì 
+9”Ì‘ ”Ìœ ”Ì ”Ì¬ ”Ì® ”Ì¸ )”Ìº +”ÌÄ 5”ÌÆ ”ÌÌ ”Ìß ”Ìà ””   ” ” ”' '–” ”
+ ” ” &” (” )™” ” ” ” ” ”, *”. ,”/ -”0 .™” ” ” ” ” ”' %”) '”* (”+ )™” ” ” ” ” ”( &”* (”+ )”, *™” ” ” ” ” ”( &”* (”+ )”, *™” ” ” ” ” ”) '”+ )”, *”- +™” ” ” ” ” ”% #”' %”( &”) '™” ” ” ” ” ”# !”% #”& $”' %™” ” ” ” ” ”* (”, *”- +”. ,™” ” ” ” ” ”& $”( &”) '”* (™” ” ” ” ” ”* (”, *”- +”. ,”” ” 	” ” ’”   ” “”   ”	 	” ’” ” 	‘” ””  ”  ”  
+”  ”” !” !
+” !” !–” "” "” "”' "!”( ""”4 ".”” #” #” #”# #”” $” $” $”ÌB $<“” %” %
+” %Ü ” &” &” &” &” &”" &”$ &”' &”) &!”0 &(”1 &)”6 &.”8 &0”9 &1”; &3”= &5”> &6‘” '™” (” (” (”" (”# (”, (&”. ((”2 (,”3 (-”” )” )” )” )”” *” *” *”  *”” +” +” +”  +–” ,” ,” ,” ,”( ,"”) ,#‘”	 -‘” .”” /” /” /
+” /”” 0” 0
+” 0” 0–” 1” 1” 1”' 1!”( 1"”4 1.”” 2” 2” 2”# 2”” 3” 3” 3”ÌB 3<“” 4” 4
+” 4Ü ” 5” 5” 5” 5” 5”" 5”$ 5”' 5”) 5!”0 5(”1 5)”6 5.”8 50”9 51”; 53”< 54”> 56”? 57‘” 6™” 7” 7” 7”" 7”# 7”, 7&”. 7(”4 7.”5 7/”” 8” 8” 8” 8”” 9” 9” 9”  9”” :” :” :”  :˜” ;” ;” ;” ;”( ;"”* ;$”9 ;3”: ;4‘”	 <‘” =”” >” >” >
+” >”” ?” ?
+” ?” ?–” Ì@” Ì@” Ì@”' Ì@!”( Ì@"”4 Ì@.”” ÌA” ÌA” ÌA”# ÌA”” ÌB” ÌB” ÌB”& ÌB “” ÌC” ÌC
+” ÌCÜ ” ÌD” ÌD” ÌD” ÌD” ÌD”" ÌD”$ ÌD”' ÌD”) ÌD!”0 ÌD(”1 ÌD)”7 ÌD/”9 ÌD1”: ÌD2”< ÌD4”= ÌD5”? ÌD7”Ì@ ÌD8‘” ÌE•” ÌF” ÌF” ÌF”& ÌF ”( ÌF"”” ÌG” ÌG” ÌG” ÌG”” ÌH” ÌH” ÌH”  ÌH”” ÌI” ÌI” ÌI”  ÌI–” ÌJ” ÌJ” ÌJ” ÌJ”$ ÌJ”% ÌJ‘”	 ÌK‘” ÌL”” ÌM” ÌM” ÌM
+” ÌM”” ÌN” ÌN
+” ÌN” ÌN–” ÌO” ÌO” ÌO”' ÌO!”( ÌO"”4 ÌO.”” ÌP” ÌP” ÌP”# ÌP”” ÌQ” ÌQ” ÌQ”& ÌQ “” ÌR” ÌR
+” ÌRÜ ” ÌS” ÌS” ÌS” ÌS” ÌS”" ÌS”$ ÌS”' ÌS”) ÌS!”0 ÌS(”1 ÌS)”6 ÌS.”8 ÌS0”9 ÌS1”; ÌS3”= ÌS5”> ÌS6”? ÌS7Ü ” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”$ ÌT”' ÌT”) ÌT!”0 ÌT(”1 ÌT)”6 ÌT.”8 ÌT0”: ÌT2”< ÌT4”= ÌT5”> ÌT6‘” ÌU” ÌV” ÌV” ÌV”" ÌV”# ÌV”. ÌV(”0 ÌV*”6 ÌV0”8 ÌV2”ÌC ÌV=”ÌE ÌV?”ÌK ÌVÌE”ÌL ÌVÌF”” ÌW” ÌW” ÌW”ÌL ÌWÌF”” ÌX” ÌX” ÌX”& ÌX ”” ÌY” ÌY” ÌY”  ÌY–” ÌZ” ÌZ” ÌZ” ÌZ”& ÌZ ”' ÌZ!‘”	 Ì[‘” Ì\”” Ì]” Ì]” Ì]
+” Ì]”” Ì^” Ì^
+” Ì^” Ì^–” Ì_” Ì_” Ì_”' Ì_!”( Ì_"”2 Ì_,”” Ì`” Ì`” Ì`”" Ì`”” Ìa” Ìa” Ìa”ÌN ÌaÌH“” Ìb” Ìb
+” ÌbÜ ” Ìc” Ìc” Ìc” Ìc” Ìc”$ Ìc”& Ìc”) Ìc!”+ Ìc#”2 Ìc*”3 Ìc+”9 Ìc1”; Ìc3”< Ìc4”> Ìc6”Ì@ Ìc8”ÌA Ìc9”ÌB Ìc:Ü ” Ìd” Ìd” Ìd” Ìd” Ìd”$ Ìd”& Ìd”) Ìd!”+ Ìd#”2 Ìd*”3 Ìd+”9 Ìd1”; Ìd3”= Ìd5”? Ìd7”Ì@ Ìd8”ÌA Ìd9‘” ÌeÜ ” Ìf” Ìf” Ìf”" Ìf”# Ìf”- Ìf'”/ Ìf)”5 Ìf/”7 Ìf1”ÌB Ìf<”ÌD Ìf>”ÌH ÌfÌB”ÌJ ÌfÌD”ÌU ÌfÌO”ÌW ÌfÌQ”Ì] ÌfÌW”Ì_ Ìg”Ìg Ìg”Ìi Ìg”Ìm Ìg”Ìo Ìg”Ìz Ìg#”Ì| Ìg%”Ì Ìg*”Ì‚ Ìg+”” Ìh” Ìh” Ìh” Ìh”” Ìi” Ìi” Ìi”' Ìi!”” Ìj” Ìj” Ìj”  Ìj˜” Ìk” Ìk” Ìk” Ìk”+ Ìk%”- Ìk'”9 Ìk3”: Ìk4‘”	 Ìl’” Ìm” Ìm’”  Ìn ” Ìn“”  Ìp ”	 Ìp	” Ìp–” Ìq”
+ Ìq” Ìq” Ìq'” Ìq)” Ìq*Ü ” Ìr”
+ Ìr” Ìr” Ìr” Ìr” Ìr” Ìr”" Ìr ”$ Ìr"”) Ìr'”+ Ìr)”/ Ìr-”1 Ìr/”7 Ìr5”9 Ìr7”> Ìr<”Ì@ Ìr>”ÌE ÌrÌC”ÌG ÌrÌE”ÌM ÌrÌK”ÌN ÌrÌL”ÌO ÌrÌMÜ ” Ìs”	 Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs”! Ìs”" Ìs ”( Ìs&”* Ìs(”+ Ìs)”- Ìs+”/ Ìs-™” Ìt” Ìt
+” Ìt” Ìt” Ìt” Ìt” Ìt” Ìt” ÌtÜ 0” Ìu” Ìu	” Ìu
+” Ìu” Ìu” Ìu” Ìu” Ìu”  Ìu”" Ìu”$ Ìu ”0 Ìu,”1 Ìu-”4 Ìu0”6 Ìu2”ÌG ÌuÌC”ÌH ÌuÌD”ÌO ÌuÌK”ÌQ Ìv”ÌX Ìv”ÌY Ìv”Ì` Ìv”Ìb Ìv”Ìe Ìv”Ìf Ìv”Ìi Ìv”Ìk Ìv ”Ìv Ìv+”Ìx Ìv-”Ì| Ìv1”Ì~ Ìv3”Ì… Ìv:”Ì‡ Ìv<”Ì ÌvÌC”Ì ÌvÌD”Ì‘ Ìw”Ìª Ìw”Ì¬ Ìw!”Ì­ Ìw"”Ì¶ Ìw+”Ì¸ Ìw-”ÌÃ Ìw8”ÌÅ Ìw:”ÌÖ ÌwÌK”Ì× ÌwÌL”ÌØ ÌwÌM”ÌÙ ÌwÌN”ÌÚ ÌwÌO‘” Ìxœ” Ìy”
+ Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”% Ìy#”& Ìy$”' Ìy%Ü ” Ìz”	 Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz”# Ìz!”% Ìz#”& Ìz$”( Ìz&”* Ìz(™” Ì{” Ì{
+” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{Ü ” Ì|” Ì|	” Ì|
+” Ì|” Ì|”$ Ì| ”% Ì|!”, Ì|(”- Ì|)”/ Ì|+”1 Ì|-”: Ì|6”; Ì|7”> Ì|:”Ì@ Ì|<”ÌA Ì|=”ÌB Ì|>”ÌC Ì|?”ÌD Ì|Ì@‘” Ì}Ü ” Ì~”
+ Ì~” Ì~” Ì~” Ì~” Ì~” Ì~”! Ì~”# Ì~!”( Ì~&”* Ì~(”0 Ì~.”2 Ì~0”9 Ì~7”; Ì~9”Ì@ Ì~>”ÌB Ì~Ì@”ÌH Ì~ÌF”ÌJ Ì~ÌH”ÌQ Ì~ÌO”ÌR Ì~ÌP”ÌS Ì~ÌQÜ ” Ì”	 Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”# Ì!”% Ì#”& Ì$”( Ì&”* Ì(™” Ì€” Ì€
+” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€Ü (” Ì” Ì	” Ì
+” Ì” Ì” Ì” Ì” Ì”  Ì”" Ì”$ Ì ”1 Ì-”2 Ì.”4 Ì0”6 Ì2”ÌG ÌÌC”ÌH ÌÌD”ÌO ÌÌK”ÌQ Ì‚”ÌX Ì‚”ÌY Ì‚”Ì` Ì‚”Ìb Ì‚”Ìc Ì‚”Ìe Ì‚”Ìn Ì‚#”Ìp Ì‚%”Ìu Ì‚*”Ìv Ì‚+”Ìx Ì‚-”Ì‘ Ì‚ÌF”Ì“ Ì‚ÌH”Ì” Ì‚ÌI”Ì  Ì‚ÌU”Ì¢ Ì‚ÌW”Ìª Ì‚Ì_”Ì« Ì‚Ì`”Ì¬ Ì‚Ìa”Ì­ Ì‚Ìb”Ì® Ì‚Ìc‘” ÌƒÜ $” Ì„”	 Ì„”
+ Ì„” Ì„” Ì„” Ì„” Ì„” Ì„”  Ì„”/ Ì„-”1 Ì„/”ÌB Ì„Ì@”ÌC Ì„ÌA”ÌJ Ì„ÌH”ÌL Ì…”ÌS Ì…”ÌT Ì…”Ì[ Ì…”Ì] Ì…”Ìc Ì…”Ìe Ì…”Ìn Ì…&”Ìp Ì…(”Ìt Ì…,”Ìu Ì…-”Ìw Ì…/”ÌŒ Ì…ÌD”Ì Ì…ÌF”Ì Ì…ÌG”Ì— Ì…ÌO”Ì™ Ì…ÌQ”Ì  Ì…ÌX”Ì¡ Ì…ÌY”Ì¢ Ì…ÌZ”Ì£ Ì…Ì[”Ì¤ Ì…Ì\Ü "” Ì†”	 Ì†”
+ Ì†” Ì†” Ì†” Ì†” Ì†”  Ì†”" Ì† ”6 Ì†4”8 Ì†6”ÌI Ì†ÌG”ÌJ Ì†ÌH”ÌQ Ì†ÌO”ÌS Ì‡”ÌZ Ì‡”Ì[ Ì‡”Ìf Ì‡”Ìh Ì‡”Ìt Ì‡%”Ìv Ì‡'”Ì Ì‡0”Ì Ì‡2”Ì‡ Ì‡8”Ìˆ Ì‡9”ÌŠ Ì‡;”ÌŒ Ì‡=”Ì Ì‡?”Ì Ì‡Ì@”Ìœ Ì‡ÌM”Ì Ì‡ÌN”Ì Ì‡ÌO”ÌŸ Ì‡ÌP”Ì  Ì‡ÌQÜ "” Ìˆ”	 Ìˆ”
+ Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”! Ìˆ”/ Ìˆ-”1 Ìˆ/”ÌB ÌˆÌ@”ÌC ÌˆÌA”ÌJ ÌˆÌH”ÌL Ì‰”ÌS Ì‰”ÌT Ì‰”Ì_ Ì‰”Ìa Ì‰”Ìg Ì‰”Ìi Ì‰!”Ìr Ì‰*”Ìt Ì‰,”Ìz Ì‰2”Ì{ Ì‰3”Ì} Ì‰5”Ì Ì‰7”Ì Ì‰9”Ì‚ Ì‰:”Ì Ì‰ÌG”Ì Ì‰ÌH”Ì‘ Ì‰ÌI”Ì’ Ì‰ÌJ”Ì“ Ì‰ÌKÜ ” ÌŠ”	 ÌŠ”
+ ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ”! ÌŠ”* ÌŠ(”, ÌŠ*”= ÌŠ;”> ÌŠ<”ÌE ÌŠÌC”ÌG Ì‹”ÌN Ì‹”ÌO Ì‹”ÌW Ì‹”ÌY Ì‹”Ì] Ì‹”Ì^ Ì‹”Ì` Ì‹”Ìb Ì‹”Ìd Ì‹!”Ìf Ì‹#”Ìg Ì‹$”Ìh Ì‹%”Ìi Ì‹&”” ÌŒ” ÌŒ	” ÌŒ” ÌŒ’”  Ì ” Ì“”  Ì ”	 Ì	” Ì’” Ì” Ì	—” Ì‘” Ì‘	” Ì‘
+” Ì‘” Ì‘”& Ì‘"”' Ì‘#—” Ì’” Ì’	” Ì’
+” Ì’” Ì’”) Ì’%”* Ì’&—” Ì“” Ì“	” Ì“
+” Ì“” Ì“”( Ì“$”) Ì“%™” Ì”” Ì”” Ì”” Ì”” Ì””  Ì””" Ì””' Ì”#”( Ì”$™” Ì•” Ì•” Ì•” Ì•” Ì•”$ Ì• ”& Ì•"”- Ì•)”. Ì•*™” Ì–” Ì–” Ì–” Ì–” Ì–”" Ì–”$ Ì– ”* Ì–&”+ Ì–'™” Ì—” Ì—” Ì—” Ì—” Ì—”- Ì—)”/ Ì—+”4 Ì—0”5 Ì—1™” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”- Ì˜)”/ Ì˜+”4 Ì˜0”5 Ì˜1™” Ì™” Ì™
+” Ì™” Ì™” Ì™”# Ì™”% Ì™!”+ Ì™'”, Ì™(™” Ìš” Ìš
+” Ìš” Ìš” Ìš”) Ìš%”+ Ìš'”1 Ìš-”2 Ìš.’” Ì›” Ì›’”  Ìœ ” Ìœ“”  Ì ”	 Ì	” Ì’” ÌŸ” ÌŸ	—” Ì ” Ì ” Ì ” Ì ” Ì ”' Ì #”( Ì $—” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡”, Ì¡(”- Ì¡)—” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”, Ì¢(”- Ì¢)“” Ì£” Ì£	” Ì£™” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤”, Ì¤(”. Ì¤*”/ Ì¤+”0 Ì¤,™” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥”- Ì¥)”/ Ì¥+”0 Ì¥,”1 Ì¥-™” Ì¦” Ì¦” Ì¦”! Ì¦”# Ì¦”- Ì¦)”/ Ì¦+”0 Ì¦,”1 Ì¦-™” Ì§” Ì§” Ì§” Ì§” Ì§”. Ì§*”0 Ì§,”1 Ì§-”2 Ì§.’” Ì¨” Ì¨’”  Ì© ” Ì©“”  Ì« ”	 Ì«	” Ì«Ü ” Ì¬”
+ Ì¬” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬”& Ì¬$”( Ì¬&”0 Ì¬.”2 Ì¬0”: Ì¬8”< Ì¬:”ÌC Ì¬ÌA”ÌE Ì¬ÌC”ÌM Ì¬ÌK”ÌN Ì¬ÌL”ÌO Ì¬ÌM–” Ì­”
+ Ì­” Ì­” Ì­'” Ì­)” Ì­*Ü ” Ì®”	 Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®”$ Ì®"”& Ì®$”' Ì®%”) Ì®'”+ Ì®)™” Ì¯” Ì¯
+” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯›” Ì°” Ì°
+” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°”! Ì°”" Ì°”# Ì°™” Ì±” Ì±
+” Ì±” Ì±” Ì±” Ì±” Ì±” Ì±” Ì±™” Ì²” Ì²
+” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì³” Ì³	” Ì³
+” Ì³” Ì³”" Ì³”# Ì³”& Ì³"”( Ì³$”, Ì³(”- Ì³)”. Ì³*”/ Ì³+‘” Ì´™” Ìµ”	 Ìµ”
+ Ìµ” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”” Ì¶” Ì¶	” Ì¶” Ì¶’”  Ì· ” Ì·“”  Ì¹ ”	 Ì¹	” Ì¹’” Ìº” Ìº	” Ì»” Ì»” Ì»” Ì»” Ì»”$ Ì» ”& Ì»"”7 Ì»3”8 Ì»4”> Ì»:”Ì@ Ì»<”ÌB Ì»>”ÌC Ì»?” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”% Ì¼!”' Ì¼#”8 Ì¼4”9 Ì¼5”? Ì¼;”ÌA Ì¼=”ÌC Ì¼?”ÌD Ì¼Ì@” Ì½” Ì½” Ì½” Ì½” Ì½”* Ì½&”, Ì½(”= Ì½9”> Ì½:”ÌD Ì½Ì@”ÌF Ì½ÌB”ÌG Ì½ÌC”ÌH Ì½ÌD” Ì¾” Ì¾” Ì¾” Ì¾” Ì¾”, Ì¾(”. Ì¾*”? Ì¾;”Ì@ Ì¾<”ÌF Ì¾ÌB”ÌH Ì¾ÌD”ÌI Ì¾ÌE”ÌJ Ì¾ÌF’” Ì¿” Ì¿’”  ÌÀ ” ÌÀ“”  ÌÂ ”	 ÌÂ	” ÌÂ–” ÌÃ”
+ ÌÃ” ÌÃ” ÌÃ&” ÌÃ(” ÌÃ)” ÌÄ”
+ ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ”  ÌÄ”) ÌÄ'”+ ÌÄ)”5 ÌÄ3”7 ÌÄ5”ÌD ÌÄÌB”ÌE ÌÄÌC”ÌF ÌÄÌDÜ ” ÌÅ”	 ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ”  ÌÅ”& ÌÅ$”( ÌÅ&”) ÌÅ'”+ ÌÅ)”- ÌÅ+™” ÌÆ” ÌÆ
+” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ›” ÌÇ” ÌÇ” ÌÇ	” ÌÇ” ÌÇ” ÌÇ” ÌÇ”  ÌÇ”! ÌÇ”" ÌÇ”# ÌÇ‘” ÌÈÜ ” ÌÉ”
+ ÌÉ” ÌÉ” ÌÉ” ÌÉ”# ÌÉ!”% ÌÉ#”2 ÌÉ0”4 ÌÉ2”ÌA ÌÉ?”ÌC ÌÉÌA”ÌP ÌÉÌN”ÌR ÌÉÌP”Ì_ ÌÉÌ]”Ì` ÌÉÌ^”Ìa ÌÉÌ_Ü ” ÌÊ”	 ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”! ÌÊ”' ÌÊ%”) ÌÊ'”* ÌÊ(”, ÌÊ*”. ÌÊ,™” ÌË” ÌË
+” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË›” ÌÌ” ÌÌ” ÌÌ	” ÌÌ” ÌÌ” ÌÌ” ÌÌ”! ÌÌ”" ÌÌ”# ÌÌ”$ ÌÌ ‘” ÌÍ”” ÌÎ” ÌÎ	” ÌÎ” ÌÎ’”  ÌÏ ” ÌÏ“”  ÌÑ ”	 ÌÑ	” ÌÑ’” ÌÒ” ÌÒ	Ü ” ÌÓ” ÌÓ
+” ÌÓ” ÌÓ” ÌÓ”' ÌÓ#”) ÌÓ%”: ÌÓ6”; ÌÓ7”ÌE ÌÓÌA”ÌG ÌÔ”ÌN ÌÔ”ÌO ÌÔ”ÌU ÌÔ”ÌW ÌÔ”Ìb ÌÔ!”Ìd ÌÔ#”Ìm ÌÔ,”Ìo ÌÔ.”Ìr ÌÔ1”Ìs ÌÔ2”Ìu ÌÔ4”Ìw ÌÔ6”Ìy ÌÔ8”Ìz ÌÔ9”Ì ÌÔÌ@”Ì‚ ÌÔÌA”Ìƒ ÌÔÌB“” ÌÕ” ÌÕ” ÌÕÜ ” ÌÖ” ÌÖ
+” ÌÖ” ÌÖ” ÌÖ”! ÌÖ”# ÌÖ”4 ÌÖ0”5 ÌÖ1”? ÌÖ;”ÌA Ì×”ÌH Ì×”ÌI Ì×”ÌR Ì×”ÌT Ì×”ÌX Ì×”ÌY Ì×”Ì[ Ì× ”Ì] Ì×"”Ì_ Ì×$”Ì` Ì×%”Ìh Ì×-”Ìi Ì×.”Ìj Ì×/“” ÌØ” ÌØ” ÌØ“” ÌÙ” ÌÙ” ÌÙ’” ÌÚ” ÌÚ’”  ÌÛ ” ÌÛ’”  Ìİ ”ÌO ÌİÌO“”  ÌŞ ”	 ÌŞ	” ÌŞ”” Ìß”
+ Ìß” Ìß” Ìß#”” Ìà”
+ Ìà” Ìà” Ìà”” Ìá” Ìá” Ìá
+” Ìá–” Ìâ” Ìâ” Ìâ”# Ìâ”$ Ìâ ”. Ìâ*”” Ìã” Ìã” Ìã” Ìã”” Ìä” Ìä” Ìä”, Ìä(“” Ìå” Ìå” Ìå
+Ü ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ”! Ìæ”# Ìæ”* Ìæ$”+ Ìæ%”2 Ìæ,”4 Ìæ.”5 Ìæ/”7 Ìæ1”9 Ìæ3”: Ìæ4”< Ìæ6”= Ìæ7Ü ” Ìç” Ìç” Ìç” Ìç” Ìç” Ìç” Ìç”! Ìç”# Ìç”* Ìç$”+ Ìç%”2 Ìç,”4 Ìç.”6 Ìç0”8 Ìç2”9 Ìç3”; Ìç5”< Ìç6Ü ” Ìè” Ìè” Ìè” Ìè” Ìè”  Ìè”" Ìè”% Ìè”' Ìè!”. Ìè(”/ Ìè)”6 Ìè0”8 Ìè2”9 Ìè3”; Ìè5”= Ìè7”> Ìè8Ü ” Ìé” Ìé” Ìé” Ìé” Ìé” Ìé”  Ìé”# Ìé”% Ìé”, Ìé&”- Ìé'”4 Ìé.”6 Ìé0”8 Ìé2”: Ìé4”< Ìé6”= Ìé7Ü ” Ìê” Ìê” Ìê” Ìê” Ìê” Ìê”  Ìê”# Ìê”% Ìê”, Ìê&”- Ìê'”4 Ìê.”6 Ìê0”7 Ìê1”9 Ìê3”; Ìê5”= Ìê7”> Ìê8‘”	 Ìë™” Ìì” Ìì” Ìì” Ìì” Ìì”, Ìì(”. Ìì*”2 Ìì.”3 Ìì/”” Ìí” Ìí” Ìí” Ìí”” Ìî” Ìî” Ìî”# Ìî”” Ìï” Ìï” Ìï”# Ìï–” Ìğ” Ìğ” Ìğ” Ìğ”  Ìğ”! Ìğ’” Ìñ” Ìñ”” Ìò” Ìò	” Ìò” Ìò’”  Ìó ” Ìó“”  Ìõ ”	 Ìõ	” Ìõ’” Ìö” Ìö	‘” Ì÷”” Ìø” Ìø” Ìø
+” Ìø”” Ìù” Ìù
+” Ìù”' Ìù!–” Ìú” Ìú” Ìú”' Ìú!”( Ìú"”. Ìú(”” Ìû” Ìû” Ìû”! Ìû”” Ìü” Ìü” Ìü”ÌD Ìü>•” Ìı” Ìı
+” Ìı” Ìı” ÌıÜ ” Ìş” Ìş” Ìş”" Ìş”# Ìş”* Ìş$”, Ìş&”7 Ìş1”9 Ìş3”ÌD Ìş>”ÌF ÌşÌ@”ÌN ÌşÌH”ÌP ÌşÌJ”ÌX ÌşÌR”ÌZ ÌşÌT”Ì^ ÌşÌX”Ì_ ÌşÌY”” Ìÿ” Ìÿ” Ìÿ” Ìÿ”” Í ” Í ” Í ”$ Í ”” Í” Í” Í”$ Í˜” Í” Í” Í” Í”& Í ”( Í"”1 Í+”2 Í,‘”	 Í‘” Í”” Í” Í” Í
+” Í”” Í” Í
+” Í” Í–” Í” Í” Í”' Í!”( Í"”. Í(”” Í” Í” Í”# Í”” Í	” Í	” Í	”ÌE Í	?•” Í
+” Í
+
+” Í
+”  Í
+”" Í
+” Í” Í” Í”" Í”# Í”) Í#”+ Í%”4 Í.”6 Í0”> Í8”Ì@ Í:”ÌC Í=”ÌD Í>”” Í” Í” Í” Í”” Í” Í” Í”! Í”” Í” Í” Í”! Í˜” Í” Í” Í” Í”# Í”% Í”. Í(”/ Í)‘”	 ÍÜ ” Í” Í
+” Í” Í” Í”% Í!”' Í#”8 Í4”9 Í5”? Í;”ÌA Í”ÌH Í”ÌI Í”ÌO Í”ÌQ Í”ÌY Í”Ì[ Í ”Ìb Í'”Ìd Í)”Ìi Í.”Ìj Í/”Ìl Í1”Ìn Í3”Ìp Í5”Ìq Í6”Ì| ÍÌA”Ì} ÍÌB”Ì~ ÍÌC’” Í” Í’”  Í ” Í“”  Í ”	 Í	” Í’” Í” Í	“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í“” Í” Í” Í’” Í ” Í ’”  Í! ” Í!Ÿ”  Í# ”	 Í#	” Í#” Í#” Í#” Í#” Í#(” Í#*” Í#Ì@” Í$”% Í$”' Í$”, Í$,”. Í$.”3 Í$=”” Í%”
+ Í%” Í%” Í%#”” Í&”
+ Í&” Í&” Í&
+”” Í'” Í'” Í'
+” Í'”” Í(” Í(” Í(” Í(”” Í)” Í)” Í)” Í)”” Í*” Í*” Í*” Í*“” Í+” Í+” Í+
+Ü ” Í,” Í,” Í,” Í,” Í,” Í,” Í,”! Í,”# Í,”* Í,$”+ Í,%”2 Í,,”4 Í,.”5 Í,/”7 Í,1”9 Í,3”: Í,4”; Í,5Ü ” Í-” Í-” Í-” Í-” Í-” Í-” Í-”! Í-”# Í-”* Í-$”+ Í-%”2 Í-,”4 Í-.”6 Í-0”8 Í-2”9 Í-3”: Í-4‘”	 Í.”” Í/” Í/” Í/” Í/”” Í0” Í0” Í0” Í0”” Í1” Í1” Í1” Í1–” Í2” Í2” Í2” Í2” Í2” Í2”” Í3” Í3” Í3” Í3’” Í4” Í4”” Í5” Í5	” Í5” Í5’”  Í6 ” Í6’”  Í8 ”& Í8&™”  Í9 ”	 Í9	” Í9” Í9” Í9%” Í9'”# Í93”% Í95”* Í9ÌB”” Í:”
+ Í:” Í:” Í:#”” Í;”
+ Í;” Í;” Í;
+”” Í<” Í<” Í<
+” Í<–” Í=” Í=” Í=”# Í=”$ Í= ”+ Í='”” Í>” Í>” Í>” Í>–” Í?” Í?” Í?” Í?” Í?”% Í?!“” Í@” Í@” Í@
+Ü ” ÍA” ÍA” ÍA” ÍA” ÍA” ÍA” ÍA”! ÍA”# ÍA”* ÍA$”+ ÍA%”2 ÍA,”4 ÍA.”5 ÍA/”7 ÍA1”9 ÍA3”: ÍA4”; ÍA5Ü ” ÍB” ÍB” ÍB” ÍB” ÍB” ÍB” ÍB”! ÍB”# ÍB”* ÍB$”+ ÍB%”2 ÍB,”4 ÍB.”6 ÍB0”8 ÍB2”9 ÍB3”: ÍB4Ü ” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC”! ÍC”# ÍC”* ÍC$”+ ÍC%”2 ÍC,”4 ÍC.”5 ÍC/”7 ÍC1”9 ÍC3”: ÍC4‘”	 ÍDÜ ” ÍE” ÍE” ÍE” ÍE” ÍE”& ÍE"”( ÍE$”+ ÍE'”0 ÍE,”3 ÍE/”5 ÍE1”< ÍE8”> ÍE:”ÌC ÍE?”ÌE ÍEÌA”ÌL ÍEÌH”ÌN ÍEÌJ”ÌU ÍEÌQ”ÌV ÍEÌR”” ÍF” ÍF” ÍF”Ì\ ÍFÌX”” ÍG” ÍG” ÍG”& ÍG"”” ÍH” ÍH” ÍH”& ÍH"˜” ÍI” ÍI” ÍI” ÍI”) ÍI%”+ ÍI'”7 ÍI3”8 ÍI4’” ÍJ” ÍJ”” ÍK” ÍK	” ÍK” ÍK’”  ÍL ” ÍL—”  ÍN ”	 ÍN	” ÍN” ÍN” ÍN” ÍN” ÍN'”” ÍO”
+ ÍO” ÍO” ÍO#”” ÍP”
+ ÍP” ÍP” ÍP
+”” ÍQ” ÍQ” ÍQ
+” ÍQ–” ÍR” ÍR” ÍR”# ÍR”$ ÍR ”, ÍR(”” ÍS” ÍS” ÍS” ÍS”” ÍT” ÍT” ÍT” ÍT“” ÍU” ÍU” ÍU
+Ü ” ÍV” ÍV” ÍV” ÍV” ÍV” ÍV” ÍV”! ÍV”# ÍV”* ÍV$”+ ÍV%”2 ÍV,”4 ÍV.”5 ÍV/”7 ÍV1”9 ÍV3”: ÍV4”; ÍV5Ü ” ÍW” ÍW” ÍW” ÍW” ÍW” ÍW” ÍW”! ÍW”# ÍW”* ÍW$”+ ÍW%”2 ÍW,”4 ÍW.”6 ÍW0”8 ÍW2”9 ÍW3”: ÍW4‘”	 ÍX™” ÍY” ÍY” ÍY” ÍY” ÍY”% ÍY!”' ÍY#”/ ÍY+”0 ÍY,”” ÍZ” ÍZ” ÍZ”% ÍZ!”” Í[” Í[” Í[” Í[”” Í\” Í\” Í\” Í\–” Í]” Í]” Í]” Í]”# Í]”$ Í] ’” Í^” Í^”” Í_” Í_	” Í_” Í_’”  Í` ” Í`™”  Íb ”	 Íb	” Íb” Íb” Íb” Íb” Íb%” Íb'” Íb4”” Íc”
+ Íc” Íc” Íc#”” Íd”
+ Íd” Íd” Íd
+”” Íe” Íe” Íe
+” Íe–” Íf” Íf” Íf”# Íf”$ Íf ”, Íf(”” Íg” Íg” Íg” Íg”” Íh” Íh” Íh” Íh“” Íi” Íi” Íi
+Ü ” Íj” Íj” Íj” Íj” Íj” Íj” Íj”! Íj”# Íj”* Íj$”+ Íj%”2 Íj,”4 Íj.”5 Íj/”7 Íj1”9 Íj3”: Íj4”; Íj5Ü ” Ík” Ík” Ík” Ík” Ík” Ík” Ík”! Ík”# Ík”* Ík$”+ Ík%”2 Ík,”4 Ík.”6 Ík0”8 Ík2”9 Ík3”: Ík4‘”	 Íl” Ím” Ím” Ím” Ím” Ím”& Ím"”( Ím$”- Ím)”/ Ím+”? Ím;”ÌA Ím=”ÌG ÍmÌC”ÌH ÍmÌD”” Ín” Ín” Ín”) Ín%”” Ío” Ío” Ío” Ío”” Íp” Íp” Íp” Íp–” Íq” Íq” Íq” Íq”' Íq#”( Íq$’” Ír” Ír”” Ís” Ís	” Ís” Ís’”  Ít ” Ít™”  Ív ”	 Ív	” Ív” Ív” Ív” Ív ” Ív,” Ív.”" Ív:”” Íw”
+ Íw” Íw” Íw#”” Íx”
+ Íx” Íx” Íx
+”” Íy” Íy” Íy
+” Íy–” Íz” Íz” Íz”# Íz”$ Íz ”, Íz(”” Í{” Í{” Í{” Í{”” Í|” Í|” Í|” Í|“” Í}” Í}” Í}
+Ü ” Í~” Í~” Í~” Í~” Í~” Í~” Í~”! Í~”# Í~”* Í~$”+ Í~%”0 Í~*”2 Í~,”3 Í~-”5 Í~/”7 Í~1”8 Í~2”9 Í~3Ü ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”1 Í+”3 Í-”5 Í/”7 Í1”8 Í2”: Í4”; Í5Ü ” Í€” Í€” Í€” Í€” Í€” Í€” Í€”! Í€”# Í€”* Í€$”+ Í€%”2 Í€,”4 Í€.”6 Í€0”8 Í€2”: Í€4”; Í€5‘”	 Í™” Í‚” Í‚” Í‚” Í‚” Í‚”% Í‚!”' Í‚#”+ Í‚'”, Í‚(”” Íƒ” Íƒ” Íƒ”) Íƒ%”” Í„” Í„” Í„” Í„”” Í…” Í…” Í…”# Í…–” Í†” Í†” Í†” Í†”# Í†”$ Í† ’” Í‡” Í‡”” Íˆ” Íˆ	” Íˆ” Íˆ’”  Í‰ ” Í‰™”  Í‹ ”	 Í‹	” Í‹” Í‹” Í‹” Í‹” Í‹(” Í‹*” Í‹6”” ÍŒ”
+ ÍŒ” ÍŒ” ÍŒ#”” Í”
+ Í” Í” Í
+”” Í” Í” Í
+” Í–” Í” Í” Í”# Í”$ Í ”, Í(”” Í” Í” Í” Í”” Í‘” Í‘” Í‘” Í‘“” Í’” Í’” Í’
+Ü ” Í“” Í“” Í“” Í“” Í“” Í“” Í“”! Í“”# Í“”* Í“$”+ Í“%”0 Í“*”2 Í“,”3 Í“-”5 Í“/”7 Í“1”8 Í“2”9 Í“3Ü ” Í”” Í”” Í”” Í”” Í”” Í”” Í””! Í””# Í””* Í”$”+ Í”%”1 Í”+”3 Í”-”5 Í”/”7 Í”1”8 Í”2”: Í”4”; Í”5Ü ” Í•” Í•” Í•” Í•” Í•” Í•” Í•”! Í•”# Í•”* Í•$”+ Í•%”2 Í•,”4 Í•.”6 Í•0”8 Í•2”: Í•4”; Í•5‘”	 Í–™” Í—” Í—” Í—” Í—” Í—”% Í—!”' Í—#”+ Í—'”, Í—(”” Í˜” Í˜” Í˜” Í˜”” Í™” Í™” Í™” Í™”” Íš” Íš” Íš” Íš–” Í›” Í›” Í›” Í›”& Í›"”' Í›#’” Íœ” Íœ”” Í” Í	” Í” Í’”  Í ” Í—”  Í  ”	 Í 	” Í ” Í ” Í ” Í ” Í )œ” Í¡”
+ Í¡” Í¡” Í¡” Í¡” Í¡”! Í¡”% Í¡#”' Í¡%”, Í¡*”3 Í¡1”4 Í¡2” Í¢”
+ Í¢” Í¢” Í¢” Í¢” Í¢” Í¢” Í¢”* Í¢/”, Í¢1”- Í¢2”. Í¢3”/ Í¢4Ü ” Í£” Í£” Í£” Í£” Í£” Í£” Í£”! Í£”# Í£”* Í£&”+ Í£'”0 Í£,”2 Í£.”3 Í£/”5 Í£1”7 Í£3”8 Í£4”: Í£6”; Í£7Ü ” Í¤” Í¤” Í¤” Í¤” Í¤” Í¤” Í¤”! Í¤”# Í¤”* Í¤&”+ Í¤'”0 Í¤,”2 Í¤.”3 Í¤/”5 Í¤1”7 Í¤3”9 Í¤5”: Í¤6Ü ” Í¥” Í¥” Í¥” Í¥” Í¥” Í¥” Í¥”! Í¥”# Í¥”* Í¥&”+ Í¥'”1 Í¥-”3 Í¥/”5 Í¥1”7 Í¥3”8 Í¥4”9 Í¥5Ü ” Í¦” Í¦” Í¦” Í¦” Í¦” Í¦” Í¦”! Í¦”# Í¦”* Í¦&”+ Í¦'”0 Í¦,”2 Í¦.”3 Í¦/”5 Í¦1”6 Í¦2”8 Í¦4”9 Í¦5Ü ” Í§” Í§” Í§” Í§” Í§” Í§” Í§”! Í§”# Í§”* Í§&”+ Í§'”1 Í§-”3 Í§/”4 Í§0”6 Í§2”8 Í§4”9 Í§5’” Í¨” Í¨”” Í©”
+ Í©” Í©” Í©#”” Íª”
+ Íª” Íª” Íª
+”” Í«” Í«” Í«
+” Í«–” Í¬” Í¬” Í¬”# Í¬”$ Í¬ ”- Í¬)”” Í­” Í­” Í­” Í­”” Í®” Í®” Í®” Í®”” Í¯” Í¯” Í¯
+” Í¯™” Í°” Í°” Í°” Í°” Í°”% Í°!”' Í°#”. Í°*”/ Í°+”” Í±” Í±” Í±”5 Í±1”” Í²” Í²” Í²” Í²”” Í³” Í³” Í³” Í³–” Í´” Í´” Í´” Í´”' Í´#”( Í´$’” Íµ” Íµ”” Í¶” Í¶	” Í¶” Í¶’”  Í· ” Í·’”  Í¹ ”ÌB Í¹ÌB“”  Íº ”	 Íº	” Íº”” Í»”
+ Í»” Í»” Í»Ü ” Í¼” Í¼” Í¼” Í¼” Í¼” Í¼” Í¼”! Í¼”# Í¼”* Í¼&”+ Í¼'”1 Í¼-”3 Í¼/”4 Í¼0”6 Í¼2”8 Í¼4”9 Í¼5”; Í¼7”< Í¼8Ü ” Í½” Í½” Í½” Í½” Í½” Í½”  Í½”# Í½”% Í½!”, Í½(”- Í½)”2 Í½.”4 Í½0”5 Í½1”7 Í½3”9 Í½5”: Í½6”< Í½8”= Í½9Ü ” Í¾” Í¾” Í¾” Í¾” Í¾” Í¾” Í¾”! Í¾”# Í¾”* Í¾&”+ Í¾'”1 Í¾-”3 Í¾/”4 Í¾0”6 Í¾2”8 Í¾4”: Í¾6”; Í¾7Ü ” Í¿” Í¿” Í¿” Í¿” Í¿”  Í¿”" Í¿”% Í¿!”' Í¿#”. Í¿*”/ Í¿+”4 Í¿0”6 Í¿2”7 Í¿3”9 Í¿5”; Í¿7”= Í¿9”> Í¿:Ü ” ÍÀ” ÍÀ” ÍÀ” ÍÀ” ÍÀ” ÍÀ”  ÍÀ”# ÍÀ”% ÍÀ!”, ÍÀ(”- ÍÀ)”2 ÍÀ.”4 ÍÀ0”6 ÍÀ2”8 ÍÀ4”: ÍÀ6”; ÍÀ7Ü ” ÍÁ” ÍÁ” ÍÁ” ÍÁ” ÍÁ”  ÍÁ”" ÍÁ”% ÍÁ!”' ÍÁ#”. ÍÁ*”/ ÍÁ+”4 ÍÁ0”6 ÍÁ2”8 ÍÁ4”: ÍÁ6”< ÍÁ8”= ÍÁ9Ü ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ”  ÍÂ”" ÍÂ”% ÍÂ!”' ÍÂ#”. ÍÂ*”/ ÍÂ+”< ÍÂ8”> ÍÂ:”Ì@ ÍÂ<”ÌB ÍÂ>”ÌC ÍÂ?”ÌE ÍÂÌA”ÌF ÍÂÌBÜ ” ÍÃ” ÍÃ” ÍÃ” ÍÃ” ÍÃ” ÍÃ” ÍÃ”! ÍÃ”# ÍÃ”* ÍÃ&”+ ÍÃ'”0 ÍÃ,”2 ÍÃ.”4 ÍÃ0”6 ÍÃ2”7 ÍÃ3”9 ÍÃ5”: ÍÃ6’” ÍÄ” ÍÄ”” ÍÅ”
+ ÍÅ” ÍÅ” ÍÅ#”” ÍÆ”
+ ÍÆ” ÍÆ” ÍÆ”” ÍÇ” ÍÇ” ÍÇ
+” ÍÇ–” ÍÈ” ÍÈ” ÍÈ”# ÍÈ”$ ÍÈ ”- ÍÈ)”” ÍÉ” ÍÉ” ÍÉ” ÍÉ”” ÍÊ” ÍÊ” ÍÊ”5 ÍÊ1”” ÍË” ÍË” ÍË
+” ÍË•” ÍÌ” ÍÌ” ÍÌ”" ÍÌ”$ ÍÌ ”” ÍÍ” ÍÍ” ÍÍ” ÍÍ”” ÍÎ” ÍÎ” ÍÎ”! ÍÎ”” ÍÏ” ÍÏ” ÍÏ”! ÍÏ˜” ÍĞ” ÍĞ” ÍĞ” ÍĞ” ÍĞ”! ÍĞ”- ÍĞ)”. ÍĞ*’” ÍÑ” ÍÑ”” ÍÒ” ÍÒ	” ÍÒ” ÍÒ’”  ÍÓ ” ÍÓ™”  ÍÕ ”	 ÍÕ	” ÍÕ” ÍÕ” ÍÕ” ÍÕ!” ÍÕ-” ÍÕ/”' ÍÕ?–” ÍÖ” ÍÖ” ÍÖ” ÍÖ” ÍÖ” ÍÖ™” Í×” Í×” Í×
+” Í×” Í×” Í×” Í×” Í×” Í×•” ÍØ” ÍØ
+” ÍØ” ÍØ” ÍØ‘” ÍÙ’” ÍÚ”ÌB ÍÚÌ@’” ÍÛ”) ÍÛ'—” ÍÜ”
+ ÍÜ” ÍÜ” ÍÜ” ÍÜ” ÍÜ” ÍÜ“” Íİ”	 Íİ”
+ ÍİÜ ” ÍŞ” ÍŞ” ÍŞ” ÍŞ” ÍŞ” ÍŞ” ÍŞ”" ÍŞ”$ ÍŞ”+ ÍŞ%”, ÍŞ&”1 ÍŞ+”3 ÍŞ-”4 ÍŞ.”6 ÍŞ0”8 ÍŞ2”9 ÍŞ3”: ÍŞ4Ü ” Íß” Íß” Íß” Íß” Íß” Íß”  Íß”# Íß”% Íß”, Íß&”- Íß'”3 Íß-”5 Íß/”6 Íß0”8 Íß2”: Íß4”; Íß5Ü ” Íà” Íà” Íà” Íà” Íà” Íà”  Íà”# Íà”% Íà”, Íà&”- Íà'”3 Íà-”5 Íà/”7 Íà1”9 Íà3”: Íà4”; Íà5‘”	 ÍáÜ ” Íâ”	 Íâ”
+ Íâ” Íâ” Íâ	” Íâ” Íâ” Íâ” Íâ” Íâ”' Íâ#”) Íâ%”* Íâ&”+ Íâ'”, Íâ(”3 Íâ/”4 Íâ0”< Íâ8”= Íâ9”> Íâ:”? Íâ;”” Íã”
+ Íã” Íã” Íã#”” Íä”
+ Íä” Íä” Íä
+”” Íå” Íå” Íå
+” Íå–” Íæ” Íæ” Íæ”# Íæ”$ Íæ ”- Íæ)”” Íç” Íç” Íç” Íç”” Íè” Íè” Íè” Íè”” Íé” Íé” Íé
+” Íé™” Íê” Íê” Íê” Íê” Íê”' Íê#”) Íê%”/ Íê+”0 Íê,”” Íë” Íë” Íë” Íë”” Íì” Íì” Íì”" Íì”” Íí” Íí” Íí”" Íí–” Íî” Íî” Íî” Íî”$ Íî ”% Íî!’” Íï” Íï”” Íğ” Íğ	” Íğ” Íğ’”  Íñ ” Íñ›”  Íó ”	 Íó	” Íó” Íó” Íó” Íó” Íó)” Íó+” ÍóÌA”  ÍóÌC”( ÍóÌS™” Íô” Íô” Íô
+” Íô” Íô” Íô” Íô”  Íô”! Íô–” Íõ” Íõ”
+ Íõ” Íõ” Íõ” Íõ–” Íö” Íö” Íö” Íö” Íö” Íö‘” Í÷–”	 Í÷	” Í÷” Í÷” Í÷” Í÷” Í÷–” Íø” Íø” Íø” Íø” Íø” Íø‘” Íù–”	 Íù	” Íù” Íù” Íù” Íù” Íù–” Íú” Íú” Íú” Íú” Íú” Íú‘” Íû–”	 Íû	” Íû” Íû” Íû” Íû” Íû–” Íü” Íü” Íü” Íü” Íü” Íü‘” Íı”” Íş”
+ Íş” Íş” Íş#”” Íÿ”
+ Íÿ” Íÿ” Íÿ
+”” Í ” Í ” Í 
+” Í ”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í
+” Í•” Í” Í” Í”" Í”$ Í ”” Í” Í” Í” Í™” Í” Í” Í” Í”  Í”! Í”, Í(”. Í*”0 Í,”” Í” Í” Í” Í–” Í	” Í	” Í	” Í	” Í	” Í	’” Í
+” Í
+”” Í” Í	” Í” Í’”  Í ” Í—”  Í ”	 Í	” Í” Í” Í$” Í&”" Í2”” Í” Í” Í” Í–” Í” Í” Í
+” Í” Í” Í“” Í” Í” ÍÜ ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”0 Í*”2 Í,”3 Í-”5 Í/”7 Í1”8 Í2”9 Í3Ü ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”1 Í+”3 Í-”5 Í/”7 Í1”8 Í2”9 Í3Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í”, Í&”- Í'”3 Í-”5 Í/”6 Í0”8 Í2”: Í4”; Í5Ü ” Í” Í” Í” Í” Í” Í”! Í”% Í”' Í!”. Í(”/ Í)”4 Í.”6 Í0”7 Í1”9 Í3”: Í4”< Í6”= Í7’”	 Í”
+ Í‘” Í‘”	 Í	“” Í” Í” ÍÜ ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”0 Í*”2 Í,”3 Í-”5 Í/”7 Í1”8 Í2”: Í4”; Í5Ü ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”0 Í*”2 Í,”3 Í-”5 Í/”7 Í1”9 Í3”: Í4Ü ” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”* Í$”+ Í%”1 Í+”3 Í-”5 Í/”7 Í1”8 Í2”9 Í3Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í”, Í&”- Í'”3 Í-”5 Í/”6 Í0”8 Í2”: Í4”; Í5Ü ” Í” Í” Í” Í” Í” Í”! Í”% Í”' Í!”. Í(”/ Í)”4 Í.”6 Í0”7 Í1”9 Í3”: Í4”< Í6”= Í7’”	 Í”
+ Í‘” Í”” Í ”
+ Í ” Í ” Í #–” Í!”
+ Í!” Í!” Í!” Í!” Í!˜” Í"” Í"” Í"
+” Í"” Í"” Í"”  Í"”" Í"–” Í#” Í#” Í#”# Í#”$ Í# ”. Í#*”” Í$” Í$” Í$” Í$–” Í%” Í%” Í%” Í%” Í%”# Í%”” Í&” Í&” Í&
+” Í&™” Í'” Í'” Í'” Í'” Í'”' Í'#”) Í'%”- Í')”. Í'*”” Í(” Í(” Í(” Í(™” Í)” Í)” Í)” Í)”# Í)”$ Í) ”/ Í)+”1 Í)-”3 Í)/™” Í*” Í*” Í*” Í*” Í*”  Í*”+ Í*'”- Í*)”3 Í*/˜” Í+” Í+” Í+” Í+”% Í+!”' Í+#”5 Í+1”6 Í+2’” Í,” Í,”” Í-” Í-	” Í-” Í-’”  Í. ” Í.“”  Í0 ”	 Í0	” Í0”” Í1”
+ Í1” Í1” Í1#”” Í2”
+ Í2” Í2” Í2”” Í3” Í3” Í3
+”% Í3!–” Í4” Í4” Í4”# Í4”$ Í4 ”. Í4*”” Í5” Í5” Í5” Í5”” Í6” Í6” Í6”- Í6)•” Í7” Í7” Í7
+” Í7” Í7™” Í8” Í8” Í8” Í8” Í8”' Í8#”) Í8%”/ Í8+”0 Í8,”” Í9” Í9” Í9” Í9”” Í:” Í:” Í:” Í:”” Í;” Í;” Í;” Í;–” Í<” Í<” Í<” Í<”! Í<”" Í<’” Í=” Í=”” Í>” Í>	” Í>” Í>’”  Í? ” Í?•”  ÍA ”	 ÍA	” ÍA” ÍA” ÍA–” ÍB” ÍB” ÍB” ÍB” ÍB” ÍB™” ÍC” ÍC”
+ ÍC” ÍC	” ÍC” ÍC” ÍC” ÍC” ÍC•” ÍD” ÍD” ÍD” ÍD” ÍD‘” ÍE”” ÍF”
+ ÍF” ÍF” ÍF#”” ÍG”
+ ÍG” ÍG” ÍG
+”” ÍH” ÍH” ÍH
+” ÍH–” ÍI” ÍI” ÍI”# ÍI”$ ÍI ”, ÍI(”” ÍJ” ÍJ” ÍJ”" ÍJ–” ÍK” ÍK” ÍK”! ÍK”# ÍK”% ÍK!•” ÍL” ÍL” ÍL
+” ÍL” ÍL™” ÍM” ÍM” ÍM” ÍM” ÍM”& ÍM"”( ÍM$”4 ÍM0”5 ÍM1”” ÍN” ÍN” ÍN” ÍN”” ÍO” ÍO” ÍO”( ÍO$”” ÍP” ÍP” ÍP”! ÍPœ” ÍQ” ÍQ” ÍQ” ÍQ”# ÍQ”% ÍQ!”2 ÍQ.”4 ÍQ0”? ÍQ;”ÌA ÍQ=”ÌK ÍQÌG”ÌL ÍQÌH’” ÍR” ÍR”” ÍS” ÍS	” ÍS” ÍS’”  ÍT ” ÍT•”  ÍV ”	 ÍV	” ÍV” ÍV” ÍV —” ÍW” ÍW” ÍW
+” ÍW”" ÍW ”$ ÍW"”% ÍW#–” ÍX” ÍX” ÍX” ÍX” ÍX” ÍX™” ÍY” ÍY”
+ ÍY” ÍY	” ÍY” ÍY” ÍY” ÍY” ÍY–” ÍZ” ÍZ” ÍZ”# ÍZ”% ÍZ!”& ÍZ"•” Í[” Í[	” Í[” Í[” Í[‘” Í\™”	 Í\	” Í\” Í\” Í\” Í\” Í\” Í\”  Í\ ”" Í\"–” Í]” Í]” Í]”" Í]”$ Í] ”% Í]!•” Í^” Í^	” Í^” Í^” Í^‘” Í_”” Í`”
+ Í`” Í`” Í`#”” Ía”
+ Ía” Ía” Ía
+”” Íb” Íb” Íb
+” Íb–” Íc” Íc” Íc”# Íc”$ Íc ”- Íc)”” Íd” Íd” Íd”* Íd&–” Íe” Íe” Íe”" Íe”$ Íe ”& Íe"”” Íf” Íf” Íf
+” Íf™” Íg” Íg” Íg” Íg” Íg”& Íg"”( Íg$”- Íg)”. Íg*”” Íh” Íh” Íh” Íh”” Íi” Íi” Íi”) Íi%”” Íj” Íj” Íj”" Íjœ” Ík” Ík” Ík” Ík”# Ík”% Ík!”2 Ík.”4 Ík0”? Ík;”ÌA Ík=”ÌN ÍkÌJ”ÌO ÍkÌK’” Íl” Íl”” Ím” Ím	” Ím” Ím’”  Ín ” Ín“”  Íp ”	 Íp	” Íp”” Íq”
+ Íq” Íq” Íq#”” Ír”
+ Ír” Ír” Ír”” Ís” Ís” Ís
+” Ís–” Ít” Ít” Ít”# Ít”$ Ít ”. Ít*”” Íu” Íu” Íu” Íu”” Ív” Ív” Ív”) Ív%•” Íw” Íw” Íw
+” Íw” Íw™” Íx” Íx” Íx” Íx” Íx”* Íx&”, Íx(”6 Íx2”7 Íx3”” Íy” Íy” Íy” Íy”” Íz” Íz” Íz”  Íz”” Í{” Í{” Í{”  Í{˜” Í|” Í|” Í|” Í|”" Í|”$ Í| ”1 Í|-”2 Í|.’” Í}” Í}”” Í~” Í~	” Í~” Í~’”  Í ” Í“”  Í ”	 Í	” Í”” Í‚”
+ Í‚” Í‚” Í‚#”” Íƒ”
+ Íƒ” Íƒ” Íƒ”” Í„” Í„” Í„
+” Í„–” Í…” Í…” Í…”# Í…”$ Í… ”. Í…*”” Í†” Í†” Í†” Í†”” Í‡” Í‡” Í‡”* Í‡&“” Íˆ” Íˆ” Íˆ
+Ü ” Í‰” Í‰” Í‰” Í‰” Í‰”  Í‰”" Í‰”% Í‰”' Í‰!”. Í‰(”/ Í‰)”4 Í‰.”6 Í‰0”7 Í‰1”9 Í‰3”; Í‰5”< Í‰6”> Í‰8”? Í‰9Ü ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ”  ÍŠ”" ÍŠ”% ÍŠ”' ÍŠ!”. ÍŠ(”/ ÍŠ)”5 ÍŠ/”7 ÍŠ1”8 ÍŠ2”: ÍŠ4”< ÍŠ6”> ÍŠ8”? ÍŠ9Ü ” Í‹” Í‹” Í‹” Í‹” Í‹”  Í‹”" Í‹”% Í‹”' Í‹!”. Í‹(”/ Í‹)”< Í‹6”> Í‹8”Ì@ Í‹:”ÌB Í‹<”ÌC Í‹=”ÌE Í‹?”ÌF Í‹Ì@Ü ” ÍŒ” ÍŒ” ÍŒ” ÍŒ” ÍŒ”  ÍŒ”" ÍŒ”% ÍŒ”' ÍŒ!”. ÍŒ(”/ ÍŒ)”4 ÍŒ.”6 ÍŒ0”8 ÍŒ2”: ÍŒ4”< ÍŒ6”= ÍŒ7‘”	 Í™” Í” Í” Í” Í” Í”* Í&”, Í(”1 Í-”2 Í.”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í‘” Í‘” Í‘” Í‘–” Í’” Í’” Í’” Í’”! Í’”" Í’’” Í“” Í“”” Í”” Í”	” Í”” Í”’”  Í• ” Í•“”  Í— ”	 Í—	” Í—”” Í˜”
+ Í˜” Í˜” Í˜#”” Í™”
+ Í™” Í™” Í™”” Íš” Íš” Íš
+”$ Íš –” Í›” Í›” Í›”# Í›”$ Í› ”. Í›*”” Íœ” Íœ” Íœ” Íœ”” Í” Í” Í”5 Í1“” Í” Í” Í
+’” ÍŸ”; ÍŸ5Ü ” Í ” Í ” Í ” Í ” Í ”  Í ”" Í ”% Í ”' Í !”. Í (”/ Í )”4 Í .”6 Í 0”7 Í 1”9 Í 3”; Í 5”< Í 6”> Í 8”? Í 9Ü ” Í¡” Í¡” Í¡” Í¡” Í¡”  Í¡”" Í¡”% Í¡”' Í¡!”. Í¡(”/ Í¡)”4 Í¡.”6 Í¡0”7 Í¡1”9 Í¡3”; Í¡5”< Í¡6”> Í¡8”? Í¡9Ü ” Í¢” Í¢” Í¢” Í¢” Í¢”  Í¢”" Í¢”% Í¢”' Í¢!”. Í¢(”/ Í¢)”4 Í¢.”6 Í¢0”7 Í¢1”9 Í¢3”; Í¢5”= Í¢7”> Í¢8Ü ” Í£” Í£” Í£” Í£” Í£”  Í£”" Í£”% Í£”' Í£!”. Í£(”/ Í£)”4 Í£.”6 Í£0”7 Í£1”9 Í£3”; Í£5”= Í£7”> Í£8Ü ” Í¤” Í¤” Í¤” Í¤” Í¤”  Í¤”" Í¤”% Í¤”' Í¤!”. Í¤(”/ Í¤)”5 Í¤/”7 Í¤1”8 Í¤2”: Í¤4”< Í¤6”> Í¤8”? Í¤9‘”	 Í¥” Í¦” Í¦” Í¦” Í¦” Í¦”) Í¦%”+ Í¦'”. Í¦*”0 Í¦,”< Í¦8”> Í¦:”ÌD Í¦Ì@”ÌE Í¦ÌA”” Í§” Í§” Í§” Í§”” Í¨” Í¨” Í¨”% Í¨!”” Í©” Í©” Í©”% Í©!”” Íª” Íª” Íª” Íª’” Í«” Í«”” Í¬” Í¬	” Í¬” Í¬’”  Í­ ” Í­“”  Í¯ ”	 Í¯	” Í¯”” Í°”
+ Í°” Í°” Í°#”” Í±”
+ Í±” Í±” Í±”” Í²” Í²” Í²
+”" Í²–” Í³” Í³” Í³”# Í³”$ Í³ ”. Í³*”” Í´” Í´” Í´” Í´”” Íµ” Íµ” Íµ”8 Íµ4“” Í¶” Í¶” Í¶
+Ü ” Í·” Í·” Í·” Í·” Í·” Í·” Í·”! Í·”# Í·”* Í·$”+ Í·%”0 Í·*”2 Í·,”3 Í·-”5 Í·/”7 Í·1”8 Í·2”: Í·4”; Í·5Ü ” Í¸” Í¸” Í¸” Í¸” Í¸” Í¸” Í¸”! Í¸”# Í¸”* Í¸$”+ Í¸%”0 Í¸*”2 Í¸,”3 Í¸-”5 Í¸/”7 Í¸1”8 Í¸2”: Í¸4”; Í¸5Ü ” Í¹” Í¹” Í¹” Í¹” Í¹”  Í¹”" Í¹”% Í¹”' Í¹!”. Í¹(”/ Í¹)”4 Í¹.”6 Í¹0”7 Í¹1”9 Í¹3”; Í¹5”= Í¹7”> Í¹8Ü ” Íº” Íº” Íº” Íº” Íº”  Íº”" Íº”% Íº”' Íº!”. Íº(”/ Íº)”5 Íº/”7 Íº1”8 Íº2”: Íº4”< Íº6”> Íº8”? Íº9‘”	 Í»™” Í¼” Í¼” Í¼” Í¼” Í¼”& Í¼"”( Í¼$”? Í¼;”Ì@ Í¼<”” Í½” Í½” Í½” Í½”” Í¾” Í¾” Í¾”# Í¾”” Í¿” Í¿” Í¿”# Í¿”” ÍÀ” ÍÀ” ÍÀ” ÍÀ’” ÍÁ” ÍÁ”” ÍÂ” ÍÂ	” ÍÂ” ÍÂ’”  ÍÃ ” ÍÃ“”  ÍÅ ”	 ÍÅ	” ÍÅ–” ÍÆ”
+ ÍÆ” ÍÆ” ÍÆ” ÍÆ” ÍÆ” ÍÇ”	 ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ” ÍÇ”  ÍÇÜ )” ÍÈ” ÍÈ” ÍÈ	” ÍÈ” ÍÈ” ÍÈ” ÍÈ” ÍÈ”  ÍÈ”# ÍÈ”$ ÍÈ ”& ÍÈ"”( ÍÈ$”- ÍÈ)”. ÍÈ*”1 ÍÈ-”2 ÍÈ.”4 ÍÈ0”6 ÍÈ2”9 ÍÈ5”: ÍÈ6”= ÍÈ9”> ÍÈ:”Ì@ ÍÈ<”ÌB ÍÈ>”ÌI ÍÈÌE”ÌJ ÍÈÌF”ÌO ÍÈÌK”ÌQ ÍÈÌM”ÌR ÍÈÌN”ÌT ÍÈÌP”ÌV ÍÈÌR”ÌW ÍÈÌS”ÌY ÍÈÌU”Ì\ ÍÈÌX”Ì] ÍÈÌY”Ì` ÍÈÌ\”Ìb ÍÈÌ^”Ìc ÍÈÌ_”Ìd ÍÈÌ`”Ìe ÍÈÌa‘” ÍÉÜ ” ÍÊ” ÍÊ”	 ÍÊ” ÍÊ” ÍÊ” ÍÊ” ÍÊ” ÍÊ” ÍÊ”" ÍÊ ”$ ÍÊ"”' ÍÊ%”) ÍÊ'”0 ÍÊ.”1 ÍÊ/”7 ÍÊ5”9 ÍÊ7”: ÍÊ8”< ÍÊ:”> ÍÊ<”Ì@ ÍÊ>”ÌA ÍÊ?”ÌB ÍÊÌ@”ÌC ÍÊÌA”” ÍË”
+ ÍË” ÍË” ÍË#”” ÍÌ”
+ ÍÌ” ÍÌ” ÍÌ”” ÍÍ” ÍÍ” ÍÍ
+” ÍÍ–” ÍÎ” ÍÎ” ÍÎ”# ÍÎ”$ ÍÎ ”. ÍÎ*”” ÍÏ” ÍÏ” ÍÏ” ÍÏ”” ÍĞ” ÍĞ” ÍĞ”/ ÍĞ+”” ÍÑ” ÍÑ” ÍÑ
+” ÍÑ™” ÍÒ” ÍÒ” ÍÒ” ÍÒ” ÍÒ”) ÍÒ%”+ ÍÒ'”. ÍÒ*”/ ÍÒ+”” ÍÓ” ÍÓ” ÍÓ” ÍÓ”” ÍÔ” ÍÔ” ÍÔ”' ÍÔ#”” ÍÕ” ÍÕ” ÍÕ”' ÍÕ#”” ÍÖ” ÍÖ” ÍÖ” ÍÖ’” Í×” Í×”” ÍØ” ÍØ	” ÍØ” ÍØ’”  ÍÙ ” ÍÙ“”  ÍÛ ”	 ÍÛ	” ÍÛ”” ÍÜ”
+ ÍÜ” ÍÜ” ÍÜ#”” Íİ”
+ Íİ” Íİ” Íİ”” ÍŞ” ÍŞ” ÍŞ
+”% ÍŞ!–” Íß” Íß” Íß”# Íß”$ Íß ”. Íß*”” Íà” Íà” Íà” Íà”” Íá” Íá” Íá”. Íá*“” Íâ” Íâ” Íâ
+Ü ” Íã” Íã” Íã” Íã” Íã” Íã”  Íã”# Íã”% Íã”, Íã&”- Íã'”2 Íã,”4 Íã.”5 Íã/”7 Íã1”9 Íã3”: Íã4”< Íã6”= Íã7Ü ” Íä” Íä” Íä” Íä” Íä” Íä”  Íä”# Íä”% Íä”, Íä&”- Íä'”3 Íä-”5 Íä/”6 Íä0”8 Íä2”: Íä4”< Íä6”= Íä7Ü ” Íå” Íå” Íå” Íå” Íå”  Íå”" Íå”% Íå”' Íå!”. Íå(”/ Íå)”5 Íå/”7 Íå1”8 Íå2”: Íå4”< Íå6”> Íå8”? Íå9‘”	 Íæ™” Íç” Íç” Íç” Íç” Íç”) Íç%”+ Íç'”1 Íç-”2 Íç.”” Íè” Íè” Íè” Íè”” Íé” Íé” Íé”& Íé"”” Íê” Íê” Íê”& Íê"–” Íë” Íë” Íë” Íë”" Íë”# Íë’” Íì” Íì”” Íí” Íí	” Íí” Íí’”  Íî ” Íî•”  Íğ ”	 Íğ	” Íğ” Íğ” Íğ–” Íñ”
+ Íñ” Íñ” Íñ” Íñ” Íñ” Íò”
+ Íò” Íò” Íò” Íò” Íò” Íò”  Íò”% Íò#”( Íò&”) Íò'”* Íò(”+ Íò)” Íó”
+ Íó” Íó” Íó” Íó” Íó”! Íó”" Íó ”' Íó%”* Íó(”+ Íó)”, Íó*”- Íó+–” Íô”
+ Íô” Íô” Íô” Íô” ÍôÜ ” Íõ”
+ Íõ” Íõ” Íõ” Íõ” Íõ” Íõ” Íõ”' Íõ%”) Íõ'”3 Íõ1”4 Íõ2”7 Íõ5”> Íõ<”ÌA Íõ?”ÌB ÍõÌ@”ÌC ÍõÌA” Íö”	 Íö” Íö” Íö” Íö” Íö” Íö” Íö” Íö”! Íö”# Íö!”$ Íö"”& Íö$”( Íö&Ü (” Í÷” Í÷” Í÷	” Í÷” Í÷” Í÷” Í÷” Í÷” Í÷”! Í÷”" Í÷”$ Í÷ ”& Í÷"”) Í÷%”* Í÷&”- Í÷)”. Í÷*”0 Í÷,”2 Í÷.”5 Í÷1”6 Í÷2”9 Í÷5”: Í÷6”< Í÷8”> Í÷:”ÌE Í÷ÌA”ÌF Í÷ÌB”ÌS Í÷ÌO”ÌU Í÷ÌQ”ÌV Í÷ÌR”ÌX Í÷ÌT”ÌZ Í÷ÌV”Ì[ Í÷ÌW”Ì^ Í÷ÌZ”Ìe Í÷Ìa”Ìh Í÷Ìd”Ìp Í÷Ìl”Ìq Í÷Ìm”Ìr Í÷Ìn”Ìs Í÷Ìo‘” Íø” Íù”	 Íù” Íù” Íù” Íù” Íù” Íù” Íù” Íù”" Íù ”$ Íù"”% Íù#”' Íù%”) Íù'š” Íú” Íú
+” Íú” Íú”  Íú”# Íú”$ Íú ”' Íú#”( Íú$”) Íú%Ü !” Íû” Íû” Íû	” Íû” Íû” Íû” Íû” Íû”# Íû”% Íû!”' Íû#”* Íû&”0 Íû,”2 Íû.”4 Íû0”7 Íû3”= Íû9”? Íû;”ÌA Íû=”ÌH ÍûÌD”ÌI ÍûÌE”ÌV ÍûÌR”ÌX ÍûÌT”ÌZ ÍûÌV”Ì\ ÍûÌX”Ì] ÍûÌY”Ì` ÍûÌ\”Ìg ÍûÌc”Ìj ÍûÌf”Ìr ÍûÌn”Ìs ÍûÌo”Ìt ÍûÌp”Ìu ÍûÌq‘” Íü”” Íı” Íı	” Íı” Íı’”  Íş ” Íş•”  Í  ”	 Í 	” Í ” Í ” Í !–” Í”
+ Í” Í” Í” Í” Í” Í”
+ Í” Í” Í” Í” Í” Í”  Í”% Í#”( Í&”) Í'”* Í(”+ Í)” Í”
+ Í” Í” Í” Í” Í”! Í”" Í ”' Í%”* Í(”+ Í)”, Í*”- Í+–” Í”
+ Í” Í” Í” Í” ÍÜ ” Í”
+ Í” Í” Í” Í” Í” Í” Í”' Í%”) Í'”3 Í1”4 Í2”7 Í5”> Í<”ÌA Í?”ÌB ÍÌ@”ÌC ÍÌA” Í”	 Í” Í” Í” Í” Í” Í” Í” Í”! Í”# Í!”$ Í"”& Í$”( Í&Ü (” Í” Í” Í	” Í” Í” Í” Í” Í” Í”" Í”# Í”% Í!”' Í#”+ Í'”, Í(”/ Í+”0 Í,”2 Í.”4 Í0”7 Í3”8 Í4”; Í7”< Í8”> Í:”Ì@ Í<”ÌG ÍÌC”ÌH ÍÌD”ÌU ÍÌQ”ÌW ÍÌS”ÌX ÍÌT”ÌZ ÍÌV”Ì\ ÍÌX”Ì] ÍÌY”Ì` ÍÌ\”Ìg ÍÌc”Ìj ÍÌf”Ìr ÍÌn”Ìs ÍÌo”Ìt ÍÌp”Ìu ÍÌq‘” Í” Í	”	 Í	” Í	” Í	” Í	” Í	” Í	” Í	” Í	”" Í	 ”$ Í	"”% Í	#”' Í	%”) Í	'š” Í
+” Í
+
+” Í
+” Í
+”  Í
+”# Í
+”$ Í
+ ”' Í
+#”( Í
+$”) Í
+%Ü !” Í” Í” Í	” Í” Í” Í” Í” Í”$ Í ”& Í"”( Í$”, Í(”2 Í.”4 Í0”6 Í2”9 Í5”? Í;”ÌA Í=”ÌC Í?”ÌJ ÍÌF”ÌK ÍÌG”ÌX ÍÌT”ÌZ ÍÌV”Ì\ ÍÌX”Ì^ ÍÌZ”Ì_ ÍÌ[”Ìb ÍÌ^”Ìi ÍÌe”Ìl ÍÌh”Ìt ÍÌp”Ìu ÍÌq”Ìv ÍÌr”Ìw ÍÌs‘” Í”” Í” Í	” Í” Í’”  Í ” Í“”  Í ”	 Í	” Í’” Í” Í	Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”3 Í/”5 Í1”7 Í3”9 Í5”: Í6”< Í8”= Í9Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”2 Í.”4 Í0”5 Í1”7 Í3”9 Í5”: Í6”< Í8”= Í9Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”2 Í.”4 Í0”5 Í1”7 Í3”9 Í5”: Í6”< Í8”= Í9Ü ” Í” Í” Í” Í” Í” Í” Í” Í”! Í”( Í$”) Í%”/ Í+”1 Í-”2 Í.”4 Í0”6 Í2”7 Í3Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”2 Í.”4 Í0”5 Í1”7 Í3”9 Í5”; Í7”< Í8Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”2 Í.”4 Í0”5 Í1”7 Í3”9 Í5”; Í7”< Í8Ü ” Í” Í” Í” Í” Í” Í”  Í”# Í”% Í!”, Í(”- Í)”3 Í/”5 Í1”7 Í3”9 Í5”; Í7”< Í8Ü ” Í” Í” Í” Í” Í” Í” Í” Í”! Í”( Í$”) Í%”. Í*”0 Í,”1 Í-”3 Í/”4 Í0”6 Í2”7 Í3’” Í” Í’”  Í ” Í“”  Í ”	 Í	” Í’” Í” Í	”” Í”
+ Í” Í” Í”” Í ” Í ” Í 
+” Í –” Í!” Í!” Í!”# Í!”$ Í! ”. Í!*”” Í"” Í"” Í"” Í"”” Í#” Í#” Í#”) Í#%“” Í$” Í$” Í$
+Ü ” Í%” Í%” Í%” Í%” Í%” Í%”  Í%”# Í%”% Í%”, Í%&”- Í%'”2 Í%,”4 Í%.”5 Í%/”7 Í%1”9 Í%3”: Í%4”< Í%6”= Í%7Ü ” Í&” Í&” Í&” Í&” Í&”  Í&”" Í&”% Í&”' Í&!”. Í&(”/ Í&)”5 Í&/”7 Í&1”8 Í&2”: Í&4”< Í&6”> Í&8”? Í&9‘”	 Í'” Í(” Í(” Í(” Í(” Í(”% Í(!”' Í(#”+ Í('”- Í()”4 Í(0”6 Í(2”; Í(7”< Í(8”” Í)” Í)” Í)” Í)”” Í*” Í*” Í*”% Í*!”” Í+” Í+” Í+”" Í+–” Í,” Í,” Í,” Í,”' Í,#”( Í,$’” Í-” Í-’”  Í. ” Í.“”  Í0 ”	 Í0	” Í0’” Í1” Í1	”” Í2”
+ Í2” Í2” Í2”” Í3” Í3” Í3
+” Í3–” Í4” Í4” Í4”# Í4”$ Í4 ”. Í4*”” Í5” Í5” Í5” Í5”” Í6” Í6” Í6”) Í6%“” Í7” Í7” Í7
+Ü ” Í8” Í8” Í8” Í8” Í8” Í8”  Í8”# Í8”% Í8”, Í8&”- Í8'”2 Í8,”4 Í8.”5 Í8/”7 Í81”9 Í83”: Í84”; Í85Ü ” Í9” Í9” Í9” Í9” Í9” Í9”  Í9”# Í9”% Í9”, Í9&”- Í9'”3 Í9-”5 Í9/”6 Í90”8 Í92”: Í94”< Í96”= Í97‘”	 Í:” Í;” Í;” Í;” Í;” Í;”% Í;!”' Í;#”+ Í;'”- Í;)”4 Í;0”6 Í;2”= Í;9”> Í;:”” Í<” Í<” Í<” Í<”” Í=” Í=” Í=”# Í=”” Í>” Í>” Í>”  Í>–” Í?” Í?” Í?” Í?”' Í?#”( Í?$’” Í@” Í@’”  ÍA ” ÍA“”  ÍC ”	 ÍC	” ÍC’” ÍD” ÍD	”” ÍE”
+ ÍE” ÍE” ÍE”” ÍF” ÍF” ÍF
+” ÍF–” ÍG” ÍG” ÍG”# ÍG”$ ÍG ”. ÍG*”” ÍH” ÍH” ÍH” ÍH”” ÍI” ÍI” ÍI”. ÍI*“” ÍJ” ÍJ” ÍJ
+Ü ” ÍK” ÍK” ÍK” ÍK” ÍK” ÍK”  ÍK”# ÍK”% ÍK”, ÍK&”- ÍK'”2 ÍK,”4 ÍK.”5 ÍK/”7 ÍK1”9 ÍK3”: ÍK4”< ÍK6”= ÍK7Ü ” ÍL” ÍL” ÍL” ÍL” ÍL” ÍL”  ÍL”# ÍL”% ÍL”, ÍL&”- ÍL'”2 ÍL,”4 ÍL.”5 ÍL/”7 ÍL1”9 ÍL3”: ÍL4”; ÍL5Ü ” ÍM” ÍM” ÍM” ÍM” ÍM” ÍM”  ÍM”# ÍM”% ÍM”, ÍM&”- ÍM'”2 ÍM,”4 ÍM.”5 ÍM/”7 ÍM1”9 ÍM3”; ÍM5”< ÍM6Ü ” ÍN” ÍN” ÍN” ÍN” ÍN” ÍN”  ÍN”# ÍN”% ÍN”, ÍN&”- ÍN'”3 ÍN-”5 ÍN/”6 ÍN0”8 ÍN2”: ÍN4”< ÍN6”= ÍN7‘”	 ÍO™” ÍP” ÍP” ÍP” ÍP” ÍP”& ÍP"”( ÍP$”3 ÍP/”4 ÍP0”” ÍQ” ÍQ” ÍQ” ÍQ”” ÍR” ÍR” ÍR”$ ÍR ”” ÍS” ÍS” ÍS”$ ÍS –” ÍT” ÍT” ÍT” ÍT”' ÍT#”( ÍT$’” ÍU” ÍU’”  ÍV ” ÍV“”  ÍX ”	 ÍX	” ÍX’” ÍY” ÍY	”” ÍZ”
+ ÍZ” ÍZ” ÍZ”” Í[” Í[” Í[
+” Í[–” Í\” Í\” Í\”# Í\”$ Í\ ”. Í\*”” Í]” Í]” Í]” Í]”” Í^” Í^” Í^”# Í^“” Í_” Í_” Í_
+Ü ” Í`” Í`” Í`” Í`” Í`” Í`”  Í`”# Í`”% Í`”, Í`&”- Í`'”2 Í`,”4 Í`.”5 Í`/”7 Í`1”9 Í`3”: Í`4”< Í`6”= Í`7Ü ” Ía” Ía” Ía” Ía” Ía”  Ía”" Ía”% Ía”' Ía!”. Ía(”/ Ía)”5 Ía/”7 Ía1”8 Ía2”: Ía4”< Ía6”> Ía8”? Ía9‘”	 Íb” Íc” Íc” Íc” Íc” Íc”) Íc%”+ Íc'”/ Íc+”1 Íc-”8 Íc4”: Íc6”ÌA Íc=”ÌB Íc>”” Íd” Íd” Íd” Íd”” Íe” Íe” Íe”% Íe!”” Íf” Íf” Íf”% Íf!–” Íg” Íg” Íg” Íg”& Íg"”' Íg#’” Íh” Íh’”  Íi ” ÍiÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ6‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ‘”  Í– ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš ‘”  Í› ‘”  Íœ ‘”  Í ‘”  Í ‘”  ÍŸ ‘”  Í  ‘”  Í¡ ‘”  Í¢ ‘”  Í£ ‘”  Í¤ ‘”  Í¥ ‘”  Í¦ ‘”  Í§ ‘”  Í¨ ‘”  Í© ‘”  Íª ‘”  Í« ‘”  Í¬ ‘”  Í­ ‘”  Í® ‘”  Í¯ ‘”  Í° ‘”  Í± ‘”  Í² ‘”  Í³ ‘”  Í´ ‘”  Íµ ‘”  Í¶ ‘”  Í· ‘”  Í¸ ‘”  Í¹ ‘”  Íº ‘”  Í» ‘”  Í¼ ‘”  Í½ ‘”  Í¾ ‘”  Í¿ ‘”  ÍÀ ‘”  ÍÁ ‘”  ÍÂ ‘”  ÍÃ ‘”  ÍÄ ‘”  ÍÅ ‘”  ÍÆ ‘”  ÍÇ ‘”  ÍÈ ‘”  ÍÉ ‘”  ÍÊ ‘”  ÍË ‘”  ÍÌ ‘”  ÍÍ ‘”  ÍÎ ‘”  ÍÏ ‘”  ÍĞ ‘”  ÍÑ ‘”  ÍÒ ‘”  ÍÓ ‘”  ÍÔ ‘”  ÍÕ ‘”  ÍÖ ‘”  Í× ‘”  ÍØ ‘”  ÍÙ ‘”  ÍÚ ‘”  ÍÛ ‘”  ÍÜ ‘”  Íİ ‘”  ÍŞ ‘”  Íß ‘”  Íà ‘”  Íá ‘”  Íâ ‘”  Íã ‘”  Íä ‘”  Íå ‘”  Íæ ‘”  Íç ‘”  Íè ‘”  Íé ‘”  Íê ‘”  Íë ‘”  Íì ‘”  Íí ‘”  Íî ‘”  Íï ‘”  Íğ ‘”  Íñ ‘”  Íò ‘”  Íó ‘”  Íô ‘”  Íõ ‘”  Íö ‘”  Í÷ ‘”  Íø ‘”  Íù ‘”  Íú ‘”  Íû ‘”  Íü ‘”  Íı ‘”  Íş ‘”  Íÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ‘”  Í– ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš ‘”  Í› ‘”  Íœ ‘”  Í ‘”  Í ‘”  ÍŸ ‘”  Í  ‘”  Í¡ ‘”  Í¢ ‘”  Í£ ‘”  Í¤ ‘”  Í¥ ‘”  Í¦ ‘”  Í§ ‘”  Í¨ ‘”  Í© ‘”  Íª ‘”  Í« ‘”  Í¬ ‘”  Í­ ‘”  Í® ‘”  Í¯ ‘”  Í° ‘”  Í± ‘”  Í² ‘”  Í³ ‘”  Í´ ‘”  Íµ ‘”  Í¶ ‘”  Í· ‘”  Í¸ ‘”  Í¹ ‘”  Íº ‘”  Í» ‘”  Í¼ ‘”  Í½ ‘”  Í¾ ‘”  Í¿ ‘”  ÍÀ ‘”  ÍÁ ‘”  ÍÂ ‘”  ÍÃ ‘”  ÍÄ ‘”  ÍÅ ‘”  ÍÆ ‘”  ÍÇ ‘”  ÍÈ ‘”  ÍÉ ‘”  ÍÊ ‘”  ÍË ‘”  ÍÌ ‘”  ÍÍ ‘”  ÍÎ ‘”  ÍÏ ‘”  ÍĞ ‘”  ÍÑ ‘”  ÍÒ ‘”  ÍÓ ‘”  ÍÔ ‘”  ÍÕ ‘”  ÍÖ ‘”  Í× ‘”  ÍØ ‘”  ÍÙ ‘”  ÍÚ ‘”  ÍÛ ‘”  ÍÜ ‘”  Íİ ‘”  ÍŞ ‘”  Íß ‘”  Íà ‘”  Íá ‘”  Íâ ‘”  Íã ‘”  Íä ‘”  Íå ‘”  Íæ ‘”  Íç ‘”  Íè ‘”  Íé ‘”  Íê ‘”  Íë ‘”  Íì ‘”  Íí ‘”  Íî ‘”  Íï ‘”  Íğ ‘”  Íñ ‘”  Íò ‘”  Íó ‘”  Íô ‘”  Íõ ‘”  Íö ‘”  Í÷ ‘”  Íø ‘”  Íù ‘”  Íú ‘”  Íû ‘”  Íü ‘”  Íı ‘”  Íş ‘”  Íÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÊÍêÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍÑÍêÔrM”¤type¥start£end¤nameªIdentifierÍÚÍñ·getAllBuiltinComponentsÂÂÂÔrN”¤type¥start£end¤body®BlockStatementÍôÍêœÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍûÍ‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍÍ
+MªIdentifierÍÍ¤listÔrQ”¤type¥start£end¨elements¯ArrayExpressionÍÍ
+¥constÔrR”¤type¥start£endªexpression³ExpressionStatementÍÍ=ÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ<MªIdentifierÍÍ!°appendComponents’MªIdentifierÍ"Í&¤listS®CallExpressionÍ(Í;MªIdentifierÍ(Í9±makePowerSuppliesÂÂR³ExpressionStatementÍCÍjS®CallExpressionÍCÍiMªIdentifierÍCÍS°appendComponents’MªIdentifierÍTÍX¤listS®CallExpressionÍZÍhMªIdentifierÍZÍf¬makePassivesÂÂR³ExpressionStatementÍpÍ˜S®CallExpressionÍpÍ—MªIdentifierÍpÍ€°appendComponents’MªIdentifierÍÍ…¤listS®CallExpressionÍ‡Í–MªIdentifierÍ‡Í”­makeDiscretesÂÂR³ExpressionStatementÍÍÆS®CallExpressionÍÍÅMªIdentifierÍÍ®°appendComponents’MªIdentifierÍ¯Í³¤listS®CallExpressionÍµÍÄMªIdentifierÍµÍÂ­makeAnalogIcsÂÂR³ExpressionStatementÍÌÍõS®CallExpressionÍÌÍôMªIdentifierÍÌÍÜ°appendComponents’MªIdentifierÍİÍá¤listS®CallExpressionÍãÍóMªIdentifierÍãÍñ®makeDigitalIcsÂÂR³ExpressionStatementÍûÍ S®CallExpressionÍûÍMªIdentifierÍûÍ°appendComponents’MªIdentifierÍÍ¤listS®CallExpressionÍÍMªIdentifierÍÍªmakeMemoryÂÂR³ExpressionStatementÍ&ÍIS®CallExpressionÍ&ÍHMªIdentifierÍ&Í6°appendComponents’MªIdentifierÍ7Í;¤listS®CallExpressionÍ=ÍGMªIdentifierÍ=ÍE¨makeMcusÂÂR³ExpressionStatementÍOÍyS®CallExpressionÍOÍxMªIdentifierÍOÍ_°appendComponents’MªIdentifierÍ`Íd¤listS®CallExpressionÍfÍwMªIdentifierÍfÍu¯makePeripheralsÂÂR³ExpressionStatementÍÍ¥S®CallExpressionÍÍ¤MªIdentifierÍÍ°appendComponents’MªIdentifierÍÍ”¤listS®CallExpressionÍ–Í£MªIdentifierÍ–Í¡«makeSensorsÂÂR³ExpressionStatementÍ«ÍÕS®CallExpressionÍ«ÍÔMªIdentifierÍ«Í»°appendComponents’MªIdentifierÍ¼ÍÀ¤listS®CallExpressionÍÂÍÓMªIdentifierÍÂÍÑ¯makeInstrumentsÂÂÔrT”¤type¥start£end¨argument¯ReturnStatementÍÛÍçMªIdentifierÍâÍæ¤listÀ“ÔrU•¤type¥start£endªspecifiers¦source±ImportDeclaration3Ìg’ÔrV•¤type¥start£end¨imported¥local¯ImportSpecifier<ÌMMªIdentifier<ÌM±ComponentCategoryMªIdentifier<ÌM±ComponentCategoryV¯ImportSpecifierÌOÌVMªIdentifierÌOÌV§PinTypeMªIdentifierÌOÌV§PinTypeÔrW•¤type¥start£end¥value£raw§LiteralÌ^Ìf¦common¨'common'U±ImportDeclarationÌiÌæ—V¯ImportSpecifierÌrÌ‚MªIdentifierÌrÌ‚°appendComponentsMªIdentifierÌrÌ‚°appendComponentsV¯ImportSpecifierÌ„ÌMªIdentifierÌ„Ì«emptyParamsMªIdentifierÌ„Ì«emptyParamsV¯ImportSpecifierÌ‘Ì˜MªIdentifierÌ‘Ì˜§makePinMªIdentifierÌ‘Ì˜§makePinV¯ImportSpecifierÌšÌ¡MªIdentifierÌšÌ¡§params1MªIdentifierÌšÌ¡§params1V¯ImportSpecifierÌ£ÌªMªIdentifierÌ£Ìª§params2MªIdentifierÌ£Ìª§params2V¯ImportSpecifierÌ¬Ì³MªIdentifierÌ¬Ì³§params3MªIdentifierÌ¬Ì³§params3V¯ImportSpecifierÌµÌ¼MªIdentifierÌµÌ¼§params5MªIdentifierÌµÌ¼§params5W§LiteralÌÄÌå¿../internal/ComponentLibHelpersÙ!'../internal/ComponentLibHelpers'U±ImportDeclarationÌèÍÈV¯ImportSpecifierÌñÌşMªIdentifierÌñÌş­pins8051Dip40MªIdentifierÌñÌş­pins8051Dip40V¯ImportSpecifierÍ ÍMªIdentifierÍ Í³pinsStm32Teaching48MªIdentifierÍ Í³pinsStm32Teaching48V¯ImportSpecifierÍÍ)MªIdentifierÍÍ)´pinsStm32Teaching100MªIdentifierÍÍ)´pinsStm32Teaching100V¯ImportSpecifierÍ+Í>MªIdentifierÍ+Í>³pinsStm32Teaching32MªIdentifierÍ+Í>³pinsStm32Teaching32V¯ImportSpecifierÍ@ÍKMªIdentifierÍ@ÍK«pinsLcd1602MªIdentifierÍ@ÍK«pinsLcd1602V¯ImportSpecifierÍMÍVMªIdentifierÍMÍV©pins24C02MªIdentifierÍMÍV©pins24C02V¯ImportSpecifierÍXÍbMªIdentifierÍXÍbªpinsW25Q64MªIdentifierÍXÍbªpinsW25Q64V¯ImportSpecifierÍdÍlMªIdentifierÍdÍl¨pins2764MªIdentifierÍdÍl¨pins2764V¯ImportSpecifierÍnÍwMªIdentifierÍnÍw©pins62256MªIdentifierÍnÍw©pins62256V¯ImportSpecifierÍyÍ„MªIdentifierÍyÍ„«pinsDs18b20MªIdentifierÍyÍ„«pinsDs18b20V¯ImportSpecifierÍ†Í”MªIdentifierÍ†Í”®pinsHallSensorMªIdentifierÍ†Í”®pinsHallSensorV¯ImportSpecifierÍ–Í MªIdentifierÍ–Í ªpinsCd4017MªIdentifierÍ–Í ªpinsCd4017V¯ImportSpecifierÍ¢Í¬MªIdentifierÍ¢Í¬ªpinsLm2596MªIdentifierÍ¢Í¬ªpinsLm2596W§LiteralÍ´ÍÇ±./NamedDevicePins³'./NamedDevicePins'

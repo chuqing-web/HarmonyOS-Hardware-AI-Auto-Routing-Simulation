@@ -1351,19 +1351,28 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   fitAllInView(): void {
-    const box: Rect2D = this.getBoundingBox();
+    this.applyFitRect(this.getBoundingBox(), 2.0);
+  }
+
+  fitRectInView(rect: Rect2D): void {
+    this.applyFitRect(rect, 5.0);
+  }
+
+  private applyFitRect(rect: Rect2D, maxZoom: number): void {
+    const boxW: number = Math.max(rect.width, 1);
+    const boxH: number = Math.max(rect.height, 1);
     const viewW: number = this.canvasViewWidth > 0 ? this.canvasViewWidth : 800;
     const viewH: number = this.canvasViewHeight > 0 ? this.canvasViewHeight : 600;
     const margin: number = 48;
     const availW: number = Math.max(100, viewW - margin * 2);
     const availH: number = Math.max(100, viewH - margin * 2);
-    const scaleX: number = availW / Math.max(box.width, 1);
-    const scaleY: number = availH / Math.max(box.height, 1);
-    const zoom: number = Math.min(scaleX, scaleY, 2.0);
+    const scaleX: number = availW / boxW;
+    const scaleY: number = availH / boxH;
+    const zoom: number = Math.min(scaleX, scaleY, maxZoom);
     this.viewport.zoom = Math.max(0.15, zoom);
     this.viewport.panOffset = {
-      x: (viewW - box.width * zoom) / 2 - box.x * zoom,
-      y: (viewH - box.height * zoom) / 2 - box.y * zoom
+      x: (viewW - boxW * this.viewport.zoom) / 2 - rect.x * this.viewport.zoom,
+      y: (viewH - boxH * this.viewport.zoom) / 2 - rect.y * this.viewport.zoom
     };
     this.publishViewport();
   }

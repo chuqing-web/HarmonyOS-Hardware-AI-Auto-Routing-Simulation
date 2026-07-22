@@ -437,13 +437,13 @@ export function buildLabAnalogIc(doc) {
 }
 
 /**
- * lab_digital: 门电路静态真值 + 方波时钟驱动 CD4017 + LA
- * CH1–6：门输出（H/L 固定，平线）；CH7=Q0（十分频脉冲）；CH8=CLK（~10Hz 方波）
+ * lab_digital: 门电路静态真值（原理图示意）+ 方波时钟驱动 CD4017 + LA
+ * LA: CH1–CH7=Q0–Q6（走动脉冲）；CH8=CLK（~10Hz 方波）
  */
 export function buildLabDigital(doc) {
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
   const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 460 });
-  // 0–5V 脉冲（OP=0V 种子为 L，暂态边沿干净）；10Hz → LA 可见，Q0≈1Hz
+  // 0–5V 脉冲（OP=0V 种子为 L，暂态边沿干净）；10Hz → LA 可见，Q 走动约 1s/圈
   const clk = K.place(doc, 'SIGNAL_GEN', 'SG1', { x: 40, y: 340 });
   clk.parameters.waveform = 'pulse';
   clk.parameters.amplitude = '5V';
@@ -468,7 +468,6 @@ export function buildLabDigital(doc) {
     { id: '74HC32', ref: 'U5', dual: true },
     { id: '74HC74', ref: 'U6', dual: true }
   ];
-  const outs = [];
   for (let i = 0; i < gateDefs.length; i++) {
     const g = gateDefs[i];
     const u = K.place(doc, g.id, g.ref, { x: 260 + i * 160, y: 180 });
@@ -477,10 +476,8 @@ export function buildLabDigital(doc) {
     if (g.dual) {
       K.join(doc, 'LOGIC_H', NetType.SIGNAL, [p(u, '1')]);
       K.join(doc, 'LOGIC_L', NetType.SIGNAL, [p(u, '2')]);
-      outs.push(p(u, '3'));
     } else {
       K.join(doc, 'LOGIC_H', NetType.SIGNAL, [p(u, '1')]);
-      outs.push(p(u, '2'));
     }
   }
 
@@ -495,20 +492,24 @@ export function buildLabDigital(doc) {
   K.join(doc, 'LOGIC_L', NetType.SIGNAL, [p(rLo, '1'), p(cnt, 'EN', 'EN')]);
   // RST 用标号并网：物理布线在拓扑重建后易拆成孤立 NET_xx
   K.joinByLabel(doc, 'LOGIC_L', NetType.SIGNAL, [p(cnt, 'RST', 'RST')]);
-  outs.push(p(cnt, 'Q0', 'Q0'));
 
   const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1180, y: 400 });
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(la, 'GND', 'GND')]);
-  for (let ch = 0; ch < Math.min(outs.length, 7); ch++) {
+  // LA 看走动输出：Q0..Q6 → CH1..CH7；CLK → CH8
+  const qPins = ['Q0', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'];
+  for (let ch = 0; ch < qPins.length; ch++) {
+    const qn = qPins[ch];
     K.join(doc, `LA_CH${ch + 1}`, NetType.SIGNAL, [
-      p(la, `CH${ch + 1}`, `CH${ch + 1}`), outs[ch]
+      p(la, `CH${ch + 1}`, `CH${ch + 1}`), p(cnt, qn, qn)
     ]);
   }
-  // CH8 看时钟方波
   K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(la, 'CH8', 'CH8')]);
 }
 
-/** lab_memory: MCU + I2C/SPI/并行存储器接口 */
+/** lab_memory: MCU + I2C/SPI/并行存储器 + LA；固件 lab_memory.hex 位带演示总线活动。
+ *  电源/I2C/SPI 一律 joinByLabel，避免物理 GND 轨穿过 OSC 廊道把晶振与 I2C 并成 NET_1。
+ *  LA: CH1=SCL CH2=SDA CH3=SCK CH4=CS CH5=MOSI CH6=MEM_CE CH7=SRAM_CE CH8=A0
+ */
 export function buildLabMemory(doc) {
   const mcu = K.place(doc, 'STM32F103RC', 'U1', { x: 200, y: 260 });
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 10 });
@@ -527,26 +528,23 @@ export function buildLabMemory(doc) {
   const eprom = K.place(doc, '2764', 'M3', { x: 900, y: 220 });
   const sram = K.place(doc, '62256', 'M4', { x: 1100, y: 220 });
 
-  // 局部电源放外侧；信号先布线，再 joinWired 电源，利用 pathConflicts 绕开总线
   const gndEep = K.place(doc, 'GND', 'GND_EEP', { x: 500, y: 300 });
   const vccEep = K.place(doc, 'VCC', 'VCC_EEP', { x: 500, y: 20 });
   const gndFlash = K.place(doc, 'GND', 'GND_FL', { x: 680, y: 300 });
   const vccFlash = K.place(doc, 'VCC', 'VCC_FL', { x: 680, y: 20 });
-  // 对齐 VSS 高度，勿落在 OSC_OUT 水平廊道（y≈210）上
-  const gndMcuL = K.place(doc, 'GND', 'GND_MCU_L', { x: 80, y: 150 });
-  const gndMcuR = K.place(doc, 'GND', 'GND_MCU_R', { x: 360, y: 400 });
+  const gndMcuL = K.place(doc, 'GND', 'GND_MCU_L', { x: 80, y: 520 });
+  const gndMcuR = K.place(doc, 'GND', 'GND_MCU_R', { x: 360, y: 520 });
 
-  // —— 信号总线（先于电源物理线）——
-  K.join(doc, 'I2C_SDA', NetType.SIGNAL, [
+  K.joinByLabel(doc, 'I2C_SDA', NetType.SIGNAL, [
     p(mcu, 'PB7', 'PB7'), p(eep, 'SDA', 'SDA'), p(rSda, '2')
   ]);
-  K.join(doc, 'I2C_SCL', NetType.SIGNAL, [
+  K.joinByLabel(doc, 'I2C_SCL', NetType.SIGNAL, [
     p(mcu, 'PB6', 'PB6'), p(eep, 'SCL', 'SCL'), p(rScl, '2')
   ]);
-  K.join(doc, 'SPI_CS', NetType.SIGNAL, [p(flash, 'CS', 'CS'), p(mcu, 'PA4', 'PA4')]);
-  K.join(doc, 'SPI_MISO', NetType.SIGNAL, [p(flash, 'DO', 'DO'), p(mcu, 'PA6', 'PA6')]);
-  K.join(doc, 'SPI_MOSI', NetType.SIGNAL, [p(flash, 'DI', 'DI'), p(mcu, 'PA7', 'PA7')]);
-  K.join(doc, 'SPI_SCK', NetType.SIGNAL, [p(flash, 'CLK', 'CLK'), p(mcu, 'PA5', 'PA5')]);
+  K.joinByLabel(doc, 'SPI_CS', NetType.SIGNAL, [p(flash, 'CS', 'CS'), p(mcu, 'PA4', 'PA4')]);
+  K.joinByLabel(doc, 'SPI_MISO', NetType.SIGNAL, [p(flash, 'DO', 'DO'), p(mcu, 'PA6', 'PA6')]);
+  K.joinByLabel(doc, 'SPI_MOSI', NetType.SIGNAL, [p(flash, 'DI', 'DI'), p(mcu, 'PA7', 'PA7')]);
+  K.joinByLabel(doc, 'SPI_SCK', NetType.SIGNAL, [p(flash, 'CLK', 'CLK'), p(mcu, 'PA5', 'PA5')]);
 
   K.joinByLabel(doc, 'MEM_CE', NetType.SIGNAL, [p(eprom, 'CE', 'CE'), p(mcu, 'PB8', 'PB8')]);
   K.joinByLabel(doc, 'MEM_OE', NetType.SIGNAL, [p(eprom, 'OE', 'OE'), p(mcu, 'PB9', 'PB9')]);
@@ -571,19 +569,18 @@ export function buildLabMemory(doc) {
     ]);
   }
 
-  // —— 就近电源：物理短线接到局部符号，拓扑 BFS 不依赖标号 ——
-  K.joinWired(doc, 'GND', NetType.GROUND, [
-    p(gndEep, '1', 'GND'), p(eep, 'A0', 'A0'), p(eep, 'A1', 'A1'), p(eep, 'A2', 'A2'), p(eep, 'VSS', 'VSS'), p(eep, 'WP', 'WP')
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gndEep, '1', 'GND'), p(eep, 'A0', 'A0'), p(eep, 'A1', 'A1'), p(eep, 'A2', 'A2'),
+    p(eep, 'VSS', 'VSS'), p(eep, 'WP', 'WP')
   ]);
-  K.joinWired(doc, 'VCC', NetType.POWER, [
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [
     p(vccEep, '1', 'VCC'), p(eep, 'VCC', 'VCC'), p(rSda, '1'), p(rScl, '1')
   ]);
-  K.joinWired(doc, 'VCC', NetType.POWER, [
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [
     p(vccFlash, '1', 'VCC'), p(flash, 'VCC', 'VCC'), p(flash, 'WP', 'WP'), p(flash, 'HOLD', 'HOLD')
   ]);
-  K.joinWired(doc, 'GND', NetType.GROUND, [p(gndFlash, '1', 'GND'), p(flash, 'GND', 'GND')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gndFlash, '1', 'GND'), p(flash, 'GND', 'GND')]);
 
-  // 并行封装高位脚：标号并到局部符号（物理长轨会与 MEM 总线 T 接短路）
   const gndMem = K.place(doc, 'GND', 'GND_MEM', { x: 1250, y: 400 });
   const vccMem = K.place(doc, 'VCC', 'VCC_MEM', { x: 1250, y: 40 });
   K.joinByLabel(doc, 'GND', NetType.GROUND, [
@@ -593,7 +590,6 @@ export function buildLabMemory(doc) {
     p(vccMem, '1', 'VCC'), p(eprom, 'VCC', 'VCC'), p(sram, 'VCC', 'VCC'), p(eprom, 'VPP', 'VPP')
   ]);
 
-  // 标号并网：物理竖线会沿 MCU 左脚列穿过 NRST/OSC
   K.joinByLabel(doc, 'GND', NetType.GROUND, [
     p(gndMcuL, '1', 'GND'), p(mcu, 'VSS', 'VSS')
   ]);
@@ -608,6 +604,17 @@ export function buildLabMemory(doc) {
   K.joinByLabel(doc, 'VCC', NetType.POWER, [
     p(vcc, '1', 'VCC'), p(vccEep, '1', 'VCC'), p(vccFlash, '1', 'VCC'), p(vccMem, '1', 'VCC')
   ]);
+
+  const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1280, y: 520 });
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(la, 'GND', 'GND')]);
+  K.joinByLabel(doc, 'I2C_SCL', NetType.SIGNAL, [p(la, 'CH1', 'CH1')]);
+  K.joinByLabel(doc, 'I2C_SDA', NetType.SIGNAL, [p(la, 'CH2', 'CH2')]);
+  K.joinByLabel(doc, 'SPI_SCK', NetType.SIGNAL, [p(la, 'CH3', 'CH3')]);
+  K.joinByLabel(doc, 'SPI_CS', NetType.SIGNAL, [p(la, 'CH4', 'CH4')]);
+  K.joinByLabel(doc, 'SPI_MOSI', NetType.SIGNAL, [p(la, 'CH5', 'CH5')]);
+  K.joinByLabel(doc, 'MEM_CE', NetType.SIGNAL, [p(la, 'CH6', 'CH6')]);
+  K.joinByLabel(doc, 'SRAM_CE', NetType.SIGNAL, [p(la, 'CH7', 'CH7')]);
+  K.joinByLabel(doc, 'MEM_A0', NetType.SIGNAL, [p(la, 'CH8', 'CH8')]);
 }
 
 /** lab_mcu_8051: 四款 8051 最小系统
@@ -751,84 +758,157 @@ export function buildLabPeripheral(doc) {
   ]);
 }
 
-/** lab_sensor: DS18B20 / 霍尔 / 光敏 + 滑动变阻器分压测 ADC */
+/** lab_sensor: DS18B20(可拖温)+霍尔(点击磁场)+电位器/光敏；需烧录 lab_sensor.hex
+ *  固件：PA0/PA3/PB0 输入 → PA4/PA5/PA6 指示灯
+ *  信号/电源一律 joinByLabel，避免 TOPO 把 HALL 与 OSC_IN 并成 NET_1。
+ */
 export function buildLabSensor(doc) {
-  const mcu = K.place(doc, 'STM32F103C8', 'U1', { x: 200, y: 260 });
+  const mcu = K.place(doc, 'STM32F103C8', 'U1', { x: 200, y: 280 });
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 10 });
-  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 500 });
-  const cDec = C(doc, 'C_100nF', 'C1', 320, 420);
-  const rRst = R(doc, 'R_10k', 'R1', 20, 400);
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 560 });
+  const cDec = C(doc, 'C_100nF', 'C1', 320, 480);
+  const rRst = R(doc, 'R_10k', 'R1', 20, 440);
   const xtal = K.place(doc, 'XTAL_8M', 'Y1', { x: 60, y: 50 });
   const { c1: cx1, c2: cx2 } = placeXtalCaps(doc, 60, 50, 'CX');
   K.crystal(doc, mcu, xtal, cx1, cx2, 'OSC_IN', 'OSC_OUT', '', gnd);
   K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'VDD', 'VSS', 'NRST');
 
-  const ds = K.place(doc, 'DS18B20', 'T1', { x: 500, y: 120 });
-  const rDs = R(doc, 'R_4.7k', 'R2', 400, 80);
-  K.join(doc, '1WIRE', NetType.SIGNAL, [p(ds, 'DQ', 'DQ'), p(mcu, 'PA3', 'PA3'), p(rDs, '1')]);
-  K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rDs, '2'), p(ds, 'VDD', 'VDD')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(ds, 'GND', 'GND')]);
+  const ds = K.place(doc, 'DS18B20', 'T1', { x: 620, y: 100 });
+  ds.parameters.temp_c = '25';
+  const rDs = R(doc, 'R_4.7k', 'R2', 500, 60);
+  const vmTemp = K.place(doc, 'VOLTMETER_DC', 'M2', { x: 820, y: 80 });
+  K.joinByLabel(doc, '1WIRE', NetType.SIGNAL, [
+    p(ds, 'DQ', 'DQ'), p(mcu, 'PA3', 'PA3'), p(rDs, '1'), p(vmTemp, 'V+', 'V+')
+  ]);
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rDs, '2'), p(ds, 'VDD', 'VDD')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(ds, 'GND', 'GND'), p(vmTemp, 'COM', 'COM')
+  ]);
 
-  const hall = K.place(doc, 'HALL_SENSOR', 'H1', { x: 500, y: 240 });
-  const rHall = R(doc, 'R_10k', 'RH', 400, 240);
-  K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rHall, '1'), p(hall, 'VCC', 'VCC')]);
-  K.join(doc, 'HALL', NetType.SIGNAL, [
+  const hall = K.place(doc, 'HALL_SENSOR', 'H1', { x: 620, y: 240 });
+  hall.parameters.active = '0';
+  const rHall = R(doc, 'R_10k', 'RH', 500, 240);
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(rHall, '1'), p(hall, 'VCC', 'VCC')]);
+  K.joinByLabel(doc, 'HALL', NetType.SIGNAL, [
     p(hall, 'OUT', 'OUT'), p(mcu, 'PB0', 'PB0'), p(rHall, '2')
   ]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(hall, 'GND', 'GND')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(hall, 'GND', 'GND')]);
 
-  // VCC—RV1—GND 分压；抽头接 ADC / 光敏并联 / 电压表
-  const pot = K.place(doc, 'POT_10k', 'RV1', { x: 480, y: 360 });
+  const pot = K.place(doc, 'POT_10k', 'RV1', { x: 600, y: 380 });
   pot.parameters.wiper = '0.5';
-  const ldr = K.place(doc, 'LDR', 'LDR1', { x: 620, y: 420 });
+  const ldr = K.place(doc, 'LDR', 'LDR1', { x: 740, y: 440 });
   ldr.parameters.value = '50k';
-  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 760, y: 340 });
-  K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(pot, '1')]);
-  K.join(doc, 'ADC', NetType.SIGNAL, [
+  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 820, y: 360 });
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(pot, '1')]);
+  K.joinByLabel(doc, 'ADC', NetType.SIGNAL, [
     p(pot, 'W', 'W'), p(mcu, 'PA0', 'PA0'), p(vm, 'V+', 'V+'), p(ldr, '1')
   ]);
-  K.join(doc, 'GND', NetType.GROUND, [
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
     p(gnd, '1', 'GND'), p(pot, '2'), p(vm, 'COM', 'COM'), p(ldr, '2')
   ]);
+
+  const ledLibs = ['LED_GREEN', 'LED_RED', 'LED_BLUE'];
+  const ledRefs = ['D_ADC', 'D_HALL', 'D_TEMP'];
+  const ledPins = ['PA4', 'PA5', 'PA6'];
+  for (let i = 0; i < 3; i++) {
+    const y = 100 + i * 90;
+    const led = K.place(doc, ledLibs[i], ledRefs[i], { x: 1020, y });
+    const rl = R(doc, 'R_330', `RL${i + 1}`, 920, y);
+    const pin = ledPins[i];
+    K.joinByLabel(doc, `LED_${pin}`, NetType.SIGNAL, [p(mcu, pin, pin), p(rl, '1')]);
+    K.joinByLabel(doc, `LED_${pin}_A`, NetType.SIGNAL, [p(rl, '2'), p(led, 'A', 'A')]);
+    K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(led, 'K', 'K')]);
+  }
 }
 
-/** lab_instruments: 滑动变阻器分压 + 全套仪器 */
+/**
+ * lab_instruments: 全套虚拟仪器功能台
+ * 万用表 VM1 四端：V→CLK(DCV/ACV)、A 串 LED(AMP)、OHM→R_1k+二极管(Ω/DIODE)、COM→GND
+ */
 export function buildLabInstruments(doc) {
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
-  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 480 });
-  const am = K.place(doc, 'AMMETER_DC', 'A1', { x: 120, y: 100 });
-  const r1 = R(doc, 'R_10k', 'R1', 260, 200);
-  const pot = K.place(doc, 'POT_10k', 'RV1', { x: 420, y: 200 });
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 560 });
+  const sg = K.place(doc, 'SIGNAL_GEN', 'SG1', { x: 40, y: 300 });
+  sg.parameters.waveform = 'pulse';
+  sg.parameters.amplitude = '5V';
+  sg.parameters.frequency = '1kHz';
+  sg.parameters.offset = '0V';
+  sg.parameters.dutyCycle = '50%';
+
+  const am = K.place(doc, 'AMMETER_DC', 'A1', { x: 140, y: 80 });
+  const pm = K.place(doc, 'POWER_METER', 'PM1', { x: 260, y: 40 });
+  const r1 = R(doc, 'R_10k', 'R1', 420, 200);
+  const pot = K.place(doc, 'POT_10k', 'RV1', { x: 560, y: 200 });
   pot.parameters.wiper = '0.5';
 
-  K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(am, 'I+', 'I+')]);
-  K.series2(doc, 'HI', p(am, 'I-', 'I-'), p(r1, '1'));
-  K.join(doc, 'TOP', NetType.SIGNAL, [p(r1, '2'), p(pot, '1')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pot, '2')]);
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(am, 'I+', 'I+')]);
+  K.series2(doc, 'AM_OUT', p(am, 'I-', 'I-'), p(pm, 'I+', 'I+'));
+  K.series2(doc, 'HI', p(pm, 'I-', 'I-'), p(r1, '1'));
+  K.joinByLabel(doc, 'TOP', NetType.SIGNAL, [p(r1, '2'), p(pot, '1')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(pot, '2'), p(sg, 'GND', 'GND')
+  ]);
+  K.joinByLabel(doc, 'HI', NetType.SIGNAL, [p(pm, 'V+', 'V+')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(pm, 'V-', 'V-')]);
 
-  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 620, y: 40 });
-  K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(vm, 'V+', 'V+')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(vm, 'COM', 'COM')]);
+  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 700, y: 40 });
+  K.joinByLabel(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(vm, 'V+', 'V+')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(vm, 'COM', 'COM')]);
 
-  const virt = K.place(doc, 'VIRTUAL_METER', 'VM1', { x: 720, y: 80 });
-  K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(virt, 'V', 'V')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(virt, 'COM', 'COM')]);
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(sg, 'OUT', 'OUT')]);
 
-  const pm = K.place(doc, 'POWER_METER', 'PM1', { x: 820, y: 40 });
-  K.join(doc, 'HI', NetType.SIGNAL, [p(r1, '1'), p(pm, 'V+', 'V+')]);
-  K.join(doc, 'HI', NetType.SIGNAL, [p(r1, '1'), p(pm, 'I+', 'I+')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pm, 'V-', 'V-')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(pm, 'I-', 'I-')]);
+  const dmm = K.place(doc, 'VIRTUAL_METER', 'VM1', { x: 700, y: 160 });
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(dmm, 'V', 'V')]);
+  const rAmp = R(doc, 'R_330', 'RAMP', 620, 260);
+  const ledAmp = K.place(doc, 'LED_RED', 'DAMP', { x: 700, y: 260 });
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(rAmp, '1')]);
+  K.series2(doc, 'DMM_A', p(rAmp, '2'), p(ledAmp, 'A', 'A'));
+  K.series2(doc, 'DMM_A_RET', p(ledAmp, 'K', 'K'), p(dmm, 'A', 'A'));
+  const rOhm = R(doc, 'R_1k', 'ROHM', 620, 340);
+  const dOhm = K.place(doc, '1N4148', 'DOHM', { x: 700, y: 340 });
+  K.joinByLabel(doc, 'DMM_OHM', NetType.SIGNAL, [
+    p(dmm, 'OHM', 'OHM'), p(rOhm, '1'), p(dOhm, 'A', 'A')
+  ]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(dmm, 'COM', 'COM'), p(rOhm, '2'), p(dOhm, 'K', 'K')
+  ]);
 
-  const fc = K.place(doc, 'FREQ_COUNTER', 'FC1', { x: 820, y: 320 });
-  K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(fc, 'IN', 'IN')]);
-  K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(fc, 'GND', 'GND')]);
+  const fc = K.place(doc, 'FREQ_COUNTER', 'FC1', { x: 700, y: 420 });
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(fc, 'IN', 'IN')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(fc, 'GND', 'GND')]);
 
-  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 1000, y: 100 });
-  K.join(doc, 'HI', NetType.SIGNAL, [p(r1, '1'), p(osc, 'CH1', 'CH1')]);
-  K.join(doc, 'MID', NetType.SIGNAL, [p(pot, 'W', 'W'), p(osc, 'CH2', 'CH2')]);
-  // stub+标号：GND 母线横穿 OSC 易把 CH4 并地（与滤波电容接地同一策略）
+  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 920, y: 60 });
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(osc, 'CH1', 'CH1')]);
+  K.joinByLabel(doc, 'HI', NetType.SIGNAL, [p(osc, 'CH2', 'CH2')]);
+  K.joinByLabel(doc, 'MID', NetType.SIGNAL, [p(osc, 'CH3', 'CH3')]);
+  K.joinByLabel(doc, 'TOP', NetType.SIGNAL, [p(osc, 'CH4', 'CH4')]);
   K.stubLabel(doc, p(osc, 'GND', 'GND'), 'GND', NetType.GROUND);
+
+  const cnt = K.place(doc, 'CD4017', 'U7', { x: 920, y: 340 });
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(cnt, 'VDD', 'VDD')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(cnt, 'VSS', 'VSS')]);
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(cnt, 'CLK', 'CLK')]);
+  K.joinByLabel(doc, 'LOGIC_L', NetType.SIGNAL, [p(cnt, 'EN', 'EN'), p(cnt, 'RST', 'RST')]);
+  const rLo = R(doc, 'R_10k', 'RLO', 820, 500);
+  K.joinByLabel(doc, 'LOGIC_L', NetType.SIGNAL, [p(rLo, '1')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(rLo, '2')]);
+
+  const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1120, y: 300 });
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(la, 'GND', 'GND')]);
+  const qPins = ['Q0', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'];
+  for (let ch = 0; ch < qPins.length; ch++) {
+    const qn = qPins[ch];
+    K.joinByLabel(doc, `LA_CH${ch + 1}`, NetType.SIGNAL, [
+      p(la, `CH${ch + 1}`, `CH${ch + 1}`), p(cnt, qn, qn)
+    ]);
+  }
+  K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(la, 'CH8', 'CH8')]);
+
+  const uart = K.place(doc, 'UART_TERMINAL', 'TERM1', { x: 1120, y: 60 });
+  K.joinByLabel(doc, 'UART_LB', NetType.SIGNAL, [
+    p(uart, 'TX', 'TX'), p(uart, 'RX', 'RX')
+  ]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [p(uart, 'GND', 'GND')]);
 }
 
 /** lab_potentiometer: 三档滑动变阻器分压 + 电压表（补齐 POT_1k/10k/100k 覆盖） */
@@ -985,13 +1065,15 @@ export const TEMPLATE_DEFS = [
   { id: 'lab_passive', name: '无源器件检测', description: '全部电阻/电容/电感/LC/交流源', build: buildLabPassive },
   { id: 'lab_discrete', name: '分立器件检测', description: '二极管/LED/三极管/MOSFET 典型接法', build: buildLabDiscrete },
   { id: 'lab_analog_ic', name: '模拟IC检测', description: '运放 + LM555 无稳态 + 全部稳压/开关电源 IC', build: buildLabAnalogIc },
-  { id: 'lab_digital', name: '数字逻辑检测', description: '74HC 门真值(平线) + 10Hz 脉冲时钟驱动 CD4017 + LA(CH8=CLK)', build: buildLabDigital },
-  { id: 'lab_memory', name: '存储器接口', description: 'EPROM/SRAM/EEPROM/Flash 与 MCU 连接', build: buildLabMemory },
+  { id: 'lab_digital', name: '数字逻辑检测', description: '74HC 门真值示意 + 10Hz 脉冲时钟驱动 CD4017；LA=Q0–Q6+CLK', build: buildLabDigital },
+  { id: 'lab_memory', name: '存储器接口', description: 'I2C/SPI/并行存储 + LA；需烧录 lab_memory.hex', build: buildLabMemory },
   { id: 'lab_mcu_8051', name: '8051全系列', description: 'AT89/STC 四款 MCU 最小系统', build: buildLabMcu8051 },
   { id: 'lab_mcu_stm32', name: 'STM32全系列', description: '五款 STM32 最小系统并排', build: buildLabMcuStm32 },
   { id: 'lab_peripheral', name: '外设接口实验', description: '按键/继电器触点指示/蜂鸣器/LCD/OLED；需烧录 lab_peripheral.hex', build: buildLabPeripheral },
-  { id: 'lab_sensor', name: '传感器实验', description: 'DS18B20/霍尔/光敏 接入 MCU', build: buildLabSensor },
-  { id: 'lab_instruments', name: '仪器仪表检测', description: '全部虚拟仪器接入分压测试点', build: buildLabInstruments },
+  { id: 'lab_sensor', name: '传感器实验', description: 'DS18B20/霍尔/ADC + 指示灯；需烧录 lab_sensor.hex', build: buildLabSensor },
+  { id: 'lab_instruments', name: '仪器仪表检测',
+    description: '全套虚拟仪器：DC 分压/串联功率电流、信号源+频率计+示波器四通道、4017+逻辑分析仪、UART 环回',
+    build: buildLabInstruments },
   { id: 'lab_potentiometer', name: '滑动变阻器实验', description: 'POT_1k/10k/100k 分压测电压', build: buildLabPotentiometer },
   { id: 'lab_schmitt', name: '运放滞回比较器整形', description: 'UA741 正反馈滞回 + 正弦激励，示波器观测整形方波', build: buildLabSchmitt },
   { id: 'lab_integrator', name: 'RC积分电路', description: 'UA741 反相积分 + 方波激励，示波器观测三角波', build: buildLabIntegrator },

@@ -19,9 +19,12 @@ runtime_key: diag
 【仪器拓扑检查清单】:
 - 电流表I+接VCC, I-接负载 → 串联正确；I+/I-在同一网络 → 短路错误
 - N块电压表各测不同node pair → 分布正确；全测同一node pair → 分布错误
+- POWER_METER: V 并 / I 串；禁止 I 与 V 完全同节点对
+- 万用表 VIRTUAL_METER 真脚 V,A,OHM,COM（勿写 V+）；按档位接线
+- LA: CH1–CH8（禁 CH0/D0）；OSC: CH1–4+GND
 - 分压链 VCC→R1→中点→R2→GND 是否完整
-- 所有仪器关键引脚(电流表I+/I-, 电压表V+/COM)是否都已连接
-- 仪器GND/COM是否浮空 → 未接地则测量无效
+- 所有仪器关键引脚是否都已连接
+- 【SIM_CONN】仪器GND/COM浮空 → 硬故障 / 测量无效
 
 【互斥双色】若需求为开/闭双色指示：检查 RELAY_SPDT 与 NC/NO 支路是否正确。
 

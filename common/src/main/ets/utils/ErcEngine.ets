@@ -122,10 +122,6 @@ export class ErcEngine {
     }
     for (let i = 0; i < doc.components.length; i++) {
       const comp = doc.components[i];
-      if (comp.libraryId.includes('OSCILLOSCOPE') ||
-        comp.libraryId === 'LOGIC_ANALYZER') {
-        continue;
-      }
       const pinDefs = ErcEngine.resolvePinIds(comp.libraryId, pinResolver);
       const compConnected = connectedPins.get(comp.id);
       for (let p = 0; p < pinDefs.length; p++) {
@@ -326,10 +322,12 @@ export class ErcEngine {
     // Peripherals / instruments — 可选通道不强制全连
     if (libraryId === 'UART_TERMINAL') return ['TX', 'RX', 'GND'];
     if (libraryId === 'VOLTMETER_DC') return ['V+', 'COM'];
+    // 至少电压档；A/OHM 可选（未接时 INFO）
     if (libraryId === 'VIRTUAL_METER') return ['V', 'COM'];
     if (libraryId === 'AMMETER_DC') return ['I+', 'I-'];
     if (libraryId === 'FREQ_COUNTER') return ['IN', 'GND'];
-    if (libraryId === 'LOGIC_ANALYZER') return [];
+    // 逻辑分析仪 / 示波器：至少 1 通道 + GND；其余通道可选
+    if (libraryId === 'LOGIC_ANALYZER') return ['CH1', 'GND'];
     if (libraryId === 'POWER_METER') return ['V+', 'V-', 'I+', 'I-'];
     if (libraryId === 'LCD1602') {
       return ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7', 'A', 'K'];
@@ -383,8 +381,8 @@ export class ErcEngine {
     if (libraryId.includes('74HC')) {
       return ['1', '2', '3', '7', '14'];
     }
-    // Oscilloscope — skip
-    if (libraryId.includes('OSCILLOSCOPE')) return [];
+    // 示波器：至少 CH1 + GND
+    if (libraryId.includes('OSCILLOSCOPE')) return ['CH1', 'GND'];
     // 未知库 ID：禁止默认假脚 1/2（会让多脚 IC ERC 假通过）
     return [];
   }

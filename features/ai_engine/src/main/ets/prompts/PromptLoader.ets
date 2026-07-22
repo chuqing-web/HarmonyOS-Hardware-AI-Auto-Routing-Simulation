@@ -14,7 +14,7 @@ import {
   DeviceUsageManual, UsageManualMode, DeviceUsageBuildResult
 } from '../algorithms/DeviceUsageManual';
 import { PromptTemplate } from './PromptTypes';
-import { TOPOLOGY_ANTIPATTERN_GUARD, JSON_ONLY_OUTPUT_RULE } from './templates/SharedPromptRules';
+import { TOPOLOGY_ANTIPATTERN_GUARD, JSON_ONLY_OUTPUT_RULE, INSTRUMENT_TOPOLOGY_RULES } from './templates/SharedPromptRules';
 import { DEVICE_SELECT_PROMPT } from './templates/DeviceSelectPrompt';
 import { LAYOUT_PROMPT } from './templates/LayoutPrompt';
 import { NET_PLAN_PROMPT } from './templates/NetPlanPrompt';
@@ -128,6 +128,22 @@ function collectMentionedLibIds(library: IComponentLibrary, prompt: string): Set
   }
   if (text.indexOf('电流表') >= 0) {
     want.add('AMMETER_DC');
+  }
+  if (text.indexOf('万用表') >= 0 || text.indexOf('多用电表') >= 0 ||
+    text.indexOf('电阻档') >= 0 || text.indexOf('二极管档') >= 0) {
+    want.add('VIRTUAL_METER');
+  }
+  if (text.indexOf('功率表') >= 0 || text.indexOf('测功率') >= 0) {
+    want.add('POWER_METER');
+  }
+  if (text.indexOf('频率计') >= 0) {
+    want.add('FREQ_COUNTER');
+  }
+  if (text.indexOf('信号发生器') >= 0 || text.indexOf('信号源') >= 0) {
+    want.add('SIGNAL_GEN');
+  }
+  if (text.indexOf('逻辑分析') >= 0) {
+    want.add('LOGIC_ANALYZER');
   }
   if (text.indexOf('电位器') >= 0 || textU.indexOf('POT') >= 0 ||
     textU.indexOf('RV1') >= 0 || textU.indexOf('RV2') >= 0) {
@@ -243,7 +259,7 @@ function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
   const focus = [
     'OSCILLOSCOPE', 'VOLTMETER_DC', 'AMMETER_DC', 'UART_TERMINAL',
     'LOGIC_ANALYZER', 'POWER_METER', 'FREQ_COUNTER', 'VIRTUAL_METER',
-    'POT_1k', 'POT_10k', 'POT_100k', 'RELAY_SPDT'
+    'SIGNAL_GEN', 'POT_1k', 'POT_10k', 'POT_100k', 'RELAY_SPDT'
   ];
   const lines: string[] = ['【库内真脚速查 — 禁止假设脚名】:'];
   for (let i = 0; i < focus.length; i++) {
@@ -408,7 +424,7 @@ export class PromptLoader {
     const isLayout = effective.id.indexOf('layout') >= 0;
     const isRoute = effective.id.indexOf('route') >= 0;
     const skipTopoGuard = isLayout || isRoute;
-    const guard = skipTopoGuard ? '' : TOPOLOGY_ANTIPATTERN_GUARD;
+    const guard = skipTopoGuard ? '' : `${INSTRUMENT_TOPOLOGY_RULES}${TOPOLOGY_ANTIPATTERN_GUARD}`;
     const pinRule = skipTopoGuard ? '' : (options?.includeFullPins
       ? '\n【选型铁律】explicitModel 必须是上方清单中的精确 libDevId；引脚连接只能使用该器件列出的 pinId/pinName；禁止编造库外型号。'
       : (options?.includeLibIds

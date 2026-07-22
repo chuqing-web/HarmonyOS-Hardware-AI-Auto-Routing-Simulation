@@ -47,7 +47,7 @@ import {
   traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity,
   emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil,
   mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, ComponentInstance,
-  MainThreadYield
+  MainThreadYield, MultimeterMode
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 
@@ -425,10 +425,12 @@ export class AppService {
         lib === 'VIRTUAL_METER' || lib.startsWith('VIRTUAL_METER') ||
         lib === 'POWER_METER' || lib.startsWith('POWER_METER') ||
         lib === 'DMM' || lib.startsWith('DMM');
-      const isInstrument = isScope || isSigGen || isMeter ||
-        lib === 'LOGIC_ANALYZER' || lib.startsWith('LOGIC_ANALYZER') ||
-        lib === 'FREQ_COUNTER' || lib.startsWith('FREQ_COUNTER') ||
-        lib === 'UART_TERMINAL' || lib.startsWith('UART_TERMINAL');
+      const isFreq = lib === 'FREQ_COUNTER' || lib.startsWith('FREQ_COUNTER');
+      const isLogic = lib === 'LOGIC_ANALYZER' || lib.startsWith('LOGIC_ANALYZER');
+      const isUart = lib === 'UART_TERMINAL' || lib.startsWith('UART_TERMINAL');
+      const isInstrument = isScope || isSigGen || isMeter || isLogic || isFreq || isUart;
+      // 有信号脚就必须有回线：示波/信号源/电表 + 频率计/逻辑分析仪/串口
+      const needsReturn = isScope || isSigGen || isMeter || isFreq || isLogic || isUart;
 
       let anyConnected = false;
       let hasSignalPin = false;
@@ -453,8 +455,8 @@ export class AppService {
       }
       if ((isPowerSym || isInstrument) && !anyConnected) {
         hardUnconnected.push(comp.refDes);
-      } else if ((isScope || isSigGen || isMeter) && hasSignalPin && !hasGndPin) {
-        // Probe without return path → false waveforms
+      } else if (needsReturn && hasSignalPin && !hasGndPin) {
+        // Probe without return path → false waveforms / 假读数
         hardUnconnected.push(`${comp.refDes}(缺GND/COM)`);
       }
     }
@@ -766,6 +768,88 @@ export class AppService {
     return delta;
   }
 
+  /** 万用表按当前档位读取原始量（V / A / Ω） */
+  readMultimeterRawForComponent(compInstId: string): number | null {
+    const doc = this.schematicEditor.getDocument();
+    const comp = doc.components.find(c => c.id === compInstId);
+    if (comp === undefined) {
+      return null;
+    }
+    const upper = comp.libraryId.toUpperCase();
+    if (!upper.includes('VIRTUAL_METER') && upper !== 'MULTIMETER') {
+      return null;
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const pinNets = getPinNetMap(compInstId, doc.nets);
+    const netV = findNetForPinLabel(pinNets, 'V') ?? findNetForPinLabel(pinNets, 'V+');
+    const netOhm = findNetForPinLabel(pinNets, 'OHM');
+    const netCom = findNetForPinLabel(pinNets, 'COM') ?? findNetForPinLabel(pinNets, 'GND');
+    const mode = (this.instruments as VirtualInstrumentsImpl).getMultimeterMode();
+    if (mode === MultimeterMode.CURRENT) {
+      return kernel.getBranchCurrent(compInstId);
+    }
+    if (mode === MultimeterMode.RESISTANCE || mode === MultimeterMode.DIODE) {
+      if (netOhm === null || netCom === null) {
+        return null;
+      }
+      const vAbs = Math.abs(kernel.getNetVoltageByUuid(netOhm) - kernel.getNetVoltageByUuid(netCom));
+      if (mode === MultimeterMode.DIODE) {
+        return vAbs;
+      }
+      const rNom = this.findResistorOhmsBetweenNets(doc, netOhm, netCom);
+      if (rNom !== null) {
+        return rNom;
+      }
+      const iSense = (1.0 - vAbs) / 1000.0;
+      if (iSense < 1e-12) {
+        return 1e9;
+      }
+      return vAbs / iSense;
+    }
+    if (netV === null || netCom === null) {
+      return null;
+    }
+    return kernel.getNetVoltageByUuid(netV) - kernel.getNetVoltageByUuid(netCom);
+  }
+
+  /** OHM↔COM 之间若有 R_*，返回其欧姆值（二极管并联时电阻档用标称） */
+  private findResistorOhmsBetweenNets(doc: SchematicDocument, netA: string, netB: string): number | null {
+    const idsOnA = new Set<string>();
+    const idsOnB = new Set<string>();
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const n = doc.nets[ni];
+      if (n.id !== netA && n.id !== netB) {
+        continue;
+      }
+      for (let pi = 0; pi < n.pinIds.length; pi++) {
+        const cid = n.pinIds[pi].split(':')[0];
+        if (n.id === netA) {
+          idsOnA.add(cid);
+        } else {
+          idsOnB.add(cid);
+        }
+      }
+    }
+    for (let ci = 0; ci < doc.components.length; ci++) {
+      const c = doc.components[ci];
+      if (!c.libraryId.startsWith('R_')) {
+        continue;
+      }
+      if (!idsOnA.has(c.id) || !idsOnB.has(c.id)) {
+        continue;
+      }
+      const fromId = UnitParser.parseResistance(c.libraryId.substring(2));
+      if (fromId.valid && fromId.numeric > 0) {
+        return fromId.numeric;
+      }
+      const fromParam = UnitParser.parseResistance(paramMapGet(c.parameters, 'resistance', ''));
+      if (fromParam.valid && fromParam.numeric > 0) {
+        return fromParam.numeric;
+      }
+    }
+    return null;
+  }
+
   /**
    * Read ammeter branch current (mA, signed I+→I-) for a specific instance.
    * @param quiet Skip instr_trace measure log (high-rate sim sampling)
@@ -852,6 +936,34 @@ export class AppService {
   }
 
   /**
+   * 仿真中调节 DS18B20 实验温度（−55…125°C）。成功返回 "xx.x"，失败返回 ''。
+   */
+  setInteractiveSensorTemp(componentId: string, tempC: number): string {
+    if (!this.isSimulationActive()) {
+      return '';
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const next = kernel.setInteractiveSensorTemp(componentId, tempC);
+    if (next.length > 0) {
+      this.publishInteractiveCircuitRefresh('sensor', `temp_c=${next}`);
+    }
+    return next;
+  }
+
+  /** 仿真中点击霍尔传感器切换磁场（active 0/1）。 */
+  toggleInteractiveHall(componentId: string): string {
+    if (!this.isSimulationActive()) {
+      return '';
+    }
+    const kernel = this.simulationKernel as SimulationKernelImpl;
+    const next = kernel.toggleInteractiveHall(componentId);
+    if (next.length > 0) {
+      this.publishInteractiveCircuitRefresh('hall', `active=${next}`);
+    }
+    return next;
+  }
+
+  /**
    * First schematic meter of a given panel kind ('vm' | 'dmm' | 'am' | 'osc' | 'power' | 'freq').
    * Used when the selection is a pot/switch but the instrument tab still needs a binding.
    */
@@ -924,7 +1036,12 @@ export class AppService {
     const v = kernel.getNetVoltageByUuid(netVPlus) - kernel.getNetVoltageByUuid(netVCom);
     let iA = 0;
     if (netIPlus !== null) {
-      iA = kernel.getNetCurrentByUuid(netIPlus);
+      const iBranch = kernel.getBranchCurrent(compInstId);
+      if (Math.abs(iBranch) > 1e-15) {
+        iA = iBranch;
+      } else {
+        iA = kernel.getNetCurrentByUuid(netIPlus);
+      }
     }
     return this.instruments.powerMeterSnapReading(v, iA);
   }
@@ -957,16 +1074,31 @@ export class AppService {
     for (let i = 0; i < doc.components.length; i++) {
       const c = doc.components[i];
       const lib = c.libraryId.toUpperCase();
-      if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+      if (lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+        const raw = this.readMultimeterRawForComponent(c.id);
+        if (raw !== null) {
+          instr.multimeterSnapReading(raw);
+          const mode = instr.getMultimeterMode();
+          let unit = 'V';
+          if (mode === MultimeterMode.CURRENT) {
+            unit = 'A';
+          } else if (mode === MultimeterMode.RESISTANCE) {
+            unit = 'Ω';
+          } else if (mode === MultimeterMode.DIODE) {
+            unit = 'V';
+          }
+          meterSnaps.push({ refDes: c.refDes, kind: 'dmm', value: `${raw.toFixed(3)}${unit}` });
+          if (firstInstrId.length === 0) {
+            firstInstrId = c.id;
+          }
+        } else {
+          meterSnaps.push({ refDes: c.refDes, kind: 'dmm', value: 'null' });
+        }
+      } else if (lib.includes('VOLTMETER')) {
         const delta = this.readVoltmeterDeltaForComponent(c.id, true);
         if (delta !== null) {
-          if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER')) {
-            instr.multimeterSnapReading(delta);
-            meterSnaps.push({ refDes: c.refDes, kind: 'dmm', value: `${delta.toFixed(3)}V` });
-          } else {
-            instr.voltmeterSnapReading(delta);
-            meterSnaps.push({ refDes: c.refDes, kind: 'vm', value: `${delta.toFixed(3)}V` });
-          }
+          instr.voltmeterSnapReading(delta);
+          meterSnaps.push({ refDes: c.refDes, kind: 'vm', value: `${delta.toFixed(3)}V` });
           if (firstInstrId.length === 0) {
             firstInstrId = c.id;
           }
@@ -1184,7 +1316,15 @@ export class AppService {
           binding.logicProbes.push(net);
         }
       }
-    } else if (upperId.includes('VOLTMETER') || upperId.includes('VIRTUAL_METER') || upperId === 'MULTIMETER') {
+    } else if (upperId.includes('VIRTUAL_METER') || upperId === 'MULTIMETER') {
+      // 四端万用表：按档位切换 V / A / OHM 读数（与 readMultimeterRawForComponent 一致）
+      const dmmId = compInstId;
+      const self = this;
+      binding.voltageReader = () => {
+        const raw = self.readMultimeterRawForComponent(dmmId);
+        return raw !== null ? raw : 0;
+      };
+    } else if (upperId.includes('VOLTMETER')) {
       const netPlus = findNetForPin('V+') ?? findNetForPin('V') ?? findNetForPin('PLUS') ?? findNetForPin('+') ??
         findNetForPin('PROBE1');
       const netCom = findNetForPin('COM') ?? findNetForPin('V-') ?? findNetForPin('-') ?? findNetForPin('GND') ??
@@ -1232,6 +1372,11 @@ export class AppService {
       }
       if (netIPlus !== null && netIMinus !== null) {
         binding.powerCurrentReader = () => {
+          // Prefer series branch through stamped 0V I-path (same as ammeter)
+          const iBranch = kernel.getBranchCurrent(compInstId);
+          if (Math.abs(iBranch) > 1e-15) {
+            return iBranch;
+          }
           const netCur = kernel.getNetCurrentByUuid(netIPlus);
           if (Math.abs(netCur) > 1e-15) {
             return netCur;
@@ -1265,8 +1410,12 @@ export class AppService {
       if (gnd !== null && binding.scopeProbes[2].length === 0) {
         binding.scopeProbes[2] = gnd;
       }
+      // lab_instruments TX↔RX 同网环回：无 MCU 时终端自发自收
+      const loopback = tx !== null && rx !== null && tx === rx;
+      (this.instruments as VirtualInstrumentsImpl).setUartLoopback(loopback);
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_GEN] UART bind ${comp.refDes} TX=${tx ?? '-'} RX=${rx ?? '-'} GND=${gnd ?? '-'}`);
+        `[AI_GEN] UART bind ${comp.refDes} TX=${tx ?? '-'} RX=${rx ?? '-'} GND=${gnd ?? '-'} ` +
+        `loopback=${loopback ? 1 : 0}`);
     }
 
     (this.instruments as VirtualInstrumentsImpl).registerComponentBinding(compInstId, binding);
@@ -1467,6 +1616,8 @@ export class AppService {
   /** 切换工程时清仪器绑定，避免右侧面板沿用上一工程读数 */
   private resetInstrumentUiForProjectSwitch(): void {
     this.clearInstrumentReaders();
+    (this.instruments as VirtualInstrumentsImpl).setUartLoopback(false);
+    (this.instruments as VirtualInstrumentsImpl).clearComponentBindings();
   }
 
   /** 启动：从加密金库加载 API 并注入 manager */
@@ -2116,14 +2267,15 @@ export class AppService {
     for (let i = 0; i < doc.components.length; i++) {
       const c = doc.components[i];
       const lib = c.libraryId.toUpperCase();
-      if (lib.includes('VOLTMETER') || lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+      if (lib.includes('VIRTUAL_METER') || lib === 'MULTIMETER') {
+        const raw = this.readMultimeterRawForComponent(c.id);
+        if (raw !== null) {
+          instr.multimeterFeedSample(raw);
+        }
+      } else if (lib.includes('VOLTMETER')) {
         const delta = this.readVoltmeterDeltaForComponent(c.id, true);
         if (delta !== null) {
-          if (lib === 'MULTIMETER' || lib.includes('VIRTUAL_METER')) {
-            instr.multimeterFeedSample(delta);
-          } else {
-            instr.voltmeterFeedSample(delta);
-          }
+          instr.voltmeterFeedSample(delta);
         }
       } else if (lib.includes('AMMETER')) {
         const mA = this.readAmmeterCurrentForComponent(c.id, true);
@@ -3101,8 +3253,11 @@ export class AppService {
           traceBurn('TEMPLATE_HEX', `template=${templateId} path=${hexPath} ready=false`);
         }
       } else {
+        // 无固件模板（如传感器）：卸掉先前实验残留 MCU，避免 GPIO 抢占 1WIRE 等传感网
+        (this.simulationKernel as SimulationKernelImpl).unloadAllMcuFirmware();
+        this.reloadSimulationFromSchematic();
         this.onStatusMessage(`已将实验「${tplName}」插入当前工程空白区域`);
-        traceBurn('TEMPLATE_HEX', `template=${templateId} path=(none)`);
+        traceBurn('TEMPLATE_HEX', `template=${templateId} path=(none) mcu_cleared=1`);
       }
       // 555 等慢信号由示波器「自适应」自动选时基；这里只清脏缓存
       if (templateId === 'lab_555_astable') {

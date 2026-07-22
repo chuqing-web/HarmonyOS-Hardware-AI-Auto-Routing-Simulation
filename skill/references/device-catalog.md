@@ -181,29 +181,31 @@
 
 ---
 
-## 17. 虚拟仪器 (Instrument) — 8 个
+## 17. 虚拟仪器 (Instrument) — 含电源符号与测量仪
 
-| libDevId | 名称 | 通道 | 引脚 | aiWiringRules |
-|----------|------|------|------|---------------|
-| VCC | 直流电源正极 | - | VCC(1) | voltage 可调（默认5V） |
-| VEE | 直流电源负极 | - | VEE(1) | voltage 负值（默认-12V）；运放双电源 |
-| GND | 直流电源地 | - | GND(1) | ground-reference |
-| VAC | 交流电源（正弦） | - | 1,2 | amplitude/frequency |
-| SIGNAL_GEN | 信号发生器 | - | OUT,GND | waveform=sine\|square\|triangle\|saw\|pulse；frequency/amplitude/offset/dutyCycle 可调 |
-| OSCILLOSCOPE | 四通道示波器 | 4CH | CH1,CH2,CH3,CH4,GND | voltage-probe,high-impedance |
-| VOLTMETER_DC | 直流电压表 | 1CH | V+,COM | voltage-probe,parallel-connect |
-| AMMETER_DC | 直流电流表 | 1CH | I+,I- | current-sense,series-connect |
-| FREQ_COUNTER | 频率计 | 1CH | IN,GND | - |
-| LOGIC_ANALYZER | 逻辑分析仪 | 8CH | CH1-CH8,GND | - |
-| POWER_METER | 功率计 | 1CH | V+,V-,I+,I- | - |
-| UART_TERMINAL | 串口终端 | - | TX,RX,GND | cross-connect-tx-rx |
-| VIRTUAL_METER | 虚拟万用表 | - | V,COM | voltage-probe,parallel-connect |
+| libDevId | 名称 | 通道/档位 | 引脚 | aiWiringRules |
+|----------|------|-----------|------|---------------|
+| VCC | 直流电源正极 | - | 1(VCC) | voltage 可调（默认5V） |
+| VEE | 直流电源负极 | - | 1(VEE) | voltage 负值（默认-12V）；运放双电源 |
+| GND | 系统地 | - | 1(GND) | ground-reference |
+| VAC | 交流电源 | - | 1(AC+),2(AC-) | amplitude/frequency |
+| SIGNAL_GEN | 信号发生器 | - | OUT,GND | waveform=sine\|square\|triangle\|saw\|pulse |
+| OSCILLOSCOPE | 四通道示波器 | 4CH | CH1,CH2,CH3,CH4,GND | joinByLabel；GND 优先 stubLabel；教学优先全通道 |
+| VOLTMETER_DC | 直流电压表 | 1CH | V+,COM | parallel；多表不同节点对 |
+| AMMETER_DC | 直流电流表 | 1CH | I+,I- | series；I+/I- 异网 |
+| VIRTUAL_METER | 四端万用表 | DCV/ACV/OHM/AMP/DIODE | V,A,OHM,COM | V∥；A–COM 串；OHM–COM 阻/二极管；COM→GND |
+| POWER_METER | 功率表 | V+I | V+,V-,I+,I- | V+/V- 跨负载；I+/I- 串联；禁止 I 与 V 同节点对 |
+| FREQ_COUNTER | 频率计 | 1CH | IN,GND | IN→脉冲/交流；GND→GND |
+| LOGIC_ANALYZER | 逻辑分析仪 | 8CH | CH1–CH8,GND | 禁止 CH0/D0；GND 必接 |
+| UART_TERMINAL | 串口终端 | - | TX,RX,GND | MCU: TX↔RX 交叉；或环回 TX↔RX |
 
-**仪器连接规则**:
-- 电压表/万用表/示波器：**并联**到被测节点
-- 电流表：**串联**到被测支路（VCC→I+→I-→负载）
-- UART 终端：TX→MCU.RX, RX→MCU.TX（交叉连接）
-- 所有仪器的 GND/COM 必须接电路 GND
+**仪器连接规则（与 SIM_CONN / lab_instruments 对齐）**:
+- **探针一律 joinByLabel**；禁止仪器脚跨板长导线
+- **示波器 GND** 优先 `stubLabel`，避免 GND 母线并入 CH4
+- **有信号脚则必须有回线**（GND/COM/V-/I-），否则仿真 `缺GND/COM` 阻断
+- 电压表/示波器通道：**并联**到被测节点；电流表/功率表 I 路：**串联**
+- UART：通常 MCU.PA9(TX)→TERM.TX，MCU.PA10(RX)→TERM.RX（按库脚名）
+- 模板参考：`lab_instruments`（全套仪器 + 四端万用表五档 DUT）
 
 ---
 

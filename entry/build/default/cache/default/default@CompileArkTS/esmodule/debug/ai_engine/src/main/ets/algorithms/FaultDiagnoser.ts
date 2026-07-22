@@ -445,6 +445,184 @@ export class FaultDiagnoser {
                 }
             }
         }
+        // ---- 功率表：V 并测 / I 串联 ----
+        const powerMeters = doc.components.filter(c => (c.libraryId ?? '').toUpperCase().includes('POWER_METER') ||
+            (c.libraryId ?? '').toUpperCase().includes('WATTMETER'));
+        for (const pm of powerMeters) {
+            const findPmNet = (hints: string[]): Net | undefined => {
+                for (let hi = 0; hi < hints.length; hi++) {
+                    const h = hints[hi].toUpperCase();
+                    const n = doc.nets.find(net => net.pinIds.some(p => {
+                        const parts = p.split(':');
+                        if (parts[0] !== pm.id) {
+                            return false;
+                        }
+                        const pin = (parts[1] ?? '').toUpperCase();
+                        const pname = (parts[2] ?? '').toUpperCase();
+                        return pin === h || pname === h;
+                    }));
+                    if (n !== undefined) {
+                        return n;
+                    }
+                }
+                return undefined;
+            };
+            const vPlus = findPmNet(['V+', 'VP']);
+            const vMinus = findPmNet(['V-', 'COM', 'GND']);
+            const iPlus = findPmNet(['I+', 'IP']);
+            const iMinus = findPmNet(['I-', 'IM']);
+            if (vPlus === undefined || vMinus === undefined || iPlus === undefined || iMinus === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `功率表 ${pm.refDes} 引脚未完全连接（需 V+/V-/I+/I-）`,
+                    componentId: pm.id,
+                    fixSuggestion: 'V+/V- 并联测负载电压；I+/I- 串联切入供电回路'
+                });
+                continue;
+            }
+            if (vPlus.id === vMinus.id) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `功率表 ${pm.refDes} V+/V- 同网 — 电压读数为 0`,
+                    componentId: pm.id,
+                    fixSuggestion: 'V+ 接负载高端，V- 接系统地'
+                });
+            }
+            if (iPlus.id === iMinus.id) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `功率表 ${pm.refDes} I+/I- 同网 — 未串联测流`,
+                    componentId: pm.id,
+                    fixSuggestion: 'I+/I- 须分属不同网络并串入电源→负载回路'
+                });
+            }
+            else if (iPlus.id === vPlus.id && iMinus.id === vMinus.id) {
+                // 典型错误：四脚全跨负载两端，电流路径未串联
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `功率表 ${pm.refDes} I 路与 V 路完全同节点对 — 电流未串联切入`,
+                    componentId: pm.id,
+                    fixSuggestion: '正确：电源→I+→I-→负载；V+/V- 再跨接负载两端'
+                });
+            }
+        }
+        // ---- 频率计 ----
+        const freqCounters = doc.components.filter(c => (c.libraryId ?? '').toUpperCase().includes('FREQ_COUNTER'));
+        for (const fc of freqCounters) {
+            const findFc = (hint: string): Net | undefined => {
+                const h = hint.toUpperCase();
+                return doc.nets.find(net => net.pinIds.some(p => {
+                    const parts = p.split(':');
+                    if (parts[0] !== fc.id) {
+                        return false;
+                    }
+                    return (parts[1] ?? '').toUpperCase() === h || (parts[2] ?? '').toUpperCase() === h;
+                }));
+            };
+            const inn = findFc('IN');
+            const gnd = findFc('GND');
+            if (inn === undefined || gnd === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `频率计 ${fc.refDes} IN/GND 未完全连接`,
+                    componentId: fc.id,
+                    fixSuggestion: 'IN 接交流或脉冲源，GND 接系统地'
+                });
+            }
+            else if (inn.id === gnd.id) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `频率计 ${fc.refDes} IN 与 GND 同网 — 无有效信号`,
+                    componentId: fc.id,
+                    fixSuggestion: 'IN 接信号，GND 接系统地'
+                });
+            }
+        }
+        // ---- 逻辑分析仪：至少 CH1+GND，且不同网 ----
+        const analyzers = doc.components.filter(c => (c.libraryId ?? '').toUpperCase().includes('LOGIC_ANALYZER'));
+        for (const la of analyzers) {
+            const findLa = (hint: string): Net | undefined => {
+                const h = hint.toUpperCase();
+                return doc.nets.find(net => net.pinIds.some(p => {
+                    const parts = p.split(':');
+                    if (parts[0] !== la.id) {
+                        return false;
+                    }
+                    return (parts[1] ?? '').toUpperCase() === h || (parts[2] ?? '').toUpperCase() === h;
+                }));
+            };
+            const ch1 = findLa('CH1');
+            const gnd = findLa('GND');
+            if (ch1 === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `逻辑分析仪 ${la.refDes} CH1 未连接`,
+                    componentId: la.id,
+                    fixSuggestion: '至少将 CH1 接到数字信号，GND 接系统地'
+                });
+            }
+            if (gnd === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `逻辑分析仪 ${la.refDes} GND 未连接`,
+                    componentId: la.id,
+                    fixSuggestion: 'LA GND 必须与电路共地'
+                });
+            }
+            if (ch1 !== undefined && gnd !== undefined && ch1.id === gnd.id) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.PARAM_MISMATCH,
+                    message: `逻辑分析仪 ${la.refDes} CH1 与 GND 同网`,
+                    componentId: la.id,
+                    fixSuggestion: '通道接数字信号，GND 接系统地'
+                });
+            }
+        }
+        // ---- UART 终端：TX/RX/GND ----
+        const uarts = doc.components.filter(c => (c.libraryId ?? '').toUpperCase().includes('UART_TERMINAL'));
+        for (const ut of uarts) {
+            const findUt = (hint: string): Net | undefined => {
+                const h = hint.toUpperCase();
+                return doc.nets.find(net => net.pinIds.some(p => {
+                    const parts = p.split(':');
+                    if (parts[0] !== ut.id) {
+                        return false;
+                    }
+                    return (parts[1] ?? '').toUpperCase() === h || (parts[2] ?? '').toUpperCase() === h;
+                }));
+            };
+            const tx = findUt('TX');
+            const rx = findUt('RX');
+            const gnd = findUt('GND');
+            if (tx === undefined || rx === undefined || gnd === undefined) {
+                result.push({
+                    id: IdUtil.generate('erc'),
+                    severity: ErcSeverity.ERROR,
+                    ruleType: ErcRuleType.UNCONNECTED_PIN,
+                    message: `串口终端 ${ut.refDes} TX/RX/GND 未完全连接`,
+                    componentId: ut.id,
+                    fixSuggestion: 'TX/RX 接 MCU 或环回，GND 共地'
+                });
+            }
+        }
         // ---- 电压表同节点检测 ----
         if (voltmeters.length >= 2) {
             const vmNodePairs: string[] = [];

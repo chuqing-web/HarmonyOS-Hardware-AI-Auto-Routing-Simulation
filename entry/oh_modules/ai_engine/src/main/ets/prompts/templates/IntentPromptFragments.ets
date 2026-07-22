@@ -110,13 +110,17 @@ export const FRAG_SERIES_RC: string = `
 - 必须: VCC + GND + R_* + C_* + SW_PUSH（充电通断）+（用户要求时）OSCILLOSCOPE
 - 拓扑: VCC→SW→R→RC_MID→C→GND；示波器 CH1→RC_MID，GND→GND
 - 【硬禁】禁止输出 RELAY_SPDT（RC 充放电不是互斥双色指示）
-- 未使用示波器 CH2/CH3/CH4 保持悬空，禁止接到 GND 或另建单脚网`;
+- 未使用示波器 CH2/CH3/CH4 保持悬空，禁止接到 GND 或另建单脚网（教学全套仪器除外，应接满 CH1–4）`;
 
 export const FRAG_INSTRUMENTS_SELECT: string = `
 【仪器追加 — 仅用户明确要求或测量意图时】:
-- 用户提到"电流表""测电流" → AMMETER_DC
-- 用户说"N个电压表" → N 个 VOLTMETER_DC
-- 用户要求示波器/逻辑分析仪时再追加对应仪器
+- "电流表/测电流" → AMMETER_DC
+- "N个电压表" → N×VOLTMETER_DC
+- "万用表/电阻档/二极管档" → VIRTUAL_METER（四端 V,A,OHM,COM）
+- "功率表" → POWER_METER（V并/I串）
+- "示波器/波形" → OSCILLOSCOPE（CH1–4+GND；GND stubLabel）
+- "逻辑分析仪" → LOGIC_ANALYZER（CH1–CH8，禁止 CH0/D0）
+- "频率计" → FREQ_COUNTER；"信号源" → SIGNAL_GEN
 - 不要仅因含电阻/MCU 就自动堆仪器`;
 
 export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
@@ -130,12 +134,13 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 
 【通用拓扑铁律】:
 1. 电流表 I+ / I- 绝不在同一网络
-2. 电压表分布在不同测量节点对
-3. 仪器引脚必须入网；GND/COM 最终到 GND
-4. 标号优先；仅≤3脚小网且脚预算≤2可升级短导线并拉近(~120mil)；仪器脚/COM/大电源扇出保持标号
-5. 【硬】一脚一网；禁止 PROBE_* 重复列出被测脚
-6. 【硬】NPN 基极 B 只接一路驱动
-7. 导线正交；不得进入选中命中区(HIT_PAD=22)；无关脚间距≥20mil
+2. 电压表分布在不同测量节点对；功率表 I 路≠V 路节点对
+3. 仪器关键脚必须入网；GND/COM 最终到 GND（SIM_CONN）
+4. VIRTUAL_METER 真脚 V,A,OHM,COM；LA 真脚 CH1–CH8（禁止 CH0/D0）
+5. 标号优先；仪器脚/COM/大电源扇出保持 joinByLabel；示波器 GND 优先 stubLabel
+6. 【硬】一脚一网；禁止 PROBE_* 重复列出被测脚
+7. 【硬】NPN 基极 B 只接一路驱动
+8. 导线正交；不得进入选中命中区(HIT_PAD=22)；无关脚间距≥20mil
 
 【输出】严格 JSON，无 markdown；第一字符 { 最后字符 }。每个 net 至少 2 个 connections；joinWired 须含 routeWaypoints。
 Schema 含 nets/labels/wiringHints/routeStrategy/topologyNotes。`;

@@ -66,9 +66,10 @@ const MCU_STM32_ALL = ['STM32F103C8', 'STM32F103RC', 'STM32F407VG', 'STM32L431CB
 const PERIPH_LIBS = ['STM32F103C8', 'SW_PUSH', 'RELAY_SPDT', 'BUZZER', 'LCD1602', 'OLED_12864',
     'LED_RED', 'LED_GREEN', 'R_10k', 'R_330', 'R_4.7k', 'C_100nF', 'XTAL_8M', 'VCC', 'GND'];
 const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 'R_4.7k', 'R_10k',
-    'C_100nF', 'VCC', 'GND', 'VOLTMETER_DC'];
-const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'POT_10k', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER',
-    'POWER_METER', 'FREQ_COUNTER', 'OSCILLOSCOPE'];
+    'R_330', 'C_100nF', 'XTAL_8M', 'VCC', 'GND', 'VOLTMETER_DC', 'LED_RED', 'LED_GREEN', 'LED_BLUE'];
+const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'R_1k', 'R_330', 'POT_10k', 'SIGNAL_GEN', 'CD4017',
+    'LED_RED', '1N4148', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER', 'POWER_METER', 'FREQ_COUNTER',
+    'OSCILLOSCOPE', 'LOGIC_ANALYZER', 'UART_TERMINAL'];
 const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
 const SCHMITT_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_100k', 'R_10k', 'SIGNAL_GEN', 'OSCILLOSCOPE'];
 const INTEGRATOR_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_10k', 'R_100k', 'C_100nF', 'SIGNAL_GEN',
@@ -134,9 +135,15 @@ export class LabTemplateRegistry {
         },
         {
             id: 'lab_memory', name: '存储器接口', category: 'memory',
-            description: 'EPROM/SRAM/EEPROM/Flash 与 MCU 连接',
-            knowledgePoints: ['并行总线', 'I2C', 'SPI'],
-            libraryIds: MEMORY_LIBS, build: buildLabMemory
+            description: 'I2C EEPROM + SPI Flash + 并行 EPROM/SRAM；LA 看总线；需烧录 lab_memory.hex',
+            knowledgePoints: [
+                '①插入模板并确认预装 lab_memory.hex',
+                '②启动仿真 → 打开逻辑分析仪',
+                '③CH1/2=I2C SCL/SDA 周期位带；CH3–5=SPI SCK/CS/MOSI；CH6/7=CE 脉冲；CH8=A0',
+                '④拓扑：I2C≠OSC；VCC=5V；无 PIN_CONFLICT'
+            ],
+            libraryIds: MEMORY_LIBS, firmware: 'STM32', hexFile: 'lab_memory.hex',
+            build: buildLabMemory
         },
         {
             id: 'lab_mcu_8051', name: '8051全系列', category: 'mcu',
@@ -159,14 +166,22 @@ export class LabTemplateRegistry {
         },
         {
             id: 'lab_sensor', name: '传感器实验', category: 'sensor',
-            description: 'DS18B20/霍尔/光敏 接入 MCU',
-            knowledgePoints: ['1-Wire', '数字输入', 'ADC'],
-            libraryIds: SENSOR_LIBS, build: buildLabSensor
+            description: 'DS18B20 拖温 / 霍尔点击 / 电位器 ADC → 三色指示灯；需烧录 lab_sensor.hex',
+            knowledgePoints: [
+                '①插入模板并确认预装 lab_sensor.hex',
+                '②仿真后拖 T1 滑条：温度↑ → M2 电压↑ → D_TEMP(蓝)亮',
+                '③点击 H1：磁场 ON → HALL 拉低 → D_HALL(红)亮',
+                '④拖 RV1：ADC 电压过阈 → D_ADC(绿)亮'
+            ],
+            libraryIds: SENSOR_LIBS, firmware: 'STM32', hexFile: 'lab_sensor.hex',
+            build: buildLabSensor
         },
         {
             id: 'lab_instruments', name: '仪器仪表检测', category: 'instrument',
-            description: '全部虚拟仪器接入分压测试点',
-            knowledgePoints: ['电压表', '电流表', '示波器'],
+            description: '全套虚拟仪器 + 四端万用表五档(DCV/ACV/Ω/AMP/二极管)',
+            knowledgePoints: ['电压表', '电流表', '功率表串联', '万用表DCV', '万用表ACV',
+                '万用表电阻', '万用表电流', '二极管档', '信号发生器', '频率计',
+                '示波器多通道', '逻辑分析仪', 'UART 环回'],
             libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
         },
         {

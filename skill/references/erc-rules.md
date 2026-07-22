@@ -12,7 +12,7 @@
 
 ### L2 — 严重警告 (WARNING): 可能导致功能异常
 
-### L2.5 — 仪器拓扑 (WARNING/ERROR): v3.0 新增
+### L2.5 — 仪器拓扑 (WARNING/ERROR): v4.0（含 VIRTUAL_METER / POWER_METER / SIM_CONN）
 
 ### L3 — 建议 (INFO): 最佳实践，不影响基本功能
 
@@ -256,7 +256,7 @@
 
 ---
 
-## K. 仪器拓扑校验 (v3.0 新增)
+## K. 仪器拓扑校验 (v4.0)
 
 ### K1. 电流表串联校验 [ERROR]
 - **检测**: 电流表 I+ 和 I- 在同一网络 → 短路
@@ -272,9 +272,27 @@
 - **检测**: VCC 网络与 GND 网络之间无负载电阻
 - **修复**: 确保分压链有完整的 VCC→R1→...→GND 路径
 
+### K4. 功率表双路径校验 [ERROR]
+- **检测**: POWER_METER 的 I+/I- 所在网与 V+/V- 节点对完全相同
+- **检测**: I+/I- 同网，或 V+/V- 同网
+- **修复**: V 路并联跨负载；I 路串联切入电源支路
+
+### K5. 万用表四端校验 [ERROR/WARNING]
+- **检测**: VIRTUAL_METER 使用了库外假脚 V+/V-（真脚为 V,A,OHM,COM）
+- **检测**: 所用档位对应脚未入网（DCV/ACV→V；AMP→A；OHM/DIODE→OHM）或 COM 浮空
+- **修复**: AiTopologyFixKit / SemanticNetBuilder 按档位重接；COM→GND
+
+### K6. 示波器/逻辑分析仪通道 [WARNING]
+- **检测**: OSC 有 CH* 无 GND；LA 使用 CH0/D0；LA 有通道无 GND
+- **修复**: OSC GND=stubLabel；LA 真脚 CH1–CH8；补 GND joinByLabel
+
+### K7. SIM_CONN 回线 [ERROR]
+- **检测**: 仪器已有信号脚入网，但缺 GND/COM（或 V-/I-）回线
+- **修复**: 强制补 GND/COM；否则仿真阻断「缺GND/COM」
+
 ---
 
-## L. 命名与连接完整性 (v3.0 新增)
+## L. 命名与连接完整性 (v4.0)
 
 ### L1. 信号网使用保留电源名 [ERROR]
 - **检测**: 非 POWER/GROUND 类型 net 名称为 VCC/VDD/GND/3V3/5V
@@ -292,5 +310,8 @@
 - **例外**: VDD/VCC/VSS/GND/EA/BOOT0 等电源/配置引脚
 
 ### L4. 仪器引脚完整性 [WARNING]
-- **检测**: 仪器的关键引脚 (电流表 I+/I-, 电压表 V+/COM 等) 未连接
-- **修复**: SemanticNetBuilder post-build 自动检测并记录
+- **检测**: 仪器关键脚未连接 — AMMETER I+/I-；VOLTMETER V+/COM；
+  POWER_METER V+/V-/I+/I-；VIRTUAL_METER 按档位 V|A|OHM + COM；
+  OSC CH1+GND；LA ≥1 通道+GND；FREQ IN+GND；UART TX/RX/GND；SIGNAL_GEN OUT+GND
+- **修复**: SemanticNetBuilder post-build / AiTopologyFixKit 自动检测并补接
+- **例外**: 未使用的 OSC CH2–4 / LA 未用通道可悬空（教学全套场景除外）
