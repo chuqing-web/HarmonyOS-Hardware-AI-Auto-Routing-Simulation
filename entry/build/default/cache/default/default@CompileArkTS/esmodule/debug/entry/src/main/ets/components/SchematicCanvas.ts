@@ -68,6 +68,9 @@ interface SchematicCanvas_Params {
     leftPanning?: boolean;
     leftPanLastX?: number;
     leftPanLastY?: number;
+    emptyHoldPending?: boolean;
+    panHoldTimer?: number;
+    handCursorMode?: number;
     lastMouseSX?: number;
     lastMouseSY?: number;
     pinchStartZoom?: number;
@@ -106,6 +109,7 @@ import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/compo
 import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { SchematicLayerId } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
 import type { SchematicEditorImpl } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
+import pointer from "@ohos:multimodalInput.pointer";
 export class SchematicCanvas extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -178,6 +182,9 @@ export class SchematicCanvas extends ViewPU {
         this.leftPanning = false;
         this.leftPanLastX = 0;
         this.leftPanLastY = 0;
+        this.emptyHoldPending = false;
+        this.panHoldTimer = -1;
+        this.handCursorMode = 0;
         this.lastMouseSX = 0;
         this.lastMouseSY = 0;
         this.pinchStartZoom = 1;
@@ -210,12 +217,19 @@ export class SchematicCanvas extends ViewPU {
         };
         this.onViewportChanged = (_payload: ModuleEventPayload): void => {
             this.backgroundDirty = true;
-            this.rulerDirty = true;
+            // 拖拽平移中不刷标尺，避免与双层 Canvas 抢帧导致画面撕裂
+            if (!this.isPanGestureActive()) {
+                this.rulerDirty = true;
+            }
             this.scheduleRedraw();
-            this.zoomPercent = Math.round(this.appService.schematicEditor.getZoom() * 100);
+            const zp = Math.round(this.appService.schematicEditor.getZoom() * 100);
+            if (this.zoomPercent !== zp) {
+                this.zoomPercent = zp;
+            }
         };
         this.onSimStep = (_payload: ModuleEventPayload): void => {
-            if (this.gestureBusy) {
+            // 平移/捏合期间跳过仿真帧，防止导线层单独刷新与背景不同步
+            if (this.gestureBusy || this.isPanGestureActive()) {
                 return;
             }
             this.simFrameDirty = true;
@@ -401,6 +415,15 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.leftPanLastY !== undefined) {
             this.leftPanLastY = params.leftPanLastY;
+        }
+        if (params.emptyHoldPending !== undefined) {
+            this.emptyHoldPending = params.emptyHoldPending;
+        }
+        if (params.panHoldTimer !== undefined) {
+            this.panHoldTimer = params.panHoldTimer;
+        }
+        if (params.handCursorMode !== undefined) {
+            this.handCursorMode = params.handCursorMode;
         }
         if (params.lastMouseSX !== undefined) {
             this.lastMouseSX = params.lastMouseSX;
@@ -714,10 +737,14 @@ export class SchematicCanvas extends ViewPU {
     private middlePanning: boolean;
     private middlePanLastX: number;
     private middlePanLastY: number;
-    /** 空白区左键拖拽平移画布 */
+    /** 空白区左键：长按 1s 后进入平移；1s 内移动则框选 */
     private leftPanning: boolean;
     private leftPanLastX: number;
     private leftPanLastY: number;
+    private emptyHoldPending: boolean;
+    private panHoldTimer: number;
+    /** 当前已设置的小手光标，避免每帧 setCursor 触发 UI 抖动 */
+    private handCursorMode: number; // 0 none, 1 open, 2 grabbing
     /** 最近鼠标屏幕坐标（滚轮/工具栏缩放锚点） */
     private lastMouseSX: number;
     private lastMouseSY: number;
@@ -742,6 +769,7 @@ export class SchematicCanvas extends ViewPU {
     private gestureIdleTimer: number;
     private static readonly TAP_SLOP: number = 12;
     private static readonly MOVE_THRESHOLD: number = 8;
+    private static readonly PAN_HOLD_MS: number = 1000;
     private static readonly REDRAW_INTERVAL_MS: number = 16;
     private static readonly GESTURE_REDRAW_MS: number = 48;
     private static readonly ALIGN_THRESHOLD: number = 6;
@@ -771,6 +799,8 @@ export class SchematicCanvas extends ViewPU {
             clearTimeout(this.gestureIdleTimer);
             this.gestureIdleTimer = -1;
         }
+        this.clearPanHoldTimer();
+        this.restoreCanvasCursor();
         this.appService.setUiGestureBusy(false);
         this.clearTouchCooldown();
         this.isTouchActive = false;
@@ -818,13 +848,20 @@ export class SchematicCanvas extends ViewPU {
             return;
         }
         this.redrawScheduled = true;
-        const delay = this.gestureBusy ?
+        const delay = (this.gestureBusy || this.isPanGestureActive()) ?
             SchematicCanvas.GESTURE_REDRAW_MS : SchematicCanvas.REDRAW_INTERVAL_MS;
         this.redrawTimer = setTimeout(() => {
             this.redrawScheduled = false;
             this.redrawTimer = -1;
             this.redraw();
         }, delay);
+    }
+    private isPanGestureActive(): boolean {
+        return this.leftPanning || this.middlePanning || this.twoFingerPanning;
+    }
+    /** 平移开始时标记忙碌，抑制仿真帧与过密重绘 */
+    private notePanGesture(): void {
+        this.markGestureBusy();
     }
     /** Immediate full repaint — used when canvas size changes or on first layout. */
     private forceFullRedraw(_reason: string = ''): void {
@@ -992,6 +1029,12 @@ export class SchematicCanvas extends ViewPU {
             // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.onAxisEvent((event: AxisEvent) => this.handleAxisZoom(event));
             // Layer 0: Background — grid + components (static, rarely redrawn)
+            Canvas.onHover((isHover: boolean) => {
+                if (isHover && this.leftPanning) {
+                    this.applyHandCursorNow(this.handCursorMode === 2);
+                }
+            });
+            // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.onKeyEvent((event: KeyEvent) => {
                 if (event.type === KeyType.Down && event.keyCode === 27) {
                     this.wireWaypoints = [];
@@ -1065,7 +1108,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onCopySelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 400, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 429, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1100,7 +1143,7 @@ export class SchematicCanvas extends ViewPU {
                                         this.contextMenuVisible = false;
                                         this.onDeleteSelected();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 409, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 438, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1149,21 +1192,22 @@ export class SchematicCanvas extends ViewPU {
                 const dy = event.y - this.middlePanLastY;
                 this.middlePanLastX = event.x;
                 this.middlePanLastY = event.y;
+                this.notePanGesture();
                 this.appService.schematicEditor.panBy(dx, dy);
-                this.scheduleRedraw();
                 return;
             }
-            // Left-drag empty area pan
+            // Left-drag empty area pan（长按就绪后）
             if (this.leftPanning) {
                 const dx = event.x - this.leftPanLastX;
                 const dy = event.y - this.leftPanLastY;
                 this.leftPanLastX = event.x;
                 this.leftPanLastY = event.y;
+                this.applyHandCursorNow(true);
+                this.notePanGesture();
                 this.appService.schematicEditor.panBy(dx, dy);
-                this.scheduleRedraw();
                 return;
             }
-            // Always process move for wire preview (may not have pointer down)
+            // 空白长按等待中也要走 onPointerMove，以便及时转框选
             this.onPointerMove(event.x, event.y);
             // Only track hover in SELECT mode — hover results are not used in tool modes
             if (this.isSelectMode()) {
@@ -1194,6 +1238,7 @@ export class SchematicCanvas extends ViewPU {
                 this.middlePanning = true;
                 this.middlePanLastX = event.x;
                 this.middlePanLastY = event.y;
+                this.notePanGesture();
                 return;
             }
             this.onPointerDown(event.x, event.y);
@@ -1206,6 +1251,8 @@ export class SchematicCanvas extends ViewPU {
             }
             if (event.button === 1) {
                 this.middlePanning = false;
+                this.endPanGestureVisual();
+                this.scheduleRedraw();
                 return;
             }
             this.onPointerUp(event.x, event.y);
@@ -1361,7 +1408,6 @@ export class SchematicCanvas extends ViewPU {
                 if (this.dragComponentId.length === 0) {
                     this.markGestureBusy();
                     this.appService.schematicEditor.panBy(dx, dy);
-                    this.scheduleRedraw();
                 }
                 return;
             }
@@ -1369,6 +1415,8 @@ export class SchematicCanvas extends ViewPU {
                 // Wait until all fingers are up
                 if (event.touches.length <= 1) {
                     this.twoFingerPanning = false;
+                    this.endPanGestureVisual();
+                    this.scheduleRedraw();
                 }
                 return;
             }
@@ -1401,10 +1449,99 @@ export class SchematicCanvas extends ViewPU {
         this.clearDragState();
         this.isBoxSelecting = false;
         this.leftPanning = false;
+        this.emptyHoldPending = false;
+        this.clearPanHoldTimer();
+        this.restoreCanvasCursor();
         this.previewWireEnd = null;
         this.alignGuideX = null;
         this.alignGuideY = null;
         this.scheduleRedraw();
+    }
+    private clearPanHoldTimer(): void {
+        if (this.panHoldTimer >= 0) {
+            clearTimeout(this.panHoldTimer);
+            this.panHoldTimer = -1;
+        }
+    }
+    /** 长按就绪：张开手；拖拽中：抓取手。同一模式只设一次 */
+    private setCanvasHandCursor(grabbing: boolean): void {
+        const mode = grabbing ? 2 : 1;
+        if (this.handCursorMode === mode) {
+            return;
+        }
+        this.handCursorMode = mode;
+        try {
+            const style = grabbing ? pointer.PointerStyle.HAND_GRABBING : pointer.PointerStyle.HAND_OPEN;
+            // 必须走绑定当前组件的 CursorController；全局 cursorControl 在定时器里常不生效
+            this.getUIContext().getCursorController().setCursor(style);
+        }
+        catch (_e) {
+            // 部分模拟器/环境可能无光标能力，忽略
+        }
+    }
+    private restoreCanvasCursor(): void {
+        if (this.handCursorMode === 0) {
+            return;
+        }
+        this.handCursorMode = 0;
+        try {
+            this.getUIContext().getCursorController().restoreDefault();
+        }
+        catch (_e) {
+            // ignore
+        }
+    }
+    private armEmptyHoldForPan(): void {
+        this.clearPanHoldTimer();
+        this.emptyHoldPending = true;
+        this.leftPanning = false;
+        this.panHoldTimer = setTimeout(() => {
+            this.panHoldTimer = -1;
+            if (!this.pointerDown || !this.emptyHoldPending) {
+                return;
+            }
+            this.emptyHoldPending = false;
+            this.leftPanning = true;
+            this.leftPanLastX = this.lastPointerX;
+            this.leftPanLastY = this.lastPointerY;
+            this.applyHandCursorNow(false);
+            this.notePanGesture();
+            this.onStatusChange('可拖拽平移画布（小手）');
+            // setCursor 在下一帧生效，再补一次确保可见
+            setTimeout(() => {
+                if (this.leftPanning && this.pointerDown) {
+                    this.applyHandCursorNow(false);
+                }
+            }, 16);
+        }, SchematicCanvas.PAN_HOLD_MS);
+    }
+    /** 强制刷新光标（忽略同模式缓存） */
+    private applyHandCursorNow(grabbing: boolean): void {
+        this.handCursorMode = 0;
+        this.setCanvasHandCursor(grabbing);
+    }
+    private promoteEmptyHoldToBoxSelect(world: Point2D): void {
+        this.clearPanHoldTimer();
+        this.emptyHoldPending = false;
+        this.leftPanning = false;
+        this.isBoxSelecting = true;
+        const downWorld = this.screenToWorld(this.downPointerX, this.downPointerY);
+        this.boxSelectStart = downWorld;
+        this.boxSelectEnd = world;
+        this.onStatusChange('框选中…');
+        this.scheduleRedraw();
+    }
+    /** 平移结束：恢复光标并强制双层全量重绘，消除拖拽中的轻量残影 */
+    private endPanGestureVisual(): void {
+        this.restoreCanvasCursor();
+        this.backgroundDirty = true;
+        this.rulerDirty = true;
+        if (this.gestureIdleTimer >= 0) {
+            clearTimeout(this.gestureIdleTimer);
+            this.gestureIdleTimer = -1;
+        }
+        this.gestureBusy = false;
+        this.appService.setUiGestureBusy(false);
     }
     private clearTouchCooldown(): void {
         if (this.touchCooldownTimer >= 0) {
@@ -1578,19 +1715,14 @@ export class SchematicCanvas extends ViewPU {
             }
             this.selectedComponentId = '';
             this.clearDragState();
-            // Shift+空白：框选；否则空白拖拽平移画布
-            if (this.shiftHeld) {
-                this.isBoxSelecting = true;
-                this.boxSelectStart = world;
-                this.boxSelectEnd = world;
-            }
-            else {
-                this.leftPanning = true;
-                this.leftPanLastX = sx;
-                this.leftPanLastY = sy;
+            // 空白区：长按 1s 不动 → 小手拖动画布；1s 内移动 → 框选
+            if (!this.shiftHeld) {
                 this.appService.schematicEditor.setSelection([]);
-                this.onStatusChange('拖拽平移画布');
             }
+            this.isBoxSelecting = false;
+            this.leftPanning = false;
+            this.armEmptyHoldForPan();
+            this.onStatusChange('长按1秒拖动画布，移动则框选');
         }
     }
     private onPointerMove(sx: number, sy: number): void {
@@ -1639,14 +1771,22 @@ export class SchematicCanvas extends ViewPU {
             return;
         }
         if (this.leftPanning) {
-            const dx = sx - this.leftPanLastX;
-            const dy = sy - this.leftPanLastY;
+            const panDx = sx - this.leftPanLastX;
+            const panDy = sy - this.leftPanLastY;
             this.leftPanLastX = sx;
             this.leftPanLastY = sy;
-            this.appService.schematicEditor.panBy(dx, dy);
+            this.applyHandCursorNow(true);
+            this.notePanGesture();
+            this.appService.schematicEditor.panBy(panDx, panDy);
             this.lastPointerX = sx;
             this.lastPointerY = sy;
-            this.scheduleRedraw();
+            return;
+        }
+        // 空白长按等待中：一移动就改框选
+        if (this.emptyHoldPending && moved && this.isSelectMode()) {
+            this.promoteEmptyHoldToBoxSelect(world);
+            this.lastPointerX = sx;
+            this.lastPointerY = sy;
             return;
         }
         if (this.dragComponentId.length > 0 && moved && this.isSelectMode()) {
@@ -1710,6 +1850,9 @@ export class SchematicCanvas extends ViewPU {
             }
             this.isBoxSelecting = false;
             this.leftPanning = false;
+            this.emptyHoldPending = false;
+            this.clearPanHoldTimer();
+            this.restoreCanvasCursor();
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1724,6 +1867,9 @@ export class SchematicCanvas extends ViewPU {
             this.backgroundDirty = true;
             this.isBoxSelecting = false;
             this.leftPanning = false;
+            this.emptyHoldPending = false;
+            this.clearPanHoldTimer();
+            this.restoreCanvasCursor();
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1738,6 +1884,9 @@ export class SchematicCanvas extends ViewPU {
             this.backgroundDirty = true;
             this.isBoxSelecting = false;
             this.leftPanning = false;
+            this.emptyHoldPending = false;
+            this.clearPanHoldTimer();
+            this.restoreCanvasCursor();
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1754,8 +1903,8 @@ export class SchematicCanvas extends ViewPU {
         else if (this.toolMode === EditorToolMode.PLACE) {
             this.tryPlaceComponent(world);
         }
-        else if (this.leftPanning) {
-            // 空白拖拽平移结束；短按已在 down 时清选
+        else if (this.leftPanning || this.emptyHoldPending) {
+            // 长按平移结束 / 未满1s松开：仅清选，不触发框选
             this.onStatusChange('就绪');
         }
         else if (this.toolMode === EditorToolMode.ZOOM_REGION && this.isBoxSelecting) {
@@ -1804,7 +1953,16 @@ export class SchematicCanvas extends ViewPU {
             }
         }
         this.isBoxSelecting = false;
+        const wasPanning = this.leftPanning;
         this.leftPanning = false;
+        this.emptyHoldPending = false;
+        this.clearPanHoldTimer();
+        if (wasPanning) {
+            this.endPanGestureVisual();
+        }
+        else {
+            this.restoreCanvasCursor();
+        }
         this.pointerDown = false;
         this.clearDragState();
         this.previewWireEnd = null;
@@ -2285,37 +2443,51 @@ export class SchematicCanvas extends ViewPU {
         const w = this.viewWidth;
         const h = this.viewHeight;
         const bounds = this.getVisibleWorldBounds(vp);
-        // Background: only redraw when scene changed or pan/zoom changed
-        if (this.backgroundDirty) {
-            const bgCtx = this.context;
+        const panLive = this.isPanGestureActive() || this.gestureBusy;
+        const bgCtx = this.context;
+        const wCtx = this.wireCtx;
+        // 平移中强制刷新背景底+网格，保证与前景同帧位移
+        if (this.backgroundDirty || panLive) {
+            // 先清空导线层，避免慢速背景绘制期间旧导线叠在新背景上造成错乱
+            wCtx.clearRect(0, 0, w, h);
             bgCtx.clearRect(0, 0, w, h);
             bgCtx.fillStyle = ThemeManager.getInstance().canvasBg();
             bgCtx.fillRect(0, 0, w, h);
-            // 网格在屏幕空间绘制（不受 CTM / putImageData 限制），低缩放仍可见
             if (vp.gridVisible) {
-                this.drawAdaptiveGrid(bgCtx, vp);
+                this.drawAdaptiveGrid(bgCtx, vp, panLive);
             }
-            bgCtx.save();
-            bgCtx.translate(vp.panOffset.x, vp.panOffset.y);
-            bgCtx.scale(vp.zoom, vp.zoom);
-            this.drawBackgroundScene(bgCtx, doc, vp, bounds, editor);
-            bgCtx.restore();
+            // 平移中器件改画到前景层，与导线同变换、同帧提交
+            if (!panLive) {
+                bgCtx.save();
+                bgCtx.translate(vp.panOffset.x, vp.panOffset.y);
+                bgCtx.scale(vp.zoom, vp.zoom);
+                this.drawBackgroundScene(bgCtx, doc, vp, bounds, editor);
+                bgCtx.restore();
+            }
             this.backgroundDirty = false;
         }
-        // Wire layer: always redraw (clear + wires + overlays)
-        const wCtx = this.wireCtx;
+        // Wire / live layer
         wCtx.clearRect(0, 0, w, h);
         wCtx.save();
         wCtx.translate(vp.panOffset.x, vp.panOffset.y);
         wCtx.scale(vp.zoom, vp.zoom);
+        if (panLive && editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
+            this.drawComponents(wCtx, doc.components, false);
+            if (editor.isLayerVisible(SchematicLayerId.ANNOTATIONS)) {
+                this.drawNetLabels(wCtx, doc);
+            }
+        }
         if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
             this.drawWires(wCtx, doc.wires);
         }
         this.renderOverlays(wCtx, doc, vp, bounds, editor);
         wCtx.restore();
         this.simFrameDirty = false;
-        this.zoomPercent = Math.round(vp.zoom * 100);
-        if (this.rulerVisible && this.rulerDirty) {
+        const zp = Math.round(vp.zoom * 100);
+        if (this.zoomPercent !== zp) {
+            this.zoomPercent = zp;
+        }
+        if (this.rulerVisible && this.rulerDirty && !this.isPanGestureActive()) {
             this.rulerDirty = false;
             this.drawHRuler();
             this.drawVRuler();
@@ -2344,8 +2516,9 @@ export class SchematicCanvas extends ViewPU {
     /**
      * 屏幕空间自适应网格：fitAll 后缩放过小时仍可见。
      * 禁止 putImageData（忽略 CTM，自适应后易“消失”）。
+     * @param lightweight 平移手势中只画主网格线，降低每帧开销避免画面错乱
      */
-    private drawAdaptiveGrid(ctx: CanvasRenderingContext2D, vp: ViewportState): void {
+    private drawAdaptiveGrid(ctx: CanvasRenderingContext2D, vp: ViewportState, lightweight: boolean = false): void {
         const w = this.viewWidth;
         const h = this.viewHeight;
         if (w <= 0 || h <= 0) {
@@ -2366,27 +2539,30 @@ export class SchematicCanvas extends ViewPU {
         const startWY = Math.floor((-vp.panOffset.y / zoom) / step) * step;
         const endWX = startWX + (w / zoom) + step * 2;
         const endWY = startWY + (h / zoom) + step * 2;
-        ctx.fillStyle = ProteusColors.GRID_DOT;
-        for (let wx = startWX; wx <= endWX; wx += step) {
-            const sx = wx * zoom + vp.panOffset.x;
-            if (sx < -1 || sx > w + 1) {
-                continue;
-            }
-            for (let wy = startWY; wy <= endWY; wy += step) {
-                const sy = wy * zoom + vp.panOffset.y;
-                if (sy < -1 || sy > h + 1) {
+        // 平移中跳过点阵，只保留主网格线（或更大步距）
+        if (!lightweight) {
+            ctx.fillStyle = ProteusColors.GRID_DOT;
+            for (let wx = startWX; wx <= endWX; wx += step) {
+                const sx = wx * zoom + vp.panOffset.x;
+                if (sx < -1 || sx > w + 1) {
                     continue;
                 }
-                ctx.fillRect(Math.round(sx), Math.round(sy), 1, 1);
+                for (let wy = startWY; wy <= endWY; wy += step) {
+                    const sy = wy * zoom + vp.panOffset.y;
+                    if (sy < -1 || sy > h + 1) {
+                        continue;
+                    }
+                    ctx.fillRect(Math.round(sx), Math.round(sy), 1, 1);
+                }
             }
         }
-        // 主网格线：缩小很多时提供方位参考
-        if (majorStep * zoom >= 24) {
+        const lineStep = lightweight ? Math.max(majorStep, step * 10) : majorStep;
+        if (lightweight || majorStep * zoom >= 24) {
             ctx.strokeStyle = ProteusColors.GRID_LINE;
             ctx.lineWidth = 1;
-            const majStartX = Math.floor((-vp.panOffset.x / zoom) / majorStep) * majorStep;
-            const majStartY = Math.floor((-vp.panOffset.y / zoom) / majorStep) * majorStep;
-            for (let wx = majStartX; wx <= endWX; wx += majorStep) {
+            const majStartX = Math.floor((-vp.panOffset.x / zoom) / lineStep) * lineStep;
+            const majStartY = Math.floor((-vp.panOffset.y / zoom) / lineStep) * lineStep;
+            for (let wx = majStartX; wx <= endWX; wx += lineStep) {
                 const sx = wx * zoom + vp.panOffset.x;
                 if (sx < 0 || sx > w) {
                     continue;
@@ -2396,7 +2572,7 @@ export class SchematicCanvas extends ViewPU {
                 ctx.lineTo(sx, h);
                 ctx.stroke();
             }
-            for (let wy = majStartY; wy <= endWY; wy += majorStep) {
+            for (let wy = majStartY; wy <= endWY; wy += lineStep) {
                 const sy = wy * zoom + vp.panOffset.y;
                 if (sy < 0 || sy > h) {
                     continue;
