@@ -33,6 +33,7 @@ import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, 
 import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
+import { InstrumentWaveExpandStore } from "@bundle:com.elecdraw.aischsim/entry/ets/components/InstrumentWaveExpandStore";
 /** AI 整图生成对话/日志条目（Claude/Cursor 风格流） */
 export interface AiGenLogEntry {
     id: string;
@@ -40,7 +41,8 @@ export interface AiGenLogEntry {
     text: string;
     ts: number;
 }
-export type AiGenerateMode = 'replace' | 'append';
+/** replace=清空后替换；append=合并到空白区；edit=基于当前画布增量修改 */
+export type AiGenerateMode = 'replace' | 'append' | 'edit';
 /** oneshot=整图一次；modular=先整体设计边界再真并行合并 */
 export type AiGenerateStrategy = 'oneshot' | 'modular';
 interface AiPostGenerateIssues {
@@ -863,6 +865,20 @@ export class AppService {
         return next;
     }
     /**
+     * 仿真中点动按键（按下闭合 / 松开断开）。555 单稳态应使用此路径，避免 toggle 清零定时电容。
+     */
+    setInteractiveSwitchPressed(componentId: string, pressed: boolean): string {
+        if (!this.isSimulationActive()) {
+            return '';
+        }
+        const kernel = this.simulationKernel as SimulationKernelImpl;
+        const next = kernel.setInteractiveSwitchPressed(componentId, pressed);
+        if (next.length > 0) {
+            this.publishInteractiveCircuitRefresh('sw', `pressed=${next}`);
+        }
+        return next;
+    }
+    /**
      * 仿真中调节电位器滑臂位置（0~1）。成功返回 "0.xxx"，失败返回 ''。
      */
     setInteractivePotWiper(componentId: string, wiper: number): string {
@@ -1273,6 +1289,9 @@ export class AppService {
             if (netPlus !== null && netCom !== null) {
                 const vPlusId = netPlus;
                 const vComId = netCom;
+                // 供面板波形：用仿真网电压差重建正弦，勿用 UI 200ms 抽点（1kHz 会混叠成乱跳）
+                binding.scopeProbes[0] = vPlusId;
+                binding.scopeProbes[1] = vComId;
                 binding.voltageReader = () => {
                     const vPlus = kernel.getNetVoltageByUuid(vPlusId);
                     const vCom = kernel.getNetVoltageByUuid(vComId);
@@ -1288,6 +1307,10 @@ export class AppService {
             const netPlus = findNetForPin('I+') ?? findNetForPin('PLUS') ?? findNetForPin('+');
             const netMinus = findNetForPin('I-') ?? findNetForPin('MINUS') ?? findNetForPin('-');
             if (netPlus !== null && netMinus !== null) {
+                binding.scopeProbes[0] = netPlus;
+                binding.scopeProbes[1] = netMinus;
+                // scopeProbes[2] 存器件 id，便于匹配 I(compUuid) 仿真电流波
+                binding.scopeProbes[2] = compInstId;
                 binding.currentReader = () => {
                     const iBranch = kernel.getBranchCurrent(compInstId);
                     if (Math.abs(iBranch) > 1e-15) {
@@ -1927,6 +1950,7 @@ export class AppService {
             this.onStatusMessage('仿真运行中...');
             // Drop stale scope history / CH2 ghost probes from prior templates
             this.instruments.clearOscilloscopeCapture();
+            InstrumentWaveExpandStore.getInstance().clearSession();
             // Set up global instrument fallbacks so instruments show data even without a selected component
             this.setupInstrumentGlobalFallbacks();
             // Re-bind all instruments now that simulation is active (refresh pin-hash cache)
@@ -2155,6 +2179,14 @@ export class AppService {
                         iA = kernel.getNetCurrentByUuid(netIPlus);
                     }
                     instr.powerMeterSnapReading(v, iA);
+                }
+            }
+            else if (lib.includes('FREQ') || lib.includes('COUNTER')) {
+                const pinNets = getPinNetMap(c.id, doc.nets);
+                const netSig = findNetForPinLabel(pinNets, 'IN') ?? findNetForPinLabel(pinNets, 'SIG') ??
+                    findNetForPinLabel(pinNets, 'INPUT') ?? findNetForPinLabel(pinNets, '+');
+                if (netSig !== null) {
+                    instr.freqCounterFeedSignalSample(kernel.getNetVoltageByUuid(netSig));
                 }
             }
         }
@@ -2417,13 +2449,17 @@ export class AppService {
         this.aiConversationHistory = [];
         Logger.info(INSTR_TRACE_TAG, '[AI_GEN] conversation history cleared');
     }
+    /** 画布器件数（供「修改现有图」入口校验） */
+    getSchematicComponentCount(): number {
+        return (this.schematicEditor as SchematicEditorImpl).getDocument().components.length;
+    }
     /** 获取当前对话轮次（0 表示无历史） */
     getAiConversationRound(): number {
         return Math.floor(this.aiConversationHistory.length / 2);
     }
     /**
      * 提示词 → 一键生成整图（选型→摆放→连线）。
-     * mode=replace 清空后替换；append 合并到当前空白区。
+     * mode=replace 清空后替换；append 合并到当前空白区；edit 基于当前画布增量修改后写回。
      */
     async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode, strategy: AiGenerateStrategy = 'oneshot'): Promise<boolean> {
         const trimmed = prompt.trim();
@@ -2434,6 +2470,14 @@ export class AppService {
         if (this.aiGenerating) {
             this.onStatusMessage('AI 正在生成中，请耐心等待');
             return false;
+        }
+        if (mode === 'edit') {
+            const curN = (this.schematicEditor as SchematicEditorImpl).getDocument().components.length;
+            if (curN === 0) {
+                this.onStatusMessage('画布为空，无法在现有图上修改，请先生成或放置电路');
+                Logger.warn(INSTR_TRACE_TAG, '[AI_GEN] edit blocked | empty canvas');
+                return false;
+            }
         }
         if (this.aiApiManager.isQuotaWarningActive()) {
             this.appendAiGenLog('system', 'AI 用量已达 80%，请注意额度');
@@ -2446,21 +2490,34 @@ export class AppService {
         traceAiPayload('AI_GEN', 'USER', trimmed, `mode=${mode} strategy=${strategy}`);
         traceAiOp('AI_GEN', 'generate_start', `mode=${mode} strategy=${strategy} apis=${this.aiApiManager.listApis().length}`);
         try {
-            // 模块并行始终 create：清多轮历史，避免被编辑模式改成 oneshot
-            if (strategy === 'modular' && this.aiConversationHistory.length > 0) {
+            // 替换/追加/模块并行：从 create 起步，清多轮历史，避免误入 edit
+            if (mode !== 'edit' && this.aiConversationHistory.length > 0) {
                 this.aiConversationHistory = [];
-                Logger.info(INSTR_TRACE_TAG, '[AI_GEN] conversation cleared for modular strategy');
+                Logger.info(INSTR_TRACE_TAG, `[AI_GEN] conversation cleared for mode=${mode} strategy=${strategy}`);
             }
-            const hasHistory = this.aiConversationHistory.length > 0;
-            const isEditMode = hasHistory;
-            const effectiveStrategy: AiGenerateStrategy = strategy;
+            // 仅显式 edit 走增量修改（「修改现有图」或对话框「在现有图上 AI 更改」）
+            const isEditMode = mode === 'edit';
+            const hasHistory = isEditMode && this.aiConversationHistory.length > 0;
+            // 编辑模式强制 oneshot（与模块并行设计一致）
+            let effectiveStrategy: AiGenerateStrategy = strategy;
+            if (isEditMode && strategy === 'modular') {
+                effectiveStrategy = 'oneshot';
+                this.appendAiGenLog('system', '在现有图上更改：已改用「整图一次」（编辑模式不支持模块并行）');
+                Logger.info(INSTR_TRACE_TAG, '[AI_GEN] edit mode forces oneshot');
+            }
             let runTopo: SchTopology;
             if (isEditMode) {
-                // 编辑模式: 基于当前画布拓扑进行增量修改
+                // 编辑模式: 基于当前画布拓扑进行真正增量修改（非整图重生成）
                 const editor = this.schematicEditor as SchematicEditorImpl;
                 runTopo = TopologyAdapter.toTopology(editor.getDocument());
                 runTopo.schName = 'AI Edited';
-                this.appendAiGenLog('system', `多轮对话 · 第${this.aiConversationHistory.length / 2 + 1}轮 · 基于当前${runTopo.deviceList.length}器件修改`);
+                const roundHint = hasHistory
+                    ? `多轮对话 · 第${this.aiConversationHistory.length / 2 + 1}轮 · `
+                    : '基于画布现有电路 · ';
+                this.appendAiGenLog('system', `${roundHint}增量编辑：保留现有 ${runTopo.deviceList.length} 器件` +
+                    `/${runTopo.netList.length} 网/${runTopo.wireList.length} 线，只改需求相关部分`);
+                Logger.info(INSTR_TRACE_TAG, `[AI_GEN] edit incremental | keepDevs=${runTopo.deviceList.length}` +
+                    ` nets=${runTopo.netList.length} wires=${runTopo.wireList.length}`);
             }
             else {
                 runTopo = emptySchTopology();
@@ -2470,7 +2527,10 @@ export class AppService {
             if (effectiveStrategy === 'modular') {
                 this.appendAiGenLog('system', '模块并行：整体设计 → 真并行生图 → 跨模块网络标号合并');
             }
-            traceAiOp('AI_GEN', 'run_full_pipeline', `TASK_FULL_PIPELINE mode=${isEditMode ? 'edit' : 'create'} strategy=${effectiveStrategy}`);
+            traceAiOp('AI_GEN', 'run_full_pipeline', `TASK_FULL_PIPELINE mode=${isEditMode ? 'edit-incremental' : 'create'} strategy=${effectiveStrategy}`);
+            if (isEditMode) {
+                this.appendAiGenLog('system', '流水线：edit incremental（跳过全量选型/摆放）');
+            }
             const result = await this.aiEngine.runAiTask(AiTaskType.TASK_FULL_PIPELINE, runTopo, {
                 prompt: trimmed, scene: 'text_gen',
                 generateStrategy: effectiveStrategy,
@@ -2522,23 +2582,28 @@ export class AppService {
                 this.onStatusMessage(msg);
                 return false;
             }
-            Logger.info(INSTR_TRACE_TAG, `[AI_GEN] OK devices=${result.topology.deviceList.length}` +
-                ` wires=${result.topology.wireList.length}` +
+            Logger.info(INSTR_TRACE_TAG, `[AI_GEN] OK mode=${mode} devices=${result.topology.deviceList.length}` +
+                ` nets=${result.topology.netList.length} wires=${result.topology.wireList.length}` +
                 ` residual=${!!result.deliveredWithResidual} | ${analysis}`);
+            if (isEditMode) {
+                this.appendAiGenLog('system', `增量编辑写回：${result.topology.deviceList.length} 器件 / ` +
+                    `${result.topology.netList.length} 网 / ${result.topology.wireList.length} 线`);
+            }
             traceAiPayload('AI_GEN', 'ASSISTANT', analysis, `devices=${result.topology.deviceList.length} wires=${result.topology.wireList.length}` +
                 ` residual=${!!result.deliveredWithResidual}`);
             this.appendTopologySummary(result.topology, analysis);
-            if (mode === 'replace') {
-                traceAiOp('AI_GEN', 'load_topology', 'mode=replace');
-                this.schematicEditor.loadTopology(result.topology);
-            }
-            else {
+            if (mode === 'append') {
                 traceAiOp('AI_GEN', 'load_topology', 'mode=append merge');
                 const generatedDoc = TopologyAdapter.fromTopology(result.topology);
                 const editor = this.schematicEditor as SchematicEditorImpl;
                 const currentDoc = editor.getDocument();
                 TemplateMergeUtil.mergeTemplateInto(currentDoc, generatedDoc);
                 editor.loadDocument(currentDoc);
+            }
+            else {
+                // replace / edit：整图写回（edit 为增量修改后的完整拓扑）
+                traceAiOp('AI_GEN', 'load_topology', `mode=${mode}`);
+                this.schematicEditor.loadTopology(result.topology);
             }
             const editor = this.schematicEditor as SchematicEditorImpl;
             editor.rebuildNetPinConnectivity();
@@ -2585,7 +2650,7 @@ export class AppService {
             const erc = this.runErc(false);
             const errN = AiErcGateUtil.countBlocking(erc);
             const warnN = erc.filter(e => e.severity === 'warning' && !AiErcGateUtil.isBlocking(e)).length;
-            this.appendAiGenLog('assistant', `落图完成 · 模式=${mode === 'replace' ? '替换' : '追加'} · ERC 阻断 ${errN} / 软警告 ${warnN}` +
+            this.appendAiGenLog('assistant', `落图完成 · 模式=${this.aiModeLabel(mode)} · ERC 阻断 ${errN} / 软警告 ${warnN}` +
                 ` · 悬空器件 ${floatingComps}`);
             // 用户硬要求：不许「生图未完成」中止 — 有残留则提示自检，仍算交付成功
             if (errN > 0) {
@@ -2654,6 +2719,15 @@ export class AppService {
             return false;
         }
     }
+    private aiModeLabel(mode: AiGenerateMode): string {
+        if (mode === 'replace') {
+            return '替换整图';
+        }
+        if (mode === 'append') {
+            return '追加到空白区';
+        }
+        return '在现有图上 AI 更改';
+    }
     private beginAiGenerate(prompt: string, mode: AiGenerateMode): void {
         this.aiGenEpoch++;
         this.aiGenerating = true;
@@ -2661,7 +2735,7 @@ export class AppService {
         (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
         this.aiGenLogs = [];
         this.appendAiGenLog('user', prompt);
-        this.appendAiGenLog('system', `开始全闭环生成（${mode === 'replace' ? '替换整图' : '追加到空白区'}）· 画布已锁定`);
+        this.appendAiGenLog('system', `开始全闭环生成（${this.aiModeLabel(mode)}）· 画布已锁定`);
         this.appendAiGenLog('assistant', '正在解析器件需求…');
         this.onAiGeneratingChanged(true);
         this.onStatusMessage('AI 生成中，画布已锁定（请耐心等待长回复）');

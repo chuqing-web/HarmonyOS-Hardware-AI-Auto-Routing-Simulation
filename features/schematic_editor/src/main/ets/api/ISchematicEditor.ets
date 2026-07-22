@@ -87,6 +87,10 @@ export interface ISchematicEditor {
   createBus(x1: number, y1: number, x2: number, y2: number, bitCount?: number): ApiResult<string>;
   assignBusNet(busUuid: string, netNameList: string[]): ApiResult<void>;
   createNetLabel(x: number, y: number, netName: string): ApiResult<string>;
+  /** 修改已有网络标号文本（同名并网）；返回所属 netId */
+  renameNetLabel(labelId: string, netName: string): ApiResult<string>;
+  /** 命中网络标号（世界坐标），未命中返回 null */
+  hitTestNetLabel(world: Point2D, tol?: number): string | null;
   attachPowerSymbolNet(compId: string): ApiResult<void>;
   createSubPort(subUuid: string, portName: string, dir?: 'in' | 'out' | 'inout'): ApiResult<string>;
 
@@ -151,8 +155,34 @@ export interface ISchematicEditor {
   moveComponents(ids: string[], delta: Point2D): ApiResult<void>;
   addWireSegment(from: Point2D, to: Point2D, netId?: string): ApiResult<string>;
   addWireWithPoints(waypoints: Point2D[], netId?: string): ApiResult<string>;
+  /**
+   * WAR 入口（Proteus Wire Auto Router）：动态预览并写入 Path Buffer。
+   * 落线必须 commitWarBufferedPath / addWireWithPoints 复用缓冲，禁止二次寻路。
+   */
+  previewWirePath(waypoints: Point2D[]): WirePathPreviewResult;
+  /**
+   * 确认落线：仅使用 Path Buffer；校验仍无碰撞则生成导线，否则拒绝（不重算）。
+   */
+  commitWarBufferedPath(netId?: string): ApiResult<string>;
+  /** 清除 WAR 路径缓冲（取消连线时） */
+  clearWarPathBuffer(): void;
+  /** Tools 工具栏 WAR 开关（默认开启） */
+  setWarEnabled(enabled: boolean): void;
+  isWarEnabled(): boolean;
   duplicateDevice(instUuid: string, offsetX?: number, offsetY?: number): ApiResult<string>;
   setComponentLocked(componentId: string, locked: boolean): ApiResult<void>;
   isComponentLocked(componentId: string): boolean;
   setGridSize(size: number): void;
+}
+
+/** WAR 预览 / 落线应用路径（previewWirePath 唯一返回类型） */
+export interface WirePathPreviewResult {
+  points: Point2D[];
+  /** true=已自动寻路避让（相对默认 L 有改道） */
+  autoCorrected: boolean;
+  /**
+   * true=无合法无碰撞路径（不可落线）。
+   * 穿选中区时必须 blocked，禁止返回穿障折线。
+   */
+  blocked?: boolean;
 }

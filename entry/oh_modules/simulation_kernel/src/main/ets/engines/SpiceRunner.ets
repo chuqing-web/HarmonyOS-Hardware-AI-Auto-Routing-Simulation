@@ -2,7 +2,7 @@
  * SPICE 仿真运行器 — Ngspice NAPI 绑定接口层 + 高级分析引擎
  * v2.0: 器件噪声模型 / TF AC扫频 / 零极点 / 失真分析 / 灵敏度分析
  */
-import { SchematicDocument, SimulationConfig, ErrCode } from 'common';
+import { SchematicDocument, SimulationConfig, ErrCode, UnitParser } from 'common';
 import { AnalogEngine } from './AnalogEngine';
 
 export interface SpiceRunResult {
@@ -78,8 +78,7 @@ export class SpiceRunner {
       const libId = comp.libraryId.toLowerCase();
       if (libId.includes('resistor') || libId.startsWith('r_')) {
         const val = comp.parameters.get('value') ?? comp.parameters.get('resistance') ?? '';
-        const fallback = comp.libraryId.replace(/^(R_|RESISTOR_?)/i, '');
-        const rVal = this.parseResistance(this.withUnitSuffix(val, fallback));
+        const rVal = this.parseResistance(UnitParser.coerceResistorParam(comp.libraryId, val));
         const pinIds = comp.pinIds ?? [];
         for (let pi = 0; pi < pinIds.length; pi++) {
           this.resistorNoise.set(pinIds[pi], rVal);
@@ -96,6 +95,10 @@ export class SpiceRunner {
   }
 
   private parseResistance(val: string): number {
+    const parsed = UnitParser.parseResistance(val);
+    if (parsed.valid && parsed.numeric > 0) {
+      return parsed.numeric;
+    }
     const s = val.toLowerCase().replace(/[ωohm]/g, '').trim();
     if (s.includes('meg')) return parseFloat(s) * 1e6;
     if (s.includes('k')) return parseFloat(s) * 1000;
@@ -104,14 +107,9 @@ export class SpiceRunner {
     return isNaN(n) || n <= 0 ? 1000 : n;
   }
 
-  /** Append unit suffix from fallback if value is bare number. See AnalogEngine.withUnitSuffix. */
+  /** Append unit suffix from fallback if value is bare number. See UnitParser.appendFallbackSuffix. */
   private withUnitSuffix(value: string, fallback: string): string {
-    const v = value.trim();
-    if (v.length === 0) return fallback;
-    if (/[a-z]/i.test(v)) return v;
-    const m = fallback.match(/[a-zµ]+$/i);
-    if (m === null) return v;
-    return v + m[0];
+    return UnitParser.appendFallbackSuffix(value, fallback);
   }
 
   // ---- 瞬态 / DC / AC 基本分析 ----

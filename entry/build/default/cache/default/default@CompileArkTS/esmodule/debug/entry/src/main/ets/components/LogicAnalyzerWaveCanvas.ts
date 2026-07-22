@@ -5,6 +5,7 @@ interface LogicAnalyzerWaveCanvas_Params {
     channelData?: number[][];
     channelCount?: number;
     sampleCount?: number;
+    canvasHeight?: number;
     canvasW?: number;
     canvasH?: number;
     settings?: RenderingContextSettings;
@@ -19,6 +20,7 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.__channelData = new SynchedPropertyObjectOneWayPU(params.channelData, this, "channelData");
         this.__channelCount = new SynchedPropertySimpleOneWayPU(params.channelCount, this, "channelCount");
         this.__sampleCount = new SynchedPropertySimpleOneWayPU(params.sampleCount, this, "sampleCount");
+        this.__canvasHeight = new SynchedPropertySimpleOneWayPU(params.canvasHeight, this, "canvasHeight");
         this.__canvasW = new ObservedPropertySimplePU(320, this, "canvasW");
         this.__canvasH = new ObservedPropertySimplePU(192, this, "canvasH");
         this.settings = new RenderingContextSettings(true);
@@ -26,6 +28,7 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.setInitiallyProvidedValue(params);
         this.declareWatch("channelData", this.onDataChanged);
         this.declareWatch("channelCount", this.onDataChanged);
+        this.declareWatch("canvasHeight", this.onDataChanged);
         this.finalizeConstruction();
     }
     setInitiallyProvidedValue(params: LogicAnalyzerWaveCanvas_Params) {
@@ -37,6 +40,9 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         }
         if (params.sampleCount === undefined) {
             this.__sampleCount.set(128);
+        }
+        if (params.canvasHeight === undefined) {
+            this.__canvasHeight.set(192);
         }
         if (params.canvasW !== undefined) {
             this.canvasW = params.canvasW;
@@ -55,11 +61,13 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.__channelData.reset(params.channelData);
         this.__channelCount.reset(params.channelCount);
         this.__sampleCount.reset(params.sampleCount);
+        this.__canvasHeight.reset(params.canvasHeight);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__channelData.purgeDependencyOnElmtId(rmElmtId);
         this.__channelCount.purgeDependencyOnElmtId(rmElmtId);
         this.__sampleCount.purgeDependencyOnElmtId(rmElmtId);
+        this.__canvasHeight.purgeDependencyOnElmtId(rmElmtId);
         this.__canvasW.purgeDependencyOnElmtId(rmElmtId);
         this.__canvasH.purgeDependencyOnElmtId(rmElmtId);
     }
@@ -67,6 +75,7 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.__channelData.aboutToBeDeleted();
         this.__channelCount.aboutToBeDeleted();
         this.__sampleCount.aboutToBeDeleted();
+        this.__canvasHeight.aboutToBeDeleted();
         this.__canvasW.aboutToBeDeleted();
         this.__canvasH.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
@@ -93,6 +102,13 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
     set sampleCount(newValue: number) {
         this.__sampleCount.set(newValue);
     }
+    private __canvasHeight: SynchedPropertySimpleOneWayPU<number>;
+    get canvasHeight() {
+        return this.__canvasHeight.get();
+    }
+    set canvasHeight(newValue: number) {
+        this.__canvasHeight.set(newValue);
+    }
     private __canvasW: ObservedPropertySimplePU<number>;
     get canvasW() {
         return this.__canvasW.get();
@@ -116,14 +132,17 @@ export class LogicAnalyzerWaveCanvas extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Canvas.create(this.ctx);
             Canvas.width('100%');
-            Canvas.height(192);
+            Canvas.height(this.canvasHeight);
             Canvas.backgroundColor('#0a0a12');
             Canvas.onAreaChange((old: Area, newArea: Area) => {
                 this.canvasW = newArea.width as number;
                 this.canvasH = newArea.height as number;
                 this.drawLogic();
             });
-            Canvas.onAppear(() => this.drawLogic());
+            Canvas.onAppear(() => {
+                this.canvasH = this.canvasHeight;
+                this.drawLogic();
+            });
         }, Canvas);
         Canvas.pop();
     }

@@ -8,7 +8,157 @@ export interface ParsedValue {
 }
 export class UnitParser {
     static parseResistance(input: string): ParsedValue {
-        return UnitParser.parseGeneric(input, 'Ω', UnitParser.getResistanceMultipliers());
+        const cleaned = UnitParser.sanitizeMalformedResistance(input);
+        const parsed = UnitParser.parseGeneric(cleaned, 'Ω', UnitParser.getResistanceMultipliers());
+        if (parsed.valid && parsed.numeric > 0) {
+            // 工程记数（1kΩ），避免写成 1000Ω 后再被拼上 lib 的 K → 1000ΩK → 1M
+            parsed.normalized = UnitParser.formatResistanceEng(parsed.numeric);
+        }
+        return parsed;
+    }
+    /**
+     * 修复 "1000ΩK" / "1000000ΩK"：绝对值欧姆后又被拼上 lib 后缀 K/M。
+     * 数字 ≥100 且带 Ω+K → 视为已是欧姆；较小数字如 4.7ΩK → 按 4.7k。
+     */
+    static sanitizeMalformedResistance(input: string): string {
+        let s = input.trim().replace(/\s+/g, '');
+        if (s.length === 0) {
+            return s;
+        }
+        // 1000ΩK / 47ohmK / 1000ωK
+        const ohmThenEng = s.match(/^([\d.]+)(?:Ω|ohm|ω|R)([kKmMgG])$/i);
+        if (ohmThenEng !== null) {
+            const n = parseFloat(ohmThenEng[1]);
+            const eng = ohmThenEng[2];
+            if (!isNaN(n) && n > 0) {
+                if (/^k$/i.test(eng)) {
+                    return n >= 100 ? `${n}Ω` : `${n}k`;
+                }
+                if (/^m$/i.test(eng)) {
+                    // 电阻语境：ΩM 几乎总是误拼（已是欧姆 + 残留 M）
+                    return n >= 1 ? `${n}Ω` : s;
+                }
+                if (/^g$/i.test(eng)) {
+                    return n >= 1 ? `${n}Ω` : s;
+                }
+            }
+        }
+        // 纯 "1000K"：若数字已像欧姆绝对值（≥1000），去掉多余 K
+        const bareNumK = s.match(/^([\d.]+)K$/i);
+        if (bareNumK !== null) {
+            const n = parseFloat(bareNumK[1]);
+            if (!isNaN(n) && n >= 1000) {
+                return `${n}Ω`;
+            }
+        }
+        return s;
+    }
+    /** 1000 → 1kΩ，4700 → 4.7kΩ，1e6 → 1MΩ */
+    static formatResistanceEng(ohms: number): string {
+        if (!Number.isFinite(ohms) || ohms <= 0) {
+            return '1kΩ';
+        }
+        const near = (a: number, b: number): boolean => Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
+        if (ohms >= 1e6) {
+            const meg = ohms / 1e6;
+            if (near(meg, Math.round(meg * 1000) / 1000)) {
+                return `${UnitParser.trimFloat(meg)}MΩ`;
+            }
+        }
+        if (ohms >= 1000) {
+            const k = ohms / 1000;
+            if (near(k, Math.round(k * 1000) / 1000)) {
+                return `${UnitParser.trimFloat(k)}kΩ`;
+            }
+        }
+        return `${UnitParser.trimFloat(ohms)}Ω`;
+    }
+    private static trimFloat(n: number): string {
+        const s = n.toFixed(6).replace(/\.?0+$/, '');
+        return s.length > 0 ? s : '0';
+    }
+    /**
+     * 裸数字补 lib 后缀；已有单位（含 Ω）不再拼接。
+     * "1000" + R_1k 的 K → 视为 1000Ω，禁止变成 1000K(=1M)。
+     */
+    static appendFallbackSuffix(value: string, fallback: string): string {
+        const v = value.trim();
+        if (v.length === 0) {
+            return fallback;
+        }
+        // 字母 / µ / Ω / ohm / 末尾 R 均视为已有单位
+        if (/[a-zµΩω]/i.test(v) || /ohm/i.test(v)) {
+            return v;
+        }
+        const m = fallback.match(/[a-zµ]+$/i);
+        if (m === null) {
+            return v;
+        }
+        const n = parseFloat(v);
+        const suf = m[0];
+        // 裸数已是欧姆量级时，勿再叠 K/M
+        if (!isNaN(n) && n > 0 && /^k$/i.test(suf) && n >= 1000) {
+            return `${n}Ω`;
+        }
+        if (!isNaN(n) && n > 0 && /^m$/i.test(suf) && n >= 1e6) {
+            return `${n}Ω`;
+        }
+        return v + suf;
+    }
+    /**
+     * 相对库标称多了一个 ×1000（典型 ΩK / 1000K 二次污染）时，恢复为库期望阻值。
+     * 例：R_1k + "1000000ΩK" → "1kΩ"
+     */
+    static healResistorAgainstLibrary(libraryId: string, value: string): string | null {
+        const libId = libraryId.trim();
+        if (!/^R_/i.test(libId) && !/RESISTOR/i.test(libId)) {
+            return null;
+        }
+        const raw = value.trim().replace(/\s+/g, '');
+        if (raw.length === 0) {
+            return null;
+        }
+        // 仅处理污染签名：…ΩK / 绝对值+K（≥1000K），勿把正常的 1k/10k 当污染
+        const ohmThenK = /(?:Ω|ohm|ω|R)[kKmMgG]$/i.test(raw);
+        const absOhmsThenK = /^([\d.]+)K$/i.test(raw) && parseFloat(raw) >= 1000;
+        if (!ohmThenK && !absOhmsThenK) {
+            return null;
+        }
+        const libSuffix = libId.replace(/^(R_|RESISTOR_?)/i, '');
+        if (libSuffix.length === 0) {
+            return null;
+        }
+        const expected = UnitParser.parseResistance(libSuffix);
+        const got = UnitParser.parseResistance(UnitParser.sanitizeMalformedResistance(raw));
+        if (!expected.valid || !got.valid || expected.numeric <= 0 || got.numeric <= 0) {
+            return null;
+        }
+        const ratio = got.numeric / expected.numeric;
+        // 多乘了一次 1000（K）
+        if (Math.abs(ratio - 1000) < 0.05) {
+            return UnitParser.formatResistanceEng(expected.numeric);
+        }
+        // 已消歧为正确欧姆，统一成工程记数
+        if (Math.abs(ratio - 1) < 0.01) {
+            return UnitParser.formatResistanceEng(expected.numeric);
+        }
+        return null;
+    }
+    /** 电阻 value 统一入口：消毒 → 对库纠偏 → 补后缀 */
+    static coerceResistorParam(libraryId: string, value: string): string {
+        const libSuffix = libraryId.replace(/^(R_|RESISTOR_?)/i, '');
+        const fallback = libSuffix.length > 0 ? libSuffix : '1k';
+        const raw = value.trim();
+        if (raw.length === 0) {
+            const fb = UnitParser.parseResistance(fallback);
+            return UnitParser.formatResistanceEng(fb.valid && fb.numeric > 0 ? fb.numeric : 1000);
+        }
+        const healed = UnitParser.healResistorAgainstLibrary(libraryId, raw);
+        if (healed !== null) {
+            return healed;
+        }
+        const sanitized = UnitParser.sanitizeMalformedResistance(raw);
+        return UnitParser.appendFallbackSuffix(sanitized, fallback);
     }
     static parseCapacitance(input: string): ParsedValue {
         return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());

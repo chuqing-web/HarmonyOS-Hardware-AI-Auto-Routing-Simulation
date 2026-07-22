@@ -1,15 +1,13 @@
 /**
- * 编辑器内部私有工具：吸附、引脚连接、线路交叉检测
+ * 编辑器内部私有工具：坐标、引脚连接、线路交叉检测
+ * 注意：已永久取消网格/磁吸吸附 — calcSnapPoint 原样返回坐标。
  */
 import { Point2D, RouteResult, DeviceInst, RouteLine } from 'common';
 
 export class EditorInternals {
-  static calcSnapPoint(rawX: number, rawY: number, gridStep: number): Point2D {
-    const result: Point2D = {
-      x: Math.round(rawX / gridStep) * gridStep,
-      y: Math.round(rawY / gridStep) * gridStep
-    };
-    return result;
+  /** 永久无吸附：直接返回原始坐标（保留 API 以免大量调用点改动）。 */
+  static calcSnapPoint(rawX: number, rawY: number, _gridStep: number): Point2D {
+    return { x: rawX, y: rawY };
   }
 
   static checkPinConnect(x: number, y: number, devices: DeviceInst[], threshold: number = 8): string {

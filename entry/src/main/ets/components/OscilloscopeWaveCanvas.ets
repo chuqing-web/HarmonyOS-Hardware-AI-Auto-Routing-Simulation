@@ -17,6 +17,15 @@ export struct OscilloscopeWaveCanvas {
   @Prop @Watch('onDataChanged') autoFit: boolean = true;
   @Prop canvasHeight: number = 160;
   @Prop showStats: boolean = true;
+  /**
+   * 水平缩放：1=默认窗宽(cols×tPerDiv)；>1 放大（窗更窄）；<1 缩小。
+   * 侧栏默认 1；放大弹窗可交互调节。
+   */
+  @Prop @Watch('onDataChanged') viewZoom: number = 1;
+  /**
+   * 相对最新时刻的回看秒数：0=跟随滚动到最新；增大则向历史拖动。
+   */
+  @Prop @Watch('onDataChanged') viewPanSec: number = 0;
   @State canvasW: number = 360;
   @State canvasH: number = 160;
 
@@ -87,11 +96,55 @@ export struct OscilloscopeWaveCanvas {
       return;
     }
 
-    const scale = this.computeScale(n);
+    const win = this.resolveTimeWindow(n);
+    const scale = this.computeScale(n, win.i0, win.i1, win.tMin, win.tMax);
     this.drawZeroLine(ctx, w, h, scale.vMin, scale.vMax);
     this.drawTrigger(ctx, w, h, scale.vMin, scale.vMax);
-    this.drawTrace(ctx, w, h, n, scale.vMin, scale.vMax);
-    this.drawHudHeaders(ctx, w, h, n, scale.vMin, scale.vMax, scale.tMin, scale.tMax);
+    this.drawTrace(ctx, w, h, n, win.i0, win.i1, win.tMin, win.tMax, scale.vMin, scale.vMax);
+    this.drawHudHeaders(ctx, w, h, n, win.i0, win.i1, scale.vMin, scale.vMax, scale.tMin, scale.tMax);
+  }
+
+  /**
+   * 滚动窗：固定时基宽度，最新时刻贴右缘（CRT 滚动）。
+   * 历史不足一屏时左侧留空，禁止把短片段横向拉满（否则无滚动感）。
+   */
+  private resolveTimeWindow(n: number): TimeViewWindow {
+    const tFirst = Number.isFinite(this.timeData[0]) ? this.timeData[0] : 0;
+    const tLast = Number.isFinite(this.timeData[n - 1]) ? this.timeData[n - 1] : tFirst;
+    const zoom = Math.max(this.viewZoom, 0.05);
+    const span = Math.max(this.tPerDiv * this.cols, 1e-12) / zoom;
+    const pan = Math.max(this.viewPanSec, 0);
+    let tMax = tLast - pan;
+    if (tMax < tFirst) {
+      tMax = tFirst;
+    }
+    if (tMax > tLast) {
+      tMax = tLast;
+    }
+    // 固定窗宽：tMin 可早于首样点（左侧空白 = 滚动感）
+    const tMin = tMax - span;
+
+    let i0 = 0;
+    let i1 = n - 1;
+    for (let i = 0; i < n; i++) {
+      const t = this.timeData[i];
+      if (Number.isFinite(t) && t >= tMin) {
+        i0 = i > 0 ? i - 1 : 0;
+        break;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const t = this.timeData[i];
+      if (Number.isFinite(t) && t <= tMax) {
+        i1 = i < n - 1 ? i + 1 : n - 1;
+        break;
+      }
+    }
+    if (i1 <= i0) {
+      i0 = Math.max(0, n - 2);
+      i1 = n - 1;
+    }
+    return { i0: i0, i1: i1, tMin: tMin, tMax: tMax };
   }
 
   private drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number): void {
@@ -167,10 +220,14 @@ export struct OscilloscopeWaveCanvas {
     ctx.font = '12px monospace';
     ctx.fillText('NO SIGNAL', w / 2 - 36, h / 2 - 6);
     ctx.font = '10px monospace';
-    ctx.fillText('运行仿真后自动刷新 / 点"采样"', Math.max(8, w / 2 - 90), h / 2 + 14);
+    if (this.channelLabel.indexOf('CH') === 0) {
+      ctx.fillText('放置并连接示波器后运行仿真', Math.max(8, w / 2 - 100), h / 2 + 14);
+    } else {
+      ctx.fillText('运行仿真后自动刷新', Math.max(8, w / 2 - 70), h / 2 + 14);
+    }
   }
 
-  private computeScale(n: number): ScaleWindow {
+  private computeScale(n: number, i0: number, i1: number, tMin: number, tMax: number): ScaleWindow {
     const rows = this.rows;
     const vDiv = Math.max(this.vPerDiv, 1e-6);
 
@@ -178,7 +235,9 @@ export struct OscilloscopeWaveCanvas {
     let dataMax = Number.NEGATIVE_INFINITY;
     let sum = 0;
     let count = 0;
-    for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i0);
+    const hi = Math.min(n - 1, i1);
+    for (let i = lo; i <= hi; i++) {
       const v = this.voltageData[i];
       if (!Number.isFinite(v)) {
         continue;
@@ -228,13 +287,11 @@ export struct OscilloscopeWaveCanvas {
       vMax = mean + half;
     }
 
-    const t0 = Number.isFinite(this.timeData[0]) ? this.timeData[0] : 0;
-    const t1 = Number.isFinite(this.timeData[n - 1]) ? this.timeData[n - 1] : t0;
     return {
       vMin: vMin,
       vMax: vMax,
-      tMin: t0,
-      tMax: t1
+      tMin: tMin,
+      tMax: tMax
     };
   }
 
@@ -277,48 +334,55 @@ export struct OscilloscopeWaveCanvas {
   }
 
   /**
-   * 引擎已重采样为均匀时间轴 → 按索引映射 X。
-   * 过密时每像素取中点（不做 max/min 交替，避免长时间显示成锯齿乱线）。
+   * 按时间窗映射 X（滚动显示）；窗内过密时每像素取中点。
    */
   private drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, n: number,
+    i0: number, i1: number, tMin: number, tMax: number,
     vMin: number, vMax: number): void {
     const xs: number[] = [];
     const ys: number[] = [];
+    const lo = Math.max(0, i0);
+    const hi = Math.min(n - 1, i1);
+    const count = hi - lo + 1;
+    const tSpan = Math.max(tMax - tMin, 1e-15);
 
-    if (n <= Math.floor(w) + 2) {
-      for (let i = 0; i < n; i++) {
+    if (count <= Math.floor(w) + 2) {
+      for (let i = lo; i <= hi; i++) {
         const v = this.voltageData[i];
-        if (!Number.isFinite(v)) {
+        const t = this.timeData[i];
+        if (!Number.isFinite(v) || !Number.isFinite(t)) {
           continue;
         }
-        const x = n > 1 ? (i / (n - 1)) * w : 0;
+        const x = ((t - tMin) / tSpan) * w;
         xs.push(x);
         ys.push(this.voltageToY(v, h, vMin, vMax));
       }
     } else {
       const buckets = Math.max(Math.floor(w), 64);
       for (let b = 0; b < buckets; b++) {
-        const i0 = Math.floor((b / buckets) * n);
-        const i1 = Math.min(n, Math.floor(((b + 1) / buckets) * n));
-        if (i1 <= i0) {
+        const iStart = lo + Math.floor((b / buckets) * count);
+        const iEnd = lo + Math.min(count, Math.floor(((b + 1) / buckets) * count));
+        if (iEnd <= iStart) {
           continue;
         }
-        const mid = i0 + ((i1 - i0) >> 1);
+        const mid = iStart + ((iEnd - iStart) >> 1);
         let v = this.voltageData[mid];
-        if (!Number.isFinite(v)) {
-          // fall back to first finite in bucket
+        let t = this.timeData[mid];
+        if (!Number.isFinite(v) || !Number.isFinite(t)) {
           v = Number.NaN;
-          for (let i = i0; i < i1; i++) {
-            if (Number.isFinite(this.voltageData[i])) {
+          t = Number.NaN;
+          for (let i = iStart; i < iEnd; i++) {
+            if (Number.isFinite(this.voltageData[i]) && Number.isFinite(this.timeData[i])) {
               v = this.voltageData[i];
+              t = this.timeData[i];
               break;
             }
           }
         }
-        if (!Number.isFinite(v)) {
+        if (!Number.isFinite(v) || !Number.isFinite(t)) {
           continue;
         }
-        const x = buckets > 1 ? (b / (buckets - 1)) * w : 0;
+        const x = ((t - tMin) / tSpan) * w;
         xs.push(x);
         ys.push(this.voltageToY(v, h, vMin, vMax));
       }
@@ -349,8 +413,8 @@ export struct OscilloscopeWaveCanvas {
   }
 
   private drawHudHeaders(ctx: CanvasRenderingContext2D, w: number, h: number, n: number,
-    vMin: number, vMax: number, tMin: number, tMax: number): void {
-    const stats = this.computeStats(n);
+    i0: number, i1: number, vMin: number, vMax: number, tMin: number, tMax: number): void {
+    const stats = this.computeStats(n, i0, i1);
     ctx.fillStyle = this.waveColor;
     ctx.font = 'bold 11px monospace';
     ctx.fillText(this.channelLabel, 8, 15);
@@ -359,7 +423,7 @@ export struct OscilloscopeWaveCanvas {
     ctx.font = '9px monospace';
     ctx.fillText(`${this.formatVoltage(vMax)}`, w - 54, 12);
     ctx.fillText(`${this.formatVoltage(vMin)}`, w - 54, h - 6);
-    // 横轴显示窗宽（相对时间），不是仿真绝对时刻
+    // 横轴：当前滚动窗宽（相对时间）
     const span = Math.max(tMax - tMin, 0);
     ctx.fillText('0', 8, h - 6);
     ctx.fillText(this.formatTime(span), w / 2 - 20, h - 6);
@@ -368,14 +432,16 @@ export struct OscilloscopeWaveCanvas {
     if (!this.showStats) {
       return;
     }
-    let nowV = this.voltageData[n - 1];
+    const hi = Math.min(n - 1, i1);
+    let nowV = this.voltageData[hi];
     if (!Number.isFinite(nowV)) {
       nowV = stats.avg;
     }
+    const follow = this.viewPanSec <= 1e-12 ? 'ROLL' : 'PAN';
     const line = `Vpp ${this.formatVoltage(stats.vpp)}  ` +
       `Avg ${this.formatVoltage(stats.avg)}  ` +
       `f ${this.formatFreq(stats.freq)}  ` +
-      `now ${this.formatVoltage(nowV)}`;
+      `now ${this.formatVoltage(nowV)}  ${follow} ×${this.viewZoom.toFixed(1)}`;
     ctx.fillStyle = '#c8d4ea';
     ctx.font = '10px monospace';
     ctx.fillText(line, 8, 30);
@@ -385,12 +451,14 @@ export struct OscilloscopeWaveCanvas {
     ctx.fillText(`${this.formatVoltage(this.vPerDiv)}/div`, w - 58, 28);
   }
 
-  private computeStats(n: number): WaveStats {
+  private computeStats(n: number, i0: number, i1: number): WaveStats {
     let minV = Number.POSITIVE_INFINITY;
     let maxV = Number.NEGATIVE_INFINITY;
     let sum = 0;
     let count = 0;
-    for (let i = 0; i < n; i++) {
+    const lo = Math.max(0, i0);
+    const hi = Math.min(n - 1, i1);
+    for (let i = lo; i <= hi; i++) {
       const v = this.voltageData[i];
       if (!Number.isFinite(v)) {
         continue;
@@ -412,7 +480,7 @@ export struct OscilloscopeWaveCanvas {
     let firstT = -1;
     let lastT = -1;
     const thr = avg;
-    for (let i = 1; i < n; i++) {
+    for (let i = lo + 1; i <= hi; i++) {
       const a = this.voltageData[i - 1];
       const b = this.voltageData[i];
       if (!Number.isFinite(a) || !Number.isFinite(b)) {
@@ -507,6 +575,13 @@ export struct OscilloscopeWaveCanvas {
 interface ScaleWindow {
   vMin: number;
   vMax: number;
+  tMin: number;
+  tMax: number;
+}
+
+interface TimeViewWindow {
+  i0: number;
+  i1: number;
   tMin: number;
   tMax: number;
 }

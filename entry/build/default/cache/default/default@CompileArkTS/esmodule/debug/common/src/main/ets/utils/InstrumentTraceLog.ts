@@ -335,6 +335,14 @@ export function traceInstrumentWiringIssues(doc: SchematicDocument): void {
                 Logger.warn(INSTR_TRACE_TAG, `[INSTR_SHORT] ${comp.refDes} signal and GND on same net ${netName(sig)}`);
             }
         }
+        else if (kind === 'sig') {
+            const out = findNet(['OUT', '1', '+']);
+            const gnd = findNet(['GND', '2', '-']);
+            if (out !== null && gnd !== null && out === gnd) {
+                Logger.warn(INSTR_TRACE_TAG, `[INSTR_SHORT] ${comp.refDes} OUT and GND on same net ${netName(out)} — ` +
+                    `wires formed one copper loop; pin-to-pin series path required (not a closed wire box)`);
+            }
+        }
     }
 }
 /** 同一器件引脚出现在多个 net 上 */
@@ -1159,5 +1167,192 @@ export function traceAiDiag(prefix: string, stage: string, lines: string[], maxL
     }
     if (n > show) {
         Logger.info(INSTR_TRACE_TAG, `[${prefix}] DIAG ${stage} <<< truncated +${n - show}`);
+    }
+}
+/** 连线落线开始 — 过滤 instr_trace，前缀 [WIRE_CONN] */
+export function traceWireConnectBegin(wireId: string, netId: string, pts: number, fromX: number, fromY: number, toX: number, toY: number, inherited: boolean): void {
+    Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] BEGIN wire=${wireId} net=${netId} pts=${pts} ` +
+        `from=(${Math.round(fromX)},${Math.round(fromY)}) ` +
+        `to=(${Math.round(toX)},${Math.round(toY)}) inherited=${inherited}`);
+}
+/** 导线端点吸附到引脚的结果 */
+export function traceWirePinSnap(endLabel: string, epX: number, epY: number, hit: boolean, refDes: string, pinName: string, pinId: string, dist: number, action: string): void {
+    if (hit) {
+        Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] SNAP ${endLabel} ep=(${Math.round(epX)},${Math.round(epY)}) ` +
+            `→ ${refDes}.${pinName}(${pinId}) dist=${dist.toFixed(1)} ${action}`);
+    }
+    else {
+        Logger.warn(INSTR_TRACE_TAG, `[WIRE_CONN] SNAP ${endLabel} ep=(${Math.round(epX)},${Math.round(epY)}) ` +
+            `→ (no pin within threshold) ${action}`);
+    }
+}
+/**
+ * 端点未吸到脚时补充：距最近异导线铜皮距离（T 接候选）。
+ * 用于区分「真悬空」vs「图上 T 到线上但 connectWireToPins 只认脚」。
+ */
+export function traceWireSnapMissNearCopper(endLabel: string, epX: number, epY: number, nearestDist: number, nearestWireId: string, nearestNetId: string, placeTol: number): void {
+    if (nearestDist < 0) {
+        Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] SNAP ${endLabel} MISS-pin no other copper nearby (true stub)`);
+        return;
+    }
+    const within = nearestDist <= placeTol;
+    Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] SNAP ${endLabel} MISS-pin but near copper d=${nearestDist.toFixed(1)} ` +
+        `tol=${placeTol.toFixed(1)} wire=${nearestWireId} net=${nearestNetId} ` +
+        `${within ? 'T_CANDIDATE (topology must merge)' : 'TOO_FAR (visual only?)'}`);
+}
+/** 吸附被拒（异网占用 / 同器件邻脚已在网） */
+export function traceWirePinSnapReject(endLabel: string, refDes: string, pinName: string, reason: string): void {
+    Logger.warn(INSTR_TRACE_TAG, `[WIRE_CONN] REJECT ${endLabel} ${refDes}.${pinName}: ${reason}`);
+}
+/** 连线拓扑：导线中段压过同器件邻脚（脚排短路）被拒绝 */
+export function traceWirePinRowShort(pinLabel: string, ax: number, ay: number, bx: number, by: number): void {
+    Logger.warn(INSTR_TRACE_TAG, `[WIRE_CONN] PIN_ROW_SHORT ${pinLabel} on segment ` +
+        `(${Math.round(ax)},${Math.round(ay)})-(${Math.round(bx)},${Math.round(by)})`);
+}
+/** 落线后即时拓扑摘要（重建前/后各打一次也可） */
+export function traceWireConnectEnd(wireId: string, netId: string, snappedPins: number, doc: SchematicDocument): void {
+    const wireNets = new Map<string, number>();
+    for (let i = 0; i < doc.wires.length; i++) {
+        const nid = doc.wires[i].netId;
+        wireNets.set(nid, (wireNets.get(nid) ?? 0) + 1);
+    }
+    const netParts: string[] = [];
+    wireNets.forEach((count: number, nid: string) => {
+        let name = nid;
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            if (doc.nets[ni].id === nid) {
+                name = doc.nets[ni].name || nid;
+                break;
+            }
+        }
+        netParts.push(`${name}×${count}`);
+    });
+    let pinOnNet = 0;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+        if (doc.nets[ni].id === netId) {
+            pinOnNet = doc.nets[ni].pinIds.length;
+            break;
+        }
+    }
+    Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] END wire=${wireId} net=${netId} snapPins=${snappedPins} ` +
+        `netPinCount=${pinOnNet} wires=${doc.wires.length} ` +
+        `wireNetBag={${netParts.join(', ')}}`);
+}
+/**
+ * 落线后每个器件引脚是否挂网 — 便于对照「画上有线但仿真 skip」。
+ */
+export function traceWireConnectPinAudit(doc: SchematicDocument, maxComps: number = 12): void {
+    Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] PIN_AUDIT comps=${doc.components.length} nets=${doc.nets.length} wires=${doc.wires.length}`);
+    const show = Math.min(doc.components.length, maxComps);
+    for (let ci = 0; ci < show; ci++) {
+        const comp = doc.components[ci];
+        const pinsOnNet: string[] = [];
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const net = doc.nets[ni];
+            for (let pi = 0; pi < net.pinIds.length; pi++) {
+                const parsed = parsePinRef(net.pinIds[pi]);
+                if (parsed !== null && parsed.compId === comp.id) {
+                    pinsOnNet.push(`${parsed.pinName || parsed.pinId}->${net.name || net.id}`);
+                }
+            }
+        }
+        const detail = pinsOnNet.length > 0 ? pinsOnNet.join(', ') : '(none — floating)';
+        if (pinsOnNet.length === 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[WIRE_CONN] PIN_AUDIT ${comp.refDes}[${comp.libraryId}] ${detail}`);
+        }
+        else {
+            Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] PIN_AUDIT ${comp.refDes}[${comp.libraryId}] ${detail}`);
+        }
+    }
+    if (doc.components.length > show) {
+        Logger.info(INSTR_TRACE_TAG, `[WIRE_CONN] PIN_AUDIT ...+${doc.components.length - show} more comps`);
+    }
+}
+/** 自动/可丢弃信号网名（与 WireNetTopology.isAutoGeneratedSignalNetName 保持一致） */
+export function isTraceAutoSignalNetName(nm: string): boolean {
+    const name = (nm ?? '').trim();
+    if (name.length === 0) {
+        return true;
+    }
+    if (/^net_topo/i.test(name)) {
+        return true;
+    }
+    if (/^NET_\d+$/i.test(name) || /^NET_net_/i.test(name)) {
+        return true;
+    }
+    return false;
+}
+/**
+ * 拓扑重建前扫描网名：撞名（尤其旧版 NET_net_17）是「多线并一网」的首要嫌疑。
+ */
+export function traceTopoNetNameScan(doc: SchematicDocument): void {
+    const byName = new Map<string, number>();
+    let autoCount = 0;
+    let semanticCount = 0;
+    let emptyCount = 0;
+    const autoDupSamples: string[] = [];
+    for (let i = 0; i < doc.nets.length; i++) {
+        const nm = (doc.nets[i].name ?? '').trim();
+        if (nm.length === 0) {
+            emptyCount++;
+            continue;
+        }
+        byName.set(nm, (byName.get(nm) ?? 0) + 1);
+        if (isTraceAutoSignalNetName(nm)) {
+            autoCount++;
+        }
+        else {
+            semanticCount++;
+        }
+    }
+    byName.forEach((count: number, nm: string) => {
+        if (count > 1 && autoDupSamples.length < 6) {
+            autoDupSamples.push(`${nm}×${count}`);
+        }
+    });
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_NAME_SCAN nets=${doc.nets.length} wires=${doc.wires.length} ` +
+        `auto=${autoCount} semantic=${semanticCount} empty=${emptyCount}` +
+        (autoDupSamples.length > 0 ? ` DUP_NAMES={${autoDupSamples.join(', ')}}` : ' dup=none'));
+    if (autoDupSamples.length > 0) {
+        Logger.warn(INSTR_TRACE_TAG, `[TOPO] NET_NAME_COLLISION 检测到重复网名 — 拓扑若按名继承会把独立导线并成一网: ` +
+            autoDupSamples.join(', '));
+    }
+}
+/** 网名继承：跳过自动名 / 保留语义名 / 同分量冲突 */
+export function traceTopoNetInheritDecision(action: 'skip_auto' | 'keep' | 'conflict_clear', detail: string): void {
+    if (action === 'conflict_clear') {
+        Logger.warn(INSTR_TRACE_TAG, `[TOPO] NET_INHERIT conflict_clear ${detail}`);
+        return;
+    }
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_INHERIT ${action} ${detail}`);
+}
+/**
+ * 信号分量赋网摘要。collapseReps>1 且共用同一 netId = 撞名并网 bug 特征。
+ */
+export function traceTopoSignalAssignSummary(signalReps: number, freshCount: number, inheritExistingCount: number, inheritNewCount: number, collapseHits: string[]): void {
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_ASSIGN signalReps=${signalReps} fresh=${freshCount} ` +
+        `inheritExisting=${inheritExistingCount} inheritNew=${inheritNewCount}`);
+    if (collapseHits.length > 0) {
+        Logger.warn(INSTR_TRACE_TAG, `[TOPO] NET_COLLAPSE 多个几何分量落到同一 netId（撞名/错误继承）: ` +
+            collapseHits.slice(0, 8).join('; '));
+    }
+}
+/** 拓扑重建后：每根导线 old→new 网名（截断），便于逐步对照 */
+export function traceTopoWireNetReassign(changes: string[], reassignCount: number, signalNets: number, junctions: number, wireNetBag: string): void {
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] rebuilt wire nets: ${reassignCount} wires reassigned, ` +
+        `signalNets=${signalNets} junctions=${junctions} wireNetBag={${wireNetBag}}`);
+    const show = Math.min(changes.length, 12);
+    for (let i = 0; i < show; i++) {
+        Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_REASSIGN #${i + 1} ${changes[i]}`);
+    }
+    if (changes.length > show) {
+        Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_REASSIGN ...+${changes.length - show} more`);
+    }
+}
+/** 新建信号网（ensureNetExists） */
+export function traceNetEnsureCreate(netId: string, name: string, totalNets: number): void {
+    Logger.info(INSTR_TRACE_TAG, `[NET] ensureNetExists CREATE id=${netId} name=${name} total=${totalNets}`);
+    if (/^NET_net_/i.test(name)) {
+        Logger.warn(INSTR_TRACE_TAG, `[NET] ensureNetExists LEGACY_PATTERN name=${name} — 旧版 substring 撞名模式，应使用唯一 NET_N`);
     }
 }

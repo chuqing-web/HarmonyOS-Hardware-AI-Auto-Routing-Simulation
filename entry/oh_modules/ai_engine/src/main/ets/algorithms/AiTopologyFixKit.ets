@@ -24,6 +24,10 @@ export interface TopologyFixResult {
 export interface FinalizeGateOpts {
   seriesRcCharge?: boolean;
   mutualLedIndicator?: boolean;
+  /** 555 单稳态 — 走 wire555Monostable，禁止 wireSeriesRc */
+  timer555Monostable?: boolean;
+  /** 板上有 555（单/无稳态）时禁止串联 RC 配方误伤 */
+  hasTimer555?: boolean;
   /** 模块边界脚键（RefDes.Pin 大写），单脚网不得 prune */
   preserveBoundaryKeys?: string[];
 }
@@ -340,6 +344,12 @@ export class AiTopologyFixKit {
     wiring: ConstrainedWiringEngine): TopologyFixResult {
     const notes: string[] = [];
     let fixed = 0;
+    // 板上有 555：绝不能套用串联 RC（会毁掉 THRES/DISCH/TRIG）
+    if (AiTopologyFixKit.topoHas555(topo)) {
+      Logger.info(INSTR_TRACE_TAG,
+        '[AI_FIX] wireSeriesRc skipped — LM555 present (use wire555Monostable/astable)');
+      return AiTopologyFixKit.emptyResult();
+    }
     const vcc = topo.deviceList.find(d => {
       const u = (d.libDevId ?? '').toUpperCase();
       return u === 'VCC' || u === 'VDD';
@@ -424,6 +434,195 @@ export class AiTopologyFixKit {
     Logger.info(INSTR_TRACE_TAG,
       `[AI_FIX] wireSeriesRc fixed=${fixed} R=${r0.refName} C=${c0.refName}` +
       ` | ${notes.slice(0, 6).join('; ')}`);
+    return { fixed, needReroute: fixed > 0, notes };
+  }
+
+  /** 板上是否有 555 定时器 */
+  static topoHas555(topo: SchTopology): boolean {
+    return topo.deviceList.some(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u.indexOf('LM555') >= 0 || u.indexOf('NE555') >= 0 || u === '555';
+    });
+  }
+
+  /**
+   * 555 单稳态延时（经典配方）:
+   *   R_timing: VCC—DISCH；C_timing: THRES≡DISCH—GND；
+   *   TRIG: R_pull→VCC，SW→GND；CTRL—C_100n—GND；
+   *   RESET→VCC；OUT—R_330—LED—GND
+   */
+  static wire555Monostable(topo: SchTopology,
+    wiring: ConstrainedWiringEngine): TopologyFixResult {
+    const timer = topo.deviceList.find(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u.indexOf('LM555') >= 0 || u.indexOf('NE555') >= 0 || u === '555';
+    });
+    if (!timer) {
+      return AiTopologyFixKit.emptyResult();
+    }
+    const vcc = topo.deviceList.find(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u === 'VCC' || u === 'VDD';
+    });
+    const gnd = topo.deviceList.find(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u === 'GND' || u === 'VSS';
+    });
+    if (!vcc || !gnd) {
+      return AiTopologyFixKit.emptyResult();
+    }
+
+    const resistors = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('R_'));
+    const caps = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('C_'));
+    const leds = topo.deviceList.filter(d =>
+      (d.libDevId ?? '').toUpperCase().startsWith('LED_'));
+    const sw = topo.deviceList.find(d => (d.libDevId ?? '').toUpperCase().startsWith('SW_'));
+    const osc = topo.deviceList.find(d =>
+      (d.libDevId ?? '').toUpperCase().indexOf('OSCILLOSCOPE') >= 0);
+
+    const takeR = (prefer: string, used: DeviceInst[]): DeviceInst | null => {
+      for (let i = 0; i < resistors.length; i++) {
+        if (used.indexOf(resistors[i]) >= 0) {
+          continue;
+        }
+        if (prefer.length > 0 && resistors[i].libDevId !== prefer) {
+          continue;
+        }
+        used.push(resistors[i]);
+        return resistors[i];
+      }
+      for (let i = 0; i < resistors.length; i++) {
+        if (used.indexOf(resistors[i]) < 0) {
+          used.push(resistors[i]);
+          return resistors[i];
+        }
+      }
+      return null;
+    };
+    const takeC = (prefer: string, used: DeviceInst[]): DeviceInst | null => {
+      for (let i = 0; i < caps.length; i++) {
+        if (used.indexOf(caps[i]) >= 0) {
+          continue;
+        }
+        const id = (caps[i].libDevId ?? '').toUpperCase();
+        if (prefer.length > 0 && id !== prefer.toUpperCase()) {
+          continue;
+        }
+        used.push(caps[i]);
+        return caps[i];
+      }
+      for (let i = 0; i < caps.length; i++) {
+        if (used.indexOf(caps[i]) < 0) {
+          used.push(caps[i]);
+          return caps[i];
+        }
+      }
+      return null;
+    };
+
+    const usedR: DeviceInst[] = [];
+    const usedC: DeviceInst[] = [];
+    const rLed = takeR('R_330', usedR);
+    const rPull = takeR('R_10k', usedR);
+    const rTiming = takeR('R_10k', usedR) ?? takeR('', usedR);
+    const cCtrl = takeC('C_100nF', usedC) ?? takeC('C_10nF', usedC);
+    // 定时电容：优先非旁路的大电容
+    let cTiming: DeviceInst | null = null;
+    for (let i = 0; i < caps.length; i++) {
+      if (usedC.indexOf(caps[i]) >= 0) {
+        continue;
+      }
+      const id = (caps[i].libDevId ?? '').toUpperCase();
+      if (id.indexOf('100NF') >= 0 || id.indexOf('10NF') >= 0) {
+        continue;
+      }
+      usedC.push(caps[i]);
+      cTiming = caps[i];
+      break;
+    }
+    if (!cTiming) {
+      cTiming = takeC('', usedC);
+    }
+    const led = leds.length > 0 ? leds[0] : null;
+
+    if (!rTiming || !cTiming) {
+      Logger.warn(INSTR_TRACE_TAG,
+        '[AI_FIX] wire555Monostable skip — missing timing R or C');
+      return AiTopologyFixKit.emptyResult();
+    }
+
+    let fixed = 0;
+    const notes: string[] = [];
+    const rc = (ref: string, pin: string, net: string): void => {
+      const r = AiTopologyFixKit.reconnectPin(topo, wiring, ref, pin, net);
+      fixed += r.fixed;
+      notes.push(...r.notes);
+    };
+
+    // 电源
+    rc(vcc.refName, '1', 'VCC');
+    rc(timer.refName, 'VCC', 'VCC');
+    rc(timer.refName, 'RESET', 'VCC');
+    rc(rTiming.refName, '1', 'VCC');
+    if (rPull) {
+      rc(rPull.refName, '1', 'VCC');
+    }
+
+    // 地
+    rc(gnd.refName, '1', 'GND');
+    rc(timer.refName, 'GND', 'GND');
+    rc(cTiming.refName, '2', 'GND');
+    if (cCtrl) {
+      rc(cCtrl.refName, '2', 'GND');
+    }
+    if (led) {
+      rc(led.refName, 'K', 'GND');
+    }
+    if (sw) {
+      rc(sw.refName, '1', 'GND');
+    }
+
+    // 定时节点：THRES ≡ DISCH ≡ R_timing.2 ≡ C_timing.1
+    rc(timer.refName, 'THRES', '555_RC');
+    rc(timer.refName, 'DISCH', '555_RC');
+    rc(rTiming.refName, '2', '555_RC');
+    rc(cTiming.refName, '1', '555_RC');
+
+    // 触发：TRIG ← R_pull ← VCC；SW→GND
+    rc(timer.refName, 'TRIG', 'TRIG_NET');
+    if (rPull) {
+      rc(rPull.refName, '2', 'TRIG_NET');
+    }
+    if (sw) {
+      rc(sw.refName, '2', 'TRIG_NET');
+    }
+
+    // CTRL 旁路
+    if (cCtrl) {
+      rc(timer.refName, 'CTRL', 'CTRL_NET');
+      rc(cCtrl.refName, '1', 'CTRL_NET');
+    }
+
+    // OUT → LED
+    if (rLed && led) {
+      rc(timer.refName, 'OUT', 'OUT_NET');
+      rc(rLed.refName, '1', 'OUT_NET');
+      rc(rLed.refName, '2', 'LED_DRIVE');
+      rc(led.refName, 'A', 'LED_DRIVE');
+    } else if (led) {
+      rc(timer.refName, 'OUT', 'OUT_NET');
+      rc(led.refName, 'A', 'OUT_NET');
+    }
+
+    if (osc) {
+      rc(osc.refName, 'CH1', 'OUT_NET');
+      rc(osc.refName, 'GND', 'GND');
+    }
+
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_FIX] wire555Monostable fixed=${fixed} U=${timer.refName}` +
+      ` Rt=${rTiming.refName} Ct=${cTiming.refName}` +
+      ` | ${notes.slice(0, 8).join('; ')}`);
     return { fixed, needReroute: fixed > 0, notes };
   }
 
@@ -787,8 +986,13 @@ export class AiTopologyFixKit {
     const split = AiTopologyFixKit.splitMergedPowerRails(topo);
     fixed += split.fixed;
 
-    if (intent.seriesRcCharge) {
-      // 剥离多余 RELAY 由编排器负责；此处只 wire RC
+    if (intent.timer555Monostable) {
+      const mono = AiTopologyFixKit.wire555Monostable(topo, wiring);
+      fixed += mono.fixed;
+      notes.push(...mono.notes);
+    } else if (intent.seriesRcCharge && !AiTopologyFixKit.topoHas555(topo) &&
+      !intent.hasTimer555) {
+      // 剥离多余 RELAY 由编排器负责；有 555 时绝不套用串联 RC
       const rc = AiTopologyFixKit.wireSeriesRc(topo, wiring);
       fixed += rc.fixed;
       notes.push(...rc.notes);

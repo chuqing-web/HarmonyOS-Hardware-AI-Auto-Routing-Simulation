@@ -2,6 +2,10 @@
  * 按 CircuitIntent 组装的 prompt 条件片段（默认骨架 + 命中才注入）
  */
 import { CircuitIntent } from '../../algorithms/CircuitIntent';
+import {
+  assembleLibIdFragments, assemblePromptKeywordFragments,
+  FRAG_INSTR_DETAIL_SELECT, FRAG_INSTR_DETAIL_NET
+} from './DeviceInstrumentFragments';
 
 export const DEVICE_SELECT_BASE: string = `你是资深硬件工程师。根据用户需求拆解电路功能模块与器件需求。
 
@@ -99,17 +103,32 @@ export const FRAG_BLINK_OK: string = `
 export const FRAG_555_ASTABLE: string = `
 【555 无稳态多谐 — 强制配方】用户要 555/LM555 振荡/方波/闪烁时:
 - explicitModel 必须用 LM555（禁止 NE555 等库外 ID）
-- 定时: R_1k(或 R_10k) 作 Ra（VCC—DISCH）、R_10k 作 Rb（DISCH—THRES≡TRIG）、C_*（THRES/TRIG—GND）
-- 【硬】追加至少一颗 C_100nF：CTRL 旁路到 GND（可再加一颗 VCC 去耦）
+- 定时: R_1k(或同类) 作 Ra（仅 VCC—DISCH）、R_10k 作 Rb（仅 DISCH—THRES≡TRIG）、C_*（仅 THRES/TRIG—GND）
+- 【硬】追加至少一颗 C_100nF：CTRL 旁路到 GND（可再加一颗 VCC—C_100nF—GND 去耦）
 - OUT→R_330→LED→GND；RESET→VCC；示波器 CH1→OUT、GND→GND
 - 肉眼闪烁可选较大 C（如 C_10uF/C_100uF）；示波器观测优先 C_1uF（约几十 Hz，时基约 10ms/div）
-- VCC param_constraint.voltage 写 "5V"（或用户指定）`;
+- VCC param_constraint.voltage 写 "5V"（或用户指定）
+- 【硬禁】禁止套用「串联 RC 充放电」配方（VCC→SW→R→C→GND）
+- 【硬禁】禁止两颗定时电阻都接到 VCC；禁止 Ra/Rb 角色对调成「R 接 THRES、另一 R 接 VCC—DISCH」却漏 Rb→THRES
+- 【硬禁】禁止 RESET 与 DISCH 同网；禁止去耦电容一端挂 THRES/DISCH 冒充测量`;
+
+export const FRAG_555_MONOSTABLE: string = `
+【555 单稳态延时 — 强制配方】用户要 555/LM555 单稳态/延时/按键触发时:
+- explicitModel 必须用 LM555（禁止 NE555 等库外 ID）
+- 定时: R_*（VCC—DISCH）、C_*（THRES≡DISCH 节点—GND）；THRES 与 DISCH 必须同网
+- TRIG: R_10k 上拉到 VCC；SW_PUSH 一端接 TRIG、另一端接 GND（按下拉低触发）
+- 【硬】C_100nF：CTRL 旁路到 GND；RESET→VCC
+- OUT→R_330→LED→GND；按键触发后 OUT 高电平驱动 LED 延时后熄灭
+- VCC param_constraint.voltage 写 "5V"（或用户指定）
+- 【硬禁】禁止套用「串联 RC 充放电」：禁止 SW 串在 VCC→R→C→GND；禁止把定时 C 两端都接 GND
+- 【硬禁】禁止把 CTRL 旁路电容接到 TRIG；禁止把 TRIG 与 THRES 短接（无稳态才是 THRES≡TRIG）`;
 
 export const FRAG_SERIES_RC: string = `
-【串联 RC 充放电 — 强制配方】观测 τ=RC / 指数波形时:
+【串联 RC 充放电 — 强制配方】观测 τ=RC / 指数波形时（无 555 定时器）:
 - 必须: VCC + GND + R_* + C_* + SW_PUSH（充电通断）+（用户要求时）OSCILLOSCOPE
 - 拓扑: VCC→SW→R→RC_MID→C→GND；示波器 CH1→RC_MID，GND→GND
 - 【硬禁】禁止输出 RELAY_SPDT（RC 充放电不是互斥双色指示）
+- 【硬禁】板上有 LM555 时禁止本配方 — 改用 555 单稳态/无稳态配方
 - 未使用示波器 CH2/CH3/CH4 保持悬空，禁止接到 GND 或另建单脚网（教学全套仪器除外，应接满 CH1–4）`;
 
 export const FRAG_INSTRUMENTS_SELECT: string = `
@@ -166,7 +185,32 @@ export const FRAG_NET_BLINK: string = `
 export const FRAG_NET_SERIES_RC: string = `
 【串联 RC 充放电】VCC→(SW)→R.1；R.2 与 C.1 同网 RC_MID；C.2→GND。
 示波器 CH1 并入 RC_MID（同名标号），OSC.GND→GND；未用 CH2/3/4 不入网。
-禁止 RELAY 线圈直连 VCC/GND；禁止用继电器冒充充放电开关。`;
+禁止 RELAY 线圈直连 VCC/GND；禁止用继电器冒充充放电开关。
+【硬】板上有 LM555 时禁止本拓扑 — 改用 555 单稳态/无稳态接线。`;
+
+export const FRAG_NET_555_MONOSTABLE: string = `
+【555 单稳态接线 — 硬】:
+- VCC: U.VCC + U.RESET + R_timing.1 + R_pull.1
+- GND: U.GND + C_timing.2 + C_ctrl.2 + LED.K + SW.1
+- 555_RC: U.THRES + U.DISCH + R_timing.2 + C_timing.1（THRES≡DISCH，禁止贴 GND）
+- TRIG_NET: U.TRIG + R_pull.2 + SW.2（按键拉低触发；禁止 C_ctrl 挂 TRIG）
+- CTRL_NET: U.CTRL + C_ctrl.1（仅旁路，禁止与 TRIG 同网）
+- OUT_NET: U.OUT + R_led.1；LED_DRIVE: R_led.2 + LED.A
+- 【硬禁】禁止 VCC→SW→R→C→GND 串联 RC；禁止 THRES/DISCH 直接接 GND`;
+
+export const FRAG_NET_555_ASTABLE: string = `
+【555 无稳态接线 — 硬·脚级清单 — edit/net_plan 必须逐条满足】:
+- VCC: U.VCC + U.RESET + Ra.1（Ra=较小定时电阻如 R_1k；仅 Ra 高端接 VCC）
+- GND: U.GND + C_timing.2 + C_ctrl.2 + (C_decouple.2) + LED.K + OSC.GND
+- 555_DISCH: U.DISCH + Ra.2 + Rb.1（仅此三脚；禁止 RESET/VCC/THRES 进本网）
+- 555_THRES_TRIG: U.THRES + U.TRIG + Rb.2 + C_timing.1（THRES≡TRIG；禁止贴 GND；禁止 DISCH 进本网）
+- 555_CTRL: U.CTRL + C_ctrl.1（仅旁路；禁止与 TRIG/THRES/DISCH 同网）
+- （可选）VCC 去耦: C_decouple.1→VCC，C_decouple.2→GND（禁止挂到信号网）
+- 555_OUT: U.OUT + R_led.1 (+ OSC.CH1)；LED_ANODE: R_led.2 + LED.A
+- 示波器：CH1∥555_OUT；GND→GND；教学可 CH2∥THRES_TRIG、CH3∥DISCH、CH4∥CTRL（并入同名网）
+- 【硬禁】禁止两颗定时 R 都接 VCC；禁止 Ra 接到 THRES 而绕过 DISCH；禁止 Rb 高端接 VCC
+- 【硬禁】禁止 RESET≡DISCH；禁止 VCC→SW→R→C→GND 串联 RC；禁止另建无 DUT 的 *_SENSE 单脚网
+- 【edit·硬】removeNetNames 不得包含仍出现在 nets 中的网名`;
 
 export const FRAG_NET_OPAMP: string = `
 【运放】必须有反馈闭环；输入不浮空；VCC/V+→VCC；双电源时 VEE/V-→VEE（勿接 GND）；双运放未用半边接跟随`;
@@ -188,7 +232,8 @@ SIGNAL_GEN amplitude 须 ≥2V（推荐 5V），禁止 1V 峰（越过不了负�
 export const FRAG_NET_INSTR: string = `
 【仪器】测量脚并入被测信号网同名；禁止另建 PROBE 网重复 DUT 脚`;
 
-export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: string = ''): string {
+export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: string = '',
+  libIds: string[] = []): string {
   let s = DEVICE_SELECT_BASE;
   if (intent.needsPowerRails) {
     s += FRAG_POWER_RAILS;
@@ -223,21 +268,27 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: st
   if (intent.blinkOscillator) {
     s += FRAG_BLINK_OK;
   }
-  const up = userPrompt ?? '';
-  if (up.indexOf('555') >= 0 || up.toLowerCase().indexOf('lm555') >= 0 ||
-    intent.reasons.indexOf('555_astable') >= 0) {
+  if (intent.timer555Monostable) {
+    s += FRAG_555_MONOSTABLE;
+  } else if (intent.timer555Astable || intent.reasons.indexOf('555_astable') >= 0) {
     s += FRAG_555_ASTABLE;
   }
-  if (intent.seriesRcCharge) {
+  if (intent.seriesRcCharge && !intent.timer555Monostable && !intent.timer555Astable) {
     s += FRAG_SERIES_RC;
   }
   if (intent.hasInstruments) {
     s += FRAG_INSTRUMENTS_SELECT;
+    s += FRAG_INSTR_DETAIL_SELECT;
+  }
+  // 关键词族片段（尚无 BOM）+ 板上/已有 libId 片段（edit 增量选型）
+  s += assemblePromptKeywordFragments(userPrompt);
+  if (libIds && libIds.length > 0) {
+    s += assembleLibIdFragments(libIds, 'select');
   }
   return s;
 }
 
-export function assembleNetPlanSystem(intent: CircuitIntent): string {
+export function assembleNetPlanSystem(intent: CircuitIntent, libIds: string[] = []): string {
   let s = NET_PLAN_BASE;
   if (intent.hasMcuMinSystem) {
     s += FRAG_NET_MCU;
@@ -251,7 +302,12 @@ export function assembleNetPlanSystem(intent: CircuitIntent): string {
   if (intent.blinkOscillator) {
     s += FRAG_NET_BLINK;
   }
-  if (intent.seriesRcCharge) {
+  if (intent.timer555Monostable) {
+    s += FRAG_NET_555_MONOSTABLE;
+  } else if (intent.timer555Astable) {
+    s += FRAG_NET_555_ASTABLE;
+  }
+  if (intent.seriesRcCharge && !intent.timer555Monostable && !intent.timer555Astable) {
     s += FRAG_NET_SERIES_RC;
   }
   if (intent.needsOpAmpFeedback) {
@@ -271,6 +327,11 @@ export function assembleNetPlanSystem(intent: CircuitIntent): string {
   }
   if (intent.hasInstruments) {
     s += FRAG_NET_INSTR;
+    s += FRAG_INSTR_DETAIL_NET;
+  }
+  // 按板上实际型号注入脚级片段（全库覆盖）
+  if (libIds && libIds.length > 0) {
+    s += assembleLibIdFragments(libIds, 'net');
   }
   return s;
 }

@@ -5,7 +5,7 @@
 import {
   SchTopology, RouteResult, RouteLine, RoutingLlmOutput, RoutingWeightPrefs,
   Point2D, SpecialNetRule, SpacingIssue, DeviceInst, NetLabelInfo, NetNodeRef,
-  DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WorldHitRect, Pin,
+  DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE, WorldHitRect, Pin,
   WireConflictGeometry, IdUtil, makeRouteLine, Logger, MainThreadYield,
   INSTR_TRACE_TAG, traceAiDiag, traceAiOp
 } from 'common';
@@ -111,6 +111,37 @@ export class ConstrainedWiringEngine {
    * 先剥离非 stub 旧线强制 A* 重布；仍违规则降级 joinByLabel stub。
    * 同步版仅供小规模/测试；生产流水线请用 routeUntilCleanAsync。
    */
+  /** edit 增量：这些网名的既有导线不 strip、不 A*、不 demote */
+  private preserveNetUuids: Set<string> = new Set();
+
+  /** 设置需保留导线的网络名（按 topo 解析为 uuid）；传空/undefined 清除 */
+  setPreserveNetNames(topo: SchTopology, names: string[] | undefined): void {
+    this.preserveNetUuids.clear();
+    if (!names || names.length === 0) {
+      return;
+    }
+    const want = new Set<string>();
+    for (let i = 0; i < names.length; i++) {
+      const n = (names[i] ?? '').trim();
+      if (n.length > 0) {
+        want.add(n);
+      }
+    }
+    for (let i = 0; i < topo.netList.length; i++) {
+      if (want.has(topo.netList[i].netName)) {
+        this.preserveNetUuids.add(topo.netList[i].netUuid);
+      }
+    }
+    if (this.preserveNetUuids.size > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_ROUTE] preserve nets=${this.preserveNetUuids.size} names=[${names.slice(0, 12).join(',')}]`);
+    }
+  }
+
+  clearPreserveNets(): void {
+    this.preserveNetUuids.clear();
+  }
+
   routeUntilClean(topo: SchTopology, constraints: RoutingLlmOutput,
     weights?: RoutingWeightPrefs,
     netWaypoints?: Map<string, Point2D[]>,
@@ -139,6 +170,18 @@ export class ConstrainedWiringEngine {
     }
 
     const forceLabelUuids = this.resolveForceLabelNetUuids(topo, constraints);
+    // edit 增量：不得 demote 保留网
+    if (this.preserveNetUuids.size > 0) {
+      const drop: string[] = [];
+      forceLabelUuids.forEach((u) => {
+        if (this.preserveNetUuids.has(u)) {
+          drop.push(u);
+        }
+      });
+      for (let di = 0; di < drop.length; di++) {
+        forceLabelUuids.delete(drop[di]);
+      }
+    }
     if (forceLabelUuids.size > 0) {
       const n = this.demoteNetsToLabelStubs(topo, forceLabelUuids);
       const names = this.netNamesOfUuids(topo, forceLabelUuids);
@@ -199,6 +242,17 @@ export class ConstrainedWiringEngine {
     }
 
     const forceLabelUuids = this.resolveForceLabelNetUuids(topo, constraints);
+    if (this.preserveNetUuids.size > 0) {
+      const drop: string[] = [];
+      forceLabelUuids.forEach((u) => {
+        if (this.preserveNetUuids.has(u)) {
+          drop.push(u);
+        }
+      });
+      for (let di = 0; di < drop.length; di++) {
+        forceLabelUuids.delete(drop[di]);
+      }
+    }
     if (forceLabelUuids.size > 0) {
       const n = this.demoteNetsToLabelStubs(topo, forceLabelUuids);
       const names = this.netNamesOfUuids(topo, forceLabelUuids);
@@ -254,6 +308,17 @@ export class ConstrainedWiringEngine {
 
   private finalizeRouteUntilClean(topo: SchTopology, last: RouteResult): RouteResult {
     const stillBad = this.findViolatingNetUuids(topo, last.routeLines);
+    if (this.preserveNetUuids.size > 0) {
+      const dropBad: string[] = [];
+      stillBad.forEach((u) => {
+        if (this.preserveNetUuids.has(u)) {
+          dropBad.push(u);
+        }
+      });
+      for (let di = 0; di < dropBad.length; di++) {
+        stillBad.delete(dropBad[di]);
+      }
+    }
     if (stillBad.size > 0) {
       const demoted = this.demoteNetsToLabelStubs(topo, stillBad);
       const names = this.netNamesOfUuids(topo, stillBad);
@@ -276,6 +341,17 @@ export class ConstrainedWiringEngine {
     }
 
     const stillAfterCap = this.findViolatingNetUuids(topo, last.routeLines);
+    if (this.preserveNetUuids.size > 0) {
+      const dropCap: string[] = [];
+      stillAfterCap.forEach((u) => {
+        if (this.preserveNetUuids.has(u)) {
+          dropCap.push(u);
+        }
+      });
+      for (let di = 0; di < dropCap.length; di++) {
+        stillAfterCap.delete(dropCap[di]);
+      }
+    }
     if (stillAfterCap.size > 0) {
       const demoted2 = this.demoteNetsToLabelStubs(topo, stillAfterCap);
       const names2 = this.netNamesOfUuids(topo, stillAfterCap);
@@ -290,6 +366,17 @@ export class ConstrainedWiringEngine {
 
     // 兜底：任意「stub+长线」混挂网一律整网标号，避免落图后分裂
     const mixed = this.findStubLongMixedNetUuids(topo);
+    if (this.preserveNetUuids.size > 0) {
+      const dropMixed: string[] = [];
+      mixed.forEach((u) => {
+        if (this.preserveNetUuids.has(u)) {
+          dropMixed.push(u);
+        }
+      });
+      for (let di = 0; di < dropMixed.length; di++) {
+        mixed.delete(dropMixed[di]);
+      }
+    }
     if (mixed.size > 0) {
       const demoted3 = this.demoteNetsToLabelStubs(topo, mixed);
       Logger.info(INSTR_TRACE_TAG,
@@ -329,6 +416,7 @@ export class ConstrainedWiringEngine {
       ` nets=${topo.netList.length}`);
     traceAiOp('AI_ROUTE', 'route_finalize',
       `wires=${topo.wireList.length} stubs=${stubN} long=${longN}`);
+    this.clearPreserveNets();
     return last;
   }
 
@@ -691,6 +779,11 @@ export class ConstrainedWiringEngine {
     const kept: RouteLine[] = [];
     for (let i = 0; i < topo.wireList.length; i++) {
       const w = topo.wireList[i];
+      // edit 增量：保留未变更网的全部导线
+      if (this.preserveNetUuids.has(w.netUuid)) {
+        kept.push(w);
+        continue;
+      }
       if (WireConflictGeometry.isShortStub(w)) {
         kept.push(w);
         continue;
@@ -1341,13 +1434,14 @@ export class ConstrainedWiringEngine {
   }
 
   /**
-   * 解析器件选中范围：优先库引脚 + HIT_PAD；否则 Kit 引脚偏移估算。
+   * 解析器件布线障碍范围：用 WIRE_OBSTACLE_PAD（非 SELECTION_HIT_PAD），
+   * 避免选中区过大把引脚深埋导致 A* / 正交布线 blocked。
    */
   private resolveHitRect(dev: DeviceInst): WorldHitRect {
     const pins = this.getDevicePins(dev.libDevId);
     if (pins.length > 0) {
       return DeviceHitGeometry.hitRectFromPins(
-        pins, dev.x, dev.y, dev.rotate, dev.mirrorH, SELECTION_HIT_PAD,
+        pins, dev.x, dev.y, dev.rotate, dev.mirrorH, WIRE_OBSTACLE_PAD,
         dev.refName, dev.instUuid, dev.libDevId);
     }
     // 回退: 用 Kit 常见脚偏移估选中区
@@ -1360,7 +1454,7 @@ export class ConstrainedWiringEngine {
       }
     }
     return DeviceHitGeometry.hitRectFromLocalPoints(
-      locals, dev.x, dev.y, dev.rotate, dev.mirrorH, SELECTION_HIT_PAD,
+      locals, dev.x, dev.y, dev.rotate, dev.mirrorH, WIRE_OBSTACLE_PAD,
       dev.refName, dev.instUuid, dev.libDevId);
   }
 
@@ -1510,6 +1604,11 @@ export class ConstrainedWiringEngine {
     for (const net of topo.netList) {
       // 无真实脚节点则跳过（禁止「前两器件」假连）
       if (net.nodeList.length < 2) {
+        continue;
+      }
+      // edit 增量：未变更网不进 A*
+      if (this.preserveNetUuids.has(net.netUuid)) {
+        skippedCovered++;
         continue;
       }
       if (forceLabelSkip.has(net.netUuid)) {

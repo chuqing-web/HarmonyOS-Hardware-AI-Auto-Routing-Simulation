@@ -1,4 +1,4 @@
-import { ErcSeverity, IdUtil, TopologyAdapter, makeDeviceInst, stringMap1, getPinNetMap, Logger, INSTR_TRACE_TAG, traceAiDiag, DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WireConflictGeometry, mapAwareStringify, mapAwareParse, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { ErcSeverity, IdUtil, TopologyAdapter, makeDeviceInst, stringMap1, getPinNetMap, Logger, INSTR_TRACE_TAG, traceAiDiag, DeviceHitGeometry, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE, WireConflictGeometry, mapAwareStringify, mapAwareParse, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { SchTopology, NetNodeRef, Point2D, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary, ComponentDefinition } from 'component_library';
 import { FaultDiagnoser } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/FaultDiagnoser";
@@ -419,13 +419,14 @@ export class PostGenValidator {
         for (const dev of topo.deviceList) {
             const def = this.getCompDef(dev.libDevId);
             if (def && def.pins.length > 0) {
-                rects.push(DeviceHitGeometry.hitRectFromDeviceInst(dev, def.pins, SELECTION_HIT_PAD));
+                // 走线门禁用障碍 pad，与编辑器 WAR 一致（非点击选中 SELECTION_HIT_PAD）
+                rects.push(DeviceHitGeometry.hitRectFromDeviceInst(dev, def.pins, WIRE_OBSTACLE_PAD));
             }
             else {
                 const locals: Point2D[] = [
                     { x: -30, y: 0 }, { x: 30, y: 0 }, { x: 0, y: -20 }, { x: 0, y: 20 }
                 ];
-                rects.push(DeviceHitGeometry.hitRectFromLocalPoints(locals, dev.x, dev.y, dev.rotate, dev.mirrorH, SELECTION_HIT_PAD, dev.refName, dev.instUuid, dev.libDevId));
+                rects.push(DeviceHitGeometry.hitRectFromLocalPoints(locals, dev.x, dev.y, dev.rotate, dev.mirrorH, WIRE_OBSTACLE_PAD, dev.refName, dev.instUuid, dev.libDevId));
             }
         }
         return rects;

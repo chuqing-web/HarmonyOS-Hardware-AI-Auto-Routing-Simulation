@@ -9,8 +9,8 @@ import { VoltmeterEngine } from "@bundle:com.elecdraw.aischsim/entry@instruments
 import { AmmeterEngine } from "@bundle:com.elecdraw.aischsim/entry@instruments/ets/engines/AmmeterEngine";
 import { PowerMeterEngine } from "@bundle:com.elecdraw.aischsim/entry@instruments/ets/engines/PowerMeterEngine";
 import { FrequencyCounterEngine } from "@bundle:com.elecdraw.aischsim/entry@instruments/ets/engines/FrequencyCounterEngine";
-import { ErrCode, ResultHelper, Validate, traceActiveComponentChanged, formatBindingSummary, Logger, INSTR_TRACE_TAG, traceUart, formatUartBytesHex } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { ApiResult, WaveData, OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode, MathChannelOp, CursorMeasurement, LogicDecodeProtocol, DecodedFrame, MultimeterMode, SignalWaveform, VoltmeterType, VoltmeterConfig, AmmeterType, AmmeterConfig, PowerMeterConfig, FrequencyCounterConfig, BindingTraceInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { ErrCode, ResultHelper, Validate, IdUtil, MathChannelOp, traceActiveComponentChanged, formatBindingSummary, Logger, INSTR_TRACE_TAG, traceUart, formatUartBytesHex } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { ApiResult, WaveData, OscTimebase, OscVoltageScale, CouplingMode, TriggerMode, CaptureMode, CursorMeasurement, LogicDecodeProtocol, DecodedFrame, MultimeterMode, SignalWaveform, VoltmeterType, VoltmeterConfig, AmmeterType, AmmeterConfig, PowerMeterConfig, FrequencyCounterConfig, BindingTraceInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import fs from "@ohos:file.fs";
 export class VirtualInstrumentsImpl implements IVirtualInstruments {
     private oscilloscope: OscilloscopeEngine = new OscilloscopeEngine();
@@ -27,6 +27,8 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     private uartTxSink: ((bytes: number[]) => void) | null = null;
     /** Explicit TX/RX same-net loopback (set by AppService on UART bind) */
     private uartLoopback: boolean = false;
+    /** 最近一帧仿真波形（µs 级），供电压表/电流表面板画正弦 */
+    private lastSimWaves: WaveData[] = [];
     /** Forward terminal TX hex into the simulation kernel USART RX path. */
     setUartTxSink(sink: ((bytes: number[]) => void) | null): void {
         this.uartTxSink = sink;
@@ -142,13 +144,17 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         this.applyScopeProbesFromAllBindings();
     }
     /**
-     * Merge scope probes from every registered instrument binding.
-     * Prefer the active OSC binding's probes when present.
+     * Merge scope probes from OSC/SCOPE bindings only.
+     * 电压表/电流表也会把网号塞进 scopeProbes 供自身波形重建，不得污染示波器 CH。
      */
     private applyScopeProbesFromAllBindings(): void {
         const merged: string[] = ['', '', '', ''];
+        const isScopeLib = (lib: string): boolean => {
+            const u = lib.toUpperCase();
+            return u.includes('OSC') || u.includes('SCOPE');
+        };
         const active = this.getActiveBinding();
-        if (active !== null) {
+        if (active !== null && isScopeLib(active.libraryId)) {
             for (let ch = 0; ch < 4; ch++) {
                 if (ch < active.scopeProbes.length && active.scopeProbes[ch].length > 0) {
                     merged[ch] = active.scopeProbes[ch];
@@ -156,6 +162,9 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
             }
         }
         this.componentBindings.forEach((b: ComponentInstrumentBinding) => {
+            if (!isScopeLib(b.libraryId)) {
+                return;
+            }
             for (let ch = 0; ch < 4; ch++) {
                 if (merged[ch].length > 0) {
                     continue;
@@ -244,6 +253,10 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
             return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Channel must be 0-3');
         }
         this.ensureActiveBindingApplied();
+        // Math FFT：返回频谱而非时域；否则 UI 点 FFT 只改标志、画面无变化
+        if (this.oscilloscope.getMathOp() === MathChannelOp.FFT) {
+            return ResultHelper.ok(this.oscilloscope.captureFft(channel));
+        }
         return ResultHelper.ok(this.oscilloscope.captureWave(channel));
     }
     async exportWaveformSvg(channel: number, path: string): Promise<ApiResult<void>> {
@@ -427,6 +440,7 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         return this.uartTerminal.getLog();
     }
     feedSimulationWaves(waves: WaveData[]): ApiResult<void> {
+        this.lastSimWaves = waves;
         this.oscilloscope.feedSimulationWaves(waves);
         this.logicAnalyzer.feedSimulationWaves(waves);
         return ResultHelper.ok();
@@ -524,6 +538,13 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     setVoltmeterGlobalFallback(reader: (() => number) | null): void {
         this.voltmeter.setGlobalFallback(reader);
     }
+    getVoltmeterWave(): ApiResult<WaveData> {
+        const rebuilt = this.buildVoltmeterSimWave();
+        if (rebuilt !== null) {
+            return ResultHelper.ok(rebuilt);
+        }
+        return ResultHelper.ok(this.voltmeter.getWaveform());
+    }
     // ---- Ammeter ----
     setAmmeterType(type: AmmeterType): ApiResult<void> {
         this.ammeter.setType(type);
@@ -566,6 +587,139 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     }
     setAmmeterGlobalFallback(reader: (() => number) | null): void {
         this.ammeter.setGlobalFallback(reader);
+    }
+    getAmmeterWave(): ApiResult<WaveData> {
+        const rebuilt = this.buildAmmeterSimWave();
+        if (rebuilt !== null) {
+            return ResultHelper.ok(rebuilt);
+        }
+        return ResultHelper.ok(this.ammeter.getWaveform());
+    }
+    /**
+     * 电压表面板波形：用仿真网电压差（µs 采样）重建，避免 UI 低频抽点把 1kHz 正弦混叠成锯齿。
+     */
+    private buildVoltmeterSimWave(): WaveData | null {
+        const binding = this.findMeterBinding('VOLTMETER');
+        if (binding === null) {
+            return null;
+        }
+        const plusId = binding.scopeProbes[0] ?? '';
+        const comId = binding.scopeProbes[1] ?? '';
+        if (plusId.length === 0 || comId.length === 0 || this.lastSimWaves.length === 0) {
+            return null;
+        }
+        const wPlus = this.findWaveForNet(plusId);
+        const wCom = this.findWaveForNet(comId);
+        if (wPlus === null || wCom === null) {
+            return null;
+        }
+        const n = Math.min(wPlus.timeAxis.length, wPlus.voltageAxis.length, wCom.timeAxis.length, wCom.voltageAxis.length);
+        if (n < 8) {
+            return null;
+        }
+        const timeAxis: number[] = [];
+        const voltageAxis: number[] = [];
+        for (let i = 0; i < n; i++) {
+            timeAxis.push(wPlus.timeAxis[i]);
+            voltageAxis.push(wPlus.voltageAxis[i] - wCom.voltageAxis[i]);
+        }
+        const span = Math.max(timeAxis[n - 1] - timeAxis[0], 1e-9);
+        Logger.info(INSTR_TRACE_TAG, `[METER_WAVE] VM sim-rebuild n=${n} span=${(span * 1e3).toFixed(2)}ms ` +
+            `V+=${plusId.slice(-8)} COM=${comId.slice(-8)} ` +
+            `lastΔ=${voltageAxis[n - 1].toFixed(3)}V (not UI-aliased ring)`);
+        return {
+            waveId: IdUtil.generate('vmw'),
+            probeName: 'VM',
+            netName: 'VOLTMETER',
+            timeAxis: timeAxis,
+            voltageAxis: voltageAxis,
+            currentAxis: new Array(n).fill(0),
+            sampleRate: (n - 1) / span,
+            waveType: 'voltage',
+            holdTime: span
+        };
+    }
+    /**
+     * 电流表面板波形：用内核 I(compUuid) 支路电流时域（mA），与信号源同采样率。
+     */
+    private buildAmmeterSimWave(): WaveData | null {
+        const binding = this.findMeterBinding('AMMETER');
+        if (binding === null || this.lastSimWaves.length === 0) {
+            return null;
+        }
+        const compId = binding.scopeProbes[2] ?? this.activeCompId ?? '';
+        if (compId.length === 0) {
+            return null;
+        }
+        const key = `I(${compId})`;
+        let w: WaveData | null = null;
+        for (let i = 0; i < this.lastSimWaves.length; i++) {
+            const cand = this.lastSimWaves[i];
+            if (cand.probeName === key || cand.netName === key) {
+                w = cand;
+                break;
+            }
+        }
+        if (w === null || w.voltageAxis.length < 8) {
+            return null;
+        }
+        const n = Math.min(w.timeAxis.length, w.voltageAxis.length);
+        const timeAxis = w.timeAxis.slice(0, n);
+        const voltageAxis = w.voltageAxis.slice(0, n);
+        const span = Math.max(timeAxis[n - 1] - timeAxis[0], 1e-9);
+        Logger.info(INSTR_TRACE_TAG, `[METER_WAVE] AM sim-rebuild n=${n} span=${(span * 1e3).toFixed(2)}ms ` +
+            `key=${key.slice(-20)} lastI=${voltageAxis[n - 1].toFixed(3)}mA (not UI-aliased ring)`);
+        return {
+            waveId: IdUtil.generate('amw'),
+            probeName: 'AM',
+            netName: 'AMMETER',
+            timeAxis: timeAxis,
+            voltageAxis: voltageAxis,
+            currentAxis: voltageAxis.slice(),
+            sampleRate: (n - 1) / span,
+            waveType: 'current',
+            holdTime: span
+        };
+    }
+    private findMeterBinding(libToken: string): ComponentInstrumentBinding | null {
+        if (this.activeCompId !== null && this.activeCompId.length > 0) {
+            const active = this.componentBindings.get(this.activeCompId);
+            if (active !== undefined && active.libraryId.toUpperCase().includes(libToken)) {
+                return active;
+            }
+        }
+        let found: ComponentInstrumentBinding | null = null;
+        this.componentBindings.forEach((b: ComponentInstrumentBinding) => {
+            if (found !== null) {
+                return;
+            }
+            if (b.libraryId.toUpperCase().includes(libToken)) {
+                found = b;
+            }
+        });
+        return found;
+    }
+    private findWaveForNet(netId: string): WaveData | null {
+        if (netId.length === 0) {
+            return null;
+        }
+        for (let i = 0; i < this.lastSimWaves.length; i++) {
+            const w = this.lastSimWaves[i];
+            if (w.probeName === netId || w.netName === netId) {
+                return w;
+            }
+        }
+        // 后缀 / 名称别名匹配（NET_1 ↔ net_topo_sig_1）
+        for (let i = 0; i < this.lastSimWaves.length; i++) {
+            const w = this.lastSimWaves[i];
+            if (w.probeName.indexOf(netId) >= 0 || w.netName.indexOf(netId) >= 0 ||
+                netId.indexOf(w.probeName) >= 0 || netId.indexOf(w.netName) >= 0) {
+                if (w.voltageAxis.length >= 8) {
+                    return w;
+                }
+            }
+        }
+        return null;
     }
     // ---- Power Meter ----
     setPowerMeterVoltageReader(reader: (() => number) | null): void {
@@ -630,6 +784,32 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
             resolution: 0.1
         };
         return ResultHelper.ok(config);
+    }
+    freqCounterFeedSignalSample(volts: number): void {
+        this.freqCounter.feedSignalSample(volts);
+    }
+    getFreqCounterWave(): ApiResult<WaveData> {
+        // 优先示波器探针缓存（仿真 µs 级波形更真实）；否则用喂入的信号环缓冲
+        const probes = this.getActiveScopeProbes();
+        if (probes.length > 0 && probes[0].length > 0) {
+            const captured = this.oscilloscope.captureProbe(probes[0]);
+            if (captured !== null && captured.voltageAxis.length > 1) {
+                return ResultHelper.ok(captured);
+            }
+        }
+        return ResultHelper.ok(this.freqCounter.getWaveform());
+    }
+    /** Active binding CH1 probe names (empty if none). */
+    private getActiveScopeProbes(): string[] {
+        const activeId = this.getActiveInstrumentComponent();
+        if (activeId === null || activeId.length === 0) {
+            return [];
+        }
+        const binding = this.componentBindings.get(activeId);
+        if (binding === undefined) {
+            return [];
+        }
+        return binding.scopeProbes.slice();
     }
     getInstrumentSnapshot(): InstrumentSnapshotView {
         return {

@@ -2,13 +2,14 @@
  * 电流表仿真引擎 — 支持 DC / AC (True-RMS)
  * DC path mirrors VoltmeterEngine so AC-driven current does not look frozen on the UI.
  */
-import { AmmeterType } from 'common';
+import { AmmeterType, WaveData, IdUtil } from 'common';
 
 const DC_RANGES_MA = [2, 20, 200, 2000, 10000];
 const AC_RANGES_MA = [2, 20, 200, 2000];
 const RMS_WINDOW_SAMPLES = 16;
 const DC_AVG_SAMPLES = 12;
 const DC_EMA_ALPHA = 0.35;
+const WAVE_HISTORY_MAX = 256;
 
 export class AmmeterEngine {
   private type: AmmeterType = AmmeterType.DC;
@@ -24,6 +25,8 @@ export class AmmeterEngine {
   private dcSampleBuffer: number[] = [];
   private dcEma: number = 0;
   private dcEmaInit: boolean = false;
+  private waveSamples: number[] = [];
+  private waveTimes: number[] = [];
 
   setType(t: AmmeterType): void {
     this.type = t;
@@ -83,6 +86,7 @@ export class AmmeterEngine {
 
   /** Measure from an explicit sample (per-instance I+→I-). Applies DC avg / AC true-RMS. */
   measureValue(raw: number): number {
+    this.pushWaveSample(raw);
     if (this.type === AmmeterType.AC) {
       this.updateRmsBuffer(raw);
       this.lastReading = raw;
@@ -106,6 +110,7 @@ export class AmmeterEngine {
 
   /** High-rate silent sample (sim tick) — fills DC avg / AC RMS without UI log spam. */
   feedSample(raw: number): void {
+    this.pushWaveSample(raw);
     if (this.type === AmmeterType.AC) {
       this.updateRmsBuffer(raw);
       return;
@@ -113,10 +118,30 @@ export class AmmeterEngine {
     this.updateDcAverage(raw);
   }
 
+  /** 电流时域波形（mA，供面板 Canvas） */
+  getWaveform(): WaveData {
+    const n = this.waveSamples.length;
+    const timeAxis = this.waveTimes.slice();
+    const voltageAxis = this.waveSamples.slice();
+    const span = n >= 2 ? Math.max(timeAxis[n - 1] - timeAxis[0], 1e-6) : 1;
+    return {
+      waveId: IdUtil.generate('amw'),
+      probeName: 'AM',
+      netName: 'AMMETER',
+      timeAxis: timeAxis,
+      voltageAxis: voltageAxis,
+      currentAxis: voltageAxis.slice(),
+      sampleRate: n > 1 ? (n - 1) / span : 1,
+      waveType: 'current',
+      holdTime: span
+    };
+  }
+
   /**
    * Immediate DC UI update (interactive pot / switch) — clears averaging lag.
    */
   snapReading(raw: number): number {
+    this.pushWaveSample(raw);
     this.dcSampleBuffer = [raw];
     this.dcEma = raw;
     this.dcEmaInit = true;
@@ -194,6 +219,19 @@ export class AmmeterEngine {
         sumSq += ac * ac;
       }
       this.lastRms = Math.sqrt(sumSq / this.rmsSampleBuffer.length);
+    }
+  }
+
+  private pushWaveSample(raw: number): void {
+    const step = 0.001;
+    const t = this.waveTimes.length > 0
+      ? this.waveTimes[this.waveTimes.length - 1] + step
+      : 0;
+    this.waveTimes.push(t);
+    this.waveSamples.push(raw);
+    while (this.waveSamples.length > WAVE_HISTORY_MAX) {
+      this.waveSamples.shift();
+      this.waveTimes.shift();
     }
   }
 }

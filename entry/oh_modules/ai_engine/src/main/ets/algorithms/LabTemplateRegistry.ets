@@ -7,7 +7,7 @@ import {
   buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital,
   buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral,
   buildLabSensor, buildLabInstruments, buildLabPotentiometer,
-  buildLabSchmitt, buildLabIntegrator, buildLab555Astable
+  buildLabSchmitt, buildLabIntegrator, buildLab555Astable, buildLab555Monostable
 } from './LabTemplateBuilders';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
 
@@ -90,6 +90,8 @@ const INTEGRATOR_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_10k', 'R_100k', 'C_100
   'OSCILLOSCOPE'];
 const ASTABLE_555_LIBS = ['VCC', 'GND', 'LM555', 'R_1k', 'R_10k', 'R_330', 'C_1uF', 'C_100nF',
   'LED_RED', 'OSCILLOSCOPE'];
+const MONOSTABLE_555_LIBS = ['VCC', 'GND', 'LM555', 'SW_PUSH', 'R_100k', 'R_10k', 'R_330',
+  'C_10uF', 'C_100nF', 'LED_RED'];
 
 export class LabTemplateRegistry {
   private static extraTemplates: LabTemplateDef[] = [];
@@ -223,6 +225,17 @@ export class LabTemplateRegistry {
       description: 'LM555 无稳态振荡(~69Hz) + LED，示波器 10ms/div 观测方波',
       knowledgePoints: ['多谐振荡', 'RC 定时', '方波输出', 'LED 限流'],
       libraryIds: ASTABLE_555_LIBS, build: buildLab555Astable
+    },
+    {
+      id: 'lab_555_monostable', name: '555单稳态延时', category: 'analog',
+      description: 'LM555(NE555同类) 单稳态 + 按键触发 + RC(~1.1s) + LED 延时熄灭',
+      knowledgePoints: [
+        '①单稳态：按下 SW1 拉低 TRIG → OUT 高 → LED 亮',
+        '②延时 t≈1.1·RT·CT≈1.1s（RT=100k CT=10µF）后 OUT 低 → LED 熄灭',
+        '③THRES≡DISCH≡定时 RC 节点；TRIG 经 RP 上拉，禁止与 THRES 并网',
+        '④库内型号用 LM555（NE555 同类）'
+      ],
+      libraryIds: MONOSTABLE_555_LIBS, build: buildLab555Monostable
     }
   ];
 

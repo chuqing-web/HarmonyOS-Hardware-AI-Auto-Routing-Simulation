@@ -51,7 +51,12 @@ export {
   traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo,
-  traceAiPayload, traceAiOp, traceAiDiag, traceAiStage
+  traceAiPayload, traceAiOp, traceAiDiag, traceAiStage,
+  traceWireConnectBegin, traceWirePinSnap, traceWirePinSnapReject,
+  traceWireSnapMissNearCopper,
+  traceWireConnectEnd, traceWireConnectPinAudit, traceWirePinRowShort,
+  isTraceAutoSignalNetName, traceTopoNetNameScan, traceTopoNetInheritDecision,
+  traceTopoSignalAssignSummary, traceTopoWireNetReassign, traceNetEnsureCreate
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {
@@ -64,7 +69,7 @@ export { ErcEngine } from './src/main/ets/utils/ErcEngine';
 export { AiErcGateUtil } from './src/main/ets/utils/AiErcGateUtil';
 
 export {
-  DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE,
+  DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE,
   WorldHitRect, WirePathCoverage
 } from './src/main/ets/utils/DeviceHitGeometry';
 

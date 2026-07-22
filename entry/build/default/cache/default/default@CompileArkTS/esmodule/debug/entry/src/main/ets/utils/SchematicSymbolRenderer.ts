@@ -60,7 +60,8 @@ export class SchematicSymbolRenderer {
         // matching how the canvas renders real components
         const pinBounds = calcSymbolBounds(def.pins, 0);
         const isRegulator = def.behaviorModel === 'regulator';
-        if (isRegulator || (def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40))) {
+        const isMeterBody = def.behaviorModel === 'ammeter_dc' || def.behaviorModel === 'voltmeter_dc';
+        if (!isMeterBody && (isRegulator || (def.pins.length > 0 && (pinBounds.width >= 50 || pinBounds.height >= 40)))) {
             let cx = (pinBounds.minX + pinBounds.maxX) / 2;
             let cy = (pinBounds.minY + pinBounds.maxY) / 2;
             let bodyW = Math.max(pinBounds.width, 12);
@@ -99,7 +100,8 @@ export class SchematicSymbolRenderer {
         // matches BuiltinComponents / template kit, even when DeviceLibrary ships SVG
         const skipSvg = key === 'led' || key === 'diode' || key === 'resistor' ||
             key === 'potentiometer' ||
-            key === 'capacitor' || key === 'fuse' || key === 'buzzer' || key === 'switch';
+            key === 'capacitor' || key === 'fuse' || key === 'buzzer' || key === 'switch' ||
+            key === 'ammeter' || key === 'voltmeter';
         if (!skipSvg && def.svgSymbol.length > 20 && def.svgSymbol.indexOf('<') >= 0) {
             const cmds = SvgSymbolCache.preload(def.id, def.svgSymbol);
             if (cmds.length > 0) {
@@ -692,101 +694,119 @@ export class SchematicSymbolRenderer {
         ctx.fillText('UART', -14, -h / 2 - 4);
     }
     private static drawVoltmeter(ctx: CanvasRenderingContext2D): void {
-        // Pins at x=-30, y={-10,10} — analog meter body
-        const r = 18;
-        // Half-circle top
+        // Pins at left cluster — framed analog meter body
+        const bw = 44;
+        const bh = 52;
+        const bx = -bw / 2;
+        const by = -bh / 2;
+        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        const r = 14;
+        const cy = -2;
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(0, 2, r, Math.PI, 0);
-        ctx.lineTo(r, 2 + r);
-        ctx.arc(0, 2 + r, r, 0, Math.PI);
-        ctx.closePath();
+        ctx.arc(0, cy, r, 0, Math.PI * 2);
         ctx.stroke();
-        // Scale arc
         ctx.lineWidth = 0.6;
         ctx.beginPath();
-        ctx.arc(0, 2, r - 3, Math.PI * 0.82, Math.PI * 0.18, true);
+        ctx.arc(0, cy, r - 3, Math.PI * 0.82, Math.PI * 0.18, true);
         ctx.stroke();
-        // Tick marks
-        for (let a = Math.PI * 0.82; a >= Math.PI * 0.18; a -= 0.13) {
-            const x1 = (r - 6) * Math.cos(a);
-            const y1 = 2 + (r - 6) * Math.sin(a);
+        for (let a = Math.PI * 0.82; a >= Math.PI * 0.18; a -= 0.16) {
+            const x1 = (r - 5) * Math.cos(a);
+            const y1 = cy + (r - 5) * Math.sin(a);
             const x2 = (r - 1.5) * Math.cos(a);
-            const y2 = 2 + (r - 1.5) * Math.sin(a);
+            const y2 = cy + (r - 1.5) * Math.sin(a);
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
             ctx.stroke();
         }
-        // Needle
         ctx.strokeStyle = '#CC0000';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(0, 2);
-        ctx.lineTo((r - 5) * Math.cos(Math.PI * 0.6), 2 + (r - 5) * Math.sin(Math.PI * 0.6));
+        ctx.moveTo(0, cy);
+        ctx.lineTo((r - 4) * Math.cos(Math.PI * 0.55), cy + (r - 4) * Math.sin(Math.PI * 0.55));
         ctx.stroke();
-        // Center dot
         ctx.fillStyle = '#CC0000';
         ctx.beginPath();
-        ctx.arc(0, 2, 1.2, 0, Math.PI * 2);
+        ctx.arc(0, cy, 1.2, 0, Math.PI * 2);
         ctx.fill();
-        // V label in center
-        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
-        ctx.lineWidth = 1;
         ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillText('V', -3, 6);
-        // Title
-        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('V', 0, cy + 8);
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
-        ctx.fillText('VOLT', -12, -r - 6);
+        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.fillText('VOLT', 0, by + bh - 8);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 1.2;
     }
     private static drawAmmeter(ctx: CanvasRenderingContext2D): void {
-        // Pins at x=-30, y={0,20} — analog meter body
-        const r = 18;
+        // Pins at (±40, 0) — series through-meter with outer black frame
+        const bw = 52;
+        const bh = 48;
+        const bx = -bw / 2;
+        const by = -bh / 2;
+        ctx.fillStyle = ProteusColors.COMPONENT_BODY_FILL;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+        // Lead stubs toward I+/I- (pins drawn separately outside)
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(0, 2, r, Math.PI, 0);
-        ctx.lineTo(r, 2 + r);
-        ctx.arc(0, 2 + r, r, 0, Math.PI);
-        ctx.closePath();
+        ctx.moveTo(-40, 0);
+        ctx.lineTo(bx, 0);
+        ctx.moveTo(bx + bw, 0);
+        ctx.lineTo(40, 0);
         ctx.stroke();
-        // Scale arc
+        const r = 14;
+        const cy = -2;
+        ctx.beginPath();
+        ctx.arc(0, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.lineWidth = 0.6;
         ctx.beginPath();
-        ctx.arc(0, 2, r - 3, Math.PI * 0.82, Math.PI * 0.18, true);
+        ctx.arc(0, cy, r - 3, Math.PI * 0.82, Math.PI * 0.18, true);
         ctx.stroke();
-        // Tick marks
-        for (let a = Math.PI * 0.82; a >= Math.PI * 0.18; a -= 0.13) {
-            const x1 = (r - 6) * Math.cos(a);
-            const y1 = 2 + (r - 6) * Math.sin(a);
+        for (let a = Math.PI * 0.82; a >= Math.PI * 0.18; a -= 0.16) {
+            const x1 = (r - 5) * Math.cos(a);
+            const y1 = cy + (r - 5) * Math.sin(a);
             const x2 = (r - 1.5) * Math.cos(a);
-            const y2 = 2 + (r - 1.5) * Math.sin(a);
+            const y2 = cy + (r - 1.5) * Math.sin(a);
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
             ctx.stroke();
         }
-        // Needle
         ctx.strokeStyle = '#CC0000';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(0, 2);
-        ctx.lineTo((r - 5) * Math.cos(Math.PI * 0.45), 2 + (r - 5) * Math.sin(Math.PI * 0.45));
+        ctx.moveTo(0, cy);
+        ctx.lineTo((r - 4) * Math.cos(Math.PI * 0.4), cy + (r - 4) * Math.sin(Math.PI * 0.4));
         ctx.stroke();
-        // Center dot
         ctx.fillStyle = '#CC0000';
         ctx.beginPath();
-        ctx.arc(0, 2, 1.2, 0, Math.PI * 2);
+        ctx.arc(0, cy, 1.2, 0, Math.PI * 2);
         ctx.fill();
-        // A label
-        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
-        ctx.lineWidth = 1;
         ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
-        ctx.font = 'bold 10px sans-serif';
-        ctx.fillText('A', -3, 6);
-        // Title
-        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('A', 0, cy + 8);
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
-        ctx.fillText('AMP', -11, -r - 6);
+        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.fillText('AMP', 0, by + bh - 8);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 1.2;
     }
     private static drawPowerMeter(ctx: CanvasRenderingContext2D): void {
         // Pins at x=-40, y={-20,0,20,40} — body covers y=-38..46
@@ -1277,9 +1297,11 @@ export class SchematicSymbolRenderer {
     private static drawLabels(ctx: CanvasRenderingContext2D, def: ComponentDefinition, refDes: string, style: SymbolDrawStyle): void {
         const bounds = calcSymbolBounds(def.pins, 4);
         const isRegulator = def.behaviorModel === 'regulator';
+        const isMeter = def.behaviorModel === 'ammeter_dc' || def.behaviorModel === 'voltmeter_dc';
         // 稳压器底脚有 GND 名，参数下移避免与脚名重叠；位号略上提
-        const refY = bounds.minY - (isRegulator ? 10 : 4);
-        const valY = bounds.maxY + (isRegulator ? 20 : 10);
+        // 电流表表头偏下，位号再上提；量程标在框外下方
+        const refY = bounds.minY - (isRegulator || isMeter ? 10 : 4);
+        const valY = bounds.maxY + (isRegulator ? 20 : (isMeter ? 14 : 10));
         ctx.fillStyle = style.selected ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY;
         ctx.font = `${ProteusFonts.CANVAS_LABEL}px sans-serif`;
         ctx.textAlign = 'center';
@@ -1287,15 +1309,18 @@ export class SchematicSymbolRenderer {
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         const valueKey = def.defaultParams.has('value') ? 'value' :
-            (def.defaultParams.has('output') ? 'output' : '');
+            (def.defaultParams.has('output') ? 'output' :
+                (def.defaultParams.has('range') ? 'range' : ''));
         // 稳压器参数旁带短型号，便于辨认且不与体内 REG 抢位
-        let valueText = valueKey.length > 0 ? (def.defaultParams.get(valueKey) ?? '') : def.id;
+        let valueText = valueKey.length > 0 ? (def.defaultParams.get(valueKey) ?? '') : '';
         if (isRegulator && valueKey === 'output' && def.id.length > 0) {
             const shortId = def.id.length > 8 ? def.id.substring(0, 8) : def.id;
             valueText = `${shortId} ${valueText}`;
         }
-        const shortVal = valueText.length > 14 ? valueText.substring(0, 12) + '..' : valueText;
-        ctx.fillText(shortVal, 0, valY);
+        if (valueText.length > 0) {
+            const shortVal = valueText.length > 14 ? valueText.substring(0, 12) + '..' : valueText;
+            ctx.fillText(shortVal, 0, valY);
+        }
         ctx.textAlign = 'start';
     }
 }

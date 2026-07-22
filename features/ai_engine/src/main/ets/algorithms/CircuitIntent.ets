@@ -12,6 +12,10 @@ export interface CircuitIntent {
   relayContactTopo: boolean;
   /** 串联 RC 充放电（观测 τ=RC / 指数波形）— 禁 RELAY，优先 SW_PUSH */
   seriesRcCharge: boolean;
+  /** 555 单稳态延时（按键触发）— 禁止套用串联 RC 充放电配方 */
+  timer555Monostable: boolean;
+  /** 555 无稳态多谐（振荡/方波/闪烁） */
+  timer555Astable: boolean;
   /** 运放/模拟双电源：需要 VEE 负压轨 */
   dualSupply: boolean;
   /** 用户指定的正电源电压文案（如 3.3V / 5V / 12V），空=默认 */
@@ -53,6 +57,8 @@ export function defaultCircuitIntent(): CircuitIntent {
     blinkOscillator: false,
     relayContactTopo: false,
     seriesRcCharge: false,
+    timer555Monostable: false,
+    timer555Astable: false,
     dualSupply: false,
     preferredVccVoltage: '',
     preferredVeeVoltage: '',
@@ -150,12 +156,36 @@ function isSeriesRcChargePrompt(prompt: string): boolean {
   if (isMutualLedSwitchPrompt(prompt)) {
     return false;
   }
+  // 555 单稳态也常写「RC / 延时」，不得误判为串联 RC 充放电
+  if (is555MonostablePrompt(prompt)) {
+    return false;
+  }
   return zh.indexOf('充放电') >= 0 || zh.indexOf('时间常数') >= 0 ||
     zh.indexOf('指数波形') >= 0 || zh.indexOf('τ=RC') >= 0 || zh.indexOf('τ＝RC') >= 0 ||
     zh.indexOf('tau=RC') >= 0 || lower.indexOf('time constant') >= 0 ||
     lower.indexOf('rc charge') >= 0 || lower.indexOf('rc discharge') >= 0 ||
     (zh.indexOf('RC') >= 0 && (zh.indexOf('电容') >= 0 || zh.indexOf('电阻') >= 0) &&
       (zh.indexOf('充电') >= 0 || zh.indexOf('放电') >= 0 || zh.indexOf('波形') >= 0));
+}
+
+/** 555 单稳态延时 / 按键触发 */
+function is555MonostablePrompt(prompt: string): boolean {
+  const zh = prompt ?? '';
+  const lower = zh.toLowerCase();
+  return zh.indexOf('单稳态') >= 0 || zh.indexOf('单稳') >= 0 ||
+    zh.indexOf('延时') >= 0 || zh.indexOf('延迟') >= 0 ||
+    zh.indexOf('延时熄灭') >= 0 ||
+    lower.indexOf('monostable') >= 0 || lower.indexOf('one-shot') >= 0 ||
+    lower.indexOf('oneshot') >= 0 || lower.indexOf('one shot') >= 0;
+}
+
+/** 555 无稳态多谐 / 振荡 */
+function is555AstablePrompt(prompt: string): boolean {
+  const zh = prompt ?? '';
+  const lower = zh.toLowerCase();
+  return zh.indexOf('多谐') >= 0 || zh.indexOf('振荡') >= 0 ||
+    zh.indexOf('方波') >= 0 || zh.indexOf('闪烁') >= 0 ||
+    lower.indexOf('astable') >= 0 || lower.indexOf('multivibrator') >= 0;
 }
 
 function pushReason(intent: CircuitIntent, reason: string): void {
@@ -213,16 +243,36 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
     intent.blinkOscillator = true;
     pushReason(intent, 'blink_keyword');
   }
-  // 555 无稳态
+  // 555：区分单稳态 vs 无稳态（禁止一律打成 555_astable）
   if (zh.indexOf('555') >= 0 || lower.indexOf('lm555') >= 0) {
-    pushReason(intent, '555_astable');
-    if (zh.indexOf('多谐') >= 0 || zh.indexOf('振荡') >= 0 || zh.indexOf('闪烁') >= 0 ||
-      zh.indexOf('方波') >= 0 || lower.indexOf('astable') >= 0) {
+    const mono = is555MonostablePrompt(prompt);
+    const asta = is555AstablePrompt(prompt);
+    if (mono && !asta) {
+      intent.timer555Monostable = true;
+      intent.seriesRcCharge = false;
+      pushReason(intent, '555_monostable');
+    } else if (asta && !mono) {
+      intent.timer555Astable = true;
       intent.blinkOscillator = true;
+      pushReason(intent, '555_astable');
+    } else if (mono && asta) {
+      // 同时出现时：单稳态关键词优先（「555 单稳态延时」）
+      intent.timer555Monostable = true;
+      intent.seriesRcCharge = false;
+      pushReason(intent, '555_monostable');
+    } else if (zh.indexOf('按键') >= 0 || zh.indexOf('触发') >= 0 ||
+      lower.indexOf('button') >= 0 || lower.indexOf('trigger') >= 0) {
+      intent.timer555Monostable = true;
+      intent.seriesRcCharge = false;
+      pushReason(intent, '555_monostable');
+    } else {
+      // 裸「555」默认无稳态配方（兼容旧提示）
+      intent.timer555Astable = true;
+      pushReason(intent, '555_astable');
     }
   }
 
-  if (isSeriesRcChargePrompt(prompt)) {
+  if (isSeriesRcChargePrompt(prompt) && !intent.timer555Monostable && !intent.timer555Astable) {
     // 运放积分不是串联 RC 充放电
     if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0) {
       intent.seriesRcCharge = true;
@@ -579,13 +629,40 @@ export function refineCircuitIntent(
   const hasRelay = ids.some(m => m.indexOf('RELAY') >= 0);
   const hasR = ids.some(m => m.startsWith('R_'));
   const hasC = ids.some(m => m.startsWith('C_'));
-  if (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt))) {
+  const has555Bom = ids.some(m => m.indexOf('LM555') >= 0 || m.indexOf('NE555') >= 0 || m === '555');
+  if (has555Bom) {
+    if (is555MonostablePrompt(prompt) || intent.timer555Monostable) {
+      intent.timer555Monostable = true;
+      intent.timer555Astable = false;
+      intent.seriesRcCharge = false;
+      pushReason(intent, '555_monostable_bom');
+    } else if (is555AstablePrompt(prompt) || intent.timer555Astable || intent.blinkOscillator) {
+      intent.timer555Astable = true;
+      pushReason(intent, '555_astable_bom');
+    } else if (!intent.timer555Monostable && !intent.timer555Astable) {
+      // BOM 有 555 但提示未明：有按键倾向单稳态，否则无稳态
+      if (ids.some(m => m.indexOf('SW_') >= 0) && !intent.blinkOscillator) {
+        intent.timer555Monostable = true;
+        intent.seriesRcCharge = false;
+        pushReason(intent, '555_monostable_bom');
+      } else {
+        intent.timer555Astable = true;
+        pushReason(intent, '555_astable_bom');
+      }
+    }
+  }
+  if (!intent.timer555Monostable && !intent.timer555Astable &&
+    (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt)))) {
     if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0) {
       intent.seriesRcCharge = true;
       intent.relayContactTopo = false;
       intent.mutualLedIndicator = false;
       pushReason(intent, 'series_rc_bom');
     }
+  }
+  // 555 与串联 RC 互斥：板上有 555 时绝不能走 wireSeriesRc
+  if (intent.timer555Monostable || intent.timer555Astable || has555Bom) {
+    intent.seriesRcCharge = false;
   }
   if (hasRelay && intent.mutualLedIndicator && !intent.seriesRcCharge) {
     intent.relayContactTopo = true;
@@ -786,6 +863,24 @@ export function refineIntentFromTopo(intent: CircuitIntent, topo: SchTopology): 
   } else if (hasRelay && next.blinkOscillator) {
     next.relayContactTopo = false;
   }
+  const has555 = topo.deviceList.some(d => {
+    const id = (d.libDevId ?? '').toUpperCase();
+    return id.indexOf('LM555') >= 0 || id.indexOf('NE555') >= 0 || id === '555';
+  });
+  if (has555) {
+    next.seriesRcCharge = false;
+    if (!next.timer555Monostable && !next.timer555Astable) {
+      const hasSw = topo.deviceList.some(d =>
+        (d.libDevId ?? '').toUpperCase().indexOf('SW_') >= 0);
+      if (hasSw && !next.blinkOscillator) {
+        next.timer555Monostable = true;
+        pushReason(next, '555_monostable_topo');
+      } else {
+        next.timer555Astable = true;
+        pushReason(next, '555_astable_topo');
+      }
+    }
+  }
   return next;
 }
 
@@ -797,6 +892,8 @@ export function copyIntent(src: CircuitIntent): CircuitIntent {
     blinkOscillator: src.blinkOscillator,
     relayContactTopo: src.relayContactTopo,
     seriesRcCharge: src.seriesRcCharge,
+    timer555Monostable: src.timer555Monostable,
+    timer555Astable: src.timer555Astable,
     dualSupply: src.dualSupply,
     preferredVccVoltage: src.preferredVccVoltage,
     preferredVeeVoltage: src.preferredVeeVoltage,
@@ -820,6 +917,7 @@ export function formatIntentLog(intent: CircuitIntent): string {
   return `power=${intent.needsPowerRails} mcu=${intent.hasMcuMinSystem}` +
     ` mutual=${intent.mutualLedIndicator} blink=${intent.blinkOscillator}` +
     ` relayTopo=${intent.relayContactTopo} seriesRc=${intent.seriesRcCharge}` +
+    ` t555=${intent.timer555Monostable ? 'mono' : (intent.timer555Astable ? 'asta' : '-')}` +
     ` dual=${intent.dualSupply} vcc=${intent.preferredVccVoltage || '-'}` +
     ` vee=${intent.preferredVeeVoltage || '-'} sig=${intent.needsSignalGen}/${intent.signalWaveform}` +
     `@${intent.preferredSignalFrequency || '1kHz'}/amp=${intent.preferredSignalAmplitude || '1V'}` +

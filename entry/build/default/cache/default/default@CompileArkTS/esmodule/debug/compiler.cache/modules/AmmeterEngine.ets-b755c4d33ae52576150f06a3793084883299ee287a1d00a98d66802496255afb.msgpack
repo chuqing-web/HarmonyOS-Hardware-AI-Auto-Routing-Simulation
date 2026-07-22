@@ -1,13 +1,14 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÁ/**
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÙ/**
  * ç”µæµè¡¨ä»¿çœŸå¼•æ“ â€” æ”¯æŒ DC / AC (True-RMS)
  * DC path mirrors VoltmeterEngine so AC-driven current does not look frozen on the UI.
  */
-import { AmmeterType } from 'common';
+import { AmmeterType, IdUtil } from 'common';
 const DC_RANGES_MA = [2, 20, 200, 2000, 10000];
 const AC_RANGES_MA = [2, 20, 200, 2000];
 const RMS_WINDOW_SAMPLES = 16;
 const DC_AVG_SAMPLES = 12;
 const DC_EMA_ALPHA = 0.35;
+const WAVE_HISTORY_MAX = 256;
 export class AmmeterEngine {
     constructor() {
         this.type = AmmeterType.DC;
@@ -23,6 +24,8 @@ export class AmmeterEngine {
         this.dcSampleBuffer = [];
         this.dcEma = 0;
         this.dcEmaInit = false;
+        this.waveSamples = [];
+        this.waveTimes = [];
     }
     setType(t) {
         this.type = t;
@@ -77,6 +80,7 @@ export class AmmeterEngine {
     }
     /** Measure from an explicit sample (per-instance I+â†’I-). Applies DC avg / AC true-RMS. */
     measureValue(raw) {
+        this.pushWaveSample(raw);
         if (this.type === AmmeterType.AC) {
             this.updateRmsBuffer(raw);
             this.lastReading = raw;
@@ -99,16 +103,36 @@ export class AmmeterEngine {
     }
     /** High-rate silent sample (sim tick) â€” fills DC avg / AC RMS without UI log spam. */
     feedSample(raw) {
+        this.pushWaveSample(raw);
         if (this.type === AmmeterType.AC) {
             this.updateRmsBuffer(raw);
             return;
         }
         this.updateDcAverage(raw);
     }
+    /** ç”µæµæ—¶åŸŸæ³¢å½¢ï¼ˆmAï¼Œä¾›é¢æ¿ Canvasï¼‰ */
+    getWaveform() {
+        const n = this.waveSamples.length;
+        const timeAxis = this.waveTimes.slice();
+        const voltageAxis = this.waveSamples.slice();
+        const span = n >= 2 ? Math.max(timeAxis[n - 1] - timeAxis[0], 1e-6) : 1;
+        return {
+            waveId: IdUtil.generate('amw'),
+            probeName: 'AM',
+            netName: 'AMMETER',
+            timeAxis: timeAxis,
+            voltageAxis: voltageAxis,
+            currentAxis: voltageAxis.slice(),
+            sampleRate: n > 1 ? (n - 1) / span : 1,
+            waveType: 'current',
+            holdTime: span
+        };
+    }
     /**
      * Immediate DC UI update (interactive pot / switch) â€” clears averaging lag.
      */
     snapReading(raw) {
+        this.pushWaveSample(raw);
         this.dcSampleBuffer = [raw];
         this.dcEma = raw;
         this.dcEmaInit = true;
@@ -185,18 +209,31 @@ export class AmmeterEngine {
             this.lastRms = Math.sqrt(sumSq / this.rmsSampleBuffer.length);
         }
     }
+    pushWaveSample(raw) {
+        const step = 0.001;
+        const t = this.waveTimes.length > 0
+            ? this.waveTimes[this.waveTimes.length - 1] + step
+            : 0;
+        this.waveTimes.push(t);
+        this.waveSamples.push(raw);
+        while (this.waveSamples.length > WAVE_HISTORY_MAX) {
+            this.waveSamples.shift();
+            this.waveTimes.shift();
+        }
+    }
 }
-//# sourceMappingURL=AmmeterEngine.js.mapÂ‘Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙXC:\Projects\ElecDraw_Harmony\features\instruments\src\main\ets\engines\AmmeterEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs«instrumentsÃÂÙ1C:\Projects\ElecDraw_Harmony\features\instruments¼C:\Projects\ElecDraw_Harmony«instruments¥1.0.0ÔrC’§pkgNameªpkgVersion«instruments¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName·./engines/AmmeterEngine«instrumentsÙ1C:\Projects\ElecDraw_Harmony\features\instrumentsÃÃÚT/**
+//# sourceMappingURL=AmmeterEngine.js.mapÂ‘Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙXC:\Projects\ElecDraw_Harmony\features\instruments\src\main\ets\engines\AmmeterEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs«instrumentsÃÂÙ1C:\Projects\ElecDraw_Harmony\features\instruments¼C:\Projects\ElecDraw_Harmony«instruments¥1.0.0ÔrC’§pkgNameªpkgVersion«instruments¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName·./engines/AmmeterEngine«instrumentsÙ1C:\Projects\ElecDraw_Harmony\features\instrumentsÃÃÚ'/**
  * ç”µæµè¡¨ä»¿çœŸå¼•æ“ â€” æ”¯æŒ DC / AC (True-RMS)
  * DC path mirrors VoltmeterEngine so AC-driven current does not look frozen on the UI.
  */
-import { AmmeterType } from 'common';
+import { AmmeterType, WaveData, IdUtil } from 'common';
 
 const DC_RANGES_MA = [2, 20, 200, 2000, 10000];
 const AC_RANGES_MA = [2, 20, 200, 2000];
 const RMS_WINDOW_SAMPLES = 16;
 const DC_AVG_SAMPLES = 12;
 const DC_EMA_ALPHA = 0.35;
+const WAVE_HISTORY_MAX = 256;
 
 export class AmmeterEngine {
   private type: AmmeterType = AmmeterType.DC;
@@ -212,6 +249,8 @@ export class AmmeterEngine {
   private dcSampleBuffer: number[] = [];
   private dcEma: number = 0;
   private dcEmaInit: boolean = false;
+  private waveSamples: number[] = [];
+  private waveTimes: number[] = [];
 
   setType(t: AmmeterType): void {
     this.type = t;
@@ -271,6 +310,7 @@ export class AmmeterEngine {
 
   /** Measure from an explicit sample (per-instance I+â†’I-). Applies DC avg / AC true-RMS. */
   measureValue(raw: number): number {
+    this.pushWaveSample(raw);
     if (this.type === AmmeterType.AC) {
       this.updateRmsBuffer(raw);
       this.lastReading = raw;
@@ -294,6 +334,7 @@ export class AmmeterEngine {
 
   /** High-rate silent sample (sim tick) â€” fills DC avg / AC RMS without UI log spam. */
   feedSample(raw: number): void {
+    this.pushWaveSample(raw);
     if (this.type === AmmeterType.AC) {
       this.updateRmsBuffer(raw);
       return;
@@ -301,10 +342,30 @@ export class AmmeterEngine {
     this.updateDcAverage(raw);
   }
 
+  /** ç”µæµæ—¶åŸŸæ³¢å½¢ï¼ˆmAï¼Œä¾›é¢æ¿ Canvasï¼‰ */
+  getWaveform(): WaveData {
+    const n = this.waveSamples.length;
+    const timeAxis = this.waveTimes.slice();
+    const voltageAxis = this.waveSamples.slice();
+    const span = n >= 2 ? Math.max(timeAxis[n - 1] - timeAxis[0], 1e-6) : 1;
+    return {
+      waveId: IdUtil.generate('amw'),
+      probeName: 'AM',
+      netName: 'AMMETER',
+      timeAxis: timeAxis,
+      voltageAxis: voltageAxis,
+      currentAxis: voltageAxis.slice(),
+      sampleRate: n > 1 ? (n - 1) / span : 1,
+      waveType: 'current',
+      holdTime: span
+    };
+  }
+
   /**
    * Immediate DC UI update (interactive pot / switch) â€” clears averaging lag.
    */
   snapReading(raw: number): number {
+    this.pushWaveSample(raw);
     this.dcSampleBuffer = [raw];
     this.dcEma = raw;
     this.dcEmaInit = true;
@@ -384,149 +445,152 @@ export class AmmeterEngine {
       this.lastRms = Math.sqrt(sumSq / this.rmsSampleBuffer.length);
     }
   }
+
+  private pushWaveSample(raw: number): void {
+    const step = 0.001;
+    const t = this.waveTimes.length > 0
+      ? this.waveTimes[this.waveTimes.length - 1] + step
+      : 0;
+    this.waveTimes.push(t);
+    this.waveSamples.push(raw);
+    while (this.waveSamples.length > WAVE_HISTORY_MAX) {
+      this.waveSamples.shift();
+      this.waveTimes.shift();
+    }
+  }
 }
-ÀÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings°AmmeterEngine.js ‘±AmmeterEngine.etsÜ ¼‘”    ‘” ˜”   ” ”	 	” ” ” ”$ $”% %Ü ”   ” ” ” ” ” ” ” ” ”   ”" "”& &”( (”- -”. .”/ /”   ” ” ” ” ” ” ” ” ”   ”" "”& &”' '”( (–”   ” ” ” ” ” –”  	 ” 	” 	” 	” 	” 	–”  
+ÀÔrE‘¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings°AmmeterEngine.js ‘±AmmeterEngine.etsÜ à‘”    ‘” š”   ” ”	 	” ”  ” &” (”$ .”, 6”- 7Ü ”   ” ” ” ” ” ” ” ” ”   ”" "”& &”( (”- -”. .”/ /”   ” ” ” ” ” ” ” ” ”   ”" "”& &”' '”( (–”   ” ” ” ” ” –”  	 ” 	” 	” 	” 	” 	–”  
  ” 
 ” 
 ” 
 ” 
 ” 
-””   ” ” ” ‘”  —” 
-” ” ” )”  *”" ,”# -•” 
-” ” ”  ” !•” 
-” ”  ” !” "•” 
-” ” ” ” •” 
-” ” !” %”  &•” 
-” ” 1”! 5”" 6•” 
-” ” 2”" 6”# 7•” 
-” ” &”! (”" )•” 
-” ” #” $”  %•” 
-” ” ” ” •” 
-” ” %”  '”! (•” 
-” ” ” ” •” 
-” ” ” $” %’” ÌÆ ” ÌÆ”” ” 	” 
-” —” ” ” 	” ” ” ” —” ” ” 	” ” ” ” —” ” ” 	” ” ”! ”" —” ” ” 	” ” ” ”  —”  ”  ”  	”  ”  ”  ”  —” !” !” !	” !” !”  !”! !—” "” "” "	” "” "” "” "—” #” #” #	” #” #” #” #’” $” $š” &” &	” &” &"” &&” &'”  &+”! &,”" &-”# &.”” (” (” (” (0—” )” )” )	” )” )”# )”$ ) —” *” *” *	” *” *”! *”" *—” +” +” +	” +” +” +”  +—” ,” ,” ,	” ,” ,”  ,”! ,—” -” -” -	” -” -” -” -—” .” .” .	” .” .” .” .’” /” /”” 1” 1” 1” 11—” 2” 2” 2	” 2” 2”$ 2 ”% 2!’” 3” 3”” 5” 5
-” 5” 5Ü ” 6” 6
-” 6” 6” 6” 6”  6”% 6!”0 6,”1 6-”3 6/”4 60”5 61”6 62”ÌB 6>”ÌC 6?”ÌD 6Ì@”ÌE 6ÌA”ÌQ 6ÌM”ÌR 6ÌNœ” 7” 7” 7” 7” 7” 7” 7” 7”$ 7 ”% 7!”+ 7'”- 7)—” 8” 8
-” 8” 8” 8”! 8”" 8‘”	 9—” :” :” :	” :” :”  :”! :’” ;” ;’” =” =
-Ü ” >” >
-” >” >” >” >”  >”% >!”0 >,”1 >-”3 >/”4 >0”5 >1”6 >2”ÌB >>”ÌC >?”ÌD >Ì@”ÌE >ÌA”ÌQ >ÌM”ÌR >ÌN›” ?” ?” ?” ?” ?” ?”% ?!”& ?"”* ?&”- ?)”. ?*’” Ì@” Ì@”” ÌB” ÌB” ÌB” ÌB—” ÌC” ÌC” ÌC	” ÌC” ÌC” ÌC”  ÌC–” ÌD” ÌD” ÌD	” ÌD” ÌD” ÌD–” ÌE” ÌE” ÌE	” ÌE” ÌE” ÌEÜ ” ÌF” ÌF” ÌF
-” ÌF” ÌF” ÌF” ÌF”) ÌF#”* ÌF$”, ÌF&”- ÌF'”. ÌF(”/ ÌF)”3 ÌF-”4 ÌF.”; ÌF5”< ÌF6”= ÌF7”> ÌF8”ÌB ÌF<”ÌC ÌF=”ÌN ÌFÌH”ÌO ÌFÌI‘”	 ÌGÜ ” ÌH” ÌH
-” ÌH” ÌH” ÌH” ÌH”  ÌH”% ÌH!”0 ÌH,”1 ÌH-”3 ÌH/”4 ÌH0”5 ÌH1”6 ÌH2”ÌB ÌH>”ÌC ÌH?”ÌD ÌHÌ@”ÌE ÌHÌA”ÌQ ÌHÌM”ÌR ÌHÌNÜ ” ÌI” ÌI	” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI”" ÌI”# ÌI”) ÌI%”+ ÌI'”, ÌI(”. ÌI*”0 ÌI,” ÌJ” ÌJ
-” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ”% ÌJ”& ÌJ ”' ÌJ!”( ÌJ"”* ÌJ$—” ÌJ&” ÌJ*” ÌJ+” ÌJ5”" ÌJ8”# ÌJ9”$ ÌJ:’” ÌJ;” ÌJÌB‘” ÌJÌD‘”	 ÌK›” ÌL” ÌL” ÌL	” ÌL” ÌL”  ÌL”! ÌL”' ÌL#”* ÌL&”+ ÌL'”, ÌL(’” ÌM” ÌM’” ÌO” ÌO	œ” ÌP” ÌP” ÌP” ÌP”  ÌP”! ÌP”% ÌP!”& ÌP"”. ÌP*”0 ÌP,”1 ÌP-”2 ÌP.’” ÌQ” ÌQ’” ÌS”Ì^ ÌSÌ\”” ÌT” ÌT” ÌT” ÌTš” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU”% ÌU!”& ÌU"”( ÌU$”* ÌU&˜” ÌV” ÌV
-” ÌV”  ÌV”! ÌV”$ ÌV”% ÌV”& ÌV —” ÌW” ÌW
-” ÌW” ÌW” ÌW”" ÌW”# ÌW–” ÌX” ÌX
-” ÌX” ÌX”  ÌX”" ÌXš” ÌY” ÌY” ÌY” ÌY” ÌY”# ÌY”$ ÌY”+ ÌY#”, ÌY$”- ÌY%‘” ÌZ–” Ì[” Ì[” Ì[” Ì[” Ì[”  Ì[‘”	 Ì\›” Ì]” Ì]
-” Ì]” Ì]” Ì]” Ì]”- Ì])”. Ì]*”1 Ì]-”2 Ì].”3 Ì]/–” Ì^” Ì^” Ì^” Ì^” Ì^” Ì^˜” Ì_” Ì_
-” Ì_” Ì_” Ì_”# Ì_”$ Ì_”% Ì_‘”	 Ì`™” Ìa” Ìa
-” Ìa” Ìa” Ìa” Ìa”! Ìa”# Ìa”$ Ìa Ü ” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb”! Ìb”$ Ìb ”' Ìb#”+ Ìb'”/ Ìb+”3 Ìb/”4 Ìb0”? Ìb;”ÌA Ìb=˜” Ìc” Ìc
+–”   ” ” ” ” ” ””   ” ” ” ‘”  —” 
+” ” ” )”  *”" ,”# -•” 
+” ” ”  ” !•” 
+” ”  ” !” "•” 
+” ” ” ” •” 
+” ” !” %”  &•” 
+” ” 1”! 5”" 6•” 
+” ” 2”" 6”# 7•” 
+” ” &”! (”" )•” 
+” ” #” $”  %•” 
+” ” ” ” •” 
+” ” %”  '”! (•” 
+” ” ” ” •” 
+” ” ” $” %•” 
+” ” "” $” %•” 
+” ”  ” "” #’” Ìì ” Ìì”” ” 	” 
+” —” ” ” 	” ” ” ” —”  ”  ”  	”  ”  ”  ”  —” !” !” !	” !” !”! !”" !—” "” "” "	” "” "” "”  "—” #” #” #	” #” #” #” #—” $” $” $	” $” $”  $”! $—” %” %” %	” %” %” %” %—” &” &” &	” &” &” &” &’” '” 'š” )” )	” )” )"” )&” )'”  )+”! ),”" )-”# ).”” +” +” +” +0—” ,” ,” ,	” ,” ,”# ,”$ , —” -” -” -	” -” -”! -”" -—” .” .” .	” .” .” .”  .—” /” /” /	” /” /”  /”! /—” 0” 0” 0	” 0” 0” 0” 0—” 1” 1” 1	” 1” 1” 1” 1’” 2” 2”” 4” 4” 4” 41—” 5” 5” 5	” 5” 5”$ 5 ”% 5!’” 6” 6”” 8” 8
+” 8” 8Ü ” 9” 9
+” 9” 9” 9” 9”  9”% 9!”0 9,”1 9-”3 9/”4 90”5 91”6 92”ÌB 9>”ÌC 9?”ÌD 9Ì@”ÌE 9ÌA”ÌQ 9ÌM”ÌR 9ÌNœ” :” :” :” :” :” :” :” :”$ : ”% :!”+ :'”- :)—” ;” ;
+” ;” ;” ;”! ;”" ;‘”	 <—” =” =” =	” =” =”  =”! =’” >” >’” Ì@” Ì@
+Ü ” ÌA” ÌA
+” ÌA” ÌA” ÌA” ÌA”  ÌA”% ÌA!”0 ÌA,”1 ÌA-”3 ÌA/”4 ÌA0”5 ÌA1”6 ÌA2”ÌB ÌA>”ÌC ÌA?”ÌD ÌAÌ@”ÌE ÌAÌA”ÌQ ÌAÌM”ÌR ÌAÌN›” ÌB” ÌB” ÌB” ÌB” ÌB” ÌB”% ÌB!”& ÌB"”* ÌB&”- ÌB)”. ÌB*’” ÌC” ÌC”” ÌE” ÌE” ÌE” ÌE—” ÌF” ÌF” ÌF	” ÌF” ÌF” ÌF”  ÌF–” ÌG” ÌG” ÌG	” ÌG” ÌG” ÌG–” ÌH” ÌH” ÌH	” ÌH” ÌH” ÌHÜ ” ÌI” ÌI” ÌI
+” ÌI” ÌI” ÌI” ÌI”) ÌI#”* ÌI$”, ÌI&”- ÌI'”. ÌI(”/ ÌI)”3 ÌI-”4 ÌI.”; ÌI5”< ÌI6”= ÌI7”> ÌI8”ÌB ÌI<”ÌC ÌI=”ÌN ÌIÌH”ÌO ÌIÌI‘”	 ÌJÜ ” ÌK” ÌK
+” ÌK” ÌK” ÌK” ÌK”  ÌK”% ÌK!”0 ÌK,”1 ÌK-”3 ÌK/”4 ÌK0”5 ÌK1”6 ÌK2”ÌB ÌK>”ÌC ÌK?”ÌD ÌKÌ@”ÌE ÌKÌA”ÌQ ÌKÌM”ÌR ÌKÌNÜ ” ÌL” ÌL	” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL”" ÌL”# ÌL”) ÌL%”+ ÌL'”, ÌL(”. ÌL*”0 ÌL,” ÌM” ÌM
+” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”% ÌM”& ÌM ”' ÌM!”( ÌM"”* ÌM$—” ÌM&” ÌM*” ÌM+” ÌM5”" ÌM8”# ÌM9”$ ÌM:’” ÌM;” ÌMÌB‘” ÌMÌD‘”	 ÌN›” ÌO” ÌO” ÌO	” ÌO” ÌO”  ÌO”! ÌO”' ÌO#”* ÌO&”+ ÌO'”, ÌO(’” ÌP” ÌP’” ÌR” ÌR	œ” ÌS” ÌS” ÌS” ÌS”  ÌS”! ÌS”% ÌS!”& ÌS"”. ÌS*”0 ÌS,”1 ÌS-”2 ÌS.’” ÌT” ÌT’” ÌV”Ì^ ÌVÌ\”” ÌW” ÌW” ÌW” ÌW˜” ÌX” ÌX” ÌX	” ÌX” ÌX” ÌX”  ÌX”! ÌXš” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”% ÌY!”& ÌY"”( ÌY$”* ÌY&˜” ÌZ” ÌZ
+” ÌZ”  ÌZ”! ÌZ”$ ÌZ”% ÌZ”& ÌZ —” Ì[” Ì[
+” Ì[” Ì[” Ì[”" Ì[”# Ì[–” Ì\” Ì\
+” Ì\” Ì\”  Ì\”" Ì\š” Ì]” Ì]” Ì]” Ì]” Ì]”# Ì]”$ Ì]”+ Ì]#”, Ì]$”- Ì]%‘” Ì^–” Ì_” Ì_” Ì_” Ì_” Ì_”  Ì_‘”	 Ì`›” Ìa” Ìa
+” Ìa” Ìa” Ìa” Ìa”- Ìa)”. Ìa*”1 Ìa-”2 Ìa.”3 Ìa/–” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb˜” Ìc” Ìc
 ” Ìc” Ìc” Ìc”# Ìc”$ Ìc”% Ìc‘”	 Ìd™” Ìe” Ìe
-” Ìe” Ìe” Ìe”  Ìe”( Ìe$”* Ìe&”+ Ìe'Ü "” Ìf” Ìf” Ìf	” Ìf” Ìf” Ìf”  Ìf”# Ìf”$ Ìf ”( Ìf$”) Ìf%”, Ìf(”- Ìf)”5 Ìf1”6 Ìf2”8 Ìf4”ÌB Ìf>”ÌC Ìf?”ÌF ÌfÌB”ÌG ÌfÌC”ÌO ÌfÌK”ÌR ÌfÌN”ÌS ÌfÌO”ÌT ÌfÌP”ÌU ÌfÌQ”ÌV ÌfÌR”ÌW ÌfÌS”ÌX ÌfÌT”ÌY ÌfÌU”ÌZ ÌfÌV”Ì[ ÌfÌW”Ì\ ÌfÌX”Ì] ÌfÌY”Ì^ ÌfÌZ–” Ìg” Ìg” Ìg” Ìg” Ìg”  Ìg’” Ìh” Ìh’” Ìj”ÌZ ÌjÌX”” Ìk” Ìk” Ìk” Ìkš” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl”% Ìl!”& Ìl"”( Ìl$”* Ìl&˜” Ìm” Ìm
-” Ìm”  Ìm”! Ìm”$ Ìm”% Ìm”& Ìm ’” Ìn” Ìn‘”	 Ìo˜” Ìp” Ìp” Ìp	” Ìp” Ìp”  Ìp”! Ìp”" Ìp’” Ìq” Ìq‘” Ìs‘” Ìu”” Ìv” Ìv” Ìv” Ìv™” Ìw” Ìw” Ìw	” Ìw” Ìw” Ìw”" Ìw”# Ìw”$ Ìw —” Ìx” Ìx” Ìx	” Ìx” Ìx” Ìx” Ìx—” Ìy” Ìy” Ìy	” Ìy” Ìy” Ìy” Ìyš” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz”% Ìz!”& Ìz"”( Ìz$”* Ìz&—” Ì{” Ì{
-” Ì{” Ì{” Ì{”" Ì{”# Ì{œ” Ì|” Ì|
-” Ì|” Ì|” Ì|” Ì|”  Ì|”# Ì|”$ Ì|”' Ì|!”( Ì|"”) Ì|#–” Ì}” Ì}” Ì}” Ì}” Ì}”  Ì}‘”	 Ì~–” Ì” Ì” Ì” Ì” Ì” Ì˜” Ì€” Ì€
-” Ì€” Ì€” Ì€” Ì€” Ì€”  Ì€‘”	 Ì™” Ì‚” Ì‚
-” Ì‚” Ì‚” Ì‚”  Ì‚”( Ì‚$”* Ì‚&”+ Ì‚'Ü "” Ìƒ” Ìƒ” Ìƒ	” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”# Ìƒ”$ Ìƒ ”( Ìƒ$”) Ìƒ%”, Ìƒ(”- Ìƒ)”0 Ìƒ,”1 Ìƒ-”3 Ìƒ/”= Ìƒ9”> Ìƒ:”ÌA Ìƒ=”ÌB Ìƒ>”ÌE ÌƒÌA”ÌH ÌƒÌD”ÌI ÌƒÌE”ÌJ ÌƒÌF”ÌK ÌƒÌG”ÌL ÌƒÌH”ÌM ÌƒÌI”ÌN ÌƒÌJ”ÌO ÌƒÌK”ÌP ÌƒÌL”ÌQ ÌƒÌM”ÌR ÌƒÌN”ÌS ÌƒÌO”ÌT ÌƒÌP–” Ì„” Ì„” Ì„” Ì„” Ì„”  Ì„’” Ì…” Ì…Ü ” Ì‡” Ì‡” Ì‡” Ì‡$”" Ì‡(”# Ì‡)”' Ì‡-”, Ì‡2”7 Ì‡=”8 Ì‡>”: Ì‡Ì@”; Ì‡ÌA”< Ì‡ÌB”= Ì‡ÌC”ÌA Ì‡ÌG”ÌB Ì‡ÌH”ÌI Ì‡ÌO”ÌJ Ì‡ÌP”ÌK Ì‡ÌQ”ÌL Ì‡ÌR”ÌP Ì‡ÌV”ÌQ Ì‡ÌW”Ì\ Ì‡Ìb”Ì] Ì‡Ìc”Ì^ Ì‡Ìd”Ì_ Ì‡ÌeÜ ” Ì‰” Ì‰	” Ì‰” Ì‰” Ì‰!” Ì‰"”  Ì‰&”% Ì‰+”0 Ì‰6”1 Ì‰7”3 Ì‰9”4 Ì‰:”5 Ì‰;”6 Ì‰<”= Ì‰ÌC”> Ì‰ÌD”? Ì‰ÌE”Ì@ Ì‰ÌF”ÌJ Ì‰ÌP”ÌK Ì‰ÌQ”ÌL Ì‰ÌR”ÌM Ì‰ÌSÜ ” Ì‹” Ì‹” Ì‹” Ì‹$” Ì‹%”# Ì‹)”$ Ì‹*”( Ì‹.”- Ì‹3”8 Ì‹>”9 Ì‹?”; Ì‹ÌA”< Ì‹ÌB”= Ì‹ÌC”> Ì‹ÌD”ÌB Ì‹ÌH”ÌC Ì‹ÌI”ÌJ Ì‹ÌP”ÌK Ì‹ÌQ”ÌL Ì‹ÌR”ÌM Ì‹ÌS”ÌQ Ì‹ÌW”ÌR Ì‹ÌX”Ì] Ì‹Ìc”Ì^ Ì‹Ìd”Ìa Ì‹Ìg”Ìe Ì‹Ìk”Ìf Ì‹Ìl”Ìg Ì‹Ìm”Ìh Ì‹Ìn’” Ì” Ì™” Ì” Ì” Ì” Ì” Ì” Ì”! Ì”% Ì!”& Ì"’” Ì” Ì’” Ì‘
-” Ì‘˜” Ì’” Ì’” Ì’” Ì’” Ì’”# Ì’”' Ì’#”) Ì’%—” Ì“” Ì“” Ì“” Ì“”% Ì“”' Ì“!”( Ì“"‘”	 Ì”˜” Ì•” Ì•” Ì•” Ì•” Ì•”$ Ì• ”( Ì•$”* Ì•&—” Ì–” Ì–” Ì–” Ì–”& Ì– ”( Ì–"”) Ì–#‘”	 Ì—”” Ì˜” Ì˜” Ì˜” Ì˜’” Ì™” Ì™”” Ì›
-” Ì›” Ì›” Ì›%š” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”  Ìœ”& Ìœ"”) Ìœ%”7 Ìœ3”9 Ìœ5š” Ì” Ì
-” Ì” Ì”  Ì”$ Ì”% Ì”( Ì"”) Ì#”* Ì$‘”	 Ì‘” Ì˜” ÌŸ” ÌŸ
-” ÌŸ” ÌŸ”  ÌŸ”% ÌŸ”' ÌŸ!”( ÌŸ"š” Ì ” Ì 
-” Ì ” Ì ”  Ì ”$ Ì ”% Ì ”( Ì "”) Ì #”* Ì $‘”	 Ì¡–” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢Ü ” Ì£” Ì£	” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”  Ì£”! Ì£”/ Ì£+”0 Ì£,”6 Ì£2”8 Ì£4”9 Ì£5”; Ì£7”= Ì£9š” Ì¤” Ì¤	” Ì¤” Ì¤” Ì¤”& Ì¤ ”' Ì¤!”( Ì¤"”) Ì¤#”* Ì¤$‘”	 Ì¥œ” Ì¦” Ì¦
-” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦”- Ì¦)”. Ì¦*”4 Ì¦0”5 Ì¦1—” Ì§” Ì§” Ì§	” Ì§” Ì§” Ì§” Ì§—” Ì¨” Ì¨
-” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨—” Ì©” Ì©
-” Ì©” Ì©” Ì©”! Ì©”" Ì©‘”	 Ìª‘” ÌªÜ ” Ì«” Ì«
-” Ì«” Ì«” Ì«”% Ì«”( Ì«"”+ Ì«%”. Ì«(”/ Ì«)”0 Ì«*”3 Ì«-”? Ì«9”Ì@ Ì«:”ÌC Ì«=”ÌG Ì«ÌA”ÌH Ì«ÌB”ÌM Ì«ÌG”ÌN Ì«ÌH‘”	 Ì¬œ” Ì­” Ì­” Ì­” Ì­” Ì­” Ì­”  Ì­”# Ì­”' Ì­#”( Ì­$”- Ì­)”. Ì­*’” Ì®” Ì®”” Ì°
-” Ì°” Ì°” Ì°%š” Ì±” Ì±” Ì±” Ì±”  Ì±”! Ì±”' Ì±#”* Ì±&”< Ì±8”> Ì±:š” Ì²” Ì²
-” Ì²”  Ì²”! Ì²”% Ì²”& Ì² ”) Ì²#”* Ì²$”+ Ì²%›” Ì³” Ì³
-” Ì³” Ì³”" Ì³”& Ì³ ”' Ì³!”6 Ì³0”7 Ì³1”= Ì³7”> Ì³8‘”	 Ì´‘” Ì´” Ìµ” Ìµ
-” Ìµ”  Ìµ”! Ìµ”% Ìµ”& Ìµ ”4 Ìµ.”7 Ìµ1”ÌI ÌµÌC”ÌJ ÌµÌD”ÌM ÌµÌG”ÌP ÌµÌJ”ÌQ ÌµÌKÜ ” Ì¶” Ì¶
-” Ì¶” Ì¶”" Ì¶”# Ì¶”' Ì¶!”( Ì¶"”6 Ì¶0”9 Ì¶3”: Ì¶4”; Ì¶5”> Ì¶8”? Ì¶9”ÌQ Ì¶ÌK”ÌT Ì¶ÌN”ÌU Ì¶ÌO”ÌV Ì¶ÌP”ÌW Ì¶ÌQ‘”	 Ì·š” Ì¸” Ì¸” Ì¸” Ì¸”  Ì¸”! Ì¸”' Ì¸#”+ Ì¸'”, Ì¸(”. Ì¸*–” Ì¹” Ì¹
-” Ì¹” Ì¹” Ì¹” Ì¹˜” Ìº” Ìº” Ìº” Ìº” Ìº”  Ìº”! Ìº”0 Ìº*•” Ìº,” Ìº/” Ìº3” Ìº4” Ìº5” Ì»” Ì»
-” Ì»” Ì»” Ì»” Ì»”" Ì»”& Ì» ”' Ì»!”6 Ì»0”7 Ì»1”= Ì»7”> Ì»8‘”	 Ì¼š” Ì½” Ì½” Ì½” Ì½”  Ì½”! Ì½”' Ì½#”+ Ì½'”, Ì½(”. Ì½*–” Ì¾” Ì¾
-” Ì¾” Ì¾” Ì¾” Ì¾™” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿”  Ì¿”! Ì¿”0 Ì¿*”2 Ì¿,š” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ”# ÌÀ”$ ÌÀ”, ÌÀ$”- ÌÀ%—” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”  ÌÁ”! ÌÁ‘” ÌÂÜ ” ÌÃ” ÌÃ
-” ÌÃ” ÌÃ” ÌÃ” ÌÃ”  ÌÃ”$ ÌÃ”% ÌÃ”* ÌÃ$”- ÌÃ'”1 ÌÃ+”2 ÌÃ,”ÌA ÌÃ;”ÌB ÌÃ<”ÌH ÌÃÌB”ÌI ÌÃÌC”ÌJ ÌÃÌD‘”	 ÌÄ’” ÌÅ” ÌÅ‘” ÌÆÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ½‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍaÍ|ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍhÍ|ÔrM”¤type¥start£end¤nameªIdentifierÍnÍ{­AmmeterEngineÀÔrN”¤type¥start£end¤body©ClassBodyÍ|Í|Ü ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍƒÍ@ÂÂMªIdentifierÍƒÍ«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍÍ@ÀÂÂÂN®BlockStatementÍ‘Í@ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍœÍ·ÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍœÍ¶¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍœÍ¥ÔrT“¤type¥start£end®ThisExpressionÍœÍ MªIdentifierÍ¡Í¥¤typeÂÂS°MemberExpressionÍ¨Í¶MªIdentifierÍ¨Í³«AmmeterTypeMªIdentifierÍ´Í¶¢DCÂÂQ³ExpressionStatementÍÁÍÕR´AssignmentExpressionÍÁÍÔ¡=S°MemberExpressionÍÁÍĞT®ThisExpressionÍÁÍÅMªIdentifierÍÆÍĞªrangeIndexÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍÓÍÔ¡2Q³ExpressionStatementÍßÍôR´AssignmentExpressionÍßÍó¡=S°MemberExpressionÍßÍïT®ThisExpressionÍßÍãMªIdentifierÍäÍï«lastReadingÂÂU§LiteralÍòÍó ¡0Q³ExpressionStatementÍşÍR´AssignmentExpressionÍşÍ¡=S°MemberExpressionÍşÍ
-T®ThisExpressionÍşÍMªIdentifierÍÍ
-§lastRmsÂÂU§LiteralÍÍ ¡0Q³ExpressionStatementÍÍ1R´AssignmentExpressionÍÍ0¡=S°MemberExpressionÍÍ)T®ThisExpressionÍÍMªIdentifierÍÍ)«autoRangeOnÂÂU§LiteralÍ,Í0Ã¤trueQ³ExpressionStatementÍ;ÍUR´AssignmentExpressionÍ;ÍT¡=S°MemberExpressionÍ;ÍMT®ThisExpressionÍ;Í?MªIdentifierÍ@ÍM­currentReaderÂÂU§LiteralÍPÍTÀ¤nullQ³ExpressionStatementÍ_ÍzR´AssignmentExpressionÍ_Íy¡=S°MemberExpressionÍ_ÍrT®ThisExpressionÍ_ÍcMªIdentifierÍdÍr®globalFallbackÂÂU§LiteralÍuÍyÀ¤nullQ³ExpressionStatementÍ„ÍR´AssignmentExpressionÍ„Í¡=S°MemberExpressionÍ„Í˜T®ThisExpressionÍ„ÍˆMªIdentifierÍ‰Í˜¯rmsSampleBufferÂÂÔrV”¤type¥start£end¨elements¯ArrayExpressionÍ›ÍQ³ExpressionStatementÍ¨ÍÀR´AssignmentExpressionÍ¨Í¿¡=S°MemberExpressionÍ¨Í»T®ThisExpressionÍ¨Í¬MªIdentifierÍ­Í»®rmsSampleIndexÂÂU§LiteralÍ¾Í¿ ¡0Q³ExpressionStatementÍÊÍÜR´AssignmentExpressionÍÊÍÛ¡=S°MemberExpressionÍÊÍ×T®ThisExpressionÍÊÍÎMªIdentifierÍÏÍ×¨dcOffsetÂÂU§LiteralÍÚÍÛ ¡0Q³ExpressionStatementÍæÍÿR´AssignmentExpressionÍæÍş¡=S°MemberExpressionÍæÍùT®ThisExpressionÍæÍêMªIdentifierÍëÍù®dcSampleBufferÂÂV¯ArrayExpressionÍüÍşQ³ExpressionStatementÍ	ÍR´AssignmentExpressionÍ	Í¡=S°MemberExpressionÍ	ÍT®ThisExpressionÍ	ÍMªIdentifierÍÍ¥dcEmaÂÂU§LiteralÍÍ ¡0Q³ExpressionStatementÍ"Í9R´AssignmentExpressionÍ"Í8¡=S°MemberExpressionÍ"Í0T®ThisExpressionÍ"Í&MªIdentifierÍ'Í0©dcEmaInitÂÂU§LiteralÍ3Í8Â¥falseO°MethodDefinitionÍFÍNÂÂMªIdentifierÍFÍM§setType¦methodP²FunctionExpressionÍMÍNÀÂÂÂ‘MªIdentifierÍNÍO¡tN®BlockStatementÍQÍN˜Q³ExpressionStatementÍ\ÍjR´AssignmentExpressionÍ\Íi¡=S°MemberExpressionÍ\ÍeT®ThisExpressionÍ\Í`MªIdentifierÍaÍe¤typeÂÂMªIdentifierÍhÍi¡tQ³ExpressionStatementÍtÍˆR´AssignmentExpressionÍtÍ‡¡=S°MemberExpressionÍtÍƒT®ThisExpressionÍtÍxMªIdentifierÍyÍƒªrangeIndexÂÂU§LiteralÍ†Í‡¡1Q³ExpressionStatementÍ’Í¬R´AssignmentExpressionÍ’Í«¡=S°MemberExpressionÍ’Í¦T®ThisExpressionÍ’Í–MªIdentifierÍ—Í¦¯rmsSampleBufferÂÂV¯ArrayExpressionÍ©Í«Q³ExpressionStatementÍ¶ÍÎR´AssignmentExpressionÍ¶ÍÍ¡=S°MemberExpressionÍ¶ÍÉT®ThisExpressionÍ¶ÍºMªIdentifierÍ»ÍÉ®rmsSampleIndexÂÂU§LiteralÍÌÍÍ ¡0Q³ExpressionStatementÍØÍêR´AssignmentExpressionÍØÍé¡=S°MemberExpressionÍØÍåT®ThisExpressionÍØÍÜMªIdentifierÍİÍå¨dcOffsetÂÂU§LiteralÍèÍé ¡0Q³ExpressionStatementÍôÍR´AssignmentExpressionÍôÍ¡=S°MemberExpressionÍôÍT®ThisExpressionÍôÍøMªIdentifierÍùÍ®dcSampleBufferÂÂV¯ArrayExpressionÍ
-ÍQ³ExpressionStatementÍÍ&R´AssignmentExpressionÍÍ%¡=S°MemberExpressionÍÍ!T®ThisExpressionÍÍMªIdentifierÍÍ!¥dcEmaÂÂU§LiteralÍ$Í% ¡0Q³ExpressionStatementÍ0ÍGR´AssignmentExpressionÍ0ÍF¡=S°MemberExpressionÍ0Í>T®ThisExpressionÍ0Í4MªIdentifierÍ5Í>©dcEmaInitÂÂU§LiteralÍAÍFÂ¥falseO°MethodDefinitionÍTÍsÂÂMªIdentifierÍTÍ[§getType¦methodP²FunctionExpressionÍ[ÍsÀÂÂÂN®BlockStatementÍ^Ís‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍ`ÍqS°MemberExpressionÍgÍpT®ThisExpressionÍgÍkMªIdentifierÍlÍp¤typeÂÂO°MethodDefinitionÍyÍcÂÂMªIdentifierÍyÍ‰°setCurrentReader¦methodP²FunctionExpressionÍ‰ÍcÀÂÂÂ‘MªIdentifierÍŠÍ¦readerN®BlockStatementÍ’Íc–Q³ExpressionStatementÍÍ¹R´AssignmentExpressionÍÍ¸¡=S°MemberExpressionÍÍ¯T®ThisExpressionÍÍ¡MªIdentifierÍ¢Í¯­currentReaderÂÂMªIdentifierÍ²Í¸¦readerQ³ExpressionStatementÍÃÍİR´AssignmentExpressionÍÃÍÜ¡=S°MemberExpressionÍÃÍ×T®ThisExpressionÍÃÍÇMªIdentifierÍÈÍ×¯rmsSampleBufferÂÂV¯ArrayExpressionÍÚÍÜQ³ExpressionStatementÍçÍÿR´AssignmentExpressionÍçÍş¡=S°MemberExpressionÍçÍúT®ThisExpressionÍçÍëMªIdentifierÍìÍú®rmsSampleIndexÂÂU§LiteralÍıÍş ¡0Q³ExpressionStatementÍ	Í"R´AssignmentExpressionÍ	Í!¡=S°MemberExpressionÍ	ÍT®ThisExpressionÍ	ÍMªIdentifierÍÍ®dcSampleBufferÂÂV¯ArrayExpressionÍÍ!Q³ExpressionStatementÍ,Í;R´AssignmentExpressionÍ,Í:¡=S°MemberExpressionÍ,Í6T®ThisExpressionÍ,Í0MªIdentifierÍ1Í6¥dcEmaÂÂU§LiteralÍ9Í: ¡0Q³ExpressionStatementÍEÍ\R´AssignmentExpressionÍEÍ[¡=S°MemberExpressionÍEÍST®ThisExpressionÍEÍIMªIdentifierÍJÍS©dcEmaInitÂÂU§LiteralÍVÍ[Â¥falseO°MethodDefinitionÍiÍ²ÂÂMªIdentifierÍiÍz±setGlobalFallback¦methodP²FunctionExpressionÍzÍ²ÀÂÂÂ‘MªIdentifierÍ{Í¦readerN®BlockStatementÍƒÍ²‘Q³ExpressionStatementÍÍ«R´AssignmentExpressionÍÍª¡=S°MemberExpressionÍÍ¡T®ThisExpressionÍÍ’MªIdentifierÍ“Í¡®globalFallbackÂÂMªIdentifierÍ¤Íª¦readerO°MethodDefinitionÍ¸Í¤ÂÂMªIdentifierÍ¸ÍÀ¨setRange¦methodP²FunctionExpressionÍÀÍ¤ÀÂÂÂ‘MªIdentifierÍÁÍÄ£idxN®BlockStatementÍÆÍ¤“ÔrX•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÑÍ‘ÔrY•¤type¥start£end¢id¤init²VariableDeclaratorÍ×ÍMªIdentifierÍ×Íİ¦rangesÔrZ–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍàÍÔr[–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍàÍüS°MemberExpressionÍàÍéT®ThisExpressionÍàÍäMªIdentifierÍåÍé¤typeÂÂ£===S°MemberExpressionÍîÍüMªIdentifierÍîÍù«AmmeterTypeMªIdentifierÍúÍü¢DCÂÂMªIdentifierÍÿÍ¬DC_RANGES_MAMªIdentifierÍÍ¬AC_RANGES_MA¥constZ«IfStatementÍ%Íz[±LogicalExpressionÍ)ÍH[°BinaryExpressionÍ)Í1MªIdentifierÍ)Í,£idx¢>=U§LiteralÍ0Í1 ¡0¢&&[°BinaryExpressionÍ5ÍHMªIdentifierÍ5Í8£idx¡<S°MemberExpressionÍ;ÍHMªIdentifierÍ;ÍA¦rangesMªIdentifierÍBÍH¦lengthÂÂN®BlockStatementÍJÍz‘Q³ExpressionStatementÍYÍoR´AssignmentExpressionÍYÍn¡=S°MemberExpressionÍYÍhT®ThisExpressionÍYÍ]MªIdentifierÍ^ÍhªrangeIndexÂÂMªIdentifierÍkÍn£idxÀQ³ExpressionStatementÍ„ÍR´AssignmentExpressionÍ„Íœ¡=S°MemberExpressionÍ„Í”T®ThisExpressionÍ„ÍˆMªIdentifierÍ‰Í”«autoRangeOnÂÂU§LiteralÍ—ÍœÂ¥falseO°MethodDefinitionÍªÍAÂÂMªIdentifierÍªÍ²¨getRange¦methodP²FunctionExpressionÍ²ÍAÀÂÂÂN®BlockStatementÍµÍA’X³VariableDeclarationÍÀÍ
-‘Y²VariableDeclaratorÍÆÍ	MªIdentifierÍÆÍÌ¦rangesZµConditionalExpressionÍÏÍ	[°BinaryExpressionÍÏÍëS°MemberExpressionÍÏÍØT®ThisExpressionÍÏÍÓMªIdentifierÍÔÍØ¤typeÂÂ£===S°MemberExpressionÍİÍëMªIdentifierÍİÍè«AmmeterTypeMªIdentifierÍéÍë¢DCÂÂMªIdentifierÍîÍú¬DC_RANGES_MAMªIdentifierÍıÍ	¬AC_RANGES_MA¥constW¯ReturnStatementÍÍ:[±LogicalExpressionÍÍ9S°MemberExpressionÍÍ2MªIdentifierÍÍ!¦rangesS°MemberExpressionÍ"Í1T®ThisExpressionÍ"Í&MªIdentifierÍ'Í1ªrangeIndexÂÂÃÂ¢??U§LiteralÍ6Í9ÌÈ£200O°MethodDefinitionÍGÍ	WÂÂMªIdentifierÍGÍP©autoRange¦methodP²FunctionExpressionÍPÍ	WÀÂÂÂ‘MªIdentifierÍQÍY¨forValueN®BlockStatementÍ[Í	W–Q³ExpressionStatementÍfÍ~R´AssignmentExpressionÍfÍ}¡=S°MemberExpressionÍfÍvT®ThisExpressionÍfÍjMªIdentifierÍkÍv«autoRangeOnÂÂU§LiteralÍyÍ}Ã¤trueX³VariableDeclarationÍˆÍ™‘Y²VariableDeclaratorÍŒÍ˜MªIdentifierÍŒÍ¡rMªIdentifierÍÍ˜¨forValue£letZ«IfStatementÍ£Í[°BinaryExpressionÍ§Í¶MªIdentifierÍ§Í¨¡r£===MªIdentifierÍ­Í¶©undefinedN®BlockStatementÍ¸Í‘Q³ExpressionStatementÍÇÍ
-R´AssignmentExpressionÍÇÍ	¡=MªIdentifierÍÇÍÈ¡rZµConditionalExpressionÍËÍ	[°BinaryExpressionÍËÍçS°MemberExpressionÍËÍÔT®ThisExpressionÍËÍÏMªIdentifierÍĞÍÔ¤typeÂÂ£===S°MemberExpressionÍÙÍçMªIdentifierÍÙÍä«AmmeterTypeMªIdentifierÍåÍç¢ACÂÂS°MemberExpressionÍêÍöT®ThisExpressionÍêÍîMªIdentifierÍïÍö§lastRmsÂÂS°MemberExpressionÍùÍ	T®ThisExpressionÍùÍıMªIdentifierÍşÍ	«lastReadingÂÂÀX³VariableDeclarationÍÍi‘Y²VariableDeclaratorÍ%ÍhMªIdentifierÍ%Í+¦rangesZµConditionalExpressionÍ.Íh[°BinaryExpressionÍ.ÍJS°MemberExpressionÍ.Í7T®ThisExpressionÍ.Í2MªIdentifierÍ3Í7¤typeÂÂ£===S°MemberExpressionÍ<ÍJMªIdentifierÍ<ÍG«AmmeterTypeMªIdentifierÍHÍJ¢DCÂÂMªIdentifierÍMÍY¬DC_RANGES_MAMªIdentifierÍ\Íh¬AC_RANGES_MA¥constÔr\—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍsÍ	"X³VariableDeclarationÍxÍ‘Y²VariableDeclaratorÍ|ÍMªIdentifierÍ|Í}¡iU§LiteralÍ€Í ¡0£let[°BinaryExpressionÍƒÍ”MªIdentifierÍƒÍ„¡i¡<S°MemberExpressionÍ‡Í”MªIdentifierÍ‡Í¦rangesMªIdentifierÍÍ”¦lengthÂÂÔr]–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ–Í™¢++ÂMªIdentifierÍ–Í—¡iN®BlockStatementÍ›Í	"‘Z«IfStatementÍªÍ	[°BinaryExpressionÍ®ÍÆÔr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ®Í¹S°MemberExpressionÍ®Í¶MªIdentifierÍ®Í²¤MathMªIdentifierÍ³Í¶£absÂÂ‘MªIdentifierÍ·Í¸¡rÂ¢<=S°MemberExpressionÍ½ÍÆMªIdentifierÍ½ÍÃ¦rangesMªIdentifierÍÄÍÅ¡iÃÂN®BlockStatementÍÈÍ	’Q³ExpressionStatementÍÛÍïR´AssignmentExpressionÍÛÍî¡=S°MemberExpressionÍÛÍêT®ThisExpressionÍÛÍßMªIdentifierÍàÍêªrangeIndexÂÂMªIdentifierÍíÍî¡iW¯ReturnStatementÍ	Í	ÀÀQ³ExpressionStatementÍ	,Í	PR´AssignmentExpressionÍ	,Í	O¡=S°MemberExpressionÍ	,Í	;T®ThisExpressionÍ	,Í	0MªIdentifierÍ	1Í	;ªrangeIndexÂÂ[°BinaryExpressionÍ	>Í	OS°MemberExpressionÍ	>Í	KMªIdentifierÍ	>Í	D¦rangesMªIdentifierÍ	EÍ	K¦lengthÂÂ¡-U§LiteralÍ	NÍ	O¡1O°MethodDefinitionÍ	]Í	£ÂÂMªIdentifierÍ	]Í	d§measure¦methodP²FunctionExpressionÍ	dÍ	£ÀÂÂÂN®BlockStatementÍ	gÍ	£‘W¯ReturnStatementÍ	rÍ	œ^®CallExpressionÍ	yÍ	›S°MemberExpressionÍ	yÍ	ŠT®ThisExpressionÍ	yÍ	}MªIdentifierÍ	~Í	Š¬measureValueÂÂ‘^®CallExpressionÍ	‹Í	šS°MemberExpressionÍ	‹Í	˜T®ThisExpressionÍ	‹Í	MªIdentifierÍ	Í	˜¨simulateÂÂÂÂO°MethodDefinitionÍ
-	Í ÂÂMªIdentifierÍ
-	Í
-¬measureValue¦methodP²FunctionExpressionÍ
-Í ÀÂÂÂ‘MªIdentifierÍ
-Í
-£rawN®BlockStatementÍ
-Í ˜Z«IfStatementÍ
-&Í&[°BinaryExpressionÍ
-*Í
-FS°MemberExpressionÍ
-*Í
-3T®ThisExpressionÍ
-*Í
-.MªIdentifierÍ
-/Í
-3¤typeÂÂ£===S°MemberExpressionÍ
-8Í
-FMªIdentifierÍ
-8Í
-C«AmmeterTypeMªIdentifierÍ
-DÍ
-F¢ACÂÂN®BlockStatementÍ
-HÍ&”Q³ExpressionStatementÍ
-WÍ
-q^®CallExpressionÍ
-WÍ
-pS°MemberExpressionÍ
-WÍ
-kT®ThisExpressionÍ
-WÍ
-[MªIdentifierÍ
-\Í
-k¯updateRmsBufferÂÂ‘MªIdentifierÍ
-lÍ
-o£rawÂQ³ExpressionStatementÍ
-Í
-–R´AssignmentExpressionÍ
-Í
-•¡=S°MemberExpressionÍ
-Í
-T®ThisExpressionÍ
-Í
-ƒMªIdentifierÍ
-„Í
-«lastReadingÂÂMªIdentifierÍ
-’Í
-•£rawZ«IfStatementÍ
-¤Í
-ùS°MemberExpressionÍ
-¨Í
-¸T®ThisExpressionÍ
-¨Í
-¬MªIdentifierÍ
-­Í
-¸«autoRangeOnÂÂN®BlockStatementÍ
-ºÍ
-ù‘Q³ExpressionStatementÍ
-ÍÍ
-ê^®CallExpressionÍ
-ÍÍ
-éS°MemberExpressionÍ
-ÍÍ
-ÛT®ThisExpressionÍ
-ÍÍ
-ÑMªIdentifierÍ
-ÒÍ
-Û©autoRangeÂÂ‘S°MemberExpressionÍ
-ÜÍ
-èT®ThisExpressionÍ
-ÜÍ
-àMªIdentifierÍ
-áÍ
-è§lastRmsÂÂÂÀW¯ReturnStatementÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§lastRmsÂÂÀX³VariableDeclarationÍ0Í[‘Y²VariableDeclaratorÍ6ÍZMªIdentifierÍ6Í>¨averaged^®CallExpressionÍAÍZS°MemberExpressionÍAÍUT®ThisExpressionÍAÍEMªIdentifierÍFÍU¯updateDcAverageÂÂ‘MªIdentifierÍVÍY£rawÂ¥constZ«IfStatementÍeÍ®S°MemberExpressionÍiÍyT®ThisExpressionÍiÍmMªIdentifierÍnÍy«autoRangeOnÂÂN®BlockStatementÍ{Í®‘Q³ExpressionStatementÍŠÍ£^®CallExpressionÍŠÍ¢S°MemberExpressionÍŠÍ˜T®ThisExpressionÍŠÍMªIdentifierÍÍ˜©autoRangeÂÂ‘MªIdentifierÍ™Í¡¨averagedÂÀX³VariableDeclarationÍ¸ÍÔ‘Y²VariableDeclaratorÍ¾ÍÓMªIdentifierÍ¾ÍÁ£max^®CallExpressionÍÄÍÓS°MemberExpressionÍÄÍÑT®ThisExpressionÍÄÍÈMªIdentifierÍÉÍÑ¨getRangeÂÂÂ¥constZ«IfStatementÍŞÍJ[±LogicalExpressionÍâÍ[°BinaryExpressionÍâÍ^®CallExpressionÍâÍôS°MemberExpressionÍâÍêMªIdentifierÍâÍæ¤MathMªIdentifierÍçÍê£absÂÂ‘MªIdentifierÍëÍó¨averagedÂ¡>[°BinaryExpressionÍ÷ÍMªIdentifierÍ÷Íú£max¡*U§LiteralÍıÍË?ğÌÌÌÌÌÍ¤1.05¢&&S°MemberExpressionÍÍT®ThisExpressionÍÍ	MªIdentifierÍ
-Í«autoRangeOnÂÂN®BlockStatementÍÍJ‘Q³ExpressionStatementÍ&Í?^®CallExpressionÍ&Í>S°MemberExpressionÍ&Í4T®ThisExpressionÍ&Í*MªIdentifierÍ+Í4©autoRangeÂÂ‘MªIdentifierÍ5Í=¨averagedÂÀX³VariableDeclarationÍTÍw‘Y²VariableDeclaratorÍZÍvMªIdentifierÍZÍdªdisplayMax^®CallExpressionÍgÍvS°MemberExpressionÍgÍtT®ThisExpressionÍgÍkMªIdentifierÍlÍt¨getRangeÂÂÂ¥constQ³ExpressionStatementÍÍ×R´AssignmentExpressionÍÍÖ¡=S°MemberExpressionÍÍ‘T®ThisExpressionÍÍ…MªIdentifierÍ†Í‘«lastReadingÂÂ[°BinaryExpressionÍ”ÍÖ^®CallExpressionÍ”Í¼S°MemberExpressionÍ”ÍœMªIdentifierÍ”Í˜¤MathMªIdentifierÍ™Íœ£minÂÂ’^®CallExpressionÍÍ¯S°MemberExpressionÍÍ¥MªIdentifierÍÍ¡¤MathMªIdentifierÍ¢Í¥£absÂÂ‘MªIdentifierÍ¦Í®¨averagedÂMªIdentifierÍ±Í»ªdisplayMaxÂ¡*ZµConditionalExpressionÍÀÍÕ[°BinaryExpressionÍÀÍÌMªIdentifierÍÀÍÈ¨averaged¡<U§LiteralÍËÍÌ ¡0]¯UnaryExpressionÍÏÍÑ¡-ÃU§LiteralÍĞÍÑ¡1U§LiteralÍÔÍÕ¡1W¯ReturnStatementÍáÍùS°MemberExpressionÍèÍøT®ThisExpressionÍèÍìMªIdentifierÍíÍø«lastReadingÂÂO°MethodDefinitionÍbÍÂÂMªIdentifierÍbÍlªfeedSample¦methodP²FunctionExpressionÍlÍÀÂÂÂ‘MªIdentifierÍmÍp£rawN®BlockStatementÍrÍ’Z«IfStatementÍ}Íè[°BinaryExpressionÍÍS°MemberExpressionÍÍŠT®ThisExpressionÍÍ…MªIdentifierÍ†ÍŠ¤typeÂÂ£===S°MemberExpressionÍÍMªIdentifierÍÍš«AmmeterTypeMªIdentifierÍ›Í¢ACÂÂN®BlockStatementÍŸÍè’Q³ExpressionStatementÍ®ÍÈ^®CallExpressionÍ®ÍÇS°MemberExpressionÍ®ÍÂT®ThisExpressionÍ®Í²MªIdentifierÍ³ÍÂ¯updateRmsBufferÂÂ‘MªIdentifierÍÃÍÆ£rawÂW¯ReturnStatementÍÖÍİÀÀQ³ExpressionStatementÍòÍ^®CallExpressionÍòÍS°MemberExpressionÍòÍT®ThisExpressionÍòÍöMªIdentifierÍ÷Í¯updateDcAverageÂÂ‘MªIdentifierÍÍ
-£rawÂO°MethodDefinitionÍ}Í”ÂÂMªIdentifierÍ}Íˆ«snapReading¦methodP²FunctionExpressionÍˆÍ”ÀÂÂÂ‘MªIdentifierÍ‰ÍŒ£rawN®BlockStatementÍÍ”˜Q³ExpressionStatementÍ™ÍµR´AssignmentExpressionÍ™Í´¡=S°MemberExpressionÍ™Í¬T®ThisExpressionÍ™ÍMªIdentifierÍÍ¬®dcSampleBufferÂÂV¯ArrayExpressionÍ¯Í´‘MªIdentifierÍ°Í³£rawQ³ExpressionStatementÍ¿ÍĞR´AssignmentExpressionÍ¿ÍÏ¡=S°MemberExpressionÍ¿ÍÉT®ThisExpressionÍ¿ÍÃMªIdentifierÍÄÍÉ¥dcEmaÂÂMªIdentifierÍÌÍÏ£rawQ³ExpressionStatementÍÚÍğR´AssignmentExpressionÍÚÍï¡=S°MemberExpressionÍÚÍèT®ThisExpressionÍÚÍŞMªIdentifierÍßÍè©dcEmaInitÂÂU§LiteralÍëÍïÃ¤trueZ«IfStatementÍúÍš[°BinaryExpressionÍşÍS°MemberExpressionÍşÍT®ThisExpressionÍşÍMªIdentifierÍÍ¤typeÂÂ£===S°MemberExpressionÍÍMªIdentifierÍÍ«AmmeterTypeMªIdentifierÍÍ¢ACÂÂN®BlockStatementÍÍš“Q³ExpressionStatementÍ+ÍBR´AssignmentExpressionÍ+ÍA¡=S°MemberExpressionÍ+Í;T®ThisExpressionÍ+Í/MªIdentifierÍ0Í;«lastReadingÂÂMªIdentifierÍ>ÍA£rawQ³ExpressionStatementÍPÍmR´AssignmentExpressionÍPÍl¡=S°MemberExpressionÍPÍ\T®ThisExpressionÍPÍTMªIdentifierÍUÍ\§lastRmsÂÂ^®CallExpressionÍ_ÍlS°MemberExpressionÍ_ÍgMªIdentifierÍ_Íc¤MathMªIdentifierÍdÍg£absÂÂ‘MªIdentifierÍhÍk£rawÂW¯ReturnStatementÍ{ÍS°MemberExpressionÍ‚ÍT®ThisExpressionÍ‚Í†MªIdentifierÍ‡Í§lastRmsÂÂÀZ«IfStatementÍ¤ÍèS°MemberExpressionÍ¨Í¸T®ThisExpressionÍ¨Í¬MªIdentifierÍ­Í¸«autoRangeOnÂÂN®BlockStatementÍºÍè‘Q³ExpressionStatementÍÉÍİ^®CallExpressionÍÉÍÜS°MemberExpressionÍÉÍ×T®ThisExpressionÍÉÍÍMªIdentifierÍÎÍ×©autoRangeÂÂ‘MªIdentifierÍØÍÛ£rawÂÀX³VariableDeclarationÍòÍ‘Y²VariableDeclaratorÍøÍMªIdentifierÍøÍªdisplayMax^®CallExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍ	MªIdentifierÍ
-Í¨getRangeÂÂÂ¥constQ³ExpressionStatementÍÍkR´AssignmentExpressionÍÍj¡=S°MemberExpressionÍÍ/T®ThisExpressionÍÍ#MªIdentifierÍ$Í/«lastReadingÂÂ[°BinaryExpressionÍ2Íj^®CallExpressionÍ2ÍUS°MemberExpressionÍ2Í:MªIdentifierÍ2Í6¤MathMªIdentifierÍ7Í:£minÂÂ’^®CallExpressionÍ;ÍHS°MemberExpressionÍ;ÍCMªIdentifierÍ;Í?¤MathMªIdentifierÍ@ÍC£absÂÂ‘MªIdentifierÍDÍG£rawÂMªIdentifierÍJÍTªdisplayMaxÂ¡*ZµConditionalExpressionÍYÍi[°BinaryExpressionÍYÍ`MªIdentifierÍYÍ\£raw¡<U§LiteralÍ_Í` ¡0]¯UnaryExpressionÍcÍe¡-ÃU§LiteralÍdÍe¡1U§LiteralÍhÍi¡1W¯ReturnStatementÍuÍS°MemberExpressionÍ|ÍŒT®ThisExpressionÍ|Í€MªIdentifierÍÍŒ«lastReadingÂÂO°MethodDefinitionÍšÍõÂÂMªIdentifierÍšÍ¨®getLastReading¦methodP²FunctionExpressionÍ¨ÍõÀÂÂÂN®BlockStatementÍ«Íõ‘W¯ReturnStatementÍ­ÍóZµConditionalExpressionÍ´Íò[°BinaryExpressionÍ´ÍĞS°MemberExpressionÍ´Í½T®ThisExpressionÍ´Í¸MªIdentifierÍ¹Í½¤typeÂÂ£===S°MemberExpressionÍÂÍĞMªIdentifierÍÂÍÍ«AmmeterTypeMªIdentifierÍÎÍĞ¢ACÂÂS°MemberExpressionÍÓÍßT®ThisExpressionÍÓÍ×MªIdentifierÍØÍß§lastRmsÂÂS°MemberExpressionÍâÍòT®ThisExpressionÍâÍæMªIdentifierÍçÍò«lastReadingÂÂO°MethodDefinitionÍûÍDÂÂMªIdentifierÍûÍ§getUnit¦methodP²FunctionExpressionÍÍDÀÂÂÂN®BlockStatementÍÍD‘W¯ReturnStatementÍÍBZµConditionalExpressionÍÍA[°BinaryExpressionÍÍ*S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ¤typeÂÂ£===S°MemberExpressionÍÍ*MªIdentifierÍÍ'«AmmeterTypeMªIdentifierÍ(Í*¢DCÂÂU§LiteralÍ-Í4¥mA DC§'mA DC'U§LiteralÍ7ÍA¨mArms ACª'mArms AC'O°MethodDefinitionÍJÍ®ÂÂMªIdentifierÍJÍX®getReadingAmps¦methodP²FunctionExpressionÍXÍ®ÀÂÂÂN®BlockStatementÍ[Í®‘W¯ReturnStatementÍ]Í¬[°BinaryExpressionÍdÍ«ZµConditionalExpressionÍeÍ£[°BinaryExpressionÍeÍS°MemberExpressionÍeÍnT®ThisExpressionÍeÍiMªIdentifierÍjÍn¤typeÂÂ£===S°MemberExpressionÍsÍMªIdentifierÍsÍ~«AmmeterTypeMªIdentifierÍÍ¢ACÂÂS°MemberExpressionÍ„ÍT®ThisExpressionÍ„ÍˆMªIdentifierÍ‰Í§lastRmsÂÂS°MemberExpressionÍ“Í£T®ThisExpressionÍ“Í—MªIdentifierÍ˜Í£«lastReadingÂÂ¡/U§LiteralÍ§Í«Íè¤1000O°MethodDefinitionÍ´ÍôÂÂMªIdentifierÍ´ÍÁ­getRangeLabel¦methodP²FunctionExpressionÍÁÍôÀÂÂÂN®BlockStatementÍÄÍô‘W¯ReturnStatementÍÏÍíÔr_•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÖÍì‘^®CallExpressionÍÙÍèS°MemberExpressionÍÙÍæT®ThisExpressionÍÙÍİMªIdentifierÍŞÍæ¨getRangeÂÂÂ’Ôr`•¤type¥start£end¥value¤tail¯TemplateElementÍ×Í×Ôra’£raw¦cooked  Â`¯TemplateElementÍéÍëa¢mA¢mAÃO°MethodDefinitionÍúÍäÂÂMªIdentifierÍúÍ¨simulate¦methodP²FunctionExpressionÍÍäÀÂÂÂN®BlockStatementÍÍä“Z«IfStatementÍÍg[°BinaryExpressionÍÍ/S°MemberExpressionÍÍ&T®ThisExpressionÍÍMªIdentifierÍÍ&­currentReaderÂÂ£!==U§LiteralÍ+Í/À¤nullN®BlockStatementÍ1Íg‘W¯ReturnStatementÍ@Í\^®CallExpressionÍGÍ[S°MemberExpressionÍGÍYT®ThisExpressionÍGÍKMªIdentifierÍLÍY­currentReaderÂÂÂÀZ«IfStatementÍqÍÊ[°BinaryExpressionÍuÍ‘S°MemberExpressionÍuÍˆT®ThisExpressionÍuÍyMªIdentifierÍzÍˆ®globalFallbackÂÂ£!==U§LiteralÍÍ‘À¤nullN®BlockStatementÍ“ÍÊ‘W¯ReturnStatementÍ¢Í¿^®CallExpressionÍ©Í¾S°MemberExpressionÍ©Í¼T®ThisExpressionÍ©Í­MªIdentifierÍ®Í¼®globalFallbackÂÂÂÀW¯ReturnStatementÍÔÍİU§LiteralÍÛÍÜ ¡0O°MethodDefinitionÍêÍ¸ÂÂMªIdentifierÍêÍù¯updateDcAverage¦methodP²FunctionExpressionÍùÍ¸ÀÂÂÂ‘MªIdentifierÍúÍı£rawN®BlockStatementÍÿÍ¸–Z«IfStatementÍ
-Íä[°BinaryExpressionÍÍ9S°MemberExpressionÍÍ(S°MemberExpressionÍÍ!T®ThisExpressionÍÍMªIdentifierÍÍ!®dcSampleBufferÂÂMªIdentifierÍ"Í(¦lengthÂÂ¡<MªIdentifierÍ+Í9®DC_AVG_SAMPLESN®BlockStatementÍ;Ís‘Q³ExpressionStatementÍJÍh^®CallExpressionÍJÍgS°MemberExpressionÍJÍbS°MemberExpressionÍJÍ]T®ThisExpressionÍJÍNMªIdentifierÍOÍ]®dcSampleBufferÂÂMªIdentifierÍ^Íb¤pushÂÂ‘MªIdentifierÍcÍf£rawÂN®BlockStatementÍ‚Íä’Q³ExpressionStatementÍ‘Í­^®CallExpressionÍ‘Í¬S°MemberExpressionÍ‘ÍªS°MemberExpressionÍ‘Í¤T®ThisExpressionÍ‘Í•MªIdentifierÍ–Í¤®dcSampleBufferÂÂMªIdentifierÍ¥Íª¥shiftÂÂÂQ³ExpressionStatementÍ»ÍÙ^®CallExpressionÍ»ÍØS°MemberExpressionÍ»ÍÓS°MemberExpressionÍ»ÍÎT®ThisExpressionÍ»Í¿MªIdentifierÍÀÍÎ®dcSampleBufferÂÂMªIdentifierÍÏÍÓ¤pushÂÂ‘MªIdentifierÍÔÍ×£rawÂX³VariableDeclarationÍîÍú‘Y²VariableDeclaratorÍòÍùMªIdentifierÍòÍõ£sumU§LiteralÍøÍù ¡0£let\¬ForStatementÍÍqX³VariableDeclarationÍ	Í‘Y²VariableDeclaratorÍÍMªIdentifierÍÍ¡iU§LiteralÍÍ ¡0£let[°BinaryExpressionÍÍ2MªIdentifierÍÍ¡i¡<S°MemberExpressionÍÍ2S°MemberExpressionÍÍ+T®ThisExpressionÍÍMªIdentifierÍÍ+®dcSampleBufferÂÂMªIdentifierÍ,Í2¦lengthÂÂ]°UpdateExpressionÍ4Í7¢++ÂMªIdentifierÍ4Í5¡iN®BlockStatementÍ9Íq‘Q³ExpressionStatementÍHÍfR´AssignmentExpressionÍHÍe¢+=MªIdentifierÍHÍK£sumS°MemberExpressionÍOÍeS°MemberExpressionÍOÍbT®ThisExpressionÍOÍSMªIdentifierÍTÍb®dcSampleBufferÂÂMªIdentifierÍcÍd¡iÃÂX³VariableDeclarationÍ{Í¨‘Y²VariableDeclaratorÍÍ§MªIdentifierÍÍ„£box[°BinaryExpressionÍ‡Í§MªIdentifierÍ‡ÍŠ£sum¡/S°MemberExpressionÍÍ§S°MemberExpressionÍÍ T®ThisExpressionÍÍ‘MªIdentifierÍ’Í ®dcSampleBufferÂÂMªIdentifierÍ¡Í§¦lengthÂÂ¥constZ«IfStatementÍ²Í]¯UnaryExpressionÍ¶ÍÅ¡!ÃS°MemberExpressionÍ·ÍÅT®ThisExpressionÍ·Í»MªIdentifierÍ¼ÍÅ©dcEmaInitÂÂN®BlockStatementÍÇÍ’Q³ExpressionStatementÍÖÍçR´AssignmentExpressionÍÖÍæ¡=S°MemberExpressionÍÖÍàT®ThisExpressionÍÖÍÚMªIdentifierÍÛÍà¥dcEmaÂÂMªIdentifierÍãÍæ£boxQ³ExpressionStatementÍõÍR´AssignmentExpressionÍõÍ
-¡=S°MemberExpressionÍõÍT®ThisExpressionÍõÍùMªIdentifierÍúÍ©dcEmaInitÂÂU§LiteralÍÍ
-Ã¤trueN®BlockStatementÍ%Í‘Q³ExpressionStatementÍ4ÍvR´AssignmentExpressionÍ4Íu¡=S°MemberExpressionÍ4Í>T®ThisExpressionÍ4Í8MªIdentifierÍ9Í>¥dcEmaÂÂ[°BinaryExpressionÍAÍu[°BinaryExpressionÍAÍSMªIdentifierÍAÍM¬DC_EMA_ALPHA¡*MªIdentifierÍPÍS£raw¡+[°BinaryExpressionÍVÍu[°BinaryExpressionÍWÍgU§LiteralÍWÍX¡1¡-MªIdentifierÍ[Íg¬DC_EMA_ALPHA¡*S°MemberExpressionÍkÍuT®ThisExpressionÍkÍoMªIdentifierÍpÍu¥dcEmaÂÂW¯ReturnStatementÍ‹Í±[°BinaryExpressionÍ’Í°[°BinaryExpressionÍ’ÍœU§LiteralÍ’Í–Ë?á™™™™™š¤0.55¡*MªIdentifierÍ™Íœ£box¡+[°BinaryExpressionÍŸÍ°U§LiteralÍŸÍ£Ë?ÜÌÌÌÌÌÍ¤0.45¡*S°MemberExpressionÍ¦Í°T®ThisExpressionÍ¦ÍªMªIdentifierÍ«Í°¥dcEmaÂÂO°MethodDefinitionÍ¾ÍyÂÂMªIdentifierÍ¾ÍÍ¯updateRmsBuffer¦methodP²FunctionExpressionÍÍÍyÀÂÂÂ‘MªIdentifierÍÎÍÑ£rawN®BlockStatementÍÓÍy“Z«IfStatementÍŞÍT[°BinaryExpressionÍâÍS°MemberExpressionÍâÍıS°MemberExpressionÍâÍöT®ThisExpressionÍâÍæMªIdentifierÍçÍö¯rmsSampleBufferÂÂMªIdentifierÍ÷Íı¦lengthÂÂ¡<MªIdentifierÍ Í²RMS_WINDOW_SAMPLESN®BlockStatementÍÍ’Q³ExpressionStatementÍ#ÍB^®CallExpressionÍ#ÍAS°MemberExpressionÍ#Í<S°MemberExpressionÍ#Í7T®ThisExpressionÍ#Í'MªIdentifierÍ(Í7¯rmsSampleBufferÂÂMªIdentifierÍ8Í<¤pushÂÂ‘MªIdentifierÍ=Í@£rawÂQ³ExpressionStatementÍPÍ‚R´AssignmentExpressionÍPÍ¡=S°MemberExpressionÍPÍcT®ThisExpressionÍPÍTMªIdentifierÍUÍc®rmsSampleIndexÂÂS°MemberExpressionÍfÍS°MemberExpressionÍfÍzT®ThisExpressionÍfÍjMªIdentifierÍkÍz¯rmsSampleBufferÂÂMªIdentifierÍ{Í¦lengthÂÂN®BlockStatementÍœÍT’Q³ExpressionStatementÍ«ÍğR´AssignmentExpressionÍ«Íï¡=S°MemberExpressionÍ«ÍéS°MemberExpressionÍ«Í¿T®ThisExpressionÍ«Í¯MªIdentifierÍ°Í¿¯rmsSampleBufferÂÂ[°BinaryExpressionÍÀÍèS°MemberExpressionÍÀÍÓT®ThisExpressionÍÀÍÄMªIdentifierÍÅÍÓ®rmsSampleIndexÂÂ¡%MªIdentifierÍÖÍè²RMS_WINDOW_SAMPLESÃÂMªIdentifierÍìÍï£rawQ³ExpressionStatementÍşÍIR´AssignmentExpressionÍşÍH¡=S°MemberExpressionÍşÍT®ThisExpressionÍşÍMªIdentifierÍÍ®rmsSampleIndexÂÂ[°BinaryExpressionÍÍH[°BinaryExpressionÍÍ,S°MemberExpressionÍÍ(T®ThisExpressionÍÍMªIdentifierÍÍ(®rmsSampleIndexÂÂ¡+U§LiteralÍ+Í,¡1¡%[°BinaryExpressionÍ1ÍGMªIdentifierÍ1ÍC²RMS_WINDOW_SAMPLES¡*U§LiteralÍFÍG¡2Z«IfStatementÍ^Í8[°BinaryExpressionÍbÍ‚S°MemberExpressionÍbÍ}S°MemberExpressionÍbÍvT®ThisExpressionÍbÍfMªIdentifierÍgÍv¯rmsSampleBufferÂÂMªIdentifierÍwÍ}¦lengthÂÂ¢>=U§LiteralÍÍ‚¡2N®BlockStatementÍ„Í8“X³VariableDeclarationÍ“ÍŸ‘Y²VariableDeclaratorÍ—ÍMªIdentifierÍ—Íš£sumU§LiteralÍÍ ¡0£letÔrb—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ­ÍíÂX³VariableDeclarationÍ²Í¹‘Y²VariableDeclaratorÍ¸Í¹MªIdentifierÍ¸Í¹¡vÀ¥constS°MemberExpressionÍ½ÍÑT®ThisExpressionÍ½ÍÁMªIdentifierÍÂÍÑ¯rmsSampleBufferÂÂQ³ExpressionStatementÍäÍíR´AssignmentExpressionÍäÍì¢+=MªIdentifierÍäÍç£sumMªIdentifierÍëÍì¡vQ³ExpressionStatementÍûÍ-R´AssignmentExpressionÍûÍ,¡=S°MemberExpressionÍûÍT®ThisExpressionÍûÍÿMªIdentifierÍ Í¨dcOffsetÂÂ[°BinaryExpressionÍÍ,MªIdentifierÍÍ£sum¡/S°MemberExpressionÍÍ,S°MemberExpressionÍÍ%T®ThisExpressionÍÍMªIdentifierÍÍ%¯rmsSampleBufferÂÂMªIdentifierÍ&Í,¦lengthÂÂÀZ«IfStatementÍBÍr[°BinaryExpressionÍFÍfS°MemberExpressionÍFÍaS°MemberExpressionÍFÍZT®ThisExpressionÍFÍJMªIdentifierÍKÍZ¯rmsSampleBufferÂÂMªIdentifierÍ[Ía¦lengthÂÂ¢>=U§LiteralÍeÍf¡2N®BlockStatementÍhÍr“X³VariableDeclarationÍwÍ…‘Y²VariableDeclaratorÍ{Í„MªIdentifierÍ{Í€¥sumSqU§LiteralÍƒÍ„ ¡0£letb®ForOfStatementÍ“ÍÂX³VariableDeclarationÍ˜ÍŸ‘Y²VariableDeclaratorÍÍŸMªIdentifierÍÍŸ¡vÀ¥constS°MemberExpressionÍ£Í·T®ThisExpressionÍ£Í§MªIdentifierÍ¨Í·¯rmsSampleBufferÂÂN®BlockStatementÍ¹Í’X³VariableDeclarationÍÌÍé‘Y²VariableDeclaratorÍÒÍèMªIdentifierÍÒÍÔ¢ac[°BinaryExpressionÍ×ÍèMªIdentifierÍ×ÍØ¡v¡-S°MemberExpressionÍÛÍèT®ThisExpressionÍÛÍßMªIdentifierÍàÍè¨dcOffsetÂÂ¥constQ³ExpressionStatementÍûÍR´AssignmentExpressionÍûÍ¢+=MªIdentifierÍûÍ ¥sumSq[°BinaryExpressionÍÍMªIdentifierÍÍ¢ac¡*MªIdentifierÍ	Í¢acQ³ExpressionStatementÍ)ÍgR´AssignmentExpressionÍ)Íf¡=S°MemberExpressionÍ)Í5T®ThisExpressionÍ)Í-MªIdentifierÍ.Í5§lastRmsÂÂ^®CallExpressionÍ8ÍfS°MemberExpressionÍ8ÍAMªIdentifierÍ8Í<¤MathMªIdentifierÍ=ÍA¤sqrtÂÂ‘[°BinaryExpressionÍBÍeMªIdentifierÍBÍG¥sumSq¡/S°MemberExpressionÍJÍeS°MemberExpressionÍJÍ^T®ThisExpressionÍJÍNMªIdentifierÍOÍ^¯rmsSampleBufferÂÂMªIdentifierÍ_Íe¦lengthÂÂÂÀÀ‘Ôrc•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ‡Ì¬‘Ôrd•¤type¥start£end¨imported¥local¯ImportSpecifierÌÌ›MªIdentifierÌÌ›«AmmeterTypeMªIdentifierÌÌ›«AmmeterTypeU§LiteralÌ£Ì«¦common¨'common'
+” Ìe” Ìe” Ìe” Ìe”! Ìe”# Ìe”$ Ìe Ü ” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf”! Ìf”$ Ìf ”' Ìf#”+ Ìf'”/ Ìf+”3 Ìf/”4 Ìf0”? Ìf;”ÌA Ìf=˜” Ìg” Ìg
+” Ìg” Ìg” Ìg”# Ìg”$ Ìg”% Ìg‘”	 Ìh™” Ìi” Ìi
+” Ìi” Ìi” Ìi”  Ìi”( Ìi$”* Ìi&”+ Ìi'Ü "” Ìj” Ìj” Ìj	” Ìj” Ìj” Ìj”  Ìj”# Ìj”$ Ìj ”( Ìj$”) Ìj%”, Ìj(”- Ìj)”5 Ìj1”6 Ìj2”8 Ìj4”ÌB Ìj>”ÌC Ìj?”ÌF ÌjÌB”ÌG ÌjÌC”ÌO ÌjÌK”ÌR ÌjÌN”ÌS ÌjÌO”ÌT ÌjÌP”ÌU ÌjÌQ”ÌV ÌjÌR”ÌW ÌjÌS”ÌX ÌjÌT”ÌY ÌjÌU”ÌZ ÌjÌV”Ì[ ÌjÌW”Ì\ ÌjÌX”Ì] ÌjÌY”Ì^ ÌjÌZ–” Ìk” Ìk” Ìk” Ìk” Ìk”  Ìk’” Ìl” Ìl’” Ìn”ÌZ ÌnÌX”” Ìo” Ìo” Ìo” Ìo˜” Ìp” Ìp” Ìp	” Ìp” Ìp” Ìp”  Ìp”! Ìpš” Ìq” Ìq” Ìq” Ìq” Ìq” Ìq”% Ìq!”& Ìq"”( Ìq$”* Ìq&˜” Ìr” Ìr
+” Ìr”  Ìr”! Ìr”$ Ìr”% Ìr”& Ìr ’” Ìs” Ìs‘”	 Ìt˜” Ìu” Ìu” Ìu	” Ìu” Ìu”  Ìu”! Ìu”" Ìu’” Ìv” Ìv’” Ìx”  Ìx’” Ìy” Ìyš” Ìz” Ìz
+” Ìz” Ìz” Ìz” Ìz”" Ìz”# Ìz”) Ìz%”* Ìz&›” Ì{” Ì{
+” Ì{” Ì{” Ì{” Ì{”' Ì{#”( Ì{$”- Ì{)”/ Ì{+”0 Ì{,›” Ì|” Ì|
+” Ì|” Ì|”  Ì|”! Ì|”, Ì|(”- Ì|)”2 Ì|.”4 Ì|0”5 Ì|1Ü !” Ì}” Ì}
+” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}”" Ì}”# Ì}”& Ì}"”' Ì}#”/ Ì}+”0 Ì},”1 Ì}-”4 Ì}0”5 Ì}1”6 Ì}2”9 Ì}5”ÌA Ì}=”ÌB Ì}>”ÌC Ì}?”ÌD Ì}Ì@”ÌF Ì}ÌB”ÌJ Ì}ÌF”ÌK Ì}ÌG”ÌL Ì}ÌH”ÌM Ì}ÌI”ÌN Ì}ÌJ”ÌO Ì}ÌK”ÌP Ì}ÌL’” Ì~” Ì~™” Ì” Ì” Ì” Ì” Ì”# Ì”$ Ì”) Ì#”* Ì$”” Ì€” Ì€” Ì€” Ì€”” Ì” Ì” Ì” Ì”” Ì‚” Ì‚” Ì‚” Ì‚”” Ìƒ” Ìƒ” Ìƒ”$ Ìƒ—” Ì„” Ì„” Ì„”$ Ì„”% Ì„”* Ì„$”, Ì„&Ü ” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…”  Ì…”! Ì…”" Ì…”% Ì…”& Ì… ”' Ì…!”* Ì…$”. Ì…(”/ Ì…)”0 Ì…*”1 Ì…+”2 Ì…,”” Ì†” Ì†” Ì†” Ì†”” Ì‡” Ì‡” Ì‡” Ì‡’”	 Ìˆ”
+ Ìˆ’” Ì‰” Ì‰‘” Ì‹‘” Ì”” Ì” Ì” Ì” Ì˜” Ì” Ì” Ì	” Ì” Ì” Ì”  Ì”! Ì™” Ì” Ì” Ì	” Ì” Ì” Ì”" Ì”# Ì”$ Ì —” Ì‘” Ì‘” Ì‘	” Ì‘” Ì‘” Ì‘” Ì‘—” Ì’” Ì’” Ì’	” Ì’” Ì’” Ì’” Ì’š” Ì“” Ì“” Ì“” Ì“” Ì“” Ì“”% Ì“!”& Ì“"”( Ì“$”* Ì“&—” Ì”” Ì”
+” Ì”” Ì”” Ì””" Ì””# Ì”œ” Ì•” Ì•
+” Ì•” Ì•” Ì•” Ì•”  Ì•”# Ì•”$ Ì•”' Ì•!”( Ì•"”) Ì•#–” Ì–” Ì–” Ì–” Ì–” Ì–”  Ì–‘”	 Ì—–” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜˜” Ì™” Ì™
+” Ì™” Ì™” Ì™” Ì™” Ì™”  Ì™‘”	 Ìš™” Ì›” Ì›
+” Ì›” Ì›” Ì›”  Ì›”( Ì›$”* Ì›&”+ Ì›'Ü "” Ìœ” Ìœ” Ìœ	” Ìœ” Ìœ” Ìœ”  Ìœ”# Ìœ”$ Ìœ ”( Ìœ$”) Ìœ%”, Ìœ(”- Ìœ)”0 Ìœ,”1 Ìœ-”3 Ìœ/”= Ìœ9”> Ìœ:”ÌA Ìœ=”ÌB Ìœ>”ÌE ÌœÌA”ÌH ÌœÌD”ÌI ÌœÌE”ÌJ ÌœÌF”ÌK ÌœÌG”ÌL ÌœÌH”ÌM ÌœÌI”ÌN ÌœÌJ”ÌO ÌœÌK”ÌP ÌœÌL”ÌQ ÌœÌM”ÌR ÌœÌN”ÌS ÌœÌO”ÌT ÌœÌP–” Ì” Ì” Ì” Ì” Ì”  Ì’” Ì” ÌÜ ” Ì ” Ì ” Ì ” Ì $”" Ì (”# Ì )”' Ì -”, Ì 2”7 Ì =”8 Ì >”: Ì Ì@”; Ì ÌA”< Ì ÌB”= Ì ÌC”ÌA Ì ÌG”ÌB Ì ÌH”ÌI Ì ÌO”ÌJ Ì ÌP”ÌK Ì ÌQ”ÌL Ì ÌR”ÌP Ì ÌV”ÌQ Ì ÌW”Ì\ Ì Ìb”Ì] Ì Ìc”Ì^ Ì Ìd”Ì_ Ì ÌeÜ ” Ì¢” Ì¢	” Ì¢” Ì¢” Ì¢!” Ì¢"”  Ì¢&”% Ì¢+”0 Ì¢6”1 Ì¢7”3 Ì¢9”4 Ì¢:”5 Ì¢;”6 Ì¢<”= Ì¢ÌC”> Ì¢ÌD”? Ì¢ÌE”Ì@ Ì¢ÌF”ÌJ Ì¢ÌP”ÌK Ì¢ÌQ”ÌL Ì¢ÌR”ÌM Ì¢ÌSÜ ” Ì¤” Ì¤” Ì¤” Ì¤$” Ì¤%”# Ì¤)”$ Ì¤*”( Ì¤.”- Ì¤3”8 Ì¤>”9 Ì¤?”; Ì¤ÌA”< Ì¤ÌB”= Ì¤ÌC”> Ì¤ÌD”ÌB Ì¤ÌH”ÌC Ì¤ÌI”ÌJ Ì¤ÌP”ÌK Ì¤ÌQ”ÌL Ì¤ÌR”ÌM Ì¤ÌS”ÌQ Ì¤ÌW”ÌR Ì¤ÌX”Ì] Ì¤Ìc”Ì^ Ì¤Ìd”Ìa Ì¤Ìg”Ìe Ì¤Ìk”Ìf Ì¤Ìl”Ìg Ì¤Ìm”Ìh Ì¤Ìn’” Ì¦” Ì¦™” Ì§” Ì§” Ì§” Ì§” Ì§” Ì§”! Ì§”% Ì§!”& Ì§"’” Ì¨” Ì¨’” Ìª
+” Ìª˜” Ì«” Ì«” Ì«” Ì«” Ì«”# Ì«”' Ì«#”) Ì«%—” Ì¬” Ì¬” Ì¬” Ì¬”% Ì¬”' Ì¬!”( Ì¬"‘”	 Ì­˜” Ì®” Ì®” Ì®” Ì®” Ì®”$ Ì® ”( Ì®$”* Ì®&—” Ì¯” Ì¯” Ì¯” Ì¯”& Ì¯ ”( Ì¯"”) Ì¯#‘”	 Ì°”” Ì±” Ì±” Ì±” Ì±’” Ì²” Ì²”” Ì´
+” Ì´” Ì´” Ì´%š” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”  Ìµ”& Ìµ"”) Ìµ%”7 Ìµ3”9 Ìµ5š” Ì¶” Ì¶
+” Ì¶” Ì¶”  Ì¶”$ Ì¶”% Ì¶”( Ì¶"”) Ì¶#”* Ì¶$‘”	 Ì·‘” Ì·˜” Ì¸” Ì¸
+” Ì¸” Ì¸”  Ì¸”% Ì¸”' Ì¸!”( Ì¸"š” Ì¹” Ì¹
+” Ì¹” Ì¹”  Ì¹”$ Ì¹”% Ì¹”( Ì¹"”) Ì¹#”* Ì¹$‘”	 Ìº–” Ì»” Ì»” Ì»” Ì»” Ì»” Ì»Ü ” Ì¼” Ì¼	” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”  Ì¼”! Ì¼”/ Ì¼+”0 Ì¼,”6 Ì¼2”8 Ì¼4”9 Ì¼5”; Ì¼7”= Ì¼9š” Ì½” Ì½	” Ì½” Ì½” Ì½”& Ì½ ”' Ì½!”( Ì½"”) Ì½#”* Ì½$‘”	 Ì¾œ” Ì¿” Ì¿
+” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿”- Ì¿)”. Ì¿*”4 Ì¿0”5 Ì¿1—” ÌÀ” ÌÀ” ÌÀ	” ÌÀ” ÌÀ” ÌÀ” ÌÀ—” ÌÁ” ÌÁ
+” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ—” ÌÂ” ÌÂ
+” ÌÂ” ÌÂ” ÌÂ”! ÌÂ”" ÌÂ‘”	 ÌÃ‘” ÌÃÜ ” ÌÄ” ÌÄ
+” ÌÄ” ÌÄ” ÌÄ”% ÌÄ”( ÌÄ"”+ ÌÄ%”. ÌÄ(”/ ÌÄ)”0 ÌÄ*”3 ÌÄ-”? ÌÄ9”Ì@ ÌÄ:”ÌC ÌÄ=”ÌG ÌÄÌA”ÌH ÌÄÌB”ÌM ÌÄÌG”ÌN ÌÄÌH‘”	 ÌÅœ” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ”  ÌÆ”# ÌÆ”' ÌÆ#”( ÌÆ$”- ÌÆ)”. ÌÆ*’” ÌÇ” ÌÇ”” ÌÉ
+” ÌÉ” ÌÉ” ÌÉ%š” ÌÊ” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”! ÌÊ”' ÌÊ#”* ÌÊ&”< ÌÊ8”> ÌÊ:š” ÌË” ÌË
+” ÌË”  ÌË”! ÌË”% ÌË”& ÌË ”) ÌË#”* ÌË$”+ ÌË%›” ÌÌ” ÌÌ
+” ÌÌ” ÌÌ”" ÌÌ”& ÌÌ ”' ÌÌ!”6 ÌÌ0”7 ÌÌ1”= ÌÌ7”> ÌÌ8‘”	 ÌÍ‘” ÌÍ” ÌÎ” ÌÎ
+” ÌÎ”  ÌÎ”! ÌÎ”% ÌÎ”& ÌÎ ”4 ÌÎ.”7 ÌÎ1”ÌI ÌÎÌC”ÌJ ÌÎÌD”ÌM ÌÎÌG”ÌP ÌÎÌJ”ÌQ ÌÎÌKÜ ” ÌÏ” ÌÏ
+” ÌÏ” ÌÏ”" ÌÏ”# ÌÏ”' ÌÏ!”( ÌÏ"”6 ÌÏ0”9 ÌÏ3”: ÌÏ4”; ÌÏ5”> ÌÏ8”? ÌÏ9”ÌQ ÌÏÌK”ÌT ÌÏÌN”ÌU ÌÏÌO”ÌV ÌÏÌP”ÌW ÌÏÌQ‘”	 ÌĞš” ÌÑ” ÌÑ” ÌÑ” ÌÑ”  ÌÑ”! ÌÑ”' ÌÑ#”+ ÌÑ'”, ÌÑ(”. ÌÑ*–” ÌÒ” ÌÒ
+” ÌÒ” ÌÒ” ÌÒ” ÌÒ˜” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”  ÌÓ”! ÌÓ”0 ÌÓ*•” ÌÓ,” ÌÓ/” ÌÓ3” ÌÓ4” ÌÓ5” ÌÔ” ÌÔ
+” ÌÔ” ÌÔ” ÌÔ” ÌÔ”" ÌÔ”& ÌÔ ”' ÌÔ!”6 ÌÔ0”7 ÌÔ1”= ÌÔ7”> ÌÔ8‘”	 ÌÕš” ÌÖ” ÌÖ” ÌÖ” ÌÖ”  ÌÖ”! ÌÖ”' ÌÖ#”+ ÌÖ'”, ÌÖ(”. ÌÖ*–” Ì×” Ì×
+” Ì×” Ì×” Ì×” Ì×™” ÌØ” ÌØ” ÌØ” ÌØ” ÌØ”  ÌØ”! ÌØ”0 ÌØ*”2 ÌØ,š” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ”# ÌÙ”$ ÌÙ”, ÌÙ$”- ÌÙ%—” ÌÚ” ÌÚ” ÌÚ” ÌÚ” ÌÚ”  ÌÚ”! ÌÚ‘” ÌÛÜ ” ÌÜ” ÌÜ
+” ÌÜ” ÌÜ” ÌÜ” ÌÜ”  ÌÜ”$ ÌÜ”% ÌÜ”* ÌÜ$”- ÌÜ'”1 ÌÜ+”2 ÌÜ,”ÌA ÌÜ;”ÌB ÌÜ<”ÌH ÌÜÌB”ÌI ÌÜÌC”ÌJ ÌÜÌD‘”	 Ìİ’” ÌŞ” ÌŞ”” Ìà
+” Ìà” Ìà” Ìà$–” Ìá” Ìá
+” Ìá” Ìá” Ìá” Ìá›” Ìâ” Ìâ
+” Ìâ” Ìâ” Ìâ” Ìâ”  Ìâ”! Ìâ”' Ìâ#”* Ìâ&”+ Ìâ'Ü ” Ìã” Ìã” Ìã” Ìã” Ìã” Ìã” Ìã”! Ìã”" Ìã”+ Ìã%”, Ìã&”2 Ìã,”5 Ìã/”6 Ìã0”7 Ìã1”: Ìã4”> Ìã8•” Ìä” Ìä” Ìä” Ìä	” Ìä
+š” Ìå” Ìå” Ìå	” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìåš” Ìæ” Ìæ” Ìæ	” Ìæ” Ìæ” Ìæ” Ìæ”! Ìæ”" Ìæ”# Ìæš” Ìç” Ìç” Ìç” Ìç” Ìç”  Ìç”& Ìç"”) Ìç%”9 Ìç5”; Ìç7˜” Ìè” Ìè
+” Ìè” Ìè” Ìè”" Ìè”$ Ìè”% Ìè˜” Ìé” Ìé
+” Ìé” Ìé” Ìé”  Ìé”" Ìé”# Ìé‘”	 Ìê’” Ìë” Ìë‘” ÌìÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ á‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍˆÍ|ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍ|ÔrM”¤type¥start£end¤nameªIdentifierÍ•Í¢­AmmeterEngineÀÔrN”¤type¥start£end¤body©ClassBodyÍ£Í|Ü ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍªÍ¥ÂÂMªIdentifierÍªÍµ«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍµÍ¥ÀÂÂÂN®BlockStatementÍ¸Í¥ŸÔrQ”¤type¥start£endªexpression³ExpressionStatementÍÃÍŞÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÃÍİ¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÃÍÌÔrT“¤type¥start£end®ThisExpressionÍÃÍÇMªIdentifierÍÈÍÌ¤typeÂÂS°MemberExpressionÍÏÍİMªIdentifierÍÏÍÚ«AmmeterTypeMªIdentifierÍÛÍİ¢DCÂÂQ³ExpressionStatementÍèÍüR´AssignmentExpressionÍèÍû¡=S°MemberExpressionÍèÍ÷T®ThisExpressionÍèÍìMªIdentifierÍíÍ÷ªrangeIndexÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍúÍû¡2Q³ExpressionStatementÍÍR´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍ
+MªIdentifierÍÍ«lastReadingÂÂU§LiteralÍÍ ¡0Q³ExpressionStatementÍ%Í6R´AssignmentExpressionÍ%Í5¡=S°MemberExpressionÍ%Í1T®ThisExpressionÍ%Í)MªIdentifierÍ*Í1§lastRmsÂÂU§LiteralÍ4Í5 ¡0Q³ExpressionStatementÍ@ÍXR´AssignmentExpressionÍ@ÍW¡=S°MemberExpressionÍ@ÍPT®ThisExpressionÍ@ÍDMªIdentifierÍEÍP«autoRangeOnÂÂU§LiteralÍSÍWÃ¤trueQ³ExpressionStatementÍbÍ|R´AssignmentExpressionÍbÍ{¡=S°MemberExpressionÍbÍtT®ThisExpressionÍbÍfMªIdentifierÍgÍt­currentReaderÂÂU§LiteralÍwÍ{À¤nullQ³ExpressionStatementÍ†Í¡R´AssignmentExpressionÍ†Í ¡=S°MemberExpressionÍ†Í™T®ThisExpressionÍ†ÍŠMªIdentifierÍ‹Í™®globalFallbackÂÂU§LiteralÍœÍ À¤nullQ³ExpressionStatementÍ«ÍÅR´AssignmentExpressionÍ«ÍÄ¡=S°MemberExpressionÍ«Í¿T®ThisExpressionÍ«Í¯MªIdentifierÍ°Í¿¯rmsSampleBufferÂÂÔrV”¤type¥start£end¨elements¯ArrayExpressionÍÂÍÄQ³ExpressionStatementÍÏÍçR´AssignmentExpressionÍÏÍæ¡=S°MemberExpressionÍÏÍâT®ThisExpressionÍÏÍÓMªIdentifierÍÔÍâ®rmsSampleIndexÂÂU§LiteralÍåÍæ ¡0Q³ExpressionStatementÍñÍR´AssignmentExpressionÍñÍ¡=S°MemberExpressionÍñÍşT®ThisExpressionÍñÍõMªIdentifierÍöÍş¨dcOffsetÂÂU§LiteralÍÍ ¡0Q³ExpressionStatementÍÍ&R´AssignmentExpressionÍÍ%¡=S°MemberExpressionÍÍ T®ThisExpressionÍÍMªIdentifierÍÍ ®dcSampleBufferÂÂV¯ArrayExpressionÍ#Í%Q³ExpressionStatementÍ0Í?R´AssignmentExpressionÍ0Í>¡=S°MemberExpressionÍ0Í:T®ThisExpressionÍ0Í4MªIdentifierÍ5Í:¥dcEmaÂÂU§LiteralÍ=Í> ¡0Q³ExpressionStatementÍIÍ`R´AssignmentExpressionÍIÍ_¡=S°MemberExpressionÍIÍWT®ThisExpressionÍIÍMMªIdentifierÍNÍW©dcEmaInitÂÂU§LiteralÍZÍ_Â¥falseQ³ExpressionStatementÍjÍ€R´AssignmentExpressionÍjÍ¡=S°MemberExpressionÍjÍzT®ThisExpressionÍjÍnMªIdentifierÍoÍz«waveSamplesÂÂV¯ArrayExpressionÍ}ÍQ³ExpressionStatementÍŠÍR´AssignmentExpressionÍŠÍ¡=S°MemberExpressionÍŠÍ˜T®ThisExpressionÍŠÍMªIdentifierÍÍ˜©waveTimesÂÂV¯ArrayExpressionÍ›ÍO°MethodDefinitionÍ«Í³ÂÂMªIdentifierÍ«Í²§setType¦methodP²FunctionExpressionÍ²Í³ÀÂÂÂ‘MªIdentifierÍ³Í´¡tN®BlockStatementÍ¶Í³˜Q³ExpressionStatementÍÁÍÏR´AssignmentExpressionÍÁÍÎ¡=S°MemberExpressionÍÁÍÊT®ThisExpressionÍÁÍÅMªIdentifierÍÆÍÊ¤typeÂÂMªIdentifierÍÍÍÎ¡tQ³ExpressionStatementÍÙÍíR´AssignmentExpressionÍÙÍì¡=S°MemberExpressionÍÙÍèT®ThisExpressionÍÙÍİMªIdentifierÍŞÍèªrangeIndexÂÂU§LiteralÍëÍì¡1Q³ExpressionStatementÍ÷ÍR´AssignmentExpressionÍ÷Í¡=S°MemberExpressionÍ÷ÍT®ThisExpressionÍ÷ÍûMªIdentifierÍüÍ¯rmsSampleBufferÂÂV¯ArrayExpressionÍÍQ³ExpressionStatementÍÍ3R´AssignmentExpressionÍÍ2¡=S°MemberExpressionÍÍ.T®ThisExpressionÍÍMªIdentifierÍ Í.®rmsSampleIndexÂÂU§LiteralÍ1Í2 ¡0Q³ExpressionStatementÍ=ÍOR´AssignmentExpressionÍ=ÍN¡=S°MemberExpressionÍ=ÍJT®ThisExpressionÍ=ÍAMªIdentifierÍBÍJ¨dcOffsetÂÂU§LiteralÍMÍN ¡0Q³ExpressionStatementÍYÍrR´AssignmentExpressionÍYÍq¡=S°MemberExpressionÍYÍlT®ThisExpressionÍYÍ]MªIdentifierÍ^Íl®dcSampleBufferÂÂV¯ArrayExpressionÍoÍqQ³ExpressionStatementÍ|Í‹R´AssignmentExpressionÍ|ÍŠ¡=S°MemberExpressionÍ|Í†T®ThisExpressionÍ|Í€MªIdentifierÍÍ†¥dcEmaÂÂU§LiteralÍ‰ÍŠ ¡0Q³ExpressionStatementÍ•Í¬R´AssignmentExpressionÍ•Í«¡=S°MemberExpressionÍ•Í£T®ThisExpressionÍ•Í™MªIdentifierÍšÍ£©dcEmaInitÂÂU§LiteralÍ¦Í«Â¥falseO°MethodDefinitionÍ¹ÍØÂÂMªIdentifierÍ¹ÍÀ§getType¦methodP²FunctionExpressionÍÀÍØÀÂÂÂN®BlockStatementÍÃÍØ‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍÅÍÖS°MemberExpressionÍÌÍÕT®ThisExpressionÍÌÍĞMªIdentifierÍÑÍÕ¤typeÂÂO°MethodDefinitionÍŞÍÈÂÂMªIdentifierÍŞÍî°setCurrentReader¦methodP²FunctionExpressionÍîÍÈÀÂÂÂ‘MªIdentifierÍïÍõ¦readerN®BlockStatementÍ÷ÍÈ–Q³ExpressionStatementÍÍR´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ­currentReaderÂÂMªIdentifierÍÍ¦readerQ³ExpressionStatementÍ(ÍBR´AssignmentExpressionÍ(ÍA¡=S°MemberExpressionÍ(Í<T®ThisExpressionÍ(Í,MªIdentifierÍ-Í<¯rmsSampleBufferÂÂV¯ArrayExpressionÍ?ÍAQ³ExpressionStatementÍLÍdR´AssignmentExpressionÍLÍc¡=S°MemberExpressionÍLÍ_T®ThisExpressionÍLÍPMªIdentifierÍQÍ_®rmsSampleIndexÂÂU§LiteralÍbÍc ¡0Q³ExpressionStatementÍnÍ‡R´AssignmentExpressionÍnÍ†¡=S°MemberExpressionÍnÍT®ThisExpressionÍnÍrMªIdentifierÍsÍ®dcSampleBufferÂÂV¯ArrayExpressionÍ„Í†Q³ExpressionStatementÍ‘Í R´AssignmentExpressionÍ‘ÍŸ¡=S°MemberExpressionÍ‘Í›T®ThisExpressionÍ‘Í•MªIdentifierÍ–Í›¥dcEmaÂÂU§LiteralÍÍŸ ¡0Q³ExpressionStatementÍªÍÁR´AssignmentExpressionÍªÍÀ¡=S°MemberExpressionÍªÍ¸T®ThisExpressionÍªÍ®MªIdentifierÍ¯Í¸©dcEmaInitÂÂU§LiteralÍ»ÍÀÂ¥falseO°MethodDefinitionÍÎÍÂÂMªIdentifierÍÎÍß±setGlobalFallback¦methodP²FunctionExpressionÍßÍÀÂÂÂ‘MªIdentifierÍàÍæ¦readerN®BlockStatementÍèÍ‘Q³ExpressionStatementÍóÍR´AssignmentExpressionÍóÍ¡=S°MemberExpressionÍóÍT®ThisExpressionÍóÍ÷MªIdentifierÍøÍ®globalFallbackÂÂMªIdentifierÍ	Í¦readerO°MethodDefinitionÍÍ	ÂÂMªIdentifierÍÍ%¨setRange¦methodP²FunctionExpressionÍ%Í	ÀÂÂÂ‘MªIdentifierÍ&Í)£idxN®BlockStatementÍ+Í	“ÔrX•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ6Í€‘ÔrY•¤type¥start£end¢id¤init²VariableDeclaratorÍ<ÍMªIdentifierÍ<ÍB¦rangesÔrZ–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍEÍÔr[–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍEÍaS°MemberExpressionÍEÍNT®ThisExpressionÍEÍIMªIdentifierÍJÍN¤typeÂÂ£===S°MemberExpressionÍSÍaMªIdentifierÍSÍ^«AmmeterTypeMªIdentifierÍ_Ía¢DCÂÂMªIdentifierÍdÍp¬DC_RANGES_MAMªIdentifierÍsÍ¬AC_RANGES_MA¥constZ«IfStatementÍŠÍß[±LogicalExpressionÍÍ­[°BinaryExpressionÍÍ–MªIdentifierÍÍ‘£idx¢>=U§LiteralÍ•Í– ¡0¢&&[°BinaryExpressionÍšÍ­MªIdentifierÍšÍ£idx¡<S°MemberExpressionÍ Í­MªIdentifierÍ Í¦¦rangesMªIdentifierÍ§Í­¦lengthÂÂN®BlockStatementÍ¯Íß‘Q³ExpressionStatementÍ¾ÍÔR´AssignmentExpressionÍ¾ÍÓ¡=S°MemberExpressionÍ¾ÍÍT®ThisExpressionÍ¾ÍÂMªIdentifierÍÃÍÍªrangeIndexÂÂMªIdentifierÍĞÍÓ£idxÀQ³ExpressionStatementÍéÍR´AssignmentExpressionÍéÍ¡=S°MemberExpressionÍéÍùT®ThisExpressionÍéÍíMªIdentifierÍîÍù«autoRangeOnÂÂU§LiteralÍüÍÂ¥falseO°MethodDefinitionÍÍ¦ÂÂMªIdentifierÍÍ¨getRange¦methodP²FunctionExpressionÍÍ¦ÀÂÂÂN®BlockStatementÍÍ¦’X³VariableDeclarationÍ%Ío‘Y²VariableDeclaratorÍ+ÍnMªIdentifierÍ+Í1¦rangesZµConditionalExpressionÍ4Ín[°BinaryExpressionÍ4ÍPS°MemberExpressionÍ4Í=T®ThisExpressionÍ4Í8MªIdentifierÍ9Í=¤typeÂÂ£===S°MemberExpressionÍBÍPMªIdentifierÍBÍM«AmmeterTypeMªIdentifierÍNÍP¢DCÂÂMªIdentifierÍSÍ_¬DC_RANGES_MAMªIdentifierÍbÍn¬AC_RANGES_MA¥constW¯ReturnStatementÍyÍŸ[±LogicalExpressionÍ€ÍS°MemberExpressionÍ€Í—MªIdentifierÍ€Í†¦rangesS°MemberExpressionÍ‡Í–T®ThisExpressionÍ‡Í‹MªIdentifierÍŒÍ–ªrangeIndexÂÂÃÂ¢??U§LiteralÍ›ÍÌÈ£200O°MethodDefinitionÍ¬Í	¼ÂÂMªIdentifierÍ¬Íµ©autoRange¦methodP²FunctionExpressionÍµÍ	¼ÀÂÂÂ‘MªIdentifierÍ¶Í¾¨forValueN®BlockStatementÍÀÍ	¼–Q³ExpressionStatementÍËÍãR´AssignmentExpressionÍËÍâ¡=S°MemberExpressionÍËÍÛT®ThisExpressionÍËÍÏMªIdentifierÍĞÍÛ«autoRangeOnÂÂU§LiteralÍŞÍâÃ¤trueX³VariableDeclarationÍíÍş‘Y²VariableDeclaratorÍñÍıMªIdentifierÍñÍò¡rMªIdentifierÍõÍı¨forValue£letZ«IfStatementÍÍz[°BinaryExpressionÍÍMªIdentifierÍÍ¡r£===MªIdentifierÍÍ©undefinedN®BlockStatementÍÍz‘Q³ExpressionStatementÍ,ÍoR´AssignmentExpressionÍ,Ín¡=MªIdentifierÍ,Í-¡rZµConditionalExpressionÍ0Ín[°BinaryExpressionÍ0ÍLS°MemberExpressionÍ0Í9T®ThisExpressionÍ0Í4MªIdentifierÍ5Í9¤typeÂÂ£===S°MemberExpressionÍ>ÍLMªIdentifierÍ>ÍI«AmmeterTypeMªIdentifierÍJÍL¢ACÂÂS°MemberExpressionÍOÍ[T®ThisExpressionÍOÍSMªIdentifierÍTÍ[§lastRmsÂÂS°MemberExpressionÍ^ÍnT®ThisExpressionÍ^ÍbMªIdentifierÍcÍn«lastReadingÂÂÀX³VariableDeclarationÍ„ÍÎ‘Y²VariableDeclaratorÍŠÍÍMªIdentifierÍŠÍ¦rangesZµConditionalExpressionÍ“ÍÍ[°BinaryExpressionÍ“Í¯S°MemberExpressionÍ“ÍœT®ThisExpressionÍ“Í—MªIdentifierÍ˜Íœ¤typeÂÂ£===S°MemberExpressionÍ¡Í¯MªIdentifierÍ¡Í¬«AmmeterTypeMªIdentifierÍ­Í¯¢DCÂÂMªIdentifierÍ²Í¾¬DC_RANGES_MAMªIdentifierÍÁÍÍ¬AC_RANGES_MA¥constÔr\—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍØÍ	‡X³VariableDeclarationÍİÍæ‘Y²VariableDeclaratorÍáÍæMªIdentifierÍáÍâ¡iU§LiteralÍåÍæ ¡0£let[°BinaryExpressionÍèÍùMªIdentifierÍèÍé¡i¡<S°MemberExpressionÍìÍùMªIdentifierÍìÍò¦rangesMªIdentifierÍóÍù¦lengthÂÂÔr]–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍûÍş¢++ÂMªIdentifierÍûÍü¡iN®BlockStatementÍ	 Í	‡‘Z«IfStatementÍ	Í	|[°BinaryExpressionÍ	Í	+Ôr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ	Í	S°MemberExpressionÍ	Í	MªIdentifierÍ	Í	¤MathMªIdentifierÍ	Í	£absÂÂ‘MªIdentifierÍ	Í	¡rÂ¢<=S°MemberExpressionÍ	"Í	+MªIdentifierÍ	"Í	(¦rangesMªIdentifierÍ	)Í	*¡iÃÂN®BlockStatementÍ	-Í	|’Q³ExpressionStatementÍ	@Í	TR´AssignmentExpressionÍ	@Í	S¡=S°MemberExpressionÍ	@Í	OT®ThisExpressionÍ	@Í	DMªIdentifierÍ	EÍ	OªrangeIndexÂÂMªIdentifierÍ	RÍ	S¡iW¯ReturnStatementÍ	fÍ	mÀÀQ³ExpressionStatementÍ	‘Í	µR´AssignmentExpressionÍ	‘Í	´¡=S°MemberExpressionÍ	‘Í	 T®ThisExpressionÍ	‘Í	•MªIdentifierÍ	–Í	 ªrangeIndexÂÂ[°BinaryExpressionÍ	£Í	´S°MemberExpressionÍ	£Í	°MªIdentifierÍ	£Í	©¦rangesMªIdentifierÍ	ªÍ	°¦lengthÂÂ¡-U§LiteralÍ	³Í	´¡1O°MethodDefinitionÍ	ÂÍ
+ÂÂMªIdentifierÍ	ÂÍ	É§measure¦methodP²FunctionExpressionÍ	ÉÍ
+ÀÂÂÂN®BlockStatementÍ	ÌÍ
+‘W¯ReturnStatementÍ	×Í
+^®CallExpressionÍ	ŞÍ
+ S°MemberExpressionÍ	ŞÍ	ïT®ThisExpressionÍ	ŞÍ	âMªIdentifierÍ	ãÍ	ï¬measureValueÂÂ‘^®CallExpressionÍ	ğÍ	ÿS°MemberExpressionÍ	ğÍ	ıT®ThisExpressionÍ	ğÍ	ôMªIdentifierÍ	õÍ	ı¨simulateÂÂÂÂO°MethodDefinitionÍ
+nÍˆÂÂMªIdentifierÍ
+nÍ
+z¬measureValue¦methodP²FunctionExpressionÍ
+zÍˆÀÂÂÂ‘MªIdentifierÍ
+{Í
+~£rawN®BlockStatementÍ
+€Íˆ™Q³ExpressionStatementÍ
+‹Í
+¤^®CallExpressionÍ
+‹Í
+£S°MemberExpressionÍ
+‹Í
+T®ThisExpressionÍ
+‹Í
+MªIdentifierÍ
+Í
+®pushWaveSampleÂÂ‘MªIdentifierÍ
+ŸÍ
+¢£rawÂZ«IfStatementÍ
+®Í®[°BinaryExpressionÍ
+²Í
+ÎS°MemberExpressionÍ
+²Í
+»T®ThisExpressionÍ
+²Í
+¶MªIdentifierÍ
+·Í
+»¤typeÂÂ£===S°MemberExpressionÍ
+ÀÍ
+ÎMªIdentifierÍ
+ÀÍ
+Ë«AmmeterTypeMªIdentifierÍ
+ÌÍ
+Î¢ACÂÂN®BlockStatementÍ
+ĞÍ®”Q³ExpressionStatementÍ
+ßÍ
+ù^®CallExpressionÍ
+ßÍ
+øS°MemberExpressionÍ
+ßÍ
+óT®ThisExpressionÍ
+ßÍ
+ãMªIdentifierÍ
+äÍ
+ó¯updateRmsBufferÂÂ‘MªIdentifierÍ
+ôÍ
+÷£rawÂQ³ExpressionStatementÍÍR´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ«lastReadingÂÂMªIdentifierÍÍ£rawZ«IfStatementÍ,ÍS°MemberExpressionÍ0Í@T®ThisExpressionÍ0Í4MªIdentifierÍ5Í@«autoRangeOnÂÂN®BlockStatementÍBÍ‘Q³ExpressionStatementÍUÍr^®CallExpressionÍUÍqS°MemberExpressionÍUÍcT®ThisExpressionÍUÍYMªIdentifierÍZÍc©autoRangeÂÂ‘S°MemberExpressionÍdÍpT®ThisExpressionÍdÍhMªIdentifierÍiÍp§lastRmsÂÂÂÀW¯ReturnStatementÍÍ£S°MemberExpressionÍ–Í¢T®ThisExpressionÍ–ÍšMªIdentifierÍ›Í¢§lastRmsÂÂÀX³VariableDeclarationÍ¸Íã‘Y²VariableDeclaratorÍ¾ÍâMªIdentifierÍ¾ÍÆ¨averaged^®CallExpressionÍÉÍâS°MemberExpressionÍÉÍİT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍİ¯updateDcAverageÂÂ‘MªIdentifierÍŞÍá£rawÂ¥constZ«IfStatementÍíÍ6S°MemberExpressionÍñÍT®ThisExpressionÍñÍõMªIdentifierÍöÍ«autoRangeOnÂÂN®BlockStatementÍÍ6‘Q³ExpressionStatementÍÍ+^®CallExpressionÍÍ*S°MemberExpressionÍÍ T®ThisExpressionÍÍMªIdentifierÍÍ ©autoRangeÂÂ‘MªIdentifierÍ!Í)¨averagedÂÀX³VariableDeclarationÍ@Í\‘Y²VariableDeclaratorÍFÍ[MªIdentifierÍFÍI£max^®CallExpressionÍLÍ[S°MemberExpressionÍLÍYT®ThisExpressionÍLÍPMªIdentifierÍQÍY¨getRangeÂÂÂ¥constZ«IfStatementÍfÍÒ[±LogicalExpressionÍjÍ[°BinaryExpressionÍjÍ‰^®CallExpressionÍjÍ|S°MemberExpressionÍjÍrMªIdentifierÍjÍn¤MathMªIdentifierÍoÍr£absÂÂ‘MªIdentifierÍsÍ{¨averagedÂ¡>[°BinaryExpressionÍÍ‰MªIdentifierÍÍ‚£max¡*U§LiteralÍ…Í‰Ë?ğÌÌÌÌÌÍ¤1.05¢&&S°MemberExpressionÍÍT®ThisExpressionÍÍ‘MªIdentifierÍ’Í«autoRangeOnÂÂN®BlockStatementÍŸÍÒ‘Q³ExpressionStatementÍ®ÍÇ^®CallExpressionÍ®ÍÆS°MemberExpressionÍ®Í¼T®ThisExpressionÍ®Í²MªIdentifierÍ³Í¼©autoRangeÂÂ‘MªIdentifierÍ½ÍÅ¨averagedÂÀX³VariableDeclarationÍÜÍÿ‘Y²VariableDeclaratorÍâÍşMªIdentifierÍâÍìªdisplayMax^®CallExpressionÍïÍşS°MemberExpressionÍïÍüT®ThisExpressionÍïÍóMªIdentifierÍôÍü¨getRangeÂÂÂ¥constQ³ExpressionStatementÍ	Í_R´AssignmentExpressionÍ	Í^¡=S°MemberExpressionÍ	ÍT®ThisExpressionÍ	ÍMªIdentifierÍÍ«lastReadingÂÂ[°BinaryExpressionÍÍ^^®CallExpressionÍÍDS°MemberExpressionÍÍ$MªIdentifierÍÍ ¤MathMªIdentifierÍ!Í$£minÂÂ’^®CallExpressionÍ%Í7S°MemberExpressionÍ%Í-MªIdentifierÍ%Í)¤MathMªIdentifierÍ*Í-£absÂÂ‘MªIdentifierÍ.Í6¨averagedÂMªIdentifierÍ9ÍCªdisplayMaxÂ¡*ZµConditionalExpressionÍHÍ][°BinaryExpressionÍHÍTMªIdentifierÍHÍP¨averaged¡<U§LiteralÍSÍT ¡0]¯UnaryExpressionÍWÍY¡-ÃU§LiteralÍXÍY¡1U§LiteralÍ\Í]¡1W¯ReturnStatementÍiÍS°MemberExpressionÍpÍ€T®ThisExpressionÍpÍtMªIdentifierÍuÍ€«lastReadingÂÂO°MethodDefinitionÍêÍ¾ÂÂMªIdentifierÍêÍôªfeedSample¦methodP²FunctionExpressionÍôÍ¾ÀÂÂÂ‘MªIdentifierÍõÍø£rawN®BlockStatementÍúÍ¾“Q³ExpressionStatementÍÍ^®CallExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍ	MªIdentifierÍ
+Í®pushWaveSampleÂÂ‘MªIdentifierÍÍ£rawÂZ«IfStatementÍ(Í“[°BinaryExpressionÍ,ÍHS°MemberExpressionÍ,Í5T®ThisExpressionÍ,Í0MªIdentifierÍ1Í5¤typeÂÂ£===S°MemberExpressionÍ:ÍHMªIdentifierÍ:ÍE«AmmeterTypeMªIdentifierÍFÍH¢ACÂÂN®BlockStatementÍJÍ“’Q³ExpressionStatementÍYÍs^®CallExpressionÍYÍrS°MemberExpressionÍYÍmT®ThisExpressionÍYÍ]MªIdentifierÍ^Ím¯updateRmsBufferÂÂ‘MªIdentifierÍnÍq£rawÂW¯ReturnStatementÍÍˆÀÀQ³ExpressionStatementÍÍ·^®CallExpressionÍÍ¶S°MemberExpressionÍÍ±T®ThisExpressionÍÍ¡MªIdentifierÍ¢Í±¯updateDcAverageÂÂ‘MªIdentifierÍ²Íµ£rawÂO°MethodDefinitionÍæÍWÂÂMªIdentifierÍæÍñ«getWaveform¦methodP²FunctionExpressionÍñÍWÀÂÂÂN®BlockStatementÍôÍW•X³VariableDeclarationÍÿÍ!‘Y²VariableDeclaratorÍÍ MªIdentifierÍÍ¡nS°MemberExpressionÍ	Í S°MemberExpressionÍ	ÍT®ThisExpressionÍ	ÍMªIdentifierÍÍ«waveSamplesÂÂMªIdentifierÍÍ ¦lengthÂÂ¥constX³VariableDeclarationÍ+ÍS‘Y²VariableDeclaratorÍ1ÍRMªIdentifierÍ1Í9¨timeAxis^®CallExpressionÍ<ÍRS°MemberExpressionÍ<ÍPS°MemberExpressionÍ<ÍJT®ThisExpressionÍ<Í@MªIdentifierÍAÍJ©waveTimesÂÂMªIdentifierÍKÍP¥sliceÂÂÂ¥constX³VariableDeclarationÍ]ÍŠ‘Y²VariableDeclaratorÍcÍ‰MªIdentifierÍcÍn«voltageAxis^®CallExpressionÍqÍ‰S°MemberExpressionÍqÍ‡S°MemberExpressionÍqÍT®ThisExpressionÍqÍuMªIdentifierÍvÍ«waveSamplesÂÂMªIdentifierÍ‚Í‡¥sliceÂÂÂ¥constX³VariableDeclarationÍ”ÍÜ‘Y²VariableDeclaratorÍšÍÛMªIdentifierÍšÍ¤spanZµConditionalExpressionÍ¡ÍÛ[°BinaryExpressionÍ¡Í§MªIdentifierÍ¡Í¢¡n¢>=U§LiteralÍ¦Í§¡2^®CallExpressionÍªÍ×S°MemberExpressionÍªÍ²MªIdentifierÍªÍ®¤MathMªIdentifierÍ¯Í²£maxÂÂ’[°BinaryExpressionÍ³ÍĞS°MemberExpressionÍ³ÍÂMªIdentifierÍ³Í»¨timeAxis[°BinaryExpressionÍ¼ÍÁMªIdentifierÍ¼Í½¡n¡-U§LiteralÍÀÍÁ¡1ÃÂ¡-S°MemberExpressionÍÅÍĞMªIdentifierÍÅÍÍ¨timeAxisU§LiteralÍÎÍÏ ¡0ÃÂU§LiteralÍÒÍÖË>°Æ÷ µí¤1e-6ÂU§LiteralÍÚÍÛ¡1¥constW¯ReturnStatementÍæÍPÔr_”¤type¥start£endªproperties°ObjectExpressionÍíÍO™Ôr`™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍüÍÂÂÂMªIdentifierÍüÍ¦waveId^®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ
+¦IdUtilMªIdentifierÍÍ¨generateÂÂ‘U§LiteralÍÍ£amw¥'amw'Â¤init`¨PropertyÍ)Í8ÂÂÂMªIdentifierÍ)Í2©probeNameU§LiteralÍ4Í8¢AM¤'AM'¤init`¨PropertyÍGÍYÂÂÂMªIdentifierÍGÍN§netNameU§LiteralÍPÍY§AMMETER©'AMMETER'¤init`¨PropertyÍhÍzÂÂÂMªIdentifierÍhÍp¨timeAxisMªIdentifierÍrÍz¨timeAxis¤init`¨PropertyÍ‰Í¡ÂÂÂMªIdentifierÍ‰Í”«voltageAxisMªIdentifierÍ–Í¡«voltageAxis¤init`¨PropertyÍ°ÍĞÂÂÂMªIdentifierÍ°Í»«currentAxis^®CallExpressionÍ½ÍĞS°MemberExpressionÍ½ÍÎMªIdentifierÍ½ÍÈ«voltageAxisMªIdentifierÍÉÍÎ¥sliceÂÂÂ¤init`¨PropertyÍßÍÂÂÂMªIdentifierÍßÍéªsampleRateZµConditionalExpressionÍëÍ[°BinaryExpressionÍëÍğMªIdentifierÍëÍì¡n¡>U§LiteralÍïÍğ¡1[°BinaryExpressionÍóÍ[°BinaryExpressionÍôÍùMªIdentifierÍôÍõ¡n¡-U§LiteralÍøÍù¡1¡/MªIdentifierÍıÍ¤spanU§LiteralÍÍ¡1¤init`¨PropertyÍÍ'ÂÂÂMªIdentifierÍÍ¨waveTypeU§LiteralÍÍ'§current©'current'¤init`¨PropertyÍ6ÍDÂÂÂMªIdentifierÍ6Í>¨holdTimeMªIdentifierÍ@ÍD¤span¤initO°MethodDefinitionÍÁÍûÂÂMªIdentifierÍÁÍÌ«snapReading¦methodP²FunctionExpressionÍÌÍûÀÂÂÂ‘MªIdentifierÍÍÍĞ£rawN®BlockStatementÍÒÍû™Q³ExpressionStatementÍİÍö^®CallExpressionÍİÍõS°MemberExpressionÍİÍğT®ThisExpressionÍİÍáMªIdentifierÍâÍğ®pushWaveSampleÂÂ‘MªIdentifierÍñÍô£rawÂQ³ExpressionStatementÍ ÍR´AssignmentExpressionÍ Í¡=S°MemberExpressionÍ ÍT®ThisExpressionÍ ÍMªIdentifierÍÍ®dcSampleBufferÂÂV¯ArrayExpressionÍÍ‘MªIdentifierÍÍ£rawQ³ExpressionStatementÍ&Í7R´AssignmentExpressionÍ&Í6¡=S°MemberExpressionÍ&Í0T®ThisExpressionÍ&Í*MªIdentifierÍ+Í0¥dcEmaÂÂMªIdentifierÍ3Í6£rawQ³ExpressionStatementÍAÍWR´AssignmentExpressionÍAÍV¡=S°MemberExpressionÍAÍOT®ThisExpressionÍAÍEMªIdentifierÍFÍO©dcEmaInitÂÂU§LiteralÍRÍVÃ¤trueZ«IfStatementÍaÍ[°BinaryExpressionÍeÍS°MemberExpressionÍeÍnT®ThisExpressionÍeÍiMªIdentifierÍjÍn¤typeÂÂ£===S°MemberExpressionÍsÍMªIdentifierÍsÍ~«AmmeterTypeMªIdentifierÍÍ¢ACÂÂN®BlockStatementÍƒÍ“Q³ExpressionStatementÍ’Í©R´AssignmentExpressionÍ’Í¨¡=S°MemberExpressionÍ’Í¢T®ThisExpressionÍ’Í–MªIdentifierÍ—Í¢«lastReadingÂÂMªIdentifierÍ¥Í¨£rawQ³ExpressionStatementÍ·ÍÔR´AssignmentExpressionÍ·ÍÓ¡=S°MemberExpressionÍ·ÍÃT®ThisExpressionÍ·Í»MªIdentifierÍ¼ÍÃ§lastRmsÂÂ^®CallExpressionÍÆÍÓS°MemberExpressionÍÆÍÎMªIdentifierÍÆÍÊ¤MathMªIdentifierÍËÍÎ£absÂÂ‘MªIdentifierÍÏÍÒ£rawÂW¯ReturnStatementÍâÍöS°MemberExpressionÍéÍõT®ThisExpressionÍéÍíMªIdentifierÍîÍõ§lastRmsÂÂÀZ«IfStatementÍÍOS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ«autoRangeOnÂÂN®BlockStatementÍ!ÍO‘Q³ExpressionStatementÍ0ÍD^®CallExpressionÍ0ÍCS°MemberExpressionÍ0Í>T®ThisExpressionÍ0Í4MªIdentifierÍ5Í>©autoRangeÂÂ‘MªIdentifierÍ?ÍB£rawÂÀX³VariableDeclarationÍYÍ|‘Y²VariableDeclaratorÍ_Í{MªIdentifierÍ_ÍiªdisplayMax^®CallExpressionÍlÍ{S°MemberExpressionÍlÍyT®ThisExpressionÍlÍpMªIdentifierÍqÍy¨getRangeÂÂÂ¥constQ³ExpressionStatementÍ†ÍÒR´AssignmentExpressionÍ†ÍÑ¡=S°MemberExpressionÍ†Í–T®ThisExpressionÍ†ÍŠMªIdentifierÍ‹Í–«lastReadingÂÂ[°BinaryExpressionÍ™ÍÑ^®CallExpressionÍ™Í¼S°MemberExpressionÍ™Í¡MªIdentifierÍ™Í¤MathMªIdentifierÍÍ¡£minÂÂ’^®CallExpressionÍ¢Í¯S°MemberExpressionÍ¢ÍªMªIdentifierÍ¢Í¦¤MathMªIdentifierÍ§Íª£absÂÂ‘MªIdentifierÍ«Í®£rawÂMªIdentifierÍ±Í»ªdisplayMaxÂ¡*ZµConditionalExpressionÍÀÍĞ[°BinaryExpressionÍÀÍÇMªIdentifierÍÀÍÃ£raw¡<U§LiteralÍÆÍÇ ¡0]¯UnaryExpressionÍÊÍÌ¡-ÃU§LiteralÍËÍÌ¡1U§LiteralÍÏÍĞ¡1W¯ReturnStatementÍÜÍôS°MemberExpressionÍãÍóT®ThisExpressionÍãÍçMªIdentifierÍèÍó«lastReadingÂÂO°MethodDefinitionÍÍ\ÂÂMªIdentifierÍÍ®getLastReading¦methodP²FunctionExpressionÍÍ\ÀÂÂÂN®BlockStatementÍÍ\‘W¯ReturnStatementÍÍZZµConditionalExpressionÍÍY[°BinaryExpressionÍÍ7S°MemberExpressionÍÍ$T®ThisExpressionÍÍMªIdentifierÍ Í$¤typeÂÂ£===S°MemberExpressionÍ)Í7MªIdentifierÍ)Í4«AmmeterTypeMªIdentifierÍ5Í7¢ACÂÂS°MemberExpressionÍ:ÍFT®ThisExpressionÍ:Í>MªIdentifierÍ?ÍF§lastRmsÂÂS°MemberExpressionÍIÍYT®ThisExpressionÍIÍMMªIdentifierÍNÍY«lastReadingÂÂO°MethodDefinitionÍbÍ«ÂÂMªIdentifierÍbÍi§getUnit¦methodP²FunctionExpressionÍiÍ«ÀÂÂÂN®BlockStatementÍlÍ«‘W¯ReturnStatementÍnÍ©ZµConditionalExpressionÍuÍ¨[°BinaryExpressionÍuÍ‘S°MemberExpressionÍuÍ~T®ThisExpressionÍuÍyMªIdentifierÍzÍ~¤typeÂÂ£===S°MemberExpressionÍƒÍ‘MªIdentifierÍƒÍ«AmmeterTypeMªIdentifierÍÍ‘¢DCÂÂU§LiteralÍ”Í›¥mA DC§'mA DC'U§LiteralÍÍ¨¨mArms ACª'mArms AC'O°MethodDefinitionÍ±ÍÂÂMªIdentifierÍ±Í¿®getReadingAmps¦methodP²FunctionExpressionÍ¿ÍÀÂÂÂN®BlockStatementÍÂÍ‘W¯ReturnStatementÍÄÍ[°BinaryExpressionÍËÍZµConditionalExpressionÍÌÍ
+[°BinaryExpressionÍÌÍèS°MemberExpressionÍÌÍÕT®ThisExpressionÍÌÍĞMªIdentifierÍÑÍÕ¤typeÂÂ£===S°MemberExpressionÍÚÍèMªIdentifierÍÚÍå«AmmeterTypeMªIdentifierÍæÍè¢ACÂÂS°MemberExpressionÍëÍ÷T®ThisExpressionÍëÍïMªIdentifierÍğÍ÷§lastRmsÂÂS°MemberExpressionÍúÍ
+T®ThisExpressionÍúÍşMªIdentifierÍÿÍ
+«lastReadingÂÂ¡/U§LiteralÍÍÍè¤1000O°MethodDefinitionÍÍ[ÂÂMªIdentifierÍÍ(­getRangeLabel¦methodP²FunctionExpressionÍ(Í[ÀÂÂÂN®BlockStatementÍ+Í[‘W¯ReturnStatementÍ6ÍTÔra•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ=ÍS‘^®CallExpressionÍ@ÍOS°MemberExpressionÍ@ÍMT®ThisExpressionÍ@ÍDMªIdentifierÍEÍM¨getRangeÂÂÂ’Ôrb•¤type¥start£end¥value¤tail¯TemplateElementÍ>Í>Ôrc’£raw¦cooked  Âb¯TemplateElementÍPÍRc¢mA¢mAÃO°MethodDefinitionÍaÍKÂÂMªIdentifierÍaÍi¨simulate¦methodP²FunctionExpressionÍiÍKÀÂÂÂN®BlockStatementÍlÍK“Z«IfStatementÍwÍÎ[°BinaryExpressionÍ{Í–S°MemberExpressionÍ{ÍT®ThisExpressionÍ{ÍMªIdentifierÍ€Í­currentReaderÂÂ£!==U§LiteralÍ’Í–À¤nullN®BlockStatementÍ˜ÍÎ‘W¯ReturnStatementÍ§ÍÃ^®CallExpressionÍ®ÍÂS°MemberExpressionÍ®ÍÀT®ThisExpressionÍ®Í²MªIdentifierÍ³ÍÀ­currentReaderÂÂÂÀZ«IfStatementÍØÍ1[°BinaryExpressionÍÜÍøS°MemberExpressionÍÜÍïT®ThisExpressionÍÜÍàMªIdentifierÍáÍï®globalFallbackÂÂ£!==U§LiteralÍôÍøÀ¤nullN®BlockStatementÍúÍ1‘W¯ReturnStatementÍ	Í&^®CallExpressionÍÍ%S°MemberExpressionÍÍ#T®ThisExpressionÍÍMªIdentifierÍÍ#®globalFallbackÂÂÂÀW¯ReturnStatementÍ;ÍDU§LiteralÍBÍC ¡0O°MethodDefinitionÍQÍÂÂMªIdentifierÍQÍ`¯updateDcAverage¦methodP²FunctionExpressionÍ`ÍÀÂÂÂ‘MªIdentifierÍaÍd£rawN®BlockStatementÍfÍ–Z«IfStatementÍqÍK[°BinaryExpressionÍuÍ S°MemberExpressionÍuÍS°MemberExpressionÍuÍˆT®ThisExpressionÍuÍyMªIdentifierÍzÍˆ®dcSampleBufferÂÂMªIdentifierÍ‰Í¦lengthÂÂ¡<MªIdentifierÍ’Í ®DC_AVG_SAMPLESN®BlockStatementÍ¢ÍÚ‘Q³ExpressionStatementÍ±ÍÏ^®CallExpressionÍ±ÍÎS°MemberExpressionÍ±ÍÉS°MemberExpressionÍ±ÍÄT®ThisExpressionÍ±ÍµMªIdentifierÍ¶ÍÄ®dcSampleBufferÂÂMªIdentifierÍÅÍÉ¤pushÂÂ‘MªIdentifierÍÊÍÍ£rawÂN®BlockStatementÍéÍK’Q³ExpressionStatementÍøÍ^®CallExpressionÍøÍS°MemberExpressionÍøÍS°MemberExpressionÍøÍT®ThisExpressionÍøÍüMªIdentifierÍıÍ®dcSampleBufferÂÂMªIdentifierÍÍ¥shiftÂÂÂQ³ExpressionStatementÍ"Í@^®CallExpressionÍ"Í?S°MemberExpressionÍ"Í:S°MemberExpressionÍ"Í5T®ThisExpressionÍ"Í&MªIdentifierÍ'Í5®dcSampleBufferÂÂMªIdentifierÍ6Í:¤pushÂÂ‘MªIdentifierÍ;Í>£rawÂX³VariableDeclarationÍUÍa‘Y²VariableDeclaratorÍYÍ`MªIdentifierÍYÍ\£sumU§LiteralÍ_Í` ¡0£let\¬ForStatementÍkÍØX³VariableDeclarationÍpÍy‘Y²VariableDeclaratorÍtÍyMªIdentifierÍtÍu¡iU§LiteralÍxÍy ¡0£let[°BinaryExpressionÍ{Í™MªIdentifierÍ{Í|¡i¡<S°MemberExpressionÍÍ™S°MemberExpressionÍÍ’T®ThisExpressionÍÍƒMªIdentifierÍ„Í’®dcSampleBufferÂÂMªIdentifierÍ“Í™¦lengthÂÂ]°UpdateExpressionÍ›Í¢++ÂMªIdentifierÍ›Íœ¡iN®BlockStatementÍ ÍØ‘Q³ExpressionStatementÍ¯ÍÍR´AssignmentExpressionÍ¯ÍÌ¢+=MªIdentifierÍ¯Í²£sumS°MemberExpressionÍ¶ÍÌS°MemberExpressionÍ¶ÍÉT®ThisExpressionÍ¶ÍºMªIdentifierÍ»ÍÉ®dcSampleBufferÂÂMªIdentifierÍÊÍË¡iÃÂX³VariableDeclarationÍâÍ‘Y²VariableDeclaratorÍèÍMªIdentifierÍèÍë£box[°BinaryExpressionÍîÍMªIdentifierÍîÍñ£sum¡/S°MemberExpressionÍôÍS°MemberExpressionÍôÍT®ThisExpressionÍôÍøMªIdentifierÍùÍ®dcSampleBufferÂÂMªIdentifierÍÍ¦lengthÂÂ¥constZ«IfStatementÍÍè]¯UnaryExpressionÍÍ,¡!ÃS°MemberExpressionÍÍ,T®ThisExpressionÍÍ"MªIdentifierÍ#Í,©dcEmaInitÂÂN®BlockStatementÍ.Í}’Q³ExpressionStatementÍ=ÍNR´AssignmentExpressionÍ=ÍM¡=S°MemberExpressionÍ=ÍGT®ThisExpressionÍ=ÍAMªIdentifierÍBÍG¥dcEmaÂÂMªIdentifierÍJÍM£boxQ³ExpressionStatementÍ\ÍrR´AssignmentExpressionÍ\Íq¡=S°MemberExpressionÍ\ÍjT®ThisExpressionÍ\Í`MªIdentifierÍaÍj©dcEmaInitÂÂU§LiteralÍmÍqÃ¤trueN®BlockStatementÍŒÍè‘Q³ExpressionStatementÍ›ÍİR´AssignmentExpressionÍ›ÍÜ¡=S°MemberExpressionÍ›Í¥T®ThisExpressionÍ›ÍŸMªIdentifierÍ Í¥¥dcEmaÂÂ[°BinaryExpressionÍ¨ÍÜ[°BinaryExpressionÍ¨ÍºMªIdentifierÍ¨Í´¬DC_EMA_ALPHA¡*MªIdentifierÍ·Íº£raw¡+[°BinaryExpressionÍ½ÍÜ[°BinaryExpressionÍ¾ÍÎU§LiteralÍ¾Í¿¡1¡-MªIdentifierÍÂÍÎ¬DC_EMA_ALPHA¡*S°MemberExpressionÍÒÍÜT®ThisExpressionÍÒÍÖMªIdentifierÍ×ÍÜ¥dcEmaÂÂW¯ReturnStatementÍòÍ[°BinaryExpressionÍùÍ[°BinaryExpressionÍùÍU§LiteralÍùÍıË?á™™™™™š¤0.55¡*MªIdentifierÍ Í£box¡+[°BinaryExpressionÍÍU§LiteralÍÍ
+Ë?ÜÌÌÌÌÌÍ¤0.45¡*S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ¥dcEmaÂÂO°MethodDefinitionÍ%ÍàÂÂMªIdentifierÍ%Í4¯updateRmsBuffer¦methodP²FunctionExpressionÍ4ÍàÀÂÂÂ‘MªIdentifierÍ5Í8£rawN®BlockStatementÍ:Íà“Z«IfStatementÍEÍ»[°BinaryExpressionÍIÍyS°MemberExpressionÍIÍdS°MemberExpressionÍIÍ]T®ThisExpressionÍIÍMMªIdentifierÍNÍ]¯rmsSampleBufferÂÂMªIdentifierÍ^Íd¦lengthÂÂ¡<MªIdentifierÍgÍy²RMS_WINDOW_SAMPLESN®BlockStatementÍ{Íô’Q³ExpressionStatementÍŠÍ©^®CallExpressionÍŠÍ¨S°MemberExpressionÍŠÍ£S°MemberExpressionÍŠÍT®ThisExpressionÍŠÍMªIdentifierÍÍ¯rmsSampleBufferÂÂMªIdentifierÍŸÍ£¤pushÂÂ‘MªIdentifierÍ¤Í§£rawÂQ³ExpressionStatementÍ·ÍéR´AssignmentExpressionÍ·Íè¡=S°MemberExpressionÍ·ÍÊT®ThisExpressionÍ·Í»MªIdentifierÍ¼ÍÊ®rmsSampleIndexÂÂS°MemberExpressionÍÍÍèS°MemberExpressionÍÍÍáT®ThisExpressionÍÍÍÑMªIdentifierÍÒÍá¯rmsSampleBufferÂÂMªIdentifierÍâÍè¦lengthÂÂN®BlockStatementÍÍ»’Q³ExpressionStatementÍÍWR´AssignmentExpressionÍÍV¡=S°MemberExpressionÍÍPS°MemberExpressionÍÍ&T®ThisExpressionÍÍMªIdentifierÍÍ&¯rmsSampleBufferÂÂ[°BinaryExpressionÍ'ÍOS°MemberExpressionÍ'Í:T®ThisExpressionÍ'Í+MªIdentifierÍ,Í:®rmsSampleIndexÂÂ¡%MªIdentifierÍ=ÍO²RMS_WINDOW_SAMPLESÃÂMªIdentifierÍSÍV£rawQ³ExpressionStatementÍeÍ°R´AssignmentExpressionÍeÍ¯¡=S°MemberExpressionÍeÍxT®ThisExpressionÍeÍiMªIdentifierÍjÍx®rmsSampleIndexÂÂ[°BinaryExpressionÍ{Í¯[°BinaryExpressionÍ|Í“S°MemberExpressionÍ|ÍT®ThisExpressionÍ|Í€MªIdentifierÍÍ®rmsSampleIndexÂÂ¡+U§LiteralÍ’Í“¡1¡%[°BinaryExpressionÍ˜Í®MªIdentifierÍ˜Íª²RMS_WINDOW_SAMPLES¡*U§LiteralÍ­Í®¡2Z«IfStatementÍÅÍŸ[°BinaryExpressionÍÉÍéS°MemberExpressionÍÉÍäS°MemberExpressionÍÉÍİT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍİ¯rmsSampleBufferÂÂMªIdentifierÍŞÍä¦lengthÂÂ¢>=U§LiteralÍèÍé¡2N®BlockStatementÍëÍŸ“X³VariableDeclarationÍúÍ‘Y²VariableDeclaratorÍşÍMªIdentifierÍşÍ£sumU§LiteralÍÍ ¡0£letÔrd—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÍTÂX³VariableDeclarationÍÍ ‘Y²VariableDeclaratorÍÍ MªIdentifierÍÍ ¡vÀ¥constS°MemberExpressionÍ$Í8T®ThisExpressionÍ$Í(MªIdentifierÍ)Í8¯rmsSampleBufferÂÂQ³ExpressionStatementÍKÍTR´AssignmentExpressionÍKÍS¢+=MªIdentifierÍKÍN£sumMªIdentifierÍRÍS¡vQ³ExpressionStatementÍbÍ”R´AssignmentExpressionÍbÍ“¡=S°MemberExpressionÍbÍoT®ThisExpressionÍbÍfMªIdentifierÍgÍo¨dcOffsetÂÂ[°BinaryExpressionÍrÍ“MªIdentifierÍrÍu£sum¡/S°MemberExpressionÍxÍ“S°MemberExpressionÍxÍŒT®ThisExpressionÍxÍ|MªIdentifierÍ}ÍŒ¯rmsSampleBufferÂÂMªIdentifierÍÍ“¦lengthÂÂÀZ«IfStatementÍ©ÍÙ[°BinaryExpressionÍ­ÍÍS°MemberExpressionÍ­ÍÈS°MemberExpressionÍ­ÍÁT®ThisExpressionÍ­Í±MªIdentifierÍ²ÍÁ¯rmsSampleBufferÂÂMªIdentifierÍÂÍÈ¦lengthÂÂ¢>=U§LiteralÍÌÍÍ¡2N®BlockStatementÍÏÍÙ“X³VariableDeclarationÍŞÍì‘Y²VariableDeclaratorÍâÍëMªIdentifierÍâÍç¥sumSqU§LiteralÍêÍë ¡0£letd®ForOfStatementÍúÍ‚ÂX³VariableDeclarationÍÿÍ‘Y²VariableDeclaratorÍÍMªIdentifierÍÍ¡vÀ¥constS°MemberExpressionÍ
+ÍT®ThisExpressionÍ
+ÍMªIdentifierÍÍ¯rmsSampleBufferÂÂN®BlockStatementÍ Í‚’X³VariableDeclarationÍ3ÍP‘Y²VariableDeclaratorÍ9ÍOMªIdentifierÍ9Í;¢ac[°BinaryExpressionÍ>ÍOMªIdentifierÍ>Í?¡v¡-S°MemberExpressionÍBÍOT®ThisExpressionÍBÍFMªIdentifierÍGÍO¨dcOffsetÂÂ¥constQ³ExpressionStatementÍbÍsR´AssignmentExpressionÍbÍr¢+=MªIdentifierÍbÍg¥sumSq[°BinaryExpressionÍkÍrMªIdentifierÍkÍm¢ac¡*MªIdentifierÍpÍr¢acQ³ExpressionStatementÍÍÎR´AssignmentExpressionÍÍÍ¡=S°MemberExpressionÍÍœT®ThisExpressionÍÍ”MªIdentifierÍ•Íœ§lastRmsÂÂ^®CallExpressionÍŸÍÍS°MemberExpressionÍŸÍ¨MªIdentifierÍŸÍ£¤MathMªIdentifierÍ¤Í¨¤sqrtÂÂ‘[°BinaryExpressionÍ©ÍÌMªIdentifierÍ©Í®¥sumSq¡/S°MemberExpressionÍ±ÍÌS°MemberExpressionÍ±ÍÅT®ThisExpressionÍ±ÍµMªIdentifierÍ¶ÍÅ¯rmsSampleBufferÂÂMªIdentifierÍÆÍÌ¦lengthÂÂÂÀO°MethodDefinitionÍæÍyÂÂMªIdentifierÍæÍô®pushWaveSample¦methodP²FunctionExpressionÍôÍyÀÂÂÂ‘MªIdentifierÍõÍø£rawN®BlockStatementÍúÍy•X³VariableDeclarationÍÍ‘Y²VariableDeclaratorÍÍMªIdentifierÍÍ¤stepU§LiteralÍÍË?PbMÒñ©ü¥0.001¥constX³VariableDeclarationÍ"Í—‘Y²VariableDeclaratorÍ(Í–MªIdentifierÍ(Í)¡tZµConditionalExpressionÍ,Í–[°BinaryExpressionÍ,ÍES°MemberExpressionÍ,ÍAS°MemberExpressionÍ,Í:T®ThisExpressionÍ,Í0MªIdentifierÍ1Í:©waveTimesÂÂMªIdentifierÍ;ÍA¦lengthÂÂ¡>U§LiteralÍDÍE ¡0[°BinaryExpressionÍUÍ…S°MemberExpressionÍUÍ~S°MemberExpressionÍUÍcT®ThisExpressionÍUÍYMªIdentifierÍZÍc©waveTimesÂÂ[°BinaryExpressionÍdÍ}S°MemberExpressionÍdÍyS°MemberExpressionÍdÍrT®ThisExpressionÍdÍhMªIdentifierÍiÍr©waveTimesÂÂMªIdentifierÍsÍy¦lengthÂÂ¡-U§LiteralÍ|Í}¡1ÃÂ¡+MªIdentifierÍÍ…¤stepU§LiteralÍ•Í– ¡0¥constQ³ExpressionStatementÍ¡Í¸^®CallExpressionÍ¡Í·S°MemberExpressionÍ¡Í´S°MemberExpressionÍ¡Í¯T®ThisExpressionÍ¡Í¥MªIdentifierÍ¦Í¯©waveTimesÂÂMªIdentifierÍ°Í´¤pushÂÂ‘MªIdentifierÍµÍ¶¡tÂQ³ExpressionStatementÍÂÍİ^®CallExpressionÍÂÍÜS°MemberExpressionÍÂÍ×S°MemberExpressionÍÂÍÒT®ThisExpressionÍÂÍÆMªIdentifierÍÇÍÒ«waveSamplesÂÂMªIdentifierÍÓÍ×¤pushÂÂ‘MªIdentifierÍØÍÛ£rawÂÔre•¤type¥start£end¤test¤body®WhileStatementÍçÍr[°BinaryExpressionÍîÍS°MemberExpressionÍîÍS°MemberExpressionÍîÍşT®ThisExpressionÍîÍòMªIdentifierÍóÍş«waveSamplesÂÂMªIdentifierÍÿÍ¦lengthÂÂ¡>MªIdentifierÍÍ°WAVE_HISTORY_MAXN®BlockStatementÍÍr’Q³ExpressionStatementÍ)ÍB^®CallExpressionÍ)ÍAS°MemberExpressionÍ)Í?S°MemberExpressionÍ)Í9T®ThisExpressionÍ)Í-MªIdentifierÍ.Í9«waveSamplesÂÂMªIdentifierÍ:Í?¥shiftÂÂÂQ³ExpressionStatementÍPÍg^®CallExpressionÍPÍfS°MemberExpressionÍPÍdS°MemberExpressionÍPÍ^T®ThisExpressionÍPÍTMªIdentifierÍUÍ^©waveTimesÂÂMªIdentifierÍ_Íd¥shiftÂÂÂÀ‘Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ‡Ì´’Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifierÌÌ›MªIdentifierÌÌ›«AmmeterTypeMªIdentifierÌÌ›«AmmeterTypeg¯ImportSpecifierÌÌ£MªIdentifierÌÌ£¦IdUtilMªIdentifierÌÌ£¦IdUtilU§LiteralÌ«Ì³¦common¨'common'

@@ -9,6 +9,7 @@ export struct LogicAnalyzerWaveCanvas {
   @Prop @Watch('onDataChanged') channelData: number[][] = [];
   @Prop @Watch('onDataChanged') channelCount: number = 8;
   @Prop sampleCount: number = 128;
+  @Prop @Watch('onDataChanged') canvasHeight: number = 192;
   @State canvasW: number = 320;
   @State canvasH: number = 192;
 
@@ -22,14 +23,17 @@ export struct LogicAnalyzerWaveCanvas {
   build() {
     Canvas(this.ctx)
       .width('100%')
-      .height(192)
+      .height(this.canvasHeight)
       .backgroundColor('#0a0a12')
       .onAreaChange((old: Area, newArea: Area) => {
         this.canvasW = newArea.width as number;
         this.canvasH = newArea.height as number;
         this.drawLogic();
       })
-      .onAppear(() => this.drawLogic())
+      .onAppear(() => {
+        this.canvasH = this.canvasHeight;
+        this.drawLogic();
+      })
   }
 
   drawLogic(): void {

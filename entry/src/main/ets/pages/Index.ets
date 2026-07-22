@@ -8,6 +8,12 @@ import { InstrumentPanel } from '../components/InstrumentPanel';
 import { FaultInjectionPanel } from '../components/FaultInjectionPanel';
 import { TeachingPanel } from '../components/TeachingPanel';
 import { InstrTraceLogPanel } from '../components/InstrTraceLogPanel';
+import { InstrumentWaveExpandOverlay } from '../components/InstrumentWaveExpandOverlay';
+import {
+  InstrumentWaveExpandStore,
+  INSTR_WAVE_EXPAND_OPEN_KEY,
+  INSTR_WAVE_EXPAND_TICK_KEY
+} from '../components/InstrumentWaveExpandStore';
 import { ComponentPreview } from '../components/ComponentPreview';
 import {
   ProteusVDivider, ProteusPanelTitle,
@@ -65,6 +71,7 @@ struct Index {
   @State mouseY: number = 0;
   @State zoomPercent: number = 100;
   @State gridVisible: boolean = true;
+  @State warEnabled: boolean = true;
   @State rulerVisible: boolean = true;
   @State selectedCount: number = 0;
   @State selectedWireActive: boolean = false;
@@ -108,6 +115,8 @@ struct Index {
   @State unsavedChanges: boolean = false;
   @State showExitConfirmDialog: boolean = false;
   @State showSimFailDialog: boolean = false;
+  @StorageLink(INSTR_WAVE_EXPAND_OPEN_KEY) showInstrWaveExpand: boolean = false;
+  @StorageLink(INSTR_WAVE_EXPAND_TICK_KEY) instrWaveExpandTick: number = 0;
   @State simFailMessage: string = '';
 
   private clipboardLibId: string = '';
@@ -119,10 +128,12 @@ struct Index {
   private uiState: UiStateStore = UiStateStore.getInstance();
 
   async aboutToAppear(): Promise<void> {
+    InstrumentWaveExpandStore.ensureAppStorage();
     Logger.info(INSTR_TRACE_TAG, `[APP] START ver=${appVersionLabel()}`);
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.appService.initPlatform(ctx);
     this.userProjectDir = this.appService.getUserProjectDir();
+    this.warEnabled = this.getEditorImpl().isWarEnabled();
     this.vm.bindCallbacks();
     this.appService.onStatusMessage = (msg: string) => { this.statusMessage = msg; };
     this.appService.onErcUpdate = (errors: ErcError[]) => {
@@ -590,6 +601,10 @@ struct Index {
       } else {
         this.statusMessage = 'Click on canvas to place component';
       }
+    } else if (mode === EditorToolMode.LABEL) {
+      this.statusMessage = '网络标签：点击画布输入网络名；选择模式下双击标号可改名';
+    } else if (mode === EditorToolMode.WIRE) {
+      this.statusMessage = '连线：点引脚开始 → 点空白加拐点 → 再点同一拐点放端点（可右击加标号）/ 或点另一引脚完成';
     } else {
       this.statusMessage = `Mode: ${toolModeLabel(mode)}`;
     }
@@ -945,7 +960,8 @@ struct Index {
 
   handleDeleteSelected(): void {
     const selectedDevices = this.appService.schematicEditor.getSelectedDevices();
-    const selectedNets = this.appService.schematicEditor.getSelectedNets();
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const selectedWireIds = editor.getSelectedWireIds();
 
     if (selectedDevices.length > 0) {
       const ids: string[] = [];
@@ -955,11 +971,11 @@ struct Index {
       this.appService.schematicEditor.batchDeleteDevice(ids);
     }
 
-    if (selectedNets.length > 0) {
+    if (selectedWireIds.length > 0) {
       this.appService.schematicEditor.clearSelectedRoute();
     }
 
-    if (selectedDevices.length === 0 && selectedNets.length === 0) {
+    if (selectedDevices.length === 0 && selectedWireIds.length === 0) {
       this.statusMessage = '未选中任何对象';
       return;
     }
@@ -968,7 +984,9 @@ struct Index {
     this.selectedCount = 0;
     this.selectedWireActive = false;
     this.bumpCanvas();
-    this.statusMessage = '已删除';
+    this.statusMessage = selectedWireIds.length > 0 && selectedDevices.length === 0
+      ? `已删除 ${selectedWireIds.length} 根导线`
+      : '已删除';
   }
 
   handleCopy(): void {
@@ -1085,6 +1103,15 @@ struct Index {
     this.bumpCanvas();
   }
 
+  toggleWar(): void {
+    this.warEnabled = !this.warEnabled;
+    this.getEditorImpl().setWarEnabled(this.warEnabled);
+    this.statusMessage = this.warEnabled
+      ? 'WAR 已开启：连线自动避让器件/引脚/导线（预览=落线）'
+      : 'WAR 已关闭：仅正交折线，不自动寻路';
+    this.bumpCanvas();
+  }
+
   toggleRuler(): void {
     this.rulerVisible = !this.rulerVisible;
     this.uiState.rulerVisible = this.rulerVisible;
@@ -1173,6 +1200,14 @@ struct Index {
       }
       if (this.showSimFailDialog) {
         this.SimFailDialog()
+      }
+      if (this.showInstrWaveExpand) {
+        InstrumentWaveExpandOverlay({
+          refreshTick: this.instrWaveExpandTick,
+          onClose: () => {
+            InstrumentWaveExpandStore.getInstance().close();
+          }
+        })
       }
     }
     .width('100%')
@@ -1354,6 +1389,7 @@ struct Index {
     return [
       { label: $r('app.string.toolbar_place'), shortcut: 'P', icon: ProteusIconName.COMPONENT, action: () => this.setToolMode(EditorToolMode.PLACE) },
       { label: $r('app.string.toolbar_wire'), shortcut: 'W', icon: ProteusIconName.WIRE, action: () => this.setToolMode(EditorToolMode.WIRE) },
+      { label: $r('app.string.toolbar_war'), shortcut: '', icon: ProteusIconName.AI_ROUTE, action: () => this.toggleWar() },
       { label: $r('app.string.toolbar_bus'), shortcut: 'B', icon: ProteusIconName.BUS, action: () => this.setToolMode(EditorToolMode.BUS) },
       { label: $r('app.string.toolbar_label'), shortcut: 'L', icon: ProteusIconName.LABEL, action: () => this.setToolMode(EditorToolMode.LABEL) },
       { label: '', separator: true, action: () => {} },
@@ -1481,10 +1517,18 @@ struct Index {
       ProteusToolGroup({ title: 'Place' }) {
         ProteusToolButton({ iconName: ProteusIconName.COMPONENT, tooltip: '放置器件 (P)', showLabel: false,
           active: this.toolMode === EditorToolMode.PLACE, onAction: () => this.setToolMode(EditorToolMode.PLACE, this.previewComponentId) })
-        ProteusToolButton({ iconName: ProteusIconName.WIRE, tooltip: '连线 (W)', showLabel: false,
+        ProteusToolButton({ iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成', showLabel: false,
           active: this.toolMode === EditorToolMode.WIRE,
           disabled: this.simRunning,
           onAction: () => this.setToolMode(EditorToolMode.WIRE) })
+        ProteusToolButton({
+          iconName: ProteusIconName.AI_ROUTE,
+          label: $r('app.string.toolbar_war'),
+          showLabel: true,
+          tooltip: 'WAR 导线自动寻路（Proteus Wire Auto Router）：开=避让器件/引脚/导线，预览路径即落线路径',
+          active: this.warEnabled,
+          onAction: () => this.toggleWar()
+        })
         ProteusToolButton({ iconName: ProteusIconName.BUS, tooltip: '总线 (B)', showLabel: false,
           active: this.toolMode === EditorToolMode.BUS,
           disabled: this.simRunning,

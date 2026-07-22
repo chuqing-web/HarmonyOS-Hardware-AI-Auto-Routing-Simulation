@@ -103,7 +103,9 @@ function makePassives(): ComponentDefinition[] {
     const resistors = ['10', '100', '330', '1k', '4.7k', '10k', '47k', '100k'];
     for (let i = 0; i < resistors.length; i++) {
         const v = resistors[i];
-        items.push(twoPin(`R_${v}`, `Resistor ${v}Ω`, ComponentCategory.PASSIVE, params3('value', `${v}Ω`, 'tolerance', '5%', 'power', '0.25W'), `R{name} {1} {2} {value}`, ['pull-up', 'pull-down', 'voltage-divider']));
+        items.push(twoPin(`R_${v}`, `Resistor ${v}Ω`, ComponentCategory.PASSIVE, 
+        // 存工程记数（1k），勿写 1000Ω，避免被拼上 lib 的 K 变成 1000ΩK→1M
+        params3('value', v, 'tolerance', '5%', 'power', '0.25W'), `R{name} {1} {2} {value}`, ['pull-up', 'pull-down', 'voltage-divider']));
     }
     const pots = ['1k', '10k', '100k'];
     for (let i = 0; i < pots.length; i++) {
@@ -289,7 +291,7 @@ function makePotentiometer(id: string, name: string, value: string): ComponentDe
             makePin('2', '2', '2', PinType.PASSIVE, 30, 0),
             makePin('W', 'W', '3', PinType.PASSIVE, 0, 28)
         ],
-        defaultParams: params3('value', `${value}Ω`, 'wiper', '0.5', 'power', '0.25W'),
+        defaultParams: params3('value', value, 'wiper', '0.5', 'power', '0.25W'),
         spiceModel: 'R{name}A {1} {W} {value}*{wiper}\nR{name}B {W} {2} {value}*(1-{wiper})',
         behaviorModel: 'potentiometer',
         svgSymbol: 'potentiometer.svg',
@@ -770,8 +772,8 @@ function makeAmmeter(): ComponentDefinition {
         manufacturer: 'AI-SCH',
         description: '直流电流表 — 串联测量 DC 电流',
         pins: [
-            makePin('I+', 'I+', '1', PinType.INPUT, -30, 0),
-            makePin('I-', 'I-', '2', PinType.OUTPUT, -30, 20)
+            makePin('I+', 'I+', '1', PinType.INPUT, -40, 0),
+            makePin('I-', 'I-', '2', PinType.OUTPUT, 40, 0)
         ],
         defaultParams: params2('type', 'dc', 'range', '200mA'),
         spiceModel: '',

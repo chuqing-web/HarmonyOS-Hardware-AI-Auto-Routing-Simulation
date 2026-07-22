@@ -38,14 +38,20 @@ export struct PropertyPanel {
   @State mmMode: string = 'DCV';
   @State vmReading: string = '0.00';
   @State vmUnit: string = 'V DC';
+  @State vmWaveTime: number[] = [];
+  @State vmWaveData: number[] = [];
   @State amReading: string = '0.00';
   @State amUnit: string = 'mA DC';
+  @State amWaveTime: number[] = [];
+  @State amWaveData: number[] = [];
   @State pmVoltage: string = '0.00';
   @State pmCurrent: string = '0.00';
   @State pmPower: string = '0.00';
   @State pmPF: string = '0.00';
   @State fcFreq: string = '0 Hz';
   @State fcGate: string = '1';
+  @State fcWaveTime: number[] = [];
+  @State fcWaveData: number[] = [];
   // Signal generator
   @State sigFreq: string = '1kHz';
   @State sigAmp: string = '3.3V';
@@ -186,6 +192,11 @@ export struct PropertyPanel {
         if (cfg.success && cfg.data !== undefined) {
           this.vmUnit = cfg.data.unit ?? 'V DC';
         }
+        const vw = this.appService.instruments.getVoltmeterWave();
+        if (vw.success && vw.data !== undefined && vw.data.voltageAxis.length > 1) {
+          this.vmWaveTime = vw.data.timeAxis.slice();
+          this.vmWaveData = vw.data.voltageAxis.slice();
+        }
       } else if (libId.includes('AMMETER')) {
         const mA = this.appService.readAmmeterCurrentForComponent(this.comp.id);
         if (mA !== null) {
@@ -200,6 +211,11 @@ export struct PropertyPanel {
         const cfg = this.appService.instruments.getAmmeterConfig();
         if (cfg.success && cfg.data !== undefined) {
           this.amUnit = cfg.data.unit ?? 'mA DC';
+        }
+        const aw = this.appService.instruments.getAmmeterWave();
+        if (aw.success && aw.data !== undefined && aw.data.voltageAxis.length > 1) {
+          this.amWaveTime = aw.data.timeAxis.slice();
+          this.amWaveData = aw.data.voltageAxis.slice();
         }
       } else if (libId.includes('POWER') || libId.includes('WATT')) {
         const pm = this.appService.readPowerMeterForComponent(this.comp.id);
@@ -231,6 +247,11 @@ export struct PropertyPanel {
         const cfg = this.appService.instruments.getFreqCounterConfig();
         if (cfg.success && cfg.data !== undefined) {
           this.fcGate = `${cfg.data.gateTime}`;
+        }
+        const fw = this.appService.instruments.getFreqCounterWave();
+        if (fw.success && fw.data !== undefined && fw.data.voltageAxis.length > 1) {
+          this.fcWaveTime = fw.data.timeAxis.slice();
+          this.fcWaveData = fw.data.voltageAxis.slice();
         }
       } else if (libId.includes('OSC')) {
         const w = this.appService.instruments.getOscilloscopeWave(0);
@@ -678,7 +699,7 @@ export struct PropertyPanel {
           vPerDiv: 1,
           triggerLevel: 0,
           autoFit: true,
-          canvasHeight: 110,
+          canvasHeight: 140,
           showStats: true
         })
           .width('100%')
@@ -692,7 +713,18 @@ export struct PropertyPanel {
       .width('100%')
       Row({ space: 6 }) {
         ProteusClassicBtn({ label: 'FFT', widthVal: '48%',
-          onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT); } })
+          onAction: () => {
+            this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
+            const w = this.appService.instruments.getOscilloscopeWave(0);
+            if (w.success && w.data !== undefined) {
+              this.oscTimeData = w.data.timeAxis.slice();
+              this.oscWaveData = w.data.voltageAxis.slice();
+            }
+            const w2 = this.appService.instruments.getOscilloscopeWave(1);
+            if (w2.success && w2.data !== undefined) {
+              this.oscWaveDataCh2 = w2.data.voltageAxis.slice();
+            }
+          } })
         ProteusClassicBtn({ label: '测量', widthVal: '48%',
           onAction: () => {
             const m = this.appService.instruments.measureCursors(50, 150);
@@ -825,6 +857,20 @@ export struct PropertyPanel {
         .width('100%').textAlign(TextAlign.Center)
         .backgroundColor('#E8F5E9')
         .padding(8)
+      if (this.vmWaveData.length > 1) {
+        OscilloscopeWaveCanvas({
+          timeData: this.vmWaveTime,
+          voltageData: this.vmWaveData,
+          channelLabel: 'ΔV',
+          waveColor: '#66bb6a',
+          vPerDiv: 1,
+          triggerLevel: 0,
+          autoFit: true,
+          canvasHeight: 96,
+          showStats: false
+        })
+          .width('100%')
+      }
     }
   }
 
@@ -837,6 +883,20 @@ export struct PropertyPanel {
         .width('100%').textAlign(TextAlign.Center)
         .backgroundColor('#FFF3E0')
         .padding(8)
+      if (this.amWaveData.length > 1) {
+        OscilloscopeWaveCanvas({
+          timeData: this.amWaveTime,
+          voltageData: this.amWaveData,
+          channelLabel: 'I(mA)',
+          waveColor: '#ffa726',
+          vPerDiv: 1,
+          triggerLevel: 0,
+          autoFit: true,
+          canvasHeight: 96,
+          showStats: false
+        })
+          .width('100%')
+      }
     }
   }
 
@@ -861,6 +921,20 @@ export struct PropertyPanel {
         .width('100%').textAlign(TextAlign.Center)
         .backgroundColor('#1a0000')
         .padding(8)
+      if (this.fcWaveData.length > 1) {
+        OscilloscopeWaveCanvas({
+          timeData: this.fcWaveTime,
+          voltageData: this.fcWaveData,
+          channelLabel: 'IN',
+          waveColor: '#42a5f5',
+          vPerDiv: 1,
+          triggerLevel: 0,
+          autoFit: true,
+          canvasHeight: 96,
+          showStats: false
+        })
+          .width('100%')
+      }
       Row({ space: 4 }) {
         Text('闸门:')
           .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)

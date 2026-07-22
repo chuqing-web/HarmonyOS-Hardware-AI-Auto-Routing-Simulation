@@ -94,6 +94,8 @@ export interface IVirtualInstruments {
   getVoltmeterConfig(): ApiResult<VoltmeterConfig>;
   setVoltmeterReader(reader: (() => number) | null): void;
   setVoltmeterGlobalFallback(reader: (() => number) | null): void;
+  /** ΔV 采样波形（面板 Canvas） */
+  getVoltmeterWave(): ApiResult<WaveData>;
 
   // ---- Multimeter (DCV avg / ACV RMS) ----
   multimeterMeasureValue(raw: number): ApiResult<number>;
@@ -112,6 +114,8 @@ export interface IVirtualInstruments {
   getAmmeterConfig(): ApiResult<AmmeterConfig>;
   setAmmeterReader(reader: (() => number) | null): void;
   setAmmeterGlobalFallback(reader: (() => number) | null): void;
+  /** 电流采样波形 mA（面板 Canvas） */
+  getAmmeterWave(): ApiResult<WaveData>;
 
   // ---- Power Meter ----
   powerMeterMeasure(): ApiResult<PowerMeterConfig>;
@@ -127,6 +131,10 @@ export interface IVirtualInstruments {
   getFreqCounterConfig(): ApiResult<FrequencyCounterConfig>;
   setFreqCounterReader(reader: (() => number) | null): void;
   setFreqCounterGlobalFallback(reader: (() => number) | null): void;
+  /** 静默喂入输入端电压（仿真步进） */
+  freqCounterFeedSignalSample(volts: number): void;
+  /** 输入信号波形（面板 Canvas） */
+  getFreqCounterWave(): ApiResult<WaveData>;
 
   getInstrumentSnapshot(): InstrumentSnapshotView;
   feedSimulationWaves(waves: WaveData[]): ApiResult<void>;

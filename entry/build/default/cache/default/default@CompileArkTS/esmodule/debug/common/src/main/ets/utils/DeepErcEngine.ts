@@ -86,7 +86,8 @@ export class DeepErcEngine {
                 if (val.length === 0) {
                     val = comp.libraryId.replace('R_', '');
                 }
-                const parsed = UnitParser.parseResistance(val.endsWith('Ω') ? val : `${val}Ω`);
+                const coerced = UnitParser.coerceResistorParam(comp.libraryId, val);
+                const parsed = UnitParser.parseResistance(coerced);
                 const powerStr = paramMapGet(comp.parameters, 'power', '0.25W');
                 const powerParsed = UnitParser.parsePower(powerStr.length > 0 ? powerStr : '0.25W');
                 const powerW = powerParsed.valid ? powerParsed.numeric : 0.25;

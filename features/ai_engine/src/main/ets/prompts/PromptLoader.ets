@@ -23,6 +23,7 @@ import { SELF_REVIEW_PROMPT } from './templates/SelfReviewPrompt';
 import { DIAG_PROMPT } from './templates/DiagPrompt';
 import { GEN_SCH_PROMPT } from './templates/GenSchPrompt';
 import { MODULAR_PLAN_PROMPT } from './templates/ModularPlanPrompt';
+import { EDIT_PLAN_PROMPT } from './templates/EditPlanPrompt';
 import { CircuitIntent } from '../algorithms/CircuitIntent';
 import {
   assembleDeviceSelectSystem, assembleNetPlanSystem
@@ -43,6 +44,8 @@ export interface RenderEnrichOptions {
    * 仍附带完整 libDevId 清单，避免锁死选型。
    */
   filterPinsByPrompt?: string;
+  /** 板上/已选 libDevId → 注入器件/仪器意图片段 */
+  libIdsForFragments?: string[];
 }
 
 interface ClusterInfo {
@@ -314,6 +317,8 @@ export class PromptLoader {
         return SELF_REVIEW_PROMPT;
       case 'modular_plan':
         return MODULAR_PLAN_PROMPT;
+      case 'edit_plan':
+        return EDIT_PLAN_PROMPT;
       default:
         Logger.error(INSTR_TRACE_TAG,
           `[AI_PROMPT] unknown template name="${name}" — refuse silent DEVICE_SELECT fallback`);
@@ -328,13 +333,14 @@ export class PromptLoader {
   }
 
   /** 按 CircuitIntent 替换 device_select / net_plan 的 system */
-  static loadForIntent(name: string, intent: CircuitIntent, userPrompt: string = ''): PromptTemplate {
+  static loadForIntent(name: string, intent: CircuitIntent, userPrompt: string = '',
+    libIds: string[] = []): PromptTemplate {
     const base = PromptLoader.load(name);
     if (name === 'device_select') {
       const t: PromptTemplate = {
         id: base.id,
         version: base.version,
-        system: assembleDeviceSelectSystem(intent, userPrompt),
+        system: assembleDeviceSelectSystem(intent, userPrompt, libIds),
         userTemplate: base.userTemplate
       };
       return t;
@@ -343,7 +349,7 @@ export class PromptLoader {
       const t: PromptTemplate = {
         id: base.id,
         version: base.version,
-        system: assembleNetPlanSystem(intent),
+        system: assembleNetPlanSystem(intent, libIds),
         userTemplate: base.userTemplate
       };
       return t;
@@ -380,9 +386,11 @@ export class PromptLoader {
         }
       }
       if (template.id.indexOf('device_select') >= 0) {
-        effective = PromptLoader.loadForIntent('device_select', options.intent, userPromptHint);
+        const fragIds = options.libIdsForFragments ?? [];
+        effective = PromptLoader.loadForIntent('device_select', options.intent, userPromptHint, fragIds);
       } else if (template.id.indexOf('net_plan') >= 0) {
-        effective = PromptLoader.loadForIntent('net_plan', options.intent);
+        const fragIds = options.libIdsForFragments ?? [];
+        effective = PromptLoader.loadForIntent('net_plan', options.intent, '', fragIds);
       }
     }
     if (cachedCatalogSummary.length === 0) {

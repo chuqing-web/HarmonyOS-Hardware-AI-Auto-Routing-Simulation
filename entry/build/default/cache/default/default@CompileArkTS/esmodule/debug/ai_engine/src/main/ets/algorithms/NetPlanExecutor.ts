@@ -1,5 +1,5 @@
 import { IdUtil, makeRouteLine, DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, Logger, INSTR_TRACE_TAG, traceAiDiag } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { SchTopology, NetInfo, NetLabelInfo, DeviceInst, NetNodeRef, Point2D, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchTopology, NetInfo, NetLabelInfo, DeviceInst, NetNodeRef, Point2D, RouteLine, WorldHitRect } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 import { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
@@ -49,6 +49,17 @@ export interface NetPlanExecutionResult {
     stubWireCount: number;
     notes: string;
     failures: string[];
+}
+/** 增量合并建网结果：保留未变网导线/标号 */
+export interface NetPlanMergeResult {
+    topology: SchTopology;
+    netCount: number;
+    labelCount: number;
+    stubWireCount: number;
+    notes: string;
+    failures: string[];
+    changedNetNames: string[];
+    preservedNetNames: string[];
 }
 interface LabelPinEntry {
     dev: DeviceInst;
@@ -1214,6 +1225,358 @@ export class NetPlanExecutor {
             traceAiDiag('AI_PIPE', 'net_plan_exec_fail', failures.slice(0, 16), 16);
         }
         return { topology: topo, netCount, labelCount, stubWireCount, notes, failures };
+    }
+    /**
+     * 增量合并建网：按网脚指纹保留未变更网络的 net/label/wire，仅重建变更/新增网。
+     * 绝不先清空全部网线。edit 路径专用；create 仍用 execute。
+     */
+    static executeMerge(topo: SchTopology, plan: NetPlanResult, removeNetNames?: string[]): NetPlanMergeResult {
+        const failures: string[] = [];
+        const changedNetNames: string[] = [];
+        const preservedNetNames: string[] = [];
+        NetPlanExecutor.sanitizePinIdsInPlan(plan);
+        NetPlanExecutor.canonicalizeLibPinsInPlan(plan, topo);
+        NetPlanExecutor.stripInstrumentSenseFromPowerNets(plan, topo);
+        NetPlanExecutor.stripUnusedOscChannels(plan);
+        NetPlanExecutor.prepareModes(plan);
+        const existingFp = NetPlanExecutor.buildExistingNetFingerprints(topo);
+        const planFp = NetPlanExecutor.buildPlanNetFingerprints(plan, topo);
+        const removeSet = new Set<string>();
+        if (removeNetNames) {
+            for (let i = 0; i < removeNetNames.length; i++) {
+                const n = (removeNetNames[i] ?? '').trim();
+                if (n.length > 0) {
+                    removeSet.add(n);
+                }
+            }
+        }
+        const planNameSet = new Set<string>();
+        for (let i = 0; i < plan.nets.length; i++) {
+            planNameSet.add(plan.nets[i].name);
+        }
+        // 分类：保留 / 重建
+        const preserveNames = new Set<string>();
+        for (let i = 0; i < plan.nets.length; i++) {
+            const name = plan.nets[i].name;
+            if (removeSet.has(name)) {
+                changedNetNames.push(name);
+                continue;
+            }
+            const oldFp = existingFp.get(name) ?? '';
+            const newFp = planFp.get(name) ?? '';
+            if (oldFp.length > 0 && oldFp === newFp) {
+                preserveNames.add(name);
+                preservedNetNames.push(name);
+            }
+            else {
+                changedNetNames.push(name);
+            }
+        }
+        // 现有网不在目标计划中 → 删除（计入 changed）
+        for (let i = 0; i < topo.netList.length; i++) {
+            const name = topo.netList[i].netName;
+            if (!planNameSet.has(name) || removeSet.has(name)) {
+                if (changedNetNames.indexOf(name) < 0) {
+                    changedNetNames.push(name);
+                }
+            }
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] net_plan_merge BEGIN planNets=${plan.nets.length}` +
+            ` preserve=${preservedNetNames.length} change=${changedNetNames.length}` +
+            ` devices=${topo.deviceList.length}`);
+        // 保留未变网的网/标号/导线
+        const keepNetUuids = new Set<string>();
+        const keepNets: NetInfo[] = [];
+        for (let i = 0; i < topo.netList.length; i++) {
+            const net = topo.netList[i];
+            if (preserveNames.has(net.netName)) {
+                keepNets.push(net);
+                keepNetUuids.add(net.netUuid);
+            }
+        }
+        const keepLabels: NetLabelInfo[] = [];
+        for (let i = 0; i < topo.netLabelList.length; i++) {
+            const lb = topo.netLabelList[i];
+            if (keepNetUuids.has(lb.netUuid)) {
+                keepLabels.push(lb);
+            }
+        }
+        const keepWires: RouteLine[] = [];
+        for (let i = 0; i < topo.wireList.length; i++) {
+            const w = topo.wireList[i];
+            if (keepNetUuids.has(w.netUuid)) {
+                keepWires.push(w);
+            }
+        }
+        topo.netList = keepNets;
+        topo.netLabelList = keepLabels;
+        topo.wireList = keepWires;
+        // 仅对变更/新增网执行追加建网
+        const rebuildNets: NetPlanEntry[] = [];
+        for (let i = 0; i < plan.nets.length; i++) {
+            if (!preserveNames.has(plan.nets[i].name)) {
+                rebuildNets.push(plan.nets[i]);
+            }
+        }
+        let netCount = keepNets.length;
+        let labelCount = keepLabels.length;
+        let stubWireCount = keepWires.length;
+        if (rebuildNets.length > 0) {
+            const rebuildPlan: NetPlanResult = {
+                nets: rebuildNets,
+                labels: plan.labels ?? [],
+                wiringHints: plan.wiringHints,
+                routeStrategy: plan.routeStrategy,
+                topologyNotes: plan.topologyNotes
+            };
+            const append = NetPlanExecutor.executeAppend(topo, rebuildPlan);
+            netCount = topo.netList.length;
+            labelCount = topo.netLabelList.length;
+            stubWireCount = append.stubWireCount;
+            for (let fi = 0; fi < append.failures.length; fi++) {
+                failures.push(append.failures[fi]);
+            }
+        }
+        if (topo.netList.length === 0 && topo.deviceList.length > 0) {
+            failures.push('LLM netPlan merge 后无有效网络');
+        }
+        const notes = `merge preserve=${preservedNetNames.length} change=${changedNetNames.length}` +
+            (plan.topologyNotes.length > 0 ? ` | ${plan.topologyNotes}` : '');
+        NetPlanExecutor.auditPinWorldCollisions(topo);
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] net_plan_merge END nets=${netCount} labels=${labelCount}` +
+            ` wires=${topo.wireList.length} preserve=[${preservedNetNames.slice(0, 8).join(',')}]` +
+            ` change=[${changedNetNames.slice(0, 8).join(',')}] failures=${failures.length}`);
+        const result: NetPlanMergeResult = {
+            topology: topo,
+            netCount,
+            labelCount,
+            stubWireCount,
+            notes,
+            failures,
+            changedNetNames,
+            preservedNetNames
+        };
+        return result;
+    }
+    /** 现有拓扑网脚指纹：netName → sorted "REF.PIN" */
+    static buildExistingNetFingerprints(topo: SchTopology): Map<string, string> {
+        const uuidToRef = new Map<string, string>();
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            uuidToRef.set(d.instUuid, d.refName);
+        }
+        const out = new Map<string, string>();
+        for (let ni = 0; ni < topo.netList.length; ni++) {
+            const net = topo.netList[ni];
+            const keys: string[] = [];
+            for (let ki = 0; ki < (net.nodeList?.length ?? 0); ki++) {
+                const node = net.nodeList[ki];
+                const ref = uuidToRef.get(node.devUuid) ?? node.devUuid;
+                const pin = (node.pinId ?? '').toUpperCase();
+                keys.push(`${ref.toUpperCase()}.${pin}`);
+            }
+            keys.sort();
+            out.set(net.netName, keys.join('|'));
+        }
+        return out;
+    }
+    /** 计划网脚指纹（按位号/库 ID 解析到现图实例） */
+    static buildPlanNetFingerprints(plan: NetPlanResult, topo: SchTopology): Map<string, string> {
+        const out = new Map<string, string>();
+        for (let ni = 0; ni < plan.nets.length; ni++) {
+            const net = plan.nets[ni];
+            const keys: string[] = [];
+            for (let ci = 0; ci < net.connections.length; ci++) {
+                const c = net.connections[ci];
+                const resolved = NetPlanExecutor.resolveCompRef(c.compRef, topo);
+                const ref = (resolved?.refName ?? c.compRef).toUpperCase();
+                const pin = (c.pinId ?? '').toUpperCase();
+                keys.push(`${ref}.${pin}`);
+            }
+            keys.sort();
+            out.set(net.name, keys.join('|'));
+        }
+        return out;
+    }
+    /** 解析 plan compRef → 现图器件（位号优先，其次唯一 libDevId） */
+    private static resolveCompRef(compRef: string, topo: SchTopology): DeviceInst | null {
+        const key = (compRef ?? '').trim();
+        if (key.length === 0) {
+            return null;
+        }
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            if (topo.deviceList[i].refName === key) {
+                return topo.deviceList[i];
+            }
+        }
+        const matches: DeviceInst[] = [];
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            if (topo.deviceList[i].libDevId === key) {
+                matches.push(topo.deviceList[i]);
+            }
+        }
+        if (matches.length === 1) {
+            return matches[0];
+        }
+        return null;
+    }
+    /**
+     * 在不清空现有网/线的前提下追加 plan 中的网络（execute 的追加版）。
+     * 调用方须已剔除将重建的旧网。
+     */
+    static executeAppend(topo: SchTopology, plan: NetPlanResult): NetPlanExecutionResult {
+        const failures: string[] = [];
+        let netCount = 0;
+        let labelCount = 0;
+        let stubWireCount = 0;
+        const refQueues = new Map<string, DeviceInst[]>();
+        const libQueues = new Map<string, DeviceInst[]>();
+        const libCounts = new Map<string, number>();
+        const stickyByKey = new Map<string, DeviceInst>();
+        const allDevs = topo.deviceList.slice();
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            const rq = refQueues.get(d.refName) ?? [];
+            rq.push(d);
+            refQueues.set(d.refName, rq);
+            const lq = libQueues.get(d.libDevId) ?? [];
+            lq.push(d);
+            libQueues.set(d.libDevId, lq);
+            libCounts.set(d.libDevId, (libCounts.get(d.libDevId) ?? 0) + 1);
+        }
+        for (let ni = 0; ni < plan.nets.length; ni++) {
+            const netPlan = plan.nets[ni];
+            const allLabel = netPlan.connections.length >= 1 &&
+                netPlan.connections.every(c => c.mode === 'joinByLabel');
+            if (netPlan.connections.length < 2 && !allLabel) {
+                failures.push(`网络 "${netPlan.name}" 只有 ${netPlan.connections.length} 个连接，跳过(需≥2或单脚标号)`);
+                continue;
+            }
+            const nodeList: NetNodeRef[] = [];
+            const labelPins: LabelPinEntry[] = [];
+            const netLocal = new Map<string, DeviceInst>();
+            for (let ci = 0; ci < netPlan.connections.length; ci++) {
+                const conn = netPlan.connections[ci];
+                let dev = netLocal.get(conn.compRef);
+                if (!dev) {
+                    dev = stickyByKey.get(conn.compRef);
+                }
+                if (!dev) {
+                    const taken = NetPlanExecutor.takeDevice(conn.compRef, refQueues, libQueues, allDevs);
+                    dev = taken !== null ? taken : undefined;
+                    if (dev) {
+                        stickyByKey.set(dev.refName, dev);
+                        if ((libCounts.get(dev.libDevId) ?? 0) <= 1) {
+                            stickyByKey.set(dev.libDevId, dev);
+                            stickyByKey.set(conn.compRef, dev);
+                        }
+                        else if (conn.compRef === dev.refName) {
+                            stickyByKey.set(conn.compRef, dev);
+                        }
+                    }
+                }
+                if (dev) {
+                    netLocal.set(conn.compRef, dev);
+                }
+                if (!dev) {
+                    failures.push(`器件 "${conn.compRef}" 不存在，跳过连接`);
+                    continue;
+                }
+                const nodeRef: NetNodeRef = {
+                    devUuid: dev.instUuid,
+                    pinId: conn.pinId,
+                    pinName: conn.pinName.length > 0 ? conn.pinName : conn.pinId
+                };
+                nodeList.push(nodeRef);
+                if (conn.mode === 'joinByLabel') {
+                    const lp: LabelPinEntry = { dev: dev, pinId: conn.pinId, pinName: conn.pinName };
+                    labelPins.push(lp);
+                }
+            }
+            if (nodeList.length < 1) {
+                failures.push(`网络 "${netPlan.name}" 解析后无有效连接`);
+                continue;
+            }
+            if (nodeList.length < 2 && labelPins.length < 1) {
+                failures.push(`网络 "${netPlan.name}" 解析后不足2个连接`);
+                continue;
+            }
+            let hasIPlus = false;
+            let hasIMinus = false;
+            for (const conn of netPlan.connections) {
+                const pn = (conn.pinName ?? conn.pinId ?? '').toUpperCase();
+                if (pn === 'I+' || pn === 'I_PLUS') {
+                    hasIPlus = true;
+                }
+                if (pn === 'I-' || pn === 'I_MINUS') {
+                    hasIMinus = true;
+                }
+            }
+            if (hasIPlus && hasIMinus) {
+                failures.push(`电流表 I+/I- 在同一网络 "${netPlan.name}" → 短路！拒绝执行`);
+                continue;
+            }
+            let hasVccSym = false;
+            let hasGndSym = false;
+            for (let nsi = 0; nsi < nodeList.length; nsi++) {
+                const nd = nodeList[nsi];
+                const d = topo.deviceList.find(x => x.instUuid === nd.devUuid);
+                const lib = (d?.libDevId ?? '').toUpperCase();
+                if (lib === 'VCC' || lib === 'VDD') {
+                    hasVccSym = true;
+                }
+                if (lib === 'GND' || lib === 'VSS') {
+                    hasGndSym = true;
+                }
+            }
+            if (hasVccSym && hasGndSym) {
+                failures.push(`VCC 与 GND 符号同网 "${netPlan.name}" → 短路！拒绝执行`);
+                continue;
+            }
+            const isPower = netPlan.type === 'power' || netPlan.type === 'ground';
+            const netInfo: NetInfo = {
+                netUuid: IdUtil.generate('net'),
+                netName: netPlan.name,
+                displayName: netPlan.name,
+                nodeList: nodeList,
+                isPower: isPower,
+                isAnalog: false,
+                isBusMember: false,
+                busParentUuid: '',
+                defaultVoltage: netPlan.type === 'power' ? 5.0 : 0.0,
+                ercWarning: false,
+                connectedProbeIds: []
+            };
+            topo.netList.push(netInfo);
+            netCount++;
+            for (const lp of labelPins) {
+                const labelEntry = plan.labels.find(l => l.netName === netPlan.name && l.atComp === lp.dev.refName && l.atPin === lp.pinId);
+                const text = labelEntry ? labelEntry.text : netPlan.name;
+                const pinPos = PinWorldResolver.forDeviceInst(lp.dev, lp.pinId, lp.pinName);
+                const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos);
+                const labelInfo: NetLabelInfo = {
+                    id: IdUtil.generate('lbl'),
+                    netUuid: netInfo.netUuid,
+                    text: text,
+                    x: labelPos.x,
+                    y: labelPos.y,
+                    global: false
+                };
+                topo.netLabelList.push(labelInfo);
+                labelCount++;
+                const routeLine = makeRouteLine(netInfo.netUuid, [pinPos, labelPos], false);
+                topo.wireList.push(routeLine);
+                stubWireCount++;
+            }
+        }
+        return {
+            topology: topo,
+            netCount,
+            labelCount,
+            stubWireCount,
+            notes: `append ${netCount} nets`,
+            failures
+        };
     }
     /**
      * 检测不同网/不同脚落在同一世界坐标（脏 pinId 典型症状：R1.1 与 R1.2 都落到 pin2）。

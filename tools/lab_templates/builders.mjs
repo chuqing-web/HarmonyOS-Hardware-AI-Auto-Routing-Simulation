@@ -1056,6 +1056,52 @@ export function buildLab555Astable(doc) {
   ]);
 }
 
+/**
+ * lab_555_monostable: LM555（NE555 同类）单稳态延时 + 按键触发 + OUT→R→LED
+ * t≈1.1·RT·CT≈1.1s（RT=100k CT=10µF）；按下 SW 拉低 TRIG → OUT 高亮 LED → 延时后熄灭
+ * 拓扑对齐 AiTopologyFixKit.wire555Monostable / DeviceUsageManual LM555 单稳态
+ */
+export function buildLab555Monostable(doc) {
+  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
+  vcc.parameters.voltage = '5V';
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 360 });
+  const t555 = K.place(doc, 'LM555', 'U1', { x: 320, y: 160 });
+  const rt = R(doc, 'R_100k', 'RT', 160, 60);
+  const rp = R(doc, 'R_10k', 'RP', 160, 200);
+  const ct = C(doc, 'C_10uF', 'CT', 160, 320);
+  const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 40, y: 200 });
+  const cDec = C(doc, 'C_100nF', 'CD1', 480, 40);
+  const cCtrl = C(doc, 'C_100nF', 'CC1', 480, 300);
+  const rLed = R(doc, 'R_330', 'RLED', 540, 160);
+  const led = K.place(doc, 'LED_RED', 'D1', { x: 680, y: 160 });
+
+  // 电源：VCC / RESET / 定时电阻上端 / TRIG 上拉 / 去耦
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [
+    p(vcc, '1', 'VCC'), p(t555, 'VCC', 'VCC'), p(t555, 'RESET', 'RESET'),
+    p(rt, '1'), p(rp, '1'), p(cDec, '1')
+  ]);
+  // 定时节点：THRES ≡ DISCH ≡ RT.2 ≡ CT.1（禁止与 TRIG 并网）
+  K.joinByLabel(doc, '555_RC', NetType.SIGNAL, [
+    p(t555, 'THRES', 'THRES'), p(t555, 'DISCH', 'DISCH'),
+    p(rt, '2'), p(ct, '1')
+  ]);
+  // 触发：TRIG ← RP 上拉；SW 另一端接 GND，按下拉低 TRIG
+  K.joinByLabel(doc, 'TRIG', NetType.SIGNAL, [
+    p(t555, 'TRIG', 'TRIG'), p(rp, '2'), p(sw, '2')
+  ]);
+  K.joinByLabel(doc, '555_OUT', NetType.SIGNAL, [
+    p(t555, 'OUT', 'OUT'), p(rLed, '1')
+  ]);
+  K.series2(doc, 'LED_PATH', p(rLed, '2'), p(led, 'A', 'A'));
+  K.joinByLabel(doc, '555_CTRL', NetType.SIGNAL, [
+    p(t555, 'CTRL', 'CTRL'), p(cCtrl, '1')
+  ]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(t555, 'GND', 'GND'), p(ct, '2'),
+    p(cDec, '2'), p(cCtrl, '2'), p(led, 'K', 'K'), p(sw, '1')
+  ]);
+}
+
 export const TEMPLATE_DEFS = [
   { id: 'lab_power', name: '直流电源电路', description: 'LM7805 稳压电源 + 滤波 + 负载测量', build: buildLabPower },
   { id: 'lab_amp', name: '运算放大电路', description: 'LM358 同相放大器（可 MNA 仿真）', build: buildLabAmp },
@@ -1077,5 +1123,6 @@ export const TEMPLATE_DEFS = [
   { id: 'lab_potentiometer', name: '滑动变阻器实验', description: 'POT_1k/10k/100k 分压测电压', build: buildLabPotentiometer },
   { id: 'lab_schmitt', name: '运放滞回比较器整形', description: 'UA741 正反馈滞回 + 正弦激励，示波器观测整形方波', build: buildLabSchmitt },
   { id: 'lab_integrator', name: 'RC积分电路', description: 'UA741 反相积分 + 方波激励，示波器观测三角波', build: buildLabIntegrator },
-  { id: 'lab_555_astable', name: '555多谐振荡器', description: 'LM555 无稳态振荡(~69Hz) + LED，示波器 10ms/div 观测方波', build: buildLab555Astable }
+  { id: 'lab_555_astable', name: '555多谐振荡器', description: 'LM555 无稳态振荡(~69Hz) + LED，示波器 10ms/div 观测方波', build: buildLab555Astable },
+  { id: 'lab_555_monostable', name: '555单稳态延时', description: 'LM555(NE555同类) 单稳态 + 按键触发 + RC(~1.1s) + LED 延时熄灭', build: buildLab555Monostable }
 ];

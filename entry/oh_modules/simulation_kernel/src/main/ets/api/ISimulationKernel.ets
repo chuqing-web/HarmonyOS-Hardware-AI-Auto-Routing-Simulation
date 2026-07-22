@@ -61,6 +61,11 @@ export interface ISimulationKernel {
    * 返回切换后的 pressed 值（'0'/'1'），失败返回空串。
    */
   toggleInteractiveSwitch(componentId: string): string;
+  /**
+   * 仿真中点动按键：pressed=true 闭合、false 断开（保留 555 等模拟状态）。
+   * 返回 '0'/'1'，失败返回空串。
+   */
+  setInteractiveSwitchPressed(componentId: string, pressed: boolean): string;
   /** 把模拟网电压采样进 MCU GPIO 输入寄存器（STM32 IDR / 8051 pin）。 */
   syncSpiceToGpioInputs(): void;
   generateSpiceNetlist(): Result<string>;

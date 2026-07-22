@@ -91,6 +91,34 @@ export struct AiSettingsPanel {
       `[AI_UI] OP request_generate | promptLen=${q.length}`);
     this.showStrategyDialog = true;
     this.showModeDialog = false;
+    this.showSelfCheckDialog = false;
+  }
+
+  /** 在现有图基础上修改：跳过策略/落图方式对话框，强制 oneshot + edit */
+  private requestEditExisting(): void {
+    if (this.aiGenerating) {
+      this.statusMessage = '请等待当前任务结束';
+      return;
+    }
+    const q = this.promptText.trim();
+    if (q.length === 0) {
+      this.statusMessage = '请输入提示词（说明要改什么）';
+      Logger.warn(INSTR_TRACE_TAG, '[AI_UI] OP edit_blocked | empty prompt');
+      return;
+    }
+    const n = this.appService.getSchematicComponentCount();
+    if (n <= 0) {
+      this.statusMessage = '画布为空，请先「生成整图」或放置器件后再修改';
+      Logger.warn(INSTR_TRACE_TAG, '[AI_UI] OP edit_blocked | empty canvas');
+      return;
+    }
+    this.showStrategyDialog = false;
+    this.showModeDialog = false;
+    this.showSelfCheckDialog = false;
+    this.pendingStrategy = 'oneshot';
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_UI] OP request_edit_existing | promptLen=${q.length} comps=${n}`);
+    void this.runGenerate('edit');
   }
 
   private pickStrategy(strategy: AiGenerateStrategy): void {
@@ -107,17 +135,22 @@ export struct AiSettingsPanel {
   private async runGenerate(mode: AiGenerateMode): Promise<void> {
     this.showModeDialog = false;
     const q = this.promptText.trim();
-    const strategy = this.pendingStrategy;
-    this.statusMessage = strategy === 'modular'
-      ? '模块并行：整体设计中（请耐心等待）…'
-      : 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…';
+    // 编辑模式强制 oneshot（与 AppService 一致；避免 UI 仍显示模块并行文案）
+    const strategy: AiGenerateStrategy = mode === 'edit' ? 'oneshot' : this.pendingStrategy;
+    this.statusMessage = mode === 'edit'
+      ? 'AI 正在基于现有电路增量修改（请耐心等待）…'
+      : (strategy === 'modular'
+        ? '模块并行：整体设计中（请耐心等待）…'
+        : 'AI 生成中（复杂电路可能需较长时间，请耐心等待）…');
     Logger.info(INSTR_TRACE_TAG,
       `[AI_UI] OP run_generate | mode=${mode} strategy=${strategy} promptLen=${q.length}`);
     const ok = await this.appService.aiGenerateCircuitFromPrompt(q, mode, strategy);
     Logger.info(INSTR_TRACE_TAG,
       `[AI_UI] OP run_generate_done | mode=${mode} strategy=${strategy} ok=${ok}`);
     if (ok) {
-      this.statusMessage = strategy === 'modular' ? '模块并行生图完成' : 'AI 整图生成完成';
+      this.statusMessage = mode === 'edit'
+        ? 'AI 已按提示词更新现有电路'
+        : (strategy === 'modular' ? '模块并行生图完成' : 'AI 整图生成完成');
     } else {
       this.statusMessage = 'AI 生成失败，请检查 API 配置与 instr_trace 日志';
     }
@@ -176,7 +209,7 @@ export struct AiSettingsPanel {
       // ---- 生成区 ----
       ProteusSectionTitle({ title: 'AI 生成整图' })
 
-      Text('输入提示词后一键选型、摆放并连线')
+      Text('「生成整图」新建/替换；「修改现有图」在当前画布上按提示词增量改；「AI自检修复」修连通/ERC')
         .fontSize(9)
         .fontColor(ProteusColors.TEXT_SECONDARY)
         .width('100%')
@@ -194,32 +227,46 @@ export struct AiSettingsPanel {
       Row({ space: 6 }) {
         ProteusClassicBtn({
           label: this.aiGenerating ? '取消' : '生成整图',
-          widthVal: '34%',
+          widthVal: '48%',
           onAction: () => {
             this.requestGenerate();
           }
         })
         ProteusClassicBtn({
+          label: '修改现有图',
+          widthVal: '48%',
+          onAction: () => {
+            this.requestEditExisting();
+          }
+        })
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 6, bottom: 2 })
+
+      Row({ space: 6 }) {
+        ProteusClassicBtn({
           label: 'AI自检修复',
-          widthVal: '42%',
+          widthVal: '70%',
           onAction: () => {
             if (this.aiGenerating) {
               this.statusMessage = '请等待当前任务结束';
               return;
             }
+            this.showStrategyDialog = false;
+            this.showModeDialog = false;
             void this.runSelfCheck();
           }
         })
         ProteusClassicBtn({
           label: '清空',
-          widthVal: '18%',
+          widthVal: '26%',
           onAction: () => {
             this.appService.clearAiGenLogs();
           }
         })
       }
       .width('100%')
-      .padding({ left: 8, right: 8, top: 6, bottom: 4 })
+      .padding({ left: 8, right: 8, top: 2, bottom: 4 })
 
       if (this.aiGenerating) {
         Text(`${this.aiStage.length > 0 ? this.aiStage : 'AI 生成中'} · ${this.aiProgress}%`)
@@ -310,7 +357,7 @@ export struct AiSettingsPanel {
         .border({ width: 1, color: ProteusColors.SELECTED })
       }
 
-      // 替换 / 追加 选择
+      // 替换 / 追加 / 在现有图上更改
       if (this.showModeDialog) {
         Column({ space: 8 }) {
           Text(this.pendingStrategy === 'modular'
@@ -333,6 +380,17 @@ export struct AiSettingsPanel {
               void this.runGenerate('append');
             }
           })
+          ProteusClassicBtn({
+            label: '在现有图上 AI 更改',
+            widthVal: '100%',
+            onAction: () => {
+              void this.runGenerate('edit');
+            }
+          })
+          Text('与顶部「修改现有图」相同：保留当前电路，按提示词增量修改（自动整图一次）')
+            .fontSize(9)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .width('100%')
           ProteusClassicBtn({
             label: '取消',
             widthVal: '100%',

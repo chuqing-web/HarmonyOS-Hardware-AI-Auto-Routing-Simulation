@@ -184,11 +184,17 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 this.syncMcuPinsToSpice();
             }
         }
-        // Settle behavioral switches (555 power-on: TRIG low → Q high). At t=0 DC OP is OK.
+        // Settle behavioral switches (555 power-on: TRIG low → Q high).
+        // 555-only flips must NOT DC-OP (opens C and wipes timing-cap voltage).
         this.analogEngine.pinVoltageSources();
         this.analogEngine.reSolveOp();
         if (this.analogEngine.updateRelayContactsFromCoil()) {
-            this.analogEngine.reSolveOp();
+            if (this.analogEngine.needsDcResolveAfterSwitch()) {
+                this.analogEngine.reSolveOp();
+            }
+            else {
+                this.analogEngine.pinVoltageSources();
+            }
         }
         this.syncVoltagesFromAnalogEngine();
         // Always dump SW/REL/LED so DNO/DNC diagnosis is visible without waiting for GPIO_SYNC
@@ -566,6 +572,10 @@ export class SimulationKernelImpl implements ISimulationKernel {
         const branchCurrents = this.analogEngine.getBranchCurrents();
         branchCurrents.forEach((current: number, name: string) => {
             this.branchCurrents.set(name, current);
+        });
+        // 电流表/功率表面板波形：按器件 UUID 记录 mA 时域（与电压网波形同采样率）
+        this.analogEngine.forEachComponentCurrent((compUuid: string, amps: number) => {
+            this.updateWaveData(`I(${compUuid})`, stepResult.time, amps * 1000, amps);
         });
         // 1.3.13 电源完整性 di/dt 噪声
         this.computeSupplyNoise(stepResult.time);
@@ -1494,6 +1504,38 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 this.analogEngine.setQuietLoad(true);
             }
             try {
+                // SW_PUSH: prefer in-place R update so 555 monostable RC state survives press/release
+                if (param === 'pressed' && SimulationKernelImpl.isPushbuttonLib(comp.libraryId)) {
+                    const pressed = SimulationKernelImpl.isTruthyParam(value);
+                    if (this.analogEngine.setPushbuttonPressed(comp.id, pressed)) {
+                        // A few transient steps: TRIG settles, 555 FF updates; never DC-OP (would open C)
+                        this.settleAfterSwitchChange();
+                        this.syncVoltagesFromAnalogEngine();
+                        this.syncSpiceToGpioInputs();
+                        return { success: true, errCode: ErrCode.OK };
+                    }
+                    // 回退 rebuild：必须先快照 RC/555，否则 OP 清电容 → 单稳态立刻灭
+                    const rcSnap = this.analogEngine.exportReactiveSnapshot();
+                    Logger.info(INSTR_TRACE_TAG, `[SW] in-place miss → rebuild netlist; preserve RC caps=${rcSnap.caps.length} ` +
+                        `t555=${rcSnap.timers.length}`);
+                    this.analogEngine.loadSchematic(this.schematic, this.config);
+                    if (this.topology) {
+                        this.buildSpiceNodeMap(this.topology);
+                    }
+                    if (this.mcuStm32Loaded && this.qemuBridge.isRunning()) {
+                        this.syncStm32GpioToSpice();
+                    }
+                    if (this.mcu8051Loaded) {
+                        this.syncMcuPinsToSpice();
+                    }
+                    // 恢复电容电压 + 555 Q；禁止再 reSolveOp（会再次开路电容）
+                    this.analogEngine.restoreReactiveSnapshot(rcSnap);
+                    this.analogEngine.pinVoltageSources(false);
+                    this.settleAfterSwitchChange();
+                    this.syncVoltagesFromAnalogEngine();
+                    this.syncSpiceToGpioInputs();
+                    return { success: true, errCode: ErrCode.OK };
+                }
                 this.analogEngine.loadSchematic(this.schematic, this.config);
                 if (this.topology) {
                     this.buildSpiceNodeMap(this.topology);
@@ -1526,6 +1568,20 @@ export class SimulationKernelImpl implements ISimulationKernel {
             }
         }
         return { success: true, errCode: ErrCode.OK };
+    }
+    /** 按键/触点变化后跑若干暂态步，更新 555/继电器；555 翻转禁止 DC-OP */
+    private settleAfterSwitchChange(): void {
+        for (let i = 0; i < 10; i++) {
+            this.runSpiceStep();
+            if (this.analogEngine.updateRelayContactsFromCoil()) {
+                if (this.analogEngine.needsDcResolveAfterSwitch()) {
+                    this.analogEngine.reSolveOp();
+                }
+                else {
+                    this.analogEngine.pinVoltageSources(false);
+                }
+            }
+        }
     }
     /** Copy AnalogEngine OP into kernel.nodeVoltages (names + net UUIDs). */
     syncVoltagesFromAnalogEngine(): void {
@@ -1572,6 +1628,37 @@ export class SimulationKernelImpl implements ISimulationKernel {
         Logger.info(INSTR_TRACE_TAG, `[SW] ${comp.refDes} pressed=${next} (${next === '1' ? 'KEY→GND short' : 'open / pull-up'})`);
         this.tracePeripheralIndicators(`sw-toggle-${comp.refDes}`);
         return next;
+    }
+    /**
+     * 仿真中点动按键：按下=闭合、松开=断开（不整表 rebuild，保留 555 定时电容状态）。
+     */
+    setInteractiveSwitchPressed(componentId: string, pressed: boolean): string {
+        if (!this.isSimActive() || !this.schematic) {
+            return '';
+        }
+        const comp = this.schematic.components.find(c => c.id === componentId);
+        if (!comp) {
+            return '';
+        }
+        if (!SimulationKernelImpl.isPushbuttonLib(comp.libraryId)) {
+            return '';
+        }
+        const next = pressed ? '1' : '0';
+        const r = this.setComponentParameter(componentId, 'pressed', next);
+        if (!r.success) {
+            return '';
+        }
+        Logger.info(INSTR_TRACE_TAG, `[SW] ${comp.refDes} pressed=${next} (${pressed ? 'KEY→GND short' : 'open / pull-up'}) moment`);
+        this.tracePeripheralIndicators(`sw-moment-${comp.refDes}`);
+        return next;
+    }
+    private static isPushbuttonLib(libraryId: string): boolean {
+        const lib = libraryId.toUpperCase();
+        return lib === 'SW_PUSH' || lib.includes('SWITCH_PUSH') || lib === 'BUTTON';
+    }
+    private static isTruthyParam(value: string): boolean {
+        const s = value.trim().toLowerCase();
+        return s === '1' || s === 'true' || s === 'yes' || s === 'on' || s === 'pressed';
     }
     /**
      * 仿真中拖动滑动变阻器滑臂。wiper ∈ (0,1)，成功返回 "0.xxx"，失败返回 ''。

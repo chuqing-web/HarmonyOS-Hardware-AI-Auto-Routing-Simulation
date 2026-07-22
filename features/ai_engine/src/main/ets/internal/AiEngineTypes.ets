@@ -60,6 +60,14 @@ export interface PositionEntry {
   position: DevicePosition;
 }
 
+/** 增量编辑：器件位移 */
+export interface EditPlanMove {
+  ref: string;
+  x: number;
+  y: number;
+  rotate: number;
+}
+
 export type DiagLevel = 'warning' | 'error' | 'critical';
 export type DiagTargetType = 'device' | 'net' | 'pin';
 export type MatchLevel = 'exact' | 'fuzzy' | 'domestic_alt' | 'rag';

@@ -147,6 +147,10 @@ export struct ComponentPreview {
     if (def.pins.length === 0) {
       return;
     }
+    // 表头自带大黑框，避免预览双重描边
+    if (def.behaviorModel === 'ammeter_dc' || def.behaviorModel === 'voltmeter_dc') {
+      return;
+    }
     const pinBounds = calcSymbolBounds(def.pins, 0);
     // Skip small 2-pin components (resistors, capacitors, etc.) — same threshold as canvas
     if (pinBounds.width < 50 || pinBounds.height < 40) {

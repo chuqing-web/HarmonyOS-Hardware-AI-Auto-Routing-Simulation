@@ -12,6 +12,7 @@ import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from './proteus/
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
+import { InstrumentWaveExpandStore } from './InstrumentWaveExpandStore';
 
 interface SelectValueOption {
   value: string;
@@ -108,7 +109,11 @@ export struct InstrumentPanel {
   @State uartLog: string = '';
   @State waveTimeData: number[] = [];
   @State waveVoltageData: number[] = [];
+  @State waveCh2TimeData: number[] = [];
   @State waveCh2Data: number[] = [];
+  /** 双通道波形区统一高度（时域 / FFT 一致）；双击可全屏放大 */
+  private readonly oscCanvasHeight: number = 160;
+  private readonly meterCanvasHeight: number = 120;
   @State cursorAIdx: number = 100;
   @State cursorBIdx: number = 200;
   @State cursorMeasureText: string = '';
@@ -119,17 +124,31 @@ export struct InstrumentPanel {
   @State vmReading: string = '--.--';
   @State vmRange: string = '20V';
   @State vmUnit: string = 'V DC';
+  @State vmWaveTime: number[] = [];
+  @State vmWaveData: number[] = [];
+  @State vmWaveFrame: number = 0;
+  /** 表计波形时基 s/div：随信号自适应，固定窗宽产生 CRT 滚动 */
+  @State vmTPerDiv: number = 1e-3;
   @State amType: number = 0;
   @State amReading: string = '--.--';
   @State amRange: string = '200mA';
   @State amUnit: string = 'mA DC';
+  @State amWaveTime: number[] = [];
+  @State amWaveData: number[] = [];
+  @State amWaveFrame: number = 0;
+  @State amTPerDiv: number = 1e-3;
   @State pmVoltage: string = '--';
   @State pmCurrent: string = '--';
   @State pmPower: string = '--';
   @State pmPF: string = '--';
   @State fcReading: string = '----';
   @State fcGateTime: number = 1.0;
+  @State fcWaveTime: number[] = [];
+  @State fcWaveData: number[] = [];
+  @State fcWaveFrame: number = 0;
+  @State fcTPerDiv: number = 1e-3;
   @State oscAutoFit: boolean = true;
+  @State oscFftMode: boolean = false;
   @State oscStatsText: string = '';
   @State oscTriggerHold: boolean = false;
   @State oscLiveVolts: string = '--';
@@ -203,11 +222,196 @@ export struct InstrumentPanel {
 
   onSimRunningChange(): void {
     if (this.simRunning) {
+      // 新一次仿真：清空本面板与放大弹窗会话缓存
+      this.clearWaveSessionForNewSim();
       this.startAutoRefreshTimer('sim_start');
     } else {
       // 停仿后做最后一次读数（冻结值），再清定时器，避免 TIMER_FIRE 刷屏
       this.autoRefreshReadings('sim_stop');
       this.stopAutoRefreshTimer('sim_stop');
+    }
+  }
+
+  /** 下次仿真开始时清空侧栏波形与放大弹窗会话 */
+  private clearWaveSessionForNewSim(): void {
+    this.waveTimeData = [];
+    this.waveVoltageData = [];
+    this.waveCh2TimeData = [];
+    this.waveCh2Data = [];
+    this.oscStatsText = '';
+    this.oscLiveVolts = '--';
+    this.cursorMeasureText = '';
+    this.logicChannelData = [];
+    this.logicSampleCount = 128;
+    this.decodedFramesText = '';
+    this.vmWaveTime = [];
+    this.vmWaveData = [];
+    this.amWaveTime = [];
+    this.amWaveData = [];
+    this.fcWaveTime = [];
+    this.fcWaveData = [];
+    this.oscFrameId = this.oscFrameId + 1;
+    this.vmWaveFrame = this.vmWaveFrame + 1;
+    this.amWaveFrame = this.amWaveFrame + 1;
+    this.fcWaveFrame = this.fcWaveFrame + 1;
+    InstrumentWaveExpandStore.getInstance().clearSession();
+  }
+
+  @Builder
+  WaveExpandHint() {
+    Text('双击波形放大')
+      .fontSize(9)
+      .fontColor(ProteusColors.TEXT_SECONDARY)
+      .width('100%')
+      .textAlign(TextAlign.End)
+      .padding({ top: 2, right: 2 })
+  }
+
+  private openWaveExpand(kind: string): void {
+    const store = InstrumentWaveExpandStore.getInstance();
+    const ref = this.selectionRefDes.length > 0 ? this.selectionRefDes : this.selectionLibraryId;
+    if (kind === 'osc') {
+      this.pushOscToStore();
+      store.open('osc', `示波器 ${ref}`, this.buildOscDetail());
+    } else if (kind === 'la') {
+      this.pushLogicToStore();
+      store.open('la', `逻辑分析仪 ${ref}`, this.buildLogicDetail());
+    } else if (kind === 'vm') {
+      this.pushMeterToStore('vm');
+      store.open('vm', `电压表 ${ref}`, this.buildVmDetail());
+    } else if (kind === 'am') {
+      this.pushMeterToStore('am');
+      store.open('am', `电流表 ${ref}`, this.buildAmDetail());
+    } else if (kind === 'fc') {
+      this.pushMeterToStore('fc');
+      store.open('fc', `频率计 ${ref}`, this.buildFcDetail());
+    }
+  }
+
+  private buildOscDetail(): string {
+    const n = this.waveVoltageData.length;
+    const n2 = this.waveCh2Data.length;
+    const parts: string[] = [];
+    parts.push(`CH1 采样点=${n}`);
+    if (n2 > 1) {
+      parts.push(`CH2 采样点=${n2}`);
+    }
+    parts.push(`时基=${this.timebaseLabels[this.timebaseIdx]}`);
+    parts.push(`档位=${this.voltageScaleLabels[this.voltageScaleIdx]}/div`);
+    parts.push(`实时=${this.oscLiveVolts}`);
+    if (this.oscStatsText.length > 0) {
+      parts.push(this.oscStatsText);
+    }
+    if (this.cursorMeasureText.length > 0) {
+      parts.push(`光标: ${this.cursorMeasureText}`);
+    }
+    parts.push(this.oscFftMode ? '模式=FFT' : '模式=时域');
+    return parts.join('\n');
+  }
+
+  private buildLogicDetail(): string {
+    const parts: string[] = [];
+    parts.push(`通道数=${this.logicChannels}`);
+    parts.push(`采样点=${this.logicSampleCount}`);
+    parts.push(`已捕获通道=${this.logicChannelData.length}`);
+    parts.push(`阈值=${this.threshold} mV`);
+    if (this.decodedFramesText.length > 0) {
+      parts.push(`解码:\n${this.decodedFramesText}`);
+    }
+    return parts.join('\n');
+  }
+
+  private buildVmDetail(): string {
+    return [
+      `读数=${this.vmReading} ${this.vmUnit}`,
+      `量程=${this.vmRange}`,
+      `采样点=${this.vmWaveData.length}`,
+      `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+    ].join('\n');
+  }
+
+  private buildAmDetail(): string {
+    return [
+      `读数=${this.amReading} ${this.amUnit}`,
+      `量程=${this.amRange}`,
+      `采样点=${this.amWaveData.length}`,
+      `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+    ].join('\n');
+  }
+
+  private buildFcDetail(): string {
+    return [
+      `频率=${this.fcReading}`,
+      `闸门=${this.fcGateTime}s`,
+      `采样点=${this.fcWaveData.length}`,
+      `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+    ].join('\n');
+  }
+
+  private pushOscToStore(): void {
+    InstrumentWaveExpandStore.getInstance().setOscSnapshot(
+      this.waveTimeData, this.waveVoltageData,
+      this.waveCh2TimeData, this.waveCh2Data,
+      this.oscFftMode ? 'FFT CH1' : 'CH1',
+      this.oscFftMode ? '#ffab40' : '#00e676',
+      this.oscFftMode ? 'FFT CH2' : 'CH2',
+      this.oscFftMode ? '#ffd54f' : '#40c4ff',
+      this.voltagePerDiv[this.voltageScaleIdx],
+      this.timebaseSecPerDiv(),
+      this.triggerLevel,
+      this.oscAutoFit,
+      this.oscFrameId,
+      this.buildOscDetail()
+    );
+  }
+
+  private pushLogicToStore(): void {
+    InstrumentWaveExpandStore.getInstance().setLogicSnapshot(
+      this.logicChannelData, this.logicChannels, this.logicSampleCount, this.buildLogicDetail()
+    );
+  }
+
+  private pushMeterToStore(kind: string): void {
+    const store = InstrumentWaveExpandStore.getInstance();
+    if (kind === 'vm') {
+      store.setMeterSnapshot(
+        this.vmWaveTime, this.vmWaveData, 'ΔV', '#66bb6a',
+        this.vmWaveFrame, this.buildVmDetail(), this.vmTPerDiv
+      );
+    } else if (kind === 'am') {
+      store.setMeterSnapshot(
+        this.amWaveTime, this.amWaveData, 'I(mA)', '#ffa726',
+        this.amWaveFrame, this.buildAmDetail(), this.amTPerDiv
+      );
+    } else if (kind === 'fc') {
+      store.setMeterSnapshot(
+        this.fcWaveTime, this.fcWaveData, 'IN', '#42a5f5',
+        this.fcWaveFrame, this.buildFcDetail(), this.fcTPerDiv
+      );
+    }
+  }
+
+  /** 刷新读数后同步放大弹窗会话（同一次仿真内保留并实时更新） */
+  private syncExpandSessionAfterRefresh(): void {
+    const store = InstrumentWaveExpandStore.getInstance();
+    if (!store.visible) {
+      return;
+    }
+    if (store.kind === 'osc') {
+      this.pushOscToStore();
+      store.refreshIfOpen('osc');
+    } else if (store.kind === 'la') {
+      this.pushLogicToStore();
+      store.refreshIfOpen('la');
+    } else if (store.kind === 'vm') {
+      this.pushMeterToStore('vm');
+      store.refreshIfOpen('vm');
+    } else if (store.kind === 'am') {
+      this.pushMeterToStore('am');
+      store.refreshIfOpen('am');
+    } else if (store.kind === 'fc') {
+      this.pushMeterToStore('fc');
+      store.refreshIfOpen('fc');
     }
   }
 
@@ -455,6 +659,9 @@ export struct InstrumentPanel {
           this.vmRange = `${vcfg.data.range}V`;
           this.vmUnit = vcfg.data.unit ?? 'V DC';
         }
+        if (source !== 'wave') {
+          this.refreshMeterWave('vm');
+        }
       } else if (instrKind === 'am') {
         let refreshed = false;
         let readId = selectionMatches ? this.selectedComponentId : '';
@@ -484,29 +691,55 @@ export struct InstrumentPanel {
           this.amRange = `${acfg.data.range}mA`;
           this.amUnit = acfg.data.unit ?? 'mA DC';
         }
+        if (source !== 'wave') {
+          this.refreshMeterWave('am');
+        }
       } else if (instrKind === 'osc') {
-        if (this.oscAutoFit) {
+        const hasScope = this.appService.findFirstSchematicInstrumentId('osc').length > 0;
+        if (!hasScope) {
+          this.waveTimeData = [];
+          this.waveVoltageData = [];
+          this.waveCh2TimeData = [];
+          this.waveCh2Data = [];
+          this.oscLiveVolts = '--';
+          this.oscStatsText = '请先在原理图放置示波器';
+          this.oscFrameId = this.oscFrameId + 1;
+          dataPath = 'no_scope_on_schematic';
+        } else if (this.oscAutoFit) {
           this.applyOscAutoScale();
         }
-        const osc = this.appService.instruments.getOscilloscopeWave(0);
-        if (osc.success && osc.data) {
-          this.waveTimeData = osc.data.timeAxis.slice();
-          this.waveVoltageData = osc.data.voltageAxis.slice();
-          this.oscFrameId = this.oscFrameId + 1;
-          this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
-          const last = InstrumentPanel.lastFinite(osc.data.voltageAxis);
-          if (last !== null) {
-            this.oscLiveVolts = `${last.toFixed(3)} V`;
+        if (hasScope) {
+          const osc = this.appService.instruments.getOscilloscopeWave(0);
+          if (osc.success && osc.data && osc.data.voltageAxis.length >= 2 &&
+            InstrumentPanel.isDisplayableScopeWave(osc.data.netName, osc.data.probeName)) {
+            this.oscFftMode = osc.data.waveType === 'freq' || osc.data.netName === 'MATH_FFT';
+            this.waveTimeData = osc.data.timeAxis.slice();
+            this.waveVoltageData = osc.data.voltageAxis.slice();
+            this.oscFrameId = this.oscFrameId + 1;
+            this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
+            const last = InstrumentPanel.lastFinite(osc.data.voltageAxis);
+            if (last !== null) {
+              this.oscLiveVolts = this.oscFftMode
+                ? `${last.toFixed(1)} dB`
+                : `${last.toFixed(3)} V`;
+            }
+            dataPath = `wave pts=${osc.data.voltageAxis.length}${this.oscFftMode ? ' fft' : ''}`;
+          } else {
+            this.waveTimeData = [];
+            this.waveVoltageData = [];
+            this.oscFrameId = this.oscFrameId + 1;
+            dataPath = 'wave_empty';
           }
-          dataPath = `wave pts=${osc.data.voltageAxis.length}`;
-        } else {
-          dataPath = 'wave_empty';
-        }
-        const osc2 = this.appService.instruments.getOscilloscopeWave(1);
-        if (osc2.success && osc2.data && InstrumentPanel.isLiveScopeChannel(osc2.data.netName)) {
-          this.waveCh2Data = osc2.data.voltageAxis.slice();
-        } else {
-          this.waveCh2Data = [];
+          const osc2 = this.appService.instruments.getOscilloscopeWave(1);
+          if (osc2.success && osc2.data &&
+            InstrumentPanel.isDisplayableScopeWave(osc2.data.netName, osc2.data.probeName) &&
+            osc2.data.voltageAxis.length >= 2) {
+            this.waveCh2TimeData = osc2.data.timeAxis.slice();
+            this.waveCh2Data = osc2.data.voltageAxis.slice();
+          } else {
+            this.waveCh2TimeData = [];
+            this.waveCh2Data = [];
+          }
         }
       } else if (instrKind === 'power') {
         const pmId = selectionMatches ? this.selectedComponentId :
@@ -543,6 +776,9 @@ export struct InstrumentPanel {
           dataPath = 'measure';
         } else {
           dataPath = 'measure_fail';
+        }
+        if (source !== 'wave') {
+          this.refreshMeterWave('freq');
         }
       } else if (instrKind === 'logic') {
         const logic = this.appService.instruments.getLogicWaveData();
@@ -598,6 +834,7 @@ export struct InstrumentPanel {
       `match=${selectionMatches ? 1 : 0} path=${dataPath} pulse=${this.uiPulse} ` +
       `sel=${this.selectionRefDes || '(none)'} reading=${reading} ms=${Date.now() - t0}`);
     this.logInstrumentReading(false, reading);
+    this.syncExpandSessionAfterRefresh();
     return reading;
   }
 
@@ -854,9 +1091,17 @@ export struct InstrumentPanel {
 
         Row({ space: 6 }) {
           ProteusClassicBtn({ label: '采样', widthVal: '48%',
-            onAction: () => { this.captureWave(); } })
-          ProteusClassicBtn({ label: 'FFT', widthVal: '48%',
-            onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT, true); } })
+            onAction: () => {
+              this.oscFftMode = false;
+              this.appService.instruments.setMathChannel(MathChannelOp.ADD, false);
+              this.captureWave();
+            } })
+          ProteusClassicBtn({ label: this.oscFftMode ? 'FFT●' : 'FFT', widthVal: '48%',
+            onAction: () => {
+              this.oscFftMode = true;
+              this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
+              this.captureWave();
+            } })
         }
         .width('100%').padding({ left: 8, right: 8 })
 
@@ -880,36 +1125,37 @@ export struct InstrumentPanel {
         .width('100%')
         .padding({ left: 8, right: 8 })
 
-        // 主波形区：始终显示，无数据时显示空屏提示
+        // 主波形区：CH1/CH2 同高；FFT 时两路各自频谱（有绑定才显示 CH2）；双击放大
         Column({ space: 4 }) {
           OscilloscopeWaveCanvas({
             timeData: this.waveTimeData,
             voltageData: this.waveVoltageData,
             frameId: this.oscFrameId,
-            channelLabel: 'CH1',
-            waveColor: '#00e676',
+            channelLabel: this.oscFftMode ? 'FFT CH1' : 'CH1',
+            waveColor: this.oscFftMode ? '#ffab40' : '#00e676',
             vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
             tPerDiv: this.timebaseSecPerDiv(),
             triggerLevel: this.triggerLevel,
             autoFit: this.oscAutoFit,
-            canvasHeight: 168,
+            canvasHeight: this.oscCanvasHeight,
             showStats: true
           })
           if (this.waveCh2Data.length > 1) {
             OscilloscopeWaveCanvas({
-              timeData: this.waveTimeData,
+              timeData: this.waveCh2TimeData.length > 1 ? this.waveCh2TimeData : this.waveTimeData,
               voltageData: this.waveCh2Data,
               frameId: this.oscFrameId,
-              channelLabel: 'CH2',
-              waveColor: '#40c4ff',
+              channelLabel: this.oscFftMode ? 'FFT CH2' : 'CH2',
+              waveColor: this.oscFftMode ? '#ffd54f' : '#40c4ff',
               vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
               tPerDiv: this.timebaseSecPerDiv(),
               triggerLevel: this.triggerLevel,
               autoFit: this.oscAutoFit,
-              canvasHeight: 120,
+              canvasHeight: this.oscCanvasHeight,
               showStats: true
             })
           }
+          this.WaveExpandHint()
           if (this.oscStatsText.length > 0) {
             Text(this.oscStatsText)
               .fontSize(ProteusFonts.STATUS)
@@ -920,6 +1166,12 @@ export struct InstrumentPanel {
           }
         }
         .width('100%').padding({ left: 4, right: 4 })
+        .gesture(
+          TapGesture({ count: 2 })
+            .onAction(() => {
+              this.openWaveExpand('osc');
+            })
+        )
 
         // Cursors
         Column({ space: 2 }) {
@@ -972,36 +1224,92 @@ export struct InstrumentPanel {
   }
 
   private captureWave(): void {
+    if (this.appService.findFirstSchematicInstrumentId('osc').length === 0) {
+      this.waveTimeData = [];
+      this.waveVoltageData = [];
+      this.waveCh2TimeData = [];
+      this.waveCh2Data = [];
+      this.oscLiveVolts = '--';
+      this.oscStatsText = '请先在原理图放置示波器';
+      this.oscFrameId = this.oscFrameId + 1;
+      return;
+    }
     for (let ch = 0; ch < 4; ch++) {
       const snap = this.appService.instruments.getOscilloscopeWave(ch);
       if (snap.success && snap.data) {
         if (ch === 0) {
+          if (snap.data.voltageAxis.length < 2 ||
+            !InstrumentPanel.isDisplayableScopeWave(snap.data.netName, snap.data.probeName)) {
+            this.waveTimeData = [];
+            this.waveVoltageData = [];
+            this.oscFrameId = this.oscFrameId + 1;
+            continue;
+          }
+          this.oscFftMode = snap.data.waveType === 'freq' || snap.data.netName === 'MATH_FFT';
           this.waveTimeData = snap.data.timeAxis.slice();
           this.waveVoltageData = snap.data.voltageAxis.slice();
           this.oscFrameId = this.oscFrameId + 1;
           this.updateOscStatsText(snap.data.voltageAxis, snap.data.timeAxis);
           const last = InstrumentPanel.lastFinite(snap.data.voltageAxis);
           if (last !== null) {
-            this.oscLiveVolts = `${last.toFixed(3)} V`;
+            this.oscLiveVolts = this.oscFftMode
+              ? `${last.toFixed(1)} dB`
+              : `${last.toFixed(3)} V`;
           }
         } else if (ch === 1) {
-          if (InstrumentPanel.isLiveScopeChannel(snap.data.netName)) {
+          if (InstrumentPanel.isDisplayableScopeWave(snap.data.netName, snap.data.probeName) &&
+            snap.data.voltageAxis.length >= 2) {
+            this.waveCh2TimeData = snap.data.timeAxis.slice();
             this.waveCh2Data = snap.data.voltageAxis.slice();
           } else {
+            this.waveCh2TimeData = [];
             this.waveCh2Data = [];
           }
         }
       }
     }
+    this.syncExpandSessionAfterRefresh();
   }
 
-  /** CH2+ only when bound to a real net (not placeholder OSC_CHx). */
+  /** CH2+ only when bound to a real net (not placeholder OSC_CHx / CHx). */
   private static isLiveScopeChannel(netName: string): boolean {
     if (netName.length === 0) {
       return false;
     }
     const upper = netName.toUpperCase();
-    return !upper.startsWith('OSC_CH');
+    if (upper.startsWith('OSC_CH')) {
+      return false;
+    }
+    // resampleWave / flat 占位名 CH1、CH2…
+    if (upper.startsWith('CH') && upper.length >= 3) {
+      let allDigits = true;
+      for (let i = 2; i < upper.length; i++) {
+        const c = upper.charCodeAt(i);
+        if (c < 48 || c > 57) {
+          allDigits = false;
+          break;
+        }
+      }
+      if (allDigits) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 时域看 netName；FFT 结果 netName 恒为 MATH_FFT，改看 probeName 内层（FFT(OUT)）。 */
+  private static isDisplayableScopeWave(netName: string, probeName: string): boolean {
+    if (netName.length === 0 && (probeName.length === 0 || /^CH\d+$/i.test(probeName))) {
+      return false;
+    }
+    if (netName === 'MATH_FFT') {
+      let inner = probeName;
+      if (probeName.startsWith('FFT(') && probeName.endsWith(')') && probeName.length > 5) {
+        inner = probeName.substring(4, probeName.length - 1);
+      }
+      return InstrumentPanel.isLiveScopeChannel(inner);
+    }
+    return InstrumentPanel.isLiveScopeChannel(netName);
   }
 
   private static lastFinite(values: number[]): number | null {
@@ -1132,13 +1440,21 @@ export struct InstrumentPanel {
             LogicAnalyzerWaveCanvas({
               channelData: this.logicChannelData,
               channelCount: this.logicChannels,
-              sampleCount: this.logicSampleCount
+              sampleCount: this.logicSampleCount,
+              canvasHeight: 200
             })
           } else {
             this.PlaceholderDisplay('点击"采样"获取逻辑波形')
           }
+          this.WaveExpandHint()
         }
         .width('100%').padding({ left: 4, right: 4 })
+        .gesture(
+          TapGesture({ count: 2 })
+            .onAction(() => {
+              this.openWaveExpand('la');
+            })
+        )
 
         if (this.decodedFramesText.length > 0) {
           Text(this.decodedFramesText)
@@ -1168,6 +1484,7 @@ export struct InstrumentPanel {
       this.logicChannelData = channels;
       this.logicSampleCount = channels.length > 0 ? channels[0].length : 128;
       this.statusMessage = `逻辑采样: ${channels.length} 通道`;
+      this.syncExpandSessionAfterRefresh();
     } else {
       this.statusMessage = '逻辑采样失败';
     }
@@ -1439,13 +1756,37 @@ export struct InstrumentPanel {
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
-      Column() {
+      Column({ space: 8 }) {
         LiveReadout({
           label: 'VOLTAGE',
           value: this.vmReading,
           unit: this.vmUnit,
           pulse: this.uiPulse
         })
+        // 固定高度波形区，避免有/无数据时布局跳动；双击放大
+        Column() {
+          OscilloscopeWaveCanvas({
+            timeData: this.vmWaveTime,
+            voltageData: this.vmWaveData,
+            frameId: this.vmWaveFrame,
+            channelLabel: 'ΔV',
+            waveColor: '#66bb6a',
+            vPerDiv: 1,
+            tPerDiv: this.vmTPerDiv,
+            triggerLevel: 0,
+            autoFit: true,
+            canvasHeight: this.meterCanvasHeight,
+            showStats: false
+          })
+          this.WaveExpandHint()
+        }
+          .width('92%')
+          .gesture(
+            TapGesture({ count: 2 })
+              .onAction(() => {
+                this.openWaveExpand('vm');
+              })
+          )
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -1520,13 +1861,36 @@ export struct InstrumentPanel {
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
-      Column() {
+      Column({ space: 8 }) {
         LiveReadout({
           label: 'CURRENT',
           value: this.amReading,
           unit: this.amUnit,
           pulse: this.uiPulse
         })
+        Column() {
+          OscilloscopeWaveCanvas({
+            timeData: this.amWaveTime,
+            voltageData: this.amWaveData,
+            frameId: this.amWaveFrame,
+            channelLabel: 'I(mA)',
+            waveColor: '#ffa726',
+            vPerDiv: 1,
+            tPerDiv: this.amTPerDiv,
+            triggerLevel: 0,
+            autoFit: true,
+            canvasHeight: this.meterCanvasHeight,
+            showStats: false
+          })
+          this.WaveExpandHint()
+        }
+          .width('92%')
+          .gesture(
+            TapGesture({ count: 2 })
+              .onAction(() => {
+                this.openWaveExpand('am');
+              })
+          )
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -1615,13 +1979,36 @@ export struct InstrumentPanel {
       }
       .width('100%').padding({ left: 8, right: 8, top: 6 })
 
-      Column() {
+      Column({ space: 8 }) {
         LiveReadout({
           label: 'FREQUENCY',
           value: this.fcReading,
           unit: `Gate: ${this.fcGateTime}s`,
           pulse: this.uiPulse
         })
+        Column() {
+          OscilloscopeWaveCanvas({
+            timeData: this.fcWaveTime,
+            voltageData: this.fcWaveData,
+            frameId: this.fcWaveFrame,
+            channelLabel: 'IN',
+            waveColor: '#42a5f5',
+            vPerDiv: 1,
+            tPerDiv: this.fcTPerDiv,
+            triggerLevel: 0,
+            autoFit: true,
+            canvasHeight: this.meterCanvasHeight,
+            showStats: false
+          })
+          this.WaveExpandHint()
+        }
+          .width('92%')
+          .gesture(
+            TapGesture({ count: 2 })
+              .onAction(() => {
+                this.openWaveExpand('fc');
+              })
+          )
       }
       .layoutWeight(1).width('100%').justifyContent(FlexAlign.Center)
 
@@ -1644,6 +2031,93 @@ export struct InstrumentPanel {
       .margin({ left: 8, right: 8, bottom: 8 })
     }
     .width('100%').height('100%')
+  }
+
+  private refreshMeterWave(kind: string): void {
+    if (kind === 'vm') {
+      const w = this.appService.instruments.getVoltmeterWave();
+      if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+        this.vmWaveTime = w.data.timeAxis.slice();
+        this.vmWaveData = w.data.voltageAxis.slice();
+        this.vmTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.vmWaveTime, this.vmWaveData);
+        this.vmWaveFrame = this.vmWaveFrame + 1;
+      }
+      return;
+    }
+    if (kind === 'am') {
+      const w = this.appService.instruments.getAmmeterWave();
+      if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+        this.amWaveTime = w.data.timeAxis.slice();
+        this.amWaveData = w.data.voltageAxis.slice();
+        this.amTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.amWaveTime, this.amWaveData);
+        this.amWaveFrame = this.amWaveFrame + 1;
+      }
+      return;
+    }
+    if (kind === 'freq') {
+      const w = this.appService.instruments.getFreqCounterWave();
+      if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+        this.fcWaveTime = w.data.timeAxis.slice();
+        this.fcWaveData = w.data.voltageAxis.slice();
+        this.fcTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.fcWaveTime, this.fcWaveData);
+        this.fcWaveFrame = this.fcWaveFrame + 1;
+      }
+    }
+  }
+
+  /**
+   * 表计波形时基：约 3 个周期铺满 10 格 → 产生右缘滚动。
+   * 估不出频率时用尾部 8ms 窗（适合 1kHz lab）。
+   */
+  private static adaptiveMeterTPerDiv(times: number[], values: number[]): number {
+    const n = Math.min(times.length, values.length);
+    if (n < 8) {
+      return 1e-3;
+    }
+    let sum = 0;
+    let vmin = values[0];
+    let vmax = values[0];
+    for (let i = 0; i < n; i++) {
+      const v = values[i];
+      sum += v;
+      if (v < vmin) {
+        vmin = v;
+      }
+      if (v > vmax) {
+        vmax = v;
+      }
+    }
+    const mean = sum / n;
+    const amp = Math.max(vmax - vmin, 1e-9);
+    if (amp < 1e-6) {
+      return 5e-3;
+    }
+    const thr = mean;
+    let crosses = 0;
+    let tFirst = -1;
+    let tLast = -1;
+    for (let i = 1; i < n; i++) {
+      if ((values[i - 1] < thr && values[i] >= thr) ||
+        (values[i - 1] > thr && values[i] <= thr)) {
+        crosses++;
+        if (tFirst < 0) {
+          tFirst = times[i];
+        }
+        tLast = times[i];
+      }
+    }
+    if (crosses >= 4 && tLast > tFirst) {
+      const period = 2 * (tLast - tFirst) / Math.max(crosses - 1, 1);
+      // 3 周期 / 10 格
+      const tDiv = (period * 3) / 10;
+      if (tDiv > 1e-7 && tDiv < 1) {
+        return tDiv;
+      }
+    }
+    const span = Math.max(times[n - 1] - times[0], 1e-6);
+    // 默认显示约 8ms（1kHz ≈ 8 周期）
+    const want = Math.min(8e-3, span);
+    return Math.max(want / 10, 1e-7);
   }
 
   private updateCursorMeasure(): void {

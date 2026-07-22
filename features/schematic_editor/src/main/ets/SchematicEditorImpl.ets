@@ -1,16 +1,17 @@
 /**
  * 模块1：原理图编辑器完备实现 v2
  */
-import {
-  ISchematicEditor, BatchDeviceItem, AlignType, DistributeType,
-  SchematicAnnotationPatch, ComponentParamsUpdate
-} from './api/ISchematicEditor';
-import { EditorInternals } from './internal/EditorInternals';
-import { SchematicLayer, createDefaultLayers, SchematicLayerId } from './model/SchematicLayers';
 import { CommandHistory, MoveCommand, PlaceCommand, BatchDeleteCommand,
   AddWireCommand, ClearWiresCommand, RotateCommand, MirrorCommand,
   SetDeviceParamCommand, ApplyRouteCommand, BatchMoveCommand, BatchMoveEntry,
   BatchSetDeviceParamCommand, LoadDocumentCommand } from './internal/EditCommands';
+import { WireAutoRouter, WarCompObstacle, WarRouteContext } from './internal/WireAutoRouter';
+import { EditorInternals } from './internal/EditorInternals';
+import { SchematicLayer, createDefaultLayers, SchematicLayerId } from './model/SchematicLayers';
+import {
+  ISchematicEditor, BatchDeviceItem, AlignType, DistributeType,
+  SchematicAnnotationPatch, ComponentParamsUpdate, WirePathPreviewResult
+} from './api/ISchematicEditor';
 import {
   SchematicDocument, ComponentInstance, Net, NetLabel, Point2D,
   Pin, Rotation, ErcViolation, Rect2D, ViewportState, BusWidth, WireStyle, NetType, Port,
@@ -23,7 +24,13 @@ import {
   SimulationConfig,
   calcSymbolBounds, pointInSymbolBounds, SymbolBounds,
   mapAwareStringify, mapAwareParse,
-  rebuildAllNetPinConnectivity, PinGeometryResolver, PinGeometry
+  rebuildAllNetPinConnectivity, PinGeometryResolver, PinGeometry,
+  DeviceHitGeometry, FOREIGN_PIN_CLEARANCE, WIRE_OBSTACLE_PAD, WorldHitRect,
+  INSTR_TRACE_TAG,
+  traceWireConnectBegin, traceWirePinSnap, traceWirePinSnapReject,
+  traceWireSnapMissNearCopper,
+  traceWireConnectEnd, traceWireConnectPinAudit, traceNetEnsureCreate,
+  UnitParser
 } from 'common';
 
 type ComponentBoundsResolver = (libraryId: string) => SymbolBounds | null;
@@ -51,7 +58,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private commandHistory: CommandHistory = new CommandHistory();
   private lockedComponentIds: Set<string> = new Set();
   private selectedIds: string[] = [];
-  private selectedNetIds: string[] = [];
+  /** 选中的单根导线 id（非整个网络） */
+  private selectedWireIds: string[] = [];
   private refDesCounters: Map<string, number> = new Map();
   private simBusy: boolean = false;
   private probes: ProbeInfo[] = [];
@@ -63,8 +71,15 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private defaultParamsResolver: DefaultParamsResolver | null = null;
   private canvasViewWidth: number = 0;
   private canvasViewHeight: number = 0;
+  /** WAR 开关：默认开启（Proteus Tools → WAR） */
+  private warEnabled: boolean = true;
+  /** Path Buffer Cache：previewWirePath 写入，落线只读复用 */
+  private warPathBuffer: Point2D[] | null = null;
+  private warBufferWaypointsKey: string = '';
   /** 点击选中外扩（世界坐标） */
   private static readonly HIT_PAD: number = 22;
+  /** 布线障碍外扩：须小于 HIT_PAD，避免引脚深埋导致无法连接 */
+  private static readonly OBSTACLE_PAD: number = WIRE_OBSTACLE_PAD;
   /** 悬停感应外扩：鼠标靠近即显示选中区 */
   static readonly HOVER_PAD: number = 36;
   private static readonly WIRE_HIT_THRESHOLD: number = 10;
@@ -84,6 +99,16 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return this.localBoundsToWorldAabb(comp, bounds);
   }
 
+  /**
+   * 布线/WAR 障碍矩形：紧贴符号 + 小 pad，使引脚落在区边附近可逃逸连线。
+   * 禁止复用 HIT_PAD 选中区（会把脚深埋 20~50px → blocked）。
+   */
+  getComponentObstacleRect(comp: ComponentInstance): Rect2D {
+    const bounds = this.expandLocalBounds(
+      this.resolveBounds(comp.libraryId), SchematicEditorImpl.OBSTACLE_PAD);
+    return this.localBoundsToWorldAabb(comp, bounds);
+  }
+
   /** 悬停选中区（更大外扩，靠近即出现） */
   getComponentHoverRect(comp: ComponentInstance): Rect2D {
     const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HOVER_PAD);
@@ -100,8 +125,24 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return this.selectedIds.includes(compId);
   }
 
+  getSelectedWireIds(): string[] {
+    return this.selectedWireIds.slice();
+  }
+
+  /** 由选中导线推导所属网络（属性栏/高亮辅助）；删除按 wire id */
   getSelectedWireNetIds(): string[] {
-    return this.selectedNetIds.slice();
+    const nets: string[] = [];
+    const doc = this.getDocument();
+    for (let i = 0; i < this.selectedWireIds.length; i++) {
+      const wid = this.selectedWireIds[i];
+      for (let j = 0; j < doc.wires.length; j++) {
+        if (doc.wires[j].id === wid && !nets.includes(doc.wires[j].netId)) {
+          nets.push(doc.wires[j].netId);
+          break;
+        }
+      }
+    }
+    return nets;
   }
 
   setComponentBoundsResolver(resolver: ComponentBoundsResolver): void {
@@ -314,10 +355,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   getSelectedNets(): NetInfo[] {
     const topo: SchTopology = this.getFullTopology();
+    const selectedNets = this.getSelectedWireNetIds();
     const result: NetInfo[] = [];
     for (let i = 0; i < topo.netList.length; i++) {
       const net: NetInfo = topo.netList[i];
-      if (this.selectedNetIds.includes(net.netUuid)) {
+      if (selectedNets.includes(net.netUuid)) {
         result.push(net);
       }
     }
@@ -434,21 +476,28 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   clearSelectedRoute(): void {
-    if (this.selectedNetIds.length === 0) {
+    if (this.selectedWireIds.length === 0) {
       return;
     }
+    const wireIds = this.selectedWireIds.slice();
     if (this.document !== null) {
-      this.commandHistory.push(new ClearWiresCommand(this.document, this.selectedNetIds.slice()));
+      this.commandHistory.push(new ClearWiresCommand(this.document, undefined, wireIds));
     } else {
       const doc: SchematicDocument = this.getDocument();
+      const remove = new Set<string>();
+      for (let i = 0; i < wireIds.length; i++) {
+        remove.add(wireIds[i]);
+      }
       const kept: Wire[] = [];
       for (let i = 0; i < doc.wires.length; i++) {
-        if (!this.selectedNetIds.includes(doc.wires[i].netId)) {
+        if (!remove.has(doc.wires[i].id)) {
           kept.push(doc.wires[i]);
         }
       }
       doc.wires = kept;
     }
+    this.selectedWireIds = [];
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
   }
 
@@ -1182,12 +1231,19 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   createNetLabel(x: number, y: number, netName: string): ApiResult<string> {
+    const name = netName.trim();
+    if (name.length === 0) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '网络名不能为空');
+    }
     const netId: string = IdUtil.generate('net');
     const doc: SchematicDocument = this.getDocument();
-    let net: Net | undefined = this.findNetByName(doc, netName);
+    if (doc.netLabels === undefined) {
+      doc.netLabels = [];
+    }
+    let net: Net | undefined = this.findNetByName(doc, name);
     if (net === undefined) {
       let netType: NetType = NetType.SIGNAL;
-      const upper = netName.toUpperCase();
+      const upper = name.toUpperCase();
       if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE') {
         netType = NetType.POWER;
       } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
@@ -1195,7 +1251,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
       net = {
         id: netId,
-        name: netName,
+        name: name,
         type: netType,
         pinIds: []
       };
@@ -1203,19 +1259,90 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     const labelId: string = IdUtil.generate('label');
     const labelPos: Point2D = { x: x, y: y };
-    const upperName = netName.toUpperCase();
+    const upperName = name.toUpperCase();
     const isRail = upperName === 'GND' || upperName === 'VCC' || upperName === 'VDD' ||
       upperName === 'V+' || upperName === 'VSS' || upperName === 'VEE' || upperName === '0';
     const label: NetLabel = {
       id: labelId,
       netId: net.id,
-      text: netName,
+      text: name,
       position: labelPos,
       global: isRail
     };
     doc.netLabels.push(label);
+    this.rebuildNetPinConnectivity();
     this.notifyChange();
     return ResultHelper.ok(net.id);
+  }
+
+  renameNetLabel(labelId: string, netName: string): ApiResult<string> {
+    const name = netName.trim();
+    if (name.length === 0) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '网络名不能为空');
+    }
+    const doc: SchematicDocument = this.getDocument();
+    const labels = doc.netLabels ?? [];
+    let label: NetLabel | undefined = undefined;
+    for (let i = 0; i < labels.length; i++) {
+      if (labels[i].id === labelId) {
+        label = labels[i];
+        break;
+      }
+    }
+    if (label === undefined) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '网络标号不存在');
+    }
+    let net: Net | undefined = this.findNetByName(doc, name);
+    if (net === undefined) {
+      let netType: NetType = NetType.SIGNAL;
+      const upper = name.toUpperCase();
+      if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE') {
+        netType = NetType.POWER;
+      } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+        netType = NetType.GROUND;
+      }
+      net = {
+        id: IdUtil.generate('net'),
+        name: name,
+        type: netType,
+        pinIds: []
+      };
+      doc.nets.push(net);
+    }
+    const upperName = name.toUpperCase();
+    const isRail = upperName === 'GND' || upperName === 'VCC' || upperName === 'VDD' ||
+      upperName === 'V+' || upperName === 'VSS' || upperName === 'VEE' || upperName === '0';
+    label.text = name;
+    label.netId = net.id;
+    label.global = isRail;
+    this.rebuildNetPinConnectivity();
+    this.notifyChange();
+    return ResultHelper.ok(net.id);
+  }
+
+  hitTestNetLabel(world: Point2D, tol?: number): string | null {
+    const doc = this.getDocument();
+    const labels = doc.netLabels ?? [];
+    if (labels.length === 0) {
+      return null;
+    }
+    const threshold = tol !== undefined ? tol : Math.max(this.viewport.gridSize * 1.5, 12);
+    let bestId: string | null = null;
+    let bestDist = threshold;
+    for (let i = 0; i < labels.length; i++) {
+      const lb = labels[i];
+      const dx = world.x - lb.position.x;
+      const dy = world.y - lb.position.y;
+      // 文本画在锚点右侧，命中时忽略右侧一段文本宽度
+      const textPad = Math.min(lb.text.length * 5, 40);
+      const adjDx = dx > 0 ? Math.max(0, dx - textPad) : dx;
+      const dist = Math.sqrt(adjDx * adjDx + dy * dy);
+      if (dist <= bestDist) {
+        bestDist = dist;
+        bestId = lb.id;
+      }
+    }
+    return bestId;
   }
 
   /** 将 VCC/GND 符号引脚接入全局电源网络，并在引脚处放置网络标签 */
@@ -2069,6 +2196,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   hitTestAt(point: Point2D): string[] {
+    // 引脚优先：邻器件过大选中区常盖住本脚，否则点脚会选中错误器件 / 无法连线
+    const pinHit = this.findPinAtPoint(point);
+    if (pinHit !== null) {
+      return [pinHit.comp.id];
+    }
     const components: ComponentInstance[] = this.getDocument().components;
     for (let i = components.length - 1; i >= 0; i--) {
       const c: ComponentInstance = components[i];
@@ -2085,6 +2217,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
    * 鼠标只要靠近附近器件就会出现选中区。
    */
   hitTestNear(point: Point2D, pad: number = SchematicEditorImpl.HOVER_PAD): string[] {
+    const pinHit = this.findPinAtPoint(point);
+    if (pinHit !== null) {
+      return [pinHit.comp.id];
+    }
     const direct = this.hitTestAt(point);
     if (direct.length > 0) {
       return direct;
@@ -2120,7 +2256,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   hitTestWireAt(point: Point2D): string | null {
     const wires = this.getDocument().wires;
-    let bestNet: string | null = null;
+    let bestWireId: string | null = null;
     let bestDist: number = SchematicEditorImpl.WIRE_HIT_THRESHOLD;
     for (let i = 0; i < wires.length; i++) {
       const wire = wires[i];
@@ -2129,11 +2265,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
         const dist = SchematicEditorImpl.pointSegmentDistance(point, pts[j], pts[j + 1]);
         if (dist < bestDist) {
           bestDist = dist;
-          bestNet = wire.netId;
+          bestWireId = wire.id;
         }
       }
     }
-    return bestNet;
+    return bestWireId;
   }
 
   selectInRect(rect: Rect2D): string[] {
@@ -2153,7 +2289,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
     }
     this.selectedIds = hit;
-    this.selectedNetIds = [];
+    this.selectedWireIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
     EventBus.getInstance().publish({
       event: ModuleEvent.SELECTION_CHANGED,
@@ -2188,6 +2324,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   private setSelectionAndReturn(ids: string[]): string[] {
     this.selectedIds = SchematicEditorImpl.copyStringArray(ids);
+    this.selectedWireIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
     return this.selectedIds.slice();
   }
@@ -2201,7 +2338,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     const hit: string[] = this.hitTestAt(point);
     if (hit.length > 0) {
       this.selectedIds = hit;
-      this.selectedNetIds = [];
+      this.selectedWireIds = [];
       CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
       EventBus.getInstance().publish({
         event: ModuleEvent.SELECTION_CHANGED,
@@ -2211,10 +2348,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
       });
       return hit;
     }
-    const wireNet: string | null = this.hitTestWireAt(point);
-    if (wireNet !== null && wireNet.length > 0) {
+    const wireId: string | null = this.hitTestWireAt(point);
+    if (wireId !== null && wireId.length > 0) {
       this.selectedIds = [];
-      this.selectedNetIds = [wireNet];
+      this.selectedWireIds = [wireId];
       CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
       EventBus.getInstance().publish({
         event: ModuleEvent.SELECTION_CHANGED,
@@ -2225,7 +2362,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       return [];
     }
     this.selectedIds = [];
-    this.selectedNetIds = [];
+    this.selectedWireIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
     EventBus.getInstance().publish({
       event: ModuleEvent.SELECTION_CHANGED,
@@ -2348,6 +2485,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   setSelection(ids: string[]): void {
     this.selectedIds = SchematicEditorImpl.copyStringArray(ids);
+    this.selectedWireIds = [];
     CallbackRegistry.getInstance().emitSelection(this.getSelectedDevices(), this.getSelectedNets());
   }
 
@@ -2396,6 +2534,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     // Snap wire endpoints to nearest component pins for visual connection
     snappedFrom = this.snapToNearestPin(snappedFrom, g);
     snappedTo = this.snapToNearestPin(snappedTo, g);
+    // 未吸到脚时：吸附到既有导线任意点（T 接）
+    snappedFrom = this.snapToNearestWire(snappedFrom, g);
+    snappedTo = this.snapToNearestWire(snappedTo, g);
     Logger.info('schematic_editor', `addWireSegment from=(${snappedFrom.x},${snappedFrom.y}) to=(${snappedTo.x},${snappedTo.y})`);
     if (snappedFrom.x === snappedTo.x && snappedFrom.y === snappedTo.y) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '导线起点与终点重合，请选择不同位置');
@@ -2403,7 +2544,22 @@ export class SchematicEditorImpl implements ISchematicEditor {
     // Smart orthogonal routing: try both L-shapes, avoid crossing component bodies
     const wirePoints = this.routeOrthogonalWire(snappedFrom, snappedTo);
     const wireId = IdUtil.generate('wire');
-    const resolvedNetId = netId !== undefined && netId.length > 0 ? netId : IdUtil.generate('net');
+    let resolvedNetId: string;
+    let didInherit = false;
+    if (netId !== undefined && netId.length > 0) {
+      resolvedNetId = netId;
+    } else {
+      const inherited0 = this.inheritNetAtPosition(snappedFrom);
+      const inherited1 = this.inheritNetAtPosition(snappedTo);
+      didInherit = inherited0 !== null || inherited1 !== null;
+      if (inherited0 !== null) {
+        resolvedNetId = inherited0;
+      } else if (inherited1 !== null) {
+        resolvedNetId = inherited1;
+      } else {
+        resolvedNetId = IdUtil.generate('net');
+      }
+    }
     const wire: Wire = {
       id: wireId,
       netId: resolvedNetId,
@@ -2416,8 +2572,13 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.getDocument().wires.push(wire);
     }
     this.ensureNetExists(resolvedNetId);
-    this.connectWireToPins(snappedFrom, snappedTo, resolvedNetId);
+    traceWireConnectBegin(wireId, resolvedNetId, wirePoints.length,
+      snappedFrom.x, snappedFrom.y, snappedTo.x, snappedTo.y, didInherit);
+    const snapCount = this.connectWireToPins(snappedFrom, snappedTo, resolvedNetId);
     this.rebuildNetPinConnectivity();
+    const docAfter = this.getDocument();
+    traceWireConnectEnd(wireId, resolvedNetId, snapCount, docAfter);
+    traceWireConnectPinAudit(docAfter);
     this.notifyChange();
     return ResultHelper.ok(wireId);
   }
@@ -2430,52 +2591,53 @@ export class SchematicEditorImpl implements ISchematicEditor {
     if (waypoints.length < 2) {
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '需要至少两个点');
     }
-    const g = this.viewport.gridSize;
-    // Endpoint waypoints arrive from canvas already at the correct pin world positions
-    // (as determined by findNearestPinWorld).  We must NOT re‑snap them to pins here,
-    // because grid‑snapping can shift a point closer to a *different* component's pin,
-    // causing the wire to visually land on the wrong pin while connectWireToPins
-    // (which uses the same snapped coordinates) still connects to the correct one.
-    // Intermediate corners are only grid‑snapped for routing consistency.
-    const snapped: Point2D[] = [];
-    for (let i = 0; i < waypoints.length; i++) {
-      const isEndpoint = i === 0 || i === waypoints.length - 1;
-      if (isEndpoint) {
-        // Preserve exact pin positions from canvas — no re-snapping
-        snapped.push({ x: waypoints[i].x, y: waypoints[i].y });
-      } else {
-        snapped.push(EditorInternals.calcSnapPoint(waypoints[i].x, waypoints[i].y, g));
+
+    // Proteus WAR：优先 Path Buffer（所见即所得）；禁止二次寻路改道
+    const key = this.warWaypointsKey(waypoints);
+    let allPoints: Point2D[] | null = null;
+    if (this.warPathBuffer !== null && this.warBufferWaypointsKey === key) {
+      allPoints = this.copyWarPoints(this.warPathBuffer);
+    } else {
+      // 缓冲未命中：再算一次写入缓冲（兼容未先预览的调用），仍须硬清空
+      const preview = this.previewWirePath(waypoints);
+      if (preview.blocked === true || preview.points.length < 2) {
+        this.clearWarPathBuffer();
+        return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
+          '无法布线：路径穿过器件选中区或无合法正交路径');
       }
+      allPoints = this.copyWarPoints(preview.points);
     }
 
-    // Build full point list by routing each consecutive pair, deduplicating boundaries
-    const allPoints: Point2D[] = [snapped[0]];
-    for (let i = 0; i < snapped.length - 1; i++) {
-      const segPoints = this.routeOrthogonalWire(snapped[i], snapped[i + 1]);
-      // Skip the first point (already in allPoints), append the rest
-      for (let j = 1; j < segPoints.length; j++) {
-        allPoints.push(segPoints[j]);
-      }
+    // 落线瞬间再校验：障碍变化则拒绝，不重新搜索替代路径
+    const ctx = this.buildWarRouteContext([allPoints[0], allPoints[allPoints.length - 1]]);
+    if (!WireAutoRouter.validateCachedPath(allPoints, ctx)) {
+      this.clearWarPathBuffer();
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
+        '无法布线：缓存路径已被阻挡（不重新寻路）');
     }
 
-    // Guarantee wire path endpoints are at the exact pin positions the user clicked
-    allPoints[0] = { x: snapped[0].x, y: snapped[0].y };
-    allPoints[allPoints.length - 1] = { x: snapped[snapped.length - 1].x, y: snapped[snapped.length - 1].y };
-
-    // Ensure wires approach pins perpendicular to the body edge, not running
-    // parallel along it (which would visually overlap the component border).
-    this.ensurePerpendicularApproach(allPoints);
+    const last = allPoints[allPoints.length - 1];
+    if (allPoints[0].x === last.x && allPoints[0].y === last.y) {
+      this.clearWarPathBuffer();
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '导线起点与终点重合，请选择不同位置');
+    }
 
     const wireId = IdUtil.generate('wire');
-    // Inherit net from the start point: if the first endpoint lands on a pin
-    // that already belongs to a net, the new wire joins that net.  Otherwise
-    // (and for intermediate corners) create a fresh net.
     let resolvedNetId: string;
+    let didInherit = false;
     if (netId !== undefined && netId.length > 0) {
       resolvedNetId = netId;
     } else {
-      const inherited = this.inheritNetAtPosition(allPoints[0]);
-      resolvedNetId = inherited !== null ? inherited : IdUtil.generate('net');
+      const inherited0 = this.inheritNetAtPosition(allPoints[0]);
+      const inherited1 = this.inheritNetAtPosition(last);
+      didInherit = inherited0 !== null || inherited1 !== null;
+      if (inherited0 !== null) {
+        resolvedNetId = inherited0;
+      } else if (inherited1 !== null) {
+        resolvedNetId = inherited1;
+      } else {
+        resolvedNetId = IdUtil.generate('net');
+      }
     }
     const wire: Wire = {
       id: wireId,
@@ -2489,10 +2651,285 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.getDocument().wires.push(wire);
     }
     this.ensureNetExists(resolvedNetId);
-    this.connectWireToPins(allPoints[0], allPoints[allPoints.length - 1], resolvedNetId);
+    traceWireConnectBegin(wireId, resolvedNetId, allPoints.length,
+      allPoints[0].x, allPoints[0].y, last.x, last.y, didInherit);
+    const snapCount = this.connectWireToPins(allPoints[0], last, resolvedNetId);
     this.rebuildNetPinConnectivity();
+    const docAfter = this.getDocument();
+    traceWireConnectEnd(wireId, resolvedNetId, snapCount, docAfter);
+    traceWireConnectPinAudit(docAfter);
+    this.clearWarPathBuffer();
     this.notifyChange();
     return ResultHelper.ok(wireId);
+  }
+
+  commitWarBufferedPath(netId?: string): ApiResult<string> {
+    const guard: ApiResult<void> | null = this.guardEdit();
+    if (guard !== null) {
+      return ResultHelper.fail(guard.errCode !== undefined ? guard.errCode : ErrCode.ERR_SIM_BUSY, guard.error);
+    }
+    if (this.warPathBuffer === null || this.warPathBuffer.length < 2) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '无 WAR 预览缓存，请先拖动预览');
+    }
+    const allPoints = this.copyWarPoints(this.warPathBuffer);
+    const ctx = this.buildWarRouteContext([allPoints[0], allPoints[allPoints.length - 1]]);
+    if (!WireAutoRouter.validateCachedPath(allPoints, ctx)) {
+      this.clearWarPathBuffer();
+      Logger.warn(INSTR_TRACE_TAG,
+        '[WIRE_CONN] FAIL cache path blocked — refuse place (no re-route)');
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
+        '无法布线：缓存路径已被阻挡（不重新寻路）');
+    }
+    const last = allPoints[allPoints.length - 1];
+    const wireId = IdUtil.generate('wire');
+    let resolvedNetId: string;
+    if (netId !== undefined && netId.length > 0) {
+      resolvedNetId = netId;
+    } else {
+      const inherited0 = this.inheritNetAtPosition(allPoints[0]);
+      const inherited1 = this.inheritNetAtPosition(last);
+      if (inherited0 !== null) {
+        resolvedNetId = inherited0;
+      } else if (inherited1 !== null) {
+        resolvedNetId = inherited1;
+      } else {
+        resolvedNetId = IdUtil.generate('net');
+      }
+    }
+    const wire: Wire = {
+      id: wireId,
+      netId: resolvedNetId,
+      points: allPoints,
+      style: WireStyle.ORTHOGONAL
+    };
+    if (this.document !== null) {
+      this.commandHistory.push(new AddWireCommand(this.document, wire));
+    } else {
+      this.getDocument().wires.push(wire);
+    }
+    this.ensureNetExists(resolvedNetId);
+    const inherited = !(netId !== undefined && netId.length > 0);
+    traceWireConnectBegin(wireId, resolvedNetId, allPoints.length,
+      allPoints[0].x, allPoints[0].y, last.x, last.y, inherited);
+    const snapCount = this.connectWireToPins(allPoints[0], last, resolvedNetId);
+    this.rebuildNetPinConnectivity();
+    const docAfter = this.getDocument();
+    traceWireConnectEnd(wireId, resolvedNetId, snapCount, docAfter);
+    traceWireConnectPinAudit(docAfter);
+    this.clearWarPathBuffer();
+    this.notifyChange();
+    return ResultHelper.ok(wireId);
+  }
+
+  clearWarPathBuffer(): void {
+    this.warPathBuffer = null;
+    this.warBufferWaypointsKey = '';
+  }
+
+  setWarEnabled(enabled: boolean): void {
+    this.warEnabled = enabled;
+    if (!enabled) {
+      this.clearWarPathBuffer();
+    }
+  }
+
+  isWarEnabled(): boolean {
+    return this.warEnabled;
+  }
+
+  /**
+   * WAR 预览：写入 Path Buffer。blocked 时清空缓冲、不返回穿障折线。
+   */
+  previewWirePath(waypoints: Point2D[]): WirePathPreviewResult {
+    if (waypoints.length < 2) {
+      this.clearWarPathBuffer();
+      const empty: WirePathPreviewResult = {
+        points: [], autoCorrected: false, blocked: true
+      };
+      return empty;
+    }
+    // 端点吸脚 / 吸导线任意点（T 接），中间拐点保持用户输入
+    const g = Math.max(1, this.viewport.gridSize);
+    const snapped: Point2D[] = [];
+    for (let i = 0; i < waypoints.length; i++) {
+      const p = waypoints[i];
+      if (i === 0 || i === waypoints.length - 1) {
+        snapped.push(this.snapWireEndpoint(p, g));
+      } else {
+        snapped.push({ x: p.x, y: p.y });
+      }
+    }
+    const ctx = this.buildWarRouteContext(snapped);
+    const result = WireAutoRouter.previewWirePath(snapped, ctx);
+    if (result.blocked === true || result.points.length < 2) {
+      this.clearWarPathBuffer();
+      const blocked: WirePathPreviewResult = {
+        points: [],
+        autoCorrected: false,
+        blocked: true
+      };
+      return blocked;
+    }
+    this.warPathBuffer = this.copyWarPoints(result.points);
+    this.warBufferWaypointsKey = this.warWaypointsKey(waypoints);
+    const ok: WirePathPreviewResult = {
+      points: this.copyWarPoints(result.points),
+      autoCorrected: result.autoCorrected,
+      blocked: false
+    };
+    return ok;
+  }
+
+  private warWaypointsKey(waypoints: Point2D[]): string {
+    const parts: string[] = [];
+    for (let i = 0; i < waypoints.length; i++) {
+      parts.push(`${Math.round(waypoints[i].x)},${Math.round(waypoints[i].y)}`);
+    }
+    return parts.join(';');
+  }
+
+  private copyWarPoints(src: Point2D[]): Point2D[] {
+    const out: Point2D[] = [];
+    for (let i = 0; i < src.length; i++) {
+      out.push({ x: src[i].x, y: src[i].y });
+    }
+    return out;
+  }
+
+  private buildWarRouteContext(waypoints: Point2D[]): WarRouteContext {
+    const doc = this.getDocument();
+    const g = Math.max(1, this.viewport.gridSize);
+    const fromInfo = this.findPinAtPoint(waypoints[0]);
+    const toInfo = this.findPinAtPoint(waypoints[waypoints.length - 1]);
+    const excludeCompIds: string[] = [];
+    const sameComp = fromInfo !== null && toInfo !== null && fromInfo.comp.id === toInfo.comp.id;
+    if (!sameComp) {
+      if (fromInfo !== null) {
+        excludeCompIds.push(fromInfo.comp.id);
+      }
+      if (toInfo !== null) {
+        excludeCompIds.push(toInfo.comp.id);
+      }
+    }
+    const excludeSet = new Set<string>();
+    for (let i = 0; i < excludeCompIds.length; i++) {
+      excludeSet.add(excludeCompIds[i]);
+    }
+
+    // 仅起点/终点目标脚可进逃逸走廊（禁止同器件 all-pins 走廊串脚）
+    const escapeByComp = new Map<string, Point2D[]>();
+    const addEscape = (info: PinAtPoint | null): void => {
+      if (info === null || sameComp) {
+        return;
+      }
+      const local = this.transformPinOffsetForConnect(
+        info.pin.position, info.comp.rotation, info.comp.mirrored);
+      const pw: Point2D = {
+        x: info.comp.position.x + local.x,
+        y: info.comp.position.y + local.y
+      };
+      let arr = escapeByComp.get(info.comp.id);
+      if (arr === undefined) {
+        arr = [];
+        escapeByComp.set(info.comp.id, arr);
+      }
+      let dup = false;
+      for (let i = 0; i < arr.length; i++) {
+        if (Math.hypot(arr[i].x - pw.x, arr[i].y - pw.y) <= 1.5) {
+          dup = true;
+          break;
+        }
+      }
+      if (!dup) {
+        arr.push(pw);
+      }
+    };
+    addEscape(fromInfo);
+    addEscape(toInfo);
+
+    const obstacles: WarCompObstacle[] = [];
+    const foreignPins: Point2D[] = [];
+    for (let ci = 0; ci < doc.components.length; ci++) {
+      const comp = doc.components[ci];
+      const rect = this.getComponentObstacleRect(comp);
+      const hitRect: WorldHitRect = this.toWorldHitRect(comp, rect);
+      const pins = this.resolvePins(comp.libraryId);
+      const pinWorlds: Point2D[] = [];
+      if (pins !== null) {
+        for (let pi = 0; pi < pins.length; pi++) {
+          const local = this.transformPinOffsetForConnect(
+            pins[pi].position, comp.rotation, comp.mirrored);
+          const pw: Point2D = {
+            x: comp.position.x + local.x,
+            y: comp.position.y + local.y
+          };
+          pinWorlds.push(pw);
+          if (!excludeSet.has(comp.id)) {
+            foreignPins.push({ x: pw.x, y: pw.y });
+          } else {
+            // 端点器件：非目标邻脚也当作异脚障碍，供外层代价/诊断
+            const esc = escapeByComp.get(comp.id) ?? [];
+            let isEsc = false;
+            for (let ei = 0; ei < esc.length; ei++) {
+              if (Math.hypot(esc[ei].x - pw.x, esc[ei].y - pw.y) <= 1.5) {
+                isEsc = true;
+                break;
+              }
+            }
+            if (!isEsc) {
+              foreignPins.push({ x: pw.x, y: pw.y });
+            }
+          }
+        }
+      }
+      const escapePinWorlds = escapeByComp.get(comp.id) ?? [];
+      const obs: WarCompObstacle = {
+        id: comp.id,
+        hitRect: hitRect,
+        pinWorlds: pinWorlds,
+        escapePinWorlds: escapePinWorlds
+      };
+      obstacles.push(obs);
+    }
+
+    const existingWires: Point2D[][] = [];
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const w = doc.wires[wi];
+      if (w.points.length >= 2) {
+        const poly: Point2D[] = [];
+        for (let pi = 0; pi < w.points.length; pi++) {
+          poly.push({ x: w.points[pi].x, y: w.points[pi].y });
+        }
+        existingWires.push(poly);
+      }
+    }
+
+    const ctx: WarRouteContext = {
+      gridSize: g,
+      warEnabled: this.warEnabled,
+      obstacles: obstacles,
+      excludeCompIds: excludeCompIds,
+      foreignPins: foreignPins,
+      existingWires: existingWires,
+      wireJoinPoints: [
+        { x: waypoints[0].x, y: waypoints[0].y },
+        { x: waypoints[waypoints.length - 1].x, y: waypoints[waypoints.length - 1].y }
+      ]
+    };
+    return ctx;
+  }
+
+  private toWorldHitRect(comp: ComponentInstance, rect: Rect2D): WorldHitRect {
+    const hit: WorldHitRect = {
+      x: rect.x,
+      y: rect.y,
+      w: rect.width,
+      h: rect.height,
+      refName: comp.refDes,
+      instUuid: comp.id,
+      libDevId: comp.libraryId
+    };
+    return hit;
   }
 
   /**
@@ -2518,6 +2955,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
       return out;
     };
+    this.mergeNetsAtSharedWireEndpoints();
     rebuildAllNetPinConnectivity(doc, Math.min(this.viewport.gridSize, 10), resolver);
     this.mergeDuplicateNamedNets();
   }
@@ -2530,8 +2968,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
    */
   private mergeNetsAtSharedWireEndpoints(): void {
     const doc = this.getDocument();
-    // Match WireNetTopology cap: must stay < half of MCU 10px pin pitch
-    const junctionRadius = Math.min(Math.max(2, this.viewport.gridSize * 0.5), 5);
+    // Align with snapToNearestWire threshold so grid-snapped stubs co-locate
+    const junctionRadius = Math.min(Math.max(this.viewport.gridSize * 0.75, 6), 12);
     // Collect endpoint → {point, wireIndex} pairs
     interface EndpointEntry { pt: Point2D; wireIdx: number; }
     const endpoints: EndpointEntry[] = [];
@@ -2660,8 +3098,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   /**
    * Routes an orthogonal wire between two points, choosing the L-shape variant
-   * that avoids crossing through component bodies. Falls back to the simple
-   * L-shape if pin/body data is unavailable.
+   * that avoids crossing component selection hit zones (HIT_PAD=22). Falls back
+   * to the simple L-shape if pin/body data is unavailable.
    */
   private routeOrthogonalWire(from: Point2D, to: Point2D): Point2D[] {
     const midA: Point2D = { x: to.x, y: from.y };
@@ -2671,7 +3109,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
     const toInfo = this.findPinAtPoint(to);
 
     // When both pins share the same component, that component body IS an obstacle.
-    // Otherwise, exclude the endpoint components so wires can reach their pins.
+    // Otherwise, exclude the endpoint components so wires can reach their pins
+    // via pin escape corridors only.
     const sameComp = fromInfo !== null && toInfo !== null && fromInfo.comp.id === toInfo.comp.id;
     const bodyExcludeIds = new Set<string>();
     if (!sameComp) {
@@ -2685,12 +3124,20 @@ export class SchematicEditorImpl implements ISchematicEditor {
     // add extra corners and make the wire appear to land on the wrong pin.
     const pinObstacles = this.collectPinObstacles(bodyExcludeIds);
 
-    if (fromInfo === null && toInfo === null && pinObstacles.length === 0) {
+    if (fromInfo === null && toInfo === null && pinObstacles.length === 0 &&
+      this.getDocument().components.length === 0) {
       return [from, midA, to];
     }
 
-    const scoreA = this.scoreWirePath(from, midA, to, bodyExcludeIds, pinObstacles);
-    const scoreB = this.scoreWirePath(from, midB, to, bodyExcludeIds, pinObstacles);
+    const scoreA = this.scoreWirePath(from, midA, to, bodyExcludeIds, pinObstacles, fromInfo, toInfo);
+    const scoreB = this.scoreWirePath(from, midB, to, bodyExcludeIds, pinObstacles, fromInfo, toInfo);
+    // 与既有导线共线重叠：重罚，避免新折线「贴」上无关网后被拓扑并接
+    if (this.doesPathOverlapExisting([from, midA, to])) {
+      scoreA.score += 8;
+    }
+    if (this.doesPathOverlapExisting([from, midB, to])) {
+      scoreB.score += 8;
+    }
 
     let mid: Point2D;
     if (scoreA.score < scoreB.score) {
@@ -2703,7 +3150,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
     const chosenScore = mid === midA ? scoreA : scoreB;
     if (chosenScore.intersectsBody || chosenScore.pinHits > 0) {
-      return this.routeAroundObstacles(from, mid, to, bodyExcludeIds, pinObstacles);
+      return this.routeAroundObstacles(from, mid, to, bodyExcludeIds, pinObstacles, fromInfo, toInfo);
     }
 
     const bestPoints = [from, mid, to];
@@ -2717,33 +3164,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return [from, mid, to];
   }
 
-  /**
-   * Returns the world-space axis-aligned bounding box for a component body.
-   */
+  /** @deprecated use getComponentObstacleRect — kept for call-site clarity */
   private getComponentWorldBounds(comp: ComponentInstance): Rect2D | null {
-    const pins = this.resolvePins(comp.libraryId);
-    if (pins === null || pins.length === 0) {
-      // Fallback default bounds
-      return { x: comp.position.x - 30, y: comp.position.y - 20, width: 60, height: 40 };
-    }
-    const localBounds = calcSymbolBounds(pins, 10);
-    const corners: Point2D[] = [
-      { x: localBounds.minX, y: localBounds.minY },
-      { x: localBounds.maxX, y: localBounds.minY },
-      { x: localBounds.minX, y: localBounds.maxY },
-      { x: localBounds.maxX, y: localBounds.maxY }
-    ];
-    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
-    for (const corner of corners) {
-      const local = this.transformPinOffsetForConnect(corner, comp.rotation, comp.mirrored);
-      const wx = comp.position.x + local.x;
-      const wy = comp.position.y + local.y;
-      if (wx < minX) { minX = wx; }
-      if (wy < minY) { minY = wy; }
-      if (wx > maxX) { maxX = wx; }
-      if (wy > maxY) { maxY = wy; }
-    }
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    return this.getComponentObstacleRect(comp);
   }
 
   private collectPinObstacles(excludeCompIds: Set<string>): Point2D[] {
@@ -2762,77 +3185,150 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return result;
   }
 
-  private scoreWirePath(from: Point2D, mid: Point2D, to: Point2D, excludeIds: Set<string>, pinObstacles: Point2D[]): WirePathScore {
+  private scoreWirePath(
+    from: Point2D, mid: Point2D, to: Point2D, excludeIds: Set<string>,
+    pinObstacles: Point2D[], fromInfo: PinAtPoint | null, toInfo: PinAtPoint | null
+  ): WirePathScore {
     let bodyHits = 0;
     let pinHits = 0;
-    const pinThreshold = this.viewport.gridSize * 2;
+    const pinThreshold = Math.max(this.viewport.gridSize * 2, FOREIGN_PIN_CLEARANCE);
 
     if (from.y === mid.y) {
-      if (this.horizontalSegmentIntersectsBody(from.x, mid.x, from.y, excludeIds)) { bodyHits++; }
-      pinHits += this.countPinHitsHorizontal(from.x, mid.x, from.y, pinObstacles, pinThreshold);
+      if (this.horizontalSegmentIntersectsBody(from.x, mid.x, from.y, excludeIds, fromInfo, toInfo)) {
+        bodyHits++;
+      }
+      pinHits += this.countPinHitsHorizontal(from.x, mid.x, from.y, pinObstacles, pinThreshold, from, mid);
     } else {
-      if (this.verticalSegmentIntersectsBody(from.x, from.y, mid.y, excludeIds)) { bodyHits++; }
-      pinHits += this.countPinHitsVertical(from.x, from.y, mid.y, pinObstacles, pinThreshold);
+      if (this.verticalSegmentIntersectsBody(from.x, from.y, mid.y, excludeIds, fromInfo, toInfo)) {
+        bodyHits++;
+      }
+      pinHits += this.countPinHitsVertical(from.x, from.y, mid.y, pinObstacles, pinThreshold, from, mid);
     }
     if (mid.y === to.y) {
-      if (this.horizontalSegmentIntersectsBody(mid.x, to.x, mid.y, excludeIds)) { bodyHits++; }
-      pinHits += this.countPinHitsHorizontal(mid.x, to.x, mid.y, pinObstacles, pinThreshold);
+      if (this.horizontalSegmentIntersectsBody(mid.x, to.x, mid.y, excludeIds, fromInfo, toInfo)) {
+        bodyHits++;
+      }
+      pinHits += this.countPinHitsHorizontal(mid.x, to.x, mid.y, pinObstacles, pinThreshold, mid, to);
     } else {
-      if (this.verticalSegmentIntersectsBody(mid.x, mid.y, to.y, excludeIds)) { bodyHits++; }
-      pinHits += this.countPinHitsVertical(mid.x, mid.y, to.y, pinObstacles, pinThreshold);
+      if (this.verticalSegmentIntersectsBody(mid.x, mid.y, to.y, excludeIds, fromInfo, toInfo)) {
+        bodyHits++;
+      }
+      pinHits += this.countPinHitsVertical(mid.x, mid.y, to.y, pinObstacles, pinThreshold, mid, to);
     }
-    const pathScore: WirePathScore = { score: bodyHits * 10 + pinHits * 3, intersectsBody: bodyHits > 0, pinHits: pinHits };
+    const pathScore: WirePathScore = {
+      score: bodyHits * 10 + pinHits * 3,
+      intersectsBody: bodyHits > 0,
+      pinHits: pinHits
+    };
     return pathScore;
   }
 
-  private countPinHitsHorizontal(x1: number, x2: number, y: number, obstacles: Point2D[], threshold: number): number {
+  private countPinHitsHorizontal(
+    x1: number, x2: number, y: number, obstacles: Point2D[], threshold: number,
+    segA: Point2D, segB: Point2D
+  ): number {
     const minX = Math.min(x1, x2) - threshold;
     const maxX = Math.max(x1, x2) + threshold;
     let count = 0;
     for (const pw of obstacles) {
-      if (Math.abs(pw.y - y) <= threshold && pw.x >= minX && pw.x <= maxX) { count++; }
+      // 端点豁免：连到目标脚时脚点不算障碍
+      if (Math.hypot(pw.x - segA.x, pw.y - segA.y) <= threshold ||
+        Math.hypot(pw.x - segB.x, pw.y - segB.y) <= threshold) {
+        continue;
+      }
+      if (Math.abs(pw.y - y) <= threshold && pw.x >= minX && pw.x <= maxX) {
+        count++;
+      }
     }
     return count;
   }
 
-  private countPinHitsVertical(x: number, y1: number, y2: number, obstacles: Point2D[], threshold: number): number {
+  private countPinHitsVertical(
+    x: number, y1: number, y2: number, obstacles: Point2D[], threshold: number,
+    segA: Point2D, segB: Point2D
+  ): number {
     const minY = Math.min(y1, y2) - threshold;
     const maxY = Math.max(y1, y2) + threshold;
     let count = 0;
     for (const pw of obstacles) {
-      if (Math.abs(pw.x - x) <= threshold && pw.y >= minY && pw.y <= maxY) { count++; }
+      if (Math.hypot(pw.x - segA.x, pw.y - segA.y) <= threshold ||
+        Math.hypot(pw.x - segB.x, pw.y - segB.y) <= threshold) {
+        continue;
+      }
+      if (Math.abs(pw.x - x) <= threshold && pw.y >= minY && pw.y <= maxY) {
+        count++;
+      }
     }
     return count;
   }
 
-  private horizontalSegmentIntersectsBody(x1: number, x2: number, y: number, excludeIds: Set<string>): boolean {
+  /**
+   * 线段是否侵入器件选中区。对端点器件：仅允许「引脚逃逸走廊」内穿过，禁止斜穿/横穿体。
+   */
+  private segmentHitsObstacleRect(
+    a: Point2D, b: Point2D, excludeIds: Set<string>,
+    fromInfo: PinAtPoint | null, toInfo: PinAtPoint | null
+  ): boolean {
     const doc = this.getDocument();
-    const segMinX = Math.min(x1, x2);
-    const segMaxX = Math.max(x1, x2);
     for (const comp of doc.components) {
-      if (excludeIds.has(comp.id)) { continue; }
-      const b = this.getComponentWorldBounds(comp);
-      if (b === null) { continue; }
-      if (y >= b.y && y <= b.y + b.height && segMaxX > b.x && segMinX < b.x + b.width) {
+      const rect = this.getComponentObstacleRect(comp);
+      const hitRect: WorldHitRect = this.toWorldHitRect(comp, rect);
+      if (!DeviceHitGeometry.segmentIntersectsRect(a, b, hitRect)) {
+        continue;
+      }
+      // 端点器件：允许沿本脚逃逸走廊进出选中区
+      if (excludeIds.has(comp.id)) {
+        const pins = this.resolvePins(comp.libraryId);
+        const pinWorlds: Point2D[] = [];
+        if (pins !== null) {
+          for (let pi = 0; pi < pins.length; pi++) {
+            const local = this.transformPinOffsetForConnect(
+              pins[pi].position, comp.rotation, comp.mirrored);
+            const pw: Point2D = {
+              x: comp.position.x + local.x,
+              y: comp.position.y + local.y
+            };
+            pinWorlds.push(pw);
+          }
+        }
+        // 仅放行：整段采样点都落在逃逸走廊（或区外）
+        const samples = DeviceHitGeometry.sampleSegment(a, b, 8);
+        let corridorOk = true;
+        for (let si = 0; si < samples.length; si++) {
+          const s = samples[si];
+          if (!DeviceHitGeometry.pointInRect(s.x, s.y, hitRect)) {
+            continue;
+          }
+          if (!DeviceHitGeometry.pointInAnyPinEscapeCorridor(
+            s.x, s.y, pinWorlds, hitRect, Math.max(this.viewport.gridSize, 10))) {
+            corridorOk = false;
+            break;
+          }
+        }
+        if (corridorOk) {
+          continue;
+        }
         return true;
       }
+      return true;
     }
     return false;
   }
 
-  private verticalSegmentIntersectsBody(x: number, y1: number, y2: number, excludeIds: Set<string>): boolean {
-    const doc = this.getDocument();
-    const segMinY = Math.min(y1, y2);
-    const segMaxY = Math.max(y1, y2);
-    for (const comp of doc.components) {
-      if (excludeIds.has(comp.id)) { continue; }
-      const b = this.getComponentWorldBounds(comp);
-      if (b === null) { continue; }
-      if (x >= b.x && x <= b.x + b.width && segMaxY > b.y && segMinY < b.y + b.height) {
-        return true;
-      }
-    }
-    return false;
+  private horizontalSegmentIntersectsBody(
+    x1: number, x2: number, y: number, excludeIds: Set<string>,
+    fromInfo: PinAtPoint | null = null, toInfo: PinAtPoint | null = null
+  ): boolean {
+    return this.segmentHitsObstacleRect(
+      { x: x1, y: y }, { x: x2, y: y }, excludeIds, fromInfo, toInfo);
+  }
+
+  private verticalSegmentIntersectsBody(
+    x: number, y1: number, y2: number, excludeIds: Set<string>,
+    fromInfo: PinAtPoint | null = null, toInfo: PinAtPoint | null = null
+  ): boolean {
+    return this.segmentHitsObstacleRect(
+      { x: x, y: y1 }, { x: x, y: y2 }, excludeIds, fromInfo, toInfo);
   }
 
   private preferMidByPinDirection(
@@ -2873,7 +3369,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   private findPinAtPoint(world: Point2D): PinAtPoint | null {
     const doc = this.getDocument();
-    const threshold = this.viewport.gridSize * 1.5;
+    // 略大于 grid*1.5：引脚贴齐障碍边时仍优先命中脚，不被邻器件选中区吞掉
+    const threshold = Math.max(this.viewport.gridSize * 2, 16);
     let bestDist = threshold;
     let bestResult: PinAtPoint | null = null;
     for (const comp of doc.components) {
@@ -2903,25 +3400,28 @@ export class SchematicEditorImpl implements ISchematicEditor {
    * lie along the chosen L-shape path. Adds intermediate waypoints to produce
    * clean right-angle detours like Proteus.
    */
-  private routeAroundObstacles(from: Point2D, mid: Point2D, to: Point2D, excludeIds: Set<string>, pinObstacles: Point2D[]): Point2D[] {
+  private routeAroundObstacles(
+    from: Point2D, mid: Point2D, to: Point2D, excludeIds: Set<string>,
+    pinObstacles: Point2D[],
+    _fromInfo: PinAtPoint | null = null, _toInfo: PinAtPoint | null = null
+  ): Point2D[] {
     const g = this.viewport.gridSize;
-    const pinThreshold = g * 2;
-    const detourMargin = g * 2;
-
-    // Determine which side to detour to for each obstacle found
-    // For each of the two segments, find the furthest-obstructing obstacle
-    // and route around it (and all obstacles on that side).
+    const pinThreshold = Math.max(g * 2, FOREIGN_PIN_CLEARANCE);
+    // 绕开选中区时多留一格余量，避免贴边仍“碰到”
+    const detourMargin = g * 3;
 
     // Segment 1: from → mid
     const seg1H = from.y === mid.y;
     let seg1Detour: Point2D[] | null = null;
 
     if (seg1H) {
-      // Horizontal segment at y=from.y from from.x to mid.x
-      seg1Detour = this.findHorizontalDetour(from.x, mid.x, from.y, from, to, excludeIds, pinObstacles, pinThreshold, detourMargin, true);
+      seg1Detour = this.findHorizontalDetour(
+        from.x, mid.x, from.y, from, to, excludeIds, pinObstacles,
+        pinThreshold, detourMargin, true);
     } else {
-      // Vertical segment at x=from.x from from.y to mid.y
-      seg1Detour = this.findVerticalDetour(from.x, from.y, mid.y, from, to, excludeIds, pinObstacles, pinThreshold, detourMargin, true);
+      seg1Detour = this.findVerticalDetour(
+        from.x, from.y, mid.y, from, to, excludeIds, pinObstacles,
+        pinThreshold, detourMargin, true);
     }
 
     // Segment 2: mid → to
@@ -2929,9 +3429,13 @@ export class SchematicEditorImpl implements ISchematicEditor {
     let seg2Detour: Point2D[] | null = null;
 
     if (seg2H) {
-      seg2Detour = this.findHorizontalDetour(mid.x, to.x, mid.y, from, to, excludeIds, pinObstacles, pinThreshold, detourMargin, false);
+      seg2Detour = this.findHorizontalDetour(
+        mid.x, to.x, mid.y, from, to, excludeIds, pinObstacles,
+        pinThreshold, detourMargin, false);
     } else {
-      seg2Detour = this.findVerticalDetour(mid.x, mid.y, to.y, from, to, excludeIds, pinObstacles, pinThreshold, detourMargin, false);
+      seg2Detour = this.findVerticalDetour(
+        mid.x, mid.y, to.y, from, to, excludeIds, pinObstacles,
+        pinThreshold, detourMargin, false);
     }
 
     if (seg1Detour === null && seg2Detour === null) {
@@ -2978,8 +3482,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
     const pinInfo = this.findPinAtPoint(pinPoint);
     if (pinInfo === null) { return; }
 
-    const body = this.getComponentWorldBounds(pinInfo.comp);
-    if (body === null) { return; }
+    // 用紧贴符号框判断引脚所在边，勿用 HIT_PAD 选中区（过大导致边判断失败）
+    const body = this.getComponentSelectRect(pinInfo.comp);
 
     const g = this.viewport.gridSize;
     const threshold = g;
@@ -3226,27 +3730,96 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return point;
   }
 
+  /**
+   * 吸附到既有导线任意点（中段/端点均可）— Proteus T 接。
+   * 已在引脚上则不改（调用方应先 snapToNearestPin）。
+   */
+  private snapToNearestWire(point: Point2D, gridSize: number): Point2D {
+    const doc = this.getDocument();
+    const threshold = Math.min(Math.max(gridSize * 0.75, 6), 12);
+    let bestDist = threshold;
+    let bestPoint: Point2D | null = null;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const wire = doc.wires[wi];
+      if (wire.points.length < 2) {
+        continue;
+      }
+      for (let si = 0; si < wire.points.length - 1; si++) {
+        const a = wire.points[si];
+        const b = wire.points[si + 1];
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const len2 = abx * abx + aby * aby;
+        let t = 0;
+        if (len2 > 1e-6) {
+          t = ((point.x - a.x) * abx + (point.y - a.y) * aby) / len2;
+          if (t < 0) {
+            t = 0;
+          } else if (t > 1) {
+            t = 1;
+          }
+        }
+        const proj: Point2D = { x: a.x + t * abx, y: a.y + t * aby };
+        const dist = Math.hypot(point.x - proj.x, point.y - proj.y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestPoint = proj;
+        }
+      }
+    }
+    if (bestPoint !== null) {
+      Logger.debug('schematic_editor',
+        `snapToNearestWire: (${Math.round(point.x)},${Math.round(point.y)}) -> ` +
+        `(${Math.round(bestPoint.x)},${Math.round(bestPoint.y)}) d=${bestDist.toFixed(1)}`);
+      return bestPoint;
+    }
+    return point;
+  }
+
+  /** 落线端点：先吸脚，再吸导线任意点 */
+  private snapWireEndpoint(point: Point2D, gridSize: number): Point2D {
+    const afterPin = this.snapToNearestPin(point, gridSize);
+    if (Math.hypot(afterPin.x - point.x, afterPin.y - point.y) > 0.5) {
+      return afterPin;
+    }
+    return this.snapToNearestWire(point, gridSize);
+  }
+
   private ensureNetExists(netId: string): void {
     const doc = this.getDocument();
     const existing = doc.nets.find(n => n.id === netId);
     if (existing !== undefined) {
       return;
     }
+    // 禁止 NET_${id.substring(0,6)}：时间戳 id（net_1784…）会全部撞成 NET_net_17，
+    // 拓扑重建按网名继承时把几何上独立的导线并成一网 → 仪器缺 GND/COM、电阻被短路跳过。
+    let idx = doc.nets.length + 1;
+    let candidate = `NET_${idx}`;
+    while (doc.nets.some(n => (n.name ?? '') === candidate)) {
+      idx++;
+      candidate = `NET_${idx}`;
+    }
     doc.nets.push({
       id: netId,
-      name: `NET_${netId.substring(0, 6)}`,
+      name: candidate,
       type: NetType.SIGNAL,
       pinIds: []
     });
-    Logger.info('schematic_editor', `ensureNetExists: created net ${netId}`);
+    traceNetEnsureCreate(netId, candidate, doc.nets.length);
+    Logger.info('schematic_editor', `ensureNetExists: created net ${netId} name=${candidate}`);
   }
 
-  /** Find the net that a world position already belongs to, if any.
-   *  Checks both pin-to-net membership and wire-to-net proximity. */
+  /**
+   * 落点已属某网则继承：引脚、导线端点、或导线中段任意点（T 接）。
+   * 容差宜紧，避免「路过附近」误并；真正压在铜皮上才并。
+   */
   private inheritNetAtPosition(pos: Point2D): string | null {
     const doc = this.getDocument();
-    const junctionRadius = Math.min(Math.max(2, this.viewport.gridSize * 0.5), 5);
-    // 1) Check if any component pin at this position is already on a net
+    const pinRadius = Math.min(Math.max(2, this.viewport.gridSize * 0.5), 5);
+    // 与 snapToNearestWire 阈值对齐，吸附后落点可稳定继承网名
+    const joinTol = Math.min(Math.max(this.viewport.gridSize * 0.75, 6), 12);
+
+    // 1) 优先：落点已是某网上的引脚
     for (const net of doc.nets) {
       if (net.pinIds.length === 0) {
         continue;
@@ -3271,21 +3844,20 @@ export class SchematicEditorImpl implements ISchematicEditor {
           const local = this.transformPinOffsetForConnect(pin.position, comp.rotation, comp.mirrored);
           const wx = comp.position.x + local.x;
           const wy = comp.position.y + local.y;
-          if (Math.abs(pos.x - wx) <= junctionRadius && Math.abs(pos.y - wy) <= junctionRadius) {
+          if (Math.abs(pos.x - wx) <= pinRadius && Math.abs(pos.y - wy) <= pinRadius) {
             return net.id;
           }
         }
       }
     }
-    // 2) Check if the position lies on an existing wire segment
+
+    // 2) 导线任意点（端点或中段）：压在铜皮上即并入该网
     for (const wire of doc.wires) {
       if (wire.points.length < 2) {
         continue;
       }
-      for (let i = 1; i < wire.points.length; i++) {
-        const a = wire.points[i - 1];
-        const b = wire.points[i];
-        if (this.pointOnSegment(pos, a, b, junctionRadius)) {
+      for (let si = 0; si < wire.points.length - 1; si++) {
+        if (this.pointOnSegment(pos, wire.points[si], wire.points[si + 1], joinTol)) {
           return wire.netId;
         }
       }
@@ -3309,13 +3881,16 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   private connectWireToPins(from: Point2D, to: Point2D, netId: string,
-    threshold: number = this.viewport.gridSize * 1.5): void {
+    threshold: number = this.viewport.gridSize * 1.5): number {
     const doc = this.getDocument();
     const endpoints = [from, to];
-    const junctionRadius = 2; // Two pins within this distance are considered co-located (junction)
+    const endLabels = ['FROM', 'TO'];
+    // 仅真正重叠的引脚才并脚；勿用过大半径把同器件邻脚并到一网
+    const junctionRadius = 2;
     let connectedCount = 0;
+    // 同一引脚只能归属一个网络，避免并网串扰
+    const pinOwnerNet = new Map<string, string>();
 
-    // Collect all (component, pin, worldPos) tuples for efficient lookup
     interface PinCandidate {
       comp: ComponentInstance;
       pin: Pin;
@@ -3341,14 +3916,34 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
     for (let ei = 0; ei < endpoints.length; ei++) {
       const ep = endpoints[ei];
-      // Find the single closest pin to this endpoint
+      const endLabel = endLabels[ei];
       let bestDist = threshold;
       let bestCandidate: PinCandidate | null = null;
       for (let ci = 0; ci < allCandidates.length; ci++) {
         const c = allCandidates[ci];
+        // 同器件邻脚半距封顶，防止密脚（仪表/MCU）抢网
+        let siblingHalf = threshold;
+        for (let sj = 0; sj < allCandidates.length; sj++) {
+          if (sj === ci) {
+            continue;
+          }
+          const o = allCandidates[sj];
+          if (o.comp.id !== c.comp.id) {
+            continue;
+          }
+          const sdx = c.world.x - o.world.x;
+          const sdy = c.world.y - o.world.y;
+          const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+          if (half > 1 && half < siblingHalf) {
+            siblingHalf = half;
+          }
+        }
         const dx = ep.x - c.world.x;
         const dy = ep.y - c.world.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= siblingHalf) {
+          continue;
+        }
         if (dist < bestDist) {
           bestDist = dist;
           bestCandidate = c;
@@ -3356,28 +3951,99 @@ export class SchematicEditorImpl implements ISchematicEditor {
       }
 
       if (bestCandidate !== null) {
-        // Add the closest pin
+        const pinKey = `${bestCandidate.comp.id}:${bestCandidate.pin.id}`;
+        const owner = pinOwnerNet.get(pinKey);
+        if (owner !== undefined && owner !== netId) {
+          traceWirePinSnapReject(endLabel, bestCandidate.comp.refDes, bestCandidate.pin.name,
+            `already on other net ${owner}`);
+          continue;
+        }
+        if (this.netHasSiblingPin(netId, bestCandidate.comp.id, bestCandidate.pin.id)) {
+          traceWirePinSnapReject(endLabel, bestCandidate.comp.refDes, bestCandidate.pin.name,
+            `sibling pin already on net ${netId} (refuse short)`);
+          continue;
+        }
         this.addPinToNet(netId, bestCandidate.comp.id, bestCandidate.pin.id, bestCandidate.pin.name);
+        pinOwnerNet.set(pinKey, netId);
         connectedCount++;
-        Logger.debug('schematic_editor',
-          `connectWireToPins: pin ${bestCandidate.pin.name}(${bestCandidate.pin.id}) of ${bestCandidate.comp.refDes} connected dist=${bestDist.toFixed(1)}`);
+        traceWirePinSnap(endLabel, ep.x, ep.y, true,
+          bestCandidate.comp.refDes, bestCandidate.pin.name, bestCandidate.pin.id,
+          bestDist, `OK→net=${netId}`);
 
-        // Also add any other pins co-located with the closest pin (junction)
+        // 共位并脚：禁止同器件不同脚（否则二端器件短路）
         for (let ci = 0; ci < allCandidates.length; ci++) {
           const c = allCandidates[ci];
           if (c.comp.id === bestCandidate.comp.id && c.pin.id === bestCandidate.pin.id) {
             continue;
           }
+          if (c.comp.id === bestCandidate.comp.id) {
+            continue;
+          }
           const dx = bestCandidate.world.x - c.world.x;
           const dy = bestCandidate.world.y - c.world.y;
           if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            const ck = `${c.comp.id}:${c.pin.id}`;
+            const cOwner = pinOwnerNet.get(ck);
+            if (cOwner !== undefined && cOwner !== netId) {
+              continue;
+            }
+            if (this.netHasSiblingPin(netId, c.comp.id, c.pin.id)) {
+              continue;
+            }
             this.addPinToNet(netId, c.comp.id, c.pin.id, c.pin.name);
+            pinOwnerNet.set(ck, netId);
             connectedCount++;
+            traceWirePinSnap(`${endLabel}+COLOC`, c.world.x, c.world.y, true,
+              c.comp.refDes, c.pin.name, c.pin.id, 0, `coloc→net=${netId}`);
           }
+        }
+      } else {
+        traceWirePinSnap(endLabel, ep.x, ep.y, false, '-', '-', '-', threshold, 'MISS');
+        // 未吸到脚 ≠ 悬空：T 接到既有铜皮时由拓扑重建并网；补距离便于对照 NET_REASSIGN
+        let bestWd = Number.POSITIVE_INFINITY;
+        let bestWid = '';
+        let bestNid = '';
+        for (let wi = 0; wi < doc.wires.length; wi++) {
+          const w = doc.wires[wi];
+          if (w.points.length < 2) {
+            continue;
+          }
+          for (let si = 0; si < w.points.length - 1; si++) {
+            const a = w.points[si];
+            const b = w.points[si + 1];
+            const abx = b.x - a.x;
+            const aby = b.y - a.y;
+            const len2 = abx * abx + aby * aby;
+            let t = 0;
+            if (len2 > 1e-6) {
+              t = ((ep.x - a.x) * abx + (ep.y - a.y) * aby) / len2;
+              if (t < 0) {
+                t = 0;
+              } else if (t > 1) {
+                t = 1;
+              }
+            }
+            const fx = a.x + t * abx;
+            const fy = a.y + t * aby;
+            const d = Math.hypot(ep.x - fx, ep.y - fy);
+            if (d < bestWd) {
+              bestWd = d;
+              bestWid = w.id;
+              bestNid = w.netId;
+            }
+          }
+        }
+        const placeTol = Math.min(Math.max(this.viewport.gridSize * 0.75, 6), 12);
+        if (!Number.isFinite(bestWd)) {
+          traceWireSnapMissNearCopper(endLabel, ep.x, ep.y, -1, '', '', placeTol);
+        } else {
+          traceWireSnapMissNearCopper(endLabel, ep.x, ep.y, bestWd, bestWid, bestNid, placeTol);
         }
       }
     }
-    Logger.debug('schematic_editor', `connectWireToPins: ${connectedCount} pins connected to net ${netId}`);
+    Logger.info(INSTR_TRACE_TAG,
+      `[WIRE_CONN] connectWireToPins done snapCount=${connectedCount} net=${netId}`);
+    return connectedCount;
   }
 
   /** 若导线网络连接到 VCC/GND 引脚，则合并到全局电源网络 */
@@ -3497,6 +4163,29 @@ export class SchematicEditorImpl implements ISchematicEditor {
       case 270: return { x: y, y: -x };
       default: return { x: x, y: y };
     }
+  }
+
+  /** 网上是否已有同器件另一脚（禁止二端器件吸附短路） */
+  private netHasSiblingPin(netId: string, compId: string, pinId: string): boolean {
+    const doc = this.getDocument();
+    const net = doc.nets.find(n => n.id === netId);
+    if (net === undefined) {
+      return false;
+    }
+    const prefix = `${compId}:`;
+    for (let i = 0; i < net.pinIds.length; i++) {
+      const ref = net.pinIds[i];
+      if (!ref.startsWith(prefix)) {
+        continue;
+      }
+      const rest = ref.substring(prefix.length);
+      const colon = rest.indexOf(':');
+      const otherPinId = colon >= 0 ? rest.substring(0, colon) : rest;
+      if (otherPinId.length > 0 && otherPinId !== pinId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private addPinToNet(netId: string, compId: string, pinId: string, pinName: string): void {
@@ -3740,16 +4429,22 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   /** Ensure the "value" param has the same unit suffix as the library ID.
-   *  e.g. R_4.7K with value="4.7" → value="4.7K" */
+   *  e.g. R_4.7K with value="4.7" → value="4.7K"
+   *  电阻另走 UnitParser.coerceResistorParam，修复 1000ΩK / 1000000ΩK 污染。 */
   private normalizeComponentValueStr(libraryId: string, value: string): string {
     if (value.length === 0) return value;
-    if (/[a-zµ]/i.test(value)) return value; // already has unit
 
     const libId = libraryId.toUpperCase();
+    if (libId.startsWith('R_') || libId.includes('RESISTOR') ||
+      libId.startsWith('POT_') || libId.includes('POTENTIOMETER') || libId.includes('RHEOSTAT')) {
+      return UnitParser.coerceResistorParam(libraryId, value);
+    }
+
+    // 已有字母/µ 单位则不拼接（电容/电感）
+    if (/[a-zµ]/i.test(value)) return value;
+
     let fallback = '';
-    if (libId.startsWith('R_') || libId.includes('RESISTOR')) {
-      fallback = libId.replace(/^(R_|RESISTOR_?)/i, '');
-    } else if (libId.startsWith('C_') || libId.includes('CAP')) {
+    if (libId.startsWith('C_') || libId.includes('CAP')) {
       fallback = libId.replace(/^(C_|CAP_?)/i, '');
     } else if (libId.startsWith('L_') || libId.includes('INDUCTOR')) {
       fallback = libId.replace(/^L_/i, '');

@@ -7,12 +7,12 @@ export interface SymbolBounds {
     width: number;
     height: number;
 }
-/** 仪器类符号主体半宽下限（示波器 70×80、逻辑分析仪 64×100） */
-const INSTRUMENT_BODY_HALF_MIN = 50;
+/** 仪器类符号主体半宽下限（示波器/表头等）；勿过大，否则单侧引脚被深埋进选中区无法连线 */
+const INSTRUMENT_BODY_HALF_MIN = 28;
 /**
  * 单侧引脚簇（示波器/电压表等）：符号主体画在原点附近，
  * 若仅用引脚 AABB，选中区会偏到引脚一侧，主体右半落在区外。
- * 将 AABB 扩到覆盖原点对称主体。
+ * 将 AABB 扩到覆盖原点对称主体——但引脚所在边保持贴齐引脚，禁止把脚深埋进区内。
  */
 export function coverOriginCenteredBody(minX: number, maxX: number, minY: number, maxY: number): SymbolBounds {
     const spansBothX = minX < -8 && maxX > 8;
@@ -23,25 +23,53 @@ export function coverOriginCenteredBody(minX: number, maxX: number, minY: number
     let outMaxY = maxY;
     if (!spansBothX) {
         const pinHalfX = Math.max(Math.abs(minX), Math.abs(maxX));
-        // 引脚距原点 ≥18：覆盖小仪器/表头（±20/±30）；VCC 单脚通常 <15
+        // 引脚距原点 ≥18：覆盖小仪器/表头；VCC 单脚通常 <15
         if (pinHalfX >= 18) {
-            const halfX = Math.max(pinHalfX, INSTRUMENT_BODY_HALF_MIN);
-            const halfY = Math.max(Math.abs(minY), Math.abs(maxY), INSTRUMENT_BODY_HALF_MIN);
-            outMinX = Math.min(outMinX, -halfX);
-            outMaxX = Math.max(outMaxX, halfX);
-            outMinY = Math.min(outMinY, -halfY);
-            outMaxY = Math.max(outMaxY, halfY);
+            const bodyHalfX = Math.max(Math.min(pinHalfX, 45), INSTRUMENT_BODY_HALF_MIN);
+            const bodyHalfY = Math.max(Math.abs(minY), Math.abs(maxY), INSTRUMENT_BODY_HALF_MIN);
+            // 仅向「无脚的一侧」扩主体；有脚一侧贴齐引脚，避免 HIT_PAD 后再埋 20~50px
+            if (maxX <= 8 && minX < -4) {
+                // 脚在左侧（电压表/功率表等）
+                outMaxX = Math.max(outMaxX, bodyHalfX);
+            }
+            else if (minX >= -8 && maxX > 4) {
+                // 脚在右侧
+                outMinX = Math.min(outMinX, -bodyHalfX);
+            }
+            else {
+                outMinX = Math.min(outMinX, -bodyHalfX);
+                outMaxX = Math.max(outMaxX, bodyHalfX);
+            }
+            outMinY = Math.min(outMinY, -bodyHalfY);
+            outMaxY = Math.max(outMaxY, bodyHalfY);
         }
     }
     else if (!spansBothY) {
         // 左右已有脚 + 另有竖直方向引脚（如 TO-220：IN/OUT + 底 GND）。
-        // 仅在存在竖直脚伸出时扩 Y；R/C 等纯水平双脚（pinHalfY≈0）不得扩，
+        // 仅在存在竖直脚伸出时扩 Y；R/C 等纯水平双脚（pinHalfY≈0、半宽≈30）不得扩，
         // 否则 height≥40 会误触发 IC backdrop 画出大黑框。
         const pinHalfY = Math.max(Math.abs(minY), Math.abs(maxY));
         if (pinHalfY >= 18) {
             const bodyHalfY = 20;
-            outMinY = Math.min(outMinY, -bodyHalfY);
-            outMaxY = Math.max(outMaxY, bodyHalfY);
+            if (maxY <= 8 && minY < -4) {
+                outMaxY = Math.max(outMaxY, bodyHalfY);
+            }
+            else if (minY >= -8 && maxY > 4) {
+                outMinY = Math.min(outMinY, -bodyHalfY);
+            }
+            else {
+                outMinY = Math.min(outMinY, -bodyHalfY);
+                outMaxY = Math.max(outMaxY, bodyHalfY);
+            }
+        }
+        else {
+            // 水平穿通型仪器（电流表 I+…I- 在 ±40）：表头上下略伸，但勿过大盖住邻器件脚
+            const pinHalfX = Math.max(Math.abs(minX), Math.abs(maxX));
+            if (pinHalfX >= 35) {
+                const bodyHalfY = 22;
+                outMinY = Math.min(outMinY, -bodyHalfY);
+                outMaxY = Math.max(outMaxY, bodyHalfY);
+            }
         }
     }
     return {

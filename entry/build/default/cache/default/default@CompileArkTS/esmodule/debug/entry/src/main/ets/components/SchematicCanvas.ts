@@ -45,6 +45,11 @@ interface SchematicCanvas_Params {
     contextMenuVisible?: boolean;
     contextMenuScreenX?: number;
     contextMenuScreenY?: number;
+    contextMenuShowAddLabel?: boolean;
+    contextMenuShowEdit?: boolean;
+    showNetLabelDialog?: boolean;
+    netLabelDialogTitle?: string;
+    netLabelDialogName?: string;
     previewWireEnd?: Point2D | null;
     placementPreview?: Point2D | null;
     isBoxSelecting?: boolean;
@@ -53,6 +58,7 @@ interface SchematicCanvas_Params {
     shiftHeld?: boolean;
     alignGuideX?: number | null;
     wireWaypoints?: Point2D[];
+    lastWirePreviewCorrected?: boolean;
     alignGuideY?: number | null;
     dragBlocked?: boolean;
     interactiveToggleCompId?: string;
@@ -62,6 +68,13 @@ interface SchematicCanvas_Params {
     tempDragLastC?: number;
     lastDownTime?: number;
     lastUpTime?: number;
+    lastLabelTapMs?: number;
+    lastLabelTapId?: string;
+    netLabelPendingX?: number;
+    netLabelPendingY?: number;
+    netLabelEditId?: string;
+    contextNetLabelX?: number;
+    contextNetLabelY?: number;
     middlePanning?: boolean;
     middlePanLastX?: number;
     middlePanLastY?: number;
@@ -105,10 +118,10 @@ import type { SimulationKernelImpl } from 'simulation_kernel';
 import type { ComponentDefinition } from 'component_library';
 import { EditorToolMode } from "@bundle:com.elecdraw.aischsim/entry/ets/model/EditorToolMode";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
-import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { SchematicLayerId } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
-import type { SchematicEditorImpl } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
+import type { SchematicEditorImpl, WirePathPreviewResult } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
 import pointer from "@ohos:multimodalInput.pointer";
 export class SchematicCanvas extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -159,6 +172,11 @@ export class SchematicCanvas extends ViewPU {
         this.__contextMenuVisible = new ObservedPropertySimplePU(false, this, "contextMenuVisible");
         this.__contextMenuScreenX = new ObservedPropertySimplePU(0, this, "contextMenuScreenX");
         this.__contextMenuScreenY = new ObservedPropertySimplePU(0, this, "contextMenuScreenY");
+        this.__contextMenuShowAddLabel = new ObservedPropertySimplePU(false, this, "contextMenuShowAddLabel");
+        this.__contextMenuShowEdit = new ObservedPropertySimplePU(false, this, "contextMenuShowEdit");
+        this.__showNetLabelDialog = new ObservedPropertySimplePU(false, this, "showNetLabelDialog");
+        this.__netLabelDialogTitle = new ObservedPropertySimplePU('放置网络标号', this, "netLabelDialogTitle");
+        this.__netLabelDialogName = new ObservedPropertySimplePU('NET1', this, "netLabelDialogName");
         this.__previewWireEnd = new ObservedPropertyObjectPU(null, this, "previewWireEnd");
         this.__placementPreview = new ObservedPropertyObjectPU(null, this, "placementPreview");
         this.isBoxSelecting = false;
@@ -167,6 +185,7 @@ export class SchematicCanvas extends ViewPU {
         this.shiftHeld = false;
         this.alignGuideX = null;
         this.wireWaypoints = [];
+        this.lastWirePreviewCorrected = false;
         this.alignGuideY = null;
         this.dragBlocked = false;
         this.interactiveToggleCompId = '';
@@ -176,6 +195,13 @@ export class SchematicCanvas extends ViewPU {
         this.tempDragLastC = Number.NaN;
         this.lastDownTime = 0;
         this.lastUpTime = 0;
+        this.lastLabelTapMs = 0;
+        this.lastLabelTapId = '';
+        this.netLabelPendingX = 0;
+        this.netLabelPendingY = 0;
+        this.netLabelEditId = '';
+        this.contextNetLabelX = 0;
+        this.contextNetLabelY = 0;
         this.middlePanning = false;
         this.middlePanLastX = 0;
         this.middlePanLastY = 0;
@@ -347,6 +373,21 @@ export class SchematicCanvas extends ViewPU {
         if (params.contextMenuScreenY !== undefined) {
             this.contextMenuScreenY = params.contextMenuScreenY;
         }
+        if (params.contextMenuShowAddLabel !== undefined) {
+            this.contextMenuShowAddLabel = params.contextMenuShowAddLabel;
+        }
+        if (params.contextMenuShowEdit !== undefined) {
+            this.contextMenuShowEdit = params.contextMenuShowEdit;
+        }
+        if (params.showNetLabelDialog !== undefined) {
+            this.showNetLabelDialog = params.showNetLabelDialog;
+        }
+        if (params.netLabelDialogTitle !== undefined) {
+            this.netLabelDialogTitle = params.netLabelDialogTitle;
+        }
+        if (params.netLabelDialogName !== undefined) {
+            this.netLabelDialogName = params.netLabelDialogName;
+        }
         if (params.previewWireEnd !== undefined) {
             this.previewWireEnd = params.previewWireEnd;
         }
@@ -370,6 +411,9 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.wireWaypoints !== undefined) {
             this.wireWaypoints = params.wireWaypoints;
+        }
+        if (params.lastWirePreviewCorrected !== undefined) {
+            this.lastWirePreviewCorrected = params.lastWirePreviewCorrected;
         }
         if (params.alignGuideY !== undefined) {
             this.alignGuideY = params.alignGuideY;
@@ -397,6 +441,27 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.lastUpTime !== undefined) {
             this.lastUpTime = params.lastUpTime;
+        }
+        if (params.lastLabelTapMs !== undefined) {
+            this.lastLabelTapMs = params.lastLabelTapMs;
+        }
+        if (params.lastLabelTapId !== undefined) {
+            this.lastLabelTapId = params.lastLabelTapId;
+        }
+        if (params.netLabelPendingX !== undefined) {
+            this.netLabelPendingX = params.netLabelPendingX;
+        }
+        if (params.netLabelPendingY !== undefined) {
+            this.netLabelPendingY = params.netLabelPendingY;
+        }
+        if (params.netLabelEditId !== undefined) {
+            this.netLabelEditId = params.netLabelEditId;
+        }
+        if (params.contextNetLabelX !== undefined) {
+            this.contextNetLabelX = params.contextNetLabelX;
+        }
+        if (params.contextNetLabelY !== undefined) {
+            this.contextNetLabelY = params.contextNetLabelY;
         }
         if (params.middlePanning !== undefined) {
             this.middlePanning = params.middlePanning;
@@ -522,6 +587,11 @@ export class SchematicCanvas extends ViewPU {
         this.__contextMenuVisible.purgeDependencyOnElmtId(rmElmtId);
         this.__contextMenuScreenX.purgeDependencyOnElmtId(rmElmtId);
         this.__contextMenuScreenY.purgeDependencyOnElmtId(rmElmtId);
+        this.__contextMenuShowAddLabel.purgeDependencyOnElmtId(rmElmtId);
+        this.__contextMenuShowEdit.purgeDependencyOnElmtId(rmElmtId);
+        this.__showNetLabelDialog.purgeDependencyOnElmtId(rmElmtId);
+        this.__netLabelDialogTitle.purgeDependencyOnElmtId(rmElmtId);
+        this.__netLabelDialogName.purgeDependencyOnElmtId(rmElmtId);
         this.__previewWireEnd.purgeDependencyOnElmtId(rmElmtId);
         this.__placementPreview.purgeDependencyOnElmtId(rmElmtId);
     }
@@ -544,6 +614,11 @@ export class SchematicCanvas extends ViewPU {
         this.__contextMenuVisible.aboutToBeDeleted();
         this.__contextMenuScreenX.aboutToBeDeleted();
         this.__contextMenuScreenY.aboutToBeDeleted();
+        this.__contextMenuShowAddLabel.aboutToBeDeleted();
+        this.__contextMenuShowEdit.aboutToBeDeleted();
+        this.__showNetLabelDialog.aboutToBeDeleted();
+        this.__netLabelDialogTitle.aboutToBeDeleted();
+        this.__netLabelDialogName.aboutToBeDeleted();
         this.__previewWireEnd.aboutToBeDeleted();
         this.__placementPreview.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
@@ -702,6 +777,41 @@ export class SchematicCanvas extends ViewPU {
     set contextMenuScreenY(newValue: number) {
         this.__contextMenuScreenY.set(newValue);
     }
+    private __contextMenuShowAddLabel: ObservedPropertySimplePU<boolean>;
+    get contextMenuShowAddLabel() {
+        return this.__contextMenuShowAddLabel.get();
+    }
+    set contextMenuShowAddLabel(newValue: boolean) {
+        this.__contextMenuShowAddLabel.set(newValue);
+    }
+    private __contextMenuShowEdit: ObservedPropertySimplePU<boolean>;
+    get contextMenuShowEdit() {
+        return this.__contextMenuShowEdit.get();
+    }
+    set contextMenuShowEdit(newValue: boolean) {
+        this.__contextMenuShowEdit.set(newValue);
+    }
+    private __showNetLabelDialog: ObservedPropertySimplePU<boolean>;
+    get showNetLabelDialog() {
+        return this.__showNetLabelDialog.get();
+    }
+    set showNetLabelDialog(newValue: boolean) {
+        this.__showNetLabelDialog.set(newValue);
+    }
+    private __netLabelDialogTitle: ObservedPropertySimplePU<string>;
+    get netLabelDialogTitle() {
+        return this.__netLabelDialogTitle.get();
+    }
+    set netLabelDialogTitle(newValue: string) {
+        this.__netLabelDialogTitle.set(newValue);
+    }
+    private __netLabelDialogName: ObservedPropertySimplePU<string>;
+    get netLabelDialogName() {
+        return this.__netLabelDialogName.get();
+    }
+    set netLabelDialogName(newValue: string) {
+        this.__netLabelDialogName.set(newValue);
+    }
     private __previewWireEnd: ObservedPropertyObjectPU<Point2D | null>;
     get previewWireEnd() {
         return this.__previewWireEnd.get();
@@ -722,6 +832,8 @@ export class SchematicCanvas extends ViewPU {
     private shiftHeld: boolean;
     private alignGuideX: number | null;
     private wireWaypoints: Point2D[]; // Proteus-style multi-point wire drawing
+    /** 上一次预览是否已自动绕障（避免 pointer move 刷状态栏） */
+    private lastWirePreviewCorrected: boolean;
     private alignGuideY: number | null;
     private dragBlocked: boolean; // true when component/layer locked, prevents accidental pan
     /** Sim-time pushbutton candidate — toggled on short click without drag */
@@ -734,6 +846,14 @@ export class SchematicCanvas extends ViewPU {
     private tempDragLastC: number;
     private lastDownTime: number;
     private lastUpTime: number;
+    private lastLabelTapMs: number;
+    private lastLabelTapId: string;
+    private netLabelPendingX: number;
+    private netLabelPendingY: number;
+    /** 空=新放置；非空=重命名已有标号 */
+    private netLabelEditId: string;
+    private contextNetLabelX: number;
+    private contextNetLabelY: number;
     private middlePanning: boolean;
     private middlePanLastX: number;
     private middlePanLastY: number;
@@ -1037,6 +1157,10 @@ export class SchematicCanvas extends ViewPU {
             // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.onKeyEvent((event: KeyEvent) => {
                 if (event.type === KeyType.Down && event.keyCode === 27) {
+                    if (this.showNetLabelDialog) {
+                        this.closeNetLabelDialog();
+                        return true;
+                    }
                     this.wireWaypoints = [];
                     this.clearSelection();
                     return true;
@@ -1097,77 +1221,282 @@ export class SchematicCanvas extends ViewPU {
                         Column.position({ x: this.contextMenuScreenX, y: this.contextMenuScreenY });
                         Column.zIndex(20);
                     }, Column);
-                    {
-                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                            if (isInitialRender) {
-                                let componentCall = new ProteusClassicBtn(this, {
-                                    label: '复制',
-                                    widthVal: 96,
-                                    heightVal: 32,
-                                    onAction: () => {
-                                        this.contextMenuVisible = false;
-                                        this.onCopySelected();
-                                    }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 429, col: 15 });
-                                ViewPU.create(componentCall);
-                                let paramsLambda = () => {
-                                    return {
-                                        label: '复制',
-                                        widthVal: 96,
-                                        heightVal: 32,
-                                        onAction: () => {
-                                            this.contextMenuVisible = false;
-                                            this.onCopySelected();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.contextMenuShowAddLabel) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new ProteusClassicBtn(this, {
+                                                label: '添加网络标号',
+                                                widthVal: 128,
+                                                heightVal: 32,
+                                                onAction: () => {
+                                                    this.contextMenuVisible = false;
+                                                    this.openPlaceNetLabelDialog(this.contextNetLabelX, this.contextNetLabelY);
+                                                }
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 449, col: 17 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    label: '添加网络标号',
+                                                    widthVal: 128,
+                                                    heightVal: 32,
+                                                    onAction: () => {
+                                                        this.contextMenuVisible = false;
+                                                        this.openPlaceNetLabelDialog(this.contextNetLabelX, this.contextNetLabelY);
+                                                    }
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
                                         }
-                                    };
-                                };
-                                componentCall.paramsGenerator_ = paramsLambda;
-                            }
-                            else {
-                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '复制',
-                                    widthVal: 96,
-                                    heightVal: 32
-                                });
-                            }
-                        }, { name: "ProteusClassicBtn" });
-                    }
-                    {
-                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                            if (isInitialRender) {
-                                let componentCall = new ProteusClassicBtn(this, {
-                                    label: '删除',
-                                    widthVal: 96,
-                                    heightVal: 32,
-                                    onAction: () => {
-                                        this.contextMenuVisible = false;
-                                        this.onDeleteSelected();
-                                    }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 438, col: 15 });
-                                ViewPU.create(componentCall);
-                                let paramsLambda = () => {
-                                    return {
-                                        label: '删除',
-                                        widthVal: 96,
-                                        heightVal: 32,
-                                        onAction: () => {
-                                            this.contextMenuVisible = false;
-                                            this.onDeleteSelected();
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                label: '添加网络标号',
+                                                widthVal: 128,
+                                                heightVal: 32
+                                            });
                                         }
-                                    };
-                                };
-                                componentCall.paramsGenerator_ = paramsLambda;
-                            }
-                            else {
-                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '删除',
-                                    widthVal: 96,
-                                    heightVal: 32
-                                });
-                            }
-                        }, { name: "ProteusClassicBtn" });
-                    }
+                                    }, { name: "ProteusClassicBtn" });
+                                }
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.contextMenuShowEdit) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new ProteusClassicBtn(this, {
+                                                label: '复制',
+                                                widthVal: 96,
+                                                heightVal: 32,
+                                                onAction: () => {
+                                                    this.contextMenuVisible = false;
+                                                    this.onCopySelected();
+                                                }
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 460, col: 17 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    label: '复制',
+                                                    widthVal: 96,
+                                                    heightVal: 32,
+                                                    onAction: () => {
+                                                        this.contextMenuVisible = false;
+                                                        this.onCopySelected();
+                                                    }
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                label: '复制',
+                                                widthVal: 96,
+                                                heightVal: 32
+                                            });
+                                        }
+                                    }, { name: "ProteusClassicBtn" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new ProteusClassicBtn(this, {
+                                                label: '删除',
+                                                widthVal: 96,
+                                                heightVal: 32,
+                                                onAction: () => {
+                                                    this.contextMenuVisible = false;
+                                                    this.onDeleteSelected();
+                                                }
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 469, col: 17 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    label: '删除',
+                                                    widthVal: 96,
+                                                    heightVal: 32,
+                                                    onAction: () => {
+                                                        this.contextMenuVisible = false;
+                                                        this.onDeleteSelected();
+                                                    }
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                label: '删除',
+                                                widthVal: 96,
+                                                heightVal: 32
+                                            });
+                                        }
+                                    }, { name: "ProteusClassicBtn" });
+                                }
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
                     Column.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.showNetLabelDialog) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Stack.create({ alignContent: Alignment.Center });
+                        Stack.width('100%');
+                        Stack.height('100%');
+                        Stack.zIndex(30);
+                    }, Stack);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.width('100%');
+                        Column.height('100%');
+                        Column.backgroundColor('#00000060');
+                        Column.onClick(() => { this.closeNetLabelDialog(); });
+                    }, Column);
+                    Column.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.width(320);
+                        Column.padding(16);
+                        Column.backgroundColor(ProteusColors.CANVAS_BG);
+                        Column.border({ width: 1, color: ProteusColors.DIVIDER });
+                        Column.shadow({ radius: 8, color: '#00000040' });
+                        Column.onClick(() => { });
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.netLabelDialogTitle);
+                        Text.fontSize(ProteusFonts.TITLE);
+                        Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                        Text.fontWeight(FontWeight.Medium);
+                        Text.margin({ bottom: 6 });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('同名标号将并网；建议贴在引脚或导线端点');
+                        Text.fontSize(ProteusFonts.STATUS);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.margin({ bottom: 10 });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        __Common__.create();
+                        __Common__.width('100%');
+                    }, __Common__);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusTextInput(this, {
+                                    placeholder: '如 NET1 / SDA / VCC',
+                                    text: this.netLabelDialogName,
+                                    mono: true,
+                                    onChange: (v: string) => { this.netLabelDialogName = v; },
+                                    onSubmit: () => { this.confirmNetLabelDialog(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 506, col: 17 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        placeholder: '如 NET1 / SDA / VCC',
+                                        text: this.netLabelDialogName,
+                                        mono: true,
+                                        onChange: (v: string) => { this.netLabelDialogName = v; },
+                                        onSubmit: () => { this.confirmNetLabelDialog(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    placeholder: '如 NET1 / SDA / VCC',
+                                    text: this.netLabelDialogName,
+                                    mono: true
+                                });
+                            }
+                        }, { name: "ProteusTextInput" });
+                    }
+                    __Common__.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create({ space: 8 });
+                        Row.width('100%');
+                        Row.margin({ top: 10 });
+                    }, Row);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusClassicBtn(this, {
+                                    label: '取消',
+                                    widthVal: '48%',
+                                    onAction: () => { this.closeNetLabelDialog(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 515, col: 19 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: '取消',
+                                        widthVal: '48%',
+                                        onAction: () => { this.closeNetLabelDialog(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: '取消',
+                                    widthVal: '48%'
+                                });
+                            }
+                        }, { name: "ProteusClassicBtn" });
+                    }
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusClassicBtn(this, {
+                                    label: this.netLabelEditId.length > 0 ? '改名' : '放置',
+                                    widthVal: '48%',
+                                    onAction: () => { this.confirmNetLabelDialog(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 520, col: 19 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: this.netLabelEditId.length > 0 ? '改名' : '放置',
+                                        widthVal: '48%',
+                                        onAction: () => { this.confirmNetLabelDialog(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: this.netLabelEditId.length > 0 ? '改名' : '放置',
+                                    widthVal: '48%'
+                                });
+                            }
+                        }, { name: "ProteusClassicBtn" });
+                    }
+                    Row.pop();
+                    Column.pop();
+                    Stack.pop();
                 });
             }
             else {
@@ -1314,14 +1643,19 @@ export class SchematicCanvas extends ViewPU {
         this.setWireStart(null);
         this.wireWaypoints = [];
         this.previewWireEnd = null;
+        this.lastWirePreviewCorrected = false;
+        (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
         this.scheduleRedraw();
         this.onStatusChange('已取消选择');
     }
     /**
-     * Right-click: cancel tools when active; show copy/delete menu when something is selected.
+     * Right-click: cancel tools when active; wire endpoint → add net label;
+     * show copy/delete menu when something is selected.
      */
     private handleRightClick(): void {
         this.contextMenuVisible = false;
+        this.contextMenuShowAddLabel = false;
+        this.contextMenuShowEdit = false;
         if (this.toolMode === EditorToolMode.PLACE) {
             this.pendingLibraryId = '';
             this.placementPreview = null;
@@ -1334,13 +1668,26 @@ export class SchematicCanvas extends ViewPU {
             this.wireWaypoints = [];
             this.setWireStart(null);
             this.previewWireEnd = null;
+            this.lastWirePreviewCorrected = false;
+            (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
             this.onStatusChange('取消布线');
             this.scheduleRedraw();
+            return;
+        }
+        const world = this.screenToWorld(this.contextMenuScreenX, this.contextMenuScreenY);
+        const endpoint = this.findNearestWireEndpointWorld(world);
+        if (endpoint !== null) {
+            this.contextNetLabelX = endpoint.x;
+            this.contextNetLabelY = endpoint.y;
+            this.contextMenuShowAddLabel = true;
+            this.contextMenuVisible = true;
+            this.onStatusChange('导线端点：可添加网络标号');
             return;
         }
         const selectedDevices = this.appService.schematicEditor.getSelectedDevices();
         const selectedNets = this.appService.schematicEditor.getSelectedNets();
         if (selectedDevices.length > 0 || selectedNets.length > 0) {
+            this.contextMenuShowEdit = true;
             this.contextMenuVisible = true;
             return;
         }
@@ -1445,6 +1792,7 @@ export class SchematicCanvas extends ViewPU {
         event.stopPropagation();
     }
     private cancelPointerInteraction(): void {
+        this.interactiveToggleCompId = '';
         this.pointerDown = false;
         this.clearDragState();
         this.isBoxSelecting = false;
@@ -1608,7 +1956,7 @@ export class SchematicCanvas extends ViewPU {
                 this.scheduleRedraw();
                 return;
             }
-            // Simulation: click SW_PUSH to press/release (no drag)
+            // Simulation: click SW_PUSH to toggle press/release (no drag)
             if (this.isSimulationActive() && this.isPushButtonComponent(hitId)) {
                 this.interactiveToggleCompId = hitId;
                 this.clearDragState();
@@ -1735,7 +2083,11 @@ export class SchematicCanvas extends ViewPU {
                 this.blockWireEditing();
                 return;
             }
-            this.previewWireEnd = world;
+            const g = this.appService.schematicEditor.getViewport().gridSize;
+            const nearPin = this.findNearestPinWorld(world);
+            const nearWire = this.findNearestWireSnapWorld(world);
+            this.previewWireEnd = nearPin ?? nearWire ?? this.snapWorldToGrid(world, g);
+            this.updateWirePreviewStatus();
             this.scheduleRedraw();
             if (!this.pointerDown) {
                 return;
@@ -1822,7 +2174,7 @@ export class SchematicCanvas extends ViewPU {
         const totalDx = sx - this.downPointerX;
         const totalDy = sy - this.downPointerY;
         const moved = Math.abs(totalDx) > SchematicCanvas.MOVE_THRESHOLD || Math.abs(totalDy) > SchematicCanvas.MOVE_THRESHOLD;
-        // Sim pushbutton / hall: short click toggles
+        // Sim pushbutton / hall: short click toggles（按键保持闭合直到再点一次）
         if (this.interactiveToggleCompId.length > 0) {
             const swId = this.interactiveToggleCompId;
             this.interactiveToggleCompId = '';
@@ -2270,6 +2622,7 @@ export class SchematicCanvas extends ViewPU {
         this.wireWaypoints = [];
         this.setWireStart(null);
         this.previewWireEnd = null;
+        (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
         this.onStatusChange('仿真运行中，无法接线');
         this.scheduleRedraw();
         return true;
@@ -2279,6 +2632,9 @@ export class SchematicCanvas extends ViewPU {
         return editor.isLayerLocked(layerId);
     }
     private handleTap(world: Point2D): void {
+        if (this.showNetLabelDialog) {
+            return;
+        }
         const editor = this.appService.schematicEditor;
         const wireStart = this.getWireStart();
         switch (this.toolMode) {
@@ -2297,41 +2653,86 @@ export class SchematicCanvas extends ViewPU {
                     this.onStatusChange('布线层已锁定');
                     break;
                 }
+                const g = this.appService.schematicEditor.getViewport().gridSize;
                 const nearPin = this.findNearestPinWorld(world);
-                const wirePoint = nearPin ?? world;
+                const nearWire = this.findNearestWireSnapWorld(world);
+                const snapped = this.snapWorldToGrid(world, g);
+                const wirePoint = nearPin ?? nearWire ?? snapped;
+                const endTol = Math.max(g * 1.5, 8);
                 if (wireStart === null) {
-                    if (nearPin === null) {
-                        this.onStatusChange('请点击引脚开始连线');
+                    if (nearPin === null && nearWire === null) {
+                        this.onStatusChange('请点击引脚或导线开始连线');
                         break;
                     }
                     this.wireWaypoints = [wirePoint];
                     this.setWireStart(wirePoint);
-                    this.onStatusChange('导线起点, 点击添加拐点 / 点击引脚完成连线');
+                    this.onStatusChange(nearPin !== null
+                        ? '导线起点: 点击添加拐点，再点同一拐点可放端点'
+                        : '导线起点(已接导线): 点击添加拐点，点引脚/导线完成');
                 }
-                else if (nearPin !== null) {
-                    // Ignore if clicking the same starting pin
+                else if (nearPin !== null || nearWire !== null) {
                     const firstWp = this.wireWaypoints[0];
-                    const samePin = Math.abs(nearPin.x - firstWp.x) < 4 && Math.abs(nearPin.y - firstWp.y) < 4;
-                    if (samePin) {
-                        this.onStatusChange('请点击其他引脚完成连线, 或按 ESC 取消');
+                    const sameAnchor = Math.abs(wirePoint.x - firstWp.x) < 4 && Math.abs(wirePoint.y - firstWp.y) < 4;
+                    if (sameAnchor) {
+                        this.onStatusChange('请点击其他引脚/导线完成，或点空白加拐点后再点该拐点放端点');
                         break;
                     }
                     this.wireWaypoints.push(wirePoint);
+                    // 最终预览写入 Path Buffer，落线只校验缓冲、不另寻路
+                    const preview = editor.previewWirePath(this.wireWaypoints);
+                    if (preview.blocked === true || preview.points.length < 2) {
+                        this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径');
+                        break;
+                    }
                     const wireResult = editor.addWireWithPoints(this.wireWaypoints);
                     this.wireWaypoints = [];
                     this.setWireStart(null);
                     this.previewWireEnd = null;
+                    this.lastWirePreviewCorrected = false;
+                    editor.clearWarPathBuffer();
                     if (wireResult.success) {
-                        this.onStatusChange('导线已完成');
+                        this.onStatusChange(nearWire !== null && nearPin === null
+                            ? '导线已完成（已并接到既有导线）'
+                            : '导线已完成（与 WAR 预览一致）');
+                        this.onDocumentChanged();
                     }
                     else {
                         this.onStatusChange(wireResult.error ?? '接线失败');
                     }
                 }
                 else {
+                    const last = this.wireWaypoints[this.wireWaypoints.length - 1];
+                    const nearLast = Math.abs(wirePoint.x - last.x) <= endTol &&
+                        Math.abs(wirePoint.y - last.y) <= endTol;
+                    // 再点当前拐点 → 以该点为导线端点结束（悬空 stub，可右键加标号）
+                    if (nearLast && this.wireWaypoints.length >= 2) {
+                        const preview = editor.previewWirePath(this.wireWaypoints);
+                        if (preview.blocked === true || preview.points.length < 2) {
+                            this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径');
+                            break;
+                        }
+                        const wireResult = editor.addWireWithPoints(this.wireWaypoints);
+                        this.wireWaypoints = [];
+                        this.setWireStart(null);
+                        this.previewWireEnd = null;
+                        this.lastWirePreviewCorrected = false;
+                        editor.clearWarPathBuffer();
+                        if (wireResult.success) {
+                            this.onStatusChange('已放置导线端点（与 WAR 预览一致；右击可加网络标号）');
+                            this.onDocumentChanged();
+                        }
+                        else {
+                            this.onStatusChange(wireResult.error ?? '接线失败');
+                        }
+                        break;
+                    }
+                    if (nearLast) {
+                        this.onStatusChange('请先点空白处添加拐点，再点该拐点放置端点');
+                        break;
+                    }
                     this.wireWaypoints.push(wirePoint);
                     this.setWireStart(wirePoint);
-                    this.onStatusChange(`拐点已添加 (共${this.wireWaypoints.length - 1}个), 继续点击 / 点击引脚完成`);
+                    this.onStatusChange(`拐点已添加 (共${this.wireWaypoints.length - 1}个): 再点此拐点放端点 / 点引脚或导线完成 / 继续点加拐点`);
                 }
                 break;
             }
@@ -2353,19 +2754,42 @@ export class SchematicCanvas extends ViewPU {
                     this.onStatusChange('总线已添加');
                 }
                 break;
-            case EditorToolMode.LABEL:
-                editor.createNetLabel(world.x, world.y, 'NET1');
-                this.onStatusChange('已放置网络标签 NET1');
+            case EditorToolMode.LABEL: {
+                if (this.appService.isAiGenerating()) {
+                    this.onStatusChange('AI 生成中，画布已锁定');
+                    break;
+                }
+                const nearPin = this.findNearestPinWorld(world);
+                const pos = nearPin ?? world;
+                this.openPlaceNetLabelDialog(pos.x, pos.y);
                 break;
+            }
             case EditorToolMode.POWER:
                 editor.createNetLabel(world.x, world.y, 'VCC');
                 this.onStatusChange('已放置电源 VCC');
+                this.onDocumentChanged();
                 break;
             case EditorToolMode.GROUND:
                 editor.createNetLabel(world.x, world.y, 'GND');
                 this.onStatusChange('已放置地 GND');
+                this.onDocumentChanged();
                 break;
             default: {
+                // 双击已有网络标号 → 改名
+                const labelHit = editor.hitTestNetLabel(world);
+                if (labelHit !== null) {
+                    const now = Date.now();
+                    if (labelHit === this.lastLabelTapId && now - this.lastLabelTapMs < 450) {
+                        this.openRenameNetLabelDialog(labelHit);
+                        this.lastLabelTapId = '';
+                        this.lastLabelTapMs = 0;
+                        break;
+                    }
+                    this.lastLabelTapId = labelHit;
+                    this.lastLabelTapMs = now;
+                    this.onStatusChange('双击网络标号可改名');
+                    break;
+                }
                 // Auto-switch to wire mode when clicking a pin in SELECT mode
                 const nearPin = this.findNearestPinWorld(world);
                 if (nearPin !== null) {
@@ -2379,7 +2803,7 @@ export class SchematicCanvas extends ViewPU {
                     this.appService.schematicEditor.setSelection([]);
                     this.wireWaypoints = [nearPin];
                     this.setWireStart(nearPin);
-                    this.onStatusChange('导线起点, 点击添加拐点 / 点击引脚完成连线');
+                    this.onStatusChange('导线起点: 点击添加拐点，再点同一拐点可放端点');
                     break;
                 }
                 const hits = editor.selectAt(world);
@@ -2393,6 +2817,68 @@ export class SchematicCanvas extends ViewPU {
                 }
                 break;
             }
+        }
+    }
+    private openPlaceNetLabelDialog(x: number, y: number): void {
+        this.netLabelEditId = '';
+        this.netLabelPendingX = x;
+        this.netLabelPendingY = y;
+        this.netLabelDialogTitle = '放置网络标号';
+        this.netLabelDialogName = 'NET1';
+        this.showNetLabelDialog = true;
+        this.onStatusChange('输入网络名后确认放置');
+    }
+    private openRenameNetLabelDialog(labelId: string): void {
+        const doc = this.appService.schematicEditor.getDocument();
+        const labels = doc.netLabels ?? [];
+        let text = 'NET1';
+        for (let i = 0; i < labels.length; i++) {
+            if (labels[i].id === labelId) {
+                text = labels[i].text;
+                break;
+            }
+        }
+        this.netLabelEditId = labelId;
+        this.netLabelDialogTitle = '修改网络标号';
+        this.netLabelDialogName = text;
+        this.showNetLabelDialog = true;
+        this.onStatusChange('输入新的网络名');
+    }
+    private closeNetLabelDialog(): void {
+        this.showNetLabelDialog = false;
+        this.netLabelEditId = '';
+        this.onStatusChange('就绪');
+    }
+    private confirmNetLabelDialog(): void {
+        const name = this.netLabelDialogName.trim();
+        if (name.length === 0) {
+            this.onStatusChange('网络名不能为空');
+            return;
+        }
+        const editor = this.appService.schematicEditor;
+        if (this.netLabelEditId.length > 0) {
+            const result = editor.renameNetLabel(this.netLabelEditId, name);
+            this.showNetLabelDialog = false;
+            this.netLabelEditId = '';
+            if (result.success) {
+                this.onStatusChange(`已改名为 ${name}`);
+                this.onDocumentChanged();
+                this.scheduleRedraw();
+            }
+            else {
+                this.onStatusChange(result.error ?? '改名失败');
+            }
+            return;
+        }
+        const result = editor.createNetLabel(this.netLabelPendingX, this.netLabelPendingY, name);
+        this.showNetLabelDialog = false;
+        if (result.success) {
+            this.onStatusChange(`已放置网络标号 ${name}`);
+            this.onDocumentChanged();
+            this.scheduleRedraw();
+        }
+        else {
+            this.onStatusChange(result.error ?? '放置失败');
         }
     }
     private updateMouseCoord(world: Point2D): void {
@@ -2595,13 +3081,16 @@ export class SchematicCanvas extends ViewPU {
                 else {
                     this.drawWireStartDot(ctx, wireStart);
                 }
-                // Draw accumulated waypoints as solid orthogonal path
+                // 动态预览：与落线同一套路径（穿选中区则显示绕障正确路径）
+                this.drawLiveWirePathPreview(ctx, editor);
+                // 当前拐点高亮：再点此处可放置导线端点
                 if (this.wireWaypoints.length >= 2) {
-                    this.drawWaypointPath(ctx);
-                }
-                // Draw dashed preview from last waypoint to cursor
-                if (this.previewWireEnd !== null) {
-                    this.drawPreviewWire(ctx, wireStart, this.previewWireEnd);
+                    const last = this.wireWaypoints[this.wireWaypoints.length - 1];
+                    ctx.strokeStyle = ProteusColors.SELECTED;
+                    ctx.fillStyle = ProteusColors.CANVAS_BG;
+                    ctx.lineWidth = 1.5;
+                    ctx.fillRect(last.x - 4, last.y - 4, 8, 8);
+                    ctx.strokeRect(last.x - 4, last.y - 4, 8, 8);
                 }
             }
             // Draw wire-to-pin connection markers on top of everything
@@ -2721,6 +3210,112 @@ export class SchematicCanvas extends ViewPU {
         ctx.fillStyle = isZoomRegion ? 'rgba(255, 152, 0, 0.08)' : 'rgba(0, 191, 255, 0.08)';
         ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
         ctx.setLineDash([]);
+    }
+    /**
+     * WAR 动态预览：蓝色虚线；blocked 时不画穿障折线。
+     * 路径写入编辑器 Path Buffer，落线复用同一缓存。
+     */
+    private drawLiveWirePathPreview(ctx: CanvasRenderingContext2D, editor: SchematicEditorImpl): void {
+        if (!editor.isWarEnabled()) {
+            // WAR 关闭：仅画用户正交折线预览（不自动绕障）
+            this.drawManualOrthogonalPreview(ctx);
+            return;
+        }
+        const previewPts = this.collectWirePreviewWaypoints();
+        if (previewPts.length < 2) {
+            return;
+        }
+        const result: WirePathPreviewResult = editor.previewWirePath(previewPts);
+        if (result.blocked === true || result.points.length < 2) {
+            // 无合法路径：不绘制穿障线，仅标红提示点
+            ctx.fillStyle = '#CC3333';
+            const last = previewPts[previewPts.length - 1];
+            ctx.beginPath();
+            ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+            return;
+        }
+        ctx.strokeStyle = ProteusColors.SELECTED;
+        ctx.lineWidth = result.autoCorrected ? 2.5 : 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(result.points[0].x, result.points[0].y);
+        for (let i = 1; i < result.points.length; i++) {
+            ctx.lineTo(result.points[i].x, result.points[i].y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    /** WAR 关闭时的正交预览（无 A*） */
+    private drawManualOrthogonalPreview(ctx: CanvasRenderingContext2D): void {
+        const previewPts = this.collectWirePreviewWaypoints();
+        if (previewPts.length < 2) {
+            return;
+        }
+        ctx.strokeStyle = ProteusColors.SELECTED;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(previewPts[0].x, previewPts[0].y);
+        for (let i = 1; i < previewPts.length; i++) {
+            const prev = previewPts[i - 1];
+            const curr = previewPts[i];
+            if (Math.abs(prev.x - curr.x) < 0.5 || Math.abs(prev.y - curr.y) < 0.5) {
+                ctx.lineTo(curr.x, curr.y);
+            }
+            else {
+                ctx.lineTo(curr.x, prev.y);
+                ctx.lineTo(curr.x, curr.y);
+            }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+    /** 当前拐点 + 光标/吸附端点，供预览与落线共用 */
+    private collectWirePreviewWaypoints(): Point2D[] {
+        const pts: Point2D[] = [];
+        for (let i = 0; i < this.wireWaypoints.length; i++) {
+            const wp: Point2D = { x: this.wireWaypoints[i].x, y: this.wireWaypoints[i].y };
+            pts.push(wp);
+        }
+        if (this.previewWireEnd === null) {
+            return pts;
+        }
+        const end: Point2D = { x: this.previewWireEnd.x, y: this.previewWireEnd.y };
+        if (pts.length === 0) {
+            pts.push(end);
+            return pts;
+        }
+        const last = pts[pts.length - 1];
+        if (Math.abs(last.x - end.x) > 0.5 || Math.abs(last.y - end.y) > 0.5) {
+            pts.push(end);
+        }
+        return pts;
+    }
+    private updateWirePreviewStatus(): void {
+        const editor = this.appService.schematicEditor as SchematicEditorImpl;
+        const previewPts = this.collectWirePreviewWaypoints();
+        if (previewPts.length < 2) {
+            this.lastWirePreviewCorrected = false;
+            return;
+        }
+        const result = editor.previewWirePath(previewPts);
+        if (result.blocked === true) {
+            if (!this.lastWirePreviewCorrected) {
+                this.lastWirePreviewCorrected = true;
+                this.onStatusChange('WAR：当前无法无碰撞布线（不可穿器件选中区）');
+            }
+            return;
+        }
+        if (result.autoCorrected !== this.lastWirePreviewCorrected) {
+            this.lastWirePreviewCorrected = result.autoCorrected;
+            if (result.autoCorrected) {
+                this.onStatusChange('WAR 自动寻路：蓝色虚线为将落线路径（已避开选中区）');
+            }
+            else if (this.wireWaypoints.length >= 1) {
+                this.onStatusChange('导线预览：点击添加拐点，再点同一拐点可放端点 / 点引脚完成');
+            }
+        }
     }
     /**
      * Draws accumulated waypoints as solid orthogonal line segments.
@@ -2853,10 +3448,15 @@ export class SchematicCanvas extends ViewPU {
             return;
         }
         const isRegulator = def.behaviorModel === 'regulator';
+        const isMeterBody = def.behaviorModel === 'ammeter_dc' || def.behaviorModel === 'voltmeter_dc';
         const pinBounds = calcSymbolBounds(def.pins, 0);
         // Only draw backdrop for IC-type components (wide/tall pin spread)
         // Skip small 2-pin components like resistors, capacitors, diodes
         // 稳压器：强制画大边框（用户可见 TO-220 主体），不依赖 height 门禁
+        // 电压表/电流表：符号自身已画大黑框，勿再叠名称「DC 电流表」造成字乱
+        if (isMeterBody) {
+            return;
+        }
         if (!isRegulator && (pinBounds.width < 50 || pinBounds.height < 40)) {
             return;
         }
@@ -2923,6 +3523,98 @@ export class SchematicCanvas extends ViewPU {
                 if (dist <= bestDist) {
                     bestDist = dist;
                     bestPoint = pinWorld;
+                }
+            }
+        }
+        return bestPoint;
+    }
+    /** 网格吸附，便于再点同一拐点结束端点 */
+    private snapWorldToGrid(world: Point2D, gridSize: number): Point2D {
+        const g = Math.max(gridSize, 1);
+        return {
+            x: Math.round(world.x / g) * g,
+            y: Math.round(world.y / g) * g
+        };
+    }
+    /** 最近导线端点（起点或终点），用于右键添加网络标号 */
+    private findNearestWireEndpointWorld(world: Point2D): Point2D | null {
+        const doc = this.appService.schematicEditor.getDocument();
+        const g = this.appService.schematicEditor.getViewport().gridSize;
+        const threshold = Math.max(g * 1.5, 10);
+        let bestDist = threshold;
+        let bestPoint: Point2D | null = null;
+        for (let i = 0; i < doc.wires.length; i++) {
+            const pts = doc.wires[i].points;
+            if (pts.length < 2) {
+                continue;
+            }
+            const ends: Point2D[] = [pts[0], pts[pts.length - 1]];
+            for (let e = 0; e < ends.length; e++) {
+                const dx = world.x - ends[e].x;
+                const dy = world.y - ends[e].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist <= bestDist) {
+                    bestDist = dist;
+                    bestPoint = { x: ends[e].x, y: ends[e].y };
+                }
+            }
+        }
+        return bestPoint;
+    }
+    /**
+     * 吸附到既有导线任意点（端点优先，其次中段投影）— 线-线 T 接 / 并网。
+     */
+    private findNearestWireSnapWorld(world: Point2D): Point2D | null {
+        const doc = this.appService.schematicEditor.getDocument();
+        const g = this.appService.schematicEditor.getViewport().gridSize;
+        const threshold = Math.min(Math.max(g * 0.75, 6), 12);
+        let bestDist = threshold;
+        let bestPoint: Point2D | null = null;
+        // Prefer endpoints first (stronger magnetic feel for joining stubs)
+        for (let i = 0; i < doc.wires.length; i++) {
+            const pts = doc.wires[i].points;
+            if (pts.length < 2) {
+                continue;
+            }
+            const ends: Point2D[] = [pts[0], pts[pts.length - 1]];
+            for (let e = 0; e < ends.length; e++) {
+                const dist = Math.hypot(world.x - ends[e].x, world.y - ends[e].y);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestPoint = { x: ends[e].x, y: ends[e].y };
+                }
+            }
+        }
+        if (bestPoint !== null) {
+            return bestPoint;
+        }
+        bestDist = threshold;
+        for (let i = 0; i < doc.wires.length; i++) {
+            const pts = doc.wires[i].points;
+            if (pts.length < 2) {
+                continue;
+            }
+            for (let si = 0; si < pts.length - 1; si++) {
+                const a = pts[si];
+                const b = pts[si + 1];
+                const abx = b.x - a.x;
+                const aby = b.y - a.y;
+                const len2 = abx * abx + aby * aby;
+                let t = 0;
+                if (len2 > 1e-6) {
+                    t = ((world.x - a.x) * abx + (world.y - a.y) * aby) / len2;
+                    if (t < 0) {
+                        t = 0;
+                    }
+                    else if (t > 1) {
+                        t = 1;
+                    }
+                }
+                const proj: Point2D = { x: a.x + t * abx, y: a.y + t * aby };
+                const dist = Math.hypot(world.x - proj.x, world.y - proj.y);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestPoint = proj;
                 }
             }
         }
@@ -3442,10 +4134,10 @@ export class SchematicCanvas extends ViewPU {
     private drawWires(ctx: CanvasRenderingContext2D, wires: Wire[]): void {
         const wCount = wires.length;
         const editor = this.appService.schematicEditor as SchematicEditorImpl;
-        const selectedWireNets = editor.getSelectedWireNetIds();
+        const selectedWireIds = editor.getSelectedWireIds();
         const selectedWireSet = new Set<string>();
-        for (let si = 0; si < selectedWireNets.length; si++) {
-            selectedWireSet.add(selectedWireNets[si]);
+        for (let si = 0; si < selectedWireIds.length; si++) {
+            selectedWireSet.add(selectedWireIds[si]);
         }
         // Check if simulation is active (running or paused) for live voltage coloring
         const simState = this.appService.simulationKernel.getState();
@@ -3534,8 +4226,8 @@ export class SchematicCanvas extends ViewPU {
             if (drawPts.length === 3 && multiDragActive && (shiftMask[0] || shiftMask[2])) {
                 drawPts[1] = this.smartMidpoint(drawPts[0], drawPts[2], this.dragComponentId);
             }
-            const wireSelected = selectedWireSet.has(wire.netId);
-            const wireHovered = wire.netId === this.hoverWireNetId && !wireSelected;
+            const wireSelected = selectedWireSet.has(wire.id);
+            const wireHovered = wire.id === this.hoverWireNetId && !wireSelected;
             if (wireHovered) {
                 ctx.strokeStyle = 'rgba(0, 170, 255, 0.35)';
                 ctx.lineWidth = 7;

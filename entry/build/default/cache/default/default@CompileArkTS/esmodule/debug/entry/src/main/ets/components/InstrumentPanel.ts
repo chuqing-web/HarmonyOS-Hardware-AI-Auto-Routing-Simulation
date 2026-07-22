@@ -24,7 +24,10 @@ interface InstrumentPanel_Params {
     uartLog?: string;
     waveTimeData?: number[];
     waveVoltageData?: number[];
+    waveCh2TimeData?: number[];
     waveCh2Data?: number[];
+    oscCanvasHeight?: number;
+    meterCanvasHeight?: number;
     cursorAIdx?: number;
     cursorBIdx?: number;
     cursorMeasureText?: string;
@@ -35,17 +38,30 @@ interface InstrumentPanel_Params {
     vmReading?: string;
     vmRange?: string;
     vmUnit?: string;
+    vmWaveTime?: number[];
+    vmWaveData?: number[];
+    vmWaveFrame?: number;
+    vmTPerDiv?: number;
     amType?: number;
     amReading?: string;
     amRange?: string;
     amUnit?: string;
+    amWaveTime?: number[];
+    amWaveData?: number[];
+    amWaveFrame?: number;
+    amTPerDiv?: number;
     pmVoltage?: string;
     pmCurrent?: string;
     pmPower?: string;
     pmPF?: string;
     fcReading?: string;
     fcGateTime?: number;
+    fcWaveTime?: number[];
+    fcWaveData?: number[];
+    fcWaveFrame?: number;
+    fcTPerDiv?: number;
     oscAutoFit?: boolean;
+    oscFftMode?: boolean;
     oscStatsText?: string;
     oscTriggerHold?: boolean;
     oscLiveVolts?: string;
@@ -85,6 +101,7 @@ import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from "@bundle:co
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { OscilloscopeWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/OscilloscopeWaveCanvas";
 import { LogicAnalyzerWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/LogicAnalyzerWaveCanvas";
+import { InstrumentWaveExpandStore } from "@bundle:com.elecdraw.aischsim/entry/ets/components/InstrumentWaveExpandStore";
 interface SelectValueOption {
     value: string;
 }
@@ -363,7 +380,10 @@ export class InstrumentPanel extends ViewPU {
         this.__uartLog = new ObservedPropertySimplePU('', this, "uartLog");
         this.__waveTimeData = new ObservedPropertyObjectPU([], this, "waveTimeData");
         this.__waveVoltageData = new ObservedPropertyObjectPU([], this, "waveVoltageData");
+        this.__waveCh2TimeData = new ObservedPropertyObjectPU([], this, "waveCh2TimeData");
         this.__waveCh2Data = new ObservedPropertyObjectPU([], this, "waveCh2Data");
+        this.oscCanvasHeight = 160;
+        this.meterCanvasHeight = 120;
         this.__cursorAIdx = new ObservedPropertySimplePU(100, this, "cursorAIdx");
         this.__cursorBIdx = new ObservedPropertySimplePU(200, this, "cursorBIdx");
         this.__cursorMeasureText = new ObservedPropertySimplePU('', this, "cursorMeasureText");
@@ -374,17 +394,30 @@ export class InstrumentPanel extends ViewPU {
         this.__vmReading = new ObservedPropertySimplePU('--.--', this, "vmReading");
         this.__vmRange = new ObservedPropertySimplePU('20V', this, "vmRange");
         this.__vmUnit = new ObservedPropertySimplePU('V DC', this, "vmUnit");
+        this.__vmWaveTime = new ObservedPropertyObjectPU([], this, "vmWaveTime");
+        this.__vmWaveData = new ObservedPropertyObjectPU([], this, "vmWaveData");
+        this.__vmWaveFrame = new ObservedPropertySimplePU(0, this, "vmWaveFrame");
+        this.__vmTPerDiv = new ObservedPropertySimplePU(1e-3, this, "vmTPerDiv");
         this.__amType = new ObservedPropertySimplePU(0, this, "amType");
         this.__amReading = new ObservedPropertySimplePU('--.--', this, "amReading");
         this.__amRange = new ObservedPropertySimplePU('200mA', this, "amRange");
         this.__amUnit = new ObservedPropertySimplePU('mA DC', this, "amUnit");
+        this.__amWaveTime = new ObservedPropertyObjectPU([], this, "amWaveTime");
+        this.__amWaveData = new ObservedPropertyObjectPU([], this, "amWaveData");
+        this.__amWaveFrame = new ObservedPropertySimplePU(0, this, "amWaveFrame");
+        this.__amTPerDiv = new ObservedPropertySimplePU(1e-3, this, "amTPerDiv");
         this.__pmVoltage = new ObservedPropertySimplePU('--', this, "pmVoltage");
         this.__pmCurrent = new ObservedPropertySimplePU('--', this, "pmCurrent");
         this.__pmPower = new ObservedPropertySimplePU('--', this, "pmPower");
         this.__pmPF = new ObservedPropertySimplePU('--', this, "pmPF");
         this.__fcReading = new ObservedPropertySimplePU('----', this, "fcReading");
         this.__fcGateTime = new ObservedPropertySimplePU(1.0, this, "fcGateTime");
+        this.__fcWaveTime = new ObservedPropertyObjectPU([], this, "fcWaveTime");
+        this.__fcWaveData = new ObservedPropertyObjectPU([], this, "fcWaveData");
+        this.__fcWaveFrame = new ObservedPropertySimplePU(0, this, "fcWaveFrame");
+        this.__fcTPerDiv = new ObservedPropertySimplePU(1e-3, this, "fcTPerDiv");
         this.__oscAutoFit = new ObservedPropertySimplePU(true, this, "oscAutoFit");
+        this.__oscFftMode = new ObservedPropertySimplePU(false, this, "oscFftMode");
         this.__oscStatsText = new ObservedPropertySimplePU('', this, "oscStatsText");
         this.__oscTriggerHold = new ObservedPropertySimplePU(false, this, "oscTriggerHold");
         this.__oscLiveVolts = new ObservedPropertySimplePU('--', this, "oscLiveVolts");
@@ -495,8 +528,17 @@ export class InstrumentPanel extends ViewPU {
         if (params.waveVoltageData !== undefined) {
             this.waveVoltageData = params.waveVoltageData;
         }
+        if (params.waveCh2TimeData !== undefined) {
+            this.waveCh2TimeData = params.waveCh2TimeData;
+        }
         if (params.waveCh2Data !== undefined) {
             this.waveCh2Data = params.waveCh2Data;
+        }
+        if (params.oscCanvasHeight !== undefined) {
+            this.oscCanvasHeight = params.oscCanvasHeight;
+        }
+        if (params.meterCanvasHeight !== undefined) {
+            this.meterCanvasHeight = params.meterCanvasHeight;
         }
         if (params.cursorAIdx !== undefined) {
             this.cursorAIdx = params.cursorAIdx;
@@ -528,6 +570,18 @@ export class InstrumentPanel extends ViewPU {
         if (params.vmUnit !== undefined) {
             this.vmUnit = params.vmUnit;
         }
+        if (params.vmWaveTime !== undefined) {
+            this.vmWaveTime = params.vmWaveTime;
+        }
+        if (params.vmWaveData !== undefined) {
+            this.vmWaveData = params.vmWaveData;
+        }
+        if (params.vmWaveFrame !== undefined) {
+            this.vmWaveFrame = params.vmWaveFrame;
+        }
+        if (params.vmTPerDiv !== undefined) {
+            this.vmTPerDiv = params.vmTPerDiv;
+        }
         if (params.amType !== undefined) {
             this.amType = params.amType;
         }
@@ -539,6 +593,18 @@ export class InstrumentPanel extends ViewPU {
         }
         if (params.amUnit !== undefined) {
             this.amUnit = params.amUnit;
+        }
+        if (params.amWaveTime !== undefined) {
+            this.amWaveTime = params.amWaveTime;
+        }
+        if (params.amWaveData !== undefined) {
+            this.amWaveData = params.amWaveData;
+        }
+        if (params.amWaveFrame !== undefined) {
+            this.amWaveFrame = params.amWaveFrame;
+        }
+        if (params.amTPerDiv !== undefined) {
+            this.amTPerDiv = params.amTPerDiv;
         }
         if (params.pmVoltage !== undefined) {
             this.pmVoltage = params.pmVoltage;
@@ -558,8 +624,23 @@ export class InstrumentPanel extends ViewPU {
         if (params.fcGateTime !== undefined) {
             this.fcGateTime = params.fcGateTime;
         }
+        if (params.fcWaveTime !== undefined) {
+            this.fcWaveTime = params.fcWaveTime;
+        }
+        if (params.fcWaveData !== undefined) {
+            this.fcWaveData = params.fcWaveData;
+        }
+        if (params.fcWaveFrame !== undefined) {
+            this.fcWaveFrame = params.fcWaveFrame;
+        }
+        if (params.fcTPerDiv !== undefined) {
+            this.fcTPerDiv = params.fcTPerDiv;
+        }
         if (params.oscAutoFit !== undefined) {
             this.oscAutoFit = params.oscAutoFit;
+        }
+        if (params.oscFftMode !== undefined) {
+            this.oscFftMode = params.oscFftMode;
         }
         if (params.oscStatsText !== undefined) {
             this.oscStatsText = params.oscStatsText;
@@ -650,6 +731,7 @@ export class InstrumentPanel extends ViewPU {
         this.__uartLog.purgeDependencyOnElmtId(rmElmtId);
         this.__waveTimeData.purgeDependencyOnElmtId(rmElmtId);
         this.__waveVoltageData.purgeDependencyOnElmtId(rmElmtId);
+        this.__waveCh2TimeData.purgeDependencyOnElmtId(rmElmtId);
         this.__waveCh2Data.purgeDependencyOnElmtId(rmElmtId);
         this.__cursorAIdx.purgeDependencyOnElmtId(rmElmtId);
         this.__cursorBIdx.purgeDependencyOnElmtId(rmElmtId);
@@ -661,17 +743,30 @@ export class InstrumentPanel extends ViewPU {
         this.__vmReading.purgeDependencyOnElmtId(rmElmtId);
         this.__vmRange.purgeDependencyOnElmtId(rmElmtId);
         this.__vmUnit.purgeDependencyOnElmtId(rmElmtId);
+        this.__vmWaveTime.purgeDependencyOnElmtId(rmElmtId);
+        this.__vmWaveData.purgeDependencyOnElmtId(rmElmtId);
+        this.__vmWaveFrame.purgeDependencyOnElmtId(rmElmtId);
+        this.__vmTPerDiv.purgeDependencyOnElmtId(rmElmtId);
         this.__amType.purgeDependencyOnElmtId(rmElmtId);
         this.__amReading.purgeDependencyOnElmtId(rmElmtId);
         this.__amRange.purgeDependencyOnElmtId(rmElmtId);
         this.__amUnit.purgeDependencyOnElmtId(rmElmtId);
+        this.__amWaveTime.purgeDependencyOnElmtId(rmElmtId);
+        this.__amWaveData.purgeDependencyOnElmtId(rmElmtId);
+        this.__amWaveFrame.purgeDependencyOnElmtId(rmElmtId);
+        this.__amTPerDiv.purgeDependencyOnElmtId(rmElmtId);
         this.__pmVoltage.purgeDependencyOnElmtId(rmElmtId);
         this.__pmCurrent.purgeDependencyOnElmtId(rmElmtId);
         this.__pmPower.purgeDependencyOnElmtId(rmElmtId);
         this.__pmPF.purgeDependencyOnElmtId(rmElmtId);
         this.__fcReading.purgeDependencyOnElmtId(rmElmtId);
         this.__fcGateTime.purgeDependencyOnElmtId(rmElmtId);
+        this.__fcWaveTime.purgeDependencyOnElmtId(rmElmtId);
+        this.__fcWaveData.purgeDependencyOnElmtId(rmElmtId);
+        this.__fcWaveFrame.purgeDependencyOnElmtId(rmElmtId);
+        this.__fcTPerDiv.purgeDependencyOnElmtId(rmElmtId);
         this.__oscAutoFit.purgeDependencyOnElmtId(rmElmtId);
+        this.__oscFftMode.purgeDependencyOnElmtId(rmElmtId);
         this.__oscStatsText.purgeDependencyOnElmtId(rmElmtId);
         this.__oscTriggerHold.purgeDependencyOnElmtId(rmElmtId);
         this.__oscLiveVolts.purgeDependencyOnElmtId(rmElmtId);
@@ -701,6 +796,7 @@ export class InstrumentPanel extends ViewPU {
         this.__uartLog.aboutToBeDeleted();
         this.__waveTimeData.aboutToBeDeleted();
         this.__waveVoltageData.aboutToBeDeleted();
+        this.__waveCh2TimeData.aboutToBeDeleted();
         this.__waveCh2Data.aboutToBeDeleted();
         this.__cursorAIdx.aboutToBeDeleted();
         this.__cursorBIdx.aboutToBeDeleted();
@@ -712,17 +808,30 @@ export class InstrumentPanel extends ViewPU {
         this.__vmReading.aboutToBeDeleted();
         this.__vmRange.aboutToBeDeleted();
         this.__vmUnit.aboutToBeDeleted();
+        this.__vmWaveTime.aboutToBeDeleted();
+        this.__vmWaveData.aboutToBeDeleted();
+        this.__vmWaveFrame.aboutToBeDeleted();
+        this.__vmTPerDiv.aboutToBeDeleted();
         this.__amType.aboutToBeDeleted();
         this.__amReading.aboutToBeDeleted();
         this.__amRange.aboutToBeDeleted();
         this.__amUnit.aboutToBeDeleted();
+        this.__amWaveTime.aboutToBeDeleted();
+        this.__amWaveData.aboutToBeDeleted();
+        this.__amWaveFrame.aboutToBeDeleted();
+        this.__amTPerDiv.aboutToBeDeleted();
         this.__pmVoltage.aboutToBeDeleted();
         this.__pmCurrent.aboutToBeDeleted();
         this.__pmPower.aboutToBeDeleted();
         this.__pmPF.aboutToBeDeleted();
         this.__fcReading.aboutToBeDeleted();
         this.__fcGateTime.aboutToBeDeleted();
+        this.__fcWaveTime.aboutToBeDeleted();
+        this.__fcWaveData.aboutToBeDeleted();
+        this.__fcWaveFrame.aboutToBeDeleted();
+        this.__fcTPerDiv.aboutToBeDeleted();
         this.__oscAutoFit.aboutToBeDeleted();
+        this.__oscFftMode.aboutToBeDeleted();
         this.__oscStatsText.aboutToBeDeleted();
         this.__oscTriggerHold.aboutToBeDeleted();
         this.__oscLiveVolts.aboutToBeDeleted();
@@ -886,6 +995,13 @@ export class InstrumentPanel extends ViewPU {
     set waveVoltageData(newValue: number[]) {
         this.__waveVoltageData.set(newValue);
     }
+    private __waveCh2TimeData: ObservedPropertyObjectPU<number[]>;
+    get waveCh2TimeData() {
+        return this.__waveCh2TimeData.get();
+    }
+    set waveCh2TimeData(newValue: number[]) {
+        this.__waveCh2TimeData.set(newValue);
+    }
     private __waveCh2Data: ObservedPropertyObjectPU<number[]>;
     get waveCh2Data() {
         return this.__waveCh2Data.get();
@@ -893,6 +1009,9 @@ export class InstrumentPanel extends ViewPU {
     set waveCh2Data(newValue: number[]) {
         this.__waveCh2Data.set(newValue);
     }
+    /** 双通道波形区统一高度（时域 / FFT 一致）；双击可全屏放大 */
+    private readonly oscCanvasHeight: number;
+    private readonly meterCanvasHeight: number;
     private __cursorAIdx: ObservedPropertySimplePU<number>;
     get cursorAIdx() {
         return this.__cursorAIdx.get();
@@ -963,6 +1082,35 @@ export class InstrumentPanel extends ViewPU {
     set vmUnit(newValue: string) {
         this.__vmUnit.set(newValue);
     }
+    private __vmWaveTime: ObservedPropertyObjectPU<number[]>;
+    get vmWaveTime() {
+        return this.__vmWaveTime.get();
+    }
+    set vmWaveTime(newValue: number[]) {
+        this.__vmWaveTime.set(newValue);
+    }
+    private __vmWaveData: ObservedPropertyObjectPU<number[]>;
+    get vmWaveData() {
+        return this.__vmWaveData.get();
+    }
+    set vmWaveData(newValue: number[]) {
+        this.__vmWaveData.set(newValue);
+    }
+    private __vmWaveFrame: ObservedPropertySimplePU<number>;
+    get vmWaveFrame() {
+        return this.__vmWaveFrame.get();
+    }
+    set vmWaveFrame(newValue: number) {
+        this.__vmWaveFrame.set(newValue);
+    }
+    /** 表计波形时基 s/div：随信号自适应，固定窗宽产生 CRT 滚动 */
+    private __vmTPerDiv: ObservedPropertySimplePU<number>;
+    get vmTPerDiv() {
+        return this.__vmTPerDiv.get();
+    }
+    set vmTPerDiv(newValue: number) {
+        this.__vmTPerDiv.set(newValue);
+    }
     private __amType: ObservedPropertySimplePU<number>;
     get amType() {
         return this.__amType.get();
@@ -990,6 +1138,34 @@ export class InstrumentPanel extends ViewPU {
     }
     set amUnit(newValue: string) {
         this.__amUnit.set(newValue);
+    }
+    private __amWaveTime: ObservedPropertyObjectPU<number[]>;
+    get amWaveTime() {
+        return this.__amWaveTime.get();
+    }
+    set amWaveTime(newValue: number[]) {
+        this.__amWaveTime.set(newValue);
+    }
+    private __amWaveData: ObservedPropertyObjectPU<number[]>;
+    get amWaveData() {
+        return this.__amWaveData.get();
+    }
+    set amWaveData(newValue: number[]) {
+        this.__amWaveData.set(newValue);
+    }
+    private __amWaveFrame: ObservedPropertySimplePU<number>;
+    get amWaveFrame() {
+        return this.__amWaveFrame.get();
+    }
+    set amWaveFrame(newValue: number) {
+        this.__amWaveFrame.set(newValue);
+    }
+    private __amTPerDiv: ObservedPropertySimplePU<number>;
+    get amTPerDiv() {
+        return this.__amTPerDiv.get();
+    }
+    set amTPerDiv(newValue: number) {
+        this.__amTPerDiv.set(newValue);
     }
     private __pmVoltage: ObservedPropertySimplePU<string>;
     get pmVoltage() {
@@ -1033,12 +1209,47 @@ export class InstrumentPanel extends ViewPU {
     set fcGateTime(newValue: number) {
         this.__fcGateTime.set(newValue);
     }
+    private __fcWaveTime: ObservedPropertyObjectPU<number[]>;
+    get fcWaveTime() {
+        return this.__fcWaveTime.get();
+    }
+    set fcWaveTime(newValue: number[]) {
+        this.__fcWaveTime.set(newValue);
+    }
+    private __fcWaveData: ObservedPropertyObjectPU<number[]>;
+    get fcWaveData() {
+        return this.__fcWaveData.get();
+    }
+    set fcWaveData(newValue: number[]) {
+        this.__fcWaveData.set(newValue);
+    }
+    private __fcWaveFrame: ObservedPropertySimplePU<number>;
+    get fcWaveFrame() {
+        return this.__fcWaveFrame.get();
+    }
+    set fcWaveFrame(newValue: number) {
+        this.__fcWaveFrame.set(newValue);
+    }
+    private __fcTPerDiv: ObservedPropertySimplePU<number>;
+    get fcTPerDiv() {
+        return this.__fcTPerDiv.get();
+    }
+    set fcTPerDiv(newValue: number) {
+        this.__fcTPerDiv.set(newValue);
+    }
     private __oscAutoFit: ObservedPropertySimplePU<boolean>;
     get oscAutoFit() {
         return this.__oscAutoFit.get();
     }
     set oscAutoFit(newValue: boolean) {
         this.__oscAutoFit.set(newValue);
+    }
+    private __oscFftMode: ObservedPropertySimplePU<boolean>;
+    get oscFftMode() {
+        return this.__oscFftMode.get();
+    }
+    set oscFftMode(newValue: boolean) {
+        this.__oscFftMode.set(newValue);
     }
     private __oscStatsText: ObservedPropertySimplePU<string>;
     get oscStatsText() {
@@ -1119,12 +1330,173 @@ export class InstrumentPanel extends ViewPU {
     }
     onSimRunningChange(): void {
         if (this.simRunning) {
+            // 新一次仿真：清空本面板与放大弹窗会话缓存
+            this.clearWaveSessionForNewSim();
             this.startAutoRefreshTimer('sim_start');
         }
         else {
             // 停仿后做最后一次读数（冻结值），再清定时器，避免 TIMER_FIRE 刷屏
             this.autoRefreshReadings('sim_stop');
             this.stopAutoRefreshTimer('sim_stop');
+        }
+    }
+    /** 下次仿真开始时清空侧栏波形与放大弹窗会话 */
+    private clearWaveSessionForNewSim(): void {
+        this.waveTimeData = [];
+        this.waveVoltageData = [];
+        this.waveCh2TimeData = [];
+        this.waveCh2Data = [];
+        this.oscStatsText = '';
+        this.oscLiveVolts = '--';
+        this.cursorMeasureText = '';
+        this.logicChannelData = [];
+        this.logicSampleCount = 128;
+        this.decodedFramesText = '';
+        this.vmWaveTime = [];
+        this.vmWaveData = [];
+        this.amWaveTime = [];
+        this.amWaveData = [];
+        this.fcWaveTime = [];
+        this.fcWaveData = [];
+        this.oscFrameId = this.oscFrameId + 1;
+        this.vmWaveFrame = this.vmWaveFrame + 1;
+        this.amWaveFrame = this.amWaveFrame + 1;
+        this.fcWaveFrame = this.fcWaveFrame + 1;
+        InstrumentWaveExpandStore.getInstance().clearSession();
+    }
+    WaveExpandHint(parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('双击波形放大');
+            Text.fontSize(9);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.width('100%');
+            Text.textAlign(TextAlign.End);
+            Text.padding({ top: 2, right: 2 });
+        }, Text);
+        Text.pop();
+    }
+    private openWaveExpand(kind: string): void {
+        const store = InstrumentWaveExpandStore.getInstance();
+        const ref = this.selectionRefDes.length > 0 ? this.selectionRefDes : this.selectionLibraryId;
+        if (kind === 'osc') {
+            this.pushOscToStore();
+            store.open('osc', `示波器 ${ref}`, this.buildOscDetail());
+        }
+        else if (kind === 'la') {
+            this.pushLogicToStore();
+            store.open('la', `逻辑分析仪 ${ref}`, this.buildLogicDetail());
+        }
+        else if (kind === 'vm') {
+            this.pushMeterToStore('vm');
+            store.open('vm', `电压表 ${ref}`, this.buildVmDetail());
+        }
+        else if (kind === 'am') {
+            this.pushMeterToStore('am');
+            store.open('am', `电流表 ${ref}`, this.buildAmDetail());
+        }
+        else if (kind === 'fc') {
+            this.pushMeterToStore('fc');
+            store.open('fc', `频率计 ${ref}`, this.buildFcDetail());
+        }
+    }
+    private buildOscDetail(): string {
+        const n = this.waveVoltageData.length;
+        const n2 = this.waveCh2Data.length;
+        const parts: string[] = [];
+        parts.push(`CH1 采样点=${n}`);
+        if (n2 > 1) {
+            parts.push(`CH2 采样点=${n2}`);
+        }
+        parts.push(`时基=${this.timebaseLabels[this.timebaseIdx]}`);
+        parts.push(`档位=${this.voltageScaleLabels[this.voltageScaleIdx]}/div`);
+        parts.push(`实时=${this.oscLiveVolts}`);
+        if (this.oscStatsText.length > 0) {
+            parts.push(this.oscStatsText);
+        }
+        if (this.cursorMeasureText.length > 0) {
+            parts.push(`光标: ${this.cursorMeasureText}`);
+        }
+        parts.push(this.oscFftMode ? '模式=FFT' : '模式=时域');
+        return parts.join('\n');
+    }
+    private buildLogicDetail(): string {
+        const parts: string[] = [];
+        parts.push(`通道数=${this.logicChannels}`);
+        parts.push(`采样点=${this.logicSampleCount}`);
+        parts.push(`已捕获通道=${this.logicChannelData.length}`);
+        parts.push(`阈值=${this.threshold} mV`);
+        if (this.decodedFramesText.length > 0) {
+            parts.push(`解码:\n${this.decodedFramesText}`);
+        }
+        return parts.join('\n');
+    }
+    private buildVmDetail(): string {
+        return [
+            `读数=${this.vmReading} ${this.vmUnit}`,
+            `量程=${this.vmRange}`,
+            `采样点=${this.vmWaveData.length}`,
+            `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+        ].join('\n');
+    }
+    private buildAmDetail(): string {
+        return [
+            `读数=${this.amReading} ${this.amUnit}`,
+            `量程=${this.amRange}`,
+            `采样点=${this.amWaveData.length}`,
+            `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+        ].join('\n');
+    }
+    private buildFcDetail(): string {
+        return [
+            `频率=${this.fcReading}`,
+            `闸门=${this.fcGateTime}s`,
+            `采样点=${this.fcWaveData.length}`,
+            `器件=${this.selectionRefDes} / ${this.selectionLibraryId}`
+        ].join('\n');
+    }
+    private pushOscToStore(): void {
+        InstrumentWaveExpandStore.getInstance().setOscSnapshot(this.waveTimeData, this.waveVoltageData, this.waveCh2TimeData, this.waveCh2Data, this.oscFftMode ? 'FFT CH1' : 'CH1', this.oscFftMode ? '#ffab40' : '#00e676', this.oscFftMode ? 'FFT CH2' : 'CH2', this.oscFftMode ? '#ffd54f' : '#40c4ff', this.voltagePerDiv[this.voltageScaleIdx], this.timebaseSecPerDiv(), this.triggerLevel, this.oscAutoFit, this.oscFrameId, this.buildOscDetail());
+    }
+    private pushLogicToStore(): void {
+        InstrumentWaveExpandStore.getInstance().setLogicSnapshot(this.logicChannelData, this.logicChannels, this.logicSampleCount, this.buildLogicDetail());
+    }
+    private pushMeterToStore(kind: string): void {
+        const store = InstrumentWaveExpandStore.getInstance();
+        if (kind === 'vm') {
+            store.setMeterSnapshot(this.vmWaveTime, this.vmWaveData, 'ΔV', '#66bb6a', this.vmWaveFrame, this.buildVmDetail(), this.vmTPerDiv);
+        }
+        else if (kind === 'am') {
+            store.setMeterSnapshot(this.amWaveTime, this.amWaveData, 'I(mA)', '#ffa726', this.amWaveFrame, this.buildAmDetail(), this.amTPerDiv);
+        }
+        else if (kind === 'fc') {
+            store.setMeterSnapshot(this.fcWaveTime, this.fcWaveData, 'IN', '#42a5f5', this.fcWaveFrame, this.buildFcDetail(), this.fcTPerDiv);
+        }
+    }
+    /** 刷新读数后同步放大弹窗会话（同一次仿真内保留并实时更新） */
+    private syncExpandSessionAfterRefresh(): void {
+        const store = InstrumentWaveExpandStore.getInstance();
+        if (!store.visible) {
+            return;
+        }
+        if (store.kind === 'osc') {
+            this.pushOscToStore();
+            store.refreshIfOpen('osc');
+        }
+        else if (store.kind === 'la') {
+            this.pushLogicToStore();
+            store.refreshIfOpen('la');
+        }
+        else if (store.kind === 'vm') {
+            this.pushMeterToStore('vm');
+            store.refreshIfOpen('vm');
+        }
+        else if (store.kind === 'am') {
+            this.pushMeterToStore('am');
+            store.refreshIfOpen('am');
+        }
+        else if (store.kind === 'fc') {
+            this.pushMeterToStore('fc');
+            store.refreshIfOpen('fc');
         }
     }
     private startAutoRefreshTimer(reason: string): void {
@@ -1372,6 +1744,9 @@ export class InstrumentPanel extends ViewPU {
                     this.vmRange = `${vcfg.data.range}V`;
                     this.vmUnit = vcfg.data.unit ?? 'V DC';
                 }
+                if (source !== 'wave') {
+                    this.refreshMeterWave('vm');
+                }
             }
             else if (instrKind === 'am') {
                 let refreshed = false;
@@ -1403,32 +1778,59 @@ export class InstrumentPanel extends ViewPU {
                     this.amRange = `${acfg.data.range}mA`;
                     this.amUnit = acfg.data.unit ?? 'mA DC';
                 }
+                if (source !== 'wave') {
+                    this.refreshMeterWave('am');
+                }
             }
             else if (instrKind === 'osc') {
-                if (this.oscAutoFit) {
+                const hasScope = this.appService.findFirstSchematicInstrumentId('osc').length > 0;
+                if (!hasScope) {
+                    this.waveTimeData = [];
+                    this.waveVoltageData = [];
+                    this.waveCh2TimeData = [];
+                    this.waveCh2Data = [];
+                    this.oscLiveVolts = '--';
+                    this.oscStatsText = '请先在原理图放置示波器';
+                    this.oscFrameId = this.oscFrameId + 1;
+                    dataPath = 'no_scope_on_schematic';
+                }
+                else if (this.oscAutoFit) {
                     this.applyOscAutoScale();
                 }
-                const osc = this.appService.instruments.getOscilloscopeWave(0);
-                if (osc.success && osc.data) {
-                    this.waveTimeData = osc.data.timeAxis.slice();
-                    this.waveVoltageData = osc.data.voltageAxis.slice();
-                    this.oscFrameId = this.oscFrameId + 1;
-                    this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
-                    const last = InstrumentPanel.lastFinite(osc.data.voltageAxis);
-                    if (last !== null) {
-                        this.oscLiveVolts = `${last.toFixed(3)} V`;
+                if (hasScope) {
+                    const osc = this.appService.instruments.getOscilloscopeWave(0);
+                    if (osc.success && osc.data && osc.data.voltageAxis.length >= 2 &&
+                        InstrumentPanel.isDisplayableScopeWave(osc.data.netName, osc.data.probeName)) {
+                        this.oscFftMode = osc.data.waveType === 'freq' || osc.data.netName === 'MATH_FFT';
+                        this.waveTimeData = osc.data.timeAxis.slice();
+                        this.waveVoltageData = osc.data.voltageAxis.slice();
+                        this.oscFrameId = this.oscFrameId + 1;
+                        this.updateOscStatsText(osc.data.voltageAxis, osc.data.timeAxis);
+                        const last = InstrumentPanel.lastFinite(osc.data.voltageAxis);
+                        if (last !== null) {
+                            this.oscLiveVolts = this.oscFftMode
+                                ? `${last.toFixed(1)} dB`
+                                : `${last.toFixed(3)} V`;
+                        }
+                        dataPath = `wave pts=${osc.data.voltageAxis.length}${this.oscFftMode ? ' fft' : ''}`;
                     }
-                    dataPath = `wave pts=${osc.data.voltageAxis.length}`;
-                }
-                else {
-                    dataPath = 'wave_empty';
-                }
-                const osc2 = this.appService.instruments.getOscilloscopeWave(1);
-                if (osc2.success && osc2.data && InstrumentPanel.isLiveScopeChannel(osc2.data.netName)) {
-                    this.waveCh2Data = osc2.data.voltageAxis.slice();
-                }
-                else {
-                    this.waveCh2Data = [];
+                    else {
+                        this.waveTimeData = [];
+                        this.waveVoltageData = [];
+                        this.oscFrameId = this.oscFrameId + 1;
+                        dataPath = 'wave_empty';
+                    }
+                    const osc2 = this.appService.instruments.getOscilloscopeWave(1);
+                    if (osc2.success && osc2.data &&
+                        InstrumentPanel.isDisplayableScopeWave(osc2.data.netName, osc2.data.probeName) &&
+                        osc2.data.voltageAxis.length >= 2) {
+                        this.waveCh2TimeData = osc2.data.timeAxis.slice();
+                        this.waveCh2Data = osc2.data.voltageAxis.slice();
+                    }
+                    else {
+                        this.waveCh2TimeData = [];
+                        this.waveCh2Data = [];
+                    }
                 }
             }
             else if (instrKind === 'power') {
@@ -1472,6 +1874,9 @@ export class InstrumentPanel extends ViewPU {
                 }
                 else {
                     dataPath = 'measure_fail';
+                }
+                if (source !== 'wave') {
+                    this.refreshMeterWave('freq');
                 }
             }
             else if (instrKind === 'logic') {
@@ -1530,6 +1935,7 @@ export class InstrumentPanel extends ViewPU {
             `match=${selectionMatches ? 1 : 0} path=${dataPath} pulse=${this.uiPulse} ` +
             `sel=${this.selectionRefDes || '(none)'} reading=${reading} ms=${Date.now() - t0}`);
         this.logInstrumentReading(false, reading);
+        this.syncExpandSessionAfterRefresh();
         return reading;
     }
     private logInstrumentReading(onSelect: boolean, readingOverride: string = ''): void {
@@ -1697,7 +2103,7 @@ export class InstrumentPanel extends ViewPU {
                             traceInstrUi('TAB', `tab=${idx} kind=${this.kindForSubTab(idx)}`);
                             this.autoRefreshReadings('tab');
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 714, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 951, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1874,7 +2280,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'AC', widthVal: '24%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 827, col: 11 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1064, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1896,7 +2302,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'DC', widthVal: '24%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 829, col: 11 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1066, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1927,7 +2333,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.captureWave();
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 831, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1068, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1963,7 +2369,7 @@ export class InstrumentPanel extends ViewPU {
                             this.appService.instruments.setCaptureMode(this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
                             this.captureWave();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 842, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1079, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1997,13 +2403,21 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '采样', widthVal: '48%',
-                        onAction: () => { this.captureWave(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 856, col: 11 });
+                        onAction: () => {
+                            this.oscFftMode = false;
+                            this.appService.instruments.setMathChannel(MathChannelOp.ADD, false);
+                            this.captureWave();
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1093, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: '采样',
                             widthVal: '48%',
-                            onAction: () => { this.captureWave(); }
+                            onAction: () => {
+                                this.oscFftMode = false;
+                                this.appService.instruments.setMathChannel(MathChannelOp.ADD, false);
+                                this.captureWave();
+                            }
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
@@ -2018,21 +2432,29 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusClassicBtn(this, { label: 'FFT', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT, true); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 858, col: 11 });
+                    let componentCall = new ProteusClassicBtn(this, { label: this.oscFftMode ? 'FFT●' : 'FFT', widthVal: '48%',
+                        onAction: () => {
+                            this.oscFftMode = true;
+                            this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
+                            this.captureWave();
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1099, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            label: 'FFT',
+                            label: this.oscFftMode ? 'FFT●' : 'FFT',
                             widthVal: '48%',
-                            onAction: () => { this.appService.instruments.setMathChannel(MathChannelOp.FFT, true); }
+                            onAction: () => {
+                                this.oscFftMode = true;
+                                this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
+                                this.captureWave();
+                            }
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'FFT', widthVal: '48%'
+                        label: this.oscFftMode ? 'FFT●' : 'FFT', widthVal: '48%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
@@ -2068,12 +2490,19 @@ export class InstrumentPanel extends ViewPU {
         // Row 4: trigger slider
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // 主波形区：始终显示，无数据时显示空屏提示
+            // 主波形区：CH1/CH2 同高；FFT 时两路各自频谱（有绑定才显示 CH2）；双击放大
             Column.create({ space: 4 });
-            // 主波形区：始终显示，无数据时显示空屏提示
+            // 主波形区：CH1/CH2 同高；FFT 时两路各自频谱（有绑定才显示 CH2）；双击放大
             Column.width('100%');
-            // 主波形区：始终显示，无数据时显示空屏提示
+            // 主波形区：CH1/CH2 同高；FFT 时两路各自频谱（有绑定才显示 CH2）；双击放大
             Column.padding({ left: 4, right: 4 });
+            globalThis.Gesture.create(GesturePriority.Low);
+            TapGesture.create({ count: 2 });
+            TapGesture.onAction(() => {
+                this.openWaveExpand('osc');
+            });
+            TapGesture.pop();
+            globalThis.Gesture.pop();
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2082,28 +2511,28 @@ export class InstrumentPanel extends ViewPU {
                         timeData: this.waveTimeData,
                         voltageData: this.waveVoltageData,
                         frameId: this.oscFrameId,
-                        channelLabel: 'CH1',
-                        waveColor: '#00e676',
+                        channelLabel: this.oscFftMode ? 'FFT CH1' : 'CH1',
+                        waveColor: this.oscFftMode ? '#ffab40' : '#00e676',
                         vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                         tPerDiv: this.timebaseSecPerDiv(),
                         triggerLevel: this.triggerLevel,
                         autoFit: this.oscAutoFit,
-                        canvasHeight: 168,
+                        canvasHeight: this.oscCanvasHeight,
                         showStats: true
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 885, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1130, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             timeData: this.waveTimeData,
                             voltageData: this.waveVoltageData,
                             frameId: this.oscFrameId,
-                            channelLabel: 'CH1',
-                            waveColor: '#00e676',
+                            channelLabel: this.oscFftMode ? 'FFT CH1' : 'CH1',
+                            waveColor: this.oscFftMode ? '#ffab40' : '#00e676',
                             vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                             tPerDiv: this.timebaseSecPerDiv(),
                             triggerLevel: this.triggerLevel,
                             autoFit: this.oscAutoFit,
-                            canvasHeight: 168,
+                            canvasHeight: this.oscCanvasHeight,
                             showStats: true
                         };
                     };
@@ -2114,13 +2543,13 @@ export class InstrumentPanel extends ViewPU {
                         timeData: this.waveTimeData,
                         voltageData: this.waveVoltageData,
                         frameId: this.oscFrameId,
-                        channelLabel: 'CH1',
-                        waveColor: '#00e676',
+                        channelLabel: this.oscFftMode ? 'FFT CH1' : 'CH1',
+                        waveColor: this.oscFftMode ? '#ffab40' : '#00e676',
                         vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                         tPerDiv: this.timebaseSecPerDiv(),
                         triggerLevel: this.triggerLevel,
                         autoFit: this.oscAutoFit,
-                        canvasHeight: 168,
+                        canvasHeight: this.oscCanvasHeight,
                         showStats: true
                     });
                 }
@@ -2134,31 +2563,31 @@ export class InstrumentPanel extends ViewPU {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
                                 let componentCall = new OscilloscopeWaveCanvas(this, {
-                                    timeData: this.waveTimeData,
+                                    timeData: this.waveCh2TimeData.length > 1 ? this.waveCh2TimeData : this.waveTimeData,
                                     voltageData: this.waveCh2Data,
                                     frameId: this.oscFrameId,
-                                    channelLabel: 'CH2',
-                                    waveColor: '#40c4ff',
+                                    channelLabel: this.oscFftMode ? 'FFT CH2' : 'CH2',
+                                    waveColor: this.oscFftMode ? '#ffd54f' : '#40c4ff',
                                     vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                                     tPerDiv: this.timebaseSecPerDiv(),
                                     triggerLevel: this.triggerLevel,
                                     autoFit: this.oscAutoFit,
-                                    canvasHeight: 120,
+                                    canvasHeight: this.oscCanvasHeight,
                                     showStats: true
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 899, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1144, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
-                                        timeData: this.waveTimeData,
+                                        timeData: this.waveCh2TimeData.length > 1 ? this.waveCh2TimeData : this.waveTimeData,
                                         voltageData: this.waveCh2Data,
                                         frameId: this.oscFrameId,
-                                        channelLabel: 'CH2',
-                                        waveColor: '#40c4ff',
+                                        channelLabel: this.oscFftMode ? 'FFT CH2' : 'CH2',
+                                        waveColor: this.oscFftMode ? '#ffd54f' : '#40c4ff',
                                         vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                                         tPerDiv: this.timebaseSecPerDiv(),
                                         triggerLevel: this.triggerLevel,
                                         autoFit: this.oscAutoFit,
-                                        canvasHeight: 120,
+                                        canvasHeight: this.oscCanvasHeight,
                                         showStats: true
                                     };
                                 };
@@ -2166,16 +2595,16 @@ export class InstrumentPanel extends ViewPU {
                             }
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    timeData: this.waveTimeData,
+                                    timeData: this.waveCh2TimeData.length > 1 ? this.waveCh2TimeData : this.waveTimeData,
                                     voltageData: this.waveCh2Data,
                                     frameId: this.oscFrameId,
-                                    channelLabel: 'CH2',
-                                    waveColor: '#40c4ff',
+                                    channelLabel: this.oscFftMode ? 'FFT CH2' : 'CH2',
+                                    waveColor: this.oscFftMode ? '#ffd54f' : '#40c4ff',
                                     vPerDiv: this.voltagePerDiv[this.voltageScaleIdx],
                                     tPerDiv: this.timebaseSecPerDiv(),
                                     triggerLevel: this.triggerLevel,
                                     autoFit: this.oscAutoFit,
-                                    canvasHeight: 120,
+                                    canvasHeight: this.oscCanvasHeight,
                                     showStats: true
                                 });
                             }
@@ -2189,6 +2618,7 @@ export class InstrumentPanel extends ViewPU {
             }
         }, If);
         If.pop();
+        this.WaveExpandHint.bind(this)();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
             if (this.oscStatsText.length > 0) {
@@ -2210,7 +2640,7 @@ export class InstrumentPanel extends ViewPU {
             }
         }, If);
         If.pop();
-        // 主波形区：始终显示，无数据时显示空屏提示
+        // 主波形区：CH1/CH2 同高；FFT 时两路各自频谱（有绑定才显示 CH2）；双击放大
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             // Cursors
@@ -2301,37 +2731,92 @@ export class InstrumentPanel extends ViewPU {
         }
     }
     private captureWave(): void {
+        if (this.appService.findFirstSchematicInstrumentId('osc').length === 0) {
+            this.waveTimeData = [];
+            this.waveVoltageData = [];
+            this.waveCh2TimeData = [];
+            this.waveCh2Data = [];
+            this.oscLiveVolts = '--';
+            this.oscStatsText = '请先在原理图放置示波器';
+            this.oscFrameId = this.oscFrameId + 1;
+            return;
+        }
         for (let ch = 0; ch < 4; ch++) {
             const snap = this.appService.instruments.getOscilloscopeWave(ch);
             if (snap.success && snap.data) {
                 if (ch === 0) {
+                    if (snap.data.voltageAxis.length < 2 ||
+                        !InstrumentPanel.isDisplayableScopeWave(snap.data.netName, snap.data.probeName)) {
+                        this.waveTimeData = [];
+                        this.waveVoltageData = [];
+                        this.oscFrameId = this.oscFrameId + 1;
+                        continue;
+                    }
+                    this.oscFftMode = snap.data.waveType === 'freq' || snap.data.netName === 'MATH_FFT';
                     this.waveTimeData = snap.data.timeAxis.slice();
                     this.waveVoltageData = snap.data.voltageAxis.slice();
                     this.oscFrameId = this.oscFrameId + 1;
                     this.updateOscStatsText(snap.data.voltageAxis, snap.data.timeAxis);
                     const last = InstrumentPanel.lastFinite(snap.data.voltageAxis);
                     if (last !== null) {
-                        this.oscLiveVolts = `${last.toFixed(3)} V`;
+                        this.oscLiveVolts = this.oscFftMode
+                            ? `${last.toFixed(1)} dB`
+                            : `${last.toFixed(3)} V`;
                     }
                 }
                 else if (ch === 1) {
-                    if (InstrumentPanel.isLiveScopeChannel(snap.data.netName)) {
+                    if (InstrumentPanel.isDisplayableScopeWave(snap.data.netName, snap.data.probeName) &&
+                        snap.data.voltageAxis.length >= 2) {
+                        this.waveCh2TimeData = snap.data.timeAxis.slice();
                         this.waveCh2Data = snap.data.voltageAxis.slice();
                     }
                     else {
+                        this.waveCh2TimeData = [];
                         this.waveCh2Data = [];
                     }
                 }
             }
         }
+        this.syncExpandSessionAfterRefresh();
     }
-    /** CH2+ only when bound to a real net (not placeholder OSC_CHx). */
+    /** CH2+ only when bound to a real net (not placeholder OSC_CHx / CHx). */
     private static isLiveScopeChannel(netName: string): boolean {
         if (netName.length === 0) {
             return false;
         }
         const upper = netName.toUpperCase();
-        return !upper.startsWith('OSC_CH');
+        if (upper.startsWith('OSC_CH')) {
+            return false;
+        }
+        // resampleWave / flat 占位名 CH1、CH2…
+        if (upper.startsWith('CH') && upper.length >= 3) {
+            let allDigits = true;
+            for (let i = 2; i < upper.length; i++) {
+                const c = upper.charCodeAt(i);
+                if (c < 48 || c > 57) {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits) {
+                return false;
+            }
+        }
+        return true;
+    }
+    /** 时域看 netName；FFT 结果 netName 恒为 MATH_FFT，改看 probeName 内层（FFT(OUT)）。 */
+    private static isDisplayableScopeWave(netName: string, probeName: string): boolean {
+        if (netName.length === 0 && (probeName.length === 0 || /^CH\d+$/i.test(probeName))) {
+            return false;
+        }
+        if (netName === 'MATH_FFT') {
+            let inner = probeName;
+            if (probeName.startsWith('FFT(') && probeName.endsWith(')') && probeName.length > 5) {
+                inner = probeName.substring(4, probeName.length - 1);
+            }
+            return InstrumentPanel.isLiveScopeChannel(inner);
+        }
+        return InstrumentPanel.isLiveScopeChannel(netName);
     }
     private static lastFinite(values: number[]): number | null {
         for (let i = values.length - 1; i >= 0; i--) {
@@ -2455,7 +2940,7 @@ export class InstrumentPanel extends ViewPU {
                             this.threshold = parseInt(v) || 1500;
                             this.appService.instruments.setThreshold(this.threshold);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1093, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1401, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2493,7 +2978,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'UART', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1109, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1417, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2515,7 +3000,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'I2C', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1111, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1419, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2543,7 +3028,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'SPI', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1117, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1425, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2565,7 +3050,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'CAN', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.CAN); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1119, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.CAN); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1427, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2593,7 +3078,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '采样', widthVal: '100%',
-                        onAction: () => { this.captureLogic(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1125, col: 11 });
+                        onAction: () => { this.captureLogic(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1433, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2616,6 +3101,13 @@ export class InstrumentPanel extends ViewPU {
             Column.create();
             Column.width('100%');
             Column.padding({ left: 4, right: 4 });
+            globalThis.Gesture.create(GesturePriority.Low);
+            TapGesture.create({ count: 2 });
+            TapGesture.onAction(() => {
+                this.openWaveExpand('la');
+            });
+            TapGesture.pop();
+            globalThis.Gesture.pop();
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
@@ -2627,14 +3119,16 @@ export class InstrumentPanel extends ViewPU {
                                 let componentCall = new LogicAnalyzerWaveCanvas(this, {
                                     channelData: this.logicChannelData,
                                     channelCount: this.logicChannels,
-                                    sampleCount: this.logicSampleCount
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1132, col: 13 });
+                                    sampleCount: this.logicSampleCount,
+                                    canvasHeight: 200
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1440, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
                                         channelData: this.logicChannelData,
                                         channelCount: this.logicChannels,
-                                        sampleCount: this.logicSampleCount
+                                        sampleCount: this.logicSampleCount,
+                                        canvasHeight: 200
                                     };
                                 };
                                 componentCall.paramsGenerator_ = paramsLambda;
@@ -2643,7 +3137,8 @@ export class InstrumentPanel extends ViewPU {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
                                     channelData: this.logicChannelData,
                                     channelCount: this.logicChannels,
-                                    sampleCount: this.logicSampleCount
+                                    sampleCount: this.logicSampleCount,
+                                    canvasHeight: 200
                                 });
                             }
                         }, { name: "LogicAnalyzerWaveCanvas" });
@@ -2657,6 +3152,7 @@ export class InstrumentPanel extends ViewPU {
             }
         }, If);
         If.pop();
+        this.WaveExpandHint.bind(this)();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
@@ -2696,6 +3192,7 @@ export class InstrumentPanel extends ViewPU {
             this.logicChannelData = channels;
             this.logicSampleCount = channels.length > 0 ? channels[0].length : 128;
             this.statusMessage = `逻辑采样: ${channels.length} 通道`;
+            this.syncExpandSessionAfterRefresh();
         }
         else {
             this.statusMessage = '逻辑采样失败';
@@ -2717,7 +3214,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'DCV', widthVal: '48%',
-                        onAction: () => { this.mmMode = 'DCV'; this.appService.instruments.setMode(MultimeterMode.DCV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1181, col: 9 });
+                        onAction: () => { this.mmMode = 'DCV'; this.appService.instruments.setMode(MultimeterMode.DCV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1498, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2739,7 +3236,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'ACV', widthVal: '48%',
-                        onAction: () => { this.mmMode = 'ACV'; this.appService.instruments.setMode(MultimeterMode.ACV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1183, col: 9 });
+                        onAction: () => { this.mmMode = 'ACV'; this.appService.instruments.setMode(MultimeterMode.ACV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1500, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2770,7 +3267,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'OHM';
                             this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1189, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1506, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2798,7 +3295,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'AMP';
                             this.appService.instruments.setMode(MultimeterMode.CURRENT);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1194, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1511, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2826,7 +3323,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'DIODE';
                             this.appService.instruments.setMode(MultimeterMode.DIODE);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1199, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1516, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2862,7 +3359,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.mmReading,
                         unit: '',
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1208, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1525, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2894,7 +3391,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '自动量程', widthVal: '42%',
-                        onAction: () => { this.appService.instruments.autoRange(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1218, col: 9 });
+                        onAction: () => { this.appService.instruments.autoRange(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1535, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2919,7 +3416,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             const r = this.appService.instruments.measure();
                             this.statusMessage = r.success ? `万用表读数: ${r.data?.toFixed(4)}` : '测量失败';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1220, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1537, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2961,7 +3458,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '正弦', widthVal: '48%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SINE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1236, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1553, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2987,7 +3484,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '方波', widthVal: '48%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SQUARE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1241, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1558, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3019,7 +3516,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '三角', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.TRIANGLE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1250, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1567, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3045,7 +3542,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '锯齿', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SAW, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1255, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1572, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3071,7 +3568,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '脉冲', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.PULSE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1260, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1577, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3101,7 +3598,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'Burst', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setBurstMode(true, 5); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1269, col: 9 });
+                        onAction: () => { this.appService.instruments.setBurstMode(true, 5); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1586, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3149,7 +3646,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.freq, mono: true,
                         onChange: (v: string) => { this.freq = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1277, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1594, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3192,7 +3689,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigAmp, mono: true,
                         onChange: (v: string) => { this.sigAmp = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1285, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1602, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3235,7 +3732,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigOffset, mono: true,
                         onChange: (v: string) => { this.sigOffset = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1293, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1610, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3278,7 +3775,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigDuty, mono: true,
                         onChange: (v: string) => { this.sigDuty = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1301, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1618, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3334,7 +3831,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = this.appService.applySignalGenParams(fp.numeric, amp, off, duty, this.selectedComponentId);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1314, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1631, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3395,7 +3892,7 @@ export class InstrumentPanel extends ViewPU {
                         text: this.uartHex,
                         placeholder: 'HEX: 55 AA',
                         onChange: (v: string) => { this.uartHex = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1347, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1664, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3426,7 +3923,7 @@ export class InstrumentPanel extends ViewPU {
                             this.statusMessage = looped
                                 ? `环回已回显: ${this.uartHex}`
                                 : `已发送: ${this.uartHex}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1353, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1670, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3459,7 +3956,7 @@ export class InstrumentPanel extends ViewPU {
                             // Show full TX/RX log — not hexReceive() raw buffer (was 5555… spam)
                             this.uartLog = this.appService.instruments.getUartLog();
                             this.statusMessage = this.uartLog.length > 0 ? '已刷新接收日志' : '暂无数据';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1362, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1679, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3576,7 +4073,7 @@ export class InstrumentPanel extends ViewPU {
                             this.vmType = 0;
                             this.vmUnit = 'V DC';
                             this.appService.instruments.setVoltmeterType(VoltmeterType.DC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1417, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1734, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3615,7 +4112,7 @@ export class InstrumentPanel extends ViewPU {
                             this.vmType = 1;
                             this.vmUnit = 'V AC';
                             this.appService.instruments.setVoltmeterType(VoltmeterType.AC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1422, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1739, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3658,7 +4155,7 @@ export class InstrumentPanel extends ViewPU {
         Text.pop();
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
+            Column.create({ space: 8 });
             Column.layoutWeight(1);
             Column.width('100%');
             Column.justifyContent(FlexAlign.Center);
@@ -3671,7 +4168,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.vmReading,
                         unit: this.vmUnit,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1443, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1760, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3693,6 +4190,73 @@ export class InstrumentPanel extends ViewPU {
                 }
             }, { name: "LiveReadout" });
         }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // 固定高度波形区，避免有/无数据时布局跳动；双击放大
+            Column.create();
+            // 固定高度波形区，避免有/无数据时布局跳动；双击放大
+            Column.width('92%');
+            globalThis.Gesture.create(GesturePriority.Low);
+            TapGesture.create({ count: 2 });
+            TapGesture.onAction(() => {
+                this.openWaveExpand('vm');
+            });
+            TapGesture.pop();
+            globalThis.Gesture.pop();
+        }, Column);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new OscilloscopeWaveCanvas(this, {
+                        timeData: this.vmWaveTime,
+                        voltageData: this.vmWaveData,
+                        frameId: this.vmWaveFrame,
+                        channelLabel: 'ΔV',
+                        waveColor: '#66bb6a',
+                        vPerDiv: 1,
+                        tPerDiv: this.vmTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1768, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            timeData: this.vmWaveTime,
+                            voltageData: this.vmWaveData,
+                            frameId: this.vmWaveFrame,
+                            channelLabel: 'ΔV',
+                            waveColor: '#66bb6a',
+                            vPerDiv: 1,
+                            tPerDiv: this.vmTPerDiv,
+                            triggerLevel: 0,
+                            autoFit: true,
+                            canvasHeight: this.meterCanvasHeight,
+                            showStats: false
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        timeData: this.vmWaveTime,
+                        voltageData: this.vmWaveData,
+                        frameId: this.vmWaveFrame,
+                        channelLabel: 'ΔV',
+                        waveColor: '#66bb6a',
+                        vPerDiv: 1,
+                        tPerDiv: this.vmTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    });
+                }
+            }, { name: "OscilloscopeWaveCanvas" });
+        }
+        this.WaveExpandHint.bind(this)();
+        // 固定高度波形区，避免有/无数据时布局跳动；双击放大
+        Column.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
@@ -3709,7 +4273,7 @@ export class InstrumentPanel extends ViewPU {
                             if (cfg.success && cfg.data) {
                                 this.vmRange = `${cfg.data.range}V`;
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1453, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1794, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3769,7 +4333,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.vmUnit = cfg.data.unit;
                             }
                             this.statusMessage = `电压表: ${this.vmReading} ${this.vmUnit}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1461, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1802, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3842,7 +4406,7 @@ export class InstrumentPanel extends ViewPU {
                             this.amType = 0;
                             this.amUnit = 'mA DC';
                             this.appService.instruments.setAmmeterType(AmmeterType.DC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1506, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1847, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3872,7 +4436,7 @@ export class InstrumentPanel extends ViewPU {
                             this.amType = 1;
                             this.amUnit = 'mA AC';
                             this.appService.instruments.setAmmeterType(AmmeterType.AC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1511, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1852, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3906,7 +4470,7 @@ export class InstrumentPanel extends ViewPU {
         Text.pop();
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
+            Column.create({ space: 8 });
             Column.layoutWeight(1);
             Column.width('100%');
             Column.justifyContent(FlexAlign.Center);
@@ -3919,7 +4483,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.amReading,
                         unit: this.amUnit,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1524, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1865, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3941,6 +4505,70 @@ export class InstrumentPanel extends ViewPU {
                 }
             }, { name: "LiveReadout" });
         }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('92%');
+            globalThis.Gesture.create(GesturePriority.Low);
+            TapGesture.create({ count: 2 });
+            TapGesture.onAction(() => {
+                this.openWaveExpand('am');
+            });
+            TapGesture.pop();
+            globalThis.Gesture.pop();
+        }, Column);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new OscilloscopeWaveCanvas(this, {
+                        timeData: this.amWaveTime,
+                        voltageData: this.amWaveData,
+                        frameId: this.amWaveFrame,
+                        channelLabel: 'I(mA)',
+                        waveColor: '#ffa726',
+                        vPerDiv: 1,
+                        tPerDiv: this.amTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1872, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            timeData: this.amWaveTime,
+                            voltageData: this.amWaveData,
+                            frameId: this.amWaveFrame,
+                            channelLabel: 'I(mA)',
+                            waveColor: '#ffa726',
+                            vPerDiv: 1,
+                            tPerDiv: this.amTPerDiv,
+                            triggerLevel: 0,
+                            autoFit: true,
+                            canvasHeight: this.meterCanvasHeight,
+                            showStats: false
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        timeData: this.amWaveTime,
+                        voltageData: this.amWaveData,
+                        frameId: this.amWaveFrame,
+                        channelLabel: 'I(mA)',
+                        waveColor: '#ffa726',
+                        vPerDiv: 1,
+                        tPerDiv: this.amTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    });
+                }
+            }, { name: "OscilloscopeWaveCanvas" });
+        }
+        this.WaveExpandHint.bind(this)();
+        Column.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
@@ -3957,7 +4585,7 @@ export class InstrumentPanel extends ViewPU {
                             if (cfg.success && cfg.data) {
                                 this.amRange = `${cfg.data.range}mA`;
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1534, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1898, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3996,7 +4624,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.amUnit = cfg.data.unit;
                             }
                             this.statusMessage = `电流表: ${this.amReading} ${this.amUnit}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1542, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1906, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4054,7 +4682,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = `功率表: ${this.pmPower}mW, PF=${this.pmPF}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1565, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1929, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4092,7 +4720,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '电压', value: this.pmVoltage, unit: 'V', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1580, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '电压', value: this.pmVoltage, unit: 'V', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1944, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4114,7 +4742,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '电流', value: this.pmCurrent, unit: 'mA', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1581, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '电流', value: this.pmCurrent, unit: 'mA', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1945, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4136,7 +4764,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '功率', value: this.pmPower, unit: 'mW', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1582, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '功率', value: this.pmPower, unit: 'mW', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1946, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4158,7 +4786,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '功率因数', value: this.pmPF, unit: '', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1583, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '功率因数', value: this.pmPF, unit: '', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1947, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4199,7 +4827,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 0.1;
                             this.appService.instruments.freqCounterSetGateTime(0.1);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1596, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1960, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4227,7 +4855,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 1.0;
                             this.appService.instruments.freqCounterSetGateTime(1.0);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1601, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1965, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4255,7 +4883,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 10;
                             this.appService.instruments.freqCounterSetGateTime(10);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1606, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1970, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4288,7 +4916,7 @@ export class InstrumentPanel extends ViewPU {
         Text.pop();
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Column.create();
+            Column.create({ space: 8 });
             Column.layoutWeight(1);
             Column.width('100%');
             Column.justifyContent(FlexAlign.Center);
@@ -4301,7 +4929,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.fcReading,
                         unit: `Gate: ${this.fcGateTime}s`,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1619, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1983, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4323,6 +4951,70 @@ export class InstrumentPanel extends ViewPU {
                 }
             }, { name: "LiveReadout" });
         }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('92%');
+            globalThis.Gesture.create(GesturePriority.Low);
+            TapGesture.create({ count: 2 });
+            TapGesture.onAction(() => {
+                this.openWaveExpand('fc');
+            });
+            TapGesture.pop();
+            globalThis.Gesture.pop();
+        }, Column);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new OscilloscopeWaveCanvas(this, {
+                        timeData: this.fcWaveTime,
+                        voltageData: this.fcWaveData,
+                        frameId: this.fcWaveFrame,
+                        channelLabel: 'IN',
+                        waveColor: '#42a5f5',
+                        vPerDiv: 1,
+                        tPerDiv: this.fcTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1990, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            timeData: this.fcWaveTime,
+                            voltageData: this.fcWaveData,
+                            frameId: this.fcWaveFrame,
+                            channelLabel: 'IN',
+                            waveColor: '#42a5f5',
+                            vPerDiv: 1,
+                            tPerDiv: this.fcTPerDiv,
+                            triggerLevel: 0,
+                            autoFit: true,
+                            canvasHeight: this.meterCanvasHeight,
+                            showStats: false
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        timeData: this.fcWaveTime,
+                        voltageData: this.fcWaveData,
+                        frameId: this.fcWaveFrame,
+                        channelLabel: 'IN',
+                        waveColor: '#42a5f5',
+                        vPerDiv: 1,
+                        tPerDiv: this.fcTPerDiv,
+                        triggerLevel: 0,
+                        autoFit: true,
+                        canvasHeight: this.meterCanvasHeight,
+                        showStats: false
+                    });
+                }
+            }, { name: "OscilloscopeWaveCanvas" });
+        }
+        this.WaveExpandHint.bind(this)();
+        Column.pop();
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             __Common__.create();
@@ -4348,7 +5040,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = `频率计: ${this.fcReading}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1628, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2015, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4382,6 +5074,91 @@ export class InstrumentPanel extends ViewPU {
         }
         __Common__.pop();
         Column.pop();
+    }
+    private refreshMeterWave(kind: string): void {
+        if (kind === 'vm') {
+            const w = this.appService.instruments.getVoltmeterWave();
+            if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+                this.vmWaveTime = w.data.timeAxis.slice();
+                this.vmWaveData = w.data.voltageAxis.slice();
+                this.vmTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.vmWaveTime, this.vmWaveData);
+                this.vmWaveFrame = this.vmWaveFrame + 1;
+            }
+            return;
+        }
+        if (kind === 'am') {
+            const w = this.appService.instruments.getAmmeterWave();
+            if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+                this.amWaveTime = w.data.timeAxis.slice();
+                this.amWaveData = w.data.voltageAxis.slice();
+                this.amTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.amWaveTime, this.amWaveData);
+                this.amWaveFrame = this.amWaveFrame + 1;
+            }
+            return;
+        }
+        if (kind === 'freq') {
+            const w = this.appService.instruments.getFreqCounterWave();
+            if (w.success && w.data !== undefined && w.data.voltageAxis.length > 1) {
+                this.fcWaveTime = w.data.timeAxis.slice();
+                this.fcWaveData = w.data.voltageAxis.slice();
+                this.fcTPerDiv = InstrumentPanel.adaptiveMeterTPerDiv(this.fcWaveTime, this.fcWaveData);
+                this.fcWaveFrame = this.fcWaveFrame + 1;
+            }
+        }
+    }
+    /**
+     * 表计波形时基：约 3 个周期铺满 10 格 → 产生右缘滚动。
+     * 估不出频率时用尾部 8ms 窗（适合 1kHz lab）。
+     */
+    private static adaptiveMeterTPerDiv(times: number[], values: number[]): number {
+        const n = Math.min(times.length, values.length);
+        if (n < 8) {
+            return 1e-3;
+        }
+        let sum = 0;
+        let vmin = values[0];
+        let vmax = values[0];
+        for (let i = 0; i < n; i++) {
+            const v = values[i];
+            sum += v;
+            if (v < vmin) {
+                vmin = v;
+            }
+            if (v > vmax) {
+                vmax = v;
+            }
+        }
+        const mean = sum / n;
+        const amp = Math.max(vmax - vmin, 1e-9);
+        if (amp < 1e-6) {
+            return 5e-3;
+        }
+        const thr = mean;
+        let crosses = 0;
+        let tFirst = -1;
+        let tLast = -1;
+        for (let i = 1; i < n; i++) {
+            if ((values[i - 1] < thr && values[i] >= thr) ||
+                (values[i - 1] > thr && values[i] <= thr)) {
+                crosses++;
+                if (tFirst < 0) {
+                    tFirst = times[i];
+                }
+                tLast = times[i];
+            }
+        }
+        if (crosses >= 4 && tLast > tFirst) {
+            const period = 2 * (tLast - tFirst) / Math.max(crosses - 1, 1);
+            // 3 周期 / 10 格
+            const tDiv = (period * 3) / 10;
+            if (tDiv > 1e-7 && tDiv < 1) {
+                return tDiv;
+            }
+        }
+        const span = Math.max(times[n - 1] - times[0], 1e-6);
+        // 默认显示约 8ms（1kHz ≈ 8 周期）
+        const want = Math.min(8e-3, span);
+        return Math.max(want / 10, 1e-7);
     }
     private updateCursorMeasure(): void {
         const r = this.appService.instruments.measureCursors(this.cursorAIdx, this.cursorBIdx);

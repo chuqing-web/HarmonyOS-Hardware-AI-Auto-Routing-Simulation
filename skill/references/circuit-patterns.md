@@ -402,7 +402,7 @@ LA: CH1..7 = Q0..Q6；UART TERM TX↔RX 环回 + GND
 | 示波器 | OSCILLOSCOPE | 1 | 观测输出脉冲 |
 | 频率计 | FREQ_COUNTER | 1 | 可选: 测量频率 |
 
-**网络拓扑（多谐振荡器）**:
+**网络拓扑（多谐振荡器·无稳态）**:
 ```
 VCC — R_1k — LM555(DISCH=7)
        R_10k — LM555(DISCH=7) — LM555(THRES=6) — LM555(TRIG=2) — C_10uF — GND
@@ -411,6 +411,14 @@ VCC — R_1k — LM555(DISCH=7)
        LM555(GND=1) — GND
        LM555(CTRL=5) — C_100nF — GND
        LM555(OUT=3) — R_330 — LED_RED(A) — LED_RED(K) — GND
+```
+
+**网络拓扑（单稳态延时·按键触发）**:
+```
+VCC — R_timing — LM555(DISCH)；THRES≡DISCH — C_timing — GND
+VCC — R_pull — LM555(TRIG)；SW_PUSH：TRIG↔GND（按下拉低触发）
+LM555(CTRL) — C_100nF — GND；RESET→VCC；OUT — R_330 — LED — GND
+【硬禁】禁止改成 VCC→SW→R→C→GND 串联 RC 充放电
 ```
 
 **仪器拓扑要求**:

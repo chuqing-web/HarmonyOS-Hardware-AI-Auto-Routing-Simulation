@@ -47,9 +47,9 @@ body = body.replace(
   'const _caps = placeXtalCaps($1);\n  const cx1 = _caps.c1;\n  const cx2 = _caps.c2;'
 );
 
-// ArkTS: typed gate defs + PinSpec outs array
+// ArkTS: typed gate defs（builders 已无 const outs=[]，勿再要求其后紧跟 outs）
 body = body.replace(
-  /const gateDefs = \[[\s\S]*?\];\s*const outs = \[\];/,
+  /const gateDefs = \[[\s\S]*?\];/,
   `const gateDefs: GateDef[] = [
     gate('74HC00', 'U1', true),
     gate('74HC02', 'U2', true),
@@ -57,8 +57,7 @@ body = body.replace(
     gate('74HC08', 'U4', true),
     gate('74HC32', 'U5', true),
     gate('74HC74', 'U6', true)
-  ];
-  const outs: PinSpec[] = [];`
+  ];`
 );
 
 const header = `/**

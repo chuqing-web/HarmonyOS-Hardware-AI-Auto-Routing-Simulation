@@ -1106,8 +1106,8 @@ export class TemplateSchematicKit {
       return { x: 0, y: 0 };
     }
     if (libraryId === 'AMMETER_DC') {
-      if (pinId === 'I+') return { x: -30, y: 0 };
-      if (pinId === 'I-') return { x: -30, y: 20 };
+      if (pinId === 'I+') return { x: -40, y: 0 };
+      if (pinId === 'I-') return { x: 40, y: 0 };
       return { x: 0, y: 0 };
     }
     if (libraryId === 'FREQ_COUNTER') {

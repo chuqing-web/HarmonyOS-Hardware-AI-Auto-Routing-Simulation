@@ -38,6 +38,26 @@ interface Timer555Entry {
     resetFloating: boolean;
     qHigh: boolean;
 }
+/** 按键 rebuild 网表前导出的电容状态（按器件 UUID 对齐） */
+export interface CapReactiveSnap {
+    compUuid: string;
+    voltage: number;
+    current: number;
+}
+/** 按键 rebuild 网表前导出的 555 锁存态 */
+export interface Timer555ReactiveSnap {
+    compId: string;
+    qHigh: boolean;
+}
+/**
+ * 模拟引擎暂态状态快照：SW_PUSH 若不得不 loadSchematic，
+ * 必须先导出再恢复，否则定时电容被 OP 清零 → 单稳态「立刻亮灭」。
+ */
+export interface AnalogReactiveSnapshot {
+    caps: CapReactiveSnap[];
+    timers: Timer555ReactiveSnap[];
+    simTime: number;
+}
 const SW_CLOSED_OHMS = 0.01;
 const SW_OPEN_OHMS = 1e12;
 const RELAY_COIL_OHMS = 400;
@@ -289,7 +309,8 @@ export class AnalogEngine {
             const nB = passive[1];
             if (libId.startsWith('R_') || libId.includes('RESISTOR')) {
                 const val = paramMapGet(comp.parameters, 'value', libId.replace('R_', ''));
-                nl += `R${rCount} ${nA} ${nB} ${this.toSpiceValue(val)}\n`;
+                const corrected = UnitParser.coerceResistorParam(comp.libraryId, val);
+                nl += `R${rCount} ${nA} ${nB} ${this.toSpiceValue(corrected)}\n`;
                 rCount++;
             }
             else if (libId.startsWith('POT_') || libId.includes('POTENTIOMETER') ||
@@ -298,7 +319,8 @@ export class AnalogEngine {
                 const n2 = this.resolveCompNode(comp, '2', pinNets, netNodeMap);
                 const nW = this.resolveCompNode(comp, 'W', pinNets, netNodeMap);
                 const val = paramMapGet(comp.parameters, 'value', libId.replace('POT_', ''));
-                const rTot = Math.max(this.parseResistance(this.withUnitSuffix(val, '10k')), 1);
+                const fb = libId.replace(/^(POT_|POTENTIOMETER_?)/i, '');
+                const rTot = Math.max(this.parseResistance(UnitParser.coerceResistorParam(fb.length > 0 ? `R_${fb}` : 'R_10k', val)), 1);
                 const tap = AnalogEngine.parseWiperFraction(paramMapGet(comp.parameters, 'wiper', '0.5'));
                 nl += `R${rCount} ${n1} ${nW} ${Math.max(rTot * tap, 1)}\n`;
                 rCount++;
@@ -835,9 +857,13 @@ export class AnalogEngine {
                     continue;
                 }
                 const val = paramMapGet(comp.parameters, 'value', '');
-                const fallback = libId.replace(/^(R_|RESISTOR_?)/i, '');
-                const corrected = this.withUnitSuffix(val, fallback);
+                const corrected = UnitParser.coerceResistorParam(comp.libraryId, val);
                 const rVal = this.parseResistance(corrected);
+                // 仿真侧纠偏后写回，避免盘上残留 1000000ΩK
+                if (corrected !== val && corrected.length > 0) {
+                    comp.parameters.set('value', corrected);
+                }
+                const fallback = libId.replace(/^(R_|RESISTOR_?)/i, '');
                 const devId = `R${rIdx++}`;
                 this.resistors.push({ id: devId, nodeA: nA, nodeB: nB, resistance: rVal });
                 this.compUuidToDevId.set(comp.id, [devId]);
@@ -863,7 +889,7 @@ export class AnalogEngine {
                 }
                 const val = paramMapGet(comp.parameters, 'value', '');
                 const fallback = libId.replace(/^(POT_|POTENTIOMETER_?)/i, '');
-                const corrected = this.withUnitSuffix(val, fallback.length > 0 ? fallback : '10k');
+                const corrected = UnitParser.coerceResistorParam(fallback.length > 0 ? `R_${fallback}` : 'R_10k', val);
                 const rTot = Math.max(this.parseResistance(corrected), 1);
                 const tap = AnalogEngine.parseWiperFraction(paramMapGet(comp.parameters, 'wiper', '0.5'));
                 const rAw = Math.max(rTot * tap, 1);
@@ -1171,7 +1197,10 @@ export class AnalogEngine {
                     nB = this.isFloatingNode(nMinus) ? this.resolveCompNode(comp, '2', pinNets, netNodeMap) : nMinus;
                 }
                 if (!this.areTerminalsConnected(nA, nB)) {
-                    Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ${isSig ? 'SIGNAL_GEN' : 'VAC'} pin(s) not wired`);
+                    const why = (nA.length > 0 && nA === nB)
+                        ? `terminals shorted (same node ${nA})`
+                        : `pin(s) not wired (A=${nA} B=${nB})`;
+                    Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ${isSig ? 'SIGNAL_GEN' : 'VAC'} ${why}`);
                     continue;
                 }
                 const defAmp = isSig ? '1V' : '220V';
@@ -1365,7 +1394,10 @@ export class AnalogEngine {
                         !libUpper.includes('VIRTUAL'))) {
                     const vm = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
                     if (!this.areTerminalsConnected(vm[0], vm[1])) {
-                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: voltmeter pin(s) not wired`);
+                        const why = (vm[0].length > 0 && vm[0] === vm[1])
+                            ? `terminals shorted (same node ${vm[0]})`
+                            : `pin(s) not wired`;
+                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: voltmeter ${why}`);
                     }
                     else {
                         const devId = `R${rIdx++}`;
@@ -1379,7 +1411,10 @@ export class AnalogEngine {
                 else if (libUpper.includes('AMMETER')) {
                     const am = this.resolveInstrumentTerminals(comp, pinNets, netNodeMap, libUpper);
                     if (!this.areTerminalsConnected(am[0], am[1])) {
-                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ammeter pin(s) not wired`);
+                        const why = (am[0].length > 0 && am[0] === am[1])
+                            ? `terminals shorted (same node ${am[0]})`
+                            : `pin(s) not wired`;
+                        Logger.info(INSTR_TRACE_TAG, `analog skip ${comp.refDes}: ammeter ${why}`);
                     }
                     else {
                         // Ideal series ammeter: 0V VSRC. Branch current comes from MNA unknown.
@@ -2281,6 +2316,123 @@ export class AnalogEngine {
         }
         return 0;
     }
+    /** 遍历各器件支路电流（供内核写入 I(compUuid) 波形） */
+    forEachComponentCurrent(cb: (compUuid: string, amps: number) => void): void {
+        this.compUuidToDevId.forEach((devIds: string[], uuid: string) => {
+            if (devIds.length === 0) {
+                return;
+            }
+            cb(uuid, this.branchCurrents.get(`I(${devIds[0]})`) ?? 0);
+        });
+    }
+    /**
+     * Live SW_PUSH update without restamping the netlist.
+     * Full loadSchematic would wipe 555 Q + timing-cap voltage → monostable looks like
+     * 「按下亮一下、松开立刻灭」with no RC delay.
+     */
+    setPushbuttonPressed(compUuid: string, pressed: boolean): boolean {
+        const devIds = this.compUuidToDevId.get(compUuid);
+        if (devIds === undefined || devIds.length === 0) {
+            return false;
+        }
+        this.setResistorOhms(devIds[0], pressed ? SW_CLOSED_OHMS : SW_OPEN_OHMS);
+        return true;
+    }
+    /** 导出电容电压 + 555 Q（按键 rebuild 前调用） */
+    exportReactiveSnapshot(): AnalogReactiveSnapshot {
+        const caps: CapReactiveSnap[] = [];
+        const timers: Timer555ReactiveSnap[] = [];
+        this.compUuidToDevId.forEach((devIds: string[], uuid: string) => {
+            if (devIds.length === 0) {
+                return;
+            }
+            const id0 = devIds[0];
+            if (!id0.startsWith('C')) {
+                return;
+            }
+            for (let i = 0; i < this.capacitors.length; i++) {
+                const c = this.capacitors[i];
+                if (c.id === id0) {
+                    const snap: CapReactiveSnap = {
+                        compUuid: uuid,
+                        voltage: c.voltage,
+                        current: c.current
+                    };
+                    caps.push(snap);
+                    break;
+                }
+            }
+        });
+        for (let i = 0; i < this.timer555s.length; i++) {
+            const t = this.timer555s[i];
+            const snap: Timer555ReactiveSnap = { compId: t.compId, qHigh: t.qHigh };
+            timers.push(snap);
+        }
+        const out: AnalogReactiveSnapshot = {
+            caps: caps,
+            timers: timers,
+            simTime: this.simTime
+        };
+        return out;
+    }
+    /**
+     * loadSchematic/OP 之后恢复 RC + 555 Q，并回写 OUT/DISCH。
+     * 禁止再跑 reSolveOp（会再次把电容当开路、清掉刚恢复的电压）。
+     */
+    restoreReactiveSnapshot(snap: AnalogReactiveSnapshot): number {
+        let restored = 0;
+        this.simTime = snap.simTime;
+        for (let i = 0; i < snap.caps.length; i++) {
+            const s = snap.caps[i];
+            const devIds = this.compUuidToDevId.get(s.compUuid);
+            if (devIds === undefined || devIds.length === 0) {
+                continue;
+            }
+            const id0 = devIds[0];
+            for (let j = 0; j < this.capacitors.length; j++) {
+                const c = this.capacitors[j];
+                if (c.id !== id0) {
+                    continue;
+                }
+                c.voltage = s.voltage;
+                c.prevVoltage = s.voltage;
+                c.current = s.current;
+                c.geq = 0;
+                c.ieq = 0;
+                // 节点电压与电容支路一致，避免下一步 companion 跳变
+                const vB = this.nodeVoltages.get(c.nodeB) ?? 0;
+                this.nodeVoltages.set(c.nodeA, vB + s.voltage);
+                restored++;
+                break;
+            }
+        }
+        for (let i = 0; i < snap.timers.length; i++) {
+            const s = snap.timers[i];
+            for (let j = 0; j < this.timer555s.length; j++) {
+                const t = this.timer555s[j];
+                if (t.compId !== s.compId) {
+                    continue;
+                }
+                t.qHigh = s.qHigh;
+                const vGnd = this.getVoltage(t.nodeGnd);
+                const vcc = this.getVoltage(t.nodeVcc) - vGnd;
+                const outTarget = s.qHigh
+                    ? Math.max(TIMER555_OUT_LOW, vcc - TIMER555_OUT_HIGH_DROP)
+                    : TIMER555_OUT_LOW;
+                this.setVoltageSourceVolts(t.outVsId, outTarget);
+                if (t.dischRId.length > 0) {
+                    this.setResistorOhms(t.dischRId, s.qHigh ? TIMER555_DISCH_OFF_OHMS : TIMER555_DISCH_ON_OHMS);
+                }
+                restored++;
+                break;
+            }
+        }
+        if (restored > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[SW] restoreReactive caps=${snap.caps.length} timers=${snap.timers.length} ` +
+                `applied=${restored} t=${snap.simTime.toFixed(6)}`);
+        }
+        return restored;
+    }
     /** Register or update a signal generator as a voltage source in the circuit */
     registerSignalSource(sourceId: string, nodeA: string, nodeB: string, waveform: string, voltage: number, amplitude: number, freq: number, phase: number, dutyCycle: number): void {
         // Find existing source with this ID or add new one
@@ -2634,15 +2786,7 @@ export class AnalogEngine {
      * return the fallback as-is.
      */
     private withUnitSuffix(value: string, fallback: string): string {
-        const v = value.trim();
-        if (v.length === 0)
-            return fallback;
-        if (/[a-z]/i.test(v))
-            return v; // already has a unit
-        const m = fallback.match(/[a-zµ]+$/i); // extract suffix from fallback
-        if (m === null)
-            return v;
-        return v + m[0];
+        return UnitParser.appendFallbackSuffix(value, fallback);
     }
     private static formatPinNetDetail(pinNets: PinNetMapping[], netNodeMap: Map<string, string>): string {
         const parts: string[] = [];
@@ -2679,17 +2823,7 @@ export class AnalogEngine {
      * Values >= 1000 with a trailing K are treated as plain ohms.
      */
     private static normalizeResistanceInput(val: string): string {
-        let s = val.trim().replace(/\s+/g, '');
-        // "47ΩK" / "47000ΩK" — strip Ω before K/M/G suffix
-        s = s.replace(/(?:Ω|ohm|R)(?=[KMG])/i, '');
-        const redundantK = s.match(/^([\d.]+)(?:Ω|ohm|R)?K$/i);
-        if (redundantK !== null) {
-            const n = parseFloat(redundantK[1]);
-            if (!isNaN(n) && n >= 1000) {
-                return `${n}Ω`;
-            }
-        }
-        return s;
+        return UnitParser.sanitizeMalformedResistance(val);
     }
     private parseCapacitance(val: string): number {
         const s = val.toLowerCase().replace('f', '').trim();

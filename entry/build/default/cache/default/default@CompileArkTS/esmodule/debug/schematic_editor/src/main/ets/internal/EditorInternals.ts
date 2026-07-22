@@ -1,11 +1,8 @@
 import type { Point2D, RouteResult, DeviceInst, RouteLine } from 'common';
 export class EditorInternals {
-    static calcSnapPoint(rawX: number, rawY: number, gridStep: number): Point2D {
-        const result: Point2D = {
-            x: Math.round(rawX / gridStep) * gridStep,
-            y: Math.round(rawY / gridStep) * gridStep
-        };
-        return result;
+    /** 永久无吸附：直接返回原始坐标（保留 API 以免大量调用点改动）。 */
+    static calcSnapPoint(rawX: number, rawY: number, _gridStep: number): Point2D {
+        return { x: rawX, y: rawY };
     }
     static checkPinConnect(x: number, y: number, devices: DeviceInst[], threshold: number = 8): string {
         for (let i = 0; i < devices.length; i++) {

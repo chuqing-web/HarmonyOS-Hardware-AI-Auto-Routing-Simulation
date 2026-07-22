@@ -1,7 +1,7 @@
 /**
  * 电压表仿真引擎 — 支持 DC / AC (True-RMS)
  */
-import { VoltmeterType } from 'common';
+import { VoltmeterType, WaveData, IdUtil } from 'common';
 
 const DC_RANGES = [0.2, 2, 20, 200, 1000];
 const AC_RANGES = [0.2, 2, 20, 200, 750];
@@ -10,6 +10,8 @@ const RMS_WINDOW_SAMPLES = 16;
 /** DC meter low-pass — short enough that 1 kHz amp swing still looks alive on the UI */
 const DC_AVG_SAMPLES = 12;
 const DC_EMA_ALPHA = 0.35;
+/** UI 波形环缓冲长度 */
+const WAVE_HISTORY_MAX = 256;
 
 export class VoltmeterEngine {
   private type: VoltmeterType = VoltmeterType.DC;
@@ -26,6 +28,8 @@ export class VoltmeterEngine {
   private dcSampleBuffer: number[] = [];
   private dcEma: number = 0;
   private dcEmaInit: boolean = false;
+  private waveSamples: number[] = [];
+  private waveTimes: number[] = [];
 
   setType(t: VoltmeterType): void {
     this.type = t;
@@ -91,6 +95,7 @@ export class VoltmeterEngine {
    * Applies DC averaging / AC true-RMS so AC excitation does not flicker the DC meter.
    */
   measureValue(raw: number): number {
+    this.pushWaveSample(raw);
     if (this.type === VoltmeterType.AC) {
       this.updateRmsBuffer(raw);
       this.lastReading = raw;
@@ -115,11 +120,31 @@ export class VoltmeterEngine {
 
   /** Push a sample into DC/AC buffers without changing lastReading (high-rate sim feed). */
   feedSample(raw: number): void {
+    this.pushWaveSample(raw);
     if (this.type === VoltmeterType.AC) {
       this.updateRmsBuffer(raw);
       return;
     }
     this.updateDcAverage(raw);
+  }
+
+  /** ΔV 时域波形（供面板 Canvas） */
+  getWaveform(): WaveData {
+    const n = this.waveSamples.length;
+    const timeAxis = this.waveTimes.slice();
+    const voltageAxis = this.waveSamples.slice();
+    const span = n >= 2 ? Math.max(timeAxis[n - 1] - timeAxis[0], 1e-6) : 1;
+    return {
+      waveId: IdUtil.generate('vmw'),
+      probeName: 'VM',
+      netName: 'VOLTMETER',
+      timeAxis: timeAxis,
+      voltageAxis: voltageAxis,
+      currentAxis: new Array(n).fill(0),
+      sampleRate: n > 1 ? (n - 1) / span : 1,
+      waveType: 'voltage',
+      holdTime: span
+    };
   }
 
   getLastReading(): number { return this.type === VoltmeterType.AC ? this.lastRms : this.lastReading; }
@@ -166,6 +191,7 @@ export class VoltmeterEngine {
    * Immediate DC UI update (interactive pot / switch) — clears averaging so meters track instantly.
    */
   snapReading(raw: number): number {
+    this.pushWaveSample(raw);
     this.dcSampleBuffer = [raw];
     this.dcEma = raw;
     this.dcEmaInit = true;
@@ -179,6 +205,19 @@ export class VoltmeterEngine {
     const displayMax = this.getRange();
     this.lastReading = Math.min(Math.abs(raw), displayMax) * (raw < 0 ? -1 : 1);
     return this.lastReading;
+  }
+
+  private pushWaveSample(raw: number): void {
+    const step = 0.001;
+    const t = this.waveTimes.length > 0
+      ? this.waveTimes[this.waveTimes.length - 1] + step
+      : 0;
+    this.waveTimes.push(t);
+    this.waveSamples.push(raw);
+    while (this.waveSamples.length > WAVE_HISTORY_MAX) {
+      this.waveSamples.shift();
+      this.waveTimes.shift();
+    }
   }
 
   /** Update sliding RMS buffer and compute true-RMS */

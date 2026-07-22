@@ -430,28 +430,9 @@ export class OscilloscopeEngine {
     }
     /** Auto-assign simulation probes to channels based on active wave data */
     autoAssignProbes(): void {
-        // Only fill empty CH0 from wave cache. Never invent CH1–CH3 from random nets —
-        // leftover VCC/DISCH/prior-template UUIDs pollute the scope (CH2 ghost traces).
-        if (this.channelProbes.length > 0 && this.channelProbes[0].length > 0) {
-            return;
-        }
-        for (let i = 0; i < this.simulationWaveCache.length; i++) {
-            const wave = this.simulationWaveCache[i];
-            if (!wave || wave.voltageAxis.length < 2) {
-                continue;
-            }
-            const name = wave.probeName.length > 0 ? wave.probeName : wave.netName;
-            const upper = name.toUpperCase();
-            if (upper === '0' || upper === 'GND' || upper === 'VCC' || upper === 'VEE' ||
-                upper === 'VDD' || upper === 'VSS') {
-                continue;
-            }
-            while (this.channelProbes.length < 1) {
-                this.channelProbes.push('');
-            }
-            this.channelProbes[0] = name;
-            return;
-        }
+        // 禁止从任意仿真网偷绑 CH0：未放置示波器时不应出现波形。
+        // 探针只由原理图 OSC 器件引脚经 applyScopeProbesFromAllBindings 写入。
+        return;
     }
     /** Drop history / wave cache and unbound CH2+ (call on sim start / template load). */
     clearCaptureBuffers(): void {
@@ -508,22 +489,9 @@ export class OscilloscopeEngine {
             }
         }
         else {
-            // 无探针：仅 CH0 允许弱回退
-            if (this.simulationWaveCache.length > 0) {
-                const anyWave = this.findAnySignalWave();
-                if (anyWave !== undefined) {
-                    raw = anyWave;
-                    source = 'anySignal';
-                }
-            }
-            if (raw === undefined && this.historyBuffer.length > 1) {
-                raw = this.buildWaveFromAnyHistoryKey(channel);
-                source = 'historyAny';
-            }
-            if (raw === undefined) {
-                raw = this.makeFlatWave(channel);
-                source = 'flatDC';
-            }
+            // 无探针：禁止偷采任意网络（未放置示波器时不应出现波形）
+            raw = this.makeEmptyWave(channel);
+            source = 'noProbe';
         }
         const display = this.prepareDisplayWave(raw, channel);
         const lastV = display.voltageAxis.length > 0
@@ -574,9 +542,9 @@ export class OscilloscopeEngine {
         const tEnd = times[n - 1];
         const tStartAll = times[0];
         const availableSpan = Math.max(tEnd - tStartAll, 1e-12);
-        // 显示窗始终跟随时基；数据不足时用真实跨度，避免短片段横向拉满成假直流
+        // 滚动模式：始终用完整时基窗（右缘对齐最新）；触发锁仍可缩短到有效数据
         let windowSec = userWindow;
-        if (availableSpan < userWindow) {
+        if (this.captureMode !== CaptureMode.ROLL && availableSpan < userWindow) {
             windowSec = availableSpan;
         }
         const estFreq = OscilloscopeEngine.estimateFreqLocal(times, volts, 0, n);
@@ -631,58 +599,97 @@ export class OscilloscopeEngine {
             }
         }
         else {
+            // 滚动：窗起点可早于首样点（左侧空白）；触发锁仍贴齐数据
             tWinStart = tEnd - windowSec;
         }
-        if (tWinStart < tStartAll) {
-            tWinStart = tStartAll;
+        if (this.captureMode !== CaptureMode.ROLL) {
+            if (tWinStart < tStartAll) {
+                tWinStart = tStartAll;
+            }
+            let tWinEnd = tWinStart + windowSec;
+            if (tWinEnd > tEnd) {
+                tWinEnd = tEnd;
+                tWinStart = Math.max(tStartAll, tWinEnd - windowSec);
+            }
+            const winT: number[] = [];
+            const winV: number[] = [];
+            for (let i = 0; i < n; i++) {
+                const t = times[i];
+                if (t < tWinStart) {
+                    continue;
+                }
+                if (t > tWinEnd + 1e-18) {
+                    break;
+                }
+                winT.push(t);
+                winV.push(volts[i]);
+            }
+            let useT = winT;
+            let useV = winV;
+            if (winT.length < 4) {
+                const take = Math.min(n, Math.max(64, Math.floor(n * 0.5)));
+                useT = times.slice(n - take);
+                useV = volts.slice(n - take);
+            }
+            if (useT.length < 2) {
+                return this.makeFlatWave(channel);
+            }
+            const displaySpan = Math.max(windowSec, 1e-15);
+            const coup = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
+            if (coup === CouplingMode.AC) {
+                let sum = 0;
+                for (let i = 0; i < useV.length; i++) {
+                    sum += useV[i];
+                }
+                const mean = sum / useV.length;
+                for (let i = 0; i < useV.length; i++) {
+                    useV[i] = useV[i] - mean;
+                }
+            }
+            else if (coup === CouplingMode.GND) {
+                for (let i = 0; i < useV.length; i++) {
+                    useV[i] = 0;
+                }
+            }
+            return this.resampleWave(useT, useV, channel, displaySpan);
         }
-        let tWinEnd = tWinStart + windowSec;
-        if (tWinEnd > tEnd) {
-            tWinEnd = tEnd;
-            tWinStart = Math.max(tStartAll, tWinEnd - windowSec);
-        }
+        // ROLL：右缘对齐最新，保留完整时基窗；数据不足时左侧无迹线
+        const rollStart = tEnd - windowSec;
         const winT: number[] = [];
         const winV: number[] = [];
         for (let i = 0; i < n; i++) {
             const t = times[i];
-            if (t < tWinStart) {
+            if (t < rollStart) {
                 continue;
             }
-            if (t > tWinEnd + 1e-18) {
+            if (t > tEnd + 1e-18) {
                 break;
             }
             winT.push(t);
             winV.push(volts[i]);
         }
-        let useT = winT;
-        let useV = winV;
-        if (winT.length < 4) {
-            const take = Math.min(n, Math.max(64, Math.floor(n * 0.5)));
-            useT = times.slice(n - take);
-            useV = volts.slice(n - take);
+        if (winT.length < 2) {
+            // 几乎无窗内点：仍输出尾部，由 Canvas 按固定窗贴右
+            const take = Math.min(n, Math.max(8, Math.floor(n * 0.25)));
+            return this.resampleWaveRoll(times.slice(n - take), volts.slice(n - take), channel, windowSec, rollStart, tEnd);
         }
-        if (useT.length < 2) {
-            return this.makeFlatWave(channel);
-        }
-        // 显示跨度严格等于截窗（不要用更大的 dataSpan 把波形横向压扁/拉乱）
-        const displaySpan = Math.max(windowSec, 1e-15);
-        const coup = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
-        if (coup === CouplingMode.AC) {
+        const coupR = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
+        if (coupR === CouplingMode.AC) {
             let sum = 0;
-            for (let i = 0; i < useV.length; i++) {
-                sum += useV[i];
+            for (let i = 0; i < winV.length; i++) {
+                sum += winV[i];
             }
-            const mean = sum / useV.length;
-            for (let i = 0; i < useV.length; i++) {
-                useV[i] = useV[i] - mean;
-            }
-        }
-        else if (coup === CouplingMode.GND) {
-            for (let i = 0; i < useV.length; i++) {
-                useV[i] = 0;
+            const mean = sum / winV.length;
+            for (let i = 0; i < winV.length; i++) {
+                winV[i] = winV[i] - mean;
             }
         }
-        return this.resampleWave(useT, useV, channel, displaySpan);
+        else if (coupR === CouplingMode.GND) {
+            for (let i = 0; i < winV.length; i++) {
+                winV[i] = 0;
+            }
+        }
+        return this.resampleWaveRoll(winT, winV, channel, windowSec, rollStart, tEnd);
     }
     private cloneWaveForChannel(src: WaveData, channel: number): WaveData {
         return this.prepareDisplayWave(src, channel);
@@ -860,6 +867,20 @@ export class OscilloscopeEngine {
         this.channelProbes[channel] = probeName;
         return this.buildWaveFromHistory(probeName, channel);
     }
+    /** 无探针 / 无示波器：空波形，UI 显示 NO SIGNAL */
+    private makeEmptyWave(channel: number): WaveData {
+        return {
+            waveId: IdUtil.generate('osc'),
+            probeName: `CH${channel + 1}`,
+            netName: '',
+            timeAxis: [],
+            voltageAxis: [],
+            currentAxis: [],
+            sampleRate: 1,
+            waveType: 'voltage',
+            holdTime: 0
+        };
+    }
     /** Build flat (DC-level) waveform from current node voltage state */
     private makeFlatWave(channel: number): WaveData {
         const dt = getTimebaseSec(this.timebase);
@@ -868,26 +889,17 @@ export class OscilloscopeEngine {
         const timeAxis: number[] = [];
         const voltageAxis: number[] = [];
         const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
+        if (probeName.length === 0) {
+            return this.makeEmptyWave(channel);
+        }
         // Use actual DC voltage from simulation if available
         let dcLevel = 0;
-        if (probeName.length > 0) {
-            dcLevel = this.resolveVoltage(probeName, this.lastNodeVoltages);
-            if (Math.abs(dcLevel) < 1e-12) {
-                const cached = this.findCachedWave(probeName);
-                if (cached !== undefined && cached.voltageAxis.length > 0) {
-                    dcLevel = cached.voltageAxis[cached.voltageAxis.length - 1];
-                }
-            }
-        }
+        dcLevel = this.resolveVoltage(probeName, this.lastNodeVoltages);
         if (Math.abs(dcLevel) < 1e-12) {
-            const anyWave = this.findAnySignalWave();
-            if (anyWave !== undefined && anyWave.voltageAxis.length > 0) {
-                dcLevel = anyWave.voltageAxis[anyWave.voltageAxis.length - 1];
+            const cached = this.findCachedWave(probeName);
+            if (cached !== undefined && cached.voltageAxis.length > 0) {
+                dcLevel = cached.voltageAxis[cached.voltageAxis.length - 1];
             }
-        }
-        // Try VCC for ch0 if nothing else
-        if (Math.abs(dcLevel) < 1e-12 && channel === 0) {
-            dcLevel = this.lastNodeVoltages.get('VCC') ?? this.lastNodeVoltages.get('VCC_5V') ?? 0;
         }
         for (let i = 0; i < SAMPLE_POINTS; i++) {
             timeAxis.push((i / SAMPLE_POINTS) * windowSec);
@@ -896,7 +908,7 @@ export class OscilloscopeEngine {
         return {
             waveId: IdUtil.generate('osc'),
             probeName: `CH${channel + 1}`,
-            netName: probeName.length > 0 ? probeName : `OSC_CH${channel + 1}`,
+            netName: probeName,
             timeAxis,
             voltageAxis,
             currentAxis: new Array(SAMPLE_POINTS).fill(0),
@@ -909,6 +921,78 @@ export class OscilloscopeEngine {
      * Resample + despike + light smooth.
      * 时间轴覆盖 displaySpan；样点之外 hold 边界值（真实示波器行为），禁止 NaN。
      */
+    /**
+     * 滚动重采样：时间轴覆盖完整 [rollStart, tEnd]，窗左无数据处电压为 NaN（Canvas 跳过）。
+     */
+    private resampleWaveRoll(timeAxis: number[], voltageAxis: number[], channel: number, windowSec: number, rollStart: number, _tEnd: number): WaveData {
+        const cleaned = OscilloscopeEngine.despikeSeries(voltageAxis);
+        const span = Math.max(windowSec, 1e-15);
+        const sampleRate = SAMPLE_POINTS / span;
+        const outTime: number[] = [];
+        const rawOut: number[] = [];
+        const n = Math.min(timeAxis.length, cleaned.length);
+        if (n < 1) {
+            return this.makeEmptyWave(channel);
+        }
+        let j = 1;
+        for (let i = 0; i < SAMPLE_POINTS; i++) {
+            const fracI = SAMPLE_POINTS > 1 ? i / (SAMPLE_POINTS - 1) : 0;
+            const tUse = rollStart + fracI * span;
+            outTime.push(tUse);
+            if (tUse < timeAxis[0] - 1e-15) {
+                rawOut.push(Number.NaN);
+                continue;
+            }
+            let vi = cleaned[n - 1];
+            if (tUse <= timeAxis[0]) {
+                vi = cleaned[0];
+            }
+            else if (tUse >= timeAxis[n - 1]) {
+                vi = cleaned[n - 1];
+            }
+            else {
+                while (j < n && timeAxis[j] < tUse) {
+                    j++;
+                }
+                if (j >= n) {
+                    vi = cleaned[n - 1];
+                }
+                else if (j <= 1) {
+                    const dtr = Math.max(timeAxis[1] - timeAxis[0], 1e-15);
+                    const frac = (tUse - timeAxis[0]) / dtr;
+                    vi = cleaned[0] + frac * (cleaned[1] - cleaned[0]);
+                }
+                else {
+                    const jm = j - 1;
+                    const dtr = Math.max(timeAxis[j] - timeAxis[jm], 1e-15);
+                    const frac = (tUse - timeAxis[jm]) / dtr;
+                    vi = cleaned[jm] + frac * (cleaned[j] - cleaned[jm]);
+                }
+            }
+            rawOut.push(vi);
+        }
+        // 仅对有效段轻度平滑，保留 NaN 空隙
+        const outVoltage: number[] = rawOut.slice();
+        for (let i = 1; i < outVoltage.length - 1; i++) {
+            const a = rawOut[i - 1];
+            const b = rawOut[i];
+            const c = rawOut[i + 1];
+            if (Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c)) {
+                outVoltage[i] = (a + b + c) / 3;
+            }
+        }
+        return {
+            waveId: IdUtil.generate('osc'),
+            probeName: `CH${channel + 1}`,
+            netName: this.channelProbes[channel] ?? `OSC_CH${channel + 1}`,
+            timeAxis: outTime,
+            voltageAxis: outVoltage,
+            currentAxis: new Array(SAMPLE_POINTS).fill(0),
+            sampleRate,
+            waveType: 'voltage',
+            holdTime: span
+        };
+    }
     private resampleWave(timeAxis: number[], voltageAxis: number[], channel: number, windowSec: number): WaveData {
         const cleaned = OscilloscopeEngine.despikeSeries(voltageAxis);
         const t0 = timeAxis[0];
@@ -1230,7 +1314,31 @@ export class OscilloscopeEngine {
         return this.computeFft(wave);
     }
     private computeFft(wave: WaveData): WaveData {
-        const voltageAxis = wave.voltageAxis;
+        // 限长：朴素 DFT 为 O(n²)，示波器实时刷新时过长会卡死「点了没反应」
+        const maxN = 512;
+        let voltageAxis = wave.voltageAxis;
+        let sampleRate = wave.sampleRate > 0 ? wave.sampleRate : 0;
+        if (voltageAxis.length > maxN) {
+            const step = Math.ceil(voltageAxis.length / maxN);
+            const trimmed: number[] = [];
+            for (let i = 0; i < voltageAxis.length; i += step) {
+                trimmed.push(voltageAxis[i]);
+            }
+            voltageAxis = trimmed;
+            sampleRate = sampleRate / step;
+        }
+        // 无 sampleRate 时用时轴估频率轴（Hz）
+        if (sampleRate <= 0 && wave.timeAxis.length >= 2) {
+            const t0 = wave.timeAxis[0];
+            const t1 = wave.timeAxis[wave.timeAxis.length - 1];
+            const span = Math.abs(t1 - t0);
+            if (span > 0 && voltageAxis.length > 1) {
+                sampleRate = (voltageAxis.length - 1) / span;
+            }
+        }
+        if (sampleRate <= 0) {
+            sampleRate = 1;
+        }
         const n = voltageAxis.length;
         const half = Math.floor(n / 2);
         const freqAxis: number[] = [];
@@ -1246,19 +1354,19 @@ export class OscilloscopeEngine {
             let mag = Math.sqrt(re * re + im * im) / n;
             if (this.fftLogScale && mag > 0)
                 mag = 20 * Math.log10(Math.max(mag, 1e-12));
-            freqAxis.push(k * wave.sampleRate / n);
+            freqAxis.push(k * sampleRate / n);
             magAxis.push(mag);
         }
         return {
             waveId: IdUtil.generate('fft'),
-            probeName: `FFT(${wave.probeName})`,
+            probeName: `FFT(${wave.netName.length > 0 ? wave.netName : wave.probeName})`,
             netName: 'MATH_FFT',
             timeAxis: freqAxis,
             voltageAxis: magAxis,
             currentAxis: new Array(half).fill(0),
-            sampleRate: wave.sampleRate / n,
+            sampleRate: sampleRate / n,
             waveType: 'freq',
-            holdTime: wave.sampleRate / 2
+            holdTime: sampleRate / 2
         };
     }
 }

@@ -6,8 +6,14 @@ import { Pin, Point2D } from '../types/CommonTypes';
 import { DeviceInst, RouteLine } from '../types/TopologyTypes';
 import { SymbolBounds, calcSymbolBounds, coverOriginCenteredBody } from './SymbolGeometry';
 
-/** 与 SchematicEditorImpl.HIT_PAD 保持一致 */
+/** 与 SchematicEditorImpl.HIT_PAD 保持一致 — 点击/悬停选中外扩 */
 export const SELECTION_HIT_PAD = 22;
+
+/**
+ * 布线障碍外扩（须明显小于 SELECTION_HIT_PAD）。
+ * 选中区可偏大方便点选，但障碍过大时会把引脚深埋，WAR/正交布线无法落到脚上。
+ */
+export const WIRE_OBSTACLE_PAD = 6;
 
 /** 导线距无关引脚的最小安全距离 (mil) */
 export const FOREIGN_PIN_CLEARANCE = 20;

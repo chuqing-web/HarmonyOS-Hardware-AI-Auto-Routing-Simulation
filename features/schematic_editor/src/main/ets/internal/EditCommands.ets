@@ -322,27 +322,41 @@ export class ClearWiresCommand implements IEditCommand {
   private doc: SchematicDocument;
   private backups: WireBackup[] = [];
 
-  constructor(doc: SchematicDocument, netIds?: string[]) {
+  /**
+   * netIds — 按网络删除（兼容旧调用）
+   * wireIds — 按单根导线 id 删除（优先）
+   * 二者皆空 — 清空全部导线
+   */
+  constructor(doc: SchematicDocument, netIds?: string[], wireIds?: string[]) {
     this.doc = doc;
     for (let i = 0; i < doc.wires.length; i++) {
       const w = doc.wires[i];
-      if (netIds === undefined || netIds.includes(w.netId)) {
-        const pts: Point2D[] = [];
-        for (let j = 0; j < w.points.length; j++) {
-          pts.push({ x: w.points[j].x, y: w.points[j].y });
-        }
-        this.backups.push({
-          index: i,
-          wire: { id: w.id, netId: w.netId, points: pts, style: w.style }
-        });
+      let match = false;
+      if (wireIds !== undefined) {
+        match = wireIds.includes(w.id);
+      } else if (netIds === undefined) {
+        match = true;
+      } else {
+        match = netIds.includes(w.netId);
       }
+      if (!match) {
+        continue;
+      }
+      const pts: Point2D[] = [];
+      for (let j = 0; j < w.points.length; j++) {
+        pts.push({ x: w.points[j].x, y: w.points[j].y });
+      }
+      this.backups.push({
+        index: i,
+        wire: { id: w.id, netId: w.netId, points: pts, style: w.style }
+      });
     }
     this.backups.sort((a: WireBackup, b: WireBackup) => b.index - a.index);
   }
 
   execute(): void {
     if (this.backups.length === 0) {
-      this.doc.wires = [];
+      // 无匹配导线：不要误清全图（仅 clearAll 且原本无导线时也会落到这里，结果仍为空）
       return;
     }
     const removeIds = new Set<string>();

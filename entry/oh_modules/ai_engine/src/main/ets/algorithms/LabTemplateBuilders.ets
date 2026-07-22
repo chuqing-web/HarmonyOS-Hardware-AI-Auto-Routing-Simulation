@@ -464,10 +464,7 @@ export function buildLabAnalogIc(doc: SchematicDocument): void {
 
 /**
  * lab_digital: 门电路静态真值（原理图示意）+ 方波时钟驱动 CD4017 + LA
- * LA 探头接 CD4017 走动脉冲，避免「只有一路方波」的误判：
- *   CH1–CH7 = Q0–Q6（十进制走动，每路约 1/10 周期高电平）
- *   CH8 = CLK（~10Hz 方波）
- * 门 Y 仍接 LOGIC_H/L 做真值演示，但不占用 LA 通道。
+ * LA: CH1–CH7=Q0–Q6（走动脉冲）；CH8=CLK（~10Hz 方波）
  */
 export function buildLabDigital(doc: SchematicDocument): void {
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
@@ -525,7 +522,7 @@ export function buildLabDigital(doc: SchematicDocument): void {
   const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1180, y: 400 });
   K.join(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(la, 'GND', 'GND')]);
   // LA 看走动输出：Q0..Q6 → CH1..CH7；CLK → CH8
-  const qPins: string[] = ['Q0', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'];
+  const qPins = ['Q0', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'];
   for (let ch = 0; ch < qPins.length; ch++) {
     const qn = qPins[ch];
     K.join(doc, `LA_CH${ch + 1}`, NetType.SIGNAL, [
@@ -563,11 +560,9 @@ export function buildLabMemory(doc: SchematicDocument): void {
   const vccEep = K.place(doc, 'VCC', 'VCC_EEP', { x: 500, y: 20 });
   const gndFlash = K.place(doc, 'GND', 'GND_FL', { x: 680, y: 300 });
   const vccFlash = K.place(doc, 'VCC', 'VCC_FL', { x: 680, y: 20 });
-  // 远离 OSC 廊道（y≈210）与 I2C 列，仅作 VSS 标号锚点
   const gndMcuL = K.place(doc, 'GND', 'GND_MCU_L', { x: 80, y: 520 });
   const gndMcuR = K.place(doc, 'GND', 'GND_MCU_R', { x: 360, y: 520 });
 
-  // —— 总线：标号并网（禁止物理长线穿越晶振区）——
   K.joinByLabel(doc, 'I2C_SDA', NetType.SIGNAL, [
     p(mcu, 'PB7', 'PB7'), p(eep, 'SDA', 'SDA'), p(rSda, '2')
   ]);
@@ -602,7 +597,6 @@ export function buildLabMemory(doc: SchematicDocument): void {
     ]);
   }
 
-  // —— 就近电源：标号并网（物理 hub-spoke 曾把 OSC/I2C 并成 NET_1）——
   K.joinByLabel(doc, 'GND', NetType.GROUND, [
     p(gndEep, '1', 'GND'), p(eep, 'A0', 'A0'), p(eep, 'A1', 'A1'), p(eep, 'A2', 'A2'),
     p(eep, 'VSS', 'VSS'), p(eep, 'WP', 'WP')
@@ -639,7 +633,6 @@ export function buildLabMemory(doc: SchematicDocument): void {
     p(vcc, '1', 'VCC'), p(vccEep, '1', 'VCC'), p(vccFlash, '1', 'VCC'), p(vccMem, '1', 'VCC')
   ]);
 
-  // LA：观察固件位带的三总线活动
   const la = K.place(doc, 'LOGIC_ANALYZER', 'LA1', { x: 1280, y: 520 });
   K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(la, 'GND', 'GND')]);
   K.joinByLabel(doc, 'I2C_SCL', NetType.SIGNAL, [p(la, 'CH1', 'CH1')]);
@@ -799,8 +792,8 @@ export function buildLabPeripheral(doc: SchematicDocument): void {
   ]);
 }
 
-/** lab_sensor: DS18B20(可拖温)+霍尔(点击磁场)+电位器/光敏 ADC；需烧录 lab_sensor.hex
- *  固件：PA0/PA3/PB0 输入 → PA4/PA5/PA6 指示灯（ADC高 / 霍尔触发 / 温度偏高）
+/** lab_sensor: DS18B20(可拖温)+霍尔(点击磁场)+电位器/光敏；需烧录 lab_sensor.hex
+ *  固件：PA0/PA3/PB0 输入 → PA4/PA5/PA6 指示灯
  *  信号/电源一律 joinByLabel，避免 TOPO 把 HALL 与 OSC_IN 并成 NET_1。
  */
 export function buildLabSensor(doc: SchematicDocument): void {
@@ -816,7 +809,6 @@ export function buildLabSensor(doc: SchematicDocument): void {
   K.crystal(doc, mcu, xtal, cx1, cx2, 'OSC_IN', 'OSC_OUT', '', gnd);
   K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'VDD', 'VSS', 'NRST');
 
-  // --- DS18B20：画布滑条调 temp_c → DQ 教学电压；PA3 输入（固件不驱动）---
   const ds = K.place(doc, 'DS18B20', 'T1', { x: 620, y: 100 });
   ds.parameters.set('temp_c', '25');
   const rDs = R(doc, 'R_4.7k', 'R2', 500, 60);
@@ -829,7 +821,6 @@ export function buildLabSensor(doc: SchematicDocument): void {
     p(gnd, '1', 'GND'), p(ds, 'GND', 'GND'), p(vmTemp, 'COM', 'COM')
   ]);
 
-  // --- 霍尔：点击 active=磁场；OUT 开漏拉低；PB0 输入（远离晶振廊道）---
   const hall = K.place(doc, 'HALL_SENSOR', 'H1', { x: 620, y: 240 });
   hall.parameters.set('active', '0');
   const rHall = R(doc, 'R_10k', 'RH', 500, 240);
@@ -839,7 +830,6 @@ export function buildLabSensor(doc: SchematicDocument): void {
   ]);
   K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(hall, 'GND', 'GND')]);
 
-  // --- 电位器+光敏 → PA0；M1 测 ADC ---
   const pot = K.place(doc, 'POT_10k', 'RV1', { x: 600, y: 380 });
   pot.parameters.set('wiper', '0.5');
   const ldr = K.place(doc, 'LDR', 'LDR1', { x: 740, y: 440 });
@@ -853,7 +843,6 @@ export function buildLabSensor(doc: SchematicDocument): void {
     p(gnd, '1', 'GND'), p(pot, '2'), p(vm, 'COM', 'COM'), p(ldr, '2')
   ]);
 
-  // --- 固件指示灯：PA4=ADC高 PA5=霍尔触发 PA6=温度偏高（高电平点亮）---
   const ledLibs = ['LED_GREEN', 'LED_RED', 'LED_BLUE'];
   const ledRefs = ['D_ADC', 'D_HALL', 'D_TEMP'];
   const ledPins = ['PA4', 'PA5', 'PA6'];
@@ -862,9 +851,7 @@ export function buildLabSensor(doc: SchematicDocument): void {
     const led = K.place(doc, ledLibs[i], ledRefs[i], { x: 1020, y });
     const rl = R(doc, 'R_330', `RL${i + 1}`, 920, y);
     const pin = ledPins[i];
-    K.joinByLabel(doc, `LED_${pin}`, NetType.SIGNAL, [
-      p(mcu, pin, pin), p(rl, '1')
-    ]);
+    K.joinByLabel(doc, `LED_${pin}`, NetType.SIGNAL, [p(mcu, pin, pin), p(rl, '1')]);
     K.joinByLabel(doc, `LED_${pin}_A`, NetType.SIGNAL, [p(rl, '2'), p(led, 'A', 'A')]);
     K.joinByLabel(doc, 'GND', NetType.GROUND, [p(gnd, '1', 'GND'), p(led, 'K', 'K')]);
   }
@@ -872,10 +859,7 @@ export function buildLabSensor(doc: SchematicDocument): void {
 
 /**
  * lab_instruments: 全套虚拟仪器功能台
- * - DC：VCC→A1→PM.I→分压；电压表测 MID
- * - 万用表 VM1 四端：V→CLK(DCV/ACV)、A 串 LED(AMP)、OHM→R_1k(Ω)、OHM→二极管(DIODE)、COM→GND
- * - AC：SIGNAL_GEN → FC / OSC CH1
- * - 数字：CD4017 + LA；串口 UART 环回
+ * 万用表 VM1 四端：V→CLK(DCV/ACV)、A 串 LED(AMP)、OHM→R_1k+二极管(Ω/DIODE)、COM→GND
  */
 export function buildLabInstruments(doc: SchematicDocument): void {
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
@@ -909,17 +893,13 @@ export function buildLabInstruments(doc: SchematicDocument): void {
 
   K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(sg, 'OUT', 'OUT')]);
 
-  // ---- 四端万用表：五档 DUT 同时挂接 ----
   const dmm = K.place(doc, 'VIRTUAL_METER', 'VM1', { x: 700, y: 160 });
-  // DCV/ACV：V 探 CLK 方波（直流均值 + 交流有效值）
   K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(dmm, 'V', 'V')]);
-  // AMP：VCC→R→LED→A→COM(GND) 串联测流
   const rAmp = R(doc, 'R_330', 'RAMP', 620, 260);
   const ledAmp = K.place(doc, 'LED_RED', 'DAMP', { x: 700, y: 260 });
   K.joinByLabel(doc, 'VCC', NetType.POWER, [p(rAmp, '1')]);
   K.series2(doc, 'DMM_A', p(rAmp, '2'), p(ledAmp, 'A', 'A'));
   K.series2(doc, 'DMM_A_RET', p(ledAmp, 'K', 'K'), p(dmm, 'A', 'A'));
-  // OHM：R_1k 测电阻；二极管并联测 Vf（二极管档）
   const rOhm = R(doc, 'R_1k', 'ROHM', 620, 340);
   const dOhm = K.place(doc, '1N4148', 'DOHM', { x: 700, y: 340 });
   K.joinByLabel(doc, 'DMM_OHM', NetType.SIGNAL, [
@@ -1109,6 +1089,52 @@ export function buildLab555Astable(doc: SchematicDocument): void {
   K.joinByLabel(doc, 'GND', NetType.GROUND, [
     p(gnd, '1', 'GND'), p(t555, 'GND', 'GND'), p(ct, '2'),
     p(cDec, '2'), p(cCtrl, '2'), p(led, 'K', 'K'), p(osc, 'GND', 'GND')
+  ]);
+}
+
+/**
+ * lab_555_monostable: LM555（NE555 同类）单稳态延时 + 按键触发 + OUT→R→LED
+ * t≈1.1·RT·CT≈1.1s（RT=100k CT=10µF）；按下 SW 拉低 TRIG → OUT 高亮 LED → 延时后熄灭
+ * 拓扑对齐 AiTopologyFixKit.wire555Monostable / DeviceUsageManual LM555 单稳态
+ */
+export function buildLab555Monostable(doc: SchematicDocument): void {
+  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 40 });
+  vcc.parameters.set('voltage', '5V');
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 360 });
+  const t555 = K.place(doc, 'LM555', 'U1', { x: 320, y: 160 });
+  const rt = R(doc, 'R_100k', 'RT', 160, 60);
+  const rp = R(doc, 'R_10k', 'RP', 160, 200);
+  const ct = C(doc, 'C_10uF', 'CT', 160, 320);
+  const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 40, y: 200 });
+  const cDec = C(doc, 'C_100nF', 'CD1', 480, 40);
+  const cCtrl = C(doc, 'C_100nF', 'CC1', 480, 300);
+  const rLed = R(doc, 'R_330', 'RLED', 540, 160);
+  const led = K.place(doc, 'LED_RED', 'D1', { x: 680, y: 160 });
+
+  // 电源：VCC / RESET / 定时电阻上端 / TRIG 上拉 / 去耦
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [
+    p(vcc, '1', 'VCC'), p(t555, 'VCC', 'VCC'), p(t555, 'RESET', 'RESET'),
+    p(rt, '1'), p(rp, '1'), p(cDec, '1')
+  ]);
+  // 定时节点：THRES ≡ DISCH ≡ RT.2 ≡ CT.1（禁止与 TRIG 并网）
+  K.joinByLabel(doc, '555_RC', NetType.SIGNAL, [
+    p(t555, 'THRES', 'THRES'), p(t555, 'DISCH', 'DISCH'),
+    p(rt, '2'), p(ct, '1')
+  ]);
+  // 触发：TRIG ← RP 上拉；SW 另一端接 GND，按下拉低 TRIG
+  K.joinByLabel(doc, 'TRIG', NetType.SIGNAL, [
+    p(t555, 'TRIG', 'TRIG'), p(rp, '2'), p(sw, '2')
+  ]);
+  K.joinByLabel(doc, '555_OUT', NetType.SIGNAL, [
+    p(t555, 'OUT', 'OUT'), p(rLed, '1')
+  ]);
+  K.series2(doc, 'LED_PATH', p(rLed, '2'), p(led, 'A', 'A'));
+  K.joinByLabel(doc, '555_CTRL', NetType.SIGNAL, [
+    p(t555, 'CTRL', 'CTRL'), p(cCtrl, '1')
+  ]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(t555, 'GND', 'GND'), p(ct, '2'),
+    p(cDec, '2'), p(cCtrl, '2'), p(led, 'K', 'K'), p(sw, '1')
   ]);
 }
 

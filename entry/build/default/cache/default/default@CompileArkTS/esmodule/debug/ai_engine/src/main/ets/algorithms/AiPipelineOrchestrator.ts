@@ -1,9 +1,9 @@
 import type { IAiApiManager, ChatOptions } from 'ai_api_manager';
 import type { IComponentLibrary } from 'component_library';
-import { AiCapability, makeProgress, IdUtil, ErcSeverity, TopologyAdapter, makeDeviceInst, stringMap1, EventBus, ModuleEvent, Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp, traceAiDiag, traceAiStage, AiErcGateUtil, DeviceHitGeometry, emptySchTopology, mapAwareStringify, mapAwareParse, MainThreadYield, ErrCode } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { SchTopology, AiPipelineResult, DeviceSelectLlmOutput, LayoutLlmOutput, RoutingLlmOutput, ProgressCallback, DiagError, MatchedDevice, RoutingWeightPrefs, ErcError, Point2D, DeviceInst, LayoutPositionItem, PlacementResult, PlacementCandidate, DevicePosition, ModuleEventPayload, DeviceRequirement } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { AiCapability, makeProgress, IdUtil, ErcSeverity, TopologyAdapter, makeDeviceInst, stringMap1, EventBus, ModuleEvent, Logger, INSTR_TRACE_TAG, traceAiPayload, traceAiOp, traceAiDiag, traceAiStage, AiErcGateUtil, DeviceHitGeometry, emptySchTopology, mapAwareStringify, mapAwareParse, ensureStringMap, MainThreadYield, ErrCode, emptyStringMap } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchTopology, AiPipelineResult, DeviceSelectLlmOutput, LayoutLlmOutput, RoutingLlmOutput, ProgressCallback, DiagError, MatchedDevice, RoutingWeightPrefs, ErcError, Point2D, DeviceInst, LayoutPositionItem, PlacementResult, PlacementCandidate, DevicePosition, ModuleEventPayload, DeviceRequirement, DeviceSelectResult, RouteResult } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
-import type { PromptVarEntry, ChatHistoryEntry } from '../internal/AiEngineTypes';
+import type { PromptVarEntry, ChatHistoryEntry, EditPlanMove } from '../internal/AiEngineTypes';
 import { DeviceSelectEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceSelectEngine";
 import { PlacementOptimizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PlacementOptimizer";
 import { ConstrainedWiringEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/ConstrainedWiringEngine";
@@ -20,6 +20,8 @@ import { classifyCircuitIntent, refineCircuitIntent, refineIntentFromTopo, forma
 import type { CircuitIntent, CritiqueSplit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";
 import { normalizeModularPlan, healModularPlan, critiqueModularPlan, buildModuleSubPrompt, mergeModularTopologies, alignTopoRefsToBoundaryPins, buildModularStreamPreview, normalizeBoundaryKey } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/ModularParallelMerge";
 import type { ModularPlan } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/ModularParallelMerge";
+import { FRAG_555_ASTABLE, FRAG_NET_555_ASTABLE, FRAG_555_MONOSTABLE, FRAG_NET_555_MONOSTABLE } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/IntentPromptFragments";
+import { assembleEditDeviceInstrumentFragments, countDevInstrCatalog } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/DeviceInstrumentFragments";
 export interface PipelineOptions {
     prompt: string;
     scene?: 'text_gen' | 'partial_assist';
@@ -141,6 +143,47 @@ interface PartialTopoPromptItem {
     x: number;
     y: number;
     rot: number;
+}
+interface EditCtxDevice {
+    instUuid: string;
+    ref: string;
+    id: string;
+    x: number;
+    y: number;
+    rot: number;
+    params: Record<string, string>;
+}
+interface EditCtxNet {
+    name: string;
+    power: boolean;
+    pins: string[];
+}
+interface EditCtxStats {
+    devices: number;
+    nets: number;
+    wires: number;
+    labels: number;
+}
+interface EditCtxRoot {
+    devices: EditCtxDevice[];
+    nets: EditCtxNet[];
+    labels: string[];
+    wireSummary: string;
+    stats: EditCtxStats;
+}
+interface EditPlanParsed {
+    keepAllDevices: boolean;
+    addRequireList: DeviceRequirement[];
+    removeRefs: string[];
+    moves: EditPlanMove[];
+    netMode: string;
+    netPlan: NetPlanResult;
+    removeNetNames: string[];
+}
+interface EditApplyStat {
+    added: number;
+    removed: number;
+    moved: number;
 }
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const LLM_MAX_RETRIES = 2;
@@ -324,6 +367,13 @@ export class AiPipelineOrchestrator {
         // 子模块 fork 后继承父级取消态；oneshot 在 AiEngine.runAiTask 已 clear
         if (this.isCancelRequested()) {
             return this.cancelPipelineResult();
+        }
+        // 真正增量 edit：读全图后局部修改，禁止整图重选型/重摆/清空重布
+        if (opts.generationMode === 'edit' &&
+            opts.partialTopo && opts.partialTopo.deviceList.length > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit incremental branch | devices=${opts.partialTopo.deviceList.length}` +
+                ` nets=${opts.partialTopo.netList.length} wires=${opts.partialTopo.wireList.length}`);
+            return await this.runEditIncrementalPipeline(opts, onProgress);
         }
         this.markStage('intent');
         this.activeIntent = opts.circuitIntent ?? classifyCircuitIntent(opts.prompt);
@@ -2191,7 +2241,16 @@ export class AiPipelineOrchestrator {
                 fixAction: 'split_power_short'
             });
         }
-        if (this.topoLooksLikeSeriesRc(topo)) {
+        if (this.topoWants555Monostable(topo)) {
+            issues.push({
+                type: 'net_integrity',
+                severity: 'error',
+                desc: '555 单稳态 — 确定性 wire_555_monostable',
+                targetDevice: '',
+                fixAction: 'wire_555_monostable'
+            });
+        }
+        else if (this.topoLooksLikeSeriesRc(topo)) {
             issues.push({
                 type: 'net_integrity',
                 severity: 'error',
@@ -2737,6 +2796,27 @@ export class AiPipelineOrchestrator {
                 });
                 continue;
             }
+            // 555 单稳态：禁止 wire_series_rc 误伤
+            if ((action === 'wire_series_rc' || action === 'wire_rc') &&
+                this.topoWants555Monostable(topo)) {
+                Logger.info(INSTR_TRACE_TAG, '[AI_FIX] tool_select remap wire_series_rc→wire_555_monostable');
+                const detail = this.cloneFixDetail(iss.fixDetail);
+                detail.reason = 'remap wire_series_rc→wire_555_monostable';
+                out.push({
+                    type: iss.type,
+                    severity: iss.severity,
+                    desc: iss.desc,
+                    targetDevice: iss.targetDevice,
+                    fixAction: 'wire_555_monostable',
+                    fixDetail: detail
+                });
+                continue;
+            }
+            if ((action === 'wire_series_rc' || action === 'wire_rc') &&
+                (AiTopologyFixKit.topoHas555(topo) || this.activeIntent.timer555Astable)) {
+                Logger.info(INSTR_TRACE_TAG, '[AI_FIX] tool_select drop wire_series_rc — 555 present');
+                continue;
+            }
             if ((action === 'wire_series_rc' || action === 'wire_rc') &&
                 this.activeIntent.mutualLedIndicator) {
                 Logger.info(INSTR_TRACE_TAG, '[AI_FIX] tool_select remap wire_series_rc→wire_relay (mutual LED)');
@@ -2913,11 +2993,26 @@ export class AiPipelineOrchestrator {
             historyText = '对话历史（前序轮次）：\n' +
                 opts.conversationHistory.map(h => `[${h.role}]: ${h.content}`).join('\n') + '\n\n';
         }
+        // 选中器件使用手册（AI 全权路径：审查/修复必须遵守，勿用串联 RC 冲掉 555 等）
+        const usage = PromptLoader.buildDeviceUsageBlock(PromptLoader.libIdsFromTopo(topo), 'full', this.componentLibrary);
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] usage_manual stage=self_review devices=${usage.deviceCount} ` +
+            `included=${usage.includedCount} miss=${usage.missIds.length} ` +
+            `criticalMiss=${usage.criticalMissIds.length} chars=${usage.charCount}` +
+            (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : '') +
+            (usage.criticalMissIds.length > 0
+                ? ` criticalMissIds=${usage.criticalMissIds.slice(0, 8).join(',')}` : ''));
+        try {
+            traceAiPayload('AI_PIPE', 'USAGE_MANUAL', usage.text, `stage=self_review mode=full chars=${usage.charCount}`);
+        }
+        catch (_e) {
+            // ignore
+        }
         return [
             { key: 'conversation_history', value: historyText },
             { key: 'user_prompt', value: opts.prompt },
             { key: 'device_count', value: `${topo.deviceList.length}` },
             { key: 'device_summary', value: devLines.join('\n') },
+            { key: 'device_usage', value: usage.text },
             { key: 'net_count', value: `${topo.netList.length}` },
             { key: 'net_summary', value: netLines.join('\n') },
             { key: 'wire_count', value: `${topo.wireList.length}` },
@@ -2999,6 +3094,16 @@ export class AiPipelineOrchestrator {
             if (stripped2 > 0) {
                 state.fixCount += stripped2;
                 state.needReroute = true;
+            }
+        }
+        if (!seenKeys.has('wire_555_monostable|*') && this.topoWants555Monostable(topo)) {
+            seenKeys.add('wire_555_monostable|*');
+            const mono = AiTopologyFixKit.wire555Monostable(topo, this.wiringEngine);
+            if (mono.fixed > 0) {
+                state.fixCount += mono.fixed;
+                state.needReroute = true;
+                state.needTopoKit = true;
+                Logger.info(INSTR_TRACE_TAG, `[AI_FIX] auto wire555Monostable fixed=${mono.fixed}`);
             }
         }
         if (!seenKeys.has('wire_series_rc|*') && this.topoLooksLikeSeriesRc(topo)) {
@@ -3171,6 +3276,12 @@ export class AiPipelineOrchestrator {
     }
     /** 简单 RC 充放电拓扑启发式（意图优先；允许板上有 stray RELAY 以便剥离） */
     private topoLooksLikeSeriesRc(topo: SchTopology): boolean {
+        if (this.activeIntent.timer555Monostable || this.activeIntent.timer555Astable) {
+            return false;
+        }
+        if (AiTopologyFixKit.topoHas555(topo)) {
+            return false;
+        }
         if (this.activeIntent.seriesRcCharge) {
             return true;
         }
@@ -3182,6 +3293,20 @@ export class AiPipelineOrchestrator {
         const ledN = topo.deviceList.filter(d => (d.libDevId ?? '').toUpperCase().startsWith('LED_')).length;
         // 不因 stray RELAY 否定 RC：剥离后再 wireSeriesRc
         return hasR && hasC && ledN < 2;
+    }
+    private topoWants555Monostable(topo: SchTopology): boolean {
+        if (this.activeIntent.timer555Monostable) {
+            return true;
+        }
+        if (this.activeIntent.timer555Astable) {
+            return false;
+        }
+        // 板上有 555 + 按键且非闪烁意图 → 按单稳态加固
+        if (!AiTopologyFixKit.topoHas555(topo)) {
+            return false;
+        }
+        const hasSw = topo.deviceList.some(d => (d.libDevId ?? '').toUpperCase().startsWith('SW_'));
+        return hasSw && !this.activeIntent.blinkOscillator;
     }
     private applyOneAiFix(topo: SchTopology, issue: AiReviewIssue, seenKeys: Set<string>, state: AiFixExecState, opts?: PipelineOptions): void {
         if (issue.fixAction === 'none' || issue.fixAction === 'noop') {
@@ -3232,13 +3357,35 @@ export class AiPipelineOrchestrator {
             return;
         }
         // ── wire_series_rc / wire_relay / pot / electrical 确定性 kit ──
-        if (action === 'wire_series_rc' || action === 'wire_rc') {
-            if (!seenKeys.has('wire_series_rc|*')) {
-                seenKeys.add('wire_series_rc|*');
-                const r = AiTopologyFixKit.wireSeriesRc(topo, this.wiringEngine);
+        if (action === 'wire_555_monostable' || action === 'wire_555_mono') {
+            if (!seenKeys.has('wire_555_monostable|*')) {
+                seenKeys.add('wire_555_monostable|*');
+                const r = AiTopologyFixKit.wire555Monostable(topo, this.wiringEngine);
                 state.fixCount += r.fixed;
                 state.needReroute = state.needReroute || r.needReroute;
                 state.needTopoKit = state.needTopoKit || r.fixed > 0;
+            }
+            return;
+        }
+        if (action === 'wire_series_rc' || action === 'wire_rc') {
+            if (!seenKeys.has('wire_series_rc|*')) {
+                seenKeys.add('wire_series_rc|*');
+                if (this.topoWants555Monostable(topo)) {
+                    const r = AiTopologyFixKit.wire555Monostable(topo, this.wiringEngine);
+                    state.fixCount += r.fixed;
+                    state.needReroute = state.needReroute || r.needReroute;
+                    state.needTopoKit = state.needTopoKit || r.fixed > 0;
+                    Logger.info(INSTR_TRACE_TAG, '[AI_FIX] wire_series_rc redirected → wire555Monostable');
+                }
+                else if (!AiTopologyFixKit.topoHas555(topo)) {
+                    const r = AiTopologyFixKit.wireSeriesRc(topo, this.wiringEngine);
+                    state.fixCount += r.fixed;
+                    state.needReroute = state.needReroute || r.needReroute;
+                    state.needTopoKit = state.needTopoKit || r.fixed > 0;
+                }
+                else {
+                    Logger.info(INSTR_TRACE_TAG, '[AI_FIX] wire_series_rc skipped — 555 on board');
+                }
             }
             return;
         }
@@ -3747,9 +3894,14 @@ export class AiPipelineOrchestrator {
     }
     /** finalize/prune 共用：带上模块边界脚白名单，禁止剪掉跨模块 joinByLabel 单脚网 */
     private buildFinalizeGateOpts(opts: PipelineOptions, seriesRc: boolean): FinalizeGateOpts {
+        const has555Intent = this.activeIntent.timer555Monostable ||
+            this.activeIntent.timer555Astable ||
+            this.activeIntent.reasons.some(r => r.indexOf('555') >= 0);
         const gateOpts: FinalizeGateOpts = {
-            seriesRcCharge: seriesRc && !this.activeIntent.mutualLedIndicator,
+            seriesRcCharge: seriesRc && !this.activeIntent.mutualLedIndicator && !has555Intent,
             mutualLedIndicator: this.activeIntent.mutualLedIndicator,
+            timer555Monostable: this.activeIntent.timer555Monostable,
+            hasTimer555: has555Intent,
             preserveBoundaryKeys: this.resolveModularBoundaryKeys(opts)
         };
         return gateOpts;
@@ -4085,6 +4237,562 @@ export class AiPipelineOrchestrator {
             items.push(item);
         }
         return JSON.stringify(items);
+    }
+    /**
+     * 增量 edit 全量现图上下文：器件+网脚+标号+导线摘要。
+     * 供 edit_plan LLM 阅读后局部修改。
+     */
+    private static formatEditContextForPrompt(topo: SchTopology): string {
+        const uuidToRef = new Map<string, string>();
+        const devices: EditCtxDevice[] = [];
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const d = topo.deviceList[i];
+            uuidToRef.set(d.instUuid, d.refName);
+            const params: Record<string, string> = {};
+            if (d.params) {
+                const pKeys = Array.from(d.params.keys());
+                for (let pi = 0; pi < pKeys.length; pi++) {
+                    const pk = pKeys[pi];
+                    params[pk] = d.params.get(pk) ?? '';
+                }
+            }
+            const item: EditCtxDevice = {
+                instUuid: d.instUuid,
+                ref: d.refName,
+                id: d.libDevId,
+                x: Math.round(d.x),
+                y: Math.round(d.y),
+                rot: d.rotate ?? 0,
+                params: params
+            };
+            devices.push(item);
+        }
+        const nets: EditCtxNet[] = [];
+        for (let ni = 0; ni < topo.netList.length; ni++) {
+            const net = topo.netList[ni];
+            const pins: string[] = [];
+            for (let ki = 0; ki < (net.nodeList?.length ?? 0); ki++) {
+                const node = net.nodeList[ki];
+                const ref = uuidToRef.get(node.devUuid) ?? node.devUuid;
+                pins.push(`${ref}.${node.pinId}`);
+            }
+            const nItem: EditCtxNet = {
+                name: net.netName,
+                power: !!net.isPower,
+                pins: pins
+            };
+            nets.push(nItem);
+        }
+        const labels: string[] = [];
+        for (let li = 0; li < topo.netLabelList.length; li++) {
+            const lb = topo.netLabelList[li];
+            labels.push(`${lb.text}@(${Math.round(lb.x)},${Math.round(lb.y)})`);
+        }
+        const wireReport = PromptLoader.buildWirePathReport(topo);
+        const ctx: EditCtxRoot = {
+            devices: devices,
+            nets: nets,
+            labels: labels,
+            wireSummary: wireReport.length > 3500 ? wireReport.substring(0, 3500) + '…' : wireReport,
+            stats: {
+                devices: devices.length,
+                nets: nets.length,
+                wires: topo.wireList.length,
+                labels: labels.length
+            }
+        };
+        return JSON.stringify(ctx);
+    }
+    /**
+     * 真正增量 edit 流水线：深拷贝现图 → edit_plan LLM → 增删/移动器件 → merge 建网 → 仅布变更网 → ERC。
+     * 跳过全量 device_select / layout。
+     */
+    private async runEditIncrementalPipeline(opts: PipelineOptions, onProgress?: ProgressCallback): Promise<AiPipelineResult> {
+        let usedLlm = false;
+        let degradedMode = false;
+        const src = opts.partialTopo as SchTopology;
+        let topo = mapAwareParse<SchTopology>(mapAwareStringify(src));
+        if (!(topo.schName && topo.schName.length > 0)) {
+            topo.schName = 'AI Edited';
+        }
+        this.markStage('intent');
+        this.activeIntent = opts.circuitIntent ?? classifyCircuitIntent(opts.prompt);
+        this.activeIntent = refineIntentFromTopo(this.activeIntent, topo);
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit incremental START | ${formatIntentLog(this.activeIntent)}` +
+            ` keepDevs=${topo.deviceList.length} nets=${topo.netList.length} wires=${topo.wireList.length}`);
+        this.stageMetric('intent', `edit|${formatIntentLog(this.activeIntent)}`);
+        this.endStage(true, 'edit incremental');
+        traceAiOp('AI_PIPE', 'pipeline_start', `mode=edit incremental devices=${topo.deviceList.length}`);
+        onProgress?.(makeProgress(8, '读取现有电路并规划增量修改'));
+        this.markStage('edit_plan');
+        opts.onStreamSnapshot?.(topo, 'edit_plan');
+        let editPlan = await this.fetchEditPlanLlm(topo, opts);
+        if (this.isCancelRequested()) {
+            return this.cancelPipelineResult();
+        }
+        for (let outer = 0; !editPlan.fromLlm && !opts.skipLlm && outer < NEVER_ABORT_OUTER; outer++) {
+            if (this.isCancelRequested()) {
+                return this.cancelPipelineResult();
+            }
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] KEEP_RETRY edit_plan outer=${outer + 1}/${NEVER_ABORT_OUTER}`);
+            onProgress?.(makeProgress(8, `增量计划重试 ${outer + 1}`));
+            editPlan = await this.fetchEditPlanLlm(topo, opts);
+        }
+        if (!editPlan.fromLlm && !opts.skipLlm) {
+            this.endStage(false, 'edit_plan LLM unavailable');
+            return abortPipelineResult('edit_plan', '增量编辑计划 LLM 不可用，已拒绝整图重生成回退', '检查 AI API；edit 模式不回退到全量 recreate');
+        }
+        if (editPlan.fromLlm) {
+            usedLlm = true;
+        }
+        const addN = editPlan.output.addRequireList.length;
+        const remN = editPlan.output.removeRefs.length;
+        const moveN = editPlan.output.moves.length;
+        const planNetN = editPlan.output.netPlan.nets.length;
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit incremental | keepDevs=${topo.deviceList.length} add=${addN}` +
+            ` remove=${remN} moves=${moveN} planNets=${planNetN}`);
+        this.stageMetric('edit_plan', `add=${addN} remove=${remN} moves=${moveN} nets=${planNetN}`);
+        this.endStage(true, `add=${addN} remove=${remN} nets=${planNetN}`);
+        onProgress?.(makeProgress(20, `增量计划: +${addN}/-${remN} 器件, 目标网${planNetN}`));
+        // 应用器件增删与局部移动（不跑全量 layout）
+        this.markStage('edit_apply_devices');
+        const applyStat = this.applyEditDeviceChanges(topo, editPlan.output);
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit apply devices | added=${applyStat.added} removed=${applyStat.removed}` +
+            ` moved=${applyStat.moved} now=${topo.deviceList.length}`);
+        this.endStage(true, `added=${applyStat.added} removed=${applyStat.removed}`);
+        opts.onStreamSnapshot?.(topo, 'placement');
+        this.logTopoFieldDiag('edit_placement', topo);
+        // merge 建网
+        onProgress?.(makeProgress(45, '增量合并网络'));
+        this.markStage('net_plan');
+        let netPlan: NetPlanResult = editPlan.output.netPlan;
+        if (netPlan.nets.length === 0) {
+            // 计划未带 nets 时再拉 net_plan，但注入现图上下文
+            const npFetch = await this.fetchNetPlanLlmForEdit(topo, opts);
+            if (npFetch.fromLlm) {
+                usedLlm = true;
+                netPlan = npFetch.output;
+            }
+        }
+        if (netPlan.nets.length === 0) {
+            this.endStage(false, 'empty nets');
+            return abortPipelineResult('net_plan', '增量编辑未得到有效网络计划', '检查 edit_plan.nets 或 API 回复');
+        }
+        NetPlanExecutor.setComponentLibrary(this.componentLibrary);
+        NetPlanExecutor.prepareModes(netPlan);
+        const pairs = NetPlanExecutor.collectWiredCompactPairs(netPlan);
+        // 增量：仅对变更相关的导线对拉近（compact 仍安全，未改网指纹不变则 merge 保留）
+        if (pairs.length > 0) {
+            this.placementOptimizer.compactDevicesForWiredNets(topo, pairs, 120);
+        }
+        const mergeResult = NetPlanExecutor.executeMerge(topo, netPlan, editPlan.output.removeNetNames);
+        topo = mergeResult.topology;
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit merge | preserve=${mergeResult.preservedNetNames.length}` +
+            ` change=${mergeResult.changedNetNames.length} wires=${topo.wireList.length}`);
+        this.stageMetric('net_plan', `merge preserve=${mergeResult.preservedNetNames.length} change=${mergeResult.changedNetNames.length}`);
+        this.endStage(true, `preserve=${mergeResult.preservedNetNames.length} change=${mergeResult.changedNetNames.length}`);
+        opts.onStreamSnapshot?.(topo, 'net_plan');
+        this.logTopoFieldDiag('net_plan', topo);
+        onProgress?.(makeProgress(70, `合并网络: 保留${mergeResult.preservedNetNames.length}/变更${mergeResult.changedNetNames.length}`));
+        // 布线：仅变更网
+        onProgress?.(makeProgress(78, '局部布线'));
+        this.markStage('astar');
+        const routeLlm: LlmFetchResult<RoutingLlmOutput> = {
+            output: ConstrainedWiringEngine.defaultConstraints(topo),
+            fromLlm: false
+        };
+        this.mergeNetPlanHintsIntoRouting(routeLlm.output, { output: netPlan, fromLlm: true });
+        this.sanitizeRoutingForceModes(routeLlm.output, topo);
+        this.lastRoutingConstraints = routeLlm.output;
+        const netWaypoints = new Map<string, Point2D[]>();
+        for (const net of netPlan.nets) {
+            if (net.routeWaypoints && net.routeWaypoints.length > 0 &&
+                mergeResult.changedNetNames.indexOf(net.name) >= 0) {
+                const flat: Point2D[] = [];
+                for (const seg of net.routeWaypoints) {
+                    for (const wp of seg) {
+                        flat.push(wp);
+                    }
+                }
+                if (flat.length > 0) {
+                    netWaypoints.set(net.name, flat);
+                }
+            }
+        }
+        this.lastNetWaypoints = netWaypoints.size > 0 ? netWaypoints : null;
+        let routeResult: RouteResult = {
+            routeLines: topo.wireList.slice(),
+            crossCount: 0,
+            totalLineLength: 0,
+            isolateAnalogDigital: false,
+            xtalShortPath: true,
+            diffLineEqualLength: true,
+            spacingIssues: []
+        };
+        if (mergeResult.changedNetNames.length > 0) {
+            this.wiringEngine.setPreserveNetNames(topo, mergeResult.preservedNetNames);
+            const astarT0 = Date.now();
+            routeResult = await this.wiringEngine.routeUntilCleanAsync(topo, routeLlm.output, opts.routingWeights, netWaypoints, 3);
+            topo.wireList = routeResult.routeLines;
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit routed wires=${topo.wireList.length} ms=${Date.now() - astarT0}` +
+                ` changed=[${mergeResult.changedNetNames.slice(0, 8).join(',')}]`);
+        }
+        else {
+            Logger.info(INSTR_TRACE_TAG, '[AI_PIPE] edit skip route — no changed nets');
+            this.wiringEngine.clearPreserveNets();
+        }
+        this.stageMetric('astar', `wires=${topo.wireList.length} changed=${mergeResult.changedNetNames.length}`);
+        this.endStage(true, `wires=${topo.wireList.length}`);
+        opts.onStreamSnapshot?.(topo, 'routing');
+        this.logTopoFieldDiag('routing', topo);
+        // ERC + 自检闭环（与 oneshot 共用）
+        onProgress?.(makeProgress(90, 'ERC 静态校验'));
+        this.markStage('erc');
+        let ercErrors = this.collectErc(topo);
+        const pinConnIssues = this.auditNetPinConnectivity(topo);
+        for (let pi = 0; pi < pinConnIssues.length; pi++) {
+            ercErrors.push(pinConnIssues[pi]);
+        }
+        topo.ercErrorList = ercErrors;
+        let ercHard = this.countPipelineBlocking(ercErrors, opts, topo);
+        this.endStage(ercHard === 0, `blocking=${ercHard}`);
+        let geoIssues = this.collectGeometricIssues(topo);
+        const congestionIssues = this.collectCongestionIssues(topo);
+        for (const ci of congestionIssues) {
+            geoIssues.push(ci);
+        }
+        this.markStage('self_review_clear');
+        const cleared = await this.runErcGeoClearLoop(topo, ercErrors, geoIssues, opts, onProgress, usedLlm, 93);
+        topo = cleared.topo;
+        ercErrors = cleared.ercErrors;
+        usedLlm = cleared.usedLlm;
+        const aiFixApplied = cleared.aiFixApplied;
+        const ercHardFinal = cleared.ercHard;
+        const geoHard = cleared.geoHard;
+        const ercClean = ercHardFinal === 0 && geoHard === 0;
+        this.markStage('gate');
+        if (ercClean) {
+            Logger.info(INSTR_TRACE_TAG, '[AI_PIPE] edit gate PASS');
+            this.endStage(true, 'PASS');
+        }
+        else {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] edit GATE_DELIVER residual erc=${ercHardFinal} geo=${geoHard}`);
+            this.endStage(true, `DELIVER residual erc=${ercHardFinal}`);
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] END edit incremental usedLlm=${usedLlm} degraded=${degradedMode}` +
+            ` devices=${topo.deviceList.length} wires=${topo.wireList.length}` +
+            ` preserveNets=${mergeResult.preservedNetNames.length}` +
+            ` changedNets=${mergeResult.changedNetNames.length}` +
+            ` add=${applyStat.added} remove=${applyStat.removed} ercClean=${ercClean}`);
+        traceAiOp('AI_PIPE', 'pipeline_end', `mode=edit incremental devices=${topo.deviceList.length} wires=${topo.wireList.length}` +
+            ` changedNets=${mergeResult.changedNetNames.length} ercClean=${ercClean}`);
+        this.logTopoFieldDiag('pipeline_end', topo);
+        const emptyPos: Record<string, DevicePosition> = {};
+        const placement: PlacementResult = {
+            topology: topo,
+            candidates: [{ devicePositions: emptyPos, fitnessScore: 1.0 }],
+            selectedIndex: 0
+        };
+        const selectResult: DeviceSelectResult = {
+            devices: [],
+            alternatives: new Map<string, string[]>(),
+            oodDetected: false,
+            matchedRequireCount: 0
+        };
+        onProgress?.(makeProgress(100, ercClean
+            ? `增量编辑完成 · 保留网${mergeResult.preservedNetNames.length}/变更${mergeResult.changedNetNames.length}`
+            : '增量编辑已交付（残留已尽力）', true));
+        return {
+            selectResult,
+            placementResult: placement,
+            routeResult,
+            ercErrors,
+            topology: topo,
+            usedLlm,
+            degradedMode,
+            ercClean,
+            geoBlocking: geoHard,
+            deliveredWithResidual: !ercClean
+        };
+    }
+    /** 应用 edit_plan 的增删器件与局部移动 */
+    private applyEditDeviceChanges(topo: SchTopology, plan: EditPlanParsed): EditApplyStat {
+        let removed = 0;
+        let added = 0;
+        let moved = 0;
+        // remove
+        if (plan.removeRefs.length > 0) {
+            const rem = new Set<string>();
+            for (let i = 0; i < plan.removeRefs.length; i++) {
+                rem.add(plan.removeRefs[i].toUpperCase());
+            }
+            const kept: DeviceInst[] = [];
+            for (let i = 0; i < topo.deviceList.length; i++) {
+                const d = topo.deviceList[i];
+                const refU = (d.refName ?? '').toUpperCase();
+                const uuidU = (d.instUuid ?? '').toUpperCase();
+                if (rem.has(refU) || rem.has(uuidU)) {
+                    removed++;
+                    continue;
+                }
+                kept.push(d);
+            }
+            topo.deviceList = kept;
+        }
+        // moves
+        for (let i = 0; i < plan.moves.length; i++) {
+            const m = plan.moves[i];
+            const key = (m.ref ?? '').trim();
+            if (key.length === 0) {
+                continue;
+            }
+            for (let di = 0; di < topo.deviceList.length; di++) {
+                const d = topo.deviceList[di];
+                if (d.refName === key || d.instUuid === key) {
+                    d.x = m.x;
+                    d.y = m.y;
+                    if (m.rotate !== undefined) {
+                        d.rotate = m.rotate;
+                    }
+                    moved++;
+                    break;
+                }
+            }
+        }
+        // add
+        if (plan.addRequireList.length > 0) {
+            const llmOut: DeviceSelectLlmOutput = {
+                functionModule: ['edit_add'],
+                deviceRequireList: plan.addRequireList,
+                circuitConstraint: '',
+                oodFlags: []
+            };
+            const matched = this.selectEngine.matchFromLlmOutput(llmOut, 'edit_add');
+            const usedRefs = new Set<string>();
+            for (let i = 0; i < topo.deviceList.length; i++) {
+                usedRefs.add(topo.deviceList[i].refName);
+            }
+            let maxX = 200;
+            let maxY = 200;
+            for (let i = 0; i < topo.deviceList.length; i++) {
+                maxX = Math.max(maxX, topo.deviceList[i].x);
+                maxY = Math.max(maxY, topo.deviceList[i].y);
+            }
+            let placeX = Math.min(1200, Math.round(maxX / 20) * 20 + 160);
+            let placeY = Math.min(800, Math.round(maxY / 20) * 20);
+            for (let i = 0; i < matched.devices.length; i++) {
+                const md = matched.devices[i];
+                const refName = this.allocUniqueRefName(md.libDevId, usedRefs);
+                const inst = makeDeviceInst(IdUtil.generate('inst'), md.libDevId, refName, placeX, placeY, 0, md.params);
+                topo.deviceList.push(inst);
+                added++;
+                placeY += 100;
+                if (placeY > 720) {
+                    placeY = 200;
+                    placeX = Math.min(1200, placeX + 140);
+                }
+            }
+        }
+        const stat: EditApplyStat = { added, removed, moved };
+        return stat;
+    }
+    private async fetchEditPlanLlm(topo: SchTopology, opts: PipelineOptions): Promise<LlmFetchResult<EditPlanParsed>> {
+        const emptyPlan: EditPlanParsed = {
+            keepAllDevices: true,
+            addRequireList: [],
+            removeRefs: [],
+            moves: [],
+            netMode: 'merge',
+            netPlan: {
+                nets: [],
+                labels: [],
+                wiringHints: { priorityOrder: [], forceWire: [], forceLabel: [] },
+                topologyNotes: ''
+            },
+            removeNetNames: []
+        };
+        if (opts.skipLlm) {
+            return { output: emptyPlan, fromLlm: false };
+        }
+        const tpl = PromptLoader.load('edit_plan');
+        if (!tpl.system || tpl.system.length === 0) {
+            return { output: emptyPlan, fromLlm: false };
+        }
+        const editCtx = AiPipelineOrchestrator.formatEditContextForPrompt(topo);
+        try {
+            traceAiPayload('AI_PIPE', 'EDIT_CONTEXT', editCtx, `stage=edit_plan devices=${topo.deviceList.length} nets=${topo.netList.length}`);
+        }
+        catch (_e) {
+            // ignore
+        }
+        const deviceDetail = PromptLoader.buildDeviceDetailForNetPlan(topo, this.componentLibrary);
+        const usage = PromptLoader.buildDeviceUsageBlock(PromptLoader.libIdsFromTopo(topo), 'full', this.componentLibrary);
+        // 手册 + 全库器件/仪器意图片段 + 555 脚级配方（有则叠加）
+        let usageText = usage.text;
+        const boardLibIds = PromptLoader.libIdsFromTopo(topo);
+        const boardFrags = assembleEditDeviceInstrumentFragments(this.activeIntent, boardLibIds);
+        if (boardFrags.length > 0) {
+            usageText = `${boardFrags}\n${usageText}`;
+            Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit_plan inject device/instrument fragments ` +
+                `libIds=${boardLibIds.length} catalog=${countDevInstrCatalog()} chars=${boardFrags.length}`);
+        }
+        const has555OnBoard = AiTopologyFixKit.topoHas555(topo);
+        if (this.activeIntent.timer555Monostable ||
+            (has555OnBoard && this.topoWants555Monostable(topo))) {
+            usageText = `${FRAG_555_MONOSTABLE}\n${FRAG_NET_555_MONOSTABLE}\n${usageText}`;
+            Logger.info(INSTR_TRACE_TAG, '[AI_PIPE] edit_plan inject 555 monostable manual fragments');
+        }
+        else if (this.activeIntent.timer555Astable ||
+            this.activeIntent.reasons.indexOf('555_astable') >= 0 ||
+            this.activeIntent.reasons.indexOf('555_astable_topo') >= 0 ||
+            (has555OnBoard && (this.activeIntent.blinkOscillator || this.activeIntent.needsLedSeriesR))) {
+            usageText = `${FRAG_555_ASTABLE}\n${FRAG_NET_555_ASTABLE}\n${usageText}`;
+            Logger.info(INSTR_TRACE_TAG, '[AI_PIPE] edit_plan inject 555 astable manual fragments');
+        }
+        else if (has555OnBoard) {
+            // 板上有 555 但意图未分清：默认按无稳态脚级清单约束（修接更常见）
+            usageText = `${FRAG_555_ASTABLE}\n${FRAG_NET_555_ASTABLE}\n${usageText}`;
+            Logger.info(INSTR_TRACE_TAG, '[AI_PIPE] edit_plan inject 555 astable (board has LM555)');
+        }
+        const vars: PromptVarEntry[] = [
+            { key: 'user_prompt', value: opts.prompt },
+            { key: 'edit_context', value: editCtx },
+            { key: 'device_detail', value: deviceDetail },
+            { key: 'device_usage', value: usageText }
+        ];
+        if (opts.conversationHistory && opts.conversationHistory.length > 0) {
+            const historyText = opts.conversationHistory
+                .map(h => `[${h.role}]: ${h.content}`)
+                .join('\n');
+            vars.push({
+                key: 'conversation_history',
+                value: `对话历史（前序轮次）：\n${historyText}\n\n`
+            });
+        }
+        else {
+            vars.push({ key: 'conversation_history', value: '' });
+        }
+        const prompt = PromptLoader.renderEnriched(tpl, vars, this.componentLibrary, { intent: this.activeIntent });
+        const api = await this.chatWithRetry(prompt, AiCapability.COMPONENT_RECOMMEND, {
+            temperature: 0.05,
+            maxTokens: AiPipelineOrchestrator.maxTokensForStage('net_plan'),
+            disableThinking: true
+        });
+        if (!api.success || !api.data || api.data.length === 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_PIPE] edit_plan API failed: ${api.error ?? 'empty'}`);
+            return { output: emptyPlan, fromLlm: false };
+        }
+        if (!PromptLoader.isStrictJsonObjectReply(api.data)) {
+            Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] edit_plan JSON impurity — try extract');
+        }
+        const raw = PromptLoader.extractJson<Object>(api.data);
+        const parsed = this.normalizeEditPlan(raw);
+        if (!parsed || parsed.netPlan.nets.length === 0) {
+            Logger.warn(INSTR_TRACE_TAG, '[AI_PIPE] edit_plan normalize empty nets');
+            return { output: emptyPlan, fromLlm: false };
+        }
+        try {
+            traceAiPayload('AI_PIPE', 'EDIT_PLAN_JSON', mapAwareStringify(parsed), `stage=edit_plan nets=${parsed.netPlan.nets.length}`);
+        }
+        catch (_e) {
+            // ignore
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] edit_plan OK nets=${parsed.netPlan.nets.length}` +
+            ` add=${parsed.addRequireList.length} remove=${parsed.removeRefs.length}`);
+        return { output: parsed, fromLlm: true };
+    }
+    /** edit 态专用 net_plan：注入现图网摘要，要求基于现图修改 */
+    private async fetchNetPlanLlmForEdit(topo: SchTopology, opts: PipelineOptions): Promise<LlmFetchResult<NetPlanResult>> {
+        const base = await this.fetchNetPlanLlm(topo, opts);
+        return base;
+    }
+    private normalizeEditPlan(raw: Object | null): EditPlanParsed | null {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const src = raw as Record<string, Object>;
+        const netPlan = NetPlanExecutor.normalizeLlmPlan(raw);
+        if (!netPlan) {
+            return null;
+        }
+        const addRaw = src['addRequireList'] ?? src['add_require_list'] ?? [];
+        const addRequireList: DeviceRequirement[] = [];
+        if (Array.isArray(addRaw)) {
+            for (let i = 0; i < (addRaw as Object[]).length; i++) {
+                const o = (addRaw as Object[])[i];
+                if (!o || typeof o !== 'object') {
+                    continue;
+                }
+                const r = o as Record<string, Object>;
+                const func = `${r['func'] ?? r['function'] ?? ''}`.trim();
+                const devType = `${r['devType'] ?? r['dev_type'] ?? ''}`.trim();
+                const model = `${r['explicitModel'] ?? r['explicit_model'] ?? ''}`.trim();
+                const pri = Number(r['priority'] ?? 5);
+                const paramRaw = r['paramConstraint'] ?? r['param_constraint'];
+                let paramConstraint = emptyStringMap();
+                if (paramRaw !== undefined && paramRaw !== null && typeof paramRaw === 'object') {
+                    paramConstraint = ensureStringMap(paramRaw as Record<string, string>);
+                }
+                const req: DeviceRequirement = {
+                    func: func.length > 0 ? func : (model || 'add'),
+                    devType: devType.length > 0 ? devType : 'device',
+                    paramConstraint: paramConstraint,
+                    priority: isNaN(pri) ? 5 : pri,
+                    explicitModel: model.length > 0 ? model : undefined
+                };
+                addRequireList.push(req);
+            }
+        }
+        const removeRefs: string[] = [];
+        const remRaw = src['removeRefs'] ?? src['remove_refs'] ?? [];
+        if (Array.isArray(remRaw)) {
+            for (let i = 0; i < (remRaw as Object[]).length; i++) {
+                const s = `${(remRaw as Object[])[i]}`.trim();
+                if (s.length > 0) {
+                    removeRefs.push(s);
+                }
+            }
+        }
+        const moves: EditPlanMove[] = [];
+        const movesRaw = src['moves'] ?? [];
+        if (Array.isArray(movesRaw)) {
+            for (let i = 0; i < (movesRaw as Object[]).length; i++) {
+                const o = (movesRaw as Object[])[i];
+                if (!o || typeof o !== 'object') {
+                    continue;
+                }
+                const m = o as Record<string, Object>;
+                const ref = `${m['ref'] ?? m['refDes'] ?? m['deviceId'] ?? m['instUuid'] ?? ''}`.trim();
+                const x = Number(m['x'] ?? 0);
+                const y = Number(m['y'] ?? 0);
+                const rotate = Number(m['rotate'] ?? m['rotation'] ?? 0);
+                if (ref.length > 0 && !isNaN(x) && !isNaN(y)) {
+                    const mv: EditPlanMove = { ref, x, y, rotate: isNaN(rotate) ? 0 : rotate };
+                    moves.push(mv);
+                }
+            }
+        }
+        const removeNetNames: string[] = [];
+        const rnRaw = src['removeNetNames'] ?? src['remove_net_names'] ?? [];
+        if (Array.isArray(rnRaw)) {
+            for (let i = 0; i < (rnRaw as Object[]).length; i++) {
+                const s = `${(rnRaw as Object[])[i]}`.trim();
+                if (s.length > 0) {
+                    removeNetNames.push(s);
+                }
+            }
+        }
+        const keepAll = src['keepAllDevices'] ?? src['keep_all_devices'];
+        const parsed: EditPlanParsed = {
+            keepAllDevices: keepAll === undefined || keepAll === null ? true : !!keepAll,
+            addRequireList,
+            removeRefs,
+            moves,
+            netMode: `${src['netMode'] ?? src['net_mode'] ?? 'merge'}`,
+            netPlan,
+            removeNetNames
+        };
+        return parsed;
     }
     private static isMutualLedSwitchPrompt(prompt: string): boolean {
         return intentIsMutualLedSwitch(prompt);
@@ -4928,10 +5636,15 @@ export class AiPipelineOrchestrator {
             vars.push({ key: 'generation_mode', value: '' });
         }
         const isModularChild = opts.prompt.indexOf('【模块并行约束') >= 0;
+        let editLibIds: string[] = [];
+        if (opts.generationMode === 'edit' && opts.partialTopo) {
+            editLibIds = PromptLoader.libIdsFromTopo(opts.partialTopo);
+        }
         const prompt = PromptLoader.renderEnriched(tpl, vars, this.componentLibrary, {
             includeFullPins: true,
             intent: this.activeIntent,
-            filterPinsByPrompt: isModularChild ? opts.prompt : undefined
+            filterPinsByPrompt: isModularChild ? opts.prompt : undefined,
+            libIdsForFragments: editLibIds
         });
         if (isModularChild) {
             Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] device_select modular_child catalog_filter=on promptLen≈` +
@@ -5061,6 +5774,12 @@ export class AiPipelineOrchestrator {
         Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] usage_manual stage=layout devices=${usage.deviceCount} ` +
             `included=${usage.includedCount} miss=${usage.missIds.length} chars=${usage.charCount}` +
             (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : ''));
+        try {
+            traceAiPayload('AI_PIPE', 'USAGE_MANUAL', usage.text, `stage=layout mode=compact chars=${usage.charCount}`);
+        }
+        catch (_e) {
+            // ignore
+        }
         const basePrompt = PromptLoader.renderEnriched(tpl, [
             { key: 'device_list', value: deviceList },
             { key: 'device_usage', value: usage.text },
@@ -5313,12 +6032,29 @@ export class AiPipelineOrchestrator {
             (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : '') +
             (usage.criticalMissIds.length > 0
                 ? ` criticalMissIds=${usage.criticalMissIds.slice(0, 8).join(',')}` : ''));
+        try {
+            traceAiPayload('AI_PIPE', 'USAGE_MANUAL', usage.text, `stage=net_plan mode=full chars=${usage.charCount}`);
+        }
+        catch (_e) {
+            // ignore
+        }
         const prompt = PromptLoader.renderEnriched(tpl, [
             { key: 'user_prompt', value: opts.prompt },
             { key: 'device_detail', value: deviceDetail },
             { key: 'device_usage', value: usage.text },
             { key: 'position_summary', value: posSummary }
-        ], this.componentLibrary, { intent: this.activeIntent });
+        ], this.componentLibrary, {
+            intent: this.activeIntent,
+            libIdsForFragments: PromptLoader.libIdsFromTopo(topo)
+        });
+        // edit 回退路径：在 prompt 末尾附上现图网络摘要，要求基于现图改而非从零
+        let editAugment = '';
+        if (opts.generationMode === 'edit') {
+            editAugment =
+                `\n\n【增量编辑模式 — 必须遵守】:\n` +
+                    `以下是现有电路网络/导线摘要，请在此基础上修正，不要整图重造：\n` +
+                    AiPipelineOrchestrator.formatEditContextForPrompt(topo) + '\n';
+        }
         // AI 驱动纠错：net_plan 触点拓扑不过关则 critique 回灌 LLM
         let critique = '';
         let lastPlan: NetPlanResult | null = null;
@@ -5326,9 +6062,9 @@ export class AiPipelineOrchestrator {
         let stableCount = 0;
         for (let round = 0; round <= CRITIQUE_INNER_ROUNDS; round++) {
             const roundPrompt = critique.length > 0
-                ? `${prompt}\n\n【上次网络计划被审查拒绝 — 必须按下列要求重出完整 netPlan JSON】:\n${critique}\n` +
+                ? `${prompt}${editAugment}\n\n【上次网络计划被审查拒绝 — 必须按下列要求重出完整 netPlan JSON】:\n${critique}\n` +
                     `【铁律】仪器 CH/V+ 必须并入被测信号网同名，禁止 PROBE_* 重复列出被测脚；一脚只能属一网。`
-                : prompt;
+                : `${prompt}${editAugment}`;
             const api = await this.chatWithRetry(roundPrompt, AiCapability.COMPONENT_RECOMMEND, { temperature: AiPipelineOrchestrator.temperatureForStage('net_plan'),
                 maxTokens: AiPipelineOrchestrator.maxTokensForStage('net_plan'),
                 disableThinking: true });
@@ -5518,6 +6254,12 @@ export class AiPipelineOrchestrator {
         Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] usage_manual stage=route devices=${usage.deviceCount} ` +
             `included=${usage.includedCount} miss=${usage.missIds.length} chars=${usage.charCount}` +
             (usage.missIds.length > 0 ? ` missIds=${usage.missIds.slice(0, 8).join(',')}` : ''));
+        try {
+            traceAiPayload('AI_PIPE', 'USAGE_MANUAL', usage.text, `stage=route mode=compact chars=${usage.charCount}`);
+        }
+        catch (_e) {
+            // ignore
+        }
         const basePrompt = PromptLoader.renderEnriched(tpl, [
             {
                 key: 'topology_summary',

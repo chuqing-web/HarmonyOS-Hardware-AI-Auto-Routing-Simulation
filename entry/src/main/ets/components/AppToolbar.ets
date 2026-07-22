@@ -22,6 +22,7 @@ export struct AppToolbar {
   onToggleGrid: () => void = () => {};
   onPlace: () => void = () => {};
   onWire: () => void = () => {};
+  onToggleWar: () => void = () => {};
   onBus: () => void = () => {};
   onLabel: () => void = () => {};
   onPower: () => void = () => {};
@@ -60,6 +61,7 @@ export struct AppToolbar {
         ProteusVDivider()
         ProteusClassicBtn({ label: $r('app.string.toolbar_place'), widthVal: 48, onAction: () => this.onPlace() })
         ProteusClassicBtn({ label: $r('app.string.toolbar_wire'), widthVal: 48, onAction: () => this.onWire() })
+        ProteusClassicBtn({ label: $r('app.string.toolbar_war'), widthVal: 44, onAction: () => this.onToggleWar() })
         ProteusClassicBtn({ label: $r('app.string.toolbar_bus'), widthVal: 48, onAction: () => this.onBus() })
         ProteusClassicBtn({ label: $r('app.string.toolbar_label'), widthVal: 48, onAction: () => this.onLabel() })
         ProteusClassicBtn({ label: $r('app.string.toolbar_power'), widthVal: 48, onAction: () => this.onPower() })
