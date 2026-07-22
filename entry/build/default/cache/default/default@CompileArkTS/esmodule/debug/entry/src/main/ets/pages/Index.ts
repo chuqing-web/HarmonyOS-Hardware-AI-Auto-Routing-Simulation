@@ -2291,11 +2291,11 @@ class Index extends ViewPU {
                 return true;
             case '+':
             case '=':
-                this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                this.appService.schematicEditor.zoomByFactor(1.2);
                 this.bumpCanvas();
                 return true;
             case '-':
-                this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                 this.bumpCanvas();
                 return true;
             default: return false;
@@ -2541,11 +2541,11 @@ class Index extends ViewPU {
     viewMenuEntries(): ProteusMenuEntry[] {
         return [
             { label: { "id": 83886168, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '+', icon: ProteusIconName.ZOOM_IN, action: () => {
-                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                    this.appService.schematicEditor.zoomByFactor(1.2);
                     this.bumpCanvas();
                 } },
             { label: { "id": 83886169, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: '-', icon: ProteusIconName.ZOOM_OUT, action: () => {
-                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                    this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                     this.bumpCanvas();
                 } },
             { label: { "id": 83886150, "type": 10003, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" }, shortcut: 'Ctrl+0', icon: ProteusIconName.FIT, action: () => {
@@ -3127,7 +3127,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
-                                                this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                                                this.appService.schematicEditor.zoomByFactor(1.2);
                                                 this.bumpCanvas();
                                             } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1465, col: 9 });
                                         ViewPU.create(componentCall);
@@ -3137,7 +3137,7 @@ class Index extends ViewPU {
                                                 tooltip: '放大 (+)',
                                                 showLabel: false,
                                                 onAction: () => {
-                                                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                                                    this.appService.schematicEditor.zoomByFactor(1.2);
                                                     this.bumpCanvas();
                                                 }
                                             };
@@ -3155,7 +3155,7 @@ class Index extends ViewPU {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
-                                                this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                                                this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                                                 this.bumpCanvas();
                                             } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1469, col: 9 });
                                         ViewPU.create(componentCall);
@@ -3165,7 +3165,7 @@ class Index extends ViewPU {
                                                 tooltip: '缩小 (-)',
                                                 showLabel: false,
                                                 onAction: () => {
-                                                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                                                    this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                                                     this.bumpCanvas();
                                                 }
                                             };
@@ -3243,7 +3243,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
-                                                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                                                    this.appService.schematicEditor.zoomByFactor(1.2);
                                                     this.bumpCanvas();
                                                 } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1465, col: 9 });
                                             ViewPU.create(componentCall);
@@ -3253,7 +3253,7 @@ class Index extends ViewPU {
                                                     tooltip: '放大 (+)',
                                                     showLabel: false,
                                                     onAction: () => {
-                                                        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+                                                        this.appService.schematicEditor.zoomByFactor(1.2);
                                                         this.bumpCanvas();
                                                     }
                                                 };
@@ -3271,7 +3271,7 @@ class Index extends ViewPU {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
-                                                    this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                                                    this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                                                     this.bumpCanvas();
                                                 } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1469, col: 9 });
                                             ViewPU.create(componentCall);
@@ -3281,7 +3281,7 @@ class Index extends ViewPU {
                                                     tooltip: '缩小 (-)',
                                                     showLabel: false,
                                                     onAction: () => {
-                                                        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+                                                        this.appService.schematicEditor.zoomByFactor(1 / 1.2);
                                                         this.bumpCanvas();
                                                     }
                                                 };

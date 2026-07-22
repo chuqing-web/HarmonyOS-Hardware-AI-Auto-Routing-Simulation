@@ -1238,11 +1238,11 @@ struct Index {
       case 'l': this.setToolMode(EditorToolMode.LABEL); return true;
       case 'g': this.toggleGrid(); return true;
       case '+': case '=':
-        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+        this.appService.schematicEditor.zoomByFactor(1.2);
         this.bumpCanvas();
         return true;
       case '-':
-        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+        this.appService.schematicEditor.zoomByFactor(1 / 1.2);
         this.bumpCanvas();
         return true;
       default: return false;
@@ -1333,11 +1333,11 @@ struct Index {
   viewMenuEntries(): ProteusMenuEntry[] {
     return [
       { label: $r('app.string.toolbar_zoom_in'), shortcut: '+', icon: ProteusIconName.ZOOM_IN, action: () => {
-        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+        this.appService.schematicEditor.zoomByFactor(1.2);
         this.bumpCanvas();
       }},
       { label: $r('app.string.toolbar_zoom_out'), shortcut: '-', icon: ProteusIconName.ZOOM_OUT, action: () => {
-        this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+        this.appService.schematicEditor.zoomByFactor(1 / 1.2);
         this.bumpCanvas();
       }},
       { label: $r('app.string.toolbar_fit'), shortcut: 'Ctrl+0', icon: ProteusIconName.FIT, action: () => {
@@ -1463,11 +1463,11 @@ struct Index {
 
       ProteusToolGroup({ title: 'View' }) {
         ProteusToolButton({ iconName: ProteusIconName.ZOOM_IN, tooltip: '放大 (+)', showLabel: false, onAction: () => {
-          this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() * 1.2);
+          this.appService.schematicEditor.zoomByFactor(1.2);
           this.bumpCanvas();
         }})
         ProteusToolButton({ iconName: ProteusIconName.ZOOM_OUT, tooltip: '缩小 (-)', showLabel: false, onAction: () => {
-          this.appService.schematicEditor.setZoom(this.appService.schematicEditor.getZoom() / 1.2);
+          this.appService.schematicEditor.zoomByFactor(1 / 1.2);
           this.bumpCanvas();
         }})
         ProteusToolButton({ iconName: ProteusIconName.FIT, tooltip: '适应窗口 (Ctrl+0)', showLabel: false, onAction: () => {

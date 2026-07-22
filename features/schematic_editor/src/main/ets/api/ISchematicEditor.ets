@@ -105,6 +105,10 @@ export interface ISchematicEditor {
   /** 将指定世界坐标矩形适配到视口（区域放大） */
   fitRectInView(rect: Rect2D): void;
   setZoom(scale: number): void;
+  /** 以屏幕坐标 (sx,sy) 为锚点缩放到 level，保持该点下世界坐标不变 */
+  zoomAt(sx: number, sy: number, level: number): void;
+  /** 以锚点缩放；省略坐标时以视口中心为锚点 */
+  zoomByFactor(factor: number, sx?: number, sy?: number): void;
   getZoom(): number;
   panBy(dx: number, dy: number): void;
   undo(): ApiResult<void>;

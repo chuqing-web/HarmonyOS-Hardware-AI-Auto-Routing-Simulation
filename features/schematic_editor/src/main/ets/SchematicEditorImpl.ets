@@ -1381,6 +1381,30 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.zoomCanvas(level);
   }
 
+  zoomAt(sx: number, sy: number, level: number): void {
+    const oldZoom: number = this.viewport.zoom;
+    const clamped: number = Math.max(0.1, Math.min(5.0, level));
+    if (Math.abs(clamped - oldZoom) < 1e-9) {
+      return;
+    }
+    const worldX: number = (sx - this.viewport.panOffset.x) / oldZoom;
+    const worldY: number = (sy - this.viewport.panOffset.y) / oldZoom;
+    this.viewport.zoom = clamped;
+    this.viewport.panOffset = {
+      x: sx - worldX * clamped,
+      y: sy - worldY * clamped
+    };
+    this.publishViewport();
+  }
+
+  zoomByFactor(factor: number, sx?: number, sy?: number): void {
+    const viewW: number = this.canvasViewWidth > 0 ? this.canvasViewWidth : 800;
+    const viewH: number = this.canvasViewHeight > 0 ? this.canvasViewHeight : 600;
+    const ax: number = sx !== undefined ? sx : viewW / 2;
+    const ay: number = sy !== undefined ? sy : viewH / 2;
+    this.zoomAt(ax, ay, this.viewport.zoom * factor);
+  }
+
   getZoom(): number {
     return this.viewport.zoom;
   }

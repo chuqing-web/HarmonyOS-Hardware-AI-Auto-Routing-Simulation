@@ -65,12 +65,16 @@ interface SchematicCanvas_Params {
     middlePanning?: boolean;
     middlePanLastX?: number;
     middlePanLastY?: number;
+    leftPanning?: boolean;
+    leftPanLastX?: number;
+    leftPanLastY?: number;
+    lastMouseSX?: number;
+    lastMouseSY?: number;
+    pinchStartZoom?: number;
+    pinchCenterX?: number;
+    pinchCenterY?: number;
     simFrameDirty?: boolean;
     backgroundDirty?: boolean;
-    gridTile?: ImageData | null;
-    gridTileKey?: string;
-    gridTileWorldW?: number;
-    gridTileWorldH?: number;
     compDefCache?: Map<string, ComponentDefinition | null>;
     juncCache?: Map<string, number> | null;
     juncCacheKey?: string;
@@ -102,11 +106,6 @@ import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/compo
 import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { SchematicLayerId } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
 import type { SchematicEditorImpl } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/Index";
-interface RgbColor {
-    r: number;
-    g: number;
-    b: number;
-}
 export class SchematicCanvas extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -176,12 +175,16 @@ export class SchematicCanvas extends ViewPU {
         this.middlePanning = false;
         this.middlePanLastX = 0;
         this.middlePanLastY = 0;
+        this.leftPanning = false;
+        this.leftPanLastX = 0;
+        this.leftPanLastY = 0;
+        this.lastMouseSX = 0;
+        this.lastMouseSY = 0;
+        this.pinchStartZoom = 1;
+        this.pinchCenterX = 0;
+        this.pinchCenterY = 0;
         this.simFrameDirty = false;
         this.backgroundDirty = true;
-        this.gridTile = null;
-        this.gridTileKey = '';
-        this.gridTileWorldW = 0;
-        this.gridTileWorldH = 0;
         this.compDefCache = new Map();
         this.juncCache = null;
         this.juncCacheKey = '';
@@ -390,23 +393,35 @@ export class SchematicCanvas extends ViewPU {
         if (params.middlePanLastY !== undefined) {
             this.middlePanLastY = params.middlePanLastY;
         }
+        if (params.leftPanning !== undefined) {
+            this.leftPanning = params.leftPanning;
+        }
+        if (params.leftPanLastX !== undefined) {
+            this.leftPanLastX = params.leftPanLastX;
+        }
+        if (params.leftPanLastY !== undefined) {
+            this.leftPanLastY = params.leftPanLastY;
+        }
+        if (params.lastMouseSX !== undefined) {
+            this.lastMouseSX = params.lastMouseSX;
+        }
+        if (params.lastMouseSY !== undefined) {
+            this.lastMouseSY = params.lastMouseSY;
+        }
+        if (params.pinchStartZoom !== undefined) {
+            this.pinchStartZoom = params.pinchStartZoom;
+        }
+        if (params.pinchCenterX !== undefined) {
+            this.pinchCenterX = params.pinchCenterX;
+        }
+        if (params.pinchCenterY !== undefined) {
+            this.pinchCenterY = params.pinchCenterY;
+        }
         if (params.simFrameDirty !== undefined) {
             this.simFrameDirty = params.simFrameDirty;
         }
         if (params.backgroundDirty !== undefined) {
             this.backgroundDirty = params.backgroundDirty;
-        }
-        if (params.gridTile !== undefined) {
-            this.gridTile = params.gridTile;
-        }
-        if (params.gridTileKey !== undefined) {
-            this.gridTileKey = params.gridTileKey;
-        }
-        if (params.gridTileWorldW !== undefined) {
-            this.gridTileWorldW = params.gridTileWorldW;
-        }
-        if (params.gridTileWorldH !== undefined) {
-            this.gridTileWorldH = params.gridTileWorldH;
         }
         if (params.compDefCache !== undefined) {
             this.compDefCache = params.compDefCache;
@@ -699,12 +714,18 @@ export class SchematicCanvas extends ViewPU {
     private middlePanning: boolean;
     private middlePanLastX: number;
     private middlePanLastY: number;
+    /** 空白区左键拖拽平移画布 */
+    private leftPanning: boolean;
+    private leftPanLastX: number;
+    private leftPanLastY: number;
+    /** 最近鼠标屏幕坐标（滚轮/工具栏缩放锚点） */
+    private lastMouseSX: number;
+    private lastMouseSY: number;
+    private pinchStartZoom: number;
+    private pinchCenterX: number;
+    private pinchCenterY: number;
     private simFrameDirty: boolean;
     private backgroundDirty: boolean;
-    private gridTile: ImageData | null;
-    private gridTileKey: string;
-    private gridTileWorldW: number;
-    private gridTileWorldH: number;
     private compDefCache: Map<string, ComponentDefinition | null>;
     private juncCache: Map<string, number> | null;
     private juncCacheKey: string;
@@ -760,15 +781,11 @@ export class SchematicCanvas extends ViewPU {
     onCanvasVersionChange(): void {
         this.backgroundDirty = true;
         this.rulerDirty = true;
-        this.gridTile = null;
-        this.gridTileKey = '';
         this.scheduleRedraw();
     }
     onThemeRefreshChange(): void {
         this.backgroundDirty = true;
         this.rulerDirty = true;
-        this.gridTile = null;
-        this.gridTileKey = '';
         this.scheduleRedraw();
     }
     private invalidateJuncCache(): void {
@@ -973,6 +990,8 @@ export class SchematicCanvas extends ViewPU {
             // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.onMouse((event: MouseEvent) => this.handleMouse(event));
             // Layer 0: Background — grid + components (static, rarely redrawn)
+            Canvas.onAxisEvent((event: AxisEvent) => this.handleAxisZoom(event));
+            // Layer 0: Background — grid + components (static, rarely redrawn)
             Canvas.onKeyEvent((event: KeyEvent) => {
                 if (event.type === KeyType.Down && event.keyCode === 27) {
                     this.wireWaypoints = [];
@@ -983,11 +1002,14 @@ export class SchematicCanvas extends ViewPU {
             });
             globalThis.Gesture.create(GesturePriority.Low);
             PinchGesture.create();
-            PinchGesture.onActionStart(() => {
+            PinchGesture.onActionStart((event: GestureEvent) => {
                 if (this.appService.isAiGenerating()) {
                     return;
                 }
                 this.markGestureBusy();
+                this.pinchStartZoom = this.appService.schematicEditor.getZoom();
+                this.pinchCenterX = event.pinchCenterX;
+                this.pinchCenterY = event.pinchCenterY;
             });
             PinchGesture.onActionUpdate((event: GestureEvent) => {
                 if (this.appService.isAiGenerating()) {
@@ -995,7 +1017,7 @@ export class SchematicCanvas extends ViewPU {
                 }
                 this.markGestureBusy();
                 const editor = this.appService.schematicEditor;
-                editor.setZoom(editor.getZoom() * event.scale);
+                editor.zoomAt(this.pinchCenterX, this.pinchCenterY, this.pinchStartZoom * event.scale);
                 // schedule via VIEWPORT_CHANGED only — avoid double redraw
             });
             PinchGesture.onActionEnd(() => {
@@ -1117,6 +1139,8 @@ export class SchematicCanvas extends ViewPU {
     }
     private handleMouse(event: MouseEvent): void {
         if (event.action === MouseAction.Move) {
+            this.lastMouseSX = event.x;
+            this.lastMouseSY = event.y;
             const world = this.screenToWorld(event.x, event.y);
             this.updateMouseCoord(world);
             // Middle-click pan
@@ -1125,6 +1149,16 @@ export class SchematicCanvas extends ViewPU {
                 const dy = event.y - this.middlePanLastY;
                 this.middlePanLastX = event.x;
                 this.middlePanLastY = event.y;
+                this.appService.schematicEditor.panBy(dx, dy);
+                this.scheduleRedraw();
+                return;
+            }
+            // Left-drag empty area pan
+            if (this.leftPanning) {
+                const dx = event.x - this.leftPanLastX;
+                const dy = event.y - this.leftPanLastY;
+                this.leftPanLastX = event.x;
+                this.leftPanLastY = event.y;
                 this.appService.schematicEditor.panBy(dx, dy);
                 this.scheduleRedraw();
                 return;
@@ -1148,6 +1182,8 @@ export class SchematicCanvas extends ViewPU {
         if (event.action === MouseAction.Press) {
             if (this.isTouchActive)
                 return; // touch handles interaction, skip mouse
+            this.lastMouseSX = event.x;
+            this.lastMouseSY = event.y;
             if (event.button === 2) {
                 this.contextMenuScreenX = event.x;
                 this.contextMenuScreenY = event.y;
@@ -1174,6 +1210,21 @@ export class SchematicCanvas extends ViewPU {
             }
             this.onPointerUp(event.x, event.y);
         }
+    }
+    /** 滚轮：以鼠标位置为中心缩放 */
+    private handleAxisZoom(event: AxisEvent): void {
+        if (this.appService.isAiGenerating()) {
+            return;
+        }
+        const v = event.getVerticalAxisValue();
+        if (v === 0) {
+            return;
+        }
+        this.lastMouseSX = event.x;
+        this.lastMouseSY = event.y;
+        // 滚轮向前(负)放大，向后(正)缩小
+        const factor = v < 0 ? 1.12 : (1 / 1.12);
+        this.appService.schematicEditor.zoomByFactor(factor, event.x, event.y);
     }
     private clearDragState(): void {
         this.dragComponentId = '';
@@ -1349,6 +1400,7 @@ export class SchematicCanvas extends ViewPU {
         this.pointerDown = false;
         this.clearDragState();
         this.isBoxSelecting = false;
+        this.leftPanning = false;
         this.previewWireEnd = null;
         this.alignGuideX = null;
         this.alignGuideY = null;
@@ -1385,6 +1437,16 @@ export class SchematicCanvas extends ViewPU {
         this.updateMouseCoord(world);
         if (this.toolMode === EditorToolMode.PLACE) {
             this.placementPreview = world;
+            return;
+        }
+        // 区域放大：按下即开始拖框，不走器件命中
+        if (this.toolMode === EditorToolMode.ZOOM_REGION) {
+            this.clearDragState();
+            this.isBoxSelecting = true;
+            this.boxSelectStart = world;
+            this.boxSelectEnd = world;
+            this.onStatusChange('拖框指定放大区域');
+            this.scheduleRedraw();
             return;
         }
         // Skip hit testing for wire/bus/label modes — nothing to select on down
@@ -1516,11 +1578,18 @@ export class SchematicCanvas extends ViewPU {
             }
             this.selectedComponentId = '';
             this.clearDragState();
-            this.isBoxSelecting = true;
-            this.boxSelectStart = world;
-            this.boxSelectEnd = world;
-            if (!this.shiftHeld) {
+            // Shift+空白：框选；否则空白拖拽平移画布
+            if (this.shiftHeld) {
+                this.isBoxSelecting = true;
+                this.boxSelectStart = world;
+                this.boxSelectEnd = world;
+            }
+            else {
+                this.leftPanning = true;
+                this.leftPanLastX = sx;
+                this.leftPanLastY = sy;
                 this.appService.schematicEditor.setSelection([]);
+                this.onStatusChange('拖拽平移画布');
             }
         }
     }
@@ -1569,6 +1638,17 @@ export class SchematicCanvas extends ViewPU {
             this.applySensorTempFromWorld(this.tempDragCompId, world);
             return;
         }
+        if (this.leftPanning) {
+            const dx = sx - this.leftPanLastX;
+            const dy = sy - this.leftPanLastY;
+            this.leftPanLastX = sx;
+            this.leftPanLastY = sy;
+            this.appService.schematicEditor.panBy(dx, dy);
+            this.lastPointerX = sx;
+            this.lastPointerY = sy;
+            this.scheduleRedraw();
+            return;
+        }
         if (this.dragComponentId.length > 0 && moved && this.isSelectMode()) {
             const editor = this.appService.schematicEditor as SchematicEditorImpl;
             if (editor.isLayerLocked(SchematicLayerId.COMPONENTS)) {
@@ -1583,7 +1663,8 @@ export class SchematicCanvas extends ViewPU {
             this.dragPreviewPos = this.computeDragSnap(this.dragComponentId, raw);
             this.scheduleRedraw();
         }
-        else if (this.isBoxSelecting && moved && this.isSelectMode()) {
+        else if (this.isBoxSelecting && moved &&
+            (this.isSelectMode() || this.toolMode === EditorToolMode.ZOOM_REGION)) {
             this.boxSelectEnd = world;
             this.scheduleRedraw();
         }
@@ -1628,6 +1709,7 @@ export class SchematicCanvas extends ViewPU {
                 }
             }
             this.isBoxSelecting = false;
+            this.leftPanning = false;
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1641,6 +1723,7 @@ export class SchematicCanvas extends ViewPU {
             this.potDragLastWiper = -1;
             this.backgroundDirty = true;
             this.isBoxSelecting = false;
+            this.leftPanning = false;
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1654,6 +1737,7 @@ export class SchematicCanvas extends ViewPU {
             this.tempDragLastC = Number.NaN;
             this.backgroundDirty = true;
             this.isBoxSelecting = false;
+            this.leftPanning = false;
             this.pointerDown = false;
             this.clearDragState();
             this.scheduleRedraw();
@@ -1669,6 +1753,22 @@ export class SchematicCanvas extends ViewPU {
         }
         else if (this.toolMode === EditorToolMode.PLACE) {
             this.tryPlaceComponent(world);
+        }
+        else if (this.leftPanning) {
+            // 空白拖拽平移结束；短按已在 down 时清选
+            this.onStatusChange('就绪');
+        }
+        else if (this.toolMode === EditorToolMode.ZOOM_REGION && this.isBoxSelecting) {
+            this.boxSelectEnd = world;
+            const rect = this.normalizeRect(this.boxSelectStart, this.boxSelectEnd);
+            if (rect.width > 4 && rect.height > 4) {
+                this.appService.schematicEditor.fitRectInView(rect);
+                this.toolMode = EditorToolMode.SELECT;
+                this.onStatusChange('已放大选定区域');
+            }
+            else {
+                this.onStatusChange('拖框过小，未放大');
+            }
         }
         else if (!moved || this.isTapSlop(totalDx, totalDy)) {
             this.handleTap(world);
@@ -1704,6 +1804,7 @@ export class SchematicCanvas extends ViewPU {
             }
         }
         this.isBoxSelecting = false;
+        this.leftPanning = false;
         this.pointerDown = false;
         this.clearDragState();
         this.previewWireEnd = null;
@@ -2190,6 +2291,10 @@ export class SchematicCanvas extends ViewPU {
             bgCtx.clearRect(0, 0, w, h);
             bgCtx.fillStyle = ThemeManager.getInstance().canvasBg();
             bgCtx.fillRect(0, 0, w, h);
+            // 网格在屏幕空间绘制（不受 CTM / putImageData 限制），低缩放仍可见
+            if (vp.gridVisible) {
+                this.drawAdaptiveGrid(bgCtx, vp);
+            }
             bgCtx.save();
             bgCtx.translate(vp.panOffset.x, vp.panOffset.y);
             bgCtx.scale(vp.zoom, vp.zoom);
@@ -2221,14 +2326,8 @@ export class SchematicCanvas extends ViewPU {
         this.backgroundDirty = true;
         this.redraw();
     }
-    /** Draw only the static background elements (grid + components + labels + ERC) */
+    /** Draw only the static background elements (components + labels + ERC; grid drawn in screen space) */
     private drawBackgroundScene(ctx: CanvasRenderingContext2D, doc: SchematicDocument, vp: ViewportState, bounds: WorldRect, editor: SchematicEditorImpl): void {
-        if (vp.gridVisible) {
-            this.drawCachedGrid(ctx, vp, bounds);
-            if (vp.zoom >= 0.8) {
-                this.drawGridLines(ctx, vp, bounds);
-            }
-        }
         if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
             this.drawBackgroundGridOnEmpty(ctx, vp, bounds, doc.wires.length);
         }
@@ -2240,6 +2339,73 @@ export class SchematicCanvas extends ViewPU {
         }
         if (this.ercErrors.length > 0 && editor.isLayerVisible(SchematicLayerId.ERC_MARKERS)) {
             this.drawErcMarkers(ctx, doc);
+        }
+    }
+    /**
+     * 屏幕空间自适应网格：fitAll 后缩放过小时仍可见。
+     * 禁止 putImageData（忽略 CTM，自适应后易“消失”）。
+     */
+    private drawAdaptiveGrid(ctx: CanvasRenderingContext2D, vp: ViewportState): void {
+        const w = this.viewWidth;
+        const h = this.viewHeight;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        const zoom = Math.max(vp.zoom, 0.01);
+        const base = Math.max(vp.gridSize, 1);
+        const multipliers: number[] = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+        let step = base;
+        for (let i = 0; i < multipliers.length; i++) {
+            step = base * multipliers[i];
+            if (step * zoom >= 8) {
+                break;
+            }
+        }
+        const majorStep = step * 5;
+        const startWX = Math.floor((-vp.panOffset.x / zoom) / step) * step;
+        const startWY = Math.floor((-vp.panOffset.y / zoom) / step) * step;
+        const endWX = startWX + (w / zoom) + step * 2;
+        const endWY = startWY + (h / zoom) + step * 2;
+        ctx.fillStyle = ProteusColors.GRID_DOT;
+        for (let wx = startWX; wx <= endWX; wx += step) {
+            const sx = wx * zoom + vp.panOffset.x;
+            if (sx < -1 || sx > w + 1) {
+                continue;
+            }
+            for (let wy = startWY; wy <= endWY; wy += step) {
+                const sy = wy * zoom + vp.panOffset.y;
+                if (sy < -1 || sy > h + 1) {
+                    continue;
+                }
+                ctx.fillRect(Math.round(sx), Math.round(sy), 1, 1);
+            }
+        }
+        // 主网格线：缩小很多时提供方位参考
+        if (majorStep * zoom >= 24) {
+            ctx.strokeStyle = ProteusColors.GRID_LINE;
+            ctx.lineWidth = 1;
+            const majStartX = Math.floor((-vp.panOffset.x / zoom) / majorStep) * majorStep;
+            const majStartY = Math.floor((-vp.panOffset.y / zoom) / majorStep) * majorStep;
+            for (let wx = majStartX; wx <= endWX; wx += majorStep) {
+                const sx = wx * zoom + vp.panOffset.x;
+                if (sx < 0 || sx > w) {
+                    continue;
+                }
+                ctx.beginPath();
+                ctx.moveTo(sx, 0);
+                ctx.lineTo(sx, h);
+                ctx.stroke();
+            }
+            for (let wy = majStartY; wy <= endWY; wy += majorStep) {
+                const sy = wy * zoom + vp.panOffset.y;
+                if (sy < 0 || sy > h) {
+                    continue;
+                }
+                ctx.beginPath();
+                ctx.moveTo(0, sy);
+                ctx.lineTo(w, sy);
+                ctx.stroke();
+            }
         }
     }
     private renderOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument, vp: ViewportState, bounds: WorldRect, editor: SchematicEditorImpl): void {
@@ -2276,7 +2442,7 @@ export class SchematicCanvas extends ViewPU {
             this.drawPlacementGhost(ctx, this.placementPreview);
         }
         if (this.isBoxSelecting) {
-            this.drawSelectionBox(ctx);
+            this.drawSelectionBox(ctx, this.toolMode === EditorToolMode.ZOOM_REGION);
         }
         if (this.alignGuideX !== null || this.alignGuideY !== null) {
             this.drawAlignGuides(ctx, bounds);
@@ -2322,58 +2488,6 @@ export class SchematicCanvas extends ViewPU {
             SchematicSymbolRenderer.drawComponent(ctx, pos.x, pos.y, def, comp.refDes, comp.rotation, comp.mirrored, style);
         }
     }
-    private ensureGridTile(vp: ViewportState): void {
-        const g = vp.gridSize;
-        const key = `${g}_${ProteusColors.GRID_DOT}_${ProteusColors.CANVAS_BG}`;
-        if (this.gridTile !== null && this.gridTileKey === key) {
-            return;
-        }
-        const cells = 16;
-        const tileW = g * cells;
-        const tileH = g * cells;
-        const dotRgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
-        const bgRgb = SchematicCanvas.parseGridColor(ProteusColors.CANVAS_BG);
-        this.gridTile = this.buildGridTileImage(tileW, tileH, g, dotRgb, bgRgb);
-        this.gridTileKey = key;
-        this.gridTileWorldW = tileW;
-        this.gridTileWorldH = tileH;
-    }
-    private buildGridTileImage(tileW: number, tileH: number, step: number, dotRgb: RgbColor, bgRgb: RgbColor): ImageData {
-        const img = this.context.createImageData(tileW, tileH);
-        // HarmonyOS createImageData 默认可能为不透明白底；putImageData 会整块覆盖，须先铺画布底色
-        SchematicCanvas.fillImageData(img, bgRgb, 255);
-        for (let x = 0; x < tileW; x += step) {
-            for (let y = 0; y < tileH; y += step) {
-                const idx = (y * tileW + x) * 4;
-                img.data[idx] = dotRgb.r;
-                img.data[idx + 1] = dotRgb.g;
-                img.data[idx + 2] = dotRgb.b;
-                img.data[idx + 3] = 255;
-            }
-        }
-        return img;
-    }
-    private drawGridLines(ctx: CanvasRenderingContext2D, vp: ViewportState, bounds: WorldRect): void {
-        const g = vp.gridSize;
-        const startX = Math.floor(bounds.minX / g) * g;
-        const startY = Math.floor(bounds.minY / g) * g;
-        const endX = Math.ceil(bounds.maxX / g) * g;
-        const endY = Math.ceil(bounds.maxY / g) * g;
-        ctx.strokeStyle = ProteusColors.GRID_LINE;
-        ctx.lineWidth = 0.5;
-        for (let x = startX; x <= endX; x += g) {
-            ctx.beginPath();
-            ctx.moveTo(x, startY);
-            ctx.lineTo(x, endY);
-            ctx.stroke();
-        }
-        for (let y = startY; y <= endY; y += g) {
-            ctx.beginPath();
-            ctx.moveTo(startX, y);
-            ctx.lineTo(endX, y);
-            ctx.stroke();
-        }
-    }
     private drawBackgroundGridOnEmpty(ctx: CanvasRenderingContext2D, vp: ViewportState, bounds: WorldRect, wireCount: number): void {
         if (wireCount > 0) {
             return;
@@ -2399,22 +2513,6 @@ export class SchematicCanvas extends ViewPU {
             ctx.stroke();
         }
     }
-    private drawCachedGrid(ctx: CanvasRenderingContext2D, vp: ViewportState, bounds: WorldRect): void {
-        this.ensureGridTile(vp);
-        if (this.gridTile === null) {
-            this.drawDotGrid(ctx, vp, bounds);
-            return;
-        }
-        const startX = Math.floor(bounds.minX / this.gridTileWorldW) * this.gridTileWorldW;
-        const startY = Math.floor(bounds.minY / this.gridTileWorldH) * this.gridTileWorldH;
-        const endX = bounds.maxX + this.gridTileWorldW;
-        const endY = bounds.maxY + this.gridTileWorldH;
-        for (let x = startX; x <= endX; x += this.gridTileWorldW) {
-            for (let y = startY; y <= endY; y += this.gridTileWorldH) {
-                ctx.putImageData(this.gridTile, x, y);
-            }
-        }
-    }
     private normalizeRect(a: Point2D, b: Point2D): Rect2D {
         const x = Math.min(a.x, b.x);
         const y = Math.min(a.y, b.y);
@@ -2438,13 +2536,13 @@ export class SchematicCanvas extends ViewPU {
         }
         ctx.setLineDash([]);
     }
-    private drawSelectionBox(ctx: CanvasRenderingContext2D): void {
+    private drawSelectionBox(ctx: CanvasRenderingContext2D, isZoomRegion: boolean = false): void {
         const rect = this.normalizeRect(this.boxSelectStart, this.boxSelectEnd);
-        ctx.strokeStyle = '#00BFFF';
+        ctx.strokeStyle = isZoomRegion ? '#FF9800' : '#00BFFF';
         ctx.lineWidth = 1 / this.appService.schematicEditor.getZoom();
         ctx.setLineDash([4, 4]);
         ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-        ctx.fillStyle = 'rgba(0, 191, 255, 0.08)';
+        ctx.fillStyle = isZoomRegion ? 'rgba(255, 152, 0, 0.08)' : 'rgba(0, 191, 255, 0.08)';
         ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
         ctx.setLineDash([]);
     }
@@ -2492,65 +2590,6 @@ export class SchematicCanvas extends ViewPU {
         ctx.lineTo(to.x, to.y);
         ctx.stroke();
         ctx.setLineDash([]);
-    }
-    private drawDotGrid(ctx: CanvasRenderingContext2D, vp: ViewportState, bounds: WorldRect): void {
-        const g = vp.gridSize;
-        const startX = Math.floor(bounds.minX / g) * g;
-        const startY = Math.floor(bounds.minY / g) * g;
-        const endX = Math.ceil(bounds.maxX / g) * g;
-        const endY = Math.ceil(bounds.maxY / g) * g;
-        const cols = Math.ceil((endX - startX) / g) + 1;
-        const rows = Math.ceil((endY - startY) / g) + 1;
-        const step = cols * rows > 5000 ? g * 2 : g;
-        const worldW = endX - startX + 1;
-        const worldH = endY - startY + 1;
-        if (worldW > 0 && worldH > 0 && worldW * worldH <= 250000) {
-            const dotRgb = SchematicCanvas.parseGridColor(ProteusColors.GRID_DOT);
-            const bgRgb = SchematicCanvas.parseGridColor(ProteusColors.CANVAS_BG);
-            const img = ctx.createImageData(worldW, worldH);
-            SchematicCanvas.fillImageData(img, bgRgb, 255);
-            for (let x = startX; x <= endX; x += step) {
-                for (let y = startY; y <= endY; y += step) {
-                    const px = x - startX;
-                    const py = y - startY;
-                    if (px >= 0 && py >= 0 && px < worldW && py < worldH) {
-                        const idx = (py * worldW + px) * 4;
-                        img.data[idx] = dotRgb.r;
-                        img.data[idx + 1] = dotRgb.g;
-                        img.data[idx + 2] = dotRgb.b;
-                        img.data[idx + 3] = 255;
-                    }
-                }
-            }
-            ctx.putImageData(img, startX, startY);
-            return;
-        }
-        ctx.fillStyle = ProteusColors.GRID_DOT;
-        for (let x = startX; x <= endX; x += step) {
-            for (let y = startY; y <= endY; y += step) {
-                ctx.fillRect(x, y, 1, 1);
-            }
-        }
-    }
-    private static parseGridColor(hex: string): RgbColor {
-        const h = hex.replace('#', '');
-        if (h.length >= 6) {
-            return {
-                r: parseInt(h.substring(0, 2), 16),
-                g: parseInt(h.substring(2, 4), 16),
-                b: parseInt(h.substring(4, 6), 16)
-            };
-        }
-        return { r: 80, g: 80, b: 96 };
-    }
-    private static fillImageData(img: ImageData, rgb: RgbColor, alpha: number): void {
-        const d = img.data;
-        for (let i = 0; i < d.length; i += 4) {
-            d[i] = rgb.r;
-            d[i + 1] = rgb.g;
-            d[i + 2] = rgb.b;
-            d[i + 3] = alpha;
-        }
     }
     private drawPlacementGhost(ctx: CanvasRenderingContext2D, pos: Point2D): void {
         const g = this.appService.schematicEditor.getViewport().gridSize;
