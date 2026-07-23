@@ -27,6 +27,10 @@ export interface WarRouteContext {
      * 中段仍禁止贴铜穿越。
      */
     wireJoinPoints: Point2D[];
+    /**
+     * 动态预览：禁止 A*（主线程会卡死），仅 L / U 形；落线时关闭。
+     */
+    previewLite: boolean;
 }
 interface WarNode {
     gx: number;
@@ -38,7 +42,10 @@ interface WarNode {
     dir: number;
 }
 export class WireAutoRouter {
-    private static readonly MAX_STEPS: number = 5000;
+    /** 落线 A* 上限（原 5000 在模拟器主线程可卡数秒） */
+    private static readonly MAX_STEPS: number = 1800;
+    /** open 表过大时提前放弃，避免 O(n²) 选最小 f 卡死 */
+    private static readonly MAX_OPEN: number = 2200;
     /** 转角惩罚 K：拐点优先于长度（原理图美观） */
     private static readonly TURN_COST_K: number = 12;
     /** 禁行矩形相对选中区再外扩的安全间隙（网格倍数） */
@@ -198,6 +205,32 @@ export class WireAutoRouter {
             // WAR 关闭：不自动绕障；穿障则失败
             return fail;
         }
+        // 预览轻量模式：禁止 A*（模拟器上 open 线性扫描可卡主线程数秒）
+        if (ctx.previewLite) {
+            const gLite = Math.max(1, ctx.gridSize);
+            const marginsLite = [gLite * 3, gLite * 5, gLite * 8];
+            for (let mi = 0; mi < marginsLite.length; mi++) {
+                const margin = marginsLite[mi];
+                const detours: Point2D[][] = [
+                    [from, { x: from.x, y: from.y - margin }, { x: to.x, y: from.y - margin }, to],
+                    [from, { x: from.x, y: from.y + margin }, { x: to.x, y: from.y + margin }, to],
+                    [from, { x: from.x - margin, y: from.y }, { x: from.x - margin, y: to.y }, to],
+                    [from, { x: from.x + margin, y: from.y }, { x: from.x + margin, y: to.y }, to]
+                ];
+                for (let di = 0; di < detours.length; di++) {
+                    const d = WireAutoRouter.dedupe(detours[di]);
+                    if (WireAutoRouter.pathHardClear(d, ctx) && WireAutoRouter.isFullyOrthogonal(d)) {
+                        const u: WirePathPreviewResult = {
+                            points: d,
+                            autoCorrected: true,
+                            blocked: false
+                        };
+                        return u;
+                    }
+                }
+            }
+            return fail;
+        }
         const astar = WireAutoRouter.astarRectilinear(from, to, ctx);
         if (astar.length >= 2 && WireAutoRouter.pathHardClear(astar, ctx)) {
             const found: WirePathPreviewResult = {
@@ -251,7 +284,7 @@ export class WireAutoRouter {
             !WireAutoRouter.nearEndpoint(sgx * g, sgy * g, from, to, g)) {
             // still allow start
         }
-        const pad = Math.max(24, Math.ceil(Math.abs(egx - sgx) + Math.abs(egy - sgy)) + 12);
+        const pad = Math.min(36, Math.max(16, Math.ceil(Math.abs(egx - sgx) + Math.abs(egy - sgy)) + 10));
         const minGx = Math.min(sgx, egx) - pad;
         const maxGx = Math.max(sgx, egx) + pad;
         const minGy = Math.min(sgy, egy) - pad;
@@ -271,6 +304,9 @@ export class WireAutoRouter {
         let found: WarNode | null = null;
         const dirs: number[][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
         while (open.length > 0 && steps < WireAutoRouter.MAX_STEPS) {
+            if (open.length > WireAutoRouter.MAX_OPEN) {
+                break;
+            }
             let bestIdx = 0;
             for (let i = 1; i < open.length; i++) {
                 if (open[i].f < open[bestIdx].f) {

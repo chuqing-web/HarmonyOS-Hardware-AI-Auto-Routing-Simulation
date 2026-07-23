@@ -561,13 +561,15 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     }
     // Cap snap radii: MCU/DIP pin pitch is 10px. junctionRadius≥10 (e.g. gridSize=20)
     // would UF-merge P1..P8+NRST into one net → lab_51_led GPIO all drive NET_1, LEDs stay off.
-    // Endpoint co-location uses a slightly wider radius so wire-wire stubs join after snap.
-    // T-junction tol MUST match SchematicEditorImpl.snapToNearestWire / inheritNetAtPosition
-    // (grid*0.75 ∈ [6,12]) — older 2.0–2.5 left place-time T stubs on a fresh NET after rebuild
-    // (频率计 IN 图上 T 到信号线，拓扑却拆成 NET_6 peers=none → FC 0Hz).
+    // T 接：中段/折点/端点均可并网（位置无关），但容差不可放到 place inherit 的 6–12：
+    // 过松会导致 O(W²·seg) 误命中 + 每次命中全表扫描 pin → THREAD_BLOCK_6S。
+    // 落线已 snap 到铜皮，重建用中等容差吸收网格/浮点误差即可。
     const junctionRadius = Math.min(Math.max(3, gridSize * 0.6), 7);
-    const tJunctionTol = Math.min(Math.max(gridSize * 0.75, 6), 12);
+    const tJunctionTol = Math.min(Math.max(3, gridSize * 0.4), 5);
     const pinThreshold = Math.max(gridSize * 1.5, 15);
+    const topoT0 = Date.now();
+    let tJuncHit = 0;
+    let tJuncRefuse = 0;
     const junctions = new Map<string, Junction>();
     const uf = new UnionFind();
     // Map pins to nearest junction key
@@ -611,11 +613,8 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
             safeUnion(uf, junctions, keys[i], keys[j]);
         }
     }
-    // T-junctions: 导线端点压到另一根线的任意位置（中段/折点/端点）即并网。
-    // 位置无关 — 只要连到正确铜皮；勿因「靠近折点」跳过（旧 bug：图上有线、拓扑拆网）。
-    // Skip VCC↔GND crossings — layout stub collisions must not short the rails.
-    let tJuncHit = 0;
-    let tJuncRefuse = 0;
+    // T-junctions: 端点压到另一根线任意位置（中段/折点/端点）即并网 — 位置无关。
+    // 不做「靠近折点就 skip」（旧 bug）。热路径避免无 pin 时的全表 forEach（防 ANR）。
     for (let wi = 0; wi < doc.wires.length; wi++) {
         const wA = doc.wires[wi];
         if (wA.points.length < 2) {
@@ -635,11 +634,16 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
                 if (railsWouldShort(railA, railB)) {
                     continue;
                 }
+                const wB0 = roundKey(wB.points[0]);
+                const wB1 = roundKey(wB.points[wB.points.length - 1]);
+                // 已与目标导线同分量：跳过整根 wB
+                if (uf.find(epKey) === uf.find(wB0) || uf.find(epKey) === uf.find(wB1)) {
+                    continue;
+                }
                 for (let si = 0; si < wB.points.length - 1; si++) {
                     if (!pointOnSegment(ep, wB.points[si], wB.points[si + 1], tJunctionTol)) {
                         continue;
                     }
-                    // 投影到线段（中段或折点均可）
                     const a = wB.points[si];
                     const b = wB.points[si + 1];
                     const abx = b.x - a.x;
@@ -659,83 +663,58 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
                     const footKey = roundKey(foot);
                     findOrCreateJunction(junctions, epKey, ep);
                     const jEp = junctions.get(epKey)!;
-                    const jFoot = findOrCreateJunction(junctions, footKey, foot);
-                    if (sameComponentDistinctPins(jEp, jFoot)) {
-                        continue;
-                    }
-                    const nearTol = Math.max(junctionRadius + 1, Math.min(tJunctionTol, 8) + 1);
-                    const epProbes = pinsNearPoint(pinList, ep.x, ep.y, nearTol);
-                    for (let pri = 0; pri < jEp.pinRefs.length; pri++) {
-                        const pr = jEp.pinRefs[pri];
-                        let dup = false;
-                        for (let qi = 0; qi < epProbes.length; qi++) {
-                            if (epProbes[qi].compId === pr.compId && epProbes[qi].pinId === pr.pinId) {
-                                dup = true;
-                                break;
+                    findOrCreateJunction(junctions, footKey, foot);
+                    // 仅当端点附近可能带脚时做同器件短路检测（无 pin 的纯铜皮 T 接走快路径）
+                    if (jEp.pinRefs.length > 0) {
+                        const nearTol = Math.max(junctionRadius + 1, tJunctionTol + 1);
+                        const epProbes = pinsNearPoint(pinList, ep.x, ep.y, nearTol);
+                        for (let pri = 0; pri < jEp.pinRefs.length; pri++) {
+                            const pr = jEp.pinRefs[pri];
+                            let dup = false;
+                            for (let qi = 0; qi < epProbes.length; qi++) {
+                                if (epProbes[qi].compId === pr.compId && epProbes[qi].pinId === pr.pinId) {
+                                    dup = true;
+                                    break;
+                                }
+                            }
+                            if (!dup) {
+                                epProbes.push(pr);
                             }
                         }
-                        if (!dup) {
-                            epProbes.push(pr);
-                        }
-                    }
-                    const wB0 = roundKey(wB.points[0]);
-                    const wB1 = roundKey(wB.points[wB.points.length - 1]);
-                    const targetProbeKeys = [wB0, wB1, roundKey(a), roundKey(b), footKey];
-                    let siblingOnTarget = false;
-                    for (let tk = 0; tk < targetProbeKeys.length; tk++) {
-                        if (ufRootConflictsWithPins(uf, junctions, targetProbeKeys[tk], epProbes)) {
-                            siblingOnTarget = true;
-                            break;
-                        }
-                        const tj = junctions.get(targetProbeKeys[tk]);
-                        if (tj !== undefined && sameComponentDistinctPins(jEp, tj)) {
-                            siblingOnTarget = true;
+                        if (epProbes.length > 0 &&
+                            (ufRootConflictsWithPins(uf, junctions, wB0, epProbes) ||
+                                ufRootConflictsWithPins(uf, junctions, wB1, epProbes))) {
+                            tJuncRefuse++;
+                            if (tJuncRefuse <= 4) {
+                                Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction REFUSE same-comp short at (${Math.round(ep.x)},${Math.round(ep.y)})`);
+                            }
                             break;
                         }
                     }
-                    if (siblingOnTarget) {
-                        tJuncRefuse++;
-                        if (tJuncRefuse <= 6) {
-                            Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction REFUSE same-comp short at (${Math.round(ep.x)},${Math.round(ep.y)})`);
-                        }
-                        continue;
-                    }
-                    if (wouldCreateSameCompShort(uf, junctions, epKey, wB0) ||
-                        wouldCreateSameCompShort(uf, junctions, epKey, wB1) ||
-                        wouldCreateSameCompShort(uf, junctions, epKey, footKey)) {
-                        tJuncRefuse++;
-                        if (tJuncRefuse <= 6) {
-                            Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction REFUSE UF short at (${Math.round(ep.x)},${Math.round(ep.y)})`);
-                        }
-                        continue;
-                    }
-                    if (uf.find(epKey) === uf.find(wB0) || uf.find(epKey) === uf.find(wB1)) {
-                        continue;
-                    }
+                    // safeUnion 内部已做同器件短路预检，勿再重复全表扫描
                     if (!safeUnion(uf, junctions, epKey, footKey)) {
-                        continue;
+                        tJuncRefuse++;
+                        break;
                     }
-                    // 并入目标导线整段（端点分量），与落点在中段还是折点无关
                     safeUnion(uf, junctions, footKey, wB0);
                     safeUnion(uf, junctions, footKey, wB1);
                     tJuncHit++;
-                    if (tJuncHit <= 8) {
+                    if (tJuncHit <= 6) {
                         Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction HIT ep=(${Math.round(ep.x)},${Math.round(ep.y)}) ` +
                             `foot=(${Math.round(foot.x)},${Math.round(foot.y)}) ` +
                             `d=${Math.hypot(ep.x - foot.x, ep.y - foot.y).toFixed(1)} ` +
-                            `tol=${tJunctionTol.toFixed(1)} wireA=${wA.id} wireB=${wB.id}`);
+                            `wireA=${wA.id} wireB=${wB.id}`);
                     }
-                    break; // 该端点已并入 wB，不必再扫 wB 其余段
+                    break; // 已并入本 wB
                 }
             }
         }
     }
     if (tJuncHit > 0 || tJuncRefuse > 0) {
         Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction summary hit=${tJuncHit} refuse=${tJuncRefuse} ` +
-            `tol=${tJunctionTol.toFixed(1)} junctionR=${junctionRadius}`);
+            `tol=${tJunctionTol.toFixed(1)} wires=${doc.wires.length}`);
     }
     // 导线中段压过同器件邻脚：拒绝并网并打日志（OUT 水平线穿过 GND）
-    // 保持紧容差，勿随 T 接放宽（否则水平线路过邻脚会误并）
     const pathPinTol = Math.min(Math.max(1.5, gridSize * 0.2), 2.5);
     const pathEndMargin = Math.max(junctionRadius + 2, pinThreshold * 0.35);
     for (let wi = 0; wi < doc.wires.length; wi++) {
@@ -1143,6 +1122,11 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     else if (doc.wires.length > 0) {
         Logger.info(INSTR_TRACE_TAG, `[TOPO] wire nets unchanged wires=${doc.wires.length} signalNets=${signalIdx} ` +
             `junctions=${junctions.size} wireNetBag={${netParts.join(', ')}}`);
+    }
+    const topoDt = Date.now() - topoT0;
+    if (topoDt >= 50) {
+        Logger.warn(INSTR_TRACE_TAG, `[TOPO] rebuildWireNetTopology SLOW ${topoDt}ms wires=${doc.wires.length} ` +
+            `junctions=${junctions.size} tHit=${tJuncHit}`);
     }
     return reassignCount;
 }

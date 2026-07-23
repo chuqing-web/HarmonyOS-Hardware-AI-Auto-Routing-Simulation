@@ -54,11 +54,15 @@
 
 ---
 
-## 5. LED — 1 个
+## 5. LED — 指示灯（口语亦称 LED灯）
+
+**选型**：用户说「LED」「LED灯」「指示灯」均为同一类两脚发光二极管；库内 `LED_RED` / `LED_GREEN` / `LED_BLUE`。禁止编造 `LED灯` 等库外 ID；勿与 `OLED_12864` 混淆。未指颜色默认 `LED_RED`。
 
 | libDevId | 名称 | 颜色 | Vf | 引脚 | aiWiringRules | 参数约束 |
 |----------|------|------|-----|------|---------------|----------|
-| LED_RED | 红色 LED | 红 | ~2.0V | A(阳极),K(阴极) | needs-current-limit-resistor | If≤20mA, 串联330Ω@5V |
+| LED_RED | 红色 LED/LED灯 | 红 | ~2.0V | A(阳极),K(阴极) | needs-current-limit-resistor | If≤20mA, 串联330Ω@5V |
+| LED_GREEN | 绿色 LED/LED灯 | 绿 | ~2.0V | A,K | needs-current-limit-resistor | 同上 |
+| LED_BLUE | 蓝色 LED/LED灯 | 蓝 | ~2.8V | A,K | needs-current-limit-resistor | 同上 |
 
 ---
 
@@ -121,11 +125,23 @@
 
 ---
 
-## 11. 运放/模拟IC (AnalogIC) — 1 个
+## 11. 运放/模拟IC (AnalogIC)
+
+**选型·普通单运放 vs 单片双运放**：
+
+| 选型场景 | 选哪个 | 封装含义 | 真脚要点 |
+|----------|--------|----------|----------|
+| 单级放大/跟随/滞回/积分，「普通运放」 | **UA741** | 一片一颗 | `IN+/IN-/OUT/VCC/VEE`；须双电源+VEE |
+| 单电源 5V，或要两路放大/比较 | **LM358** | 一片两路 | `OUT1/IN±1/…/OUT2/V+/V-`；未用半边跟随 |
+| 高阻输入 + 双电源积分/缓冲 | **TL082** | 一片两路 | 同双运放通道脚；`V-→VEE` |
+
+禁止把 UA741 当双运放，也禁止把 LM358/TL082 按 UA741 五脚符号连线。
 
 | libDevId | 名称 | 类型 | 引脚 | aiWiringRules |
 |----------|------|------|------|---------------|
-| LM358 | 双路运放 | dual-opamp | OUT1,IN-1,IN+1,V-,IN+2,IN-2,OUT2,V+ | feedback-must-closed,needs-feedback-resistor |
+| UA741 | 普通单运放 | single-opamp | IN+,IN-,OUT,VCC,VEE | feedback-must-closed,needs-dual-supply |
+| LM358 | 单片双运放 | dual-opamp | OUT1,IN-1,IN+1,V-,IN+2,IN-2,OUT2,V+ | feedback-must-closed,unused-half-follower |
+| TL082 | 单片双运放(JFET) | dual-opamp | 同 LM358 | feedback-must-closed,needs-dual-supply |
 
 ---
 

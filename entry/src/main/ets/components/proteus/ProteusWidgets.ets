@@ -539,6 +539,8 @@ export struct ProteusParamRow {
   @Prop label: ResourceStr = '';
   @Prop value: string = '';
   @Prop editable: boolean = false;
+  /** 标签列宽；0=使用主题默认。长中文标签（如 LED 阈值）可加大避免 … */
+  @Prop labelWidth: number = 0;
   onChange: (v: string) => void = () => {};
 
   build() {
@@ -546,9 +548,9 @@ export struct ProteusParamRow {
       Text(this.label)
         .fontSize(ProteusFonts.PARAM_KEY)
         .fontColor(ProteusColors.TEXT_LABEL)
-        .width(ProteusDimens.PARAM_LABEL_WIDTH)
+        .width(this.labelWidth > 0 ? this.labelWidth : ProteusDimens.PARAM_LABEL_WIDTH)
         .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textOverflow({ overflow: TextOverflow.Clip })
       if (this.editable) {
         TextInput({ text: this.value })
           .layoutWeight(1)

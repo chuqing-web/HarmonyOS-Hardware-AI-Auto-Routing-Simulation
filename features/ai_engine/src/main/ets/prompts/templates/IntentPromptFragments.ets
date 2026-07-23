@@ -72,10 +72,18 @@ export const FRAG_MCU_MIN: string = `
 【MCU 最小系统】必须包含: 晶振、去耦电容(C_100nF)、复位上拉电阻(R_10k)、VCC、GND`;
 
 export const FRAG_LED_SERIES_R: string = `
-【LED 限流】LED 必须配对限流电阻（优先 R_330）；N 颗 LED 配 N 颗电阻`;
+【LED / LED灯 选型与限流】
+- 口语「LED」「LED灯」「指示灯」同一类：库内仅 LED_RED / LED_GREEN / LED_BLUE（两脚 A/K）
+- 禁止把「LED灯」写成库外 libDevId；禁止用 OLED_12864 冒充指示灯
+- 颜色：红→LED_RED，绿→LED_GREEN，蓝→LED_BLUE；未指颜色默认 LED_RED
+- 必须配对限流电阻（优先 R_330）；N 颗 LED 配 N 颗电阻`;
 
 export const FRAG_OPAMP: string = `
-【运放】必须包含反馈电阻（闭环），输入不可浮空；滞回比较器须正反馈分压（OUT→Rf→IN+，IN+→Rg→GND）；Rf/Rg 取约 10:1（如 100k/10k）或激励幅度≥5V，且双电源 VCC/VEE 对称（±12V）；双运放未用半边接电压跟随（IN-↔OUT，IN+→GND 或虚地）`;
+【运放选型·普通单运放 vs 单片双运放】
+- UA741=普通单运放（一片一颗）：真脚 IN+/IN-/OUT/VCC/VEE；单级放大/跟随/滞回/积分优先；须双电源 VCC+VEE（±12V）
+- LM358/TL082=单片双运放（一片两路）：真脚 OUT1/IN±1/…/OUT2/V+/V-；单电源或两路需求选 LM358；高阻双电源积分选 TL082
+- 禁止把 UA741 当双运放，也禁止把 LM358 按 UA741 五脚符号连线
+【运放接法】必须闭环反馈，输入不可浮空；滞回须正反馈（OUT→Rf→IN+，IN+→Rg→GND）；Rf/Rg≈10:1 或激励≥5V；双运放未用半边接跟随（IN-↔OUT，IN+→GND 或虚地）`;
 
 export const FRAG_INTEGRATOR: string = `
 【运放积分器 — 强制配方】方波→三角 / RC 积分观测时:
@@ -147,7 +155,7 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 你的任务：
 1. 分析电路结构，识别功能模块
 2. 为每个网络分配合理名称和类型
-3. 【关键】可建议 mode；系统标号优先，按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议 mode；2～4 脚局部小网优先导线（WAR），仪器/大网标号
 4. 【关键】为可能升级的 joinWired 规划 routeWaypoints：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整 netPlan JSON
 
@@ -156,10 +164,11 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 2. 电压表分布在不同测量节点对；功率表 I 路≠V 路节点对
 3. 仪器关键脚必须入网；GND/COM 最终到 GND（SIM_CONN）
 4. VIRTUAL_METER 真脚 V,A,OHM,COM；LA 真脚 CH1–CH8（禁止 CH0/D0）
-5. 标号优先；仪器脚/COM/大电源扇出保持 joinByLabel；示波器 GND 优先 stubLabel
+5. 局部小网导线优先；仪器脚/COM/大电源扇出保持 joinByLabel；示波器 GND 优先 stubLabel
 6. 【硬】一脚一网；禁止 PROBE_* 重复列出被测脚
 7. 【硬】NPN 基极 B 只接一路驱动
 8. 导线正交；不得进入选中命中区(HIT_PAD=22)；无关脚间距≥20mil
+9. 【硬】wiringHints.forceWire 须含若干可见直连网，禁止整图几乎无导线
 
 【输出】严格 JSON，无 markdown；第一字符 { 最后字符 }。每个 net 至少 2 个 connections；joinWired 须含 routeWaypoints。
 Schema 含 nets/labels/wiringHints/routeStrategy/topologyNotes。`;
@@ -170,7 +179,7 @@ export const FRAG_NET_MCU: string = `
 - 晶振 XTAL→OSC_IN/OSC_OUT + 22pF×2→GND（导线最短路径）`;
 
 export const FRAG_NET_LED: string = `
-【LED 驱动】阳极经限流电阻；阴极→GND 或合法驱动节点；禁止 K 接 VCC；N 灯 N 电阻`;
+【LED/LED灯 驱动】库仅 LED_RED/GREEN/BLUE；阳极经限流电阻；阴极→GND 或合法驱动节点；禁止 K 接 VCC；N 灯 N 电阻`;
 
 export const FRAG_NET_MUTUAL: string = `
 【互斥双色触点拓扑】必须用 RELAY_SPDT，禁止 SW_PUSH 当 SPDT:
@@ -213,7 +222,7 @@ export const FRAG_NET_555_ASTABLE: string = `
 - 【edit·硬】removeNetNames 不得包含仍出现在 nets 中的网名`;
 
 export const FRAG_NET_OPAMP: string = `
-【运放】必须有反馈闭环；输入不浮空；VCC/V+→VCC；双电源时 VEE/V-→VEE（勿接 GND）；双运放未用半边接跟随`;
+【运放】UA741 用 IN+/IN-/OUT/VCC/VEE；LM358/TL082 用通道脚 OUT1/IN±1…；必须闭环；双电源时 VEE/V-→VEE（勿接 GND）；双运放未用半边接跟随`;
 
 export const FRAG_NET_INTEGRATOR: string = `
 【运放积分】SIG.OUT→R→IN-；IN+→GND；C 跨 OUT↔IN-；OUT→OSC.CH2；SIG.OUT→OSC.CH1；电源 VCC/VEE/GND 分网。

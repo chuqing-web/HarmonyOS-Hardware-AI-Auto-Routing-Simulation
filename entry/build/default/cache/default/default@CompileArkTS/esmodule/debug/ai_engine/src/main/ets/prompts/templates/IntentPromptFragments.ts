@@ -124,7 +124,7 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 你的任务：
 1. 分析电路结构，识别功能模块
 2. 为每个网络分配合理名称和类型
-3. 【关键】可建议 mode；系统标号优先，按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议 mode；2～4 脚局部小网优先导线（WAR），仪器/大网标号
 4. 【关键】为可能升级的 joinWired 规划 routeWaypoints：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整 netPlan JSON
 
@@ -133,10 +133,11 @@ export const NET_PLAN_BASE: string = `你是原理图网络拓扑规划专家。
 2. 电压表分布在不同测量节点对；功率表 I 路≠V 路节点对
 3. 仪器关键脚必须入网；GND/COM 最终到 GND（SIM_CONN）
 4. VIRTUAL_METER 真脚 V,A,OHM,COM；LA 真脚 CH1–CH8（禁止 CH0/D0）
-5. 标号优先；仪器脚/COM/大电源扇出保持 joinByLabel；示波器 GND 优先 stubLabel
+5. 局部小网导线优先；仪器脚/COM/大电源扇出保持 joinByLabel；示波器 GND 优先 stubLabel
 6. 【硬】一脚一网；禁止 PROBE_* 重复列出被测脚
 7. 【硬】NPN 基极 B 只接一路驱动
 8. 导线正交；不得进入选中命中区(HIT_PAD=22)；无关脚间距≥20mil
+9. 【硬】wiringHints.forceWire 须含若干可见直连网，禁止整图几乎无导线
 
 【输出】严格 JSON，无 markdown；第一字符 { 最后字符 }。每个 net 至少 2 个 connections；joinWired 须含 routeWaypoints。
 Schema 含 nets/labels/wiringHints/routeStrategy/topologyNotes。`;

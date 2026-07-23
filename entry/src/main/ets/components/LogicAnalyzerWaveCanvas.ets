@@ -49,8 +49,8 @@ export struct LogicAnalyzerWaveCanvas {
     const channels = Math.min(this.channelCount, this.channelData.length);
     if (channels === 0) {
       ctx.fillStyle = '#555';
-      ctx.font = '10px monospace';
-      ctx.fillText('点击采样捕获逻辑波形', 8, h / 2 + 4);
+      ctx.font = '16px monospace';
+      ctx.fillText('点击采样捕获逻辑波形', 8, h / 2 + 6);
       return;
     }
     const laneH = h / channels;
@@ -78,9 +78,9 @@ export struct LogicAnalyzerWaveCanvas {
       }
       ctx.stroke();
       // Label
-      ctx.fillStyle = '#808090';
-      ctx.font = '8px monospace';
-      ctx.fillText(`D${ch}`, 3, ch * laneH + 10);
+      ctx.fillStyle = '#a0a8c0';
+      ctx.font = '14px monospace';
+      ctx.fillText(`D${ch}`, 4, ch * laneH + Math.min(18, laneH * 0.55));
     }
   }
 }

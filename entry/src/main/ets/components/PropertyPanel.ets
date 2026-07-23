@@ -6,11 +6,14 @@ import { AppService } from '../services/AppService';
 import {
   ComponentInstance, UnitParser, paramMapGet, emptyStringMap, ApiResult,
   CouplingMode, MathChannelOp, LogicDecodeProtocol, MultimeterMode, McuFamily,
-  VoltmeterType, traceUiRefresh, traceUiSelect, traceBurn, formatFirmwarePreview
+  VoltmeterType, traceUiRefresh, traceUiSelect, traceBurn, formatFirmwarePreview,
+  SimulationState, getPinNetMap, findNetForPinLabel
 } from 'common';
 import {
   ComponentParamsUpdate, ComponentParamEntry
 } from 'schematic_editor';
+import { ComponentDefinition } from 'component_library';
+import { SimulationKernelImpl } from 'simulation_kernel';
 import { ProteusParamRow, ProteusClassicBtn, ProteusSectionTitle, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
@@ -19,6 +22,18 @@ import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
 import fs from '@ohos.file.fs';
 import { picker } from '@kit.CoreFileKit';
 import util from '@ohos.util';
+
+/** LED 显示阈值默认值（与器件 defaultParams 一致；属性板可改） */
+const LED_DEF_LIT_VF = 1.2;
+const LED_DEF_LIT_VK_MAX = 0.9;
+const LED_DEF_LIT_I_MA = 0.5;
+const LED_DEF_LIT_VF_ALT = 1.0;
+const LED_DEF_DIM_VF = 0.25;
+const LED_DEF_OPEN_VK = 2.5;
+
+const LED_THRESH_KEYS: string[] = [
+  'litVf', 'litVkMax', 'litImA', 'litVfAlt', 'dimVf', 'openVk'
+];
 
 @Component
 export struct PropertyPanel {
@@ -72,6 +87,12 @@ export struct PropertyPanel {
   @State logicChannelData: number[][] = [];
   @State logicSampleCount: number = 128;
   @State logicChannelCount: number = 8;
+  // LED live + thresholds
+  @State ledStatus: string = '—';
+  @State ledVa: string = '—';
+  @State ledVk: string = '—';
+  @State ledVf: string = '—';
+  @State ledI: string = '—';
 
   private appService: AppService = AppService.getInstance();
   private refreshTimer: number = -1;
@@ -125,6 +146,11 @@ export struct PropertyPanel {
     this.hexPath = '';
     this.hexRegisters = '';
     this.hexState = 'stopped';
+    this.ledStatus = '—';
+    this.ledVa = '—';
+    this.ledVk = '—';
+    this.ledVf = '—';
+    this.ledI = '—';
   }
 
   onSimWaveTick(): void {
@@ -294,7 +320,150 @@ export struct PropertyPanel {
     } catch (_e) {
       // Best-effort refresh
     }
+    this.refreshLedStatus();
     this.logInstrumentReading(false);
+  }
+
+  private isLedThreshKey(key: string): boolean {
+    for (let i = 0; i < LED_THRESH_KEYS.length; i++) {
+      if (LED_THRESH_KEYS[i] === key) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 阈值项在 LED 专区编辑，避免与通用参数列表重复 */
+  private visibleParamEntries(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < this.paramEntries.length; i++) {
+      const key = this.paramEntries[i];
+      if (!this.isLedThreshKey(key)) {
+        out.push(key);
+      }
+    }
+    return out;
+  }
+
+  private parseLedNumber(raw: string, fallback: number): number {
+    if (raw.length === 0) {
+      return fallback;
+    }
+    const cleaned = raw.trim().replace(/[VvMmAa]/g, '').replace(/Ω/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  private getLedThresh(key: string, fallback: number): number {
+    return this.parseLedNumber(this.paramDisplayValue(key), fallback);
+  }
+
+  private isLed(): boolean {
+    if (this.comp === null) {
+      return false;
+    }
+    return this.comp.libraryId.toUpperCase().includes('LED');
+  }
+
+  private findLedAnodeNet(def: ComponentDefinition, pinNets: Map<string, string>): string | null {
+    for (let i = 0; i < def.pins.length; i++) {
+      const pin = def.pins[i];
+      const name = pin.name.toUpperCase();
+      if (name === 'A' || name === 'ANODE' || name === '1') {
+        const net = findNetForPinLabel(pinNets, pin.name) ?? findNetForPinLabel(pinNets, pin.id);
+        if (net !== null) {
+          return net;
+        }
+      }
+    }
+    if (def.pins.length > 0) {
+      return findNetForPinLabel(pinNets, def.pins[0].name) ?? findNetForPinLabel(pinNets, def.pins[0].id);
+    }
+    return null;
+  }
+
+  private findLedCathodeNet(def: ComponentDefinition, pinNets: Map<string, string>): string | null {
+    for (let i = 0; i < def.pins.length; i++) {
+      const pin = def.pins[i];
+      const name = pin.name.toUpperCase();
+      if (name === 'K' || name === 'C' || name === 'CATHODE' || name === '2') {
+        const net = findNetForPinLabel(pinNets, pin.name) ?? findNetForPinLabel(pinNets, pin.id);
+        if (net !== null) {
+          return net;
+        }
+      }
+    }
+    if (def.pins.length > 1) {
+      return findNetForPinLabel(pinNets, def.pins[1].name) ?? findNetForPinLabel(pinNets, def.pins[1].id);
+    }
+    return null;
+  }
+
+  private refreshLedStatus(): void {
+    if (this.comp === null || !this.isLed()) {
+      return;
+    }
+    const defRes = this.appService.componentLibrary.getComponent(this.comp.libraryId);
+    if (!defRes.success || defRes.data === undefined) {
+      this.ledStatus = '—';
+      this.ledVa = '—';
+      this.ledVk = '—';
+      this.ledVf = '—';
+      this.ledI = '—';
+      return;
+    }
+    const def = defRes.data;
+    const doc = this.appService.schematicEditor.getDocument();
+    const pinNets = getPinNetMap(this.comp.id, doc.nets);
+    const anodeNet = this.findLedAnodeNet(def, pinNets);
+    const cathodeNet = this.findLedCathodeNet(def, pinNets);
+    if (anodeNet === null || cathodeNet === null || anodeNet === cathodeNet) {
+      this.ledStatus = '未接线';
+      this.ledVa = '—';
+      this.ledVk = '—';
+      this.ledVf = '—';
+      this.ledI = '—';
+      return;
+    }
+    const simState = this.appService.simulationKernel.getState();
+    const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
+    if (!simActive) {
+      this.ledStatus = '仿真未运行';
+      this.ledVa = '—';
+      this.ledVk = '—';
+      this.ledVf = '—';
+      this.ledI = '—';
+      return;
+    }
+    const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+    const vA = kernel.getNetVoltageByUuid(anodeNet);
+    const vK = kernel.getNetVoltageByUuid(cathodeNet);
+    const vf = vA - vK;
+    const current = Math.abs(kernel.getBranchCurrent(this.comp.id));
+    this.ledVa = `${vA.toFixed(3)} V`;
+    this.ledVk = `${vK.toFixed(3)} V`;
+    this.ledVf = `${vf.toFixed(3)} V`;
+    if (current >= 1e-3) {
+      this.ledI = `${(current * 1000).toFixed(3)} mA`;
+    } else {
+      this.ledI = `${(current * 1e6).toFixed(2)} uA`;
+    }
+    let status = '熄灭';
+    const litVf = this.getLedThresh('litVf', LED_DEF_LIT_VF);
+    const litVkMax = this.getLedThresh('litVkMax', LED_DEF_LIT_VK_MAX);
+    const litI = this.getLedThresh('litImA', LED_DEF_LIT_I_MA) * 1e-3;
+    const litVfAlt = this.getLedThresh('litVfAlt', LED_DEF_LIT_VF_ALT);
+    const dimVf = this.getLedThresh('dimVf', LED_DEF_DIM_VF);
+    const openVk = this.getLedThresh('openVk', LED_DEF_OPEN_VK);
+    if (vK >= openVk) {
+      status = '熄灭';
+    } else if ((vK <= litVkMax && vf >= litVf) ||
+      (current >= litI && vf >= litVfAlt)) {
+      status = '点亮';
+    } else if (vf >= dimVf || (current >= 1e-5 && vf >= 0.15)) {
+      status = '昏暗';
+    }
+    this.ledStatus = status;
   }
 
   private logInstrumentReading(onSelect: boolean): void {
@@ -414,6 +583,9 @@ export struct PropertyPanel {
       return key === 'waveform' || key === 'frequency' || key === 'amplitude' ||
         key === 'offset' || key === 'dutyCycle' || key === 'duty';
     }
+    if (lib.includes('LED')) {
+      return key === 'color' || key === 'forwardVoltage' || this.isLedThreshKey(key);
+    }
     return false;
   }
 
@@ -501,7 +673,7 @@ export struct PropertyPanel {
           // ---- Custom parameters ----
           if (this.paramEntries.length > 0) {
             Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 4, bottom: 4 })
-            ForEach(this.paramEntries, (key: string) => {
+            ForEach(this.visibleParamEntries(), (key: string) => {
               ProteusParamRow({
                 label: key,
                 value: this.paramDisplayValue(key),
@@ -537,6 +709,12 @@ export struct PropertyPanel {
             } else if (this.instrType() === 'uart') {
               this.UartTerminalSection()
             }
+          }
+
+          // ---- LED live + thresholds ----
+          if (this.isLed()) {
+            Divider().color(ProteusColors.DIVIDER).height(1).width('100%').margin({ top: 6, bottom: 4 })
+            this.LedSection()
           }
 
           // ---- MCU HEX burn (conditional) ----
@@ -670,6 +848,80 @@ export struct PropertyPanel {
     }
     .width('100%')
     .padding({ top: 4, bottom: 6, left: 2, right: 2 })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  LedSection() {
+    Column({ space: 4 }) {
+      Text('LED 状态')
+        .fontSize(ProteusFonts.TITLE)
+        .fontColor(ProteusColors.TEXT_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .width('100%')
+      ProteusParamRow({ label: '显示', value: this.ledStatus, editable: false, labelWidth: 100 })
+      ProteusParamRow({ label: 'Va', value: this.ledVa, editable: false, labelWidth: 100 })
+      ProteusParamRow({ label: 'Vk', value: this.ledVk, editable: false, labelWidth: 100 })
+      ProteusParamRow({ label: 'Vf', value: this.ledVf, editable: false, labelWidth: 100 })
+      ProteusParamRow({ label: 'I', value: this.ledI, editable: false, labelWidth: 100 })
+      Text('显示阈值（可改）')
+        .fontSize(ProteusFonts.PARAM_KEY)
+        .fontColor(ProteusColors.TEXT_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .width('100%')
+        .margin({ top: 4 })
+      ProteusParamRow({
+        label: '点亮Vf',
+        value: this.paramDisplayValue('litVf'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('litVf', v); }
+      })
+      ProteusParamRow({
+        label: '点亮Vk上限',
+        value: this.paramDisplayValue('litVkMax'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('litVkMax', v); }
+      })
+      ProteusParamRow({
+        label: '点亮电流mA',
+        value: this.paramDisplayValue('litImA'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('litImA', v); }
+      })
+      ProteusParamRow({
+        label: '点亮Vf(电流)',
+        value: this.paramDisplayValue('litVfAlt'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('litVfAlt', v); }
+      })
+      ProteusParamRow({
+        label: '昏暗Vf',
+        value: this.paramDisplayValue('dimVf'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('dimVf', v); }
+      })
+      ProteusParamRow({
+        label: '开路Vk',
+        value: this.paramDisplayValue('openVk'),
+        editable: true,
+        labelWidth: 100,
+        onChange: (v: string) => { this.saveParam('openVk', v); }
+      })
+      Text('点亮：Vk≤点亮Vk上限 且 Vf≥点亮Vf，或 I≥点亮电流 且 Vf≥点亮Vf(电流)')
+        .fontSize(10)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .width('100%')
+      Text('昏暗：正向 Vf≥昏暗Vf 但未达点亮；熄灭：反偏 / Vf过低 / Vk≥开路Vk')
+        .fontSize(10)
+        .fontColor(ProteusColors.TEXT_SECONDARY)
+        .width('100%')
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
   }
 

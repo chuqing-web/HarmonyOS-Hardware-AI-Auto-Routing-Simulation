@@ -87,7 +87,8 @@ interface LabelPinEntry {
 }
 
 /** 小网才允许标号→导线升级（防满图 A* / wire_cross） */
-const MAX_WIRE_PROMOTE_PINS: number = 3;
+/** 可升级为 joinWired 的最大网脚数（略放宽以增加可见导线） */
+const MAX_WIRE_PROMOTE_PINS: number = 4;
 
 /** sanitizePinToken 返回值（ArkTS 禁止内联对象字面量作类型） */
 export interface SanitizedPinToken {
@@ -1757,7 +1758,8 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 标号优先策略：全标号 → hints → 仅≤3脚小网按脚预算升级 → 大网/电源强制回标号 → fanout 兜底。
+   * 局部小网导线优先：全标号 -> hints -> 最多4脚按脚预算升级 -> 大网/电源回标号 ->
+   * fanout 兜底 -> 同网均质 -> 自动写入 forceWire（供 A-star/WAR 保导线、少 demote）。
    * Orchestrator 可在 compact 拉近前预调用；execute 内再调一次幂等。
    */
   static prepareModes(plan: NetPlanResult): void {
@@ -1768,12 +1770,13 @@ export class NetPlanExecutor {
     NetPlanExecutor.capJoinWiredFanout(plan);
     // 同网禁止混合 mode：否则 stub 岛与导线岛在 rebuild 后分裂（如 HYST_NODE 断网）
     NetPlanExecutor.homogenizeNetConnectionModes(plan);
+    NetPlanExecutor.boostForceWireFromWiredNets(plan);
   }
 
   /**
    * 同一网络内 joinWired / joinByLabel 必须全有或全无。
-   * 2～3 脚小信号网：多数为 joinWired → 整网升为 joinWired（稳定 pin-to-pin）。
-   * 其余（电源/大网/标号占优）→ 整网压回 joinByLabel。
+   * 2～4 脚无仪器脚的小信号网：有导线倾向则整网 joinWired（pin-to-pin / WAR）。
+   * 含仪器脚或电源/大网 → 整网压回 joinByLabel。
    */
   private static homogenizeNetConnectionModes(plan: NetPlanResult): void {
     let netsToLabel = 0;
@@ -1787,11 +1790,15 @@ export class NetPlanExecutor {
       }
       let labelN = 0;
       let wireN = 0;
+      let hasInstr = false;
       for (let ci = 0; ci < conns.length; ci++) {
         if (conns[ci].mode === 'joinByLabel') {
           labelN++;
         } else if (conns[ci].mode === 'joinWired') {
           wireN++;
+        }
+        if (NetPlanExecutor.isInstrumentPin(conns[ci].pinName, conns[ci].pinId)) {
+          hasInstr = true;
         }
       }
       if (labelN === 0 || wireN === 0) {
@@ -1799,7 +1806,9 @@ export class NetPlanExecutor {
       }
       const nameUp = (net.name ?? '').toUpperCase();
       const isPower = NetPlanExecutor.isPowerRailName(nameUp);
-      const preferWire = !isPower && conns.length <= 3 && wireN >= labelN;
+      // 无仪器的小网：有任一导线倾向即整网导线；含仪器脚一律标号（探针并网）
+      const preferWire = !hasInstr && !isPower &&
+        conns.length <= MAX_WIRE_PROMOTE_PINS && wireN >= 1;
       const target: 'joinWired' | 'joinByLabel' = preferWire ? 'joinWired' : 'joinByLabel';
       for (let ci = 0; ci < conns.length; ci++) {
         if (conns[ci].mode !== target) {
@@ -1816,6 +1825,76 @@ export class NetPlanExecutor {
     if (netsToLabel > 0 || netsToWire > 0) {
       Logger.info(INSTR_TRACE_TAG,
         `[AI_PIPE] homogenize mixed→wire=${netsToWire} →label=${netsToLabel} conns=${connsFixed}`);
+    }
+  }
+
+  /**
+   * 将已升级为全 joinWired 的 2～4 脚小信号网写入 forceWire，
+   * 并从 forceLabel 剔除，避免后续 A* 失败整网 demote 成标号。
+   */
+  private static boostForceWireFromWiredNets(plan: NetPlanResult): void {
+    if (!plan.wiringHints) {
+      const empty: NetPlanWiringHints = {
+        priorityOrder: [],
+        forceWire: [],
+        forceLabel: []
+      };
+      plan.wiringHints = empty;
+    }
+    const hints = plan.wiringHints;
+    const forceWire = (hints.forceWire ?? []).slice();
+    const forceLabel = (hints.forceLabel ?? []).slice();
+    const wireUp = new Set<string>();
+    for (let i = 0; i < forceWire.length; i++) {
+      wireUp.add(`${forceWire[i]}`.toUpperCase());
+    }
+    let added = 0;
+    let removedLabel = 0;
+    for (let ni = 0; ni < plan.nets.length; ni++) {
+      const net = plan.nets[ni];
+      const name = net.name ?? '';
+      if (name.length === 0) {
+        continue;
+      }
+      const nameUp = name.toUpperCase();
+      const conns = net.connections ?? [];
+      if (conns.length < 2 || conns.length > MAX_WIRE_PROMOTE_PINS) {
+        continue;
+      }
+      if (NetPlanExecutor.isPowerRailName(nameUp) && conns.length > 2) {
+        continue;
+      }
+      let allWired = true;
+      let hasInstr = false;
+      for (let ci = 0; ci < conns.length; ci++) {
+        if (conns[ci].mode !== 'joinWired') {
+          allWired = false;
+        }
+        if (NetPlanExecutor.isInstrumentPin(conns[ci].pinName, conns[ci].pinId)) {
+          hasInstr = true;
+        }
+      }
+      if (!allWired || hasInstr) {
+        continue;
+      }
+      if (!wireUp.has(nameUp)) {
+        forceWire.push(name);
+        wireUp.add(nameUp);
+        added++;
+      }
+      for (let li = forceLabel.length - 1; li >= 0; li--) {
+        if (`${forceLabel[li]}`.toUpperCase() === nameUp) {
+          forceLabel.splice(li, 1);
+          removedLabel++;
+        }
+      }
+    }
+    hints.forceWire = forceWire;
+    hints.forceLabel = forceLabel;
+    if (added > 0 || removedLabel > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] boost forceWire+=${added} dropForceLabel=${removedLabel}` +
+        ` forceWire=[${forceWire.slice(0, 16).join(',')}]`);
     }
   }
 
@@ -1878,7 +1957,7 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 仅当：网脚数 2～3、非大电源扇出、非仪器脚、该脚 joinWired 累计仍 <2
+   * 仅当：网脚数 2～4、非大电源扇出、非仪器脚、该脚 joinWired 累计仍 <2
    * 才从标号升级为导线。大网一律保持标号。
    */
   private static promoteJoinWiredByPinBudget(plan: NetPlanResult): void {
@@ -1955,12 +2034,12 @@ export class NetPlanExecutor {
       }
     }
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_PIPE] label_first promote wired+=${promoted} keptLabel=${keptLabel}` +
+      `[AI_PIPE] wire_boost promote wired+=${promoted} keptLabel=${keptLabel}` +
       ` skipLarge=${skipLarge} skipPower=${skipPower}`);
   }
 
   /**
-   * 安全网：>3 脚网、或电源别名且>2 脚上的 joinWired → 全部压回标号；
+   * 安全网：>4 脚网、或电源别名且>2 脚上的 joinWired → 全部压回标号；
    * 仪器测量脚强制标号。线圈短网（名含 COIL）保留导线。
    */
   private static demoteOversizedOrPowerWired(plan: NetPlanResult): void {
@@ -2129,11 +2208,12 @@ export class NetPlanExecutor {
   }
 
   private static approxHitRectForDev(dev: DeviceInst, pinPosHint?: Point2D): WorldHitRect {
-    const lib = NetPlanExecutor.library;
-    if (lib) {
-      const r = lib.getComponent(dev.libDevId);
-      if (r.success && r.data && r.data.pins && r.data.pins.length > 0) {
-        return DeviceHitGeometry.hitRectFromDeviceInst(dev, r.data.pins, SELECTION_HIT_PAD);
+    const libSafe = NetPlanExecutor.library;
+    if (libSafe !== null) {
+      const r = libSafe.getComponent(dev.libDevId);
+      const data = r.data;
+      if (r.success && data !== undefined && data.pins !== undefined && data.pins.length > 0) {
+        return DeviceHitGeometry.hitRectFromDeviceInst(dev, data.pins, SELECTION_HIT_PAD);
       }
     }
     const hx = pinPosHint !== undefined
@@ -2144,7 +2224,7 @@ export class NetPlanExecutor {
       : 30;
     const halfW = hx + SELECTION_HIT_PAD;
     const halfH = hy + SELECTION_HIT_PAD;
-    return {
+    const fallback: WorldHitRect = {
       x: dev.x - halfW,
       y: dev.y - halfH,
       w: halfW * 2,
@@ -2153,6 +2233,7 @@ export class NetPlanExecutor {
       instUuid: dev.instUuid,
       libDevId: dev.libDevId
     };
+    return fallback;
   }
 
   private static buildApproxHitRects(topo: SchTopology): WorldHitRect[] {
@@ -2165,15 +2246,16 @@ export class NetPlanExecutor {
 
   private static collectForeignPinWorlds(topo: SchTopology, excludePin: Point2D): Point2D[] {
     const out: Point2D[] = [];
-    const lib = NetPlanExecutor.library;
+    const libSafe = NetPlanExecutor.library;
     for (let di = 0; di < topo.deviceList.length; di++) {
       const d = topo.deviceList[di];
       let ids: string[] = [];
-      if (lib) {
-        const r = lib.getComponent(d.libDevId);
-        if (r.success && r.data && r.data.pins) {
-          for (let pi = 0; pi < r.data.pins.length; pi++) {
-            const p = r.data.pins[pi];
+      if (libSafe !== null) {
+        const r = libSafe.getComponent(d.libDevId);
+        const data = r.data;
+        if (r.success && data !== undefined && data.pins !== undefined) {
+          for (let pi = 0; pi < data.pins.length; pi++) {
+            const p = data.pins[pi];
             ids.push(p.id);
             if (p.name && p.name.length > 0 && p.name !== p.id) {
               ids.push(p.name);

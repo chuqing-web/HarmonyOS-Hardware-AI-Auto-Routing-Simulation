@@ -49,6 +49,71 @@ export class DeviceHitGeometry {
     };
   }
 
+  /**
+   * pad 外扩后，把「原本贴齐引脚」的边收回，使引脚埋入深度 ≤ maxBuried。
+   * 解决 HIT_PAD/障碍 pad 均匀外扩把脚深埋 → 点选选错器件、WAR 无法沿走廊逃逸。
+   */
+  static exposePinsInLocalBounds(
+    padded: SymbolBounds,
+    original: SymbolBounds,
+    pinLocals: Point2D[],
+    maxBuried: number
+  ): SymbolBounds {
+    if (pinLocals.length === 0) {
+      return padded;
+    }
+    const bury = Math.max(0, maxBuried);
+    const edgeTol = 14;
+    let minX = padded.minX;
+    let maxX = padded.maxX;
+    let minY = padded.minY;
+    let maxY = padded.maxY;
+    for (let i = 0; i < pinLocals.length; i++) {
+      const p = pinLocals[i];
+      if (p.x <= original.minX + edgeTol) {
+        minX = Math.max(minX, p.x - bury);
+      }
+      if (p.x >= original.maxX - edgeTol) {
+        maxX = Math.min(maxX, p.x + bury);
+      }
+      if (p.y <= original.minY + edgeTol) {
+        minY = Math.max(minY, p.y - bury);
+      }
+      if (p.y >= original.maxY - edgeTol) {
+        maxY = Math.min(maxY, p.y + bury);
+      }
+    }
+    if (maxX - minX < 8) {
+      const cx = (padded.minX + padded.maxX) / 2;
+      minX = cx - 4;
+      maxX = cx + 4;
+    }
+    if (maxY - minY < 8) {
+      const cy = (padded.minY + padded.maxY) / 2;
+      minY = cy - 4;
+      maxY = cy + 4;
+    }
+    return {
+      minX: minX,
+      maxX: maxX,
+      minY: minY,
+      maxY: maxY,
+      width: maxX - minX,
+      height: maxY - minY
+    };
+  }
+
+  /** pad 外扩 + 引脚露边（选中区 / 布线障碍共用） */
+  static expandLocalExposingPins(
+    bounds: SymbolBounds,
+    pinLocals: Point2D[],
+    pad: number,
+    maxBuried: number
+  ): SymbolBounds {
+    const padded = DeviceHitGeometry.expandLocal(bounds, pad);
+    return DeviceHitGeometry.exposePinsInLocalBounds(padded, bounds, pinLocals, maxBuried);
+  }
+
   static transformLocal(local: Point2D, rotate: number, mirrorH: boolean): Point2D {
     let lx = local.x;
     let ly = local.y;
@@ -113,7 +178,14 @@ export class DeviceHitGeometry {
     pad: number = SELECTION_HIT_PAD,
     refName: string = '', instUuid: string = '', libDevId: string = ''
   ): WorldHitRect {
-    const local = DeviceHitGeometry.expandLocal(calcSymbolBounds(pins, 8), pad);
+    const raw = calcSymbolBounds(pins, 8);
+    const pinLocals: Point2D[] = [];
+    for (let i = 0; i < pins.length; i++) {
+      pinLocals.push({ x: pins[i].position.x, y: pins[i].position.y });
+    }
+    // 选中区允许脚略埋（方便点主体），但勿被 pad 深埋
+    const maxBuried = pad >= SELECTION_HIT_PAD ? 8 : 2;
+    const local = DeviceHitGeometry.expandLocalExposingPins(raw, pinLocals, pad, maxBuried);
     return DeviceHitGeometry.localToWorldAabb(
       ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
   }
@@ -144,14 +216,16 @@ export class DeviceHitGeometry {
     }
     // 与 calcSymbolBounds 一致：单侧引脚须覆盖原点符号主体
     const covered = coverOriginCenteredBody(minX, maxX, minY, maxY);
-    const local: SymbolBounds = {
-      minX: covered.minX - 8 - pad,
-      maxX: covered.maxX + 8 + pad,
-      minY: covered.minY - 8 - pad,
-      maxY: covered.maxY + 8 + pad,
-      width: covered.width + 16 + pad * 2,
-      height: covered.height + 16 + pad * 2
+    const raw: SymbolBounds = {
+      minX: covered.minX - 8,
+      maxX: covered.maxX + 8,
+      minY: covered.minY - 8,
+      maxY: covered.maxY + 8,
+      width: covered.width + 16,
+      height: covered.height + 16
     };
+    const maxBuried = pad >= SELECTION_HIT_PAD ? 8 : 2;
+    const local = DeviceHitGeometry.expandLocalExposingPins(raw, locals, pad, maxBuried);
     return DeviceHitGeometry.localToWorldAabb(
       ox, oy, rotate, mirrorH, local, refName, instUuid, libDevId);
   }

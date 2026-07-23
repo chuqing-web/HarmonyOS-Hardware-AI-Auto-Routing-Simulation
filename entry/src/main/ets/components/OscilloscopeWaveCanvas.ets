@@ -213,17 +213,17 @@ export struct OscilloscopeWaveCanvas {
     ctx.setLineDash([]);
 
     ctx.fillStyle = this.waveColor;
-    ctx.font = '11px monospace';
-    ctx.fillText(this.channelLabel, 8, 16);
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(this.channelLabel, 8, 22);
 
     ctx.fillStyle = '#6b7a99';
-    ctx.font = '12px monospace';
-    ctx.fillText('NO SIGNAL', w / 2 - 36, h / 2 - 6);
-    ctx.font = '10px monospace';
+    ctx.font = '18px monospace';
+    ctx.fillText('NO SIGNAL', w / 2 - 52, h / 2 - 8);
+    ctx.font = '14px monospace';
     if (this.channelLabel.indexOf('CH') === 0) {
-      ctx.fillText('放置并连接示波器后运行仿真', Math.max(8, w / 2 - 100), h / 2 + 14);
+      ctx.fillText('放置并连接示波器后运行仿真', Math.max(8, w / 2 - 140), h / 2 + 18);
     } else {
-      ctx.fillText('运行仿真后自动刷新', Math.max(8, w / 2 - 70), h / 2 + 14);
+      ctx.fillText('运行仿真后自动刷新', Math.max(8, w / 2 - 90), h / 2 + 18);
     }
   }
 
@@ -310,8 +310,8 @@ export struct OscilloscopeWaveCanvas {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#6b7a99';
-    ctx.font = '9px monospace';
-    ctx.fillText('0V', 4, y - 3);
+    ctx.font = '13px monospace';
+    ctx.fillText('0V', 4, y - 4);
   }
 
   private drawTrigger(ctx: CanvasRenderingContext2D, w: number, h: number,
@@ -329,8 +329,8 @@ export struct OscilloscopeWaveCanvas {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#ff9100';
-    ctx.font = '9px monospace';
-    ctx.fillText(`T ${this.formatVoltage(this.triggerLevel)}`, w - 56, y - 3);
+    ctx.font = '13px monospace';
+    ctx.fillText(`T ${this.formatVoltage(this.triggerLevel)}`, Math.max(8, w - 88), y - 4);
   }
 
   /**
@@ -416,18 +416,18 @@ export struct OscilloscopeWaveCanvas {
     i0: number, i1: number, vMin: number, vMax: number, tMin: number, tMax: number): void {
     const stats = this.computeStats(n, i0, i1);
     ctx.fillStyle = this.waveColor;
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(this.channelLabel, 8, 15);
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(this.channelLabel, 8, 20);
 
     ctx.fillStyle = '#8fa0bf';
-    ctx.font = '9px monospace';
-    ctx.fillText(`${this.formatVoltage(vMax)}`, w - 54, 12);
-    ctx.fillText(`${this.formatVoltage(vMin)}`, w - 54, h - 6);
+    ctx.font = '13px monospace';
+    ctx.fillText(`${this.formatVoltage(vMax)}`, Math.max(8, w - 72), 16);
+    ctx.fillText(`${this.formatVoltage(vMin)}`, Math.max(8, w - 72), h - 8);
     // 横轴：当前滚动窗宽（相对时间）
     const span = Math.max(tMax - tMin, 0);
-    ctx.fillText('0', 8, h - 6);
-    ctx.fillText(this.formatTime(span), w / 2 - 20, h - 6);
-    ctx.fillText(`${this.formatTime(this.tPerDiv)}/div`, w - 62, h - 6);
+    ctx.fillText('0', 8, h - 8);
+    ctx.fillText(this.formatTime(span), w / 2 - 28, h - 8);
+    ctx.fillText(`${this.formatTime(this.tPerDiv)}/div`, Math.max(8, w - 88), h - 8);
 
     if (!this.showStats) {
       return;
@@ -443,12 +443,12 @@ export struct OscilloscopeWaveCanvas {
       `f ${this.formatFreq(stats.freq)}  ` +
       `now ${this.formatVoltage(nowV)}  ${follow} ×${this.viewZoom.toFixed(1)}`;
     ctx.fillStyle = '#c8d4ea';
-    ctx.font = '10px monospace';
-    ctx.fillText(line, 8, 30);
+    ctx.font = 'bold 15px monospace';
+    ctx.fillText(line, 8, 42);
 
     ctx.fillStyle = '#6b7a99';
-    ctx.font = '9px monospace';
-    ctx.fillText(`${this.formatVoltage(this.vPerDiv)}/div`, w - 58, 28);
+    ctx.font = '13px monospace';
+    ctx.fillText(`${this.formatVoltage(this.vPerDiv)}/div`, Math.max(8, w - 80), 40);
   }
 
   private computeStats(n: number, i0: number, i1: number): WaveStats {

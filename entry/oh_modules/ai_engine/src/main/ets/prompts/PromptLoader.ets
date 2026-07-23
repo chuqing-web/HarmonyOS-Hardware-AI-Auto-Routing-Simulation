@@ -857,7 +857,7 @@ export class PromptLoader {
     if (totalWireEstimate > 10) {
       lines.push(`  预估导线数>${totalWireEstimate} → 建议对跨区域信号优先使用 joinByLabel 标号管理`);
     }
-    lines.push('  标号决策原则: 默认标号优先；仅本地≤3脚且预算允许时可升级导线；密集区必须标号。');
+    lines.push('  标号决策原则: 2～4脚局部小网优先导线(WAR)；仪器/大电源扇出/跨区用标号；密集区必须标号。');
 
     lines.push('');
     lines.push('=== 引脚密度分析（预测连线拥挤区域，帮助决定标号使用） ===');

@@ -1074,7 +1074,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
             if (vA > -900 && vK > -900) {
                 const vf = vA - vK;
                 const iLed = Math.abs(this.getBranchCurrent(comp.id));
-                // Match SchematicCanvas.isLedConducting (voltage + ballast-drop fallback)
+                // Match SchematicCanvas lit/dim/off (voltage + ballast-drop fallback)
                 let tag = 'off';
                 if (vK >= 2.5) {
                     tag = 'off';
@@ -1085,6 +1085,13 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 }
                 else if (iLed >= 5e-4 && vf >= 1.0) {
                     tag = 'lit';
+                }
+                else if (vf >= 0.25) {
+                    // 正向偏置但未达亮灯阈值 → UI 昏暗原色
+                    tag = 'dim';
+                }
+                else if (iLed >= 1e-5 && vf >= 0.15) {
+                    tag = 'dim';
                 }
                 else {
                     tag = 'off';

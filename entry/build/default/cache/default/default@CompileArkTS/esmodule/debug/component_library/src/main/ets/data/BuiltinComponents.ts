@@ -319,6 +319,14 @@ function diode(id: string, desc: string): ComponentDefinition {
     return def;
 }
 function led(id: string, name: string, color: string): ComponentDefinition {
+    const defaults = params2('color', color, 'forwardVoltage', '2.0V');
+    // 画布显示阈值（可在右侧属性板修改）
+    defaults.set('litVf', '1.2');
+    defaults.set('litVkMax', '0.9');
+    defaults.set('litImA', '0.5');
+    defaults.set('litVfAlt', '1.0');
+    defaults.set('dimVf', '0.25');
+    defaults.set('openVk', '2.5');
     const def: ComponentDefinition = {
         id: id,
         name: name,
@@ -329,7 +337,7 @@ function led(id: string, name: string, color: string): ComponentDefinition {
             makePin('A', 'A', '1', PinType.PASSIVE, -30, 0),
             makePin('K', 'K', '2', PinType.PASSIVE, 30, 0)
         ],
-        defaultParams: params2('color', color, 'forwardVoltage', '2.0V'),
+        defaultParams: defaults,
         spiceModel: 'D{name} {A} {K} LED',
         behaviorModel: 'led',
         svgSymbol: 'led.svg',

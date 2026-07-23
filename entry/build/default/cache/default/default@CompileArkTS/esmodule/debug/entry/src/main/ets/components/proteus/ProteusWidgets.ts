@@ -131,6 +131,7 @@ interface ProteusParamRow_Params {
     label?: ResourceStr;
     value?: string;
     editable?: boolean;
+    labelWidth?: number;
     onChange?: (v: string) => void;
 }
 interface ProteusTreeRow_Params {
@@ -1705,6 +1706,7 @@ export class ProteusParamRow extends ViewPU {
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.__value = new SynchedPropertySimpleOneWayPU(params.value, this, "value");
         this.__editable = new SynchedPropertySimpleOneWayPU(params.editable, this, "editable");
+        this.__labelWidth = new SynchedPropertySimpleOneWayPU(params.labelWidth, this, "labelWidth");
         this.onChange = () => { };
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
@@ -1719,6 +1721,9 @@ export class ProteusParamRow extends ViewPU {
         if (params.editable === undefined) {
             this.__editable.set(false);
         }
+        if (params.labelWidth === undefined) {
+            this.__labelWidth.set(0);
+        }
         if (params.onChange !== undefined) {
             this.onChange = params.onChange;
         }
@@ -1727,18 +1732,21 @@ export class ProteusParamRow extends ViewPU {
         this.__label.reset(params.label);
         this.__value.reset(params.value);
         this.__editable.reset(params.editable);
+        this.__labelWidth.reset(params.labelWidth);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
         this.__value.purgeDependencyOnElmtId(rmElmtId);
         this.__editable.purgeDependencyOnElmtId(rmElmtId);
+        this.__labelWidth.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
         this.__value.aboutToBeDeleted();
         this.__editable.aboutToBeDeleted();
+        this.__labelWidth.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -1771,6 +1779,14 @@ export class ProteusParamRow extends ViewPU {
     set editable(newValue: boolean) {
         this.__editable.set(newValue);
     }
+    /** 标签列宽；0=使用主题默认。长中文标签（如 LED 阈值）可加大避免 … */
+    private __labelWidth: SynchedPropertySimpleOneWayPU<number>;
+    get labelWidth() {
+        return this.__labelWidth.get();
+    }
+    set labelWidth(newValue: number) {
+        this.__labelWidth.set(newValue);
+    }
     private onChange: (v: string) => void;
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -1783,9 +1799,9 @@ export class ProteusParamRow extends ViewPU {
             Text.create(this.label);
             Text.fontSize(ProteusFonts.PARAM_KEY);
             Text.fontColor(ProteusColors.TEXT_LABEL);
-            Text.width(ProteusDimens.PARAM_LABEL_WIDTH);
+            Text.width(this.labelWidth > 0 ? this.labelWidth : ProteusDimens.PARAM_LABEL_WIDTH);
             Text.maxLines(1);
-            Text.textOverflow({ overflow: TextOverflow.Ellipsis });
+            Text.textOverflow({ overflow: TextOverflow.Clip });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2323,7 +2339,7 @@ export class ProteusToolButton extends ViewPU {
                         iconSize: 14,
                         color: this.disabled ? ProteusColors.TEXT_SECONDARY :
                             (this.active ? ProteusColors.BTN_FOCUS : ProteusColors.TEXT_PRIMARY)
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 683, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 685, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2490,7 +2506,7 @@ export class ProteusMenuTrigger extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 766, col: 9 });
+                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 768, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2548,7 +2564,7 @@ export class ProteusMenuTrigger extends ViewPU {
                                                 this.open = false;
                                                 e.action();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 795, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 797, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2925,7 +2941,7 @@ export class ProteusSidebarTab extends ViewPU {
                         iconSize: 16,
                         color: this.selected ?
                             ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 895, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 897, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

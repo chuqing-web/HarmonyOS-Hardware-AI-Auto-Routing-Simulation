@@ -1844,7 +1844,7 @@ export class AiPipelineOrchestrator {
         return AiErcGateUtil.countBlocking(ercErrors);
     }
     /**
-     * 标号优先：prepareModes → 导线对拉近 → execute 建网。
+     * 局部小网导线优先：prepareModes → 导线对拉近 → execute 建网。
      */
     private executeNetPlanLabelFirst(topo: SchTopology, plan: NetPlanResult): NetPlanExecutionResult {
         NetPlanExecutor.setComponentLibrary(this.componentLibrary);
@@ -6187,7 +6187,7 @@ export class AiPipelineOrchestrator {
         };
         return { output: failOut, fromLlm: false };
     }
-    /** 将 net_plan.wiringHints 合并进布线约束（标号优先） */
+    /** 将 net_plan.wiringHints 合并进布线约束（局部小网 forceWire 优先保留） */
     private mergeNetPlanHintsIntoRouting(route: RoutingLlmOutput, netPlanFetch: LlmFetchResult<NetPlanResult>): void {
         if (!netPlanFetch.fromLlm || !netPlanFetch.output.wiringHints) {
             return;

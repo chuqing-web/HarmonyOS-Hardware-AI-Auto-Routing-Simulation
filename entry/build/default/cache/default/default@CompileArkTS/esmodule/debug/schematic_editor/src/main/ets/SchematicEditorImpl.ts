@@ -48,6 +48,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
     /** Path Buffer Cache：previewWirePath 写入，落线只读复用 */
     private warPathBuffer: Point2D[] | null = null;
     private warBufferWaypointsKey: string = '';
+    /** 最近一次预览结果（含 blocked），同 waypoints 键命中则不再次 A* */
+    private warCachedAutoCorrected: boolean = false;
+    private warCachedBlocked: boolean = false;
+    /** 静态障碍缓存（器件/既有导线），文档变更后失效 */
+    private warStaticCacheKey: string = '';
+    private warStaticObstacles: WarCompObstacle[] = [];
+    private warStaticExistingWires: Point2D[][] = [];
+    private warChangeSeq: number = 0;
     /** 点击选中外扩（世界坐标） */
     private static readonly HIT_PAD: number = 22;
     /** 布线障碍外扩：须小于 HIT_PAD，避免引脚深埋导致无法连接 */
@@ -62,28 +70,45 @@ export class SchematicEditorImpl implements ISchematicEditor {
         this.canvasViewWidth = Math.max(0, width);
         this.canvasViewHeight = Math.max(0, height);
     }
-    /** World-space hit rectangle for click overlay (includes HIT_PAD). */
+    /** World-space hit rectangle for click overlay (includes HIT_PAD, pins exposed). */
     getComponentHitRect(comp: ComponentInstance): Rect2D {
-        const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HIT_PAD);
+        const raw = this.resolveBounds(comp.libraryId);
+        const pinLocals = this.collectPinLocals(comp);
+        const bounds = DeviceHitGeometry.expandLocalExposingPins(raw, pinLocals, SchematicEditorImpl.HIT_PAD, 8);
         return this.localBoundsToWorldAabb(comp, bounds);
     }
     /**
-     * 布线/WAR 障碍矩形：紧贴符号 + 小 pad，使引脚落在区边附近可逃逸连线。
+     * 布线/WAR 障碍矩形：紧贴符号 + 小 pad，引脚露边便于逃逸连线。
      * 禁止复用 HIT_PAD 选中区（会把脚深埋 20~50px → blocked）。
      */
     getComponentObstacleRect(comp: ComponentInstance): Rect2D {
-        const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.OBSTACLE_PAD);
+        const raw = this.resolveBounds(comp.libraryId);
+        const pinLocals = this.collectPinLocals(comp);
+        const bounds = DeviceHitGeometry.expandLocalExposingPins(raw, pinLocals, SchematicEditorImpl.OBSTACLE_PAD, 2);
         return this.localBoundsToWorldAabb(comp, bounds);
     }
-    /** 悬停选中区（更大外扩，靠近即出现） */
+    /** 悬停选中区（更大外扩，靠近即出现；仍露脚） */
     getComponentHoverRect(comp: ComponentInstance): Rect2D {
-        const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), SchematicEditorImpl.HOVER_PAD);
+        const raw = this.resolveBounds(comp.libraryId);
+        const pinLocals = this.collectPinLocals(comp);
+        const bounds = DeviceHitGeometry.expandLocalExposingPins(raw, pinLocals, SchematicEditorImpl.HOVER_PAD, 10);
         return this.localBoundsToWorldAabb(comp, bounds);
     }
     /** 选中高亮框：紧贴符号，略外扩，避免像命中区那样过大 */
     getComponentSelectRect(comp: ComponentInstance): Rect2D {
         const bounds = this.expandLocalBounds(this.resolveBounds(comp.libraryId), 8);
         return this.localBoundsToWorldAabb(comp, bounds);
+    }
+    private collectPinLocals(comp: ComponentInstance): Point2D[] {
+        const out: Point2D[] = [];
+        const pins = this.resolvePins(comp.libraryId);
+        if (pins === null) {
+            return out;
+        }
+        for (let i = 0; i < pins.length; i++) {
+            out.push({ x: pins[i].position.x, y: pins[i].position.y });
+        }
+        return out;
     }
     isComponentSelected(compId: string): boolean {
         return this.selectedIds.includes(compId);
@@ -2018,7 +2043,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
         const components: ComponentInstance[] = this.getDocument().components;
         for (let i = components.length - 1; i >= 0; i--) {
             const c: ComponentInstance = components[i];
-            const bounds = this.expandLocalBounds(this.resolveBounds(c.libraryId), SchematicEditorImpl.HIT_PAD);
+            const raw = this.resolveBounds(c.libraryId);
+            const bounds = DeviceHitGeometry.expandLocalExposingPins(raw, this.collectPinLocals(c), SchematicEditorImpl.HIT_PAD, 8);
             if (this.pointInComponentBounds(point, c, bounds)) {
                 return [c.id];
             }
@@ -2043,7 +2069,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
         let bestDist: number = pad;
         for (let i = components.length - 1; i >= 0; i--) {
             const c: ComponentInstance = components[i];
-            const hoverBounds = this.expandLocalBounds(this.resolveBounds(c.libraryId), pad);
+            const raw = this.resolveBounds(c.libraryId);
+            const hoverBounds = DeviceHitGeometry.expandLocalExposingPins(raw, this.collectPinLocals(c), pad, 10);
             if (this.pointInComponentBounds(point, c, hoverBounds)) {
                 const aabb = this.localBoundsToWorldAabb(c, this.resolveBounds(c.libraryId));
                 const dist = SchematicEditorImpl.distancePointToRect(point, aabb);
@@ -2516,6 +2543,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
     clearWarPathBuffer(): void {
         this.warPathBuffer = null;
         this.warBufferWaypointsKey = '';
+        this.warCachedAutoCorrected = false;
+        this.warCachedBlocked = false;
+    }
+    private invalidateWarStaticCache(): void {
+        this.warStaticCacheKey = '';
+        this.warStaticObstacles = [];
+        this.warStaticExistingWires = [];
+        this.warChangeSeq++;
     }
     setWarEnabled(enabled: boolean): void {
         this.warEnabled = enabled;
@@ -2528,14 +2563,37 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     /**
      * WAR 预览：写入 Path Buffer。blocked 时清空缓冲、不返回穿障折线。
+     * 同一 waypoints 键命中缓存则直接返回，避免鼠标移动时重复寻路。
+     * previewLite：拖动预览禁 A*；落线必须 previewLite=false（或省略）以写入可提交缓冲。
      */
-    previewWirePath(waypoints: Point2D[]): WirePathPreviewResult {
+    previewWirePath(waypoints: Point2D[], previewLite?: boolean): WirePathPreviewResult {
+        const lite = previewLite === true;
         if (waypoints.length < 2) {
-            this.clearWarPathBuffer();
+            if (!lite) {
+                this.clearWarPathBuffer();
+            }
             const empty: WirePathPreviewResult = {
                 points: [], autoCorrected: false, blocked: true
             };
             return empty;
+        }
+        const key = `${lite ? 'L' : 'F'}|${this.warWaypointsKey(waypoints)}`;
+        // 仅完整寻路结果写入 Path Buffer / 命中缓冲；lite 预览不污染落线缓冲
+        if (!lite && this.warBufferWaypointsKey === key) {
+            if (this.warCachedBlocked || this.warPathBuffer === null || this.warPathBuffer.length < 2) {
+                const blockedHit: WirePathPreviewResult = {
+                    points: [],
+                    autoCorrected: false,
+                    blocked: true
+                };
+                return blockedHit;
+            }
+            const cached: WirePathPreviewResult = {
+                points: this.copyWarPoints(this.warPathBuffer),
+                autoCorrected: this.warCachedAutoCorrected,
+                blocked: false
+            };
+            return cached;
         }
         // 端点吸脚 / 吸导线任意点（T 接），中间拐点保持用户输入
         const g = Math.max(1, this.viewport.gridSize);
@@ -2549,10 +2607,30 @@ export class SchematicEditorImpl implements ISchematicEditor {
                 snapped.push({ x: p.x, y: p.y });
             }
         }
-        const ctx = this.buildWarRouteContext(snapped);
+        const ctx = this.buildWarRouteContext(snapped, lite);
         const result = WireAutoRouter.previewWirePath(snapped, ctx);
+        if (lite) {
+            // 拖动预览：不写 Path Buffer，落线时再完整算一次
+            if (result.blocked === true || result.points.length < 2) {
+                const blockedLite: WirePathPreviewResult = {
+                    points: [],
+                    autoCorrected: false,
+                    blocked: true
+                };
+                return blockedLite;
+            }
+            const liteOk: WirePathPreviewResult = {
+                points: this.copyWarPoints(result.points),
+                autoCorrected: result.autoCorrected,
+                blocked: false
+            };
+            return liteOk;
+        }
+        this.warBufferWaypointsKey = key;
         if (result.blocked === true || result.points.length < 2) {
-            this.clearWarPathBuffer();
+            this.warPathBuffer = null;
+            this.warCachedAutoCorrected = false;
+            this.warCachedBlocked = true;
             const blocked: WirePathPreviewResult = {
                 points: [],
                 autoCorrected: false,
@@ -2561,7 +2639,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
             return blocked;
         }
         this.warPathBuffer = this.copyWarPoints(result.points);
-        this.warBufferWaypointsKey = this.warWaypointsKey(waypoints);
+        this.warCachedAutoCorrected = result.autoCorrected;
+        this.warCachedBlocked = false;
         const ok: WirePathPreviewResult = {
             points: this.copyWarPoints(result.points),
             autoCorrected: result.autoCorrected,
@@ -2583,9 +2662,10 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
         return out;
     }
-    private buildWarRouteContext(waypoints: Point2D[]): WarRouteContext {
+    private buildWarRouteContext(waypoints: Point2D[], previewLite: boolean = false): WarRouteContext {
         const doc = this.getDocument();
         const g = Math.max(1, this.viewport.gridSize);
+        this.ensureWarStaticCache(doc, g);
         const fromInfo = this.findPinAtPoint(waypoints[0]);
         const toInfo = this.findPinAtPoint(waypoints[waypoints.length - 1]);
         const excludeCompIds: string[] = [];
@@ -2602,7 +2682,6 @@ export class SchematicEditorImpl implements ISchematicEditor {
         for (let i = 0; i < excludeCompIds.length; i++) {
             excludeSet.add(excludeCompIds[i]);
         }
-        // 仅起点/终点目标脚可进逃逸走廊（禁止同器件 all-pins 走廊串脚）
         const escapeByComp = new Map<string, Point2D[]>();
         const addEscape = (info: PinAtPoint | null): void => {
             if (info === null || sameComp) {
@@ -2631,8 +2710,60 @@ export class SchematicEditorImpl implements ISchematicEditor {
         };
         addEscape(fromInfo);
         addEscape(toInfo);
+        // 复用静态障碍几何，仅刷新逃逸脚
         const obstacles: WarCompObstacle[] = [];
         const foreignPins: Point2D[] = [];
+        for (let oi = 0; oi < this.warStaticObstacles.length; oi++) {
+            const base = this.warStaticObstacles[oi];
+            const escapePinWorlds = escapeByComp.get(base.id) ?? [];
+            const obs: WarCompObstacle = {
+                id: base.id,
+                hitRect: base.hitRect,
+                pinWorlds: base.pinWorlds,
+                escapePinWorlds: escapePinWorlds
+            };
+            obstacles.push(obs);
+            for (let pi = 0; pi < base.pinWorlds.length; pi++) {
+                const pw = base.pinWorlds[pi];
+                if (!excludeSet.has(base.id)) {
+                    foreignPins.push(pw);
+                    continue;
+                }
+                let isEsc = false;
+                for (let ei = 0; ei < escapePinWorlds.length; ei++) {
+                    if (Math.hypot(escapePinWorlds[ei].x - pw.x, escapePinWorlds[ei].y - pw.y) <= 1.5) {
+                        isEsc = true;
+                        break;
+                    }
+                }
+                if (!isEsc) {
+                    foreignPins.push(pw);
+                }
+            }
+        }
+        const ctx: WarRouteContext = {
+            gridSize: g,
+            warEnabled: this.warEnabled,
+            obstacles: obstacles,
+            excludeCompIds: excludeCompIds,
+            foreignPins: foreignPins,
+            existingWires: this.warStaticExistingWires,
+            wireJoinPoints: [
+                { x: waypoints[0].x, y: waypoints[0].y },
+                { x: waypoints[waypoints.length - 1].x, y: waypoints[waypoints.length - 1].y }
+            ],
+            previewLite: previewLite
+        };
+        return ctx;
+    }
+    /** 器件/导线障碍静态缓存：预览拖动时避免每帧重建 */
+    private ensureWarStaticCache(doc: SchematicDocument, g: number): void {
+        const key = `${this.warChangeSeq}|${doc.components.length}|${doc.wires.length}|${g}`;
+        if (this.warStaticCacheKey === key && this.warStaticObstacles.length === doc.components.length) {
+            return;
+        }
+        const obstacles: WarCompObstacle[] = [];
+        const existingWires: Point2D[][] = [];
         for (let ci = 0; ci < doc.components.length; ci++) {
             const comp = doc.components[ci];
             const rect = this.getComponentObstacleRect(comp);
@@ -2642,40 +2773,20 @@ export class SchematicEditorImpl implements ISchematicEditor {
             if (pins !== null) {
                 for (let pi = 0; pi < pins.length; pi++) {
                     const local = this.transformPinOffsetForConnect(pins[pi].position, comp.rotation, comp.mirrored);
-                    const pw: Point2D = {
+                    pinWorlds.push({
                         x: comp.position.x + local.x,
                         y: comp.position.y + local.y
-                    };
-                    pinWorlds.push(pw);
-                    if (!excludeSet.has(comp.id)) {
-                        foreignPins.push({ x: pw.x, y: pw.y });
-                    }
-                    else {
-                        // 端点器件：非目标邻脚也当作异脚障碍，供外层代价/诊断
-                        const esc = escapeByComp.get(comp.id) ?? [];
-                        let isEsc = false;
-                        for (let ei = 0; ei < esc.length; ei++) {
-                            if (Math.hypot(esc[ei].x - pw.x, esc[ei].y - pw.y) <= 1.5) {
-                                isEsc = true;
-                                break;
-                            }
-                        }
-                        if (!isEsc) {
-                            foreignPins.push({ x: pw.x, y: pw.y });
-                        }
-                    }
+                    });
                 }
             }
-            const escapePinWorlds = escapeByComp.get(comp.id) ?? [];
             const obs: WarCompObstacle = {
                 id: comp.id,
                 hitRect: hitRect,
                 pinWorlds: pinWorlds,
-                escapePinWorlds: escapePinWorlds
+                escapePinWorlds: []
             };
             obstacles.push(obs);
         }
-        const existingWires: Point2D[][] = [];
         for (let wi = 0; wi < doc.wires.length; wi++) {
             const w = doc.wires[wi];
             if (w.points.length >= 2) {
@@ -2686,19 +2797,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
                 existingWires.push(poly);
             }
         }
-        const ctx: WarRouteContext = {
-            gridSize: g,
-            warEnabled: this.warEnabled,
-            obstacles: obstacles,
-            excludeCompIds: excludeCompIds,
-            foreignPins: foreignPins,
-            existingWires: existingWires,
-            wireJoinPoints: [
-                { x: waypoints[0].x, y: waypoints[0].y },
-                { x: waypoints[waypoints.length - 1].x, y: waypoints[waypoints.length - 1].y }
-            ]
-        };
-        return ctx;
+        this.warStaticObstacles = obstacles;
+        this.warStaticExistingWires = existingWires;
+        this.warStaticCacheKey = key;
     }
     private toWorldHitRect(comp: ComponentInstance, rect: Rect2D): WorldHitRect {
         const hit: WorldHitRect = {
@@ -4444,6 +4545,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
         return cloned;
     }
     private notifyChange(): void {
+        this.invalidateWarStaticCache();
+        this.clearWarPathBuffer();
         this.syncTopologyFromDoc();
         if (this.document !== null) {
             this.document.metadata.modifiedAt = new Date().toISOString();

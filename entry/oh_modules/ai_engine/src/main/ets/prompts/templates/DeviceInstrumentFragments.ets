@@ -76,16 +76,16 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
       '【IRF540】功率 N-MOS；注意驱动与散热。',
       '【功率 MOS】同 N-MOS 拓扑；感性负载加续流二极管；G 勿悬空。'),
 
-    // —— 运放 ——
+    // —— 运放（普通单运放 vs 单片双运放）——
     f('UA741',
-      '【UA741】单运放；优先双电源 ±12V；必须闭环。',
-      '【UA741】V+→VCC V-→VEE；反馈 OUT→IN- 或滞回正反馈；未用输入勿悬空；输出勿短电源。'),
+      '【UA741·普通单运放】一片一颗；单级放大/跟随/滞回/积分优先选它；须双电源±12V+VEE；禁套双运放通道脚。',
+      '【UA741】真脚 IN+/IN-/OUT/VCC/VEE；VCC→正轨 VEE→负轨；反馈 OUT↔IN- 或滞回正反馈；禁 V+/OUT1 假脚。'),
     f('LM358',
-      '【LM358】双运放可单电源；未用半边接跟随。',
-      '【LM358】电源脚正确；每半边须闭环或跟随(IN-↔OUT, IN+→GND/虚地)；禁止输入悬空。'),
+      '【LM358·单片双运放】一片两路共享电源；单电源5V或要两路时选它；与 UA741 脚名完全不同。',
+      '【LM358】OUT1/IN±1/OUT2/IN±2/V+/V-；未用半边 IN-↔OUT、IN+→GND；禁按 UA741 五脚连。'),
     f('TL082',
-      '【TL082】JFET 双运放；高阻输入；双电源常用。',
-      '【TL082】同运放闭环铁律；未用半边跟随；双电源时 VEE 独立网。'),
+      '【TL082·单片双运放·高阻】双通道 JFET；积分/高阻缓冲+双电源时选；未用半边须跟随。',
+      '【TL082】同双运放通道脚铁律；V+→VCC V-→VEE；禁按 UA741 单运放脚名建网。'),
 
     // —— 555（选型侧短述；脚级以 IntentPromptFragments 无稳态/单稳态为准）——
     f('LM555',
@@ -198,7 +198,7 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
       '【电位器】三端；分压或可变电阻。',
       '【POT】1/2 跨电源或串入，W 抽头取分压；禁悬空抽头当完成。'),
     f('LED_*',
-      '【LED】必须限流电阻；N 灯 N 电阻。',
+      '【LED/LED灯】口语 LED=LED灯=指示灯，库仅 LED_RED/GREEN/BLUE；禁编造 LED灯 为 libDevId；禁当 OLED。须限流；N 灯 N 电阻。',
       '【LED】A←经 R←驱动；K→GND；禁无电阻直接电源；禁 K 接 VCC 正向硬灌。'),
     f('XTAL_*',
       '【晶振】MCU 时钟；配负载电容。',

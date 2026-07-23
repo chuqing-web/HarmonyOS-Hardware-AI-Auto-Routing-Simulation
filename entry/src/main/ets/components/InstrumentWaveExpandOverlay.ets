@@ -2,7 +2,7 @@
  * 仪器波形全屏放大弹窗 — 示波器 / 逻辑仪 / 电压表 / 电流表 / 频率计
  */
 import { ProteusClassicBtn } from './proteus/ProteusWidgets';
-import { ProteusColors, ProteusFonts } from '../theme/ProteusTheme';
+import { ProteusColors } from '../theme/ProteusTheme';
 import { OscilloscopeWaveCanvas } from './OscilloscopeWaveCanvas';
 import { LogicAnalyzerWaveCanvas } from './LogicAnalyzerWaveCanvas';
 import {
@@ -73,6 +73,7 @@ export struct InstrumentWaveExpandOverlay {
       chCopy.push(s.channelData[i].slice());
     }
     this.channelData = chCopy;
+    this.viewPanSec = this.clampPan(this.viewPanSec);
   }
 
   private close(): void {
@@ -80,12 +81,49 @@ export struct InstrumentWaveExpandOverlay {
     this.onClose();
   }
 
+  private getWindowSpan(): number {
+    return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
+  }
+
+  private getMaxPanSec(): number {
+    const n = Math.min(this.timeData.length, this.voltageData.length);
+    if (n < 2) {
+      return 0;
+    }
+    const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
+    return Math.max(hist - this.getWindowSpan(), 0);
+  }
+
+  private clampPan(next: number): number {
+    let v = next;
+    if (v < 0) {
+      v = 0;
+    }
+    const maxPan = this.getMaxPanSec();
+    if (v > maxPan) {
+      v = maxPan;
+    }
+    return v;
+  }
+
+  private applyZoom(z: number): void {
+    let next = z;
+    if (next < 0.25) {
+      next = 0.25;
+    }
+    if (next > 16) {
+      next = 16;
+    }
+    this.viewZoom = next;
+    this.viewPanSec = this.clampPan(this.viewPanSec);
+  }
+
   private zoomIn(): void {
-    this.viewZoom = Math.min(16, this.viewZoom * 1.4);
+    this.applyZoom(this.viewZoom * 1.4);
   }
 
   private zoomOut(): void {
-    this.viewZoom = Math.max(0.25, this.viewZoom / 1.4);
+    this.applyZoom(this.viewZoom / 1.4);
   }
 
   private resetView(): void {
@@ -94,22 +132,36 @@ export struct InstrumentWaveExpandOverlay {
   }
 
   private panByFraction(frac: number): void {
-    const span = Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
-    let next = this.viewPanSec + frac * span;
-    if (next < 0) {
-      next = 0;
+    const span = this.getWindowSpan();
+    this.viewPanSec = this.clampPan(this.viewPanSec + frac * span);
+  }
+
+  private setPanFromSlider(norm: number): void {
+    // 滑杆左=历史(回看)，右=最新(跟随)
+    const maxPan = this.getMaxPanSec();
+    const t = Math.max(0, Math.min(1000, norm)) / 1000;
+    this.viewPanSec = this.clampPan((1 - t) * maxPan);
+  }
+
+  private panSliderValue(): number {
+    const maxPan = this.getMaxPanSec();
+    if (maxPan <= 1e-15) {
+      return 1000;
     }
-    const n = Math.min(this.timeData.length, this.voltageData.length);
-    if (n >= 2) {
-      const t0 = this.timeData[0];
-      const t1 = this.timeData[n - 1];
-      const hist = Math.max(t1 - t0, 0);
-      const maxPan = Math.max(hist - span, 0);
-      if (next > maxPan) {
-        next = maxPan;
-      }
+    return Math.max(0, Math.min(1000, (1 - this.viewPanSec / maxPan) * 1000));
+  }
+
+  private handleAxisZoom(event: AxisEvent): void {
+    if (this.kind === 'la') {
+      return;
     }
-    this.viewPanSec = next;
+    const v = event.getVerticalAxisValue();
+    if (v === 0) {
+      return;
+    }
+    // 滚轮向前(负)放大，向后(正)缩小
+    const factor = v < 0 ? 1.15 : (1 / 1.15);
+    this.applyZoom(this.viewZoom * factor);
   }
 
   build() {
@@ -125,14 +177,14 @@ export struct InstrumentWaveExpandOverlay {
       Column({ space: 10 }) {
         Row() {
           Text(this.title.length > 0 ? this.title : '波形详情')
-            .fontSize(16)
+            .fontSize(18)
             .fontColor(ProteusColors.TEXT_PRIMARY)
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`#${this.refreshTick}`)
-            .fontSize(10)
+            .fontSize(12)
             .fontColor(ProteusColors.TEXT_SECONDARY)
             .fontFamily('monospace')
             .margin({ right: 8 })
@@ -184,7 +236,7 @@ export struct InstrumentWaveExpandOverlay {
               }
             })
             Text(`×${this.viewZoom.toFixed(1)}  pan=${this.viewPanSec.toExponential(1)}s`)
-              .fontSize(10)
+              .fontSize(12)
               .fontColor(ProteusColors.TEXT_SECONDARY)
               .fontFamily('monospace')
               .layoutWeight(1)
@@ -240,6 +292,10 @@ export struct InstrumentWaveExpandOverlay {
                 }
               }
               .width('100%')
+              .focusable(true)
+              .onAxisEvent((event: AxisEvent) => {
+                this.handleAxisZoom(event);
+              })
               .gesture(
                 GestureGroup(GestureMode.Exclusive,
                   PinchGesture({ fingers: 2 })
@@ -251,58 +307,65 @@ export struct InstrumentWaveExpandOverlay {
                       if (!Number.isFinite(s) || s <= 0.05) {
                         return;
                       }
-                      let z = this.pinchStartZoom * s;
-                      if (z < 0.25) {
-                        z = 0.25;
-                      }
-                      if (z > 16) {
-                        z = 16;
-                      }
-                      this.viewZoom = z;
+                      this.applyZoom(this.pinchStartZoom * s);
                     }),
                   PanGesture({ direction: PanDirection.Horizontal, distance: 4 })
                     .onActionStart(() => {
                       this.panStartSec = this.viewPanSec;
                     })
                     .onActionUpdate((e: GestureEvent) => {
-                      const span = Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
+                      const span = this.getWindowSpan();
                       // 右拖看更新（减小 pan）；左拖看历史（增大 pan）
                       const deltaSec = (-e.offsetX / 360) * span;
-                      let next = this.panStartSec + deltaSec;
-                      if (next < 0) {
-                        next = 0;
-                      }
-                      const n = Math.min(this.timeData.length, this.voltageData.length);
-                      if (n >= 2) {
-                        const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
-                        const maxPan = Math.max(hist - span, 0);
-                        if (next > maxPan) {
-                          next = maxPan;
-                        }
-                      }
-                      this.viewPanSec = next;
+                      this.viewPanSec = this.clampPan(this.panStartSec + deltaSec);
                     })
                 )
               )
             }
 
+            if (this.kind !== 'la') {
+              Row({ space: 8 }) {
+                Text('历史')
+                  .fontSize(12)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+                  .width(36)
+                Slider({
+                  value: this.panSliderValue(),
+                  min: 0,
+                  max: 1000,
+                  step: 1
+                })
+                  .layoutWeight(1)
+                  .enabled(this.getMaxPanSec() > 1e-15)
+                  .onChange((v: number) => {
+                    this.setPanFromSlider(v);
+                  })
+                Text('最新')
+                  .fontSize(12)
+                  .fontColor(ProteusColors.TEXT_SECONDARY)
+                  .width(36)
+              }
+              .width('100%')
+              .padding({ top: 4, bottom: 2 })
+            }
+
             Text(this.kind === 'la'
               ? '逻辑波形'
-              : '滚动显示最新窗；双指缩放，左右拖动平移；按钮亦可调节')
-              .fontSize(9)
+              : '滚轮缩放 · 底部滑杆左右平移 · 亦可拖动/双指缩放')
+              .fontSize(12)
               .fontColor(ProteusColors.TEXT_SECONDARY)
               .width('100%')
 
             if (this.detail.length > 0) {
               Text(this.detail)
-                .fontSize(ProteusFonts.STATUS)
+                .fontSize(15)
                 .fontColor(ProteusColors.HOVER_PREVIEW)
                 .fontFamily('monospace')
                 .width('100%')
                 .maxLines(20)
             } else {
               Text('本次仿真尚无波形数据。启动仿真后双击侧栏波形可查看详情。')
-                .fontSize(ProteusFonts.STATUS)
+                .fontSize(14)
                 .fontColor(ProteusColors.TEXT_SECONDARY)
                 .width('100%')
             }
@@ -318,6 +381,10 @@ export struct InstrumentWaveExpandOverlay {
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })
       .shadow({ radius: 16, color: '#00000080' })
+      .focusable(true)
+      .onAxisEvent((event: AxisEvent) => {
+        this.handleAxisZoom(event);
+      })
       .onClick(() => {
         // 吞掉点击，避免点到内容区关闭
       })

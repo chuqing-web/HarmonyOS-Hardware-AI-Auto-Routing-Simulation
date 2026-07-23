@@ -158,8 +158,9 @@ export interface ISchematicEditor {
   /**
    * WAR 入口（Proteus Wire Auto Router）：动态预览并写入 Path Buffer。
    * 落线必须 commitWarBufferedPath / addWireWithPoints 复用缓冲，禁止二次寻路。
+   * @param previewLite true=拖动预览禁止 A*（仅 L/U），避免主线程卡死；落线传 false/省略。
    */
-  previewWirePath(waypoints: Point2D[]): WirePathPreviewResult;
+  previewWirePath(waypoints: Point2D[], previewLite?: boolean): WirePathPreviewResult;
   /**
    * 确认落线：仅使用 Path Buffer；校验仍无碰撞则生成导线，否则拒绝（不重算）。
    */

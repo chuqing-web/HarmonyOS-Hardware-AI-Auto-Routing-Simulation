@@ -30,7 +30,7 @@ interface InstrumentWaveExpandOverlay_Params {
     pinchStartZoom?: number;
 }
 import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
-import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+import { ProteusColors } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { OscilloscopeWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/OscilloscopeWaveCanvas";
 import { LogicAnalyzerWaveCanvas } from "@bundle:com.elecdraw.aischsim/entry/ets/components/LogicAnalyzerWaveCanvas";
 import { InstrumentWaveExpandStore } from "@bundle:com.elecdraw.aischsim/entry/ets/components/InstrumentWaveExpandStore";
@@ -401,38 +401,83 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
             chCopy.push(s.channelData[i].slice());
         }
         this.channelData = chCopy;
+        this.viewPanSec = this.clampPan(this.viewPanSec);
     }
     private close(): void {
         InstrumentWaveExpandStore.getInstance().close();
         this.onClose();
     }
+    private getWindowSpan(): number {
+        return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
+    }
+    private getMaxPanSec(): number {
+        const n = Math.min(this.timeData.length, this.voltageData.length);
+        if (n < 2) {
+            return 0;
+        }
+        const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
+        return Math.max(hist - this.getWindowSpan(), 0);
+    }
+    private clampPan(next: number): number {
+        let v = next;
+        if (v < 0) {
+            v = 0;
+        }
+        const maxPan = this.getMaxPanSec();
+        if (v > maxPan) {
+            v = maxPan;
+        }
+        return v;
+    }
+    private applyZoom(z: number): void {
+        let next = z;
+        if (next < 0.25) {
+            next = 0.25;
+        }
+        if (next > 16) {
+            next = 16;
+        }
+        this.viewZoom = next;
+        this.viewPanSec = this.clampPan(this.viewPanSec);
+    }
     private zoomIn(): void {
-        this.viewZoom = Math.min(16, this.viewZoom * 1.4);
+        this.applyZoom(this.viewZoom * 1.4);
     }
     private zoomOut(): void {
-        this.viewZoom = Math.max(0.25, this.viewZoom / 1.4);
+        this.applyZoom(this.viewZoom / 1.4);
     }
     private resetView(): void {
         this.viewZoom = 1;
         this.viewPanSec = 0;
     }
     private panByFraction(frac: number): void {
-        const span = Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
-        let next = this.viewPanSec + frac * span;
-        if (next < 0) {
-            next = 0;
+        const span = this.getWindowSpan();
+        this.viewPanSec = this.clampPan(this.viewPanSec + frac * span);
+    }
+    private setPanFromSlider(norm: number): void {
+        // 滑杆左=历史(回看)，右=最新(跟随)
+        const maxPan = this.getMaxPanSec();
+        const t = Math.max(0, Math.min(1000, norm)) / 1000;
+        this.viewPanSec = this.clampPan((1 - t) * maxPan);
+    }
+    private panSliderValue(): number {
+        const maxPan = this.getMaxPanSec();
+        if (maxPan <= 1e-15) {
+            return 1000;
         }
-        const n = Math.min(this.timeData.length, this.voltageData.length);
-        if (n >= 2) {
-            const t0 = this.timeData[0];
-            const t1 = this.timeData[n - 1];
-            const hist = Math.max(t1 - t0, 0);
-            const maxPan = Math.max(hist - span, 0);
-            if (next > maxPan) {
-                next = maxPan;
-            }
+        return Math.max(0, Math.min(1000, (1 - this.viewPanSec / maxPan) * 1000));
+    }
+    private handleAxisZoom(event: AxisEvent): void {
+        if (this.kind === 'la') {
+            return;
         }
-        this.viewPanSec = next;
+        const v = event.getVerticalAxisValue();
+        if (v === 0) {
+            return;
+        }
+        // 滚轮向前(负)放大，向后(正)缩小
+        const factor = v < 0 ? 1.15 : (1 / 1.15);
+        this.applyZoom(this.viewZoom * factor);
     }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -458,6 +503,10 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
             Column.backgroundColor(ProteusColors.CANVAS_BG);
             Column.border({ width: 1, color: ProteusColors.DIVIDER });
             Column.shadow({ radius: 16, color: '#00000080' });
+            Column.focusable(true);
+            Column.onAxisEvent((event: AxisEvent) => {
+                this.handleAxisZoom(event);
+            });
             Column.onClick(() => {
                 // 吞掉点击，避免点到内容区关闭
             });
@@ -468,7 +517,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.title.length > 0 ? this.title : '波形详情');
-            Text.fontSize(16);
+            Text.fontSize(18);
             Text.fontColor(ProteusColors.TEXT_PRIMARY);
             Text.fontWeight(FontWeight.Medium);
             Text.layoutWeight(1);
@@ -478,7 +527,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(`#${this.refreshTick}`);
-            Text.fontSize(10);
+            Text.fontSize(12);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.fontFamily('monospace');
             Text.margin({ right: 8 });
@@ -493,7 +542,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                         onAction: () => {
                             this.close();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 139, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 191, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -532,7 +581,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomIn();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 151, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 203, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -562,7 +611,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomOut();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 158, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 210, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -592,7 +641,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 165, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 217, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -622,7 +671,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(-0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 172, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 224, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -652,7 +701,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.resetView();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 179, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 231, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -675,7 +724,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                     }
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create(`×${this.viewZoom.toFixed(1)}  pan=${this.viewPanSec.toExponential(1)}s`);
-                        Text.fontSize(10);
+                        Text.fontSize(12);
                         Text.fontColor(ProteusColors.TEXT_SECONDARY);
                         Text.fontFamily('monospace');
                         Text.layoutWeight(1);
@@ -715,7 +764,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     channelCount: this.channelCount,
                                     sampleCount: this.sampleCount,
                                     canvasHeight: 420
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 198, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 250, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -745,6 +794,10 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Column.create();
                         Column.width('100%');
+                        Column.focusable(true);
+                        Column.onAxisEvent((event: AxisEvent) => {
+                            this.handleAxisZoom(event);
+                        });
                         globalThis.Gesture.create(GesturePriority.Low);
                         GestureGroup.create(GestureMode.Exclusive);
                         PinchGesture.create({ fingers: 2 });
@@ -756,14 +809,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                             if (!Number.isFinite(s) || s <= 0.05) {
                                 return;
                             }
-                            let z = this.pinchStartZoom * s;
-                            if (z < 0.25) {
-                                z = 0.25;
-                            }
-                            if (z > 16) {
-                                z = 16;
-                            }
-                            this.viewZoom = z;
+                            this.applyZoom(this.pinchStartZoom * s);
                         });
                         PinchGesture.pop();
                         PanGesture.create({ direction: PanDirection.Horizontal, distance: 4 });
@@ -771,22 +817,10 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                             this.panStartSec = this.viewPanSec;
                         });
                         PanGesture.onActionUpdate((e: GestureEvent) => {
-                            const span = Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
+                            const span = this.getWindowSpan();
                             // 右拖看更新（减小 pan）；左拖看历史（增大 pan）
                             const deltaSec = (-e.offsetX / 360) * span;
-                            let next = this.panStartSec + deltaSec;
-                            if (next < 0) {
-                                next = 0;
-                            }
-                            const n = Math.min(this.timeData.length, this.voltageData.length);
-                            if (n >= 2) {
-                                const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
-                                const maxPan = Math.max(hist - span, 0);
-                                if (next > maxPan) {
-                                    next = maxPan;
-                                }
-                            }
-                            this.viewPanSec = next;
+                            this.viewPanSec = this.clampPan(this.panStartSec + deltaSec);
                         });
                         PanGesture.pop();
                         GestureGroup.pop();
@@ -813,7 +847,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     showStats: true,
                                     viewZoom: this.viewZoom,
                                     viewPanSec: this.viewPanSec
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 207, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 259, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -879,7 +913,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                                 showStats: true,
                                                 viewZoom: this.viewZoom,
                                                 viewPanSec: this.viewPanSec
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 224, col: 19 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 276, col: 19 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -934,10 +968,55 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         }, If);
         If.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.kind !== 'la') {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create({ space: 8 });
+                        Row.width('100%');
+                        Row.padding({ top: 4, bottom: 2 });
+                    }, Row);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('历史');
+                        Text.fontSize(12);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width(36);
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Slider.create({
+                            value: this.panSliderValue(),
+                            min: 0,
+                            max: 1000,
+                            step: 1
+                        });
+                        Slider.layoutWeight(1);
+                        Slider.enabled(this.getMaxPanSec() > 1e-15);
+                        Slider.onChange((v: number) => {
+                            this.setPanFromSlider(v);
+                        });
+                    }, Slider);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('最新');
+                        Text.fontSize(12);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width(36);
+                    }, Text);
+                    Text.pop();
+                    Row.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.kind === 'la'
                 ? '逻辑波形'
-                : '滚动显示最新窗；双指缩放，左右拖动平移；按钮亦可调节');
-            Text.fontSize(9);
+                : '滚轮缩放 · 底部滑杆左右平移 · 亦可拖动/双指缩放');
+            Text.fontSize(12);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.width('100%');
         }, Text);
@@ -948,7 +1027,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                 this.ifElseBranchUpdateFunction(0, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create(this.detail);
-                        Text.fontSize(ProteusFonts.STATUS);
+                        Text.fontSize(15);
                         Text.fontColor(ProteusColors.HOVER_PREVIEW);
                         Text.fontFamily('monospace');
                         Text.width('100%');
@@ -961,7 +1040,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                 this.ifElseBranchUpdateFunction(1, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('本次仿真尚无波形数据。启动仿真后双击侧栏波形可查看详情。');
-                        Text.fontSize(ProteusFonts.STATUS);
+                        Text.fontSize(14);
                         Text.fontColor(ProteusColors.TEXT_SECONDARY);
                         Text.width('100%');
                     }, Text);

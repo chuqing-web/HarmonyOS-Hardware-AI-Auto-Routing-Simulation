@@ -1,4 +1,4 @@
-�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��*hexport const NET_PLAN_PROMPT = {
+�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��*~export const NET_PLAN_PROMPT = {
     id: 'net_plan_v6',
     version: '6.0.0',
     system: `你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
@@ -6,7 +6,7 @@
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
 2. 为每个网络分配合理的名称和类型
-3. 【关键】可建议每个连接的 mode；系统默认标号优先，再按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议每个连接的 mode；系统对 2～4 脚局部小网优先升级导线（WAR 正交），仪器/大网仍标号
 4. 【关键】为可能升级的 joinWired 网给出 routeWaypoints，并自检：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整的 netPlan JSON
 
@@ -33,18 +33,18 @@
    - 仪器探针一律 joinByLabel；测量脚并入被测信号网同名（禁止另建 PROBE_* 重复 DUT 脚）
    - VIRTUAL_METER 真脚为 V,A,OHM,COM（不是 V+）；LA 真脚为 CH1–CH8（禁止 CH0/D0）
 
-4. 连接方式选择规则 — 标号优先原则:
-   【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
-   >3 脚网络、电源别名扇出（VCC/GND/VCC_AM/AVDD…）、仪器脚（含 COM）一律保持标号。
+4. 连接方式选择规则 — 局部小网导线优先（适度增加可见导线）:
+   【基本原则】功能区内 2～4 脚小信号网优先 joinWired（正交/WAR 绕障）；系统会写入 forceWire 并拉近器件。
+   仪器脚、>4 脚大网、电源别名扇出（VCC/GND/VCC_AM/AVDD…）保持 joinByLabel。
 
-   适合升级为 joinWired（导线直连）的场景:
-   - 2～3 脚小信号网（LED+R、晶振负载、相邻分压段）
+   适合 joinWired（导线直连）的场景:
+   - 2～4 脚小信号网（LED+R、晶振负载、相邻分压段、运放反馈）
    - 电源符号↔单负载（连接数≤2）
-   - 线圈短驱动网可保留导线
+   - 线圈短驱动网
 
    必须保持 joinByLabel:
    - 【硬】同脚 joinWired 已达 2 次
-   - 【硬】网脚数 >3
+   - 【硬】网脚数 >4
    - 【硬】电源轨别名且连接数 >2
    - 仪器测量脚 CH*/V+/V/A/OHM/I+/COM/PROBE/IN/OUT/TX/RX
    - MCU 多外设 / 跨区长跨
@@ -52,7 +52,7 @@
    严格禁止:
    - 仪器脚走长导线
    - 大网满屏 A* 导线
-   - 假设「导线优先」
+   - 整图只用标号、几乎无导线（教学图至少保留若干局部 joinWired）
 
 5. 网络命名规则:
    - 电源网络: VCC, GND, VEE（不允许信号网络使用这些名字）
@@ -178,7 +178,7 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 
 请根据以上信息输出完整 netPlan JSON。现在立即只输出 JSON，不要任何其它文字：`
 };
-//# sourceMappingURL=NetPlanPrompt.js.map�`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\NetPlanPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/NetPlanPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���*�/**
+//# sourceMappingURL=NetPlanPrompt.js.map�`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\NetPlanPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/NetPlanPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���*�/**
  * net_plan — 同步自 skill/prompts/03_net_plan.md
  */
 import { PromptTemplate } from '../PromptTypes';
@@ -191,7 +191,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
 2. 为每个网络分配合理的名称和类型
-3. 【关键】可建议每个连接的 mode；系统默认标号优先，再按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议每个连接的 mode；系统对 2～4 脚局部小网优先升级导线（WAR 正交），仪器/大网仍标号
 4. 【关键】为可能升级的 joinWired 网给出 routeWaypoints，并自检：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整的 netPlan JSON
 
@@ -218,18 +218,18 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 仪器探针一律 joinByLabel；测量脚并入被测信号网同名（禁止另建 PROBE_* 重复 DUT 脚）
    - VIRTUAL_METER 真脚为 V,A,OHM,COM（不是 V+）；LA 真脚为 CH1–CH8（禁止 CH0/D0）
 
-4. 连接方式选择规则 — 标号优先原则:
-   【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
-   >3 脚网络、电源别名扇出（VCC/GND/VCC_AM/AVDD…）、仪器脚（含 COM）一律保持标号。
+4. 连接方式选择规则 — 局部小网导线优先（适度增加可见导线）:
+   【基本原则】功能区内 2～4 脚小信号网优先 joinWired（正交/WAR 绕障）；系统会写入 forceWire 并拉近器件。
+   仪器脚、>4 脚大网、电源别名扇出（VCC/GND/VCC_AM/AVDD…）保持 joinByLabel。
 
-   适合升级为 joinWired（导线直连）的场景:
-   - 2～3 脚小信号网（LED+R、晶振负载、相邻分压段）
+   适合 joinWired（导线直连）的场景:
+   - 2～4 脚小信号网（LED+R、晶振负载、相邻分压段、运放反馈）
    - 电源符号↔单负载（连接数≤2）
-   - 线圈短驱动网可保留导线
+   - 线圈短驱动网
 
    必须保持 joinByLabel:
    - 【硬】同脚 joinWired 已达 2 次
-   - 【硬】网脚数 >3
+   - 【硬】网脚数 >4
    - 【硬】电源轨别名且连接数 >2
    - 仪器测量脚 CH*/V+/V/A/OHM/I+/COM/PROBE/IN/OUT/TX/RX
    - MCU 多外设 / 跨区长跨
@@ -237,7 +237,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    严格禁止:
    - 仪器脚走长导线
    - 大网满屏 A* 导线
-   - 假设「导线优先」
+   - 整图只用标号、几乎无导线（教学图至少保留若干局部 joinWired）
 
 5. 网络命名规则:
    - 电源网络: VCC, GND, VEE（不允许信号网络使用这些名字）
@@ -366,12 +366,12 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 �A��rE��version�file�sourceRoot�sources�names�mappings�NetPlanPrompt.js���NetPlanPrompt.ets�� ���   � � � � � /�� � � � �� � 	� � �� �
  � 
 ���������������������������������������������������������������������������������������������������������������������������������������������������������������������G ̫�G�� ̬� ̬� ̬������������0 ̷0�� ̸� ̸�rF��version�file�sources�sourcesContent�names�mappings������� ���    ��   ��   ��   ��   ��   ��   ��   ��   ��  	 ��  
- ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > ��  ? ��  �@ ��  �A ��  �B ��  �C ��  �D ��  �E ��  �F ��  �G ��  �H ��  �I ��  �J ��  �K ��  �L ��  �M ��  �N ��  �O ��  �P ��  �Q ��  �R ��  �S ��  �T ��  �U ��  �V ��  �W ��  �X ��  �Y ��  �Z ��  �[ ��  �\ ��  �] ��  �^ ��  �_ ��  �` ��  �a ��  �b ��  �c ��  �d ��  �e ��  �f ��  �g ��  �h ��  �i ��  �j ��  �k ��  �l ��  �m ��  �n ��  �o ��  �p ��  �q ��  �r ��  �s ��  �t ��  �u ��  �v ��  �w ��  �x ��  �y ��  �z ��  �{ ��  �| ��  �} ��  �~ ��  � ��  ̀ ��  ́ ��  ̂ ��  ̃ ��  ̄ ��  ̅ ��  ̆ ��  ̇ ��  ̈ ��  ̉ ��  ̊ ��  ̋ ��  ̌ ��  ̍ ��  ̎ ��  ̏ ��  ̐ ��  ̑ ��  ̒ ��  ̓ ��  ̔ ��  ̕ ��  ̖ ��  ̗ ��  ̘ ��  ̙ ��  ̚ ��  ̛ ��  ̜ ��  ̝ ��  ̞ ��  ̟ ��  ̠ ��  ̡ ��  ̢ ��  ̣ ��  ̤ ��  ̥ ��  ̦ ��  ̧ ��  ̨ ��  ̩ ��  ̪ ��  ̫ ��  ̬ ��  ̭ ��  ̮ ��  ̯ ��  ̰ ��  ̱ ��  ̲ ��  ̳ ��  ̴ �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration �7�rJ��type�start�end�declarations�kind�VariableDeclaration�7��rK��type�start�end�id�init�VariableDeclarator�6�rL��type�start�end�name�Identifier�NET_PLAN_PROMPT�rM��type�start�end�properties�ObjectExpression�6��rN��type�start�end�method�shorthand�computed�key�value�kind�Property&7���L�Identifier&(�id�rO��type�start�end�value�raw�Literal*7�net_plan_v6�'net_plan_v6'�initN�Property>�N���L�Identifier>�E�versionO�Literal�G�N�6.0.0�'6.0.0'�initN�Property�U�M���L�Identifier�U�[�system�rP��type�start�end�expressions�quasis�TemplateLiteral�]�M���rQ��type�start�end�value�tail�TemplateElement�^�L�rR��raw�cooked�(P你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
+ ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > ��  ? ��  �@ ��  �A ��  �B ��  �C ��  �D ��  �E ��  �F ��  �G ��  �H ��  �I ��  �J ��  �K ��  �L ��  �M ��  �N ��  �O ��  �P ��  �Q ��  �R ��  �S ��  �T ��  �U ��  �V ��  �W ��  �X ��  �Y ��  �Z ��  �[ ��  �\ ��  �] ��  �^ ��  �_ ��  �` ��  �a ��  �b ��  �c ��  �d ��  �e ��  �f ��  �g ��  �h ��  �i ��  �j ��  �k ��  �l ��  �m ��  �n ��  �o ��  �p ��  �q ��  �r ��  �s ��  �t ��  �u ��  �v ��  �w ��  �x ��  �y ��  �z ��  �{ ��  �| ��  �} ��  �~ ��  � ��  ̀ ��  ́ ��  ̂ ��  ̃ ��  ̄ ��  ̅ ��  ̆ ��  ̇ ��  ̈ ��  ̉ ��  ̊ ��  ̋ ��  ̌ ��  ̍ ��  ̎ ��  ̏ ��  ̐ ��  ̑ ��  ̒ ��  ̓ ��  ̔ ��  ̕ ��  ̖ ��  ̗ ��  ̘ ��  ̙ ��  ̚ ��  ̛ ��  ̜ ��  ̝ ��  ̞ ��  ̟ ��  ̠ ��  ̡ ��  ̢ ��  ̣ ��  ̤ ��  ̥ ��  ̦ ��  ̧ ��  ̨ ��  ̩ ��  ̪ ��  ̫ ��  ̬ ��  ̭ ��  ̮ ��  ̯ ��  ̰ ��  ̱ ��  ̲ ��  ̳ ��  ̴ �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration �M�rJ��type�start�end�declarations�kind�VariableDeclaration�M��rK��type�start�end�id�init�VariableDeclarator�L�rL��type�start�end�name�Identifier�NET_PLAN_PROMPT�rM��type�start�end�properties�ObjectExpression�L��rN��type�start�end�method�shorthand�computed�key�value�kind�Property&7���L�Identifier&(�id�rO��type�start�end�value�raw�Literal*7�net_plan_v6�'net_plan_v6'�initN�Property>�N���L�Identifier>�E�versionO�Literal�G�N�6.0.0�'6.0.0'�initN�Property�U�c���L�Identifier�U�[�system�rP��type�start�end�expressions�quasis�TemplateLiteral�]�c���rQ��type�start�end�value�tail�TemplateElement�^�b�rR��raw�cooked�(f你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
 
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
 2. 为每个网络分配合理的名称和类型
-3. 【关键】可建议每个连接的 mode；系统默认标号优先，再按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议每个连接的 mode；系统对 2～4 脚局部小网优先升级导线（WAR 正交），仪器/大网仍标号
 4. 【关键】为可能升级的 joinWired 网给出 routeWaypoints，并自检：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整的 netPlan JSON
 
@@ -398,18 +398,18 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    - 仪器探针一律 joinByLabel；测量脚并入被测信号网同名（禁止另建 PROBE_* 重复 DUT 脚）
    - VIRTUAL_METER 真脚为 V,A,OHM,COM（不是 V+）；LA 真脚为 CH1–CH8（禁止 CH0/D0）
 
-4. 连接方式选择规则 — 标号优先原则:
-   【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
-   >3 脚网络、电源别名扇出（VCC/GND/VCC_AM/AVDD…）、仪器脚（含 COM）一律保持标号。
+4. 连接方式选择规则 — 局部小网导线优先（适度增加可见导线）:
+   【基本原则】功能区内 2～4 脚小信号网优先 joinWired（正交/WAR 绕障）；系统会写入 forceWire 并拉近器件。
+   仪器脚、>4 脚大网、电源别名扇出（VCC/GND/VCC_AM/AVDD…）保持 joinByLabel。
 
-   适合升级为 joinWired（导线直连）的场景:
-   - 2～3 脚小信号网（LED+R、晶振负载、相邻分压段）
+   适合 joinWired（导线直连）的场景:
+   - 2～4 脚小信号网（LED+R、晶振负载、相邻分压段、运放反馈）
    - 电源符号↔单负载（连接数≤2）
-   - 线圈短驱动网可保留导线
+   - 线圈短驱动网
 
    必须保持 joinByLabel:
    - 【硬】同脚 joinWired 已达 2 次
-   - 【硬】网脚数 >3
+   - 【硬】网脚数 >4
    - 【硬】电源轨别名且连接数 >2
    - 仪器测量脚 CH*/V+/V/A/OHM/I+/COM/PROBE/IN/OUT/TX/RX
    - MCU 多外设 / 跨区长跨
@@ -417,7 +417,7 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    严格禁止:
    - 仪器脚走长导线
    - 大网满屏 A* 导线
-   - 假设「导线优先」
+   - 整图只用标号、几乎无导线（教学图至少保留若干局部 joinWired）
 
 5. 网络命名规则:
    - 电源网络: VCC, GND, VEE（不允许信号网络使用这些名字）
@@ -529,12 +529,12 @@ wiringHints.forceLabel 列出需要标号管理的网络名（精确全名；禁
 【必须】routeStrategy — Key=网络名, Value="direct"|"avoid_cross"|"bus_style"
 
 MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
-仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？�(P你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
+仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？�(f你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
 
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
 2. 为每个网络分配合理的名称和类型
-3. 【关键】可建议每个连接的 mode；系统默认标号优先，再按脚预算≤2 升级导线并对并拉近
+3. 【关键】可建议每个连接的 mode；系统对 2～4 脚局部小网优先升级导线（WAR 正交），仪器/大网仍标号
 4. 【关键】为可能升级的 joinWired 网给出 routeWaypoints，并自检：不穿选中区、不碰无关脚、不与异网交叉
 5. 输出完整的 netPlan JSON
 
@@ -561,18 +561,18 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    - 仪器探针一律 joinByLabel；测量脚并入被测信号网同名（禁止另建 PROBE_* 重复 DUT 脚）
    - VIRTUAL_METER 真脚为 V,A,OHM,COM（不是 V+）；LA 真脚为 CH1–CH8（禁止 CH0/D0）
 
-4. 连接方式选择规则 — 标号优先原则:
-   【基本原则】系统默认全部 joinByLabel。仅当网络连接数≤3、且该脚 joinWired 预算仍≤2 时，本地才升级为导线，并把非仪器/非大封装器件对拉近（约120mil）。
-   >3 脚网络、电源别名扇出（VCC/GND/VCC_AM/AVDD…）、仪器脚（含 COM）一律保持标号。
+4. 连接方式选择规则 — 局部小网导线优先（适度增加可见导线）:
+   【基本原则】功能区内 2～4 脚小信号网优先 joinWired（正交/WAR 绕障）；系统会写入 forceWire 并拉近器件。
+   仪器脚、>4 脚大网、电源别名扇出（VCC/GND/VCC_AM/AVDD…）保持 joinByLabel。
 
-   适合升级为 joinWired（导线直连）的场景:
-   - 2～3 脚小信号网（LED+R、晶振负载、相邻分压段）
+   适合 joinWired（导线直连）的场景:
+   - 2～4 脚小信号网（LED+R、晶振负载、相邻分压段、运放反馈）
    - 电源符号↔单负载（连接数≤2）
-   - 线圈短驱动网可保留导线
+   - 线圈短驱动网
 
    必须保持 joinByLabel:
    - 【硬】同脚 joinWired 已达 2 次
-   - 【硬】网脚数 >3
+   - 【硬】网脚数 >4
    - 【硬】电源轨别名且连接数 >2
    - 仪器测量脚 CH*/V+/V/A/OHM/I+/COM/PROBE/IN/OUT/TX/RX
    - MCU 多外设 / 跨区长跨
@@ -580,7 +580,7 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    严格禁止:
    - 仪器脚走长导线
    - 大网满屏 A* 导线
-   - 假设「导线优先」
+   - 整图只用标号、几乎无导线（教学图至少保留若干局部 joinWired）
 
 5. 网络命名规则:
    - 电源网络: VCC, GND, VEE（不允许信号网络使用这些名字）
@@ -692,7 +692,7 @@ wiringHints.forceLabel 列出需要标号管理的网络名（精确全名；禁
 【必须】routeStrategy — Key=网络名, Value="direct"|"avoid_cross"|"bus_style"
 
 MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
-仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？äinitN�Property�T�3���L�Identifier�T�`�userTemplateP�TemplateLiteral�b�3��Q�TemplateElement�c�2R�s用户需求：{{user_prompt}}
+仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？äinitN�Property�j�I���L�Identifier�j�v�userTemplateP�TemplateLiteral�x�I��Q�TemplateElement�y�HR�s用户需求：{{user_prompt}}
 
 === 已放置器件列表（含完整引脚信息与选中区AABB） ===
 {{device_detail}}

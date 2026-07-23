@@ -14,6 +14,8 @@ export interface SymbolDrawStyle {
   hovered: boolean;
   /** LED fill/emission color; empty = unlit (outline only) */
   ledDisplayColor?: string;
+  /** Weak conduction / below full-lit threshold — same hue, dimmer alpha */
+  ledDimmed?: boolean;
   /** Buzzer energised (sounding) — filled body + sound waves */
   buzzerActive?: boolean;
   /** Pushbutton pressed (contacts closed) */
@@ -52,7 +54,8 @@ export class SchematicSymbolRenderer {
       style.switchPressed === true,
       style.potWiper !== undefined ? style.potWiper : 0.5,
       style.sensorTempC !== undefined ? style.sensorTempC : Number.NaN,
-      style.hallActive === true
+      style.hallActive === true,
+      style.ledDimmed === true
     );
     SchematicSymbolRenderer.drawPins(ctx, def.pins, style.strokeColor);
     SchematicSymbolRenderer.drawLabels(ctx, def, refDes, style);
@@ -119,7 +122,8 @@ export class SchematicSymbolRenderer {
     switchPressed: boolean = false,
     potWiper: number = 0.5,
     sensorTempC: number = Number.NaN,
-    hallActive: boolean = false
+    hallActive: boolean = false,
+    ledDimmed: boolean = false
   ): void {
     ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
     ctx.fillStyle = ProteusColors.CANVAS_BG;
@@ -173,7 +177,7 @@ export class SchematicSymbolRenderer {
         SchematicSymbolRenderer.drawDiode(ctx, false, '');
         break;
       case 'led':
-        SchematicSymbolRenderer.drawDiode(ctx, true, ledDisplayColor);
+        SchematicSymbolRenderer.drawDiode(ctx, true, ledDisplayColor, ledDimmed);
         break;
       case 'transistor':
         SchematicSymbolRenderer.drawTransistor(ctx);
@@ -413,7 +417,12 @@ export class SchematicSymbolRenderer {
     ['pink', '#D81B60'],
   ]);
 
-  private static drawDiode(ctx: CanvasRenderingContext2D, isLed: boolean, ledColor: string): void {
+  private static drawDiode(
+    ctx: CanvasRenderingContext2D,
+    isLed: boolean,
+    ledColor: string,
+    ledDimmed: boolean = false
+  ): void {
     // Diode body lines
     ctx.beginPath();
     ctx.moveTo(-30, 0);
@@ -431,13 +440,15 @@ export class SchematicSymbolRenderer {
     ctx.closePath();
     if (isLed && ledColor.length > 0) {
       const hex = SchematicSymbolRenderer.diodeColorMap.get(ledColor) ?? '#E53935';
+      const fillA = ledDimmed ? 0.12 : 0.72;
+      const strokeA = ledDimmed ? 0.22 : 1.0;
       ctx.save();
-      ctx.globalAlpha = 0.72;
+      ctx.globalAlpha = fillA;
       ctx.fillStyle = hex;
       ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = strokeA;
       ctx.strokeStyle = hex;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = ledDimmed ? 1.2 : 1.8;
       ctx.stroke();
       ctx.restore();
     } else {
@@ -448,8 +459,8 @@ export class SchematicSymbolRenderer {
     ctx.moveTo(8, -10);
     ctx.lineTo(8, 10);
     ctx.stroke();
-    // LED light emission arrows
-    if (isLed && ledColor.length > 0) {
+    // LED light emission arrows (full lit only; dim = weak fill, no rays)
+    if (isLed && ledColor.length > 0 && !ledDimmed) {
       const hex = SchematicSymbolRenderer.diodeColorMap.get(ledColor) ?? '#E53935';
       ctx.strokeStyle = hex;
       ctx.lineWidth = 1.5;

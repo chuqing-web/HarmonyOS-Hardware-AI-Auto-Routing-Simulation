@@ -15,7 +15,7 @@ import { EditorToolMode } from '../model/EditorToolMode';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 import { ProteusClassicBtn, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ThemeManager } from '../theme/ThemeManager';
-import { SchematicEditorImpl, SchematicLayerId, WirePathPreviewResult } from 'schematic_editor';
+import { SchematicEditorImpl, SchematicLayerId } from 'schematic_editor';
 import { pointer } from '@kit.InputKit';
 
 @Component
@@ -68,6 +68,8 @@ export struct SchematicCanvas {
   @State contextMenuScreenY: number = 0;
   @State contextMenuShowAddLabel: boolean = false;
   @State contextMenuShowEdit: boolean = false;
+  /** 仅选中器件时显示「复制」；仅导线时只显示「删除」 */
+  @State contextMenuShowCopy: boolean = false;
   @State showNetLabelDialog: boolean = false;
   @State netLabelDialogTitle: string = '放置网络标号';
   @State netLabelDialogName: string = 'NET1';
@@ -81,6 +83,23 @@ export struct SchematicCanvas {
   private wireWaypoints: Point2D[] = []; // Proteus-style multi-point wire drawing
   /** 上一次预览是否已自动绕障（避免 pointer move 刷状态栏） */
   private lastWirePreviewCorrected: boolean = false;
+  /** 画布侧 WAR 预览折线（绘制用，避免每帧同步 A*） */
+  private warDrawPoints: Point2D[] = [];
+  private warDrawBlocked: boolean = false;
+  private warDrawCorrected: boolean = false;
+  private warRouteTimer: number = -1;
+  private warRoutePending: boolean = false;
+  private lastWarPreviewEndKey: string = '';
+  private wireOverlayRedrawScheduled: boolean = false;
+  private wireOverlayRedrawTimer: number = -1;
+  /** 鼠标静止后再跑 lite WAR；拖动中只画 L 线 */
+  private static readonly WAR_DEBOUNCE_MS: number = 120;
+  /** 导线层重绘节流（约 ≤20fps），避免拖线时主线程刷屏 */
+  private static readonly WIRE_OVERLAY_THROTTLE_MS: number = 48;
+  /** 磁吸扫描节流：拖动中不必每像素扫引脚/导线 */
+  private static readonly WIRE_SNAP_THROTTLE_MS: number = 40;
+  private lastWireSnapMs: number = 0;
+  private lastSnappedWireEnd: Point2D | null = null;
   private alignGuideY: number | null = null;
   private dragBlocked: boolean = false; // true when component/layer locked, prevents accidental pan
   /** Sim-time pushbutton candidate — toggled on short click without drag */
@@ -93,6 +112,8 @@ export struct SchematicCanvas {
   private tempDragLastC: number = Number.NaN;
   private lastDownTime: number = 0;
   private lastUpTime: number = 0;
+  /** 本次按下前该导线是否已选中 — 仅此时松开才允许引出，避免「一击既选又布线」 */
+  private wireBranchEligible: boolean = false;
   private lastLabelTapMs: number = 0;
   private lastLabelTapId: string = '';
   private netLabelPendingX: number = 0;
@@ -169,6 +190,11 @@ export struct SchematicCanvas {
     if (this.gestureIdleTimer >= 0) {
       clearTimeout(this.gestureIdleTimer);
       this.gestureIdleTimer = -1;
+    }
+    this.clearWarRouteTimer();
+    if (this.wireOverlayRedrawTimer >= 0) {
+      clearTimeout(this.wireOverlayRedrawTimer);
+      this.wireOverlayRedrawTimer = -1;
     }
     this.clearPanHoldTimer();
     this.restoreCanvasCursor();
@@ -257,12 +283,23 @@ export struct SchematicCanvas {
     if (this.viewWidth <= 0 || this.viewHeight <= 0) {
       return;
     }
+    // 布线预览要跟手：优先 0 延迟；若已排队更长延迟则缩短
+    const wireLive = this.toolMode === EditorToolMode.WIRE && this.getWireStart() !== null;
+    const delay = wireLive ? 0 :
+      ((this.gestureBusy || this.isPanGestureActive()) ?
+        SchematicCanvas.GESTURE_REDRAW_MS : SchematicCanvas.REDRAW_INTERVAL_MS);
     if (this.redrawScheduled) {
+      if (wireLive && this.redrawTimer >= 0 && delay === 0) {
+        clearTimeout(this.redrawTimer);
+        this.redrawTimer = setTimeout(() => {
+          this.redrawScheduled = false;
+          this.redrawTimer = -1;
+          this.redraw();
+        }, 0);
+      }
       return;
     }
     this.redrawScheduled = true;
-    const delay = (this.gestureBusy || this.isPanGestureActive()) ?
-      SchematicCanvas.GESTURE_REDRAW_MS : SchematicCanvas.REDRAW_INTERVAL_MS;
     this.redrawTimer = setTimeout(() => {
       this.redrawScheduled = false;
       this.redrawTimer = -1;
@@ -457,15 +494,17 @@ export struct SchematicCanvas {
                 })
               }
               if (this.contextMenuShowEdit) {
-                ProteusClassicBtn({
-                  label: '复制',
-                  widthVal: 96,
-                  heightVal: 32,
-                  onAction: () => {
-                    this.contextMenuVisible = false;
-                    this.onCopySelected();
-                  }
-                })
+                if (this.contextMenuShowCopy) {
+                  ProteusClassicBtn({
+                    label: '复制',
+                    widthVal: 96,
+                    heightVal: 32,
+                    onAction: () => {
+                      this.contextMenuVisible = false;
+                      this.onCopySelected();
+                    }
+                  })
+                }
                 ProteusClassicBtn({
                   label: '删除',
                   widthVal: 96,
@@ -680,6 +719,7 @@ export struct SchematicCanvas {
   private clearSelection(): void {
     this.selectedComponentId = '';
     this.clearDragState();
+    this.wireBranchEligible = false;
     this.toolMode = EditorToolMode.SELECT;
     this.appService.schematicEditor.setSelection([]);
     this.setWireStart(null);
@@ -691,14 +731,52 @@ export struct SchematicCanvas {
     this.onStatusChange('已取消选择');
   }
 
+  /** 取消进行中的布线，回到选择模式；可选同时清除导线/器件选中 */
+  private cancelActiveWiring(clearSel: boolean = true): void {
+    this.wireWaypoints = [];
+    this.setWireStart(null);
+    this.previewWireEnd = null;
+    this.lastWirePreviewCorrected = false;
+    this.wireBranchEligible = false;
+    this.clearWarPreviewState();
+    (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
+    this.toolMode = EditorToolMode.SELECT;
+    if (clearSel) {
+      this.selectedComponentId = '';
+      this.clearDragState();
+      this.appService.schematicEditor.setSelection([]);
+    }
+    this.onStatusChange('已取消布线');
+    this.scheduleRedraw();
+  }
+
+  private clearWarRouteTimer(): void {
+    if (this.warRouteTimer >= 0) {
+      clearTimeout(this.warRouteTimer);
+      this.warRouteTimer = -1;
+    }
+    this.warRoutePending = false;
+  }
+
+  private clearWarPreviewState(): void {
+    this.clearWarRouteTimer();
+    this.warDrawPoints = [];
+    this.warDrawBlocked = false;
+    this.warDrawCorrected = false;
+    this.lastWarPreviewEndKey = '';
+    this.lastSnappedWireEnd = null;
+    this.lastWireSnapMs = 0;
+  }
+
   /**
-   * Right-click: cancel tools when active; wire endpoint → add net label;
-   * show copy/delete menu when something is selected.
+   * Right-click: cancel tools when active; selected wire/device → delete (+ copy if device);
+   * wire endpoint (no selection) → add net label.
    */
   private handleRightClick(): void {
     this.contextMenuVisible = false;
     this.contextMenuShowAddLabel = false;
     this.contextMenuShowEdit = false;
+    this.contextMenuShowCopy = false;
 
     if (this.toolMode === EditorToolMode.PLACE) {
       this.pendingLibraryId = '';
@@ -709,18 +787,30 @@ export struct SchematicCanvas {
       return;
     }
 
-    if (this.wireWaypoints.length > 0 || this.wireStartActive) {
-      this.wireWaypoints = [];
-      this.setWireStart(null);
-      this.previewWireEnd = null;
-      this.lastWirePreviewCorrected = false;
-      (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
-      this.onStatusChange('取消布线');
-      this.scheduleRedraw();
+    if (this.wireWaypoints.length > 0 || this.wireStartActive || this.toolMode === EditorToolMode.WIRE) {
+      this.cancelActiveWiring(true);
       return;
     }
 
     const world = this.screenToWorld(this.contextMenuScreenX, this.contextMenuScreenY);
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const selectedDevices = editor.getSelectedDevices();
+    const selectedWireIds = editor.getSelectedWireIds();
+
+    // 选中导线/器件后右击：删除（导线不必对准端点）
+    if (selectedDevices.length > 0 || selectedWireIds.length > 0) {
+      this.contextMenuShowEdit = true;
+      this.contextMenuShowCopy = selectedDevices.length > 0;
+      const endpoint = this.findNearestWireEndpointWorld(world);
+      if (endpoint !== null && selectedWireIds.length > 0) {
+        this.contextNetLabelX = endpoint.x;
+        this.contextNetLabelY = endpoint.y;
+        this.contextMenuShowAddLabel = true;
+      }
+      this.contextMenuVisible = true;
+      return;
+    }
+
     const endpoint = this.findNearestWireEndpointWorld(world);
     if (endpoint !== null) {
       this.contextNetLabelX = endpoint.x;
@@ -728,15 +818,6 @@ export struct SchematicCanvas {
       this.contextMenuShowAddLabel = true;
       this.contextMenuVisible = true;
       this.onStatusChange('导线端点：可添加网络标号');
-      return;
-    }
-
-    const selectedDevices = this.appService.schematicEditor.getSelectedDevices();
-    const selectedNets = this.appService.schematicEditor.getSelectedNets();
-
-    if (selectedDevices.length > 0 || selectedNets.length > 0) {
-      this.contextMenuShowEdit = true;
-      this.contextMenuVisible = true;
       return;
     }
 
@@ -1004,6 +1085,26 @@ export struct SchematicCanvas {
     }
 
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    // 导线优先：靠近引脚时也不要在 down 里选中器件，否则松开会「选器件+从脚引出」叠在一起
+    if (this.toolMode === EditorToolMode.SELECT) {
+      const wireHit = editor.hitTestWireAt(world);
+      if (wireHit !== null && wireHit.length > 0) {
+        const selectedWires = editor.getSelectedWireIds();
+        this.wireBranchEligible = false;
+        for (let wi = 0; wi < selectedWires.length; wi++) {
+          if (selectedWires[wi] === wireHit) {
+            this.wireBranchEligible = true;
+            break;
+          }
+        }
+        this.selectedComponentId = '';
+        this.clearDragState();
+        this.scheduleRedraw();
+        return;
+      }
+      this.wireBranchEligible = false;
+    }
+
     // 先 hitTest，勿用 selectAt（会立刻把多选压成单选）
     const hits = editor.hitTestAt(world);
     this.interactiveToggleCompId = '';
@@ -1116,17 +1217,10 @@ export struct SchematicCanvas {
     }
 
     if (this.toolMode === EditorToolMode.SELECT) {
-      const wireNet = editor.hitTestWireAt(world);
-      if (wireNet !== null && wireNet.length > 0) {
-        editor.selectAt(world);
-        this.selectedComponentId = '';
-        this.clearDragState();
-        this.onStatusChange('已选择导线');
-        this.scheduleRedraw();
-        return;
-      }
+      // 空白区（导线已在上面提前 return）：取消器件/导线选中
       this.selectedComponentId = '';
       this.clearDragState();
+      this.wireBranchEligible = false;
       // 空白区：长按 1s 不动 → 小手拖动画布；1s 内移动 → 框选
       if (!this.shiftHeld) {
         this.appService.schematicEditor.setSelection([]);
@@ -1135,6 +1229,7 @@ export struct SchematicCanvas {
       this.leftPanning = false;
       this.armEmptyHoldForPan();
       this.onStatusChange('长按1秒拖动画布，移动则框选');
+      this.scheduleRedraw();
     }
   }
 
@@ -1150,11 +1245,22 @@ export struct SchematicCanvas {
         return;
       }
       const g = this.appService.schematicEditor.getViewport().gridSize;
-      const nearPin = this.findNearestPinWorld(world);
-      const nearWire = this.findNearestWireSnapWorld(world);
-      this.previewWireEnd = nearPin ?? nearWire ?? this.snapWorldToGrid(world, g);
-      this.updateWirePreviewStatus();
-      this.scheduleRedraw();
+      const now = Date.now();
+      if (now - this.lastWireSnapMs >= SchematicCanvas.WIRE_SNAP_THROTTLE_MS ||
+        this.lastSnappedWireEnd === null) {
+        this.lastWireSnapMs = now;
+        const nearPin = this.findNearestPinWorld(world);
+        const nearWire = this.findNearestWireSnapWorld(world);
+        this.lastSnappedWireEnd = nearPin ?? nearWire ?? this.snapWorldToGrid(world, g);
+      } else if (this.lastSnappedWireEnd !== null) {
+        // 节流间隙：网格跟手，磁吸点沿用上次
+        const gridEnd = this.snapWorldToGrid(world, g);
+        const snap = this.lastSnappedWireEnd;
+        const snapDist = Math.hypot(world.x - snap.x, world.y - snap.y);
+        this.lastSnappedWireEnd = snapDist <= g * 1.2 ? snap : gridEnd;
+      }
+      this.previewWireEnd = this.lastSnappedWireEnd ?? this.snapWorldToGrid(world, g);
+      this.onWirePreviewEndMoved();
       if (!this.pointerDown) {
         return;
       }
@@ -1329,7 +1435,12 @@ export struct SchematicCanvas {
     } else if (this.toolMode === EditorToolMode.PLACE) {
       this.tryPlaceComponent(world);
     } else if (this.leftPanning || this.emptyHoldPending) {
-      // 长按平移结束 / 未满1s松开：仅清选，不触发框选
+      // 长按平移结束 / 未满1s松开：取消选中（含导线），不触发框选/布线
+      this.wireBranchEligible = false;
+      if (!this.shiftHeld) {
+        this.selectedComponentId = '';
+        this.appService.schematicEditor.setSelection([]);
+      }
       this.onStatusChange('就绪');
     } else if (this.toolMode === EditorToolMode.ZOOM_REGION && this.isBoxSelecting) {
       this.boxSelectEnd = world;
@@ -1699,6 +1810,7 @@ export struct SchematicCanvas {
     this.wireWaypoints = [];
     this.setWireStart(null);
     this.previewWireEnd = null;
+    this.clearWarPreviewState();
     (this.appService.schematicEditor as SchematicEditorImpl).clearWarPathBuffer();
     this.onStatusChange('仿真运行中，无法接线');
     this.scheduleRedraw();
@@ -1714,7 +1826,7 @@ export struct SchematicCanvas {
     if (this.showNetLabelDialog) {
       return;
     }
-    const editor = this.appService.schematicEditor;
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
     const wireStart = this.getWireStart();
 
     switch (this.toolMode) {
@@ -1741,19 +1853,21 @@ export struct SchematicCanvas {
         const endTol = Math.max(g * 1.5, 8);
         if (wireStart === null) {
           if (nearPin === null && nearWire === null) {
-            this.onStatusChange('请点击引脚或导线开始连线');
+            // 空白：退出布线并清除选中
+            this.cancelActiveWiring(true);
             break;
           }
           this.wireWaypoints = [wirePoint];
           this.setWireStart(wirePoint);
+          this.lastWarPreviewEndKey = '';
           this.onStatusChange(nearPin !== null
-            ? '导线起点: 点击添加拐点，再点同一拐点可放端点'
-            : '导线起点(已接导线): 点击添加拐点，点引脚/导线完成');
+            ? '导线起点: 点引脚/导线完成；点空白或右击取消'
+            : '导线起点(已接导线): 点引脚/导线完成；点空白或右击取消');
         } else if (nearPin !== null || nearWire !== null) {
           const firstWp = this.wireWaypoints[0];
           const sameAnchor = Math.abs(wirePoint.x - firstWp.x) < 4 && Math.abs(wirePoint.y - firstWp.y) < 4;
           if (sameAnchor) {
-            this.onStatusChange('请点击其他引脚/导线完成，或点空白加拐点后再点该拐点放端点');
+            this.onStatusChange('请点其他引脚/导线完成，或点空白/右击取消');
             break;
           }
           this.wireWaypoints.push(wirePoint);
@@ -1768,7 +1882,11 @@ export struct SchematicCanvas {
           this.setWireStart(null);
           this.previewWireEnd = null;
           this.lastWirePreviewCorrected = false;
+          this.clearWarPreviewState();
           editor.clearWarPathBuffer();
+          this.toolMode = EditorToolMode.SELECT;
+          this.selectedComponentId = '';
+          this.appService.schematicEditor.setSelection([]);
           if (wireResult.success) {
             this.onStatusChange(nearWire !== null && nearPin === null
               ? '导线已完成（已并接到既有导线）'
@@ -1781,7 +1899,7 @@ export struct SchematicCanvas {
           const last = this.wireWaypoints[this.wireWaypoints.length - 1];
           const nearLast = Math.abs(wirePoint.x - last.x) <= endTol &&
             Math.abs(wirePoint.y - last.y) <= endTol;
-          // 再点当前拐点 → 以该点为导线端点结束（悬空 stub，可右键加标号）
+          // 再点当前拐点 → 以该点为导线端点结束（悬空 stub）
           if (nearLast && this.wireWaypoints.length >= 2) {
             const preview = editor.previewWirePath(this.wireWaypoints);
             if (preview.blocked === true || preview.points.length < 2) {
@@ -1793,24 +1911,21 @@ export struct SchematicCanvas {
             this.setWireStart(null);
             this.previewWireEnd = null;
             this.lastWirePreviewCorrected = false;
+            this.clearWarPreviewState();
             editor.clearWarPathBuffer();
+            this.toolMode = EditorToolMode.SELECT;
+            this.selectedComponentId = '';
+            this.appService.schematicEditor.setSelection([]);
             if (wireResult.success) {
-              this.onStatusChange('已放置导线端点（与 WAR 预览一致；右击可加网络标号）');
+              this.onStatusChange('已放置导线端点（右击可加网络标号）');
               this.onDocumentChanged();
             } else {
               this.onStatusChange(wireResult.error ?? '接线失败');
             }
             break;
           }
-          if (nearLast) {
-            this.onStatusChange('请先点空白处添加拐点，再点该拐点放置端点');
-            break;
-          }
-          this.wireWaypoints.push(wirePoint);
-          this.setWireStart(wirePoint);
-          this.onStatusChange(
-            `拐点已添加 (共${this.wireWaypoints.length - 1}个): 再点此拐点放端点 / 点引脚或导线完成 / 继续点加拐点`
-          );
+          // 空白非导线区：取消布线 + 清除导线选中
+          this.cancelActiveWiring(true);
         }
         break;
       }
@@ -1852,9 +1967,12 @@ export struct SchematicCanvas {
         this.onDocumentChanged();
         break;
       default: {
-        // 双击已有网络标号 → 改名
+        // 双击已有网络标号 → 改名（点标号也取消导线选中）
         const labelHit = editor.hitTestNetLabel(world);
         if (labelHit !== null) {
+          this.wireBranchEligible = false;
+          editor.setSelection([]);
+          this.selectedComponentId = '';
           const now = Date.now();
           if (labelHit === this.lastLabelTapId && now - this.lastLabelTapMs < 450) {
             this.openRenameNetLabelDialog(labelHit);
@@ -1865,9 +1983,64 @@ export struct SchematicCanvas {
           this.lastLabelTapId = labelHit;
           this.lastLabelTapMs = now;
           this.onStatusChange('双击网络标号可改名');
+          this.scheduleRedraw();
           break;
         }
-        // Auto-switch to wire mode when clicking a pin in SELECT mode
+
+        // 导线优先于引脚：第一次点导线只选中；已选中且本按下前已选中 → 再左击才引出
+        // （避免点线近脚时被当成「从引脚开始布线」，表现为一击既选又引出）
+        const wireId: string | null = editor.hitTestWireAt(world);
+        if (wireId !== null && wireId.length > 0) {
+          const selectedWires: string[] = editor.getSelectedWireIds();
+          let alreadySelected = false;
+          for (let i = 0; i < selectedWires.length; i++) {
+            if (selectedWires[i] === wireId) {
+              alreadySelected = true;
+              break;
+            }
+          }
+          if (alreadySelected && this.wireBranchEligible) {
+            if (this.isSimulationActive()) {
+              this.onStatusChange('仿真运行中，无法接线');
+              break;
+            }
+            if (this.isLayerBlocked(SchematicLayerId.WIRING)) {
+              this.onStatusChange('布线层已锁定');
+              break;
+            }
+            const snap = this.findNearestWireSnapWorld(world);
+            if (snap === null) {
+              this.onStatusChange('无法从该点引出导线');
+              break;
+            }
+            this.wireBranchEligible = false;
+            this.toolMode = EditorToolMode.WIRE;
+            this.selectedComponentId = '';
+            this.clearDragState();
+            this.wireWaypoints = [snap];
+            this.setWireStart(snap);
+            this.lastWarPreviewEndKey = '';
+            this.onStatusChange('从导线引出: 点引脚/导线完成；点空白或右击取消');
+            this.scheduleRedraw();
+            break;
+          }
+          editor.selectAt(world);
+          this.wireBranchEligible = false;
+          this.selectedComponentId = '';
+          this.clearDragState();
+          this.onStatusChange('已选择导线（再左击从该点引出，右击删除）');
+          this.scheduleRedraw();
+          break;
+        }
+
+        // 点到非导线处：先取消导线选中
+        this.wireBranchEligible = false;
+        if (editor.getSelectedWireIds().length > 0) {
+          editor.setSelection([]);
+          this.selectedComponentId = '';
+        }
+
+        // 无导线命中时：点引脚开始布线
         const nearPin = this.findNearestPinWorld(world);
         if (nearPin !== null) {
           if (this.isSimulationActive()) {
@@ -1880,9 +2053,11 @@ export struct SchematicCanvas {
           this.appService.schematicEditor.setSelection([]);
           this.wireWaypoints = [nearPin];
           this.setWireStart(nearPin);
-          this.onStatusChange('导线起点: 点击添加拐点，再点同一拐点可放端点');
+          this.lastWarPreviewEndKey = '';
+          this.onStatusChange('导线起点: 点引脚/导线完成；点空白或右击取消');
           break;
         }
+
         const hits = editor.selectAt(world);
         if (hits.length > 0) {
           this.selectedComponentId = hits[0];
@@ -1890,7 +2065,9 @@ export struct SchematicCanvas {
         } else {
           this.selectedComponentId = '';
           editor.setSelection([]);
+          this.onStatusChange('已取消选择');
         }
+        this.scheduleRedraw();
         break;
       }
     }
@@ -2325,12 +2502,10 @@ export struct SchematicCanvas {
   }
 
   /**
-   * WAR 动态预览：蓝色虚线；blocked 时不画穿障折线。
-   * 路径写入编辑器 Path Buffer，落线复用同一缓存。
+   * WAR 动态预览：蓝色虚线。绘制只用本地缓存，不在绘制路径里跑 A*。
    */
   private drawLiveWirePathPreview(ctx: CanvasRenderingContext2D, editor: SchematicEditorImpl): void {
     if (!editor.isWarEnabled()) {
-      // WAR 关闭：仅画用户正交折线预览（不自动绕障）
       this.drawManualOrthogonalPreview(ctx);
       return;
     }
@@ -2338,9 +2513,10 @@ export struct SchematicCanvas {
     if (previewPts.length < 2) {
       return;
     }
-    const result: WirePathPreviewResult = editor.previewWirePath(previewPts);
-    if (result.blocked === true || result.points.length < 2) {
-      // 无合法路径：不绘制穿障线，仅标红提示点
+    const drawPts = this.warDrawPoints.length >= 2
+      ? this.warDrawPoints
+      : this.buildCheapOrthogonalPreview(previewPts);
+    if (this.warDrawBlocked && this.warDrawPoints.length < 2) {
       ctx.fillStyle = '#CC3333';
       const last = previewPts[previewPts.length - 1];
       ctx.beginPath();
@@ -2348,16 +2524,160 @@ export struct SchematicCanvas {
       ctx.fill();
       return;
     }
+    if (drawPts.length < 2) {
+      return;
+    }
     ctx.strokeStyle = ProteusColors.SELECTED;
-    ctx.lineWidth = result.autoCorrected ? 2.5 : 2;
+    ctx.lineWidth = this.warDrawCorrected ? 2.5 : 2;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.moveTo(result.points[0].x, result.points[0].y);
-    for (let i = 1; i < result.points.length; i++) {
-      ctx.lineTo(result.points[i].x, result.points[i].y);
+    ctx.moveTo(drawPts[0].x, drawPts[0].y);
+    for (let i = 1; i < drawPts.length; i++) {
+      ctx.lineTo(drawPts[i].x, drawPts[i].y);
     }
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  /** 鼠标移动：先画廉价 L 线跟手，再防抖跑 WAR */
+  private onWirePreviewEndMoved(): void {
+    if (this.previewWireEnd === null) {
+      return;
+    }
+    const endKey =
+      `${Math.round(this.previewWireEnd.x)},${Math.round(this.previewWireEnd.y)}`;
+    if (endKey === this.lastWarPreviewEndKey) {
+      return;
+    }
+    this.lastWarPreviewEndKey = endKey;
+    const previewPts = this.collectWirePreviewWaypoints();
+    this.warDrawPoints = this.buildCheapOrthogonalPreview(previewPts);
+    this.warDrawBlocked = false;
+    this.warDrawCorrected = false;
+    this.scheduleWireOverlayRedraw();
+    this.requestWarRouteUpdate();
+  }
+
+  /** 正交 L 折线（无 A*），用于跟手预览 */
+  private buildCheapOrthogonalPreview(previewPts: Point2D[]): Point2D[] {
+    if (previewPts.length < 2) {
+      return [];
+    }
+    const out: Point2D[] = [];
+    out.push({ x: previewPts[0].x, y: previewPts[0].y });
+    for (let i = 1; i < previewPts.length; i++) {
+      const prev = out[out.length - 1];
+      const curr = previewPts[i];
+      if (Math.abs(prev.x - curr.x) < 0.5 || Math.abs(prev.y - curr.y) < 0.5) {
+        out.push({ x: curr.x, y: curr.y });
+      } else {
+        out.push({ x: curr.x, y: prev.y });
+        out.push({ x: curr.x, y: curr.y });
+      }
+    }
+    return out;
+  }
+
+  /** 真正 idle 防抖：每次移动重置计时，静止 WAR_DEBOUNCE_MS 后再算 */
+  private requestWarRouteUpdate(): void {
+    this.warRoutePending = true;
+    if (this.warRouteTimer >= 0) {
+      clearTimeout(this.warRouteTimer);
+      this.warRouteTimer = -1;
+    }
+    this.warRouteTimer = setTimeout(() => {
+      this.warRouteTimer = -1;
+      if (!this.warRoutePending) {
+        return;
+      }
+      this.warRoutePending = false;
+      this.runWarRouteCompute();
+    }, SchematicCanvas.WAR_DEBOUNCE_MS);
+  }
+
+  private runWarRouteCompute(): void {
+    if (this.toolMode !== EditorToolMode.WIRE || this.getWireStart() === null) {
+      return;
+    }
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    if (!editor.isWarEnabled()) {
+      const pts = this.collectWirePreviewWaypoints();
+      this.warDrawPoints = this.buildCheapOrthogonalPreview(pts);
+      this.warDrawBlocked = false;
+      this.warDrawCorrected = false;
+      this.scheduleWireOverlayRedraw();
+      return;
+    }
+    const previewPts = this.collectWirePreviewWaypoints();
+    if (previewPts.length < 2) {
+      this.warDrawPoints = [];
+      this.warDrawBlocked = false;
+      this.scheduleWireOverlayRedraw();
+      return;
+    }
+    // 拖动预览：previewLite=true，禁止 A*，避免主线程 THREAD_BLOCK
+    const result = editor.previewWirePath(previewPts, true);
+    if (result.blocked === true || result.points.length < 2) {
+      this.warDrawBlocked = true;
+      // lite 失败时保留 L 线跟手，避免预览闪空
+      this.warDrawPoints = this.buildCheapOrthogonalPreview(previewPts);
+      this.warDrawCorrected = false;
+      if (!this.lastWirePreviewCorrected) {
+        this.lastWirePreviewCorrected = true;
+        this.onStatusChange('WAR：当前无法无碰撞布线（不可穿器件选中区）');
+      }
+    } else {
+      this.warDrawBlocked = false;
+      this.warDrawPoints = result.points;
+      this.warDrawCorrected = result.autoCorrected;
+      if (result.autoCorrected !== this.lastWirePreviewCorrected) {
+        this.lastWirePreviewCorrected = result.autoCorrected;
+        if (result.autoCorrected) {
+          this.onStatusChange('WAR 自动寻路：蓝色虚线为将落线路径（已避开选中区）');
+        } else if (this.wireWaypoints.length >= 1) {
+          this.onStatusChange('导线预览：点引脚/导线完成；点空白或右击取消');
+        }
+      }
+    }
+    this.scheduleWireOverlayRedraw();
+  }
+
+  /** 仅刷新导线/预览层；节流避免拖线时主线程刷屏 */
+  private scheduleWireOverlayRedraw(): void {
+    if (this.viewWidth <= 0 || this.viewHeight <= 0) {
+      return;
+    }
+    if (this.wireOverlayRedrawScheduled) {
+      return;
+    }
+    this.wireOverlayRedrawScheduled = true;
+    this.wireOverlayRedrawTimer = setTimeout(() => {
+      this.wireOverlayRedrawScheduled = false;
+      this.wireOverlayRedrawTimer = -1;
+      this.redrawWireOverlayOnly();
+    }, SchematicCanvas.WIRE_OVERLAY_THROTTLE_MS);
+  }
+
+  private redrawWireOverlayOnly(): void {
+    if (this.viewWidth <= 0 || this.viewHeight <= 0) {
+      return;
+    }
+    const doc = this.appService.schematicEditor.getDocument();
+    const vp = this.appService.schematicEditor.getViewport();
+    const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    const w = this.viewWidth;
+    const h = this.viewHeight;
+    const bounds = this.getVisibleWorldBounds(vp);
+    const wCtx = this.wireCtx;
+    wCtx.clearRect(0, 0, w, h);
+    wCtx.save();
+    wCtx.translate(vp.panOffset.x, vp.panOffset.y);
+    wCtx.scale(vp.zoom, vp.zoom);
+    if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
+      this.drawWires(wCtx, doc.wires);
+    }
+    this.renderOverlays(wCtx, doc, vp, bounds, editor);
+    wCtx.restore();
   }
 
   /** WAR 关闭时的正交预览（无 A*） */
@@ -2366,20 +2686,14 @@ export struct SchematicCanvas {
     if (previewPts.length < 2) {
       return;
     }
+    const drawPts = this.buildCheapOrthogonalPreview(previewPts);
     ctx.strokeStyle = ProteusColors.SELECTED;
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.moveTo(previewPts[0].x, previewPts[0].y);
-    for (let i = 1; i < previewPts.length; i++) {
-      const prev = previewPts[i - 1];
-      const curr = previewPts[i];
-      if (Math.abs(prev.x - curr.x) < 0.5 || Math.abs(prev.y - curr.y) < 0.5) {
-        ctx.lineTo(curr.x, curr.y);
-      } else {
-        ctx.lineTo(curr.x, prev.y);
-        ctx.lineTo(curr.x, curr.y);
-      }
+    ctx.moveTo(drawPts[0].x, drawPts[0].y);
+    for (let i = 1; i < drawPts.length; i++) {
+      ctx.lineTo(drawPts[i].x, drawPts[i].y);
     }
     ctx.stroke();
     ctx.setLineDash([]);
@@ -2405,31 +2719,6 @@ export struct SchematicCanvas {
       pts.push(end);
     }
     return pts;
-  }
-
-  private updateWirePreviewStatus(): void {
-    const editor = this.appService.schematicEditor as SchematicEditorImpl;
-    const previewPts = this.collectWirePreviewWaypoints();
-    if (previewPts.length < 2) {
-      this.lastWirePreviewCorrected = false;
-      return;
-    }
-    const result = editor.previewWirePath(previewPts);
-    if (result.blocked === true) {
-      if (!this.lastWirePreviewCorrected) {
-        this.lastWirePreviewCorrected = true;
-        this.onStatusChange('WAR：当前无法无碰撞布线（不可穿器件选中区）');
-      }
-      return;
-    }
-    if (result.autoCorrected !== this.lastWirePreviewCorrected) {
-      this.lastWirePreviewCorrected = result.autoCorrected;
-      if (result.autoCorrected) {
-        this.onStatusChange('WAR 自动寻路：蓝色虚线为将落线路径（已避开选中区）');
-      } else if (this.wireWaypoints.length >= 1) {
-        this.onStatusChange('导线预览：点击添加拐点，再点同一拐点可放端点 / 点引脚完成');
-      }
-    }
   }
 
   /**
@@ -2637,7 +2926,8 @@ export struct SchematicCanvas {
   private findNearestPinWorld(world: Point2D): Point2D | null {
     const doc = this.appService.schematicEditor.getDocument();
     const g = this.appService.schematicEditor.getViewport().gridSize;
-    const threshold = g * 1.5; // match editor's snapToNearestPin threshold
+    // 与 SchematicEditorImpl.findPinAtPoint 对齐：脚在选中区内仍优先吸附
+    const threshold = Math.max(g * 2, 16);
     let bestDist = threshold;
     let bestPoint: Point2D | null = null;
     for (let i = 0; i < doc.components.length; i++) {
@@ -3069,6 +3359,20 @@ export struct SchematicCanvas {
     return null;
   }
 
+  private parseLedThreshNumber(comp: ComponentInstance, def: ComponentDefinition,
+    key: string, fallback: number): number {
+    let raw = comp.parameters.get(key);
+    if (raw === undefined || raw.length === 0) {
+      raw = def.defaultParams.get(key);
+    }
+    if (raw === undefined || raw.length === 0) {
+      return fallback;
+    }
+    const cleaned = raw.trim().replace(/[VvMmAa]/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
   private isLedConducting(comp: ComponentInstance, def: ComponentDefinition): boolean {
     const doc = this.appService.schematicEditor.getDocument();
     const pinNets = getPinNetMap(comp.id, doc.nets);
@@ -3082,32 +3386,68 @@ export struct SchematicCanvas {
     const vK = kernel.getNetVoltageByUuid(cathodeNet);
     const vf = vA - vK;
     const current = Math.abs(kernel.getBranchCurrent(comp.id));
-    // Open contact / HiZ: cathode not near GND — not lit
-    if (vK >= 2.5) {
+    const litVf = this.parseLedThreshNumber(comp, def, 'litVf', 1.2);
+    const litVkMax = this.parseLedThreshNumber(comp, def, 'litVkMax', 0.9);
+    const litI = this.parseLedThreshNumber(comp, def, 'litImA', 0.5) * 1e-3;
+    const litVfAlt = this.parseLedThreshNumber(comp, def, 'litVfAlt', 1.0);
+    const openVk = this.parseLedThreshNumber(comp, def, 'openVk', 2.5);
+    if (vK >= openVk) {
       return false;
     }
-    // Sink-lit: cathode near GND + forward Vf.
-    // Branch I 常因节点别名报 0，不能单靠电流；Va 也可能仍接近 VCC（量测取到电源网）。
-    // 以 Vk≤0.9 且 Vf≥1.2 作为主判据（与 instr_trace [LED] mid/lit 一致）。
-    if (vK <= 0.9 && vf >= 1.2) {
+    if (vK <= litVkMax && vf >= litVf) {
       return true;
     }
-    return current >= 5e-4 && vf >= 1.0;
+    return current >= litI && vf >= litVfAlt;
   }
 
-  private resolveLedDisplayColor(comp: ComponentInstance, def: ComponentDefinition): string {
+  /**
+   * Weak forward / sub-threshold conduction: enough to say「在导通方向」，
+   * but below full-lit criteria — show dimmed nominal color.
+   */
+  private isLedWeakConducting(comp: ComponentInstance, def: ComponentDefinition): boolean {
+    if (this.isLedConducting(comp, def)) {
+      return false;
+    }
+    const doc = this.appService.schematicEditor.getDocument();
+    const pinNets = getPinNetMap(comp.id, doc.nets);
+    const anodeNet = this.findLedAnodeNet(def, pinNets);
+    const cathodeNet = this.findLedCathodeNet(def, pinNets);
+    if (anodeNet === null || cathodeNet === null || anodeNet === cathodeNet) {
+      return false;
+    }
+    const kernel = this.appService.simulationKernel as SimulationKernelImpl;
+    const vA = kernel.getNetVoltageByUuid(anodeNet);
+    const vK = kernel.getNetVoltageByUuid(cathodeNet);
+    const vf = vA - vK;
+    const current = Math.abs(kernel.getBranchCurrent(comp.id));
+    const openVk = this.parseLedThreshNumber(comp, def, 'openVk', 2.5);
+    const dimVf = this.parseLedThreshNumber(comp, def, 'dimVf', 0.25);
+    if (vK >= openVk) {
+      return false;
+    }
+    if (vf >= dimVf) {
+      return true;
+    }
+    return current >= 1e-5 && vf >= 0.15;
+  }
+
+  /** off | dim (导通未达亮) | lit */
+  private resolveLedVisualLevel(comp: ComponentInstance, def: ComponentDefinition): string {
     if (!this.isLedWired(comp, def)) {
-      return '';
+      return 'off';
     }
     const simState = this.appService.simulationKernel.getState();
     const simActive = simState === SimulationState.RUNNING || simState === SimulationState.PAUSED;
     if (!simActive) {
-      return '';
+      return 'off';
     }
-    if (!this.isLedConducting(comp, def)) {
-      return '';
+    if (this.isLedConducting(comp, def)) {
+      return 'lit';
     }
-    return this.resolveLedNominalColor(comp, def);
+    if (this.isLedWeakConducting(comp, def)) {
+      return 'dim';
+    }
+    return 'off';
   }
 
   private drawLitLedOverlays(ctx: CanvasRenderingContext2D, doc: SchematicDocument): void {
@@ -3124,7 +3464,11 @@ export struct SchematicCanvas {
       if (def === null || !this.isLedComponent(comp, def)) {
         continue;
       }
-      const ledColor = this.resolveLedDisplayColor(comp, def);
+      const level = this.resolveLedVisualLevel(comp, def);
+      if (level === 'off') {
+        continue;
+      }
+      const ledColor = this.resolveLedNominalColor(comp, def);
       if (ledColor.length === 0) {
         continue;
       }
@@ -3134,7 +3478,8 @@ export struct SchematicCanvas {
         lineWidth: 1.2,
         selected: false,
         hovered: false,
-        ledDisplayColor: ledColor
+        ledDisplayColor: ledColor,
+        ledDimmed: level === 'dim'
       };
       SchematicSymbolRenderer.drawComponent(
         ctx, comp.position.x, comp.position.y, def,
