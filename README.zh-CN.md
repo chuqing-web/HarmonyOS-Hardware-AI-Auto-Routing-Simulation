@@ -43,12 +43,13 @@
 3. 能把 **大模型能力落地为可执行拓扑**（而不仅是聊天答疑）——且 Prompt 可版本化、可审计、可演进；  
 4. 面向课堂的 **实验模板、分步上电、故障注入与覆盖率评估**。
 
-**AI-SCH 仿真器**（包名 `com.elecdraw.aischsim`，厂商 ElecDraw，版本 1.0.0）正是为填补上述空白而设计：在 ArkTS / ArkUI Stage 模型上构建模块化 HAR 架构，以统一拓扑契约 `SchTopology` 贯穿编辑、仿真、AI、持久化与教学全链路。
+**AI-SCH 仿真器**（包名 `com.elecdraw.aischsim`，厂商 ElecDraw，版本 **1.1.0**）正是为填补上述空白而设计：在 ArkTS / ArkUI Stage 模型上构建模块化 HAR 架构，以统一拓扑契约 `SchTopology` 贯穿编辑、仿真、AI、持久化与教学全链路。
 
 | 项目 | 说明 |
 |------|------|
 | 应用名称 | AI-SCH 仿真器 |
 | Bundle | `com.elecdraw.aischsim` |
+| 版本 | **1.1.0**（`AppScope/app.json5` / `oh-package.json5`） |
 | 平台 | HarmonyOS NEXT 5.0+ / SDK API 12 |
 | 设备形态 | **2in1（主推）**、tablet、default |
 | 语言与 UI | ArkTS + ArkUI，Proteus 风格主题 |
@@ -66,7 +67,7 @@
 | 2 | **分阶段约束 JSON + 本地硬引擎** | 选型 / 布局 / 建网计划 / 布线 / 自检 / 模块规划等 Prompt 只产出结构化约束；GA 摆放、语义建网、A\* 布线、ERC / 几何门禁在本地执行，杜绝「生成一段文字当电路」 |
 | 3 | **模块化并行生图** | 复杂电路可选「整图一次」或「模块并行」：整体设计 + 边界门禁 → 真并行子流水线 → pin-to-pin joints 合并，显著缩短墙钟时间且保持跨模块电气正确 |
 | 4 | **器件用法手册注入** | 选型落地后，按本次 BOM 注入全库 `DeviceUsageManual`（真脚 / 典型接法 / 禁例），降低瞎连线与脚名臆造 |
-| 5 | **HarmonyOS 原生混合信号内核** | 自研 MNA 模拟引擎、事件驱动数字引擎、8051 / Cortex-M3 路径，全局纳秒调度器协同 |
+| 5 | **HarmonyOS 原生混合信号内核** | 自研 MNA 模拟引擎、事件驱动数字引擎、8051 / 进程内 Cortex-M3 教学路径，全局纳秒调度器协同 |
 | 6 | **教学—仿真—诊断闭环** | 20 套 `.schsim` 实验 + HEX 固件 + 知识点提示 + 分步上电 + 故障注入 + 覆盖率仪表盘；仪器与原理图网络实时绑定 |
 | 7 | **多厂商 AI 治理** | 17 类提供商模板、任务级 API 绑定、配额仪表盘、离线 / 代理 / 降级策略 |
 
@@ -149,10 +150,11 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 
 - 模拟：`AnalogEngine`（MNA + Newton-Raphson，二极管 / LED / 三极管 / 运放 / 稳压 / 继电器 / 电位器等）  
 - 数字：`DigitalEngine`（事件驱动，74HC 时序、扇出、建立保持）  
-- MCU：8051 与 Cortex-M3 行为 / 指令路径，与模拟 / 数字网络同步（GPIO、ADC、USART）  
+- MCU：8051 与 Cortex-M3 **进程内**行为 / 指令路径（`QemuMcuBridge` 为 Thumb 教学级解释器，**非**外部 QEMU 进程），与模拟 / 数字网络同步（GPIO、ADC、USART）  
 - 全局调度：`GlobalScheduler`（纳秒级、自适应步长）  
-- 分析接口：瞬态 / 直流 / 交流 / 混合 / 噪声 / 蒙特卡洛 / 参数扫描  
-- 交互：按键通断、电位器滑臂、继电器触点；故障注入 9 类场景与批量扫描  
+- 分析接口：瞬态 / 直流 / 交流 / 混合 / 噪声 / 蒙特卡洛 / 参数扫描（高级项受 `FeatureGate` 授权门闸）  
+- 交互：按键通断、电位器滑臂、继电器触点  
+- 故障注入：枚举 **9 类**故障类型；波形修改 / 批量扫描引擎覆盖其中常用子集（开短路、电容漏电等），持续扩充中  
 
 ### 4.3 MCU 调试
 
@@ -178,7 +180,9 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 
 ### 4.5 AI 智能设计
 
-自然语言驱动的器件选型、布局约束、建网计划、全局 / 局部布线、整图一次 / 模块并行生成、静态 / 动态诊断、波形解读、参数推荐、替换器件与 BOM 优化；完整闭环见 [第六节](#六ai-闭环流水线)。
+自然语言驱动的器件选型、布局约束、建网计划、全局 / 局部布线、整图一次 / 模块并行生成、多轮 **edit 增量**、静态 / 动态诊断、波形解读、参数推荐、替换器件与 BOM 优化；完整闭环见 [第六节](#六ai-闭环流水线)。
+
+生产路径要求 **真实 LLM + 本地硬引擎**；**禁止**用实验模板 / `CircuitTemplates` 关键词捷径冒充 AI 落图。实验模板仅通过教学面板加载。
 
 <p align="center">
   <img src="./picture/ai-gen-process-1.png" alt="AI 生图过程：选型与布局约束" width="900">
@@ -195,9 +199,11 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 ### 4.6 工程与扩展
 
 - `.schsim` 工程保存 / 加载、自动保存、崩溃保护、会话恢复  
-- 导入：Proteus / KiCad / LTspice 解析骨架；导出：PNG / SVG / PDF、波形 CSV、BOM  
-- 协作：快照、工程锁、批注、冲突解决骨架  
-- 插件：清单、签名校验、沙箱权限、示例脚本加载  
+- 导入：Proteus / KiCad / LTspice **基础解析器**（覆盖常见子集，非全量 EDA 兼容）  
+- 导出：PNG / SVG（`exportSchImage`）、简化 PDF、波形 CSV、BOM / 网表  
+- 协作：本地快照、工程锁、批注与冲突辅助；**实时 WebSocket 协同需外部服务端**（骨架）  
+- 插件：清单解析、签名校验、权限门闸；沙箱执行当前为 **权限约束下的桩执行器**（非完整脚本 VM）  
+- 授权：`LicenseManager` / `TrialManager` / `FeatureGate`（蒙特卡洛、故障注入、插件等能力门闸）  
 
 ---
 
@@ -231,11 +237,13 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 
 ### 5.4 仿真线程路径
 
+`SimWorkerHost` 已实现 ThreadWorker 路径，但当前默认 **`ENABLE_THREAD_WORKER = false`**（帧载荷尚未做字典差分前，避免 Worker 队列饿死 MMI）。生产默认走主线程 **预算泵（约 40ms）**，保证 UI 流畅；Worker 为可选项 / 路线图能力。
+
 ```
 UI / AppService
     → SimWorkerHost
-        → [优选] ThreadWorker（SimWorker）→ SimulationKernelImpl → 帧快照
-        → [回退] 主线程泵（预算限流，保障流畅）
+        → [默认] 主线程预算泵 → SimulationKernelImpl → 帧快照
+        → [可选·当前关闭] ThreadWorker（SimWorker）→ 同上
     → SimFrameStore → 仪器面板 / 画布刷新
 ```
 
@@ -267,7 +275,7 @@ entry
 用户提示词
     │
     ▼
-① 意图解析 / 强模板匹配（命中可加速，失败不静默假图）
+① CircuitIntent 规则意图分类（关键词 / 启发式；非实验模板捷径）
     │
     ▼
 ② LLM 选型 → LlmJsonNormalizer → DeviceSelectEngine（防幻觉 / OOD）
@@ -276,7 +284,7 @@ entry
 ③ 注入 DeviceUsageManual → LLM 布局约束 → PlacementOptimizer / GA
     │
     ▼
-④ LLM net_plan（脚级网络）→ SemanticNetBuilder + PinWorldResolver
+④ LLM net_plan（脚级网络）→ NetPlanExecutor（生产主路径；SemanticNetBuilder 仅 skipLlm 验收）
     │
     ▼
 ⑤ LLM 布线约束 → ConstrainedWiringEngine（A*，模拟/数字/晶振权重）
@@ -287,6 +295,8 @@ entry
     ▼
 可编辑 · 可仿真 · 可教学的 SchTopology
 ```
+
+生产硬约束：选型 / net_plan LLM 失败则 **中止并报错**，禁止静默模板假图；`CircuitTemplates` 关键词匹配路径已禁用。
 
 ### 6.2 模块并行（modular）
 
@@ -307,7 +317,8 @@ entry
 | 全闭环 | `runFullPipeline`（`generateStrategy: oneshot \| modular`） |
 | 模块并行 | `runModularParallelPipeline` |
 | 分步任务 | `aiSelectDevices` / `aiPlaceDevices` / `aiAutoRoute*` |
-| 生成 | `aiGenFullSchematic` / `aiGenSubCircuit` |
+| 增量编辑 | `generationMode: 'edit'`（多轮对话增量，勿整图重建） |
+| 生成 | `aiGenFullSchematic` / `aiGenSubCircuit`（遗留入口；生产整图走 `runFullPipeline`） |
 | 诊断 | `aiStaticDiagnose` / `aiDynamicDiagnose` / `aiAnalyzeWave` |
 | 工程辅助 | `aiRecommendParam` / `aiGetReplaceDevice` / `aiOptimizeBom` |
 
@@ -320,34 +331,37 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | 类别 | 能力 |
 |------|------|
 | 引擎 | AnalogEngine、DigitalEngine、MCU（8051 / Cortex-M3）、GlobalScheduler |
-| SPICE | SpiceMatrixBuilder、SpiceRunner；Ngspice NAPI 桩（当前降级至自研模拟引擎） |
-| MCU 桥 | QemuMcuBridge 骨架（完整 QEMU STM32 为后续规划） |
-| 分析 | 参数扫描、蒙特卡洛、噪声分析（高级能力受授权门闸约束） |
-| 故障 | 电阻开/短路、电容漏电、电感开路、三极管击穿、MOS 损坏、IO 短路、晶振停振、复位粘滞等 |
-| 调试 | HEX 加载、断点、单步、寄存器 / 内存、UART |
+| SPICE | SpiceMatrixBuilder、SpiceRunner；Ngspice NAPI **桩**（`native=false`，降级自研 AnalogEngine） |
+| MCU 桥 | `QemuMcuBridge`：**进程内** Thumb 教学级解释器 + 寄存器模型（非外部 QEMU；完整外设级 QEMU 列入展望） |
+| 分析 | 参数扫描、蒙特卡洛、噪声分析（高级能力受 `FeatureGate` 约束） |
+| 故障 | 枚举 9 类；引擎波形/批量扫描覆盖常用子集 |
+| 调试 | HEX 加载、地址/数据断点、单步、寄存器 / 内存、UART |
 | 仪器 | 波形实时刷新、协议解码、测量读数与网络绑定 |
+| 线程 | 默认主线程预算泵；ThreadWorker 已实现但默认关闭 |
 
 ---
 
 ## 八、器件库与实验模板
 
-### 8.1 器件库（约 79 个运行时器件）
+### 8.1 器件库（**82** 个运行时器件）
 
-运行时权威目录由 `component_library` 内置数据维护；磁盘 `DeviceLibrary/` 提供三分体样例与共享 SVG。
+运行时权威目录由 `component_library` 内置数据（`BuiltinComponents` / `ALL_CATALOG_LIBRARY_IDS`）维护；磁盘 `DeviceLibrary/` 提供三分体样例与共享 SVG。
 
-| 品类 | 数量级 | 示例 |
-|------|--------|------|
-| 电源 | 3 | VCC、GND、VAC |
-| 无源 | ~23 | 电阻 / 电容 / 电感 / 晶振 / 熔断 / 电位器 |
-| 分立 | ~10 | 二极管、LED、BJT、MOSFET |
-| 模拟 IC | ~7 | UA741、LM358、LDO、Buck |
-| 数字 IC | ~7 | 74HC 系列、CD4017 |
-| 存储器 | 4 | 并行 / I2C / SPI Flash |
-| MCU | 9 | AT89 / STC、STM32F103 / F407 / L431 等 |
-| 外设与传感器 | ~8 | 按键、继电器、蜂鸣器、LCD/OLED、DS18B20 等 |
-| 虚拟仪器 | 8 | 示波器、逻辑仪、各类表计、UART |
+| 品类 | 数量 | 示例 |
+|------|------|------|
+| 电源轨 / 激励 | 5 | VCC、GND、**VEE**、VAC、**SIGNAL_GEN**（信号源归 INSTRUMENT 类） |
+| 无源 | 23 | R×8、POT×3、C×8、L、XTAL×2、FUSE |
+| 分立 | 10 | 1N4148/4007/5819、LED_RED/GREEN/BLUE、BJT、MOS |
+| 模拟 IC | 8 | **UA741**（单运放）、**LM358/TL082**（双运放）、**LM555**、7805/7812、AMS1117、LM2596 |
+| 数字 IC | 7 | 74HC00/02/04/08/32、**74HC74（库内为 XOR，非 D 触发器）**、CD4017 |
+| 存储器 | 4 | 2764、62256、24C02、W25Q64 |
+| MCU | 9 | AT89C51/C52、STC89C52、STC15W408AS；STM32F103C8/RC、F407VG、L431CB、F030F4 |
+| 外设与传感器 | 8 | SW_PUSH、RELAY_SPDT、BUZZER、LCD1602、OLED；DS18B20、HALL、LDR |
+| 虚拟仪器 | 8 | OSCILLOSCOPE、VIRTUAL_METER、LOGIC_ANALYZER、UART_TERMINAL、电压/电流/功率/频率计 |
 
 **三分体规范：** `{id}.meta.json` + `{id}.symbol.svg` + `{id}.model.*`
+
+**运放选型提示：** 普通单运放 → UA741；单片双运放 / 单电源 → LM358；高阻双电源 → TL082。口语「LED / LED灯」→ `LED_RED|GREEN|BLUE`（须限流电阻）。
 
 ### 8.2 二十套实验模板
 
@@ -444,7 +458,7 @@ ElecDraw_Harmony/
 - [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/) 5.0+  
 - HarmonyOS SDK API 12+（产品目标 `5.0.0(12)`）  
 - Node.js 18+（可选，用于 `tools/`）  
-- 云端 AI：需网络权限；离线模式可走模板 / 本地算法降级  
+- 云端 AI：需网络权限；离线时仍可编辑 / 加载实验模板 / 跑本地仿真，但 **生产 AI 整图不走模板假图**（选型 / net_plan 依赖云端 LLM，失败则明确报错）  
 
 ### 权限说明
 
@@ -515,19 +529,26 @@ python tools/_build_lab_uart_hex.py
 | 单元测试框架 | 根依赖 `@ohos/hypium`（持续扩充中） |
 | 原生集成说明 | `features/simulation_kernel/native/ngspice_napi/README.md` |
 
-**当前边界（诚实说明）：** Ngspice NAPI 与 QEMU-MCU 仍为桩 / 骨架，完整生产级 SPICE / QEMU 集成列入展望；默认仿真路径以保证 UI 流畅为优先（Worker 与主线程回退并存）。
+**当前边界（诚实说明）：**
+
+- Ngspice NAPI 仍为桩（`native=false`），默认自研 AnalogEngine  
+- MCU：进程内 Thumb / 8051 教学级模型；**外部 QEMU 外设级仿真**列入展望  
+- 仿真线程：默认主线程预算泵；ThreadWorker 已实现但默认关闭  
+- 故障注入 / 插件沙箱 / 实时协作：能力骨架或子集实现，勿按桌面商业 EDA 全量对标  
+- Hypium 自动化用例持续扩充；核心验收以 `AiPipelineValidator` + `tools/lab_templates/verify_*.mjs` 为主  
 
 ---
 
 ## 十四、发展展望
 
 1. **Ngspice NAPI 实装** — 交叉编译 Ngspice，替换模拟降级路径  
-2. **QEMU-MCU** — 完整 STM32 外设级仿真  
+2. **外部 QEMU-MCU** — 完整 STM32 外设级仿真（替换进程内教学解释器）  
 3. **Prompt / Skill 工具链** — md→ets 半自动同步与回归 diff  
 4. **器件库扩充** — 三分体批量导入、Proteus `.lib` 全量兼容  
-5. **性能** — 稳定启用独立仿真线程、大规模原理图渲染优化  
+5. **性能** — 稳定启用 ThreadWorker（帧差分）、大规模原理图渲染优化  
 6. **协作与云** — 实时协同编辑与实验报告云同步  
 7. **测试** — Hypium 自动化与更多验收用例  
+8. **故障注入 / 插件沙箱** — 引擎与执行器覆盖补全  
 
 ---
 
@@ -535,7 +556,7 @@ python tools/_build_lab_uart_hex.py
 
 - 软件许可证：**Apache-2.0**（见根目录 `oh-package.json5`）  
 - 「Proteus」仅为能力对标与 UI 风格参考说明，与 Labcenter 无隶属关系  
-- 云端 AI 能力依赖第三方提供商服务条款与配额；离线场景使用本地算法与实验模板  
+- 云端 AI 能力依赖第三方提供商服务条款与配额；离线可编辑、仿真与加载实验模板，**不**静默用模板冒充 AI 整图  
 
 ---
 

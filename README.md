@@ -43,12 +43,13 @@ Electronics education and embedded prototyping still rely heavily on **Windows +
 3. Able to turn **LLM output into executable topology** (not chat-only Q&A)—with versioned, auditable, evolvable Prompts;  
 4. Equipped for teaching: **lab templates, staged power-on, fault injection, coverage metrics**.
 
-**AI-SCH Simulator** (`com.elecdraw.aischsim`, vendor ElecDraw, v1.0.0) addresses that gap. It is implemented in ArkTS / ArkUI (Stage model) with modular HAR packages, centered on a shared topology contract—`SchTopology`—across editing, simulation, AI, persistence, and teaching.
+**AI-SCH Simulator** (`com.elecdraw.aischsim`, vendor ElecDraw, **v1.1.0**) addresses that gap. It is implemented in ArkTS / ArkUI (Stage model) with modular HAR packages, centered on a shared topology contract—`SchTopology`—across editing, simulation, AI, persistence, and teaching.
 
 | Item | Detail |
 |------|--------|
 | Product name | AI-SCH Simulator |
 | Bundle ID | `com.elecdraw.aischsim` |
+| Version | **1.1.0** (`AppScope/app.json5` / `oh-package.json5`) |
 | Platform | HarmonyOS NEXT 5.0+ / SDK API 12 |
 | Device types | **2in1 (primary)**, tablet, default |
 | Stack | ArkTS + ArkUI, Proteus-inspired theme |
@@ -66,7 +67,7 @@ The differentiator is not “another chatbot”—it is **constraining LLMs into
 | 2 | **Staged constraint JSON + local hard engines** | Select / layout / net-plan / route / self-review / modular-plan Prompts emit structured constraints only; GA placement, semantic nets, A\* routing, ERC / geometry gates run locally—no “text as circuit” |
 | 3 | **Modular parallel generation** | For complex circuits: choose **oneshot** or **modular**—global plan + boundary gates → true parallel sub-pipelines → pin-to-pin joint merge; shorter wall-clock with correct cross-module nets |
 | 4 | **Device usage-manual injection** | After library match, inject BOM-scoped `DeviceUsageManual` (real pins / typical wiring / anti-patterns) into layout / net-plan / route to cut hallucinated connections |
-| 5 | **Native mixed-signal kernel** | In-house MNA analog engine, event-driven digital engine, 8051 / Cortex-M3 paths, global nanosecond scheduler |
+| 5 | **Native mixed-signal kernel** | In-house MNA analog, event-driven digital, 8051 / in-process Cortex-M3 teaching paths, global nanosecond scheduler |
 | 6 | **Teach–sim–diagnose loop** | 20 `.schsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
 | 7 | **Multi-vendor AI governance** | 17 provider templates, per-task API binding, quota dashboard, offline / proxy / degrade policies |
 
@@ -149,10 +150,11 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 
 - Analog: `AnalogEngine` (MNA + Newton–Raphson; diodes/LEDs/BJTs/op-amps/regulators/relays/pots)  
 - Digital: `DigitalEngine` (event-driven; 74HC timing, fanout, setup/hold)  
-- MCU: 8051 and Cortex-M3 paths synced with analog/digital nets (GPIO, ADC, USART)  
+- MCU: 8051 and Cortex-M3 **in-process** paths (`QemuMcuBridge` = teaching-grade Thumb interpreter—**not** external QEMU), synced with analog/digital nets (GPIO, ADC, USART)  
 - Scheduler: `GlobalScheduler` (nanosecond, adaptive step)  
-- Analysis APIs: transient / DC / AC / mixed / noise / Monte Carlo / parameter scan  
-- Interaction: pushbuttons, pot wipers, relay contacts; **9 fault types** + batch scan  
+- Analysis APIs: transient / DC / AC / mixed / noise / Monte Carlo / parameter scan (advanced items gated by `FeatureGate`)  
+- Interaction: pushbuttons, pot wipers, relay contacts  
+- Fault injection: **9** enum types; wave/batch engines cover a common subset (open/short, cap leak, …)  
 
 ### 4.3 MCU debugging
 
@@ -178,7 +180,9 @@ Oscilloscope (multi-channel, timebase, trigger, math/FFT, cursors), logic analyz
 
 ### 4.5 AI-assisted design
 
-Natural-language device select, layout constraints, net planning, global/local routing, oneshot / modular-parallel generation, static/dynamic diagnosis, waveform analysis, parameter tips, replacement devices, BOM optimization. Full loop in [Section 6](#6-ai-closed-loop-pipeline).
+Natural-language device select, layout constraints, net planning, global/local routing, oneshot / modular-parallel generation, multi-turn **edit** increments, static/dynamic diagnosis, waveform analysis, parameter tips, replacement devices, BOM optimization. Full loop in [Section 6](#6-ai-closed-loop-pipeline).
+
+Production requires a **real LLM + local hard engines**; **no** lab-template / `CircuitTemplates` keyword shortcuts posing as AI generation. Lab templates load only via the teaching panel.
 
 <p align="center">
   <img src="./picture/ai-gen-process-1.png" alt="AI schematic generation: select and layout constraints" width="900">
@@ -195,9 +199,11 @@ Natural-language device select, layout constraints, net planning, global/local r
 ### 4.6 Projects & extensibility
 
 - `.schsim` save/load, autosave, crash guard, session restore  
-- Import skeletons: Proteus / KiCad / LTspice; export: PNG / SVG / PDF, wave CSV, BOM  
-- Collaboration skeleton: snapshots, project lock, annotations, conflict resolve  
-- Plugins: manifest, signature check, sandbox permissions, sample script load  
+- Import: Proteus / KiCad / LTspice **basic parsers** (common subsets, not full EDA parity)  
+- Export: PNG / SVG (`exportSchImage`), minimal PDF, wave CSV, BOM / netlist  
+- Collaboration: local snapshots, project locks, annotations; **live WebSocket sync needs an external server** (skeleton)  
+- Plugins: manifest parse, signature check, permission gates; sandbox is a **permission-gated stub executor** (not a full script VM)  
+- Licensing: `LicenseManager` / `TrialManager` / `FeatureGate` (Monte Carlo, fault injection, plugins, …)  
 
 ---
 
@@ -231,11 +237,13 @@ Editor, simulation kernel, AI pipeline, persistence, plugins, and teaching templ
 
 ### 5.4 Simulation threading
 
+`SimWorkerHost` implements a ThreadWorker path, but **`ENABLE_THREAD_WORKER = false` by default** (until frame payloads are dictionary-diffed, to avoid starving MMI). Production uses a **main-thread budget pump (~40 ms)** for UI fluidity; Worker remains optional / roadmap.
+
 ```
 UI / AppService
     → SimWorkerHost
-        → [preferred] ThreadWorker (SimWorker) → SimulationKernelImpl → frame snapshots
-        → [fallback] main-thread pump (budget-capped for fluidity)
+        → [default] main-thread budget pump → SimulationKernelImpl → frame snapshots
+        → [optional · currently off] ThreadWorker (SimWorker) → same
     → SimFrameStore → instrument panels / canvas refresh
 ```
 
@@ -267,7 +275,7 @@ entry
 User prompt
     │
     ▼
-① Intent parse / strong template match (accelerate when hit; no silent fake schematic on failure)
+① CircuitIntent rule classification (keywords / heuristics — not a lab-template shortcut)
     │
     ▼
 ② LLM device select → LlmJsonNormalizer → DeviceSelectEngine (anti-hallucination / OOD)
@@ -276,7 +284,7 @@ User prompt
 ③ Inject DeviceUsageManual → LLM layout constraints → PlacementOptimizer / GA
     │
     ▼
-④ LLM net_plan (pin-level nets) → SemanticNetBuilder + PinWorldResolver
+④ LLM net_plan (pin-level nets) → NetPlanExecutor (production path; SemanticNetBuilder is skipLlm-only)
     │
     ▼
 ⑤ LLM routing constraints → ConstrainedWiringEngine (A*, analog/digital/xtal weights)
@@ -287,6 +295,8 @@ User prompt
     ▼
 Editable · simulatable · teachable SchTopology
 ```
+
+Hard production rule: device-select / net_plan LLM failure **aborts with an error**—no silent template fake schematic; `CircuitTemplates` keyword matching is disabled.
 
 ### 6.2 Modular parallel
 
@@ -307,7 +317,8 @@ Gate highlights: 2–4 modules, boundary pins present, joints resolvable, in-lib
 | Full loop | `runFullPipeline` (`generateStrategy: oneshot \| modular`) |
 | Modular parallel | `runModularParallelPipeline` |
 | Step tasks | `aiSelectDevices` / `aiPlaceDevices` / `aiAutoRoute*` |
-| Generation | `aiGenFullSchematic` / `aiGenSubCircuit` |
+| Incremental edit | `generationMode: 'edit'` (multi-turn deltas; do not rebuild from scratch) |
+| Generation | `aiGenFullSchematic` / `aiGenSubCircuit` (legacy; production full-gen uses `runFullPipeline`) |
 | Diagnosis | `aiStaticDiagnose` / `aiDynamicDiagnose` / `aiAnalyzeWave` |
 | Engineering aids | `aiRecommendParam` / `aiGetReplaceDevice` / `aiOptimizeBom` |
 
@@ -320,34 +331,37 @@ Provider templates cover Doubao, Tongyi, DeepSeek, Wenxin, Zhipu, Kimi, OpenAI, 
 | Area | Capabilities |
 |------|----------------|
 | Engines | AnalogEngine, DigitalEngine, MCU (8051 / Cortex-M3), GlobalScheduler |
-| SPICE | SpiceMatrixBuilder, SpiceRunner; Ngspice NAPI stub (falls back to in-house analog) |
-| MCU bridge | QemuMcuBridge skeleton (full QEMU STM32 planned) |
-| Analysis | Parameter scan, Monte Carlo, noise analysis (advanced features license-gated) |
-| Faults | Resistor open/short, cap leak, inductor open, transistor breakdown, MOS damage, IO short, crystal stop, reset stuck, … |
-| Debug | HEX load, breakpoints, stepping, registers/memory, UART |
+| SPICE | SpiceMatrixBuilder, SpiceRunner; Ngspice NAPI **stub** (`native=false` → in-house AnalogEngine) |
+| MCU bridge | `QemuMcuBridge`: **in-process** teaching Thumb interpreter + register model (not external QEMU; full peripheral QEMU is roadmap) |
+| Analysis | Parameter scan, Monte Carlo, noise analysis (`FeatureGate`-gated) |
+| Faults | 9 enum types; wave/batch engines cover a common subset |
+| Debug | HEX load, address/data breakpoints, stepping, registers/memory, UART |
 | Instruments | Live waves, protocol decode, meter readings bound to nets |
+| Threading | Default main-thread budget pump; ThreadWorker implemented but off by default |
 
 ---
 
 ## 8. Device Library & Lab Templates
 
-### 8.1 Device library (~79 runtime devices)
+### 8.1 Device library (**82** runtime devices)
 
-The authoritative runtime catalog is maintained in `component_library` built-in data. On-disk `DeviceLibrary/` holds tri-part samples and shared SVGs.
+The authoritative runtime catalog is `component_library` built-ins (`BuiltinComponents` / `ALL_CATALOG_LIBRARY_IDS`). On-disk `DeviceLibrary/` holds tri-part samples and shared SVGs.
 
-| Category | Scale | Examples |
+| Category | Count | Examples |
 |----------|-------|----------|
-| Power | 3 | VCC, GND, VAC |
-| Passive | ~23 | R/C/L, crystals, fuse, pots |
-| Discrete | ~10 | Diodes, LEDs, BJTs, MOSFETs |
-| Analog IC | ~7 | UA741, LM358, LDO, Buck |
-| Digital IC | ~7 | 74HC series, CD4017 |
-| Memory | 4 | Parallel / I2C / SPI Flash |
-| MCU | 9 | AT89 / STC, STM32F103 / F407 / L431, … |
-| Peripheral & sensor | ~8 | Switch, relay, buzzer, LCD/OLED, DS18B20, … |
-| Virtual instruments | 8 | Scope, LA, meters, UART |
+| Power rails / sources | 5 | VCC, GND, **VEE**, VAC, **SIGNAL_GEN** (instrument-class source) |
+| Passive | 23 | R×8, POT×3, C×8, L, XTAL×2, FUSE |
+| Discrete | 10 | 1N4148/4007/5819, LED_RED/GREEN/BLUE, BJT, MOS |
+| Analog IC | 8 | **UA741** (single), **LM358/TL082** (dual), **LM555**, 7805/7812, AMS1117, LM2596 |
+| Digital IC | 7 | 74HC00/02/04/08/32, **74HC74 (XOR in this library, not a D-FF)**, CD4017 |
+| Memory | 4 | 2764, 62256, 24C02, W25Q64 |
+| MCU | 9 | AT89C51/C52, STC89C52, STC15W408AS; STM32F103C8/RC, F407VG, L431CB, F030F4 |
+| Peripheral & sensor | 8 | SW_PUSH, RELAY_SPDT, BUZZER, LCD1602, OLED; DS18B20, HALL, LDR |
+| Virtual instruments | 8 | OSCILLOSCOPE, VIRTUAL_METER, LOGIC_ANALYZER, UART_TERMINAL, V/I/power/freq meters |
 
 **Tri-part format:** `{id}.meta.json` + `{id}.symbol.svg` + `{id}.model.*`
+
+**Op-amp pick tip:** single/classic → UA741; dual / single-supply → LM358; high-Z dual-supply → TL082. Spoken “LED / LED lamp” → `LED_RED|GREEN|BLUE` (series current-limit R required).
 
 ### 8.2 Twenty lab templates
 
@@ -444,7 +458,7 @@ ElecDraw_Harmony/
 - [DevEco Studio](https://developer.huawei.com/consumer/en/deveco-studio/) 5.0+  
 - HarmonyOS SDK API 12+ (product target `5.0.0(12)`)  
 - Node.js 18+ (optional, for `tools/`)  
-- Cloud AI needs network permission; offline mode uses templates / local algorithms  
+- Cloud AI needs network permission; offline still allows edit / load lab templates / local sim, but **production AI full-gen does not fake schematics from templates** (device-select / net_plan need a cloud LLM; failures surface as clear errors)  
 
 ### Permissions
 
@@ -515,19 +529,26 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable
 | Unit-test framework | Root dep `@ohos/hypium` (expanding) |
 | Native integration notes | `features/simulation_kernel/native/ngspice_napi/README.md` |
 
-**Honest boundaries:** Ngspice NAPI and QEMU-MCU remain stub/skeleton; production-grade SPICE/QEMU integration is on the roadmap. The default sim path prioritizes UI fluidity (worker + main-thread fallback coexist).
+**Honest boundaries:**
+
+- Ngspice NAPI remains a stub (`native=false`); default is the in-house AnalogEngine  
+- MCU: in-process Thumb / 8051 teaching models; **external QEMU peripheral-level sim** is roadmap  
+- Sim thread: default main-thread budget pump; ThreadWorker exists but is off by default  
+- Fault injection / plugin sandbox / live collab: skeleton or subset—do not equate to full desktop EDA  
+- Hypium automation is expanding; core acceptance is `AiPipelineValidator` + `tools/lab_templates/verify_*.mjs`  
 
 ---
 
 ## 14. Roadmap
 
 1. **Ngspice NAPI** — Cross-compile Ngspice; replace analog fallback path  
-2. **QEMU-MCU** — Full STM32 peripheral-level simulation  
+2. **External QEMU-MCU** — Full STM32 peripheral-level simulation (replace in-process teaching interpreter)  
 3. **Prompt / Skill toolchain** — Semi-auto md→ets sync and regression diffs  
 4. **Library growth** — Bulk tri-part import, fuller Proteus `.lib` compatibility  
-5. **Performance** — Stable dedicated sim thread; large-schematic rendering  
+5. **Performance** — Enable ThreadWorker stably (frame diffs); large-schematic rendering  
 6. **Collab & cloud** — Real-time co-edit and lab report sync  
 7. **Testing** — Broader Hypium automation and acceptance cases  
+8. **Fault injection / plugin sandbox** — Complete engine and executor coverage  
 
 ---
 
@@ -535,7 +556,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable
 
 - License: **Apache-2.0** (see root `oh-package.json5`)  
 - “Proteus” is used only as a capability/UI reference; no affiliation with Labcenter  
-- Cloud AI depends on third-party terms and quotas; offline use relies on local algorithms and lab templates  
+- Cloud AI depends on third-party terms and quotas; offline edit/sim/lab templates are available—**no** silent template posing as AI full-gen  
 
 ---
 
