@@ -56,7 +56,9 @@ export {
   traceWireSnapMissNearCopper,
   traceWireConnectEnd, traceWireConnectPinAudit, traceWirePinRowShort,
   isTraceAutoSignalNetName, traceTopoNetNameScan, traceTopoNetInheritDecision,
-  traceTopoSignalAssignSummary, traceTopoWireNetReassign, traceNetEnsureCreate
+  traceTopoSignalAssignSummary, traceTopoWireNetReassign, traceNetEnsureCreate,
+  traceWireSnapEndpointDecision, traceWireWireMerge, traceWirePinAttach,
+  tracePinPinMerge, traceCompMoveWireFollow, traceWireEndpointNudge
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {

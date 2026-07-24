@@ -2,7 +2,7 @@ import { NetType } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/Co
 import type { SchematicDocument, Point2D } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/CommonTypes";
 import type { PinGeometry, PinGeometryResolver } from './NetPinRebuildUtil';
 import { Logger } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/Logger";
-import { INSTR_TRACE_TAG, traceWirePinRowShort, traceTopoNetNameScan, traceTopoNetInheritDecision, traceTopoSignalAssignSummary, traceTopoWireNetReassign } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/InstrumentTraceLog";
+import { INSTR_TRACE_TAG, traceWirePinRowShort, traceTopoNetNameScan, traceTopoNetInheritDecision, traceTopoSignalAssignSummary, traceTopoWireNetReassign, traceWireWireMerge } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/InstrumentTraceLog";
 import { namedMcuPinGeoms, namedDevicePinGeoms } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/NamedDevicePinDefaults";
 // Re-export helper access — defaultPinsForLib is not exported from NetPinRebuildUtil,
 // duplicate minimal pin lookup inline via resolver pattern.
@@ -699,11 +699,12 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
                     safeUnion(uf, junctions, footKey, wB0);
                     safeUnion(uf, junctions, footKey, wB1);
                     tJuncHit++;
-                    if (tJuncHit <= 6) {
+                    if (tJuncHit <= 12) {
                         Logger.info(INSTR_TRACE_TAG, `[TOPO] T-junction HIT ep=(${Math.round(ep.x)},${Math.round(ep.y)}) ` +
                             `foot=(${Math.round(foot.x)},${Math.round(foot.y)}) ` +
                             `d=${Math.hypot(ep.x - foot.x, ep.y - foot.y).toFixed(1)} ` +
                             `wireA=${wA.id} wireB=${wB.id}`);
+                        traceWireWireMerge('T_junction', wA.id, wA.netId, wB.id, wB.netId, ep.x, ep.y, wB.netId);
                     }
                     break; // 已并入本 wB
                 }

@@ -8,7 +8,8 @@ import { PinGeometry, PinGeometryResolver } from './NetPinRebuildUtil';
 import { Logger } from './Logger';
 import { INSTR_TRACE_TAG, traceWirePinRowShort,
   traceTopoNetNameScan, traceTopoNetInheritDecision,
-  traceTopoSignalAssignSummary, traceTopoWireNetReassign
+  traceTopoSignalAssignSummary, traceTopoWireNetReassign,
+  traceWireWireMerge
 } from './InstrumentTraceLog';
 import { namedMcuPinGeoms, namedDevicePinGeoms } from './NamedDevicePinDefaults';
 
@@ -763,12 +764,14 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
           safeUnion(uf, junctions, footKey, wB0);
           safeUnion(uf, junctions, footKey, wB1);
           tJuncHit++;
-          if (tJuncHit <= 6) {
+          if (tJuncHit <= 12) {
             Logger.info(INSTR_TRACE_TAG,
               `[TOPO] T-junction HIT ep=(${Math.round(ep.x)},${Math.round(ep.y)}) ` +
               `foot=(${Math.round(foot.x)},${Math.round(foot.y)}) ` +
               `d=${Math.hypot(ep.x - foot.x, ep.y - foot.y).toFixed(1)} ` +
               `wireA=${wA.id} wireB=${wB.id}`);
+            traceWireWireMerge('T_junction', wA.id, wA.netId, wB.id, wB.netId,
+              ep.x, ep.y, wB.netId);
           }
           break; // 已并入本 wB
         }

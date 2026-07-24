@@ -1513,7 +1513,7 @@ class Index extends ViewPU {
             this.statusMessage = '网络标签：点击画布输入网络名；选择模式下双击标号可改名';
         }
         else if (mode === EditorToolMode.WIRE) {
-            this.statusMessage = '连线：点引脚开始 → 点空白加拐点 → 再点同一拐点放端点（可右击加标号）/ 或点另一引脚完成';
+            this.statusMessage = '连线：点引脚开始 → 点空白加拐点 → 再点同一拐点放端点 / 或点另一引脚完成；右击取消';
         }
         else {
             this.statusMessage = `Mode: ${toolModeLabel(mode)}`;
@@ -3506,7 +3506,7 @@ class Index extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成', showLabel: false,
+                                        let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消', showLabel: false,
                                             active: this.toolMode === EditorToolMode.WIRE,
                                             disabled: this.simRunning,
                                             onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1535, col: 9 });
@@ -3514,7 +3514,7 @@ class Index extends ViewPU {
                                         let paramsLambda = () => {
                                             return {
                                                 iconName: ProteusIconName.WIRE,
-                                                tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成',
+                                                tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消',
                                                 showLabel: false,
                                                 active: this.toolMode === EditorToolMode.WIRE,
                                                 disabled: this.simRunning,
@@ -3525,7 +3525,7 @@ class Index extends ViewPU {
                                     }
                                     else {
                                         this.updateStateVarsOfChildByElmtId(elmtId, {
-                                            iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成', showLabel: false,
+                                            iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消', showLabel: false,
                                             active: this.toolMode === EditorToolMode.WIRE,
                                             disabled: this.simRunning
                                         });
@@ -3702,7 +3702,7 @@ class Index extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成', showLabel: false,
+                                            let componentCall = new ProteusToolButton(this, { iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消', showLabel: false,
                                                 active: this.toolMode === EditorToolMode.WIRE,
                                                 disabled: this.simRunning,
                                                 onAction: () => this.setToolMode(EditorToolMode.WIRE) }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/Index.ets", line: 1535, col: 9 });
@@ -3710,7 +3710,7 @@ class Index extends ViewPU {
                                             let paramsLambda = () => {
                                                 return {
                                                     iconName: ProteusIconName.WIRE,
-                                                    tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成',
+                                                    tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消',
                                                     showLabel: false,
                                                     active: this.toolMode === EditorToolMode.WIRE,
                                                     disabled: this.simRunning,
@@ -3721,7 +3721,7 @@ class Index extends ViewPU {
                                         }
                                         else {
                                             this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→加拐点→再点拐点放端点，或点另一引脚完成', showLabel: false,
+                                                iconName: ProteusIconName.WIRE, tooltip: '连线 (W)：点引脚→点空白加拐点→再点拐点放端点/或点另一引脚完成；右击取消', showLabel: false,
                                                 active: this.toolMode === EditorToolMode.WIRE,
                                                 disabled: this.simRunning
                                             });

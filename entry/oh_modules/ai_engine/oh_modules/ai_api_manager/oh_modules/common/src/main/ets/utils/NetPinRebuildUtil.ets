@@ -4,7 +4,10 @@
  */
 import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from '../types/CommonTypes';
 import { buildPinRef, parsePinRef } from './PinRefUtil';
-import { traceNetConnectivity, INSTR_TRACE_TAG, traceWireConnectPinAudit } from './InstrumentTraceLog';
+import {
+  traceNetConnectivity, INSTR_TRACE_TAG, traceWireConnectPinAudit,
+  traceWirePinAttach, tracePinPinMerge
+} from './InstrumentTraceLog';
 import { Logger } from './Logger';
 import { rebuildWireNetTopology } from './WireNetTopology';
 import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
@@ -346,6 +349,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
     pinId: string;
     pinName: string;
     libraryId: string;
+    refDes: string;
     world: Point2D;
   }
   const allCandidates: PinCandidate[] = [];
@@ -360,6 +364,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
         pinId: pin.id,
         pinName: pin.name,
         libraryId: comp.libraryId,
+        refDes: comp.refDes,
         world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
       });
     }
@@ -369,6 +374,9 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
   const pinOwnerNet = new Map<string, string>();
 
   let connected = 0;
+  let endpointHits = 0;
+  let midHits = 0;
+  let colocHits = 0;
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
     if (wire.points.length < 2) {
@@ -429,6 +437,9 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
         addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
         pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
         connected++;
+        endpointHits++;
+        traceWirePinAttach('endpoint', best.refDes, best.pinName, best.pinId,
+          wire.id, wire.netId, bestDist, best.world.x, best.world.y);
         // Also add co-located pins (junction) — never same-component distinct pins
         for (let ci = 0; ci < allCandidates.length; ci++) {
           if (ci === bestIdx) {
@@ -452,6 +463,11 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
             addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
             pinOwnerNet.set(ck, wire.netId);
             connected++;
+            colocHits++;
+            tracePinPinMerge(best.refDes, best.pinName, c.refDes, c.pinName,
+              wire.netId, best.world.x, best.world.y);
+            traceWirePinAttach('coloc', c.refDes, c.pinName, c.pinId,
+              wire.id, wire.netId, 0, c.world.x, c.world.y);
           }
         }
       }
@@ -459,7 +475,8 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
   }
 
   // 导线中段过脚：引脚压在铜皮任意点上即挂网（Proteus）；同器件异脚已在网则拒绝
-  const midTol = Math.min(Math.max(1.5, threshold * 0.12), 2.5);
+  // 与导线 T 接容差对齐（约 3–5），避免「脚贴在线上但仍 floating」
+  const midTol = Math.min(Math.max(3, threshold * 0.2), 5);
   for (let ci = 0; ci < allCandidates.length; ci++) {
     const c = allCandidates[ci];
     const pinKey = `${c.compId}:${c.pinId}`;
@@ -472,14 +489,14 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
       if (wire.points.length < 2) {
         continue;
       }
-      let onCopper = false;
+      let bestSegDist = midTol + 1;
       for (let si = 0; si < wire.points.length - 1; si++) {
-        if (pointToSegmentDist(c.world, wire.points[si], wire.points[si + 1]) <= midTol) {
-          onCopper = true;
-          break;
+        const d = pointToSegmentDist(c.world, wire.points[si], wire.points[si + 1]);
+        if (d < bestSegDist) {
+          bestSegDist = d;
         }
       }
-      if (!onCopper) {
+      if (bestSegDist > midTol) {
         continue;
       }
       if (netHasSiblingPin(doc, wire.netId, c.compId, c.pinId)) {
@@ -488,9 +505,15 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
       addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
       pinOwnerNet.set(pinKey, wire.netId);
       connected++;
+      midHits++;
+      traceWirePinAttach('mid_segment', c.refDes, c.pinName, c.pinId,
+        wire.id, wire.netId, bestSegDist, c.world.x, c.world.y);
       break;
     }
   }
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_PIN summary endpoint=${endpointHits} mid=${midHits} ` +
+    `coloc=${colocHits} total=${connected} threshold=${threshold.toFixed(1)} midTol=${midTol.toFixed(1)}`);
   return connected;
 }
 

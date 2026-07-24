@@ -1881,21 +1881,21 @@ export struct SchematicCanvas {
         const endTol = Math.max(g * 1.5, 8);
         if (wireStart === null) {
           if (nearPin === null && nearWire === null) {
-            // 空白：退出布线并清除选中
-            this.cancelActiveWiring(true);
+            // 尚未开始：空白不能起线（须从引脚/导线起）
+            this.onStatusChange('请先点引脚或导线开始布线；右击取消连线工具');
             break;
           }
           this.wireWaypoints = [wirePoint];
           this.setWireStart(wirePoint);
           this.lastWarPreviewEndKey = '';
           this.onStatusChange(nearPin !== null
-            ? '导线起点: 点引脚/导线完成；点空白或右击取消'
-            : '导线起点(已接导线): 点引脚/导线完成；点空白或右击取消');
+            ? '导线起点: 点空白加拐点；点引脚/导线完成；右击取消'
+            : '导线起点(已接导线): 点空白加拐点；点引脚/导线完成；右击取消');
         } else if (nearPin !== null || nearWire !== null) {
           const firstWp = this.wireWaypoints[0];
           const sameAnchor = Math.abs(wirePoint.x - firstWp.x) < 4 && Math.abs(wirePoint.y - firstWp.y) < 4;
           if (sameAnchor) {
-            this.onStatusChange('请点其他引脚/导线完成，或点空白/右击取消');
+            this.onStatusChange('请点其他引脚/导线完成，或点空白加拐点；右击取消');
             break;
           }
           this.wireWaypoints.push(wirePoint);
@@ -1952,8 +1952,12 @@ export struct SchematicCanvas {
             }
             break;
           }
-          // 空白非导线区：取消布线 + 清除导线选中
-          this.cancelActiveWiring(true);
+          // 已开始布线：点空白 → 添加拐点（右击才取消）
+          this.wireWaypoints.push(wirePoint);
+          this.lastWarPreviewEndKey = '';
+          this.onStatusChange(
+            `已加拐点(${this.wireWaypoints.length - 1})：继续点空白加拐点，或点引脚/导线完成；右击取消`);
+          this.scheduleRedraw();
         }
         break;
       }
@@ -2048,7 +2052,7 @@ export struct SchematicCanvas {
             this.wireWaypoints = [snap];
             this.setWireStart(snap);
             this.lastWarPreviewEndKey = '';
-            this.onStatusChange('从导线引出: 点引脚/导线完成；点空白或右击取消');
+            this.onStatusChange('从导线引出: 点空白加拐点；点引脚/导线完成；右击取消');
             this.scheduleRedraw();
             break;
           }
@@ -2082,7 +2086,7 @@ export struct SchematicCanvas {
           this.wireWaypoints = [nearPin];
           this.setWireStart(nearPin);
           this.lastWarPreviewEndKey = '';
-          this.onStatusChange('导线起点: 点引脚/导线完成；点空白或右击取消');
+          this.onStatusChange('导线起点: 点空白加拐点；点引脚/导线完成；右击取消');
           break;
         }
 
@@ -2663,7 +2667,7 @@ export struct SchematicCanvas {
         if (result.autoCorrected) {
           this.onStatusChange('WAR 自动寻路：蓝色虚线为将落线路径（已避开选中区）');
         } else if (this.wireWaypoints.length >= 1) {
-          this.onStatusChange('导线预览：点引脚/导线完成；点空白或右击取消');
+          this.onStatusChange('导线预览：点空白加拐点；点引脚/导线完成；右击取消');
         }
       }
     }

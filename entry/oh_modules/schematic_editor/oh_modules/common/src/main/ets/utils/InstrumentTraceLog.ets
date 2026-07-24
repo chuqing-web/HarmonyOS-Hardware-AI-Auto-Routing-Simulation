@@ -2141,3 +2141,82 @@ export function traceNetEnsureCreate(netId: string, name: string, totalNets: num
   }
 }
 
+/**
+ * 落线端点吸附决策：脚优先 vs 导线 T 接。
+ * 排查「看起来连到仪器脚，实际被吸到附近铜皮」根因。
+ */
+export function traceWireSnapEndpointDecision(
+  endLabel: string,
+  rawX: number, rawY: number,
+  resultX: number, resultY: number,
+  mode: string,
+  detail: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] SNAP_EP ${endLabel} raw=(${Math.round(rawX)},${Math.round(rawY)}) ` +
+    `→ (${Math.round(resultX)},${Math.round(resultY)}) mode=${mode} ${detail}`);
+}
+
+/** 导线↔导线并网（共端点 / T 接） */
+export function traceWireWireMerge(
+  kind: string,
+  wireA: string, netA: string,
+  wireB: string, netB: string,
+  atX: number, atY: number,
+  canonicalNet: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_WIRE ${kind} ` +
+    `A=${wireA}(${netA}) B=${wireB}(${netB}) ` +
+    `at=(${Math.round(atX)},${Math.round(atY)}) → net=${canonicalNet}`);
+}
+
+/** 导线↔引脚挂网（端点吸附 / 中段压脚 / 共位并脚） */
+export function traceWirePinAttach(
+  kind: string,
+  refDes: string, pinName: string, pinId: string,
+  wireId: string, netId: string,
+  dist: number, worldX: number, worldY: number
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_PIN ${kind} ${refDes}.${pinName}(${pinId}) ` +
+    `wire=${wireId} net=${netId} dist=${dist.toFixed(2)} ` +
+    `at=(${Math.round(worldX)},${Math.round(worldY)})`);
+}
+
+/** 引脚↔引脚共位并网（异器件压在同一点） */
+export function tracePinPinMerge(
+  refA: string, pinA: string,
+  refB: string, pinB: string,
+  netId: string, atX: number, atY: number
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] PIN_PIN coloc ${refA}.${pinA} + ${refB}.${pinB} ` +
+    `→ net=${netId} at=(${Math.round(atX)},${Math.round(atY)})`);
+}
+
+/** 移动器件时导线是否跟上引脚 */
+export function traceCompMoveWireFollow(
+  refDes: string, compId: string,
+  pinHits: number, wireUpdates: number,
+  midSegSplits: number, misses: string
+): void {
+  const missPart = misses.length > 0 ? ` miss=[${misses}]` : '';
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] COMP_MOVE ${refDes}(${compId}) pinHits=${pinHits} ` +
+    `wiresUpdated=${wireUpdates} midSegSplit=${midSegSplits}${missPart}`);
+}
+
+/** 端点被纠正到精确引脚坐标（防移动后脱线） */
+export function traceWireEndpointNudge(
+  wireId: string, endLabel: string,
+  fromX: number, fromY: number,
+  toX: number, toY: number,
+  refDes: string, pinName: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] NUDGE ${endLabel} wire=${wireId} ` +
+    `(${Math.round(fromX)},${Math.round(fromY)})→(${Math.round(toX)},${Math.round(toY)}) ` +
+    `→ ${refDes}.${pinName}`);
+}
+
