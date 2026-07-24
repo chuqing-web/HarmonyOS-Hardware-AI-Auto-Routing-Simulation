@@ -25,14 +25,17 @@ export default class EntryAbility extends UIAbility {
         catch (_e) { /* best-effort */ }
     }
     onWindowStageCreate(windowStage: window.WindowStage): void {
-        windowStage.loadContent('pages/SplashPage', (err) => {
-            if (err.code) {
-                hilog.error(DOMAIN, TAG, 'Failed to load SplashPage: %{public}s', JSON.stringify(err));
-                return;
-            }
-            hilog.info(DOMAIN, TAG, 'SplashPage loaded');
-            void maximizeAppWindow(undefined, windowStage);
-        });
+        // 先最大化再进 Splash，避免首帧布局尺寸抖动（主画布 fit / 启动页过渡更稳）
+        void (async () => {
+            await maximizeAppWindow(undefined, windowStage);
+            windowStage.loadContent('pages/SplashPage', (err) => {
+                if (err.code) {
+                    hilog.error(DOMAIN, TAG, 'Failed to load SplashPage: %{public}s', JSON.stringify(err));
+                    return;
+                }
+                hilog.info(DOMAIN, TAG, 'SplashPage loaded after maximize');
+            });
+        })();
     }
     onWindowStageDestroy(): void {
         hilog.info(DOMAIN, TAG, 'Window stage destroyed');

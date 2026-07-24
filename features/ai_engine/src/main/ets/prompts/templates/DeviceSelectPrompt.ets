@@ -49,7 +49,8 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 【强制器件 — 任何电路都必须包含，缺一不可】:
 - 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND 接地符号: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
-- 用户要正弦/方波等激励时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
+- 用户要**外接**正弦/方波等激励（信号源/信号发生器/输入激励）时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
+- 【硬禁】运放滞回+积分闭环自激/弛张/三角波反馈振荡：方波自产，禁止 SIGNAL_GEN
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
@@ -60,7 +61,7 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
 - 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
-- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
+- 用户提到频率计 → 追加 FREQ_COUNTER；明确要信号源/信号发生器 → SIGNAL_GEN（自激振荡除外）
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 

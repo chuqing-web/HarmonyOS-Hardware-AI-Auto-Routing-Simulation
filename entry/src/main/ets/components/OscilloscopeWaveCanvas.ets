@@ -15,6 +15,11 @@ export struct OscilloscopeWaveCanvas {
   @Prop tPerDiv: number = 1e-3;
   @Prop triggerLevel: number = 0;
   @Prop @Watch('onDataChanged') autoFit: boolean = true;
+  /**
+   * 频域（FFT）：横轴为 Hz，必须按全频谱窗显示；
+   * 禁止再按 tPerDiv（秒）裁窗，否则只剩 DC 附近一条竖线/空白。
+   */
+  @Prop @Watch('onDataChanged') freqDomain: boolean = false;
   @Prop canvasHeight: number = 160;
   @Prop showStats: boolean = true;
   /**
@@ -105,24 +110,79 @@ export struct OscilloscopeWaveCanvas {
   }
 
   /**
-   * 滚动窗：固定时基宽度，最新时刻贴右缘（CRT 滚动）。
-   * 历史不足一屏时左侧留空，禁止把短片段横向拉满（否则无滚动感）。
+   * 滚动窗：固定时基宽度。
+   * A) 有效历史不足一屏 → 左缘对齐首个有效样点（迹线从左往右写，右侧可空）
+   * B) 历史已满 → 最新时刻贴右缘（CRT 滚动）
+   * 频域：横轴为 Hz，默认铺满 0～Nyquist（可用 viewZoom 放大）。
    */
   private resolveTimeWindow(n: number): TimeViewWindow {
-    const tFirst = Number.isFinite(this.timeData[0]) ? this.timeData[0] : 0;
-    const tLast = Number.isFinite(this.timeData[n - 1]) ? this.timeData[n - 1] : tFirst;
+    // 用「有限电压」样点界定真实可见历史，忽略引擎填充的 NaN 空洞
+    let tFirst = Number.NaN;
+    let tLast = Number.NaN;
+    for (let i = 0; i < n; i++) {
+      const t = this.timeData[i];
+      const v = this.voltageData[i];
+      if (Number.isFinite(t) && Number.isFinite(v)) {
+        tFirst = t;
+        break;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const t = this.timeData[i];
+      const v = this.voltageData[i];
+      if (Number.isFinite(t) && Number.isFinite(v)) {
+        tLast = t;
+        break;
+      }
+    }
+    if (!Number.isFinite(tFirst) || !Number.isFinite(tLast)) {
+      tFirst = Number.isFinite(this.timeData[0]) ? this.timeData[0] : 0;
+      tLast = Number.isFinite(this.timeData[n - 1]) ? this.timeData[n - 1] : tFirst;
+    }
+
     const zoom = Math.max(this.viewZoom, 0.05);
-    const span = Math.max(this.tPerDiv * this.cols, 1e-12) / zoom;
+    const availableSpan = Math.max(tLast - tFirst, 0);
+    let span: number;
+    if (this.freqDomain) {
+      // FFT：以全频谱为基准窗，禁止用秒时基裁切
+      span = Math.max(availableSpan, 1) / zoom;
+    } else {
+      span = Math.max(this.tPerDiv * this.cols, 1e-12) / zoom;
+    }
     const pan = Math.max(this.viewPanSec, 0);
-    let tMax = tLast - pan;
-    if (tMax < tFirst) {
-      tMax = tFirst;
+
+    let tMin: number;
+    let tMax: number;
+    if (this.freqDomain) {
+      tMin = tFirst;
+      tMax = tFirst + span;
+      if (tMax < tLast && zoom <= 1.0001) {
+        tMax = tLast;
+      }
+      if (pan > 1e-15) {
+        tMin = Math.min(tFirst + pan, Math.max(tLast - span, tFirst));
+        tMax = tMin + span;
+      }
+    } else if (availableSpan < span - 1e-15 && pan <= 1e-15) {
+      // 写屏阶段：从左填充
+      tMin = tFirst;
+      tMax = tFirst + span;
+    } else {
+      // 滚动阶段：右缘对齐最新（可回看）
+      tMax = tLast - pan;
+      if (tMax < tFirst) {
+        tMax = tFirst;
+      }
+      if (tMax > tLast) {
+        tMax = tLast;
+      }
+      tMin = tMax - span;
+      // 回看时若越过首样，钳到首样并保持窗宽观感
+      if (tMin < tFirst && pan > 1e-15) {
+        tMin = tFirst;
+        tMax = tMin + span;
+      }
     }
-    if (tMax > tLast) {
-      tMax = tLast;
-    }
-    // 固定窗宽：tMin 可早于首样点（左侧空白 = 滚动感）
-    const tMin = tMax - span;
 
     let i0 = 0;
     let i1 = n - 1;
@@ -421,13 +481,22 @@ export struct OscilloscopeWaveCanvas {
 
     ctx.fillStyle = '#8fa0bf';
     ctx.font = '13px monospace';
-    ctx.fillText(`${this.formatVoltage(vMax)}`, Math.max(8, w - 72), 16);
-    ctx.fillText(`${this.formatVoltage(vMin)}`, Math.max(8, w - 72), h - 8);
-    // 横轴：当前滚动窗宽（相对时间）
+    if (this.freqDomain) {
+      ctx.fillText(`${this.formatMag(vMax)}`, Math.max(8, w - 72), 16);
+      ctx.fillText(`${this.formatMag(vMin)}`, Math.max(8, w - 72), h - 8);
+    } else {
+      ctx.fillText(`${this.formatVoltage(vMax)}`, Math.max(8, w - 72), 16);
+      ctx.fillText(`${this.formatVoltage(vMin)}`, Math.max(8, w - 72), h - 8);
+    }
+    // 横轴：时域=秒窗；频域=Hz 窗
     const span = Math.max(tMax - tMin, 0);
-    ctx.fillText('0', 8, h - 8);
-    ctx.fillText(this.formatTime(span), w / 2 - 28, h - 8);
-    ctx.fillText(`${this.formatTime(this.tPerDiv)}/div`, Math.max(8, w - 88), h - 8);
+    ctx.fillText(this.freqDomain ? this.formatFreq(tMin) : '0', 8, h - 8);
+    ctx.fillText(this.freqDomain ? this.formatFreq(tMin + span / 2) : this.formatTime(span),
+      w / 2 - 28, h - 8);
+    const perDiv = this.freqDomain ? Math.max(span / this.cols, 0) : this.tPerDiv;
+    ctx.fillText(
+      this.freqDomain ? `${this.formatFreq(perDiv)}/div` : `${this.formatTime(this.tPerDiv)}/div`,
+      Math.max(8, w - 88), h - 8);
 
     if (!this.showStats) {
       return;
@@ -437,18 +506,56 @@ export struct OscilloscopeWaveCanvas {
     if (!Number.isFinite(nowV)) {
       nowV = stats.avg;
     }
+    let peakF = 0;
+    let peakMag = Number.NEGATIVE_INFINITY;
+    if (this.freqDomain) {
+      const lo = Math.max(0, i0);
+      for (let i = lo; i <= hi; i++) {
+        const mag = this.voltageData[i];
+        const f = this.timeData[i];
+        if (!Number.isFinite(mag) || !Number.isFinite(f) || f <= 0) {
+          continue;
+        }
+        if (mag > peakMag) {
+          peakMag = mag;
+          peakF = f;
+        }
+      }
+    }
     const follow = this.viewPanSec <= 1e-12 ? 'ROLL' : 'PAN';
-    const line = `Vpp ${this.formatVoltage(stats.vpp)}  ` +
-      `Avg ${this.formatVoltage(stats.avg)}  ` +
-      `f ${this.formatFreq(stats.freq)}  ` +
-      `now ${this.formatVoltage(nowV)}  ${follow} ×${this.viewZoom.toFixed(1)}`;
+    const line = this.freqDomain
+      ? `Peak ${this.formatFreq(peakF)}  Mag ${this.formatMag(peakMag)}  ` +
+        `span ${this.formatFreq(span)}  ×${this.viewZoom.toFixed(1)}`
+      : `Vpp ${this.formatVoltage(stats.vpp)}  ` +
+        `Avg ${this.formatVoltage(stats.avg)}  ` +
+        `f ${this.formatFreq(stats.freq)}  ` +
+        `now ${this.formatVoltage(nowV)}  ${follow} ×${this.viewZoom.toFixed(1)}`;
     ctx.fillStyle = '#c8d4ea';
     ctx.font = 'bold 15px monospace';
     ctx.fillText(line, 8, 42);
 
     ctx.fillStyle = '#6b7a99';
     ctx.font = '13px monospace';
-    ctx.fillText(`${this.formatVoltage(this.vPerDiv)}/div`, Math.max(8, w - 80), 40);
+    ctx.fillText(
+      this.freqDomain ? `${this.formatMag(this.vPerDiv)}/div` : `${this.formatVoltage(this.vPerDiv)}/div`,
+      Math.max(8, w - 80), 40);
+  }
+
+  private formatMag(v: number): string {
+    if (!Number.isFinite(v)) {
+      return '--';
+    }
+    const a = Math.abs(v);
+    if (a >= 100) {
+      return `${v.toFixed(0)}`;
+    }
+    if (a >= 1) {
+      return `${v.toFixed(2)}`;
+    }
+    if (a >= 0.001) {
+      return `${(v * 1000).toFixed(1)}m`;
+    }
+    return `${v.toFixed(3)}`;
   }
 
   private computeStats(n: number, i0: number, i1: number): WaveStats {
@@ -549,8 +656,11 @@ export struct OscilloscopeWaveCanvas {
   }
 
   private formatFreq(f: number): string {
-    if (!(f > 0) || f !== f) {
+    if (!Number.isFinite(f) || f < 0) {
       return '--';
+    }
+    if (f === 0) {
+      return '0Hz';
     }
     if (f >= 1e6) {
       return `${(f / 1e6).toFixed(2)}MHz`;

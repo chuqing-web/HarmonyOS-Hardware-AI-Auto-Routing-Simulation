@@ -17,6 +17,8 @@ export interface FinalizeGateOpts {
     timer555Monostable?: boolean;
     /** 板上有 555（单/无稳态）时禁止串联 RC 配方误伤 */
     hasTimer555?: boolean;
+    /** 运放自激（滞回+积分闭环）— 走 wireOpAmpSelfOsc，禁止 wireSeriesRc */
+    opAmpSelfOscillator?: boolean;
     /** 模块边界脚键（RefDes.Pin 大写），单脚网不得 prune */
     preserveBoundaryKeys?: string[];
 }
@@ -297,6 +299,11 @@ export class AiTopologyFixKit {
             Logger.info(INSTR_TRACE_TAG, '[AI_FIX] wireSeriesRc skipped — LM555 present (use wire555Monostable/astable)');
             return AiTopologyFixKit.emptyResult();
         }
+        // 两片运放（或双运放）+ 无按键：视为自激/模拟闭环，禁止 RC 充放电配方
+        if (AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo)) {
+            Logger.info(INSTR_TRACE_TAG, '[AI_FIX] wireSeriesRc skipped — op-amp self-osc topology (use wireOpAmpSelfOsc)');
+            return AiTopologyFixKit.emptyResult();
+        }
         const vcc = topo.deviceList.find(d => {
             const u = (d.libDevId ?? '').toUpperCase();
             return u === 'VCC' || u === 'VDD';
@@ -379,6 +386,207 @@ export class AiTopologyFixKit {
             const u = (d.libDevId ?? '').toUpperCase();
             return u.indexOf('LM555') >= 0 || u.indexOf('NE555') >= 0 || u === '555';
         });
+    }
+    /** 运放通道数（UA741=1，LM358/TL082=2） */
+    static countOpAmpChannels(topo: SchTopology): number {
+        let n = 0;
+        for (let i = 0; i < topo.deviceList.length; i++) {
+            const u = (topo.deviceList[i].libDevId ?? '').toUpperCase();
+            if (u === 'UA741') {
+                n += 1;
+            }
+            else if (u.indexOf('LM358') >= 0 || u.indexOf('TL08') >= 0 ||
+                u.indexOf('LM324') >= 0) {
+                n += 2;
+            }
+        }
+        return n;
+    }
+    /**
+     * 板上像运放自激（≥2 通道运放 + C + 多 R，且无 SW 充放电开关）。
+     * 用于阻断 wireSeriesRc 误把积分电容接到 GND。
+     */
+    static topoLooksLikeOpAmpSelfOsc(topo: SchTopology): boolean {
+        if (AiTopologyFixKit.countOpAmpChannels(topo) < 2) {
+            return false;
+        }
+        const hasC = topo.deviceList.some(d => (d.libDevId ?? '').startsWith('C_'));
+        const rN = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('R_')).length;
+        if (!hasC || rN < 2) {
+            return false;
+        }
+        const hasSw = topo.deviceList.some(d => (d.libDevId ?? '').toUpperCase().startsWith('SW_'));
+        // 有按键时更像外触发/555/RC；无按键 + 双运放 → 自激
+        return !hasSw;
+    }
+    /**
+     * 运放自激振荡确定性接线（滞回比较器 + 积分器闭环）:
+     *   比较器 OUT(方波)→Rin→积分 IN-；C 跨积分 OUT↔IN-；积分 OUT→比较器 IN-；
+     *   滞回: OUT→Rf→IN+，IN+→Rg→GND；积分 IN+→GND；
+     *   示波器 CH1∥方波、CH2∥三角；双电源 VCC/VEE。
+     * 禁止 SIGNAL_GEN / 串联 RC 充放电。
+     */
+    static wireOpAmpSelfOsc(topo: SchTopology, wiring: ConstrainedWiringEngine): TopologyFixResult {
+        const notes: string[] = [];
+        let fixed = 0;
+        const opamps = topo.deviceList.filter(d => {
+            const u = (d.libDevId ?? '').toUpperCase();
+            return u === 'UA741' || u.indexOf('LM358') >= 0 || u.indexOf('TL08') >= 0 ||
+                u.indexOf('LM324') >= 0;
+        });
+        if (opamps.length < 1 || AiTopologyFixKit.countOpAmpChannels(topo) < 2) {
+            return AiTopologyFixKit.emptyResult();
+        }
+        const vcc = topo.deviceList.find(d => {
+            const u = (d.libDevId ?? '').toUpperCase();
+            return u === 'VCC' || u === 'VDD';
+        });
+        const vee = topo.deviceList.find(d => (d.libDevId ?? '').toUpperCase() === 'VEE');
+        const gnd = topo.deviceList.find(d => {
+            const u = (d.libDevId ?? '').toUpperCase();
+            return u === 'GND' || u === 'VSS';
+        });
+        if (!vcc || !gnd) {
+            return AiTopologyFixKit.emptyResult();
+        }
+        // 单运放×2：按 Y 排序，上=比较器、下=积分器；单片双运放：通道1比较 / 通道2积分
+        const sorted = opamps.slice().sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
+        let compRef = '';
+        let integRef = '';
+        let compSuf = '';
+        let integSuf = '';
+        const firstLib = (sorted[0].libDevId ?? '').toUpperCase();
+        if (sorted.length >= 2 && firstLib === 'UA741') {
+            compRef = sorted[0].refName;
+            integRef = sorted[1].refName;
+        }
+        else if (firstLib.indexOf('LM358') >= 0 || firstLib.indexOf('TL08') >= 0 ||
+            firstLib.indexOf('LM324') >= 0) {
+            compRef = sorted[0].refName;
+            integRef = sorted[0].refName;
+            compSuf = '1';
+            integSuf = '2';
+        }
+        else if (sorted.length >= 2) {
+            compRef = sorted[0].refName;
+            integRef = sorted[1].refName;
+        }
+        else {
+            return AiTopologyFixKit.emptyResult();
+        }
+        const pin = (suf: string, base: string): string => suf.length > 0 ? `${base}${suf}` : base;
+        const compOut = pin(compSuf, 'OUT');
+        const compInp = pin(compSuf, 'IN+');
+        const compInn = pin(compSuf, 'IN-');
+        const integOut = pin(integSuf, 'OUT');
+        const integInp = pin(integSuf, 'IN+');
+        const integInn = pin(integSuf, 'IN-');
+        const pwrPlus = firstLib === 'UA741' ||
+            (sorted[0].libDevId ?? '').toUpperCase() === 'UA741' ? 'VCC' : 'V+';
+        const pwrMinus = firstLib === 'UA741' ||
+            (sorted[0].libDevId ?? '').toUpperCase() === 'UA741' ? 'VEE' : 'V-';
+        const resistors = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('R_'));
+        const caps = topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('C_'));
+        if (resistors.length < 3 || caps.length < 1) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_FIX] wireOpAmpSelfOsc skip — need ≥3R+1C got R=${resistors.length} C=${caps.length}`);
+            return AiTopologyFixKit.emptyResult();
+        }
+        const takeR = (prefer: string, used: DeviceInst[]): DeviceInst | null => {
+            for (let i = 0; i < resistors.length; i++) {
+                if (used.indexOf(resistors[i]) >= 0) {
+                    continue;
+                }
+                if (prefer.length > 0 && resistors[i].libDevId !== prefer) {
+                    continue;
+                }
+                used.push(resistors[i]);
+                return resistors[i];
+            }
+            for (let i = 0; i < resistors.length; i++) {
+                if (used.indexOf(resistors[i]) < 0) {
+                    used.push(resistors[i]);
+                    return resistors[i];
+                }
+            }
+            return null;
+        };
+        const usedR: DeviceInst[] = [];
+        const rf = takeR('R_100k', usedR); // 正反馈
+        const rg = takeR('R_10k', usedR); // IN+→GND
+        const rin = takeR('R_10k', usedR); // 方波→积分 IN-
+        const rPar = takeR('R_100k', usedR); // 可选并联在 C 上（DC 稳定）
+        const c0 = caps[0];
+        const osc = topo.deviceList.find(d => (d.libDevId ?? '').toUpperCase().indexOf('OSCILLOSCOPE') >= 0);
+        if (!rf || !rg || !rin || !c0) {
+            return AiTopologyFixKit.emptyResult();
+        }
+        const rc = (ref: string, pinId: string, net: string): void => {
+            const r = AiTopologyFixKit.reconnectPin(topo, wiring, ref, pinId, net);
+            fixed += r.fixed;
+            notes.push(...r.notes);
+        };
+        // 电源
+        rc(vcc.refName, '1', 'VCC');
+        rc(gnd.refName, '1', 'GND');
+        if (vee) {
+            rc(vee.refName, '1', 'VEE');
+        }
+        // 比较器/积分器电源脚（双实例时各接一次）
+        const wirePwr = (ref: string): void => {
+            rc(ref, pwrPlus, 'VCC');
+            if (vee) {
+                rc(ref, pwrMinus, 'VEE');
+            }
+        };
+        wirePwr(compRef);
+        if (integRef !== compRef) {
+            wirePwr(integRef);
+        }
+        // 方波 / 三角
+        rc(compRef, compOut, 'SQUARE_OUT');
+        rc(integRef, integOut, 'TRIANGLE_OUT');
+        rc(integRef, integInp, 'GND');
+        // 滞回正反馈: OUT→Rf→COMP_REF(IN+)，COMP_REF→Rg→GND
+        rc(rf.refName, '1', 'SQUARE_OUT');
+        rc(rf.refName, '2', 'COMP_REF');
+        rc(compRef, compInp, 'COMP_REF');
+        rc(rg.refName, '1', 'COMP_REF');
+        rc(rg.refName, '2', 'GND');
+        // 积分输入: SQUARE→Rin→INT_IN(IN-)
+        rc(rin.refName, '1', 'SQUARE_OUT');
+        rc(rin.refName, '2', 'INT_IN');
+        rc(integRef, integInn, 'INT_IN');
+        // 积分电容跨 OUT↔IN-
+        rc(c0.refName, '1', 'TRIANGLE_OUT');
+        rc(c0.refName, '2', 'INT_IN');
+        // 三角波反馈→比较器反相端
+        rc(compRef, compInn, 'TRIANGLE_OUT');
+        // 可选并联电阻跨 C（同两端）
+        if (rPar) {
+            rc(rPar.refName, '1', 'TRIANGLE_OUT');
+            rc(rPar.refName, '2', 'INT_IN');
+        }
+        if (osc) {
+            rc(osc.refName, 'CH1', 'SQUARE_OUT');
+            rc(osc.refName, 'CH2', 'TRIANGLE_OUT');
+            rc(osc.refName, 'GND', 'GND');
+        }
+        // 多余电阻（自检误加）从网络摘掉，避免 VCC↔TRIANGLE 等寄生负载
+        for (let i = 0; i < resistors.length; i++) {
+            if (usedR.indexOf(resistors[i]) >= 0) {
+                continue;
+            }
+            const d0 = AiTopologyFixKit.disconnectPin(topo, wiring, resistors[i].refName, '1');
+            const d1 = AiTopologyFixKit.disconnectPin(topo, wiring, resistors[i].refName, '2');
+            fixed += d0.fixed + d1.fixed;
+            if (d0.fixed + d1.fixed > 0) {
+                notes.push(`drop_extra ${resistors[i].refName}`);
+            }
+        }
+        Logger.info(INSTR_TRACE_TAG, `[AI_FIX] wireOpAmpSelfOsc fixed=${fixed} comp=${compRef} integ=${integRef}` +
+            ` Rf=${rf.refName} Rg=${rg.refName} Rin=${rin.refName} C=${c0.refName}` +
+            ` | ${notes.slice(0, 8).join('; ')}`);
+        return { fixed, needReroute: fixed > 0, notes };
     }
     /**
      * 555 单稳态延时（经典配方）:
@@ -885,9 +1093,14 @@ export class AiTopologyFixKit {
             fixed += mono.fixed;
             notes.push(...mono.notes);
         }
+        else if (intent.opAmpSelfOscillator || AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo)) {
+            const osc = AiTopologyFixKit.wireOpAmpSelfOsc(topo, wiring);
+            fixed += osc.fixed;
+            notes.push(...osc.notes);
+        }
         else if (intent.seriesRcCharge && !AiTopologyFixKit.topoHas555(topo) &&
-            !intent.hasTimer555) {
-            // 剥离多余 RELAY 由编排器负责；有 555 时绝不套用串联 RC
+            !intent.hasTimer555 && !intent.opAmpSelfOscillator) {
+            // 剥离多余 RELAY 由编排器负责；有 555 / 自激运放时绝不套用串联 RC
             const rc = AiTopologyFixKit.wireSeriesRc(topo, wiring);
             fixed += rc.fixed;
             notes.push(...rc.notes);

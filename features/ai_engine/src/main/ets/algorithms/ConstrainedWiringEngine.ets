@@ -1660,7 +1660,7 @@ export class ConstrainedWiringEngine {
     const rulePower: SpecialNetRule = { netGroup: 'power', rule: 'thick_line,direct_route,no_detour' };
     const specialNetRules: SpecialNetRule[] = [ruleXtal, ruleI2c, rulePower];
 
-    // 仪器相关网默认 forceLabel（合并阶段/无 LLM 时也避免长线穿体）
+    // 仪器：纯仪器/电源网 forceLabel；DUT≥2 的探针并网 forceWire（仪器脚本地 stub）
     // 注意：不得仅凭网名含 SENSE/UART 就 forceLabel，否则分压中点等信号网被整网 stub 化
     const forceLabelNets: string[] = [];
     const forceWireNets: string[] = [];
@@ -1684,28 +1684,30 @@ export class ConstrainedWiringEngine {
     for (let ni = 0; ni < topo.netList.length; ni++) {
       const net = topo.netList[ni];
       let hit = false;
-      let hasInstrPin = false;
+      let dutPins = 0;
       for (let ki = 0; ki < (net.nodeList?.length ?? 0); ki++) {
         const node = net.nodeList[ki];
         const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
         if (dev && isInstr(dev.libDevId ?? '')) {
           hit = true;
+          continue;
         }
         if (isInstrPin(node.pinId ?? '')) {
-          hasInstrPin = true;
+          hit = true;
+          continue;
         }
+        dutPins++;
       }
       const nUp = (net.netName ?? '').toUpperCase();
-      const pinN = net.nodeList?.length ?? 0;
-      if (hit || hasInstrPin) {
+      const isPower = net.isPower || nUp === 'VCC' || nUp === 'GND' ||
+        nUp.indexOf('VCC') === 0 || nUp.indexOf('GND') === 0;
+      if (hit && (dutPins < 2 || isPower)) {
         if (forceLabelNets.indexOf(net.netName) < 0) {
           forceLabelNets.push(net.netName);
           priorityMap.set(net.netName, 9);
         }
-      } else if (pinN >= 2 && pinN <= 4 && !net.isPower &&
-        nUp !== 'VCC' && nUp !== 'GND' && nUp.indexOf('VCC') !== 0 &&
-        nUp.indexOf('GND') !== 0) {
-        // 无仪器的 2～4 脚信号网：默认走导线（WAR/A*），少标号
+      } else if (dutPins >= 2 && dutPins <= 4 && !isPower) {
+        // 含或不含仪器探针：DUT 2～4 脚信号网默认 forceWire
         if (forceWireNets.indexOf(net.netName) < 0) {
           forceWireNets.push(net.netName);
         }

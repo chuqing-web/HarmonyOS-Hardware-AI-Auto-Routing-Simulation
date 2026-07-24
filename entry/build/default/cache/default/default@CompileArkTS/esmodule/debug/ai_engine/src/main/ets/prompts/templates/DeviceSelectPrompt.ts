@@ -21,8 +21,15 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 3. 陌生或无法归类的需求写入 oodFlags，禁止猜测编造
 4. 根据电路类型自动判断是否需要仪器
 5. MCU 电路必须包含: 晶振、去耦电容、复位上拉电阻、VCC、GND
-6. LED 电路必须配对限流电阻（R_330），单个 LED 至少 220Ω；双 LED 必须输出两颗 R_330
+6. LED/LED灯电路必须配对限流电阻（R_330），单个 LED 至少 220Ω；双 LED 必须输出两颗 R_330
+   - 【选型】口语「LED」「LED灯」「指示灯」同一类 → 库内仅 LED_RED/LED_GREEN/LED_BLUE；禁止编造 LED灯 等库外 ID；勿选 OLED_12864
+   - 颜色：红→LED_RED，绿→LED_GREEN，蓝→LED_BLUE；未指颜色默认 LED_RED
 7. 运放电路必须包含反馈电阻（闭环），输入不可浮空
+   - 【选型·普通单运放 vs 单片双运放】
+     · UA741=普通单运放（一片一颗，脚 IN+/IN-/OUT/VCC/VEE）：单级放大/跟随/滞回/积分优先；须双电源+VEE
+     · LM358=单片双运放（一片两路，脚 OUT1/IN±1/…/V+/V-）：单电源5V或两路需求优选；未用半边须跟随
+     · TL082=单片双运放·高阻：双电源积分/高阻缓冲优选
+     · 禁止把 UA741 当双运放，也禁止把 LM358 按 UA741 五脚符号选型/连线
 8. I2C 器件必须配 4.7kΩ 上拉电阻（R_4.7k）
 9. 【强制】开/闭两路互斥指示（如：开关打开绿灯亮、闭合红灯亮）必须输出:
    - RELAY_SPDT（触点 SPDT）+ SW_PUSH（驱动线圈）+ LED_GREEN + LED_RED + 两颗 R_330 + VCC + GND
@@ -38,7 +45,8 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 【强制器件 — 任何电路都必须包含，缺一不可】:
 - 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND 接地符号: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
-- 用户要正弦/方波等激励时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
+- 用户要**外接**正弦/方波等激励（信号源/信号发生器/输入激励）时追加 SIGNAL_GEN；waveform 以输入/激励为准（「正弦输入+整形输出方波」→ waveform=sine）
+- 【硬禁】运放滞回+积分闭环自激/弛张/三角波反馈振荡：方波自产，禁止 SIGNAL_GEN
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
@@ -49,7 +57,7 @@ export const DEVICE_SELECT_PROMPT: PromptTemplate = {
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
 - 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
-- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
+- 用户提到频率计 → 追加 FREQ_COUNTER；明确要信号源/信号发生器 → SIGNAL_GEN（自激振荡除外）
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 

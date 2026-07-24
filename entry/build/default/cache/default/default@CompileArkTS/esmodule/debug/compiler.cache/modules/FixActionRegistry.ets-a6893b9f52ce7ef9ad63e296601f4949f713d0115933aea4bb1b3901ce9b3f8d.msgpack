@@ -1,0 +1,852 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ)ä/** å…¨é‡ç™»è®°ï¼ˆå« LLM å¯è§ + ä»…ä»£ç è·¯å¾„ï¼‰ */
+export const FIX_ACTION_DEFS = [
+    {
+        id: 'split_power_short',
+        aliases: ['split_power'],
+        priority: 0,
+        llmVisible: true,
+        summary: 'VCCâ†”GND/ç”µæºè½¨åŒç½‘çŸ­è·¯æ‹†åˆ†',
+        requireFields: ''
+    },
+    {
+        id: 'heal_electrical',
+        aliases: ['heal_electrical_short', 'heal_electrical_shorts'],
+        priority: 0,
+        llmVisible: true,
+        summary: 'å…³é”®ç”µæ°”çŸ­è·¯ç¡®å®šæ€§ä¿®å¤ï¼ˆI+/I- åŒç½‘ç­‰ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'strip_phantom_pins',
+        aliases: ['sanitize_pins'],
+        priority: 0,
+        llmVisible: true,
+        summary: 'å‰¥ç¦»åº“å¤–å‡è„šèŠ‚ç‚¹ï¼ˆå¦‚ UA741 çš„ V+/V-ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'prune_unused_osc_channels',
+        aliases: ['break_nc_bridge'],
+        priority: 0,
+        llmVisible: true,
+        summary: 'æ‹†é™¤ç¤ºæ³¢å™¨æœªç”¨é€šé“äº’è¿/NC ç½‘',
+        requireFields: ''
+    },
+    {
+        id: 'prune_singleton_nets',
+        aliases: ['prune_singleton'],
+        priority: 0,
+        llmVisible: true,
+        summary: 'å‰ªå•è„šå­¤å„¿ä¿¡å·ç½‘',
+        requireFields: ''
+    },
+    {
+        id: 'rebuild_instrument',
+        aliases: ['rebuild_topo', 'rebuild_net', 'rebuild'],
+        priority: 1,
+        llmVisible: true,
+        summary: 'ä»…ä»ªå™¨/æµ‹é‡æ‹“æ‰‘é‡å»ºï¼›ç¦æ­¢ç”¨äºçº¯å‡ ä½•',
+        requireFields: ''
+    },
+    {
+        id: 'remove_component',
+        aliases: [],
+        priority: 2,
+        llmVisible: true,
+        summary: 'åˆ é™¤å™¨ä»¶ï¼ˆrefName æˆ– targetDeviceï¼‰',
+        requireFields: 'refName'
+    },
+    {
+        id: 'disconnect_pin',
+        aliases: ['float_pin'],
+        priority: 2,
+        llmVisible: true,
+        summary: 'æ‹†é™¤æŒ‡å®šè„šå…¨éƒ¨ç½‘ç»œè¿æ¥',
+        requireFields: 'refName,pinId'
+    },
+    {
+        id: 'add_component',
+        aliases: [],
+        priority: 3,
+        llmVisible: true,
+        summary: 'æ·»åŠ åº“å†…å™¨ä»¶ï¼ˆlibDevId å¿…å¡«ï¼‰',
+        requireFields: 'libDevId'
+    },
+    {
+        id: 'wire_555_monostable',
+        aliases: ['wire_555_mono'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'LM555 å•ç¨³æ€ç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæœ‰ 555+æŒ‰é”®ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'wire_opamp_self_osc',
+        aliases: ['wire_opamp_oscillator', 'wire_hyst_integrator'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'è¿æ”¾è‡ªæ¿€ï¼ˆæ»å›æ¯”è¾ƒå™¨+ç§¯åˆ†å™¨é—­ç¯ï¼‰ç¡®å®šæ€§æ¥çº¿ï¼›ç¦æ­¢ wire_series_rc',
+        requireFields: ''
+    },
+    {
+        id: 'wire_series_rc',
+        aliases: ['wire_rc'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'ä¸²è” RC å……æ”¾ç”µç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæ—  LM555 / éè¿æ”¾è‡ªæ¿€ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'wire_potentiometer',
+        aliases: ['wire_pot'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'ç”µä½å™¨ä¸‰ç«¯ç¡®å®šæ€§æ¥çº¿',
+        requireFields: ''
+    },
+    {
+        id: 'wire_relay',
+        aliases: ['wire_relay_spdt'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'äº’æ–¥åŒè‰² RELAY_SPDT è§¦ç‚¹ç¡®å®šæ€§æ¥çº¿',
+        requireFields: ''
+    },
+    {
+        id: 'wire_dual_supply',
+        aliases: ['wire_dual_rails'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'è¿æ”¾åŒç”µæº VCC/VEE ç¡®å®šæ€§æ¥çº¿',
+        requireFields: ''
+    },
+    {
+        id: 'wire_opamp_feedback',
+        aliases: ['opamp_feedback'],
+        priority: 3,
+        llmVisible: true,
+        summary: 'è¿æ”¾å¼€ç¯â†’è·Ÿéšé—­ç¯ï¼ˆæ¯”è¾ƒå™¨åŒè¾“å…¥å·²æ¥åˆ™è·³è¿‡ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'ensure_signal_gen',
+        aliases: [],
+        priority: 3,
+        llmVisible: true,
+        summary: 'SIGNAL_GEN GNDâ†’GNDï¼ŒOUT å…¥ç½‘ï¼ˆå¤–æ¿€åŠ±åœºæ™¯ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'move_device',
+        aliases: [],
+        priority: 4,
+        llmVisible: true,
+        summary: 'ç§»åŠ¨å™¨ä»¶åˆ°ç»å¯¹åæ ‡ x/yï¼ˆ20mil æ …æ ¼ï¼‰',
+        requireFields: 'refName'
+    },
+    {
+        id: 'nudge_device',
+        aliases: [],
+        priority: 4,
+        llmVisible: true,
+        summary: 'ç›¸å¯¹ä½ç§» dx/dy æ‹‰å¼€ç¢°æ’',
+        requireFields: 'refName'
+    },
+    {
+        id: 'rotate_device',
+        aliases: [],
+        priority: 4,
+        llmVisible: true,
+        summary: 'æ—‹è½¬å™¨ä»¶ rotate=0/90/180/270ï¼ˆçœç•¥=+90ï¼‰',
+        requireFields: 'refName'
+    },
+    {
+        id: 'heal_floating',
+        aliases: ['fix_floating'],
+        priority: 4,
+        llmVisible: true,
+        summary: 'æµ®ç©ºå…³é”®è„šç¡®å®šæ€§è¡¥æ¥ï¼ˆéçº¯å‡ ä½•ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'reconnect_pin',
+        aliases: ['rewire_net', 'move_pin'],
+        priority: 5,
+        llmVisible: true,
+        summary: 'å°†è„šå¹¶å…¥ç›®æ ‡ç½‘ï¼ˆrefName+pinId+netNameï¼‰',
+        requireFields: 'refName,pinId,netName'
+    },
+    {
+        id: 'change_param',
+        aliases: [],
+        priority: 5,
+        llmVisible: true,
+        summary: 'æ”¹å™¨ä»¶å‚æ•° paramKey/paramValue',
+        requireFields: 'paramKey,paramValue'
+    },
+    {
+        id: 'join_by_label',
+        aliases: [],
+        priority: 6,
+        llmVisible: true,
+        summary: 'åŒåæ ‡å·å¹¶ç½‘ï¼ˆnetName/toNetï¼Œå¯é€‰ fromNetï¼‰',
+        requireFields: 'netName'
+    },
+    {
+        id: 'demote_geo_nets',
+        aliases: [],
+        priority: 7,
+        llmVisible: true,
+        summary: 'å½“å‰å…¨éƒ¨å‡ ä½•è¿è§„ç½‘ä¸€æ¬¡æ ‡å·åŒ–ï¼ˆå¤šç½‘é¦–é€‰ï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'demote_power_rails',
+        aliases: [],
+        priority: 7,
+        llmVisible: true,
+        summary: 'ä»… VCC/VEE/GND/VDD/VSS æ ‡å·åŒ–',
+        requireFields: ''
+    },
+    {
+        id: 'reroute',
+        aliases: [],
+        priority: 7,
+        llmVisible: true,
+        summary: 'æ‹“æ‰‘å·²æ­£ç¡®ï¼Œä»…è§¦å‘é‡å¸ƒçº¿',
+        requireFields: ''
+    },
+    {
+        id: 'demote_to_label',
+        aliases: ['force_label'],
+        priority: 8,
+        llmVisible: true,
+        summary: 'æŒ‡å®šç½‘æ ‡å· stubï¼ˆnetName å¿…å¡«ï¼‰',
+        requireFields: 'netName'
+    },
+    {
+        id: 'demote_all_labels',
+        aliases: ['label_all'],
+        priority: 9,
+        llmVisible: true,
+        summary: 'å…¨ç½‘æ ‡å·ï¼ˆæç«¯ wire_crossï¼‰',
+        requireFields: ''
+    },
+    {
+        id: 'none',
+        aliases: ['noop'],
+        priority: 99,
+        llmVisible: false,
+        summary: 'ç©ºæ“ä½œ',
+        requireFields: ''
+    }
+];
+let aliasMapCache = null;
+function buildAliasMap() {
+    if (aliasMapCache !== null) {
+        return aliasMapCache;
+    }
+    const m = new Map();
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        const d = FIX_ACTION_DEFS[i];
+        m.set(d.id, d.id);
+        for (let ai = 0; ai < d.aliases.length; ai++) {
+            m.set(d.aliases[ai].toLowerCase(), d.id);
+        }
+    }
+    aliasMapCache = m;
+    return m;
+}
+/** åˆ«å â†’ canonicalï¼›æœªçŸ¥è¿”å›ç©ºä¸² */
+export function canonicalizeFixAction(raw) {
+    const key = (raw ?? '').trim().toLowerCase();
+    if (key.length === 0) {
+        return '';
+    }
+    return buildAliasMap().get(key) ?? '';
+}
+export function isKnownFixAction(raw) {
+    return canonicalizeFixAction(raw).length > 0;
+}
+export function fixActionPriorityOf(raw) {
+    const id = canonicalizeFixAction(raw);
+    if (id.length === 0) {
+        return 5;
+    }
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        if (FIX_ACTION_DEFS[i].id === id) {
+            return FIX_ACTION_DEFS[i].priority;
+        }
+    }
+    return 5;
+}
+export function findFixActionDef(raw) {
+    const id = canonicalizeFixAction(raw);
+    if (id.length === 0) {
+        return null;
+    }
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        if (FIX_ACTION_DEFS[i].id === id) {
+            return FIX_ACTION_DEFS[i];
+        }
+    }
+    return null;
+}
+/** Schema æšä¸¾ä¸²ï¼ˆä»… llmVisibleï¼‰ */
+export function buildFixActionSchemaEnum() {
+    const ids = [];
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        const d = FIX_ACTION_DEFS[i];
+        if (d.llmVisible && d.id !== 'none') {
+            ids.push(d.id);
+        }
+    }
+    return ids.join('|');
+}
+/** æ³¨å…¥ self_review system çš„å·¥å…·ç›®å½• */
+export function buildFixActionPromptCatalog() {
+    const lines = [
+        'ã€å¯ç”¨ä¿®å¤å·¥å…· fixAction â€” å®Œæ•´ç›®å½•ï¼ˆä»…å…è®¸ä¸‹åˆ—åç§°ï¼‰ã€‘:'
+    ];
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        const d = FIX_ACTION_DEFS[i];
+        if (!d.llmVisible || d.id === 'none') {
+            continue;
+        }
+        const req = d.requireFields.length > 0
+            ? `ï¼›å¿…å¡« fixDetail: ${d.requireFields}`
+            : '';
+        lines.push(`- ${d.id}: ${d.summary}${req}`);
+    }
+    lines.push('ç¦æ­¢è¾“å‡ºç›®å½•å¤– fixActionï¼›æœªçŸ¥åä¼šè¢«ä¸¢å¼ƒã€‚');
+    return lines.join('\n');
+}
+/** applyOneAiFix å·²å®ç°çš„ canonical é›†åˆï¼ˆä¸ registry å¯¹é½è‡ªæ£€ï¼‰ */
+export const IMPLEMENTED_FIX_ACTIONS = [
+    'rebuild_instrument', 'demote_all_labels', 'heal_floating',
+    'wire_555_monostable', 'wire_opamp_self_osc', 'wire_series_rc', 'wire_potentiometer', 'wire_relay',
+    'heal_electrical', 'wire_dual_supply', 'wire_opamp_feedback', 'ensure_signal_gen',
+    'strip_phantom_pins', 'prune_unused_osc_channels', 'prune_singleton_nets',
+    'demote_power_rails', 'demote_geo_nets', 'split_power_short', 'reroute',
+    'demote_to_label', 'join_by_label', 'reconnect_pin', 'disconnect_pin',
+    'move_device', 'nudge_device', 'rotate_device',
+    'add_component', 'remove_component', 'change_param', 'none'
+];
+/** å¯åŠ¨/é¦–è½®ä¿®å¤æ—¶æ‰“ä¸€æ¬¡å¯¹é½æ—¥å¿—ï¼›è¿”å›ç¼ºå¤±æ•° */
+export function auditFixActionRegistryCoverage() {
+    const impl = new Set();
+    for (let i = 0; i < IMPLEMENTED_FIX_ACTIONS.length; i++) {
+        impl.add(IMPLEMENTED_FIX_ACTIONS[i]);
+    }
+    let missing = 0;
+    for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+        const id = FIX_ACTION_DEFS[i].id;
+        if (id === 'none') {
+            continue;
+        }
+        if (!impl.has(id)) {
+            missing++;
+        }
+    }
+    return missing;
+}
+//# sourceMappingURL=FixActionRegistry.js.mapÂÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\FixActionRegistry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0’ÔrD’²hostDependencyName®hostModuleName³./FixActionRegistry©ai_engineDÙ"../../algorithms/FixActionRegistry©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ)‚/**
+ * fixAction å•æºæ³¨å†Œè¡¨ â€” self_review LLM å·¥å…· + ç¡®å®šæ€§ kit å…±ç”¨ã€‚
+ * Prompt æšä¸¾ / sanitize çº å / priority / unknown ä¸¢å¼ƒ å‡ä»¥æ­¤ä¸ºå‡†ã€‚
+ * æ–°å¢å·¥å…·ï¼šå…ˆç™»è®°æ­¤å¤„ï¼Œå†å®ç° applyOneAiFix + AiTopologyFixKitï¼Œæœ€ååŒæ­¥ skill/prompts/05_self_review.mdã€‚
+ */
+
+export interface FixActionDef {
+  /** canonical åï¼ˆå†™å…¥ JSON / prompt schemaï¼‰ */
+  id: string;
+  /** å°å†™åˆ«åï¼Œcanonicalize æ—¶æ˜ å°„åˆ° id */
+  aliases: string[];
+  /** æ‰§è¡Œä¼˜å…ˆçº§ï¼Œè¶Šå°è¶Šå…ˆ */
+  priority: number;
+  /** æ˜¯å¦å…è®¸ LLM åœ¨ self_review è¾“å‡ºï¼ˆfalse=ä»…ç¡®å®šæ€§/autoï¼‰ */
+  llmVisible: boolean;
+  /** ä¸€è¡Œè¯´æ˜ï¼ˆæ³¨å…¥ promptï¼‰ */
+  summary: string;
+  /** å¿…å¡« fixDetail å­—æ®µï¼Œé€—å·åˆ†éš”ï¼›ç©º=æ—  */
+  requireFields: string;
+}
+
+/** å…¨é‡ç™»è®°ï¼ˆå« LLM å¯è§ + ä»…ä»£ç è·¯å¾„ï¼‰ */
+export const FIX_ACTION_DEFS: FixActionDef[] = [
+  {
+    id: 'split_power_short',
+    aliases: ['split_power'],
+    priority: 0,
+    llmVisible: true,
+    summary: 'VCCâ†”GND/ç”µæºè½¨åŒç½‘çŸ­è·¯æ‹†åˆ†',
+    requireFields: ''
+  },
+  {
+    id: 'heal_electrical',
+    aliases: ['heal_electrical_short', 'heal_electrical_shorts'],
+    priority: 0,
+    llmVisible: true,
+    summary: 'å…³é”®ç”µæ°”çŸ­è·¯ç¡®å®šæ€§ä¿®å¤ï¼ˆI+/I- åŒç½‘ç­‰ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'strip_phantom_pins',
+    aliases: ['sanitize_pins'],
+    priority: 0,
+    llmVisible: true,
+    summary: 'å‰¥ç¦»åº“å¤–å‡è„šèŠ‚ç‚¹ï¼ˆå¦‚ UA741 çš„ V+/V-ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'prune_unused_osc_channels',
+    aliases: ['break_nc_bridge'],
+    priority: 0,
+    llmVisible: true,
+    summary: 'æ‹†é™¤ç¤ºæ³¢å™¨æœªç”¨é€šé“äº’è¿/NC ç½‘',
+    requireFields: ''
+  },
+  {
+    id: 'prune_singleton_nets',
+    aliases: ['prune_singleton'],
+    priority: 0,
+    llmVisible: true,
+    summary: 'å‰ªå•è„šå­¤å„¿ä¿¡å·ç½‘',
+    requireFields: ''
+  },
+  {
+    id: 'rebuild_instrument',
+    aliases: ['rebuild_topo', 'rebuild_net', 'rebuild'],
+    priority: 1,
+    llmVisible: true,
+    summary: 'ä»…ä»ªå™¨/æµ‹é‡æ‹“æ‰‘é‡å»ºï¼›ç¦æ­¢ç”¨äºçº¯å‡ ä½•',
+    requireFields: ''
+  },
+  {
+    id: 'remove_component',
+    aliases: [],
+    priority: 2,
+    llmVisible: true,
+    summary: 'åˆ é™¤å™¨ä»¶ï¼ˆrefName æˆ– targetDeviceï¼‰',
+    requireFields: 'refName'
+  },
+  {
+    id: 'disconnect_pin',
+    aliases: ['float_pin'],
+    priority: 2,
+    llmVisible: true,
+    summary: 'æ‹†é™¤æŒ‡å®šè„šå…¨éƒ¨ç½‘ç»œè¿æ¥',
+    requireFields: 'refName,pinId'
+  },
+  {
+    id: 'add_component',
+    aliases: [],
+    priority: 3,
+    llmVisible: true,
+    summary: 'æ·»åŠ åº“å†…å™¨ä»¶ï¼ˆlibDevId å¿…å¡«ï¼‰',
+    requireFields: 'libDevId'
+  },
+  {
+    id: 'wire_555_monostable',
+    aliases: ['wire_555_mono'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'LM555 å•ç¨³æ€ç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæœ‰ 555+æŒ‰é”®ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'wire_opamp_self_osc',
+    aliases: ['wire_opamp_oscillator', 'wire_hyst_integrator'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'è¿æ”¾è‡ªæ¿€ï¼ˆæ»å›æ¯”è¾ƒå™¨+ç§¯åˆ†å™¨é—­ç¯ï¼‰ç¡®å®šæ€§æ¥çº¿ï¼›ç¦æ­¢ wire_series_rc',
+    requireFields: ''
+  },
+  {
+    id: 'wire_series_rc',
+    aliases: ['wire_rc'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'ä¸²è” RC å……æ”¾ç”µç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæ—  LM555 / éè¿æ”¾è‡ªæ¿€ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'wire_potentiometer',
+    aliases: ['wire_pot'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'ç”µä½å™¨ä¸‰ç«¯ç¡®å®šæ€§æ¥çº¿',
+    requireFields: ''
+  },
+  {
+    id: 'wire_relay',
+    aliases: ['wire_relay_spdt'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'äº’æ–¥åŒè‰² RELAY_SPDT è§¦ç‚¹ç¡®å®šæ€§æ¥çº¿',
+    requireFields: ''
+  },
+  {
+    id: 'wire_dual_supply',
+    aliases: ['wire_dual_rails'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'è¿æ”¾åŒç”µæº VCC/VEE ç¡®å®šæ€§æ¥çº¿',
+    requireFields: ''
+  },
+  {
+    id: 'wire_opamp_feedback',
+    aliases: ['opamp_feedback'],
+    priority: 3,
+    llmVisible: true,
+    summary: 'è¿æ”¾å¼€ç¯â†’è·Ÿéšé—­ç¯ï¼ˆæ¯”è¾ƒå™¨åŒè¾“å…¥å·²æ¥åˆ™è·³è¿‡ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'ensure_signal_gen',
+    aliases: [],
+    priority: 3,
+    llmVisible: true,
+    summary: 'SIGNAL_GEN GNDâ†’GNDï¼ŒOUT å…¥ç½‘ï¼ˆå¤–æ¿€åŠ±åœºæ™¯ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'move_device',
+    aliases: [],
+    priority: 4,
+    llmVisible: true,
+    summary: 'ç§»åŠ¨å™¨ä»¶åˆ°ç»å¯¹åæ ‡ x/yï¼ˆ20mil æ …æ ¼ï¼‰',
+    requireFields: 'refName'
+  },
+  {
+    id: 'nudge_device',
+    aliases: [],
+    priority: 4,
+    llmVisible: true,
+    summary: 'ç›¸å¯¹ä½ç§» dx/dy æ‹‰å¼€ç¢°æ’',
+    requireFields: 'refName'
+  },
+  {
+    id: 'rotate_device',
+    aliases: [],
+    priority: 4,
+    llmVisible: true,
+    summary: 'æ—‹è½¬å™¨ä»¶ rotate=0/90/180/270ï¼ˆçœç•¥=+90ï¼‰',
+    requireFields: 'refName'
+  },
+  {
+    id: 'heal_floating',
+    aliases: ['fix_floating'],
+    priority: 4,
+    llmVisible: true,
+    summary: 'æµ®ç©ºå…³é”®è„šç¡®å®šæ€§è¡¥æ¥ï¼ˆéçº¯å‡ ä½•ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'reconnect_pin',
+    aliases: ['rewire_net', 'move_pin'],
+    priority: 5,
+    llmVisible: true,
+    summary: 'å°†è„šå¹¶å…¥ç›®æ ‡ç½‘ï¼ˆrefName+pinId+netNameï¼‰',
+    requireFields: 'refName,pinId,netName'
+  },
+  {
+    id: 'change_param',
+    aliases: [],
+    priority: 5,
+    llmVisible: true,
+    summary: 'æ”¹å™¨ä»¶å‚æ•° paramKey/paramValue',
+    requireFields: 'paramKey,paramValue'
+  },
+  {
+    id: 'join_by_label',
+    aliases: [],
+    priority: 6,
+    llmVisible: true,
+    summary: 'åŒåæ ‡å·å¹¶ç½‘ï¼ˆnetName/toNetï¼Œå¯é€‰ fromNetï¼‰',
+    requireFields: 'netName'
+  },
+  {
+    id: 'demote_geo_nets',
+    aliases: [],
+    priority: 7,
+    llmVisible: true,
+    summary: 'å½“å‰å…¨éƒ¨å‡ ä½•è¿è§„ç½‘ä¸€æ¬¡æ ‡å·åŒ–ï¼ˆå¤šç½‘é¦–é€‰ï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'demote_power_rails',
+    aliases: [],
+    priority: 7,
+    llmVisible: true,
+    summary: 'ä»… VCC/VEE/GND/VDD/VSS æ ‡å·åŒ–',
+    requireFields: ''
+  },
+  {
+    id: 'reroute',
+    aliases: [],
+    priority: 7,
+    llmVisible: true,
+    summary: 'æ‹“æ‰‘å·²æ­£ç¡®ï¼Œä»…è§¦å‘é‡å¸ƒçº¿',
+    requireFields: ''
+  },
+  {
+    id: 'demote_to_label',
+    aliases: ['force_label'],
+    priority: 8,
+    llmVisible: true,
+    summary: 'æŒ‡å®šç½‘æ ‡å· stubï¼ˆnetName å¿…å¡«ï¼‰',
+    requireFields: 'netName'
+  },
+  {
+    id: 'demote_all_labels',
+    aliases: ['label_all'],
+    priority: 9,
+    llmVisible: true,
+    summary: 'å…¨ç½‘æ ‡å·ï¼ˆæç«¯ wire_crossï¼‰',
+    requireFields: ''
+  },
+  {
+    id: 'none',
+    aliases: ['noop'],
+    priority: 99,
+    llmVisible: false,
+    summary: 'ç©ºæ“ä½œ',
+    requireFields: ''
+  }
+];
+
+let aliasMapCache: Map<string, string> | null = null;
+
+function buildAliasMap(): Map<string, string> {
+  if (aliasMapCache !== null) {
+    return aliasMapCache;
+  }
+  const m = new Map<string, string>();
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    const d = FIX_ACTION_DEFS[i];
+    m.set(d.id, d.id);
+    for (let ai = 0; ai < d.aliases.length; ai++) {
+      m.set(d.aliases[ai].toLowerCase(), d.id);
+    }
+  }
+  aliasMapCache = m;
+  return m;
+}
+
+/** åˆ«å â†’ canonicalï¼›æœªçŸ¥è¿”å›ç©ºä¸² */
+export function canonicalizeFixAction(raw: string): string {
+  const key = (raw ?? '').trim().toLowerCase();
+  if (key.length === 0) {
+    return '';
+  }
+  return buildAliasMap().get(key) ?? '';
+}
+
+export function isKnownFixAction(raw: string): boolean {
+  return canonicalizeFixAction(raw).length > 0;
+}
+
+export function fixActionPriorityOf(raw: string): number {
+  const id = canonicalizeFixAction(raw);
+  if (id.length === 0) {
+    return 5;
+  }
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    if (FIX_ACTION_DEFS[i].id === id) {
+      return FIX_ACTION_DEFS[i].priority;
+    }
+  }
+  return 5;
+}
+
+export function findFixActionDef(raw: string): FixActionDef | null {
+  const id = canonicalizeFixAction(raw);
+  if (id.length === 0) {
+    return null;
+  }
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    if (FIX_ACTION_DEFS[i].id === id) {
+      return FIX_ACTION_DEFS[i];
+    }
+  }
+  return null;
+}
+
+/** Schema æšä¸¾ä¸²ï¼ˆä»… llmVisibleï¼‰ */
+export function buildFixActionSchemaEnum(): string {
+  const ids: string[] = [];
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    const d = FIX_ACTION_DEFS[i];
+    if (d.llmVisible && d.id !== 'none') {
+      ids.push(d.id);
+    }
+  }
+  return ids.join('|');
+}
+
+/** æ³¨å…¥ self_review system çš„å·¥å…·ç›®å½• */
+export function buildFixActionPromptCatalog(): string {
+  const lines: string[] = [
+    'ã€å¯ç”¨ä¿®å¤å·¥å…· fixAction â€” å®Œæ•´ç›®å½•ï¼ˆä»…å…è®¸ä¸‹åˆ—åç§°ï¼‰ã€‘:'
+  ];
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    const d = FIX_ACTION_DEFS[i];
+    if (!d.llmVisible || d.id === 'none') {
+      continue;
+    }
+    const req = d.requireFields.length > 0
+      ? `ï¼›å¿…å¡« fixDetail: ${d.requireFields}`
+      : '';
+    lines.push(`- ${d.id}: ${d.summary}${req}`);
+  }
+  lines.push('ç¦æ­¢è¾“å‡ºç›®å½•å¤– fixActionï¼›æœªçŸ¥åä¼šè¢«ä¸¢å¼ƒã€‚');
+  return lines.join('\n');
+}
+
+/** applyOneAiFix å·²å®ç°çš„ canonical é›†åˆï¼ˆä¸ registry å¯¹é½è‡ªæ£€ï¼‰ */
+export const IMPLEMENTED_FIX_ACTIONS: string[] = [
+  'rebuild_instrument', 'demote_all_labels', 'heal_floating',
+  'wire_555_monostable', 'wire_opamp_self_osc', 'wire_series_rc', 'wire_potentiometer', 'wire_relay',
+  'heal_electrical', 'wire_dual_supply', 'wire_opamp_feedback', 'ensure_signal_gen',
+  'strip_phantom_pins', 'prune_unused_osc_channels', 'prune_singleton_nets',
+  'demote_power_rails', 'demote_geo_nets', 'split_power_short', 'reroute',
+  'demote_to_label', 'join_by_label', 'reconnect_pin', 'disconnect_pin',
+  'move_device', 'nudge_device', 'rotate_device',
+  'add_component', 'remove_component', 'change_param', 'none'
+];
+
+/** å¯åŠ¨/é¦–è½®ä¿®å¤æ—¶æ‰“ä¸€æ¬¡å¯¹é½æ—¥å¿—ï¼›è¿”å›ç¼ºå¤±æ•° */
+export function auditFixActionRegistryCoverage(): number {
+  const impl = new Set<string>();
+  for (let i = 0; i < IMPLEMENTED_FIX_ACTIONS.length; i++) {
+    impl.add(IMPLEMENTED_FIX_ACTIONS[i]);
+  }
+  let missing = 0;
+  for (let i = 0; i < FIX_ACTION_DEFS.length; i++) {
+    const id = FIX_ACTION_DEFS[i].id;
+    if (id === 'none') {
+      continue;
+    }
+    if (!impl.has(id)) {
+      missing++;
+    }
+  }
+  return missing;
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings´FixActionRegistry.js ‘µFixActionRegistry.etsÜ`’”   ” –”   ” ” ” ” ” /‘” ”” ”
+ ” ” –” ” ” ” ” ”  ”” ” ” ” ”” ” ” ” ”” ” ” ”$  ”” ” ” ” ‘” ‘” ””  ”
+  ”  ”  ˜” !” !” !” !”) !%”+ !'”ÌC !?”ÌD !Ì@”” "” "” "” "”” #” #” #” #”” $” $” $”) $%”” %” %” %” %‘” &‘” '”” (”
+ (” (”  (–” )” )” )” )”! )”" )”” *” *” *” *”” +” +” +” +”” ,” ,” ,”, ,(”” -” -” -” -‘” .‘” /”” 0”
+ 0” 0”' 0#–” 1” 1” 1” 1”# 1”$ 1 ”” 2” 2” 2” 2”” 3” 3” 3” 3”” 4” 4” 4”# 4”” 5” 5” 5” 5‘” 6‘” 7”” 8”
+ 8” 8”" 8–” 9” 9” 9” 9”# 9”$ 9 ”” :” :” :” :”” ;” ;” ;” ;”” <” <” <” <”” =” =” =” =‘” >‘” ?”” Ì@”
+ Ì@” Ì@”  Ì@š” ÌA” ÌA” ÌA” ÌA”  ÌA”" ÌA”/ ÌA+”1 ÌA-”: ÌA6”; ÌA7”” ÌB” ÌB” ÌB” ÌB”” ÌC” ÌC” ÌC” ÌC”” ÌD” ÌD” ÌD”% ÌD!”” ÌE” ÌE” ÌE” ÌE‘” ÌF‘” ÌG”” ÌH”
+ ÌH” ÌH” ÌH”” ÌI” ÌI” ÌI” ÌI”” ÌJ” ÌJ” ÌJ” ÌJ”” ÌK” ÌK” ÌK” ÌK”” ÌL” ÌL” ÌL”/ ÌL+”” ÌM” ÌM” ÌM”  ÌM‘” ÌN‘” ÌO”” ÌP”
+ ÌP” ÌP” ÌP–” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”” ÌR” ÌR” ÌR” ÌR”” ÌS” ÌS” ÌS” ÌS”” ÌT” ÌT” ÌT” ÌT”” ÌU” ÌU” ÌU”& ÌU"‘” ÌV‘” ÌW”” ÌX”
+ ÌX” ÌX” ÌX”” ÌY” ÌY” ÌY” ÌY”” ÌZ” ÌZ” ÌZ” ÌZ”” Ì[” Ì[” Ì[” Ì[”” Ì\” Ì\” Ì\”& Ì\"”” Ì]” Ì]” Ì]”! Ì]‘” Ì^‘” Ì_”” Ì`”
+ Ì`” Ì`”! Ì`–” Ìa” Ìa” Ìa” Ìa”! Ìa”" Ìa”” Ìb” Ìb” Ìb” Ìb”” Ìc” Ìc” Ìc” Ìc”” Ìd” Ìd” Ìd”- Ìd)”” Ìe” Ìe” Ìe” Ìe‘” Ìf‘” Ìg”” Ìh”
+ Ìh” Ìh”! Ìh˜” Ìi” Ìi” Ìi” Ìi”) Ìi%”+ Ìi'”ÌA Ìi=”ÌB Ìi>”” Ìj” Ìj” Ìj” Ìj”” Ìk” Ìk” Ìk” Ìk”” Ìl” Ìl” Ìl”; Ìl7”” Ìm” Ìm” Ìm” Ìm‘” Ìn‘” Ìo”” Ìp”
+ Ìp” Ìp” Ìp–” Ìq” Ìq” Ìq” Ìq” Ìq” Ìq”” Ìr” Ìr” Ìr” Ìr”” Ìs” Ìs” Ìs” Ìs”” Ìt” Ìt” Ìt”4 Ìt0”” Ìu” Ìu” Ìu” Ìu‘” Ìv‘” Ìw”” Ìx”
+ Ìx” Ìx”  Ìx–” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”” Ìz” Ìz” Ìz” Ìz”” Ì{” Ì{” Ì{” Ì{”” Ì|” Ì|” Ì|” Ì|”” Ì}” Ì}” Ì}” Ì}‘” Ì~‘” Ì”” Ì€”
+ Ì€” Ì€” Ì€–” Ì” Ì” Ì” Ì”# Ì”$ Ì ”” Ì‚” Ì‚” Ì‚” Ì‚”” Ìƒ” Ìƒ” Ìƒ” Ìƒ”” Ì„” Ì„” Ì„”* Ì„&”” Ì…” Ì…” Ì…” Ì…‘” Ì†‘” Ì‡”” Ìˆ”
+ Ìˆ” Ìˆ” Ìˆ–” Ì‰” Ì‰” Ì‰” Ì‰”# Ì‰”$ Ì‰ ”” ÌŠ” ÌŠ” ÌŠ” ÌŠ”” Ì‹” Ì‹” Ì‹” Ì‹”” ÌŒ” ÌŒ” ÌŒ”& ÌŒ"”” Ì” Ì” Ì” Ì‘” Ì‘” Ì”” Ì”
+ Ì” Ì”! Ì–” Ì‘” Ì‘” Ì‘” Ì‘”" Ì‘”# Ì‘”” Ì’” Ì’” Ì’” Ì’”” Ì“” Ì“” Ì“” Ì“”” Ì”” Ì”” Ì””) Ì”%”” Ì•” Ì•” Ì•” Ì•‘” Ì–‘” Ì—”” Ì˜”
+ Ì˜” Ì˜” Ì˜”” Ì™” Ì™” Ì™” Ì™”” Ìš” Ìš” Ìš” Ìš”” Ì›” Ì›” Ì›” Ì›”” Ìœ” Ìœ” Ìœ”3 Ìœ/”” Ì” Ì” Ì” Ì‘” Ì‘” ÌŸ”” Ì ”
+ Ì ” Ì ” Ì ”” Ì¡” Ì¡” Ì¡” Ì¡”” Ì¢” Ì¢” Ì¢” Ì¢”” Ì£” Ì£” Ì£” Ì£”” Ì¤” Ì¤” Ì¤”* Ì¤&”” Ì¥” Ì¥” Ì¥”  Ì¥‘” Ì¦‘” Ì§”” Ì¨”
+ Ì¨” Ì¨” Ì¨”” Ì©” Ì©” Ì©” Ì©”” Ìª” Ìª” Ìª” Ìª”” Ì«” Ì«” Ì«” Ì«”” Ì¬” Ì¬” Ì¬”" Ì¬”” Ì­” Ì­” Ì­”  Ì­‘” Ì®‘” Ì¯”” Ì°”
+ Ì°” Ì°” Ì°”” Ì±” Ì±” Ì±” Ì±”” Ì²” Ì²” Ì²” Ì²”” Ì³” Ì³” Ì³” Ì³”” Ì´” Ì´” Ì´”3 Ì´/”” Ìµ” Ìµ” Ìµ”  Ìµ‘” Ì¶‘” Ì·”” Ì¸”
+ Ì¸” Ì¸” Ì¸–” Ì¹” Ì¹” Ì¹” Ì¹”  Ì¹”! Ì¹”” Ìº” Ìº” Ìº” Ìº”” Ì»” Ì»” Ì»” Ì»”” Ì¼” Ì¼” Ì¼”# Ì¼”” Ì½” Ì½” Ì½” Ì½‘” Ì¾‘” Ì¿”” ÌÀ”
+ ÌÀ” ÌÀ” ÌÀ˜” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”  ÌÁ”* ÌÁ&”+ ÌÁ'”” ÌÂ” ÌÂ” ÌÂ” ÌÂ”” ÌÃ” ÌÃ” ÌÃ” ÌÃ”” ÌÄ” ÌÄ” ÌÄ”1 ÌÄ-”” ÌÅ” ÌÅ” ÌÅ”. ÌÅ*‘” ÌÆ‘” ÌÇ”” ÌÈ”
+ ÌÈ” ÌÈ” ÌÈ”” ÌÉ” ÌÉ” ÌÉ” ÌÉ”” ÌÊ” ÌÊ” ÌÊ” ÌÊ”” ÌË” ÌË” ÌË” ÌË”” ÌÌ” ÌÌ” ÌÌ”, ÌÌ(”” ÌÍ” ÌÍ” ÌÍ”, ÌÍ(‘” ÌÎ‘” ÌÏ”” ÌĞ”
+ ÌĞ” ÌĞ” ÌĞ”” ÌÑ” ÌÑ” ÌÑ” ÌÑ”” ÌÒ” ÌÒ” ÌÒ” ÌÒ”” ÌÓ” ÌÓ” ÌÓ” ÌÓ”” ÌÔ” ÌÔ” ÌÔ”3 ÌÔ/”” ÌÕ” ÌÕ” ÌÕ”  ÌÕ‘” ÌÖ‘” Ì×”” ÌØ”
+ ÌØ” ÌØ” ÌØ”” ÌÙ” ÌÙ” ÌÙ” ÌÙ”” ÌÚ” ÌÚ” ÌÚ” ÌÚ”” ÌÛ” ÌÛ” ÌÛ” ÌÛ”” ÌÜ” ÌÜ” ÌÜ”' ÌÜ#”” Ìİ” Ìİ” Ìİ” Ìİ‘” ÌŞ‘” Ìß”” Ìà”
+ Ìà” Ìà”  Ìà”” Ìá” Ìá” Ìá” Ìá”” Ìâ” Ìâ” Ìâ” Ìâ”” Ìã” Ìã” Ìã” Ìã”” Ìä” Ìä” Ìä”, Ìä(”” Ìå” Ìå” Ìå” Ìå‘” Ìæ‘” Ìç”” Ìè”
+ Ìè” Ìè” Ìè”” Ìé” Ìé” Ìé” Ìé”” Ìê” Ìê” Ìê” Ìê”” Ìë” Ìë” Ìë” Ìë”” Ìì” Ìì” Ìì” Ìì”” Ìí” Ìí” Ìí” Ìí‘” Ìî‘” Ìï”” Ìğ”
+ Ìğ” Ìğ” Ìğ–” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ”  Ìñ”” Ìò” Ìò” Ìò” Ìò”” Ìó” Ìó” Ìó” Ìó”” Ìô” Ìô” Ìô”) Ìô%”” Ìõ” Ìõ” Ìõ”  Ìõ‘” Ìö‘” Ì÷”” Ìø”
+ Ìø” Ìø” Ìø–” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù”” Ìú” Ìú” Ìú” Ìú”” Ìû” Ìû” Ìû” Ìû”” Ìü” Ìü” Ìü”& Ìü"”” Ìı” Ìı” Ìı” Ìı‘” Ìş‘” Ìÿ”” Í ”
+ Í ” Í ” Í –” Í” Í” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í‘” Í’” Í” Í–”  Í	 ” Í	” Í	” Í	0” Í	4” Í	5“”  Í ”	 Í	” Í–” Í” Í” Í” Í” Í”  Í”” Í” Í” Í” Í‘” Í˜” Í”
+ Í” Í	” Í” Í” Í” Í%” Í&Ü ” Í”	 Í” Í” Í” Í” Í” Í” Í” Í”' Í%”( Í&”. Í,”0 Í.”1 Í/”3 Í1”5 Í3™” Í” Í
+” Í” Í”! Í”" Í”# Í”$ Í ”% Í!” Í”	 Í”
+ Í” Í	” Í
+” Í” Í” Í” Í” Í” Í” Í” Í” ÍÜ ” Í” Í	” Í” Í” Í” Í” Í” Í” Í” Í”  Í”' Í#”( Í$”. Í*”0 Í,”2 Í.”4 Í0”6 Í2Ü ” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í”  Í”+ Í%”- Í'”/ Í)”0 Í*”1 Í+”3 Í-”4 Í.”5 Í/‘”	 Í‘” Í•” Í” Í” Í” Í” Í”” Í” Í	” Í
+” Í’”  Í ” Í’”  Í ” Í–”  Í ” Í” Í”% Í%”& Í&”) Í1Ü ” Í”
+ Í” Í” Í” Í” Í” Í” Í” Í” Í”  Í”" Í ”# Í!”. Í,”0 Í.”1 Í/˜” Í” Í” Í	” Í
+” Í” Í” Í” Í”” Í” Í” Í” Í‘” Í œ” Í!” Í!	” Í!” Í!” Í!” Í!” Í!”" Í! ”# Í!!”' Í!%”) Í!'”* Í!(’”  Í" ” Í"–”  Í$ ” Í$” Í$”  Í$ ”! Í$!”$ Í$,›” Í%” Í%	”  Í%”! Í%”$ Í%"”% Í%#”& Í%$”, Í%*”/ Í%-”0 Í%.”1 Í%/’”  Í& ” Í&–”  Í( ” Í(” Í(”# Í(#”$ Í($”' Í(/™” Í)”
+ Í)” Í)
+” Í)”$ Í)"”% Í)#”( Í)&”) Í)'”* Í)(˜” Í*” Í*”
+ Í*” Í*	” Í*” Í*” Í*” Í*”” Í+” Í+” Í+” Í+‘” Í,Ü ” Í-”	 Í-” Í-” Í-” Í-” Í-” Í-” Í-” Í-”' Í-%”( Í-&”. Í-,”0 Í-.”1 Í-/”3 Í-1”5 Í-3›” Í.” Í.” Í.” Í.” Í.” Í.” Í.”! Í.”& Í."”( Í.$”* Í.&™” Í/” Í/”" Í/”# Í/”$ Í/”% Í/”& Í/ ”. Í/(”/ Í/)‘”	 Í0‘” Í1”” Í2” Í2	” Í2
+” Í2’”  Í3 ” Í3–”  Í5 ” Í5” Í5”  Í5 ”! Í5!”$ Í5,™” Í6”
+ Í6” Í6
+” Í6”$ Í6"”% Í6#”( Í6&”) Í6'”* Í6(˜” Í7” Í7”
+ Í7” Í7	” Í7” Í7” Í7” Í7”” Í8” Í8” Í8” Í8‘” Í9Ü ” Í:”	 Í:” Í:” Í:” Í:” Í:” Í:” Í:” Í:”' Í:%”( Í:&”. Í:,”0 Í:.”1 Í:/”3 Í:1”5 Í:3›” Í;” Í;” Í;” Í;” Í;” Í;” Í;”! Í;”& Í;"”( Í;$”* Í;&—” Í<” Í<”" Í<”# Í<”$ Í<”% Í<”& Í< ‘”	 Í=‘” Í>”” Í?” Í?	” Í?” Í?’”  Í@ ” Í@’”  ÍB ” ÍB””  ÍC ” ÍC” ÍC”( ÍC(–” ÍD”
+ ÍD” ÍD” ÍD” ÍD” ÍDÜ ” ÍE”	 ÍE” ÍE” ÍE” ÍE” ÍE” ÍE” ÍE” ÍE”' ÍE%”( ÍE&”. ÍE,”0 ÍE.”1 ÍE/”3 ÍE1”5 ÍE3™” ÍF” ÍF
+” ÍF” ÍF”! ÍF”" ÍF”# ÍF”$ ÍF ”% ÍF!œ” ÍG” ÍG” ÍG	” ÍG
+” ÍG” ÍG” ÍG” ÍG”  ÍG”% ÍG!”+ ÍG'”- ÍG)š” ÍH” ÍH	” ÍH
+” ÍH” ÍH” ÍH” ÍH” ÍH” ÍH” ÍH‘”	 ÍI‘” ÍJ™” ÍK” ÍK	” ÍK” ÍK” ÍK” ÍK” ÍK” ÍK” ÍK’”  ÍL ” ÍL’”  ÍN ”" ÍN"””  ÍO ” ÍO” ÍO”+ ÍO+”” ÍP”
+ ÍP” ÍP” ÍP’” ÍQ”- ÍQ)’” ÍR” ÍRÜ ” ÍS”	 ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS”' ÍS%”( ÍS&”. ÍS,”0 ÍS.”1 ÍS/”3 ÍS1”5 ÍS3™” ÍT” ÍT
+” ÍT” ÍT”! ÍT”" ÍT”# ÍT”$ ÍT ”% ÍT!” ÍU” ÍU” ÍU	” ÍU
+” ÍU” ÍU” ÍU” ÍU” ÍU”! ÍU”& ÍU"”, ÍU(”. ÍU*’” ÍV” ÍV‘”	 ÍW›” ÍX” ÍX
+” ÍX” ÍX” ÍX” ÍX”# ÍX”$ ÍX ”* ÍX&”- ÍX)”. ÍX*˜” ÍY” ÍY” ÍY”  ÍY”! ÍY”" ÍY”/ ÍY)”1 ÍY+•” ÍZ” ÍZ” ÍZ” ÍZ
+” ÍZÜ ” Í[” Í[	” Í[
+” Í[” Í[” Í[” Í[” Í[” Í[”! Í[”" Í[”# Í[”* Í[&”- Í[)”0 Í[,”2 Í[.”3 Í[/”4 Í[0‘” Í\˜” Í]”	 Í]”
+ Í]” Í]” Í]”+ Í])”, Í]*”- Í]+™” Í^” Í^	” Í^” Í^” Í^” Í^” Í^” Í^” Í^’”  Í_ ” Í_’”  Ía ”7 Ía7–”  Íb ” Íb” Íb” Íb”$ Íb$”' Íb1–” Íc” Íc” Íc”- Íc+”/ Íc-”> Íc<š” Íd” Íd” Íd”0 Íd.”2 Íd0”ÌB ÍdÌ@”ÌD ÍdÌB”ÌX ÍdÌV”ÌZ ÍdÌX”Ìf ÍdÌd˜” Íe” Íe” Íe”) Íe'”+ Íe)”Ì@ Íe>”ÌB ÍeÌ@”ÌU ÍeÌS–” Íf” Íf” Íf”5 Íf3”7 Íf5”ÌM ÍfÌK˜” Íg” Íg” Íg”+ Íg)”- Íg+”Ì@ Íg>”ÌB ÍgÌ@”ÌK ÍgÌI˜” Íh” Íh” Íh”& Íh$”( Íh&”7 Íh5”9 Íh7”ÌI ÍhÌG–” Íi” Íi” Íi”! Íi”# Íi!”2 Íi0˜” Íj” Íj” Íj”' Íj%”) Íj'”7 Íj5”9 Íj7”? Íj=’” Ík” Ík’”  Ím ” Ím””  Ín ” Ín” Ín”. Ín.˜” Ío”
+ Ío” Ío” Ío” Ío” Ío” Ío ” Ío!Ü ” Íp”	 Íp” Íp” Íp” Íp” Íp” Íp” Íp” Íp”/ Íp-”0 Íp.”6 Íp4”8 Íp6”9 Íp7”; Íp9”= Íp;›” Íq” Íq” Íq	” Íq” Íq”( Íq$”) Íq%”* Íq&”+ Íq'”, Íq(”- Íq)‘” Ír–” Ís” Ís” Ís” Ís” Ís” ÍsÜ ” Ít”	 Ít” Ít” Ít” Ít” Ít” Ít” Ít” Ít”' Ít%”( Ít&”. Ít,”0 Ít.”1 Ít/”3 Ít1”5 Ít3›” Íu” Íu
+” Íu” Íu”" Íu”# Íu”$ Íu ”% Íu!”& Íu"”( Íu$”) Íu%–” Ív” Ív” Ív
+” Ív” Ív” Ív’” Íw” Íw‘”	 Íxš” Íy” Íy” Íy	” Íy” Íy” Íy” Íy” Íy” Íy” Íy”” Íz” Íz” Íz” Íz‘”	 Í{‘” Í|”” Í}” Í}	” Í}” Í}’”  Í~ ” Í~ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜa‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache™ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ*ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration&Í*‘ÔrK•¤type¥start£end¢id¤init²VariableDeclarator,Í)ÔrL”¤type¥start£end¤nameªIdentifier,;¯FIX_ACTION_DEFSÔrM”¤type¥start£end¨elements¯ArrayExpression>Í)Ü ÔrN”¤type¥start£endªproperties°ObjectExpressionÌEÍ–ÔrO™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌPÌgÂÂÂLªIdentifierÌPÌR¢idÔrP•¤type¥start£end¥value£raw§LiteralÌTÌg±split_power_short³'split_power_short'¤initO¨PropertyÌrÌŠÂÂÂLªIdentifierÌrÌy§aliasesM¯ArrayExpressionÌ{ÌŠ‘P§LiteralÌ|Ì‰«split_power­'split_power'¤initO¨PropertyÌ•Ì ÂÂÂLªIdentifierÌ•Ì¨priorityP§LiteralÌŸÌ  ¡0¤initO¨PropertyÌ«Ì»ÂÂÂLªIdentifierÌ«ÌµªllmVisibleP§LiteralÌ·Ì»Ã¤true¤initO¨PropertyÌÆÌâÂÂÂLªIdentifierÌÆÌÍ§summaryP§LiteralÌÏÌâÙ%VCCâ†”GND/ç”µæºè½¨åŒç½‘çŸ­è·¯æ‹†åˆ†Ù''VCCâ†”GND/ç”µæºè½¨åŒç½‘çŸ­è·¯æ‹†åˆ†'¤initO¨PropertyÌíÌşÂÂÂLªIdentifierÌíÌú­requireFieldsP§LiteralÌüÌş ¢''¤initN°ObjectExpressionÍÍó–O¨PropertyÍÍ,ÂÂÂLªIdentifierÍÍ¢idP§LiteralÍÍ,¯heal_electrical±'heal_electrical'¤initO¨PropertyÍ7ÍsÂÂÂLªIdentifierÍ7Í>§aliasesM¯ArrayExpressionÍ@Ís’P§LiteralÍAÍXµheal_electrical_short·'heal_electrical_short'P§LiteralÍZÍr¶heal_electrical_shorts¸'heal_electrical_shorts'¤initO¨PropertyÍ~Í‰ÂÂÂLªIdentifierÍ~Í†¨priorityP§LiteralÍˆÍ‰ ¡0¤initO¨PropertyÍ”Í¤ÂÂÂLªIdentifierÍ”ÍªllmVisibleP§LiteralÍ Í¤Ã¤true¤initO¨PropertyÍ¯ÍĞÂÂÂLªIdentifierÍ¯Í¶§summaryP§LiteralÍ¸ÍĞÙ6å…³é”®ç”µæ°”çŸ­è·¯ç¡®å®šæ€§ä¿®å¤ï¼ˆI+/I- åŒç½‘ç­‰ï¼‰Ù8'å…³é”®ç”µæ°”çŸ­è·¯ç¡®å®šæ€§ä¿®å¤ï¼ˆI+/I- åŒç½‘ç­‰ï¼‰'¤initO¨PropertyÍÛÍìÂÂÂLªIdentifierÍÛÍè­requireFieldsP§LiteralÍêÍì ¢''¤initN°ObjectExpressionÍúÍÅ–O¨PropertyÍÍÂÂÂLªIdentifierÍÍ¢idP§LiteralÍ	Í²strip_phantom_pins´'strip_phantom_pins'¤initO¨PropertyÍ(ÍBÂÂÂLªIdentifierÍ(Í/§aliasesM¯ArrayExpressionÍ1ÍB‘P§LiteralÍ2ÍA­sanitize_pins¯'sanitize_pins'¤initO¨PropertyÍMÍXÂÂÂLªIdentifierÍMÍU¨priorityP§LiteralÍWÍX ¡0¤initO¨PropertyÍcÍsÂÂÂLªIdentifierÍcÍmªllmVisibleP§LiteralÍoÍsÃ¤true¤initO¨PropertyÍ~Í¢ÂÂÂLªIdentifierÍ~Í…§summaryP§LiteralÍ‡Í¢Ù1å‰¥ç¦»åº“å¤–å‡è„šèŠ‚ç‚¹ï¼ˆå¦‚ UA741 çš„ V+/V-ï¼‰Ù3'å‰¥ç¦»åº“å¤–å‡è„šèŠ‚ç‚¹ï¼ˆå¦‚ UA741 çš„ V+/V-ï¼‰'¤initO¨PropertyÍ­Í¾ÂÂÂLªIdentifierÍ­Íº­requireFieldsP§LiteralÍ¼Í¾ ¢''¤initN°ObjectExpressionÍÌÍ—–O¨PropertyÍ×ÍöÂÂÂLªIdentifierÍ×ÍÙ¢idP§LiteralÍÛÍö¹prune_unused_osc_channels»'prune_unused_osc_channels'¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍ§aliasesM¯ArrayExpressionÍ
+Í‘P§LiteralÍÍ¯break_nc_bridge±'break_nc_bridge'¤initO¨PropertyÍ(Í3ÂÂÂLªIdentifierÍ(Í0¨priorityP§LiteralÍ2Í3 ¡0¤initO¨PropertyÍ>ÍNÂÂÂLªIdentifierÍ>ÍHªllmVisibleP§LiteralÍJÍNÃ¤true¤initO¨PropertyÍYÍtÂÂÂLªIdentifierÍYÍ`§summaryP§LiteralÍbÍtÙ(æ‹†é™¤ç¤ºæ³¢å™¨æœªç”¨é€šé“äº’è¿/NC ç½‘Ù*'æ‹†é™¤ç¤ºæ³¢å™¨æœªç”¨é€šé“äº’è¿/NC ç½‘'¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍŒ­requireFieldsP§LiteralÍÍ ¢''¤initN°ObjectExpressionÍÍ\–O¨PropertyÍ©ÍÃÂÂÂLªIdentifierÍ©Í«¢idP§LiteralÍ­ÍÃ´prune_singleton_nets¶'prune_singleton_nets'¤initO¨PropertyÍÎÍêÂÂÂLªIdentifierÍÎÍÕ§aliasesM¯ArrayExpressionÍ×Íê‘P§LiteralÍØÍé¯prune_singleton±'prune_singleton'¤initO¨PropertyÍõÍ ÂÂÂLªIdentifierÍõÍı¨priorityP§LiteralÍÿÍ  ¡0¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍªllmVisibleP§LiteralÍÍÃ¤true¤initO¨PropertyÍ&Í9ÂÂÂLªIdentifierÍ&Í-§summaryP§LiteralÍ/Í9¸å‰ªå•è„šå­¤å„¿ä¿¡å·ç½‘º'å‰ªå•è„šå­¤å„¿ä¿¡å·ç½‘'¤initO¨PropertyÍDÍUÂÂÂLªIdentifierÍDÍQ­requireFieldsP§LiteralÍSÍU ¢''¤initN°ObjectExpressionÍcÍ@–O¨PropertyÍnÍ†ÂÂÂLªIdentifierÍnÍp¢idP§LiteralÍrÍ†²rebuild_instrument´'rebuild_instrument'¤initO¨PropertyÍ‘ÍÄÂÂÂLªIdentifierÍ‘Í˜§aliasesM¯ArrayExpressionÍšÍÄ“P§LiteralÍ›Í©¬rebuild_topo®'rebuild_topo'P§LiteralÍ«Í¸«rebuild_net­'rebuild_net'P§LiteralÍºÍÃ§rebuild©'rebuild'¤initO¨PropertyÍÏÍÚÂÂÂLªIdentifierÍÏÍ×¨priorityP§LiteralÍÙÍÚ¡1¤initO¨PropertyÍåÍõÂÂÂLªIdentifierÍåÍïªllmVisibleP§LiteralÍñÍõÃ¤true¤initO¨PropertyÍ ÍÂÂÂLªIdentifierÍ Í§summaryP§LiteralÍ	ÍÙ4ä»…ä»ªå™¨/æµ‹é‡æ‹“æ‰‘é‡å»ºï¼›ç¦æ­¢ç”¨äºçº¯å‡ ä½•Ù6'ä»…ä»ªå™¨/æµ‹é‡æ‹“æ‰‘é‡å»ºï¼›ç¦æ­¢ç”¨äºçº¯å‡ ä½•'¤initO¨PropertyÍ(Í9ÂÂÂLªIdentifierÍ(Í5­requireFieldsP§LiteralÍ7Í9 ¢''¤initN°ObjectExpressionÍGÍ–O¨PropertyÍRÍhÂÂÂLªIdentifierÍRÍT¢idP§LiteralÍVÍh°remove_component²'remove_component'¤initO¨PropertyÍsÍ~ÂÂÂLªIdentifierÍsÍz§aliasesM¯ArrayExpressionÍ|Í~¤initO¨PropertyÍ‰Í”ÂÂÂLªIdentifierÍ‰Í‘¨priorityP§LiteralÍ“Í”¡2¤initO¨PropertyÍŸÍ¯ÂÂÂLªIdentifierÍŸÍ©ªllmVisibleP§LiteralÍ«Í¯Ã¤true¤initO¨PropertyÍºÍáÂÂÂLªIdentifierÍºÍÁ§summaryP§LiteralÍÃÍáÙ*åˆ é™¤å™¨ä»¶ï¼ˆrefName æˆ– targetDeviceï¼‰Ù,'åˆ é™¤å™¨ä»¶ï¼ˆrefName æˆ– targetDeviceï¼‰'¤initO¨PropertyÍìÍÂÂÂLªIdentifierÍìÍù­requireFieldsP§LiteralÍûÍ§refName©'refName'¤initN°ObjectExpressionÍÍÔ–O¨PropertyÍÍ1ÂÂÂLªIdentifierÍÍ¢idP§LiteralÍ!Í1®disconnect_pin°'disconnect_pin'¤initO¨PropertyÍ<ÍRÂÂÂLªIdentifierÍ<ÍC§aliasesM¯ArrayExpressionÍEÍR‘P§LiteralÍFÍQ©float_pin«'float_pin'¤initO¨PropertyÍ]ÍhÂÂÂLªIdentifierÍ]Íe¨priorityP§LiteralÍgÍh¡2¤initO¨PropertyÍsÍƒÂÂÂLªIdentifierÍsÍ}ªllmVisibleP§LiteralÍÍƒÃ¤true¤initO¨PropertyÍÍ¤ÂÂÂLªIdentifierÍÍ•§summaryP§LiteralÍ—Í¤Ù!æ‹†é™¤æŒ‡å®šè„šå…¨éƒ¨ç½‘ç»œè¿æ¥Ù#'æ‹†é™¤æŒ‡å®šè„šå…¨éƒ¨ç½‘ç»œè¿æ¥'¤initO¨PropertyÍ¯ÍÍÂÂÂLªIdentifierÍ¯Í¼­requireFieldsP§LiteralÍ¾ÍÍ­refName,pinId¯'refName,pinId'¤initN°ObjectExpressionÍÛÍ”–O¨PropertyÍæÍùÂÂÂLªIdentifierÍæÍè¢idP§LiteralÍêÍù­add_component¯'add_component'¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍ§aliasesM¯ArrayExpressionÍÍ¤initO¨PropertyÍÍ%ÂÂÂLªIdentifierÍÍ"¨priorityP§LiteralÍ$Í%¡3¤initO¨PropertyÍ0Í@ÂÂÂLªIdentifierÍ0Í:ªllmVisibleP§LiteralÍ<Í@Ã¤true¤initO¨PropertyÍKÍiÂÂÂLªIdentifierÍKÍR§summaryP§LiteralÍTÍiÙ'æ·»åŠ åº“å†…å™¨ä»¶ï¼ˆlibDevId å¿…å¡«ï¼‰Ù)'æ·»åŠ åº“å†…å™¨ä»¶ï¼ˆlibDevId å¿…å¡«ï¼‰'¤initO¨PropertyÍtÍÂÂÂLªIdentifierÍtÍ­requireFieldsP§LiteralÍƒÍ¨libDevIdª'libDevId'¤initN°ObjectExpressionÍ›Íh–O¨PropertyÍ¦Í¿ÂÂÂLªIdentifierÍ¦Í¨¢idP§LiteralÍªÍ¿³wire_555_monostableµ'wire_555_monostable'¤initO¨PropertyÍÊÍäÂÂÂLªIdentifierÍÊÍÑ§aliasesM¯ArrayExpressionÍÓÍä‘P§LiteralÍÔÍã­wire_555_mono¯'wire_555_mono'¤initO¨PropertyÍïÍúÂÂÂLªIdentifierÍïÍ÷¨priorityP§LiteralÍùÍú¡3¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍªllmVisibleP§LiteralÍÍÃ¤true¤initO¨PropertyÍ ÍEÂÂÂLªIdentifierÍ Í'§summaryP§LiteralÍ)ÍEÙ8LM555 å•ç¨³æ€ç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæœ‰ 555+æŒ‰é”®ï¼‰Ù:'LM555 å•ç¨³æ€ç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæœ‰ 555+æŒ‰é”®ï¼‰'¤initO¨PropertyÍPÍaÂÂÂLªIdentifierÍPÍ]­requireFieldsP§LiteralÍ_Ía ¢''¤initN°ObjectExpressionÍoÍ	j–O¨PropertyÍzÍ“ÂÂÂLªIdentifierÍzÍ|¢idP§LiteralÍ~Í“³wire_opamp_self_oscµ'wire_opamp_self_osc'¤initO¨PropertyÍÍØÂÂÂLªIdentifierÍÍ¥§aliasesM¯ArrayExpressionÍ§ÍØ’P§LiteralÍ¨Í¿µwire_opamp_oscillator·'wire_opamp_oscillator'P§LiteralÍÁÍ×´wire_hyst_integrator¶'wire_hyst_integrator'¤initO¨PropertyÍãÍîÂÂÂLªIdentifierÍãÍë¨priorityP§LiteralÍíÍî¡3¤initO¨PropertyÍùÍ		ÂÂÂLªIdentifierÍùÍ	ªllmVisibleP§LiteralÍ	Í		Ã¤true¤initO¨PropertyÍ	Í	GÂÂÂLªIdentifierÍ	Í	§summaryP§LiteralÍ	Í	GÙXè¿æ”¾è‡ªæ¿€ï¼ˆæ»å›æ¯”è¾ƒå™¨+ç§¯åˆ†å™¨é—­ç¯ï¼‰ç¡®å®šæ€§æ¥çº¿ï¼›ç¦æ­¢ wire_series_rcÙZ'è¿æ”¾è‡ªæ¿€ï¼ˆæ»å›æ¯”è¾ƒå™¨+ç§¯åˆ†å™¨é—­ç¯ï¼‰ç¡®å®šæ€§æ¥çº¿ï¼›ç¦æ­¢ wire_series_rc'¤initO¨PropertyÍ	RÍ	cÂÂÂLªIdentifierÍ	RÍ	_­requireFieldsP§LiteralÍ	aÍ	c ¢''¤initN°ObjectExpressionÍ	qÍ
+:–O¨PropertyÍ	|Í	ÂÂÂLªIdentifierÍ	|Í	~¢idP§LiteralÍ	€Í	®wire_series_rc°'wire_series_rc'¤initO¨PropertyÍ	›Í	¯ÂÂÂLªIdentifierÍ	›Í	¢§aliasesM¯ArrayExpressionÍ	¤Í	¯‘P§LiteralÍ	¥Í	®§wire_rc©'wire_rc'¤initO¨PropertyÍ	ºÍ	ÅÂÂÂLªIdentifierÍ	ºÍ	Â¨priorityP§LiteralÍ	ÄÍ	Å¡3¤initO¨PropertyÍ	ĞÍ	àÂÂÂLªIdentifierÍ	ĞÍ	ÚªllmVisibleP§LiteralÍ	ÜÍ	àÃ¤true¤initO¨PropertyÍ	ëÍ
+ÂÂÂLªIdentifierÍ	ëÍ	ò§summaryP§LiteralÍ	ôÍ
+ÙIä¸²è” RC å……æ”¾ç”µç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæ—  LM555 / éè¿æ”¾è‡ªæ¿€ï¼‰ÙK'ä¸²è” RC å……æ”¾ç”µç¡®å®šæ€§æ¥çº¿ï¼ˆæ¿ä¸Šæ—  LM555 / éè¿æ”¾è‡ªæ¿€ï¼‰'¤initO¨PropertyÍ
+"Í
+3ÂÂÂLªIdentifierÍ
+"Í
+/­requireFieldsP§LiteralÍ
+1Í
+3 ¢''¤initN°ObjectExpressionÍ
+AÍ
+ø–O¨PropertyÍ
+LÍ
+dÂÂÂLªIdentifierÍ
+LÍ
+N¢idP§LiteralÍ
+PÍ
+d²wire_potentiometer´'wire_potentiometer'¤initO¨PropertyÍ
+oÍ
+„ÂÂÂLªIdentifierÍ
+oÍ
+v§aliasesM¯ArrayExpressionÍ
+xÍ
+„‘P§LiteralÍ
+yÍ
+ƒ¨wire_potª'wire_pot'¤initO¨PropertyÍ
+Í
+šÂÂÂLªIdentifierÍ
+Í
+—¨priorityP§LiteralÍ
+™Í
+š¡3¤initO¨PropertyÍ
+¥Í
+µÂÂÂLªIdentifierÍ
+¥Í
+¯ªllmVisibleP§LiteralÍ
+±Í
+µÃ¤true¤initO¨PropertyÍ
+ÀÍ
+ÕÂÂÂLªIdentifierÍ
+ÀÍ
+Ç§summaryP§LiteralÍ
+ÉÍ
+Õ¾ç”µä½å™¨ä¸‰ç«¯ç¡®å®šæ€§æ¥çº¿Ù 'ç”µä½å™¨ä¸‰ç«¯ç¡®å®šæ€§æ¥çº¿'¤initO¨PropertyÍ
+àÍ
+ñÂÂÂLªIdentifierÍ
+àÍ
+í­requireFieldsP§LiteralÍ
+ïÍ
+ñ ¢''¤initN°ObjectExpressionÍ
+ÿÍÂ–O¨PropertyÍ
+ÍÂÂÂLªIdentifierÍ
+Í¢idP§LiteralÍÍªwire_relay¬'wire_relay'¤initO¨PropertyÍ%ÍAÂÂÂLªIdentifierÍ%Í,§aliasesM¯ArrayExpressionÍ.ÍA‘P§LiteralÍ/Í@¯wire_relay_spdt±'wire_relay_spdt'¤initO¨PropertyÍLÍWÂÂÂLªIdentifierÍLÍT¨priorityP§LiteralÍVÍW¡3¤initO¨PropertyÍbÍrÂÂÂLªIdentifierÍbÍlªllmVisibleP§LiteralÍnÍrÃ¤true¤initO¨PropertyÍ}ÍŸÂÂÂLªIdentifierÍ}Í„§summaryP§LiteralÍ†ÍŸÙ-äº’æ–¥åŒè‰² RELAY_SPDT è§¦ç‚¹ç¡®å®šæ€§æ¥çº¿Ù/'äº’æ–¥åŒè‰² RELAY_SPDT è§¦ç‚¹ç¡®å®šæ€§æ¥çº¿'¤initO¨PropertyÍªÍ»ÂÂÂLªIdentifierÍªÍ·­requireFieldsP§LiteralÍ¹Í» ¢''¤initN°ObjectExpressionÍÉÍ–O¨PropertyÍÔÍêÂÂÂLªIdentifierÍÔÍÖ¢idP§LiteralÍØÍê°wire_dual_supply²'wire_dual_supply'¤initO¨PropertyÍõÍÂÂÂLªIdentifierÍõÍü§aliasesM¯ArrayExpressionÍşÍ‘P§LiteralÍÿÍ¯wire_dual_rails±'wire_dual_rails'¤initO¨PropertyÍÍ'ÂÂÂLªIdentifierÍÍ$¨priorityP§LiteralÍ&Í'¡3¤initO¨PropertyÍ2ÍBÂÂÂLªIdentifierÍ2Í<ªllmVisibleP§LiteralÍ>ÍBÃ¤true¤initO¨PropertyÍMÍkÂÂÂLªIdentifierÍMÍT§summaryP§LiteralÍVÍkÙ'è¿æ”¾åŒç”µæº VCC/VEE ç¡®å®šæ€§æ¥çº¿Ù)'è¿æ”¾åŒç”µæº VCC/VEE ç¡®å®šæ€§æ¥çº¿'¤initO¨PropertyÍvÍ‡ÂÂÂLªIdentifierÍvÍƒ­requireFieldsP§LiteralÍ…Í‡ ¢''¤initN°ObjectExpressionÍ•Í_–O¨PropertyÍ Í¹ÂÂÂLªIdentifierÍ Í¢¢idP§LiteralÍ¤Í¹³wire_opamp_feedbackµ'wire_opamp_feedback'¤initO¨PropertyÍÄÍßÂÂÂLªIdentifierÍÄÍË§aliasesM¯ArrayExpressionÍÍÍß‘P§LiteralÍÎÍŞ®opamp_feedback°'opamp_feedback'¤initO¨PropertyÍêÍõÂÂÂLªIdentifierÍêÍò¨priorityP§LiteralÍôÍõ¡3¤initO¨PropertyÍ ÍÂÂÂLªIdentifierÍ Í
+ªllmVisibleP§LiteralÍÍÃ¤true¤initO¨PropertyÍÍ<ÂÂÂLªIdentifierÍÍ"§summaryP§LiteralÍ$Í<ÙBè¿æ”¾å¼€ç¯â†’è·Ÿéšé—­ç¯ï¼ˆæ¯”è¾ƒå™¨åŒè¾“å…¥å·²æ¥åˆ™è·³è¿‡ï¼‰ÙD'è¿æ”¾å¼€ç¯â†’è·Ÿéšé—­ç¯ï¼ˆæ¯”è¾ƒå™¨åŒè¾“å…¥å·²æ¥åˆ™è·³è¿‡ï¼‰'¤initO¨PropertyÍGÍXÂÂÂLªIdentifierÍGÍT­requireFieldsP§LiteralÍVÍX ¢''¤initN°ObjectExpressionÍfÍ(–O¨PropertyÍqÍˆÂÂÂLªIdentifierÍqÍs¢idP§LiteralÍuÍˆ±ensure_signal_gen³'ensure_signal_gen'¤initO¨PropertyÍ“ÍÂÂÂLªIdentifierÍ“Íš§aliasesM¯ArrayExpressionÍœÍ¤initO¨PropertyÍ©Í´ÂÂÂLªIdentifierÍ©Í±¨priorityP§LiteralÍ³Í´¡3¤initO¨PropertyÍ¿ÍÏÂÂÂLªIdentifierÍ¿ÍÉªllmVisibleP§LiteralÍËÍÏÃ¤true¤initO¨PropertyÍÚÍÂÂÂLªIdentifierÍÚÍá§summaryP§LiteralÍãÍÙ6SIGNAL_GEN GNDâ†’GNDï¼ŒOUT å…¥ç½‘ï¼ˆå¤–æ¿€åŠ±åœºæ™¯ï¼‰Ù8'SIGNAL_GEN GNDâ†’GNDï¼ŒOUT å…¥ç½‘ï¼ˆå¤–æ¿€åŠ±åœºæ™¯ï¼‰'¤initO¨PropertyÍÍ!ÂÂÂLªIdentifierÍÍ­requireFieldsP§LiteralÍÍ! ¢''¤initN°ObjectExpressionÍ/Íé–O¨PropertyÍ:ÍKÂÂÂLªIdentifierÍ:Í<¢idP§LiteralÍ>ÍK«move_device­'move_device'¤initO¨PropertyÍVÍaÂÂÂLªIdentifierÍVÍ]§aliasesM¯ArrayExpressionÍ_Ía¤initO¨PropertyÍlÍwÂÂÂLªIdentifierÍlÍt¨priorityP§LiteralÍvÍw¡4¤initO¨PropertyÍ‚Í’ÂÂÂLªIdentifierÍ‚ÍŒªllmVisibleP§LiteralÍÍ’Ã¤true¤initO¨PropertyÍÍ¿ÂÂÂLªIdentifierÍÍ¤§summaryP§LiteralÍ¦Í¿Ù1ç§»åŠ¨å™¨ä»¶åˆ°ç»å¯¹åæ ‡ x/yï¼ˆ20mil æ …æ ¼ï¼‰Ù3'ç§»åŠ¨å™¨ä»¶åˆ°ç»å¯¹åæ ‡ x/yï¼ˆ20mil æ …æ ¼ï¼‰'¤initO¨PropertyÍÊÍâÂÂÂLªIdentifierÍÊÍ×­requireFieldsP§LiteralÍÙÍâ§refName©'refName'¤initN°ObjectExpressionÍğÍ£–O¨PropertyÍûÍÂÂÂLªIdentifierÍûÍı¢idP§LiteralÍÿÍ¬nudge_device®'nudge_device'¤initO¨PropertyÍÍ#ÂÂÂLªIdentifierÍÍ§aliasesM¯ArrayExpressionÍ!Í#¤initO¨PropertyÍ.Í9ÂÂÂLªIdentifierÍ.Í6¨priorityP§LiteralÍ8Í9¡4¤initO¨PropertyÍDÍTÂÂÂLªIdentifierÍDÍNªllmVisibleP§LiteralÍPÍTÃ¤true¤initO¨PropertyÍ_ÍyÂÂÂLªIdentifierÍ_Íf§summaryP§LiteralÍhÍy¿ç›¸å¯¹ä½ç§» dx/dy æ‹‰å¼€ç¢°æ’Ù!'ç›¸å¯¹ä½ç§» dx/dy æ‹‰å¼€ç¢°æ’'¤initO¨PropertyÍ„ÍœÂÂÂLªIdentifierÍ„Í‘­requireFieldsP§LiteralÍ“Íœ§refName©'refName'¤initN°ObjectExpressionÍªÍo–O¨PropertyÍµÍÈÂÂÂLªIdentifierÍµÍ·¢idP§LiteralÍ¹ÍÈ­rotate_device¯'rotate_device'¤initO¨PropertyÍÓÍŞÂÂÂLªIdentifierÍÓÍÚ§aliasesM¯ArrayExpressionÍÜÍŞ¤initO¨PropertyÍéÍôÂÂÂLªIdentifierÍéÍñ¨priorityP§LiteralÍóÍô¡4¤initO¨PropertyÍÿÍÂÂÂLªIdentifierÍÿÍ	ªllmVisibleP§LiteralÍÍÃ¤true¤initO¨PropertyÍÍEÂÂÂLªIdentifierÍÍ!§summaryP§LiteralÍ#ÍEÙ0æ—‹è½¬å™¨ä»¶ rotate=0/90/180/270ï¼ˆçœç•¥=+90ï¼‰Ù2'æ—‹è½¬å™¨ä»¶ rotate=0/90/180/270ï¼ˆçœç•¥=+90ï¼‰'¤initO¨PropertyÍPÍhÂÂÂLªIdentifierÍPÍ]­requireFieldsP§LiteralÍ_Íh§refName©'refName'¤initN°ObjectExpressionÍvÍ2–O¨PropertyÍÍ”ÂÂÂLªIdentifierÍÍƒ¢idP§LiteralÍ…Í”­heal_floating¯'heal_floating'¤initO¨PropertyÍŸÍ¸ÂÂÂLªIdentifierÍŸÍ¦§aliasesM¯ArrayExpressionÍ¨Í¸‘P§LiteralÍ©Í·¬fix_floating®'fix_floating'¤initO¨PropertyÍÃÍÎÂÂÂLªIdentifierÍÃÍË¨priorityP§LiteralÍÍÍÎ¡4¤initO¨PropertyÍÙÍéÂÂÂLªIdentifierÍÙÍãªllmVisibleP§LiteralÍåÍéÃ¤true¤initO¨PropertyÍôÍÂÂÂLªIdentifierÍôÍû§summaryP§LiteralÍıÍÙ0æµ®ç©ºå…³é”®è„šç¡®å®šæ€§è¡¥æ¥ï¼ˆéçº¯å‡ ä½•ï¼‰Ù2'æµ®ç©ºå…³é”®è„šç¡®å®šæ€§è¡¥æ¥ï¼ˆéçº¯å‡ ä½•ï¼‰'¤initO¨PropertyÍÍ+ÂÂÂLªIdentifierÍÍ'­requireFieldsP§LiteralÍ)Í+ ¢''¤initN°ObjectExpressionÍ9Í"–O¨PropertyÍDÍWÂÂÂLªIdentifierÍDÍF¢idP§LiteralÍHÍW­reconnect_pin¯'reconnect_pin'¤initO¨PropertyÍbÍ…ÂÂÂLªIdentifierÍbÍi§aliasesM¯ArrayExpressionÍkÍ…’P§LiteralÍlÍxªrewire_net¬'rewire_net'P§LiteralÍzÍ„¨move_pinª'move_pin'¤initO¨PropertyÍÍ›ÂÂÂLªIdentifierÍÍ˜¨priorityP§LiteralÍšÍ›¡5¤initO¨PropertyÍ¦Í¶ÂÂÂLªIdentifierÍ¦Í°ªllmVisibleP§LiteralÍ²Í¶Ã¤true¤initO¨PropertyÍÁÍêÂÂÂLªIdentifierÍÁÍÈ§summaryP§LiteralÍÊÍêÙ0å°†è„šå¹¶å…¥ç›®æ ‡ç½‘ï¼ˆrefName+pinId+netNameï¼‰Ù2'å°†è„šå¹¶å…¥ç›®æ ‡ç½‘ï¼ˆrefName+pinId+netNameï¼‰'¤initO¨PropertyÍõÍÂÂÂLªIdentifierÍõÍ­requireFieldsP§LiteralÍÍµrefName,pinId,netName·'refName,pinId,netName'¤initN°ObjectExpressionÍ)Íò–O¨PropertyÍ4ÍFÂÂÂLªIdentifierÍ4Í6¢idP§LiteralÍ8ÍF¬change_param®'change_param'¤initO¨PropertyÍQÍ\ÂÂÂLªIdentifierÍQÍX§aliasesM¯ArrayExpressionÍZÍ\¤initO¨PropertyÍgÍrÂÂÂLªIdentifierÍgÍo¨priorityP§LiteralÍqÍr¡5¤initO¨PropertyÍ}ÍÂÂÂLªIdentifierÍ}Í‡ªllmVisibleP§LiteralÍ‰ÍÃ¤true¤initO¨PropertyÍ˜Í¼ÂÂÂLªIdentifierÍ˜ÍŸ§summaryP§LiteralÍ¡Í¼Ù#æ”¹å™¨ä»¶å‚æ•° paramKey/paramValueÙ%'æ”¹å™¨ä»¶å‚æ•° paramKey/paramValue'¤initO¨PropertyÍÇÍëÂÂÂLªIdentifierÍÇÍÔ­requireFieldsP§LiteralÍÖÍë³paramKey,paramValueµ'paramKey,paramValue'¤initN°ObjectExpressionÍùÍ¾–O¨PropertyÍÍÂÂÂLªIdentifierÍÍ¢idP§LiteralÍÍ­join_by_label¯'join_by_label'¤initO¨PropertyÍ"Í-ÂÂÂLªIdentifierÍ"Í)§aliasesM¯ArrayExpressionÍ+Í-¤initO¨PropertyÍ8ÍCÂÂÂLªIdentifierÍ8Í@¨priorityP§LiteralÍBÍC¡6¤initO¨PropertyÍNÍ^ÂÂÂLªIdentifierÍNÍXªllmVisibleP§LiteralÍZÍ^Ã¤true¤initO¨PropertyÍiÍ”ÂÂÂLªIdentifierÍiÍp§summaryP§LiteralÍrÍ”Ù6åŒåæ ‡å·å¹¶ç½‘ï¼ˆnetName/toNetï¼Œå¯é€‰ fromNetï¼‰Ù8'åŒåæ ‡å·å¹¶ç½‘ï¼ˆnetName/toNetï¼Œå¯é€‰ fromNetï¼‰'¤initO¨PropertyÍŸÍ·ÂÂÂLªIdentifierÍŸÍ¬­requireFieldsP§LiteralÍ®Í·§netName©'netName'¤initN°ObjectExpressionÍÅÍy–O¨PropertyÍĞÍåÂÂÂLªIdentifierÍĞÍÒ¢idP§LiteralÍÔÍå¯demote_geo_nets±'demote_geo_nets'¤initO¨PropertyÍğÍûÂÂÂLªIdentifierÍğÍ÷§aliasesM¯ArrayExpressionÍùÍû¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍ¨priorityP§LiteralÍÍ¡7¤initO¨PropertyÍÍ,ÂÂÂLªIdentifierÍÍ&ªllmVisibleP§LiteralÍ(Í,Ã¤true¤initO¨PropertyÍ7ÍVÂÂÂLªIdentifierÍ7Í>§summaryP§LiteralÍ@ÍVÙ<å½“å‰å…¨éƒ¨å‡ ä½•è¿è§„ç½‘ä¸€æ¬¡æ ‡å·åŒ–ï¼ˆå¤šç½‘é¦–é€‰ï¼‰Ù>'å½“å‰å…¨éƒ¨å‡ ä½•è¿è§„ç½‘ä¸€æ¬¡æ ‡å·åŒ–ï¼ˆå¤šç½‘é¦–é€‰ï¼‰'¤initO¨PropertyÍaÍrÂÂÂLªIdentifierÍaÍn­requireFieldsP§LiteralÍpÍr ¢''¤initN°ObjectExpressionÍ€Í<–O¨PropertyÍ‹Í£ÂÂÂLªIdentifierÍ‹Í¢idP§LiteralÍÍ£²demote_power_rails´'demote_power_rails'¤initO¨PropertyÍ®Í¹ÂÂÂLªIdentifierÍ®Íµ§aliasesM¯ArrayExpressionÍ·Í¹¤initO¨PropertyÍÄÍÏÂÂÂLªIdentifierÍÄÍÌ¨priorityP§LiteralÍÎÍÏ¡7¤initO¨PropertyÍÚÍêÂÂÂLªIdentifierÍÚÍäªllmVisibleP§LiteralÍæÍêÃ¤true¤initO¨PropertyÍõÍÂÂÂLªIdentifierÍõÍü§summaryP§LiteralÍşÍÙ!ä»… VCC/VEE/GND/VDD/VSS æ ‡å·åŒ–Ù#'ä»… VCC/VEE/GND/VDD/VSS æ ‡å·åŒ–'¤initO¨PropertyÍ$Í5ÂÂÂLªIdentifierÍ$Í1­requireFieldsP§LiteralÍ3Í5 ¢''¤initN°ObjectExpressionÍCÍç–O¨PropertyÍNÍ[ÂÂÂLªIdentifierÍNÍP¢idP§LiteralÍRÍ[§reroute©'reroute'¤initO¨PropertyÍfÍqÂÂÂLªIdentifierÍfÍm§aliasesM¯ArrayExpressionÍoÍq¤initO¨PropertyÍ|Í‡ÂÂÂLªIdentifierÍ|Í„¨priorityP§LiteralÍ†Í‡¡7¤initO¨PropertyÍ’Í¢ÂÂÂLªIdentifierÍ’ÍœªllmVisibleP§LiteralÍÍ¢Ã¤true¤initO¨PropertyÍ­ÍÄÂÂÂLªIdentifierÍ­Í´§summaryP§LiteralÍ¶ÍÄÙ$æ‹“æ‰‘å·²æ­£ç¡®ï¼Œä»…è§¦å‘é‡å¸ƒçº¿Ù&'æ‹“æ‰‘å·²æ­£ç¡®ï¼Œä»…è§¦å‘é‡å¸ƒçº¿'¤initO¨PropertyÍÏÍàÂÂÂLªIdentifierÍÏÍÜ­requireFieldsP§LiteralÍŞÍà ¢''¤initN°ObjectExpressionÍîÍ¸–O¨PropertyÍùÍÂÂÂLªIdentifierÍùÍû¢idP§LiteralÍıÍ¯demote_to_label±'demote_to_label'¤initO¨PropertyÍÍ1ÂÂÂLªIdentifierÍÍ §aliasesM¯ArrayExpressionÍ"Í1‘P§LiteralÍ#Í0«force_label­'force_label'¤initO¨PropertyÍ<ÍGÂÂÂLªIdentifierÍ<ÍD¨priorityP§LiteralÍFÍG¡8¤initO¨PropertyÍRÍbÂÂÂLªIdentifierÍRÍ\ªllmVisibleP§LiteralÍ^ÍbÃ¤true¤initO¨PropertyÍmÍÂÂÂLªIdentifierÍmÍt§summaryP§LiteralÍvÍÙ(æŒ‡å®šç½‘æ ‡å· stubï¼ˆnetName å¿…å¡«ï¼‰Ù*'æŒ‡å®šç½‘æ ‡å· stubï¼ˆnetName å¿…å¡«ï¼‰'¤initO¨PropertyÍ™Í±ÂÂÂLªIdentifierÍ™Í¦­requireFieldsP§LiteralÍ¨Í±§netName©'netName'¤initN°ObjectExpressionÍ¿Í–O¨PropertyÍÊÍáÂÂÂLªIdentifierÍÊÍÌ¢idP§LiteralÍÎÍá±demote_all_labels³'demote_all_labels'¤initO¨PropertyÍìÍÂÂÂLªIdentifierÍìÍó§aliasesM¯ArrayExpressionÍõÍ‘P§LiteralÍöÍ©label_all«'label_all'¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍ¨priorityP§LiteralÍÍ	¡9¤initO¨PropertyÍ#Í3ÂÂÂLªIdentifierÍ#Í-ªllmVisibleP§LiteralÍ/Í3Ã¤true¤initO¨PropertyÍ>Í\ÂÂÂLªIdentifierÍ>ÍE§summaryP§LiteralÍGÍ\Ù#å…¨ç½‘æ ‡å·ï¼ˆæç«¯ wire_crossï¼‰Ù%'å…¨ç½‘æ ‡å·ï¼ˆæç«¯ wire_crossï¼‰'¤initO¨PropertyÍgÍxÂÂÂLªIdentifierÍgÍt­requireFieldsP§LiteralÍvÍx ¢''¤initN°ObjectExpressionÍ†Í&–O¨PropertyÍ‘Í›ÂÂÂLªIdentifierÍ‘Í“¢idP§LiteralÍ•Í›¤none¦'none'¤initO¨PropertyÍ¦Í·ÂÂÂLªIdentifierÍ¦Í­§aliasesM¯ArrayExpressionÍ¯Í·‘P§LiteralÍ°Í¶¤noop¦'noop'¤initO¨PropertyÍÂÍÎÂÂÂLªIdentifierÍÂÍÊ¨priorityP§LiteralÍÌÍÎÌc¢99¤initO¨PropertyÍÙÍêÂÂÂLªIdentifierÍÙÍãªllmVisibleP§LiteralÍåÍêÂ¥false¤initO¨PropertyÍõÍÂÂÂLªIdentifierÍõÍü§summaryP§LiteralÍşÍ©ç©ºæ“ä½œ«'ç©ºæ“ä½œ'¤initO¨PropertyÍÍÂÂÂLªIdentifierÍÍ­requireFieldsP§LiteralÍÍ ¢''¤init¥constÀI¶ExportNamedDeclarationÍÍÑÔrQ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍÍÑLªIdentifierÍÍ0µcanonicalizeFixActionÂÂÂ‘LªIdentifierÍ1Í4£rawÔrR”¤type¥start£end¤body®BlockStatementÍ6ÍÑ“J³VariableDeclarationÍ=Íj‘K²VariableDeclaratorÍCÍiLªIdentifierÍCÍF£keyÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍIÍiÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍIÍgS®CallExpressionÍIÍ[T°MemberExpressionÍIÍYÔrU–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍJÍSLªIdentifierÍJÍM£raw¢??P§LiteralÍQÍS ¢''LªIdentifierÍUÍY¤trimÂÂÂLªIdentifierÍ\Íg«toLowerCaseÂÂÂ¥constÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍpÍ¢U°BinaryExpressionÍtÍ„T°MemberExpressionÍtÍ~LªIdentifierÍtÍw£keyLªIdentifierÍxÍ~¦lengthÂÂ£===P§LiteralÍƒÍ„ ¡0R®BlockStatementÍ†Í¢‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍ‘Í›P§LiteralÍ˜Íš ¢''ÀW¯ReturnStatementÍ¨ÍÎU±LogicalExpressionÍ¯ÍÍS®CallExpressionÍ¯ÍÇT°MemberExpressionÍ¯ÍÂS®CallExpressionÍ¯Í¾LªIdentifierÍ¯Í¼­buildAliasMapÂLªIdentifierÍ¿ÍÂ£getÂÂ‘LªIdentifierÍÃÍÆ£keyÂ¢??P§LiteralÍËÍÍ ¢''ÀI¶ExportNamedDeclarationÍÓÍ0Q³FunctionDeclarationÍÚÍ0LªIdentifierÍãÍó°isKnownFixActionÂÂÂ‘LªIdentifierÍôÍ÷£rawR®BlockStatementÍùÍ0‘W¯ReturnStatementÍ Í-U°BinaryExpressionÍÍ,T°MemberExpressionÍÍ(S®CallExpressionÍÍ!LªIdentifierÍÍµcanonicalizeFixAction‘LªIdentifierÍÍ £rawÂLªIdentifierÍ"Í(¦lengthÂÂ¡>P§LiteralÍ+Í, ¡0ÀI¶ExportNamedDeclarationÍ2ÍxQ³FunctionDeclarationÍ9ÍxLªIdentifierÍBÍU³fixActionPriorityOfÂÂÂ‘LªIdentifierÍVÍY£rawR®BlockStatementÍ[Íx”J³VariableDeclarationÍbÍˆ‘K²VariableDeclaratorÍhÍ‡LªIdentifierÍhÍj¢idS®CallExpressionÍmÍ‡LªIdentifierÍmÍ‚µcanonicalizeFixAction‘LªIdentifierÍƒÍ†£rawÂ¥constV«IfStatementÍÍ¾U°BinaryExpressionÍ’Í¡T°MemberExpressionÍ’Í›LªIdentifierÍ’Í”¢idLªIdentifierÍ•Í›¦lengthÂÂ£===P§LiteralÍ Í¡ ¡0R®BlockStatementÍ£Í¾‘W¯ReturnStatementÍ®Í·P§LiteralÍµÍ¶¡5ÀÔrX—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÄÍfJ³VariableDeclarationÍÉÍÒ‘K²VariableDeclaratorÍÍÍÒLªIdentifierÍÍÍÎ¡iP§LiteralÍÑÍÒ ¡0£letU°BinaryExpressionÍÔÍîLªIdentifierÍÔÍÕ¡i¡<T°MemberExpressionÍØÍîLªIdentifierÍØÍç¯FIX_ACTION_DEFSLªIdentifierÍèÍî¦lengthÂÂÔrY–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍğÍó¢++ÂLªIdentifierÍğÍñ¡iR®BlockStatementÍõÍf‘V«IfStatementÍ Í_U°BinaryExpressionÍÍ T°MemberExpressionÍÍT°MemberExpressionÍÍLªIdentifierÍÍ¯FIX_ACTION_DEFSLªIdentifierÍÍ¡iÃÂLªIdentifierÍÍ¢idÂÂ£===LªIdentifierÍÍ ¢idR®BlockStatementÍ"Í_‘W¯ReturnStatementÍ1ÍTT°MemberExpressionÍ8ÍST°MemberExpressionÍ8ÍJLªIdentifierÍ8ÍG¯FIX_ACTION_DEFSLªIdentifierÍHÍI¡iÃÂLªIdentifierÍKÍS¨priorityÂÂÀW¯ReturnStatementÍlÍuP§LiteralÍsÍt¡5ÀI¶ExportNamedDeclarationÍzÍºQ³FunctionDeclarationÍÍºLªIdentifierÍŠÍš°findFixActionDefÂÂÂ‘LªIdentifierÍ›Í£rawR®BlockStatementÍ Íº”J³VariableDeclarationÍ§ÍÍ‘K²VariableDeclaratorÍ­ÍÌLªIdentifierÍ­Í¯¢idS®CallExpressionÍ²ÍÌLªIdentifierÍ²ÍÇµcanonicalizeFixAction‘LªIdentifierÍÈÍË£rawÂ¥constV«IfStatementÍÓÍU°BinaryExpressionÍ×ÍæT°MemberExpressionÍ×ÍàLªIdentifierÍ×ÍÙ¢idLªIdentifierÍÚÍà¦lengthÂÂ£===P§LiteralÍåÍæ ¡0R®BlockStatementÍèÍ‘W¯ReturnStatementÍóÍÿP§LiteralÍúÍşÀ¤nullÀX¬ForStatementÍÍ¥J³VariableDeclarationÍÍ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ¡iP§LiteralÍÍ ¡0£letU°BinaryExpressionÍÍ6LªIdentifierÍÍ¡i¡<T°MemberExpressionÍ Í6LªIdentifierÍ Í/¯FIX_ACTION_DEFSLªIdentifierÍ0Í6¦lengthÂÂY°UpdateExpressionÍ8Í;¢++ÂLªIdentifierÍ8Í9¡iR®BlockStatementÍ=Í¥‘V«IfStatementÍHÍU°BinaryExpressionÍLÍhT°MemberExpressionÍLÍaT°MemberExpressionÍLÍ^LªIdentifierÍLÍ[¯FIX_ACTION_DEFSLªIdentifierÍ\Í]¡iÃÂLªIdentifierÍ_Ía¢idÂÂ£===LªIdentifierÍfÍh¢idR®BlockStatementÍjÍ‘W¯ReturnStatementÍyÍ“T°MemberExpressionÍ€Í’LªIdentifierÍ€Í¯FIX_ACTION_DEFSLªIdentifierÍÍ‘¡iÃÂÀW¯ReturnStatementÍ«Í·P§LiteralÍ²Í¶À¤nullÀI¶ExportNamedDeclarationÍİÍúQ³FunctionDeclarationÍäÍúLªIdentifierÍíÍ¸buildFixActionSchemaEnumÂÂÂR®BlockStatementÍÍú“J³VariableDeclarationÍÍ‘K²VariableDeclaratorÍÍLªIdentifierÍÍ£idsM¯ArrayExpressionÍÍ¥constX¬ForStatementÍ$ÍÜJ³VariableDeclarationÍ)Í2‘K²VariableDeclaratorÍ-Í2LªIdentifierÍ-Í.¡iP§LiteralÍ1Í2 ¡0£letU°BinaryExpressionÍ4ÍNLªIdentifierÍ4Í5¡i¡<T°MemberExpressionÍ8ÍNLªIdentifierÍ8ÍG¯FIX_ACTION_DEFSLªIdentifierÍHÍN¦lengthÂÂY°UpdateExpressionÍPÍS¢++ÂLªIdentifierÍPÍQ¡iR®BlockStatementÍUÍÜ’J³VariableDeclarationÍ`Í}‘K²VariableDeclaratorÍfÍ|LªIdentifierÍfÍg¡dT°MemberExpressionÍjÍ|LªIdentifierÍjÍy¯FIX_ACTION_DEFSLªIdentifierÍzÍ{¡iÃÂ¥constV«IfStatementÍ‡ÍÕU±LogicalExpressionÍ‹ÍªT°MemberExpressionÍ‹Í—LªIdentifierÍ‹ÍŒ¡dLªIdentifierÍÍ—ªllmVisibleÂÂ¢&&U°BinaryExpressionÍ›ÍªT°MemberExpressionÍ›ÍŸLªIdentifierÍ›Íœ¡dLªIdentifierÍÍŸ¢idÂÂ£!==P§LiteralÍ¤Íª¤none¦'none'R®BlockStatementÍ¬ÍÕ‘ÔrZ”¤type¥start£endªexpression³ExpressionStatementÍ»ÍÊS®CallExpressionÍ»ÍÉT°MemberExpressionÍ»ÍÃLªIdentifierÍ»Í¾£idsLªIdentifierÍ¿ÍÃ¤pushÂÂ‘T°MemberExpressionÍÄÍÈLªIdentifierÍÄÍÅ¡dLªIdentifierÍÆÍÈ¢idÂÂÂÀW¯ReturnStatementÍâÍ÷S®CallExpressionÍéÍöT°MemberExpressionÍéÍñLªIdentifierÍéÍì£idsLªIdentifierÍíÍñ¤joinÂÂ‘P§LiteralÍòÍõ¡|£'|'ÂÀI¶ExportNamedDeclarationÍ Í!PQ³FunctionDeclarationÍ'Í!PLªIdentifierÍ0ÍK»buildFixActionPromptCatalogÂÂÂR®BlockStatementÍNÍ!P”J³VariableDeclarationÍUÍ›‘K²VariableDeclaratorÍ[ÍšLªIdentifierÍ[Í`¥linesM¯ArrayExpressionÍcÍš‘P§LiteralÍnÍ“ÙOã€å¯ç”¨ä¿®å¤å·¥å…· fixAction â€” å®Œæ•´ç›®å½•ï¼ˆä»…å…è®¸ä¸‹åˆ—åç§°ï¼‰ã€‘:ÙQ'ã€å¯ç”¨ä¿®å¤å·¥å…· fixAction â€” å®Œæ•´ç›®å½•ï¼ˆä»…å…è®¸ä¸‹åˆ—åç§°ï¼‰ã€‘:'¥constX¬ForStatementÍ¡Í! J³VariableDeclarationÍ¦Í¯‘K²VariableDeclaratorÍªÍ¯LªIdentifierÍªÍ«¡iP§LiteralÍ®Í¯ ¡0£letU°BinaryExpressionÍ±ÍËLªIdentifierÍ±Í²¡i¡<T°MemberExpressionÍµÍËLªIdentifierÍµÍÄ¯FIX_ACTION_DEFSLªIdentifierÍÅÍË¦lengthÂÂY°UpdateExpressionÍÍÍĞ¢++ÂLªIdentifierÍÍÍÎ¡iR®BlockStatementÍÒÍ! ”J³VariableDeclarationÍİÍú‘K²VariableDeclaratorÍãÍùLªIdentifierÍãÍä¡dT°MemberExpressionÍçÍùLªIdentifierÍçÍö¯FIX_ACTION_DEFSLªIdentifierÍ÷Íø¡iÃÂ¥constV«IfStatementÍ Í MU±LogicalExpressionÍ Í (Y¯UnaryExpressionÍ Í ¡!ÃT°MemberExpressionÍ 	Í LªIdentifierÍ 	Í 
+¡dLªIdentifierÍ Í ªllmVisibleÂÂ¢||U°BinaryExpressionÍ Í (T°MemberExpressionÍ Í LªIdentifierÍ Í ¡dLªIdentifierÍ Í ¢idÂÂ£===P§LiteralÍ "Í (¤none¦'none'R®BlockStatementÍ *Í M‘Ôr[”¤type¥start£end¥label±ContinueStatementÍ 9Í BÀÀJ³VariableDeclarationÍ WÍ Ã‘K²VariableDeclaratorÍ ]Í ÂLªIdentifierÍ ]Í `£reqVµConditionalExpressionÍ cÍ ÂU°BinaryExpressionÍ cÍ }T°MemberExpressionÍ cÍ yT°MemberExpressionÍ cÍ rLªIdentifierÍ cÍ d¡dLªIdentifierÍ eÍ r­requireFieldsÂÂLªIdentifierÍ sÍ y¦lengthÂÂ¡>P§LiteralÍ |Í } ¡0Ôr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ Í °‘T°MemberExpressionÍ ŸÍ ®LªIdentifierÍ ŸÍ  ¡dLªIdentifierÍ ¡Í ®­requireFieldsÂÂ’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍ Í Ôr^’£raw¦cookedµï¼›å¿…å¡« fixDetail: µï¼›å¿…å¡« fixDetail: Â]¯TemplateElementÍ ¯Í ¯^  ÃP§LiteralÍ ÀÍ Â ¢''¥constZ³ExpressionStatementÍ ÍÍ ùS®CallExpressionÍ ÍÍ øT°MemberExpressionÍ ÍÍ ×LªIdentifierÍ ÍÍ Ò¥linesLªIdentifierÍ ÓÍ ×¤pushÂÂ‘\¯TemplateLiteralÍ ØÍ ÷“T°MemberExpressionÍ İÍ áLªIdentifierÍ İÍ Ş¡dLªIdentifierÍ ßÍ á¢idÂÂT°MemberExpressionÍ æÍ ïLªIdentifierÍ æÍ ç¡dLªIdentifierÍ èÍ ï§summaryÂÂLªIdentifierÍ òÍ õ£req”]¯TemplateElementÍ ÙÍ Û^¢- ¢- Â]¯TemplateElementÍ âÍ ä^¢: ¢: Â]¯TemplateElementÍ ğÍ ğ^  Â]¯TemplateElementÍ öÍ ö^  ÃÂZ³ExpressionStatementÍ!Í!/S®CallExpressionÍ!Í!.T°MemberExpressionÍ!Í!LªIdentifierÍ!Í!¥linesLªIdentifierÍ!Í!¤pushÂÂ‘P§LiteralÍ!Í!-Ù:ç¦æ­¢è¾“å‡ºç›®å½•å¤– fixActionï¼›æœªçŸ¥åä¼šè¢«ä¸¢å¼ƒã€‚Ù<'ç¦æ­¢è¾“å‡ºç›®å½•å¤– fixActionï¼›æœªçŸ¥åä¼šè¢«ä¸¢å¼ƒã€‚'ÂW¯ReturnStatementÍ!5Í!MS®CallExpressionÍ!<Í!LT°MemberExpressionÍ!<Í!FLªIdentifierÍ!<Í!A¥linesLªIdentifierÍ!BÍ!F¤joinÂÂ‘P§LiteralÍ!GÍ!K¡
+¤'\n'ÂÀI¶ExportNamedDeclarationÍ!‹Í$J³VariableDeclarationÍ!’Í$‘K²VariableDeclaratorÍ!˜Í$LªIdentifierÍ!˜Í!¯·IMPLEMENTED_FIX_ACTIONSM¯ArrayExpressionÍ!²Í$Ü P§LiteralÍ!¹Í!Í²rebuild_instrument´'rebuild_instrument'P§LiteralÍ!ÏÍ!â±demote_all_labels³'demote_all_labels'P§LiteralÍ!äÍ!ó­heal_floating¯'heal_floating'P§LiteralÍ!úÍ"³wire_555_monostableµ'wire_555_monostable'P§LiteralÍ"Í"&³wire_opamp_self_oscµ'wire_opamp_self_osc'P§LiteralÍ"(Í"8®wire_series_rc°'wire_series_rc'P§LiteralÍ":Í"N²wire_potentiometer´'wire_potentiometer'P§LiteralÍ"PÍ"\ªwire_relay¬'wire_relay'P§LiteralÍ"cÍ"t¯heal_electrical±'heal_electrical'P§LiteralÍ"vÍ"ˆ°wire_dual_supply²'wire_dual_supply'P§LiteralÍ"ŠÍ"Ÿ³wire_opamp_feedbackµ'wire_opamp_feedback'P§LiteralÍ"¡Í"´±ensure_signal_gen³'ensure_signal_gen'P§LiteralÍ"»Í"Ï²strip_phantom_pins´'strip_phantom_pins'P§LiteralÍ"ÑÍ"ì¹prune_unused_osc_channels»'prune_unused_osc_channels'P§LiteralÍ"îÍ#´prune_singleton_nets¶'prune_singleton_nets'P§LiteralÍ#Í#²demote_power_rails´'demote_power_rails'P§LiteralÍ#!Í#2¯demote_geo_nets±'demote_geo_nets'P§LiteralÍ#4Í#G±split_power_short³'split_power_short'P§LiteralÍ#IÍ#R§reroute©'reroute'P§LiteralÍ#YÍ#j¯demote_to_label±'demote_to_label'P§LiteralÍ#lÍ#{­join_by_label¯'join_by_label'P§LiteralÍ#}Í#Œ­reconnect_pin¯'reconnect_pin'P§LiteralÍ#Í#®disconnect_pin°'disconnect_pin'P§LiteralÍ#¥Í#²«move_device­'move_device'P§LiteralÍ#´Í#Â¬nudge_device®'nudge_device'P§LiteralÍ#ÄÍ#Ó­rotate_device¯'rotate_device'P§LiteralÍ#ÚÍ#é­add_component¯'add_component'P§LiteralÍ#ëÍ#ı°remove_component²'remove_component'P§LiteralÍ#ÿÍ$¬change_param®'change_param'P§LiteralÍ$Í$¤none¦'none'¥constÀI¶ExportNamedDeclarationÍ$9Í&Q³FunctionDeclarationÍ$@Í&LªIdentifierÍ$IÍ$g¾auditFixActionRegistryCoverageÂÂÂR®BlockStatementÍ$jÍ&•J³VariableDeclarationÍ$qÍ$ˆ‘K²VariableDeclaratorÍ$wÍ$‡LªIdentifierÍ$wÍ${¤implÔr_•¤type¥start£end¦callee©arguments­NewExpressionÍ$~Í$‡LªIdentifierÍ$‚Í$…£Set¥constX¬ForStatementÍ$Í$şJ³VariableDeclarationÍ$“Í$œ‘K²VariableDeclaratorÍ$—Í$œLªIdentifierÍ$—Í$˜¡iP§LiteralÍ$›Í$œ ¡0£letU°BinaryExpressionÍ$Í$ÀLªIdentifierÍ$Í$Ÿ¡i¡<T°MemberExpressionÍ$¢Í$ÀLªIdentifierÍ$¢Í$¹·IMPLEMENTED_FIX_ACTIONSLªIdentifierÍ$ºÍ$À¦lengthÂÂY°UpdateExpressionÍ$ÂÍ$Å¢++ÂLªIdentifierÍ$ÂÍ$Ã¡iR®BlockStatementÍ$ÇÍ$ş‘Z³ExpressionStatementÍ$ÒÍ$÷S®CallExpressionÍ$ÒÍ$öT°MemberExpressionÍ$ÒÍ$ÚLªIdentifierÍ$ÒÍ$Ö¤implLªIdentifierÍ$×Í$Ú£addÂÂ‘T°MemberExpressionÍ$ÛÍ$õLªIdentifierÍ$ÛÍ$ò·IMPLEMENTED_FIX_ACTIONSLªIdentifierÍ$óÍ$ô¡iÃÂÂJ³VariableDeclarationÍ%Í%‘K²VariableDeclaratorÍ%Í%LªIdentifierÍ%Í%§missingP§LiteralÍ%Í% ¡0£letX¬ForStatementÍ%Í%ÿJ³VariableDeclarationÍ%Í%(‘K²VariableDeclaratorÍ%#Í%(LªIdentifierÍ%#Í%$¡iP§LiteralÍ%'Í%( ¡0£letU°BinaryExpressionÍ%*Í%DLªIdentifierÍ%*Í%+¡i¡<T°MemberExpressionÍ%.Í%DLªIdentifierÍ%.Í%=¯FIX_ACTION_DEFSLªIdentifierÍ%>Í%D¦lengthÂÂY°UpdateExpressionÍ%FÍ%I¢++ÂLªIdentifierÍ%FÍ%G¡iR®BlockStatementÍ%KÍ%ÿ“J³VariableDeclarationÍ%VÍ%w‘K²VariableDeclaratorÍ%\Í%vLªIdentifierÍ%\Í%^¢idT°MemberExpressionÍ%aÍ%vT°MemberExpressionÍ%aÍ%sLªIdentifierÍ%aÍ%p¯FIX_ACTION_DEFSLªIdentifierÍ%qÍ%r¡iÃÂLªIdentifierÍ%tÍ%v¢idÂÂ¥constV«IfStatementÍ%Í%·U°BinaryExpressionÍ%…Í%’LªIdentifierÍ%…Í%‡¢id£===P§LiteralÍ%ŒÍ%’¤none¦'none'R®BlockStatementÍ%”Í%·‘[±ContinueStatementÍ%£Í%¬ÀÀV«IfStatementÍ%ÁÍ%øY¯UnaryExpressionÍ%ÅÍ%Ò¡!ÃS®CallExpressionÍ%ÆÍ%ÒT°MemberExpressionÍ%ÆÍ%ÎLªIdentifierÍ%ÆÍ%Ê¤implLªIdentifierÍ%ËÍ%Î£hasÂÂ‘LªIdentifierÍ%ÏÍ%Ñ¢idÂR®BlockStatementÍ%ÔÍ%ø‘Z³ExpressionStatementÍ%ãÍ%íY°UpdateExpressionÍ%ãÍ%ì¢++ÂLªIdentifierÍ%ãÍ%ê§missingÀW¯ReturnStatementÍ&Í&LªIdentifierÍ&Í&§missingÀ

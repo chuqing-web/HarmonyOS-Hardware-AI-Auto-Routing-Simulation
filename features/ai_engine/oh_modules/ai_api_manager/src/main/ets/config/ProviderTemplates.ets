@@ -37,4 +37,5 @@ export function getTemplate(provider: AiProviderType): ProviderTemplate | undefi
   return PROVIDER_TEMPLATES.find(t => t.provider === provider);
 }
 
-export const CIRCUIT_TEST_PROMPT = 'Analyze a simple 5V MCU circuit with 10k pull-up resistor and 100nF decoupling capacitor. Reply OK if you understand.';
+export const CIRCUIT_TEST_PROMPT =
+  'Reply with exactly the two letters OK and nothing else.';

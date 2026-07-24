@@ -633,7 +633,7 @@ export class OscilloscopeEngine {
         tWinStart = tEnd - windowSec;
       }
     } else {
-      // 滚动：窗起点可早于首样点（左侧空白）；触发锁仍贴齐数据
+      // 滚动写屏/滚动：窗起点由 availableSpan 与 windowSec 比较决定（见下方 filling）
       tWinStart = tEnd - windowSec;
     }
 
@@ -688,8 +688,12 @@ export class OscilloscopeEngine {
       return this.resampleWave(useT, useV, channel, displaySpan);
     }
 
-    // ROLL：右缘对齐最新，保留完整时基窗；数据不足时左侧无迹线
-    const rollStart = tEnd - windowSec;
+    // ROLL 两阶段：
+    // A) 历史不足一屏 → 左缘对齐首样，迹线从左往右写（右侧暂空）
+    // B) 历史已满 → 右缘对齐最新，整屏滚动
+    const filling = availableSpan < windowSec - 1e-15;
+    const rollStart = filling ? tStartAll : (tEnd - windowSec);
+    const rollEnd = filling ? (tStartAll + windowSec) : tEnd;
     const winT: number[] = [];
     const winV: number[] = [];
     for (let i = 0; i < n; i++) {
@@ -704,10 +708,9 @@ export class OscilloscopeEngine {
       winV.push(volts[i]);
     }
     if (winT.length < 2) {
-      // 几乎无窗内点：仍输出尾部，由 Canvas 按固定窗贴右
       const take = Math.min(n, Math.max(8, Math.floor(n * 0.25)));
       return this.resampleWaveRoll(times.slice(n - take), volts.slice(n - take),
-        channel, windowSec, rollStart, tEnd);
+        channel, windowSec, rollStart, rollEnd, filling);
     }
     const coupR = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
     if (coupR === CouplingMode.AC) {
@@ -724,7 +727,7 @@ export class OscilloscopeEngine {
         winV[i] = 0;
       }
     }
-    return this.resampleWaveRoll(winT, winV, channel, windowSec, rollStart, tEnd);
+    return this.resampleWaveRoll(winT, winV, channel, windowSec, rollStart, rollEnd, filling);
   }
 
   private cloneWaveForChannel(src: WaveData, channel: number): WaveData {
@@ -966,14 +969,13 @@ export class OscilloscopeEngine {
   }
 
   /**
-   * Resample + despike + light smooth.
-   * 时间轴覆盖 displaySpan；样点之外 hold 边界值（真实示波器行为），禁止 NaN。
-   */
-  /**
-   * 滚动重采样：时间轴覆盖完整 [rollStart, tEnd]，窗左无数据处电压为 NaN（Canvas 跳过）。
+   * 滚动重采样：时间轴覆盖完整 [rollStart, rollStart+windowSec]。
+   * - filling=true（写屏阶段）：超过末样的右侧为 NaN，迹线从左往右生长
+   * - filling=false（滚动阶段）：窗内应有满历史，边界外 hold（不再左侧 NaN 留黑）
    */
   private resampleWaveRoll(timeAxis: number[], voltageAxis: number[],
-    channel: number, windowSec: number, rollStart: number, _tEnd: number): WaveData {
+    channel: number, windowSec: number, rollStart: number, _rollEnd: number,
+    filling: boolean = false): WaveData {
     const cleaned = OscilloscopeEngine.despikeSeries(voltageAxis);
     const span = Math.max(windowSec, 1e-15);
     const sampleRate = SAMPLE_POINTS / span;
@@ -983,19 +985,27 @@ export class OscilloscopeEngine {
     if (n < 1) {
       return this.makeEmptyWave(channel);
     }
+    const tData0 = timeAxis[0];
+    const tDataN = timeAxis[n - 1];
     let j = 1;
     for (let i = 0; i < SAMPLE_POINTS; i++) {
       const fracI = SAMPLE_POINTS > 1 ? i / (SAMPLE_POINTS - 1) : 0;
       const tUse = rollStart + fracI * span;
       outTime.push(tUse);
-      if (tUse < timeAxis[0] - 1e-15) {
+      // 写屏阶段：右侧尚未到达的时刻留空；滚动阶段不再在左侧挖空
+      if (filling && tUse > tDataN + 1e-15) {
         rawOut.push(Number.NaN);
         continue;
       }
+      if (!filling && tUse < tData0 - 1e-15) {
+        // 极端短缓冲兜底：贴齐首样，避免再出现半屏黑
+        rawOut.push(cleaned[0]);
+        continue;
+      }
       let vi = cleaned[n - 1];
-      if (tUse <= timeAxis[0]) {
+      if (tUse <= tData0) {
         vi = cleaned[0];
-      } else if (tUse >= timeAxis[n - 1]) {
+      } else if (tUse >= tDataN) {
         vi = cleaned[n - 1];
       } else {
         while (j < n && timeAxis[j] < tUse) {
@@ -1369,7 +1379,28 @@ export class OscilloscopeEngine {
   private computeFft(wave: WaveData): WaveData {
     // 限长：朴素 DFT 为 O(n²)，示波器实时刷新时过长会卡死「点了没反应」
     const maxN = 512;
-    let voltageAxis = wave.voltageAxis;
+    // 时域可能含写屏 NaN：只取有限样点，否则频谱全 NaN、画面空白
+    const cleanV: number[] = [];
+    const cleanT: number[] = [];
+    const srcN = Math.min(wave.voltageAxis.length, wave.timeAxis.length);
+    for (let i = 0; i < srcN; i++) {
+      const v = wave.voltageAxis[i];
+      const t = wave.timeAxis[i];
+      if (Number.isFinite(v) && Number.isFinite(t)) {
+        cleanV.push(v);
+        cleanT.push(t);
+      }
+    }
+    if (cleanV.length < 2) {
+      // 回退：忽略时间轴，只过滤电压
+      for (let i = 0; i < wave.voltageAxis.length; i++) {
+        const v = wave.voltageAxis[i];
+        if (Number.isFinite(v)) {
+          cleanV.push(v);
+        }
+      }
+    }
+    let voltageAxis = cleanV;
     let sampleRate = wave.sampleRate > 0 ? wave.sampleRate : 0;
     if (voltageAxis.length > maxN) {
       const step = Math.ceil(voltageAxis.length / maxN);
@@ -1381,6 +1412,14 @@ export class OscilloscopeEngine {
       sampleRate = sampleRate / step;
     }
     // 无 sampleRate 时用时轴估频率轴（Hz）
+    if (sampleRate <= 0 && cleanT.length >= 2) {
+      const t0 = cleanT[0];
+      const t1 = cleanT[cleanT.length - 1];
+      const span = Math.abs(t1 - t0);
+      if (span > 0 && voltageAxis.length > 1) {
+        sampleRate = (voltageAxis.length - 1) / span;
+      }
+    }
     if (sampleRate <= 0 && wave.timeAxis.length >= 2) {
       const t0 = wave.timeAxis[0];
       const t1 = wave.timeAxis[wave.timeAxis.length - 1];
@@ -1392,6 +1431,19 @@ export class OscilloscopeEngine {
     if (sampleRate <= 0) {
       sampleRate = 1;
     }
+    if (voltageAxis.length < 2) {
+      return {
+        waveId: IdUtil.generate('fft'),
+        probeName: `FFT(${wave.netName.length > 0 ? wave.netName : wave.probeName})`,
+        netName: 'MATH_FFT',
+        timeAxis: [0, 1],
+        voltageAxis: [0, 0],
+        currentAxis: [0, 0],
+        sampleRate: 1,
+        waveType: 'freq',
+        holdTime: 1
+      };
+    }
 
     const n = voltageAxis.length;
     const half = Math.floor(n / 2);
@@ -1402,13 +1454,25 @@ export class OscilloscopeEngine {
       let re = 0; let im = 0;
       for (let i = 0; i < n; i++) {
         const angle = -2 * Math.PI * k * i / n;
-        re += voltageAxis[i] * Math.cos(angle);
-        im += voltageAxis[i] * Math.sin(angle);
+        const vi = voltageAxis[i];
+        const v = Number.isFinite(vi) ? vi : 0;
+        re += v * Math.cos(angle);
+        im += v * Math.sin(angle);
       }
       let mag = Math.sqrt(re * re + im * im) / n;
-      if (this.fftLogScale && mag > 0) mag = 20 * Math.log10(Math.max(mag, 1e-12));
+      if (!(mag === mag) || !Number.isFinite(mag)) {
+        mag = 0;
+      }
+      if (this.fftLogScale && mag > 0) {
+        mag = 20 * Math.log10(Math.max(mag, 1e-12));
+      }
       freqAxis.push(k * sampleRate / n);
       magAxis.push(mag);
+    }
+    // Canvas 要求 ≥2 点；极短序列补齐 Nyquist 端点
+    if (freqAxis.length < 2) {
+      freqAxis.push(0, Math.max(sampleRate / 2, 1));
+      magAxis.push(magAxis.length > 0 ? magAxis[0] : 0, 0);
     }
 
     return {
@@ -1417,8 +1481,8 @@ export class OscilloscopeEngine {
       netName: 'MATH_FFT',
       timeAxis: freqAxis,
       voltageAxis: magAxis,
-      currentAxis: new Array(half).fill(0),
-      sampleRate: sampleRate / n,
+      currentAxis: new Array(magAxis.length).fill(0),
+      sampleRate: sampleRate / Math.max(n, 1),
       waveType: 'freq',
       holdTime: sampleRate / 2
     };

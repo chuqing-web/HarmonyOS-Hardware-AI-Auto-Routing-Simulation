@@ -227,69 +227,96 @@ export class AiEngineImpl implements IAiEngine {
               result.usedLlm = false;
               result.deliveredWithResidual = false;
               Logger.info(INSTR_TRACE_TAG, '[AI_TASK] FULL_PIPELINE CANCELLED');
-            } else if (!extra?.skipLlm && !pipe.data.usedLlm) {
-              // 整图生成必须走 LLM；禁止模板静默落图（结构化 usedLlm，禁止仅靠 analysisText）
-              result.success = false;
-              result.errCode = ErrCode.ERR_API_TIMEOUT;
-              result.errMsg = 'AI API 不可用或未正确配置，已拒绝模板回退';
-              result.topology = undefined;
-              result.usedLlm = false;
-              result.deliveredWithResidual = false;
-              Logger.error(INSTR_TRACE_TAG,
-                `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
-            } else if (!pipe.data.ercClean) {
-              // 生图完整门禁：仅计划/空图/选型失败才拒交付；其余经强力收尾后必须交付
-              const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
-              const geoN = pipe.data.geoBlocking ?? 0;
-              const hint = AiErcGateUtil.summarizeBlocking(pipe.data.ercErrors ?? [], 4);
-              const errs = pipe.data.ercErrors ?? [];
-              let modularHard = false;
-              let modularSuggest = '';
-              for (let ei = 0; ei < errs.length; ei++) {
-                const et = errs[ei].errType;
+            } else {
+              // 阶段硬失败（选型/建网等）优先于 usedLlm 误判，避免把真实 abort 说成「API 不可用」
+              const errsEarly = pipe.data.ercErrors ?? [];
+              let stageHardEarly: string = '';
+              let stageSuggestEarly: string = '';
+              let stageTypeEarly: string = '';
+              for (let ei = 0; ei < errsEarly.length; ei++) {
+                const et = errsEarly[ei].errType;
                 if (et === 'modular_plan' || et === 'modular_parallel' ||
                   et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
                   et === 'modular_joint') {
-                  modularHard = true;
-                  if (errs[ei].suggest.length > 0) {
-                    modularSuggest = errs[ei].suggest;
-                  }
-                  if (errs[ei].desc.length > 0) {
-                    result.errMsg = errs[ei].desc +
-                      (modularSuggest.length > 0 ? `。${modularSuggest}` : '');
-                  }
+                  stageTypeEarly = et;
+                  stageHardEarly = errsEarly[ei].desc ?? '';
+                  stageSuggestEarly = errsEarly[ei].suggest ?? '';
                   break;
                 }
               }
-              const emptyTopo = (pipe.data.topology?.deviceList.length ?? 0) === 0;
-              if (modularHard || emptyTopo) {
+              if (stageHardEarly.length > 0 && !pipe.data.ercClean) {
                 result.success = false;
                 result.errCode = ErrCode.ERR_PARAM_INVALID;
                 result.topology = undefined;
                 result.deliveredWithResidual = false;
-                if (!result.errMsg || result.errMsg.length === 0) {
-                  result.errMsg = emptyTopo
-                    ? '模块并行失败：无有效拓扑'
-                    : (result.errMsg ?? '生图失败：选型/建网未成功');
-                }
+                result.errMsg = stageHardEarly +
+                  (stageSuggestEarly.length > 0 ? `。${stageSuggestEarly}` : '');
                 Logger.error(INSTR_TRACE_TAG,
-                  `[AI_TASK] FULL_PIPELINE FAIL modularHard=${modularHard} empty=${emptyTopo}` +
-                  ` | ${result.analysisText}`);
+                  `[AI_TASK] FULL_PIPELINE FAIL stage=${stageTypeEarly} | ${result.analysisText}`);
+              } else if (!extra?.skipLlm && !pipe.data.usedLlm) {
+                // 整图生成必须走 LLM；禁止模板静默落图（结构化 usedLlm，禁止仅靠 analysisText）
+                result.success = false;
+                result.errCode = ErrCode.ERR_API_TIMEOUT;
+                result.errMsg = 'AI API 不可用或未正确配置，已拒绝模板回退';
+                result.topology = undefined;
+                result.usedLlm = false;
+                result.deliveredWithResidual = false;
+                Logger.error(INSTR_TRACE_TAG,
+                  `[AI_TASK] FULL_PIPELINE REJECT non-LLM | ${result.analysisText}`);
+              } else if (!pipe.data.ercClean) {
+                // 生图完整门禁：仅计划/空图/选型失败才拒交付；其余经强力收尾后必须交付
+                const hardN = AiErcGateUtil.countBlocking(pipe.data.ercErrors ?? []);
+                const geoN = pipe.data.geoBlocking ?? 0;
+                const hint = AiErcGateUtil.summarizeBlocking(pipe.data.ercErrors ?? [], 4);
+                const errs = pipe.data.ercErrors ?? [];
+                let modularHard = false;
+                let modularSuggest = '';
+                for (let ei = 0; ei < errs.length; ei++) {
+                  const et = errs[ei].errType;
+                  if (et === 'modular_plan' || et === 'modular_parallel' ||
+                    et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
+                    et === 'modular_joint') {
+                    modularHard = true;
+                    if (errs[ei].suggest.length > 0) {
+                      modularSuggest = errs[ei].suggest;
+                    }
+                    if (errs[ei].desc.length > 0) {
+                      result.errMsg = errs[ei].desc +
+                        (modularSuggest.length > 0 ? `。${modularSuggest}` : '');
+                    }
+                    break;
+                  }
+                }
+                const emptyTopo = (pipe.data.topology?.deviceList.length ?? 0) === 0;
+                if (modularHard || emptyTopo) {
+                  result.success = false;
+                  result.errCode = ErrCode.ERR_PARAM_INVALID;
+                  result.topology = undefined;
+                  result.deliveredWithResidual = false;
+                  if (!result.errMsg || result.errMsg.length === 0) {
+                    result.errMsg = emptyTopo
+                      ? '模块并行失败：无有效拓扑'
+                      : (result.errMsg ?? '生图失败：选型/建网未成功');
+                  }
+                  Logger.error(INSTR_TRACE_TAG,
+                    `[AI_TASK] FULL_PIPELINE FAIL modularHard=${modularHard} empty=${emptyTopo}` +
+                    ` | ${result.analysisText}`);
+                } else {
+                  // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付，结构化标记 residual
+                  result.success = true;
+                  result.topology = pipe.data.topology;
+                  result.deliveredWithResidual = true;
+                  Logger.warn(INSTR_TRACE_TAG,
+                    `[AI_TASK] FULL_PIPELINE DELIVER residualErc=${hardN} residualGeo=${geoN}` +
+                    (hint.length > 0 ? ` (${hint})` : '') +
+                    ` | ${result.analysisText}`);
+                }
               } else {
-                // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付，结构化标记 residual
-                result.success = true;
-                result.topology = pipe.data.topology;
-                result.deliveredWithResidual = true;
-                Logger.warn(INSTR_TRACE_TAG,
-                  `[AI_TASK] FULL_PIPELINE DELIVER residualErc=${hardN} residualGeo=${geoN}` +
-                  (hint.length > 0 ? ` (${hint})` : '') +
-                  ` | ${result.analysisText}`);
+                result.deliveredWithResidual = false;
+                Logger.info(INSTR_TRACE_TAG,
+                  `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
               }
-            } else {
-              result.deliveredWithResidual = false;
-              Logger.info(INSTR_TRACE_TAG,
-                `[AI_TASK] FULL_PIPELINE OK | ${result.analysisText}`);
-            }
+            } // end cancel/stage/usedLlm/erc chain
           } else {
             result.analysisText = '';
             Logger.error(INSTR_TRACE_TAG, '[AI_TASK] FULL_PIPELINE empty pipe.data');
@@ -514,14 +541,14 @@ export class AiEngineImpl implements IAiEngine {
     });
     if (!api.success || !api.data) {
       Logger.error(INSTR_TRACE_TAG,
-        '[AI_TASK] aiSelectDevices ABORT: LLM unavailable — refuse local/template fallback');
+        '[AI_TASK] aiSelectDevices FAIL: LLM unavailable — refuse local/template fallback');
       return ResultHelper.fail(ErrCode.ERR_API_TIMEOUT,
         '器件选型 LLM 失败，已拒绝本地/模板回退');
     }
     const llmOut = PromptLoader.extractJson<DeviceSelectLlmOutput>(api.data);
     if (!llmOut) {
       Logger.error(INSTR_TRACE_TAG,
-        '[AI_TASK] aiSelectDevices ABORT: LLM JSON invalid — refuse local fallback');
+        '[AI_TASK] aiSelectDevices FAIL: LLM JSON invalid — refuse local fallback');
       return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID,
         '器件选型 LLM JSON 无效，已拒绝本地回退');
     }

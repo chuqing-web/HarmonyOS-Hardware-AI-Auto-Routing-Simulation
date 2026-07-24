@@ -1506,7 +1506,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   fitAllInView(): void {
-    this.applyFitRect(this.getBoundingBox(), 2.0);
+    // 自适应不超过 100%：避免小电路在大屏上被放大到 200% 出现“软放大/发糊”
+    this.applyFitRect(this.getBoundingBox(), 1.0);
   }
 
   fitRectInView(rect: Rect2D): void {
@@ -1514,20 +1515,26 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   private applyFitRect(rect: Rect2D, maxZoom: number): void {
+    // 画布尺寸未就绪时绝不使用 800×600 兜底 — 否则启动竞态会算出错误高倍缩放
+    if (this.canvasViewWidth <= 0 || this.canvasViewHeight <= 0) {
+      return;
+    }
     const boxW: number = Math.max(rect.width, 1);
     const boxH: number = Math.max(rect.height, 1);
-    const viewW: number = this.canvasViewWidth > 0 ? this.canvasViewWidth : 800;
-    const viewH: number = this.canvasViewHeight > 0 ? this.canvasViewHeight : 600;
+    const viewW: number = this.canvasViewWidth;
+    const viewH: number = this.canvasViewHeight;
     const margin: number = 48;
     const availW: number = Math.max(100, viewW - margin * 2);
     const availH: number = Math.max(100, viewH - margin * 2);
     const scaleX: number = availW / boxW;
     const scaleY: number = availH / boxH;
-    const zoom: number = Math.min(scaleX, scaleY, maxZoom);
-    this.viewport.zoom = Math.max(0.15, zoom);
+    // 取整到 0.01，减少非整数缩放带来的抗锯齿发糊
+    const rawZoom: number = Math.min(scaleX, scaleY, maxZoom);
+    const zoom: number = Math.max(0.15, Math.round(rawZoom * 100) / 100);
+    this.viewport.zoom = zoom;
     this.viewport.panOffset = {
-      x: (viewW - boxW * this.viewport.zoom) / 2 - rect.x * this.viewport.zoom,
-      y: (viewH - boxH * this.viewport.zoom) / 2 - rect.y * this.viewport.zoom
+      x: Math.round((viewW - boxW * zoom) / 2 - rect.x * zoom),
+      y: Math.round((viewH - boxH * zoom) / 2 - rect.y * zoom)
     };
     this.publishViewport();
   }

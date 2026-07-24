@@ -21,6 +21,7 @@ interface InstrumentWaveExpandOverlay_Params {
     tPerDiv?: number;
     triggerLevel?: number;
     autoFit?: boolean;
+    freqDomain?: boolean;
     channelData?: number[][];
     channelCount?: number;
     sampleCount?: number;
@@ -59,6 +60,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.__tPerDiv = new ObservedPropertySimplePU(1e-3, this, "tPerDiv");
         this.__triggerLevel = new ObservedPropertySimplePU(0, this, "triggerLevel");
         this.__autoFit = new ObservedPropertySimplePU(true, this, "autoFit");
+        this.__freqDomain = new ObservedPropertySimplePU(false, this, "freqDomain");
         this.__channelData = new ObservedPropertyObjectPU([], this, "channelData");
         this.__channelCount = new ObservedPropertySimplePU(8, this, "channelCount");
         this.__sampleCount = new ObservedPropertySimplePU(128, this, "sampleCount");
@@ -128,6 +130,9 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         if (params.autoFit !== undefined) {
             this.autoFit = params.autoFit;
         }
+        if (params.freqDomain !== undefined) {
+            this.freqDomain = params.freqDomain;
+        }
         if (params.channelData !== undefined) {
             this.channelData = params.channelData;
         }
@@ -172,6 +177,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.__tPerDiv.purgeDependencyOnElmtId(rmElmtId);
         this.__triggerLevel.purgeDependencyOnElmtId(rmElmtId);
         this.__autoFit.purgeDependencyOnElmtId(rmElmtId);
+        this.__freqDomain.purgeDependencyOnElmtId(rmElmtId);
         this.__channelData.purgeDependencyOnElmtId(rmElmtId);
         this.__channelCount.purgeDependencyOnElmtId(rmElmtId);
         this.__sampleCount.purgeDependencyOnElmtId(rmElmtId);
@@ -197,6 +203,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.__tPerDiv.aboutToBeDeleted();
         this.__triggerLevel.aboutToBeDeleted();
         this.__autoFit.aboutToBeDeleted();
+        this.__freqDomain.aboutToBeDeleted();
         this.__channelData.aboutToBeDeleted();
         this.__channelCount.aboutToBeDeleted();
         this.__sampleCount.aboutToBeDeleted();
@@ -332,6 +339,13 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
     set autoFit(newValue: boolean) {
         this.__autoFit.set(newValue);
     }
+    private __freqDomain: ObservedPropertySimplePU<boolean>;
+    get freqDomain() {
+        return this.__freqDomain.get();
+    }
+    set freqDomain(newValue: boolean) {
+        this.__freqDomain.set(newValue);
+    }
     private __channelData: ObservedPropertyObjectPU<number[][]>;
     get channelData() {
         return this.__channelData.get();
@@ -394,6 +408,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.tPerDiv = s.tPerDiv;
         this.triggerLevel = s.triggerLevel;
         this.autoFit = s.autoFit;
+        this.freqDomain = s.freqDomain;
         this.channelCount = s.channelCount;
         this.sampleCount = s.sampleCount;
         const chCopy: number[][] = [];
@@ -542,7 +557,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                         onAction: () => {
                             this.close();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 191, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 193, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -581,7 +596,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomIn();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 203, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 205, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -611,7 +626,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomOut();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 210, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 212, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -641,7 +656,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 217, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 219, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -671,7 +686,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(-0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 224, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 226, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -701,7 +716,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.resetView();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 231, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 233, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -764,7 +779,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     channelCount: this.channelCount,
                                     sampleCount: this.sampleCount,
                                     canvasHeight: 420
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 250, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 252, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -843,11 +858,12 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     tPerDiv: this.tPerDiv,
                                     triggerLevel: this.triggerLevel,
                                     autoFit: this.autoFit,
+                                    freqDomain: this.freqDomain,
                                     canvasHeight: this.showCh2 ? 280 : 380,
                                     showStats: true,
                                     viewZoom: this.viewZoom,
                                     viewPanSec: this.viewPanSec
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 259, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 261, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -860,6 +876,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                         tPerDiv: this.tPerDiv,
                                         triggerLevel: this.triggerLevel,
                                         autoFit: this.autoFit,
+                                        freqDomain: this.freqDomain,
                                         canvasHeight: this.showCh2 ? 280 : 380,
                                         showStats: true,
                                         viewZoom: this.viewZoom,
@@ -879,6 +896,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     tPerDiv: this.tPerDiv,
                                     triggerLevel: this.triggerLevel,
                                     autoFit: this.autoFit,
+                                    freqDomain: this.freqDomain,
                                     canvasHeight: this.showCh2 ? 280 : 380,
                                     showStats: true,
                                     viewZoom: this.viewZoom,
@@ -909,11 +927,12 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                                 tPerDiv: this.tPerDiv,
                                                 triggerLevel: this.triggerLevel,
                                                 autoFit: this.autoFit,
+                                                freqDomain: this.freqDomain,
                                                 canvasHeight: 280,
                                                 showStats: true,
                                                 viewZoom: this.viewZoom,
                                                 viewPanSec: this.viewPanSec
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 276, col: 19 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 279, col: 19 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -926,6 +945,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                                     tPerDiv: this.tPerDiv,
                                                     triggerLevel: this.triggerLevel,
                                                     autoFit: this.autoFit,
+                                                    freqDomain: this.freqDomain,
                                                     canvasHeight: 280,
                                                     showStats: true,
                                                     viewZoom: this.viewZoom,
@@ -945,6 +965,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                                 tPerDiv: this.tPerDiv,
                                                 triggerLevel: this.triggerLevel,
                                                 autoFit: this.autoFit,
+                                                freqDomain: this.freqDomain,
                                                 canvasHeight: 280,
                                                 showStats: true,
                                                 viewZoom: this.viewZoom,

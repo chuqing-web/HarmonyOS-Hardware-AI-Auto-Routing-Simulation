@@ -361,7 +361,8 @@ export struct InstrumentPanel {
       this.triggerLevel,
       this.oscAutoFit,
       this.oscFrameId,
-      this.buildOscDetail()
+      this.buildOscDetail(),
+      this.oscFftMode
     );
   }
 
@@ -1137,6 +1138,7 @@ export struct InstrumentPanel {
             tPerDiv: this.timebaseSecPerDiv(),
             triggerLevel: this.triggerLevel,
             autoFit: this.oscAutoFit,
+            freqDomain: this.oscFftMode,
             canvasHeight: this.oscCanvasHeight,
             showStats: true
           })
@@ -1151,6 +1153,7 @@ export struct InstrumentPanel {
               tPerDiv: this.timebaseSecPerDiv(),
               triggerLevel: this.triggerLevel,
               autoFit: this.oscAutoFit,
+              freqDomain: this.oscFftMode,
               canvasHeight: this.oscCanvasHeight,
               showStats: true
             })
@@ -2068,12 +2071,17 @@ export struct InstrumentPanel {
   /**
    * 表计波形时基：约 3 个周期铺满 10 格 → 产生右缘滚动。
    * 估不出频率时用尾部 8ms 窗（适合 1kHz lab）。
+   * 强制 10×tDiv ≤ 可用历史，避免窗宽大于数据导致左侧黑屏。
    */
   private static adaptiveMeterTPerDiv(times: number[], values: number[]): number {
     const n = Math.min(times.length, values.length);
     if (n < 8) {
       return 1e-3;
     }
+    const dataSpan = Math.max(times[n - 1] - times[0], 1e-6);
+    // 单格上限：整窗不超过已有历史（写满前也能铺满有效段）
+    const maxTDiv = Math.max(dataSpan / 10, 1e-7);
+
     let sum = 0;
     let vmin = values[0];
     let vmax = values[0];
@@ -2090,7 +2098,7 @@ export struct InstrumentPanel {
     const mean = sum / n;
     const amp = Math.max(vmax - vmin, 1e-9);
     if (amp < 1e-6) {
-      return 5e-3;
+      return Math.min(5e-3, maxTDiv);
     }
     const thr = mean;
     let crosses = 0;
@@ -2111,13 +2119,12 @@ export struct InstrumentPanel {
       // 3 周期 / 10 格
       const tDiv = (period * 3) / 10;
       if (tDiv > 1e-7 && tDiv < 1) {
-        return tDiv;
+        return Math.min(tDiv, maxTDiv);
       }
     }
-    const span = Math.max(times[n - 1] - times[0], 1e-6);
-    // 默认显示约 8ms（1kHz ≈ 8 周期）
-    const want = Math.min(8e-3, span);
-    return Math.max(want / 10, 1e-7);
+    // 默认显示约 8ms（1kHz ≈ 8 周期），且不超过可用跨度
+    const want = Math.min(8e-3, dataSpan);
+    return Math.max(Math.min(want / 10, maxTDiv), 1e-7);
   }
 
   private updateCursorMeasure(): void {

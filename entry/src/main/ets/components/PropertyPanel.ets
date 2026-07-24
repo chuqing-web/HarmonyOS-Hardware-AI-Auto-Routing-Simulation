@@ -83,6 +83,7 @@ export struct PropertyPanel {
   @State oscTimeData: number[] = [];
   @State oscWaveData: number[] = [];
   @State oscWaveDataCh2: number[] = [];
+  @State oscFftMode: boolean = false;
   // Logic Analyzer
   @State logicChannelData: number[][] = [];
   @State logicSampleCount: number = 128;
@@ -282,6 +283,7 @@ export struct PropertyPanel {
       } else if (libId.includes('OSC')) {
         const w = this.appService.instruments.getOscilloscopeWave(0);
         if (w.success && w.data !== undefined) {
+          this.oscFftMode = w.data.waveType === 'freq' || w.data.netName === 'MATH_FFT';
           this.oscTimeData = w.data.timeAxis.slice();
           this.oscWaveData = w.data.voltageAxis.slice();
         }
@@ -933,11 +935,12 @@ export struct PropertyPanel {
       OscilloscopeWaveCanvas({
         timeData: this.oscTimeData,
         voltageData: this.oscWaveData,
-        channelLabel: 'CH1',
-        waveColor: '#00e676',
+        channelLabel: this.oscFftMode ? 'FFT CH1' : 'CH1',
+        waveColor: this.oscFftMode ? '#ffab40' : '#00e676',
         vPerDiv: 1,
         triggerLevel: 0,
         autoFit: true,
+        freqDomain: this.oscFftMode,
         canvasHeight: 140,
         showStats: true
       })
@@ -946,11 +949,12 @@ export struct PropertyPanel {
         OscilloscopeWaveCanvas({
           timeData: this.oscTimeData,
           voltageData: this.oscWaveDataCh2,
-          channelLabel: 'CH2',
-          waveColor: '#40c4ff',
+          channelLabel: this.oscFftMode ? 'FFT CH2' : 'CH2',
+          waveColor: this.oscFftMode ? '#ffd54f' : '#40c4ff',
           vPerDiv: 1,
           triggerLevel: 0,
           autoFit: true,
+          freqDomain: this.oscFftMode,
           canvasHeight: 140,
           showStats: true
         })
@@ -964,11 +968,12 @@ export struct PropertyPanel {
       }
       .width('100%')
       Row({ space: 6 }) {
-        ProteusClassicBtn({ label: 'FFT', widthVal: '48%',
+        ProteusClassicBtn({ label: this.oscFftMode ? 'FFT●' : 'FFT', widthVal: '48%',
           onAction: () => {
             this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
             const w = this.appService.instruments.getOscilloscopeWave(0);
             if (w.success && w.data !== undefined) {
+              this.oscFftMode = w.data.waveType === 'freq' || w.data.netName === 'MATH_FFT';
               this.oscTimeData = w.data.timeAxis.slice();
               this.oscWaveData = w.data.voltageAxis.slice();
             }

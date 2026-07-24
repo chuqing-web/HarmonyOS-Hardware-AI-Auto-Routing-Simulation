@@ -4,6 +4,9 @@ import type common from "@ohos:app.ability.common";
  * Expand the main window to the last maximized / large desktop size.
  * Prefer maximize() (PC/2in1) over layout-fullscreen (immersive mobile).
  * Also enables window-rect auto-save when a WindowStage is provided.
+ *
+ * Callers should await this BEFORE loading Splash / Index,
+ * so the first layout pass sees a settled window size.
  */
 export async function maximizeAppWindow(ctx?: common.UIAbilityContext, stage?: window.WindowStage): Promise<void> {
     try {
@@ -27,6 +30,8 @@ export async function maximizeAppWindow(ctx?: common.UIAbilityContext, stage?: w
         // Desktop maximize (keeps system title bar; not immersive fullscreen).
         try {
             await mainWindow.maximize();
+            // 给布局一帧时间收敛，减少随后 Splash/主页 Canvas 尺寸抖动
+            await new Promise<void>((resolve) => setTimeout(resolve, 32));
             return;
         }
         catch (_eMax) {

@@ -7,9 +7,9 @@ export const ROUTE_PROMPT: PromptTemplate = {
 【优先级】GND/VCC=10, 晶振=9, 仪器=9, 模拟=7, 总线=5, GPIO=2
 
 【mode 规则（内心遵守，不要写进回复）】:
-- 2～4脚局部小信号网优先 forceWire（WAR 正交）；仪器/COM/大电源扇出 forceLabel
-- 同脚导线端点≤2；含仪器脚的网一律 forceLabel；勿整图只填 forceLabel
-- forceWire 至少覆盖若干教学可见直连网（LED/分压段/晶振/反馈）
+- 2～4脚局部小信号网优先 forceWire（WAR 正交）；纯仪器/COM/大电源扇出 forceLabel
+- 同脚导线端点≤2；DUT≥2 的探针并网仍 forceWire（仪器脚用标号 stub，勿整网 forceLabel）
+- forceWire 至少覆盖若干教学可见直连网（LED/分压段/晶振/反馈）；禁止整图几乎只有 forceLabel
 
 【JSON 字段】netPriority / specialNetRules / globalConstraint / connectionModeHints(forceWire/forceLabel)
 禁止输出导线坐标点（waypoints 由 A* 本地引擎生成；本阶段只填约束与 mode）。`,

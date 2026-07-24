@@ -31,6 +31,7 @@ export struct InstrumentWaveExpandOverlay {
   @State private tPerDiv: number = 1e-3;
   @State private triggerLevel: number = 0;
   @State private autoFit: boolean = true;
+  @State private freqDomain: boolean = false;
   @State private channelData: number[][] = [];
   @State private channelCount: number = 8;
   @State private sampleCount: number = 128;
@@ -66,6 +67,7 @@ export struct InstrumentWaveExpandOverlay {
     this.tPerDiv = s.tPerDiv;
     this.triggerLevel = s.triggerLevel;
     this.autoFit = s.autoFit;
+    this.freqDomain = s.freqDomain;
     this.channelCount = s.channelCount;
     this.sampleCount = s.sampleCount;
     const chCopy: number[][] = [];
@@ -266,6 +268,7 @@ export struct InstrumentWaveExpandOverlay {
                   tPerDiv: this.tPerDiv,
                   triggerLevel: this.triggerLevel,
                   autoFit: this.autoFit,
+                  freqDomain: this.freqDomain,
                   canvasHeight: this.showCh2 ? 280 : 380,
                   showStats: true,
                   viewZoom: this.viewZoom,
@@ -283,6 +286,7 @@ export struct InstrumentWaveExpandOverlay {
                     tPerDiv: this.tPerDiv,
                     triggerLevel: this.triggerLevel,
                     autoFit: this.autoFit,
+                    freqDomain: this.freqDomain,
                     canvasHeight: 280,
                     showStats: true,
                     viewZoom: this.viewZoom,

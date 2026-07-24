@@ -40,7 +40,7 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
 
 4. 连接方式选择规则 — 局部小网导线优先（适度增加可见导线）:
    【基本原则】功能区内 2～4 脚小信号网优先 joinWired（正交/WAR 绕障）；系统会写入 forceWire 并拉近器件。
-   仪器脚、>4 脚大网、电源别名扇出（VCC/GND/VCC_AM/AVDD…）保持 joinByLabel。
+   仪器脚保持 joinByLabel（可与同网 DUT 的 joinWired 并存）；DUT>4 脚大网、电源别名扇出保持 joinByLabel。
 
    适合 joinWired（导线直连）的场景:
    - 2～4 脚小信号网（LED+R、晶振负载、相邻分压段、运放反馈）
@@ -98,12 +98,15 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - 同相/反相输入不可浮空
    - 单电源: V+/VCC→VCC，V-/VEE→GND
    - 双电源: V+/VCC→VCC，V-/VEE→VEE（板上须有 VEE 符号）
-   - 【滞回/施密特】正反馈分压节点须同一网名（如 HYST_NODE）：OUT→Rf→HYST_NODE、HYST_NODE→Rg→GND（或 VCC）、运放 IN+→HYST_NODE；三脚必须同 mode（全 joinByLabel 或全 joinWired），禁止混用导致断网
-   - 【滞回阈值】阈值 ≈ ±β·|Vsat|，β=Rg/(Rf+Rg)。须 β·|Vsat| < 激励峰值，否则正弦进不了翻转窗、看不到方波。推荐 Rf=100k / Rg=10k（β≈0.09）或激励 amplitude≥5V；双电源 VCC 与 VEE 须对称（如 ±12V），禁止 VCC=+5 配 VEE=-12
-   - 激励为正弦时 SIGNAL_GEN 输入网接 IN-（或 IN+），示波器 CH1 观测激励、CH2 观测 OUT；勿把「输出方波」写成激励波形
+   - 【滞回/施密特·外激励】正反馈分压节点须同一网名（如 HYST_NODE）：OUT→Rf→HYST_NODE、HYST_NODE→Rg→GND（或 VCC）、运放 IN+→HYST_NODE；三脚必须同 mode（全 joinByLabel 或全 joinWired），禁止混用导致断网
+   - 【滞回阈值·外激励】阈值 ≈ ±β·|Vsat|，β=Rg/(Rf+Rg)。须 β·|Vsat| < 激励峰值，否则正弦进不了翻转窗、看不到方波。推荐 Rf=100k / Rg=10k（β≈0.09）或激励 amplitude≥5V；双电源 VCC 与 VEE 须对称（如 ±12V），禁止 VCC=+5 配 VEE=-12
+   - 外激励为正弦时 SIGNAL_GEN 输入网接 IN-（或 IN+），示波器 CH1 观测激励、CH2 观测 OUT；勿把「输出方波」写成激励波形
+   - 【自激·滞回+积分闭环】比较器 OUT→R→积分 IN-；C 跨积分 OUT↔IN-；积分 OUT 反馈→比较器 IN-（与三角波同网）；积分 IN+→GND（并入 GND 网≥2脚）；OSC CH1∥方波、CH2∥三角；禁止 SIGNAL_GEN
+   - 【硬】禁止为运放未用输入另建只有 1 个连接的网（如 COMP_INV/INT_NON_INV）；比较器 IN- 必须并入 TRIANGLE_*，积分器 IN+ 必须并入 GND
 
-9. SIGNAL_GEN: OUT→激励信号网，GND→GND；waveform=sine|square|triangle|saw|pulse；frequency/dutyCycle 可调
+9. SIGNAL_GEN（仅外激励）: OUT→激励信号网，GND→GND；waveform=sine|square|triangle|saw|pulse；frequency/dutyCycle 可调
    - waveform 以用户「输入/激励」为准；「整形输出方波」不是信号源波形
+   - 【硬禁】闭环自激/弛张振荡禁止 SIGNAL_GEN
 
 10. 【串联 RC 充放电铁律】板上有 R_* + C_*（且无双色 LED 互斥）时:
    - 正确充电路径: VCC → (可选 SW.1/SW.2) → R.1 → R.2 与 C.1 同网名 RC_MID → C.2 → GND

@@ -112,15 +112,18 @@ function buildExactEntries(): DeviceUsageEntry[] {
       'amplitude、frequency（如 220V/50Hz 或低压实验值）',
       '交流理想源', 6),
     entry('SIGNAL_GEN', '函数信号源(正弦/方波/三角/锯齿/脉冲)',
-      '可调波形激励源，驱动运放输入、滤波器、滞回比较器等；必须同时接 OUT 与 GND。',
+      '可调波形**外接**激励源，驱动运放输入、滤波器、滞回整形等；必须同时接 OUT 与 GND。' +
+      '【非场景】运放滞回+积分闭环自激/弛张振荡器：方波由比较器自产，禁止使用 SIGNAL_GEN。',
       'OUT=信号输出；GND=系统地回线（以库脚为准）',
       '①OUT 并入被测输入信号网；GND→GND。②驱动同相/反相放大：OUT→Rin→运放输入。' +
-      '③滞回/施密特：amplitude 峰值须越过阈值（Rf/Rg≈10:1、±12V 时阈值约 1V），推荐 ≥5V（至少 ≥2V）。' +
-      '④方波/脉冲驱动积分器须写 dutyCycle。⑤示波器可并测同一 OUT 网。',
+      '③外激励滞回/施密特整形：amplitude 峰值须越过阈值（Rf/Rg≈10:1、±12V 时阈值约 1V），推荐 ≥5V（至少 ≥2V）。' +
+      '④外激励积分示教：方波/脉冲须写 dutyCycle；示波器 CH1∥OUT、CH2∥运放 OUT。' +
+      '⑤示波器可并测同一 OUT 网。',
       '✕1禁止 OUT 直接短 VCC/GND。✕2禁止有 OUT 无 GND（SIM_CONN 阻断）。' +
-      '✕3禁止滞回场景 amplitude<2V（锁死单轨）。✕4禁止当直流电源轨。✕5禁止省略波形参数乱默认。',
+      '✕3禁止滞回整形 amplitude<2V（锁死单轨）。✕4禁止当直流电源轨。✕5禁止省略波形参数乱默认。' +
+      '✕6【硬】禁止用于「闭环自激/弛张/三角波反馈至比较器」拓扑（勿外接信号源）。',
       'waveform(sine|square|triangle|saw|pulse)、amplitude、frequency、offset、dutyCycle',
-      '瞬态激励；方波边沿驱动积分器/比较器时注意幅度与偏置', 9),
+      '瞬态外激励；自激振荡器勿选本器件', 9),
 
     // —— 继电器/开关/蜂鸣器 ——
     entry('SW_PUSH', '轻触按键开关(常开瞬时)',
@@ -237,12 +240,16 @@ function buildExactEntries(): DeviceUsageEntry[] {
       '①【双电源供电】VCC→VCC 网，VEE→VEE 网（对称 ±12V/±15V），系统地另有 GND。' +
       '②【电压跟随】OUT↔IN-，信号→IN+。③【反相放大】Vin→Rin→IN-，Rf 跨 OUT↔IN-，IN+→GND。' +
       '④【同相放大】Vin→IN+，Rg：IN-→GND，Rf：OUT↔IN-。' +
-      '⑤【滞回比较】OUT→Rf→IN+→Rg→GND，SIGNAL_GEN→IN-；amplitude≥5V(≥2V)。' +
-      '⑥【积分器】信号→R→IN-，C 跨 OUT↔IN-，IN+→GND。',
+      '⑤【外激励滞回整形】OUT→Rf→IN+→Rg→GND，SIGNAL_GEN→IN-；amplitude≥5V(≥2V)。' +
+      '⑥【外激励积分】SIGNAL_GEN→R→IN-，C 跨 OUT↔IN-，IN+→GND。' +
+      '⑦【自激振荡·滞回+积分闭环·硬】两片 UA741：比较器 OUT 方波→R→积分 IN-；C 跨积分 OUT↔IN-；' +
+      '积分 OUT 反馈→比较器 IN-（与三角波同网）；积分 IN+→GND；禁止 SIGNAL_GEN；' +
+      '示波器 CH1∥方波、CH2∥三角。禁止为 IN± 另建单脚网（COMP_INV/INT_NON_INV）。',
       '✕1禁止单电源硬用无偏置。✕2禁止输出短电源。✕3禁止挂库外假脚 V+/V- 或双运放通道脚。' +
-      '✕4禁止滞回激励 ≤|Vth|。✕5禁止开环当完成态（比较器双输入已接除外）。' +
+      '✕4禁止外激励滞回 amplitude ≤|Vth|。✕5禁止开环当完成态（比较器双输入已接除外）。' +
       '✕6禁止用串联 RC 充放电冒充积分。✕7禁止省略 VEE。' +
-      '✕8禁止把 UA741 当双运放建两路独立放大。',
+      '✕8禁止把 UA741 当双运放建两路独立放大。' +
+      '✕9【硬】自激闭环禁止再加 SIGNAL_GEN。',
       'gain',
       '单运放宏模型；输出摆幅不到轨', 10),
     entry('LM358', '单片双运放LM358(可单电源)',
@@ -252,11 +259,14 @@ function buildExactEntries(): DeviceUsageEntry[] {
       'OUT1/IN-1/IN+1/V-/IN+2/IN-2/OUT2/V+（双通道+共享电源，以库为准）',
       '①【供电】V+→VCC；V- 单电源时常接 GND，双电源时接 VEE。' +
       '②【跟随】OUTn↔IN-n，信号→IN+n。③【反相/同相放大】拓扑同 UA741，但脚名带通道号。' +
-      '④【滞回比较】同 UA741 滞回，注意单电源输出摆幅。⑤【积分】信号→R→IN-1，C 跨 OUT1↔IN-1，IN+1→GND/偏置。' +
-      '⑥【未用半边·硬】IN-2↔OUT2、IN+2→GND（或中点偏置），禁止悬空。',
+      '④【外激励滞回】同 UA741⑤，注意单电源输出摆幅。⑤【外激励积分】信号→R→IN-1，C 跨 OUT1↔IN-1，IN+1→GND/偏置。' +
+      '⑥【自激·双通道】OUT1 滞回方波→R→IN-2；C 跨 OUT2↔IN-2；OUT2 反馈→比较器 IN-1（与三角同网）；' +
+      '积分 IN+2→GND；禁 SIGNAL_GEN；禁止 COMP_INV/INT_NON_INV 单脚网；未用半边跟随。' +
+      '⑦【未用半边·硬】IN-2↔OUT2、IN+2→GND（或中点偏置），禁止悬空。',
       '✕1禁止输入超轨。✕2禁止未用放大器输入悬空。✕3禁止电源反接。' +
       '✕4禁止把 V- 当信号脚。✕5禁止两运放输出短接。✕6禁止用 RC 充放电冒充运放积分。' +
-      '✕7禁止按 UA741 五脚符号连线（无 IN+/OUT/VCC/VEE 这组单运放脚）。',
+      '✕7禁止按 UA741 五脚符号连线（无 IN+/OUT/VCC/VEE 这组单运放脚）。' +
+      '✕8自激闭环禁止 SIGNAL_GEN。',
       'gain',
       '双运放模型；未用通道须跟随', 9),
     entry('TL082', '单片双运放TL082(JFET高阻)',
@@ -264,11 +274,12 @@ function buildExactEntries(): DeviceUsageEntry[] {
       '与普通单运放 UA741 区别：脚名带 1/2 通道，未用半边必须跟随；不要当五脚单运放用。',
       'OUT1/IN-1/IN+1/V-/IN+2/IN-2/OUT2/V+',
       '①【双电源】V+→VCC，V-→VEE（偏好 ±12V）。②【跟随/缓冲高阻传感器】OUT1↔IN-1，信号→IN+1。' +
-      '③【反相/同相放大】同 UA741（脚名加通道号）。④【滞回】同 UA741。' +
-      '⑤【积分经典】信号→R→IN-1，C 跨 OUT1↔IN-1，IN+1→GND。⑥未用半边 IN-2↔OUT2、IN+2→GND。',
+      '③【反相/同相放大】同 UA741（脚名加通道号）。④【外激励滞回/积分】同 UA741⑤⑥。' +
+      '⑤【自激·双通道经典】一路滞回+一路积分闭环；禁 SIGNAL_GEN；未用半边跟随。' +
+      '⑥未用半边 IN-2↔OUT2、IN+2→GND。',
       '✕1禁止电源反接。✕2禁止未用半边输入悬空。✕3禁止用 RC 充放电拓扑冒充积分。' +
       '✕4禁止单电源无偏置硬用。✕5禁止输出短电源。✕6禁止省略 VEE。' +
-      '✕7禁止按 UA741 单运放脚名建网。',
+      '✕7禁止按 UA741 单运放脚名建网。✕8自激闭环禁止 SIGNAL_GEN。',
       'gain',
       'JFET 双运放模型', 8),
     entry('LM555', '555定时器LM555(单稳态延时/无稳态多谐)',

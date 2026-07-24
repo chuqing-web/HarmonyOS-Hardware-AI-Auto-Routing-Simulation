@@ -51,8 +51,9 @@ runtime_key: device_select
 - 必须输出 VCC 电源符号: {"func":"电源正极","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND 接地符号: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
 - 双电源/运放±供电时追加 VEE: {"func":"电源负极","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
-- 用户要正弦/方波/三角/锯齿/脉冲激励时追加 SIGNAL_GEN（param_constraint: waveform、frequency、dutyCycle、amplitude、offset）
+- 用户要**外接**正弦/方波/三角/锯齿/脉冲激励时追加 SIGNAL_GEN（param_constraint: waveform、frequency、dutyCycle、amplitude、offset）
   - waveform 以「输入/激励/信号源」为准；若同时出现「正弦输入」与「整形/输出方波」，waveform 必须写 sine（方波是输出结果）
+  - 【硬禁】闭环自激/弛张/三角波反馈至比较器：方波自产，禁止 SIGNAL_GEN；只需运放+R/C+示波器
 - 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k 等)，不要只写 "Resistor"
 
 【仪器自动追加规则 — 严格按用户需求，禁止擅自加仪器】:
@@ -63,8 +64,9 @@ runtime_key: device_select
 - 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
 - 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
-- 用户提到频率计 → 追加 FREQ_COUNTER；信号源/信号发生器 → SIGNAL_GEN
+- 用户提到频率计 → 追加 FREQ_COUNTER；明确要信号源/信号发生器 → SIGNAL_GEN（自激振荡除外）
 - 【硬】禁止因「含运放/含电源/含稳压/含数字 IC」自动追加示波器或电压表
+- 【硬】禁止把「观测波形/方波/三角波」自动当成要 SIGNAL_GEN（那是示波器场景）
 - 禁止擅自追加用户未要求的 MCU/定时器/运放/仪器
 
 【防幻觉规则】:

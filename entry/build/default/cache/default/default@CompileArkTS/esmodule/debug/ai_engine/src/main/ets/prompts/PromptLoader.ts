@@ -8,6 +8,7 @@ import { DeviceUsageManual } from "@bundle:com.elecdraw.aischsim/entry@ai_engine
 import type { UsageManualMode, DeviceUsageBuildResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceUsageManual";
 import type { PromptTemplate } from './PromptTypes';
 import { TOPOLOGY_ANTIPATTERN_GUARD, JSON_ONLY_OUTPUT_RULE, INSTRUMENT_TOPOLOGY_RULES } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/SharedPromptRules";
+import { stageCapabilityBlurb } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/StageCapabilities";
 import { DEVICE_SELECT_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/DeviceSelectPrompt";
 import { LAYOUT_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/LayoutPrompt";
 import { NET_PLAN_PROMPT } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/templates/NetPlanPrompt";
@@ -35,6 +36,8 @@ export interface RenderEnrichOptions {
     filterPinsByPrompt?: string;
     /** 板上/已选 libDevId → 注入器件/仪器意图片段 */
     libIdsForFragments?: string[];
+    /** 显式阶段名（注入能力边界）；缺省从 template.id 推断 */
+    stageName?: string;
 }
 interface ClusterInfo {
     devices: DeviceInst[];
@@ -279,6 +282,20 @@ function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
     }
     return `\n${lines.join('\n')}`;
 }
+/** 从 template.id 推断阶段名（device_select_v5 → device_select） */
+function inferStageFromTemplateId(id: string): string {
+    const keys = [
+        'device_select', 'modular_plan', 'net_plan', 'self_review',
+        'edit_plan', 'gen_sch', 'layout', 'route', 'diag'
+    ];
+    const low = (id ?? '').toLowerCase();
+    for (let i = 0; i < keys.length; i++) {
+        if (low.indexOf(keys[i]) >= 0) {
+            return keys[i];
+        }
+    }
+    return '';
+}
 export class PromptLoader {
     /** 从 templates 加载；runtime_key 对应 skill/prompts README 映射表 */
     static load(name: string): PromptTemplate {
@@ -341,7 +358,8 @@ export class PromptLoader {
             return '';
         }
         const user = applyPromptVars(template.userTemplate, vars);
-        return `${template.system}${JSON_ONLY_OUTPUT_RULE}\n\n${user}`;
+        const stageCap = stageCapabilityBlurb(inferStageFromTemplateId(template.id));
+        return `${template.system}${stageCap}${JSON_ONLY_OUTPUT_RULE}\n\n${user}`;
     }
     /**
      * 增强版 prompt：注入器件库目录 + 拓扑反模式（SharedPromptRules）。
@@ -419,7 +437,11 @@ export class PromptLoader {
         const instrumentHint = !skipTopoGuard && (options?.includeLibIds || options?.includeFullPins)
             ? buildInstrumentPinCheatsheet(library)
             : '';
-        return `${effective.system}${JSON_ONLY_OUTPUT_RULE}${guard}${instrumentHint}${idHint}\n\n${user}`;
+        const stageName = (options?.stageName ?? '').length > 0
+            ? (options!.stageName as string)
+            : inferStageFromTemplateId(effective.id);
+        const stageCap = stageCapabilityBlurb(stageName);
+        return `${effective.system}${stageCap}${JSON_ONLY_OUTPUT_RULE}${guard}${instrumentHint}${idHint}\n\n${user}`;
     }
     static clearCatalogCache(): void {
         cachedCatalogSummary = '';

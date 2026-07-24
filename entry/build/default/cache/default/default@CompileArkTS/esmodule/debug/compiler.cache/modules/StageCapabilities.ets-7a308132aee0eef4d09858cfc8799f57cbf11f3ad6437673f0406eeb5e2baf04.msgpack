@@ -1,0 +1,193 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚí/**
+ * å„æµæ°´çº¿é˜¶æ®µã€Œèƒ½åšä»€ä¹ˆã€â€” æ³¨å…¥ Promptï¼Œé¿å…æ··ç”¨ fixAction / å»ºç½‘è¯æ±‡ã€‚
+ * æ³¨æ„ï¼šä»… self_review /ï¼ˆéƒ¨åˆ†ï¼‰ç¡®å®šæ€§å›é€€å¯æ‰§è¡Œ fixActionï¼›å…¶å®ƒé˜¶æ®µè¾“å‡ºå„è‡ª JSON å¥‘çº¦ã€‚
+ * ArkTSï¼šç¦æ­¢æœªæ ‡æ³¨ç±»å‹çš„å¯¹è±¡å­—é¢é‡ä½œ Recordï¼Œæ”¹ç”¨ switchã€‚
+ */
+export function stageCapabilityBlurb(stage) {
+    const key = (stage ?? '').trim().toLowerCase();
+    let body = '';
+    if (key === 'device_select') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:\n' +
+            '- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿';
+    }
+    else if (key === 'layout') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:\n' +
+            '- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/route';
+    }
+    else if (key === 'net_plan') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:\n' +
+            '- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints\n' +
+            '- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabel';
+    }
+    else if (key === 'route') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:\n' +
+            '- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰';
+    }
+    else if (key === 'self_review') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:\n' +
+            '- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰\n' +
+            '- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ\n' +
+            '- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›' +
+            'è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰';
+    }
+    else if (key === 'diag') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:\n' +
+            '- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kit';
+    }
+    else if (key === 'modular_plan') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:\n' +
+            '- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints\n' +
+            '- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GND';
+    }
+    else if (key === 'edit_plan') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” edit_planã€‘:\n' +
+            '- è¾“å‡ºï¼šå¢é‡ç¼–è¾‘ JSONï¼ˆaddRequireList/removeRefs/moves/netsï¼‰\n' +
+            '- ä¸å¯ç”¨ï¼šself_review fixAction æšä¸¾ï¼ˆç”¨ç¼–è¾‘å­—æ®µè¡¨è¾¾å˜æ›´ï¼‰\n' +
+            '- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢';
+    }
+    else if (key === 'gen_sch') {
+        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” gen_schï¼ˆé—ç•™ï¼‰ã€‘:\n' +
+            '- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n' +
+            '- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£';
+    }
+    return body.length > 0 ? `\n${body}\n` : '';
+}
+//# sourceMappingURL=StageCapabilities.js.mapÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\StageCapabilities.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName½./templates/StageCapabilities©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚƒ/**
+ * å„æµæ°´çº¿é˜¶æ®µã€Œèƒ½åšä»€ä¹ˆã€â€” æ³¨å…¥ Promptï¼Œé¿å…æ··ç”¨ fixAction / å»ºç½‘è¯æ±‡ã€‚
+ * æ³¨æ„ï¼šä»… self_review /ï¼ˆéƒ¨åˆ†ï¼‰ç¡®å®šæ€§å›é€€å¯æ‰§è¡Œ fixActionï¼›å…¶å®ƒé˜¶æ®µè¾“å‡ºå„è‡ª JSON å¥‘çº¦ã€‚
+ * ArkTSï¼šç¦æ­¢æœªæ ‡æ³¨ç±»å‹çš„å¯¹è±¡å­—é¢é‡ä½œ Recordï¼Œæ”¹ç”¨ switchã€‚
+ */
+
+export function stageCapabilityBlurb(stage: string): string {
+  const key = (stage ?? '').trim().toLowerCase();
+  let body = '';
+  if (key === 'device_select') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:\n' +
+      '- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿';
+  } else if (key === 'layout') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:\n' +
+      '- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/route';
+  } else if (key === 'net_plan') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:\n' +
+      '- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints\n' +
+      '- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabel';
+  } else if (key === 'route') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:\n' +
+      '- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰';
+  } else if (key === 'self_review') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:\n' +
+      '- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰\n' +
+      '- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ\n' +
+      '- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›' +
+      'è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰';
+  } else if (key === 'diag') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:\n' +
+      '- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kit';
+  } else if (key === 'modular_plan') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:\n' +
+      '- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints\n' +
+      '- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GND';
+  } else if (key === 'edit_plan') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” edit_planã€‘:\n' +
+      '- è¾“å‡ºï¼šå¢é‡ç¼–è¾‘ JSONï¼ˆaddRequireList/removeRefs/moves/netsï¼‰\n' +
+      '- ä¸å¯ç”¨ï¼šself_review fixAction æšä¸¾ï¼ˆç”¨ç¼–è¾‘å­—æ®µè¡¨è¾¾å˜æ›´ï¼‰\n' +
+      '- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢';
+  } else if (key === 'gen_sch') {
+    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” gen_schï¼ˆé—ç•™ï¼‰ã€‘:\n' +
+      '- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n' +
+      '- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£';
+  }
+  return body.length > 0 ? `\n${body}\n` : '';
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings´StageCapabilities.js ‘µStageCapabilities.etsÜ B‘”    ‘” –”   ” ” ”$ $”% %”* 2Ü ” ”
+ ” ” ” ” ” ” ” ” ”"  ”$ "”% #”0 .”2 0”3 1–” ” ” 
+” ” ” –” 	” 	” 		” 	” 	”! 	”” 
+” 
+” 
+”+ 
+'’” ”2 ,’” ”9 3“” ”) #”* $‘” –”	 	” ” ” ” ” ”” ” ” ”$  ’” ”( "’” ”< 6“” ”. (”/ )‘” –”	 	” ” ” ” ”! !”” ” ” ”& "’” ”ÌR ÌL’” ”> 8’” ”ÌH ÌB“” ”< 6”= 7‘” –”	 	” ” ” ” ” ”” ” ” ”# ’” ”ÌD >’” ”6 0“” ”ÌD >”ÌE ?‘” –”	 	” ” ” ”" "”$ $”” ” ” ”) %’”  ”7  1’” !”ÌG !ÌA’” "”> "8’” #”ÌZ #ÌT“” $”ÌG $ÌA”ÌH $ÌB‘” %–”	 %	” %” %” %” %” %”” &” &” &”" &’” '”2 ',’” (”> (8“” )”3 )-”4 ).‘” *–”	 *	” *” *” *”# *#”% *%”” +” +” +”* +&’” ,”1 ,+’” -”1 -+“” .”4 ..”5 ./‘” /–”	 /	” /” /” /”  / ”" /"”” 0” 0” 0”' 0#’” 1”ÌD 1>’” 2”9 23“” 3”, 3&”- 3'‘” 4–”	 4	” 4” 4” 4” 4”  4 ”” 5” 5” 5”) 5%’” 6”, 6&“” 7” 7” 7‘” 8Ü ” 9” 9	” 9” 9” 9” 9” 9” 9” 9” 9”" 9 ”& 9$”* 9(”+ 9)”, 9*”- 9+”/ 9-”0 9.’”  : ” :ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ C‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ§Í>ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌ®Í>ÔrK”¤type¥start£end¤nameªIdentifierÌ·ÌË´stageCapabilityBlurbÂÂÂ‘KªIdentifierÌÌÌÑ¥stageÔrL”¤type¥start£end¤body®BlockStatementÌÓÍ>”ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÌÚÍ	‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÌàÍKªIdentifierÌàÌã£keyÔrO–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌæÍÔrP—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌæÍO®CallExpressionÌæÌúP°MemberExpressionÌæÌøÔrQ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÌçÌòKªIdentifierÌçÌì¥stage¢??ÔrR•¤type¥start£end¥value£raw§LiteralÌğÌò ¢''KªIdentifierÌôÌø¤trimÂÂÂKªIdentifierÌûÍ«toLowerCaseÂÂÂ¥constM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¤bodyR§LiteralÍÍ ¢''£letÔrS–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ#Í	Q°BinaryExpressionÍ'Í>KªIdentifierÍ'Í*£key£===R§LiteralÍ/Í>­device_select¯'device_select'L®BlockStatementÍ@Í‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÍKÍÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍKÍ¡=KªIdentifierÍKÍO¤bodyQ°BinaryExpressionÍRÍQ°BinaryExpressionÍRÍáQ°BinaryExpressionÍRÍ¤R§LiteralÍRÍnÙ)ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:
+Ù,'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:\n'¡+R§LiteralÍ~Í¤Ù=- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰
+Ù@'- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰\n'¡+R§LiteralÍ´ÍáÙF- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints
+ÙI'- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints\n'¡+R§LiteralÍñÍÙM- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿ÙO'- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿'S«IfStatementÍ!Í	Q°BinaryExpressionÍ%Í5KªIdentifierÍ%Í(£key£===R§LiteralÍ-Í5¦layout¨'layout'L®BlockStatementÍ7Í‘T³ExpressionStatementÍBÍıU´AssignmentExpressionÍBÍü¡=KªIdentifierÍBÍF¤bodyQ°BinaryExpressionÍIÍüQ°BinaryExpressionÍIÍÊQ°BinaryExpressionÍIÍŠR§LiteralÍIÍ^Ù"ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:
+Ù%'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:\n'¡+R§LiteralÍnÍŠÙ7- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰
+Ù:'- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰\n'¡+R§LiteralÍšÍÊÙ=- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel
+Ù@'- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel\n'¡+R§LiteralÍÚÍüÙ>- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/routeÙ@'- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/route'S«IfStatementÍÍ	Q°BinaryExpressionÍÍ%KªIdentifierÍÍ£key£===R§LiteralÍÍ%¨net_planª'net_plan'L®BlockStatementÍ'Í|‘T³ExpressionStatementÍ2ÍuU´AssignmentExpressionÍ2Ít¡=KªIdentifierÍ2Í6¤bodyQ°BinaryExpressionÍ9ÍtQ°BinaryExpressionÍ9Í4Q°BinaryExpressionÍ9ÍèQ°BinaryExpressionÍ9Í¦R§LiteralÍ9ÍPÙ$ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:
+Ù''ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:\n'¡+R§LiteralÍ`Í¦ÙI- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints
+ÙL'- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints\n'¡+R§LiteralÍ¶ÍèÙE- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰
+ÙH'- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰\n'¡+R§LiteralÍøÍ4ÙG- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰
+ÙJ'- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰\n'¡+R§LiteralÍDÍtÙX- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabelÙZ'- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabel'S«IfStatementÍ‡Í	Q°BinaryExpressionÍ‹ÍšKªIdentifierÍ‹Í£key£===R§LiteralÍ“Íš¥route§'route'L®BlockStatementÍœÍ”‘T³ExpressionStatementÍ§ÍU´AssignmentExpressionÍ§ÍŒ¡=KªIdentifierÍ§Í«¤bodyQ°BinaryExpressionÍ®ÍŒQ°BinaryExpressionÍ®ÍDQ°BinaryExpressionÍ®Í
+R§LiteralÍ®ÍÂÙ!ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:
+Ù$'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:\n'¡+R§LiteralÍÒÍ
+ÙM- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰
+ÙP'- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰\n'¡+R§LiteralÍÍDÙC- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review
+ÙF'- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review\n'¡+R§LiteralÍTÍŒÙ`- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰Ùb'- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰'S«IfStatementÍŸÍ	Q°BinaryExpressionÍ£Í¸KªIdentifierÍ£Í¦£key£===R§LiteralÍ«Í¸«self_review­'self_review'L®BlockStatementÍºÍ_‘T³ExpressionStatementÍÅÍXU´AssignmentExpressionÍÅÍW¡=KªIdentifierÍÅÍÉ¤bodyQ°BinaryExpressionÍÌÍWQ°BinaryExpressionÍÌÍQ°BinaryExpressionÍÌÍ®Q°BinaryExpressionÍÌÍlQ°BinaryExpressionÍÌÍ!R§LiteralÍÌÍæÙ'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:
+Ù*'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:\n'¡+R§LiteralÍöÍ!ÙN- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰
+ÙQ'- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰\n'¡+R§LiteralÍ1ÍlÙZ- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ
+Ù]'- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ\n'¡+R§LiteralÍ|Í®Ù]- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤
+Ù`'- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤\n'¡+R§LiteralÍ¾ÍÙl- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›Ùn'- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›'¡+R§LiteralÍÍWÙ_è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰Ùa'è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰'S«IfStatementÍjÍ	Q°BinaryExpressionÍnÍ|KªIdentifierÍnÍq£key£===R§LiteralÍvÍ|¤diag¦'diag'L®BlockStatementÍ~ÍZ‘T³ExpressionStatementÍ‰ÍSU´AssignmentExpressionÍ‰ÍR¡=KªIdentifierÍ‰Í¤bodyQ°BinaryExpressionÍÍRQ°BinaryExpressionÍÍQ°BinaryExpressionÍÍÙR§LiteralÍÍ£Ù ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:
+Ù#'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:\n'¡+R§LiteralÍ³ÍÙÙ?- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰
+ÙB'- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰\n'¡+R§LiteralÍéÍÙY- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•
+Ù\'- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•\n'¡+R§LiteralÍ+ÍRÙI- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kitÙK'- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kit'S«IfStatementÍeÍ	Q°BinaryExpressionÍiÍKªIdentifierÍiÍl£key£===R§LiteralÍqÍ¬modular_plan®'modular_plan'L®BlockStatementÍÍ	X‘T³ExpressionStatementÍŒÍ	QU´AssignmentExpressionÍŒÍ	P¡=KªIdentifierÍŒÍ¤bodyQ°BinaryExpressionÍ“Í	PQ°BinaryExpressionÍ“Í	Q°BinaryExpressionÍ“ÍãR§LiteralÍ“Í®Ù(ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:
+Ù+'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:\n'¡+R§LiteralÍ¾ÍãÙ0- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints
+Ù3'- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints\n'¡+R§LiteralÍóÍ	Ù<- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan
+Ù?'- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan\n'¡+R§LiteralÍ	(Í	PÙD- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GNDÙF'- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GND'S«IfStatementÍ	cÍ	Q°BinaryExpressionÍ	gÍ	zKªIdentifierÍ	gÍ	j£key£===R§LiteralÍ	oÍ	z©edit_plan«'edit_plan'L®BlockStatementÍ	|Í
+c‘T³ExpressionStatementÍ	‡Í
+\U´AssignmentExpressionÍ	‡Í
+[¡=KªIdentifierÍ	‡Í	‹¤bodyQ°BinaryExpressionÍ	Í
+[Q°BinaryExpressionÍ	Í
++Q°BinaryExpressionÍ	Í	îR§LiteralÍ	Í	¦Ù%ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” edit_planã€‘:
+Ù('ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” edit_planã€‘:\n'¡+R§LiteralÍ	¶Í	îÙG- è¾“å‡ºï¼šå¢é‡ç¼–è¾‘ JSONï¼ˆaddRequireList/removeRefs/moves/netsï¼‰
+ÙJ'- è¾“å‡ºï¼šå¢é‡ç¼–è¾‘ JSONï¼ˆaddRequireList/removeRefs/moves/netsï¼‰\n'¡+R§LiteralÍ	şÍ
++ÙL- ä¸å¯ç”¨ï¼šself_review fixAction æšä¸¾ï¼ˆç”¨ç¼–è¾‘å­—æ®µè¡¨è¾¾å˜æ›´ï¼‰
+ÙO'- ä¸å¯ç”¨ï¼šself_review fixAction æšä¸¾ï¼ˆç”¨ç¼–è¾‘å­—æ®µè¡¨è¾¾å˜æ›´ï¼‰\n'¡+R§LiteralÍ
+;Í
+[Ù@- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢ÙB'- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢'S«IfStatementÍ
+nÍ	Q°BinaryExpressionÍ
+rÍ
+ƒKªIdentifierÍ
+rÍ
+u£key£===R§LiteralÍ
+zÍ
+ƒ§gen_sch©'gen_sch'L®BlockStatementÍ
+…Í	‘T³ExpressionStatementÍ
+ÍU´AssignmentExpressionÍ
+Í¡=KªIdentifierÍ
+Í
+”¤bodyQ°BinaryExpressionÍ
+—ÍQ°BinaryExpressionÍ
+—Í
+áR§LiteralÍ
+—Í
+±Ù/ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” gen_schï¼ˆé—ç•™ï¼‰ã€‘:
+Ù2'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” gen_schï¼ˆé—ç•™ï¼‰ã€‘:\n'¡+R§LiteralÍ
+ÁÍ
+áÙ5- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline
+Ù8'- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n'¡+R§LiteralÍ
+ñÍÙ&- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£Ù('- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£'ÀÔrV”¤type¥start£end¨argument¯ReturnStatementÍÍ;SµConditionalExpressionÍÍ:Q°BinaryExpressionÍÍ%P°MemberExpressionÍÍ!KªIdentifierÍÍ¤bodyKªIdentifierÍÍ!¦lengthÂÂ¡>R§LiteralÍ$Í% ¡0ÔrW•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ(Í5‘KªIdentifierÍ-Í1¤body’ÔrX•¤type¥start£end¥value¤tail¯TemplateElementÍ)Í+ÔrY’£raw¦cooked¢\n¡
+ÂX¯TemplateElementÍ2Í4Y¢\n¡
+ÃR§LiteralÍ8Í: ¢''À

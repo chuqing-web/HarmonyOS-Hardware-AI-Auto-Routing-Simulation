@@ -1,6 +1,14 @@
 /**
- * Splash — 极简中心式霓虹线框双曲面启动页
- * 纯黑底 | 居中双曲面（景深+光晕+呼吸）| 下方品牌/状态 | 克制入场/退场
+ * Splash — 霓虹线框双曲面启动页
+ *
+ * 间歇空白根因（已修）：
+ * 1. 父级 @State（opacity / progress / status）频繁刷新 → Canvas 缓冲被清且表面偶发失效
+ * 2. aboutToAppear 即开计时，Canvas 尺寸/onReady 未就绪时整段空画，冷启动更明显
+ *
+ * 稳定策略：
+ * - 整页视觉（双曲面 + 品牌 + 进度 + 状态）均在 Canvas 自绘，页面无 @State
+ * - 仅在 onReady 且宽高有效后启动动画时钟
+ * - 布局收敛期补几次强制重绘（对齐 SchematicCanvas 启动策略）
  */
 import { BusinessError } from '@kit.BasicServicesKit';
 import { APP_VERSION_NAME } from 'common';
@@ -18,7 +26,7 @@ interface MeshEdge {
 }
 
 interface LoadingStage {
-  threshold: number;
+  atMs: number;
   text: string;
 }
 
@@ -31,18 +39,20 @@ interface ProjPoint {
 @Entry
 @Component
 struct SplashPage {
-  @State pageOpacity: number = 1;
-  @State titleOpacity: number = 0;
-  @State subOpacity: number = 0;
-  @State statusOpacity: number = 0;
-  @State statusText: string = 'Initializing simulation kernel...';
   private meshAngle: number = 0;
   private meshScale: number = 0.88;
   private meshBreath: number = 0;
+  private meshDrawAlpha: number = 1;
+  private brandAlpha: number = 0;
   private meshVertices: Vec3[] = [];
   private meshEdges: MeshEdge[] = [];
+  private projBuf: ProjPoint[] = [];
+  private sortOrder: number[] = [];
+  private edgeDepthBuf: number[] = [];
+
   private animTimer: number = -1;
   private exitTimer: number = -1;
+  private settleTimers: number[] = [];
   private canvasSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private canvasCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.canvasSettings);
   private canvasW: number = 0;
@@ -50,60 +60,88 @@ struct SplashPage {
   private startTime: number = 0;
   private entering: boolean = true;
   private exiting: boolean = false;
+  private navigated: boolean = false;
+  private surfaceReady: boolean = false;
+  private animStarted: boolean = false;
+  private frameCount: number = 0;
+  private statusText: string = 'Initializing simulation kernel...';
+  private progress: number = 0;
+  private lastStageIdx: number = 0;
+
+  private readonly TOTAL_MS: number = 2800;
+  private readonly EXIT_MS: number = 520;
 
   private readonly stages: LoadingStage[] = [
-    { threshold: 0, text: 'Initializing simulation kernel...' },
-    { threshold: 25, text: 'Loading component library...' },
-    { threshold: 50, text: 'Configuring AI routing engine...' },
-    { threshold: 75, text: 'Preparing schematic workspace...' },
-    { threshold: 95, text: 'Ready' }
+    { atMs: 0, text: 'Initializing simulation kernel...' },
+    { atMs: 550, text: 'Loading component library...' },
+    { atMs: 1100, text: 'Configuring AI routing engine...' },
+    { atMs: 1750, text: 'Preparing schematic workspace...' },
+    { atMs: 2500, text: 'Ready' }
   ];
 
   aboutToAppear(): void {
-    this.startTime = Date.now();
     this.generateMesh();
-    this.startEntrance();
-    this.startAnimation();
+    // 布局可能晚于 onReady：与主画布同样补几次强制绘制 / 启动
+    this.queueSettle(80);
+    this.queueSettle(220);
+    this.queueSettle(480);
   }
 
   aboutToDisappear(): void {
+    this.clearTimers();
+  }
+
+  private queueSettle(delayMs: number): void {
+    this.settleTimers.push(setTimeout(() => {
+      this.tryStartAnimation();
+      this.drawFrame(true);
+    }, delayMs));
+  }
+
+  private clearTimers(): void {
     if (this.animTimer >= 0) {
       clearInterval(this.animTimer);
       this.animTimer = -1;
     }
     if (this.exitTimer >= 0) {
-      clearTimeout(this.exitTimer);
+      clearInterval(this.exitTimer);
       this.exitTimer = -1;
     }
+    for (let i = 0; i < this.settleTimers.length; i++) {
+      clearTimeout(this.settleTimers[i]);
+    }
+    this.settleTimers = [];
   }
 
-  /** 字标分阶淡入：标题 → 副标题 → 状态 */
-  private startEntrance(): void {
-    try {
-      const ui = this.getUIContext();
-      ui?.animateTo({ duration: 700, curve: Curve.EaseOut, delay: 120 }, () => {
-        this.titleOpacity = 1;
-      });
-      ui?.animateTo({ duration: 650, curve: Curve.EaseOut, delay: 320 }, () => {
-        this.subOpacity = 1;
-      });
-      ui?.animateTo({ duration: 600, curve: Curve.EaseOut, delay: 480 }, () => {
-        this.statusOpacity = 1;
-      });
-    } catch (_e) {
-      this.titleOpacity = 1;
-      this.subOpacity = 1;
-      this.statusOpacity = 1;
+  private markSurface(w: number, h: number): void {
+    if (w <= 1 || h <= 1) {
+      return;
+    }
+    const sizeChanged = Math.abs(w - this.canvasW) > 0.5 || Math.abs(h - this.canvasH) > 0.5;
+    this.canvasW = w;
+    this.canvasH = h;
+    this.surfaceReady = true;
+    this.tryStartAnimation();
+    if (sizeChanged || !this.animStarted) {
+      this.drawFrame(true);
     }
   }
 
-  /**
-   * Generate a twisted hyperboloid wireframe mesh with elliptical center cutout.
-   * Parametric surface: x² + y² - z² = 1 with twist along z-axis.
-   */
+  private tryStartAnimation(): void {
+    if (this.animStarted || this.navigated) {
+      return;
+    }
+    if (!this.surfaceReady || this.canvasW <= 1 || this.canvasH <= 1) {
+      return;
+    }
+    this.animStarted = true;
+    this.startTime = Date.now();
+    this.startAnimation();
+  }
+
   private generateMesh(): void {
-    const zSegs = 28;
-    const tSegs = 44;
+    const zSegs = 22;
+    const tSegs = 32;
     const height = 2.2;
     const twist = 1.6;
     const a = 1.0;
@@ -181,67 +219,85 @@ struct SplashPage {
 
     this.meshVertices = vertices;
     this.meshEdges = edges;
+    this.projBuf = [];
+    for (let i = 0; i < vertices.length; i++) {
+      this.projBuf.push({ sx: 0, sy: 0, depth: 0 });
+    }
+    this.sortOrder = [];
+    this.edgeDepthBuf = [];
+    for (let e = 0; e < edges.length; e++) {
+      this.sortOrder.push(e);
+      this.edgeDepthBuf.push(0);
+    }
   }
 
   private startAnimation(): void {
-    const fps = 30;
+    const frameMs = 33;
     this.animTimer = setInterval(() => {
       this.meshAngle += 0.012;
       this.meshBreath += 0.045;
+      this.frameCount++;
 
-      // 入场：0.88 → 1.0（ease-out）
       if (this.entering && !this.exiting) {
         const enterT = Math.min((Date.now() - this.startTime) / 900, 1);
         const ease = 1 - Math.pow(1 - enterT, 2.4);
         this.meshScale = 0.88 + 0.12 * ease;
+        // 品牌略晚于网格出现
+        this.brandAlpha = Math.max(0, Math.min(1, (enterT - 0.12) / 0.55));
         if (enterT >= 1) {
           this.entering = false;
+          this.brandAlpha = 1;
         }
       }
 
-      this.drawFrame();
+      this.drawFrame((this.frameCount % 2) === 0);
 
       if (this.exiting) {
         return;
       }
 
       const elapsed = Date.now() - this.startTime;
-      const totalDuration = 3200;
-      const ratio = Math.min(elapsed / totalDuration, 1);
-      const pct = Math.floor(ratio * 100);
+      this.progress = Math.min(100, Math.floor(elapsed / this.TOTAL_MS * 100));
+
+      let stageIdx = 0;
       for (let i = this.stages.length - 1; i >= 0; i--) {
-        if (pct >= this.stages[i].threshold) {
-          this.statusText = this.stages[i].text;
+        if (elapsed >= this.stages[i].atMs) {
+          stageIdx = i;
           break;
         }
       }
-
-      if (ratio >= 1) {
-        this.finish();
+      if (stageIdx !== this.lastStageIdx) {
+        this.lastStageIdx = stageIdx;
+        this.statusText = this.stages[stageIdx].text;
       }
-    }, 1000 / fps);
+
+      if (elapsed >= this.TOTAL_MS) {
+        this.beginExit();
+      }
+    }, frameMs);
   }
 
-  private drawFrame(): void {
+  private drawFrame(resort: boolean = true): void {
     const ctx = this.canvasCtx;
     const w = this.canvasW;
     const h = this.canvasH;
-    if (w <= 0 || h <= 0) {
+    if (!this.surfaceReady || w <= 1 || h <= 1) {
       return;
     }
 
-    ctx.clearRect(0, 0, w, h);
+    // 先铺黑底，避免透明缓冲偶发露出系统层
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
 
     const breath = 1 + 0.02 * Math.sin(this.meshBreath);
     const cosA = Math.cos(this.meshAngle);
     const sinA = Math.sin(this.meshAngle);
     const camDist = 5.5;
-    // 动态区：水平居中、上半屏；与下方静态文案分区，避免叠在一起
     const screenCX = w * 0.50;
     const screenCY = h * 0.30;
     const projScale = Math.min(w, h) * 0.18 * this.meshScale * breath;
+    const globalA = this.meshDrawAlpha;
 
-    const proj: ProjPoint[] = [];
     let minDepth = 1e9;
     let maxDepth = -1e9;
 
@@ -258,25 +314,23 @@ struct SplashPage {
         maxDepth = depth;
       }
       const invZ = projScale / depth;
-      const pp: ProjPoint = {
-        sx: rx * invZ + screenCX,
-        sy: -ry * invZ + screenCY,
-        depth: depth
-      };
-      proj.push(pp);
+      const pp = this.projBuf[i];
+      pp.sx = rx * invZ + screenCX;
+      pp.sy = -ry * invZ + screenCY;
+      pp.depth = depth;
     }
 
     const depthSpan = Math.max(0.001, maxDepth - minDepth);
 
-    // 近→远排序，景深叠绘更干净
-    const sortedEdges = this.meshEdges.slice();
-    sortedEdges.sort((ea: MeshEdge, eb: MeshEdge) => {
-      const dA = (proj[ea.a].depth + proj[ea.b].depth) * 0.5;
-      const dB = (proj[eb.a].depth + proj[eb.b].depth) * 0.5;
-      return dB - dA;
-    });
+    if (resort) {
+      for (let e = 0; e < this.meshEdges.length; e++) {
+        const edge = this.meshEdges[e];
+        this.edgeDepthBuf[e] = (this.projBuf[edge.a].depth + this.projBuf[edge.b].depth) * 0.5;
+      }
+      const depths = this.edgeDepthBuf;
+      this.sortOrder.sort((ia: number, ib: number) => depths[ib] - depths[ia]);
+    }
 
-    // 三层霓虹（克制）：外晕淡、中晕轻、内芯不过曝
     for (let pass = 0; pass < 3; pass++) {
       let baseW: number;
       let baseA: number;
@@ -291,24 +345,21 @@ struct SplashPage {
         baseA = 0.52;
       }
 
-      for (let e = 0; e < sortedEdges.length; e++) {
-        const edge = sortedEdges[e];
-        const p1 = proj[edge.a];
-        const p2 = proj[edge.b];
+      for (let si = 0; si < this.sortOrder.length; si++) {
+        const edge = this.meshEdges[this.sortOrder[si]];
+        const p1 = this.projBuf[edge.a];
+        const p2 = this.projBuf[edge.b];
         if (p1 === undefined || p2 === undefined) {
           continue;
         }
 
         const edgeDepth = (p1.depth + p2.depth) * 0.5;
-        // 近亮远淡（0 近 → 1 远），对比放缓避免全屏发白
         const far = (edgeDepth - minDepth) / depthSpan;
         const depthFade = 1.0 - far * 0.55;
         const widthBoost = 1.0 + (1.0 - far) * 0.18;
-
         const zNorm = (edge.avgZ + 2.2) / 4.4;
-        const color = this.edgeColor(zNorm, baseA * depthFade);
 
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = this.edgeColor(zNorm, baseA * depthFade * globalA);
         ctx.lineWidth = baseW * widthBoost;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -317,6 +368,45 @@ struct SplashPage {
         ctx.stroke();
       }
     }
+
+    this.drawBrandAndHud(ctx, w, h);
+  }
+
+  private drawBrandAndHud(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const fade = Math.max(0, Math.min(1, this.brandAlpha * this.meshDrawAlpha));
+    if (fade < 0.02) {
+      return;
+    }
+
+    const cx = w * 0.5;
+    const titleY = h * 0.62;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = `rgba(255,255,255,${fade.toFixed(3)})`;
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText('ElecDraw', cx, titleY);
+
+    ctx.fillStyle = `rgba(255,255,255,${(0.42 * fade).toFixed(3)})`;
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Hardware Schematic Simulator', cx, titleY + 28);
+
+    const barW = Math.min(w * 0.38, 420);
+    const barX = cx - barW * 0.5;
+    const barY = titleY + 58;
+    const barH = 2;
+    ctx.fillStyle = `rgba(255,255,255,${(0.08 * fade).toFixed(3)})`;
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = `rgba(120,210,255,${(0.72 * fade).toFixed(3)})`;
+    ctx.fillRect(barX, barY, barW * Math.max(0.04, this.progress / 100), barH);
+
+    ctx.fillStyle = `rgba(255,255,255,${(0.28 * fade).toFixed(3)})`;
+    ctx.font = '12px sans-serif';
+    ctx.fillText(this.statusText, cx, barY + 18);
+
+    ctx.fillStyle = `rgba(255,255,255,${(0.18 * fade).toFixed(3)})`;
+    ctx.font = '10px sans-serif';
+    ctx.fillText(`v${APP_VERSION_NAME}`, cx, barY + 38);
   }
 
   private edgeColor(t: number, alpha: number): string {
@@ -334,12 +424,12 @@ struct SplashPage {
       g = Math.round(238 - s * (238 - 170));
       b = Math.round(s * 170);
     }
-    const a = Math.max(0, Math.min(1, alpha));
-    return `rgba(${r},${g},${b},${a.toFixed(3)})`;
+    const aa = Math.max(0, Math.min(1, alpha));
+    return `rgba(${r},${g},${b},${aa.toFixed(3)})`;
   }
 
-  private finish(): void {
-    if (this.exiting) {
+  private beginExit(): void {
+    if (this.exiting || this.navigated) {
       return;
     }
     this.exiting = true;
@@ -348,42 +438,54 @@ struct SplashPage {
       this.animTimer = -1;
     }
 
-    try {
-      this.getUIContext()?.animateTo({ duration: 480, curve: Curve.EaseIn }, () => {
-        this.titleOpacity = 0;
-        this.subOpacity = 0;
-        this.statusOpacity = 0;
-      });
-    } catch (_e) {
-      this.titleOpacity = 0;
-      this.subOpacity = 0;
-      this.statusOpacity = 0;
-    }
-
-    // 克制退场：轻微放大 + 整页淡出（不做炸开）
     const expandStart = Date.now();
     const baseScale = this.meshScale;
     this.exitTimer = setInterval(() => {
       const elapsed = Date.now() - expandStart;
-      const progress = Math.min(elapsed / 550, 1);
-      const easeIn = progress * progress;
+      const t = Math.min(elapsed / this.EXIT_MS, 1);
+      const easeIn = t * t;
       this.meshScale = baseScale + 0.12 * easeIn;
-      this.pageOpacity = 1 - progress;
-      this.drawFrame();
+      this.meshDrawAlpha = 1 - t;
+      this.brandAlpha = Math.max(0, 1 - t * 1.15);
+      this.drawFrame(false);
 
-      if (progress >= 1) {
+      if (t >= 1) {
         clearInterval(this.exitTimer);
         this.exitTimer = -1;
-        this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
-          .catch((_err: BusinessError) => {
-            // Fallback if UIContext router fails mid-transition
-          });
+        this.navigateToIndex();
       }
     }, 30);
   }
 
+  private navigateToIndex(): void {
+    if (this.navigated) {
+      return;
+    }
+    this.navigated = true;
+    this.clearTimers();
+    try {
+      this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
+        .catch((_err: BusinessError) => {
+          this.navigated = false;
+          setTimeout(() => {
+            if (!this.navigated) {
+              this.navigated = true;
+              try {
+                this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' });
+              } catch (_e2) {
+                // ignore
+              }
+            }
+          }, 160);
+        });
+    } catch (_e) {
+      this.navigated = false;
+    }
+  }
+
   build() {
     Stack() {
+      // 系统层兜底黑底（Canvas 未就绪时也不闪白）
       Column()
         .width('100%')
         .height('100%')
@@ -392,71 +494,18 @@ struct SplashPage {
       Canvas(this.canvasCtx)
         .width('100%')
         .height('100%')
+        .hitTestBehavior(HitTestMode.None)
         .onReady(() => {
-          this.drawFrame();
+          this.surfaceReady = true;
+          this.tryStartAnimation();
+          this.drawFrame(true);
         })
         .onAreaChange((_old, area) => {
-          const nw = Number(area.width);
-          const nh = Number(area.height);
-          if (nw > 1 && nh > 1) {
-            this.canvasW = nw;
-            this.canvasH = nh;
-            this.drawFrame();
-          }
+          this.markSurface(Number(area.width), Number(area.height));
         })
-        .hitTestBehavior(HitTestMode.None)
-
-      // 静态文案固定下半区；上方留给动态曲面，互不叠压
-      Column() {
-        Blank().layoutWeight(1.75)
-
-        Column({ space: 0 }) {
-          Text('ElecDraw')
-            .fontSize(34)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
-            .fontFamily('sans-serif')
-            .letterSpacing(5)
-            .opacity(this.titleOpacity)
-
-          Blank().height(10)
-
-          Text('Hardware Schematic Simulator')
-            .fontSize(13)
-            .fontColor('rgba(255,255,255,0.42)')
-            .fontFamily('sans-serif')
-            .letterSpacing(2.5)
-            .opacity(this.subOpacity)
-
-          Blank().height(24)
-
-          Text(this.statusText)
-            .fontSize(12)
-            .fontColor('rgba(255,255,255,0.28)')
-            .fontFamily('sans-serif')
-            .opacity(this.statusOpacity)
-
-          Blank().height(14)
-
-          Text(`v${APP_VERSION_NAME}`)
-            .fontSize(10)
-            .fontColor('rgba(255,255,255,0.20)')
-            .fontFamily('sans-serif')
-            .letterSpacing(1)
-            .opacity(this.statusOpacity * 0.9)
-        }
-        .alignItems(HorizontalAlign.Center)
-        .width('100%')
-
-        Blank().layoutWeight(0.55)
-      }
-      .width('100%')
-      .height('100%')
-      .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
     .height('100%')
-    .opacity(Math.max(0, this.pageOpacity))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }

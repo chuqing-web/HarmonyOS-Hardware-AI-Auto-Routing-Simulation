@@ -203,7 +203,11 @@ struct Index {
       }
     };
     this.hookStartupWindowResize();
-    void maximizeAppWindow(ctx);
+    // Splash 阶段已最大化；此处再确认一次（幂等），并拉长启动期 refit 窗口
+    void maximizeAppWindow(ctx).then(() => {
+      this.startupRefitDeadline = Date.now() + 5000;
+      this.deferCanvasFit();
+    });
 
     // 先读 recovery/session（仍保留上次 closedCleanly），再标记本次运行中
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
@@ -478,15 +482,27 @@ struct Index {
   private startupRefitDeadline: number = 0;
   private windowResizeHooked: boolean = false;
 
-  /** Wait until canvas reports real size, then fit — avoids 800×600 fallback mis-centering. */
+  /**
+   * Wait until canvas reports real size, then fit.
+   * applyFitRect 在尺寸未就绪时会直接 return，故需重试；稳定后再补一次纠正半窗缩放。
+   */
   private deferCanvasFit(attempt: number = 0): void {
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
     if (editor.isCanvasViewReady()) {
       editor.fitAllInView();
       this.bumpCanvas();
+      // 布局可能仍在收敛：短延迟再 fit 一次，消除偶发“局部软放大”
+      if (attempt === 0 || attempt === 4) {
+        setTimeout(() => {
+          if (editor.isCanvasViewReady()) {
+            editor.fitAllInView();
+            this.bumpCanvas();
+          }
+        }, attempt === 0 ? 120 : 280);
+      }
       return;
     }
-    if (attempt < 30) {
+    if (attempt < 50) {
       setTimeout(() => this.deferCanvasFit(attempt + 1), 50);
     }
   }
@@ -496,7 +512,7 @@ struct Index {
       return;
     }
     this.windowResizeHooked = true;
-    this.startupRefitDeadline = Date.now() + 4000;
+    this.startupRefitDeadline = Date.now() + 6000;
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     window.getLastWindow(ctx).then((win) => {
       win.on('windowSizeChange', () => {
@@ -509,9 +525,8 @@ struct Index {
   }
 
   onPageShow(): void {
-    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    void maximizeAppWindow(ctx);
     this.hookStartupWindowResize();
+    this.startupRefitDeadline = Date.now() + 6000;
     this.deferCanvasFit();
   }
 

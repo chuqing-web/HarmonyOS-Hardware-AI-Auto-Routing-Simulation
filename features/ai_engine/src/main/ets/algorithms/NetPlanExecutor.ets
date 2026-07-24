@@ -762,6 +762,496 @@ export class NetPlanExecutor {
   }
 
   /**
+   * 自激滞回+积分：补全比较器 IN-→三角网、积分器 IN+→GND；丢弃残余 joinWired 单脚网。
+   * 避免 LLM 为 COMP_INV/INT_NON_INV 建「只有 1 连接」网导致 exec fatal ABORT。
+   */
+  static healOpAmpFloatingInputsInPlan(plan: NetPlanResult, topo: SchTopology): number {
+    if (!plan.nets || plan.nets.length === 0) {
+      return 0;
+    }
+    let fixes = 0;
+    const isOpAmpLib = (lib: string): boolean => {
+      const u = (lib ?? '').toUpperCase();
+      return u === 'UA741' || u.indexOf('LM358') >= 0 || u.indexOf('TL08') >= 0 ||
+        u.indexOf('LM324') >= 0;
+    };
+    const libOfRef = (ref: string): string => {
+      const want = (ref ?? '').toUpperCase();
+      if (want.length === 0) {
+        return '';
+      }
+      for (let i = 0; i < topo.deviceList.length; i++) {
+        const d = topo.deviceList[i];
+        if ((d.refName ?? '').toUpperCase() === want) {
+          return (d.libDevId ?? '').toUpperCase();
+        }
+      }
+      return '';
+    };
+    const isResRef = (ref: string): boolean => {
+      const r = (ref ?? '').toUpperCase();
+      if (/^R\d/.test(r)) {
+        return true;
+      }
+      const lib = libOfRef(ref);
+      return lib.indexOf('R_') === 0 || lib.indexOf('RES') >= 0 || lib === 'R';
+    };
+    const isCapRef = (ref: string): boolean => {
+      const r = (ref ?? '').toUpperCase();
+      if (/^C\d/.test(r)) {
+        return true;
+      }
+      const lib = libOfRef(ref);
+      return lib.indexOf('C_') === 0 || lib.indexOf('CAP') >= 0 || lib === 'C';
+    };
+    const normPin = (p: string): string => (p ?? '').toUpperCase().replace(/\s/g, '');
+    const isInnPin = (p: string): boolean => {
+      const u = normPin(p);
+      return u === 'IN-' || u === 'IN-1' || u === 'IN-2';
+    };
+    const isInpPin = (p: string): boolean => {
+      const u = normPin(p);
+      return u === 'IN+' || u === 'IN+1' || u === 'IN+2';
+    };
+    const isOutPin = (p: string): boolean => {
+      const u = normPin(p);
+      return u === 'OUT' || u === 'OUT1' || u === 'OUT2';
+    };
+
+    let gndRef = '';
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const d = topo.deviceList[i];
+      const lib = (d.libDevId ?? '').toUpperCase();
+      const ref = d.refName ?? '';
+      if (lib === 'GND' || ref.toUpperCase() === 'GND') {
+        gndRef = ref;
+        break;
+      }
+    }
+
+    const findTriangleNetIdx = (): number => {
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const name = (plan.nets[ni].name ?? '').toUpperCase();
+        if ((name.indexOf('TRIANGLE') >= 0 || name.indexOf('TRI_') >= 0 ||
+          name.indexOf('RAMP') >= 0) &&
+          (plan.nets[ni].connections?.length ?? 0) >= 2) {
+          return ni;
+        }
+      }
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const conns = plan.nets[ni].connections ?? [];
+        if (conns.length < 2) {
+          continue;
+        }
+        let hasOpOut = false;
+        let hasCap = false;
+        for (let ci = 0; ci < conns.length; ci++) {
+          const c = conns[ci];
+          if (isOpAmpLib(libOfRef(c.compRef)) && isOutPin(c.pinId)) {
+            hasOpOut = true;
+          }
+          if (isCapRef(c.compRef)) {
+            hasCap = true;
+          }
+        }
+        if (hasOpOut && hasCap) {
+          return ni;
+        }
+      }
+      return -1;
+    };
+
+    const findGndNetIdx = (): number => {
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const n = plan.nets[ni];
+        if ((n.type ?? '') === 'ground') {
+          return ni;
+        }
+        const name = (n.name ?? '').toUpperCase();
+        if (name === 'GND' || name.indexOf('GND') === 0) {
+          return ni;
+        }
+      }
+      return -1;
+    };
+
+    const netSize = (ni: number): number => plan.nets[ni]?.connections?.length ?? 0;
+
+    const pinNetIndices = (ref: string, pin: string): number[] => {
+      const wantRef = ref.toUpperCase();
+      const wantPin = normPin(pin);
+      const out: number[] = [];
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const conns = plan.nets[ni].connections ?? [];
+        for (let ci = 0; ci < conns.length; ci++) {
+          if ((conns[ci].compRef ?? '').toUpperCase() === wantRef &&
+            normPin(conns[ci].pinId) === wantPin) {
+            out.push(ni);
+            break;
+          }
+        }
+      }
+      return out;
+    };
+
+    const removeSingletonPinNets = (ref: string, pinPred: (p: string) => boolean,
+      keepNi: number): number => {
+      let removed = 0;
+      for (let ni = plan.nets.length - 1; ni >= 0; ni--) {
+        if (ni === keepNi) {
+          continue;
+        }
+        const conns = plan.nets[ni].connections ?? [];
+        if (conns.length === 1 &&
+          (conns[0].compRef ?? '').toUpperCase() === ref.toUpperCase() &&
+          pinPred(conns[0].pinId)) {
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_PIPE] heal_opamp drop_singleton net=${plan.nets[ni].name}` +
+            ` ${ref}.${conns[0].pinId}`);
+          plan.nets.splice(ni, 1);
+          removed++;
+        }
+      }
+      return removed;
+    };
+
+    for (let di = 0; di < topo.deviceList.length; di++) {
+      const d = topo.deviceList[di];
+      const lib = (d.libDevId ?? '').toUpperCase();
+      if (!isOpAmpLib(lib)) {
+        continue;
+      }
+      const ref = d.refName ?? '';
+      if (ref.length === 0) {
+        continue;
+      }
+      const channels: string[] = lib === 'UA741' ? [''] : ['1', '2', ''];
+      for (let chi = 0; chi < channels.length; chi++) {
+        const suf = channels[chi];
+        const innPin = suf.length > 0 ? `IN-${suf}` : 'IN-';
+        const inpPin = suf.length > 0 ? `IN+${suf}` : 'IN+';
+
+        const innIdxs = pinNetIndices(ref, innPin);
+        const inpIdxs = pinNetIndices(ref, inpPin);
+
+        const innIsIntegrator = innIdxs.some(ni => {
+          if (netSize(ni) < 2) {
+            return false;
+          }
+          const conns = plan.nets[ni].connections;
+          return conns.some(c => isResRef(c.compRef) || isCapRef(c.compRef));
+        });
+        const inpIsHyst = inpIdxs.some(ni => {
+          if (netSize(ni) < 2) {
+            return false;
+          }
+          const conns = plan.nets[ni].connections;
+          return conns.some(c => isResRef(c.compRef));
+        });
+
+        // 积分器：IN+ 须进 GND（禁止 INT_NON_INV 单脚网）
+        if (innIsIntegrator && gndRef.length > 0) {
+          const needsGnd = inpIdxs.length === 0 || inpIdxs.every(ni => netSize(ni) < 2);
+          if (needsGnd) {
+            let gndNi = findGndNetIdx();
+            if (gndNi < 0) {
+              const gndConn: NetPlanConnection = {
+                compRef: gndRef,
+                pinId: 'GND',
+                pinName: 'GND',
+                mode: 'joinByLabel'
+              };
+              const gndEntry: NetPlanEntry = {
+                name: 'GND',
+                type: 'ground',
+                connections: [gndConn]
+              };
+              plan.nets.push(gndEntry);
+              gndNi = plan.nets.length - 1;
+              fixes++;
+            }
+            const gndConns = plan.nets[gndNi].connections;
+            const already = gndConns.some(c =>
+              (c.compRef ?? '').toUpperCase() === ref.toUpperCase() &&
+              normPin(c.pinId) === normPin(inpPin));
+            if (!already) {
+              const add: NetPlanConnection = {
+                compRef: ref,
+                pinId: inpPin,
+                pinName: inpPin,
+                mode: 'joinByLabel'
+              };
+              gndConns.push(add);
+              fixes++;
+              Logger.info(INSTR_TRACE_TAG,
+                `[AI_PIPE] heal_opamp ${ref}.${inpPin}→GND (integrator non-inv)`);
+            }
+            fixes += removeSingletonPinNets(ref, isInpPin, gndNi);
+          }
+        }
+
+        // 滞回比较器：IN- 须并入三角波网（禁止 COMP_INV 单脚网）
+        if (inpIsHyst) {
+          const innSingleton = innIdxs.length === 0 || innIdxs.every(ni => netSize(ni) < 2);
+          if (innSingleton) {
+            const triNi = findTriangleNetIdx();
+            if (triNi >= 0) {
+              const triConns = plan.nets[triNi].connections;
+              const already = triConns.some(c =>
+                (c.compRef ?? '').toUpperCase() === ref.toUpperCase() && isInnPin(c.pinId));
+              if (!already) {
+                let pinId = innPin;
+                let pinName = innPin;
+                for (let ii = 0; ii < innIdxs.length; ii++) {
+                  const c0 = plan.nets[innIdxs[ii]].connections[0];
+                  if (c0) {
+                    pinId = c0.pinId;
+                    pinName = (c0.pinName ?? '').length > 0 ? c0.pinName : c0.pinId;
+                  }
+                }
+                const add: NetPlanConnection = {
+                  compRef: ref,
+                  pinId,
+                  pinName,
+                  mode: 'joinByLabel'
+                };
+                triConns.push(add);
+                fixes++;
+                Logger.info(INSTR_TRACE_TAG,
+                  `[AI_PIPE] heal_opamp ${ref}.${pinId}→${plan.nets[triNi].name}` +
+                  ` (comparator inv←triangle)`);
+              }
+              fixes += removeSingletonPinNets(ref, isInnPin, triNi);
+            }
+          }
+        }
+      }
+    }
+
+    fixes += NetPlanExecutor.healIntegratorFeedbackCapInPlan(plan, topo);
+    fixes += NetPlanExecutor.dropOrphanSingletonNets(plan);
+    return fixes;
+  }
+
+  /**
+   * 积分器反馈电容：C 必须跨 OUT↔IN-（两网），禁止落成 INT_FB 单脚孤儿后被 drop。
+   * sanitize 去重后常见：INT_FB 只剩 C.1 → 此处把 C 两端分别挂到积分 OUT / IN- 网。
+   */
+  static healIntegratorFeedbackCapInPlan(plan: NetPlanResult, topo: SchTopology): number {
+    if (!plan.nets || plan.nets.length === 0) {
+      return 0;
+    }
+    let fixes = 0;
+    const isOpAmpLib = (lib: string): boolean => {
+      const u = (lib ?? '').toUpperCase();
+      return u === 'UA741' || u.indexOf('LM358') >= 0 || u.indexOf('TL08') >= 0 ||
+        u.indexOf('LM324') >= 0;
+    };
+    const libOfRef = (ref: string): string => {
+      const want = (ref ?? '').toUpperCase();
+      for (let i = 0; i < topo.deviceList.length; i++) {
+        const d = topo.deviceList[i];
+        if ((d.refName ?? '').toUpperCase() === want) {
+          return (d.libDevId ?? '').toUpperCase();
+        }
+      }
+      return '';
+    };
+    const isCapRef = (ref: string): boolean => {
+      const r = (ref ?? '').toUpperCase();
+      if (/^C\d/.test(r)) {
+        return true;
+      }
+      const lib = libOfRef(ref);
+      return lib.indexOf('C_') === 0 || lib.indexOf('CAP') >= 0 || lib === 'C';
+    };
+    const isResRef = (ref: string): boolean => {
+      const r = (ref ?? '').toUpperCase();
+      if (/^R\d/.test(r)) {
+        return true;
+      }
+      const lib = libOfRef(ref);
+      return lib.indexOf('R_') === 0 || lib.indexOf('RES') >= 0 || lib === 'R';
+    };
+    const normPin = (p: string): string => (p ?? '').toUpperCase().replace(/\s/g, '');
+    const isInnPin = (p: string): boolean => {
+      const u = normPin(p);
+      return u === 'IN-' || u === 'IN-1' || u === 'IN-2';
+    };
+    const isOutPin = (p: string): boolean => {
+      const u = normPin(p);
+      return u === 'OUT' || u === 'OUT1' || u === 'OUT2';
+    };
+
+    const pinNetIdx = (ref: string, pinPred: (p: string) => boolean): number => {
+      const want = ref.toUpperCase();
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const conns = plan.nets[ni].connections ?? [];
+        for (let ci = 0; ci < conns.length; ci++) {
+          if ((conns[ci].compRef ?? '').toUpperCase() === want &&
+            pinPred(conns[ci].pinId)) {
+            return ni;
+          }
+        }
+      }
+      return -1;
+    };
+
+    const capPinNets = (ref: string): number[] => {
+      const want = ref.toUpperCase();
+      const out: number[] = [];
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const conns = plan.nets[ni].connections ?? [];
+        for (let ci = 0; ci < conns.length; ci++) {
+          if ((conns[ci].compRef ?? '').toUpperCase() === want) {
+            out.push(ni);
+            break;
+          }
+        }
+      }
+      return out;
+    };
+
+    const removeCapFromNet = (ni: number, ref: string): void => {
+      const want = ref.toUpperCase();
+      const conns = plan.nets[ni].connections ?? [];
+      plan.nets[ni].connections = conns.filter(c =>
+        (c.compRef ?? '').toUpperCase() !== want);
+    };
+
+    for (let di = 0; di < topo.deviceList.length; di++) {
+      const d = topo.deviceList[di];
+      if (!isOpAmpLib(d.libDevId ?? '')) {
+        continue;
+      }
+      const ref = d.refName ?? '';
+      if (ref.length === 0) {
+        continue;
+      }
+      const channels: string[] = (d.libDevId ?? '').toUpperCase() === 'UA741' ?
+        [''] : ['1', '2', ''];
+      for (let chi = 0; chi < channels.length; chi++) {
+        const suf = channels[chi];
+        const outPin = suf.length > 0 ? `OUT${suf}` : 'OUT';
+        const innPin = suf.length > 0 ? `IN-${suf}` : 'IN-';
+        const outNi = pinNetIdx(ref, p => normPin(p) === normPin(outPin) || isOutPin(p));
+        const innNi = pinNetIdx(ref, p => normPin(p) === normPin(innPin) || isInnPin(p));
+        if (outNi < 0 || innNi < 0 || outNi === innNi) {
+          continue;
+        }
+        // 积分特征：IN- 网含电阻（输入 R）
+        const innHasR = (plan.nets[innNi].connections ?? []).some(c => isResRef(c.compRef));
+        if (!innHasR) {
+          continue;
+        }
+        // 是否已有 C 同时出现在 OUT 与 IN- 两网
+        let bridged = false;
+        for (let ci = 0; ci < topo.deviceList.length; ci++) {
+          const cdev = topo.deviceList[ci];
+          if (!isCapRef(cdev.refName ?? '') && !(cdev.libDevId ?? '').startsWith('C_')) {
+            continue;
+          }
+          const cref = cdev.refName ?? '';
+          const nets = capPinNets(cref);
+          if (nets.indexOf(outNi) >= 0 && nets.indexOf(innNi) >= 0) {
+            bridged = true;
+            break;
+          }
+        }
+        if (bridged) {
+          continue;
+        }
+        // 找可重挂的电容：优先 INT_FB 孤儿 / 单脚 / 误接 GND
+        let capRef = '';
+        for (let ni = 0; ni < plan.nets.length; ni++) {
+          const name = (plan.nets[ni].name ?? '').toUpperCase();
+          const conns = plan.nets[ni].connections ?? [];
+          if (name.indexOf('INT_FB') >= 0 || name.indexOf('INTEG_FB') >= 0 ||
+            name.indexOf('FB_C') >= 0) {
+            for (let ci = 0; ci < conns.length; ci++) {
+              if (isCapRef(conns[ci].compRef)) {
+                capRef = conns[ci].compRef;
+                break;
+              }
+            }
+          }
+          if (capRef.length > 0) {
+            break;
+          }
+        }
+        if (capRef.length === 0) {
+          for (let ci = 0; ci < topo.deviceList.length; ci++) {
+            const cdev = topo.deviceList[ci];
+            if (!(cdev.libDevId ?? '').startsWith('C_')) {
+              continue;
+            }
+            const cref = cdev.refName ?? '';
+            const nets = capPinNets(cref);
+            // 未跨 OUT↔IN-：单脚孤儿、或误接到 GND/电源
+            if (nets.indexOf(outNi) < 0 || nets.indexOf(innNi) < 0) {
+              capRef = cref;
+              break;
+            }
+          }
+        }
+        if (capRef.length === 0) {
+          continue;
+        }
+        // 从旧网摘掉该 C 的所有连接
+        for (let ni = plan.nets.length - 1; ni >= 0; ni--) {
+          removeCapFromNet(ni, capRef);
+        }
+        // 挂到 OUT / IN-
+        const addOut: NetPlanConnection = {
+          compRef: capRef,
+          pinId: '1',
+          pinName: '1',
+          mode: 'joinWired'
+        };
+        const addInn: NetPlanConnection = {
+          compRef: capRef,
+          pinId: '2',
+          pinName: '2',
+          mode: 'joinWired'
+        };
+        plan.nets[outNi].connections.push(addOut);
+        plan.nets[innNi].connections.push(addInn);
+        fixes++;
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_PIPE] heal_opamp_cap ${capRef}: ${plan.nets[outNi].name}` +
+          `↔${plan.nets[innNi].name} (integrator feedback)`);
+      }
+    }
+    return fixes;
+  }
+
+  /**
+   * 丢弃无法执行的 joinWired 单脚网（保留单脚 joinByLabel 边界 stub）。
+   * 不计 failure，避免「只有1连接」误判 fatal ABORT。
+   */
+  static dropOrphanSingletonNets(plan: NetPlanResult): number {
+    if (!plan.nets || plan.nets.length === 0) {
+      return 0;
+    }
+    let dropped = 0;
+    for (let i = plan.nets.length - 1; i >= 0; i--) {
+      const conns = plan.nets[i].connections ?? [];
+      if (conns.length >= 2) {
+        continue;
+      }
+      if (conns.length === 1 && conns.every(c => c.mode === 'joinByLabel')) {
+        continue; // 模块边界单脚标号
+      }
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_PIPE] drop_orphan_singleton net=${plan.nets[i].name}` +
+        ` conns=${conns.length}`);
+      plan.nets.splice(i, 1);
+      dropped++;
+    }
+    return dropped;
+  }
+
+  /**
    * 确定性修复：合并探针/仪器重复脚、消除一脚双网。
    * 返回修复条数；调用方应在 critique 前执行。
    */
@@ -914,8 +1404,9 @@ export class NetPlanExecutor {
       net.connections = kept;
     }
 
-    // Pass3: 删空网
+    // Pass3: 删空网，再补运放自激脚并丢掉残余 joinWired 单脚网
     plan.nets = plan.nets.filter(n => (n.connections ?? []).length > 0);
+    fixes += NetPlanExecutor.healOpAmpFloatingInputsInPlan(plan, topo);
     return fixes;
   }
 
@@ -1103,11 +1594,12 @@ export class NetPlanExecutor {
       ` forceLabel=${plan.wiringHints?.forceLabel?.length ?? 0}` +
       ` forceWire=${plan.wiringHints?.forceWire?.length ?? 0}`);
 
-    // 执行前再清洗 pinId / 库别名 / 仪器误挂电源 / 未用 CH
+    // 执行前再清洗 pinId / 库别名 / 仪器误挂电源 / 未用 CH / 运放自激单脚网
     NetPlanExecutor.sanitizePinIdsInPlan(plan);
     NetPlanExecutor.canonicalizeLibPinsInPlan(plan, topo);
     NetPlanExecutor.stripInstrumentSenseFromPowerNets(plan, topo);
     NetPlanExecutor.stripUnusedOscChannels(plan);
+    NetPlanExecutor.healOpAmpFloatingInputsInPlan(plan, topo);
 
     // 队列索引：同名/同 libDevId 多实例按出现顺序消费，禁止 Map 覆盖丢器件
     const refQueues = new Map<string, DeviceInst[]>();
@@ -1142,7 +1634,10 @@ export class NetPlanExecutor {
       const allLabel = netPlan.connections.length >= 1 &&
         netPlan.connections.every(c => c.mode === 'joinByLabel');
       if (netPlan.connections.length < 2 && !allLabel) {
-        failures.push(`网络 "${netPlan.name}" 只有 ${netPlan.connections.length} 个连接，跳过(需≥2或单脚标号)`);
+        // 不记 failure：sanitize 应已 drop/heal；残余单脚网跳过即可，避免误 abort
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] net_plan skip singleton net=${netPlan.name}` +
+          ` conns=${netPlan.connections.length}`);
         continue;
       }
 
@@ -1552,7 +2047,9 @@ export class NetPlanExecutor {
       const allLabel = netPlan.connections.length >= 1 &&
         netPlan.connections.every(c => c.mode === 'joinByLabel');
       if (netPlan.connections.length < 2 && !allLabel) {
-        failures.push(`网络 "${netPlan.name}" 只有 ${netPlan.connections.length} 个连接，跳过(需≥2或单脚标号)`);
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PIPE] net_plan skip singleton net=${netPlan.name}` +
+          ` conns=${netPlan.connections.length}`);
         continue;
       }
 
@@ -1758,8 +2255,8 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 局部小网导线优先：全标号 -> hints -> 最多4脚按脚预算升级 -> 大网/电源回标号 ->
-   * fanout 兜底 -> 同网均质 -> 自动写入 forceWire（供 A-star/WAR 保导线、少 demote）。
+   * 局部小网导线优先：全标号 -> hints -> 最多4脚按 DUT 预算升级 -> 大网/电源回标号 ->
+   * fanout 兜底 -> 同网均质（仪器脚可混合标号）-> 自动写入 forceWire。
    * Orchestrator 可在 compact 拉近前预调用；execute 内再调一次幂等。
    */
   static prepareModes(plan: NetPlanResult): void {
@@ -1768,20 +2265,20 @@ export class NetPlanExecutor {
     NetPlanExecutor.promoteJoinWiredByPinBudget(plan);
     NetPlanExecutor.demoteOversizedOrPowerWired(plan);
     NetPlanExecutor.capJoinWiredFanout(plan);
-    // 同网禁止混合 mode：否则 stub 岛与导线岛在 rebuild 后分裂（如 HYST_NODE 断网）
+    // 仪器脚可 joinByLabel，同网 DUT 保持 joinWired（混合合法）
     NetPlanExecutor.homogenizeNetConnectionModes(plan);
     NetPlanExecutor.boostForceWireFromWiredNets(plan);
   }
 
   /**
-   * 同一网络内 joinWired / joinByLabel 必须全有或全无。
-   * 2～4 脚无仪器脚的小信号网：有导线倾向则整网 joinWired（pin-to-pin / WAR）。
-   * 含仪器脚或电源/大网 → 整网压回 joinByLabel。
+   * 同一网络内：电源/大网整网标号；小信号 DUT 脚导线；仪器测量脚始终标号（允许混合）。
+   * 禁止「网内有 CH1 就整网压标号」——那会把 DUT 间 WAR 导线一并抹掉。
    */
   private static homogenizeNetConnectionModes(plan: NetPlanResult): void {
     let netsToLabel = 0;
     let netsToWire = 0;
     let connsFixed = 0;
+    let mixedInstr = 0;
     for (let ni = 0; ni < plan.nets.length; ni++) {
       const net = plan.nets[ni];
       const conns = net.connections ?? [];
@@ -1791,6 +2288,7 @@ export class NetPlanExecutor {
       let labelN = 0;
       let wireN = 0;
       let hasInstr = false;
+      let dutN = 0;
       for (let ci = 0; ci < conns.length; ci++) {
         if (conns[ci].mode === 'joinByLabel') {
           labelN++;
@@ -1799,15 +2297,39 @@ export class NetPlanExecutor {
         }
         if (NetPlanExecutor.isInstrumentPin(conns[ci].pinName, conns[ci].pinId)) {
           hasInstr = true;
+        } else {
+          dutN++;
         }
-      }
-      if (labelN === 0 || wireN === 0) {
-        continue;
       }
       const nameUp = (net.name ?? '').toUpperCase();
       const isPower = NetPlanExecutor.isPowerRailName(nameUp);
-      // 无仪器的小网：有任一导线倾向即整网导线；含仪器脚一律标号（探针并网）
-      const preferWire = !hasInstr && !isPower &&
+
+      // 含仪器：DUT 小网走导线，仪器脚标号（混合合法）
+      if (hasInstr) {
+        const preferDutWire = !isPower && dutN >= 2 && dutN <= MAX_WIRE_PROMOTE_PINS;
+        for (let ci = 0; ci < conns.length; ci++) {
+          const isInstr = NetPlanExecutor.isInstrumentPin(conns[ci].pinName, conns[ci].pinId);
+          const target: 'joinWired' | 'joinByLabel' =
+            isInstr ? 'joinByLabel' : (preferDutWire ? 'joinWired' : 'joinByLabel');
+          if (conns[ci].mode !== target) {
+            conns[ci].mode = target;
+            connsFixed++;
+          }
+        }
+        if (preferDutWire) {
+          mixedInstr++;
+          netsToWire++;
+        } else {
+          netsToLabel++;
+        }
+        continue;
+      }
+
+      if (labelN === 0 || wireN === 0) {
+        continue;
+      }
+      // 无仪器的小网：有任一导线倾向即整网导线
+      const preferWire = !isPower &&
         conns.length <= MAX_WIRE_PROMOTE_PINS && wireN >= 1;
       const target: 'joinWired' | 'joinByLabel' = preferWire ? 'joinWired' : 'joinByLabel';
       for (let ci = 0; ci < conns.length; ci++) {
@@ -1822,15 +2344,16 @@ export class NetPlanExecutor {
         netsToLabel++;
       }
     }
-    if (netsToLabel > 0 || netsToWire > 0) {
+    if (netsToLabel > 0 || netsToWire > 0 || mixedInstr > 0) {
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_PIPE] homogenize mixed→wire=${netsToWire} →label=${netsToLabel} conns=${connsFixed}`);
+        `[AI_PIPE] homogenize mixed→wire=${netsToWire} →label=${netsToLabel}` +
+        ` instrMixed=${mixedInstr} conns=${connsFixed}`);
     }
   }
 
   /**
-   * 将已升级为全 joinWired 的 2～4 脚小信号网写入 forceWire，
-   * 并从 forceLabel 剔除，避免后续 A* 失败整网 demote 成标号。
+   * 将 DUT 侧已 joinWired 的 2～4 脚小信号网写入 forceWire（仪器脚可仍为标号），
+   * 并从 forceLabel 剔除，避免后续 A* 整网 demote 成标号。
    */
   private static boostForceWireFromWiredNets(plan: NetPlanResult): void {
     if (!plan.wiringHints) {
@@ -1858,23 +2381,24 @@ export class NetPlanExecutor {
       }
       const nameUp = name.toUpperCase();
       const conns = net.connections ?? [];
-      if (conns.length < 2 || conns.length > MAX_WIRE_PROMOTE_PINS) {
-        continue;
-      }
-      if (NetPlanExecutor.isPowerRailName(nameUp) && conns.length > 2) {
-        continue;
-      }
-      let allWired = true;
-      let hasInstr = false;
+      let dutN = 0;
+      let dutAllWired = true;
       for (let ci = 0; ci < conns.length; ci++) {
-        if (conns[ci].mode !== 'joinWired') {
-          allWired = false;
-        }
         if (NetPlanExecutor.isInstrumentPin(conns[ci].pinName, conns[ci].pinId)) {
-          hasInstr = true;
+          continue;
+        }
+        dutN++;
+        if (conns[ci].mode !== 'joinWired') {
+          dutAllWired = false;
         }
       }
-      if (!allWired || hasInstr) {
+      if (dutN < 2 || dutN > MAX_WIRE_PROMOTE_PINS) {
+        continue;
+      }
+      if (NetPlanExecutor.isPowerRailName(nameUp) && dutN > 2) {
+        continue;
+      }
+      if (!dutAllWired) {
         continue;
       }
       if (!wireUp.has(nameUp)) {
@@ -1898,16 +2422,17 @@ export class NetPlanExecutor {
     }
   }
 
-  /** 收集需拉近的 joinWired 小网器件对（连接数 2～3） */
+  /** 收集需拉近的 joinWired 小网器件对（DUT 连接数 2～4） */
   static collectWiredCompactPairs(plan: NetPlanResult): WiredCompactPair[] {
     const pairs: WiredCompactPair[] = [];
     for (let ni = 0; ni < plan.nets.length; ni++) {
       const net = plan.nets[ni];
       const conns = net.connections ?? [];
-      if (conns.length < 2 || conns.length > MAX_WIRE_PROMOTE_PINS) {
+      const dutN = NetPlanExecutor.countDutPins(conns);
+      if (dutN < 2 || dutN > MAX_WIRE_PROMOTE_PINS) {
         continue;
       }
-      if (NetPlanExecutor.isPowerRailName((net.name ?? '').toUpperCase()) && conns.length > 2) {
+      if (NetPlanExecutor.isPowerRailName((net.name ?? '').toUpperCase()) && dutN > 2) {
         continue;
       }
       const wiredRefs: string[] = [];
@@ -1957,8 +2482,8 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 仅当：网脚数 2～4、非大电源扇出、非仪器脚、该脚 joinWired 累计仍 <2
-   * 才从标号升级为导线。大网一律保持标号。
+   * 仅当：DUT 脚数 2～4、非大电源扇出、非仪器脚、该脚 joinWired 累计仍 <2
+   * 才从标号升级为导线。仪器脚始终保持标号；DUT 计数不含探针脚。
    */
   private static promoteJoinWiredByPinBudget(plan: NetPlanResult): void {
     const wiredCount = new Map<string, number>();
@@ -1978,7 +2503,8 @@ export class NetPlanExecutor {
       order.push(i);
     }
     order.sort((ia: number, ib: number) =>
-      (plan.nets[ia].connections?.length ?? 0) - (plan.nets[ib].connections?.length ?? 0));
+      NetPlanExecutor.countDutPins(plan.nets[ia].connections) -
+      NetPlanExecutor.countDutPins(plan.nets[ib].connections));
 
     let promoted = 0;
     let keptLabel = 0;
@@ -1988,9 +2514,10 @@ export class NetPlanExecutor {
       const net = plan.nets[order[oi]];
       const nameUp = (net.name ?? '').toUpperCase();
       const conns = net.connections ?? [];
+      const dutN = NetPlanExecutor.countDutPins(conns);
 
-      // 大网：整网保持标号（hints 已强制的 joinWired 留给 demoteOversized 收口）
-      if (conns.length > MAX_WIRE_PROMOTE_PINS) {
+      // 大网：按 DUT 脚数判定（探针脚不挤占预算）
+      if (dutN > MAX_WIRE_PROMOTE_PINS) {
         for (let ci = 0; ci < conns.length; ci++) {
           if (conns[ci].mode === 'joinByLabel') {
             keptLabel++;
@@ -1999,11 +2526,11 @@ export class NetPlanExecutor {
         skipLarge++;
         continue;
       }
-      if (conns.length < 2) {
+      if (dutN < 2) {
         continue;
       }
-      // 电源别名且 >2 脚：不升级
-      if (NetPlanExecutor.isPowerRailName(nameUp) && conns.length > 2) {
+      // 电源别名且 DUT >2：不升级
+      if (NetPlanExecutor.isPowerRailName(nameUp) && dutN > 2) {
         skipPower++;
         for (let ci = 0; ci < conns.length; ci++) {
           if (conns[ci].mode === 'joinByLabel') {
@@ -2038,8 +2565,21 @@ export class NetPlanExecutor {
       ` skipLarge=${skipLarge} skipPower=${skipPower}`);
   }
 
+  private static countDutPins(conns: NetPlanConnection[] | undefined): number {
+    if (!conns || conns.length === 0) {
+      return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < conns.length; i++) {
+      if (!NetPlanExecutor.isInstrumentPin(conns[i].pinName, conns[i].pinId)) {
+        n++;
+      }
+    }
+    return n;
+  }
+
   /**
-   * 安全网：>4 脚网、或电源别名且>2 脚上的 joinWired → 全部压回标号；
+   * 安全网：DUT >4 脚、或电源别名且 DUT>2 上的 joinWired → 压回标号；
    * 仪器测量脚强制标号。线圈短网（名含 COIL）保留导线。
    */
   private static demoteOversizedOrPowerWired(plan: NetPlanResult): void {
@@ -2049,9 +2589,10 @@ export class NetPlanExecutor {
       const net = plan.nets[ni];
       const nameUp = (net.name ?? '').toUpperCase();
       const conns = net.connections ?? [];
+      const dutN = NetPlanExecutor.countDutPins(conns);
       const keepCoil = nameUp.indexOf('COIL') >= 0 || nameUp.indexOf('REL_COIL') >= 0;
-      const tooBig = conns.length > MAX_WIRE_PROMOTE_PINS;
-      const powerFan = NetPlanExecutor.isPowerRailName(nameUp) && conns.length > 2;
+      const tooBig = dutN > MAX_WIRE_PROMOTE_PINS;
+      const powerFan = NetPlanExecutor.isPowerRailName(nameUp) && dutN > 2;
       for (let ci = 0; ci < conns.length; ci++) {
         const c = conns[ci];
         if (c.mode !== 'joinWired') {
@@ -2101,7 +2642,8 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 按 wiringHints 改写连接 mode：forceLabel 优先于 forceWire。
+   * 按 wiringHints 改写连接 mode：forceWire 保 DUT 导线；仪器脚始终标号。
+   * 禁止「网内有 CH1 就整网压标号」。
    */
   private static applyWiringHints(plan: NetPlanResult): void {
     const hints = plan.wiringHints;
@@ -2110,14 +2652,11 @@ export class NetPlanExecutor {
     }
     let forceLabel = (hints.forceLabel ?? []).slice();
     let forceWire = (hints.forceWire ?? []).slice();
-    // 仪器/电源网禁止 forceWire（几何与 ERC 死循环），一律转 forceLabel
+    // 仅纯电源轨禁止 forceWire；信号网名含 OSC/SENSE 但挂 DUT 的仍可导线
     const demoteWire = new Set<string>();
     for (let wi = forceWire.length - 1; wi >= 0; wi--) {
       const up = `${forceWire[wi] ?? ''}`.toUpperCase();
-      const powerLike = NetPlanExecutor.isPowerRailName(up) ||
-        up.indexOf('OSC') >= 0 || up.indexOf('VM_') >= 0 || up.indexOf('AM_') >= 0 ||
-        up.indexOf('PROBE') >= 0 || up.indexOf('SENSE') >= 0;
-      if (powerLike) {
+      if (NetPlanExecutor.isPowerRailName(up)) {
         demoteWire.add(up);
         forceWire.splice(wi, 1);
       }
@@ -2133,9 +2672,11 @@ export class NetPlanExecutor {
         }
       }
       Logger.info(INSTR_TRACE_TAG,
-        `[AI_PIPE] applyWiringHints demote forceWire→forceLabel n=${demoteWire.size}`);
+        `[AI_PIPE] applyWiringHints demote power forceWire→forceLabel n=${demoteWire.size}`);
     }
     if (forceLabel.length === 0 && forceWire.length === 0) {
+      // 仍须把仪器脚压标号
+      NetPlanExecutor.forceInstrumentPinsLabel(plan);
       return;
     }
     hints.forceLabel = forceLabel;
@@ -2143,53 +2684,68 @@ export class NetPlanExecutor {
     for (let ni = 0; ni < plan.nets.length; ni++) {
       const net = plan.nets[ni];
       const nameUp = (net.name ?? '').toUpperCase();
-      if (nameUp.length === 0) {
+      if (nameUp.length === 0 || !net.connections) {
         continue;
       }
-      let toLabel = false;
-      let toWire = false;
+      let inForceLabel = false;
+      let inForceWire = false;
       for (let i = 0; i < forceLabel.length; i++) {
         const fl = forceLabel[i];
         if (fl && nameUp === `${fl}`.toUpperCase()) {
-          toLabel = true;
+          inForceLabel = true;
           break;
         }
       }
       for (let i = 0; i < forceWire.length; i++) {
         const fw = forceWire[i];
         if (fw && nameUp === `${fw}`.toUpperCase()) {
-          toWire = true;
+          inForceWire = true;
           break;
         }
       }
-      // 网内含仪器测量脚 → 强制标号（即使未在 hints）
-      if (!toLabel && net.connections) {
+      const dutN = NetPlanExecutor.countDutPins(net.connections);
+      const keepCoil = nameUp.indexOf('COIL') >= 0 || nameUp.indexOf('REL_COIL') >= 0;
+      // 线圈：整网导线
+      if (keepCoil || (inForceWire && !NetPlanExecutor.isPowerRailName(nameUp))) {
         for (let ci = 0; ci < net.connections.length; ci++) {
-          const pin = (net.connections[ci].pinName ?? net.connections[ci].pinId ?? '')
-            .toUpperCase();
-          if (/^CH\d+$/.test(pin) || pin === 'V+' || pin === 'I+' || pin === 'I-' ||
-            pin === 'PROBE' || pin === 'COM') {
-            toLabel = true;
-            toWire = false;
-            break;
+          const c = net.connections[ci];
+          if (NetPlanExecutor.isInstrumentPin(c.pinName, c.pinId)) {
+            c.mode = 'joinByLabel';
+          } else {
+            c.mode = 'joinWired';
+          }
+        }
+        continue;
+      }
+      // forceLabel：仅当 DUT 不足 2 或电源轨时整网标号；否则只压仪器脚
+      if (inForceLabel) {
+        const wholeLabel = NetPlanExecutor.isPowerRailName(nameUp) || dutN < 2;
+        for (let ci = 0; ci < net.connections.length; ci++) {
+          const c = net.connections[ci];
+          if (wholeLabel || NetPlanExecutor.isInstrumentPin(c.pinName, c.pinId)) {
+            c.mode = 'joinByLabel';
           }
         }
       }
-      // 线圈驱动网禁止 forceLabel 误伤
-      if (toLabel && (nameUp.indexOf('COIL') >= 0 || nameUp.indexOf('REL_COIL') >= 0)) {
-        toLabel = false;
-        toWire = true;
-      }
-      if (!toLabel && !toWire) {
-        continue;
-      }
-      for (let ci = 0; ci < net.connections.length; ci++) {
-        if (toLabel) {
-          net.connections[ci].mode = 'joinByLabel';
-        } else if (toWire) {
-          net.connections[ci].mode = 'joinWired';
+    }
+    NetPlanExecutor.forceInstrumentPinsLabel(plan);
+  }
+
+  /** 仪器测量脚一律 joinByLabel（可与同网 DUT 导线并存） */
+  private static forceInstrumentPinsLabel(plan: NetPlanResult): void {
+    let n = 0;
+    for (let ni = 0; ni < plan.nets.length; ni++) {
+      const conns = plan.nets[ni].connections ?? [];
+      for (let ci = 0; ci < conns.length; ci++) {
+        const c = conns[ci];
+        if (NetPlanExecutor.isInstrumentPin(c.pinName, c.pinId) && c.mode !== 'joinByLabel') {
+          c.mode = 'joinByLabel';
+          n++;
         }
       }
+    }
+    if (n > 0) {
+      Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] instrPins→label n=${n}`);
     }
   }
 

@@ -358,7 +358,10 @@ export class AiApiManagerImpl implements IAiApiManager {
       ` provider=${api.provider} model=${api.model} url=${api.baseUrl}` +
       ` preferProxy=${this.shouldUseSystemProxy(api.id)}`);
     const result = await this.sendRequest(api, CIRCUIT_TEST_PROMPT, {
-      maxTokens: 50,
+      // deepseek-v4-pro 等带 thinking 的模型：50 tokens 会被推理耗尽 → finish_reason=length 空正文
+      maxTokens: 256,
+      temperature: 0,
+      disableThinking: true,
       connectTimeoutMs: AI_HTTP_TEST_CONNECT_TIMEOUT_MS,
       readTimeoutMs: AI_HTTP_TEST_READ_TIMEOUT_MS
     });

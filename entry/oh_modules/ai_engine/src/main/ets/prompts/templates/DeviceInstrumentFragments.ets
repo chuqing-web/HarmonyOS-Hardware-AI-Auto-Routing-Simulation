@@ -420,7 +420,8 @@ export const FRAG_INSTR_DETAIL_SELECT: string = `
 - 电压表/测压 → VOLTMETER_DC（多表不同节点对）
 - 万用表/电阻档/二极管档 → VIRTUAL_METER（V/A/OHM/COM）
 - 功率 → POWER_METER；频率 → FREQ_COUNTER；逻辑 → LOGIC_ANALYZER(CH1–8)；串口 → UART_TERMINAL
-- 信号源/正弦/三角激励 → SIGNAL_GEN（写全 param）`;
+- 信号源/外接正弦/三角激励 → SIGNAL_GEN（写全 param）；【禁】闭环自激振荡勿加 SIGNAL_GEN
+- 「观测方波/三角波」只加 OSCILLOSCOPE，不等于要 SIGNAL_GEN`;
 
 export const FRAG_INSTR_DETAIL_NET: string = `
 【仪器细分建网】:

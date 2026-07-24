@@ -59,6 +59,7 @@ export struct SchematicCanvas {
   private viewHeight: number = 0;
   private canvasReady: boolean = false;
   private needsFitOnLayout: boolean = true;
+  private fitSettleTimer: number = -1;
   private redrawScheduled: boolean = false;
   private redrawTimer: number = -1;
   @State hoverComponentId: string = '';
@@ -172,9 +173,16 @@ export struct SchematicCanvas {
     // Fallback: layout may complete after onReady — force a full paint once sizes settle.
     setTimeout(() => {
       this.ensureLayoutRedraw('startup');
+      if (this.viewWidth > 0 && this.viewHeight > 0 && this.needsFitOnLayout) {
+        this.appService.schematicEditor.fitAllInView();
+      }
     }, 120);
     setTimeout(() => {
       this.ensureLayoutRedraw('startup-late');
+      if (this.viewWidth > 0 && this.viewHeight > 0) {
+        this.appService.schematicEditor.fitAllInView();
+        this.needsFitOnLayout = false;
+      }
     }, 400);
   }
 
@@ -183,6 +191,10 @@ export struct SchematicCanvas {
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STEP, this.onSimStep);
     EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STARTED, this.onSimulationStarted);
+    if (this.fitSettleTimer >= 0) {
+      clearTimeout(this.fitSettleTimer);
+      this.fitSettleTimer = -1;
+    }
     if (this.redrawTimer >= 0) {
       clearTimeout(this.redrawTimer);
       this.redrawTimer = -1;
@@ -353,11 +365,27 @@ export struct SchematicCanvas {
     if (sizeChanged || !this.canvasReady) {
       this.canvasReady = true;
       this.forceFullRedraw('areaChange');
-      const growAfterMaximize = !wasUnlaid && (nw - prevW > 64 || nh - prevH > 64);
+      // 启动期：明显变大（最大化）或尚未完成首次稳定 fit 时重新适配
+      const growDelta = Math.max(Math.abs(nw - prevW), Math.abs(nh - prevH));
+      const growAfterMaximize = !wasUnlaid && growDelta > 16;
       if (this.needsFitOnLayout || wasUnlaid || growAfterMaximize) {
-        this.needsFitOnLayout = false;
         this.appService.schematicEditor.fitAllInView();
         this.scheduleRedraw();
+        if (wasUnlaid || growAfterMaximize) {
+          // 尺寸还在变：延后清除，等布局收敛后再 fit 最后一次
+          this.needsFitOnLayout = true;
+          if (this.fitSettleTimer >= 0) {
+            clearTimeout(this.fitSettleTimer);
+          }
+          this.fitSettleTimer = setTimeout(() => {
+            this.fitSettleTimer = -1;
+            if (this.viewWidth > 0 && this.viewHeight > 0) {
+              this.appService.schematicEditor.fitAllInView();
+              this.scheduleRedraw();
+            }
+            this.needsFitOnLayout = false;
+          }, 180);
+        }
       }
     }
   }

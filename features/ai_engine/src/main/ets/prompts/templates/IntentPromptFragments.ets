@@ -55,12 +55,13 @@ export const FRAG_DUAL_SUPPLY: string = `
 - 用户写 ±15V/±12V/±5V 时同步改 VCC 与 VEE 的 voltage`;
 
 export const FRAG_SIGNAL_GEN: string = `
-【信号发生器 SIGNAL_GEN】用户要求正弦/方波/三角/锯齿/脉冲激励时:
+【信号发生器 SIGNAL_GEN】用户要求**外接**正弦/方波/三角/锯齿/脉冲激励时:
 - 输出 SIGNAL_GEN: param_constraint 必须含 waveform、amplitude、frequency、offset、dutyCycle（全部由你决定并写出数值）
 - frequency 按用户指定（如 1kHz/10kHz），未指定默认 "1kHz"；dutyCycle 对方波/脉冲有效，默认 "50%"
 - amplitude：按被激励电路决定（普通小信号可用 "1V"；滞回/比较器整形须 ≥"2V"，推荐 "5V"）
 - waveform 以「输入/激励/信号源」为准；若同时出现「正弦输入」与「整形/输出方波」，waveform 必须写 sine
-- 拓扑: OUT→被激励节点，GND→GND；可用示波器观测`;
+- 拓扑: OUT→被激励节点，GND→GND；可用示波器观测
+- 【硬禁】闭环自激/弛张振荡（滞回+积分）禁止输出 SIGNAL_GEN`;
 
 export const FRAG_HYSTERESIS_SIG: string = `
 【滞回/施密特整形 — SIGNAL_GEN 幅度强制】正反馈比较器阈值 ≈ ±β·|Vsat|（β=Rg/(Rf+Rg)）:
@@ -94,6 +95,17 @@ export const FRAG_INTEGRATOR: string = `
 - 示波器 CH1→SIG.OUT（方波），CH2→运放 OUT（三角）；OSC.GND→GND
 - 【硬禁】禁止当成串联 RC 充放电（VCC→SW→R→C）；禁止把「三角」写成信号源 waveform
 - 双运放未用半边必须接跟随，禁止输入悬空`;
+
+export const FRAG_SELF_OSC_HYST_INT: string = `
+【运放自激振荡 — 滞回比较器 + 积分器闭环】:
+- 必须双电源: VCC="12V" + VEE="-12V" + GND
+- 【硬禁 SIGNAL_GEN】方波由滞回比较器自产，三角由积分器产生；禁止外接信号发生器
+- 两片运放（UA741×2）或一片双运放（TL082/LM358）：一路滞回比较器，一路积分器
+- 滞回: OUT→R_100k→IN+，IN+→R_10k→GND；积分: 方波经 R_10k→IN-，C_100nF 跨 OUT↔IN-，可选 R_100k 并 C
+- 【硬】比较器 IN- 必须与积分 OUT（三角波）同网；积分器 IN+ 必须入 GND 网（≥2 脚）
+- 【硬】禁止为 IN± 另建只有 1 连接的网（COMP_INV/INT_NON_INV 等）
+- 示波器 CH1→方波 OUT，CH2→三角 OUT，GND→GND
+- circuit_constraint 写明闭环自激，勿写 SIGNAL_GEN`;
 
 export const FRAG_I2C: string = `
 【I2C】必须配 4.7kΩ 上拉电阻（R_4.7k）`;
@@ -228,6 +240,10 @@ export const FRAG_NET_INTEGRATOR: string = `
 【运放积分】SIG.OUT→R→IN-；IN+→GND；C 跨 OUT↔IN-；OUT→OSC.CH2；SIG.OUT→OSC.CH1；电源 VCC/VEE/GND 分网。
 禁止 RC 充放电拓扑；未用运放半边 IN-↔OUT、IN+→GND`;
 
+export const FRAG_NET_SELF_OSC_HYST_INT: string = `
+【自激振荡网】比较器 OUT（方波）→R→积分 IN-；C 跨积分 OUT↔IN-；积分 OUT 反馈→比较器输入；
+OSC.CH1→方波网，OSC.CH2→三角网，GND→GND；电源 VCC/VEE/GND。禁止 SIGNAL_GEN`;
+
 export const FRAG_NET_DUAL: string = `
 【双电源网】独立网名 VCC 与 VEE；VCC 符号→VCC 网，VEE 符号→VEE 网，GND→GND；禁止 VCC/VEE 同网`;
 
@@ -253,7 +269,7 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: st
   if (intent.needsSignalGen) {
     s += FRAG_SIGNAL_GEN;
   }
-  if (intent.needsHysteresisComparator) {
+  if (intent.needsHysteresisComparator && intent.needsSignalGen) {
     s += FRAG_HYSTERESIS_SIG;
   }
   if (intent.hasMcuMinSystem) {
@@ -266,7 +282,12 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: st
     s += FRAG_OPAMP;
   }
   if (intent.needsOpAmpIntegrator) {
-    s += FRAG_INTEGRATOR;
+    // 自激闭环：用专用片段，禁止再注入「必须 SIGNAL_GEN」的积分示教配方
+    if (intent.needsSignalGen) {
+      s += FRAG_INTEGRATOR;
+    } else {
+      s += FRAG_SELF_OSC_HYST_INT;
+    }
   }
   if (intent.needsI2cPullup) {
     s += FRAG_I2C;
@@ -323,7 +344,11 @@ export function assembleNetPlanSystem(intent: CircuitIntent, libIds: string[] = 
     s += FRAG_NET_OPAMP;
   }
   if (intent.needsOpAmpIntegrator) {
-    s += FRAG_NET_INTEGRATOR;
+    if (intent.needsSignalGen) {
+      s += FRAG_NET_INTEGRATOR;
+    } else {
+      s += FRAG_NET_SELF_OSC_HYST_INT;
+    }
   }
   if (intent.dualSupply) {
     s += FRAG_NET_DUAL;
@@ -331,7 +356,7 @@ export function assembleNetPlanSystem(intent: CircuitIntent, libIds: string[] = 
   if (intent.needsSignalGen) {
     s += FRAG_NET_SIGNAL_GEN;
   }
-  if (intent.needsHysteresisComparator) {
+  if (intent.needsHysteresisComparator && intent.needsSignalGen) {
     s += FRAG_NET_HYSTERESIS;
   }
   if (intent.hasInstruments) {

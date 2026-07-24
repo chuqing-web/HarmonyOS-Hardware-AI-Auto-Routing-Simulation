@@ -23,6 +23,8 @@ export class InstrumentWaveExpandStore {
   tPerDiv: number = 1e-3;
   triggerLevel: number = 0;
   autoFit: boolean = true;
+  /** 示波器 FFT：横轴为 Hz */
+  freqDomain: boolean = false;
   showCh2: boolean = false;
   ch2Label: string = 'CH2';
   ch2Color: string = '#40c4ff';
@@ -88,7 +90,7 @@ export class InstrumentWaveExpandStore {
     time1: number[], volt1: number[], time2: number[], volt2: number[],
     label1: string, color1: string, label2: string, color2: string,
     vPerDiv: number, tPerDiv: number, trigger: number, autoFit: boolean,
-    frameId: number, detail: string
+    frameId: number, detail: string, freqDomain: boolean = false
   ): void {
     this.timeData = time1.slice();
     this.voltageData = volt1.slice();
@@ -103,6 +105,7 @@ export class InstrumentWaveExpandStore {
     this.tPerDiv = tPerDiv;
     this.triggerLevel = trigger;
     this.autoFit = autoFit;
+    this.freqDomain = freqDomain;
     this.frameId = frameId;
     this.detail = detail;
   }

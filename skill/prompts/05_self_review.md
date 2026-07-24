@@ -31,7 +31,8 @@ runtime_key: self_review
    - 不同网络导线不得共线重叠或正交交叉短路穿越
    - 对照「器件选中区AABB」与「导线完整路径覆盖」逐根审查；违规 → demote_geo_nets / demote_to_label / move_device
    - 若无法正交绕开 → join_by_label 或 demote_to_label / demote_power_rails
-4. 器件选型: 板上每个 libDevId 是否都在库内？是否缺关键器件（VCC/GND/VEE/限流R/SIGNAL_GEN）？
+4. 器件选型: 板上每个 libDevId 是否都在库内？是否缺关键器件（VCC/GND/VEE/限流R；**外激励**场景才查 SIGNAL_GEN）？
+   - 运放自激/闭环振荡（滞回+积分）**不应**有 SIGNAL_GEN；若误加 → remove_component SIGNAL_GEN
 5. 器件参数: 限流电阻值是否合理(LED≥220Ω)? 上拉电阻(I2C=4.7k, RST=10k)?
 6. MCU最小系统: 晶振+去耦电容+RST上拉是否完整?
 7. 浮空引脚: 关键引脚(MCU RST/VDD, 运放输入, R/C/SW 两端, 示波器CH1/GND)是否浮空?
@@ -73,18 +74,22 @@ runtime_key: self_review
 | 仪器未接/接错/测量脚挂电源轨 | rebuild_instrument | 仅 reroute |
 | 浮空关键脚（非几何） | heal_floating 或 reconnect_pin | rebuild_instrument（除非同时是仪器） |
 | VCC↔GND 同网短路 | split_power_short | 仅 demote |
+| 仪器 I+/I- 等同网短路 | heal_electrical | 仅 demote |
 | 运放开环 | wire_opamp_feedback | 零散 reconnect |
 | 双电源轨未接 | wire_dual_supply | 挂假脚 V+/V- |
 | SIGNAL_GEN 缺 GND/OUT | ensure_signal_gen | 编造脚名 |
-| 板上有 LM555 拓扑错 | reconnect_pin / join_by_label（按手册） | wire_series_rc |
+| 板上有 LM555 单稳态拓扑错 | wire_555_monostable | wire_series_rc |
+| 板上有 LM555 无稳态拓扑错 | reconnect_pin / join_by_label（按手册） | wire_series_rc |
 | 串联 RC 拓扑错（且无 LM555） | wire_series_rc | wire_relay |
 | 互斥双色触点错 | wire_relay | wire_series_rc |
+| 电位器接线错 | wire_potentiometer | 零散 reconnect 漏脚 |
 | 缺库内器件 | add_component（精确 libDevId） | 编造库外 ID |
 | 器件重叠/通道不足 | move_device / nudge_device / rotate_device | demote_all 当唯一手段 |
 | 单脚孤儿网 | prune_singleton_nets | add_component |
 | 拓扑已正确仅布线差 | reroute | rebuild_instrument |
 
 【修复方案 — 具体可执行】:
+> 权威目录：`features/ai_engine/.../FixActionRegistry.ets`（运行时注入 self_review）。新增工具必须先登记 Registry。
 - demote_geo_nets: 【高效】把当前全部几何违规网一次标号化（多网 pin_proximity 首选）
 - demote_power_rails: 仅 VCC/VEE/GND/VDD/VSS 标号化
 - demote_to_label: 指定网标号 stub（fixDetail.netName 必填）
@@ -97,6 +102,9 @@ runtime_key: self_review
 - wire_dual_supply: 运放双电源 VCC/VEE 确定性接线
 - wire_opamp_feedback: 运放开环→跟随闭环（比较器双输入已接则跳过）
 - ensure_signal_gen: SIGNAL_GEN GND→GND，OUT 入网
+- wire_555_monostable: LM555 单稳态确定性接线
+- wire_potentiometer: 电位器三端确定性接线
+- heal_electrical: 仪器/关键电气短路确定性修复
 - prune_singleton_nets: 剪单脚孤儿信号网
 - add_component / remove_component / change_param
 - rebuild_instrument: 【仅仪器/测量拓扑】禁止用于纯几何
@@ -121,7 +129,7 @@ Schema: {
      "severity":"error|warning",
      "desc":"问题描述(中文)",
      "targetDevice":"受影响的器件refName（必须与器件列表一致）",
-     "fixAction":"demote_geo_nets|demote_power_rails|demote_to_label|demote_all_labels|strip_phantom_pins|prune_unused_osc_channels|disconnect_pin|move_device|nudge_device|rotate_device|wire_dual_supply|wire_opamp_feedback|ensure_signal_gen|prune_singleton_nets|add_component|remove_component|change_param|rebuild_instrument|reconnect_pin|join_by_label|heal_floating|split_power_short|wire_series_rc|wire_relay|reroute",
+     "fixAction":"demote_geo_nets|demote_power_rails|demote_to_label|demote_all_labels|strip_phantom_pins|prune_unused_osc_channels|disconnect_pin|move_device|nudge_device|rotate_device|wire_dual_supply|wire_opamp_feedback|ensure_signal_gen|prune_singleton_nets|add_component|remove_component|change_param|rebuild_instrument|reconnect_pin|join_by_label|heal_floating|split_power_short|heal_electrical|wire_series_rc|wire_relay|wire_555_monostable|wire_potentiometer|reroute",
      "fixDetail":{
        "libDevId":"库内精确ID如R_330/C_100nF/RELAY_SPDT",
        "refName":"位号",

@@ -34,10 +34,10 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
         f('2N2907', '【2N2907 PNP】高侧开关/放大。', '【PNP】E→VCC；C→负载；B 经电阻下拉/驱动；注意与 NPN 电源方向相反。'),
         f('2N7000', '【2N7000 N-MOS】小信号开关；G 要有确定电平。', '【N-MOS】S→GND；D→负载下端；G←驱动(可经电阻)；禁止 G 悬空。'),
         f('IRF540', '【IRF540】功率 N-MOS；注意驱动与散热。', '【功率 MOS】同 N-MOS 拓扑；感性负载加续流二极管；G 勿悬空。'),
-        // —— 运放 ——
-        f('UA741', '【UA741】单运放；优先双电源 ±12V；必须闭环。', '【UA741】V+→VCC V-→VEE；反馈 OUT→IN- 或滞回正反馈；未用输入勿悬空；输出勿短电源。'),
-        f('LM358', '【LM358】双运放可单电源；未用半边接跟随。', '【LM358】电源脚正确；每半边须闭环或跟随(IN-↔OUT, IN+→GND/虚地)；禁止输入悬空。'),
-        f('TL082', '【TL082】JFET 双运放；高阻输入；双电源常用。', '【TL082】同运放闭环铁律；未用半边跟随；双电源时 VEE 独立网。'),
+        // —— 运放（普通单运放 vs 单片双运放）——
+        f('UA741', '【UA741·普通单运放】一片一颗；单级放大/跟随/滞回/积分优先选它；须双电源±12V+VEE；禁套双运放通道脚。', '【UA741】真脚 IN+/IN-/OUT/VCC/VEE；VCC→正轨 VEE→负轨；反馈 OUT↔IN- 或滞回正反馈；禁 V+/OUT1 假脚。'),
+        f('LM358', '【LM358·单片双运放】一片两路共享电源；单电源5V或要两路时选它；与 UA741 脚名完全不同。', '【LM358】OUT1/IN±1/OUT2/IN±2/V+/V-；未用半边 IN-↔OUT、IN+→GND；禁按 UA741 五脚连。'),
+        f('TL082', '【TL082·单片双运放·高阻】双通道 JFET；积分/高阻缓冲+双电源时选；未用半边须跟随。', '【TL082】同双运放通道脚铁律；V+→VCC V-→VEE；禁按 UA741 单运放脚名建网。'),
         // —— 555（选型侧短述；脚级以 IntentPromptFragments 无稳态/单稳态为准）——
         f('LM555', '【LM555】库 ID 必须 LM555；禁 NE555；按单稳态/无稳态选对拓扑。', '【LM555】供电 VCC/GND；RESET→VCC(不用复位)；CTRL—C_100n—GND；OUT 经 R 驱 LED；禁裸脚号 1..8。'),
         // —— 稳压/DC-DC ——
@@ -78,7 +78,7 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
         f('C_*', '【电容】去耦用 C_100nF；定时/积分按拓扑选值。', '【C】去耦：电源—C—GND；555 CTRL 旁路必须 100n；禁电解反接；禁两端同网。'),
         f('L_*', '【电感】滤波/储能。', '【L】串入电源或 LC 滤波；开关节点按拓扑；禁当导线短接电源。'),
         f('POT_*', '【电位器】三端；分压或可变电阻。', '【POT】1/2 跨电源或串入，W 抽头取分压；禁悬空抽头当完成。'),
-        f('LED_*', '【LED】必须限流电阻；N 灯 N 电阻。', '【LED】A←经 R←驱动；K→GND；禁无电阻直接电源；禁 K 接 VCC 正向硬灌。'),
+        f('LED_*', '【LED/LED灯】口语 LED=LED灯=指示灯，库仅 LED_RED/GREEN/BLUE；禁编造 LED灯 为 libDevId；禁当 OLED。须限流；N 灯 N 电阻。', '【LED】A←经 R←驱动；K→GND；禁无电阻直接电源；禁 K 接 VCC 正向硬灌。'),
         f('XTAL_*', '【晶振】MCU 时钟；配负载电容。', '【XTAL】接 OSC_IN/OSC_OUT；两端各 22pF→GND；走线最短。'),
         f('L_10uH', '【L_10uH】滤波/储能电感。', '【L_10uH】串电源或 LC；禁两端同网短电源。'),
         f('XTAL_11M', '【XTAL_11M】8051 常用晶振。', '【XTAL_11M】跨 XTAL1/2 + 负载电容到 GND。'),
@@ -286,7 +286,8 @@ export const FRAG_INSTR_DETAIL_SELECT: string = `
 - 电压表/测压 → VOLTMETER_DC（多表不同节点对）
 - 万用表/电阻档/二极管档 → VIRTUAL_METER（V/A/OHM/COM）
 - 功率 → POWER_METER；频率 → FREQ_COUNTER；逻辑 → LOGIC_ANALYZER(CH1–8)；串口 → UART_TERMINAL
-- 信号源/正弦/三角激励 → SIGNAL_GEN（写全 param）`;
+- 信号源/外接正弦/三角激励 → SIGNAL_GEN（写全 param）；【禁】闭环自激振荡勿加 SIGNAL_GEN
+- 「观测方波/三角波」只加 OSCILLOSCOPE，不等于要 SIGNAL_GEN`;
 export const FRAG_INSTR_DETAIL_NET: string = `
 【仪器细分建网】:
 - OSC: CHx∥被测网同名；GND stubLabel；禁 PROBE_*；禁 CH 挂 VCC/GND

@@ -139,6 +139,101 @@ function isOpAmpIntegratorPrompt(prompt: string): boolean {
   return hasOp && hasSquareIn && hasTriOut;
 }
 
+/**
+ * 意图侧自激判定（prompt 关键词 或 hyst+integ 且无外激励）。
+ * 用于阻断 wireSeriesRc / demote_all 误伤。
+ */
+export function intentIsOpAmpSelfOscillator(intent: CircuitIntent, prompt?: string): boolean {
+  if (prompt && prompt.length > 0 && isOpAmpSelfOscillatorPrompt(prompt)) {
+    return true;
+  }
+  for (let i = 0; i < intent.reasons.length; i++) {
+    const r = intent.reasons[i];
+    if (r.indexOf('self_osc') >= 0 || r.indexOf('hyst_self_osc') >= 0) {
+      return true;
+    }
+  }
+  // 滞回+积分且无 SIGNAL_GEN：与外激励整形/积分互斥，视为自激闭环
+  if (intent.needsHysteresisComparator && intent.needsOpAmpIntegrator &&
+    !intent.needsSignalGen) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 运放自激/弛张振荡（滞回比较器 + 积分器闭环）：方波由比较器自产，禁止强制 SIGNAL_GEN。
+ * 例：「三角波反馈至比较器形成闭环自激振荡」「运放方波三角波振荡器」
+ */
+export function isOpAmpSelfOscillatorPrompt(prompt: string): boolean {
+  const zh = prompt ?? '';
+  const lower = zh.toLowerCase();
+  if (zh.indexOf('自激') >= 0 || zh.indexOf('弛张') >= 0 ||
+    lower.indexOf('relaxation') >= 0 || lower.indexOf('self-oscill') >= 0) {
+    return true;
+  }
+  // 「无稳态」alone 常指 555；运放语境才算自激
+  if (lower.indexOf('astable') >= 0 &&
+    (zh.indexOf('运放') >= 0 || zh.indexOf('积分') >= 0 || zh.indexOf('滞回') >= 0)) {
+    return true;
+  }
+  const deniesExternalExcitation =
+    /无需\s*外?接?激励|不要\s*外?接?激励|禁止\s*外?接?激励|勿\s*外?接?激励|无\s*外?部?激励|不需要\s*信号源|禁止\s*信号源|勿\s*加\s*信号发生/.test(zh);
+  const hasExternalExcitation =
+    zh.indexOf('信号源') >= 0 || zh.indexOf('信号发生') >= 0 || zh.indexOf('函数发生') >= 0 ||
+    (/激励/.test(zh) && !deniesExternalExcitation &&
+      (zh.indexOf('输入') >= 0 || zh.indexOf('外接') >= 0 || zh.indexOf('外部') >= 0));
+  if (hasExternalExcitation) {
+    return false;
+  }
+
+  const closedLoop = zh.indexOf('闭环') >= 0 || zh.indexOf('反馈至比较') >= 0 ||
+    zh.indexOf('反馈到比较') >= 0 || zh.indexOf('回授') >= 0 ||
+    (zh.indexOf('反馈') >= 0 && (zh.indexOf('比较器') >= 0 || zh.indexOf('滞回') >= 0 ||
+      zh.indexOf('积分') >= 0));
+  const osc = zh.indexOf('振荡') >= 0 || zh.indexOf('震荡') >= 0 ||
+    zh.indexOf('振荡器') >= 0 || lower.indexOf('oscillat') >= 0;
+  const squareTri = (zh.indexOf('方波') >= 0 || lower.indexOf('square') >= 0) &&
+    (zh.indexOf('三角') >= 0 || lower.indexOf('triangle') >= 0);
+  const dualOp = zh.indexOf('两片运放') >= 0 || zh.indexOf('双运放') >= 0 ||
+    zh.indexOf('两路运放') >= 0 || zh.indexOf('两级运放') >= 0 ||
+    /两\s*片?\s*运放/.test(zh) ||
+    (zh.indexOf('运放') >= 0 && (zh.indexOf('滞回') >= 0 || zh.indexOf('比较器') >= 0) &&
+      zh.indexOf('积分') >= 0);
+  const genName = zh.indexOf('三角波发生') >= 0 || zh.indexOf('方波发生器') >= 0 ||
+    zh.indexOf('方波三角波') >= 0 || (zh.indexOf('发生器') >= 0 && squareTri &&
+      zh.indexOf('信号发生') < 0 && zh.indexOf('函数发生') < 0);
+
+  // 闭环振荡 / 方波+三角双运放自产 / 命名发生器
+  if ((closedLoop && osc) || (closedLoop && squareTri && dualOp) ||
+    (squareTri && dualOp && zh.indexOf('积分') >= 0 &&
+      (zh.indexOf('滞回') >= 0 || zh.indexOf('比较器') >= 0)) ||
+    (genName && dualOp) || (genName && osc && zh.indexOf('运放') >= 0)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 单点收口：自激拓扑禁止 needsSignalGen；末尾务必调用，防止 refine 再写回。
+ */
+export function applySelfOscSignalGenGuard(intent: CircuitIntent, prompt: string): void {
+  if (!isOpAmpSelfOscillatorPrompt(prompt)) {
+    return;
+  }
+  if (intent.needsSignalGen) {
+    intent.needsSignalGen = false;
+    pushReason(intent, 'self_osc_guard_clear_siggen');
+  }
+  // 自激含「振荡」易误触 blink 片段（SW 串供电），与运放闭环冲突
+  if (intent.blinkOscillator &&
+    (intent.needsOpAmpIntegrator || intent.needsHysteresisComparator ||
+      intent.needsOpAmpFeedback)) {
+    intent.blinkOscillator = false;
+    pushReason(intent, 'self_osc_clear_blink');
+  }
+}
+
 function isHysteresisComparatorPrompt(prompt: string): boolean {
   const zh = prompt ?? '';
   const lower = zh.toLowerCase();
@@ -327,14 +422,19 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
     intent.needsOpAmpIntegrator = true;
     intent.needsOpAmpFeedback = true;
     intent.dualSupply = true;
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    if (intent.signalWaveform.length === 0 || intent.signalWaveform === 'sine') {
-      // 积分示教默认方波激励（可被用户显式波形覆盖，见 applyPowerAndSignalIntent）
-      intent.signalWaveform = 'square';
-    }
-    if (intent.preferredSignalAmplitude.length === 0) {
-      intent.preferredSignalAmplitude = '5V';
+    // 自激振荡：方波由滞回比较器自产，勿强制外接 SIGNAL_GEN
+    if (!isOpAmpSelfOscillatorPrompt(prompt)) {
+      intent.needsSignalGen = true;
+      intent.hasInstruments = true;
+      if (intent.signalWaveform.length === 0 || intent.signalWaveform === 'sine') {
+        // 积分示教默认方波激励（可被用户显式波形覆盖，见 applyPowerAndSignalIntent）
+        intent.signalWaveform = 'square';
+      }
+      if (intent.preferredSignalAmplitude.length === 0) {
+        intent.preferredSignalAmplitude = '5V';
+      }
+    } else {
+      pushReason(intent, 'self_osc_no_siggen');
     }
     pushReason(intent, 'opamp_integrator');
   }
@@ -342,7 +442,8 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
   applyPowerAndSignalIntent(intent, prompt);
 
   // 积分器：激励波形以方波为准（「三角」是输出观测，不是信号源）
-  if (intent.needsOpAmpIntegrator) {
+  // 自激闭环除外 — 无需 SIGNAL_GEN
+  if (intent.needsOpAmpIntegrator && !isOpAmpSelfOscillatorPrompt(prompt)) {
     intent.dualSupply = true;
     intent.needsSignalGen = true;
     const zh2 = prompt ?? '';
@@ -356,6 +457,15 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
     if (intent.preferredSignalAmplitude.length === 0) {
       intent.preferredSignalAmplitude = '5V';
     }
+    if (intent.preferredVccVoltage.length === 0) {
+      intent.preferredVccVoltage = '12V';
+    }
+    if (intent.preferredVeeVoltage.length === 0) {
+      intent.preferredVeeVoltage = '-12V';
+    }
+  } else if (intent.needsOpAmpIntegrator && isOpAmpSelfOscillatorPrompt(prompt)) {
+    intent.dualSupply = true;
+    intent.needsSignalGen = false;
     if (intent.preferredVccVoltage.length === 0) {
       intent.preferredVccVoltage = '12V';
     }
@@ -384,6 +494,7 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
     // 不强制 passiveOnly；仅作弱信号
   }
 
+  applySelfOscSignalGenGuard(intent, prompt);
   return intent;
 }
 
@@ -414,17 +525,21 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
       pushReason(intent, 'opamp_dual_default');
     }
   }
-  // 积分器：强制双电源 + 方波激励缺省
+  // 积分器：强制双电源；外激励示教才要 SIGNAL_GEN（自激闭环除外）
   if (intent.needsOpAmpIntegrator) {
     intent.dualSupply = true;
     intent.needsPowerRails = true;
-    intent.needsSignalGen = true;
-    if (intent.signalWaveform !== 'sine' && intent.signalWaveform !== 'triangle' &&
-      intent.signalWaveform !== 'saw' && intent.signalWaveform !== 'pulse') {
-      intent.signalWaveform = 'square';
-    }
-    if (intent.preferredSignalAmplitude.length === 0) {
-      intent.preferredSignalAmplitude = '5V';
+    if (!isOpAmpSelfOscillatorPrompt(prompt)) {
+      intent.needsSignalGen = true;
+      if (intent.signalWaveform !== 'sine' && intent.signalWaveform !== 'triangle' &&
+        intent.signalWaveform !== 'saw' && intent.signalWaveform !== 'pulse') {
+        intent.signalWaveform = 'square';
+      }
+      if (intent.preferredSignalAmplitude.length === 0) {
+        intent.preferredSignalAmplitude = '5V';
+      }
+    } else {
+      intent.needsSignalGen = false;
     }
   }
 
@@ -469,13 +584,19 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
     pushReason(intent, `vccSym=${intent.preferredVccVoltage}`);
   }
 
-  // 信号发生器
-  const wantSig = zh.indexOf('信号发生') >= 0 || zh.indexOf('函数发生') >= 0 ||
+  // 信号发生器：仅「外接激励/信号源」才置位；否定语境（无需激励）不算
+  const deniesExcitation =
+    /无需\s*外?接?激励|不要\s*外?接?激励|禁止\s*外?接?激励|勿\s*外?接?激励|无\s*外?部?激励|不需要\s*信号源|禁止\s*SIGNAL_GEN/i.test(zh);
+  const wantSig = !deniesExcitation && (
+    zh.indexOf('信号发生') >= 0 || zh.indexOf('函数发生') >= 0 ||
     zh.indexOf('信号源') >= 0 || lower.indexOf('signal gen') >= 0 ||
     lower.indexOf('function gen') >= 0 || lower.indexOf('waveform gen') >= 0 ||
-    (zh.indexOf('激励') >= 0 && (zh.indexOf('正弦') >= 0 || zh.indexOf('方波') >= 0 ||
-      zh.indexOf('三角') >= 0));
-  if (wantSig) {
+    (zh.indexOf('外接激励') >= 0 || zh.indexOf('外部激励') >= 0 || zh.indexOf('输入激励') >= 0) ||
+    (/激励/.test(zh) && !deniesExcitation &&
+      (zh.indexOf('输入') >= 0 || zh.indexOf('外接') >= 0) &&
+      (zh.indexOf('正弦') >= 0 || zh.indexOf('方波') >= 0 || zh.indexOf('三角') >= 0))
+  );
+  if (wantSig && !isOpAmpSelfOscillatorPrompt(prompt)) {
     intent.needsSignalGen = true;
     intent.hasInstruments = true;
     pushReason(intent, 'signal_gen');
@@ -507,22 +628,23 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
     }
   } else if (hasSquare && !squareAsOutputOnly) {
     intent.signalWaveform = 'square';
-    if (wantSig || zh.indexOf('波形') >= 0 || exciteCtx('方波')) {
+    // 「观测波形/两路波形」是示波器语境，不代表外接信号源
+    if (wantSig || exciteCtx('方波')) {
       intent.needsSignalGen = true;
     }
   } else if (hasTri) {
     intent.signalWaveform = 'triangle';
-    if (wantSig || zh.indexOf('波形') >= 0) {
+    if (wantSig || exciteCtx('三角')) {
       intent.needsSignalGen = true;
     }
   } else if (hasSaw) {
     intent.signalWaveform = 'saw';
-    if (wantSig || zh.indexOf('波形') >= 0) {
+    if (wantSig || exciteCtx('锯齿')) {
       intent.needsSignalGen = true;
     }
   } else if (hasPulse) {
     intent.signalWaveform = 'pulse';
-    if (wantSig || zh.indexOf('波形') >= 0) {
+    if (wantSig || exciteCtx('脉冲')) {
       intent.needsSignalGen = true;
     }
   } else if (hasSine) {
@@ -565,8 +687,8 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
       pushReason(intent, `sigAmp=${intent.preferredSignalAmplitude}`);
     }
   }
-  // 滞回整形：激励须 >|Vth|；未指定或过小则抬到推荐 5V
-  if (intent.needsHysteresisComparator) {
+  // 滞回整形：有外激励时抬幅度；自激振荡不需要 SIGNAL_GEN
+  if (intent.needsHysteresisComparator && !isOpAmpSelfOscillatorPrompt(prompt)) {
     intent.needsSignalGen = true;
     if (intent.signalWaveform.length === 0) {
       intent.signalWaveform = 'sine';
@@ -576,6 +698,9 @@ function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void 
       intent.preferredSignalAmplitude = HYSTERESIS_RECOMMENDED_SIGNAL_AMP;
       pushReason(intent, `sigAmpHyst=${HYSTERESIS_RECOMMENDED_SIGNAL_AMP}`);
     }
+  } else if (intent.needsHysteresisComparator && isOpAmpSelfOscillatorPrompt(prompt)) {
+    intent.needsSignalGen = false;
+    pushReason(intent, 'hyst_self_osc_no_siggen');
   }
 }
 
@@ -705,7 +830,11 @@ export function refineCircuitIntent(
     intent.needsOpAmpIntegrator = true;
     intent.needsOpAmpFeedback = true;
     intent.dualSupply = true;
-    intent.needsSignalGen = true;
+    if (!isOpAmpSelfOscillatorPrompt(prompt)) {
+      intent.needsSignalGen = true;
+    } else {
+      intent.needsSignalGen = false;
+    }
     pushReason(intent, 'integrator_bom');
   }
 
@@ -763,38 +892,43 @@ export function refineCircuitIntent(
     }
   }
   if (hasSig) {
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    pushReason(intent, 'signal_gen_bom');
-    // BOM 显式 waveform 覆盖启发式（避免「输出方波」误判激励）
-    for (let i = 0; i < bomList.length; i++) {
-      const id = `${bomList[i].explicitModel ?? ''} ${bomList[i].devType ?? ''}`.toUpperCase();
-      if (id.indexOf('SIGNAL_GEN') < 0) {
-        continue;
+    // 自激拓扑若 LLM 误加 SIGNAL_GEN：不巩固 intent，留给 critique 提示删除
+    if (isOpAmpSelfOscillatorPrompt(prompt)) {
+      pushReason(intent, 'signal_gen_bom_ignored_self_osc');
+    } else {
+      intent.needsSignalGen = true;
+      intent.hasInstruments = true;
+      pushReason(intent, 'signal_gen_bom');
+      // BOM 显式 waveform 覆盖启发式（避免「输出方波」误判激励）
+      for (let i = 0; i < bomList.length; i++) {
+        const id = `${bomList[i].explicitModel ?? ''} ${bomList[i].devType ?? ''}`.toUpperCase();
+        if (id.indexOf('SIGNAL_GEN') < 0) {
+          continue;
+        }
+        const wf = (bomList[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
+        if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
+          intent.signalWaveform = wf;
+          pushReason(intent, `sigWfBom=${wf}`);
+        }
+        const freq = (bomList[i].paramConstraint?.get('frequency') ?? '').trim();
+        if (freq.length > 0) {
+          intent.preferredSignalFrequency = freq;
+        }
+        const duty = (bomList[i].paramConstraint?.get('dutyCycle') ?? '').trim();
+        if (duty.length > 0) {
+          intent.preferredSignalDuty = duty;
+        }
+        const amp = (bomList[i].paramConstraint?.get('amplitude') ?? '').trim();
+        if (amp.length > 0) {
+          intent.preferredSignalAmplitude = amp;
+          pushReason(intent, `sigAmpBom=${amp}`);
+        }
+        break;
       }
-      const wf = (bomList[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
-      if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
-        intent.signalWaveform = wf;
-        pushReason(intent, `sigWfBom=${wf}`);
-      }
-      const freq = (bomList[i].paramConstraint?.get('frequency') ?? '').trim();
-      if (freq.length > 0) {
-        intent.preferredSignalFrequency = freq;
-      }
-      const duty = (bomList[i].paramConstraint?.get('dutyCycle') ?? '').trim();
-      if (duty.length > 0) {
-        intent.preferredSignalDuty = duty;
-      }
-      const amp = (bomList[i].paramConstraint?.get('amplitude') ?? '').trim();
-      if (amp.length > 0) {
-        intent.preferredSignalAmplitude = amp;
-        pushReason(intent, `sigAmpBom=${amp}`);
-      }
-      break;
     }
   }
-  // 滞回：BOM 幅度过小则抬到推荐值（避免 1V 峰锁死单轨）
-  if (intent.needsHysteresisComparator) {
+  // 滞回：外激励整形才抬 SIGNAL_GEN 幅度；自激禁止写回
+  if (intent.needsHysteresisComparator && !isOpAmpSelfOscillatorPrompt(prompt)) {
     intent.needsSignalGen = true;
     const curV = parseSignalAmplitudeVolts(intent.preferredSignalAmplitude);
     if (!Number.isFinite(curV) || curV < HYSTERESIS_MIN_SIGNAL_AMP_V) {
@@ -817,7 +951,7 @@ export function refineCircuitIntent(
       }
     }
   }
-  if (intent.needsOpAmpIntegrator) {
+  if (intent.needsOpAmpIntegrator && !isOpAmpSelfOscillatorPrompt(prompt)) {
     intent.needsSignalGen = true;
     if (intent.signalWaveform !== 'sine' && intent.signalWaveform !== 'pulse') {
       intent.signalWaveform = 'square';
@@ -835,6 +969,9 @@ export function refineCircuitIntent(
     intent.mutualLedIndicator = false;
     intent.relayContactTopo = false;
   }
+
+  // 末尾单点收口：防止上文任何路径把自激又写成 needsSignalGen
+  applySelfOscSignalGenGuard(intent, prompt);
 
   return intent;
 }

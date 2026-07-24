@@ -38,6 +38,7 @@ interface SchematicCanvas_Params {
     viewHeight?: number;
     canvasReady?: boolean;
     needsFitOnLayout?: boolean;
+    fitSettleTimer?: number;
     redrawScheduled?: boolean;
     redrawTimer?: number;
     hoverComponentId?: string;
@@ -177,6 +178,7 @@ export class SchematicCanvas extends ViewPU {
         this.viewHeight = 0;
         this.canvasReady = false;
         this.needsFitOnLayout = true;
+        this.fitSettleTimer = -1;
         this.redrawScheduled = false;
         this.redrawTimer = -1;
         this.__hoverComponentId = new ObservedPropertySimplePU('', this, "hoverComponentId");
@@ -375,6 +377,9 @@ export class SchematicCanvas extends ViewPU {
         }
         if (params.needsFitOnLayout !== undefined) {
             this.needsFitOnLayout = params.needsFitOnLayout;
+        }
+        if (params.fitSettleTimer !== undefined) {
+            this.fitSettleTimer = params.fitSettleTimer;
         }
         if (params.redrawScheduled !== undefined) {
             this.redrawScheduled = params.redrawScheduled;
@@ -802,6 +807,7 @@ export class SchematicCanvas extends ViewPU {
     private viewHeight: number;
     private canvasReady: boolean;
     private needsFitOnLayout: boolean;
+    private fitSettleTimer: number;
     private redrawScheduled: boolean;
     private redrawTimer: number;
     private __hoverComponentId: ObservedPropertySimplePU<string>;
@@ -990,9 +996,16 @@ export class SchematicCanvas extends ViewPU {
         // Fallback: layout may complete after onReady — force a full paint once sizes settle.
         setTimeout(() => {
             this.ensureLayoutRedraw('startup');
+            if (this.viewWidth > 0 && this.viewHeight > 0 && this.needsFitOnLayout) {
+                this.appService.schematicEditor.fitAllInView();
+            }
         }, 120);
         setTimeout(() => {
             this.ensureLayoutRedraw('startup-late');
+            if (this.viewWidth > 0 && this.viewHeight > 0) {
+                this.appService.schematicEditor.fitAllInView();
+                this.needsFitOnLayout = false;
+            }
         }, 400);
     }
     aboutToDisappear(): void {
@@ -1000,6 +1013,10 @@ export class SchematicCanvas extends ViewPU {
         EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
         EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STEP, this.onSimStep);
         EventBus.getInstance().unsubscribe(ModuleEvent.SIMULATION_STARTED, this.onSimulationStarted);
+        if (this.fitSettleTimer >= 0) {
+            clearTimeout(this.fitSettleTimer);
+            this.fitSettleTimer = -1;
+        }
         if (this.redrawTimer >= 0) {
             clearTimeout(this.redrawTimer);
             this.redrawTimer = -1;
@@ -1123,11 +1140,27 @@ export class SchematicCanvas extends ViewPU {
         if (sizeChanged || !this.canvasReady) {
             this.canvasReady = true;
             this.forceFullRedraw('areaChange');
-            const growAfterMaximize = !wasUnlaid && (nw - prevW > 64 || nh - prevH > 64);
+            // 启动期：明显变大（最大化）或尚未完成首次稳定 fit 时重新适配
+            const growDelta = Math.max(Math.abs(nw - prevW), Math.abs(nh - prevH));
+            const growAfterMaximize = !wasUnlaid && growDelta > 16;
             if (this.needsFitOnLayout || wasUnlaid || growAfterMaximize) {
-                this.needsFitOnLayout = false;
                 this.appService.schematicEditor.fitAllInView();
                 this.scheduleRedraw();
+                if (wasUnlaid || growAfterMaximize) {
+                    // 尺寸还在变：延后清除，等布局收敛后再 fit 最后一次
+                    this.needsFitOnLayout = true;
+                    if (this.fitSettleTimer >= 0) {
+                        clearTimeout(this.fitSettleTimer);
+                    }
+                    this.fitSettleTimer = setTimeout(() => {
+                        this.fitSettleTimer = -1;
+                        if (this.viewWidth > 0 && this.viewHeight > 0) {
+                            this.appService.schematicEditor.fitAllInView();
+                            this.scheduleRedraw();
+                        }
+                        this.needsFitOnLayout = false;
+                    }, 180);
+                }
             }
         }
     }
@@ -1341,7 +1374,7 @@ export class SchematicCanvas extends ViewPU {
                                                     this.contextMenuVisible = false;
                                                     this.openPlaceNetLabelDialog(this.contextNetLabelX, this.contextNetLabelY);
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 486, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 514, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1392,7 +1425,7 @@ export class SchematicCanvas extends ViewPU {
                                                                 this.contextMenuVisible = false;
                                                                 this.onCopySelected();
                                                             }
-                                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 498, col: 19 });
+                                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 526, col: 19 });
                                                         ViewPU.create(componentCall);
                                                         let paramsLambda = () => {
                                                             return {
@@ -1435,7 +1468,7 @@ export class SchematicCanvas extends ViewPU {
                                                     this.contextMenuVisible = false;
                                                     this.onDeleteSelected();
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 508, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 536, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1531,7 +1564,7 @@ export class SchematicCanvas extends ViewPU {
                                     mono: true,
                                     onChange: (v: string) => { this.netLabelDialogName = v; },
                                     onSubmit: () => { this.confirmNetLabelDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 545, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 573, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1566,7 +1599,7 @@ export class SchematicCanvas extends ViewPU {
                                     label: '取消',
                                     widthVal: '48%',
                                     onAction: () => { this.closeNetLabelDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 554, col: 19 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 582, col: 19 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1592,7 +1625,7 @@ export class SchematicCanvas extends ViewPU {
                                     label: this.netLabelEditId.length > 0 ? '改名' : '放置',
                                     widthVal: '48%',
                                     onAction: () => { this.confirmNetLabelDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 559, col: 19 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/SchematicCanvas.ets", line: 587, col: 19 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
