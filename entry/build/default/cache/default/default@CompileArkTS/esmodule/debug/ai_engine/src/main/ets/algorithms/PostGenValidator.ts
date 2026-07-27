@@ -519,12 +519,10 @@ export class PostGenValidator {
                 const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
                 if (dev) {
                     const lib = (dev.libDevId ?? '').toUpperCase();
-                    if (lib === 'LM555' || lib === 'NE555') {
-                        const c = TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
-                        if (c.length > 0) {
-                            safe.add(`${node.devUuid}:${c}`);
-                            connectedPinKeys.add(`${node.devUuid}:${c}`);
-                        }
+                    const c = TemplateSchematicKit.canonicalizeLibPin(lib, pinId, pinName);
+                    if (c.length > 0) {
+                        safe.add(`${node.devUuid}:${c}`);
+                        connectedPinKeys.add(`${node.devUuid}:${c}`);
                     }
                 }
             }

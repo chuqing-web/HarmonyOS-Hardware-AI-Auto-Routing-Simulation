@@ -1,0 +1,3264 @@
+{
+  "summary": {
+    "metaCount": 83,
+    "builtinCount": 67,
+    "match": 14,
+    "mismatch": 50,
+    "missingKit": 30,
+    "metaOnly": 19,
+    "builtinOnly": 3
+  },
+  "match": [
+    "2764",
+    "62256",
+    "74HC00",
+    "74HC02",
+    "74HC08",
+    "74HC32",
+    "74HC74",
+    "BUZZER",
+    "LDR",
+    "L_10uH",
+    "OSCILLOSCOPE",
+    "SW_PUSH",
+    "XTAL_11M",
+    "XTAL_8M"
+  ],
+  "mismatch": [
+    {
+      "id": "1N4007",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4007.meta.json"
+    },
+    {
+      "id": "1N4148",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4148.meta.json"
+    },
+    {
+      "id": "1N5819",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N5819.meta.json"
+    },
+    {
+      "id": "24C02",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/24C02.meta.json"
+    },
+    {
+      "id": "2N2222",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2222.meta.json"
+    },
+    {
+      "id": "2N2907",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2907.meta.json"
+    },
+    {
+      "id": "2N7000",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/2N7000.meta.json"
+    },
+    {
+      "id": "74HC04",
+      "meta": [
+        "1",
+        "2",
+        "7",
+        "14"
+      ],
+      "builtin": [
+        "1",
+        "2",
+        "7",
+        "14",
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "7",
+        "14",
+        "3"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC04.meta.json"
+    },
+    {
+      "id": "AMMETER_DC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "I+",
+        "I-"
+      ],
+      "kitRecognized": [
+        "I+",
+        "I-"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/AMMETER_DC.meta.json"
+    },
+    {
+      "id": "AMS1117_3V3",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/AMS1117_3V3.meta.json"
+    },
+    {
+      "id": "AT89C51",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/AT89C51.meta.json"
+    },
+    {
+      "id": "AT89C52",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/AT89C52.meta.json"
+    },
+    {
+      "id": "CD4017",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/CD4017.meta.json"
+    },
+    {
+      "id": "DS18B20",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "1",
+        "2"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "1",
+        "2"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/DS18B20.meta.json"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "IN",
+        "GND"
+      ],
+      "kitRecognized": [
+        "IN",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/FREQ_COUNTER.meta.json"
+    },
+    {
+      "id": "FUSE_1A",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Fuse/FUSE_1A.meta.json"
+    },
+    {
+      "id": "GND",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/GND.meta.json"
+    },
+    {
+      "id": "HALL_SENSOR",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "1",
+        "2"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "1",
+        "2"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/HALL_SENSOR.meta.json"
+    },
+    {
+      "id": "IRF540",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/IRF540.meta.json"
+    },
+    {
+      "id": "LCD1602",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/LCD1602.meta.json"
+    },
+    {
+      "id": "LED_BLUE",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_BLUE.meta.json"
+    },
+    {
+      "id": "LED_GREEN",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_GREEN.meta.json"
+    },
+    {
+      "id": "LED_RED",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "A",
+        "K"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_RED.meta.json"
+    },
+    {
+      "id": "LM2596",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM2596.meta.json"
+    },
+    {
+      "id": "LM358",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM358.meta.json"
+    },
+    {
+      "id": "LM555",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM555.meta.json"
+    },
+    {
+      "id": "LM7805",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7805.meta.json"
+    },
+    {
+      "id": "LM7812",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7812.meta.json"
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "builtin": [
+        "GND"
+      ],
+      "kitRecognized": [
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/LOGIC_ANALYZER.meta.json"
+    },
+    {
+      "id": "OLED_12864",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "kitRecognized": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/OLED_12864.meta.json"
+    },
+    {
+      "id": "POWER_METER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "kitRecognized": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/POWER_METER.meta.json"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "builtin": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "3",
+        "4",
+        "5"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/RELAY_SPDT.meta.json"
+    },
+    {
+      "id": "SIGNAL_GEN",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/SIGNAL_GEN.meta.json"
+    },
+    {
+      "id": "STC15W408AS",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/STC15W408AS.meta.json"
+    },
+    {
+      "id": "STC89C52",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/STC89C52.meta.json"
+    },
+    {
+      "id": "STM32F030F4",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F030F4.meta.json"
+    },
+    {
+      "id": "STM32F103C8",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103C8.meta.json"
+    },
+    {
+      "id": "STM32F103C8T6",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103C8T6.meta.json"
+    },
+    {
+      "id": "STM32F103RC",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103RC.meta.json"
+    },
+    {
+      "id": "STM32F407VG",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68",
+        "69",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "76",
+        "77",
+        "78",
+        "79",
+        "80",
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+        "87",
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68",
+        "69",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "76",
+        "77",
+        "78",
+        "79",
+        "80",
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+        "87",
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F407VG.meta.json"
+    },
+    {
+      "id": "STM32L431CB",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "builtin": [],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32L431CB.meta.json"
+    },
+    {
+      "id": "TL082",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/TL082.meta.json"
+    },
+    {
+      "id": "UA741",
+      "meta": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/UA741.meta.json"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "kitRecognized": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/UART_TERMINAL.meta.json"
+    },
+    {
+      "id": "VAC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1",
+        "2"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VAC.meta.json"
+    },
+    {
+      "id": "VCC",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VCC.meta.json"
+    },
+    {
+      "id": "VEE",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VEE.meta.json"
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "kitRecognized": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VIRTUAL_METER.meta.json"
+    },
+    {
+      "id": "VOLTMETER_DC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "V+",
+        "COM"
+      ],
+      "kitRecognized": [
+        "V+",
+        "COM"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VOLTMETER_DC.meta.json"
+    },
+    {
+      "id": "W25Q64",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/W25Q64.meta.json"
+    }
+  ],
+  "missingKit": [
+    {
+      "id": "24C02",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/24C02.meta.json"
+    },
+    {
+      "id": "2N2222",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2222.meta.json"
+    },
+    {
+      "id": "2N2907",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2907.meta.json"
+    },
+    {
+      "id": "2N7000",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/2N7000.meta.json"
+    },
+    {
+      "id": "AMMETER_DC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "I+",
+        "I-"
+      ],
+      "kitRecognized": [
+        "I+",
+        "I-"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/AMMETER_DC.meta.json"
+    },
+    {
+      "id": "AMS1117_3V3",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/AMS1117_3V3.meta.json"
+    },
+    {
+      "id": "DS18B20",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "1",
+        "2"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "1",
+        "2"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/DS18B20.meta.json"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "IN",
+        "GND"
+      ],
+      "kitRecognized": [
+        "IN",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/FREQ_COUNTER.meta.json"
+    },
+    {
+      "id": "FUSE_1A",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [
+        "1",
+        "2"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Fuse/FUSE_1A.meta.json"
+    },
+    {
+      "id": "GND",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/GND.meta.json"
+    },
+    {
+      "id": "HALL_SENSOR",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "1",
+        "2"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "1",
+        "2"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/HALL_SENSOR.meta.json"
+    },
+    {
+      "id": "IRF540",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "A",
+        "K"
+      ],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [
+        "A",
+        "K"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/IRF540.meta.json"
+    },
+    {
+      "id": "LCD1602",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/LCD1602.meta.json"
+    },
+    {
+      "id": "LM2596",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM2596.meta.json"
+    },
+    {
+      "id": "LM358",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM358.meta.json"
+    },
+    {
+      "id": "LM7805",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7805.meta.json"
+    },
+    {
+      "id": "LM7812",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "OUT"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "IN+",
+        "IN-",
+        "VCC",
+        "VEE"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7812.meta.json"
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "builtin": [
+        "GND"
+      ],
+      "kitRecognized": [
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/LOGIC_ANALYZER.meta.json"
+    },
+    {
+      "id": "OLED_12864",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "kitRecognized": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/OLED_12864.meta.json"
+    },
+    {
+      "id": "POWER_METER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "kitRecognized": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/POWER_METER.meta.json"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "builtin": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "3",
+        "4",
+        "5"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/RELAY_SPDT.meta.json"
+    },
+    {
+      "id": "TL082",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/TL082.meta.json"
+    },
+    {
+      "id": "UA741",
+      "meta": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "kitRecognized": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "G",
+        "D",
+        "S"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/UA741.meta.json"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtin": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "kitRecognized": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/UART_TERMINAL.meta.json"
+    },
+    {
+      "id": "VAC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1",
+        "2"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VAC.meta.json"
+    },
+    {
+      "id": "VCC",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VCC.meta.json"
+    },
+    {
+      "id": "VEE",
+      "meta": [
+        "1"
+      ],
+      "builtin": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "kitRecognized": [
+        "1"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [],
+      "kitMissingBuiltin": [
+        "2",
+        "OUT",
+        "GND"
+      ],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VEE.meta.json"
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "builtin": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "kitRecognized": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VIRTUAL_METER.meta.json"
+    },
+    {
+      "id": "VOLTMETER_DC",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "builtin": [
+        "V+",
+        "COM"
+      ],
+      "kitRecognized": [
+        "V+",
+        "COM"
+      ],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VOLTMETER_DC.meta.json"
+    },
+    {
+      "id": "W25Q64",
+      "meta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "builtin": [],
+      "kitRecognized": [],
+      "metaEqBuiltin": false,
+      "kitMissingMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitMissingBuiltin": [],
+      "metaFile": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/W25Q64.meta.json"
+    }
+  ],
+  "metaOnly": [
+    {
+      "id": "C_100nF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100nF.meta.json"
+    },
+    {
+      "id": "C_100pF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100pF.meta.json"
+    },
+    {
+      "id": "C_100uF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100uF.meta.json"
+    },
+    {
+      "id": "C_10nF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10nF.meta.json"
+    },
+    {
+      "id": "C_10pF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10pF.meta.json"
+    },
+    {
+      "id": "C_10uF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10uF.meta.json"
+    },
+    {
+      "id": "C_1nF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_1nF.meta.json"
+    },
+    {
+      "id": "C_1uF",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_1uF.meta.json"
+    },
+    {
+      "id": "POT_100k",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_100k.meta.json"
+    },
+    {
+      "id": "POT_10k",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_10k.meta.json"
+    },
+    {
+      "id": "POT_1k",
+      "meta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_1k.meta.json"
+    },
+    {
+      "id": "R_10",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_10.meta.json"
+    },
+    {
+      "id": "R_100",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_100.meta.json"
+    },
+    {
+      "id": "R_100k",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_100k.meta.json"
+    },
+    {
+      "id": "R_10k",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_10k.meta.json"
+    },
+    {
+      "id": "R_1k",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_1k.meta.json"
+    },
+    {
+      "id": "R_330",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_330.meta.json"
+    },
+    {
+      "id": "R_4.7k",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_4.7k.meta.json"
+    },
+    {
+      "id": "R_47k",
+      "meta": [
+        "1",
+        "2"
+      ],
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_47k.meta.json"
+    }
+  ],
+  "builtinOnly": [
+    {
+      "id": "C_${v}",
+      "builtin": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "POT_${v}",
+      "builtin": [
+        "1",
+        "2",
+        "W"
+      ]
+    },
+    {
+      "id": "R_${v}",
+      "builtin": [
+        "1",
+        "2"
+      ]
+    }
+  ]
+}

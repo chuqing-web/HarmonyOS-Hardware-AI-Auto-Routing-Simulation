@@ -1956,19 +1956,7 @@ export class AiTopologyFixKit {
       return null;
     }
     const libId = (dev.libDevId ?? '').toUpperCase();
-    let canon = '';
-    if (libId === 'LM358' || libId === 'TL082' || libId.indexOf('LM324') >= 0) {
-      canon = TemplateSchematicKit.canonicalizeDualOpAmpPin(rawId, rawName);
-    } else if (libId === 'LM555' || libId === 'NE555' || libId.indexOf('555') >= 0) {
-      canon = TemplateSchematicKit.canonicalize555Pin(rawId, rawName);
-    } else if (libId === 'UA741') {
-      const u = (rawId.length > 0 ? rawId : rawName).toUpperCase();
-      if (u === 'V+' || u === 'VCC') {
-        canon = 'VCC';
-      } else if (u === 'V-' || u === 'VEE') {
-        canon = 'VEE';
-      }
-    }
+    let canon = TemplateSchematicKit.canonicalizeLibPin(libId, rawId, rawName);
 
     const candidates: string[] = [];
     const push = (s: string): void => {

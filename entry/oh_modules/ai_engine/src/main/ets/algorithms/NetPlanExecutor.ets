@@ -590,7 +590,7 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 按器件库类型把别名/DIP 数字脚规范到库 pinId（555/双运放/三端稳压）。
+   * 按器件库类型把数字 pin_id / 别名规范到 Builtin 语义脚（PinIdRegistry）。
    * 须在 validatePinsAgainstLibrary 之前调用。
    */
   static canonicalizeLibPinsInPlan(plan: NetPlanResult, topo: SchTopology): number {
@@ -613,15 +613,7 @@ export class NetPlanExecutor {
           continue;
         }
         const before = c.pinId;
-        let canon = '';
-        if (lib === 'LM555' || lib === 'NE555' || lib.indexOf('555') >= 0) {
-          canon = TemplateSchematicKit.canonicalize555Pin(c.pinId, c.pinName);
-        } else if (lib === 'LM358' || lib === 'TL082' || lib === 'LM324') {
-          canon = TemplateSchematicKit.canonicalizeDualOpAmpPin(c.pinId, c.pinName);
-        } else if (lib === 'LM7805' || lib === 'LM7812' || lib === 'AMS1117_3V3' ||
-          lib.indexOf('AMS1117') >= 0 || lib.indexOf('7805') >= 0 || lib.indexOf('7812') >= 0) {
-          canon = TemplateSchematicKit.canonicalizeRegulatorPin(c.pinId, c.pinName);
-        }
+        let canon = TemplateSchematicKit.canonicalizeLibPin(lib, c.pinId, c.pinName);
         if (canon.length > 0 && canon !== before) {
           c.pinId = canon;
           c.pinName = canon;

@@ -1,0 +1,8866 @@
+{
+  "summary": {
+    "metaCount": 83,
+    "builtinParsed": 51,
+    "semanticMeta": 2,
+    "numericMeta": 81,
+    "high": 29,
+    "med": 5,
+    "low": 49,
+    "withCanon": 8,
+    "metaNeBuiltin": 26,
+    "rawfileDiffs": 0,
+    "kitCanonFns": [
+      "canonicalize555Pin",
+      "canonicalizeDualOpAmpPin",
+      "canonicalizeRegulatorPin",
+      "canonicalizeUa741Pin",
+      "canonicalizeOscilloscopePin"
+    ]
+  },
+  "rawDiff": [],
+  "semanticMetas": [
+    {
+      "id": "OSCILLOSCOPE",
+      "metaIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeOscilloscopePin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/OSCILLOSCOPE.meta.json"
+    },
+    {
+      "id": "UA741",
+      "metaIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "metaLabels": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinPkgs": [
+        "3",
+        "2",
+        "6",
+        "7",
+        "4"
+      ],
+      "kitKeys": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE",
+        "2",
+        "3",
+        "4",
+        "6",
+        "7"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeUa741Pin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "2": "IN-",
+        "3": "IN+",
+        "4": "VEE",
+        "6": "OUT",
+        "7": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id",
+        "ua741_semantic_meta_matches_builtin_user_wants_numeric"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/UA741.meta.json"
+    }
+  ],
+  "highRisk": [
+    {
+      "id": "1N4007",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4007.meta.json"
+    },
+    {
+      "id": "1N4148",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4148.meta.json"
+    },
+    {
+      "id": "1N5819",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N5819.meta.json"
+    },
+    {
+      "id": "24C02",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "A0",
+        "A1",
+        "A2",
+        "VSS",
+        "SDA",
+        "SCL",
+        "WP",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "A0",
+        "A1",
+        "A2",
+        "VSS",
+        "SDA",
+        "SCL",
+        "WP",
+        "VCC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A0",
+        "2": "A1",
+        "3": "A2",
+        "4": "VSS",
+        "5": "SDA",
+        "6": "SCL",
+        "7": "WP",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/24C02.meta.json"
+    },
+    {
+      "id": "2N2222",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2222.meta.json"
+    },
+    {
+      "id": "2N2907",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2907.meta.json"
+    },
+    {
+      "id": "2N7000",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/2N7000.meta.json"
+    },
+    {
+      "id": "AMMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "I+",
+        "2": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/AMMETER_DC.meta.json"
+    },
+    {
+      "id": "CD4017",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "metaLabels": [
+        "Q5",
+        "Q1",
+        "Q0",
+        "Q2",
+        "Q6",
+        "Q7",
+        "Q3",
+        "VSS",
+        "Q8",
+        "Q4",
+        "Q9",
+        "CO",
+        "CLK",
+        "EN",
+        "RST",
+        "VDD"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "Q5",
+        "Q1",
+        "Q0",
+        "Q2",
+        "Q6",
+        "Q7",
+        "Q3",
+        "VSS",
+        "Q8",
+        "Q4",
+        "Q9",
+        "CO",
+        "CLK",
+        "EN",
+        "RST",
+        "VDD",
+        "1-16"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "Q5",
+        "2": "Q1",
+        "3": "Q0",
+        "4": "Q2",
+        "5": "Q6",
+        "6": "Q7",
+        "7": "Q3",
+        "8": "VSS",
+        "9": "Q8",
+        "10": "Q4",
+        "11": "Q9",
+        "12": "CO",
+        "13": "CLK",
+        "14": "EN",
+        "15": "RST",
+        "16": "VDD"
+      },
+      "unresolvedMeta": [],
+      "risk": "HIGH",
+      "issues": [
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/CD4017.meta.json"
+    },
+    {
+      "id": "DS18B20",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinIds": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "DQ",
+        "3": "VDD"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/DS18B20.meta.json"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "IN",
+        "GND"
+      ],
+      "builtinIds": [
+        "IN",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "IN",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "IN",
+        "2": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/FREQ_COUNTER.meta.json"
+    },
+    {
+      "id": "HALL_SENSOR",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinIds": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "OUT",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/HALL_SENSOR.meta.json"
+    },
+    {
+      "id": "IRF540",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/IRF540.meta.json"
+    },
+    {
+      "id": "LCD1602",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "metaLabels": [
+        "VSS",
+        "VDD",
+        "V0",
+        "RS",
+        "RW",
+        "E",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "A",
+        "K"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "VSS",
+        "VDD",
+        "V0",
+        "RS",
+        "RW",
+        "E",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VSS",
+        "2": "VDD",
+        "3": "V0",
+        "4": "RS",
+        "5": "RW",
+        "6": "E",
+        "7": "D0",
+        "8": "D1",
+        "9": "D2",
+        "10": "D3",
+        "11": "D4",
+        "12": "D5",
+        "13": "D6",
+        "14": "D7",
+        "15": "A",
+        "16": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/LCD1602.meta.json"
+    },
+    {
+      "id": "LED_BLUE",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_BLUE.meta.json"
+    },
+    {
+      "id": "LED_GREEN",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_GREEN.meta.json"
+    },
+    {
+      "id": "LED_RED",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_RED.meta.json"
+    },
+    {
+      "id": "LM2596",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinIds": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VIN",
+        "2": "OUT",
+        "3": "GND",
+        "4": "FB",
+        "5": "ON"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5",
+        "lm2596_needs_numeric_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM2596.meta.json"
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "CH5",
+        "CH6",
+        "CH7",
+        "CH8",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH${i + 1}",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "${i + 1}",
+        "9"
+      ],
+      "kitKeys": [
+        "CH1-8",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "CH5",
+        "6": "CH6",
+        "7": "CH7",
+        "8": "CH8",
+        "9": "GND",
+        "${i + 1}": "CH${i + 1}"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5,6,7,8,9",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/LOGIC_ANALYZER.meta.json"
+    },
+    {
+      "id": "OLED_12864",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinIds": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "GND",
+        "3": "SDA",
+        "4": "SCL"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "oled_numeric_vs_VCC/GND/SDA/SCL"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/OLED_12864.meta.json"
+    },
+    {
+      "id": "POT_100k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_100k.meta.json"
+    },
+    {
+      "id": "POT_10k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_10k.meta.json"
+    },
+    {
+      "id": "POT_1k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_1k.meta.json"
+    },
+    {
+      "id": "POWER_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "V-",
+        "3": "I+",
+        "4": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/POWER_METER.meta.json"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "COM",
+        "4": "NO",
+        "5": "NC"
+      },
+      "unresolvedMeta": [
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:3,4,5",
+        "relay_3/4/5_vs_COM/NO/NC"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/RELAY_SPDT.meta.json"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinIds": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "TX",
+        "2": "RX",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/UART_TERMINAL.meta.json"
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinIds": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V",
+        "2": "A",
+        "3": "OHM",
+        "4": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VIRTUAL_METER.meta.json"
+    },
+    {
+      "id": "VOLTMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "V+",
+        "COM"
+      ],
+      "builtinIds": [
+        "V+",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "V+",
+        "V",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VOLTMETER_DC.meta.json"
+    },
+    {
+      "id": "W25Q64",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "CS",
+        "DO",
+        "WP",
+        "GND",
+        "DI",
+        "CLK",
+        "HOLD",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "CS",
+        "DO",
+        "WP",
+        "GND",
+        "DI",
+        "CLK",
+        "HOLD",
+        "VCC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "CS",
+        "2": "DO",
+        "3": "WP",
+        "4": "GND",
+        "5": "DI",
+        "6": "CLK",
+        "7": "HOLD",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/W25Q64.meta.json"
+    }
+  ],
+  "medRisk": [
+    {
+      "id": "LM358",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM358.meta.json"
+    },
+    {
+      "id": "LM555",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinIds": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalize555Pin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "TRIG",
+        "3": "OUT",
+        "4": "RESET",
+        "5": "CTRL",
+        "6": "THRES",
+        "7": "DISCH",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_ic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM555.meta.json"
+    },
+    {
+      "id": "OSCILLOSCOPE",
+      "metaIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeOscilloscopePin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/OSCILLOSCOPE.meta.json"
+    },
+    {
+      "id": "TL082",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/TL082.meta.json"
+    },
+    {
+      "id": "UA741",
+      "metaIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "metaLabels": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinPkgs": [
+        "3",
+        "2",
+        "6",
+        "7",
+        "4"
+      ],
+      "kitKeys": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE",
+        "2",
+        "3",
+        "4",
+        "6",
+        "7"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeUa741Pin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "2": "IN-",
+        "3": "IN+",
+        "4": "VEE",
+        "6": "OUT",
+        "7": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id",
+        "ua741_semantic_meta_matches_builtin_user_wants_numeric"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/UA741.meta.json"
+    }
+  ],
+  "numMetaSemBuiltin": [
+    {
+      "id": "1N4007",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4007.meta.json"
+    },
+    {
+      "id": "1N4148",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4148.meta.json"
+    },
+    {
+      "id": "1N5819",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N5819.meta.json"
+    },
+    {
+      "id": "2N2222",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2222.meta.json"
+    },
+    {
+      "id": "2N2907",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2907.meta.json"
+    },
+    {
+      "id": "2N7000",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/2N7000.meta.json"
+    },
+    {
+      "id": "AMMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "I+",
+        "2": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/AMMETER_DC.meta.json"
+    },
+    {
+      "id": "DS18B20",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinIds": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "DQ",
+        "3": "VDD"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/DS18B20.meta.json"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "IN",
+        "GND"
+      ],
+      "builtinIds": [
+        "IN",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "IN",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "IN",
+        "2": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/FREQ_COUNTER.meta.json"
+    },
+    {
+      "id": "HALL_SENSOR",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinIds": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "OUT",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/HALL_SENSOR.meta.json"
+    },
+    {
+      "id": "IRF540",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/IRF540.meta.json"
+    },
+    {
+      "id": "LED_BLUE",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_BLUE.meta.json"
+    },
+    {
+      "id": "LED_GREEN",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_GREEN.meta.json"
+    },
+    {
+      "id": "LED_RED",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_RED.meta.json"
+    },
+    {
+      "id": "LM2596",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinIds": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VIN",
+        "2": "OUT",
+        "3": "GND",
+        "4": "FB",
+        "5": "ON"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5",
+        "lm2596_needs_numeric_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM2596.meta.json"
+    },
+    {
+      "id": "LM358",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM358.meta.json"
+    },
+    {
+      "id": "LM555",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinIds": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalize555Pin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "TRIG",
+        "3": "OUT",
+        "4": "RESET",
+        "5": "CTRL",
+        "6": "THRES",
+        "7": "DISCH",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_ic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM555.meta.json"
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "CH5",
+        "CH6",
+        "CH7",
+        "CH8",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH${i + 1}",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "${i + 1}",
+        "9"
+      ],
+      "kitKeys": [
+        "CH1-8",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "CH5",
+        "6": "CH6",
+        "7": "CH7",
+        "8": "CH8",
+        "9": "GND",
+        "${i + 1}": "CH${i + 1}"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5,6,7,8,9",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/LOGIC_ANALYZER.meta.json"
+    },
+    {
+      "id": "OLED_12864",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinIds": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "GND",
+        "3": "SDA",
+        "4": "SCL"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "oled_numeric_vs_VCC/GND/SDA/SCL"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/OLED_12864.meta.json"
+    },
+    {
+      "id": "POWER_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "V-",
+        "3": "I+",
+        "4": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/POWER_METER.meta.json"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "COM",
+        "4": "NO",
+        "5": "NC"
+      },
+      "unresolvedMeta": [
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:3,4,5",
+        "relay_3/4/5_vs_COM/NO/NC"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/RELAY_SPDT.meta.json"
+    },
+    {
+      "id": "SIGNAL_GEN",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "OUT",
+        "GND"
+      ],
+      "builtinIds": [
+        "OUT",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "OUT",
+        "GND",
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT",
+        "2": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "signal_gen_has_1_2_alias"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/SIGNAL_GEN.meta.json"
+    },
+    {
+      "id": "TL082",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/TL082.meta.json"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinIds": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "TX",
+        "2": "RX",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/UART_TERMINAL.meta.json"
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinIds": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V",
+        "2": "A",
+        "3": "OHM",
+        "4": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VIRTUAL_METER.meta.json"
+    },
+    {
+      "id": "VOLTMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "V+",
+        "COM"
+      ],
+      "builtinIds": [
+        "V+",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "V+",
+        "V",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VOLTMETER_DC.meta.json"
+    }
+  ],
+  "all": [
+    {
+      "id": "1N4007",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4007.meta.json"
+    },
+    {
+      "id": "1N4148",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N4148.meta.json"
+    },
+    {
+      "id": "1N5819",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_diode",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Diode/1N5819.meta.json"
+    },
+    {
+      "id": "24C02",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "A0",
+        "A1",
+        "A2",
+        "VSS",
+        "SDA",
+        "SCL",
+        "WP",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "A0",
+        "A1",
+        "A2",
+        "VSS",
+        "SDA",
+        "SCL",
+        "WP",
+        "VCC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A0",
+        "2": "A1",
+        "3": "A2",
+        "4": "VSS",
+        "5": "SDA",
+        "6": "SCL",
+        "7": "WP",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/24C02.meta.json"
+    },
+    {
+      "id": "2764",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28"
+      ],
+      "metaLabels": [
+        "VPP",
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "GND",
+        "CE",
+        "OE",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "VCC",
+        "NC26",
+        "NC27"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1-28 numeric genPinOffset"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VPP",
+        "2": "A0",
+        "3": "A1",
+        "4": "A2",
+        "5": "A3",
+        "6": "A4",
+        "7": "A5",
+        "8": "A6",
+        "9": "A7",
+        "10": "D0",
+        "11": "D1",
+        "12": "D2",
+        "13": "D3",
+        "14": "D4",
+        "15": "D5",
+        "16": "D6",
+        "17": "D7",
+        "18": "GND",
+        "19": "CE",
+        "20": "OE",
+        "21": "A8",
+        "22": "A9",
+        "23": "A10",
+        "24": "A11",
+        "25": "A12",
+        "26": "VCC",
+        "27": "NC26",
+        "28": "NC27"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/2764.meta.json"
+    },
+    {
+      "id": "2N2222",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2222.meta.json"
+    },
+    {
+      "id": "2N2907",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinIds": [
+        "B",
+        "C",
+        "E"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "B",
+        "C",
+        "E"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "B",
+        "2": "C",
+        "3": "E"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "bjt_needs_1→B,2→C,3→E"
+      ],
+      "cat": "discrete_bjt",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Transistor/2N2907.meta.json"
+    },
+    {
+      "id": "2N7000",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/2N7000.meta.json"
+    },
+    {
+      "id": "62256",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28"
+      ],
+      "metaLabels": [
+        "A14",
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "GND",
+        "CE",
+        "OE",
+        "A8",
+        "A9",
+        "A10",
+        "A11",
+        "A12",
+        "A13",
+        "WE",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1-28 numeric genPinOffset"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A14",
+        "2": "A0",
+        "3": "A1",
+        "4": "A2",
+        "5": "A3",
+        "6": "A4",
+        "7": "A5",
+        "8": "A6",
+        "9": "A7",
+        "10": "D0",
+        "11": "D1",
+        "12": "D2",
+        "13": "D3",
+        "14": "D4",
+        "15": "D5",
+        "16": "D6",
+        "17": "D7",
+        "18": "GND",
+        "19": "CE",
+        "20": "OE",
+        "21": "A8",
+        "22": "A9",
+        "23": "A10",
+        "24": "A11",
+        "25": "A12",
+        "26": "A13",
+        "27": "WE",
+        "28": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/62256.meta.json"
+    },
+    {
+      "id": "74HC00",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "B",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "B",
+        "3": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC00.meta.json"
+    },
+    {
+      "id": "74HC02",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "B",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "B",
+        "3": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC02.meta.json"
+    },
+    {
+      "id": "74HC04",
+      "metaIds": [
+        "1",
+        "2",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC04.meta.json"
+    },
+    {
+      "id": "74HC08",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "B",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "B",
+        "3": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC08.meta.json"
+    },
+    {
+      "id": "74HC32",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "B",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "B",
+        "3": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC32.meta.json"
+    },
+    {
+      "id": "74HC74",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "metaLabels": [
+        "A",
+        "B",
+        "Y",
+        "GND",
+        "VCC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "7",
+        "14"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "A",
+        "2": "B",
+        "3": "Y",
+        "7": "GND",
+        "14": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/74HC74.meta.json"
+    },
+    {
+      "id": "AMMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "I+",
+        "2": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/AMMETER_DC.meta.json"
+    },
+    {
+      "id": "AMS1117_3V3",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "IN",
+        "GND",
+        "OUT"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeRegulatorPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "regulator_numeric_meta_ok_with_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/AMS1117_3V3.meta.json"
+    },
+    {
+      "id": "AT89C51",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaLabels": [
+        "P1.0",
+        "P1.1",
+        "P1.2",
+        "P1.3",
+        "P1.4",
+        "P1.5",
+        "P1.6",
+        "P1.7",
+        "RST",
+        "P3.0",
+        "P3.1",
+        "P3.2",
+        "P3.3",
+        "P3.4",
+        "P3.5",
+        "P3.6",
+        "P3.7",
+        "XTAL2",
+        "XTAL1",
+        "GND",
+        "P2.0",
+        "P2.1",
+        "P2.2",
+        "P2.3",
+        "P2.4",
+        "P2.5",
+        "P2.6",
+        "P2.7",
+        "PSEN",
+        "ALE",
+        "EA",
+        "P0.7",
+        "P0.6",
+        "P0.5",
+        "P0.4",
+        "P0.3",
+        "P0.2",
+        "P0.1",
+        "P0.0",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "P1.0",
+        "2": "P1.1",
+        "3": "P1.2",
+        "4": "P1.3",
+        "5": "P1.4",
+        "6": "P1.5",
+        "7": "P1.6",
+        "8": "P1.7",
+        "9": "RST",
+        "10": "P3.0",
+        "11": "P3.1",
+        "12": "P3.2",
+        "13": "P3.3",
+        "14": "P3.4",
+        "15": "P3.5",
+        "16": "P3.6",
+        "17": "P3.7",
+        "18": "XTAL2",
+        "19": "XTAL1",
+        "20": "GND",
+        "21": "P2.0",
+        "22": "P2.1",
+        "23": "P2.2",
+        "24": "P2.3",
+        "25": "P2.4",
+        "26": "P2.5",
+        "27": "P2.6",
+        "28": "P2.7",
+        "29": "PSEN",
+        "30": "ALE",
+        "31": "EA",
+        "32": "P0.7",
+        "33": "P0.6",
+        "34": "P0.5",
+        "35": "P0.4",
+        "36": "P0.3",
+        "37": "P0.2",
+        "38": "P0.1",
+        "39": "P0.0",
+        "40": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_8051",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/AT89C51.meta.json"
+    },
+    {
+      "id": "AT89C52",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaLabels": [
+        "P1.0",
+        "P1.1",
+        "P1.2",
+        "P1.3",
+        "P1.4",
+        "P1.5",
+        "P1.6",
+        "P1.7",
+        "RST",
+        "P3.0",
+        "P3.1",
+        "P3.2",
+        "P3.3",
+        "P3.4",
+        "P3.5",
+        "P3.6",
+        "P3.7",
+        "XTAL2",
+        "XTAL1",
+        "GND",
+        "P2.0",
+        "P2.1",
+        "P2.2",
+        "P2.3",
+        "P2.4",
+        "P2.5",
+        "P2.6",
+        "P2.7",
+        "PSEN",
+        "ALE",
+        "EA",
+        "P0.7",
+        "P0.6",
+        "P0.5",
+        "P0.4",
+        "P0.3",
+        "P0.2",
+        "P0.1",
+        "P0.0",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "P1.0",
+        "2": "P1.1",
+        "3": "P1.2",
+        "4": "P1.3",
+        "5": "P1.4",
+        "6": "P1.5",
+        "7": "P1.6",
+        "8": "P1.7",
+        "9": "RST",
+        "10": "P3.0",
+        "11": "P3.1",
+        "12": "P3.2",
+        "13": "P3.3",
+        "14": "P3.4",
+        "15": "P3.5",
+        "16": "P3.6",
+        "17": "P3.7",
+        "18": "XTAL2",
+        "19": "XTAL1",
+        "20": "GND",
+        "21": "P2.0",
+        "22": "P2.1",
+        "23": "P2.2",
+        "24": "P2.3",
+        "25": "P2.4",
+        "26": "P2.5",
+        "27": "P2.6",
+        "28": "P2.7",
+        "29": "PSEN",
+        "30": "ALE",
+        "31": "EA",
+        "32": "P0.7",
+        "33": "P0.6",
+        "34": "P0.5",
+        "35": "P0.4",
+        "36": "P0.3",
+        "37": "P0.2",
+        "38": "P0.1",
+        "39": "P0.0",
+        "40": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_8051",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/AT89C52.meta.json"
+    },
+    {
+      "id": "BUZZER",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/BUZZER.meta.json"
+    },
+    {
+      "id": "CD4017",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "metaLabels": [
+        "Q5",
+        "Q1",
+        "Q0",
+        "Q2",
+        "Q6",
+        "Q7",
+        "Q3",
+        "VSS",
+        "Q8",
+        "Q4",
+        "Q9",
+        "CO",
+        "CLK",
+        "EN",
+        "RST",
+        "VDD"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "Q5",
+        "Q1",
+        "Q0",
+        "Q2",
+        "Q6",
+        "Q7",
+        "Q3",
+        "VSS",
+        "Q8",
+        "Q4",
+        "Q9",
+        "CO",
+        "CLK",
+        "EN",
+        "RST",
+        "VDD",
+        "1-16"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "Q5",
+        "2": "Q1",
+        "3": "Q0",
+        "4": "Q2",
+        "5": "Q6",
+        "6": "Q7",
+        "7": "Q3",
+        "8": "VSS",
+        "9": "Q8",
+        "10": "Q4",
+        "11": "Q9",
+        "12": "CO",
+        "13": "CLK",
+        "14": "EN",
+        "15": "RST",
+        "16": "VDD"
+      },
+      "unresolvedMeta": [],
+      "risk": "HIGH",
+      "issues": [
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "digital_logic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/DigitalLogic/CD4017.meta.json"
+    },
+    {
+      "id": "C_100nF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100nF.meta.json"
+    },
+    {
+      "id": "C_100pF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100pF.meta.json"
+    },
+    {
+      "id": "C_100uF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_100uF.meta.json"
+    },
+    {
+      "id": "C_10nF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10nF.meta.json"
+    },
+    {
+      "id": "C_10pF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10pF.meta.json"
+    },
+    {
+      "id": "C_10uF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_10uF.meta.json"
+    },
+    {
+      "id": "C_1nF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_1nF.meta.json"
+    },
+    {
+      "id": "C_1uF",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_capacitor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Capacitor/C_1uF.meta.json"
+    },
+    {
+      "id": "DS18B20",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinIds": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "GND",
+        "DQ",
+        "VDD"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "DQ",
+        "3": "VDD"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/DS18B20.meta.json"
+    },
+    {
+      "id": "FREQ_COUNTER",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "IN",
+        "GND"
+      ],
+      "builtinIds": [
+        "IN",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "IN",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "IN",
+        "2": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/FREQ_COUNTER.meta.json"
+    },
+    {
+      "id": "FUSE_1A",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_fuse",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Fuse/FUSE_1A.meta.json"
+    },
+    {
+      "id": "GND",
+      "metaIds": [
+        "1"
+      ],
+      "metaLabels": [
+        "GND"
+      ],
+      "builtinIds": [
+        "1"
+      ],
+      "builtinPkgs": [
+        "1"
+      ],
+      "kitKeys": [
+        "1"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "power_supply",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/GND.meta.json"
+    },
+    {
+      "id": "HALL_SENSOR",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinIds": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "VCC",
+        "OUT",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "OUT",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "sensor_numeric_vs_named"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/HALL_SENSOR.meta.json"
+    },
+    {
+      "id": "IRF540",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinIds": [
+        "G",
+        "D",
+        "S"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "G",
+        "D",
+        "S"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "G",
+        "2": "D",
+        "3": "S"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "mosfet_needs_1→G,2→D,3→S"
+      ],
+      "cat": "discrete_mosfet",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/Mosfet/IRF540.meta.json"
+    },
+    {
+      "id": "LCD1602",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "metaLabels": [
+        "VSS",
+        "VDD",
+        "V0",
+        "RS",
+        "RW",
+        "E",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "A",
+        "K"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "VSS",
+        "VDD",
+        "V0",
+        "RS",
+        "RW",
+        "E",
+        "D0",
+        "D1",
+        "D2",
+        "D3",
+        "D4",
+        "D5",
+        "D6",
+        "D7",
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VSS",
+        "2": "VDD",
+        "3": "V0",
+        "4": "RS",
+        "5": "RW",
+        "6": "E",
+        "7": "D0",
+        "8": "D1",
+        "9": "D2",
+        "10": "D3",
+        "11": "D4",
+        "12": "D5",
+        "13": "D6",
+        "14": "D7",
+        "15": "A",
+        "16": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/LCD1602.meta.json"
+    },
+    {
+      "id": "LDR",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "sensor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Sensor/LDR.meta.json"
+    },
+    {
+      "id": "LED_BLUE",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_BLUE.meta.json"
+    },
+    {
+      "id": "LED_GREEN",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_GREEN.meta.json"
+    },
+    {
+      "id": "LED_RED",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "A",
+        "K"
+      ],
+      "builtinIds": [
+        "A",
+        "K"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "A",
+        "K"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "A",
+        "2": "K"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "diode_numeric_maps_wrong_side"
+      ],
+      "cat": "discrete_led",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Discrete/LED/LED_RED.meta.json"
+    },
+    {
+      "id": "LM2596",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinIds": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "VIN",
+        "OUT",
+        "GND",
+        "FB",
+        "ON"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VIN",
+        "2": "OUT",
+        "3": "GND",
+        "4": "FB",
+        "5": "ON"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5",
+        "lm2596_needs_numeric_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM2596.meta.json"
+    },
+    {
+      "id": "LM358",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM358.meta.json"
+    },
+    {
+      "id": "LM555",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinIds": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "GND",
+        "TRIG",
+        "OUT",
+        "RESET",
+        "CTRL",
+        "THRES",
+        "DISCH",
+        "VCC",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalize555Pin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "GND",
+        "2": "TRIG",
+        "3": "OUT",
+        "4": "RESET",
+        "5": "CTRL",
+        "6": "THRES",
+        "7": "DISCH",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_ic",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM555.meta.json"
+    },
+    {
+      "id": "LM7805",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "IN",
+        "GND",
+        "OUT"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeRegulatorPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "regulator_numeric_meta_ok_with_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7805.meta.json"
+    },
+    {
+      "id": "LM7812",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "3",
+        "IN",
+        "GND",
+        "OUT"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeRegulatorPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "regulator_numeric_meta_ok_with_canon"
+      ],
+      "cat": "analog_regulator",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/LM7812.meta.json"
+    },
+    {
+      "id": "LOGIC_ANALYZER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "CH5",
+        "CH6",
+        "CH7",
+        "CH8",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH${i + 1}",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "${i + 1}",
+        "9"
+      ],
+      "kitKeys": [
+        "CH1-8",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "CH5",
+        "6": "CH6",
+        "7": "CH7",
+        "8": "CH8",
+        "9": "GND",
+        "${i + 1}": "CH${i + 1}"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4,5,6,7,8,9",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/LOGIC_ANALYZER.meta.json"
+    },
+    {
+      "id": "L_10uH",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_inductor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Inductor/L_10uH.meta.json"
+    },
+    {
+      "id": "OLED_12864",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinIds": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "VCC",
+        "GND",
+        "SDA",
+        "SCL"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VCC",
+        "2": "GND",
+        "3": "SDA",
+        "4": "SCL"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "oled_numeric_vs_VCC/GND/SDA/SCL"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/OLED_12864.meta.json"
+    },
+    {
+      "id": "OSCILLOSCOPE",
+      "metaIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "metaLabels": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinIds": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "CH1",
+        "CH2",
+        "CH3",
+        "CH4",
+        "GND",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeOscilloscopePin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "CH1",
+        "2": "CH2",
+        "3": "CH3",
+        "4": "CH4",
+        "5": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/OSCILLOSCOPE.meta.json"
+    },
+    {
+      "id": "POT_100k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_100k.meta.json"
+    },
+    {
+      "id": "POT_10k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_10k.meta.json"
+    },
+    {
+      "id": "POT_1k",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "W"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2",
+        "W"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "W"
+      },
+      "unresolvedMeta": [
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:3",
+        "pot_meta_3_vs_builtin_W"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/POT_1k.meta.json"
+    },
+    {
+      "id": "POWER_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinIds": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V+",
+        "V-",
+        "I+",
+        "I-"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "V-",
+        "3": "I+",
+        "4": "I-"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/POWER_METER.meta.json"
+    },
+    {
+      "id": "RELAY_SPDT",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "metaLabels": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinIds": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "kitKeys": [
+        "1",
+        "2",
+        "COM",
+        "NO",
+        "NC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "3": "COM",
+        "4": "NO",
+        "5": "NC"
+      },
+      "unresolvedMeta": [
+        "3",
+        "4",
+        "5"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:3,4,5",
+        "relay_3/4/5_vs_COM/NO/NC"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/RELAY_SPDT.meta.json"
+    },
+    {
+      "id": "R_10",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_10.meta.json"
+    },
+    {
+      "id": "R_100",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_100.meta.json"
+    },
+    {
+      "id": "R_100k",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_100k.meta.json"
+    },
+    {
+      "id": "R_10k",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_10k.meta.json"
+    },
+    {
+      "id": "R_1k",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_1k.meta.json"
+    },
+    {
+      "id": "R_330",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_330.meta.json"
+    },
+    {
+      "id": "R_4.7k",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_4.7k.meta.json"
+    },
+    {
+      "id": "R_47k",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_resistor",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Resistor/R_47k.meta.json"
+    },
+    {
+      "id": "SIGNAL_GEN",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "OUT",
+        "GND"
+      ],
+      "builtinIds": [
+        "OUT",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "OUT",
+        "GND",
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT",
+        "2": "GND"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "signal_gen_has_1_2_alias"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/SIGNAL_GEN.meta.json"
+    },
+    {
+      "id": "STC15W408AS",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaLabels": [
+        "P1.0",
+        "P1.1",
+        "P1.2",
+        "P1.3",
+        "P1.4",
+        "P1.5",
+        "P1.6",
+        "P1.7",
+        "RST",
+        "P3.0",
+        "P3.1",
+        "P3.2",
+        "P3.3",
+        "P3.4",
+        "P3.5",
+        "P3.6",
+        "P3.7",
+        "XTAL2",
+        "XTAL1",
+        "GND",
+        "P2.0",
+        "P2.1",
+        "P2.2",
+        "P2.3",
+        "P2.4",
+        "P2.5",
+        "P2.6",
+        "P2.7",
+        "PSEN",
+        "ALE",
+        "EA",
+        "P0.7",
+        "P0.6",
+        "P0.5",
+        "P0.4",
+        "P0.3",
+        "P0.2",
+        "P0.1",
+        "P0.0",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "P1.0",
+        "2": "P1.1",
+        "3": "P1.2",
+        "4": "P1.3",
+        "5": "P1.4",
+        "6": "P1.5",
+        "7": "P1.6",
+        "8": "P1.7",
+        "9": "RST",
+        "10": "P3.0",
+        "11": "P3.1",
+        "12": "P3.2",
+        "13": "P3.3",
+        "14": "P3.4",
+        "15": "P3.5",
+        "16": "P3.6",
+        "17": "P3.7",
+        "18": "XTAL2",
+        "19": "XTAL1",
+        "20": "GND",
+        "21": "P2.0",
+        "22": "P2.1",
+        "23": "P2.2",
+        "24": "P2.3",
+        "25": "P2.4",
+        "26": "P2.5",
+        "27": "P2.6",
+        "28": "P2.7",
+        "29": "PSEN",
+        "30": "ALE",
+        "31": "EA",
+        "32": "P0.7",
+        "33": "P0.6",
+        "34": "P0.5",
+        "35": "P0.4",
+        "36": "P0.3",
+        "37": "P0.2",
+        "38": "P0.1",
+        "39": "P0.0",
+        "40": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_8051",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/STC15W408AS.meta.json"
+    },
+    {
+      "id": "STC89C52",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40"
+      ],
+      "metaLabels": [
+        "P1.0",
+        "P1.1",
+        "P1.2",
+        "P1.3",
+        "P1.4",
+        "P1.5",
+        "P1.6",
+        "P1.7",
+        "RST",
+        "P3.0",
+        "P3.1",
+        "P3.2",
+        "P3.3",
+        "P3.4",
+        "P3.5",
+        "P3.6",
+        "P3.7",
+        "XTAL2",
+        "XTAL1",
+        "GND",
+        "P2.0",
+        "P2.1",
+        "P2.2",
+        "P2.3",
+        "P2.4",
+        "P2.5",
+        "P2.6",
+        "P2.7",
+        "PSEN",
+        "ALE",
+        "EA",
+        "P0.7",
+        "P0.6",
+        "P0.5",
+        "P0.4",
+        "P0.3",
+        "P0.2",
+        "P0.1",
+        "P0.0",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "P1.0",
+        "2": "P1.1",
+        "3": "P1.2",
+        "4": "P1.3",
+        "5": "P1.4",
+        "6": "P1.5",
+        "7": "P1.6",
+        "8": "P1.7",
+        "9": "RST",
+        "10": "P3.0",
+        "11": "P3.1",
+        "12": "P3.2",
+        "13": "P3.3",
+        "14": "P3.4",
+        "15": "P3.5",
+        "16": "P3.6",
+        "17": "P3.7",
+        "18": "XTAL2",
+        "19": "XTAL1",
+        "20": "GND",
+        "21": "P2.0",
+        "22": "P2.1",
+        "23": "P2.2",
+        "24": "P2.3",
+        "25": "P2.4",
+        "26": "P2.5",
+        "27": "P2.6",
+        "28": "P2.7",
+        "29": "PSEN",
+        "30": "ALE",
+        "31": "EA",
+        "32": "P0.7",
+        "33": "P0.6",
+        "34": "P0.5",
+        "35": "P0.4",
+        "36": "P0.3",
+        "37": "P0.2",
+        "38": "P0.1",
+        "39": "P0.0",
+        "40": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_8051",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/8051/STC89C52.meta.json"
+    },
+    {
+      "id": "STM32F030F4",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32"
+      ],
+      "metaLabels": [
+        "VDD",
+        "VSS",
+        "NRST",
+        "BOOT0",
+        "OSC_IN",
+        "OSC_OUT",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VDD",
+        "2": "VSS",
+        "3": "NRST",
+        "4": "BOOT0",
+        "5": "OSC_IN",
+        "6": "OSC_OUT",
+        "7": "PA0",
+        "8": "PA1",
+        "9": "PA2",
+        "10": "PA3",
+        "11": "PA4",
+        "12": "PA5",
+        "13": "PA6",
+        "14": "PA7",
+        "15": "PA8",
+        "16": "PA9",
+        "17": "PA10",
+        "18": "PA11",
+        "19": "PA12",
+        "20": "PA13",
+        "21": "PA14",
+        "22": "PA15",
+        "23": "PB0",
+        "24": "PB1",
+        "25": "PB2",
+        "26": "PB3",
+        "27": "PB4",
+        "28": "PB5",
+        "29": "PB6",
+        "30": "PB7",
+        "31": "PB8",
+        "32": "PB9"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F030F4.meta.json"
+    },
+    {
+      "id": "STM32F103C8",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaLabels": [
+        "VDD",
+        "VSS",
+        "VDDA",
+        "VSSA",
+        "BOOT0",
+        "NRST",
+        "OSC_IN",
+        "OSC_OUT",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9",
+        "PB10",
+        "PB11",
+        "PB12",
+        "PB13",
+        "PB14",
+        "PB15",
+        "PC0",
+        "PC1",
+        "PC2",
+        "PC3",
+        "PC4",
+        "PC5",
+        "PC6",
+        "PC7"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VDD",
+        "2": "VSS",
+        "3": "VDDA",
+        "4": "VSSA",
+        "5": "BOOT0",
+        "6": "NRST",
+        "7": "OSC_IN",
+        "8": "OSC_OUT",
+        "9": "PA0",
+        "10": "PA1",
+        "11": "PA2",
+        "12": "PA3",
+        "13": "PA4",
+        "14": "PA5",
+        "15": "PA6",
+        "16": "PA7",
+        "17": "PA8",
+        "18": "PA9",
+        "19": "PA10",
+        "20": "PA11",
+        "21": "PA12",
+        "22": "PA13",
+        "23": "PA14",
+        "24": "PA15",
+        "25": "PB0",
+        "26": "PB1",
+        "27": "PB2",
+        "28": "PB3",
+        "29": "PB4",
+        "30": "PB5",
+        "31": "PB6",
+        "32": "PB7",
+        "33": "PB8",
+        "34": "PB9",
+        "35": "PB10",
+        "36": "PB11",
+        "37": "PB12",
+        "38": "PB13",
+        "39": "PB14",
+        "40": "PB15",
+        "41": "PC0",
+        "42": "PC1",
+        "43": "PC2",
+        "44": "PC3",
+        "45": "PC4",
+        "46": "PC5",
+        "47": "PC6",
+        "48": "PC7"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103C8.meta.json"
+    },
+    {
+      "id": "STM32F103C8T6",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaLabels": [
+        "PE2",
+        "PE3",
+        "PE4",
+        "PE5",
+        "PE6",
+        "VBAT",
+        "PC13",
+        "PC14",
+        "PC15",
+        "OSC_IN",
+        "OSC_OUT",
+        "NRST",
+        "VSSA",
+        "VDDA",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PC4",
+        "PC5",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB10",
+        "PB11",
+        "VSS_1",
+        "VDD_1",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9",
+        "VSS_2",
+        "VDD_2"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "PE2",
+        "2": "PE3",
+        "3": "PE4",
+        "4": "PE5",
+        "5": "PE6",
+        "6": "VBAT",
+        "7": "PC13",
+        "8": "PC14",
+        "9": "PC15",
+        "10": "OSC_IN",
+        "11": "OSC_OUT",
+        "12": "NRST",
+        "13": "VSSA",
+        "14": "VDDA",
+        "15": "PA0",
+        "16": "PA1",
+        "17": "PA2",
+        "18": "PA3",
+        "19": "PA4",
+        "20": "PA5",
+        "21": "PA6",
+        "22": "PA7",
+        "23": "PC4",
+        "24": "PC5",
+        "25": "PB0",
+        "26": "PB1",
+        "27": "PB2",
+        "28": "PB10",
+        "29": "PB11",
+        "30": "VSS_1",
+        "31": "VDD_1",
+        "32": "PA8",
+        "33": "PA9",
+        "34": "PA10",
+        "35": "PA11",
+        "36": "PA12",
+        "37": "PA13",
+        "38": "PA14",
+        "39": "PA15",
+        "40": "PB3",
+        "41": "PB4",
+        "42": "PB5",
+        "43": "PB6",
+        "44": "PB7",
+        "45": "PB8",
+        "46": "PB9",
+        "47": "VSS_2",
+        "48": "VDD_2"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103C8T6.meta.json"
+    },
+    {
+      "id": "STM32F103RC",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaLabels": [
+        "VDD",
+        "VSS",
+        "VDDA",
+        "VSSA",
+        "BOOT0",
+        "NRST",
+        "OSC_IN",
+        "OSC_OUT",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9",
+        "PB10",
+        "PB11",
+        "PB12",
+        "PB13",
+        "PB14",
+        "PB15",
+        "PC0",
+        "PC1",
+        "PC2",
+        "PC3",
+        "PC4",
+        "PC5",
+        "PC6",
+        "PC7"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VDD",
+        "2": "VSS",
+        "3": "VDDA",
+        "4": "VSSA",
+        "5": "BOOT0",
+        "6": "NRST",
+        "7": "OSC_IN",
+        "8": "OSC_OUT",
+        "9": "PA0",
+        "10": "PA1",
+        "11": "PA2",
+        "12": "PA3",
+        "13": "PA4",
+        "14": "PA5",
+        "15": "PA6",
+        "16": "PA7",
+        "17": "PA8",
+        "18": "PA9",
+        "19": "PA10",
+        "20": "PA11",
+        "21": "PA12",
+        "22": "PA13",
+        "23": "PA14",
+        "24": "PA15",
+        "25": "PB0",
+        "26": "PB1",
+        "27": "PB2",
+        "28": "PB3",
+        "29": "PB4",
+        "30": "PB5",
+        "31": "PB6",
+        "32": "PB7",
+        "33": "PB8",
+        "34": "PB9",
+        "35": "PB10",
+        "36": "PB11",
+        "37": "PB12",
+        "38": "PB13",
+        "39": "PB14",
+        "40": "PB15",
+        "41": "PC0",
+        "42": "PC1",
+        "43": "PC2",
+        "44": "PC3",
+        "45": "PC4",
+        "46": "PC5",
+        "47": "PC6",
+        "48": "PC7"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F103RC.meta.json"
+    },
+    {
+      "id": "STM32F407VG",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59",
+        "60",
+        "61",
+        "62",
+        "63",
+        "64",
+        "65",
+        "66",
+        "67",
+        "68",
+        "69",
+        "70",
+        "71",
+        "72",
+        "73",
+        "74",
+        "75",
+        "76",
+        "77",
+        "78",
+        "79",
+        "80",
+        "81",
+        "82",
+        "83",
+        "84",
+        "85",
+        "86",
+        "87",
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100"
+      ],
+      "metaLabels": [
+        "VDD",
+        "VSS",
+        "VDDA",
+        "VSSA",
+        "BOOT0",
+        "NRST",
+        "OSC_IN",
+        "OSC_OUT",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9",
+        "PB10",
+        "PB11",
+        "PB12",
+        "PB13",
+        "PB14",
+        "PB15",
+        "PC0",
+        "PC1",
+        "PC2",
+        "PC3",
+        "PC4",
+        "PC5",
+        "PC6",
+        "PC7",
+        "PD0",
+        "PD1",
+        "PD2",
+        "PD3",
+        "PD4",
+        "PD5",
+        "PD6",
+        "PD7",
+        "PD8",
+        "PD9",
+        "PD10",
+        "PD11",
+        "PD12",
+        "PD13",
+        "PD14",
+        "PD15",
+        "PE0",
+        "PE1",
+        "PE2",
+        "PE3",
+        "PE4",
+        "PE5",
+        "PE6",
+        "PE7",
+        "PE8",
+        "PE9",
+        "PE10",
+        "PE11",
+        "PE12",
+        "PE13",
+        "PE14",
+        "PE15",
+        "PC8",
+        "PC9",
+        "PC10",
+        "PC11",
+        "PC12",
+        "PC13",
+        "PC14",
+        "PC15",
+        "PF0",
+        "PF1",
+        "PF2",
+        "PF3",
+        "PF4",
+        "PF5",
+        "PF6",
+        "PF7",
+        "PF8",
+        "PF9",
+        "PF10",
+        "PF11"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VDD",
+        "2": "VSS",
+        "3": "VDDA",
+        "4": "VSSA",
+        "5": "BOOT0",
+        "6": "NRST",
+        "7": "OSC_IN",
+        "8": "OSC_OUT",
+        "9": "PA0",
+        "10": "PA1",
+        "11": "PA2",
+        "12": "PA3",
+        "13": "PA4",
+        "14": "PA5",
+        "15": "PA6",
+        "16": "PA7",
+        "17": "PA8",
+        "18": "PA9",
+        "19": "PA10",
+        "20": "PA11",
+        "21": "PA12",
+        "22": "PA13",
+        "23": "PA14",
+        "24": "PA15",
+        "25": "PB0",
+        "26": "PB1",
+        "27": "PB2",
+        "28": "PB3",
+        "29": "PB4",
+        "30": "PB5",
+        "31": "PB6",
+        "32": "PB7",
+        "33": "PB8",
+        "34": "PB9",
+        "35": "PB10",
+        "36": "PB11",
+        "37": "PB12",
+        "38": "PB13",
+        "39": "PB14",
+        "40": "PB15",
+        "41": "PC0",
+        "42": "PC1",
+        "43": "PC2",
+        "44": "PC3",
+        "45": "PC4",
+        "46": "PC5",
+        "47": "PC6",
+        "48": "PC7",
+        "49": "PD0",
+        "50": "PD1",
+        "51": "PD2",
+        "52": "PD3",
+        "53": "PD4",
+        "54": "PD5",
+        "55": "PD6",
+        "56": "PD7",
+        "57": "PD8",
+        "58": "PD9",
+        "59": "PD10",
+        "60": "PD11",
+        "61": "PD12",
+        "62": "PD13",
+        "63": "PD14",
+        "64": "PD15",
+        "65": "PE0",
+        "66": "PE1",
+        "67": "PE2",
+        "68": "PE3",
+        "69": "PE4",
+        "70": "PE5",
+        "71": "PE6",
+        "72": "PE7",
+        "73": "PE8",
+        "74": "PE9",
+        "75": "PE10",
+        "76": "PE11",
+        "77": "PE12",
+        "78": "PE13",
+        "79": "PE14",
+        "80": "PE15",
+        "81": "PC8",
+        "82": "PC9",
+        "83": "PC10",
+        "84": "PC11",
+        "85": "PC12",
+        "86": "PC13",
+        "87": "PC14",
+        "88": "PC15",
+        "89": "PF0",
+        "90": "PF1",
+        "91": "PF2",
+        "92": "PF3",
+        "93": "PF4",
+        "94": "PF5",
+        "95": "PF6",
+        "96": "PF7",
+        "97": "PF8",
+        "98": "PF9",
+        "99": "PF10",
+        "100": "PF11"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32F407VG.meta.json"
+    },
+    {
+      "id": "STM32L431CB",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48"
+      ],
+      "metaLabels": [
+        "VDD",
+        "VSS",
+        "VDDA",
+        "VSSA",
+        "BOOT0",
+        "NRST",
+        "OSC_IN",
+        "OSC_OUT",
+        "PA0",
+        "PA1",
+        "PA2",
+        "PA3",
+        "PA4",
+        "PA5",
+        "PA6",
+        "PA7",
+        "PA8",
+        "PA9",
+        "PA10",
+        "PA11",
+        "PA12",
+        "PA13",
+        "PA14",
+        "PA15",
+        "PB0",
+        "PB1",
+        "PB2",
+        "PB3",
+        "PB4",
+        "PB5",
+        "PB6",
+        "PB7",
+        "PB8",
+        "PB9",
+        "PB10",
+        "PB11",
+        "PB12",
+        "PB13",
+        "PB14",
+        "PB15",
+        "PC0",
+        "PC1",
+        "PC2",
+        "PC3",
+        "PC4",
+        "PC5",
+        "PC6",
+        "PC7"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "MCU named (mcuPinOffset)"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "VDD",
+        "2": "VSS",
+        "3": "VDDA",
+        "4": "VSSA",
+        "5": "BOOT0",
+        "6": "NRST",
+        "7": "OSC_IN",
+        "8": "OSC_OUT",
+        "9": "PA0",
+        "10": "PA1",
+        "11": "PA2",
+        "12": "PA3",
+        "13": "PA4",
+        "14": "PA5",
+        "15": "PA6",
+        "16": "PA7",
+        "17": "PA8",
+        "18": "PA9",
+        "19": "PA10",
+        "20": "PA11",
+        "21": "PA12",
+        "22": "PA13",
+        "23": "PA14",
+        "24": "PA15",
+        "25": "PB0",
+        "26": "PB1",
+        "27": "PB2",
+        "28": "PB3",
+        "29": "PB4",
+        "30": "PB5",
+        "31": "PB6",
+        "32": "PB7",
+        "33": "PB8",
+        "34": "PB9",
+        "35": "PB10",
+        "36": "PB11",
+        "37": "PB12",
+        "38": "PB13",
+        "39": "PB14",
+        "40": "PB15",
+        "41": "PC0",
+        "42": "PC1",
+        "43": "PC2",
+        "44": "PC3",
+        "45": "PC4",
+        "46": "PC5",
+        "47": "PC6",
+        "48": "PC7"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "mcu_stm32",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/MCU/STM32/STM32L431CB.meta.json"
+    },
+    {
+      "id": "SW_PUSH",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "peripheral",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Peripheral/SW_PUSH.meta.json"
+    },
+    {
+      "id": "TL082",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinIds": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "kitKeys": [
+        "OUT1",
+        "IN-1",
+        "IN+1",
+        "V-",
+        "IN+2",
+        "IN-2",
+        "OUT2",
+        "V+",
+        "1-8"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeDualOpAmpPin",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "OUT1",
+        "2": "IN-1",
+        "3": "IN+1",
+        "4": "V-",
+        "5": "IN+2",
+        "6": "IN-2",
+        "7": "OUT2",
+        "8": "V+"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_numeric_builtin_semantic_has_canon",
+        "meta_ne_builtin_ids",
+        "ic_numeric_meta_canon_ok_but_validatePinExists_empty_common"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/TL082.meta.json"
+    },
+    {
+      "id": "UA741",
+      "metaIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "metaLabels": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinIds": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE"
+      ],
+      "builtinPkgs": [
+        "3",
+        "2",
+        "6",
+        "7",
+        "4"
+      ],
+      "kitKeys": [
+        "IN+",
+        "IN-",
+        "OUT",
+        "VCC",
+        "VEE",
+        "2",
+        "3",
+        "4",
+        "6",
+        "7"
+      ],
+      "hasCanon": true,
+      "canonName": "canonicalizeUa741Pin",
+      "metaStyle": "semantic",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "2": "IN-",
+        "3": "IN+",
+        "4": "VEE",
+        "6": "OUT",
+        "7": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "MED",
+      "issues": [
+        "meta_semantic_pin_id",
+        "ua741_semantic_meta_matches_builtin_user_wants_numeric"
+      ],
+      "cat": "analog_opamp",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/AnalogIC/UA741.meta.json"
+    },
+    {
+      "id": "UART_TERMINAL",
+      "metaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "metaLabels": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinIds": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "kitKeys": [
+        "TX",
+        "RX",
+        "GND"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "TX",
+        "2": "RX",
+        "3": "GND"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/UART_TERMINAL.meta.json"
+    },
+    {
+      "id": "VAC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "AC+",
+        "AC-"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "AC+",
+        "2": "AC-"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "power_supply",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VAC.meta.json"
+    },
+    {
+      "id": "VCC",
+      "metaIds": [
+        "1"
+      ],
+      "metaLabels": [
+        "VCC"
+      ],
+      "builtinIds": [
+        "1"
+      ],
+      "builtinPkgs": [
+        "1"
+      ],
+      "kitKeys": [
+        "1"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "VCC"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "power_supply",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VCC.meta.json"
+    },
+    {
+      "id": "VEE",
+      "metaIds": [
+        "1"
+      ],
+      "metaLabels": [
+        "VEE"
+      ],
+      "builtinIds": [
+        "1"
+      ],
+      "builtinPkgs": [
+        "1"
+      ],
+      "kitKeys": [
+        "1"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {
+        "1": "VEE"
+      },
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [],
+      "cat": "power_supply",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Power/VEE.meta.json"
+    },
+    {
+      "id": "VIRTUAL_METER",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "metaLabels": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinIds": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "kitKeys": [
+        "V",
+        "A",
+        "OHM",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V",
+        "2": "A",
+        "3": "OHM",
+        "4": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2,3,4",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VIRTUAL_METER.meta.json"
+    },
+    {
+      "id": "VOLTMETER_DC",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "V+",
+        "COM"
+      ],
+      "builtinIds": [
+        "V+",
+        "COM"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "V+",
+        "V",
+        "COM"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "semantic",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "V+",
+        "2": "COM"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "meta_numeric_builtin_semantic_no_canon",
+        "meta_ne_builtin_ids",
+        "kit_unresolved:1,2",
+        "instrument_numeric_meta_kit_semantic_only"
+      ],
+      "cat": "instrument",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Instrument/VOLTMETER_DC.meta.json"
+    },
+    {
+      "id": "W25Q64",
+      "metaIds": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "metaLabels": [
+        "CS",
+        "DO",
+        "WP",
+        "GND",
+        "DI",
+        "CLK",
+        "HOLD",
+        "VCC"
+      ],
+      "builtinIds": null,
+      "builtinPkgs": null,
+      "kitKeys": [
+        "CS",
+        "DO",
+        "WP",
+        "GND",
+        "DI",
+        "CLK",
+        "HOLD",
+        "VCC"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "missing",
+      "metaEqBuiltin": false,
+      "proposed": {
+        "1": "CS",
+        "2": "DO",
+        "3": "WP",
+        "4": "GND",
+        "5": "DI",
+        "6": "CLK",
+        "7": "HOLD",
+        "8": "VCC"
+      },
+      "unresolvedMeta": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8"
+      ],
+      "risk": "HIGH",
+      "issues": [
+        "kit_unresolved:1,2,3,4,5,6,7,8",
+        "named_dip_meta_numeric_no_canon"
+      ],
+      "cat": "memory",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Memory/W25Q64.meta.json"
+    },
+    {
+      "id": "XTAL_11M",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_crystal",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Crystal/XTAL_11M.meta.json"
+    },
+    {
+      "id": "XTAL_8M",
+      "metaIds": [
+        "1",
+        "2"
+      ],
+      "metaLabels": [
+        "1",
+        "2"
+      ],
+      "builtinIds": [
+        "1",
+        "2"
+      ],
+      "builtinPkgs": [
+        "1",
+        "2"
+      ],
+      "kitKeys": [
+        "1",
+        "2"
+      ],
+      "hasCanon": false,
+      "canonName": "",
+      "metaStyle": "numeric",
+      "builtinStyle": "numeric",
+      "metaEqBuiltin": true,
+      "proposed": {},
+      "unresolvedMeta": [],
+      "risk": "LOW",
+      "issues": [
+        "passive_numeric_ok"
+      ],
+      "cat": "passive_crystal",
+      "file": "C:/Projects/ElecDraw_Harmony/DeviceLibrary/Passive/Crystal/XTAL_8M.meta.json"
+    }
+  ],
+  "builtinSample": {
+    "RELAY_SPDT": [
+      {
+        "id": "1",
+        "name": "1",
+        "pkg": "1"
+      },
+      {
+        "id": "2",
+        "name": "2",
+        "pkg": "2"
+      },
+      {
+        "id": "COM",
+        "name": "COM",
+        "pkg": "3"
+      },
+      {
+        "id": "NO",
+        "name": "NO",
+        "pkg": "4"
+      },
+      {
+        "id": "NC",
+        "name": "NC",
+        "pkg": "5"
+      }
+    ],
+    "OSCILLOSCOPE": [
+      {
+        "id": "CH1",
+        "name": "CH1",
+        "pkg": "1"
+      },
+      {
+        "id": "CH2",
+        "name": "CH2",
+        "pkg": "2"
+      },
+      {
+        "id": "CH3",
+        "name": "CH3",
+        "pkg": "3"
+      },
+      {
+        "id": "CH4",
+        "name": "CH4",
+        "pkg": "4"
+      },
+      {
+        "id": "GND",
+        "name": "GND",
+        "pkg": "5"
+      }
+    ],
+    "VIRTUAL_METER": [
+      {
+        "id": "V",
+        "name": "V",
+        "pkg": "1"
+      },
+      {
+        "id": "A",
+        "name": "A",
+        "pkg": "2"
+      },
+      {
+        "id": "OHM",
+        "name": "OHM",
+        "pkg": "3"
+      },
+      {
+        "id": "COM",
+        "name": "COM",
+        "pkg": "4"
+      }
+    ],
+    "LOGIC_ANALYZER": [
+      {
+        "id": "CH${i + 1}",
+        "name": "CH${i + 1}",
+        "pkg": "${i + 1}"
+      },
+      {
+        "id": "GND",
+        "name": "GND",
+        "pkg": "9"
+      }
+    ],
+    "UART_TERMINAL": [
+      {
+        "id": "TX",
+        "name": "TX",
+        "pkg": "1"
+      },
+      {
+        "id": "RX",
+        "name": "RX",
+        "pkg": "2"
+      },
+      {
+        "id": "GND",
+        "name": "GND",
+        "pkg": "3"
+      }
+    ]
+  }
+}

@@ -3509,9 +3509,10 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets": {
-      "mtimeMs": 1784711758042.9915,
+      "mtimeMs": 1785144464168.2698,
       "children": [
-        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinIdRegistry.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
@@ -3543,7 +3544,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\NetPlanExecutor.ets": {
-      "mtimeMs": 1785133357156.0928,
+      "mtimeMs": 1785144464143.5422,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -3571,10 +3572,11 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets": {
-      "mtimeMs": 1784622861683.0764,
+      "mtimeMs": 1785144730997.3657,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinIdRegistry.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\Index.ets",
@@ -3643,7 +3645,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\ConstrainedWiringEngine.ets": {
-      "mtimeMs": 1785138236070.5542,
+      "mtimeMs": 1785144464144.838,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -3832,7 +3834,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PostGenValidator.ets": {
-      "mtimeMs": 1785138236104.007,
+      "mtimeMs": 1785144464168.2698,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -5251,7 +5253,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiTopologyFixKit.ets": {
-      "mtimeMs": 1785139415883.1067,
+      "mtimeMs": 1785144464177.8965,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -5619,6 +5621,15 @@
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinIdRegistry.ets": {
+      "mtimeMs": 1785144870398.775,
+      "children": [],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\PinWorldResolver.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\TemplateSchematicKit.ets"
       ],
       "error": false
     }

@@ -1,8 +1,12 @@
 /**
  * 引脚世界坐标 — Kit pinOffset + 旋转/镜像（与 WireNetTopology 一致）
+ *
+ * 约定：调用方可能传入 DeviceLibrary 数字 pin_id 或 Builtin 语义脚；
+ * 一律经 PinIdRegistry / Kit 规范化后再取局部坐标。
  */
 import { Point2D, DeviceInst, ComponentInstance, Logger, INSTR_TRACE_TAG } from 'common';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
+import { PinIdRegistry } from './PinIdRegistry';
 
 export class PinWorldResolver {
   static transformLocal(local: Point2D, rotation: number, mirrored: boolean): Point2D {
@@ -26,12 +30,17 @@ export class PinWorldResolver {
 
   static forDevice(libDevId: string, x: number, y: number, rotate: number,
     mirrorH: boolean, pinId: string, pinName: string): Point2D {
-    const known = TemplateSchematicKit.validatePinExists(libDevId, pinId)
-      || (pinName.length > 0 && TemplateSchematicKit.validatePinExists(libDevId, pinName));
-    const local = TemplateSchematicKit.pinOffset(libDevId, pinId, pinName);
+    // 数字/别名 → Builtin pin.id；几何与 validate 都用规范脚
+    const resolved = PinIdRegistry.resolve(libDevId, pinId, pinName);
+    const known = TemplateSchematicKit.validatePinExists(libDevId, resolved)
+      || TemplateSchematicKit.validatePinExists(libDevId, pinId)
+      || (pinName.length > 0 && TemplateSchematicKit.validatePinExists(libDevId, pinName))
+      || PinIdRegistry.canonicalize(libDevId, pinId, pinName).length > 0;
+    const local = TemplateSchematicKit.pinOffset(libDevId, resolved, pinName);
     if (!known && local.x === 0 && local.y === 0) {
       Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PIN] unknown pin ${libDevId}.${pinId}/${pinName} — world falls at device center`);
+        `[AI_PIN] unknown pin ${libDevId}.${pinId}/${pinName}` +
+        ` (resolved=${resolved}) — world falls at device center`);
     }
     const t = PinWorldResolver.transformLocal(local, rotate, mirrorH);
     return { x: x + t.x, y: y + t.y };

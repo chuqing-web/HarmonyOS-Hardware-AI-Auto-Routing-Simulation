@@ -1195,17 +1195,7 @@ export class ConstrainedWiringEngine {
       return '';
     }
     const lib = (dev.libDevId ?? '').toUpperCase();
-    if (lib === 'LM555' || lib === 'NE555' || lib.indexOf('555') >= 0) {
-      return TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
-    }
-    if (lib === 'LM358' || lib === 'TL082' || lib === 'LM324') {
-      return TemplateSchematicKit.canonicalizeDualOpAmpPin(pinId, pinName);
-    }
-    if (lib === 'LM7805' || lib === 'LM7812' || lib === 'AMS1117_3V3' ||
-      lib.indexOf('AMS1117') >= 0 || lib.indexOf('7805') >= 0 || lib.indexOf('7812') >= 0) {
-      return TemplateSchematicKit.canonicalizeRegulatorPin(pinId, pinName);
-    }
-    return '';
+    return TemplateSchematicKit.canonicalizeLibPin(lib, pinId, pinName);
   }
 
   /** @deprecated 兼容旧调用：任意本网脚逃逸走廊 */
