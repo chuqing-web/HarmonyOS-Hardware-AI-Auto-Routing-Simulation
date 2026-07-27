@@ -2,7 +2,7 @@
 
 **Schematic-centric hardware simulation and AI-assisted circuit design on HarmonyOS NEXT**
 
-A Proteus-class editing and mixed-signal experience—native to HarmonyOS—with 8051/STM32 HEX debugging, virtual instruments, and a closed loop driven by **engineered AI Prompts**: **select → place → net-plan → route → self-review**. Built for university labs, contest training, and early design verification.
+A Proteus-class editing and mixed-signal experience—native to HarmonyOS—with 8051/STM32 HEX debugging, virtual instruments, and a closed loop driven by **engineered AI Prompts** and a **multi-agent quality bus**: **clarify → select → place → net-plan → WAR route → QA**. Built for university labs, contest training, and early design verification.
 
 [简体中文](./README.zh-CN.md) | English
 
@@ -64,15 +64,17 @@ The differentiator is not “another chatbot”—it is **constraining LLMs into
 | # | Innovation | Detail |
 |---|------------|--------|
 | 1 | **Engineered AI Prompts (single source of truth)** | `skill/prompts/` is the staged Prompt authority; mirrored to `templates/*.ets` and loaded by `PromptLoader` at runtime; md↔ets sync prevents drift (device never reads on-disk `skill/`) |
-| 2 | **Staged constraint JSON + local hard engines** | Select / layout / net-plan / route / self-review / modular-plan Prompts emit structured constraints only; GA placement, semantic nets, A\* routing, ERC / geometry gates run locally—no “text as circuit” |
-| 3 | **Modular parallel generation** | For complex circuits: choose **oneshot** or **modular**—global plan + boundary gates → true parallel sub-pipelines → pin-to-pin joint merge; shorter wall-clock with correct cross-module nets |
-| 4 | **Device usage-manual injection** | After library match, inject BOM-scoped `DeviceUsageManual` (real pins / typical wiring / anti-patterns) into layout / net-plan / route to cut hallucinated connections |
-| 5 | **Native mixed-signal kernel** | In-house MNA analog, event-driven digital, 8051 / in-process Cortex-M3 teaching paths, global nanosecond scheduler |
-| 6 | **Teach–sim–diagnose loop** | 20 `.schsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
-| 7 | **Multi-vendor AI governance** | 17 provider templates, per-task API binding, quota dashboard, offline / proxy / degrade policies |
+| 2 | **Multi-agent quality bus** | `AgentPipelineCoordinator` + `CircuitBlackboard`: Requirements → Select → Layout → Net → WAR Route → QA; stage critique, `qualityHardFail`, snapshot resume after clarification |
+| 3 | **Staged constraint JSON + local hard engines** | Prompts emit structured constraints only; GA placement, semantic nets, **WAR** (`WireAutoRouter`, same as the editor), ERC / geometry gates run locally—no “text as circuit” |
+| 4 | **Requirement clarification (A/B/C)** | `RequirementsAgent` asks only topology-critical questions; no silent fake schematic; resume via blackboard snapshot |
+| 5 | **Modular parallel generation** | Complex circuits: **oneshot** or **modular**—global plan + boundary gates → parallel sub-pipelines → pin-to-pin joint merge |
+| 6 | **Device usage-manual injection** | After library match, inject BOM-scoped `DeviceUsageManual` (real pins / typical wiring / anti-patterns) into layout / net-plan / route |
+| 7 | **Native mixed-signal kernel** | In-house MNA analog, event-driven digital, 8051 / in-process Cortex-M3 teaching paths, global nanosecond scheduler |
+| 8 | **Teach–sim–diagnose loop** | 20 `.schsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
+| 9 | **Multi-vendor AI governance** | 17 provider templates, per-task API binding, quota dashboard, offline / proxy / degrade policies |
 
 **Versus classic desktop EDA:** native HarmonyOS + executable AI + measurable teaching.  
-**Versus chat-only assistants:** staged Prompt engineering, topology landing, ERC / sim verification, diagnosable failures.
+**Versus chat-only assistants:** staged Prompt engineering, multi-agent gates, topology landing, ERC / sim verification, diagnosable failures.
 
 ---
 
@@ -90,11 +92,12 @@ skill/prompts/*.md      (staged system + userTemplate with frontmatter)
 features/ai_engine/.../prompts/templates/*Prompt.ets
         │ PromptLoader.load(runtime_key)
         ▼
-LLM constraint JSON  →  local algorithm engines  →  SchTopology
+LLM constraint JSON  →  Agent stages + local engines  →  SchTopology
 ```
 
 - **Authoritative copy:** [`skill/prompts/`](./skill/prompts/README.md) (v5.1)  
 - **Rule book:** [`skill/SKILL.md`](./skill/SKILL.md)  
+- **Pipeline stages:** [`skill/references/pipeline-stages.md`](./skill/references/pipeline-stages.md)  
 - **Index:** [`skill/references/prompt-templates.md`](./skill/references/prompt-templates.md)  
 - **Loader:** `PromptLoader` (refuses unknown-template silent fallback; refuses empty render)  
 - **Legacy:** root `ai_prompt_lib/*.json` is early assets—**current authority is `skill/`**
@@ -104,16 +107,17 @@ LLM constraint JSON  →  local algorithm engines  →  SchTopology
 | Stage | skill file | runtime_key | Role in pipeline |
 |-------|------------|-------------|------------------|
 | Shared rules | `00_shared_rules.md` | — | Injected via `renderEnriched` |
+| Requirement | `09_requirement.md` | `requirement` | `RequirementsAgent`: `RequirementSpec` or A/B/C clarification |
 | Device select | `01_device_select.md` | `device_select` | Function modules + in-library models; anti-hallucination / OOD |
 | Layout | `02_layout.md` | `layout` | Regions / adjacency / density → GA placement |
 | Net plan | `03_net_plan.md` | `net_plan` | Pin-level net list (primary battlefield + usage manual) |
-| Route | `04_route.md` | `route` | Analog / digital / xtal weights → A\* |
-| Self-review | `05_self_review.md` | `self_review` | ERC + geometry → repair suggestions |
+| Route | `04_route.md` | `route` | Analog / digital / xtal weights → WAR (optional skip via net_plan hints) |
+| Self-review | `05_self_review.md` | `self_review` | ERC + geometry → repair suggestions (QA agent) |
 | Diagnosis | `06_diag.md` | `diag` | Static / dynamic diagnosis tasks |
 | Legacy full sch | `07_gen_sch.md` | `gen_sch` | Compat path (do not rely on for production full-gen) |
 | Modular plan | `08_modular_plan.md` | `modular_plan` | Parallel gen: module boundaries + joint gates |
 
-Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragments`, `EditPlanPrompt` (local edit), injected with shared rules.
+Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragments`, `EditPlanPrompt` (local edit), `StageCapabilities`, injected with shared rules.
 
 ### 3.3 Runtime dynamic injection (not static body text)
 
@@ -124,6 +128,7 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 | `library_catalog` / libDevId list | Select & modular plan stay in-library |
 | `DeviceUsageManual` (full / compact) | Pin-level wiring & anti-patterns for layout / net-plan / route |
 | Pin world coords / selection AABB | Geometry-aware net_plan |
+| Named pin defaults | MCU / op-amp pin geometry (`NamedDevicePinDefaults`) |
 | Wire-path / density reports | Geometry coverage for self_review |
 | Topology anti-pattern guards | Enriched safeguards (e.g. mutually exclusive indicator / relay contact topology) |
 
@@ -132,7 +137,7 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 1. Change rules → edit `skill/SKILL.md`  
 2. Change a stage’s wording → edit the matching `skill/prompts/0x_*.md`  
 3. **Must** sync the same `*Prompt.ets`, or App behavior will not change  
-4. Keep geometry constants aligned with code (selection hit pad, foreign-pin clearance, …)  
+4. Keep geometry constants aligned with code (`HIT_PAD=22`, foreign-pin clearance ≥20 mil, …)  
 
 ---
 
@@ -145,6 +150,7 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 - ERC: static / deep / dynamic  
 - Proteus-style menus, toolbar, light/dark theme, keyboard shortcuts  
 - Proteus component alias table for habit migration  
+- Named device pins + WAR route ordering (shared with AI routing)
 
 ### 4.2 Mixed-signal simulation
 
@@ -180,7 +186,7 @@ Oscilloscope (multi-channel, timebase, trigger, math/FFT, cursors), logic analyz
 
 ### 4.5 AI-assisted design
 
-Natural-language device select, layout constraints, net planning, global/local routing, oneshot / modular-parallel generation, multi-turn **edit** increments, static/dynamic diagnosis, waveform analysis, parameter tips, replacement devices, BOM optimization. Full loop in [Section 6](#6-ai-closed-loop-pipeline).
+Natural-language **requirement understanding** (optional A/B/C clarification), device select, layout constraints, net planning, WAR routing, oneshot / modular-parallel generation, multi-turn **edit** increments, **self-check** (WAR + QA), static/dynamic diagnosis, waveform analysis, parameter tips, replacement devices, BOM optimization. Full loop in [Section 6](#6-ai-closed-loop-pipeline).
 
 Production requires a **real LLM + local hard engines**; **no** lab-template / `CircuitTemplates` keyword shortcuts posing as AI generation. Lab templates load only via the teaching panel.
 
@@ -221,6 +227,7 @@ Production requires a **real LLM + local hard engines**; **no** lab-template / `
 │  file_persistence │ plugin_system                             │
 ├─────────────────────────────────────────────────────────────┤
 │  common (HAR)  SchTopology · ErrCode · EventBus · ERC · license│
+│               NamedDevicePinDefaults · WarRouteOrder · Ai gates│
 ├─────────────────────────────────────────────────────────────┤
 │  Assets  DeviceLibrary · skill/prompts · Test_Template · HEX  │
 │          (ai_prompt_lib = legacy JSON; authority is skill)    │
@@ -261,49 +268,52 @@ entry
 ├── plugin_system         → common
 ├── ai_api_manager        → common
 └── ai_engine             → common, ai_api_manager, component_library
+    └── algorithms/agents/   AgentPipelineCoordinator + stage agents
 ```
 
 ---
 
 ## 6. AI Closed-Loop Pipeline
 
-`AiPipelineOrchestrator` / `IAiEngine.runFullPipeline` turns a natural-language request into a simulatable topology. Complex circuits can switch `generateStrategy: 'modular'` for the parallel path.
+Production path: `AiEngineImpl.runFullPipeline` → **`AgentPipelineCoordinator`** (oneshot / edit / append; modular via `runModular`). Legacy `AiPipelineOrchestrator` remains the shared executor / modular merge backend and the `skipLlm` fallback.
 
-### 6.1 Oneshot full pipeline
+### 6.1 Oneshot (multi-agent)
 
 ```
 User prompt
     │
     ▼
-① CircuitIntent rule classification (keywords / heuristics — not a lab-template shortcut)
+⓪ RequirementsAgent → RequirementSpec
+       or need_clarification (A/B/C + UI free-text D) → save BlackboardSnapshot → NO commit
+    │ (after answers: resume / re-run)
+    ▼
+① SelectAgent → LLM device select → DeviceSelectEngine (anti-hallucination / OOD)
     │
     ▼
-② LLM device select → LlmJsonNormalizer → DeviceSelectEngine (anti-hallucination / OOD)
+② LayoutAgent → LLM layout constraints → PlacementOptimizer / GA
     │
     ▼
-③ Inject DeviceUsageManual → LLM layout constraints → PlacementOptimizer / GA
+③ NetAgent → LLM net_plan → NetPlanExecutor (production; SemanticNetBuilder is skipLlm-only)
     │
     ▼
-④ LLM net_plan (pin-level nets) → NetPlanExecutor (production path; SemanticNetBuilder is skipLlm-only)
+④ RouteAgent → WAR / WireAutoRouter (same engine as the schematic editor)
     │
     ▼
-⑤ LLM routing constraints → ConstrainedWiringEngine (A*, analog/digital/xtal weights)
-    │
-    ▼
-⑥ ERC + geometry gates → LLM self_review repair
+⑤ QaAgent → ERC + geometry + limited WAR re-route / finalize (≤2 fix rounds)
     │
     ▼
 Editable · simulatable · teachable SchTopology
 ```
 
-Hard production rule: device-select / net_plan LLM failure **aborts with an error**—no silent template fake schematic; `CircuitTemplates` keyword matching is disabled.
+Hard production rules: device-select / net_plan / QA residual failures **abort with empty topology**—no silent template fake schematic; `qualityHardFail` defaults **on** for LLM runs; `CircuitTemplates` keyword matching is disabled.
 
 ### 6.2 Modular parallel
 
 ```
 User chooses “modular”
+    → AgentPipelineCoordinator.runModular
     → ① LLM modular_plan (overview + modules[] + joints[], hard gates)
-    → ② Promise.all: isolated orchestrators runFullPipeline(sub-prompt) in parallel
+    → ② Promise.all: ModularModuleAgent / isolated sub-pipelines in parallel
     → ③ pin-to-pin joint merge + unified power rails + ERC / geometry gates
     → Commit to canvas (replace / append to empty area)
 ```
@@ -314,8 +324,10 @@ Gate highlights: 2–4 modules, boundary pins present, joints resolvable, in-lib
 
 | Capability | API highlights |
 |------------|----------------|
-| Full loop | `runFullPipeline` (`generateStrategy: oneshot \| modular`) |
-| Modular parallel | `runModularParallelPipeline` |
+| Full loop | `runFullPipeline` → Coordinator (`generateStrategy: oneshot \| modular`) |
+| Modular parallel | `runModular` / `runModularParallelPipeline` |
+| Self-check | `runSelfCheckPipeline` (WAR + QA) |
+| Clarification resume | `clarificationAnswers` + `resumeSnapshotJson` / `getLastAgentSnapshotJson` |
 | Step tasks | `aiSelectDevices` / `aiPlaceDevices` / `aiAutoRoute*` |
 | Incremental edit | `generationMode: 'edit'` (multi-turn deltas; do not rebuild from scratch) |
 | Generation | `aiGenFullSchematic` / `aiGenSubCircuit` (legacy; production full-gen uses `runFullPipeline`) |
@@ -343,9 +355,9 @@ Provider templates cover Doubao, Tongyi, DeepSeek, Wenxin, Zhipu, Kimi, OpenAI, 
 
 ## 8. Device Library & Lab Templates
 
-### 8.1 Device library (**82** runtime devices)
+### 8.1 Device library (**82** runtime / **83** on-disk)
 
-The authoritative runtime catalog is `component_library` built-ins (`BuiltinComponents` / `ALL_CATALOG_LIBRARY_IDS`). On-disk `DeviceLibrary/` holds tri-part samples and shared SVGs.
+The authoritative runtime catalog is `component_library` built-ins (`BuiltinComponents`). On-disk `DeviceLibrary/` holds tri-part samples, shared SVGs, and `index.lib.json`.
 
 | Category | Count | Examples |
 |----------|-------|----------|
@@ -359,7 +371,11 @@ The authoritative runtime catalog is `component_library` built-ins (`BuiltinComp
 | Peripheral & sensor | 8 | SW_PUSH, RELAY_SPDT, BUZZER, LCD1602, OLED; DS18B20, HALL, LDR |
 | Virtual instruments | 8 | OSCILLOSCOPE, VIRTUAL_METER, LOGIC_ANALYZER, UART_TERMINAL, V/I/power/freq meters |
 
+**On-disk extra:** `STM32F103C8T6` (detailed LQFP48 sample) aliases to teaching `STM32F103C8`—present in `DeviceLibrary/` / `index.lib.json`, not a separate runtime catalog entry.
+
 **Tri-part format:** `{id}.meta.json` + `{id}.symbol.svg` + `{id}.model.*`
+
+**Category folders:** `Power/`, `Passive/`, `Discrete/`, `AnalogIC/`, `DigitalLogic/`, `Memory/`, `MCU/`, `Peripheral/`, `Sensor/`, `Instrument/`, `Common/` (shared SVG), `UserCustom/`
 
 **Op-amp pick tip:** single/classic → UA741; dual / single-supply → LM358; high-Z dual-supply → TL082. Spoken “LED / LED lamp” → `LED_RED|GREEN|BLUE` (series current-limit R required).
 
@@ -388,7 +404,7 @@ The authoritative runtime catalog is `component_library` built-ins (`BuiltinComp
 | `lab_555_astable` | 555 astable | Multivibrator, duty | — |
 | `lab_555_monostable` | 555 monostable | Timing, trigger | — |
 
-Assets: `Test_Template/`, `hex_files/`, `template_manifest.json`. The teaching panel shows coverage metrics and AI Q&A (same source as `DeviceUsageManual`).
+Assets: `Test_Template/`, `hex_files/` (7 HEX), `template_manifest.json`. The teaching panel shows coverage metrics and AI Q&A (same source as `DeviceUsageManual`).
 
 <p align="center">
   <img src="./picture/lab-templates-1.png" alt="Lab template example: 8051 LED chase" width="900">
@@ -406,28 +422,31 @@ Assets: `Test_Template/`, `hex_files/`, `template_manifest.json`. The teaching p
 ElecDraw_Harmony/
 ├── AppScope/                    # Bundle config & global resources
 ├── entry/                       # HAP: pages, components, AppService, SimWorker
-├── common/                      # Shared types, ERC, EventBus, license
+│   └── src/main/resources/rawfile/  # Bundled DeviceLibrary / templates / HEX / i18n
+├── common/                      # Shared types, ERC, EventBus, license, WAR helpers
 ├── features/
 │   ├── schematic_editor/        # Schematic edit engine
-│   ├── component_library/       # Catalog & loaders
+│   ├── component_library/       # Catalog & loaders (BuiltinComponents)
 │   ├── simulation_kernel/       # Mixed-signal kernel (+ native/ngspice_napi)
 │   ├── hex_debugger/            # HEX / MCU debug
 │   ├── ai_engine/               # AI pipeline, PromptLoader, teaching
+│   │   └── .../algorithms/agents/  # ★ Multi-agent quality bus
 │   ├── ai_api_manager/          # Multi-vendor API & quotas
 │   ├── file_persistence/        # Projects / import-export / collab
 │   ├── instruments/             # Virtual instrument engines
 │   └── plugin_system/           # Plugin sandbox
 ├── skill/                       # ★ AI rule book + Prompt authority
 │   ├── SKILL.md
-│   ├── prompts/                 # Staged md (sync → templates/*.ets)
-│   └── references/              # Catalog, ERC, pin maps, …
-├── DeviceLibrary/               # Tri-part devices & symbols
+│   ├── prompts/                 # Staged md 00–09 (sync → templates/*.ets)
+│   └── references/              # Catalog, ERC, pin maps, pipeline-stages, …
+├── DeviceLibrary/               # Tri-part devices, symbols, index.lib.json
 ├── ai_prompt_lib/               # Legacy LLM prompt JSON (not authority)
-├── Test_Template/               # Lab .schsim (20 sets)
-├── hex_files/                   # Lab firmware HEX
+├── Test_Template/               # Lab .schsim (20 sets) + template_manifest.json
+├── hex_files/                   # Lab firmware HEX (7 files)
 ├── picture/                     # README / brief screenshots (ASCII filenames)
-├── tools/                       # HEX/template build & verify scripts
-├── docs/                        # Design specs & plans (incl. modular parallel)
+├── tools/                       # HEX/template build, verify, audit, smoke
+│   └── lab_templates/           # builders / export / verify_*.mjs
+├── docs/                        # Competition brief (作品说明文档.md)
 ├── project/                     # Local project placeholder
 ├── build-profile.json5
 └── oh-package.json5
@@ -436,18 +455,20 @@ ElecDraw_Harmony/
 | Module | Role |
 |--------|------|
 | `entry` | UI shell, orchestration, worker host, theme & shortcuts |
-| `common` | `SchTopology`, `ErrCode`, ERC, EventBus, License / FeatureGate |
-| `schematic_editor` | Edit commands, layers, topology I/O, sim interlock |
+| `common` | `SchTopology`, `ErrCode`, ERC, EventBus, License / FeatureGate, named pins / WAR utils |
+| `schematic_editor` | Edit commands, layers, topology I/O, sim interlock, WireAutoRouter |
 | `component_library` | Built-in catalog, SVG cache, Proteus aliases |
 | `simulation_kernel` | Three engines + scheduler + fault injection + SpiceRunner |
 | `hex_debugger` | HEX, 8051 / Cortex-M3, breakpoints & behavior sim |
-| `ai_engine` | Pipeline orchestration, PromptLoader, GA / A\*, modular parallel, TeachingService |
+| `ai_engine` | `AgentPipelineCoordinator`, PromptLoader, GA / WAR, modular parallel, TeachingService |
 | `ai_api_manager` | Providers, network modes, quota dashboard |
 | `file_persistence` | `.schsim`, crash guard, export, collab skeleton |
 | `instruments` | Instrument engines & binding snapshots |
 | `plugin_system` | Plugin lifecycle & sandbox |
 
-**Selected UI components:** `SchematicCanvas`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, and more.
+**Agent modules** (`features/ai_engine/.../algorithms/agents/`): `AgentPipelineCoordinator`, `CircuitBlackboard`, `RequirementsAgent`, `SelectAgent`, `LayoutAgent`, `NetAgent`, `RouteAgent`, `QaAgent`, `StageCritic`, `StageHooks`, `ModularModuleAgent`.
+
+**Selected UI components:** `SchematicCanvas`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, oscilloscope / LA wave canvases, and more.
 
 ---
 
@@ -480,28 +501,29 @@ ohpm install
 # Optional: rebuild lab HEX
 node tools/_build_lab_mcu_stm32_hex.mjs
 python tools/_build_lab_uart_hex.py
+# Optional: export runtime catalog → DeviceLibrary tri-part
+node tools/export-builtin-device-library.mjs
 ```
 
-### Optional icons
+### App icons
 
 - `AppScope/resources/base/media/app_icon.png`  
 - `entry/src/main/resources/base/media/startIcon.png`  
 - `entry/src/main/resources/base/media/layered_image.json`  
-- Source art: `ico/ico.png`  
 
 ---
 
 ## 11. Demo Script for Judges
 
-Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable topology → teachable verification**:
+Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent gates → simulatable topology → teachable verification**:
 
 1. **Launch & shell** — Splash → Proteus-style main UI; library & navigator.  
 2. **Teaching template** — Load `lab_uart` / `lab_555_astable`; show coverage and tips.  
 3. **HEX debug** — Burn companion HEX, run sim, UART echo / LED chase.  
 4. **Instruments** — Open `lab_amp` / `lab_filter`; observe op-amp or RC on the scope.  
-5. **AI Prompt loop** — Prompt “STM32 min-system + LED”; show select / layout / net-plan / route / self-review and ERC.  
+5. **AI Prompt loop** — Prompt “STM32 min-system + LED”; show clarify (if any) / select / layout / net-plan / WAR / QA and ERC.  
 6. **Modular parallel (bonus)** — Complex request with “modular”; show plan → parallel sub-gens → joint merge.  
-7. **Fault injection** — Inject resistor-open (etc.), batch scan, compare waves / diagnosis.  
+7. **Self-check / fault injection** — Run AI self-check, or inject resistor-open and compare waves / diagnosis.  
 8. **Project polish** — Save `.schsim`, theme toggle, AI quota / offline mode (optional).  
 
 ---
@@ -514,7 +536,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable
 | Electronics / embedded contest training | Fast circuits, HEX burn, waves & serial; modular parallel for complex briefs |
 | Engineer pre-validation | AI draft + local sim to catch errors before hardware |
 | HarmonyOS classrooms / 2in1 terminals | Native OS deployment, less Windows dependency |
-| AI + EDA teaching demos | Full staged-Prompt engineering story—ideal for courses and reviews |
+| AI + EDA teaching demos | Full staged-Prompt + multi-agent engineering story—ideal for courses and reviews |
 
 ---
 
@@ -523,8 +545,11 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable
 | Kind | Where / how |
 |------|-------------|
 | AI acceptance suite | `AiPipelineValidator`: min-system+LED, hallucination chip block, modular-merge checks, API-failure degrade; via `runValidationSuite()` |
+| Multi-agent gates | `qualityHardFail`, stage critique limits, QA residual abort, `usedLlm` triple gate on commit |
 | Engineering verify scripts | `tools/lab_templates/verify_*.mjs` (MNA, diode Newton, digital logic, geometry audit, template merge, …) |
+| Audit / smoke | `tools/_audit_*.mjs`, `osc_*_smoke.mjs`, `war_route_order_smoke.mjs` |
 | Template & firmware builders | `tools/_build_lab_*.py` / `.mjs`, `tools/lab_templates/` |
+| Catalog export | `tools/export-builtin-device-library.mjs` |
 | Prompt sync | `skill/prompts` ↔ `features/ai_engine/.../templates/*.ets` |
 | Unit-test framework | Root dep `@ohos/hypium` (expanding) |
 | Native integration notes | `features/simulation_kernel/native/ngspice_napi/README.md` |
@@ -549,6 +574,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → simulatable
 6. **Collab & cloud** — Real-time co-edit and lab report sync  
 7. **Testing** — Broader Hypium automation and acceptance cases  
 8. **Fault injection / plugin sandbox** — Complete engine and executor coverage  
+9. **Agent modular Phase-2** — Deeper Agentization of modular parallel path  
 
 ---
 

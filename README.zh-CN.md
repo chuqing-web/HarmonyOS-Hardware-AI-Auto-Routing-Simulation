@@ -2,7 +2,7 @@
 
 **面向 HarmonyOS NEXT 的纯原理图硬件仿真与 AI 辅助电路设计平台**
 
-对标 Proteus 核心编辑与仿真体验，在国产操作系统上提供混合信号仿真、8051/STM32 HEX 调试、虚拟仪器，以及以 **工程化 AI Prompt** 驱动的「选型 → 布局 → 建网 → 布线 → 自检」全闭环——服务高校实验、竞赛训练与方案预验证。
+对标 Proteus 核心编辑与仿真体验，在国产操作系统上提供混合信号仿真、8051/STM32 HEX 调试、虚拟仪器，以及以 **工程化 AI Prompt** 与 **多 Agent 质量总线** 驱动的「澄清 → 选型 → 布局 → 建网 → WAR 布线 → QA」全闭环——服务高校实验、竞赛训练与方案预验证。
 
 [English](./README.md) | 简体中文
 
@@ -64,15 +64,17 @@
 | # | 创新点 | 说明 |
 |---|--------|------|
 | 1 | **工程化 AI Prompt（权威源）** | `skill/prompts/` 为分阶段 Prompt 唯一权威源；同步镜像到 `templates/*.ets`，由 `PromptLoader` 运行时加载；md↔ets 防漂移，真机不读磁盘 skill |
-| 2 | **分阶段约束 JSON + 本地硬引擎** | 选型 / 布局 / 建网计划 / 布线 / 自检 / 模块规划等 Prompt 只产出结构化约束；GA 摆放、语义建网、A\* 布线、ERC / 几何门禁在本地执行，杜绝「生成一段文字当电路」 |
-| 3 | **模块化并行生图** | 复杂电路可选「整图一次」或「模块并行」：整体设计 + 边界门禁 → 真并行子流水线 → pin-to-pin joints 合并，显著缩短墙钟时间且保持跨模块电气正确 |
-| 4 | **器件用法手册注入** | 选型落地后，按本次 BOM 注入全库 `DeviceUsageManual`（真脚 / 典型接法 / 禁例），降低瞎连线与脚名臆造 |
-| 5 | **HarmonyOS 原生混合信号内核** | 自研 MNA 模拟引擎、事件驱动数字引擎、8051 / 进程内 Cortex-M3 教学路径，全局纳秒调度器协同 |
-| 6 | **教学—仿真—诊断闭环** | 20 套 `.schsim` 实验 + HEX 固件 + 知识点提示 + 分步上电 + 故障注入 + 覆盖率仪表盘；仪器与原理图网络实时绑定 |
-| 7 | **多厂商 AI 治理** | 17 类提供商模板、任务级 API 绑定、配额仪表盘、离线 / 代理 / 降级策略 |
+| 2 | **多 Agent 质量总线** | `AgentPipelineCoordinator` + `CircuitBlackboard`：需求 → 选型 → 布局 → 建网 → WAR 布线 → QA；阶段批判、`qualityHardFail`、澄清后快照续跑 |
+| 3 | **分阶段约束 JSON + 本地硬引擎** | Prompt 只产出结构化约束；GA 摆放、语义建网、**WAR**（`WireAutoRouter`，与编辑器同源）、ERC / 几何门禁在本地执行，杜绝「生成一段文字当电路」 |
+| 4 | **需求澄清（A/B/C）** | `RequirementsAgent` 仅追问影响拓扑的关键歧义；禁止静默假图；经黑板快照续跑 |
+| 5 | **模块化并行生图** | 复杂电路可选「整图一次」或「模块并行」：整体设计 + 边界门禁 → 真并行子流水线 → pin-to-pin joints 合并 |
+| 6 | **器件用法手册注入** | 选型落地后，按本次 BOM 注入全库 `DeviceUsageManual`（真脚 / 典型接法 / 禁例），降低瞎连线与脚名臆造 |
+| 7 | **HarmonyOS 原生混合信号内核** | 自研 MNA 模拟引擎、事件驱动数字引擎、8051 / 进程内 Cortex-M3 教学路径，全局纳秒调度器协同 |
+| 8 | **教学—仿真—诊断闭环** | 20 套 `.schsim` 实验 + HEX 固件 + 知识点提示 + 分步上电 + 故障注入 + 覆盖率仪表盘；仪器与原理图网络实时绑定 |
+| 9 | **多厂商 AI 治理** | 17 类提供商模板、任务级 API 绑定、配额仪表盘、离线 / 代理 / 降级策略 |
 
 **相对传统桌面 EDA：** 国产 OS 原生落地 + AI 可执行输出 + 教学可度量。  
-**相对纯 Chat 助手：** Prompt 分阶段工程化、拓扑落地、ERC / 仿真可验证、失败可诊断。
+**相对纯 Chat 助手：** Prompt 分阶段工程化、多 Agent 门禁、拓扑落地、ERC / 仿真可验证、失败可诊断。
 
 ---
 
@@ -90,11 +92,12 @@ skill/prompts/*.md      （分阶段 system + userTemplate，含 frontmatter）
 features/ai_engine/.../prompts/templates/*Prompt.ets
         │ PromptLoader.load(runtime_key)
         ▼
-LLM 约束 JSON  →  本地算法引擎  →  SchTopology
+LLM 约束 JSON  →  Agent 阶段 + 本地算法引擎  →  SchTopology
 ```
 
 - **权威文案**：[`skill/prompts/`](./skill/prompts/README.md)（v5.1）  
 - **规则总纲**：[`skill/SKILL.md`](./skill/SKILL.md)  
+- **流水线阶段**：[`skill/references/pipeline-stages.md`](./skill/references/pipeline-stages.md)  
 - **索引**：[`skill/references/prompt-templates.md`](./skill/references/prompt-templates.md)  
 - **加载器**：`PromptLoader`（拒绝未知模板静默回退；空模板拒绝渲染）  
 - **遗留资源**：根目录 `ai_prompt_lib/*.json` 为早期资产，**现行权威源以 skill 为准**
@@ -104,16 +107,17 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 | 阶段 | skill 文件 | runtime_key | 管线作用 |
 |------|------------|-------------|----------|
 | 共享规则 | `00_shared_rules.md` | — | `renderEnriched` 注入公共约束 |
+| 需求理解 | `09_requirement.md` | `requirement` | `RequirementsAgent`：`RequirementSpec` 或 A/B/C 澄清 |
 | 器件选型 | `01_device_select.md` | `device_select` | 功能模块拆解 + 库内型号；防幻觉 / OOD |
 | 布局约束 | `02_layout.md` | `layout` | 区域 / 邻接 / 密度 → GA 摆放 |
 | 建网计划 | `03_net_plan.md` | `net_plan` | 引脚级网络清单（主战场，含用法手册） |
-| 布线约束 | `04_route.md` | `route` | 模拟 / 数字 / 晶振权重 → A\* |
-| 自检修复 | `05_self_review.md` | `self_review` | ERC + 几何问题 → 修复建议 |
+| 布线约束 | `04_route.md` | `route` | 模拟 / 数字 / 晶振权重 → WAR（可由 net_plan hints 跳过） |
+| 自检修复 | `05_self_review.md` | `self_review` | ERC + 几何问题 → 修复建议（QA Agent） |
 | 故障诊断 | `06_diag.md` | `diag` | 静态 / 动态诊断任务 |
 | 遗留整图 | `07_gen_sch.md` | `gen_sch` | 兼容路径（生产整图勿依赖） |
 | 模块规划 | `08_modular_plan.md` | `modular_plan` | 并行生图：模块边界 + joints 门禁 |
 
-另有运行时片段：`IntentPromptFragments`、`DeviceInstrumentFragments`、`EditPlanPrompt`（局部编辑）等，与共享规则一并注入。
+另有运行时片段：`IntentPromptFragments`、`DeviceInstrumentFragments`、`EditPlanPrompt`（局部编辑）、`StageCapabilities` 等，与共享规则一并注入。
 
 ### 3.3 运行时动态注入（非静态正文）
 
@@ -124,6 +128,7 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 | `library_catalog` / libDevId 清单 | 选型与模块规划只允许库内型号 |
 | `DeviceUsageManual`（full / compact） | 布局 / 建网 / 布线阶段的脚级接法与禁例 |
 | 引脚世界坐标 / 选中区 AABB | net_plan 几何感知 |
+| 命名脚默认几何 | MCU / 运放脚几何（`NamedDevicePinDefaults`） |
 | 导线路径 / 密度报告 | self_review 几何覆盖 |
 | 拓扑反模式警示 | enriched 防护（如互斥指示灯触点拓扑） |
 
@@ -132,7 +137,7 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 1. 改规则 → 改 `skill/SKILL.md`  
 2. 改某阶段文案 → 改对应 `skill/prompts/0x_*.md`  
 3. **必须**同步同名 `*Prompt.ets`，否则 App 行为不变  
-4. 几何常量与代码一致：选中命中区 pad、无关脚安全距等  
+4. 几何常量与代码一致：`HIT_PAD=22`、无关脚安全距 ≥20 mil 等  
 
 ---
 
@@ -145,6 +150,7 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 - 电气规则检查：静态 ERC / 深度 ERC / 动态 ERC  
 - Proteus 风格菜单、工具栏、主题（明暗）与快捷键配置  
 - Proteus 器件别名表加载，便于习惯迁移  
+- 命名器件脚 + WAR 布线序（与 AI 布线同源）
 
 ### 4.2 混合信号仿真
 
@@ -180,7 +186,7 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 
 ### 4.5 AI 智能设计
 
-自然语言驱动的器件选型、布局约束、建网计划、全局 / 局部布线、整图一次 / 模块并行生成、多轮 **edit 增量**、静态 / 动态诊断、波形解读、参数推荐、替换器件与 BOM 优化；完整闭环见 [第六节](#六ai-闭环流水线)。
+自然语言 **需求理解**（可选 A/B/C 澄清）、器件选型、布局约束、建网计划、WAR 布线、整图一次 / 模块并行生成、多轮 **edit 增量**、**自检**（WAR + QA）、静态 / 动态诊断、波形解读、参数推荐、替换器件与 BOM 优化；完整闭环见 [第六节](#六ai-闭环流水线)。
 
 生产路径要求 **真实 LLM + 本地硬引擎**；**禁止**用实验模板 / `CircuitTemplates` 关键词捷径冒充 AI 落图。实验模板仅通过教学面板加载。
 
@@ -221,6 +227,7 @@ LLM 约束 JSON  →  本地算法引擎  →  SchTopology
 │  file_persistence │ plugin_system                             │
 ├─────────────────────────────────────────────────────────────┤
 │  common（HAR）  SchTopology · ErrCode · EventBus · ERC · 授权  │
+│                NamedDevicePinDefaults · WarRouteOrder · AI 门禁│
 ├─────────────────────────────────────────────────────────────┤
 │  资源层  DeviceLibrary · skill/prompts · Test_Template · HEX  │
 │         （ai_prompt_lib 为遗留 JSON，权威源见 skill）          │
@@ -261,49 +268,52 @@ entry
 ├── plugin_system         → common
 ├── ai_api_manager        → common
 └── ai_engine             → common, ai_api_manager, component_library
+    └── algorithms/agents/   AgentPipelineCoordinator + 各阶段 Agent
 ```
 
 ---
 
 ## 六、AI 闭环流水线
 
-`AiPipelineOrchestrator` / `IAiEngine.runFullPipeline` 将自然语言需求落地为可仿真拓扑；复杂电路可切换 `generateStrategy: 'modular'` 走并行路径。
+生产路径：`AiEngineImpl.runFullPipeline` → **`AgentPipelineCoordinator`**（oneshot / edit / append；modular 走 `runModular`）。遗留 `AiPipelineOrchestrator` 仍为共享执行器 / 模块合并后端，以及 `skipLlm` 回退路径。
 
-### 6.1 整图一次（oneshot）
+### 6.1 整图一次（多 Agent）
 
 ```
 用户提示词
     │
     ▼
-① CircuitIntent 规则意图分类（关键词 / 启发式；非实验模板捷径）
+⓪ RequirementsAgent → RequirementSpec
+       或 need_clarification（A/B/C + UI 自由输入 D）→ 保存 BlackboardSnapshot → 不落图
+    │ （答完后：续跑 / 重跑）
+    ▼
+① SelectAgent → LLM 选型 → DeviceSelectEngine（防幻觉 / OOD）
     │
     ▼
-② LLM 选型 → LlmJsonNormalizer → DeviceSelectEngine（防幻觉 / OOD）
+② LayoutAgent → LLM 布局约束 → PlacementOptimizer / GA
     │
     ▼
-③ 注入 DeviceUsageManual → LLM 布局约束 → PlacementOptimizer / GA
+③ NetAgent → LLM net_plan → NetPlanExecutor（生产主路径；SemanticNetBuilder 仅 skipLlm）
     │
     ▼
-④ LLM net_plan（脚级网络）→ NetPlanExecutor（生产主路径；SemanticNetBuilder 仅 skipLlm 验收）
+④ RouteAgent → WAR / WireAutoRouter（与原理图编辑器同源）
     │
     ▼
-⑤ LLM 布线约束 → ConstrainedWiringEngine（A*，模拟/数字/晶振权重）
-    │
-    ▼
-⑥ ERC + 几何门禁 → LLM self_review 自检修复
+⑤ QaAgent → ERC + 几何 + 有限 WAR 重拉 / finalize（≤2 轮修复）
     │
     ▼
 可编辑 · 可仿真 · 可教学的 SchTopology
 ```
 
-生产硬约束：选型 / net_plan LLM 失败则 **中止并报错**，禁止静默模板假图；`CircuitTemplates` 关键词匹配路径已禁用。
+生产硬约束：选型 / net_plan / QA 残留失败则 **中止并交空拓扑**，禁止静默模板假图；LLM 跑时默认开启 `qualityHardFail`；`CircuitTemplates` 关键词匹配路径已禁用。
 
 ### 6.2 模块并行（modular）
 
 ```
 用户选「模块并行」
+    → AgentPipelineCoordinator.runModular
     → ① LLM modular_plan（整体设计 + modules[] + joints[]，硬门禁）
-    → ② Promise.all：各模块隔离编排器并行 runFullPipeline(子 prompt)
+    → ② Promise.all：ModularModuleAgent / 隔离子流水线并行
     → ③ pin-to-pin joints 合并 + 电源轨统一 + ERC / 几何门禁
     → 落图画布（替换整图 / 追加空白区）
 ```
@@ -314,8 +324,10 @@ entry
 
 | 能力 | API 要点 |
 |------|----------|
-| 全闭环 | `runFullPipeline`（`generateStrategy: oneshot \| modular`） |
-| 模块并行 | `runModularParallelPipeline` |
+| 全闭环 | `runFullPipeline` → Coordinator（`generateStrategy: oneshot \| modular`） |
+| 模块并行 | `runModular` / `runModularParallelPipeline` |
+| 自检 | `runSelfCheckPipeline`（WAR + QA） |
+| 澄清续跑 | `clarificationAnswers` + `resumeSnapshotJson` / `getLastAgentSnapshotJson` |
 | 分步任务 | `aiSelectDevices` / `aiPlaceDevices` / `aiAutoRoute*` |
 | 增量编辑 | `generationMode: 'edit'`（多轮对话增量，勿整图重建） |
 | 生成 | `aiGenFullSchematic` / `aiGenSubCircuit`（遗留入口；生产整图走 `runFullPipeline`） |
@@ -343,9 +355,9 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 
 ## 八、器件库与实验模板
 
-### 8.1 器件库（**82** 个运行时器件）
+### 8.1 器件库（**82** 运行时 / **83** 磁盘三分体）
 
-运行时权威目录由 `component_library` 内置数据（`BuiltinComponents` / `ALL_CATALOG_LIBRARY_IDS`）维护；磁盘 `DeviceLibrary/` 提供三分体样例与共享 SVG。
+运行时权威目录由 `component_library` 内置数据（`BuiltinComponents`）维护；磁盘 `DeviceLibrary/` 提供三分体样例、共享 SVG 与 `index.lib.json`。
 
 | 品类 | 数量 | 示例 |
 |------|------|------|
@@ -359,7 +371,11 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | 外设与传感器 | 8 | SW_PUSH、RELAY_SPDT、BUZZER、LCD1602、OLED；DS18B20、HALL、LDR |
 | 虚拟仪器 | 8 | OSCILLOSCOPE、VIRTUAL_METER、LOGIC_ANALYZER、UART_TERMINAL、电压/电流/功率/频率计 |
 
+**磁盘额外样例：** `STM32F103C8T6`（详细 LQFP48）与教学型号 `STM32F103C8` 双向别名——存在于 `DeviceLibrary/` / `index.lib.json`，不单独计入运行时目录。
+
 **三分体规范：** `{id}.meta.json` + `{id}.symbol.svg` + `{id}.model.*`
+
+**品类目录：** `Power/`、`Passive/`、`Discrete/`、`AnalogIC/`、`DigitalLogic/`、`Memory/`、`MCU/`、`Peripheral/`、`Sensor/`、`Instrument/`、`Common/`（共享 SVG）、`UserCustom/`
 
 **运放选型提示：** 普通单运放 → UA741；单片双运放 / 单电源 → LM358；高阻双电源 → TL082。口语「LED / LED灯」→ `LED_RED|GREEN|BLUE`（须限流电阻）。
 
@@ -388,7 +404,7 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | `lab_555_astable` | 555 无稳态 | 多谐振荡、占空比 | — |
 | `lab_555_monostable` | 555 单稳态 | 定时、触发 | — |
 
-资源目录：`Test_Template/`、`hex_files/`、`template_manifest.json`。教学面板展示模板覆盖率与 AI 答疑入口（与 `DeviceUsageManual` 同源）。
+资源目录：`Test_Template/`、`hex_files/`（7 个 HEX）、`template_manifest.json`。教学面板展示模板覆盖率与 AI 答疑入口（与 `DeviceUsageManual` 同源）。
 
 <p align="center">
   <img src="./picture/lab-templates-1.png" alt="实验模板库示例：51 流水灯" width="900">
@@ -406,28 +422,31 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 ElecDraw_Harmony/
 ├── AppScope/                    # 包配置与全局资源
 ├── entry/                       # HAP：页面、组件、AppService、SimWorker
-├── common/                      # 公共类型、ERC、EventBus、授权
+│   └── src/main/resources/rawfile/  # 打包 DeviceLibrary / 模板 / HEX / i18n
+├── common/                      # 公共类型、ERC、EventBus、授权、WAR 辅助
 ├── features/
 │   ├── schematic_editor/        # 原理图编辑引擎
-│   ├── component_library/       # 器件目录与加载器
+│   ├── component_library/       # 器件目录与加载器（BuiltinComponents）
 │   ├── simulation_kernel/       # 混合仿真内核（含 native/ngspice_napi）
 │   ├── hex_debugger/            # HEX / MCU 调试
 │   ├── ai_engine/               # AI 流水线、PromptLoader、教学
+│   │   └── .../algorithms/agents/  # ★ 多 Agent 质量总线
 │   ├── ai_api_manager/          # 多厂商 API 与配额
 │   ├── file_persistence/        # 工程持久化 / 导入导出 / 协作
 │   ├── instruments/             # 虚拟仪器引擎
 │   └── plugin_system/           # 插件沙箱
 ├── skill/                       # ★ AI 规则总纲 + Prompt 权威源
 │   ├── SKILL.md
-│   ├── prompts/                 # 分阶段 md（同步至 templates/*.ets）
-│   └── references/              # 器件目录、ERC、管脚图等参考
-├── DeviceLibrary/               # 三分体器件与符号
+│   ├── prompts/                 # 分阶段 md 00–09（同步至 templates/*.ets）
+│   └── references/              # 器件目录、ERC、管脚图、pipeline-stages 等
+├── DeviceLibrary/               # 三分体器件、符号、index.lib.json
 ├── ai_prompt_lib/               # 遗留 LLM 提示词 JSON（非权威源）
-├── Test_Template/               # 实验 .schsim（20 套）
-├── hex_files/                   # 实验固件 HEX
+├── Test_Template/               # 实验 .schsim（20 套）+ template_manifest.json
+├── hex_files/                   # 实验固件 HEX（7 个）
 ├── picture/                     # README / 作品说明配图（ASCII 文件名）
-├── tools/                       # HEX / 模板构建与 verify 脚本
-├── docs/                        # 设计规格与计划（含模块并行等）
+├── tools/                       # HEX / 模板构建、verify、audit、smoke
+│   └── lab_templates/           # builders / export / verify_*.mjs
+├── docs/                        # 比赛材料（作品说明文档.md）
 ├── project/                     # 本地工程占位
 ├── build-profile.json5
 └── oh-package.json5
@@ -436,18 +455,20 @@ ElecDraw_Harmony/
 | 模块 | 职责摘要 |
 |------|----------|
 | `entry` | UI 壳层、业务编排、Worker 宿主、主题与快捷键 |
-| `common` | `SchTopology`、`ErrCode`、ERC、EventBus、License / FeatureGate |
-| `schematic_editor` | 编辑命令、图层、拓扑导入导出、仿真互锁 |
+| `common` | `SchTopology`、`ErrCode`、ERC、EventBus、License / FeatureGate、命名脚 / WAR 工具 |
+| `schematic_editor` | 编辑命令、图层、拓扑导入导出、仿真互锁、WireAutoRouter |
 | `component_library` | 内置目录、SVG 缓存、Proteus 别名 |
 | `simulation_kernel` | 三引擎 + 调度器 + 故障注入 + SpiceRunner |
 | `hex_debugger` | HEX、8051 / Cortex-M3、断点与行为仿真 |
-| `ai_engine` | 流水线编排、PromptLoader、GA / A\*、模块并行、TeachingService |
+| `ai_engine` | `AgentPipelineCoordinator`、PromptLoader、GA / WAR、模块并行、TeachingService |
 | `ai_api_manager` | 提供商、网络模式、配额仪表盘 |
 | `file_persistence` | `.schsim`、崩溃保护、导出、协作骨架 |
 | `instruments` | 各仪器引擎与绑定快照 |
 | `plugin_system` | 插件生命周期与沙箱 |
 
-**入口 UI 组件（节选）：** `SchematicCanvas`、`AppLeftPanel` / `AppRightPanel`、`AiSettingsPanel`、`McuDebugPanel`、`InstrumentPanel`、`FaultInjectionPanel`、`TeachingPanel`、`PlatformSettingsPanel` 等。
+**Agent 模块**（`features/ai_engine/.../algorithms/agents/`）：`AgentPipelineCoordinator`、`CircuitBlackboard`、`RequirementsAgent`、`SelectAgent`、`LayoutAgent`、`NetAgent`、`RouteAgent`、`QaAgent`、`StageCritic`、`StageHooks`、`ModularModuleAgent`。
+
+**入口 UI 组件（节选）：** `SchematicCanvas`、`AppLeftPanel` / `AppRightPanel`、`AiSettingsPanel`、`McuDebugPanel`、`InstrumentPanel`、`FaultInjectionPanel`、`TeachingPanel`、`PlatformSettingsPanel`、示波器 / 逻辑分析仪波形画布等。
 
 ---
 
@@ -480,28 +501,29 @@ ohpm install
 # 可选：重建实验 HEX
 node tools/_build_lab_mcu_stm32_hex.mjs
 python tools/_build_lab_uart_hex.py
+# 可选：导出运行时目录 → DeviceLibrary 三分体
+node tools/export-builtin-device-library.mjs
 ```
 
-### 可选图标资源
+### 应用图标
 
 - `AppScope/resources/base/media/app_icon.png`  
 - `entry/src/main/resources/base/media/startIcon.png`  
 - `entry/src/main/resources/base/media/layered_image.json`  
-- 源素材：`ico/ico.png`  
 
 ---
 
 ## 十一、演示建议（评审录屏）
 
-建议按 5～8 分钟分镜，突出 **「工程化 Prompt → 可仿真拓扑 → 可教学验证」**：
+建议按 5～8 分钟分镜，突出 **「工程化 Prompt → 多 Agent 门禁 → 可仿真拓扑 → 可教学验证」**：
 
 1. **启动与界面** — Splash → Proteus 风格主界面，打开左侧器件库与导航。  
 2. **教学模板** — 加载 `lab_uart` / `lab_555_astable` 等，展示覆盖率与知识点。  
 3. **HEX 调试** — 烧录配套 HEX，运行仿真，虚拟串口收发 / 流水灯现象。  
 4. **仪器联动** — 打开 `lab_amp` / `lab_filter`，示波器观察运放或 RC 波形。  
-5. **AI Prompt 闭环** — AI 面板输入「STM32 最小系统 + LED」；展示选型 / 布局 / 建网 / 布线 / 自检进度与 ERC。  
+5. **AI Prompt 闭环** — AI 面板输入「STM32 最小系统 + LED」；展示澄清（如有）/ 选型 / 布局 / 建网 / WAR / QA 与 ERC。  
 6. **模块并行（加分项）** — 复杂需求选「模块并行」，展示整体设计 → 并行子图 → joints 合并。  
-7. **故障注入** — 注入电阻开路等故障，批量扫描并对照波形 / 诊断。  
+7. **自检 / 故障注入** — 跑 AI 自检，或注入电阻开路等对照波形 / 诊断。  
 8. **工程能力** — 保存 `.schsim`、主题切换、AI 配额 / 离线模式（可选）。  
 
 ---
@@ -514,7 +536,7 @@ python tools/_build_lab_uart_hex.py
 | 电子设计 / 嵌入式竞赛培训 | 快速搭电路、烧 HEX、看波形与串口；复杂题可用模块并行加速出图 |
 | 工程师方案预验证 | AI 生成初稿 + 本地仿真筛错，降低原型成本 |
 | HarmonyOS 教室 / 2in1 终端 | 国产 OS 原生部署，减少 Windows 依赖 |
-| AI + EDA 教学示范 | 可展示「Prompt 分阶段工程化」完整链路，适合课程与评审 |
+| AI + EDA 教学示范 | 可展示「Prompt 分阶段 + 多 Agent 工程化」完整链路，适合课程与评审 |
 
 ---
 
@@ -523,8 +545,11 @@ python tools/_build_lab_uart_hex.py
 | 类型 | 位置 / 方式 |
 |------|-------------|
 | AI 验收套件 | `AiPipelineValidator`：最小系统 + LED、幻觉芯片拦截、模块合并校验、API 失败降级；经 `runValidationSuite()` 调用 |
+| 多 Agent 门禁 | `qualityHardFail`、阶段批判限额、QA 残留中止、落图前 `usedLlm` 三重门禁 |
 | 工程 verify 脚本 | `tools/lab_templates/verify_*.mjs`（MNA、二极管 Newton、数字逻辑、几何审计、模板合并等） |
+| Audit / smoke | `tools/_audit_*.mjs`、`osc_*_smoke.mjs`、`war_route_order_smoke.mjs` |
 | 模板与固件构建 | `tools/_build_lab_*.py` / `.mjs`、`tools/lab_templates/` |
+| 目录导出 | `tools/export-builtin-device-library.mjs` |
 | Prompt 同步 | `skill/prompts` ↔ `features/ai_engine/.../templates/*.ets` |
 | 单元测试框架 | 根依赖 `@ohos/hypium`（持续扩充中） |
 | 原生集成说明 | `features/simulation_kernel/native/ngspice_napi/README.md` |
@@ -549,6 +574,7 @@ python tools/_build_lab_uart_hex.py
 6. **协作与云** — 实时协同编辑与实验报告云同步  
 7. **测试** — Hypium 自动化与更多验收用例  
 8. **故障注入 / 插件沙箱** — 引擎与执行器覆盖补全  
+9. **Agent 模块并行 Phase-2** — 加深 modular 路径的 Agent 化  
 
 ---
 

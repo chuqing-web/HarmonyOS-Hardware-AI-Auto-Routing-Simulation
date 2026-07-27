@@ -2223,3 +2223,1978 @@ at C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\foreground.p
 [2026-07-27T16:41:14.420] [DEBUG] debug-file - session manager: send message to worker process.
 [2026-07-27T16:41:14.416] [DEBUG] debug-file - watch worker: worker id should be larger than 0. Nothing will be sent to any worker thread.
 [2026-07-27T16:41:14.420] [DEBUG] debug-file - watch worker: worker id should be larger than 0. Nothing will be sent to any worker thread.
+[2026-07-27T16:45:57.625] [DEBUG] debug-file - session manager: set active socket. socketId=1KhVbBFFmnAOD6YTAAA7
+[2026-07-27T16:45:57.674] [DEBUG] debug-file - watch worker: worker id should be larger than 0. Nothing will be sent to any worker thread.
+[2026-07-27T16:45:57.727] [DEBUG] debug-file - Workers' log level updated to INFO
+[2026-07-27T16:45:57.761] [DEBUG] debug-file - Hvigor init with startParameters:{
+  hvigorfileTypeCheck: false,
+  parallelExecution: true,
+  incrementalExecution: true,
+  printStackTrace: false,
+  daemon: true,
+  analyze: 0,
+  logLevel: Level { level: 20000, levelStr: 'INFO', colour: 'green' },
+  optimizationStrategy: 'memory',
+  hotCompile: undefined,
+  hotReloadBuild: undefined,
+  customizedParam: undefined
+}
+[2026-07-27T16:45:57.801] [DEBUG] debug-file - Cache service initialization finished in 40 ms 
+[2026-07-27T16:45:57.806] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+[2026-07-27T16:45:57.848] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:57.848] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:57.850] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:57.851] [DEBUG] debug-file - App plugin prepare start...
+[2026-07-27T16:45:57.852] [DEBUG] debug-file - App plugin prepare end...
+[2026-07-27T16:45:57.852] [DEBUG] debug-file - App plugin creating...
+[2026-07-27T16:45:57.882] [DEBUG] debug-file - App plugin register hook start...
+[2026-07-27T16:45:57.882] [DEBUG] debug-file - App plugin register hook end...
+[2026-07-27T16:45:57.882] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:57.884] [DEBUG] debug-file - Start initialize project's product build option map with build mode debug.
+[2026-07-27T16:45:57.885] [DEBUG] debug-file - Picking option from product 'default' with build mode 'debug'.
+[2026-07-27T16:45:57.886] [DEBUG] debug-file - Product 'default' build option initialized
+[2026-07-27T16:45:57.887] [DEBUG] debug-file - End initialize project's product build option map with build mode 'debug'.
+[2026-07-27T16:45:57.890] [DEBUG] debug-file - Obtain build option for product 'default'in this build.
+[2026-07-27T16:45:57.895] [DEBUG] debug-file - No signingConfig found, initRemoteHspCache failed.
+[2026-07-27T16:45:57.906] [DEBUG] debug-file - Start recording SDK configuration permission data.
+[2026-07-27T16:45:57.940] [DEBUG] debug-file - Sdk init in 44 ms 
+[2026-07-27T16:45:57.946] [DEBUG] debug-file - Project task initialization takes 5 ms 
+[2026-07-27T16:45:57.946] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:57.946] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+[2026-07-27T16:45:57.946] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+[2026-07-27T16:45:57.947] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\entry\hvigorfile.ts
+[2026-07-27T16:45:57.951] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:57.951] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:57.951] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:57.951] [DEBUG] debug-file - Hap plugin creating...
+[2026-07-27T16:45:57.955] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:57.959] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=entry, buildMode=debug
+[2026-07-27T16:45:57.959] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.960] [DEBUG] debug-file - Module 'entry' target 'default' build option initialized
+[2026-07-27T16:45:57.960] [DEBUG] debug-file - End initialize module-target build option map, moduleName=entry
+[2026-07-27T16:45:57.960] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=entry, buildMode=release
+[2026-07-27T16:45:57.960] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - Module 'entry' target 'default' build option initialized
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - End initialize module-target build option map, moduleName=entry
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=entry, buildMode=debug
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - Module 'entry' target 'default' build option initialized
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - End initialize module-target build option map, moduleName=entry
+[2026-07-27T16:45:57.961] [DEBUG] debug-file - Obtain build option for module 'entry' target 'default'in this build.
+[2026-07-27T16:45:57.967] [DEBUG] debug-file - Module entry task initialization takes 6 ms 
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - Hap plugin register hook start...
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - Hap plugin register hook end...
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\entry\hvigorfile.ts
+[2026-07-27T16:45:57.968] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\entry\hvigorfile.ts
+[2026-07-27T16:45:57.969] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\common\hvigorfile.ts
+[2026-07-27T16:45:57.973] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:57.973] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:57.973] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:57.973] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:57.974] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:57.976] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=common, buildMode=debug
+[2026-07-27T16:45:57.976] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.976] [DEBUG] debug-file - Module 'common' target 'default' build option initialized
+[2026-07-27T16:45:57.976] [DEBUG] debug-file - End initialize module-target build option map, moduleName=common
+[2026-07-27T16:45:57.976] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=common, buildMode=release
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Module 'common' target 'default' build option initialized
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - End initialize module-target build option map, moduleName=common
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=common, buildMode=debug
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Module 'common' target 'default' build option initialized
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - End initialize module-target build option map, moduleName=common
+[2026-07-27T16:45:57.977] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - Module common task initialization takes 2 ms 
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\common\hvigorfile.ts
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\common\hvigorfile.ts
+[2026-07-27T16:45:57.980] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\schematic_editor\hvigorfile.ts
+[2026-07-27T16:45:57.984] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:57.984] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:57.984] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:57.984] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:57.985] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:57.986] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=schematic_editor, buildMode=debug
+[2026-07-27T16:45:57.986] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.986] [DEBUG] debug-file - Module 'schematic_editor' target 'default' build option initialized
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - End initialize module-target build option map, moduleName=schematic_editor
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=schematic_editor, buildMode=release
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Module 'schematic_editor' target 'default' build option initialized
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - End initialize module-target build option map, moduleName=schematic_editor
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=schematic_editor, buildMode=debug
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Module 'schematic_editor' target 'default' build option initialized
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - End initialize module-target build option map, moduleName=schematic_editor
+[2026-07-27T16:45:57.987] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - Module schematic_editor task initialization takes 1 ms 
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\schematic_editor\hvigorfile.ts
+[2026-07-27T16:45:57.988] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\schematic_editor\hvigorfile.ts
+[2026-07-27T16:45:57.989] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\component_library\hvigorfile.ts
+[2026-07-27T16:45:57.994] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:57.994] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:57.994] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:57.994] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:57.995] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:57.996] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=component_library, buildMode=debug
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - Module 'component_library' target 'default' build option initialized
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - End initialize module-target build option map, moduleName=component_library
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=component_library, buildMode=release
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - Module 'component_library' target 'default' build option initialized
+[2026-07-27T16:45:57.997] [DEBUG] debug-file - End initialize module-target build option map, moduleName=component_library
+[2026-07-27T16:45:57.998] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=component_library, buildMode=debug
+[2026-07-27T16:45:57.998] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:57.998] [DEBUG] debug-file - Module 'component_library' target 'default' build option initialized
+[2026-07-27T16:45:57.998] [DEBUG] debug-file - End initialize module-target build option map, moduleName=component_library
+[2026-07-27T16:45:57.998] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:57.999] [DEBUG] debug-file - Module component_library task initialization takes 1 ms 
+[2026-07-27T16:45:57.999] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:57.999] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:57.999] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.000] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.000] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\component_library\hvigorfile.ts
+[2026-07-27T16:45:58.000] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\component_library\hvigorfile.ts
+[2026-07-27T16:45:58.000] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\simulation_kernel\hvigorfile.ts
+[2026-07-27T16:45:58.003] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.003] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.003] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.003] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.003] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=simulation_kernel, buildMode=debug
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Module 'simulation_kernel' target 'default' build option initialized
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - End initialize module-target build option map, moduleName=simulation_kernel
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=simulation_kernel, buildMode=release
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Module 'simulation_kernel' target 'default' build option initialized
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - End initialize module-target build option map, moduleName=simulation_kernel
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=simulation_kernel, buildMode=debug
+[2026-07-27T16:45:58.005] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.007] [DEBUG] debug-file - Module 'simulation_kernel' target 'default' build option initialized
+[2026-07-27T16:45:58.007] [DEBUG] debug-file - End initialize module-target build option map, moduleName=simulation_kernel
+[2026-07-27T16:45:58.007] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - Module simulation_kernel task initialization takes 1 ms 
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\simulation_kernel\hvigorfile.ts
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\simulation_kernel\hvigorfile.ts
+[2026-07-27T16:45:58.008] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\hex_debugger\hvigorfile.ts
+[2026-07-27T16:45:58.012] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.012] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.012] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.012] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.012] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.013] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=hex_debugger, buildMode=debug
+[2026-07-27T16:45:58.014] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.014] [DEBUG] debug-file - Module 'hex_debugger' target 'default' build option initialized
+[2026-07-27T16:45:58.014] [DEBUG] debug-file - End initialize module-target build option map, moduleName=hex_debugger
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=hex_debugger, buildMode=release
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Module 'hex_debugger' target 'default' build option initialized
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - End initialize module-target build option map, moduleName=hex_debugger
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=hex_debugger, buildMode=debug
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Module 'hex_debugger' target 'default' build option initialized
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - End initialize module-target build option map, moduleName=hex_debugger
+[2026-07-27T16:45:58.015] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - Module hex_debugger task initialization takes 1 ms 
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\hex_debugger\hvigorfile.ts
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\hex_debugger\hvigorfile.ts
+[2026-07-27T16:45:58.016] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\ai_engine\hvigorfile.ts
+[2026-07-27T16:45:58.019] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.019] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.019] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.019] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.020] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.021] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_engine, buildMode=debug
+[2026-07-27T16:45:58.021] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.021] [DEBUG] debug-file - Module 'ai_engine' target 'default' build option initialized
+[2026-07-27T16:45:58.021] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_engine
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_engine, buildMode=release
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Module 'ai_engine' target 'default' build option initialized
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_engine
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_engine, buildMode=debug
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Module 'ai_engine' target 'default' build option initialized
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_engine
+[2026-07-27T16:45:58.022] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - Module ai_engine task initialization takes 1 ms 
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\ai_engine\hvigorfile.ts
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\ai_engine\hvigorfile.ts
+[2026-07-27T16:45:58.023] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\ai_api_manager\hvigorfile.ts
+[2026-07-27T16:45:58.027] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.027] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.027] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.027] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.028] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.029] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_api_manager, buildMode=debug
+[2026-07-27T16:45:58.029] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Module 'ai_api_manager' target 'default' build option initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_api_manager
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_api_manager, buildMode=release
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Module 'ai_api_manager' target 'default' build option initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_api_manager
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=ai_api_manager, buildMode=debug
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Module 'ai_api_manager' target 'default' build option initialized
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - End initialize module-target build option map, moduleName=ai_api_manager
+[2026-07-27T16:45:58.030] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - Module ai_api_manager task initialization takes 1 ms 
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\ai_api_manager\hvigorfile.ts
+[2026-07-27T16:45:58.031] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\ai_api_manager\hvigorfile.ts
+[2026-07-27T16:45:58.032] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\file_persistence\hvigorfile.ts
+[2026-07-27T16:45:58.036] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.036] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.036] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.036] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.037] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=file_persistence, buildMode=debug
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Module 'file_persistence' target 'default' build option initialized
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - End initialize module-target build option map, moduleName=file_persistence
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=file_persistence, buildMode=release
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Module 'file_persistence' target 'default' build option initialized
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - End initialize module-target build option map, moduleName=file_persistence
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=file_persistence, buildMode=debug
+[2026-07-27T16:45:58.038] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.039] [DEBUG] debug-file - Module 'file_persistence' target 'default' build option initialized
+[2026-07-27T16:45:58.039] [DEBUG] debug-file - End initialize module-target build option map, moduleName=file_persistence
+[2026-07-27T16:45:58.039] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.039] [DEBUG] debug-file - Module file_persistence task initialization takes 1 ms 
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\file_persistence\hvigorfile.ts
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\file_persistence\hvigorfile.ts
+[2026-07-27T16:45:58.040] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\instruments\hvigorfile.ts
+[2026-07-27T16:45:58.043] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.043] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.043] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.043] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.044] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=instruments, buildMode=debug
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Module 'instruments' target 'default' build option initialized
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - End initialize module-target build option map, moduleName=instruments
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=instruments, buildMode=release
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Module 'instruments' target 'default' build option initialized
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - End initialize module-target build option map, moduleName=instruments
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=instruments, buildMode=debug
+[2026-07-27T16:45:58.045] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.046] [DEBUG] debug-file - Module 'instruments' target 'default' build option initialized
+[2026-07-27T16:45:58.046] [DEBUG] debug-file - End initialize module-target build option map, moduleName=instruments
+[2026-07-27T16:45:58.046] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - Module instruments task initialization takes 1 ms 
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\instruments\hvigorfile.ts
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\instruments\hvigorfile.ts
+[2026-07-27T16:45:58.047] [DEBUG] debug-file - hvigorfile, resolving C:\Projects\ElecDraw_Harmony\features\plugin_system\hvigorfile.ts
+[2026-07-27T16:45:58.050] [DEBUG] debug-file - hvigorfile, require result:  { default: { plugins: [] } }
+[2026-07-27T16:45:58.050] [DEBUG] debug-file - hvigorfile, binding system plugins null
+[2026-07-27T16:45:58.050] [DEBUG] debug-file - Starting plugin build process
+[2026-07-27T16:45:58.050] [DEBUG] debug-file - Har plugin creating...
+[2026-07-27T16:45:58.051] [DEBUG] debug-file - failed to load cangjie to dynamically generate schemas: Error: Cannot find module '@ohos/cangjie-build-support/index'
+Require stack:
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\hooks\cangjie-register.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\strategy\stage-init-strategy.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\abstract-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\builder\app-plugin-builder.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\src\plugin\factory\plugin-factory.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin\index.js
+- C:\Projects\ElecDraw_Harmony\hvigorfile.ts
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\internal\lifecycle\configuration.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\boot\index.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\cluster\worker-process-lifecycle.js
+- C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor\src\base\daemon\process\daemon-process-boot-script.js
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=plugin_system, buildMode=debug
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Module 'plugin_system' target 'default' build option initialized
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - End initialize module-target build option map, moduleName=plugin_system
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=plugin_system, buildMode=release
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Module 'plugin_system' target 'default' build option initialized
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - End initialize module-target build option map, moduleName=plugin_system
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Start initialize module-target build option map, moduleName=plugin_system, buildMode=debug
+[2026-07-27T16:45:58.052] [DEBUG] debug-file - Target 'default' config initialized
+[2026-07-27T16:45:58.053] [DEBUG] debug-file - Module 'plugin_system' target 'default' build option initialized
+[2026-07-27T16:45:58.053] [DEBUG] debug-file - End initialize module-target build option map, moduleName=plugin_system
+[2026-07-27T16:45:58.053] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - Module plugin_system task initialization takes 1 ms 
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - Har plugin register hook start...
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - Har plugin register hook end...
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - Plugin build process completed
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - hvigorfile, begin to bind custom plugins...
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - hvigorfile, no custom plugins were found in C:\Projects\ElecDraw_Harmony\features\plugin_system\hvigorfile.ts
+[2026-07-27T16:45:58.054] [DEBUG] debug-file - hvigorfile, resolve finished C:\Projects\ElecDraw_Harmony\features\plugin_system\hvigorfile.ts
+[2026-07-27T16:45:58.178] [DEBUG] debug-file - hvigorfile, resolve hvigorfile dependencies in 124 ms 
+[2026-07-27T16:45:58.178] [DEBUG] debug-file - project has submodules:entry,common,schematic_editor,component_library,simulation_kernel,hex_debugger,ai_engine,ai_api_manager,file_persistence,instruments,plugin_system
+[2026-07-27T16:45:58.178] [DEBUG] debug-file - module:common no need to execute packageHap
+[2026-07-27T16:45:58.178] [DEBUG] debug-file - module:schematic_editor no need to execute packageHap
+[2026-07-27T16:45:58.178] [DEBUG] debug-file - module:component_library no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:simulation_kernel no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:hex_debugger no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:ai_engine no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:ai_api_manager no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:file_persistence no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:instruments no need to execute packageHap
+[2026-07-27T16:45:58.179] [DEBUG] debug-file - module:plugin_system no need to execute packageHap
+[2026-07-27T16:45:58.181] [DEBUG] debug-file - start to load updatedOhPackageInfo to the disk
+[2026-07-27T16:45:58.193] [DEBUG] debug-file - load to the disk finished
+[2026-07-27T16:45:58.196] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.199] [DEBUG] debug-file - Module ElecDraw_Harmony Collected Dependency: 
+[2026-07-27T16:45:58.199] [DEBUG] debug-file - Module ElecDraw_Harmony's total dependency: 0
+[2026-07-27T16:45:58.200] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.252] [DEBUG] debug-file - Module entry Collected Dependency: C:\Projects\ElecDraw_Harmony\common,C:\Projects\ElecDraw_Harmony\features\schematic_editor,C:\Projects\ElecDraw_Harmony\features\component_library,C:\Projects\ElecDraw_Harmony\features\simulation_kernel,C:\Projects\ElecDraw_Harmony\features\hex_debugger,C:\Projects\ElecDraw_Harmony\features\ai_api_manager,C:\Projects\ElecDraw_Harmony\features\ai_engine,C:\Projects\ElecDraw_Harmony\features\file_persistence,C:\Projects\ElecDraw_Harmony\features\instruments,C:\Projects\ElecDraw_Harmony\features\plugin_system
+[2026-07-27T16:45:58.253] [DEBUG] debug-file - Module entry's total dependency: 10
+[2026-07-27T16:45:58.255] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.256] [DEBUG] debug-file - Module common Collected Dependency: 
+[2026-07-27T16:45:58.257] [DEBUG] debug-file - Module common's total dependency: 0
+[2026-07-27T16:45:58.258] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.260] [DEBUG] debug-file - Module schematic_editor Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.260] [DEBUG] debug-file - Module schematic_editor's total dependency: 1
+[2026-07-27T16:45:58.261] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.263] [DEBUG] debug-file - Module component_library Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.264] [DEBUG] debug-file - Module component_library's total dependency: 1
+[2026-07-27T16:45:58.265] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.266] [DEBUG] debug-file - Module simulation_kernel Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.266] [DEBUG] debug-file - Module simulation_kernel's total dependency: 1
+[2026-07-27T16:45:58.268] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.269] [DEBUG] debug-file - Module hex_debugger Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.269] [DEBUG] debug-file - Module hex_debugger's total dependency: 1
+[2026-07-27T16:45:58.270] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.272] [DEBUG] debug-file - Module ai_engine Collected Dependency: C:\Projects\ElecDraw_Harmony\common,C:\Projects\ElecDraw_Harmony\features\ai_api_manager,C:\Projects\ElecDraw_Harmony\features\component_library
+[2026-07-27T16:45:58.272] [DEBUG] debug-file - Module ai_engine's total dependency: 3
+[2026-07-27T16:45:58.274] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.276] [DEBUG] debug-file - Module ai_api_manager Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.276] [DEBUG] debug-file - Module ai_api_manager's total dependency: 1
+[2026-07-27T16:45:58.278] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.280] [DEBUG] debug-file - Module file_persistence Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.280] [DEBUG] debug-file - Module file_persistence's total dependency: 1
+[2026-07-27T16:45:58.282] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.283] [DEBUG] debug-file - Module instruments Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.284] [DEBUG] debug-file - Module instruments's total dependency: 1
+[2026-07-27T16:45:58.286] [DEBUG] debug-file - Start to initialize dependency information.
+[2026-07-27T16:45:58.288] [DEBUG] debug-file - Module plugin_system Collected Dependency: C:\Projects\ElecDraw_Harmony\common
+[2026-07-27T16:45:58.288] [DEBUG] debug-file - Module plugin_system's total dependency: 1
+[2026-07-27T16:45:58.291] [DEBUG] debug-file - Configuration phase cost:490 ms 
+[2026-07-27T16:45:58.300] [DEBUG] debug-file - Configuration task cost before running: 569 ms 
+[2026-07-27T16:45:58.305] [DEBUG] debug-file - Executing task :entry:default@PreBuild
+[2026-07-27T16:45:58.323] [DEBUG] debug-file - Task 'entry:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.330] [DEBUG] debug-file - Incremental task entry:default@PreBuild pre-execution cost: 5 ms .
+[2026-07-27T16:45:58.330] [DEBUG] debug-file - entry : default@PreBuild cost memory 1.4519729614257812
+[2026-07-27T16:45:58.332] [INFO] debug-file - UP-TO-DATE :entry:default@PreBuild...  
+[2026-07-27T16:45:58.334] [DEBUG] debug-file - Executing task :common:default@PreBuild
+[2026-07-27T16:45:58.336] [DEBUG] debug-file - Task 'common:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.343] [DEBUG] debug-file - Incremental task common:default@PreBuild pre-execution cost: 6 ms .
+[2026-07-27T16:45:58.343] [DEBUG] debug-file - common : default@PreBuild cost memory 0.49655914306640625
+[2026-07-27T16:45:58.345] [INFO] debug-file - UP-TO-DATE :common:default@PreBuild...  
+[2026-07-27T16:45:58.348] [DEBUG] debug-file - Executing task :schematic_editor:default@PreBuild
+[2026-07-27T16:45:58.350] [DEBUG] debug-file - Task 'schematic_editor:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.354] [DEBUG] debug-file - Incremental task schematic_editor:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.354] [DEBUG] debug-file - schematic_editor : default@PreBuild cost memory 0.502960205078125
+[2026-07-27T16:45:58.355] [INFO] debug-file - UP-TO-DATE :schematic_editor:default@PreBuild...  
+[2026-07-27T16:45:58.357] [DEBUG] debug-file - Executing task :component_library:default@PreBuild
+[2026-07-27T16:45:58.360] [DEBUG] debug-file - Task 'component_library:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.373] [DEBUG] debug-file - Incremental task component_library:default@PreBuild pre-execution cost: 6 ms .
+[2026-07-27T16:45:58.373] [DEBUG] debug-file - component_library : default@PreBuild cost memory 0.49724578857421875
+[2026-07-27T16:45:58.375] [INFO] debug-file - UP-TO-DATE :component_library:default@PreBuild...  
+[2026-07-27T16:45:58.377] [DEBUG] debug-file - Executing task :simulation_kernel:default@PreBuild
+[2026-07-27T16:45:58.379] [DEBUG] debug-file - Task 'simulation_kernel:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.384] [DEBUG] debug-file - Incremental task simulation_kernel:default@PreBuild pre-execution cost: 4 ms .
+[2026-07-27T16:45:58.384] [DEBUG] debug-file - simulation_kernel : default@PreBuild cost memory 0.49768829345703125
+[2026-07-27T16:45:58.386] [INFO] debug-file - UP-TO-DATE :simulation_kernel:default@PreBuild...  
+[2026-07-27T16:45:58.388] [DEBUG] debug-file - Executing task :hex_debugger:default@PreBuild
+[2026-07-27T16:45:58.390] [DEBUG] debug-file - Task 'hex_debugger:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.395] [DEBUG] debug-file - Incremental task hex_debugger:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.395] [DEBUG] debug-file - hex_debugger : default@PreBuild cost memory 0.49600982666015625
+[2026-07-27T16:45:58.397] [INFO] debug-file - UP-TO-DATE :hex_debugger:default@PreBuild...  
+[2026-07-27T16:45:58.399] [DEBUG] debug-file - Executing task :ai_api_manager:default@PreBuild
+[2026-07-27T16:45:58.400] [DEBUG] debug-file - Task 'ai_api_manager:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.406] [DEBUG] debug-file - Incremental task ai_api_manager:default@PreBuild pre-execution cost: 4 ms .
+[2026-07-27T16:45:58.406] [DEBUG] debug-file - ai_api_manager : default@PreBuild cost memory 0.49643707275390625
+[2026-07-27T16:45:58.407] [INFO] debug-file - UP-TO-DATE :ai_api_manager:default@PreBuild...  
+[2026-07-27T16:45:58.410] [DEBUG] debug-file - Executing task :ai_engine:default@PreBuild
+[2026-07-27T16:45:58.413] [DEBUG] debug-file - Task 'ai_engine:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.417] [DEBUG] debug-file - Incremental task ai_engine:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.417] [DEBUG] debug-file - ai_engine : default@PreBuild cost memory 0.5132598876953125
+[2026-07-27T16:45:58.418] [INFO] debug-file - UP-TO-DATE :ai_engine:default@PreBuild...  
+[2026-07-27T16:45:58.420] [DEBUG] debug-file - Executing task :file_persistence:default@PreBuild
+[2026-07-27T16:45:58.422] [DEBUG] debug-file - Task 'file_persistence:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.426] [DEBUG] debug-file - Incremental task file_persistence:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.426] [DEBUG] debug-file - file_persistence : default@PreBuild cost memory 0.496551513671875
+[2026-07-27T16:45:58.427] [INFO] debug-file - UP-TO-DATE :file_persistence:default@PreBuild...  
+[2026-07-27T16:45:58.428] [DEBUG] debug-file - Executing task :instruments:default@PreBuild
+[2026-07-27T16:45:58.430] [DEBUG] debug-file - Task 'instruments:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.433] [DEBUG] debug-file - Incremental task instruments:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.434] [DEBUG] debug-file - instruments : default@PreBuild cost memory 0.49535369873046875
+[2026-07-27T16:45:58.435] [INFO] debug-file - UP-TO-DATE :instruments:default@PreBuild...  
+[2026-07-27T16:45:58.437] [DEBUG] debug-file - Executing task :plugin_system:default@PreBuild
+[2026-07-27T16:45:58.439] [DEBUG] debug-file - Task 'plugin_system:default@PreBuild' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.442] [DEBUG] debug-file - Incremental task plugin_system:default@PreBuild pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.442] [DEBUG] debug-file - plugin_system : default@PreBuild cost memory 0.49626922607421875
+[2026-07-27T16:45:58.444] [INFO] debug-file - UP-TO-DATE :plugin_system:default@PreBuild...  
+[2026-07-27T16:45:58.445] [DEBUG] debug-file - Executing task :entry:default@CreateModuleInfo
+[2026-07-27T16:45:58.445] [DEBUG] debug-file - Task 'entry:default@CreateModuleInfo' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.445] [DEBUG] debug-file - entry : default@CreateModuleInfo cost memory 0.0366058349609375
+[2026-07-27T16:45:58.445] [DEBUG] debug-file - runTaskFromQueue task cost before running: 715 ms 
+[2026-07-27T16:45:58.445] [INFO] debug-file - Finished :entry:default@CreateModuleInfo... after 1 ms 
+[2026-07-27T16:45:58.446] [DEBUG] debug-file - Executing task :entry:default@GenerateMetadata
+[2026-07-27T16:45:58.447] [DEBUG] debug-file - Task 'entry:default@GenerateMetadata' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.447] [DEBUG] debug-file - Incremental task entry:default@GenerateMetadata pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.447] [DEBUG] debug-file - entry : default@GenerateMetadata cost memory 0.0744781494140625
+[2026-07-27T16:45:58.448] [INFO] debug-file - UP-TO-DATE :entry:default@GenerateMetadata...  
+[2026-07-27T16:45:58.449] [DEBUG] debug-file - Executing task :entry:default@PreCheckSyscap
+[2026-07-27T16:45:58.449] [DEBUG] debug-file - entry : default@PreCheckSyscap cost memory 0.013641357421875
+[2026-07-27T16:45:58.449] [DEBUG] debug-file - runTaskFromQueue task cost before running: 719 ms 
+[2026-07-27T16:45:58.449] [INFO] debug-file - Finished :entry:default@PreCheckSyscap... after 1 ms 
+[2026-07-27T16:45:58.450] [DEBUG] debug-file - Executing task :entry:default@GeneratePkgContextInfo
+[2026-07-27T16:45:58.460] [DEBUG] debug-file - Task 'entry:default@GeneratePkgContextInfo' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.461] [DEBUG] debug-file - entry : default@GeneratePkgContextInfo cost memory 0.9738311767578125
+[2026-07-27T16:45:58.461] [DEBUG] debug-file - runTaskFromQueue task cost before running: 731 ms 
+[2026-07-27T16:45:58.461] [INFO] debug-file - Finished :entry:default@GeneratePkgContextInfo... after 11 ms 
+[2026-07-27T16:45:58.463] [DEBUG] debug-file - Executing task :entry:default@GeneratePkgSdkInfo
+[2026-07-27T16:45:58.468] [DEBUG] debug-file - Task 'entry:default@GeneratePkgSdkInfo' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.469] [DEBUG] debug-file - Incremental task entry:default@GeneratePkgSdkInfo pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.469] [DEBUG] debug-file - entry : default@GeneratePkgSdkInfo cost memory 0.2731475830078125
+[2026-07-27T16:45:58.469] [INFO] debug-file - UP-TO-DATE :entry:default@GeneratePkgSdkInfo...  
+[2026-07-27T16:45:58.476] [DEBUG] debug-file - Executing task :entry:default@ProcessIntegratedHsp
+[2026-07-27T16:45:58.477] [DEBUG] debug-file - entry:default@ProcessIntegratedHsp is not up-to-date, since the output file 'C:\Projects\ElecDraw_Harmony\build\cache\default\integrated_hsp\integratedHspCache.json' does not exist.
+[2026-07-27T16:45:58.477] [DEBUG] debug-file - Incremental task entry:default@ProcessIntegratedHsp pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.477] [DEBUG] debug-file - entry : default@ProcessIntegratedHsp cost memory 0.05220794677734375
+[2026-07-27T16:45:58.477] [DEBUG] debug-file - runTaskFromQueue task cost before running: 747 ms 
+[2026-07-27T16:45:58.478] [INFO] debug-file - Finished :entry:default@ProcessIntegratedHsp... after 1 ms 
+[2026-07-27T16:45:58.479] [DEBUG] debug-file - Executing task :common:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.480] [DEBUG] debug-file - Task 'common:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.482] [DEBUG] debug-file - Incremental task common:default@CreateHarBuildProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.482] [DEBUG] debug-file - common : default@CreateHarBuildProfile cost memory 0.078521728515625
+[2026-07-27T16:45:58.483] [INFO] debug-file - UP-TO-DATE :common:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.484] [DEBUG] debug-file - Executing task :common:default@ConfigureCmake
+[2026-07-27T16:45:58.484] [DEBUG] debug-file - common : default@ConfigureCmake cost memory 0.013397216796875
+[2026-07-27T16:45:58.485] [DEBUG] debug-file - runTaskFromQueue task cost before running: 754 ms 
+[2026-07-27T16:45:58.485] [INFO] debug-file - Finished :common:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.486] [DEBUG] debug-file - Executing task :common:default@MergeProfile
+[2026-07-27T16:45:58.487] [DEBUG] debug-file - Task 'common:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.489] [DEBUG] debug-file - Incremental task common:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.489] [DEBUG] debug-file - common : default@MergeProfile cost memory 0.11305999755859375
+[2026-07-27T16:45:58.489] [INFO] debug-file - UP-TO-DATE :common:default@MergeProfile...  
+[2026-07-27T16:45:58.491] [DEBUG] debug-file - Executing task :entry:default@SyscapTransform
+[2026-07-27T16:45:58.491] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\entry\src\main\syscap.json' from 'sysCapJsonPath' is not exists, just ignore.
+[2026-07-27T16:45:58.493] [DEBUG] debug-file - Task 'entry:default@SyscapTransform' cost while wrapping incremental declarations: 2 ms 
+[2026-07-27T16:45:58.499] [DEBUG] debug-file - entry:default@SyscapTransform is not up-to-date, since the output file 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\syscap\default\rpcid.sc' does not exist.
+[2026-07-27T16:45:58.500] [DEBUG] debug-file - Incremental task entry:default@SyscapTransform pre-execution cost: 7 ms .
+[2026-07-27T16:45:58.500] [DEBUG] debug-file - entry : default@SyscapTransform cost memory 0.14191436767578125
+[2026-07-27T16:45:58.500] [DEBUG] debug-file - runTaskFromQueue task cost before running: 770 ms 
+[2026-07-27T16:45:58.500] [INFO] debug-file - Finished :entry:default@SyscapTransform... after 9 ms 
+[2026-07-27T16:45:58.502] [DEBUG] debug-file - Executing task :entry:default@ProcessRouterMap
+[2026-07-27T16:45:58.505] [DEBUG] debug-file - Incremental task entry:default@ProcessRouterMap pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.505] [DEBUG] debug-file - entry : default@ProcessRouterMap cost memory 0.159210205078125
+[2026-07-27T16:45:58.506] [INFO] debug-file - UP-TO-DATE :entry:default@ProcessRouterMap...  
+[2026-07-27T16:45:58.508] [DEBUG] debug-file - Executing task :entry:default@ProcessShareConfig
+[2026-07-27T16:45:58.510] [DEBUG] debug-file - Incremental task entry:default@ProcessShareConfig pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.510] [DEBUG] debug-file - entry : default@ProcessShareConfig cost memory 0.13713836669921875
+[2026-07-27T16:45:58.511] [INFO] debug-file - UP-TO-DATE :entry:default@ProcessShareConfig...  
+[2026-07-27T16:45:58.521] [DEBUG] debug-file - Executing task :entry:default@ProcessStartupConfig
+[2026-07-27T16:45:58.521] [DEBUG] debug-file - Task 'entry:default@ProcessStartupConfig' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.522] [DEBUG] debug-file - entry:default@ProcessStartupConfig is not up-to-date, since the output file 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\startup\default\startup_config.json' does not exist.
+[2026-07-27T16:45:58.522] [DEBUG] debug-file - Incremental task entry:default@ProcessStartupConfig pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.523] [DEBUG] debug-file - entry : default@ProcessStartupConfig cost memory 0.11887359619140625
+[2026-07-27T16:45:58.523] [DEBUG] debug-file - runTaskFromQueue task cost before running: 792 ms 
+[2026-07-27T16:45:58.523] [INFO] debug-file - Finished :entry:default@ProcessStartupConfig... after 2 ms 
+[2026-07-27T16:45:58.524] [DEBUG] debug-file - Executing task :schematic_editor:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.524] [DEBUG] debug-file - Task 'schematic_editor:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.525] [DEBUG] debug-file - Incremental task schematic_editor:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.526] [DEBUG] debug-file - schematic_editor : default@CreateHarBuildProfile cost memory 0.07355499267578125
+[2026-07-27T16:45:58.526] [INFO] debug-file - UP-TO-DATE :schematic_editor:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.527] [DEBUG] debug-file - Executing task :component_library:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.528] [DEBUG] debug-file - Task 'component_library:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.529] [DEBUG] debug-file - Incremental task component_library:default@CreateHarBuildProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.529] [DEBUG] debug-file - component_library : default@CreateHarBuildProfile cost memory 0.0771026611328125
+[2026-07-27T16:45:58.530] [INFO] debug-file - UP-TO-DATE :component_library:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.531] [DEBUG] debug-file - Executing task :simulation_kernel:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.532] [DEBUG] debug-file - Task 'simulation_kernel:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.533] [DEBUG] debug-file - Incremental task simulation_kernel:default@CreateHarBuildProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.533] [DEBUG] debug-file - simulation_kernel : default@CreateHarBuildProfile cost memory 0.0771026611328125
+[2026-07-27T16:45:58.534] [INFO] debug-file - UP-TO-DATE :simulation_kernel:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.534] [DEBUG] debug-file - Executing task :hex_debugger:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.535] [DEBUG] debug-file - Task 'hex_debugger:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.536] [DEBUG] debug-file - Incremental task hex_debugger:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.536] [DEBUG] debug-file - hex_debugger : default@CreateHarBuildProfile cost memory 0.07375335693359375
+[2026-07-27T16:45:58.536] [INFO] debug-file - UP-TO-DATE :hex_debugger:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.537] [DEBUG] debug-file - Executing task :ai_api_manager:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.537] [DEBUG] debug-file - Task 'ai_api_manager:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.539] [DEBUG] debug-file - Incremental task ai_api_manager:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.539] [DEBUG] debug-file - ai_api_manager : default@CreateHarBuildProfile cost memory 0.07379150390625
+[2026-07-27T16:45:58.539] [INFO] debug-file - UP-TO-DATE :ai_api_manager:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.540] [DEBUG] debug-file - Executing task :file_persistence:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.540] [DEBUG] debug-file - Task 'file_persistence:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.541] [DEBUG] debug-file - Incremental task file_persistence:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.541] [DEBUG] debug-file - file_persistence : default@CreateHarBuildProfile cost memory 0.07381439208984375
+[2026-07-27T16:45:58.541] [INFO] debug-file - UP-TO-DATE :file_persistence:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.542] [DEBUG] debug-file - Executing task :instruments:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.542] [DEBUG] debug-file - Task 'instruments:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.543] [DEBUG] debug-file - Incremental task instruments:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.543] [DEBUG] debug-file - instruments : default@CreateHarBuildProfile cost memory 0.0737152099609375
+[2026-07-27T16:45:58.544] [INFO] debug-file - UP-TO-DATE :instruments:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.545] [DEBUG] debug-file - Executing task :plugin_system:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.545] [DEBUG] debug-file - Task 'plugin_system:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.546] [DEBUG] debug-file - Incremental task plugin_system:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.546] [DEBUG] debug-file - plugin_system : default@CreateHarBuildProfile cost memory 0.073760986328125
+[2026-07-27T16:45:58.547] [INFO] debug-file - UP-TO-DATE :plugin_system:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.548] [DEBUG] debug-file - Executing task :common:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.548] [DEBUG] debug-file - common : default@BuildNativeWithCmake cost memory 0.013397216796875
+[2026-07-27T16:45:58.548] [DEBUG] debug-file - runTaskFromQueue task cost before running: 818 ms 
+[2026-07-27T16:45:58.548] [INFO] debug-file - Finished :common:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.549] [DEBUG] debug-file - Executing task :schematic_editor:default@MergeProfile
+[2026-07-27T16:45:58.549] [DEBUG] debug-file - Task 'schematic_editor:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.551] [DEBUG] debug-file - Incremental task schematic_editor:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.552] [DEBUG] debug-file - schematic_editor : default@MergeProfile cost memory 0.13623046875
+[2026-07-27T16:45:58.552] [INFO] debug-file - UP-TO-DATE :schematic_editor:default@MergeProfile...  
+[2026-07-27T16:45:58.553] [DEBUG] debug-file - Executing task :component_library:default@MergeProfile
+[2026-07-27T16:45:58.553] [DEBUG] debug-file - Task 'component_library:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.555] [DEBUG] debug-file - Incremental task component_library:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.555] [DEBUG] debug-file - component_library : default@MergeProfile cost memory 0.13648223876953125
+[2026-07-27T16:45:58.556] [INFO] debug-file - UP-TO-DATE :component_library:default@MergeProfile...  
+[2026-07-27T16:45:58.556] [DEBUG] debug-file - Executing task :simulation_kernel:default@MergeProfile
+[2026-07-27T16:45:58.557] [DEBUG] debug-file - Task 'simulation_kernel:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.559] [DEBUG] debug-file - Incremental task simulation_kernel:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.559] [DEBUG] debug-file - simulation_kernel : default@MergeProfile cost memory 0.13639068603515625
+[2026-07-27T16:45:58.559] [INFO] debug-file - UP-TO-DATE :simulation_kernel:default@MergeProfile...  
+[2026-07-27T16:45:58.560] [DEBUG] debug-file - Executing task :hex_debugger:default@MergeProfile
+[2026-07-27T16:45:58.560] [DEBUG] debug-file - Task 'hex_debugger:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.562] [DEBUG] debug-file - Incremental task hex_debugger:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.562] [DEBUG] debug-file - hex_debugger : default@MergeProfile cost memory 0.1356353759765625
+[2026-07-27T16:45:58.563] [INFO] debug-file - UP-TO-DATE :hex_debugger:default@MergeProfile...  
+[2026-07-27T16:45:58.564] [DEBUG] debug-file - Executing task :ai_api_manager:default@MergeProfile
+[2026-07-27T16:45:58.564] [DEBUG] debug-file - Task 'ai_api_manager:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.566] [DEBUG] debug-file - Incremental task ai_api_manager:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.566] [DEBUG] debug-file - ai_api_manager : default@MergeProfile cost memory 0.13613128662109375
+[2026-07-27T16:45:58.566] [INFO] debug-file - UP-TO-DATE :ai_api_manager:default@MergeProfile...  
+[2026-07-27T16:45:58.567] [DEBUG] debug-file - Executing task :file_persistence:default@MergeProfile
+[2026-07-27T16:45:58.567] [DEBUG] debug-file - Task 'file_persistence:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.569] [DEBUG] debug-file - Incremental task file_persistence:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.569] [DEBUG] debug-file - file_persistence : default@MergeProfile cost memory 0.13625335693359375
+[2026-07-27T16:45:58.569] [INFO] debug-file - UP-TO-DATE :file_persistence:default@MergeProfile...  
+[2026-07-27T16:45:58.570] [DEBUG] debug-file - Executing task :instruments:default@MergeProfile
+[2026-07-27T16:45:58.570] [DEBUG] debug-file - Task 'instruments:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.572] [DEBUG] debug-file - Incremental task instruments:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.572] [DEBUG] debug-file - instruments : default@MergeProfile cost memory 0.1358489990234375
+[2026-07-27T16:45:58.572] [INFO] debug-file - UP-TO-DATE :instruments:default@MergeProfile...  
+[2026-07-27T16:45:58.573] [DEBUG] debug-file - Executing task :plugin_system:default@MergeProfile
+[2026-07-27T16:45:58.573] [DEBUG] debug-file - Task 'plugin_system:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.575] [DEBUG] debug-file - Incremental task plugin_system:default@MergeProfile pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.575] [DEBUG] debug-file - plugin_system : default@MergeProfile cost memory 0.1359405517578125
+[2026-07-27T16:45:58.576] [INFO] debug-file - UP-TO-DATE :plugin_system:default@MergeProfile...  
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.577] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.578] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.578] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.578] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.579] [DEBUG] debug-file - Executing task :entry:default@GenerateLoaderJson
+[2026-07-27T16:45:58.580] [DEBUG] debug-file - Task 'entry:default@GenerateLoaderJson' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.582] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.583] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.583] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.583] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.583] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.583] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.584] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.584] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.584] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.584] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.584] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.586] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.587] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.588] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.589] [DEBUG] debug-file - Incremental task entry:default@GenerateLoaderJson pre-execution cost: 6 ms .
+[2026-07-27T16:45:58.590] [DEBUG] debug-file - entry : default@GenerateLoaderJson cost memory 0.9796829223632812
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.592] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'common' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'schematic_editor' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'component_library' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'simulation_kernel' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'hex_debugger' target 'default'in this build.
+[2026-07-27T16:45:58.593] [DEBUG] debug-file - Obtain build option for module 'ai_api_manager' target 'default'in this build.
+[2026-07-27T16:45:58.594] [DEBUG] debug-file - Obtain build option for module 'ai_engine' target 'default'in this build.
+[2026-07-27T16:45:58.594] [DEBUG] debug-file - Obtain build option for module 'file_persistence' target 'default'in this build.
+[2026-07-27T16:45:58.594] [DEBUG] debug-file - Obtain build option for module 'instruments' target 'default'in this build.
+[2026-07-27T16:45:58.594] [DEBUG] debug-file - Obtain build option for module 'plugin_system' target 'default'in this build.
+[2026-07-27T16:45:58.594] [INFO] debug-file - UP-TO-DATE :entry:default@GenerateLoaderJson...  
+[2026-07-27T16:45:58.595] [DEBUG] debug-file - Executing task :ai_engine:default@CreateHarBuildProfile
+[2026-07-27T16:45:58.595] [DEBUG] debug-file - Task 'ai_engine:default@CreateHarBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.596] [DEBUG] debug-file - Incremental task ai_engine:default@CreateHarBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.596] [DEBUG] debug-file - ai_engine : default@CreateHarBuildProfile cost memory 0.2570953369140625
+[2026-07-27T16:45:58.596] [INFO] debug-file - UP-TO-DATE :ai_engine:default@CreateHarBuildProfile...  
+[2026-07-27T16:45:58.597] [DEBUG] debug-file - Executing task :common:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.598] [DEBUG] debug-file - common : default@BuildNativeWithNinja cost memory 0.01914215087890625
+[2026-07-27T16:45:58.598] [DEBUG] debug-file - runTaskFromQueue task cost before running: 867 ms 
+[2026-07-27T16:45:58.598] [INFO] debug-file - Finished :common:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - Executing task :schematic_editor:default@ConfigureCmake
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - schematic_editor : default@ConfigureCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - runTaskFromQueue task cost before running: 868 ms 
+[2026-07-27T16:45:58.599] [INFO] debug-file - Finished :schematic_editor:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - Executing task :component_library:default@ConfigureCmake
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - component_library : default@ConfigureCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.599] [DEBUG] debug-file - runTaskFromQueue task cost before running: 869 ms 
+[2026-07-27T16:45:58.600] [INFO] debug-file - Finished :component_library:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.600] [DEBUG] debug-file - Executing task :simulation_kernel:default@ConfigureCmake
+[2026-07-27T16:45:58.600] [DEBUG] debug-file - simulation_kernel : default@ConfigureCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.600] [DEBUG] debug-file - runTaskFromQueue task cost before running: 870 ms 
+[2026-07-27T16:45:58.600] [INFO] debug-file - Finished :simulation_kernel:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.601] [DEBUG] debug-file - Executing task :hex_debugger:default@ConfigureCmake
+[2026-07-27T16:45:58.601] [DEBUG] debug-file - hex_debugger : default@ConfigureCmake cost memory 0.0134124755859375
+[2026-07-27T16:45:58.601] [DEBUG] debug-file - runTaskFromQueue task cost before running: 871 ms 
+[2026-07-27T16:45:58.601] [INFO] debug-file - Finished :hex_debugger:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.602] [DEBUG] debug-file - Executing task :ai_api_manager:default@ConfigureCmake
+[2026-07-27T16:45:58.602] [DEBUG] debug-file - ai_api_manager : default@ConfigureCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.602] [DEBUG] debug-file - runTaskFromQueue task cost before running: 871 ms 
+[2026-07-27T16:45:58.602] [INFO] debug-file - Finished :ai_api_manager:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.602] [DEBUG] debug-file - Executing task :file_persistence:default@ConfigureCmake
+[2026-07-27T16:45:58.602] [DEBUG] debug-file - file_persistence : default@ConfigureCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.603] [DEBUG] debug-file - runTaskFromQueue task cost before running: 872 ms 
+[2026-07-27T16:45:58.603] [INFO] debug-file - Finished :file_persistence:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.603] [DEBUG] debug-file - Executing task :instruments:default@ConfigureCmake
+[2026-07-27T16:45:58.603] [DEBUG] debug-file - instruments : default@ConfigureCmake cost memory 0.01340484619140625
+[2026-07-27T16:45:58.603] [DEBUG] debug-file - runTaskFromQueue task cost before running: 873 ms 
+[2026-07-27T16:45:58.603] [INFO] debug-file - Finished :instruments:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.604] [DEBUG] debug-file - Executing task :plugin_system:default@ConfigureCmake
+[2026-07-27T16:45:58.604] [DEBUG] debug-file - plugin_system : default@ConfigureCmake cost memory 0.01342010498046875
+[2026-07-27T16:45:58.604] [DEBUG] debug-file - runTaskFromQueue task cost before running: 874 ms 
+[2026-07-27T16:45:58.605] [INFO] debug-file - Finished :plugin_system:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.605] [DEBUG] debug-file - Executing task :ai_engine:default@MergeProfile
+[2026-07-27T16:45:58.606] [DEBUG] debug-file - Task 'ai_engine:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.609] [DEBUG] debug-file - Incremental task ai_engine:default@MergeProfile pre-execution cost: 3 ms .
+[2026-07-27T16:45:58.609] [DEBUG] debug-file - ai_engine : default@MergeProfile cost memory 0.1880340576171875
+[2026-07-27T16:45:58.610] [INFO] debug-file - UP-TO-DATE :ai_engine:default@MergeProfile...  
+[2026-07-27T16:45:58.611] [DEBUG] debug-file - Executing task :entry:default@CreateBuildProfile
+[2026-07-27T16:45:58.611] [DEBUG] debug-file - Task 'entry:default@CreateBuildProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.612] [DEBUG] debug-file - Incremental task entry:default@CreateBuildProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.613] [DEBUG] debug-file - entry : default@CreateBuildProfile cost memory 0.0892486572265625
+[2026-07-27T16:45:58.613] [INFO] debug-file - UP-TO-DATE :entry:default@CreateBuildProfile...  
+[2026-07-27T16:45:58.614] [DEBUG] debug-file - Executing task :common:default@ProcessLibs
+[2026-07-27T16:45:58.615] [DEBUG] debug-file - Incremental task common:default@ProcessLibs pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.615] [DEBUG] debug-file - common : default@ProcessLibs cost memory 0.09775543212890625
+[2026-07-27T16:45:58.616] [INFO] debug-file - UP-TO-DATE :common:default@ProcessLibs...  
+[2026-07-27T16:45:58.616] [DEBUG] debug-file - Executing task :schematic_editor:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.617] [DEBUG] debug-file - schematic_editor : default@BuildNativeWithCmake cost memory 0.013458251953125
+[2026-07-27T16:45:58.617] [DEBUG] debug-file - runTaskFromQueue task cost before running: 886 ms 
+[2026-07-27T16:45:58.617] [INFO] debug-file - Finished :schematic_editor:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.617] [DEBUG] debug-file - Executing task :component_library:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.617] [DEBUG] debug-file - component_library : default@BuildNativeWithCmake cost memory 0.013458251953125
+[2026-07-27T16:45:58.618] [DEBUG] debug-file - runTaskFromQueue task cost before running: 887 ms 
+[2026-07-27T16:45:58.618] [INFO] debug-file - Finished :component_library:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.618] [DEBUG] debug-file - Executing task :simulation_kernel:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.618] [DEBUG] debug-file - simulation_kernel : default@BuildNativeWithCmake cost memory 0.013458251953125
+[2026-07-27T16:45:58.618] [DEBUG] debug-file - runTaskFromQueue task cost before running: 888 ms 
+[2026-07-27T16:45:58.618] [INFO] debug-file - Finished :simulation_kernel:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.619] [DEBUG] debug-file - Executing task :hex_debugger:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.620] [DEBUG] debug-file - hex_debugger : default@BuildNativeWithCmake cost memory 0.01343536376953125
+[2026-07-27T16:45:58.620] [DEBUG] debug-file - runTaskFromQueue task cost before running: 889 ms 
+[2026-07-27T16:45:58.620] [INFO] debug-file - Finished :hex_debugger:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.620] [DEBUG] debug-file - Executing task :ai_api_manager:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.620] [DEBUG] debug-file - ai_api_manager : default@BuildNativeWithCmake cost memory 0.0134429931640625
+[2026-07-27T16:45:58.621] [DEBUG] debug-file - runTaskFromQueue task cost before running: 890 ms 
+[2026-07-27T16:45:58.621] [INFO] debug-file - Finished :ai_api_manager:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.621] [DEBUG] debug-file - Executing task :file_persistence:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.621] [DEBUG] debug-file - file_persistence : default@BuildNativeWithCmake cost memory 0.013458251953125
+[2026-07-27T16:45:58.622] [DEBUG] debug-file - runTaskFromQueue task cost before running: 891 ms 
+[2026-07-27T16:45:58.622] [INFO] debug-file - Finished :file_persistence:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.622] [DEBUG] debug-file - Executing task :instruments:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.622] [DEBUG] debug-file - instruments : default@BuildNativeWithCmake cost memory 0.013427734375
+[2026-07-27T16:45:58.623] [DEBUG] debug-file - runTaskFromQueue task cost before running: 892 ms 
+[2026-07-27T16:45:58.623] [INFO] debug-file - Finished :instruments:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.623] [DEBUG] debug-file - Executing task :plugin_system:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.623] [DEBUG] debug-file - plugin_system : default@BuildNativeWithCmake cost memory 0.01343536376953125
+[2026-07-27T16:45:58.623] [DEBUG] debug-file - runTaskFromQueue task cost before running: 893 ms 
+[2026-07-27T16:45:58.623] [INFO] debug-file - Finished :plugin_system:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.624] [DEBUG] debug-file - Executing task :entry:default@MergeProfile
+[2026-07-27T16:45:58.625] [DEBUG] debug-file - Task 'entry:default@MergeProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.630] [DEBUG] debug-file - Incremental task entry:default@MergeProfile pre-execution cost: 4 ms .
+[2026-07-27T16:45:58.630] [DEBUG] debug-file - entry : default@MergeProfile cost memory 0.35906982421875
+[2026-07-27T16:45:58.631] [INFO] debug-file - UP-TO-DATE :entry:default@MergeProfile...  
+[2026-07-27T16:45:58.632] [DEBUG] debug-file - Executing task :common:default@DoNativeStrip
+[2026-07-27T16:45:58.632] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\common\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:58.632] [DEBUG] debug-file - Task 'common:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.633] [DEBUG] debug-file - Incremental task common:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.633] [DEBUG] debug-file - common : default@DoNativeStrip cost memory 0.08229827880859375
+[2026-07-27T16:45:58.633] [INFO] debug-file - UP-TO-DATE :common:default@DoNativeStrip...  
+[2026-07-27T16:45:58.634] [DEBUG] debug-file - Executing task :ai_engine:default@ConfigureCmake
+[2026-07-27T16:45:58.634] [DEBUG] debug-file - ai_engine : default@ConfigureCmake cost memory 0.0158843994140625
+[2026-07-27T16:45:58.634] [DEBUG] debug-file - runTaskFromQueue task cost before running: 904 ms 
+[2026-07-27T16:45:58.635] [INFO] debug-file - Finished :ai_engine:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.636] [DEBUG] debug-file - Executing task :entry:default@MakePackInfo
+[2026-07-27T16:45:58.637] [DEBUG] debug-file - Incremental task entry:default@MakePackInfo pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.637] [DEBUG] debug-file - entry : default@MakePackInfo cost memory 0.0995025634765625
+[2026-07-27T16:45:58.637] [INFO] debug-file - UP-TO-DATE :entry:default@MakePackInfo...  
+[2026-07-27T16:45:58.639] [DEBUG] debug-file - Executing task :entry:default@ProcessProfile
+[2026-07-27T16:45:58.640] [DEBUG] debug-file - Task 'entry:default@ProcessProfile' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.641] [DEBUG] debug-file - Incremental task entry:default@ProcessProfile pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.641] [DEBUG] debug-file - entry : default@ProcessProfile cost memory 0.1456146240234375
+[2026-07-27T16:45:58.641] [INFO] debug-file - UP-TO-DATE :entry:default@ProcessProfile...  
+[2026-07-27T16:45:58.642] [DEBUG] debug-file - Executing task :schematic_editor:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.642] [DEBUG] debug-file - schematic_editor : default@BuildNativeWithNinja cost memory 0.02014923095703125
+[2026-07-27T16:45:58.642] [DEBUG] debug-file - runTaskFromQueue task cost before running: 912 ms 
+[2026-07-27T16:45:58.643] [INFO] debug-file - Finished :schematic_editor:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.643] [DEBUG] debug-file - Executing task :component_library:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.643] [DEBUG] debug-file - component_library : default@BuildNativeWithNinja cost memory 0.02019500732421875
+[2026-07-27T16:45:58.643] [DEBUG] debug-file - runTaskFromQueue task cost before running: 913 ms 
+[2026-07-27T16:45:58.644] [INFO] debug-file - Finished :component_library:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.644] [DEBUG] debug-file - Executing task :simulation_kernel:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.645] [DEBUG] debug-file - simulation_kernel : default@BuildNativeWithNinja cost memory 0.02019500732421875
+[2026-07-27T16:45:58.645] [DEBUG] debug-file - runTaskFromQueue task cost before running: 914 ms 
+[2026-07-27T16:45:58.645] [INFO] debug-file - Finished :simulation_kernel:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.645] [DEBUG] debug-file - Executing task :hex_debugger:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.646] [DEBUG] debug-file - hex_debugger : default@BuildNativeWithNinja cost memory 0.02007293701171875
+[2026-07-27T16:45:58.646] [DEBUG] debug-file - runTaskFromQueue task cost before running: 915 ms 
+[2026-07-27T16:45:58.646] [INFO] debug-file - Finished :hex_debugger:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.647] [DEBUG] debug-file - Executing task :ai_api_manager:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.647] [DEBUG] debug-file - ai_api_manager : default@BuildNativeWithNinja cost memory 0.0200958251953125
+[2026-07-27T16:45:58.647] [DEBUG] debug-file - runTaskFromQueue task cost before running: 917 ms 
+[2026-07-27T16:45:58.647] [INFO] debug-file - Finished :ai_api_manager:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.648] [DEBUG] debug-file - Executing task :file_persistence:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.648] [DEBUG] debug-file - file_persistence : default@BuildNativeWithNinja cost memory 0.02014923095703125
+[2026-07-27T16:45:58.648] [DEBUG] debug-file - runTaskFromQueue task cost before running: 918 ms 
+[2026-07-27T16:45:58.648] [INFO] debug-file - Finished :file_persistence:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.649] [DEBUG] debug-file - Executing task :instruments:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.649] [DEBUG] debug-file - instruments : default@BuildNativeWithNinja cost memory 0.02010345458984375
+[2026-07-27T16:45:58.649] [DEBUG] debug-file - runTaskFromQueue task cost before running: 919 ms 
+[2026-07-27T16:45:58.649] [INFO] debug-file - Finished :instruments:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.650] [DEBUG] debug-file - Executing task :plugin_system:default@BuildNativeWithNinja
+[2026-07-27T16:45:58.650] [DEBUG] debug-file - plugin_system : default@BuildNativeWithNinja cost memory 0.02008056640625
+[2026-07-27T16:45:58.650] [DEBUG] debug-file - runTaskFromQueue task cost before running: 920 ms 
+[2026-07-27T16:45:58.650] [INFO] debug-file - Finished :plugin_system:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:58.651] [DEBUG] debug-file - Executing task :ai_engine:default@BuildNativeWithCmake
+[2026-07-27T16:45:58.651] [DEBUG] debug-file - ai_engine : default@BuildNativeWithCmake cost memory 0.01622772216796875
+[2026-07-27T16:45:58.651] [DEBUG] debug-file - runTaskFromQueue task cost before running: 921 ms 
+[2026-07-27T16:45:58.651] [INFO] debug-file - Finished :ai_engine:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:58.652] [DEBUG] debug-file - restool module names: entry,common,schematic_editor,component_library,simulation_kernel,hex_debugger,ai_engine,ai_api_manager,file_persistence,instruments,plugin_system; moduleName=entry, taskName=default@ProcessResource
+[2026-07-27T16:45:58.656] [DEBUG] debug-file - Executing task :entry:default@ProcessResource
+[2026-07-27T16:45:58.656] [DEBUG] debug-file - Task 'entry:default@ProcessResource' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:58.657] [DEBUG] debug-file - Incremental task entry:default@ProcessResource pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.657] [DEBUG] debug-file - entry : default@ProcessResource cost memory 0.12671661376953125
+[2026-07-27T16:45:58.658] [INFO] debug-file - UP-TO-DATE :entry:default@ProcessResource...  
+[2026-07-27T16:45:58.659] [DEBUG] debug-file - Executing task :schematic_editor:default@ProcessLibs
+[2026-07-27T16:45:58.661] [DEBUG] debug-file - Incremental task schematic_editor:default@ProcessLibs pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.661] [DEBUG] debug-file - schematic_editor : default@ProcessLibs cost memory 0.09683990478515625
+[2026-07-27T16:45:58.661] [INFO] debug-file - UP-TO-DATE :schematic_editor:default@ProcessLibs...  
+[2026-07-27T16:45:58.662] [DEBUG] debug-file - Executing task :component_library:default@ProcessLibs
+[2026-07-27T16:45:58.663] [DEBUG] debug-file - Incremental task component_library:default@ProcessLibs pre-execution cost: 2 ms .
+[2026-07-27T16:45:58.663] [DEBUG] debug-file - component_library : default@ProcessLibs cost memory 0.09696197509765625
+[2026-07-27T16:45:58.664] [INFO] debug-file - UP-TO-DATE :component_library:default@ProcessLibs...  
+[2026-07-27T16:45:58.664] [DEBUG] debug-file - Executing task :simulation_kernel:default@ProcessLibs
+[2026-07-27T16:45:58.666] [DEBUG] debug-file - Incremental task simulation_kernel:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.666] [DEBUG] debug-file - simulation_kernel : default@ProcessLibs cost memory 0.0937347412109375
+[2026-07-27T16:45:58.666] [INFO] debug-file - UP-TO-DATE :simulation_kernel:default@ProcessLibs...  
+[2026-07-27T16:45:58.667] [DEBUG] debug-file - Executing task :hex_debugger:default@ProcessLibs
+[2026-07-27T16:45:58.668] [DEBUG] debug-file - Incremental task hex_debugger:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.668] [DEBUG] debug-file - hex_debugger : default@ProcessLibs cost memory 0.09319305419921875
+[2026-07-27T16:45:58.669] [INFO] debug-file - UP-TO-DATE :hex_debugger:default@ProcessLibs...  
+[2026-07-27T16:45:58.669] [DEBUG] debug-file - Executing task :ai_api_manager:default@ProcessLibs
+[2026-07-27T16:45:58.671] [DEBUG] debug-file - Incremental task ai_api_manager:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.671] [DEBUG] debug-file - ai_api_manager : default@ProcessLibs cost memory 0.09366607666015625
+[2026-07-27T16:45:58.671] [INFO] debug-file - UP-TO-DATE :ai_api_manager:default@ProcessLibs...  
+[2026-07-27T16:45:58.672] [DEBUG] debug-file - Executing task :file_persistence:default@ProcessLibs
+[2026-07-27T16:45:58.673] [DEBUG] debug-file - Incremental task file_persistence:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.673] [DEBUG] debug-file - file_persistence : default@ProcessLibs cost memory 0.09360504150390625
+[2026-07-27T16:45:58.674] [INFO] debug-file - UP-TO-DATE :file_persistence:default@ProcessLibs...  
+[2026-07-27T16:45:58.674] [DEBUG] debug-file - Executing task :instruments:default@ProcessLibs
+[2026-07-27T16:45:58.675] [DEBUG] debug-file - Incremental task instruments:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.675] [DEBUG] debug-file - instruments : default@ProcessLibs cost memory 0.09325408935546875
+[2026-07-27T16:45:58.676] [INFO] debug-file - UP-TO-DATE :instruments:default@ProcessLibs...  
+[2026-07-27T16:45:58.676] [DEBUG] debug-file - Executing task :plugin_system:default@ProcessLibs
+[2026-07-27T16:45:58.678] [DEBUG] debug-file - Incremental task plugin_system:default@ProcessLibs pre-execution cost: 1 ms .
+[2026-07-27T16:45:58.678] [DEBUG] debug-file - plugin_system : default@ProcessLibs cost memory 0.09322357177734375
+[2026-07-27T16:45:58.678] [INFO] debug-file - UP-TO-DATE :plugin_system:default@ProcessLibs...  
+[2026-07-27T16:45:58.679] [DEBUG] debug-file - Executing task :entry:default@ConfigureCmake
+[2026-07-27T16:45:58.679] [DEBUG] debug-file - entry : default@ConfigureCmake cost memory 0.01338958740234375
+[2026-07-27T16:45:58.679] [DEBUG] debug-file - runTaskFromQueue task cost before running: 949 ms 
+[2026-07-27T16:45:58.679] [INFO] debug-file - Finished :entry:default@ConfigureCmake... after 1 ms 
+[2026-07-27T16:45:58.680] [DEBUG] debug-file - restool module names: entry,common,schematic_editor,component_library,simulation_kernel,hex_debugger,ai_engine,ai_api_manager,file_persistence,instruments,plugin_system; moduleName=entry, taskName=default@CompileResource
+[2026-07-27T16:45:58.683] [DEBUG] debug-file - Executing task :entry:default@CompileResource
+[2026-07-27T16:45:58.716] [DEBUG] debug-file - entry:default@CompileResource is not up-to-date, since the input file 'C:\Projects\ElecDraw_Harmony\entry\src\main\resources' has been changed.
+[2026-07-27T16:45:58.716] [DEBUG] debug-file - Incremental task entry:default@CompileResource pre-execution cost: 32 ms .
+[2026-07-27T16:45:58.757] [DEBUG] debug-file - Use tool [C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\restool.exe]
+ [
+  'C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\toolchains\\restool.exe',
+  '-l',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\resConfig.json'
+]
+[2026-07-27T16:45:58.759] [DEBUG] debug-file - current process  memoryUsage: {
+  rss: 179458048,
+  heapTotal: 196104192,
+  heapUsed: 160345512,
+  external: 3599811,
+  arrayBuffers: 539396
+} os memoryUsage :11.586078643798828
+[2026-07-27T16:45:58.995] [DEBUG] debug-file - Info: Pack: normal pack mode
+
+[2026-07-27T16:45:59.173] [DEBUG] debug-file - Info: hardware concurrency count is : 16
+Info: thread count is : 16
+
+[2026-07-27T16:45:59.174] [DEBUG] debug-file - Info: thread pool is started
+
+[2026-07-27T16:45:59.176] [DEBUG] debug-file - Info: GenericCompiler::CompileFiles
+
+[2026-07-27T16:45:59.187] [DEBUG] debug-file - Info: GenericCompiler::CompileFiles
+
+[2026-07-27T16:45:59.191] [DEBUG] debug-file - Info: GenericCompiler::CompileFiles
+
+[2026-07-27T16:45:59.209] [DEBUG] debug-file - 07-27 16:45:59.209   252 29564 E C01400/ImageTranscoderUtils: DecodeToRGBA IN
+07-27 16:45:59.209   252 29564 E C01400/ImageTranscoderUtils: ImageFilter IN C:\Projects\ElecDraw_Harmony\AppScope\resources\base\media\app_icon.png
+
+[2026-07-27T16:45:59.215] [DEBUG] debug-file - 07-27 16:45:59.215   252 29564 E C01400/ImageTranscoder: TranscodeSLR ScalePixelsWithSLR failed
+
+[2026-07-27T16:45:59.216] [DEBUG] debug-file - Warning: ScaleImage failed, file path = C:\Projects\ElecDraw_Harmony\AppScope\resources\base\media\app_icon.png
+
+[2026-07-27T16:45:59.218] [DEBUG] debug-file - 07-27 16:45:59.218   252 29564 E C01400/ImageTranscoderUtils: DecodeToRGBA IN
+07-27 16:45:59.218   252 29564 E C01400/ImageTranscoderUtils: ImageFilter IN C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\background.png
+
+[2026-07-27T16:45:59.220] [DEBUG] debug-file - 07-27 16:45:59.220   252 29564 E C01400/ImageTranscoder: TranscodeSLR ScalePixelsWithSLR failed
+
+[2026-07-27T16:45:59.220] [DEBUG] debug-file - Warning: ScaleImage failed, file path = C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\background.png
+
+[2026-07-27T16:45:59.221] [DEBUG] debug-file - 07-27 16:45:59.221   252 29564 E C01400/ImageTranscoderUtils: DecodeToRGBA IN
+07-27 16:45:59.221   252 29564 E C01400/ImageTranscoderUtils: ImageFilter IN C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\foreground.png
+
+[2026-07-27T16:45:59.227] [DEBUG] debug-file - 07-27 16:45:59.227   252 29564 E C01400/ImageTranscoder: TranscodeSLR ScalePixelsWithSLR failed
+
+[2026-07-27T16:45:59.228] [DEBUG] debug-file - Warning: ScaleImage failed, file path = C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\foreground.png
+
+[2026-07-27T16:45:59.229] [DEBUG] debug-file - Info: can't scale media json file.
+
+[2026-07-27T16:45:59.229] [DEBUG] debug-file - Warning: The width or height of the png file referenced by the icon exceeds the limit (41 pixels)
+at C:\Projects\ElecDraw_Harmony\AppScope\resources\base\media\app_icon.png
+
+[2026-07-27T16:45:59.230] [DEBUG] debug-file - Warning: The width or height of the png file referenced by the icon exceeds the limit (41 pixels)
+at C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\background.png
+Warning: The width or height of the png file referenced by the icon exceeds the limit (41 pixels)
+at C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\foreground.png
+Warning: C:\Projects\ElecDraw_Harmony\entry\src\main\resources\base\media\layered_image.json is not png format
+
+[2026-07-27T16:45:59.243] [DEBUG] debug-file - Info: file '.gitkeep' is ignored by default filename pattern '\..+'.
+
+[2026-07-27T16:45:59.261] [DEBUG] debug-file - Info: restool resources compile success.
+
+[2026-07-27T16:45:59.261] [DEBUG] debug-file - Info: thread pool is stopped
+
+[2026-07-27T16:45:59.341] [DEBUG] debug-file - entry : default@CompileResource cost memory 1.8095855712890625
+[2026-07-27T16:45:59.342] [DEBUG] debug-file - runTaskFromQueue task cost before running: 1 s 611 ms 
+[2026-07-27T16:45:59.343] [INFO] debug-file - Finished :entry:default@CompileResource... after 659 ms 
+[2026-07-27T16:45:59.344] [DEBUG] debug-file - Executing task :schematic_editor:default@DoNativeStrip
+[2026-07-27T16:45:59.344] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\schematic_editor\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.345] [DEBUG] debug-file - Task 'schematic_editor:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.346] [DEBUG] debug-file - Incremental task schematic_editor:default@DoNativeStrip pre-execution cost: 2 ms .
+[2026-07-27T16:45:59.346] [DEBUG] debug-file - schematic_editor : default@DoNativeStrip cost memory 0.08823394775390625
+[2026-07-27T16:45:59.347] [INFO] debug-file - UP-TO-DATE :schematic_editor:default@DoNativeStrip...  
+[2026-07-27T16:45:59.348] [DEBUG] debug-file - Executing task :component_library:default@DoNativeStrip
+[2026-07-27T16:45:59.348] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\component_library\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.348] [DEBUG] debug-file - Task 'component_library:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.349] [DEBUG] debug-file - Incremental task component_library:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.349] [DEBUG] debug-file - component_library : default@DoNativeStrip cost memory 0.0850677490234375
+[2026-07-27T16:45:59.350] [INFO] debug-file - UP-TO-DATE :component_library:default@DoNativeStrip...  
+[2026-07-27T16:45:59.351] [DEBUG] debug-file - Executing task :simulation_kernel:default@DoNativeStrip
+[2026-07-27T16:45:59.351] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\simulation_kernel\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.351] [DEBUG] debug-file - Task 'simulation_kernel:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.352] [DEBUG] debug-file - Incremental task simulation_kernel:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.353] [DEBUG] debug-file - simulation_kernel : default@DoNativeStrip cost memory 0.08988189697265625
+[2026-07-27T16:45:59.353] [INFO] debug-file - UP-TO-DATE :simulation_kernel:default@DoNativeStrip...  
+[2026-07-27T16:45:59.354] [DEBUG] debug-file - Executing task :hex_debugger:default@DoNativeStrip
+[2026-07-27T16:45:59.354] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\hex_debugger\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.354] [DEBUG] debug-file - Task 'hex_debugger:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.355] [DEBUG] debug-file - Incremental task hex_debugger:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.355] [DEBUG] debug-file - hex_debugger : default@DoNativeStrip cost memory 0.0846099853515625
+[2026-07-27T16:45:59.356] [INFO] debug-file - UP-TO-DATE :hex_debugger:default@DoNativeStrip...  
+[2026-07-27T16:45:59.356] [DEBUG] debug-file - Executing task :ai_api_manager:default@DoNativeStrip
+[2026-07-27T16:45:59.357] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\ai_api_manager\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.357] [DEBUG] debug-file - Task 'ai_api_manager:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.358] [DEBUG] debug-file - Incremental task ai_api_manager:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.358] [DEBUG] debug-file - ai_api_manager : default@DoNativeStrip cost memory 0.09114837646484375
+[2026-07-27T16:45:59.358] [INFO] debug-file - UP-TO-DATE :ai_api_manager:default@DoNativeStrip...  
+[2026-07-27T16:45:59.359] [DEBUG] debug-file - Executing task :file_persistence:default@DoNativeStrip
+[2026-07-27T16:45:59.359] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\file_persistence\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.360] [DEBUG] debug-file - Task 'file_persistence:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.361] [DEBUG] debug-file - Incremental task file_persistence:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.361] [DEBUG] debug-file - file_persistence : default@DoNativeStrip cost memory 0.08502960205078125
+[2026-07-27T16:45:59.361] [INFO] debug-file - UP-TO-DATE :file_persistence:default@DoNativeStrip...  
+[2026-07-27T16:45:59.362] [DEBUG] debug-file - Executing task :instruments:default@DoNativeStrip
+[2026-07-27T16:45:59.362] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\instruments\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.362] [DEBUG] debug-file - Task 'instruments:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.363] [DEBUG] debug-file - Incremental task instruments:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.363] [DEBUG] debug-file - instruments : default@DoNativeStrip cost memory 0.0845947265625
+[2026-07-27T16:45:59.364] [INFO] debug-file - UP-TO-DATE :instruments:default@DoNativeStrip...  
+[2026-07-27T16:45:59.364] [DEBUG] debug-file - Executing task :plugin_system:default@DoNativeStrip
+[2026-07-27T16:45:59.365] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\plugin_system\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.365] [DEBUG] debug-file - Task 'plugin_system:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.366] [DEBUG] debug-file - Incremental task plugin_system:default@DoNativeStrip pre-execution cost: 2 ms .
+[2026-07-27T16:45:59.366] [DEBUG] debug-file - plugin_system : default@DoNativeStrip cost memory 0.1011962890625
+[2026-07-27T16:45:59.367] [INFO] debug-file - UP-TO-DATE :plugin_system:default@DoNativeStrip...  
+[2026-07-27T16:45:59.368] [DEBUG] debug-file - Executing task :entry:default@BuildNativeWithCmake
+[2026-07-27T16:45:59.368] [DEBUG] debug-file - entry : default@BuildNativeWithCmake cost memory 0.01340484619140625
+[2026-07-27T16:45:59.368] [DEBUG] debug-file - runTaskFromQueue task cost before running: 1 s 638 ms 
+[2026-07-27T16:45:59.368] [INFO] debug-file - Finished :entry:default@BuildNativeWithCmake... after 1 ms 
+[2026-07-27T16:45:59.370] [DEBUG] debug-file - Executing task :entry:default@CompileArkTS
+[2026-07-27T16:45:59.371] [DEBUG] debug-file - obfuscationOptions: undefined
+[2026-07-27T16:45:59.378] [DEBUG] debug-file - Task 'entry:default@CompileArkTS' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.391] [DEBUG] debug-file - entry:default@CompileArkTS is not up-to-date, since the input file 'C:\Projects\ElecDraw_Harmony\features\schematic_editor\Index.ets' has been changed.
+[2026-07-27T16:45:59.391] [DEBUG] debug-file - Incremental task entry:default@CompileArkTS pre-execution cost: 10 ms .
+[2026-07-27T16:45:59.416] [DEBUG] debug-file - build config:
+[2026-07-27T16:45:59.417] [DEBUG] debug-file - {
+  moduleType: 'entry',
+  perf: 0,
+  targetName: '.default',
+  packageManagerType: 'ohpm',
+  localPropertiesPath: 'C:\\Projects\\ElecDraw_Harmony\\local.properties',
+  isPreview: false,
+  isOhosTest: false,
+  isLocalTest: false,
+  buildMode: 'Debug',
+  hotReloadBuild: undefined,
+  watchMode: 'false',
+  aceProfilePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\resources\\base\\profile',
+  etsLoaderPath: 'C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\build-tools\\ets-loader',
+  modulePath: 'C:\\Projects\\ElecDraw_Harmony\\entry',
+  testFrameworkPar: {
+    testMode: undefined,
+    coveragePathFilter: undefined,
+    coverageMode: undefined
+  },
+  needCoverageInsert: false,
+  debugLine: false,
+  projectTopDir: 'C:\\Projects\\ElecDraw_Harmony',
+  compileSdkVersion: 24,
+  compatibleSdkVersion: 12,
+  originCompatibleSdkVersion: '5.0.0(12)',
+  compatibleSdkVersionStage: 'beta1',
+  bundleName: 'c***m',
+  etsLoaderVersion: '6.1.1.125',
+  etsLoaderReleaseType: 'Release',
+  aotCompileMode: 'type',
+  apPath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\modules.ap',
+  entryModuleName: 'entry',
+  entryModuleVersion: '1.0.0',
+  entryPackageName: 'entry',
+  allModuleNameHash: '552180bde0fd2579480f16670999fb6b7a313e0f257f8ebd8d79df2ade91a1aa',
+  externalApiPaths: [
+    'C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\hms\\ets'
+  ],
+  compilerTypes: [],
+  isCrossplatform: false,
+  hvigorPluginFile: undefined,
+  compilePluginPath: undefined,
+  buildGeneratedProfilePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\generated\\profile\\default',
+  bundleType: 'app',
+  arkTSVersion: undefined,
+  apiVersion: 24,
+  needCompleteSourcesMap: false,
+  isFaMode: false,
+  buildDir: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build',
+  deviceTypes: [ 'default', 'tablet', '2in1' ],
+  pkgContextInfo: undefined,
+  ohPackagePathMap: {},
+  dependencyAliasMap: {},
+  permission: {
+    requestPermissions: [ [Object], [Object], [Object], [Object], [Object] ],
+    definePermissions: undefined
+  },
+  useGetCurrentBundleName: false,
+  projectArkOption: undefined,
+  sourceMapDir: undefined,
+  branchElimination: false,
+  transformLib: undefined,
+  tsImportSendable: false,
+  resolveConflictMode: true,
+  depName2RootPath: {},
+  depName2DepInfo: {},
+  depName2OhExports: {},
+  rootPathSet: [ 'C:\\Projects\\ElecDraw_Harmony' ],
+  useNativeResolver: true,
+  shouldEmitJs: true,
+  useTscResolve: false,
+  singleFileEmit: false,
+  userProjectConfig: {
+    autoLazyImport: false,
+    allowEmptyBundleName: false,
+    reExportCheckMode: 'noCheck',
+    executionMode: 'memory',
+    usePathPlaceholder: false,
+    writeRollupCache: true,
+    isExpandImportEnabled: false,
+    expandImportExclude: '',
+    lazyImportExclude: '',
+    lazyImportInclude: '',
+    ignoreCrossplatformCheck: false,
+    isHarDeduplicateEnabled: false,
+    skipOhModulesLint: false,
+    enableStrictCheckOHModule: false,
+    disableSendableCheckRules: [],
+    useDeclarationFileSignature: false,
+    customizedOptions: undefined,
+    integratedHsp: false,
+    isPreloadSoEnabled: false
+  },
+  executionMode: 'memory',
+  arkCompileCachePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\cache\\default\\default@CompileArkTS\\esmodule',
+  autoLazyFilter: undefined,
+  isHarDeduplicateEnabled: false,
+  intermediateHarDuplicateDirPath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\har_duplicate\\default',
+  autoLazyImport: false,
+  allowEmptyBundleName: false,
+  reExportCheckMode: 'noCheck',
+  usePathPlaceholder: false,
+  writeRollupCache: true,
+  isExpandImportEnabled: false,
+  expandImportExclude: '',
+  lazyImportExclude: '',
+  lazyImportInclude: '',
+  ignoreCrossplatformCheck: false,
+  skipOhModulesLint: false,
+  enableStrictCheckOHModule: false,
+  disableSendableCheckRules: [],
+  useDeclarationFileSignature: false,
+  customizedOptions: undefined,
+  integratedHsp: false,
+  isPreloadSoEnabled: false,
+  strictMode: undefined,
+  useNormalizedOHMUrl: false,
+  caseSensitiveCheck: false,
+  strictCheckerOnly: false,
+  aceModuleJsonPath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\ark_module.json',
+  appResource: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\ResourceTable.txt',
+  rawFileResource: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\resources\\rawfile',
+  resourceTableHash: '432ce22feb47752fb723e44c2ede088f908fd3dcce1a1b0f16c93a1d24013f20',
+  runtimeOS: 'HarmonyOS',
+  sdkInfo: 'false:24:6.1.1.125:Release',
+  aceModuleRoot: 'C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets',
+  compileMode: 'esmodule',
+  aceSuperVisualPath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\supervisual',
+  aceBuildJson: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\loader\\default\\loader.json',
+  cachePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\cache\\default\\default@CompileArkTS\\esmodule\\debug',
+  aceModuleBuild: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\loader_out\\default\\ets',
+  supportChunks: true,
+  declaredFilesPath: undefined,
+  shouldCollectDirectImportees: false,
+  isByteCodeHarOptimize: false,
+  expandImportPath: undefined,
+  resourceTableTs: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\generated\\r\\default\\ResourceTable.ts',
+  moduleMetaInfoFiles: [
+    {
+      filePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\generated\\r\\default\\ResourceTable.ts',
+      ohmurl: 'com.elecdraw.aischsim/entry/build/generated/r/ResourceTable'
+    }
+  ],
+  pkgNameToPkgBriefInfo: {
+    common: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\common',
+      pkgName: 'common',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    schematic_editor: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor',
+      pkgName: 'schematic_editor',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    component_library: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\component_library',
+      pkgName: 'component_library',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    simulation_kernel: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel',
+      pkgName: 'simulation_kernel',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    hex_debugger: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger',
+      pkgName: 'hex_debugger',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    ai_api_manager: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager',
+      pkgName: 'ai_api_manager',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    ai_engine: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine',
+      pkgName: 'ai_engine',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    file_persistence: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence',
+      pkgName: 'file_persistence',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    instruments: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\instruments',
+      pkgName: 'instruments',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    plugin_system: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system',
+      pkgName: 'plugin_system',
+      sourceRoots: [Array],
+      originalSourceRoots: undefined
+    },
+    entry: {
+      pkgRoot: 'C:\\Projects\\ElecDraw_Harmony\\entry',
+      originalSourceRoots: undefined,
+      sourceRoots: [Array],
+      pkgName: 'entry'
+    }
+  },
+  projectModel: {
+    'C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main': {
+      moduleName: 'entry',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\entry',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\entry': {
+      moduleName: 'entry',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\entry',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\common\\src\\main': {
+      moduleName: 'common',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\common',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\common': {
+      moduleName: 'common',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\common',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main': {
+      moduleName: 'schematic_editor',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor': {
+      moduleName: 'schematic_editor',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\src\\main': {
+      moduleName: 'component_library',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\component_library',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\component_library': {
+      moduleName: 'component_library',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\component_library',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel\\src\\main': {
+      moduleName: 'simulation_kernel',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel': {
+      moduleName: 'simulation_kernel',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger\\src\\main': {
+      moduleName: 'hex_debugger',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger': {
+      moduleName: 'hex_debugger',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main': {
+      moduleName: 'ai_engine',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine': {
+      moduleName: 'ai_engine',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main': {
+      moduleName: 'ai_api_manager',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager': {
+      moduleName: 'ai_api_manager',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence\\src\\main': {
+      moduleName: 'file_persistence',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence': {
+      moduleName: 'file_persistence',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\src\\main': {
+      moduleName: 'instruments',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\instruments',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\instruments': {
+      moduleName: 'instruments',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\instruments',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system\\src\\main': {
+      moduleName: 'plugin_system',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system': {
+      moduleName: 'plugin_system',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    },
+    'C:\\Projects\\ElecDraw_Harmony': {
+      moduleName: 'ElecDraw_Harmony',
+      modulePkgPath: 'C:\\Projects\\ElecDraw_Harmony',
+      belongProjectPath: 'C:\\Projects\\ElecDraw_Harmony'
+    }
+  },
+  pkgJsonFileHash: '051943d7c7802358fcc02a8a9e8fcfedd40a8d384f4e4ba1cabb27ad336bf17f',
+  allModulePaths: [
+    'C:\\Projects\\ElecDraw_Harmony\\entry',
+    'C:\\Projects\\ElecDraw_Harmony\\common',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\component_library',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\simulation_kernel',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\hex_debugger',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\file_persistence',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\instruments',
+    'C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system'
+  ],
+  routerMap: {},
+  obfuscationOptions: undefined,
+  byteCodeHarToDependencyKeys: undefined,
+  compileBlockPkg: [],
+  mockParams: {
+    decorator: '@MockSetup',
+    packageName: '@ohos/hamock',
+    etsSourceRootPath: 'src/main/ets',
+    mockConfigPath: undefined,
+    mockConfigKey2ModuleInfo: {},
+    source2ModuleIdMap: {}
+  },
+  copyCodeResourceEnable: true,
+  copyCodeResourceExcludes: [],
+  copyCodeResourceIncludes: undefined,
+  uiTransformOptimization: false,
+  sdkPath: 'C:/Program Files/Huawei/DevEco Studio/sdk',
+  needPreloadSoFileSet: {},
+  preloadSoFilePath: 'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\preload\\default\\preload.json',
+  useSourceHash: false,
+  localModuleParamMap: {},
+  otherPaths: {
+    'common/*': [
+      '..\\..\\..\\..\\common\\src\\main\\*',
+      '..\\..\\..\\..\\common\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'schematic_editor/*': [
+      '..\\..\\..\\..\\features\\schematic_editor\\src\\main\\*',
+      '..\\..\\..\\..\\features\\schematic_editor\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'component_library/*': [
+      '..\\..\\..\\..\\features\\component_library\\src\\main\\*',
+      '..\\..\\..\\..\\features\\component_library\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'simulation_kernel/*': [
+      '..\\..\\..\\..\\features\\simulation_kernel\\src\\main\\*',
+      '..\\..\\..\\..\\features\\simulation_kernel\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'hex_debugger/*': [
+      '..\\..\\..\\..\\features\\hex_debugger\\src\\main\\*',
+      '..\\..\\..\\..\\features\\hex_debugger\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'ai_api_manager/*': [
+      '..\\..\\..\\..\\features\\ai_api_manager\\src\\main\\*',
+      '..\\..\\..\\..\\features\\ai_api_manager\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'ai_engine/*': [
+      '..\\..\\..\\..\\features\\ai_engine\\src\\main\\*',
+      '..\\..\\..\\..\\features\\ai_engine\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'file_persistence/*': [
+      '..\\..\\..\\..\\features\\file_persistence\\src\\main\\*',
+      '..\\..\\..\\..\\features\\file_persistence\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'instruments/*': [
+      '..\\..\\..\\..\\features\\instruments\\src\\main\\*',
+      '..\\..\\..\\..\\features\\instruments\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'plugin_system/*': [
+      '..\\..\\..\\..\\features\\plugin_system\\src\\main\\*',
+      '..\\..\\..\\..\\features\\plugin_system\\build\\default\\generated\\profile\\default\\*'
+    ],
+    'entry/*': [
+      '..\\*',
+      '..\\..\\..\\build\\default\\generated\\profile\\default\\*'
+    ]
+  },
+  collectImportersConfig: undefined
+}
+[2026-07-27T16:45:59.418] [DEBUG] debug-file - Compile arkts with external api path: C:\Program Files\Huawei\DevEco Studio\sdk\default\hms\ets
+[2026-07-27T16:45:59.419] [DEBUG] debug-file - default@CompileArkTS work[82] is submitted.
+[2026-07-27T16:45:59.419] [DEBUG] debug-file - default@CompileArkTS work[82] is pushed to ready queue.
+[2026-07-27T16:45:59.419] [DEBUG] debug-file - default@CompileArkTS work[82] is not dispatched.
+[2026-07-27T16:45:59.420] [DEBUG] debug-file - CopyResources startTime: 269509396351900
+[2026-07-27T16:45:59.420] [DEBUG] debug-file - default@CompileArkTS work[83] is submitted.
+[2026-07-27T16:45:59.420] [DEBUG] debug-file - default@CompileArkTS work[83] is pushed to ready queue.
+[2026-07-27T16:45:59.420] [DEBUG] debug-file - default@CompileArkTS work[83] is not dispatched.
+[2026-07-27T16:45:59.420] [DEBUG] debug-file - entry : default@CompileArkTS cost memory -9.621170043945312
+[2026-07-27T16:45:59.422] [DEBUG] debug-file - Executing task :entry:default@BuildJS
+[2026-07-27T16:45:59.422] [DEBUG] debug-file - Task 'entry:default@BuildJS' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.427] [DEBUG] debug-file - entry : default@BuildJS cost memory 0.2518768310546875
+[2026-07-27T16:45:59.427] [DEBUG] debug-file - runTaskFromQueue task cost before running: 1 s 697 ms 
+[2026-07-27T16:45:59.427] [INFO] debug-file - Finished :entry:default@BuildJS... after 6 ms 
+[2026-07-27T16:45:59.429] [DEBUG] debug-file - Executing task :ai_engine:default@BuildNativeWithNinja
+[2026-07-27T16:45:59.429] [DEBUG] debug-file - ai_engine : default@BuildNativeWithNinja cost memory 0.0226287841796875
+[2026-07-27T16:45:59.429] [DEBUG] debug-file - runTaskFromQueue task cost before running: 1 s 699 ms 
+[2026-07-27T16:45:59.430] [INFO] debug-file - Finished :ai_engine:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:59.431] [DEBUG] debug-file - Executing task :ai_engine:default@ProcessLibs
+[2026-07-27T16:45:59.433] [DEBUG] debug-file - Incremental task ai_engine:default@ProcessLibs pre-execution cost: 2 ms .
+[2026-07-27T16:45:59.433] [DEBUG] debug-file - ai_engine : default@ProcessLibs cost memory 0.1005706787109375
+[2026-07-27T16:45:59.434] [INFO] debug-file - UP-TO-DATE :ai_engine:default@ProcessLibs...  
+[2026-07-27T16:45:59.435] [DEBUG] debug-file - Executing task :ai_engine:default@DoNativeStrip
+[2026-07-27T16:45:59.435] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\features\ai_engine\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.435] [DEBUG] debug-file - Task 'ai_engine:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.437] [DEBUG] debug-file - Incremental task ai_engine:default@DoNativeStrip pre-execution cost: 2 ms .
+[2026-07-27T16:45:59.437] [DEBUG] debug-file - ai_engine : default@DoNativeStrip cost memory 0.0930633544921875
+[2026-07-27T16:45:59.437] [INFO] debug-file - UP-TO-DATE :ai_engine:default@DoNativeStrip...  
+[2026-07-27T16:45:59.438] [DEBUG] debug-file - Executing task :entry:default@BuildNativeWithNinja
+[2026-07-27T16:45:59.439] [DEBUG] debug-file - entry : default@BuildNativeWithNinja cost memory 0.01904296875
+[2026-07-27T16:45:59.439] [DEBUG] debug-file - runTaskFromQueue task cost before running: 1 s 708 ms 
+[2026-07-27T16:45:59.439] [INFO] debug-file - Finished :entry:default@BuildNativeWithNinja... after 1 ms 
+[2026-07-27T16:45:59.440] [DEBUG] debug-file - Executing task :entry:default@ProcessLibs
+[2026-07-27T16:45:59.467] [DEBUG] debug-file - Incremental task entry:default@ProcessLibs pre-execution cost: 9 ms .
+[2026-07-27T16:45:59.468] [DEBUG] debug-file - entry : default@ProcessLibs cost memory 1.5384902954101562
+[2026-07-27T16:45:59.470] [INFO] debug-file - UP-TO-DATE :entry:default@ProcessLibs...  
+[2026-07-27T16:45:59.471] [DEBUG] debug-file - Executing task :entry:default@DoNativeStrip
+[2026-07-27T16:45:59.471] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\binxo\default' from 'doBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.472] [DEBUG] debug-file - Task 'entry:default@DoNativeStrip' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.473] [DEBUG] debug-file - Incremental task entry:default@DoNativeStrip pre-execution cost: 1 ms .
+[2026-07-27T16:45:59.473] [DEBUG] debug-file - entry : default@DoNativeStrip cost memory 0.08225250244140625
+[2026-07-27T16:45:59.473] [INFO] debug-file - UP-TO-DATE :entry:default@DoNativeStrip...  
+[2026-07-27T16:45:59.475] [DEBUG] debug-file - Executing task :entry:default@CacheNativeLibs
+[2026-07-27T16:45:59.475] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\binxo\default' from 'cacheBinxoNativeLibs' is not exists, just ignore.
+[2026-07-27T16:45:59.476] [DEBUG] debug-file - Task 'entry:default@CacheNativeLibs' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:45:59.478] [DEBUG] debug-file - Incremental task entry:default@CacheNativeLibs pre-execution cost: 2 ms .
+[2026-07-27T16:45:59.478] [DEBUG] debug-file - entry : default@CacheNativeLibs cost memory 0.11468505859375
+[2026-07-27T16:45:59.478] [INFO] debug-file - UP-TO-DATE :entry:default@CacheNativeLibs...  
+[2026-07-27T16:45:59.632] [DEBUG] debug-file - A work dispatched to worker[15] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.632] [DEBUG] debug-file - Create  resident worker with id: 14.
+[2026-07-27T16:45:59.637] [DEBUG] debug-file - default@CompileArkTS work[83] has been dispatched to worker[14].
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[15] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[14] failed because of worker busy.
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[13] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[12] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[11] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.835] [DEBUG] debug-file - A work dispatched to worker[10] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - A work dispatched to worker[9] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - A work dispatched to worker[8] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - A work dispatched to worker[7] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - A work dispatched to worker[6] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - A work dispatched to worker[5] failed because unable to get work from ready queue.
+[2026-07-27T16:45:59.836] [DEBUG] debug-file - default@CompileArkTS work[82] has been dispatched to worker[4].
+[2026-07-27T16:46:01.126] [DEBUG] debug-file - worker[14] has one work done.
+[2026-07-27T16:46:01.126] [DEBUG] debug-file - CopyResources is end, endTime: 269511102474400
+[2026-07-27T16:46:01.126] [DEBUG] debug-file - default@CompileArkTS work[83] done.
+[2026-07-27T16:46:01.126] [DEBUG] debug-file - A work dispatched to worker[14] failed because unable to get work from ready queue.
+[2026-07-27T16:46:08.186] [WARN] debug-file - [33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/ai_engine/src/main/ets/algorithms/agents/StageHooks.ets:60:32
+ Classes cannot be used as objects (arkts-no-classes-as-obj)
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN: For details about ArkTS syntax errors, see FAQs[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/ai_api_manager/src/main/ets/AiApiManagerImpl.ets:722:42
+ To use this API, you need to apply for the permissions: ohos.permission.INTERNET
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/file_persistence/src/main/ets/collaboration/CollabSyncClient.ets:62:17
+ To use this API, you need to apply for the permissions: ohos.permission.INTERNET
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/file_persistence/src/main/ets/collaboration/CollabSyncClient.ets:78:19
+ To use this API, you need to apply for the permissions: ohos.permission.INTERNET
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/file_persistence/src/main/ets/collaboration/CollabSyncClient.ets:90:19
+ To use this API, you need to apply for the permissions: ohos.permission.INTERNET
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/features/file_persistence/src/main/ets/collaboration/CollabSyncClient.ets:99:21
+ To use this API, you need to apply for the permissions: ohos.permission.INTERNET
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/utils/WindowLaunchUtil.ets:23:21
+ The system capacity of this api 'setWindowRectAutoSave' is not supported on all devices
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/utils/WindowLaunchUtil.ets:35:24
+ The system capacity of this api 'maximize' is not supported on all devices
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:426:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:439:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:450:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:463:14
+ The 'onAxisEvent' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:700:21
+ The 'getVerticalAxisValue' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:704:30
+ The 'x' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:705:30
+ The 'y' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:708:64
+ The 'x' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/SchematicCanvas.ets:708:73
+ The 'y' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/PropertyPanel.ets:831:6
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/InstrumentPanel.ets:40:10
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/InstrumentPanel.ets:75:10
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets:160:21
+ The 'getVerticalAxisValue' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets:300:16
+ The 'onAxisEvent' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets:389:8
+ The 'onAxisEvent' API is supported since SDK version 17. However, the current compatible SDK version is 5.0.0(12).
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/components/ComponentPreview.ets:40:10
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:1191:8
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:1350:6
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:1650:6
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:1889:6
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2112:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2122:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2127:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2133:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2269:20
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2276:20
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2283:20
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2290:20
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2368:6
+ 'key' can only be used for testing directories 
+[39m[39m
+[33mWARN: [33m[33mArkTS:WARN File: C:/Projects/ElecDraw_Harmony/entry/src/main/ets/pages/Index.ets:2967:6
+ 'key' can only be used for testing directories 
+[39m[39m
+
+[2026-07-27T16:46:08.187] [DEBUG] debug-file - Ark compile task finished.finished time is 269518163866200
+[2026-07-27T16:46:08.187] [DEBUG] debug-file - worker[4] has one work done.
+[2026-07-27T16:46:08.189] [DEBUG] debug-file - default@CompileArkTS work[82] done.
+[2026-07-27T16:46:08.189] [DEBUG] debug-file - A work dispatched to worker[4] failed because unable to get work from ready queue.
+[2026-07-27T16:46:08.195] [INFO] debug-file - Finished :entry:default@CompileArkTS... after 8 s 381 ms 
+[2026-07-27T16:46:08.197] [DEBUG] debug-file - Executing task :entry:default@GeneratePkgModuleJson
+[2026-07-27T16:46:08.197] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\preload\default\preload.json' from 'preloadSoJsonPath' is not exists, just ignore.
+[2026-07-27T16:46:08.198] [DEBUG] debug-file - Error occurs while handling @Input 'shouldDeduplicateHar': The "data" argument must be of type string or an instance of Buffer, TypedArray, or DataView. Received undefined
+[2026-07-27T16:46:08.198] [DEBUG] debug-file - Task 'entry:default@GeneratePkgModuleJson' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:46:08.198] [DEBUG] debug-file - entry:default@GeneratePkgModuleJson is not up-to-date, since the input file 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\module.json' has been changed.
+[2026-07-27T16:46:08.199] [DEBUG] debug-file - Incremental task entry:default@GeneratePkgModuleJson pre-execution cost: 1 ms .
+[2026-07-27T16:46:08.201] [DEBUG] debug-file - entry : default@GeneratePkgModuleJson cost memory 0.2075042724609375
+[2026-07-27T16:46:08.202] [DEBUG] debug-file - runTaskFromQueue task cost before running: 10 s 471 ms 
+[2026-07-27T16:46:08.202] [INFO] debug-file - Finished :entry:default@GeneratePkgModuleJson... after 5 ms 
+[2026-07-27T16:46:08.204] [DEBUG] debug-file - Executing task :entry:default@ProcessCompiledResources
+[2026-07-27T16:46:08.204] [DEBUG] debug-file - File: 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\preload\default\preload.json' from 'preloadSoJsonPath' is not exists, just ignore.
+[2026-07-27T16:46:08.204] [DEBUG] debug-file - Task 'entry:default@ProcessCompiledResources' cost while wrapping incremental declarations: 1 ms 
+[2026-07-27T16:46:08.205] [DEBUG] debug-file - entry : default@ProcessCompiledResources cost memory 0.066192626953125
+[2026-07-27T16:46:08.205] [DEBUG] debug-file - runTaskFromQueue task cost before running: 10 s 475 ms 
+[2026-07-27T16:46:08.205] [INFO] debug-file - Finished :entry:default@ProcessCompiledResources... after 2 ms 
+[2026-07-27T16:46:08.208] [DEBUG] debug-file - Executing task :entry:default@PackageHap
+[2026-07-27T16:46:08.212] [DEBUG] debug-file - entry:default@PackageHap is not up-to-date, since the input file 'C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\module.json' has been changed.
+[2026-07-27T16:46:08.212] [DEBUG] debug-file - Incremental task entry:default@PackageHap pre-execution cost: 3 ms .
+[2026-07-27T16:46:08.213] [DEBUG] debug-file - Use tool [C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\lib\app_packing_tool.jar]
+ [
+  'java',
+  '-Dfile.encoding=GBK',
+  '-jar',
+  'C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\toolchains\\lib\\app_packing_tool.jar',
+  '--mode',
+  'hap',
+  '--force',
+  'true',
+  '--lib-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\stripped_native_libs\\default',
+  '--json-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\package\\default\\module.json',
+  '--resources-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\resources',
+  '--index-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\res\\default\\resources.index',
+  '--pack-info-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\outputs\\default\\pack.info',
+  '--out-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\outputs\\default\\entry-default-unsigned.hap',
+  '--ets-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\loader_out\\default\\ets',
+  '--pkg-sdk-info-path',
+  'C:\\Projects\\ElecDraw_Harmony\\entry\\build\\default\\intermediates\\loader\\default\\pkgSdkInfo.json'
+]
+[2026-07-27T16:46:08.214] [DEBUG] debug-file - default@PackageHap work[84] is submitted.
+[2026-07-27T16:46:08.214] [DEBUG] debug-file - default@PackageHap work[84] is pushed to ready queue.
+[2026-07-27T16:46:08.214] [DEBUG] debug-file - A work dispatched to worker[15] failed because unable to get work from ready queue.
+[2026-07-27T16:46:08.214] [DEBUG] debug-file - default@PackageHap work[84] has been dispatched to worker[14].
+[2026-07-27T16:46:08.214] [DEBUG] debug-file - default@PackageHap work[84] is dispatched.
+[2026-07-27T16:46:08.222] [DEBUG] debug-file - entry : default@PackageHap cost memory 0.4105377197265625
+[2026-07-27T16:46:08.583] [DEBUG] debug-file - current process  memoryUsage: {
+  rss: 1164185600,
+  heapTotal: 68190208,
+  heapUsed: 54665408,
+  external: 2399982,
+  arrayBuffers: 158305
+} os memoryUsage :13.034988403320312
+[2026-07-27T16:46:09.371] [DEBUG] debug-file - worker[14] has one work done.
+[2026-07-27T16:46:09.372] [DEBUG] debug-file - default@PackageHap work[84] done.
+[2026-07-27T16:46:09.372] [DEBUG] debug-file - A work dispatched to worker[14] failed because unable to get work from ready queue.
+[2026-07-27T16:46:09.373] [INFO] debug-file - Finished :entry:default@PackageHap... after 811 ms 
+[2026-07-27T16:46:09.374] [DEBUG] debug-file - Executing task :entry:default@PackingCheck
+[2026-07-27T16:46:09.391] [DEBUG] debug-file - entry : default@PackingCheck cost memory 1.8571395874023438
+[2026-07-27T16:46:09.391] [DEBUG] debug-file - runTaskFromQueue task cost before running: 11 s 660 ms 
+[2026-07-27T16:46:09.391] [INFO] debug-file - Finished :entry:default@PackingCheck... after 17 ms 
+[2026-07-27T16:46:09.393] [DEBUG] debug-file - Executing task :entry:default@SignHap
+[2026-07-27T16:46:09.394] [WARN] debug-file - No signingConfig found for product default
+[2026-07-27T16:46:09.395] [DEBUG] debug-file - entry:default@SignHap is not up-to-date, since the input file 'C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\entry-default-unsigned.hap' has been changed.
+[2026-07-27T16:46:09.395] [DEBUG] debug-file - Incremental task entry:default@SignHap pre-execution cost: 1 ms .
+[2026-07-27T16:46:09.395] [DEBUG] debug-file - entry : default@SignHap cost memory 0.08056640625
+[2026-07-27T16:46:09.395] [DEBUG] debug-file - runTaskFromQueue task cost before running: 11 s 665 ms 
+[2026-07-27T16:46:09.396] [INFO] debug-file - Finished :entry:default@SignHap... after 2 ms 
+[2026-07-27T16:46:09.397] [DEBUG] debug-file - Executing task :entry:default@CollectDebugSymbol
+[2026-07-27T16:46:09.398] [DEBUG] debug-file - entry : default@CollectDebugSymbol cost memory 0.08089447021484375
+[2026-07-27T16:46:09.398] [DEBUG] debug-file - runTaskFromQueue task cost before running: 11 s 668 ms 
+[2026-07-27T16:46:09.398] [INFO] debug-file - Finished :entry:default@CollectDebugSymbol... after 1 ms 
+[2026-07-27T16:46:09.398] [DEBUG] debug-file - Executing task :entry:assembleHap
+[2026-07-27T16:46:09.399] [DEBUG] debug-file - entry : assembleHap cost memory 0.01166534423828125
+[2026-07-27T16:46:09.399] [DEBUG] debug-file - runTaskFromQueue task cost before running: 11 s 668 ms 
+[2026-07-27T16:46:09.399] [INFO] debug-file - Finished :entry:assembleHap... after 1 ms 
+[2026-07-27T16:46:09.415] [INFO] debug-file - BUILD SUCCESSFUL in 11 s 685 ms 
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task common:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task schematic_editor:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task component_library:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task simulation_kernel:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task hex_debugger:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_api_manager:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_engine:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task file_persistence:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task instruments:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task plugin_system:default@PreBuild is up-to-date.
+[2026-07-27T16:46:09.416] [DEBUG] debug-file - Update task entry:default@CreateModuleInfo output file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\profile\default\ModuleInfo.ts cache.
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - Incremental task entry:default@CreateModuleInfo post-execution cost:1 ms .
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@GenerateMetadata is up-to-date.
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - Update task entry:default@GeneratePkgContextInfo output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader\default\pkgContextInfo.json cache.
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - Incremental task entry:default@GeneratePkgContextInfo post-execution cost:1 ms .
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@GeneratePkgSdkInfo is up-to-date.
+[2026-07-27T16:46:09.417] [DEBUG] debug-file - Update task entry:default@ProcessIntegratedHsp output file:C:\Projects\ElecDraw_Harmony\build\cache\default\integrated_hsp\integratedHspCache.json cache.
+[2026-07-27T16:46:09.418] [DEBUG] debug-file - Incremental task entry:default@ProcessIntegratedHsp post-execution cost:1 ms .
+[2026-07-27T16:46:09.418] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task common:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.418] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task common:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.418] [DEBUG] debug-file - Update task entry:default@SyscapTransform input file:C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\syscap_tool.exe cache by regenerate.
+[2026-07-27T16:46:09.418] [DEBUG] debug-file - Update task entry:default@SyscapTransform input file:C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\ets\api\device-define cache by regenerate.
+[2026-07-27T16:46:09.420] [DEBUG] debug-file - Update task entry:default@SyscapTransform output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\syscap\default\rpcid.sc cache.
+[2026-07-27T16:46:09.420] [DEBUG] debug-file - Incremental task entry:default@SyscapTransform post-execution cost:3 ms .
+[2026-07-27T16:46:09.420] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@ProcessRouterMap is up-to-date.
+[2026-07-27T16:46:09.420] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@ProcessShareConfig is up-to-date.
+[2026-07-27T16:46:09.420] [DEBUG] debug-file - Update task entry:default@ProcessStartupConfig output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\startup\default\startup_config.json cache.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - Incremental task entry:default@ProcessStartupConfig post-execution cost:1 ms .
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task schematic_editor:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task component_library:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task simulation_kernel:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task hex_debugger:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_api_manager:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task file_persistence:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task instruments:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task plugin_system:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task schematic_editor:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task component_library:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task simulation_kernel:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task hex_debugger:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_api_manager:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.421] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task file_persistence:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task instruments:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task plugin_system:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@GenerateLoaderJson is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_engine:default@CreateHarBuildProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_engine:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@CreateBuildProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task common:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@MergeProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task common:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@MakePackInfo is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@ProcessProfile is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@ProcessResource is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task schematic_editor:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task component_library:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task simulation_kernel:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task hex_debugger:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_api_manager:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.422] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task file_persistence:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.423] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task instruments:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.423] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task plugin_system:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.424] [DEBUG] debug-file - Update task entry:default@CompileResource input file:C:\Projects\ElecDraw_Harmony\entry\src\main\resources cache from map.
+[2026-07-27T16:46:09.424] [DEBUG] debug-file - Update task entry:default@CompileResource input file:C:\Projects\ElecDraw_Harmony\AppScope\resources cache by regenerate.
+[2026-07-27T16:46:09.425] [DEBUG] debug-file - Update task entry:default@CompileResource input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\process_profile\default\module.json cache by regenerate.
+[2026-07-27T16:46:09.425] [DEBUG] debug-file - Update task entry:default@CompileResource input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resConfig.json cache by regenerate.
+[2026-07-27T16:46:09.426] [DEBUG] debug-file - Update task entry:default@CompileResource output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default cache.
+[2026-07-27T16:46:09.464] [DEBUG] debug-file - Update task entry:default@CompileResource output file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\r\default\ResourceTable.h cache.
+[2026-07-27T16:46:09.464] [DEBUG] debug-file - Update task entry:default@CompileResource output file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\r\default\ResourceTable.ts cache.
+[2026-07-27T16:46:09.465] [DEBUG] debug-file - Update task entry:default@CompileResource output file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\r\default cache.
+[2026-07-27T16:46:09.465] [DEBUG] debug-file - Incremental task entry:default@CompileResource post-execution cost:43 ms .
+[2026-07-27T16:46:09.465] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task schematic_editor:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task component_library:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task simulation_kernel:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task hex_debugger:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_api_manager:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task file_persistence:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task instruments:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.466] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task plugin_system:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.469] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader\default cache by regenerate.
+[2026-07-27T16:46:09.470] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\common\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.470] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\schematic_editor\Index.ets cache from map.
+[2026-07-27T16:46:09.470] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\component_library\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.470] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\simulation_kernel\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\hex_debugger\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_api_manager\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_engine\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\file_persistence\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\instruments\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.471] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\plugin_system\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.472] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\common\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.482] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\schematic_editor\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.484] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\component_library\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.486] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\simulation_kernel\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.488] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\hex_debugger\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.489] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_api_manager\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.491] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.498] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\file_persistence\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.501] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\instruments\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.502] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\plugin_system\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.504] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources\rawfile cache by regenerate.
+[2026-07-27T16:46:09.531] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\ResourceTable.txt cache by regenerate.
+[2026-07-27T16:46:09.532] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\ark_module.json cache by regenerate.
+[2026-07-27T16:46:09.532] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources\base\profile cache by regenerate.
+[2026-07-27T16:46:09.532] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\src\main\ets cache by regenerate.
+[2026-07-27T16:46:09.538] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\profile\default\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.538] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\common\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.538] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\schematic_editor\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.538] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\component_library\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.538] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\simulation_kernel\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\hex_debugger\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_api_manager\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\ai_engine\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\file_persistence\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\instruments\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS input file:C:\Projects\ElecDraw_Harmony\features\plugin_system\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.539] [DEBUG] debug-file - Update task entry:default@CompileArkTS output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader_out\default\ets cache.
+[2026-07-27T16:46:09.540] [DEBUG] debug-file - Incremental task entry:default@CompileArkTS post-execution cost:75 ms .
+[2026-07-27T16:46:09.542] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader\default cache by regenerate.
+[2026-07-27T16:46:09.543] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\common\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.543] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\schematic_editor\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.543] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\component_library\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\simulation_kernel\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\hex_debugger\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\ai_api_manager\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\ai_engine\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\file_persistence\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.544] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\instruments\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.545] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\features\plugin_system\Index.ets cache by regenerate.
+[2026-07-27T16:46:09.545] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources\rawfile cache by regenerate.
+[2026-07-27T16:46:09.581] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\ResourceTable.txt cache by regenerate.
+[2026-07-27T16:46:09.581] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\ark_module.json cache by regenerate.
+[2026-07-27T16:46:09.582] [DEBUG] debug-file - Update task entry:default@BuildJS input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources\base\profile cache by regenerate.
+[2026-07-27T16:46:09.582] [DEBUG] debug-file - Update task entry:default@BuildJS output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader_out\default\js cache.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - Incremental task entry:default@BuildJS post-execution cost:43 ms .
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_engine:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task ai_engine:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@ProcessLibs is up-to-date.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@DoNativeStrip is up-to-date.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - There is no need to refresh cache, since the incremental task entry:default@CacheNativeLibs is up-to-date.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - Update task entry:default@GeneratePkgModuleJson input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\module.json cache from map.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - Update task entry:default@GeneratePkgModuleJson output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\package\default\module.json cache.
+[2026-07-27T16:46:09.583] [DEBUG] debug-file - Incremental task entry:default@GeneratePkgModuleJson post-execution cost:1 ms .
+[2026-07-27T16:46:09.584] [DEBUG] debug-file - Incremental task entry:default@ProcessCompiledResources post-execution cost:1 ms .
+[2026-07-27T16:46:09.584] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\stripped_native_libs\default cache by regenerate.
+[2026-07-27T16:46:09.585] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\module.json cache from map.
+[2026-07-27T16:46:09.585] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources cache by regenerate.
+[2026-07-27T16:46:09.621] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\res\default\resources.index cache by regenerate.
+[2026-07-27T16:46:09.621] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\pack.info cache by regenerate.
+[2026-07-27T16:46:09.622] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader_out\default\ets cache by regenerate.
+[2026-07-27T16:46:09.622] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader\default\pkgSdkInfo.json cache by regenerate.
+[2026-07-27T16:46:09.622] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader_out\default\ets\sourceMaps.map cache by regenerate.
+[2026-07-27T16:46:09.622] [DEBUG] debug-file - Update task entry:default@PackageHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\generated\profile\default\BuildProfile.ets cache by regenerate.
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Update task entry:default@PackageHap output file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\entry-default-unsigned.hap cache.
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Update task entry:default@PackageHap output file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\source_map\default\sourceMaps.map cache.
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Update task entry:default@PackageHap output file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\mapping\sourceMaps.map cache.
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Incremental task entry:default@PackageHap post-execution cost:40 ms .
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Update task entry:default@SignHap input file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\entry-default-unsigned.hap cache from map.
+[2026-07-27T16:46:09.623] [DEBUG] debug-file - Update task entry:default@SignHap output file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\entry-default-signed.hap cache.
+[2026-07-27T16:46:09.624] [DEBUG] debug-file - Incremental task entry:default@SignHap post-execution cost:1 ms .
+[2026-07-27T16:46:09.624] [DEBUG] debug-file - Update task entry:default@CollectDebugSymbol input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\loader_out\default\ets\sourceMaps.map cache by regenerate.
+[2026-07-27T16:46:09.624] [DEBUG] debug-file - Update task entry:default@CollectDebugSymbol input file:C:\Projects\ElecDraw_Harmony\entry\build\default\intermediates\libs\default cache by regenerate.
+[2026-07-27T16:46:09.625] [DEBUG] debug-file - Update task entry:default@CollectDebugSymbol output file:C:\Projects\ElecDraw_Harmony\entry\build\default\outputs\default\symbol cache.
+[2026-07-27T16:46:09.625] [DEBUG] debug-file - Incremental task entry:default@CollectDebugSymbol post-execution cost:1 ms .
+[2026-07-27T16:46:09.677] [DEBUG] debug-file - Cleanup worker 14.
+[2026-07-27T16:46:09.677] [DEBUG] debug-file - Worker 14 has been cleaned up.
+[2026-07-27T16:46:09.677] [DEBUG] debug-file - Current idle worker size: 1.
+[2026-07-27T16:46:09.677] [DEBUG] debug-file - Current resident worker size: 2.
+[2026-07-27T16:46:09.679] [DEBUG] debug-file - hvigor build process will be closed.
+[2026-07-27T16:46:09.685] [DEBUG] debug-file - session manager: send message to worker process.
+[2026-07-27T16:46:09.686] [DEBUG] debug-file - session manager: send message to worker process.
+[2026-07-27T16:46:09.687] [DEBUG] debug-file - watch worker: worker id should be larger than 0. Nothing will be sent to any worker thread.
+[2026-07-27T16:46:09.687] [DEBUG] debug-file - worker[14] exits with exit code 1.
+[2026-07-27T16:46:09.687] [DEBUG] debug-file - watch worker: worker id should be larger than 0. Nothing will be sent to any worker thread.
