@@ -1,0 +1,717 @@
+{
+  "lib_dev_id": "STM32F407VG",
+  "name": "STM32F407VG",
+  "vendor": "STMicroelectronics",
+  "category": "mcu_stm32",
+  "sub_category": "teaching",
+  "symbol_file": "../../Common/mcu_stm32.svg",
+  "sim_model_file": "STM32F1.model.mcu",
+  "model_type": "mcu_stm32",
+  "is_mcu": true,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VDD",
+      "pin_type": "power",
+      "x": -50,
+      "y": -250
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "VSS",
+      "pin_type": "ground",
+      "x": -50,
+      "y": -240
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "VDDA",
+      "pin_type": "power",
+      "x": -50,
+      "y": -230
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "VSSA",
+      "pin_type": "ground",
+      "x": -50,
+      "y": -220
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "BOOT0",
+      "pin_type": "input",
+      "x": -50,
+      "y": -210
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "NRST",
+      "pin_type": "input",
+      "x": -50,
+      "y": -200
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "OSC_IN",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -190
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "OSC_OUT",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -180
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "PA0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -170
+    },
+    {
+      "pin_id": "10",
+      "pin_label": "PA1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -160
+    },
+    {
+      "pin_id": "11",
+      "pin_label": "PA2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -150
+    },
+    {
+      "pin_id": "12",
+      "pin_label": "PA3",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -140
+    },
+    {
+      "pin_id": "13",
+      "pin_label": "PA4",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -130
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "PA5",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -120
+    },
+    {
+      "pin_id": "15",
+      "pin_label": "PA6",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -110
+    },
+    {
+      "pin_id": "16",
+      "pin_label": "PA7",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -100
+    },
+    {
+      "pin_id": "17",
+      "pin_label": "PA8",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -90
+    },
+    {
+      "pin_id": "18",
+      "pin_label": "PA9",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -80
+    },
+    {
+      "pin_id": "19",
+      "pin_label": "PA10",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -70
+    },
+    {
+      "pin_id": "20",
+      "pin_label": "PA11",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -60
+    },
+    {
+      "pin_id": "21",
+      "pin_label": "PA12",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -50
+    },
+    {
+      "pin_id": "22",
+      "pin_label": "PA13",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -40
+    },
+    {
+      "pin_id": "23",
+      "pin_label": "PA14",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -30
+    },
+    {
+      "pin_id": "24",
+      "pin_label": "PA15",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -20
+    },
+    {
+      "pin_id": "25",
+      "pin_label": "PB0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -10
+    },
+    {
+      "pin_id": "26",
+      "pin_label": "PB1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 0
+    },
+    {
+      "pin_id": "27",
+      "pin_label": "PB2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 10
+    },
+    {
+      "pin_id": "28",
+      "pin_label": "PB3",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 20
+    },
+    {
+      "pin_id": "29",
+      "pin_label": "PB4",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 30
+    },
+    {
+      "pin_id": "30",
+      "pin_label": "PB5",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 40
+    },
+    {
+      "pin_id": "31",
+      "pin_label": "PB6",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 50
+    },
+    {
+      "pin_id": "32",
+      "pin_label": "PB7",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 60
+    },
+    {
+      "pin_id": "33",
+      "pin_label": "PB8",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 70
+    },
+    {
+      "pin_id": "34",
+      "pin_label": "PB9",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 80
+    },
+    {
+      "pin_id": "35",
+      "pin_label": "PB10",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 90
+    },
+    {
+      "pin_id": "36",
+      "pin_label": "PB11",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 100
+    },
+    {
+      "pin_id": "37",
+      "pin_label": "PB12",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 110
+    },
+    {
+      "pin_id": "38",
+      "pin_label": "PB13",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 120
+    },
+    {
+      "pin_id": "39",
+      "pin_label": "PB14",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 130
+    },
+    {
+      "pin_id": "40",
+      "pin_label": "PB15",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 140
+    },
+    {
+      "pin_id": "41",
+      "pin_label": "PC0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 150
+    },
+    {
+      "pin_id": "42",
+      "pin_label": "PC1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 160
+    },
+    {
+      "pin_id": "43",
+      "pin_label": "PC2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 170
+    },
+    {
+      "pin_id": "44",
+      "pin_label": "PC3",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 180
+    },
+    {
+      "pin_id": "45",
+      "pin_label": "PC4",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 190
+    },
+    {
+      "pin_id": "46",
+      "pin_label": "PC5",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 200
+    },
+    {
+      "pin_id": "47",
+      "pin_label": "PC6",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 210
+    },
+    {
+      "pin_id": "48",
+      "pin_label": "PC7",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 220
+    },
+    {
+      "pin_id": "49",
+      "pin_label": "PD0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 230
+    },
+    {
+      "pin_id": "50",
+      "pin_label": "PD1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 240
+    },
+    {
+      "pin_id": "51",
+      "pin_label": "PD2",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -250
+    },
+    {
+      "pin_id": "52",
+      "pin_label": "PD3",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -240
+    },
+    {
+      "pin_id": "53",
+      "pin_label": "PD4",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -230
+    },
+    {
+      "pin_id": "54",
+      "pin_label": "PD5",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -220
+    },
+    {
+      "pin_id": "55",
+      "pin_label": "PD6",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -210
+    },
+    {
+      "pin_id": "56",
+      "pin_label": "PD7",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -200
+    },
+    {
+      "pin_id": "57",
+      "pin_label": "PD8",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -190
+    },
+    {
+      "pin_id": "58",
+      "pin_label": "PD9",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -180
+    },
+    {
+      "pin_id": "59",
+      "pin_label": "PD10",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -170
+    },
+    {
+      "pin_id": "60",
+      "pin_label": "PD11",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -160
+    },
+    {
+      "pin_id": "61",
+      "pin_label": "PD12",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -150
+    },
+    {
+      "pin_id": "62",
+      "pin_label": "PD13",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -140
+    },
+    {
+      "pin_id": "63",
+      "pin_label": "PD14",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -130
+    },
+    {
+      "pin_id": "64",
+      "pin_label": "PD15",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -120
+    },
+    {
+      "pin_id": "65",
+      "pin_label": "PE0",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -110
+    },
+    {
+      "pin_id": "66",
+      "pin_label": "PE1",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -100
+    },
+    {
+      "pin_id": "67",
+      "pin_label": "PE2",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -90
+    },
+    {
+      "pin_id": "68",
+      "pin_label": "PE3",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -80
+    },
+    {
+      "pin_id": "69",
+      "pin_label": "PE4",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -70
+    },
+    {
+      "pin_id": "70",
+      "pin_label": "PE5",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -60
+    },
+    {
+      "pin_id": "71",
+      "pin_label": "PE6",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -50
+    },
+    {
+      "pin_id": "72",
+      "pin_label": "PE7",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -40
+    },
+    {
+      "pin_id": "73",
+      "pin_label": "PE8",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -30
+    },
+    {
+      "pin_id": "74",
+      "pin_label": "PE9",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -20
+    },
+    {
+      "pin_id": "75",
+      "pin_label": "PE10",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -10
+    },
+    {
+      "pin_id": "76",
+      "pin_label": "PE11",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 0
+    },
+    {
+      "pin_id": "77",
+      "pin_label": "PE12",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 10
+    },
+    {
+      "pin_id": "78",
+      "pin_label": "PE13",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 20
+    },
+    {
+      "pin_id": "79",
+      "pin_label": "PE14",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 30
+    },
+    {
+      "pin_id": "80",
+      "pin_label": "PE15",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 40
+    },
+    {
+      "pin_id": "81",
+      "pin_label": "PC8",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 50
+    },
+    {
+      "pin_id": "82",
+      "pin_label": "PC9",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 60
+    },
+    {
+      "pin_id": "83",
+      "pin_label": "PC10",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 70
+    },
+    {
+      "pin_id": "84",
+      "pin_label": "PC11",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 80
+    },
+    {
+      "pin_id": "85",
+      "pin_label": "PC12",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 90
+    },
+    {
+      "pin_id": "86",
+      "pin_label": "PC13",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 100
+    },
+    {
+      "pin_id": "87",
+      "pin_label": "PC14",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 110
+    },
+    {
+      "pin_id": "88",
+      "pin_label": "PC15",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 120
+    },
+    {
+      "pin_id": "89",
+      "pin_label": "PF0",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 130
+    },
+    {
+      "pin_id": "90",
+      "pin_label": "PF1",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 140
+    },
+    {
+      "pin_id": "91",
+      "pin_label": "PF2",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 150
+    },
+    {
+      "pin_id": "92",
+      "pin_label": "PF3",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 160
+    },
+    {
+      "pin_id": "93",
+      "pin_label": "PF4",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 170
+    },
+    {
+      "pin_id": "94",
+      "pin_label": "PF5",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 180
+    },
+    {
+      "pin_id": "95",
+      "pin_label": "PF6",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 190
+    },
+    {
+      "pin_id": "96",
+      "pin_label": "PF7",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 200
+    },
+    {
+      "pin_id": "97",
+      "pin_label": "PF8",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 210
+    },
+    {
+      "pin_id": "98",
+      "pin_label": "PF9",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 220
+    },
+    {
+      "pin_id": "99",
+      "pin_label": "PF10",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 230
+    },
+    {
+      "pin_id": "100",
+      "pin_label": "PF11",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 240
+    }
+  ],
+  "default_params": {
+    "clock": "168MHz"
+  }
+}

@@ -24,7 +24,7 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
   return [
     // —— 电源符号 ——
     f('VCC',
-      '【VCC】必须写 param_constraint.voltage；数字常用 5V/3.3V，运放双电源正轨常用 12V。',
+      '【VCC】必须写 param_constraint.voltage；数字常用 5V/3.3V；双电源运放正轨常用 12V；单电源运放常用 5V。',
       '【VCC 网】joinByLabel；所有芯片 VCC/VDD/V+ 与上拉高端并入；禁止与 GND/VEE 同网。'),
     f('GND',
       '【GND】系统地参考，无 voltage。',

@@ -16,7 +16,7 @@ import {
 
 } from '../types/CommonTypes';
 
-import { ErcError } from '../types/TopologyTypes';
+import { ErcError, RouteLine } from '../types/TopologyTypes';
 
 import { HexFileInfo } from '../types/HexExtendedTypes';
 
@@ -1556,36 +1556,23 @@ export function traceSimStep(
 
 
 export function traceCaptureWave(
-
   channel: number, probe: string, source: string, pointCount: number, lastV: number,
-
-  vpp: number = 0, rawSpanSec: number = 0, estFreq: number = 0): void {
-
+  vpp: number = 0, rawSpanSec: number = 0, estFreq: number = 0,
+  timebaseLabel: string = ''): void {
   const spanMs = rawSpanSec * 1e3;
-
+  const tb = timebaseLabel.length > 0 ? ` tb=${timebaseLabel}` : '';
   const msg =
-
     `scope CH${channel + 1} probe=${probe.length > 18 ? probe.substring(0, 18) : probe} ` +
-
     `src=${source} pts=${pointCount} last=${lastV.toFixed(4)}V ` +
-
-    `Vpp=${vpp.toFixed(4)}V span=${spanMs.toFixed(3)}ms f=${estFreq > 0 ? estFreq.toFixed(1) : '--'}Hz`;
-
-  // 短窗/低 Vpp 用 info，便于现场确认是否仍在「仿真时间几乎不前进」
-
-  if (vpp < 0.05 || rawSpanSec < 5e-4 || source === 'history' || source === 'flatDC') {
-
+    `Vpp=${vpp.toFixed(4)}V span=${spanMs.toFixed(3)}ms f=${estFreq > 0 ? estFreq.toFixed(1) : '--'}Hz${tb}`;
+  // 短窗/低 Vpp / 长窗(易左侧拥挤) 用 info，便于现场确认
+  if (vpp < 0.05 || rawSpanSec < 5e-4 || rawSpanSec > 0.5 ||
+    source === 'history' || source === 'flatDC' || source === 'historyLonger') {
     Logger.info(INSTR_TRACE_TAG, msg);
-
   } else {
-
     Logger.debug(INSTR_TRACE_TAG, msg);
-
   }
-
 }
-
-
 
 export function traceUiRefresh(
 
@@ -1889,6 +1876,53 @@ export function traceAiDiag(prefix: string, stage: string, lines: string[],
   if (n > show) {
     Logger.info(INSTR_TRACE_TAG,
       `[${prefix}] DIAG ${stage} <<< truncated +${n - show}`);
+  }
+}
+
+/**
+ * AI 画线明细 — 过滤 instr_trace 前缀 [AI_WIRE] DRAW
+ * via: war | net_plan_stub | fix_stub | a_star | other
+ */
+export function traceAiWireDraw(via: string, detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] DRAW via=${via} | ${detail}`);
+}
+
+/**
+ * AI 拆线/改线明细 — 过滤 [AI_WIRE] DROP / MOVE
+ * action: DROP（删导线）| MOVE（脚改挂网）| KEEP（幂等跳过）
+ */
+export function traceAiWireFix(action: string, detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] ${action} | ${detail}`);
+}
+
+/**
+ * AI 导线清单快照 — 过滤 [AI_WIRE] INV
+ * stage 例：net_plan_end / war_end / fix_batch_end / finalize
+ */
+export function traceAiWireInventory(stage: string, wires: RouteLine[],
+  netNameOf: (netUuid: string) => string, maxLines: number = 40): void {
+  const n = wires.length;
+  const show = Math.min(n, Math.max(1, maxLines));
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} | total=${n}` +
+    `${n > show ? ` show=${show}` : ''}`);
+  if (n === 0) {
+    Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} | (no wires)`);
+    return;
+  }
+  for (let i = 0; i < show; i++) {
+    const w = wires[i];
+    const pts = w.points ?? [];
+    const a = pts.length > 0 ? pts[0] : undefined;
+    const b = pts.length > 0 ? pts[pts.length - 1] : undefined;
+    const ends = a && b
+      ? `(${Math.round(a.x)},${Math.round(a.y)})→(${Math.round(b.x)},${Math.round(b.y)})`
+      : '(no-pts)';
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_WIRE] INV|${stage}|${i} wireId=${w.uuid ?? '?'} net=${netNameOf(w.netUuid)}` +
+      ` pts=${pts.length} ${ends}`);
+  }
+  if (n > show) {
+    Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} <<< truncated +${n - show}`);
   }
 }
 

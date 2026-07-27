@@ -1,0 +1,80 @@
+{
+  "lib_dev_id": "LOGIC_ANALYZER",
+  "name": "Logic Analyzer",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "logic",
+  "symbol_file": "../Common/logic_analyzer.svg",
+  "sim_model_file": "LOGIC_ANALYZER.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "CH1",
+      "pin_type": "input",
+      "x": -40,
+      "y": -40
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "CH2",
+      "pin_type": "input",
+      "x": -40,
+      "y": -30
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "CH3",
+      "pin_type": "input",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "CH4",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "CH5",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "CH6",
+      "pin_type": "input",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "CH7",
+      "pin_type": "input",
+      "x": -40,
+      "y": 20
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "CH8",
+      "pin_type": "input",
+      "x": -40,
+      "y": 30
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -40,
+      "y": 40
+    }
+  ],
+  "default_params": {
+    "channels": "8"
+  }
+}

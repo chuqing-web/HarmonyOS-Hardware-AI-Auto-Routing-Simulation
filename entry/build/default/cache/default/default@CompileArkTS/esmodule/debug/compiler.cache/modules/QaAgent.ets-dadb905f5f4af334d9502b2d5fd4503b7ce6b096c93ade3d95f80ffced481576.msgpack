@@ -1,0 +1,300 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ–/**
+ * QaAgent â€” ç»ˆæ£€é—¨ç¦ï¼›æœ€å¤š QA_FIX_ROUNDS æœ‰é™ä¿®å¤ï¼Œç¦æ­¢ FORCE_COMPLETE è„äº¤ä»˜
+ */
+import { emptySchTopology, Logger, INSTR_TRACE_TAG } from 'common';
+import { QA_FIX_ROUNDS } from './StageHooks';
+import { WarRouteAdapter } from '../WarRouteAdapter';
+export class QaAgent {
+    constructor(routeAgent) {
+        this.routeAgent = routeAgent;
+    }
+    begin(bb) {
+        bb.log('qa begin');
+        Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=qa begin runId=${bb.runId}`);
+    }
+    /**
+     * hardFailï¼šæ®‹ç•™åˆ™å…ˆæœ‰é™ WAR å†æ£€ï¼›ä»è„ â†’ ABORT ç©ºæ‹“æ‰‘ã€‚
+     */
+    async gate(bb, result, hardFail, isCancel) {
+        if (!hardFail) {
+            this.end(bb, !!result.ercClean, 'soft');
+            const soft = { ok: !!result.ercClean, abort: false, result: result };
+            return soft;
+        }
+        if (result.deliveredWithResidual || !result.ercClean) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_AGENT] QaAgent residual â€” limited WAR x${QA_FIX_ROUNDS}`);
+            if (result.topology && result.topology.deviceList.length > 0) {
+                result.topology.wireList = WarRouteAdapter.stripNonStubWires(result.topology.wireList);
+                const war = await this.routeAgent.ensureWar(result.topology, isCancel);
+                if (!war.ok) {
+                    Logger.error(INSTR_TRACE_TAG, `[AI_AGENT] ABORT qa | WAR ${war.reason}`);
+                    this.end(bb, false, war.reason);
+                    bb.abort('qa', war.reason);
+                    const abortPipe = {
+                        topology: emptySchTopology(),
+                        usedLlm: result.usedLlm,
+                        degradedMode: false,
+                        ercClean: false,
+                        geoBlocking: result.geoBlocking ?? 0,
+                        agentAbortStage: 'qa',
+                        agentAbortReason: war.reason,
+                        requirementSpec: bb.requirementSpec,
+                        ercErrors: [{
+                                errType: 'qa_war',
+                                targetUuid: '',
+                                desc: war.reason,
+                                suggest: 'è°ƒæ•´æ‘†æ”¾æˆ–ç®€åŒ–è¿çº¿åé‡è¯•',
+                                severity: 'error'
+                            }]
+                    };
+                    const abortOut = { ok: false, abort: true, result: abortPipe };
+                    return abortOut;
+                }
+            }
+            // æ®‹ç•™/æœªæ¸…é›¶ï¼šéé˜»å¡ï¼Œå¸¦è­¦å‘Šäº¤ä»˜ï¼ˆä¸Šå±‚ AppService åšè½¯æ¥å—å†³ç­–ï¼‰
+            if (result.deliveredWithResidual || !result.ercClean) {
+                Logger.warn(INSTR_TRACE_TAG, `[AI_AGENT] QA residual warn ercClean=${result.ercClean}` +
+                    ` residual=${!!result.deliveredWithResidual}`);
+                this.end(bb, false, 'residual_warn');
+                // ä¸æŠ¹é™¤æ‹“æ‰‘ï¼šä¿ç•™æœ‰ç”¨ç»“æœï¼Œæ ‡è®° deliveredWithResidual è®©ä¸Šå±‚çŸ¥æƒ…
+                const warnPipe = {
+                    topology: result.topology,
+                    usedLlm: result.usedLlm,
+                    degradedMode: false,
+                    ercClean: result.ercClean,
+                    geoBlocking: result.geoBlocking ?? 0,
+                    deliveredWithResidual: true,
+                    agentAbortStage: '',
+                    agentAbortReason: '',
+                    requirementSpec: bb.requirementSpec,
+                    selectResult: result.selectResult,
+                    ercErrors: result.ercErrors ?? [],
+                    needsClarification: false,
+                    clarificationQuestions: []
+                };
+                const warnOut = { ok: true, abort: false, result: warnPipe };
+                return warnOut;
+            }
+        }
+        this.end(bb, true, 'pass');
+        const pass = { ok: true, abort: false, result: result };
+        return pass;
+    }
+    end(bb, ok, detail = '') {
+        bb.log(`qa ${ok ? 'ok' : 'fail'} ${detail}`);
+        Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=qa ${ok ? 'ok' : 'fail'} ${detail}`);
+    }
+}
+//# sourceMappingURL=QaAgent.js.mapÂ“Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageHooks.etsÙ[C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\WarRouteAdapter.etsÙZC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\QaAgent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName©./QaAgent©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚã/**
+ * QaAgent â€” ç»ˆæ£€é—¨ç¦ï¼›æœ€å¤š QA_FIX_ROUNDS æœ‰é™ä¿®å¤ï¼Œç¦æ­¢ FORCE_COMPLETE è„äº¤ä»˜
+ */
+import {
+  AiPipelineResult, emptySchTopology, Logger, INSTR_TRACE_TAG
+} from 'common';
+import { CircuitBlackboard } from './CircuitBlackboard';
+import { RouteAgent } from './RouteAgent';
+import { QA_FIX_ROUNDS } from './StageHooks';
+import { WarRouteAdapter } from '../WarRouteAdapter';
+
+export interface QaAgentResult {
+  ok: boolean;
+  abort: boolean;
+  result: AiPipelineResult;
+}
+
+export class QaAgent {
+  private routeAgent: RouteAgent;
+
+  constructor(routeAgent: RouteAgent) {
+    this.routeAgent = routeAgent;
+  }
+
+  begin(bb: CircuitBlackboard): void {
+    bb.log('qa begin');
+    Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=qa begin runId=${bb.runId}`);
+  }
+
+  /**
+   * hardFailï¼šæ®‹ç•™åˆ™å…ˆæœ‰é™ WAR å†æ£€ï¼›ä»è„ â†’ ABORT ç©ºæ‹“æ‰‘ã€‚
+   */
+  async gate(bb: CircuitBlackboard, result: AiPipelineResult, hardFail: boolean,
+    isCancel?: () => boolean): Promise<QaAgentResult> {
+    if (!hardFail) {
+      this.end(bb, !!result.ercClean, 'soft');
+      const soft: QaAgentResult = { ok: !!result.ercClean, abort: false, result: result };
+      return soft;
+    }
+
+    if (result.deliveredWithResidual || !result.ercClean) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[AI_AGENT] QaAgent residual â€” limited WAR x${QA_FIX_ROUNDS}`);
+      if (result.topology && result.topology.deviceList.length > 0) {
+        result.topology.wireList = WarRouteAdapter.stripNonStubWires(result.topology.wireList);
+        const war = await this.routeAgent.ensureWar(result.topology, isCancel);
+        if (!war.ok) {
+          Logger.error(INSTR_TRACE_TAG, `[AI_AGENT] ABORT qa | WAR ${war.reason}`);
+          this.end(bb, false, war.reason);
+          bb.abort('qa', war.reason);
+          const abortPipe: AiPipelineResult = {
+            topology: emptySchTopology(),
+            usedLlm: result.usedLlm,
+            degradedMode: false,
+            ercClean: false,
+            geoBlocking: result.geoBlocking ?? 0,
+            agentAbortStage: 'qa',
+            agentAbortReason: war.reason,
+            requirementSpec: bb.requirementSpec,
+            ercErrors: [{
+              errType: 'qa_war',
+              targetUuid: '',
+              desc: war.reason,
+              suggest: 'è°ƒæ•´æ‘†æ”¾æˆ–ç®€åŒ–è¿çº¿åé‡è¯•',
+              severity: 'error'
+            }]
+          };
+          const abortOut: QaAgentResult = { ok: false, abort: true, result: abortPipe };
+          return abortOut;
+        }
+      }
+      // æ®‹ç•™/æœªæ¸…é›¶ï¼šéé˜»å¡ï¼Œå¸¦è­¦å‘Šäº¤ä»˜ï¼ˆä¸Šå±‚ AppService åšè½¯æ¥å—å†³ç­–ï¼‰
+      if (result.deliveredWithResidual || !result.ercClean) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_AGENT] QA residual warn ercClean=${result.ercClean}` +
+          ` residual=${!!result.deliveredWithResidual}`);
+        this.end(bb, false, 'residual_warn');
+        // ä¸æŠ¹é™¤æ‹“æ‰‘ï¼šä¿ç•™æœ‰ç”¨ç»“æœï¼Œæ ‡è®° deliveredWithResidual è®©ä¸Šå±‚çŸ¥æƒ…
+        const warnPipe: AiPipelineResult = {
+          topology: result.topology,
+          usedLlm: result.usedLlm,
+          degradedMode: false,
+          ercClean: result.ercClean,
+          geoBlocking: result.geoBlocking ?? 0,
+          deliveredWithResidual: true,
+          agentAbortStage: '',  // ä¸è®¾ abortï¼Œå…è®¸äº¤ä»˜
+          agentAbortReason: '',
+          requirementSpec: bb.requirementSpec,
+          selectResult: result.selectResult,
+          ercErrors: result.ercErrors ?? [],
+          needsClarification: false,
+          clarificationQuestions: []
+        };
+        const warnOut: QaAgentResult = { ok: true, abort: false, result: warnPipe };
+        return warnOut;
+      }
+    }
+
+    this.end(bb, true, 'pass');
+    const pass: QaAgentResult = { ok: true, abort: false, result: result };
+    return pass;
+  }
+
+  end(bb: CircuitBlackboard, ok: boolean, detail: string = ''): void {
+    bb.log(`qa ${ok ? 'ok' : 'fail'} ${detail}`);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_AGENT] stage=qa ${ok ? 'ok' : 'fail'} ${detail}`);
+  }
+}
+ÀÔrE“¬./StageHooks²../WarRouteAdapter¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageHooks.etsAÃªoh-resolveÂFAÂÙ[C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\WarRouteAdapter.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappingsªQaAgent.js ‘«QaAgent.etsÜ W‘”    ‘” œ”   ” ”	 ” $” &”! ,”# .”2 =”4 ”: ”ÌB ”ÌC ˜”   ” ”	 	” ” ” ”, ,”- -˜”  	 ” 	”	 		” 	” 	”  	 ”4 	4”5 	5””   ” ” ” “” ” ” $—” ” ” 	” ” ”$  ”% !’” ” ”” ”	 ”
+ ” ˜” ”
+ ” ” 
+” ” ” ” ” ” 
+” ” ” ”# ”% !”ÌH ÌD”ÌJ ÌF”ÌK ÌG”ÌP ÌL”ÌR ÌN”ÌS ÌO”ÌT ÌP’” ” ‘” ‘” œ”  ”	  ”
+  ”  ”  ”  "”  $”  <”  >”#  ÌO”% !”- !•” "” "” "	” "” "Ü ” #” #
+” #” #” #” #” #” #” #”! #”" #”* #$”, #&”2 #,”3 #-”4 #.Ü ” $” $” $” $"” $$” $&” $(”  $)”! $*”' $0”( $1”0 $9”2 $;”7 $Ì@”9 $ÌB”> $ÌG”Ì@ $ÌI”ÌF $ÌO”ÌH $ÌQ”ÌN $ÌW”ÌP $ÌY”ÌQ $ÌZ”” %” %” %” %‘”	 &›” (” (” (” (”( ($”, ((”- ()”3 (/”4 (0”< (8”> (:œ” )” )” )” )” )”' )!”) *”ÌW *6”Ìd *ÌC”Ìf *ÌE”Ìg *ÌF”Ìh *ÌGÜ ” +” +
+” +” +” +”# +”) +#”* +$”2 +,”3 +-”= +7”> +8”ÌD +>”ÌG +ÌA”ÌH +ÌB”ÌJ +ÌDÜ ” ,” ,” ,” ,”  ,”( , ”+ ,#”: ,2”; ,3”ÌL ,ÌD”ÌM ,ÌE”ÌS ,ÌK”ÌT ,ÌL”Ì\ ,ÌT”Ì] ,ÌU”Ìe ,Ì]”Ìf ,Ì^”Ìg ,Ì_Ü ” -” -” -” -”" -”& -”' -”1 -)”2 -*”; -3”< -4”ÌB -:”ÌC -;”ÌK -ÌC”ÌM -ÌE”ÌU -ÌM”ÌV -ÌN”ÌW -ÌO—” .” .” .” .” .” .” .” /
+” /” /”  /”! /”0 /&”2 /(”ÌO /ÌE”ÌR /ÌH”ÌS /ÌI”ÌY /ÌO”Ì[ /ÌQ”Ì\ /ÌR”Ì] /ÌS” 0
+” 0” 0” 0” 0” 0”! 0”& 0”( 0”+ 0!”, 0"”2 0(”3 0)”4 0*œ” 1
+” 1” 1” 1” 1”! 1”# 1”& 1”' 1”- 1#”. 1$”/ 1%”” 2
+” 2”# 2”& 2.•” 3”  3”" 3”2 3&”4 3(–” 4” 4”! 4”' 4”( 4”/ 4#”” 5”$ 5”& 5”+ 5”” 6”  6”" 6”' 6˜” 7”# 7”% 7”+ 7”, 7 ”7 7+”; 7/”< 70”” 8”' 8”) 8”- 8!–” 9”( 9”* 9”- 9!”. 9"”4 9(–” :”' :”) :”+ :”, : ”; :/”” ;”! ;”# ;”$ ;””  <”' <”) <”1 <””  =”* =”, =”. =–”  >”$ >”& >”) >”* >”0 >””  ?”' ?”) ?”7 ?%””  Ì@”( Ì@”* Ì@”1 Ì@’” ÌA” ÌA’” ÌB” ÌBÜ ” ÌC
+” ÌC”" ÌC”% ÌC*”' ÌC,”) ÌC.”+ ÌC0”0 ÌC5”2 ÌC7”7 ÌC<”9 ÌC>”= ÌCÌB”? ÌCÌD”ÌE ÌCÌJ”ÌG ÌCÌL”ÌP ÌCÌU”ÌR ÌCÌW”ÌS ÌCÌX”” ÌD
+” ÌD”# ÌD”$ ÌD‘” ÌE	‘” ÌF’” ÌG”5 ÌG/›” ÌH” ÌH
+” ÌH” ÌH”, ÌH&”0 ÌH*”1 ÌH+”7 ÌH1”8 ÌH2”Ì@ ÌH:”ÌB ÌH<œ” ÌI” ÌI” ÌI” ÌI” ÌI”+ ÌI#”- ÌJ
+”ÌU ÌJ2”Ì[ ÌJ8”Ì\ ÌJ9”Ìd ÌJÌA”Ìf ÌJÌCš” ÌK
+”! ÌK”" ÌK”# ÌK”) ÌK”* ÌK ”? ÌK5”ÌA ÌK7”ÌB ÌK8”ÌC ÌK9œ” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL”" ÌL”$ ÌL”3 ÌL+”4 ÌL,”5 ÌL-’” ÌM”> ÌM6”” ÌN” ÌN” ÌN”! ÌN+–” ÌO
+” ÌO” ÌO”$ ÌO”% ÌO”- ÌO#–” ÌP
+” ÌP” ÌP”# ÌP”$ ÌP”+ ÌP!”” ÌQ
+”  ÌQ”" ÌQ”' ÌQ–” ÌR
+” ÌR” ÌR”$ ÌR”% ÌR”- ÌR#˜” ÌS
+” ÌS”! ÌS”' ÌS”( ÌS”3 ÌS)”7 ÌS-”8 ÌS.”” ÌT
+”) ÌT”+ ÌT!”/ ÌT%”” ÌU
+”# ÌU”% ÌU”' ÌU”” ÌV
+”$ ÌV”& ÌV”( ÌV–” ÌW
+”# ÌW”% ÌW”' ÌW”( ÌW”7 ÌW-–” ÌX
+”  ÌX”" ÌX”( ÌX”) ÌX”5 ÌX+˜” ÌY
+” ÌY” ÌY”% ÌY”& ÌY”/ ÌY%”3 ÌY)”5 ÌY+”” ÌZ
+”& ÌZ”( ÌZ”- ÌZ#”” Ì[
+”* Ì[ ”, Ì["”. Ì[$’” Ì\	” Ì\
+Ü ” Ì]” Ì]” Ì]”  Ì]'”" Ì])”$ Ì]+”& Ì]-”* Ì]1”, Ì]3”1 Ì]8”3 Ì]:”8 Ì]?”: Ì]ÌA”Ì@ Ì]ÌG”ÌB Ì]ÌI”ÌJ Ì]ÌQ”ÌL Ì]ÌS”ÌM Ì]ÌT”” Ì^” Ì^” Ì^” Ì^‘” Ì_‘”	 Ì`œ” Ìb” Ìb” Ìb	” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb”! Ìb”" Ìb”# ÌbÜ ” Ìc” Ìc
+” Ìc” Ìc ” Ìc"” Ìc$” Ìc&” Ìc*”! Ìc,”& Ìc1”( Ìc3”- Ìc8”/ Ìc:”5 ÌcÌ@”7 ÌcÌB”= ÌcÌH”? ÌcÌJ”Ì@ ÌcÌK”” Ìd” Ìd” Ìd” Ìd’” Ìe” Ìe™” Ìg” Ìg” Ìg”
+ Ìg” Ìg” Ìg(” Ìg*” Ìg;” Ìg=Ü ” Ìh”
+ Ìh” Ìh” Ìh
+” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh”  Ìh”! Ìh”' Ìh#”+ Ìh'”1 Ìh-”3 Ìh/”4 Ìh0”5 Ìh1Ü ” Ìi” Ìi
+” Ìi” Ìi” Ìi”# Ìi”% Ìj”< Ìj”> Ìj”? Ìj ”Ì@ Ìj!”ÌA Ìj"”ÌE Ìj&”ÌF Ìj'”ÌG Ìj(”ÌH Ìj)”ÌN Ìj/”ÌR Ìj3”ÌX Ìj9”ÌZ Ìj;”Ì[ Ìj<”Ì\ Ìj=’” Ìk” Ìk‘” ÌlÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ X‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌôÍ·ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌûÍ·ÔrM”¤type¥start£end¤nameªIdentifierÍÍ§QaAgentÀÔrN”¤type¥start£end¤body©ClassBodyÍ	Í·”ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍÍWÂÂMªIdentifierÍÍ«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍÍWÀÂÂÂ‘MªIdentifierÍÍ&ªrouteAgentN®BlockStatementÍ(ÍW‘ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍ3ÍPÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ3ÍO¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ3ÍBÔrT“¤type¥start£end®ThisExpressionÍ3Í7MªIdentifierÍ8ÍBªrouteAgentÂÂMªIdentifierÍEÍOªrouteAgentO°MethodDefinitionÍ]ÍâÂÂMªIdentifierÍ]Íb¥begin¦methodP²FunctionExpressionÍbÍâÀÂÂÂ‘MªIdentifierÍcÍe¢bbN®BlockStatementÍgÍâ’Q³ExpressionStatementÍrÍ…ÔrU–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍrÍ„S°MemberExpressionÍrÍxMªIdentifierÍrÍt¢bbMªIdentifierÍuÍx£logÂÂ‘ÔrV•¤type¥start£end¥value£raw§LiteralÍyÍƒ¨qa beginª'qa begin'ÂQ³ExpressionStatementÍÍÛU®CallExpressionÍÍÚS°MemberExpressionÍÍšMªIdentifierÍÍ•¦LoggerMªIdentifierÍ–Íš¤infoÂÂ’MªIdentifierÍ›Íª¯INSTR_TRACE_TAGÔrW•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ¬ÍÙ‘S°MemberExpressionÍÏÍ×MªIdentifierÍÏÍÑ¢bbMªIdentifierÍÒÍ×¥runIdÂÂ’ÔrX•¤type¥start£end¥value¤tail¯TemplateElementÍ­ÍÍÔrY’£raw¦cookedÙ [AI_AGENT] stage=qa begin runId=Ù [AI_AGENT] stage=qa begin runId=ÂX¯TemplateElementÍØÍØY  ÃÂO°MethodDefinitionÍ)ÍøÂÂMªIdentifierÍ/Í3¤gate¦methodP²FunctionExpressionÍ3ÍøÀÂÂÃ”MªIdentifierÍ4Í6¢bbMªIdentifierÍ8Í>¦resultMªIdentifierÍ@ÍH¨hardFailMªIdentifierÍJÍR¨isCancelN®BlockStatementÍTÍø•ÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ_ÍÔr[–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍcÍl¡!ÃMªIdentifierÍdÍl¨hardFailN®BlockStatementÍnÍ“Q³ExpressionStatementÍ}Í¥U®CallExpressionÍ}Í¤S°MemberExpressionÍ}Í…T®ThisExpressionÍ}ÍMªIdentifierÍ‚Í…£endÂÂ“MªIdentifierÍ†Íˆ¢bb[¯UnaryExpressionÍŠÍ›¡!Ã[¯UnaryExpressionÍ‹Í›¡!ÃS°MemberExpressionÍŒÍ›MªIdentifierÍŒÍ’¦resultMªIdentifierÍ“Í›¨ercCleanÂÂV§LiteralÍÍ£¤soft¦'soft'ÂÔr\•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ³Íø‘Ôr]•¤type¥start£end¢id¤init²VariableDeclaratorÍ¹Í÷MªIdentifierÍ¹Í½¤softÔr^”¤type¥start£endªproperties°ObjectExpressionÍÀÍ÷“Ôr_™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÂÍ×ÂÂÂMªIdentifierÍÂÍÄ¢ok[¯UnaryExpressionÍÆÍ×¡!Ã[¯UnaryExpressionÍÇÍ×¡!ÃS°MemberExpressionÍÈÍ×MªIdentifierÍÈÍÎ¦resultMªIdentifierÍÏÍ×¨ercCleanÂÂ¤init_¨PropertyÍÙÍåÂÂÂMªIdentifierÍÙÍŞ¥abortV§LiteralÍàÍåÂ¥false¤init_¨PropertyÍçÍõÂÂÂMªIdentifierÍçÍí¦resultMªIdentifierÍïÍõ¦result¤init¥constÔr`”¤type¥start£end¨argument¯ReturnStatementÍÍMªIdentifierÍÍ¤softÀZ«IfStatementÍ'ÍtÔra–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ+Í[S°MemberExpressionÍ+ÍGMªIdentifierÍ+Í1¦resultMªIdentifierÍ2ÍGµdeliveredWithResidualÂÂ¢||[¯UnaryExpressionÍKÍ[¡!ÃS°MemberExpressionÍLÍ[MªIdentifierÍLÍR¦resultMªIdentifierÍSÍ[¨ercCleanÂÂN®BlockStatementÍ]Ít“Q³ExpressionStatementÍlÍÈU®CallExpressionÍlÍÇS°MemberExpressionÍlÍwMªIdentifierÍlÍr¦LoggerMªIdentifierÍsÍw¤warnÂÂ’MªIdentifierÍxÍ‡¯INSTR_TRACE_TAGW¯TemplateLiteralÍ‰ÍÆ‘MªIdentifierÍ·ÍÄ­QA_FIX_ROUNDS’X¯TemplateElementÍŠÍµYÙ-[AI_AGENT] QaAgent residual â€” limited WAR xÙ-[AI_AGENT] QaAgent residual â€” limited WAR xÂX¯TemplateElementÍÅÍÅY  ÃÂZ«IfStatementÍÖÍ	Œa±LogicalExpressionÍÚÍS°MemberExpressionÍÚÍéMªIdentifierÍÚÍà¦resultMªIdentifierÍáÍé¨topologyÂÂ¢&&a°BinaryExpressionÍíÍS°MemberExpressionÍíÍS°MemberExpressionÍíÍS°MemberExpressionÍíÍüMªIdentifierÍíÍó¦resultMªIdentifierÍôÍü¨topologyÂÂMªIdentifierÍıÍªdeviceListÂÂMªIdentifierÍÍ¦lengthÂÂ¡>V§LiteralÍÍ ¡0N®BlockStatementÍÍ	Œ“Q³ExpressionStatementÍ'Í~R´AssignmentExpressionÍ'Í}¡=S°MemberExpressionÍ'Í?S°MemberExpressionÍ'Í6MªIdentifierÍ'Í-¦resultMªIdentifierÍ.Í6¨topologyÂÂMªIdentifierÍ7Í?¨wireListÂÂU®CallExpressionÍBÍ}S°MemberExpressionÍBÍcMªIdentifierÍBÍQ¯WarRouteAdapterMªIdentifierÍRÍc±stripNonStubWiresÂÂ‘S°MemberExpressionÍdÍ|S°MemberExpressionÍdÍsMªIdentifierÍdÍj¦resultMªIdentifierÍkÍs¨topologyÂÂMªIdentifierÍtÍ|¨wireListÂÂÂ\³VariableDeclarationÍÍ×‘]²VariableDeclaratorÍ–ÍÖMªIdentifierÍ–Í™£war`¯AwaitExpressionÍœÍÖU®CallExpressionÍ¢ÍÖS°MemberExpressionÍ¢Í»S°MemberExpressionÍ¢Í±T®ThisExpressionÍ¢Í¦MªIdentifierÍ§Í±ªrouteAgentÂÂMªIdentifierÍ²Í»©ensureWarÂÂ’S°MemberExpressionÍ¼ÍËMªIdentifierÍ¼ÍÂ¦resultMªIdentifierÍÃÍË¨topologyÂÂMªIdentifierÍÍÍÕ¨isCancelÂ¥constZ«IfStatementÍéÍ	}[¯UnaryExpressionÍíÍô¡!ÃS°MemberExpressionÍîÍôMªIdentifierÍîÍñ£warMªIdentifierÍòÍô¢okÂÂN®BlockStatementÍöÍ	}–Q³ExpressionStatementÍÍVU®CallExpressionÍÍUS°MemberExpressionÍÍMªIdentifierÍÍ¦LoggerMªIdentifierÍÍ¥errorÂÂ’MªIdentifierÍÍ)¯INSTR_TRACE_TAGW¯TemplateLiteralÍ+ÍT‘S°MemberExpressionÍHÍRMªIdentifierÍHÍK£warMªIdentifierÍLÍR¦reasonÂÂ’X¯TemplateElementÍ,ÍFYº[AI_AGENT] ABORT qa | WAR º[AI_AGENT] ABORT qa | WAR ÂX¯TemplateElementÍSÍSY  ÃÂQ³ExpressionStatementÍlÍŒU®CallExpressionÍlÍ‹S°MemberExpressionÍlÍtT®ThisExpressionÍlÍpMªIdentifierÍqÍt£endÂÂ“MªIdentifierÍuÍw¢bbV§LiteralÍyÍ~Â¥falseS°MemberExpressionÍ€ÍŠMªIdentifierÍ€Íƒ£warMªIdentifierÍ„ÍŠ¦reasonÂÂÂQ³ExpressionStatementÍ¢Í½U®CallExpressionÍ¢Í¼S°MemberExpressionÍ¢ÍªMªIdentifierÍ¢Í¤¢bbMªIdentifierÍ¥Íª¥abortÂÂ’V§LiteralÍ«Í¯¢qa¤'qa'S°MemberExpressionÍ±Í»MªIdentifierÍ±Í´£warMªIdentifierÍµÍ»¦reasonÂÂÂ\³VariableDeclarationÍÓÍï‘]²VariableDeclaratorÍÙÍîMªIdentifierÍÙÍâ©abortPipe^°ObjectExpressionÍåÍî™_¨PropertyÍ ÍÂÂÂMªIdentifierÍ Í¨topologyU®CallExpressionÍ
+ÍMªIdentifierÍ
+Í°emptySchTopologyÂ¤init_¨PropertyÍ7ÍNÂÂÂMªIdentifierÍ7Í>§usedLlmS°MemberExpressionÍ@ÍNMªIdentifierÍ@ÍF¦resultMªIdentifierÍGÍN§usedLlmÂÂ¤init_¨PropertyÍiÍ|ÂÂÂMªIdentifierÍiÍu¬degradedModeV§LiteralÍwÍ|Â¥false¤init_¨PropertyÍ—Í¦ÂÂÂMªIdentifierÍ—ÍŸ¨ercCleanV§LiteralÍ¡Í¦Â¥false¤init_¨PropertyÍÁÍåÂÂÂMªIdentifierÍÁÍÌ«geoBlockinga±LogicalExpressionÍÎÍåS°MemberExpressionÍÎÍàMªIdentifierÍÎÍÔ¦resultMªIdentifierÍÕÍà«geoBlockingÂÂ¢??V§LiteralÍäÍå ¡0¤init_¨PropertyÍ ÍÂÂÂMªIdentifierÍ Í¯agentAbortStageV§LiteralÍÍ¢qa¤'qa'¤init_¨PropertyÍ0ÍLÂÂÂMªIdentifierÍ0Í@°agentAbortReasonS°MemberExpressionÍBÍLMªIdentifierÍBÍE£warMªIdentifierÍFÍL¦reasonÂÂ¤init_¨PropertyÍgÍŠÂÂÂMªIdentifierÍgÍv¯requirementSpecS°MemberExpressionÍxÍŠMªIdentifierÍxÍz¢bbMªIdentifierÍ{ÍŠ¯requirementSpecÂÂ¤init_¨PropertyÍ¥Í×ÂÂÂMªIdentifierÍ¥Í®©ercErrorsÔrb”¤type¥start£end¨elements¯ArrayExpressionÍ°Í×‘^°ObjectExpressionÍ±ÍÖ•_¨PropertyÍÔÍåÂÂÂMªIdentifierÍÔÍÛ§errTypeV§LiteralÍİÍå¦qa_war¨'qa_war'¤init_¨PropertyÍÍÂÂÂMªIdentifierÍÍªtargetUuidV§LiteralÍÍ ¢''¤init_¨PropertyÍ9ÍIÂÂÂMªIdentifierÍ9Í=¤descS°MemberExpressionÍ?ÍIMªIdentifierÍ?ÍB£warMªIdentifierÍCÍI¦reasonÂÂ¤init_¨PropertyÍlÍƒÂÂÂMªIdentifierÍlÍs§suggestV§LiteralÍuÍƒÙ$è°ƒæ•´æ‘†æ”¾æˆ–ç®€åŒ–è¿çº¿åé‡è¯•Ù&'è°ƒæ•´æ‘†æ”¾æˆ–ç®€åŒ–è¿çº¿åé‡è¯•'¤init_¨PropertyÍ¦Í·ÂÂÂMªIdentifierÍ¦Í®¨severityV§LiteralÍ°Í·¥error§'error'¤init¤init¥const\³VariableDeclarationÍ	Í	D‘]²VariableDeclaratorÍ	Í	CMªIdentifierÍ	Í	¨abortOut^°ObjectExpressionÍ	Í	C“_¨PropertyÍ	Í	!ÂÂÂMªIdentifierÍ	Í	¢okV§LiteralÍ	Í	!Â¥false¤init_¨PropertyÍ	#Í	.ÂÂÂMªIdentifierÍ	#Í	(¥abortV§LiteralÍ	*Í	.Ã¤true¤init_¨PropertyÍ	0Í	AÂÂÂMªIdentifierÍ	0Í	6¦resultMªIdentifierÍ	8Í	A©abortPipe¤init¥const`¯ReturnStatementÍ	ZÍ	jMªIdentifierÍ	aÍ	i¨abortOutÀÀZ«IfStatementÍ	ÑÍia±LogicalExpressionÍ	ÕÍ
+S°MemberExpressionÍ	ÕÍ	ñMªIdentifierÍ	ÕÍ	Û¦resultMªIdentifierÍ	ÜÍ	ñµdeliveredWithResidualÂÂ¢||[¯UnaryExpressionÍ	õÍ
+¡!ÃS°MemberExpressionÍ	öÍ
+MªIdentifierÍ	öÍ	ü¦resultMªIdentifierÍ	ıÍ
+¨ercCleanÂÂN®BlockStatementÍ
+Íi•Q³ExpressionStatementÍ
+Í
+·U®CallExpressionÍ
+Í
+¶S°MemberExpressionÍ
+Í
+%MªIdentifierÍ
+Í
+ ¦LoggerMªIdentifierÍ
+!Í
+%¤warnÂÂ’MªIdentifierÍ
+&Í
+5¯INSTR_TRACE_TAGa°BinaryExpressionÍ
+7Í
+µW¯TemplateLiteralÍ
+7Í
+p‘S°MemberExpressionÍ
+_Í
+nMªIdentifierÍ
+_Í
+e¦resultMªIdentifierÍ
+fÍ
+n¨ercCleanÂÂ’X¯TemplateElementÍ
+8Í
+]YÙ%[AI_AGENT] QA residual warn ercClean=Ù%[AI_AGENT] QA residual warn ercClean=ÂX¯TemplateElementÍ
+oÍ
+oY  Ã¡+W¯TemplateLiteralÍ
+ˆÍ
+µ‘[¯UnaryExpressionÍ
+•Í
+³¡!Ã[¯UnaryExpressionÍ
+–Í
+³¡!ÃS°MemberExpressionÍ
+—Í
+³MªIdentifierÍ
+—Í
+¦resultMªIdentifierÍ
+Í
+³µdeliveredWithResidualÂÂ’X¯TemplateElementÍ
+‰Í
+“Yª residual=ª residual=ÂX¯TemplateElementÍ
+´Í
+´Y  ÃÂQ³ExpressionStatementÍ
+ÉÍ
+îU®CallExpressionÍ
+ÉÍ
+íS°MemberExpressionÍ
+ÉÍ
+ÑT®ThisExpressionÍ
+ÉÍ
+ÍMªIdentifierÍ
+ÎÍ
+Ñ£endÂÂ“MªIdentifierÍ
+ÒÍ
+Ô¢bbV§LiteralÍ
+ÖÍ
+ÛÂ¥falseV§LiteralÍ
+İÍ
+ì­residual_warn¯'residual_warn'Â\³VariableDeclarationÍ@Íê‘]²VariableDeclaratorÍFÍéMªIdentifierÍFÍN¨warnPipe^°ObjectExpressionÍQÍé_¨PropertyÍhÍÂÂÂMªIdentifierÍhÍp¨topologyS°MemberExpressionÍrÍMªIdentifierÍrÍx¦resultMªIdentifierÍyÍ¨topologyÂÂ¤init_¨PropertyÍ˜Í¯ÂÂÂMªIdentifierÍ˜ÍŸ§usedLlmS°MemberExpressionÍ¡Í¯MªIdentifierÍ¡Í§¦resultMªIdentifierÍ¨Í¯§usedLlmÂÂ¤init_¨PropertyÍÆÍÙÂÂÂMªIdentifierÍÆÍÒ¬degradedModeV§LiteralÍÔÍÙÂ¥false¤init_¨PropertyÍğÍ	ÂÂÂMªIdentifierÍğÍø¨ercCleanS°MemberExpressionÍúÍ	MªIdentifierÍúÍ ¦resultMªIdentifierÍÍ	¨ercCleanÂÂ¤init_¨PropertyÍ ÍDÂÂÂMªIdentifierÍ Í+«geoBlockinga±LogicalExpressionÍ-ÍDS°MemberExpressionÍ-Í?MªIdentifierÍ-Í3¦resultMªIdentifierÍ4Í?«geoBlockingÂÂ¢??V§LiteralÍCÍD ¡0¤init_¨PropertyÍ[ÍvÂÂÂMªIdentifierÍ[ÍpµdeliveredWithResidualV§LiteralÍrÍvÃ¤true¤init_¨PropertyÍÍ ÂÂÂMªIdentifierÍÍœ¯agentAbortStageV§LiteralÍÍ  ¢''¤init_¨PropertyÍ·ÍËÂÂÂMªIdentifierÍ·ÍÇ°agentAbortReasonV§LiteralÍÉÍË ¢''¤init_¨PropertyÍâÍÂÂÂMªIdentifierÍâÍñ¯requirementSpecS°MemberExpressionÍóÍMªIdentifierÍóÍõ¢bbMªIdentifierÍöÍ¯requirementSpecÂÂ¤init_¨PropertyÍÍ=ÂÂÂMªIdentifierÍÍ(¬selectResultS°MemberExpressionÍ*Í=MªIdentifierÍ*Í0¦resultMªIdentifierÍ1Í=¬selectResultÂÂ¤init_¨PropertyÍTÍuÂÂÂMªIdentifierÍTÍ]©ercErrorsa±LogicalExpressionÍ_ÍuS°MemberExpressionÍ_ÍoMªIdentifierÍ_Íe¦resultMªIdentifierÍfÍo©ercErrorsÂÂ¢??b¯ArrayExpressionÍsÍu¤init_¨PropertyÍŒÍ¥ÂÂÂMªIdentifierÍŒÍ²needsClarificationV§LiteralÍ Í¥Â¥false¤init_¨PropertyÍ¼ÍÖÂÂÂMªIdentifierÍ¼ÍÒ¶clarificationQuestionsb¯ArrayExpressionÍÔÍÖ¤init¥const\³VariableDeclarationÍüÍ9‘]²VariableDeclaratorÍÍ8MªIdentifierÍÍ	§warnOut^°ObjectExpressionÍÍ8“_¨PropertyÍÍÂÂÂMªIdentifierÍÍ¢okV§LiteralÍÍÃ¤true¤init_¨PropertyÍÍ$ÂÂÂMªIdentifierÍÍ¥abortV§LiteralÍÍ$Â¥false¤init_¨PropertyÍ&Í6ÂÂÂMªIdentifierÍ&Í,¦resultMªIdentifierÍ.Í6¨warnPipe¤init¥const`¯ReturnStatementÍKÍZMªIdentifierÍRÍY§warnOutÀÀQ³ExpressionStatementÍ~Í™U®CallExpressionÍ~Í˜S°MemberExpressionÍ~Í†T®ThisExpressionÍ~Í‚MªIdentifierÍƒÍ†£endÂÂ“MªIdentifierÍ‡Í‰¢bbV§LiteralÍ‹ÍÃ¤trueV§LiteralÍ‘Í—¤pass¦'pass'Â\³VariableDeclarationÍ£ÍÛ‘]²VariableDeclaratorÍ©ÍÚMªIdentifierÍ©Í­¤pass^°ObjectExpressionÍ°ÍÚ“_¨PropertyÍ²ÍºÂÂÂMªIdentifierÍ²Í´¢okV§LiteralÍ¶ÍºÃ¤true¤init_¨PropertyÍ¼ÍÈÂÂÂMªIdentifierÍ¼ÍÁ¥abortV§LiteralÍÃÍÈÂ¥false¤init_¨PropertyÍÊÍØÂÂÂMªIdentifierÍÊÍĞ¦resultMªIdentifierÍÒÍØ¦result¤init¥const`¯ReturnStatementÍåÍñMªIdentifierÍìÍğ¤passO°MethodDefinitionÍşÍ´ÂÂMªIdentifierÍşÍ£end¦methodP²FunctionExpressionÍÍ´ÀÂÂÂ“MªIdentifierÍÍ¢bbMªIdentifierÍÍ¢okÔrc•¤type¥start£end¤left¥right±AssignmentPatternÍ
+ÍMªIdentifierÍ
+Í¦detailV§LiteralÍÍ ¢''N®BlockStatementÍÍ´’Q³ExpressionStatementÍ"ÍOU®CallExpressionÍ"ÍNS°MemberExpressionÍ"Í(MªIdentifierÍ"Í$¢bbMªIdentifierÍ%Í(£logÂÂ‘W¯TemplateLiteralÍ)ÍM’ZµConditionalExpressionÍ/ÍAMªIdentifierÍ/Í1¢okV§LiteralÍ4Í8¢ok¤'ok'V§LiteralÍ;ÍA¤fail¦'fail'MªIdentifierÍEÍK¦detail“X¯TemplateElementÍ*Í-Y£qa £qa ÂX¯TemplateElementÍBÍCY¡ ¡ ÂX¯TemplateElementÍLÍLY  ÃÂQ³ExpressionStatementÍYÍ­U®CallExpressionÍYÍ¬S°MemberExpressionÍYÍdMªIdentifierÍYÍ_¦LoggerMªIdentifierÍ`Íd¤infoÂÂ’MªIdentifierÍeÍt¯INSTR_TRACE_TAGW¯TemplateLiteralÍvÍ«’ZµConditionalExpressionÍÍŸMªIdentifierÍÍ¢okV§LiteralÍ’Í–¢ok¤'ok'V§LiteralÍ™ÍŸ¤fail¦'fail'MªIdentifierÍ£Í©¦detail“X¯TemplateElementÍwÍ‹Y´[AI_AGENT] stage=qa ´[AI_AGENT] stage=qa ÂX¯TemplateElementÍ Í¡Y¡ ¡ ÂX¯TemplateElementÍªÍªY  ÃÂÀ“Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclarationÌIÌŒ“Ôre•¤type¥start£end¨imported¥local¯ImportSpecifierÌRÌbMªIdentifierÌRÌb°emptySchTopologyMªIdentifierÌRÌb°emptySchTopologye¯ImportSpecifierÌdÌjMªIdentifierÌdÌj¦LoggerMªIdentifierÌdÌj¦Loggere¯ImportSpecifierÌlÌ{MªIdentifierÌlÌ{¯INSTR_TRACE_TAGMªIdentifierÌlÌ{¯INSTR_TRACE_TAGV§LiteralÌƒÌ‹¦common¨'common'd±ImportDeclarationÌÌ»‘e¯ImportSpecifierÌ—Ì¤MªIdentifierÌ—Ì¤­QA_FIX_ROUNDSMªIdentifierÌ—Ì¤­QA_FIX_ROUNDSV§LiteralÌ¬Ìº¬./StageHooks®'./StageHooks'd±ImportDeclarationÌ½Ìò‘e¯ImportSpecifierÌÆÌÕMªIdentifierÌÆÌÕ¯WarRouteAdapterMªIdentifierÌÆÌÕ¯WarRouteAdapterV§LiteralÌİÌñ²../WarRouteAdapter´'../WarRouteAdapter'

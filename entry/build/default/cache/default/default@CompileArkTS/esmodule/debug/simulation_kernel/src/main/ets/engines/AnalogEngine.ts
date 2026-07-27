@@ -138,6 +138,14 @@ interface OpAmpModel {
     comparatorMode: boolean;
     /** Latched output polarity for comparatorMode (hysteresis memory). */
     compHigh: boolean;
+    /**
+     * Schmitt IN- is an integrator OUT (C across that amp's OUT↔IN-).
+     * With triangle on IN- + HYS on IN+, ideal inverting Schmitt + inverting
+     * integrator latches; use non-inverting trip so the loop oscillates.
+     */
+    oscillatorSense: boolean;
+    /** β = Rlo/(Rhi+Rlo) of OUT—R—IN+—R—GND divider (fixed trip levels). */
+    hystBeta: number;
 }
 interface VoltageSourceEntry {
     id: string;
@@ -1166,7 +1174,7 @@ export class AnalogEngine {
                     // A=1e4 is still ≫ closed-loop gain of lab circuits; 1e5 Ill-conditions the MNA.
                     id: devId, nodeOut: nO, nodeInP: nP, nodeInN: nN,
                     nodeVcc: rails[0], nodeVee: rails[1], gain: 10000, bw: 1e6,
-                    comparatorMode: false, compHigh: false
+                    comparatorMode: false, compHigh: false, oscillatorSense: false, hystBeta: 0.1
                 });
                 this.compUuidToDevId.set(comp.id, [devId]);
                 Logger.info(INSTR_TRACE_TAG, `[MNA] ${comp.refDes} ${devId} lib=${comp.libraryId} OUT=${nO} IN+=${nP} IN-=${nN} V+=${rails[0]} V-=${rails[1]}`);
@@ -1518,6 +1526,14 @@ export class AnalogEngine {
     getTimer555Count(): number {
         return this.timer555s.length;
     }
+    /** Capacitors in the loaded netlist (RC / integrator dynamics). */
+    getCapacitorCount(): number {
+        return this.capacitors.length;
+    }
+    /** Behavioral op-amps (Schmitt / integrator oscillators need ms-scale bursts). */
+    getOpampCount(): number {
+        return this.opamps.length;
+    }
     /**
      * After updateRelayContactsFromCoil(): whether a DC re-solve is required.
      * Relay contact changes need OP; 555 OUT/DISCH updates must NOT run DC OP mid-transient
@@ -1650,8 +1666,78 @@ export class AnalogEngine {
             }
         }
     }
+    /**
+     * DC OP treats C as open → capacitive-feedback amps (integrators) saturate and
+     * would seed Cf with tens of volts (lab_integrator / Schmitt+triangle osc).
+     * Pull OUT/IN− to mid-rail before seeding so the first transient steps enter
+     * the linear region and the triangle can ramp.
+     */
+    private relaxCapacitiveFeedbackOpAmps(): void {
+        for (let i = 0; i < this.opamps.length; i++) {
+            const opa = this.opamps[i];
+            if (opa.comparatorMode) {
+                continue;
+            }
+            for (let j = 0; j < this.capacitors.length; j++) {
+                const cap = this.capacitors[j];
+                const bridges = (cap.nodeA === opa.nodeOut && cap.nodeB === opa.nodeInN) ||
+                    (cap.nodeB === opa.nodeOut && cap.nodeA === opa.nodeInN);
+                if (!bridges) {
+                    continue;
+                }
+                const vcc = this.nodeVoltages.get(opa.nodeVcc) ?? this.nodeVoltages.get('VCC') ?? 5;
+                const vee = this.nodeVoltages.get(opa.nodeVee) ?? this.nodeVoltages.get('0') ?? 0;
+                // Bipolar ±12V → mid≈0; single-supply → mid-rail
+                const mid = 0.5 * (vcc + vee);
+                this.nodeVoltages.set(opa.nodeOut, mid);
+                this.nodeVoltages.set(opa.nodeInN, mid);
+                if (!this.quietLoad) {
+                    Logger.info(INSTR_TRACE_TAG, `[MNA] ${opa.id} relax capacitive FB: OUT/IN- → ${mid.toFixed(3)}V (DC-OP sat recovery)`);
+                }
+            }
+        }
+        this.seedSchmittIntegratorOutsideBand();
+    }
+    /**
+     * oscillatorSense Schmitt has no stable DC point when |triangle| < Vth (HYS tracks
+     * OUT → chatters near 0V @ ~dt rate, Vpp≪rail). Seed triangle above +Vth with
+     * square latched high so the first ramp crosses the trip and oscillates.
+     */
+    private seedSchmittIntegratorOutsideBand(): void {
+        for (let i = 0; i < this.opamps.length; i++) {
+            const sch = this.opamps[i];
+            if (!sch.comparatorMode || !sch.oscillatorSense) {
+                continue;
+            }
+            const vcc = this.nodeVoltages.get(sch.nodeVcc) ?? this.nodeVoltages.get('VCC') ?? 5;
+            const vee = this.nodeVoltages.get(sch.nodeVee) ?? this.nodeVoltages.get('0') ?? 0;
+            const vSatHi = Math.max(vee + 0.3, vcc - 1.5);
+            const beta = sch.hystBeta > 1e-6 ? sch.hystBeta : 0.1;
+            const vth = beta * Math.abs(vSatHi);
+            // Park triangle above +Vth so non-inv trip stays HIGH until first ramp-down
+            const vTri = Math.max(vth * 1.5, vth + 0.5);
+            this.nodeVoltages.set(sch.nodeInN, vTri);
+            this.nodeVoltages.set(sch.nodeOut, vSatHi);
+            sch.compHigh = true;
+            this.nodeVoltages.set(sch.nodeInP, beta * vSatHi);
+            if (!this.quietLoad) {
+                Logger.info(INSTR_TRACE_TAG, `[MNA] ${sch.id} osc IC: TRIANGLE=${vTri.toFixed(3)}V SQUARE=${vSatHi.toFixed(3)}V ` +
+                    `Vth≈${vth.toFixed(3)}V (outside hysteresis band)`);
+            }
+            // Keep integrator virtual ground at mid; OUT already set via nodeInN===TRIANGLE
+            for (let j = 0; j < this.opamps.length; j++) {
+                const intg = this.opamps[j];
+                if (intg.comparatorMode || intg.nodeOut !== sch.nodeInN) {
+                    continue;
+                }
+                const mid = 0.5 * (vcc + vee);
+                this.nodeVoltages.set(intg.nodeInN, mid);
+            }
+        }
+    }
     /** After DC OP: capacitors keep Vop with i=0; inductors keep i with v≈0. */
     private seedReactiveFromOp(): void {
+        this.relaxCapacitiveFeedbackOpAmps();
         for (const cap of this.capacitors) {
             const vA = this.nodeVoltages.get(cap.nodeA) ?? 0;
             const vB = this.nodeVoltages.get(cap.nodeB) ?? 0;
@@ -2037,6 +2123,9 @@ export class AnalogEngine {
      * Positive-feedback (Schmitt) paths OUT↔IN+ without OUT↔IN- make the linear VCVS
      * admit an unstable mid-point (Vout≈Vin/β). Detect that topology and use a
      * latched rail comparator instead; keep linear+soft-rail for negative-FB amps.
+     *
+     * When IN- is driven by a capacitive-feedback integrator, mark oscillatorSense:
+     * inverting Schmitt + inverting integrator would latch; trip as non-inverting.
      */
     private classifyOpAmpFeedbackModes(): void {
         for (let i = 0; i < this.opamps.length; i++) {
@@ -2044,10 +2133,65 @@ export class AnalogEngine {
             const negFb = this.nodesResistivelyCoupled(opa.nodeOut, opa.nodeInN);
             const posFb = this.nodesResistivelyCoupled(opa.nodeOut, opa.nodeInP);
             opa.comparatorMode = posFb && !negFb;
-            if (opa.comparatorMode && !this.quietLoad) {
-                Logger.info(INSTR_TRACE_TAG, `[MNA] ${opa.id} comparatorMode (pos-FB Schmitt) OUT=${opa.nodeOut} IN+=${opa.nodeInP}`);
+            opa.oscillatorSense = false;
+            opa.hystBeta = 0.1;
+            if (opa.comparatorMode) {
+                opa.oscillatorSense = this.isCapacitiveIntegratorOutput(opa.nodeInN);
+                opa.hystBeta = this.computePosFbBeta(opa);
+                if (!this.quietLoad) {
+                    const sense = opa.oscillatorSense ? ' oscillatorSense(non-inv trip)' : '';
+                    Logger.info(INSTR_TRACE_TAG, `[MNA] ${opa.id} comparatorMode (pos-FB Schmitt) OUT=${opa.nodeOut} ` +
+                        `IN+=${opa.nodeInP} β=${opa.hystBeta.toFixed(4)}${sense}`);
+                }
             }
         }
+    }
+    /** β of OUT—Rhi—IN+—Rlo—GND (0 if divider incomplete). */
+    private computePosFbBeta(opa: OpAmpModel): number {
+        let rHi = 0;
+        let rLo = 0;
+        for (let i = 0; i < this.resistors.length; i++) {
+            const r = this.resistors[i];
+            if (r.resistance >= 1e11) {
+                continue;
+            }
+            const touchesHys = r.nodeA === opa.nodeInP || r.nodeB === opa.nodeInP;
+            if (!touchesHys) {
+                continue;
+            }
+            const other = r.nodeA === opa.nodeInP ? r.nodeB : r.nodeA;
+            if (other === opa.nodeOut) {
+                rHi = r.resistance;
+            }
+            else if (other === '0' || other === 'GND') {
+                rLo = r.resistance;
+            }
+        }
+        if (rHi > 0 && rLo > 0) {
+            return rLo / (rHi + rLo);
+        }
+        return 0.1;
+    }
+    /** True if `node` is an op-amp OUT with a feedback C to that amp's IN-. */
+    private isCapacitiveIntegratorOutput(node: string): boolean {
+        if (node.length === 0) {
+            return false;
+        }
+        for (let i = 0; i < this.opamps.length; i++) {
+            const amp = this.opamps[i];
+            if (amp.nodeOut !== node) {
+                continue;
+            }
+            for (let j = 0; j < this.capacitors.length; j++) {
+                const cap = this.capacitors[j];
+                const bridges = (cap.nodeA === amp.nodeOut && cap.nodeB === amp.nodeInN) ||
+                    (cap.nodeB === amp.nodeOut && cap.nodeA === amp.nodeInN);
+                if (bridges) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
     /** True if two nodes are the same or linked by resistors (R < 1e11Ω). */
     private nodesResistivelyCoupled(a: string, b: string): boolean {
@@ -2107,37 +2251,78 @@ export class AnalogEngine {
         const vp = this.nodeVoltages.get(opa.nodeInP) ?? 0;
         const vn = this.nodeVoltages.get(opa.nodeInN) ?? 0;
         const vDiff = vp - vn;
-        // Schmitt / pos-FB: latch to rails (breaks unstable Vout≈Vin/β saddle).
+        // Schmitt / pos-FB: latch to rails with FIXED ±β·Vsat trip levels.
+        // Comparing against instantaneous HYS fails mid-transition: as OUT slews,
+        // HYS tracks it and re-arms the opposite trip → CH1 chatters near +rail
+        // (~0.6Vpp @ 25kHz) instead of flipping to −Vsat.
+        // Dual thresholds: high→low only at the lower trip, low→high only at the upper
+        // (or swapped for inverting Schmitt) — never re-arm from the trip we just crossed.
         if (opa.comparatorMode) {
-            const eps = 1e-4;
-            if (vDiff > eps) {
-                opa.compHigh = true;
+            const eps = 1e-3;
+            const beta = opa.hystBeta > 1e-6 ? opa.hystBeta : 0.1;
+            const vthPos = beta * vSatHi;
+            const vthNeg = beta * vSatLo;
+            if (opa.oscillatorSense) {
+                // Non-inv (integrator→IN-): square high while triangle between trips;
+                // high→low only when triangle falls below −β·|Vsat|, low→high only above +β·|Vsat|.
+                if (opa.compHigh) {
+                    if (vn < vthNeg - eps) {
+                        opa.compHigh = false;
+                    }
+                }
+                else {
+                    if (vn > vthPos + eps) {
+                        opa.compHigh = true;
+                    }
+                }
             }
-            else if (vDiff < -eps) {
-                opa.compHigh = false;
+            else {
+                // Inverting Schmitt (lab_schmitt: signal on IN-): high while signal below band;
+                // high→low when signal rises above +Vth, low→high when it falls below −Vth.
+                if (opa.compHigh) {
+                    if (vn > vthPos + eps) {
+                        opa.compHigh = false;
+                    }
+                }
+                else {
+                    if (vn < vthNeg - eps) {
+                        opa.compHigh = true;
+                    }
+                }
             }
             const vTarget = opa.compHigh ? vSatHi : vSatLo;
-            this.mnaG[no * size + no] += gOut;
-            this.mnaRhs[no] += gOut * vTarget;
+            const gLatch = 1.0;
+            this.mnaG[no * size + no] += gLatch;
+            this.mnaRhs[no] += gLatch * vTarget;
             return;
         }
         // Linear VCVS: gOut*(A*(vp−vn) − vout) = 0 ⇒ vout ≈ A*(vp−vn).
         // Soft rails act on the OUTPUT node (not A*vDiff): early Newton has huge open-loop
         // A*vDiff before feedback settles; clamping on that killed the Jacobian (lab_analog_ic).
+        // gd must dominate gOut*A when past the rail — otherwise saturated OP (−15V with
+        // VEE=−12) never recovers (Schmitt+integrator triangle stuck flat).
         const A = opa.gain;
         this.mnaG[no * size + no] += gOut;
         this.mnaG[no * size + np] -= gOut * A;
         this.mnaG[no * size + nn] += gOut * A;
         const vOut = this.nodeVoltages.get(opa.nodeOut) ?? 0;
+        const gDrive = gOut * Math.abs(A);
         if (vOut < vSatLo) {
             const over = Math.min(vSatLo - vOut, 3);
-            const gd = 0.5 + 20 * over;
+            // Near-rail: gentle soft clamp. Deep past supply (OP open-C sat): dominate VCVS.
+            let gd = 0.5 + 20 * over;
+            if (over > 0.3) {
+                gd = Math.max(gd, gDrive * 2);
+            }
             this.mnaG[no * size + no] += gd;
             this.mnaRhs[no] += gd * vSatLo;
         }
         else if (vOut > vSatHi) {
             const over = Math.min(vOut - vSatHi, 3);
-            const gd = 0.5 + 20 * over;
+            let gd = 0.5 + 20 * over;
+            if (over > 0.3) {
+                gd = Math.max(gd, gDrive * 2);
+            }
             this.mnaG[no * size + no] += gd;
             this.mnaRhs[no] += gd * vSatHi;
         }

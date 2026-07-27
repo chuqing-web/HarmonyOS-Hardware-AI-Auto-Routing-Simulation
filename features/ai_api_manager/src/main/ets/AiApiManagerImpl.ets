@@ -777,21 +777,28 @@ export class AiApiManagerImpl implements IAiApiManager {
       }
       const parsed = JSON.parse(rawBody) as ChatCompletionResponse;
       if (parsed.choices && parsed.choices.length > 0) {
-        const content = extractChoiceContent(parsed.choices[0]);
+        const choice0 = parsed.choices[0];
+        const content = extractChoiceContent(choice0);
+        const rcRaw = choice0.message !== undefined && choice0.message !== null
+          ? (choice0.message.reasoning_content ?? '') : '';
+        const rcLen = rcRaw.length;
         Logger.info(INSTR_TRACE_TAG,
-          `[AI_API] HTTP 200 id=${api.id} contentLen=${content.length}`);
+          `[AI_API] HTTP 200 id=${api.id} contentLen=${content.length}` +
+          `${rcLen > 0 ? ` reasoningLen=${rcLen}` : ''}`);
         traceAiPayload('AI_API', 'REPLY', content, `id=${api.id} model=${api.model}`);
         if (content.length === 0) {
           let finishReason = 'unknown';
-          const fr = parsed.choices[0].finish_reason;
+          const fr = choice0.finish_reason;
           if (fr !== undefined && fr !== null && fr.length > 0) {
             finishReason = fr;
           }
           Logger.warn(INSTR_TRACE_TAG,
-            `[AI_API] HTTP 200 id=${api.id} empty content finish_reason=${finishReason}`);
+            `[AI_API] HTTP 200 id=${api.id} empty content finish_reason=${finishReason}` +
+            ` reasoningLen=${rcLen}`);
           return {
             success: false,
-            error: `LLM returned empty content (finish_reason=${finishReason})`
+            error: `LLM returned empty content (finish_reason=${finishReason}` +
+              `${rcLen > 0 ? `, reasoningLen=${rcLen}` : ''})`
           };
         }
         return { success: true, data: content };

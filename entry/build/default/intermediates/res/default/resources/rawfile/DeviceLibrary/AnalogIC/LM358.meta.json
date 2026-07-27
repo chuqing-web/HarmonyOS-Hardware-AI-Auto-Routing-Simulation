@@ -4,23 +4,81 @@
   "vendor": "TI",
   "category": "analog_opamp",
   "sub_category": "dual_opamp",
-  "symbol_file": "LM358.symbol.svg",
+  "symbol_file": "../Common/opamp.svg",
   "sim_model_file": "LM358.model.spice",
   "model_type": "opamp",
   "is_mcu": false,
   "is_custom": false,
   "pin_list": [
-    {"pin_id": "1", "pin_label": "OUT1", "pin_type": "output", "x": 50, "y": -30},
-    {"pin_id": "2", "pin_label": "IN-1", "pin_type": "input", "x": -50, "y": -20},
-    {"pin_id": "3", "pin_label": "IN+1", "pin_type": "input", "x": -50, "y": -40},
-    {"pin_id": "4", "pin_label": "V-", "pin_type": "power_neg", "x": 0, "y": 50},
-    {"pin_id": "5", "pin_label": "IN+2", "pin_type": "input", "x": -50, "y": 20},
-    {"pin_id": "6", "pin_label": "IN-2", "pin_type": "input", "x": -50, "y": 40},
-    {"pin_id": "7", "pin_label": "OUT2", "pin_type": "output", "x": 50, "y": 30},
-    {"pin_id": "8", "pin_label": "V+", "pin_type": "power_pos", "x": 0, "y": -50}
+    {
+      "pin_id": "1",
+      "pin_label": "OUT1",
+      "pin_type": "output",
+      "x": 50,
+      "y": -30
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "IN-1",
+      "pin_type": "input",
+      "x": -50,
+      "y": -20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "IN+1",
+      "pin_type": "input",
+      "x": -50,
+      "y": -40
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "V-",
+      "pin_type": "power_neg",
+      "x": 0,
+      "y": 50
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "IN+2",
+      "pin_type": "input",
+      "x": -50,
+      "y": 20
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "IN-2",
+      "pin_type": "input",
+      "x": -50,
+      "y": 40
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "OUT2",
+      "pin_type": "output",
+      "x": 50,
+      "y": 30
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "V+",
+      "pin_type": "power_pos",
+      "x": 0,
+      "y": -50
+    }
   ],
-  "default_params": {"supply_voltage": "12V"},
-  "param_limit": {"supply_min": "3V", "supply_max": "32V"},
-  "erc_check_rules": ["power_pin_unconnected"],
-  "ai_route_constraint": {"is_analog_component": true, "priority": "high"}
+  "default_params": {
+    "supply_voltage": "12V"
+  },
+  "param_limit": {
+    "supply_min": "3V",
+    "supply_max": "32V"
+  },
+  "erc_check_rules": [
+    "power_pin_unconnected"
+  ],
+  "ai_route_constraint": {
+    "is_analog_component": true,
+    "priority": "high"
+  }
 }

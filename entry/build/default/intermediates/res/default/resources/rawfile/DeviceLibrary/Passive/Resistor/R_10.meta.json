@@ -1,0 +1,33 @@
+{
+  "lib_dev_id": "R_10",
+  "name": "Resistor 10Ω",
+  "vendor": "Generic",
+  "category": "passive_resistor",
+  "sub_category": "tht",
+  "symbol_file": "../../Common/R_10.svg",
+  "sim_model_file": "R_10.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "value": "10",
+    "tolerance": "5%",
+    "power": "0.25W"
+  }
+}

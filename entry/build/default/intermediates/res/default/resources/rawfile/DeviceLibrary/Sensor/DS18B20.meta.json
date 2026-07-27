@@ -1,0 +1,40 @@
+{
+  "lib_dev_id": "DS18B20",
+  "name": "DS18B20 Temperature",
+  "vendor": "Maxim",
+  "category": "sensor",
+  "sub_category": "temp",
+  "symbol_file": "../Common/DS18B20.svg",
+  "sim_model_file": "DS18B20.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "DQ",
+      "pin_type": "bidirectional",
+      "x": 0,
+      "y": 28
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "VDD",
+      "pin_type": "power",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "range": "-55~125°C",
+    "interface": "1-Wire",
+    "temp_c": "25"
+  }
+}

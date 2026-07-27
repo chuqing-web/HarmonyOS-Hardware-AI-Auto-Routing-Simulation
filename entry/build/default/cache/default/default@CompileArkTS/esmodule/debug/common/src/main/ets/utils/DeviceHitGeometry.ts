@@ -2,6 +2,7 @@ import type { Pin, Point2D } from '../types/CommonTypes';
 import type { DeviceInst, RouteLine } from '../types/TopologyTypes';
 import { calcSymbolBounds, coverOriginCenteredBody } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/SymbolGeometry";
 import type { SymbolBounds } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/SymbolGeometry";
+import { WireConflictGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/WireConflictGeometry";
 /** 与 SchematicEditorImpl.HIT_PAD 保持一致 — 点击/悬停选中外扩 */
 export const SELECTION_HIT_PAD = 22;
 /**
@@ -11,6 +12,19 @@ export const SELECTION_HIT_PAD = 22;
 export const WIRE_OBSTACLE_PAD = 6;
 /** 导线距无关引脚的最小安全距离 (mil) */
 export const FOREIGN_PIN_CLEARANCE = 20;
+/** 智能标号：避让导线/已有标号/旗标文字框 */
+export interface LabelPlaceHints {
+    /** 既有导线折线（含它网长线；本网短 stub 可省略） */
+    wirePaths?: Point2D[][];
+    /** 已放置标号锚点 */
+    occupiedLabels?: Point2D[];
+    /** 标号文本（估旗标框宽） */
+    labelText?: string;
+    /** 导线净空（默认 8） */
+    wireClearance?: number;
+    /** 标号互斥净空（默认 18） */
+    labelClearance?: number;
+}
 export interface WorldHitRect {
     x: number;
     y: number;
@@ -231,61 +245,360 @@ export class DeviceHitGeometry {
         return { x: pin.x, y: r.y + r.h + stubPad };
     }
     /**
-     * 选出不穿透异器件选中区、且距无关脚≥FOREIGN_PIN_CLEARANCE 的 stub 终点。
-     * foreignPins：调用方排除本脚后的全部引脚世界坐标（含同芯片邻脚）。
+     * 信号标号旗标框（与 SchematicCanvas.drawSignalNetLabel 对齐）。
+     * expandLeft=true：锚点左侧展开（导线从右侧接入时，避免旗标压住连接线）。
+     * 略放大估宽，避免文字实际比估算更宽时压线。
      */
-    static stubLabelOutsidePinAvoidForeign(pin: Point2D, own: WorldHitRect, foreign: WorldHitRect[], stubPad: number = 20, foreignPins?: Point2D[]): Point2D {
-        const pinClear: Point2D[] = foreignPins !== undefined ? foreignPins : [];
-        const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
-        const order: string[] = [preferred];
-        const all = ['L', 'R', 'T', 'B'];
-        for (let i = 0; i < all.length; i++) {
-            if (all[i] !== preferred) {
-                order.push(all[i]);
+    static estimateSignalLabelFlagRect(anchor: Point2D, text: string, expandLeft: boolean = false): WorldHitRect {
+        const t = (text ?? '').length > 0 ? text : 'NET';
+        const fontPx = 12;
+        const tw = Math.max(t.length * 7.2, 14);
+        const padX = 5;
+        const stubLen = 6;
+        const boxH = fontPx + 6;
+        const boxW = tw + padX * 2 + 4;
+        return {
+            x: expandLeft ? (anchor.x - stubLen - boxW) : (anchor.x + stubLen),
+            y: anchor.y - boxH / 2,
+            w: boxW,
+            h: boxH,
+            refName: '',
+            instUuid: '',
+            libDevId: ''
+        };
+    }
+    /**
+     * 根据接入导线方向推断旗标朝向：导线在锚点右侧 → 旗标向左展开。
+     */
+    static inferSignalLabelExpandLeft(anchor: Point2D, wirePaths: Point2D[][]): boolean {
+        const NEAR = 14;
+        let bestD = NEAR;
+        let expandLeft = false;
+        for (let wi = 0; wi < wirePaths.length; wi++) {
+            const path = wirePaths[wi];
+            if (!path || path.length < 2) {
+                continue;
             }
-        }
-        const pads = [stubPad, stubPad + 16, stubPad + 32, stubPad + 48, stubPad + 64,
-            stubPad + 80, stubPad + 112, stubPad + 144];
-        let bestLabel: Point2D | null = null;
-        let bestMinDist = -1;
-        for (let pi = 0; pi < pads.length; pi++) {
-            for (let ei = 0; ei < order.length; ei++) {
-                const label = DeviceHitGeometry.stubLabelOnEdge(pin, own, order[ei], pads[pi]);
-                let hitsForeign = false;
-                for (let fi = 0; fi < foreign.length; fi++) {
-                    const fr = foreign[fi];
-                    if (fr.instUuid === own.instUuid) {
-                        continue;
-                    }
-                    if (DeviceHitGeometry.segmentIntersectsRect(pin, label, fr)) {
-                        hitsForeign = true;
-                        break;
-                    }
-                    if (DeviceHitGeometry.pointInRect(label.x, label.y, fr)) {
-                        hitsForeign = true;
-                        break;
-                    }
-                }
-                if (hitsForeign) {
+            const ends: number[] = [0, path.length - 1];
+            for (let ei = 0; ei < ends.length; ei++) {
+                const idx = ends[ei];
+                const ep = path[idx];
+                const d = Math.hypot(ep.x - anchor.x, ep.y - anchor.y);
+                if (d > bestD) {
                     continue;
                 }
-                const clearOk = DeviceHitGeometry.segmentClearsForeignPins(pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
-                if (clearOk) {
-                    return label;
+                const adj = idx === 0 ? path[1] : path[path.length - 2];
+                bestD = d;
+                // 邻点在锚点右方：导线从右侧接入
+                expandLeft = adj.x > anchor.x + 2;
+            }
+            // 标号落在导线中段：哪侧延伸更长，旗标朝另一侧
+            for (let si = 1; si < path.length; si++) {
+                const wa = path[si - 1];
+                const wb = path[si];
+                if (DeviceHitGeometry.pointSegmentDistance(anchor, wa, wb) > 8) {
+                    continue;
                 }
-                const minD = DeviceHitGeometry.minDistToForeignPins(pin, label, pinClear);
-                if (minD > bestMinDist) {
-                    bestMinDist = minD;
-                    bestLabel = label;
+                const rightExt = Math.max(wa.x, wb.x) - anchor.x;
+                const leftExt = anchor.x - Math.min(wa.x, wb.x);
+                if (rightExt > leftExt + 2) {
+                    expandLeft = true;
+                }
+                else if (leftExt > rightExt + 2) {
+                    expandLeft = false;
                 }
             }
         }
-        // 仅返回满足 FOREIGN_PIN_CLEARANCE 的标号端；否则返回 null 语义用远距兜底前先拒绝
-        if (bestLabel !== null && bestMinDist >= FOREIGN_PIN_CLEARANCE) {
-            return bestLabel;
+        return expandLeft;
+    }
+    /** 矩形与线段最小距离（端点在框内视为 0） */
+    private static rectSegmentMinDist(r: WorldHitRect, a: Point2D, b: Point2D): number {
+        if (DeviceHitGeometry.pointInRect(a.x, a.y, r) ||
+            DeviceHitGeometry.pointInRect(b.x, b.y, r) ||
+            DeviceHitGeometry.segmentIntersectsRect(a, b, r)) {
+            return 0;
         }
-        // 无合格候选：仍用标准 stub（调用方应 demote），勿返回 clearance 不足的 best
-        return DeviceHitGeometry.stubLabelOutsidePin(pin, own, stubPad + 40);
+        const corners: Point2D[] = [
+            { x: r.x, y: r.y },
+            { x: r.x + r.w, y: r.y },
+            { x: r.x + r.w, y: r.y + r.h },
+            { x: r.x, y: r.y + r.h }
+        ];
+        let minD = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < corners.length; i++) {
+            const d = DeviceHitGeometry.pointSegmentDistance(corners[i], a, b);
+            if (d < minD) {
+                minD = d;
+            }
+        }
+        const samples: Point2D[] = [
+            a, b,
+            { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+            { x: (a.x * 3 + b.x) / 4, y: (a.y * 3 + b.y) / 4 },
+            { x: (a.x + b.x * 3) / 4, y: (a.y + b.y * 3) / 4 }
+        ];
+        for (let i = 0; i < samples.length; i++) {
+            const p = samples[i];
+            const dx = p.x < r.x ? r.x - p.x : (p.x > r.x + r.w ? p.x - (r.x + r.w) : 0);
+            const dy = p.y < r.y ? r.y - p.y : (p.y > r.y + r.h ? p.y - (r.y + r.h) : 0);
+            const d = Math.hypot(dx, dy);
+            if (d < minD) {
+                minD = d;
+            }
+        }
+        return minD;
+    }
+    private static rectsOverlap(a: WorldHitRect, b: WorldHitRect, pad: number = 0): boolean {
+        return !(a.x + a.w + pad < b.x || b.x + b.w + pad < a.x ||
+            a.y + a.h + pad < b.y || b.y + b.h + pad < a.y);
+    }
+    /** stub 折线（正交 1～2 段）是否侵入器件体（本脚逃逸走廊放行） */
+    private static stubHitsDeviceBody(pin: Point2D, mid: Point2D | null, label: Point2D, own: WorldHitRect, foreign: WorldHitRect[]): boolean {
+        const segs: Point2D[][] = mid !== null
+            ? [[pin, mid], [mid, label]]
+            : [[pin, label]];
+        for (let s = 0; s < segs.length; s++) {
+            const a = segs[s][0];
+            const b = segs[s][1];
+            // 本器件：禁止穿体；走廊内允许
+            if (DeviceHitGeometry.segmentIntersectsRect(a, b, own)) {
+                const samples = DeviceHitGeometry.sampleSegment(a, b, 6);
+                for (let i = 0; i < samples.length; i++) {
+                    const p = samples[i];
+                    if (!DeviceHitGeometry.pointInRect(p.x, p.y, own)) {
+                        continue;
+                    }
+                    if (!DeviceHitGeometry.pointInPinEscapeCorridor(p.x, p.y, pin.x, pin.y, own, 14)) {
+                        return true;
+                    }
+                }
+            }
+            for (let fi = 0; fi < foreign.length; fi++) {
+                const fr = foreign[fi];
+                if (fr.instUuid === own.instUuid) {
+                    continue;
+                }
+                if (DeviceHitGeometry.segmentIntersectsRect(a, b, fr) ||
+                    DeviceHitGeometry.pointInRect(label.x, label.y, fr)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    /** 旗标/锚点与导线净空；长线共脚不豁免（避免标号叠在引出线上） */
+    private static labelHitsWires(pin: Point2D, mid: Point2D | null, label: Point2D, flag: WorldHitRect, wirePaths: Point2D[][], wireClr: number): boolean {
+        const stubSegs: Point2D[][] = mid !== null
+            ? [[pin, mid], [mid, label]]
+            : [[pin, label]];
+        // 旗标不得压住自身引出 stub（仅豁免锚点旁极短视觉 stub）
+        const ANCHOR_EXEMPT = 8;
+        for (let s = 0; s < stubSegs.length; s++) {
+            const sa = stubSegs[s][0];
+            const sb = stubSegs[s][1];
+            if (DeviceHitGeometry.rectSegmentMinDist(flag, sa, sb) < wireClr) {
+                const midX = (sa.x + sb.x) / 2;
+                const midY = (sa.y + sb.y) / 2;
+                const nearAnchor = Math.hypot(sa.x - label.x, sa.y - label.y) <= ANCHOR_EXEMPT &&
+                    Math.hypot(sb.x - label.x, sb.y - label.y) <= ANCHOR_EXEMPT;
+                const midNearAnchor = Math.hypot(midX - label.x, midY - label.y) <= ANCHOR_EXEMPT;
+                if (!nearAnchor && !midNearAnchor) {
+                    return true;
+                }
+            }
+        }
+        for (let wi = 0; wi < wirePaths.length; wi++) {
+            const path = wirePaths[wi];
+            if (!path || path.length < 2) {
+                continue;
+            }
+            const pathLen = WireConflictGeometry.pathLength(path);
+            const nearPin = Math.hypot(path[0].x - pin.x, path[0].y - pin.y) <= 10 ||
+                Math.hypot(path[path.length - 1].x - pin.x, path[path.length - 1].y - pin.y) <= 10;
+            const otherIsShortStub = pathLen <= 55 && path.length <= 3;
+            // 同脚短 stub：忽略
+            if (nearPin && otherIsShortStub) {
+                continue;
+            }
+            for (let si = 1; si < path.length; si++) {
+                const wa = path[si - 1];
+                const wb = path[si];
+                for (let s = 0; s < stubSegs.length; s++) {
+                    const conf = WireConflictGeometry.segmentConflict(stubSegs[s][0], stubSegs[s][1], wa, wb);
+                    if (conf === 'orthogonal_cross' || conf === 'collinear_overlap') {
+                        return true;
+                    }
+                    // 平行贴近也算压线
+                    if (DeviceHitGeometry.pointSegmentDistance(stubSegs[s][0], wa, wb) < wireClr &&
+                        Math.hypot(stubSegs[s][0].x - pin.x, stubSegs[s][0].y - pin.y) > 8) {
+                        return true;
+                    }
+                    if (DeviceHitGeometry.pointSegmentDistance(stubSegs[s][1], wa, wb) < wireClr &&
+                        Math.hypot(stubSegs[s][1].x - pin.x, stubSegs[s][1].y - pin.y) > 8) {
+                        return true;
+                    }
+                }
+                if (DeviceHitGeometry.rectSegmentMinDist(flag, wa, wb) < wireClr) {
+                    return true;
+                }
+                // 锚点本身勿落在导线上
+                if (DeviceHitGeometry.pointSegmentDistance(label, wa, wb) < wireClr) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    /**
+     * 选出不穿透器件、不压导线/已有标号的 stub 终点。
+     * 从引脚外向扇出搜索（含侧移），禁止穿体到对侧；旗标向右展开一并校验。
+     */
+    static stubLabelOutsidePinAvoidForeign(pin: Point2D, own: WorldHitRect, foreign: WorldHitRect[], stubPad: number = 20, foreignPins?: Point2D[], hints?: LabelPlaceHints): Point2D {
+        const pinClear: Point2D[] = foreignPins !== undefined ? foreignPins : [];
+        const wirePaths: Point2D[][] = hints !== undefined && hints.wirePaths !== undefined
+            ? hints.wirePaths : [];
+        const occupied: Point2D[] = hints !== undefined && hints.occupiedLabels !== undefined
+            ? hints.occupiedLabels : [];
+        const labelText = hints !== undefined && hints.labelText !== undefined
+            ? hints.labelText : '';
+        const wireClr = hints !== undefined && hints.wireClearance !== undefined
+            ? hints.wireClearance : 14;
+        const labelClr = hints !== undefined && hints.labelClearance !== undefined
+            ? hints.labelClearance : 22;
+        const preferred = DeviceHitGeometry.nearestEscapeEdge(pin.x, pin.y, own);
+        // 外向主方向：必须沿逃逸边，禁止穿体到对侧
+        const dirs: string[] = [];
+        const pushDir = (d: string): void => {
+            if (dirs.indexOf(d) < 0) {
+                dirs.push(d);
+            }
+        };
+        pushDir(preferred);
+        // 侧向次选（仍外向），最后才尝试右侧（旗标友好）但若会导致穿体由 stubHitsDeviceBody 拒绝
+        if (preferred === 'L' || preferred === 'R') {
+            pushDir('T');
+            pushDir('B');
+            pushDir(preferred === 'L' ? 'R' : 'L');
+        }
+        else {
+            pushDir('L');
+            pushDir('R');
+            pushDir(preferred === 'T' ? 'B' : 'T');
+        }
+        const dists = [
+            Math.max(stubPad, 28), 36, 48, 60, 76, 96, 120, 148, 180, 220
+        ];
+        const laterals = [0, -16, 16, -32, 32, -48, 48, -72, 72, -96, 96];
+        let bestClear: Point2D | null = null;
+        let bestClearScore = -1e9;
+        let bestAny: Point2D | null = null;
+        let bestAnyScore = -1e9;
+        for (let di = 0; di < dirs.length; di++) {
+            const dir = dirs[di];
+            for (let dsi = 0; dsi < dists.length; dsi++) {
+                const dist = dists[dsi];
+                for (let li = 0; li < laterals.length; li++) {
+                    const lat = laterals[li];
+                    let label: Point2D;
+                    // 候选锚点：沿逃逸边外向 + 侧移（落图 stub 为 pin→label 直线，禁止穿体）
+                    if (dir === 'L') {
+                        label = { x: own.x - dist, y: pin.y + lat };
+                    }
+                    else if (dir === 'R') {
+                        label = { x: own.x + own.w + dist, y: pin.y + lat };
+                    }
+                    else if (dir === 'T') {
+                        label = { x: pin.x + lat, y: own.y - dist };
+                    }
+                    else {
+                        label = { x: pin.x + lat, y: own.y + own.h + dist };
+                    }
+                    // 导线从右侧接入（左侧逃逸）→ 旗标向左展开，避免盖住连接 stub
+                    const expandLeft = dir === 'L' || pin.x > label.x + 4;
+                    let flag = DeviceHitGeometry.estimateSignalLabelFlagRect(label, labelText, expandLeft);
+                    // 左侧逃逸：整框须仍在器件左侧
+                    if (dir === 'L' && flag.x + flag.w > own.x - 4) {
+                        label = { x: label.x - ((flag.x + flag.w) - (own.x - 8)), y: label.y };
+                        flag = DeviceHitGeometry.estimateSignalLabelFlagRect(label, labelText, true);
+                    }
+                    // 直线 stub 必须清器件（与 demote 实际画线一致）
+                    if (DeviceHitGeometry.stubHitsDeviceBody(pin, null, label, own, foreign)) {
+                        continue;
+                    }
+                    if (DeviceHitGeometry.rectsOverlap(flag, own, 2)) {
+                        continue;
+                    }
+                    let flagOnForeign = false;
+                    for (let fi = 0; fi < foreign.length; fi++) {
+                        if (foreign[fi].instUuid === own.instUuid) {
+                            continue;
+                        }
+                        if (DeviceHitGeometry.rectsOverlap(flag, foreign[fi], 4)) {
+                            flagOnForeign = true;
+                            break;
+                        }
+                    }
+                    if (flagOnForeign) {
+                        continue;
+                    }
+                    const pinClearOk = DeviceHitGeometry.segmentClearsForeignPins(pin, label, pinClear, FOREIGN_PIN_CLEARANCE);
+                    const hitsWire = DeviceHitGeometry.labelHitsWires(pin, null, label, flag, wirePaths, wireClr);
+                    let hitsLabel = false;
+                    for (let oi = 0; oi < occupied.length; oi++) {
+                        const o = occupied[oi];
+                        if (Math.hypot(o.x - label.x, o.y - label.y) < labelClr) {
+                            hitsLabel = true;
+                            break;
+                        }
+                        const otherExpand = DeviceHitGeometry.inferSignalLabelExpandLeft(o, wirePaths);
+                        const otherFlag = DeviceHitGeometry.estimateSignalLabelFlagRect(o, labelText.length > 0 ? labelText : 'NET', otherExpand);
+                        if (DeviceHitGeometry.rectsOverlap(flag, otherFlag, 6)) {
+                            hitsLabel = true;
+                            break;
+                        }
+                    }
+                    let score = 0;
+                    score += preferred === dir ? 40 : 0;
+                    score += lat === 0 ? 15 : 0;
+                    score -= dist * 0.08;
+                    score -= Math.abs(lat) * 0.05;
+                    score -= di * 8;
+                    if (!pinClearOk) {
+                        score -= 80;
+                    }
+                    if (hitsWire) {
+                        score -= 200;
+                    }
+                    if (hitsLabel) {
+                        score -= 120;
+                    }
+                    if (score > bestAnyScore) {
+                        bestAnyScore = score;
+                        bestAny = label;
+                    }
+                    if (pinClearOk && !hitsWire && !hitsLabel) {
+                        const clearScore = score + 500;
+                        if (clearScore > bestClearScore) {
+                            bestClearScore = clearScore;
+                            bestClear = label;
+                        }
+                        if (di === 0 && dist <= 60 && Math.abs(lat) <= 32) {
+                            return label;
+                        }
+                    }
+                }
+            }
+            if (bestClear !== null && di >= 1) {
+                return bestClear;
+            }
+        }
+        if (bestClear !== null) {
+            return bestClear;
+        }
+        if (bestAny !== null) {
+            return bestAny;
+        }
+        return DeviceHitGeometry.stubLabelOnEdge(pin, own, preferred, stubPad + 80);
     }
     /** 线段与标号端点到无关脚的最小距离均 ≥ clearance（两端点 ENDPOINT_EXEMPT 内豁免，与门禁一致） */
     static segmentClearsForeignPins(a: Point2D, b: Point2D, foreignPins: Point2D[], clearance: number): boolean {

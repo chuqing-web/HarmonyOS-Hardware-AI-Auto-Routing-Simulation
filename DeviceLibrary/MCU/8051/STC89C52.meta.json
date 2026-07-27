@@ -1,0 +1,297 @@
+{
+  "lib_dev_id": "STC89C52",
+  "name": "STC89C52",
+  "vendor": "STC",
+  "category": "mcu_8051",
+  "sub_category": "mcs51",
+  "symbol_file": "../../Common/mcu_8051.svg",
+  "sim_model_file": "STC89C52.model.mcu",
+  "model_type": "mcu_51",
+  "is_mcu": true,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "P1.0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -100
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "P1.1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -90
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "P1.2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -80
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "P1.3",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -70
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "P1.4",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -60
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "P1.5",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -50
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "P1.6",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -40
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "P1.7",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -30
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "RST",
+      "pin_type": "input",
+      "x": -50,
+      "y": -20
+    },
+    {
+      "pin_id": "10",
+      "pin_label": "P3.0",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": -10
+    },
+    {
+      "pin_id": "11",
+      "pin_label": "P3.1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 0
+    },
+    {
+      "pin_id": "12",
+      "pin_label": "P3.2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 10
+    },
+    {
+      "pin_id": "13",
+      "pin_label": "P3.3",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 20
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "P3.4",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 30
+    },
+    {
+      "pin_id": "15",
+      "pin_label": "P3.5",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 40
+    },
+    {
+      "pin_id": "16",
+      "pin_label": "P3.6",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 50
+    },
+    {
+      "pin_id": "17",
+      "pin_label": "P3.7",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 60
+    },
+    {
+      "pin_id": "18",
+      "pin_label": "XTAL2",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 70
+    },
+    {
+      "pin_id": "19",
+      "pin_label": "XTAL1",
+      "pin_type": "bidirectional",
+      "x": -50,
+      "y": 80
+    },
+    {
+      "pin_id": "20",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -50,
+      "y": 90
+    },
+    {
+      "pin_id": "21",
+      "pin_label": "P2.0",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -100
+    },
+    {
+      "pin_id": "22",
+      "pin_label": "P2.1",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -90
+    },
+    {
+      "pin_id": "23",
+      "pin_label": "P2.2",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -80
+    },
+    {
+      "pin_id": "24",
+      "pin_label": "P2.3",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -70
+    },
+    {
+      "pin_id": "25",
+      "pin_label": "P2.4",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -60
+    },
+    {
+      "pin_id": "26",
+      "pin_label": "P2.5",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -50
+    },
+    {
+      "pin_id": "27",
+      "pin_label": "P2.6",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -40
+    },
+    {
+      "pin_id": "28",
+      "pin_label": "P2.7",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -30
+    },
+    {
+      "pin_id": "29",
+      "pin_label": "PSEN",
+      "pin_type": "output",
+      "x": 50,
+      "y": -20
+    },
+    {
+      "pin_id": "30",
+      "pin_label": "ALE",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": -10
+    },
+    {
+      "pin_id": "31",
+      "pin_label": "EA",
+      "pin_type": "input",
+      "x": 50,
+      "y": 0
+    },
+    {
+      "pin_id": "32",
+      "pin_label": "P0.7",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 10
+    },
+    {
+      "pin_id": "33",
+      "pin_label": "P0.6",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 20
+    },
+    {
+      "pin_id": "34",
+      "pin_label": "P0.5",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 30
+    },
+    {
+      "pin_id": "35",
+      "pin_label": "P0.4",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 40
+    },
+    {
+      "pin_id": "36",
+      "pin_label": "P0.3",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 50
+    },
+    {
+      "pin_id": "37",
+      "pin_label": "P0.2",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 60
+    },
+    {
+      "pin_id": "38",
+      "pin_label": "P0.1",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 70
+    },
+    {
+      "pin_id": "39",
+      "pin_label": "P0.0",
+      "pin_type": "bidirectional",
+      "x": 50,
+      "y": 80
+    },
+    {
+      "pin_id": "40",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 50,
+      "y": 90
+    }
+  ],
+  "default_params": {
+    "clock": "11.0592MHz"
+  }
+}

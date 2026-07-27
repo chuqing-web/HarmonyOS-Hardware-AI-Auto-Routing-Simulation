@@ -249,9 +249,9 @@ export function defsHallSensor(): NamedPinDef[] {
 }
 export function pinsHallSensor(): Pin[] {
     return [
-        makePin('VCC', 'VCC', '1', PinType.POWER, -30, -10),
+        makePin('VCC', 'VCC', '1', PinType.POWER, -30, -20),
         makePin('OUT', 'OUT', '2', PinType.OUTPUT, 30, 0),
-        makePin('GND', 'GND', '3', PinType.GROUND, -30, 10)
+        makePin('GND', 'GND', '3', PinType.GROUND, -30, 20)
     ];
 }
 /** CD4017 十进制计数 */

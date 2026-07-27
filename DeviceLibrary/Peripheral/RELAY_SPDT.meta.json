@@ -1,0 +1,52 @@
+{
+  "lib_dev_id": "RELAY_SPDT",
+  "name": "SPDT Relay",
+  "vendor": "Generic",
+  "category": "peripheral",
+  "sub_category": "relay",
+  "symbol_file": "../Common/RELAY_SPDT.svg",
+  "sim_model_file": "RELAY_SPDT.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": -20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "COM",
+      "pin_type": "passive",
+      "x": 0,
+      "y": 20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "NO",
+      "pin_type": "passive",
+      "x": 20,
+      "y": 20
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "NC",
+      "pin_type": "passive",
+      "x": -20,
+      "y": 20
+    }
+  ],
+  "default_params": {
+    "coilVoltage": "5V"
+  }
+}

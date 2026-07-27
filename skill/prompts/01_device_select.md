@@ -61,7 +61,7 @@ runtime_key: device_select
 - 用户提到"电流表""测电流""总电流" → 必须追加 AMMETER_DC
 - 用户提到"万用表""电阻档""二极管档""多用电表" → 追加 VIRTUAL_METER（四端 V/A/OHM/COM）
 - 用户提到"功率表""测功率" → 追加 POWER_METER
-- 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE
+- 用户明确要求观测波形/示波/指数/充放电/τ → 追加 OSCILLOSCOPE（一台多通道；禁止按 CH 拆成多条）
 - 用户提到 UART/串口终端 → 追加 UART_TERMINAL
 - 用户提到逻辑分析/数字波形 → 追加 LOGIC_ANALYZER（CH1–CH8，禁止 CH0）
 - 用户提到频率计 → 追加 FREQ_COUNTER；明确要信号源/信号发生器 → SIGNAL_GEN（自激振荡除外）

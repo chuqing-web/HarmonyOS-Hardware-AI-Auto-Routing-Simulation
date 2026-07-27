@@ -1,0 +1,31 @@
+{
+  "lib_dev_id": "BUZZER",
+  "name": "Buzzer",
+  "vendor": "Generic",
+  "category": "peripheral",
+  "sub_category": "buzzer",
+  "symbol_file": "../Common/buzzer.svg",
+  "sim_model_file": "BUZZER.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "voltage": "5V"
+  }
+}

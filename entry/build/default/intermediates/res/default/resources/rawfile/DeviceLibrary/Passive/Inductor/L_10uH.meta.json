@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "L_10uH",
+  "name": "Inductor 10uH",
+  "vendor": "Generic",
+  "category": "passive_inductor",
+  "sub_category": "tht",
+  "symbol_file": "../../Common/L_10uH.svg",
+  "sim_model_file": "L_10uH.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "value": "10uH",
+    "current": "1A"
+  }
+}

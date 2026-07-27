@@ -2,8 +2,9 @@
  * AI 面板 — API 配置（默认折叠）+ 提示词一键生成 + Claude/Cursor 风格流式日志
  */
 import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '../services/AppService';
-import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from 'common';
-import { ProteusClassicBtn, ProteusChipGrid, ProteusSectionTitle, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
+import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG,
+  ClarificationQuestion, ClarificationAnswer } from 'common';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -28,6 +29,13 @@ export struct AiSettingsPanel {
   @State showSelfCheckDialog: boolean = false;
   @State selfCheckSummary: string = '';
   @State selfCheckCount: number = 0;
+  @State clarifyQuestions: ClarificationQuestion[] = [];
+  @State clarifyChoiceById: Map<string, string> = new Map();
+  @State clarifyFreeById: Map<string, string> = new Map();
+  @State pendingClarifyPrompt: string = '';
+  @State pendingClarifyMode: AiGenerateMode = 'replace';
+  @State pendingClarifyStrategy: AiGenerateStrategy = 'oneshot';
+  @State enableReasoning: boolean = false;
   @State newApiName: string = '';
   @State newApiKey: string = '';
   @State newApiModel: string = '';
@@ -65,10 +73,20 @@ export struct AiSettingsPanel {
       this.selfCheckSummary = summary;
       this.showSelfCheckDialog = true;
     };
+    this.appService.onAiClarificationNeeded = (questions, prompt, mode, strategy) => {
+      this.clarifyQuestions = questions;
+      this.clarifyChoiceById = new Map();
+      this.clarifyFreeById = new Map();
+      this.pendingClarifyPrompt = prompt;
+      this.pendingClarifyMode = mode;
+      this.pendingClarifyStrategy = strategy;
+      Logger.info(INSTR_TRACE_TAG, `[AI_UI] clarify Ask cards n=${questions.length}`);
+    };
     if (this.appService.isAiSelfCheckPromptPending()) {
       this.showSelfCheckDialog = true;
       this.selfCheckSummary = '检测到首次布局问题';
     }
+    this.enableReasoning = this.appService.aiEnableReasoning;
   }
 
   refreshList(): void {
@@ -92,6 +110,36 @@ export struct AiSettingsPanel {
     this.showStrategyDialog = true;
     this.showModeDialog = false;
     this.showSelfCheckDialog = false;
+  }
+
+  private async submitClarification(): Promise<void> {
+    const answers: ClarificationAnswer[] = [];
+    for (let i = 0; i < this.clarifyQuestions.length; i++) {
+      const q = this.clarifyQuestions[i];
+      const free = (this.clarifyFreeById.get(q.id) ?? '').trim();
+      const choiceRaw = this.clarifyChoiceById.get(q.id);
+      if (free.length === 0 && (!choiceRaw || choiceRaw.length === 0)) {
+        this.statusMessage = `请回答：${q.prompt}`;
+        return;
+      }
+      const ans: ClarificationAnswer = { questionId: q.id };
+      if (free.length > 0) {
+        ans.freeText = free;
+      }
+      if (choiceRaw === 'A' || choiceRaw === 'B' || choiceRaw === 'C') {
+        ans.choice = choiceRaw;
+      }
+      answers.push(ans);
+    }
+    const prompt = this.pendingClarifyPrompt.length > 0 ? this.pendingClarifyPrompt : this.promptText;
+    const mode = this.pendingClarifyMode;
+    const strategy = this.pendingClarifyStrategy;
+    this.clarifyQuestions = [];
+    Logger.info(INSTR_TRACE_TAG, `[AI_UI] OP submit_clarification n=${answers.length}`);
+    const ok = await this.appService.aiGenerateCircuitFromPrompt(prompt, mode, strategy, answers);
+    if (!ok) {
+      this.statusMessage = this.statusMessage.length > 0 ? this.statusMessage : '继续生成失败';
+    }
   }
 
   /** 在现有图基础上修改：跳过策略/落图方式对话框，强制 oneshot + edit */
@@ -183,245 +231,53 @@ export struct AiSettingsPanel {
 
   build() {
     Column() {
-      // ---- API 配置（默认折叠） ----
+      // ---- Cline 顶栏：任务 / 进度 / API 齿轮 ----
       Row() {
-        Text(this.apiSectionExpanded ? '▾ API 配置' : '▸ API 配置')
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_LABEL)
+        Text('AI 助手')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
-        Text(`${this.apiList.length} 个`)
-          .fontSize(9)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
+        if (this.aiGenerating) {
+          Text(`${this.aiProgress}%`)
+            .fontSize(10)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .margin({ right: 8 })
+        }
+        Text(this.apiSectionExpanded ? '▾ API' : '⚙ API')
+          .fontSize(10)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .padding({ left: 6, right: 6, top: 4, bottom: 4 })
+          .onClick(() => {
+            this.apiSectionExpanded = !this.apiSectionExpanded;
+          })
+        if (this.aiGenerating) {
+          Text('取消')
+            .fontSize(10)
+            .fontColor(ProteusColors.ERC_ERR)
+            .padding({ left: 8, right: 4, top: 4, bottom: 4 })
+            .onClick(() => {
+              this.appService.cancelAiGenerate();
+            })
+        }
       }
       .width('100%')
-      .padding({ left: 8, right: 8, top: 8, bottom: 6 })
-      .onClick(() => {
-        this.apiSectionExpanded = !this.apiSectionExpanded;
-      })
+      .padding({ left: 10, right: 8, top: 8, bottom: 6 })
+
+      if (this.aiGenerating && this.aiStage.length > 0) {
+        Text(this.aiStage)
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .width('100%')
+          .padding({ left: 10, right: 8, bottom: 4 })
+      }
 
       if (this.apiSectionExpanded) {
         this.ApiConfigSection()
+        Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
       }
 
-      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
-
-      // ---- 生成区 ----
-      ProteusSectionTitle({ title: 'AI 生成整图' })
-
-      Text('「生成整图」新建/替换；「修改现有图」在当前画布上按提示词增量改；「AI自检修复」修连通/ERC')
-        .fontSize(9)
-        .fontColor(ProteusColors.TEXT_SECONDARY)
-        .width('100%')
-        .padding({ left: 8, right: 8, bottom: 4 })
-
-      ProteusTextArea({
-        placeholder: '例如：STM32F103 最小系统 + LED 闪烁，含示波器观察',
-        text: this.promptText,
-        areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
-        isEnabled: !this.aiGenerating,
-        onChange: (v: string) => { this.promptText = v; }
-      })
-        .margin({ left: 8, right: 8 })
-
-      Row({ space: 6 }) {
-        ProteusClassicBtn({
-          label: this.aiGenerating ? '取消' : '生成整图',
-          widthVal: '48%',
-          onAction: () => {
-            this.requestGenerate();
-          }
-        })
-        ProteusClassicBtn({
-          label: '修改现有图',
-          widthVal: '48%',
-          onAction: () => {
-            this.requestEditExisting();
-          }
-        })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 8, top: 6, bottom: 2 })
-
-      Row({ space: 6 }) {
-        ProteusClassicBtn({
-          label: 'AI自检修复',
-          widthVal: '70%',
-          onAction: () => {
-            if (this.aiGenerating) {
-              this.statusMessage = '请等待当前任务结束';
-              return;
-            }
-            this.showStrategyDialog = false;
-            this.showModeDialog = false;
-            void this.runSelfCheck();
-          }
-        })
-        ProteusClassicBtn({
-          label: '清空',
-          widthVal: '26%',
-          onAction: () => {
-            this.appService.clearAiGenLogs();
-          }
-        })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 8, top: 2, bottom: 4 })
-
-      if (this.aiGenerating) {
-        Text(`${this.aiStage.length > 0 ? this.aiStage : 'AI 生成中'} · ${this.aiProgress}%`)
-          .fontSize(10)
-          .fontColor(ProteusColors.TEXT_LABEL)
-          .width('100%')
-          .padding({ left: 8, right: 8, bottom: 4 })
-      }
-
-      // 首次布局问题 → 询问自检
-      if (this.showSelfCheckDialog && !this.aiGenerating) {
-        Column({ space: 8 }) {
-          Text('首次布局检测到问题')
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .fontWeight(FontWeight.Medium)
-            .width('100%')
-          Text(this.selfCheckSummary.length > 0
-            ? this.selfCheckSummary
-            : '是否根据自检日志与错误进行修复？')
-            .fontSize(10)
-            .fontColor(ProteusColors.TEXT_LABEL)
-            .width('100%')
-          ProteusClassicBtn({
-            label: '自检修复',
-            widthVal: '100%',
-            onAction: () => {
-              this.showSelfCheckDialog = false;
-              void this.runSelfCheck();
-            }
-          })
-          ProteusClassicBtn({
-            label: '暂不',
-            widthVal: '100%',
-            onAction: () => {
-              this.showSelfCheckDialog = false;
-              this.appService.dismissAiSelfCheckPrompt();
-              this.statusMessage = '已跳过自检修复';
-            }
-          })
-        }
-        .width('100%')
-        .padding(10)
-        .margin({ left: 8, right: 8, bottom: 6 })
-        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-        .border({ width: 1, color: ProteusColors.ERC_WARN })
-      }
-
-      // 生成策略：整图一次 / 模块并行（每次必问，与设计一致）
-      if (this.showStrategyDialog) {
-        Column({ space: 8 }) {
-          Text('请选择生成方式：')
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .width('100%')
-          Text(this.appService.getAiConversationRound() > 0
-            ? '复杂电路建议「模块并行」（将开启新一轮并行生图）。「整图一次」可继续多轮编辑。'
-            : '复杂电路建议「模块并行」：先整体设计连接边界，再多路并行生图后合并。')
-            .fontSize(9)
-            .fontColor(ProteusColors.TEXT_SECONDARY)
-            .width('100%')
-          ProteusClassicBtn({
-            label: '整图一次',
-            widthVal: '100%',
-            onAction: () => {
-              this.pickStrategy('oneshot');
-            }
-          })
-          ProteusClassicBtn({
-            label: '模块并行（先整体设计+边界）',
-            widthVal: '100%',
-            onAction: () => {
-              this.pickStrategy('modular');
-            }
-          })
-          ProteusClassicBtn({
-            label: '取消',
-            widthVal: '100%',
-            onAction: () => {
-              this.showStrategyDialog = false;
-            }
-          })
-        }
-        .width('100%')
-        .padding(10)
-        .margin({ left: 8, right: 8, bottom: 6 })
-        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-        .border({ width: 1, color: ProteusColors.SELECTED })
-      }
-
-      // 替换 / 追加 / 在现有图上更改
-      if (this.showModeDialog) {
-        Column({ space: 8 }) {
-          Text(this.pendingStrategy === 'modular'
-            ? '模块并行 · 画布处理方式：'
-            : '画布上已有电路时，请选择：')
-            .fontSize(ProteusFonts.PARAM_KEY)
-            .fontColor(ProteusColors.TEXT_PRIMARY)
-            .width('100%')
-          ProteusClassicBtn({
-            label: '替换整图',
-            widthVal: '100%',
-            onAction: () => {
-              void this.runGenerate('replace');
-            }
-          })
-          ProteusClassicBtn({
-            label: '追加到空白区',
-            widthVal: '100%',
-            onAction: () => {
-              void this.runGenerate('append');
-            }
-          })
-          ProteusClassicBtn({
-            label: '在现有图上 AI 更改',
-            widthVal: '100%',
-            onAction: () => {
-              void this.runGenerate('edit');
-            }
-          })
-          Text('与顶部「修改现有图」相同：保留当前电路，按提示词增量修改（自动整图一次）')
-            .fontSize(9)
-            .fontColor(ProteusColors.TEXT_SECONDARY)
-            .width('100%')
-          ProteusClassicBtn({
-            label: '取消',
-            widthVal: '100%',
-            onAction: () => {
-              this.showModeDialog = false;
-            }
-          })
-        }
-        .width('100%')
-        .padding(10)
-        .margin({ left: 8, right: 8, bottom: 6 })
-        .backgroundColor(ProteusColors.INPUT_READONLY_BG)
-        .border({ width: 1, color: ProteusColors.SELECTED })
-      }
-
-      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
-
-      // ---- 流式日志 ----
-      Row() {
-        Text('生成日志')
-          .fontSize(ProteusFonts.PARAM_KEY)
-          .fontColor(ProteusColors.TEXT_LABEL)
-          .fontWeight(FontWeight.Medium)
-        Blank()
-        Text(`${this.logs.length}`)
-          .fontSize(9)
-          .fontColor(ProteusColors.TEXT_SECONDARY)
-      }
-      .width('100%')
-      .padding({ left: 8, right: 8, top: 6, bottom: 4 })
-
+      // ---- 中部对话时间线 ----
       List({ space: 6 }) {
         ForEach(this.logs, (entry: AiGenLogEntry) => {
           ListItem() {
@@ -447,11 +303,298 @@ export struct AiSettingsPanel {
             .alignSelf(entry.role === 'user' ? ItemAlign.End : ItemAlign.Start)
           }
         }, (entry: AiGenLogEntry) => entry.id)
+
+        // Ask 澄清卡片（嵌入时间线）
+        if (this.clarifyQuestions.length > 0 && !this.aiGenerating) {
+          ListItem() {
+            Column({ space: 10 }) {
+              Text('需要澄清后再生成')
+                .fontSize(ProteusFonts.PARAM_KEY)
+                .fontColor(ProteusColors.TEXT_PRIMARY)
+                .fontWeight(FontWeight.Medium)
+                .width('100%')
+              ForEach(this.clarifyQuestions, (q: ClarificationQuestion) => {
+                Column({ space: 6 }) {
+                  Text(q.prompt)
+                    .fontSize(10)
+                    .fontColor(ProteusColors.TEXT_PRIMARY)
+                    .width('100%')
+                  ProteusClassicBtn({
+                    label: `A. ${q.optionA}`,
+                    widthVal: '100%',
+                    onAction: () => {
+                      this.clarifyChoiceById.set(q.id, 'A');
+                      this.clarifyChoiceById = new Map(this.clarifyChoiceById);
+                    }
+                  })
+                  ProteusClassicBtn({
+                    label: `B. ${q.optionB}`,
+                    widthVal: '100%',
+                    onAction: () => {
+                      this.clarifyChoiceById.set(q.id, 'B');
+                      this.clarifyChoiceById = new Map(this.clarifyChoiceById);
+                    }
+                  })
+                  ProteusClassicBtn({
+                    label: `C. ${q.optionC}`,
+                    widthVal: '100%',
+                    onAction: () => {
+                      this.clarifyChoiceById.set(q.id, 'C');
+                      this.clarifyChoiceById = new Map(this.clarifyChoiceById);
+                    }
+                  })
+                  ProteusTextArea({
+                    placeholder: 'D. 补充说明（可选，留空跳过）',
+                    text: this.clarifyFreeById.get(q.id) ?? '',
+                    areaHeight: 48,
+                    isEnabled: true,
+                    onChange: (v: string) => {
+                      this.clarifyFreeById.set(q.id, v);
+                      this.clarifyFreeById = new Map(this.clarifyFreeById);
+                    }
+                  })
+                  Text(`已选: ${this.clarifyChoiceById.get(q.id) ?? '无'}`)
+                    .fontSize(9)
+                    .fontColor(ProteusColors.TEXT_SECONDARY)
+                    .width('100%')
+                }
+                .width('100%')
+                .padding(8)
+                .backgroundColor(ProteusColors.SIDEBAR_TAB_ACTIVE_BG)
+              }, (q: ClarificationQuestion) => q.id)
+              ProteusClassicBtn({
+                label: '继续生成',
+                widthVal: '100%',
+                onAction: () => {
+                  void this.submitClarification();
+                }
+              })
+            }
+            .width('100%')
+            .padding(8)
+          }
+        }
+
+        if (this.showSelfCheckDialog && !this.aiGenerating) {
+          ListItem() {
+            Column({ space: 8 }) {
+              Text('首次布局检测到问题')
+                .fontSize(ProteusFonts.PARAM_KEY)
+                .fontColor(ProteusColors.TEXT_PRIMARY)
+                .fontWeight(FontWeight.Medium)
+                .width('100%')
+              Text(this.selfCheckSummary.length > 0
+                ? this.selfCheckSummary
+                : '是否根据自检日志与错误进行修复？')
+                .fontSize(10)
+                .fontColor(ProteusColors.TEXT_LABEL)
+                .width('100%')
+              ProteusClassicBtn({
+                label: '自检修复',
+                widthVal: '100%',
+                onAction: () => {
+                  this.showSelfCheckDialog = false;
+                  void this.runSelfCheck();
+                }
+              })
+              ProteusClassicBtn({
+                label: '暂不',
+                widthVal: '100%',
+                onAction: () => {
+                  this.showSelfCheckDialog = false;
+                  this.appService.dismissAiSelfCheckPrompt();
+                  this.statusMessage = '已跳过自检修复';
+                }
+              })
+            }
+            .width('100%')
+            .padding(10)
+            .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+            .border({ width: 1, color: ProteusColors.ERC_WARN })
+          }
+        }
+
+        if (this.showStrategyDialog) {
+          ListItem() {
+            Column({ space: 8 }) {
+              Text('请选择生成方式：')
+                .fontSize(ProteusFonts.PARAM_KEY)
+                .fontColor(ProteusColors.TEXT_PRIMARY)
+                .width('100%')
+              Text(this.appService.getAiConversationRound() > 0
+                ? '复杂电路建议「模块并行」（将开启新一轮并行生图）。「整图一次」可继续多轮编辑。'
+                : '复杂电路建议「模块并行」：先整体设计连接边界，再多路并行生图后合并。')
+                .fontSize(9)
+                .fontColor(ProteusColors.TEXT_SECONDARY)
+                .width('100%')
+              ProteusClassicBtn({
+                label: '整图一次',
+                widthVal: '100%',
+                onAction: () => {
+                  this.pickStrategy('oneshot');
+                }
+              })
+              ProteusClassicBtn({
+                label: '模块并行（先整体设计+边界）',
+                widthVal: '100%',
+                onAction: () => {
+                  this.pickStrategy('modular');
+                }
+              })
+              ProteusClassicBtn({
+                label: '取消',
+                widthVal: '100%',
+                onAction: () => {
+                  this.showStrategyDialog = false;
+                }
+              })
+            }
+            .width('100%')
+            .padding(10)
+            .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+            .border({ width: 1, color: ProteusColors.SELECTED })
+          }
+        }
+
+        if (this.showModeDialog) {
+          ListItem() {
+            Column({ space: 8 }) {
+              Text(this.pendingStrategy === 'modular'
+                ? '模块并行 · 画布处理方式：'
+                : '画布上已有电路时，请选择：')
+                .fontSize(ProteusFonts.PARAM_KEY)
+                .fontColor(ProteusColors.TEXT_PRIMARY)
+                .width('100%')
+              ProteusClassicBtn({
+                label: '替换整图',
+                widthVal: '100%',
+                onAction: () => {
+                  void this.runGenerate('replace');
+                }
+              })
+              ProteusClassicBtn({
+                label: '追加到空白区',
+                widthVal: '100%',
+                onAction: () => {
+                  void this.runGenerate('append');
+                }
+              })
+              ProteusClassicBtn({
+                label: '在现有图上 AI 更改',
+                widthVal: '100%',
+                onAction: () => {
+                  void this.runGenerate('edit');
+                }
+              })
+              Text('与底栏「修改现有图」相同：保留当前电路，按提示词增量修改（自动整图一次）')
+                .fontSize(9)
+                .fontColor(ProteusColors.TEXT_SECONDARY)
+                .width('100%')
+              ProteusClassicBtn({
+                label: '取消',
+                widthVal: '100%',
+                onAction: () => {
+                  this.showModeDialog = false;
+                }
+              })
+            }
+            .width('100%')
+            .padding(10)
+            .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+            .border({ width: 1, color: ProteusColors.SELECTED })
+          }
+        }
       }
       .layoutWeight(1)
       .width('100%')
-      .padding({ left: 6, right: 6, bottom: 6 })
+      .padding({ left: 6, right: 6, bottom: 4 })
       .scrollBar(BarState.Auto)
+
+      Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
+
+      // ---- Cline 底栏：输入 + 操作 ----
+      Column({ space: 4 }) {
+        ProteusTextArea({
+          placeholder: '描述电路需求… 例如：STM32F103 最小系统 + LED 闪烁',
+          text: this.promptText,
+          areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
+          isEnabled: !this.aiGenerating,
+          onChange: (v: string) => { this.promptText = v; }
+        })
+          .margin({ left: 8, right: 8, top: 6 })
+
+        Row() {
+          Text(this.enableReasoning ? '● 推理开' : '○ 推理关')
+            .fontSize(10)
+            .fontColor(this.enableReasoning ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .onClick(() => {
+              this.enableReasoning = !this.enableReasoning;
+              this.appService.aiEnableReasoning = this.enableReasoning;
+              Logger.info(INSTR_TRACE_TAG,
+                `[AI_UI] enableReasoning=${this.enableReasoning}`);
+              this.statusMessage = this.enableReasoning
+                ? '已开启推理：选型/建网/布线允许 thinking，并隔离 JSON（较慢）'
+                : '已关闭推理（默认，利于纯 JSON）';
+            })
+          Text('严格质量 · 禁残留交付')
+            .fontSize(9)
+            .fontColor(ProteusColors.ERC_OK)
+            .padding({ right: 8 })
+          Text('难需求可开推理')
+            .fontSize(9)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 4, right: 8 })
+
+        Row({ space: 6 }) {
+          ProteusClassicBtn({
+            label: this.aiGenerating ? '取消' : '生成整图',
+            widthVal: '48%',
+            onAction: () => {
+              this.requestGenerate();
+            }
+          })
+          ProteusClassicBtn({
+            label: '修改现有图',
+            widthVal: '48%',
+            onAction: () => {
+              this.requestEditExisting();
+            }
+          })
+        }
+        .width('100%')
+        .padding({ left: 8, right: 8 })
+
+        Row({ space: 6 }) {
+          ProteusClassicBtn({
+            label: 'AI自检修复',
+            widthVal: '70%',
+            onAction: () => {
+              if (this.aiGenerating) {
+                this.statusMessage = '请等待当前任务结束';
+                return;
+              }
+              this.showStrategyDialog = false;
+              this.showModeDialog = false;
+              void this.runSelfCheck();
+            }
+          })
+          ProteusClassicBtn({
+            label: '清空',
+            widthVal: '26%',
+            onAction: () => {
+              this.appService.clearAiGenLogs();
+            }
+          })
+        }
+        .width('100%')
+        .padding({ left: 8, right: 8, bottom: 8 })
+      }
+      .width('100%')
+      .backgroundColor(ProteusColors.INPUT_READONLY_BG)
     }
     .width('100%')
     .height('100%')

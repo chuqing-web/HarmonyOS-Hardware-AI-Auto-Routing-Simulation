@@ -1,0 +1,38 @@
+{
+  "lib_dev_id": "2N7000",
+  "name": "N-MOSFET",
+  "vendor": "Generic",
+  "category": "discrete_mosfet",
+  "sub_category": "nmos",
+  "symbol_file": "../../Common/mosfet.svg",
+  "sim_model_file": "2N7000.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "G",
+      "pin_type": "input",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "D",
+      "pin_type": "output",
+      "x": 30,
+      "y": -20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "S",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 20
+    }
+  ],
+  "default_params": {
+    "type": "nmos"
+  }
+}

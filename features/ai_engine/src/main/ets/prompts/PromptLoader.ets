@@ -25,6 +25,7 @@ import { DIAG_PROMPT } from './templates/DiagPrompt';
 import { GEN_SCH_PROMPT } from './templates/GenSchPrompt';
 import { MODULAR_PLAN_PROMPT } from './templates/ModularPlanPrompt';
 import { EDIT_PLAN_PROMPT } from './templates/EditPlanPrompt';
+import { REQUIREMENT_PROMPT } from './templates/RequirementPrompt';
 import { CircuitIntent } from '../algorithms/CircuitIntent';
 import {
   assembleDeviceSelectSystem, assembleNetPlanSystem
@@ -321,6 +322,8 @@ export class PromptLoader {
     switch (name) {
       case 'device_select':
         return DEVICE_SELECT_PROMPT;
+      case 'requirement':
+        return REQUIREMENT_PROMPT;
       case 'layout':
         return LAYOUT_PROMPT;
       case 'route':
@@ -482,8 +485,23 @@ export class PromptLoader {
     if (!content) {
       return null;
     }
-    const trimmed = content.trim();
+    const isolated = PromptLoader.isolateJsonObject(content);
+    if (isolated !== null) {
+      try {
+        return JSON.parse(isolated) as T;
+      } catch (_e0) {
+        const repaired = PromptLoader.tryRepairTruncatedJson(isolated);
+        if (repaired) {
+          try {
+            return JSON.parse(repaired) as T;
+          } catch (_e0b) {
+            // fall through to legacy paths
+          }
+        }
+      }
+    }
 
+    const trimmed = content.trim();
     try {
       return JSON.parse(trimmed) as T;
     } catch (_e) {
@@ -514,7 +532,6 @@ export class PromptLoader {
       try {
         return JSON.parse(trimmed.substring(start, end + 1)) as T;
       } catch (_e3) {
-        // 截断 JSON：尝试闭合 brackets
         const repaired = PromptLoader.tryRepairTruncatedJson(trimmed.substring(start));
         if (repaired) {
           try {
@@ -530,27 +547,151 @@ export class PromptLoader {
   }
 
   /**
+   * 从可能混有 thinking / 说明 / markdown 的回复中隔离出最外层 JSON 对象正文。
+   * 优先剥离 <think> / <thinking> 块，再按括号平衡（尊重字符串）抽取。
+   */
+  static isolateJsonObject(content: string): string | null {
+    if (!content) {
+      return null;
+    }
+    let s = PromptLoader.stripThinkBlocks(content).trim();
+    if (s.length === 0) {
+      return null;
+    }
+    // markdown fence → take inner
+    const fence = s.indexOf('```');
+    if (fence >= 0) {
+      const afterNl = s.indexOf('\n', fence + 3);
+      if (afterNl >= 0) {
+        const endFence = s.indexOf('```', afterNl + 1);
+        if (endFence > afterNl) {
+          s = s.substring(afterNl + 1, endFence).trim();
+        }
+      }
+    }
+    if (s.charAt(0) === '{' && s.charAt(s.length - 1) === '}') {
+      try {
+        JSON.parse(s);
+        return s;
+      } catch (_e) {
+        // continue to brace scan
+      }
+    }
+    return PromptLoader.extractBalancedJsonObject(s);
+  }
+
+  /** 去掉 DeepSeek / 通用 thinking 泄漏标签与残留 */
+  static stripThinkBlocks(content: string): string {
+    let s = content;
+    // <think>...</think> 以及未闭合残段
+    s = s.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    s = s.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+    s = s.replace(/<\/?think>/gi, '');
+    s = s.replace(/<\/?thinking>/gi, '');
+    // 常见「推理结束后的 JSON:」前言：保留从首个 { 起的内容由 isolate 处理
+    return s;
+  }
+
+  /**
+   * 括号平衡抽取：取「最后一个可解析的完整 {…} 对象」
+   * （thinking 常在前，最终 JSON 在后）
+   */
+  static extractBalancedJsonObject(content: string): string | null {
+    const s = content;
+    let lastOk: string | null = null;
+    for (let i = 0; i < s.length; i++) {
+      if (s.charAt(i) !== '{') {
+        continue;
+      }
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      for (let j = i; j < s.length; j++) {
+        const ch = s.charAt(j);
+        if (inStr) {
+          if (esc) {
+            esc = false;
+          } else if (ch === '\\') {
+            esc = true;
+          } else if (ch === '"') {
+            inStr = false;
+          }
+          continue;
+        }
+        if (ch === '"') {
+          inStr = true;
+          continue;
+        }
+        if (ch === '{') {
+          depth++;
+        } else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            const cand = s.substring(i, j + 1);
+            try {
+              const v: Object = JSON.parse(cand) as Object;
+              if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+                lastOk = cand;
+              }
+            } catch (_e) {
+              // ignore this span
+            }
+            break;
+          }
+        }
+      }
+    }
+    return lastOk;
+  }
+
+  /**
    * 严格纯 JSON 对象正文：trim 后必须以 { 开头 } 结尾，且整段可 parse，禁止 markdown 围栏。
    * 用于检测 LLM 是否违反「只出 JSON」；可抽取解析成功但 impure 时触发 critique 重试。
+   * 推理开场景：剥 think 标签后，或仅有短前言但可隔离出完整 JSON，亦视为通过。
    */
   static isStrictJsonObjectReply(content: string): boolean {
     if (!content) {
       return false;
     }
-    const t = content.trim();
+    const stripped = PromptLoader.stripThinkBlocks(content).trim();
+    const t = stripped.length > 0 ? stripped : content.trim();
     if (t.length < 2) {
       return false;
     }
-    if (t.charAt(0) !== '{' || t.charAt(t.length - 1) !== '}') {
+    if (t.indexOf('```') >= 0) {
+      // 仍尝试隔离 fence 内 JSON
+      const isolatedFence = PromptLoader.isolateJsonObject(content);
+      if (isolatedFence !== null) {
+        try {
+          const vf: Object = JSON.parse(isolatedFence) as Object;
+          return vf !== null && typeof vf === 'object' && !Array.isArray(vf);
+        } catch (_ef) {
+          return false;
+        }
+      }
       return false;
     }
-    if (t.indexOf('```') >= 0) {
+    if (t.charAt(0) === '{' && t.charAt(t.length - 1) === '}') {
+      try {
+        const v: Object = JSON.parse(t) as Object;
+        return v !== null && typeof v === 'object' && !Array.isArray(v);
+      } catch (_e) {
+        // fall through to isolate
+      }
+    }
+    // 短前言 / 推理泄漏：能隔离出完整对象即接受，避免 thinking 开启时无谓重试
+    const isolated = PromptLoader.isolateJsonObject(content);
+    if (isolated === null) {
+      return false;
+    }
+    const pre = t.indexOf('{');
+    if (pre > 200) {
       return false;
     }
     try {
-      const v: Object = JSON.parse(t) as Object;
-      return v !== null && typeof v === 'object' && !Array.isArray(v);
-    } catch (_e) {
+      const v2: Object = JSON.parse(isolated) as Object;
+      return v2 !== null && typeof v2 === 'object' && !Array.isArray(v2);
+    } catch (_e2) {
       return false;
     }
   }
@@ -560,8 +701,13 @@ export class PromptLoader {
     if (!content || content.trim().length === 0) {
       return 'empty';
     }
-    const t = content.trim();
+    const raw = content.trim();
+    const stripped = PromptLoader.stripThinkBlocks(raw).trim();
+    const t = stripped.length > 0 ? stripped : raw;
     const bits: string[] = [];
+    if (raw !== stripped && stripped.length > 0) {
+      bits.push('had_think_tags');
+    }
     if (t.charAt(0) !== '{') {
       bits.push('not_start_{');
     }
@@ -574,6 +720,9 @@ export class PromptLoader {
     const pre = t.indexOf('{');
     if (pre > 0) {
       bits.push(`preamble_chars=${pre}`);
+    }
+    if (PromptLoader.isolateJsonObject(content) !== null && bits.length > 0) {
+      bits.push('isolatable');
     }
     return bits.length > 0 ? bits.join(',') : 'parse_fail';
   }

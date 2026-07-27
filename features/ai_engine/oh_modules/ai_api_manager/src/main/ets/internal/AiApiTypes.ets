@@ -76,9 +76,13 @@ export function buildChatRequestBody(model: string, messages: ChatRequestMessage
     max_tokens: maxTokens,
     temperature: temperature
   };
-  if (disableThinking) {
+  // DeepSeek V4 等：显式 enabled/disabled；未传则不带 thinking 字段（兼容旧模型）
+  if (disableThinking === true) {
     const thinking: ThinkingParam = { type: 'disabled' };
     body.thinking = thinking;
+  } else if (disableThinking === false) {
+    const thinkingOn: ThinkingParam = { type: 'enabled' };
+    body.thinking = thinkingOn;
   }
   return body;
 }
@@ -112,17 +116,97 @@ export function extractAnthropicText(parsed: AnthropicMessagesResponse): string 
 
 export function extractChoiceContent(choice: ChatCompletionChoice): string {
   const msg = choice.message;
-  const content = msg.content ?? '';
-  if (content.length > 0) {
-    return content;
-  }
-  // content 空时：仅当 reasoning 本身像 JSON 对象才回退，禁止把中文推理当正文
+  let content = (msg.content ?? '').trim();
   const reasoning = (msg.reasoning_content ?? '').trim();
-  if (reasoning.length > 0 && reasoning.charAt(0) === '{' &&
-    reasoning.charAt(reasoning.length - 1) === '}') {
-    return reasoning;
+
+  // 正文优先；剥 think 标签后再用
+  if (content.length > 0) {
+    content = stripInlineThinkTags(content).trim();
+    if (content.length > 0) {
+      return content;
+    }
+  }
+
+  // content 空：从 reasoning 里隔离 JSON（禁止把纯中文推理当正文）
+  if (reasoning.length > 0) {
+    const fromReason = isolateJsonFromText(reasoning);
+    if (fromReason !== null) {
+      return fromReason;
+    }
+    if (reasoning.charAt(0) === '{' && reasoning.charAt(reasoning.length - 1) === '}') {
+      return reasoning;
+    }
   }
   return '';
+}
+
+/** 轻量剥标签（API 层不依赖 PromptLoader，避免循环依赖） */
+function stripInlineThinkTags(text: string): string {
+  let s = text;
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  s = s.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+  s = s.replace(/<\/?think>/gi, '');
+  s = s.replace(/<\/?thinking>/gi, '');
+  return s;
+}
+
+function isolateJsonFromText(text: string): string | null {
+  const s = stripInlineThinkTags(text).trim();
+  if (s.length < 2) {
+    return null;
+  }
+  if (s.charAt(0) === '{' && s.charAt(s.length - 1) === '}') {
+    try {
+      JSON.parse(s);
+      return s;
+    } catch (_e) {
+      // scan
+    }
+  }
+  let lastOk: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charAt(i) !== '{') {
+      continue;
+    }
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < s.length; j++) {
+      const ch = s.charAt(j);
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === '\\') {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          const cand = s.substring(i, j + 1);
+          try {
+            const v: Object = JSON.parse(cand) as Object;
+            if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+              lastOk = cand;
+            }
+          } catch (_e2) {
+            // ignore
+          }
+          break;
+        }
+      }
+    }
+  }
+  return lastOk;
 }
 
 export function maskApiConfig(api: AiApiConfig): AiApiConfig {

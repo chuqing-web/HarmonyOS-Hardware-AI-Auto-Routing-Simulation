@@ -200,6 +200,8 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
     }
     clearOscilloscopeCapture(): ApiResult<void> {
         this.oscilloscope.clearCaptureBuffers();
+        // Re-assert schematic OSC probes after buffer drop (CH1=SQUARE / CH2=TRIANGLE …)
+        this.applyScopeProbesFromAllBindings();
         return ResultHelper.ok();
     }
     autoAdjustOscilloscope(channel: number = 0): ApiResult<OscAutoScaleView> {

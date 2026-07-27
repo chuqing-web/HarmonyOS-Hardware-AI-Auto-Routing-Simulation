@@ -1,0 +1,38 @@
+{
+  "lib_dev_id": "AMS1117_3V3",
+  "name": "3.3V LDO",
+  "vendor": "Generic",
+  "category": "analog_regulator",
+  "sub_category": "ldo",
+  "symbol_file": "../Common/regulator.svg",
+  "sim_model_file": "AMS1117_3V3.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "ground",
+      "x": 0,
+      "y": 40
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "3",
+      "pin_type": "output",
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "output": "3.3V"
+  }
+}

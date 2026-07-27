@@ -28,6 +28,48 @@ export interface DiagError {
     repairSuggest: string;
     devReference: string;
 }
+/** 澄清题（Cline Ask：A/B/C + UI 固定 D） */
+export interface ClarificationQuestion {
+    id: string;
+    prompt: string;
+    optionA: string;
+    optionB: string;
+    optionC: string;
+}
+export interface ClarificationAnswer {
+    questionId: string;
+    choice?: 'A' | 'B' | 'C';
+    freeText?: string;
+}
+/** RequirementsAgent 最小需求契约 */
+export interface RequirementPowerSpec {
+    rails: string[];
+    voltageHint?: string;
+}
+export interface RequirementSpec {
+    summary: string;
+    modules: string[];
+    power: RequirementPowerSpec;
+    needsMcu: boolean;
+    instruments: string[];
+    measureGoals: string[];
+    constraints: string[];
+    oodHints: string[];
+    openQuestions: string[];
+}
+export function emptyRequirementSpec(): RequirementSpec {
+    return {
+        summary: '',
+        modules: [],
+        power: { rails: [] },
+        needsMcu: false,
+        instruments: [],
+        measureGoals: [],
+        constraints: [],
+        oodHints: [],
+        openQuestions: []
+    };
+}
 export interface AiTaskResult {
     taskType: AiTaskType;
     success: boolean;
@@ -40,7 +82,14 @@ export interface AiTaskResult {
     usedLlm?: boolean;
     /** 结构化：ERC/几何仍有阻断但已尽力交付 */
     deliveredWithResidual?: boolean;
+    /** 门禁真实值（质量硬失败依赖） */
+    ercClean?: boolean;
+    agentAbortStage?: string;
+    agentAbortReason?: string;
     progress: ProgressInfo;
+    /** Requirements 澄清：不落图 */
+    needsClarification?: boolean;
+    clarificationQuestions?: ClarificationQuestion[];
 }
 export interface AiTestResult {
     success: boolean;
@@ -206,4 +255,14 @@ export interface AiPipelineResult {
     geoBlocking?: number;
     /** oneshot 带残留交付时为 true；ercClean 仍须反映真实门禁 */
     deliveredWithResidual?: boolean;
+    /** RequirementsAgent：需要用户澄清，不落图 */
+    needsClarification?: boolean;
+    clarificationQuestions?: ClarificationQuestion[];
+    /** 结构化需求（RequirementsAgent 产出） */
+    requirementSpec?: RequirementSpec;
+    /** 质量总线阶段失败摘要（硬失败） */
+    agentAbortStage?: string;
+    agentAbortReason?: string;
+    /** Orchestrator 已完成 WAR，Coordinator 勿双跑 */
+    warDone?: boolean;
 }

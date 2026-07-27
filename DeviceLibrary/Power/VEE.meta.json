@@ -1,0 +1,24 @@
+{
+  "lib_dev_id": "VEE",
+  "name": "VEE 负电源",
+  "vendor": "Generic",
+  "category": "power_supply",
+  "sub_category": "rail",
+  "symbol_file": "../Common/vee.svg",
+  "sim_model_file": "VEE.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VEE",
+      "pin_type": "power_neg",
+      "x": 0,
+      "y": -10
+    }
+  ],
+  "default_params": {
+    "voltage": "-12V"
+  }
+}

@@ -4,6 +4,8 @@ import { ConstrainedWiringEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_
 import { FaultDiagnoser } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/FaultDiagnoser";
 import { AiPipelineOrchestrator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiPipelineOrchestrator";
 import type { PipelineOptions } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/AiPipelineOrchestrator";
+import { AgentPipelineCoordinator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/agents/AgentPipelineCoordinator";
+import type { BlackboardSnapshot } from './algorithms/agents/CircuitBlackboard';
 import { DeviceSelectEngine } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceSelectEngine";
 import { PlacementOptimizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PlacementOptimizer";
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
@@ -25,6 +27,7 @@ export class AiEngineImpl implements IAiEngine {
     private wiringEngine: AutoWiringEngine = new AutoWiringEngine();
     private constrainedWiring: ConstrainedWiringEngine = new ConstrainedWiringEngine();
     private pipeline: AiPipelineOrchestrator | null = null;
+    private agentCoordinator: AgentPipelineCoordinator | null = null;
     private cancelled: boolean = false;
     private taskBindings: Map<AiTaskType, string> = new Map();
     private resultCache: AiResultCache = new AiResultCache();
@@ -35,17 +38,20 @@ export class AiEngineImpl implements IAiEngine {
             this.componentLibrary = componentLibrary;
             this.constrainedWiring.setComponentLibrary(componentLibrary);
             this.pipeline = new AiPipelineOrchestrator(apiManager, componentLibrary);
+            this.agentCoordinator = new AgentPipelineCoordinator(apiManager, componentLibrary);
         }
     }
     setComponentLibrary(library: IComponentLibrary): void {
         this.componentLibrary = library;
         this.constrainedWiring.setComponentLibrary(library);
         this.pipeline = new AiPipelineOrchestrator(this.apiManager, library);
+        this.agentCoordinator = new AgentPipelineCoordinator(this.apiManager, library);
     }
     // ---- v2 API ----
     async runAiTask(taskType: AiTaskType, topo: SchTopology, extra?: AiTaskExtra, onProgress?: ProgressCallback): Promise<AiTaskResult> {
         this.cancelled = false;
         this.pipeline?.clearCancel();
+        this.agentCoordinator?.clearCancel();
         this.apiManager.clearChatCancel();
         const quota = this.apiManager.checkGlobalAiQuota();
         if (!quota.success) {
@@ -194,7 +200,30 @@ export class AiEngineImpl implements IAiEngine {
                                 (pipe.data.selectResult?.ragTemplateId ?
                                     ` rag:${pipe.data.selectResult.ragTemplateId}` : '');
                         result.usedLlm = pipe.data.usedLlm;
+                        result.ercClean = pipe.data.ercClean;
                         result.deliveredWithResidual = !!pipe.data.deliveredWithResidual || !pipe.data.ercClean;
+                        result.agentAbortStage = pipe.data.agentAbortStage;
+                        result.agentAbortReason = pipe.data.agentAbortReason;
+                        if (pipe.data.needsClarification) {
+                            result.success = false;
+                            result.needsClarification = true;
+                            result.clarificationQuestions = pipe.data.clarificationQuestions;
+                            result.topology = undefined;
+                            result.deliveredWithResidual = false;
+                            result.errMsg = '需要补充需求澄清后再生成';
+                            Logger.info(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE needsClarification n=${pipe.data.clarificationQuestions?.length ?? 0}`);
+                            break;
+                        }
+                        if (pipe.data.agentAbortStage && pipe.data.agentAbortStage.length > 0) {
+                            result.success = false;
+                            result.errCode = ErrCode.ERR_PARAM_INVALID;
+                            result.topology = undefined;
+                            result.deliveredWithResidual = false;
+                            result.errMsg = pipe.data.agentAbortReason ||
+                                `阶段失败: ${pipe.data.agentAbortStage}`;
+                            Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE ABORT stage=${pipe.data.agentAbortStage}`);
+                            break;
+                        }
                         const cancelHit = this.cancelled ||
                             (pipe.data.ercErrors ?? []).some(e => e.errType === 'cancelled');
                         if (cancelHit) {
@@ -216,7 +245,8 @@ export class AiEngineImpl implements IAiEngine {
                                 const et = errsEarly[ei].errType;
                                 if (et === 'modular_plan' || et === 'modular_parallel' ||
                                     et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
-                                    et === 'modular_joint') {
+                                    et === 'modular_joint' || et === 'layout' || et === 'routing' ||
+                                    et === 'war_route' || et === 'qa_residual') {
                                     stageTypeEarly = et;
                                     stageHardEarly = errsEarly[ei].desc ?? '';
                                     stageSuggestEarly = errsEarly[ei].suggest ?? '';
@@ -254,7 +284,8 @@ export class AiEngineImpl implements IAiEngine {
                                     const et = errs[ei].errType;
                                     if (et === 'modular_plan' || et === 'modular_parallel' ||
                                         et === 'device_select' || et === 'net_plan' || et === 'library_match' ||
-                                        et === 'modular_joint') {
+                                        et === 'modular_joint' || et === 'layout' || et === 'routing' ||
+                                        et === 'war_route' || et === 'qa_residual') {
                                         modularHard = true;
                                         if (errs[ei].suggest.length > 0) {
                                             modularSuggest = errs[ei].suggest;
@@ -267,21 +298,39 @@ export class AiEngineImpl implements IAiEngine {
                                     }
                                 }
                                 const emptyTopo = (pipe.data.topology?.deviceList.length ?? 0) === 0;
+                                const hardFail = extra?.qualityHardFail !== false && !extra?.skipLlm;
+                                // 分级决策：只有空拓扑或选型/建网阶段硬失败才拒绝；ERC/几何残留允许带警告交付
+                                const hasUsableTopo = !emptyTopo && !modularHard;
                                 if (modularHard || emptyTopo) {
                                     result.success = false;
                                     result.errCode = ErrCode.ERR_PARAM_INVALID;
                                     result.topology = undefined;
                                     result.deliveredWithResidual = false;
+                                    result.ercClean = false;
                                     if (!result.errMsg || result.errMsg.length === 0) {
                                         result.errMsg = emptyTopo
                                             ? '模块并行失败：无有效拓扑'
                                             : (result.errMsg ?? '生图失败：选型/建网未成功');
                                     }
-                                    Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE FAIL modularHard=${modularHard} empty=${emptyTopo}` +
+                                    Logger.error(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE HARD FAIL modularHard=${modularHard} empty=${emptyTopo}` +
+                                        ` | ${result.analysisText}`);
+                                }
+                                else if (hardFail && !emptyTopo) {
+                                    // 硬度模式但有可用拓扑：带警告标记交付（上层 AppService 做软接受决策）
+                                    result.success = true;
+                                    result.topology = pipe.data.topology;
+                                    result.deliveredWithResidual = true;
+                                    result.ercClean = pipe.data.ercClean;
+                                    if (!result.errMsg || result.errMsg.length === 0) {
+                                        result.errMsg = `终检未完全通过（ERC=${hardN}/几何=${geoN}），已尽力交付`;
+                                    }
+                                    Logger.warn(INSTR_TRACE_TAG, `[AI_TASK] FULL_PIPELINE SOFT DELIVER hardFail with usable topo` +
+                                        ` ercHard=${hardN} geoHard=${geoN}` +
+                                        (hint.length > 0 ? ` (${hint})` : '') +
                                         ` | ${result.analysisText}`);
                                 }
                                 else {
-                                    // 用户硬要求：不许「生图未完成」— 有 LLM 拓扑则交付，结构化标记 residual
+                                    // skipLlm / 显式非硬失败：允许 residual 标记交付
                                     result.success = true;
                                     result.topology = pipe.data.topology;
                                     result.deliveredWithResidual = true;
@@ -344,6 +393,7 @@ export class AiEngineImpl implements IAiEngine {
     cancelAiTask(): ApiResult<void> {
         this.cancelled = true;
         this.pipeline?.requestCancel();
+        this.agentCoordinator?.requestCancel();
         this.apiManager.cancelPendingChat();
         Logger.info(INSTR_TRACE_TAG, '[AI_TASK] CANCEL requested — abort HTTP + pipeline');
         traceAiOp('AI_TASK', 'cancel', 'http+pipeline');
@@ -475,13 +525,98 @@ export class AiEngineImpl implements IAiEngine {
             onStreamSnapshot: extra?.onStreamSnapshot,
             conversationHistory: extra?.conversationHistory,
             generationMode: extra?.generationMode,
-            generateStrategy: extra?.generateStrategy
+            generateStrategy: extra?.generateStrategy,
+            qualityHardFail: extra?.qualityHardFail ?? !extra?.skipLlm
         };
-        // 模块并行：整体设计门禁 → Promise.all 子流水线 → POWER/joints 合并
-        const result = extra?.generateStrategy === 'modular'
-            ? await this.pipeline.runModularParallelPipeline(pipeOpts, onProgress)
-            : await this.pipeline.runFullPipeline(pipeOpts, onProgress);
+        // Phase1+：oneshot/edit/append → Coordinator；modular → Coordinator.runModular
+        if (extra?.generateStrategy === 'modular') {
+            if (this.agentCoordinator && !extra?.skipLlm) {
+                let resumeSnapMod: BlackboardSnapshot | undefined = undefined;
+                if (extra?.resumeSnapshotJson && extra.resumeSnapshotJson.length > 0) {
+                    try {
+                        resumeSnapMod = JSON.parse(extra.resumeSnapshotJson) as BlackboardSnapshot;
+                    }
+                    catch (_e) {
+                        Logger.warn(INSTR_TRACE_TAG, '[AI_TASK] modular resumeSnapshotJson parse fail');
+                    }
+                }
+                const result = await this.agentCoordinator.runModular({
+                    prompt: pipeOpts.prompt,
+                    scene: pipeOpts.scene,
+                    partialTopo: pipeOpts.partialTopo,
+                    lockedDeviceUuids: pipeOpts.lockedDeviceUuids,
+                    mcuFamily: pipeOpts.mcuFamily,
+                    skipLlm: pipeOpts.skipLlm,
+                    routingWeights: pipeOpts.routingWeights,
+                    onStreamSnapshot: pipeOpts.onStreamSnapshot,
+                    conversationHistory: pipeOpts.conversationHistory,
+                    generationMode: pipeOpts.generationMode,
+                    generateStrategy: 'modular',
+                    qualityHardFail: extra?.qualityHardFail !== false,
+                    enableReasoning: extra?.enableReasoning,
+                    clarificationAnswers: extra?.clarificationAnswers,
+                    resumeSnapshot: resumeSnapMod
+                }, onProgress);
+                return ResultHelper.ok(result);
+            }
+            const result = await this.pipeline.runModularParallelPipeline(pipeOpts, onProgress);
+            return ResultHelper.ok(result);
+        }
+        if (this.agentCoordinator && !extra?.skipLlm) {
+            let resumeSnap: BlackboardSnapshot | undefined = undefined;
+            if (extra?.resumeSnapshotJson && extra.resumeSnapshotJson.length > 0) {
+                try {
+                    resumeSnap = JSON.parse(extra.resumeSnapshotJson) as BlackboardSnapshot;
+                }
+                catch (_e) {
+                    Logger.warn(INSTR_TRACE_TAG, '[AI_TASK] resumeSnapshotJson parse fail');
+                }
+            }
+            const result = await this.agentCoordinator.runOneshot({
+                prompt: pipeOpts.prompt,
+                scene: pipeOpts.scene,
+                partialTopo: pipeOpts.partialTopo,
+                lockedDeviceUuids: pipeOpts.lockedDeviceUuids,
+                mcuFamily: pipeOpts.mcuFamily,
+                skipLlm: pipeOpts.skipLlm,
+                routingWeights: pipeOpts.routingWeights,
+                onStreamSnapshot: pipeOpts.onStreamSnapshot,
+                conversationHistory: pipeOpts.conversationHistory,
+                generationMode: pipeOpts.generationMode,
+                generateStrategy: pipeOpts.generateStrategy,
+                qualityHardFail: pipeOpts.qualityHardFail,
+                enableReasoning: extra?.enableReasoning,
+                clarificationAnswers: extra?.clarificationAnswers,
+                resumeSnapshot: resumeSnap
+            }, onProgress);
+            return ResultHelper.ok(result);
+        }
+        const result = await this.pipeline.runFullPipeline(pipeOpts, onProgress);
         return ResultHelper.ok(result);
+    }
+    /** 自检：经 Coordinator WAR + QA（硬失败可选） */
+    async runSelfCheckPipeline(topo: SchTopology, hardFail: boolean = true, onProgress?: ProgressCallback): Promise<ApiResult<AiPipelineResult>> {
+        if (!this.agentCoordinator) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Agent coordinator not ready');
+        }
+        const result = await this.agentCoordinator.runSelfCheck(topo, hardFail, onProgress);
+        return ResultHelper.ok(result);
+    }
+    /** 最近一次 Agent 黑板快照（澄清后续跑） */
+    getLastAgentSnapshotJson(): string {
+        if (!this.agentCoordinator) {
+            return '';
+        }
+        const snap = this.agentCoordinator.getLastSnapshot();
+        if (!snap) {
+            return '';
+        }
+        try {
+            return JSON.stringify(snap);
+        }
+        catch (_e) {
+            return '';
+        }
     }
     async aiSelectDevices(prompt: string, partialTopo?: SchTopology): Promise<ApiResult<DeviceSelectResult>> {
         if (!this.componentLibrary)

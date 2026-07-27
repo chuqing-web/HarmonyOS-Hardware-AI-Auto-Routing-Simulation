@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "VOLTMETER_DC",
+  "name": "DC 电压表",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "voltmeter",
+  "symbol_file": "../Common/voltmeter.svg",
+  "sim_model_file": "VOLTMETER_DC.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "V+",
+      "pin_type": "input",
+      "x": -30,
+      "y": -25
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "COM",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 25
+    }
+  ],
+  "default_params": {
+    "type": "dc",
+    "range": "20V"
+  }
+}

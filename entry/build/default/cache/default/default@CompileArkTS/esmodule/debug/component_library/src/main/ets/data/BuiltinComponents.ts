@@ -46,7 +46,7 @@ function makePowerSupplies(): ComponentDefinition[] {
             defaultParams: params1('voltage', '-12V'),
             spiceModel: '',
             behaviorModel: 'vee',
-            svgSymbol: 'gnd.svg',
+            svgSymbol: 'vee.svg',
             aiWiringRules: ['power-rail', 'negative-rail']
         },
         {
@@ -93,8 +93,8 @@ function makePowerSupplies(): ComponentDefinition[] {
             defaultParams: params5('waveform', 'sine', 'amplitude', '1V', 'frequency', '1kHz', 'offset', '0V', 'dutyCycle', '50%'),
             spiceModel: '',
             behaviorModel: 'signal_gen',
-            svgSymbol: 'vac.svg',
-            aiWiringRules: ['signal-source', 'series-gnd']
+            svgSymbol: 'signal_gen.svg',
+            aiWiringRules: ['output']
         }
     ];
 }
@@ -188,7 +188,7 @@ function makePeripherals(): ComponentDefinition[] {
     return [
         twoPin('SW_PUSH', 'Push Button', ComponentCategory.PERIPHERAL, params2('type', 'momentary', 'pressed', '0'), '', ['input']),
         makeRelaySpdt(),
-        twoPin('BUZZER', 'Buzzer', ComponentCategory.PERIPHERAL, params1('voltage', '5V'), '', ['output']),
+        twoPin('BUZZER', 'Buzzer', ComponentCategory.PERIPHERAL, params1('voltage', '5V'), '', ['output'], 40),
         makeLcd1602(),
         makeOled12864(),
     ];
@@ -202,8 +202,8 @@ function makeRelaySpdt(): ComponentDefinition {
         manufacturer: 'Generic',
         description: '线圈 1/2 + 触点 COM/NO/NC',
         pins: [
-            makePin('1', '1', '1', PinType.PASSIVE, -30, -10),
-            makePin('2', '2', '2', PinType.PASSIVE, 30, -10),
+            makePin('1', '1', '1', PinType.PASSIVE, -30, -20),
+            makePin('2', '2', '2', PinType.PASSIVE, 30, -20),
             makePin('COM', 'COM', '3', PinType.PASSIVE, 0, 20),
             makePin('NO', 'NO', '4', PinType.PASSIVE, 20, 20),
             makePin('NC', 'NC', '5', PinType.PASSIVE, -20, 20)
@@ -244,7 +244,7 @@ function makeSensors(): ComponentDefinition[] {
             svgSymbol: 'hall.svg',
             aiWiringRules: ['input', 'pull-up']
         },
-        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input'])
+        twoPin('LDR', 'Photoresistor', ComponentCategory.SENSOR, params2('type', 'analog', 'value', '50k'), '', ['adc-input'], 40)
     ];
 }
 function makeInstruments(): ComponentDefinition[] {
@@ -259,7 +259,7 @@ function makeInstruments(): ComponentDefinition[] {
         makeFrequencyCounter(),
     ];
 }
-function twoPin(id: string, name: string, cat: ComponentCategory, params: Map<string, string>, spice: string, rules: string[]): ComponentDefinition {
+function twoPin(id: string, name: string, cat: ComponentCategory, params: Map<string, string>, spice: string, rules: string[], pinX: number = 30): ComponentDefinition {
     const def: ComponentDefinition = {
         id: id,
         name: name,
@@ -267,8 +267,8 @@ function twoPin(id: string, name: string, cat: ComponentCategory, params: Map<st
         manufacturer: 'Generic',
         description: name,
         pins: [
-            makePin('1', '1', '1', PinType.PASSIVE, -30, 0),
-            makePin('2', '2', '2', PinType.PASSIVE, 30, 0)
+            makePin('1', '1', '1', PinType.PASSIVE, -pinX, 0),
+            makePin('2', '2', '2', PinType.PASSIVE, pinX, 0)
         ],
         defaultParams: params,
         spiceModel: spice,
@@ -374,8 +374,8 @@ function mosfet(id: string, name: string, type: string): ComponentDefinition {
         description: name,
         pins: [
             makePin('G', 'G', '1', PinType.INPUT, -30, 0),
-            makePin('D', 'D', '2', PinType.OUTPUT, 30, -10),
-            makePin('S', 'S', '3', PinType.PASSIVE, 30, 10)
+            makePin('D', 'D', '2', PinType.OUTPUT, 30, -20),
+            makePin('S', 'S', '3', PinType.PASSIVE, 30, 20)
         ],
         defaultParams: params1('type', type),
         spiceModel: '',
@@ -614,10 +614,10 @@ function makeOled12864(): ComponentDefinition {
         manufacturer: 'Generic',
         description: '128x64 OLED Display',
         pins: [
-            makePin('VCC', 'VCC', '1', PinType.POWER, -30, -10),
-            makePin('GND', 'GND', '2', PinType.GROUND, -30, 10),
-            makePin('SDA', 'SDA', '3', PinType.BIDIRECTIONAL, 30, -10),
-            makePin('SCL', 'SCL', '4', PinType.INPUT, 30, 10)
+            makePin('VCC', 'VCC', '1', PinType.POWER, -30, -20),
+            makePin('GND', 'GND', '2', PinType.GROUND, -30, 20),
+            makePin('SDA', 'SDA', '3', PinType.BIDIRECTIONAL, 30, -20),
+            makePin('SCL', 'SCL', '4', PinType.INPUT, 30, 20)
         ],
         defaultParams: params1('interface', 'I2C'),
         spiceModel: '',

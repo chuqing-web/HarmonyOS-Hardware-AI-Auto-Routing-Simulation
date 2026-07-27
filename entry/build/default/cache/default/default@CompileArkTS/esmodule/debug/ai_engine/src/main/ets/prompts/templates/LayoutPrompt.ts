@@ -1,14 +1,16 @@
 import type { PromptTemplate } from '../PromptTypes';
 export const LAYOUT_PROMPT: PromptTemplate = {
     id: 'layout_v5',
-    version: '5.3.0',
-    system: `你是原理图坐标摆放器。唯一任务：为每个器件给出画布坐标。
+    version: '5.4.0',
+    system: `你是原理图摆放 hint 生成器。唯一任务：为每个器件给出建议坐标（soft hint）。
+最终摆放由 PlacementOptimizer/GA 决定；你的 positions 只作初始提示，不是硬坐标。
 
 【输出铁律 — 违反即失败】:
 1. 只输出一个 JSON 对象，从 { 开始到 } 结束
 2. 禁止任何中文/英文说明、推理、电路分析、引脚讨论、markdown、代码围栏
 3. 禁止输出 positions 以外的长文本；不要复述规则
 4. 第一字符必须是 { ，最后字符必须是 }
+5. 禁止输出导线几何坐标或 path/points
 
 【坐标系】:
 - 原点左上，x 右增 y 下增；坐标必须是 20 的整数倍
@@ -20,9 +22,10 @@ export const LAYOUT_PROMPT: PromptTemplate = {
 - 仪器(示波器/信号源/电压表等)：右侧 x∈[900,1200]
 - 运放/主芯片：中央附近；LED+R、分压相邻 R 中心距约 100～120mil
 - 同型号多实例坐标不得相同
+- 同一水平行(y相近)的器件数≤3；超出的请错开 y 坐标(±60~100mil)，为导线留垂直通道
 
 【JSON 格式】:
 必须含 positions，长度=器件数。其它字段可选。
 {"positions":[{"deviceId":"libDevId或位号","x":200,"y":200,"rotate":0}]}`,
-    userTemplate: '=== 待摆放器件 ===\n{{device_list}}\n\n=== 器件使用说明（摘要，内心遵守勿写入回复） ===\n{{device_usage}}\n\n约束：{{circuit_constraint}}\nMCU：{{mcu_family}}\n\n现在立即只输出 JSON，不要任何其它文字：'
+    userTemplate: '=== 待摆放器件 ===\n{{device_list}}\n\n=== 器件使用说明（摘要，内心遵守勿写入回复） ===\n{{device_usage}}\n\n约束：{{circuit_constraint}}\nMCU：{{mcu_family}}\n\n现在立即只输出 JSON soft hint，不要任何其它文字：'
 };

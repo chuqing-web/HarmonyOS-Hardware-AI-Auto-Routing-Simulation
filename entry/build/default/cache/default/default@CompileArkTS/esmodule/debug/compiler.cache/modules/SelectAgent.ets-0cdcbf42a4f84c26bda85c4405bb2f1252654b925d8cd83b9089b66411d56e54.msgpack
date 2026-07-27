@@ -1,0 +1,296 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ}/**
+ * SelectAgent â€” ç‹¬ç«‹ await + LLM æ‰¹åˆ¤ + å†™å…¥ selectLlm å¿«ç…§å­—æ®µ
+ */
+import { Logger, INSTR_TRACE_TAG } from 'common';
+import { CreatePipelineCtx } from '../AiPipelineOrchestrator';
+import { withCritiqueLimit } from './StageHooks';
+import { critiqueWithLlm } from './StageCritic';
+export class SelectAgent {
+    begin(bb) {
+        bb.log('select begin');
+        Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=select begin runId=${bb.runId}`);
+    }
+    async run(bb, orch, opts, onProgress, hooks = null, api) {
+        this.begin(bb);
+        const hard = !!opts.qualityHardFail && !opts.skipLlm;
+        const result = await withCritiqueLimit('select', bb.runId, hooks, async (attempt) => {
+            const ctx = new CreatePipelineCtx();
+            ctx.usedLlm = bb.usedLlm;
+            Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=select attempt=${attempt} runId=${bb.runId}`);
+            const ok = await orch.runSelectStage(opts, onProgress, ctx);
+            bb.usedLlm = bb.usedLlm || ctx.usedLlm;
+            // å¤±è´¥ä¹Ÿå†™å¿«ç…§ï¼Œä¾¿äºè¯Šæ–­/ç»­è·‘
+            if (ctx.selectLlm) {
+                bb.selectLlmOutput = ctx.selectLlm.output;
+                bb.selectLlmFromLlm = ctx.selectLlm.fromLlm;
+            }
+            if (ctx.selectResult) {
+                bb.selectResult = ctx.selectResult;
+                bb.matchedDevices = ctx.selectResult.devices ?? [];
+            }
+            const zero = !ctx.selectResult || ctx.selectResult.devices.length === 0;
+            const requireN = ctx.selectLlm?.output?.deviceRequireList?.length ?? 0;
+            const matchedReq = ctx.selectResult?.matchedRequireCount ?? 0;
+            const partial = hard && requireN > 0 && matchedReq < requireN;
+            const oodN = ctx.selectLlm?.output?.oodFlags?.length ?? 0;
+            const hardLines = [];
+            if (partial) {
+                hardLines.push(`partial BOM ${matchedReq}/${requireN}`);
+            }
+            const stageOk = ok && !zero && !partial;
+            const critiqueCtx = {
+                stage: 'select',
+                runId: bb.runId,
+                attempt: attempt,
+                zeroMatch: zero,
+                softMiss: oodN > 0 ? oodN : 0,
+                hardLines: hardLines
+            };
+            const value = {
+                ok: stageOk,
+                ctx: ctx,
+                reason: ctx.abort?.ercErrors?.[0]?.desc ??
+                    (partial ? `partial BOM ${matchedReq}/${requireN}` : undefined)
+            };
+            const out = {
+                ok: stageOk,
+                value: value,
+                critiqueCtx: critiqueCtx
+            };
+            return out;
+        }, (_last, reason) => {
+            Logger.error(INSTR_TRACE_TAG, `[AI_AGENT] stage=select critique exhausted | ${reason}`);
+            const fail = {
+                ok: false, ctx: new CreatePipelineCtx(), reason: reason
+            };
+            return fail;
+        }, async (ctx, stageOk) => {
+            const c = await critiqueWithLlm(api ?? null, 'select', opts.prompt, ctx, stageOk, !!opts.skipLlm);
+            return c.reason;
+        });
+        if (result.ok && result.ctx.selectResult) {
+            bb.selectResult = result.ctx.selectResult;
+            bb.matchedDevices = result.ctx.selectResult.devices ?? [];
+            if (result.ctx.selectLlm) {
+                bb.selectLlmOutput = result.ctx.selectLlm.output;
+                bb.selectLlmFromLlm = result.ctx.selectLlm.fromLlm;
+            }
+            bb.markStageDone('select');
+        }
+        this.end(bb, result.ok, result.reason ?? '');
+        return result;
+    }
+    end(bb, ok, detail = '') {
+        bb.log(`select ${ok ? 'ok' : 'fail'} ${detail}`);
+        Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=select ${ok ? 'ok' : 'fail'} ${detail}`);
+    }
+}
+//# sourceMappingURL=SelectAgent.js.mapÂ”Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\AiPipelineOrchestrator.etsÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageHooks.etsÙ^C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageCritic.etsÙ^C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\SelectAgent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName­./SelectAgent©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ6/**
+ * SelectAgent â€” ç‹¬ç«‹ await + LLM æ‰¹åˆ¤ + å†™å…¥ selectLlm å¿«ç…§å­—æ®µ
+ */
+import {
+  Logger, INSTR_TRACE_TAG, ProgressCallback
+} from 'common';
+import { IAiApiManager } from 'ai_api_manager';
+import { AiPipelineOrchestrator, CreatePipelineCtx, PipelineOptions } from '../AiPipelineOrchestrator';
+import { CircuitBlackboard } from './CircuitBlackboard';
+import { withCritiqueLimit, StageHooks, StageHookContext, CritiqueAttemptResult } from './StageHooks';
+import { critiqueWithLlm } from './StageCritic';
+
+export interface SelectAgentRunResult {
+  ok: boolean;
+  ctx: CreatePipelineCtx;
+  reason?: string;
+}
+
+export class SelectAgent {
+  begin(bb: CircuitBlackboard): void {
+    bb.log('select begin');
+    Logger.info(INSTR_TRACE_TAG, `[AI_AGENT] stage=select begin runId=${bb.runId}`);
+  }
+
+  async run(bb: CircuitBlackboard, orch: AiPipelineOrchestrator, opts: PipelineOptions,
+    onProgress?: ProgressCallback, hooks: StageHooks | null = null,
+    api?: IAiApiManager | null): Promise<SelectAgentRunResult> {
+    this.begin(bb);
+    const hard = !!opts.qualityHardFail && !opts.skipLlm;
+    const result = await withCritiqueLimit<SelectAgentRunResult>(
+      'select', bb.runId, hooks,
+      async (attempt: number): Promise<CritiqueAttemptResult<SelectAgentRunResult>> => {
+        const ctx = new CreatePipelineCtx();
+        ctx.usedLlm = bb.usedLlm;
+        Logger.info(INSTR_TRACE_TAG,
+          `[AI_AGENT] stage=select attempt=${attempt} runId=${bb.runId}`);
+        const ok = await orch.runSelectStage(opts, onProgress, ctx);
+        bb.usedLlm = bb.usedLlm || ctx.usedLlm;
+        // å¤±è´¥ä¹Ÿå†™å¿«ç…§ï¼Œä¾¿äºè¯Šæ–­/ç»­è·‘
+        if (ctx.selectLlm) {
+          bb.selectLlmOutput = ctx.selectLlm.output;
+          bb.selectLlmFromLlm = ctx.selectLlm.fromLlm;
+        }
+        if (ctx.selectResult) {
+          bb.selectResult = ctx.selectResult;
+          bb.matchedDevices = ctx.selectResult.devices ?? [];
+        }
+        const zero = !ctx.selectResult || ctx.selectResult.devices.length === 0;
+        const requireN = ctx.selectLlm?.output?.deviceRequireList?.length ?? 0;
+        const matchedReq = ctx.selectResult?.matchedRequireCount ?? 0;
+        const partial = hard && requireN > 0 && matchedReq < requireN;
+        const oodN = ctx.selectLlm?.output?.oodFlags?.length ?? 0;
+        const hardLines: string[] = [];
+        if (partial) {
+          hardLines.push(`partial BOM ${matchedReq}/${requireN}`);
+        }
+        const stageOk = ok && !zero && !partial;
+        const critiqueCtx: StageHookContext = {
+          stage: 'select',
+          runId: bb.runId,
+          attempt: attempt,
+          zeroMatch: zero,
+          softMiss: oodN > 0 ? oodN : 0,
+          hardLines: hardLines
+        };
+        const value: SelectAgentRunResult = {
+          ok: stageOk,
+          ctx: ctx,
+          reason: ctx.abort?.ercErrors?.[0]?.desc ??
+            (partial ? `partial BOM ${matchedReq}/${requireN}` : undefined)
+        };
+        const out: CritiqueAttemptResult<SelectAgentRunResult> = {
+          ok: stageOk,
+          value: value,
+          critiqueCtx: critiqueCtx
+        };
+        return out;
+      },
+      (_last, reason) => {
+        Logger.error(INSTR_TRACE_TAG, `[AI_AGENT] stage=select critique exhausted | ${reason}`);
+        const fail: SelectAgentRunResult = {
+          ok: false, ctx: new CreatePipelineCtx(), reason: reason
+        };
+        return fail;
+      },
+      async (ctx, stageOk) => {
+        const c = await critiqueWithLlm(api ?? null, 'select', opts.prompt, ctx, stageOk,
+          !!opts.skipLlm);
+        return c.reason;
+      }
+    );
+    if (result.ok && result.ctx.selectResult) {
+      bb.selectResult = result.ctx.selectResult;
+      bb.matchedDevices = result.ctx.selectResult.devices ?? [];
+      if (result.ctx.selectLlm) {
+        bb.selectLlmOutput = result.ctx.selectLlm.output;
+        bb.selectLlmFromLlm = result.ctx.selectLlm.fromLlm;
+      }
+      bb.markStageDone('select');
+    }
+    this.end(bb, result.ok, result.reason ?? '');
+    return result;
+  }
+
+  end(bb: CircuitBlackboard, ok: boolean, detail: string = ''): void {
+    bb.log(`select ${ok ? 'ok' : 'fail'} ${detail}`);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_AGENT] stage=select ${ok ? 'ok' : 'fail'} ${detail}`);
+  }
+}
+ÀÔrE”¹../AiPipelineOrchestrator¬./StageHooks­./StageCritic¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\AiPipelineOrchestrator.etsAÃªoh-resolveÂFAÂÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageHooks.etsAÃªoh-resolveÂFAÂÙ^C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageCritic.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings®SelectAgent.js ‘¯SelectAgent.etsÜ W‘”    ‘” š”   ” ”	 ” ” 
+”  ”" ”( ”0 ”1 ˜”   ” ”	 !” 2” ÌE”" ÌK”= Ìf”> Ìg˜”  	 ” 	”	 		” 	” 	ÌQ”" 	ÌW”0 	Ìe”1 	Ìf˜”  
+ ” 
+”	 
+	” 
+” 
+”  
+ ”/ 
+/”0 
+0””   ” ” ” ”” ”	 ”
+ ” ˜” ”
+ ” ” 
+” ” ” ” ” ” 
+” ” ” ”# ”% !”ÌL ÌH”ÌN ÌJ”ÌO ÌK”ÌT ÌP”ÌV ÌR”ÌW ÌS”ÌX ÌT’” ” Ü ” ”	 ”
+ ” ” ” !” #” ?” ÌA” ÌV” ”( !”* #”2 >”6 ÌB”8 ”; ˜” ” ” 	” ” ” ” ” Ÿ” ” 
+” ” ” ” ” ” ”+ '”/ +”0 ,”4 0”5 1”< 8”= 9Ü ” ” 
+” ” ” ”. *”/ ”7 ”9 ”; ”< ”ÌA ”ÌC ”ÌH ”ÌJ ”ÌO ”ÌQ ”ÌX ”ÌZ ÌT”Ì\ ÌV˜”  ”  ”  ”  ”  ”-  )”/  +”0  ,™” !” !” !” !” !” !” !”$ ! ”% !!Ü ” "” "” "” "” "”' "#”) #
+”ÌL #-”ÌS #4”Ì] #>”Ì_ #Ì@”Ì` #ÌA”Ìe #ÌF”Ìg #ÌH”Ìh #ÌI”Ìi #ÌJÜ ” $” $” $” $” $”! $”" $”0 $,”1 $-”5 $1”7 $3”ÌA $=”ÌC $?”ÌF $ÌB”ÌG $ÌC”ÌH $ÌD” %” %
+” %” %” %” %” %”# %”' %#”* %&”+ %'”2 %.”3 %/’” &” &–” '” '” '” '” '” '›” (
+” (” (”" (”% (”( ("”) (#”2 (,”3 (-”9 (3”: (4›” )
+” )” )”# )”& ) ”) )#”* )$”3 )-”4 ).”; )5”< )6‘” *	–” +” +” +” +”  +”" +™” ,
+” ,” ,” ,”" ,”% ,”& , ”2 ,,”3 ,-” -
+” -” -”! -”$ -”' -!”( -"”4 -.”5 -/”< -6”Ì@ -:”ÌB -<”ÌC -=‘” .	Ü ” /” /” /” /” /” /” /”* /&”. /*”1 /-”2 /.”> /:”? /;”ÌF /ÌB”ÌG /ÌC”ÌM /ÌI”ÌR /ÌN”ÌS /ÌO”ÌT /ÌPÜ ” 0” 0” 0” 0”  0”! 0”* 0&”, 0(”2 0.”4 00”ÌE 0ÌA”ÌG 0ÌC”ÌM 0ÌI”ÌQ 0ÌM”ÌR 0ÌN”ÌS 0ÌOœ” 1” 1” 1” 1”" 1”# 1”/ 1+”1 1-”ÌD 1Ì@”ÌH 1ÌD”ÌI 1ÌE”ÌJ 1ÌF” 2” 2” 2” 2”  2”$ 2 ”, 2(”/ 2+”0 2,”4 20”> 2:”ÌA 2=”ÌI 2ÌE”ÌJ 2ÌFÜ ” 3” 3” 3” 3” 3” 3”& 3"”( 3$”. 3*”0 3,”8 34”: 36”Ì@ 3<”ÌD 3Ì@”ÌE 3ÌA”ÌF 3ÌB–” 4” 4” 4” 4$”  4&”! 4'”” 5” 5” 5” 5œ” 6
+” 6” 6” 6” 6”. 6(”8 62”< 66”ÌD 6>”ÌF 6Ì@”ÌG 6ÌA”ÌH 6ÌB‘” 7	œ” 8” 8” 8” 8” 8”" 8”# 8”' 8#”+ 8'”, 8(”3 8/”4 80”” 9” 9” 9”  9.”” :
+” :” :” :–” ;
+” ;” ;” ;” ;” ;”” <
+” <” <”  <”” =
+” =” =” =” >
+” >” >” >”! >”" >”# >”$ >”% >”) >#”* >$”+ >%”, >&”- >'”” ?
+” ?” ?”$ ?’” Ì@	” Ì@
+”” ÌA” ÌA” ÌA” ÌA,”” ÌB
+” ÌB” ÌB” ÌB”” ÌC
+” ÌC” ÌC” ÌC” ÌD
+” ÌD” ÌD” ÌD” ÌD”! ÌD”# ÌD”, ÌD&”. ÌD(”/ ÌD)”0 ÌD*”1 ÌD+”3 ÌD-”7 ÌD1Ü ” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE”. ÌE&”8 ÌE0”< ÌE4”ÌD ÌE<”ÌF ÌE>”ÌG ÌE?”ÌH ÌEÌ@”ÌI ÌEÌA”ÌR ÌEÌJ”ÌS ÌEÌK’” ÌF	” ÌF
+”” ÌG” ÌG” ÌG” ÌGÌA”” ÌH
+” ÌH” ÌH” ÌH”” ÌI
+” ÌI” ÌI” ÌI”” ÌJ
+” ÌJ” ÌJ”( ÌJ"’” ÌK	” ÌK
+”” ÌL” ÌL” ÌL” ÌL™” ÌM”	 ÌM” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌNœ” ÌO” ÌO” ÌO” ÌO” ÌO”( ÌO$”* ÌO&”ÌZ ÌOÌV”Ì` ÌOÌ\”Ìb ÌOÌ^”Ìc ÌOÌ_”Ìd ÌOÌ`”” ÌP” ÌP” ÌP” ÌP+” ÌQ
+” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”  ÌQ”$ ÌQ”5 ÌQ/”7 ÌQ1”9 ÌQ3”? ÌQ9”ÌA ÌQ;”ÌG ÌQÌA’” ÌR	” ÌR
+”” ÌS” ÌS” ÌS” ÌSš” ÌT”	 ÌT” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU”  ÌU”" ÌUÜ ” ÌV” ÌV” ÌV” ÌV” ÌV”+ ÌV'”, ÌV(”/ ÌV+”3 ÌV/”7 ÌV3”9 ÌV5”ÌA ÌV=”ÌC ÌV?”ÌG ÌVÌC”ÌH ÌVÌD”ÌN ÌVÌJ”ÌP ÌVÌL”ÌS ÌVÌO”ÌU ÌVÌQ”Ì\ ÌVÌX”Ì^ ÌW
+”Ì_ ÌW”Ì` ÌW”Ìd ÌW”Ìe ÌW”Ìl ÌW”Ìm ÌW”Ìn ÌW–” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”” ÌY”	 ÌY”
+ ÌZ” ÌZœ” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[”  Ì[”# Ì[”$ Ì[ ”0 Ì[,”2 Ì[.›” Ì\” Ì\” Ì\	” Ì\” Ì\”$ Ì\”% Ì\”( Ì\"”) Ì\#”5 Ì\/”6 Ì\0Ÿ” Ì]” Ì]” Ì]	” Ì]”  Ì]”& Ì] ”' Ì]!”* Ì]$”+ Ì]%”7 Ì]1”8 Ì]2”? Ì]9”ÌC Ì]=”ÌE Ì]?”ÌF Ì]Ì@˜” Ì^” Ì^
+” Ì^” Ì^” Ì^” Ì^”$ Ì^”& Ì^ ” Ì_” Ì_
+” Ì_”" Ì_”% Ì_”+ Ì_#”, Ì_$”/ Ì_'”0 Ì_(”9 Ì_1”: Ì_2”Ì@ Ì_8”ÌA Ì_9” Ì`” Ì`
+” Ì`”# Ì`”& Ì`”, Ì`$”- Ì`%”0 Ì`(”1 Ì`)”: Ì`2”; Ì`3”ÌB Ì`:”ÌC Ì`;‘” Ìa˜” Ìb” Ìb” Ìb	” Ìb” Ìb”% Ìb”& Ìb ”' Ìb!‘”	 ÌcÜ ” Ìd” Ìd” Ìd	” Ìd” Ìd” Ìd” Ìd” Ìd” Ìd” Ìd”  Ìd”& Ìd"”' Ìd#”- Ìd)”1 Ìd-”3 Ìd/”4 Ìd0”5 Ìd1”” Ìe” Ìe” Ìe” Ìe’” Ìf” Ìf™” Ìh” Ìh” Ìh”
+ Ìh” Ìh” Ìh(” Ìh*” Ìh;” Ìh=Ü ” Ìi”
+ Ìi” Ìi” Ìi
+” Ìi” Ìi” Ìi” Ìi” Ìi” Ìi”" Ìi”# Ìi”$ Ìi ”% Ìi!”+ Ìi'”/ Ìi+”5 Ìi1”7 Ìi3”8 Ìi4”9 Ìi5Ü ” Ìj” Ìj
+” Ìj” Ìj” Ìj”# Ìj”% Ìk”Ì@ Ìk!”ÌB Ìk#”ÌC Ìk$”ÌD Ìk%”ÌE Ìk&”ÌI Ìk*”ÌJ Ìk+”ÌK Ìk,”ÌL Ìk-”ÌR Ìk3”ÌV Ìk7”Ì\ Ìk=”Ì^ Ìk?”Ì_ ÌkÌ@”Ì` ÌkÌA’” Ìl” Ìl‘” ÌmÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ X‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍ$ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ!Í$ÔrM”¤type¥start£end¤nameªIdentifierÍ'Í2«SelectAgentÀÔrN”¤type¥start£end¤body©ClassBodyÍ3Í$“ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ:ÍÇÂÂMªIdentifierÍ:Í?¥begin¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ?ÍÇÀÂÂÂ‘MªIdentifierÍ@ÍB¢bbN®BlockStatementÍDÍÇ’ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍOÍfÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍOÍeÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍOÍUMªIdentifierÍOÍQ¢bbMªIdentifierÍRÍU£logÂÂ‘ÔrT•¤type¥start£end¥value£raw§LiteralÍVÍd¬select begin®'select begin'ÂQ³ExpressionStatementÍpÍÀR®CallExpressionÍpÍ¿S°MemberExpressionÍpÍ{MªIdentifierÍpÍv¦LoggerMªIdentifierÍwÍ{¤infoÂÂ’MªIdentifierÍ|Í‹¯INSTR_TRACE_TAGÔrU•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍ¾‘S°MemberExpressionÍ´Í¼MªIdentifierÍ´Í¶¢bbMªIdentifierÍ·Í¼¥runIdÂÂ’ÔrV•¤type¥start£end¥value¤tail¯TemplateElementÍÍ²ÔrW’£raw¦cookedÙ$[AI_AGENT] stage=select begin runId=Ù$[AI_AGENT] stage=select begin runId=ÂV¯TemplateElementÍ½Í½W  ÃÂO°MethodDefinitionÍÍÍ]ÂÂMªIdentifierÍÓÍÖ£run¦methodP²FunctionExpressionÍÖÍ]ÀÂÂÃ–MªIdentifierÍ×ÍÙ¢bbMªIdentifierÍÛÍß¤orchMªIdentifierÍáÍå¤optsMªIdentifierÍçÍñªonProgressÔrX•¤type¥start£end¤left¥right±AssignmentPatternÍóÍÿMªIdentifierÍóÍø¥hooksT§LiteralÍûÍÿÀ¤nullMªIdentifierÍÍ£apiN®BlockStatementÍÍ]–Q³ExpressionStatementÍÍ R®CallExpressionÍÍS°MemberExpressionÍÍÔrY“¤type¥start£end®ThisExpressionÍÍMªIdentifierÍÍ¥beginÂÂ‘MªIdentifierÍÍ¢bbÂÔrZ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ*Í_‘Ôr[•¤type¥start£end¢id¤init²VariableDeclaratorÍ0Í^MªIdentifierÍ0Í4¤hardÔr\–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ7Í^Ôr]–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ7ÍM¡!Ã]¯UnaryExpressionÍ8ÍM¡!ÃS°MemberExpressionÍ9ÍMMªIdentifierÍ9Í=¤optsMªIdentifierÍ>ÍM¯qualityHardFailÂÂ¢&&]¯UnaryExpressionÍQÍ^¡!ÃS°MemberExpressionÍRÍ^MªIdentifierÍRÍV¤optsMªIdentifierÍWÍ^§skipLlmÂÂ¥constZ³VariableDeclarationÍiÍ^‘[²VariableDeclaratorÍoÍ]MªIdentifierÍoÍu¦resultÔr^”¤type¥start£end¨argument¯AwaitExpressionÍxÍ]R®CallExpressionÍ~Í]MªIdentifierÍ~Í±withCritiqueLimit–T§LiteralÍÍ˜¦select¨'select'S°MemberExpressionÍšÍ¢MªIdentifierÍšÍœ¢bbMªIdentifierÍÍ¢¥runIdÂÂMªIdentifierÍ¤Í©¥hooksP·ArrowFunctionExpressionÍ«Í
+’ÀÂÂÃ‘MªIdentifierÍ²Í¹§attemptN®BlockStatementÍ¾Í
+’Ü Z³VariableDeclarationÍÍÍñ‘[²VariableDeclaratorÍÓÍğMªIdentifierÍÓÍÖ£ctxÔr_•¤type¥start£end¦callee©arguments­NewExpressionÍÙÍğMªIdentifierÍİÍî±CreatePipelineCtx¥constQ³ExpressionStatementÍÿÍÔr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÿÍ¡=S°MemberExpressionÍÿÍ
+MªIdentifierÍÿÍ£ctxMªIdentifierÍÍ
+§usedLlmÂÂS°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍÍ§usedLlmÂÂQ³ExpressionStatementÍ&ÍƒR®CallExpressionÍ&Í‚S°MemberExpressionÍ&Í1MªIdentifierÍ&Í,¦LoggerMªIdentifierÍ-Í1¤infoÂÂ’MªIdentifierÍ2ÍA¯INSTR_TRACE_TAGU¯TemplateLiteralÍCÍ’MªIdentifierÍfÍm§attemptS°MemberExpressionÍwÍMªIdentifierÍwÍy¢bbMªIdentifierÍzÍ¥runIdÂÂ“V¯TemplateElementÍDÍdWÙ [AI_AGENT] stage=select attempt=Ù [AI_AGENT] stage=select attempt=ÂV¯TemplateElementÍnÍuW§ runId=§ runId=ÂV¯TemplateElementÍ€Í€W  ÃÂZ³VariableDeclarationÍ‘ÍÍ‘[²VariableDeclaratorÍ—ÍÌMªIdentifierÍ—Í™¢ok^¯AwaitExpressionÍœÍÌR®CallExpressionÍ¢ÍÌS°MemberExpressionÍ¢ÍµMªIdentifierÍ¢Í¦¤orchMªIdentifierÍ§Íµ®runSelectStageÂÂ“MªIdentifierÍ¶Íº¤optsMªIdentifierÍ¼ÍÆªonProgressMªIdentifierÍÈÍË£ctxÂ¥constQ³ExpressionStatementÍÛÍ`´AssignmentExpressionÍÛÍ¡=S°MemberExpressionÍÛÍåMªIdentifierÍÛÍİ¢bbMªIdentifierÍŞÍå§usedLlmÂÂ\±LogicalExpressionÍèÍS°MemberExpressionÍèÍòMªIdentifierÍèÍê¢bbMªIdentifierÍëÍò§usedLlmÂÂ¢||S°MemberExpressionÍöÍMªIdentifierÍöÍù£ctxMªIdentifierÍúÍ§usedLlmÂÂÔra–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ/ÍÌS°MemberExpressionÍ3Í@MªIdentifierÍ3Í6£ctxMªIdentifierÍ7Í@©selectLlmÂÂN®BlockStatementÍBÍÌ’Q³ExpressionStatementÍUÍ`´AssignmentExpressionÍUÍ~¡=S°MemberExpressionÍUÍgMªIdentifierÍUÍW¢bbMªIdentifierÍXÍg¯selectLlmOutputÂÂS°MemberExpressionÍjÍ~S°MemberExpressionÍjÍwMªIdentifierÍjÍm£ctxMªIdentifierÍnÍw©selectLlmÂÂMªIdentifierÍxÍ~¦outputÂÂQ³ExpressionStatementÍ‘Í½`´AssignmentExpressionÍ‘Í¼¡=S°MemberExpressionÍ‘Í¤MªIdentifierÍ‘Í“¢bbMªIdentifierÍ”Í¤°selectLlmFromLlmÂÂS°MemberExpressionÍ§Í¼S°MemberExpressionÍ§Í´MªIdentifierÍ§Íª£ctxMªIdentifierÍ«Í´©selectLlmÂÂMªIdentifierÍµÍ¼§fromLlmÂÂÀa«IfStatementÍÚÍzS°MemberExpressionÍŞÍîMªIdentifierÍŞÍá£ctxMªIdentifierÍâÍî¬selectResultÂÂN®BlockStatementÍğÍz’Q³ExpressionStatementÍÍ&`´AssignmentExpressionÍÍ%¡=S°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍÍ¬selectResultÂÂS°MemberExpressionÍÍ%MªIdentifierÍÍ£ctxMªIdentifierÍÍ%¬selectResultÂÂQ³ExpressionStatementÍ8Ík`´AssignmentExpressionÍ8Íj¡=S°MemberExpressionÍ8ÍIMªIdentifierÍ8Í:¢bbMªIdentifierÍ;ÍI®matchedDevicesÂÂ\±LogicalExpressionÍLÍjS°MemberExpressionÍLÍdS°MemberExpressionÍLÍ\MªIdentifierÍLÍO£ctxMªIdentifierÍPÍ\¬selectResultÂÂMªIdentifierÍ]Íd§devicesÂÂ¢??Ôrb”¤type¥start£end¨elements¯ArrayExpressionÍhÍjÀZ³VariableDeclarationÍˆÍĞ‘[²VariableDeclaratorÍÍÏMªIdentifierÍÍ’¤zero\±LogicalExpressionÍ•ÍÏ]¯UnaryExpressionÍ•Í¦¡!ÃS°MemberExpressionÍ–Í¦MªIdentifierÍ–Í™£ctxMªIdentifierÍšÍ¦¬selectResultÂÂ¢||\°BinaryExpressionÍªÍÏS°MemberExpressionÍªÍÉS°MemberExpressionÍªÍÂS°MemberExpressionÍªÍºMªIdentifierÍªÍ­£ctxMªIdentifierÍ®Íº¬selectResultÂÂMªIdentifierÍ»ÍÂ§devicesÂÂMªIdentifierÍÃÍÉ¦lengthÂÂ£===T§LiteralÍÎÍÏ ¡0¥constZ³VariableDeclarationÍŞÍ%‘[²VariableDeclaratorÍäÍ$MªIdentifierÍäÍì¨requireN\±LogicalExpressionÍïÍ$Q¯ChainExpressionÍïÍS°MemberExpressionÍïÍS°MemberExpressionÍïÍS°MemberExpressionÍïÍS°MemberExpressionÍïÍüMªIdentifierÍïÍò£ctxMªIdentifierÍóÍü©selectLlmÂÂMªIdentifierÍşÍ¦outputÂÃMªIdentifierÍÍ±deviceRequireListÂÃMªIdentifierÍÍ¦lengthÂÃ¢??T§LiteralÍ#Í$ ¡0¥constZ³VariableDeclarationÍ3Íq‘[²VariableDeclaratorÍ9ÍpMªIdentifierÍ9ÍCªmatchedReq\±LogicalExpressionÍFÍpQ¯ChainExpressionÍFÍkS°MemberExpressionÍFÍkS°MemberExpressionÍFÍVMªIdentifierÍFÍI£ctxMªIdentifierÍJÍV¬selectResultÂÂMªIdentifierÍXÍk³matchedRequireCountÂÃ¢??T§LiteralÍoÍp ¡0¥constZ³VariableDeclarationÍÍ½‘[²VariableDeclaratorÍ…Í¼MªIdentifierÍ…ÍŒ§partial\±LogicalExpressionÍÍ¼\±LogicalExpressionÍÍ£MªIdentifierÍÍ“¤hard¢&&\°BinaryExpressionÍ—Í£MªIdentifierÍ—ÍŸ¨requireN¡>T§LiteralÍ¢Í£ ¡0¢&&\°BinaryExpressionÍ§Í¼MªIdentifierÍ§Í±ªmatchedReq¡<MªIdentifierÍ´Í¼¨requireN¥constZ³VariableDeclarationÍËÍ‘[²VariableDeclaratorÍÑÍMªIdentifierÍÑÍÕ¤oodN\±LogicalExpressionÍØÍQ¯ChainExpressionÍØÍÿS°MemberExpressionÍØÍÿS°MemberExpressionÍØÍ÷S°MemberExpressionÍØÍíS°MemberExpressionÍØÍåMªIdentifierÍØÍÛ£ctxMªIdentifierÍÜÍå©selectLlmÂÂMªIdentifierÍçÍí¦outputÂÃMªIdentifierÍïÍ÷¨oodFlagsÂÃMªIdentifierÍùÍÿ¦lengthÂÃ¢??T§LiteralÍÍ ¡0¥constZ³VariableDeclarationÍÍ(‘[²VariableDeclaratorÍÍ'MªIdentifierÍÍ"©hardLinesb¯ArrayExpressionÍ%Í'¥consta«IfStatementÍ6ÍMªIdentifierÍ:ÍA§partialN®BlockStatementÍCÍ‘Q³ExpressionStatementÍVÍR®CallExpressionÍVÍS°MemberExpressionÍVÍdMªIdentifierÍVÍ_©hardLinesMªIdentifierÍ`Íd¤pushÂÂ‘U¯TemplateLiteralÍeÍŒ’MªIdentifierÍtÍ~ªmatchedReqMªIdentifierÍ‚ÍŠ¨requireN“V¯TemplateElementÍfÍrW¬partial BOM ¬partial BOM ÂV¯TemplateElementÍÍ€W¡/¡/ÂV¯TemplateElementÍ‹Í‹W  ÃÂÀZ³VariableDeclarationÍ«ÍÓ‘[²VariableDeclaratorÍ±ÍÒMªIdentifierÍ±Í¸§stageOk\±LogicalExpressionÍ»ÍÒ\±LogicalExpressionÍ»ÍÆMªIdentifierÍ»Í½¢ok¢&&]¯UnaryExpressionÍÁÍÆ¡!ÃMªIdentifierÍÂÍÆ¤zero¢&&]¯UnaryExpressionÍÊÍÒ¡!ÃMªIdentifierÍËÍÒ§partial¥constZ³VariableDeclarationÍáÍå‘[²VariableDeclaratorÍçÍäMªIdentifierÍçÍò«critiqueCtxÔrc”¤type¥start£endªproperties°ObjectExpressionÍõÍä–Ôrd™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍÂÂÂMªIdentifierÍÍ¥stageT§LiteralÍÍ¦select¨'select'¤initd¨PropertyÍ*Í9ÂÂÂMªIdentifierÍ*Í/¥runIdS°MemberExpressionÍ1Í9MªIdentifierÍ1Í3¢bbMªIdentifierÍ4Í9¥runIdÂÂ¤initd¨PropertyÍLÍ\ÂÂÂMªIdentifierÍLÍS§attemptMªIdentifierÍUÍ\§attempt¤initd¨PropertyÍoÍ~ÂÂÂMªIdentifierÍoÍx©zeroMatchMªIdentifierÍzÍ~¤zero¤initd¨PropertyÍ‘Í®ÂÂÂMªIdentifierÍ‘Í™¨softMissaµConditionalExpressionÍ›Í®\°BinaryExpressionÍ›Í£MªIdentifierÍ›ÍŸ¤oodN¡>T§LiteralÍ¢Í£ ¡0MªIdentifierÍ¦Íª¤oodNT§LiteralÍ­Í® ¡0¤initd¨PropertyÍÁÍÕÂÂÂMªIdentifierÍÁÍÊ©hardLinesMªIdentifierÍÌÍÕ©hardLines¤init¥constZ³VariableDeclarationÍóÍ	Ü‘[²VariableDeclaratorÍùÍ	ÛMªIdentifierÍùÍş¥valuec°ObjectExpressionÍ	Í	Û“d¨PropertyÍ	Í	ÂÂÂMªIdentifierÍ	Í	¢okMªIdentifierÍ	Í	§stageOk¤initd¨PropertyÍ	2Í	:ÂÂÂMªIdentifierÍ	2Í	5£ctxMªIdentifierÍ	7Í	:£ctx¤initd¨PropertyÍ	MÍ	ÌÂÂÂMªIdentifierÍ	MÍ	S¦reason\±LogicalExpressionÍ	UÍ	ÌQ¯ChainExpressionÍ	UÍ	tS°MemberExpressionÍ	UÍ	tS°MemberExpressionÍ	UÍ	nS°MemberExpressionÍ	UÍ	iS°MemberExpressionÍ	UÍ	^MªIdentifierÍ	UÍ	X£ctxMªIdentifierÍ	YÍ	^¥abortÂÂMªIdentifierÍ	`Í	i©ercErrorsÂÃT§LiteralÍ	lÍ	m ¡0ÃÃMªIdentifierÍ	pÍ	t¤descÂÃ¢??aµConditionalExpressionÍ	Í	ËMªIdentifierÍ	Í	•§partialU¯TemplateLiteralÍ	˜Í	¿’MªIdentifierÍ	§Í	±ªmatchedReqMªIdentifierÍ	µÍ	½¨requireN“V¯TemplateElementÍ	™Í	¥W¬partial BOM ¬partial BOM ÂV¯TemplateElementÍ	²Í	³W¡/¡/ÂV¯TemplateElementÍ	¾Í	¾W  ÃMªIdentifierÍ	ÂÍ	Ë©undefined¤init¥constZ³VariableDeclarationÍ	êÍ
+n‘[²VariableDeclaratorÍ	ğÍ
+mMªIdentifierÍ	ğÍ	ó£outc°ObjectExpressionÍ	öÍ
+m“d¨PropertyÍ
+	Í
+ÂÂÂMªIdentifierÍ
+	Í
+¢okMªIdentifierÍ
+Í
+§stageOk¤initd¨PropertyÍ
+'Í
+3ÂÂÂMªIdentifierÍ
+'Í
+,¥valueMªIdentifierÍ
+.Í
+3¥value¤initd¨PropertyÍ
+FÍ
+^ÂÂÂMªIdentifierÍ
+FÍ
+Q«critiqueCtxMªIdentifierÍ
+SÍ
+^«critiqueCtx¤init¥const^¯ReturnStatementÍ
+|Í
+‡MªIdentifierÍ
+ƒÍ
+†£outP·ArrowFunctionExpressionÍ
+”Í¨ÀÂÂÂ’MªIdentifierÍ
+•Í
+š¥_lastMªIdentifierÍ
+œÍ
+¢¦reasonN®BlockStatementÍ
+§Í¨“Q³ExpressionStatementÍ
+¶ÍR®CallExpressionÍ
+¶ÍS°MemberExpressionÍ
+¶Í
+ÂMªIdentifierÍ
+¶Í
+¼¦LoggerMªIdentifierÍ
+½Í
+Â¥errorÂÂ’MªIdentifierÍ
+ÃÍ
+Ò¯INSTR_TRACE_TAGU¯TemplateLiteralÍ
+ÔÍ‘MªIdentifierÍÍ
+¦reason’V¯TemplateElementÍ
+ÕÍWÙ-[AI_AGENT] stage=select critique exhausted | Ù-[AI_AGENT] stage=select critique exhausted | ÂV¯TemplateElementÍÍW  ÃÂZ³VariableDeclarationÍÍƒ‘[²VariableDeclaratorÍ"Í‚MªIdentifierÍ"Í&¤failc°ObjectExpressionÍ)Í‚“d¨PropertyÍ<ÍEÂÂÂMªIdentifierÍ<Í>¢okT§LiteralÍ@ÍEÂ¥false¤initd¨PropertyÍGÍcÂÂÂMªIdentifierÍGÍJ£ctx_­NewExpressionÍLÍcMªIdentifierÍPÍa±CreatePipelineCtx¤initd¨PropertyÍeÍsÂÂÂMªIdentifierÍeÍk¦reasonMªIdentifierÍmÍs¦reason¤init¥const^¯ReturnStatementÍ‘ÍMªIdentifierÍ˜Íœ¤failP·ArrowFunctionExpressionÍªÍ\ÀÂÂÃ’MªIdentifierÍ±Í´£ctxMªIdentifierÍ¶Í½§stageOkN®BlockStatementÍÂÍ\’Z³VariableDeclarationÍÑÍ3‘[²VariableDeclaratorÍ×Í2MªIdentifierÍ×ÍØ¡c^¯AwaitExpressionÍÛÍ2R®CallExpressionÍáÍ2MªIdentifierÍáÍğ¯critiqueWithLlm–\±LogicalExpressionÍñÍüMªIdentifierÍñÍô£api¢??T§LiteralÍøÍüÀ¤nullT§LiteralÍşÍ¦select¨'select'S°MemberExpressionÍÍMªIdentifierÍÍ¤optsMªIdentifierÍÍ¦promptÂÂMªIdentifierÍÍ£ctxMªIdentifierÍÍ!§stageOk]¯UnaryExpressionÍ#Í1¡!Ã]¯UnaryExpressionÍ$Í1¡!ÃS°MemberExpressionÍ%Í1MªIdentifierÍ%Í)¤optsMªIdentifierÍ*Í1§skipLlmÂÂÂ¥const^¯ReturnStatementÍAÍQS°MemberExpressionÍHÍPMªIdentifierÍHÍI¡cMªIdentifierÍJÍP¦reasonÂÂÂ¥consta«IfStatementÍhÍ\±LogicalExpressionÍlÍS°MemberExpressionÍlÍuMªIdentifierÍlÍr¦resultMªIdentifierÍsÍu¢okÂÂ¢&&S°MemberExpressionÍyÍS°MemberExpressionÍyÍƒMªIdentifierÍyÍ¦resultMªIdentifierÍ€Íƒ£ctxÂÂMªIdentifierÍ„Í¬selectResultÂÂN®BlockStatementÍ’Í”Q³ExpressionStatementÍ¡ÍË`´AssignmentExpressionÍ¡ÍÊ¡=S°MemberExpressionÍ¡Í°MªIdentifierÍ¡Í£¢bbMªIdentifierÍ¤Í°¬selectResultÂÂS°MemberExpressionÍ³ÍÊS°MemberExpressionÍ³Í½MªIdentifierÍ³Í¹¦resultMªIdentifierÍºÍ½£ctxÂÂMªIdentifierÍ¾ÍÊ¬selectResultÂÂQ³ExpressionStatementÍÙÍ`´AssignmentExpressionÍÙÍ¡=S°MemberExpressionÍÙÍêMªIdentifierÍÙÍÛ¢bbMªIdentifierÍÜÍê®matchedDevicesÂÂ\±LogicalExpressionÍíÍS°MemberExpressionÍíÍS°MemberExpressionÍíÍS°MemberExpressionÍíÍ÷MªIdentifierÍíÍó¦resultMªIdentifierÍôÍ÷£ctxÂÂMªIdentifierÍøÍ¬selectResultÂÂMªIdentifierÍÍ§devicesÂÂ¢??b¯ArrayExpressionÍÍa«IfStatementÍ!ÍÓS°MemberExpressionÍ%Í9S°MemberExpressionÍ%Í/MªIdentifierÍ%Í+¦resultMªIdentifierÍ,Í/£ctxÂÂMªIdentifierÍ0Í9©selectLlmÂÂN®BlockStatementÍ;ÍÓ’Q³ExpressionStatementÍNÍ`´AssignmentExpressionÍNÍ~¡=S°MemberExpressionÍNÍ`MªIdentifierÍNÍP¢bbMªIdentifierÍQÍ`¯selectLlmOutputÂÂS°MemberExpressionÍcÍ~S°MemberExpressionÍcÍwS°MemberExpressionÍcÍmMªIdentifierÍcÍi¦resultMªIdentifierÍjÍm£ctxÂÂMªIdentifierÍnÍw©selectLlmÂÂMªIdentifierÍxÍ~¦outputÂÂQ³ExpressionStatementÍ‘ÍÄ`´AssignmentExpressionÍ‘ÍÃ¡=S°MemberExpressionÍ‘Í¤MªIdentifierÍ‘Í“¢bbMªIdentifierÍ”Í¤°selectLlmFromLlmÂÂS°MemberExpressionÍ§ÍÃS°MemberExpressionÍ§Í»S°MemberExpressionÍ§Í±MªIdentifierÍ§Í­¦resultMªIdentifierÍ®Í±£ctxÂÂMªIdentifierÍ²Í»©selectLlmÂÂMªIdentifierÍ¼ÍÃ§fromLlmÂÂÀQ³ExpressionStatementÍáÍüR®CallExpressionÍáÍûS°MemberExpressionÍáÍñMªIdentifierÍáÍã¢bbMªIdentifierÍäÍñ­markStageDoneÂÂ‘T§LiteralÍòÍú¦select¨'select'ÂÀQ³ExpressionStatementÍÍ>R®CallExpressionÍÍ=S°MemberExpressionÍÍY®ThisExpressionÍÍMªIdentifierÍÍ£endÂÂ“MªIdentifierÍÍ¢bbS°MemberExpressionÍÍ'MªIdentifierÍÍ$¦resultMªIdentifierÍ%Í'¢okÂÂ\±LogicalExpressionÍ)Í<S°MemberExpressionÍ)Í6MªIdentifierÍ)Í/¦resultMªIdentifierÍ0Í6¦reasonÂÂ¢??T§LiteralÍ:Í< ¢''Â^¯ReturnStatementÍHÍVMªIdentifierÍOÍU¦resultO°MethodDefinitionÍcÍ!ÂÂMªIdentifierÍcÍf£end¦methodP²FunctionExpressionÍfÍ!ÀÂÂÂ“MªIdentifierÍgÍi¢bbMªIdentifierÍkÍm¢okX±AssignmentPatternÍoÍzMªIdentifierÍoÍu¦detailT§LiteralÍxÍz ¢''N®BlockStatementÍ|Í!’Q³ExpressionStatementÍ‡Í¸R®CallExpressionÍ‡Í·S°MemberExpressionÍ‡ÍMªIdentifierÍ‡Í‰¢bbMªIdentifierÍŠÍ£logÂÂ‘U¯TemplateLiteralÍÍ¶’aµConditionalExpressionÍ˜ÍªMªIdentifierÍ˜Íš¢okT§LiteralÍÍ¡¢ok¤'ok'T§LiteralÍ¤Íª¤fail¦'fail'MªIdentifierÍ®Í´¦detail“V¯TemplateElementÍÍ–W§select §select ÂV¯TemplateElementÍ«Í¬W¡ ¡ ÂV¯TemplateElementÍµÍµW  ÃÂQ³ExpressionStatementÍÂÍR®CallExpressionÍÂÍS°MemberExpressionÍÂÍÍMªIdentifierÍÂÍÈ¦LoggerMªIdentifierÍÉÍÍ¤infoÂÂ’MªIdentifierÍÎÍİ¯INSTR_TRACE_TAGU¯TemplateLiteralÍßÍ’aµConditionalExpressionÍúÍMªIdentifierÍúÍü¢okT§LiteralÍÿÍ¢ok¤'ok'T§LiteralÍÍ¤fail¦'fail'MªIdentifierÍÍ¦detail“V¯TemplateElementÍàÍøW¸[AI_AGENT] stage=select ¸[AI_AGENT] stage=select ÂV¯TemplateElementÍÍW¡ ¡ ÂV¯TemplateElementÍÍW  ÃÂÀ”Ôre•¤type¥start£endªspecifiers¦source±ImportDeclarationÌBÌs’Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifierÌKÌQMªIdentifierÌKÌQ¦LoggerMªIdentifierÌKÌQ¦Loggerf¯ImportSpecifierÌSÌbMªIdentifierÌSÌb¯INSTR_TRACE_TAGMªIdentifierÌSÌb¯INSTR_TRACE_TAGT§LiteralÌjÌr¦common¨'common'e±ImportDeclarationÌuÌ³‘f¯ImportSpecifierÌ~ÌMªIdentifierÌ~Ì±CreatePipelineCtxMªIdentifierÌ~Ì±CreatePipelineCtxT§LiteralÌ—Ì²¹../AiPipelineOrchestrator»'../AiPipelineOrchestrator'e±ImportDeclarationÌµÌæ‘f¯ImportSpecifierÌ¾ÌÏMªIdentifierÌ¾ÌÏ±withCritiqueLimitMªIdentifierÌ¾ÌÏ±withCritiqueLimitT§LiteralÌ×Ìå¬./StageHooks®'./StageHooks'e±ImportDeclarationÌèÍ‘f¯ImportSpecifierÌñÍ MªIdentifierÌñÍ ¯critiqueWithLlmMªIdentifierÌñÍ ¯critiqueWithLlmT§LiteralÍÍ­./StageCritic¯'./StageCritic'

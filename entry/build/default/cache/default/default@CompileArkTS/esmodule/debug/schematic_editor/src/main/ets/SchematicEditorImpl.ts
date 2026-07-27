@@ -1,7 +1,7 @@
 import { CommandHistory, MoveCommand, PlaceCommand, BatchDeleteCommand, AddWireCommand, ClearWiresCommand, RotateCommand, MirrorCommand, SetDeviceParamCommand, ApplyRouteCommand, BatchMoveCommand, BatchSetDeviceParamCommand, LoadDocumentCommand } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditCommands";
 import type { BatchMoveEntry } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditCommands";
-import { WireAutoRouter } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/WireAutoRouter";
-import type { WarCompObstacle, WarRouteContext } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/WireAutoRouter";
+import { WireAutoRouter } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { WarCompObstacle, WarRouteContext } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { EditorInternals } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditorInternals";
 import { createDefaultLayers } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/model/SchematicLayers";
 import type { SchematicLayer, SchematicLayerId } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/model/SchematicLayers";
@@ -1257,12 +1257,50 @@ export class SchematicEditorImpl implements ISchematicEditor {
         let bestDist = threshold;
         for (let i = 0; i < labels.length; i++) {
             const lb = labels[i];
-            const dx = world.x - lb.position.x;
-            const dy = world.y - lb.position.y;
-            // 文本画在锚点右侧，命中时忽略右侧一段文本宽度
-            const textPad = Math.min(lb.text.length * 5, 40);
-            const adjDx = dx > 0 ? Math.max(0, dx - textPad) : dx;
-            const dist = Math.sqrt(adjDx * adjDx + dy * dy);
+            const upper = lb.text.toUpperCase();
+            const isPwr = upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE';
+            const isGnd = upper === 'GND' || upper === 'VSS' || upper === '0';
+            let dx = world.x - lb.position.x;
+            let dy = world.y - lb.position.y;
+            if (isPwr) {
+                // Glyph extends upward from anchor
+                if (dy < 0 && dy > -30) {
+                    dy = 0;
+                }
+                dx = Math.abs(dx) <= 10 ? 0 : dx;
+            }
+            else if (isGnd) {
+                // Glyph extends downward from anchor
+                if (dy > 0 && dy < 28) {
+                    dy = 0;
+                }
+                dx = Math.abs(dx) <= 10 ? 0 : dx;
+            }
+            else {
+                // Signal flag: 按接入导线方向左/右展开
+                const textPad = Math.min(Math.max(lb.text.length * 7 + 10, 28), 72);
+                const paths: Point2D[][] = [];
+                const wires = doc.wires ?? [];
+                for (let wi = 0; wi < wires.length; wi++) {
+                    const pts = wires[wi].points;
+                    if (pts && pts.length >= 2) {
+                        paths.push(pts);
+                    }
+                }
+                const expandLeft = DeviceHitGeometry.inferSignalLabelExpandLeft(lb.position, paths);
+                if (expandLeft) {
+                    if (dx < 0) {
+                        dx = Math.min(0, dx + textPad);
+                    }
+                }
+                else if (dx > 0) {
+                    dx = Math.max(0, dx - textPad);
+                }
+                if (Math.abs(dy) <= 8) {
+                    dy = 0;
+                }
+            }
+            const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= bestDist) {
                 bestDist = dist;
                 bestId = lb.id;

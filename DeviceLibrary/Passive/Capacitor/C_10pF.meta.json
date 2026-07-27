@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "C_10pF",
+  "name": "Capacitor 10pF",
+  "vendor": "Generic",
+  "category": "passive_capacitor",
+  "sub_category": "tht",
+  "symbol_file": "../../Common/C_10pF.svg",
+  "sim_model_file": "C_10pF.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "value": "10pF",
+    "voltage": "50V"
+  }
+}

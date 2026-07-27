@@ -25,6 +25,8 @@ export interface SymbolDrawStyle {
     sensorTempC?: number;
     /** Hall sensor magnet field active */
     hallActive?: boolean;
+    /** Instance parameter overrides (e.g. VCC voltage) for label drawing */
+    paramOverrides?: Map<string, string>;
 }
 export class SchematicSymbolRenderer {
     static drawComponent(ctx: CanvasRenderingContext2D, originX: number, originY: number, def: ComponentDefinition, refDes: string, rotation: Rotation, mirrored: boolean, style: SymbolDrawStyle): SymbolBounds {
@@ -98,12 +100,17 @@ export class SchematicSymbolRenderer {
         if (isIcType) {
             SchematicSymbolRenderer.drawIcBody(ctx, def.pins, def.name);
         }
-        // LED/diode/resistor: always use procedural symbols so pin geometry (±30)
-        // matches BuiltinComponents / template kit, even when DeviceLibrary ships SVG
+        // Procedural symbols: pin geometry must match BuiltinComponents / templates.
+        // DeviceLibrary Common/*.svg must not override these (wrong scale / mis-keyed files).
         const skipSvg = key === 'led' || key === 'diode' || key === 'resistor' ||
             key === 'potentiometer' ||
             key === 'capacitor' || key === 'fuse' || key === 'buzzer' || key === 'switch' ||
-            key === 'ammeter' || key === 'voltmeter';
+            key === 'mosfet' || key === 'relay' || key === 'oled' ||
+            key === 'ammeter' || key === 'voltmeter' ||
+            key === 'vcc' || key === 'gnd' || key === 'vee' || key === 'vac' ||
+            key === 'oscilloscope' || key === 'multimeter' || key === 'logic_analyzer' ||
+            key === 'uart_terminal' || key === 'power_meter' || key === 'freq_counter' ||
+            key === 'signal_gen';
         if (!skipSvg && def.svgSymbol.length > 20 && def.svgSymbol.indexOf('<') >= 0) {
             const cmds = SvgSymbolCache.preload(def.id, def.svgSymbol);
             if (cmds.length > 0) {
@@ -186,6 +193,9 @@ export class SchematicSymbolRenderer {
             case 'freq_counter':
                 SchematicSymbolRenderer.drawFreqCounter(ctx);
                 break;
+            case 'signal_gen':
+                SchematicSymbolRenderer.drawSignalGen(ctx);
+                break;
             case 'lcd':
                 SchematicSymbolRenderer.drawLcd(ctx);
                 break;
@@ -225,6 +235,12 @@ export class SchematicSymbolRenderer {
                 break;
             case 'gnd':
                 SchematicSymbolRenderer.drawGnd(ctx);
+                break;
+            case 'vee':
+                SchematicSymbolRenderer.drawVee(ctx);
+                break;
+            case 'vac':
+                SchematicSymbolRenderer.drawVac(ctx);
                 break;
             default:
                 // Body already drawn above for generic_ic (isIcType=true)
@@ -455,30 +471,31 @@ export class SchematicSymbolRenderer {
         ctx.stroke();
     }
     private static drawMosfet(ctx: CanvasRenderingContext2D): void {
+        // D/S 与 pin 几何对齐（±20），保证预览/画布大黑框门禁 height≥40
         ctx.beginPath();
         ctx.moveTo(-30, 0);
         ctx.lineTo(-10, 0);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(-10, -14);
-        ctx.lineTo(-10, 14);
+        ctx.moveTo(-10, -20);
+        ctx.lineTo(-10, 20);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(-6, -10);
-        ctx.lineTo(20, -10);
-        ctx.lineTo(20, -18);
+        ctx.moveTo(-6, -16);
+        ctx.lineTo(20, -16);
+        ctx.lineTo(20, -24);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(-6, 10);
-        ctx.lineTo(20, 10);
+        ctx.moveTo(-6, 16);
+        ctx.lineTo(20, 16);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(20, -10);
-        ctx.lineTo(30, -10);
+        ctx.moveTo(20, -16);
+        ctx.lineTo(30, -20);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(20, 10);
-        ctx.lineTo(30, 10);
+        ctx.moveTo(20, 16);
+        ctx.lineTo(30, 20);
         ctx.stroke();
     }
     private static drawOpAmp(ctx: CanvasRenderingContext2D): void {
@@ -547,50 +564,64 @@ export class SchematicSymbolRenderer {
         ctx.stroke();
     }
     private static drawOscilloscope(ctx: CanvasRenderingContext2D): void {
-        // Pins at x=-40, y={-20,-10,10,20,40} — body covers y=-40..40
-        const w = 70;
-        const h = 80;
-        ctx.strokeRect(-w / 2, -h / 2, w, h);
-        // Screen area
+        // Must match BuiltinComponents / DeviceLibrary OSCILLOSCOPE pins:
+        //   x=-40, y={-30,-10,10,30,50}. drawPins only paints outward stubs,
+        //   so body↔pin links are drawn here (same as OSCILLOSCOPE.symbol.svg).
+        const pinX = -40;
+        const bodyLeft = -30;
+        const bodyRight = 30;
+        const bodyTop = -35;
+        const bodyBottom = 55;
+        const pinYs: number[] = [-30, -10, 10, 30, 50];
+        const w = bodyRight - bodyLeft;
+        const h = bodyBottom - bodyTop;
+        ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(bodyLeft, bodyTop, w, h);
+        // Screen area (leave strip at bottom for CH legend)
         ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 20);
-        // Grid lines
+        ctx.fillRect(bodyLeft + 4, bodyTop + 4, w - 8, h - 22);
         ctx.strokeStyle = '#2a2a3e';
         ctx.lineWidth = 0.5;
-        for (let gx = -w / 2 + 10; gx < w / 2 - 4; gx += 8) {
+        for (let gx = bodyLeft + 10; gx < bodyRight - 4; gx += 8) {
             ctx.beginPath();
-            ctx.moveTo(gx, -h / 2 + 4);
-            ctx.lineTo(gx, h / 2 - 16);
+            ctx.moveTo(gx, bodyTop + 4);
+            ctx.lineTo(gx, bodyBottom - 18);
             ctx.stroke();
         }
-        for (let gy = -h / 2 + 8; gy < h / 2 - 16; gy += 7) {
+        for (let gy = bodyTop + 8; gy < bodyBottom - 18; gy += 8) {
             ctx.beginPath();
-            ctx.moveTo(-w / 2 + 4, gy);
-            ctx.lineTo(w / 2 - 4, gy);
+            ctx.moveTo(bodyLeft + 4, gy);
+            ctx.lineTo(bodyRight - 4, gy);
             ctx.stroke();
         }
-        // Waveform trace
         ctx.strokeStyle = '#00FF88';
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.moveTo(-w / 2 + 6, 0);
-        ctx.lineTo(-16, -4);
-        ctx.lineTo(-6, 6);
-        ctx.lineTo(4, -8);
-        ctx.lineTo(14, 4);
-        ctx.lineTo(24, -2);
-        ctx.lineTo(w / 2 - 6, 3);
+        ctx.moveTo(bodyLeft + 6, 5);
+        ctx.lineTo(-16, 0);
+        ctx.lineTo(-6, 12);
+        ctx.lineTo(4, -2);
+        ctx.lineTo(14, 10);
+        ctx.lineTo(24, 4);
+        ctx.lineTo(bodyRight - 6, 8);
         ctx.stroke();
-        // CH1 label
         ctx.fillStyle = '#00FF88';
         ctx.font = '8px monospace';
-        ctx.fillText('CH1', -w / 2 + 8, h / 2 - 6);
-        // Title
+        ctx.fillText('CH1', bodyLeft + 6, bodyBottom - 6);
+        // Body↔pin stubs (drawPins only extends further left of pinX)
         ctx.strokeStyle = ProteusColors.COMPONENT_STROKE;
         ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let i = 0; i < pinYs.length; i++) {
+            const py = pinYs[i];
+            ctx.moveTo(pinX, py);
+            ctx.lineTo(bodyLeft, py);
+        }
+        ctx.stroke();
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
-        ctx.fillText('SCOPE', -16, -h / 2 - 4);
+        ctx.fillText('SCOPE', -16, bodyTop - 4);
     }
     private static drawMultimeter(ctx: CanvasRenderingContext2D): void {
         // Pins at x=-30: V=-30 A=-10 OHM=10 COM=30
@@ -882,12 +913,13 @@ export class SchematicSymbolRenderer {
         ctx.fillText('LCD', -10, 4);
     }
     private static drawOled(ctx: CanvasRenderingContext2D): void {
-        ctx.strokeRect(-30, -18, 60, 36);
+        // 主体覆盖脚距 ±20，预览大黑框内可见显示屏
+        ctx.strokeRect(-28, -20, 56, 40);
         ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(-24, -12, 48, 24);
+        ctx.fillRect(-22, -14, 44, 28);
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
-        ctx.fillText('OLED', -14, 28);
+        ctx.fillText('OLED', -14, 4);
     }
     /**
      * Pushbutton: OPEN = raised angled blade + gap; CLOSED = flat bar bridging contacts.
@@ -974,7 +1006,8 @@ export class SchematicSymbolRenderer {
         ctx.textAlign = 'start';
     }
     private static drawRelay(ctx: CanvasRenderingContext2D): void {
-        ctx.strokeRect(-20, -18, 40, 36);
+        // 主体覆盖线圈脚 y=-20 与触点 y=20，配合大黑框
+        ctx.strokeRect(-22, -18, 44, 36);
         ctx.beginPath();
         ctx.arc(-8, -6, 6, 0, Math.PI * 2);
         ctx.stroke();
@@ -1029,7 +1062,8 @@ export class SchematicSymbolRenderer {
         ctx.stroke();
     }
     private static drawSensor(ctx: CanvasRenderingContext2D): void {
-        ctx.strokeRect(-18, -14, 36, 28);
+        // 主体略增高，配合 Hall/LDR 脚距 height≥40 的大黑框
+        ctx.strokeRect(-18, -18, 36, 36);
         ctx.beginPath();
         ctx.moveTo(-6, 0);
         ctx.lineTo(6, 0);
@@ -1298,28 +1332,116 @@ export class SchematicSymbolRenderer {
         ctx.fillText('GND', 0, 28);
         ctx.textAlign = 'start';
     }
+    private static drawVee(ctx: CanvasRenderingContext2D): void {
+        // Negative rail: mirror of VCC — bar at pin, stem down, circle at bottom
+        ctx.beginPath();
+        ctx.moveTo(0, -10);
+        ctx.lineTo(0, 10);
+        ctx.moveTo(-6, -10);
+        ctx.lineTo(6, -10);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 13, 3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.textAlign = 'center';
+        ctx.fillText('VEE', 0, 28);
+        ctx.textAlign = 'start';
+    }
+    private static drawVac(ctx: CanvasRenderingContext2D): void {
+        // AC source: circle with sine wave; pins at (±20, 0)
+        ctx.beginPath();
+        ctx.arc(0, 0, 14, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-8, 0);
+        ctx.bezierCurveTo(-5, -8, -3, -8, 0, 0);
+        ctx.bezierCurveTo(3, 8, 5, 8, 8, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-20, 0);
+        ctx.lineTo(-14, 0);
+        ctx.moveTo(14, 0);
+        ctx.lineTo(20, 0);
+        ctx.stroke();
+        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.textAlign = 'center';
+        ctx.fillText('VAC', 0, -18);
+        ctx.textAlign = 'start';
+    }
+    private static drawSignalGen(ctx: CanvasRenderingContext2D): void {
+        // Function generator: box + sine glyph; pins at (±30, 0)
+        const w = 36;
+        const h = 28;
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        ctx.beginPath();
+        ctx.moveTo(-10, 0);
+        ctx.bezierCurveTo(-6, -8, -2, -8, 0, 0);
+        ctx.bezierCurveTo(2, 8, 6, 8, 10, 0);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-30, 0);
+        ctx.lineTo(-w / 2, 0);
+        ctx.moveTo(w / 2, 0);
+        ctx.lineTo(30, 0);
+        ctx.stroke();
+        ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
+        ctx.fillStyle = ProteusColors.TEXT_LABEL;
+        ctx.textAlign = 'center';
+        ctx.fillText('GEN', 0, h / 2 + 10);
+        ctx.textAlign = 'start';
+    }
     private static drawLabels(ctx: CanvasRenderingContext2D, def: ComponentDefinition, refDes: string, style: SymbolDrawStyle): void {
+        const symbolKey = resolveSymbolKey(def.id, def.svgSymbol, def.behaviorModel);
+        const isVac = symbolKey === 'vac' || symbolKey === 'signal_gen';
         const bounds = calcSymbolBounds(def.pins, 4);
         const isRegulator = def.behaviorModel === 'regulator';
         const isMeter = def.behaviorModel === 'ammeter_dc' || def.behaviorModel === 'voltmeter_dc';
         // 稳压器底脚有 GND 名，参数下移避免与脚名重叠；位号略上提
         // 电流表表头偏下，位号再上提；量程标在框外下方
         const refY = bounds.minY - (isRegulator || isMeter ? 10 : 4);
-        const valY = bounds.maxY + (isRegulator ? 20 : (isMeter ? 14 : 10));
+        const valY = bounds.maxY + (isRegulator ? 20 : (isMeter ? 14 : (isVac ? 18 : 10)));
         ctx.fillStyle = style.selected ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY;
         ctx.font = `${ProteusFonts.CANVAS_LABEL}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(refDes, 0, refY);
         ctx.fillStyle = ProteusColors.TEXT_LABEL;
         ctx.font = `${ProteusFonts.PARAM_KEY}px sans-serif`;
-        const valueKey = def.defaultParams.has('value') ? 'value' :
+        let valueKey = def.defaultParams.has('value') ? 'value' :
             (def.defaultParams.has('output') ? 'output' :
-                (def.defaultParams.has('range') ? 'range' : ''));
+                (def.defaultParams.has('range') ? 'range' :
+                    (def.defaultParams.has('voltage') ? 'voltage' : '')));
+        if (isVac && (def.defaultParams.has('amplitude') ||
+            (style.paramOverrides !== undefined && style.paramOverrides.has('amplitude')))) {
+            valueKey = 'amplitude';
+        }
         // 稳压器参数旁带短型号，便于辨认且不与体内 REG 抢位
-        let valueText = valueKey.length > 0 ? (def.defaultParams.get(valueKey) ?? '') : '';
+        let valueText = '';
+        if (valueKey.length > 0) {
+            if (style.paramOverrides !== undefined && style.paramOverrides.has(valueKey)) {
+                valueText = style.paramOverrides.get(valueKey) ?? '';
+            }
+            if (valueText.length === 0) {
+                valueText = def.defaultParams.get(valueKey) ?? '';
+            }
+        }
         if (isRegulator && valueKey === 'output' && def.id.length > 0) {
             const shortId = def.id.length > 8 ? def.id.substring(0, 8) : def.id;
             valueText = `${shortId} ${valueText}`;
+        }
+        if (isVac && valueText.length > 0) {
+            let freq = '';
+            if (style.paramOverrides !== undefined && style.paramOverrides.has('frequency')) {
+                freq = style.paramOverrides.get('frequency') ?? '';
+            }
+            if (freq.length === 0) {
+                freq = def.defaultParams.get('frequency') ?? '';
+            }
+            if (freq.length > 0) {
+                valueText = `${valueText} ${freq}`;
+            }
         }
         if (valueText.length > 0) {
             const shortVal = valueText.length > 14 ? valueText.substring(0, 12) + '..' : valueText;

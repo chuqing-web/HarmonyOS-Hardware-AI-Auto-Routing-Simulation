@@ -23,3 +23,5 @@ export {
   parseSignalAmplitudeVolts, resolveHysteresisSafeAmplitude,
   schematicLikelyHysteresisComparator
 } from './src/main/ets/algorithms/CircuitIntent';
+export { AgentPipelineCoordinator } from './src/main/ets/algorithms/agents/AgentPipelineCoordinator';
+export { WarRouteAdapter } from './src/main/ets/algorithms/WarRouteAdapter';

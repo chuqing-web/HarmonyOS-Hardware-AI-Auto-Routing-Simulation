@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "FREQ_COUNTER",
+  "name": "频率计",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "freq",
+  "symbol_file": "../Common/freq_counter.svg",
+  "sim_model_file": "FREQ_COUNTER.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "IN",
+      "pin_type": "input",
+      "x": -30,
+      "y": -10
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 10
+    }
+  ],
+  "default_params": {
+    "gateTime": "1s",
+    "range": "10MHz"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "lib_dev_id": "W25Q64",
+  "name": "SPI Flash 64Mbit",
+  "vendor": "Generic",
+  "category": "memory",
+  "sub_category": "flash",
+  "symbol_file": "../Common/memory.svg",
+  "sim_model_file": "W25Q64.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "CS",
+      "pin_type": "input",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "DO",
+      "pin_type": "output",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "WP",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "DI",
+      "pin_type": "input",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "CLK",
+      "pin_type": "input",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "HOLD",
+      "pin_type": "input",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 40,
+      "y": 10
+    }
+  ],
+  "default_params": {}
+}

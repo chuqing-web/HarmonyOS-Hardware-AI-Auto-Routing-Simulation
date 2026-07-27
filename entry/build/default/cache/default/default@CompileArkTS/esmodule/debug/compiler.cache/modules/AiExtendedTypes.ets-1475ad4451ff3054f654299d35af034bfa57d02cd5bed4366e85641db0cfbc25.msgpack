@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚšexport var AiTaskType;
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÃexport var AiTaskType;
 (function (AiTaskType) {
     AiTaskType[AiTaskType["TASK_AUTO_ROUTE_GLOBAL"] = 0] = "TASK_AUTO_ROUTE_GLOBAL";
     AiTaskType[AiTaskType["TASK_AUTO_ROUTE_SELECT"] = 1] = "TASK_AUTO_ROUTE_SELECT";
@@ -18,7 +18,20 @@
     /** é€‰å‹ â†’ æ‘†æ”¾ â†’ å¸ƒçº¿ â†’ ERC å…¨é—­ç¯ */
     AiTaskType[AiTaskType["TASK_FULL_PIPELINE"] = 13] = "TASK_FULL_PIPELINE";
 })(AiTaskType || (AiTaskType = {}));
-//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚãimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
+export function emptyRequirementSpec() {
+    return {
+        summary: '',
+        modules: [],
+        power: { rails: [] },
+        needsMcu: false,
+        instruments: [],
+        measureGoals: [],
+        constraints: [],
+        oodHints: [],
+        openQuestions: []
+    };
+}
+//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚNimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
 
 import { ErrCode } from './ErrCode';
 
@@ -82,6 +95,53 @@ export interface DiagError {
 
 }
 
+/** æ¾„æ¸…é¢˜ï¼ˆCline Askï¼šA/B/C + UI å›ºå®š Dï¼‰ */
+export interface ClarificationQuestion {
+  id: string;
+  prompt: string;
+  optionA: string;
+  optionB: string;
+  optionC: string;
+}
+
+export interface ClarificationAnswer {
+  questionId: string;
+  choice?: 'A' | 'B' | 'C';
+  freeText?: string;
+}
+
+/** RequirementsAgent æœ€å°éœ€æ±‚å¥‘çº¦ */
+export interface RequirementPowerSpec {
+  rails: string[];
+  voltageHint?: string;
+}
+
+export interface RequirementSpec {
+  summary: string;
+  modules: string[];
+  power: RequirementPowerSpec;
+  needsMcu: boolean;
+  instruments: string[];
+  measureGoals: string[];
+  constraints: string[];
+  oodHints: string[];
+  openQuestions: string[];
+}
+
+export function emptyRequirementSpec(): RequirementSpec {
+  return {
+    summary: '',
+    modules: [],
+    power: { rails: [] },
+    needsMcu: false,
+    instruments: [],
+    measureGoals: [],
+    constraints: [],
+    oodHints: [],
+    openQuestions: []
+  };
+}
+
 
 
 export interface AiTaskResult {
@@ -106,7 +166,19 @@ export interface AiTaskResult {
   /** ç»“æ„åŒ–ï¼šERC/å‡ ä½•ä»æœ‰é˜»æ–­ä½†å·²å°½åŠ›äº¤ä»˜ */
   deliveredWithResidual?: boolean;
 
+  /** é—¨ç¦çœŸå®å€¼ï¼ˆè´¨é‡ç¡¬å¤±è´¥ä¾èµ–ï¼‰ */
+  ercClean?: boolean;
+
+  agentAbortStage?: string;
+
+  agentAbortReason?: string;
+
   progress: ProgressInfo;
+
+  /** Requirements æ¾„æ¸…ï¼šä¸è½å›¾ */
+  needsClarification?: boolean;
+
+  clarificationQuestions?: ClarificationQuestion[];
 
 }
 
@@ -462,10 +534,26 @@ export interface AiPipelineResult {
   /** oneshot å¸¦æ®‹ç•™äº¤ä»˜æ—¶ä¸º trueï¼›ercClean ä»é¡»åæ˜ çœŸå®é—¨ç¦ */
   deliveredWithResidual?: boolean;
 
+  /** RequirementsAgentï¼šéœ€è¦ç”¨æˆ·æ¾„æ¸…ï¼Œä¸è½å›¾ */
+  needsClarification?: boolean;
+
+  clarificationQuestions?: ClarificationQuestion[];
+
+  /** ç»“æ„åŒ–éœ€æ±‚ï¼ˆRequirementsAgent äº§å‡ºï¼‰ */
+  requirementSpec?: RequirementSpec;
+
+  /** è´¨é‡æ€»çº¿é˜¶æ®µå¤±è´¥æ‘˜è¦ï¼ˆç¡¬å¤±è´¥ï¼‰ */
+  agentAbortStage?: string;
+
+  agentAbortReason?: string;
+
+  /** Orchestrator å·²å®Œæˆ WARï¼ŒCoordinator å‹¿åŒè·‘ */
+  warDone?: boolean;
+
 }
 
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²AiExtendedTypes.js ‘³AiExtendedTypes.etsÜ •”   ” ”  ” ” ,“”   ” ” “” 
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²AiExtendedTypes.js ‘³AiExtendedTypes.etsÜ !•”   ” ”  ” ” ,“”   ” ” “” 
 ”ÌS 
 ”ÌT 
-“” ”ÌS ”ÌT “” ”ÌM ”ÌN “” ”ÌW ”ÌX “” ”ÌY ”ÌZ “” ”ÌI ”ÌJ “” ”ÌO ”ÌP “” ”ÌI ”ÌJ “” ”ÌK ”ÌL “” ”ÌS ”ÌT “” ”ÌJ ”ÌK ’”  ”  “” "”ÌL "”ÌM "’” $” $“” &”ÌJ &”ÌK &’” (”! (“” *”ÌL *”ÌM *—”  , ” ,” ” ” ” ”$ ,ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÔrL”¤type¥start£end¤nameªIdentifierªAiTaskTypeÀ£varÀ
+“” ”ÌS ”ÌT “” ”ÌM ”ÌN “” ”ÌW ”ÌX “” ”ÌY ”ÌZ “” ”ÌI ”ÌJ “” ”ÌO ”ÌP “” ”ÌI ”ÌJ “” ”ÌK ”ÌL “” ”ÌS ”ÌT “” ”ÌJ ”ÌK ’”  ”  “” "”ÌL "”ÌM "’” $” $“” &”ÌJ &”ÌK &’” (”! (“” *”ÌL *”ÌM *—”  , ” ,” ” ” ” ”$ ,””  Ìa ” Ìa” Ìa”$ Ìa$’” Ìb” Ìb	”” Ìc” Ìc” Ìc” Ìc”” Ìd” Ìd” Ìd” Ìd˜” Ìe” Ìe	” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe”” Ìf” Ìf” Ìf” Ìf”” Ìg” Ìg” Ìg” Ìg”” Ìh” Ìh” Ìh” Ìh”” Ìi” Ìi” Ìi” Ìi”” Ìj” Ìj” Ìj” Ìj”” Ìk” Ìk” Ìk” Ìk’” Ìl” Ìl’”  Ìm ” ÌmÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ "‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÔrL”¤type¥start£end¤nameªIdentifierªAiTaskTypeÀ£varÀI¶ExportNamedDeclarationÍ1ÍXÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ8ÍXLªIdentifierÍAÍU´emptyRequirementSpecÂÂÂÔrN”¤type¥start£end¤body®BlockStatementÍXÍX‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÍ_ÍUÔrP”¤type¥start£endªproperties°ObjectExpressionÍfÍT™ÔrQ™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍqÍ|ÂÂÂLªIdentifierÍqÍx§summaryÔrR•¤type¥start£end¥value£raw§LiteralÍzÍ| ¢''¤initQ¨PropertyÍ‡Í’ÂÂÂLªIdentifierÍ‡Í§modulesÔrS”¤type¥start£end¨elements¯ArrayExpressionÍÍ’¤initQ¨PropertyÍÍ±ÂÂÂLªIdentifierÍÍ¢¥powerP°ObjectExpressionÍ¤Í±‘Q¨PropertyÍ¦Í¯ÂÂÂLªIdentifierÍ¦Í«¥railsS¯ArrayExpressionÍ­Í¯¤init¤initQ¨PropertyÍ¼ÍËÂÂÂLªIdentifierÍ¼ÍÄ¨needsMcuR§LiteralÍÆÍËÂ¥false¤initQ¨PropertyÍÖÍåÂÂÂLªIdentifierÍÖÍá«instrumentsS¯ArrayExpressionÍãÍå¤initQ¨PropertyÍğÍ ÂÂÂLªIdentifierÍğÍü¬measureGoalsS¯ArrayExpressionÍşÍ ¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ«constraintsS¯ArrayExpressionÍÍ¤initQ¨PropertyÍ%Í1ÂÂÂLªIdentifierÍ%Í-¨oodHintsS¯ArrayExpressionÍ/Í1¤initQ¨PropertyÍ<ÍMÂÂÂLªIdentifierÍ<ÍI­openQuestionsS¯ArrayExpressionÍKÍM¤initÀ

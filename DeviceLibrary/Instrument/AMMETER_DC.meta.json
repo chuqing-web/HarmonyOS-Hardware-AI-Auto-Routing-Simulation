@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "AMMETER_DC",
+  "name": "DC 电流表",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "ammeter",
+  "symbol_file": "../Common/ammeter.svg",
+  "sim_model_file": "AMMETER_DC.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "I+",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "I-",
+      "pin_type": "output",
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "type": "dc",
+    "range": "200mA"
+  }
+}

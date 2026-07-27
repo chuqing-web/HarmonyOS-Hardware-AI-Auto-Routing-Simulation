@@ -160,12 +160,16 @@ export struct InstrumentPanel {
   private appService: AppService = AppService.getInstance();
   private timebases: OscTimebase[] = [
     OscTimebase.NS_10, OscTimebase.US_1, OscTimebase.US_100,
-    OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.S_1, OscTimebase.S_10
+    OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.MS_100,
+    OscTimebase.S_1, OscTimebase.S_10
   ];
-  private timebaseLabels: string[] = ['10ns', '1us', '100us', '1ms', '10ms', '1s', '10s'];
+  private timebaseLabels: string[] = [
+    '10ns', '1us', '100us', '1ms', '10ms', '100ms', '1s', '10s'
+  ];
   private selTimebase: SelectValueOption[] = [
     { value: '10ns' }, { value: '1us' }, { value: '100us' },
-    { value: '1ms' }, { value: '10ms' }, { value: '1s' }, { value: '10s' }
+    { value: '1ms' }, { value: '10ms' }, { value: '100ms' },
+    { value: '1s' }, { value: '10s' }
   ];
   private voltageScales: OscVoltageScale[] = [
     OscVoltageScale.MV_1, OscVoltageScale.MV_50, OscVoltageScale.MV_100,
@@ -1206,7 +1210,7 @@ export struct InstrumentPanel {
   }
 
   private timebaseSecPerDiv(): number {
-    const secs: number[] = [10e-9, 1e-6, 100e-6, 1e-3, 10e-3, 1, 10];
+    const secs: number[] = [10e-9, 1e-6, 100e-6, 1e-3, 10e-3, 100e-3, 1, 10];
     return this.timebaseIdx < secs.length ? secs[this.timebaseIdx] : 1e-3;
   }
 

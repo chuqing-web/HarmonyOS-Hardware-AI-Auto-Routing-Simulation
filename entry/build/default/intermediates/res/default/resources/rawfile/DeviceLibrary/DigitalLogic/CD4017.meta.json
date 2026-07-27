@@ -1,0 +1,129 @@
+{
+  "lib_dev_id": "CD4017",
+  "name": "CD4017 Decade Counter",
+  "vendor": "TI",
+  "category": "digital_logic",
+  "sub_category": "counter",
+  "symbol_file": "../Common/cd4017.svg",
+  "sim_model_file": "CD4017.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "Q5",
+      "pin_type": "output",
+      "x": -40,
+      "y": -40
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "Q1",
+      "pin_type": "output",
+      "x": -40,
+      "y": -30
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "Q0",
+      "pin_type": "output",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "Q2",
+      "pin_type": "output",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "Q6",
+      "pin_type": "output",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "Q7",
+      "pin_type": "output",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "Q3",
+      "pin_type": "output",
+      "x": -40,
+      "y": 20
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "VSS",
+      "pin_type": "ground",
+      "x": -40,
+      "y": 30
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "Q8",
+      "pin_type": "output",
+      "x": 40,
+      "y": -40
+    },
+    {
+      "pin_id": "10",
+      "pin_label": "Q4",
+      "pin_type": "output",
+      "x": 40,
+      "y": -30
+    },
+    {
+      "pin_id": "11",
+      "pin_label": "Q9",
+      "pin_type": "output",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "12",
+      "pin_label": "CO",
+      "pin_type": "output",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "13",
+      "pin_label": "CLK",
+      "pin_type": "input",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "EN",
+      "pin_type": "input",
+      "x": 40,
+      "y": 10
+    },
+    {
+      "pin_id": "15",
+      "pin_label": "RST",
+      "pin_type": "input",
+      "x": 40,
+      "y": 20
+    },
+    {
+      "pin_id": "16",
+      "pin_label": "VDD",
+      "pin_type": "power",
+      "x": 40,
+      "y": 30
+    }
+  ],
+  "default_params": {
+    "family": "4000"
+  }
+}

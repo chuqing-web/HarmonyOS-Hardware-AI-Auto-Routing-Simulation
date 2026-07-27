@@ -6,7 +6,7 @@ import {
   Point2D, ViewportState, ErrCode, ApiResult, Rect2D,
   SchematicAnnotation, SchematicAnnotationStatus, SchematicAnnotationType,
   AnnotationTargetKind,
-  SchematicDocument, ComponentInstance, ErcViolation
+  SchematicDocument, ComponentInstance, ErcViolation, WirePathPreviewResult
 } from 'common';
 import { SchematicLayer, SchematicLayerId } from '../model/SchematicLayers';
 
@@ -176,14 +176,5 @@ export interface ISchematicEditor {
   setGridSize(size: number): void;
 }
 
-/** WAR 预览 / 落线应用路径（previewWirePath 唯一返回类型） */
-export interface WirePathPreviewResult {
-  points: Point2D[];
-  /** true=已自动寻路避让（相对默认 L 有改道） */
-  autoCorrected: boolean;
-  /**
-   * true=无合法无碰撞路径（不可落线）。
-   * 穿选中区时必须 blocked，禁止返回穿障折线。
-   */
-  blocked?: boolean;
-}
+/** WAR 预览 / 落线应用路径 — 类型定义在 common（与 AI RouteAgent 共用） */
+export { WirePathPreviewResult } from 'common';

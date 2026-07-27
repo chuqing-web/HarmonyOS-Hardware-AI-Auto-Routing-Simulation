@@ -1,0 +1,211 @@
+{
+  "lib_dev_id": "2764",
+  "name": "EPROM 8Kx8",
+  "vendor": "Generic",
+  "category": "memory",
+  "sub_category": "eprom",
+  "symbol_file": "../Common/memory.svg",
+  "sim_model_file": "2764.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VPP",
+      "pin_type": "power",
+      "x": -40,
+      "y": -70
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "A0",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -60
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "A1",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -50
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "A2",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -40
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "A3",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -30
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "A4",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "A5",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "A6",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "A7",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "10",
+      "pin_label": "D0",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 20
+    },
+    {
+      "pin_id": "11",
+      "pin_label": "D1",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 30
+    },
+    {
+      "pin_id": "12",
+      "pin_label": "D2",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 40
+    },
+    {
+      "pin_id": "13",
+      "pin_label": "D3",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 50
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "D4",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 60
+    },
+    {
+      "pin_id": "15",
+      "pin_label": "D5",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -70
+    },
+    {
+      "pin_id": "16",
+      "pin_label": "D6",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -60
+    },
+    {
+      "pin_id": "17",
+      "pin_label": "D7",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -50
+    },
+    {
+      "pin_id": "18",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": 40,
+      "y": -40
+    },
+    {
+      "pin_id": "19",
+      "pin_label": "CE",
+      "pin_type": "input",
+      "x": 40,
+      "y": -30
+    },
+    {
+      "pin_id": "20",
+      "pin_label": "OE",
+      "pin_type": "input",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "21",
+      "pin_label": "A8",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "22",
+      "pin_label": "A9",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "23",
+      "pin_label": "A10",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 10
+    },
+    {
+      "pin_id": "24",
+      "pin_label": "A11",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 20
+    },
+    {
+      "pin_id": "25",
+      "pin_label": "A12",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 30
+    },
+    {
+      "pin_id": "26",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 40,
+      "y": 40
+    },
+    {
+      "pin_id": "27",
+      "pin_label": "NC26",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 50
+    },
+    {
+      "pin_id": "28",
+      "pin_label": "NC27",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 60
+    }
+  ],
+  "default_params": {}
+}

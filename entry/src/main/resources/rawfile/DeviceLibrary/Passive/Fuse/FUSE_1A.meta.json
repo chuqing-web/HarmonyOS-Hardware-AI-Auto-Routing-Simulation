@@ -1,0 +1,31 @@
+{
+  "lib_dev_id": "FUSE_1A",
+  "name": "Fuse 1A",
+  "vendor": "Generic",
+  "category": "passive_fuse",
+  "sub_category": "fuse",
+  "symbol_file": "../../Common/FUSE_1A.svg",
+  "sim_model_file": "FUSE_1A.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "rating": "1A"
+  }
+}

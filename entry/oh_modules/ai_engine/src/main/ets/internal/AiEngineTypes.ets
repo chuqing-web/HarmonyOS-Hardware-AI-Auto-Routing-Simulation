@@ -1,4 +1,4 @@
-import { WaveData, RoutingWeightPrefs, SchTopology } from 'common';
+import { WaveData, RoutingWeightPrefs, SchTopology, ClarificationAnswer } from 'common';
 
 export interface AiTaskExtra {
   devUuids?: string[];
@@ -21,6 +21,14 @@ export interface AiTaskExtra {
   generationMode?: 'create' | 'edit';
   /** oneshot=整图一次；modular=整体设计+边界后真并行合并；默认 oneshot */
   generateStrategy?: 'oneshot' | 'modular';
+  /** 澄清答案（Requirements 续跑） */
+  clarificationAnswers?: ClarificationAnswer[];
+  /** Phase1 质量硬失败；生产 oneshot 默认 true */
+  qualityHardFail?: boolean;
+  /** Phase2：开启推理/思考链 */
+  enableReasoning?: boolean;
+  /** Phase2：黑板快照续跑（由 AppService 在澄清后续传） */
+  resumeSnapshotJson?: string;
 }
 
 export interface ChatHistoryEntry {

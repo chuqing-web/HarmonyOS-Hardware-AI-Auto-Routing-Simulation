@@ -1,0 +1,39 @@
+{
+  "lib_dev_id": "HALL_SENSOR",
+  "name": "Hall Sensor",
+  "vendor": "Generic",
+  "category": "sensor",
+  "sub_category": "hall",
+  "symbol_file": "../Common/HALL_SENSOR.svg",
+  "sim_model_file": "HALL_SENSOR.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": -30,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "OUT",
+      "pin_type": "output",
+      "x": 30,
+      "y": 0
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 20
+    }
+  ],
+  "default_params": {
+    "type": "digital",
+    "active": "0"
+  }
+}

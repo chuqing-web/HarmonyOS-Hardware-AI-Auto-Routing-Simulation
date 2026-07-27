@@ -1,0 +1,55 @@
+{
+  "lib_dev_id": "74HC32",
+  "name": "74HC32 OR",
+  "vendor": "TI",
+  "category": "digital_logic",
+  "sub_category": "hc_series",
+  "symbol_file": "../Common/gate_or.svg",
+  "sim_model_file": "74HC32.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "A",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "B",
+      "pin_type": "input",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "Y",
+      "pin_type": "output",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": 0,
+      "y": 40
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 0,
+      "y": -40
+    }
+  ],
+  "default_params": {
+    "family": "HC"
+  },
+  "erc_check_rules": [
+    "power_pin_unconnected"
+  ]
+}

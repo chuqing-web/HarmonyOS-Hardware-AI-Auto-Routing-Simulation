@@ -1,0 +1,40 @@
+{
+  "lib_dev_id": "POT_1k",
+  "name": "滑动变阻器 1kΩ",
+  "vendor": "Generic",
+  "category": "passive_resistor",
+  "sub_category": "potentiometer",
+  "symbol_file": "../../Common/switch.svg",
+  "sim_model_file": "POT_1k.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "W",
+      "pin_type": "passive",
+      "x": 0,
+      "y": 28
+    }
+  ],
+  "default_params": {
+    "value": "1k",
+    "wiper": "0.5",
+    "power": "0.25W"
+  }
+}

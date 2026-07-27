@@ -12,7 +12,7 @@ interface ResourceManagerLike {
 }
 
 /** 变更 DeviceLibrary 引脚/符号时递增，触发设备侧重拷贝 */
-const DEVICE_LIBRARY_BOOTSTRAP_VERSION = '2026-07-17-lm555-timer';
+const DEVICE_LIBRARY_BOOTSTRAP_VERSION = '2026-07-27-builtin-full-index';
 
 export class DeviceLibraryBootstrap {
   static async ensureLibrary(context: common.UIAbilityContext, targetRoot: string): Promise<boolean> {

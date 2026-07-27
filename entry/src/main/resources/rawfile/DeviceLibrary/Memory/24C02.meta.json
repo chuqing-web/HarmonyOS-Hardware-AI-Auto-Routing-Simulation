@@ -1,0 +1,71 @@
+{
+  "lib_dev_id": "24C02",
+  "name": "I2C EEPROM 256B",
+  "vendor": "Generic",
+  "category": "memory",
+  "sub_category": "eeprom",
+  "symbol_file": "../Common/memory.svg",
+  "sim_model_file": "24C02.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "A0",
+      "pin_type": "input",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "A1",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "A2",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "VSS",
+      "pin_type": "ground",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "SDA",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "SCL",
+      "pin_type": "input",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "WP",
+      "pin_type": "input",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 40,
+      "y": 10
+    }
+  ],
+  "default_params": {}
+}

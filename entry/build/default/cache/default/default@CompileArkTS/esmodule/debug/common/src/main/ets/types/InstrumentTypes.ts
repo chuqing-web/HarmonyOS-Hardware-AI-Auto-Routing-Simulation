@@ -7,6 +7,8 @@ export enum OscTimebase {
     US_100 = "100us",
     MS_1 = "1ms",
     MS_10 = "10ms",
+    /** RC / one-shot：填补 10ms→1s 空洞，避免自适应直接跳到 10s 窗把波形挤到左侧 */
+    MS_100 = "100ms",
     S_1 = "1s",
     S_10 = "10s"
 }

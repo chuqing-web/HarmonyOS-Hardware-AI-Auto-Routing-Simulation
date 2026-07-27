@@ -1,0 +1,17 @@
+<svg width="70" height="60" viewBox="-35 -30 70 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Power Meter - rectangular display -->
+  <rect x="-25" y="-22" width="50" height="34" rx="2" fill="none" stroke="#000" stroke-width="1.2"/>
+  <text x="0" y="-12" font-size="5" fill="#000" text-anchor="middle">P = V × I</text>
+  <text x="0" y="-4" font-size="9" fill="#000" text-anchor="middle" font-weight="bold">0.04W</text>
+  <text x="0" y="4" font-size="5" fill="#666" text-anchor="middle">PF:0.96</text>
+  <!-- 4 probe leads -->
+  <line x1="-35" y1="-15" x2="-25" y2="-15" stroke="#f00" stroke-width="1"/>
+  <line x1="-35" y1="-5" x2="-25" y2="-5" stroke="#000" stroke-width="1"/>
+  <line x1="-35" y1="5" x2="-25" y2="5" stroke="#f00" stroke-width="1"/>
+  <line x1="-35" y1="15" x2="-25" y2="15" stroke="#000" stroke-width="1"/>
+  <circle cx="-35" cy="-15" r="1.5" fill="#f00"/>
+  <circle cx="-35" cy="-5" r="1.5" fill="#000"/>
+  <circle cx="-35" cy="5" r="1.5" fill="#f00"/>
+  <circle cx="-35" cy="15" r="1.5" fill="#000"/>
+  <text x="-35" y="28" font-size="4" fill="#000" text-anchor="middle">V+ V- I+  I-</text>
+</svg>

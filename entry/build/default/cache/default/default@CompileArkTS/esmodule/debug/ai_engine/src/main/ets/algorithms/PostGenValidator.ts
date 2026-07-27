@@ -502,6 +502,8 @@ export class PostGenValidator {
         }
         // 构建每个网络关联的 (devUuid, pinId) 集合（含 555 数字脚号别名）
         const netSafePins = new Map<string, Set<string>>();
+        // 已入网脚；未入网脚（示波器未用 CH3/CH4 等）不做 pin_proximity 硬门禁
+        const connectedPinKeys = new Set<string>();
         for (const net of topo.netList) {
             const safe = new Set<string>();
             for (const node of net.nodeList) {
@@ -509,8 +511,10 @@ export class PostGenValidator {
                 const pinName = (node.pinName !== undefined && node.pinName.length > 0)
                     ? node.pinName : '';
                 safe.add(`${node.devUuid}:${pinId}`);
+                connectedPinKeys.add(`${node.devUuid}:${pinId}`);
                 if (pinName.length > 0 && pinName !== pinId) {
                     safe.add(`${node.devUuid}:${pinName}`);
+                    connectedPinKeys.add(`${node.devUuid}:${pinName}`);
                 }
                 const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
                 if (dev) {
@@ -519,6 +523,7 @@ export class PostGenValidator {
                         const c = TemplateSchematicKit.canonicalize555Pin(pinId, pinName);
                         if (c.length > 0) {
                             safe.add(`${node.devUuid}:${c}`);
+                            connectedPinKeys.add(`${node.devUuid}:${c}`);
                         }
                     }
                 }
@@ -553,6 +558,10 @@ export class PostGenValidator {
                         }
                         const safeKey = `${devUuid}:${pinId}`;
                         if (safeSet && safeSet.has(safeKey)) {
+                            continue;
+                        }
+                        // 浮空脚（未入任何网）— 示波器未用 CH 等 — 不因 stub 扇出误报阻断
+                        if (!connectedPinKeys.has(safeKey)) {
                             continue;
                         }
                         let nearEnd = false;

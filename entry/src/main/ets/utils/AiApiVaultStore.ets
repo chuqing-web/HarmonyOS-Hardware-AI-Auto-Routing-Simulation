@@ -184,8 +184,6 @@ export class AiApiVaultStore {
           /* ok */
         }
       }
-      Logger.info(INSTR_TRACE_TAG,
-        `[AI_API] vault save OK count=${configs.length} path=${this.vaultPath}`);
       return true;
     } catch (e) {
       Logger.error(INSTR_TRACE_TAG, `[AI_API] vault save FAILED: ${e}`);

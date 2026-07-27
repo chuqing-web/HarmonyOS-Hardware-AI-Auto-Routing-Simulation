@@ -234,6 +234,90 @@ export function applySelfOscSignalGenGuard(intent: CircuitIntent, prompt: string
   }
 }
 
+/** 需求摘要 / 用户原文是否明示单电源（含 enrich：电源:VCC/GND） */
+export function promptImpliesSingleSupply(prompt: string): boolean {
+  const zh = prompt ?? '';
+  if (/单电源|single\s*supply/i.test(zh)) {
+    return true;
+  }
+  if (zh.indexOf('singleSupply') >= 0) {
+    return true;
+  }
+  // 【已确认需求摘要】电源:VCC/GND(5V) — 同行无 VEE
+  if (/电源\s*:\s*[^\n]*VCC\s*\/\s*GND/i.test(zh) && !/电源\s*:\s*[^\n]*VEE/i.test(zh)) {
+    return true;
+  }
+  return false;
+}
+
+/** 明示双电源（单电源标记优先否决） */
+export function promptImpliesDualSupply(prompt: string): boolean {
+  const zh = prompt ?? '';
+  if (promptImpliesSingleSupply(zh)) {
+    return false;
+  }
+  if (/双电源|正负电源|±\s*\d/i.test(zh)) {
+    return true;
+  }
+  if (/电源\s*:\s*[^\n]*VEE/i.test(zh)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 电源轨契约收口：BOM 无 VEE / 需求单电源 → 禁 dual；BOM 有 VEE → 强制 dual。
+ * 覆盖积分器/运放启发式默认 ±12V。
+ */
+export function applySupplyRailContract(intent: CircuitIntent, prompt: string,
+  bomHasVcc: boolean, bomHasGnd: boolean, bomHasVee: boolean): void {
+  const singlePrompt = promptImpliesSingleSupply(prompt);
+  const dualPrompt = promptImpliesDualSupply(prompt);
+
+  // 从需求摘要抠电压：电源:VCC/GND(5V)
+  const hintM = (prompt ?? '').match(/电源\s*:\s*VCC\s*\/\s*GND\s*\(([^)]+)\)/i);
+  if (hintM && hintM[1] && intent.preferredVccVoltage.length === 0) {
+    intent.preferredVccVoltage = hintM[1].trim();
+    pushReason(intent, `vccReqHint=${intent.preferredVccVoltage}`);
+  }
+
+  if (bomHasVee) {
+    intent.dualSupply = true;
+    if (intent.preferredVeeVoltage.length === 0) {
+      intent.preferredVeeVoltage = '-12V';
+    }
+    pushReason(intent, 'supply_contract_vee_bom');
+    return;
+  }
+
+  if ((bomHasVcc || bomHasGnd) && !bomHasVee) {
+    // BOM 明确单轨：除非用户原文强要双电源且未写单电源
+    if (!dualPrompt || singlePrompt) {
+      intent.dualSupply = false;
+      intent.preferredVeeVoltage = '';
+      pushReason(intent, 'supply_contract_single_bom');
+      return;
+    }
+    pushReason(intent, 'supply_contract_dual_prompt_miss_vee');
+    return;
+  }
+
+  if (singlePrompt) {
+    intent.dualSupply = false;
+    intent.preferredVeeVoltage = '';
+    pushReason(intent, 'supply_contract_single_prompt');
+    return;
+  }
+
+  if (dualPrompt) {
+    intent.dualSupply = true;
+    if (intent.preferredVeeVoltage.length === 0) {
+      intent.preferredVeeVoltage = '-12V';
+    }
+    pushReason(intent, 'supply_contract_dual_prompt');
+  }
+}
+
 function isHysteresisComparatorPrompt(prompt: string): boolean {
   const zh = prompt ?? '';
   const lower = zh.toLowerCase();
@@ -495,6 +579,8 @@ export function classifyCircuitIntent(prompt: string): CircuitIntent {
   }
 
   applySelfOscSignalGenGuard(intent, prompt);
+  // 分类阶段：尊重需求摘要/用户明示的单双电源（先于选型注入 FRAG）
+  applySupplyRailContract(intent, prompt, false, false, false);
   return intent;
 }
 
@@ -936,12 +1022,13 @@ export function refineCircuitIntent(
       pushReason(intent, `sigAmpHystBump=${HYSTERESIS_RECOMMENDED_SIGNAL_AMP}`);
     }
   }
-  // 运放 / 积分：未声明单电源 → 意图标记双电源（供 Prompt 注入）；具体电压由 LLM 写出
+  // 运放 / 积分：仅当未单电源、且 BOM 未排除 VEE 时，才默认双电源
   if (intent.needsOpAmpFeedback || intent.needsOpAmpIntegrator) {
     const zh = prompt ?? '';
-    if (zh.indexOf('单电源') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
+    const bomSingle = (hasVcc || hasGnd) && !hasVee;
+    if (!bomSingle && !promptImpliesSingleSupply(zh) &&
+      zh.indexOf('单电源') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
       intent.dualSupply = true;
-      // 仅当 BOM 未写电压时给意图默认，供空字段补齐；已有 vccBom/veeBom 不覆盖
       if (intent.preferredVeeVoltage.length === 0) {
         intent.preferredVeeVoltage = '-12V';
       }
@@ -972,6 +1059,8 @@ export function refineCircuitIntent(
 
   // 末尾单点收口：防止上文任何路径把自激又写成 needsSignalGen
   applySelfOscSignalGenGuard(intent, prompt);
+  // BOM/需求电源契约最终收口（覆盖积分器启发式 dual）
+  applySupplyRailContract(intent, prompt, hasVcc, hasGnd, hasVee);
 
   return intent;
 }

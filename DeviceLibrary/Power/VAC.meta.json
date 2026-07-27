@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "VAC",
+  "name": "VAC 交流电源",
+  "vendor": "Generic",
+  "category": "power_supply",
+  "sub_category": "ac",
+  "symbol_file": "../Common/vac.svg",
+  "sim_model_file": "VAC.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "AC+",
+      "pin_type": "power",
+      "x": -20,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "AC-",
+      "pin_type": "power",
+      "x": 20,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "amplitude": "220V",
+    "frequency": "50Hz"
+  }
+}

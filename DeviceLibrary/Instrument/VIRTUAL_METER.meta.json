@@ -1,0 +1,45 @@
+{
+  "lib_dev_id": "VIRTUAL_METER",
+  "name": "Virtual Multimeter",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "multimeter",
+  "symbol_file": "../Common/multimeter.svg",
+  "sim_model_file": "VIRTUAL_METER.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "V",
+      "pin_type": "input",
+      "x": -30,
+      "y": -30
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "A",
+      "pin_type": "input",
+      "x": -30,
+      "y": -10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "OHM",
+      "pin_type": "input",
+      "x": -30,
+      "y": 10
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "COM",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 30
+    }
+  ],
+  "default_params": {
+    "modes": "DCV,ACV,OHM,AMP,DIODE"
+  }
+}

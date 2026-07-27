@@ -24,6 +24,7 @@
 | `06_diag.md` | `diag` | `DiagPrompt.ets` | 诊断任务 |
 | `07_gen_sch.md` | `gen_sch` | `GenSchPrompt.ets` | 遗留整图 |
 | `08_modular_plan.md` | `modular_plan` | `ModularPlanPrompt.ets` | `fetchModularPlanLlm` |
+| `09_requirement.md` | `requirement` | `RequirementPrompt.ets` | `RequirementsAgent` |
 
 ## md 结构
 

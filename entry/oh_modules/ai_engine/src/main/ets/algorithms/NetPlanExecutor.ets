@@ -9,7 +9,8 @@ import {
   SchTopology, NetInfo, NetLabelInfo, DeviceInst, NetNodeRef,
   IdUtil, Point2D, makeRouteLine, RouteLine,
   DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE, WorldHitRect,
-  Logger, INSTR_TRACE_TAG, traceAiDiag
+  LabelPlaceHints,
+  Logger, INSTR_TRACE_TAG, traceAiDiag, traceAiWireDraw, traceAiWireInventory
 } from 'common';
 import { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from './PinWorldResolver';
@@ -934,12 +935,13 @@ export class NetPlanExecutor {
         const innIdxs = pinNetIndices(ref, innPin);
         const inpIdxs = pinNetIndices(ref, inpPin);
 
+        // 积分器判定须见电容（跨 OUT↔IN-）；仅有电阻可能是滞回/反馈，禁止误判
         const innIsIntegrator = innIdxs.some(ni => {
           if (netSize(ni) < 2) {
             return false;
           }
           const conns = plan.nets[ni].connections;
-          return conns.some(c => isResRef(c.compRef) || isCapRef(c.compRef));
+          return conns.some(c => isCapRef(c.compRef));
         });
         const inpIsHyst = inpIdxs.some(ni => {
           if (netSize(ni) < 2) {
@@ -950,7 +952,8 @@ export class NetPlanExecutor {
         });
 
         // 积分器：IN+ 须进 GND（禁止 INT_NON_INV 单脚网）
-        if (innIsIntegrator && gndRef.length > 0) {
+        // 【硬】同通道若 IN+ 已挂电阻（滞回比较器），绝不可拉 GND 拆掉 HYST_REF
+        if (innIsIntegrator && gndRef.length > 0 && !inpIsHyst) {
           const needsGnd = inpIdxs.length === 0 || inpIdxs.every(ni => netSize(ni) < 2);
           if (needsGnd) {
             let gndNi = findGndNetIdx();
@@ -1119,107 +1122,171 @@ export class NetPlanExecutor {
         (c.compRef ?? '').toUpperCase() !== want);
     };
 
-    for (let di = 0; di < topo.deviceList.length; di++) {
-      const d = topo.deviceList[di];
-      if (!isOpAmpLib(d.libDevId ?? '')) {
-        continue;
+    /** 电容是否已跨接某运放 OUT↔IN-（禁止被另一片偷走） */
+    const capBridgesAnyOpampFb = (cref: string): boolean => {
+      const nets = capPinNets(cref);
+      if (nets.length < 2) {
+        return false;
       }
-      const ref = d.refName ?? '';
-      if (ref.length === 0) {
-        continue;
-      }
-      const channels: string[] = (d.libDevId ?? '').toUpperCase() === 'UA741' ?
-        [''] : ['1', '2', ''];
-      for (let chi = 0; chi < channels.length; chi++) {
-        const suf = channels[chi];
-        const outPin = suf.length > 0 ? `OUT${suf}` : 'OUT';
-        const innPin = suf.length > 0 ? `IN-${suf}` : 'IN-';
-        const outNi = pinNetIdx(ref, p => normPin(p) === normPin(outPin) || isOutPin(p));
-        const innNi = pinNetIdx(ref, p => normPin(p) === normPin(innPin) || isInnPin(p));
-        if (outNi < 0 || innNi < 0 || outNi === innNi) {
+      for (let di = 0; di < topo.deviceList.length; di++) {
+        const d = topo.deviceList[di];
+        if (!isOpAmpLib(d.libDevId ?? '')) {
           continue;
         }
-        // 积分特征：IN- 网含电阻（输入 R）
-        const innHasR = (plan.nets[innNi].connections ?? []).some(c => isResRef(c.compRef));
-        if (!innHasR) {
+        const ref = d.refName ?? '';
+        if (ref.length === 0) {
           continue;
         }
-        // 是否已有 C 同时出现在 OUT 与 IN- 两网
-        let bridged = false;
-        for (let ci = 0; ci < topo.deviceList.length; ci++) {
-          const cdev = topo.deviceList[ci];
-          if (!isCapRef(cdev.refName ?? '') && !(cdev.libDevId ?? '').startsWith('C_')) {
+        const outNi = pinNetIdx(ref, isOutPin);
+        const innNi = pinNetIdx(ref, isInnPin);
+        if (outNi >= 0 && innNi >= 0 && outNi !== innNi &&
+          nets.indexOf(outNi) >= 0 && nets.indexOf(innNi) >= 0) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isSquareOutNet = (name: string): boolean => {
+      const u = (name ?? '').toUpperCase();
+      return u.indexOf('SQUARE') >= 0 || u.indexOf('SQ_OUT') >= 0 ||
+        u.indexOf('HYST_OUT') >= 0 || u.indexOf('COMP_OUT') >= 0;
+    };
+    const isTriangleOutNet = (name: string): boolean => {
+      const u = (name ?? '').toUpperCase();
+      return u.indexOf('TRIANGLE') >= 0 || u.indexOf('TRI_OUT') >= 0 ||
+        u.indexOf('INTEG_OUT') >= 0 || u.indexOf('INT_OUT') >= 0 || u === 'TRI';
+    };
+
+    // 两遍：优先三角波 OUT（真积分器），再其它非方波；成功一次即停，防比较器偷电容
+    const passes: boolean[] = [true, false];
+    for (let pass = 0; pass < passes.length; pass++) {
+      const onlyTriangle = passes[pass];
+      for (let di = 0; di < topo.deviceList.length; di++) {
+        const d = topo.deviceList[di];
+        if (!isOpAmpLib(d.libDevId ?? '')) {
+          continue;
+        }
+        const ref = d.refName ?? '';
+        if (ref.length === 0) {
+          continue;
+        }
+        const channels: string[] = (d.libDevId ?? '').toUpperCase() === 'UA741' ?
+          [''] : ['1', '2', ''];
+        for (let chi = 0; chi < channels.length; chi++) {
+          const suf = channels[chi];
+          const outPin = suf.length > 0 ? `OUT${suf}` : 'OUT';
+          const innPin = suf.length > 0 ? `IN-${suf}` : 'IN-';
+          const outNi = pinNetIdx(ref, p => normPin(p) === normPin(outPin) || isOutPin(p));
+          const innNi = pinNetIdx(ref, p => normPin(p) === normPin(innPin) || isInnPin(p));
+          if (outNi < 0 || innNi < 0 || outNi === innNi) {
             continue;
           }
-          const cref = cdev.refName ?? '';
-          const nets = capPinNets(cref);
-          if (nets.indexOf(outNi) >= 0 && nets.indexOf(innNi) >= 0) {
-            bridged = true;
-            break;
+          const outName = plan.nets[outNi].name ?? '';
+          // 比较器方波 OUT 绝不当积分反馈跨接目标
+          if (isSquareOutNet(outName)) {
+            continue;
           }
-        }
-        if (bridged) {
-          continue;
-        }
-        // 找可重挂的电容：优先 INT_FB 孤儿 / 单脚 / 误接 GND
-        let capRef = '';
-        for (let ni = 0; ni < plan.nets.length; ni++) {
-          const name = (plan.nets[ni].name ?? '').toUpperCase();
-          const conns = plan.nets[ni].connections ?? [];
-          if (name.indexOf('INT_FB') >= 0 || name.indexOf('INTEG_FB') >= 0 ||
-            name.indexOf('FB_C') >= 0) {
-            for (let ci = 0; ci < conns.length; ci++) {
-              if (isCapRef(conns[ci].compRef)) {
-                capRef = conns[ci].compRef;
-                break;
-              }
-            }
+          if (onlyTriangle && !isTriangleOutNet(outName)) {
+            continue;
           }
-          if (capRef.length > 0) {
-            break;
+          // 积分特征：IN- 网含电阻（输入 R）
+          const innHasR = (plan.nets[innNi].connections ?? []).some(c => isResRef(c.compRef));
+          if (!innHasR) {
+            continue;
           }
-        }
-        if (capRef.length === 0) {
+          // 是否已有 C 同时出现在 OUT 与 IN- 两网
+          let bridged = false;
           for (let ci = 0; ci < topo.deviceList.length; ci++) {
             const cdev = topo.deviceList[ci];
-            if (!(cdev.libDevId ?? '').startsWith('C_')) {
+            if (!isCapRef(cdev.refName ?? '') && !(cdev.libDevId ?? '').startsWith('C_')) {
               continue;
             }
             const cref = cdev.refName ?? '';
             const nets = capPinNets(cref);
-            // 未跨 OUT↔IN-：单脚孤儿、或误接到 GND/电源
-            if (nets.indexOf(outNi) < 0 || nets.indexOf(innNi) < 0) {
-              capRef = cref;
+            if (nets.indexOf(outNi) >= 0 && nets.indexOf(innNi) >= 0) {
+              bridged = true;
               break;
             }
           }
+          if (bridged) {
+            continue;
+          }
+          // 找可重挂的电容：优先 INT_FB 孤儿；禁止偷已跨接其它运放的反馈 C
+          let capRef = '';
+          for (let ni = 0; ni < plan.nets.length; ni++) {
+            const name = (plan.nets[ni].name ?? '').toUpperCase();
+            const conns = plan.nets[ni].connections ?? [];
+            if (name.indexOf('INT_FB') >= 0 || name.indexOf('INTEG_FB') >= 0 ||
+              name.indexOf('FB_C') >= 0) {
+              for (let ci = 0; ci < conns.length; ci++) {
+                if (isCapRef(conns[ci].compRef)) {
+                  capRef = conns[ci].compRef;
+                  break;
+                }
+              }
+            }
+            if (capRef.length > 0) {
+              break;
+            }
+          }
+          if (capRef.length === 0) {
+            for (let ci = 0; ci < topo.deviceList.length; ci++) {
+              const cdev = topo.deviceList[ci];
+              if (!(cdev.libDevId ?? '').startsWith('C_')) {
+                continue;
+              }
+              const cref = cdev.refName ?? '';
+              const nets = capPinNets(cref);
+              // 未跨本通道 OUT↔IN-；且未已是其它运放反馈 C
+              if (nets.indexOf(outNi) < 0 || nets.indexOf(innNi) < 0) {
+                if (capBridgesAnyOpampFb(cref)) {
+                  continue;
+                }
+                // 跳过电源去耦（一端电源一端地）
+                let onPower = false;
+                for (let nxi = 0; nxi < nets.length; nxi++) {
+                  const nn = (plan.nets[nets[nxi]].name ?? '').toUpperCase();
+                  if (nn === 'VCC' || nn === 'VEE' || nn === 'GND' || nn === 'VDD') {
+                    onPower = true;
+                    break;
+                  }
+                }
+                if (onPower && nets.length >= 2) {
+                  continue;
+                }
+                capRef = cref;
+                break;
+              }
+            }
+          }
+          if (capRef.length === 0) {
+            continue;
+          }
+          // 从旧网摘掉该 C 的所有连接
+          for (let ni = plan.nets.length - 1; ni >= 0; ni--) {
+            removeCapFromNet(ni, capRef);
+          }
+          const addOut: NetPlanConnection = {
+            compRef: capRef,
+            pinId: '1',
+            pinName: '1',
+            mode: 'joinWired'
+          };
+          const addInn: NetPlanConnection = {
+            compRef: capRef,
+            pinId: '2',
+            pinName: '2',
+            mode: 'joinWired'
+          };
+          plan.nets[outNi].connections.push(addOut);
+          plan.nets[innNi].connections.push(addInn);
+          fixes++;
+          Logger.info(INSTR_TRACE_TAG,
+            `[AI_PIPE] heal_opamp_cap ${capRef}: ${plan.nets[outNi].name}` +
+            `↔${plan.nets[innNi].name} (integrator feedback)`);
+          return fixes;
         }
-        if (capRef.length === 0) {
-          continue;
-        }
-        // 从旧网摘掉该 C 的所有连接
-        for (let ni = plan.nets.length - 1; ni >= 0; ni--) {
-          removeCapFromNet(ni, capRef);
-        }
-        // 挂到 OUT / IN-
-        const addOut: NetPlanConnection = {
-          compRef: capRef,
-          pinId: '1',
-          pinName: '1',
-          mode: 'joinWired'
-        };
-        const addInn: NetPlanConnection = {
-          compRef: capRef,
-          pinId: '2',
-          pinName: '2',
-          mode: 'joinWired'
-        };
-        plan.nets[outNi].connections.push(addOut);
-        plan.nets[innNi].connections.push(addInn);
-        fixes++;
-        Logger.info(INSTR_TRACE_TAG,
-          `[AI_PIPE] heal_opamp_cap ${capRef}: ${plan.nets[outNi].name}` +
-          `↔${plan.nets[innNi].name} (integrator feedback)`);
       }
     }
     return fixes;
@@ -1762,8 +1829,8 @@ export class NetPlanExecutor {
           l.netName === netPlan.name && l.atComp === lp.dev.refName && l.atPin === lp.pinId);
         const text = labelEntry ? labelEntry.text : netPlan.name;
         const pinPos = PinWorldResolver.forDeviceInst(lp.dev, lp.pinId, lp.pinName);
-        // 沿最近边逃逸引出，避开异器件选中区与无关脚
-        const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos);
+        // 沿最近边逃逸引出，避开异器件/导线/已有标号
+        const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos, text);
 
         // 创建标号数据
         const labelInfo: NetLabelInfo = {
@@ -1778,9 +1845,17 @@ export class NetPlanExecutor {
         labelCount++;
 
         // 单段正交 stub：引脚 → 区外标号
-        const routeLine = makeRouteLine(netInfo.netUuid, [pinPos, labelPos], false);
+        const wid = IdUtil.generate('w');
+        const routeLine = makeRouteLine(netInfo.netUuid, [pinPos, labelPos], false, wid);
         topo.wireList.push(routeLine);
         stubWireCount++;
+        const pinTok = lp.pinName.length > 0 && lp.pinName !== lp.pinId
+          ? `${lp.pinId}(${lp.pinName})` : lp.pinId;
+        traceAiWireDraw('net_plan_stub',
+          `net=${netPlan.name} pin=${lp.dev.refName}.${pinTok}` +
+          ` wireId=${wid} label=${text}` +
+          ` ends=(${Math.round(pinPos.x)},${Math.round(pinPos.y)})→` +
+          `(${Math.round(labelPos.x)},${Math.round(labelPos.y)})`);
       }
     }
 
@@ -1794,6 +1869,12 @@ export class NetPlanExecutor {
       : `执行 ${netCount} 网/${labelCount} 标号/${stubWireCount} stub导线`;
 
     NetPlanExecutor.auditPinWorldCollisions(topo);
+
+    const netNameOf = (uuid: string): string => {
+      const n = topo.netList.find(x => x.netUuid === uuid);
+      return n?.netName ?? uuid.substring(0, 10);
+    };
+    traceAiWireInventory('net_plan_end', topo.wireList, netNameOf, 48);
 
     Logger.info(INSTR_TRACE_TAG,
       `[AI_PIPE] net_plan_exec END nets=${netCount} labels=${labelCount}` +
@@ -2160,7 +2241,7 @@ export class NetPlanExecutor {
           l.netName === netPlan.name && l.atComp === lp.dev.refName && l.atPin === lp.pinId);
         const text = labelEntry ? labelEntry.text : netPlan.name;
         const pinPos = PinWorldResolver.forDeviceInst(lp.dev, lp.pinId, lp.pinName);
-        const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos);
+        const labelPos = NetPlanExecutor.stubLabelOutside(topo, lp.dev, pinPos, text);
         const labelInfo: NetLabelInfo = {
           id: IdUtil.generate('lbl'),
           netUuid: netInfo.netUuid,
@@ -2171,9 +2252,17 @@ export class NetPlanExecutor {
         };
         topo.netLabelList.push(labelInfo);
         labelCount++;
-        const routeLine = makeRouteLine(netInfo.netUuid, [pinPos, labelPos], false);
+        const wid = IdUtil.generate('w');
+        const routeLine = makeRouteLine(netInfo.netUuid, [pinPos, labelPos], false, wid);
         topo.wireList.push(routeLine);
         stubWireCount++;
+        const pinTok = lp.pinName.length > 0 && lp.pinName !== lp.pinId
+          ? `${lp.pinId}(${lp.pinName})` : lp.pinId;
+        traceAiWireDraw('net_plan_merge_stub',
+          `net=${netPlan.name} pin=${lp.dev.refName}.${pinTok}` +
+          ` wireId=${wid} label=${text}` +
+          ` ends=(${Math.round(pinPos.x)},${Math.round(pinPos.y)})→` +
+          `(${Math.round(labelPos.x)},${Math.round(labelPos.y)})`);
       }
     }
 
@@ -2750,17 +2839,36 @@ export class NetPlanExecutor {
   }
 
   /**
-   * 标号 stub 终点：库/估选中区 + 避开异器件选中区与无关脚（与 ConstrainedWiringEngine demote 对齐）
+   * 标号 stub 终点：库/估选中区 + 避开异器件/导线/已有标号（与 ConstrainedWiringEngine demote 对齐）
    */
-  private static stubLabelOutside(topo: SchTopology, dev: DeviceInst, pinPos: Point2D): Point2D {
+  private static stubLabelOutside(topo: SchTopology, dev: DeviceInst, pinPos: Point2D,
+    labelText: string = ''): Point2D {
     const hitRects = NetPlanExecutor.buildApproxHitRects(topo);
     let own = hitRects.find(r => r.instUuid === dev.instUuid);
     if (!own) {
       own = NetPlanExecutor.approxHitRectForDev(dev, pinPos);
     }
     const foreignPins = NetPlanExecutor.collectForeignPinWorlds(topo, pinPos);
+    const occupied: Point2D[] = [];
+    for (let li = 0; li < topo.netLabelList.length; li++) {
+      occupied.push({ x: topo.netLabelList[li].x, y: topo.netLabelList[li].y });
+    }
+    const wirePaths: Point2D[][] = [];
+    for (let wi = 0; wi < topo.wireList.length; wi++) {
+      const pts = topo.wireList[wi].points;
+      if (pts && pts.length >= 2) {
+        wirePaths.push(pts);
+      }
+    }
+    const hints: LabelPlaceHints = {
+      wirePaths: wirePaths,
+      occupiedLabels: occupied,
+      labelText: labelText,
+      wireClearance: 16,
+      labelClearance: 24
+    };
     return DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(
-      pinPos, own, hitRects, FOREIGN_PIN_CLEARANCE, foreignPins);
+      pinPos, own, hitRects, FOREIGN_PIN_CLEARANCE, foreignPins, hints);
   }
 
   private static approxHitRectForDev(dev: DeviceInst, pinPosHint?: Point2D): WorldHitRect {

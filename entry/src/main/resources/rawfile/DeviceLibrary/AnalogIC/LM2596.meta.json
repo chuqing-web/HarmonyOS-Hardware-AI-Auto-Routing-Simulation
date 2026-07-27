@@ -1,0 +1,52 @@
+{
+  "lib_dev_id": "LM2596",
+  "name": "Buck Converter",
+  "vendor": "Generic",
+  "category": "analog_regulator",
+  "sub_category": "buck",
+  "symbol_file": "../Common/regulator.svg",
+  "sim_model_file": "LM2596.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VIN",
+      "pin_type": "power",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "OUT",
+      "pin_type": "output",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": 0,
+      "y": 40
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "FB",
+      "pin_type": "input",
+      "x": 40,
+      "y": 10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "ON",
+      "pin_type": "input",
+      "x": -40,
+      "y": 10
+    }
+  ],
+  "default_params": {
+    "output": "5V"
+  }
+}

@@ -52,6 +52,7 @@ export {
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo,
   traceAiPayload, traceAiOp, traceAiDiag, traceAiStage,
+  traceAiWireDraw, traceAiWireFix, traceAiWireInventory,
   traceWireConnectBegin, traceWirePinSnap, traceWirePinSnapReject,
   traceWireSnapMissNearCopper,
   traceWireConnectEnd, traceWireConnectPinAudit, traceWirePinRowShort,
@@ -72,10 +73,16 @@ export { AiErcGateUtil } from './src/main/ets/utils/AiErcGateUtil';
 
 export {
   DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE,
-  WorldHitRect, WirePathCoverage
+  WorldHitRect, WirePathCoverage, LabelPlaceHints
 } from './src/main/ets/utils/DeviceHitGeometry';
 
 export { WireConflictGeometry } from './src/main/ets/utils/WireConflictGeometry';
+
+export {
+  WireAutoRouter, WarCompObstacle, WarRouteContext, WirePathPreviewResult
+} from './src/main/ets/utils/WireAutoRouter';
+
+export { WarRouteOrder, WarOrderPin } from './src/main/ets/utils/WarRouteOrder';
 
 export { DeepErcEngine } from './src/main/ets/utils/DeepErcEngine';
 
@@ -160,7 +167,10 @@ export {
 
   NetPriorityRule, SpecialNetRule, RoutingLlmOutput, RoutingWeightPrefs, AiPipelineResult,
 
-  DevicePosition
+  DevicePosition,
+
+  ClarificationQuestion, ClarificationAnswer, RequirementSpec, RequirementPowerSpec,
+  emptyRequirementSpec
 
 } from './src/main/ets/types/AiExtendedTypes';
 

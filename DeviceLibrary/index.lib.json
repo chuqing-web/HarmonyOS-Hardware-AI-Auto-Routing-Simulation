@@ -1,14 +1,342 @@
 {
-  "version": "1.0.0",
-  "generated_at": "2026-07-07T08:00:00Z",
-  "total_count": 5,
+  "version": "2.0.0",
+  "generated_at": "2026-07-27T03:07:04.318Z",
+  "total_count": 83,
   "devices": [
     {
-      "lib_dev_id": "R_10k",
-      "name": "通用贴片电阻 10kΩ",
-      "category": "passive_resistor",
-      "sub_category": "smd_0805",
-      "meta_path": "Passive/Resistor/R_10k.meta.json",
+      "lib_dev_id": "1N4007",
+      "name": "1N4007",
+      "category": "discrete_diode",
+      "sub_category": "diode",
+      "meta_path": "Discrete/Diode/1N4007.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "1N4148",
+      "name": "1N4148",
+      "category": "discrete_diode",
+      "sub_category": "diode",
+      "meta_path": "Discrete/Diode/1N4148.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "1N5819",
+      "name": "1N5819",
+      "category": "discrete_diode",
+      "sub_category": "diode",
+      "meta_path": "Discrete/Diode/1N5819.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "24C02",
+      "name": "I2C EEPROM 256B",
+      "category": "memory",
+      "sub_category": "eeprom",
+      "meta_path": "Memory/24C02.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "2764",
+      "name": "EPROM 8Kx8",
+      "category": "memory",
+      "sub_category": "eprom",
+      "meta_path": "Memory/2764.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "2N2222",
+      "name": "NPN Transistor",
+      "category": "discrete_bjt",
+      "sub_category": "npn",
+      "meta_path": "Discrete/Transistor/2N2222.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "2N2907",
+      "name": "PNP Transistor",
+      "category": "discrete_bjt",
+      "sub_category": "pnp",
+      "meta_path": "Discrete/Transistor/2N2907.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "2N7000",
+      "name": "N-MOSFET",
+      "category": "discrete_mosfet",
+      "sub_category": "nmos",
+      "meta_path": "Discrete/Mosfet/2N7000.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "62256",
+      "name": "SRAM 32Kx8",
+      "category": "memory",
+      "sub_category": "sram",
+      "meta_path": "Memory/62256.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC00",
+      "name": "74HC00 NAND",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC00.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC02",
+      "name": "74HC02 NOR",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC02.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC04",
+      "name": "74HC04 NOT",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC04.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC08",
+      "name": "74HC08 AND",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC08.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC32",
+      "name": "74HC32 OR",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC32.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "74HC74",
+      "name": "74HC74 XOR",
+      "category": "digital_logic",
+      "sub_category": "hc_series",
+      "meta_path": "DigitalLogic/74HC74.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "AMMETER_DC",
+      "name": "DC 电流表",
+      "category": "instrument",
+      "sub_category": "ammeter",
+      "meta_path": "Instrument/AMMETER_DC.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "AMS1117_3V3",
+      "name": "3.3V LDO",
+      "category": "analog_regulator",
+      "sub_category": "ldo",
+      "meta_path": "AnalogIC/AMS1117_3V3.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "AT89C51",
+      "name": "AT89C51",
+      "category": "mcu_8051",
+      "sub_category": "mcs51",
+      "meta_path": "MCU/8051/AT89C51.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "AT89C52",
+      "name": "AT89C52",
+      "category": "mcu_8051",
+      "sub_category": "mcs51",
+      "meta_path": "MCU/8051/AT89C52.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "BUZZER",
+      "name": "Buzzer",
+      "category": "peripheral",
+      "sub_category": "buzzer",
+      "meta_path": "Peripheral/BUZZER.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_100nF",
+      "name": "Capacitor 100nF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_100nF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_100pF",
+      "name": "Capacitor 100pF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_100pF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_100uF",
+      "name": "Capacitor 100uF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_100uF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_10nF",
+      "name": "Capacitor 10nF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_10nF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_10pF",
+      "name": "Capacitor 10pF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_10pF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_10uF",
+      "name": "Capacitor 10uF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_10uF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_1nF",
+      "name": "Capacitor 1nF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_1nF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "C_1uF",
+      "name": "Capacitor 1uF",
+      "category": "passive_capacitor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Capacitor/C_1uF.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "CD4017",
+      "name": "CD4017 Decade Counter",
+      "category": "digital_logic",
+      "sub_category": "counter",
+      "meta_path": "DigitalLogic/CD4017.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "DS18B20",
+      "name": "DS18B20 Temperature",
+      "category": "sensor",
+      "sub_category": "temp",
+      "meta_path": "Sensor/DS18B20.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "FREQ_COUNTER",
+      "name": "频率计",
+      "category": "instrument",
+      "sub_category": "freq",
+      "meta_path": "Instrument/FREQ_COUNTER.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "FUSE_1A",
+      "name": "Fuse 1A",
+      "category": "passive_fuse",
+      "sub_category": "fuse",
+      "meta_path": "Passive/Fuse/FUSE_1A.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "GND",
+      "name": "GND 接地",
+      "category": "power_supply",
+      "sub_category": "ground",
+      "meta_path": "Power/GND.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "HALL_SENSOR",
+      "name": "Hall Sensor",
+      "category": "sensor",
+      "sub_category": "hall",
+      "meta_path": "Sensor/HALL_SENSOR.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "IRF540",
+      "name": "N-MOSFET Power",
+      "category": "discrete_mosfet",
+      "sub_category": "nmos",
+      "meta_path": "Discrete/Mosfet/IRF540.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "L_10uH",
+      "name": "Inductor 10uH",
+      "category": "passive_inductor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Inductor/L_10uH.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LCD1602",
+      "name": "LCD1602",
+      "category": "peripheral",
+      "sub_category": "display",
+      "meta_path": "Peripheral/LCD1602.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LDR",
+      "name": "Photoresistor",
+      "category": "sensor",
+      "sub_category": "light",
+      "meta_path": "Sensor/LDR.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LED_BLUE",
+      "name": "Blue LED",
+      "category": "discrete_led",
+      "sub_category": "led",
+      "meta_path": "Discrete/LED/LED_BLUE.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LED_GREEN",
+      "name": "Green LED",
+      "category": "discrete_led",
+      "sub_category": "led",
+      "meta_path": "Discrete/LED/LED_GREEN.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LED_RED",
+      "name": "Red LED",
+      "category": "discrete_led",
+      "sub_category": "led",
+      "meta_path": "Discrete/LED/LED_RED.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LM2596",
+      "name": "Buck Converter",
+      "category": "analog_regulator",
+      "sub_category": "buck",
+      "meta_path": "AnalogIC/LM2596.meta.json",
       "is_custom": false
     },
     {
@@ -20,19 +348,43 @@
       "is_custom": false
     },
     {
-      "lib_dev_id": "STM32F103C8T6",
-      "name": "STM32F103C8T6 Cortex-M3",
-      "category": "mcu_stm32",
-      "sub_category": "f103",
-      "meta_path": "MCU/STM32/STM32F103C8T6.meta.json",
+      "lib_dev_id": "LM555",
+      "name": "LM555 Timer",
+      "category": "analog_ic",
+      "sub_category": "timer",
+      "meta_path": "AnalogIC/LM555.meta.json",
       "is_custom": false
     },
     {
-      "lib_dev_id": "74HC04",
-      "name": "74HC04 六路反相器",
-      "category": "digital_logic",
-      "sub_category": "hc_series",
-      "meta_path": "DigitalLogic/74HC04.meta.json",
+      "lib_dev_id": "LM7805",
+      "name": "5V Regulator",
+      "category": "analog_regulator",
+      "sub_category": "ldo",
+      "meta_path": "AnalogIC/LM7805.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LM7812",
+      "name": "12V Regulator",
+      "category": "analog_regulator",
+      "sub_category": "ldo",
+      "meta_path": "AnalogIC/LM7812.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "LOGIC_ANALYZER",
+      "name": "Logic Analyzer",
+      "category": "instrument",
+      "sub_category": "logic",
+      "meta_path": "Instrument/LOGIC_ANALYZER.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "OLED_12864",
+      "name": "OLED 128x64",
+      "category": "peripheral",
+      "sub_category": "display",
+      "meta_path": "Peripheral/OLED_12864.meta.json",
       "is_custom": false
     },
     {
@@ -41,6 +393,278 @@
       "category": "instrument",
       "sub_category": "oscilloscope",
       "meta_path": "Instrument/OSCILLOSCOPE.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "POT_100k",
+      "name": "滑动变阻器 100kΩ",
+      "category": "passive_resistor",
+      "sub_category": "potentiometer",
+      "meta_path": "Passive/Resistor/POT_100k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "POT_10k",
+      "name": "滑动变阻器 10kΩ",
+      "category": "passive_resistor",
+      "sub_category": "potentiometer",
+      "meta_path": "Passive/Resistor/POT_10k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "POT_1k",
+      "name": "滑动变阻器 1kΩ",
+      "category": "passive_resistor",
+      "sub_category": "potentiometer",
+      "meta_path": "Passive/Resistor/POT_1k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "POWER_METER",
+      "name": "功率表",
+      "category": "instrument",
+      "sub_category": "power",
+      "meta_path": "Instrument/POWER_METER.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_10",
+      "name": "Resistor 10Ω",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_10.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_100",
+      "name": "Resistor 100Ω",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_100.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_100k",
+      "name": "Resistor 100kΩ",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_100k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_10k",
+      "name": "Resistor 10kΩ",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_10k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_1k",
+      "name": "Resistor 1kΩ",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_1k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_330",
+      "name": "Resistor 330Ω",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_330.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_4.7k",
+      "name": "Resistor 4.7kΩ",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_4.7k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "R_47k",
+      "name": "Resistor 47kΩ",
+      "category": "passive_resistor",
+      "sub_category": "tht",
+      "meta_path": "Passive/Resistor/R_47k.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "RELAY_SPDT",
+      "name": "SPDT Relay",
+      "category": "peripheral",
+      "sub_category": "relay",
+      "meta_path": "Peripheral/RELAY_SPDT.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "SIGNAL_GEN",
+      "name": "信号发生器",
+      "category": "instrument",
+      "sub_category": "signal_gen",
+      "meta_path": "Instrument/SIGNAL_GEN.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STC15W408AS",
+      "name": "STC15W408AS",
+      "category": "mcu_8051",
+      "sub_category": "mcs51",
+      "meta_path": "MCU/8051/STC15W408AS.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STC89C52",
+      "name": "STC89C52",
+      "category": "mcu_8051",
+      "sub_category": "mcs51",
+      "meta_path": "MCU/8051/STC89C52.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F030F4",
+      "name": "STM32F030F4",
+      "category": "mcu_stm32",
+      "sub_category": "teaching",
+      "meta_path": "MCU/STM32/STM32F030F4.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F103C8",
+      "name": "STM32F103C8",
+      "category": "mcu_stm32",
+      "sub_category": "teaching",
+      "meta_path": "MCU/STM32/STM32F103C8.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F103C8T6",
+      "name": "STM32F103C8T6 Cortex-M3 48-pin",
+      "category": "mcu_stm32",
+      "sub_category": "f103",
+      "meta_path": "MCU/STM32/STM32F103C8T6.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F103RC",
+      "name": "STM32F103RC",
+      "category": "mcu_stm32",
+      "sub_category": "teaching",
+      "meta_path": "MCU/STM32/STM32F103RC.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32F407VG",
+      "name": "STM32F407VG",
+      "category": "mcu_stm32",
+      "sub_category": "teaching",
+      "meta_path": "MCU/STM32/STM32F407VG.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "STM32L431CB",
+      "name": "STM32L431CB",
+      "category": "mcu_stm32",
+      "sub_category": "teaching",
+      "meta_path": "MCU/STM32/STM32L431CB.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "SW_PUSH",
+      "name": "Push Button",
+      "category": "peripheral",
+      "sub_category": "switch",
+      "meta_path": "Peripheral/SW_PUSH.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "TL082",
+      "name": "TL082 JFET Op-Amp",
+      "category": "analog_opamp",
+      "sub_category": "dual_opamp",
+      "meta_path": "AnalogIC/TL082.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "UA741",
+      "name": "UA741 Op-Amp",
+      "category": "analog_opamp",
+      "sub_category": "single",
+      "meta_path": "AnalogIC/UA741.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "UART_TERMINAL",
+      "name": "UART Virtual Terminal",
+      "category": "instrument",
+      "sub_category": "uart",
+      "meta_path": "Instrument/UART_TERMINAL.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "VAC",
+      "name": "VAC 交流电源",
+      "category": "power_supply",
+      "sub_category": "ac",
+      "meta_path": "Power/VAC.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "VCC",
+      "name": "VCC 电源",
+      "category": "power_supply",
+      "sub_category": "rail",
+      "meta_path": "Power/VCC.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "VEE",
+      "name": "VEE 负电源",
+      "category": "power_supply",
+      "sub_category": "rail",
+      "meta_path": "Power/VEE.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "VIRTUAL_METER",
+      "name": "Virtual Multimeter",
+      "category": "instrument",
+      "sub_category": "multimeter",
+      "meta_path": "Instrument/VIRTUAL_METER.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "VOLTMETER_DC",
+      "name": "DC 电压表",
+      "category": "instrument",
+      "sub_category": "voltmeter",
+      "meta_path": "Instrument/VOLTMETER_DC.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "W25Q64",
+      "name": "SPI Flash 64Mbit",
+      "category": "memory",
+      "sub_category": "flash",
+      "meta_path": "Memory/W25Q64.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "XTAL_11M",
+      "name": "Crystal 11.0592MHz",
+      "category": "passive_crystal",
+      "sub_category": "hc49",
+      "meta_path": "Passive/Crystal/XTAL_11M.meta.json",
+      "is_custom": false
+    },
+    {
+      "lib_dev_id": "XTAL_8M",
+      "name": "Crystal 8MHz",
+      "category": "passive_crystal",
+      "sub_category": "hc49",
+      "meta_path": "Passive/Crystal/XTAL_8M.meta.json",
       "is_custom": false
     }
   ]

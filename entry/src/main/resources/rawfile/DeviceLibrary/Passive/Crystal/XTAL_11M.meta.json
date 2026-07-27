@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "XTAL_11M",
+  "name": "Crystal 11.0592MHz",
+  "vendor": "Generic",
+  "category": "passive_crystal",
+  "sub_category": "hc49",
+  "symbol_file": "../../Common/XTAL_11M.svg",
+  "sim_model_file": "XTAL_11M.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "frequency": "11.0592MHz",
+    "loadCap": "30pF"
+  }
+}

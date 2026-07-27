@@ -32,7 +32,7 @@ export class DeviceMetaAdapter {
 
     const pins: Pin[] = [];
     for (let i = 0; i < meta.pin_list.length; i++) {
-      pins.push(DeviceMetaAdapter.toPin(meta.pin_list[i]));
+      pins.push(DeviceMetaAdapter.toPin(meta.pin_list[i], i));
     }
 
     const def: ComponentDefinition = {
@@ -51,17 +51,30 @@ export class DeviceMetaAdapter {
     return def;
   }
 
-  static toPin(pin: DevicePinMeta): Pin {
+  static toPin(pin: DevicePinMeta, listIndex: number = 0): Pin {
     let pullType: 'none' | 'pull_up' | 'pull_down' = 'none';
     if (pin.pull_up) {
       pullType = 'pull_up';
     } else if (pin.pull_down) {
       pullType = 'pull_down';
     }
+    // meta 规范：pin_id=封装数字、pin_label=语义名（STM32: "42"/"PB11"；LM358: "1"/"OUT1"）。
+    // 运行时 Pin：id/name=语义 label，number=数字 pin_id，供 AI 建网与 SPICE DIP 映射。
+    // 兼容旧稿：若 pin_id 已是语义名，则 number 用 pin_list 序（1-based）。
+    const rawId = `${pin.pin_id ?? ''}`.trim();
+    const label = `${pin.pin_label ?? ''}`.trim();
+    const numericId = /^\d+$/.test(rawId);
+    const useSemantic = numericId && label.length > 0 && label.toUpperCase() !== rawId.toUpperCase();
+    let number = rawId.length > 0 ? rawId : label;
+    if (useSemantic) {
+      number = rawId;
+    } else if (!numericId && rawId.length > 0) {
+      number = `${listIndex + 1}`;
+    }
     const result: Pin = {
-      id: pin.pin_id,
-      name: pin.pin_label,
-      number: pin.pin_id,
+      id: useSemantic ? label : (rawId.length > 0 ? rawId : label),
+      name: label.length > 0 ? label : rawId,
+      number: number,
       type: DeviceMetaAdapter.mapPinType(pin.pin_type),
       position: makePoint(pin.x, pin.y),
       pullType: pullType
@@ -111,6 +124,11 @@ export class DeviceMetaAdapter {
   }
 
   static mapBehaviorModel(meta: DeviceMeta): string {
+    const id = meta.lib_dev_id.toUpperCase();
+    if (id === 'VCC') return 'vcc';
+    if (id === 'GND') return 'gnd';
+    if (id === 'VEE') return 'vee';
+    if (id === 'VAC') return 'ac_source';
     switch (meta.model_type) {
       case 'mcu_51': return '8051_behavioral';
       case 'mcu_stm32': return 'stm32_behavioral';

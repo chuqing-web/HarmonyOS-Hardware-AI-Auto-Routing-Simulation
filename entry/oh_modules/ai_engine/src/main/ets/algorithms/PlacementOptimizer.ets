@@ -49,6 +49,24 @@ export class PlacementOptimizer {
     this.resolveOverlaps(topo);
   }
 
+  /** 消解后仍重叠的对数（hardFail 二次门禁） */
+  countSelectionOverlaps(topo: SchTopology): number {
+    let n = 0;
+    const list = topo.deviceList;
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        const dx = Math.abs(a.x - b.x);
+        const dy = Math.abs(a.y - b.y);
+        if (dx < 40 && dy < 40) {
+          n++;
+        }
+      }
+    }
+    return n;
+  }
+
   /**
    * 将 joinWired 小网器件对拉近到约 targetDist（默认 120mil，snap 20mil）。
    * 优先精确位号；同型号多实例不误绑；仪器/大封装不移动；近者优先。
@@ -122,6 +140,109 @@ export class PlacementOptimizer {
       Logger.info(INSTR_TRACE_TAG,
         `[AI_PIPE] compact_wired pairs=${pairs.length} moved=${moved}` +
         ` skipped=${skipped} target=${targetDist}`);
+    }
+    const nudged = this.nudgeOpAmpSidePassives(topo);
+    return moved + nudged;
+  }
+
+  /**
+   * 同行器件垂直错开，为 WAR 链式布线留出走线通道。
+   * 检测 y 相近（<60mil）的器件组，交替偏移 ±stagger 创建间歇。
+   * 修复 TL082 正下方 R→R 水平链被本体堵死的问题。
+   */
+  staggerRowDevices(topo: SchTopology, stagger: number = 40): number {
+    const SNAP = 20;
+    const ROW_BAND = 60;
+    // 按 y 分组
+    const rows = new Map<number, DeviceInst[]>();
+    const list = topo.deviceList.filter(d => {
+      const id = (d.libDevId ?? '').toUpperCase();
+      return id !== 'VCC' && id !== 'GND' && id !== 'VEE' && id !== 'VDD' && id !== 'VSS';
+    });
+    for (const d of list) {
+      let foundRow = -1;
+      const rowKeys = Array.from(rows.keys());
+      for (let ri = 0; ri < rowKeys.length; ri++) {
+        if (Math.abs(d.y - rowKeys[ri]) < ROW_BAND) {
+          foundRow = rowKeys[ri];
+          break;
+        }
+      }
+      if (foundRow >= 0) {
+        rows.get(foundRow)!.push(d);
+      } else {
+        rows.set(d.y, [d]);
+      }
+    }
+    let moved = 0;
+    rows.forEach((devs, _rowY) => {
+      if (devs.length < 2) {
+        return;
+      }
+      // 按 x 排序后交替偏移
+      devs.sort((a, b) => a.x - b.x);
+      const baseY = Math.round(devs.reduce((s, d) => s + d.y, 0) / devs.length / SNAP) * SNAP;
+      for (let i = 0; i < devs.length; i++) {
+        const d = devs[i];
+        const offset = (i % 2 === 0) ? -stagger : stagger;
+        const newY = this.snapTo(baseY + offset, SNAP);
+        const clampedY = Math.max(40, Math.min(CANVAS_H - 40, newY));
+        if (Math.abs(clampedY - d.y) > 1) {
+          d.y = clampedY;
+          moved++;
+        }
+      }
+    });
+    if (moved > 0) {
+      this.resolveOverlaps(topo);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] stagger_row devices=${moved} stagger=${stagger}`);
+    }
+    return moved;
+  }
+
+  /** 运放正下方叠电阻/电容时，挪到左侧留通道。
+   * 修复自激滞回 HYS：IN+→Rf 竖穿本体被 WAR blocked。
+   */
+  nudgeOpAmpSidePassives(topo: SchTopology): number {
+    const SNAP = 20;
+    const opamps: DeviceInst[] = [];
+    const passives: DeviceInst[] = [];
+    for (let i = 0; i < topo.deviceList.length; i++) {
+      const d = topo.deviceList[i];
+      const id = (d.libDevId ?? '').toUpperCase();
+      if (id === 'UA741' || id === 'LM358' || id === 'TL082' ||
+        id.indexOf('OPAMP') >= 0) {
+        opamps.push(d);
+      } else if (id.indexOf('R_') === 0 || id.indexOf('C_') === 0 ||
+        id.indexOf('POT_') === 0) {
+        passives.push(d);
+      }
+    }
+    let moved = 0;
+    for (let oi = 0; oi < opamps.length; oi++) {
+      const op = opamps[oi];
+      for (let pi = 0; pi < passives.length; pi++) {
+        const p = passives[pi];
+        const dx = Math.abs(p.x - op.x);
+        const dy = p.y - op.y;
+        if (dx < 90 && dy > 60 && dy < 240) {
+          const newX = this.snapTo(op.x - 140, SNAP);
+          const newY = this.snapTo(op.y + Math.min(dy, 140), SNAP);
+          const nx = Math.max(40, Math.min(CANVAS_W - 40, newX));
+          const ny = Math.max(40, Math.min(CANVAS_H - 40, newY));
+          if (Math.abs(nx - p.x) > 1 || Math.abs(ny - p.y) > 1) {
+            p.x = nx;
+            p.y = ny;
+            moved++;
+          }
+        }
+      }
+    }
+    if (moved > 0) {
+      this.resolveOverlaps(topo);
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] nudge_opamp_side passives=${moved}`);
     }
     return moved;
   }
@@ -1028,14 +1149,17 @@ export class PlacementOptimizer {
         refPrefix = 'K';
       } else if (idUp.startsWith('SW_')) {
         refPrefix = 'SW';
-      } else if (m.libDevId === 'VCC' || m.libDevId === 'GND') {
+      } else if (m.libDevId === 'VCC' || m.libDevId === 'GND' || m.libDevId === 'VEE' ||
+        m.libDevId === 'VDD' || m.libDevId === 'VSS') {
         refPrefix = m.libDevId;
       } else if (idUp.includes('STM32') || idUp.includes('AT89') || idUp.includes('LM555') ||
         idUp.includes('NE555')) {
         refPrefix = 'U';
       }
       let refName: string;
-      if (m.libDevId === 'VCC' || m.libDevId === 'GND') {
+      // 电源符号位号=型号（禁 VEE→U1，否则 netPlan/门禁对不上）
+      if (m.libDevId === 'VCC' || m.libDevId === 'GND' || m.libDevId === 'VEE' ||
+        m.libDevId === 'VDD' || m.libDevId === 'VSS') {
         refName = m.libDevId;
       } else {
         const n = (prefixCount.get(refPrefix) ?? 0) + 1;

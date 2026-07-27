@@ -1,5 +1,5 @@
 import { DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE, WireConflictGeometry, IdUtil, makeRouteLine, Logger, MainThreadYield, INSTR_TRACE_TAG, traceAiOp } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { SchTopology, RouteResult, RouteLine, RoutingLlmOutput, RoutingWeightPrefs, Point2D, SpecialNetRule, SpacingIssue, DeviceInst, NetLabelInfo, NetNodeRef, WorldHitRect, Pin } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchTopology, RouteResult, RouteLine, RoutingLlmOutput, RoutingWeightPrefs, Point2D, SpecialNetRule, SpacingIssue, DeviceInst, NetLabelInfo, NetNodeRef, WorldHitRect, Pin, LabelPlaceHints } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary } from 'component_library';
 import { cloneRouteResult, getNetPriorityValue, netPriorityMapToRecord } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/internal/AiEngineHelpers";
 import type { NetPriorityHint } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/internal/AiEngineHelpers";
@@ -264,20 +264,18 @@ export class ConstrainedWiringEngine {
                 stillBad.delete(dropBad[di]);
             }
         }
-        // forceWire 小网：几何违例时仍保留导线（WAR 风格），留给 clear-loop 再修，禁止整网 demote 成标号
+        // forceWire 小网：若 A* 后仍几何违例，降级为标号（勿 skipDemote 死磕 — 模拟器主线程会 THREAD_BLOCK）
         if (forceWireKeep.size > 0) {
-            const dropFw: string[] = [];
+            const fwBad: string[] = [];
             stillBad.forEach((u) => {
                 if (forceWireKeep.has(u)) {
-                    dropFw.push(u);
+                    fwBad.push(u);
                 }
             });
-            for (let di = 0; di < dropFw.length; di++) {
-                stillBad.delete(dropFw[di]);
-            }
-            if (dropFw.length > 0) {
-                Logger.info(INSTR_TRACE_TAG, `[AI_ROUTE] keep_forceWire skipDemote n=${dropFw.length}` +
-                    ` names=[${this.netNamesOfUuids(topo, new Set(dropFw)).join(',')}]`);
+            if (fwBad.length > 0) {
+                Logger.warn(INSTR_TRACE_TAG, `[AI_ROUTE] demote_forceWire_fallback n=${fwBad.length}` +
+                    ` names=[${this.netNamesOfUuids(topo, new Set(fwBad)).join(',')}]` +
+                    ` (was keep_forceWire skipDemote — ANR risk)`);
             }
         }
         if (stillBad.size > 0) {
@@ -307,17 +305,6 @@ export class ConstrainedWiringEngine {
                 stillAfterCap.delete(dropCap[di]);
             }
         }
-        if (forceWireKeep.size > 0) {
-            const dropFw2: string[] = [];
-            stillAfterCap.forEach((u) => {
-                if (forceWireKeep.has(u)) {
-                    dropFw2.push(u);
-                }
-            });
-            for (let di = 0; di < dropFw2.length; di++) {
-                stillAfterCap.delete(dropFw2[di]);
-            }
-        }
         if (stillAfterCap.size > 0) {
             const demoted2 = this.demoteNetsToLabelStubs(topo, stillAfterCap);
             const names2 = this.netNamesOfUuids(topo, stillAfterCap);
@@ -340,21 +327,17 @@ export class ConstrainedWiringEngine {
                 mixed.delete(dropMixed[di]);
             }
         }
-        // forceWire 混挂：剥 stub 保留长线，勿整网标号
+        // forceWire 混挂亦整网标号：剥 stub 留长线仍可能几何违例并卡主线程
         if (forceWireKeep.size > 0) {
-            const dropMixFw: string[] = [];
+            const mixFw: string[] = [];
             mixed.forEach((u) => {
                 if (forceWireKeep.has(u)) {
-                    dropMixFw.push(u);
+                    mixFw.push(u);
                 }
             });
-            for (let di = 0; di < dropMixFw.length; di++) {
-                mixed.delete(dropMixFw[di]);
-                this.stripStubsKeepLongWires(topo, dropMixFw[di]);
-            }
-            if (dropMixFw.length > 0) {
-                Logger.info(INSTR_TRACE_TAG, `[AI_ROUTE] keep_forceWire mixed→stripStub n=${dropMixFw.length}`);
-                last.routeLines = topo.wireList.slice();
+            if (mixFw.length > 0) {
+                Logger.warn(INSTR_TRACE_TAG, `[AI_ROUTE] demote_forceWire_mixed n=${mixFw.length}` +
+                    ` names=[${this.netNamesOfUuids(topo, new Set(mixFw)).join(',')}]`);
             }
         }
         if (mixed.size > 0) {
@@ -371,18 +354,6 @@ export class ConstrainedWiringEngine {
                 this.ensureLabelStubsForUnwiredPins(topo, uuids[i]);
             }
             const mixed2 = this.findStubLongMixedNetUuids(topo);
-            if (forceWireKeep.size > 0) {
-                const dropM2: string[] = [];
-                mixed2.forEach((u) => {
-                    if (forceWireKeep.has(u)) {
-                        dropM2.push(u);
-                    }
-                });
-                for (let di = 0; di < dropM2.length; di++) {
-                    mixed2.delete(dropM2[di]);
-                    this.stripStubsKeepLongWires(topo, dropM2[di]);
-                }
-            }
             if (mixed2.size > 0) {
                 const demoted4 = this.demoteNetsToLabelStubs(topo, mixed2);
                 Logger.info(INSTR_TRACE_TAG, `[AI_ROUTE] heal_unwired→allLabel nets=${mixed2.size} stubs=${demoted4}` +
@@ -654,11 +625,24 @@ export class ConstrainedWiringEngine {
             }
             const hit = this.resolveHitRect(dev);
             const foreignPins = this.collectForeignPinWorlds(pinPos);
-            const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins);
+            const occupied: Point2D[] = [];
+            for (let li = 0; li < topo.netLabelList.length; li++) {
+                occupied.push({ x: topo.netLabelList[li].x, y: topo.netLabelList[li].y });
+            }
+            const wirePaths = this.collectWirePathsForLabelPlace(topo);
+            const labelText = net.netName.length > 0 ? net.netName : 'NET';
+            const hints: LabelPlaceHints = {
+                wirePaths: wirePaths,
+                occupiedLabels: occupied,
+                labelText: labelText,
+                wireClearance: 16,
+                labelClearance: 24
+            };
+            const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins, hints);
             const label: NetLabelInfo = {
                 id: IdUtil.generate('lbl'),
                 netUuid: netUuid,
-                text: net.netName.length > 0 ? net.netName : 'NET',
+                text: labelText,
                 x: labelPos.x,
                 y: labelPos.y,
                 global: false
@@ -713,7 +697,18 @@ export class ConstrainedWiringEngine {
             }
             const hit = this.resolveHitRect(dev);
             const foreignPins = this.collectForeignPinWorlds(pinPos);
-            const labelPos = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins);
+            const occupied: Point2D[] = [];
+            for (let li = 0; li < topo.netLabelList.length; li++) {
+                occupied.push({ x: topo.netLabelList[li].x, y: topo.netLabelList[li].y });
+            }
+            const hints: LabelPlaceHints = {
+                wirePaths: this.collectWirePathsForLabelPlace(topo),
+                occupiedLabels: occupied,
+                labelText: netName,
+                wireClearance: 16,
+                labelClearance: 24
+            };
+            const labelPos = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins, hints);
             topo.netLabelList.push({
                 id: IdUtil.generate('lbl'),
                 netUuid: netUuid,
@@ -864,12 +859,18 @@ export class ConstrainedWiringEngine {
         topo.netLabelList = topo.netLabelList.filter(l => !netUuids.has(l.netUuid));
         let stubCount = 0;
         const uuidList: string[] = Array.from(netUuids);
+        const wirePaths = this.collectWirePathsForLabelPlace(topo);
+        const occupiedLabels: Point2D[] = [];
+        for (let li = 0; li < topo.netLabelList.length; li++) {
+            occupiedLabels.push({ x: topo.netLabelList[li].x, y: topo.netLabelList[li].y });
+        }
         for (let ui = 0; ui < uuidList.length; ui++) {
             const netUuid = uuidList[ui];
             const net = topo.netList.find(n => n.netUuid === netUuid);
             if (!net || net.nodeList.length === 0) {
                 continue;
             }
+            const labelText = net.netName.length > 0 ? net.netName : 'NET';
             for (let ni = 0; ni < net.nodeList.length; ni++) {
                 const node = net.nodeList[ni];
                 const dev = topo.deviceList.find(d => d.instUuid === node.devUuid);
@@ -881,21 +882,42 @@ export class ConstrainedWiringEngine {
                 const pinPos = PinWorldResolver.forDeviceInst(dev, pinId, pinName);
                 const hit = this.resolveHitRect(dev);
                 const foreignPins = this.collectForeignPinWorlds(pinPos);
-                const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins);
+                const hints: LabelPlaceHints = {
+                    wirePaths: wirePaths,
+                    occupiedLabels: occupiedLabels,
+                    labelText: labelText,
+                    wireClearance: 16,
+                    labelClearance: 24
+                };
+                const labelPos: Point2D = DeviceHitGeometry.stubLabelOutsidePinAvoidForeign(pinPos, hit, this.hitRects, 20, foreignPins, hints);
                 const label: NetLabelInfo = {
                     id: IdUtil.generate('lbl'),
                     netUuid: netUuid,
-                    text: net.netName.length > 0 ? net.netName : 'NET',
+                    text: labelText,
                     x: labelPos.x,
                     y: labelPos.y,
                     global: false
                 };
                 topo.netLabelList.push(label);
-                topo.wireList.push(makeRouteLine(netUuid, [pinPos, labelPos], false));
+                occupiedLabels.push({ x: labelPos.x, y: labelPos.y });
+                const stubPts: Point2D[] = [pinPos, labelPos];
+                topo.wireList.push(makeRouteLine(netUuid, stubPts, false));
+                wirePaths.push(stubPts);
                 stubCount++;
             }
         }
         return stubCount;
+    }
+    /** 供智能标号避让：收集既有导线折线 */
+    private collectWirePathsForLabelPlace(topo: SchTopology): Point2D[][] {
+        const out: Point2D[][] = [];
+        for (let i = 0; i < topo.wireList.length; i++) {
+            const pts = topo.wireList[i].points;
+            if (pts && pts.length >= 2) {
+                out.push(pts);
+            }
+        }
+        return out;
     }
     /** 检测导线是否侵入选中区或与异网交叉/重叠 */
     findViolatingNetUuids(topo: SchTopology, lines: RouteLine[]): Set<string> {

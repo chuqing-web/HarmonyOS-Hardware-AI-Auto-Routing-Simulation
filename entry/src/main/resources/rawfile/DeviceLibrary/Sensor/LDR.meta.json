@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "LDR",
+  "name": "Photoresistor",
+  "vendor": "Generic",
+  "category": "sensor",
+  "sub_category": "light",
+  "symbol_file": "../Common/LDR.svg",
+  "sim_model_file": "LDR.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 40,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "type": "analog",
+    "value": "50k"
+  }
+}

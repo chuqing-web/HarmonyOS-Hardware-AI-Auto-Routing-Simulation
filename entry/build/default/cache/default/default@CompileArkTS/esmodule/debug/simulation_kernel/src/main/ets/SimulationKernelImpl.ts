@@ -604,6 +604,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
      *
      * 555 astable (no VAC): same class of bug — default DC nudge was 50µs/frame, so a
      * 10µF/7Hz timing cap never reached ⅔VCC and the scope looked stuck high.
+     *
+     * Op-amp RC oscillators (Schmitt + integrator, no VAC/555): same DC nudge + adaptive
+     * dt collapse to 10ns after rail snaps → scope span stuck ~0.2ms (NaN ROLL fill).
      */
     runBudgetSteps(budgetMs: number = 3): number {
         if (this.state !== SimulationState.RUNNING) {
@@ -611,7 +614,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
         const acFreq = this.analogEngine.getMaxAcFrequency();
         const has555 = this.analogEngine.getTimer555Count() > 0;
-        const wallCap = (acFreq > 0 || has555) ? 12 : 4;
+        // Op-amp RC oscillators (square/triangle) have no VAC/555 — old DC path only
+        // advanced ~50µs/frame while rail snaps shrunk dt to 10ns → scope looked frozen.
+        const hasCaps = this.analogEngine.getCapacitorCount() > 0;
+        const hasOpamps = this.analogEngine.getOpampCount() > 0;
+        const needsAnalogBurst = acFreq > 0 || has555 || hasCaps || hasOpamps;
+        const wallCap = needsAnalogBurst ? 12 : 4;
         // Sample KEY/net voltages into GPIO IDR before firmware reads inputs
         this.syncSpiceToGpioInputs();
         this.tickMcuCore();
@@ -629,22 +637,31 @@ export class SimulationKernelImpl implements ISimulationKernel {
             this.scheduler.setMaxStepCap(acMax);
             this.scheduler.bumpStepToward(acMax);
         }
+        else if (this.scheduler !== null && (hasCaps || hasOpamps)) {
+            // Integrator / Schmitt: restore µs–tens-of-µs dt after large ΔV shrinks to 10ns
+            this.scheduler.setMaxStepCap(5e-5);
+            this.scheduler.bumpStepToward(1e-5);
+        }
         else if (this.scheduler !== null) {
             this.scheduler.setMaxStepCap(0);
         }
-        // Target sim advance: 555 ≈ near-realtime; else ≥2 AC periods (≤50ms); else DC nudge
+        // Target sim advance: 555 ≈ near-realtime; else ≥2 AC periods (≤50ms);
+        // RC/opamp burst ~5ms/frame so a 10ms scope window fills in <1s wall time;
+        // else DC nudge
         // Old Math.min(2e-3, …) starved 10Hz SIGGEN (half-period 50ms) → CLK looked stuck
         const targetAdvance = has555
             ? 4e-2
             : (acFreq > 0
                 ? Math.min(5e-2, Math.max(2.0 / acFreq, 2e-4))
-                : 5e-5);
-        // MCU firmware needs UV time; pure analog / 555 can burst harder for the scope
+                : ((hasCaps || hasOpamps) ? 5e-3 : 5e-5));
+        // MCU firmware needs UV time; pure analog / 555 / RC can burst harder for the scope
         const maxSpice = has555
             ? 80
-            : (this.isAnyMcuLoaded() ? (acFreq > 0 ? 24 : 4) : (acFreq > 0 ? 160 : 24));
-        // AC / 555 labs need a longer wall slice than the default 3ms Worker budget
-        const sliceMs = (acFreq > 0 || has555) ? Math.max(budgetMs, 8) : budgetMs;
+            : (this.isAnyMcuLoaded()
+                ? (acFreq > 0 ? 24 : 4)
+                : (needsAnalogBurst ? 160 : 24));
+        // AC / 555 / RC labs need a longer wall slice than the default 3ms Worker budget
+        const sliceMs = needsAnalogBurst ? Math.max(budgetMs, 8) : budgetMs;
         const deadline = Date.now() + Math.max(1, Math.min(sliceMs, wallCap));
         const t0 = this.globalTime;
         let steps = 0;
@@ -2381,8 +2398,12 @@ export class SimulationKernelImpl implements ISimulationKernel {
         }
     }
     private static readonly MAX_WAVE_POINTS = 8192;
-    /** Keep ~100ms of samples for scope (10× a 10ms display window at 1ms/div). */
-    private static readonly MAX_WAVE_SPAN_SEC = 1.0;
+    /**
+     * Keep enough wall-clock history for scope timebases up to 1s/div (10s window).
+     * Point budget is enforced by stride-decimate — never by dropping the oldest
+     * contiguous chunk (that left only ~8ms @ 1µs and permanently crowded ROLL left).
+     */
+    private static readonly MAX_WAVE_SPAN_SEC = 12.0;
     private resolveNetUuidForNode(nodeName: string): string {
         if (nodeName.length === 0) {
             return nodeName;
@@ -2460,7 +2481,7 @@ export class SimulationKernelImpl implements ISimulationKernel {
         wave.timeAxis.push(time);
         wave.voltageAxis.push(voltage);
         wave.currentAxis.push(current);
-        // Prefer time-window trim (stable density) over blunt point-count splice mid-ring
+        // 1) Drop samples older than MAX_WAVE_SPAN_SEC (wall-clock window for scope)
         const n = wave.timeAxis.length;
         if (n >= 8) {
             const tEnd = wave.timeAxis[n - 1];
@@ -2477,12 +2498,28 @@ export class SimulationKernelImpl implements ISimulationKernel {
                 }
             }
         }
-        if (wave.timeAxis.length >= SimulationKernelImpl.MAX_WAVE_POINTS) {
-            const drop = wave.timeAxis.length - SimulationKernelImpl.MAX_WAVE_POINTS + 64;
-            if (drop > 0) {
-                wave.timeAxis.splice(0, drop);
-                wave.voltageAxis.splice(0, drop);
-                wave.currentAxis.splice(0, drop);
+        // 2) If still over budget: stride-decimate to preserve span (do NOT blunt-drop head)
+        if (wave.timeAxis.length > SimulationKernelImpl.MAX_WAVE_POINTS) {
+            const stride = Math.ceil(wave.timeAxis.length / SimulationKernelImpl.MAX_WAVE_POINTS);
+            if (stride > 1) {
+                const nt: number[] = [];
+                const nv: number[] = [];
+                const ni: number[] = [];
+                const len = wave.timeAxis.length;
+                for (let i = 0; i < len; i += stride) {
+                    nt.push(wave.timeAxis[i]);
+                    nv.push(wave.voltageAxis[i]);
+                    ni.push(wave.currentAxis[i]);
+                }
+                const last = len - 1;
+                if (nt.length === 0 || nt[nt.length - 1] !== wave.timeAxis[last]) {
+                    nt.push(wave.timeAxis[last]);
+                    nv.push(wave.voltageAxis[last]);
+                    ni.push(wave.currentAxis[last]);
+                }
+                wave.timeAxis = nt;
+                wave.voltageAxis = nv;
+                wave.currentAxis = ni;
             }
         }
     }

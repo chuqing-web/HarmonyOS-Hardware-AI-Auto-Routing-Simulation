@@ -10,7 +10,7 @@ import {
 
   DeviceRequirement, DeviceSelectLlmOutput, MatchedDevice, DeviceSelectResult,
 
-  DeviceMeta, LibDevice, LibDevicePin, SimModelInfo, Logger,
+  DeviceMeta, LibDevice, LibDevicePin, SimModelInfo, Logger, INSTR_TRACE_TAG,
 
   emptyStringMap, makeDeviceRequirement, stringMap1, copyStringMap
 
@@ -101,7 +101,8 @@ export class DeviceSelectEngine {
 
   /** 阶段2-4：本地匹配 + 参数校验 + RAG 兜底 */
 
-  matchFromLlmOutput(llm: DeviceSelectLlmOutput, prompt: string): DeviceSelectResult {
+  matchFromLlmOutput(llm: DeviceSelectLlmOutput, prompt: string,
+    allowAutoPower: boolean = true): DeviceSelectResult {
 
     let oodDetected = (llm.oodFlags?.length ?? 0) > 0;
 
@@ -125,6 +126,14 @@ export class DeviceSelectEngine {
       if (!llm.oodFlags.includes('EMPTY_REQUIRE_LIST')) {
         llm.oodFlags.push('EMPTY_REQUIRE_LIST');
       }
+    }
+
+    const beforeMerge = requirements.length;
+    requirements = DeviceSelectEngine.mergeMultiChannelInstruments(requirements);
+    if (requirements.length < beforeMerge) {
+      llm.deviceRequireList = requirements;
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] device_select merge instruments ${beforeMerge}→${requirements.length}`);
     }
 
     let matchedRequireCount = 0;
@@ -197,35 +206,99 @@ export class DeviceSelectEngine {
 
     };
 
-    // AI 全权：缺 VEE / SIGNAL_GEN / 去耦电容等一律由选型 HARD critique 逼 LLM 重出，禁止静默补件。
-    // 仅保留通用轨 VCC/GND 的最后兜底（HARD 已要求；此处防匹配丢符号导致整图无电源）。
+    // AI 全权：缺 VEE / SIGNAL_GEN 等由 HARD critique；VCC/GND 仅非硬失败时兜底补件
     if (devices.length > 0) {
       const intent = classifyCircuitIntent(prompt);
       const hasVcc = devices.some(d => d.libDevId === 'VCC');
       const hasGnd = devices.some(d => d.libDevId === 'GND');
-      if (!hasVcc) {
-        const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
-        let vccV = intent.preferredVccVoltage;
-        if (vccV.length === 0 && intent.dualSupply) {
-          vccV = '12V';
+      if (!hasVcc || !hasGnd) {
+        if (!llm.oodFlags) {
+          llm.oodFlags = [];
         }
-        if (vccV.length > 0) {
-          vccReq.paramConstraint = stringMap1('voltage', vccV);
+        if (!hasVcc && !llm.oodFlags.includes('MISSING_VCC')) {
+          llm.oodFlags.push('MISSING_VCC');
         }
-        devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
-        Logger.info('DeviceSelect', `Auto-added VCC voltage=${vccV || '(default)'}`);
+        if (!hasGnd && !llm.oodFlags.includes('MISSING_GND')) {
+          llm.oodFlags.push('MISSING_GND');
+        }
       }
-      if (!hasGnd) {
-        const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
-        devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
-        Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+      if (allowAutoPower) {
+        if (!hasVcc) {
+          const vccReq = makeDeviceRequirement('VCC', 'power_supply', 2, emptyStringMap(), 'VCC');
+          let vccV = intent.preferredVccVoltage;
+          if (vccV.length === 0 && intent.dualSupply) {
+            vccV = '12V';
+          }
+          if (vccV.length > 0) {
+            vccReq.paramConstraint = stringMap1('voltage', vccV);
+          }
+          devices.push(this.buildMatched(vccReq, 'VCC', 'VCC Power', 'exact'));
+          Logger.info('DeviceSelect', `Auto-added VCC voltage=${vccV || '(default)'}`);
+        }
+        if (!hasGnd) {
+          const gndReq = makeDeviceRequirement('GND', 'power_supply', 2, emptyStringMap(), 'GND');
+          devices.push(this.buildMatched(gndReq, 'GND', 'GND Ground', 'exact'));
+          Logger.info('DeviceSelect', 'Auto-added GND (LLM omitted it)');
+        }
+      } else if (!hasVcc || !hasGnd) {
+        Logger.warn('DeviceSelect',
+          `[AI_AGENT] hardFail skip auto VCC/GND — missingVcc=${!hasVcc} missingGnd=${!hasGnd}`);
+        oodDetected = true;
       }
-      // 电参：只补空；非空以 LLM paramConstraint 为准
       this.applyElectricalSourceParams(devices, intent);
     }
 
     return result;
 
+  }
+
+  /**
+   * 多通道仪器（示波器/逻辑分析仪）按 libDevId 合并为 1 条 require，
+   * 避免 LLM 按 CH1/CH2 拆成两台仪。电压表/电流表不合并（用户可能要多块）。
+   */
+  static mergeMultiChannelInstruments(reqs: DeviceRequirement[]): DeviceRequirement[] {
+    const MERGE_IDS: string[] = ['OSCILLOSCOPE', 'LOGIC_ANALYZER'];
+    const out: DeviceRequirement[] = [];
+    const seen: Map<string, number> = new Map();
+    for (let i = 0; i < reqs.length; i++) {
+      const req = reqs[i];
+      const id = (req.explicitModel ?? req.devType ?? '').toUpperCase().trim();
+      let mergeKey = '';
+      for (let m = 0; m < MERGE_IDS.length; m++) {
+        if (id === MERGE_IDS[m] || id.indexOf(MERGE_IDS[m]) >= 0) {
+          mergeKey = MERGE_IDS[m];
+          break;
+        }
+      }
+      if (mergeKey.length === 0) {
+        out.push(req);
+        continue;
+      }
+      const prevIdx = seen.get(mergeKey);
+      if (prevIdx === undefined) {
+        seen.set(mergeKey, out.length);
+        out.push(req);
+        continue;
+      }
+      const keep = out[prevIdx];
+      const chNew = (req.paramConstraint?.get('channel') ?? '').trim();
+      const chOld = (keep.paramConstraint?.get('channel') ?? '').trim();
+      if (chNew.length > 0) {
+        if (chOld.length === 0) {
+          keep.paramConstraint.set('channel', chNew);
+        } else if (chOld.indexOf(chNew) < 0) {
+          keep.paramConstraint.set('channel', `${chOld}+${chNew}`);
+        }
+      }
+      const fNew = (req.func ?? '').trim();
+      if (fNew.length > 0 && (keep.func ?? '').indexOf(fNew) < 0) {
+        keep.func = `${keep.func}; ${fNew}`;
+      }
+      if ((req.priority ?? 0) > (keep.priority ?? 0)) {
+        keep.priority = req.priority;
+      }
+    }
+    return out;
   }
 
   /**

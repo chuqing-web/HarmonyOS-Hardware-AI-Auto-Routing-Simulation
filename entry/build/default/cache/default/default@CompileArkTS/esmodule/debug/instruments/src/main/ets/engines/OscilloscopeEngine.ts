@@ -25,6 +25,7 @@ function getTimebaseSec(timebase: OscTimebase): number {
         case OscTimebase.US_100: return 100e-6;
         case OscTimebase.MS_1: return 1e-3;
         case OscTimebase.MS_10: return 10e-3;
+        case OscTimebase.MS_100: return 100e-3;
         case OscTimebase.S_1: return 1;
         case OscTimebase.S_10: return 10;
         default: return 1e-6;
@@ -306,9 +307,17 @@ export class OscilloscopeEngine {
         const vpp = maxV - minV;
         const freq = OscilloscopeEngine.estimateFreqLocal(times, volts, 0, n);
         const span = Math.max(times[n - 1] - times[0], 1e-15);
-        // Target ~3 periods across 10 divisions; fallback to half of captured span
-        let wantWindow = freq > 0.5 ? (3.0 / freq) : Math.max(span * 0.8, 1e-3);
+        // Periodic: ~3 periods on screen.
+        // DC / one-shot (RC)：用「活动区间」而非全历史 span——否则空闲直流越积越长，
+        // 自适应不断放大时基（尤其 10ms 下一档曾是 1s），ROLL 永久左侧拥挤。
+        let wantWindow = freq > 0.5
+            ? (3.0 / freq)
+            : OscilloscopeEngine.estimateActivitySpan(times, volts, n);
         wantWindow = Math.min(Math.max(wantWindow, 1e-8), 100);
+        // Never auto-pick a window the live buffer cannot fill
+        if (span > 1e-6) {
+            wantWindow = Math.min(wantWindow, span * 0.95);
+        }
         const wantDiv = wantWindow / DIVISIONS;
         const nextTb = OscilloscopeEngine.pickTimebase(wantDiv);
         // V/div: Vpp fills ~6 of 10 divisions (leave headroom)
@@ -326,9 +335,16 @@ export class OscilloscopeEngine {
             needTb = periodsOnScreen < 1.2 || periodsOnScreen > 8.0;
         }
         else if (needTb && freq <= 0.5) {
-            // DC / slow: change if window differs by >2.5×
+            // DC / slow: change if window differs by >2.5×.
+            // Do NOT zoom out further once current window already covers the activity
+            // (prevents idle DC history from ratcheting 10ms → 100ms → 1s).
             const ratio = wantWindow / Math.max(curWindow, 1e-15);
-            needTb = ratio < 0.4 || ratio > 2.5;
+            if (ratio > 2.5 && curWindow >= wantWindow * 0.85) {
+                needTb = false;
+            }
+            else {
+                needTb = ratio < 0.4 || ratio > 2.5;
+            }
         }
         let needVs = nextVs !== curVs;
         if (needVs) {
@@ -384,7 +400,8 @@ export class OscilloscopeEngine {
     private static pickTimebase(wantSecPerDiv: number): OscTimebase {
         const order: OscTimebase[] = [
             OscTimebase.NS_10, OscTimebase.US_1, OscTimebase.US_100,
-            OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.S_1, OscTimebase.S_10
+            OscTimebase.MS_1, OscTimebase.MS_10, OscTimebase.MS_100,
+            OscTimebase.S_1, OscTimebase.S_10
         ];
         for (let i = 0; i < order.length; i++) {
             if (getTimebaseSec(order[i]) >= wantSecPerDiv * 0.85) {
@@ -392,6 +409,56 @@ export class OscilloscopeEngine {
             }
         }
         return OscTimebase.S_10;
+    }
+    /**
+     * Wall-clock span of significant voltage activity (edges / settling).
+     * Ignores long idle DC tails so auto timebase stays stable for RC one-shots.
+     */
+    private static estimateActivitySpan(times: number[], volts: number[], nIn: number): number {
+        const n = Math.min(nIn, times.length, volts.length);
+        if (n < 2) {
+            return 1e-3;
+        }
+        let minV = volts[0];
+        let maxV = volts[0];
+        for (let i = 1; i < n; i++) {
+            if (volts[i] < minV) {
+                minV = volts[i];
+            }
+            if (volts[i] > maxV) {
+                maxV = volts[i];
+            }
+        }
+        const vpp = maxV - minV;
+        const full = Math.max(times[n - 1] - times[0], 1e-15);
+        if (vpp < 1e-4) {
+            return Math.min(full, 50e-3);
+        }
+        const thr = Math.max(vpp * 0.08, 1e-4);
+        const vFinal = volts[n - 1];
+        let lastActive = 0;
+        for (let i = n - 1; i >= 1; i--) {
+            if (Math.abs(volts[i] - vFinal) > thr || Math.abs(volts[i] - volts[i - 1]) > thr) {
+                lastActive = i;
+                break;
+            }
+        }
+        let firstActive = 0;
+        for (let i = 1; i < n; i++) {
+            if (Math.abs(volts[i] - volts[0]) > thr) {
+                firstActive = i > 0 ? i - 1 : 0;
+                break;
+            }
+        }
+        if (lastActive < firstActive) {
+            lastActive = firstActive;
+        }
+        const act = Math.max(times[lastActive] - times[firstActive], 1e-6);
+        const settledTail = times[n - 1] - times[lastActive];
+        if (settledTail > act * 0.5) {
+            return Math.min(Math.max(act * 2.5, 5e-3), 2.0);
+        }
+        return Math.min(Math.max(act * 2.0, full * 0.5, 5e-3), 2.0);
     }
     private static pickVoltageScale(wantVPerDiv: number): OscVoltageScale {
         const order: OscVoltageScale[] = [
@@ -434,16 +501,17 @@ export class OscilloscopeEngine {
         // 探针只由原理图 OSC 器件引脚经 applyScopeProbesFromAllBindings 写入。
         return;
     }
-    /** Drop history / wave cache and unbound CH2+ (call on sim start / template load). */
+    /**
+     * Drop history / wave cache only (call on sim start / template load).
+     * Do NOT clear channelProbes — CH2+ are bound from OSC schematic pins;
+     * wiping them drops TRIANGLE_OUT etc. until the next rebind race.
+     */
     clearCaptureBuffers(): void {
         this.historyBuffer = [];
         this.simulationWaveCache = [];
         this.simDataAge = 0;
         this.autoScalePendingKey = '';
         this.autoScalePendingCount = 0;
-        for (let i = 1; i < this.channelProbes.length; i++) {
-            this.channelProbes[i] = '';
-        }
     }
     getTimebase(): OscTimebase { return this.timebase; }
     getVoltageScales(): OscVoltageScale[] { return this.voltageScales.slice(); }
@@ -463,21 +531,37 @@ export class OscilloscopeEngine {
         }
         let raw: WaveData | undefined = undefined;
         let source = 'flatDC';
-        // 有绑定探针时：优先内核逐步 WaveData（µs 级），history 仅作兜底
-        // DisplayPump history ≈ 帧率采样，对 1kHz 会严重混叠成「慢漂直流」
+        // 有绑定探针时：优先能盖满时基窗的源。
+        // 内核 WaveData 密度高（µs），但若曾被钝裁只剩几 ms，ROLL 会永久左侧拥挤；
+        // 此时改用 history（帧率采样、跨度更长）或 span 更大的缓存。
         if (probeName.length > 0) {
+            const userWindow = Math.max(getTimebaseSec(this.timebase) * DIVISIONS, 1e-12);
             const matched = this.findCachedWave(probeName);
-            if (matched !== undefined && matched.voltageAxis.length >= 32 &&
-                this.hasMeaningfulWave(matched)) {
-                raw = matched;
-                source = 'waveCache';
-            }
-            if (raw === undefined && this.historyBuffer.length >= 2) {
-                const histWave = this.buildWaveFromHistory(probeName, channel);
-                if (histWave.voltageAxis.length >= 2 && this.hasMeaningfulWave(histWave)) {
-                    raw = histWave;
-                    source = 'history';
+            let histWave: WaveData | undefined = undefined;
+            if (this.historyBuffer.length >= 2) {
+                histWave = this.buildWaveFromHistory(probeName, channel);
+                if (histWave.voltageAxis.length < 2 || !this.hasMeaningfulWave(histWave)) {
+                    histWave = undefined;
                 }
+            }
+            const cacheOk = matched !== undefined && matched.voltageAxis.length >= 32 &&
+                this.hasMeaningfulWave(matched);
+            if (cacheOk && matched !== undefined) {
+                const cacheSpan = OscilloscopeEngine.waveSpanSec(matched);
+                const histSpan = histWave !== undefined ? OscilloscopeEngine.waveSpanSec(histWave) : 0;
+                // Prefer history only when cache cannot cover the display window and history is longer
+                if (cacheSpan + 1e-15 < userWindow && histSpan > cacheSpan * 1.25) {
+                    raw = histWave;
+                    source = 'historyLonger';
+                }
+                else {
+                    raw = matched;
+                    source = 'waveCache';
+                }
+            }
+            if (raw === undefined && histWave !== undefined) {
+                raw = histWave;
+                source = 'history';
             }
             if (raw === undefined && matched !== undefined && matched.voltageAxis.length >= 2) {
                 raw = matched;
@@ -494,24 +578,34 @@ export class OscilloscopeEngine {
             source = 'noProbe';
         }
         const display = this.prepareDisplayWave(raw, channel);
-        const lastV = display.voltageAxis.length > 0
-            ? display.voltageAxis[display.voltageAxis.length - 1] : 0;
-        let minV = lastV;
-        let maxV = lastV;
+        let lastV = 0;
+        let minV = Number.POSITIVE_INFINITY;
+        let maxV = Number.NEGATIVE_INFINITY;
+        let finiteN = 0;
         for (let i = 0; i < display.voltageAxis.length; i++) {
             const v = display.voltageAxis[i];
+            if (!Number.isFinite(v)) {
+                continue;
+            }
+            lastV = v;
             if (v < minV) {
                 minV = v;
             }
             if (v > maxV) {
                 maxV = v;
             }
+            finiteN++;
+        }
+        if (finiteN === 0) {
+            minV = 0;
+            maxV = 0;
+            lastV = 0;
         }
         const rawN = Math.min(raw.timeAxis.length, raw.voltageAxis.length);
         const rawSpan = rawN >= 2 ? Math.max(raw.timeAxis[rawN - 1] - raw.timeAxis[0], 0) : 0;
         const estFreq = rawN >= 8
             ? OscilloscopeEngine.estimateFreqLocal(raw.timeAxis, raw.voltageAxis, 0, rawN) : 0;
-        traceCaptureWave(channel, probeName, source, display.voltageAxis.length, lastV, maxV - minV, rawSpan, estFreq);
+        traceCaptureWave(channel, probeName, source, display.voltageAxis.length, lastV, maxV - minV, rawSpan, estFreq, `${this.timebase}`);
         return display;
     }
     /**
@@ -808,6 +902,13 @@ export class OscilloscopeEngine {
         }
         return maxV - minV > 1e-12 || Math.abs(maxV) > 1e-12;
     }
+    private static waveSpanSec(wave: WaveData): number {
+        const n = Math.min(wave.timeAxis.length, wave.voltageAxis.length);
+        if (n < 2) {
+            return 0;
+        }
+        return Math.max(wave.timeAxis[n - 1] - wave.timeAxis[0], 0);
+    }
     /** Resolve voltage for a probe key (net UUID or SPICE node name) */
     private resolveVoltage(probeName: string, voltages: Map<string, number>): number {
         if (probeName.length === 0) {
@@ -922,7 +1023,7 @@ export class OscilloscopeEngine {
     }
     /**
      * 滚动重采样：时间轴覆盖完整 [rollStart, rollStart+windowSec]。
-     * - filling=true（写屏阶段）：超过末样的右侧为 NaN，迹线从左往右生长
+     * - filling=true（写屏阶段）：右侧尚未到达的时刻 hold 末样（禁止 NaN — 会把 UI 打成 last=NaNV / 空迹线）
      * - filling=false（滚动阶段）：窗内应有满历史，边界外 hold（不再左侧 NaN 留黑）
      */
     private resampleWaveRoll(timeAxis: number[], voltageAxis: number[], channel: number, windowSec: number, rollStart: number, _rollEnd: number, filling: boolean = false): WaveData {
@@ -942,9 +1043,9 @@ export class OscilloscopeEngine {
             const fracI = SAMPLE_POINTS > 1 ? i / (SAMPLE_POINTS - 1) : 0;
             const tUse = rollStart + fracI * span;
             outTime.push(tUse);
-            // 写屏阶段：右侧尚未到达的时刻留空；滚动阶段不再在左侧挖空
+            // 写屏阶段：右侧 hold 末样，迹线从左往右“写满”而不是半屏黑洞
             if (filling && tUse > tDataN + 1e-15) {
-                rawOut.push(Number.NaN);
+                rawOut.push(cleaned[n - 1]);
                 continue;
             }
             if (!filling && tUse < tData0 - 1e-15) {
@@ -980,7 +1081,7 @@ export class OscilloscopeEngine {
             }
             rawOut.push(vi);
         }
-        // 仅对有效段轻度平滑，保留 NaN 空隙
+        // 轻度三点平滑（全部为有限值时）
         const outVoltage: number[] = rawOut.slice();
         for (let i = 1; i < outVoltage.length - 1; i++) {
             const a = rawOut[i - 1];

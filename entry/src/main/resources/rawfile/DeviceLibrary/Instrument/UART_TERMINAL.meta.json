@@ -1,0 +1,38 @@
+{
+  "lib_dev_id": "UART_TERMINAL",
+  "name": "UART Virtual Terminal",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "uart",
+  "symbol_file": "../Common/uart_terminal.svg",
+  "sim_model_file": "UART_TERMINAL.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "TX",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "RX",
+      "pin_type": "output",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -40,
+      "y": 30
+    }
+  ],
+  "default_params": {
+    "baudRate": "9600"
+  }
+}

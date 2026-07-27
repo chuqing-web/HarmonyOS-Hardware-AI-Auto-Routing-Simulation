@@ -1,0 +1,22 @@
+{
+  "lib_dev_id": "GND",
+  "name": "GND 接地",
+  "vendor": "Generic",
+  "category": "power_supply",
+  "sub_category": "ground",
+  "symbol_file": "../Common/gnd.svg",
+  "sim_model_file": "GND.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": 0,
+      "y": -10
+    }
+  ],
+  "default_params": {}
+}

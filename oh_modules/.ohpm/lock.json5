@@ -210,16 +210,6 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "simulation_kernel@file:features/simulation_kernel": {
-      "storePath": "features/simulation_kernel",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
     "schematic_editor@file:features/schematic_editor": {
       "storePath": "features/schematic_editor",
       "dependencies": {
@@ -240,8 +230,8 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "hex_debugger@file:features/hex_debugger": {
-      "storePath": "features/hex_debugger",
+    "simulation_kernel@file:features/simulation_kernel": {
+      "storePath": "features/simulation_kernel",
       "dependencies": {
         "common": "common"
       },
@@ -272,6 +262,16 @@
     },
     "instruments@file:features/instruments": {
       "storePath": "features/instruments",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "hex_debugger@file:features/hex_debugger": {
+      "storePath": "features/hex_debugger",
       "dependencies": {
         "common": "common"
       },

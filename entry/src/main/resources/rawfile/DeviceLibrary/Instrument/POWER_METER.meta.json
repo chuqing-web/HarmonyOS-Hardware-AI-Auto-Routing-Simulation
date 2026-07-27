@@ -1,0 +1,45 @@
+{
+  "lib_dev_id": "POWER_METER",
+  "name": "功率表",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "power",
+  "symbol_file": "../Common/power_meter.svg",
+  "sim_model_file": "POWER_METER.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "V+",
+      "pin_type": "input",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "V-",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "I+",
+      "pin_type": "input",
+      "x": -40,
+      "y": 20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "I-",
+      "pin_type": "output",
+      "x": -40,
+      "y": 40
+    }
+  ],
+  "default_params": {
+    "range": "1000V/10A"
+  }
+}

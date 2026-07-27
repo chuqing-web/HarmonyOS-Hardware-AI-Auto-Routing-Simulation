@@ -1,0 +1,129 @@
+{
+  "lib_dev_id": "LCD1602",
+  "name": "LCD1602",
+  "vendor": "Generic",
+  "category": "peripheral",
+  "sub_category": "display",
+  "symbol_file": "../Common/lcd1602.svg",
+  "sim_model_file": "LCD1602.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VSS",
+      "pin_type": "ground",
+      "x": -40,
+      "y": -40
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "VDD",
+      "pin_type": "power",
+      "x": -40,
+      "y": -30
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "V0",
+      "pin_type": "input",
+      "x": -40,
+      "y": -20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "RS",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "RW",
+      "pin_type": "input",
+      "x": -40,
+      "y": 0
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "E",
+      "pin_type": "input",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "D0",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 20
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "D1",
+      "pin_type": "bidirectional",
+      "x": -40,
+      "y": 30
+    },
+    {
+      "pin_id": "9",
+      "pin_label": "D2",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -40
+    },
+    {
+      "pin_id": "10",
+      "pin_label": "D3",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -30
+    },
+    {
+      "pin_id": "11",
+      "pin_label": "D4",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -20
+    },
+    {
+      "pin_id": "12",
+      "pin_label": "D5",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "13",
+      "pin_label": "D6",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 0
+    },
+    {
+      "pin_id": "14",
+      "pin_label": "D7",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": 10
+    },
+    {
+      "pin_id": "15",
+      "pin_label": "A",
+      "pin_type": "power",
+      "x": 40,
+      "y": 20
+    },
+    {
+      "pin_id": "16",
+      "pin_label": "K",
+      "pin_type": "ground",
+      "x": 40,
+      "y": 30
+    }
+  ],
+  "default_params": {
+    "interface": "parallel"
+  }
+}

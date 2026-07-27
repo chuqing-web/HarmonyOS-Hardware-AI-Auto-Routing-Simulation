@@ -7,7 +7,8 @@ import { SchematicSymbolRenderer, SymbolDrawStyle } from '../utils/SchematicSymb
 import {
   SchematicDocument, ComponentInstance, Wire, ViewportState, Point2D, WorldRect, Rect2D,
   ModuleEvent, ModuleEventPayload, EventBus, ErcError, Pin, calcSymbolBounds, SimulationState,
-  getPinNetMap, findNetForPinLabel, isPowerSupplyLabelText, isGroundLabelText
+  getPinNetMap, findNetForPinLabel, isPowerSupplyLabelText, isGroundLabelText,
+  DeviceHitGeometry
 } from 'common';
 import { SimulationKernelImpl } from 'simulation_kernel';
 import { ComponentDefinition } from 'component_library';
@@ -1113,8 +1114,17 @@ export struct SchematicCanvas {
     }
 
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
-    // 导线优先：靠近引脚时也不要在 down 里选中器件，否则松开会「选器件+从脚引出」叠在一起
+    // 仅「紧贴引脚」时跳过器件拖拽，留给 handleTap 从脚布线；点本体仍可选中看属性
     if (this.toolMode === EditorToolMode.SELECT) {
+      const nearPinDown = this.findNearestPinWorld(world, this.pinClickThreshold());
+      if (nearPinDown !== null) {
+        this.wireBranchEligible = false;
+        this.selectedComponentId = '';
+        this.clearDragState();
+        this.scheduleRedraw();
+        return;
+      }
+      // 导线中段：不要在 down 里选中器件
       const wireHit = editor.hitTestWireAt(world);
       if (wireHit !== null && wireHit.length > 0) {
         const selectedWires = editor.getSelectedWireIds();
@@ -2019,8 +2029,31 @@ export struct SchematicCanvas {
           break;
         }
 
-        // 导线优先于引脚：第一次点导线只选中；已选中且本按下前已选中 → 再左击才引出
-        // （避免点线近脚时被当成「从引脚开始布线」，表现为一击既选又引出）
+        // 紧贴引脚 → 起线（含已接导线的脚）；阈值收紧以免点器件本体无法看属性
+        const nearPin = this.findNearestPinWorld(world, this.pinClickThreshold());
+        if (nearPin !== null) {
+          if (this.isSimulationActive()) {
+            this.onStatusChange('仿真运行中，无法接线');
+            break;
+          }
+          if (this.isLayerBlocked(SchematicLayerId.WIRING)) {
+            this.onStatusChange('布线层已锁定');
+            break;
+          }
+          this.wireBranchEligible = false;
+          this.toolMode = EditorToolMode.WIRE;
+          this.selectedComponentId = '';
+          this.clearDragState();
+          this.appService.schematicEditor.setSelection([]);
+          this.wireWaypoints = [nearPin];
+          this.setWireStart(nearPin);
+          this.lastWarPreviewEndKey = '';
+          this.onStatusChange('导线起点: 点空白加拐点；点引脚/导线完成；右击取消');
+          this.scheduleRedraw();
+          break;
+        }
+
+        // 无引脚命中：第一次点导线只选中；已选中且本按下前已选中 → 再左击才引出
         const wireId: string | null = editor.hitTestWireAt(world);
         if (wireId !== null && wireId.length > 0) {
           const selectedWires: string[] = editor.getSelectedWireIds();
@@ -2072,28 +2105,11 @@ export struct SchematicCanvas {
           this.selectedComponentId = '';
         }
 
-        // 无导线命中时：点引脚开始布线
-        const nearPin = this.findNearestPinWorld(world);
-        if (nearPin !== null) {
-          if (this.isSimulationActive()) {
-            this.onStatusChange('仿真运行中，无法接线');
-            break;
-          }
-          this.toolMode = EditorToolMode.WIRE;
-          this.selectedComponentId = '';
-          this.clearDragState();
-          this.appService.schematicEditor.setSelection([]);
-          this.wireWaypoints = [nearPin];
-          this.setWireStart(nearPin);
-          this.lastWarPreviewEndKey = '';
-          this.onStatusChange('导线起点: 点空白加拐点；点引脚/导线完成；右击取消');
-          break;
-        }
-
         const hits = editor.selectAt(world);
         if (hits.length > 0) {
           this.selectedComponentId = hits[0];
           editor.setSelection([hits[0]]);
+          this.onStatusChange('已选择器件');
         } else {
           this.selectedComponentId = '';
           editor.setSelection([]);
@@ -2861,7 +2877,8 @@ export struct SchematicCanvas {
         switchPressed: swPressed,
         potWiper: potWiper,
         sensorTempC: sensorTempC,
-        hallActive: hallActive
+        hallActive: hallActive,
+        paramOverrides: comp.parameters
       };
       SchematicSymbolRenderer.drawComponent(
         ctx, drawPos.x, drawPos.y, def,
@@ -2954,13 +2971,13 @@ export struct SchematicCanvas {
   /**
    * Finds the nearest component pin to a world point within threshold.
    * Returns the pin's world position, or null if no pin is close enough.
+   * @param threshold 可选；默认与 findPinAtPoint 对齐（吸附用）；点选起线请用更紧阈值。
    */
-  private findNearestPinWorld(world: Point2D): Point2D | null {
+  private findNearestPinWorld(world: Point2D, threshold?: number): Point2D | null {
     const doc = this.appService.schematicEditor.getDocument();
     const g = this.appService.schematicEditor.getViewport().gridSize;
-    // 与 SchematicEditorImpl.findPinAtPoint 对齐：脚在选中区内仍优先吸附
-    const threshold = Math.max(g * 2, 16);
-    let bestDist = threshold;
+    const lim = threshold !== undefined ? threshold : Math.max(g * 2, 16);
+    let bestDist = lim;
     let bestPoint: Point2D | null = null;
     for (let i = 0; i < doc.components.length; i++) {
       const comp = doc.components[i];
@@ -2982,6 +2999,12 @@ export struct SchematicCanvas {
       }
     }
     return bestPoint;
+  }
+
+  /** SELECT 模式点脚起线：比吸附阈值更紧，避免点器件本体被当成点脚 */
+  private pinClickThreshold(): number {
+    const g = this.appService.schematicEditor.getViewport().gridSize;
+    return Math.min(Math.max(g * 0.9, 7), 10);
   }
 
   /** 网格吸附，便于再点同一拐点结束端点 */
@@ -4077,62 +4100,152 @@ export struct SchematicCanvas {
       const label = doc.netLabels[i];
       const x = label.position.x;
       const y = label.position.y;
+      const focused = label.id === this.lastLabelTapId;
       // Draw by text semantics (AI stubs often have global=false)
       if (isPowerSupplyLabelText(label.text)) {
         this.drawPowerSymbol(ctx, x, y, label.text);
+        if (focused) {
+          this.drawNetLabelFocusRing(ctx, x, y - 12, 14);
+        }
       } else if (isGroundLabelText(label.text)) {
         this.drawGroundSymbol(ctx, x, y);
+        if (focused) {
+          this.drawNetLabelFocusRing(ctx, x, y + 10, 14);
+        }
       } else {
-        // Signal label: short anchor stub + text
-        ctx.strokeStyle = ProteusColors.TEXT_PRIMARY;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x - 4, y);
-        ctx.lineTo(x + 2, y);
-        ctx.stroke();
-        ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
-        ctx.font = `${ProteusFonts.CANVAS_LABEL}px sans-serif`;
-        ctx.fillText(label.text, x + 4, y + 4);
+        const expandLeft = this.inferSignalLabelExpandLeft(doc, x, y);
+        this.drawSignalNetLabel(ctx, x, y, label.text, focused, expandLeft);
       }
     }
+  }
+
+  /** 导线从右侧接入锚点 → 旗标向左展开，避免盖住连接线 */
+  private inferSignalLabelExpandLeft(doc: SchematicDocument, x: number, y: number): boolean {
+    const wires = doc.wires ?? [];
+    const paths: Point2D[][] = [];
+    for (let i = 0; i < wires.length; i++) {
+      const pts = wires[i].points;
+      if (pts && pts.length >= 2) {
+        paths.push(pts);
+      }
+    }
+    return DeviceHitGeometry.inferSignalLabelExpandLeft({ x: x, y: y }, paths);
+  }
+
+  /** Proteus 风格信号网络标号：锚点 + 旗标框 + 文本 */
+  private drawSignalNetLabel(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    text: string,
+    focused: boolean,
+    expandLeft: boolean = false
+  ): void {
+    const fontPx = ProteusFonts.CANVAS_LABEL;
+    ctx.font = `${fontPx}px sans-serif`;
+    const tw = Math.max(ctx.measureText(text).width, 12);
+    const padX = 4;
+    const boxH = fontPx + 4;
+    const stubLen = 6;
+    const boxW = tw + padX * 2;
+    const boxX = expandLeft ? (x - stubLen - boxW) : (x + stubLen);
+    const boxY = y - boxH / 2;
+    const color = focused ? ProteusColors.SELECTED : ProteusColors.WIRE;
+    const stubEndX = expandLeft ? (x - stubLen) : (x + stubLen);
+
+    // Anchor stub from connection point into flag
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = focused ? 1.6 : 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(stubEndX, y);
+    ctx.stroke();
+    // Connection dot
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    // Flag body (rect + notch toward anchor)
+    ctx.beginPath();
+    if (expandLeft) {
+      ctx.moveTo(boxX + boxW, boxY);
+      ctx.lineTo(boxX, boxY);
+      ctx.lineTo(boxX, boxY + boxH);
+      ctx.lineTo(boxX + boxW, boxY + boxH);
+      ctx.lineTo(boxX + boxW - 3, y);
+    } else {
+      ctx.moveTo(boxX, boxY);
+      ctx.lineTo(boxX + boxW, boxY);
+      ctx.lineTo(boxX + boxW, boxY + boxH);
+      ctx.lineTo(boxX, boxY + boxH);
+      ctx.lineTo(boxX + 3, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = ProteusColors.CANVAS_BG;
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    // Text
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, boxX + padX + 2, y);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  private drawNetLabelFocusRing(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    r: number
+  ): void {
+    ctx.strokeStyle = ProteusColors.SELECTED;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   private drawPowerSymbol(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
     ctx.strokeStyle = ProteusColors.POWER;
     ctx.fillStyle = ProteusColors.POWER;
-    ctx.lineWidth = 1.2;
-    // Vertical arrow pointing up from connection point
+    ctx.lineWidth = 1.4;
+    // Match component VCC glyph: pin at (x,y), arrow pointing up
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x, y - 10);
+    ctx.lineTo(x, y - 18);
     ctx.stroke();
-    // Arrow head
     ctx.beginPath();
-    ctx.moveTo(x - 4, y - 6);
-    ctx.lineTo(x, y - 10);
-    ctx.lineTo(x + 4, y - 6);
+    ctx.moveTo(x, y - 24);
+    ctx.lineTo(x - 5, y - 16);
+    ctx.lineTo(x + 5, y - 16);
     ctx.closePath();
     ctx.fill();
-    // Text above
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y);
+    ctx.lineTo(x + 5, y);
+    ctx.stroke();
     ctx.font = `${ProteusFonts.CANVAS_LABEL - 1}px sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(text, x, y - 14);
+    ctx.fillText(text, x, y - 28);
     ctx.textAlign = 'start';
   }
 
   private drawGroundSymbol(ctx: CanvasRenderingContext2D, x: number, y: number): void {
     ctx.strokeStyle = ProteusColors.GROUND;
-    ctx.lineWidth = 1.2;
-    // Vertical line from connection point
+    ctx.fillStyle = ProteusColors.GROUND;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x, y + 6);
+    ctx.lineTo(x, y + 14);
     ctx.stroke();
-    // Three descending horizontal lines
-    const lineWidths = [10, 7, 4];
-    for (let l = 0; l < 3; l++) {
-      const ly = y + 7 + l * 3;
-      const hw = lineWidths[l] / 2;
+    const bars = [12, 8, 4];
+    for (let l = 0; l < bars.length; l++) {
+      const ly = y + 15 + l * 4;
+      const hw = bars[l] / 2;
       ctx.beginPath();
       ctx.moveTo(x - hw, ly);
       ctx.lineTo(x + hw, ly);

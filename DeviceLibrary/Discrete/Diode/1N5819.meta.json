@@ -1,0 +1,31 @@
+{
+  "lib_dev_id": "1N5819",
+  "name": "1N5819",
+  "vendor": "Generic",
+  "category": "discrete_diode",
+  "sub_category": "diode",
+  "symbol_file": "../../Common/diode.svg",
+  "sim_model_file": "1N5819.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "A",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "K",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "type": "signal"
+  }
+}

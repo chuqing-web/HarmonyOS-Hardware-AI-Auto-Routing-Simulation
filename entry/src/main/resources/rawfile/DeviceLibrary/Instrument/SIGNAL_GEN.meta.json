@@ -1,0 +1,35 @@
+{
+  "lib_dev_id": "SIGNAL_GEN",
+  "name": "信号发生器",
+  "vendor": "AI-SCH",
+  "category": "instrument",
+  "sub_category": "signal_gen",
+  "symbol_file": "../Common/signal_gen.svg",
+  "sim_model_file": "SIGNAL_GEN.model.txt",
+  "model_type": "instrument",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "OUT",
+      "pin_type": "output",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "waveform": "sine",
+    "amplitude": "1V",
+    "frequency": "1kHz",
+    "offset": "0V",
+    "dutyCycle": "50%"
+  }
+}

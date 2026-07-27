@@ -1,0 +1,35 @@
+{
+  "lib_dev_id": "LED_BLUE",
+  "name": "Blue LED",
+  "vendor": "Generic",
+  "category": "discrete_led",
+  "sub_category": "led",
+  "symbol_file": "../../Common/led.svg",
+  "sim_model_file": "LED_BLUE.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "A",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "K",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "color": "blue",
+    "forwardVoltage": "2.0V",
+    "litVf": "1.2",
+    "litVkMax": "0.9",
+    "litImA": "0.5"
+  }
+}

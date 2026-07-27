@@ -1,0 +1,45 @@
+{
+  "lib_dev_id": "OLED_12864",
+  "name": "OLED 128x64",
+  "vendor": "Generic",
+  "category": "peripheral",
+  "sub_category": "display",
+  "symbol_file": "../Common/oled.svg",
+  "sim_model_file": "OLED_12864.model.digital",
+  "model_type": "digital",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": -30,
+      "y": -20
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -30,
+      "y": 20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "SDA",
+      "pin_type": "bidirectional",
+      "x": 30,
+      "y": -20
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "SCL",
+      "pin_type": "input",
+      "x": 30,
+      "y": 20
+    }
+  ],
+  "default_params": {
+    "interface": "I2C"
+  }
+}

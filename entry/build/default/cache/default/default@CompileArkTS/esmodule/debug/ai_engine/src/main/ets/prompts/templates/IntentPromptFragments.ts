@@ -17,8 +17,10 @@ export const DEVICE_SELECT_BASE: string = `你是资深硬件工程师。根据�
 4. 电阻器件必须尽量指定 explicitModel (如 R_1k, R_10k, R_4.7k)，不要只写 "Resistor"
 5. 简单电路不要追加电压表/电流表/滤波电容，除非用户明确要求或意图需要仪器
 6. 【硬·电参由你决定并写入 param_constraint】电源与激励不可省略数值：
-   - VCC → {"voltage":"5V"|"3.3V"|"12V"|…}（按电路需求选，运放双电源默认 12V）
-   - VEE → {"voltage":"-12V"|"-5V"|…}（与 |VCC| 对称）
+   - VCC → {"voltage":"5V"|"3.3V"|"12V"|…}（按电路需求选）
+   - 【硬】需求摘要写明单电源 / 电源仅 VCC+GND → 只出 VCC+GND，禁止 VEE；voltage 跟摘要（如 5V）
+   - VEE → 仅双电源/±V 时输出 {"voltage":"-12V"|"-5V"|…}（与 |VCC| 对称）
+   - 运放仅在双电源场景默认 VCC "12V"；单电源运放（如 LM358）默认 "5V"
    - SIGNAL_GEN → 必须含 waveform、amplitude、frequency、offset、dutyCycle（幅度按门限/增益选，勿盲目抄库默认 1V）
    - 用户写明数值时原样采用；未写明时由你按拓扑给出合理默认并写进 JSON
 
@@ -37,7 +39,13 @@ export const FRAG_POWER_RAILS: string = `
 【强制电源符号】:
 - 必须输出 VCC: {"func":"电源正极","dev_type":"VCC","param_constraint":{"voltage":"5V"},"priority":10,"explicitModel":"VCC"}
 - 必须输出 GND: {"func":"电源地","dev_type":"GND","param_constraint":{},"priority":10,"explicitModel":"GND"}
-- 【决定电压】用户指定则写精确值；MCU/数字默认 "5V" 或 "3.3V"；运放双电源默认 "12V"；禁止空 {} 省略 voltage`;
+- 【决定电压】用户/需求摘要指定则写精确值；MCU/数字默认 "5V" 或 "3.3V"；双电源运放默认 "12V"；单电源运放默认 "5V"；禁止空 {} 省略 voltage`;
+export const FRAG_SINGLE_SUPPLY: string = `
+【单电源契约 — 强制】:
+- 只输出 VCC + GND；【硬禁】禁止输出 VEE
+- VCC param_constraint.voltage 必须等于需求摘要/用户指定（常见 "5V"/"3.3V"）
+- 运放优先 LM358（单电源友好）；负电源脚 V- 接 GND（非 VEE）
+- 禁止擅自改成 ±12V 双电源`;
 export const FRAG_DUAL_SUPPLY: string = `
 【双电源 / VEE 负压 — 强制】:
 - 必须额外输出 VEE: {"func":"电源负极","dev_type":"VEE","param_constraint":{"voltage":"-12V"},"priority":10,"explicitModel":"VEE"}
@@ -73,22 +81,28 @@ export const FRAG_OPAMP: string = `
 【运放接法】必须闭环反馈，输入不可浮空；滞回须正反馈（OUT→Rf→IN+，IN+→Rg→GND）；Rf/Rg≈10:1 或激励≥5V；双运放未用半边接跟随（IN-↔OUT，IN+→GND 或虚地）`;
 export const FRAG_INTEGRATOR: string = `
 【运放积分器 — 强制配方】方波→三角 / RC 积分观测时:
-- 必须双电源: VCC voltage="12V" + VEE voltage="-12V" + GND（禁止单 5V）
+- 双电源场景: VCC="12V" + VEE="-12V" + GND；单电源/需求仅 VCC+GND: 只出 VCC+GND（如 5V），禁止 VEE，运放选 LM358
 - SIGNAL_GEN: waveform="square"，amplitude 推荐 "5V"，frequency 默认 "1kHz"，offset="0V"，dutyCycle="50%"
-- 运放优先 UA741 或 TL082；积分电阻 R_10k、积分电容 C_100nF（τ≈1ms，与 1kHz 方波匹配）
+- 运放：双电源可用 UA741/TL082；单电源优先 LM358；积分电阻 R_10k、积分电容 C_100nF（τ≈1ms，与 1kHz 方波匹配）
 - 拓扑: SIG.OUT→R→运放 IN-；IN+→GND；C 跨接 OUT↔IN-；可选 R_100k 并在 C 两端作直流复位
-- 示波器 CH1→SIG.OUT（方波），CH2→运放 OUT（三角）；OSC.GND→GND
+- 示波器 CH1→SIG.OUT（方波），CH2→运放 OUT（三角）；OSC.GND→GND；【硬】一台 OSCILLOSCOPE 即可（多通道写 param，禁止拆成多条示波器）
 - 【硬禁】禁止当成串联 RC 充放电（VCC→SW→R→C）；禁止把「三角」写成信号源 waveform
 - 双运放未用半边必须接跟随，禁止输入悬空`;
 export const FRAG_SELF_OSC_HYST_INT: string = `
 【运放自激振荡 — 滞回比较器 + 积分器闭环】:
-- 必须双电源: VCC="12V" + VEE="-12V" + GND
+- BOM 硬门槛：≥2 运放通道（两片 UA741 或一片 LM358/TL082）、≥3R（Rf+Rg+Rin）、≥1C、OSCILLOSCOPE、VCC+VEE+GND；【禁】SIGNAL_GEN
+- 位号：电源符号 ref= VCC/GND/VEE（勿写成 U*）；运放 U1/U2；电阻 R1..；电容 C1；示波器 OSC1
+- 网名：SQUARE_OUT（比较器 OUT/方波）、TRIANGLE_OUT 或 TRI_OUT（积分 OUT/三角）、COMP_REF/滞回分压、VEE 负轨独立
+- 示波器：CH1∥SQUARE_OUT、CH2∥TRIANGLE_OUT、GND→GND；【禁】CH∩GND、CH1∩CH2 同网
+- VEE 符号脚只入 VEE 网；运放 V-/VEE→VEE，V+/VCC→VCC
+
+- 电源：需求摘要单电源/仅 VCC+GND → 只出 VCC+GND（voltage 跟摘要，如 "5V"），【硬禁】VEE；双电源/±V/UA741 → VCC+VEE+GND（默认 ±12V）
 - 【硬禁 SIGNAL_GEN】方波由滞回比较器自产，三角由积分器产生；禁止外接信号发生器
-- 两片运放（UA741×2）或一片双运放（TL082/LM358）：一路滞回比较器，一路积分器
+- 两片运放（LM358×2 / UA741×2）或一片双运放（TL082/LM358）：一路滞回比较器，一路积分器；单电源优选 LM358
 - 滞回: OUT→R_100k→IN+，IN+→R_10k→GND；积分: 方波经 R_10k→IN-，C_100nF 跨 OUT↔IN-，可选 R_100k 并 C
 - 【硬】比较器 IN- 必须与积分 OUT（三角波）同网；积分器 IN+ 必须入 GND 网（≥2 脚）
 - 【硬】禁止为 IN± 另建只有 1 连接的网（COMP_INV/INT_NON_INV 等）
-- 示波器 CH1→方波 OUT，CH2→三角 OUT，GND→GND
+- 示波器：【硬】只输出 1 条 OSCILLOSCOPE（CH1→方波，CH2→三角，GND→GND）；禁止按通道拆成两台仪
 - circuit_constraint 写明闭环自激，勿写 SIGNAL_GEN`;
 export const FRAG_I2C: string = `
 【I2C】必须配 4.7kΩ 上拉电阻（R_4.7k）`;
@@ -175,9 +189,9 @@ export const FRAG_NET_BLINK: string = `
 【闪烁/振荡电路】SW_PUSH 仅作电源通断合法；双灯由三极管/MCU 等驱动交替闪烁。
 不要要求 RELAY_SPDT，不要把 SW 当常开/常闭三端。`;
 export const FRAG_NET_SERIES_RC: string = `
-【串联 RC 充放电】VCC→(SW)→R.1；R.2 与 C.1 同网 RC_MID；C.2→GND。
+【串联 RC 充放电】VCC→SW_PUSH→R.1；R.2 与 C.1 同网 RC_MID；C.2→GND。
 示波器 CH1 并入 RC_MID（同名标号），OSC.GND→GND；未用 CH2/3/4 不入网。
-禁止 RELAY 线圈直连 VCC/GND；禁止用继电器冒充充放电开关。
+【硬】必须用 SW_PUSH 作充放电通断；禁止 RELAY_SPDT / 继电器冒充开关；禁止线圈直连 VCC/GND。
 【硬】板上有 LM555 时禁止本拓扑 — 改用 555 单稳态/无稳态接线。`;
 export const FRAG_NET_555_MONOSTABLE: string = `
 【555 单稳态接线 — 硬】:
@@ -204,11 +218,14 @@ export const FRAG_NET_555_ASTABLE: string = `
 export const FRAG_NET_OPAMP: string = `
 【运放】UA741 用 IN+/IN-/OUT/VCC/VEE；LM358/TL082 用通道脚 OUT1/IN±1…；必须闭环；双电源时 VEE/V-→VEE（勿接 GND）；双运放未用半边接跟随`;
 export const FRAG_NET_INTEGRATOR: string = `
-【运放积分】SIG.OUT→R→IN-；IN+→GND；C 跨 OUT↔IN-；OUT→OSC.CH2；SIG.OUT→OSC.CH1；电源 VCC/VEE/GND 分网。
+【运放积分】SIG.OUT→R→IN-；IN+→GND；C 跨 OUT↔IN-；OUT→OSC.CH2；SIG.OUT→OSC.CH1；
+单电源电源仅 VCC/GND（V-→GND），双电源 VCC/VEE/GND 分网。
 禁止 RC 充放电拓扑；未用运放半边 IN-↔OUT、IN+→GND`;
 export const FRAG_NET_SELF_OSC_HYST_INT: string = `
 【自激振荡网】比较器 OUT（方波）→R→积分 IN-；C 跨积分 OUT↔IN-；积分 OUT 反馈→比较器输入；
-OSC.CH1→方波网，OSC.CH2→三角网，GND→GND；电源 VCC/VEE/GND。禁止 SIGNAL_GEN`;
+网名推荐 SQUARE_OUT / TRIANGLE_OUT（或 TRI_OUT）；滞回 Rf/Rg 与 Rin 须入网（禁浮空电阻）。
+OSC.CH1→SQUARE_OUT，OSC.CH2→TRIANGLE_OUT，GND→GND；【硬禁】CH∩GND、CH1∩CH2 同网。
+VEE 符号只入 VEE 网（位号=VEE）；双电源 VCC/VEE/GND 分网。禁止 SIGNAL_GEN`;
 export const FRAG_NET_DUAL: string = `
 【双电源网】独立网名 VCC 与 VEE；VCC 符号→VCC 网，VEE 符号→VEE 网，GND→GND；禁止 VCC/VEE 同网`;
 export const FRAG_NET_SIGNAL_GEN: string = `
@@ -225,6 +242,9 @@ export function assembleDeviceSelectSystem(intent: CircuitIntent, userPrompt: st
     }
     if (intent.dualSupply) {
         s += FRAG_DUAL_SUPPLY;
+    }
+    else if (intent.needsOpAmpFeedback || intent.needsOpAmpIntegrator) {
+        s += FRAG_SINGLE_SUPPLY;
     }
     if (intent.needsSignalGen) {
         s += FRAG_SIGNAL_GEN;

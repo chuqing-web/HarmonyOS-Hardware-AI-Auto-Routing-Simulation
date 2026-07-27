@@ -1,0 +1,71 @@
+{
+  "lib_dev_id": "LM555",
+  "name": "LM555 Timer",
+  "vendor": "TI",
+  "category": "analog_ic",
+  "sub_category": "timer",
+  "symbol_file": "../Common/timer555.svg",
+  "sim_model_file": "LM555.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "GND",
+      "pin_type": "ground",
+      "x": -40,
+      "y": -30
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "TRIG",
+      "pin_type": "input",
+      "x": -40,
+      "y": -10
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "OUT",
+      "pin_type": "output",
+      "x": -40,
+      "y": 10
+    },
+    {
+      "pin_id": "4",
+      "pin_label": "RESET",
+      "pin_type": "input",
+      "x": -40,
+      "y": 30
+    },
+    {
+      "pin_id": "5",
+      "pin_label": "CTRL",
+      "pin_type": "input",
+      "x": 40,
+      "y": 30
+    },
+    {
+      "pin_id": "6",
+      "pin_label": "THRES",
+      "pin_type": "input",
+      "x": 40,
+      "y": 10
+    },
+    {
+      "pin_id": "7",
+      "pin_label": "DISCH",
+      "pin_type": "bidirectional",
+      "x": 40,
+      "y": -10
+    },
+    {
+      "pin_id": "8",
+      "pin_label": "VCC",
+      "pin_type": "power",
+      "x": 40,
+      "y": -30
+    }
+  ],
+  "default_params": {}
+}

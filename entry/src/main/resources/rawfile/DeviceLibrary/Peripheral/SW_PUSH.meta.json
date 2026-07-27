@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "SW_PUSH",
+  "name": "Push Button",
+  "vendor": "Generic",
+  "category": "peripheral",
+  "sub_category": "switch",
+  "symbol_file": "../Common/SW_PUSH.svg",
+  "sim_model_file": "SW_PUSH.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "type": "momentary",
+    "pressed": "0"
+  }
+}

@@ -16,7 +16,7 @@ function f(key: string, select: string, net: string): DevInstrFragEntry {
 export function buildDevInstrCatalog(): DevInstrFragEntry[] {
     return [
         // —— 电源符号 ——
-        f('VCC', '【VCC】必须写 param_constraint.voltage；数字常用 5V/3.3V，运放双电源正轨常用 12V。', '【VCC 网】joinByLabel；所有芯片 VCC/VDD/V+ 与上拉高端并入；禁止与 GND/VEE 同网。'),
+        f('VCC', '【VCC】必须写 param_constraint.voltage；数字常用 5V/3.3V；双电源运放正轨常用 12V；单电源运放常用 5V。', '【VCC 网】joinByLabel；所有芯片 VCC/VDD/V+ 与上拉高端并入；禁止与 GND/VEE 同网。'),
         f('GND', '【GND】系统地参考，无 voltage。', '【GND 网】芯片 GND/VSS、仪器 COM/GND、旁路下端并入；禁止浮空地。'),
         f('VEE', '【VEE】双电源负轨；voltage 须与 |VCC| 对称（如 -12V）。', '【VEE 网】运放 V-/VEE→VEE；禁止接到 GND；禁止与 VCC 同网。'),
         f('VAC', '【VAC】交流正弦源；写明 amplitude/frequency。', '【VAC】输出端接负载/整流前端；回线到 GND 或专用 AC 回；禁止当直流 VCC。'),

@@ -1,0 +1,13 @@
+<svg width="90" height="60" viewBox="-45 -30 90 60" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ammeter — series L/R pins with outer frame -->
+  <rect x="-26" y="-24" width="52" height="48" fill="none" stroke="#000" stroke-width="2"/>
+  <circle cx="0" cy="-2" r="14" fill="none" stroke="#000" stroke-width="1.2"/>
+  <text x="0" y="8" font-size="11" font-weight="bold" fill="#000" text-anchor="middle">A</text>
+  <text x="0" y="20" font-size="7" fill="#000" text-anchor="middle">AMP</text>
+  <line x1="-40" y1="0" x2="-26" y2="0" stroke="#000" stroke-width="1.2"/>
+  <line x1="26" y1="0" x2="40" y2="0" stroke="#000" stroke-width="1.2"/>
+  <circle cx="-40" cy="0" r="1.5" fill="#f00"/>
+  <circle cx="40" cy="0" r="1.5" fill="#000"/>
+  <text x="-40" y="-6" font-size="5" fill="#f00" text-anchor="middle">I+</text>
+  <text x="40" y="-6" font-size="5" fill="#000" text-anchor="middle">I-</text>
+</svg>

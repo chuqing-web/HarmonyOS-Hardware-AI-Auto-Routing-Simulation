@@ -22,3 +22,5 @@ export { DeviceUsageManual } from "@bundle:com.elecdraw.aischsim/entry@ai_engine
 export type { DeviceUsageEntry, DeviceUsageBuildResult, UsageManualMode } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/DeviceUsageManual";
 export { defaultCircuitIntent, classifyCircuitIntent, refineCircuitIntent, HYSTERESIS_MIN_SIGNAL_AMP_V, HYSTERESIS_RECOMMENDED_SIGNAL_AMP, parseSignalAmplitudeVolts, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";
 export type { CircuitIntent } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/CircuitIntent";
+export { AgentPipelineCoordinator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/agents/AgentPipelineCoordinator";
+export { WarRouteAdapter } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/WarRouteAdapter";

@@ -117,6 +117,18 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
     const svg = svgSymbol.toLowerCase();
     const id = libraryId.toLowerCase();
     const behavior = behaviorModel.toLowerCase();
+    // Power rails MUST be resolved by id before svg/filename heuristics —
+    // DeviceLibrary historically pointed VCC/GND at regulator.svg, which would
+    // otherwise mis-classify them as TO-220 regulators.
+    if (id === 'vcc' || id.endsWith('/vcc') || behavior === 'vcc')
+        return 'vcc';
+    if (id === 'gnd' || id.endsWith('/gnd') || behavior === 'gnd')
+        return 'gnd';
+    if (id === 'vee' || id.endsWith('/vee') || behavior === 'vee')
+        return 'vee';
+    if (id === 'vac' || id.endsWith('/vac') || behavior === 'ac_source' || behavior === 'vac') {
+        return 'vac';
+    }
     if (id.startsWith('r_') || svg.includes('resistor'))
         return 'resistor';
     if (id.startsWith('pot_') || behavior === 'potentiometer' || svg.includes('potentiometer')) {
@@ -157,14 +169,22 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
         return 'gate_or';
     if (svg.includes('gate_xor') || behavior.includes('xor'))
         return 'gate_xor';
-    if (svg.includes('oscilloscope') || id === 'oscilloscope')
+    // signal_gen before oscilloscope: DeviceLibrary historically mis-pointed SIGNAL_GEN
+    // at oscilloscope.svg, which would otherwise draw a scope body.
+    if (id === 'signal_gen' || behavior === 'signal_gen' || svg.includes('signal_gen')) {
+        return 'signal_gen';
+    }
+    if (svg.includes('oscilloscope') || id === 'oscilloscope' || behavior === 'oscilloscope') {
         return 'oscilloscope';
-    if (svg.includes('multimeter') || id === 'virtual_meter')
+    }
+    if (svg.includes('multimeter') || id === 'virtual_meter' || behavior === 'multimeter') {
         return 'multimeter';
-    if (svg.includes('logic_analyzer'))
+    }
+    if (svg.includes('logic_analyzer') || behavior === 'logic_analyzer')
         return 'logic_analyzer';
-    if (svg.includes('uart') || id === 'uart_terminal')
+    if (svg.includes('uart') || id === 'uart_terminal' || behavior === 'uart_terminal') {
         return 'uart_terminal';
+    }
     if (svg.includes('voltmeter') || id === 'voltmeter_dc')
         return 'voltmeter';
     if (svg.includes('ammeter') || id === 'ammeter_dc')
@@ -187,18 +207,19 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
         return 'switch';
     if (id === 'relay_spdt' || id.startsWith('relay_'))
         return 'relay';
-    if (id === 'signal_gen' || svg.includes('signal_gen') || behavior === 'signal_gen') {
-        return 'signal_gen';
-    }
     if (id === 'buzzer')
         return 'buzzer';
     if (id === 'ds18b20' || id === 'hall_sensor' || id === 'ldr')
         return 'sensor';
     if (id === 'cd4017')
         return 'counter';
-    if (id === 'vcc' || svg.includes('vcc') || behavior === 'vcc')
+    if (svg.includes('vcc.svg') || behavior === 'vcc')
         return 'vcc';
-    if (id === 'gnd' || svg.includes('gnd') || behavior === 'gnd')
+    if (svg.includes('gnd.svg') || behavior === 'gnd')
         return 'gnd';
+    if (svg.includes('vee.svg') || behavior === 'vee')
+        return 'vee';
+    if (svg.includes('vac.svg') || behavior === 'vac' || behavior === 'ac_source')
+        return 'vac';
     return 'generic_ic';
 }

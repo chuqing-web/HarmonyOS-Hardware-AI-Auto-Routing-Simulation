@@ -30,7 +30,7 @@ import { ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/Prot
 import { PlatformPrefsStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/PlatformPrefsStore";
 import { AiApiVaultStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiApiVaultStore";
 import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, ErrCode, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, MainThreadYield, MultimeterMode } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance, ClarificationQuestion, ClarificationAnswer } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import { InstrumentWaveExpandStore } from "@bundle:com.elecdraw.aischsim/entry/ets/components/InstrumentWaveExpandStore";
@@ -142,6 +142,10 @@ export class AppService {
     private aiSelfCheckPromptPending: boolean = false;
     private lastAiPrompt: string = '';
     private aiConversationHistory: ChatHistoryEntry[] = [];
+    /** 澄清后续跑：黑板快照 JSON */
+    private aiResumeSnapshotJson: string = '';
+    /** Phase2：推理/思考链开关（默认关，防 JSON 污染） */
+    aiEnableReasoning: boolean = false;
     onProjectChanged: () => void = () => { };
     onStatusMessage: (msg: string) => void = () => { };
     /** 最近一次仿真启动失败原因（供 UI 弹窗）；成功启动时清空 */
@@ -152,6 +156,8 @@ export class AppService {
     onAiGeneratingChanged: (busy: boolean) => void = () => { };
     onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => { };
     onAiSelfCheckNeeded: (issueCount: number, summary: string) => void = () => { };
+    /** Cline Ask：澄清问题就绪 */
+    onAiClarificationNeeded: (questions: ClarificationQuestion[], prompt: string, mode: AiGenerateMode, strategy: AiGenerateStrategy) => void = () => { };
     onLibraryLoaded: (totalCount: number) => void = () => { };
     wireToolToggleHandler: () => void = () => { };
     copyHandler: () => void = () => { };
@@ -1675,11 +1681,11 @@ export class AppService {
         }
         try {
             const configs = JSON.parse(exported.data) as AiApiConfig[];
-            Logger.info(INSTR_TRACE_TAG, `[AI_API] sync→vault ok count=${configs.length}` +
-                ` ids=[${configs.map(c => c.id).join(',')}]`);
             if (persistToDisk || configs.length > 0) {
                 const ok = AiApiVaultStore.getInstance().saveConfigs(configs, persistToDisk && configs.length === 0);
-                Logger.info(INSTR_TRACE_TAG, `[AI_API] persist→vault ${ok ? 'OK' : 'FAIL'} path=${AiApiVaultStore.getInstance().getVaultPath()}`);
+                if (!ok) {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] persist→vault FAIL path=${AiApiVaultStore.getInstance().getVaultPath()}`);
+                }
             }
         }
         catch (e) {
@@ -2365,16 +2371,34 @@ export class AppService {
             const after = this.runErc(true);
             const afterErr = after.filter(e => e.severity === 'error' || e.severity === 'critical').length;
             this.appendAiGenLog('assistant', `自动修复后 ERC: ${after.length} 条（错误 ${afterErr}，此前 ${beforeErr}）`);
-            // 语义再建网：生产自检禁止 SemanticNetBuilder（会覆盖/冒充 LLM 网表）
-            const beforeWires = editor.getDocument().wires.length;
-            const beforeNets = editor.getDocument().nets.length;
-            this.appendAiGenLog('assistant', `跳过 SemanticNetBuilder（nets=${beforeNets} wires=${beforeWires}；自检仅 ERC/FixKit/ensureNetPin）`);
+            // Coordinator：WAR 补线 + QA 硬门禁
+            const topo = TopologyAdapter.toTopology(editor.getDocument());
+            this.appendAiGenLog('assistant', 'Coordinator 自检 WAR/QA…');
+            const pipe = await (this.aiEngine as AiEngineImpl).runSelfCheckPipeline(topo, true, (p) => {
+                this.onAiProgress(p);
+            });
+            if (pipe.success && pipe.data && pipe.data.topology &&
+                (pipe.data.topology.deviceList?.length ?? 0) > 0 &&
+                !pipe.data.agentAbortStage) {
+                editor.loadTopology(pipe.data.topology);
+                editor.rebuildNetPinConnectivity();
+                doc = editor.getDocument();
+                ensureNetPinConnectivity(doc, grid, this.pinGeometryResolver());
+                editor.loadDocument(doc);
+                this.appendAiGenLog('assistant', `Coordinator 自检: warOk=${!!pipe.data.ercClean} wires=${doc.wires.length}`);
+                Logger.info(INSTR_TRACE_TAG, `[AI_GEN] self_check via Coordinator clean=${pipe.data.ercClean}`);
+            }
+            else {
+                const reason = pipe.data?.agentAbortReason ?? pipe.error ?? '自检 WAR/QA 未通过';
+                this.appendAiGenLog('system', `Coordinator 自检未通过: ${reason}`);
+                Logger.warn(INSTR_TRACE_TAG, `[AI_GEN] self_check Coordinator fail | ${reason}`);
+            }
+            this.appendAiGenLog('assistant', '跳过 SemanticNetBuilder（自检仅 ERC/FixKit/ensureNetPin/WAR）');
             traceAiOp('AI_GEN', 'self_check_rebuild_net', 'skipped_refuse_semantic_rebuild');
             const afterNet = this.runErc(false);
             const afterNetErr = afterNet.filter(e => e.severity === 'error' || e.severity === 'critical').length;
-            // 诊断器补充
-            const topo = this.getTopology();
-            const diag = await (this.aiEngine as AiEngineImpl).aiStaticDiagnose(topo);
+            const diagTopo = this.getTopology();
+            const diag = await (this.aiEngine as AiEngineImpl).aiStaticDiagnose(diagTopo);
             if (diag.success && diag.data !== undefined && diag.data.length > 0) {
                 const n = Math.min(diag.data.length, 8);
                 this.appendAiGenLog('assistant', `静态诊断 ${diag.data.length} 条:`);
@@ -2461,7 +2485,7 @@ export class AppService {
      * 提示词 → 一键生成整图（选型→摆放→连线）。
      * mode=replace 清空后替换；append 合并到当前空白区；edit 基于当前画布增量修改后写回。
      */
-    async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode, strategy: AiGenerateStrategy = 'oneshot'): Promise<boolean> {
+    async aiGenerateCircuitFromPrompt(prompt: string, mode: AiGenerateMode, strategy: AiGenerateStrategy = 'oneshot', clarificationAnswers?: ClarificationAnswer[]): Promise<boolean> {
         const trimmed = prompt.trim();
         if (trimmed.length === 0) {
             this.onStatusMessage('请输入提示词');
@@ -2538,8 +2562,16 @@ export class AppService {
                     this.handleStreamSnapshot(snapshot, stage);
                 },
                 conversationHistory: isEditMode ? [...this.aiConversationHistory] : undefined,
-                generationMode: isEditMode ? 'edit' : 'create'
+                generationMode: isEditMode ? 'edit' : 'create',
+                clarificationAnswers: clarificationAnswers,
+                qualityHardFail: true,
+                enableReasoning: this.aiEnableReasoning,
+                resumeSnapshotJson: (clarificationAnswers && clarificationAnswers.length > 0)
+                    ? this.aiResumeSnapshotJson : undefined
             }, (p) => this.handleAiGenProgress(p));
+            if (clarificationAnswers && clarificationAnswers.length > 0) {
+                this.aiResumeSnapshotJson = '';
+            }
             if (genSession !== this.aiGenEpoch || this.aiGenCancelRequested ||
                 result.errCode === ErrCode.ERR_ASYNC_CANCEL ||
                 (result.errMsg ?? '').indexOf('cancelled') >= 0 ||
@@ -2555,6 +2587,17 @@ export class AppService {
                 return false;
             }
             if (!result.success || !result.topology) {
+                if (result.needsClarification && result.clarificationQuestions &&
+                    result.clarificationQuestions.length > 0) {
+                    this.aiResumeSnapshotJson =
+                        (this.aiEngine as AiEngineImpl).getLastAgentSnapshotJson();
+                    this.appendAiGenLog('assistant', `需要补充需求澄清后再继续生成` +
+                        (this.aiResumeSnapshotJson.length > 0 ? '（已保存快照）' : ''));
+                    this.onAiClarificationNeeded?.(result.clarificationQuestions, trimmed, mode, strategy);
+                    this.endAiGenerate(false);
+                    this.onStatusMessage('请回答澄清问题后继续');
+                    return false;
+                }
                 // 仅真正失败（无拓扑 / API / 选型）——不再以「生图未完成」门禁中止
                 this.appendAiGenLog('assistant', `生成失败: ${result.errMsg || '未知错误'}`);
                 Logger.error(INSTR_TRACE_TAG, `[AI_GEN] FAILED err=${result.errMsg || 'unknown'} code=${result.errCode}`);
@@ -2571,16 +2614,50 @@ export class AppService {
                 this.onStatusMessage(result.errMsg || 'AI 生成失败');
                 return false;
             }
+            // 分级质量门禁：硬阻断（无可用拓扑）vs 软接受（有用拓扑但欠完美）
             const analysis = result.analysisText ?? '';
-            // 必须来自真实 LLM：结构化 usedLlm（禁止仅靠 analysisText 子串）
-            if (result.usedLlm === false) {
-                const msg = 'AI API 未返回有效结果（已禁用模板回退）。请检查 API 配置与连通性测试。';
-                this.appendAiGenLog('assistant', msg);
-                Logger.error(INSTR_TRACE_TAG, `[AI_GEN] REJECT non-LLM topology | ${analysis}`);
-                traceAiOp('AI_GEN', 'generate_reject_non_llm', analysis);
-                this.endAiGenerate(false);
-                this.onStatusMessage(msg);
-                return false;
+            const hasTopo = !!(result.topology && (result.topology.deviceList.length ?? 0) > 0);
+            const hardBlock = !hasTopo || result.usedLlm === false ||
+                (result.agentAbortStage && !hasTopo);
+            if (hardBlock) {
+                if (result.agentAbortStage && !hasTopo) {
+                    const reason = result.agentAbortReason ?? `阶段失败: ${result.agentAbortStage}`;
+                    this.appendAiGenLog('assistant', `生成中止: ${reason}`);
+                    Logger.error(INSTR_TRACE_TAG, `[AI_GEN] HARD REJECT abort=${result.agentAbortStage} reason=${reason}`);
+                    traceAiOp('AI_GEN', 'generate_reject_abort', reason);
+                    this.endAiGenerate(false);
+                    this.onStatusMessage(reason);
+                    return false;
+                }
+                if (result.usedLlm === false) {
+                    const msg = 'AI API 未返回有效结果（已禁用模板回退）。请检查 API 配置与连通性测试。';
+                    this.appendAiGenLog('assistant', msg);
+                    Logger.error(INSTR_TRACE_TAG, `[AI_GEN] REJECT non-LLM topology | ${analysis}`);
+                    traceAiOp('AI_GEN', 'generate_reject_non_llm', analysis);
+                    this.endAiGenerate(false);
+                    this.onStatusMessage(msg);
+                    return false;
+                }
+            }
+            // 软接受：有可用拓扑但 ERC/几何未完全清零 → 警告后交付
+            if (result.ercClean === false || result.deliveredWithResidual || result.agentAbortStage) {
+                const warnBits: string[] = [];
+                if (result.agentAbortStage) {
+                    warnBits.push(`阶段异常: ${result.agentAbortStage}`);
+                }
+                if (!result.ercClean) {
+                    warnBits.push('ERC/几何尚有残留');
+                }
+                if (result.deliveredWithResidual) {
+                    warnBits.push('交付不完美');
+                }
+                const warnMsg = 'AI 尽力生成了电路，但质量并非完美（' +
+                    warnBits.join('; ') + '）。可能需要手动微调。';
+                this.appendAiGenLog('assistant', warnMsg);
+                Logger.warn(INSTR_TRACE_TAG, `[AI_GEN] SOFT ACCEPT abort=${result.agentAbortStage ?? '-'} ` +
+                    `ercClean=${result.ercClean} residual=${!!result.deliveredWithResidual} | ${warnMsg}`);
+                traceAiOp('AI_GEN', 'generate_soft_accept', warnMsg);
+                // 继续交付拓扑，不中断
             }
             Logger.info(INSTR_TRACE_TAG, `[AI_GEN] OK mode=${mode} devices=${result.topology.deviceList.length}` +
                 ` nets=${result.topology.netList.length} wires=${result.topology.wireList.length}` +

@@ -1,0 +1,32 @@
+{
+  "lib_dev_id": "XTAL_8M",
+  "name": "Crystal 8MHz",
+  "vendor": "Generic",
+  "category": "passive_crystal",
+  "sub_category": "hc49",
+  "symbol_file": "../../Common/XTAL_8M.svg",
+  "sim_model_file": "XTAL_8M.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "1",
+      "pin_type": "passive",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "2",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 0
+    }
+  ],
+  "default_params": {
+    "frequency": "8MHz",
+    "loadCap": "20pF"
+  }
+}

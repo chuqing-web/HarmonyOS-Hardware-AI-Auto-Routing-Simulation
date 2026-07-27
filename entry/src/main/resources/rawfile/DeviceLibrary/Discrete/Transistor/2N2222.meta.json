@@ -1,0 +1,38 @@
+{
+  "lib_dev_id": "2N2222",
+  "name": "NPN Transistor",
+  "vendor": "Generic",
+  "category": "discrete_bjt",
+  "sub_category": "npn",
+  "symbol_file": "../../Common/transistor.svg",
+  "sim_model_file": "2N2222.model.spice",
+  "model_type": "spice",
+  "is_mcu": false,
+  "is_custom": false,
+  "pin_list": [
+    {
+      "pin_id": "1",
+      "pin_label": "B",
+      "pin_type": "input",
+      "x": -30,
+      "y": 0
+    },
+    {
+      "pin_id": "2",
+      "pin_label": "C",
+      "pin_type": "output",
+      "x": 30,
+      "y": -20
+    },
+    {
+      "pin_id": "3",
+      "pin_label": "E",
+      "pin_type": "passive",
+      "x": 30,
+      "y": 20
+    }
+  ],
+  "default_params": {
+    "type": "npn"
+  }
+}

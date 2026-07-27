@@ -1,0 +1,347 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÈ/** æ‰¹åˆ¤ä¸Šé™ â€” ç”¨æ˜¾å¼å­—æ®µï¼Œç¦æ­¢ Record å¯¹è±¡å­—é¢é‡ç±»å‹ */
+export class CritiqueLimits {
+    static of(stage) {
+        if (stage === 'requirements') {
+            return CritiqueLimits.requirements;
+        }
+        if (stage === 'select') {
+            return CritiqueLimits.select;
+        }
+        if (stage === 'layout') {
+            return CritiqueLimits.layout;
+        }
+        if (stage === 'net') {
+            return CritiqueLimits.net;
+        }
+        if (stage === 'route') {
+            return CritiqueLimits.route;
+        }
+        return CritiqueLimits.qa;
+    }
+}
+CritiqueLimits.requirements = 2;
+CritiqueLimits.select = 3;
+CritiqueLimits.layout = 3;
+CritiqueLimits.net = 3;
+CritiqueLimits.route = 3;
+CritiqueLimits.qa = 2;
+/** @deprecated å…¼å®¹æ—§å¼•ç”¨ */
+export const CRITIQUE_LIMITS = CritiqueLimits;
+export const QA_FIX_ROUNDS = 2;
+export const STAGE_ORDER = [
+    'requirements', 'select', 'layout', 'net', 'route', 'qa'
+];
+export function stageRank(stage) {
+    const i = STAGE_ORDER.indexOf(stage);
+    return i >= 0 ? i : -1;
+}
+export function canSkipStage(stageCompleted, target) {
+    return stageRank(stageCompleted) >= stageRank(target);
+}
+export function defaultCritique(ctx) {
+    if (ctx.zeroMatch) {
+        return 'zero library matches';
+    }
+    if (ctx.warFailed) {
+        return 'WAR failed';
+    }
+    if (ctx.hardLines && ctx.hardLines.length > 0) {
+        return ctx.hardLines.slice(0, 3).join('; ');
+    }
+    // softMissï¼šä»»æ„ attempt å‡æ‰¹åˆ¤ï¼ˆæœ«è½® fail-closedï¼‰
+    if ((ctx.softMiss ?? 0) > 0) {
+        return `softMiss=${ctx.softMiss}`;
+    }
+    return null;
+}
+/** å¸¦æ‰¹åˆ¤ä¸Šé™çš„é‡è¯•ï¼›å¯é€‰ LLM æ‰¹åˆ¤æ–‡æ¡ˆ */
+export async function withCritiqueLimit(stage, runId, hooks, attemptFn, onExhausted, llmCritique) {
+    const limit = CritiqueLimits.of(stage);
+    let lastValue = null;
+    let lastReason = 'critique exhausted';
+    for (let attempt = 0; attempt < limit; attempt++) {
+        const beforeCtx = { stage: stage, runId: runId, attempt: attempt };
+        const before = hooks?.beforeStage?.(beforeCtx);
+        if (before) {
+            lastReason = before;
+            break;
+        }
+        const r = await attemptFn(attempt);
+        lastValue = r.value;
+        const genCtx = r.critiqueCtx ?? {
+            stage: stage, runId: runId, attempt: attempt
+        };
+        genCtx.attempt = attempt;
+        let afterGen = hooks?.afterGenerate?.(genCtx) ?? defaultCritique(genCtx);
+        if (llmCritique && (!r.ok || afterGen)) {
+            const llmReason = await llmCritique(genCtx, r.ok);
+            if (llmReason !== null && llmReason !== undefined) {
+                afterGen = llmReason;
+            }
+            else if (llmReason === null && r.ok && !genCtx.zeroMatch &&
+                !(genCtx.hardLines && genCtx.hardLines.length > 0)) {
+                afterGen = null;
+            }
+        }
+        if (!afterGen && r.ok) {
+            hooks?.afterCritique?.(genCtx, false);
+            return r.value;
+        }
+        lastReason = afterGen ?? 'stage not ok';
+        const afterTools = hooks?.afterTools?.(genCtx);
+        if (afterTools) {
+            lastReason = afterTools;
+        }
+        if (attempt + 1 >= limit) {
+            hooks?.afterCritique?.(genCtx, true);
+            break;
+        }
+    }
+    return onExhausted(lastValue, lastReason);
+}
+//# sourceMappingURL=StageHooks.js.mapÂÙ]C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\agents\StageHooks.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0’ÔrD’²hostDependencyName®hostModuleName¬./StageHooks©ai_engineD³./agents/StageHooks©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ™/**
+ * StageHooks â€” è´¨é‡é—¨ç¦é’©å­ + æ‰¹åˆ¤ä¸Šé™ + LLM æ‰¹åˆ¤å›è°ƒ
+ */
+export type AgentStageId =
+  'requirements' | 'select' | 'layout' | 'net' | 'route' | 'qa';
+
+export interface StageHookContext {
+  stage: AgentStageId;
+  runId: string;
+  softMiss?: number;
+  hardLines?: string[];
+  warFailed?: boolean;
+  zeroMatch?: boolean;
+  attempt?: number;
+}
+
+export interface StageHooks {
+  beforeStage?: (ctx: StageHookContext) => string | null;
+  afterGenerate?: (ctx: StageHookContext) => string | null;
+  afterTools?: (ctx: StageHookContext) => string | null;
+  afterCritique?: (ctx: StageHookContext, exhausted: boolean) => string | null;
+}
+
+export interface CritiqueAttemptResult<T> {
+  ok: boolean;
+  value: T;
+  critiqueCtx?: StageHookContext;
+}
+
+/** æ‰¹åˆ¤ä¸Šé™ â€” ç”¨æ˜¾å¼å­—æ®µï¼Œç¦æ­¢ Record å¯¹è±¡å­—é¢é‡ç±»å‹ */
+export class CritiqueLimits {
+  static readonly requirements: number = 2;
+  static readonly select: number = 3;
+  static readonly layout: number = 3;
+  static readonly net: number = 3;
+  static readonly route: number = 3;
+  static readonly qa: number = 2;
+
+  static of(stage: AgentStageId): number {
+    if (stage === 'requirements') {
+      return CritiqueLimits.requirements;
+    }
+    if (stage === 'select') {
+      return CritiqueLimits.select;
+    }
+    if (stage === 'layout') {
+      return CritiqueLimits.layout;
+    }
+    if (stage === 'net') {
+      return CritiqueLimits.net;
+    }
+    if (stage === 'route') {
+      return CritiqueLimits.route;
+    }
+    return CritiqueLimits.qa;
+  }
+}
+
+/** @deprecated å…¼å®¹æ—§å¼•ç”¨ */
+export const CRITIQUE_LIMITS = CritiqueLimits;
+
+export const QA_FIX_ROUNDS = 2;
+
+export const STAGE_ORDER: AgentStageId[] = [
+  'requirements', 'select', 'layout', 'net', 'route', 'qa'
+];
+
+export function stageRank(stage: string): number {
+  const i = STAGE_ORDER.indexOf(stage as AgentStageId);
+  return i >= 0 ? i : -1;
+}
+
+export function canSkipStage(stageCompleted: string, target: AgentStageId): boolean {
+  return stageRank(stageCompleted) >= stageRank(target);
+}
+
+export function defaultCritique(ctx: StageHookContext): string | null {
+  if (ctx.zeroMatch) {
+    return 'zero library matches';
+  }
+  if (ctx.warFailed) {
+    return 'WAR failed';
+  }
+  if (ctx.hardLines && ctx.hardLines.length > 0) {
+    return ctx.hardLines.slice(0, 3).join('; ');
+  }
+  // softMissï¼šä»»æ„ attempt å‡æ‰¹åˆ¤ï¼ˆæœ«è½® fail-closedï¼‰
+  if ((ctx.softMiss ?? 0) > 0) {
+    return `softMiss=${ctx.softMiss}`;
+  }
+  return null;
+}
+
+export type LlmCritiqueFn = (ctx: StageHookContext, stageOk: boolean) =>
+  Promise<string | null>;
+
+/** å¸¦æ‰¹åˆ¤ä¸Šé™çš„é‡è¯•ï¼›å¯é€‰ LLM æ‰¹åˆ¤æ–‡æ¡ˆ */
+export async function withCritiqueLimit<T>(
+  stage: AgentStageId,
+  runId: string,
+  hooks: StageHooks | null,
+  attemptFn: (attempt: number) => Promise<CritiqueAttemptResult<T>>,
+  onExhausted: (last: T, reason: string) => T,
+  llmCritique?: LlmCritiqueFn
+): Promise<T> {
+  const limit = CritiqueLimits.of(stage);
+  let lastValue: T | null = null;
+  let lastReason = 'critique exhausted';
+  for (let attempt = 0; attempt < limit; attempt++) {
+    const beforeCtx: StageHookContext = { stage: stage, runId: runId, attempt: attempt };
+    const before = hooks?.beforeStage?.(beforeCtx);
+    if (before) {
+      lastReason = before;
+      break;
+    }
+    const r = await attemptFn(attempt);
+    lastValue = r.value;
+    const genCtx: StageHookContext = r.critiqueCtx ?? {
+      stage: stage, runId: runId, attempt: attempt
+    };
+    genCtx.attempt = attempt;
+    let afterGen = hooks?.afterGenerate?.(genCtx) ?? defaultCritique(genCtx);
+    if (llmCritique && (!r.ok || afterGen)) {
+      const llmReason = await llmCritique(genCtx, r.ok);
+      if (llmReason !== null && llmReason !== undefined) {
+        afterGen = llmReason;
+      } else if (llmReason === null && r.ok && !genCtx.zeroMatch &&
+        !(genCtx.hardLines && genCtx.hardLines.length > 0)) {
+        afterGen = null;
+      }
+    }
+    if (!afterGen && r.ok) {
+      hooks?.afterCritique?.(genCtx, false);
+      return r.value;
+    }
+    lastReason = afterGen ?? 'stage not ok';
+    const afterTools = hooks?.afterTools?.(genCtx);
+    if (afterTools) {
+      lastReason = afterTools;
+    }
+    if (attempt + 1 >= limit) {
+      hooks?.afterCritique?.(genCtx, true);
+      break;
+    }
+  }
+  return onExhausted(lastValue as T, lastReason);
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings­StageHooks.js ‘®StageHooks.etsÜ e’”   ”% %””   ” ” ” –” &”
+ &” &	” &” &” &–” '” '” '” '”$ ' ”& '"–” (” (”! (”" (”. ((”/ ()‘”	 )–” *” *” *” *” *”  *–” +” +”! +”" +”( +"”) +#‘”	 ,–” -” -” -” -” -”  -–” .” .”! .”" .”( ."”) .#‘”	 /–” 0” 0” 0” 0” 0” 0–” 1” 1”! 1”" 1”% 1”& 1 ‘”	 2–” 3” 3” 3” 3” 3” 3–” 4” 4”! 4”" 4”' 4!”( 4"‘”	 5–” 6” 6” 6” 6”  6”! 6’” 7” 7•”  ” ” )” *”  +•”   ”  ”  #”  $”  %•”  !” !” !#” !$” !%•”  "” "” " ” "!” ""•”  #” #” #"” ##” #$•”  $” $” $” $ ” $!’”  : ” :˜”  ; ” ;” ;” ;” ;” ;”- ;-”. ;.˜”  = ” =” =” =” =” =” =” =–”  ? ” ?” ?” ?” ?” ?+œ” Ì@” Ì@” Ì@” Ì@” Ì@”& Ì@$”( Ì@&”- Ì@+”/ Ì@-”6 Ì@4”8 Ì@6”< Ì@:’” ÌA” ÌA–”  ÌC ” ÌC” ÌC” ÌC” ÌC” ÌC'›” ÌD”
+ ÌD” ÌD	” ÌD” ÌD” ÌD”! ÌD”" ÌD ”' ÌD5”( ÌD6”) ÌD7Ÿ” ÌE” ÌE	” ÌE
+” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE’”  ÌF ” ÌF˜”  ÌH ” ÌH” ÌH” ÌH” ÌH”+ ÌH3”- ÌH5”3 ÌHÌIœ” ÌI” ÌI	” ÌI” ÌI”# ÌI!”$ ÌI"”( ÌI&”1 ÌI/”2 ÌI0”8 ÌI6”9 ÌI7”: ÌI8’”  ÌJ ” ÌJ–”  ÌL ” ÌL” ÌL” ÌL”  ÌL ”# ÌL5–” ÌM” ÌM” ÌM	” ÌM
+” ÌM” ÌM”” ÌN” ÌN”% ÌN!”& ÌN"‘” ÌO–” ÌP” ÌP” ÌP	” ÌP
+” ÌP” ÌP”” ÌQ” ÌQ” ÌQ” ÌQ‘” ÌR” ÌS” ÌS” ÌS	” ÌS
+” ÌS” ÌS” ÌS” ÌS”& ÌS$”' ÌS%”- ÌS+”0 ÌS.”1 ÌS/”3 ÌS1Ü ” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”# ÌT”$ ÌT ”& ÌT"”' ÌT#”( ÌT$”) ÌT%”- ÌT)”. ÌT*”2 ÌT.”3 ÌT/”4 ÌT0‘” ÌU’” ÌV”. ÌV,œ” ÌW” ÌW”	 ÌW” ÌW
+” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW”! ÌW˜” ÌX” ÌX” ÌX” ÌX” ÌX”' ÌX#”) ÌX%”* ÌX&‘” ÌY”” ÌZ” ÌZ	” ÌZ” ÌZ’”  Ì[ ” Ì[’”  Ì` ” Ì`Ü ”  Ìa ” Ìa” Ìa” Ìa” Ìa”' Ìa'”( Ìb”- Ìb”/ Ìc”4 Ìc”6 Ìd”; Ìd”= Ìe”ÌF ÌeÌC”ÌH Ìf”ÌS Ìf-”ÌU Ìg”Ì` Ìg›” Ìi”
+ Ìi” Ìi” Ìi”  Ìi”! Ìi”# Ìi!”$ Ìi"”) Ìi'”* Ìi(”+ Ìi)–” Ìj” Ìj” Ìj” Ìj” Ìj ” Ìj!–” Ìk” Ìk” Ìk” Ìk”) Ìk'”* Ìk(” Ìl”	 Ìl” Ìl” Ìl” Ìl” Ìl” Ìl”! Ìl”$ Ìl"”) Ìl'”+ Ìl)”2 Ìl0”4 Ìl2”6 Ìl4Ü ” Ìm” Ìm
+” Ìm” Ìm(” Ìm*”! Ìm/”# Ìm1”( Ìm6”* Ìm8”/ Ìm=”1 Ìm?”6 ÌmÌD”8 ÌmÌF”? ÌmÌM”ÌA ÌmÌO”ÌH ÌmÌV”ÌJ ÌmÌX”ÌK ÌmÌYœ” Ìn” Ìn
+” Ìn” Ìn” Ìn” Ìn”) Ìn%”+ Ìn'”, Ìn(”5 Ìn1”6 Ìn2”7 Ìn3”” Ìo” Ìo” Ìo” Ìo•” Ìp” Ìp” Ìp” Ìp”  Ìp’” Ìq” Ìq‘”	 Ìrš” Ìs” Ìs
+” Ìs” Ìs” Ìs”! Ìs”" Ìs”) Ìs%”* Ìs&”+ Ìs'—” Ìt” Ìt” Ìt” Ìt” Ìt” Ìt” Ìt˜” Ìu” Ìu
+” Ìu” Ìu%” Ìu&” Ìu'”$ Ìu2”( Ìu6œ” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv”! Ìv”& Ìv ”( Ìv"”/ Ìv)”1 Ìv+”8 Ìv2’”	 Ìw”
+ Ìw—” Ìx” Ìx
+” Ìx” Ìx” Ìx”  Ìx”! ÌxÜ ” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”+ Ìy'”- Ìy)”. Ìy*”4 Ìy0”5 Ìy1”9 Ìy5”ÌH ÌyÌD”ÌI ÌyÌE”ÌO ÌyÌK”ÌP ÌyÌL”ÌQ ÌyÌM” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz”! Ìz”% Ìz!”- Ìz)”. Ìz*”0 Ìz,” Ì{” Ì{” Ì{” Ì{”$ Ì{”/ Ì{)”0 Ì{*”6 Ì{0”8 Ì{2”9 Ì{3”: Ì{4”< Ì{6”= Ì{7”> Ì{8š” Ì|” Ì|
+” Ì|” Ì|”" Ì|”& Ì| ”/ Ì|)”4 Ì|.”= Ì|7”? Ì|9•” Ì}” Ì}” Ì}”$ Ì}”% Ì}‘” Ì~” Ì~” Ì~” Ì~”# Ì~”' Ì~#”+ Ì~'”, Ì~(”- Ì~)”/ Ì~+”3 Ì~/”4 Ì~0”: Ì~6”; Ì~7”ÌD Ì~Ì@Ü ” Ì” Ì	” Ì
+” Ì” Ì”" Ì”& Ì”, Ì$”- Ì%”6 Ì.”7 Ì/”= Ì5”Ì@ Ì8”ÌA Ì9”ÌB Ì:”ÌD Ì<•” Ì€” Ì€” Ì€” Ì€”  Ì€‘” Ì‘”	 Ì‚™” Ìƒ” Ìƒ” Ìƒ	” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ›” Ì„” Ì„” Ì„”  Ì„”" Ì„”# Ì„”) Ì„#”+ Ì„%”0 Ì„*”1 Ì„+”2 Ì„,–” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…‘”	 Ì†—” Ì‡” Ì‡” Ì‡” Ì‡”! Ì‡”/ Ì‡+”0 Ì‡,œ” Ìˆ” Ìˆ
+” Ìˆ” Ìˆ”  Ìˆ”" Ìˆ”, Ìˆ(”. Ìˆ*”/ Ìˆ+”5 Ìˆ1”6 Ìˆ2”7 Ìˆ3”” Ì‰” Ì‰” Ì‰” Ì‰•” ÌŠ” ÌŠ” ÌŠ”# ÌŠ”$ ÌŠ‘”	 Ì‹˜” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”  ÌŒ”" ÌŒ›” Ì” Ì” Ì”  Ì”" Ì”# Ì”) Ì#”+ Ì%”/ Ì)”0 Ì*”1 Ì+’” Ì” Ì‘”	 Ì‘” Ì™” Ì‘” Ì‘	” Ì‘” Ì‘”  Ì‘#”" Ì‘%”, Ì‘/”- Ì‘0”. Ì‘1’”  Ì’ ” Ì’ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ f‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache˜ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration'ÍJÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclaration.ÍJÔrK”¤type¥start£end¤nameªIdentifier4ÌB®CritiqueLimitsÀÔrL”¤type¥start£end¤body©ClassBodyÌCÍJ‘ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌJÍGÃÂKªIdentifierÌQÌS¢of¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌSÍGÀÂÂÂ‘KªIdentifierÌTÌY¥stageL®BlockStatementÌ[ÍG–ÔrO–¤type¥start£end¤testªconsequent©alternate«IfStatementÌfÌÁÔrP–¤type¥start£end¤left¨operator¥right°BinaryExpressionÌjÌ‚KªIdentifierÌjÌo¥stage£===ÔrQ•¤type¥start£end¥value£raw§LiteralÌtÌ‚¬requirements®'requirements'L®BlockStatementÌ„ÌÁ‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÌ“Ì¶ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌšÌµKªIdentifierÌšÌ¨®CritiqueLimitsKªIdentifierÌ©Ìµ¬requirementsÂÂÀO«IfStatementÌËÍP°BinaryExpressionÌÏÌáKªIdentifierÌÏÌÔ¥stage£===Q§LiteralÌÙÌá¦select¨'select'L®BlockStatementÌãÍ‘R¯ReturnStatementÌòÍS°MemberExpressionÌùÍKªIdentifierÌùÍ®CritiqueLimitsKªIdentifierÍÍ¦selectÂÂÀO«IfStatementÍ$ÍsP°BinaryExpressionÍ(Í:KªIdentifierÍ(Í-¥stage£===Q§LiteralÍ2Í:¦layout¨'layout'L®BlockStatementÍ<Ís‘R¯ReturnStatementÍKÍhS°MemberExpressionÍRÍgKªIdentifierÍRÍ`®CritiqueLimitsKªIdentifierÍaÍg¦layoutÂÂÀO«IfStatementÍ}ÍÆP°BinaryExpressionÍÍKªIdentifierÍÍ†¥stage£===Q§LiteralÍ‹Í£net¥'net'L®BlockStatementÍ’ÍÆ‘R¯ReturnStatementÍ¡Í»S°MemberExpressionÍ¨ÍºKªIdentifierÍ¨Í¶®CritiqueLimitsKªIdentifierÍ·Íº£netÂÂÀO«IfStatementÍĞÍP°BinaryExpressionÍÔÍåKªIdentifierÍÔÍÙ¥stage£===Q§LiteralÍŞÍå¥route§'route'L®BlockStatementÍçÍ‘R¯ReturnStatementÍöÍS°MemberExpressionÍıÍKªIdentifierÍıÍ®CritiqueLimitsKªIdentifierÍÍ¥routeÂÂÀR¯ReturnStatementÍ'Í@S°MemberExpressionÍ.Í?KªIdentifierÍ.Í<®CritiqueLimitsKªIdentifierÍ=Í?¢qaÂÂÀI¶ExportNamedDeclarationÍÍ:ÔrT•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍ:‘ÔrU•¤type¥start£end¢id¤init²VariableDeclaratorÍÍ9KªIdentifierÍÍ(¯CRITIQUE_LIMITSKªIdentifierÍ+Í9®CritiqueLimits¥constÀI¶ExportNamedDeclarationÍ<Í[T³VariableDeclarationÍCÍ[‘U²VariableDeclaratorÍIÍZKªIdentifierÍIÍV­QA_FIX_ROUNDSQ§LiteralÍYÍZ¡2¥constÀI¶ExportNamedDeclarationÍ]Í»T³VariableDeclarationÍdÍ»‘U²VariableDeclaratorÍjÍºKªIdentifierÍjÍu«STAGE_ORDERÔrV”¤type¥start£end¨elements¯ArrayExpressionÍxÍº–Q§LiteralÍÍ¬requirements®'requirements'Q§LiteralÍÍ—¦select¨'select'Q§LiteralÍ™Í¡¦layout¨'layout'Q§LiteralÍ£Í¨£net¥'net'Q§LiteralÍªÍ±¥route§'route'Q§LiteralÍ³Í·¢qa¤'qa'¥constÀI¶ExportNamedDeclarationÍ½Í*N³FunctionDeclarationÍÄÍ*KªIdentifierÍÍÍÖ©stageRankÂÂÂ‘KªIdentifierÍ×ÍÜ¥stageL®BlockStatementÍŞÍ*’T³VariableDeclarationÍåÍ
+‘U²VariableDeclaratorÍëÍ	KªIdentifierÍëÍì¡iÔrW–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍïÍ	S°MemberExpressionÍïÍKªIdentifierÍïÍú«STAGE_ORDERKªIdentifierÍûÍ§indexOfÂÂ‘KªIdentifierÍÍ¥stageÂ¥constR¯ReturnStatementÍÍ'OµConditionalExpressionÍÍ&P°BinaryExpressionÍÍKªIdentifierÍÍ¡i¢>=Q§LiteralÍÍ ¡0KªIdentifierÍ Í!¡iÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ$Í&¡-ÃQ§LiteralÍ%Í&¡1ÀI¶ExportNamedDeclarationÍ,Í¡N³FunctionDeclarationÍ3Í¡KªIdentifierÍ<ÍH¬canSkipStageÂÂÂ’KªIdentifierÍIÍW®stageCompletedKªIdentifierÍYÍ_¦targetL®BlockStatementÍaÍ¡‘R¯ReturnStatementÍhÍP°BinaryExpressionÍoÍW®CallExpressionÍoÍˆKªIdentifierÍoÍx©stageRank‘KªIdentifierÍyÍ‡®stageCompletedÂ¢>=W®CallExpressionÍŒÍKªIdentifierÍŒÍ•©stageRank‘KªIdentifierÍ–Íœ¦targetÂÀI¶ExportNamedDeclarationÍ£Í`N³FunctionDeclarationÍªÍ`KªIdentifierÍ³ÍÂ¯defaultCritiqueÂÂÂ‘KªIdentifierÍÃÍÆ£ctxL®BlockStatementÍÈÍ`•O«IfStatementÍÏÍS°MemberExpressionÍÓÍàKªIdentifierÍÓÍÖ£ctxKªIdentifierÍ×Íà©zeroMatchÂÂL®BlockStatementÍâÍ‘R¯ReturnStatementÍíÍQ§LiteralÍôÍ
+´zero library matches¶'zero library matches'ÀO«IfStatementÍÍQS°MemberExpressionÍÍ)KªIdentifierÍÍ£ctxKªIdentifierÍ Í)©warFailedÂÂL®BlockStatementÍ+ÍQ‘R¯ReturnStatementÍ6ÍJQ§LiteralÍ=ÍIªWAR failed¬'WAR failed'ÀO«IfStatementÍWÍÄP±LogicalExpressionÍ[Í„S°MemberExpressionÍ[ÍhKªIdentifierÍ[Í^£ctxKªIdentifierÍ_Íh©hardLinesÂÂ¢&&P°BinaryExpressionÍlÍ„S°MemberExpressionÍlÍ€S°MemberExpressionÍlÍyKªIdentifierÍlÍo£ctxKªIdentifierÍpÍy©hardLinesÂÂKªIdentifierÍzÍ€¦lengthÂÂ¡>Q§LiteralÍƒÍ„ ¡0L®BlockStatementÍ†ÍÄ‘R¯ReturnStatementÍ‘Í½W®CallExpressionÍ˜Í¼S°MemberExpressionÍ˜Í¶W®CallExpressionÍ˜Í±S°MemberExpressionÍ˜Í«S°MemberExpressionÍ˜Í¥KªIdentifierÍ˜Í›£ctxKªIdentifierÍœÍ¥©hardLinesÂÂKªIdentifierÍ¦Í«¥sliceÂÂ’Q§LiteralÍ¬Í­ ¡0Q§LiteralÍ¯Í°¡3ÂKªIdentifierÍ²Í¶¤joinÂÂ‘Q§LiteralÍ·Í»¢; ¤'; 'ÂÀO«IfStatementÍúÍKP°BinaryExpressionÍşÍP±LogicalExpressionÍÿÍS°MemberExpressionÍÿÍKªIdentifierÍÿÍ£ctxKªIdentifierÍÍ¨softMissÂÂ¢??Q§LiteralÍÍ ¡0¡>Q§LiteralÍÍ ¡0L®BlockStatementÍÍK‘R¯ReturnStatementÍ"ÍDÔrY•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ)ÍC‘S°MemberExpressionÍ5ÍAKªIdentifierÍ5Í8£ctxKªIdentifierÍ9ÍA¨softMissÂÂ’ÔrZ•¤type¥start£end¥value¤tail¯TemplateElementÍ*Í3Ôr[’£raw¦cooked©softMiss=©softMiss=ÂZ¯TemplateElementÍBÍB[  ÃÀR¯ReturnStatementÍQÍ]Q§LiteralÍXÍ\À¤nullÀI¶ExportNamedDeclarationÍÍ<N³FunctionDeclarationÍ†Í<KªIdentifierÍ•Í¦±withCritiqueLimitÂÂÃ–KªIdentifierÍ§Í¬¥stageKªIdentifierÍ®Í³¥runIdKªIdentifierÍµÍº¥hooksKªIdentifierÍ¼ÍÅ©attemptFnKªIdentifierÍÇÍÒ«onExhaustedKªIdentifierÍÔÍß«llmCritiqueL®BlockStatementÍáÍ<•T³VariableDeclarationÍèÍ‘U²VariableDeclaratorÍîÍKªIdentifierÍîÍó¥limitW®CallExpressionÍöÍS°MemberExpressionÍöÍKªIdentifierÍöÍ®CritiqueLimitsKªIdentifierÍÍ¢ofÂÂ‘KªIdentifierÍÍ¥stageÂ¥constT³VariableDeclarationÍÍ*‘U²VariableDeclaratorÍÍ)KªIdentifierÍÍ"©lastValueQ§LiteralÍ%Í)À¤null£letT³VariableDeclarationÍ0ÍV‘U²VariableDeclaratorÍ4ÍUKªIdentifierÍ4Í>ªlastReasonQ§LiteralÍAÍU²critique exhausted´'critique exhausted'£letÔr\—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ\Í	T³VariableDeclarationÍaÍp‘U²VariableDeclaratorÍeÍpKªIdentifierÍeÍl§attemptQ§LiteralÍoÍp ¡0£letP°BinaryExpressionÍrÍKªIdentifierÍrÍy§attempt¡<KªIdentifierÍ|Í¥limitX°UpdateExpressionÍƒÍŒ¢++ÂKªIdentifierÍƒÍŠ§attemptL®BlockStatementÍÍ	T³VariableDeclarationÍ™ÍÜ‘U²VariableDeclaratorÍŸÍÛKªIdentifierÍŸÍ¨©beforeCtxÔr]”¤type¥start£endªproperties°ObjectExpressionÍ«ÍÛ“Ôr^™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ­Í¹ÂÂÂKªIdentifierÍ­Í²¥stageKªIdentifierÍ´Í¹¥stage¤init^¨PropertyÍ»ÍÇÂÂÂKªIdentifierÍ»ÍÀ¥runIdKªIdentifierÍÂÍÇ¥runId¤init^¨PropertyÍÉÍÙÂÂÂKªIdentifierÍÉÍĞ§attemptKªIdentifierÍÒÍÙ§attempt¤init¥constT³VariableDeclarationÍæÍ‘U²VariableDeclaratorÍìÍKªIdentifierÍìÍò¦beforeÔr_”¤type¥start£endªexpression¯ChainExpressionÍõÍW®CallExpressionÍõÍS°MemberExpressionÍõÍKªIdentifierÍõÍú¥hooksKªIdentifierÍüÍ«beforeStageÂÃ‘KªIdentifierÍ
+Í©beforeCtxÃ¥constO«IfStatementÍÍmKªIdentifierÍ#Í)¦beforeL®BlockStatementÍ+Ím’_³ExpressionStatementÍ:ÍNÔr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ:ÍM¡=KªIdentifierÍ:ÍDªlastReasonKªIdentifierÍGÍM¦beforeÔra”¤type¥start£end¥label®BreakStatementÍ\ÍbÀÀT³VariableDeclarationÍwÍš‘U²VariableDeclaratorÍ}Í™KªIdentifierÍ}Í~¡rR¯AwaitExpressionÍÍ™W®CallExpressionÍ‡Í™KªIdentifierÍ‡Í©attemptFn‘KªIdentifierÍ‘Í˜§attemptÂ¥const_³ExpressionStatementÍ¤Í¸`´AssignmentExpressionÍ¤Í·¡=KªIdentifierÍ¤Í­©lastValueS°MemberExpressionÍ°Í·KªIdentifierÍ°Í±¡rKªIdentifierÍ²Í·¥valueÂÂT³VariableDeclarationÍÂÍ	)‘U²VariableDeclaratorÍÈÍ	(KªIdentifierÍÈÍÎ¦genCtxP±LogicalExpressionÍÑÍ	(S°MemberExpressionÍÑÍŞKªIdentifierÍÑÍÒ¡rKªIdentifierÍÓÍŞ«critiqueCtxÂÂ¢??]°ObjectExpressionÍâÍ	(“^¨PropertyÍñÍıÂÂÂKªIdentifierÍñÍö¥stageKªIdentifierÍøÍı¥stage¤init^¨PropertyÍÿÍ	ÂÂÂKªIdentifierÍÿÍ	¥runIdKªIdentifierÍ	Í	¥runId¤init^¨PropertyÍ	Í	ÂÂÂKªIdentifierÍ	Í	§attemptKªIdentifierÍ	Í	§attempt¤init¥const_³ExpressionStatementÍ	3Í	L`´AssignmentExpressionÍ	3Í	K¡=S°MemberExpressionÍ	3Í	AKªIdentifierÍ	3Í	9¦genCtxKªIdentifierÍ	:Í	A§attemptÂÂKªIdentifierÍ	DÍ	K§attemptT³VariableDeclarationÍ	VÍ	Ÿ‘U²VariableDeclaratorÍ	ZÍ	KªIdentifierÍ	ZÍ	b¨afterGenP±LogicalExpressionÍ	eÍ	_¯ChainExpressionÍ	eÍ	ƒW®CallExpressionÍ	eÍ	ƒS°MemberExpressionÍ	eÍ	yKªIdentifierÍ	eÍ	j¥hooksKªIdentifierÍ	lÍ	y­afterGenerateÂÃ‘KªIdentifierÍ	|Í	‚¦genCtxÃ¢??W®CallExpressionÍ	‡Í	KªIdentifierÍ	‡Í	–¯defaultCritique‘KªIdentifierÍ	—Í	¦genCtxÂ£letO«IfStatementÍ	©ÍVP±LogicalExpressionÍ	­Í	ÏKªIdentifierÍ	­Í	¸«llmCritique¢&&P±LogicalExpressionÍ	½Í	ÎX¯UnaryExpressionÍ	½Í	Â¡!ÃS°MemberExpressionÍ	¾Í	ÂKªIdentifierÍ	¾Í	¿¡rKªIdentifierÍ	ÀÍ	Â¢okÂÂ¢||KªIdentifierÍ	ÆÍ	Î¨afterGenL®BlockStatementÍ	ÑÍV’T³VariableDeclarationÍ	àÍ
+‘U²VariableDeclaratorÍ	æÍ
+KªIdentifierÍ	æÍ	ï©llmReasonR¯AwaitExpressionÍ	òÍ
+W®CallExpressionÍ	øÍ
+KªIdentifierÍ	øÍ
+«llmCritique’KªIdentifierÍ
+Í
+
+¦genCtxS°MemberExpressionÍ
+Í
+KªIdentifierÍ
+Í
+¡rKªIdentifierÍ
+Í
+¢okÂÂÂ¥constO«IfStatementÍ
+ ÍKP±LogicalExpressionÍ
+$Í
+QP°BinaryExpressionÍ
+$Í
+6KªIdentifierÍ
+$Í
+-©llmReason£!==Q§LiteralÍ
+2Í
+6À¤null¢&&P°BinaryExpressionÍ
+:Í
+QKªIdentifierÍ
+:Í
+C©llmReason£!==KªIdentifierÍ
+HÍ
+Q©undefinedL®BlockStatementÍ
+SÍ
+Š‘_³ExpressionStatementÍ
+fÍ
+{`´AssignmentExpressionÍ
+fÍ
+z¡=KªIdentifierÍ
+fÍ
+n¨afterGenKªIdentifierÍ
+qÍ
+z©llmReasonO«IfStatementÍ
+ÍKP±LogicalExpressionÍ
+¡ÍP±LogicalExpressionÍ
+¡Í
+ĞP±LogicalExpressionÍ
+¡Í
+»P°BinaryExpressionÍ
+¡Í
+³KªIdentifierÍ
+¡Í
+ª©llmReason£===Q§LiteralÍ
+¯Í
+³À¤null¢&&S°MemberExpressionÍ
+·Í
+»KªIdentifierÍ
+·Í
+¸¡rKªIdentifierÍ
+¹Í
+»¢okÂÂ¢&&X¯UnaryExpressionÍ
+¿Í
+Ğ¡!ÃS°MemberExpressionÍ
+ÀÍ
+ĞKªIdentifierÍ
+ÀÍ
+Æ¦genCtxKªIdentifierÍ
+ÇÍ
+Ğ©zeroMatchÂÂ¢&&X¯UnaryExpressionÍ
+åÍ¡!ÃP±LogicalExpressionÍ
+çÍS°MemberExpressionÍ
+çÍ
+÷KªIdentifierÍ
+çÍ
+í¦genCtxKªIdentifierÍ
+îÍ
+÷©hardLinesÂÂ¢&&P°BinaryExpressionÍ
+ûÍS°MemberExpressionÍ
+ûÍS°MemberExpressionÍ
+ûÍKªIdentifierÍ
+ûÍ¦genCtxKªIdentifierÍÍ©hardLinesÂÂKªIdentifierÍÍ¦lengthÂÂ¡>Q§LiteralÍÍ ¡0L®BlockStatementÍÍK‘_³ExpressionStatementÍ,Í<`´AssignmentExpressionÍ,Í;¡=KªIdentifierÍ,Í4¨afterGenQ§LiteralÍ7Í;À¤nullÀÀO«IfStatementÍ`ÍÔP±LogicalExpressionÍdÍuX¯UnaryExpressionÍdÍm¡!ÃKªIdentifierÍeÍm¨afterGen¢&&S°MemberExpressionÍqÍuKªIdentifierÍqÍr¡rKªIdentifierÍsÍu¢okÂÂL®BlockStatementÍwÍÔ’_³ExpressionStatementÍ†Í¬_¯ChainExpressionÍ†Í«W®CallExpressionÍ†Í«S°MemberExpressionÍ†ÍšKªIdentifierÍ†Í‹¥hooksKªIdentifierÍÍš­afterCritiqueÂÃ’KªIdentifierÍÍ£¦genCtxQ§LiteralÍ¥ÍªÂ¥falseÃR¯ReturnStatementÍºÍÉS°MemberExpressionÍÁÍÈKªIdentifierÍÁÍÂ¡rKªIdentifierÍÃÍÈ¥valueÂÂÀ_³ExpressionStatementÍŞÍ`´AssignmentExpressionÍŞÍ¡=KªIdentifierÍŞÍèªlastReasonP±LogicalExpressionÍëÍKªIdentifierÍëÍó¨afterGen¢??Q§LiteralÍ÷Í¬stage not ok®'stage not ok'T³VariableDeclarationÍÍ?‘U²VariableDeclaratorÍÍ>KªIdentifierÍÍ ªafterTools_¯ChainExpressionÍ#Í>W®CallExpressionÍ#Í>S°MemberExpressionÍ#Í4KªIdentifierÍ#Í(¥hooksKªIdentifierÍ*Í4ªafterToolsÂÃ‘KªIdentifierÍ7Í=¦genCtxÃ¥constO«IfStatementÍIÍ‹KªIdentifierÍMÍWªafterToolsL®BlockStatementÍYÍ‹‘_³ExpressionStatementÍhÍ€`´AssignmentExpressionÍhÍ¡=KªIdentifierÍhÍrªlastReasonKªIdentifierÍuÍªafterToolsÀO«IfStatementÍ•ÍP°BinaryExpressionÍ™Í­P°BinaryExpressionÍ™Í¤KªIdentifierÍ™Í §attempt¡+Q§LiteralÍ£Í¤¡1¢>=KªIdentifierÍ¨Í­¥limitL®BlockStatementÍ¯Í’_³ExpressionStatementÍ¾Íã_¯ChainExpressionÍ¾ÍâW®CallExpressionÍ¾ÍâS°MemberExpressionÍ¾ÍÒKªIdentifierÍ¾ÍÃ¥hooksKªIdentifierÍÅÍÒ­afterCritiqueÂÃ’KªIdentifierÍÕÍÛ¦genCtxQ§LiteralÍİÍáÃ¤trueÃa®BreakStatementÍñÍ÷ÀÀR¯ReturnStatementÍÍ9W®CallExpressionÍÍ8KªIdentifierÍÍ!«onExhausted’KªIdentifierÍ"Í+©lastValueKªIdentifierÍ-Í7ªlastReasonÂÀ
