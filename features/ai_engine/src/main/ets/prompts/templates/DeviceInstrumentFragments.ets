@@ -41,8 +41,10 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
       '【SIGNAL_GEN】param 须含 waveform/amplitude/frequency/offset/dutyCycle。',
       '【SIGNAL_GEN】OUT→激励网；GND→GND；可用 OSC CH 同网观测；禁止 OUT 短 GND。'),
     f('SW_PUSH',
-      '【SW_PUSH】两端子常开；用于电源通断/复位/555 TRIG/线圈驱动。',
-      '【SW_PUSH】仅 2 脚；禁止当 SPDT；555 单稳态：一端 TRIG 一端 GND；禁止有 555 时串进 VCC→R→C 冒充定时。'),
+      '【SW_PUSH】两端子常开；用于电源通断/复位/555 TRIG/线圈驱动/数字门开关输入。',
+      '【SW_PUSH】仅 2 脚；禁止当 SPDT；【硬】禁止一端 VCC、另一端 GND（按下短路电源）；' +
+      '数字门输入：一端=门输入信号网(含 Ux:A/B)，另一端=GND（可经上拉 R 接 VCC）；' +
+      '555 单稳态：一端 TRIG 一端 GND；禁止有 555 时串进 VCC→R→C 冒充定时。'),
     f('RELAY_SPDT',
       '【RELAY_SPDT】线圈+COM/NO/NC；互斥双色必须用本器件。',
       '【RELAY】线圈经 SW 驱动勿直短电源；COM→GND（互斥灯）；NC/NO 分接两路 LED；禁止 SW 冒充三端。'),
@@ -111,8 +113,11 @@ export function buildDevInstrCatalog(): DevInstrFragEntry[] {
       '【CD4017】十进制计数/流水灯；CLK 需时钟。',
       '【4017】CLK←时钟；Qn—R—LED—GND；RST/EN 按手册；VDD/VSS+去耦。'),
     f('74HC*',
-      '【74HC】CMOS 逻辑；电源与不用输入处理。',
-      '【74HC】VCC/GND；不用输入拉到合法电平；输出勿短电源；总线注意上拉。'),
+      '【74HC】库内门：00=NAND 02=NOR 04=NOT 08=AND 32=OR 74=XOR（库符号为异或，非真实 DFF）；' +
+      '异或/XOR 必须选 74HC74；禁止编造 74HC86 等库外型号。',
+      '【74HC】VCC(14)/GND(7)；输入 A=1 B=2 输出 Y=3（非门 A=1 Y=2）；【硬】输入禁止浮空；' +
+      '开关输入：INPUT_x 网含 SW.一端 + U.输入，SW.另一端→GND（可加 R 上拉到 VCC）；' +
+      '【硬】禁止 SW 跨接 VCC↔GND；Y 经 R_330→LED→GND。'),
 
     // —— MCU ——
     f('STM32*',

@@ -255,7 +255,9 @@ function buildFamilyTemplates(): FamilyTemplate[] {
         },
         {
             prefix: '74HC',
-            entry: entry('', '74HC系列CMOS逻辑', 'CMOS 逻辑门/触发器族；电源去耦，未用输入禁止悬空。', '按门型号：输入/输出/VCC/GND', '①VCC 旁路 100n→GND。②按真值表接输入输出。③未用输入接 VCC 或 GND。④输出经电阻驱 LED。⑤级联组合逻辑。', '✕1禁止输入悬空。✕2禁止输出短接。✕3禁止电源超出逻辑电平范围。✕4禁止输出直接短电源。✕5禁止电源反接。', 'VCC 常 5V', '数字门行为', 8)
+            entry: entry('', '74HC系列CMOS逻辑', 'CMOS 逻辑门；库内 74HC74=XOR（异或符号，非真实 DFF）。电源去耦，未用输入禁止悬空。', 'A=1 B=2 Y=3 VCC=14 GND=7（非门 A=1 Y=2）', '①VCC(14)→VCC，GND(7)→GND。②按键输入：INPUT_A 网=SW.1+门.A，SW.2→GND（可加 R 上拉到 VCC）；' +
+                '禁止 SW 两端分接 VCC 与 GND。③未用输入接 VCC 或 GND。④Y→R_330→LED.A，LED.K→GND。⑤一脚一网。', '✕1禁止输入悬空。✕2禁止输出短接。✕3禁止 SW 跨接电源轨。✕4禁止输出直接短电源。✕5禁止电源反接。' +
+                '✕6禁止把同一 SW 脚同时写入 GND 与 INPUT 两网。', 'VCC 常 5V', '数字门行为', 8)
         },
         {
             prefix: 'STM32',

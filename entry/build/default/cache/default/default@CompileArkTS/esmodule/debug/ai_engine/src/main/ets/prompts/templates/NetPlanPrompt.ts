@@ -77,10 +77,19 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - EA(8051) → VCC
    - 晶振 XTAL → OSC_IN/OSC_OUT + 22pF×2→GND（全部用导线最短路径）
 
+6b. 数字逻辑门(74HC*) + 按键输入铁律:
+   - 芯片 VCC(14)→VCC 网，GND(7)→GND 网；输入 A=1、B=2、输出 Y=3（非门 A=1 Y=2）
+   - 【硬】每个逻辑输入必须入独立信号网（如 INPUT_A），禁止浮空
+   - 【硬】SW_PUSH 作门输入：INPUT_A 含 SW1.1 + U1.1；SW1.2→GND（可另加 R 上拉到 VCC）
+   - 【硬】禁止同一按键一端接 VCC、另一端接 GND（按下=电源短路）
+   - 【硬】一脚只能属一网：禁止 SW.1 同时出现在 GND 与 INPUT_A
+   - 输出驱 LED: Y→R→LED.A，LED.K→GND
+
 7. LED 驱动规则:
    - LED 阳极(A) → 限流电阻 → VCC 或 MCU GPIO / 继电器触点支路
    - LED 阴极(K) → GND 或继电器 NC/NO（禁止把 K 接到 VCC；禁止短路任一 LED）
    - 每个 LED 必须串联限流电阻(至少220Ω)；N 颗 LED 用 N 颗不同电阻（用唯一 refDes 如 R1/R2）
+   - 【数字门输出驱 LED】门 Y(脚3)→R_330→LED.A，LED.K→GND；禁止 Y 直短电源
    - 【强制】开/闭互斥双色指示（存在 RELAY_SPDT + ≥2 LED）必须按触点拓扑，禁止 SW_PUSH 当 SPDT:
      * 线圈: VCC→SW_PUSH.1 → SW_PUSH.2→RELAY.1 ，RELAY.2→GND
      * COM→GND

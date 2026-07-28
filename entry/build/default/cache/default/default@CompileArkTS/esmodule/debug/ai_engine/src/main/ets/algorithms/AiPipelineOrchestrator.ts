@@ -6104,6 +6104,60 @@ export class AiPipelineOrchestrator {
                 split.soft.push(`有 ${rFloat} 颗电阻未入网 — 滞回须 OUT→Rf→IN+、IN+→Rg→GND，积分须 Rin`);
             }
         }
+        // 数字门 + 按键：禁止 SW 两端分跨 VCC/GND；逻辑输入不得浮空
+        const pinNetOf = new Map<string, string>();
+        for (let ni = 0; ni < nets.length; ni++) {
+            const nn = (nets[ni].name ?? '').toUpperCase();
+            const conns = nets[ni].connections ?? [];
+            for (let ci = 0; ci < conns.length; ci++) {
+                const c = conns[ci];
+                pinNetOf.set(`${(c.compRef ?? '').toUpperCase()}:${(c.pinId ?? '').toUpperCase()}`, nn);
+                const pn = (c.pinName ?? '').toUpperCase();
+                if (pn.length > 0) {
+                    pinNetOf.set(`${(c.compRef ?? '').toUpperCase()}:${pn}`, nn);
+                }
+            }
+        }
+        const isVccN = (n: string): boolean => n === 'VCC' || n === 'VDD' || n === '+5V' || n === 'VCC_NET';
+        const isGndN = (n: string): boolean => n === 'GND' || n === 'VSS' || n === '0V' || n === 'GND_NET';
+        for (let di = 0; di < topo.deviceList.length; di++) {
+            const d = topo.deviceList[di];
+            const lib = (d.libDevId ?? '').toUpperCase();
+            const ref = (d.refName ?? '').toUpperCase();
+            if (lib.indexOf('SW_') === 0) {
+                const n1 = pinNetOf.get(`${ref}:1`) ?? pinNetOf.get(`${ref}:A`) ?? '';
+                const n2 = pinNetOf.get(`${ref}:2`) ?? pinNetOf.get(`${ref}:B`) ?? '';
+                if (n1.length > 0 && n2.length > 0 &&
+                    ((isVccN(n1) && isGndN(n2)) || (isGndN(n1) && isVccN(n2)))) {
+                    split.hard.push(`按键 ${d.refName} 两端分接 ${n1} 与 ${n2}：按下会电源短路！` +
+                        `正确：一端接门输入信号网(含 Ux:A/B)，另一端接 GND（或经上拉电阻接 VCC）；` +
+                        `禁止 SW 一脚 VCC、另一脚 GND`);
+                }
+            }
+            if (NetPlanExecutor.isDigitalGateLibId(lib)) {
+                const inPins = NetPlanExecutor.digitalGateInputPinIds(lib);
+                for (let pi = 0; pi < inPins.length; pi++) {
+                    const pid = inPins[pi];
+                    const nn = pinNetOf.get(`${ref}:${pid}`) ?? '';
+                    if (nn.length === 0) {
+                        split.hard.push(`数字门 ${d.refName}(${lib}) 输入脚 ${pid} 未入网 — 禁止浮空；` +
+                            `须与 SW/上拉同网（如 INPUT_A: SW.1+${d.refName}.${pid}）`);
+                    }
+                    else if (isVccN(nn) || isGndN(nn)) {
+                        // 未用输入可拉电源；若板上有 SW 且该脚直贴电源而无开关路径则 SOFT
+                        const hasSw = topo.deviceList.some(x => (x.libDevId ?? '').toUpperCase().indexOf('SW_') === 0);
+                        if (hasSw) {
+                            split.soft.push(`数字门 ${d.refName}.${pid} 直连 ${nn} — 若作开关输入应改接独立信号网经 SW`);
+                        }
+                    }
+                }
+                const yNet = pinNetOf.get(`${ref}:3`) ?? pinNetOf.get(`${ref}:Y`) ??
+                    (lib === '74HC04' ? (pinNetOf.get(`${ref}:2`) ?? '') : '');
+                if (yNet.length === 0) {
+                    split.soft.push(`数字门 ${d.refName} 输出未入网 — LED 指示须 Y→R→LED→GND`);
+                }
+            }
+        }
         const needMutualTopo = (intent.mutualLedIndicator || intent.relayContactTopo) &&
             !intent.blinkOscillator && ledN >= 2;
         if (!needMutualTopo) {

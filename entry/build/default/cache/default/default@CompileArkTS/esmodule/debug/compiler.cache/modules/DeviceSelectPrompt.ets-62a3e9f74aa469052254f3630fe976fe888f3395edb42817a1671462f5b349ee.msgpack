@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚâexport const DEVICE_SELECT_PROMPT = {
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ*export const DEVICE_SELECT_PROMPT = {
     id: 'device_select_v6',
     version: '6.0.0',
     system: `ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—å¹¶è¾“å‡ºå™¨ä»¶é€‰å‹æ¸…å•ã€‚
@@ -29,6 +29,11 @@ LED ç±»:
 - ç®€å•é€šæ–­ â†’ SW_PUSHï¼ˆSPSTï¼Œä»…2è„šï¼‰
 - åŒè·¯äº’æ–¥åˆ‡æ¢(æ‰“å¼€Aäº®/é—­åˆBäº®) â†’ RELAY_SPDT + SW_PUSH é©±åŠ¨çº¿åœˆ + åŒ LED + åŒç”µé˜»
 - å……æ”¾ç”µå¼€å…³ â†’ SW_PUSHï¼›ç¦æ­¢ç”¨ RELAY_SPDT å†’å……å½“æ”¾ç”µå¼€å…³
+
+æ•°å­—é€»è¾‘é—¨ï¼ˆä»…åº“å†…å‹å·ï¼‰:
+- NANDâ†’74HC00ï¼›NORâ†’74HC02ï¼›NOT/åç›¸â†’74HC04ï¼›ANDâ†’74HC08ï¼›ORâ†’74HC32
+- å¼‚æˆ–/XOR/ä¸¤è¾“å…¥ä¸åŒåˆ™äº® â†’ 74HC74ï¼ˆæœ¬åº“ XOR ç¬¦å·ï¼Œä¸æ˜¯çœŸå® D è§¦å‘å™¨ï¼‰
+- ã€ç¡¬ã€‘ç¦æ­¢ç¼–é€  74HC86/74LS86 ç­‰åº“å¤–å‹å·ï¼›é¡»é… SW_PUSHÃ—è¾“å…¥è·¯æ•° + R_330 + LED + VCC + GND
 
 555 å®šæ—¶å™¨:
 - é—ªçƒ/æŒ¯è¡/æ–¹æ³¢ â†’ LM555 æ— ç¨³æ€æ¨¡å¼
@@ -69,7 +74,7 @@ LED ç±»:
 è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}`,
     userTemplate: '{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š\n{{user_prompt}}\n\nåœºæ™¯ï¼š{{scene}}\n\nå±€éƒ¨ç”µè·¯ï¼ˆå¯é€‰ï¼‰ï¼š\n{{partial_topo}}\n\nå¯ç”¨å™¨ä»¶åº“æ‘˜è¦ï¼š\n{{library_catalog}}\n\nç°åœ¨ç«‹å³åªè¾“å‡º JSONï¼Œä¸è¦ä»»ä½•å…¶å®ƒæ–‡å­—ï¼š'
 };
-//# sourceMappingURL=DeviceSelectPrompt.js.mapÂÙeC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¾./templates/DeviceSelectPrompt©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚA/**
+//# sourceMappingURL=DeviceSelectPrompt.js.mapÂÙeC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\DeviceSelectPrompt.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName¾./templates/DeviceSelectPrompt©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ‰/**
  * device_select v6 â€” ç®€åŒ–ç‰ˆï¼šä»…è´Ÿè´£é€‰å‹ï¼Œæ‹“æ‰‘è§„åˆ™äº¤ç»™ net_plan
  */
 import { PromptTemplate } from '../PromptTypes';
@@ -105,6 +110,11 @@ LED ç±»:
 - ç®€å•é€šæ–­ â†’ SW_PUSHï¼ˆSPSTï¼Œä»…2è„šï¼‰
 - åŒè·¯äº’æ–¥åˆ‡æ¢(æ‰“å¼€Aäº®/é—­åˆBäº®) â†’ RELAY_SPDT + SW_PUSH é©±åŠ¨çº¿åœˆ + åŒ LED + åŒç”µé˜»
 - å……æ”¾ç”µå¼€å…³ â†’ SW_PUSHï¼›ç¦æ­¢ç”¨ RELAY_SPDT å†’å……å½“æ”¾ç”µå¼€å…³
+
+æ•°å­—é€»è¾‘é—¨ï¼ˆä»…åº“å†…å‹å·ï¼‰:
+- NANDâ†’74HC00ï¼›NORâ†’74HC02ï¼›NOT/åç›¸â†’74HC04ï¼›ANDâ†’74HC08ï¼›ORâ†’74HC32
+- å¼‚æˆ–/XOR/ä¸¤è¾“å…¥ä¸åŒåˆ™äº® â†’ 74HC74ï¼ˆæœ¬åº“ XOR ç¬¦å·ï¼Œä¸æ˜¯çœŸå® D è§¦å‘å™¨ï¼‰
+- ã€ç¡¬ã€‘ç¦æ­¢ç¼–é€  74HC86/74LS86 ç­‰åº“å¤–å‹å·ï¼›é¡»é… SW_PUSHÃ—è¾“å…¥è·¯æ•° + R_330 + LED + VCC + GND
 
 555 å®šæ—¶å™¨:
 - é—ªçƒ/æŒ¯è¡/æ–¹æ³¢ â†’ LM555 æ— ç¨³æ€æ¨¡å¼
@@ -144,10 +154,10 @@ LED ç±»:
 
 è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}`,
   userTemplate: '{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š\n{{user_prompt}}\n\nåœºæ™¯ï¼š{{scene}}\n\nå±€éƒ¨ç”µè·¯ï¼ˆå¯é€‰ï¼‰ï¼š\n{{partial_topo}}\n\nå¯ç”¨å™¨ä»¶åº“æ‘˜è¦ï¼š\n{{library_catalog}}\n\nç°åœ¨ç«‹å³åªè¾“å‡º JSONï¼Œä¸è¦ä»»ä½•å…¶å®ƒæ–‡å­—ï¼š'
-};ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsµDeviceSelectPrompt.js ‘¶DeviceSelectPrompt.etsÜ G–”   ” ” ” ”! !”$ 4”” ” ” ” ”” ” 	” ” “” ”
+};ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsµDeviceSelectPrompt.js ‘¶DeviceSelectPrompt.etsÜ L–”   ” ” ” ”! !”$ 4”” ” ” ” ”” ” 	” ” “” ”
  ” 
-‘”ÌÔ ÌIÌÔ”” ÌJ” ÌJ” ÌJ”Ì¿ ÌJÌ½’” ÌK” ÌKÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ H‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍQÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍQ‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍPÔrL”¤type¥start£end¤nameªIdentifier!´DEVICE_SELECT_PROMPTÔrM”¤type¥start£endªproperties°ObjectExpression$ÍP”ÔrN™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨Property+ÌAÂÂÂLªIdentifier+-¢idÔrO•¤type¥start£end¥value£raw§Literal/ÌA°device_select_v6²'device_select_v6'¤initN¨PropertyÌHÌXÂÂÂLªIdentifierÌHÌO§versionO§LiteralÌQÌX¥6.0.0§'6.0.0'¤initN¨PropertyÌ_Í‹ÂÂÂLªIdentifierÌ_Ìe¦systemÔrP•¤type¥start£end«expressions¦quasis¯TemplateLiteralÌgÍ‹‘ÔrQ•¤type¥start£end¥value¤tail¯TemplateElementÌhÍŠÔrR’£raw¦cookedÚ/ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—å¹¶è¾“å‡ºå™¨ä»¶é€‰å‹æ¸…å•ã€‚
+‘”ÌÔ ÌNÌÔ”” ÌO” ÌO” ÌO”Ì¿ ÌOÌ½’” ÌP” ÌPÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ M‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration Í	ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ	‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÍ	ÔrL”¤type¥start£end¤nameªIdentifier!´DEVICE_SELECT_PROMPTÔrM”¤type¥start£endªproperties°ObjectExpression$Í	”ÔrN™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨Property+ÌAÂÂÂLªIdentifier+-¢idÔrO•¤type¥start£end¥value£raw§Literal/ÌA°device_select_v6²'device_select_v6'¤initN¨PropertyÌHÌXÂÂÂLªIdentifierÌHÌO§versionO§LiteralÌQÌX¥6.0.0§'6.0.0'¤initN¨PropertyÌ_ÍNÂÂÂLªIdentifierÌ_Ìe¦systemÔrP•¤type¥start£end«expressions¦quasis¯TemplateLiteralÌgÍN‘ÔrQ•¤type¥start£end¥value¤tail¯TemplateElementÌhÍMÔrR’£raw¦cookedÚwä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—å¹¶è¾“å‡ºå™¨ä»¶é€‰å‹æ¸…å•ã€‚
 
 ã€ä½ çš„èŒè´£: é€‰å‹ï¼Œä¸æ˜¯å»ºç½‘ã€‘
 - è¾“å‡º: function_module åˆ—è¡¨ + device_require_list æ¸…å• + circuit_constraint çº¦æŸ
@@ -175,6 +185,11 @@ LED ç±»:
 - ç®€å•é€šæ–­ â†’ SW_PUSHï¼ˆSPSTï¼Œä»…2è„šï¼‰
 - åŒè·¯äº’æ–¥åˆ‡æ¢(æ‰“å¼€Aäº®/é—­åˆBäº®) â†’ RELAY_SPDT + SW_PUSH é©±åŠ¨çº¿åœˆ + åŒ LED + åŒç”µé˜»
 - å……æ”¾ç”µå¼€å…³ â†’ SW_PUSHï¼›ç¦æ­¢ç”¨ RELAY_SPDT å†’å……å½“æ”¾ç”µå¼€å…³
+
+æ•°å­—é€»è¾‘é—¨ï¼ˆä»…åº“å†…å‹å·ï¼‰:
+- NANDâ†’74HC00ï¼›NORâ†’74HC02ï¼›NOT/åç›¸â†’74HC04ï¼›ANDâ†’74HC08ï¼›ORâ†’74HC32
+- å¼‚æˆ–/XOR/ä¸¤è¾“å…¥ä¸åŒåˆ™äº® â†’ 74HC74ï¼ˆæœ¬åº“ XOR ç¬¦å·ï¼Œä¸æ˜¯çœŸå® D è§¦å‘å™¨ï¼‰
+- ã€ç¡¬ã€‘ç¦æ­¢ç¼–é€  74HC86/74LS86 ç­‰åº“å¤–å‹å·ï¼›é¡»é… SW_PUSHÃ—è¾“å…¥è·¯æ•° + R_330 + LED + VCC + GND
 
 555 å®šæ—¶å™¨:
 - é—ªçƒ/æŒ¯è¡/æ–¹æ³¢ â†’ LM555 æ— ç¨³æ€æ¨¡å¼
@@ -212,7 +227,7 @@ LED ç±»:
 ã€ç¼–è¾‘æ¨¡å¼ã€‘:
 - generation_mode=edit â†’ åœ¨ç°æœ‰å™¨ä»¶åŸºç¡€ä¸Šå¢é‡ä¿®æ”¹ï¼Œä¿ç•™æœªæ¶‰åŠå™¨ä»¶
 
-è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}Ú/ä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—å¹¶è¾“å‡ºå™¨ä»¶é€‰å‹æ¸…å•ã€‚
+è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}Úwä½ æ˜¯èµ„æ·±ç¡¬ä»¶å·¥ç¨‹å¸ˆã€‚æ ¹æ®ç”¨æˆ·éœ€æ±‚æ‹†è§£ç”µè·¯åŠŸèƒ½æ¨¡å—å¹¶è¾“å‡ºå™¨ä»¶é€‰å‹æ¸…å•ã€‚
 
 ã€ä½ çš„èŒè´£: é€‰å‹ï¼Œä¸æ˜¯å»ºç½‘ã€‘
 - è¾“å‡º: function_module åˆ—è¡¨ + device_require_list æ¸…å• + circuit_constraint çº¦æŸ
@@ -240,6 +255,11 @@ LED ç±»:
 - ç®€å•é€šæ–­ â†’ SW_PUSHï¼ˆSPSTï¼Œä»…2è„šï¼‰
 - åŒè·¯äº’æ–¥åˆ‡æ¢(æ‰“å¼€Aäº®/é—­åˆBäº®) â†’ RELAY_SPDT + SW_PUSH é©±åŠ¨çº¿åœˆ + åŒ LED + åŒç”µé˜»
 - å……æ”¾ç”µå¼€å…³ â†’ SW_PUSHï¼›ç¦æ­¢ç”¨ RELAY_SPDT å†’å……å½“æ”¾ç”µå¼€å…³
+
+æ•°å­—é€»è¾‘é—¨ï¼ˆä»…åº“å†…å‹å·ï¼‰:
+- NANDâ†’74HC00ï¼›NORâ†’74HC02ï¼›NOT/åç›¸â†’74HC04ï¼›ANDâ†’74HC08ï¼›ORâ†’74HC32
+- å¼‚æˆ–/XOR/ä¸¤è¾“å…¥ä¸åŒåˆ™äº® â†’ 74HC74ï¼ˆæœ¬åº“ XOR ç¬¦å·ï¼Œä¸æ˜¯çœŸå® D è§¦å‘å™¨ï¼‰
+- ã€ç¡¬ã€‘ç¦æ­¢ç¼–é€  74HC86/74LS86 ç­‰åº“å¤–å‹å·ï¼›é¡»é… SW_PUSHÃ—è¾“å…¥è·¯æ•° + R_330 + LED + VCC + GND
 
 555 å®šæ—¶å™¨:
 - é—ªçƒ/æŒ¯è¡/æ–¹æ³¢ â†’ LM555 æ— ç¨³æ€æ¨¡å¼
@@ -277,7 +297,7 @@ LED ç±»:
 ã€ç¼–è¾‘æ¨¡å¼ã€‘:
 - generation_mode=edit â†’ åœ¨ç°æœ‰å™¨ä»¶åŸºç¡€ä¸Šå¢é‡ä¿®æ”¹ï¼Œä¿ç•™æœªæ¶‰åŠå™¨ä»¶
 
-è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}Ã¤initN¨PropertyÍ’ÍMÂÂÂLªIdentifierÍ’Í¬userTemplateO§LiteralÍ ÍMÙô{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š
+è¾“å‡ºçº¯ JSONã€‚Schema: {"function_module":["..."],"device_require_list":[{"func":"...","dev_type":"...","param_constraint":{},"priority":1-10,"explicitModel":"...|null"}],"circuit_constraint":"...","oodFlags":["..."]}Ã¤initN¨PropertyÍUÍ	ÂÂÂLªIdentifierÍUÍa¬userTemplateO§LiteralÍcÍ	Ùô{{conversation_history}}{{generation_mode}}ç”¨æˆ·éœ€æ±‚ï¼š
 {{user_prompt}}
 
 åœºæ™¯ï¼š{{scene}}

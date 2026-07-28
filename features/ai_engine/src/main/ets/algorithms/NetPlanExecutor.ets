@@ -87,6 +87,12 @@ interface LabelPinEntry {
   pinName: string;
 }
 
+/** 浮空数字门输入（healDigitalSwitchRailShorts） */
+interface FloatingGateInput {
+  ref: string;
+  pinId: string;
+}
+
 /** 小网才允许标号→导线升级（防满图 A* / wire_cross） */
 /** 可升级为 joinWired 的最大网脚数（略放宽以增加可见导线） */
 const MAX_WIRE_PROMOTE_PINS: number = 4;
@@ -1485,6 +1491,21 @@ export class NetPlanExecutor {
           fixes++;
           continue;
         }
+        // 电源轨 vs 信号：优先保留信号（避免 SW 输入脚被 GND 抢走后 INPUT_* 变孤儿、按键变成 VCC↔GND 短路）
+        const prevPower = NetPlanExecutor.isPowerRailNetName(prevName);
+        const curPower = NetPlanExecutor.isPowerRailNetName(curName);
+        if (prevPower && !curPower) {
+          const oNet = plan.nets[prev];
+          oNet.connections = (oNet.connections ?? []).filter(oc => pinKey(oc) !== k);
+          owner.set(k, ni);
+          kept.push(c);
+          fixes++;
+          continue;
+        }
+        if (curPower && !prevPower) {
+          fixes++;
+          continue;
+        }
         // 真冲突（如 B 脚挂两路驱动）：优先保留蜂鸣器驱动网 / 非 LED 网
         const prevPrefer = prevName.indexOf('BUZZ') >= 0 || prevName.indexOf('BJT') >= 0;
         const curPrefer = curName.indexOf('BUZZ') >= 0 || curName.indexOf('BJT') >= 0;
@@ -1501,9 +1522,169 @@ export class NetPlanExecutor {
       net.connections = kept;
     }
 
-    // Pass3: 删空网，再补运放自激脚并丢掉残余 joinWired 单脚网
+    // Pass3: 删空网，再补数字按键/运放自激脚并丢掉残余 joinWired 单脚网
     plan.nets = plan.nets.filter(n => (n.connections ?? []).length > 0);
+    fixes += NetPlanExecutor.healDigitalSwitchRailShorts(plan, topo);
     fixes += NetPlanExecutor.healOpAmpFloatingInputsInPlan(plan, topo);
+    return fixes;
+  }
+
+  /** VCC/GND/VEE 等电源轨网名（含偶发 VCC_NET 别名） */
+  static isPowerRailNetName(name: string): boolean {
+    const u = (name ?? '').toUpperCase().replace(/\s/g, '');
+    if (u === 'VCC' || u === 'VDD' || u === '+5V' || u === '+3V3' || u === 'GND' ||
+      u === 'VSS' || u === 'VEE' || u === '0V' || u === '0') {
+      return true;
+    }
+    if (u === 'VCC_NET' || u === 'GND_NET' || u === 'VEE_NET' || u === 'VDD_NET') {
+      return true;
+    }
+    return false;
+  }
+
+  static isVccFamilyNetName(name: string): boolean {
+    const u = (name ?? '').toUpperCase().replace(/\s/g, '');
+    return u === 'VCC' || u === 'VDD' || u === '+5V' || u === '+3V3' || u === 'VCC_NET' ||
+      u === 'VDD_NET';
+  }
+
+  static isGndFamilyNetName(name: string): boolean {
+    const u = (name ?? '').toUpperCase().replace(/\s/g, '');
+    return u === 'GND' || u === 'VSS' || u === '0V' || u === '0' || u === 'GND_NET' ||
+      u === 'VSS_NET';
+  }
+
+  static isDigitalGateLibId(lib: string): boolean {
+    const u = (lib ?? '').toUpperCase();
+    return /^74HC(00|02|04|08|32|74)$/.test(u);
+  }
+
+  /** 库内门电路逻辑输入脚（几何真脚 id） */
+  static digitalGateInputPinIds(lib: string): string[] {
+    const u = (lib ?? '').toUpperCase();
+    if (u === '74HC04') {
+      return ['1'];
+    }
+    return ['1', '2'];
+  }
+
+  /**
+   * 按键两端分别硬接 VCC 与 GND → 按下短路电源。
+   * 确定性修复：GND 端保留在地；原 VCC 端改接到浮空数字门输入，组成 INPUT_* 信号网。
+   */
+  static healDigitalSwitchRailShorts(plan: NetPlanResult, topo: SchTopology): number {
+    if (!plan.nets || plan.nets.length === 0) {
+      return 0;
+    }
+    let fixes = 0;
+    const pinKey = (c: NetPlanConnection): string =>
+      `${c.compRef ?? ''}:${c.pinId ?? ''}`.toUpperCase();
+    const connected = new Set<string>();
+    for (let ni = 0; ni < plan.nets.length; ni++) {
+      const conns = plan.nets[ni].connections ?? [];
+      for (let ci = 0; ci < conns.length; ci++) {
+        connected.add(pinKey(conns[ci]));
+      }
+    }
+    const floatingInputs: FloatingGateInput[] = [];
+    for (let di = 0; di < topo.deviceList.length; di++) {
+      const d = topo.deviceList[di];
+      const lib = (d.libDevId ?? '').toUpperCase();
+      if (!NetPlanExecutor.isDigitalGateLibId(lib)) {
+        continue;
+      }
+      const ref = d.refName ?? '';
+      const pins = NetPlanExecutor.digitalGateInputPinIds(lib);
+      for (let pi = 0; pi < pins.length; pi++) {
+        const key = `${ref}:${pins[pi]}`.toUpperCase();
+        if (!connected.has(key)) {
+          const fi: FloatingGateInput = { ref: ref, pinId: pins[pi] };
+          floatingInputs.push(fi);
+        }
+      }
+    }
+    if (floatingInputs.length === 0) {
+      return 0;
+    }
+    let floatIdx = 0;
+    const swDevs = topo.deviceList.filter(d => (d.libDevId ?? '').toUpperCase().indexOf('SW_') === 0);
+    for (let si = 0; si < swDevs.length; si++) {
+      if (floatIdx >= floatingInputs.length) {
+        break;
+      }
+      const swRef = swDevs[si].refName ?? '';
+      const swU = swRef.toUpperCase();
+      let netPin1 = -1;
+      let netPin2 = -1;
+      for (let ni = 0; ni < plan.nets.length; ni++) {
+        const conns = plan.nets[ni].connections ?? [];
+        for (let ci = 0; ci < conns.length; ci++) {
+          const c = conns[ci];
+          if ((c.compRef ?? '').toUpperCase() !== swU) {
+            continue;
+          }
+          const pid = (c.pinId ?? c.pinName ?? '').toUpperCase();
+          if (pid === '1' || pid === 'A') {
+            netPin1 = ni;
+          } else if (pid === '2' || pid === 'B') {
+            netPin2 = ni;
+          }
+        }
+      }
+      if (netPin1 < 0 || netPin2 < 0 || netPin1 === netPin2) {
+        continue;
+      }
+      const n1 = (plan.nets[netPin1].name ?? '').toUpperCase();
+      const n2 = (plan.nets[netPin2].name ?? '').toUpperCase();
+      const p1Vcc = NetPlanExecutor.isVccFamilyNetName(n1);
+      const p1Gnd = NetPlanExecutor.isGndFamilyNetName(n1);
+      const p2Vcc = NetPlanExecutor.isVccFamilyNetName(n2);
+      const p2Gnd = NetPlanExecutor.isGndFamilyNetName(n2);
+      const railShort = (p1Vcc && p2Gnd) || (p1Gnd && p2Vcc);
+      if (!railShort) {
+        continue;
+      }
+      const vccNetIdx = p1Vcc ? netPin1 : netPin2;
+      const vccPinId = p1Vcc ? '1' : '2';
+      const gate = floatingInputs[floatIdx++];
+      // 从 VCC 网摘掉该 SW 脚
+      const vccNet = plan.nets[vccNetIdx];
+      vccNet.connections = (vccNet.connections ?? []).filter(c => {
+        if ((c.compRef ?? '').toUpperCase() !== swU) {
+          return true;
+        }
+        const pid = (c.pinId ?? c.pinName ?? '').toUpperCase();
+        return pid !== vccPinId && pid !== (vccPinId === '1' ? 'A' : 'B');
+      });
+      const sigName = `INPUT_${String.fromCharCode(65 + Math.min(si, 25))}`;
+      const swConn: NetPlanConnection = {
+        compRef: swRef,
+        pinId: vccPinId,
+        pinName: vccPinId,
+        mode: 'joinByLabel'
+      };
+      const gateConn: NetPlanConnection = {
+        compRef: gate.ref,
+        pinId: gate.pinId,
+        pinName: gate.pinId,
+        mode: 'joinByLabel'
+      };
+      const fresh: NetPlanEntry = {
+        name: sigName,
+        type: 'signal',
+        connections: [swConn, gateConn]
+      };
+      plan.nets.push(fresh);
+      connected.add(pinKey(swConn));
+      connected.add(pinKey(gateConn));
+      fixes += 2;
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_PIPE] heal_sw_rail_short ${swRef}.${vccPinId} off power → ${sigName}` +
+        ` + ${gate.ref}.${gate.pinId}`);
+    }
+    if (fixes > 0) {
+      plan.nets = plan.nets.filter(n => (n.connections ?? []).length > 0);
+    }
     return fixes;
   }
 

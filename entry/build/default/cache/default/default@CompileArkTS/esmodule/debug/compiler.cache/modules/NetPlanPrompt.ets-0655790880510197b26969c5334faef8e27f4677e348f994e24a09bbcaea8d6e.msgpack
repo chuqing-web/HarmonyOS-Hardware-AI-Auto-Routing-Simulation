@@ -1,4 +1,4 @@
-�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��,�export const NET_PLAN_PROMPT = {
+�r@��assertions�code�customTransformCache�dependencies�id�meta�moduleSideEffects�originalCode�originalSourcemap�resolvedIds�sourcemapChain�syntheticNamedExports�transformDependencies�transformFiles�cacheAst�rA��/Oexport const NET_PLAN_PROMPT = {
     id: 'net_plan_v6',
     version: '6.0.0',
     system: `你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
@@ -76,10 +76,19 @@
    - EA(8051) → VCC
    - 晶振 XTAL → OSC_IN/OSC_OUT + 22pF×2→GND（全部用导线最短路径）
 
+6b. 数字逻辑门(74HC*) + 按键输入铁律:
+   - 芯片 VCC(14)→VCC 网，GND(7)→GND 网；输入 A=1、B=2、输出 Y=3（非门 A=1 Y=2）
+   - 【硬】每个逻辑输入必须入独立信号网（如 INPUT_A），禁止浮空
+   - 【硬】SW_PUSH 作门输入：INPUT_A 含 SW1.1 + U1.1；SW1.2→GND（可另加 R 上拉到 VCC）
+   - 【硬】禁止同一按键一端接 VCC、另一端接 GND（按下=电源短路）
+   - 【硬】一脚只能属一网：禁止 SW.1 同时出现在 GND 与 INPUT_A
+   - 输出驱 LED: Y→R→LED.A，LED.K→GND
+
 7. LED 驱动规则:
    - LED 阳极(A) → 限流电阻 → VCC 或 MCU GPIO / 继电器触点支路
    - LED 阴极(K) → GND 或继电器 NC/NO（禁止把 K 接到 VCC；禁止短路任一 LED）
    - 每个 LED 必须串联限流电阻(至少220Ω)；N 颗 LED 用 N 颗不同电阻（用唯一 refDes 如 R1/R2）
+   - 【数字门输出驱 LED】门 Y(脚3)→R_330→LED.A，LED.K→GND；禁止 Y 直短电源
    - 【强制】开/闭互斥双色指示（存在 RELAY_SPDT + ≥2 LED）必须按触点拓扑，禁止 SW_PUSH 当 SPDT:
      * 线圈: VCC→SW_PUSH.1 → SW_PUSH.2→RELAY.1 ，RELAY.2→GND
      * COM→GND
@@ -181,7 +190,7 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 
 请根据以上信息输出完整 netPlan JSON。现在立即只输出 JSON，不要任何其它文字：`
 };
-//# sourceMappingURL=NetPlanPrompt.js.map�`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\NetPlanPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/NetPlanPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���,�/**
+//# sourceMappingURL=NetPlanPrompt.js.map�`C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\NetPlanPrompt.ets�rB��moduleName�isLocalDependency�isNodeEntryFile�pkgPath�belongProjectPath�pkgName�pkgVersion�dependencyPkgInfo�hostModulesInfo�belongModulePath�shouldEmitJs�ai_engine���/C:\Projects\ElecDraw_Harmony\features\ai_engine�C:\Projects\ElecDraw_Harmony�ai_engine�1.0.0�rC��pkgName�pkgVersion�ai_engine�1.0.0��rD��hostDependencyName�hostModuleName�./templates/NetPlanPrompt�ai_engine�/C:\Projects\ElecDraw_Harmony\features\ai_engine���/�/**
  * net_plan — 同步自 skill/prompts/03_net_plan.md
  */
 import { PromptTemplate } from '../PromptTypes';
@@ -264,10 +273,19 @@ export const NET_PLAN_PROMPT: PromptTemplate = {
    - EA(8051) → VCC
    - 晶振 XTAL → OSC_IN/OSC_OUT + 22pF×2→GND（全部用导线最短路径）
 
+6b. 数字逻辑门(74HC*) + 按键输入铁律:
+   - 芯片 VCC(14)→VCC 网，GND(7)→GND 网；输入 A=1、B=2、输出 Y=3（非门 A=1 Y=2）
+   - 【硬】每个逻辑输入必须入独立信号网（如 INPUT_A），禁止浮空
+   - 【硬】SW_PUSH 作门输入：INPUT_A 含 SW1.1 + U1.1；SW1.2→GND（可另加 R 上拉到 VCC）
+   - 【硬】禁止同一按键一端接 VCC、另一端接 GND（按下=电源短路）
+   - 【硬】一脚只能属一网：禁止 SW.1 同时出现在 GND 与 INPUT_A
+   - 输出驱 LED: Y→R→LED.A，LED.K→GND
+
 7. LED 驱动规则:
    - LED 阳极(A) → 限流电阻 → VCC 或 MCU GPIO / 继电器触点支路
    - LED 阴极(K) → GND 或继电器 NC/NO（禁止把 K 接到 VCC；禁止短路任一 LED）
    - 每个 LED 必须串联限流电阻(至少220Ω)；N 颗 LED 用 N 颗不同电阻（用唯一 refDes 如 R1/R2）
+   - 【数字门输出驱 LED】门 Y(脚3)→R_330→LED.A，LED.K→GND；禁止 Y 直短电源
    - 【强制】开/闭互斥双色指示（存在 RELAY_SPDT + ≥2 LED）必须按触点拓扑，禁止 SW_PUSH 当 SPDT:
      * 线圈: VCC→SW_PUSH.1 → SW_PUSH.2→RELAY.1 ，RELAY.2→GND
      * COM→GND
@@ -369,10 +387,10 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
 
 请根据以上信息输出完整 netPlan JSON。现在立即只输出 JSON，不要任何其它文字：`
 };
-�A��rE��version�file�sourceRoot�sources�names�mappings�NetPlanPrompt.js���NetPlanPrompt.ets�� ���   � � � � � /�� � � � �� � 	� � �� �
+�A��rE��version�file�sourceRoot�sources�names�mappings�NetPlanPrompt.js���NetPlanPrompt.ets�� ���   � � � � � /�� � � � �� � 	� � �� �
  � 
-������������������������������������������������������������������������������������������������������������������������������������������������������������������������G ̮�G�� ̯� ̯� ̯������������0 ̺0�� ̻� ̻�rF��version�file�sources�sourcesContent�names�mappings������� ���    ��   ��   ��   ��   ��   ��   ��   ��   ��  	 ��  
- ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > ��  ? ��  �@ ��  �A ��  �B ��  �C ��  �D ��  �E ��  �F ��  �G ��  �H ��  �I ��  �J ��  �K ��  �L ��  �M ��  �N ��  �O ��  �P ��  �Q ��  �R ��  �S ��  �T ��  �U ��  �V ��  �W ��  �X ��  �Y ��  �Z ��  �[ ��  �\ ��  �] ��  �^ ��  �_ ��  �` ��  �a ��  �b ��  �c ��  �d ��  �e ��  �f ��  �g ��  �h ��  �i ��  �j ��  �k ��  �l ��  �m ��  �n ��  �o ��  �p ��  �q ��  �r ��  �s ��  �t ��  �u ��  �v ��  �w ��  �x ��  �y ��  �z ��  �{ ��  �| ��  �} ��  �~ ��  � ��  ̀ ��  ́ ��  ̂ ��  ̃ ��  ̄ ��  ̅ ��  ̆ ��  ̇ ��  ̈ ��  ̉ ��  ̊ ��  ̋ ��  ̌ ��  ̍ ��  ̎ ��  ̏ ��  ̐ ��  ̑ ��  ̒ ��  ̓ ��  ̔ ��  ̕ ��  ̖ ��  ̗ ��  ̘ ��  ̙ ��  ̚ ��  ̛ ��  ̜ ��  ̝ ��  ̞ ��  ̟ ��  ̠ ��  ̡ ��  ̢ ��  ̣ ��  ̤ ��  ̥ ��  ̦ ��  ̧ ��  ̨ ��  ̩ ��  ̪ ��  ̫ ��  ̬ ��  ̭ ��  ̮ ��  ̯ ��  ̰ ��  ̱ ��  ̲ ��  ̳ ��  ̴ ��  ̵ ��  ̶ ��  ̷ �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration �q�rJ��type�start�end�declarations�kind�VariableDeclaration�q��rK��type�start�end�id�init�VariableDeclarator�p�rL��type�start�end�name�Identifier�NET_PLAN_PROMPT�rM��type�start�end�properties�ObjectExpression�p��rN��type�start�end�method�shorthand�computed�key�value�kind�Property&7���L�Identifier&(�id�rO��type�start�end�value�raw�Literal*7�net_plan_v6�'net_plan_v6'�initN�Property>�N���L�Identifier>�E�versionO�Literal�G�N�6.0.0�'6.0.0'�initN�Property�U�����L�Identifier�U�[�system�rP��type�start�end�expressions�quasis�TemplateLiteral�]�����rQ��type�start�end�value�tail�TemplateElement�^���rR��raw�cooked�*�你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
+���������������������������������������������������������������������������������������������������������������������������������������������������������������������������������G ̷�G�� ̸� ̸� ̸������������0 ��0�� ��� ���rF��version�file�sources�sourcesContent�names�mappings������� ���    ��   ��   ��   ��   ��   ��   ��   ��   ��  	 ��  
+ ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��   ��    ��  ! ��  " ��  # ��  $ ��  % ��  & ��  ' ��  ( ��  ) ��  * ��  + ��  , ��  - ��  . ��  / ��  0 ��  1 ��  2 ��  3 ��  4 ��  5 ��  6 ��  7 ��  8 ��  9 ��  : ��  ; ��  < ��  = ��  > ��  ? ��  �@ ��  �A ��  �B ��  �C ��  �D ��  �E ��  �F ��  �G ��  �H ��  �I ��  �J ��  �K ��  �L ��  �M ��  �N ��  �O ��  �P ��  �Q ��  �R ��  �S ��  �T ��  �U ��  �V ��  �W ��  �X ��  �Y ��  �Z ��  �[ ��  �\ ��  �] ��  �^ ��  �_ ��  �` ��  �a ��  �b ��  �c ��  �d ��  �e ��  �f ��  �g ��  �h ��  �i ��  �j ��  �k ��  �l ��  �m ��  �n ��  �o ��  �p ��  �q ��  �r ��  �s ��  �t ��  �u ��  �v ��  �w ��  �x ��  �y ��  �z ��  �{ ��  �| ��  �} ��  �~ ��  � ��  ̀ ��  ́ ��  ̂ ��  ̃ ��  ̄ ��  ̅ ��  ̆ ��  ̇ ��  ̈ ��  ̉ ��  ̊ ��  ̋ ��  ̌ ��  ̍ ��  ̎ ��  ̏ ��  ̐ ��  ̑ ��  ̒ ��  ̓ ��  ̔ ��  ̕ ��  ̖ ��  ̗ ��  ̘ ��  ̙ ��  ̚ ��  ̛ ��  ̜ ��  ̝ ��  ̞ ��  ̟ ��  ̠ ��  ̡ ��  ̢ ��  ̣ ��  ̤ ��  ̥ ��  ̦ ��  ̧ ��  ̨ ��  ̩ ��  ̪ ��  ̫ ��  ̬ ��  ̭ ��  ̮ ��  ̯ ��  ̰ ��  ̱ ��  ̲ ��  ̳ ��  ̴ ��  ̵ ��  ̶ ��  ̷ ��  ̸ ��  ̹ ��  ̺ ��  ̻ ��  ̼ ��  ̽ ��  ̾ ��  ̿ ��  �� �rG��missing�pluginægenAbc�  �rH��dynamicImportCache�exportAllDeclarationCache�exportNamedDeclarationCache�importCache����rI��type�start�end�declaration�specifiers�source�ExportNamedDeclaration ���rJ��type�start�end�declarations�kind�VariableDeclaration���rK��type�start�end�id�init�VariableDeclarator���rL��type�start�end�name�Identifier�NET_PLAN_PROMPT�rM��type�start�end�properties�ObjectExpression���rN��type�start�end�method�shorthand�computed�key�value�kind�Property&7���L�Identifier&(�id�rO��type�start�end�value�raw�Literal*7�net_plan_v6�'net_plan_v6'�initN�Property>�N���L�Identifier>�E�versionO�Literal�G�N�6.0.0�'6.0.0'�initN�Property�U�����L�Identifier�U�[�system�rP��type�start�end�expressions�quasis�TemplateLiteral�]�����rQ��type�start�end�value�tail�TemplateElement�^���rR��raw�cooked�-7你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
 
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
@@ -447,10 +465,19 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    - EA(8051) → VCC
    - 晶振 XTAL → OSC_IN/OSC_OUT + 22pF×2→GND（全部用导线最短路径）
 
+6b. 数字逻辑门(74HC*) + 按键输入铁律:
+   - 芯片 VCC(14)→VCC 网，GND(7)→GND 网；输入 A=1、B=2、输出 Y=3（非门 A=1 Y=2）
+   - 【硬】每个逻辑输入必须入独立信号网（如 INPUT_A），禁止浮空
+   - 【硬】SW_PUSH 作门输入：INPUT_A 含 SW1.1 + U1.1；SW1.2→GND（可另加 R 上拉到 VCC）
+   - 【硬】禁止同一按键一端接 VCC、另一端接 GND（按下=电源短路）
+   - 【硬】一脚只能属一网：禁止 SW.1 同时出现在 GND 与 INPUT_A
+   - 输出驱 LED: Y→R→LED.A，LED.K→GND
+
 7. LED 驱动规则:
    - LED 阳极(A) → 限流电阻 → VCC 或 MCU GPIO / 继电器触点支路
    - LED 阴极(K) → GND 或继电器 NC/NO（禁止把 K 接到 VCC；禁止短路任一 LED）
    - 每个 LED 必须串联限流电阻(至少220Ω)；N 颗 LED 用 N 颗不同电阻（用唯一 refDes 如 R1/R2）
+   - 【数字门输出驱 LED】门 Y(脚3)→R_330→LED.A，LED.K→GND；禁止 Y 直短电源
    - 【强制】开/闭互斥双色指示（存在 RELAY_SPDT + ≥2 LED）必须按触点拓扑，禁止 SW_PUSH 当 SPDT:
      * 线圈: VCC→SW_PUSH.1 → SW_PUSH.2→RELAY.1 ，RELAY.2→GND
      * COM→GND
@@ -538,7 +565,7 @@ wiringHints.forceLabel 列出需要标号管理的网络名（精确全名；禁
 【必须】routeStrategy — Key=网络名, Value="direct"|"avoid_cross"|"bus_style"
 
 MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
-仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？�*�你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
+仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？�-7你是原理图网络拓扑规划专家。根据已放置的器件列表，推理并输出完整的网络连接计划。
 
 你拥有所有器件的完整信息（ID、引脚精确世界坐标、选中区AABB）以及拥挤度分析数据，你的任务是：
 1. 分析电路结构，识别功能模块（分压链、MCU最小系统、LED支路、仪器测量回路等）
@@ -613,10 +640,19 @@ MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
    - EA(8051) → VCC
    - 晶振 XTAL → OSC_IN/OSC_OUT + 22pF×2→GND（全部用导线最短路径）
 
+6b. 数字逻辑门(74HC*) + 按键输入铁律:
+   - 芯片 VCC(14)→VCC 网，GND(7)→GND 网；输入 A=1、B=2、输出 Y=3（非门 A=1 Y=2）
+   - 【硬】每个逻辑输入必须入独立信号网（如 INPUT_A），禁止浮空
+   - 【硬】SW_PUSH 作门输入：INPUT_A 含 SW1.1 + U1.1；SW1.2→GND（可另加 R 上拉到 VCC）
+   - 【硬】禁止同一按键一端接 VCC、另一端接 GND（按下=电源短路）
+   - 【硬】一脚只能属一网：禁止 SW.1 同时出现在 GND 与 INPUT_A
+   - 输出驱 LED: Y→R→LED.A，LED.K→GND
+
 7. LED 驱动规则:
    - LED 阳极(A) → 限流电阻 → VCC 或 MCU GPIO / 继电器触点支路
    - LED 阴极(K) → GND 或继电器 NC/NO（禁止把 K 接到 VCC；禁止短路任一 LED）
    - 每个 LED 必须串联限流电阻(至少220Ω)；N 颗 LED 用 N 颗不同电阻（用唯一 refDes 如 R1/R2）
+   - 【数字门输出驱 LED】门 Y(脚3)→R_330→LED.A，LED.K→GND；禁止 Y 直短电源
    - 【强制】开/闭互斥双色指示（存在 RELAY_SPDT + ≥2 LED）必须按触点拓扑，禁止 SW_PUSH 当 SPDT:
      * 线圈: VCC→SW_PUSH.1 → SW_PUSH.2→RELAY.1 ，RELAY.2→GND
      * COM→GND
@@ -704,7 +740,7 @@ wiringHints.forceLabel 列出需要标号管理的网络名（精确全名；禁
 【必须】routeStrategy — Key=网络名, Value="direct"|"avoid_cross"|"bus_style"
 
 MCU 引脚 ID 必须使用提供的引脚列表中的实际 pinId。
-仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？äinitN�Property���m���L�Identifier�����userTemplateP�TemplateLiteral���m��Q�TemplateElement���lR�s用户需求：{{user_prompt}}
+仔细检查: 电流表 I+/I- 是否不同网？电压表是否分布在不同测量点对？每个 joinWired 是否都有 routeWaypoints？äinitN�Property������L�Identifier���userTemplateP�TemplateLiteral��向Q�TemplateElement���R�s用户需求：{{user_prompt}}
 
 === 已放置器件列表（含完整引脚信息与选中区AABB） ===
 {{device_detail}}
