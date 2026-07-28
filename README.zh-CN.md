@@ -53,7 +53,7 @@
 | 平台 | HarmonyOS NEXT 5.0+ / SDK API 12 |
 | 设备形态 | **2in1（主推）**、tablet、default |
 | 语言与 UI | ArkTS + ArkUI，Proteus 风格主题 |
-| 许可证 | Apache-2.0 |
+| 许可证 | [Apache-2.0](LICENSE) |
 
 ---
 
@@ -174,7 +174,18 @@ LLM 约束 JSON  →  Agent 阶段 + 本地算法引擎  →  SchTopology
 
 ### 4.4 虚拟仪器
 
-示波器（多通道、时基、触发、数学 / FFT、光标）、逻辑分析仪、万用表（四端 `V/A/OHM/COM`）、直流电压 / 电流表、功率计、频率计、信号源、UART 终端（含定时脚本）。
+示波器（CH1–4、时基、触发、数学 / FFT、光标）、逻辑分析仪、万用表（四端 `V/A/OHM/COM`）、直流电压 / 电流表、功率计、频率计、信号源、UART 终端（含定时脚本）。引擎位于 `features/instruments/.../engines/`；侧栏与原理图网络实时绑定，随仿真帧刷新。
+
+**示波器显示链路（现行）：**
+
+| 层级 | 行为 |
+|------|------|
+| 侧栏 | ROLL 写屏 → 滚动；按活信号自适应时基 / V/div；按时基截窗刷新（CRT 观感） |
+| 全历史 API | `getOscilloscopeWaveFull` / `captureWaveFullHistory` — 峰值保留导出整次仿真（不按时基截断） |
+| 放大弹窗 | 双击波形 → `InstrumentWaveExpandOverlay`：默认 **全览** 一次仿真，可缩放 / 平移看细节，「全览」复位 |
+| Canvas | `OscilloscopeWaveCanvas`：像素桶 min/max 包络；写屏阶段 NaN 空隙；`/div` 跟随当前可视窗 |
+
+电压 / 电流 / 频率表面板用内核高采样重建波形（避免 UI 环缓冲混叠），并共用同一放大弹窗做全程回看。
 
 <p align="center">
   <img src="./picture/instruments-1.png" alt="虚拟示波器波形示例" width="900">
@@ -348,7 +359,7 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | 分析 | 参数扫描、蒙特卡洛、噪声分析（高级能力受 `FeatureGate` 约束） |
 | 故障 | 枚举 9 类；引擎波形/批量扫描覆盖常用子集 |
 | 调试 | HEX 加载、地址/数据断点、单步、寄存器 / 内存、UART |
-| 仪器 | 波形实时刷新、协议解码、测量读数与网络绑定 |
+| 仪器 | 波形实时刷新、协议解码、表计↔网络绑定；示波器全历史放大 + 峰值保留滚动重采样 |
 | 线程 | 默认主线程预算泵；ThreadWorker 已实现但默认关闭 |
 
 ---
@@ -433,7 +444,8 @@ ElecDraw_Harmony/
 │   │   └── .../algorithms/agents/  # ★ 多 Agent 质量总线
 │   ├── ai_api_manager/          # 多厂商 API 与配额
 │   ├── file_persistence/        # 工程持久化 / 导入导出 / 协作
-│   ├── instruments/             # 虚拟仪器引擎
+│   ├── instruments/             # 虚拟仪器引擎 + IVirtualInstruments
+│   │   └── .../engines/         # 示波器 / LA / 表计 / 信号源 / UART …
 │   └── plugin_system/           # 插件沙箱
 ├── skill/                       # ★ AI 规则总纲 + Prompt 权威源
 │   ├── SKILL.md
@@ -452,10 +464,12 @@ ElecDraw_Harmony/
 └── oh-package.json5
 ```
 
+> **说明：** `entry/oh_modules/*` 为指向 `features/*` / `common` 的 junction——请改 `features/` 与 `common/` 源码，勿直接改 junction 副本。
+
 | 模块 | 职责摘要 |
 |------|----------|
-| `entry` | UI 壳层、业务编排、Worker 宿主、主题与快捷键 |
-| `common` | `SchTopology`、`ErrCode`、ERC、EventBus、License / FeatureGate、命名脚 / WAR 工具 |
+| `entry` | UI 壳层、业务编排、Worker 宿主、主题与快捷键；仪器面板与放大弹窗 |
+| `common` | `SchTopology`、`ErrCode`、ERC、EventBus、License / FeatureGate、命名脚 / WAR / 网络标号工具、`InstrumentTraceLog` |
 | `schematic_editor` | 编辑命令、图层、拓扑导入导出、仿真互锁、WireAutoRouter |
 | `component_library` | 内置目录、SVG 缓存、Proteus 别名 |
 | `simulation_kernel` | 三引擎 + 调度器 + 故障注入 + SpiceRunner |
@@ -463,12 +477,12 @@ ElecDraw_Harmony/
 | `ai_engine` | `AgentPipelineCoordinator`、PromptLoader、GA / WAR、模块并行、TeachingService |
 | `ai_api_manager` | 提供商、网络模式、配额仪表盘 |
 | `file_persistence` | `.schsim`、崩溃保护、导出、协作骨架 |
-| `instruments` | 各仪器引擎与绑定快照 |
+| `instruments` | `VirtualInstrumentsImpl`、示波器 / LA / 表计引擎、`getOscilloscopeWave` / `getOscilloscopeWaveFull` |
 | `plugin_system` | 插件生命周期与沙箱 |
 
 **Agent 模块**（`features/ai_engine/.../algorithms/agents/`）：`AgentPipelineCoordinator`、`CircuitBlackboard`、`RequirementsAgent`、`SelectAgent`、`LayoutAgent`、`NetAgent`、`RouteAgent`、`QaAgent`、`StageCritic`、`StageHooks`、`ModularModuleAgent`。
 
-**入口 UI 组件（节选）：** `SchematicCanvas`、`AppLeftPanel` / `AppRightPanel`、`AiSettingsPanel`、`McuDebugPanel`、`InstrumentPanel`、`FaultInjectionPanel`、`TeachingPanel`、`PlatformSettingsPanel`、示波器 / 逻辑分析仪波形画布等。
+**入口 UI 组件（节选）：** `SchematicCanvas`、`AppLeftPanel` / `AppRightPanel`、`AiSettingsPanel`、`McuDebugPanel`、`InstrumentPanel`、`InstrumentWaveExpandOverlay` / `InstrumentWaveExpandStore`、`OscilloscopeWaveCanvas`、`LogicAnalyzerWaveCanvas`、`FaultInjectionPanel`、`TeachingPanel`、`PlatformSettingsPanel` 等。
 
 ---
 
@@ -520,7 +534,7 @@ node tools/export-builtin-device-library.mjs
 1. **启动与界面** — Splash → Proteus 风格主界面，打开左侧器件库与导航。  
 2. **教学模板** — 加载 `lab_uart` / `lab_555_astable` 等，展示覆盖率与知识点。  
 3. **HEX 调试** — 烧录配套 HEX，运行仿真，虚拟串口收发 / 流水灯现象。  
-4. **仪器联动** — 打开 `lab_amp` / `lab_filter`，示波器观察运放或 RC 波形。  
+4. **仪器联动** — 打开 `lab_amp` / `lab_filter`，示波器观察波形；双击波形放大，**全览**整次仿真后再缩放 / 平移看细节。  
 5. **AI Prompt 闭环** — AI 面板输入「STM32 最小系统 + LED」；展示澄清（如有）/ 选型 / 布局 / 建网 / WAR / QA 与 ERC。  
 6. **模块并行（加分项）** — 复杂需求选「模块并行」，展示整体设计 → 并行子图 → joints 合并。  
 7. **自检 / 故障注入** — 跑 AI 自检，或注入电阻开路等对照波形 / 诊断。  
@@ -580,7 +594,8 @@ node tools/export-builtin-device-library.mjs
 
 ## 十五、许可证与声明
 
-- 软件许可证：**Apache-2.0**（见根目录 `oh-package.json5`）  
+- 软件许可证：**Apache-2.0** — 完整文本见根目录 [`LICENSE`](LICENSE)；并在 `oh-package.json5` 中声明  
+
 - 「Proteus」仅为能力对标与 UI 风格参考说明，与 Labcenter 无隶属关系  
 - 云端 AI 能力依赖第三方提供商服务条款与配额；离线可编辑、仿真与加载实验模板，**不**静默用模板冒充 AI 整图  
 

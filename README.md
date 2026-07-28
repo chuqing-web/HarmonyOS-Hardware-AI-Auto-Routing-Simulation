@@ -53,7 +53,7 @@ Electronics education and embedded prototyping still rely heavily on **Windows +
 | Platform | HarmonyOS NEXT 5.0+ / SDK API 12 |
 | Device types | **2in1 (primary)**, tablet, default |
 | Stack | ArkTS + ArkUI, Proteus-inspired theme |
-| License | Apache-2.0 |
+| License | [Apache-2.0](LICENSE) |
 
 ---
 
@@ -174,7 +174,18 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 
 ### 4.4 Virtual instruments
 
-Oscilloscope (multi-channel, timebase, trigger, math/FFT, cursors), logic analyzer, multimeter (four-terminal `V/A/OHM/COM`), DC volt/ammeter, power meter, frequency counter, signal generator, UART terminal (timed scripts).
+Oscilloscope (CH1–4, timebase, trigger, math/FFT, cursors), logic analyzer, multimeter (four-terminal `V/A/OHM/COM`), DC volt/ammeter, power meter, frequency counter, signal generator, UART terminal (timed scripts). Engines live under `features/instruments/.../engines/`; the side panel binds live nets and refreshes from sim frames.
+
+**Oscilloscope display path (current):**
+
+| Layer | Behavior |
+|-------|----------|
+| Side panel | ROLL write → scroll; auto timebase / V/div from live signal; windowed capture for CRT-style refresh |
+| Full-history API | `getOscilloscopeWaveFull` / `captureWaveFullHistory` — peak-preserved export of the whole run (not timebase-clipped) |
+| Expand overlay | Double-click a wave → `InstrumentWaveExpandOverlay`: default **fit-all** for one simulation, zoom/pan for detail, “全览” reset |
+| Canvas | `OscilloscopeWaveCanvas`: min/max envelope per pixel; NaN gaps during write-fill; `/div` follows the visible window |
+
+Volt/ammeter/frequency panels rebuild high-rate waves from kernel samples (avoid UI-ring aliasing) and share the same expand overlay for full-span review.
 
 <p align="center">
   <img src="./picture/instruments-1.png" alt="Virtual oscilloscope waveform example" width="900">
@@ -348,7 +359,7 @@ Provider templates cover Doubao, Tongyi, DeepSeek, Wenxin, Zhipu, Kimi, OpenAI, 
 | Analysis | Parameter scan, Monte Carlo, noise analysis (`FeatureGate`-gated) |
 | Faults | 9 enum types; wave/batch engines cover a common subset |
 | Debug | HEX load, address/data breakpoints, stepping, registers/memory, UART |
-| Instruments | Live waves, protocol decode, meter readings bound to nets |
+| Instruments | Live waves, protocol decode, meter↔net binding; scope full-history expand + peak-preserve roll resample |
 | Threading | Default main-thread budget pump; ThreadWorker implemented but off by default |
 
 ---
@@ -433,7 +444,8 @@ ElecDraw_Harmony/
 │   │   └── .../algorithms/agents/  # ★ Multi-agent quality bus
 │   ├── ai_api_manager/          # Multi-vendor API & quotas
 │   ├── file_persistence/        # Projects / import-export / collab
-│   ├── instruments/             # Virtual instrument engines
+│   ├── instruments/             # Virtual instrument engines + IVirtualInstruments
+│   │   └── .../engines/         # Oscilloscope / LA / meters / signal gen / UART …
 │   └── plugin_system/           # Plugin sandbox
 ├── skill/                       # ★ AI rule book + Prompt authority
 │   ├── SKILL.md
@@ -452,10 +464,12 @@ ElecDraw_Harmony/
 └── oh-package.json5
 ```
 
+> **Note:** `entry/oh_modules/*` are junctions into `features/*` / `common`—edit sources under `features/` and `common/`, not the junction copies.
+
 | Module | Role |
 |--------|------|
-| `entry` | UI shell, orchestration, worker host, theme & shortcuts |
-| `common` | `SchTopology`, `ErrCode`, ERC, EventBus, License / FeatureGate, named pins / WAR utils |
+| `entry` | UI shell, orchestration, worker host, theme & shortcuts; instrument panels & expand overlay |
+| `common` | `SchTopology`, `ErrCode`, ERC, EventBus, License / FeatureGate, named pins / WAR / net-label utils, `InstrumentTraceLog` |
 | `schematic_editor` | Edit commands, layers, topology I/O, sim interlock, WireAutoRouter |
 | `component_library` | Built-in catalog, SVG cache, Proteus aliases |
 | `simulation_kernel` | Three engines + scheduler + fault injection + SpiceRunner |
@@ -463,12 +477,12 @@ ElecDraw_Harmony/
 | `ai_engine` | `AgentPipelineCoordinator`, PromptLoader, GA / WAR, modular parallel, TeachingService |
 | `ai_api_manager` | Providers, network modes, quota dashboard |
 | `file_persistence` | `.schsim`, crash guard, export, collab skeleton |
-| `instruments` | Instrument engines & binding snapshots |
+| `instruments` | `VirtualInstrumentsImpl`, scope/LA/meter engines, `getOscilloscopeWave` / `getOscilloscopeWaveFull` |
 | `plugin_system` | Plugin lifecycle & sandbox |
 
 **Agent modules** (`features/ai_engine/.../algorithms/agents/`): `AgentPipelineCoordinator`, `CircuitBlackboard`, `RequirementsAgent`, `SelectAgent`, `LayoutAgent`, `NetAgent`, `RouteAgent`, `QaAgent`, `StageCritic`, `StageHooks`, `ModularModuleAgent`.
 
-**Selected UI components:** `SchematicCanvas`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, oscilloscope / LA wave canvases, and more.
+**Selected UI components:** `SchematicCanvas`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `InstrumentWaveExpandOverlay` / `InstrumentWaveExpandStore`, `OscilloscopeWaveCanvas`, `LogicAnalyzerWaveCanvas`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, and more.
 
 ---
 
@@ -520,7 +534,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 1. **Launch & shell** — Splash → Proteus-style main UI; library & navigator.  
 2. **Teaching template** — Load `lab_uart` / `lab_555_astable`; show coverage and tips.  
 3. **HEX debug** — Burn companion HEX, run sim, UART echo / LED chase.  
-4. **Instruments** — Open `lab_amp` / `lab_filter`; observe op-amp or RC on the scope.  
+4. **Instruments** — Open `lab_amp` / `lab_filter`; observe on the scope; double-click the wave to expand and **fit-all** one full simulation run, then zoom/pan for detail.  
 5. **AI Prompt loop** — Prompt “STM32 min-system + LED”; show clarify (if any) / select / layout / net-plan / WAR / QA and ERC.  
 6. **Modular parallel (bonus)** — Complex request with “modular”; show plan → parallel sub-gens → joint merge.  
 7. **Self-check / fault injection** — Run AI self-check, or inject resistor-open and compare waves / diagnosis.  
@@ -580,7 +594,8 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 
 ## 15. License & Notices
 
-- License: **Apache-2.0** (see root `oh-package.json5`)  
+- License: **Apache-2.0** — full text in root [`LICENSE`](LICENSE); also declared in `oh-package.json5`  
+
 - “Proteus” is used only as a capability/UI reference; no affiliation with Labcenter  
 - Cloud AI depends on third-party terms and quotas; offline edit/sim/lab templates are available—**no** silent template posing as AI full-gen  
 
