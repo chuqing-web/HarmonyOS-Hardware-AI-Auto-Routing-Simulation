@@ -7,6 +7,7 @@
  */
 import { Point2D } from '../types/CommonTypes';
 import { DeviceHitGeometry, WorldHitRect } from './DeviceHitGeometry';
+import { MainThreadYield } from './MainThreadYield';
 
 /** WAR 预览 / 落线路径结果（与编辑器 ISchematicEditor 对齐） */
 export interface WirePathPreviewResult {
@@ -64,10 +65,19 @@ interface WarNode {
 }
 
 export class WireAutoRouter {
-  /** 落线 A* 上限（原 5000/1800 在模拟器主线程可卡数秒；配合 WAR 段间 yield） */
-  private static readonly MAX_STEPS: number = 1200;
+  /**
+   * 同步 A* 步数上限。再大时单段可占满主线程触发 THREAD_BLOCK_3S/6S；
+   * AI/WAR 生产路径请用 previewWirePathAsync（步内 yield）。
+   */
+  private static readonly MAX_STEPS: number = 640;
+  /** 异步 A* 可搜更远，靠 yield 喂 watchdog */
+  private static readonly MAX_STEPS_ASYNC: number = 1600;
   /** open 表过大时提前放弃，避免 O(n²) 选最小 f 卡死 */
-  private static readonly MAX_OPEN: number = 1600;
+  private static readonly MAX_OPEN: number = 1200;
+  /** 同步 A* 墙钟上限（ms）— 超时即放弃，避免单次 uv_timer 内卡死 */
+  private static readonly ASTAR_WALL_MS: number = 60;
+  /** 异步 A* 每 N 步让出主线程 */
+  private static readonly ASTAR_YIELD_EVERY: number = 24;
   /** 转角惩罚 K：拐点优先于长度（原理图美观） */
   private static readonly TURN_COST_K: number = 12;
   /** 禁行矩形相对选中区再外扩的安全间隙（网格倍数） */
@@ -145,6 +155,83 @@ export class WireAutoRouter {
 
     const simplified = WireAutoRouter.simplifyCollinear(routed);
     // 简化后再次硬校验（防共线合并改变几何）
+    if (!WireAutoRouter.pathHardClear(simplified, ctx)) {
+      return fail;
+    }
+
+    const ok: WirePathPreviewResult = {
+      points: simplified,
+      autoCorrected: autoCorrected,
+      blocked: false
+    };
+    return ok;
+  }
+
+  /**
+   * AI/WAR 落线入口：段内 A* 协作让出，避免 THREAD_BLOCK_3S/6S。
+   * UI 动态预览仍用 previewWirePath（previewLite / 短墙钟）。
+   */
+  static async previewWirePathAsync(
+    waypoints: Point2D[], ctx: WarRouteContext
+  ): Promise<WirePathPreviewResult> {
+    const fail: WirePathPreviewResult = {
+      points: [],
+      autoCorrected: false,
+      blocked: true
+    };
+    if (waypoints.length < 2) {
+      return fail;
+    }
+    const anchors = WireAutoRouter.snapAnchors(waypoints, ctx.gridSize);
+    if (anchors.length < 2) {
+      return fail;
+    }
+    if (!WireAutoRouter.anchorsOutsideForeignHits(anchors, ctx)) {
+      return fail;
+    }
+
+    let autoCorrected = false;
+    const out: Point2D[] = [];
+    out.push({ x: anchors[0].x, y: anchors[0].y });
+
+    for (let i = 0; i < anchors.length - 1; i++) {
+      if (i > 0) {
+        await MainThreadYield.yield();
+      }
+      const a = anchors[i];
+      const b = anchors[i + 1];
+      const seg = await WireAutoRouter.routeSegmentAsync(a, b, ctx);
+      if (seg.blocked || seg.points.length < 2) {
+        return fail;
+      }
+      if (seg.autoCorrected) {
+        autoCorrected = true;
+      }
+      if (!WireAutoRouter.pathHardClear(seg.points, ctx)) {
+        return fail;
+      }
+      for (let j = 1; j < seg.points.length; j++) {
+        out.push({ x: seg.points[j].x, y: seg.points[j].y });
+      }
+    }
+
+    const sealed = WireAutoRouter.sealEndpoints(out, waypoints[0], waypoints[waypoints.length - 1], ctx);
+    if (sealed === null || sealed.length < 2) {
+      return fail;
+    }
+    if (!WireAutoRouter.pathHardClear(sealed, ctx)) {
+      return fail;
+    }
+    if (!WireAutoRouter.isFullyOrthogonal(sealed)) {
+      return fail;
+    }
+
+    let routed = WireAutoRouter.ensurePinLeadOut(sealed, ctx);
+    if (routed === null) {
+      routed = sealed;
+    }
+
+    const simplified = WireAutoRouter.simplifyCollinear(routed);
     if (!WireAutoRouter.pathHardClear(simplified, ctx)) {
       return fail;
     }
@@ -338,6 +425,112 @@ export class WireAutoRouter {
     }
 
     // 绝不回退到穿障 L
+    return fail;
+  }
+
+  /** 异步段路由：A* 步内让出；U/逃逸几何候选与同步版相同 */
+  private static async routeSegmentAsync(from: Point2D, to: Point2D, ctx: WarRouteContext):
+    Promise<WirePathPreviewResult> {
+    const fail: WirePathPreviewResult = { points: [], autoCorrected: false, blocked: true };
+    const midH: Point2D = { x: to.x, y: from.y };
+    const midV: Point2D = { x: from.x, y: to.y };
+    const pathH: Point2D[] = WireAutoRouter.dedupe([from, midH, to]);
+    const pathV: Point2D[] = WireAutoRouter.dedupe([from, midV, to]);
+
+    const clearH = WireAutoRouter.pathHardClear(pathH, ctx);
+    const clearV = WireAutoRouter.pathHardClear(pathV, ctx);
+
+    if (clearH || clearV) {
+      let chosen = pathH;
+      if (clearH && clearV) {
+        const scoreH = WireAutoRouter.escapeAlignScore(pathH, from, to, ctx);
+        const scoreV = WireAutoRouter.escapeAlignScore(pathV, from, to, ctx);
+        if (scoreV > scoreH + 0.5) {
+          chosen = pathV;
+        } else if (scoreH > scoreV + 0.5) {
+          chosen = pathH;
+        } else {
+          const turnsH = WireAutoRouter.countTurns(pathH);
+          const turnsV = WireAutoRouter.countTurns(pathV);
+          if (turnsV < turnsH) {
+            chosen = pathV;
+          } else if (turnsH < turnsV) {
+            chosen = pathH;
+          } else {
+            chosen = WireAutoRouter.pathLength(pathV) < WireAutoRouter.pathLength(pathH)
+              ? pathV : pathH;
+          }
+        }
+      } else if (clearV) {
+        chosen = pathV;
+      }
+      const ok: WirePathPreviewResult = {
+        points: chosen,
+        autoCorrected: false,
+        blocked: false
+      };
+      return ok;
+    }
+
+    if (!ctx.warEnabled) {
+      return fail;
+    }
+
+    if (ctx.previewLite) {
+      return WireAutoRouter.routeSegment(from, to, ctx);
+    }
+
+    const astar = await WireAutoRouter.astarRectilinearAsync(from, to, ctx);
+    if (astar.length >= 2 && WireAutoRouter.pathHardClear(astar, ctx)) {
+      const found: WirePathPreviewResult = {
+        points: astar,
+        autoCorrected: true,
+        blocked: false
+      };
+      return found;
+    }
+
+    const g = Math.max(1, ctx.gridSize);
+    const margins = [g * 3, g * 5, g * 8, g * 12, g * 16, g * 20];
+    for (let mi = 0; mi < margins.length; mi++) {
+      const margin = margins[mi];
+      const detours: Point2D[][] = [
+        [from, { x: from.x, y: from.y - margin }, { x: to.x, y: from.y - margin }, to],
+        [from, { x: from.x, y: from.y + margin }, { x: to.x, y: from.y + margin }, to],
+        [from, { x: from.x - margin, y: from.y }, { x: from.x - margin, y: to.y }, to],
+        [from, { x: from.x + margin, y: from.y }, { x: from.x + margin, y: to.y }, to]
+      ];
+      for (let di = 0; di < detours.length; di++) {
+        const d = WireAutoRouter.dedupe(detours[di]);
+        if (WireAutoRouter.pathHardClear(d, ctx) && WireAutoRouter.isFullyOrthogonal(d)) {
+          const u: WirePathPreviewResult = {
+            points: d,
+            autoCorrected: true,
+            blocked: false
+          };
+          return u;
+        }
+      }
+    }
+
+    const escapeDetours = WireAutoRouter.buildEscapeDetourCandidates(from, to, ctx, margins);
+    for (let di = 0; di < escapeDetours.length; di++) {
+      if ((di & 3) === 3) {
+        await MainThreadYield.yield();
+      }
+      const d = WireAutoRouter.dedupe(escapeDetours[di]);
+      if (d.length >= 2 &&
+        WireAutoRouter.pathHardClear(d, ctx) &&
+        WireAutoRouter.isFullyOrthogonal(d)) {
+        const u: WirePathPreviewResult = {
+          points: d,
+          autoCorrected: true,
+          blocked: false
+        };
+        return u;
+      }
+    }
+
     return fail;
   }
 
@@ -732,9 +925,14 @@ export class WireAutoRouter {
     let steps = 0;
     let found: WarNode | null = null;
     const dirs: number[][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const wallT0 = Date.now();
 
     while (open.length > 0 && steps < WireAutoRouter.MAX_STEPS) {
       if (open.length > WireAutoRouter.MAX_OPEN) {
+        break;
+      }
+      if (steps > 0 && (steps & 31) === 0 &&
+        (Date.now() - wallT0) > WireAutoRouter.ASTAR_WALL_MS) {
         break;
       }
       let bestIdx = 0;
@@ -785,6 +983,157 @@ export class WireAutoRouter {
         }
         if ((isStart || isGoal) && WireAutoRouter.cellHardBlocked(wx, wy, ctx, true)) {
           // 端点格：仅当完全不可达（非走廊且非端点邻域）才拒
+          if (!WireAutoRouter.nearEndpoint(wx, wy, from, to, g)) {
+            continue;
+          }
+        }
+
+        const fromW: Point2D = { x: cur.gx * g, y: cur.gy * g };
+        const toW: Point2D = { x: wx, y: wy };
+        if (!WireAutoRouter.segmentHardClear(fromW, toW, ctx)) {
+          continue;
+        }
+
+        let stepCost = 1;
+        if (cur.dir >= 0 && cur.dir !== di) {
+          stepCost += WireAutoRouter.TURN_COST_K;
+        }
+
+        const tentativeG = cur.g + stepCost;
+        const existingIdx = openMap.get(nkey);
+        if (existingIdx !== undefined && existingIdx < open.length &&
+          open[existingIdx].gx === ngx && open[existingIdx].gy === ngy &&
+          open[existingIdx].g <= tentativeG) {
+          continue;
+        }
+
+        const h = Math.abs(egx - ngx) + Math.abs(egy - ngy);
+        const node: WarNode = {
+          gx: ngx, gy: ngy, g: tentativeG, f: tentativeG + h,
+          parent: cur, dir: di
+        };
+        if (existingIdx !== undefined && existingIdx < open.length &&
+          open[existingIdx].gx === ngx && open[existingIdx].gy === ngy) {
+          open[existingIdx] = node;
+        } else {
+          openMap.set(nkey, open.length);
+          open.push(node);
+        }
+      }
+    }
+
+    if (found === null) {
+      return [];
+    }
+
+    const gridPath: Point2D[] = [];
+    let walk: WarNode | null = found;
+    while (walk !== null) {
+      gridPath.push({ x: walk.gx * g, y: walk.gy * g });
+      walk = walk.parent;
+    }
+    gridPath.reverse();
+    if (gridPath.length === 0) {
+      return [];
+    }
+    const sealed = WireAutoRouter.sealEndpoints(gridPath, from, to, ctx);
+    return sealed !== null ? sealed : [];
+  }
+
+  /** 异步正交 A*：步内 yield，供 AI WAR 落线 */
+  private static async astarRectilinearAsync(
+    from: Point2D, to: Point2D, ctx: WarRouteContext
+  ): Promise<Point2D[]> {
+    const g = Math.max(1, ctx.gridSize);
+    const sgx = Math.round(from.x / g);
+    const sgy = Math.round(from.y / g);
+    const egx = Math.round(to.x / g);
+    const egy = Math.round(to.y / g);
+    if (sgx === egx && sgy === egy) {
+      const direct: Point2D[] = [from, to];
+      if (WireAutoRouter.pathHardClear(direct, ctx)) {
+        return direct;
+      }
+      return [];
+    }
+
+    const pad = Math.min(36, Math.max(16, Math.ceil(Math.abs(egx - sgx) + Math.abs(egy - sgy)) + 10));
+    const minGx = Math.min(sgx, egx) - pad;
+    const maxGx = Math.max(sgx, egx) + pad;
+    const minGy = Math.min(sgy, egy) - pad;
+    const maxGy = Math.max(sgy, egy) + pad;
+
+    const open: WarNode[] = [];
+    const openMap = new Map<string, number>();
+    const closed = new Set<string>();
+
+    const start: WarNode = {
+      gx: sgx, gy: sgy, g: 0,
+      f: Math.abs(egx - sgx) + Math.abs(egy - sgy),
+      parent: null,
+      dir: -1
+    };
+    open.push(start);
+    openMap.set(`${sgx},${sgy}`, 0);
+
+    let steps = 0;
+    let found: WarNode | null = null;
+    const dirs: number[][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    while (open.length > 0 && steps < WireAutoRouter.MAX_STEPS_ASYNC) {
+      if (open.length > WireAutoRouter.MAX_OPEN) {
+        break;
+      }
+      if (steps > 0 && steps % WireAutoRouter.ASTAR_YIELD_EVERY === 0) {
+        await MainThreadYield.yield();
+      }
+      let bestIdx = 0;
+      for (let i = 1; i < open.length; i++) {
+        if (open[i].f < open[bestIdx].f) {
+          bestIdx = i;
+        }
+      }
+      const cur = open[bestIdx];
+      openMap.delete(`${cur.gx},${cur.gy}`);
+      if (bestIdx === open.length - 1) {
+        open.pop();
+      } else {
+        const moved = open[open.length - 1];
+        open[bestIdx] = moved;
+        open.pop();
+        openMap.set(`${moved.gx},${moved.gy}`, bestIdx);
+      }
+
+      const ckey = `${cur.gx},${cur.gy}`;
+      if (closed.has(ckey)) {
+        continue;
+      }
+      closed.add(ckey);
+      steps++;
+
+      if (cur.gx === egx && cur.gy === egy) {
+        found = cur;
+        break;
+      }
+
+      for (let di = 0; di < 4; di++) {
+        const ngx = cur.gx + dirs[di][0];
+        const ngy = cur.gy + dirs[di][1];
+        if (ngx < minGx || ngx > maxGx || ngy < minGy || ngy > maxGy) {
+          continue;
+        }
+        const nkey = `${ngx},${ngy}`;
+        if (closed.has(nkey)) {
+          continue;
+        }
+        const wx = ngx * g;
+        const wy = ngy * g;
+        const isGoal = ngx === egx && ngy === egy;
+        const isStart = ngx === sgx && ngy === sgy;
+        if (!isStart && !isGoal && WireAutoRouter.cellHardBlocked(wx, wy, ctx, false)) {
+          continue;
+        }
+        if ((isStart || isGoal) && WireAutoRouter.cellHardBlocked(wx, wy, ctx, true)) {
           if (!WireAutoRouter.nearEndpoint(wx, wy, from, to, g)) {
             continue;
           }

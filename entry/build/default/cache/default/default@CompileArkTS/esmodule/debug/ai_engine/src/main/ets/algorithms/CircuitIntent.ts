@@ -814,7 +814,8 @@ export function refineCircuitIntent(prompt: string, out: DeviceSelectLlmOutput, 
     }
     if (!intent.timer555Monostable && !intent.timer555Astable &&
         (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt)))) {
-        if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0) {
+        if (!intent.needsOpAmpIntegrator && prompt.indexOf('积分') < 0 &&
+            prompt.indexOf('微分') < 0 && prompt.indexOf('运放') < 0) {
             intent.seriesRcCharge = true;
             intent.relayContactTopo = false;
             intent.mutualLedIndicator = false;
@@ -850,7 +851,12 @@ export function refineCircuitIntent(prompt: string, out: DeviceSelectLlmOutput, 
         m.indexOf('UA741') >= 0 || m.indexOf('TL082') >= 0 || m.indexOf('LM741') >= 0);
     if (hasOp) {
         intent.needsOpAmpFeedback = true;
+        // 有源模拟拓扑禁止串联 RC 充放电配方（会误加 SW、拆毁微分/积分反馈）
+        intent.seriesRcCharge = false;
         pushReason(intent, 'opamp_bom');
+    }
+    if (intent.needsSignalGen || intent.dualSupply) {
+        intent.seriesRcCharge = false;
     }
     if (isHysteresisComparatorPrompt(prompt) ||
         (hasOp && intent.needsSignalGen && (prompt.indexOf('整形') >= 0 ||

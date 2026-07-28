@@ -360,7 +360,8 @@ export enum ErcRuleType {
     POWER_REVERSED = "power_reversed",
     IO_OVERCURRENT = "io_overcurrent",
     PARAM_MISMATCH = "param_mismatch",
-    PORT_MISMATCH = "port_mismatch"
+    PORT_MISMATCH = "port_mismatch",
+    LABEL_OVER_DEVICE = "label_over_device"
 }
 export interface ErcViolation {
     id: string;

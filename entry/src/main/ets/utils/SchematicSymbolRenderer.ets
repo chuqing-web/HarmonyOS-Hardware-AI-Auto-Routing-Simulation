@@ -31,6 +31,12 @@ export interface SymbolDrawStyle {
 }
 
 export class SchematicSymbolRenderer {
+  /** Pin-dot circles in DeviceLibrary SVGs are typically r≤2; notch/bubbles are larger. */
+  private static readonly SVG_PIN_DOT_R_MAX: number = 2.5;
+  /** Inner SVG body frame inset from meta pin tips (outer shell hosts pins). */
+  private static readonly SVG_INNER_BODY_INSET: number = 10;
+  private static svgCacheBusted: boolean = false;
+
   static drawComponent(
     ctx: CanvasRenderingContext2D,
     originX: number,
@@ -136,12 +142,6 @@ export class SchematicSymbolRenderer {
     const isIcType = key === 'counter' || key === 'mcu_8051' || key === 'mcu_stm32' ||
       key === 'memory' || key === 'generic_ic' || key === 'timer555';
 
-    // For IC-type components, always draw the body backdrop first so the border
-    // is visible even when SVG content exists (device-library components)
-    if (isIcType) {
-      SchematicSymbolRenderer.drawIcBody(ctx, def.pins, def.name);
-    }
-
     // Procedural symbols: pin geometry must match BuiltinComponents / templates.
     // DeviceLibrary Common/*.svg must not override these (wrong scale / mis-keyed files).
     const skipSvg = key === 'led' || key === 'diode' || key === 'resistor' ||
@@ -154,11 +154,23 @@ export class SchematicSymbolRenderer {
       key === 'uart_terminal' || key === 'power_meter' || key === 'freq_counter' ||
       key === 'signal_gen';
     if (!skipSvg && def.svgSymbol.length > 20 && def.svgSymbol.indexOf('<') >= 0) {
+      if (!SchematicSymbolRenderer.svgCacheBusted) {
+        SvgSymbolCache.clear();
+        SchematicSymbolRenderer.svgCacheBusted = true;
+      }
       const cmds = SvgSymbolCache.preload(def.id, def.svgSymbol);
       if (cmds.length > 0) {
-        SchematicSymbolRenderer.drawSvgCommands(ctx, cmds);
+        // Outer shell + pins come from canvas backdrop / drawPins.
+        // SVG keeps only inner decoration (inset body, notch) — never pin stubs.
+        const bodyCmds = SchematicSymbolRenderer.stripSvgPinCommands(cmds, def.pins);
+        SchematicSymbolRenderer.drawSvgCommands(ctx, bodyCmds);
         return;
       }
+    }
+
+    // No usable SVG: procedural IC body (canvas backdrop may still draw outer shell)
+    if (isIcType) {
+      SchematicSymbolRenderer.drawIcBody(ctx, def.pins, def.name);
     }
 
     switch (key) {
@@ -1299,22 +1311,8 @@ export class SchematicSymbolRenderer {
       ctx.moveTo(ext.x, ext.y);
       ctx.lineTo(px, py);
       ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = strokeColor;
-      ctx.fill();
-      ctx.stroke();
-      if (pin.type === PinType.POWER) {
-        ctx.fillStyle = ProteusColors.POWER;
-        ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (pin.type === PinType.GROUND) {
-        ctx.fillStyle = ProteusColors.GROUND;
-        ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // KiCad-ish 电气类型端点标记（颜色/形状），便于 ERC 目视核对
+      SchematicSymbolRenderer.drawPinTypeMarker(ctx, px, py, pin.type, strokeColor);
       // Draw pin number/label at extension point
       if (showLabels) {
         // 少脚器件优先显示功能名（IN/OUT/GND），避免与位号叠数字且更易读
@@ -1339,6 +1337,119 @@ export class SchematicSymbolRenderer {
         ctx.textBaseline = 'alphabetic';
       }
     }
+  }
+
+  /** 引脚电气类型端点：Out=方、In=圆、BiDi=菱、Power/Gnd=色点、OC=三角、Passive=小圆 */
+  private static drawPinTypeMarker(
+    ctx: CanvasRenderingContext2D, px: number, py: number, type: PinType, strokeColor: string
+  ): void {
+    const r = 2.5;
+    ctx.lineWidth = 1;
+    if (type === PinType.POWER) {
+      ctx.fillStyle = ProteusColors.POWER;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (type === PinType.GROUND) {
+      ctx.fillStyle = ProteusColors.GROUND;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (type === PinType.OUTPUT) {
+      ctx.fillStyle = strokeColor;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+      return;
+    }
+    if (type === PinType.BIDIRECTIONAL) {
+      ctx.fillStyle = strokeColor;
+      ctx.beginPath();
+      ctx.moveTo(px, py - r);
+      ctx.lineTo(px + r, py);
+      ctx.lineTo(px, py + r);
+      ctx.lineTo(px - r, py);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+    if (type === PinType.OPEN_COLLECTOR) {
+      ctx.strokeStyle = strokeColor;
+      ctx.fillStyle = ProteusColors.CANVAS_BG;
+      ctx.beginPath();
+      ctx.moveTo(px, py - r);
+      ctx.lineTo(px + r, py + r);
+      ctx.lineTo(px - r, py + r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+    if (type === PinType.ANALOG) {
+      ctx.strokeStyle = ProteusColors.ANALOG;
+      ctx.fillStyle = ProteusColors.CANVAS_BG;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      return;
+    }
+    // INPUT / PASSIVE：实心圆
+    ctx.fillStyle = strokeColor;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /**
+   * SVG must not host pins. Meta pins + outer shell (canvas backdrop / drawPins) are authoritative.
+   * - Drop all SVG lines (pin stubs in DeviceLibrary symbols)
+   * - Drop small pin-dot circles
+   * - Collapse body rects to one inset frame inside pin tips (inner box, no pins)
+   */
+  private static stripSvgPinCommands(cmds: DrawCommand[], pins: Pin[]): DrawCommand[] {
+    if (pins.length === 0 || cmds.length === 0) {
+      return cmds;
+    }
+    const rMax = SchematicSymbolRenderer.SVG_PIN_DOT_R_MAX;
+    const inset = SchematicSymbolRenderer.SVG_INNER_BODY_INSET;
+    const pinBounds = calcSymbolBounds(pins, 0);
+    const inner = calcSymbolBounds(pins, -inset);
+    const useInnerBody = pins.length >= 3 || pinBounds.width >= 50 || pinBounds.height >= 40;
+    const out: DrawCommand[] = [];
+    let emittedInnerRect = false;
+    for (let i = 0; i < cmds.length; i++) {
+      const c = cmds[i];
+      if (c.type === 'line') {
+        continue;
+      }
+      if (c.type === 'circle' && c.r !== undefined && c.r <= rMax) {
+        continue;
+      }
+      if (c.type === 'rect' && useInnerBody) {
+        if (emittedInnerRect) {
+          continue;
+        }
+        if (inner.width < 8 || inner.height < 8) {
+          continue;
+        }
+        const insetRect: DrawCommand = {
+          type: 'rect',
+          x: inner.minX,
+          y: inner.minY,
+          w: inner.width,
+          h: inner.height,
+          strokeWidth: c.strokeWidth ?? 1.2
+        };
+        out.push(insetRect);
+        emittedInnerRect = true;
+        continue;
+      }
+      out.push(c);
+    }
+    return out;
   }
 
   /** SVG 里常见的黑/近黑描边在深色画布上不可见 → 映射到主题描边色 */

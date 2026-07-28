@@ -1,5 +1,6 @@
 /**
  * 仪器波形全屏放大弹窗 — 示波器 / 逻辑仪 / 电压表 / 电流表 / 频率计
+ * 时域默认铺满一次仿真全历史；可放大细节并平移回看。
  */
 import { ProteusClassicBtn } from './proteus/ProteusWidgets';
 import { ProteusColors } from '../theme/ProteusTheme';
@@ -39,9 +40,17 @@ export struct InstrumentWaveExpandOverlay {
   @State private viewPanSec: number = 0;
   private panStartSec: number = 0;
   private pinchStartZoom: number = 1;
+  /** 打开后已做过「铺满全历史」；实时刷新不再强行复位缩放 */
+  private viewBootstrapped: boolean = false;
+  /** 处于全览跟随时：仿真历史变长仍铺满全程 */
+  private followFullOverview: boolean = true;
 
   aboutToAppear(): void {
+    this.viewBootstrapped = false;
+    this.followFullOverview = true;
     this.pullFromStore();
+    this.resetView();
+    this.viewBootstrapped = true;
   }
 
   onRefreshTick(): void {
@@ -75,7 +84,12 @@ export struct InstrumentWaveExpandOverlay {
       chCopy.push(s.channelData[i].slice());
     }
     this.channelData = chCopy;
-    this.viewPanSec = this.clampPan(this.viewPanSec);
+    if (this.viewBootstrapped && this.followFullOverview) {
+      this.viewZoom = this.getFitZoom();
+      this.viewPanSec = 0;
+    } else {
+      this.viewPanSec = this.clampPan(this.viewPanSec);
+    }
   }
 
   private close(): void {
@@ -83,16 +97,51 @@ export struct InstrumentWaveExpandOverlay {
     this.onClose();
   }
 
-  private getWindowSpan(): number {
-    return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
-  }
-
-  private getMaxPanSec(): number {
+  /** 有效有限样点的历史跨度（忽略写屏 NaN） */
+  private getHistorySpan(): number {
     const n = Math.min(this.timeData.length, this.voltageData.length);
     if (n < 2) {
       return 0;
     }
-    const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
+    let tFirst = Number.NaN;
+    let tLast = Number.NaN;
+    for (let i = 0; i < n; i++) {
+      if (Number.isFinite(this.timeData[i]) && Number.isFinite(this.voltageData[i])) {
+        tFirst = this.timeData[i];
+        break;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      if (Number.isFinite(this.timeData[i]) && Number.isFinite(this.voltageData[i])) {
+        tLast = this.timeData[i];
+        break;
+      }
+    }
+    if (!Number.isFinite(tFirst) || !Number.isFinite(tLast)) {
+      return 0;
+    }
+    return Math.max(tLast - tFirst, 0);
+  }
+
+  /** 铺满全历史所需缩放（≤1）；历史短于时基窗时为 1 */
+  private getFitZoom(): number {
+    if (this.freqDomain) {
+      return 1;
+    }
+    const hist = this.getHistorySpan();
+    const base = Math.max(this.tPerDiv * 10, 1e-12);
+    if (hist <= base + 1e-15) {
+      return 1;
+    }
+    return Math.max(base / hist, 0.01);
+  }
+
+  private getWindowSpan(): number {
+    return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.01), 1e-12);
+  }
+
+  private getMaxPanSec(): number {
+    const hist = this.getHistorySpan();
     return Math.max(hist - this.getWindowSpan(), 0);
   }
 
@@ -109,14 +158,20 @@ export struct InstrumentWaveExpandOverlay {
   }
 
   private applyZoom(z: number): void {
+    const fit = this.getFitZoom();
     let next = z;
-    if (next < 0.25) {
-      next = 0.25;
+    // 允许缩小到刚好铺满全历史；放大上限 32×
+    if (next < fit) {
+      next = fit;
     }
-    if (next > 16) {
-      next = 16;
+    if (next < 0.01) {
+      next = 0.01;
+    }
+    if (next > 32) {
+      next = 32;
     }
     this.viewZoom = next;
+    this.followFullOverview = next <= fit * 1.001;
     this.viewPanSec = this.clampPan(this.viewPanSec);
   }
 
@@ -129,12 +184,15 @@ export struct InstrumentWaveExpandOverlay {
   }
 
   private resetView(): void {
-    this.viewZoom = 1;
+    // 复位 = 铺满一次仿真全历史（而非仅时基窗）
+    this.followFullOverview = true;
+    this.viewZoom = this.getFitZoom();
     this.viewPanSec = 0;
   }
 
   private panByFraction(frac: number): void {
     const span = this.getWindowSpan();
+    this.followFullOverview = false;
     this.viewPanSec = this.clampPan(this.viewPanSec + frac * span);
   }
 
@@ -142,6 +200,7 @@ export struct InstrumentWaveExpandOverlay {
     // 滑杆左=历史(回看)，右=最新(跟随)
     const maxPan = this.getMaxPanSec();
     const t = Math.max(0, Math.min(1000, norm)) / 1000;
+    this.followFullOverview = false;
     this.viewPanSec = this.clampPan((1 - t) * maxPan);
   }
 
@@ -231,13 +290,13 @@ export struct InstrumentWaveExpandOverlay {
               }
             })
             ProteusClassicBtn({
-              label: '复位',
+              label: '全览',
               widthVal: 56,
               onAction: () => {
                 this.resetView();
               }
             })
-            Text(`×${this.viewZoom.toFixed(1)}  pan=${this.viewPanSec.toExponential(1)}s`)
+            Text(`×${this.viewZoom.toFixed(2)}  span=${this.getHistorySpan().toExponential(1)}s`)
               .fontSize(12)
               .fontColor(ProteusColors.TEXT_SECONDARY)
               .fontFamily('monospace')
@@ -321,6 +380,7 @@ export struct InstrumentWaveExpandOverlay {
                       const span = this.getWindowSpan();
                       // 右拖看更新（减小 pan）；左拖看历史（增大 pan）
                       const deltaSec = (-e.offsetX / 360) * span;
+                      this.followFullOverview = false;
                       this.viewPanSec = this.clampPan(this.panStartSec + deltaSec);
                     })
                 )
@@ -355,7 +415,7 @@ export struct InstrumentWaveExpandOverlay {
 
             Text(this.kind === 'la'
               ? '逻辑波形'
-              : '滚轮缩放 · 底部滑杆左右平移 · 亦可拖动/双指缩放')
+              : '默认全览整次仿真 · 滚轮/双指缩放细节 · 滑杆或拖动平移')
               .fontSize(12)
               .fontColor(ProteusColors.TEXT_SECONDARY)
               .width('100%')

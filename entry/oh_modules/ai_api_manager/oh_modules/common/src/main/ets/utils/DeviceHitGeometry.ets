@@ -33,6 +33,14 @@ export interface LabelPlaceHints {
   labelClearance?: number;
 }
 
+/** 网络标号锚点（收集旗标选中区 / WAR 障碍用） */
+export interface NetLabelAnchorInfo {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+}
+
 export interface WorldHitRect {
   x: number;
   y: number;
@@ -295,10 +303,70 @@ export class DeviceHitGeometry {
     return { x: pin.x, y: r.y + r.h + stubPad };
   }
 
+  /** 电源/地标号无旗标框，不参与旗标选中区/WAR 障碍 */
+  static isSignalNetLabelText(text: string): boolean {
+    const upper = (text ?? '').toUpperCase();
+    if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE') {
+      return false;
+    }
+    if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+      return false;
+    }
+    return true;
+  }
+
   /**
-   * 信号标号旗标框（与 SchematicCanvas.drawSignalNetLabel 对齐）。
+   * 信号标号旗标选中区（与 SchematicCanvas.drawSignalNetLabel 框同大）。
+   * 供点选命中与 WAR 硬障碍；勿再外扩 HIT_PAD。
+   */
+  static signalLabelFlagHitRect(anchor: Point2D, text: string,
+    expandLeft: boolean = false): WorldHitRect {
+    const t = (text ?? '').length > 0 ? text : 'NET';
+    const fontPx = 12;
+    const tw = Math.max(t.length * 7.0, 12);
+    const padX = 4;
+    const stubLen = 6;
+    const boxH = fontPx + 4;
+    const boxW = tw + padX * 2;
+    return {
+      x: expandLeft ? (anchor.x - stubLen - boxW) : (anchor.x + stubLen),
+      y: anchor.y - boxH / 2,
+      w: boxW,
+      h: boxH,
+      refName: t,
+      instUuid: '',
+      libDevId: 'NET_LABEL'
+    };
+  }
+
+  /**
+   * 收集信号网络标号旗标选中区（电源/地符号跳过）。
+   * wirePaths 用于推断旗标左右朝向。
+   */
+  static collectSignalLabelHitRects(
+    labels: NetLabelAnchorInfo[],
+    wirePaths: Point2D[][]
+  ): WorldHitRect[] {
+    const out: WorldHitRect[] = [];
+    for (let i = 0; i < labels.length; i++) {
+      const lb = labels[i];
+      if (!DeviceHitGeometry.isSignalNetLabelText(lb.text)) {
+        continue;
+      }
+      const anchor: Point2D = { x: lb.x, y: lb.y };
+      const expandLeft = DeviceHitGeometry.inferSignalLabelExpandLeft(anchor, wirePaths);
+      const r = DeviceHitGeometry.signalLabelFlagHitRect(anchor, lb.text, expandLeft);
+      r.instUuid = lb.id;
+      r.refName = lb.text;
+      out.push(r);
+    }
+    return out;
+  }
+
+  /**
+   * 信号标号旗标框（摆放避让用，略放大估宽，避免文字比估算更宽时压线）。
    * expandLeft=true：锚点左侧展开（导线从右侧接入时，避免旗标压住连接线）。
-   * 略放大估宽，避免文字实际比估算更宽时压线。
+   * WAR/点选请用 signalLabelFlagHitRect（与框同大）。
    */
   static estimateSignalLabelFlagRect(anchor: Point2D, text: string,
     expandLeft: boolean = false): WorldHitRect {

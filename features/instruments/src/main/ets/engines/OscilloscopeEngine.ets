@@ -17,6 +17,17 @@ interface HistoryEntry {
   voltages: Map<string, number>;
 }
 
+interface RawWavePick {
+  wave: WaveData;
+  source: string;
+  probeName: string;
+}
+
+interface PeakPackedWave {
+  timeAxis: number[];
+  voltageAxis: number[];
+}
+
 /** Result of autoAdjustToSignal — panel syncs Select indices from these. */
 export interface OscAutoScaleResult {
   changed: boolean;
@@ -28,6 +39,8 @@ export interface OscAutoScaleResult {
 
 const DIVISIONS = 10;
 const SAMPLE_POINTS = 1024;
+/** 放大弹窗 / 全历史导出：峰值保留后上限（过大拖垮 Canvas） */
+const FULL_HISTORY_MAX_POINTS = 4096;
 
 function getTimebaseSec(timebase: OscTimebase): number {
   switch (timebase) {
@@ -303,7 +316,23 @@ export class OscilloscopeEngine {
         times = matched.timeAxis;
         volts = matched.voltageAxis;
       }
-      if (times.length < 8 && this.historyBuffer.length >= 8) {
+      // 内核 Wave 若几乎是直流，改用 history 环估频（DisplayPump 帧采样常更能看见边沿）
+      let cacheVpp = 0;
+      if (times.length >= 8) {
+        let lo = volts[0];
+        let hi = volts[0];
+        const nn = Math.min(times.length, volts.length);
+        for (let i = 1; i < nn; i++) {
+          if (volts[i] < lo) {
+            lo = volts[i];
+          }
+          if (volts[i] > hi) {
+            hi = volts[i];
+          }
+        }
+        cacheVpp = hi - lo;
+      }
+      if ((times.length < 8 || cacheVpp < 1e-4) && this.historyBuffer.length >= 8) {
         const hist = this.buildWaveFromHistory(probeName, channel);
         if (hist.voltageAxis.length >= 8) {
           times = hist.timeAxis;
@@ -336,8 +365,15 @@ export class OscilloscopeEngine {
       ? (3.0 / freq)
       : OscilloscopeEngine.estimateActivitySpan(times, volts, n);
     wantWindow = Math.min(Math.max(wantWindow, 1e-8), 100);
-    // Never auto-pick a window the live buffer cannot fill
-    if (span > 1e-6) {
+    // AC：禁止用 span*0.95 把目标窗钳死。缓冲未盖满 3 周期时仍应对准频率选时基，
+    // 由 ROLL 写屏（左侧真实迹线 / 右侧空）逐步填满；否则永远停在过快时基，
+    // 看起来像「没有自动量程、也不会滚动」。
+    if (freq > 0.5) {
+      const onePeriod = 1.0 / freq;
+      if (span < onePeriod * 0.45) {
+        wantWindow = Math.min(wantWindow, Math.max(span * 1.5, onePeriod * 0.5, 1e-8));
+      }
+    } else if (span > 1e-6) {
       wantWindow = Math.min(wantWindow, span * 0.95);
     }
     const wantDiv = wantWindow / DIVISIONS;
@@ -374,28 +410,32 @@ export class OscilloscopeEngine {
       needVs = divsUsed < 2.0 || divsUsed > 9.5 || vpp < 1e-4;
     }
 
-    // Require two consecutive identical recommendations before applying
+    // Require two consecutive identical recommendations before applying.
+    // Exception: AC 严重欠采样（屏上不足半周期）立即切时基，否则写屏一直像直流。
+    const urgentZoomOut = needTb && periodsOnScreen > 0 && periodsOnScreen < 0.5;
     const key = `${channel}|${needTb ? nextTb : curTb}|${needVs ? nextVs : curVs}`;
-    if (key !== this.autoScalePendingKey) {
-      this.autoScalePendingKey = key;
-      this.autoScalePendingCount = 1;
-      return {
-        changed: false,
-        timebase: curTb,
-        voltageScale: curVs,
-        frequencyHz: freq,
-        vpp: vpp
-      };
-    }
-    this.autoScalePendingCount++;
-    if (this.autoScalePendingCount < 2) {
-      return {
-        changed: false,
-        timebase: curTb,
-        voltageScale: curVs,
-        frequencyHz: freq,
-        vpp: vpp
-      };
+    if (!urgentZoomOut) {
+      if (key !== this.autoScalePendingKey) {
+        this.autoScalePendingKey = key;
+        this.autoScalePendingCount = 1;
+        return {
+          changed: false,
+          timebase: curTb,
+          voltageScale: curVs,
+          frequencyHz: freq,
+          vpp: vpp
+        };
+      }
+      this.autoScalePendingCount++;
+      if (this.autoScalePendingCount < 2) {
+        return {
+          changed: false,
+          timebase: curTb,
+          voltageScale: curVs,
+          frequencyHz: freq,
+          vpp: vpp
+        };
+      }
     }
 
     let changed = false;
@@ -550,12 +590,14 @@ export class OscilloscopeEngine {
   getMathOp(): MathChannelOp { return this.mathOp; }
   getFftLogScale(): boolean { return this.fftLogScale; }
 
-  /** Capture waveform from real simulation data — 按时基截窗；禁止串台到 GND/其它网络 */
-  captureWave(channel: number = 0): WaveData {
+  /**
+   * 解析当前通道原始时域源（未按时基截窗）。
+   * 侧栏滚动用 prepareDisplayWave；放大弹窗用 prepareFullHistoryWave。
+   */
+  private resolveRawWave(channel: number): RawWavePick {
     const probeName = channel < this.channelProbes.length ? this.channelProbes[channel] : '';
-    // CH2+ without a bound probe must not steal CH1 nets / invent a second trace
     if (channel > 0 && probeName.length === 0) {
-      return this.makeFlatWave(channel);
+      return { wave: this.makeFlatWave(channel), source: 'flatDC', probeName: probeName };
     }
     let raw: WaveData | undefined = undefined;
     let source = 'flatDC';
@@ -604,8 +646,11 @@ export class OscilloscopeEngine {
       raw = this.makeEmptyWave(channel);
       source = 'noProbe';
     }
+    return { wave: raw, source: source, probeName: probeName };
+  }
 
-    const display = this.prepareDisplayWave(raw, channel);
+  private traceDisplayStats(channel: number, probeName: string, source: string,
+    raw: WaveData, display: WaveData): void {
     let lastV = 0;
     let minV = Number.POSITIVE_INFINITY;
     let maxV = Number.NEGATIVE_INFINITY;
@@ -635,7 +680,155 @@ export class OscilloscopeEngine {
       ? OscilloscopeEngine.estimateFreqLocal(raw.timeAxis, raw.voltageAxis, 0, rawN) : 0;
     traceCaptureWave(channel, probeName, source, display.voltageAxis.length, lastV,
       maxV - minV, rawSpan, estFreq, `${this.timebase}`);
+  }
+
+  /** Capture waveform from real simulation data — 按时基截窗；禁止串台到 GND/其它网络 */
+  captureWave(channel: number = 0): WaveData {
+    const pick = this.resolveRawWave(channel);
+    const display = this.prepareDisplayWave(pick.wave, channel);
+    this.traceDisplayStats(channel, pick.probeName, pick.source, pick.wave, display);
     return display;
+  }
+
+  /**
+   * 一次仿真全历史波形（不按时基截窗），峰值保留降采样。
+   * 供放大弹窗缩放/平移浏览整段仿真；FFT 模式仍走 captureFft。
+   */
+  captureWaveFullHistory(channel: number = 0): WaveData {
+    const pick = this.resolveRawWave(channel);
+    const display = this.prepareFullHistoryWave(pick.wave, channel);
+    this.traceDisplayStats(channel, pick.probeName, `full:${pick.source}`, pick.wave, display);
+    return display;
+  }
+
+  /**
+   * 全历史导出：保留绝对时间轴 + 耦合处理 + 峰值保留降采样。
+   * 写屏/滚动/停止后均可用，不截成时基窗。
+   */
+  private prepareFullHistoryWave(src: WaveData, channel: number): WaveData {
+    const n0 = Math.min(src.timeAxis.length, src.voltageAxis.length);
+    if (n0 < 2) {
+      return this.makeEmptyWave(channel);
+    }
+    let startIdx = 0;
+    for (let i = 1; i < n0; i++) {
+      if (!(src.timeAxis[i] > src.timeAxis[i - 1])) {
+        startIdx = i;
+      }
+    }
+    const times = startIdx > 0 ? src.timeAxis.slice(startIdx) : src.timeAxis.slice();
+    const volts = startIdx > 0 ? src.voltageAxis.slice(startIdx) : src.voltageAxis.slice();
+    const n = Math.min(times.length, volts.length);
+    if (n < 2) {
+      return this.makeEmptyWave(channel);
+    }
+
+    const coup = channel < this.coupling.length ? this.coupling[channel] : CouplingMode.DC;
+    if (coup === CouplingMode.AC) {
+      let sum = 0;
+      let cnt = 0;
+      for (let i = 0; i < n; i++) {
+        if (Number.isFinite(volts[i])) {
+          sum += volts[i];
+          cnt++;
+        }
+      }
+      const mean = cnt > 0 ? sum / cnt : 0;
+      for (let i = 0; i < n; i++) {
+        if (Number.isFinite(volts[i])) {
+          volts[i] = volts[i] - mean;
+        }
+      }
+    } else if (coup === CouplingMode.GND) {
+      for (let i = 0; i < n; i++) {
+        volts[i] = 0;
+      }
+    }
+
+    const cleaned = OscilloscopeEngine.despikeSeries(volts);
+    const packed = OscilloscopeEngine.peakPreserveDownsample(times, cleaned, FULL_HISTORY_MAX_POINTS);
+    const span = Math.max(packed.timeAxis[packed.timeAxis.length - 1] - packed.timeAxis[0], 1e-15);
+    return {
+      waveId: IdUtil.generate('osc'),
+      probeName: `CH${channel + 1}`,
+      netName: this.channelProbes[channel] ?? src.netName,
+      timeAxis: packed.timeAxis,
+      voltageAxis: packed.voltageAxis,
+      currentAxis: new Array(packed.timeAxis.length).fill(0),
+      sampleRate: packed.timeAxis.length / span,
+      waveType: 'voltage',
+      holdTime: span
+    };
+  }
+
+  /**
+   * 峰值保留降采样：每桶按时间顺序输出 min/max，避免窄脉冲/边沿在缩略时消失。
+   */
+  private static peakPreserveDownsample(times: number[], volts: number[],
+    maxPoints: number): PeakPackedWave {
+    const n = Math.min(times.length, volts.length);
+    const outT: number[] = [];
+    const outV: number[] = [];
+    if (n < 2) {
+      return { timeAxis: times.slice(0, n), voltageAxis: volts.slice(0, n) };
+    }
+    if (n <= maxPoints) {
+      for (let i = 0; i < n; i++) {
+        outT.push(times[i]);
+        outV.push(volts[i]);
+      }
+      return { timeAxis: outT, voltageAxis: outV };
+    }
+    // 每桶 2 点（min+max）→ 桶数 = maxPoints/2
+    const buckets = Math.max(1, Math.floor(maxPoints / 2));
+    for (let b = 0; b < buckets; b++) {
+      const i0 = Math.floor((b / buckets) * n);
+      const i1 = Math.min(n, Math.floor(((b + 1) / buckets) * n));
+      if (i1 <= i0) {
+        continue;
+      }
+      let iMin = -1;
+      let iMax = -1;
+      let vMin = Number.POSITIVE_INFINITY;
+      let vMax = Number.NEGATIVE_INFINITY;
+      for (let i = i0; i < i1; i++) {
+        const v = volts[i];
+        const t = times[i];
+        if (!Number.isFinite(v) || !Number.isFinite(t)) {
+          continue;
+        }
+        if (v < vMin) {
+          vMin = v;
+          iMin = i;
+        }
+        if (v > vMax) {
+          vMax = v;
+          iMax = i;
+        }
+      }
+      if (iMin < 0 || iMax < 0) {
+        continue;
+      }
+      if (iMin === iMax) {
+        outT.push(times[iMin]);
+        outV.push(volts[iMin]);
+      } else if (iMin < iMax) {
+        outT.push(times[iMin]);
+        outV.push(volts[iMin]);
+        outT.push(times[iMax]);
+        outV.push(volts[iMax]);
+      } else {
+        outT.push(times[iMax]);
+        outV.push(volts[iMax]);
+        outT.push(times[iMin]);
+        outV.push(volts[iMin]);
+      }
+    }
+    if (outT.length < 2) {
+      return { timeAxis: times.slice(0, Math.min(n, maxPoints)),
+        voltageAxis: volts.slice(0, Math.min(n, maxPoints)) };
+    }
+    return { timeAxis: outT, voltageAxis: outV };
   }
 
   /**
@@ -1071,8 +1264,10 @@ export class OscilloscopeEngine {
 
   /**
    * 滚动重采样：时间轴覆盖完整 [rollStart, rollStart+windowSec]。
-   * - filling=true（写屏阶段）：右侧尚未到达的时刻 hold 末样（禁止 NaN — 会把 UI 打成 last=NaNV / 空迹线）
+   * - filling=true（写屏阶段）：超过末样的右侧填 NaN，Canvas 跳过 → 迹线从左往右生长
+   *   （禁止 hold 末样：会把未写满区域刷成直流，自适应 Vpp≈0、看起来像不滚动）
    * - filling=false（滚动阶段）：窗内应有满历史，边界外 hold（不再左侧 NaN 留黑）
+   * 每显示样点在对应时间桶内取峰值（奇偶桶交替 min/max），避免窄脉冲被线性插值抹平。
    */
   private resampleWaveRoll(timeAxis: number[], voltageAxis: number[],
     channel: number, windowSec: number, rollStart: number, _rollEnd: number,
@@ -1089,18 +1284,49 @@ export class OscilloscopeEngine {
     const tData0 = timeAxis[0];
     const tDataN = timeAxis[n - 1];
     let j = 1;
+    const halfBin = span / Math.max(SAMPLE_POINTS - 1, 1) / 2;
     for (let i = 0; i < SAMPLE_POINTS; i++) {
       const fracI = SAMPLE_POINTS > 1 ? i / (SAMPLE_POINTS - 1) : 0;
       const tUse = rollStart + fracI * span;
       outTime.push(tUse);
-      // 写屏阶段：右侧 hold 末样，迹线从左往右“写满”而不是半屏黑洞
+      // 写屏阶段：右侧未到达时刻用 NaN，让 Canvas 只画已有历史
       if (filling && tUse > tDataN + 1e-15) {
-        rawOut.push(cleaned[n - 1]);
+        rawOut.push(Number.NaN);
         continue;
       }
       if (!filling && tUse < tData0 - 1e-15) {
         // 极端短缓冲兜底：贴齐首样，避免再出现半屏黑
         rawOut.push(cleaned[0]);
+        continue;
+      }
+      // 时间桶内峰值保留（比纯线性插值更能保住边沿/窄脉冲）
+      const tLo = tUse - halfBin;
+      const tHi = tUse + halfBin;
+      let peakMin = Number.POSITIVE_INFINITY;
+      let peakMax = Number.NEGATIVE_INFINITY;
+      let peakCnt = 0;
+      let scan = j > 0 ? j - 1 : 0;
+      while (scan < n && timeAxis[scan] < tLo) {
+        scan++;
+      }
+      let k = scan;
+      while (k < n && timeAxis[k] <= tHi) {
+        const v = cleaned[k];
+        if (Number.isFinite(v)) {
+          if (v < peakMin) {
+            peakMin = v;
+          }
+          if (v > peakMax) {
+            peakMax = v;
+          }
+          peakCnt++;
+        }
+        k++;
+      }
+      if (peakCnt > 0) {
+        // 奇偶桶交替输出 max/min，包络在相邻点间可见
+        rawOut.push((i & 1) === 0 ? peakMax : peakMin);
+        j = Math.max(j, k);
         continue;
       }
       let vi = cleaned[n - 1];
@@ -1127,14 +1353,17 @@ export class OscilloscopeEngine {
       }
       rawOut.push(vi);
     }
-    // 轻度三点平滑（全部为有限值时）
+    // 轻度三点平滑（全部为有限值时）；峰值桶跳过以免抹平包络
     const outVoltage: number[] = rawOut.slice();
     for (let i = 1; i < outVoltage.length - 1; i++) {
       const a = rawOut[i - 1];
       const b = rawOut[i];
       const c = rawOut[i + 1];
       if (Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c)) {
-        outVoltage[i] = (a + b + c) / 3;
+        const spread = Math.max(a, b, c) - Math.min(a, b, c);
+        if (spread < Math.max(Math.abs(b) * 0.05, 0.02)) {
+          outVoltage[i] = (a + b + c) / 3;
+        }
       }
     }
     return {

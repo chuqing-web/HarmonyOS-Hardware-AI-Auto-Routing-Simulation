@@ -45,6 +45,11 @@ export interface IVirtualInstruments {
   setCaptureMode(mode: CaptureMode): ApiResult<void>;
   setMathChannel(op: MathChannelOp, fftLogScale?: boolean): ApiResult<void>;
   getOscilloscopeWave(channel?: number): ApiResult<WaveData>;
+  /**
+   * 一次仿真全历史波形（不按时基截窗，峰值保留），供放大弹窗缩放/平移。
+   * FFT 模式下仍返回频谱。
+   */
+  getOscilloscopeWaveFull(channel?: number): ApiResult<WaveData>;
   exportWaveformSvg(channel: number, path: string): Promise<ApiResult<void>>;
 
   // ---- Logic Analyzer ----

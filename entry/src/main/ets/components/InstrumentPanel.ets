@@ -353,9 +353,33 @@ export struct InstrumentPanel {
   }
 
   private pushOscToStore(): void {
+    let time1 = this.waveTimeData;
+    let volt1 = this.waveVoltageData;
+    let time2 = this.waveCh2TimeData;
+    let volt2 = this.waveCh2Data;
+    // 放大弹窗需要整次仿真历史，不能只用侧栏时基截窗（否则缩放/平移看不到全程）
+    if (!this.oscFftMode) {
+      const full1 = this.appService.instruments.getOscilloscopeWaveFull(0);
+      if (full1.success && full1.data &&
+        InstrumentPanel.isDisplayableScopeWave(full1.data.netName, full1.data.probeName) &&
+        full1.data.voltageAxis.length >= 2) {
+        time1 = full1.data.timeAxis;
+        volt1 = full1.data.voltageAxis;
+      }
+      const full2 = this.appService.instruments.getOscilloscopeWaveFull(1);
+      if (full2.success && full2.data &&
+        InstrumentPanel.isDisplayableScopeWave(full2.data.netName, full2.data.probeName) &&
+        full2.data.voltageAxis.length >= 2) {
+        time2 = full2.data.timeAxis;
+        volt2 = full2.data.voltageAxis;
+      } else {
+        time2 = [];
+        volt2 = [];
+      }
+    }
     InstrumentWaveExpandStore.getInstance().setOscSnapshot(
-      this.waveTimeData, this.waveVoltageData,
-      this.waveCh2TimeData, this.waveCh2Data,
+      time1, volt1,
+      time2, volt2,
       this.oscFftMode ? 'FFT CH1' : 'CH1',
       this.oscFftMode ? '#ffab40' : '#00e676',
       this.oscFftMode ? 'FFT CH2' : 'CH2',
@@ -715,7 +739,9 @@ export struct InstrumentPanel {
         }
         if (hasScope) {
           const osc = this.appService.instruments.getOscilloscopeWave(0);
-          if (osc.success && osc.data && osc.data.voltageAxis.length >= 2 &&
+          const finite0 = osc.success && osc.data
+            ? InstrumentPanel.countFinite(osc.data.voltageAxis) : 0;
+          if (osc.success && osc.data && finite0 >= 2 &&
             InstrumentPanel.isDisplayableScopeWave(osc.data.netName, osc.data.probeName)) {
             this.oscFftMode = osc.data.waveType === 'freq' || osc.data.netName === 'MATH_FFT';
             this.waveTimeData = osc.data.timeAxis.slice();
@@ -728,7 +754,7 @@ export struct InstrumentPanel {
                 ? `${last.toFixed(1)} dB`
                 : `${last.toFixed(3)} V`;
             }
-            dataPath = `wave pts=${osc.data.voltageAxis.length}${this.oscFftMode ? ' fft' : ''}`;
+            dataPath = `wave pts=${finite0}${this.oscFftMode ? ' fft' : ''}`;
           } else {
             this.waveTimeData = [];
             this.waveVoltageData = [];
@@ -736,9 +762,10 @@ export struct InstrumentPanel {
             dataPath = 'wave_empty';
           }
           const osc2 = this.appService.instruments.getOscilloscopeWave(1);
-          if (osc2.success && osc2.data &&
-            InstrumentPanel.isDisplayableScopeWave(osc2.data.netName, osc2.data.probeName) &&
-            osc2.data.voltageAxis.length >= 2) {
+          const finite2 = osc2.success && osc2.data
+            ? InstrumentPanel.countFinite(osc2.data.voltageAxis) : 0;
+          if (osc2.success && osc2.data && finite2 >= 2 &&
+            InstrumentPanel.isDisplayableScopeWave(osc2.data.netName, osc2.data.probeName)) {
             this.waveCh2TimeData = osc2.data.timeAxis.slice();
             this.waveCh2Data = osc2.data.voltageAxis.slice();
           } else {
@@ -1217,9 +1244,11 @@ export struct InstrumentPanel {
   /** Sync panel Select + engine when 自适应 is on (freq / Vpp driven). */
   private applyOscAutoScale(): void {
     const r = this.appService.instruments.autoAdjustOscilloscope(0);
-    if (!r.success || r.data === undefined || !r.data.changed) {
+    if (!r.success || r.data === undefined) {
       return;
     }
+    // 始终把面板档位跟引擎对齐（含 hysteresis 未改时的当前档），
+    // 否则 Canvas tPerDiv 与引擎截窗不一致，看起来像「自适应不滚动」。
     const tbIdx = this.timebases.indexOf(r.data.timebase);
     if (tbIdx >= 0) {
       this.timebaseIdx = tbIdx;
@@ -1327,6 +1356,16 @@ export struct InstrumentPanel {
       }
     }
     return null;
+  }
+
+  private static countFinite(values: number[]): number {
+    let n = 0;
+    for (let i = 0; i < values.length; i++) {
+      if (Number.isFinite(values[i])) {
+        n++;
+      }
+    }
+    return n;
   }
 
   private updateOscStatsText(volts: number[], times: number[]): void {

@@ -56,6 +56,46 @@ export class WireConflictGeometry {
         }
         return 'none';
     }
+    /**
+     * 正交交叉点坐标；非正交交叉或不相交返回 null。
+     * 用于「交叉≠连接」：禁止把交叉点附近的无关端点吸并。
+     */
+    static orthogonalCrossPoint(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): Point2D | null {
+        if (WireConflictGeometry.segmentConflict(a1, a2, b1, b2) !== 'orthogonal_cross') {
+            return null;
+        }
+        const aVert = WireConflictGeometry.nearlyEq(a1.x, a2.x);
+        const aHoriz = WireConflictGeometry.nearlyEq(a1.y, a2.y);
+        const bVert = WireConflictGeometry.nearlyEq(b1.x, b2.x);
+        const bHoriz = WireConflictGeometry.nearlyEq(b1.y, b2.y);
+        if (aVert && bHoriz) {
+            return { x: a1.x, y: b1.y };
+        }
+        if (aHoriz && bVert) {
+            return { x: b1.x, y: a1.y };
+        }
+        // 斜线：取近似中点
+        return {
+            x: (a1.x + a2.x + b1.x + b2.x) / 4,
+            y: (a1.y + a2.y + b1.y + b2.y) / 4
+        };
+    }
+    /**
+     * 交叉点是否远离双方全部端点（真·中段穿越，非 T 接/共端点）。
+     */
+    static isMidspanCross(cross: Point2D, aEnds: Point2D[], bEnds: Point2D[], endTol: number = 3): boolean {
+        for (let i = 0; i < aEnds.length; i++) {
+            if (Math.hypot(cross.x - aEnds[i].x, cross.y - aEnds[i].y) <= endTol) {
+                return false;
+            }
+        }
+        for (let i = 0; i < bEnds.length; i++) {
+            if (Math.hypot(cross.x - bEnds[i].x, cross.y - bEnds[i].y) <= endTol) {
+                return false;
+            }
+        }
+        return true;
+    }
     /** 严格相交（端点共点不算冲突，避免 T 结误报） */
     private static segmentsProperIntersect(p1: Point2D, p2: Point2D, q1: Point2D, q2: Point2D): boolean {
         const o1 = WireConflictGeometry.orient(p1, p2, q1);

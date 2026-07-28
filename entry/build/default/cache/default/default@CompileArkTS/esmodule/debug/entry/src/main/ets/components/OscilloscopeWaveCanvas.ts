@@ -663,7 +663,7 @@ export class OscilloscopeWaveCanvas extends ViewPU {
         ctx.fillText(`T ${this.formatVoltage(this.triggerLevel)}`, Math.max(8, w - 88), y - 4);
     }
     /**
-     * 按时间窗映射 X（滚动显示）；窗内过密时每像素取中点。
+     * 按时间窗映射 X（滚动显示）；窗内过密时按像素桶输出 min/max 包络，保留尖峰。
      */
     private drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, n: number, i0: number, i1: number, tMin: number, tMax: number, vMin: number, vMax: number): void {
         const xs: number[] = [];
@@ -685,6 +685,7 @@ export class OscilloscopeWaveCanvas extends ViewPU {
             }
         }
         else {
+            // 每像素一桶：按时间顺序输出 min/max，避免中点抽样丢掉窄脉冲
             const buckets = Math.max(Math.floor(w), 64);
             for (let b = 0; b < buckets; b++) {
                 const iStart = lo + Math.floor((b / buckets) * count);
@@ -692,26 +693,46 @@ export class OscilloscopeWaveCanvas extends ViewPU {
                 if (iEnd <= iStart) {
                     continue;
                 }
-                const mid = iStart + ((iEnd - iStart) >> 1);
-                let v = this.voltageData[mid];
-                let t = this.timeData[mid];
-                if (!Number.isFinite(v) || !Number.isFinite(t)) {
-                    v = Number.NaN;
-                    t = Number.NaN;
-                    for (let i = iStart; i < iEnd; i++) {
-                        if (Number.isFinite(this.voltageData[i]) && Number.isFinite(this.timeData[i])) {
-                            v = this.voltageData[i];
-                            t = this.timeData[i];
-                            break;
-                        }
+                let iMin = -1;
+                let iMax = -1;
+                let vmin = Number.POSITIVE_INFINITY;
+                let vmax = Number.NEGATIVE_INFINITY;
+                for (let i = iStart; i < iEnd; i++) {
+                    const v = this.voltageData[i];
+                    const t = this.timeData[i];
+                    if (!Number.isFinite(v) || !Number.isFinite(t)) {
+                        continue;
+                    }
+                    if (v < vmin) {
+                        vmin = v;
+                        iMin = i;
+                    }
+                    if (v > vmax) {
+                        vmax = v;
+                        iMax = i;
                     }
                 }
-                if (!Number.isFinite(v) || !Number.isFinite(t)) {
+                if (iMin < 0 || iMax < 0) {
                     continue;
                 }
-                const x = ((t - tMin) / tSpan) * w;
-                xs.push(x);
-                ys.push(this.voltageToY(v, h, vMin, vMax));
+                const pushPt = (idx: number): void => {
+                    const v = this.voltageData[idx];
+                    const t = this.timeData[idx];
+                    const x = ((t - tMin) / tSpan) * w;
+                    xs.push(x);
+                    ys.push(this.voltageToY(v, h, vMin, vMax));
+                };
+                if (iMin === iMax) {
+                    pushPt(iMin);
+                }
+                else if (iMin < iMax) {
+                    pushPt(iMin);
+                    pushPt(iMax);
+                }
+                else {
+                    pushPt(iMax);
+                    pushPt(iMin);
+                }
             }
         }
         if (xs.length < 2) {
@@ -727,10 +748,29 @@ export class OscilloscopeWaveCanvas extends ViewPU {
         this.strokePolyline(ctx, xs, ys);
     }
     private strokePolyline(ctx: CanvasRenderingContext2D, xs: number[], ys: number[]): void {
+        if (xs.length < 2) {
+            return;
+        }
+        // 跳过写屏 NaN 造成的大间隙，避免把左缘迹线错误连到右缘
+        const gapX = Math.max(this.canvasW * 0.08, 12);
         ctx.beginPath();
-        ctx.moveTo(xs[0], ys[0]);
-        for (let i = 1; i < xs.length; i++) {
-            ctx.lineTo(xs[i], ys[i]);
+        let penDown = false;
+        let prevX = xs[0];
+        for (let i = 0; i < xs.length; i++) {
+            const x = xs[i];
+            const y = ys[i];
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                penDown = false;
+                continue;
+            }
+            if (!penDown || Math.abs(x - prevX) > gapX) {
+                ctx.moveTo(x, y);
+                penDown = true;
+            }
+            else {
+                ctx.lineTo(x, y);
+            }
+            prevX = x;
         }
         ctx.stroke();
     }
@@ -749,12 +789,12 @@ export class OscilloscopeWaveCanvas extends ViewPU {
             ctx.fillText(`${this.formatVoltage(vMax)}`, Math.max(8, w - 72), 16);
             ctx.fillText(`${this.formatVoltage(vMin)}`, Math.max(8, w - 72), h - 8);
         }
-        // 横轴：时域=秒窗；频域=Hz 窗
+        // 横轴：时域=秒窗；频域=Hz 窗（/div 跟当前可视窗，含缩放）
         const span = Math.max(tMax - tMin, 0);
+        const effectivePerDiv = span / this.cols;
         ctx.fillText(this.freqDomain ? this.formatFreq(tMin) : '0', 8, h - 8);
         ctx.fillText(this.freqDomain ? this.formatFreq(tMin + span / 2) : this.formatTime(span), w / 2 - 28, h - 8);
-        const perDiv = this.freqDomain ? Math.max(span / this.cols, 0) : this.tPerDiv;
-        ctx.fillText(this.freqDomain ? `${this.formatFreq(perDiv)}/div` : `${this.formatTime(this.tPerDiv)}/div`, Math.max(8, w - 88), h - 8);
+        ctx.fillText(this.freqDomain ? `${this.formatFreq(effectivePerDiv)}/div` : `${this.formatTime(effectivePerDiv)}/div`, Math.max(8, w - 88), h - 8);
         if (!this.showStats) {
             return;
         }

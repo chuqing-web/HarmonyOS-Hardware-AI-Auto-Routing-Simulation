@@ -1,5 +1,5 @@
 import { WireAutoRouter, DeviceHitGeometry, WIRE_OBSTACLE_PAD, IdUtil, makeRouteLine, Logger, INSTR_TRACE_TAG, traceAiWireDraw, traceAiWireFix, traceAiWireInventory, WarRouteOrder, MainThreadYield } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { SchTopology, RouteLine, Point2D, DeviceInst, NetInfo, Pin, NetLabelInfo, WarRouteContext, WarCompObstacle, WirePathPreviewResult, WorldHitRect, WarOrderPin } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { SchTopology, RouteLine, Point2D, DeviceInst, NetInfo, Pin, NetLabelInfo, ErcError, WarRouteContext, WarCompObstacle, WirePathPreviewResult, WorldHitRect, WarOrderPin, NetLabelAnchorInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PinWorldResolver";
 export interface WarRouteAdapterResult {
@@ -243,6 +243,18 @@ export class WarRouteAdapter {
                     demoted.push(net.netName || net.netUuid);
                     Logger.warn(INSTR_TRACE_TAG, `[AI_WIRE] WAR_DEMOTE_LABEL net=${net.netName} stubs=${stubN}` +
                         ` (geometry blocked → joinByLabel)`);
+                    // 可见 ERC 警告（软性，不挡质量门禁）：禁止静默 demote
+                    if (topo.ercErrorList === undefined) {
+                        topo.ercErrorList = [];
+                    }
+                    const demoteErr: ErcError = {
+                        errType: 'WAR_DEMOTE_LABEL',
+                        targetUuid: net.netUuid,
+                        desc: `网络 "${net.netName || net.netUuid}" WAR 几何失败，已降级为网络标号 stub`,
+                        suggest: '增大器件间距或计划阶段改用 joinByLabel，避免长线穿障',
+                        severity: 'warning'
+                    };
+                    topo.ercErrorList.push(demoteErr);
                 }
                 else {
                     failed.push(net.netName || net.netUuid);
@@ -259,6 +271,11 @@ export class WarRouteAdapter {
             return n?.netName ?? uuid.substring(0, 10);
         };
         traceAiWireInventory('war_end', topo.wireList, netNameOf, 48);
+        // AI：标号锚点吸附到同网/近邻导线端点，配合半格触铜，减少「标号未并网」
+        const snapped = WarRouteAdapter.snapTopoLabelsToWireEnds(topo, grid);
+        if (snapped > 0) {
+            Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] WAR_LABEL_SNAP n=${snapped} (onto stub/wire ends)`);
+        }
         Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] WAR_END routedNets=${routed} drawnSegs=${drawnSegs}` +
             ` demoted=${demoted.length} wires=${wiresBefore}→${topo.wireList.length}` +
             ` failed=${failed.length}`);
@@ -356,6 +373,15 @@ export class WarRouteAdapter {
             catch (_e) {
                 labelPos = { x: p.pt.x + 30, y: p.pt.y - 40 };
             }
+            // 网格对齐端点，保证落图后半格触铜必中
+            const g = topo.gridStep > 0 ? topo.gridStep : 10;
+            labelPos = {
+                x: Math.round(labelPos.x / g) * g,
+                y: Math.round(labelPos.y / g) * g
+            };
+            if (Math.hypot(labelPos.x - p.pt.x, labelPos.y - p.pt.y) < g) {
+                labelPos = { x: p.pt.x + g * 3, y: p.pt.y };
+            }
             const labelInfo: NetLabelInfo = {
                 id: IdUtil.generate('lbl'),
                 netUuid: net.netUuid,
@@ -376,6 +402,70 @@ export class WarRouteAdapter {
                 `(${Math.round(labelPos.x)},${Math.round(labelPos.y)})`);
         }
         return added;
+    }
+    /**
+     * 将拓扑标号吸附到导线端点（优先同 netUuid），保证半格触铜并网。
+     */
+    private static snapTopoLabelsToWireEnds(topo: SchTopology, grid: number): number {
+        if (!topo.netLabelList || topo.netLabelList.length === 0 || topo.wireList.length === 0) {
+            return 0;
+        }
+        const g = grid > 0 ? grid : 10;
+        const touchTol = Math.max(g * 0.5, 5);
+        const searchTol = Math.max(touchTol * 4, g * 2, 20);
+        let n = 0;
+        for (let li = 0; li < topo.netLabelList.length; li++) {
+            const lb = topo.netLabelList[li];
+            const upper = (lb.text ?? '').toUpperCase();
+            if (upper === 'VCC' || upper === 'GND' || upper === 'VSS' || upper === 'VEE' || upper === '0') {
+                continue;
+            }
+            // 已贴端点则跳过
+            let already = false;
+            for (let wi = 0; wi < topo.wireList.length; wi++) {
+                const w = topo.wireList[wi];
+                if (!w.points || w.points.length < 2) {
+                    continue;
+                }
+                const ends = [w.points[0], w.points[w.points.length - 1]];
+                for (let ei = 0; ei < ends.length; ei++) {
+                    if (Math.hypot(lb.x - ends[ei].x, lb.y - ends[ei].y) <= touchTol) {
+                        already = true;
+                        break;
+                    }
+                }
+                if (already) {
+                    break;
+                }
+            }
+            if (already) {
+                continue;
+            }
+            let best: Point2D | null = null;
+            let bestScore = searchTol;
+            for (let wi = 0; wi < topo.wireList.length; wi++) {
+                const w = topo.wireList[wi];
+                if (!w.points || w.points.length < 2) {
+                    continue;
+                }
+                const same = lb.netUuid.length > 0 && w.netUuid === lb.netUuid;
+                const ends = [w.points[0], w.points[w.points.length - 1]];
+                for (let ei = 0; ei < ends.length; ei++) {
+                    const d = Math.hypot(lb.x - ends[ei].x, lb.y - ends[ei].y);
+                    const score = same ? d - 1 : d;
+                    if (score < bestScore) {
+                        bestScore = score;
+                        best = { x: ends[ei].x, y: ends[ei].y };
+                    }
+                }
+            }
+            if (best !== null) {
+                lb.x = best.x;
+                lb.y = best.y;
+                n++;
+            }
+        }
+        return n;
     }
     private pinTouchedByNetWire(topo: SchTopology, netUuid: string, pt: Point2D, tol: number): boolean {
         for (let wi = 0; wi < topo.wireList.length; wi++) {
@@ -399,20 +489,18 @@ export class WarRouteAdapter {
      */
     private async routePinPair(topo: SchTopology, grid: number, warEnabled: boolean, a: WarPinWorld, b: WarPinWorld): Promise<WirePathPreviewResult> {
         const ctx = this.buildContext(topo, grid, warEnabled, a.devUuid, b.devUuid, a.pt, b.pt);
-        const direct = WireAutoRouter.previewWirePath([a.pt, b.pt], ctx);
+        const direct = await WireAutoRouter.previewWirePathAsync([a.pt, b.pt], ctx);
         if (!direct.blocked && direct.points && direct.points.length >= 2) {
             return direct;
         }
         const g = Math.max(1, grid);
-        // 仅 3 档 margin（原 6 档×4 形 ≈24 次全量 A*）
+        // 仅 3 档 margin；每候选独立 A*（async+yield），上限再压低防堆积
         const escapeMargins = [g * 3, g * 8, g * 16];
         const detours = WireAutoRouter.buildEscapeDetourCandidates(a.pt, b.pt, ctx, escapeMargins);
-        const maxDetours = Math.min(detours.length, 8);
+        const maxDetours = Math.min(detours.length, 6);
         for (let di = 0; di < maxDetours; di++) {
-            if (di > 0 && (di % 2) === 0) {
-                await MainThreadYield.yield();
-            }
-            const wp = WireAutoRouter.previewWirePath(detours[di], ctx);
+            await MainThreadYield.yield();
+            const wp = await WireAutoRouter.previewWirePathAsync(detours[di], ctx);
             if (!wp.blocked && wp.points && wp.points.length >= 2) {
                 Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] WAR_ESCAPE ok ${a.refName}.${a.pinId}→${b.refName}.${b.pinId}` +
                     ` detour=${di} pts=${wp.points.length}`);
@@ -636,6 +724,23 @@ export class WarRouteAdapter {
             if (pts && pts.length >= 2) {
                 existingWires.push(pts);
             }
+        }
+        // 信号网络标号旗标框 = 选中区硬障碍（与框同大），避免 AI 布线压住标号文字
+        const labelInputs: NetLabelAnchorInfo[] = [];
+        for (let li = 0; li < topo.netLabelList.length; li++) {
+            const lb = topo.netLabelList[li];
+            const item: NetLabelAnchorInfo = { id: lb.id, text: lb.text, x: lb.x, y: lb.y };
+            labelInputs.push(item);
+        }
+        const labelHits = DeviceHitGeometry.collectSignalLabelHitRects(labelInputs, existingWires);
+        for (let hi = 0; hi < labelHits.length; hi++) {
+            const hr = labelHits[hi];
+            obstacles.push({
+                id: `lbl:${hr.instUuid}`,
+                hitRect: hr,
+                pinWorlds: [],
+                escapePinWorlds: []
+            });
         }
         return {
             gridSize: grid,

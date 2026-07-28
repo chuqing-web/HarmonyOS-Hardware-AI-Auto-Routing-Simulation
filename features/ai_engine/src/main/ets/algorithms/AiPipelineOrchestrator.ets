@@ -1799,7 +1799,7 @@ export class AiPipelineOrchestrator {
     if (preLooksRc && !this.activeIntent.mutualLedIndicator) {
       this.stripStrayRelaysForSeriesRc(topo);
     }
-    const preFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, preLooksRc));
+    const preFin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, preLooksRc));
     if (preFin.fixed > 0) {
       aiFixApplied += preFin.fixed;
       Logger.info(INSTR_TRACE_TAG,
@@ -1838,7 +1838,7 @@ export class AiPipelineOrchestrator {
       // 提速：每轮先确定性修复；仍阻断才调 self-review LLM
       const detFirst = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
       if (detFirst.issues.length > 0) {
-        const detExec = this.executeAiFixes(topo, detFirst.issues, opts);
+        const detExec = await this.executeAiFixes(topo, detFirst.issues, opts);
         if (detExec.fixCount > 0) {
           aiFixApplied += detExec.fixCount;
           if (detExec.needReroute) {
@@ -1906,7 +1906,7 @@ export class AiPipelineOrchestrator {
       if (reviewResult.output.issues.length > 0) {
         onProgress?.(makeProgress(Math.min(99, progressBase + 3),
           `AI 驱动修复 第${clearRound}轮`));
-        const fixExec = this.executeAiFixes(topo, reviewResult.output.issues, opts);
+        const fixExec = await this.executeAiFixes(topo, reviewResult.output.issues, opts);
         aiFixApplied += fixExec.fixCount;
         roundFixCount = fixExec.fixCount;
         roundNeedReroute = fixExec.needReroute;
@@ -2042,8 +2042,8 @@ export class AiPipelineOrchestrator {
         if (stallKitTried < 3) {
           stallKitTried++;
           const stallDet = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
-          const stallExec = this.executeAiFixes(topo, stallDet.issues, opts);
-          const stallFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
+          const stallExec = await this.executeAiFixes(topo, stallDet.issues, opts);
+          const stallFin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
           const stallFixed = stallExec.fixCount + stallFin.fixed;
           if (stallFixed > 0) {
             aiFixApplied += stallFixed;
@@ -2121,7 +2121,7 @@ export class AiPipelineOrchestrator {
         if (looksRcNuke && !this.activeIntent.mutualLedIndicator) {
           this.stripStrayRelaysForSeriesRc(topo);
         }
-        const nukeFin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine,
+        const nukeFin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine,
           this.buildFinalizeGateOpts(opts, looksRcNuke));
         if (nukeFin.fixed > 0) {
           Logger.warn(INSTR_TRACE_TAG,
@@ -2141,7 +2141,7 @@ export class AiPipelineOrchestrator {
     if (looksRc && !this.activeIntent.mutualLedIndicator) {
       this.stripStrayRelaysForSeriesRc(topo);
     }
-    const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
+    const fin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
     if (fin.fixed > 0) {
       aiFixApplied += fin.fixed;
       Logger.info(INSTR_TRACE_TAG,
@@ -2298,7 +2298,7 @@ export class AiPipelineOrchestrator {
       }
 
       const looksRc = this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo);
-      const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine,
+      const fin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine,
         this.buildFinalizeGateOpts(opts, looksRc));
       aiFixApplied += fin.fixed;
 
@@ -2360,14 +2360,14 @@ export class AiPipelineOrchestrator {
 
       // 策略轮换
       if (assault === 1 || assault === 4) {
-        const fin = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
+        const fin = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         aiFixApplied += fin.fixed;
         const opa = AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
         aiFixApplied += opa.fixed;
       }
       if (assault === 2 || assault === 5) {
         const det = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
-        const exec = this.executeAiFixes(topo, det.issues, opts);
+        const exec = await this.executeAiFixes(topo, det.issues, opts);
         aiFixApplied += exec.fixCount;
         const reb = AiTopologyFixKit.rebuildInstrument(topo, this.wiringEngine);
         aiFixApplied += reb.fixed;
@@ -2391,7 +2391,7 @@ export class AiPipelineOrchestrator {
         if (this.wantsOpAmpSelfOsc(topo)) {
           aiFixApplied += AiTopologyFixKit.wireOpAmpSelfOsc(topo, this.wiringEngine).fixed;
         }
-        const fin2 = AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
+        const fin2 = await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         aiFixApplied += fin2.fixed;
         AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
         AiTopologyFixKit.healCriticalElectricalShorts(topo, this.wiringEngine);
@@ -2404,7 +2404,7 @@ export class AiPipelineOrchestrator {
       if (review.fromLlm) {
         usedLlm = true;
         if (review.output.issues.length > 0) {
-          const fx = this.executeAiFixes(topo, review.output.issues, opts);
+          const fx = await this.executeAiFixes(topo, review.output.issues, opts);
           aiFixApplied += fx.fixCount;
           if (fx.needReroute) {
             const routeCons = this.lastRoutingConstraints ??
@@ -2416,7 +2416,7 @@ export class AiPipelineOrchestrator {
         }
       } else {
         const det2 = this.buildDeterministicReviewFixes(topo, ercErrors, geoIssues);
-        const fx2 = this.executeAiFixes(topo, det2.issues, opts);
+        const fx2 = await this.executeAiFixes(topo, det2.issues, opts);
         aiFixApplied += fx2.fixCount;
       }
 
@@ -2440,7 +2440,7 @@ export class AiPipelineOrchestrator {
           AiTopologyFixKit.demotePowerRails(topo, this.wiringEngine);
         }
         AiTopologyFixKit.rebuildInstrument(topo, this.wiringEngine);
-        AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
+        await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, looksRc));
         geoIssues = this.collectGeometricIssues(topo);
         geoHard = this.countGeoBlocking(geoIssues);
         ercErrors = this.collectErc(topo);
@@ -2471,7 +2471,7 @@ export class AiPipelineOrchestrator {
         this.wiringEngine.demoteNetsToLabelStubs(topo, badFinal);
       }
       AiTopologyFixKit.demotePowerRails(topo, this.wiringEngine);
-      AiTopologyFixKit.finalizeForGate(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
+      await AiTopologyFixKit.finalizeForGateAsync(topo, this.wiringEngine, this.buildFinalizeGateOpts(opts, this.activeIntent.seriesRcCharge || this.topoLooksLikeSeriesRc(topo)));
       AiTopologyFixKit.wireOpAmpFeedback(topo, this.wiringEngine);
       AiTopologyFixKit.dropFullyFloatingDevices(topo);
       geoIssues = this.collectGeometricIssues(topo);
@@ -3976,8 +3976,8 @@ export class AiPipelineOrchestrator {
 
   // ─── AI 驱动修复执行 (LLM 决策修复策略, 函数执行具体操作) ───
 
-  private executeAiFixes(topo: SchTopology, issues: AiReviewIssue[],
-    opts?: PipelineOptions): AiFixExecResult {
+  private async executeAiFixes(topo: SchTopology, issues: AiReviewIssue[],
+    opts?: PipelineOptions): Promise<AiFixExecResult> {
     const missingReg = auditFixActionRegistryCoverage();
     if (missingReg > 0) {
       Logger.error(INSTR_TRACE_TAG,
@@ -3987,6 +3987,7 @@ export class AiPipelineOrchestrator {
     const state: AiFixExecState = { fixCount: 0, needReroute: false, needTopoKit: false };
     // 确定性/LLM 出口统一纠错工具选择
     const normalized = this.sanitizeReviewFixActions(issues, topo);
+    await MainThreadYield.yield();
 
     // 任何一轮修复前先清洗脏 pinId + 拆电源短接（确定性，不依赖 LLM）
     const preSanitize = AiTopologyFixKit.sanitizeTopoPinIds(topo);
@@ -4025,7 +4026,8 @@ export class AiPipelineOrchestrator {
       AiPipelineOrchestrator.fixActionPriority(a.fixAction) -
       AiPipelineOrchestrator.fixActionPriority(b.fixAction));
 
-    for (const issue of sorted) {
+    for (let ii = 0; ii < sorted.length; ii++) {
+      const issue = sorted[ii];
       try {
         this.applyOneAiFix(topo, issue, seenKeys, state, opts);
       } catch (e) {
@@ -4033,9 +4035,12 @@ export class AiPipelineOrchestrator {
         Logger.warn(INSTR_TRACE_TAG,
           `[AI_FIX] skip crashed fixAction=${issue.fixAction} type=${issue.type}: ${msg}`);
       }
+      // reconnect_pin / demote_geo / kit 同步重拓扑：每步让出（单步即可超 3s）
+      await MainThreadYield.yield();
     }
 
     // 若审查提到浮空/网络完整性且尚未 heal，补一轮（纯几何 demote/reroute 不触发）
+    await MainThreadYield.yield();
     const needHeal = normalized.some(i => {
       const t = (i.type ?? '').toLowerCase();
       const a = (i.fixAction ?? '').toLowerCase();
@@ -4295,6 +4300,28 @@ export class AiPipelineOrchestrator {
       AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo);
   }
 
+  /**
+   * 运放 / 双电源 / SIGNAL_GEN 等模拟拓扑禁止套用串联 RC 充放电。
+   * 否则 UA741+R+C 会被误判为 RC，注入 SW_PUSH 并把微分/积分反馈拆毁。
+   */
+  private topoBlocksSeriesRcHeal(topo: SchTopology): boolean {
+    if (AiTopologyFixKit.countOpAmpChannels(topo) > 0) {
+      return true;
+    }
+    if (topo.deviceList.some(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u === 'SIGNAL_GEN' || u === 'VEE';
+    })) {
+      return true;
+    }
+    if (this.activeIntent.needsOpAmpFeedback || this.activeIntent.needsOpAmpIntegrator ||
+      this.activeIntent.needsHysteresisComparator || this.activeIntent.needsSignalGen ||
+      this.activeIntent.dualSupply) {
+      return true;
+    }
+    return false;
+  }
+
   /** 简单 RC 充放电拓扑启发式（意图优先；允许板上有 stray RELAY 以便剥离） */
   private topoLooksLikeSeriesRc(topo: SchTopology): boolean {
     if (this.activeIntent.timer555Monostable || this.activeIntent.timer555Astable) {
@@ -4305,6 +4332,10 @@ export class AiPipelineOrchestrator {
     }
     // 运放自激 / 滞回+积分：绝不可套用串联 RC（会把积分 C 接到 GND）
     if (this.wantsOpAmpSelfOsc(topo)) {
+      return false;
+    }
+    // 单运放有源微分/积分/放大 + SIGNAL_GEN：禁止 RC 充放电误杀
+    if (this.topoBlocksSeriesRcHeal(topo)) {
       return false;
     }
     if (this.activeIntent.seriesRcCharge) {
@@ -5050,7 +5081,9 @@ export class AiPipelineOrchestrator {
     const selfOsc = intentIsOpAmpSelfOscillator(this.activeIntent, opts.prompt);
     const gateOpts: FinalizeGateOpts = {
       seriesRcCharge: seriesRc && !this.activeIntent.mutualLedIndicator &&
-        !has555Intent && !selfOsc,
+        !has555Intent && !selfOsc &&
+        !this.activeIntent.needsOpAmpFeedback && !this.activeIntent.needsSignalGen &&
+        !this.activeIntent.dualSupply && !this.activeIntent.needsOpAmpIntegrator,
       mutualLedIndicator: this.activeIntent.mutualLedIndicator,
       timer555Monostable: this.activeIntent.timer555Monostable,
       hasTimer555: has555Intent,

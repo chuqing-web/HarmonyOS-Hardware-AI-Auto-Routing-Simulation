@@ -261,6 +261,16 @@ export class VirtualInstrumentsImpl implements IVirtualInstruments {
         }
         return ResultHelper.ok(this.oscilloscope.captureWave(channel));
     }
+    getOscilloscopeWaveFull(channel: number = 0): ApiResult<WaveData> {
+        if (channel < 0 || channel > 3) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'Channel must be 0-3');
+        }
+        this.ensureActiveBindingApplied();
+        if (this.oscilloscope.getMathOp() === MathChannelOp.FFT) {
+            return ResultHelper.ok(this.oscilloscope.captureFft(channel));
+        }
+        return ResultHelper.ok(this.oscilloscope.captureWaveFullHistory(channel));
+    }
     async exportWaveformSvg(channel: number, path: string): Promise<ApiResult<void>> {
         const pathErr = Validate.filePath(path);
         if (pathErr !== null)

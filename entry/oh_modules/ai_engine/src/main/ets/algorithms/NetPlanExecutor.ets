@@ -1187,6 +1187,23 @@ export class NetPlanExecutor {
           if (!innHasR) {
             continue;
           }
+          // 有源微分/反相放大：Rf 已跨 OUT↔IN-，禁止把输入耦合 C 偷成积分反馈
+          const outConns = plan.nets[outNi].connections ?? [];
+          const innConns = plan.nets[innNi].connections ?? [];
+          let rfBridges = false;
+          for (let oi = 0; oi < outConns.length; oi++) {
+            if (!isResRef(outConns[oi].compRef)) {
+              continue;
+            }
+            const rWant = (outConns[oi].compRef ?? '').toUpperCase();
+            if (innConns.some(ic => (ic.compRef ?? '').toUpperCase() === rWant)) {
+              rfBridges = true;
+              break;
+            }
+          }
+          if (rfBridges) {
+            continue;
+          }
           // 是否已有 C 同时出现在 OUT 与 IN- 两网
           let bridged = false;
           for (let ci = 0; ci < topo.deviceList.length; ci++) {
@@ -1245,6 +1262,27 @@ export class NetPlanExecutor {
                   }
                 }
                 if (onPower && nets.length >= 2) {
+                  continue;
+                }
+                // 跳过 SIGNAL_GEN 耦合输入电容（有源微分 C_in，非积分反馈 C）
+                let onSigGen = false;
+                for (let nxi = 0; nxi < nets.length; nxi++) {
+                  const nConns = plan.nets[nets[nxi]].connections ?? [];
+                  for (let ci2 = 0; ci2 < nConns.length; ci2++) {
+                    const other = (nConns[ci2].compRef ?? '').toUpperCase();
+                    if (other.length === 0 || other === (cref ?? '').toUpperCase()) {
+                      continue;
+                    }
+                    if (libOfRef(nConns[ci2].compRef) === 'SIGNAL_GEN') {
+                      onSigGen = true;
+                      break;
+                    }
+                  }
+                  if (onSigGen) {
+                    break;
+                  }
+                }
+                if (onSigGen) {
                   continue;
                 }
                 capRef = cref;

@@ -8,7 +8,8 @@ import {
   SchTopology, NetInfo, NetLabelInfo, NetNodeRef, DeviceInst, Point2D, RouteLine,
   IdUtil, makeRouteLine, Logger, INSTR_TRACE_TAG, traceAiDiag,
   traceAiWireDraw, traceAiWireFix, traceAiWireInventory,
-  DeviceHitGeometry, WorldHitRect, SELECTION_HIT_PAD, LabelPlaceHints
+  DeviceHitGeometry, WorldHitRect, SELECTION_HIT_PAD, LabelPlaceHints,
+  MainThreadYield
 } from 'common';
 import { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from './PinWorldResolver';
@@ -409,6 +410,20 @@ export class AiTopologyFixKit {
     if (AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo)) {
       Logger.info(INSTR_TRACE_TAG,
         '[AI_FIX] wireSeriesRc skipped — op-amp self-osc topology (use wireOpAmpSelfOsc)');
+      return AiTopologyFixKit.emptyResult();
+    }
+    // 任意运放 / SIGNAL_GEN / VEE：有源模拟拓扑，禁止套用 VCC→SW→R→C→GND
+    if (AiTopologyFixKit.countOpAmpChannels(topo) > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        '[AI_FIX] wireSeriesRc skipped — op-amp present (active analog, not series RC)');
+      return AiTopologyFixKit.emptyResult();
+    }
+    if (topo.deviceList.some(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u === 'SIGNAL_GEN' || u === 'VEE';
+    })) {
+      Logger.info(INSTR_TRACE_TAG,
+        '[AI_FIX] wireSeriesRc skipped — SIGNAL_GEN/VEE present (not series RC charge)');
       return AiTopologyFixKit.emptyResult();
     }
     const vcc = topo.deviceList.find(d => {
@@ -1568,6 +1583,110 @@ export class AiTopologyFixKit {
     if (fixed > 0) {
       Logger.info(INSTR_TRACE_TAG,
         `[AI_FIX] finalizeForGate fixed=${fixed}`);
+      const netNameOf = (uuid: string): string => {
+        const n = topo.netList.find(x => x.netUuid === uuid);
+        return n?.netName ?? uuid.substring(0, 10);
+      };
+      traceAiWireInventory('finalize_end', topo.wireList, netNameOf, 32);
+    }
+    return { fixed, needReroute: fixed > 0, notes };
+  }
+
+  /**
+   * 异步 finalize：kit 步骤间让出主线程，避免 heal/rebuild 堆叠触发 THREAD_BLOCK。
+   */
+  static async finalizeForGateAsync(topo: SchTopology, wiring: ConstrainedWiringEngine,
+    opts?: FinalizeGateOpts): Promise<TopologyFixResult> {
+    let fixed = 0;
+    const notes: string[] = [];
+    const intent = opts ?? {};
+    await MainThreadYield.yield();
+    AiTopologyFixKit.sanitizeTopoPinIds(topo);
+    const phantoms = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+    fixed += phantoms.fixed;
+
+    const split = AiTopologyFixKit.splitMergedPowerRails(topo);
+    fixed += split.fixed;
+    await MainThreadYield.yield();
+
+    if (intent.timer555Monostable) {
+      const mono = AiTopologyFixKit.wire555Monostable(topo, wiring);
+      fixed += mono.fixed;
+      notes.push(...mono.notes);
+    } else if (intent.opAmpSelfOscillator || AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo)) {
+      const osc = AiTopologyFixKit.wireOpAmpSelfOsc(topo, wiring);
+      fixed += osc.fixed;
+      notes.push(...osc.notes);
+    } else if (intent.seriesRcCharge && !AiTopologyFixKit.topoHas555(topo) &&
+      !intent.hasTimer555 && !intent.opAmpSelfOscillator) {
+      const rc = AiTopologyFixKit.wireSeriesRc(topo, wiring);
+      fixed += rc.fixed;
+      notes.push(...rc.notes);
+    }
+    await MainThreadYield.yield();
+
+    const hasPot = topo.deviceList.some(d => {
+      const u = (d.libDevId ?? '').toUpperCase();
+      return u.indexOf('POT') >= 0 || u.startsWith('RV_');
+    });
+    if (hasPot) {
+      const pot = AiTopologyFixKit.wirePotentiometer(topo, wiring);
+      fixed += pot.fixed;
+    }
+    const hasVee = topo.deviceList.some(d => (d.libDevId ?? '').toUpperCase() === 'VEE');
+    if (hasVee) {
+      const dual = AiTopologyFixKit.wireDualSupplyRails(topo, wiring);
+      fixed += dual.fixed;
+      const phantoms2 = AiTopologyFixKit.stripUnknownDevicePinNodes(topo);
+      fixed += phantoms2.fixed;
+    }
+    const opa = AiTopologyFixKit.wireOpAmpFeedback(topo, wiring);
+    fixed += opa.fixed;
+    await MainThreadYield.yield();
+
+    if (!intent.seriesRcCharge &&
+      (intent.mutualLedIndicator ||
+        (topo.deviceList.filter(d => (d.libDevId ?? '').startsWith('LED_')).length >= 2 &&
+          topo.deviceList.some(d => (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0)))) {
+      const wr = AiTopologyFixKit.wireRelaySpdtDualLed(topo, wiring);
+      fixed += wr.fixed;
+    }
+
+    const elec = AiTopologyFixKit.healCriticalElectricalShorts(topo, wiring);
+    fixed += elec.fixed;
+    await MainThreadYield.yield();
+
+    const reb = AiTopologyFixKit.rebuildInstrument(topo, wiring);
+    fixed += reb.fixed;
+    await MainThreadYield.yield();
+
+    const heal = AiTopologyFixKit.healFloatingPins(topo, wiring);
+    fixed += heal.fixed;
+    await MainThreadYield.yield();
+
+    if (intent.opAmpSelfOscillator || AiTopologyFixKit.topoLooksLikeOpAmpSelfOsc(topo)) {
+      const osc2 = AiTopologyFixKit.wireOpAmpSelfOsc(topo, wiring);
+      fixed += osc2.fixed;
+      notes.push(...osc2.notes);
+      if (hasVee) {
+        const dual2 = AiTopologyFixKit.wireDualSupplyRails(topo, wiring);
+        fixed += dual2.fixed;
+      }
+    }
+
+    const drop = AiTopologyFixKit.dropFullyFloatingDevices(topo);
+    fixed += drop.fixed;
+    const prune = AiTopologyFixKit.pruneSingletonOrphanNets(topo);
+    fixed += prune.fixed;
+    const oscNc = AiTopologyFixKit.pruneUnusedOscChannelNets(topo);
+    fixed += oscNc.fixed;
+    const prune2 = AiTopologyFixKit.pruneAllSingletonSignalNets(topo,
+      intent.preserveBoundaryKeys);
+    fixed += prune2.fixed;
+
+    if (fixed > 0) {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_FIX] finalizeForGateAsync fixed=${fixed}`);
       const netNameOf = (uuid: string): string => {
         const n = topo.netList.find(x => x.netUuid === uuid);
         return n?.netName ?? uuid.substring(0, 10);

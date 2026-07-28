@@ -29,6 +29,8 @@ interface InstrumentWaveExpandOverlay_Params {
     viewPanSec?: number;
     panStartSec?: number;
     pinchStartZoom?: number;
+    viewBootstrapped?: boolean;
+    followFullOverview?: boolean;
 }
 import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
@@ -68,6 +70,8 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.__viewPanSec = new ObservedPropertySimplePU(0, this, "viewPanSec");
         this.panStartSec = 0;
         this.pinchStartZoom = 1;
+        this.viewBootstrapped = false;
+        this.followFullOverview = true;
         this.setInitiallyProvidedValue(params);
         this.declareWatch("refreshTick", this.onRefreshTick);
         this.finalizeConstruction();
@@ -153,6 +157,12 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         }
         if (params.pinchStartZoom !== undefined) {
             this.pinchStartZoom = params.pinchStartZoom;
+        }
+        if (params.viewBootstrapped !== undefined) {
+            this.viewBootstrapped = params.viewBootstrapped;
+        }
+        if (params.followFullOverview !== undefined) {
+            this.followFullOverview = params.followFullOverview;
         }
     }
     updateStateVars(params: InstrumentWaveExpandOverlay_Params) {
@@ -383,8 +393,16 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
     }
     private panStartSec: number;
     private pinchStartZoom: number;
+    /** 打开后已做过「铺满全历史」；实时刷新不再强行复位缩放 */
+    private viewBootstrapped: boolean;
+    /** 处于全览跟随时：仿真历史变长仍铺满全程 */
+    private followFullOverview: boolean;
     aboutToAppear(): void {
+        this.viewBootstrapped = false;
+        this.followFullOverview = true;
         this.pullFromStore();
+        this.resetView();
+        this.viewBootstrapped = true;
     }
     onRefreshTick(): void {
         this.pullFromStore();
@@ -416,21 +434,60 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
             chCopy.push(s.channelData[i].slice());
         }
         this.channelData = chCopy;
-        this.viewPanSec = this.clampPan(this.viewPanSec);
+        if (this.viewBootstrapped && this.followFullOverview) {
+            this.viewZoom = this.getFitZoom();
+            this.viewPanSec = 0;
+        }
+        else {
+            this.viewPanSec = this.clampPan(this.viewPanSec);
+        }
     }
     private close(): void {
         InstrumentWaveExpandStore.getInstance().close();
         this.onClose();
     }
-    private getWindowSpan(): number {
-        return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.05), 1e-12);
-    }
-    private getMaxPanSec(): number {
+    /** 有效有限样点的历史跨度（忽略写屏 NaN） */
+    private getHistorySpan(): number {
         const n = Math.min(this.timeData.length, this.voltageData.length);
         if (n < 2) {
             return 0;
         }
-        const hist = Math.max(this.timeData[n - 1] - this.timeData[0], 0);
+        let tFirst = Number.NaN;
+        let tLast = Number.NaN;
+        for (let i = 0; i < n; i++) {
+            if (Number.isFinite(this.timeData[i]) && Number.isFinite(this.voltageData[i])) {
+                tFirst = this.timeData[i];
+                break;
+            }
+        }
+        for (let i = n - 1; i >= 0; i--) {
+            if (Number.isFinite(this.timeData[i]) && Number.isFinite(this.voltageData[i])) {
+                tLast = this.timeData[i];
+                break;
+            }
+        }
+        if (!Number.isFinite(tFirst) || !Number.isFinite(tLast)) {
+            return 0;
+        }
+        return Math.max(tLast - tFirst, 0);
+    }
+    /** 铺满全历史所需缩放（≤1）；历史短于时基窗时为 1 */
+    private getFitZoom(): number {
+        if (this.freqDomain) {
+            return 1;
+        }
+        const hist = this.getHistorySpan();
+        const base = Math.max(this.tPerDiv * 10, 1e-12);
+        if (hist <= base + 1e-15) {
+            return 1;
+        }
+        return Math.max(base / hist, 0.01);
+    }
+    private getWindowSpan(): number {
+        return Math.max(this.tPerDiv * 10 / Math.max(this.viewZoom, 0.01), 1e-12);
+    }
+    private getMaxPanSec(): number {
+        const hist = this.getHistorySpan();
         return Math.max(hist - this.getWindowSpan(), 0);
     }
     private clampPan(next: number): number {
@@ -445,14 +502,20 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         return v;
     }
     private applyZoom(z: number): void {
+        const fit = this.getFitZoom();
         let next = z;
-        if (next < 0.25) {
-            next = 0.25;
+        // 允许缩小到刚好铺满全历史；放大上限 32×
+        if (next < fit) {
+            next = fit;
         }
-        if (next > 16) {
-            next = 16;
+        if (next < 0.01) {
+            next = 0.01;
+        }
+        if (next > 32) {
+            next = 32;
         }
         this.viewZoom = next;
+        this.followFullOverview = next <= fit * 1.001;
         this.viewPanSec = this.clampPan(this.viewPanSec);
     }
     private zoomIn(): void {
@@ -462,17 +525,21 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.applyZoom(this.viewZoom / 1.4);
     }
     private resetView(): void {
-        this.viewZoom = 1;
+        // 复位 = 铺满一次仿真全历史（而非仅时基窗）
+        this.followFullOverview = true;
+        this.viewZoom = this.getFitZoom();
         this.viewPanSec = 0;
     }
     private panByFraction(frac: number): void {
         const span = this.getWindowSpan();
+        this.followFullOverview = false;
         this.viewPanSec = this.clampPan(this.viewPanSec + frac * span);
     }
     private setPanFromSlider(norm: number): void {
         // 滑杆左=历史(回看)，右=最新(跟随)
         const maxPan = this.getMaxPanSec();
         const t = Math.max(0, Math.min(1000, norm)) / 1000;
+        this.followFullOverview = false;
         this.viewPanSec = this.clampPan((1 - t) * maxPan);
     }
     private panSliderValue(): number {
@@ -557,7 +624,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                         onAction: () => {
                             this.close();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 193, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 252, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -596,7 +663,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomIn();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 205, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 264, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -626,7 +693,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.zoomOut();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 212, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 271, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -656,7 +723,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 219, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 278, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -686,7 +753,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     onAction: () => {
                                         this.panByFraction(-0.35);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 226, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 285, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -711,16 +778,16 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
                                 let componentCall = new ProteusClassicBtn(this, {
-                                    label: '复位',
+                                    label: '全览',
                                     widthVal: 56,
                                     onAction: () => {
                                         this.resetView();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 233, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 292, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
-                                        label: '复位',
+                                        label: '全览',
                                         widthVal: 56,
                                         onAction: () => {
                                             this.resetView();
@@ -731,14 +798,14 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                             }
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '复位',
+                                    label: '全览',
                                     widthVal: 56
                                 });
                             }
                         }, { name: "ProteusClassicBtn" });
                     }
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create(`×${this.viewZoom.toFixed(1)}  pan=${this.viewPanSec.toExponential(1)}s`);
+                        Text.create(`×${this.viewZoom.toFixed(2)}  span=${this.getHistorySpan().toExponential(1)}s`);
                         Text.fontSize(12);
                         Text.fontColor(ProteusColors.TEXT_SECONDARY);
                         Text.fontFamily('monospace');
@@ -779,7 +846,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     channelCount: this.channelCount,
                                     sampleCount: this.sampleCount,
                                     canvasHeight: 420
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 252, col: 15 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 311, col: 15 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -835,6 +902,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                             const span = this.getWindowSpan();
                             // 右拖看更新（减小 pan）；左拖看历史（增大 pan）
                             const deltaSec = (-e.offsetX / 360) * span;
+                            this.followFullOverview = false;
                             this.viewPanSec = this.clampPan(this.panStartSec + deltaSec);
                         });
                         PanGesture.pop();
@@ -863,7 +931,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                     showStats: true,
                                     viewZoom: this.viewZoom,
                                     viewPanSec: this.viewPanSec
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 261, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 320, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -932,7 +1000,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
                                                 showStats: true,
                                                 viewZoom: this.viewZoom,
                                                 viewPanSec: this.viewPanSec
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 279, col: 19 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentWaveExpandOverlay.ets", line: 338, col: 19 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1036,7 +1104,7 @@ export class InstrumentWaveExpandOverlay extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.kind === 'la'
                 ? '逻辑波形'
-                : '滚轮缩放 · 底部滑杆左右平移 · 亦可拖动/双指缩放');
+                : '默认全览整次仿真 · 滚轮/双指缩放细节 · 滑杆或拖动平移');
             Text.fontSize(12);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.width('100%');

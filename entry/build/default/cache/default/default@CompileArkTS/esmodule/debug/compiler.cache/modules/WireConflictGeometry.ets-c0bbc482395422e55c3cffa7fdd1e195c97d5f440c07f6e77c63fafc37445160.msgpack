@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ{const COORD_EPS = 0.75;
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚconst COORD_EPS = 0.75;
 export class WireConflictGeometry {
     static nearlyEq(a, b) {
         return Math.abs(a - b) <= COORD_EPS;
@@ -52,6 +52,46 @@ export class WireConflictGeometry {
             }
         }
         return 'none';
+    }
+    /**
+     * æ­£äº¤äº¤å‰ç‚¹åæ ‡ï¼›éæ­£äº¤äº¤å‰æˆ–ä¸ç›¸äº¤è¿”å› nullã€‚
+     * ç”¨äºã€Œäº¤å‰â‰ è¿æ¥ã€ï¼šç¦æ­¢æŠŠäº¤å‰ç‚¹é™„è¿‘çš„æ— å…³ç«¯ç‚¹å¸å¹¶ã€‚
+     */
+    static orthogonalCrossPoint(a1, a2, b1, b2) {
+        if (WireConflictGeometry.segmentConflict(a1, a2, b1, b2) !== 'orthogonal_cross') {
+            return null;
+        }
+        const aVert = WireConflictGeometry.nearlyEq(a1.x, a2.x);
+        const aHoriz = WireConflictGeometry.nearlyEq(a1.y, a2.y);
+        const bVert = WireConflictGeometry.nearlyEq(b1.x, b2.x);
+        const bHoriz = WireConflictGeometry.nearlyEq(b1.y, b2.y);
+        if (aVert && bHoriz) {
+            return { x: a1.x, y: b1.y };
+        }
+        if (aHoriz && bVert) {
+            return { x: b1.x, y: a1.y };
+        }
+        // æ–œçº¿ï¼šå–è¿‘ä¼¼ä¸­ç‚¹
+        return {
+            x: (a1.x + a2.x + b1.x + b2.x) / 4,
+            y: (a1.y + a2.y + b1.y + b2.y) / 4
+        };
+    }
+    /**
+     * äº¤å‰ç‚¹æ˜¯å¦è¿œç¦»åŒæ–¹å…¨éƒ¨ç«¯ç‚¹ï¼ˆçœŸÂ·ä¸­æ®µç©¿è¶Šï¼Œé T æ¥/å…±ç«¯ç‚¹ï¼‰ã€‚
+     */
+    static isMidspanCross(cross, aEnds, bEnds, endTol = 3) {
+        for (let i = 0; i < aEnds.length; i++) {
+            if (Math.hypot(cross.x - aEnds[i].x, cross.y - aEnds[i].y) <= endTol) {
+                return false;
+            }
+        }
+        for (let i = 0; i < bEnds.length; i++) {
+            if (Math.hypot(cross.x - bEnds[i].x, cross.y - bEnds[i].y) <= endTol) {
+                return false;
+            }
+        }
+        return true;
     }
     /** ä¸¥æ ¼ç›¸äº¤ï¼ˆç«¯ç‚¹å…±ç‚¹ä¸ç®—å†²çªï¼Œé¿å… T ç»“è¯¯æŠ¥ï¼‰ */
     static segmentsProperIntersect(p1, p2, q1, q2) {
@@ -112,7 +152,7 @@ export class WireConflictGeometry {
         return len <= 35;
     }
 }
-//# sourceMappingURL=WireConflictGeometry.js.mapÂÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireConflictGeometry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ)./src/main/ets/utils/WireConflictGeometry¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ~/**
+//# sourceMappingURL=WireConflictGeometry.js.mapÂÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\WireConflictGeometry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ)./src/main/ets/utils/WireConflictGeometry¦commonD¶./WireConflictGeometry¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ?/**
  * å¯¼çº¿å†²çªå‡ ä½• â€” å¼‚ç½‘æ­£äº¤äº¤å‰ / å…±çº¿é‡åˆ / æ–œçº¿ç›¸äº¤ç»Ÿä¸€åˆ¤å®š
  * ä¾› ConstrainedWiringEngine / PostGenValidator / é—¨ç¦å…±ç”¨
  */
@@ -180,6 +220,53 @@ export class WireConflictGeometry {
     return 'none';
   }
 
+  /**
+   * æ­£äº¤äº¤å‰ç‚¹åæ ‡ï¼›éæ­£äº¤äº¤å‰æˆ–ä¸ç›¸äº¤è¿”å› nullã€‚
+   * ç”¨äºã€Œäº¤å‰â‰ è¿æ¥ã€ï¼šç¦æ­¢æŠŠäº¤å‰ç‚¹é™„è¿‘çš„æ— å…³ç«¯ç‚¹å¸å¹¶ã€‚
+   */
+  static orthogonalCrossPoint(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): Point2D | null {
+    if (WireConflictGeometry.segmentConflict(a1, a2, b1, b2) !== 'orthogonal_cross') {
+      return null;
+    }
+    const aVert = WireConflictGeometry.nearlyEq(a1.x, a2.x);
+    const aHoriz = WireConflictGeometry.nearlyEq(a1.y, a2.y);
+    const bVert = WireConflictGeometry.nearlyEq(b1.x, b2.x);
+    const bHoriz = WireConflictGeometry.nearlyEq(b1.y, b2.y);
+    if (aVert && bHoriz) {
+      return { x: a1.x, y: b1.y };
+    }
+    if (aHoriz && bVert) {
+      return { x: b1.x, y: a1.y };
+    }
+    // æ–œçº¿ï¼šå–è¿‘ä¼¼ä¸­ç‚¹
+    return {
+      x: (a1.x + a2.x + b1.x + b2.x) / 4,
+      y: (a1.y + a2.y + b1.y + b2.y) / 4
+    };
+  }
+
+  /**
+   * äº¤å‰ç‚¹æ˜¯å¦è¿œç¦»åŒæ–¹å…¨éƒ¨ç«¯ç‚¹ï¼ˆçœŸÂ·ä¸­æ®µç©¿è¶Šï¼Œé T æ¥/å…±ç«¯ç‚¹ï¼‰ã€‚
+   */
+  static isMidspanCross(
+    cross: Point2D,
+    aEnds: Point2D[],
+    bEnds: Point2D[],
+    endTol: number = 3
+  ): boolean {
+    for (let i = 0; i < aEnds.length; i++) {
+      if (Math.hypot(cross.x - aEnds[i].x, cross.y - aEnds[i].y) <= endTol) {
+        return false;
+      }
+    }
+    for (let i = 0; i < bEnds.length; i++) {
+      if (Math.hypot(cross.x - bEnds[i].x, cross.y - bEnds[i].y) <= endTol) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** ä¸¥æ ¼ç›¸äº¤ï¼ˆç«¯ç‚¹å…±ç‚¹ä¸ç®—å†²çªï¼Œé¿å… T ç»“è¯¯æŠ¥ï¼‰ */
   private static segmentsProperIntersect(p1: Point2D, p2: Point2D, q1: Point2D, q2: Point2D): boolean {
     const o1 = WireConflictGeometry.orient(p1, p2, q1);
@@ -245,7 +332,7 @@ export class WireConflictGeometry {
     return len <= 35;
   }
 }
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings·WireConflictGeometry.js ‘¸WireConflictGeometry.etsÜ r–”  	 ” 	” 	” 	” 	” 	””   ” ” ”! !˜” 
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings·WireConflictGeometry.js ‘¸WireConflictGeometry.etsÜ š–”  	 ” 	” 	” 	” 	” 	””   ” ” ”! !˜” 
 ”
  ” ” ” ” #” %” .” ” ” ” ” ” ” ” ” ” ”" ”+ '”, (’” ” ’” ” œ” ”
  ” 	” ” ” $” &”! 1”# 3”% >”' Ì@”) ÌKÜ ” ” 
@@ -258,128 +345,143 @@ export class WireConflictGeometry {
 ” .” .” .” .” .” .”# .”$ .”' .!”+ .%”, .&”/ .)”0 .*”4 ..”6 .0”: .4”; .5”> .8”? .9”ÌA .;”” /” /”* /"”+ /#‘” 0‘”	 1Ü ” 2” 2” 2” 2” 2”  2”4 20”5 21”= 29”> 2:”Ì@ 2<”ÌA 2=”ÌB 2>”ÌD 2Ì@”ÌF 2ÌB”ÌG 2ÌC”ÌH 2ÌD”ÌI 2ÌE”ÌK 2ÌGÜ ” 3” 3” 3” 3” 3” 3”! 3”" 3”$ 3”% 3”& 3 ”( 3"”* 3$”+ 3%”, 3&”- 3'”. 3(Ü ” 4” 4” 4” 4” 4” 4”! 4”" 4”$ 4”% 4”& 4 ”( 4"”* 4$”+ 4%”, 4&”- 4'”. 4(Ü ” 5” 5” 5” 5” 5” 5”! 5”" 5”$ 5”% 5”& 5 ”( 5"”* 5$”+ 5%”, 5&”- 5'”. 5(Ü ” 6” 6” 6” 6” 6” 6”! 6”" 6”$ 6”% 6”& 6 ”( 6"”* 6$”+ 6%”, 6&”- 6'”. 6(Ü ” 7” 7
 ” 7” 7” 7” 7” 7” 7”# 7”$ 7”' 7!”+ 7%”, 7&”/ 7)”0 7*”4 7.”6 70”: 74”; 75”> 78”? 79”ÌA 7;”” 8” 8”* 8"”+ 8#‘” 9‘”	 :’” ;”! ;Ü ” <” <” <	” <
 ” <” <” <” <” <”# <”$ < ”% <!”* <&”. <*”/ <+”5 <1”6 <2”8 <4Ÿ” =” =
-”$ =”% =”< =6”= =7”? =9”ÌA =;”ÌC ==”ÌE =?”ÌG =ÌA”ÌI =ÌC”ÌK =ÌE”ÌL =ÌF”ÌN =ÌH”” >” >”) >!”* >"‘” ?‘”	 Ì@”” ÌA” ÌA” ÌA” ÌA’” ÌB” ÌB’” ÌD”" ÌD œ” ÌE
+”$ =”% =”< =6”= =7”? =9”ÌA =;”ÌC ==”ÌE =?”ÌG =ÌA”ÌI =ÌC”ÌK =ÌE”ÌL =ÌF”ÌN =ÌH”” >” >”) >!”* >"‘” ?‘”	 Ì@”” ÌA” ÌA” ÌA” ÌA’” ÌB” ÌB‘” ÌD‘” ÌGœ” ÌH”
+ ÌH” ÌH	” ÌH”  ÌH”" ÌH)”$ ÌH+”& ÌH6”( ÌH8”* ÌHÌC”, ÌHÌE”. ÌHÌPÜ ” ÌI” ÌI”  ÌI”! ÌI”0 ÌI,”1 ÌI-”3 ÌI/”5 ÌI1”7 ÌI3”9 ÌI5”; ÌI7”= ÌI9”? ÌI;”Ì@ ÌI<”ÌE ÌIÌA”ÌW ÌIÌS”ÌY ÌIÌU”” ÌJ” ÌJ” ÌJ” ÌJ‘”	 ÌKÜ ” ÌL” ÌL
+” ÌL” ÌL”* ÌL&”+ ÌL'”3 ÌL/”4 ÌL0”6 ÌL2”7 ÌL3”8 ÌL4”: ÌL6”< ÌL8”= ÌL9”> ÌL:”? ÌL;”Ì@ ÌL<Ü ” ÌM” ÌM
+” ÌM” ÌM”+ ÌM'”, ÌM(”4 ÌM0”5 ÌM1”7 ÌM3”8 ÌM4”9 ÌM5”; ÌM7”= ÌM9”> ÌM:”? ÌM;”Ì@ ÌM<”ÌA ÌM=Ü ” ÌN” ÌN
+” ÌN” ÌN”* ÌN&”+ ÌN'”3 ÌN/”4 ÌN0”6 ÌN2”7 ÌN3”8 ÌN4”: ÌN6”< ÌN8”= ÌN9”> ÌN:”? ÌN;”Ì@ ÌN<Ü ” ÌO” ÌO
+” ÌO” ÌO”+ ÌO'”, ÌO(”4 ÌO0”5 ÌO1”7 ÌO3”8 ÌO4”9 ÌO5”; ÌO7”= ÌO9”> ÌO:”? ÌO;”Ì@ ÌO<”ÌA ÌO=–” ÌP” ÌP” ÌP” ÌP” ÌP” ÌPÜ ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”! ÌQ”# ÌQ”$ ÌQ”% ÌQ”' ÌQ!”( ÌQ"‘”	 ÌR–” ÌS” ÌS” ÌS” ÌS” ÌS” ÌSÜ ” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”! ÌT”# ÌT”$ ÌT”% ÌT”' ÌT!”( ÌT"‘”	 ÌU’” ÌV” ÌV’” ÌW” ÌWÜ ” ÌX” ÌX” ÌX	” ÌX
+” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”  ÌX”! ÌX”" ÌX”% ÌX”' ÌX!”( ÌX"”) ÌX#”* ÌX$”- ÌX'”. ÌX(Ü ” ÌY” ÌY” ÌY	” ÌY
+” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”  ÌY”! ÌY”" ÌY”% ÌY”' ÌY!”( ÌY"”) ÌY#”* ÌY$”- ÌY'”. ÌY(’”	 ÌZ”
+ ÌZ’” Ì[” Ì[‘” Ì]‘” Ì_” Ì`”
+ Ì`” Ì`	” Ì`” Ìa” Ìa”! Ìb”& Ìb”( Ìc”- Ìc”/ Ìd”8 Ìd”9 ÌdÜ ” Ìf” Ìf	” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf”! Ìf”" Ìf”( Ìf$”* Ìf&”+ Ìf'”- Ìf)”/ Ìf+Ü ” Ìg” Ìg
+” Ìg” Ìg” Ìg” Ìg”  Ìg”! Ìg”" Ìg”% Ìg”* Ìg$”+ Ìg%”, Ìg&”- Ìg'”. Ìg(”/ Ìg)”1 Ìg+”6 Ìg0”7 Ìg1”8 Ìg2”; Ìg5”Ì@ Ìg:”ÌA Ìg;”ÌB Ìg<”ÌC Ìg=”ÌD Ìg>”ÌE Ìg?”ÌF ÌgÌ@”ÌJ ÌgÌD”ÌP ÌgÌJ”ÌR ÌgÌL”” Ìh” Ìh” Ìh” Ìh‘” Ìi‘”	 ÌjÜ ” Ìk” Ìk	” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”! Ìk”" Ìk”( Ìk$”* Ìk&”+ Ìk'”- Ìk)”/ Ìk+Ü ” Ìl” Ìl
+” Ìl” Ìl” Ìl” Ìl”  Ìl”! Ìl”" Ìl”% Ìl”* Ìl$”+ Ìl%”, Ìl&”- Ìl'”. Ìl(”/ Ìl)”1 Ìl+”6 Ìl0”7 Ìl1”8 Ìl2”; Ìl5”Ì@ Ìl:”ÌA Ìl;”ÌB Ìl<”ÌC Ìl=”ÌD Ìl>”ÌE Ìl?”ÌF ÌlÌ@”ÌJ ÌlÌD”ÌP ÌlÌJ”ÌR ÌlÌL”” Ìm” Ìm” Ìm” Ìm‘” Ìn‘”	 Ìo”” Ìp” Ìp” Ìp” Ìp’” Ìq” Ìq’” Ìs”" Ìs œ” Ìt
 ”
- ÌE” ÌE”" ÌE(”# ÌE)”% ÌE4”' ÌE6”) ÌEÌA”+ ÌEÌC”- ÌEÌN”/ ÌEÌP”1 ÌEÌ[Ÿ” ÌF” ÌF
-” ÌF” ÌF”' ÌF#”( ÌF$”. ÌF*”/ ÌF+”1 ÌF-”3 ÌF/”5 ÌF1”7 ÌF3”9 ÌF5”: ÌF6”; ÌF7Ÿ” ÌG” ÌG
-” ÌG” ÌG”' ÌG#”( ÌG$”. ÌG*”/ ÌG+”1 ÌG-”3 ÌG/”5 ÌG1”7 ÌG3”9 ÌG5”: ÌG6”; ÌG7Ÿ” ÌH” ÌH
-” ÌH” ÌH”' ÌH#”( ÌH$”. ÌH*”/ ÌH+”1 ÌH-”3 ÌH/”5 ÌH1”7 ÌH3”9 ÌH5”: ÌH6”; ÌH7Ÿ” ÌI” ÌI
-” ÌI” ÌI”' ÌI#”( ÌI$”. ÌI*”/ ÌI+”1 ÌI-”3 ÌI/”5 ÌI1”7 ÌI3”9 ÌI5”: ÌI6”; ÌI7Ü ” ÌJ” ÌJ” ÌJ
-” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ”  ÌJ”$ ÌJ ”& ÌJ"”+ ÌJ'”, ÌJ(”0 ÌJ,”2 ÌJ.”7 ÌJ3”8 ÌJ4”: ÌJ6”” ÌK” ÌK” ÌK” ÌK‘”	 ÌLÜ ” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”" ÌM”# ÌM”$ ÌM ”( ÌM$”) ÌM%”+ ÌM'”. ÌM*”/ ÌM+”0 ÌM,”5 ÌM1”6 ÌM2”8 ÌM4”; ÌM7”< ÌM8”= ÌM9”> ÌM:’” ÌN” ÌNš” ÌP
+ Ìt” Ìt”" Ìt(”# Ìt)”% Ìt4”' Ìt6”) ÌtÌA”+ ÌtÌC”- ÌtÌN”/ ÌtÌP”1 ÌtÌ[Ÿ” Ìu” Ìu
+” Ìu” Ìu”' Ìu#”( Ìu$”. Ìu*”/ Ìu+”1 Ìu-”3 Ìu/”5 Ìu1”7 Ìu3”9 Ìu5”: Ìu6”; Ìu7Ÿ” Ìv” Ìv
+” Ìv” Ìv”' Ìv#”( Ìv$”. Ìv*”/ Ìv+”1 Ìv-”3 Ìv/”5 Ìv1”7 Ìv3”9 Ìv5”: Ìv6”; Ìv7Ÿ” Ìw” Ìw
+” Ìw” Ìw”' Ìw#”( Ìw$”. Ìw*”/ Ìw+”1 Ìw-”3 Ìw/”5 Ìw1”7 Ìw3”9 Ìw5”: Ìw6”; Ìw7Ÿ” Ìx” Ìx
+” Ìx” Ìx”' Ìx#”( Ìx$”. Ìx*”/ Ìx+”1 Ìx-”3 Ìx/”5 Ìx1”7 Ìx3”9 Ìx5”: Ìx6”; Ìx7Ü ” Ìy” Ìy” Ìy
+” Ìy” Ìy” Ìy” Ìy” Ìy”  Ìy”$ Ìy ”& Ìy"”+ Ìy'”, Ìy(”0 Ìy,”2 Ìy.”7 Ìy3”8 Ìy4”: Ìy6”” Ìz” Ìz” Ìz” Ìz‘”	 Ì{Ü ” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|”" Ì|”# Ì|”$ Ì| ”( Ì|$”) Ì|%”+ Ì|'”. Ì|*”/ Ì|+”0 Ì|,”5 Ì|1”6 Ì|2”8 Ì|4”; Ì|7”< Ì|8”= Ì|9”> Ì|:’” Ì}” Ì}š” Ì
 ”
- ÌP” ÌP” ÌP” ÌP” ÌP"” ÌP$” ÌP.” ÌP0” ÌP:Ü ,” ÌQ” ÌQ
-” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”  ÌQ”! ÌQ”" ÌQ”# ÌQ”$ ÌQ ”' ÌQ#”( ÌQ$”) ÌQ%”* ÌQ&”+ ÌQ'”. ÌQ*”/ ÌQ+”0 ÌQ,”1 ÌQ-”2 ÌQ.”5 ÌQ1”6 ÌQ2”7 ÌQ3”8 ÌQ4”9 ÌQ5”< ÌQ8”= ÌQ9”> ÌQ:”? ÌQ;”Ì@ ÌQ<”ÌC ÌQ?”ÌD ÌQÌ@”ÌE ÌQÌA”ÌF ÌQÌB”ÌG ÌQÌC”ÌH ÌQÌD›” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR”  ÌR”” ÌS” ÌS” ÌS” ÌS‘”	 ÌTŸ” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU’” ÌV” ÌVš” ÌX”
- ÌX” ÌX	” ÌX” ÌX” ÌX” ÌX” ÌX&” ÌX(” ÌX2” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”" ÌY”& ÌY"”' ÌY#”+ ÌY'”- ÌY)”0 ÌY,”9 ÌY5”: ÌY6’” ÌZ” ÌZ’” Ì\”$ Ì\"˜” Ì]”
- Ì]” Ì]	” Ì]” Ì]” Ì]#” Ì]%” Ì]1š” Ì^” Ì^” Ì^	” Ì^
-” Ì^” Ì^” Ì^” Ì^”# Ì^”% Ì^!”” Ì_” Ì_” Ì_” Ì_‘”	 Ì`–” Ìa” Ìa” Ìa” Ìa%” Ìa+” Ìa,Ü ” Ìb” Ìb	” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb” Ìb”$ Ìb ”% Ìb!”+ Ìb'”- Ìb)”. Ìb*”0 Ìb,”2 Ìb.Ü ” Ìc” Ìc” Ìc” Ìc” Ìc” Ìc” Ìc” Ìc”  Ìc”! Ìc”" Ìc”( Ìc"”) Ìc#”/ Ìc)”1 Ìc+”2 Ìc,”4 Ìc.”6 Ìc0Ü )” Ìd” Ìd” Ìd” Ìd”. Ìd&”/ Ìd'”> Ìd6”? Ìe
-”Ì@ Ìe”ÌA Ìe”ÌG Ìe”ÌH Ìe”ÌI Ìe”ÌL Ìe”ÌM Ìe”ÌN Ìe”ÌP Ìe”ÌQ Ìe”ÌR Ìe”ÌX Ìe#”ÌY Ìe$”ÌZ Ìe%”Ì[ Ìe&”Ì] Ìe(”Ì^ Ìe)”Ì_ Ìe*”Ìe Ìe0”Ìf Ìe1”Ìg Ìe2”Ìj Ìe5”Ìk Ìe6”Ìl Ìe7”Ìn Ìe9”Ìo Ìe:”Ìp Ìe;”Ìv ÌeÌA”Ìw ÌeÌB”Ìx ÌeÌC”Ìy ÌeÌD”Ìz ÌeÌE”Ì{ ÌeÌF–” Ìf” Ìf” Ìf” Ìf”- Ìf%”/ Ìf'”” Ìg
-” Ìg”. Ìg$”/ Ìg%‘” Ìh	–” Ìi” Ìi” Ìi” Ìi”, Ìi$”. Ìi&•” Ìj
-” Ìj” Ìj”. Ìj$”/ Ìj%‘” Ìk	‘” Ìl‘”	 Ìm”” Ìn” Ìn” Ìn” Ìn’” Ìo” Ìo–” Ìq”
- Ìq” Ìq	” Ìq” Ìq” Ìq%–” Ìr” Ìr” Ìr” Ìr” Ìr” ÌrÜ ” Ìs” Ìs	” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs”" Ìs”# Ìs”) Ìs%”+ Ìs'”, Ìs(”. Ìs*”0 Ìs,Ü -” Ìt” Ìt	” Ìt” Ìt” Ìt” Ìt” Ìt”" Ìt”# Ìt”$ Ìt”% Ìt”& Ìt ”' Ìt!”* Ìt$”0 Ìt*”1 Ìt+”2 Ìt,”5 Ìt/”6 Ìt0”7 Ìt1”8 Ìt2”9 Ìt3”: Ìt4”= Ìt7”ÌA Ìt;”ÌB Ìt<”ÌE Ìt?”ÌF ÌtÌ@”ÌL ÌtÌF”ÌM ÌtÌG”ÌN ÌtÌH”ÌO ÌtÌI”ÌP ÌtÌJ”ÌQ ÌtÌK”ÌT ÌtÌN”ÌZ ÌtÌT”Ì[ ÌtÌU”Ì\ ÌtÌV”Ì_ ÌtÌY”Ì` ÌtÌZ”Ìa ÌtÌ[”Ìb ÌtÌ\”Ìc ÌtÌ]”Ìd ÌtÌ^”Ìe ÌtÌ_‘”	 Ìu”” Ìv” Ìv” Ìv” Ìv’” Ìw” Ìw’” Ìy”- Ìy+–” Ìz”
- Ìz” Ìz	” Ìz” Ìz” Ìz$” Ì{” Ì{
-” Ì{” Ì{”( Ì{$”) Ì{%”3 Ì{/”4 Ì{0”8 Ì{4”9 Ì{5”? Ì{;”Ì@ Ì{<”ÌA Ì{=” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|” Ì|”" Ì|”# Ì|”' Ì|#”* Ì|&”. Ì|*”0 Ì|,”2 Ì|.”” Ì}” Ì}” Ì}” Ì}‘”	 Ì~” Ì” Ì” Ì” Ì” Ì” Ì” Ì”" Ì”# Ì”' Ì#”* Ì&”. Ì*”0 Ì,”2 Ì.”” Ì€” Ì€” Ì€” Ì€‘”	 Ì–” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚’” Ìƒ” Ìƒ‘” Ì„ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ s‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍgÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclaration ÍgÔrK”¤type¥start£end¤nameªIdentifier&:´WireConflictGeometryÀÔrL”¤type¥start£end¤body©ClassBody;Íg˜ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌBÌÃÂKªIdentifierÌIÌQ¨nearlyEq¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌQÌÀÂÂÂ’KªIdentifierÌRÌS¡aKªIdentifierÌUÌV¡bL®BlockStatementÌXÌ‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÌcÌ‡ÔrP–¤type¥start£end¤left¨operator¥right°BinaryExpressionÌjÌ†ÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌjÌyÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌjÌrKªIdentifierÌjÌn¤MathKªIdentifierÌoÌr£absÂÂ‘P°BinaryExpressionÌsÌxKªIdentifierÌsÌt¡a¡-KªIdentifierÌwÌx¡bÂ¢<=KªIdentifierÌ}Ì†©COORD_EPSM°MethodDefinitionÌ¯Í	ÃÂKªIdentifierÌ¶ÌÅ¯segmentConflict¦methodN²FunctionExpressionÌÅÍ	ÀÂÂÂ”KªIdentifierÌÆÌÈ¢a1KªIdentifierÌÊÌÌ¢a2KªIdentifierÌÎÌĞ¢b1KªIdentifierÌÒÌÔ¢b2L®BlockStatementÌÖÍ	šÔrS•¤type¥start£end¬declarations¤kind³VariableDeclarationÌáÍ‘ÔrT•¤type¥start£end¢id¤init²VariableDeclaratorÌçÍKªIdentifierÌçÌì¥aVertQ®CallExpressionÌïÍR°MemberExpressionÌïÍKªIdentifierÌïÍ´WireConflictGeometryKªIdentifierÍÍ¨nearlyEqÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ¢a1KªIdentifierÍÍ¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂÂ¥constS³VariableDeclarationÍ#Í\‘T²VariableDeclaratorÍ)Í[KªIdentifierÍ)Í/¦aHorizQ®CallExpressionÍ2Í[R°MemberExpressionÍ2ÍOKªIdentifierÍ2ÍF´WireConflictGeometryKªIdentifierÍGÍO¨nearlyEqÂÂ’R°MemberExpressionÍPÍTKªIdentifierÍPÍR¢a1KªIdentifierÍSÍT¡yÂÂR°MemberExpressionÍVÍZKªIdentifierÍVÍX¢a2KªIdentifierÍYÍZ¡yÂÂÂ¥constS³VariableDeclarationÍfÍ‘T²VariableDeclaratorÍlÍKªIdentifierÍlÍq¥bVertQ®CallExpressionÍtÍR°MemberExpressionÍtÍ‘KªIdentifierÍtÍˆ´WireConflictGeometryKªIdentifierÍ‰Í‘¨nearlyEqÂÂ’R°MemberExpressionÍ’Í–KªIdentifierÍ’Í”¢b1KªIdentifierÍ•Í–¡xÂÂR°MemberExpressionÍ˜ÍœKªIdentifierÍ˜Íš¢b2KªIdentifierÍ›Íœ¡xÂÂÂ¥constS³VariableDeclarationÍ¨Íá‘T²VariableDeclaratorÍ®ÍàKªIdentifierÍ®Í´¦bHorizQ®CallExpressionÍ·ÍàR°MemberExpressionÍ·ÍÔKªIdentifierÍ·ÍË´WireConflictGeometryKªIdentifierÍÌÍÔ¨nearlyEqÂÂ’R°MemberExpressionÍÕÍÙKªIdentifierÍÕÍ×¢b1KªIdentifierÍØÍÙ¡yÂÂR°MemberExpressionÍÛÍßKªIdentifierÍÛÍİ¢b2KªIdentifierÍŞÍß¡yÂÂÂ¥constÔrU–¤type¥start£end¤testªconsequent©alternate«IfStatementÍüÍRP±LogicalExpressionÍ ÍKªIdentifierÍ Í¥aVert¢&&KªIdentifierÍ	Í¦bHorizL®BlockStatementÍÍR“S³VariableDeclarationÍ Í/‘T²VariableDeclaratorÍ&Í.KªIdentifierÍ&Í'¡xR°MemberExpressionÍ*Í.KªIdentifierÍ*Í,¢a1KªIdentifierÍ-Í.¡xÂÂ¥constS³VariableDeclarationÍ=ÍL‘T²VariableDeclaratorÍCÍKKªIdentifierÍCÍD¡yR°MemberExpressionÍGÍKKªIdentifierÍGÍI¢b1KªIdentifierÍJÍK¡yÂÂ¥constU«IfStatementÍZÍGP±LogicalExpressionÍ^Í	Q®CallExpressionÍ^Í©R°MemberExpressionÍ^ÍzKªIdentifierÍ^Ír´WireConflictGeometryKªIdentifierÍsÍz§betweenÂÂ“KªIdentifierÍ{Í|¡yQ®CallExpressionÍ~Í’R°MemberExpressionÍ~Í†KªIdentifierÍ~Í‚¤MathKªIdentifierÍƒÍ†£minÂÂ’R°MemberExpressionÍ‡Í‹KªIdentifierÍ‡Í‰¢a1KªIdentifierÍŠÍ‹¡yÂÂR°MemberExpressionÍÍ‘KªIdentifierÍÍ¢a2KªIdentifierÍÍ‘¡yÂÂÂQ®CallExpressionÍ”Í¨R°MemberExpressionÍ”ÍœKªIdentifierÍ”Í˜¤MathKªIdentifierÍ™Íœ£maxÂÂ’R°MemberExpressionÍÍ¡KªIdentifierÍÍŸ¢a1KªIdentifierÍ Í¡¡yÂÂR°MemberExpressionÍ£Í§KªIdentifierÍ£Í¥¢a2KªIdentifierÍ¦Í§¡yÂÂÂÂ¢&&Q®CallExpressionÍ¾Í	R°MemberExpressionÍ¾ÍÚKªIdentifierÍ¾ÍÒ´WireConflictGeometryKªIdentifierÍÓÍÚ§betweenÂÂ“KªIdentifierÍÛÍÜ¡xQ®CallExpressionÍŞÍòR°MemberExpressionÍŞÍæKªIdentifierÍŞÍâ¤MathKªIdentifierÍãÍæ£minÂÂ’R°MemberExpressionÍçÍëKªIdentifierÍçÍé¢b1KªIdentifierÍêÍë¡xÂÂR°MemberExpressionÍíÍñKªIdentifierÍíÍï¢b2KªIdentifierÍğÍñ¡xÂÂÂQ®CallExpressionÍôÍR°MemberExpressionÍôÍüKªIdentifierÍôÍø¤MathKªIdentifierÍùÍü£maxÂÂ’R°MemberExpressionÍıÍKªIdentifierÍıÍÿ¢b1KªIdentifierÍ Í¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢b2KªIdentifierÍÍ¡xÂÂÂÂL®BlockStatementÍÍG‘O¯ReturnStatementÍÍ8ÔrV•¤type¥start£end¥value£raw§LiteralÍ%Í7°orthogonal_cross²'orthogonal_cross'ÀÀU«IfStatementÍ\Í²P±LogicalExpressionÍ`ÍoKªIdentifierÍ`Íf¦aHoriz¢&&KªIdentifierÍjÍo¥bVertL®BlockStatementÍqÍ²“S³VariableDeclarationÍ€Í‘T²VariableDeclaratorÍ†ÍKªIdentifierÍ†Í‡¡xR°MemberExpressionÍŠÍKªIdentifierÍŠÍŒ¢b1KªIdentifierÍÍ¡xÂÂ¥constS³VariableDeclarationÍÍ¬‘T²VariableDeclaratorÍ£Í«KªIdentifierÍ£Í¤¡yR°MemberExpressionÍ§Í«KªIdentifierÍ§Í©¢a1KªIdentifierÍªÍ«¡yÂÂ¥constU«IfStatementÍºÍ§P±LogicalExpressionÍ¾ÍiQ®CallExpressionÍ¾Í	R°MemberExpressionÍ¾ÍÚKªIdentifierÍ¾ÍÒ´WireConflictGeometryKªIdentifierÍÓÍÚ§betweenÂÂ“KªIdentifierÍÛÍÜ¡xQ®CallExpressionÍŞÍòR°MemberExpressionÍŞÍæKªIdentifierÍŞÍâ¤MathKªIdentifierÍãÍæ£minÂÂ’R°MemberExpressionÍçÍëKªIdentifierÍçÍé¢a1KªIdentifierÍêÍë¡xÂÂR°MemberExpressionÍíÍñKªIdentifierÍíÍï¢a2KªIdentifierÍğÍñ¡xÂÂÂQ®CallExpressionÍôÍR°MemberExpressionÍôÍüKªIdentifierÍôÍø¤MathKªIdentifierÍùÍü£maxÂÂ’R°MemberExpressionÍıÍKªIdentifierÍıÍÿ¢a1KªIdentifierÍ Í¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂÂÂ¢&&Q®CallExpressionÍÍiR°MemberExpressionÍÍ:KªIdentifierÍÍ2´WireConflictGeometryKªIdentifierÍ3Í:§betweenÂÂ“KªIdentifierÍ;Í<¡yQ®CallExpressionÍ>ÍRR°MemberExpressionÍ>ÍFKªIdentifierÍ>ÍB¤MathKªIdentifierÍCÍF£minÂÂ’R°MemberExpressionÍGÍKKªIdentifierÍGÍI¢b1KªIdentifierÍJÍK¡yÂÂR°MemberExpressionÍMÍQKªIdentifierÍMÍO¢b2KªIdentifierÍPÍQ¡yÂÂÂQ®CallExpressionÍTÍhR°MemberExpressionÍTÍ\KªIdentifierÍTÍX¤MathKªIdentifierÍYÍ\£maxÂÂ’R°MemberExpressionÍ]ÍaKªIdentifierÍ]Í_¢b1KªIdentifierÍ`Ía¡yÂÂR°MemberExpressionÍcÍgKªIdentifierÍcÍe¢b2KªIdentifierÍfÍg¡yÂÂÂÂL®BlockStatementÍkÍ§‘O¯ReturnStatementÍ~Í˜V§LiteralÍ…Í—°orthogonal_cross²'orthogonal_cross'ÀÀU«IfStatementÍØÍeP±LogicalExpressionÍÜÍP±LogicalExpressionÍÜÍêKªIdentifierÍÜÍá¥aVert¢&&KªIdentifierÍåÍê¥bVert¢&&Q®CallExpressionÍîÍR°MemberExpressionÍîÍKªIdentifierÍîÍ´WireConflictGeometryKªIdentifierÍÍ¨nearlyEqÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ¢a1KªIdentifierÍÍ¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢b1KªIdentifierÍÍ¡xÂÂÂL®BlockStatementÍÍe•S³VariableDeclarationÍ(ÍJ‘T²VariableDeclaratorÍ.ÍIKªIdentifierÍ.Í2¤aMinQ®CallExpressionÍ5ÍIR°MemberExpressionÍ5Í=KªIdentifierÍ5Í9¤MathKªIdentifierÍ:Í=£minÂÂ’R°MemberExpressionÍ>ÍBKªIdentifierÍ>Í@¢a1KªIdentifierÍAÍB¡yÂÂR°MemberExpressionÍDÍHKªIdentifierÍDÍF¢a2KªIdentifierÍGÍH¡yÂÂÂ¥constS³VariableDeclarationÍXÍz‘T²VariableDeclaratorÍ^ÍyKªIdentifierÍ^Íb¤aMaxQ®CallExpressionÍeÍyR°MemberExpressionÍeÍmKªIdentifierÍeÍi¤MathKªIdentifierÍjÍm£maxÂÂ’R°MemberExpressionÍnÍrKªIdentifierÍnÍp¢a1KªIdentifierÍqÍr¡yÂÂR°MemberExpressionÍtÍxKªIdentifierÍtÍv¢a2KªIdentifierÍwÍx¡yÂÂÂ¥constS³VariableDeclarationÍˆÍª‘T²VariableDeclaratorÍÍ©KªIdentifierÍÍ’¤bMinQ®CallExpressionÍ•Í©R°MemberExpressionÍ•ÍKªIdentifierÍ•Í™¤MathKªIdentifierÍšÍ£minÂÂ’R°MemberExpressionÍÍ¢KªIdentifierÍÍ ¢b1KªIdentifierÍ¡Í¢¡yÂÂR°MemberExpressionÍ¤Í¨KªIdentifierÍ¤Í¦¢b2KªIdentifierÍ§Í¨¡yÂÂÂ¥constS³VariableDeclarationÍ¸ÍÚ‘T²VariableDeclaratorÍ¾ÍÙKªIdentifierÍ¾ÍÂ¤bMaxQ®CallExpressionÍÅÍÙR°MemberExpressionÍÅÍÍKªIdentifierÍÅÍÉ¤MathKªIdentifierÍÊÍÍ£maxÂÂ’R°MemberExpressionÍÎÍÒKªIdentifierÍÎÍĞ¢b1KªIdentifierÍÑÍÒ¡yÂÂR°MemberExpressionÍÔÍØKªIdentifierÍÔÍÖ¢b2KªIdentifierÍ×ÍØ¡yÂÂÂ¥constU«IfStatementÍèÍZP°BinaryExpressionÍìÍP°BinaryExpressionÍìÍQ®CallExpressionÍìÍ R°MemberExpressionÍìÍôKªIdentifierÍìÍğ¤MathKªIdentifierÍñÍô£minÂÂ’KªIdentifierÍõÍù¤aMaxKªIdentifierÍûÍÿ¤bMaxÂ¡-Q®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¤MathKªIdentifierÍÍ£maxÂÂ’KªIdentifierÍÍ¤aMinKªIdentifierÍÍ¤bMinÂ¡>V§LiteralÍÍ¡5L®BlockStatementÍÍZ‘O¯ReturnStatementÍ0ÍKV§LiteralÍ7ÍJ±collinear_overlap³'collinear_overlap'ÀÀU«IfStatementÍoÍşP±LogicalExpressionÍsÍ°P±LogicalExpressionÍsÍƒKªIdentifierÍsÍy¦aHoriz¢&&KªIdentifierÍ}Íƒ¦bHoriz¢&&Q®CallExpressionÍ‡Í°R°MemberExpressionÍ‡Í¤KªIdentifierÍ‡Í›´WireConflictGeometryKªIdentifierÍœÍ¤¨nearlyEqÂÂ’R°MemberExpressionÍ¥Í©KªIdentifierÍ¥Í§¢a1KªIdentifierÍ¨Í©¡yÂÂR°MemberExpressionÍ«Í¯KªIdentifierÍ«Í­¢b1KªIdentifierÍ®Í¯¡yÂÂÂL®BlockStatementÍ²Íş•S³VariableDeclarationÍÁÍã‘T²VariableDeclaratorÍÇÍâKªIdentifierÍÇÍË¤aMinQ®CallExpressionÍÎÍâR°MemberExpressionÍÎÍÖKªIdentifierÍÎÍÒ¤MathKªIdentifierÍÓÍÖ£minÂÂ’R°MemberExpressionÍ×ÍÛKªIdentifierÍ×ÍÙ¢a1KªIdentifierÍÚÍÛ¡xÂÂR°MemberExpressionÍİÍáKªIdentifierÍİÍß¢a2KªIdentifierÍàÍá¡xÂÂÂ¥constS³VariableDeclarationÍñÍ‘T²VariableDeclaratorÍ÷ÍKªIdentifierÍ÷Íû¤aMaxQ®CallExpressionÍşÍR°MemberExpressionÍşÍKªIdentifierÍşÍ¤MathKªIdentifierÍÍ£maxÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ	¢a1KªIdentifierÍ
+ Ì” Ì” Ì” Ì” Ì"” Ì$” Ì.” Ì0” Ì:Ü ,” Ì€” Ì€
+” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€” Ì€”  Ì€”! Ì€”" Ì€”# Ì€”$ Ì€ ”' Ì€#”( Ì€$”) Ì€%”* Ì€&”+ Ì€'”. Ì€*”/ Ì€+”0 Ì€,”1 Ì€-”2 Ì€.”5 Ì€1”6 Ì€2”7 Ì€3”8 Ì€4”9 Ì€5”< Ì€8”= Ì€9”> Ì€:”? Ì€;”Ì@ Ì€<”ÌC Ì€?”ÌD Ì€Ì@”ÌE Ì€ÌA”ÌF Ì€ÌB”ÌG Ì€ÌC”ÌH Ì€ÌD›” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”” Ì‚” Ì‚” Ì‚” Ì‚‘”	 ÌƒŸ” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„’” Ì…” Ì…š” Ì‡”
+ Ì‡” Ì‡	” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡&” Ì‡(” Ì‡2” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”" Ìˆ”& Ìˆ"”' Ìˆ#”+ Ìˆ'”- Ìˆ)”0 Ìˆ,”9 Ìˆ5”: Ìˆ6’” Ì‰” Ì‰’” Ì‹”$ Ì‹"˜” ÌŒ”
+ ÌŒ” ÌŒ	” ÌŒ” ÌŒ” ÌŒ#” ÌŒ%” ÌŒ1š” Ì” Ì” Ì	” Ì
+” Ì” Ì” Ì” Ì”# Ì”% Ì!”” Ì” Ì” Ì” Ì‘”	 Ì–” Ì” Ì” Ì” Ì%” Ì+” Ì,Ü ” Ì‘” Ì‘	” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”$ Ì‘ ”% Ì‘!”+ Ì‘'”- Ì‘)”. Ì‘*”0 Ì‘,”2 Ì‘.Ü ” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’”  Ì’”! Ì’”" Ì’”( Ì’"”) Ì’#”/ Ì’)”1 Ì’+”2 Ì’,”4 Ì’.”6 Ì’0Ü )” Ì“” Ì“” Ì“” Ì“”. Ì“&”/ Ì“'”> Ì“6”? Ì”
+”Ì@ Ì””ÌA Ì””ÌG Ì””ÌH Ì””ÌI Ì””ÌL Ì””ÌM Ì””ÌN Ì””ÌP Ì””ÌQ Ì””ÌR Ì””ÌX Ì”#”ÌY Ì”$”ÌZ Ì”%”Ì[ Ì”&”Ì] Ì”(”Ì^ Ì”)”Ì_ Ì”*”Ìe Ì”0”Ìf Ì”1”Ìg Ì”2”Ìj Ì”5”Ìk Ì”6”Ìl Ì”7”Ìn Ì”9”Ìo Ì”:”Ìp Ì”;”Ìv Ì”ÌA”Ìw Ì”ÌB”Ìx Ì”ÌC”Ìy Ì”ÌD”Ìz Ì”ÌE”Ì{ Ì”ÌF–” Ì•” Ì•” Ì•” Ì•”- Ì•%”/ Ì•'”” Ì–
+” Ì–”. Ì–$”/ Ì–%‘” Ì—	–” Ì˜” Ì˜” Ì˜” Ì˜”, Ì˜$”. Ì˜&•” Ì™
+” Ì™” Ì™”. Ì™$”/ Ì™%‘” Ìš	‘” Ì›‘”	 Ìœ”” Ì” Ì” Ì” Ì’” Ì” Ì–” Ì ”
+ Ì ” Ì 	” Ì ” Ì ” Ì %–” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡Ü ” Ì¢” Ì¢	” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”" Ì¢”# Ì¢”) Ì¢%”+ Ì¢'”, Ì¢(”. Ì¢*”0 Ì¢,Ü -” Ì£” Ì£	” Ì£” Ì£” Ì£” Ì£” Ì£”" Ì£”# Ì£”$ Ì£”% Ì£”& Ì£ ”' Ì£!”* Ì£$”0 Ì£*”1 Ì£+”2 Ì£,”5 Ì£/”6 Ì£0”7 Ì£1”8 Ì£2”9 Ì£3”: Ì£4”= Ì£7”ÌA Ì£;”ÌB Ì£<”ÌE Ì£?”ÌF Ì£Ì@”ÌL Ì£ÌF”ÌM Ì£ÌG”ÌN Ì£ÌH”ÌO Ì£ÌI”ÌP Ì£ÌJ”ÌQ Ì£ÌK”ÌT Ì£ÌN”ÌZ Ì£ÌT”Ì[ Ì£ÌU”Ì\ Ì£ÌV”Ì_ Ì£ÌY”Ì` Ì£ÌZ”Ìa Ì£Ì[”Ìb Ì£Ì\”Ìc Ì£Ì]”Ìd Ì£Ì^”Ìe Ì£Ì_‘”	 Ì¤”” Ì¥” Ì¥” Ì¥” Ì¥’” Ì¦” Ì¦’” Ì¨”- Ì¨+–” Ì©”
+ Ì©” Ì©	” Ì©” Ì©” Ì©$” Ìª” Ìª
+” Ìª” Ìª”( Ìª$”) Ìª%”3 Ìª/”4 Ìª0”8 Ìª4”9 Ìª5”? Ìª;”Ì@ Ìª<”ÌA Ìª=” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«”" Ì«”# Ì«”' Ì«#”* Ì«&”. Ì«*”0 Ì«,”2 Ì«.”” Ì¬” Ì¬” Ì¬” Ì¬‘”	 Ì­” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®”" Ì®”# Ì®”' Ì®#”* Ì®&”. Ì®*”0 Ì®,”2 Ì®.”” Ì¯” Ì¯” Ì¯” Ì¯‘”	 Ì°–” Ì±” Ì±” Ì±” Ì±” Ì±” Ì±’” Ì²” Ì²‘” Ì³ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ›‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ×ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclaration Í×ÔrK”¤type¥start£end¤nameªIdentifier&:´WireConflictGeometryÀÔrL”¤type¥start£end¤body©ClassBody;Í×šÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌBÌÃÂKªIdentifierÌIÌQ¨nearlyEq¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌQÌÀÂÂÂ’KªIdentifierÌRÌS¡aKªIdentifierÌUÌV¡bL®BlockStatementÌXÌ‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÌcÌ‡ÔrP–¤type¥start£end¤left¨operator¥right°BinaryExpressionÌjÌ†ÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌjÌyÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌjÌrKªIdentifierÌjÌn¤MathKªIdentifierÌoÌr£absÂÂ‘P°BinaryExpressionÌsÌxKªIdentifierÌsÌt¡a¡-KªIdentifierÌwÌx¡bÂ¢<=KªIdentifierÌ}Ì†©COORD_EPSM°MethodDefinitionÌ¯Í	ÃÂKªIdentifierÌ¶ÌÅ¯segmentConflict¦methodN²FunctionExpressionÌÅÍ	ÀÂÂÂ”KªIdentifierÌÆÌÈ¢a1KªIdentifierÌÊÌÌ¢a2KªIdentifierÌÎÌĞ¢b1KªIdentifierÌÒÌÔ¢b2L®BlockStatementÌÖÍ	šÔrS•¤type¥start£end¬declarations¤kind³VariableDeclarationÌáÍ‘ÔrT•¤type¥start£end¢id¤init²VariableDeclaratorÌçÍKªIdentifierÌçÌì¥aVertQ®CallExpressionÌïÍR°MemberExpressionÌïÍKªIdentifierÌïÍ´WireConflictGeometryKªIdentifierÍÍ¨nearlyEqÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ¢a1KªIdentifierÍÍ¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂÂ¥constS³VariableDeclarationÍ#Í\‘T²VariableDeclaratorÍ)Í[KªIdentifierÍ)Í/¦aHorizQ®CallExpressionÍ2Í[R°MemberExpressionÍ2ÍOKªIdentifierÍ2ÍF´WireConflictGeometryKªIdentifierÍGÍO¨nearlyEqÂÂ’R°MemberExpressionÍPÍTKªIdentifierÍPÍR¢a1KªIdentifierÍSÍT¡yÂÂR°MemberExpressionÍVÍZKªIdentifierÍVÍX¢a2KªIdentifierÍYÍZ¡yÂÂÂ¥constS³VariableDeclarationÍfÍ‘T²VariableDeclaratorÍlÍKªIdentifierÍlÍq¥bVertQ®CallExpressionÍtÍR°MemberExpressionÍtÍ‘KªIdentifierÍtÍˆ´WireConflictGeometryKªIdentifierÍ‰Í‘¨nearlyEqÂÂ’R°MemberExpressionÍ’Í–KªIdentifierÍ’Í”¢b1KªIdentifierÍ•Í–¡xÂÂR°MemberExpressionÍ˜ÍœKªIdentifierÍ˜Íš¢b2KªIdentifierÍ›Íœ¡xÂÂÂ¥constS³VariableDeclarationÍ¨Íá‘T²VariableDeclaratorÍ®ÍàKªIdentifierÍ®Í´¦bHorizQ®CallExpressionÍ·ÍàR°MemberExpressionÍ·ÍÔKªIdentifierÍ·ÍË´WireConflictGeometryKªIdentifierÍÌÍÔ¨nearlyEqÂÂ’R°MemberExpressionÍÕÍÙKªIdentifierÍÕÍ×¢b1KªIdentifierÍØÍÙ¡yÂÂR°MemberExpressionÍÛÍßKªIdentifierÍÛÍİ¢b2KªIdentifierÍŞÍß¡yÂÂÂ¥constÔrU–¤type¥start£end¤testªconsequent©alternate«IfStatementÍüÍRP±LogicalExpressionÍ ÍKªIdentifierÍ Í¥aVert¢&&KªIdentifierÍ	Í¦bHorizL®BlockStatementÍÍR“S³VariableDeclarationÍ Í/‘T²VariableDeclaratorÍ&Í.KªIdentifierÍ&Í'¡xR°MemberExpressionÍ*Í.KªIdentifierÍ*Í,¢a1KªIdentifierÍ-Í.¡xÂÂ¥constS³VariableDeclarationÍ=ÍL‘T²VariableDeclaratorÍCÍKKªIdentifierÍCÍD¡yR°MemberExpressionÍGÍKKªIdentifierÍGÍI¢b1KªIdentifierÍJÍK¡yÂÂ¥constU«IfStatementÍZÍGP±LogicalExpressionÍ^Í	Q®CallExpressionÍ^Í©R°MemberExpressionÍ^ÍzKªIdentifierÍ^Ír´WireConflictGeometryKªIdentifierÍsÍz§betweenÂÂ“KªIdentifierÍ{Í|¡yQ®CallExpressionÍ~Í’R°MemberExpressionÍ~Í†KªIdentifierÍ~Í‚¤MathKªIdentifierÍƒÍ†£minÂÂ’R°MemberExpressionÍ‡Í‹KªIdentifierÍ‡Í‰¢a1KªIdentifierÍŠÍ‹¡yÂÂR°MemberExpressionÍÍ‘KªIdentifierÍÍ¢a2KªIdentifierÍÍ‘¡yÂÂÂQ®CallExpressionÍ”Í¨R°MemberExpressionÍ”ÍœKªIdentifierÍ”Í˜¤MathKªIdentifierÍ™Íœ£maxÂÂ’R°MemberExpressionÍÍ¡KªIdentifierÍÍŸ¢a1KªIdentifierÍ Í¡¡yÂÂR°MemberExpressionÍ£Í§KªIdentifierÍ£Í¥¢a2KªIdentifierÍ¦Í§¡yÂÂÂÂ¢&&Q®CallExpressionÍ¾Í	R°MemberExpressionÍ¾ÍÚKªIdentifierÍ¾ÍÒ´WireConflictGeometryKªIdentifierÍÓÍÚ§betweenÂÂ“KªIdentifierÍÛÍÜ¡xQ®CallExpressionÍŞÍòR°MemberExpressionÍŞÍæKªIdentifierÍŞÍâ¤MathKªIdentifierÍãÍæ£minÂÂ’R°MemberExpressionÍçÍëKªIdentifierÍçÍé¢b1KªIdentifierÍêÍë¡xÂÂR°MemberExpressionÍíÍñKªIdentifierÍíÍï¢b2KªIdentifierÍğÍñ¡xÂÂÂQ®CallExpressionÍôÍR°MemberExpressionÍôÍüKªIdentifierÍôÍø¤MathKªIdentifierÍùÍü£maxÂÂ’R°MemberExpressionÍıÍKªIdentifierÍıÍÿ¢b1KªIdentifierÍ Í¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢b2KªIdentifierÍÍ¡xÂÂÂÂL®BlockStatementÍÍG‘O¯ReturnStatementÍÍ8ÔrV•¤type¥start£end¥value£raw§LiteralÍ%Í7°orthogonal_cross²'orthogonal_cross'ÀÀU«IfStatementÍ\Í²P±LogicalExpressionÍ`ÍoKªIdentifierÍ`Íf¦aHoriz¢&&KªIdentifierÍjÍo¥bVertL®BlockStatementÍqÍ²“S³VariableDeclarationÍ€Í‘T²VariableDeclaratorÍ†ÍKªIdentifierÍ†Í‡¡xR°MemberExpressionÍŠÍKªIdentifierÍŠÍŒ¢b1KªIdentifierÍÍ¡xÂÂ¥constS³VariableDeclarationÍÍ¬‘T²VariableDeclaratorÍ£Í«KªIdentifierÍ£Í¤¡yR°MemberExpressionÍ§Í«KªIdentifierÍ§Í©¢a1KªIdentifierÍªÍ«¡yÂÂ¥constU«IfStatementÍºÍ§P±LogicalExpressionÍ¾ÍiQ®CallExpressionÍ¾Í	R°MemberExpressionÍ¾ÍÚKªIdentifierÍ¾ÍÒ´WireConflictGeometryKªIdentifierÍÓÍÚ§betweenÂÂ“KªIdentifierÍÛÍÜ¡xQ®CallExpressionÍŞÍòR°MemberExpressionÍŞÍæKªIdentifierÍŞÍâ¤MathKªIdentifierÍãÍæ£minÂÂ’R°MemberExpressionÍçÍëKªIdentifierÍçÍé¢a1KªIdentifierÍêÍë¡xÂÂR°MemberExpressionÍíÍñKªIdentifierÍíÍï¢a2KªIdentifierÍğÍñ¡xÂÂÂQ®CallExpressionÍôÍR°MemberExpressionÍôÍüKªIdentifierÍôÍø¤MathKªIdentifierÍùÍü£maxÂÂ’R°MemberExpressionÍıÍKªIdentifierÍıÍÿ¢a1KªIdentifierÍ Í¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂÂÂ¢&&Q®CallExpressionÍÍiR°MemberExpressionÍÍ:KªIdentifierÍÍ2´WireConflictGeometryKªIdentifierÍ3Í:§betweenÂÂ“KªIdentifierÍ;Í<¡yQ®CallExpressionÍ>ÍRR°MemberExpressionÍ>ÍFKªIdentifierÍ>ÍB¤MathKªIdentifierÍCÍF£minÂÂ’R°MemberExpressionÍGÍKKªIdentifierÍGÍI¢b1KªIdentifierÍJÍK¡yÂÂR°MemberExpressionÍMÍQKªIdentifierÍMÍO¢b2KªIdentifierÍPÍQ¡yÂÂÂQ®CallExpressionÍTÍhR°MemberExpressionÍTÍ\KªIdentifierÍTÍX¤MathKªIdentifierÍYÍ\£maxÂÂ’R°MemberExpressionÍ]ÍaKªIdentifierÍ]Í_¢b1KªIdentifierÍ`Ía¡yÂÂR°MemberExpressionÍcÍgKªIdentifierÍcÍe¢b2KªIdentifierÍfÍg¡yÂÂÂÂL®BlockStatementÍkÍ§‘O¯ReturnStatementÍ~Í˜V§LiteralÍ…Í—°orthogonal_cross²'orthogonal_cross'ÀÀU«IfStatementÍØÍeP±LogicalExpressionÍÜÍP±LogicalExpressionÍÜÍêKªIdentifierÍÜÍá¥aVert¢&&KªIdentifierÍåÍê¥bVert¢&&Q®CallExpressionÍîÍR°MemberExpressionÍîÍKªIdentifierÍîÍ´WireConflictGeometryKªIdentifierÍÍ¨nearlyEqÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ¢a1KªIdentifierÍÍ¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢b1KªIdentifierÍÍ¡xÂÂÂL®BlockStatementÍÍe•S³VariableDeclarationÍ(ÍJ‘T²VariableDeclaratorÍ.ÍIKªIdentifierÍ.Í2¤aMinQ®CallExpressionÍ5ÍIR°MemberExpressionÍ5Í=KªIdentifierÍ5Í9¤MathKªIdentifierÍ:Í=£minÂÂ’R°MemberExpressionÍ>ÍBKªIdentifierÍ>Í@¢a1KªIdentifierÍAÍB¡yÂÂR°MemberExpressionÍDÍHKªIdentifierÍDÍF¢a2KªIdentifierÍGÍH¡yÂÂÂ¥constS³VariableDeclarationÍXÍz‘T²VariableDeclaratorÍ^ÍyKªIdentifierÍ^Íb¤aMaxQ®CallExpressionÍeÍyR°MemberExpressionÍeÍmKªIdentifierÍeÍi¤MathKªIdentifierÍjÍm£maxÂÂ’R°MemberExpressionÍnÍrKªIdentifierÍnÍp¢a1KªIdentifierÍqÍr¡yÂÂR°MemberExpressionÍtÍxKªIdentifierÍtÍv¢a2KªIdentifierÍwÍx¡yÂÂÂ¥constS³VariableDeclarationÍˆÍª‘T²VariableDeclaratorÍÍ©KªIdentifierÍÍ’¤bMinQ®CallExpressionÍ•Í©R°MemberExpressionÍ•ÍKªIdentifierÍ•Í™¤MathKªIdentifierÍšÍ£minÂÂ’R°MemberExpressionÍÍ¢KªIdentifierÍÍ ¢b1KªIdentifierÍ¡Í¢¡yÂÂR°MemberExpressionÍ¤Í¨KªIdentifierÍ¤Í¦¢b2KªIdentifierÍ§Í¨¡yÂÂÂ¥constS³VariableDeclarationÍ¸ÍÚ‘T²VariableDeclaratorÍ¾ÍÙKªIdentifierÍ¾ÍÂ¤bMaxQ®CallExpressionÍÅÍÙR°MemberExpressionÍÅÍÍKªIdentifierÍÅÍÉ¤MathKªIdentifierÍÊÍÍ£maxÂÂ’R°MemberExpressionÍÎÍÒKªIdentifierÍÎÍĞ¢b1KªIdentifierÍÑÍÒ¡yÂÂR°MemberExpressionÍÔÍØKªIdentifierÍÔÍÖ¢b2KªIdentifierÍ×ÍØ¡yÂÂÂ¥constU«IfStatementÍèÍZP°BinaryExpressionÍìÍP°BinaryExpressionÍìÍQ®CallExpressionÍìÍ R°MemberExpressionÍìÍôKªIdentifierÍìÍğ¤MathKªIdentifierÍñÍô£minÂÂ’KªIdentifierÍõÍù¤aMaxKªIdentifierÍûÍÿ¤bMaxÂ¡-Q®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¤MathKªIdentifierÍÍ£maxÂÂ’KªIdentifierÍÍ¤aMinKªIdentifierÍÍ¤bMinÂ¡>V§LiteralÍÍ¡5L®BlockStatementÍÍZ‘O¯ReturnStatementÍ0ÍKV§LiteralÍ7ÍJ±collinear_overlap³'collinear_overlap'ÀÀU«IfStatementÍoÍşP±LogicalExpressionÍsÍ°P±LogicalExpressionÍsÍƒKªIdentifierÍsÍy¦aHoriz¢&&KªIdentifierÍ}Íƒ¦bHoriz¢&&Q®CallExpressionÍ‡Í°R°MemberExpressionÍ‡Í¤KªIdentifierÍ‡Í›´WireConflictGeometryKªIdentifierÍœÍ¤¨nearlyEqÂÂ’R°MemberExpressionÍ¥Í©KªIdentifierÍ¥Í§¢a1KªIdentifierÍ¨Í©¡yÂÂR°MemberExpressionÍ«Í¯KªIdentifierÍ«Í­¢b1KªIdentifierÍ®Í¯¡yÂÂÂL®BlockStatementÍ²Íş•S³VariableDeclarationÍÁÍã‘T²VariableDeclaratorÍÇÍâKªIdentifierÍÇÍË¤aMinQ®CallExpressionÍÎÍâR°MemberExpressionÍÎÍÖKªIdentifierÍÎÍÒ¤MathKªIdentifierÍÓÍÖ£minÂÂ’R°MemberExpressionÍ×ÍÛKªIdentifierÍ×ÍÙ¢a1KªIdentifierÍÚÍÛ¡xÂÂR°MemberExpressionÍİÍáKªIdentifierÍİÍß¢a2KªIdentifierÍàÍá¡xÂÂÂ¥constS³VariableDeclarationÍñÍ‘T²VariableDeclaratorÍ÷ÍKªIdentifierÍ÷Íû¤aMaxQ®CallExpressionÍşÍR°MemberExpressionÍşÍKªIdentifierÍşÍ¤MathKªIdentifierÍÍ£maxÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ	¢a1KªIdentifierÍ
 Í¡xÂÂR°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂÂ¥constS³VariableDeclarationÍ!ÍC‘T²VariableDeclaratorÍ'ÍBKªIdentifierÍ'Í+¤bMinQ®CallExpressionÍ.ÍBR°MemberExpressionÍ.Í6KªIdentifierÍ.Í2¤MathKªIdentifierÍ3Í6£minÂÂ’R°MemberExpressionÍ7Í;KªIdentifierÍ7Í9¢b1KªIdentifierÍ:Í;¡xÂÂR°MemberExpressionÍ=ÍAKªIdentifierÍ=Í?¢b2KªIdentifierÍ@ÍA¡xÂÂÂ¥constS³VariableDeclarationÍQÍs‘T²VariableDeclaratorÍWÍrKªIdentifierÍWÍ[¤bMaxQ®CallExpressionÍ^ÍrR°MemberExpressionÍ^ÍfKªIdentifierÍ^Íb¤MathKªIdentifierÍcÍf£maxÂÂ’R°MemberExpressionÍgÍkKªIdentifierÍgÍi¢b1KªIdentifierÍjÍk¡xÂÂR°MemberExpressionÍmÍqKªIdentifierÍmÍo¢b2KªIdentifierÍpÍq¡xÂÂÂ¥constU«IfStatementÍÍóP°BinaryExpressionÍ…Í´P°BinaryExpressionÍ…Í°Q®CallExpressionÍ…Í™R°MemberExpressionÍ…ÍKªIdentifierÍ…Í‰¤MathKªIdentifierÍŠÍ£minÂÂ’KªIdentifierÍÍ’¤aMaxKªIdentifierÍ”Í˜¤bMaxÂ¡-Q®CallExpressionÍœÍ°R°MemberExpressionÍœÍ¤KªIdentifierÍœÍ ¤MathKªIdentifierÍ¡Í¤£maxÂÂ’KªIdentifierÍ¥Í©¤aMinKªIdentifierÍ«Í¯¤bMinÂ¡>V§LiteralÍ³Í´¡5L®BlockStatementÍ¶Íó‘O¯ReturnStatementÍÉÍäV§LiteralÍĞÍã±collinear_overlap³'collinear_overlap'ÀÀU«IfStatementÍ+ÍóP±LogicalExpressionÍ/ÍYP±LogicalExpressionÍ0ÍAÔrW–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ0Í6¡!ÃKªIdentifierÍ1Í6¥aVert¢&&W¯UnaryExpressionÍ:ÍA¡!ÃKªIdentifierÍ;ÍA¦aHoriz¢||P±LogicalExpressionÍGÍXW¯UnaryExpressionÍGÍM¡!ÃKªIdentifierÍHÍM¥bVert¢&&W¯UnaryExpressionÍQÍX¡!ÃKªIdentifierÍRÍX¦bHorizL®BlockStatementÍ[Íó‘U«IfStatementÍjÍèQ®CallExpressionÍnÍªR°MemberExpressionÍnÍšKªIdentifierÍnÍ‚´WireConflictGeometryKªIdentifierÍƒÍš·segmentsProperIntersectÂÂ”KªIdentifierÍ›Í¢a1KªIdentifierÍŸÍ¡¢a2KªIdentifierÍ£Í¥¢b1KªIdentifierÍ§Í©¢b2ÂL®BlockStatementÍ¬Íè‘O¯ReturnStatementÍ¿ÍÙV§LiteralÍÆÍØ°orthogonal_cross²'orthogonal_cross'ÀÀO¯ReturnStatementÍıÍ	V§LiteralÍ	Í	
-¤none¦'none'M°MethodDefinitionÍ	<Í
-ÃÂKªIdentifierÍ	CÍ	Z·segmentsProperIntersect¦methodN²FunctionExpressionÍ	ZÍ
-ÀÂÂÂ”KªIdentifierÍ	[Í	]¢p1KªIdentifierÍ	_Í	a¢p2KªIdentifierÍ	cÍ	e¢q1KªIdentifierÍ	gÍ	i¢q2L®BlockStatementÍ	kÍ
-–S³VariableDeclarationÍ	vÍ	©‘T²VariableDeclaratorÍ	|Í	¨KªIdentifierÍ	|Í	~¢o1Q®CallExpressionÍ	Í	¨R°MemberExpressionÍ	Í	œKªIdentifierÍ	Í	•´WireConflictGeometryKªIdentifierÍ	–Í	œ¦orientÂÂ“KªIdentifierÍ	Í	Ÿ¢p1KªIdentifierÍ	¡Í	£¢p2KªIdentifierÍ	¥Í	§¢q1Â¥constS³VariableDeclarationÍ	³Í	æ‘T²VariableDeclaratorÍ	¹Í	åKªIdentifierÍ	¹Í	»¢o2Q®CallExpressionÍ	¾Í	åR°MemberExpressionÍ	¾Í	ÙKªIdentifierÍ	¾Í	Ò´WireConflictGeometryKªIdentifierÍ	ÓÍ	Ù¦orientÂÂ“KªIdentifierÍ	ÚÍ	Ü¢p1KªIdentifierÍ	ŞÍ	à¢p2KªIdentifierÍ	âÍ	ä¢q2Â¥constS³VariableDeclarationÍ	ğÍ
-#‘T²VariableDeclaratorÍ	öÍ
-"KªIdentifierÍ	öÍ	ø¢o3Q®CallExpressionÍ	ûÍ
-"R°MemberExpressionÍ	ûÍ
-KªIdentifierÍ	ûÍ
-´WireConflictGeometryKªIdentifierÍ
-Í
-¦orientÂÂ“KªIdentifierÍ
-Í
-¢q1KªIdentifierÍ
-Í
-¢q2KªIdentifierÍ
-Í
-!¢p1Â¥constS³VariableDeclarationÍ
+¤none¦'none'M°MethodDefinitionÍ	oÍlÃÂKªIdentifierÍ	vÍ	Š´orthogonalCrossPoint¦methodN²FunctionExpressionÍ	ŠÍlÀÂÂÂ”KªIdentifierÍ	‹Í	¢a1KªIdentifierÍ	Í	‘¢a2KªIdentifierÍ	“Í	•¢b1KªIdentifierÍ	—Í	™¢b2L®BlockStatementÍ	›Íl˜U«IfStatementÍ	¦Í
+P°BinaryExpressionÍ	ªÍ	õQ®CallExpressionÍ	ªÍ	ŞR°MemberExpressionÍ	ªÍ	ÎKªIdentifierÍ	ªÍ	¾´WireConflictGeometryKªIdentifierÍ	¿Í	Î¯segmentConflictÂÂ”KªIdentifierÍ	ÏÍ	Ñ¢a1KªIdentifierÍ	ÓÍ	Õ¢a2KªIdentifierÍ	×Í	Ù¢b1KªIdentifierÍ	ÛÍ	İ¢b2Â£!==V§LiteralÍ	ãÍ	õ°orthogonal_cross²'orthogonal_cross'L®BlockStatementÍ	÷Í
+‘O¯ReturnStatementÍ
+Í
+V§LiteralÍ
+Í
+À¤nullÀS³VariableDeclarationÍ
+'Í
+_‘T²VariableDeclaratorÍ
 -Í
-`‘T²VariableDeclaratorÍ
-3Í
-_KªIdentifierÍ
-3Í
-5¢o4Q®CallExpressionÍ
-8Í
-_R°MemberExpressionÍ
-8Í
-SKªIdentifierÍ
-8Í
-L´WireConflictGeometryKªIdentifierÍ
-MÍ
-S¦orientÂÂ“KªIdentifierÍ
-TÍ
-V¢q1KªIdentifierÍ
-XÍ
-Z¢q2KªIdentifierÍ
+^KªIdentifierÍ
+-Í
+2¥aVertQ®CallExpressionÍ
+5Í
+^R°MemberExpressionÍ
+5Í
+RKªIdentifierÍ
+5Í
+I´WireConflictGeometryKªIdentifierÍ
+JÍ
+R¨nearlyEqÂÂ’R°MemberExpressionÍ
+SÍ
+WKªIdentifierÍ
+SÍ
+U¢a1KªIdentifierÍ
+VÍ
+W¡xÂÂR°MemberExpressionÍ
+YÍ
+]KªIdentifierÍ
+YÍ
+[¢a2KªIdentifierÍ
 \Í
-^¢p2Â¥constU«IfStatementÍ
-jÍ
-ÃP±LogicalExpressionÍ
-nÍ
-šP±LogicalExpressionÍ
-nÍ
-P±LogicalExpressionÍ
-nÍ
-‚P°BinaryExpressionÍ
-nÍ
-vKªIdentifierÍ
-nÍ
-p¢o1£===V§LiteralÍ
-uÍ
-v ¡0¢||P°BinaryExpressionÍ
-zÍ
-‚KªIdentifierÍ
-zÍ
-|¢o2£===V§LiteralÍ
-Í
-‚ ¡0¢||P°BinaryExpressionÍ
-†Í
-KªIdentifierÍ
-†Í
-ˆ¢o3£===V§LiteralÍ
+]¡xÂÂÂ¥constS³VariableDeclarationÍ
+iÍ
+¢‘T²VariableDeclaratorÍ
+oÍ
+¡KªIdentifierÍ
+oÍ
+u¦aHorizQ®CallExpressionÍ
+xÍ
+¡R°MemberExpressionÍ
+xÍ
+•KªIdentifierÍ
+xÍ
+Œ´WireConflictGeometryKªIdentifierÍ
 Í
- ¡0¢||P°BinaryExpressionÍ
-’Í
+•¨nearlyEqÂÂ’R°MemberExpressionÍ
+–Í
 šKªIdentifierÍ
-’Í
-”¢o4£===V§LiteralÍ
+–Í
+˜¢a1KªIdentifierÍ
 ™Í
-š ¡0L®BlockStatementÍ
+š¡yÂÂR°MemberExpressionÍ
 œÍ
-Ã‘O¯ReturnStatementÍ
-«Í
-¸V§LiteralÍ
+ KªIdentifierÍ
+œÍ
+¢a2KªIdentifierÍ
+ŸÍ
+ ¡yÂÂÂ¥constS³VariableDeclarationÍ
+¬Í
+ä‘T²VariableDeclaratorÍ
 ²Í
-·Â¥falseÀO¯ReturnStatementÍ
-ÍÍP±LogicalExpressionÍ
-ÔÍP°BinaryExpressionÍ
-ÔÍ
-éP°BinaryExpressionÍ
-ÕÍ
-ÛKªIdentifierÍ
-ÕÍ
-×¢o1¡>V§LiteralÍ
-ÚÍ
-Û ¡0£!==P°BinaryExpressionÍ
-âÍ
-èKªIdentifierÍ
-âÍ
-ä¢o2¡>V§LiteralÍ
-çÍ
-è ¡0¢&&P°BinaryExpressionÍ
-íÍP°BinaryExpressionÍ
-îÍ
-ôKªIdentifierÍ
-îÍ
-ğ¢o3¡>V§LiteralÍ
-óÍ
-ô ¡0£!==P°BinaryExpressionÍ
-ûÍKªIdentifierÍ
-ûÍ
-ı¢o4¡>V§LiteralÍ Í ¡0M°MethodDefinitionÍÍŞÃÂKªIdentifierÍÍ¦orient¦methodN²FunctionExpressionÍÍŞÀÂÂÂ“KªIdentifierÍÍ¡aKªIdentifierÍ!Í"¡bKªIdentifierÍ$Í%¡cL®BlockStatementÍ'ÍŞ“S³VariableDeclarationÍ2Ír‘T²VariableDeclaratorÍ8ÍqKªIdentifierÍ8Í9¡vP°BinaryExpressionÍ<ÍqP°BinaryExpressionÍ<ÍUP°BinaryExpressionÍ=ÍFR°MemberExpressionÍ=Í@KªIdentifierÍ=Í>¡bKªIdentifierÍ?Í@¡xÂÂ¡-R°MemberExpressionÍCÍFKªIdentifierÍCÍD¡aKªIdentifierÍEÍF¡xÂÂ¡*P°BinaryExpressionÍKÍTR°MemberExpressionÍKÍNKªIdentifierÍKÍL¡cKªIdentifierÍMÍN¡yÂÂ¡-R°MemberExpressionÍQÍTKªIdentifierÍQÍR¡aKªIdentifierÍSÍT¡yÂÂ¡-P°BinaryExpressionÍXÍqP°BinaryExpressionÍYÍbR°MemberExpressionÍYÍ\KªIdentifierÍYÍZ¡bKªIdentifierÍ[Í\¡yÂÂ¡-R°MemberExpressionÍ_ÍbKªIdentifierÍ_Í`¡aKªIdentifierÍaÍb¡yÂÂ¡*P°BinaryExpressionÍgÍpR°MemberExpressionÍgÍjKªIdentifierÍgÍh¡cKªIdentifierÍiÍj¡xÂÂ¡-R°MemberExpressionÍmÍpKªIdentifierÍmÍn¡aKªIdentifierÍoÍp¡xÂÂ¥constU«IfStatementÍ|Í·P°BinaryExpressionÍ€Í’Q®CallExpressionÍ€Í‹R°MemberExpressionÍ€ÍˆKªIdentifierÍ€Í„¤MathKªIdentifierÍ…Íˆ£absÂÂ‘KªIdentifierÍ‰ÍŠ¡vÂ¡<V§LiteralÍÍ’Ë>°Æ÷ µí¤1e-6L®BlockStatementÍ”Í·‘O¯ReturnStatementÍ£Í¬V§LiteralÍªÍ« ¡0ÀO¯ReturnStatementÍÁÍ×UµConditionalExpressionÍÈÍÖP°BinaryExpressionÍÈÍÍKªIdentifierÍÈÍÉ¡v¡>V§LiteralÍÌÍÍ ¡0V§LiteralÍĞÍÑ¡1W¯UnaryExpressionÍÔÍÖ¡-ÃV§LiteralÍÕÍÖ¡1M°MethodDefinitionÍäÍBÃÂKªIdentifierÍëÍò§between¦methodN²FunctionExpressionÍòÍBÀÂÂÂ“KªIdentifierÍóÍô¡vKªIdentifierÍöÍø¢loKªIdentifierÍúÍü¢hiL®BlockStatementÍşÍB‘O¯ReturnStatementÍ	Í;P±LogicalExpressionÍÍ:P°BinaryExpressionÍÍ#KªIdentifierÍÍ¡v¢>=P°BinaryExpressionÍÍ#KªIdentifierÍÍ¢lo¡-KªIdentifierÍÍ#©COORD_EPS¢&&P°BinaryExpressionÍ'Í:KªIdentifierÍ'Í(¡v¢<=P°BinaryExpressionÍ,Í:KªIdentifierÍ,Í.¢hi¡+KªIdentifierÍ1Í:©COORD_EPSM°MethodDefinitionÍnÍÃÂKªIdentifierÍuÍ‚­wiresConflict¦methodN²FunctionExpressionÍ‚ÍÀÂÂÂ’KªIdentifierÍƒÍ„¡aKªIdentifierÍ†Í‡¡bL®BlockStatementÍ‰Í”U«IfStatementÍ”ÍÙP°BinaryExpressionÍ˜Í¯R°MemberExpressionÍ˜Í¡KªIdentifierÍ˜Í™¡aKªIdentifierÍšÍ¡§netUuidÂÂ£===R°MemberExpressionÍ¦Í¯KªIdentifierÍ¦Í§¡bKªIdentifierÍ¨Í¯§netUuidÂÂL®BlockStatementÍ±ÍÙ‘O¯ReturnStatementÍÀÍÎV§LiteralÍÇÍÍ¤none¦'none'ÀS³VariableDeclarationÍãÍö‘T²VariableDeclaratorÍçÍõKªIdentifierÍçÍì¥worstV§LiteralÍïÍõ¤none¦'none'£letÔrX—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ ÍæS³VariableDeclarationÍÍ‘T²VariableDeclaratorÍ	ÍKªIdentifierÍ	Í
-¡iV§LiteralÍÍ¡1£letP°BinaryExpressionÍÍ#KªIdentifierÍÍ¡i¡<R°MemberExpressionÍÍ#R°MemberExpressionÍÍKªIdentifierÍÍ¡aKªIdentifierÍÍ¦pointsÂÂKªIdentifierÍÍ#¦lengthÂÂW°UpdateExpressionÍ%Í(¢++ÂKªIdentifierÍ%Í&¡iL®BlockStatementÍ*Íæ‘X¬ForStatementÍ9ÍÛS³VariableDeclarationÍ>ÍG‘T²VariableDeclaratorÍBÍGKªIdentifierÍBÍC¡jV§LiteralÍFÍG¡1£letP°BinaryExpressionÍIÍ\KªIdentifierÍIÍJ¡j¡<R°MemberExpressionÍMÍ\R°MemberExpressionÍMÍUKªIdentifierÍMÍN¡bKªIdentifierÍOÍU¦pointsÂÂKªIdentifierÍVÍ\¦lengthÂÂW°UpdateExpressionÍ^Ía¢++ÂKªIdentifierÍ^Í_¡jL®BlockStatementÍcÍÛ“S³VariableDeclarationÍvÍá‘T²VariableDeclaratorÍ|ÍàKªIdentifierÍ|Í}¡cQ®CallExpressionÍ€ÍàR°MemberExpressionÍ€Í¤KªIdentifierÍ€Í”´WireConflictGeometryKªIdentifierÍ•Í¤¯segmentConflictÂÂ”R°MemberExpressionÍ¥Í´R°MemberExpressionÍ¥Í­KªIdentifierÍ¥Í¦¡aKªIdentifierÍ§Í­¦pointsÂÂP°BinaryExpressionÍ®Í³KªIdentifierÍ®Í¯¡i¡-V§LiteralÍ²Í³¡1ÃÂR°MemberExpressionÍ¶ÍÁR°MemberExpressionÍ¶Í¾KªIdentifierÍ¶Í·¡aKªIdentifierÍ¸Í¾¦pointsÂÂKªIdentifierÍ¿ÍÀ¡iÃÂR°MemberExpressionÍÃÍÒR°MemberExpressionÍÃÍËKªIdentifierÍÃÍÄ¡bKªIdentifierÍÅÍË¦pointsÂÂP°BinaryExpressionÍÌÍÑKªIdentifierÍÌÍÍ¡j¡-V§LiteralÍĞÍÑ¡1ÃÂR°MemberExpressionÍÔÍßR°MemberExpressionÍÔÍÜKªIdentifierÍÔÍÕ¡bKªIdentifierÍÖÍÜ¦pointsÂÂKªIdentifierÍİÍŞ¡jÃÂÂ¥constU«IfStatementÍóÍWP°BinaryExpressionÍ÷ÍKªIdentifierÍ÷Íø¡c£===V§LiteralÍıÍ±collinear_overlap³'collinear_overlap'L®BlockStatementÍÍW‘O¯ReturnStatementÍ)ÍDV§LiteralÍ0ÍC±collinear_overlap³'collinear_overlap'ÀU«IfStatementÍiÍÌP°BinaryExpressionÍmÍ…KªIdentifierÍmÍn¡c£===V§LiteralÍsÍ…°orthogonal_cross²'orthogonal_cross'L®BlockStatementÍ‡ÍÌ‘ÔrY”¤type¥start£endªexpression³ExpressionStatementÍÍ¹ÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ¸¡=KªIdentifierÍÍ£¥worstV§LiteralÍ¦Í¸°orthogonal_cross²'orthogonal_cross'ÀO¯ReturnStatementÍğÍıKªIdentifierÍ÷Íü¥worstM°MethodDefinitionÍ
-ÍüÃÂKªIdentifierÍÍªpathLength¦methodN²FunctionExpressionÍÍüÀÂÂÂ‘KªIdentifierÍÍ"¦pointsL®BlockStatementÍ$Íü“S³VariableDeclarationÍ/Í;‘T²VariableDeclaratorÍ3Í:KªIdentifierÍ3Í6£lenV§LiteralÍ9Í: ¡0£letX¬ForStatementÍEÍàS³VariableDeclarationÍJÍS‘T²VariableDeclaratorÍNÍSKªIdentifierÍNÍO¡iV§LiteralÍRÍS¡1£letP°BinaryExpressionÍUÍfKªIdentifierÍUÍV¡i¡<R°MemberExpressionÍYÍfKªIdentifierÍYÍ_¦pointsKªIdentifierÍ`Íf¦lengthÂÂW°UpdateExpressionÍhÍk¢++ÂKªIdentifierÍhÍi¡iL®BlockStatementÍmÍà‘Y³ExpressionStatementÍ|ÍÕZ´AssignmentExpressionÍ|ÍÔ¢+=KªIdentifierÍ|Í£lenP°BinaryExpressionÍƒÍÔQ®CallExpressionÍƒÍªR°MemberExpressionÍƒÍ‹KªIdentifierÍƒÍ‡¤MathKªIdentifierÍˆÍ‹£absÂÂ‘P°BinaryExpressionÍŒÍ©R°MemberExpressionÍŒÍ—R°MemberExpressionÍŒÍ•KªIdentifierÍŒÍ’¦pointsKªIdentifierÍ“Í”¡iÃÂKªIdentifierÍ–Í—¡xÂÂ¡-R°MemberExpressionÍšÍ©R°MemberExpressionÍšÍ§KªIdentifierÍšÍ ¦pointsP°BinaryExpressionÍ¡Í¦KªIdentifierÍ¡Í¢¡i¡-V§LiteralÍ¥Í¦¡1ÃÂKªIdentifierÍ¨Í©¡xÂÂÂ¡+Q®CallExpressionÍ­ÍÔR°MemberExpressionÍ­ÍµKªIdentifierÍ­Í±¤MathKªIdentifierÍ²Íµ£absÂÂ‘P°BinaryExpressionÍ¶ÍÓR°MemberExpressionÍ¶ÍÁR°MemberExpressionÍ¶Í¿KªIdentifierÍ¶Í¼¦pointsKªIdentifierÍ½Í¾¡iÃÂKªIdentifierÍÀÍÁ¡yÂÂ¡-R°MemberExpressionÍÄÍÓR°MemberExpressionÍÄÍÑKªIdentifierÍÄÍÊ¦pointsP°BinaryExpressionÍËÍĞKªIdentifierÍËÍÌ¡i¡-V§LiteralÍÏÍĞ¡1ÃÂKªIdentifierÍÒÍÓ¡yÂÂÂO¯ReturnStatementÍêÍõKªIdentifierÍñÍô£lenM°MethodDefinitionÍ1ÍdÃÂKªIdentifierÍ8ÍC«isShortStub¦methodN²FunctionExpressionÍCÍdÀÂÂÂ‘KªIdentifierÍDÍH¤wireL®BlockStatementÍJÍd”S³VariableDeclarationÍUÍ‘T²VariableDeclaratorÍ[ÍKªIdentifierÍ[Í^£lenQ®CallExpressionÍaÍR°MemberExpressionÍaÍ€KªIdentifierÍaÍu´WireConflictGeometryKªIdentifierÍvÍ€ªpathLengthÂÂ‘R°MemberExpressionÍÍŒKªIdentifierÍÍ…¤wireKªIdentifierÍ†ÍŒ¦pointsÂÂÂ¥constU«IfStatementÍ˜ÍèP±LogicalExpressionÍœÍÀP°BinaryExpressionÍœÍ³R°MemberExpressionÍœÍ®R°MemberExpressionÍœÍ§KªIdentifierÍœÍ ¤wireKªIdentifierÍ¡Í§¦pointsÂÂKªIdentifierÍ¨Í®¦lengthÂÂ¢<=V§LiteralÍ²Í³¡2¢&&P°BinaryExpressionÍ·ÍÀKªIdentifierÍ·Íº£len¢<=V§LiteralÍ¾ÍÀ7¢55L®BlockStatementÍÂÍè‘O¯ReturnStatementÍÑÍİV§LiteralÍØÍÜÃ¤trueÀU«IfStatementÍòÍBP±LogicalExpressionÍöÍP°BinaryExpressionÍöÍR°MemberExpressionÍöÍR°MemberExpressionÍöÍKªIdentifierÍöÍú¤wireKªIdentifierÍûÍ¦pointsÂÂKªIdentifierÍÍ¦lengthÂÂ¢<=V§LiteralÍÍ¡3¢&&P°BinaryExpressionÍÍKªIdentifierÍÍ£len¢<=V§LiteralÍÍ-¢45L®BlockStatementÍÍB‘O¯ReturnStatementÍ+Í7V§LiteralÍ2Í6Ã¤trueÀO¯ReturnStatementÍLÍ]P°BinaryExpressionÍSÍ\KªIdentifierÍSÍV£len¢<=V§LiteralÍZÍ\#¢35À
+ãKªIdentifierÍ
+²Í
+·¥bVertQ®CallExpressionÍ
+ºÍ
+ãR°MemberExpressionÍ
+ºÍ
+×KªIdentifierÍ
+ºÍ
+Î´WireConflictGeometryKªIdentifierÍ
+ÏÍ
+×¨nearlyEqÂÂ’R°MemberExpressionÍ
+ØÍ
+ÜKªIdentifierÍ
+ØÍ
+Ú¢b1KªIdentifierÍ
+ÛÍ
+Ü¡xÂÂR°MemberExpressionÍ
+ŞÍ
+âKªIdentifierÍ
+ŞÍ
+à¢b2KªIdentifierÍ
+áÍ
+â¡xÂÂÂ¥constS³VariableDeclarationÍ
+îÍ'‘T²VariableDeclaratorÍ
+ôÍ&KªIdentifierÍ
+ôÍ
+ú¦bHorizQ®CallExpressionÍ
+ıÍ&R°MemberExpressionÍ
+ıÍKªIdentifierÍ
+ıÍ´WireConflictGeometryKªIdentifierÍÍ¨nearlyEqÂÂ’R°MemberExpressionÍÍKªIdentifierÍÍ¢b1KªIdentifierÍÍ¡yÂÂR°MemberExpressionÍ!Í%KªIdentifierÍ!Í#¢b2KªIdentifierÍ$Í%¡yÂÂÂ¥constU«IfStatementÍ1Í|P±LogicalExpressionÍ5ÍDKªIdentifierÍ5Í:¥aVert¢&&KªIdentifierÍ>ÍD¦bHorizL®BlockStatementÍFÍ|‘O¯ReturnStatementÍUÍqÔrX”¤type¥start£endªproperties°ObjectExpressionÍ\Íp’ÔrY™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ^ÍeÂÂÂKªIdentifierÍ^Í_¡xR°MemberExpressionÍaÍeKªIdentifierÍaÍc¢a1KªIdentifierÍdÍe¡xÂÂ¤initY¨PropertyÍgÍnÂÂÂKªIdentifierÍgÍh¡yR°MemberExpressionÍjÍnKªIdentifierÍjÍl¢b1KªIdentifierÍmÍn¡yÂÂ¤initÀU«IfStatementÍ†ÍÑP±LogicalExpressionÍŠÍ™KªIdentifierÍŠÍ¦aHoriz¢&&KªIdentifierÍ”Í™¥bVertL®BlockStatementÍ›ÍÑ‘O¯ReturnStatementÍªÍÆX°ObjectExpressionÍ±ÍÅ’Y¨PropertyÍ³ÍºÂÂÂKªIdentifierÍ³Í´¡xR°MemberExpressionÍ¶ÍºKªIdentifierÍ¶Í¸¢b1KªIdentifierÍ¹Íº¡xÂÂ¤initY¨PropertyÍ¼ÍÃÂÂÂKªIdentifierÍ¼Í½¡yR°MemberExpressionÍ¿ÍÃKªIdentifierÍ¿ÍÁ¢a1KªIdentifierÍÂÍÃ¡yÂÂ¤initÀO¯ReturnStatementÍğÍeX°ObjectExpressionÍ÷Íd’Y¨PropertyÍÍ(ÂÂÂKªIdentifierÍÍ¡xP°BinaryExpressionÍ	Í(P°BinaryExpressionÍ
+Í#P°BinaryExpressionÍ
+ÍP°BinaryExpressionÍ
+ÍR°MemberExpressionÍ
+ÍKªIdentifierÍ
+Í¢a1KªIdentifierÍÍ¡xÂÂ¡+R°MemberExpressionÍÍKªIdentifierÍÍ¢a2KªIdentifierÍÍ¡xÂÂ¡+R°MemberExpressionÍÍKªIdentifierÍÍ¢b1KªIdentifierÍÍ¡xÂÂ¡+R°MemberExpressionÍÍ#KªIdentifierÍÍ!¢b2KªIdentifierÍ"Í#¡xÂÂ¡/V§LiteralÍ'Í(¡4¤initY¨PropertyÍ7ÍYÂÂÂKªIdentifierÍ7Í8¡yP°BinaryExpressionÍ:ÍYP°BinaryExpressionÍ;ÍTP°BinaryExpressionÍ;ÍMP°BinaryExpressionÍ;ÍFR°MemberExpressionÍ;Í?KªIdentifierÍ;Í=¢a1KªIdentifierÍ>Í?¡yÂÂ¡+R°MemberExpressionÍBÍFKªIdentifierÍBÍD¢a2KªIdentifierÍEÍF¡yÂÂ¡+R°MemberExpressionÍIÍMKªIdentifierÍIÍK¢b1KªIdentifierÍLÍM¡yÂÂ¡+R°MemberExpressionÍPÍTKªIdentifierÍPÍR¢b2KªIdentifierÍSÍT¡yÂÂ¡/V§LiteralÍXÍY¡4¤initM°MethodDefinitionÍ­Í‚ÃÂKªIdentifierÍ´ÍÂ®isMidspanCross¦methodN²FunctionExpressionÍÂÍ‚ÀÂÂÂ”KªIdentifierÍÃÍÈ¥crossKªIdentifierÍÊÍÏ¥aEndsKªIdentifierÍÑÍÖ¥bEndsÔrZ•¤type¥start£end¤left¥right±AssignmentPatternÍØÍâKªIdentifierÍØÍŞ¦endTolV§LiteralÍáÍâ¡3L®BlockStatementÍäÍ‚“Ôr[—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍïÍ¥S³VariableDeclarationÍôÍı‘T²VariableDeclaratorÍøÍıKªIdentifierÍøÍù¡iV§LiteralÍüÍı ¡0£letP°BinaryExpressionÍÿÍKªIdentifierÍÿÍ ¡i¡<R°MemberExpressionÍÍKªIdentifierÍÍ¥aEndsKªIdentifierÍ	Í¦lengthÂÂW°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¡iL®BlockStatementÍÍ¥‘U«IfStatementÍ%ÍšP°BinaryExpressionÍ)ÍiQ®CallExpressionÍ)Í_R°MemberExpressionÍ)Í3KªIdentifierÍ)Í-¤MathKªIdentifierÍ.Í3¥hypotÂÂ’P°BinaryExpressionÍ4ÍHR°MemberExpressionÍ4Í;KªIdentifierÍ4Í9¥crossKªIdentifierÍ:Í;¡xÂÂ¡-R°MemberExpressionÍ>ÍHR°MemberExpressionÍ>ÍFKªIdentifierÍ>ÍC¥aEndsKªIdentifierÍDÍE¡iÃÂKªIdentifierÍGÍH¡xÂÂP°BinaryExpressionÍJÍ^R°MemberExpressionÍJÍQKªIdentifierÍJÍO¥crossKªIdentifierÍPÍQ¡yÂÂ¡-R°MemberExpressionÍTÍ^R°MemberExpressionÍTÍ\KªIdentifierÍTÍY¥aEndsKªIdentifierÍZÍ[¡iÃÂKªIdentifierÍ]Í^¡yÂÂÂ¢<=KªIdentifierÍcÍi¦endTolL®BlockStatementÍkÍš‘O¯ReturnStatementÍ~Í‹V§LiteralÍ…ÍŠÂ¥falseÀ[¬ForStatementÍ¯ÍeS³VariableDeclarationÍ´Í½‘T²VariableDeclaratorÍ¸Í½KªIdentifierÍ¸Í¹¡iV§LiteralÍ¼Í½ ¡0£letP°BinaryExpressionÍ¿ÍÏKªIdentifierÍ¿ÍÀ¡i¡<R°MemberExpressionÍÃÍÏKªIdentifierÍÃÍÈ¥bEndsKªIdentifierÍÉÍÏ¦lengthÂÂW°UpdateExpressionÍÑÍÔ¢++ÂKªIdentifierÍÑÍÒ¡iL®BlockStatementÍÖÍe‘U«IfStatementÍåÍZP°BinaryExpressionÍéÍ)Q®CallExpressionÍéÍR°MemberExpressionÍéÍóKªIdentifierÍéÍí¤MathKªIdentifierÍîÍó¥hypotÂÂ’P°BinaryExpressionÍôÍR°MemberExpressionÍôÍûKªIdentifierÍôÍù¥crossKªIdentifierÍúÍû¡xÂÂ¡-R°MemberExpressionÍşÍR°MemberExpressionÍşÍKªIdentifierÍşÍ¥bEndsKªIdentifierÍÍ¡iÃÂKªIdentifierÍÍ¡xÂÂP°BinaryExpressionÍ
+ÍR°MemberExpressionÍ
+ÍKªIdentifierÍ
+Í¥crossKªIdentifierÍÍ¡yÂÂ¡-R°MemberExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¥bEndsKªIdentifierÍÍ¡iÃÂKªIdentifierÍÍ¡yÂÂÂ¢<=KªIdentifierÍ#Í)¦endTolL®BlockStatementÍ+ÍZ‘O¯ReturnStatementÍ>ÍKV§LiteralÍEÍJÂ¥falseÀO¯ReturnStatementÍoÍ{V§LiteralÍvÍzÃ¤trueM°MethodDefinitionÍ¬ÍzÃÂKªIdentifierÍ³ÍÊ·segmentsProperIntersect¦methodN²FunctionExpressionÍÊÍzÀÂÂÂ”KªIdentifierÍËÍÍ¢p1KªIdentifierÍÏÍÑ¢p2KªIdentifierÍÓÍÕ¢q1KªIdentifierÍ×ÍÙ¢q2L®BlockStatementÍÛÍz–S³VariableDeclarationÍæÍ‘T²VariableDeclaratorÍìÍKªIdentifierÍìÍî¢o1Q®CallExpressionÍñÍR°MemberExpressionÍñÍKªIdentifierÍñÍ´WireConflictGeometryKªIdentifierÍÍ¦orientÂÂ“KªIdentifierÍÍ¢p1KªIdentifierÍÍ¢p2KªIdentifierÍÍ¢q1Â¥constS³VariableDeclarationÍ#ÍV‘T²VariableDeclaratorÍ)ÍUKªIdentifierÍ)Í+¢o2Q®CallExpressionÍ.ÍUR°MemberExpressionÍ.ÍIKªIdentifierÍ.ÍB´WireConflictGeometryKªIdentifierÍCÍI¦orientÂÂ“KªIdentifierÍJÍL¢p1KªIdentifierÍNÍP¢p2KªIdentifierÍRÍT¢q2Â¥constS³VariableDeclarationÍ`Í“‘T²VariableDeclaratorÍfÍ’KªIdentifierÍfÍh¢o3Q®CallExpressionÍkÍ’R°MemberExpressionÍkÍ†KªIdentifierÍkÍ´WireConflictGeometryKªIdentifierÍ€Í†¦orientÂÂ“KªIdentifierÍ‡Í‰¢q1KªIdentifierÍ‹Í¢q2KªIdentifierÍÍ‘¢p1Â¥constS³VariableDeclarationÍÍĞ‘T²VariableDeclaratorÍ£ÍÏKªIdentifierÍ£Í¥¢o4Q®CallExpressionÍ¨ÍÏR°MemberExpressionÍ¨ÍÃKªIdentifierÍ¨Í¼´WireConflictGeometryKªIdentifierÍ½ÍÃ¦orientÂÂ“KªIdentifierÍÄÍÆ¢q1KªIdentifierÍÈÍÊ¢q2KªIdentifierÍÌÍÎ¢p2Â¥constU«IfStatementÍÚÍ3P±LogicalExpressionÍŞÍ
+P±LogicalExpressionÍŞÍşP±LogicalExpressionÍŞÍòP°BinaryExpressionÍŞÍæKªIdentifierÍŞÍà¢o1£===V§LiteralÍåÍæ ¡0¢||P°BinaryExpressionÍêÍòKªIdentifierÍêÍì¢o2£===V§LiteralÍñÍò ¡0¢||P°BinaryExpressionÍöÍşKªIdentifierÍöÍø¢o3£===V§LiteralÍıÍş ¡0¢||P°BinaryExpressionÍÍ
+KªIdentifierÍÍ¢o4£===V§LiteralÍ	Í
+ ¡0L®BlockStatementÍÍ3‘O¯ReturnStatementÍÍ(V§LiteralÍ"Í'Â¥falseÀO¯ReturnStatementÍ=ÍsP±LogicalExpressionÍDÍrP°BinaryExpressionÍDÍYP°BinaryExpressionÍEÍKKªIdentifierÍEÍG¢o1¡>V§LiteralÍJÍK ¡0£!==P°BinaryExpressionÍRÍXKªIdentifierÍRÍT¢o2¡>V§LiteralÍWÍX ¡0¢&&P°BinaryExpressionÍ]ÍrP°BinaryExpressionÍ^ÍdKªIdentifierÍ^Í`¢o3¡>V§LiteralÍcÍd ¡0£!==P°BinaryExpressionÍkÍqKªIdentifierÍkÍm¢o4¡>V§LiteralÍpÍq ¡0M°MethodDefinitionÍ€ÍNÃÂKªIdentifierÍ‡Í¦orient¦methodN²FunctionExpressionÍÍNÀÂÂÂ“KªIdentifierÍÍ¡aKªIdentifierÍ‘Í’¡bKªIdentifierÍ”Í•¡cL®BlockStatementÍ—ÍN“S³VariableDeclarationÍ¢Íâ‘T²VariableDeclaratorÍ¨ÍáKªIdentifierÍ¨Í©¡vP°BinaryExpressionÍ¬ÍáP°BinaryExpressionÍ¬ÍÅP°BinaryExpressionÍ­Í¶R°MemberExpressionÍ­Í°KªIdentifierÍ­Í®¡bKªIdentifierÍ¯Í°¡xÂÂ¡-R°MemberExpressionÍ³Í¶KªIdentifierÍ³Í´¡aKªIdentifierÍµÍ¶¡xÂÂ¡*P°BinaryExpressionÍ»ÍÄR°MemberExpressionÍ»Í¾KªIdentifierÍ»Í¼¡cKªIdentifierÍ½Í¾¡yÂÂ¡-R°MemberExpressionÍÁÍÄKªIdentifierÍÁÍÂ¡aKªIdentifierÍÃÍÄ¡yÂÂ¡-P°BinaryExpressionÍÈÍáP°BinaryExpressionÍÉÍÒR°MemberExpressionÍÉÍÌKªIdentifierÍÉÍÊ¡bKªIdentifierÍËÍÌ¡yÂÂ¡-R°MemberExpressionÍÏÍÒKªIdentifierÍÏÍĞ¡aKªIdentifierÍÑÍÒ¡yÂÂ¡*P°BinaryExpressionÍ×ÍàR°MemberExpressionÍ×ÍÚKªIdentifierÍ×ÍØ¡cKªIdentifierÍÙÍÚ¡xÂÂ¡-R°MemberExpressionÍİÍàKªIdentifierÍİÍŞ¡aKªIdentifierÍßÍà¡xÂÂ¥constU«IfStatementÍìÍ'P°BinaryExpressionÍğÍQ®CallExpressionÍğÍûR°MemberExpressionÍğÍøKªIdentifierÍğÍô¤MathKªIdentifierÍõÍø£absÂÂ‘KªIdentifierÍùÍú¡vÂ¡<V§LiteralÍşÍË>°Æ÷ µí¤1e-6L®BlockStatementÍÍ'‘O¯ReturnStatementÍÍV§LiteralÍÍ ¡0ÀO¯ReturnStatementÍ1ÍGUµConditionalExpressionÍ8ÍFP°BinaryExpressionÍ8Í=KªIdentifierÍ8Í9¡v¡>V§LiteralÍ<Í= ¡0V§LiteralÍ@ÍA¡1W¯UnaryExpressionÍDÍF¡-ÃV§LiteralÍEÍF¡1M°MethodDefinitionÍTÍ²ÃÂKªIdentifierÍ[Íb§between¦methodN²FunctionExpressionÍbÍ²ÀÂÂÂ“KªIdentifierÍcÍd¡vKªIdentifierÍfÍh¢loKªIdentifierÍjÍl¢hiL®BlockStatementÍnÍ²‘O¯ReturnStatementÍyÍ«P±LogicalExpressionÍ€ÍªP°BinaryExpressionÍ€Í“KªIdentifierÍ€Í¡v¢>=P°BinaryExpressionÍ…Í“KªIdentifierÍ…Í‡¢lo¡-KªIdentifierÍŠÍ“©COORD_EPS¢&&P°BinaryExpressionÍ—ÍªKªIdentifierÍ—Í˜¡v¢<=P°BinaryExpressionÍœÍªKªIdentifierÍœÍ¢hi¡+KªIdentifierÍ¡Íª©COORD_EPSM°MethodDefinitionÍŞÍtÃÂKªIdentifierÍåÍò­wiresConflict¦methodN²FunctionExpressionÍòÍtÀÂÂÂ’KªIdentifierÍóÍô¡aKªIdentifierÍöÍ÷¡bL®BlockStatementÍùÍt”U«IfStatementÍÍIP°BinaryExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ	¡aKªIdentifierÍ
+Í§netUuidÂÂ£===R°MemberExpressionÍÍKªIdentifierÍÍ¡bKªIdentifierÍÍ§netUuidÂÂL®BlockStatementÍ!ÍI‘O¯ReturnStatementÍ0Í>V§LiteralÍ7Í=¤none¦'none'ÀS³VariableDeclarationÍSÍf‘T²VariableDeclaratorÍWÍeKªIdentifierÍWÍ\¥worstV§LiteralÍ_Íe¤none¦'none'£let[¬ForStatementÍpÍVS³VariableDeclarationÍuÍ~‘T²VariableDeclaratorÍyÍ~KªIdentifierÍyÍz¡iV§LiteralÍ}Í~¡1£letP°BinaryExpressionÍ€Í“KªIdentifierÍ€Í¡i¡<R°MemberExpressionÍ„Í“R°MemberExpressionÍ„ÍŒKªIdentifierÍ„Í…¡aKªIdentifierÍ†ÍŒ¦pointsÂÂKªIdentifierÍÍ“¦lengthÂÂW°UpdateExpressionÍ•Í˜¢++ÂKªIdentifierÍ•Í–¡iL®BlockStatementÍšÍV‘[¬ForStatementÍ©ÍKS³VariableDeclarationÍ®Í·‘T²VariableDeclaratorÍ²Í·KªIdentifierÍ²Í³¡jV§LiteralÍ¶Í·¡1£letP°BinaryExpressionÍ¹ÍÌKªIdentifierÍ¹Íº¡j¡<R°MemberExpressionÍ½ÍÌR°MemberExpressionÍ½ÍÅKªIdentifierÍ½Í¾¡bKªIdentifierÍ¿ÍÅ¦pointsÂÂKªIdentifierÍÆÍÌ¦lengthÂÂW°UpdateExpressionÍÎÍÑ¢++ÂKªIdentifierÍÎÍÏ¡jL®BlockStatementÍÓÍK“S³VariableDeclarationÍæÍQ‘T²VariableDeclaratorÍìÍPKªIdentifierÍìÍí¡cQ®CallExpressionÍğÍPR°MemberExpressionÍğÍKªIdentifierÍğÍ´WireConflictGeometryKªIdentifierÍÍ¯segmentConflictÂÂ”R°MemberExpressionÍÍ$R°MemberExpressionÍÍKªIdentifierÍÍ¡aKªIdentifierÍÍ¦pointsÂÂP°BinaryExpressionÍÍ#KªIdentifierÍÍ¡i¡-V§LiteralÍ"Í#¡1ÃÂR°MemberExpressionÍ&Í1R°MemberExpressionÍ&Í.KªIdentifierÍ&Í'¡aKªIdentifierÍ(Í.¦pointsÂÂKªIdentifierÍ/Í0¡iÃÂR°MemberExpressionÍ3ÍBR°MemberExpressionÍ3Í;KªIdentifierÍ3Í4¡bKªIdentifierÍ5Í;¦pointsÂÂP°BinaryExpressionÍ<ÍAKªIdentifierÍ<Í=¡j¡-V§LiteralÍ@ÍA¡1ÃÂR°MemberExpressionÍDÍOR°MemberExpressionÍDÍLKªIdentifierÍDÍE¡bKªIdentifierÍFÍL¦pointsÂÂKªIdentifierÍMÍN¡jÃÂÂ¥constU«IfStatementÍcÍÇP°BinaryExpressionÍgÍ€KªIdentifierÍgÍh¡c£===V§LiteralÍmÍ€±collinear_overlap³'collinear_overlap'L®BlockStatementÍ‚ÍÇ‘O¯ReturnStatementÍ™Í´V§LiteralÍ Í³±collinear_overlap³'collinear_overlap'ÀU«IfStatementÍÙÍ<P°BinaryExpressionÍİÍõKªIdentifierÍİÍŞ¡c£===V§LiteralÍãÍõ°orthogonal_cross²'orthogonal_cross'L®BlockStatementÍ÷Í<‘Ôr\”¤type¥start£endªexpression³ExpressionStatementÍÍ)Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ(¡=KªIdentifierÍÍ¥worstV§LiteralÍÍ(°orthogonal_cross²'orthogonal_cross'ÀO¯ReturnStatementÍ`ÍmKªIdentifierÍgÍl¥worstM°MethodDefinitionÍzÍlÃÂKªIdentifierÍÍ‹ªpathLength¦methodN²FunctionExpressionÍ‹ÍlÀÂÂÂ‘KªIdentifierÍŒÍ’¦pointsL®BlockStatementÍ”Íl“S³VariableDeclarationÍŸÍ«‘T²VariableDeclaratorÍ£ÍªKªIdentifierÍ£Í¦£lenV§LiteralÍ©Íª ¡0£let[¬ForStatementÍµÍPS³VariableDeclarationÍºÍÃ‘T²VariableDeclaratorÍ¾ÍÃKªIdentifierÍ¾Í¿¡iV§LiteralÍÂÍÃ¡1£letP°BinaryExpressionÍÅÍÖKªIdentifierÍÅÍÆ¡i¡<R°MemberExpressionÍÉÍÖKªIdentifierÍÉÍÏ¦pointsKªIdentifierÍĞÍÖ¦lengthÂÂW°UpdateExpressionÍØÍÛ¢++ÂKªIdentifierÍØÍÙ¡iL®BlockStatementÍİÍP‘\³ExpressionStatementÍìÍE]´AssignmentExpressionÍìÍD¢+=KªIdentifierÍìÍï£lenP°BinaryExpressionÍóÍDQ®CallExpressionÍóÍR°MemberExpressionÍóÍûKªIdentifierÍóÍ÷¤MathKªIdentifierÍøÍû£absÂÂ‘P°BinaryExpressionÍüÍR°MemberExpressionÍüÍR°MemberExpressionÍüÍKªIdentifierÍüÍ¦pointsKªIdentifierÍÍ¡iÃÂKªIdentifierÍÍ¡xÂÂ¡-R°MemberExpressionÍ
+ÍR°MemberExpressionÍ
+ÍKªIdentifierÍ
+Í¦pointsP°BinaryExpressionÍÍKªIdentifierÍÍ¡i¡-V§LiteralÍÍ¡1ÃÂKªIdentifierÍÍ¡xÂÂÂ¡+Q®CallExpressionÍÍDR°MemberExpressionÍÍ%KªIdentifierÍÍ!¤MathKªIdentifierÍ"Í%£absÂÂ‘P°BinaryExpressionÍ&ÍCR°MemberExpressionÍ&Í1R°MemberExpressionÍ&Í/KªIdentifierÍ&Í,¦pointsKªIdentifierÍ-Í.¡iÃÂKªIdentifierÍ0Í1¡yÂÂ¡-R°MemberExpressionÍ4ÍCR°MemberExpressionÍ4ÍAKªIdentifierÍ4Í:¦pointsP°BinaryExpressionÍ;Í@KªIdentifierÍ;Í<¡i¡-V§LiteralÍ?Í@¡1ÃÂKªIdentifierÍBÍC¡yÂÂÂO¯ReturnStatementÍZÍeKªIdentifierÍaÍd£lenM°MethodDefinitionÍ¡ÍÔÃÂKªIdentifierÍ¨Í³«isShortStub¦methodN²FunctionExpressionÍ³ÍÔÀÂÂÂ‘KªIdentifierÍ´Í¸¤wireL®BlockStatementÍºÍÔ”S³VariableDeclarationÍÅÍş‘T²VariableDeclaratorÍËÍıKªIdentifierÍËÍÎ£lenQ®CallExpressionÍÑÍıR°MemberExpressionÍÑÍğKªIdentifierÍÑÍå´WireConflictGeometryKªIdentifierÍæÍğªpathLengthÂÂ‘R°MemberExpressionÍñÍüKªIdentifierÍñÍõ¤wireKªIdentifierÍöÍü¦pointsÂÂÂ¥constU«IfStatementÍÍXP±LogicalExpressionÍÍ0P°BinaryExpressionÍÍ#R°MemberExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¤wireKªIdentifierÍÍ¦pointsÂÂKªIdentifierÍÍ¦lengthÂÂ¢<=V§LiteralÍ"Í#¡2¢&&P°BinaryExpressionÍ'Í0KªIdentifierÍ'Í*£len¢<=V§LiteralÍ.Í07¢55L®BlockStatementÍ2ÍX‘O¯ReturnStatementÍAÍMV§LiteralÍHÍLÃ¤trueÀU«IfStatementÍbÍ²P±LogicalExpressionÍfÍŠP°BinaryExpressionÍfÍ}R°MemberExpressionÍfÍxR°MemberExpressionÍfÍqKªIdentifierÍfÍj¤wireKªIdentifierÍkÍq¦pointsÂÂKªIdentifierÍrÍx¦lengthÂÂ¢<=V§LiteralÍ|Í}¡3¢&&P°BinaryExpressionÍÍŠKªIdentifierÍÍ„£len¢<=V§LiteralÍˆÍŠ-¢45L®BlockStatementÍŒÍ²‘O¯ReturnStatementÍ›Í§V§LiteralÍ¢Í¦Ã¤trueÀO¯ReturnStatementÍ¼ÍÍP°BinaryExpressionÍÃÍÌKªIdentifierÍÃÍÆ£len¢<=V§LiteralÍÊÍÌ#¢35À

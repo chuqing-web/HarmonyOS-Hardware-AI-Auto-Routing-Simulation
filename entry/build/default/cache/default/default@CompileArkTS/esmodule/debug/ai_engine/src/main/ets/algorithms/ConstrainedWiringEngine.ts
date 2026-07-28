@@ -51,8 +51,8 @@ export class ConstrainedWiringEngine {
     private readonly MIN_WIRE_GAP: number = 10; // 最小平行导线间距 (mil)
     /** A* 单段最大扩展步数；失败则走捷径并交由 routeUntilClean 降级标号 */
     private readonly ASTAR_MAX_STEPS: number = 500;
-    /** 异步 A* 每 N 步让出主线程，避免单网同步搜索触发 THREAD_BLOCK */
-    private readonly ASTAR_YIELD_EVERY: number = 64;
+    /** 异步 A* 每 N 步让出（模拟器上单步代价高，64 仍可能攒出 3s+） */
+    private readonly ASTAR_YIELD_EVERY: number = 32;
     /** routeUntilCleanAsync 墙钟预算（ms）；超时则标号降级退出 */
     private readonly ROUTE_WALL_MS: number = 12000;
     private weights: RoutingWeightPrefs = DEFAULT_WEIGHTS;

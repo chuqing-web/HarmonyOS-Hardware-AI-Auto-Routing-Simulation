@@ -27,7 +27,8 @@ export class SvgSymbolCache {
     }
     static parseSvgToCommands(svg: string): DrawCommand[] {
         const cmds: DrawCommand[] = [];
-        const lineRe = /<line[^>]*x1="([\d.]+)"[^>]*y1="([\d.]+)"[^>]*x2="([\d.]+)"[^>]*y2="([\d.]+)"/gi;
+        // Must accept negatives — DeviceLibrary symbols use centered viewBox coords.
+        const lineRe = /<line[^>]*x1="([\d.-]+)"[^>]*y1="([\d.-]+)"[^>]*x2="([\d.-]+)"[^>]*y2="([\d.-]+)"/gi;
         let m: RegExpExecArray | null;
         while ((m = lineRe.exec(svg)) !== null) {
             // 不写死 #000：深色主题下由渲染器映射到 COMPONENT_STROKE
@@ -43,7 +44,7 @@ export class SvgSymbolCache {
                 w: parseFloat(m[3]), h: parseFloat(m[4]), strokeWidth: 1
             });
         }
-        const circleRe = /<circle[^>]*cx="([\d.]+)"[^>]*cy="([\d.]+)"[^>]*r="([\d.]+)"/gi;
+        const circleRe = /<circle[^>]*cx="([\d.-]+)"[^>]*cy="([\d.-]+)"[^>]*r="([\d.]+)"/gi;
         while ((m = circleRe.exec(svg)) !== null) {
             cmds.push({ type: 'circle', x: parseFloat(m[1]), y: parseFloat(m[2]), r: parseFloat(m[3]) });
         }

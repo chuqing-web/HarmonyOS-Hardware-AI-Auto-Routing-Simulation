@@ -3216,9 +3216,8 @@ export class SchematicCanvas extends ViewPU {
     }
     /**
      * Two-layer rendering:
-     * - Background canvas (this.context): grid + components + net labels + ERC (only when dirty)
-     * - Wire canvas (this.wireCtx): wires + junctions + overlays (every frame)
-     * This eliminates ImageData snapshot copies and separates static from dynamic content.
+     * - Background canvas: grid + components（标号/ERC 改在导线层之上，避免线压字）
+     * - Wire canvas: wires → net labels → ERC → overlays
      */
     redraw(): void {
         if (this.viewWidth <= 0 || this.viewHeight <= 0) {
@@ -3253,19 +3252,22 @@ export class SchematicCanvas extends ViewPU {
             }
             this.backgroundDirty = false;
         }
-        // Wire / live layer
+        // Wire / live layer：导线之下，标号/ERC 之上（KiCad z 序）
         wCtx.clearRect(0, 0, w, h);
         wCtx.save();
         wCtx.translate(vp.panOffset.x, vp.panOffset.y);
         wCtx.scale(vp.zoom, vp.zoom);
         if (panLive && editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
             this.drawComponents(wCtx, doc.components, false);
-            if (editor.isLayerVisible(SchematicLayerId.ANNOTATIONS)) {
-                this.drawNetLabels(wCtx, doc);
-            }
         }
         if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
             this.drawWires(wCtx, doc.wires);
+        }
+        if (editor.isLayerVisible(SchematicLayerId.ANNOTATIONS)) {
+            this.drawNetLabels(wCtx, doc);
+        }
+        if (this.ercErrors.length > 0 && editor.isLayerVisible(SchematicLayerId.ERC_MARKERS)) {
+            this.drawErcMarkers(wCtx, doc);
         }
         this.renderOverlays(wCtx, doc, vp, bounds, editor);
         wCtx.restore();
@@ -3285,19 +3287,13 @@ export class SchematicCanvas extends ViewPU {
         this.backgroundDirty = true;
         this.redraw();
     }
-    /** Draw only the static background elements (components + labels + ERC; grid drawn in screen space) */
+    /** Draw static background: components only（标号/ERC 在导线层后绘） */
     private drawBackgroundScene(ctx: CanvasRenderingContext2D, doc: SchematicDocument, vp: ViewportState, bounds: WorldRect, editor: SchematicEditorImpl): void {
         if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
             this.drawBackgroundGridOnEmpty(ctx, vp, bounds, doc.wires.length);
         }
         if (editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
             this.drawComponents(ctx, doc.components, false);
-        }
-        if (editor.isLayerVisible(SchematicLayerId.ANNOTATIONS)) {
-            this.drawNetLabels(ctx, doc);
-        }
-        if (this.ercErrors.length > 0 && editor.isLayerVisible(SchematicLayerId.ERC_MARKERS)) {
-            this.drawErcMarkers(ctx, doc);
         }
     }
     /**
@@ -3398,6 +3394,7 @@ export class SchematicCanvas extends ViewPU {
             if (this.dragComponentId.length === 0) {
                 this.drawWireConnectionMarkers(ctx);
                 this.drawDanglingWireEnds(ctx);
+                this.drawNoConnectMarkers(ctx, doc);
             }
         }
         if (this.dragComponentId.length > 0 && editor.isLayerVisible(SchematicLayerId.COMPONENTS)) {
@@ -3682,6 +3679,12 @@ export class SchematicCanvas extends ViewPU {
         wCtx.scale(vp.zoom, vp.zoom);
         if (editor.isLayerVisible(SchematicLayerId.WIRING)) {
             this.drawWires(wCtx, doc.wires);
+        }
+        if (editor.isLayerVisible(SchematicLayerId.ANNOTATIONS)) {
+            this.drawNetLabels(wCtx, doc);
+        }
+        if (this.ercErrors.length > 0 && editor.isLayerVisible(SchematicLayerId.ERC_MARKERS)) {
+            this.drawErcMarkers(wCtx, doc);
         }
         this.renderOverlays(wCtx, doc, vp, bounds, editor);
         wCtx.restore();
@@ -4757,7 +4760,7 @@ export class SchematicCanvas extends ViewPU {
             return;
         }
         // Only count co-located vertices / T-hits among wires that share a netId
-        // (avoids false dots where VCC and GND cross visually but are not joined).
+        // (KiCad：有点=同网；异网正交交叉不画点、不并网)
         const counts = new Map<string, number>();
         for (let i = 0; i < wires.length; i++) {
             const w = wires[i];
@@ -4792,7 +4795,7 @@ export class SchematicCanvas extends ViewPU {
                         if ((counts.get(key) ?? 0) >= 2) {
                             continue;
                         }
-                        if (this.pointOnSegment(pt, a, b)) {
+                        if (this.pointOnSegment(pt, a, b, 3)) {
                             counts.set(key, (counts.get(key) ?? 0) + 2);
                         }
                     }
@@ -4993,6 +4996,81 @@ export class SchematicCanvas extends ViewPU {
             }
         }
     }
+    /**
+     * KiCad NoConnect：未入网引脚画 ×（有铜皮端点贴近则视为已接，不画）。
+     */
+    private drawNoConnectMarkers(ctx: CanvasRenderingContext2D, doc: SchematicDocument): void {
+        if (doc.components.length === 0) {
+            return;
+        }
+        const connected = new Set<string>();
+        for (let ni = 0; ni < doc.nets.length; ni++) {
+            const pins = doc.nets[ni].pinIds;
+            for (let pi = 0; pi < pins.length; pi++) {
+                const parts = pins[pi].split(':');
+                if (parts.length >= 2) {
+                    connected.add(`${parts[0]}:${parts[1]}`);
+                    if (parts.length >= 3 && parts[2].length > 0) {
+                        connected.add(`${parts[0]}:${parts[2]}`);
+                    }
+                }
+            }
+        }
+        const gridSize = doc.metadata.gridSize || 10;
+        const wireTol = Math.max(gridSize * 0.6, 5);
+        const arm = 3.5;
+        ctx.strokeStyle = 'rgba(200, 60, 50, 0.9)';
+        ctx.lineWidth = 1.35;
+        for (let ci = 0; ci < doc.components.length; ci++) {
+            const comp = doc.components[ci];
+            const def = this.getCachedCompDef(comp.libraryId);
+            if (def === null || def.pins.length === 0) {
+                continue;
+            }
+            for (let pi = 0; pi < def.pins.length; pi++) {
+                const pin = def.pins[pi];
+                if (connected.has(`${comp.id}:${pin.id}`) || connected.has(`${comp.id}:${pin.name}`)) {
+                    continue;
+                }
+                const local = this.transformPinOffset(pin.position, comp.rotation, comp.mirrored);
+                const wx = comp.position.x + local.x;
+                const wy = comp.position.y + local.y;
+                // 几何上已有导线端点贴脚 → 不画 NC（重建延迟时的视觉兜底）
+                let onCopper = false;
+                for (let wi = 0; wi < doc.wires.length; wi++) {
+                    const pts = doc.wires[wi].points;
+                    if (pts.length < 2) {
+                        continue;
+                    }
+                    const ends = [pts[0], pts[pts.length - 1]];
+                    for (let ei = 0; ei < ends.length; ei++) {
+                        if (Math.hypot(ends[ei].x - wx, ends[ei].y - wy) <= wireTol) {
+                            onCopper = true;
+                            break;
+                        }
+                    }
+                    if (onCopper) {
+                        break;
+                    }
+                }
+                if (onCopper) {
+                    continue;
+                }
+                // 电源/地符号脚不画 NC（本身即网标语义）
+                const libU = comp.libraryId.toUpperCase();
+                if (libU === 'VCC' || libU === 'GND' || libU === 'VEE' ||
+                    libU.endsWith('/VCC') || libU.endsWith('/GND') || libU.endsWith('/VEE')) {
+                    continue;
+                }
+                ctx.beginPath();
+                ctx.moveTo(wx - arm, wy - arm);
+                ctx.lineTo(wx + arm, wy + arm);
+                ctx.moveTo(wx + arm, wy - arm);
+                ctx.lineTo(wx - arm, wy + arm);
+                ctx.stroke();
+            }
+        }
+    }
     private drawNetLabels(ctx: CanvasRenderingContext2D, doc: SchematicDocument): void {
         if (!doc.netLabels) {
             return;
@@ -5033,7 +5111,7 @@ export class SchematicCanvas extends ViewPU {
         }
         return DeviceHitGeometry.inferSignalLabelExpandLeft({ x: x, y: y }, paths);
     }
-    /** Proteus 风格信号网络标号：锚点 + 旗标框 + 文本 */
+    /** Proteus 风格信号网络标号：锚点 + 旗标框 + 文本；选中区与框同大 */
     private drawSignalNetLabel(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, focused: boolean, expandLeft: boolean = false): void {
         const fontPx = ProteusFonts.CANVAS_LABEL;
         ctx.font = `${fontPx}px sans-serif`;
@@ -5046,6 +5124,18 @@ export class SchematicCanvas extends ViewPU {
         const boxY = y - boxH / 2;
         const color = focused ? ProteusColors.SELECTED : ProteusColors.WIRE;
         const stubEndX = expandLeft ? (x - stubLen) : (x + stubLen);
+        // 选中区：与旗标框同大的半透明高亮（与器件选中区同语义，供辨识/避障对齐）
+        if (focused) {
+            const zoom = Math.max(this.appService.schematicEditor.getZoom(), 0.35);
+            const lw = Math.max(1.6 / zoom, 1.2);
+            ctx.fillStyle = 'rgba(0, 102, 204, 0.18)';
+            ctx.fillRect(boxX, boxY, boxW, boxH);
+            ctx.strokeStyle = ProteusColors.SELECTED;
+            ctx.lineWidth = lw;
+            ctx.setLineDash([]);
+            ctx.strokeRect(boxX, boxY, boxW, boxH);
+            this.drawCornerBrackets(ctx, { x: boxX, y: boxY, width: boxW, height: boxH }, ProteusColors.SELECTED, lw, 8 / zoom);
+        }
         // Anchor stub from connection point into flag
         ctx.strokeStyle = color;
         ctx.fillStyle = color;

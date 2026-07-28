@@ -25,10 +25,12 @@ export {
 export {
   applyNetLabelConnectivity, isAutoNetLabelText, isPowerRailLabelText,
   isGroundLabelText, isPowerSupplyLabelText, normalizePowerLabelFlags,
-  canonicalizeRailLabelText, mergeNetInto
+  canonicalizeRailLabelText, mergeNetInto, labelCopperTouchTol, snapLabelsOntoCopper
 } from './src/main/ets/utils/NetLabelConnectivity';
 
-export { rebuildWireNetTopology } from './src/main/ets/utils/WireNetTopology';
+export {
+  rebuildWireNetTopology, computeTopoJunctionRadius, computeTopoTJunctionTol
+} from './src/main/ets/utils/WireNetTopology';
 
 export {
   INSTR_TRACE_TAG, INSTR_TRACE_SIM_STEP, setInstrTraceSimStep,
@@ -73,7 +75,7 @@ export { AiErcGateUtil } from './src/main/ets/utils/AiErcGateUtil';
 
 export {
   DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE,
-  WorldHitRect, WirePathCoverage, LabelPlaceHints
+  WorldHitRect, WirePathCoverage, LabelPlaceHints, NetLabelAnchorInfo
 } from './src/main/ets/utils/DeviceHitGeometry';
 
 export { WireConflictGeometry } from './src/main/ets/utils/WireConflictGeometry';

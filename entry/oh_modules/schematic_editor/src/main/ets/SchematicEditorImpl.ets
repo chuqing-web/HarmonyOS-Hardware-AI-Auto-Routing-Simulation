@@ -26,6 +26,8 @@ import {
   mapAwareStringify, mapAwareParse,
   rebuildAllNetPinConnectivity, PinGeometryResolver, PinGeometry,
   DeviceHitGeometry, FOREIGN_PIN_CLEARANCE, WIRE_OBSTACLE_PAD, WorldHitRect,
+  NetLabelAnchorInfo,
+  computeTopoJunctionRadius, computeTopoTJunctionTol, canonicalizeRailLabelText,
   INSTR_TRACE_TAG,
   traceWireConnectBegin, traceWirePinSnap, traceWirePinSnapReject,
   traceWireSnapMissNearCopper,
@@ -93,6 +95,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private warStaticObstacles: WarCompObstacle[] = [];
   private warStaticExistingWires: Point2D[][] = [];
   private warChangeSeq: number = 0;
+  /** 连通几何指纹：未变则跳过全量 rebuild（增量） */
+  private connectivityGeomKey: string = '';
   /** 点击选中外扩（世界坐标） */
   private static readonly HIT_PAD: number = 22;
   /** 布线障碍外扩：须小于 HIT_PAD，避免引脚深埋导致无法连接 */
@@ -371,6 +375,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.probes = SchematicEditorImpl.copyProbeList(topo.probeList);
     this.buses = SchematicEditorImpl.copyBusList(topo.busList);
     this.rebuildRefDesCounters();
+    this.invalidateConnectivityCache();
     this.rebuildNetPinConnectivity();
     // rebuild 后 document 已变；必须同步 topology，否则 AI 门禁读到陈旧 SchTopology
     this.syncTopologyFromDoc();
@@ -1366,6 +1371,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
       return null;
     }
     const threshold = tol !== undefined ? tol : Math.max(this.viewport.gridSize * 1.5, 12);
+    const paths: Point2D[][] = [];
+    const wires = doc.wires ?? [];
+    for (let wi = 0; wi < wires.length; wi++) {
+      const pts = wires[wi].points;
+      if (pts && pts.length >= 2) {
+        paths.push(pts);
+      }
+    }
     let bestId: string | null = null;
     let bestDist = threshold;
     for (let i = 0; i < labels.length; i++) {
@@ -1388,27 +1401,20 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
         dx = Math.abs(dx) <= 10 ? 0 : dx;
       } else {
-        // Signal flag: 按接入导线方向左/右展开
-        const textPad = Math.min(Math.max(lb.text.length * 7 + 10, 28), 72);
-        const paths: Point2D[][] = [];
-        const wires = doc.wires ?? [];
-        for (let wi = 0; wi < wires.length; wi++) {
-          const pts = wires[wi].points;
-          if (pts && pts.length >= 2) {
-            paths.push(pts);
-          }
-        }
+        // 信号旗标：整框为选中区（与绘制框同大）
         const expandLeft = DeviceHitGeometry.inferSignalLabelExpandLeft(lb.position, paths);
-        if (expandLeft) {
-          if (dx < 0) {
-            dx = Math.min(0, dx + textPad);
-          }
-        } else if (dx > 0) {
-          dx = Math.max(0, dx - textPad);
+        const flag = DeviceHitGeometry.signalLabelFlagHitRect(lb.position, lb.text, expandLeft);
+        if (DeviceHitGeometry.pointInRect(world.x, world.y, flag)) {
+          return lb.id;
         }
-        if (Math.abs(dy) <= 8) {
-          dy = 0;
+        // 锚点附近也算命中（短 stub）
+        const stubTol = Math.min(threshold, 10);
+        const distAnchor = Math.hypot(dx, dy);
+        if (distAnchor <= stubTol && distAnchor <= bestDist) {
+          bestDist = distAnchor;
+          bestId = lb.id;
         }
+        continue;
       }
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist <= bestDist) {
@@ -1797,6 +1803,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
       this.document = normalized;
     }
     this.rebuildRefDesCounters();
+    this.invalidateConnectivityCache();
     this.rebuildNetPinConnectivity();
     this.syncTopologyFromDoc();
     this.notifyChange();
@@ -3141,10 +3148,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
     return ctx;
   }
 
-  /** 器件/导线障碍静态缓存：预览拖动时避免每帧重建 */
+  /** 器件/导线/网络标号旗标障碍静态缓存：预览拖动时避免每帧重建 */
   private ensureWarStaticCache(doc: SchematicDocument, g: number): void {
-    const key = `${this.warChangeSeq}|${doc.components.length}|${doc.wires.length}|${g}`;
-    if (this.warStaticCacheKey === key && this.warStaticObstacles.length === doc.components.length) {
+    const labelN = doc.netLabels !== undefined ? doc.netLabels.length : 0;
+    const key = `${this.warChangeSeq}|${doc.components.length}|${doc.wires.length}|${labelN}|${g}`;
+    if (this.warStaticCacheKey === key) {
       return;
     }
     const obstacles: WarCompObstacle[] = [];
@@ -3183,6 +3191,29 @@ export class SchematicEditorImpl implements ISchematicEditor {
         existingWires.push(poly);
       }
     }
+    // 信号网络标号旗标框作选中区障碍（与框同大），避免布线压字
+    const labels = doc.netLabels ?? [];
+    const labelInputs: NetLabelAnchorInfo[] = [];
+    for (let li = 0; li < labels.length; li++) {
+      const lb = labels[li];
+      const item: NetLabelAnchorInfo = {
+        id: lb.id,
+        text: lb.text,
+        x: lb.position.x,
+        y: lb.position.y
+      };
+      labelInputs.push(item);
+    }
+    const labelHits = DeviceHitGeometry.collectSignalLabelHitRects(labelInputs, existingWires);
+    for (let hi = 0; hi < labelHits.length; hi++) {
+      const hr = labelHits[hi];
+      obstacles.push({
+        id: `lbl:${hr.instUuid}`,
+        hitRect: hr,
+        pinWorlds: [],
+        escapePinWorlds: []
+      });
+    }
     this.warStaticObstacles = obstacles;
     this.warStaticExistingWires = existingWires;
     this.warStaticCacheKey = key;
@@ -3203,10 +3234,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   /**
    * 从导线几何与器件引脚位置重建全部 net.pinIds，合并 VCC/GND 全局网络。
-   * 解决画布显示已连接但拓扑 pinIds 为空的问题。
+   * 几何指纹未变时跳过（选择/参数等不触发重算）。
    */
   rebuildNetPinConnectivity(): void {
     const doc = this.getDocument();
+    const key = this.computeConnectivityGeomKey(doc);
+    if (key === this.connectivityGeomKey && key.length > 0) {
+      return;
+    }
     const resolver: PinGeometryResolver = (libraryId: string): PinGeometry[] | null => {
       const pins = this.resolvePins(libraryId);
       if (pins === null) {
@@ -3227,6 +3262,40 @@ export class SchematicEditorImpl implements ISchematicEditor {
     this.mergeNetsAtSharedWireEndpoints();
     rebuildAllNetPinConnectivity(doc, Math.min(this.viewport.gridSize, 10), resolver);
     this.mergeDuplicateNamedNets();
+    // 指纹不含 netId（重建会改写）；存几何摘要避免下次误重入
+    this.connectivityGeomKey = this.computeConnectivityGeomKey(doc);
+  }
+
+  /** 强制下次 rebuild 走全量（加载工程后调用） */
+  invalidateConnectivityCache(): void {
+    this.connectivityGeomKey = '';
+  }
+
+  /** 器件位姿 + 导线折点 + 标号位置/文案（不含 netId，避免重建改写导致指纹抖动） */
+  private computeConnectivityGeomKey(doc: SchematicDocument): string {
+    const parts: string[] = [];
+    parts.push(`g${this.viewport.gridSize}`);
+    parts.push(`c${doc.components.length}`);
+    for (let i = 0; i < doc.components.length; i++) {
+      const c = doc.components[i];
+      parts.push(`${c.id}:${Math.round(c.position.x)},${Math.round(c.position.y)},${c.rotation},${c.mirrored ? 1 : 0},${c.libraryId}`);
+    }
+    parts.push(`w${doc.wires.length}`);
+    for (let i = 0; i < doc.wires.length; i++) {
+      const w = doc.wires[i];
+      const pts: string[] = [];
+      for (let p = 0; p < w.points.length; p++) {
+        pts.push(`${Math.round(w.points[p].x)},${Math.round(w.points[p].y)}`);
+      }
+      parts.push(`${w.id}:${pts.join(';')}`);
+    }
+    const labels = doc.netLabels ?? [];
+    parts.push(`l${labels.length}`);
+    for (let i = 0; i < labels.length; i++) {
+      const lb = labels[i];
+      parts.push(`${lb.id}:${lb.text}:${Math.round(lb.position.x)},${Math.round(lb.position.y)}`);
+    }
+    return parts.join('|');
   }
 
   /**
@@ -3234,11 +3303,12 @@ export class SchematicEditorImpl implements ISchematicEditor {
    * belong to the same net.  Unlike mergeNets (which merges entire nets),
    * this only touches wires whose endpoints are co-located — it does not
    * pull in other wires that happen to share the same net elsewhere.
+   * 半径与 WireNetTopology 对齐；异电源轨端点靠近时拒绝并网（交叉≠连接）。
    */
   private mergeNetsAtSharedWireEndpoints(): void {
     const doc = this.getDocument();
-    // Align with snapToNearestWire threshold so grid-snapped stubs co-locate
-    const junctionRadius = Math.min(Math.max(this.viewport.gridSize * 0.75, 6), 12);
+    // 与 rebuildWireNetTopology 同一公式，禁止 0.75×grid→12 误并 MCU 邻脚
+    const junctionRadius = computeTopoJunctionRadius(this.viewport.gridSize);
     // Collect endpoint → {point, wireIndex} pairs
     interface EndpointEntry { pt: Point2D; wireIdx: number; }
     const endpoints: EndpointEntry[] = [];
@@ -3269,11 +3339,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
       groups.push(group);
     }
     // For each junction, reassign all wires to the first wire's net.
-    // No rail priority — it would pull signal wires onto GND at junctions
-    // where the saved data already has a wrong net assignment.
+    // Skip when group would short distinct rails (VCC/GND/VEE).
     let mergeCount = 0;
     for (const group of groups) {
-      // Collect distinct net IDs in this group
       const netIds: string[] = [];
       for (const ep of group) {
         const nid = doc.wires[ep.wireIdx].netId;
@@ -3282,6 +3350,9 @@ export class SchematicEditorImpl implements ISchematicEditor {
         }
       }
       if (netIds.length <= 1) continue;
+      if (this.endpointGroupHasRailConflict(doc, netIds)) {
+        continue;
+      }
       const canonicalId = netIds[0];
       const at = group[0].pt;
       for (const ep of group) {
@@ -3305,7 +3376,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
 
     // T 接候选：端点压到另一根线中段（仅日志；实际并网由 WireNetTopology 完成）
-    const tTol = Math.min(Math.max(3, this.viewport.gridSize * 0.4), 5);
+    const tTol = computeTopoTJunctionTol(this.viewport.gridSize);
     let tHits = 0;
     for (let wi = 0; wi < doc.wires.length; wi++) {
       const wA = doc.wires[wi];
@@ -3329,8 +3400,12 @@ export class SchematicEditorImpl implements ISchematicEditor {
             }
             tHits++;
             if (tHits <= 12) {
-              traceWireWireMerge('T_candidate', wA.id, wA.netId, wB.id, wB.netId,
-                ep.x, ep.y, wA.netId === wB.netId ? wA.netId : `${wA.netId}|${wB.netId}`);
+              // 仅几何候选；是否并网由 WireNetTopology 决定（同器件异脚会 REFUSE）
+              const hint = wA.netId === wB.netId
+                ? `already_same:${wA.netId}`
+                : `geom_only:${wA.netId}|${wB.netId}`;
+              traceWireWireMerge('T_candidate_geom', wA.id, wA.netId, wB.id, wB.netId,
+                ep.x, ep.y, hint);
             }
             break;
           }
@@ -3341,6 +3416,25 @@ export class SchematicEditorImpl implements ISchematicEditor {
       Logger.info(INSTR_TRACE_TAG,
         `[WIRE_CONN] WIRE_WIRE T_candidate summary hits=${tHits} tol=${tTol.toFixed(1)}`);
     }
+  }
+
+  /** 端点组内是否含互斥电源轨（VCC/GND/VEE），禁止几何误并短路 */
+  private endpointGroupHasRailConflict(doc: SchematicDocument, netIds: string[]): boolean {
+    const kinds: string[] = [];
+    for (let i = 0; i < netIds.length; i++) {
+      const net = doc.nets.find(n => n.id === netIds[i]);
+      if (net === undefined) {
+        continue;
+      }
+      const canon = canonicalizeRailLabelText(net.name);
+      if (canon === null) {
+        continue;
+      }
+      if (!kinds.includes(canon)) {
+        kinds.push(canon);
+      }
+    }
+    return kinds.length >= 2;
   }
 
   /** 将 VCC/GND 符号引脚注册到全局电源网络 */
