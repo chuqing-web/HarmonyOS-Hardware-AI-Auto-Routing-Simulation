@@ -65,7 +65,7 @@ export class LicenseManager {
         return {
           maxDevices: 200,
           dailyAiCalls: 50,
-          maxAiApis: 1,
+          maxAiApis: 8,
           stm32AdvancedPeriph: false,
           monteCarlo: false,
           faultInjection: false,

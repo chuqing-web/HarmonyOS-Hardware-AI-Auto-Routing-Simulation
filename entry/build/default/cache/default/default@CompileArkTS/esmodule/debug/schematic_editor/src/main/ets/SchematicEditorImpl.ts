@@ -49,6 +49,11 @@ export class SchematicEditorImpl implements ISchematicEditor {
     private defaultParamsResolver: DefaultParamsResolver | null = null;
     private canvasViewWidth: number = 0;
     private canvasViewHeight: number = 0;
+    /**
+     * 用户已手动缩放/平移后为 true：启动期 / 布局收敛的 auto-fit 不得再覆盖视口。
+     * 显式「适应窗口」或打开工程时会清锁。
+     */
+    private viewportUserLocked: boolean = false;
     /** WAR 开关：默认开启（Proteus Tools → WAR） */
     private warEnabled: boolean = true;
     /** Path Buffer Cache：previewWirePath 写入，落线只读复用 */
@@ -77,6 +82,25 @@ export class SchematicEditorImpl implements ISchematicEditor {
     setCanvasViewSize(width: number, height: number): void {
         this.canvasViewWidth = Math.max(0, width);
         this.canvasViewHeight = Math.max(0, height);
+    }
+    /** 用户滚轮/捏合/拖拽平移后调用，阻止启动 auto-fit 抢视口 */
+    markViewportUserAdjusted(): void {
+        this.viewportUserLocked = true;
+    }
+    clearViewportUserLock(): void {
+        this.viewportUserLocked = false;
+    }
+    isViewportUserLocked(): boolean {
+        return this.viewportUserLocked;
+    }
+    /**
+     * 启动/布局收敛用：用户已动手缩放或平移则跳过，避免「打开后缩放又被打回」。
+     */
+    autoFitAllInView(): void {
+        if (this.viewportUserLocked) {
+            return;
+        }
+        this.applyFitRect(this.getBoundingBox(), 1.0);
     }
     /** World-space hit rectangle for click overlay (includes HIT_PAD, pins exposed). */
     getComponentHitRect(comp: ComponentInstance): Rect2D {
@@ -1427,19 +1451,27 @@ export class SchematicEditorImpl implements ISchematicEditor {
         return this.cloneViewportState();
     }
     zoomCanvas(scale: number): void {
-        this.viewport.zoom = Math.max(0.1, Math.min(5.0, scale));
+        this.markViewportUserAdjusted();
+        const zoom: number = Math.max(0.1, Math.min(5.0, Math.round(scale * 100) / 100));
+        this.viewport.zoom = zoom;
+        this.snapPanOffset();
         this.publishViewport();
     }
     moveView(dx: number, dy: number): void {
+        this.markViewportUserAdjusted();
         this.viewport.panOffset.x += dx;
         this.viewport.panOffset.y += dy;
+        // 拖动中保持亚像素跟手；结束时由 Canvas 调用 snapPanOffset 消残影
         this.publishViewport();
     }
     fitAllInView(): void {
+        // 显式适应窗口：清锁后强制适配（工具栏 / 快捷键 / 打开工程）
+        this.viewportUserLocked = false;
         // 自适应不超过 100%：避免小电路在大屏上被放大到 200% 出现“软放大/发糊”
         this.applyFitRect(this.getBoundingBox(), 1.0);
     }
     fitRectInView(rect: Rect2D): void {
+        this.markViewportUserAdjusted();
         this.applyFitRect(rect, 5.0);
     }
     private applyFitRect(rect: Rect2D, maxZoom: number): void {
@@ -1466,12 +1498,23 @@ export class SchematicEditorImpl implements ISchematicEditor {
         };
         this.publishViewport();
     }
+    /** 平移结束 / 缩放后对齐整数像素，消除亚像素 CTM 发糊与残影 */
+    snapPanOffset(): void {
+        const nx: number = Math.round(this.viewport.panOffset.x);
+        const ny: number = Math.round(this.viewport.panOffset.y);
+        if (nx === this.viewport.panOffset.x && ny === this.viewport.panOffset.y) {
+            return;
+        }
+        this.viewport.panOffset = { x: nx, y: ny };
+        this.publishViewport();
+    }
     setZoom(level: number): void {
         this.zoomCanvas(level);
     }
     zoomAt(sx: number, sy: number, level: number): void {
+        this.markViewportUserAdjusted();
         const oldZoom: number = this.viewport.zoom;
-        const clamped: number = Math.max(0.1, Math.min(5.0, level));
+        const clamped: number = Math.max(0.1, Math.min(5.0, Math.round(level * 100) / 100));
         if (Math.abs(clamped - oldZoom) < 1e-9) {
             return;
         }
@@ -1479,8 +1522,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
         const worldY: number = (sy - this.viewport.panOffset.y) / oldZoom;
         this.viewport.zoom = clamped;
         this.viewport.panOffset = {
-            x: sx - worldX * clamped,
-            y: sy - worldY * clamped
+            x: Math.round(sx - worldX * clamped),
+            y: Math.round(sy - worldY * clamped)
         };
         this.publishViewport();
     }

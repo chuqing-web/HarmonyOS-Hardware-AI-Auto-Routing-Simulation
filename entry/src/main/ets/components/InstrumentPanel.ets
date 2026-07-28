@@ -902,7 +902,39 @@ export struct InstrumentPanel {
       const pts = this.waveVoltageData.length;
       const lastV = InstrumentPanel.lastFinite(this.waveVoltageData);
       const last = lastV !== null ? lastV.toFixed(4) : '--';
-      return `OSC pts=${pts} last=${last}V ch2=${this.waveCh2Data.length}`;
+      let minV = Number.POSITIVE_INFINITY;
+      let maxV = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < this.waveVoltageData.length; i++) {
+        const v = this.waveVoltageData[i];
+        if (!(v === v) || !Number.isFinite(v)) {
+          continue;
+        }
+        if (v < minV) {
+          minV = v;
+        }
+        if (v > maxV) {
+          maxV = v;
+        }
+      }
+      const vpp = (minV < maxV) ? (maxV - minV).toFixed(3) : '--';
+      const last2V = InstrumentPanel.lastFinite(this.waveCh2Data);
+      const last2 = last2V !== null ? last2V.toFixed(4) : '--';
+      let min2 = Number.POSITIVE_INFINITY;
+      let max2 = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < this.waveCh2Data.length; i++) {
+        const v = this.waveCh2Data[i];
+        if (!(v === v) || !Number.isFinite(v)) {
+          continue;
+        }
+        if (v < min2) {
+          min2 = v;
+        }
+        if (v > max2) {
+          max2 = v;
+        }
+      }
+      const vpp2 = (min2 < max2) ? (max2 - min2).toFixed(3) : '--';
+      return `OSC pts=${pts} last=${last}V Vpp=${vpp} ch2last=${last2}V ch2Vpp=${vpp2}`;
     }
     if (kind === 'logic') return `LA ch=${this.logicChannels} samples=${this.logicSampleCount}`;
     if (kind === 'uart') return `UART logLen=${this.uartLog.length}`;

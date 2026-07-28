@@ -231,18 +231,18 @@ export class AppService {
         PlatformPrefsStore.getInstance().init(baseDir);
         AiApiVaultStore.getInstance().init(baseDir);
         this.applyPlatformPrefsFromStore();
-        this.loadAiApiVaultOnStartup();
         (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
         this.filePersistence.initCollaboration(baseDir);
         this.templateBootstrapPromise = TemplateProjectBootstrap.ensure(context, baseDir);
         void this.bootstrapAndLoadLibrary(context, `${baseDir}/DeviceLibrary`);
         void this.loadProteusAliases(context);
-        void LicenseManager.getInstance().applyTrialStatus(context);
+        // 先授权/试用，再灌金库，避免 FREE maxAiApis 截断已存多条 API
+        const licensePath = `${filesDir}/AISchSim/license.lic`;
+        const status = LicenseManager.getInstance().loadFromPath(licensePath);
+        void this.initAiApiVaultAfterLicense(context, status);
         void PrivacyConsentStore.init(context);
         this.pluginManager.setPluginInstallDir(`${filesDir}/AISchSim/Plugins`);
         this.collabSync.setSession(this.sessionHolderId, this.sessionUserName);
-        const licensePath = `${filesDir}/AISchSim/license.lic`;
-        const status = LicenseManager.getInstance().loadFromPath(licensePath);
         FeatureGate.refresh();
         const trialHint = status.valid ? status.message : LicenseManager.getInstance().getStatus().message;
         this.onStatusMessage(trialHint);
@@ -252,6 +252,21 @@ export class AppService {
             timestamp: Date.now(),
             data: status
         });
+    }
+    private async initAiApiVaultAfterLicense(context: common.UIAbilityContext, status: LicenseStatus): Promise<void> {
+        try {
+            await LicenseManager.getInstance().applyTrialStatus(context);
+            FeatureGate.refresh();
+        }
+        catch (e) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] applyTrialStatus failed: ${e}`);
+        }
+        this.loadAiApiVaultOnStartup();
+        // 试用生效后刷新状态文案
+        const refreshed = LicenseManager.getInstance().getStatus();
+        if (refreshed.message !== status.message) {
+            this.onStatusMessage(refreshed.message);
+        }
     }
     getLicenseStatus(): LicenseStatus {
         return LicenseManager.getInstance().getStatus();
@@ -1576,7 +1591,7 @@ export class AppService {
         (this.instruments as VirtualInstrumentsImpl).setUartLoopback(false);
         (this.instruments as VirtualInstrumentsImpl).clearComponentBindings();
     }
-    /** 启动：从加密金库加载 API 并注入 manager */
+    /** 启动：从加密金库加载 API 并注入 manager（须在 license/trial 之后调用更稳妥；restore 跳过门禁） */
     private loadAiApiVaultOnStartup(): void {
         const vault = AiApiVaultStore.getInstance();
         const configs = vault.loadConfigs();
@@ -1588,13 +1603,18 @@ export class AppService {
             return;
         }
         this.aiApiManager.clearAllConfigs();
+        let okCount = 0;
         for (let i = 0; i < configs.length; i++) {
             const cfg = configs[i];
-            const addResult = this.aiApiManager.addApi(cfg);
-            Logger.info(INSTR_TRACE_TAG, `[AI_API] vault→manager add id=${cfg.id} name=${cfg.name}` +
-                ` ok=${addResult.success} keyLen=${cfg.apiKey ? cfg.apiKey.length : 0}`);
+            const addResult = this.aiApiManager.restoreApi(cfg);
+            if (addResult.success) {
+                okCount++;
+            }
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] vault→manager restore id=${cfg.id} name=${cfg.name}` +
+                ` ok=${addResult.success} keyLen=${cfg.apiKey ? cfg.apiKey.length : 0}` +
+                ` err=${addResult.error ?? ''}`);
         }
-        Logger.info(INSTR_TRACE_TAG, `[AI_API] vault startup restored ${configs.length} configs` +
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] vault startup restored ${okCount}/${configs.length} configs` +
             ` path=${vault.getVaultPath()}`);
     }
     /**
@@ -1613,7 +1633,7 @@ export class AppService {
         if (vaultCfgs.length === 0) {
             Logger.info(INSTR_TRACE_TAG, `[AI_API] migrate project→vault count=${projectCfgs.length}`);
             for (let i = 0; i < projectCfgs.length; i++) {
-                this.aiApiManager.addApi(projectCfgs[i]);
+                this.aiApiManager.restoreApi(projectCfgs[i]);
             }
             this.persistAiApiVaultFromManager();
         }
@@ -1624,7 +1644,7 @@ export class AppService {
                 const cfg = projectCfgs[i];
                 const existing = this.aiApiManager.getApi(cfg.id);
                 if (!existing.success) {
-                    const addRes = this.aiApiManager.addApi(cfg);
+                    const addRes = this.aiApiManager.restoreApi(cfg);
                     if (addRes.success) {
                         merged++;
                     }
@@ -1669,15 +1689,16 @@ export class AppService {
      * 将内存中的 API 配置加密写入全局金库（与工程文件分离）。
      * @param persistToDisk 为 true 时立即写金库（UI 保存 API）；
      *                      工程 save 传 false 时仍写金库，但 Key 不进 .schsim。
+     * @returns 金库写入是否成功（失败时内存配置仍在，切勿当作 Key 已丢）
      */
-    syncAiApiConfigsToProject(persistToDisk: boolean = true): void {
+    syncAiApiConfigsToProject(persistToDisk: boolean = true): boolean {
         if (this.currentProject) {
             this.currentProject.aiConfigs = [];
         }
         const exported = this.aiApiManager.exportConfigs(false);
         if (!exported.success || !exported.data) {
             Logger.warn(INSTR_TRACE_TAG, `[AI_API] sync→vault FAILED: ${exported.error ?? 'export empty'}`);
-            return;
+            return false;
         }
         try {
             const configs = JSON.parse(exported.data) as AiApiConfig[];
@@ -1685,11 +1706,14 @@ export class AppService {
                 const ok = AiApiVaultStore.getInstance().saveConfigs(configs, persistToDisk && configs.length === 0);
                 if (!ok) {
                     Logger.warn(INSTR_TRACE_TAG, `[AI_API] persist→vault FAIL path=${AiApiVaultStore.getInstance().getVaultPath()}`);
+                    return false;
                 }
             }
+            return true;
         }
         catch (e) {
             Logger.error(INSTR_TRACE_TAG, `[AI_API] sync→vault parse error: ${e}`);
+            return false;
         }
     }
     async createSnapshot(versionLabel: string, note: string): Promise<SnapshotMeta | null> {

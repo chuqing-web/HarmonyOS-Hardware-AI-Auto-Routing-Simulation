@@ -23,6 +23,11 @@ interface HttpTransportOpts {
     connectTimeoutMs: number;
     readTimeoutMs: number;
 }
+/** 上次对该 API 成功的传输方式（进程内粘性，避免每次先直连超时） */
+interface StickyTransport {
+    usingProxy: boolean;
+    usePublicDns: boolean;
+}
 /** HarmonyOS http / BusinessError 常不是 Error 实例，`${e}` 会变成 [object Object] */
 function formatCaughtError(e: Object | string | number | boolean | Error | null | undefined): string {
     if (e === null || e === undefined) {
@@ -103,6 +108,8 @@ export class AiApiManagerImpl implements IAiApiManager {
     /** 用户取消：中止 in-flight HTTP，并阻止重试 */
     private chatCancelRequested: boolean = false;
     private activeHttpRequests: http.HttpRequest[] = [];
+    /** apiId → 上次成功的代理/DNS 组合；测试通了后生图优先走同一档 */
+    private stickyTransportByApi: Map<string, StickyTransport> = new Map();
     // ---- v2 API ----
     getAllApiConfig(): AiApiConfig[] {
         return this.listApis();
@@ -218,14 +225,27 @@ export class AiApiManagerImpl implements IAiApiManager {
     }
     // ---- v1 API ----
     addApi(config: AiApiConfig): Result<void> {
+        return this.addApiInternal(config, false);
+    }
+    /**
+     * 金库/工程恢复专用：跳过 FeatureGate 数量上限。
+     * 否则启动时试用/授权尚未生效（FREE maxAiApis 过低）会只灌入 1 条，
+     * 随后 sync 再把金库整表写穿成 1 条。
+     */
+    restoreApi(config: AiApiConfig): Result<void> {
+        return this.addApiInternal(config, true);
+    }
+    private addApiInternal(config: AiApiConfig, skipGate: boolean): Result<void> {
         if (this.apis.has(config.id)) {
             Logger.warn(INSTR_TRACE_TAG, `[AI_API] addApi REJECT duplicate id=${config.id}`);
             return { success: false, error: 'API ID already exists' };
         }
-        const gate = FeatureGate.canAddAiApi(this.apis.size);
-        if (!gate.success) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_API] addApi REJECT gate: ${gate.error}`);
-            return { success: false, errCode: gate.errCode, error: gate.error };
+        if (!skipGate) {
+            const gate = FeatureGate.canAddAiApi(this.apis.size);
+            if (!gate.success) {
+                Logger.warn(INSTR_TRACE_TAG, `[AI_API] addApi REJECT gate: ${gate.error}`);
+                return { success: false, errCode: gate.errCode, error: gate.error };
+            }
         }
         const stored = cloneAiApiConfig(config);
         if (stored.maxTokens < DEFAULT_MAX_OUTPUT_TOKENS) {
@@ -241,7 +261,7 @@ export class AiApiManagerImpl implements IAiApiManager {
         this.failedApiIds.delete(config.id);
         if (!this.defaultApiId && config.enabled)
             this.defaultApiId = config.id;
-        Logger.info(INSTR_TRACE_TAG, `[AI_API] addApi OK id=${config.id} name=${config.name}` +
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] ${skipGate ? 'restoreApi' : 'addApi'} OK id=${config.id} name=${config.name}` +
             ` provider=${config.provider} model=${config.model}` +
             ` enabled=${config.enabled} keyLen=${config.apiKey && config.apiKey !== '***' ? config.apiKey.length : 0}` +
             ` total=${this.apis.size}`);
@@ -253,6 +273,7 @@ export class AiApiManagerImpl implements IAiApiManager {
         this.encryptedKeys.delete(id);
         this.encryptedKeys.delete(`${id}_backup`);
         this.failedApiIds.delete(id);
+        this.stickyTransportByApi.delete(id);
         if (this.defaultApiId === id)
             this.defaultApiId = '';
         return { success: true };
@@ -261,15 +282,36 @@ export class AiApiManagerImpl implements IAiApiManager {
         const existing = this.apis.get(id);
         if (!existing)
             return { success: false, error: 'API not found' };
-        if (updates.apiKey && updates.apiKey !== '***') {
-            this.encryptedKeys.set(id, CryptoUtil.encryptWithHuks(updates.apiKey));
+        // 仅在明确传入有效新 Key 时轮换；空串 / *** / 未传 一律保留 encryptedKeys
+        const newKey = updates.apiKey;
+        const hasNewKey = newKey !== undefined &&
+            newKey.length > 0 && newKey !== '***';
+        if (hasNewKey) {
+            this.encryptedKeys.set(id, CryptoUtil.encryptWithHuks(newKey as string));
             this.failedApiIds.delete(id);
         }
-        if (updates.backupApiKey) {
+        if (updates.backupApiKey !== undefined && updates.backupApiKey.length > 0 &&
+            updates.backupApiKey !== '***') {
             this.encryptedKeys.set(`${id}_backup`, CryptoUtil.encryptWithHuks(updates.backupApiKey));
             this.failedApiIds.delete(id);
         }
         const updated = mergeAiApiConfig(existing, updates);
+        // 防止 merge 把 *** / 空串写进内存镜像；密钥以 encryptedKeys 为准
+        if (!hasNewKey) {
+            const kept = existing.apiKey;
+            if (kept && kept !== '***') {
+                updated.apiKey = kept;
+            }
+            else {
+                const enc = this.encryptedKeys.get(id);
+                if (enc && enc.length > 0) {
+                    const plain = CryptoUtil.decrypt(enc);
+                    if (plain.length > 0) {
+                        updated.apiKey = plain;
+                    }
+                }
+            }
+        }
         this.apis.set(id, updated);
         return { success: true };
     }
@@ -419,13 +461,23 @@ export class AiApiManagerImpl implements IAiApiManager {
                 copy.backupApiKey = copy.backupApiKey ? '***' : undefined;
             }
             else {
+                // 优先金库镜像；解密失败时绝不能用空串覆盖仍有效的明文，否则会写穿金库丢 Key
                 const enc = this.encryptedKeys.get(api.id);
-                if (enc) {
-                    copy.apiKey = CryptoUtil.decrypt(enc);
+                if (enc && enc.length > 0) {
+                    const plain = CryptoUtil.decrypt(enc);
+                    if (plain.length > 0) {
+                        copy.apiKey = plain;
+                    }
+                }
+                if (!copy.apiKey || copy.apiKey.length === 0 || copy.apiKey === '***') {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] exportConfigs missing key id=${api.id} name=${api.name}`);
                 }
                 const encBak = this.encryptedKeys.get(`${api.id}_backup`);
-                if (encBak) {
-                    copy.backupApiKey = CryptoUtil.decrypt(encBak);
+                if (encBak && encBak.length > 0) {
+                    const bakPlain = CryptoUtil.decrypt(encBak);
+                    if (bakPlain.length > 0) {
+                        copy.backupApiKey = bakPlain;
+                    }
                 }
             }
             configs.push(copy);
@@ -486,6 +538,7 @@ export class AiApiManagerImpl implements IAiApiManager {
         this.encryptedKeys.clear();
         this.defaultApiId = '';
         this.failedApiIds.clear();
+        this.stickyTransportByApi.clear();
         return { success: true };
     }
     getSupportedProviders(): AiProviderType[] {
@@ -535,6 +588,56 @@ export class AiApiManagerImpl implements IAiApiManager {
         }
         return api.maxTokens >= DEFAULT_MAX_OUTPUT_TOKENS ? api.maxTokens : DEFAULT_MAX_OUTPUT_TOKENS;
     }
+    /**
+     * 传输尝试顺序：若该 API 曾有成功档（如代理通、直连超时），优先复用，再回退其余组合。
+     */
+    private buildTransportAttempts(apiId: string, preferProxy: boolean, connectTimeoutMs: number, readTimeoutMs: number): HttpTransportOpts[] {
+        const defaults: HttpTransportOpts[] = [
+            { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
+            { usingProxy: preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs },
+            { usingProxy: !preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs }
+        ];
+        const sticky = this.stickyTransportByApi.get(apiId);
+        const ordered: HttpTransportOpts[] = [];
+        if (sticky) {
+            ordered.push({
+                usingProxy: sticky.usingProxy,
+                usePublicDns: sticky.usePublicDns,
+                connectTimeoutMs,
+                readTimeoutMs
+            });
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] sticky transport first id=${apiId}` +
+                ` usingProxy=${sticky.usingProxy} publicDns=${sticky.usePublicDns}`);
+        }
+        for (let i = 0; i < defaults.length; i++) {
+            const d = defaults[i];
+            let dup = false;
+            for (let j = 0; j < ordered.length; j++) {
+                if (ordered[j].usingProxy === d.usingProxy &&
+                    ordered[j].usePublicDns === d.usePublicDns) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) {
+                ordered.push(d);
+            }
+        }
+        return ordered;
+    }
+    private rememberStickyTransport(apiId: string, opt: HttpTransportOpts): void {
+        const prev = this.stickyTransportByApi.get(apiId);
+        if (prev && prev.usingProxy === opt.usingProxy && prev.usePublicDns === opt.usePublicDns) {
+            return;
+        }
+        const sticky: StickyTransport = {
+            usingProxy: opt.usingProxy,
+            usePublicDns: opt.usePublicDns
+        };
+        this.stickyTransportByApi.set(apiId, sticky);
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] sticky transport saved id=${apiId}` +
+            ` usingProxy=${opt.usingProxy} publicDns=${opt.usePublicDns}`);
+    }
     private async sendRequest(api: AiApiConfig, prompt: string, options?: ChatOptions): Promise<Result<string>> {
         const apiKey = this.getDecryptedKey(api.id);
         const template = getTemplate(api.provider);
@@ -564,12 +667,7 @@ export class AiApiManagerImpl implements IAiApiManager {
             ? buildAnthropicMessagesBody(api.model, messages, maxTokens, temp)
             : buildChatRequestBody(api.model, messages, maxTokens, temp, options?.disableThinking);
         const body = JSON.stringify(reqBody);
-        // 本机系统 DNS 常失败：优先公共 DNS 直连，再回退代理/系统 DNS
-        const attempts: HttpTransportOpts[] = [
-            { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
-            { usingProxy: preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs },
-            { usingProxy: !preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs }
-        ];
+        const attempts = this.buildTransportAttempts(api.id, preferProxy, connectTimeoutMs, readTimeoutMs);
         let lastErr = '';
         let usedProxy = preferProxy;
         for (let i = 0; i < attempts.length; i++) {
@@ -599,6 +697,7 @@ export class AiApiManagerImpl implements IAiApiManager {
             }
             if (attempt.success && attempt.data !== undefined) {
                 this.networkFailCount = 0;
+                this.rememberStickyTransport(api.id, opt);
                 return this.parseChatHttpSuccess(api, attempt.data);
             }
             lastErr = attempt.error ?? 'unknown';
@@ -770,18 +869,21 @@ export class AiApiManagerImpl implements IAiApiManager {
             : buildChatRequestBody(api.model, messages, maxTokens, temp, options?.disableThinking);
         const body = JSON.stringify(reqBody);
         const preferProxy = this.shouldUseSystemProxy(api.id);
-        const attempts: HttpTransportOpts[] = [
-            { usingProxy: false, usePublicDns: true, connectTimeoutMs, readTimeoutMs },
-            { usingProxy: preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs },
-            { usingProxy: !preferProxy, usePublicDns: false, connectTimeoutMs, readTimeoutMs }
-        ];
+        const attempts = this.buildTransportAttempts(api.id, preferProxy, connectTimeoutMs, readTimeoutMs);
         let lastErr = '';
         let usedProxy = preferProxy;
         for (let i = 0; i < attempts.length; i++) {
             const opt = attempts[i];
+            if (i > 0 && opt.usingProxy === attempts[i - 1].usingProxy &&
+                opt.usePublicDns === attempts[i - 1].usePublicDns) {
+                continue;
+            }
             usedProxy = opt.usingProxy;
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] HTTP attempt#${i + 1} (backupKey) id=${api.id} usingProxy=${opt.usingProxy}` +
+                ` publicDns=${opt.usePublicDns}`);
             const attempt = await this.executeHttpPost(url, headers, body, opt);
             if (attempt.success && attempt.data !== undefined) {
+                this.rememberStickyTransport(api.id, opt);
                 return this.parseChatHttpSuccess(api, attempt.data);
             }
             lastErr = attempt.error ?? 'unknown';

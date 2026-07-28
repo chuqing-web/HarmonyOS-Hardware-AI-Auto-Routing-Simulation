@@ -612,6 +612,11 @@ export class SimulationKernelImpl implements ISimulationKernel {
         if (this.state !== SimulationState.RUNNING) {
             return 0;
         }
+        // Continuous interactive: never let stopTime kill the pump mid-scope session
+        if (this.scheduler !== null && this.globalTime >= this.config.stopTime - 0.5) {
+            this.config.stopTime = this.globalTime + 3600;
+            this.scheduler.extendStopTime(3600);
+        }
         const acFreq = this.analogEngine.getMaxAcFrequency();
         const has555 = this.analogEngine.getTimer555Count() > 0;
         // Op-amp RC oscillators (square/triangle) have no VAC/555 — old DC path only
@@ -619,72 +624,99 @@ export class SimulationKernelImpl implements ISimulationKernel {
         const hasCaps = this.analogEngine.getCapacitorCount() > 0;
         const hasOpamps = this.analogEngine.getOpampCount() > 0;
         const needsAnalogBurst = acFreq > 0 || has555 || hasCaps || hasOpamps;
-        const wallCap = needsAnalogBurst ? 12 : 4;
+        // AC+opamp (differentiator/integrator labs): give the main thread more wall
+        // so SIGGEN half-periods arrive before the scope window looks DC-flat.
+        const wallCap = (acFreq > 0 && hasOpamps) ? 28 : (needsAnalogBurst ? 12 : 4);
         // Sample KEY/net voltages into GPIO IDR before firmware reads inputs
         this.syncSpiceToGpioInputs();
         this.tickMcuCore();
+        // Ideal VSRC edges must not drive adaptive dt shrink
+        if (this.scheduler !== null) {
+            this.scheduler.setAdaptiveIgnoreNodes(this.analogEngine.getForcedSourceNodes());
+        }
+        // Per-frame AC step target (re-bumped inside the loop so rail-snap shrink cannot stick)
+        let acMax = 0;
         // 555 RC 优先：同板有 VAC 时若仍用 25µs AC 步长，定时电容充不到 ⅔VCC，LED 会卡在亮
         if (this.scheduler !== null && has555) {
             // RC astable edges are ms-scale; allow up to 1ms steps so Hz-range 555 can move
             this.scheduler.setMaxStepCap(1e-3);
+            this.scheduler.setMinStepFloor(1e-5);
             this.scheduler.bumpStepToward(5e-4);
         }
         else if (this.scheduler !== null && acFreq > 0) {
-            // ≥40 samples/period; low-f clocks (10Hz lab) need ms-scale steps or edges never arrive
-            const perSample = 1.0 / (acFreq * 40);
-            const acCeil = acFreq < 100 ? 5e-4 : 5e-5;
-            const acMax = Math.max(1e-6, Math.min(perSample, acCeil));
+            // Op-amp labs: 20 samples/period (was 40) — faster wall→sim so scope keeps scrolling
+            const samplesPerPeriod = hasOpamps ? 20 : 40;
+            const perSample = 1.0 / (acFreq * samplesPerPeriod);
+            const acCeil = hasOpamps
+                ? (acFreq < 100 ? 2e-3 : 2e-4)
+                : (acFreq < 100 ? 5e-4 : 5e-5);
+            acMax = Math.max(1e-6, Math.min(perSample, acCeil));
+            const floorDiv = hasOpamps ? 80 : 200;
+            const acFloor = Math.max(1e-7, Math.min(acMax / 2, 1.0 / (acFreq * floorDiv)));
             this.scheduler.setMaxStepCap(acMax);
+            this.scheduler.setMinStepFloor(acFloor);
             this.scheduler.bumpStepToward(acMax);
         }
         else if (this.scheduler !== null && (hasCaps || hasOpamps)) {
             // Integrator / Schmitt: restore µs–tens-of-µs dt after large ΔV shrinks to 10ns
             this.scheduler.setMaxStepCap(5e-5);
+            this.scheduler.setMinStepFloor(5e-7);
             this.scheduler.bumpStepToward(1e-5);
         }
         else if (this.scheduler !== null) {
             this.scheduler.setMaxStepCap(0);
+            this.scheduler.setMinStepFloor(0);
         }
-        // Target sim advance: 555 ≈ near-realtime; else ≥2 AC periods (≤50ms);
-        // RC/opamp burst ~5ms/frame so a 10ms scope window fills in <1s wall time;
-        // else DC nudge
-        // Old Math.min(2e-3, …) starved 10Hz SIGGEN (half-period 50ms) → CLK looked stuck
+        // Target ≥1 full AC period/frame for opamp+SIGGEN (≤50ms); avoid exact N·T lock
         const targetAdvance = has555
             ? 4e-2
             : (acFreq > 0
-                ? Math.min(5e-2, Math.max(2.0 / acFreq, 2e-4))
+                ? Math.min(5e-2, Math.max((hasOpamps ? 1.15 : 2.25) / acFreq, 2e-4))
                 : ((hasCaps || hasOpamps) ? 5e-3 : 5e-5));
-        // MCU firmware needs UV time; pure analog / 555 / RC can burst harder for the scope
         const maxSpice = has555
             ? 80
             : (this.isAnyMcuLoaded()
                 ? (acFreq > 0 ? 24 : 4)
-                : (needsAnalogBurst ? 160 : 24));
-        // AC / 555 / RC labs need a longer wall slice than the default 3ms Worker budget
-        const sliceMs = needsAnalogBurst ? Math.max(budgetMs, 8) : budgetMs;
+                : (needsAnalogBurst ? (hasOpamps && acFreq > 0 ? 400 : 200) : 24));
+        const sliceMs = needsAnalogBurst
+            ? Math.max(budgetMs, (acFreq > 0 && hasOpamps) ? 18 : 8)
+            : budgetMs;
         const deadline = Date.now() + Math.max(1, Math.min(sliceMs, wallCap));
         const t0 = this.globalTime;
         let steps = 0;
         while (steps < maxSpice && Date.now() < deadline &&
             (this.globalTime - t0) < targetAdvance) {
             this.runSpiceStep();
+            if (acMax > 0 && this.scheduler !== null && (steps & 3) === 3) {
+                this.scheduler.bumpStepToward(acMax);
+            }
             if (this.analogEngine.updateRelayContactsFromCoil()) {
                 if (this.analogEngine.needsDcResolveAfterSwitch()) {
                     this.analogEngine.reSolveOp();
                 }
                 else {
-                    // 555-only: pin OUT immediately; keep C companions for next transient step
                     this.analogEngine.pinVoltageSources();
                 }
             }
             this.syncSpiceToGpioInputs();
-            // Interleave MCU with SPICE so bit-bang edges land in wave buffers within the same frame
             if (this.isAnyMcuLoaded() && (steps & 1) === 1) {
                 this.tickMcuCore();
             }
             this.tickDigitalLogic();
             steps++;
             this.budgetStepCount++;
+        }
+        // Stall recovery: must advance ≥1 SIGGEN period/frame or scope plateaus look frozen
+        if (acFreq > 0 && this.scheduler !== null && (this.globalTime - t0) < (0.95 / acFreq)) {
+            const forceDeadline = Date.now() + 12;
+            this.scheduler.bumpStepToward(acMax > 0 ? acMax : 1e-5);
+            const need = Math.max(targetAdvance, 1.05 / acFreq);
+            while (steps < maxSpice + 80 && Date.now() < forceDeadline &&
+                (this.globalTime - t0) < need) {
+                this.runSpiceStep();
+                steps++;
+                this.budgetStepCount++;
+            }
         }
         return steps;
     }
@@ -1489,7 +1521,9 @@ export class SimulationKernelImpl implements ISimulationKernel {
             data: stepData
         });
         if (this.scheduler.isFinished()) {
-            this.state = SimulationState.STOPPED;
+            // Interactive continuous: slide horizon instead of STOPPED (scope looked frozen)
+            this.config.stopTime = this.globalTime + 3600;
+            this.scheduler.extendStopTime(3600);
         }
         return { success: true, errCode: ErrCode.OK, data: this.result! };
     }

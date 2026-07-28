@@ -135,6 +135,10 @@ export class AnalogEngine {
   private simTime: number = 0;
   private lastStepSize: number = 1e-6;
   private lastConverged: boolean = true;
+  /** Transient Newton hit iter cap — damp C/L commit so soft-accept cannot poison state. */
+  private newtonSoftAccepted: boolean = false;
+  /** Previous op-amp OUT for slew limiting. */
+  private prevOpAmpOut: Map<string, number> = new Map();
   /** True while assembling/solving a transient step (C/L companions active). */
   private inTransientStep: boolean = false;
   private matrixSize: number = 0;
@@ -799,6 +803,8 @@ export class AnalogEngine {
     this.resistors = []; this.capacitors = []; this.inductors = [];
     this.diodes = []; this.bjts = []; this.mosfets = []; this.opamps = [];
     this.voltageSources = []; this.compPinNets.clear();
+    this.prevOpAmpOut.clear();
+    this.newtonSoftAccepted = false;
     this.relayContacts = [];
     this.timer555s = [];
 
@@ -1001,6 +1007,8 @@ export class AnalogEngine {
         }
       } else if (libId.startsWith('C_') || libId.includes('CAP')) {
         if (!this.areTerminalsConnected(nA, nB)) {
+          Logger.info(INSTR_TRACE_TAG,
+            `analog skip ${comp.refDes}: capacitor pin(s) not wired (A=${nA} B=${nB})`);
           continue;
         }
         const val = paramMapGet(comp.parameters, 'value', '');
@@ -1013,6 +1021,10 @@ export class AnalogEngine {
         });
         this.compUuidToDevId.set(comp.id, [devId]);
         cIdx++;
+        if (!this.quietLoad) {
+          traceAnalogDeviceStamp(comp.refDes, devId, comp.libraryId, nA, nB,
+            `${cVal}F pins=[${AnalogEngine.formatPinNetDetail(pinNets, netNodeMap)}]`);
+        }
         for (const m of pinNets) {
           const node = netNodeMap.get(m.netId);
           if (node) this.netUuidToNode.set(m.netId, node);
@@ -1392,6 +1404,7 @@ export class AnalogEngine {
     }
 
     this.classifyOpAmpFeedbackModes();
+    this.injectPracticalDifferentiatorCompensation();
 
     const rStamps: AnalogResistorStamp[] = [];
     for (let ri = 0; ri < this.resistors.length; ri++) {
@@ -1489,6 +1502,29 @@ export class AnalogEngine {
   }
 
   /**
+   * Ideal VSRC / VAC / SIGGEN forced nodes — exclude from adaptive ΔV shrink so
+   * intentional square-wave edges do not collapse dt every half-cycle.
+   */
+  getForcedSourceNodes(): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < this.voltageSources.length; i++) {
+      const vs = this.voltageSources[i];
+      // Skip ideal ammeters (0V between two signal nodes)
+      if (vs.voltage === 0 && vs.freq === 0 && vs.waveform === 'dc' &&
+        vs.nodeA !== '0' && vs.nodeA !== 'GND' &&
+        vs.nodeB !== '0' && vs.nodeB !== 'GND') {
+        continue;
+      }
+      if (vs.nodeA.length > 0 && vs.nodeA !== '0' && vs.nodeA !== 'GND' && !seen.has(vs.nodeA)) {
+        seen.add(vs.nodeA);
+        out.push(vs.nodeA);
+      }
+    }
+    return out;
+  }
+
+  /**
    * After updateRelayContactsFromCoil(): whether a DC re-solve is required.
    * Relay contact changes need OP; 555 OUT/DISCH updates must NOT run DC OP mid-transient
    * (capacitors go open and wipe timing-cap voltage — kills astable oscillation).
@@ -1500,10 +1536,16 @@ export class AnalogEngine {
   private runOpAnalysis(): void {
     // On LU failure keep the previous iterate (do not snap back) — restoring
     // every singular step freezes VAC-driven circuits near op-amp rails.
-    for (let iter = 0; iter < this.maxNewtonIter; iter++) {
+    // Transient soft-accept: fewer Newton iters so interactive budget can take
+    // many steps/frame (120×MNA per step starved SIGGEN → scope looked frozen).
+    const iterCap = this.inTransientStep ? Math.min(this.maxNewtonIter, 16) : this.maxNewtonIter;
+    let lastN = this.nodeIndex.size + this.voltageSources.length;
+    this.newtonSoftAccepted = false;
+    for (let iter = 0; iter < iterCap; iter++) {
       this.newtonIterations = iter + 1;
       this.buildMnaSystem(0, false);
       const n = this.nodeIndex.size + this.voltageSources.length;
+      lastN = n;
       if (!this.solveLinearSystem(n)) {
         this.lastConverged = false;
         this.enforceVoltageSources();
@@ -1522,7 +1564,15 @@ export class AnalogEngine {
       const stepLim = maxDelta < 0.1 ? 2.0 : 0.4;
       this.updateNodeVoltages(n, damp, stepLim);
     }
-    this.lastConverged = false;
+    // Soft-accept last iterate in transient so non-source nodes keep moving.
+    // Without this, residual-large steps only pin VSRC → OUT freezes on scope.
+    if (this.inTransientStep) {
+      this.updateNodeVoltages(lastN, 1.0, 5.0);
+      this.lastConverged = true;
+      this.newtonSoftAccepted = true;
+    } else {
+      this.lastConverged = false;
+    }
     this.enforceVoltageSources();
   }
 
@@ -1535,8 +1585,10 @@ export class AnalogEngine {
     this.runOpAnalysis();
     // Always pin ideal sources to simTime so UI cannot freeze when Newton soft-fails
     this.enforceVoltageSources();
-    // Commit reactive companions even on soft-fail so C/L (and wall-clock) keep advancing
-    this.commitReactiveCompanions();
+    this.limitOpAmpSlew(dt);
+    // Soft-accept: damp C/L commit — full commit of a bad Newton iterate locked OUT
+    // near ±amp for long stretches (scope looked frozen at ±5.9V).
+    this.commitReactiveCompanions(this.newtonSoftAccepted ? 0.35 : 1.0);
     this.inTransientStep = false;
     this.syncGroundAlias();
   }
@@ -1629,8 +1681,10 @@ export class AnalogEngine {
   /**
    * DC OP treats C as open → capacitive-feedback amps (integrators) saturate and
    * would seed Cf with tens of volts (lab_integrator / Schmitt+triangle osc).
+   * Series-C into IN- (differentiator) has the same OP problem: IN- floats except
+   * through Rf → Newton can park OUT on a rail (−14V flatDC on scope).
    * Pull OUT/IN− to mid-rail before seeding so the first transient steps enter
-   * the linear region and the triangle can ramp.
+   * the linear region and the triangle / AC response can develop.
    */
   private relaxCapacitiveFeedbackOpAmps(): void {
     for (let i = 0; i < this.opamps.length; i++) {
@@ -1638,24 +1692,33 @@ export class AnalogEngine {
       if (opa.comparatorMode) {
         continue;
       }
+      let needsRelax = false;
       for (let j = 0; j < this.capacitors.length; j++) {
         const cap = this.capacitors[j];
-        const bridges =
+        const bridgesFb =
           (cap.nodeA === opa.nodeOut && cap.nodeB === opa.nodeInN) ||
           (cap.nodeB === opa.nodeOut && cap.nodeA === opa.nodeInN);
-        if (!bridges) {
-          continue;
+        // Series input C into the summing junction (C—IN-, other end ≠ OUT)
+        const seriesIntoInn =
+          (cap.nodeA === opa.nodeInN && cap.nodeB !== opa.nodeOut) ||
+          (cap.nodeB === opa.nodeInN && cap.nodeA !== opa.nodeOut);
+        if (bridgesFb || seriesIntoInn) {
+          needsRelax = true;
+          break;
         }
-        const vcc = this.nodeVoltages.get(opa.nodeVcc) ?? this.nodeVoltages.get('VCC') ?? 5;
-        const vee = this.nodeVoltages.get(opa.nodeVee) ?? this.nodeVoltages.get('0') ?? 0;
-        // Bipolar ±12V → mid≈0; single-supply → mid-rail
-        const mid = 0.5 * (vcc + vee);
-        this.nodeVoltages.set(opa.nodeOut, mid);
-        this.nodeVoltages.set(opa.nodeInN, mid);
-        if (!this.quietLoad) {
-          Logger.info(INSTR_TRACE_TAG,
-            `[MNA] ${opa.id} relax capacitive FB: OUT/IN- → ${mid.toFixed(3)}V (DC-OP sat recovery)`);
-        }
+      }
+      if (!needsRelax) {
+        continue;
+      }
+      const vcc = this.nodeVoltages.get(opa.nodeVcc) ?? this.nodeVoltages.get('VCC') ?? 5;
+      const vee = this.nodeVoltages.get(opa.nodeVee) ?? this.nodeVoltages.get('0') ?? 0;
+      // Bipolar ±12V → mid≈0; single-supply → mid-rail
+      const mid = 0.5 * (vcc + vee);
+      this.nodeVoltages.set(opa.nodeOut, mid);
+      this.nodeVoltages.set(opa.nodeInN, mid);
+      if (!this.quietLoad) {
+        Logger.info(INSTR_TRACE_TAG,
+          `[MNA] ${opa.id} relax capacitive FB/series-C: OUT/IN- → ${mid.toFixed(3)}V (DC-OP sat recovery)`);
       }
     }
     this.seedSchmittIntegratorOutsideBand();
@@ -1737,6 +1800,10 @@ export class AnalogEngine {
       if (geq > 1e8) {
         geq = 1e8;
       }
+      // ~10Ω ESR: damps ideal series-C differentiator impulses that rail-hunt UA741
+      // and collapse adaptive dt until the scope looks frozen.
+      const esr = 10.0;
+      geq = 1.0 / (1.0 / Math.max(geq, 1e-18) + esr);
       cap.geq = geq;
       const J = geq * cap.voltage + cap.current;
       cap.ieq = -J;
@@ -1757,7 +1824,9 @@ export class AnalogEngine {
     }
   }
 
-  private commitReactiveCompanions(): void {
+  private commitReactiveCompanions(blend: number = 1.0): void {
+    const a = Math.max(0.05, Math.min(1.0, blend));
+    const b = 1.0 - a;
     for (const cap of this.capacitors) {
       const vA = this.nodeVoltages.get(cap.nodeA) ?? 0;
       const vB = this.nodeVoltages.get(cap.nodeB) ?? 0;
@@ -1765,9 +1834,9 @@ export class AnalogEngine {
       // i_n = geq*v_n - J = geq*v_n + ieq
       const iNow = cap.geq * vNow + cap.ieq;
       cap.prevVoltage = cap.voltage;
-      cap.voltage = vNow;
-      cap.current = iNow;
-      this.branchCurrents.set(`I(${cap.id})`, iNow);
+      cap.voltage = a * vNow + b * cap.voltage;
+      cap.current = a * iNow + b * cap.current;
+      this.branchCurrents.set(`I(${cap.id})`, cap.current);
     }
     for (const ind of this.inductors) {
       const vA = this.nodeVoltages.get(ind.nodeA) ?? 0;
@@ -1775,9 +1844,89 @@ export class AnalogEngine {
       const vNow = vA - vB;
       const iNow = ind.ieqStamp + ind.geq * vNow;
       ind.prevCurrent = ind.current;
-      ind.current = iNow;
-      ind.prevVoltage = vNow;
-      this.branchCurrents.set(`I(${ind.id})`, iNow);
+      ind.current = a * iNow + b * ind.current;
+      ind.prevVoltage = a * vNow + b * ind.prevVoltage;
+      this.branchCurrents.set(`I(${ind.id})`, ind.current);
+    }
+  }
+
+  /**
+   * Ideal series-C differentiator + square wave → infinite HF / rail hunting.
+   * Inject small Cf across Rf (textbook practical differentiator) when missing.
+   */
+  private injectPracticalDifferentiatorCompensation(): void {
+    let addIdx = 0;
+    for (let i = 0; i < this.opamps.length; i++) {
+      const opa = this.opamps[i];
+      if (opa.comparatorMode) {
+        continue;
+      }
+      if (!this.nodesResistivelyCoupled(opa.nodeOut, opa.nodeInN)) {
+        continue;
+      }
+      let seriesC = 0;
+      for (let j = 0; j < this.capacitors.length; j++) {
+        const cap = this.capacitors[j];
+        const intoInn =
+          (cap.nodeA === opa.nodeInN && cap.nodeB !== opa.nodeOut) ||
+          (cap.nodeB === opa.nodeInN && cap.nodeA !== opa.nodeOut);
+        if (intoInn) {
+          seriesC = Math.max(seriesC, cap.capacitance);
+        }
+      }
+      if (seriesC <= 0) {
+        continue;
+      }
+      let hasCf = false;
+      for (let j = 0; j < this.capacitors.length; j++) {
+        const cap = this.capacitors[j];
+        if ((cap.nodeA === opa.nodeOut && cap.nodeB === opa.nodeInN) ||
+          (cap.nodeB === opa.nodeOut && cap.nodeA === opa.nodeInN)) {
+          hasCf = true;
+          break;
+        }
+      }
+      if (hasCf) {
+        continue;
+      }
+      // Cf ≈ 5% of series C (floor 47pF): limits HF gain without killing 1kHz edge response
+      const cf = Math.max(seriesC * 0.05, 47e-12);
+      const devId = `Ccomp${addIdx++}`;
+      this.capacitors.push({
+        id: devId, nodeA: opa.nodeOut, nodeB: opa.nodeInN,
+        capacitance: cf, voltage: 0, prevVoltage: 0, current: 0, geq: 0, ieq: 0
+      });
+      if (!this.quietLoad) {
+        Logger.info(INSTR_TRACE_TAG,
+          `[MNA] ${opa.id} practical differentiator Cf=${cf}F across OUT/IN- (seriesC=${seriesC}F)`);
+      }
+    }
+  }
+
+  /** UA741-ish slew (~0.5V/µs) — prevents Newton soft-accept from parking OUT on rails. */
+  private limitOpAmpSlew(dt: number): void {
+    const sr = 0.5e6;
+    const maxDv = Math.max(sr * Math.max(dt, 1e-15), 0.02);
+    for (let i = 0; i < this.opamps.length; i++) {
+      const opa = this.opamps[i];
+      if (opa.comparatorMode) {
+        continue;
+      }
+      const cur = this.nodeVoltages.get(opa.nodeOut);
+      if (cur === undefined) {
+        continue;
+      }
+      const prev = this.prevOpAmpOut.get(opa.nodeOut);
+      let next = cur;
+      if (prev !== undefined) {
+        if (next > prev + maxDv) {
+          next = prev + maxDv;
+        } else if (next < prev - maxDv) {
+          next = prev - maxDv;
+        }
+      }
+      this.nodeVoltages.set(opa.nodeOut, next);
+      this.prevOpAmpOut.set(opa.nodeOut, next);
     }
   }
 

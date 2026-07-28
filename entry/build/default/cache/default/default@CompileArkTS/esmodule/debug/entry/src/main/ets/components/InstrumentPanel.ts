@@ -2005,7 +2005,39 @@ export class InstrumentPanel extends ViewPU {
             const pts = this.waveVoltageData.length;
             const lastV = InstrumentPanel.lastFinite(this.waveVoltageData);
             const last = lastV !== null ? lastV.toFixed(4) : '--';
-            return `OSC pts=${pts} last=${last}V ch2=${this.waveCh2Data.length}`;
+            let minV = Number.POSITIVE_INFINITY;
+            let maxV = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < this.waveVoltageData.length; i++) {
+                const v = this.waveVoltageData[i];
+                if (!(v === v) || !Number.isFinite(v)) {
+                    continue;
+                }
+                if (v < minV) {
+                    minV = v;
+                }
+                if (v > maxV) {
+                    maxV = v;
+                }
+            }
+            const vpp = (minV < maxV) ? (maxV - minV).toFixed(3) : '--';
+            const last2V = InstrumentPanel.lastFinite(this.waveCh2Data);
+            const last2 = last2V !== null ? last2V.toFixed(4) : '--';
+            let min2 = Number.POSITIVE_INFINITY;
+            let max2 = Number.NEGATIVE_INFINITY;
+            for (let i = 0; i < this.waveCh2Data.length; i++) {
+                const v = this.waveCh2Data[i];
+                if (!(v === v) || !Number.isFinite(v)) {
+                    continue;
+                }
+                if (v < min2) {
+                    min2 = v;
+                }
+                if (v > max2) {
+                    max2 = v;
+                }
+            }
+            const vpp2 = (min2 < max2) ? (max2 - min2).toFixed(3) : '--';
+            return `OSC pts=${pts} last=${last}V Vpp=${vpp} ch2last=${last2}V ch2Vpp=${vpp2}`;
         }
         if (kind === 'logic')
             return `LA ch=${this.logicChannels} samples=${this.logicSampleCount}`;
@@ -2135,7 +2167,7 @@ export class InstrumentPanel extends ViewPU {
                             traceInstrUi('TAB', `tab=${idx} kind=${this.kindForSubTab(idx)}`);
                             this.autoRefreshReadings('tab');
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 983, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1015, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2312,7 +2344,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'AC', widthVal: '24%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1096, col: 11 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.AC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1128, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2334,7 +2366,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'DC', widthVal: '24%',
-                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1098, col: 11 });
+                        onAction: () => { this.appService.instruments.setCoupling(0, CouplingMode.DC); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1130, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2365,7 +2397,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.captureWave();
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1100, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1132, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2401,7 +2433,7 @@ export class InstrumentPanel extends ViewPU {
                             this.appService.instruments.setCaptureMode(this.oscTriggerHold ? CaptureMode.SINGLE : CaptureMode.ROLL);
                             this.captureWave();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1111, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1143, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2439,7 +2471,7 @@ export class InstrumentPanel extends ViewPU {
                             this.oscFftMode = false;
                             this.appService.instruments.setMathChannel(MathChannelOp.ADD, false);
                             this.captureWave();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1125, col: 11 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1157, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2469,7 +2501,7 @@ export class InstrumentPanel extends ViewPU {
                             this.oscFftMode = true;
                             this.appService.instruments.setMathChannel(MathChannelOp.FFT, true);
                             this.captureWave();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1131, col: 11 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1163, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2552,7 +2584,7 @@ export class InstrumentPanel extends ViewPU {
                         freqDomain: this.oscFftMode,
                         canvasHeight: this.oscCanvasHeight,
                         showStats: true
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1162, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1194, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2610,7 +2642,7 @@ export class InstrumentPanel extends ViewPU {
                                     freqDomain: this.oscFftMode,
                                     canvasHeight: this.oscCanvasHeight,
                                     showStats: true
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1177, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1209, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2989,7 +3021,7 @@ export class InstrumentPanel extends ViewPU {
                             this.threshold = parseInt(v) || 1500;
                             this.appService.instruments.setThreshold(this.threshold);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1447, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1479, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3027,7 +3059,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'UART', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1463, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.UART, 115200); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1495, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3049,7 +3081,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'I2C', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1465, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.I2C); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1497, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3077,7 +3109,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'SPI', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1471, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.SPI); this.refreshDecodedFrames(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1503, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3099,7 +3131,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'CAN', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.CAN); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1473, col: 11 });
+                        onAction: () => { this.appService.instruments.decodeBus(LogicDecodeProtocol.CAN); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1505, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3127,7 +3159,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '采样', widthVal: '100%',
-                        onAction: () => { this.captureLogic(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1479, col: 11 });
+                        onAction: () => { this.captureLogic(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1511, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3170,7 +3202,7 @@ export class InstrumentPanel extends ViewPU {
                                     channelCount: this.logicChannels,
                                     sampleCount: this.logicSampleCount,
                                     canvasHeight: 200
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1486, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1518, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -3263,7 +3295,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'DCV', widthVal: '48%',
-                        onAction: () => { this.mmMode = 'DCV'; this.appService.instruments.setMode(MultimeterMode.DCV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1544, col: 9 });
+                        onAction: () => { this.mmMode = 'DCV'; this.appService.instruments.setMode(MultimeterMode.DCV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1576, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3285,7 +3317,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'ACV', widthVal: '48%',
-                        onAction: () => { this.mmMode = 'ACV'; this.appService.instruments.setMode(MultimeterMode.ACV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1546, col: 9 });
+                        onAction: () => { this.mmMode = 'ACV'; this.appService.instruments.setMode(MultimeterMode.ACV); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1578, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3316,7 +3348,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'OHM';
                             this.appService.instruments.setMode(MultimeterMode.RESISTANCE);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1552, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1584, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3344,7 +3376,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'AMP';
                             this.appService.instruments.setMode(MultimeterMode.CURRENT);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1557, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1589, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3372,7 +3404,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.mmMode = 'DIODE';
                             this.appService.instruments.setMode(MultimeterMode.DIODE);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1562, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1594, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3408,7 +3440,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.mmReading,
                         unit: '',
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1571, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1603, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3440,7 +3472,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: '自动量程', widthVal: '42%',
-                        onAction: () => { this.appService.instruments.autoRange(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1581, col: 9 });
+                        onAction: () => { this.appService.instruments.autoRange(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1613, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3465,7 +3497,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             const r = this.appService.instruments.measure();
                             this.statusMessage = r.success ? `万用表读数: ${r.data?.toFixed(4)}` : '测量失败';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1583, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1615, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3507,7 +3539,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '正弦', widthVal: '48%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SINE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1599, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1631, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3533,7 +3565,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '方波', widthVal: '48%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SQUARE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1604, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1636, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3565,7 +3597,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '三角', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.TRIANGLE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1613, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1645, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3591,7 +3623,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '锯齿', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.SAW, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1618, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1650, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3617,7 +3649,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '脉冲', widthVal: '32%',
                         onAction: () => {
                             this.statusMessage = this.appService.applySignalGenWaveform(SignalWaveform.PULSE, this.selectedComponentId);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1623, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1655, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3647,7 +3679,7 @@ export class InstrumentPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, { label: 'Burst', widthVal: '48%',
-                        onAction: () => { this.appService.instruments.setBurstMode(true, 5); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1632, col: 9 });
+                        onAction: () => { this.appService.instruments.setBurstMode(true, 5); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1664, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3695,7 +3727,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.freq, mono: true,
                         onChange: (v: string) => { this.freq = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1640, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1672, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3738,7 +3770,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigAmp, mono: true,
                         onChange: (v: string) => { this.sigAmp = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1648, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1680, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3781,7 +3813,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigOffset, mono: true,
                         onChange: (v: string) => { this.sigOffset = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1656, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1688, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3824,7 +3856,7 @@ export class InstrumentPanel extends ViewPU {
                     let componentCall = new ProteusTextInput(this, {
                         text: this.sigDuty, mono: true,
                         onChange: (v: string) => { this.sigDuty = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1664, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1696, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3880,7 +3912,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = this.appService.applySignalGenParams(fp.numeric, amp, off, duty, this.selectedComponentId);
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1677, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1709, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3941,7 +3973,7 @@ export class InstrumentPanel extends ViewPU {
                         text: this.uartHex,
                         placeholder: 'HEX: 55 AA',
                         onChange: (v: string) => { this.uartHex = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1710, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1742, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3972,7 +4004,7 @@ export class InstrumentPanel extends ViewPU {
                             this.statusMessage = looped
                                 ? `环回已回显: ${this.uartHex}`
                                 : `已发送: ${this.uartHex}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1716, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1748, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4005,7 +4037,7 @@ export class InstrumentPanel extends ViewPU {
                             // Show full TX/RX log — not hexReceive() raw buffer (was 5555… spam)
                             this.uartLog = this.appService.instruments.getUartLog();
                             this.statusMessage = this.uartLog.length > 0 ? '已刷新接收日志' : '暂无数据';
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1725, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1757, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4122,7 +4154,7 @@ export class InstrumentPanel extends ViewPU {
                             this.vmType = 0;
                             this.vmUnit = 'V DC';
                             this.appService.instruments.setVoltmeterType(VoltmeterType.DC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1780, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1812, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4161,7 +4193,7 @@ export class InstrumentPanel extends ViewPU {
                             this.vmType = 1;
                             this.vmUnit = 'V AC';
                             this.appService.instruments.setVoltmeterType(VoltmeterType.AC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1785, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1817, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4217,7 +4249,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.vmReading,
                         unit: this.vmUnit,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1806, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1838, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4267,7 +4299,7 @@ export class InstrumentPanel extends ViewPU {
                         autoFit: true,
                         canvasHeight: this.meterCanvasHeight,
                         showStats: false
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1814, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1846, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4322,7 +4354,7 @@ export class InstrumentPanel extends ViewPU {
                             if (cfg.success && cfg.data) {
                                 this.vmRange = `${cfg.data.range}V`;
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1840, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1872, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4382,7 +4414,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.vmUnit = cfg.data.unit;
                             }
                             this.statusMessage = `电压表: ${this.vmReading} ${this.vmUnit}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1848, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1880, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4455,7 +4487,7 @@ export class InstrumentPanel extends ViewPU {
                             this.amType = 0;
                             this.amUnit = 'mA DC';
                             this.appService.instruments.setAmmeterType(AmmeterType.DC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1893, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1925, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4485,7 +4517,7 @@ export class InstrumentPanel extends ViewPU {
                             this.amType = 1;
                             this.amUnit = 'mA AC';
                             this.appService.instruments.setAmmeterType(AmmeterType.AC);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1898, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1930, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4532,7 +4564,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.amReading,
                         unit: this.amUnit,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1911, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1943, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4580,7 +4612,7 @@ export class InstrumentPanel extends ViewPU {
                         autoFit: true,
                         canvasHeight: this.meterCanvasHeight,
                         showStats: false
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1918, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1950, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4634,7 +4666,7 @@ export class InstrumentPanel extends ViewPU {
                             if (cfg.success && cfg.data) {
                                 this.amRange = `${cfg.data.range}mA`;
                             }
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1944, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1976, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4673,7 +4705,7 @@ export class InstrumentPanel extends ViewPU {
                                 this.amUnit = cfg.data.unit;
                             }
                             this.statusMessage = `电流表: ${this.amReading} ${this.amUnit}`;
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1952, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1984, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4731,7 +4763,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = `功率表: ${this.pmPower}mW, PF=${this.pmPF}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1975, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2007, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4769,7 +4801,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '电压', value: this.pmVoltage, unit: 'V', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1990, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '电压', value: this.pmVoltage, unit: 'V', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2022, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4791,7 +4823,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '电流', value: this.pmCurrent, unit: 'mA', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1991, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '电流', value: this.pmCurrent, unit: 'mA', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2023, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4813,7 +4845,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '功率', value: this.pmPower, unit: 'mW', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1992, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '功率', value: this.pmPower, unit: 'mW', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2024, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4835,7 +4867,7 @@ export class InstrumentPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new LivePmRow(this, { label: '功率因数', value: this.pmPF, unit: '', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 1993, col: 9 });
+                    let componentCall = new LivePmRow(this, { label: '功率因数', value: this.pmPF, unit: '', pulse: this.uiPulse }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2025, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4876,7 +4908,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 0.1;
                             this.appService.instruments.freqCounterSetGateTime(0.1);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2006, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2038, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4904,7 +4936,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 1.0;
                             this.appService.instruments.freqCounterSetGateTime(1.0);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2011, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2043, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4932,7 +4964,7 @@ export class InstrumentPanel extends ViewPU {
                         onAction: () => {
                             this.fcGateTime = 10;
                             this.appService.instruments.freqCounterSetGateTime(10);
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2016, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2048, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4978,7 +5010,7 @@ export class InstrumentPanel extends ViewPU {
                         value: this.fcReading,
                         unit: `Gate: ${this.fcGateTime}s`,
                         pulse: this.uiPulse
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2029, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2061, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5026,7 +5058,7 @@ export class InstrumentPanel extends ViewPU {
                         autoFit: true,
                         canvasHeight: this.meterCanvasHeight,
                         showStats: false
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2036, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2068, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -5089,7 +5121,7 @@ export class InstrumentPanel extends ViewPU {
                             }
                             this.statusMessage = `频率计: ${this.fcReading}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2061, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/InstrumentPanel.ets", line: 2093, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

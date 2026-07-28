@@ -242,25 +242,40 @@ export function cloneAiApiConfig(source: AiApiConfig): AiApiConfig {
     };
 }
 export function mergeAiApiConfig(existing: AiApiConfig, updates: AiApiConfigUpdate): AiApiConfig {
+    // apiKey：仅接受非空且非掩码的新值；未传 / 空 / *** 一律保留原值（避免编辑保存冲掉 Key）
+    let nextKey = existing.apiKey;
+    if (updates.apiKey !== undefined) {
+        const k = updates.apiKey;
+        if (k.length > 0 && k !== '***') {
+            nextKey = k;
+        }
+    }
+    let nextBackup = existing.backupApiKey;
+    if (updates.backupApiKey !== undefined) {
+        const b = updates.backupApiKey;
+        if (b.length > 0 && b !== '***') {
+            nextBackup = b;
+        }
+    }
     return {
         id: existing.id,
-        name: updates.name ?? existing.name,
-        provider: updates.provider ?? existing.provider,
-        baseUrl: updates.baseUrl ?? existing.baseUrl,
-        apiKey: updates.apiKey && updates.apiKey !== '***' ? updates.apiKey : existing.apiKey,
-        backupApiKey: updates.backupApiKey ?? existing.backupApiKey,
-        model: updates.model ?? existing.model,
-        enabled: updates.enabled ?? existing.enabled,
-        priority: updates.priority ?? existing.priority,
-        maxTokens: updates.maxTokens ?? existing.maxTokens,
-        temperature: updates.temperature ?? existing.temperature,
-        contextLimit: updates.contextLimit ?? existing.contextLimit,
-        proxyUrl: updates.proxyUrl ?? existing.proxyUrl,
-        customHeaders: updates.customHeaders ?? existing.customHeaders,
-        capabilityBinding: updates.capabilityBinding ?? existing.capabilityBinding,
-        remark: updates.remark ?? existing.remark,
-        lastStatus: updates.lastStatus ?? existing.lastStatus,
-        lastTestedAt: updates.lastTestedAt ?? existing.lastTestedAt,
+        name: updates.name !== undefined ? updates.name : existing.name,
+        provider: updates.provider !== undefined ? updates.provider : existing.provider,
+        baseUrl: updates.baseUrl !== undefined ? updates.baseUrl : existing.baseUrl,
+        apiKey: nextKey,
+        backupApiKey: nextBackup,
+        model: updates.model !== undefined ? updates.model : existing.model,
+        enabled: updates.enabled !== undefined ? updates.enabled : existing.enabled,
+        priority: updates.priority !== undefined ? updates.priority : existing.priority,
+        maxTokens: updates.maxTokens !== undefined ? updates.maxTokens : existing.maxTokens,
+        temperature: updates.temperature !== undefined ? updates.temperature : existing.temperature,
+        contextLimit: updates.contextLimit !== undefined ? updates.contextLimit : existing.contextLimit,
+        proxyUrl: updates.proxyUrl !== undefined ? updates.proxyUrl : existing.proxyUrl,
+        customHeaders: updates.customHeaders !== undefined ? updates.customHeaders : existing.customHeaders,
+        capabilityBinding: updates.capabilityBinding !== undefined ? updates.capabilityBinding : existing.capabilityBinding,
+        remark: updates.remark !== undefined ? updates.remark : existing.remark,
+        lastStatus: updates.lastStatus !== undefined ? updates.lastStatus : existing.lastStatus,
+        lastTestedAt: updates.lastTestedAt !== undefined ? updates.lastTestedAt : existing.lastTestedAt,
         dailyCallCount: existing.dailyCallCount,
         taskBind: existing.taskBind
     };

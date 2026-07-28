@@ -32,18 +32,22 @@ interface AiSettingsPanel_Params {
     newAuthField?: string;
     selectedProvider?: AiProviderType;
     apiFormatIdx?: number;
-    appService?: AppService;
+    editingApiId?: string;
+    defaultApiId?: string;
     providerIdx?: number;
     selectedStratIdx?: number;
+    apiListRev?: number;
+    appService?: AppService;
     providers?: string[];
     providerTypes?: AiProviderType[];
     apiFormats?: ApiFormatOption[];
     loadBalanceLabels?: string[];
+    loadBalanceModes?: LoadBalanceMode[];
 }
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import type { AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { AiApiConfig, ClarificationQuestion, ClarificationAnswer } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { AiApiConfig, ClarificationQuestion, ClarificationAnswer, Result } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 interface ApiFormatOption {
@@ -86,9 +90,12 @@ export class AiSettingsPanel extends ViewPU {
         this.__newAuthField = new ObservedPropertySimplePU('', this, "newAuthField");
         this.__selectedProvider = new ObservedPropertySimplePU(AiProviderType.DEEPSEEK, this, "selectedProvider");
         this.__apiFormatIdx = new ObservedPropertySimplePU(2, this, "apiFormatIdx");
+        this.__editingApiId = new ObservedPropertySimplePU('', this, "editingApiId");
+        this.__defaultApiId = new ObservedPropertySimplePU('', this, "defaultApiId");
+        this.__providerIdx = new ObservedPropertySimplePU(0, this, "providerIdx");
+        this.__selectedStratIdx = new ObservedPropertySimplePU(0, this, "selectedStratIdx");
+        this.__apiListRev = new ObservedPropertySimplePU(0, this, "apiListRev");
         this.appService = AppService.getInstance();
-        this.providerIdx = 0;
-        this.selectedStratIdx = 0;
         this.providers = ['DeepSeek', '通义千问', '豆包', 'OpenAI', 'Ollama', 'Claude', 'Gemini', '自定义'];
         this.providerTypes = [
             AiProviderType.DEEPSEEK, AiProviderType.QWEN, AiProviderType.DOUBAO,
@@ -101,7 +108,11 @@ export class AiSettingsPanel extends ViewPU {
             { label: 'DeepSeek Chat', value: 'deepseek' },
             { label: 'Ollama (原生)', value: 'ollama' }
         ];
-        this.loadBalanceLabels = ['优先级', '轮询', '故障切换'];
+        this.loadBalanceLabels = ['指定默认', '优先级', '轮询', '故障切换'];
+        this.loadBalanceModes = [
+            LoadBalanceMode.SINGLE_DEFAULT, LoadBalanceMode.PRIORITY,
+            LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER
+        ];
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -184,14 +195,23 @@ export class AiSettingsPanel extends ViewPU {
         if (params.apiFormatIdx !== undefined) {
             this.apiFormatIdx = params.apiFormatIdx;
         }
-        if (params.appService !== undefined) {
-            this.appService = params.appService;
+        if (params.editingApiId !== undefined) {
+            this.editingApiId = params.editingApiId;
+        }
+        if (params.defaultApiId !== undefined) {
+            this.defaultApiId = params.defaultApiId;
         }
         if (params.providerIdx !== undefined) {
             this.providerIdx = params.providerIdx;
         }
         if (params.selectedStratIdx !== undefined) {
             this.selectedStratIdx = params.selectedStratIdx;
+        }
+        if (params.apiListRev !== undefined) {
+            this.apiListRev = params.apiListRev;
+        }
+        if (params.appService !== undefined) {
+            this.appService = params.appService;
         }
         if (params.providers !== undefined) {
             this.providers = params.providers;
@@ -204,6 +224,9 @@ export class AiSettingsPanel extends ViewPU {
         }
         if (params.loadBalanceLabels !== undefined) {
             this.loadBalanceLabels = params.loadBalanceLabels;
+        }
+        if (params.loadBalanceModes !== undefined) {
+            this.loadBalanceModes = params.loadBalanceModes;
         }
     }
     updateStateVars(params: AiSettingsPanel_Params) {
@@ -239,6 +262,11 @@ export class AiSettingsPanel extends ViewPU {
         this.__newAuthField.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedProvider.purgeDependencyOnElmtId(rmElmtId);
         this.__apiFormatIdx.purgeDependencyOnElmtId(rmElmtId);
+        this.__editingApiId.purgeDependencyOnElmtId(rmElmtId);
+        this.__defaultApiId.purgeDependencyOnElmtId(rmElmtId);
+        this.__providerIdx.purgeDependencyOnElmtId(rmElmtId);
+        this.__selectedStratIdx.purgeDependencyOnElmtId(rmElmtId);
+        this.__apiListRev.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__statusMessage.aboutToBeDeleted();
@@ -271,6 +299,11 @@ export class AiSettingsPanel extends ViewPU {
         this.__newAuthField.aboutToBeDeleted();
         this.__selectedProvider.aboutToBeDeleted();
         this.__apiFormatIdx.aboutToBeDeleted();
+        this.__editingApiId.aboutToBeDeleted();
+        this.__defaultApiId.aboutToBeDeleted();
+        this.__providerIdx.aboutToBeDeleted();
+        this.__selectedStratIdx.aboutToBeDeleted();
+        this.__apiListRev.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -484,15 +517,59 @@ export class AiSettingsPanel extends ViewPU {
     set apiFormatIdx(newValue: number) {
         this.__apiFormatIdx.set(newValue);
     }
+    /** 非空表示正在编辑已保存配置（保存走 updateApi） */
+    private __editingApiId: ObservedPropertySimplePU<string>;
+    get editingApiId() {
+        return this.__editingApiId.get();
+    }
+    set editingApiId(newValue: string) {
+        this.__editingApiId.set(newValue);
+    }
+    private __defaultApiId: ObservedPropertySimplePU<string>;
+    get defaultApiId() {
+        return this.__defaultApiId.get();
+    }
+    set defaultApiId(newValue: string) {
+        this.__defaultApiId.set(newValue);
+    }
+    private __providerIdx: ObservedPropertySimplePU<number>;
+    get providerIdx() {
+        return this.__providerIdx.get();
+    }
+    set providerIdx(newValue: number) {
+        this.__providerIdx.set(newValue);
+    }
+    private __selectedStratIdx: ObservedPropertySimplePU<number>;
+    get selectedStratIdx() {
+        return this.__selectedStratIdx.get();
+    }
+    set selectedStratIdx(newValue: number) {
+        this.__selectedStratIdx.set(newValue);
+    }
+    /** ForEach 仅用 id 作 key 时，model/name 变更不会重建子项；递增以强制刷新 */
+    private __apiListRev: ObservedPropertySimplePU<number>;
+    get apiListRev() {
+        return this.__apiListRev.get();
+    }
+    set apiListRev(newValue: number) {
+        this.__apiListRev.set(newValue);
+    }
     private appService: AppService;
-    private providerIdx: number;
-    private selectedStratIdx: number;
     private providers: string[];
     private providerTypes: AiProviderType[];
     private apiFormats: ApiFormatOption[];
     private loadBalanceLabels: string[];
+    private loadBalanceModes: LoadBalanceMode[];
     aboutToAppear(): void {
         this.refreshList();
+        if (this.defaultApiId.length > 0) {
+            this.appService.aiApiManager.setLoadBalanceStrategy(LoadBalanceMode.SINGLE_DEFAULT);
+            this.selectedStratIdx = 0;
+        }
+        else {
+            // 与 AiApiManagerImpl 默认 PRIORITY 对齐
+            this.selectedStratIdx = 1;
+        }
         this.logs = this.appService.getAiGenLogs();
         this.appService.onAiGenLogsChanged = (entries: AiGenLogEntry[]) => {
             this.logs = entries;
@@ -519,6 +596,216 @@ export class AiSettingsPanel extends ViewPU {
     }
     refreshList(): void {
         this.apiList = this.appService.aiApiManager.listApis();
+        const def = this.appService.aiApiManager.getDefaultApi();
+        this.defaultApiId = (def.success && def.data) ? def.data.id : '';
+        this.apiListRev++;
+    }
+    private resetApiForm(): void {
+        this.editingApiId = '';
+        this.newApiName = '';
+        this.newApiKey = '';
+        this.newApiUrl = '';
+        this.newApiModel = '';
+        this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
+    }
+    private beginEditApi(api: AiApiConfig): void {
+        // 从 manager 重取，避免 ForEach 闭包里的旧快照把表单冲回旧 model/name
+        let src: AiApiConfig = api;
+        const fresh = this.appService.aiApiManager.getApi(api.id);
+        if (fresh.success && fresh.data) {
+            src = fresh.data;
+        }
+        this.editingApiId = src.id;
+        this.showAddForm = true;
+        this.newApiName = src.name;
+        this.newApiKey = '';
+        this.newApiUrl = src.baseUrl;
+        this.newApiModel = src.model;
+        this.selectedProvider = src.provider;
+        let pIdx = 0;
+        for (let i = 0; i < this.providerTypes.length; i++) {
+            if (this.providerTypes[i] === src.provider) {
+                pIdx = i;
+                break;
+            }
+        }
+        this.providerIdx = pIdx;
+        // remark: apiFormat=xxx
+        let fmt = 'openai';
+        const remark = src.remark ?? '';
+        const marker = 'apiFormat=';
+        const mi = remark.indexOf(marker);
+        if (mi >= 0) {
+            fmt = remark.substring(mi + marker.length).trim();
+            const sp = fmt.indexOf(' ');
+            if (sp >= 0) {
+                fmt = fmt.substring(0, sp);
+            }
+        }
+        else if (src.provider === AiProviderType.CLAUDE) {
+            fmt = 'anthropic';
+        }
+        else if (src.provider === AiProviderType.DEEPSEEK) {
+            fmt = 'deepseek';
+        }
+        else if (src.provider === AiProviderType.OLLAMA) {
+            fmt = 'ollama';
+        }
+        this.newApiFormat = fmt;
+        let fIdx = 1;
+        for (let i = 0; i < this.apiFormats.length; i++) {
+            if (this.apiFormats[i].value === fmt) {
+                fIdx = i;
+                break;
+            }
+        }
+        this.apiFormatIdx = fIdx;
+        this.newAuthField = '';
+        const ch = src.customHeaders;
+        if (ch) {
+            // ArkTS：不用 Object.keys；按常见认证头探测
+            if (ch['x-api-key'] !== undefined) {
+                this.newAuthField = 'x-api-key';
+            }
+            else if (ch['Authorization'] !== undefined) {
+                this.newAuthField = 'Authorization';
+            }
+            else if (ch['api-key'] !== undefined) {
+                this.newAuthField = 'api-key';
+            }
+        }
+        else if (src.provider === AiProviderType.CLAUDE) {
+            this.newAuthField = 'x-api-key';
+        }
+        this.statusMessage = `正在编辑 ${src.name}（Key 留空则保留原值）`;
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] UI edit begin id=${src.id} name=${src.name} model=${src.model}`);
+    }
+    private selectAsDefault(api: AiApiConfig): void {
+        if (!api.enabled) {
+            this.appService.aiApiManager.enableApi(api.id);
+        }
+        const setDef = this.appService.aiApiManager.setDefaultApi(api.id);
+        if (!setDef.success) {
+            this.statusMessage = setDef.error ?? '设为默认失败';
+            return;
+        }
+        this.appService.aiApiManager.setLoadBalanceStrategy(LoadBalanceMode.SINGLE_DEFAULT);
+        this.selectedStratIdx = 0;
+        this.appService.syncAiApiConfigsToProject();
+        this.refreshList();
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] UI select default id=${api.id} name=${api.name}`);
+        this.statusMessage = `已选用 ${api.name}（指定默认）`;
+    }
+    private saveApiFromForm(): void {
+        const isEdit = this.editingApiId.length > 0;
+        if (isEdit) {
+            const keyTrim = this.newApiKey.trim();
+            // Key 留空：完全不传 apiKey，避免冲掉已存密钥
+            const nameVal = this.newApiName.trim().length > 0 ? this.newApiName.trim() : this.newApiName;
+            const urlVal = this.newApiUrl.trim().length > 0 ? this.newApiUrl.trim() : this.newApiUrl;
+            const modelVal = this.newApiModel.trim().length > 0 ? this.newApiModel.trim() : this.newApiModel;
+            const remarkVal = this.newApiFormat.length > 0 ? `apiFormat=${this.newApiFormat}` : '';
+            let upd: Result<void> = { success: false, error: 'update not called' };
+            if (keyTrim.length > 0 && keyTrim !== '***') {
+                const headers: Record<string, string> = {};
+                let useHeaders = false;
+                if (this.newAuthField.length > 0) {
+                    const lower = this.newAuthField.toLowerCase();
+                    if (lower !== 'bearer' && lower !== 'authorization') {
+                        headers[this.newAuthField] = keyTrim;
+                        useHeaders = true;
+                    }
+                }
+                if (useHeaders) {
+                    upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+                        name: nameVal,
+                        provider: this.selectedProvider,
+                        baseUrl: urlVal,
+                        model: modelVal,
+                        apiKey: keyTrim,
+                        customHeaders: headers,
+                        remark: remarkVal
+                    });
+                }
+                else {
+                    upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+                        name: nameVal,
+                        provider: this.selectedProvider,
+                        baseUrl: urlVal,
+                        model: modelVal,
+                        apiKey: keyTrim,
+                        remark: remarkVal
+                    });
+                }
+            }
+            else {
+                upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+                    name: nameVal,
+                    provider: this.selectedProvider,
+                    baseUrl: urlVal,
+                    model: modelVal,
+                    remark: remarkVal
+                });
+            }
+            if (!upd.success) {
+                Logger.error(INSTR_TRACE_TAG, `[AI_API] update FAILED id=${this.editingApiId}: ${upd.error}`);
+                this.statusMessage = upd.error ?? '更新 API 失败（未改动 Key）';
+                return;
+            }
+            const synced = this.appService.syncAiApiConfigsToProject();
+            if (!synced) {
+                Logger.error(INSTR_TRACE_TAG, `[AI_API] update OK but vault sync FAIL id=${this.editingApiId}`);
+                this.statusMessage = '配置已更新到内存，但金库保存失败（Key 仍保留，请重试）';
+                this.refreshList();
+                return;
+            }
+            Logger.info(INSTR_TRACE_TAG, `[AI_API] updated id=${this.editingApiId} name=${this.newApiName}` +
+                ` provider=${this.selectedProvider} model=${this.newApiModel}` +
+                ` url=${this.newApiUrl} keyChanged=${keyTrim.length > 0}`);
+            this.refreshList();
+            this.showAddForm = false;
+            this.resetApiForm();
+            this.statusMessage = '已更新并同步 API 配置';
+            return;
+        }
+        const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, this.newApiName || 'New API');
+        if (!tmpl.success || !tmpl.data) {
+            Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
+            this.statusMessage = '创建 API 配置失败';
+            return;
+        }
+        const config = tmpl.data;
+        config.apiKey = this.newApiKey;
+        config.model = this.newApiModel || config.model;
+        config.name = this.newApiName || config.name || 'New API';
+        config.baseUrl = this.newApiUrl || config.baseUrl;
+        if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
+            const lower = this.newAuthField.toLowerCase();
+            if (lower !== 'bearer' && lower !== 'authorization') {
+                const h: Record<string, string> = {};
+                h[this.newAuthField] = this.newApiKey;
+                config.customHeaders = h;
+            }
+        }
+        if (this.newApiFormat.length > 0) {
+            config.remark = `apiFormat=${this.newApiFormat}`;
+        }
+        const addResult = this.appService.aiApiManager.addApi(config);
+        if (!addResult.success) {
+            Logger.error(INSTR_TRACE_TAG, `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
+            this.statusMessage = addResult.error ?? '保存 API 失败';
+            return;
+        }
+        const syncedAdd = this.appService.syncAiApiConfigsToProject();
+        Logger.info(INSTR_TRACE_TAG, `[AI_API] saved id=${config.id} name=${config.name}` +
+            ` provider=${config.provider} model=${config.model}` +
+            ` url=${config.baseUrl} keyLen=${config.apiKey.length} vault=${syncedAdd}`);
+        this.refreshList();
+        this.showAddForm = false;
+        this.resetApiForm();
+        this.statusMessage = syncedAdd
+            ? `已添加并同步 ${config.name}`
+            : `已添加 ${config.name}，但金库保存失败请重试`;
     }
     private requestGenerate(): void {
         if (this.aiGenerating) {
@@ -887,7 +1174,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'A');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 322, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 552, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -919,7 +1206,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'B');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 330, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 560, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -951,7 +1238,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'C');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 338, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -985,7 +1272,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyFreeById.set(q.id, v);
                                                         this.clarifyFreeById = new Map(this.clarifyFreeById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 346, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 576, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1032,7 +1319,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.submitClarification();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 365, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 595, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1119,7 +1406,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.showSelfCheckDialog = false;
                                                 void this.runSelfCheck();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 392, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 622, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1152,7 +1439,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.appService.dismissAiSelfCheckPrompt();
                                                 this.statusMessage = '已跳过自检修复';
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 400, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 630, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1239,7 +1526,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('oneshot');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 430, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 660, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1269,7 +1556,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('modular');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 437, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 667, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1299,7 +1586,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showStrategyDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 444, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 674, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1377,7 +1664,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('replace');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 468, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 698, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1407,7 +1694,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('append');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 475, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 705, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1437,7 +1724,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('edit');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 482, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 712, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1474,7 +1761,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showModeDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 493, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 723, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1538,7 +1825,7 @@ export class AiSettingsPanel extends ViewPU {
                         areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
                         isEnabled: !this.aiGenerating,
                         onChange: (v: string) => { this.promptText = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 517, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 747, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1611,7 +1898,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestGenerate();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 553, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 783, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1641,7 +1928,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestEditExisting();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 560, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 790, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1683,7 +1970,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.showModeDialog = false;
                             void this.runSelfCheck();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 572, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 802, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1719,7 +2006,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.appService.clearAiGenLogs();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 585, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 815, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1770,14 +2057,32 @@ export class AiSettingsPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: this.showAddForm ? '收起' : '+ 添加',
                         widthVal: 64,
-                        onAction: () => { this.showAddForm = !this.showAddForm; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 614, col: 9 });
+                        onAction: () => {
+                            if (this.showAddForm) {
+                                this.showAddForm = false;
+                                this.resetApiForm();
+                            }
+                            else {
+                                this.resetApiForm();
+                                this.showAddForm = true;
+                            }
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 844, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: this.showAddForm ? '收起' : '+ 添加',
                             widthVal: 64,
-                            onAction: () => { this.showAddForm = !this.showAddForm; }
+                            onAction: () => {
+                                if (this.showAddForm) {
+                                    this.showAddForm = false;
+                                    this.resetApiForm();
+                                }
+                                else {
+                                    this.resetApiForm();
+                                    this.showAddForm = true;
+                                }
+                            }
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
@@ -1803,7 +2108,7 @@ export class AiSettingsPanel extends ViewPU {
                         Column.margin({ left: 4, right: 4, top: 2 });
                     }, Column);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create('选择平台');
+                        Text.create(this.editingApiId.length > 0 ? '编辑已保存 API' : '选择平台');
                         Text.fontSize(ProteusFonts.PARAM_KEY);
                         Text.fontColor(ProteusColors.TEXT_LABEL);
                         Text.width('100%');
@@ -1821,12 +2126,17 @@ export class AiSettingsPanel extends ViewPU {
                                     selectedIdx: this.providerIdx,
                                     colsPerRow: 3,
                                     onSelect: (idx: number) => {
+                                        const nextProvider = this.providerTypes[idx];
+                                        const providerChanged = nextProvider !== this.selectedProvider;
                                         this.providerIdx = idx;
-                                        this.selectedProvider = this.providerTypes[idx];
-                                        const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
-                                        if (tmpl.success && tmpl.data) {
-                                            this.newApiModel = tmpl.data.model;
-                                            this.newApiUrl = tmpl.data.baseUrl;
+                                        this.selectedProvider = nextProvider;
+                                        // 编辑中复点同一平台勿覆盖已改的模型名；新建或真正切换厂商才套模板
+                                        if (this.editingApiId.length === 0 || providerChanged) {
+                                            const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
+                                            if (tmpl.success && tmpl.data) {
+                                                this.newApiModel = tmpl.data.model;
+                                                this.newApiUrl = tmpl.data.baseUrl;
+                                            }
                                         }
                                         // 按厂商同步协议与认证头，避免 DeepSeek 误带 ANTHROPIC_AUTH_TOKEN
                                         if (this.selectedProvider === AiProviderType.CLAUDE) {
@@ -1850,7 +2160,7 @@ export class AiSettingsPanel extends ViewPU {
                                             this.newAuthField = '';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 630, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 868, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1858,12 +2168,17 @@ export class AiSettingsPanel extends ViewPU {
                                         selectedIdx: this.providerIdx,
                                         colsPerRow: 3,
                                         onSelect: (idx: number) => {
+                                            const nextProvider = this.providerTypes[idx];
+                                            const providerChanged = nextProvider !== this.selectedProvider;
                                             this.providerIdx = idx;
-                                            this.selectedProvider = this.providerTypes[idx];
-                                            const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
-                                            if (tmpl.success && tmpl.data) {
-                                                this.newApiModel = tmpl.data.model;
-                                                this.newApiUrl = tmpl.data.baseUrl;
+                                            this.selectedProvider = nextProvider;
+                                            // 编辑中复点同一平台勿覆盖已改的模型名；新建或真正切换厂商才套模板
+                                            if (this.editingApiId.length === 0 || providerChanged) {
+                                                const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
+                                                if (tmpl.success && tmpl.data) {
+                                                    this.newApiModel = tmpl.data.model;
+                                                    this.newApiUrl = tmpl.data.baseUrl;
+                                                }
                                             }
                                             // 按厂商同步协议与认证头，避免 DeepSeek 误带 ANTHROPIC_AUTH_TOKEN
                                             if (this.selectedProvider === AiProviderType.CLAUDE) {
@@ -1932,7 +2247,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'https://example.com （可选）',
                                     text: this.newApiUrl,
                                     onChange: (v: string) => { this.newApiUrl = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 670, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 913, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1974,15 +2289,15 @@ export class AiSettingsPanel extends ViewPU {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
                                 let componentCall = new ProteusTextInput(this, {
-                                    placeholder: 'sk-...',
+                                    placeholder: this.editingApiId.length > 0 ? '留空则保留原 Key' : 'sk-...',
                                     text: this.newApiKey,
                                     password: true,
                                     onChange: (v: string) => { this.newApiKey = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 682, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 925, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
-                                        placeholder: 'sk-...',
+                                        placeholder: this.editingApiId.length > 0 ? '留空则保留原 Key' : 'sk-...',
                                         text: this.newApiKey,
                                         password: true,
                                         onChange: (v: string) => { this.newApiKey = v; }
@@ -1992,7 +2307,7 @@ export class AiSettingsPanel extends ViewPU {
                             }
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    placeholder: 'sk-...',
+                                    placeholder: this.editingApiId.length > 0 ? '留空则保留原 Key' : 'sk-...',
                                     text: this.newApiKey,
                                     password: true
                                 });
@@ -2054,7 +2369,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'x-api-key（Claude）或留空用 Bearer',
                                     text: this.newAuthField,
                                     onChange: (v: string) => { this.newAuthField = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 711, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 954, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2091,6 +2406,7 @@ export class AiSettingsPanel extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         __Common__.create();
                         __Common__.layoutWeight(1);
+                        __Common__.key(`api_model_input_${this.editingApiId}`);
                     }, __Common__);
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2099,7 +2415,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'claude-sonnet-4-6',
                                     text: this.newApiModel,
                                     onChange: (v: string) => { this.newApiModel = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 723, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 966, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2124,97 +2440,19 @@ export class AiSettingsPanel extends ViewPU {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
                                 let componentCall = new ProteusClassicBtn(this, {
-                                    label: '保存 API',
+                                    label: this.editingApiId.length > 0 ? '更新 API' : '保存 API',
                                     widthVal: '100%',
                                     onAction: () => {
-                                        const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, this.newApiName || 'New API');
-                                        if (!tmpl.success || !tmpl.data) {
-                                            Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
-                                            this.statusMessage = '创建 API 配置失败';
-                                            return;
-                                        }
-                                        const config = tmpl.data;
-                                        config.apiKey = this.newApiKey;
-                                        config.model = this.newApiModel || config.model;
-                                        config.name = this.newApiName || config.name || 'New API';
-                                        config.baseUrl = this.newApiUrl || config.baseUrl;
-                                        // 仅非 Bearer 类自定义认证头写入；Bearer 由 buildRequestHeaders 注入
-                                        if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
-                                            const lower = this.newAuthField.toLowerCase();
-                                            if (lower !== 'bearer' && lower !== 'authorization') {
-                                                const headers: Record<string, string> = {};
-                                                headers[this.newAuthField] = this.newApiKey;
-                                                config.customHeaders = headers;
-                                            }
-                                        }
-                                        // 把选择的协议记入 remark，便于排障（运行时仍以 provider.chatPath 为准）
-                                        if (this.newApiFormat.length > 0) {
-                                            config.remark = `apiFormat=${this.newApiFormat}`;
-                                        }
-                                        const addResult = this.appService.aiApiManager.addApi(config);
-                                        if (!addResult.success) {
-                                            Logger.error(INSTR_TRACE_TAG, `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
-                                            this.statusMessage = addResult.error ?? '保存 API 失败';
-                                            return;
-                                        }
-                                        this.appService.syncAiApiConfigsToProject();
-                                        Logger.info(INSTR_TRACE_TAG, `[AI_API] saved id=${config.id} name=${config.name}` +
-                                            ` provider=${config.provider} model=${config.model}` +
-                                            ` url=${config.baseUrl} keyLen=${config.apiKey.length}`);
-                                        this.refreshList();
-                                        this.showAddForm = false;
-                                        this.newApiKey = '';
-                                        this.newApiUrl = '';
-                                        this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
-                                        this.statusMessage = `已添加并同步 ${config.name}`;
+                                        this.saveApiFromForm();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 731, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 975, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
-                                        label: '保存 API',
+                                        label: this.editingApiId.length > 0 ? '更新 API' : '保存 API',
                                         widthVal: '100%',
                                         onAction: () => {
-                                            const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, this.newApiName || 'New API');
-                                            if (!tmpl.success || !tmpl.data) {
-                                                Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
-                                                this.statusMessage = '创建 API 配置失败';
-                                                return;
-                                            }
-                                            const config = tmpl.data;
-                                            config.apiKey = this.newApiKey;
-                                            config.model = this.newApiModel || config.model;
-                                            config.name = this.newApiName || config.name || 'New API';
-                                            config.baseUrl = this.newApiUrl || config.baseUrl;
-                                            // 仅非 Bearer 类自定义认证头写入；Bearer 由 buildRequestHeaders 注入
-                                            if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
-                                                const lower = this.newAuthField.toLowerCase();
-                                                if (lower !== 'bearer' && lower !== 'authorization') {
-                                                    const headers: Record<string, string> = {};
-                                                    headers[this.newAuthField] = this.newApiKey;
-                                                    config.customHeaders = headers;
-                                                }
-                                            }
-                                            // 把选择的协议记入 remark，便于排障（运行时仍以 provider.chatPath 为准）
-                                            if (this.newApiFormat.length > 0) {
-                                                config.remark = `apiFormat=${this.newApiFormat}`;
-                                            }
-                                            const addResult = this.appService.aiApiManager.addApi(config);
-                                            if (!addResult.success) {
-                                                Logger.error(INSTR_TRACE_TAG, `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
-                                                this.statusMessage = addResult.error ?? '保存 API 失败';
-                                                return;
-                                            }
-                                            this.appService.syncAiApiConfigsToProject();
-                                            Logger.info(INSTR_TRACE_TAG, `[AI_API] saved id=${config.id} name=${config.name}` +
-                                                ` provider=${config.provider} model=${config.model}` +
-                                                ` url=${config.baseUrl} keyLen=${config.apiKey.length}`);
-                                            this.refreshList();
-                                            this.showAddForm = false;
-                                            this.newApiKey = '';
-                                            this.newApiUrl = '';
-                                            this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
-                                            this.statusMessage = `已添加并同步 ${config.name}`;
+                                            this.saveApiFromForm();
                                         }
                                     };
                                 };
@@ -2222,7 +2460,7 @@ export class AiSettingsPanel extends ViewPU {
                             }
                             else {
                                 this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '保存 API',
+                                    label: this.editingApiId.length > 0 ? '更新 API' : '保存 API',
                                     widthVal: '100%'
                                 });
                             }
@@ -2259,11 +2497,10 @@ export class AiSettingsPanel extends ViewPU {
                         colsPerRow: 3,
                         onSelect: (idx: number) => {
                             this.selectedStratIdx = idx;
-                            const modes = [LoadBalanceMode.PRIORITY, LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER];
-                            this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
+                            this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 793, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 995, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2272,8 +2509,7 @@ export class AiSettingsPanel extends ViewPU {
                             colsPerRow: 3,
                             onSelect: (idx: number) => {
                                 this.selectedStratIdx = idx;
-                                const modes = [LoadBalanceMode.PRIORITY, LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER];
-                                this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
+                                this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
                                 this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                             }
                         };
@@ -2343,6 +2579,25 @@ export class AiSettingsPanel extends ViewPU {
                 }, Text);
                 Text.pop();
                 this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    If.create();
+                    if (api.id === this.defaultApiId) {
+                        this.ifElseBranchUpdateFunction(0, () => {
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Text.create('当前');
+                                Text.fontSize(8);
+                                Text.fontColor(ProteusColors.ERC_OK);
+                                Text.margin({ left: 4, right: 4 });
+                            }, Text);
+                            Text.pop();
+                        });
+                    }
+                    else {
+                        this.ifElseBranchUpdateFunction(1, () => {
+                        });
+                    }
+                }, If);
+                If.pop();
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
                     Text.create(api.enabled ? '●' : '○');
                     Text.fontSize(8);
                     Text.fontColor(api.enabled ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY);
@@ -2367,6 +2622,64 @@ export class AiSettingsPanel extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         if (isInitialRender) {
                             let componentCall = new ProteusClassicBtn(this, {
+                                label: api.id === this.defaultApiId ? '已选' : '选用',
+                                widthVal: 44,
+                                onAction: () => {
+                                    this.selectAsDefault(api);
+                                }
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1042, col: 15 });
+                            ViewPU.create(componentCall);
+                            let paramsLambda = () => {
+                                return {
+                                    label: api.id === this.defaultApiId ? '已选' : '选用',
+                                    widthVal: 44,
+                                    onAction: () => {
+                                        this.selectAsDefault(api);
+                                    }
+                                };
+                            };
+                            componentCall.paramsGenerator_ = paramsLambda;
+                        }
+                        else {
+                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                label: api.id === this.defaultApiId ? '已选' : '选用',
+                                widthVal: 44
+                            });
+                        }
+                    }, { name: "ProteusClassicBtn" });
+                }
+                {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        if (isInitialRender) {
+                            let componentCall = new ProteusClassicBtn(this, {
+                                label: '编辑', widthVal: 44,
+                                onAction: () => {
+                                    this.beginEditApi(api);
+                                }
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1049, col: 15 });
+                            ViewPU.create(componentCall);
+                            let paramsLambda = () => {
+                                return {
+                                    label: '编辑',
+                                    widthVal: 44,
+                                    onAction: () => {
+                                        this.beginEditApi(api);
+                                    }
+                                };
+                            };
+                            componentCall.paramsGenerator_ = paramsLambda;
+                        }
+                        else {
+                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                label: '编辑', widthVal: 44
+                            });
+                        }
+                    }, { name: "ProteusClassicBtn" });
+                }
+                {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        if (isInitialRender) {
+                            let componentCall = new ProteusClassicBtn(this, {
                                 label: '测试', widthVal: 44,
                                 onAction: async () => {
                                     this.statusMessage = `测试 ${api.name}...`;
@@ -2380,7 +2693,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 835, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1055, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2424,7 +2737,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 852, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1072, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2459,10 +2772,14 @@ export class AiSettingsPanel extends ViewPU {
                                 onAction: () => {
                                     this.appService.aiApiManager.removeApi(api.id);
                                     this.appService.syncAiApiConfigsToProject();
+                                    if (this.editingApiId === api.id) {
+                                        this.showAddForm = false;
+                                        this.resetApiForm();
+                                    }
                                     Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 864, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1084, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2471,6 +2788,10 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.appService.aiApiManager.removeApi(api.id);
                                         this.appService.syncAiApiConfigsToProject();
+                                        if (this.editingApiId === api.id) {
+                                            this.showAddForm = false;
+                                            this.resetApiForm();
+                                        }
                                         Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                         this.refreshList();
                                     }
@@ -2488,7 +2809,7 @@ export class AiSettingsPanel extends ViewPU {
                 Row.pop();
                 Column.pop();
             };
-            this.forEachUpdateFunction(elmtId, this.apiList, forEachItemGenFunction, (api: AiApiConfig) => api.id, false, false);
+            this.forEachUpdateFunction(elmtId, this.apiList, forEachItemGenFunction, (api: AiApiConfig) => `${api.id}_${api.model}_${api.name}_${api.enabled}_${this.apiListRev}`, false, false);
         }, ForEach);
         ForEach.pop();
         Column.pop();

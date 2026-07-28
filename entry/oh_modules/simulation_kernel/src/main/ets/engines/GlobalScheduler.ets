@@ -43,11 +43,26 @@ export class GlobalScheduler {
   private mcuTicksPerStep: number = 1;
   /** Optional tighter/looser cap (e.g. AC scope: ~1/40 period). Infinity = use config only. */
   private maxStepCap: number = Number.POSITIVE_INFINITY;
+  /**
+   * Optional floor above MIN_ANALOG_STEP. Without this, op-amp rail snaps shrink dt to 10ns
+   * and VAC/SIGGEN half-periods never arrive → scope CH stuck flat (Vpp=0) while UI still ticks.
+   */
+  private minStepFloor: number = 0;
+  /**
+   * Nodes excluded from ΔV step-size control (ideal VSRC/SIGGEN). Square edges are
+   * intentional 2·amp jumps — counting them as RAPID collapses dt every half-cycle.
+   */
+  private adaptiveIgnoreNodes: Set<string> = new Set();
   /** Last emitted step time — wave/history timestamps must never go backwards. */
   private lastEmittedTime: number = Number.NEGATIVE_INFINITY;
 
   private analogMinStep(): number {
-    return Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.effectiveMaxStep()));
+    const base = Math.max(MIN_ANALOG_STEP, Math.min(this.config.stepSize, this.effectiveMaxStep()));
+    if (this.minStepFloor > 0) {
+      // Floor must not exceed the active max cap (else every step hits the ceiling).
+      return Math.max(base, Math.min(this.minStepFloor, this.effectiveMaxStep()));
+    }
+    return base;
   }
 
   private effectiveMaxStep(): number {
@@ -61,6 +76,22 @@ export class GlobalScheduler {
   /** Cap adaptive dt (pass <=0 to clear). Keeps VAC@1kHz from needing 10k × 1µs steps/frame. */
   setMaxStepCap(cap: number): void {
     this.maxStepCap = cap > 0 ? cap : Number.POSITIVE_INFINITY;
+  }
+
+  /** Raise analog dt floor (pass <=0 to clear). Used with AC / RC so time keeps advancing. */
+  setMinStepFloor(floor: number): void {
+    this.minStepFloor = floor > 0 ? floor : 0;
+  }
+
+  /** Ideal source nodes whose ΔV must not shrink adaptive dt (pass empty to clear). */
+  setAdaptiveIgnoreNodes(nodes: string[]): void {
+    this.adaptiveIgnoreNodes.clear();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.length > 0) {
+        this.adaptiveIgnoreNodes.add(n);
+      }
+    }
   }
 
   constructor(config: SimulationConfig, digital: DigitalEngine, analog: AnalogEngine) {
@@ -175,7 +206,8 @@ export class GlobalScheduler {
     let hasReference = false;
     voltages.forEach((v: number, node: string) => {
       const prev = this.lastVoltageSnapshot.get(node);
-      if (prev !== undefined) {
+      const ignore = this.adaptiveIgnoreNodes.has(node);
+      if (prev !== undefined && !ignore) {
         hasReference = true;
         const delta = Math.abs(v - prev);
         if (delta > maxDelta) maxDelta = delta;
@@ -186,7 +218,8 @@ export class GlobalScheduler {
     if (!hasReference) return;
 
     if (maxDelta > VOLTAGE_DELTA_RAPID) {
-      this.currentStepSize = Math.max(this.currentStepSize / 4, this.analogMinStep());
+      // Softer shrink (÷2): rail snaps / differentiator spikes must not pin dt at floor
+      this.currentStepSize = Math.max(this.currentStepSize / 2, this.analogMinStep());
       this.steadyStepCounter = 0;
     } else if (maxDelta < VOLTAGE_DELTA_STEADY) {
       this.steadyStepCounter++;
@@ -239,6 +272,17 @@ export class GlobalScheduler {
     this.mcuCycleAccum = 0;
     this.mcuTicksPerStep = 1;
     this.lastEmittedTime = Number.NEGATIVE_INFINITY;
+    this.minStepFloor = 0;
+    this.maxStepCap = Number.POSITIVE_INFINITY;
+    this.adaptiveIgnoreNodes.clear();
+  }
+
+  /** Slide interactive stop horizon so continuous scope runs never hit isFinished(). */
+  extendStopTime(extraSec: number): void {
+    if (!(extraSec > 0)) {
+      return;
+    }
+    this.config.stopTime = Math.max(this.config.stopTime, this.globalTime) + extraSec;
   }
 
   isFinished(): boolean {

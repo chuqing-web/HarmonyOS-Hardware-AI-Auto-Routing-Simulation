@@ -3,7 +3,7 @@
  */
 import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG,
-  ClarificationQuestion, ClarificationAnswer } from 'common';
+  ClarificationQuestion, ClarificationAnswer, Result } from 'common';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
@@ -44,10 +44,15 @@ export struct AiSettingsPanel {
   @State newAuthField: string = '';
   @State selectedProvider: AiProviderType = AiProviderType.DEEPSEEK;
   @State apiFormatIdx: number = 2;
+  /** 非空表示正在编辑已保存配置（保存走 updateApi） */
+  @State editingApiId: string = '';
+  @State defaultApiId: string = '';
+  @State providerIdx: number = 0;
+  @State selectedStratIdx: number = 0;
+  /** ForEach 仅用 id 作 key 时，model/name 变更不会重建子项；递增以强制刷新 */
+  @State apiListRev: number = 0;
 
   private appService: AppService = AppService.getInstance();
-  private providerIdx: number = 0;
-  private selectedStratIdx: number = 0;
   private providers: string[] = ['DeepSeek', '通义千问', '豆包', 'OpenAI', 'Ollama', 'Claude', 'Gemini', '自定义'];
   private providerTypes: AiProviderType[] = [
     AiProviderType.DEEPSEEK, AiProviderType.QWEN, AiProviderType.DOUBAO,
@@ -60,10 +65,21 @@ export struct AiSettingsPanel {
     { label: 'DeepSeek Chat', value: 'deepseek' },
     { label: 'Ollama (原生)', value: 'ollama' }
   ];
-  private loadBalanceLabels: string[] = ['优先级', '轮询', '故障切换'];
+  private loadBalanceLabels: string[] = ['指定默认', '优先级', '轮询', '故障切换'];
+  private loadBalanceModes: LoadBalanceMode[] = [
+    LoadBalanceMode.SINGLE_DEFAULT, LoadBalanceMode.PRIORITY,
+    LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER
+  ];
 
   aboutToAppear(): void {
     this.refreshList();
+    if (this.defaultApiId.length > 0) {
+      this.appService.aiApiManager.setLoadBalanceStrategy(LoadBalanceMode.SINGLE_DEFAULT);
+      this.selectedStratIdx = 0;
+    } else {
+      // 与 AiApiManagerImpl 默认 PRIORITY 对齐
+      this.selectedStratIdx = 1;
+    }
     this.logs = this.appService.getAiGenLogs();
     this.appService.onAiGenLogsChanged = (entries: AiGenLogEntry[]) => {
       this.logs = entries;
@@ -91,6 +107,220 @@ export struct AiSettingsPanel {
 
   refreshList(): void {
     this.apiList = this.appService.aiApiManager.listApis();
+    const def = this.appService.aiApiManager.getDefaultApi();
+    this.defaultApiId = (def.success && def.data) ? def.data.id : '';
+    this.apiListRev++;
+  }
+
+  private resetApiForm(): void {
+    this.editingApiId = '';
+    this.newApiName = '';
+    this.newApiKey = '';
+    this.newApiUrl = '';
+    this.newApiModel = '';
+    this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
+  }
+
+  private beginEditApi(api: AiApiConfig): void {
+    // 从 manager 重取，避免 ForEach 闭包里的旧快照把表单冲回旧 model/name
+    let src: AiApiConfig = api;
+    const fresh = this.appService.aiApiManager.getApi(api.id);
+    if (fresh.success && fresh.data) {
+      src = fresh.data;
+    }
+    this.editingApiId = src.id;
+    this.showAddForm = true;
+    this.newApiName = src.name;
+    this.newApiKey = '';
+    this.newApiUrl = src.baseUrl;
+    this.newApiModel = src.model;
+    this.selectedProvider = src.provider;
+    let pIdx = 0;
+    for (let i = 0; i < this.providerTypes.length; i++) {
+      if (this.providerTypes[i] === src.provider) {
+        pIdx = i;
+        break;
+      }
+    }
+    this.providerIdx = pIdx;
+    // remark: apiFormat=xxx
+    let fmt = 'openai';
+    const remark = src.remark ?? '';
+    const marker = 'apiFormat=';
+    const mi = remark.indexOf(marker);
+    if (mi >= 0) {
+      fmt = remark.substring(mi + marker.length).trim();
+      const sp = fmt.indexOf(' ');
+      if (sp >= 0) {
+        fmt = fmt.substring(0, sp);
+      }
+    } else if (src.provider === AiProviderType.CLAUDE) {
+      fmt = 'anthropic';
+    } else if (src.provider === AiProviderType.DEEPSEEK) {
+      fmt = 'deepseek';
+    } else if (src.provider === AiProviderType.OLLAMA) {
+      fmt = 'ollama';
+    }
+    this.newApiFormat = fmt;
+    let fIdx = 1;
+    for (let i = 0; i < this.apiFormats.length; i++) {
+      if (this.apiFormats[i].value === fmt) {
+        fIdx = i;
+        break;
+      }
+    }
+    this.apiFormatIdx = fIdx;
+    this.newAuthField = '';
+    const ch = src.customHeaders;
+    if (ch) {
+      // ArkTS：不用 Object.keys；按常见认证头探测
+      if (ch['x-api-key'] !== undefined) {
+        this.newAuthField = 'x-api-key';
+      } else if (ch['Authorization'] !== undefined) {
+        this.newAuthField = 'Authorization';
+      } else if (ch['api-key'] !== undefined) {
+        this.newAuthField = 'api-key';
+      }
+    } else if (src.provider === AiProviderType.CLAUDE) {
+      this.newAuthField = 'x-api-key';
+    }
+    this.statusMessage = `正在编辑 ${src.name}（Key 留空则保留原值）`;
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] UI edit begin id=${src.id} name=${src.name} model=${src.model}`);
+  }
+
+  private selectAsDefault(api: AiApiConfig): void {
+    if (!api.enabled) {
+      this.appService.aiApiManager.enableApi(api.id);
+    }
+    const setDef = this.appService.aiApiManager.setDefaultApi(api.id);
+    if (!setDef.success) {
+      this.statusMessage = setDef.error ?? '设为默认失败';
+      return;
+    }
+    this.appService.aiApiManager.setLoadBalanceStrategy(LoadBalanceMode.SINGLE_DEFAULT);
+    this.selectedStratIdx = 0;
+    this.appService.syncAiApiConfigsToProject();
+    this.refreshList();
+    Logger.info(INSTR_TRACE_TAG, `[AI_API] UI select default id=${api.id} name=${api.name}`);
+    this.statusMessage = `已选用 ${api.name}（指定默认）`;
+  }
+
+  private saveApiFromForm(): void {
+    const isEdit = this.editingApiId.length > 0;
+    if (isEdit) {
+      const keyTrim = this.newApiKey.trim();
+      // Key 留空：完全不传 apiKey，避免冲掉已存密钥
+      const nameVal = this.newApiName.trim().length > 0 ? this.newApiName.trim() : this.newApiName;
+      const urlVal = this.newApiUrl.trim().length > 0 ? this.newApiUrl.trim() : this.newApiUrl;
+      const modelVal = this.newApiModel.trim().length > 0 ? this.newApiModel.trim() : this.newApiModel;
+      const remarkVal = this.newApiFormat.length > 0 ? `apiFormat=${this.newApiFormat}` : '';
+      let upd: Result<void> = { success: false, error: 'update not called' };
+      if (keyTrim.length > 0 && keyTrim !== '***') {
+        const headers: Record<string, string> = {};
+        let useHeaders = false;
+        if (this.newAuthField.length > 0) {
+          const lower = this.newAuthField.toLowerCase();
+          if (lower !== 'bearer' && lower !== 'authorization') {
+            headers[this.newAuthField] = keyTrim;
+            useHeaders = true;
+          }
+        }
+        if (useHeaders) {
+          upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+            name: nameVal,
+            provider: this.selectedProvider,
+            baseUrl: urlVal,
+            model: modelVal,
+            apiKey: keyTrim,
+            customHeaders: headers,
+            remark: remarkVal
+          });
+        } else {
+          upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+            name: nameVal,
+            provider: this.selectedProvider,
+            baseUrl: urlVal,
+            model: modelVal,
+            apiKey: keyTrim,
+            remark: remarkVal
+          });
+        }
+      } else {
+        upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
+          name: nameVal,
+          provider: this.selectedProvider,
+          baseUrl: urlVal,
+          model: modelVal,
+          remark: remarkVal
+        });
+      }
+      if (!upd.success) {
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_API] update FAILED id=${this.editingApiId}: ${upd.error}`);
+        this.statusMessage = upd.error ?? '更新 API 失败（未改动 Key）';
+        return;
+      }
+      const synced = this.appService.syncAiApiConfigsToProject();
+      if (!synced) {
+        Logger.error(INSTR_TRACE_TAG,
+          `[AI_API] update OK but vault sync FAIL id=${this.editingApiId}`);
+        this.statusMessage = '配置已更新到内存，但金库保存失败（Key 仍保留，请重试）';
+        this.refreshList();
+        return;
+      }
+      Logger.info(INSTR_TRACE_TAG,
+        `[AI_API] updated id=${this.editingApiId} name=${this.newApiName}` +
+        ` provider=${this.selectedProvider} model=${this.newApiModel}` +
+        ` url=${this.newApiUrl} keyChanged=${keyTrim.length > 0}`);
+      this.refreshList();
+      this.showAddForm = false;
+      this.resetApiForm();
+      this.statusMessage = '已更新并同步 API 配置';
+      return;
+    }
+
+    const tmpl = this.appService.aiApiManager.createFromTemplate(
+      this.selectedProvider, this.newApiName || 'New API');
+    if (!tmpl.success || !tmpl.data) {
+      Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
+      this.statusMessage = '创建 API 配置失败';
+      return;
+    }
+    const config = tmpl.data;
+    config.apiKey = this.newApiKey;
+    config.model = this.newApiModel || config.model;
+    config.name = this.newApiName || config.name || 'New API';
+    config.baseUrl = this.newApiUrl || config.baseUrl;
+    if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
+      const lower = this.newAuthField.toLowerCase();
+      if (lower !== 'bearer' && lower !== 'authorization') {
+        const h: Record<string, string> = {};
+        h[this.newAuthField] = this.newApiKey;
+        config.customHeaders = h;
+      }
+    }
+    if (this.newApiFormat.length > 0) {
+      config.remark = `apiFormat=${this.newApiFormat}`;
+    }
+    const addResult = this.appService.aiApiManager.addApi(config);
+    if (!addResult.success) {
+      Logger.error(INSTR_TRACE_TAG,
+        `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
+      this.statusMessage = addResult.error ?? '保存 API 失败';
+      return;
+    }
+    const syncedAdd = this.appService.syncAiApiConfigsToProject();
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_API] saved id=${config.id} name=${config.name}` +
+      ` provider=${config.provider} model=${config.model}` +
+      ` url=${config.baseUrl} keyLen=${config.apiKey.length} vault=${syncedAdd}`);
+    this.refreshList();
+    this.showAddForm = false;
+    this.resetApiForm();
+    this.statusMessage = syncedAdd
+      ? `已添加并同步 ${config.name}`
+      : `已添加 ${config.name}，但金库保存失败请重试`;
   }
 
   private requestGenerate(): void {
@@ -614,7 +844,15 @@ export struct AiSettingsPanel {
         ProteusClassicBtn({
           label: this.showAddForm ? '收起' : '+ 添加',
           widthVal: 64,
-          onAction: () => { this.showAddForm = !this.showAddForm; }
+          onAction: () => {
+            if (this.showAddForm) {
+              this.showAddForm = false;
+              this.resetApiForm();
+            } else {
+              this.resetApiForm();
+              this.showAddForm = true;
+            }
+          }
         })
       }
       .width('100%')
@@ -622,7 +860,7 @@ export struct AiSettingsPanel {
 
       if (this.showAddForm) {
         Column({ space: 4 }) {
-          Text('选择平台')
+          Text(this.editingApiId.length > 0 ? '编辑已保存 API' : '选择平台')
             .fontSize(ProteusFonts.PARAM_KEY)
             .fontColor(ProteusColors.TEXT_LABEL)
             .width('100%')
@@ -632,12 +870,17 @@ export struct AiSettingsPanel {
             selectedIdx: this.providerIdx,
             colsPerRow: 3,
             onSelect: (idx: number) => {
+              const nextProvider = this.providerTypes[idx];
+              const providerChanged = nextProvider !== this.selectedProvider;
               this.providerIdx = idx;
-              this.selectedProvider = this.providerTypes[idx];
-              const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
-              if (tmpl.success && tmpl.data) {
-                this.newApiModel = tmpl.data.model;
-                this.newApiUrl = tmpl.data.baseUrl;
+              this.selectedProvider = nextProvider;
+              // 编辑中复点同一平台勿覆盖已改的模型名；新建或真正切换厂商才套模板
+              if (this.editingApiId.length === 0 || providerChanged) {
+                const tmpl = this.appService.aiApiManager.createFromTemplate(this.selectedProvider, '');
+                if (tmpl.success && tmpl.data) {
+                  this.newApiModel = tmpl.data.model;
+                  this.newApiUrl = tmpl.data.baseUrl;
+                }
               }
               // 按厂商同步协议与认证头，避免 DeepSeek 误带 ANTHROPIC_AUTH_TOKEN
               if (this.selectedProvider === AiProviderType.CLAUDE) {
@@ -680,7 +923,7 @@ export struct AiSettingsPanel {
               .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
               .width(ProteusDimens.PARAM_LABEL_WIDTH)
             ProteusTextInput({
-              placeholder: 'sk-...',
+              placeholder: this.editingApiId.length > 0 ? '留空则保留原 Key' : 'sk-...',
               text: this.newApiKey,
               password: true,
               onChange: (v: string) => { this.newApiKey = v; }
@@ -726,55 +969,14 @@ export struct AiSettingsPanel {
               onChange: (v: string) => { this.newApiModel = v; }
             })
               .layoutWeight(1)
+              .key(`api_model_input_${this.editingApiId}`)
           }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           ProteusClassicBtn({
-            label: '保存 API',
+            label: this.editingApiId.length > 0 ? '更新 API' : '保存 API',
             widthVal: '100%',
             onAction: () => {
-              const tmpl = this.appService.aiApiManager.createFromTemplate(
-                this.selectedProvider, this.newApiName || 'New API');
-              if (!tmpl.success || !tmpl.data) {
-                Logger.error(INSTR_TRACE_TAG, '[AI_API] save: createFromTemplate failed');
-                this.statusMessage = '创建 API 配置失败';
-                return;
-              }
-              const config = tmpl.data;
-              config.apiKey = this.newApiKey;
-              config.model = this.newApiModel || config.model;
-              config.name = this.newApiName || config.name || 'New API';
-              config.baseUrl = this.newApiUrl || config.baseUrl;
-              // 仅非 Bearer 类自定义认证头写入；Bearer 由 buildRequestHeaders 注入
-              if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
-                const lower = this.newAuthField.toLowerCase();
-                if (lower !== 'bearer' && lower !== 'authorization') {
-                  const headers: Record<string, string> = {};
-                  headers[this.newAuthField] = this.newApiKey;
-                  config.customHeaders = headers;
-                }
-              }
-              // 把选择的协议记入 remark，便于排障（运行时仍以 provider.chatPath 为准）
-              if (this.newApiFormat.length > 0) {
-                config.remark = `apiFormat=${this.newApiFormat}`;
-              }
-              const addResult = this.appService.aiApiManager.addApi(config);
-              if (!addResult.success) {
-                Logger.error(INSTR_TRACE_TAG,
-                  `[AI_API] save FAILED id=${config.id}: ${addResult.error}`);
-                this.statusMessage = addResult.error ?? '保存 API 失败';
-                return;
-              }
-              this.appService.syncAiApiConfigsToProject();
-              Logger.info(INSTR_TRACE_TAG,
-                `[AI_API] saved id=${config.id} name=${config.name}` +
-                ` provider=${config.provider} model=${config.model}` +
-                ` url=${config.baseUrl} keyLen=${config.apiKey.length}`);
-              this.refreshList();
-              this.showAddForm = false;
-              this.newApiKey = '';
-              this.newApiUrl = '';
-              this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
-              this.statusMessage = `已添加并同步 ${config.name}`;
+              this.saveApiFromForm();
             }
           })
         }
@@ -796,8 +998,7 @@ export struct AiSettingsPanel {
         colsPerRow: 3,
         onSelect: (idx: number) => {
           this.selectedStratIdx = idx;
-          const modes = [LoadBalanceMode.PRIORITY, LoadBalanceMode.ROUND_ROBIN, LoadBalanceMode.FAILOVER];
-          this.appService.aiApiManager.setLoadBalanceStrategy(modes[idx]);
+          this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
           this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
         }
       })
@@ -821,6 +1022,12 @@ export struct AiSettingsPanel {
               Text(api.name)
                 .fontSize(10).fontColor(ProteusColors.TEXT_PRIMARY).fontWeight(FontWeight.Medium)
                 .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+              if (api.id === this.defaultApiId) {
+                Text('当前')
+                  .fontSize(8)
+                  .fontColor(ProteusColors.ERC_OK)
+                  .margin({ left: 4, right: 4 })
+              }
               Text(api.enabled ? '●' : '○')
                 .fontSize(8)
                 .fontColor(api.enabled ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY)
@@ -832,6 +1039,19 @@ export struct AiSettingsPanel {
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
 
             Row({ space: 3 }) {
+              ProteusClassicBtn({
+                label: api.id === this.defaultApiId ? '已选' : '选用',
+                widthVal: 44,
+                onAction: () => {
+                  this.selectAsDefault(api);
+                }
+              })
+              ProteusClassicBtn({
+                label: '编辑', widthVal: 44,
+                onAction: () => {
+                  this.beginEditApi(api);
+                }
+              })
               ProteusClassicBtn({
                 label: '测试', widthVal: 44,
                 onAction: async () => {
@@ -866,6 +1086,10 @@ export struct AiSettingsPanel {
                 onAction: () => {
                   this.appService.aiApiManager.removeApi(api.id);
                   this.appService.syncAiApiConfigsToProject();
+                  if (this.editingApiId === api.id) {
+                    this.showAddForm = false;
+                    this.resetApiForm();
+                  }
                   Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                   this.refreshList();
                 }
@@ -876,7 +1100,8 @@ export struct AiSettingsPanel {
           .padding({ left: 6, right: 6, top: 4, bottom: 4 })
           .backgroundColor(ProteusColors.INPUT_READONLY_BG)
           .border({ width: 1, color: ProteusColors.DIVIDER })
-        }, (api: AiApiConfig) => api.id)
+        }, (api: AiApiConfig) =>
+          `${api.id}_${api.model}_${api.name}_${api.enabled}_${this.apiListRev}`)
       }
       .width('100%')
       .padding({ left: 4, right: 4, top: 2, bottom: 6 })

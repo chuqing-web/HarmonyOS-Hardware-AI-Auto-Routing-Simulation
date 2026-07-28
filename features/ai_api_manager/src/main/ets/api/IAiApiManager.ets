@@ -43,6 +43,8 @@ export interface IAiApiManager {
 
   // ---- v1 兼容 ----
   addApi(config: AiApiConfig): Result<void>;
+  /** 金库/工程恢复：跳过数量门禁，避免启动时 FREE 上限截断已存配置 */
+  restoreApi(config: AiApiConfig): Result<void>;
   removeApi(id: string): Result<void>;
   updateApi(id: string, config: AiApiConfigUpdate): Result<void>;
   getApi(id: string): Result<AiApiConfig>;

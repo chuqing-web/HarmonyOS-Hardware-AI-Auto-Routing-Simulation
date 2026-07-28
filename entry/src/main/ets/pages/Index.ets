@@ -485,17 +485,24 @@ struct Index {
   /**
    * Wait until canvas reports real size, then fit.
    * applyFitRect 在尺寸未就绪时会直接 return，故需重试；稳定后再补一次纠正半窗缩放。
+   * 用户已手动缩放/平移后不再覆盖视口。
    */
   private deferCanvasFit(attempt: number = 0): void {
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
+    if (editor.isViewportUserLocked()) {
+      return;
+    }
     if (editor.isCanvasViewReady()) {
-      editor.fitAllInView();
+      editor.autoFitAllInView();
       this.bumpCanvas();
       // 布局可能仍在收敛：短延迟再 fit 一次，消除偶发“局部软放大”
       if (attempt === 0 || attempt === 4) {
         setTimeout(() => {
+          if (editor.isViewportUserLocked()) {
+            return;
+          }
           if (editor.isCanvasViewReady()) {
-            editor.fitAllInView();
+            editor.autoFitAllInView();
             this.bumpCanvas();
           }
         }, attempt === 0 ? 120 : 280);

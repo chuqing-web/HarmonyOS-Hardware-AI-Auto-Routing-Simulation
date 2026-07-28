@@ -485,11 +485,15 @@ export class SpiceRunner {
         return Math.sqrt(sumSq / samples);
     }
     runWithConvergenceRetry(time: number, stepSize: number): SpiceRunResult {
+        // Per-call retry budget (never accumulate across steps — old counter stuck at
+        // maxRetries and either over-retried early or never reset after soft-fails).
+        let retries = 0;
         let result = this.runTransient(time, stepSize);
-        while (!result.converged && this.convergenceRetries < this.maxRetries) {
-            this.convergenceRetries++;
+        while (!result.converged && retries < this.maxRetries) {
+            retries++;
+            this.convergenceRetries = retries;
             // Floor at 10 ns — picosecond retries freeze VAC@1kHz while steps keep counting
-            const reducedStep = Math.max(stepSize / Math.pow(2, this.convergenceRetries), 1e-8);
+            const reducedStep = Math.max(stepSize / Math.pow(2, retries), 1e-8);
             result = this.runTransient(time, reducedStep);
         }
         if (!result.converged) {
