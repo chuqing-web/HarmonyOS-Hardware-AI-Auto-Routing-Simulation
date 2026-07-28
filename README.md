@@ -409,7 +409,7 @@ The authoritative runtime catalog is `component_library` built-ins (`BuiltinComp
 | `lab_peripheral` | Peripherals | GPIO, relay, display | ✓ |
 | `lab_sensor` | Sensors | 1-Wire, digital in, ADC | ✓ |
 | `lab_instruments` | Instruments | V/I/scope binding | — |
-| `lab_potentiometer` | Potentiometer | Wiper, divider ratio | — |
+| `lab_digital_gates` | Digital gates | SW truth table, 74HC×6+CD4017 LEDs | — |
 | `lab_schmitt` | Schmitt trigger | Hysteresis, shaping | — |
 | `lab_integrator` | Integrator | Op-amp integrate, τ | — |
 | `lab_555_astable` | 555 astable | Multivibrator, duty | — |

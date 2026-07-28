@@ -32,7 +32,9 @@ interface McuRegEntry {
     name: string;
     valueHex: string;
 }
-const MCU_REG_PRIORITY: string[] = ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3'];
+const MCU_REG_PRIORITY: string[] = ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3',
+    'R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'R14', 'R15',
+    'LR', 'ODR_A', 'ODR_B', 'ODR_C', 'TH0', 'TL0', 'TH1', 'TL1', 'TCON', 'TMOD', 'SCON', 'SBUF', 'IE', 'IP'];
 export class McuDebugPanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -258,11 +260,17 @@ export class McuDebugPanel extends ViewPU {
     private appService: AppService;
     private buildRegEntries(regs: Map<string, number>): McuRegEntry[] {
         const entries: McuRegEntry[] = [];
+        // 8051 engine mirrors banks as R00–R37; hide aliases (keep R0–R7).
+        const hide8051BankAlias = regs.has('ACC') || regs.has('PSW');
         regs.forEach((value: number, key: string) => {
-            const width = (key === 'PC' || key === 'DPTR' || value > 0xFF) ? 4 : 2;
+            if (hide8051BankAlias && /^R[0-3][0-7]$/.test(key)) {
+                return;
+            }
+            const width = (key === 'PC' || key === 'DPTR' || key === 'STM32_PC' || value > 0xFF) ? 4 : 2;
+            const widthHex = value > 0xFFFF ? 8 : width;
             entries.push({
                 name: key,
-                valueHex: `0x${value.toString(16).toUpperCase().padStart(width, '0')}`
+                valueHex: `0x${value.toString(16).toUpperCase().padStart(widthHex, '0')}`
             });
         });
         entries.sort((a: McuRegEntry, b: McuRegEntry) => {
@@ -356,10 +364,12 @@ export class McuDebugPanel extends ViewPU {
         const simSnap = kernel.getMcuSnapshot();
         if (simSnap !== null &&
             (simState === SimulationState.RUNNING || simState === SimulationState.PAUSED)) {
-            this.debugState = 'running';
-            const pcVal = simSnap.registers.get('PC');
+            this.debugState = simState === SimulationState.PAUSED ? 'paused' : 'running';
+            const pcVal = simSnap.registers.get('PC') ?? simSnap.registers.get('STM32_PC');
             const pcNum = pcVal !== undefined ? pcVal : 0;
-            this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
+            const pcWidth = pcNum > 0xFFFF ? 8 : 4;
+            this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(pcWidth, '0')}`;
+            // New array each poll; ForEach key includes value so ArkUI rebinds.
             this.regEntries = this.buildRegEntries(simSnap.registers);
             this.uartOutput = this.appService.hexDebugger.getUartOutput();
             return;
@@ -466,7 +476,7 @@ export class McuDebugPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusSectionTitle(this, { title: 'MCU 调试' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 252, col: 7 });
+                    let componentCall = new ProteusSectionTitle(this, { title: 'MCU 调试' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 262, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -627,7 +637,7 @@ export class McuDebugPanel extends ViewPU {
                         placeholder: '固件路径…',
                         text: this.hexFilePath,
                         onChange: (v: string) => { this.hexFilePath = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 326, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 336, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -661,7 +671,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '浏览',
                         widthVal: '48%',
                         onAction: () => { void this.browseHexFile(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 337, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 347, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -687,7 +697,7 @@ export class McuDebugPanel extends ViewPU {
                         label: '烧录',
                         widthVal: '48%',
                         onAction: () => { void this.burnHex(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 342, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 352, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -747,7 +757,7 @@ export class McuDebugPanel extends ViewPU {
                                                 this.hexFilePath = hexPath;
                                                 void this.burnHex();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 365, col: 13 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 375, col: 13 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -797,7 +807,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '▶ 运行', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.run();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 382, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 392, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -824,7 +834,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '⏸ 暂停', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.pause();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 386, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 396, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -851,7 +861,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↷ 单步', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.step();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 390, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 400, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -878,7 +888,7 @@ export class McuDebugPanel extends ViewPU {
                     let componentCall = new ProteusClassicBtn(this, { label: '↺ 复位', widthVal: '23%', onAction: () => {
                             this.appService.hexDebugger.reset();
                             this.refreshState();
-                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 394, col: 9 });
+                        } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 404, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -929,7 +939,7 @@ export class McuDebugPanel extends ViewPU {
                             }
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 404, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 414, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1011,7 +1021,7 @@ export class McuDebugPanel extends ViewPU {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Scroll.create();
                         Scroll.width('100%');
-                        Scroll.constraintSize({ maxHeight: 128 });
+                        Scroll.constraintSize({ maxHeight: 200 });
                         Scroll.scrollBar(BarState.Auto);
                         Scroll.edgeEffect(EdgeEffect.None);
                     }, Scroll);
@@ -1040,7 +1050,7 @@ export class McuDebugPanel extends ViewPU {
                                 Text.create(reg.name);
                                 Text.fontSize(ProteusFonts.STATUS);
                                 Text.fontColor(ProteusColors.TEXT_LABEL);
-                                Text.width(36);
+                                Text.width(40);
                                 Text.maxLines(1);
                                 Text.textOverflow({ overflow: TextOverflow.Ellipsis });
                             }, Text);
@@ -1058,7 +1068,7 @@ export class McuDebugPanel extends ViewPU {
                             Text.pop();
                             Row.pop();
                         };
-                        this.forEachUpdateFunction(elmtId, this.regEntries, forEachItemGenFunction, (reg: McuRegEntry) => reg.name, false, false);
+                        this.forEachUpdateFunction(elmtId, this.regEntries, forEachItemGenFunction, (reg: McuRegEntry) => `${reg.name}=${reg.valueHex}`, false, false);
                     }, ForEach);
                     ForEach.pop();
                     Flex.pop();
@@ -1171,7 +1181,7 @@ export class McuDebugPanel extends ViewPU {
                         placeholder: '输入 UART 数据',
                         text: this.hexInput,
                         onChange: (v: string) => { this.hexInput = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 539, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 549, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1201,7 +1211,7 @@ export class McuDebugPanel extends ViewPU {
                             this.appService.hexDebugger.sendUartInput(this.hexInput);
                             this.refreshState();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 545, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/McuDebugPanel.ets", line: 555, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

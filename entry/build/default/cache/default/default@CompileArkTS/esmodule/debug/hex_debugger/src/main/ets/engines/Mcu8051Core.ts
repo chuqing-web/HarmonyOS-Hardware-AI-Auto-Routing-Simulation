@@ -24,7 +24,23 @@ export class Mcu8051Core {
     getRegisters(): Map<string, number> {
         const result = copyNumberMap(this.state.regs);
         result.set('PC', this.state.pc);
+        result.set('P0', this.state.sfr.get(0x80) ?? 0xFF);
         result.set('P1', this.state.sfr.get(0x90) ?? 0xFF);
+        result.set('P2', this.state.sfr.get(0xA0) ?? 0xFF);
+        result.set('P3', this.state.sfr.get(0xB0) ?? 0xFF);
+        result.set('TH0', this.state.sfr.get(0x8C) ?? 0);
+        result.set('TL0', this.state.sfr.get(0x8A) ?? 0);
+        result.set('TH1', this.state.sfr.get(0x8D) ?? 0);
+        result.set('TL1', this.state.sfr.get(0x8B) ?? 0);
+        result.set('TCON', this.state.sfr.get(0x88) ?? 0);
+        result.set('TMOD', this.state.sfr.get(0x89) ?? 0);
+        result.set('SCON', this.state.sfr.get(0x98) ?? 0);
+        result.set('SBUF', this.state.sfr.get(0x99) ?? 0);
+        result.set('IE', this.state.sfr.get(0xA8) ?? 0);
+        result.set('IP', this.state.sfr.get(0xB8) ?? 0);
+        const dpl = this.state.regs.get('DPL') ?? 0;
+        const dph = this.state.regs.get('DPH') ?? 0;
+        result.set('DPTR', ((dph << 8) | dpl) & 0xFFFF);
         return result;
     }
     getPc(): number { return this.state.pc; }

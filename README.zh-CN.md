@@ -409,7 +409,7 @@ AI 提供商模板覆盖豆包、通义、DeepSeek、文心、智谱、Kimi、Op
 | `lab_peripheral` | 外设接口 | GPIO、继电器、显示 | ✓ |
 | `lab_sensor` | 传感器实验 | 1-Wire、数字入、ADC | ✓ |
 | `lab_instruments` | 仪器仪表检测 | 电压 / 电流 / 示波器绑定 | — |
-| `lab_potentiometer` | 电位器分压 | 滑臂、分压比 | — |
+| `lab_digital_gates` | 数字门电路 | 按键真值表、74HC×6+CD4017 LED | — |
 | `lab_schmitt` | 施密特触发 | 迟滞、整形 | — |
 | `lab_integrator` | 积分电路 | 运放积分、时间常数 | — |
 | `lab_555_astable` | 555 无稳态 | 多谐振荡、占空比 | — |

@@ -16,7 +16,9 @@ interface McuRegEntry {
 }
 
 const MCU_REG_PRIORITY: string[] =
-  ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3'];
+  ['PC', 'ACC', 'B', 'PSW', 'SP', 'DPTR', 'P0', 'P1', 'P2', 'P3',
+    'R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'R14', 'R15',
+    'LR', 'ODR_A', 'ODR_B', 'ODR_C', 'TH0', 'TL0', 'TH1', 'TL1', 'TCON', 'TMOD', 'SCON', 'SBUF', 'IE', 'IP'];
 
 @Component
 export struct McuDebugPanel {
@@ -41,11 +43,17 @@ export struct McuDebugPanel {
 
   private buildRegEntries(regs: Map<string, number>): McuRegEntry[] {
     const entries: McuRegEntry[] = [];
+    // 8051 engine mirrors banks as R00–R37; hide aliases (keep R0–R7).
+    const hide8051BankAlias = regs.has('ACC') || regs.has('PSW');
     regs.forEach((value: number, key: string) => {
-      const width = (key === 'PC' || key === 'DPTR' || value > 0xFF) ? 4 : 2;
+      if (hide8051BankAlias && /^R[0-3][0-7]$/.test(key)) {
+        return;
+      }
+      const width = (key === 'PC' || key === 'DPTR' || key === 'STM32_PC' || value > 0xFF) ? 4 : 2;
+      const widthHex = value > 0xFFFF ? 8 : width;
       entries.push({
         name: key,
-        valueHex: `0x${value.toString(16).toUpperCase().padStart(width, '0')}`
+        valueHex: `0x${value.toString(16).toUpperCase().padStart(widthHex, '0')}`
       });
     });
     entries.sort((a: McuRegEntry, b: McuRegEntry) => {
@@ -144,10 +152,12 @@ export struct McuDebugPanel {
     const simSnap = kernel.getMcuSnapshot();
     if (simSnap !== null &&
         (simState === SimulationState.RUNNING || simState === SimulationState.PAUSED)) {
-      this.debugState = 'running';
-      const pcVal = simSnap.registers.get('PC');
+      this.debugState = simState === SimulationState.PAUSED ? 'paused' : 'running';
+      const pcVal = simSnap.registers.get('PC') ?? simSnap.registers.get('STM32_PC');
       const pcNum = pcVal !== undefined ? pcVal : 0;
-      this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(4, '0')}`;
+      const pcWidth = pcNum > 0xFFFF ? 8 : 4;
+      this.pcValue = `0x${pcNum.toString(16).toUpperCase().padStart(pcWidth, '0')}`;
+      // New array each poll; ForEach key includes value so ArkUI rebinds.
       this.regEntries = this.buildRegEntries(simSnap.registers);
       this.uartOutput = this.appService.hexDebugger.getUartOutput();
       return;
@@ -454,7 +464,7 @@ export struct McuDebugPanel {
                   Text(reg.name)
                     .fontSize(ProteusFonts.STATUS)
                     .fontColor(ProteusColors.TEXT_LABEL)
-                    .width(36)
+                    .width(40)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(reg.valueHex)
@@ -473,12 +483,12 @@ export struct McuDebugPanel {
                 .border({ width: 1, color: ProteusColors.DIVIDER })
                 .margin({ bottom: 3 })
                 .alignItems(VerticalAlign.Center)
-              }, (reg: McuRegEntry) => reg.name)
+              }, (reg: McuRegEntry) => `${reg.name}=${reg.valueHex}`)
             }
             .width('100%')
           }
           .width('100%')
-          .constraintSize({ maxHeight: 128 })
+          .constraintSize({ maxHeight: 200 })
           .scrollBar(BarState.Auto)
           .edgeEffect(EdgeEffect.None)
         }

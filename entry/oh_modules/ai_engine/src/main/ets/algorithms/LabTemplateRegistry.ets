@@ -6,7 +6,7 @@ import {
   buildLabPower, buildLabAmp, buildLabFilter, buildLab51Led, buildLabUart,
   buildLabPassive, buildLabDiscrete, buildLabAnalogIc, buildLabDigital,
   buildLabMemory, buildLabMcu8051, buildLabMcuStm32, buildLabPeripheral,
-  buildLabSensor, buildLabInstruments, buildLabPotentiometer,
+  buildLabSensor, buildLabInstruments, buildLabDigitalGates,
   buildLabSchmitt, buildLabIntegrator, buildLab555Astable, buildLab555Monostable
 } from './LabTemplateBuilders';
 import { TemplateSchematicKit } from './TemplateSchematicKit';
@@ -63,8 +63,8 @@ const MCU51_LIBS = ['AT89C51', 'XTAL_11M', 'C_100nF', 'R_10k', 'R_330', 'LED_RED
 const MCU_UART_LIBS = ['STM32F103C8', 'XTAL_8M', 'C_100nF', 'R_10k', 'R_1k', 'LED_GREEN',
   'UART_TERMINAL', 'VCC', 'GND', 'VOLTMETER_DC'];
 const PASSIVE_LIBS = ['VCC', 'GND', 'VAC', 'FUSE_1A', 'R_10', 'R_100', 'R_330', 'R_1k', 'R_4.7k',
-  'R_10k', 'R_47k', 'R_100k', 'C_10pF', 'C_100pF', 'C_1nF', 'C_10nF', 'C_100nF', 'C_1uF',
-  'C_10uF', 'C_100uF', 'L_10uH', 'AMMETER_DC'];
+  'R_10k', 'R_47k', 'R_100k', 'POT_1k', 'POT_10k', 'POT_100k', 'C_10pF', 'C_100pF', 'C_1nF',
+  'C_10nF', 'C_100nF', 'C_1uF', 'C_10uF', 'C_100uF', 'L_10uH', 'AMMETER_DC', 'VOLTMETER_DC'];
 const DISCRETE_LIBS = ['VCC', 'GND', '1N4148', '1N4007', '1N5819', 'LED_RED', 'LED_GREEN', 'LED_BLUE',
   'R_330', 'R_1k', 'R_10k', '2N2222', '2N2907', '2N7000', 'IRF540'];
 const ANALOG_IC_LIBS = ['VCC', 'GND', 'UA741', 'LM358', 'TL082', 'LM555', 'LM7805', 'LM7812', 'AMS1117_3V3',
@@ -84,7 +84,8 @@ const SENSOR_LIBS = ['STM32F103C8', 'DS18B20', 'HALL_SENSOR', 'LDR', 'POT_10k', 
 const INSTRUMENT_LIBS = ['VCC', 'GND', 'R_10k', 'R_1k', 'R_330', 'POT_10k', 'SIGNAL_GEN', 'CD4017',
   'LED_RED', '1N4148', 'VOLTMETER_DC', 'AMMETER_DC', 'VIRTUAL_METER', 'POWER_METER', 'FREQ_COUNTER',
   'OSCILLOSCOPE', 'LOGIC_ANALYZER', 'UART_TERMINAL'];
-const POT_LIBS = ['VCC', 'GND', 'POT_1k', 'POT_10k', 'POT_100k', 'VOLTMETER_DC'];
+const DIGITAL_GATES_LIBS = ['VCC', 'GND', 'SIGNAL_GEN', 'SW_PUSH', 'C_100nF', 'R_10k', 'R_330',
+  '74HC00', '74HC02', '74HC04', '74HC08', '74HC32', '74HC74', 'CD4017', 'LED_RED', 'LED_GREEN'];
 const SCHMITT_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_100k', 'R_10k', 'SIGNAL_GEN', 'OSCILLOSCOPE'];
 const INTEGRATOR_LIBS = ['VCC', 'VEE', 'GND', 'UA741', 'R_10k', 'R_100k', 'C_100nF', 'SIGNAL_GEN',
   'OSCILLOSCOPE'];
@@ -129,8 +130,8 @@ export class LabTemplateRegistry {
     },
     {
       id: 'lab_passive', name: '无源器件检测', category: 'passive',
-      description: '全部电阻/电容/电感/LC/交流源',
-      knowledgePoints: ['分压', '去耦', 'LC谐振'],
+      description: '全部电阻/电容/电感/电位器/LC/交流源',
+      knowledgePoints: ['分压', '去耦', 'LC谐振', '电位器滑臂'],
       libraryIds: PASSIVE_LIBS, build: buildLabPassive
     },
     {
@@ -203,10 +204,15 @@ export class LabTemplateRegistry {
       libraryIds: INSTRUMENT_LIBS, build: buildLabInstruments
     },
     {
-      id: 'lab_potentiometer', name: '滑动变阻器实验', category: 'passive',
-      description: 'POT_1k/10k/100k 三档分压 + 电压表',
-      knowledgePoints: ['分压比', '滑臂调节', '线性电位器'],
-      libraryIds: POT_LIBS, build: buildLabPotentiometer
+      id: 'lab_digital_gates', name: '数字门电路实验', category: 'digital',
+      description: 'Digital IC×7：SW 真值表(六门 LED) + 10Hz 时钟驱 CD4017(Q0 LED)',
+      knowledgePoints: [
+        '①SWA/SWB 上拉按键：开=H、合=L，观察六门 LED 真值',
+        '②74HC00/02/04/08/32/74：NAND/NOR/NOT/AND/OR/XOR（库内 74HC74=XOR）',
+        '③CD4017：10Hz 脉冲时钟，Q0 绿灯走动',
+        '④门输出须 Y→R_330→LED→GND，禁止浮空输入'
+      ],
+      libraryIds: DIGITAL_GATES_LIBS, build: buildLabDigitalGates
     },
     {
       id: 'lab_schmitt', name: '运放滞回比较器整形', category: 'analog',

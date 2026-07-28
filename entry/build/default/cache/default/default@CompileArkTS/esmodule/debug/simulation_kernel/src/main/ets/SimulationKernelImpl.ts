@@ -1544,9 +1544,50 @@ export class SimulationKernelImpl implements ISimulationKernel {
         return states[states.length - 1] === LogicState.HIGH;
     }
     getMcuSnapshot(): McuRegisterSnapshot | null {
+        // Prefer live core dump — historical mcuRegs only kept PC/ACC/SP (+P1) and
+        // starved the debug panel of ports/SFR/GPRs while values looked "frozen".
+        const live = this.buildLiveMcuRegisterSnapshot();
+        if (live !== null) {
+            return live;
+        }
         if (!this.result?.mcuRegisters?.length)
             return null;
         return this.result.mcuRegisters[this.result.mcuRegisters.length - 1];
+    }
+    /** Full register view from the active MCU interpreter(s) for UI refresh. */
+    private buildLiveMcuRegisterSnapshot(): McuRegisterSnapshot | null {
+        if (!this.mcu8051Loaded && !this.mcuStm32Loaded) {
+            return null;
+        }
+        const registers = new Map<string, number>();
+        if (this.mcu8051Loaded) {
+            const r8051 = this.mcu8051.getRegisters();
+            r8051.forEach((v: number, k: string) => {
+                registers.set(k, v);
+            });
+            const dpl = r8051.get('DPL') ?? 0;
+            const dph = r8051.get('DPH') ?? 0;
+            registers.set('DPTR', ((dph << 8) | dpl) & 0xFFFF);
+        }
+        if (this.mcuStm32Loaded) {
+            const rStm = this.qemuBridge.getRegisterMap();
+            if (this.mcu8051Loaded) {
+                rStm.forEach((v: number, k: string) => {
+                    registers.set(`STM32_${k}`, v);
+                });
+            }
+            else {
+                rStm.forEach((v: number, k: string) => {
+                    registers.set(k, v);
+                });
+            }
+        }
+        return {
+            timestamp: this.globalTime,
+            registers: registers,
+            memory: new Uint8Array(0),
+            pinStates: new Map<string, number>()
+        };
     }
     setComponentParameter(componentId: string, param: string, value: string): Result<void> {
         if (!this.schematic)

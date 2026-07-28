@@ -149,7 +149,11 @@ export class CircuitTemplates {
     }
     if (lower.includes('电位器') || lower.includes('滑动变阻') || lower.includes('potentiometer') ||
       lower.includes('pot_')) {
-      return 'lab_potentiometer';
+      return 'lab_passive';
+    }
+    if (lower.includes('数字门') || lower.includes('真值表') || lower.includes('与非') ||
+      lower.includes('异或')) {
+      return 'lab_digital_gates';
     }
     if (lower.includes('无源') && (lower.includes('电阻') || lower.includes('电容') || lower.includes('实验'))) {
       return 'lab_passive';

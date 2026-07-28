@@ -374,6 +374,20 @@ export class QemuMcuBridge {
     getPc(): number { return this.state.pc; }
     getState(): QemuMcuState { return this.state; }
     getFirmwareSize(): number { return this.firmware.length; }
+    /** Live GPRs + useful GPIO ODR for MCU debug panel (UI poll, not hot path). */
+    getRegisterMap(): Map<string, number> {
+        const m = new Map<string, number>();
+        for (let i = 0; i < 16; i++) {
+            m.set(`R${i}`, this.reg(i));
+        }
+        m.set('PC', this.state.pc >>> 0);
+        m.set('SP', this.reg(13));
+        m.set('LR', this.reg(14));
+        m.set('ODR_A', this.readPeriph(0x4001080C) & 0xFFFF);
+        m.set('ODR_B', this.readPeriph(0x40010C0C) & 0xFFFF);
+        m.set('ODR_C', this.readPeriph(0x4001100C) & 0xFFFF);
+        return m;
+    }
     // ---- 内部: 外设寄存器读/写 ----
     private readPeriphInternal(addr: number): number {
         if (addr === USART1_BASE + USART_DR || addr === USART2_BASE + USART_DR ||

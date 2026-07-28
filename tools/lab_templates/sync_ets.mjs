@@ -47,9 +47,9 @@ body = body.replace(
   'const _caps = placeXtalCaps($1);\n  const cx1 = _caps.c1;\n  const cx2 = _caps.c2;'
 );
 
-// ArkTS: typed gate defs（builders 已无 const outs=[]，勿再要求其后紧跟 outs）
+// ArkTS: typed gate defs（lab_digital + lab_digital_gates 各一处，须全局替换）
 body = body.replace(
-  /const gateDefs = \[[\s\S]*?\];/,
+  /const gateDefs = \[[\s\S]*?\];/g,
   `const gateDefs: GateDef[] = [
     gate('74HC00', 'U1', true),
     gate('74HC02', 'U2', true),
