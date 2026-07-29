@@ -338,3 +338,58 @@ export {
 
 } from './src/main/ets/types/CommonTypes';
 
+export {
+  PcbLayerId, PcbPadShape, PcbPadType, PcbViaKind, PcbAppearanceMode, PcbStackLayerType,
+  PcbPad, PcbFootprintDef, PcbFootprintInst,
+  PcbTrack, PcbVia, PcbZone, PcbBoardOutline, PcbLayerConfig, PcbMetadata,
+  PcbDesignRules, PcbDocument, PcbDrcSeverity, PcbDrcRuleType, PcbDrcViolation,
+  PcbNet, PcbNetClass, PcbDiffPair, PcbStackLayer, PcbLayerStack, PcbAppearance,
+  PcbRatsnestEdge,
+  defaultPcbDesignRules, defaultPcbNetClasses, defaultPcbAppearance,
+  createDefaultPcbLayers, createDefaultLayerStack, createEmptyPcbDocument, createDefaultPcbViewport,
+  normalizePcbDocument, applyCopperLayerCount, isCopperLayer, copperLayersFromStack,
+  PcbNetRef, PcbPadNetPreserved, PcbPadHit,
+  PcbEditorSelectionData, PcbSelectionKind, PcbSelectionState, PcbSelectionRect,
+  PcbHistorySnapshot, pcbSelectionEmpty, pcbSelectionFromData
+} from './src/main/ets/types/PcbTypes';
+
+export { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './src/main/ets/utils/PcbFootprintLibrary';
+
+export { PcbForwardAnnotator, ForwardAnnotateResult, forwardAnnotatePcb } from './src/main/ets/utils/PcbForwardAnnotator';
+
+export { ReverseAnnotateResult, reverseAnnotatePcb } from './src/main/ets/utils/PcbReverseAnnotator';
+
+export { GerberLayerFile, GerberExportResult, exportPcbGerber } from './src/main/ets/utils/PcbGerberExporter';
+
+export { KiCadPcbExportResult, exportPcbKiCad } from './src/main/ets/utils/PcbKiCadExporter';
+
+export { autoRoutePcb, AutoRouteResult, rerouteNets, RerouteResult } from './src/main/ets/utils/PcbAutoRouter';
+
+export {
+  registerSchPinToPadNet, lookupPadNet, registerPadNetKey
+} from './src/main/ets/utils/PcbPinBindUtil';
+
+export {
+  tracePcb, tracePcbWarn, tracePcbForwardResult, tracePcbAutoRoute,
+  tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded,
+  tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult
+} from './src/main/ets/utils/PcbTraceLog';
+
+export {
+  collectFootprintPadPositions, updateTracksForFootprintTransform,
+  updateTracksForFootprintTransformDetailed, syncMovedTrackJunctions,
+  collectNetIdsForFootprints, snapTrackEndpointsToPads,
+  orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
+  pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
+} from './src/main/ets/utils/PcbTrackBindUtil';
+
+export {
+  padWorldPosition, rebuildZoneCutouts, pointInPolygon, makeRectCutout,
+  normalizeZoneFields, defaultZoneFields
+} from './src/main/ets/utils/PcbZoneUtil';
+
+export {
+  rebuildPcbNets, buildRatsnest, routeLPoints, routeOrtho45Points,
+  findNetClass, guessNetClassId, sumTrackLengthForNet
+} from './src/main/ets/utils/PcbNetUtil';
+

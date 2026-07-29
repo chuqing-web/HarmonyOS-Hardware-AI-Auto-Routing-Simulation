@@ -4,8 +4,8 @@ import { KiCadParser } from "@bundle:com.elecdraw.aischsim/entry@file_persistenc
 import { LtspiceParser } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/parsers/LtspiceParser";
 import { formatImportReport } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/parsers/ImportReport";
 import { CollaborationService } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/collaboration/CollaborationService";
-import { FileFormat, SimulationMode, EventBus, ModuleEvent, CryptoUtil, ErrCode, ResultHelper, Validate, TopologyAdapter, defaultSimConfig, makeProgress, paramMapGet, mapAwareStringify, mapAwareParse, errCodeMessage } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { ProjectFile, SchematicDocument, Result, SimulationConfig, SchTopology, SimConfig, WaveData, AiApiConfig, ProgressCallback, ApiResult, SnapshotMeta, VersionCompareReport, CollabChangeLogEntry, ProjectLockInfo, ProjectAccessMode, CollaborationData, SchematicAnnotation } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { FileFormat, SimulationMode, EventBus, ModuleEvent, CryptoUtil, ErrCode, ResultHelper, Validate, TopologyAdapter, defaultSimConfig, makeProgress, paramMapGet, mapAwareStringify, mapAwareParse, errCodeMessage, createEmptyPcbDocument, normalizePcbDocument } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { ProjectFile, SchematicDocument, PcbDocument, Result, SimulationConfig, SchTopology, SimConfig, WaveData, AiApiConfig, ProgressCallback, ApiResult, SnapshotMeta, VersionCompareReport, CollabChangeLogEntry, ProjectLockInfo, ProjectAccessMode, CollaborationData, SchematicAnnotation } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import fs from "@ohos:file.fs";
 import { arrayBufferToString, buildProjectDataForSave, encryptAiApiConfigs, encryptAiApiConfigsForSave, copyStringArray, maxOfNumbers } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/internal/FilePersistenceHelpers";
 import { TopoPngExporter } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/export/TopoPngExporter";
@@ -366,6 +366,7 @@ export class FilePersistenceImpl implements IFilePersistence {
             topology: TopologyAdapter.toTopology(file.schematic),
             simConfig: this.legacyToSimConfig(file.simulationConfig),
             aiConfigs: file.aiConfigs,
+            pcb: file.pcb,
             createdAt: file.createdAt,
             modifiedAt: file.modifiedAt,
             collaboration: file.collaboration ?? this.collaboration.exportCollaborationData([])
@@ -402,6 +403,7 @@ export class FilePersistenceImpl implements IFilePersistence {
             aiConfigs: [],
             createdAt: now,
             modifiedAt: now,
+            pcb: createEmptyPcbDocument(name),
             collaboration: { annotations: [], snapshots: [], changeLog: [] }
         };
     }
@@ -709,6 +711,7 @@ export class FilePersistenceImpl implements IFilePersistence {
             version: data.version,
             name: data.name,
             schematic: TopologyAdapter.fromTopology(data.topology),
+            pcb: data.pcb,
             simulationConfig: this.simConfigToLegacy(data.simConfig),
             aiConfigs: data.aiConfigs,
             createdAt: data.createdAt,
@@ -727,6 +730,9 @@ export class FilePersistenceImpl implements IFilePersistence {
             data.topology.textAnnotate = [];
         if (!data.topology.netLabelList)
             data.topology.netLabelList = [];
+        if (data.pcb) {
+            normalizePcbDocument(data.pcb);
+        }
     }
     private static buildHashPayload(data: ProjectData): string {
         interface HashPayload {
@@ -735,6 +741,7 @@ export class FilePersistenceImpl implements IFilePersistence {
             topology: SchTopology;
             simConfig: SimConfig;
             aiConfigs: AiApiConfig[];
+            pcb?: PcbDocument;
             createdAt: string;
             modifiedAt: string;
         }
@@ -744,6 +751,7 @@ export class FilePersistenceImpl implements IFilePersistence {
             topology: data.topology,
             simConfig: data.simConfig,
             aiConfigs: data.aiConfigs,
+            pcb: data.pcb,
             createdAt: data.createdAt,
             modifiedAt: data.modifiedAt
         };

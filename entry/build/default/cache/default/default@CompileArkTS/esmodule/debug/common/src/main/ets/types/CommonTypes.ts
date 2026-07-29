@@ -1,5 +1,6 @@
 import type { ErrCode } from './ErrCode';
 import type { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+import type { PcbDocument } from './PcbTypes';
 // ==================== 基础几何类型 ====================
 export interface Point2D {
     x: number;
@@ -336,6 +337,8 @@ export interface ProjectFile {
     version: string;
     name: string;
     schematic: SchematicDocument;
+    /** PCB 布局文档（可选，KiCad 式双文档工程） */
+    pcb?: PcbDocument;
     simulationConfig: SimulationConfig;
     mcuDebugConfig?: McuDebugConfig;
     aiConfigs: AiApiConfig[];
@@ -394,7 +397,8 @@ export enum ModuleEvent {
     LICENSE_CHANGED = "license_changed",
     ANNOTATION_CHANGED = "annotation_changed",
     SNAPSHOT_CREATED = "snapshot_created",
-    PROJECT_LOCK_CHANGED = "project_lock_changed"
+    PROJECT_LOCK_CHANGED = "project_lock_changed",
+    PCB_CHANGED = "pcb_changed"
 }
 export interface ModuleEventPayload {
     event: ModuleEvent;

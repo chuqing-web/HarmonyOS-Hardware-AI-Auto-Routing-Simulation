@@ -1,0 +1,1163 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ#import { NetType, WireStyle, PinType } from '../types/CommonTypes';
+import { IdUtil } from './IdUtil';
+import { ensureStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
+import { parsePinRef, buildPinRef } from './PinRefUtil';
+import { TopologyPatchApplier } from './TopologyPatch';
+export class TopologyAdapter {
+    static toTopology(doc) {
+        const netLabelList = [];
+        if (doc.netLabels !== undefined) {
+            for (let i = 0; i < doc.netLabels.length; i++) {
+                const lb = doc.netLabels[i];
+                netLabelList.push({
+                    id: lb.id,
+                    netUuid: lb.netId,
+                    text: lb.text,
+                    x: lb.position.x,
+                    y: lb.position.y,
+                    global: lb.global
+                });
+            }
+        }
+        return {
+            schUuid: doc.id,
+            schName: doc.name,
+            layerDepth: 0,
+            deviceList: doc.components.map(TopologyAdapter.toDeviceInst),
+            netList: doc.nets.map(TopologyAdapter.toNetInfo),
+            busList: [],
+            wireList: doc.wires.map(w => makeRouteLine(w.netId, w.points, false, w.id)),
+            subCircuitList: doc.subcircuits.map(TopologyAdapter.toSubBlock),
+            probeList: [],
+            textAnnotate: [],
+            netLabelList: netLabelList,
+            ercErrorList: [],
+            gridStep: doc.metadata.gridSize,
+            bgColor: '#0a0a1a'
+        };
+    }
+    static fromTopology(topo) {
+        const now = new Date().toISOString();
+        const netLabels = [];
+        const srcLabels = topo.netLabelList !== undefined ? topo.netLabelList : [];
+        for (let i = 0; i < srcLabels.length; i++) {
+            const lb = srcLabels[i];
+            netLabels.push({
+                id: lb.id.length > 0 ? lb.id : IdUtil.generate('lbl'),
+                netId: lb.netUuid,
+                text: lb.text,
+                position: { x: lb.x, y: lb.y },
+                global: lb.global
+            });
+        }
+        return {
+            id: topo.schUuid || IdUtil.generate('sch'),
+            name: topo.schName,
+            version: '2.0',
+            components: topo.deviceList.map(TopologyAdapter.toComponent),
+            wires: topo.wireList.map((w, _i) => {
+                const wire = {
+                    // ä¿ç•™æ‹“æ‰‘å¯¼çº¿ IDï¼Œé¿å…å¾€è¿”ä¸¢ id å¯¼è‡´ä»¿çœŸ/æ’¤é”€é”®å¤±æ•ˆ
+                    id: (w.uuid && w.uuid.length > 0) ? w.uuid : IdUtil.generate('wire'),
+                    netId: w.netUuid,
+                    points: w.points,
+                    style: WireStyle.ORTHOGONAL
+                };
+                return wire;
+            }),
+            nets: topo.netList.map(TopologyAdapter.toNet),
+            netLabels: netLabels,
+            subcircuits: topo.subCircuitList.map(TopologyAdapter.toSubRef),
+            metadata: {
+                author: '',
+                createdAt: now,
+                modifiedAt: now,
+                description: '',
+                gridSize: topo.gridStep,
+                units: 'mm',
+                undoLimit: 1000
+            }
+        };
+    }
+    static toDeviceInst(c) {
+        return {
+            instUuid: c.id,
+            libDevId: c.libraryId,
+            refName: c.refDes,
+            x: c.position.x,
+            y: c.position.y,
+            rotate: c.rotation,
+            mirrorH: c.mirrored,
+            mirrorV: false,
+            params: ensureStringMap(c.parameters),
+            pinVoltage: new Map(),
+            hidden: false,
+            subCircuitRef: c.subcircuitId ?? '',
+            ercErrorMsg: ''
+        };
+    }
+    static toComponent(d) {
+        const rotation = normalizeRotation(d.rotate);
+        const comp = {
+            id: d.instUuid ?? IdUtil.generate('comp'),
+            libraryId: d.libDevId ?? '',
+            refDes: d.refName ?? '',
+            position: { x: d.x, y: d.y },
+            rotation: rotation,
+            mirrored: d.mirrorH,
+            parameters: ensureStringMap(d.params)
+        };
+        if (d.subCircuitRef && d.subCircuitRef.length > 0) {
+            comp.subcircuitId = d.subCircuitRef;
+        }
+        return comp;
+    }
+    static toNetInfo(n) {
+        return {
+            netUuid: n.id,
+            netName: n.name,
+            displayName: n.name,
+            nodeList: n.pinIds.map((pinRef) => {
+                const parsed = parsePinRef(pinRef);
+                if (parsed !== null && parsed.compId.length > 0 && parsed.pinId.length > 0) {
+                    return makeNetNodeRef(parsed.compId, parsed.pinId, parsed.pinName);
+                }
+                // å pinRefï¼šä¸¢å¼ƒç©º devUuid èŠ‚ç‚¹ï¼Œé¿å…å‡è¿é€š
+                return makeNetNodeRef('', '', '');
+            }).filter((node) => node.devUuid.length > 0 && node.pinId.length > 0),
+            isPower: n.type === NetType.POWER || n.type === NetType.GROUND,
+            isAnalog: false,
+            isBusMember: n.type === NetType.BUS,
+            busParentUuid: '',
+            defaultVoltage: (() => {
+                const upper = (n.name ?? '').toUpperCase();
+                if (n.type === NetType.GROUND || upper === 'GND' || upper === 'VSS' || upper === '0') {
+                    return 0.0;
+                }
+                if (upper === 'VEE' || upper === 'V-') {
+                    return -5.0;
+                }
+                if (n.type === NetType.POWER) {
+                    return 5.0;
+                }
+                return 0.0;
+            })(),
+            ercWarning: false,
+            connectedProbeIds: []
+        };
+    }
+    static toNet(n) {
+        const upper = (n.netName ?? '').toUpperCase();
+        let netType = NetType.SIGNAL;
+        if (n.isPower) {
+            netType = (upper === 'GND' || upper === 'VSS' || upper === '0') ?
+                NetType.GROUND : NetType.POWER;
+        }
+        else if (n.isBusMember) {
+            netType = NetType.BUS;
+        }
+        else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+            netType = NetType.GROUND;
+        }
+        else if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' || upper === 'V-') {
+            netType = NetType.POWER;
+        }
+        return {
+            id: n.netUuid,
+            name: n.netName,
+            type: netType,
+            pinIds: n.nodeList.map(node => {
+                if (node.devUuid.length > 0) {
+                    const rawName = node.pinName;
+                    const pinName = (rawName !== undefined && rawName.length > 0) ? rawName : node.pinId;
+                    return buildPinRef(node.devUuid, node.pinId, pinName);
+                }
+                return node.pinId;
+            })
+        };
+    }
+    static toSubBlock(s) {
+        const ports = s.ports ?? [];
+        const portList = [];
+        for (let i = 0; i < ports.length; i++) {
+            const p = ports[i];
+            let direction = 'inout';
+            if (p.direction === 'input') {
+                direction = 'in';
+            }
+            else if (p.direction === 'output') {
+                direction = 'out';
+            }
+            portList.push({
+                portId: p.id,
+                portName: p.name,
+                direction: direction,
+                x: p.position.x,
+                y: p.position.y
+            });
+        }
+        return {
+            subUuid: s.id,
+            name: s.name,
+            portList: portList,
+            innerTopo: s.embeddedDocument ? TopologyAdapter.toTopology(s.embeddedDocument) : null
+        };
+    }
+    static toSubRef(b) {
+        const ports = [];
+        for (let i = 0; i < b.portList.length; i++) {
+            const p = b.portList[i];
+            let direction = 'bidirectional';
+            if (p.direction === 'in') {
+                direction = 'input';
+            }
+            else if (p.direction === 'out') {
+                direction = 'output';
+            }
+            ports.push({
+                id: p.portId,
+                name: p.portName,
+                type: PinType.BIDIRECTIONAL,
+                direction: direction,
+                position: { x: p.x, y: p.y }
+            });
+        }
+        const ref = {
+            id: b.subUuid,
+            name: b.name,
+            documentId: b.subUuid,
+            position: { x: 0, y: 0 },
+            ports: ports
+        };
+        if (b.innerTopo) {
+            ref.embeddedDocument = TopologyAdapter.fromTopology(b.innerTopo);
+        }
+        return ref;
+    }
+    static syncIncremental(doc, cached) {
+        return TopologyPatchApplier.syncTopologyIncremental(doc, cached);
+    }
+}
+//# sourceMappingURL=TopologyAdapter.js.mapÂ•ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\TopologyPatch.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\TopologyAdapter.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName±./TopologyAdapter¦commonCÙ$./src/main/ets/utils/TopologyAdapter¦commonÃÚ!simport {
+
+  SchematicDocument, ComponentInstance, Net, NetType, SubcircuitRef, Port,
+
+  WireStyle, PinType, Rotation, Wire, NetLabel
+
+} from '../types/CommonTypes';
+
+import {
+
+  SchTopology, DeviceInst, NetInfo, SubCircuitBlock, SubCircuitPort, NetLabelInfo
+
+} from '../types/TopologyTypes';
+
+import { IdUtil } from './IdUtil';
+
+import { ensureStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
+import { parsePinRef, buildPinRef } from './PinRefUtil';
+import { TopologyPatchApplier } from './TopologyPatch';
+
+
+
+export class TopologyAdapter {
+
+  static toTopology(doc: SchematicDocument): SchTopology {
+
+    const netLabelList: NetLabelInfo[] = [];
+    if (doc.netLabels !== undefined) {
+      for (let i = 0; i < doc.netLabels.length; i++) {
+        const lb = doc.netLabels[i];
+        netLabelList.push({
+          id: lb.id,
+          netUuid: lb.netId,
+          text: lb.text,
+          x: lb.position.x,
+          y: lb.position.y,
+          global: lb.global
+        });
+      }
+    }
+
+    return {
+
+      schUuid: doc.id,
+
+      schName: doc.name,
+
+      layerDepth: 0,
+
+      deviceList: doc.components.map(TopologyAdapter.toDeviceInst),
+
+      netList: doc.nets.map(TopologyAdapter.toNetInfo),
+
+      busList: [],
+
+      wireList: doc.wires.map(w => makeRouteLine(w.netId, w.points, false, w.id)),
+
+      subCircuitList: doc.subcircuits.map(TopologyAdapter.toSubBlock),
+
+      probeList: [],
+
+      textAnnotate: [],
+
+      netLabelList: netLabelList,
+
+      ercErrorList: [],
+
+      gridStep: doc.metadata.gridSize,
+
+      bgColor: '#0a0a1a'
+
+    };
+
+  }
+
+
+
+  static fromTopology(topo: SchTopology): SchematicDocument {
+
+    const now = new Date().toISOString();
+
+    const netLabels: NetLabel[] = [];
+    const srcLabels = topo.netLabelList !== undefined ? topo.netLabelList : [];
+    for (let i = 0; i < srcLabels.length; i++) {
+      const lb = srcLabels[i];
+      netLabels.push({
+        id: lb.id.length > 0 ? lb.id : IdUtil.generate('lbl'),
+        netId: lb.netUuid,
+        text: lb.text,
+        position: { x: lb.x, y: lb.y },
+        global: lb.global
+      });
+    }
+
+    return {
+
+      id: topo.schUuid || IdUtil.generate('sch'),
+
+      name: topo.schName,
+
+      version: '2.0',
+
+      components: topo.deviceList.map(TopologyAdapter.toComponent),
+
+      wires: topo.wireList.map((w, _i) => {
+        const wire: Wire = {
+          // ä¿ç•™æ‹“æ‰‘å¯¼çº¿ IDï¼Œé¿å…å¾€è¿”ä¸¢ id å¯¼è‡´ä»¿çœŸ/æ’¤é”€é”®å¤±æ•ˆ
+          id: (w.uuid && w.uuid.length > 0) ? w.uuid : IdUtil.generate('wire'),
+          netId: w.netUuid,
+          points: w.points,
+          style: WireStyle.ORTHOGONAL
+        };
+        return wire;
+      }),
+
+      nets: topo.netList.map(TopologyAdapter.toNet),
+
+      netLabels: netLabels,
+
+      subcircuits: topo.subCircuitList.map(TopologyAdapter.toSubRef),
+
+      metadata: {
+
+        author: '',
+
+        createdAt: now,
+
+        modifiedAt: now,
+
+        description: '',
+
+        gridSize: topo.gridStep,
+
+        units: 'mm',
+
+        undoLimit: 1000
+
+      }
+
+    };
+
+  }
+
+
+
+  static toDeviceInst(c: ComponentInstance): DeviceInst {
+
+    return {
+
+      instUuid: c.id,
+
+      libDevId: c.libraryId,
+
+      refName: c.refDes,
+
+      x: c.position.x,
+
+      y: c.position.y,
+
+      rotate: c.rotation,
+
+      mirrorH: c.mirrored,
+
+      mirrorV: false,
+
+      params: ensureStringMap(c.parameters),
+
+      pinVoltage: new Map<string, number>(),
+
+      hidden: false,
+
+      subCircuitRef: c.subcircuitId ?? '',
+
+      ercErrorMsg: ''
+
+    };
+
+  }
+
+
+
+  static toComponent(d: DeviceInst): ComponentInstance {
+
+    const rotation: Rotation = normalizeRotation(d.rotate);
+
+    const comp: ComponentInstance = {
+
+      id: d.instUuid ?? IdUtil.generate('comp'),
+
+      libraryId: d.libDevId ?? '',
+
+      refDes: d.refName ?? '',
+
+      position: { x: d.x, y: d.y },
+
+      rotation: rotation,
+
+      mirrored: d.mirrorH,
+
+      parameters: ensureStringMap(d.params)
+
+    };
+
+    if (d.subCircuitRef && d.subCircuitRef.length > 0) {
+
+      comp.subcircuitId = d.subCircuitRef;
+
+    }
+
+    return comp;
+
+  }
+
+
+
+  static toNetInfo(n: Net): NetInfo {
+
+    return {
+
+      netUuid: n.id,
+
+      netName: n.name,
+
+      displayName: n.name,
+
+      nodeList: n.pinIds.map((pinRef: string) => {
+        const parsed = parsePinRef(pinRef);
+        if (parsed !== null && parsed.compId.length > 0 && parsed.pinId.length > 0) {
+          return makeNetNodeRef(parsed.compId, parsed.pinId, parsed.pinName);
+        }
+        // å pinRefï¼šä¸¢å¼ƒç©º devUuid èŠ‚ç‚¹ï¼Œé¿å…å‡è¿é€š
+        return makeNetNodeRef('', '', '');
+      }).filter((node) => node.devUuid.length > 0 && node.pinId.length > 0),
+
+      isPower: n.type === NetType.POWER || n.type === NetType.GROUND,
+
+      isAnalog: false,
+
+      isBusMember: n.type === NetType.BUS,
+
+      busParentUuid: '',
+
+      defaultVoltage: (() => {
+        const upper = (n.name ?? '').toUpperCase();
+        if (n.type === NetType.GROUND || upper === 'GND' || upper === 'VSS' || upper === '0') {
+          return 0.0;
+        }
+        if (upper === 'VEE' || upper === 'V-') {
+          return -5.0;
+        }
+        if (n.type === NetType.POWER) {
+          return 5.0;
+        }
+        return 0.0;
+      })(),
+
+      ercWarning: false,
+
+      connectedProbeIds: []
+
+    };
+
+  }
+
+
+
+  static toNet(n: NetInfo): Net {
+
+    const upper = (n.netName ?? '').toUpperCase();
+    let netType = NetType.SIGNAL;
+    if (n.isPower) {
+      netType = (upper === 'GND' || upper === 'VSS' || upper === '0') ?
+        NetType.GROUND : NetType.POWER;
+    } else if (n.isBusMember) {
+      netType = NetType.BUS;
+    } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+      netType = NetType.GROUND;
+    } else if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' || upper === 'V-') {
+      netType = NetType.POWER;
+    }
+
+    return {
+
+      id: n.netUuid,
+
+      name: n.netName,
+
+      type: netType,
+
+      pinIds: n.nodeList.map(node => {
+        if (node.devUuid.length > 0) {
+          const rawName = node.pinName;
+          const pinName = (rawName !== undefined && rawName.length > 0) ? rawName : node.pinId;
+          return buildPinRef(node.devUuid, node.pinId, pinName);
+        }
+        return node.pinId;
+      })
+
+    };
+
+  }
+
+
+
+  private static toSubBlock(s: SubcircuitRef): SubCircuitBlock {
+
+    const ports = s.ports ?? [];
+
+    const portList: SubCircuitPort[] = [];
+
+    for (let i = 0; i < ports.length; i++) {
+
+      const p = ports[i];
+
+      let direction: 'in' | 'out' | 'inout' = 'inout';
+
+      if (p.direction === 'input') {
+
+        direction = 'in';
+
+      } else if (p.direction === 'output') {
+
+        direction = 'out';
+
+      }
+
+      portList.push({
+
+        portId: p.id,
+
+        portName: p.name,
+
+        direction: direction,
+
+        x: p.position.x,
+
+        y: p.position.y
+
+      });
+
+    }
+
+    return {
+
+      subUuid: s.id,
+
+      name: s.name,
+
+      portList: portList,
+
+      innerTopo: s.embeddedDocument ? TopologyAdapter.toTopology(s.embeddedDocument) : null
+
+    };
+
+  }
+
+
+
+  private static toSubRef(b: SubCircuitBlock): SubcircuitRef {
+
+    const ports: Port[] = [];
+
+    for (let i = 0; i < b.portList.length; i++) {
+
+      const p = b.portList[i];
+
+      let direction: 'input' | 'output' | 'bidirectional' = 'bidirectional';
+
+      if (p.direction === 'in') {
+
+        direction = 'input';
+
+      } else if (p.direction === 'out') {
+
+        direction = 'output';
+
+      }
+
+      ports.push({
+
+        id: p.portId,
+
+        name: p.portName,
+
+        type: PinType.BIDIRECTIONAL,
+
+        direction: direction,
+
+        position: { x: p.x, y: p.y }
+
+      });
+
+    }
+
+    const ref: SubcircuitRef = {
+
+      id: b.subUuid,
+
+      name: b.name,
+
+      documentId: b.subUuid,
+
+      position: { x: 0, y: 0 },
+
+      ports: ports
+
+    };
+
+    if (b.innerTopo) {
+
+      ref.embeddedDocument = TopologyAdapter.fromTopology(b.innerTopo);
+
+    }
+
+    return ref;
+
+  }
+
+  static syncIncremental(doc: SchematicDocument, cached: SchTopology | null): SchTopology {
+    return TopologyPatchApplier.syncTopologyIncremental(doc, cached);
+  }
+
+}
+
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ ñ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  "
+‘”  #
+‘”  %	‘”  &‘”  '‘”  /‘”  5‘”  ;‘”  =‘”  ?‘”  ÌA‘”  ÌC‘”  ÌE‘”  ÌR‘”  ÌS‘”  ÌT‘”  ÌY‘”  Ì[‘”  Ì\‘”  Ìd‘”  Ìh‘”  Ìi‘”  Ìk
+‘”  Ìp‘”  Ìq‘”  Ìu‘”  Ìy‘”  Ì{‘”  Ì}‘”  Ì‘”  Ì‘”  Ì…‘”  Ì‡‘”  Ì‰‘”  Ì›‘”  Ì‘”  Ì£‘”  Ì¥‘”  Ì©‘”  Ì«‘”  Ì­‘”  Ì¹‘”  Ì½‘”  Ì¿‘”  ÌÁ‘”  ÌÃ‘”  ÌÇ‘”  ÌÍ‘”  ÌÏ‘”  ÌÑ‘”  Ìâ‘”  Ìã‘”  Ìä
+‘”  Ìå	‘”  Ìê‘”  Ìì‘”  Ìî‘”  Ìğ‘”  Ìó‘”  Ìô‘”  Ìõ
+‘”  Ìö	‘”  Ì÷‘”  Ìù	‘”  Ìú‘”  Ìû
+‘”  Ìü	‘”  Ìı‘”  Ìş‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í"‘”  Í#
+‘”  Í%
+‘”  Í&	‘”  Í(‘”  Í2‘”  Í6‘”  Í8‘”  Í<‘”  Í@‘”  Í@‘”  ÍD‘”  ÍL‘”  ÍN‘”  ÍP‘”  ÍR‘”  ÍT‘”  Í\‘”  Í^‘”  Íj‘”  Íp‘”  Ít‘”  Ít‘”  Íx‘”  Í‚‘”  Í„‘”  Í†‘”  Íˆ‘”  ÍŠ‘”  Í”‘”  Íœ‘”  Í‘”  Í¢‘”  Í¦‘ÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\TopologyAdapter.ets‘Ú!simport {
+
+  SchematicDocument, ComponentInstance, Net, NetType, SubcircuitRef, Port,
+
+  WireStyle, PinType, Rotation, Wire, NetLabel
+
+} from '../types/CommonTypes';
+
+import {
+
+  SchTopology, DeviceInst, NetInfo, SubCircuitBlock, SubCircuitPort, NetLabelInfo
+
+} from '../types/TopologyTypes';
+
+import { IdUtil } from './IdUtil';
+
+import { ensureStringMap, makeNetNodeRef, makeRouteLine, normalizeRotation } from './MapHelpers';
+import { parsePinRef, buildPinRef } from './PinRefUtil';
+import { TopologyPatchApplier } from './TopologyPatch';
+
+
+
+export class TopologyAdapter {
+
+  static toTopology(doc: SchematicDocument): SchTopology {
+
+    const netLabelList: NetLabelInfo[] = [];
+    if (doc.netLabels !== undefined) {
+      for (let i = 0; i < doc.netLabels.length; i++) {
+        const lb = doc.netLabels[i];
+        netLabelList.push({
+          id: lb.id,
+          netUuid: lb.netId,
+          text: lb.text,
+          x: lb.position.x,
+          y: lb.position.y,
+          global: lb.global
+        });
+      }
+    }
+
+    return {
+
+      schUuid: doc.id,
+
+      schName: doc.name,
+
+      layerDepth: 0,
+
+      deviceList: doc.components.map(TopologyAdapter.toDeviceInst),
+
+      netList: doc.nets.map(TopologyAdapter.toNetInfo),
+
+      busList: [],
+
+      wireList: doc.wires.map(w => makeRouteLine(w.netId, w.points, false, w.id)),
+
+      subCircuitList: doc.subcircuits.map(TopologyAdapter.toSubBlock),
+
+      probeList: [],
+
+      textAnnotate: [],
+
+      netLabelList: netLabelList,
+
+      ercErrorList: [],
+
+      gridStep: doc.metadata.gridSize,
+
+      bgColor: '#0a0a1a'
+
+    };
+
+  }
+
+
+
+  static fromTopology(topo: SchTopology): SchematicDocument {
+
+    const now = new Date().toISOString();
+
+    const netLabels: NetLabel[] = [];
+    const srcLabels = topo.netLabelList !== undefined ? topo.netLabelList : [];
+    for (let i = 0; i < srcLabels.length; i++) {
+      const lb = srcLabels[i];
+      netLabels.push({
+        id: lb.id.length > 0 ? lb.id : IdUtil.generate('lbl'),
+        netId: lb.netUuid,
+        text: lb.text,
+        position: { x: lb.x, y: lb.y },
+        global: lb.global
+      });
+    }
+
+    return {
+
+      id: topo.schUuid || IdUtil.generate('sch'),
+
+      name: topo.schName,
+
+      version: '2.0',
+
+      components: topo.deviceList.map(TopologyAdapter.toComponent),
+
+      wires: topo.wireList.map((w, _i) => {
+        const wire: Wire = {
+          // ä¿ç•™æ‹“æ‰‘å¯¼çº¿ IDï¼Œé¿å…å¾€è¿”ä¸¢ id å¯¼è‡´ä»¿çœŸ/æ’¤é”€é”®å¤±æ•ˆ
+          id: (w.uuid && w.uuid.length > 0) ? w.uuid : IdUtil.generate('wire'),
+          netId: w.netUuid,
+          points: w.points,
+          style: WireStyle.ORTHOGONAL
+        };
+        return wire;
+      }),
+
+      nets: topo.netList.map(TopologyAdapter.toNet),
+
+      netLabels: netLabels,
+
+      subcircuits: topo.subCircuitList.map(TopologyAdapter.toSubRef),
+
+      metadata: {
+
+        author: '',
+
+        createdAt: now,
+
+        modifiedAt: now,
+
+        description: '',
+
+        gridSize: topo.gridStep,
+
+        units: 'mm',
+
+        undoLimit: 1000
+
+      }
+
+    };
+
+  }
+
+
+
+  static toDeviceInst(c: ComponentInstance): DeviceInst {
+
+    return {
+
+      instUuid: c.id,
+
+      libDevId: c.libraryId,
+
+      refName: c.refDes,
+
+      x: c.position.x,
+
+      y: c.position.y,
+
+      rotate: c.rotation,
+
+      mirrorH: c.mirrored,
+
+      mirrorV: false,
+
+      params: ensureStringMap(c.parameters),
+
+      pinVoltage: new Map<string, number>(),
+
+      hidden: false,
+
+      subCircuitRef: c.subcircuitId ?? '',
+
+      ercErrorMsg: ''
+
+    };
+
+  }
+
+
+
+  static toComponent(d: DeviceInst): ComponentInstance {
+
+    const rotation: Rotation = normalizeRotation(d.rotate);
+
+    const comp: ComponentInstance = {
+
+      id: d.instUuid ?? IdUtil.generate('comp'),
+
+      libraryId: d.libDevId ?? '',
+
+      refDes: d.refName ?? '',
+
+      position: { x: d.x, y: d.y },
+
+      rotation: rotation,
+
+      mirrored: d.mirrorH,
+
+      parameters: ensureStringMap(d.params)
+
+    };
+
+    if (d.subCircuitRef && d.subCircuitRef.length > 0) {
+
+      comp.subcircuitId = d.subCircuitRef;
+
+    }
+
+    return comp;
+
+  }
+
+
+
+  static toNetInfo(n: Net): NetInfo {
+
+    return {
+
+      netUuid: n.id,
+
+      netName: n.name,
+
+      displayName: n.name,
+
+      nodeList: n.pinIds.map((pinRef: string) => {
+        const parsed = parsePinRef(pinRef);
+        if (parsed !== null && parsed.compId.length > 0 && parsed.pinId.length > 0) {
+          return makeNetNodeRef(parsed.compId, parsed.pinId, parsed.pinName);
+        }
+        // å pinRefï¼šä¸¢å¼ƒç©º devUuid èŠ‚ç‚¹ï¼Œé¿å…å‡è¿é€š
+        return makeNetNodeRef('', '', '');
+      }).filter((node) => node.devUuid.length > 0 && node.pinId.length > 0),
+
+      isPower: n.type === NetType.POWER || n.type === NetType.GROUND,
+
+      isAnalog: false,
+
+      isBusMember: n.type === NetType.BUS,
+
+      busParentUuid: '',
+
+      defaultVoltage: (() => {
+        const upper = (n.name ?? '').toUpperCase();
+        if (n.type === NetType.GROUND || upper === 'GND' || upper === 'VSS' || upper === '0') {
+          return 0.0;
+        }
+        if (upper === 'VEE' || upper === 'V-') {
+          return -5.0;
+        }
+        if (n.type === NetType.POWER) {
+          return 5.0;
+        }
+        return 0.0;
+      })(),
+
+      ercWarning: false,
+
+      connectedProbeIds: []
+
+    };
+
+  }
+
+
+
+  static toNet(n: NetInfo): Net {
+
+    const upper = (n.netName ?? '').toUpperCase();
+    let netType = NetType.SIGNAL;
+    if (n.isPower) {
+      netType = (upper === 'GND' || upper === 'VSS' || upper === '0') ?
+        NetType.GROUND : NetType.POWER;
+    } else if (n.isBusMember) {
+      netType = NetType.BUS;
+    } else if (upper === 'GND' || upper === 'VSS' || upper === '0') {
+      netType = NetType.GROUND;
+    } else if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' || upper === 'V-') {
+      netType = NetType.POWER;
+    }
+
+    return {
+
+      id: n.netUuid,
+
+      name: n.netName,
+
+      type: netType,
+
+      pinIds: n.nodeList.map(node => {
+        if (node.devUuid.length > 0) {
+          const rawName = node.pinName;
+          const pinName = (rawName !== undefined && rawName.length > 0) ? rawName : node.pinId;
+          return buildPinRef(node.devUuid, node.pinId, pinName);
+        }
+        return node.pinId;
+      })
+
+    };
+
+  }
+
+
+
+  private static toSubBlock(s: SubcircuitRef): SubCircuitBlock {
+
+    const ports = s.ports ?? [];
+
+    const portList: SubCircuitPort[] = [];
+
+    for (let i = 0; i < ports.length; i++) {
+
+      const p = ports[i];
+
+      let direction: 'in' | 'out' | 'inout' = 'inout';
+
+      if (p.direction === 'input') {
+
+        direction = 'in';
+
+      } else if (p.direction === 'output') {
+
+        direction = 'out';
+
+      }
+
+      portList.push({
+
+        portId: p.id,
+
+        portName: p.name,
+
+        direction: direction,
+
+        x: p.position.x,
+
+        y: p.position.y
+
+      });
+
+    }
+
+    return {
+
+      subUuid: s.id,
+
+      name: s.name,
+
+      portList: portList,
+
+      innerTopo: s.embeddedDocument ? TopologyAdapter.toTopology(s.embeddedDocument) : null
+
+    };
+
+  }
+
+
+
+  private static toSubRef(b: SubCircuitBlock): SubcircuitRef {
+
+    const ports: Port[] = [];
+
+    for (let i = 0; i < b.portList.length; i++) {
+
+      const p = b.portList[i];
+
+      let direction: 'input' | 'output' | 'bidirectional' = 'bidirectional';
+
+      if (p.direction === 'in') {
+
+        direction = 'input';
+
+      } else if (p.direction === 'out') {
+
+        direction = 'output';
+
+      }
+
+      ports.push({
+
+        id: p.portId,
+
+        name: p.portName,
+
+        type: PinType.BIDIRECTIONAL,
+
+        direction: direction,
+
+        position: { x: p.x, y: p.y }
+
+      });
+
+    }
+
+    const ref: SubcircuitRef = {
+
+      id: b.subUuid,
+
+      name: b.name,
+
+      documentId: b.subUuid,
+
+      position: { x: 0, y: 0 },
+
+      ports: ports
+
+    };
+
+    if (b.innerTopo) {
+
+      ref.embeddedDocument = TopologyAdapter.fromTopology(b.innerTopo);
+
+    }
+
+    return ref;
+
+  }
+
+  static syncIncremental(doc: SchematicDocument, cached: SchTopology | null): SchTopology {
+    return TopologyPatchApplier.syncTopologyIncremental(doc, cached);
+  }
+
+}
+
+ÔrE•´../types/CommonTypes¨./IdUtil¬./PinRefUtil¬./MapHelpers¯./TopologyPatchÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\TopologyPatch.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ?Í"–ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍFÍ"–ÔrK”¤type¥start£end¤nameªIdentifierÍLÍ[¯TopologyAdapterÀÔrL”¤type¥start£end¤body©ClassBodyÍ\Í"–™ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍcÍÃÂKªIdentifierÍjÍtªtoTopology¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍtÍÀÂÂÂ‘KªIdentifierÍuÍx£docL®BlockStatementÍzÍ“ÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ…Í‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍ‹ÍœKªIdentifierÍ‹Í—¬netLabelListÔrQ”¤type¥start£end¨elements¯ArrayExpressionÍšÍœ¥constÔrR–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ§ÍjÔrS–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ«ÍÆÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ«Í¸KªIdentifierÍ«Í®£docKªIdentifierÍ¯Í¸©netLabelsÂÂ£!==KªIdentifierÍ½ÍÆ©undefinedL®BlockStatementÍÈÍj‘ÔrU—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ×Í_O³VariableDeclarationÍÜÍå‘P²VariableDeclaratorÍàÍåKªIdentifierÍàÍá¡iÔrV•¤type¥start£end¥value£raw§LiteralÍäÍå ¡0£letS°BinaryExpressionÍçÍÿKªIdentifierÍçÍè¡i¡<T°MemberExpressionÍëÍÿT°MemberExpressionÍëÍøKªIdentifierÍëÍî£docKªIdentifierÍïÍø©netLabelsÂÂKªIdentifierÍùÍÿ¦lengthÂÂÔrW–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¡iL®BlockStatementÍÍ_’O³VariableDeclarationÍÍ5‘P²VariableDeclaratorÍÍ4KªIdentifierÍÍ!¢lbT°MemberExpressionÍ$Í4T°MemberExpressionÍ$Í1KªIdentifierÍ$Í'£docKªIdentifierÍ(Í1©netLabelsÂÂKªIdentifierÍ2Í3¡iÃÂ¥constÔrX”¤type¥start£endªexpression³ExpressionStatementÍGÍPÔrY–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍGÍOT°MemberExpressionÍGÍXKªIdentifierÍGÍS¬netLabelListKªIdentifierÍTÍX¤pushÂÂ‘ÔrZ”¤type¥start£endªproperties°ObjectExpressionÍYÍN–Ôr[™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍpÍyÂÂÂKªIdentifierÍpÍr¢idT°MemberExpressionÍtÍyKªIdentifierÍtÍv¢lbKªIdentifierÍwÍy¢idÂÂ¤init[¨PropertyÍÍ¡ÂÂÂKªIdentifierÍÍ—§netUuidT°MemberExpressionÍ™Í¡KªIdentifierÍ™Í›¢lbKªIdentifierÍœÍ¡¥netIdÂÂ¤init[¨PropertyÍ¸ÍÅÂÂÂKªIdentifierÍ¸Í¼¤textT°MemberExpressionÍ¾ÍÅKªIdentifierÍ¾ÍÀ¢lbKªIdentifierÍÁÍÅ¤textÂÂ¤init[¨PropertyÍÜÍìÂÂÂKªIdentifierÍÜÍİ¡xT°MemberExpressionÍßÍìT°MemberExpressionÍßÍêKªIdentifierÍßÍá¢lbKªIdentifierÍâÍê¨positionÂÂKªIdentifierÍëÍì¡xÂÂ¤init[¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡yT°MemberExpressionÍÍT°MemberExpressionÍÍKªIdentifierÍÍ¢lbKªIdentifierÍ	Í¨positionÂÂKªIdentifierÍÍ¡yÂÂ¤init[¨PropertyÍ*Í;ÂÂÂKªIdentifierÍ*Í0¦globalT°MemberExpressionÍ2Í;KªIdentifierÍ2Í4¢lbKªIdentifierÍ5Í;¦globalÂÂ¤initÂÀÔr\”¤type¥start£end¨argument¯ReturnStatementÍtÍÿZ°ObjectExpressionÍ{Íş[¨PropertyÍŠÍ™ÂÂÂKªIdentifierÍŠÍ‘§schUuidT°MemberExpressionÍ“Í™KªIdentifierÍ“Í–£docKªIdentifierÍ—Í™¢idÂÂ¤init[¨PropertyÍ¨Í¹ÂÂÂKªIdentifierÍ¨Í¯§schNameT°MemberExpressionÍ±Í¹KªIdentifierÍ±Í´£docKªIdentifierÍµÍ¹¤nameÂÂ¤init[¨PropertyÍÈÍÕÂÂÂKªIdentifierÍÈÍÒªlayerDepthV§LiteralÍÔÍÕ ¡0¤init[¨PropertyÍäÍ ÂÂÂKªIdentifierÍäÍîªdeviceListY®CallExpressionÍğÍ T°MemberExpressionÍğÍT°MemberExpressionÍğÍşKªIdentifierÍğÍó£docKªIdentifierÍôÍşªcomponentsÂÂKªIdentifierÍÿÍ£mapÂÂ‘T°MemberExpressionÍÍKªIdentifierÍÍ¯TopologyAdapterKªIdentifierÍÍ¬toDeviceInstÂÂÂ¤init[¨PropertyÍ/Í_ÂÂÂKªIdentifierÍ/Í6§netListY®CallExpressionÍ8Í_T°MemberExpressionÍ8ÍDT°MemberExpressionÍ8Í@KªIdentifierÍ8Í;£docKªIdentifierÍ<Í@¤netsÂÂKªIdentifierÍAÍD£mapÂÂ‘T°MemberExpressionÍEÍ^KªIdentifierÍEÍT¯TopologyAdapterKªIdentifierÍUÍ^©toNetInfoÂÂÂ¤init[¨PropertyÍnÍyÂÂÂKªIdentifierÍnÍu§busListQ¯ArrayExpressionÍwÍy¤init[¨PropertyÍˆÍÓÂÂÂKªIdentifierÍˆÍ¨wireListY®CallExpressionÍ’ÍÓT°MemberExpressionÍ’ÍŸT°MemberExpressionÍ’Í›KªIdentifierÍ’Í•£docKªIdentifierÍ–Í›¥wiresÂÂKªIdentifierÍœÍŸ£mapÂÂ‘N·ArrowFunctionExpressionÍ ÍÒÀÃÂÂ‘KªIdentifierÍ Í¡¡wY®CallExpressionÍ¥ÍÒKªIdentifierÍ¥Í²­makeRouteLine”T°MemberExpressionÍ³ÍºKªIdentifierÍ³Í´¡wKªIdentifierÍµÍº¥netIdÂÂT°MemberExpressionÍ¼ÍÄKªIdentifierÍ¼Í½¡wKªIdentifierÍ¾ÍÄ¦pointsÂÂV§LiteralÍÆÍËÂ¥falseT°MemberExpressionÍÍÍÑKªIdentifierÍÍÍÎ¡wKªIdentifierÍÏÍÑ¢idÂÂÂÂ¤init[¨PropertyÍâÍ!ÂÂÂKªIdentifierÍâÍğ®subCircuitListY®CallExpressionÍòÍ!T°MemberExpressionÍòÍT°MemberExpressionÍòÍKªIdentifierÍòÍõ£docKªIdentifierÍöÍ«subcircuitsÂÂKªIdentifierÍÍ£mapÂÂ‘T°MemberExpressionÍÍ KªIdentifierÍÍ¯TopologyAdapterKªIdentifierÍÍ ªtoSubBlockÂÂÂ¤init[¨PropertyÍ0Í=ÂÂÂKªIdentifierÍ0Í9©probeListQ¯ArrayExpressionÍ;Í=¤init[¨PropertyÍLÍ\ÂÂÂKªIdentifierÍLÍX¬textAnnotateQ¯ArrayExpressionÍZÍ\¤init[¨PropertyÍkÍ…ÂÂÂKªIdentifierÍkÍw¬netLabelListKªIdentifierÍyÍ…¬netLabelList¤init[¨PropertyÍ”Í¤ÂÂÂKªIdentifierÍ”Í ¬ercErrorListQ¯ArrayExpressionÍ¢Í¤¤init[¨PropertyÍ³ÍÒÂÂÂKªIdentifierÍ³Í»¨gridStepT°MemberExpressionÍ½ÍÒT°MemberExpressionÍ½ÍÉKªIdentifierÍ½ÍÀ£docKªIdentifierÍÁÍÉ¨metadataÂÂKªIdentifierÍÊÍÒ¨gridSizeÂÂ¤init[¨PropertyÍáÍóÂÂÂKªIdentifierÍáÍè§bgColorV§LiteralÍêÍó§#0a0a1a©'#0a0a1a'¤initM°MethodDefinitionÍÍŒÃÂKªIdentifierÍÍ¬fromTopology¦methodN²FunctionExpressionÍÍŒÀÂÂÂ‘KªIdentifierÍ Í$¤topoL®BlockStatementÍ&ÍŒ•O³VariableDeclarationÍ1ÍV‘P²VariableDeclaratorÍ7ÍUKªIdentifierÍ7Í:£nowY®CallExpressionÍ=ÍUT°MemberExpressionÍ=ÍSÔr]•¤type¥start£end¦callee©arguments­NewExpressionÍ=ÍGKªIdentifierÍAÍE¤DateKªIdentifierÍHÍS«toISOStringÂÂÂ¥constO³VariableDeclarationÍ`Íu‘P²VariableDeclaratorÍfÍtKªIdentifierÍfÍo©netLabelsQ¯ArrayExpressionÍrÍt¥constO³VariableDeclarationÍÍÊ‘P²VariableDeclaratorÍ…ÍÉKªIdentifierÍ…Í©srcLabelsRµConditionalExpressionÍ‘ÍÉS°BinaryExpressionÍ‘Í°T°MemberExpressionÍ‘Í¢KªIdentifierÍ‘Í•¤topoKªIdentifierÍ–Í¢¬netLabelListÂÂ£!==KªIdentifierÍ§Í°©undefinedT°MemberExpressionÍ³ÍÄKªIdentifierÍ³Í·¤topoKªIdentifierÍ¸ÍÄ¬netLabelListÂÂQ¯ArrayExpressionÍÇÍÉ¥constU¬ForStatementÍÔÍ@O³VariableDeclarationÍÙÍâ‘P²VariableDeclaratorÍİÍâKªIdentifierÍİÍŞ¡iV§LiteralÍáÍâ ¡0£letS°BinaryExpressionÍäÍøKªIdentifierÍäÍå¡i¡<T°MemberExpressionÍèÍøKªIdentifierÍèÍñ©srcLabelsKªIdentifierÍòÍø¦lengthÂÂW°UpdateExpressionÍúÍı¢++ÂKªIdentifierÍúÍû¡iL®BlockStatementÍÿÍ@’O³VariableDeclarationÍÍ&‘P²VariableDeclaratorÍÍ%KªIdentifierÍÍ¢lbT°MemberExpressionÍÍ%KªIdentifierÍÍ"©srcLabelsKªIdentifierÍ#Í$¡iÃÂ¥constX³ExpressionStatementÍ4Í5Y®CallExpressionÍ4Í4T°MemberExpressionÍ4ÍBKªIdentifierÍ4Í=©netLabelsKªIdentifierÍ>ÍB¤pushÂÂ‘Z°ObjectExpressionÍCÍ3•[¨PropertyÍVÍ‹ÂÂÂKªIdentifierÍVÍX¢idRµConditionalExpressionÍZÍ‹S°BinaryExpressionÍZÍjT°MemberExpressionÍZÍfT°MemberExpressionÍZÍ_KªIdentifierÍZÍ\¢lbKªIdentifierÍ]Í_¢idÂÂKªIdentifierÍ`Íf¦lengthÂÂ¡>V§LiteralÍiÍj ¡0T°MemberExpressionÍmÍrKªIdentifierÍmÍo¢lbKªIdentifierÍpÍr¢idÂÂY®CallExpressionÍuÍ‹T°MemberExpressionÍuÍ„KªIdentifierÍuÍ{¦IdUtilKªIdentifierÍ|Í„¨generateÂÂ‘V§LiteralÍ…ÍŠ£lbl¥'lbl'Â¤init[¨PropertyÍÍ¯ÂÂÂKªIdentifierÍÍ£¥netIdT°MemberExpressionÍ¥Í¯KªIdentifierÍ¥Í§¢lbKªIdentifierÍ¨Í¯§netUuidÂÂ¤init[¨PropertyÍÂÍÏÂÂÂKªIdentifierÍÂÍÆ¤textT°MemberExpressionÍÈÍÏKªIdentifierÍÈÍÊ¢lbKªIdentifierÍËÍÏ¤textÂÂ¤init[¨PropertyÍâÍ ÂÂÂKªIdentifierÍâÍê¨positionZ°ObjectExpressionÍìÍ ’[¨PropertyÍîÍõÂÂÂKªIdentifierÍîÍï¡xT°MemberExpressionÍñÍõKªIdentifierÍñÍó¢lbKªIdentifierÍôÍõ¡xÂÂ¤init[¨PropertyÍ÷ÍşÂÂÂKªIdentifierÍ÷Íø¡yT°MemberExpressionÍúÍşKªIdentifierÍúÍü¢lbKªIdentifierÍıÍş¡yÂÂ¤init¤init[¨PropertyÍÍ$ÂÂÂKªIdentifierÍÍ¦globalT°MemberExpressionÍÍ$KªIdentifierÍÍ¢lbKªIdentifierÍÍ$¦globalÂÂ¤initÂ\¯ReturnStatementÍJÍ…Z°ObjectExpressionÍQÍ„™[¨PropertyÍ`ÍŠÂÂÂKªIdentifierÍ`Íb¢idS±LogicalExpressionÍdÍŠT°MemberExpressionÍdÍpKªIdentifierÍdÍh¤topoKªIdentifierÍiÍp§schUuidÂÂ¢||Y®CallExpressionÍtÍŠT°MemberExpressionÍtÍƒKªIdentifierÍtÍz¦IdUtilKªIdentifierÍ{Íƒ¨generateÂÂ‘V§LiteralÍ„Í‰£sch¥'sch'Â¤init[¨PropertyÍ™Í«ÂÂÂKªIdentifierÍ™Í¤nameT°MemberExpressionÍŸÍ«KªIdentifierÍŸÍ£¤topoKªIdentifierÍ¤Í«§schNameÂÂ¤init[¨PropertyÍºÍÈÂÂÂKªIdentifierÍºÍÁ§versionV§LiteralÍÃÍÈ£2.0¥'2.0'¤init[¨PropertyÍ×Í	ÂÂÂKªIdentifierÍ×ÍáªcomponentsY®CallExpressionÍãÍ	T°MemberExpressionÍãÍöT°MemberExpressionÍãÍòKªIdentifierÍãÍç¤topoKªIdentifierÍèÍòªdeviceListÂÂKªIdentifierÍóÍö£mapÂÂ‘T°MemberExpressionÍ÷Í	KªIdentifierÍ÷Í	¯TopologyAdapterKªIdentifierÍ	Í	«toComponentÂÂÂ¤init[¨PropertyÍ	"Í
+¹ÂÂÂKªIdentifierÍ	"Í	'¥wiresY®CallExpressionÍ	)Í
+¹T°MemberExpressionÍ	)Í	:T°MemberExpressionÍ	)Í	6KªIdentifierÍ	)Í	-¤topoKªIdentifierÍ	.Í	6¨wireListÂÂKªIdentifierÍ	7Í	:£mapÂÂ‘N·ArrowFunctionExpressionÍ	;Í
+¸ÀÂÂÂ’KªIdentifierÍ	<Í	=¡wKªIdentifierÍ	?Í	A¢_iL®BlockStatementÍ	FÍ
+¸’O³VariableDeclarationÍ	YÍ
+‹‘P²VariableDeclaratorÍ	_Í
+ŠKªIdentifierÍ	_Í	c¤wireZ°ObjectExpressionÍ	fÍ
+Š”[¨PropertyÍ	³Í	÷ÂÂÂKªIdentifierÍ	³Í	µ¢idRµConditionalExpressionÍ	·Í	÷S±LogicalExpressionÍ	¸Í	ÓT°MemberExpressionÍ	¸Í	¾KªIdentifierÍ	¸Í	¹¡wKªIdentifierÍ	ºÍ	¾¤uuidÂÂ¢&&S°BinaryExpressionÍ	ÂÍ	ÓT°MemberExpressionÍ	ÂÍ	ÏT°MemberExpressionÍ	ÂÍ	ÈKªIdentifierÍ	ÂÍ	Ã¡wKªIdentifierÍ	ÄÍ	È¤uuidÂÂKªIdentifierÍ	ÉÍ	Ï¦lengthÂÂ¡>V§LiteralÍ	ÒÍ	Ó ¡0T°MemberExpressionÍ	×Í	İKªIdentifierÍ	×Í	Ø¡wKªIdentifierÍ	ÙÍ	İ¤uuidÂÂY®CallExpressionÍ	àÍ	÷T°MemberExpressionÍ	àÍ	ïKªIdentifierÍ	àÍ	æ¦IdUtilKªIdentifierÍ	çÍ	ï¨generateÂÂ‘V§LiteralÍ	ğÍ	ö¤wire¦'wire'Â¤init[¨PropertyÍ
+Í
+ÂÂÂKªIdentifierÍ
+Í
+¥netIdT°MemberExpressionÍ
+Í
+KªIdentifierÍ
+Í
+¡wKªIdentifierÍ
+Í
+§netUuidÂÂ¤init[¨PropertyÍ
+5Í
+EÂÂÂKªIdentifierÍ
+5Í
+;¦pointsT°MemberExpressionÍ
+=Í
+EKªIdentifierÍ
+=Í
+>¡wKªIdentifierÍ
+?Í
+E¦pointsÂÂ¤init[¨PropertyÍ
+\Í
+wÂÂÂKªIdentifierÍ
+\Í
+a¥styleT°MemberExpressionÍ
+cÍ
+wKªIdentifierÍ
+cÍ
+l©WireStyleKªIdentifierÍ
+mÍ
+wªORTHOGONALÂÂ¤init¥const\¯ReturnStatementÍ
+Í
+©KªIdentifierÍ
+¤Í
+¨¤wireÂ¤init[¨PropertyÍ
+ÈÍ
+õÂÂÂKªIdentifierÍ
+ÈÍ
+Ì¤netsY®CallExpressionÍ
+ÎÍ
+õT°MemberExpressionÍ
+ÎÍ
+ŞT°MemberExpressionÍ
+ÎÍ
+ÚKªIdentifierÍ
+ÎÍ
+Ò¤topoKªIdentifierÍ
+ÓÍ
+Ú§netListÂÂKªIdentifierÍ
+ÛÍ
+Ş£mapÂÂ‘T°MemberExpressionÍ
+ßÍ
+ôKªIdentifierÍ
+ßÍ
+î¯TopologyAdapterKªIdentifierÍ
+ïÍ
+ô¥toNetÂÂÂ¤init[¨PropertyÍÍÂÂÂKªIdentifierÍÍ©netLabelsKªIdentifierÍÍ©netLabels¤init[¨PropertyÍ'ÍeÂÂÂKªIdentifierÍ'Í2«subcircuitsY®CallExpressionÍ4ÍeT°MemberExpressionÍ4ÍKT°MemberExpressionÍ4ÍGKªIdentifierÍ4Í8¤topoKªIdentifierÍ9ÍG®subCircuitListÂÂKªIdentifierÍHÍK£mapÂÂ‘T°MemberExpressionÍLÍdKªIdentifierÍLÍ[¯TopologyAdapterKªIdentifierÍ\Íd¨toSubRefÂÂÂ¤init[¨PropertyÍtÍyÂÂÂKªIdentifierÍtÍ|¨metadataZ°ObjectExpressionÍ~Íy—[¨PropertyÍ‘Í›ÂÂÂKªIdentifierÍ‘Í—¦authorV§LiteralÍ™Í› ¢''¤init[¨PropertyÍ®Í¼ÂÂÂKªIdentifierÍ®Í·©createdAtKªIdentifierÍ¹Í¼£now¤init[¨PropertyÍÏÍŞÂÂÂKªIdentifierÍÏÍÙªmodifiedAtKªIdentifierÍÛÍŞ£now¤init[¨PropertyÍñÍ ÂÂÂKªIdentifierÍñÍü«descriptionV§LiteralÍşÍ  ¢''¤init[¨PropertyÍÍ*ÂÂÂKªIdentifierÍÍ¨gridSizeT°MemberExpressionÍÍ*KªIdentifierÍÍ!¤topoKªIdentifierÍ"Í*¨gridStepÂÂ¤init[¨PropertyÍ=ÍHÂÂÂKªIdentifierÍ=ÍB¥unitsV§LiteralÍDÍH¢mm¤'mm'¤init[¨PropertyÍ[ÍjÂÂÂKªIdentifierÍ[Íd©undoLimitV§LiteralÍfÍjÍè¤1000¤init¤initM°MethodDefinitionÍ’ÍÃÂKªIdentifierÍ™Í¥¬toDeviceInst¦methodN²FunctionExpressionÍ¥ÍÀÂÂÂ‘KªIdentifierÍ¦Í§¡cL®BlockStatementÍ©Í‘\¯ReturnStatementÍ´ÍˆZ°ObjectExpressionÍ»Í‡[¨PropertyÍÊÍØÂÂÂKªIdentifierÍÊÍÒ¨instUuidT°MemberExpressionÍÔÍØKªIdentifierÍÔÍÕ¡cKªIdentifierÍÖÍØ¢idÂÂ¤init[¨PropertyÍçÍüÂÂÂKªIdentifierÍçÍï¨libDevIdT°MemberExpressionÍñÍüKªIdentifierÍñÍò¡cKªIdentifierÍóÍü©libraryIdÂÂ¤init[¨PropertyÍÍÂÂÂKªIdentifierÍÍ§refNameT°MemberExpressionÍÍKªIdentifierÍÍ¡cKªIdentifierÍÍ¦refDesÂÂ¤init[¨PropertyÍ+Í:ÂÂÂKªIdentifierÍ+Í,¡xT°MemberExpressionÍ.Í:T°MemberExpressionÍ.Í8KªIdentifierÍ.Í/¡cKªIdentifierÍ0Í8¨positionÂÂKªIdentifierÍ9Í:¡xÂÂ¤init[¨PropertyÍIÍXÂÂÂKªIdentifierÍIÍJ¡yT°MemberExpressionÍLÍXT°MemberExpressionÍLÍVKªIdentifierÍLÍM¡cKªIdentifierÍNÍV¨positionÂÂKªIdentifierÍWÍX¡yÂÂ¤init[¨PropertyÍgÍyÂÂÂKªIdentifierÍgÍm¦rotateT°MemberExpressionÍoÍyKªIdentifierÍoÍp¡cKªIdentifierÍqÍy¨rotationÂÂ¤init[¨PropertyÍˆÍ›ÂÂÂKªIdentifierÍˆÍ§mirrorHT°MemberExpressionÍ‘Í›KªIdentifierÍ‘Í’¡cKªIdentifierÍ“Í›¨mirroredÂÂ¤init[¨PropertyÍªÍ¸ÂÂÂKªIdentifierÍªÍ±§mirrorVV§LiteralÍ³Í¸Â¥false¤init[¨PropertyÍÇÍìÂÂÂKªIdentifierÍÇÍÍ¦paramsY®CallExpressionÍÏÍìKªIdentifierÍÏÍŞ¯ensureStringMap‘T°MemberExpressionÍßÍëKªIdentifierÍßÍà¡cKªIdentifierÍáÍëªparametersÂÂÂ¤init[¨PropertyÍûÍÂÂÂKªIdentifierÍûÍªpinVoltage]­NewExpressionÍÍKªIdentifierÍÍ£Map¤init[¨PropertyÍÍ,ÂÂÂKªIdentifierÍÍ%¦hiddenV§LiteralÍ'Í,Â¥false¤init[¨PropertyÍ;Í^ÂÂÂKªIdentifierÍ;ÍH­subCircuitRefS±LogicalExpressionÍJÍ^T°MemberExpressionÍJÍXKªIdentifierÍJÍK¡cKªIdentifierÍLÍX¬subcircuitIdÂÂ¢??V§LiteralÍ\Í^ ¢''¤init[¨PropertyÍmÍ|ÂÂÂKªIdentifierÍmÍx«ercErrorMsgV§LiteralÍzÍ| ¢''¤initM°MethodDefinitionÍ•ÍÈÃÂKªIdentifierÍœÍ§«toComponent¦methodN²FunctionExpressionÍ§ÍÈÀÂÂÂ‘KªIdentifierÍ¨Í©¡dL®BlockStatementÍ«ÍÈ”O³VariableDeclarationÍ¶Íã‘P²VariableDeclaratorÍ¼ÍâKªIdentifierÍ¼ÍÄ¨rotationY®CallExpressionÍÇÍâKªIdentifierÍÇÍØ±normalizeRotation‘T°MemberExpressionÍÙÍáKªIdentifierÍÙÍÚ¡dKªIdentifierÍÛÍá¦rotateÂÂÂ¥constO³VariableDeclarationÍíÍ0‘P²VariableDeclaratorÍóÍ/KªIdentifierÍóÍ÷¤compZ°ObjectExpressionÍúÍ/—[¨PropertyÍ	Í2ÂÂÂKªIdentifierÍ	Í¢idS±LogicalExpressionÍÍ2T°MemberExpressionÍÍKªIdentifierÍÍ¡dKªIdentifierÍÍ¨instUuidÂÂ¢??Y®CallExpressionÍÍ2T°MemberExpressionÍÍ*KªIdentifierÍÍ!¦IdUtilKªIdentifierÍ"Í*¨generateÂÂ‘V§LiteralÍ+Í1¤comp¦'comp'Â¤init[¨PropertyÍAÍ\ÂÂÂKªIdentifierÍAÍJ©libraryIdS±LogicalExpressionÍLÍ\T°MemberExpressionÍLÍVKªIdentifierÍLÍM¡dKªIdentifierÍNÍV¨libDevIdÂÂ¢??V§LiteralÍZÍ\ ¢''¤init[¨PropertyÍkÍ‚ÂÂÂKªIdentifierÍkÍq¦refDesS±LogicalExpressionÍsÍ‚T°MemberExpressionÍsÍ|KªIdentifierÍsÍt¡dKªIdentifierÍuÍ|§refNameÂÂ¢??V§LiteralÍ€Í‚ ¢''¤init[¨PropertyÍ‘Í­ÂÂÂKªIdentifierÍ‘Í™¨positionZ°ObjectExpressionÍ›Í­’[¨PropertyÍÍ£ÂÂÂKªIdentifierÍÍ¡xT°MemberExpressionÍ Í£KªIdentifierÍ Í¡¡dKªIdentifierÍ¢Í£¡xÂÂ¤init[¨PropertyÍ¥Í«ÂÂÂKªIdentifierÍ¥Í¦¡yT°MemberExpressionÍ¨Í«KªIdentifierÍ¨Í©¡dKªIdentifierÍªÍ«¡yÂÂ¤init¤init[¨PropertyÍ¼ÍÎÂÂÂKªIdentifierÍ¼ÍÄ¨rotationKªIdentifierÍÆÍÎ¨rotation¤init[¨PropertyÍİÍğÂÂÂKªIdentifierÍİÍå¨mirroredT°MemberExpressionÍçÍğKªIdentifierÍçÍè¡dKªIdentifierÍéÍğ§mirrorHÂÂ¤init[¨PropertyÍÿÍ$ÂÂÂKªIdentifierÍÿÍ	ªparametersY®CallExpressionÍÍ$KªIdentifierÍÍ¯ensureStringMap‘T°MemberExpressionÍÍ#KªIdentifierÍÍ¡dKªIdentifierÍÍ#¦paramsÂÂÂ¤init¥constR«IfStatementÍ:Í«S±LogicalExpressionÍ>ÍkT°MemberExpressionÍ>ÍMKªIdentifierÍ>Í?¡dKªIdentifierÍ@ÍM­subCircuitRefÂÂ¢&&S°BinaryExpressionÍQÍkT°MemberExpressionÍQÍgT°MemberExpressionÍQÍ`KªIdentifierÍQÍR¡dKªIdentifierÍSÍ`­subCircuitRefÂÂKªIdentifierÍaÍg¦lengthÂÂ¡>V§LiteralÍjÍk ¡0L®BlockStatementÍmÍ«‘X³ExpressionStatementÍ|Í Ôr^–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ|ÍŸ¡=T°MemberExpressionÍ|ÍKªIdentifierÍ|Í€¤compKªIdentifierÍÍ¬subcircuitIdÂÂT°MemberExpressionÍÍŸKªIdentifierÍÍ‘¡dKªIdentifierÍ’ÍŸ­subCircuitRefÂÂÀ\¯ReturnStatementÍµÍÁKªIdentifierÍ¼ÍÀ¤compM°MethodDefinitionÍÎÍTÃÂKªIdentifierÍÕÍŞ©toNetInfo¦methodN²FunctionExpressionÍŞÍTÀÂÂÂ‘KªIdentifierÍßÍà¡nL®BlockStatementÍâÍT‘\¯ReturnStatementÍíÍMZ°ObjectExpressionÍôÍL›[¨PropertyÍÍÂÂÂKªIdentifierÍÍ
+§netUuidT°MemberExpressionÍÍKªIdentifierÍÍ¡nKªIdentifierÍÍ¢idÂÂ¤init[¨PropertyÍÍ.ÂÂÂKªIdentifierÍÍ&§netNameT°MemberExpressionÍ(Í.KªIdentifierÍ(Í)¡nKªIdentifierÍ*Í.¤nameÂÂ¤init[¨PropertyÍ=ÍPÂÂÂKªIdentifierÍ=ÍH«displayNameT°MemberExpressionÍJÍPKªIdentifierÍJÍK¡nKªIdentifierÍLÍP¤nameÂÂ¤init[¨PropertyÍ_Í<ÂÂÂKªIdentifierÍ_Íg¨nodeListY®CallExpressionÍiÍ<T°MemberExpressionÍiÍ Y®CallExpressionÍiÍùT°MemberExpressionÍiÍuT°MemberExpressionÍiÍqKªIdentifierÍiÍj¡nKªIdentifierÍkÍq¦pinIdsÂÂKªIdentifierÍrÍu£mapÂÂ‘N·ArrowFunctionExpressionÍvÍøÀÂÂÂ‘KªIdentifierÍwÍ}¦pinRefL®BlockStatementÍ‚Íø“O³VariableDeclarationÍ•Í¸‘P²VariableDeclaratorÍ›Í·KªIdentifierÍ›Í¡¦parsedY®CallExpressionÍ¤Í·KªIdentifierÍ¤Í¯«parsePinRef‘KªIdentifierÍ°Í¶¦pinRefÂ¥constR«IfStatementÍÊÍƒS±LogicalExpressionÍÎÍS±LogicalExpressionÍÎÍùS°BinaryExpressionÍÎÍİKªIdentifierÍÎÍÔ¦parsed£!==V§LiteralÍÙÍİÀ¤null¢&&S°BinaryExpressionÍáÍùT°MemberExpressionÍáÍõT°MemberExpressionÍáÍîKªIdentifierÍáÍç¦parsedKªIdentifierÍèÍî¦compIdÂÂKªIdentifierÍïÍõ¦lengthÂÂ¡>V§LiteralÍøÍù ¡0¢&&S°BinaryExpressionÍıÍT°MemberExpressionÍıÍT°MemberExpressionÍıÍ	KªIdentifierÍıÍ¦parsedKªIdentifierÍÍ	¥pinIdÂÂKªIdentifierÍ
+Í¦lengthÂÂ¡>V§LiteralÍÍ ¡0L®BlockStatementÍÍƒ‘\¯ReturnStatementÍ-ÍpY®CallExpressionÍ4ÍoKªIdentifierÍ4ÍB®makeNetNodeRef“T°MemberExpressionÍCÍPKªIdentifierÍCÍI¦parsedKªIdentifierÍJÍP¦compIdÂÂT°MemberExpressionÍRÍ^KªIdentifierÍRÍX¦parsedKªIdentifierÍYÍ^¥pinIdÂÂT°MemberExpressionÍ`ÍnKªIdentifierÍ`Íf¦parsedKªIdentifierÍgÍn§pinNameÂÂÂÀ\¯ReturnStatementÍÇÍéY®CallExpressionÍÎÍèKªIdentifierÍÎÍÜ®makeNetNodeRef“V§LiteralÍİÍß ¢''V§LiteralÍáÍã ¢''V§LiteralÍåÍç ¢''ÂÂKªIdentifierÍúÍ ¦filterÂÂ‘N·ArrowFunctionExpressionÍÍ;ÀÃÂÂ‘KªIdentifierÍÍ¤nodeS±LogicalExpressionÍÍ;S°BinaryExpressionÍÍ"T°MemberExpressionÍÍT°MemberExpressionÍÍKªIdentifierÍÍ¤nodeKªIdentifierÍÍ§devUuidÂÂKªIdentifierÍÍ¦lengthÂÂ¡>V§LiteralÍ!Í" ¡0¢&&S°BinaryExpressionÍ&Í;T°MemberExpressionÍ&Í7T°MemberExpressionÍ&Í0KªIdentifierÍ&Í*¤nodeKªIdentifierÍ+Í0¥pinIdÂÂKªIdentifierÍ1Í7¦lengthÂÂ¡>V§LiteralÍ:Í; ¡0Â¤init[¨PropertyÍKÍ‰ÂÂÂKªIdentifierÍKÍR§isPowerS±LogicalExpressionÍTÍ‰S°BinaryExpressionÍTÍlT°MemberExpressionÍTÍZKªIdentifierÍTÍU¡nKªIdentifierÍVÍZ¤typeÂÂ£===T°MemberExpressionÍ_ÍlKªIdentifierÍ_Íf§NetTypeKªIdentifierÍgÍl¥POWERÂÂ¢||S°BinaryExpressionÍpÍ‰T°MemberExpressionÍpÍvKªIdentifierÍpÍq¡nKªIdentifierÍrÍv¤typeÂÂ£===T°MemberExpressionÍ{Í‰KªIdentifierÍ{Í‚§NetTypeKªIdentifierÍƒÍ‰¦GROUNDÂÂ¤init[¨PropertyÍ˜Í§ÂÂÂKªIdentifierÍ˜Í ¨isAnalogV§LiteralÍ¢Í§Â¥false¤init[¨PropertyÍ¶ÍÙÂÂÂKªIdentifierÍ¶ÍÁ«isBusMemberS°BinaryExpressionÍÃÍÙT°MemberExpressionÍÃÍÉKªIdentifierÍÃÍÄ¡nKªIdentifierÍÅÍÉ¤typeÂÂ£===T°MemberExpressionÍÎÍÙKªIdentifierÍÎÍÕ§NetTypeKªIdentifierÍÖÍÙ£BUSÂÂ¤init[¨PropertyÍèÍùÂÂÂKªIdentifierÍèÍõ­busParentUuidV§LiteralÍ÷Íù ¢''¤init[¨PropertyÍÍıÂÂÂKªIdentifierÍÍ®defaultVoltageY®CallExpressionÍÍıN·ArrowFunctionExpressionÍÍúÀÂÂÂL®BlockStatementÍÍú•O³VariableDeclarationÍ2Í]‘P²VariableDeclaratorÍ8Í\KªIdentifierÍ8Í=¥upperY®CallExpressionÍ@Í\T°MemberExpressionÍ@ÍZS±LogicalExpressionÍAÍMT°MemberExpressionÍAÍGKªIdentifierÍAÍB¡nKªIdentifierÍCÍG¤nameÂÂ¢??V§LiteralÍKÍM ¢''KªIdentifierÍOÍZ«toUpperCaseÂÂÂ¥constR«IfStatementÍoÍúS±LogicalExpressionÍsÍÃS±LogicalExpressionÍsÍ²S±LogicalExpressionÍsÍŸS°BinaryExpressionÍsÍŒT°MemberExpressionÍsÍyKªIdentifierÍsÍt¡nKªIdentifierÍuÍy¤typeÂÂ£===T°MemberExpressionÍ~ÍŒKªIdentifierÍ~Í…§NetTypeKªIdentifierÍ†ÍŒ¦GROUNDÂÂ¢||S°BinaryExpressionÍÍŸKªIdentifierÍÍ•¥upper£===V§LiteralÍšÍŸ£GND¥'GND'¢||S°BinaryExpressionÍ£Í²KªIdentifierÍ£Í¨¥upper£===V§LiteralÍ­Í²£VSS¥'VSS'¢||S°BinaryExpressionÍ¶ÍÃKªIdentifierÍ¶Í»¥upper£===V§LiteralÍÀÍÃ¡0£'0'L®BlockStatementÍÅÍú‘\¯ReturnStatementÍÜÍçV§LiteralÍãÍæ £0.0ÀR«IfStatementÍÍiS±LogicalExpressionÍÍ1S°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===V§LiteralÍÍ£VEE¥'VEE'¢||S°BinaryExpressionÍ#Í1KªIdentifierÍ#Í(¥upper£===V§LiteralÍ-Í1¢V-¤'V-'L®BlockStatementÍ3Íi‘\¯ReturnStatementÍJÍVW¯UnaryExpressionÍQÍU¡-ÃV§LiteralÍRÍU£5.0ÀR«IfStatementÍ{ÍÎS°BinaryExpressionÍÍ—T°MemberExpressionÍÍ…KªIdentifierÍÍ€¡nKªIdentifierÍÍ…¤typeÂÂ£===T°MemberExpressionÍŠÍ—KªIdentifierÍŠÍ‘§NetTypeKªIdentifierÍ’Í—¥POWERÂÂL®BlockStatementÍ™ÍÎ‘\¯ReturnStatementÍ°Í»V§LiteralÍ·Íº£5.0À\¯ReturnStatementÍàÍëV§LiteralÍçÍê £0.0Â¤init[¨PropertyÍÍÂÂÂKªIdentifierÍÍªercWarningV§LiteralÍÍÂ¥false¤init[¨PropertyÍ,ÍAÂÂÂKªIdentifierÍ,Í=±connectedProbeIdsQ¯ArrayExpressionÍ?ÍA¤initM°MethodDefinitionÍZÍæÃÂKªIdentifierÍaÍf¥toNet¦methodN²FunctionExpressionÍfÍæÀÂÂÂ‘KªIdentifierÍgÍh¡nL®BlockStatementÍjÍæ”O³VariableDeclarationÍuÍ£‘P²VariableDeclaratorÍ{Í¢KªIdentifierÍ{Í€¥upperY®CallExpressionÍƒÍ¢T°MemberExpressionÍƒÍ S±LogicalExpressionÍ„Í“T°MemberExpressionÍ„ÍKªIdentifierÍ„Í…¡nKªIdentifierÍ†Í§netNameÂÂ¢??V§LiteralÍ‘Í“ ¢''KªIdentifierÍ•Í «toUpperCaseÂÂÂ¥constO³VariableDeclarationÍ­ÍÊ‘P²VariableDeclaratorÍ±ÍÉKªIdentifierÍ±Í¸§netTypeT°MemberExpressionÍ»ÍÉKªIdentifierÍ»ÍÂ§NetTypeKªIdentifierÍÃÍÉ¦SIGNALÂÂ£letR«IfStatementÍÔÍÜT°MemberExpressionÍØÍáKªIdentifierÍØÍÙ¡nKªIdentifierÍÚÍá§isPowerÂÂL®BlockStatementÍãÍo‘X³ExpressionStatementÍòÍd^´AssignmentExpressionÍòÍc¡=KªIdentifierÍòÍù§netTypeRµConditionalExpressionÍüÍcS±LogicalExpressionÍıÍ0S±LogicalExpressionÍıÍS°BinaryExpressionÍıÍKªIdentifierÍıÍ¥upper£===V§LiteralÍÍ£GND¥'GND'¢||S°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===V§LiteralÍÍ£VSS¥'VSS'¢||S°BinaryExpressionÍ#Í0KªIdentifierÍ#Í(¥upper£===V§LiteralÍ-Í0¡0£'0'T°MemberExpressionÍEÍSKªIdentifierÍEÍL§NetTypeKªIdentifierÍMÍS¦GROUNDÂÂT°MemberExpressionÍVÍcKªIdentifierÍVÍ]§NetTypeKªIdentifierÍ^Íc¥POWERÂÂR«IfStatementÍ~ÍÜT°MemberExpressionÍ‚ÍKªIdentifierÍ‚Íƒ¡nKªIdentifierÍ„Í«isBusMemberÂÂL®BlockStatementÍ‘ÍÁ‘X³ExpressionStatementÍ Í¶^´AssignmentExpressionÍ Íµ¡=KªIdentifierÍ Í§§netTypeT°MemberExpressionÍªÍµKªIdentifierÍªÍ±§NetTypeKªIdentifierÍ²Íµ£BUSÂÂR«IfStatementÍĞÍÜS±LogicalExpressionÍÔÍS±LogicalExpressionÍÔÍöS°BinaryExpressionÍÔÍãKªIdentifierÍÔÍÙ¥upper£===V§LiteralÍŞÍã£GND¥'GND'¢||S°BinaryExpressionÍçÍöKªIdentifierÍçÍì¥upper£===V§LiteralÍñÍö£VSS¥'VSS'¢||S°BinaryExpressionÍúÍKªIdentifierÍúÍÿ¥upper£===V§LiteralÍÍ¡0£'0'L®BlockStatementÍ	Í<‘X³ExpressionStatementÍÍ1^´AssignmentExpressionÍÍ0¡=KªIdentifierÍÍ§netTypeT°MemberExpressionÍ"Í0KªIdentifierÍ"Í)§NetTypeKªIdentifierÍ*Í0¦GROUNDÂÂR«IfStatementÍKÍÜS±LogicalExpressionÍOÍ¨S±LogicalExpressionÍOÍ–S±LogicalExpressionÍOÍƒS±LogicalExpressionÍOÍqS°BinaryExpressionÍOÍ^KªIdentifierÍOÍT¥upper£===V§LiteralÍYÍ^£VCC¥'VCC'¢||S°BinaryExpressionÍbÍqKªIdentifierÍbÍg¥upper£===V§LiteralÍlÍq£VDD¥'VDD'¢||S°BinaryExpressionÍuÍƒKªIdentifierÍuÍz¥upper£===V§LiteralÍÍƒ¢V+¤'V+'¢||S°BinaryExpressionÍ‡Í–KªIdentifierÍ‡ÍŒ¥upper£===V§LiteralÍ‘Í–£VEE¥'VEE'¢||S°BinaryExpressionÍšÍ¨KªIdentifierÍšÍŸ¥upper£===V§LiteralÍ¤Í¨¢V-¤'V-'L®BlockStatementÍªÍÜ‘X³ExpressionStatementÍ¹ÍÑ^´AssignmentExpressionÍ¹ÍĞ¡=KªIdentifierÍ¹ÍÀ§netTypeT°MemberExpressionÍÃÍĞKªIdentifierÍÃÍÊ§NetTypeKªIdentifierÍËÍĞ¥POWERÂÂÀ\¯ReturnStatementÍæÍßZ°ObjectExpressionÍíÍŞ”[¨PropertyÍüÍ	ÂÂÂKªIdentifierÍüÍş¢idT°MemberExpressionÍ Í	KªIdentifierÍ Í¡nKªIdentifierÍÍ	§netUuidÂÂ¤init[¨PropertyÍÍ'ÂÂÂKªIdentifierÍÍ¤nameT°MemberExpressionÍÍ'KªIdentifierÍÍ¡nKªIdentifierÍ Í'§netNameÂÂ¤init[¨PropertyÍ6ÍCÂÂÂKªIdentifierÍ6Í:¤typeKªIdentifierÍ<ÍC§netType¤init[¨PropertyÍRÍÓÂÂÂKªIdentifierÍRÍX¦pinIdsY®CallExpressionÍZÍÓT°MemberExpressionÍZÍhT°MemberExpressionÍZÍdKªIdentifierÍZÍ[¡nKªIdentifierÍ\Íd¨nodeListÂÂKªIdentifierÍeÍh£mapÂÂ‘N·ArrowFunctionExpressionÍiÍÒÀÂÂÂ‘KªIdentifierÍiÍm¤nodeL®BlockStatementÍqÍÒ’R«IfStatementÍ„ÍŸS°BinaryExpressionÍˆÍŸT°MemberExpressionÍˆÍ›T°MemberExpressionÍˆÍ”KªIdentifierÍˆÍŒ¤nodeKªIdentifierÍÍ”§devUuidÂÂKªIdentifierÍ•Í›¦lengthÂÂ¡>V§LiteralÍÍŸ ¡0L®BlockStatementÍ¡ÍŸ“O³VariableDeclarationÍ¸ÍÕ‘P²VariableDeclaratorÍ¾ÍÔKªIdentifierÍ¾ÍÅ§rawNameT°MemberExpressionÍÈÍÔKªIdentifierÍÈÍÌ¤nodeKªIdentifierÍÍÍÔ§pinNameÂÂ¥constO³VariableDeclarationÍëÍ@‘P²VariableDeclaratorÍñÍ?KªIdentifierÍñÍø§pinNameRµConditionalExpressionÍûÍ?S±LogicalExpressionÍüÍ'S°BinaryExpressionÍüÍKªIdentifierÍüÍ§rawName£!==KªIdentifierÍÍ©undefined¢&&S°BinaryExpressionÍÍ'T°MemberExpressionÍÍ#KªIdentifierÍÍ§rawNameKªIdentifierÍÍ#¦lengthÂÂ¡>V§LiteralÍ&Í' ¡0KªIdentifierÍ+Í2§rawNameT°MemberExpressionÍ5Í?KªIdentifierÍ5Í9¤nodeKªIdentifierÍ:Í?¥pinIdÂÂ¥const\¯ReturnStatementÍVÍŒY®CallExpressionÍ]Í‹KªIdentifierÍ]Íh«buildPinRef“T°MemberExpressionÍiÍuKªIdentifierÍiÍm¤nodeKªIdentifierÍnÍu§devUuidÂÂT°MemberExpressionÍwÍKªIdentifierÍwÍ{¤nodeKªIdentifierÍ|Í¥pinIdÂÂKªIdentifierÍƒÍŠ§pinNameÂÀ\¯ReturnStatementÍ±ÍÃT°MemberExpressionÍ¸ÍÂKªIdentifierÍ¸Í¼¤nodeKªIdentifierÍ½ÍÂ¥pinIdÂÂÂ¤initM°MethodDefinitionÍìÍGÃÂKªIdentifierÍóÍıªtoSubBlock¦methodN²FunctionExpressionÍıÍGÀÂÂÂ‘KªIdentifierÍşÍÿ¡sL®BlockStatementÍÍG”O³VariableDeclarationÍÍ(‘P²VariableDeclaratorÍÍ'KªIdentifierÍÍ¥portsS±LogicalExpressionÍÍ'T°MemberExpressionÍÍ!KªIdentifierÍÍ¡sKªIdentifierÍÍ!¥portsÂÂ¢??Q¯ArrayExpressionÍ%Í'¥constO³VariableDeclarationÍ2ÍF‘P²VariableDeclaratorÍ8ÍEKªIdentifierÍ8Í@¨portListQ¯ArrayExpressionÍCÍE¥constU¬ForStatementÍPÍgO³VariableDeclarationÍUÍ^‘P²VariableDeclaratorÍYÍ^KªIdentifierÍYÍZ¡iV§LiteralÍ]Í^ ¡0£letS°BinaryExpressionÍ`ÍpKªIdentifierÍ`Ía¡i¡<T°MemberExpressionÍdÍpKªIdentifierÍdÍi¥portsKªIdentifierÍjÍp¦lengthÂÂW°UpdateExpressionÍrÍu¢++ÂKªIdentifierÍrÍs¡iL®BlockStatementÍwÍg”O³VariableDeclarationÍ†Í™‘P²VariableDeclaratorÍŒÍ˜KªIdentifierÍŒÍ¡pT°MemberExpressionÍÍ˜KªIdentifierÍÍ•¥portsKªIdentifierÍ–Í—¡iÃÂ¥constO³VariableDeclarationÍ§Í¿‘P²VariableDeclaratorÍ«Í¾KªIdentifierÍ«Í´©directionV§LiteralÍ·Í¾¥inout§'inout'£letR«IfStatementÍÍÍ‚S°BinaryExpressionÍÑÍèT°MemberExpressionÍÑÍÜKªIdentifierÍÑÍÒ¡pKªIdentifierÍÓÍÜ©directionÂÂ£===V§LiteralÍáÍè¥input§'input'L®BlockStatementÍêÍ‘X³ExpressionStatementÍıÍ^´AssignmentExpressionÍıÍ¡=KªIdentifierÍıÍ©directionV§LiteralÍ	Í¢in¤'in'R«IfStatementÍ0Í‚S°BinaryExpressionÍ4ÍLT°MemberExpressionÍ4Í?KªIdentifierÍ4Í5¡pKªIdentifierÍ6Í?©directionÂÂ£===V§LiteralÍDÍL¦output¨'output'L®BlockStatementÍNÍ‚‘X³ExpressionStatementÍaÍs^´AssignmentExpressionÍaÍr¡=KªIdentifierÍaÍj©directionV§LiteralÍmÍr£out¥'out'ÀX³ExpressionStatementÍÍ\Y®CallExpressionÍÍ[T°MemberExpressionÍÍKªIdentifierÍÍ˜¨portListKªIdentifierÍ™Í¤pushÂÂ‘Z°ObjectExpressionÍÍZ•[¨PropertyÍ±Í½ÂÂÂKªIdentifierÍ±Í·¦portIdT°MemberExpressionÍ¹Í½KªIdentifierÍ¹Íº¡pKªIdentifierÍ»Í½¢idÂÂ¤init[¨PropertyÍĞÍàÂÂÂKªIdentifierÍĞÍØ¨portNameT°MemberExpressionÍÚÍàKªIdentifierÍÚÍÛ¡pKªIdentifierÍÜÍà¤nameÂÂ¤init[¨PropertyÍóÍÂÂÂKªIdentifierÍóÍü©directionKªIdentifierÍşÍ©direction¤init[¨PropertyÍÍ)ÂÂÂKªIdentifierÍÍ¡xT°MemberExpressionÍÍ)T°MemberExpressionÍÍ'KªIdentifierÍÍ¡pKªIdentifierÍÍ'¨positionÂÂKªIdentifierÍ(Í)¡xÂÂ¤init[¨PropertyÍ<ÍKÂÂÂKªIdentifierÍ<Í=¡yT°MemberExpressionÍ?ÍKT°MemberExpressionÍ?ÍIKªIdentifierÍ?Í@¡pKªIdentifierÍAÍI¨positionÂÂKªIdentifierÍJÍK¡yÂÂ¤initÂ\¯ReturnStatementÍqÍ@Z°ObjectExpressionÍxÍ?”[¨PropertyÍ‡Í”ÂÂÂKªIdentifierÍ‡Í§subUuidT°MemberExpressionÍÍ”KªIdentifierÍÍ‘¡sKªIdentifierÍ’Í”¢idÂÂ¤init[¨PropertyÍ£Í¯ÂÂÂKªIdentifierÍ£Í§¤nameT°MemberExpressionÍ©Í¯KªIdentifierÍ©Íª¡sKªIdentifierÍ«Í¯¤nameÂÂ¤init[¨PropertyÍ¾ÍĞÂÂÂKªIdentifierÍ¾ÍÆ¨portListKªIdentifierÍÈÍĞ¨portList¤init[¨PropertyÍßÍ4ÂÂÂKªIdentifierÍßÍè©innerTopoRµConditionalExpressionÍêÍ4T°MemberExpressionÍêÍüKªIdentifierÍêÍë¡sKªIdentifierÍìÍü°embeddedDocumentÂÂY®CallExpressionÍÿÍ-T°MemberExpressionÍÿÍKªIdentifierÍÿÍ¯TopologyAdapterKªIdentifierÍÍªtoTopologyÂÂ‘T°MemberExpressionÍÍ,KªIdentifierÍÍ¡sKªIdentifierÍÍ,°embeddedDocumentÂÂÂV§LiteralÍ0Í4À¤null¤initM°MethodDefinitionÍMÍ"ÃÂKªIdentifierÍTÍ\¨toSubRef¦methodN²FunctionExpressionÍ\Í"ÀÂÂÂ‘KªIdentifierÍ]Í^¡bL®BlockStatementÍ`Í"•O³VariableDeclarationÍkÍ|‘P²VariableDeclaratorÍqÍ{KªIdentifierÍqÍv¥portsQ¯ArrayExpressionÍyÍ{¥constU¬ForStatementÍ†Í ÅO³VariableDeclarationÍ‹Í”‘P²VariableDeclaratorÍÍ”KªIdentifierÍÍ¡iV§LiteralÍ“Í” ¡0£letS°BinaryExpressionÍ–Í«KªIdentifierÍ–Í—¡i¡<T°MemberExpressionÍšÍ«T°MemberExpressionÍšÍ¤KªIdentifierÍšÍ›¡bKªIdentifierÍœÍ¤¨portListÂÂKªIdentifierÍ¥Í«¦lengthÂÂW°UpdateExpressionÍ­Í°¢++ÂKªIdentifierÍ­Í®¡iL®BlockStatementÍ²Í Å”O³VariableDeclarationÍÁÍÙ‘P²VariableDeclaratorÍÇÍØKªIdentifierÍÇÍÈ¡pT°MemberExpressionÍËÍØT°MemberExpressionÍËÍÕKªIdentifierÍËÍÌ¡bKªIdentifierÍÍÍÕ¨portListÂÂKªIdentifierÍÖÍ×¡iÃÂ¥constO³VariableDeclarationÍçÍ‘P²VariableDeclaratorÍëÍKªIdentifierÍëÍô©directionV§LiteralÍ÷Í­bidirectional¯'bidirectional'£letR«IfStatementÍÍÊS°BinaryExpressionÍÍ-T°MemberExpressionÍÍ$KªIdentifierÍÍ¡pKªIdentifierÍÍ$©directionÂÂ£===V§LiteralÍ)Í-¢in¤'in'L®BlockStatementÍ/Íe‘X³ExpressionStatementÍBÍV^´AssignmentExpressionÍBÍU¡=KªIdentifierÍBÍK©directionV§LiteralÍNÍU¥input§'input'R«IfStatementÍxÍÊS°BinaryExpressionÍ|Í‘T°MemberExpressionÍ|Í‡KªIdentifierÍ|Í}¡pKªIdentifierÍ~Í‡©directionÂÂ£===V§LiteralÍŒÍ‘£out¥'out'L®BlockStatementÍ“ÍÊ‘X³ExpressionStatementÍ¦Í»^´AssignmentExpressionÍ¦Íº¡=KªIdentifierÍ¦Í¯©directionV§LiteralÍ²Íº¦output¨'output'ÀX³ExpressionStatementÍØÍ ºY®CallExpressionÍØÍ ¹T°MemberExpressionÍØÍâKªIdentifierÍØÍİ¥portsKªIdentifierÍŞÍâ¤pushÂÂ‘Z°ObjectExpressionÍãÍ ¸•[¨PropertyÍöÍ ÂÂÂKªIdentifierÍöÍø¢idT°MemberExpressionÍúÍ KªIdentifierÍúÍû¡pKªIdentifierÍüÍ ¦portIdÂÂ¤init[¨PropertyÍ Í %ÂÂÂKªIdentifierÍ Í ¤nameT°MemberExpressionÍ Í %KªIdentifierÍ Í ¡pKªIdentifierÍ Í %¨portNameÂÂ¤init[¨PropertyÍ 8Í SÂÂÂKªIdentifierÍ 8Í <¤typeT°MemberExpressionÍ >Í SKªIdentifierÍ >Í E§PinTypeKªIdentifierÍ FÍ S­BIDIRECTIONALÂÂ¤init[¨PropertyÍ fÍ zÂÂÂKªIdentifierÍ fÍ o©directionKªIdentifierÍ qÍ z©direction¤init[¨PropertyÍ Í ©ÂÂÂKªIdentifierÍ Í •¨positionZ°ObjectExpressionÍ —Í ©’[¨PropertyÍ ™Í ŸÂÂÂKªIdentifierÍ ™Í š¡xT°MemberExpressionÍ œÍ ŸKªIdentifierÍ œÍ ¡pKªIdentifierÍ Í Ÿ¡xÂÂ¤init[¨PropertyÍ ¡Í §ÂÂÂKªIdentifierÍ ¡Í ¢¡yT°MemberExpressionÍ ¤Í §KªIdentifierÍ ¤Í ¥¡pKªIdentifierÍ ¦Í §¡yÂÂ¤init¤initÂO³VariableDeclarationÍ ÏÍ!„‘P²VariableDeclaratorÍ ÕÍ!ƒKªIdentifierÍ ÕÍ Ø£refZ°ObjectExpressionÍ ÛÍ!ƒ•[¨PropertyÍ êÍ ÷ÂÂÂKªIdentifierÍ êÍ ì¢idT°MemberExpressionÍ îÍ ÷KªIdentifierÍ îÍ ï¡bKªIdentifierÍ ğÍ ÷§subUuidÂÂ¤init[¨PropertyÍ!Í!ÂÂÂKªIdentifierÍ!Í!
+¤nameT°MemberExpressionÍ!Í!KªIdentifierÍ!Í!¡bKªIdentifierÍ!Í!¤nameÂÂ¤init[¨PropertyÍ!!Í!6ÂÂÂKªIdentifierÍ!!Í!+ªdocumentIdT°MemberExpressionÍ!-Í!6KªIdentifierÍ!-Í!.¡bKªIdentifierÍ!/Í!6§subUuidÂÂ¤init[¨PropertyÍ!EÍ!]ÂÂÂKªIdentifierÍ!EÍ!M¨positionZ°ObjectExpressionÍ!OÍ!]’[¨PropertyÍ!QÍ!UÂÂÂKªIdentifierÍ!QÍ!R¡xV§LiteralÍ!TÍ!U ¡0¤init[¨PropertyÍ!WÍ![ÂÂÂKªIdentifierÍ!WÍ!X¡yV§LiteralÍ!ZÍ![ ¡0¤init¤init[¨PropertyÍ!lÍ!xÂÂÂKªIdentifierÍ!lÍ!q¥portsKªIdentifierÍ!sÍ!x¥ports¤init¥constR«IfStatementÍ!Í!úT°MemberExpressionÍ!’Í!KªIdentifierÍ!’Í!“¡bKªIdentifierÍ!”Í!©innerTopoÂÂL®BlockStatementÍ!ŸÍ!ú‘X³ExpressionStatementÍ!®Í!ï^´AssignmentExpressionÍ!®Í!î¡=T°MemberExpressionÍ!®Í!ÂKªIdentifierÍ!®Í!±£refKªIdentifierÍ!²Í!Â°embeddedDocumentÂÂY®CallExpressionÍ!ÅÍ!îT°MemberExpressionÍ!ÅÍ!áKªIdentifierÍ!ÅÍ!Ô¯TopologyAdapterKªIdentifierÍ!ÕÍ!á¬fromTopologyÂÂ‘T°MemberExpressionÍ!âÍ!íKªIdentifierÍ!âÍ!ã¡bKªIdentifierÍ!äÍ!í©innerTopoÂÂÂÀ\¯ReturnStatementÍ"Í"KªIdentifierÍ"Í"£refM°MethodDefinitionÍ"Í"“ÃÂKªIdentifierÍ"#Í"2¯syncIncremental¦methodN²FunctionExpressionÍ"2Í"“ÀÂÂÂ’KªIdentifierÍ"3Í"6£docKªIdentifierÍ"8Í">¦cachedL®BlockStatementÍ"@Í"“‘\¯ReturnStatementÍ"KÍ"ŒY®CallExpressionÍ"RÍ"‹T°MemberExpressionÍ"RÍ"~KªIdentifierÍ"RÍ"f´TopologyPatchApplierKªIdentifierÍ"gÍ"~·syncTopologyIncrementalÂÂ’KªIdentifierÍ"Í"‚£docKªIdentifierÍ"„Í"Š¦cachedÂÀ•Ôr_•¤type¥start£endªspecifiers¦source±ImportDeclaration ÌC“Ôr`•¤type¥start£end¨imported¥local¯ImportSpecifier	KªIdentifier	§NetTypeKªIdentifier	§NetType`¯ImportSpecifierKªIdentifier©WireStyleKªIdentifier©WireStyle`¯ImportSpecifier$KªIdentifier$§PinTypeKªIdentifier$§PinTypeV§Literal,ÌB´../types/CommonTypes¶'../types/CommonTypes'_±ImportDeclarationÌEÌg‘`¯ImportSpecifierÌNÌTKªIdentifierÌNÌT¦IdUtilKªIdentifierÌNÌT¦IdUtilV§LiteralÌ\Ìf¨./IdUtilª'./IdUtil'_±ImportDeclarationÌiÌÊ”`¯ImportSpecifierÌrÌKªIdentifierÌrÌ¯ensureStringMapKªIdentifierÌrÌ¯ensureStringMap`¯ImportSpecifierÌƒÌ‘KªIdentifierÌƒÌ‘®makeNetNodeRefKªIdentifierÌƒÌ‘®makeNetNodeRef`¯ImportSpecifierÌ“Ì KªIdentifierÌ“Ì ­makeRouteLineKªIdentifierÌ“Ì ­makeRouteLine`¯ImportSpecifierÌ¢Ì³KªIdentifierÌ¢Ì³±normalizeRotationKªIdentifierÌ¢Ì³±normalizeRotationV§LiteralÌ»ÌÉ¬./MapHelpers®'./MapHelpers'_±ImportDeclarationÌÌÍ’`¯ImportSpecifierÌÕÌàKªIdentifierÌÕÌà«parsePinRefKªIdentifierÌÕÌà«parsePinRef`¯ImportSpecifierÌâÌíKªIdentifierÌâÌí«buildPinRefKªIdentifierÌâÌí«buildPinRefV§LiteralÌõÍ¬./PinRefUtil®'./PinRefUtil'_±ImportDeclarationÍÍ=‘`¯ImportSpecifierÍÍ#KªIdentifierÍÍ#´TopologyPatchApplierKªIdentifierÍÍ#´TopologyPatchApplierV§LiteralÍ+Í<¯./TopologyPatch±'./TopologyPatch'

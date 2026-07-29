@@ -5,7 +5,7 @@
  * - 通过 AppStorage 广播 proteusThemeRev，驱动未显式传参的 @Component 重绘
  */
 import { ConfigurationConstant, common } from '@kit.AbilityKit';
-import { ProteusColors } from './ProteusTheme';
+import { ProteusColors, PcbColors } from './ProteusTheme';
 import fs from '@ohos.file.fs';
 
 export type ThemeMode = 'light' | 'dark';
@@ -63,6 +63,7 @@ export class ThemeManager {
 
   applyActivePalette(): void {
     ProteusColors.applyTheme(this.mode === 'dark', this.highContrast);
+    PcbColors.applyTheme(this.mode === 'dark');
     this.syncSystemColorMode();
     this.publishThemeRev();
   }

@@ -16,6 +16,7 @@ import {
 import { FilePersistenceImpl, CrashGuard, IFilePersistence, BomLookup, SessionState } from 'file_persistence';
 import { VirtualInstrumentsImpl, IVirtualInstruments, ComponentInstrumentBinding } from 'instruments';
 import { PluginManagerImpl, IPluginManager } from 'plugin_system';
+import { PcbEditorImpl, IPcbEditor } from 'pcb_editor';
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import { DeviceLibraryBootstrap } from '../utils/DeviceLibraryBootstrap';
@@ -48,7 +49,7 @@ import {
   emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil,
   mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, ComponentInstance,
   ClarificationQuestion, ClarificationAnswer,
-  MainThreadYield, MultimeterMode
+  MainThreadYield, MultimeterMode, createEmptyPcbDocument, PcbDocument, normalizePcbDocument
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 import { InstrumentWaveExpandStore } from '../components/InstrumentWaveExpandStore';
@@ -126,6 +127,7 @@ export class AppService {
   readonly filePersistence: IFilePersistence;
   readonly instruments: IVirtualInstruments;
   readonly pluginManager: IPluginManager;
+  readonly pcbEditor: IPcbEditor;
   readonly teachingService: TeachingService;
   readonly mcuBehavior: McuBehaviorSimulator;
   readonly crashGuard: CrashGuard;
@@ -206,6 +208,8 @@ export class AppService {
     this.filePersistence = new FilePersistenceImpl();
     this.instruments = new VirtualInstrumentsImpl();
     this.pluginManager = new PluginManagerImpl();
+    this.pcbEditor = new PcbEditorImpl();
+    (this.pcbEditor as PcbEditorImpl).setSchematicProvider(() => this.schematicEditor.getDocument());
     this.teachingService = (this.aiEngine as AiEngineImpl).teachingService;
     this.mcuBehavior = new McuBehaviorSimulator();
     this.crashGuard = new CrashGuard();
@@ -327,6 +331,11 @@ export class AppService {
     this.resetInstrumentUiForProjectSwitch();
     this.currentProject = this.filePersistence.createNewProject(name);
     this.currentProjectPath = '';
+    if (!this.currentProject.pcb) {
+      this.currentProject.pcb = createEmptyPcbDocument(name);
+    }
+    normalizePcbDocument(this.currentProject.pcb);
+    this.pcbEditor.loadDocument(this.currentProject.pcb);
     // API 存在全局加密金库，新建工程不再清空已加载的 API
     this.currentProject.aiConfigs = [];
     Logger.info(INSTR_TRACE_TAG, '[AI_API] newProject keep vault APIs (not cleared)');
@@ -1640,6 +1649,12 @@ export class AppService {
     }
     this.currentProject = result.data;
     this.currentProjectPath = path;
+    if (!this.currentProject.pcb) {
+      this.currentProject.pcb = createEmptyPcbDocument(this.currentProject.name);
+    } else {
+      normalizePcbDocument(this.currentProject.pcb);
+    }
+    this.pcbEditor.loadDocument(this.currentProject.pcb);
     const editor = this.schematicEditor as SchematicEditorImpl;
     editor.loadDocument(this.currentProject.schematic);
     editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
@@ -1762,6 +1777,10 @@ export class AppService {
   syncProjectFromModules(): void {
     if (!this.currentProject) return;
     this.currentProject.schematic = this.schematicEditor.getDocument();
+    const pcbDoc = this.pcbEditor.getDocument();
+    if (pcbDoc) {
+      this.currentProject.pcb = pcbDoc;
+    }
     this.currentProject.simulationConfig = this.simulationKernel.getConfig();
     this.currentProject.modifiedAt = new Date().toISOString();
     const editor = this.schematicEditor as SchematicEditorImpl;
@@ -1878,9 +1897,17 @@ export class AppService {
     return this.getWorkingAutoSavePath();
   }
 
+  /** 是否已绑定磁盘路径（正式工程或 autosave 副本） */
+  private hasDiskBackedProject(): boolean {
+    if (this.currentProjectPath.length > 0) {
+      return true;
+    }
+    return this.getWorkingAutoSavePath().length > 0;
+  }
+
   /** 编辑后防抖写入 autosave 工作副本 */
   async persistWorkingCopy(): Promise<boolean> {
-    if (this.currentProject === null) {
+    if (this.currentProject === null || !this.hasDiskBackedProject()) {
       return false;
     }
     this.syncProjectFromModules();
@@ -1892,7 +1919,7 @@ export class AppService {
    * closedCleanly=true 表示正常退出；false 表示异常/编辑中，下次启动走恢复。
    */
   async flushProjectProtection(closedCleanly: boolean): Promise<void> {
-    if (this.currentProject === null) {
+    if (this.currentProject === null || !this.hasDiskBackedProject()) {
       return;
     }
     await this.persistWorkingCopy();
@@ -1945,7 +1972,9 @@ export class AppService {
   }
 
   async saveRecoveryCache(): Promise<void> {
-    if (this.currentProject === null) return;
+    if (this.currentProject === null || !this.hasDiskBackedProject()) {
+      return;
+    }
     this.syncProjectFromModules();
     await (this.filePersistence as FilePersistenceImpl)
       .saveRecoveryCacheWithPath(this.currentProjectPath, this.currentProject);
@@ -3369,6 +3398,11 @@ export class AppService {
       return;
     }
     await TemplateProjectBootstrap.whenReady();
+  }
+
+  /** 列出沙箱 Test_Template 目录下示例工程（完整路径） */
+  listTemplateProjectFiles(): string[] {
+    return TemplateProjectBootstrap.listTemplateSchsimFiles(this.appBaseDir);
   }
 
   listAvailableLabTemplates(category: string = 'all'): LabTemplate[] {

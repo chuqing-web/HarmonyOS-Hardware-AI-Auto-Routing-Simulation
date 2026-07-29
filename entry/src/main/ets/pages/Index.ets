@@ -20,7 +20,7 @@ import {
   ProteusNavTab, ProteusTreeRow, ProteusClassicBtn, ProteusSectionTitle,
   ProteusMenuTrigger, ProteusToolButton, ProteusToolGroup, ProteusResizer,
   ProteusSidebarTab, ProteusNavCompRow, ProteusNavNetRow, ProteusErcRow,
-  ProteusMenuEntry, ProteusTextInput
+  ProteusMenuEntry, ProteusTextInput, ProteusMenuItem
 } from '../components/proteus/ProteusWidgets';
 import { ProteusIcon, ProteusIconName } from '../components/proteus/ProteusIcons';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
@@ -209,88 +209,19 @@ struct Index {
       this.deferCanvasFit();
     });
 
-    // 先读 recovery/session（仍保留上次 closedCleanly），再标记本次运行中
+    // 首页传入 launchMode 时按意图打开；否则创建空白工程（不再自动恢复 session / 欢迎弹窗）
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
-    const session = await this.appService.loadSession();
-    if (session !== null && session.lastProjectName.length > 0) {
-      const autoSavePath = session.autoSavePath !== undefined && session.autoSavePath.length > 0
-        ? session.autoSavePath
-        : `${this.appService.getAutosaveDir()}/${session.lastProjectName}.schsim`;
-      const pathsToTry: string[] = [];
-      if (!session.closedCleanly) {
-        for (let i = 0; i < this.recoveryFiles.length; i++) {
-          if (!pathsToTry.includes(this.recoveryFiles[i])) {
-            pathsToTry.push(this.recoveryFiles[i]);
-          }
-        }
-        if (session.lastPath.length > 0 && !pathsToTry.includes(session.lastPath)) {
-          pathsToTry.push(session.lastPath);
-        }
-        if (!pathsToTry.includes(autoSavePath)) {
-          pathsToTry.push(autoSavePath);
-        }
-      } else {
-        if (session.lastPath.length > 0) {
-          pathsToTry.push(session.lastPath);
-        }
-        if (!pathsToTry.includes(autoSavePath)) {
-          pathsToTry.push(autoSavePath);
-        }
-      }
-      let ok = false;
-      let loadedPath = '';
-      for (let i = 0; i < pathsToTry.length; i++) {
-        ok = await this.appService.loadProject(pathsToTry[i]);
-        if (ok) {
-          loadedPath = pathsToTry[i];
-          break;
-        }
-      }
-      if (ok) {
-        this.projectName = this.appService.currentProject?.name ?? session.lastProjectName;
-        this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
-        this.deferCanvasFit();
-        this.appInitialized = true;
-        if (!session.closedCleanly) {
-          const loadedFromWorkingCopy = loadedPath === autoSavePath ||
-            this.recoveryFiles.includes(loadedPath);
-          if (!loadedFromWorkingCopy && this.recoveryFiles.length > 0) {
-            this.showRecoveryDialog = true;
-            this.statusMessage = `已恢复工程: ${this.projectName}（检测到更新的工作副本）`;
-          } else {
-            this.statusMessage = `已从工作副本恢复: ${loadedPath}`;
-          }
-        } else if (this.recoveryFiles.length > 0) {
-          this.showRecoveryDialog = true;
-          this.statusMessage = `已恢复工程: ${this.projectName}（检测到额外恢复文件）`;
-        } else {
-          this.statusMessage = `已恢复上次工程: ${this.projectName}`;
-        }
-        await this.appService.markSessionRunning();
-        return;
-      }
-    }
-
-    if (this.recoveryFiles.length > 0) {
-      this.appService.newProject('Untitled');
-      this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`,
-        AppService.AUTOSAVE_INTERVAL_MS);
-      this.showRecoveryDialog = true;
-      this.appInitialized = true;
-      this.statusMessage = '检测到未正常关闭的工程，是否恢复？';
-      await this.appService.markSessionRunning();
+    if (await this.applyLaunchFromRouter()) {
       return;
     }
 
-    // No recovery, no last session — show welcome dialog
     this.appService.newProject('Untitled');
     this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/Untitled.schsim`,
       AppService.AUTOSAVE_INTERVAL_MS);
     this.refreshComponentList();
     this.deferCanvasFit();
     this.appInitialized = true;
-    this.showWelcomeDialog = true;
-    this.statusMessage = '欢迎使用 AI 原理图仿真 — 请新建或打开工程';
+    this.statusMessage = '新建空白工程';
     await this.appService.markSessionRunning();
   }
 
@@ -694,6 +625,174 @@ struct Index {
     this.statusMessage = `已加载: ${path}`;
   }
 
+  /** 首页快捷入口：内存工作区，不启用 autosave、不写 Untitled.schsim */
+  private initEphemeralWorkspace(projectName: string = 'Untitled'): void {
+    this.showWelcomeDialog = false;
+    this.appService.disableAutoSave();
+    this.appService.newProject(projectName);
+    this.projectName = projectName;
+    this.appService.schematicEditor.fitAllInView();
+    this.unsavedChanges = false;
+    this.statusMessage = '未保存工作区 · 请通过 文件 → 保存 写入工程';
+  }
+
+  private sanitizeProjectName(raw: string | undefined): string {
+    if (raw === undefined || raw.trim().length === 0) {
+      return 'Untitled';
+    }
+    let name = raw.trim().replace(/[\\/:*?"<>|]/g, '_');
+    return name.length > 0 ? name : 'Untitled';
+  }
+
+  /** 读取 HomePage 传入的路由参数并初始化工程 */
+  private async applyLaunchFromRouter(): Promise<boolean> {
+    let params: Record<string, Object> = {};
+    try {
+      params = this.getUIContext().getRouter().getParams() as Record<string, Object>;
+    } catch (_e) {
+      return false;
+    }
+    const mode = params['launchMode'] as string | undefined;
+    if (mode === undefined || mode.length === 0) {
+      return false;
+    }
+
+    if (mode === 'open') {
+      const path = params['projectPath'] as string | undefined;
+      if (path !== undefined && path.length > 0) {
+        const ok = await this.appService.loadProject(path);
+        if (ok) {
+          this.applyOpenedProject(path);
+          this.refreshComponentList();
+          this.deferCanvasFit();
+          this.appInitialized = true;
+          if (params['showRecovery'] === true) {
+            this.showRecoveryDialog = true;
+          }
+          await this.appService.markSessionRunning();
+          this.applyPostLaunchRouterOptions(params);
+          return true;
+        }
+        this.statusMessage = `无法打开: ${path}`;
+      }
+      return false;
+    }
+
+    if (mode === 'new') {
+      const name = this.sanitizeProjectName(params['projectName'] as string | undefined);
+      this.createNamedProject(name);
+      this.refreshComponentList();
+      this.deferCanvasFit();
+      this.appInitialized = true;
+      await this.appService.markSessionRunning();
+      this.applyPostLaunchRouterOptions(params);
+      return true;
+    }
+
+    if (mode === 'resume') {
+      if (this.appService.currentProject !== null) {
+        this.projectName = this.appService.currentProject.name;
+        if (this.appService.currentProject.pcb) {
+          this.appService.pcbEditor.loadDocument(this.appService.currentProject.pcb);
+        }
+        this.refreshComponentList();
+        this.deferCanvasFit();
+        this.appInitialized = true;
+        this.applyPostLaunchRouterOptions(params);
+        return true;
+      }
+      return false;
+    }
+
+    if (mode === 'blank' || mode === 'scratch') {
+      const name = this.sanitizeProjectName(params['projectName'] as string | undefined);
+      const persist = params['persistProject'] === true;
+      if (persist) {
+        this.appService.disableAutoSave();
+        this.appService.newProject(name);
+        this.projectName = name;
+        this.appService.enableAutoSave(`${this.appService.getAutosaveDir()}/${name}.schsim`,
+          AppService.AUTOSAVE_INTERVAL_MS);
+        this.statusMessage = '新建空白工程';
+        await this.appService.markSessionRunning();
+      } else {
+        this.initEphemeralWorkspace(name);
+      }
+      this.refreshComponentList();
+      this.deferCanvasFit();
+      this.appInitialized = true;
+      this.applyPostLaunchRouterOptions(params);
+      return true;
+    }
+
+    return false;
+  }
+
+  /** HomePage 传入的后续 UI 意图：打开侧栏标签、自动仿真等 */
+  private applyPostLaunchRouterOptions(params: Record<string, Object>): void {
+    if (params['expandRightPanel'] === true) {
+      this.rightCollapsed = false;
+      this.uiState.rightCollapsed = false;
+    }
+    const tabRaw = params['openRightTab'];
+    if (tabRaw !== undefined) {
+      const tab = Number(tabRaw);
+      if (!isNaN(tab) && tab >= 0 && tab <= 8) {
+        this.setActiveRightTab(tab);
+        this.rightCollapsed = false;
+        this.uiState.rightCollapsed = false;
+      }
+    }
+    if (params['autoStartSim'] === true) {
+      setTimeout(() => {
+        void this.startSimFromUi();
+      }, 450);
+    }
+  }
+
+  private createNamedProject(name: string): void {
+    this.showWelcomeDialog = false;
+    this.appService.disableAutoSave();
+    this.appService.newProject(name);
+    this.projectName = name;
+    this.appService.schematicEditor.fitAllInView();
+    const projectPath = `${this.userProjectDir}/${name}.schsim`;
+    const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
+    this.appService.currentProjectPath = projectPath;
+    void this.appService.saveProject(projectPath, true).then((saved) => {
+      if (saved) {
+        this.appService.currentProjectPath = projectPath;
+        this.unsavedChanges = false;
+        this.statusMessage = `已创建: ${projectPath}`;
+        void this.appService.saveSession(projectPath, name, false);
+      } else {
+        this.statusMessage = `创建失败，请检查工程目录: ${this.userProjectDir}`;
+      }
+    });
+    this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
+  }
+
+  async goToHomePage(): Promise<void> {
+    await this.appService.flushProjectProtection(!this.unsavedChanges);
+    try {
+      await this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' });
+    } catch (_e) {
+      this.statusMessage = '无法返回首页';
+    }
+  }
+
+  async goToPcbPage(): Promise<void> {
+    this.appService.syncProjectFromModules();
+    try {
+      await this.getUIContext().getRouter().replaceUrl({
+        url: 'pages/PcbPage',
+        params: { launchMode: 'resume' }
+      });
+    } catch (_e) {
+      this.statusMessage = '无法打开 PCB 编辑器';
+    }
+  }
+
   /**
    * 新建：直接打开系统文件管理（默认定位到 project 目录）另存为新工程
    */
@@ -757,24 +856,7 @@ struct Index {
     }
     this.showNewProjectDialog = false;
     this.showWelcomeDialog = false;
-    this.appService.disableAutoSave();
-    this.appService.newProject(name);
-    this.projectName = name;
-    this.appService.schematicEditor.fitAllInView();
-    const projectPath = `${this.userProjectDir}/${name}.schsim`;
-    const autoSavePath = `${this.appService.getAutosaveDir()}/${name}.schsim`;
-    this.appService.currentProjectPath = projectPath;
-    void this.appService.saveProject(projectPath, true).then((saved) => {
-      if (saved) {
-        this.appService.currentProjectPath = projectPath;
-        this.unsavedChanges = false;
-        this.statusMessage = `已创建: ${projectPath}`;
-        void this.appService.saveSession(projectPath, name, false);
-      } else {
-        this.statusMessage = `创建失败，请检查工程目录: ${this.userProjectDir}`;
-      }
-    });
-    this.appService.enableAutoSave(autoSavePath, AppService.AUTOSAVE_INTERVAL_MS);
+    this.createNamedProject(name);
   }
 
   /**
@@ -1309,6 +1391,16 @@ struct Index {
   @Builder
   MenuBar() {
     Row() {
+      ProteusMenuItem({
+        label: $r('app.string.menu_home'),
+        onAction: () => { void this.goToHomePage(); }
+      })
+      Divider()
+        .vertical(true)
+        .height(18)
+        .width(1)
+        .color(ProteusColors.DIVIDER)
+        .margin({ left: 2, right: 4 })
       ProteusMenuTrigger({
         label: $r('app.string.menu_file'),
         entries: this.fileMenuEntries()
@@ -1363,6 +1455,8 @@ struct Index {
       { label: $r('app.string.toolbar_open'), shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
       { label: $r('app.string.toolbar_save'), shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } },
       { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: () => { void this.handleSaveAs(); } },
+      { label: '', separator: true, action: () => {} },
+      { label: $r('app.string.menu_back_home'), action: () => { void this.goToHomePage(); } },
       { label: '', separator: true, action: () => {} },
       { label: 'Export...', action: () => { this.statusMessage = 'Export: not yet implemented'; } }
     ];
@@ -1467,12 +1561,16 @@ struct Index {
     return [
       { label: $r('app.string.toolbar_new'), shortcut: 'Ctrl+N', icon: ProteusIconName.NEW, action: () => { void this.handleNewProject(); } },
       { label: $r('app.string.toolbar_open'), shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
-      { label: $r('app.string.toolbar_save'), shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } }
+      { label: $r('app.string.toolbar_save'), shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } },
+      { label: '', separator: true, action: () => {} },
+      { label: 'PCB Layout', action: () => { void this.goToPcbPage(); } }
     ];
   }
 
   helpMenuEntries(): ProteusMenuEntry[] {
     return [
+      { label: $r('app.string.menu_back_home'), action: () => { void this.goToHomePage(); } },
+      { label: '', separator: true, action: () => {} },
       { label: 'Keyboard Shortcuts', shortcut: 'F1', action: () => {
         this.setActiveRightTab(7);
         if (this.rightCollapsed) {
@@ -1491,6 +1589,15 @@ struct Index {
   @Builder
   MainToolbar() {
     Row() {
+      ProteusToolGroup({ title: 'Home' }) {
+        ProteusToolButton({
+          iconName: ProteusIconName.HOME,
+          tooltip: '返回首页',
+          showLabel: false,
+          onAction: () => { void this.goToHomePage(); }
+        })
+      }
+
       ProteusToolGroup({ title: 'File' }) {
         ProteusToolButton({ iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } })
         ProteusToolButton({ iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } })

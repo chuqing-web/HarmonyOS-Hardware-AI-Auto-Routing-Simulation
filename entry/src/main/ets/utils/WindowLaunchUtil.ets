@@ -33,6 +33,12 @@ export async function maximizeAppWindow(ctx?: common.UIAbilityContext,
     // Desktop maximize (keeps system title bar; not immersive fullscreen).
     try {
       await mainWindow.maximize();
+      try {
+        // 启动页加载前窗口底设为黑色，避免首帧/layout 抖动时角落闪白
+        await mainWindow.setWindowBackgroundColor('#FF000000');
+      } catch (_eBg) {
+        // Optional API
+      }
       // 给布局一帧时间收敛，减少随后 Splash/主页 Canvas 尺寸抖动
       await new Promise<void>((resolve) => setTimeout(resolve, 32));
       return;

@@ -1357,6 +1357,11 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
   const collapseHits: string[] = [];
   netIdToReps.forEach((reps: string[], nid: string) => {
     if (reps.length > 1) {
+      const nm = nameOfNet(nid).toUpperCase();
+      // GND/VCC 等同名电源网：多几何岛合并到同一 netId 是正常行为，非撞名 bug
+      if (nm === 'GND' || nm === 'VSS' || nm === 'AGND' || nm === 'VCC' || nm === 'VDD' || nm === 'VEE') {
+        return;
+      }
       collapseHits.push(`${nameOfNet(nid)}(${nid})←${reps.length}reps`);
     }
   });

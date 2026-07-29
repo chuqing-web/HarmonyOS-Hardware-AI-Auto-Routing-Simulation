@@ -241,6 +241,9 @@ export function buildProjectDataForSave(
   if (data.backupPath !== undefined) {
     result.backupPath = data.backupPath;
   }
+  if (data.pcb !== undefined) {
+    result.pcb = data.pcb;
+  }
   return result;
 }
 

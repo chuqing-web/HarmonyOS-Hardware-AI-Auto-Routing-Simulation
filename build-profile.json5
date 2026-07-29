@@ -150,6 +150,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "pcb_editor",
+      "srcPath": "./features/pcb_editor",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

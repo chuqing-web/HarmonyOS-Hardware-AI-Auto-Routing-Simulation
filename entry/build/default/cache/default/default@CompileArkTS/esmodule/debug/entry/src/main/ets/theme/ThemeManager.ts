@@ -1,6 +1,6 @@
 import ConfigurationConstant from "@ohos:app.ability.ConfigurationConstant";
 import type common from "@ohos:app.ability.common";
-import { ProteusColors } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+import { ProteusColors, PcbColors } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import fs from "@ohos:file.fs";
 export type ThemeMode = 'light' | 'dark';
 export const PROTEUS_THEME_REV_KEY: string = 'proteusThemeRev';
@@ -47,6 +47,7 @@ export class ThemeManager {
     }
     applyActivePalette(): void {
         ProteusColors.applyTheme(this.mode === 'dark', this.highContrast);
+        PcbColors.applyTheme(this.mode === 'dark');
         this.syncSystemColorMode();
         this.publishThemeRev();
     }

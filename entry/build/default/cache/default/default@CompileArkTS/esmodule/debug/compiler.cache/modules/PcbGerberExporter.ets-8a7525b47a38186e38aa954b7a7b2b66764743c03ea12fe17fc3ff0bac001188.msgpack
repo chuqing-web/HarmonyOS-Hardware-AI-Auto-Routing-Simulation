@@ -1,0 +1,848 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ2¡/**
+ * Gerber RS-274X å¯¼å‡º â€” é“œå±‚é—ªé“œ / Mask / Silk / Paste / Edge / Drill åˆ†åŒ…
+ */
+import { PcbLayerId, PcbPadType, PcbPadShape, isCopperLayer, copperLayersFromStack } from '../types/PcbTypes';
+import { padWorldPosition } from './PcbZoneUtil';
+import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+function milToMm(v) {
+    return v * 0.0254;
+}
+function fmtCoord(vMil) {
+    const iv = Math.round(milToMm(vMil) * 10000);
+    const s = Math.abs(iv).toString();
+    const padded = s.length >= 6 ? s : '0'.repeat(6 - s.length) + s;
+    return iv < 0 ? `X-${padded}` : `X${padded}`;
+}
+function fmtCoordY(vMil) {
+    const iv = Math.round(milToMm(vMil) * 10000);
+    const s = Math.abs(iv).toString();
+    const padded = s.length >= 6 ? s : '0'.repeat(6 - s.length) + s;
+    return iv < 0 ? `Y-${padded}` : `Y${padded}`;
+}
+function gerberHeader(title) {
+    return [
+        `G04 ${title}*`,
+        '%FSLAX24Y24*%',
+        '%MOMM*%',
+        '%LPD*%',
+        'G01*'
+    ].join('\n') + '\n';
+}
+function apertureCircle(dCode, diameterMil) {
+    const mm = milToMm(Math.max(1, diameterMil)).toFixed(4);
+    return `%ADD${dCode}C,${mm}*%\n`;
+}
+function apertureRect(dCode, wMil, hMil) {
+    const w = milToMm(Math.max(1, wMil)).toFixed(4);
+    const h = milToMm(Math.max(1, hMil)).toFixed(4);
+    return `%ADD${dCode}R,${w}X${h}*%\n`;
+}
+function apertureOval(dCode, wMil, hMil) {
+    const w = milToMm(Math.max(1, wMil)).toFixed(4);
+    const h = milToMm(Math.max(1, hMil)).toFixed(4);
+    const macroDef = `%AMOVAL${dCode}*\n21,1,${w},${h},0,0,0*%\n`;
+    return `${macroDef}%ADD${dCode}OVAL${dCode}*%\n`;
+}
+function apertureRoundRect(dCode, wMil, hMil, rMil) {
+    const w = milToMm(Math.max(1, wMil)).toFixed(4);
+    const h = milToMm(Math.max(1, hMil)).toFixed(4);
+    const r = milToMm(Math.max(0.1, rMil)).toFixed(4);
+    const macroDef = `%AMRR${dCode}*\n21,1,${w},${h},${r},0,0*%\n`;
+    return `${macroDef}%ADD${dCode}RR${dCode}*%\n`;
+}
+function flashPad(x, y, dCode) {
+    return `D${dCode}*\n${fmtCoord(x)}${fmtCoordY(y)}D03*\n`;
+}
+function appendTrackSegment(trk, dCode) {
+    let s = `G04 net ${trk.netName || trk.netId}*\n`;
+    s += `D${dCode}*\n`;
+    s += `${fmtCoord(trk.start.x)}${fmtCoordY(trk.start.y)}D02*\n`;
+    s += `${fmtCoord(trk.end.x)}${fmtCoordY(trk.end.y)}D01*\n`;
+    return s;
+}
+function exportCopperLayer(doc, layer, fileName, layerTitle) {
+    let body = gerberHeader(layerTitle);
+    let nextD = 10;
+    const widthToD = new Map();
+    const padApertures = [];
+    for (const trk of doc.tracks) {
+        if (trk.layer !== layer)
+            continue;
+        const w = Math.max(1, Math.round(trk.width));
+        if (!widthToD.has(w)) {
+            widthToD.set(w, nextD);
+            body += apertureCircle(nextD, w);
+            nextD++;
+        }
+    }
+    // ç„Šç›˜é—ªé“œ
+    const padDefs = [];
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            if (!padOnCopperLayer(pad, layer, fp))
+                continue;
+            const dCode = nextD++;
+            if (pad.shape === PcbPadShape.OVAL || pad.shape === PcbPadShape.ROUNDRECT) {
+                if (pad.shape === PcbPadShape.OVAL) {
+                    padApertures.push(apertureOval(dCode, pad.size.x, pad.size.y));
+                }
+                else {
+                    const r = Math.min(pad.size.x, pad.size.y) * 0.25;
+                    padApertures.push(apertureRoundRect(dCode, pad.size.x, pad.size.y, r));
+                }
+            }
+            else if (pad.shape === PcbPadShape.CIRCLE ||
+                (pad.size.x === pad.size.y && pad.type !== PcbPadType.SMD)) {
+                padApertures.push(apertureCircle(dCode, Math.max(pad.size.x, pad.size.y)));
+            }
+            else {
+                padApertures.push(apertureRect(dCode, pad.size.x, pad.size.y));
+            }
+            const wp = padWorldPosition(fp, pad);
+            const padDef = { d: dCode, flash: flashPad(wp.x, wp.y, dCode) };
+            padDefs.push(padDef);
+        }
+    }
+    for (const via of doc.vias) {
+        if (!viaSpansLayer(via.layers, layer))
+            continue;
+        const dCode = nextD++;
+        padApertures.push(apertureCircle(dCode, via.diameter));
+        const viaDef = { d: dCode, flash: flashPad(via.position.x, via.position.y, dCode) };
+        padDefs.push(viaDef);
+    }
+    for (const a of padApertures) {
+        body += a;
+    }
+    for (const trk of doc.tracks) {
+        if (trk.layer !== layer)
+            continue;
+        const w = Math.max(1, Math.round(trk.width));
+        const d = widthToD.get(w) ?? 10;
+        body += appendTrackSegment(trk, d);
+    }
+    for (const p of padDefs) {
+        body += p.flash;
+    }
+    // Zone è¦†é“œå¤šè¾¹å½¢å¡«å…… (G36/G37 region)
+    for (const z of doc.zones) {
+        if (z.layer !== layer)
+            continue;
+        if (z.outline.length < 3)
+            continue;
+        body += `G04 zone ${z.netName ?? z.netId} priority ${z.priority}*\n`;
+        body += 'G36*\n';
+        const z0 = z.outline[0];
+        body += `${fmtCoord(z0.x)}${fmtCoordY(z0.y)}D02*\n`;
+        for (let i = 1; i < z.outline.length; i++) {
+            body += `${fmtCoord(z.outline[i].x)}${fmtCoordY(z.outline[i].y)}D01*\n`;
+        }
+        body += `${fmtCoord(z0.x)}${fmtCoordY(z0.y)}D01*\n`;
+        body += 'G37*\n';
+    }
+    body += 'M02*\n';
+    return { layerName: layerTitle, fileName, content: body };
+}
+function padOnCopperLayer(pad, layer, fp) {
+    if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+        return isCopperLayer(layer);
+    }
+    if (pad.layers && pad.layers.length > 0) {
+        for (const l of pad.layers) {
+            if (l === layer)
+                return true;
+        }
+        return false;
+    }
+    return fp.layer === layer || (fp.mirrored && layer === PcbLayerId.B_CU) ||
+        (!fp.mirrored && layer === PcbLayerId.F_CU);
+}
+function viaSpansLayer(layers, layer) {
+    for (const l of layers) {
+        if (l === layer)
+            return true;
+    }
+    // é€šå­”é»˜è®¤è´¯ç©¿å…¨éƒ¨é“œå±‚
+    if (layers.length >= 2 && layers[0] === PcbLayerId.F_CU && layers[layers.length - 1] === PcbLayerId.B_CU) {
+        return isCopperLayer(layer);
+    }
+    return false;
+}
+function exportMaskLayer(doc, front) {
+    const title = front ? 'F.Mask' : 'B.Mask';
+    const fileName = front ? 'F_Mask.gbr' : 'B_Mask.gbr';
+    const copper = front ? PcbLayerId.F_CU : PcbLayerId.B_CU;
+    let body = gerberHeader(title);
+    let nextD = 10;
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            if (!padOnCopperLayer(pad, copper, fp))
+                continue;
+            const inflate = 4;
+            const dCode = nextD++;
+            body += apertureRect(dCode, pad.size.x + inflate * 2, pad.size.y + inflate * 2);
+            const wp = padWorldPosition(fp, pad);
+            body += flashPad(wp.x, wp.y, dCode);
+        }
+    }
+    for (const via of doc.vias) {
+        if (!viaSpansLayer(via.layers, copper))
+            continue;
+        const dCode = nextD++;
+        body += apertureCircle(dCode, via.diameter + 8);
+        body += flashPad(via.position.x, via.position.y, dCode);
+    }
+    body += 'M02*\n';
+    return { layerName: title, fileName, content: body };
+}
+function exportPasteLayer(doc, front) {
+    const title = front ? 'F.Paste' : 'B.Paste';
+    const fileName = front ? 'F_Paste.gbr' : 'B_Paste.gbr';
+    const copper = front ? PcbLayerId.F_CU : PcbLayerId.B_CU;
+    let body = gerberHeader(title);
+    let nextD = 10;
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            if (pad.type !== PcbPadType.SMD)
+                continue;
+            if (!padOnCopperLayer(pad, copper, fp))
+                continue;
+            const dCode = nextD++;
+            body += apertureRect(dCode, pad.size.x * 0.9, pad.size.y * 0.9);
+            const wp = padWorldPosition(fp, pad);
+            body += flashPad(wp.x, wp.y, dCode);
+        }
+    }
+    body += 'M02*\n';
+    return { layerName: title, fileName, content: body };
+}
+function localToWorld(local, fp) {
+    let lx = local.x;
+    let ly = local.y;
+    if (fp.mirrored)
+        lx = -lx;
+    if (fp.rotation === 90) {
+        const t = lx;
+        lx = -ly;
+        ly = t;
+    }
+    else if (fp.rotation === 180) {
+        lx = -lx;
+        ly = -ly;
+    }
+    else if (fp.rotation === 270) {
+        const t = lx;
+        lx = ly;
+        ly = -t;
+    }
+    const result = { x: fp.position.x + lx, y: fp.position.y + ly };
+    return result;
+}
+function exportSilkLayer(doc, front) {
+    const title = front ? 'F.SilkS' : 'B.SilkS';
+    const fileName = front ? 'F_SilkS.gbr' : 'B_SilkS.gbr';
+    const lib = getGlobalPcbFootprintLibrary();
+    let body = gerberHeader(title);
+    body += apertureCircle(10, 6);
+    body += 'D10*\n';
+    for (const fp of doc.footprints) {
+        const onFront = !fp.mirrored && fp.layer !== PcbLayerId.B_CU;
+        if (front !== onFront)
+            continue;
+        const def = lib.getDef(fp.defId);
+        body += `G04 ${fp.refDes}*\n`;
+        if (def && def.silkLines.length > 0) {
+            // ç»˜åˆ¶å°è£…ä¸å°è½®å»“çº¿
+            for (const line of def.silkLines) {
+                if (line.length < 2)
+                    continue;
+                const w0 = localToWorld(line[0], fp);
+                body += `${fmtCoord(w0.x)}${fmtCoordY(w0.y)}D02*\n`;
+                for (let i = 1; i < line.length; i++) {
+                    const wp = localToWorld(line[i], fp);
+                    body += `${fmtCoord(wp.x)}${fmtCoordY(wp.y)}D01*\n`;
+                }
+            }
+        }
+        else {
+            // æ— å®šä¹‰æ—¶ä»ç”»å‚è€ƒæ ‡è®°
+            body += `${fmtCoord(fp.position.x)}${fmtCoordY(fp.position.y)}D02*\n`;
+            body += `${fmtCoord(fp.position.x + 24)}${fmtCoordY(fp.position.y)}D01*\n`;
+        }
+    }
+    body += 'M02*\n';
+    return { layerName: title, fileName, content: body };
+}
+function exportBoardOutline(doc) {
+    let body = gerberHeader('Edge Cuts');
+    body += apertureCircle(10, Math.max(1, doc.boardOutline.width));
+    body += 'D10*\n';
+    const pts = doc.boardOutline.points;
+    if (pts.length >= 2) {
+        body += `${fmtCoord(pts[0].x)}${fmtCoordY(pts[0].y)}D02*\n`;
+        for (let i = 1; i < pts.length; i++) {
+            body += `${fmtCoord(pts[i].x)}${fmtCoordY(pts[i].y)}D01*\n`;
+        }
+        body += `${fmtCoord(pts[0].x)}${fmtCoordY(pts[0].y)}D01*\n`;
+    }
+    body += 'M02*\n';
+    return { layerName: 'Edge.Cuts', fileName: 'Edge_Cuts.gbr', content: body };
+}
+function exportDrill(doc) {
+    let body = 'M48\n';
+    body += 'METRIC,TZ\n';
+    body += 'T1C0.30\n';
+    body += '%\n';
+    body += 'T1\n';
+    for (const via of doc.vias) {
+        const x = milToMm(via.position.x).toFixed(3);
+        const y = milToMm(via.position.y).toFixed(3);
+        body += `X${x}Y${y}\n`;
+    }
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            if (!pad.drill || pad.drill <= 0)
+                continue;
+            const wp = padWorldPosition(fp, pad);
+            const x = milToMm(wp.x).toFixed(3);
+            const y = milToMm(wp.y).toFixed(3);
+            body += `X${x}Y${y}\n`;
+        }
+    }
+    body += 'M30\n';
+    return { layerName: 'Drill', fileName: 'drill.txt', content: body };
+}
+/** æ‰“åŒ…è¯´æ˜æ–‡æœ¬ï¼ˆå·¥å‚å¯¹ç…§ï¼‰ */
+function exportReadme(doc, files) {
+    let body = `ElecDraw Gerber bundle for ${doc.name}\n`;
+    body += `Copper layers: ${doc.layerStack.copperCount}\n`;
+    body += `Units: mm (Gerber), drill metric\n\nFiles:\n`;
+    for (const f of files) {
+        body += ` - ${f.fileName} (${f.layerName})\n`;
+    }
+    return { layerName: 'README', fileName: 'README.txt', content: body };
+}
+export function exportPcbGerber(doc) {
+    const files = [];
+    let copperIds = copperLayersFromStack(doc.layerStack);
+    if (copperIds.length === 0) {
+        copperIds = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+    }
+    for (const id of copperIds) {
+        const safe = id.replace('.', '_');
+        files.push(exportCopperLayer(doc, id, `${safe}.gbr`, id));
+    }
+    files.push(exportMaskLayer(doc, true));
+    files.push(exportMaskLayer(doc, false));
+    files.push(exportPasteLayer(doc, true));
+    files.push(exportPasteLayer(doc, false));
+    files.push(exportSilkLayer(doc, true));
+    files.push(exportSilkLayer(doc, false));
+    files.push(exportBoardOutline(doc));
+    files.push(exportDrill(doc));
+    files.push(exportReadme(doc, files));
+    return { files };
+}
+//# sourceMappingURL=PcbGerberExporter.js.mapÂ“ÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbGerberExporter.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/PcbGerberExporter¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ2	/**
+ * Gerber RS-274X å¯¼å‡º â€” é“œå±‚é—ªé“œ / Mask / Silk / Paste / Edge / Drill åˆ†åŒ…
+ */
+import {
+  PcbDocument, PcbLayerId, PcbTrack, PcbPadType, PcbPadShape, PcbFootprintInst, PcbPad,
+  isCopperLayer, copperLayersFromStack
+} from '../types/PcbTypes';
+import { Point2D } from '../types/CommonTypes';
+import { padWorldPosition } from './PcbZoneUtil';
+import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+
+export interface GerberLayerFile {
+  layerName: string;
+  fileName: string;
+  content: string;
+}
+
+export interface GerberExportResult {
+  files: GerberLayerFile[];
+}
+
+interface PadExportDef {
+  d: number;
+  flash: string;
+}
+
+function milToMm(v: number): number {
+  return v * 0.0254;
+}
+
+function fmtCoord(vMil: number): string {
+  const iv = Math.round(milToMm(vMil) * 10000);
+  const s = Math.abs(iv).toString();
+  const padded = s.length >= 6 ? s : '0'.repeat(6 - s.length) + s;
+  return iv < 0 ? `X-${padded}` : `X${padded}`;
+}
+
+function fmtCoordY(vMil: number): string {
+  const iv = Math.round(milToMm(vMil) * 10000);
+  const s = Math.abs(iv).toString();
+  const padded = s.length >= 6 ? s : '0'.repeat(6 - s.length) + s;
+  return iv < 0 ? `Y-${padded}` : `Y${padded}`;
+}
+
+function gerberHeader(title: string): string {
+  return [
+    `G04 ${title}*`,
+    '%FSLAX24Y24*%',
+    '%MOMM*%',
+    '%LPD*%',
+    'G01*'
+  ].join('\n') + '\n';
+}
+
+function apertureCircle(dCode: number, diameterMil: number): string {
+  const mm = milToMm(Math.max(1, diameterMil)).toFixed(4);
+  return `%ADD${dCode}C,${mm}*%\n`;
+}
+
+function apertureRect(dCode: number, wMil: number, hMil: number): string {
+  const w = milToMm(Math.max(1, wMil)).toFixed(4);
+  const h = milToMm(Math.max(1, hMil)).toFixed(4);
+  return `%ADD${dCode}R,${w}X${h}*%\n`;
+}
+
+function apertureOval(dCode: number, wMil: number, hMil: number): string {
+  const w = milToMm(Math.max(1, wMil)).toFixed(4);
+  const h = milToMm(Math.max(1, hMil)).toFixed(4);
+  const macroDef = `%AMOVAL${dCode}*\n21,1,${w},${h},0,0,0*%\n`;
+  return `${macroDef}%ADD${dCode}OVAL${dCode}*%\n`;
+}
+
+function apertureRoundRect(dCode: number, wMil: number, hMil: number, rMil: number): string {
+  const w = milToMm(Math.max(1, wMil)).toFixed(4);
+  const h = milToMm(Math.max(1, hMil)).toFixed(4);
+  const r = milToMm(Math.max(0.1, rMil)).toFixed(4);
+  const macroDef = `%AMRR${dCode}*\n21,1,${w},${h},${r},0,0*%\n`;
+  return `${macroDef}%ADD${dCode}RR${dCode}*%\n`;
+}
+
+function flashPad(x: number, y: number, dCode: number): string {
+  return `D${dCode}*\n${fmtCoord(x)}${fmtCoordY(y)}D03*\n`;
+}
+
+function appendTrackSegment(trk: PcbTrack, dCode: number): string {
+  let s = `G04 net ${trk.netName || trk.netId}*\n`;
+  s += `D${dCode}*\n`;
+  s += `${fmtCoord(trk.start.x)}${fmtCoordY(trk.start.y)}D02*\n`;
+  s += `${fmtCoord(trk.end.x)}${fmtCoordY(trk.end.y)}D01*\n`;
+  return s;
+}
+
+function exportCopperLayer(doc: PcbDocument, layer: PcbLayerId, fileName: string,
+  layerTitle: string): GerberLayerFile {
+  let body = gerberHeader(layerTitle);
+  let nextD = 10;
+  const widthToD: Map<number, number> = new Map();
+  const padApertures: string[] = [];
+
+  for (const trk of doc.tracks) {
+    if (trk.layer !== layer) continue;
+    const w = Math.max(1, Math.round(trk.width));
+    if (!widthToD.has(w)) {
+      widthToD.set(w, nextD);
+      body += apertureCircle(nextD, w);
+      nextD++;
+    }
+  }
+
+  // ç„Šç›˜é—ªé“œ
+  const padDefs: PadExportDef[] = [];
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (!padOnCopperLayer(pad, layer, fp)) continue;
+      const dCode = nextD++;
+      if (pad.shape === PcbPadShape.OVAL || pad.shape === PcbPadShape.ROUNDRECT) {
+        if (pad.shape === PcbPadShape.OVAL) {
+          padApertures.push(apertureOval(dCode, pad.size.x, pad.size.y));
+        } else {
+          const r = Math.min(pad.size.x, pad.size.y) * 0.25;
+          padApertures.push(apertureRoundRect(dCode, pad.size.x, pad.size.y, r));
+        }
+      } else if (pad.shape === PcbPadShape.CIRCLE ||
+        (pad.size.x === pad.size.y && pad.type !== PcbPadType.SMD)) {
+        padApertures.push(apertureCircle(dCode, Math.max(pad.size.x, pad.size.y)));
+      } else {
+        padApertures.push(apertureRect(dCode, pad.size.x, pad.size.y));
+      }
+      const wp = padWorldPosition(fp, pad);
+      const padDef: PadExportDef = { d: dCode, flash: flashPad(wp.x, wp.y, dCode) };
+      padDefs.push(padDef);
+    }
+  }
+  for (const via of doc.vias) {
+    if (!viaSpansLayer(via.layers, layer)) continue;
+    const dCode = nextD++;
+    padApertures.push(apertureCircle(dCode, via.diameter));
+    const viaDef: PadExportDef = { d: dCode, flash: flashPad(via.position.x, via.position.y, dCode) };
+    padDefs.push(viaDef);
+  }
+
+  for (const a of padApertures) {
+    body += a;
+  }
+
+  for (const trk of doc.tracks) {
+    if (trk.layer !== layer) continue;
+    const w = Math.max(1, Math.round(trk.width));
+    const d = widthToD.get(w) ?? 10;
+    body += appendTrackSegment(trk, d);
+  }
+  for (const p of padDefs) {
+    body += p.flash;
+  }
+
+  // Zone è¦†é“œå¤šè¾¹å½¢å¡«å…… (G36/G37 region)
+  for (const z of doc.zones) {
+    if (z.layer !== layer) continue;
+    if (z.outline.length < 3) continue;
+    body += `G04 zone ${z.netName ?? z.netId} priority ${z.priority}*\n`;
+    body += 'G36*\n';
+    const z0 = z.outline[0];
+    body += `${fmtCoord(z0.x)}${fmtCoordY(z0.y)}D02*\n`;
+    for (let i = 1; i < z.outline.length; i++) {
+      body += `${fmtCoord(z.outline[i].x)}${fmtCoordY(z.outline[i].y)}D01*\n`;
+    }
+    body += `${fmtCoord(z0.x)}${fmtCoordY(z0.y)}D01*\n`;
+    body += 'G37*\n';
+  }
+
+  body += 'M02*\n';
+  return { layerName: layerTitle, fileName, content: body };
+}
+
+function padOnCopperLayer(pad: PcbPad, layer: PcbLayerId, fp: PcbFootprintInst): boolean {
+  if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+    return isCopperLayer(layer);
+  }
+  if (pad.layers && pad.layers.length > 0) {
+    for (const l of pad.layers) {
+      if (l === layer) return true;
+    }
+    return false;
+  }
+  return fp.layer === layer || (fp.mirrored && layer === PcbLayerId.B_CU) ||
+    (!fp.mirrored && layer === PcbLayerId.F_CU);
+}
+
+function viaSpansLayer(layers: PcbLayerId[], layer: PcbLayerId): boolean {
+  for (const l of layers) {
+    if (l === layer) return true;
+  }
+  // é€šå­”é»˜è®¤è´¯ç©¿å…¨éƒ¨é“œå±‚
+  if (layers.length >= 2 && layers[0] === PcbLayerId.F_CU && layers[layers.length - 1] === PcbLayerId.B_CU) {
+    return isCopperLayer(layer);
+  }
+  return false;
+}
+
+function exportMaskLayer(doc: PcbDocument, front: boolean): GerberLayerFile {
+  const title = front ? 'F.Mask' : 'B.Mask';
+  const fileName = front ? 'F_Mask.gbr' : 'B_Mask.gbr';
+  const copper = front ? PcbLayerId.F_CU : PcbLayerId.B_CU;
+  let body = gerberHeader(title);
+  let nextD = 10;
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (!padOnCopperLayer(pad, copper, fp)) continue;
+      const inflate = 4;
+      const dCode = nextD++;
+      body += apertureRect(dCode, pad.size.x + inflate * 2, pad.size.y + inflate * 2);
+      const wp = padWorldPosition(fp, pad);
+      body += flashPad(wp.x, wp.y, dCode);
+    }
+  }
+  for (const via of doc.vias) {
+    if (!viaSpansLayer(via.layers, copper)) continue;
+    const dCode = nextD++;
+    body += apertureCircle(dCode, via.diameter + 8);
+    body += flashPad(via.position.x, via.position.y, dCode);
+  }
+  body += 'M02*\n';
+  return { layerName: title, fileName, content: body };
+}
+
+function exportPasteLayer(doc: PcbDocument, front: boolean): GerberLayerFile {
+  const title = front ? 'F.Paste' : 'B.Paste';
+  const fileName = front ? 'F_Paste.gbr' : 'B_Paste.gbr';
+  const copper = front ? PcbLayerId.F_CU : PcbLayerId.B_CU;
+  let body = gerberHeader(title);
+  let nextD = 10;
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (pad.type !== PcbPadType.SMD) continue;
+      if (!padOnCopperLayer(pad, copper, fp)) continue;
+      const dCode = nextD++;
+      body += apertureRect(dCode, pad.size.x * 0.9, pad.size.y * 0.9);
+      const wp = padWorldPosition(fp, pad);
+      body += flashPad(wp.x, wp.y, dCode);
+    }
+  }
+  body += 'M02*\n';
+  return { layerName: title, fileName, content: body };
+}
+
+function localToWorld(local: Point2D, fp: PcbFootprintInst): Point2D {
+  let lx = local.x;
+  let ly = local.y;
+  if (fp.mirrored) lx = -lx;
+  if (fp.rotation === 90) { const t = lx; lx = -ly; ly = t; }
+  else if (fp.rotation === 180) { lx = -lx; ly = -ly; }
+  else if (fp.rotation === 270) { const t = lx; lx = ly; ly = -t; }
+  const result: Point2D = { x: fp.position.x + lx, y: fp.position.y + ly };
+  return result;
+}
+
+function exportSilkLayer(doc: PcbDocument, front: boolean): GerberLayerFile {
+  const title = front ? 'F.SilkS' : 'B.SilkS';
+  const fileName = front ? 'F_SilkS.gbr' : 'B_SilkS.gbr';
+  const lib = getGlobalPcbFootprintLibrary();
+  let body = gerberHeader(title);
+  body += apertureCircle(10, 6);
+  body += 'D10*\n';
+  for (const fp of doc.footprints) {
+    const onFront = !fp.mirrored && fp.layer !== PcbLayerId.B_CU;
+    if (front !== onFront) continue;
+    const def = lib.getDef(fp.defId);
+    body += `G04 ${fp.refDes}*\n`;
+    if (def && def.silkLines.length > 0) {
+      // ç»˜åˆ¶å°è£…ä¸å°è½®å»“çº¿
+      for (const line of def.silkLines) {
+        if (line.length < 2) continue;
+        const w0 = localToWorld(line[0], fp);
+        body += `${fmtCoord(w0.x)}${fmtCoordY(w0.y)}D02*\n`;
+        for (let i = 1; i < line.length; i++) {
+          const wp = localToWorld(line[i], fp);
+          body += `${fmtCoord(wp.x)}${fmtCoordY(wp.y)}D01*\n`;
+        }
+      }
+    } else {
+      // æ— å®šä¹‰æ—¶ä»ç”»å‚è€ƒæ ‡è®°
+      body += `${fmtCoord(fp.position.x)}${fmtCoordY(fp.position.y)}D02*\n`;
+      body += `${fmtCoord(fp.position.x + 24)}${fmtCoordY(fp.position.y)}D01*\n`;
+    }
+  }
+  body += 'M02*\n';
+  return { layerName: title, fileName, content: body };
+}
+
+function exportBoardOutline(doc: PcbDocument): GerberLayerFile {
+  let body = gerberHeader('Edge Cuts');
+  body += apertureCircle(10, Math.max(1, doc.boardOutline.width));
+  body += 'D10*\n';
+  const pts = doc.boardOutline.points;
+  if (pts.length >= 2) {
+    body += `${fmtCoord(pts[0].x)}${fmtCoordY(pts[0].y)}D02*\n`;
+    for (let i = 1; i < pts.length; i++) {
+      body += `${fmtCoord(pts[i].x)}${fmtCoordY(pts[i].y)}D01*\n`;
+    }
+    body += `${fmtCoord(pts[0].x)}${fmtCoordY(pts[0].y)}D01*\n`;
+  }
+  body += 'M02*\n';
+  return { layerName: 'Edge.Cuts', fileName: 'Edge_Cuts.gbr', content: body };
+}
+
+function exportDrill(doc: PcbDocument): GerberLayerFile {
+  let body = 'M48\n';
+  body += 'METRIC,TZ\n';
+  body += 'T1C0.30\n';
+  body += '%\n';
+  body += 'T1\n';
+  for (const via of doc.vias) {
+    const x = milToMm(via.position.x).toFixed(3);
+    const y = milToMm(via.position.y).toFixed(3);
+    body += `X${x}Y${y}\n`;
+  }
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (!pad.drill || pad.drill <= 0) continue;
+      const wp = padWorldPosition(fp, pad);
+      const x = milToMm(wp.x).toFixed(3);
+      const y = milToMm(wp.y).toFixed(3);
+      body += `X${x}Y${y}\n`;
+    }
+  }
+  body += 'M30\n';
+  return { layerName: 'Drill', fileName: 'drill.txt', content: body };
+}
+
+/** æ‰“åŒ…è¯´æ˜æ–‡æœ¬ï¼ˆå·¥å‚å¯¹ç…§ï¼‰ */
+function exportReadme(doc: PcbDocument, files: GerberLayerFile[]): GerberLayerFile {
+  let body = `ElecDraw Gerber bundle for ${doc.name}\n`;
+  body += `Copper layers: ${doc.layerStack.copperCount}\n`;
+  body += `Units: mm (Gerber), drill metric\n\nFiles:\n`;
+  for (const f of files) {
+    body += ` - ${f.fileName} (${f.layerName})\n`;
+  }
+  return { layerName: 'README', fileName: 'README.txt', content: body };
+}
+
+export function exportPcbGerber(doc: PcbDocument): GerberExportResult {
+  const files: GerberLayerFile[] = [];
+  let copperIds = copperLayersFromStack(doc.layerStack);
+  if (copperIds.length === 0) {
+    copperIds = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+  }
+  for (const id of copperIds) {
+    const safe = id.replace('.', '_');
+    files.push(exportCopperLayer(doc, id, `${safe}.gbr`, id));
+  }
+  files.push(exportMaskLayer(doc, true));
+  files.push(exportMaskLayer(doc, false));
+  files.push(exportPasteLayer(doc, true));
+  files.push(exportPasteLayer(doc, false));
+  files.push(exportSilkLayer(doc, true));
+  files.push(exportSilkLayer(doc, false));
+  files.push(exportBoardOutline(doc));
+  files.push(exportDrill(doc));
+  files.push(exportReadme(doc, files));
+  return { files };
+}
+ÀÔrE“±../types/PcbTypes­./PcbZoneUtilµ./PcbFootprintLibraryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings´PcbGerberExporter.js ‘µPcbGerberExporter.etsÜY‘”    ‘” Ü ”   ” ”	 ” ” %” /”! 1”, <”. ”; ”= ”ÌR &”ÌT ”ÌZ ”Ìm ”Ìn ˜”   ” ”	 	” ” ”! !”0 0”1 1˜”  	 ” 	”	 		”% 	%”' 	'”- 	-”ÌD 	ÌD”ÌE 	ÌE•”   ”	 	” ” ” –” ” 	” 
+” ” ” ’”   ” •”   ”	 	” ” ” Ü ” ”
+ ” 
+” ” ” ” ” ”! ”"  ”& $”' %”* (”/ -”0 .”1 /”  ”
+  ”  	”  ”  ”  ”  ”  ”  ”  ”  ”#  !”%  #”&  $Ü ” !”
+ !” !” !” !” !” !” !”  !”! !”" ! ”# !!”$ !"”% !#”& !$”' !%”* !(”+ !)”1 !/”2 !0”3 !1”6 !4”7 !5”8 !6”> !<”? !=”ÌB !Ì@”ÌC !ÌA”ÌD !ÌBÜ ” "” "	” "” "” "” "” "” "” "” "”! "”" " ”# "!”$ ""”( "&”. ",”0 ".”1 "/’”  # ” #•”  % ”	 %	” %” %” %Ü ” &”
+ &” &
+” &” &” &” &” &”! &”" & ”& &$”' &%”* &(”/ &-”0 &.”1 &/” '”
+ '” '	” '” '” '” '” '” '” '” '”# '!”% '#”& '$Ü ” (”
+ (” (” (” (” (” (” (”  (”! (”" ( ”# (!”$ ("”% (#”& ($”' (%”* ((”+ ()”1 (/”2 (0”3 (1”6 (4”7 (5”8 (6”> (<”? (=”ÌB (Ì@”ÌC (ÌA”ÌD (ÌBÜ ” )” )	” )” )” )” )” )” )” )” )”! )”" ) ”# )!”$ )"”( )&”. ),”0 ).”1 )/’”  * ” *•”  , ”	 ,	” ,” ,” ,#’” -” -	”” .” .” .” .’” /” /’” 0” 0’” 1” 1’” 2” 2
+™” 3” 3”
+ 3” 3	” 3” 3” 3” 3” 3’”  4 ” 4—”  6 ”	 6	” 6” 6” 6%” 6'”* 6:Ü ” 7”
+ 7” 7
+” 7” 7” 7” 7” 7” 7”  7”! 7”# 7!”. 7,”/ 7-”0 7.”1 7/”8 76”9 77”: 78”; 79”< 7:˜” 8” 8	” 8” 8” 8” 8”$ 8"”% 8#’”  9 ” 9™”  ; ”	 ;	” ;” ;” ;#” ;%”! ;1”# ;3”' ;?Ü ” <”
+ <” <	” <” <” <” <” <” <” <”  <”" < ”& <$”' <%”( <&”) <'”0 <.”1 </”2 <0”3 <1”4 <2Ü ” =”
+ =” =	” =” =” =” =” =” =” =”  =”" = ”& =$”' =%”( =&”) ='”0 =.”1 =/”2 =0”3 =1”4 =2š” >” >	” >” >” >” >”! >”" > ”( >&”) >'’”  ? ” ?™”  ÌA ”	 ÌA	” ÌA” ÌA” ÌA#” ÌA%”! ÌA1”# ÌA3”' ÌA?Ü ” ÌB”
+ ÌB” ÌB	” ÌB” ÌB” ÌB” ÌB” ÌB” ÌB” ÌB”  ÌB”" ÌB ”& ÌB$”' ÌB%”( ÌB&”) ÌB'”0 ÌB.”1 ÌB/”2 ÌB0”3 ÌB1”4 ÌB2Ü ” ÌC”
+ ÌC” ÌC	” ÌC” ÌC” ÌC” ÌC” ÌC” ÌC” ÌC”  ÌC”" ÌC ”& ÌC$”' ÌC%”( ÌC&”) ÌC'”0 ÌC.”1 ÌC/”2 ÌC0”3 ÌC1”4 ÌC2œ” ÌD”
+ ÌD” ÌD” ÌD” ÌD”$ ÌD"”/ ÌD-”0 ÌD.”4 ÌD2”5 ÌD3”ÌA ÌD?”ÌB ÌDÌ@š” ÌE” ÌE	” ÌE” ÌE” ÌE”" ÌE ”) ÌE'”. ÌE,”4 ÌE2”5 ÌE3’”  ÌF ” ÌF›”  ÌH ”	 ÌH	” ÌH” ÌH”  ÌH(”" ÌH*”& ÌH6”( ÌH8”, ÌHÌD”. ÌHÌF”2 ÌHÌRÜ ” ÌI”
+ ÌI” ÌI	” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI”  ÌI”" ÌI ”& ÌI$”' ÌI%”( ÌI&”) ÌI'”0 ÌI.”1 ÌI/”2 ÌI0”3 ÌI1”4 ÌI2Ü ” ÌJ”
+ ÌJ” ÌJ	” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ”  ÌJ”" ÌJ ”& ÌJ$”' ÌJ%”( ÌJ&”) ÌJ'”0 ÌJ.”1 ÌJ/”2 ÌJ0”3 ÌJ1”4 ÌJ2Ü ” ÌK”
+ ÌK” ÌK	” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK”" ÌK ”$ ÌK"”( ÌK&”) ÌK'”* ÌK(”+ ÌK)”2 ÌK0”3 ÌK1”4 ÌK2”5 ÌK3”6 ÌK4” ÌL”
+ ÌL” ÌL” ÌL” ÌL”" ÌL ”- ÌL+”. ÌL,”2 ÌL0”3 ÌL1”7 ÌL5”8 ÌL6”ÌB ÌLÌ@”ÌC ÌLÌAš” ÌM” ÌM	” ÌM” ÌM” ÌM”" ÌM ”' ÌM%”, ÌM*”2 ÌM0”3 ÌM1’”  ÌN ” ÌN™”  ÌP ”	 ÌP	” ÌP” ÌP” ÌP” ÌP” ÌP&” ÌP(” ÌP5Ü ” ÌQ” ÌQ	” ÌQ” ÌQ” ÌQ”" ÌQ ”# ÌQ!”$ ÌQ"”% ÌQ#”( ÌQ&”1 ÌQ/”2 ÌQ0”3 ÌQ1”4 ÌQ2”< ÌQ:”= ÌQ;’”  ÌR ” ÌR—”  ÌT ”	 ÌT	” ÌT” ÌT” ÌT)”! ÌT+”& ÌT8” ÌU” ÌU”	 ÌU” ÌU
+” ÌU” ÌU” ÌU”" ÌU ”& ÌU$”) ÌU'”* ÌU(”/ ÌU-”4 ÌU2”5 ÌU3—” ÌV” ÌV”	 ÌV” ÌV” ÌV” ÌV” ÌVÜ ” ÌW” ÌW”	 ÌW” ÌW
+” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW”  ÌW”! ÌW”$ ÌW"”- ÌW+”. ÌW,”1 ÌW/”2 ÌW0”7 ÌW5”8 ÌW6”9 ÌW7”: ÌW8”ÌB ÌWÌ@”ÌC ÌWÌAÜ ” ÌX” ÌX”	 ÌX” ÌX
+” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”" ÌX ”+ ÌX)”, ÌX*”/ ÌX-”0 ÌX.”3 ÌX1”4 ÌX2”5 ÌX3”6 ÌX4”> ÌX<”? ÌX=”” ÌY” ÌY	” ÌY
+” ÌY’”  ÌZ ” ÌZ›”  Ì\ ”	 Ì\	” Ì\” Ì\” Ì\+”  Ì\-”% Ì\>”' Ì\Ì@”/ Ì\ÌP”1 Ì]”; Ì]™” Ì^” Ì^” Ì^
+” Ì^” Ì^” Ì^”& Ì^$”' Ì^%”( Ì^&–” Ì_” Ì_” Ì_” Ì_” Ì_” Ì_˜” Ì`”
+ Ì`” Ì`” Ì`(” Ì`,” Ì`/” Ì`1” Ì`2–” Ìa”
+ Ìa” Ìa” Ìa!” Ìa#” Ìa$™” Ìc”	 Ìc” Ìc” Ìc” Ìc” Ìc” Ìc”  Ìc”" Ìc —” Ìd” Ìd” Ìd” Ìd” Ìd” Ìd” Ìd’” Ìd” Ìd&Ü ” Ìe” Ìe
+” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe”" Ìe”# Ìe”( Ìe$”) Ìe%”, Ìe(”- Ìe)”2 Ìe.”3 Ìe/”4 Ìe0”5 Ìe1š” Ìf” Ìf” Ìf	” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf” Ìfš” Ìg” Ìg” Ìg” Ìg” Ìg” Ìg” Ìg”! Ìg”" Ìg”# Ìgš” Ìh” Ìh
+” Ìh”" Ìh”# Ìh”( Ìh"”* Ìh$”+ Ìh%”, Ìh&”- Ìh'”” Ìi” Ìi” Ìi” Ìi‘”	 Ìj‘” Ìk’” Ìm” Ìm	–” Ìn”
+ Ìn” Ìn” Ìn"” Ìn$” Ìn%™” Ìo”	 Ìo” Ìo” Ìo” Ìo” Ìo” Ìo”# Ìo!”% Ìo#™” Ìp” Ìp	” Ìp” Ìp” Ìp” Ìp” Ìp”! Ìp”# Ìp›” Ìq” Ìq
+” Ìq”! Ìq”" Ìq”% Ìq”' Ìq!”, Ìq&”. Ìq(”0 Ìq*”1 Ìq+’” Ìq-” Ìq6—” Ìr” Ìr” Ìr” Ìr” Ìr”! Ìr”" ÌrÜ ” Ìs” Ìs
+” Ìs” Ìs” Ìs” Ìs”) Ìs#”* Ìs$”. Ìs(”2 Ìs,”5 Ìs/”6 Ìs0”; Ìs5”Ì@ Ìs:”ÌK ÌsÌE”ÌL ÌsÌF”ÌU ÌsÌO”ÌW ÌsÌQš” Ìt” Ìt” Ìt” Ìt” Ìt”" Ìt”- Ìt%”. Ìt&”2 Ìt*”4 Ìt,Ü ” Ìu
+”  Ìu”! Ìu”% Ìu”& Ìu”2 Ìu(”3 Ìu)”8 Ìu.”: Ìu0”= Ìu3”> Ìu4”ÌB Ìu8”ÌC Ìu9”ÌD Ìu:”ÌF Ìu<”ÌI Ìu?”ÌJ ÌuÌ@”ÌN ÌuÌD”ÌO ÌuÌE”ÌP ÌuÌF”ÌQ ÌuÌG”ÌR ÌuÌH”ÌS ÌuÌI‘” Ìv	‘” ÌvÜ ” Ìw
+” Ìw” Ìw” Ìw”" Ìw”# Ìw”& Ìw”' Ìw”* Ìw ”+ Ìw!”/ Ìw%”0 Ìw&”1 Ìw'”3 Ìw)”6 Ìw,”7 Ìw-”; Ìw1”< Ìw2”= Ìw3”> Ìw4”ÌA Ìw7”ÌE Ìw;”ÌF Ìw<Ü ” Ìx
+”  Ìx”! Ìx”% Ìx”& Ìx”7 Ìx-”8 Ìx.”= Ìx3”? Ìx5”ÌB Ìx8”ÌC Ìx9”ÌG Ìx=”ÌH Ìx>”ÌI Ìx?”ÌK ÌxÌA”ÌN ÌxÌD”ÌO ÌxÌE”ÌS ÌxÌI”ÌT ÌxÌJ”ÌU ÌxÌK”ÌW ÌxÌM”ÌX ÌxÌN”ÌY ÌxÌO”ÌZ ÌxÌP”Ì[ ÌxÌQ‘” Ìy	‘” Ìz™” Ìz” Ìz” Ìz” Ìz” Ìz”# Ìz”. Ìz*”/ Ìz+”5 Ìz1Ü ” Ì{” Ì{	” Ì{” Ì{” Ì{” Ì{” Ì{”  Ì{”# Ì{”$ Ì{”( Ì{ ”) Ì{!”* Ì{"”. Ì{&”1 Ì{)”2 Ì{*”6 Ì{.”; Ì{3”ÌE Ì{=”ÌF Ì{>”ÌI Ì{ÌA”ÌJ Ì{ÌB”ÌL Ì{ÌDÜ ” Ì|” Ì|” Ì|”! Ì|”" Ì|”0 Ì|(”1 Ì|)”6 Ì|.”8 Ì|0”< Ì|4”= Ì|5”Ì@ Ì|8”ÌA Ì|9”ÌD Ì|<”ÌE Ì|=”ÌI Ì|ÌA”ÌJ Ì|ÌB”ÌK Ì|ÌC”ÌM Ì|ÌE”ÌP Ì|ÌH”ÌQ Ì|ÌI”ÌU Ì|ÌM”ÌV Ì|ÌN”ÌW Ì|ÌO”ÌX Ì|ÌP”ÌY Ì|ÌQ”ÌZ Ì|ÌR”Ì[ Ì|ÌS‘” Ì}‘” Ì}Ü ” Ì~” Ì~” Ì~”! Ì~”" Ì~”. Ì~&”/ Ì~'”4 Ì~,”6 Ì~.”9 Ì~1”: Ì~2”> Ì~6”? Ì~7”Ì@ Ì~8”ÌB Ì~:”ÌE Ì~=”ÌF Ì~>”ÌJ Ì~ÌB”ÌK Ì~ÌC”ÌL Ì~ÌD”ÌM Ì~ÌE”ÌN Ì~ÌF”ÌO Ì~ÌG‘” Ì›” Ì€” Ì€” Ì€” Ì€”' Ì€!”( Ì€"”* Ì€$”, Ì€&”/ Ì€)”0 Ì€*”1 Ì€+Ü ” Ì” Ì” Ì” Ì#” Ì%” Ì&”  Ì(”% Ì-”' Ì/”, Ì4”. Ì6”6 Ì>”7 Ì?”9 ÌÌA”: ÌÌB”; ÌÌC”= ÌÌE”? ÌÌG”Ì@ ÌÌH”ÌA ÌÌI”ÌC ÌÌK”ÌH ÌÌP”ÌI ÌÌQ”ÌK ÌÌS”ÌL ÌÌT˜” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚”  Ì‚”! Ì‚‘”	 Ìƒ‘” Ì„™” Ì…”	 Ì…” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…”  Ì…›” Ì†” Ì†” Ì†	” Ì†” Ì†” Ì†” Ì†”% Ì†!”' Ì†#”, Ì†(”- Ì†)’” Ì†+” Ì†4—” Ì‡” Ì‡
+” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡Ÿ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”( Ìˆ$”) Ìˆ%”. Ìˆ*”0 Ìˆ,”3 Ìˆ/”4 Ìˆ0”< Ìˆ8”= Ìˆ9”> Ìˆ:”? Ìˆ;Ü ” Ì‰” Ì‰
+” Ì‰” Ì‰!” Ì‰#” Ì‰$” Ì‰&”! Ì‰+”# Ì‰-”( Ì‰2”* Ì‰4”2 Ì‰<”3 Ì‰=”6 Ì‰Ì@”7 Ì‰ÌA”? Ì‰ÌI”Ì@ Ì‰ÌJ”ÌA Ì‰ÌK”ÌC Ì‰ÌM”ÌF Ì‰ÌP”ÌG Ì‰ÌQ”ÌO Ì‰ÌY”ÌP Ì‰ÌZ”ÌQ Ì‰Ì[”ÌS Ì‰Ì]”ÌX Ì‰Ìb”ÌY Ì‰Ìc”Ì[ Ì‰Ìe”Ì\ Ì‰Ìf˜” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ‘” Ì‹—” Ì”	 Ì” Ì” Ì” Ì”  Ì”" Ì •” Ì” Ì” Ì” Ì” Ì‘” Ì™” Ì‘”	 Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”  Ì‘”" Ì‘ —” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’” Ì’’” Ì’” Ì’&Ü ” Ì“” Ì“
+” Ì“” Ì“” Ì“” Ì“” Ì“” Ì“” Ì“” Ì“”" Ì“”# Ì“”( Ì“$”) Ì“%”, Ì“(”- Ì“)”2 Ì“.”3 Ì“/”4 Ì“0”5 Ì“1” Ì”” Ì”
+” Ì”” Ì”” Ì”” Ì”” Ì”” Ì””  Ì””! Ì””% Ì”!”' Ì”#”( Ì”$š” Ì•” Ì•” Ì•”" Ì•”# Ì•”& Ì•"”( Ì•$”) Ì•%”* Ì•&”+ Ì•'‘” Ì–—” Ì—”	 Ì—” Ì—” Ì—” Ì—” Ì—” Ì——” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜‘” Ì™’” Ì›”$ Ì›"™” Ìœ”	 Ìœ” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ—” Ì” Ì” Ì	” Ì
+” Ì” Ì” Ì’” Ì” Ì$™” Ì” Ì” Ì	” Ì
+” Ì” Ì” Ì” Ì”  Ì’” Ì” Ì'Ü ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”% ÌŸ!”) ÌŸ%”* ÌŸ&”+ ÌŸ'”0 ÌŸ,”= ÌŸ9”> ÌŸ:”? ÌŸ;”ÌG ÌŸÌC”ÌL ÌŸÌH”ÌM ÌŸÌI•” Ì ” Ì ” Ì ” Ì ” Ì ›” Ì¡” Ì¡
+” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡”  Ì¡Ü ” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”  Ì¢”! Ì¢”$ Ì¢ ”- Ì¢)”. Ì¢*”0 Ì¢,”1 Ì¢-”2 Ì¢.”3 Ì¢/”; Ì¢7”< Ì¢8Ü ” Ì£” Ì£	” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”% Ì£!”& Ì£"”, Ì£(”. Ì£*”/ Ì£+”1 Ì£-”3 Ì£/Ü ” Ì¤” Ì¤
+” Ì¤” Ì¤” Ì¤”  Ì¤”! Ì¤”" Ì¤”) Ì¤#”* Ì¤$”+ Ì¤%”, Ì¤&”- Ì¤'”. Ì¤(”/ Ì¤)”2 Ì¤,”; Ì¤5”< Ì¤6”= Ì¤7”> Ì¤8”ÌE Ì¤?”ÌF Ì¤Ì@”ÌG Ì¤ÌA”ÌH Ì¤ÌB”ÌI Ì¤ÌC”ÌJ Ì¤ÌD”ÌK Ì¤ÌE”ÌS Ì¤ÌM”ÌT Ì¤ÌN‘”	 Ì¥Ü ” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦”  Ì¦”! Ì¦”$ Ì¦ ”- Ì¦)”. Ì¦*”0 Ì¦,”1 Ì¦-”2 Ì¦.”3 Ì¦/”; Ì¦7”< Ì¦8•” Ì§” Ì§” Ì§” Ì§” Ì§‘” Ì¨•” Ìª” Ìª” Ìª
+” Ìª” Ìª” Ì«” Ì«	” Ì«” Ì«” Ì«”" Ì« ”$ Ì«"”, Ì«*”. Ì«,”5 Ì«3”7 Ì«5”; Ì«9”= Ì«;”> Ì«<’”  Ì¬ ” Ì¬™”  Ì® ”	 Ì®	” Ì®” Ì®” Ì®%” Ì®'”$ Ì®8”& Ì®:”( Ì®ÌNÜ ” Ì¯” Ì¯” Ì¯	” Ì¯
+” Ì¯” Ì¯” Ì¯”  Ì¯”" Ì¯ ”& Ì¯$”) Ì¯'”* Ì¯(”. Ì¯,”3 Ì¯1”= Ì¯;”> Ì¯<”ÌB Ì¯Ì@”ÌD Ì¯ÌB—” Ì°” Ì°” Ì°” Ì°”" Ì°”# Ì°”$ Ì° ‘” Ì±” Ì²” Ì²” Ì²	” Ì²
+” Ì²” Ì²” Ì²” Ì²”  Ì²”! Ì²”' Ì²%”* Ì²(”+ Ì²)”- Ì²+™” Ì³” Ì³	” Ì³” Ì³” Ì³” Ì³” Ì³”" Ì³”$ Ì³ •” Ì´” Ì´
+” Ì´” Ì´” Ì´”” Ì´” Ì´” Ì´"” Ì´#‘”	 Ìµ”” Ì¶” Ì¶” Ì¶” Ì¶‘” Ì·Ü ” Ì¸” Ì¸	” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸”! Ì¸”" Ì¸ ”$ Ì¸"”% Ì¸#”- Ì¸+”1 Ì¸/”6 Ì¸4”; Ì¸9”ÌE Ì¸ÌC”ÌF Ì¸ÌD”ÌJ Ì¸ÌH”ÌK Ì¸ÌI” Ì¹”	 Ì¹”
+ Ì¹” Ì¹” Ì¹	” Ì¹” Ì¹” Ì¹”# Ì¹”- Ì¹)”. Ì¹*”2 Ì¹.”3 Ì¹/”4 Ì¹0’”  Ìº ” Ìº—”  Ì¼ ”	 Ì¼	” Ì¼” Ì¼” Ì¼+” Ì¼-”$ Ì¼>—” Ì½”	 Ì½” Ì½” Ì½” Ì½” Ì½” Ì½•” Ì¾” Ì¾” Ì¾	” Ì¾” Ì¾”” Ì¾” Ì¾” Ì¾ ” Ì¾!‘” Ì¿’” ÌÀ” ÌÀÜ ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”$ ÌÁ"”% ÌÁ#”& ÌÁ$”' ÌÁ%”, ÌÁ*”6 ÌÁ4”7 ÌÁ5”; ÌÁ9”? ÌÁ=”ÌE ÌÁÌC”ÌF ÌÁÌD”ÌL ÌÁÌJ”ÌM ÌÁÌK”ÌS ÌÁÌQ”ÌV ÌÁÌT”ÌW ÌÁÌU”ÌX ÌÁÌV”Ì] ÌÁÌ[”Ìg ÌÁÌe”Ìh ÌÁÌf”Ìl ÌÁÌj”Ìn ÌÁÌl—” ÌÂ” ÌÂ” ÌÂ” ÌÂ”" ÌÂ”# ÌÂ”$ ÌÂ ‘” ÌÃ”” ÌÄ” ÌÄ	” ÌÄ” ÌÄ’”  ÌÅ ” ÌÅ—”  ÌÇ ”	 ÌÇ	” ÌÇ” ÌÇ” ÌÇ)” ÌÇ+”# ÌÇ9” ÌÈ”
+ ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ”" ÌÈ ”# ÌÈ!”$ ÌÈ"”% ÌÈ#”- ÌÈ+”. ÌÈ,” ÌÉ”
+ ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ”) ÌÉ'”* ÌÉ(”+ ÌÉ)”, ÌÉ*”8 ÌÉ6”9 ÌÉ7Ü ” ÌÊ”
+ ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”% ÌÊ#”& ÌÊ$”* ÌÊ(”+ ÌÊ)”, ÌÊ*”- ÌÊ+”7 ÌÊ5”8 ÌÊ6”< ÌÊ:”= ÌÊ;™” ÌË” ÌË” ÌË
+” ÌË” ÌË” ÌË”! ÌË”" ÌË ”# ÌË!–” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ™” ÌÍ”	 ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ”# ÌÍ!”% ÌÍ#™” ÌÎ” ÌÎ	” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”! ÌÎ”# ÌÎ›” ÌÏ” ÌÏ
+” ÌÏ”! ÌÏ”" ÌÏ”% ÌÏ”' ÌÏ!”- ÌÏ'”/ ÌÏ)”1 ÌÏ+”2 ÌÏ,’” ÌÏ.” ÌÏ7–” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ—” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ”! ÌÑ”" ÌÑÜ ” ÌÒ” ÌÒ
+” ÌÒ”  ÌÒ”! ÌÒ”& ÌÒ ”( ÌÒ"”+ ÌÒ%”, ÌÒ&”0 ÌÒ*”1 ÌÒ+”2 ÌÒ,”5 ÌÒ/”< ÌÒ6”? ÌÒ9”Ì@ ÌÒ:”ÌB ÌÒ<”ÌE ÌÒ?”ÌF ÌÒÌ@”ÌJ ÌÒÌD”ÌK ÌÒÌE”ÌL ÌÒÌF”ÌO ÌÒÌI”ÌV ÌÒÌP”ÌY ÌÒÌS”ÌZ ÌÒÌT”Ì[ ÌÒÌU”Ì\ ÌÒÌV›” ÌÓ” ÌÓ” ÌÓ” ÌÓ”' ÌÓ!”( ÌÓ"”* ÌÓ$”, ÌÓ&”/ ÌÓ)”0 ÌÓ*”1 ÌÓ+Ü ” ÌÔ” ÌÔ
+” ÌÔ” ÌÔ” ÌÔ” ÌÔ”  ÌÔ”! ÌÔ”# ÌÔ”% ÌÔ”& ÌÔ ”' ÌÔ!”) ÌÔ#”. ÌÔ(”/ ÌÔ)”0 ÌÔ*‘”	 ÌÕ‘” ÌÖ™” Ì×”	 Ì×” Ì×” Ì×” Ì×” Ì×” Ì×” Ì×”  Ì×›” ÌØ” ÌØ” ÌØ	” ÌØ” ÌØ” ÌØ” ÌØ”% ÌØ!”' ÌØ#”- ÌØ)”. ÌØ*’” ÌØ,” ÌØ5—” ÌÙ” ÌÙ
+” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÚ” ÌÚ” ÌÚ” ÌÚ” ÌÚ”$ ÌÚ ”& ÌÚ"”) ÌÚ%”* ÌÚ&”2 ÌÚ.”5 ÌÚ1”6 ÌÚ2”7 ÌÚ3”8 ÌÚ4Ü ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ”% ÌÛ!”& ÌÛ"”' ÌÛ#”) ÌÛ%”, ÌÛ(”- ÌÛ)”5 ÌÛ1”6 ÌÛ2”7 ÌÛ3”9 ÌÛ5”> ÌÛ:”? ÌÛ;”Ì@ ÌÛ<‘” ÌÜ•” Ìİ” Ìİ” Ìİ
+” Ìİ” Ìİ” ÌŞ” ÌŞ	” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”' ÌŞ%”) ÌŞ'”0 ÌŞ.”2 ÌŞ0”6 ÌŞ4”8 ÌŞ6”9 ÌŞ7’”  Ìß ” Ìß—”  Ìá ”	 Ìá	” Ìá” Ìá” Ìá*” Ìá,”$ Ìá:” Ìâ”
+ Ìâ” Ìâ” Ìâ” Ìâ” Ìâ” Ìâ” Ìâ”# Ìâ!”$ Ìâ"”% Ìâ#”& Ìâ$”/ Ìâ-”0 Ìâ.” Ìã”
+ Ìã” Ìã” Ìã” Ìã” Ìã” Ìã” Ìã”* Ìã(”+ Ìã)”, Ìã*”- Ìã+”: Ìã8”; Ìã9Ü ” Ìä”
+ Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä”% Ìä#”& Ìä$”* Ìä(”+ Ìä)”, Ìä*”- Ìä+”7 Ìä5”8 Ìä6”< Ìä:”= Ìä;™” Ìå” Ìå” Ìå
+” Ìå” Ìå” Ìå”! Ìå”" Ìå ”# Ìå!–” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ™” Ìç”	 Ìç” Ìç” Ìç” Ìç” Ìç” Ìç”# Ìç!”% Ìç#™” Ìè” Ìè	” Ìè” Ìè” Ìè” Ìè” Ìè”! Ìè”# Ìè™” Ìé” Ìé
+” Ìé” Ìé” Ìé” Ìé”' Ìé!”( Ìé"”+ Ìé%’” Ìé'” Ìé0›” Ìê” Ìê
+” Ìê”! Ìê”" Ìê”% Ìê”' Ìê!”- Ìê'”/ Ìê)”1 Ìê+”2 Ìê,’” Ìê.” Ìê7—” Ìë” Ìë” Ìë” Ìë” Ìë”! Ìë”" ÌëÜ ” Ìì” Ìì
+” Ìì”  Ìì”! Ìì”& Ìì ”( Ìì"”+ Ìì%”, Ìì&”0 Ìì*”1 Ìì+”2 Ìì,”5 Ìì/”8 Ìì2”: Ìì4”= Ìì7”> Ìì8”ÌB Ìì<”ÌC Ìì=”ÌD Ìì>”ÌG ÌìÌA”ÌJ ÌìÌD”ÌK ÌìÌE”ÌL ÌìÌF›” Ìí” Ìí” Ìí” Ìí”' Ìí!”( Ìí"”* Ìí$”, Ìí&”/ Ìí)”0 Ìí*”1 Ìí+Ü ” Ìî” Ìî
+” Ìî” Ìî” Ìî” Ìî”  Ìî”! Ìî”# Ìî”% Ìî”& Ìî ”' Ìî!”) Ìî#”. Ìî(”/ Ìî)”0 Ìî*‘”	 Ìï‘” Ìğ•” Ìñ” Ìñ” Ìñ
+” Ìñ” Ìñ” Ìò” Ìò	” Ìò” Ìò” Ìò” Ìò” Ìò”' Ìò%”) Ìò'”0 Ìò.”2 Ìò0”6 Ìò4”8 Ìò6”9 Ìò7’”  Ìó ” Ìó—”  Ìõ ”	 Ìõ	” Ìõ” Ìõ” Ìõ$” Ìõ&” Ìõ:˜” Ìö” Ìö”
+ Ìö” Ìö” Ìö” Ìö” Ìö” Ìö˜” Ì÷” Ì÷”
+ Ì÷” Ì÷” Ì÷” Ì÷” Ì÷” Ì÷•” Ìø” Ìø”
+ Ìø” Ìø	” Ìø–” Ìø”
+ Ìø” Ìø” Ìø” Ìø” Ìø˜” Ìù” Ìù”
+ Ìù” Ìù	” Ìù” Ìù” Ìù” Ìù–” Ìù” Ìù"” Ìù#” Ìù&” Ìù(” Ìù)–” Ìù*”
+ Ìù,” Ìù/” Ìù0” Ìù2” Ìù3•” Ìù4”
+ Ìù6” Ìù9” Ìù:” Ìù;‘” Ìù=˜”	 Ìú” Ìú” Ìú” Ìú” Ìú” Ìú”  Ìú”" Ìú –” Ìú"”
+ Ìú$” Ìú'” Ìú(” Ìú*” Ìú+–” Ìú,”
+ Ìú.” Ìú1” Ìú2” Ìú4” Ìú5‘” Ìú7˜”	 Ìû” Ìû” Ìû” Ìû” Ìû” Ìû”  Ìû”" Ìû –” Ìû"” Ìû(” Ìû)” Ìû,” Ìû.” Ìû/•” Ìû0”
+ Ìû2” Ìû5” Ìû7” Ìû8–” Ìû9”
+ Ìû;” Ìû>” Ìû?” ÌûÌ@” ÌûÌA‘” ÌûÌCÜ ” Ìü”
+ Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü!” Ìü"”# Ìü*”$ Ìü+”% Ìü,”( Ìü/”* Ìü1”, Ìü3”- Ìü4”/ Ìü6”1 Ìü8”2 Ìü9”: ÌüÌA”; ÌüÌB”< ÌüÌC”? ÌüÌF”ÌA ÌüÌH”ÌC ÌüÌJ”ÌD ÌüÌK”” Ìı” Ìı	” Ìı” Ìı’”  Ìş ” Ìş—”  Í  ”	 Í 	” Í ” Í ” Í )” Í +”# Í 9” Í”
+ Í” Í” Í” Í” Í” Í” Í”# Í!”$ Í"”% Í#”& Í$”/ Í-”0 Í.” Í”
+ Í” Í” Í” Í” Í” Í” Í”* Í(”+ Í)”, Í*”- Í+”: Í8”; Í9—” Í”
+ Í” Í” Í”, Í*”. Í,”/ Í-™” Í” Í” Í
+” Í” Í” Í”! Í”" Í ”# Í!š” Í” Í” Í
+” Í” Í” Í” Í”  Í”! Í”" Í •” Í” Í” Í
+” Í” Í™” Í”	 Í” Í” Í” Í” Í” Í”# Í!”% Í#Ü ” Í” Í
+” Í” Í” Í” Í” Í”$ Í ”( Í$”* Í&”+ Í'”0 Í,”5 Í1”? Í;”Ì@ Í<”ÌD ÍÌ@”ÌE ÍÌA•” Í	” Í	” Í	” Í	” Í	’” Í	” Í	$” Í
+” Í
+
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+”! Í
+”" Í
+”' Í
+#”( Í
+$”) Í
+%™” Í” Í” Í” Í” Í” Í”  Í”% Í!”& Í"œ” Í” Í” Í” Í” Í” Í”  Í”! Í”' Í#”* Í&”+ Í'”- Í)’” Í” Í™” Í” Í” Í” Í” Í”" Í”# Í”, Í&”. Í(—” Í” Í” Í” Í” Í”" Í”# Í’” Í” Í&” Í” Í” Í” Í”' Í”( Í ”, Í$”- Í%”. Í&”/ Í'”1 Í)”3 Í+”4 Í,”5 Í-Ü ” Í” Í” Í” Í”# Í”$ Í”& Í”' Í”( Í ”) Í!”, Í$”5 Í-”6 Í.”8 Í0”9 Í1”: Í2”; Í3”ÌC Í;”ÌD Í<Ü ” Í” Í” Í” Í” Í” Í”  Í”! Í”$ Í”( Í ”) Í!”/ Í'”1 Í)”2 Í*”4 Í,”6 Í.” Í
+” Í” Í” Í”+ Í!”, Í"”0 Í&”1 Í'”2 Í(”3 Í)”5 Í+”7 Í-”8 Í.”9 Í/Ü ” Í
+” Í” Í” Í”' Í”( Í”* Í ”+ Í!”, Í"”- Í#”0 Í&”9 Í/”: Í0”< Í2”= Í3”> Í4”? Í5”ÌG Í=”ÌH Í>‘” Í	‘” Í‘”	 Í‘” Í’” Í” ÍÜ ” Í” Í
+” Í” Í” Í”  Í”" Í”# Í”+ Í%”, Í&”- Í'”. Í(”1 Í+”: Í4”; Í5”= Í7”> Í8”ÌF ÍÌ@”ÌG ÍÌA”ÌH ÍÌB”ÌI ÍÌC”ÌQ ÍÌK”ÌR ÍÌLÜ ” Í” Í
+” Í” Í” Í”  Í”" Í”# Í”+ Í%”, Í&”- Í'”0 Í*”2 Í,”3 Í-”6 Í0”? Í9”Ì@ Í:”ÌB Í<”ÌC Í=”ÌK ÍÌE”ÌL ÍÌF”ÌM ÍÌG”ÌN ÍÌH”ÌV ÍÌP”ÌW ÍÌQ‘”	 Í‘” Í•” Í” Í” Í
+” Í” Í” Í” Í	” Í” Í” Í” Í” Í”' Í%”) Í'”0 Í.”2 Í0”6 Í4”8 Í6”9 Í7’”  Í ” Í•”  Í! ”	 Í!	” Í!” Í!” Í!,™” Í"” Í"” Í"
+” Í"” Í"” Í"”' Í"%”( Í"&”) Í"'Ü ” Í#” Í#” Í#
+” Í#” Í#” Í#” Í#”# Í#!”$ Í#"”' Í#%”( Í#&”) Í#'”+ Í#)”. Í#,”/ Í#-”; Í#9”< Í#:”ÌA Í#?”ÌB Í#Ì@”ÌC Í#ÌA”ÌD Í#ÌB•” Í$” Í$” Í$
+” Í$” Í$š” Í%”
+ Í%” Í%” Í%” Í%” Í%”  Í%”! Í%”' Í%%”( Í%&˜” Í&” Í&” Í&	” Í&
+” Í&” Í&” Í&” Í&Ü ” Í'” Í'” Í'” Í'” Í'” Í'” Í'”  Í'”! Í'”" Í'”# Í'”$ Í' ”% Í'!”( Í'$”1 Í'-”2 Í'.”5 Í'1”6 Í'2”7 Í'3”8 Í'4”9 Í'5”: Í'6”; Í'7”ÌC Í'?”ÌD Í'Ì@Ü ” Í(” Í(	” Í(” Í(” Í(” Í(” Í(” Í(” Í(” Í(”  Í(”& Í("”( Í($”) Í(%”+ Í('”- Í()Ü ” Í)” Í)
+” Í)” Í)” Í)”  Í)”# Í)”$ Í)”% Í)”& Í) ”' Í)!”( Í)"”) Í)#”, Í)&”5 Í)/”6 Í)0”9 Í)3”: Í)4”; Í)5”< Í)6”= Í)7”> Í)8”? Í)9”ÌG Í)ÌA”ÌH Í)ÌB‘”	 Í*Ü ” Í+” Í+” Í+” Í+” Í+” Í+” Í+”  Í+”! Í+”" Í+”# Í+”$ Í+ ”% Í+!”( Í+$”1 Í+-”2 Í+.”5 Í+1”6 Í+2”7 Í+3”8 Í+4”9 Í+5”: Í+6”; Í+7”ÌC Í+?”ÌD Í+Ì@‘” Í,•” Í-” Í-” Í-
+” Í-” Í-Ü ” Í.” Í.	” Í.” Í.” Í.”# Í.!”% Í.#”- Í.+”/ Í.-”> Í.<”Ì@ Í.>”ÌG Í.ÌE”ÌI Í.ÌG”ÌM Í.ÌK”ÌO Í.ÌM”ÌP Í.ÌN’”  Í/ ” Í/•”  Í1 ”	 Í1	” Í1” Í1” Í1%–” Í2” Í2” Í2
+” Í2” Í2” Í2•” Í3” Í3” Í3
+” Í3” Í3•” Í4” Í4” Í4
+” Í4” Í4•” Í5” Í5” Í5
+” Í5” Í5•” Í6” Í6” Í6
+” Í6” Í6™” Í7”	 Í7” Í7” Í7” Í7” Í7” Í7” Í7”  Í7Ü ” Í8” Í8
+” Í8” Í8” Í8” Í8” Í8” Í8”& Í8"”' Í8#”( Í8$”) Í8%”* Í8&”1 Í8-”2 Í8.”3 Í8/”4 Í80”5 Í81Ü ” Í9” Í9
+” Í9” Í9” Í9” Í9” Í9” Í9”& Í9"”' Í9#”( Í9$”) Í9%”* Í9&”1 Í9-”2 Í9.”3 Í9/”4 Í90”5 Í91™” Í:” Í:” Í:” Í:” Í:” Í:” Í:” Í:” Í:‘” Í;™” Í<”	 Í<” Í<” Í<” Í<” Í<” Í<”# Í<!”% Í<#™” Í=” Í=	” Í=” Í=” Í=” Í=” Í=”! Í=”# Í=œ” Í>” Í>
+” Í>” Í>” Í>” Í>” Í>”! Í>”" Í>”' Í>!”+ Í>%”, Í>&’” Í>(” Í>1›” Í?” Í?” Í?” Í?”' Í?!”( Í?"”* Í?$”, Í?&”/ Í?)”0 Í?*”1 Í?+Ü ” Í@” Í@” Í@” Í@” Í@” Í@”  Í@”! Í@”" Í@”# Í@”$ Í@”+ Í@%”, Í@&”- Í@'”. Í@(”/ Í@)Ü ” ÍA” ÍA” ÍA” ÍA” ÍA” ÍA”  ÍA”! ÍA”" ÍA”# ÍA”$ ÍA”+ ÍA%”, ÍA&”- ÍA'”. ÍA(”/ ÍA)™” ÍB” ÍB
+” ÍB” ÍB” ÍB” ÍB” ÍB”" ÍB”# ÍB‘”	 ÍC‘” ÍD•” ÍE” ÍE” ÍE
+” ÍE” ÍEÜ ” ÍF” ÍF	” ÍF” ÍF” ÍF” ÍF”! ÍF”) ÍF'”+ ÍF)”6 ÍF4”8 ÍF6”? ÍF=”ÌA ÍF?”ÌE ÍFÌC”ÌG ÍFÌE”ÌH ÍFÌF’”  ÍG ” ÍG’”  ÍI ” ÍI—”  ÍJ ”	 ÍJ	” ÍJ” ÍJ” ÍJ&” ÍJ(”  ÍJÌ@š” ÍK” ÍK” ÍK
+” ÍK”- ÍK+”0 ÍK.”1 ÍK/”5 ÍK3”9 ÍK7”: ÍK8›” ÍL” ÍL” ÍL
+” ÍL”! ÍL”" ÍL ”, ÍL*”- ÍL+”8 ÍL6”< ÍL:”= ÍL;•” ÍM” ÍM” ÍM
+”: ÍM8”; ÍM9—” ÍN”	 ÍN” ÍN” ÍN” ÍN” ÍN” ÍN” ÍO” ÍO” ÍO” ÍO” ÍO” ÍO”  ÍO”% ÍO!”& ÍO"”' ÍO#”0 ÍO,”5 ÍO1”6 ÍO2‘” ÍPÜ ” ÍQ” ÍQ	” ÍQ” ÍQ” ÍQ”  ÍQ”" ÍQ ”* ÍQ(”, ÍQ*”8 ÍQ6”: ÍQ8”ÌA ÍQ?”ÌC ÍQÌA”ÌG ÍQÌE”ÌI ÍQÌG”ÌJ ÍQÌH’”  ÍR ” ÍR–”  ÍT ” ÍT” ÍT” ÍT”  ÍT ”# ÍT0–” ÍU”
+ ÍU” ÍU” ÍU#” ÍU%” ÍU&›” ÍV” ÍV” ÍV” ÍV”) ÍV'”* ÍV(”- ÍV+”. ÍV,”8 ÍV6”9 ÍV7”: ÍV8˜” ÍW” ÍW” ÍW” ÍW” ÍW” ÍW” ÍW”  ÍW” ÍX” ÍX” ÍX” ÍX” ÍX”  ÍX”$ ÍX ”& ÍX"”0 ÍX,”1 ÍX-”5 ÍX1”6 ÍX2”7 ÍX3‘” ÍY—” ÍZ”	 ÍZ” ÍZ” ÍZ” ÍZ” ÍZ”  ÍZ” Í[” Í[
+” Í[” Í[” Í[” Í[” Í[”  Í[”# Í[”% Í[!”( Í[$”) Í[%”* Í[&Ü ” Í\” Í\	” Í\
+” Í\” Í\”$ Í\ ”% Í\!”( Í\$”* Í\&”, Í\(”. Í\*”1 Í\-”5 Í\1”; Í\7”= Í\9”? Í\;”Ì@ Í\<”ÌA Í\=”ÌB Í\>‘” Í]” Í^”	 Í^”
+ Í^” Í^” Í^” Í^” Í^”" Í^ ”$ Í^"”( Í^&”) Í^'”* Í^(”+ Í^)” Í_”	 Í_”
+ Í_” Í_” Í_” Í_” Í_”" Í_ ”$ Í_"”) Í_'”* Í_(”+ Í_)”, Í_*” Í`”	 Í`”
+ Í`” Í`” Í`” Í`”  Í`”# Í`!”% Í`#”) Í`'”* Í`(”+ Í`)”, Í`*” Ía”	 Ía”
+ Ía” Ía” Ía” Ía”  Ía”# Ía!”% Ía#”* Ía(”+ Ía)”, Ía*”- Ía+” Íb”	 Íb”
+ Íb” Íb” Íb” Íb” Íb”" Íb ”$ Íb"”( Íb&”) Íb'”* Íb(”+ Íb)” Íc”	 Íc”
+ Íc” Íc” Íc” Íc” Íc”" Íc ”$ Íc"”) Íc'”* Íc(”+ Íc)”, Íc*›” Íd”	 Íd”
+ Íd” Íd” Íd”! Íd”" Íd ”% Íd#”& Íd$”' Íd%”( Íd&›” Íe”	 Íe”
+ Íe” Íe” Íe” Íe” Íe” Íe” Íe”  Íe”! Íe” Íf”	 Íf”
+ Íf” Íf” Íf” Íf” Íf” Íf”! Íf”& Íf$”' Íf%”( Íf&”) Íf'–” Íg” Íg	” Íg” Íg” Íg” Íg’”  Íh ” ÍhÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜZ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ.İÍ1øÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ.äÍ1øÔrM”¤type¥start£end¤nameªIdentifierÍ.íÍ.ü¯exportPcbGerberÂÂÂ‘MªIdentifierÍ.ıÍ/ £docÔrN”¤type¥start£end¤body®BlockStatementÍ/Í1øÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ/	Í/‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍ/Í/MªIdentifierÍ/Í/¥filesÔrQ”¤type¥start£end¨elements¯ArrayExpressionÍ/Í/¥constO³VariableDeclarationÍ/ Í/V‘P²VariableDeclaratorÍ/$Í/UMªIdentifierÍ/$Í/-©copperIdsÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ/0Í/UMªIdentifierÍ/0Í/EµcopperLayersFromStack‘ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ/FÍ/TMªIdentifierÍ/FÍ/I£docMªIdentifierÍ/JÍ/TªlayerStackÂÂÂ£letÔrT–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ/\Í/¹ÔrU–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ/`Í/vS°MemberExpressionÍ/`Í/pMªIdentifierÍ/`Í/i©copperIdsMªIdentifierÍ/jÍ/p¦lengthÂÂ£===ÔrV•¤type¥start£end¥value£raw§LiteralÍ/uÍ/v ¡0N®BlockStatementÍ/xÍ/¹‘ÔrW”¤type¥start£endªexpression³ExpressionStatementÍ/ƒÍ/²ÔrX–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ/ƒÍ/±¡=MªIdentifierÍ/ƒÍ/Œ©copperIdsQ¯ArrayExpressionÍ/Í/±’S°MemberExpressionÍ/Í/ŸMªIdentifierÍ/Í/šªPcbLayerIdMªIdentifierÍ/›Í/Ÿ¤F_CUÂÂS°MemberExpressionÍ/¡Í/°MªIdentifierÍ/¡Í/«ªPcbLayerIdMªIdentifierÍ/¬Í/°¤B_CUÂÂÀÔrY—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ/¿Í0SÂO³VariableDeclarationÍ/ÄÍ/Ì‘P²VariableDeclaratorÍ/ÊÍ/ÌMªIdentifierÍ/ÊÍ/Ì¢idÀ¥constMªIdentifierÍ/ĞÍ/Ù©copperIdsN®BlockStatementÍ/ÛÍ0S’O³VariableDeclarationÍ/æÍ0‘P²VariableDeclaratorÍ/ìÍ0MªIdentifierÍ/ìÍ/ğ¤safeR®CallExpressionÍ/óÍ0S°MemberExpressionÍ/óÍ/ıMªIdentifierÍ/óÍ/õ¢idMªIdentifierÍ/öÍ/ı§replaceÂÂ’V§LiteralÍ/şÍ0¡.£'.'V§LiteralÍ0Í0¡_£'_'Â¥constW³ExpressionStatementÍ0Í0LR®CallExpressionÍ0Í0KS°MemberExpressionÍ0Í0MªIdentifierÍ0Í0¥filesMªIdentifierÍ0Í0¤pushÂÂ‘R®CallExpressionÍ0Í0JMªIdentifierÍ0Í0.±exportCopperLayer”MªIdentifierÍ0/Í02£docMªIdentifierÍ04Í06¢idÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ08Í0E‘MªIdentifierÍ0;Í0?¤safe’Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ09Í09Ôr\’£raw¦cooked  Â[¯TemplateElementÍ0@Í0D\¤.gbr¤.gbrÃMªIdentifierÍ0GÍ0I¢idÂÂW³ExpressionStatementÍ0YÍ0€R®CallExpressionÍ0YÍ0S°MemberExpressionÍ0YÍ0cMªIdentifierÍ0YÍ0^¥filesMªIdentifierÍ0_Í0c¤pushÂÂ‘R®CallExpressionÍ0dÍ0~MªIdentifierÍ0dÍ0s¯exportMaskLayer’MªIdentifierÍ0tÍ0w£docV§LiteralÍ0yÍ0}Ã¤trueÂÂW³ExpressionStatementÍ0†Í0®R®CallExpressionÍ0†Í0­S°MemberExpressionÍ0†Í0MªIdentifierÍ0†Í0‹¥filesMªIdentifierÍ0ŒÍ0¤pushÂÂ‘R®CallExpressionÍ0‘Í0¬MªIdentifierÍ0‘Í0 ¯exportMaskLayer’MªIdentifierÍ0¡Í0¤£docV§LiteralÍ0¦Í0«Â¥falseÂÂW³ExpressionStatementÍ0´Í0ÜR®CallExpressionÍ0´Í0ÛS°MemberExpressionÍ0´Í0¾MªIdentifierÍ0´Í0¹¥filesMªIdentifierÍ0ºÍ0¾¤pushÂÂ‘R®CallExpressionÍ0¿Í0ÚMªIdentifierÍ0¿Í0Ï°exportPasteLayer’MªIdentifierÍ0ĞÍ0Ó£docV§LiteralÍ0ÕÍ0ÙÃ¤trueÂÂW³ExpressionStatementÍ0âÍ1R®CallExpressionÍ0âÍ1
+S°MemberExpressionÍ0âÍ0ìMªIdentifierÍ0âÍ0ç¥filesMªIdentifierÍ0èÍ0ì¤pushÂÂ‘R®CallExpressionÍ0íÍ1	MªIdentifierÍ0íÍ0ı°exportPasteLayer’MªIdentifierÍ0şÍ1£docV§LiteralÍ1Í1Â¥falseÂÂW³ExpressionStatementÍ1Í18R®CallExpressionÍ1Í17S°MemberExpressionÍ1Í1MªIdentifierÍ1Í1¥filesMªIdentifierÍ1Í1¤pushÂÂ‘R®CallExpressionÍ1Í16MªIdentifierÍ1Í1+¯exportSilkLayer’MªIdentifierÍ1,Í1/£docV§LiteralÍ11Í15Ã¤trueÂÂW³ExpressionStatementÍ1>Í1fR®CallExpressionÍ1>Í1eS°MemberExpressionÍ1>Í1HMªIdentifierÍ1>Í1C¥filesMªIdentifierÍ1DÍ1H¤pushÂÂ‘R®CallExpressionÍ1IÍ1dMªIdentifierÍ1IÍ1X¯exportSilkLayer’MªIdentifierÍ1YÍ1\£docV§LiteralÍ1^Í1cÂ¥falseÂÂW³ExpressionStatementÍ1lÍ1R®CallExpressionÍ1lÍ1S°MemberExpressionÍ1lÍ1vMªIdentifierÍ1lÍ1q¥filesMªIdentifierÍ1rÍ1v¤pushÂÂ‘R®CallExpressionÍ1wÍ1MªIdentifierÍ1wÍ1‰²exportBoardOutline‘MªIdentifierÍ1ŠÍ1£docÂÂW³ExpressionStatementÍ1–Í1³R®CallExpressionÍ1–Í1²S°MemberExpressionÍ1–Í1 MªIdentifierÍ1–Í1›¥filesMªIdentifierÍ1œÍ1 ¤pushÂÂ‘R®CallExpressionÍ1¡Í1±MªIdentifierÍ1¡Í1¬«exportDrill‘MªIdentifierÍ1­Í1°£docÂÂW³ExpressionStatementÍ1¹Í1ŞR®CallExpressionÍ1¹Í1İS°MemberExpressionÍ1¹Í1ÃMªIdentifierÍ1¹Í1¾¥filesMªIdentifierÍ1¿Í1Ã¤pushÂÂ‘R®CallExpressionÍ1ÄÍ1ÜMªIdentifierÍ1ÄÍ1Ğ¬exportReadme’MªIdentifierÍ1ÑÍ1Ô£docMªIdentifierÍ1ÖÍ1Û¥filesÂÂÔr]”¤type¥start£end¨argument¯ReturnStatementÍ1äÍ1õÔr^”¤type¥start£endªproperties°ObjectExpressionÍ1ëÍ1ô‘Ôr_™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ1íÍ1òÂÃÂMªIdentifierÍ1íÍ1ò¥files¤initMªIdentifierÍ1íÍ1ò¥filesÀ“Ôr`•¤type¥start£endªspecifiers¦source±ImportDeclarationÌOÌ½•Ôra•¤type¥start£end¨imported¥local¯ImportSpecifierÌXÌbMªIdentifierÌXÌbªPcbLayerIdMªIdentifierÌXÌbªPcbLayerIda¯ImportSpecifierÌdÌnMªIdentifierÌdÌnªPcbPadTypeMªIdentifierÌdÌnªPcbPadTypea¯ImportSpecifierÌpÌ{MªIdentifierÌpÌ{«PcbPadShapeMªIdentifierÌpÌ{«PcbPadShapea¯ImportSpecifierÌ}ÌŠMªIdentifierÌ}ÌŠ­isCopperLayerMªIdentifierÌ}ÌŠ­isCopperLayera¯ImportSpecifierÌŒÌ¡MªIdentifierÌŒÌ¡µcopperLayersFromStackMªIdentifierÌŒÌ¡µcopperLayersFromStackV§LiteralÌ©Ì¼±../types/PcbTypes³'../types/PcbTypes'`±ImportDeclarationÌ¿Ìğ‘a¯ImportSpecifierÌÈÌØMªIdentifierÌÈÌØ°padWorldPositionMªIdentifierÌÈÌØ°padWorldPositionV§LiteralÌàÌï­./PcbZoneUtil¯'./PcbZoneUtil'`±ImportDeclarationÌòÍ7‘a¯ImportSpecifierÌûÍMªIdentifierÌûÍ¼getGlobalPcbFootprintLibraryMªIdentifierÌûÍ¼getGlobalPcbFootprintLibraryV§LiteralÍÍ6µ./PcbFootprintLibrary·'./PcbFootprintLibrary'

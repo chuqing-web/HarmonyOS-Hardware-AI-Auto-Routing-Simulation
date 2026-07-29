@@ -7,7 +7,8 @@
  *
  * 稳定策略：
  * - 整页视觉（双曲面 + 品牌 + 进度 + 状态）均在 Canvas 自绘，页面无 @State
- * - 仅在 onReady 且宽高有效后启动动画时钟
+ * - Canvas/Stack/窗口底均为 #000000；onAreaChange 尺寸变化时先铺黑再绘帧
+ * - 仅在 markSurface 宽高有效后启动动画时钟
  * - 布局收敛期补几次强制重绘（对齐 SchematicCanvas 启动策略）
  */
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -70,6 +71,7 @@ struct SplashPage {
 
   private readonly TOTAL_MS: number = 2800;
   private readonly EXIT_MS: number = 520;
+  private readonly BG: string = '#000000';
 
   private readonly stages: LoadingStage[] = [
     { atMs: 0, text: 'Initializing simulation kernel...' },
@@ -120,11 +122,25 @@ struct SplashPage {
     const sizeChanged = Math.abs(w - this.canvasW) > 0.5 || Math.abs(h - this.canvasH) > 0.5;
     this.canvasW = w;
     this.canvasH = h;
+    // 尺寸变化时 Canvas 缓冲可能被清成白底，必须先铺黑再画帧
+    this.paintBlackOnly(w, h);
     this.surfaceReady = true;
     this.tryStartAnimation();
     if (sizeChanged || !this.animStarted) {
       this.drawFrame(true);
     }
+  }
+
+  /** 仅铺黑底 — 布局/onAreaChange/退出前调用，防止透明或白底露出 */
+  private paintBlackOnly(w?: number, h?: number): void {
+    const cw = (w !== undefined && w > 1) ? w : this.canvasW;
+    const ch = (h !== undefined && h > 1) ? h : this.canvasH;
+    if (cw <= 1 || ch <= 1) {
+      return;
+    }
+    const ctx = this.canvasCtx;
+    ctx.fillStyle = this.BG;
+    ctx.fillRect(0, 0, cw, ch);
   }
 
   private tryStartAnimation(): void {
@@ -281,13 +297,17 @@ struct SplashPage {
     const ctx = this.canvasCtx;
     const w = this.canvasW;
     const h = this.canvasH;
-    if (!this.surfaceReady || w <= 1 || h <= 1) {
+    if (w <= 1 || h <= 1) {
       return;
     }
 
-    // 先铺黑底，避免透明缓冲偶发露出系统层
-    ctx.fillStyle = '#000000';
+    // 每帧先铺黑底（含 onAreaChange 后缓冲被清的场景）
+    ctx.fillStyle = this.BG;
     ctx.fillRect(0, 0, w, h);
+
+    if (!this.surfaceReady) {
+      return;
+    }
 
     const breath = 1 + 0.02 * Math.sin(this.meshBreath);
     const cosA = Math.cos(this.meshAngle);
@@ -452,6 +472,7 @@ struct SplashPage {
       if (t >= 1) {
         clearInterval(this.exitTimer);
         this.exitTimer = -1;
+        this.paintBlackOnly();
         this.navigateToIndex();
       }
     }, 30);
@@ -463,15 +484,17 @@ struct SplashPage {
     }
     this.navigated = true;
     this.clearTimers();
+    this.paintBlackOnly();
+    this.drawFrame(false);
     try {
-      this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
+      this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' })
         .catch((_err: BusinessError) => {
           this.navigated = false;
           setTimeout(() => {
             if (!this.navigated) {
               this.navigated = true;
               try {
-                this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' });
+                this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' });
               } catch (_e2) {
                 // ignore
               }
@@ -485,27 +508,33 @@ struct SplashPage {
 
   build() {
     Stack() {
-      // 系统层兜底黑底（Canvas 未就绪时也不闪白）
+      // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#000000')
+        .backgroundColor(this.BG)
 
       Canvas(this.canvasCtx)
         .width('100%')
         .height('100%')
+        .backgroundColor(this.BG)
         .hitTestBehavior(HitTestMode.None)
         .onReady(() => {
-          this.surfaceReady = true;
-          this.tryStartAnimation();
+          this.paintBlackOnly();
           this.drawFrame(true);
         })
         .onAreaChange((_old, area) => {
-          this.markSurface(Number(area.width), Number(area.height));
+          const w = Number(area.width);
+          const h = Number(area.height);
+          if (w > 1 && h > 1) {
+            this.paintBlackOnly(w, h);
+          }
+          this.markSurface(w, h);
         })
     }
     .width('100%')
     .height('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .backgroundColor(this.BG)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM, SafeAreaEdge.START, SafeAreaEdge.END])
   }
 }

@@ -327,6 +327,7 @@ export class ProteusColors {
                 ProteusColors.TOGGLE_KNOB = '#FFFFFF';
             }
         }
+        PcbColors.applyTheme(dark);
     }
 }
 /** @deprecated 保留兼容；请用 ProteusColors.applyTheme */
@@ -370,6 +371,123 @@ export class ProteusDimens {
     static readonly ICON_SIZE: number = 16;
     static readonly TOOL_BTN_SIZE: number = 24;
     static readonly RULER_SIZE: number = 20;
+}
+/** PCB 画布专用色板 — KiCad Pcbnew 风格 */
+interface PcbThemePalette {
+    CANVAS_BG: string;
+    SUBSTRATE: string;
+    GRID: string;
+    GRID_MAJOR: string;
+    BOARD_OUTLINE: string;
+    SILK: string;
+    PAD_SMD: string;
+    PAD_SMD_NET: string;
+    PAD_TH: string;
+    PAD_UNCONNECTED: string;
+    VIA_FILL: string;
+    VIA_STROKE: string;
+    ROUTE_PREVIEW: string;
+    DRC_ERROR: string;
+    SNAP: string;
+    SEL_RECT: string;
+    SEL_RECT_FILL: string;
+    ZONE_GND: string;
+    ZONE_SIGNAL: string;
+    ZONE_SELECTED: string;
+    REFDES: string;
+}
+const PCB_LIGHT: PcbThemePalette = {
+    CANVAS_BG: '#484848',
+    SUBSTRATE: '#1B5E20',
+    GRID: 'rgba(255,255,255,0.06)',
+    GRID_MAJOR: 'rgba(255,255,255,0.12)',
+    BOARD_OUTLINE: '#FFD700',
+    SILK: '#E8E8E8',
+    PAD_SMD: '#B0B0B0',
+    PAD_SMD_NET: '#D4A820',
+    PAD_TH: '#B87333',
+    PAD_UNCONNECTED: '#A0A0A0',
+    VIA_FILL: '#C8C8C8',
+    VIA_STROKE: '#707070',
+    ROUTE_PREVIEW: '#FFFF00',
+    DRC_ERROR: '#FF3333',
+    SNAP: '#00FF88',
+    SEL_RECT: '#00BFFF',
+    SEL_RECT_FILL: 'rgba(0, 191, 255, 0.12)',
+    ZONE_GND: 'rgba(192, 160, 64, 0.30)',
+    ZONE_SIGNAL: 'rgba(80, 160, 224, 0.25)',
+    ZONE_SELECTED: 'rgba(255, 220, 80, 0.45)',
+    REFDES: '#FFFFFF'
+};
+const PCB_DARK: PcbThemePalette = {
+    CANVAS_BG: '#1A1A1E',
+    SUBSTRATE: '#0F3D0F',
+    GRID: 'rgba(255,255,255,0.05)',
+    GRID_MAJOR: 'rgba(255,255,255,0.10)',
+    BOARD_OUTLINE: '#E8C832',
+    SILK: '#D8D8D8',
+    PAD_SMD: '#A0A0A0',
+    PAD_SMD_NET: '#E8C040',
+    PAD_TH: '#C88040',
+    PAD_UNCONNECTED: '#888888',
+    VIA_FILL: '#B0B0B0',
+    VIA_STROKE: '#606060',
+    ROUTE_PREVIEW: '#FFEE44',
+    DRC_ERROR: '#FF4444',
+    SNAP: '#44FF99',
+    SEL_RECT: '#3794FF',
+    SEL_RECT_FILL: 'rgba(55, 148, 255, 0.15)',
+    ZONE_GND: 'rgba(192, 160, 64, 0.28)',
+    ZONE_SIGNAL: 'rgba(80, 160, 224, 0.22)',
+    ZONE_SELECTED: 'rgba(255, 220, 80, 0.42)',
+    REFDES: '#F0F0F0'
+};
+export class PcbColors {
+    static CANVAS_BG: string = PCB_LIGHT.CANVAS_BG;
+    static SUBSTRATE: string = PCB_LIGHT.SUBSTRATE;
+    static GRID: string = PCB_LIGHT.GRID;
+    static GRID_MAJOR: string = PCB_LIGHT.GRID_MAJOR;
+    static BOARD_OUTLINE: string = PCB_LIGHT.BOARD_OUTLINE;
+    static SILK: string = PCB_LIGHT.SILK;
+    static PAD_SMD: string = PCB_LIGHT.PAD_SMD;
+    static PAD_SMD_NET: string = PCB_LIGHT.PAD_SMD_NET;
+    static PAD_TH: string = PCB_LIGHT.PAD_TH;
+    static PAD_UNCONNECTED: string = PCB_LIGHT.PAD_UNCONNECTED;
+    static VIA_FILL: string = PCB_LIGHT.VIA_FILL;
+    static VIA_STROKE: string = PCB_LIGHT.VIA_STROKE;
+    static ROUTE_PREVIEW: string = PCB_LIGHT.ROUTE_PREVIEW;
+    static DRC_ERROR: string = PCB_LIGHT.DRC_ERROR;
+    static SNAP: string = PCB_LIGHT.SNAP;
+    static SEL_RECT: string = PCB_LIGHT.SEL_RECT;
+    static SEL_RECT_FILL: string = PCB_LIGHT.SEL_RECT_FILL;
+    static ZONE_GND: string = PCB_LIGHT.ZONE_GND;
+    static ZONE_SIGNAL: string = PCB_LIGHT.ZONE_SIGNAL;
+    static ZONE_SELECTED: string = PCB_LIGHT.ZONE_SELECTED;
+    static REFDES: string = PCB_LIGHT.REFDES;
+    static applyTheme(dark: boolean): void {
+        const src = dark ? PCB_DARK : PCB_LIGHT;
+        PcbColors.CANVAS_BG = src.CANVAS_BG;
+        PcbColors.SUBSTRATE = src.SUBSTRATE;
+        PcbColors.GRID = src.GRID;
+        PcbColors.GRID_MAJOR = src.GRID_MAJOR;
+        PcbColors.BOARD_OUTLINE = src.BOARD_OUTLINE;
+        PcbColors.SILK = src.SILK;
+        PcbColors.PAD_SMD = src.PAD_SMD;
+        PcbColors.PAD_SMD_NET = src.PAD_SMD_NET;
+        PcbColors.PAD_TH = src.PAD_TH;
+        PcbColors.PAD_UNCONNECTED = src.PAD_UNCONNECTED;
+        PcbColors.VIA_FILL = src.VIA_FILL;
+        PcbColors.VIA_STROKE = src.VIA_STROKE;
+        PcbColors.ROUTE_PREVIEW = src.ROUTE_PREVIEW;
+        PcbColors.DRC_ERROR = src.DRC_ERROR;
+        PcbColors.SNAP = src.SNAP;
+        PcbColors.SEL_RECT = src.SEL_RECT;
+        PcbColors.SEL_RECT_FILL = src.SEL_RECT_FILL;
+        PcbColors.ZONE_GND = src.ZONE_GND;
+        PcbColors.ZONE_SIGNAL = src.ZONE_SIGNAL;
+        PcbColors.ZONE_SELECTED = src.ZONE_SELECTED;
+        PcbColors.REFDES = src.REFDES;
+    }
 }
 export class ProteusFonts {
     private static scale: number = 1.0;

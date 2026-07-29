@@ -214,6 +214,9 @@ export function buildProjectDataForSave(data: ProjectData, version: string, modi
     if (data.backupPath !== undefined) {
         result.backupPath = data.backupPath;
     }
+    if (data.pcb !== undefined) {
+        result.pcb = data.pcb;
+    }
     return result;
 }
 export function emptyParameters(): Map<string, string> {

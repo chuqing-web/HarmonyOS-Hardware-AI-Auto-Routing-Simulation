@@ -91,8 +91,8 @@ interface ProteusMenuTrigger_Params {
     themeRev?: number;
     label?: ResourceStr;
     entries?: ProteusMenuEntry[];
-    open?: boolean;
     pressed?: boolean;
+    hovered?: boolean;
 }
 interface ProteusToolButton_Params {
     themeRev?: number;
@@ -1215,6 +1215,7 @@ export class ProteusMenuItem extends ViewPU {
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Button.createWithLabel(this.label);
+            globalThis.Context.animation({ duration: 90, curve: Curve.EaseOut });
             Button.fontSize(ProteusFonts.MENU);
             Button.fontColor(ProteusColors.TEXT_PRIMARY);
             Button.height(ProteusDimens.MENU_HEIGHT);
@@ -1223,6 +1224,7 @@ export class ProteusMenuItem extends ViewPU {
             Button.backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED :
                 (this.hovered ? '#E8E8E8' : ProteusColors.MENU_BG));
             Button.scale(this.pressed ? { x: 0.98, y: 0.92 } : { x: 1, y: 1 });
+            globalThis.Context.animation(null);
             Button.stateEffect(false);
             Button.onClick(() => this.onAction());
             Button.onHover((isHover: boolean) => { this.hovered = isHover; });
@@ -1427,7 +1429,7 @@ export class ProteusCollapsibleSection extends ViewPU {
                         title: this.title,
                         collapsed: !this.expanded,
                         onToggle: () => { this.expanded = !this.expanded; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 447, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 448, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2339,7 +2341,7 @@ export class ProteusToolButton extends ViewPU {
                         iconSize: 14,
                         color: this.disabled ? ProteusColors.TEXT_SECONDARY :
                             (this.active ? ProteusColors.BTN_FOCUS : ProteusColors.TEXT_PRIMARY)
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 685, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 686, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2403,8 +2405,8 @@ export class ProteusMenuTrigger extends ViewPU {
         this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
         this.__label = new SynchedPropertyObjectOneWayPU(params.label, this, "label");
         this.entries = [];
-        this.__open = new ObservedPropertySimplePU(false, this, "open");
         this.__pressed = new ObservedPropertySimplePU(false, this, "pressed");
+        this.__hovered = new ObservedPropertySimplePU(false, this, "hovered");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -2415,11 +2417,11 @@ export class ProteusMenuTrigger extends ViewPU {
         if (params.entries !== undefined) {
             this.entries = params.entries;
         }
-        if (params.open !== undefined) {
-            this.open = params.open;
-        }
         if (params.pressed !== undefined) {
             this.pressed = params.pressed;
+        }
+        if (params.hovered !== undefined) {
+            this.hovered = params.hovered;
         }
     }
     updateStateVars(params: ProteusMenuTrigger_Params) {
@@ -2428,14 +2430,14 @@ export class ProteusMenuTrigger extends ViewPU {
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__label.purgeDependencyOnElmtId(rmElmtId);
-        this.__open.purgeDependencyOnElmtId(rmElmtId);
         this.__pressed.purgeDependencyOnElmtId(rmElmtId);
+        this.__hovered.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__themeRev.aboutToBeDeleted();
         this.__label.aboutToBeDeleted();
-        this.__open.aboutToBeDeleted();
         this.__pressed.aboutToBeDeleted();
+        this.__hovered.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -2455,13 +2457,6 @@ export class ProteusMenuTrigger extends ViewPU {
         this.__label.set(newValue);
     }
     private entries: ProteusMenuEntry[];
-    private __open: ObservedPropertySimplePU<boolean>;
-    get open() {
-        return this.__open.get();
-    }
-    set open(newValue: boolean) {
-        this.__open.set(newValue);
-    }
     private __pressed: ObservedPropertySimplePU<boolean>;
     get pressed() {
         return this.__pressed.get();
@@ -2469,17 +2464,35 @@ export class ProteusMenuTrigger extends ViewPU {
     set pressed(newValue: boolean) {
         this.__pressed.set(newValue);
     }
+    private __hovered: ObservedPropertySimplePU<boolean>;
+    get hovered() {
+        return this.__hovered.get();
+    }
+    set hovered(newValue: boolean) {
+        this.__hovered.set(newValue);
+    }
+    private bg(): string {
+        if (this.pressed) {
+            return ProteusColors.BTN_PRESSED;
+        }
+        if (this.hovered) {
+            return ProteusColors.MENU_HOVER;
+        }
+        return ProteusColors.MENU_BG;
+    }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Button.createWithChild({ type: ButtonType.Normal });
+            globalThis.Context.animation({ duration: 90, curve: Curve.EaseOut });
             Button.height(ProteusDimens.MENU_HEIGHT);
             Button.padding({ left: 6, right: 4 });
             Button.borderRadius(0);
-            Button.backgroundColor(this.pressed || this.open ? ProteusColors.BTN_PRESSED : ProteusColors.MENU_BG);
-            Button.border(proteusBtnBorder(this.pressed || this.open));
+            Button.backgroundColor(this.bg());
+            Button.border(proteusBtnBorder(this.pressed));
             Button.scale(this.pressed ? { x: 0.98, y: 0.92 } : { x: 1, y: 1 });
+            globalThis.Context.animation(null);
             Button.stateEffect(false);
-            Button.onClick(() => { this.open = true; });
+            Button.onHover((isHover: boolean) => { this.hovered = isHover; });
             Button.onTouch((event: TouchEvent) => {
                 if (event.type === TouchType.Down) {
                     this.pressed = true;
@@ -2488,7 +2501,11 @@ export class ProteusMenuTrigger extends ViewPU {
                     this.pressed = false;
                 }
             });
-            Button.bindMenu({ builder: this.buildMenu.bind(this) });
+            Button.bindMenu({ builder: this.buildMenu.bind(this) }, {
+                onDisappear: () => {
+                    this.pressed = false;
+                }
+            });
         }, Button);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create();
@@ -2506,7 +2523,7 @@ export class ProteusMenuTrigger extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 768, col: 9 });
+                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.CHEVRON_DOWN, iconSize: 8, color: ProteusColors.TEXT_SECONDARY }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 779, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2561,10 +2578,9 @@ export class ProteusMenuTrigger extends ViewPU {
                                             shortcut: e.shortcut ?? '',
                                             disabled: e.disabled === true,
                                             onAction: () => {
-                                                this.open = false;
                                                 e.action();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 797, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 813, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2572,7 +2588,6 @@ export class ProteusMenuTrigger extends ViewPU {
                                                 shortcut: e.shortcut ?? '',
                                                 disabled: e.disabled === true,
                                                 onAction: () => {
-                                                    this.open = false;
                                                     e.action();
                                                 }
                                             };
@@ -2941,7 +2956,7 @@ export class ProteusSidebarTab extends ViewPU {
                         iconSize: 16,
                         color: this.selected ?
                             ProteusColors.SIDEBAR_TAB_ACTIVE_TEXT : ProteusColors.SIDEBAR_TAB_IDLE_TEXT
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 897, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusWidgets.ets", line: 912, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

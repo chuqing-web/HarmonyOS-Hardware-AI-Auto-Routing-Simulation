@@ -52,9 +52,17 @@ export enum ProteusIconName {
   CHEVRON_RIGHT = 'chevron_right',
   SEARCH = 'search',
   SETTINGS = 'settings',
+  HOME = 'home',
   CLOSE = 'close',
   CHECK = 'check',
   WARNING = 'warning',
+  // PCB
+  SELECT = 'select',
+  TRACK = 'track',
+  VIA = 'via',
+  ZONE = 'zone',
+  LAYER = 'layer',
+  DRC = 'drc',
 }
 
 const ICON_PATHS: Record<ProteusIconName, string> = {
@@ -96,9 +104,16 @@ const ICON_PATHS: Record<ProteusIconName, string> = {
   [ProteusIconName.CHEVRON_RIGHT]: 'M9 6l6 6-6 6',
   [ProteusIconName.SEARCH]: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M21 21l-5-5',
   [ProteusIconName.SETTINGS]: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z M12 2v3 M12 19v3 M4.93 4.93l2.12 2.12 M16.95 16.95l2.12 2.12 M2 12h3 M19 12h3 M4.93 19.07l2.12-2.12 M16.95 7.05l2.12-2.12',
+  [ProteusIconName.HOME]: 'M4 10.5L12 4l8 6.5V20H4V10.5z M9 20v-6h6v6',
   [ProteusIconName.CLOSE]: 'M6 6l12 12 M18 6L6 18',
   [ProteusIconName.CHECK]: 'M5 12l5 5L20 6',
   [ProteusIconName.WARNING]: 'M12 3l9 16H3z M12 9v5 M12 18v.5',
+  [ProteusIconName.SELECT]: 'M4 4l6 14 2-6 6-2z',
+  [ProteusIconName.TRACK]: 'M3 12h5 M8 12c0-4 4-7 8-7 M16 5h5 M8 12c0 4 4 7 8 7 M16 19h5',
+  [ProteusIconName.VIA]: 'M12 6a6 6 0 1 1 0 12 6 6 0 0 1 0-12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  [ProteusIconName.ZONE]: 'M4 8l8-4 8 4v8l-8 4-8-4V8z M12 4v16',
+  [ProteusIconName.LAYER]: 'M4 6l8-3 8 3-8 3-8-3z M4 12l8 3 8-3 M4 18l8 3 8-3',
+  [ProteusIconName.DRC]: 'M4 12l5 5L20 6 M12 3l9 16H3',
 };
 
 @Component

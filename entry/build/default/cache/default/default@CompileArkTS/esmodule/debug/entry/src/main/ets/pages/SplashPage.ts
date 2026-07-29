@@ -31,6 +31,7 @@ interface SplashPage_Params {
     lastStageIdx?: number;
     TOTAL_MS?: number;
     EXIT_MS?: number;
+    BG?: string;
     stages?: LoadingStage[];
 }
 import type { BusinessError } from "@ohos:base";
@@ -89,6 +90,7 @@ class SplashPage extends ViewPU {
         this.lastStageIdx = 0;
         this.TOTAL_MS = 2800;
         this.EXIT_MS = 520;
+        this.BG = '#000000';
         this.stages = [
             { atMs: 0, text: 'Initializing simulation kernel...' },
             { atMs: 550, text: 'Loading component library...' },
@@ -187,6 +189,9 @@ class SplashPage extends ViewPU {
         if (params.EXIT_MS !== undefined) {
             this.EXIT_MS = params.EXIT_MS;
         }
+        if (params.BG !== undefined) {
+            this.BG = params.BG;
+        }
         if (params.stages !== undefined) {
             this.stages = params.stages;
         }
@@ -228,6 +233,7 @@ class SplashPage extends ViewPU {
     private lastStageIdx: number;
     private readonly TOTAL_MS: number;
     private readonly EXIT_MS: number;
+    private readonly BG: string;
     private readonly stages: LoadingStage[];
     aboutToAppear(): void {
         this.generateMesh();
@@ -266,11 +272,24 @@ class SplashPage extends ViewPU {
         const sizeChanged = Math.abs(w - this.canvasW) > 0.5 || Math.abs(h - this.canvasH) > 0.5;
         this.canvasW = w;
         this.canvasH = h;
+        // 尺寸变化时 Canvas 缓冲可能被清成白底，必须先铺黑再画帧
+        this.paintBlackOnly(w, h);
         this.surfaceReady = true;
         this.tryStartAnimation();
         if (sizeChanged || !this.animStarted) {
             this.drawFrame(true);
         }
+    }
+    /** 仅铺黑底 — 布局/onAreaChange/退出前调用，防止透明或白底露出 */
+    private paintBlackOnly(w?: number, h?: number): void {
+        const cw = (w !== undefined && w > 1) ? w : this.canvasW;
+        const ch = (h !== undefined && h > 1) ? h : this.canvasH;
+        if (cw <= 1 || ch <= 1) {
+            return;
+        }
+        const ctx = this.canvasCtx;
+        ctx.fillStyle = this.BG;
+        ctx.fillRect(0, 0, cw, ch);
     }
     private tryStartAnimation(): void {
         if (this.animStarted || this.navigated) {
@@ -411,12 +430,15 @@ class SplashPage extends ViewPU {
         const ctx = this.canvasCtx;
         const w = this.canvasW;
         const h = this.canvasH;
-        if (!this.surfaceReady || w <= 1 || h <= 1) {
+        if (w <= 1 || h <= 1) {
             return;
         }
-        // 先铺黑底，避免透明缓冲偶发露出系统层
-        ctx.fillStyle = '#000000';
+        // 每帧先铺黑底（含 onAreaChange 后缓冲被清的场景）
+        ctx.fillStyle = this.BG;
         ctx.fillRect(0, 0, w, h);
+        if (!this.surfaceReady) {
+            return;
+        }
         const breath = 1 + 0.02 * Math.sin(this.meshBreath);
         const cosA = Math.cos(this.meshAngle);
         const sinA = Math.sin(this.meshAngle);
@@ -563,6 +585,7 @@ class SplashPage extends ViewPU {
             if (t >= 1) {
                 clearInterval(this.exitTimer);
                 this.exitTimer = -1;
+                this.paintBlackOnly();
                 this.navigateToIndex();
             }
         }, 30);
@@ -573,15 +596,17 @@ class SplashPage extends ViewPU {
         }
         this.navigated = true;
         this.clearTimers();
+        this.paintBlackOnly();
+        this.drawFrame(false);
         try {
-            this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' })
+            this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' })
                 .catch((_err: BusinessError) => {
                 this.navigated = false;
                 setTimeout(() => {
                     if (!this.navigated) {
                         this.navigated = true;
                         try {
-                            this.getUIContext().getRouter().replaceUrl({ url: 'pages/Index' });
+                            this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' });
                         }
                         catch (_e2) {
                             // ignore
@@ -599,32 +624,38 @@ class SplashPage extends ViewPU {
             Stack.create();
             Stack.width('100%');
             Stack.height('100%');
-            Stack.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+            Stack.backgroundColor(this.BG);
+            Stack.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM, SafeAreaEdge.START, SafeAreaEdge.END]);
         }, Stack);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // 系统层兜底黑底（Canvas 未就绪时也不闪白）
+            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.create();
-            // 系统层兜底黑底（Canvas 未就绪时也不闪白）
+            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.width('100%');
-            // 系统层兜底黑底（Canvas 未就绪时也不闪白）
+            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.height('100%');
-            // 系统层兜底黑底（Canvas 未就绪时也不闪白）
-            Column.backgroundColor('#000000');
+            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
+            Column.backgroundColor(this.BG);
         }, Column);
-        // 系统层兜底黑底（Canvas 未就绪时也不闪白）
+        // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Canvas.create(this.canvasCtx);
             Canvas.width('100%');
             Canvas.height('100%');
+            Canvas.backgroundColor(this.BG);
             Canvas.hitTestBehavior(HitTestMode.None);
             Canvas.onReady(() => {
-                this.surfaceReady = true;
-                this.tryStartAnimation();
+                this.paintBlackOnly();
                 this.drawFrame(true);
             });
             Canvas.onAreaChange((_old, area) => {
-                this.markSurface(Number(area.width), Number(area.height));
+                const w = Number(area.width);
+                const h = Number(area.height);
+                if (w > 1 && h > 1) {
+                    this.paintBlackOnly(w, h);
+                }
+                this.markSurface(w, h);
             });
         }, Canvas);
         Canvas.pop();

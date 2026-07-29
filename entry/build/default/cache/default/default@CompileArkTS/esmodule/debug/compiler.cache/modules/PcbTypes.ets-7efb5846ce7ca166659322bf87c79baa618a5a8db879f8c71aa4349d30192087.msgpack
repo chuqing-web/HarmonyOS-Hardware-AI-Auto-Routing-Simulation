@@ -1,0 +1,1267 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ>/** KiCad é£æ ¼å›¾å±‚ IDï¼ˆå«å†…å±‚é“œ / é’¢ç½‘ï¼‰ */
+export var PcbLayerId;
+(function (PcbLayerId) {
+    PcbLayerId["F_CU"] = "F.Cu";
+    PcbLayerId["IN1_CU"] = "In1.Cu";
+    PcbLayerId["IN2_CU"] = "In2.Cu";
+    PcbLayerId["IN3_CU"] = "In3.Cu";
+    PcbLayerId["IN4_CU"] = "In4.Cu";
+    PcbLayerId["B_CU"] = "B.Cu";
+    PcbLayerId["F_SILKS"] = "F.SilkS";
+    PcbLayerId["B_SILKS"] = "B.SilkS";
+    PcbLayerId["F_MASK"] = "F.Mask";
+    PcbLayerId["B_MASK"] = "B.Mask";
+    PcbLayerId["F_PASTE"] = "F.Paste";
+    PcbLayerId["B_PASTE"] = "B.Paste";
+    PcbLayerId["EDGE_CUTS"] = "Edge.Cuts";
+    PcbLayerId["F_FAB"] = "F.Fab";
+    PcbLayerId["B_FAB"] = "B.Fab";
+    PcbLayerId["COURTYARD"] = "F.CrtYd";
+})(PcbLayerId || (PcbLayerId = {}));
+export var PcbPadShape;
+(function (PcbPadShape) {
+    PcbPadShape["CIRCLE"] = "circle";
+    PcbPadShape["RECT"] = "rect";
+    PcbPadShape["OVAL"] = "oval";
+    PcbPadShape["ROUNDRECT"] = "roundrect";
+})(PcbPadShape || (PcbPadShape = {}));
+export var PcbPadType;
+(function (PcbPadType) {
+    PcbPadType["SMD"] = "smd";
+    PcbPadType["TH"] = "th";
+    PcbPadType["NPTH"] = "npth";
+})(PcbPadType || (PcbPadType = {}));
+export var PcbViaKind;
+(function (PcbViaKind) {
+    PcbViaKind["THROUGH"] = "through";
+    PcbViaKind["BLIND"] = "blind";
+    PcbViaKind["BURIED"] = "buried";
+})(PcbViaKind || (PcbViaKind = {}));
+export var PcbAppearanceMode;
+(function (PcbAppearanceMode) {
+    PcbAppearanceMode["OVERLAY"] = "overlay";
+    PcbAppearanceMode["ACTIVE_ONLY"] = "active_only";
+    PcbAppearanceMode["DIM_INACTIVE"] = "dim_inactive";
+})(PcbAppearanceMode || (PcbAppearanceMode = {}));
+export var PcbStackLayerType;
+(function (PcbStackLayerType) {
+    PcbStackLayerType["COPPER"] = "copper";
+    PcbStackLayerType["DIELECTRIC"] = "dielectric";
+    PcbStackLayerType["SOLDERMASK"] = "soldermask";
+})(PcbStackLayerType || (PcbStackLayerType = {}));
+export var PcbDrcSeverity;
+(function (PcbDrcSeverity) {
+    PcbDrcSeverity["ERROR"] = "error";
+    PcbDrcSeverity["WARNING"] = "warning";
+})(PcbDrcSeverity || (PcbDrcSeverity = {}));
+export var PcbDrcRuleType;
+(function (PcbDrcRuleType) {
+    PcbDrcRuleType["CLEARANCE"] = "clearance";
+    PcbDrcRuleType["UNROUTED_NET"] = "unrouted_net";
+    PcbDrcRuleType["OFF_BOARD"] = "off_board";
+    PcbDrcRuleType["SHORT"] = "short";
+    PcbDrcRuleType["MIN_WIDTH"] = "min_width";
+    PcbDrcRuleType["VIA_ANNULAR"] = "via_annular";
+    PcbDrcRuleType["PAD_CLEARANCE"] = "pad_clearance";
+    PcbDrcRuleType["DIFF_LENGTH"] = "diff_length";
+    PcbDrcRuleType["KEEPOUT"] = "keepout";
+})(PcbDrcRuleType || (PcbDrcRuleType = {}));
+export function defaultPcbDesignRules() {
+    return {
+        minTrackWidth: 6,
+        minClearance: 6,
+        minViaDrill: 12,
+        defaultTrackWidth: 10,
+        minAnnularRing: 4,
+        minHoleToHole: 10
+    };
+}
+export function defaultPcbNetClasses() {
+    return [
+        {
+            id: 'nc_default', name: 'Default',
+            trackWidth: 10, clearance: 6, viaDiameter: 24, viaDrill: 12
+        },
+        {
+            id: 'nc_power', name: 'Power',
+            trackWidth: 20, clearance: 10, viaDiameter: 30, viaDrill: 16
+        },
+        {
+            id: 'nc_signal', name: 'Signal',
+            trackWidth: 8, clearance: 6, viaDiameter: 22, viaDrill: 12
+        }
+    ];
+}
+export function defaultPcbAppearance() {
+    return {
+        mode: PcbAppearanceMode.OVERLAY,
+        dimAlpha: 0.28,
+        highlightNetId: '',
+        hideZones: false,
+        showRatsnest: true,
+        showPadNumbers: false,
+        show3d: false
+    };
+}
+export function createDefaultLayerStack(copperCount = 2) {
+    const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
+    const layers = [];
+    layers.push({
+        id: 'sm_top', type: PcbStackLayerType.SOLDERMASK, name: 'F.Mask', thicknessMm: 0.02
+    });
+    layers.push({
+        id: 'cu_f', type: PcbStackLayerType.COPPER, name: 'F.Cu',
+        copperLayerId: PcbLayerId.F_CU, thicknessMm: 0.035, copperOz: 1
+    });
+    if (n >= 4) {
+        layers.push({
+            id: 'diel_1', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
+            thicknessMm: 0.2, dielectricDk: 4.5
+        });
+        layers.push({
+            id: 'cu_in1', type: PcbStackLayerType.COPPER, name: 'In1.Cu',
+            copperLayerId: PcbLayerId.IN1_CU, thicknessMm: 0.035, copperOz: 1
+        });
+        layers.push({
+            id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
+            thicknessMm: 0.8, dielectricDk: 4.3
+        });
+        layers.push({
+            id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
+            copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
+        });
+    }
+    else {
+        layers.push({
+            id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
+            thicknessMm: 1.5, dielectricDk: 4.3
+        });
+    }
+    if (n >= 6) {
+        layers.push({
+            id: 'diel_3', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2',
+            thicknessMm: 0.2, dielectricDk: 4.5
+        });
+        layers.push({
+            id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
+            copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
+        });
+    }
+    if (n >= 8) {
+        layers.push({
+            id: 'diel_4', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3',
+            thicknessMm: 0.2, dielectricDk: 4.5
+        });
+        layers.push({
+            id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
+            copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
+        });
+    }
+    if (n >= 6) {
+        // ensure B.Cu after last inner for 6/8 â€” already handled below
+    }
+    layers.push({
+        id: 'cu_b', type: PcbStackLayerType.COPPER, name: 'B.Cu',
+        copperLayerId: PcbLayerId.B_CU, thicknessMm: 0.035, copperOz: 1
+    });
+    layers.push({
+        id: 'sm_bot', type: PcbStackLayerType.SOLDERMASK, name: 'B.Mask', thicknessMm: 0.02
+    });
+    return { copperCount: n, layers };
+}
+export function createDefaultPcbLayers(copperCount = 2) {
+    const layers = [
+        { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#C83434', opacity: 1 }
+    ];
+    if (copperCount >= 4) {
+        layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#34C878', opacity: 1 });
+        layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#C87834', opacity: 1 });
+    }
+    if (copperCount >= 6) {
+        layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#7834C8', opacity: 1 });
+    }
+    if (copperCount >= 8) {
+        layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#34C8C8', opacity: 1 });
+    }
+    layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#3478C8', opacity: 1 });
+    layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#F0F0F0', opacity: 1 });
+    layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#C8C8C8', opacity: 1 });
+    layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
+    layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
+    layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
+    layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
+    layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#FFD700', opacity: 1 });
+    layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
+    return layers;
+}
+export function createEmptyPcbDocument(name) {
+    const now = new Date().toISOString();
+    const w = 3000;
+    const h = 2000;
+    return {
+        id: `pcb_${Date.now()}`,
+        name,
+        version: '1.1',
+        boardOutline: {
+            points: [
+                { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }
+            ],
+            width: 5
+        },
+        footprints: [],
+        tracks: [],
+        vias: [],
+        zones: [],
+        layers: createDefaultPcbLayers(2),
+        nets: [],
+        netClasses: defaultPcbNetClasses(),
+        layerStack: createDefaultLayerStack(2),
+        diffPairs: [],
+        metadata: {
+            author: '',
+            createdAt: now,
+            modifiedAt: now,
+            description: '',
+            gridSize: 5,
+            units: 'mil',
+            designRules: defaultPcbDesignRules()
+        }
+    };
+}
+export function createDefaultPcbViewport() {
+    return {
+        zoom: 0.15,
+        panOffset: { x: 40, y: 40 },
+        gridVisible: true,
+        gridSize: 5,
+        snapToGrid: true
+    };
+}
+/** é“œå±‚åˆ¤å®šï¼ˆå«å†…å±‚ï¼‰ */
+export function isCopperLayer(layer) {
+    return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
+        layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
+        layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU;
+}
+export function copperLayersFromStack(stack) {
+    const out = [];
+    for (const sl of stack.layers) {
+        if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId) {
+            out.push(sl.copperLayerId);
+        }
+    }
+    return out;
+}
+/** åŠ è½½æ—§å·¥ç¨‹æˆ–æ®‹ç¼º JSON æ—¶è¡¥é½ PCB å­—æ®µ */
+export function normalizePcbDocument(doc) {
+    if (!doc.footprints) {
+        doc.footprints = [];
+    }
+    if (!doc.tracks) {
+        doc.tracks = [];
+    }
+    if (!doc.vias) {
+        doc.vias = [];
+    }
+    if (!doc.zones) {
+        doc.zones = [];
+    }
+    if (!doc.nets) {
+        doc.nets = [];
+    }
+    if (!doc.netClasses || doc.netClasses.length === 0) {
+        doc.netClasses = defaultPcbNetClasses();
+    }
+    if (!doc.diffPairs) {
+        doc.diffPairs = [];
+    }
+    if (!doc.layerStack || !doc.layerStack.layers || doc.layerStack.layers.length === 0) {
+        doc.layerStack = createDefaultLayerStack(2);
+    }
+    for (const via of doc.vias) {
+        if (!via.kind) {
+            via.kind = PcbViaKind.THROUGH;
+        }
+        if (!via.layers || via.layers.length === 0) {
+            via.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+        }
+    }
+    for (const z of doc.zones) {
+        if (!z.cutouts)
+            z.cutouts = [];
+        if (!z.manualCutouts)
+            z.manualCutouts = [];
+        if (z.clearance === undefined || z.clearance <= 0) {
+            z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
+        }
+        if (z.thermalRelief === undefined)
+            z.thermalRelief = true;
+        if (z.thermalGap === undefined || z.thermalGap <= 0)
+            z.thermalGap = 12;
+        if (z.thermalWidth === undefined || z.thermalWidth <= 0)
+            z.thermalWidth = 10;
+        if (z.priority === undefined)
+            z.priority = 0;
+    }
+    if (!doc.layers || doc.layers.length === 0) {
+        doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
+    }
+    else {
+        ensureLayerPresent(doc, PcbLayerId.F_MASK, 'Front Mask', '#2E8B57', false);
+        ensureLayerPresent(doc, PcbLayerId.B_MASK, 'Back Mask', '#2E8B57', false);
+        ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
+        ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
+        if (doc.layerStack.copperCount >= 4) {
+            ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#34C878', true);
+            ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#C87834', true);
+        }
+        if (doc.layerStack.copperCount >= 6) {
+            ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#7834C8', true);
+        }
+        if (doc.layerStack.copperCount >= 8) {
+            ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#34C8C8', true);
+        }
+    }
+    if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
+        doc.boardOutline = {
+            points: [
+                { x: 0, y: 0 }, { x: 3000, y: 0 }, { x: 3000, y: 2000 }, { x: 0, y: 2000 }
+            ],
+            width: 5
+        };
+    }
+    if (!doc.metadata) {
+        const now = new Date().toISOString();
+        doc.metadata = {
+            author: '', createdAt: now, modifiedAt: now,
+            description: '', gridSize: 5, units: 'mil',
+            designRules: defaultPcbDesignRules()
+        };
+    }
+    else {
+        if (!doc.metadata.designRules) {
+            doc.metadata.designRules = defaultPcbDesignRules();
+        }
+        else {
+            const dr = doc.metadata.designRules;
+            if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0)
+                dr.minAnnularRing = 4;
+            if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0)
+                dr.minHoleToHole = 10;
+        }
+        if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
+            doc.metadata.gridSize = 5;
+        }
+    }
+}
+function ensureLayerPresent(doc, id, name, color, visible) {
+    for (const l of doc.layers) {
+        if (l.id === id)
+            return;
+    }
+    doc.layers.push({ id, name, visible, color, opacity: 1 });
+}
+/** å°†é“œå±‚æ•°åˆ‡æ¢ä¸º 2/4/6/8ï¼ŒåŒæ­¥ layers + layerStack */
+export function applyCopperLayerCount(doc, copperCount) {
+    const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
+    doc.layerStack = createDefaultLayerStack(n);
+    const visibility = new Map();
+    for (const l of doc.layers) {
+        visibility.set(l.id, l.visible);
+    }
+    doc.layers = createDefaultPcbLayers(n);
+    for (const l of doc.layers) {
+        const prev = visibility.get(l.id);
+        if (prev !== undefined) {
+            l.visible = prev;
+        }
+    }
+}
+/** PCB ç¼–è¾‘å™¨é€‰æ‹©äº‹ä»¶è½½è· */
+export class PcbEditorSelectionData {
+    constructor() {
+        this.footprintIds = [];
+        this.trackIds = [];
+        this.viaIds = [];
+        this.zoneIds = [];
+    }
+}
+/** ç»Ÿä¸€é€‰æ‹©çŠ¶æ€ */
+export var PcbSelectionKind;
+(function (PcbSelectionKind) {
+    PcbSelectionKind["NONE"] = "none";
+    PcbSelectionKind["FOOTPRINT"] = "footprint";
+    PcbSelectionKind["TRACK"] = "track";
+    PcbSelectionKind["VIA"] = "via";
+    PcbSelectionKind["ZONE"] = "zone";
+    PcbSelectionKind["MULTI"] = "multi";
+})(PcbSelectionKind || (PcbSelectionKind = {}));
+export function pcbSelectionEmpty() {
+    return { kind: PcbSelectionKind.NONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [] };
+}
+export function pcbSelectionFromData(d) {
+    let kind = PcbSelectionKind.NONE;
+    if (d.footprintIds.length > 0)
+        kind = PcbSelectionKind.FOOTPRINT;
+    else if (d.trackIds.length > 0)
+        kind = PcbSelectionKind.TRACK;
+    else if (d.viaIds.length > 0)
+        kind = PcbSelectionKind.VIA;
+    else if (d.zoneIds.length > 0)
+        kind = PcbSelectionKind.ZONE;
+    const total = d.footprintIds.length + d.trackIds.length + d.viaIds.length + d.zoneIds.length;
+    if (total > 1)
+        kind = PcbSelectionKind.MULTI;
+    return {
+        kind,
+        footprintIds: [...d.footprintIds],
+        trackIds: [...d.trackIds],
+        viaIds: [...d.viaIds],
+        zoneIds: [...d.zoneIds]
+    };
+}
+//# sourceMappingURL=PcbTypes.js.mapÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleName½./src/main/ets/types/PcbTypes¦commonD±../types/PcbTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚI//**
+ * PCB å¸ƒå±€æ•°æ®æ¨¡å‹ â€” å¯¹é½ KiCad åˆ†å±‚/å°è£…/èµ°çº¿è¯­ä¹‰
+ */
+import { Point2D, Rotation, ViewportState } from './CommonTypes';
+
+/** KiCad é£æ ¼å›¾å±‚ IDï¼ˆå«å†…å±‚é“œ / é’¢ç½‘ï¼‰ */
+export enum PcbLayerId {
+  F_CU = 'F.Cu',
+  IN1_CU = 'In1.Cu',
+  IN2_CU = 'In2.Cu',
+  IN3_CU = 'In3.Cu',
+  IN4_CU = 'In4.Cu',
+  B_CU = 'B.Cu',
+  F_SILKS = 'F.SilkS',
+  B_SILKS = 'B.SilkS',
+  F_MASK = 'F.Mask',
+  B_MASK = 'B.Mask',
+  F_PASTE = 'F.Paste',
+  B_PASTE = 'B.Paste',
+  EDGE_CUTS = 'Edge.Cuts',
+  F_FAB = 'F.Fab',
+  B_FAB = 'B.Fab',
+  COURTYARD = 'F.CrtYd'
+}
+
+export enum PcbPadShape {
+  CIRCLE = 'circle',
+  RECT = 'rect',
+  OVAL = 'oval',
+  ROUNDRECT = 'roundrect'
+}
+
+export enum PcbPadType {
+  SMD = 'smd',
+  TH = 'th',
+  NPTH = 'npth'
+}
+
+export enum PcbViaKind {
+  THROUGH = 'through',
+  BLIND = 'blind',
+  BURIED = 'buried'
+}
+
+export enum PcbAppearanceMode {
+  OVERLAY = 'overlay',
+  ACTIVE_ONLY = 'active_only',
+  DIM_INACTIVE = 'dim_inactive'
+}
+
+export enum PcbStackLayerType {
+  COPPER = 'copper',
+  DIELECTRIC = 'dielectric',
+  SOLDERMASK = 'soldermask'
+}
+
+/** ç„Šç›˜ï¼ˆKiCad pad ç®€åŒ–ï¼‰ */
+export interface PcbPad {
+  id: string;
+  number: string;
+  type: PcbPadType;
+  shape: PcbPadShape;
+  /** ç›¸å¯¹å°è£…åŸç‚¹çš„å±€éƒ¨åæ ‡ (mil) */
+  pos: Point2D;
+  size: Point2D;
+  drill?: number;
+  layers: PcbLayerId[];
+  netId?: string;
+  netName?: string;
+}
+
+/** å°è£…å®šä¹‰ï¼ˆåº“å†…æ¨¡æ¿ï¼‰ */
+export interface PcbFootprintDef {
+  id: string;
+  name: string;
+  description: string;
+  pads: PcbPad[];
+  /** ä¸å°è½®å»“æŠ˜çº¿ (mil, å±€éƒ¨åæ ‡) */
+  silkLines: Point2D[][];
+  courtyard: Point2D[];
+  /** å¯é€‰ 3D é«˜åº¦ (mil)ï¼Œç¼ºçœæŒ‰å°è£…ç±»å‹ä¼°ç®— */
+  heightMil?: number;
+}
+
+/** æ¿ä¸Šå°è£…å®ä¾‹ */
+export interface PcbFootprintInst {
+  id: string;
+  defId: string;
+  refDes: string;
+  value: string;
+  position: Point2D;
+  rotation: Rotation;
+  mirrored: boolean;
+  layer: PcbLayerId;
+  locked: boolean;
+  /** å®ä¾‹çº§ç„Šç›˜ï¼ˆå«ç½‘ç»œç»‘å®šï¼‰ */
+  pads: PcbPad[];
+  schematicCompId?: string;
+}
+
+/** èµ°çº¿æ®µ (KiCad segment) */
+export interface PcbTrack {
+  id: string;
+  layer: PcbLayerId;
+  start: Point2D;
+  end: Point2D;
+  width: number;
+  netId: string;
+  netName: string;
+}
+
+/** è¿‡å­” */
+export interface PcbVia {
+  id: string;
+  position: Point2D;
+  drill: number;
+  diameter: number;
+  netId: string;
+  netName: string;
+  layers: PcbLayerId[];
+  kind?: PcbViaKind;
+}
+
+/** è¦†é“œåŒºï¼ˆå¤šè¾¹å½¢ + æŒ–ç©º + çƒ­ç„Šç›˜ï¼‰ */
+export interface PcbZone {
+  id: string;
+  layer: PcbLayerId;
+  netId: string;
+  netName: string;
+  outline: Point2D[];
+  priority: number;
+  /** å¼‚ç½‘ç„Šç›˜é—´è· (mil) */
+  clearance: number;
+  /** è‡ªåŠ¨+æ‰‹åŠ¨æŒ–ç©ºå¤šè¾¹å½¢åˆ—è¡¨ */
+  cutouts: Point2D[][];
+  /** ç”¨æˆ·æ‰‹åŠ¨æŒ–ç©ºï¼ˆä¿ç•™ï¼‰ */
+  manualCutouts: Point2D[][];
+  /** åŒç½‘ç„Šç›˜çƒ­ç„Šç›˜ */
+  thermalRelief: boolean;
+  thermalGap: number;
+  thermalWidth: number;
+}
+
+/** æ¿æ¡† */
+export interface PcbBoardOutline {
+  points: Point2D[];
+  width: number;
+}
+
+export interface PcbLayerConfig {
+  id: PcbLayerId;
+  name: string;
+  visible: boolean;
+  color: string;
+  userName?: string;
+  opacity?: number;
+}
+
+export interface PcbNet {
+  id: string;
+  name: string;
+  classId?: string;
+}
+
+export interface PcbNetClass {
+  id: string;
+  name: string;
+  trackWidth: number;
+  clearance: number;
+  viaDiameter: number;
+  viaDrill: number;
+}
+
+/** å·®åˆ†å¯¹ï¼ˆé•¿åº¦/é—´è·çº¦æŸå ä½ï¼‰ */
+export interface PcbDiffPair {
+  id: string;
+  name: string;
+  netIdP: string;
+  netIdN: string;
+  gapMil: number;
+  lengthTolMil: number;
+}
+
+export interface PcbStackLayer {
+  id: string;
+  type: PcbStackLayerType;
+  name: string;
+  /** å…³è”é€»è¾‘é“œå±‚ï¼ˆä»… copperï¼‰ */
+  copperLayerId?: PcbLayerId;
+  thicknessMm: number;
+  dielectricDk?: number;
+  copperOz?: number;
+}
+
+export interface PcbLayerStack {
+  copperCount: number;
+  layers: PcbStackLayer[];
+}
+
+export interface PcbAppearance {
+  mode: PcbAppearanceMode;
+  dimAlpha: number;
+  highlightNetId: string;
+  hideZones: boolean;
+  showRatsnest: boolean;
+  showPadNumbers: boolean;
+  show3d: boolean;
+}
+
+export interface PcbMetadata {
+  author: string;
+  createdAt: string;
+  modifiedAt: string;
+  description: string;
+  gridSize: number;
+  units: 'mil' | 'mm';
+  designRules: PcbDesignRules;
+}
+
+export interface PcbDesignRules {
+  minTrackWidth: number;
+  minClearance: number;
+  minViaDrill: number;
+  defaultTrackWidth: number;
+  minAnnularRing: number;
+  minHoleToHole: number;
+}
+
+export interface PcbDocument {
+  id: string;
+  name: string;
+  version: string;
+  boardOutline: PcbBoardOutline;
+  footprints: PcbFootprintInst[];
+  tracks: PcbTrack[];
+  vias: PcbVia[];
+  zones: PcbZone[];
+  layers: PcbLayerConfig[];
+  nets: PcbNet[];
+  netClasses: PcbNetClass[];
+  layerStack: PcbLayerStack;
+  diffPairs: PcbDiffPair[];
+  metadata: PcbMetadata;
+}
+
+export enum PcbDrcSeverity {
+  ERROR = 'error',
+  WARNING = 'warning'
+}
+
+export enum PcbDrcRuleType {
+  CLEARANCE = 'clearance',
+  UNROUTED_NET = 'unrouted_net',
+  OFF_BOARD = 'off_board',
+  SHORT = 'short',
+  MIN_WIDTH = 'min_width',
+  VIA_ANNULAR = 'via_annular',
+  PAD_CLEARANCE = 'pad_clearance',
+  DIFF_LENGTH = 'diff_length',
+  KEEPOUT = 'keepout'
+}
+
+export interface PcbDrcViolation {
+  id: string;
+  severity: PcbDrcSeverity;
+  ruleType: PcbDrcRuleType;
+  message: string;
+  position?: Point2D;
+  netId?: string;
+  footprintId?: string;
+}
+
+/** é£çº¿ç«¯ç‚¹ */
+export interface PcbRatsnestEdge {
+  netId: string;
+  netName: string;
+  a: Point2D;
+  b: Point2D;
+}
+
+export function defaultPcbDesignRules(): PcbDesignRules {
+  return {
+    minTrackWidth: 6,
+    minClearance: 6,
+    minViaDrill: 12,
+    defaultTrackWidth: 10,
+    minAnnularRing: 4,
+    minHoleToHole: 10
+  };
+}
+
+export function defaultPcbNetClasses(): PcbNetClass[] {
+  return [
+    {
+      id: 'nc_default', name: 'Default',
+      trackWidth: 10, clearance: 6, viaDiameter: 24, viaDrill: 12
+    },
+    {
+      id: 'nc_power', name: 'Power',
+      trackWidth: 20, clearance: 10, viaDiameter: 30, viaDrill: 16
+    },
+    {
+      id: 'nc_signal', name: 'Signal',
+      trackWidth: 8, clearance: 6, viaDiameter: 22, viaDrill: 12
+    }
+  ];
+}
+
+export function defaultPcbAppearance(): PcbAppearance {
+  return {
+    mode: PcbAppearanceMode.OVERLAY,
+    dimAlpha: 0.28,
+    highlightNetId: '',
+    hideZones: false,
+    showRatsnest: true,
+    showPadNumbers: false,
+    show3d: false
+  };
+}
+
+export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack {
+  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
+  const layers: PcbStackLayer[] = [];
+  layers.push({
+    id: 'sm_top', type: PcbStackLayerType.SOLDERMASK, name: 'F.Mask', thicknessMm: 0.02
+  });
+  layers.push({
+    id: 'cu_f', type: PcbStackLayerType.COPPER, name: 'F.Cu',
+    copperLayerId: PcbLayerId.F_CU, thicknessMm: 0.035, copperOz: 1
+  });
+  if (n >= 4) {
+    layers.push({
+      id: 'diel_1', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
+      thicknessMm: 0.2, dielectricDk: 4.5
+    });
+    layers.push({
+      id: 'cu_in1', type: PcbStackLayerType.COPPER, name: 'In1.Cu',
+      copperLayerId: PcbLayerId.IN1_CU, thicknessMm: 0.035, copperOz: 1
+    });
+    layers.push({
+      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
+      thicknessMm: 0.8, dielectricDk: 4.3
+    });
+    layers.push({
+      id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
+      copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
+    });
+  } else {
+    layers.push({
+      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
+      thicknessMm: 1.5, dielectricDk: 4.3
+    });
+  }
+  if (n >= 6) {
+    layers.push({
+      id: 'diel_3', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2',
+      thicknessMm: 0.2, dielectricDk: 4.5
+    });
+    layers.push({
+      id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
+      copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
+    });
+  }
+  if (n >= 8) {
+    layers.push({
+      id: 'diel_4', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3',
+      thicknessMm: 0.2, dielectricDk: 4.5
+    });
+    layers.push({
+      id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
+      copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
+    });
+  }
+  if (n >= 6) {
+    // ensure B.Cu after last inner for 6/8 â€” already handled below
+  }
+  layers.push({
+    id: 'cu_b', type: PcbStackLayerType.COPPER, name: 'B.Cu',
+    copperLayerId: PcbLayerId.B_CU, thicknessMm: 0.035, copperOz: 1
+  });
+  layers.push({
+    id: 'sm_bot', type: PcbStackLayerType.SOLDERMASK, name: 'B.Mask', thicknessMm: 0.02
+  });
+  return { copperCount: n, layers };
+}
+
+export function createDefaultPcbLayers(copperCount: number = 2): PcbLayerConfig[] {
+  const layers: PcbLayerConfig[] = [
+    { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#C83434', opacity: 1 }
+  ];
+  if (copperCount >= 4) {
+    layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#34C878', opacity: 1 });
+    layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#C87834', opacity: 1 });
+  }
+  if (copperCount >= 6) {
+    layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#7834C8', opacity: 1 });
+  }
+  if (copperCount >= 8) {
+    layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#34C8C8', opacity: 1 });
+  }
+  layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#3478C8', opacity: 1 });
+  layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#F0F0F0', opacity: 1 });
+  layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#C8C8C8', opacity: 1 });
+  layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
+  layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
+  layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
+  layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
+  layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#FFD700', opacity: 1 });
+  layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
+  return layers;
+}
+
+export function createEmptyPcbDocument(name: string): PcbDocument {
+  const now = new Date().toISOString();
+  const w = 3000;
+  const h = 2000;
+  return {
+    id: `pcb_${Date.now()}`,
+    name,
+    version: '1.1',
+    boardOutline: {
+      points: [
+        { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }
+      ],
+      width: 5
+    },
+    footprints: [],
+    tracks: [],
+    vias: [],
+    zones: [],
+    layers: createDefaultPcbLayers(2),
+    nets: [],
+    netClasses: defaultPcbNetClasses(),
+    layerStack: createDefaultLayerStack(2),
+    diffPairs: [],
+    metadata: {
+      author: '',
+      createdAt: now,
+      modifiedAt: now,
+      description: '',
+      gridSize: 5,
+      units: 'mil',
+      designRules: defaultPcbDesignRules()
+    }
+  };
+}
+
+export function createDefaultPcbViewport(): ViewportState {
+  return {
+    zoom: 0.15,
+    panOffset: { x: 40, y: 40 },
+    gridVisible: true,
+    gridSize: 5,
+    snapToGrid: true
+  };
+}
+
+/** é“œå±‚åˆ¤å®šï¼ˆå«å†…å±‚ï¼‰ */
+export function isCopperLayer(layer: PcbLayerId): boolean {
+  return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
+    layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
+    layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU;
+}
+
+export function copperLayersFromStack(stack: PcbLayerStack): PcbLayerId[] {
+  const out: PcbLayerId[] = [];
+  for (const sl of stack.layers) {
+    if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId) {
+      out.push(sl.copperLayerId);
+    }
+  }
+  return out;
+}
+
+/** åŠ è½½æ—§å·¥ç¨‹æˆ–æ®‹ç¼º JSON æ—¶è¡¥é½ PCB å­—æ®µ */
+export function normalizePcbDocument(doc: PcbDocument): void {
+  if (!doc.footprints) {
+    doc.footprints = [];
+  }
+  if (!doc.tracks) {
+    doc.tracks = [];
+  }
+  if (!doc.vias) {
+    doc.vias = [];
+  }
+  if (!doc.zones) {
+    doc.zones = [];
+  }
+  if (!doc.nets) {
+    doc.nets = [];
+  }
+  if (!doc.netClasses || doc.netClasses.length === 0) {
+    doc.netClasses = defaultPcbNetClasses();
+  }
+  if (!doc.diffPairs) {
+    doc.diffPairs = [];
+  }
+  if (!doc.layerStack || !doc.layerStack.layers || doc.layerStack.layers.length === 0) {
+    doc.layerStack = createDefaultLayerStack(2);
+  }
+  for (const via of doc.vias) {
+    if (!via.kind) {
+      via.kind = PcbViaKind.THROUGH;
+    }
+    if (!via.layers || via.layers.length === 0) {
+      via.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+    }
+  }
+  for (const z of doc.zones) {
+    if (!z.cutouts) z.cutouts = [];
+    if (!z.manualCutouts) z.manualCutouts = [];
+    if (z.clearance === undefined || z.clearance <= 0) {
+      z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
+    }
+    if (z.thermalRelief === undefined) z.thermalRelief = true;
+    if (z.thermalGap === undefined || z.thermalGap <= 0) z.thermalGap = 12;
+    if (z.thermalWidth === undefined || z.thermalWidth <= 0) z.thermalWidth = 10;
+    if (z.priority === undefined) z.priority = 0;
+  }
+  if (!doc.layers || doc.layers.length === 0) {
+    doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
+  } else {
+    ensureLayerPresent(doc, PcbLayerId.F_MASK, 'Front Mask', '#2E8B57', false);
+    ensureLayerPresent(doc, PcbLayerId.B_MASK, 'Back Mask', '#2E8B57', false);
+    ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
+    ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
+    if (doc.layerStack.copperCount >= 4) {
+      ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#34C878', true);
+      ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#C87834', true);
+    }
+    if (doc.layerStack.copperCount >= 6) {
+      ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#7834C8', true);
+    }
+    if (doc.layerStack.copperCount >= 8) {
+      ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#34C8C8', true);
+    }
+  }
+  if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
+    doc.boardOutline = {
+      points: [
+        { x: 0, y: 0 }, { x: 3000, y: 0 }, { x: 3000, y: 2000 }, { x: 0, y: 2000 }
+      ],
+      width: 5
+    };
+  }
+  if (!doc.metadata) {
+    const now = new Date().toISOString();
+    doc.metadata = {
+      author: '', createdAt: now, modifiedAt: now,
+      description: '', gridSize: 5, units: 'mil',
+      designRules: defaultPcbDesignRules()
+    };
+  } else {
+    if (!doc.metadata.designRules) {
+      doc.metadata.designRules = defaultPcbDesignRules();
+    } else {
+      const dr = doc.metadata.designRules;
+      if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0) dr.minAnnularRing = 4;
+      if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0) dr.minHoleToHole = 10;
+    }
+    if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
+      doc.metadata.gridSize = 5;
+    }
+  }
+}
+
+function ensureLayerPresent(doc: PcbDocument, id: PcbLayerId, name: string,
+  color: string, visible: boolean): void {
+  for (const l of doc.layers) {
+    if (l.id === id) return;
+  }
+  doc.layers.push({ id, name, visible, color, opacity: 1 });
+}
+
+/** å°†é“œå±‚æ•°åˆ‡æ¢ä¸º 2/4/6/8ï¼ŒåŒæ­¥ layers + layerStack */
+export function applyCopperLayerCount(doc: PcbDocument, copperCount: number): void {
+  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
+  doc.layerStack = createDefaultLayerStack(n);
+  const visibility: Map<string, boolean> = new Map();
+  for (const l of doc.layers) {
+    visibility.set(l.id, l.visible);
+  }
+  doc.layers = createDefaultPcbLayers(n);
+  for (const l of doc.layers) {
+    const prev = visibility.get(l.id);
+    if (prev !== undefined) {
+      l.visible = prev;
+    }
+  }
+}
+
+/** PCB ç½‘ç»œå¼•ç”¨ï¼ˆèµ°çº¿/ç„Šç›˜ç»‘å®šï¼‰ */
+export interface PcbNetRef {
+  netId: string;
+  netName: string;
+}
+
+/** ç„Šç›˜ç½‘ç»œä¿ç•™ï¼ˆå°è£…åˆ·æ–°æ—¶ï¼‰ */
+export interface PcbPadNetPreserved {
+  netId?: string;
+  netName?: string;
+}
+
+/** ç„Šç›˜å‘½ä¸­æµ‹è¯•ç»“æœ */
+export interface PcbPadHit {
+  pad: PcbPad;
+  wx: number;
+  wy: number;
+}
+
+/** PCB ç¼–è¾‘å™¨é€‰æ‹©äº‹ä»¶è½½è· */
+export class PcbEditorSelectionData {
+  footprintIds: string[] = [];
+  trackIds: string[] = [];
+  viaIds: string[] = [];
+  zoneIds: string[] = [];
+}
+
+/** ç»Ÿä¸€é€‰æ‹©çŠ¶æ€ */
+export enum PcbSelectionKind {
+  NONE = 'none',
+  FOOTPRINT = 'footprint',
+  TRACK = 'track',
+  VIA = 'via',
+  ZONE = 'zone',
+  MULTI = 'multi'
+}
+
+export interface PcbSelectionState {
+  kind: PcbSelectionKind;
+  footprintIds: string[];
+  trackIds: string[];
+  viaIds: string[];
+  zoneIds: string[];
+}
+
+export function pcbSelectionEmpty(): PcbSelectionState {
+  return { kind: PcbSelectionKind.NONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [] };
+}
+
+export function pcbSelectionFromData(d: PcbEditorSelectionData): PcbSelectionState {
+  let kind = PcbSelectionKind.NONE;
+  if (d.footprintIds.length > 0) kind = PcbSelectionKind.FOOTPRINT;
+  else if (d.trackIds.length > 0) kind = PcbSelectionKind.TRACK;
+  else if (d.viaIds.length > 0) kind = PcbSelectionKind.VIA;
+  else if (d.zoneIds.length > 0) kind = PcbSelectionKind.ZONE;
+  const total = d.footprintIds.length + d.trackIds.length + d.viaIds.length + d.zoneIds.length;
+  if (total > 1) kind = PcbSelectionKind.MULTI;
+  return {
+    kind,
+    footprintIds: [...d.footprintIds],
+    trackIds: [...d.trackIds],
+    viaIds: [...d.viaIds],
+    zoneIds: [...d.zoneIds]
+  };
+}
+
+/** æ¡†é€‰çŸ©å½¢ï¼ˆä¸–ç•Œåæ ‡ï¼‰ */
+export interface PcbSelectionRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/** æ’¤é”€/é‡åšå†å²å¿«ç…§ */
+export interface PcbHistorySnapshot {
+  documentJson: string;
+  selection: PcbSelectionState;
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings«PcbTypes.js ‘¬PcbTypes.etsÜ¦’”   ” •”   ” ”  ” ” “”   ” ” “” ” ”  “” ”# ”$ “” 	”# 	”$ 	“” 
+”# 
+”$ 
+“” ”# ”$ “” ” ”  “” ”% ”& “” ”% ”& “” ”# ”$ “” ”# ”$ “” ”% ”& “” ”% ”& “” ”) ”* “” ”! ”" “” ”! ”" “” ”' ”( —”   ” ” ” ” ” ”$ •”   ” ”  ” ” “”   ” ” “” ”$ ”% “” ”  ”! “” ”  ”! “” ”* ”+ —”   ” ” ” ” ” ”& •”    ”  ”   ”  ” $“”    ”  ”  “” !” !” !“” "” "” "“” #” #”  #—”  $ ” $”  ”  ”  ”  ”$ $•”  & ” &” & ” &” *“”  & ” &” &“” '”% '”& '“” (”! (”" (“” )”# )”$ )—”  * ” *” &” &” &” &”$ *•”  , ” ,” , ” ,” 0“”  , ” ,” ,“” -”, -”- -“” .”4 .”5 .“” /”6 /”7 /—”  0 ” 0” ,” ,” ,”* ,”2 0•”  2 ” 2” 2 ” 2” 6“”  2 ” 2” 2“” 3”* 3”+ 3“” 4”2 4”3 4“” 5”2 5”3 5—”  6 ” 6” 2” 2” 2”* 2”2 6•”  Ìõ ” Ìõ” Ìõ ” Ìõ” Ìø“”  Ìõ ” Ìõ” Ìõ“” Ìö”% Ìö”& Ìö“” Ì÷”) Ì÷”* Ì÷—”  Ìø ” Ìø” Ìõ” Ìõ” Ìõ”$ Ìõ”, Ìø•”  Ìú ” Ìú” Ìú ” Ìú” Í“”  Ìú ” Ìú” Ìú“” Ìû”- Ìû”. Ìû“” Ìü”3 Ìü”4 Ìü“” Ìı”- Ìı”. Ìı“” Ìş”% Ìş”& Ìş“” Ìÿ”- Ìÿ”. Ìÿ“” Í ”1 Í ”2 Í “” Í”5 Í!”6 Í!“” Í”1 Í”2 Í“” Í”) Í”* Í—”  Í ” Í” Ìú” Ìú” Ìú”$ Ìú”, Í””  Í ” Í” Í”% Í%’” Í” Í	”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í”” Í” Í” Í” Í’” Í ” Í ’”  Í! ” Í!””  Í# ” Í#” Í#”$ Í#$’” Í$” Í$	‘” Í%˜” Í&” Í&” Í&
+” Í&” Í&”" Í&”$ Í&”- Í&'Ü ” Í'” Í'” Í'” Í'” Í'”% Í'”' Í'!”( Í'"”* Í'$”5 Í'/”7 Í'1”9 Í'3”; Í'5”ÌC Í'=”ÌE Í'?”ÌG Í'ÌA‘”	 Í(‘” Í)˜” Í*” Í*” Í*
+” Í*” Í*”  Í*”" Í*”) Í*#Ü ” Í+” Í+” Í+” Í+” Í+”% Í+”' Í+!”) Í+#”+ Í+%”6 Í+0”8 Í+2”: Í+4”< Í+6”ÌD Í+>”ÌF Í+Ì@”ÌH Í+ÌB‘”	 Í,‘” Í-˜” Í.” Í.” Í.
+” Í.” Í.”! Í.”# Í.”+ Í.%Ü ” Í/” Í/” Í/” Í/” Í/”$ Í/”& Í/ ”' Í/!”) Í/#”4 Í/.”6 Í/0”8 Í/2”: Í/4”ÌB Í/<”ÌD Í/>”ÌF Í/Ì@‘”	 Í0’” Í1” Í1’”  Í2 ” Í2””  Í4 ” Í4” Í4”$ Í4$’” Í5” Í5	–” Í6” Í6” Í6
+” Í6”  Í6”' Í6#”” Í7” Í7” Í7” Í7”” Í8” Í8” Í8” Í8”” Í9” Í9” Í9” Í9”” Í:” Í:” Í:” Í:”” Í;” Í;” Í;” Í;”” Í<” Í<
+” Í<” Í<’” Í=” Í=’”  Í> ” Í>—”  Í@ ” Í@” Í@”' Í@'”( Í@(”6 Í@>”7 Í@?Ü ” ÍA”
+ ÍA” ÍA	” ÍA” ÍA” ÍA” ÍA”# ÍA!”. ÍA,”3 ÍA1”4 ÍA2”8 ÍA6”ÌC ÍAÌA”ÌH ÍAÌF”ÌI ÍAÌG”ÌJ ÍAÌH”ÌK ÍAÌI”ÌL ÍAÌJ”ÌW ÍAÌU”ÌX ÍAÌV”ÌY ÍAÌW”ÌZ ÍAÌX”Ì[ ÍAÌY”Ì\ ÍAÌZ–” ÍB”
+ ÍB” ÍB” ÍB"” ÍB$” ÍB%•” ÍC”
+ ÍC” ÍC	” ÍC” ÍCÜ ” ÍD”
+ ÍD” ÍD” ÍD” ÍD” ÍD” ÍD”- ÍD)”. ÍD*”8 ÍD4”: ÍD6”> ÍD:”Ì@ ÍD<”ÌH ÍDÌD”ÌJ ÍDÌF”ÌU ÍDÌQ”ÌW ÍDÌS”Ì[ ÍDÌW“” ÍE” ÍE” ÍE•” ÍF”
+ ÍF” ÍF	” ÍF” ÍF” ÍG”
+ ÍG” ÍG” ÍG” ÍG” ÍG” ÍG”+ ÍG'”, ÍG(”2 ÍG.”4 ÍG0”8 ÍG4”: ÍG6”Ì@ ÍG<” ÍH” ÍH” ÍH”! ÍH”" ÍH”& ÍH"”( ÍH$”3 ÍH/”5 ÍH1”: ÍH6”< ÍH8”ÌD ÍHÌ@”ÌF ÍHÌB”ÌG ÍHÌC“” ÍI” ÍI” ÍI–” ÍJ” ÍJ”	 ÍJ” ÍJ” ÍJ” ÍJ•” ÍK” ÍK
+” ÍK” ÍK” ÍK” ÍL” ÍL” ÍL
+” ÍL” ÍL” ÍL”  ÍL”1 ÍL+”2 ÍL,”< ÍL6”> ÍL8”ÌB ÍL<”ÌD ÍL>”ÌM ÍLÌG˜” ÍM” ÍM” ÍM” ÍM” ÍM”* ÍM$”, ÍM&”/ ÍM)“”	 ÍN”
+ ÍN” ÍN•” ÍO” ÍO
+” ÍO” ÍO” ÍO” ÍP” ÍP” ÍP
+” ÍP” ÍP” ÍP”  ÍP”1 ÍP+”2 ÍP,”8 ÍP2”: ÍP4”> ÍP8”Ì@ ÍP:”ÌH ÍPÌB” ÍQ” ÍQ” ÍQ”% ÍQ”& ÍQ ”, ÍQ&”. ÍQ(”9 ÍQ3”; ÍQ5”Ì@ ÍQ:”ÌB ÍQ<”ÌJ ÍQÌD”ÌL ÍQÌF”ÌM ÍQÌG“”	 ÍR”
+ ÍR” ÍR•” ÍS” ÍS
+” ÍS” ÍS” ÍS” ÍT” ÍT” ÍT
+” ÍT” ÍT”! ÍT”# ÍT”4 ÍT.”5 ÍT/”? ÍT9”ÌA ÍT;”ÌE ÍT?”ÌG ÍTÌA”ÌM ÍTÌG˜” ÍU” ÍU” ÍU” ÍU” ÍU”* ÍU$”, ÍU&”/ ÍU)“”	 ÍV”
+ ÍV” ÍV•” ÍW” ÍW
+” ÍW” ÍW” ÍW” ÍX” ÍX” ÍX
+” ÍX” ÍX” ÍX”  ÍX”1 ÍX+”2 ÍX,”8 ÍX2”: ÍX4”> ÍX8”Ì@ ÍX:”ÌH ÍXÌB” ÍY” ÍY” ÍY”% ÍY”& ÍY ”, ÍY&”. ÍY(”9 ÍY3”; ÍY5”Ì@ ÍY:”ÌB ÍY<”ÌJ ÍYÌD”ÌL ÍYÌF”ÌM ÍYÌG“”	 ÍZ”
+ ÍZ” ÍZ‘” Í[‘”	 Í[	•” Í\” Í\
+” Í\” Í\” Í\” Í]” Í]” Í]
+” Í]” Í]”! Í]”# Í]”4 Í].”5 Í]/”? Í]9”ÌA Í];”ÌE Í]?”ÌG Í]ÌA”ÌM Í]ÌG˜” Í^” Í^” Í^” Í^” Í^”* Í^$”, Í^&”/ Í^)“”	 Í_”
+ Í_” Í_‘” Í`–” Ía” Ía”	 Ía” Ía” Ía” Ía•” Íb” Íb
+” Íb” Íb” Íb” Íc” Íc” Íc
+” Íc” Íc” Íc”  Íc”1 Íc+”2 Íc,”< Íc6”> Íc8”ÌB Íc<”ÌD Íc>”ÌN ÍcÌH˜” Íd” Íd” Íd” Íd” Íd”* Íd$”, Íd&”/ Íd)“”	 Íe”
+ Íe” Íe•” Íf” Íf
+” Íf” Íf” Íf” Íg” Íg” Íg
+” Íg” Íg” Íg”  Íg”1 Íg+”2 Íg,”8 Íg2”: Íg4”> Íg8”Ì@ Íg:”ÌH ÍgÌB” Íh” Íh” Íh”% Íh”& Íh ”, Íh&”. Íh(”9 Íh3”; Íh5”Ì@ Íh:”ÌB Íh<”ÌJ ÍhÌD”ÌL ÍhÌF”ÌM ÍhÌG“”	 Íi”
+ Íi” Íi‘” Íj–” Ík” Ík”	 Ík” Ík” Ík” Ík•” Íl” Íl
+” Íl” Íl” Íl” Ím” Ím” Ím
+” Ím” Ím” Ím”  Ím”1 Ím+”2 Ím,”< Ím6”> Ím8”ÌB Ím<”ÌD Ím>”ÌN ÍmÌH˜” Ín” Ín” Ín” Ín” Ín”* Ín$”, Ín&”/ Ín)“”	 Ío”
+ Ío” Ío•” Íp” Íp
+” Íp” Íp” Íp” Íq” Íq” Íq
+” Íq” Íq” Íq”  Íq”1 Íq+”2 Íq,”8 Íq2”: Íq4”> Íq8”Ì@ Íq:”ÌH ÍqÌB” Ír” Ír” Ír”% Ír”& Ír ”, Ír&”. Ír(”9 Ír3”; Ír5”Ì@ Ír:”ÌB Ír<”ÌJ ÍrÌD”ÌL ÍrÌF”ÌM ÍrÌG“”	 Ís”
+ Ís” Ís‘” Ít–” Íu” Íu”	 Íu” Íu” Íu” Íu’” Ív”ÌG ÍvÌC‘” Íw•” Íx”
+ Íx” Íx	” Íx” Íx” Íy”
+ Íy” Íy” Íy” Íy” Íy” Íy”+ Íy'”, Íy(”2 Íy.”4 Íy0”8 Íy4”: Íy6”Ì@ Íy<” Íz” Íz” Íz”! Íz”" Íz”& Íz"”( Íz$”3 Íz/”5 Íz1”: Íz6”< Íz8”ÌD ÍzÌ@”ÌF ÍzÌB”ÌG ÍzÌC“” Í{” Í{” Í{•” Í|”
+ Í|” Í|	” Í|” Í|Ü ” Í}”
+ Í}” Í}” Í}” Í}” Í}” Í}”- Í})”. Í}*”8 Í}4”: Í}6”> Í}:”Ì@ Í}<”ÌH Í}ÌD”ÌJ Í}ÌF”ÌU Í}ÌQ”ÌW Í}ÌS”Ì[ Í}ÌW“” Í~” Í~” Í~š” Í” Í	” Í” Í” Í” Í” Í”# Í!”% Í#”& Í$’”  Í€ ” Í€—”  Í‚ ” Í‚” Í‚”& Í‚&”' Í‚'”5 Í‚=”6 Í‚>”” Íƒ”
+ Íƒ” Íƒ” Íƒ#Ü ” Í„”
+ Í„” Í„” Í„
+” Í„” Í„” Í„” Í„”# Í„”% Í„!”3 Í„/”5 Í„1”< Í„8”> Í„:”ÌB Í„>”ÌD Í„Ì@”ÌI Í„ÌE”ÌK Í„ÌG”ÌT Í„ÌP”ÌV Í„ÌR”Ì] Í„ÌY”Ì_ Í„Ì[”Ì` Í„Ì\”Ìb Í„Ì^’” Í…” Í…–” Í†” Í†” Í†” Í†” Í†” Í†Ü ” Í‡” Í‡
+” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡”$ Í‡ ”% Í‡!”+ Í‡'”- Í‡)”1 Í‡-”3 Í‡/”ÌB Í‡>”ÌD Í‡Ì@”ÌK Í‡ÌG”ÌM Í‡ÌI”ÌQ Í‡ÌM”ÌS Í‡ÌO”ÌX Í‡ÌT”ÌZ Í‡ÌV”Ìc Í‡Ì_”Ìe Í‡Ìa”Ìl Í‡Ìh”Ìn Í‡Ìj”Ìo Í‡Ìk”Ìq Í‡Ìm”Ìr Í‡Ìn”Ìs Í‡ÌoÜ ” Íˆ” Íˆ
+” Íˆ” Íˆ” Íˆ” Íˆ” Íˆ” Íˆ”$ Íˆ ”% Íˆ!”+ Íˆ'”- Íˆ)”1 Íˆ-”3 Íˆ/”ÌB Íˆ>”ÌD ÍˆÌ@”ÌK ÍˆÌG”ÌM ÍˆÌI”ÌQ ÍˆÌM”ÌS ÍˆÌO”ÌX ÍˆÌT”ÌZ ÍˆÌV”Ìc ÍˆÌ_”Ìe ÍˆÌa”Ìl ÍˆÌh”Ìn ÍˆÌj”Ìo ÍˆÌk”Ìq ÍˆÌm”Ìr ÍˆÌn”Ìs ÍˆÌo‘” Í‰–” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠÜ ” Í‹” Í‹
+” Í‹” Í‹” Í‹” Í‹” Í‹” Í‹”$ Í‹ ”% Í‹!”+ Í‹'”- Í‹)”1 Í‹-”3 Í‹/”ÌB Í‹>”ÌD Í‹Ì@”ÌK Í‹ÌG”ÌM Í‹ÌI”ÌQ Í‹ÌM”ÌS Í‹ÌO”ÌX Í‹ÌT”ÌZ Í‹ÌV”Ìc Í‹Ì_”Ìe Í‹Ìa”Ìl Í‹Ìh”Ìn Í‹Ìj”Ìo Í‹Ìk”Ìq Í‹Ìm”Ìr Í‹Ìn”Ìs Í‹Ìo‘” ÍŒ–” Í” Í” Í” Í” Í” ÍÜ ” Í” Í
+” Í” Í” Í” Í” Í” Í”$ Í ”% Í!”+ Í'”- Í)”1 Í-”3 Í/”ÌB Í>”ÌD ÍÌ@”ÌK ÍÌG”ÌM ÍÌI”ÌQ ÍÌM”ÌS ÍÌO”ÌX ÍÌT”ÌZ ÍÌV”Ìc ÍÌ_”Ìe ÍÌa”Ìl ÍÌh”Ìn ÍÌj”Ìo ÍÌk”Ìq ÍÌm”Ìr ÍÌn”Ìs ÍÌo‘” ÍÜ ” Í”
+ Í” Í	” Í” Í” Í” Í” Í”  Í”! Í”% Í#”' Í%”+ Í)”- Í+”: Í8”< Í:”ÌC ÍÌA”ÌE ÍÌC”ÌI ÍÌG”ÌK ÍÌI”ÌP ÍÌN”ÌR ÍÌP”Ì[ ÍÌY”Ì] ÍÌ[”Ìd ÍÌb”Ìf ÍÌd”Ìg ÍÌe”Ìi ÍÌg”Ìj ÍÌh”Ìk ÍÌiÜ ” Í‘”
+ Í‘” Í‘	” Í‘” Í‘” Í‘” Í‘” Í‘”  Í‘”! Í‘”( Í‘&”* Í‘(”. Í‘,”0 Í‘.”< Í‘:”> Í‘<”ÌE Í‘ÌC”ÌG Í‘ÌE”ÌK Í‘ÌI”ÌM Í‘ÌK”ÌR Í‘ÌP”ÌT Í‘ÌR”Ì] Í‘Ì[”Ì_ Í‘Ì]”Ìf Í‘Ìd”Ìh Í‘Ìf”Ìi Í‘Ìg”Ìk Í‘Ìi”Ìl Í‘Ìj”Ìm Í‘ÌkÜ ” Í’”
+ Í’” Í’	” Í’” Í’” Í’” Í’” Í’”  Í’”! Í’”( Í’&”* Í’(”. Í’,”0 Í’.”; Í’9”= Í’;”ÌD Í’ÌB”ÌF Í’ÌD”ÌK Í’ÌI”ÌM Í’ÌK”ÌR Í’ÌP”ÌT Í’ÌR”Ì] Í’Ì[”Ì_ Í’Ì]”Ìf Í’Ìd”Ìh Í’Ìf”Ìi Í’Ìg”Ìk Í’Ìi”Ìl Í’Ìj”Ìm Í’ÌkÜ ” Í“”
+ Í“” Í“	” Í“” Í“” Í“” Í“” Í“”  Í“”! Í“”' Í“%”) Í“'”- Í“+”/ Í“-”; Í“9”= Í“;”ÌD Í“ÌB”ÌF Í“ÌD”ÌK Í“ÌI”ÌM Í“ÌK”ÌR Í“ÌP”ÌT Í“ÌR”Ì] Í“Ì[”Ì_ Í“Ì]”Ìf Í“Ìd”Ìh Í“Ìf”Ìl Í“Ìj”Ìn Í“Ìl”Ìo Í“Ìm”Ìp Í“ÌnÜ ” Í””
+ Í”” Í”	” Í”” Í”” Í”” Í”” Í””  Í””! Í””' Í”%”) Í”'”- Í”+”/ Í”-”: Í”8”< Í”:”ÌC Í”ÌA”ÌE Í”ÌC”ÌJ Í”ÌH”ÌL Í”ÌJ”ÌQ Í”ÌO”ÌS Í”ÌQ”Ì\ Í”ÌZ”Ì^ Í”Ì\”Ìe Í”Ìc”Ìg Í”Ìe”Ìk Í”Ìi”Ìm Í”Ìk”Ìn Í”Ìl”Ìo Í”ÌmÜ ” Í•”
+ Í•” Í•	” Í•” Í•” Í•” Í•” Í•”  Í•”! Í•”( Í•&”* Í•(”. Í•,”0 Í•.”= Í•;”? Í•=”ÌF Í•ÌD”ÌH Í•ÌF”ÌM Í•ÌK”ÌO Í•ÌM”ÌT Í•ÌR”ÌV Í•ÌT”Ì_ Í•Ì]”Ìa Í•Ì_”Ìh Í•Ìf”Ìj Í•Ìh”Ìm Í•Ìk”Ìo Í•Ìm”Ìp Í•Ìn”Ìq Í•ÌoÜ ” Í–”
+ Í–” Í–	” Í–” Í–” Í–” Í–” Í–”  Í–”! Í–”( Í–&”* Í–(”. Í–,”0 Í–.”< Í–:”> Í–<”ÌE Í–ÌC”ÌG Í–ÌE”ÌL Í–ÌJ”ÌN Í–ÌL”ÌS Í–ÌQ”ÌU Í–ÌS”Ì^ Í–Ì\”Ì` Í–Ì^”Ìg Í–Ìe”Ìi Í–Ìg”Ìl Í–Ìj”Ìn Í–Ìl”Ìo Í–Ìm”Ìp Í–ÌnÜ ” Í—”
+ Í—” Í—	” Í—” Í—” Í—” Í—” Í—”  Í—”! Í—”* Í—(”, Í—*”0 Í—.”2 Í—0”= Í—;”? Í—=”ÌF Í—ÌD”ÌH Í—ÌF”ÌL Í—ÌJ”ÌN Í—ÌL”ÌS Í—ÌQ”ÌU Í—ÌS”Ì^ Í—Ì\”Ì` Í—Ì^”Ìg Í—Ìe”Ìi Í—Ìg”Ìj Í—Ìh”Ìl Í—Ìj”Ìm Í—Ìk”Ìn Í—ÌlÜ ” Í˜”
+ Í˜” Í˜	” Í˜” Í˜” Í˜” Í˜” Í˜”  Í˜”! Í˜”* Í˜(”, Í˜*”0 Í˜.”2 Í˜0”= Í˜;”? Í˜=”ÌF Í˜ÌD”ÌH Í˜ÌF”ÌM Í˜ÌK”ÌO Í˜ÌM”ÌT Í˜ÌR”ÌV Í˜ÌT”Ì_ Í˜Ì]”Ìa Í˜Ì_”Ìh Í˜Ìf”Ìj Í˜Ìh”Ìk Í˜Ìi”Ìm Í˜Ìk”Ìn Í˜Ìl”Ìo Í˜Ìm”” Í™” Í™	” Í™” Í™’”  Íš ” Íš–”  Íœ ” Íœ” Íœ”& Íœ&”' Íœ'”+ Íœ3›” Í”
+ Í” Í” Í” Í” Í” Í” Í”& Í$”( Í&”) Í'–” Í”
+ Í” Í	” Í” Í” Í–” ÍŸ”
+ ÍŸ” ÍŸ	” ÍŸ” ÍŸ” ÍŸ’” Í ” Í 	™” Í¡”
+ Í¡” Í¡” Í¡” Í¡” Í¡” Í¡” Í¡” Í¡’” Í¢” Í¢”” Í£” Í£” Í£” Í£“” Í¤” Í¤” Í¤“” Í¥” Í¥” Í¥Ü (” Í¦” Í¦
+” Í¦” Í¦” Í¦” Í¦” Í¦” Í¦” Í¦” Í¦”  Í¦”" Í¦”# Í¦”% Í¦”& Í¦”( Í¦ ”) Í¦!”+ Í¦#”, Í¦$”. Í¦&”0 Í¦(”2 Í¦*”3 Í¦+”5 Í¦-”6 Í¦.”8 Í¦0”9 Í¦1”; Í¦3”< Í¦4”> Í¦6”Ì@ Í¦8”ÌB Í¦:”ÌC Í¦;”ÌE Í¦=”ÌF Í¦>”ÌH Í¦Ì@”ÌI Í¦ÌA”ÌK Í¦ÌC”ÌL Í¦ÌD”ÌN Í¦ÌF‘” Í§”” Í¨” Í¨” Í¨” Í¨‘”	 Í©”” Íª” Íª” Íª” Íª”” Í«” Í«
+” Í«” Í«”” Í¬” Í¬” Í¬
+” Í¬”” Í­” Í­	” Í­” Í­—” Í®” Í®
+” Í®”& Í®"”' Í®#”( Í®$”) Í®%”” Í¯” Í¯” Í¯
+” Í¯•” Í°” Í°” Í°”( Í°$”* Í°&—” Í±” Í±” Í±”+ Í±'”, Í±(”- Í±)”. Í±*”” Í²” Í²” Í²” Í²“” Í³” Í³” Í³”” Í´” Í´” Í´” Í´”” Íµ” Íµ” Íµ” Íµ”” Í¶” Í¶” Í¶” Í¶”” Í·” Í·” Í·” Í·”” Í¸” Í¸” Í¸” Í¸”” Í¹” Í¹” Í¹” Í¹•” Íº” Íº” Íº”. Íº(”0 Íº*‘”	 Í»’” Í¼” Í¼’”  Í½ ” Í½””  Í¿ ” Í¿” Í¿”( Í¿(’” ÍÀ” ÍÀ	”” ÍÁ” ÍÁ” ÍÁ
+” ÍÁœ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ” ÍÂ”! ÍÂ”# ÍÂ”” ÍÃ” ÍÃ” ÍÃ” ÍÃ”” ÍÄ” ÍÄ” ÍÄ” ÍÄ”” ÍÅ” ÍÅ” ÍÅ” ÍÅ’” ÍÆ” ÍÆ’”  ÍÇ ” ÍÇ’”  ÍÉ ” ÍÉ–”  ÍÊ ” ÍÊ” ÍÊ” ÍÊ” ÍÊ”# ÍÊ/” ÍË” ÍË	” ÍË” ÍË” ÍË”  ÍË”$ ÍË"”( ÍË&”- ÍË+”2 ÍË0”< ÍË:”= ÍË;”ÌA ÍË?œ” ÍÌ” ÍÌ	” ÍÌ” ÍÌ” ÍÌ”# ÍÌ”' ÍÌ#”, ÍÌ(”1 ÍÌ-”; ÍÌ7”< ÍÌ8”ÌB ÍÌ>” ÍÍ” ÍÍ	” ÍÍ” ÍÍ” ÍÍ”# ÍÍ”' ÍÍ#”, ÍÍ(”1 ÍÍ-”; ÍÍ7”< ÍÍ8”ÌB ÍÍ>”ÌC ÍÍ?’”  ÍÎ ” ÍÎ–”  ÍĞ ” ÍĞ” ÍĞ”% ÍĞ%”& ÍĞ&”+ ÍĞ:–” ÍÑ”
+ ÍÑ” ÍÑ” ÍÑ” ÍÑ” ÍÑ™” ÍÒ”	 ÍÒ” ÍÒ” ÍÒ” ÍÒ” ÍÒ” ÍÒ”! ÍÒ”# ÍÒ!” ÍÓ” ÍÓ” ÍÓ
+” ÍÓ” ÍÓ” ÍÓ”) ÍÓ%”* ÍÓ&”0 ÍÓ,”4 ÍÓ0”6 ÍÓ2”7 ÍÓ3”ÌD ÍÓÌ@”ÌF ÍÓÌBš” ÍÔ” ÍÔ	” ÍÔ
+” ÍÔ” ÍÔ” ÍÔ” ÍÔ”% ÍÔ”& ÍÔ ”' ÍÔ!‘”	 ÍÕ‘” ÍÖ”” Í×” Í×	” Í×” Í×’”  ÍØ ” ÍØ’”  ÍÚ ” ÍÚ–”  ÍÛ ” ÍÛ” ÍÛ”$ ÍÛ$”% ÍÛ%”( ÍÛ5—” ÍÜ” ÍÜ”	 ÍÜ” ÍÜ
+” ÍÜ” ÍÜ” ÍÜ—” Íİ” Íİ” Íİ” Íİ” Íİ” Íİ” Íİ‘” ÍŞ—” Íß” Íß”	 Íß” Íß
+” Íß” Íß” Íß—” Íà” Íà” Íà” Íà” Íà” Íà” Íà‘” Íá—” Íâ” Íâ”	 Íâ” Íâ
+” Íâ” Íâ” Íâ—” Íã” Íã” Íã” Íã” Íã” Íã” Íã‘” Íä—” Íå” Íå”	 Íå” Íå
+” Íå” Íå” Íå—” Íæ” Íæ” Íæ” Íæ” Íæ” Íæ” Íæ‘” Íç—” Íè” Íè”	 Íè” Íè
+” Íè” Íè” Íè—” Íé” Íé” Íé” Íé” Íé” Íé” Íé‘” ÍêŸ” Íë” Íë”	 Íë” Íë
+” Íë” Íë” Íë” Íë” Íë”) Íë'”* Íë(”0 Íë.”5 Íë3”6 Íë4”8 Íë6˜” Íì” Íì” Íì” Íì” Íì”- Íì)”/ Íì+”0 Íì,‘” Íí—” Íî” Íî”	 Íî” Íî
+” Íî” Íî” Íî—” Íï” Íï” Íï” Íï” Íï” Íï” Íï‘” ÍğÜ ” Íñ” Íñ”	 Íñ” Íñ
+” Íñ” Íñ” Íñ” Íñ” Íñ”  Íñ”* Íñ(”+ Íñ)”1 Íñ/”5 Íñ3”8 Íñ6”9 Íñ7”ÌC ÍñÌA”ÌD ÍñÌB”ÌJ ÍñÌH”ÌK ÍñÌI”ÌQ ÍñÌO”ÌV ÍñÌT”ÌW ÍñÌU”ÌY ÍñÌWš” Íò” Íò” Íò” Íò” Íò”0 Íò,”1 Íò-”2 Íò.”3 Íò/”4 Íò0‘” Íó™” Íô”	 Íô” Íô” Íô” Íô” Íô” Íô” Íô”  Íô—” Íõ” Íõ” Íõ	” Íõ” Íõ” Íõ” Íõ™” Íö” Íö	” Íö
+” Íö” Íö”! Íö”" Íö”) Íö#”* Íö$‘”	 Í÷Ÿ” Íø” Íø” Íø	” Íø” Íø” Íø” Íø” Íø” Íø”% Íø!”& Íø"”, Íø(”1 Íø-”2 Íø.”4 Íø0Ÿ” Íù” Íù	” Íù
+” Íù” Íù” Íù”$ Íù”% Íù”) Íù#”+ Íù%”5 Íù/”6 Íù0”: Íù4”; Íù5”< Íù6‘”	 Íú‘” Íû™” Íü”	 Íü” Íü” Íü” Íü” Íü” Íü” Íü” Íü–” Íı” Íı” Íı	” Íı
+” Íı” Íı—” Íı” Íı” Íı” Íı” Íı ” Íı"” Íı#–” Íş” Íş” Íş	” Íş
+” Íş” Íş—” Íş” Íş” Íş” Íş)” Íş,”  Íş.”! Íş/” Íÿ” Íÿ” Íÿ	” Íÿ
+” Íÿ” Íÿ”% Íÿ!”) Íÿ%”* Íÿ&”+ Íÿ'”4 Íÿ0”8 Íÿ4”9 Íÿ5”; Íÿ7Ÿ” Í ” Í ” Í ” Í ” Í ” Í ” Í ”& Í  ”( Í "”3 Í -”5 Í /”ÌA Í ;”ÌE Í ?”ÌF Í Ì@”ÌG Í ÌA‘”	 Í—” Í” Í” Í	” Í
+” Í”  Í”) Í%—” Í'” Í(” Í)” Í6” Í9”" Í=”# Í>” Í” Í” Í	” Í
+” Í” Í”& Í"”* Í&”+ Í'”, Í(”6 Í2”: Í6”; Í7—” Í9” Í:” Í;” ÍÌE” ÍÌH” ÍÌJ” ÍÌK” Í” Í” Í	” Í
+” Í” Í”( Í$”, Í(”- Í)”. Í*”: Í6”> Í:”? Í;—” Í=” Í>” Í?” ÍÌK” ÍÌN” ÍÌP”  ÍÌQ—” Í” Í” Í	” Í
+” Í” Í”$ Í —” Í"” Í#” Í$” Í,” Í/” Í0” Í1‘” ÍŸ” Í” Í”	 Í” Í
+” Í” Í” Í” Í” Í”! Í”" Í ”( Í&”- Í+”. Í,”0 Í.” Í” Í” Í” Í” Í”+ Í'”, Í(”/ Í+”0 Í,”: Í6”; Í7”ÌF ÍÌB”ÌG ÍÌC”ÌH ÍÌD‘” Í	‘”	 Í		Ü ” Í
+” Í
+” Í
+” Í
+”  Í
+”* Í
+&”+ Í
+'”1 Í
+-”3 Í
+/”? Í
+;”ÌA Í
+=”ÌJ Í
+ÌF”ÌL Í
+ÌH”ÌQ Í
+ÌM”ÌR Í
+ÌN”ÌS Í
+ÌOÜ ” Í” Í” Í” Í”  Í”* Í&”+ Í'”1 Í-”3 Í/”> Í:”Ì@ Í<”ÌI ÍÌE”ÌK ÍÌG”ÌP ÍÌL”ÌQ ÍÌM”ÌR ÍÌNÜ ” Í” Í” Í” Í”  Í”* Í&”+ Í'”2 Í.”4 Í0”ÌA Í=”ÌC Í?”ÌL ÍÌH”ÌN ÍÌJ”ÌS ÍÌO”ÌT ÍÌP”ÌU ÍÌQÜ ” Í” Í” Í” Í”  Í”* Í&”+ Í'”2 Í.”4 Í0”Ì@ Í<”ÌB Í>”ÌK ÍÌG”ÌM ÍÌI”ÌR ÍÌN”ÌS ÍÌO”ÌT ÍÌPš” Í” Í” Í” Í” Í” Í”& Í"”* Í&”+ Í'”- Í)Ü ” Í” Í” Í”" Í”$ Í”. Í(”/ Í)”5 Í/”7 Í1”ÌF ÍÌ@”ÌH ÍÌB”ÌQ ÍÌK”ÌS ÍÌM”ÌW ÍÌQ”ÌX ÍÌR”ÌY ÍÌSÜ ” Í” Í” Í”" Í”$ Í”. Í(”/ Í)”5 Í/”7 Í1”ÌF ÍÌ@”ÌH ÍÌB”ÌQ ÍÌK”ÌS ÍÌM”ÌW ÍÌQ”ÌX ÍÌR”ÌY ÍÌS‘”	 Íš” Í” Í” Í” Í” Í” Í”& Í"”* Í&”+ Í'”- Í)Ü ” Í” Í” Í”" Í”$ Í”. Í(”/ Í)”5 Í/”7 Í1”ÌF ÍÌ@”ÌH ÍÌB”ÌQ ÍÌK”ÌS ÍÌM”ÌW ÍÌQ”ÌX ÍÌR”ÌY ÍÌS‘”	 Íš” Í” Í” Í” Í” Í” Í”& Í"”* Í&”+ Í'”- Í)Ü ” Í” Í” Í”" Í”$ Í”. Í(”/ Í)”5 Í/”7 Í1”ÌF ÍÌ@”ÌH ÍÌB”ÌQ ÍÌK”ÌS ÍÌM”ÌW ÍÌQ”ÌX ÍÌR”ÌY ÍÌS‘”	 Í‘” ÍÜ ” Í” Í”	 Í” Í
+” Í” Í” Í” Í”! Í”" Í ”. Í,”/ Í-”5 Í3”9 Í7”< Í:”= Í;”ÌI ÍÌG”ÌJ ÍÌH”ÌP ÍÌN”ÌQ ÍÌO”ÌW ÍÌU”ÌZ ÍÌX”Ì[ ÍÌY”Ì] ÍÌ[•” Í” Í” Í” Í” Í“” Í” Í” ÍÜ (” Í” Í
+” Í” Í” Í” Í” Í” Í” Í” Í”  Í”" Í”# Í”% Í”) Í!”+ Í#”, Í$”. Í&”/ Í'”1 Í)”3 Í+”5 Í-”6 Í.”8 Í0”< Í4”> Í6”? Í7”ÌA Í9”ÌE Í=”ÌG Í?”ÌI ÍÌA”ÌK ÍÌC”ÌL ÍÌD”ÌN ÍÌF”ÌO ÍÌG”ÌQ ÍÌI”ÌR ÍÌJ”ÌT ÍÌL”ÌX ÍÌP”ÌZ ÍÌR‘” Í”” Í” Í” Í” Í’”	 Í”
+ Í‘” Í —” Í!” Í!”	 Í!” Í!
+” Í!” Í!” Í!›” Í"” Í"
+” Í"” Í"” Í"” Í"” Í"” Í"”* Í"&”, Í"(”- Í")•” Í#” Í#” Í#” Í#” Í#œ” Í$” Í$” Í$” Í$” Í$”! Í$”# Í$”& Í$ ”( Í$"”2 Í$,”4 Í$.”7 Í$1œ” Í%” Í%” Í%” Í%” Í%”% Í%”' Í%!”( Í%"”* Í%$”/ Í%)”1 Í%+”6 Í%0•” Í&” Í&” Í&”. Í&(”0 Í&*’”	 Í'”
+ Í'‘” Í(‘”	 Í(	™” Í)” Í)” Í)	” Í)” Í)” Í)” Í)”% Í)!”' Í)#š” Í*” Í*	” Í*
+” Í*” Í*”$ Í*”' Í*!”< Í*6”> Í*8”? Í*9‘”	 Í+‘” Í+š” Í,” Í,” Í,” Í,” Í,” Í,”# Í,”$ Í,”/ Í,)”0 Í,*” Í-” Í-
+” Í-” Í-”! Í-”& Í- ”/ Í-)”3 Í--”5 Í-/”6 Í-0”ÌD Í->”ÌH Í-ÌB”ÌI Í-ÌC—” Í-ÌE” Í-ÌG” Í-ÌH”! Í-ÌV”$ Í-ÌY”% Í-ÌZ”& Í-Ì[” Í.” Í.
+” Í.” Í.”  Í.”% Í.”. Í.(”2 Í.,”4 Í..”5 Í./”ÌB Í.<”ÌF Í.Ì@”ÌG Í.ÌA—” Í.ÌC” Í.ÌE” Í.ÌF”  Í.ÌS”# Í.ÌV”% Í.ÌX”& Í.ÌY‘”	 Í/Ü ” Í0” Í0” Í0	” Í0” Í0” Í0” Í0”" Í0”& Í0"”) Í0%”* Í0&”2 Í0.”3 Í0/”; Í07”? Í0;”Ì@ Í0<”ÌB Í0>™” Í1” Í1	” Í1
+” Í1” Í1”! Í1”$ Í1”% Í1”& Í1 ‘”	 Í2‘” Í3’”  Í4 ” Í4”  Í6 ”	 Í6	” Í6” Í6” Í6,”! Í6.”# Í6<”% Í6>”) Í6ÌJ”+ Í7”0 Í7”2 Í7”9 Í7!™” Í8”	 Í8” Í8” Í8” Í8” Í8” Í8” Í8”  Í8—” Í9” Í9” Í9	” Í9
+” Í9” Í9” Í9’” Í9” Í9‘” Í:Ü ” Í;” Í;” Í;” Í;” Í;” Í;” Í;” Í;” Í;” Í;” Í;”  Í;”' Í;%”) Í;'”. Í;,”0 Í;.”7 Í;5”9 Í;7”: Í;8”< Í;:”= Í;;”> Í;<’”  Í< ” Í<’”  Í> ”- Í>-˜”  Í? ” Í?” Í?”% Í?%”& Í?&”) Í?6”+ Í?8”6 Í?ÌKÜ ” Í@”
+ Í@” Í@	” Í@” Í@” Í@” Í@”# Í@!”. Í@,”3 Í@1”4 Í@2”8 Í@6”ÌC Í@ÌA”ÌH Í@ÌF”ÌI Í@ÌG”ÌJ Í@ÌH”ÌK Í@ÌI”ÌL Í@ÌJ”ÌW Í@ÌU”ÌX Í@ÌV”ÌY Í@ÌW”ÌZ Í@ÌX”Ì[ Í@ÌY”Ì\ Í@ÌZš” ÍA” ÍA” ÍA” ÍA” ÍA”, ÍA*”- ÍA+”. ÍA,”/ ÍA-”0 ÍA.˜” ÍB”
+ ÍB” ÍB” ÍB+” ÍB/” ÍB2”  ÍB4”! ÍB5™” ÍC”	 ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC”  ÍC” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD” ÍD”& ÍD"”' ÍD#”( ÍD$‘” ÍEš” ÍF” ÍF” ÍF” ÍF” ÍF”' ÍF%”( ÍF&”) ÍF'”* ÍF(”+ ÍF)™” ÍG”	 ÍG” ÍG” ÍG” ÍG” ÍG” ÍG” ÍG”  ÍG” ÍH” ÍH
+” ÍH” ÍH” ÍH”  ÍH”# ÍH”$ ÍH ”% ÍH!”& ÍH"”( ÍH$”) ÍH%”* ÍH&–” ÍI” ÍI” ÍI” ÍI” ÍI”  ÍI—” ÍJ” ÍJ” ÍJ” ÍJ” ÍJ” ÍJ” ÍJ‘”	 ÍK‘” ÍL’”  ÍM ” ÍM’”  Íb ” Íb””  Íc ” Íc” Íc”# Íc#‘” Íc •” Íd” Íd” Íd” Íd” Íd•” Íe” Íe
+” Íe” Íe” Íe•” Íf” Íf” Íf” Íf” Íf•” Íg” Íg	” Íg” Íg” Íg’” Íh ” Íh‘” Íh’”  Íj ” Íj•”  Ík ” Ík” Ík ” Ík” Ír“”  Ík ” Ík” Ík“” Íl”% Íl”& Íl“” Ím”/ Ím”0 Ím“” Ín”' Ín”( Ín“” Ío”# Ío”$ Ío“” Íp”% Íp”& Íp“” Íq”' Íq”( Íq—”  Ír ” Ír” Ík” Ík” Ík”( Ík”0 Ír””  Í| ” Í|” Í|”! Í|!Ü ” Í}” Í}	” Í}” Í}” Í}”# Í}!”$ Í}"”( Í}&”* Í}(”6 Í}4”8 Í}6”: Í}8”< Í}:”ÌD Í}ÌB”ÌF Í}ÌD”ÌH Í}ÌF”ÌJ Í}ÌH”ÌP Í}ÌN”ÌR Í}ÌP”ÌT Í}ÌR”ÌV Í}ÌT”Ì] Í}Ì[”Ì_ Í}Ì]”Ìa Í}Ì_”Ìc Í}Ìa”Ìd Í}Ìb’”  Í~ ” Í~–”  Í€ ” Í€” Í€”$ Í€$”% Í€%”& Í€>˜” Í” Í” Í
+” Í” Í”  Í”$ Í"”% Í#™” Í‚” Í‚”	 Í‚”
+ Í‚” Í‚” Í‚” Í‚”  Í‚”! Í‚—” Í‚!” Í‚%” Í‚(” Í‚8”  Í‚9”) Í‚ÌB”* Í‚ÌC™”	 Íƒ” Íƒ” Íƒ” Íƒ” Íƒ” Íƒ” Íƒ”! Íƒ”" Íƒ —” Íƒ"” Íƒ&” Íƒ)” Íƒ9”  Íƒ:”% Íƒ?”& ÍƒÌ@™”	 Í„” Í„” Í„” Í„” Í„” Í„” Í„” Í„”  Í„—” Í„ ” Í„$” Í„'” Í„7”  Í„8”# Í„;”$ Í„<™”	 Í…” Í…” Í…” Í…” Í…” Í…” Í…”  Í…”! Í…—” Í…!” Í…%” Í…(” Í…8”  Í…9”$ Í…=”% Í…>Ü ” Í†”
+ Í†” Í†” Í†” Í†” Í†”  Í†”! Í†”' Í†%”* Í†(”+ Í†)”, Í†*”4 Í†2”5 Í†3”; Í†9”> Í†<”? Í†=”Ì@ Í†>”ÌF Í†ÌD”ÌG Í†ÌE”ÌM Í†ÌK”ÌP Í†ÌN”ÌQ Í†ÌO”ÌR Í†ÌP”ÌY Í†ÌW”ÌZ Í†ÌX”Ì` Í†Ì^”Ìa Í†Ì_•” Í‡” Í‡” Í‡” Í‡” Í‡—” Í‡” Í‡” Í‡” Í‡(”  Í‡)”% Í‡.”& Í‡/’” Íˆ” Íˆ	’” Í‰” Í‰™” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ”( ÍŠ$”) ÍŠ%™” Í‹” Í‹” Í‹” Í‹” Í‹” Í‹” Í‹”  Í‹”! Í‹™” ÍŒ” ÍŒ
+” ÍŒ” ÍŒ” ÍŒ” ÍŒ” ÍŒ” ÍŒ” ÍŒ™” Í” Í” Í” Í” Í” Í” Í” Í” Í’” Í” Í’”  Í ” ÍÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ§‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ‘”  Í– ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš ‘”  Í› ‘”  Íœ ‘”  Í ‘”  Í ‘”  ÍŸ ‘”  Í  ‘”  Í¡ ‘”  Í¢ ‘”  Í£ ‘”  Í¤ ‘”  Í¥ ‘”  Í¦ ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration!7ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration(7‘ÔrK•¤type¥start£end¢id¤init²VariableDeclarator,6ÔrL”¤type¥start£end¤nameªIdentifier,6ªPcbLayerIdÀ£varÀI¶ExportNamedDeclarationÍßÍöJ³VariableDeclarationÍæÍö‘K²VariableDeclaratorÍêÍõLªIdentifierÍêÍõ«PcbPadShapeÀ£varÀI¶ExportNamedDeclarationÍÕÍëJ³VariableDeclarationÍÜÍë‘K²VariableDeclaratorÍàÍêLªIdentifierÍàÍêªPcbPadTypeÀ£varÀI¶ExportNamedDeclarationÍÍ£J³VariableDeclarationÍ”Í£‘K²VariableDeclaratorÍ˜Í¢LªIdentifierÍ˜Í¢ªPcbViaKindÀ£varÀI¶ExportNamedDeclarationÍWÍtJ³VariableDeclarationÍ^Ít‘K²VariableDeclaratorÍbÍsLªIdentifierÍbÍs±PcbAppearanceModeÀ£varÀI¶ExportNamedDeclarationÍjÍ‡J³VariableDeclarationÍqÍ‡‘K²VariableDeclaratorÍuÍ†LªIdentifierÍuÍ†±PcbStackLayerTypeÀ£varÀI¶ExportNamedDeclarationÍuÍJ³VariableDeclarationÍ|Í‘K²VariableDeclaratorÍ€ÍLªIdentifierÍ€Í®PcbDrcSeverityÀ£varÀI¶ExportNamedDeclarationÍ1ÍKJ³VariableDeclarationÍ8ÍK‘K²VariableDeclaratorÍ<ÍJLªIdentifierÍ<ÍJ®PcbDrcRuleTypeÀ£varÀI¶ExportNamedDeclarationÍ
+SÍ;ÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ
+ZÍ;LªIdentifierÍ
+cÍ
+xµdefaultPcbDesignRulesÂÂÂÔrN”¤type¥start£end¤body®BlockStatementÍ
+{Í;‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÍ
+‚Í8ÔrP”¤type¥start£endªproperties°ObjectExpressionÍ
+‰Í7–ÔrQ™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ
+”Í
+¤ÂÂÂLªIdentifierÍ
+”Í
+¡­minTrackWidthÔrR•¤type¥start£end¥value£raw§LiteralÍ
+£Í
+¤¡6¤initQ¨PropertyÍ
+¯Í
+¾ÂÂÂLªIdentifierÍ
+¯Í
+»¬minClearanceR§LiteralÍ
+½Í
+¾¡6¤initQ¨PropertyÍ
+ÉÍ
+ØÂÂÂLªIdentifierÍ
+ÉÍ
+Ô«minViaDrillR§LiteralÍ
+ÖÍ
+Ø¢12¤initQ¨PropertyÍ
+ãÍ
+øÂÂÂLªIdentifierÍ
+ãÍ
+ô±defaultTrackWidthR§LiteralÍ
+öÍ
+ø
+¢10¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ®minAnnularRingR§LiteralÍÍ¡4¤initQ¨PropertyÍÍ0ÂÂÂLªIdentifierÍÍ,­minHoleToHoleR§LiteralÍ.Í0
+¢10¤initÀI¶ExportNamedDeclarationÍ=Í'M³FunctionDeclarationÍDÍ'LªIdentifierÍMÍa´defaultPcbNetClassesÂÂÂN®BlockStatementÍdÍ'‘O¯ReturnStatementÍkÍ$ÔrS”¤type¥start£end¨elements¯ArrayExpressionÍrÍ#“P°ObjectExpressionÍ}Í–Q¨PropertyÍŒÍœÂÂÂLªIdentifierÍŒÍ¢idR§LiteralÍÍœªnc_default¬'nc_default'¤initQ¨PropertyÍÍ­ÂÂÂLªIdentifierÍÍ¢¤nameR§LiteralÍ¤Í­§Default©'Default'¤initQ¨PropertyÍ¼ÍÊÂÂÂLªIdentifierÍ¼ÍÆªtrackWidthR§LiteralÍÈÍÊ
+¢10¤initQ¨PropertyÍÌÍØÂÂÂLªIdentifierÍÌÍÕ©clearanceR§LiteralÍ×ÍØ¡6¤initQ¨PropertyÍÚÍéÂÂÂLªIdentifierÍÚÍå«viaDiameterR§LiteralÍçÍé¢24¤initQ¨PropertyÍëÍ÷ÂÂÂLªIdentifierÍëÍó¨viaDrillR§LiteralÍõÍ÷¢12¤initP°ObjectExpressionÍÍ–Q¨PropertyÍÍ*ÂÂÂLªIdentifierÍÍ¢idR§LiteralÍ Í*¨nc_powerª'nc_power'¤initQ¨PropertyÍ,Í9ÂÂÂLªIdentifierÍ,Í0¤nameR§LiteralÍ2Í9¥Power§'Power'¤initQ¨PropertyÍHÍVÂÂÂLªIdentifierÍHÍRªtrackWidthR§LiteralÍTÍV¢20¤initQ¨PropertyÍXÍeÂÂÂLªIdentifierÍXÍa©clearanceR§LiteralÍcÍe
+¢10¤initQ¨PropertyÍgÍvÂÂÂLªIdentifierÍgÍr«viaDiameterR§LiteralÍtÍv¢30¤initQ¨PropertyÍxÍ„ÂÂÂLªIdentifierÍxÍ€¨viaDrillR§LiteralÍ‚Í„¢16¤initP°ObjectExpressionÍšÍ–Q¨PropertyÍ©Í¸ÂÂÂLªIdentifierÍ©Í«¢idR§LiteralÍ­Í¸©nc_signal«'nc_signal'¤initQ¨PropertyÍºÍÈÂÂÂLªIdentifierÍºÍ¾¤nameR§LiteralÍÀÍÈ¦Signal¨'Signal'¤initQ¨PropertyÍ×ÍäÂÂÂLªIdentifierÍ×ÍáªtrackWidthR§LiteralÍãÍä¡8¤initQ¨PropertyÍæÍòÂÂÂLªIdentifierÍæÍï©clearanceR§LiteralÍñÍò¡6¤initQ¨PropertyÍôÍÂÂÂLªIdentifierÍôÍÿ«viaDiameterR§LiteralÍÍ¢22¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ¨viaDrillR§LiteralÍÍ¢12¤initÀI¶ExportNamedDeclarationÍ)Í9M³FunctionDeclarationÍ0Í9LªIdentifierÍ9ÍM´defaultPcbAppearanceÂÂÂN®BlockStatementÍPÍ9‘O¯ReturnStatementÍWÍ6P°ObjectExpressionÍ^Í5—Q¨PropertyÍiÍˆÂÂÂLªIdentifierÍiÍm¤modeÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍoÍˆLªIdentifierÍoÍ€±PcbAppearanceModeLªIdentifierÍÍˆ§OVERLAYÂÂ¤initQ¨PropertyÍ“Í¡ÂÂÂLªIdentifierÍ“Í›¨dimAlphaR§LiteralÍÍ¡Ë?Ñë…¸Qì¤0.28¤initQ¨PropertyÍ¬Í¾ÂÂÂLªIdentifierÍ¬Íº®highlightNetIdR§LiteralÍ¼Í¾ ¢''¤initQ¨PropertyÍÉÍÙÂÂÂLªIdentifierÍÉÍÒ©hideZonesR§LiteralÍÔÍÙÂ¥false¤initQ¨PropertyÍäÍöÂÂÂLªIdentifierÍäÍğ¬showRatsnestR§LiteralÍòÍöÃ¤true¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ®showPadNumbersR§LiteralÍÍÂ¥false¤initQ¨PropertyÍ!Í.ÂÂÂLªIdentifierÍ!Í'¦show3dR§LiteralÍ)Í.Â¥false¤initÀI¶ExportNamedDeclarationÍ;ÍOM³FunctionDeclarationÍBÍOLªIdentifierÍKÍb·createDefaultLayerStackÂÂÂ‘ÔrU•¤type¥start£end¤left¥right±AssignmentPatternÍcÍrLªIdentifierÍcÍn«copperCountR§LiteralÍqÍr¡2N®BlockStatementÍtÍO›J³VariableDeclarationÍ{ÍÓ‘K²VariableDeclaratorÍÍÒLªIdentifierÍÍ‚¡nÔrV–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍ…ÍÒÔrW–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ…ÍÀW±LogicalExpressionÍ…Í«W°BinaryExpressionÍ…Í–LªIdentifierÍ…Í«copperCount£===R§LiteralÍ•Í–¡4¢||W°BinaryExpressionÍšÍ«LªIdentifierÍšÍ¥«copperCount£===R§LiteralÍªÍ«¡6¢||W°BinaryExpressionÍ¯ÍÀLªIdentifierÍ¯Íº«copperCount£===R§LiteralÍ¿ÍÀ¡8LªIdentifierÍÃÍÎ«copperCountR§LiteralÍÑÍÒ¡2¥constJ³VariableDeclarationÍÙÍë‘K²VariableDeclaratorÍßÍêLªIdentifierÍßÍå¦layersS¯ArrayExpressionÍèÍê¥constÔrX”¤type¥start£endªexpression³ExpressionStatementÍñÍdÔrY–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍñÍcT°MemberExpressionÍñÍüLªIdentifierÍñÍ÷¦layersLªIdentifierÍøÍü¤pushÂÂ‘P°ObjectExpressionÍıÍb”Q¨PropertyÍÍÂÂÂLªIdentifierÍÍ
+¢idR§LiteralÍÍ¦sm_top¨'sm_top'¤initQ¨PropertyÍÍ8ÂÂÂLªIdentifierÍÍ¤typeT°MemberExpressionÍÍ8LªIdentifierÍÍ-±PcbStackLayerTypeLªIdentifierÍ.Í8ªSOLDERMASKÂÂ¤initQ¨PropertyÍ:ÍHÂÂÂLªIdentifierÍ:Í>¤nameR§LiteralÍ@ÍH¦F.Mask¨'F.Mask'¤initQ¨PropertyÍJÍ[ÂÂÂLªIdentifierÍJÍU«thicknessMmR§LiteralÍWÍ[Ë?”záG®{¤0.02¤initÂX³ExpressionStatementÍjÍY®CallExpressionÍjÍT°MemberExpressionÍjÍuLªIdentifierÍjÍp¦layersLªIdentifierÍqÍu¤pushÂÂ‘P°ObjectExpressionÍvÍ
+–Q¨PropertyÍÍ‹ÂÂÂLªIdentifierÍÍƒ¢idR§LiteralÍ…Í‹¤cu_f¦'cu_f'¤initQ¨PropertyÍÍ«ÂÂÂLªIdentifierÍÍ‘¤typeT°MemberExpressionÍ“Í«LªIdentifierÍ“Í¤±PcbStackLayerTypeLªIdentifierÍ¥Í«¦COPPERÂÂ¤initQ¨PropertyÍ­Í¹ÂÂÂLªIdentifierÍ­Í±¤nameR§LiteralÍ³Í¹¤F.Cu¦'F.Cu'¤initQ¨PropertyÍÄÍâÂÂÂLªIdentifierÍÄÍÑ­copperLayerIdT°MemberExpressionÍÓÍâLªIdentifierÍÓÍİªPcbLayerIdLªIdentifierÍŞÍâ¤F_CUÂÂ¤initQ¨PropertyÍäÍöÂÂÂLªIdentifierÍäÍï«thicknessMmR§LiteralÍñÍöË?¡ë…¸Qì¥0.035¤initQ¨PropertyÍøÍÂÂÂLªIdentifierÍøÍ ¨copperOzR§LiteralÍÍ¡1¤initÂV«IfStatementÍÍ¤W°BinaryExpressionÍÍLªIdentifierÍÍ¡n¢>=R§LiteralÍÍ¡4N®BlockStatementÍÍì”X³ExpressionStatementÍ)ÍÄY®CallExpressionÍ)ÍÃT°MemberExpressionÍ)Í4LªIdentifierÍ)Í/¦layersLªIdentifierÍ0Í4¤pushÂÂ‘P°ObjectExpressionÍ5ÍÂ•Q¨PropertyÍDÍPÂÂÂLªIdentifierÍDÍF¢idR§LiteralÍHÍP¦diel_1¨'diel_1'¤initQ¨PropertyÍRÍtÂÂÂLªIdentifierÍRÍV¤typeT°MemberExpressionÍXÍtLªIdentifierÍXÍi±PcbStackLayerTypeLªIdentifierÍjÍtªDIELECTRICÂÂ¤initQ¨PropertyÍvÍ…ÂÂÂLªIdentifierÍvÍz¤nameR§LiteralÍ|Í…§Prepreg©'Prepreg'¤initQ¨PropertyÍ”Í¤ÂÂÂLªIdentifierÍ”ÍŸ«thicknessMmR§LiteralÍ¡Í¤Ë?É™™™™™š£0.2¤initQ¨PropertyÍ¦Í·ÂÂÂLªIdentifierÍ¦Í²¬dielectricDkR§LiteralÍ´Í·Ë@      £4.5¤initÂX³ExpressionStatementÍÎÍ‚Y®CallExpressionÍÎÍT°MemberExpressionÍÎÍÙLªIdentifierÍÎÍÔ¦layersLªIdentifierÍÕÍÙ¤pushÂÂ‘P°ObjectExpressionÍÚÍ€–Q¨PropertyÍéÍõÂÂÂLªIdentifierÍéÍë¢idR§LiteralÍíÍõ¦cu_in1¨'cu_in1'¤initQ¨PropertyÍ÷ÍÂÂÂLªIdentifierÍ÷Íû¤typeT°MemberExpressionÍıÍLªIdentifierÍıÍ±PcbStackLayerTypeLªIdentifierÍÍ¦COPPERÂÂ¤initQ¨PropertyÍÍ%ÂÂÂLªIdentifierÍÍ¤nameR§LiteralÍÍ%¦In1.Cu¨'In1.Cu'¤initQ¨PropertyÍ4ÍTÂÂÂLªIdentifierÍ4ÍA­copperLayerIdT°MemberExpressionÍCÍTLªIdentifierÍCÍMªPcbLayerIdLªIdentifierÍNÍT¦IN1_CUÂÂ¤initQ¨PropertyÍVÍhÂÂÂLªIdentifierÍVÍa«thicknessMmR§LiteralÍcÍhË?¡ë…¸Qì¥0.035¤initQ¨PropertyÍjÍuÂÂÂLªIdentifierÍjÍr¨copperOzR§LiteralÍtÍu¡1¤initÂX³ExpressionStatementÍŒÍ'Y®CallExpressionÍŒÍ&T°MemberExpressionÍŒÍ—LªIdentifierÍŒÍ’¦layersLªIdentifierÍ“Í—¤pushÂÂ‘P°ObjectExpressionÍ˜Í%•Q¨PropertyÍ§Í¶ÂÂÂLªIdentifierÍ§Í©¢idR§LiteralÍ«Í¶©diel_core«'diel_core'¤initQ¨PropertyÍ¸ÍÚÂÂÂLªIdentifierÍ¸Í¼¤typeT°MemberExpressionÍ¾ÍÚLªIdentifierÍ¾ÍÏ±PcbStackLayerTypeLªIdentifierÍĞÍÚªDIELECTRICÂÂ¤initQ¨PropertyÍÜÍèÂÂÂLªIdentifierÍÜÍà¤nameR§LiteralÍâÍè¤Core¦'Core'¤initQ¨PropertyÍ÷ÍÂÂÂLªIdentifierÍ÷Í«thicknessMmR§LiteralÍÍË?é™™™™™š£0.8¤initQ¨PropertyÍ	ÍÂÂÂLªIdentifierÍ	Í¬dielectricDkR§LiteralÍÍË@333333£4.3¤initÂX³ExpressionStatementÍ1ÍåY®CallExpressionÍ1ÍäT°MemberExpressionÍ1Í<LªIdentifierÍ1Í7¦layersLªIdentifierÍ8Í<¤pushÂÂ‘P°ObjectExpressionÍ=Íã–Q¨PropertyÍLÍXÂÂÂLªIdentifierÍLÍN¢idR§LiteralÍPÍX¦cu_in2¨'cu_in2'¤initQ¨PropertyÍZÍxÂÂÂLªIdentifierÍZÍ^¤typeT°MemberExpressionÍ`ÍxLªIdentifierÍ`Íq±PcbStackLayerTypeLªIdentifierÍrÍx¦COPPERÂÂ¤initQ¨PropertyÍzÍˆÂÂÂLªIdentifierÍzÍ~¤nameR§LiteralÍ€Íˆ¦In2.Cu¨'In2.Cu'¤initQ¨PropertyÍ—Í·ÂÂÂLªIdentifierÍ—Í¤­copperLayerIdT°MemberExpressionÍ¦Í·LªIdentifierÍ¦Í°ªPcbLayerIdLªIdentifierÍ±Í·¦IN2_CUÂÂ¤initQ¨PropertyÍ¹ÍËÂÂÂLªIdentifierÍ¹ÍÄ«thicknessMmR§LiteralÍÆÍËË?¡ë…¸Qì¥0.035¤initQ¨PropertyÍÍÍØÂÂÂLªIdentifierÍÍÍÕ¨copperOzR§LiteralÍ×ÍØ¡1¤initÂN®BlockStatementÍ÷Í¤‘X³ExpressionStatementÍÍY®CallExpressionÍÍœT°MemberExpressionÍÍLªIdentifierÍÍ¦layersLªIdentifierÍ	Í¤pushÂÂ‘P°ObjectExpressionÍÍ›•Q¨PropertyÍÍ,ÂÂÂLªIdentifierÍÍ¢idR§LiteralÍ!Í,©diel_core«'diel_core'¤initQ¨PropertyÍ.ÍPÂÂÂLªIdentifierÍ.Í2¤typeT°MemberExpressionÍ4ÍPLªIdentifierÍ4ÍE±PcbStackLayerTypeLªIdentifierÍFÍPªDIELECTRICÂÂ¤initQ¨PropertyÍRÍ^ÂÂÂLªIdentifierÍRÍV¤nameR§LiteralÍXÍ^¤Core¦'Core'¤initQ¨PropertyÍmÍ}ÂÂÂLªIdentifierÍmÍx«thicknessMmR§LiteralÍzÍ}Ë?ø      £1.5¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ‹¬dielectricDkR§LiteralÍÍË@333333£4.3¤initÂV«IfStatementÍªÍ"W°BinaryExpressionÍ®Í´LªIdentifierÍ®Í¯¡n¢>=R§LiteralÍ³Í´¡6N®BlockStatementÍ¶Í"’X³ExpressionStatementÍÁÍ]Y®CallExpressionÍÁÍ\T°MemberExpressionÍÁÍÌLªIdentifierÍÁÍÇ¦layersLªIdentifierÍÈÍÌ¤pushÂÂ‘P°ObjectExpressionÍÍÍ[•Q¨PropertyÍÜÍèÂÂÂLªIdentifierÍÜÍŞ¢idR§LiteralÍàÍè¦diel_3¨'diel_3'¤initQ¨PropertyÍêÍÂÂÂLªIdentifierÍêÍî¤typeT°MemberExpressionÍğÍLªIdentifierÍğÍ±PcbStackLayerTypeLªIdentifierÍÍªDIELECTRICÂÂ¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ¤nameR§LiteralÍÍ¨Prepreg2ª'Prepreg2'¤initQ¨PropertyÍ-Í=ÂÂÂLªIdentifierÍ-Í8«thicknessMmR§LiteralÍ:Í=Ë?É™™™™™š£0.2¤initQ¨PropertyÍ?ÍPÂÂÂLªIdentifierÍ?ÍK¬dielectricDkR§LiteralÍMÍPË@      £4.5¤initÂX³ExpressionStatementÍgÍY®CallExpressionÍgÍT°MemberExpressionÍgÍrLªIdentifierÍgÍm¦layersLªIdentifierÍnÍr¤pushÂÂ‘P°ObjectExpressionÍsÍ–Q¨PropertyÍ‚ÍÂÂÂLªIdentifierÍ‚Í„¢idR§LiteralÍ†Í¦cu_in3¨'cu_in3'¤initQ¨PropertyÍÍ®ÂÂÂLªIdentifierÍÍ”¤typeT°MemberExpressionÍ–Í®LªIdentifierÍ–Í§±PcbStackLayerTypeLªIdentifierÍ¨Í®¦COPPERÂÂ¤initQ¨PropertyÍ°Í¾ÂÂÂLªIdentifierÍ°Í´¤nameR§LiteralÍ¶Í¾¦In3.Cu¨'In3.Cu'¤initQ¨PropertyÍÍÍíÂÂÂLªIdentifierÍÍÍÚ­copperLayerIdT°MemberExpressionÍÜÍíLªIdentifierÍÜÍæªPcbLayerIdLªIdentifierÍçÍí¦IN3_CUÂÂ¤initQ¨PropertyÍïÍÂÂÂLªIdentifierÍïÍú«thicknessMmR§LiteralÍüÍË?¡ë…¸Qì¥0.035¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ¨copperOzR§LiteralÍÍ¡1¤initÂÀV«IfStatementÍ(Í W°BinaryExpressionÍ,Í2LªIdentifierÍ,Í-¡n¢>=R§LiteralÍ1Í2¡8N®BlockStatementÍ4Í ’X³ExpressionStatementÍ?ÍÛY®CallExpressionÍ?ÍÚT°MemberExpressionÍ?ÍJLªIdentifierÍ?ÍE¦layersLªIdentifierÍFÍJ¤pushÂÂ‘P°ObjectExpressionÍKÍÙ•Q¨PropertyÍZÍfÂÂÂLªIdentifierÍZÍ\¢idR§LiteralÍ^Íf¦diel_4¨'diel_4'¤initQ¨PropertyÍhÍŠÂÂÂLªIdentifierÍhÍl¤typeT°MemberExpressionÍnÍŠLªIdentifierÍnÍ±PcbStackLayerTypeLªIdentifierÍ€ÍŠªDIELECTRICÂÂ¤initQ¨PropertyÍŒÍœÂÂÂLªIdentifierÍŒÍ¤nameR§LiteralÍ’Íœ¨Prepreg3ª'Prepreg3'¤initQ¨PropertyÍ«Í»ÂÂÂLªIdentifierÍ«Í¶«thicknessMmR§LiteralÍ¸Í»Ë?É™™™™™š£0.2¤initQ¨PropertyÍ½ÍÎÂÂÂLªIdentifierÍ½ÍÉ¬dielectricDkR§LiteralÍËÍÎË@      £4.5¤initÂX³ExpressionStatementÍåÍ™Y®CallExpressionÍåÍ˜T°MemberExpressionÍåÍğLªIdentifierÍåÍë¦layersLªIdentifierÍìÍğ¤pushÂÂ‘P°ObjectExpressionÍñÍ—–Q¨PropertyÍ ÍÂÂÂLªIdentifierÍ Í¢idR§LiteralÍÍ¦cu_in4¨'cu_in4'¤initQ¨PropertyÍÍ,ÂÂÂLªIdentifierÍÍ¤typeT°MemberExpressionÍÍ,LªIdentifierÍÍ%±PcbStackLayerTypeLªIdentifierÍ&Í,¦COPPERÂÂ¤initQ¨PropertyÍ.Í<ÂÂÂLªIdentifierÍ.Í2¤nameR§LiteralÍ4Í<¦In4.Cu¨'In4.Cu'¤initQ¨PropertyÍKÍkÂÂÂLªIdentifierÍKÍX­copperLayerIdT°MemberExpressionÍZÍkLªIdentifierÍZÍdªPcbLayerIdLªIdentifierÍeÍk¦IN4_CUÂÂ¤initQ¨PropertyÍmÍÂÂÂLªIdentifierÍmÍx«thicknessMmR§LiteralÍzÍË?¡ë…¸Qì¥0.035¤initQ¨PropertyÍÍŒÂÂÂLªIdentifierÍÍ‰¨copperOzR§LiteralÍ‹ÍŒ¡1¤initÂÀV«IfStatementÍ¦ÍW°BinaryExpressionÍªÍ°LªIdentifierÍªÍ«¡n¢>=R§LiteralÍ¯Í°¡6N®BlockStatementÍ²ÍÀX³ExpressionStatementÍ	Í«Y®CallExpressionÍ	ÍªT°MemberExpressionÍ	ÍLªIdentifierÍ	Í¦layersLªIdentifierÍÍ¤pushÂÂ‘P°ObjectExpressionÍÍ©–Q¨PropertyÍ Í*ÂÂÂLªIdentifierÍ Í"¢idR§LiteralÍ$Í*¤cu_b¦'cu_b'¤initQ¨PropertyÍ,ÍJÂÂÂLªIdentifierÍ,Í0¤typeT°MemberExpressionÍ2ÍJLªIdentifierÍ2ÍC±PcbStackLayerTypeLªIdentifierÍDÍJ¦COPPERÂÂ¤initQ¨PropertyÍLÍXÂÂÂLªIdentifierÍLÍP¤nameR§LiteralÍRÍX¤B.Cu¦'B.Cu'¤initQ¨PropertyÍcÍÂÂÂLªIdentifierÍcÍp­copperLayerIdT°MemberExpressionÍrÍLªIdentifierÍrÍ|ªPcbLayerIdLªIdentifierÍ}Í¤B_CUÂÂ¤initQ¨PropertyÍƒÍ•ÂÂÂLªIdentifierÍƒÍ«thicknessMmR§LiteralÍÍ•Ë?¡ë…¸Qì¥0.035¤initQ¨PropertyÍ—Í¢ÂÂÂLªIdentifierÍ—ÍŸ¨copperOzR§LiteralÍ¡Í¢¡1¤initÂX³ExpressionStatementÍ±Í$Y®CallExpressionÍ±Í#T°MemberExpressionÍ±Í¼LªIdentifierÍ±Í·¦layersLªIdentifierÍ¸Í¼¤pushÂÂ‘P°ObjectExpressionÍ½Í"”Q¨PropertyÍÈÍÔÂÂÂLªIdentifierÍÈÍÊ¢idR§LiteralÍÌÍÔ¦sm_bot¨'sm_bot'¤initQ¨PropertyÍÖÍøÂÂÂLªIdentifierÍÖÍÚ¤typeT°MemberExpressionÍÜÍøLªIdentifierÍÜÍí±PcbStackLayerTypeLªIdentifierÍîÍøªSOLDERMASKÂÂ¤initQ¨PropertyÍúÍÂÂÂLªIdentifierÍúÍş¤nameR§LiteralÍ Í¦B.Mask¨'B.Mask'¤initQ¨PropertyÍ
+ÍÂÂÂLªIdentifierÍ
+Í«thicknessMmR§LiteralÍÍË?”záG®{¤0.02¤initÂO¯ReturnStatementÍ*ÍLP°ObjectExpressionÍ1ÍK’Q¨PropertyÍ3ÍAÂÂÂLªIdentifierÍ3Í>«copperCountLªIdentifierÍ@ÍA¡n¤initÔrZ™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍCÍIÂÃÂLªIdentifierÍCÍI¦layers¤initLªIdentifierÍCÍI¦layersÀI¶ExportNamedDeclarationÍQÍWM³FunctionDeclarationÍXÍWLªIdentifierÍaÍw¶createDefaultPcbLayersÂÂÂ‘U±AssignmentPatternÍxÍ‡LªIdentifierÍxÍƒ«copperCountR§LiteralÍ†Í‡¡2N®BlockStatementÍ‰ÍWJ³VariableDeclarationÍÍ‘K²VariableDeclaratorÍ–ÍLªIdentifierÍ–Íœ¦layersS¯ArrayExpressionÍŸÍ‘P°ObjectExpressionÍªÍ•Q¨PropertyÍ¬Í¿ÂÂÂLªIdentifierÍ¬Í®¢idT°MemberExpressionÍ°Í¿LªIdentifierÍ°ÍºªPcbLayerIdLªIdentifierÍ»Í¿¤F_CUÂÂ¤initQ¨PropertyÍÁÍÕÂÂÂLªIdentifierÍÁÍÅ¤nameR§LiteralÍÇÍÕ¬Front Copper®'Front Copper'¤initQ¨PropertyÍ×ÍäÂÂÂLªIdentifierÍ×ÍŞ§visibleR§LiteralÍàÍäÃ¤true¤initQ¨PropertyÍæÍöÂÂÂLªIdentifierÍæÍë¥colorR§LiteralÍíÍö§#C83434©'#C83434'¤initQ¨PropertyÍøÍÂÂÂLªIdentifierÍøÍÿ§opacityR§LiteralÍÍ¡1¤init¥constV«IfStatementÍÍW°BinaryExpressionÍÍ&LªIdentifierÍÍ!«copperCount¢>=R§LiteralÍ%Í&¡4N®BlockStatementÍ(Í’X³ExpressionStatementÍ3ÍY®CallExpressionÍ3ÍT°MemberExpressionÍ3Í>LªIdentifierÍ3Í9¦layersLªIdentifierÍ:Í>¤pushÂÂ‘P°ObjectExpressionÍ?Íœ•Q¨PropertyÍAÍVÂÂÂLªIdentifierÍAÍC¢idT°MemberExpressionÍEÍVLªIdentifierÍEÍOªPcbLayerIdLªIdentifierÍPÍV¦IN1_CUÂÂ¤initQ¨PropertyÍXÍmÂÂÂLªIdentifierÍXÍ\¤nameR§LiteralÍ^Ím­Inner1 Copper¯'Inner1 Copper'¤initQ¨PropertyÍoÍ|ÂÂÂLªIdentifierÍoÍv§visibleR§LiteralÍxÍ|Ã¤true¤initQ¨PropertyÍ~ÍÂÂÂLªIdentifierÍ~Íƒ¥colorR§LiteralÍ…Í§#34C878©'#34C878'¤initQ¨PropertyÍÍšÂÂÂLªIdentifierÍÍ—§opacityR§LiteralÍ™Íš¡1¤initÂX³ExpressionStatementÍ¨ÍY®CallExpressionÍ¨ÍT°MemberExpressionÍ¨Í³LªIdentifierÍ¨Í®¦layersLªIdentifierÍ¯Í³¤pushÂÂ‘P°ObjectExpressionÍ´Í•Q¨PropertyÍ¶ÍËÂÂÂLªIdentifierÍ¶Í¸¢idT°MemberExpressionÍºÍËLªIdentifierÍºÍÄªPcbLayerIdLªIdentifierÍÅÍË¦IN2_CUÂÂ¤initQ¨PropertyÍÍÍâÂÂÂLªIdentifierÍÍÍÑ¤nameR§LiteralÍÓÍâ­Inner2 Copper¯'Inner2 Copper'¤initQ¨PropertyÍäÍñÂÂÂLªIdentifierÍäÍë§visibleR§LiteralÍíÍñÃ¤true¤initQ¨PropertyÍóÍÂÂÂLªIdentifierÍóÍø¥colorR§LiteralÍúÍ§#C87834©'#C87834'¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ§opacityR§LiteralÍÍ¡1¤initÂÀV«IfStatementÍ Í³W°BinaryExpressionÍ$Í4LªIdentifierÍ$Í/«copperCount¢>=R§LiteralÍ3Í4¡6N®BlockStatementÍ6Í³‘X³ExpressionStatementÍAÍ¬Y®CallExpressionÍAÍ«T°MemberExpressionÍAÍLLªIdentifierÍAÍG¦layersLªIdentifierÍHÍL¤pushÂÂ‘P°ObjectExpressionÍMÍª•Q¨PropertyÍOÍdÂÂÂLªIdentifierÍOÍQ¢idT°MemberExpressionÍSÍdLªIdentifierÍSÍ]ªPcbLayerIdLªIdentifierÍ^Íd¦IN3_CUÂÂ¤initQ¨PropertyÍfÍ{ÂÂÂLªIdentifierÍfÍj¤nameR§LiteralÍlÍ{­Inner3 Copper¯'Inner3 Copper'¤initQ¨PropertyÍ}ÍŠÂÂÂLªIdentifierÍ}Í„§visibleR§LiteralÍ†ÍŠÃ¤true¤initQ¨PropertyÍŒÍœÂÂÂLªIdentifierÍŒÍ‘¥colorR§LiteralÍ“Íœ§#7834C8©'#7834C8'¤initQ¨PropertyÍÍ¨ÂÂÂLªIdentifierÍÍ¥§opacityR§LiteralÍ§Í¨¡1¤initÂÀV«IfStatementÍ¹ÍLW°BinaryExpressionÍ½ÍÍLªIdentifierÍ½ÍÈ«copperCount¢>=R§LiteralÍÌÍÍ¡8N®BlockStatementÍÏÍL‘X³ExpressionStatementÍÚÍEY®CallExpressionÍÚÍDT°MemberExpressionÍÚÍåLªIdentifierÍÚÍà¦layersLªIdentifierÍáÍå¤pushÂÂ‘P°ObjectExpressionÍæÍC•Q¨PropertyÍèÍıÂÂÂLªIdentifierÍèÍê¢idT°MemberExpressionÍìÍıLªIdentifierÍìÍöªPcbLayerIdLªIdentifierÍ÷Íı¦IN4_CUÂÂ¤initQ¨PropertyÍÿÍÂÂÂLªIdentifierÍÿÍ¤nameR§LiteralÍÍ­Inner4 Copper¯'Inner4 Copper'¤initQ¨PropertyÍÍ#ÂÂÂLªIdentifierÍÍ§visibleR§LiteralÍÍ#Ã¤true¤initQ¨PropertyÍ%Í5ÂÂÂLªIdentifierÍ%Í*¥colorR§LiteralÍ,Í5§#34C8C8©'#34C8C8'¤initQ¨PropertyÍ7ÍAÂÂÂLªIdentifierÍ7Í>§opacityR§LiteralÍ@ÍA¡1¤initÂÀX³ExpressionStatementÍRÍ¹Y®CallExpressionÍRÍ¸T°MemberExpressionÍRÍ]LªIdentifierÍRÍX¦layersLªIdentifierÍYÍ]¤pushÂÂ‘P°ObjectExpressionÍ^Í·•Q¨PropertyÍ`ÍsÂÂÂLªIdentifierÍ`Íb¢idT°MemberExpressionÍdÍsLªIdentifierÍdÍnªPcbLayerIdLªIdentifierÍoÍs¤B_CUÂÂ¤initQ¨PropertyÍuÍˆÂÂÂLªIdentifierÍuÍy¤nameR§LiteralÍ{Íˆ«Back Copper­'Back Copper'¤initQ¨PropertyÍŠÍ—ÂÂÂLªIdentifierÍŠÍ‘§visibleR§LiteralÍ“Í—Ã¤true¤initQ¨PropertyÍ™Í©ÂÂÂLªIdentifierÍ™Í¥colorR§LiteralÍ Í©§#3478C8©'#3478C8'¤initQ¨PropertyÍ«ÍµÂÂÂLªIdentifierÍ«Í²§opacityR§LiteralÍ´Íµ¡1¤initÂX³ExpressionStatementÍ¿Í(Y®CallExpressionÍ¿Í'T°MemberExpressionÍ¿ÍÊLªIdentifierÍ¿ÍÅ¦layersLªIdentifierÍÆÍÊ¤pushÂÂ‘P°ObjectExpressionÍËÍ&•Q¨PropertyÍÍÍãÂÂÂLªIdentifierÍÍÍÏ¢idT°MemberExpressionÍÑÍãLªIdentifierÍÑÍÛªPcbLayerIdLªIdentifierÍÜÍã§F_SILKSÂÂ¤initQ¨PropertyÍåÍ÷ÂÂÂLªIdentifierÍåÍé¤nameR§LiteralÍëÍ÷ªFront Silk¬'Front Silk'¤initQ¨PropertyÍùÍÂÂÂLªIdentifierÍùÍ §visibleR§LiteralÍÍÃ¤true¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ¥colorR§LiteralÍÍ§#F0F0F0©'#F0F0F0'¤initQ¨PropertyÍÍ$ÂÂÂLªIdentifierÍÍ!§opacityR§LiteralÍ#Í$¡1¤initÂX³ExpressionStatementÍ.Í—Y®CallExpressionÍ.Í–T°MemberExpressionÍ.Í9LªIdentifierÍ.Í4¦layersLªIdentifierÍ5Í9¤pushÂÂ‘P°ObjectExpressionÍ:Í••Q¨PropertyÍ<ÍRÂÂÂLªIdentifierÍ<Í>¢idT°MemberExpressionÍ@ÍRLªIdentifierÍ@ÍJªPcbLayerIdLªIdentifierÍKÍR§B_SILKSÂÂ¤initQ¨PropertyÍTÍeÂÂÂLªIdentifierÍTÍX¤nameR§LiteralÍZÍe©Back Silk«'Back Silk'¤initQ¨PropertyÍgÍuÂÂÂLªIdentifierÍgÍn§visibleR§LiteralÍpÍuÂ¥false¤initQ¨PropertyÍwÍ‡ÂÂÂLªIdentifierÍwÍ|¥colorR§LiteralÍ~Í‡§#C8C8C8©'#C8C8C8'¤initQ¨PropertyÍ‰Í“ÂÂÂLªIdentifierÍ‰Í§opacityR§LiteralÍ’Í“¡1¤initÂX³ExpressionStatementÍÍ	Y®CallExpressionÍÍT°MemberExpressionÍÍ¨LªIdentifierÍÍ£¦layersLªIdentifierÍ¤Í¨¤pushÂÂ‘P°ObjectExpressionÍ©Í•Q¨PropertyÍ«ÍÀÂÂÂLªIdentifierÍ«Í­¢idT°MemberExpressionÍ¯ÍÀLªIdentifierÍ¯Í¹ªPcbLayerIdLªIdentifierÍºÍÀ¦F_MASKÂÂ¤initQ¨PropertyÍÂÍÔÂÂÂLªIdentifierÍÂÍÆ¤nameR§LiteralÍÈÍÔªFront Mask¬'Front Mask'¤initQ¨PropertyÍÖÍäÂÂÂLªIdentifierÍÖÍİ§visibleR§LiteralÍßÍäÂ¥false¤initQ¨PropertyÍæÍöÂÂÂLªIdentifierÍæÍë¥colorR§LiteralÍíÍö§#2E8B57©'#2E8B57'¤initQ¨PropertyÍøÍÂÂÂLªIdentifierÍøÍÿ§opacityR§LiteralÍÍË?Öffffff¤0.35¤initÂX³ExpressionStatementÍÍzY®CallExpressionÍÍyT°MemberExpressionÍÍLªIdentifierÍÍ¦layersLªIdentifierÍÍ¤pushÂÂ‘P°ObjectExpressionÍÍx•Q¨PropertyÍÍ2ÂÂÂLªIdentifierÍÍ¢idT°MemberExpressionÍ!Í2LªIdentifierÍ!Í+ªPcbLayerIdLªIdentifierÍ,Í2¦B_MASKÂÂ¤initQ¨PropertyÍ4ÍEÂÂÂLªIdentifierÍ4Í8¤nameR§LiteralÍ:ÍE©Back Mask«'Back Mask'¤initQ¨PropertyÍGÍUÂÂÂLªIdentifierÍGÍN§visibleR§LiteralÍPÍUÂ¥false¤initQ¨PropertyÍWÍgÂÂÂLªIdentifierÍWÍ\¥colorR§LiteralÍ^Íg§#2E8B57©'#2E8B57'¤initQ¨PropertyÍiÍvÂÂÂLªIdentifierÍiÍp§opacityR§LiteralÍrÍvË?Öffffff¤0.35¤initÂX³ExpressionStatementÍ€ÍíY®CallExpressionÍ€ÍìT°MemberExpressionÍ€Í‹LªIdentifierÍ€Í†¦layersLªIdentifierÍ‡Í‹¤pushÂÂ‘P°ObjectExpressionÍŒÍë•Q¨PropertyÍÍ¤ÂÂÂLªIdentifierÍÍ¢idT°MemberExpressionÍ’Í¤LªIdentifierÍ’ÍœªPcbLayerIdLªIdentifierÍÍ¤§F_PASTEÂÂ¤initQ¨PropertyÍ¦Í¹ÂÂÂLªIdentifierÍ¦Íª¤nameR§LiteralÍ¬Í¹«Front Paste­'Front Paste'¤initQ¨PropertyÍ»ÍÉÂÂÂLªIdentifierÍ»ÍÂ§visibleR§LiteralÍÄÍÉÂ¥false¤initQ¨PropertyÍËÍÛÂÂÂLªIdentifierÍËÍĞ¥colorR§LiteralÍÒÍÛ§#C0C0C0©'#C0C0C0'¤initQ¨PropertyÍİÍéÂÂÂLªIdentifierÍİÍä§opacityR§LiteralÍæÍéË?à      £0.5¤initÂX³ExpressionStatementÍóÍ_Y®CallExpressionÍóÍ^T°MemberExpressionÍóÍşLªIdentifierÍóÍù¦layersLªIdentifierÍúÍş¤pushÂÂ‘P°ObjectExpressionÍÿÍ]•Q¨PropertyÍÍÂÂÂLªIdentifierÍÍ¢idT°MemberExpressionÍÍLªIdentifierÍÍªPcbLayerIdLªIdentifierÍÍ§B_PASTEÂÂ¤initQ¨PropertyÍÍ+ÂÂÂLªIdentifierÍÍ¤nameR§LiteralÍÍ+ªBack Paste¬'Back Paste'¤initQ¨PropertyÍ-Í;ÂÂÂLªIdentifierÍ-Í4§visibleR§LiteralÍ6Í;Â¥false¤initQ¨PropertyÍ=ÍMÂÂÂLªIdentifierÍ=ÍB¥colorR§LiteralÍDÍM§#A0A0A0©'#A0A0A0'¤initQ¨PropertyÍOÍ[ÂÂÂLªIdentifierÍOÍV§opacityR§LiteralÍXÍ[Ë?à      £0.5¤initÂX³ExpressionStatementÍeÍÏY®CallExpressionÍeÍÎT°MemberExpressionÍeÍpLªIdentifierÍeÍk¦layersLªIdentifierÍlÍp¤pushÂÂ‘P°ObjectExpressionÍqÍÍ•Q¨PropertyÍsÍ‹ÂÂÂLªIdentifierÍsÍu¢idT°MemberExpressionÍwÍ‹LªIdentifierÍwÍªPcbLayerIdLªIdentifierÍ‚Í‹©EDGE_CUTSÂÂ¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ‘¤nameR§LiteralÍ“Í©Edge Cuts«'Edge Cuts'¤initQ¨PropertyÍ Í­ÂÂÂLªIdentifierÍ Í§§visibleR§LiteralÍ©Í­Ã¤true¤initQ¨PropertyÍ¯Í¿ÂÂÂLªIdentifierÍ¯Í´¥colorR§LiteralÍ¶Í¿§#FFD700©'#FFD700'¤initQ¨PropertyÍÁÍËÂÂÂLªIdentifierÍÁÍÈ§opacityR§LiteralÍÊÍË¡1¤initÂX³ExpressionStatementÍÕÍ@Y®CallExpressionÍÕÍ?T°MemberExpressionÍÕÍàLªIdentifierÍÕÍÛ¦layersLªIdentifierÍÜÍà¤pushÂÂ‘P°ObjectExpressionÍáÍ>•Q¨PropertyÍãÍûÂÂÂLªIdentifierÍãÍå¢idT°MemberExpressionÍçÍûLªIdentifierÍçÍñªPcbLayerIdLªIdentifierÍòÍû©COURTYARDÂÂ¤initQ¨PropertyÍıÍÂÂÂLªIdentifierÍıÍ¤nameR§LiteralÍÍ©Courtyard«'Courtyard'¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ§visibleR§LiteralÍÍÂ¥false¤initQ¨PropertyÍ Í0ÂÂÂLªIdentifierÍ Í%¥colorR§LiteralÍ'Í0§#808080©'#808080'¤initQ¨PropertyÍ2Í<ÂÂÂLªIdentifierÍ2Í9§opacityR§LiteralÍ;Í<¡1¤initÂO¯ReturnStatementÍFÍTLªIdentifierÍMÍS¦layersÀI¶ExportNamedDeclarationÍYÍ"ôM³FunctionDeclarationÍ`Í"ôLªIdentifierÍiÍ¶createEmptyPcbDocumentÂÂÂ‘LªIdentifierÍ€Í„¤nameN®BlockStatementÍ†Í"ô”J³VariableDeclarationÍÍ²‘K²VariableDeclaratorÍ“Í±LªIdentifierÍ“Í–£nowY®CallExpressionÍ™Í±T°MemberExpressionÍ™Í¯Ôr[•¤type¥start£end¦callee©arguments­NewExpressionÍ™Í£LªIdentifierÍÍ¡¤DateLªIdentifierÍ¤Í¯«toISOStringÂÂÂ¥constJ³VariableDeclarationÍ¸ÍÇ‘K²VariableDeclaratorÍ¾ÍÆLªIdentifierÍ¾Í¿¡wR§LiteralÍÂÍÆÍ¸¤3000¥constJ³VariableDeclarationÍÍÍÜ‘K²VariableDeclaratorÍÓÍÛLªIdentifierÍÓÍÔ¡hR§LiteralÍ×ÍÛÍĞ¤2000¥constO¯ReturnStatementÍâÍ"ñP°ObjectExpressionÍéÍ"ğQ¨PropertyÍôÍ ÂÂÂLªIdentifierÍôÍö¢idÔr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍøÍ ‘Y®CallExpressionÍÿÍ 	T°MemberExpressionÍÿÍ LªIdentifierÍÿÍ ¤DateLªIdentifierÍ Í £nowÂÂÂ’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍùÍıÔr^’£raw¦cooked¤pcb_¤pcb_Â]¯TemplateElementÍ 
+Í 
+^  Ã¤initZ¨PropertyÍ Í ÂÃÂLªIdentifierÍ Í ¤name¤initLªIdentifierÍ Í ¤nameQ¨PropertyÍ %Í 3ÂÂÂLªIdentifierÍ %Í ,§versionR§LiteralÍ .Í 3£1.1¥'1.1'¤initQ¨PropertyÍ >Í åÂÂÂLªIdentifierÍ >Í J¬boardOutlineP°ObjectExpressionÍ LÍ å’Q¨PropertyÍ [Í ÃÂÂÂLªIdentifierÍ [Í a¦pointsS¯ArrayExpressionÍ cÍ Ã”P°ObjectExpressionÍ vÍ „’Q¨PropertyÍ xÍ |ÂÂÂLªIdentifierÍ xÍ y¡xR§LiteralÍ {Í | ¡0¤initQ¨PropertyÍ ~Í ‚ÂÂÂLªIdentifierÍ ~Í ¡yR§LiteralÍ Í ‚ ¡0¤initP°ObjectExpressionÍ †Í ”’Q¨PropertyÍ ˆÍ ŒÂÂÂLªIdentifierÍ ˆÍ ‰¡xLªIdentifierÍ ‹Í Œ¡w¤initQ¨PropertyÍ Í ’ÂÂÂLªIdentifierÍ Í ¡yR§LiteralÍ ‘Í ’ ¡0¤initP°ObjectExpressionÍ –Í ¤’Q¨PropertyÍ ˜Í œÂÂÂLªIdentifierÍ ˜Í ™¡xLªIdentifierÍ ›Í œ¡w¤initQ¨PropertyÍ Í ¢ÂÂÂLªIdentifierÍ Í Ÿ¡yLªIdentifierÍ ¡Í ¢¡h¤initP°ObjectExpressionÍ ¦Í ´’Q¨PropertyÍ ¨Í ¬ÂÂÂLªIdentifierÍ ¨Í ©¡xR§LiteralÍ «Í ¬ ¡0¤initQ¨PropertyÍ ®Í ²ÂÂÂLªIdentifierÍ ®Í ¯¡yLªIdentifierÍ ±Í ²¡h¤init¤initQ¨PropertyÍ ÒÍ ÚÂÂÂLªIdentifierÍ ÒÍ ×¥widthR§LiteralÍ ÙÍ Ú¡5¤init¤initQ¨PropertyÍ ğÍ şÂÂÂLªIdentifierÍ ğÍ úªfootprintsS¯ArrayExpressionÍ üÍ ş¤initQ¨PropertyÍ!	Í!ÂÂÂLªIdentifierÍ!	Í!¦tracksS¯ArrayExpressionÍ!Í!¤initQ¨PropertyÍ!Í!&ÂÂÂLªIdentifierÍ!Í!"¤viasS¯ArrayExpressionÍ!$Í!&¤initQ¨PropertyÍ!1Í!:ÂÂÂLªIdentifierÍ!1Í!6¥zonesS¯ArrayExpressionÍ!8Í!:¤initQ¨PropertyÍ!EÍ!fÂÂÂLªIdentifierÍ!EÍ!K¦layersY®CallExpressionÍ!MÍ!fLªIdentifierÍ!MÍ!c¶createDefaultPcbLayers‘R§LiteralÍ!dÍ!e¡2Â¤initQ¨PropertyÍ!qÍ!yÂÂÂLªIdentifierÍ!qÍ!u¤netsS¯ArrayExpressionÍ!wÍ!y¤initQ¨PropertyÍ!„Í!¦ÂÂÂLªIdentifierÍ!„Í!ªnetClassesY®CallExpressionÍ!Í!¦LªIdentifierÍ!Í!¤´defaultPcbNetClassesÂ¤initQ¨PropertyÍ!±Í!×ÂÂÂLªIdentifierÍ!±Í!»ªlayerStackY®CallExpressionÍ!½Í!×LªIdentifierÍ!½Í!Ô·createDefaultLayerStack‘R§LiteralÍ!ÕÍ!Ö¡2Â¤initQ¨PropertyÍ!âÍ!ïÂÂÂLªIdentifierÍ!âÍ!ë©diffPairsS¯ArrayExpressionÍ!íÍ!ï¤initQ¨PropertyÍ!úÍ"éÂÂÂLªIdentifierÍ!úÍ"¨metadataP°ObjectExpressionÍ"Í"é—Q¨PropertyÍ"Í"ÂÂÂLªIdentifierÍ"Í"¦authorR§LiteralÍ"Í" ¢''¤initQ¨PropertyÍ",Í":ÂÂÂLªIdentifierÍ",Í"5©createdAtLªIdentifierÍ"7Í":£now¤initQ¨PropertyÍ"IÍ"XÂÂÂLªIdentifierÍ"IÍ"SªmodifiedAtLªIdentifierÍ"UÍ"X£now¤initQ¨PropertyÍ"gÍ"vÂÂÂLªIdentifierÍ"gÍ"r«descriptionR§LiteralÍ"tÍ"v ¢''¤initQ¨PropertyÍ"…Í"ÂÂÂLªIdentifierÍ"…Í"¨gridSizeR§LiteralÍ"Í"¡5¤initQ¨PropertyÍ"ŸÍ"«ÂÂÂLªIdentifierÍ"ŸÍ"¤¥unitsR§LiteralÍ"¦Í"«£mil¥'mil'¤initQ¨PropertyÍ"ºÍ"ŞÂÂÂLªIdentifierÍ"ºÍ"Å«designRulesY®CallExpressionÍ"ÇÍ"ŞLªIdentifierÍ"ÇÍ"ÜµdefaultPcbDesignRulesÂ¤init¤initÀI¶ExportNamedDeclarationÍ"öÍ#ÂM³FunctionDeclarationÍ"ıÍ#ÂLªIdentifierÍ#Í#¸createDefaultPcbViewportÂÂÂN®BlockStatementÍ#!Í#Â‘O¯ReturnStatementÍ#(Í#¿P°ObjectExpressionÍ#/Í#¾•Q¨PropertyÍ#:Í#DÂÂÂLªIdentifierÍ#:Í#>¤zoomR§LiteralÍ#@Í#DË?Ã333333¤0.15¤initQ¨PropertyÍ#OÍ#jÂÂÂLªIdentifierÍ#OÍ#X©panOffsetP°ObjectExpressionÍ#ZÍ#j’Q¨PropertyÍ#\Í#aÂÂÂLªIdentifierÍ#\Í#]¡xR§LiteralÍ#_Í#a(¢40¤initQ¨PropertyÍ#cÍ#hÂÂÂLªIdentifierÍ#cÍ#d¡yR§LiteralÍ#fÍ#h(¢40¤init¤initQ¨PropertyÍ#uÍ#†ÂÂÂLªIdentifierÍ#uÍ#€«gridVisibleR§LiteralÍ#‚Í#†Ã¤true¤initQ¨PropertyÍ#‘Í#œÂÂÂLªIdentifierÍ#‘Í#™¨gridSizeR§LiteralÍ#›Í#œ¡5¤initQ¨PropertyÍ#§Í#·ÂÂÂLªIdentifierÍ#§Í#±ªsnapToGridR§LiteralÍ#³Í#·Ã¤true¤initÀI¶ExportNamedDeclarationÍ#ÖÍ$ÑM³FunctionDeclarationÍ#İÍ$ÑLªIdentifierÍ#æÍ#ó­isCopperLayerÂÂÂ‘LªIdentifierÍ#ôÍ#ù¥layerN®BlockStatementÍ#ûÍ$Ñ‘O¯ReturnStatementÍ$Í$ÎW±LogicalExpressionÍ$	Í$ÍW±LogicalExpressionÍ$	Í$®W±LogicalExpressionÍ$	Í$†W±LogicalExpressionÍ$	Í$gW±LogicalExpressionÍ$	Í$?W°BinaryExpressionÍ$	Í$"LªIdentifierÍ$	Í$¥layer£===T°MemberExpressionÍ$Í$"LªIdentifierÍ$Í$ªPcbLayerIdLªIdentifierÍ$Í$"¤F_CUÂÂ¢||W°BinaryExpressionÍ$&Í$?LªIdentifierÍ$&Í$+¥layer£===T°MemberExpressionÍ$0Í$?LªIdentifierÍ$0Í$:ªPcbLayerIdLªIdentifierÍ$;Í$?¤B_CUÂÂ¢||W°BinaryExpressionÍ$LÍ$gLªIdentifierÍ$LÍ$Q¥layer£===T°MemberExpressionÍ$VÍ$gLªIdentifierÍ$VÍ$`ªPcbLayerIdLªIdentifierÍ$aÍ$g¦IN1_CUÂÂ¢||W°BinaryExpressionÍ$kÍ$†LªIdentifierÍ$kÍ$p¥layer£===T°MemberExpressionÍ$uÍ$†LªIdentifierÍ$uÍ$ªPcbLayerIdLªIdentifierÍ$€Í$†¦IN2_CUÂÂ¢||W°BinaryExpressionÍ$“Í$®LªIdentifierÍ$“Í$˜¥layer£===T°MemberExpressionÍ$Í$®LªIdentifierÍ$Í$§ªPcbLayerIdLªIdentifierÍ$¨Í$®¦IN3_CUÂÂ¢||W°BinaryExpressionÍ$²Í$ÍLªIdentifierÍ$²Í$·¥layer£===T°MemberExpressionÍ$¼Í$ÍLªIdentifierÍ$¼Í$ÆªPcbLayerIdLªIdentifierÍ$ÇÍ$Í¦IN4_CUÂÂÀI¶ExportNamedDeclarationÍ$ÓÍ%ÔM³FunctionDeclarationÍ$ÚÍ%ÔLªIdentifierÍ$ãÍ$øµcopperLayersFromStackÂÂÂ‘LªIdentifierÍ$ùÍ$ş¥stackN®BlockStatementÍ% Í%Ô“J³VariableDeclarationÍ%Í%‘K²VariableDeclaratorÍ%Í%LªIdentifierÍ%Í%£outS¯ArrayExpressionÍ%Í%¥constÔr_—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ%Í%ÀÂJ³VariableDeclarationÍ%!Í%)‘K²VariableDeclaratorÍ%'Í%)LªIdentifierÍ%'Í%)¢slÀ¥constT°MemberExpressionÍ%-Í%9LªIdentifierÍ%-Í%2¥stackLªIdentifierÍ%3Í%9¦layersÂÂN®BlockStatementÍ%;Í%À‘V«IfStatementÍ%FÍ%¹W±LogicalExpressionÍ%JÍ%‚W°BinaryExpressionÍ%JÍ%nT°MemberExpressionÍ%JÍ%QLªIdentifierÍ%JÍ%L¢slLªIdentifierÍ%MÍ%Q¤typeÂÂ£===T°MemberExpressionÍ%VÍ%nLªIdentifierÍ%VÍ%g±PcbStackLayerTypeLªIdentifierÍ%hÍ%n¦COPPERÂÂ¢&&T°MemberExpressionÍ%rÍ%‚LªIdentifierÍ%rÍ%t¢slLªIdentifierÍ%uÍ%‚­copperLayerIdÂÂN®BlockStatementÍ%„Í%¹‘X³ExpressionStatementÍ%“Í%®Y®CallExpressionÍ%“Í%­T°MemberExpressionÍ%“Í%›LªIdentifierÍ%“Í%–£outLªIdentifierÍ%—Í%›¤pushÂÂ‘T°MemberExpressionÍ%œÍ%¬LªIdentifierÍ%œÍ%¢slLªIdentifierÍ%ŸÍ%¬­copperLayerIdÂÂÂÀO¯ReturnStatementÍ%ÆÍ%ÑLªIdentifierÍ%ÍÍ%Ğ£outÀI¶ExportNamedDeclarationÍ%÷Í4”M³FunctionDeclarationÍ%şÍ4”LªIdentifierÍ&Í&´normalizePcbDocumentÂÂÂ‘LªIdentifierÍ&Í&£docN®BlockStatementÍ&!Í4”V«IfStatementÍ&(Í&cÔr`–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ&,Í&;¡!ÃT°MemberExpressionÍ&-Í&;LªIdentifierÍ&-Í&0£docLªIdentifierÍ&1Í&;ªfootprintsÂÂN®BlockStatementÍ&=Í&c‘X³ExpressionStatementÍ&HÍ&\Ôra–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ&HÍ&[¡=T°MemberExpressionÍ&HÍ&VLªIdentifierÍ&HÍ&K£docLªIdentifierÍ&LÍ&VªfootprintsÂÂS¯ArrayExpressionÍ&YÍ&[ÀV«IfStatementÍ&iÍ&œ`¯UnaryExpressionÍ&mÍ&x¡!ÃT°MemberExpressionÍ&nÍ&xLªIdentifierÍ&nÍ&q£docLªIdentifierÍ&rÍ&x¦tracksÂÂN®BlockStatementÍ&zÍ&œ‘X³ExpressionStatementÍ&…Í&•a´AssignmentExpressionÍ&…Í&”¡=T°MemberExpressionÍ&…Í&LªIdentifierÍ&…Í&ˆ£docLªIdentifierÍ&‰Í&¦tracksÂÂS¯ArrayExpressionÍ&’Í&”ÀV«IfStatementÍ&¢Í&Ñ`¯UnaryExpressionÍ&¦Í&¯¡!ÃT°MemberExpressionÍ&§Í&¯LªIdentifierÍ&§Í&ª£docLªIdentifierÍ&«Í&¯¤viasÂÂN®BlockStatementÍ&±Í&Ñ‘X³ExpressionStatementÍ&¼Í&Êa´AssignmentExpressionÍ&¼Í&É¡=T°MemberExpressionÍ&¼Í&ÄLªIdentifierÍ&¼Í&¿£docLªIdentifierÍ&ÀÍ&Ä¤viasÂÂS¯ArrayExpressionÍ&ÇÍ&ÉÀV«IfStatementÍ&×Í'`¯UnaryExpressionÍ&ÛÍ&å¡!ÃT°MemberExpressionÍ&ÜÍ&åLªIdentifierÍ&ÜÍ&ß£docLªIdentifierÍ&àÍ&å¥zonesÂÂN®BlockStatementÍ&çÍ'‘X³ExpressionStatementÍ&òÍ'a´AssignmentExpressionÍ&òÍ' ¡=T°MemberExpressionÍ&òÍ&ûLªIdentifierÍ&òÍ&õ£docLªIdentifierÍ&öÍ&û¥zonesÂÂS¯ArrayExpressionÍ&şÍ' ÀV«IfStatementÍ'Í'=`¯UnaryExpressionÍ'Í'¡!ÃT°MemberExpressionÍ'Í'LªIdentifierÍ'Í'£docLªIdentifierÍ'Í'¤netsÂÂN®BlockStatementÍ'Í'=‘X³ExpressionStatementÍ'(Í'6a´AssignmentExpressionÍ'(Í'5¡=T°MemberExpressionÍ'(Í'0LªIdentifierÍ'(Í'+£docLªIdentifierÍ',Í'0¤netsÂÂS¯ArrayExpressionÍ'3Í'5ÀV«IfStatementÍ'CÍ'±W±LogicalExpressionÍ'GÍ'u`¯UnaryExpressionÍ'GÍ'V¡!ÃT°MemberExpressionÍ'HÍ'VLªIdentifierÍ'HÍ'K£docLªIdentifierÍ'LÍ'VªnetClassesÂÂ¢||W°BinaryExpressionÍ'ZÍ'uT°MemberExpressionÍ'ZÍ'oT°MemberExpressionÍ'ZÍ'hLªIdentifierÍ'ZÍ']£docLªIdentifierÍ'^Í'hªnetClassesÂÂLªIdentifierÍ'iÍ'o¦lengthÂÂ£===R§LiteralÍ'tÍ'u ¡0N®BlockStatementÍ'wÍ'±‘X³ExpressionStatementÍ'‚Í'ªa´AssignmentExpressionÍ'‚Í'©¡=T°MemberExpressionÍ'‚Í'LªIdentifierÍ'‚Í'…£docLªIdentifierÍ'†Í'ªnetClassesÂÂY®CallExpressionÍ'“Í'©LªIdentifierÍ'“Í'§´defaultPcbNetClassesÂÀV«IfStatementÍ'·Í'ğ`¯UnaryExpressionÍ'»Í'É¡!ÃT°MemberExpressionÍ'¼Í'ÉLªIdentifierÍ'¼Í'¿£docLªIdentifierÍ'ÀÍ'É©diffPairsÂÂN®BlockStatementÍ'ËÍ'ğ‘X³ExpressionStatementÍ'ÖÍ'éa´AssignmentExpressionÍ'ÖÍ'è¡=T°MemberExpressionÍ'ÖÍ'ãLªIdentifierÍ'ÖÍ'Ù£docLªIdentifierÍ'ÚÍ'ã©diffPairsÂÂS¯ArrayExpressionÍ'æÍ'èÀV«IfStatementÍ'öÍ(‰W±LogicalExpressionÍ'úÍ(IW±LogicalExpressionÍ'úÍ(#`¯UnaryExpressionÍ'úÍ(	¡!ÃT°MemberExpressionÍ'ûÍ(	LªIdentifierÍ'ûÍ'ş£docLªIdentifierÍ'ÿÍ(	ªlayerStackÂÂ¢||`¯UnaryExpressionÍ(Í(#¡!ÃT°MemberExpressionÍ(Í(#T°MemberExpressionÍ(Í(LªIdentifierÍ(Í(£docLªIdentifierÍ(Í(ªlayerStackÂÂLªIdentifierÍ(Í(#¦layersÂÂ¢||W°BinaryExpressionÍ('Í(IT°MemberExpressionÍ('Í(CT°MemberExpressionÍ('Í(<T°MemberExpressionÍ('Í(5LªIdentifierÍ('Í(*£docLªIdentifierÍ(+Í(5ªlayerStackÂÂLªIdentifierÍ(6Í(<¦layersÂÂLªIdentifierÍ(=Í(C¦lengthÂÂ£===R§LiteralÍ(HÍ(I ¡0N®BlockStatementÍ(KÍ(‰‘X³ExpressionStatementÍ(VÍ(‚a´AssignmentExpressionÍ(VÍ(¡=T°MemberExpressionÍ(VÍ(dLªIdentifierÍ(VÍ(Y£docLªIdentifierÍ(ZÍ(dªlayerStackÂÂY®CallExpressionÍ(gÍ(LªIdentifierÍ(gÍ(~·createDefaultLayerStack‘R§LiteralÍ(Í(€¡2ÂÀ_®ForOfStatementÍ(Í)„ÂJ³VariableDeclarationÍ(”Í(‘K²VariableDeclaratorÍ(šÍ(LªIdentifierÍ(šÍ(£viaÀ¥constT°MemberExpressionÍ(¡Í(©LªIdentifierÍ(¡Í(¤£docLªIdentifierÍ(¥Í(©¤viasÂÂN®BlockStatementÍ(«Í)„’V«IfStatementÍ(¶Í(ı`¯UnaryExpressionÍ(ºÍ(Ã¡!ÃT°MemberExpressionÍ(»Í(ÃLªIdentifierÍ(»Í(¾£viaLªIdentifierÍ(¿Í(Ã¤kindÂÂN®BlockStatementÍ(ÅÍ(ı‘X³ExpressionStatementÍ(ÔÍ(òa´AssignmentExpressionÍ(ÔÍ(ñ¡=T°MemberExpressionÍ(ÔÍ(ÜLªIdentifierÍ(ÔÍ(×£viaLªIdentifierÍ(ØÍ(Ü¤kindÂÂT°MemberExpressionÍ(ßÍ(ñLªIdentifierÍ(ßÍ(éªPcbViaKindLªIdentifierÍ(êÍ(ñ§THROUGHÂÂÀV«IfStatementÍ)Í)}W±LogicalExpressionÍ)Í)1`¯UnaryExpressionÍ)Í)¡!ÃT°MemberExpressionÍ)Í)LªIdentifierÍ)Í)£viaLªIdentifierÍ)Í)¦layersÂÂ¢||W°BinaryExpressionÍ)Í)1T°MemberExpressionÍ)Í)+T°MemberExpressionÍ)Í)$LªIdentifierÍ)Í)£viaLªIdentifierÍ)Í)$¦layersÂÂLªIdentifierÍ)%Í)+¦lengthÂÂ£===R§LiteralÍ)0Í)1 ¡0N®BlockStatementÍ)3Í)}‘X³ExpressionStatementÍ)BÍ)ra´AssignmentExpressionÍ)BÍ)q¡=T°MemberExpressionÍ)BÍ)LLªIdentifierÍ)BÍ)E£viaLªIdentifierÍ)FÍ)L¦layersÂÂS¯ArrayExpressionÍ)OÍ)q’T°MemberExpressionÍ)PÍ)_LªIdentifierÍ)PÍ)ZªPcbLayerIdLªIdentifierÍ)[Í)_¤F_CUÂÂT°MemberExpressionÍ)aÍ)pLªIdentifierÍ)aÍ)kªPcbLayerIdLªIdentifierÍ)lÍ)p¤B_CUÂÂÀ_®ForOfStatementÍ)ŠÍ,ÂJ³VariableDeclarationÍ)Í)–‘K²VariableDeclaratorÍ)•Í)–LªIdentifierÍ)•Í)–¡zÀ¥constT°MemberExpressionÍ)šÍ)£LªIdentifierÍ)šÍ)£docLªIdentifierÍ)Í)£¥zonesÂÂN®BlockStatementÍ)¥Í,—V«IfStatementÍ)°Í)Ü`¯UnaryExpressionÍ)´Í)¾¡!ÃT°MemberExpressionÍ)µÍ)¾LªIdentifierÍ)µÍ)¶¡zLªIdentifierÍ)·Í)¾§cutoutsÂÂX³ExpressionStatementÍ)ÍÍ)Üa´AssignmentExpressionÍ)ÍÍ)Û¡=T°MemberExpressionÍ)ÍÍ)ÖLªIdentifierÍ)ÍÍ)Î¡zLªIdentifierÍ)ÏÍ)Ö§cutoutsÂÂS¯ArrayExpressionÍ)ÙÍ)ÛÀV«IfStatementÍ)æÍ*`¯UnaryExpressionÍ)êÍ)ú¡!ÃT°MemberExpressionÍ)ëÍ)úLªIdentifierÍ)ëÍ)ì¡zLªIdentifierÍ)íÍ)ú­manualCutoutsÂÂX³ExpressionStatementÍ*	Í*a´AssignmentExpressionÍ*	Í*¡=T°MemberExpressionÍ*	Í*LªIdentifierÍ*	Í*
+¡zLªIdentifierÍ*Í*­manualCutoutsÂÂS¯ArrayExpressionÍ*Í*ÀV«IfStatementÍ*(Í*°W±LogicalExpressionÍ*,Í*YW°BinaryExpressionÍ*,Í*ET°MemberExpressionÍ*,Í*7LªIdentifierÍ*,Í*-¡zLªIdentifierÍ*.Í*7©clearanceÂÂ£===LªIdentifierÍ*<Í*E©undefined¢||W°BinaryExpressionÍ*IÍ*YT°MemberExpressionÍ*IÍ*TLªIdentifierÍ*IÍ*J¡zLªIdentifierÍ*KÍ*T©clearanceÂÂ¢<=R§LiteralÍ*XÍ*Y ¡0N®BlockStatementÍ*[Í*°‘X³ExpressionStatementÍ*jÍ*¥a´AssignmentExpressionÍ*jÍ*¤¡=T°MemberExpressionÍ*jÍ*uLªIdentifierÍ*jÍ*k¡zLªIdentifierÍ*lÍ*u©clearanceÂÂW±LogicalExpressionÍ*xÍ*¤X¯ChainExpressionÍ*xÍ*ŸT°MemberExpressionÍ*xÍ*ŸT°MemberExpressionÍ*xÍ*‘T°MemberExpressionÍ*xÍ*„LªIdentifierÍ*xÍ*{£docLªIdentifierÍ*|Í*„¨metadataÂÂLªIdentifierÍ*†Í*‘«designRulesÂÃLªIdentifierÍ*“Í*Ÿ¬minClearanceÂÃ¢??R§LiteralÍ*£Í*¤¡6ÀV«IfStatementÍ*ºÍ+W°BinaryExpressionÍ*¾Í*ÛT°MemberExpressionÍ*¾Í*ÍLªIdentifierÍ*¾Í*¿¡zLªIdentifierÍ*ÀÍ*Í­thermalReliefÂÂ£===LªIdentifierÍ*ÒÍ*Û©undefinedX³ExpressionStatementÍ*êÍ+a´AssignmentExpressionÍ*êÍ+ ¡=T°MemberExpressionÍ*êÍ*ùLªIdentifierÍ*êÍ*ë¡zLªIdentifierÍ*ìÍ*ù­thermalReliefÂÂR§LiteralÍ*üÍ+ Ã¤trueÀV«IfStatementÍ+Í+_W±LogicalExpressionÍ+Í+>W°BinaryExpressionÍ+Í+)T°MemberExpressionÍ+Í+LªIdentifierÍ+Í+¡zLªIdentifierÍ+Í+ªthermalGapÂÂ£===LªIdentifierÍ+ Í+)©undefined¢||W°BinaryExpressionÍ+-Í+>T°MemberExpressionÍ+-Í+9LªIdentifierÍ+-Í+.¡zLªIdentifierÍ+/Í+9ªthermalGapÂÂ¢<=R§LiteralÍ+=Í+> ¡0X³ExpressionStatementÍ+MÍ+_a´AssignmentExpressionÍ+MÍ+^¡=T°MemberExpressionÍ+MÍ+YLªIdentifierÍ+MÍ+N¡zLªIdentifierÍ+OÍ+YªthermalGapÂÂR§LiteralÍ+\Í+^¢12ÀV«IfStatementÍ+iÍ+ÃW±LogicalExpressionÍ+mÍ+ W°BinaryExpressionÍ+mÍ+‰T°MemberExpressionÍ+mÍ+{LªIdentifierÍ+mÍ+n¡zLªIdentifierÍ+oÍ+{¬thermalWidthÂÂ£===LªIdentifierÍ+€Í+‰©undefined¢||W°BinaryExpressionÍ+Í+ T°MemberExpressionÍ+Í+›LªIdentifierÍ+Í+¡zLªIdentifierÍ+Í+›¬thermalWidthÂÂ¢<=R§LiteralÍ+ŸÍ+  ¡0X³ExpressionStatementÍ+¯Í+Ãa´AssignmentExpressionÍ+¯Í+Â¡=T°MemberExpressionÍ+¯Í+½LªIdentifierÍ+¯Í+°¡zLªIdentifierÍ+±Í+½¬thermalWidthÂÂR§LiteralÍ+ÀÍ+Â
+¢10ÀV«IfStatementÍ+ÍÍ,W°BinaryExpressionÍ+ÑÍ+éT°MemberExpressionÍ+ÑÍ+ÛLªIdentifierÍ+ÑÍ+Ò¡zLªIdentifierÍ+ÓÍ+Û¨priorityÂÂ£===LªIdentifierÍ+àÍ+é©undefinedX³ExpressionStatementÍ+øÍ,a´AssignmentExpressionÍ+øÍ,¡=T°MemberExpressionÍ+øÍ,LªIdentifierÍ+øÍ+ù¡zLªIdentifierÍ+úÍ,¨priorityÂÂR§LiteralÍ,Í, ¡0ÀV«IfStatementÍ,Í0W±LogicalExpressionÍ,Í,>`¯UnaryExpressionÍ,Í,#¡!ÃT°MemberExpressionÍ,Í,#LªIdentifierÍ,Í,£docLªIdentifierÍ,Í,#¦layersÂÂ¢||W°BinaryExpressionÍ,'Í,>T°MemberExpressionÍ,'Í,8T°MemberExpressionÍ,'Í,1LªIdentifierÍ,'Í,*£docLªIdentifierÍ,+Í,1¦layersÂÂLªIdentifierÍ,2Í,8¦lengthÂÂ£===R§LiteralÍ,=Í,> ¡0N®BlockStatementÍ,@Í,’‘X³ExpressionStatementÍ,KÍ,‹a´AssignmentExpressionÍ,KÍ,Š¡=T°MemberExpressionÍ,KÍ,ULªIdentifierÍ,KÍ,N£docLªIdentifierÍ,OÍ,U¦layersÂÂY®CallExpressionÍ,XÍ,ŠLªIdentifierÍ,XÍ,n¶createDefaultPcbLayers‘T°MemberExpressionÍ,oÍ,‰T°MemberExpressionÍ,oÍ,}LªIdentifierÍ,oÍ,r£docLªIdentifierÍ,sÍ,}ªlayerStackÂÂLªIdentifierÍ,~Í,‰«copperCountÂÂÂN®BlockStatementÍ,Í0—X³ExpressionStatementÍ,¨Í,óY®CallExpressionÍ,¨Í,òLªIdentifierÍ,¨Í,º²ensureLayerPresent•LªIdentifierÍ,»Í,¾£docT°MemberExpressionÍ,ÀÍ,ÑLªIdentifierÍ,ÀÍ,ÊªPcbLayerIdLªIdentifierÍ,ËÍ,Ñ¦F_MASKÂÂR§LiteralÍ,ÓÍ,ßªFront Mask¬'Front Mask'R§LiteralÍ,áÍ,ê§#2E8B57©'#2E8B57'R§LiteralÍ,ìÍ,ñÂ¥falseÂX³ExpressionStatementÍ,ıÍ-GY®CallExpressionÍ,ıÍ-FLªIdentifierÍ,ıÍ-²ensureLayerPresent•LªIdentifierÍ-Í-£docT°MemberExpressionÍ-Í-&LªIdentifierÍ-Í-ªPcbLayerIdLªIdentifierÍ- Í-&¦B_MASKÂÂR§LiteralÍ-(Í-3©Back Mask«'Back Mask'R§LiteralÍ-5Í->§#2E8B57©'#2E8B57'R§LiteralÍ-@Í-EÂ¥falseÂX³ExpressionStatementÍ-QÍ-Y®CallExpressionÍ-QÍ-LªIdentifierÍ-QÍ-c²ensureLayerPresent•LªIdentifierÍ-dÍ-g£docT°MemberExpressionÍ-iÍ-{LªIdentifierÍ-iÍ-sªPcbLayerIdLªIdentifierÍ-tÍ-{§F_PASTEÂÂR§LiteralÍ-}Í-Š«Front Paste­'Front Paste'R§LiteralÍ-ŒÍ-•§#C0C0C0©'#C0C0C0'R§LiteralÍ-—Í-œÂ¥falseÂX³ExpressionStatementÍ-¨Í-ôY®CallExpressionÍ-¨Í-óLªIdentifierÍ-¨Í-º²ensureLayerPresent•LªIdentifierÍ-»Í-¾£docT°MemberExpressionÍ-ÀÍ-ÒLªIdentifierÍ-ÀÍ-ÊªPcbLayerIdLªIdentifierÍ-ËÍ-Ò§B_PASTEÂÂR§LiteralÍ-ÔÍ-àªBack Paste¬'Back Paste'R§LiteralÍ-âÍ-ë§#A0A0A0©'#A0A0A0'R§LiteralÍ-íÍ-òÂ¥falseÂV«IfStatementÍ-şÍ.åW°BinaryExpressionÍ.Í.!T°MemberExpressionÍ.Í.T°MemberExpressionÍ.Í.LªIdentifierÍ.Í.£docLªIdentifierÍ.Í.ªlayerStackÂÂLªIdentifierÍ.Í.«copperCountÂÂ¢>=R§LiteralÍ. Í.!¡4N®BlockStatementÍ.#Í.å’X³ExpressionStatementÍ.2Í.Y®CallExpressionÍ.2Í.~LªIdentifierÍ.2Í.D²ensureLayerPresent•LªIdentifierÍ.EÍ.H£docT°MemberExpressionÍ.JÍ.[LªIdentifierÍ.JÍ.TªPcbLayerIdLªIdentifierÍ.UÍ.[¦IN1_CUÂÂR§LiteralÍ.]Í.l­Inner1 Copper¯'Inner1 Copper'R§LiteralÍ.nÍ.w§#34C878©'#34C878'R§LiteralÍ.yÍ.}Ã¤trueÂX³ExpressionStatementÍ.Í.ÚY®CallExpressionÍ.Í.ÙLªIdentifierÍ.Í.Ÿ²ensureLayerPresent•LªIdentifierÍ. Í.££docT°MemberExpressionÍ.¥Í.¶LªIdentifierÍ.¥Í.¯ªPcbLayerIdLªIdentifierÍ.°Í.¶¦IN2_CUÂÂR§LiteralÍ.¸Í.Ç­Inner2 Copper¯'Inner2 Copper'R§LiteralÍ.ÉÍ.Ò§#C87834©'#C87834'R§LiteralÍ.ÔÍ.ØÃ¤trueÂÀV«IfStatementÍ.ïÍ/{W°BinaryExpressionÍ.óÍ/T°MemberExpressionÍ.óÍ/T°MemberExpressionÍ.óÍ/LªIdentifierÍ.óÍ.ö£docLªIdentifierÍ.÷Í/ªlayerStackÂÂLªIdentifierÍ/Í/«copperCountÂÂ¢>=R§LiteralÍ/Í/¡6N®BlockStatementÍ/Í/{‘X³ExpressionStatementÍ/#Í/pY®CallExpressionÍ/#Í/oLªIdentifierÍ/#Í/5²ensureLayerPresent•LªIdentifierÍ/6Í/9£docT°MemberExpressionÍ/;Í/LLªIdentifierÍ/;Í/EªPcbLayerIdLªIdentifierÍ/FÍ/L¦IN3_CUÂÂR§LiteralÍ/NÍ/]­Inner3 Copper¯'Inner3 Copper'R§LiteralÍ/_Í/h§#7834C8©'#7834C8'R§LiteralÍ/jÍ/nÃ¤trueÂÀV«IfStatementÍ/…Í0W°BinaryExpressionÍ/‰Í/¨T°MemberExpressionÍ/‰Í/£T°MemberExpressionÍ/‰Í/—LªIdentifierÍ/‰Í/Œ£docLªIdentifierÍ/Í/—ªlayerStackÂÂLªIdentifierÍ/˜Í/£«copperCountÂÂ¢>=R§LiteralÍ/§Í/¨¡8N®BlockStatementÍ/ªÍ0‘X³ExpressionStatementÍ/¹Í0Y®CallExpressionÍ/¹Í0LªIdentifierÍ/¹Í/Ë²ensureLayerPresent•LªIdentifierÍ/ÌÍ/Ï£docT°MemberExpressionÍ/ÑÍ/âLªIdentifierÍ/ÑÍ/ÛªPcbLayerIdLªIdentifierÍ/ÜÍ/â¦IN4_CUÂÂR§LiteralÍ/äÍ/ó­Inner4 Copper¯'Inner4 Copper'R§LiteralÍ/õÍ/ş§#34C8C8©'#34C8C8'R§LiteralÍ0 Í0Ã¤trueÂÀV«IfStatementÍ0Í1BW±LogicalExpressionÍ0"Í0uW±LogicalExpressionÍ0"Í0O`¯UnaryExpressionÍ0"Í03¡!ÃT°MemberExpressionÍ0#Í03LªIdentifierÍ0#Í0&£docLªIdentifierÍ0'Í03¬boardOutlineÂÂ¢||`¯UnaryExpressionÍ07Í0O¡!ÃT°MemberExpressionÍ08Í0OT°MemberExpressionÍ08Í0HLªIdentifierÍ08Í0;£docLªIdentifierÍ0<Í0H¬boardOutlineÂÂLªIdentifierÍ0IÍ0O¦pointsÂÂ¢||W°BinaryExpressionÍ0SÍ0uT°MemberExpressionÍ0SÍ0qT°MemberExpressionÍ0SÍ0jT°MemberExpressionÍ0SÍ0cLªIdentifierÍ0SÍ0V£docLªIdentifierÍ0WÍ0c¬boardOutlineÂÂLªIdentifierÍ0dÍ0j¦pointsÂÂLªIdentifierÍ0kÍ0q¦lengthÂÂ¡<R§LiteralÍ0tÍ0u¡3N®BlockStatementÍ0wÍ1B‘X³ExpressionStatementÍ0‚Í1;a´AssignmentExpressionÍ0‚Í1:¡=T°MemberExpressionÍ0‚Í0’LªIdentifierÍ0‚Í0…£docLªIdentifierÍ0†Í0’¬boardOutlineÂÂP°ObjectExpressionÍ0•Í1:’Q¨PropertyÍ0¤Í1ÂÂÂLªIdentifierÍ0¤Í0ª¦pointsS¯ArrayExpressionÍ0¬Í1”P°ObjectExpressionÍ0¿Í0Í’Q¨PropertyÍ0ÁÍ0ÅÂÂÂLªIdentifierÍ0ÁÍ0Â¡xR§LiteralÍ0ÄÍ0Å ¡0¤initQ¨PropertyÍ0ÇÍ0ËÂÂÂLªIdentifierÍ0ÇÍ0È¡yR§LiteralÍ0ÊÍ0Ë ¡0¤initP°ObjectExpressionÍ0ÏÍ0à’Q¨PropertyÍ0ÑÍ0ØÂÂÂLªIdentifierÍ0ÑÍ0Ò¡xR§LiteralÍ0ÔÍ0ØÍ¸¤3000¤initQ¨PropertyÍ0ÚÍ0ŞÂÂÂLªIdentifierÍ0ÚÍ0Û¡yR§LiteralÍ0İÍ0Ş ¡0¤initP°ObjectExpressionÍ0âÍ0ö’Q¨PropertyÍ0äÍ0ëÂÂÂLªIdentifierÍ0äÍ0å¡xR§LiteralÍ0çÍ0ëÍ¸¤3000¤initQ¨PropertyÍ0íÍ0ôÂÂÂLªIdentifierÍ0íÍ0î¡yR§LiteralÍ0ğÍ0ôÍĞ¤2000¤initP°ObjectExpressionÍ0øÍ1	’Q¨PropertyÍ0úÍ0şÂÂÂLªIdentifierÍ0úÍ0û¡xR§LiteralÍ0ıÍ0ş ¡0¤initQ¨PropertyÍ1 Í1ÂÂÂLªIdentifierÍ1 Í1¡yR§LiteralÍ1Í1ÍĞ¤2000¤init¤initQ¨PropertyÍ1'Í1/ÂÂÂLªIdentifierÍ1'Í1,¥widthR§LiteralÍ1.Í1/¡5¤initÀV«IfStatementÍ1HÍ4‘`¯UnaryExpressionÍ1LÍ1Y¡!ÃT°MemberExpressionÍ1MÍ1YLªIdentifierÍ1MÍ1P£docLªIdentifierÍ1QÍ1Y¨metadataÂÂN®BlockStatementÍ1[Í2]’J³VariableDeclarationÍ1fÍ1‹‘K²VariableDeclaratorÍ1lÍ1ŠLªIdentifierÍ1lÍ1o£nowY®CallExpressionÍ1rÍ1ŠT°MemberExpressionÍ1rÍ1ˆ[­NewExpressionÍ1rÍ1|LªIdentifierÍ1vÍ1z¤DateLªIdentifierÍ1}Í1ˆ«toISOStringÂÂÂ¥constX³ExpressionStatementÍ1•Í2Va´AssignmentExpressionÍ1•Í2U¡=T°MemberExpressionÍ1•Í1¡LªIdentifierÍ1•Í1˜£docLªIdentifierÍ1™Í1¡¨metadataÂÂP°ObjectExpressionÍ1¤Í2U—Q¨PropertyÍ1³Í1½ÂÂÂLªIdentifierÍ1³Í1¹¦authorR§LiteralÍ1»Í1½ ¢''¤initQ¨PropertyÍ1¿Í1ÍÂÂÂLªIdentifierÍ1¿Í1È©createdAtLªIdentifierÍ1ÊÍ1Í£now¤initQ¨PropertyÍ1ÏÍ1ŞÂÂÂLªIdentifierÍ1ÏÍ1ÙªmodifiedAtLªIdentifierÍ1ÛÍ1Ş£now¤initQ¨PropertyÍ1íÍ1üÂÂÂLªIdentifierÍ1íÍ1ø«descriptionR§LiteralÍ1úÍ1ü ¢''¤initQ¨PropertyÍ1şÍ2	ÂÂÂLªIdentifierÍ1şÍ2¨gridSizeR§LiteralÍ2Í2	¡5¤initQ¨PropertyÍ2Í2ÂÂÂLªIdentifierÍ2Í2¥unitsR§LiteralÍ2Í2£mil¥'mil'¤initQ¨PropertyÍ2&Í2JÂÂÂLªIdentifierÍ2&Í21«designRulesY®CallExpressionÍ23Í2JLªIdentifierÍ23Í2HµdefaultPcbDesignRulesÂ¤initN®BlockStatementÍ2hÍ4‘’V«IfStatementÍ2sÍ4`¯UnaryExpressionÍ2wÍ2¡!ÃT°MemberExpressionÍ2xÍ2T°MemberExpressionÍ2xÍ2„LªIdentifierÍ2xÍ2{£docLªIdentifierÍ2|Í2„¨metadataÂÂLªIdentifierÍ2…Í2«designRulesÂÂN®BlockStatementÍ2’Í2ß‘X³ExpressionStatementÍ2¡Í2Ôa´AssignmentExpressionÍ2¡Í2Ó¡=T°MemberExpressionÍ2¡Í2¹T°MemberExpressionÍ2¡Í2­LªIdentifierÍ2¡Í2¤£docLªIdentifierÍ2¥Í2­¨metadataÂÂLªIdentifierÍ2®Í2¹«designRulesÂÂY®CallExpressionÍ2¼Í2ÓLªIdentifierÍ2¼Í2ÑµdefaultPcbDesignRulesÂN®BlockStatementÍ2îÍ4“J³VariableDeclarationÍ2ıÍ3!‘K²VariableDeclaratorÍ3Í3 LªIdentifierÍ3Í3¢drT°MemberExpressionÍ3Í3 T°MemberExpressionÍ3Í3LªIdentifierÍ3Í3£docLªIdentifierÍ3Í3¨metadataÂÂLªIdentifierÍ3Í3 «designRulesÂÂ¥constV«IfStatementÍ3/Í3•W±LogicalExpressionÍ33Í3lW°BinaryExpressionÍ33Í3RT°MemberExpressionÍ33Í3DLªIdentifierÍ33Í35¢drLªIdentifierÍ36Í3D®minAnnularRingÂÂ£===LªIdentifierÍ3IÍ3R©undefined¢||W°BinaryExpressionÍ3VÍ3lT°MemberExpressionÍ3VÍ3gLªIdentifierÍ3VÍ3X¢drLªIdentifierÍ3YÍ3g®minAnnularRingÂÂ¢<=R§LiteralÍ3kÍ3l ¡0X³ExpressionStatementÍ3Í3•a´AssignmentExpressionÍ3Í3”¡=T°MemberExpressionÍ3Í3LªIdentifierÍ3Í3¢drLªIdentifierÍ3‚Í3®minAnnularRingÂÂR§LiteralÍ3“Í3”¡4ÀV«IfStatementÍ3£Í4W±LogicalExpressionÍ3§Í3ŞW°BinaryExpressionÍ3§Í3ÅT°MemberExpressionÍ3§Í3·LªIdentifierÍ3§Í3©¢drLªIdentifierÍ3ªÍ3·­minHoleToHoleÂÂ£===LªIdentifierÍ3¼Í3Å©undefined¢||W°BinaryExpressionÍ3ÉÍ3ŞT°MemberExpressionÍ3ÉÍ3ÙLªIdentifierÍ3ÉÍ3Ë¢drLªIdentifierÍ3ÌÍ3Ù­minHoleToHoleÂÂ¢<=R§LiteralÍ3İÍ3Ş ¡0X³ExpressionStatementÍ3ñÍ4a´AssignmentExpressionÍ3ñÍ4¡=T°MemberExpressionÍ3ñÍ4LªIdentifierÍ3ñÍ3ó¢drLªIdentifierÍ3ôÍ4­minHoleToHoleÂÂR§LiteralÍ4Í4
+¢10ÀV«IfStatementÍ4Í4ŠW±LogicalExpressionÍ4 Í4T`¯UnaryExpressionÍ4 Í46¡!ÃT°MemberExpressionÍ4!Í46T°MemberExpressionÍ4!Í4-LªIdentifierÍ4!Í4$£docLªIdentifierÍ4%Í4-¨metadataÂÂLªIdentifierÍ4.Í46¨gridSizeÂÂ¢||W°BinaryExpressionÍ4:Í4TT°MemberExpressionÍ4:Í4OT°MemberExpressionÍ4:Í4FLªIdentifierÍ4:Í4=£docLªIdentifierÍ4>Í4F¨metadataÂÂLªIdentifierÍ4GÍ4O¨gridSizeÂÂ¢<=R§LiteralÍ4SÍ4T ¡0N®BlockStatementÍ4VÍ4Š‘X³ExpressionStatementÍ4eÍ4a´AssignmentExpressionÍ4eÍ4~¡=T°MemberExpressionÍ4eÍ4zT°MemberExpressionÍ4eÍ4qLªIdentifierÍ4eÍ4h£docLªIdentifierÍ4iÍ4q¨metadataÂÂLªIdentifierÍ4rÍ4z¨gridSizeÂÂR§LiteralÍ4}Í4~¡5ÀÀI¶ExportNamedDeclarationÍ5ŸÍ7²M³FunctionDeclarationÍ5¦Í7²LªIdentifierÍ5¯Í5ÄµapplyCopperLayerCountÂÂÂ’LªIdentifierÍ5ÅÍ5È£docLªIdentifierÍ5ÊÍ5Õ«copperCountN®BlockStatementÍ5×Í7²–J³VariableDeclarationÍ5ŞÍ66‘K²VariableDeclaratorÍ5äÍ65LªIdentifierÍ5äÍ5å¡nVµConditionalExpressionÍ5èÍ65W±LogicalExpressionÍ5èÍ6#W±LogicalExpressionÍ5èÍ6W°BinaryExpressionÍ5èÍ5ùLªIdentifierÍ5èÍ5ó«copperCount£===R§LiteralÍ5øÍ5ù¡4¢||W°BinaryExpressionÍ5ıÍ6LªIdentifierÍ5ıÍ6«copperCount£===R§LiteralÍ6Í6¡6¢||W°BinaryExpressionÍ6Í6#LªIdentifierÍ6Í6«copperCount£===R§LiteralÍ6"Í6#¡8LªIdentifierÍ6&Í61«copperCountR§LiteralÍ64Í65¡2¥constX³ExpressionStatementÍ6<Í6ha´AssignmentExpressionÍ6<Í6g¡=T°MemberExpressionÍ6<Í6JLªIdentifierÍ6<Í6?£docLªIdentifierÍ6@Í6JªlayerStackÂÂY®CallExpressionÍ6MÍ6gLªIdentifierÍ6MÍ6d·createDefaultLayerStack‘LªIdentifierÍ6eÍ6f¡nÂJ³VariableDeclarationÍ6nÍ6‹‘K²VariableDeclaratorÍ6tÍ6ŠLªIdentifierÍ6tÍ6~ªvisibility[­NewExpressionÍ6Í6ŠLªIdentifierÍ6…Í6ˆ£Map¥const_®ForOfStatementÍ6‘Í6ßÂJ³VariableDeclarationÍ6–Í6‘K²VariableDeclaratorÍ6œÍ6LªIdentifierÍ6œÍ6¡lÀ¥constT°MemberExpressionÍ6¡Í6«LªIdentifierÍ6¡Í6¤£docLªIdentifierÍ6¥Í6«¦layersÂÂN®BlockStatementÍ6­Í6ß‘X³ExpressionStatementÍ6¸Í6ØY®CallExpressionÍ6¸Í6×T°MemberExpressionÍ6¸Í6ÆLªIdentifierÍ6¸Í6ÂªvisibilityLªIdentifierÍ6ÃÍ6Æ£setÂÂ’T°MemberExpressionÍ6ÇÍ6ËLªIdentifierÍ6ÇÍ6È¡lLªIdentifierÍ6ÉÍ6Ë¢idÂÂT°MemberExpressionÍ6ÍÍ6ÖLªIdentifierÍ6ÍÍ6Î¡lLªIdentifierÍ6ÏÍ6Ö§visibleÂÂÂX³ExpressionStatementÍ6åÍ7a´AssignmentExpressionÍ6åÍ7¡=T°MemberExpressionÍ6åÍ6ïLªIdentifierÍ6åÍ6è£docLªIdentifierÍ6éÍ6ï¦layersÂÂY®CallExpressionÍ6òÍ7LªIdentifierÍ6òÍ7¶createDefaultPcbLayers‘LªIdentifierÍ7	Í7
+¡nÂ_®ForOfStatementÍ7Í7¯ÂJ³VariableDeclarationÍ7Í7‘K²VariableDeclaratorÍ7Í7LªIdentifierÍ7Í7¡lÀ¥constT°MemberExpressionÍ7"Í7,LªIdentifierÍ7"Í7%£docLªIdentifierÍ7&Í7,¦layersÂÂN®BlockStatementÍ7.Í7¯’J³VariableDeclarationÍ79Í7[‘K²VariableDeclaratorÍ7?Í7ZLªIdentifierÍ7?Í7C¤prevY®CallExpressionÍ7FÍ7ZT°MemberExpressionÍ7FÍ7TLªIdentifierÍ7FÍ7PªvisibilityLªIdentifierÍ7QÍ7T£getÂÂ‘T°MemberExpressionÍ7UÍ7YLªIdentifierÍ7UÍ7V¡lLªIdentifierÍ7WÍ7Y¢idÂÂÂ¥constV«IfStatementÍ7eÍ7¨W°BinaryExpressionÍ7iÍ7{LªIdentifierÍ7iÍ7m¤prev£!==LªIdentifierÍ7rÍ7{©undefinedN®BlockStatementÍ7}Í7¨‘X³ExpressionStatementÍ7ŒÍ7a´AssignmentExpressionÍ7ŒÍ7œ¡=T°MemberExpressionÍ7ŒÍ7•LªIdentifierÍ7ŒÍ7¡lLªIdentifierÍ7Í7•§visibleÂÂLªIdentifierÍ7˜Í7œ¤prevÀÀI¶ExportNamedDeclarationÍ7ÊÍ8ƒÔrb–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ7ÑÍ8ƒLªIdentifierÍ7×Í7í¶PcbEditorSelectionDataÀN©ClassBodyÍ7îÍ8ƒ‘Ôrc˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ7õÍ8€ÂÂLªIdentifierÍ7õÍ8 «constructor«constructorM²FunctionExpressionÍ8 Í8€ÀÂÂÂN®BlockStatementÍ8Í8€”X³ExpressionStatementÍ8Í8%a´AssignmentExpressionÍ8Í8$¡=T°MemberExpressionÍ8Í8Ôrd“¤type¥start£end®ThisExpressionÍ8Í8LªIdentifierÍ8Í8¬footprintIdsÂÂS¯ArrayExpressionÍ8"Í8$X³ExpressionStatementÍ8/Í8Ba´AssignmentExpressionÍ8/Í8A¡=T°MemberExpressionÍ8/Í8<d®ThisExpressionÍ8/Í83LªIdentifierÍ84Í8<¨trackIdsÂÂS¯ArrayExpressionÍ8?Í8AX³ExpressionStatementÍ8LÍ8]a´AssignmentExpressionÍ8LÍ8\¡=T°MemberExpressionÍ8LÍ8Wd®ThisExpressionÍ8LÍ8PLªIdentifierÍ8QÍ8W¦viaIdsÂÂS¯ArrayExpressionÍ8ZÍ8\X³ExpressionStatementÍ8gÍ8ya´AssignmentExpressionÍ8gÍ8x¡=T°MemberExpressionÍ8gÍ8sd®ThisExpressionÍ8gÍ8kLªIdentifierÍ8lÍ8s§zoneIdsÂÂS¯ArrayExpressionÍ8vÍ8xÀI¶ExportNamedDeclarationÍ8”Í8°J³VariableDeclarationÍ8›Í8°‘K²VariableDeclaratorÍ8ŸÍ8¯LªIdentifierÍ8ŸÍ8¯°PcbSelectionKindÀ£varÀI¶ExportNamedDeclarationÍ: Í:M³FunctionDeclarationÍ:Í:LªIdentifierÍ:Í:!±pcbSelectionEmptyÂÂÂN®BlockStatementÍ:$Í:‘O¯ReturnStatementÍ:+Í:‹P°ObjectExpressionÍ:2Í:Š•Q¨PropertyÍ:4Í:OÂÂÂLªIdentifierÍ:4Í:8¤kindT°MemberExpressionÍ::Í:OLªIdentifierÍ::Í:J°PcbSelectionKindLªIdentifierÍ:KÍ:O¤NONEÂÂ¤initQ¨PropertyÍ:QÍ:aÂÂÂLªIdentifierÍ:QÍ:]¬footprintIdsS¯ArrayExpressionÍ:_Í:a¤initQ¨PropertyÍ:cÍ:oÂÂÂLªIdentifierÍ:cÍ:k¨trackIdsS¯ArrayExpressionÍ:mÍ:o¤initQ¨PropertyÍ:qÍ:{ÂÂÂLªIdentifierÍ:qÍ:w¦viaIdsS¯ArrayExpressionÍ:yÍ:{¤initQ¨PropertyÍ:}Í:ˆÂÂÂLªIdentifierÍ:}Í:„§zoneIdsS¯ArrayExpressionÍ:†Í:ˆ¤initÀI¶ExportNamedDeclarationÍ:Í=iM³FunctionDeclarationÍ:—Í=iLªIdentifierÍ: Í:´´pcbSelectionFromDataÂÂÂ‘LªIdentifierÍ:µÍ:¶¡dN®BlockStatementÍ:¸Í=i•J³VariableDeclarationÍ:¿Í:à‘K²VariableDeclaratorÍ:ÃÍ:ßLªIdentifierÍ:ÃÍ:Ç¤kindT°MemberExpressionÍ:ÊÍ:ßLªIdentifierÍ:ÊÍ:Ú°PcbSelectionKindLªIdentifierÍ:ÛÍ:ß¤NONEÂÂ£letV«IfStatementÍ:æÍ<W°BinaryExpressionÍ:êÍ;T°MemberExpressionÍ:êÍ:ÿT°MemberExpressionÍ:êÍ:øLªIdentifierÍ:êÍ:ë¡dLªIdentifierÍ:ìÍ:ø¬footprintIdsÂÂLªIdentifierÍ:ùÍ:ÿ¦lengthÂÂ¡>R§LiteralÍ;Í; ¡0X³ExpressionStatementÍ;Í;0a´AssignmentExpressionÍ;Í;/¡=LªIdentifierÍ;Í;¤kindT°MemberExpressionÍ;Í;/LªIdentifierÍ;Í;%°PcbSelectionKindLªIdentifierÍ;&Í;/©FOOTPRINTÂÂV«IfStatementÍ;;Í<W°BinaryExpressionÍ;?Í;TT°MemberExpressionÍ;?Í;PT°MemberExpressionÍ;?Í;ILªIdentifierÍ;?Í;@¡dLªIdentifierÍ;AÍ;I¨trackIdsÂÂLªIdentifierÍ;JÍ;P¦lengthÂÂ¡>R§LiteralÍ;SÍ;T ¡0X³ExpressionStatementÍ;_Í;}a´AssignmentExpressionÍ;_Í;|¡=LªIdentifierÍ;_Í;c¤kindT°MemberExpressionÍ;fÍ;|LªIdentifierÍ;fÍ;v°PcbSelectionKindLªIdentifierÍ;wÍ;|¥TRACKÂÂV«IfStatementÍ;ˆÍ<W°BinaryExpressionÍ;ŒÍ;ŸT°MemberExpressionÍ;ŒÍ;›T°MemberExpressionÍ;ŒÍ;”LªIdentifierÍ;ŒÍ;¡dLªIdentifierÍ;Í;”¦viaIdsÂÂLªIdentifierÍ;•Í;›¦lengthÂÂ¡>R§LiteralÍ;Í;Ÿ ¡0X³ExpressionStatementÍ;ªÍ;Æa´AssignmentExpressionÍ;ªÍ;Å¡=LªIdentifierÍ;ªÍ;®¤kindT°MemberExpressionÍ;±Í;ÅLªIdentifierÍ;±Í;Á°PcbSelectionKindLªIdentifierÍ;ÂÍ;Å£VIAÂÂV«IfStatementÍ;ÑÍ<W°BinaryExpressionÍ;ÕÍ;éT°MemberExpressionÍ;ÕÍ;åT°MemberExpressionÍ;ÕÍ;ŞLªIdentifierÍ;ÕÍ;Ö¡dLªIdentifierÍ;×Í;Ş§zoneIdsÂÂLªIdentifierÍ;ßÍ;å¦lengthÂÂ¡>R§LiteralÍ;èÍ;é ¡0X³ExpressionStatementÍ;ôÍ<a´AssignmentExpressionÍ;ôÍ<¡=LªIdentifierÍ;ôÍ;ø¤kindT°MemberExpressionÍ;ûÍ<LªIdentifierÍ;ûÍ<°PcbSelectionKindLªIdentifierÍ<Í<¤ZONEÂÂÀJ³VariableDeclarationÍ<Í<t‘K²VariableDeclaratorÍ<Í<sLªIdentifierÍ<Í<"¥totalW°BinaryExpressionÍ<%Í<sW°BinaryExpressionÍ<%Í<`W°BinaryExpressionÍ<%Í<NT°MemberExpressionÍ<%Í<:T°MemberExpressionÍ<%Í<3LªIdentifierÍ<%Í<&¡dLªIdentifierÍ<'Í<3¬footprintIdsÂÂLªIdentifierÍ<4Í<:¦lengthÂÂ¡+T°MemberExpressionÍ<=Í<NT°MemberExpressionÍ<=Í<GLªIdentifierÍ<=Í<>¡dLªIdentifierÍ<?Í<G¨trackIdsÂÂLªIdentifierÍ<HÍ<N¦lengthÂÂ¡+T°MemberExpressionÍ<QÍ<`T°MemberExpressionÍ<QÍ<YLªIdentifierÍ<QÍ<R¡dLªIdentifierÍ<SÍ<Y¦viaIdsÂÂLªIdentifierÍ<ZÍ<`¦lengthÂÂ¡+T°MemberExpressionÍ<cÍ<sT°MemberExpressionÍ<cÍ<lLªIdentifierÍ<cÍ<d¡dLªIdentifierÍ<eÍ<l§zoneIdsÂÂLªIdentifierÍ<mÍ<s¦lengthÂÂ¥constV«IfStatementÍ<zÍ<°W°BinaryExpressionÍ<~Í<‡LªIdentifierÍ<~Í<ƒ¥total¡>R§LiteralÍ<†Í<‡¡1X³ExpressionStatementÍ<’Í<°a´AssignmentExpressionÍ<’Í<¯¡=LªIdentifierÍ<’Í<–¤kindT°MemberExpressionÍ<™Í<¯LªIdentifierÍ<™Í<©°PcbSelectionKindLªIdentifierÍ<ªÍ<¯¥MULTIÂÂÀO¯ReturnStatementÍ<¶Í=fP°ObjectExpressionÍ<½Í=e•Z¨PropertyÍ<ÈÍ<ÌÂÃÂLªIdentifierÍ<ÈÍ<Ì¤kind¤initLªIdentifierÍ<ÈÍ<Ì¤kindQ¨PropertyÍ<×Í<øÂÂÂLªIdentifierÍ<×Í<ã¬footprintIdsS¯ArrayExpressionÍ<åÍ<ø‘O­SpreadElementÍ<æÍ<÷T°MemberExpressionÍ<éÍ<÷LªIdentifierÍ<éÍ<ê¡dLªIdentifierÍ<ëÍ<÷¬footprintIdsÂÂ¤initQ¨PropertyÍ=Í=ÂÂÂLªIdentifierÍ=Í=¨trackIdsS¯ArrayExpressionÍ=Í=‘O­SpreadElementÍ=Í=T°MemberExpressionÍ=Í=LªIdentifierÍ=Í=¡dLªIdentifierÍ=Í=¨trackIdsÂÂ¤initQ¨PropertyÍ='Í=<ÂÂÂLªIdentifierÍ='Í=-¦viaIdsS¯ArrayExpressionÍ=/Í=<‘O­SpreadElementÍ=0Í=;T°MemberExpressionÍ=3Í=;LªIdentifierÍ=3Í=4¡dLªIdentifierÍ=5Í=;¦viaIdsÂÂ¤initQ¨PropertyÍ=GÍ=^ÂÂÂLªIdentifierÍ=GÍ=N§zoneIdsS¯ArrayExpressionÍ=PÍ=^‘O­SpreadElementÍ=QÍ=]T°MemberExpressionÍ=TÍ=]LªIdentifierÍ=TÍ=U¡dLªIdentifierÍ=VÍ=]§zoneIdsÂÂ¤initÀ

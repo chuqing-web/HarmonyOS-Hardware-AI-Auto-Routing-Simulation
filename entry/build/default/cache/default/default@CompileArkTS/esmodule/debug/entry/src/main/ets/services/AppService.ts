@@ -18,6 +18,8 @@ import { VirtualInstrumentsImpl } from "@bundle:com.elecdraw.aischsim/entry@inst
 import type { IVirtualInstruments, ComponentInstrumentBinding } from "@bundle:com.elecdraw.aischsim/entry@instruments/Index";
 import { PluginManagerImpl } from "@bundle:com.elecdraw.aischsim/entry@plugin_system/Index";
 import type { IPluginManager } from "@bundle:com.elecdraw.aischsim/entry@plugin_system/Index";
+import { PcbEditorImpl } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/Index";
+import type { IPcbEditor } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/Index";
 import type common from "@ohos:app.ability.common";
 import fs from "@ohos:file.fs";
 import { DeviceLibraryBootstrap } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/DeviceLibraryBootstrap";
@@ -29,7 +31,7 @@ import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/Them
 import { ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PlatformPrefsStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/PlatformPrefsStore";
 import { AiApiVaultStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiApiVaultStore";
-import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, ErrCode, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, MainThreadYield, MultimeterMode } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, ErrCode, LicenseManager, FeatureGate, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, MainThreadYield, MultimeterMode, createEmptyPcbDocument, normalizePcbDocument } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance, ClarificationQuestion, ClarificationAnswer } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
 import type { CollabPresence } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -97,6 +99,7 @@ export class AppService {
     readonly filePersistence: IFilePersistence;
     readonly instruments: IVirtualInstruments;
     readonly pluginManager: IPluginManager;
+    readonly pcbEditor: IPcbEditor;
     readonly teachingService: TeachingService;
     readonly mcuBehavior: McuBehaviorSimulator;
     readonly crashGuard: CrashGuard;
@@ -173,6 +176,8 @@ export class AppService {
         this.filePersistence = new FilePersistenceImpl();
         this.instruments = new VirtualInstrumentsImpl();
         this.pluginManager = new PluginManagerImpl();
+        this.pcbEditor = new PcbEditorImpl();
+        (this.pcbEditor as PcbEditorImpl).setSchematicProvider(() => this.schematicEditor.getDocument());
         this.teachingService = (this.aiEngine as AiEngineImpl).teachingService;
         this.mcuBehavior = new McuBehaviorSimulator();
         this.crashGuard = new CrashGuard();
@@ -302,6 +307,11 @@ export class AppService {
         this.resetInstrumentUiForProjectSwitch();
         this.currentProject = this.filePersistence.createNewProject(name);
         this.currentProjectPath = '';
+        if (!this.currentProject.pcb) {
+            this.currentProject.pcb = createEmptyPcbDocument(name);
+        }
+        normalizePcbDocument(this.currentProject.pcb);
+        this.pcbEditor.loadDocument(this.currentProject.pcb);
         // API 存在全局加密金库，新建工程不再清空已加载的 API
         this.currentProject.aiConfigs = [];
         Logger.info(INSTR_TRACE_TAG, '[AI_API] newProject keep vault APIs (not cleared)');
@@ -1563,6 +1573,13 @@ export class AppService {
         }
         this.currentProject = result.data;
         this.currentProjectPath = path;
+        if (!this.currentProject.pcb) {
+            this.currentProject.pcb = createEmptyPcbDocument(this.currentProject.name);
+        }
+        else {
+            normalizePcbDocument(this.currentProject.pcb);
+        }
+        this.pcbEditor.loadDocument(this.currentProject.pcb);
         const editor = this.schematicEditor as SchematicEditorImpl;
         editor.loadDocument(this.currentProject.schematic);
         editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
@@ -1677,6 +1694,10 @@ export class AppService {
         if (!this.currentProject)
             return;
         this.currentProject.schematic = this.schematicEditor.getDocument();
+        const pcbDoc = this.pcbEditor.getDocument();
+        if (pcbDoc) {
+            this.currentProject.pcb = pcbDoc;
+        }
         this.currentProject.simulationConfig = this.simulationKernel.getConfig();
         this.currentProject.modifiedAt = new Date().toISOString();
         const editor = this.schematicEditor as SchematicEditorImpl;
@@ -1781,9 +1802,16 @@ export class AppService {
         }
         return this.getWorkingAutoSavePath();
     }
+    /** 是否已绑定磁盘路径（正式工程或 autosave 副本） */
+    private hasDiskBackedProject(): boolean {
+        if (this.currentProjectPath.length > 0) {
+            return true;
+        }
+        return this.getWorkingAutoSavePath().length > 0;
+    }
     /** 编辑后防抖写入 autosave 工作副本 */
     async persistWorkingCopy(): Promise<boolean> {
-        if (this.currentProject === null) {
+        if (this.currentProject === null || !this.hasDiskBackedProject()) {
             return false;
         }
         this.syncProjectFromModules();
@@ -1794,7 +1822,7 @@ export class AppService {
      * closedCleanly=true 表示正常退出；false 表示异常/编辑中，下次启动走恢复。
      */
     async flushProjectProtection(closedCleanly: boolean): Promise<void> {
-        if (this.currentProject === null) {
+        if (this.currentProject === null || !this.hasDiskBackedProject()) {
             return;
         }
         await this.persistWorkingCopy();
@@ -1834,8 +1862,9 @@ export class AppService {
         return (this.filePersistence as FilePersistenceImpl).checkRecoveryFiles();
     }
     async saveRecoveryCache(): Promise<void> {
-        if (this.currentProject === null)
+        if (this.currentProject === null || !this.hasDiskBackedProject()) {
             return;
+        }
         this.syncProjectFromModules();
         await (this.filePersistence as FilePersistenceImpl)
             .saveRecoveryCacheWithPath(this.currentProjectPath, this.currentProject);
@@ -3106,6 +3135,10 @@ export class AppService {
             return;
         }
         await TemplateProjectBootstrap.whenReady();
+    }
+    /** 列出沙箱 Test_Template 目录下示例工程（完整路径） */
+    listTemplateProjectFiles(): string[] {
+        return TemplateProjectBootstrap.listTemplateSchsimFiles(this.appBaseDir);
     }
     listAvailableLabTemplates(category: string = 'all'): LabTemplate[] {
         const all = category === 'all'

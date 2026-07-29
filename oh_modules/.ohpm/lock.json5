@@ -69,6 +69,10 @@
         "plugin_system": {
           "specifier": "file:features/plugin_system",
           "version": "file:features/plugin_system"
+        },
+        "pcb_editor": {
+          "specifier": "file:features/pcb_editor",
+          "version": "file:features/pcb_editor"
         }
       },
       "devDependencies": {},
@@ -145,6 +149,18 @@
     },
     "features/instruments": {
       "name": "instruments",
+      "dependencies": {
+        "common": {
+          "specifier": "file:common",
+          "version": "file:common"
+        }
+      },
+      "devDependencies": {},
+      "dynamicDependencies": {},
+      "maskedByOverrideDependencyMap": false
+    },
+    "features/pcb_editor": {
+      "name": "pcb_editor",
       "dependencies": {
         "common": {
           "specifier": "file:common",
@@ -240,26 +256,6 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "file_persistence@file:features/file_persistence": {
-      "storePath": "features/file_persistence",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "ai_api_manager@file:features/ai_api_manager": {
-      "storePath": "features/ai_api_manager",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
     "instruments@file:features/instruments": {
       "storePath": "features/instruments",
       "dependencies": {
@@ -280,8 +276,38 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
+    "file_persistence@file:features/file_persistence": {
+      "storePath": "features/file_persistence",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
     "plugin_system@file:features/plugin_system": {
       "storePath": "features/plugin_system",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "pcb_editor@file:features/pcb_editor": {
+      "storePath": "features/pcb_editor",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "ai_api_manager@file:features/ai_api_manager": {
+      "storePath": "features/ai_api_manager",
       "dependencies": {
         "common": "common"
       },

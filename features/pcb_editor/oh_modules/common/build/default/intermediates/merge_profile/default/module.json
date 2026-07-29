@@ -1,0 +1,30 @@
+{
+	"app": {
+		"bundleName": "com.elecdraw.aischsim",
+		"debug": true,
+		"versionCode": 1001000,
+		"versionName": "1.1.0",
+		"minAPIVersion": 50000012,
+		"targetAPIVersion": 50000012,
+		"apiReleaseType": "Release",
+		"targetMinorAPIVersion": 0,
+		"targetPatchAPIVersion": 0,
+		"compileSdkVersion": "6.1.1.125",
+		"compileSdkType": "HarmonyOS",
+		"appEnvironments": [],
+		"bundleType": "app",
+		"buildMode": "debug"
+	},
+	"module": {
+		"name": "common",
+		"type": "har",
+		"description": "AI-SCH仿真器公共类型与工具库",
+		"deviceTypes": [
+			"default",
+			"tablet",
+			"2in1"
+		],
+		"packageName": "common",
+		"installationFree": false
+	}
+}

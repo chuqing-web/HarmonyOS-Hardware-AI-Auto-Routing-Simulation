@@ -381,6 +381,7 @@ export struct ProteusMenuItem {
       .backgroundColor(this.pressed ? ProteusColors.BTN_PRESSED :
         (this.hovered ? '#E8E8E8' : ProteusColors.MENU_BG))
       .scale(this.pressed ? { x: 0.98, y: 0.92 } : { x: 1, y: 1 })
+      .animation({ duration: 90, curve: Curve.EaseOut })
       .stateEffect(false)
       .onClick(() => this.onAction())
       .onHover((isHover: boolean) => { this.hovered = isHover; })
@@ -756,8 +757,18 @@ export struct ProteusMenuTrigger {
   @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop label: ResourceStr = '';
   entries: ProteusMenuEntry[] = [];
-  @State open: boolean = false;
   @State private pressed: boolean = false;
+  @State private hovered: boolean = false;
+
+  private bg(): string {
+    if (this.pressed) {
+      return ProteusColors.BTN_PRESSED;
+    }
+    if (this.hovered) {
+      return ProteusColors.MENU_HOVER;
+    }
+    return ProteusColors.MENU_BG;
+  }
 
   build() {
     Button({ type: ButtonType.Normal }) {
@@ -772,11 +783,12 @@ export struct ProteusMenuTrigger {
     .height(ProteusDimens.MENU_HEIGHT)
     .padding({ left: 6, right: 4 })
     .borderRadius(0)
-    .backgroundColor(this.pressed || this.open ? ProteusColors.BTN_PRESSED : ProteusColors.MENU_BG)
-    .border(proteusBtnBorder(this.pressed || this.open))
+    .backgroundColor(this.bg())
+    .border(proteusBtnBorder(this.pressed))
     .scale(this.pressed ? { x: 0.98, y: 0.92 } : { x: 1, y: 1 })
+    .animation({ duration: 90, curve: Curve.EaseOut })
     .stateEffect(false)
-    .onClick(() => { this.open = true; })
+    .onHover((isHover: boolean) => { this.hovered = isHover; })
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
         this.pressed = true;
@@ -784,7 +796,11 @@ export struct ProteusMenuTrigger {
         this.pressed = false;
       }
     })
-    .bindMenu(this.buildMenu)
+    .bindMenu(this.buildMenu, {
+      onDisappear: () => {
+        this.pressed = false;
+      }
+    })
   }
 
   @Builder
@@ -799,7 +815,6 @@ export struct ProteusMenuTrigger {
             shortcut: e.shortcut ?? '',
             disabled: e.disabled === true,
             onAction: () => {
-              this.open = false;
               e.action();
             }
           })

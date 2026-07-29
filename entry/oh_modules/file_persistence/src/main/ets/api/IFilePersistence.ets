@@ -6,7 +6,7 @@ import {
   SchTopology, SimConfig, WaveData, AiApiConfig,
   ProgressCallback, ApiResult, CollaborationData,
   SnapshotMeta, VersionCompareReport, CollabChangeLogEntry,
-  ProjectLockInfo, ProjectAccessMode, SchematicAnnotation
+  ProjectLockInfo, ProjectAccessMode, SchematicAnnotation, PcbDocument
 } from 'common';
 
 export interface ProjectData {
@@ -16,6 +16,7 @@ export interface ProjectData {
   topology: SchTopology;
   simConfig: SimConfig;
   aiConfigs: AiApiConfig[];
+  pcb?: PcbDocument;
   createdAt: string;
   modifiedAt: string;
   integrityHash?: string;
