@@ -339,13 +339,13 @@ export {
 } from './src/main/ets/types/CommonTypes';
 
 export {
-  PcbLayerId, PcbPadShape, PcbPadType, PcbViaKind, PcbAppearanceMode, PcbStackLayerType,
+  PcbLayerId, PcbPadShape, PcbPadType, PcbViaKind, PcbAppearanceMode, Pcb3dDisplayMode, PcbRouteCornerMode, PcbStackLayerType,
   PcbPad, PcbFootprintDef, PcbFootprintInst,
   PcbTrack, PcbVia, PcbZone, PcbBoardOutline, PcbLayerConfig, PcbMetadata,
   PcbDesignRules, PcbDocument, PcbDrcSeverity, PcbDrcRuleType, PcbDrcViolation,
   PcbNet, PcbNetClass, PcbDiffPair, PcbStackLayer, PcbLayerStack, PcbAppearance,
   PcbRatsnestEdge,
-  defaultPcbDesignRules, defaultPcbNetClasses, defaultPcbAppearance,
+  defaultPcbDesignRules, defaultPcbNetClasses, defaultPcbAppearance, normalizePcbAppearance,
   createDefaultPcbLayers, createDefaultLayerStack, createEmptyPcbDocument, createDefaultPcbViewport,
   normalizePcbDocument, applyCopperLayerCount, isCopperLayer, copperLayersFromStack,
   PcbNetRef, PcbPadNetPreserved, PcbPadHit,
@@ -370,26 +370,42 @@ export {
 } from './src/main/ets/utils/PcbPinBindUtil';
 
 export {
-  tracePcb, tracePcbWarn, tracePcbForwardResult, tracePcbAutoRoute,
+  tracePcb, tracePcbWarn, tracePcbUi, tracePcbOp, tracePcb3d,
+  tracePcbForwardResult, tracePcbAutoRoute,
   tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded,
-  tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult
+  tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult,
+  tracePcbFullState, tracePcbPinConnectivity, tracePcbCanvasRealtime, PcbCanvasTraceSnapshot,
+  tracePcbLayoutCrowd, tracePcbView2dAudit, tracePcbView3dAudit, tracePcbDisplayDump,
+  PcbView2dTraceParams, PcbView3dTraceParams
 } from './src/main/ets/utils/PcbTraceLog';
 
 export {
   collectFootprintPadPositions, updateTracksForFootprintTransform,
   updateTracksForFootprintTransformDetailed, syncMovedTrackJunctions,
-  collectNetIdsForFootprints, snapTrackEndpointsToPads,
+  collectNetIdsForFootprints, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints,
   orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
   pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
 } from './src/main/ets/utils/PcbTrackBindUtil';
 
 export {
   padWorldPosition, rebuildZoneCutouts, pointInPolygon, makeRectCutout,
-  normalizeZoneFields, defaultZoneFields
+  thermalSpokeRects, ThermalSpokeRect, normalizeZoneFields, defaultZoneFields
 } from './src/main/ets/utils/PcbZoneUtil';
 
 export {
-  rebuildPcbNets, buildRatsnest, routeLPoints, routeOrtho45Points,
+  rebuildPcbNets, buildRatsnest, routeLPoints, routeOrtho45Points, routeArcPoints, routeByCornerMode,
   findNetClass, guessNetClassId, sumTrackLengthForNet
 } from './src/main/ets/utils/PcbNetUtil';
+
+export {
+  buildTrackPolylines, polylineJointPoints, PcbTrackPolyline
+} from './src/main/ets/utils/PcbTrackChainUtil';
+
+export {
+  PcbSpatialIndex, PcbSpatialItem, PcbSpatialKind, PcbSpatialRect
+} from './src/main/ets/utils/PcbSpatialIndex';
+
+export {
+  polylineLength, addSerpentineMeander, matchDiffPairLengths
+} from './src/main/ets/utils/PcbSerpentineUtil';
 

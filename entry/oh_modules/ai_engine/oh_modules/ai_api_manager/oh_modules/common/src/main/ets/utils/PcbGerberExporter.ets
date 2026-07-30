@@ -153,7 +153,7 @@ function exportCopperLayer(doc: PcbDocument, layer: PcbLayerId, fileName: string
     body += p.flash;
   }
 
-  // Zone 覆铜多边形填充 (G36/G37 region)
+  // Zone 覆铜多边形填充 (G36/G37 region) + 挖空 cutouts（LPC 负极性）
   for (const z of doc.zones) {
     if (z.layer !== layer) continue;
     if (z.outline.length < 3) continue;
@@ -166,6 +166,20 @@ function exportCopperLayer(doc: PcbDocument, layer: PcbLayerId, fileName: string
     }
     body += `${fmtCoord(z0.x)}${fmtCoordY(z0.y)}D01*\n`;
     body += 'G37*\n';
+    if (z.cutouts && z.cutouts.length > 0) {
+      body += '%LPC*%\n';
+      for (const cut of z.cutouts) {
+        if (cut.length < 3) continue;
+        body += 'G36*\n';
+        body += `${fmtCoord(cut[0].x)}${fmtCoordY(cut[0].y)}D02*\n`;
+        for (let i = 1; i < cut.length; i++) {
+          body += `${fmtCoord(cut[i].x)}${fmtCoordY(cut[i].y)}D01*\n`;
+        }
+        body += `${fmtCoord(cut[0].x)}${fmtCoordY(cut[0].y)}D01*\n`;
+        body += 'G37*\n';
+      }
+      body += '%LPD*%\n';
+    }
   }
 
   body += 'M02*\n';

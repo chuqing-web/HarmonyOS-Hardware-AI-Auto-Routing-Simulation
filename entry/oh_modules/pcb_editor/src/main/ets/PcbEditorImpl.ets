@@ -8,20 +8,21 @@ import {
   PcbEditorSelectionData, Point2D, ViewportState, EventBus, ModuleEvent, IdUtil,
   createDefaultPcbViewport, createEmptyPcbDocument,
   forwardAnnotatePcb, reverseAnnotatePcb, getGlobalPcbFootprintLibrary,
-  autoRoutePcb, AutoRouteResult, rerouteNets,
+  autoRoutePcb, AutoRouteResult,
   rebuildZoneCutouts, pointInPolygon, makeRectCutout, normalizeZoneFields, defaultZoneFields,
   SchematicDocument, ApiResult, ResultHelper, ErrCode,
   normalizePcbDocument, isCopperLayer, applyCopperLayerCount, copperLayersFromStack,
   PcbSelectionState, PcbSelectionKind, PcbHistorySnapshot,
   pcbSelectionEmpty, PcbSelectionRect, padWorldPosition,
   collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance,
-  snapTrackEndpointsToPads, syncMovedTrackJunctions, TrackEndpointSnapshot,
-  collectNetIdsForFootprints,
+  snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions, TrackEndpointSnapshot,
   tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject,
   tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary,
-  PcbAppearance, PcbAppearanceMode, defaultPcbAppearance, PcbRatsnestEdge,
-  PcbViaKind, rebuildPcbNets, buildRatsnest, routeOrtho45Points, findNetClass,
-  sumTrackLengthForNet
+  tracePcbUi, tracePcbOp, tracePcb3d,
+  PcbAppearance, PcbAppearanceMode, defaultPcbAppearance, normalizePcbAppearance, PcbRatsnestEdge,
+  PcbViaKind, PcbRouteCornerMode, rebuildPcbNets, buildRatsnest, routeByCornerMode, findNetClass,
+  sumTrackLengthForNet, PcbSpatialIndex, PcbSpatialItem, PcbSpatialKind, PcbSpatialRect,
+  matchDiffPairLengths, Pcb3dDisplayMode
 } from 'common';
 
 export { PcbToolMode } from './api/IPcbEditor';
@@ -42,8 +43,13 @@ export class PcbEditorImpl implements IPcbEditor {
   private canvasViewW: number = 800;
   private canvasViewH: number = 600;
   private appearance: PcbAppearance = defaultPcbAppearance();
+  private lastDrcViolations: PcbDrcViolation[] = [];
   private ratsnestCache: PcbRatsnestEdge[] = [];
   private hoverWorld: Point2D | null = null;
+  private spatialIndex: PcbSpatialIndex = new PcbSpatialIndex();
+  private spatialDirty: boolean = true;
+  /** 进入 3D 前保存的 2D 平移，退出时恢复 */
+  private savedPan2d: Point2D | null = null;
 
   // ── Undo/Redo ──
   private history: HistoryEntry[] = [];
@@ -54,6 +60,7 @@ export class PcbEditorImpl implements IPcbEditor {
   private routeStartPoint: Point2D | null = null;
   private routePreviewPoint: Point2D | null = null;
   private routeViolationCount: number = 0;
+  private routeCornerMode: PcbRouteCornerMode = PcbRouteCornerMode.ORTHO45;
 
   // ── Diff-pair route state ──
   private diffRouteActive: boolean = false;
@@ -69,6 +76,14 @@ export class PcbEditorImpl implements IPcbEditor {
 
   // ── Clipboard ──
   private clipboard: PcbFootprintInst[] = [];
+
+  // ── Via placement preferences ──
+  private viaKind: PcbViaKind = PcbViaKind.THROUGH;
+  private viaFromLayer: PcbLayerId = PcbLayerId.F_CU;
+  private viaToLayer: PcbLayerId = PcbLayerId.B_CU;
+
+  // ── Move tracking for local snap ──
+  private lastMovedFootprintIds: Set<string> = new Set();
 
   // ═══════════════════════════════════════════════════
   //  Document / Viewport
@@ -87,8 +102,10 @@ export class PcbEditorImpl implements IPcbEditor {
     normalizePcbDocument(doc);
     rebuildPcbNets(doc);
     this.document = doc;
+    this.appearance = normalizePcbAppearance(this.appearance);
     this.selection = pcbSelectionEmpty();
     this.ratsnestCache = buildRatsnest(doc);
+    this.spatialDirty = true;
     this.clearHistory();
     this.saveSnapshot();
     this.publishChanged();
@@ -162,7 +179,11 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   setActiveLayer(layer: PcbLayerId): void {
+    const prev = this.activeLayer;
     this.activeLayer = layer;
+    if (prev !== layer) {
+      tracePcbUi('ACTIVE_LAYER', `${prev} → ${layer}`);
+    }
   }
 
   setLayerVisible(layer: PcbLayerId, visible: boolean): void {
@@ -170,6 +191,38 @@ export class PcbEditorImpl implements IPcbEditor {
     for (const l of this.document.layers) {
       if (l.id === layer) { l.visible = visible; break; }
     }
+    tracePcbUi('LAYER_VISIBLE', `${layer}=${visible}`);
+    this.publishChanged();
+  }
+
+  setLayerOpacity(layer: PcbLayerId, opacity: number): void {
+    if (!this.document) return;
+    const o = Math.max(0.05, Math.min(1, opacity));
+    for (const l of this.document.layers) {
+      if (l.id === layer) { l.opacity = o; break; }
+    }
+    tracePcbUi('LAYER_OPACITY', `${layer}=${o.toFixed(2)}`);
+    this.publishChanged();
+  }
+
+  /** 单层预览：仅激活铜层可见，其余铜层隐藏 */
+  setSoloCopperLayer(solo: boolean): void {
+    if (!this.document) return;
+    const active = this.activeLayer;
+    for (const l of this.document.layers) {
+      if (!isCopperLayer(l.id)) continue;
+      if (solo) {
+        l.visible = l.id === active;
+      } else {
+        l.visible = true;
+      }
+    }
+    if (solo) {
+      this.appearance.mode = PcbAppearanceMode.ACTIVE_ONLY;
+    } else {
+      this.appearance.mode = PcbAppearanceMode.OVERLAY;
+    }
+    tracePcbUi('SOLO_COPPER', `${solo} active=${active}`);
     this.publishChanged();
   }
 
@@ -179,32 +232,215 @@ export class PcbEditorImpl implements IPcbEditor {
 
   setAppearanceMode(mode: PcbAppearanceMode): void {
     this.appearance.mode = mode;
+    tracePcbUi('APPEARANCE_MODE', `${mode}`);
     this.publishChanged();
   }
 
   setHighlightNet(netId: string): void {
     this.appearance.highlightNetId = netId ?? '';
+    tracePcbUi('HIGHLIGHT_NET', this.appearance.highlightNetId.length > 0
+      ? this.appearance.highlightNetId : '(cleared)');
     this.publishChanged();
   }
 
   clearHighlightNet(): void {
     this.appearance.highlightNetId = '';
+    tracePcbUi('HIGHLIGHT_NET', '(cleared)');
     this.publishChanged();
   }
 
   setHideZones(hide: boolean): void {
     this.appearance.hideZones = hide;
+    tracePcbUi('HIDE_ZONES', `${hide}`);
     this.publishChanged();
   }
 
   setShowRatsnest(show: boolean): void {
     this.appearance.showRatsnest = show;
+    tracePcbUi('RATSNEST', `${show}`);
     this.publishChanged();
   }
 
   setShow3d(show: boolean): void {
+    if (show && !this.appearance.show3d) {
+      this.savedPan2d = { x: this.viewport.panOffset.x, y: this.viewport.panOffset.y };
+      this.appearance = normalizePcbAppearance(this.appearance);
+      this.normalizeView3dAngles();
+      this.viewport.panOffset = { x: 0, y: 0 };
+      this.setViewport(this.viewport);
+    } else if (!show && this.appearance.show3d && this.savedPan2d !== null) {
+      this.viewport.panOffset = { x: this.savedPan2d.x, y: this.savedPan2d.y };
+      this.savedPan2d = null;
+      this.setViewport(this.viewport);
+    }
     this.appearance.show3d = show;
+    if (show) {
+      this.normalizeView3dAngles();
+    }
+    tracePcb3d(show ? 'ENTER' : 'EXIT',
+      `yaw=${this.appearance.view3dYawDeg.toFixed(1)} pitch=${this.appearance.view3dPitchDeg.toFixed(1)}`);
     this.publishChanged();
+  }
+
+  orbit3d(deltaYawDeg: number, deltaPitchDeg: number): void {
+    this.normalizeView3dAngles();
+    this.appearance.view3dYawDeg =
+      (this.appearance.view3dYawDeg + deltaYawDeg) % 360;
+    if (this.appearance.view3dYawDeg < 0) {
+      this.appearance.view3dYawDeg += 360;
+    }
+    let pitch = this.appearance.view3dPitchDeg + deltaPitchDeg;
+    if (pitch < 12) {
+      pitch = 12;
+    } else if (pitch > 88) {
+      pitch = 88;
+    }
+    this.appearance.view3dPitchDeg = pitch;
+    this.publishChanged();
+  }
+
+  resetView3d(): void {
+    this.appearance.view3dYawDeg = 35;
+    this.appearance.view3dPitchDeg = 55;
+    this.appearance.view3dOrtho = true;
+    tracePcb3d('RESET_VIEW', 'yaw=35 pitch=55 ortho=1');
+    this.publishChanged();
+  }
+
+  setView3dOrtho(ortho: boolean): void {
+    this.appearance.view3dOrtho = ortho;
+    tracePcb3d('ORTHO', `${ortho}`);
+    this.publishChanged();
+  }
+
+  setView3dPreset(preset: string): void {
+    const p = (preset ?? '').toLowerCase();
+    if (p === 'top') {
+      this.appearance.view3dYawDeg = 0;
+      this.appearance.view3dPitchDeg = 88;
+    } else if (p === 'bottom') {
+      this.appearance.view3dYawDeg = 180;
+      this.appearance.view3dPitchDeg = 88;
+    } else if (p === 'front') {
+      this.appearance.view3dYawDeg = 0;
+      this.appearance.view3dPitchDeg = 12;
+    } else if (p === 'left') {
+      this.appearance.view3dYawDeg = 90;
+      this.appearance.view3dPitchDeg = 12;
+    } else if (p === 'right') {
+      this.appearance.view3dYawDeg = 270;
+      this.appearance.view3dPitchDeg = 12;
+    } else {
+      // iso 默认
+      this.appearance.view3dYawDeg = 35;
+      this.appearance.view3dPitchDeg = 55;
+    }
+    this.normalizeView3dAngles();
+    tracePcb3d('PRESET', p.length > 0 ? p : 'iso');
+    this.publishChanged();
+  }
+
+  setView3dDisplayMode(mode: Pcb3dDisplayMode): void {
+    this.appearance.view3dDisplayMode = mode;
+    tracePcb3d('DISPLAY_MODE', `${mode}`);
+    this.publishChanged();
+  }
+
+  setView3dCutFraction(fraction: number): void {
+    let f = fraction;
+    if (!(f >= 0 && f <= 1)) f = 0.55;
+    this.appearance.view3dCutFraction = Math.max(0.05, Math.min(0.95, f));
+    tracePcb3d('CUT_FRAC', `${this.appearance.view3dCutFraction}`);
+    this.publishChanged();
+  }
+
+  setView3dMeasure(active: boolean): void {
+    this.appearance.view3dMeasure = active;
+    tracePcb3d('MEASURE', `${active}`);
+    this.publishChanged();
+  }
+
+  setView3dShowInterference(show: boolean): void {
+    this.appearance.view3dShowInterference = show;
+    tracePcb3d('INTERFERENCE', `${show}`);
+    this.publishChanged();
+  }
+
+  setView3dPbr(enabled: boolean): void {
+    this.appearance.view3dPbr = enabled;
+    tracePcb3d('PBR', `${enabled}`);
+    this.publishChanged();
+  }
+
+  setView3dMsaa(samples: number): void {
+    this.appearance.view3dMsaa = samples >= 4 ? 4 : 1;
+    tracePcb3d('MSAA', `${this.appearance.view3dMsaa}`);
+    this.publishChanged();
+  }
+
+  setShowPadNumbers(show: boolean): void {
+    this.appearance.showPadNumbers = show;
+    tracePcbUi('PAD_NUMBERS', `${show}`);
+    this.publishChanged();
+  }
+
+  private normalizeView3dAngles(): void {
+    let yaw = this.appearance.view3dYawDeg;
+    let pitch = this.appearance.view3dPitchDeg;
+    if (!(yaw >= -10000 && yaw <= 10000)) {
+      yaw = 35;
+    }
+    if (!(pitch >= 12 && pitch <= 88)) {
+      pitch = 55;
+    }
+    this.appearance.view3dYawDeg = yaw;
+    this.appearance.view3dPitchDeg = pitch;
+  }
+
+  getViaKind(): PcbViaKind {
+    return this.viaKind;
+  }
+
+  setViaKind(kind: PcbViaKind): void {
+    this.viaKind = kind;
+    this.publishChanged();
+  }
+
+  getRouteCornerMode(): PcbRouteCornerMode {
+    return this.routeCornerMode;
+  }
+
+  setRouteCornerMode(mode: PcbRouteCornerMode): void {
+    this.routeCornerMode = mode;
+    tracePcbUi('ROUTE_CORNER', `${mode}`);
+    this.publishChanged();
+  }
+
+  getViaSpan(): PcbLayerId[] {
+    return [this.viaFromLayer, this.viaToLayer];
+  }
+
+  setViaSpan(from: PcbLayerId, to: PcbLayerId): void {
+    this.viaFromLayer = from;
+    this.viaToLayer = to;
+    if (from !== to) {
+      this.viaKind = (from === PcbLayerId.F_CU || to === PcbLayerId.B_CU ||
+        from === PcbLayerId.B_CU || to === PcbLayerId.F_CU)
+        ? PcbViaKind.BLIND : PcbViaKind.BURIED;
+      const copper = this.document ? copperLayersFromStack(this.document.layerStack) : [];
+      if (copper.length >= 2 &&
+        ((from === copper[0] && to === copper[copper.length - 1]) ||
+          (to === copper[0] && from === copper[copper.length - 1]))) {
+        this.viaKind = PcbViaKind.THROUGH;
+      }
+    } else {
+      this.viaKind = PcbViaKind.THROUGH;
+    }
+    this.publishChanged();
+  }
+
+  getLayerStackCopperCount(): number {
+    return this.document?.layerStack.copperCount ?? 2;
   }
 
   getRatsnest(): PcbRatsnestEdge[] {
@@ -225,6 +461,16 @@ export class PcbEditorImpl implements IPcbEditor {
     applyCopperLayerCount(this.document, count);
     if (!isCopperLayer(this.activeLayer)) {
       this.activeLayer = PcbLayerId.F_CU;
+    }
+    // 多层默认变暗非活动层，便于按层编辑
+    if (count > 2 && this.appearance.mode === PcbAppearanceMode.OVERLAY) {
+      this.appearance.mode = PcbAppearanceMode.DIM_INACTIVE;
+    }
+    const copper = copperLayersFromStack(this.document.layerStack);
+    if (copper.length >= 2) {
+      this.viaFromLayer = copper[0];
+      this.viaToLayer = copper[copper.length - 1];
+      this.viaKind = PcbViaKind.THROUGH;
     }
     this.touchModified();
     this.publishChanged();
@@ -336,8 +582,27 @@ export class PcbEditorImpl implements IPcbEditor {
           footprintIds: [fp.id], trackIds: [],
           viaIds: [], zoneIds: []
         };
+        // 点选封装时按最近焊盘高亮网络（白皮书 5.1）
+        let bestNet = '';
+        let bestD = Number.POSITIVE_INFINITY;
+        for (let pi = 0; pi < fp.pads.length; pi++) {
+          const pad = fp.pads[pi];
+          if (!pad.netId || pad.netId.length === 0) continue;
+          const w = padWorldPosition(fp, pad);
+          const dx = w.x - worldX;
+          const dy = w.y - worldY;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            bestNet = pad.netId;
+          }
+        }
+        if (bestNet.length > 0) {
+          this.appearance.highlightNetId = bestNet;
+        }
       }
       this.publishSelection();
+      this.publishChanged();
       return;
     }
 
@@ -356,6 +621,7 @@ export class PcbEditorImpl implements IPcbEditor {
     const fpIds: string[] = [];
     const trkIds: string[] = [];
     const viaIds: string[] = [];
+    const zoneIds: string[] = [];
 
     for (const fp of this.document.footprints) {
       const bb = this.footprintBoundingBox(fp);
@@ -365,9 +631,7 @@ export class PcbEditorImpl implements IPcbEditor {
     }
     for (const trk of this.document.tracks) {
       if (!isLayerVisible(this.document!, trk.layer)) continue;
-      if (trk.start.x >= rx1 && trk.start.x <= rx2 && trk.start.y >= ry1 && trk.start.y <= ry2) {
-        trkIds.push(trk.id);
-      } else if (trk.end.x >= rx1 && trk.end.x <= rx2 && trk.end.y >= ry1 && trk.end.y <= ry2) {
+      if (segmentIntersectsRect(trk.start, trk.end, rx1, ry1, rx2, ry2)) {
         trkIds.push(trk.id);
       }
     }
@@ -377,16 +641,28 @@ export class PcbEditorImpl implements IPcbEditor {
         viaIds.push(via.id);
       }
     }
+    for (const zone of this.document.zones) {
+      if (!isLayerVisible(this.document!, zone.layer) || zone.outline.length < 3) continue;
+      let zx1 = Infinity; let zy1 = Infinity; let zx2 = -Infinity; let zy2 = -Infinity;
+      for (const p of zone.outline) {
+        zx1 = Math.min(zx1, p.x); zy1 = Math.min(zy1, p.y);
+        zx2 = Math.max(zx2, p.x); zy2 = Math.max(zy2, p.y);
+      }
+      if (zx1 <= rx2 && zx2 >= rx1 && zy1 <= ry2 && zy2 >= ry1) {
+        zoneIds.push(zone.id);
+      }
+    }
 
     if (additive) {
       for (const id of fpIds) { if (!this.selection.footprintIds.includes(id)) this.selection.footprintIds.push(id); }
       for (const id of trkIds) { if (!this.selection.trackIds.includes(id)) this.selection.trackIds.push(id); }
       for (const id of viaIds) { if (!this.selection.viaIds.includes(id)) this.selection.viaIds.push(id); }
+      for (const id of zoneIds) { if (!this.selection.zoneIds.includes(id)) this.selection.zoneIds.push(id); }
     } else {
       this.selection.footprintIds = fpIds;
       this.selection.trackIds = trkIds;
       this.selection.viaIds = viaIds;
-      this.selection.zoneIds = [];
+      this.selection.zoneIds = zoneIds;
     }
 
     const total = this.selection.footprintIds.length + this.selection.trackIds.length +
@@ -399,6 +675,31 @@ export class PcbEditorImpl implements IPcbEditor {
       else this.selection.kind = PcbSelectionKind.ZONE;
     } else {
       this.selection.kind = PcbSelectionKind.MULTI;
+    }
+    // 框选单一走线/过孔/覆铜时同步网络高亮
+    if (total === 1) {
+      if (this.selection.trackIds.length === 1) {
+        for (let i = 0; i < this.document.tracks.length; i++) {
+          if (this.document.tracks[i].id === this.selection.trackIds[0]) {
+            this.appearance.highlightNetId = this.document.tracks[i].netId ?? '';
+            break;
+          }
+        }
+      } else if (this.selection.viaIds.length === 1) {
+        for (let i = 0; i < this.document.vias.length; i++) {
+          if (this.document.vias[i].id === this.selection.viaIds[0]) {
+            this.appearance.highlightNetId = this.document.vias[i].netId ?? '';
+            break;
+          }
+        }
+      } else if (this.selection.zoneIds.length === 1) {
+        for (let i = 0; i < this.document.zones.length; i++) {
+          if (this.document.zones[i].id === this.selection.zoneIds[0]) {
+            this.appearance.highlightNetId = this.document.zones[i].netId ?? '';
+            break;
+          }
+        }
+      }
     }
     this.publishSelection();
   }
@@ -460,13 +761,17 @@ export class PcbEditorImpl implements IPcbEditor {
     }
     this.moveInProgress = false;
 
-    // 移动结束仅吸附端点到焊盘，不再整网重布 — 避免拖拽橡皮筋结果被 L 布线瞬间替换导致闪断/跳变
-    snapTrackEndpointsToPads(this.document);
+    // 仅校正刚移动封装附近的同网端点，禁止全局乱吸附
+    if (this.lastMovedFootprintIds.size > 0) {
+      snapTrackEndpointsNearFootprints(this.document, this.lastMovedFootprintIds);
+      this.lastMovedFootprintIds.clear();
+    }
 
     for (const z of this.document.zones) {
       rebuildZoneCutouts(z, this.document);
     }
     this.touchModified();
+    this.refreshConnectivity();
     this.publishChanged();
   }
 
@@ -531,6 +836,7 @@ export class PcbEditorImpl implements IPcbEditor {
 
     if (oldPadPositions.size > 0) {
       updateTracksForFootprintTransform(this.document, fpSet, oldPadPositions);
+      this.lastMovedFootprintIds = new Set(fpSet);
     }
 
     if (trackSnapshots.length > 0) {
@@ -565,17 +871,14 @@ export class PcbEditorImpl implements IPcbEditor {
       }
     }
     if (oldPadPositions.size > 0) {
-      const affectedNets = collectNetIdsForFootprints(this.document, fpSet);
-      updateTracksForFootprintTransform(this.document, fpSet, oldPadPositions, affectedNets);
-      if (affectedNets.size > 0) {
-        const layer = isCopperLayer(this.activeLayer) ? this.activeLayer : PcbLayerId.F_CU;
-        rerouteNets(this.document, layer, affectedNets);
-      }
+      updateTracksForFootprintTransform(this.document, fpSet, oldPadPositions);
+      snapTrackEndpointsNearFootprints(this.document, fpSet);
     }
     for (const z of this.document.zones) {
       rebuildZoneCutouts(z, this.document);
     }
     this.touchModified();
+    this.refreshConnectivity();
     this.publishChanged();
   }
 
@@ -601,7 +904,7 @@ export class PcbEditorImpl implements IPcbEditor {
   previewRoute(point: Point2D): Point2D {
     this.routePreviewPoint = this.snapToPadOrGrid(point);
     if (this.routeStartPoint && this.document) {
-      const path = routeOrtho45Points(this.routeStartPoint, this.routePreviewPoint);
+      const path = routeByCornerMode(this.routeStartPoint, this.routePreviewPoint, this.routeCornerMode);
       this.routeViolationCount = this.checkPathClearance(path);
     }
     return this.routePreviewPoint;
@@ -628,13 +931,16 @@ export class PcbEditorImpl implements IPcbEditor {
 
     const netId = startNet?.netId ?? endNet?.netId ?? '';
     const netName = startNet?.netName ?? endNet?.netName ?? '';
-    const path = routeOrtho45Points(this.routeStartPoint, snappedEnd);
+    const path = routeByCornerMode(this.routeStartPoint, snappedEnd, this.routeCornerMode);
 
-    // 提交前最后一次实时 DRC 检查
+    // 提交前最后一次实时 DRC 检查 — 违规则拒绝写入
     const violations = this.checkPathClearance(path);
     if (violations > 0) {
       tracePcbManualRouteReject('实时DRC',
         `路径存在 ${violations} 处违规`, `${violations} violations`);
+      this.routePreviewPoint = snappedEnd;
+      this.routeViolationCount = violations;
+      return null;
     }
 
     let lastTrack: PcbTrack | null = null;
@@ -655,7 +961,7 @@ export class PcbEditorImpl implements IPcbEditor {
     return lastTrack;
   }
 
-  /** 布线中切换铜层：当前位置自动插过孔 */
+  /** 布线中切换铜层：当前位置按当前过孔偏好插过孔 */
   switchRouteLayer(layer: PcbLayerId): PcbVia | null {
     if (!isCopperLayer(layer)) return null;
     if (layer === this.activeLayer) return null;
@@ -663,13 +969,28 @@ export class PcbEditorImpl implements IPcbEditor {
     let via: PcbVia | null = null;
     if (pos) {
       const net = this.findNetAtPoint(pos);
-      via = this.addVia(pos, net?.netId, net?.netName, PcbViaKind.THROUGH,
-        this.activeLayer, layer);
+      const from = this.activeLayer;
+      via = this.addVia(pos, net?.netId, net?.netName, this.viaKindForSpan(from, layer),
+        from, layer);
     }
     this.activeLayer = layer;
-    this.routeViolationCount = 0;
     this.publishChanged();
     return via;
+  }
+
+  private viaKindForSpan(from: PcbLayerId, to: PcbLayerId): PcbViaKind {
+    if (!this.document) return PcbViaKind.THROUGH;
+    const copper = copperLayersFromStack(this.document.layerStack);
+    if (copper.length < 2) return PcbViaKind.THROUGH;
+    const first = copper[0];
+    const last = copper[copper.length - 1];
+    if ((from === first && to === last) || (from === last && to === first)) {
+      return PcbViaKind.THROUGH;
+    }
+    if (from === first || from === last || to === first || to === last) {
+      return PcbViaKind.BLIND;
+    }
+    return PcbViaKind.BURIED;
   }
 
   cancelRoute(): void {
@@ -778,8 +1099,31 @@ export class PcbEditorImpl implements IPcbEditor {
     const rules = this.document.metadata.designRules;
     const width = rules.defaultTrackWidth;
 
-    // P 线: startP → previewP
-    const pathP = routeOrtho45Points(ds.startP, ds.previewP);
+    let pathP = routeByCornerMode(ds.startP, ds.previewP, this.routeCornerMode);
+    let pathN = routeByCornerMode(ds.startN, ds.previewN, this.routeCornerMode);
+
+    // 蛇形等长：补齐较短侧，使累计长度差落入 tol
+    let tol = 20;
+    for (const dp of this.document.diffPairs) {
+      if (dp.netIdP === ds.netIdP || dp.netIdN === ds.netIdN ||
+        dp.netIdP === ds.netIdN || dp.netIdN === ds.netIdP) {
+        tol = dp.lengthTolMil;
+        break;
+      }
+    }
+    const existP = sumTrackLengthForNet(this.document, ds.netIdP);
+    const existN = sumTrackLengthForNet(this.document, ds.netIdN);
+    const matched = matchDiffPairLengths(pathP, pathN, existP, existN, tol, ds.gap);
+    pathP = matched[0];
+    pathN = matched[1];
+
+    let nameP = ds.dpName + '_P';
+    let nameN = ds.dpName + '_N';
+    for (let ni = 0; ni < this.document.nets.length; ni++) {
+      if (this.document.nets[ni].id === ds.netIdP) nameP = this.document.nets[ni].name;
+      if (this.document.nets[ni].id === ds.netIdN) nameN = this.document.nets[ni].name;
+    }
+
     for (let i = 0; i < pathP.length - 1; i++) {
       const startPt: Point2D = { x: pathP[i].x, y: pathP[i].y };
       const endPt: Point2D = { x: pathP[i + 1].x, y: pathP[i + 1].y };
@@ -790,14 +1134,12 @@ export class PcbEditorImpl implements IPcbEditor {
         end: endPt,
         width,
         netId: ds.netIdP,
-        netName: ds.dpName + '_P'
+        netName: nameP
       };
       this.document.tracks.push(trk);
       count++;
     }
 
-    // N 线: startN → previewN
-    const pathN = routeOrtho45Points(ds.startN, ds.previewN);
     for (let i = 0; i < pathN.length - 1; i++) {
       const startPt2: Point2D = { x: pathN[i].x, y: pathN[i].y };
       const endPt2: Point2D = { x: pathN[i + 1].x, y: pathN[i + 1].y };
@@ -808,13 +1150,12 @@ export class PcbEditorImpl implements IPcbEditor {
         end: endPt2,
         width,
         netId: ds.netIdN,
-        netName: ds.dpName + '_N'
+        netName: nameN
       };
       this.document.tracks.push(trk);
       count++;
     }
 
-    // 更新起点为终点，继续布线
     ds.startP = ds.previewP;
     ds.startN = ds.previewN;
     this.touchModified();
@@ -1077,6 +1418,7 @@ export class PcbEditorImpl implements IPcbEditor {
     if (!this.document) return false;
     for (const z of this.document.zones) {
       if (z.id !== zoneId) continue;
+      this.saveSnapshot();
       z.priority = Math.max(0, z.priority + delta);
       this.touchModified();
       this.publishChanged();
@@ -1089,6 +1431,7 @@ export class PcbEditorImpl implements IPcbEditor {
     if (!this.document) return false;
     for (const z of this.document.zones) {
       if (z.id !== zoneId) continue;
+      this.saveSnapshot();
       normalizeZoneFields(z, this.document);
       z.thermalRelief = enabled;
       rebuildZoneCutouts(z, this.document);
@@ -1287,13 +1630,30 @@ export class PcbEditorImpl implements IPcbEditor {
     if (!this.document) return;
     if (this.selection.footprintIds.length === 0) return;
     this.saveSnapshot();
-    const idSet = new Set(this.selection.footprintIds);
+    const fpSet = new Set(this.selection.footprintIds);
+    const oldPadPositions: Map<string, Point2D> = new Map();
     for (const fp of this.document.footprints) {
-      if (!idSet.has(fp.id) || fp.locked) continue;
+      if (fpSet.has(fp.id) && !fp.locked) {
+        const pads = collectFootprintPadPositions(fp);
+        pads.forEach((pos: Point2D, key: string) => {
+          oldPadPositions.set(key, { x: pos.x, y: pos.y });
+        });
+      }
+    }
+    for (const fp of this.document.footprints) {
+      if (!fpSet.has(fp.id) || fp.locked) continue;
       fp.mirrored = !fp.mirrored;
       fp.layer = fp.mirrored ? PcbLayerId.B_CU : PcbLayerId.F_CU;
     }
+    if (oldPadPositions.size > 0) {
+      updateTracksForFootprintTransform(this.document, fpSet, oldPadPositions);
+      snapTrackEndpointsNearFootprints(this.document, fpSet);
+    }
+    for (const z of this.document.zones) {
+      rebuildZoneCutouts(z, this.document);
+    }
     this.touchModified();
+    this.refreshConnectivity();
     this.publishChanged();
   }
 
@@ -1441,9 +1801,110 @@ export class PcbEditorImpl implements IPcbEditor {
         violations.push({
           id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
           ruleType: PcbDrcRuleType.DIFF_LENGTH,
-          message: `差分对 ${dp.name} 长度差 ${diff.toFixed(1)}mil > ${dp.lengthTolMil}mil`,
+          message: `差分对 ${dp.name} 长度差 ${diff.toFixed(1)}mil > ${dp.lengthTolMil}mil (P=${lp.toFixed(0)} N=${ln.toFixed(0)})`,
           netId: dp.netIdP
         });
+      }
+      // 差分对间距粗检：同层最近异网段间距
+      let minGap = Number.POSITIVE_INFINITY;
+      let gapPos: Point2D | undefined = undefined;
+      for (let i = 0; i < this.document.tracks.length; i++) {
+        const t1 = this.document.tracks[i];
+        if (t1.netId !== dp.netIdP) continue;
+        for (let j = 0; j < this.document.tracks.length; j++) {
+          const t2 = this.document.tracks[j];
+          if (t2.netId !== dp.netIdN || t1.layer !== t2.layer) continue;
+          const d = segmentDist(t1.start, t1.end, t2.start, t2.end);
+          if (d < minGap) {
+            minGap = d;
+            gapPos = t1.start;
+          }
+        }
+      }
+      if (minGap < Number.POSITIVE_INFINITY && minGap + 0.5 < dp.gapMil * 0.7) {
+        violations.push({
+          id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
+          ruleType: PcbDrcRuleType.DIFF_GAP,
+          message: `差分对 ${dp.name} 间距 ${minGap.toFixed(1)}mil 远小于目标 ${dp.gapMil}mil`,
+          position: gapPos, netId: dp.netIdP
+        });
+      } else if (minGap < Number.POSITIVE_INFINITY && minGap > dp.gapMil * 1.6) {
+        violations.push({
+          id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
+          ruleType: PcbDrcRuleType.DIFF_GAP,
+          message: `差分对 ${dp.name} 间距 ${minGap.toFixed(1)}mil 明显大于目标 ${dp.gapMil}mil`,
+          position: gapPos, netId: dp.netIdP
+        });
+      }
+    }
+
+    // Edge.Cuts 闭合性
+    const outlinePts = this.document.boardOutline.points;
+    if (outlinePts.length >= 3) {
+      const a = outlinePts[0];
+      const b = outlinePts[outlinePts.length - 1];
+      const gap = Math.hypot(a.x - b.x, a.y - b.y);
+      if (gap > Math.max(2, this.document.boardOutline.width)) {
+        violations.push({
+          id: IdUtil.generate('drc'), severity: PcbDrcSeverity.ERROR,
+          ruleType: PcbDrcRuleType.EDGE_OPEN,
+          message: `Edge.Cuts 未闭合，首尾间隙 ${gap.toFixed(1)}mil`,
+          position: a
+        });
+      }
+    }
+
+    // 丝印生产合规：位号字高 + 丝印线距焊盘
+    const silkClear = rules.silkToPadClearance !== undefined ? rules.silkToPadClearance : 8;
+    const minSilkH = rules.minSilkHeight !== undefined ? rules.minSilkHeight : 31;
+    const lib = getGlobalPcbFootprintLibrary();
+    for (const fp of this.document.footprints) {
+      const def = lib.getDef(fp.defId);
+      if (!def || def.silkLines.length === 0) continue;
+      let silkSpan = 0;
+      for (const line of def.silkLines) {
+        for (let i = 1; i < line.length; i++) {
+          silkSpan = Math.max(silkSpan,
+            Math.hypot(line[i].x - line[i - 1].x, line[i].y - line[i - 1].y));
+        }
+      }
+      if (silkSpan > 0 && silkSpan < minSilkH * 0.35) {
+        violations.push({
+          id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
+          ruleType: PcbDrcRuleType.SILK_HEIGHT,
+          message: `${fp.refDes} 丝印线段过短，可能不满足最小字高 ${minSilkH}mil`,
+          position: fp.position, footprintId: fp.id
+        });
+      }
+      let silkPadHit = false;
+      for (const line of def.silkLines) {
+        if (silkPadHit) break;
+        for (const lp of line) {
+          if (silkPadHit) break;
+          // 与 Gerber/绘制一致：局部坐标经镜像+旋转到世界
+          let lx = lp.x;
+          let ly = lp.y;
+          if (fp.mirrored) lx = -lx;
+          if (fp.rotation === 90) { const t = lx; lx = -ly; ly = t; }
+          else if (fp.rotation === 180) { lx = -lx; ly = -ly; }
+          else if (fp.rotation === 270) { const t = lx; lx = ly; ly = -t; }
+          const sw: Point2D = { x: fp.position.x + lx, y: fp.position.y + ly };
+          for (const pad of fp.pads) {
+            const pw = padWorldPosition(fp, pad);
+            const d = Math.hypot(sw.x - pw.x, sw.y - pw.y) -
+              Math.max(pad.size.x, pad.size.y) / 2;
+            if (d < silkClear) {
+              violations.push({
+                id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
+                ruleType: PcbDrcRuleType.SILK_PAD,
+                message: `${fp.refDes} 丝印距焊盘 ${d.toFixed(1)}mil < ${silkClear}mil`,
+                position: sw, footprintId: fp.id
+              });
+              silkPadHit = true;
+              break;
+            }
+          }
+        }
       }
     }
 
@@ -1474,7 +1935,12 @@ export class PcbEditorImpl implements IPcbEditor {
     tracePcbDrc(violations.length, unroutedCount, clearanceCount);
     tracePcbNetRoutingSummary(this.document);
 
+    this.lastDrcViolations = violations;
     return violations;
+  }
+
+  getLastDrcViolations(): PcbDrcViolation[] {
+    return this.lastDrcViolations;
   }
 
   // ═══════════════════════════════════════════════════
@@ -1570,27 +2036,64 @@ export class PcbEditorImpl implements IPcbEditor {
 
   hitTestTrack(worldX: number, worldY: number): PcbTrack | null {
     if (!this.document) return null;
+    this.ensureSpatialIndex();
     const tol = Math.max(15, (this.document.metadata.gridSize ?? 5) * 3);
+    const cand = this.spatialIndex.queryPoint(worldX, worldY, tol + 40);
     let best: PcbTrack | null = null;
     let bestDist = tol;
-    for (const trk of this.document.tracks) {
-      if (!isLayerVisible(this.document, trk.layer)) continue;
+    const seen = new Set<string>();
+    for (let i = 0; i < cand.length; i++) {
+      if (cand[i].kind !== PcbSpatialKind.TRACK) continue;
+      if (seen.has(cand[i].refId)) continue;
+      seen.add(cand[i].refId);
+      let trk: PcbTrack | null = null;
+      for (const t of this.document.tracks) {
+        if (t.id === cand[i].refId) { trk = t; break; }
+      }
+      if (!trk || !isLayerVisible(this.document, trk.layer)) continue;
       const d = pointToSegmentDist({ x: worldX, y: worldY }, trk.start, trk.end);
       const hitDist = d - trk.width / 2;
       if (hitDist <= bestDist) { bestDist = hitDist; best = trk; }
+    }
+    // 回退全扫（索引空时）
+    if (!best && cand.length === 0) {
+      for (const trk of this.document.tracks) {
+        if (!isLayerVisible(this.document, trk.layer)) continue;
+        const d = pointToSegmentDist({ x: worldX, y: worldY }, trk.start, trk.end);
+        const hitDist = d - trk.width / 2;
+        if (hitDist <= bestDist) { bestDist = hitDist; best = trk; }
+      }
     }
     return best;
   }
 
   hitTestVia(worldX: number, worldY: number): PcbVia | null {
     if (!this.document) return null;
+    this.ensureSpatialIndex();
     const tol = Math.max(18, (this.document.metadata.gridSize ?? 5) * 3);
+    const cand = this.spatialIndex.queryPoint(worldX, worldY, tol + 40);
     let best: PcbVia | null = null;
     let bestDist = tol;
-    for (const via of this.document.vias) {
+    const seen = new Set<string>();
+    for (let i = 0; i < cand.length; i++) {
+      if (cand[i].kind !== PcbSpatialKind.VIA) continue;
+      if (seen.has(cand[i].refId)) continue;
+      seen.add(cand[i].refId);
+      let via: PcbVia | null = null;
+      for (const v of this.document.vias) {
+        if (v.id === cand[i].refId) { via = v; break; }
+      }
+      if (!via) continue;
       const d = pointDist({ x: worldX, y: worldY }, via.position);
       const hitDist = d - via.diameter / 2;
       if (hitDist <= bestDist) { bestDist = hitDist; best = via; }
+    }
+    if (!best && cand.length === 0) {
+      for (const via of this.document.vias) {
+        const d = pointDist({ x: worldX, y: worldY }, via.position);
+        const hitDist = d - via.diameter / 2;
+        if (hitDist <= bestDist) { bestDist = hitDist; best = via; }
+      }
     }
     return best;
   }
@@ -1601,7 +2104,17 @@ export class PcbEditorImpl implements IPcbEditor {
     for (let i = this.document.zones.length - 1; i >= 0; i--) {
       const z = this.document.zones[i];
       if (!isLayerVisible(this.document, z.layer)) continue;
-      if (pointInPolygon(world, z.outline)) return z;
+      if (!pointInPolygon(world, z.outline)) continue;
+      let inCutout = false;
+      if (z.cutouts) {
+        for (const cut of z.cutouts) {
+          if (cut.length >= 3 && pointInPolygon(world, cut)) {
+            inCutout = true;
+            break;
+          }
+        }
+      }
+      if (!inCutout) return z;
     }
     return null;
   }
@@ -1784,6 +2297,86 @@ export class PcbEditorImpl implements IPcbEditor {
     if (!this.document) return;
     rebuildPcbNets(this.document);
     this.ratsnestCache = buildRatsnest(this.document);
+    this.spatialDirty = true;
+  }
+
+  /** 惰性重建四叉树 */
+  private ensureSpatialIndex(): void {
+    if (!this.document || !this.spatialDirty) return;
+    const items: PcbSpatialItem[] = [];
+    let bx1 = Number.POSITIVE_INFINITY;
+    let by1 = Number.POSITIVE_INFINITY;
+    let bx2 = Number.NEGATIVE_INFINITY;
+    let by2 = Number.NEGATIVE_INFINITY;
+    const expand = (x: number, y: number): void => {
+      if (x < bx1) bx1 = x;
+      if (y < by1) by1 = y;
+      if (x > bx2) bx2 = x;
+      if (y > by2) by2 = y;
+    };
+    for (const trk of this.document.tracks) {
+      const hw = Math.max(trk.width / 2, 4);
+      const rect = PcbSpatialIndex.trackRect(trk.start.x, trk.start.y, trk.end.x, trk.end.y, hw);
+      expand(rect.x1, rect.y1);
+      expand(rect.x2, rect.y2);
+      items.push({ id: `t:${trk.id}`, kind: PcbSpatialKind.TRACK, refId: trk.id, rect });
+    }
+    for (const via of this.document.vias) {
+      const rect = PcbSpatialIndex.viaRect(via.position.x, via.position.y, via.diameter);
+      expand(rect.x1, rect.y1);
+      expand(rect.x2, rect.y2);
+      items.push({ id: `v:${via.id}`, kind: PcbSpatialKind.VIA, refId: via.id, rect });
+    }
+    for (const fp of this.document.footprints) {
+      const bb = this.footprintBoundingBox(fp);
+      const rect: PcbSpatialRect = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
+      expand(rect.x1, rect.y1);
+      expand(rect.x2, rect.y2);
+      items.push({ id: `f:${fp.id}`, kind: PcbSpatialKind.FOOTPRINT, refId: fp.id, rect });
+      for (const pad of fp.pads) {
+        const w = padWorldPosition(fp, pad);
+        const r = Math.max(pad.size.x, pad.size.y) / 2 + 2;
+        const pr: PcbSpatialRect = { x1: w.x - r, y1: w.y - r, x2: w.x + r, y2: w.y + r };
+        items.push({
+          id: `p:${fp.id}:${pad.id}`,
+          kind: PcbSpatialKind.PAD,
+          refId: fp.id,
+          rect: pr
+        });
+      }
+    }
+    for (const z of this.document.zones) {
+      if (z.outline.length < 1) continue;
+      let zx1 = z.outline[0].x;
+      let zy1 = z.outline[0].y;
+      let zx2 = zx1;
+      let zy2 = zy1;
+      for (let i = 1; i < z.outline.length; i++) {
+        const p = z.outline[i];
+        if (p.x < zx1) zx1 = p.x;
+        if (p.y < zy1) zy1 = p.y;
+        if (p.x > zx2) zx2 = p.x;
+        if (p.y > zy2) zy2 = p.y;
+      }
+      expand(zx1, zy1);
+      expand(zx2, zy2);
+      items.push({
+        id: `z:${z.id}`,
+        kind: PcbSpatialKind.ZONE,
+        refId: z.id,
+        rect: { x1: zx1, y1: zy1, x2: zx2, y2: zy2 }
+      });
+    }
+    if (!(bx1 < bx2 && by1 < by2)) {
+      bx1 = 0; by1 = 0; bx2 = 3000; by2 = 2000;
+    }
+    this.spatialIndex.rebuild({ x1: bx1, y1: by1, x2: bx2, y2: by2 }, items);
+    this.spatialDirty = false;
+  }
+
+  getSpatialIndex(): PcbSpatialIndex {
+    this.ensureSpatialIndex();
+    return this.spatialIndex;
   }
 
   private saveSnapshot(): void {
@@ -1821,6 +2414,7 @@ export class PcbEditorImpl implements IPcbEditor {
       gridSize: entry.viewport.gridSize,
       snapToGrid: entry.viewport.snapToGrid
     };
+    this.refreshConnectivity();
   }
 
   private clearHistory(): void {
@@ -1916,6 +2510,50 @@ function pointToSegmentDist(p: Point2D, a: Point2D, b: Point2D): number {
 function segmentDist(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): number {
   const mids = [pointDist(a1, b1), pointDist(a1, b2), pointDist(a2, b1), pointDist(a2, b2)];
   return Math.min(...mids);
+}
+
+/** 线段与轴对齐矩形相交（含端点在矩形内） */
+function segmentIntersectsRect(a: Point2D, b: Point2D,
+  rx1: number, ry1: number, rx2: number, ry2: number): boolean {
+  const pointIn = (p: Point2D): boolean =>
+    p.x >= rx1 && p.x <= rx2 && p.y >= ry1 && p.y <= ry2;
+  if (pointIn(a) || pointIn(b)) return true;
+  const corners: Point2D[] = [
+    { x: rx1, y: ry1 }, { x: rx2, y: ry1 },
+    { x: rx2, y: ry2 }, { x: rx1, y: ry2 }
+  ];
+  const edges: Point2D[][] = [
+    [corners[0], corners[1]], [corners[1], corners[2]],
+    [corners[2], corners[3]], [corners[3], corners[0]]
+  ];
+  for (const e of edges) {
+    if (segmentsCross(a, b, e[0], e[1])) return true;
+  }
+  return false;
+}
+
+function orient(p: Point2D, q: Point2D, r: Point2D): number {
+  const v = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (Math.abs(v) < 1e-9) return 0;
+  return v > 0 ? 1 : 2;
+}
+
+function onSegment(p: Point2D, q: Point2D, r: Point2D): boolean {
+  return q.x <= Math.max(p.x, r.x) + 1e-9 && q.x >= Math.min(p.x, r.x) - 1e-9 &&
+    q.y <= Math.max(p.y, r.y) + 1e-9 && q.y >= Math.min(p.y, r.y) - 1e-9;
+}
+
+function segmentsCross(p1: Point2D, q1: Point2D, p2: Point2D, q2: Point2D): boolean {
+  const o1 = orient(p1, q1, p2);
+  const o2 = orient(p1, q1, q2);
+  const o3 = orient(p2, q2, p1);
+  const o4 = orient(p2, q2, q1);
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && onSegment(p1, p2, q1)) return true;
+  if (o2 === 0 && onSegment(p1, q2, q1)) return true;
+  if (o3 === 0 && onSegment(p2, p1, q2)) return true;
+  if (o4 === 0 && onSegment(p2, q1, q2)) return true;
+  return false;
 }
 
 function viaSpansLayer(layers: PcbLayerId[], layer: PcbLayerId): boolean {

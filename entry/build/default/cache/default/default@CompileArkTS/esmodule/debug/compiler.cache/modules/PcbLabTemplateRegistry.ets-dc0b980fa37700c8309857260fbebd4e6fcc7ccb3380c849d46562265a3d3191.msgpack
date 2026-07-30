@@ -1,0 +1,212 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚjexport class PcbLabTemplateRegistry {
+    static def(id, name, category, description, extraTips) {
+        return {
+            id,
+            name: `${name}ï¼ˆPCBï¼‰`,
+            category,
+            description,
+            knowledgePoints: PcbLabTemplateRegistry.COMMON_PCB_TIPS.concat(extraTips),
+            pcbFile: `${id}.pcbsim`
+        };
+    }
+    static listTemplates() {
+        return PcbLabTemplateRegistry.BUILTIN.concat(PcbLabTemplateRegistry.extraTemplates);
+    }
+    static findById(id) {
+        return PcbLabTemplateRegistry.listTemplates().find(t => t.id === id);
+    }
+    static registerTemplate(def) {
+        const idx = PcbLabTemplateRegistry.extraTemplates.findIndex(t => t.id === def.id);
+        if (idx >= 0) {
+            PcbLabTemplateRegistry.extraTemplates[idx] = def;
+        }
+        else {
+            PcbLabTemplateRegistry.extraTemplates.push(def);
+        }
+    }
+    static listCategories() {
+        const cats = new Set();
+        for (const t of PcbLabTemplateRegistry.listTemplates()) {
+            cats.add(t.category);
+        }
+        return Array.from(cats);
+    }
+    static listByCategory(category) {
+        if (category === 'all') {
+            return PcbLabTemplateRegistry.listTemplates();
+        }
+        return PcbLabTemplateRegistry.listTemplates().filter(t => t.category === category);
+    }
+}
+PcbLabTemplateRegistry.extraTemplates = [];
+PcbLabTemplateRegistry.COMMON_PCB_TIPS = [
+    'åŒé¢æ¿ï¼šä¿¡å·ä¼˜å…ˆ F.Cuï¼ŒGND é“ºé“œåœ¨ B.Cu',
+    'æ’å…¥åæ£€æŸ¥ DRCï¼šé—´è· / æœªå¸ƒçº¿ç½‘ç»œ / å‡ºæ¿',
+    'ç”µæº/åœ°é é“ºé“œä¸å®½çº¿ï¼Œä¿¡å·ç”¨è‡ªåŠ¨ L å‹èµ°çº¿å¯¹ç…§'
+];
+PcbLabTemplateRegistry.BUILTIN = [
+    PcbLabTemplateRegistry.def('lab_power', 'ç›´æµç”µæºç”µè·¯', 'power', 'ç¨³å‹ç”µæºæˆå“æ¿ï¼šç¨³å‹å™¨å°è£… + æ»¤æ³¢ + GND é“ºé“œ', ['TO-220 ç¨³å‹å™¨æ•£çƒ­ä¸ GND é“ºé“œè¿æ¥', 'è¾“å…¥/è¾“å‡ºç”µå®¹é è¿‘ç¨³å‹å™¨æ‘†æ”¾']),
+    PcbLabTemplateRegistry.def('lab_amp', 'è¿ç®—æ”¾å¤§ç”µè·¯', 'analog', 'è¿æ”¾æ”¾å¤§å™¨æˆå“æ¿ï¼šSOIC è¿æ”¾ + åé¦ˆç”µé˜»ç½‘ç»œ', ['è¿æ”¾å»è€¦ç”µå®¹é è¿‘ç”µæºè„š', 'åé¦ˆç½‘ç»œçŸ­èµ°çº¿é™ä½å™ªå£°']),
+    PcbLabTemplateRegistry.def('lab_filter', 'RCæ»¤æ³¢ç”µè·¯', 'analog', 'RC ä½é€š + ç¼“å†²æˆå“æ¿', ['RC èŠ‚ç‚¹èµ°çº¿å°½é‡çŸ­', 'å¯¹ç…§ DRC æŸ¥çœ‹æœªå¸ƒçº¿ç½‘ç»œ']),
+    PcbLabTemplateRegistry.def('lab_51_led', '51æµæ°´ç¯', 'mcu', '8051 æµæ°´ç¯æˆå“æ¿ï¼šMCU + æ™¶æŒ¯ + LED', ['æ™¶æŒ¯èµ°çº¿çŸ­ä¸”å¯¹ç§°', 'LED é™æµç”µé˜»ä¸ IO åŒç½‘æ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_uart', 'ä¸²å£é€šä¿¡', 'mcu', 'STM32 UART æˆå“æ¿', ['UART TX/RX äº¤å‰ä¸ä¸å°æ ¸å¯¹', 'æ™¶æŒ¯/å¤ä½é è¿‘ MCU']),
+    PcbLabTemplateRegistry.def('lab_passive', 'æ— æºå™¨ä»¶æ£€æµ‹', 'passive', 'æ— æºå™¨ä»¶é˜µåˆ—æˆå“æ¿', ['åŒç±»å°è£…æˆè¡Œæ‘†æ”¾ä¾¿äºå¯¹ç…§', 'GND é“ºé“œè¦†ç›–æ¿æ¡†å†…ä¾§']),
+    PcbLabTemplateRegistry.def('lab_discrete', 'åˆ†ç«‹å™¨ä»¶æ£€æµ‹', 'discrete', 'äºŒæç®¡/ä¸‰æç®¡/MOS æˆå“æ¿', ['SOT-23 ææ€§ä¸ä¸å°', 'åŠŸç‡å™¨ä»¶æ•£çƒ­ä¸é“ºé“œ']),
+    PcbLabTemplateRegistry.def('lab_analog_ic', 'æ¨¡æ‹ŸICæ£€æµ‹', 'analog', 'è¿æ”¾/555/ç¨³å‹ IC æˆå“æ¿', ['IC ç”µæºè„šå°±è¿‘å»è€¦', 'å¤šå±‚ç½‘ç»œç”¨é£çº¿/DRC æ£€æŸ¥']),
+    PcbLabTemplateRegistry.def('lab_digital', 'æ•°å­—é€»è¾‘æ£€æµ‹', 'digital', '74HC é€»è¾‘æˆå“æ¿', ['æ—¶é’Ÿçº¿ä¼˜å…ˆçŸ­ç›´', 'é¿å…ä¸æ¨¡æ‹ŸåŒºäº¤å‰ï¼ˆæœ¬æ¿å•åŒºå¯¹ç…§ï¼‰']),
+    PcbLabTemplateRegistry.def('lab_memory', 'å­˜å‚¨å™¨æ¥å£', 'memory', 'å­˜å‚¨å™¨æ¥å£æˆå“æ¿', ['æ€»çº¿ç­‰é•¿ä»…ä½œæ¦‚å¿µå¯¹ç…§', 'CS/SCK ç­‰å…³é”®ä¿¡å·ä¼˜å…ˆå¸ƒé€š']),
+    PcbLabTemplateRegistry.def('lab_mcu_8051', '8051å…¨ç³»åˆ—', 'mcu', 'å¤šé¢— 8051 æœ€å°ç³»ç»Ÿæˆå“æ¿', ['å¤š MCU åˆ†åŒºæ‘†æ”¾', 'å…¬å…± GND é“ºé“œè¿æ¥']),
+    PcbLabTemplateRegistry.def('lab_mcu_stm32', 'STM32å…¨ç³»åˆ—', 'mcu', 'å¤šé¢— STM32 æœ€å°ç³»ç»Ÿæˆå“æ¿', ['HSE æ™¶æŒ¯é è¿‘èŠ¯ç‰‡', 'å¯¹ç…§å±‚æ ˆä¸ºåŒé¢æ¿']),
+    PcbLabTemplateRegistry.def('lab_peripheral', 'å¤–è®¾æ¥å£å®éªŒ', 'peripheral', 'æŒ‰é”®/æ˜¾ç¤º/ç»§ç”µå™¨æˆå“æ¿', ['äººæœºæ¥å£å™¨ä»¶é æ¿è¾¹', 'ç»§ç”µå™¨è§¦ç‚¹ç½‘ç»œå‹¿ä¸ MCU ç”µæºçŸ­è·¯']),
+    PcbLabTemplateRegistry.def('lab_sensor', 'ä¼ æ„Ÿå™¨å®éªŒ', 'sensor', 'ä¼ æ„Ÿå™¨æ¥å£æˆå“æ¿', ['æ¨¡æ‹Ÿä¼ æ„Ÿèµ°çº¿è¿œç¦»æ•°å­—æ—¶é’Ÿ', '1-Wire/ADC ç½‘ç»œ DRC æ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_instruments', 'ä»ªå™¨ä»ªè¡¨æ£€æµ‹', 'instrument', 'ä»ªå™¨ç±»å™¨ä»¶å¤šè·³è¿‡å¸ƒå±€ï¼›æ¿å†…ä»…å¯å¸ƒå±€å™¨ä»¶å¯¹ç…§', ['è™šæ‹Ÿä»ªå™¨æ— å°è£…å±é¢„æœŸ', 'å¯å¸ƒå±€éƒ¨åˆ†ä»åšèµ°çº¿/é“ºé“œæ¼”ç¤º']),
+    PcbLabTemplateRegistry.def('lab_digital_gates', 'æ•°å­—é—¨ç”µè·¯å®éªŒ', 'digital', 'é—¨ç”µè·¯çœŸå€¼è¡¨æˆå“æ¿', ['LED é™æµç”µé˜»ä¸é—¨è¾“å‡ºåŒç½‘', 'æ—¶é’Ÿç½‘ç»œä¼˜å…ˆå¸ƒé€š']),
+    PcbLabTemplateRegistry.def('lab_schmitt', 'è¿æ”¾æ»å›æ¯”è¾ƒå™¨æ•´å½¢', 'analog', 'æ»å›æ¯”è¾ƒå™¨æˆå“æ¿', ['æ­£åé¦ˆç”µé˜»é è¿‘è¿æ”¾', 'åŒç”µæºèµ°çº¿å¯¹ç§°']),
+    PcbLabTemplateRegistry.def('lab_integrator', 'RCç§¯åˆ†ç”µè·¯', 'analog', 'ç§¯åˆ†ç”µè·¯æˆå“æ¿', ['ç§¯åˆ†ç”µå®¹é è¿‘è¿æ”¾åç›¸ç«¯', 'å¯¹ç…§è‡ªåŠ¨å¸ƒçº¿ L å‹æŠ˜çº¿']),
+    PcbLabTemplateRegistry.def('lab_555_astable', '555å¤šè°æŒ¯è¡å™¨', 'analog', '555 æ— ç¨³æ€æˆå“æ¿', ['å®šæ—¶ RC é è¿‘ 555', 'OUTâ†’LED é™æµç½‘ç»œæ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_555_monostable', '555å•ç¨³æ€å»¶æ—¶', 'analog', '555 å•ç¨³æ€æˆå“æ¿', ['TRIG æŒ‰é”®èµ°çº¿çŸ­', 'å®šæ—¶ç”µå®¹ä¸ DISCH/THRES åŒç½‘'])
+];
+//# sourceMappingURL=PcbLabTemplateRegistry.js.mapÂÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\PcbLabTemplateRegistry.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ0./src/main/ets/algorithms/PcbLabTemplateRegistry©ai_engineDÙ#./algorithms/PcbLabTemplateRegistry©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ2/**
+ * PCB å®éªŒæ¨¡æ¿æ³¨å†Œè¡¨ â€” ä¸åŸç†å›¾ LabTemplateRegistry ä¸€ä¸€å¯¹åº”
+ */
+export interface PcbLabTemplateDef {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  /** PCB ä¾§çŸ¥è¯†ç‚¹ï¼šå±‚æ ˆ / DRC / å¸ƒçº¿ / é“ºé“œ */
+  knowledgePoints: string[];
+  /** Test_Template ä¸‹æ–‡ä»¶å */
+  pcbFile: string;
+}
+
+export class PcbLabTemplateRegistry {
+  private static extraTemplates: PcbLabTemplateDef[] = [];
+
+  private static readonly COMMON_PCB_TIPS: string[] = [
+    'åŒé¢æ¿ï¼šä¿¡å·ä¼˜å…ˆ F.Cuï¼ŒGND é“ºé“œåœ¨ B.Cu',
+    'æ’å…¥åæ£€æŸ¥ DRCï¼šé—´è· / æœªå¸ƒçº¿ç½‘ç»œ / å‡ºæ¿',
+    'ç”µæº/åœ°é é“ºé“œä¸å®½çº¿ï¼Œä¿¡å·ç”¨è‡ªåŠ¨ L å‹èµ°çº¿å¯¹ç…§'
+  ];
+
+  private static def(id: string, name: string, category: string, description: string,
+    extraTips: string[]): PcbLabTemplateDef {
+    return {
+      id,
+      name: `${name}ï¼ˆPCBï¼‰`,
+      category,
+      description,
+      knowledgePoints: PcbLabTemplateRegistry.COMMON_PCB_TIPS.concat(extraTips),
+      pcbFile: `${id}.pcbsim`
+    };
+  }
+
+  private static readonly BUILTIN: PcbLabTemplateDef[] = [
+    PcbLabTemplateRegistry.def('lab_power', 'ç›´æµç”µæºç”µè·¯', 'power',
+      'ç¨³å‹ç”µæºæˆå“æ¿ï¼šç¨³å‹å™¨å°è£… + æ»¤æ³¢ + GND é“ºé“œ',
+      ['TO-220 ç¨³å‹å™¨æ•£çƒ­ä¸ GND é“ºé“œè¿æ¥', 'è¾“å…¥/è¾“å‡ºç”µå®¹é è¿‘ç¨³å‹å™¨æ‘†æ”¾']),
+    PcbLabTemplateRegistry.def('lab_amp', 'è¿ç®—æ”¾å¤§ç”µè·¯', 'analog',
+      'è¿æ”¾æ”¾å¤§å™¨æˆå“æ¿ï¼šSOIC è¿æ”¾ + åé¦ˆç”µé˜»ç½‘ç»œ',
+      ['è¿æ”¾å»è€¦ç”µå®¹é è¿‘ç”µæºè„š', 'åé¦ˆç½‘ç»œçŸ­èµ°çº¿é™ä½å™ªå£°']),
+    PcbLabTemplateRegistry.def('lab_filter', 'RCæ»¤æ³¢ç”µè·¯', 'analog',
+      'RC ä½é€š + ç¼“å†²æˆå“æ¿',
+      ['RC èŠ‚ç‚¹èµ°çº¿å°½é‡çŸ­', 'å¯¹ç…§ DRC æŸ¥çœ‹æœªå¸ƒçº¿ç½‘ç»œ']),
+    PcbLabTemplateRegistry.def('lab_51_led', '51æµæ°´ç¯', 'mcu',
+      '8051 æµæ°´ç¯æˆå“æ¿ï¼šMCU + æ™¶æŒ¯ + LED',
+      ['æ™¶æŒ¯èµ°çº¿çŸ­ä¸”å¯¹ç§°', 'LED é™æµç”µé˜»ä¸ IO åŒç½‘æ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_uart', 'ä¸²å£é€šä¿¡', 'mcu',
+      'STM32 UART æˆå“æ¿',
+      ['UART TX/RX äº¤å‰ä¸ä¸å°æ ¸å¯¹', 'æ™¶æŒ¯/å¤ä½é è¿‘ MCU']),
+    PcbLabTemplateRegistry.def('lab_passive', 'æ— æºå™¨ä»¶æ£€æµ‹', 'passive',
+      'æ— æºå™¨ä»¶é˜µåˆ—æˆå“æ¿',
+      ['åŒç±»å°è£…æˆè¡Œæ‘†æ”¾ä¾¿äºå¯¹ç…§', 'GND é“ºé“œè¦†ç›–æ¿æ¡†å†…ä¾§']),
+    PcbLabTemplateRegistry.def('lab_discrete', 'åˆ†ç«‹å™¨ä»¶æ£€æµ‹', 'discrete',
+      'äºŒæç®¡/ä¸‰æç®¡/MOS æˆå“æ¿',
+      ['SOT-23 ææ€§ä¸ä¸å°', 'åŠŸç‡å™¨ä»¶æ•£çƒ­ä¸é“ºé“œ']),
+    PcbLabTemplateRegistry.def('lab_analog_ic', 'æ¨¡æ‹ŸICæ£€æµ‹', 'analog',
+      'è¿æ”¾/555/ç¨³å‹ IC æˆå“æ¿',
+      ['IC ç”µæºè„šå°±è¿‘å»è€¦', 'å¤šå±‚ç½‘ç»œç”¨é£çº¿/DRC æ£€æŸ¥']),
+    PcbLabTemplateRegistry.def('lab_digital', 'æ•°å­—é€»è¾‘æ£€æµ‹', 'digital',
+      '74HC é€»è¾‘æˆå“æ¿',
+      ['æ—¶é’Ÿçº¿ä¼˜å…ˆçŸ­ç›´', 'é¿å…ä¸æ¨¡æ‹ŸåŒºäº¤å‰ï¼ˆæœ¬æ¿å•åŒºå¯¹ç…§ï¼‰']),
+    PcbLabTemplateRegistry.def('lab_memory', 'å­˜å‚¨å™¨æ¥å£', 'memory',
+      'å­˜å‚¨å™¨æ¥å£æˆå“æ¿',
+      ['æ€»çº¿ç­‰é•¿ä»…ä½œæ¦‚å¿µå¯¹ç…§', 'CS/SCK ç­‰å…³é”®ä¿¡å·ä¼˜å…ˆå¸ƒé€š']),
+    PcbLabTemplateRegistry.def('lab_mcu_8051', '8051å…¨ç³»åˆ—', 'mcu',
+      'å¤šé¢— 8051 æœ€å°ç³»ç»Ÿæˆå“æ¿',
+      ['å¤š MCU åˆ†åŒºæ‘†æ”¾', 'å…¬å…± GND é“ºé“œè¿æ¥']),
+    PcbLabTemplateRegistry.def('lab_mcu_stm32', 'STM32å…¨ç³»åˆ—', 'mcu',
+      'å¤šé¢— STM32 æœ€å°ç³»ç»Ÿæˆå“æ¿',
+      ['HSE æ™¶æŒ¯é è¿‘èŠ¯ç‰‡', 'å¯¹ç…§å±‚æ ˆä¸ºåŒé¢æ¿']),
+    PcbLabTemplateRegistry.def('lab_peripheral', 'å¤–è®¾æ¥å£å®éªŒ', 'peripheral',
+      'æŒ‰é”®/æ˜¾ç¤º/ç»§ç”µå™¨æˆå“æ¿',
+      ['äººæœºæ¥å£å™¨ä»¶é æ¿è¾¹', 'ç»§ç”µå™¨è§¦ç‚¹ç½‘ç»œå‹¿ä¸ MCU ç”µæºçŸ­è·¯']),
+    PcbLabTemplateRegistry.def('lab_sensor', 'ä¼ æ„Ÿå™¨å®éªŒ', 'sensor',
+      'ä¼ æ„Ÿå™¨æ¥å£æˆå“æ¿',
+      ['æ¨¡æ‹Ÿä¼ æ„Ÿèµ°çº¿è¿œç¦»æ•°å­—æ—¶é’Ÿ', '1-Wire/ADC ç½‘ç»œ DRC æ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_instruments', 'ä»ªå™¨ä»ªè¡¨æ£€æµ‹', 'instrument',
+      'ä»ªå™¨ç±»å™¨ä»¶å¤šè·³è¿‡å¸ƒå±€ï¼›æ¿å†…ä»…å¯å¸ƒå±€å™¨ä»¶å¯¹ç…§',
+      ['è™šæ‹Ÿä»ªå™¨æ— å°è£…å±é¢„æœŸ', 'å¯å¸ƒå±€éƒ¨åˆ†ä»åšèµ°çº¿/é“ºé“œæ¼”ç¤º']),
+    PcbLabTemplateRegistry.def('lab_digital_gates', 'æ•°å­—é—¨ç”µè·¯å®éªŒ', 'digital',
+      'é—¨ç”µè·¯çœŸå€¼è¡¨æˆå“æ¿',
+      ['LED é™æµç”µé˜»ä¸é—¨è¾“å‡ºåŒç½‘', 'æ—¶é’Ÿç½‘ç»œä¼˜å…ˆå¸ƒé€š']),
+    PcbLabTemplateRegistry.def('lab_schmitt', 'è¿æ”¾æ»å›æ¯”è¾ƒå™¨æ•´å½¢', 'analog',
+      'æ»å›æ¯”è¾ƒå™¨æˆå“æ¿',
+      ['æ­£åé¦ˆç”µé˜»é è¿‘è¿æ”¾', 'åŒç”µæºèµ°çº¿å¯¹ç§°']),
+    PcbLabTemplateRegistry.def('lab_integrator', 'RCç§¯åˆ†ç”µè·¯', 'analog',
+      'ç§¯åˆ†ç”µè·¯æˆå“æ¿',
+      ['ç§¯åˆ†ç”µå®¹é è¿‘è¿æ”¾åç›¸ç«¯', 'å¯¹ç…§è‡ªåŠ¨å¸ƒçº¿ L å‹æŠ˜çº¿']),
+    PcbLabTemplateRegistry.def('lab_555_astable', '555å¤šè°æŒ¯è¡å™¨', 'analog',
+      '555 æ— ç¨³æ€æˆå“æ¿',
+      ['å®šæ—¶ RC é è¿‘ 555', 'OUTâ†’LED é™æµç½‘ç»œæ ¸å¯¹']),
+    PcbLabTemplateRegistry.def('lab_555_monostable', '555å•ç¨³æ€å»¶æ—¶', 'analog',
+      '555 å•ç¨³æ€æˆå“æ¿',
+      ['TRIG æŒ‰é”®èµ°çº¿çŸ­', 'å®šæ—¶ç”µå®¹ä¸ DISCH/THRES åŒç½‘'])
+  ];
+
+  static listTemplates(): PcbLabTemplateDef[] {
+    return PcbLabTemplateRegistry.BUILTIN.concat(PcbLabTemplateRegistry.extraTemplates);
+  }
+
+  static findById(id: string): PcbLabTemplateDef | undefined {
+    return PcbLabTemplateRegistry.listTemplates().find(t => t.id === id);
+  }
+
+  static registerTemplate(def: PcbLabTemplateDef): void {
+    const idx = PcbLabTemplateRegistry.extraTemplates.findIndex(t => t.id === def.id);
+    if (idx >= 0) {
+      PcbLabTemplateRegistry.extraTemplates[idx] = def;
+    } else {
+      PcbLabTemplateRegistry.extraTemplates.push(def);
+    }
+  }
+
+  static listCategories(): string[] {
+    const cats = new Set<string>();
+    for (const t of PcbLabTemplateRegistry.listTemplates()) {
+      cats.add(t.category);
+    }
+    return Array.from(cats);
+  }
+
+  static listByCategory(category: string): PcbLabTemplateDef[] {
+    if (category === 'all') {
+      return PcbLabTemplateRegistry.listTemplates();
+    }
+    return PcbLabTemplateRegistry.listTemplates().filter(t => t.category === category);
+  }
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings¹PcbLabTemplateRegistry.js ‘ºPcbLabTemplateRegistry.etsÜ D””   ” ” ”# #” 
+”
+ ” ” ” ” ” !” -” /”! ?”# ÌA”. ÌT”0 ”9 ’” ” ’” ” –” ” 
+” ” ” ”  ’” ” ’” ” ›” ” ” ”3 -”4 .”ÌC =”ÌD >”ÌJ ÌD”ÌK ÌE”ÌT ÌN”ÌU ÌO–” ” ” ” ” ”# ’”	  ”
+  ’” !” !”” Ìb”
+ Ìb” Ìb	” Ìb” Ìc” Ìc”% Ìc!”& Ìc"”- Ìc)”. Ìc*”4 Ìc0”5 Ìc1”ÌK ÌcÌG”ÌL ÌcÌH”ÌZ ÌcÌV”Ì[ ÌcÌW”Ì\ ÌcÌX’” Ìd” Ìd–” Ìf”
+ Ìf” Ìf	” Ìf” Ìf” ÌfÜ ” Ìg” Ìg”% Ìg!”& Ìg"”3 Ìg/”5 Ìg1”6 Ìg2”: Ìg6”; Ìg7”< Ìg8”= Ìg9”? Ìg;”Ì@ Ìg<”ÌA Ìg=”ÌB Ìg>”ÌD ÌgÌ@”ÌI ÌgÌE”ÌK ÌgÌG”ÌL ÌgÌH”ÌM ÌgÌI’” Ìh” Ìh–” Ìj”
+ Ìj” Ìj	” Ìj” Ìj” Ìj0Ü ” Ìk” Ìk
+” Ìk” Ìk”* Ìk&”+ Ìk'”9 Ìk5”: Ìk6”ÌC Ìk?”ÌD ÌkÌ@”ÌE ÌkÌA”ÌF ÌkÌB”ÌH ÌkÌD”ÌI ÌkÌE”ÌJ ÌkÌF”ÌK ÌkÌG”ÌM ÌkÌI”ÌR ÌkÌN”ÌU ÌkÌQ”ÌV ÌkÌR”ÌX ÌkÌT”ÌY ÌkÌU”ÌZ ÌkÌV–” Ìl” Ìl” Ìl” Ìl” Ìl” Ìlš” Ìm”" Ìm”# Ìm”1 Ìm+”2 Ìm,”5 Ìm/”6 Ìm0”9 Ìm3”< Ìm6”= Ìm7‘”	 Ìn‘” Ìnš” Ìo”" Ìo”# Ìo”1 Ìo+”2 Ìo,”6 Ìo0”7 Ìo1”: Ìo4”; Ìo5”< Ìo6‘”	 Ìp’” Ìq” Ìq”” Ìs”
+ Ìs” Ìs	” Ìs˜” Ìt” Ìt
+” Ìt” Ìt” Ìt” Ìt” Ìt"” Ìt#š” Ìu” Ìu	” Ìu” Ìu” Ìu”. Ìu*”/ Ìu+”< Ìu8”> Ìu:”Ì@ Ìu<š” Ìv” Ìv
+” Ìv” Ìv” Ìv” Ìv” Ìv” Ìv”  Ìv”! Ìv‘”	 Ìw™” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx”  Ìx’” Ìy” Ìy–” Ì{”
+ Ì{” Ì{	” Ì{” Ì{”" Ì{(–” Ì|” Ì|” Ì|” Ì|” Ì|”  Ì|—” Ì}” Ì}”) Ì}#”* Ì}$”7 Ì}1”9 Ì}3”: Ì}4‘”	 Ì~Ü ” Ì” Ì”% Ì!”& Ì"”3 Ì/”5 Ì1”6 Ì2”< Ì8”= Ì9”> Ì:”? Ì;”ÌA Ì=”ÌB Ì>”ÌC Ì?”ÌD ÌÌ@”ÌL ÌÌH”ÌQ ÌÌM”ÌY ÌÌU”ÌZ ÌÌV”Ì[ ÌÌW’” Ì€” Ì€•”  ”% ”( 7”* 9”+ :“”  ”& )”) 6’” ”   ’” ” ’” ” ’” ” “”  #” #!”! #9Ü ” $” $” $” $” $”* $*”, $,”4 $4”6 $6”= $=”? %”Ì\ %#”Ì^ &”Ì_ &”Ìw &”Ìy &!”Ì‰ &1”ÌŠ &2”Ì‹ &3Ü ” '” '” '” '” '”( '(”* '*”2 '2”4 '4”< '<”> (”ÌY (!”Ì[ )”Ì\ )”Ìi )”Ìk )”Ìx )#”Ìy )$”Ìz )%Ü ” *” *” *” *” *”+ *+”- *-”5 *5”7 *7”? *?”ÌA +”ÌP +”ÌR ,”ÌS ,”Ì_ ,”Ìa ,”Ìq ,%”Ìr ,&”Ìs ,'Ü ” -” -” -” -” -”+ -+”- --”4 -4”6 -6”; -;”= .”ÌY ."”Ì[ /”Ì\ /”Ìf /”Ìh /”Ì{ /&”Ì| /'”Ì} /(Ü ” 0” 0” 0” 0” 0”) 0)”+ 0+”1 01”3 03”8 08”: 1”ÌJ 1”ÌL 2”ÌM 2”Ìa 2”Ìc 2”Ìp 2*”Ìq 2+”Ìr 2,Ü ” 3” 3” 3” 3” 3”, 3,”. 3.”6 36”8 38”ÌA 3ÌA”ÌC 4”ÌN 4”ÌP 5”ÌQ 5”Ì_ 5”Ìa 5”Ìo 5%”Ìp 5&”Ìq 5'Ü ” 6” 6” 6” 6” 6”- 6-”/ 6/”7 67”9 69”ÌC 6ÌC”ÌE 7”ÌV 7”ÌX 8”ÌY 8”Ìg 8”Ìi 8”Ìt 8"”Ìu 8#”Ìv 8$Ü ” 9” 9” 9” 9” 9”. 9.”0 90”8 98”: 9:”ÌB 9ÌB”ÌD :”ÌV :”ÌX ;”ÌY ;”Ìe ;”Ìg ;”Ìw ;%”Ìx ;&”Ìy ;'Ü ” <” <” <” <” <”, <,”. <.”6 <6”8 <8”ÌA <ÌA”ÌC =”ÌO =”ÌQ >”ÌR >”Ì[ >”Ì] >”Ìo >$”Ìp >%”Ìq >&Ü ” ?” ?” ?” ?” ?”+ ?+”- ?-”4 ?4”6 ?6”> ?>”Ì@ Ì@”ÌJ Ì@”ÌL ÌA”ÌM ÌA”ÌY ÌA”Ì[ ÌA”Ìm ÌA'”Ìn ÌA(”Ìo ÌA)Ü ” ÌB” ÌB” ÌB” ÌB” ÌB”- ÌB-”/ ÌB/”8 ÌB8”: ÌB:”? ÌB?”ÌA ÌC”ÌR ÌC”ÌT ÌD”ÌU ÌD”Ìa ÌD”Ìc ÌD”Ìp ÌD"”Ìq ÌD#”Ìr ÌD$Ü ” ÌE” ÌE” ÌE” ÌE” ÌE”. ÌE.”0 ÌE0”: ÌE:”< ÌE<”ÌA ÌEÌA”ÌC ÌF”ÌU ÌF”ÌW ÌG”ÌX ÌG”Ìd ÌG”Ìf ÌG”Ìp ÌG”Ìq ÌG ”Ìr ÌG!Ü ” ÌH” ÌH” ÌH” ÌH” ÌH”/ ÌH/”1 ÌH1”9 ÌH9”; ÌH;”ÌG ÌHÌG”ÌI ÌI”ÌW ÌI”ÌY ÌJ”ÌZ ÌJ”Ìe ÌJ”Ìg ÌJ”Ì{ ÌJ(”Ì| ÌJ)”Ì} ÌJ*Ü ” ÌK” ÌK” ÌK” ÌK” ÌK”+ ÌK+”- ÌK-”4 ÌK4”6 ÌK6”> ÌK>”Ì@ ÌL”ÌJ ÌL”ÌL ÌM”ÌM ÌM”Ì[ ÌM”Ì] ÌM”Ìs ÌM-”Ìt ÌM.”Ìu ÌM/Ü ” ÌN” ÌN” ÌN” ÌN” ÌN”0 ÌN0”2 ÌN2”: ÌN:”< ÌN<”ÌH ÌNÌH”ÌJ ÌO”Ìa ÌO”Ìc ÌP”Ìd ÌP”Ìp ÌP”Ìr ÌP”Ì‚ ÌP%”Ìƒ ÌP&”Ì„ ÌP'Ü ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”2 ÌQ2”4 ÌQ4”= ÌQ=”? ÌQ?”ÌH ÌQÌH”ÌJ ÌR”ÌU ÌR”ÌW ÌS”ÌX ÌS”Ìh ÌS”Ìj ÌS”Ìt ÌS#”Ìu ÌS$”Ìv ÌS%Ü ” ÌT” ÌT” ÌT” ÌT” ÌT”, ÌT,”. ÌT.”9 ÌT9”; ÌT;”ÌC ÌTÌC”ÌE ÌU”ÌO ÌU”ÌQ ÌV”ÌR ÌV”Ì] ÌV”Ì_ ÌV”Ìh ÌV”Ìi ÌV”Ìj ÌVÜ ” ÌW” ÌW” ÌW” ÌW” ÌW”/ ÌW/”1 ÌW1”9 ÌW9”; ÌW;”ÌC ÌWÌC”ÌE ÌX”ÌN ÌX”ÌP ÌY”ÌQ ÌY”Ì^ ÌY”Ì` ÌY”Ìn ÌY$”Ìo ÌY%”Ìp ÌY&Ü ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”0 ÌZ0”2 ÌZ2”< ÌZ<”> ÌZ>”ÌF ÌZÌF”ÌH Ì[”ÌT Ì[”ÌV Ì\”ÌW Ì\”Ìe Ì\”Ìg Ì\”Ìw Ì\'”Ìx Ì\(”Ìy Ì\)Ü ” Ì]” Ì]” Ì]” Ì]” Ì]”3 Ì]3”5 Ì]5”? Ì]?”ÌA Ì]ÌA”ÌI Ì]ÌI”ÌK Ì^”ÌW Ì^”ÌY Ì_”ÌZ Ì_”Ìf Ì_”Ìh Ì_”Ì~ Ì_+”Ì Ì_,”Ì€ Ì_-’” Ì`” Ì`ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ E‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍsÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍsÔrK”¤type¥start£end¤nameªIdentifier#¶PcbLabTemplateRegistryÀÔrL”¤type¥start£end¤body©ClassBody$Ís–ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinition+ÍjÃÂKªIdentifier25£def¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpression5ÍjÀÂÂÂ•KªIdentifier68¢idKªIdentifier:>¤nameKªIdentifierÌ@ÌH¨categoryKªIdentifierÌJÌU«descriptionKªIdentifierÌWÌ`©extraTipsL®BlockStatementÌbÍj‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÌmÍcÔrP”¤type¥start£endªproperties°ObjectExpressionÌtÍb–ÔrQ™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÌƒÌ…ÂÃÂKªIdentifierÌƒÌ…¢id¤initKªIdentifierÌƒÌ…¢idÔrR™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌ”Ì¨ÂÂÂKªIdentifierÌ”Ì˜¤nameÔrS•¤type¥start£end«expressions¦quasis¯TemplateLiteralÌšÌ¨‘KªIdentifierÌÌ¡¤name’ÔrT•¤type¥start£end¥value¤tail¯TemplateElementÌ›Ì›ÔrU’£raw¦cooked  ÂT¯TemplateElementÌ¢Ì§U©ï¼ˆPCBï¼‰©ï¼ˆPCBï¼‰Ã¤initQ¨PropertyÌ·Ì¿ÂÃÂKªIdentifierÌ·Ì¿¨category¤initKªIdentifierÌ·Ì¿¨categoryQ¨PropertyÌÎÌÙÂÃÂKªIdentifierÌÎÌÙ«description¤initKªIdentifierÌÎÌÙ«descriptionR¨PropertyÌèÍ1ÂÂÂKªIdentifierÌèÌ÷¯knowledgePointsÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌùÍ1ÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌùÍ&W°MemberExpressionÌùÍKªIdentifierÌùÍ¶PcbLabTemplateRegistryKªIdentifierÍÍ¯COMMON_PCB_TIPSÂÂKªIdentifierÍ Í&¦concatÂÂ‘KªIdentifierÍ'Í0©extraTipsÂ¤initR¨PropertyÍ@ÍWÂÂÂKªIdentifierÍ@ÍG§pcbFileS¯TemplateLiteralÍIÍW‘KªIdentifierÍLÍN¢id’T¯TemplateElementÍJÍJU  ÂT¯TemplateElementÍOÍVU§.pcbsim§.pcbsimÃ¤initM°MethodDefinitionÍpÍíÃÂKªIdentifierÍwÍ„­listTemplates¦methodN²FunctionExpressionÍ„ÍíÀÂÂÂL®BlockStatementÍ‡Íí‘O¯ReturnStatementÍ’ÍæV®CallExpressionÍ™ÍåW°MemberExpressionÍ™Í¾W°MemberExpressionÍ™Í·KªIdentifierÍ™Í¯¶PcbLabTemplateRegistryKªIdentifierÍ°Í·§BUILTINÂÂKªIdentifierÍ¸Í¾¦concatÂÂ‘W°MemberExpressionÍ¿ÍäKªIdentifierÍ¿ÍÕ¶PcbLabTemplateRegistryKªIdentifierÍÖÍä®extraTemplatesÂÂÂM°MethodDefinitionÍóÍ^ÃÂKªIdentifierÍúÍ¨findById¦methodN²FunctionExpressionÍÍ^ÀÂÂÂ‘KªIdentifierÍÍ¢idL®BlockStatementÍÍ^‘O¯ReturnStatementÍÍWV®CallExpressionÍÍVW°MemberExpressionÍÍDV®CallExpressionÍÍ?W°MemberExpressionÍÍ=KªIdentifierÍÍ/¶PcbLabTemplateRegistryKªIdentifierÍ0Í=­listTemplatesÂÂÂKªIdentifierÍ@ÍD¤findÂÂ‘N·ArrowFunctionExpressionÍEÍUÀÃÂÂ‘KªIdentifierÍEÍF¡tÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍJÍUW°MemberExpressionÍJÍNKªIdentifierÍJÍK¡tKªIdentifierÍLÍN¢idÂÂ£===KªIdentifierÍSÍU¢idÂM°MethodDefinitionÍdÍ¡ÃÂKªIdentifierÍkÍ{°registerTemplate¦methodN²FunctionExpressionÍ{Í¡ÀÂÂÂ‘KªIdentifierÍ|Í£defL®BlockStatementÍÍ¡’ÔrY•¤type¥start£end¬declarations¤kind³VariableDeclarationÍŒÍŞ‘ÔrZ•¤type¥start£end¢id¤init²VariableDeclaratorÍ’ÍİKªIdentifierÍ’Í•£idxV®CallExpressionÍ˜ÍİW°MemberExpressionÍ˜ÍÇW°MemberExpressionÍ˜Í½KªIdentifierÍ˜Í®¶PcbLabTemplateRegistryKªIdentifierÍ¯Í½®extraTemplatesÂÂKªIdentifierÍ¾ÍÇ©findIndexÂÂ‘N·ArrowFunctionExpressionÍÈÍÜÀÃÂÂ‘KªIdentifierÍÈÍÉ¡tX°BinaryExpressionÍÍÍÜW°MemberExpressionÍÍÍÑKªIdentifierÍÍÍÎ¡tKªIdentifierÍÏÍÑ¢idÂÂ£===W°MemberExpressionÍÖÍÜKªIdentifierÍÖÍÙ£defKªIdentifierÍÚÍÜ¢idÂÂÂ¥constÔr[–¤type¥start£end¤testªconsequent©alternate«IfStatementÍèÍšX°BinaryExpressionÍìÍôKªIdentifierÍìÍï£idx¢>=Ôr\•¤type¥start£end¥value£raw§LiteralÍóÍô ¡0L®BlockStatementÍöÍA‘Ôr]”¤type¥start£endªexpression³ExpressionStatementÍÍ6Ôr^–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ5¡=W°MemberExpressionÍÍ/W°MemberExpressionÍÍ*KªIdentifierÍÍ¶PcbLabTemplateRegistryKªIdentifierÍÍ*®extraTemplatesÂÂKªIdentifierÍ+Í.£idxÃÂKªIdentifierÍ2Í5£defL®BlockStatementÍPÍš‘]³ExpressionStatementÍ_ÍV®CallExpressionÍ_ÍW°MemberExpressionÍ_Í‰W°MemberExpressionÍ_Í„KªIdentifierÍ_Íu¶PcbLabTemplateRegistryKªIdentifierÍvÍ„®extraTemplatesÂÂKªIdentifierÍ…Í‰¤pushÂÂ‘KªIdentifierÍŠÍ£defÂM°MethodDefinitionÍ§Í{ÃÂKªIdentifierÍ®Í¼®listCategories¦methodN²FunctionExpressionÍ¼Í{ÀÂÂÂL®BlockStatementÍ¿Í{“Y³VariableDeclarationÍÊÍá‘Z²VariableDeclaratorÍĞÍàKªIdentifierÍĞÍÔ¤catsÔr_•¤type¥start£end¦callee©arguments­NewExpressionÍ×ÍàKªIdentifierÍÛÍŞ£Set¥constÔr`—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍëÍRÂY³VariableDeclarationÍğÍ÷‘Z²VariableDeclaratorÍöÍ÷KªIdentifierÍöÍ÷¡tÀ¥constV®CallExpressionÍûÍ!W°MemberExpressionÍûÍKªIdentifierÍûÍ¶PcbLabTemplateRegistryKªIdentifierÍÍ­listTemplatesÂÂÂL®BlockStatementÍ#ÍR‘]³ExpressionStatementÍ2ÍGV®CallExpressionÍ2ÍFW°MemberExpressionÍ2Í:KªIdentifierÍ2Í6¤catsKªIdentifierÍ7Í:£addÂÂ‘W°MemberExpressionÍ;ÍEKªIdentifierÍ;Í<¡tKªIdentifierÍ=ÍE¨categoryÂÂÂO¯ReturnStatementÍ\ÍtV®CallExpressionÍcÍsW°MemberExpressionÍcÍmKªIdentifierÍcÍh¥ArrayKªIdentifierÍiÍm¤fromÂÂ‘KªIdentifierÍnÍr¤catsÂM°MethodDefinitionÍÍpÃÂKªIdentifierÍˆÍ–®listByCategory¦methodN²FunctionExpressionÍ–ÍpÀÂÂÂ‘KªIdentifierÍ—ÍŸ¨categoryL®BlockStatementÍ¡Íp’[«IfStatementÍ¬ÍX°BinaryExpressionÍ°ÍÂKªIdentifierÍ°Í¸¨category£===\§LiteralÍ½ÍÂ£all¥'all'L®BlockStatementÍÄÍ‘O¯ReturnStatementÍÓÍV®CallExpressionÍÚÍ W°MemberExpressionÍÚÍşKªIdentifierÍÚÍğ¶PcbLabTemplateRegistryKªIdentifierÍñÍş­listTemplatesÂÂÂÀO¯ReturnStatementÍÍiV®CallExpressionÍÍhW°MemberExpressionÍÍJV®CallExpressionÍÍCW°MemberExpressionÍÍAKªIdentifierÍÍ3¶PcbLabTemplateRegistryKªIdentifierÍ4ÍA­listTemplatesÂÂÂKªIdentifierÍDÍJ¦filterÂÂ‘N·ArrowFunctionExpressionÍKÍgÀÃÂÂ‘KªIdentifierÍKÍL¡tX°BinaryExpressionÍPÍgW°MemberExpressionÍPÍZKªIdentifierÍPÍQ¡tKªIdentifierÍRÍZ¨categoryÂÂ£===KªIdentifierÍ_Íg¨categoryÂÀ

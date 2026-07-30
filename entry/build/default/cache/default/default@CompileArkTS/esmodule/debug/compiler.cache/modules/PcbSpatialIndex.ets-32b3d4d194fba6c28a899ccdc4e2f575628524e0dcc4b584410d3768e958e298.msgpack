@@ -1,0 +1,432 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ7export var PcbSpatialKind;
+(function (PcbSpatialKind) {
+    PcbSpatialKind["TRACK"] = "track";
+    PcbSpatialKind["VIA"] = "via";
+    PcbSpatialKind["FOOTPRINT"] = "fp";
+    PcbSpatialKind["ZONE"] = "zone";
+    PcbSpatialKind["PAD"] = "pad";
+})(PcbSpatialKind || (PcbSpatialKind = {}));
+class QuadNode {
+    constructor(bounds, depth, maxItems, maxDepth) {
+        this.items = [];
+        this.children = null;
+        this.bounds = bounds;
+        this.depth = depth;
+        this.maxItems = maxItems;
+        this.maxDepth = maxDepth;
+    }
+    insert(item) {
+        if (!rectsOverlap(this.bounds, item.rect))
+            return;
+        if (this.children === null) {
+            this.items.push(item);
+            if (this.items.length > this.maxItems && this.depth < this.maxDepth) {
+                this.split();
+            }
+            return;
+        }
+        for (let i = 0; i < 4; i++) {
+            this.children[i].insert(item);
+        }
+    }
+    split() {
+        const b = this.bounds;
+        const mx = (b.x1 + b.x2) / 2;
+        const my = (b.y1 + b.y2) / 2;
+        const d = this.depth + 1;
+        this.children = [
+            new QuadNode({ x1: b.x1, y1: b.y1, x2: mx, y2: my }, d, this.maxItems, this.maxDepth),
+            new QuadNode({ x1: mx, y1: b.y1, x2: b.x2, y2: my }, d, this.maxItems, this.maxDepth),
+            new QuadNode({ x1: b.x1, y1: my, x2: mx, y2: b.y2 }, d, this.maxItems, this.maxDepth),
+            new QuadNode({ x1: mx, y1: my, x2: b.x2, y2: b.y2 }, d, this.maxItems, this.maxDepth)
+        ];
+        const old = this.items;
+        this.items = [];
+        for (let i = 0; i < old.length; i++) {
+            for (let c = 0; c < 4; c++) {
+                this.children[c].insert(old[i]);
+            }
+        }
+    }
+    query(rect, out, seen) {
+        if (!rectsOverlap(this.bounds, rect))
+            return;
+        for (let i = 0; i < this.items.length; i++) {
+            const it = this.items[i];
+            if (!rectsOverlap(it.rect, rect))
+                continue;
+            if (seen.has(it.id))
+                continue;
+            seen.add(it.id);
+            out.push(it);
+        }
+        if (this.children !== null) {
+            for (let c = 0; c < 4; c++) {
+                this.children[c].query(rect, out, seen);
+            }
+        }
+    }
+}
+function rectsOverlap(a, b) {
+    return !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
+}
+function expandPoint(x, y, r) {
+    return { x1: x - r, y1: y - r, x2: x + r, y2: y + r };
+}
+export class PcbSpatialIndex {
+    constructor() {
+        this.root = null;
+        this.version = 0;
+    }
+    getVersion() {
+        return this.version;
+    }
+    clear() {
+        this.root = null;
+        this.version++;
+    }
+    rebuild(bounds, items) {
+        const pad = 200;
+        const b = {
+            x1: bounds.x1 - pad,
+            y1: bounds.y1 - pad,
+            x2: bounds.x2 + pad,
+            y2: bounds.y2 + pad
+        };
+        if (b.x2 <= b.x1) {
+            b.x1 = -1000;
+            b.x2 = 5000;
+        }
+        if (b.y2 <= b.y1) {
+            b.y1 = -1000;
+            b.y2 = 5000;
+        }
+        this.root = new QuadNode(b, 0, 12, 8);
+        for (let i = 0; i < items.length; i++) {
+            this.root.insert(items[i]);
+        }
+        this.version++;
+    }
+    queryRect(rect) {
+        const out = [];
+        if (!this.root)
+            return out;
+        const seen = new Set();
+        this.root.query(rect, out, seen);
+        return out;
+    }
+    queryPoint(x, y, radius) {
+        return this.queryRect(expandPoint(x, y, radius));
+    }
+    static trackRect(ax, ay, bx, by, halfW) {
+        return {
+            x1: Math.min(ax, bx) - halfW,
+            y1: Math.min(ay, by) - halfW,
+            x2: Math.max(ax, bx) + halfW,
+            y2: Math.max(ay, by) + halfW
+        };
+    }
+    static viaRect(x, y, diameter) {
+        const r = diameter / 2;
+        return expandPoint(x, y, r);
+    }
+}
+//# sourceMappingURL=PcbSpatialIndex.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbSpatialIndex.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/utils/PcbSpatialIndex¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ/**
+ * PCB å››å‰æ ‘ç©ºé—´ç´¢å¼• â€” åŠ é€Ÿæ‹¾å–ä¸è§†å£æŸ¥è¯¢
+ */
+export interface PcbSpatialRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export enum PcbSpatialKind {
+  TRACK = 'track',
+  VIA = 'via',
+  FOOTPRINT = 'fp',
+  ZONE = 'zone',
+  PAD = 'pad'
+}
+
+export interface PcbSpatialItem {
+  id: string;
+  kind: PcbSpatialKind;
+  /** å®¿ä¸»å¯¹è±¡ idï¼ˆtrack/via/fp/zoneï¼‰ */
+  refId: string;
+  rect: PcbSpatialRect;
+}
+
+class QuadNode {
+  bounds: PcbSpatialRect;
+  items: PcbSpatialItem[] = [];
+  children: QuadNode[] | null = null;
+  private depth: number;
+  private maxItems: number;
+  private maxDepth: number;
+
+  constructor(bounds: PcbSpatialRect, depth: number, maxItems: number, maxDepth: number) {
+    this.bounds = bounds;
+    this.depth = depth;
+    this.maxItems = maxItems;
+    this.maxDepth = maxDepth;
+  }
+
+  insert(item: PcbSpatialItem): void {
+    if (!rectsOverlap(this.bounds, item.rect)) return;
+    if (this.children === null) {
+      this.items.push(item);
+      if (this.items.length > this.maxItems && this.depth < this.maxDepth) {
+        this.split();
+      }
+      return;
+    }
+    for (let i = 0; i < 4; i++) {
+      this.children[i].insert(item);
+    }
+  }
+
+  private split(): void {
+    const b = this.bounds;
+    const mx = (b.x1 + b.x2) / 2;
+    const my = (b.y1 + b.y2) / 2;
+    const d = this.depth + 1;
+    this.children = [
+      new QuadNode({ x1: b.x1, y1: b.y1, x2: mx, y2: my }, d, this.maxItems, this.maxDepth),
+      new QuadNode({ x1: mx, y1: b.y1, x2: b.x2, y2: my }, d, this.maxItems, this.maxDepth),
+      new QuadNode({ x1: b.x1, y1: my, x2: mx, y2: b.y2 }, d, this.maxItems, this.maxDepth),
+      new QuadNode({ x1: mx, y1: my, x2: b.x2, y2: b.y2 }, d, this.maxItems, this.maxDepth)
+    ];
+    const old = this.items;
+    this.items = [];
+    for (let i = 0; i < old.length; i++) {
+      for (let c = 0; c < 4; c++) {
+        this.children[c].insert(old[i]);
+      }
+    }
+  }
+
+  query(rect: PcbSpatialRect, out: PcbSpatialItem[], seen: Set<string>): void {
+    if (!rectsOverlap(this.bounds, rect)) return;
+    for (let i = 0; i < this.items.length; i++) {
+      const it = this.items[i];
+      if (!rectsOverlap(it.rect, rect)) continue;
+      if (seen.has(it.id)) continue;
+      seen.add(it.id);
+      out.push(it);
+    }
+    if (this.children !== null) {
+      for (let c = 0; c < 4; c++) {
+        this.children[c].query(rect, out, seen);
+      }
+    }
+  }
+}
+
+function rectsOverlap(a: PcbSpatialRect, b: PcbSpatialRect): boolean {
+  return !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
+}
+
+function expandPoint(x: number, y: number, r: number): PcbSpatialRect {
+  return { x1: x - r, y1: y - r, x2: x + r, y2: y + r };
+}
+
+export class PcbSpatialIndex {
+  private root: QuadNode | null = null;
+  private version: number = 0;
+
+  getVersion(): number {
+    return this.version;
+  }
+
+  clear(): void {
+    this.root = null;
+    this.version++;
+  }
+
+  rebuild(bounds: PcbSpatialRect, items: PcbSpatialItem[]): void {
+    const pad = 200;
+    const b: PcbSpatialRect = {
+      x1: bounds.x1 - pad,
+      y1: bounds.y1 - pad,
+      x2: bounds.x2 + pad,
+      y2: bounds.y2 + pad
+    };
+    if (b.x2 <= b.x1) {
+      b.x1 = -1000;
+      b.x2 = 5000;
+    }
+    if (b.y2 <= b.y1) {
+      b.y1 = -1000;
+      b.y2 = 5000;
+    }
+    this.root = new QuadNode(b, 0, 12, 8);
+    for (let i = 0; i < items.length; i++) {
+      this.root.insert(items[i]);
+    }
+    this.version++;
+  }
+
+  queryRect(rect: PcbSpatialRect): PcbSpatialItem[] {
+    const out: PcbSpatialItem[] = [];
+    if (!this.root) return out;
+    const seen = new Set<string>();
+    this.root.query(rect, out, seen);
+    return out;
+  }
+
+  queryPoint(x: number, y: number, radius: number): PcbSpatialItem[] {
+    return this.queryRect(expandPoint(x, y, radius));
+  }
+
+  static trackRect(ax: number, ay: number, bx: number, by: number, halfW: number): PcbSpatialRect {
+    return {
+      x1: Math.min(ax, bx) - halfW,
+      y1: Math.min(ay, by) - halfW,
+      x2: Math.max(ax, bx) + halfW,
+      y2: Math.max(ay, by) + halfW
+    };
+  }
+
+  static viaRect(x: number, y: number, diameter: number): PcbSpatialRect {
+    const r = diameter / 2;
+    return expandPoint(x, y, r);
+  }
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbSpatialIndex.js ‘³PcbSpatialIndex.etsÜ …•”  
+ ” 
+” 
+ ” 
+” “”  
+ ” 
+” 
+“” ”% ”& “” ”! ”" “” ”& ”' “” ”# ”$ “” ”! ”" —”   ” ” 
+” 
+” 
+”$ 
+”, “”   ” ” ™” "” "” "$” "&” "3” "5”' "ÌE”) "ÌG”1 "ÌW•” ” ” ” ” •” ” 
+”  ” $” %—” #” #” #	” #” #” #” #—” $” $” $	” $” $” $” $—” %” %” %	” %” %”  %”! %—” &” &” &	” &” &”  &”! &’” '” '”” )”
+ )” )	” )” *” *” *	” *” *” *” *”% *!”' *#”+ *'”, *(”0 *,”1 *-’” */” *6˜” +” +” +” +” +” +”" +”$ + š” ,” ,
+” ,” ,” ,” ,” ,”  ,”! ,”" ,Ü ” -” -
+” -” -” -” -”! -”$ -”( -"”) -#”1 -+”5 -/”9 -3”: -4”? -9”ÌB -<”ÌF -Ì@”ÌG -ÌA”ÌO -ÌI”ÌQ -ÌK–” .” .” .” .” .” .‘” /’” 0” 0‘”	 1” 2” 2	” 2” 2” 2” 2” 2” 2” 2” 2” 2”  2”" 2”$ 2 ” 3” 3
+” 3” 3” 3” 3” 3” 3”# 3”$ 3”( 3"”) 3#”* 3$‘”	 4’” 5” 5’” 7
+”	 7˜” 8” 8
+” 8” 8” 8” 8” 8” 8Ü ” 9” 9
+” 9” 9” 9” 9” 9” 9” 9” 9” 9” 9”  9”# 9”$ 9 ”% 9!Ü ” :” :
+” :” :” :” :” :” :” :” :” :” :”  :”# :”$ : ”% :!š” ;” ;
+” ;” ;” ;” ;” ;” ;”  ;”! ;•” <” <” <	” <” <Ü $” =” =
+” =” =” =” =” =”  =”! =”# =”% =”' =!”) =#”* =$”+ =%”- ='”/ =)”1 =+”3 =-”5 =/”7 =1”9 =3”; =5”= =7”? =9”ÌA =;”ÌB =<”ÌD =>”ÌH =ÌB”ÌI =ÌC”ÌQ =ÌK”ÌS =ÌM”ÌW =ÌQ”ÌX =ÌR”Ì` =ÌZ”Ìa =Ì[Ü $” >” >
+” >” >” >” >” >”! >”# >”% >”' >!”( >"”) >#”+ >%”- >'”/ >)”1 >+”2 >,”3 >-”5 >/”7 >1”9 >3”; >5”= >7”? >9”ÌA >;”ÌB ><”ÌD >>”ÌH >ÌB”ÌI >ÌC”ÌQ >ÌK”ÌS >ÌM”ÌW >ÌQ”ÌX >ÌR”Ì` >ÌZ”Ìa >Ì[Ü $” ?” ?
+” ?” ?” ?” ?” ?”  ?”! ?”# ?”% ?”' ?!”) ?#”+ ?%”- ?'”/ ?)”1 ?+”3 ?-”5 ?/”7 ?1”9 ?3”: ?4”; ?5”= ?7”? ?9”ÌA ?;”ÌB ?<”ÌD ?>”ÌH ?ÌB”ÌI ?ÌC”ÌQ ?ÌK”ÌS ?ÌM”ÌW ?ÌQ”ÌX ?ÌR”Ì` ?ÌZ”Ìa ?Ì[Ü $” Ì@” Ì@
+” Ì@” Ì@” Ì@” Ì@” Ì@”! Ì@”# Ì@”% Ì@”' Ì@!”) Ì@#”+ Ì@%”- Ì@'”/ Ì@)”0 Ì@*”1 Ì@+”3 Ì@-”5 Ì@/”7 Ì@1”9 Ì@3”: Ì@4”; Ì@5”= Ì@7”? Ì@9”ÌA Ì@;”ÌB Ì@<”ÌD Ì@>”ÌH Ì@ÌB”ÌI Ì@ÌC”ÌQ Ì@ÌK”ÌS Ì@ÌM”ÌW Ì@ÌQ”ÌX Ì@ÌR”Ì` Ì@ÌZ”Ìa Ì@Ì[’”	 ÌA”
+ ÌA˜” ÌB” ÌB
+” ÌB” ÌB” ÌB” ÌB” ÌB” ÌB—” ÌC” ÌC” ÌC	” ÌC” ÌC” ÌC” ÌCÜ ” ÌD” ÌD	” ÌD” ÌD” ÌD” ÌD” ÌD” ÌD” ÌD” ÌD”  ÌD”& ÌD"”( ÌD$”) ÌD%”+ ÌD'”- ÌD)” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE” ÌE”  ÌE”! ÌE”# ÌE”$ ÌE”& ÌE ”( ÌE"Ü ” ÌF” ÌF” ÌF” ÌF” ÌF” ÌF”  ÌF”! ÌF”' ÌF”( ÌF ”+ ÌF#”, ÌF$”- ÌF%”. ÌF&”/ ÌF'”0 ÌF(‘” ÌG‘”	 ÌH’” ÌI” ÌI˜” ÌK”	 ÌK”
+ ÌK” ÌK” ÌK” ÌK3” ÌK5” ÌKÌF›” ÌL” ÌL” ÌL	” ÌL” ÌL” ÌL” ÌL”% ÌL!”' ÌL#”+ ÌL'”, ÌL(’” ÌL*” ÌL1Ü ” ÌM” ÌM	” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌM”! ÌM”& ÌM"”' ÌM#”- ÌM)”/ ÌM+”0 ÌM,”2 ÌM.”4 ÌM0›” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN”! ÌN”" ÌN”# ÌN”$ ÌN”% ÌN›” ÌO” ÌO
+” ÌO” ÌO” ÌO”  ÌO”! ÌO”% ÌO”' ÌO!”+ ÌO%”, ÌO&’” ÌO(” ÌO1š” ÌP” ÌP
+” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP’” ÌP” ÌP$š” ÌQ” ÌQ
+” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ˜” ÌR” ÌR	” ÌR
+” ÌR” ÌR” ÌR” ÌR” ÌR‘”	 ÌS˜” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”$ ÌT ” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU”  ÌU”! ÌU”# ÌU”$ ÌU”& ÌU ”( ÌU"Ü ” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”  ÌV”! ÌV”& ÌV”' ÌV”+ ÌV#”- ÌV%”0 ÌV(”2 ÌV*”6 ÌV.”7 ÌV/”8 ÌV0‘” ÌW‘”	 ÌX’” ÌY” ÌY‘” ÌZ—”  Ì\ ”	 Ì\	” Ì\” Ì\” Ì\'” Ì\)” Ì\:Ü %” Ì]” Ì]	” Ì]
+” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]”  Ì]”# Ì]!”$ Ì]"”% Ì]#”' Ì]%”+ Ì])”, Ì]*”- Ì]+”/ Ì]-”2 Ì]0”3 Ì]1”4 Ì]2”6 Ì]4”: Ì]8”; Ì]9”< Ì]:”> Ì]<”ÌA Ì]?”ÌB Ì]Ì@”ÌC Ì]ÌA”ÌE Ì]ÌC”ÌF Ì]ÌD”ÌG Ì]ÌE’”  Ì^ ” Ì^™”  Ì` ”	 Ì`	” Ì`” Ì`” Ì`” Ì` ” Ì`)” Ì`+” Ì`4Ü ” Ìa” Ìa	” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa”  Ìa”! Ìa”# Ìa!”% Ìa#”' Ìa%”( Ìa&”+ Ìa)”, Ìa*”. Ìa,”0 Ìa.”2 Ìa0”3 Ìa1”6 Ìa4”7 Ìa5”9 Ìa7”: Ìa8’”  Ìb ” Ìb””  Ìd ” Ìd” Ìd” Ìd‘” Ìd •” Ìe
+” Ìe” Ìe"” Ìe&” Ìe'•” Ìf
+” Ìf” Ìf” Ìf” Ìf’” Ì¡ ” Ì¡’” Ìh” Ìh–” Ìi” Ìi” Ìi” Ìi” Ìi” Ìi’” Ìj” Ìj’” Ìl”	 Ìl—” Ìm” Ìm” Ìm	” Ìm” Ìm” Ìm” Ìm–” Ìn” Ìn” Ìn	” Ìn” Ìn” Ìn’” Ìo” Ìo–” Ìq” Ìq	” Ìq
+” Ìq ” Ìq"” Ìq9–” Ìr” Ìr
+” Ìr” Ìr” Ìr” Ìr”” Ìs” Ìs
+” Ìs” Ìs˜” Ìt” Ìt” Ìt
+” Ìt” Ìt” Ìt” Ìt” Ìt˜” Ìu” Ìu” Ìu
+” Ìu” Ìu” Ìu” Ìu” Ìu˜” Ìv” Ìv” Ìv
+” Ìv” Ìv” Ìv” Ìv” Ìv˜” Ìw” Ìw” Ìw
+” Ìw” Ìw” Ìw” Ìw” Ìw’”	 Ìx”
+ Ìxš” Ìy” Ìy” Ìy	” Ìy
+” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy˜” Ìz” Ìz” Ìz” Ìz
+” Ìz” Ìz” Ìz” Ìz—” Ì{” Ì{” Ì{” Ì{
+” Ì{” Ì{” Ì{‘”	 Ì|š” Ì}” Ì}” Ì}	” Ì}
+” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}˜” Ì~” Ì~” Ì~” Ì~
+” Ì~” Ì~” Ì~” Ì~—” Ì” Ì” Ì” Ì
+” Ì” Ì” Ì‘”	 Ì€Ü ” Ì” Ì” Ì	” Ì” Ì” Ì”  Ì”! Ì”" Ì”$ Ì ”% Ì!”' Ì#”) Ì%”+ Ì'”, Ì(”- Ì)”. Ì*Ü ” Ì‚” Ì‚	” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚”! Ì‚”" Ì‚”( Ì‚$”* Ì‚&”+ Ì‚'”- Ì‚)”/ Ì‚+” Ìƒ” Ìƒ
+” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”" Ìƒ”# Ìƒ”$ Ìƒ”% Ìƒ”& Ìƒ ”' Ìƒ!‘”	 Ì„–” Ì…” Ì…” Ì…	” Ì…” Ì…” Ì…’” Ì†” Ì†”” Ìˆ” Ìˆ” Ìˆ” Ìˆ –” Ì‰” Ì‰
+” Ì‰” Ì‰"” Ì‰$” Ì‰%–” ÌŠ” ÌŠ” ÌŠ	” ÌŠ” ÌŠ” ÌŠ”” ÌŠ” ÌŠ” ÌŠ” ÌŠ˜” Ì‹” Ì‹
+” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹"” Ì‹#” ÌŒ” ÌŒ” ÌŒ	” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”! ÌŒ”# ÌŒ”' ÌŒ#”( ÌŒ$”) ÌŒ%”” Ì” Ì” Ì” Ì’” Ì” Ì˜” Ì” Ì” Ì” Ì” Ì” Ì!” Ì#” Ì1Ü ” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”) Ì‘%”* Ì‘&”+ Ì‘'”- Ì‘)”. Ì‘*”0 Ì‘,”6 Ì‘2”7 Ì‘3”8 Ì‘4”9 Ì‘5’” Ì’” Ì’” Ì””
+ Ì”” Ì”	” Ì”” Ì”” Ì”” Ì”” Ì”)” Ì”+” Ì”5”! Ì”7”# Ì”ÌA”% Ì”ÌC”* Ì”ÌP’” Ì•” Ì•” Ì–” Ì–” Ì–
+” Ì–” Ì–” Ì–” Ì–” Ì–” Ì–” Ì–”  Ì–”# Ì–”( Ì–"” Ì—” Ì—” Ì—
+” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—”  Ì—”# Ì—”( Ì—"” Ì˜” Ì˜” Ì˜
+” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”  Ì˜”# Ì˜”( Ì˜"” Ì™” Ì™” Ì™
+” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™”  Ì™”# Ì™”( Ì™"’”	 Ìš”
+ Ìš’” Ì›” Ì›š” Ì”
+ Ì” Ì	” Ì” Ì” Ì” Ì” Ì%” Ì'”! Ì7˜” Ì” Ì
+” Ì” Ì” Ì” Ì” Ì” Ì›” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”! ÌŸ”" ÌŸ”# ÌŸ”$ ÌŸ ’” Ì ” Ì ‘” Ì¡ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ †‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÔrL”¤type¥start£end¤nameªIdentifier®PcbSpatialKindÀ£varÀI¶ExportNamedDeclarationÍ
+%Í
+ÔrM–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ
+,Í
+LªIdentifierÍ
+2Í
+A¯PcbSpatialIndexÀÔrN”¤type¥start£end¤body©ClassBodyÍ
+BÍ
+˜ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ
+IÍ
+•ÂÂLªIdentifierÍ
+IÍ
+T«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ
+TÍ
+•ÀÂÂÂN®BlockStatementÍ
+WÍ
+•’ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍ
+bÍ
+sÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ
+bÍ
+r¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ
+bÍ
+kÔrT“¤type¥start£end®ThisExpressionÍ
+bÍ
+fLªIdentifierÍ
+gÍ
+k¤rootÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍ
+nÍ
+rÀ¤nullQ³ExpressionStatementÍ
+}Í
+R´AssignmentExpressionÍ
+}Í
+¡=S°MemberExpressionÍ
+}Í
+‰T®ThisExpressionÍ
+}Í
+LªIdentifierÍ
+‚Í
+‰§versionÂÂU§LiteralÍ
+ŒÍ
+ ¡0O°MethodDefinitionÍ
+›Í
+ÎÂÂLªIdentifierÍ
+›Í
+¥ªgetVersion¦methodP²FunctionExpressionÍ
+¥Í
+ÎÀÂÂÂN®BlockStatementÍ
+¨Í
+Î‘ÔrV”¤type¥start£end¨argument¯ReturnStatementÍ
+³Í
+ÇS°MemberExpressionÍ
+ºÍ
+ÆT®ThisExpressionÍ
+ºÍ
+¾LªIdentifierÍ
+¿Í
+Æ§versionÂÂO°MethodDefinitionÍ
+ÔÍÂÂLªIdentifierÍ
+ÔÍ
+Ù¥clear¦methodP²FunctionExpressionÍ
+ÙÍÀÂÂÂN®BlockStatementÍ
+ÜÍ’Q³ExpressionStatementÍ
+çÍ
+øR´AssignmentExpressionÍ
+çÍ
+÷¡=S°MemberExpressionÍ
+çÍ
+ğT®ThisExpressionÍ
+çÍ
+ëLªIdentifierÍ
+ìÍ
+ğ¤rootÂÂU§LiteralÍ
+óÍ
+÷À¤nullQ³ExpressionStatementÍÍÔrW–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍÍ¢++ÂS°MemberExpressionÍÍT®ThisExpressionÍÍLªIdentifierÍÍ§versionÂÂO°MethodDefinitionÍÍhÂÂLªIdentifierÍÍ%§rebuild¦methodP²FunctionExpressionÍ%ÍhÀÂÂÂ’LªIdentifierÍ&Í,¦boundsLªIdentifierÍ.Í3¥itemsN®BlockStatementÍ5Íh—J³VariableDeclarationÍ@ÍP‘K²VariableDeclaratorÍFÍOLªIdentifierÍFÍI£padU§LiteralÍLÍOÌÈ£200¥constJ³VariableDeclarationÍZÍø‘K²VariableDeclaratorÍ`Í÷LªIdentifierÍ`Ía¡bÔrX”¤type¥start£endªproperties°ObjectExpressionÍdÍ÷”ÔrY™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍsÍ†ÂÂÂLªIdentifierÍsÍu¢x1ÔrZ–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍwÍ†S°MemberExpressionÍwÍ€LªIdentifierÍwÍ}¦boundsLªIdentifierÍ~Í€¢x1ÂÂ¡-LªIdentifierÍƒÍ†£pad¤initY¨PropertyÍ•Í¨ÂÂÂLªIdentifierÍ•Í—¢y1Z°BinaryExpressionÍ™Í¨S°MemberExpressionÍ™Í¢LªIdentifierÍ™ÍŸ¦boundsLªIdentifierÍ Í¢¢y1ÂÂ¡-LªIdentifierÍ¥Í¨£pad¤initY¨PropertyÍ·ÍÊÂÂÂLªIdentifierÍ·Í¹¢x2Z°BinaryExpressionÍ»ÍÊS°MemberExpressionÍ»ÍÄLªIdentifierÍ»ÍÁ¦boundsLªIdentifierÍÂÍÄ¢x2ÂÂ¡+LªIdentifierÍÇÍÊ£pad¤initY¨PropertyÍÙÍìÂÂÂLªIdentifierÍÙÍÛ¢y2Z°BinaryExpressionÍİÍìS°MemberExpressionÍİÍæLªIdentifierÍİÍã¦boundsLªIdentifierÍäÍæ¢y2ÂÂ¡+LªIdentifierÍéÍì£pad¤init¥constÔr[–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍUZ°BinaryExpressionÍÍS°MemberExpressionÍÍ
+LªIdentifierÍÍ¡bLªIdentifierÍÍ
+¢x2ÂÂ¢<=S°MemberExpressionÍÍLªIdentifierÍÍ¡bLªIdentifierÍÍ¢x1ÂÂN®BlockStatementÍÍU’Q³ExpressionStatementÍ#Í0R´AssignmentExpressionÍ#Í/¡=S°MemberExpressionÍ#Í'LªIdentifierÍ#Í$¡bLªIdentifierÍ%Í'¢x1ÂÂW¯UnaryExpressionÍ*Í/¡-ÃU§LiteralÍ+Í/Íè¤1000Q³ExpressionStatementÍ>ÍJR´AssignmentExpressionÍ>ÍI¡=S°MemberExpressionÍ>ÍBLªIdentifierÍ>Í?¡bLªIdentifierÍ@ÍB¢x2ÂÂU§LiteralÍEÍIÍˆ¤5000À[«IfStatementÍ_Í²Z°BinaryExpressionÍcÍoS°MemberExpressionÍcÍgLªIdentifierÍcÍd¡bLªIdentifierÍeÍg¢y2ÂÂ¢<=S°MemberExpressionÍkÍoLªIdentifierÍkÍl¡bLªIdentifierÍmÍo¢y1ÂÂN®BlockStatementÍqÍ²’Q³ExpressionStatementÍ€ÍR´AssignmentExpressionÍ€ÍŒ¡=S°MemberExpressionÍ€Í„LªIdentifierÍ€Í¡bLªIdentifierÍ‚Í„¢y1ÂÂW¯UnaryExpressionÍ‡ÍŒ¡-ÃU§LiteralÍˆÍŒÍè¤1000Q³ExpressionStatementÍ›Í§R´AssignmentExpressionÍ›Í¦¡=S°MemberExpressionÍ›ÍŸLªIdentifierÍ›Íœ¡bLªIdentifierÍÍŸ¢y2ÂÂU§LiteralÍ¢Í¦Íˆ¤5000ÀQ³ExpressionStatementÍ¼ÍâR´AssignmentExpressionÍ¼Íá¡=S°MemberExpressionÍ¼ÍÅT®ThisExpressionÍ¼ÍÀLªIdentifierÍÁÍÅ¤rootÂÂÔr\•¤type¥start£end¦callee©arguments­NewExpressionÍÈÍáLªIdentifierÍÌÍÔ¨QuadNode”LªIdentifierÍÕÍÖ¡bU§LiteralÍØÍÙ ¡0U§LiteralÍÛÍİ¢12U§LiteralÍßÍà¡8Ôr]—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍìÍHJ³VariableDeclarationÍñÍú‘K²VariableDeclaratorÍõÍúLªIdentifierÍõÍö¡iU§LiteralÍùÍú ¡0£letZ°BinaryExpressionÍüÍLªIdentifierÍüÍı¡i¡<S°MemberExpressionÍ ÍLªIdentifierÍ Í¥itemsLªIdentifierÍÍ¦lengthÂÂW°UpdateExpressionÍÍ¢++ÂLªIdentifierÍÍ¡iN®BlockStatementÍÍH‘Q³ExpressionStatementÍ"Í=Ôr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ"Í<S°MemberExpressionÍ"Í2S°MemberExpressionÍ"Í+T®ThisExpressionÍ"Í&LªIdentifierÍ'Í+¤rootÂÂLªIdentifierÍ,Í2¦insertÂÂ‘S°MemberExpressionÍ3Í;LªIdentifierÍ3Í8¥itemsLªIdentifierÍ9Í:¡iÃÂÂQ³ExpressionStatementÍRÍaW°UpdateExpressionÍRÍ`¢++ÂS°MemberExpressionÍRÍ^T®ThisExpressionÍRÍVLªIdentifierÍWÍ^§versionÂÂO°MethodDefinitionÍnÍ2ÂÂLªIdentifierÍnÍw©queryRect¦methodP²FunctionExpressionÍwÍ2ÀÂÂÂ‘LªIdentifierÍxÍ|¤rectN®BlockStatementÍ~Í2•J³VariableDeclarationÍ‰Í˜‘K²VariableDeclaratorÍÍ—LªIdentifierÍÍ’£outÔr_”¤type¥start£end¨elements¯ArrayExpressionÍ•Í—¥const[«IfStatementÍ¢ÍÊW¯UnaryExpressionÍ¦Í°¡!ÃS°MemberExpressionÍ§Í°T®ThisExpressionÍ§Í«LªIdentifierÍ¬Í°¤rootÂÂV¯ReturnStatementÍ¿ÍÊLªIdentifierÍÆÍÉ£outÀJ³VariableDeclarationÍÔÍë‘K²VariableDeclaratorÍÚÍêLªIdentifierÍÚÍŞ¤seen\­NewExpressionÍáÍêLªIdentifierÍåÍè£Set¥constQ³ExpressionStatementÍõÍ^®CallExpressionÍõÍS°MemberExpressionÍõÍS°MemberExpressionÍõÍşT®ThisExpressionÍõÍùLªIdentifierÍúÍş¤rootÂÂLªIdentifierÍÿÍ¥queryÂÂ“LªIdentifierÍÍ	¤rectLªIdentifierÍÍ£outLªIdentifierÍÍ¤seenÂV¯ReturnStatementÍ Í+LªIdentifierÍ'Í*£outO°MethodDefinitionÍ8Í”ÂÂLªIdentifierÍ8ÍBªqueryPoint¦methodP²FunctionExpressionÍBÍ”ÀÂÂÂ“LªIdentifierÍCÍD¡xLªIdentifierÍFÍG¡yLªIdentifierÍIÍO¦radiusN®BlockStatementÍQÍ”‘V¯ReturnStatementÍ\Í^®CallExpressionÍcÍŒS°MemberExpressionÍcÍqT®ThisExpressionÍcÍgLªIdentifierÍhÍq©queryRectÂÂ‘^®CallExpressionÍrÍ‹LªIdentifierÍrÍ}«expandPoint“LªIdentifierÍ~Í¡xLªIdentifierÍÍ‚¡yLªIdentifierÍ„ÍŠ¦radiusÂÂO°MethodDefinitionÍšÍ“ÃÂLªIdentifierÍ¡Íª©trackRect¦methodP²FunctionExpressionÍªÍ“ÀÂÂÂ•LªIdentifierÍ«Í­¢axLªIdentifierÍ¯Í±¢ayLªIdentifierÍ³Íµ¢bxLªIdentifierÍ·Í¹¢byLªIdentifierÍ»ÍÀ¥halfWN®BlockStatementÍÂÍ“‘V¯ReturnStatementÍÍÍŒX°ObjectExpressionÍÔÍ‹”Y¨PropertyÍãÍÿÂÂÂLªIdentifierÍãÍå¢x1Z°BinaryExpressionÍçÍÿ^®CallExpressionÍçÍ÷S°MemberExpressionÍçÍïLªIdentifierÍçÍë¤MathLªIdentifierÍìÍï£minÂÂ’LªIdentifierÍğÍò¢axLªIdentifierÍôÍö¢bxÂ¡-LªIdentifierÍúÍÿ¥halfW¤initY¨PropertyÍÍ*ÂÂÂLªIdentifierÍÍ¢y1Z°BinaryExpressionÍÍ*^®CallExpressionÍÍ"S°MemberExpressionÍÍLªIdentifierÍÍ¤MathLªIdentifierÍÍ£minÂÂ’LªIdentifierÍÍ¢ayLªIdentifierÍÍ!¢byÂ¡-LªIdentifierÍ%Í*¥halfW¤initY¨PropertyÍ9ÍUÂÂÂLªIdentifierÍ9Í;¢x2Z°BinaryExpressionÍ=ÍU^®CallExpressionÍ=ÍMS°MemberExpressionÍ=ÍELªIdentifierÍ=ÍA¤MathLªIdentifierÍBÍE£maxÂÂ’LªIdentifierÍFÍH¢axLªIdentifierÍJÍL¢bxÂ¡+LªIdentifierÍPÍU¥halfW¤initY¨PropertyÍdÍ€ÂÂÂLªIdentifierÍdÍf¢y2Z°BinaryExpressionÍhÍ€^®CallExpressionÍhÍxS°MemberExpressionÍhÍpLªIdentifierÍhÍl¤MathLªIdentifierÍmÍp£maxÂÂ’LªIdentifierÍqÍs¢ayLªIdentifierÍuÍw¢byÂ¡+LªIdentifierÍ{Í€¥halfW¤initO°MethodDefinitionÍ™ÍÃÂLªIdentifierÍ Í§§viaRect¦methodP²FunctionExpressionÍ§ÍÀÂÂÂ“LªIdentifierÍ¨Í©¡xLªIdentifierÍ«Í¬¡yLªIdentifierÍ®Í¶¨diameterN®BlockStatementÍ¸Í’J³VariableDeclarationÍÃÍÚ‘K²VariableDeclaratorÍÉÍÙLªIdentifierÍÉÍÊ¡rZ°BinaryExpressionÍÍÍÙLªIdentifierÍÍÍÕ¨diameter¡/U§LiteralÍØÍÙ¡2¥constV¯ReturnStatementÍäÍ ^®CallExpressionÍëÍÿLªIdentifierÍëÍö«expandPoint“LªIdentifierÍ÷Íø¡xLªIdentifierÍúÍû¡yLªIdentifierÍıÍş¡rÂÀ

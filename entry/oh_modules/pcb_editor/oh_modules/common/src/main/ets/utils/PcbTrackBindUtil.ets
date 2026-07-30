@@ -405,11 +405,19 @@ export function snapTrackEndpointsToPads(doc: PcbDocument): number {
     let best: Point2D | null = null;
     let bestDist = Infinity;
     for (const pr of pads) {
-      if (netId.length > 0 && pr.netId.length > 0 && pr.netId !== netId) {
+      // 有网络时必须同网，禁止乱吸附到异网焊盘
+      if (netId.length > 0) {
+        if (pr.netId.length === 0 || pr.netId !== netId) {
+          continue;
+        }
+      } else if (pr.netId.length > 0) {
+        // 无网络走线只允许吸附到无网络焊盘，避免乱吸
         continue;
       }
       const d = pointDist(pt, pr.pos);
-      if (d <= pr.tol && d < bestDist) {
+      // 收紧：仅在焊盘半径范围内吸附，不再用过大容差
+      const tightTol = Math.min(pr.tol, Math.max(pr.tol * 0.55, 12));
+      if (d <= tightTol && d < bestDist) {
         bestDist = d;
         best = pr.pos;
       }
@@ -425,6 +433,73 @@ export function snapTrackEndpointsToPads(doc: PcbDocument): number {
   for (const trk of doc.tracks) {
     if (snapEndpoint(trk.start, trk.netId)) snapped++;
     if (snapEndpoint(trk.end, trk.netId)) snapped++;
+  }
+  return snapped;
+}
+
+/**
+ * 仅吸附「与指定封装同网且端点已靠近其焊盘」的走线端点。
+ * 用于移动/旋转后校正，避免全局 snap 把无关走线乱吸到远处焊盘。
+ */
+export function snapTrackEndpointsNearFootprints(
+  doc: PcbDocument,
+  footprintIds: Set<string>
+): number {
+  if (footprintIds.size === 0) {
+    return 0;
+  }
+  const pads: PcbPadSnapRef[] = [];
+  const netIds: Set<string> = new Set();
+  for (const fp of doc.footprints) {
+    if (!footprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const nid = pad.netId ?? '';
+      if (nid.length > 0) {
+        netIds.add(nid);
+      }
+      pads.push({
+        pos: padWorldPosition(fp, pad),
+        netId: nid,
+        tol: Math.max(Math.max(pad.size.x, pad.size.y) / 2 + 2, 10)
+      });
+    }
+  }
+  if (pads.length === 0) {
+    return 0;
+  }
+
+  let snapped = 0;
+  for (const trk of doc.tracks) {
+    if (trk.netId.length > 0 && !netIds.has(trk.netId)) {
+      continue;
+    }
+    const trySnap = (pt: Point2D): boolean => {
+      let best: Point2D | null = null;
+      let bestDist = Infinity;
+      for (const pr of pads) {
+        if (trk.netId.length > 0 && pr.netId !== trk.netId) {
+          continue;
+        }
+        const d = pointDist(pt, pr.pos);
+        if (d <= pr.tol && d < bestDist) {
+          bestDist = d;
+          best = pr.pos;
+        }
+      }
+      if (best !== null && bestDist > 0.01) {
+        pt.x = best.x;
+        pt.y = best.y;
+        return true;
+      }
+      return false;
+    };
+    if (trySnap(trk.start)) snapped++;
+    if (trySnap(trk.end)) snapped++;
+  }
+  if (snapped > 0) {
+    tracePcb('TRACK_SNAP_NEAR_FP', `fps=${footprintIds.size} endpoints=${snapped}`);
   }
   return snapped;
 }

@@ -10,6 +10,7 @@ interface PcbStatusBar_Params {
     activeLayer?: PcbLayerId;
     gridSize?: number;
     gridVisible?: boolean;
+    hoverNetName?: string;
 }
 import { PcbLayerId } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { appVersionLabel } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
@@ -29,6 +30,7 @@ export class PcbStatusBar extends ViewPU {
         this.__activeLayer = new SynchedPropertySimpleOneWayPU(params.activeLayer, this, "activeLayer");
         this.__gridSize = new SynchedPropertySimpleOneWayPU(params.gridSize, this, "gridSize");
         this.__gridVisible = new SynchedPropertySimpleOneWayPU(params.gridVisible, this, "gridVisible");
+        this.__hoverNetName = new SynchedPropertySimpleOneWayPU(params.hoverNetName, this, "hoverNetName");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -54,6 +56,9 @@ export class PcbStatusBar extends ViewPU {
         if (params.gridVisible === undefined) {
             this.__gridVisible.set(true);
         }
+        if (params.hoverNetName === undefined) {
+            this.__hoverNetName.set('');
+        }
     }
     updateStateVars(params: PcbStatusBar_Params) {
         this.__statusMessage.reset(params.statusMessage);
@@ -63,6 +68,7 @@ export class PcbStatusBar extends ViewPU {
         this.__activeLayer.reset(params.activeLayer);
         this.__gridSize.reset(params.gridSize);
         this.__gridVisible.reset(params.gridVisible);
+        this.__hoverNetName.reset(params.hoverNetName);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
@@ -73,6 +79,7 @@ export class PcbStatusBar extends ViewPU {
         this.__activeLayer.purgeDependencyOnElmtId(rmElmtId);
         this.__gridSize.purgeDependencyOnElmtId(rmElmtId);
         this.__gridVisible.purgeDependencyOnElmtId(rmElmtId);
+        this.__hoverNetName.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__themeRev.aboutToBeDeleted();
@@ -83,6 +90,7 @@ export class PcbStatusBar extends ViewPU {
         this.__activeLayer.aboutToBeDeleted();
         this.__gridSize.aboutToBeDeleted();
         this.__gridVisible.aboutToBeDeleted();
+        this.__hoverNetName.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -142,6 +150,13 @@ export class PcbStatusBar extends ViewPU {
     set gridVisible(newValue: boolean) {
         this.__gridVisible.set(newValue);
     }
+    private __hoverNetName: SynchedPropertySimpleOneWayPU<string>;
+    get hoverNetName() {
+        return this.__hoverNetName.get();
+    }
+    set hoverNetName(newValue: string) {
+        this.__hoverNetName.set(newValue);
+    }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create();
@@ -169,7 +184,6 @@ export class PcbStatusBar extends ViewPU {
         }, Text);
         // 状态消息
         Text.pop();
-        // 分隔
         this.sep.bind(this)();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             // 坐标
@@ -182,6 +196,19 @@ export class PcbStatusBar extends ViewPU {
             Text.fontFamily('monospace');
         }, Text);
         // 坐标
+        Text.pop();
+        this.sep.bind(this)();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // 悬停网络
+            Text.create(this.hoverNetName.length > 0 ? `Net ${this.hoverNetName}` : 'Net —');
+            // 悬停网络
+            Text.fontSize(ProteusFonts.STATUS);
+            // 悬停网络
+            Text.fontColor(this.hoverNetName.length > 0 ? ProteusColors.SELECTED : ProteusColors.TEXT_SECONDARY);
+            // 悬停网络
+            Text.fontFamily('monospace');
+        }, Text);
+        // 悬停网络
         Text.pop();
         this.sep.bind(this)();
         this.observeComponentCreation2((elmtId, isInitialRender) => {

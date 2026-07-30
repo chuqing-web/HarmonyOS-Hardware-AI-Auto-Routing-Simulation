@@ -1,9 +1,11 @@
 export type { IAiEngine } from './src/main/ets/api/IAiEngine';
 export { AiEngineImpl } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/AiEngineImpl";
 export { TeachingService } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
-export type { LabTemplate, KnowledgeTip, TemplateFirmware } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
+export type { LabTemplate, PcbLabTemplate, KnowledgeTip, TemplateFirmware } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
 export { LabTemplateRegistry, ALL_CATALOG_LIBRARY_IDS } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
 export type { LabTemplateDef, LabTemplateBuilder, LabCoverageReport } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/LabTemplateRegistry";
+export { PcbLabTemplateRegistry } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PcbLabTemplateRegistry";
+export type { PcbLabTemplateDef } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/PcbLabTemplateRegistry";
 export { TemplateSchematicKit } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/TemplateSchematicKit";
 export { SemanticNetBuilder } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";
 export type { SemanticNetBuildResult } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/SemanticNetBuilder";

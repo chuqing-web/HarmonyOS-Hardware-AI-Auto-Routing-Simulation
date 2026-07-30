@@ -1,6 +1,6 @@
 /**
  * ElecDraw 启动页 — 工业灰阶布局
- * 顶栏 | 左栏(Getting Started / Help / About) | 右栏(Start / News)
+ * 顶栏 | 左栏(Getting Started / Start / Help / About) | 右栏(公告 / News)
  */
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
@@ -8,13 +8,15 @@ import { picker, fileUri } from '@kit.CoreFileKit';
 import fs from '@ohos.file.fs';
 import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger } from 'common';
 import { AppService } from '../services/AppService';
+import { HomeAnnouncement, HomeAnnouncementService } from '../services/HomeAnnouncementService';
 import { PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
 import {
   ProteusHomeColors, ProteusHomeDownloadBtn, ProteusHomeIconLink, ProteusHomeInlineLink,
   ProteusHomeNewsItem, ProteusHomePanel, ProteusHomeRecentRow,
   ProteusHomeTopBar, ProteusHomeWizardDialog, ProteusHomeBottomStrip, ProteusHomeTextDialog,
   ProteusHomeBackdrop, ProteusHomeAboutRow, ProteusHomeHelpDialog,
-  ProteusHomeSectionTitle, ProteusHomeSectionDivider, ProteusHomeNewsRow
+  ProteusHomeSectionTitle, ProteusHomeSectionDivider, ProteusHomeNewsRow,
+  ProteusHomeAnnouncementPanel
 } from '../components/proteus/ProteusHomeWidgets';
 import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 import { ProjectPaths } from '../utils/ProjectPaths';
@@ -57,35 +59,83 @@ const MIGRATION_GUIDE_TEXT: string =
   '   · Start → Open Sample 浏览 lab_* 教程工程';
 
 const HELP_HOME_TEXT: string =
-  'Help Home — 教学与实验\n\n' +
-  '· 进入编辑器后，右侧「教学」面板提供实验模板、步骤说明与 MCU 实验入口\n' +
-  '· 也可从 Start → Open Sample 打开 lab_* / Test_Template 教程工程\n' +
-  '· 快捷键 F5 运行仿真，F7 执行 ERC\n\n' +
-  '提示：点击下方「打开教学面板」将进入未保存工作区，不会自动创建工程文件。';
-
-const HELP_SCHEMATIC_TEXT: string =
-  'Schematic Capture — 原理图绘制\n\n' +
-  '· W：连线模式  · P：放置器件  · 拖放左侧库中元件到画布\n' +
-  '· Ctrl+S 保存工程  · Ctrl+N 通过系统对话框另存为新工程\n' +
-  '· 仿真前建议 F7 ERC 检查连接\n\n' +
-  '从 Getting Started → Schematic Capture 可进入空白画布（不自动写盘）。';
-
-const HELP_SIMULATION_TEXT: string =
-  'Simulation — 电路仿真\n\n' +
-  '· F5 或工具栏运行仿真，右侧「仿真 / 仪器」查看波形与探针\n' +
-  '· 需先放置电源、地及完整网表；空工程运行仿真不会生成工程文件\n\n' +
-  '从 Getting Started → Simulation 可打开仿真侧栏；保存请使用 文件 → 保存。';
-
-const HELP_PCB_TEXT: string =
-  'PCB Layout — KiCad 式 PCB 布局\n\n' +
-  '· 从原理图「更新 PCB」导入封装与网络\n' +
-  '· 选择/移动/旋转封装，走线、过孔工具\n' +
-  '· 左侧图层开关，右侧 DRC 检查\n' +
-  '· 与原理图共用 .schsim 工程文件';
-
-const HELP_VISUAL_DESIGNER_TEXT: string =
-  'Visual Designer 尚未在本版本中提供。\n\n' +
-  '请使用 Schematic Capture 与 Simulation 完成设计与验证。';
+  'AI-SCH Design Suite 操作手册\n' +
+  '================================\n\n' +
+  '一、启动与工程管理\n' +
+  '----------------\n' +
+  '1. 首页左侧 Getting Started\n' +
+  '   · Schematic Capture：进入空白原理图工作区（默认不写盘）\n' +
+  '   · PCB Layout：进入 PCB 布局编辑器\n' +
+  '   · Simulation：进入原理图并展开仿真侧栏\n\n' +
+  '2. 首页 Start 面板（左侧第二栏）\n' +
+  '   · Open Project：打开 .schsim / .pcbsim / .json 工程\n' +
+  '   · New Project：向导命名后进入未落盘工作区，保存请用 文件 → 保存\n' +
+  '   · Open Sample Design：浏览并打开内置 lab_* / Test_Template 教程工程\n' +
+  '   · Recent Projects：双击或选中后点 Open 打开最近工程\n\n' +
+  '3. 工程文件\n' +
+  '   · 原理图：.schsim（JSON 原理图工程）\n' +
+  '   · PCB：.pcbsim（PCB 工程，与原理图同目录 project/）\n' +
+  '   · Ctrl+N 新建 / Ctrl+O 打开 / Ctrl+S 保存 / 另存为走系统对话框\n' +
+  '   · 异常退出后可在最近列表中看到带恢复标记的工程\n\n' +
+  '二、原理图绘制（Schematic Capture）\n' +
+  '--------------------------------\n' +
+  '1. 器件放置\n' +
+  '   · P：放置模式；从左侧器件库拖放到画布\n' +
+  '   · 选中器件后可移动、旋转、删除属性编辑\n\n' +
+  '2. 连线与网络\n' +
+  '   · W：连线模式，点击引脚/导线端点建立连接\n' +
+  '   · 电源与地必须正确放置，否则仿真/ERC 会报错\n\n' +
+  '3. 电气规则检查（ERC）\n' +
+  '   · F7 或菜单「仿真 → ERC」检查悬空引脚、电源冲突等\n' +
+  '   · 建议仿真前先通过 ERC\n\n' +
+  '4. 从原理图到 PCB\n' +
+  '   · 在原理图侧使用「更新 PCB」将封装与网络同步到 PCB 编辑器\n' +
+  '   · PCB 可用「另存为」保存为 .pcbsim，与 .schsim 区分\n\n' +
+  '三、电路仿真（Simulation）\n' +
+  '------------------------\n' +
+  '1. 启动仿真\n' +
+  '   · F5 或工具栏运行/停止仿真\n' +
+  '   · Getting Started → Simulation 会打开右侧仿真相关面板\n\n' +
+  '2. 仪器与波形\n' +
+  '   · 右侧「仿真 / 仪器」面板：示波器、逻辑分析仪、探针等\n' +
+  '   · 放置电源、地及完整网表后再运行；空工程不会自动生成文件\n\n' +
+  '3. MCU / 教学实验\n' +
+  '   · 右侧「教学」面板：实验模板、步骤说明、MCU 实验入口\n' +
+  '   · Start → Open Sample 可打开 lab_* 教程工程\n' +
+  '   · 本对话框下方「打开教学面板」进入教学侧栏（不写盘）\n\n' +
+  '四、PCB 布局（PCB Layout）\n' +
+  '------------------------\n' +
+  '1. 进入方式\n' +
+  '   · Getting Started → PCB Layout，或原理图更新 PCB 后跳转\n\n' +
+  '2. 常用操作\n' +
+  '   · 选择 / 移动 / 旋转封装\n' +
+  '   · 走线、过孔工具布线\n' +
+  '   · 左侧图层面板开关各层显示\n' +
+  '   · 右侧执行 DRC（设计规则检查）\n\n' +
+  '3. 与原理图联动\n' +
+  '   · 网络与封装来自原理图同步；修改后请保存工程\n\n' +
+  '五、界面与面板\n' +
+  '------------\n' +
+  '· 左侧：器件库 / 图层等（随当前编辑器变化）\n' +
+  '· 中间：原理图或 PCB 画布\n' +
+  '· 右侧：属性、仿真、仪器、教学、AI 设置等页签\n' +
+  '· 底栏：状态与平台信息\n\n' +
+  '六、常用快捷键\n' +
+  '------------\n' +
+  '· Ctrl+N / Ctrl+O / Ctrl+S — 新建 / 打开 / 保存\n' +
+  '· W — 连线    · P — 放置器件\n' +
+  '· F5 — 运行/停止仿真    · F7 — ERC\n' +
+  '· Delete — 删除选中对象\n\n' +
+  '七、从其他 EDA 迁移\n' +
+  '----------------\n' +
+  '· 本软件使用 .schsim；通过 文件 → 打开 或 Start → Open Sample 开始\n' +
+  '· 内置 DeviceLibrary 与 proteus_alias.json 别名映射\n' +
+  '· 放置器件后使用 ERC 检查，再运行仿真验证\n\n' +
+  '八、版本与支持\n' +
+  '------------\n' +
+  '· 版本号见首页顶栏与 About 区域\n' +
+  '· 首页右侧「公告」可展示服务器下发的图片与文字通知\n' +
+  '· 更多教程：Start → Open Sample 或右侧教学面板\n';
 
 const UPDATES_INFO_TEXT: string =
   '版本更新通过应用分发渠道发布。\n\n' +
@@ -121,6 +171,8 @@ struct HomePage {
   @State helpDialogTitle: string = '';
   @State helpDialogBody: string = '';
   @State helpDialogPrimaryLabel: string = '';
+  @State announcement: HomeAnnouncement = HomeAnnouncementService.defaultAnnouncement();
+  @State announcementLoading: boolean = false;
   private helpDialogPrimaryAction: (() => void) | null = null;
 
   private appService: AppService = AppService.getInstance();
@@ -170,6 +222,7 @@ struct HomePage {
     }
     this.ready = true;
     Logger.info('HomePage', `ready ver=${appVersionLabel()} recent=${this.recentEntries.length}`);
+    void this.loadAnnouncement();
   }
 
   private initNewsItems(): void {
@@ -180,6 +233,15 @@ struct HomePage {
       { description: 'AI-SCH Professional 1.0 SP1 [1.0.1]', releaseDate: '22/10/2024', uscValid: 'Yes', actionLabel: 'Download' },
       { description: 'Sample tutorials (Test_Template)', releaseDate: '—', uscValid: '—', actionLabel: 'Open' }
     ];
+  }
+
+  private async loadAnnouncement(): Promise<void> {
+    this.announcementLoading = true;
+    try {
+      this.announcement = await HomeAnnouncementService.fetchLatest();
+    } finally {
+      this.announcementLoading = false;
+    }
   }
 
   private refreshLists(): void {
@@ -257,7 +319,11 @@ struct HomePage {
     const norm = path.replace(/\\/g, '/');
     const slash = norm.lastIndexOf('/');
     let name = slash >= 0 ? norm.substring(slash + 1) : norm;
-    if (name.endsWith('.schsim')) { name = name.substring(0, name.length - 7); }
+    if (name.endsWith(ProjectPaths.SCH_EXT)) {
+      name = name.substring(0, name.length - ProjectPaths.SCH_EXT.length);
+    } else if (name.endsWith(ProjectPaths.PCB_EXT)) {
+      name = name.substring(0, name.length - ProjectPaths.PCB_EXT.length);
+    }
     return name;
   }
 
@@ -328,6 +394,10 @@ struct HomePage {
       this.refreshLists();
       return;
     }
+    if (ProjectPaths.isPcbProjectPath(path)) {
+      this.goToPcbEditor({ launchMode: 'open', projectPath: path });
+      return;
+    }
     this.goToEditor({ launchMode: 'open', projectPath: path, showRecovery: showRecovery });
   }
 
@@ -350,7 +420,7 @@ struct HomePage {
     try {
       const opt = new picker.DocumentSelectOptions();
       opt.maxSelectNumber = 1;
-      opt.fileSuffixFilters = ['.schsim', '.json'];
+      opt.fileSuffixFilters = ['.schsim', '.pcbsim', '.json'];
       const uri = fileUri.getUriFromPath(this.userProjectDir);
       if (uri.length > 0) { opt.defaultFilePathUri = uri; }
       const uris = await new picker.DocumentViewPicker(this.getHostCtx()).select(opt);
@@ -418,7 +488,7 @@ struct HomePage {
   /** Help Home：说明 + 可选进入教学面板（仍不写盘） */
   openHelpHome(): void {
     this.openHelpDialog(
-      'Help Home',
+      'Help Home — 操作手册',
       HELP_HOME_TEXT,
       '打开教学面板',
       () => {
@@ -426,24 +496,6 @@ struct HomePage {
         this.launchScratchWorkspace(scratchOpts);
       }
     );
-  }
-
-  openHelpTopicSchematic(): void {
-    this.openHelpDialog('Schematic Capture', HELP_SCHEMATIC_TEXT);
-  }
-
-  openHelpTopicSimulation(): void {
-    this.openHelpDialog('Simulation', HELP_SIMULATION_TEXT);
-  }
-
-  openHelpTopicPcb(): void {
-    this.openHelpDialog('PCB Layout', HELP_PCB_TEXT, '打开 PCB 编辑器', () => {
-      this.openPcbLayout();
-    });
-  }
-
-  openHelpTopicVisualDesigner(): void {
-    this.openHelpDialog('Visual Designer', HELP_VISUAL_DESIGNER_TEXT);
   }
 
   openFlowchartUnavailable(): void {
@@ -455,17 +507,6 @@ struct HomePage {
 
   openMigrationGuide(): void {
     this.showMigrationGuide = true;
-  }
-
-  focusWhatsNew(): void {
-    this.newsHighlight = true;
-    if (this.newsHighlightTimer >= 0) {
-      clearTimeout(this.newsHighlightTimer);
-    }
-    this.newsHighlightTimer = setTimeout(() => {
-      this.newsHighlight = false;
-      this.newsHighlightTimer = -1;
-    }, 2800);
   }
 
   openSampleList(): void {
@@ -571,21 +612,111 @@ struct HomePage {
         ProteusHomeIconLink({ label: 'Schematic Capture', onAction: () => this.openBlankSchematic() })
         ProteusHomeIconLink({ label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } })
         ProteusHomeIconLink({ label: 'Simulation', onAction: () => this.openSimulation() })
-        ProteusHomeIconLink({ label: 'Migration Guide', onAction: () => this.openMigrationGuide() })
-        ProteusHomeIconLink({ label: 'What\'s New', onAction: () => this.focusWhatsNew() })
       }
       .width('100%')
       .padding({ top: 2, bottom: 4 })
       .backgroundColor(ProteusHomeColors.PANEL_INSET)
 
       ProteusHomeSectionDivider()
+      ProteusHomeSectionTitle({ title: 'Start' })
+      // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+      Column() {
+        this.StartToolbar()
+
+        if (this.showSamples) {
+          Row() {
+            ProteusHomeInlineLink({
+              label: 'Back to Recent Projects',
+              onAction: () => this.backToRecentList()
+            })
+          }
+          .width('100%')
+          .padding({ left: 8, bottom: 2 })
+        }
+
+        Text(this.showSamples ? 'Sample Projects' : 'Recent Projects')
+          .fontSize(10)
+          .fontColor(ProteusHomeColors.TEXT)
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: 8, bottom: 2 })
+
+        Column() {
+          if (!this.ready) {
+            Text('Loading…')
+              .fontSize(10)
+              .fontColor(ProteusHomeColors.TEXT_DIM)
+              .padding({ left: 8, top: 6 })
+              .width('100%')
+              .textAlign(TextAlign.Start)
+          } else if (this.listEntries().length === 0) {
+            Column() {
+              Text(this.showSamples ? '(no samples)' : '(no recent projects)')
+                .fontSize(10)
+                .fontColor(ProteusHomeColors.TEXT_DIM)
+                .width('100%')
+              if (!this.showSamples) {
+                ProteusHomeInlineLink({
+                  label: 'New Project…',
+                  onAction: () => this.startNewProjectWizard()
+                })
+                  .margin({ top: 4 })
+              }
+            }
+            .width('100%')
+            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .alignItems(HorizontalAlign.Start)
+            .justifyContent(FlexAlign.Start)
+          } else {
+            Scroll() {
+              Column() {
+                ForEach(this.listEntries(), (e: HomeProjectEntry) => {
+                  ProteusHomeRecentRow({
+                    name: e.name,
+                    selected: this.selectedPath === e.path,
+                    warn: e.isRecovery,
+                    onSelect: () => { this.selectedPath = e.path; },
+                    onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
+                  })
+                }, (e: HomeProjectEntry) => `${this.showSamples}_${e.path}`)
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            .width('100%')
+            .height('100%')
+            .scrollBar(BarState.Auto)
+            .align(Alignment.TopStart)
+          }
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .margin({ left: 6, right: 6, bottom: 4 })
+        .alignItems(HorizontalAlign.Start)
+        .justifyContent(FlexAlign.Start)
+        .backgroundColor(ProteusHomeColors.PANEL_BG)
+        .border({ width: 1, color: ProteusHomeColors.LISTBOX_BORDER })
+        .clip(true)
+
+        Row() {
+          ProteusHomeDownloadBtn({
+            label: 'Open',
+            primary: true,
+            btnEnabled: this.canOpenSelected(),
+            onAction: () => this.openSelected()
+          })
+        }
+        .width('100%')
+        .padding({ left: 8, right: 8, bottom: 4 })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .backgroundColor(ProteusHomeColors.PANEL_INSET)
+
+      ProteusHomeSectionDivider()
       ProteusHomeSectionTitle({ title: 'Help' })
       Column() {
         ProteusHomeIconLink({ label: 'Help Home', onAction: () => this.openHelpHome() })
-        ProteusHomeIconLink({ label: 'Schematic Capture', onAction: () => this.openHelpTopicSchematic() })
-        ProteusHomeIconLink({ label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } })
-        ProteusHomeIconLink({ label: 'Simulation', onAction: () => this.openHelpTopicSimulation() })
-        ProteusHomeIconLink({ label: 'Visual Designer', tabEnabled: false, onAction: () => { this.openHelpTopicVisualDesigner(); } })
       }
       .width('100%')
       .padding({ top: 2, bottom: 4 })
@@ -599,9 +730,9 @@ struct HomePage {
           .fontColor(ProteusHomeColors.TEXT_DIM)
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ top: 6, bottom: 4 })
+          .margin({ top: 4, bottom: 2 })
         Text(this.aboutInfo.releaseLine)
-          .fontSize(9)
+          .fontSize(8)
           .fontColor(ProteusHomeColors.TEXT)
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -611,7 +742,7 @@ struct HomePage {
           .decoration({ type: TextDecorationType.Underline, color: ProteusHomeColors.LINK })
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ top: 2, bottom: 8 })
+          .margin({ top: 2, bottom: 4 })
 
         Column() {
           ProteusHomeAboutRow({
@@ -631,22 +762,20 @@ struct HomePage {
           })
         }
         .width('100%')
-        .padding({ top: 2, bottom: 4 })
+        .padding({ top: 2, bottom: 2 })
         .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
-        .margin({ left: 6, right: 6 })
+        .margin({ left: 6, right: 6, bottom: 2 })
 
-        Blank()
         Text(`Free Memory: ${this.aboutInfo.freeMemoryLine}`)
           .fontSize(8)
           .fontColor(ProteusHomeColors.TEXT_DIM)
           .width('100%')
-          .padding({ left: 8, bottom: 6 })
+          .padding({ left: 8, top: 2, bottom: 4 })
       }
       .width('100%')
-      .layoutWeight(1)
       .backgroundColor(ProteusHomeColors.PANEL_INSET)
     }
-    .width('21%')
+    .width('36%')
     .height('100%')
     .backgroundColor(ProteusHomeColors.SIDEBAR_BG)
     .border({ width: 1, color: ProteusHomeColors.PANEL_BORDER })
@@ -655,7 +784,7 @@ struct HomePage {
 
   @Builder
   StartToolbar() {
-    Row() {
+    Flex({ wrap: FlexWrap.Wrap }) {
       ProteusHomeInlineLink({ label: 'Open Project', onAction: () => { void this.handleOpenProject(); } })
       Text(' | ')
         .fontSize(10)
@@ -664,107 +793,24 @@ struct HomePage {
       Text(' | ')
         .fontSize(10)
         .fontColor(ProteusHomeColors.TEXT_DIM)
-      ProteusHomeInlineLink({ label: 'New Flowchart', onAction: () => { this.openFlowchartUnavailable(); } })
-      Text(' | ')
-        .fontSize(10)
-        .fontColor(ProteusHomeColors.TEXT_DIM)
-      ProteusHomeInlineLink({ label: 'Open Sample Design', onAction: () => this.openSampleList() })
+      ProteusHomeInlineLink({ label: 'Open Sample', onAction: () => this.openSampleList() })
     }
     .width('100%')
-    .padding({ left: 8, top: 6, bottom: 4 })
-    .alignItems(VerticalAlign.Center)
+    .padding({ left: 8, top: 4, bottom: 2, right: 4 })
   }
 
   @Builder
   RightWorkspace() {
     Column({ space: 6 }) {
-      ProteusHomePanel({ title: 'Start', panelWeight: 6 }) {
-        Column() {
-          this.StartToolbar()
+      ProteusHomeAnnouncementPanel({
+        title: this.announcement.title,
+        body: this.announcement.body,
+        imageUrl: this.announcement.imageUrl,
+        publishedAt: this.announcement.publishedAt,
+        loading: this.announcementLoading
+      })
 
-          if (this.showSamples) {
-            Row() {
-              ProteusHomeInlineLink({
-                label: 'Back to Recent Projects',
-                onAction: () => this.backToRecentList()
-              })
-            }
-            .width('100%')
-            .padding({ left: 8, bottom: 2 })
-          }
-
-          Text(this.showSamples ? 'Sample Projects' : 'Recent Projects')
-            .fontSize(10)
-            .fontColor(ProteusHomeColors.TEXT)
-            .fontWeight(FontWeight.Bold)
-            .width('100%')
-            .padding({ left: 8, bottom: 2 })
-
-          Column() {
-            if (!this.ready) {
-              Text('Loading…')
-                .fontSize(10)
-                .fontColor(ProteusHomeColors.TEXT_DIM)
-                .padding(8)
-            } else if (this.listEntries().length === 0) {
-              Column() {
-                Text(this.showSamples ? '(no samples)' : '(no recent projects)')
-                  .fontSize(10)
-                  .fontColor(ProteusHomeColors.TEXT_DIM)
-                if (!this.showSamples) {
-                  ProteusHomeInlineLink({
-                    label: 'New Project…',
-                    onAction: () => this.startNewProjectWizard()
-                  })
-                    .margin({ top: 4 })
-                }
-              }
-              .width('100%')
-              .padding(8)
-              .alignItems(HorizontalAlign.Start)
-            } else {
-              Scroll() {
-                Column() {
-                  ForEach(this.listEntries(), (e: HomeProjectEntry) => {
-                    ProteusHomeRecentRow({
-                      name: e.name,
-                      selected: this.selectedPath === e.path,
-                      warn: e.isRecovery,
-                      onSelect: () => { this.selectedPath = e.path; },
-                      onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                    })
-                  }, (e: HomeProjectEntry) => `${this.showSamples}_${e.path}`)
-                }
-                .width('100%')
-              }
-              .width('100%')
-              .layoutWeight(1)
-              .scrollBar(BarState.Auto)
-            }
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .margin({ left: 8, right: 8, bottom: 4 })
-          .backgroundColor(ProteusHomeColors.PANEL_BG)
-          .border({ width: 1, color: ProteusHomeColors.LISTBOX_BORDER })
-
-          Row() {
-            ProteusHomeDownloadBtn({
-              label: 'Open',
-              primary: true,
-              btnEnabled: this.canOpenSelected(),
-              onAction: () => this.openSelected()
-            })
-          }
-          .width('100%')
-          .padding({ left: 8, right: 8, bottom: 8 })
-        }
-        .width('100%')
-        .height('100%')
-        .alignItems(HorizontalAlign.Start)
-      }
-
-      ProteusHomePanel({ title: 'News', panelWeight: 4, highlighted: this.newsHighlight }) {
+      ProteusHomePanel({ title: 'News', panelWeight: 1, highlighted: this.newsHighlight }) {
         Column() {
           Row() {
             Text('Description')

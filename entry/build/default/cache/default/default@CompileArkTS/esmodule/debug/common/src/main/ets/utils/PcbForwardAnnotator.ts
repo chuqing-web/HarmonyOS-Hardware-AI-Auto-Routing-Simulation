@@ -84,10 +84,12 @@ export class PcbForwardAnnotator {
             }
         }
         const newFootprints: PcbFootprintInst[] = [];
-        const courtyardGap = 80;
-        const originX = 300;
-        const originY = 300;
-        const maxRowWidth = 2800;
+        const courtyardGap = 40;
+        const originX = 180;
+        const originY = 180;
+        const nComp = schematic.components.filter(c => isLayoutable(c)).length;
+        const cols = Math.max(2, Math.ceil(Math.sqrt(Math.max(nComp, 1) * 1.4)));
+        const maxRowWidth = Math.max(cols * 240, 720);
         let cursorX = originX;
         let cursorY = originY;
         let rowMaxH = 0;
@@ -223,14 +225,39 @@ export class PcbForwardAnnotator {
         }
     }
     private expandBoardOutline(doc: PcbDocument): void {
-        let maxX = 3000;
-        let maxY = 2000;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let has = false;
         for (const fp of doc.footprints) {
-            maxX = Math.max(maxX, fp.position.x + 400);
-            maxY = Math.max(maxY, fp.position.y + 400);
+            has = true;
+            minX = Math.min(minX, fp.position.x - 80);
+            minY = Math.min(minY, fp.position.y - 80);
+            maxX = Math.max(maxX, fp.position.x + 80);
+            maxY = Math.max(maxY, fp.position.y + 80);
         }
+        if (!has) {
+            doc.boardOutline.points = [
+                { x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 700 }, { x: 0, y: 700 }
+            ];
+            return;
+        }
+        const margin = 140;
+        const shiftX = minX - margin;
+        const shiftY = minY - margin;
+        if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
+            for (const fp of doc.footprints) {
+                fp.position.x -= shiftX;
+                fp.position.y -= shiftY;
+            }
+            maxX -= shiftX;
+            maxY -= shiftY;
+        }
+        const boardW = Math.max(maxX + margin, 800);
+        const boardH = Math.max(maxY + margin, 600);
         doc.boardOutline.points = [
-            { x: 0, y: 0 }, { x: maxX, y: 0 }, { x: maxX, y: maxY }, { x: 0, y: maxY }
+            { x: 0, y: 0 }, { x: boardW, y: 0 }, { x: boardW, y: boardH }, { x: 0, y: boardH }
         ];
     }
 }

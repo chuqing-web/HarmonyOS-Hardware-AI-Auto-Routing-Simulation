@@ -886,7 +886,7 @@ struct Index {
     try {
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
-      options.fileSuffixFilters = ['原理图工程|.schsim,.json', '.schsim', '.json'];
+      options.fileSuffixFilters = ['原理图工程|.schsim,.json', 'PCB工程|.pcbsim', '.schsim', '.pcbsim', '.json'];
       const dirUri = this.getProjectDirUri();
       if (dirUri.length > 0) {
         options.defaultFilePathUri = dirUri;
@@ -894,14 +894,28 @@ struct Index {
       const docPicker = new picker.DocumentViewPicker(this.getHostAbilityContext());
       const uris = await docPicker.select(options);
       if (uris && uris.length > 0) {
-        const ok = await this.appService.loadProject(uris[0]);
+        const path = uris[0];
+        if (path.toLowerCase().endsWith('.pcbsim')) {
+          this.showOpenDialog = false;
+          this.showWelcomeDialog = false;
+          try {
+            this.getUIContext().getRouter().replaceUrl({
+              url: 'pages/PcbPage',
+              params: { launchMode: 'open', projectPath: path }
+            }).catch((_e: BusinessError) => { /* ignore */ });
+          } catch (_e) {
+            this.statusMessage = '无法打开 PCB 编辑器';
+          }
+          return 'ok';
+        }
+        const ok = await this.appService.loadProject(path);
         if (ok) {
           this.showOpenDialog = false;
           this.showWelcomeDialog = false;
-          this.applyOpenedProject(uris[0]);
+          this.applyOpenedProject(path);
           return 'ok';
         }
-        this.statusMessage = `无法打开: ${uris[0]}`;
+        this.statusMessage = `无法打开: ${path}`;
         return 'ok';
       }
       return 'cancel';

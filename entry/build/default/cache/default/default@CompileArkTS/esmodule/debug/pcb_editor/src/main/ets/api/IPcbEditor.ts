@@ -1,4 +1,4 @@
-import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbLayerId, PcbDrcViolation, Point2D, ViewportState, ApiResult, AutoRouteResult, PcbSelectionState, PcbAppearance, PcbAppearanceMode, PcbRatsnestEdge, PcbViaKind } from 'common';
+import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbLayerId, PcbDrcViolation, Point2D, ViewportState, ApiResult, AutoRouteResult, PcbSelectionState, PcbAppearance, PcbAppearanceMode, Pcb3dDisplayMode, PcbRatsnestEdge, PcbViaKind, PcbRouteCornerMode, PcbSpatialIndex } from 'common';
 export type { AutoRouteResult } from 'common';
 export interface DiffRouteState {
     dpName: string;
@@ -35,6 +35,8 @@ export interface IPcbEditor {
     getActiveLayer(): PcbLayerId;
     setActiveLayer(layer: PcbLayerId): void;
     setLayerVisible(layer: PcbLayerId, visible: boolean): void;
+    setLayerOpacity(layer: PcbLayerId, opacity: number): void;
+    setSoloCopperLayer(solo: boolean): void;
     /** Appearance / 网络高亮 */
     getAppearance(): PcbAppearance;
     setAppearanceMode(mode: PcbAppearanceMode): void;
@@ -43,6 +45,24 @@ export interface IPcbEditor {
     setHideZones(hide: boolean): void;
     setShowRatsnest(show: boolean): void;
     setShow3d(show: boolean): void;
+    /** 3D 轨道旋转（度增量）；pitch 自动钳制 */
+    orbit3d(deltaYawDeg: number, deltaPitchDeg: number): void;
+    resetView3d(): void;
+    setView3dOrtho(ortho: boolean): void;
+    /** 预设：iso | top | bottom | front | left | right */
+    setView3dPreset(preset: string): void;
+    setView3dDisplayMode(mode: Pcb3dDisplayMode): void;
+    setView3dCutFraction(fraction: number): void;
+    setView3dMeasure(active: boolean): void;
+    setView3dShowInterference(show: boolean): void;
+    setView3dPbr(enabled: boolean): void;
+    setView3dMsaa(samples: number): void;
+    setShowPadNumbers(show: boolean): void;
+    getViaKind(): PcbViaKind;
+    setViaKind(kind: PcbViaKind): void;
+    getViaSpan(): PcbLayerId[];
+    setViaSpan(from: PcbLayerId, to: PcbLayerId): void;
+    getLayerStackCopperCount(): number;
     getRatsnest(): PcbRatsnestEdge[];
     rebuildNets(): void;
     setCopperLayerCount(count: number): boolean;
@@ -62,9 +82,11 @@ export interface IPcbEditor {
     previewRoute(point: Point2D): Point2D;
     commitRoute(end: Point2D): PcbTrack | null;
     cancelRoute(): void;
+    getRouteCornerMode(): PcbRouteCornerMode;
+    setRouteCornerMode(mode: PcbRouteCornerMode): void;
     /** 换层并在当前位置自动插入过孔 */
     switchRouteLayer(layer: PcbLayerId): PcbVia | null;
-    addVia(pos: Point2D, netId?: string, netName?: string, kind?: PcbViaKind): PcbVia | null;
+    addVia(pos: Point2D, netId?: string, netName?: string, kind?: PcbViaKind, fromLayer?: PcbLayerId, toLayer?: PcbLayerId): PcbVia | null;
     addGroundPour(): PcbZone | null;
     /** 多边形敷铜：点列闭合后提交 */
     beginZonePoly(netId?: string, netName?: string): void;
@@ -102,6 +124,8 @@ export interface IPcbEditor {
     screenToWorld(sx: number, sy: number): Point2D;
     worldToScreen(wx: number, wy: number): Point2D;
     runDrc(): PcbDrcViolation[];
+    getLastDrcViolations(): PcbDrcViolation[];
+    getSpatialIndex(): PcbSpatialIndex;
     forwardAnnotateFromSchematic(): ApiResult<PcbDocument>;
     reverseAnnotateToSchematic(): ApiResult<number>;
     /** 撤销/重做 */

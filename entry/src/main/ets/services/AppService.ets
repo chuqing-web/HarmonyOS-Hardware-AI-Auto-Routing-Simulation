@@ -9,7 +9,7 @@ import { SimFramePlain } from './sim/SimProtocol';
 import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugger';
 import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
 import {
-  AiEngineImpl, IAiEngine, TeachingService, LabTemplate, ChatHistoryEntry, FaultDiagnoser,
+  AiEngineImpl, IAiEngine, TeachingService, LabTemplate, PcbLabTemplate, ChatHistoryEntry, FaultDiagnoser,
   classifyCircuitIntent, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator,
   parseSignalAmplitudeVolts, HYSTERESIS_MIN_SIGNAL_AMP_V
 } from 'ai_engine';
@@ -22,6 +22,7 @@ import fs from '@ohos.file.fs';
 import { DeviceLibraryBootstrap } from '../utils/DeviceLibraryBootstrap';
 import { TemplateProjectBootstrap } from '../utils/TemplateProjectBootstrap';
 import { TemplateMergeUtil } from '../utils/TemplateMergeUtil';
+import { PcbTemplateMergeUtil } from '../utils/PcbTemplateMergeUtil';
 import { ProjectPaths } from '../utils/ProjectPaths';
 import { KeyboardShortcutManager } from '../utils/KeyboardShortcutManager';
 import { ThemeManager } from '../theme/ThemeManager';
@@ -49,7 +50,8 @@ import {
   emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil,
   mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, ComponentInstance,
   ClarificationQuestion, ClarificationAnswer,
-  MainThreadYield, MultimeterMode, createEmptyPcbDocument, PcbDocument, normalizePcbDocument
+  MainThreadYield, MultimeterMode, createEmptyPcbDocument, PcbDocument, normalizePcbDocument,
+  tracePcb, tracePcbFullState, PcbCanvasTraceSnapshot
 } from 'common';
 import { CollabSyncClient, CollabPresence } from 'file_persistence';
 import { InstrumentWaveExpandStore } from '../components/InstrumentWaveExpandStore';
@@ -3368,8 +3370,9 @@ export class AppService {
       const names = fs.listFileSync(dir);
       const out: string[] = [];
       for (let i = 0; i < names.length; i++) {
-        if (names[i].endsWith('.schsim')) {
-          out.push(`${dir}/${names[i]}`);
+        const n = names[i];
+        if (n.endsWith(ProjectPaths.SCH_EXT) || n.endsWith(ProjectPaths.PCB_EXT)) {
+          out.push(`${dir}/${n}`);
         }
       }
       return out.sort();
@@ -3491,6 +3494,112 @@ export class AppService {
       if (templateId === 'lab_555_astable') {
         this.instruments.clearOscilloscopeCapture();
       }
+      return true;
+    } finally {
+      this.templateLoadBusy = false;
+    }
+  }
+
+  listAvailablePcbLabTemplates(category: string = 'all'): PcbLabTemplate[] {
+    const all = category === 'all'
+      ? this.teachingService.listPcbTemplates()
+      : this.teachingService.listPcbTemplatesByCategory(category);
+    const out: PcbLabTemplate[] = [];
+    for (let i = 0; i < all.length; i++) {
+      const tpl = all[i];
+      const path = ProjectPaths.templatePcbFile(this.appBaseDir, tpl.id);
+      if (TemplateProjectBootstrap.fileExists(path)) {
+        out.push(tpl);
+      }
+    }
+    return out;
+  }
+
+  /** 将 PCB 实验模板合并到当前板（不替换工程） */
+  async loadPcbLabTemplate(templateId: string): Promise<boolean> {
+    if (this.templateLoadBusy) {
+      this.onStatusMessage('模板加载中，请稍候…');
+      return false;
+    }
+    this.templateLoadBusy = true;
+    try {
+      await this.ensureTemplatesReady();
+      const templatePath = ProjectPaths.templatePcbFile(this.appBaseDir, templateId);
+      if (!TemplateProjectBootstrap.fileExists(templatePath)) {
+        this.onStatusMessage(`PCB 模板不存在: ${templatePath}`);
+        return false;
+      }
+      if (this.currentProject === null) {
+        this.newProject('Untitled');
+      }
+      const project = this.currentProject;
+      if (project === null) {
+        this.onStatusMessage('无法创建工程');
+        return false;
+      }
+      const loadResult = await (this.filePersistence as FilePersistenceImpl).loadProjectData(templatePath);
+      if (!loadResult.success || loadResult.data === undefined || loadResult.data.pcb === undefined) {
+        this.onStatusMessage(`读取 PCB 模板失败: ${loadResult.error ?? templatePath}`);
+        return false;
+      }
+      await MainThreadYield.yield();
+      const templatePcb = loadResult.data.pcb;
+      normalizePcbDocument(templatePcb);
+      tracePcb('TPL_LOAD',
+        `id=${templateId} path=${templatePath} ` +
+        `srcFp=${templatePcb.footprints.length} srcTrk=${templatePcb.tracks.length} ` +
+        `srcVia=${templatePcb.vias.length} srcZone=${templatePcb.zones.length} ` +
+        `srcNet=${templatePcb.nets.length}`);
+      tracePcbFullState(templatePcb, `template_src:${templateId}`);
+      let target = this.pcbEditor.getDocument();
+      const beforeFp = target !== null ? target.footprints.length : 0;
+      const beforeTrk = target !== null ? target.tracks.length : 0;
+      if (target === null) {
+        if (!project.pcb) {
+          project.pcb = createEmptyPcbDocument(project.name);
+        }
+        normalizePcbDocument(project.pcb);
+        target = project.pcb;
+      } else {
+        normalizePcbDocument(target);
+      }
+      PcbTemplateMergeUtil.mergeTemplateInto(target, templatePcb);
+      // 合并后二次固化板框/覆铜对齐，并同步文档层色到专业色板
+      for (let li = 0; li < target.layers.length; li++) {
+        const layer = target.layers[li];
+        if (layer.id === 'F.Cu') {
+          layer.color = '#FF2A2A';
+          layer.opacity = 0.92;
+        } else if (layer.id === 'B.Cu') {
+          layer.color = '#00C853';
+          layer.opacity = 0.78;
+        } else if (layer.id === 'F.SilkS') layer.color = '#5CE1E6';
+        else if (layer.id === 'Edge.Cuts') layer.color = '#E8A020';
+      }
+      this.pcbEditor.loadDocument(target);
+      this.pcbEditor.setShowPadNumbers(true);
+      this.pcbEditor.setShowRatsnest(false);
+      this.pcbEditor.fitBoardInView();
+      this.pcbEditor.rebuildNets();
+      this.syncProjectFromModules();
+      this.onProjectChanged();
+      const merged = this.pcbEditor.getDocument() ?? target;
+      const canvasSnap: PcbCanvasTraceSnapshot = {
+        viewport: this.pcbEditor.getViewport(),
+        activeLayer: this.pcbEditor.getActiveLayer(),
+        appearance: this.pcbEditor.getAppearance(),
+        selection: this.pcbEditor.getSelection(),
+        ratsnest: this.pcbEditor.getRatsnest()
+      };
+      tracePcb('TPL_MERGED',
+        `id=${templateId} beforeFp=${beforeFp} beforeTrk=${beforeTrk} ` +
+        `afterFp=${merged.footprints.length} afterTrk=${merged.tracks.length} ` +
+        `afterVia=${merged.vias.length} afterZone=${merged.zones.length} ` +
+        `afterNet=${merged.nets.length} ratsnest=${canvasSnap.ratsnest.length}`);
+      tracePcbFullState(merged, `after_insert:${templateId}`, canvasSnap);
+      const def = this.teachingService.getPcbTemplate(templateId);
+      const tplName = def !== null ? def.name : templateId;
+      this.onStatusMessage(`已将 PCB 实验「${tplName}」插入当前板空白区域`);
       return true;
     } finally {
       this.templateLoadBusy = false;

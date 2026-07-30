@@ -1,5 +1,5 @@
 /**
- * KiCad 风格状态栏 — 坐标 / 网格 / 缩放 / 活动层
+ * KiCad 风格状态栏 — 坐标 / 网格 / 缩放 / 活动层 / 悬停网络
  */
 import { PcbLayerId } from 'common';
 import { appVersionLabel } from 'common';
@@ -16,6 +16,7 @@ export struct PcbStatusBar {
   @Prop activeLayer: PcbLayerId = PcbLayerId.F_CU;
   @Prop gridSize: number = 5;
   @Prop gridVisible: boolean = true;
+  @Prop hoverNetName: string = '';
 
   build() {
     Row() {
@@ -28,13 +29,20 @@ export struct PcbStatusBar {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: 8 })
 
-      // 分隔
       this.sep()
 
       // 坐标
       Text(`X ${this.worldX.toFixed(1)}  Y ${this.worldY.toFixed(1)} mil`)
         .fontSize(ProteusFonts.STATUS)
         .fontColor(ProteusColors.TEXT_PRIMARY)
+        .fontFamily('monospace')
+
+      this.sep()
+
+      // 悬停网络
+      Text(this.hoverNetName.length > 0 ? `Net ${this.hoverNetName}` : 'Net —')
+        .fontSize(ProteusFonts.STATUS)
+        .fontColor(this.hoverNetName.length > 0 ? ProteusColors.SELECTED : ProteusColors.TEXT_SECONDARY)
         .fontFamily('monospace')
 
       this.sep()

@@ -1,9 +1,12 @@
 export { IAiEngine } from './src/main/ets/api/IAiEngine';
 export { AiEngineImpl } from './src/main/ets/AiEngineImpl';
-export { TeachingService, LabTemplate, KnowledgeTip, TemplateFirmware } from './src/main/ets/TeachingService';
+export { TeachingService, LabTemplate, PcbLabTemplate, KnowledgeTip, TemplateFirmware } from './src/main/ets/TeachingService';
 export {
   LabTemplateRegistry, LabTemplateDef, LabTemplateBuilder, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
 } from './src/main/ets/algorithms/LabTemplateRegistry';
+export {
+  PcbLabTemplateRegistry, PcbLabTemplateDef
+} from './src/main/ets/algorithms/PcbLabTemplateRegistry';
 export { TemplateSchematicKit } from './src/main/ets/algorithms/TemplateSchematicKit';
 export { SemanticNetBuilder, SemanticNetBuildResult } from './src/main/ets/algorithms/SemanticNetBuilder';
 export { NetPlanExecutor, NetPlanResult, NetPlanExecutionResult, NetPlanWiringHints, WiredCompactPair } from './src/main/ets/algorithms/NetPlanExecutor';

@@ -236,16 +236,6 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "component_library@file:features/component_library": {
-      "storePath": "features/component_library",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
     "simulation_kernel@file:features/simulation_kernel": {
       "storePath": "features/simulation_kernel",
       "dependencies": {
@@ -256,8 +246,8 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "instruments@file:features/instruments": {
-      "storePath": "features/instruments",
+    "component_library@file:features/component_library": {
+      "storePath": "features/component_library",
       "dependencies": {
         "common": "common"
       },
@@ -276,8 +266,28 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
+    "instruments@file:features/instruments": {
+      "storePath": "features/instruments",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
     "file_persistence@file:features/file_persistence": {
       "storePath": "features/file_persistence",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "ai_api_manager@file:features/ai_api_manager": {
+      "storePath": "features/ai_api_manager",
       "dependencies": {
         "common": "common"
       },
@@ -298,16 +308,6 @@
     },
     "pcb_editor@file:features/pcb_editor": {
       "storePath": "features/pcb_editor",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "ai_api_manager@file:features/ai_api_manager": {
-      "storePath": "features/ai_api_manager",
       "dependencies": {
         "common": "common"
       },

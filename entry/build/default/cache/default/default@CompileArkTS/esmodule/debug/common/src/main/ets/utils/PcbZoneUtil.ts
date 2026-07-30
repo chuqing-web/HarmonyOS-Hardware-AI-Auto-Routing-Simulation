@@ -9,6 +9,8 @@ export interface PcbZoneDefaultFields {
 export function padWorldPosition(fp: PcbFootprintInst, pad: PcbPad): Point2D {
     let lx = pad.pos.x;
     let ly = pad.pos.y;
+    if (fp.mirrored)
+        lx = -lx;
     if (fp.rotation === 90) {
         const t = lx;
         lx = -ly;
@@ -33,6 +35,31 @@ export function makeRectCutout(center: Point2D, halfW: number, halfH: number): P
         { x: center.x + halfW, y: center.y + halfH },
         { x: center.x - halfW, y: center.y + halfH }
     ];
+}
+/** 热焊盘连接筋矩形（中心 + 宽高，世界坐标） */
+export interface ThermalSpokeRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+}
+/**
+ * 四向热焊盘连接筋：沿 thermalGap 把焊盘边桥接到覆铜边。
+ * 旧实现把细条画在挖空外沿且未跨过 gap，横竖都会断。
+ */
+export function thermalSpokeRects(padCenter: Point2D, halfW: number, halfH: number, gap: number, spokeW: number): ThermalSpokeRect[] {
+    const g = Math.max(gap, 1);
+    const tw = Math.max(spokeW, 2);
+    // 两端各伸入焊盘/覆铜，避免 evenodd 孔边与焊盘贴边时视觉断开
+    const overlap = Math.max(2, Math.min(4, g * 0.25));
+    const len = g + overlap * 2;
+    const out: ThermalSpokeRect[] = [
+        { x: padCenter.x - halfW - g / 2, y: padCenter.y, w: len, h: tw },
+        { x: padCenter.x + halfW + g / 2, y: padCenter.y, w: len, h: tw },
+        { x: padCenter.x, y: padCenter.y - halfH - g / 2, w: tw, h: len },
+        { x: padCenter.x, y: padCenter.y + halfH + g / 2, w: tw, h: len }
+    ];
+    return out;
 }
 export function pointInPolygon(p: Point2D, poly: Point2D[]): boolean {
     if (poly.length < 3)

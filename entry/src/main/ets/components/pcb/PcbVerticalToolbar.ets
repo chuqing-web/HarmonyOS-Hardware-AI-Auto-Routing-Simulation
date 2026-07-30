@@ -1,11 +1,11 @@
 /**
- * KiCad 风格左侧垂直工具栏 — 纯图标 + tooltip
+ * PCB 左侧快捷工具栏 — 对齐原理图 ProteusToolButton（Button 命中）
  */
 import { PcbToolMode } from 'pcb_editor';
-import { ProteusColors, ProteusDimens } from '../../theme/ProteusTheme';
+import { ProteusColors } from '../../theme/ProteusTheme';
 import { PROTEUS_THEME_REV_KEY } from '../../theme/ThemeManager';
-import { ProteusIcon, ProteusIconName } from '../proteus/ProteusIcons';
-import { ProteusTooltipBubble } from '../proteus/ProteusWidgets';
+import { ProteusIconName } from '../proteus/ProteusIcons';
+import { ProteusToolButton } from '../proteus/ProteusWidgets';
 
 @Component
 export struct PcbVerticalToolbar {
@@ -14,6 +14,7 @@ export struct PcbVerticalToolbar {
   @Prop gridActive: boolean = true;
   onToolSelect: (mode: PcbToolMode) => void = (_m: PcbToolMode) => {};
   onRotate: () => void = () => {};
+  onFlip: () => void = () => {};
   onDelete: () => void = () => {};
   onUndo: () => void = () => {};
   onRedo: () => void = () => {};
@@ -22,115 +23,177 @@ export struct PcbVerticalToolbar {
   onUpdatePcb: () => void = () => {};
   onDrc: () => void = () => {};
   onAutoRoute: () => void = () => {};
+  onCopy: () => void = () => {};
+  onPaste: () => void = () => {};
 
   build() {
-    Column() {
-      this.toolBtn(ProteusIconName.SELECT, '选择 (S)', this.toolMode === PcbToolMode.SELECT, () => {
-        this.onToolSelect(PcbToolMode.SELECT);
-      })
-      this.toolBtn(ProteusIconName.TRACK, '走线 (X)', this.toolMode === PcbToolMode.ROUTE, () => {
-        this.onToolSelect(PcbToolMode.ROUTE);
-      })
-      this.toolBtn(ProteusIconName.VIA, '过孔 (V)', this.toolMode === PcbToolMode.VIA, () => {
-        this.onToolSelect(PcbToolMode.VIA);
-      })
-      this.toolBtn(ProteusIconName.ZONE, '覆铜 (Z)', this.toolMode === PcbToolMode.POUR, () => {
-        this.onToolSelect(PcbToolMode.POUR);
-      })
+    Scroll() {
+      Column({ space: 2 }) {
+        ProteusToolButton({
+          iconName: ProteusIconName.SELECT,
+          tooltip: '选择 (S)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.SELECT,
+          onAction: () => { this.onToolSelect(PcbToolMode.SELECT); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.TRACK,
+          tooltip: '走线 (X)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.ROUTE,
+          onAction: () => { this.onToolSelect(PcbToolMode.ROUTE); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.VIA,
+          tooltip: '过孔 (V)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.VIA,
+          onAction: () => { this.onToolSelect(PcbToolMode.VIA); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.ZONE,
+          tooltip: '多边形覆铜 (Z)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.ZONE_POLY,
+          onAction: () => { this.onToolSelect(PcbToolMode.ZONE_POLY); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.GROUND,
+          tooltip: '整板覆铜 (Shift+Z)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.POUR,
+          onAction: () => { this.onToolSelect(PcbToolMode.POUR); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.LABEL,
+          tooltip: '板框 (O)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.OUTLINE,
+          onAction: () => { this.onToolSelect(PcbToolMode.OUTLINE); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.RULER,
+          tooltip: '测量 (M)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.MEASURE,
+          onAction: () => { this.onToolSelect(PcbToolMode.MEASURE); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.COMPONENT,
+          tooltip: '放置封装 (P)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.toolMode === PcbToolMode.PLACE_FP,
+          onAction: () => { this.onToolSelect(PcbToolMode.PLACE_FP); }
+        })
 
-      Divider().color(ProteusColors.DIVIDER).width('80%').margin({ top: 4, bottom: 4 })
+        Divider().color(ProteusColors.DIVIDER).width('80%').margin({ top: 4, bottom: 4 })
 
-      this.toolBtn(ProteusIconName.ROTATE, '旋转 (R)', false, () => { this.onRotate(); })
-      this.toolBtn(ProteusIconName.TRASH, '删除 (Del)', false, () => { this.onDelete(); })
-      this.toolBtn(ProteusIconName.UNDO, '撤销 (Ctrl+Z)', false, () => { this.onUndo(); })
-      this.toolBtn(ProteusIconName.REDO, '重做 (Ctrl+Y)', false, () => { this.onRedo(); })
+        ProteusToolButton({
+          iconName: ProteusIconName.ROTATE,
+          tooltip: '旋转 (R)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onRotate(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.MIRROR,
+          tooltip: '镜像翻转 (F)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onFlip(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.TRASH,
+          tooltip: '删除 (Del)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onDelete(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.UNDO,
+          tooltip: '撤销 (Ctrl+Z)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onUndo(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.REDO,
+          tooltip: '重做 (Ctrl+Y)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onRedo(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.COPY,
+          tooltip: '复制 (Ctrl+C)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onCopy(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.PASTE,
+          tooltip: '粘贴 (Ctrl+V)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onPaste(); }
+        })
 
-      Divider().color(ProteusColors.DIVIDER).width('80%').margin({ top: 4, bottom: 4 })
+        Divider().color(ProteusColors.DIVIDER).width('80%').margin({ top: 4, bottom: 4 })
 
-      this.toolBtn(ProteusIconName.FIT, '适应窗口 (F)', false, () => { this.onFit(); })
-      this.toolBtn(ProteusIconName.GRID, '切换网格', this.gridActive, () => { this.onToggleGrid(); })
-
-      Blank()
-
-      this.toolBtn(ProteusIconName.COMPONENT, '更新 PCB', false, () => { this.onUpdatePcb(); })
-      this.toolBtn(ProteusIconName.DRC, 'DRC 检查', false, () => { this.onDrc(); })
-      this.toolBtn(ProteusIconName.AI_ROUTE, '自动布线', false, () => { this.onAutoRoute(); })
+        ProteusToolButton({
+          iconName: ProteusIconName.FIT,
+          tooltip: '适应窗口 (Ctrl+0)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onFit(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.GRID,
+          tooltip: '切换网格 (G)',
+          showLabel: false,
+          btnSize: 32,
+          active: this.gridActive,
+          onAction: () => { this.onToggleGrid(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.AI_LAYOUT,
+          tooltip: '更新 PCB (U)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onUpdatePcb(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.DRC,
+          tooltip: 'DRC 检查 (F7)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onDrc(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.AI_ROUTE,
+          tooltip: '自动布线 (F8)',
+          showLabel: false,
+          btnSize: 32,
+          onAction: () => { this.onAutoRoute(); }
+        })
+      }
+      .width('100%')
+      .padding({ top: 4, bottom: 8 })
+      .alignItems(HorizontalAlign.Center)
     }
     .width(44)
     .height('100%')
-    .padding({ top: 4, bottom: 4 })
+    .scrollBar(BarState.Auto)
     .backgroundColor(ProteusColors.TOOLBAR_BG)
     .border({ width: { right: 1 }, color: ProteusColors.BORDER })
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  toolBtn(icon: ProteusIconName, tip: string, active: boolean, action: () => void) {
-    PcbToolIconBtn({ icon: icon, tip: tip, active: active, onAction: action })
-  }
-}
-
-@Component
-struct PcbToolIconBtn {
-  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
-  @Prop icon: ProteusIconName = ProteusIconName.SELECT;
-  @Prop tip: string = '';
-  @Prop active: boolean = false;
-  onAction: () => void = () => {};
-  @State private tipVisible: boolean = false;
-  @State private pressed: boolean = false;
-
-  private bg(): string {
-    if (this.pressed) {
-      return ProteusColors.BTN_PRESSED;
-    }
-    return this.active ? ProteusColors.TOOL_ACTIVE : '#00000000';
-  }
-
-  build() {
-    Column() {
-      ProteusIcon({
-        name: this.icon,
-        iconSize: ProteusDimens.ICON_SIZE,
-        color: this.active ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY
-      })
-    }
-    .width(36)
-    .height(36)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.bg())
-    .border({
-      width: this.active ? 1 : 0,
-      color: this.active ? ProteusColors.SELECTED : Color.Transparent
-    })
-    .margin({ bottom: 2 })
-    .onClick(() => { this.onAction(); })
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down) {
-        this.pressed = true;
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.pressed = false;
-      }
-    })
-    .onHover((hover: boolean) => {
-      this.tipVisible = hover;
-    })
-    .bindPopup(this.tipVisible, {
-      builder: this.tooltipPopup,
-      placement: Placement.Right,
-      enableArrow: true,
-      popupColor: Color.Transparent,
-      mask: false,
-      onStateChange: (event) => {
-        if (!event.isVisible) {
-          this.tipVisible = false;
-        }
-      }
-    })
-  }
-
-  @Builder
-  tooltipPopup() {
-    ProteusTooltipBubble(this.tip)
+    .hitTestBehavior(HitTestMode.Default)
   }
 }

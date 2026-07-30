@@ -193,12 +193,50 @@ function defTO2203(): PcbFootprintDef {
   };
 }
 
+function defPinHeader(n: number): PcbFootprintDef {
+  const pads: PcbPad[] = [];
+  const pitch = 100;
+  const startY = -((n - 1) * pitch) / 2;
+  for (let i = 0; i < n; i++) {
+    pads.push(thPad(`${i + 1}`, 0, startY + i * pitch, 35, 60));
+  }
+  const halfH = ((n - 1) * pitch) / 2 + 50;
+  return {
+    id: `FP_PINHDR_${n}`,
+    name: `PinHeader_1x${n}`,
+    description: `1x${n} pin header`,
+    pads,
+    silkLines: rectSilk(40, halfH),
+    courtyard: [
+      { x: -55, y: -halfH - 10 }, { x: 55, y: -halfH - 10 },
+      { x: 55, y: halfH + 10 }, { x: -55, y: halfH + 10 }
+    ]
+  };
+}
+
+function defMountHole(): PcbFootprintDef {
+  return {
+    id: 'FP_MOUNT',
+    name: 'MountingHole',
+    description: 'M3 mounting hole',
+    pads: [thPad('1', 0, 0, 120, 160)],
+    silkLines: [
+      [{ x: -90, y: 0 }, { x: 90, y: 0 }],
+      [{ x: 0, y: -90 }, { x: 0, y: 90 }]
+    ],
+    courtyard: [
+      { x: -100, y: -100 }, { x: 100, y: -100 }, { x: 100, y: 100 }, { x: -100, y: 100 }
+    ]
+  };
+}
+
 function defGeneric2Pin(): PcbFootprintDef {
   return def0805();
 }
 
 const BUILTIN_DEFS: PcbFootprintDef[] = [
-  def0805(), def0603(), def0402(), def1206(), defSOIC8(), defDIP8(), defSOT23(), defTHT2Pin(), defTO2203()
+  def0805(), def0603(), def0402(), def1206(), defSOIC8(), defDIP8(), defSOT23(),
+  defTHT2Pin(), defTO2203(), defPinHeader(4), defPinHeader(6), defPinHeader(8), defMountHole()
 ];
 
 export class PcbFootprintLibrary {

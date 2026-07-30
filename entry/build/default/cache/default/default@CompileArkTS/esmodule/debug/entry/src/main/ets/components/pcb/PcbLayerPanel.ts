@@ -8,6 +8,8 @@ interface PcbLayerPanel_Params {
     panelWidth?: number;
     onLayerSelect?: (id: PcbLayerId) => void;
     onVisibilityChange?: (id: PcbLayerId, visible: boolean) => void;
+    onOpacityChange?: (id: PcbLayerId, opacity: number) => void;
+    onPreset?: (preset: string) => void;
 }
 import { PcbLayerId } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
@@ -19,6 +21,7 @@ export interface PcbLayerRow {
     name: string;
     visible: boolean;
     color: string;
+    opacity: number;
 }
 export class PcbLayerPanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -32,6 +35,8 @@ export class PcbLayerPanel extends ViewPU {
         this.__panelWidth = new SynchedPropertySimpleOneWayPU(params.panelWidth, this, "panelWidth");
         this.onLayerSelect = (_id: PcbLayerId) => { };
         this.onVisibilityChange = (_id: PcbLayerId, _v: boolean) => { };
+        this.onOpacityChange = (_id: PcbLayerId, _o: number) => { };
+        this.onPreset = (_p: string) => { };
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -50,6 +55,12 @@ export class PcbLayerPanel extends ViewPU {
         }
         if (params.onVisibilityChange !== undefined) {
             this.onVisibilityChange = params.onVisibilityChange;
+        }
+        if (params.onOpacityChange !== undefined) {
+            this.onOpacityChange = params.onOpacityChange;
+        }
+        if (params.onPreset !== undefined) {
+            this.onPreset = params.onPreset;
         }
     }
     updateStateVars(params: PcbLayerPanel_Params) {
@@ -101,6 +112,8 @@ export class PcbLayerPanel extends ViewPU {
     }
     private onLayerSelect: (id: PcbLayerId) => void;
     private onVisibilityChange: (id: PcbLayerId, visible: boolean) => void;
+    private onOpacityChange: (id: PcbLayerId, opacity: number) => void;
+    private onPreset: (preset: string) => void;
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
@@ -108,11 +121,12 @@ export class PcbLayerPanel extends ViewPU {
             Column.height('100%');
             Column.backgroundColor(ProteusColors.SIDEBAR_BG);
             Column.border({ width: { right: 1 }, color: ProteusColors.BORDER });
+            Column.hitTestBehavior(HitTestMode.Default);
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Layers' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbLayerPanel.ets", line: 28, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Layers' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbLayerPanel.ets", line: 31, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -128,6 +142,16 @@ export class PcbLayerPanel extends ViewPU {
                 }
             }, { name: "ProteusPanelTitle" });
         }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 3 });
+            Row.width('100%');
+            Row.padding({ left: 6, right: 6, bottom: 4 });
+        }, Row);
+        this.presetChip.bind(this)('顶层', 'top');
+        this.presetChip.bind(this)('底层', 'bottom');
+        this.presetChip.bind(this)('单层', 'solo');
+        this.presetChip.bind(this)('全部', 'all');
+        Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             List.create();
             List.layoutWeight(1);
@@ -158,37 +182,80 @@ export class PcbLayerPanel extends ViewPU {
                     ListItem.pop();
                 }
             };
-            this.forEachUpdateFunction(elmtId, this.layerRows, forEachItemGenFunction, (row: PcbLayerRow) => row.id, false, false);
+            this.forEachUpdateFunction(elmtId, this.layerRows, forEachItemGenFunction, (row: PcbLayerRow) => `${row.id}:${row.visible}:${row.opacity}`, false, false);
         }, ForEach);
         ForEach.pop();
         List.pop();
         Column.pop();
     }
+    presetChip(label: string, preset: string, parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithChild({ type: ButtonType.Normal });
+            Button.height(22);
+            Button.padding({ left: 6, right: 6 });
+            Button.backgroundColor(ProteusColors.BTN_BG);
+            Button.border({ width: 1, color: ProteusColors.BORDER });
+            Button.borderRadius(2);
+            Button.stateEffect(false);
+            Button.onClick(() => { this.onPreset(preset); });
+        }, Button);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(label);
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_PRIMARY);
+        }, Text);
+        Text.pop();
+        Button.pop();
+    }
+    opacityChip(label: string, id: PcbLayerId, opacity: number, parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithChild({ type: ButtonType.Normal });
+            Button.height(18);
+            Button.padding({ left: 4, right: 4 });
+            Button.backgroundColor(Color.Transparent);
+            Button.border({ width: 1, color: ProteusColors.BORDER });
+            Button.borderRadius(2);
+            Button.stateEffect(false);
+            Button.onClick(() => { this.onOpacityChange(id, opacity); });
+        }, Button);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(label);
+            Text.fontSize(9);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+        }, Text);
+        Text.pop();
+        Button.pop();
+    }
     layerRow(row: PcbLayerRow, parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('100%');
+            Column.padding({ right: 4 });
+            Column.backgroundColor(row.id === this.activeLayer ? ProteusColors.TREE_SELECTED : Color.Transparent);
+        }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create();
             Row.width('100%');
-            Row.height(ProteusDimens.TREE_ROW_HEIGHT + 6);
-            Row.padding({ right: 6 });
-            Row.backgroundColor(row.id === this.activeLayer ? ProteusColors.TREE_SELECTED : Color.Transparent);
-            Row.onClick(() => {
-                this.onLayerSelect(row.id);
-            });
+            Row.height(ProteusDimens.TREE_ROW_HEIGHT + 4);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // KiCad 风格左侧色条
             Column.create();
-            // KiCad 风格左侧色条
             Column.width(4);
-            // KiCad 风格左侧色条
             Column.height(22);
-            // KiCad 风格左侧色条
             Column.backgroundColor(row.color);
-            // KiCad 风格左侧色条
             Column.margin({ left: 4, right: 6 });
         }, Column);
-        // KiCad 风格左侧色条
         Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithChild({ type: ButtonType.Normal });
+            Button.layoutWeight(1);
+            Button.height(ProteusDimens.TREE_ROW_HEIGHT + 4);
+            Button.padding({ left: 2, right: 2 });
+            Button.backgroundColor(Color.Transparent);
+            Button.border({ width: 0 });
+            Button.stateEffect(false);
+            Button.onClick(() => { this.onLayerSelect(row.id); });
+        }, Button);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(row.name);
             Text.fontSize(ProteusFonts.STATUS);
@@ -196,25 +263,23 @@ export class PcbLayerPanel extends ViewPU {
                 ? ProteusColors.SELECTED
                 : (row.visible ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY));
             Text.fontWeight(row.id === this.activeLayer ? FontWeight.Bold : FontWeight.Normal);
-            Text.layoutWeight(1);
             Text.maxLines(1);
             Text.textOverflow({ overflow: TextOverflow.Ellipsis });
+            Text.width('100%');
+            Text.textAlign(TextAlign.Start);
         }, Text);
         Text.pop();
+        Button.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // 可见性切换
-            Column.create();
-            // 可见性切换
-            Column.width(24);
-            // 可见性切换
-            Column.height(22);
-            // 可见性切换
-            Column.justifyContent(FlexAlign.Center);
-            // 可见性切换
-            Column.onClick(() => {
-                this.onVisibilityChange(row.id, !row.visible);
-            });
-        }, Column);
+            Button.createWithChild({ type: ButtonType.Normal });
+            Button.width(28);
+            Button.height(26);
+            Button.padding(0);
+            Button.backgroundColor(Color.Transparent);
+            Button.border({ width: 0 });
+            Button.stateEffect(false);
+            Button.onClick(() => { this.onVisibilityChange(row.id, !row.visible); });
+        }, Button);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
@@ -222,7 +287,7 @@ export class PcbLayerPanel extends ViewPU {
                         name: row.visible ? ProteusIconName.GRID : ProteusIconName.CLOSE,
                         iconSize: 12,
                         color: row.visible ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbLayerPanel.ets", line: 67, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbLayerPanel.ets", line: 122, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -242,9 +307,39 @@ export class PcbLayerPanel extends ViewPU {
                 }
             }, { name: "ProteusIcon" });
         }
-        // 可见性切换
-        Column.pop();
+        Button.pop();
         Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            // 铜层透明度快捷调节
+            if (row.id === PcbLayerId.F_CU || row.id === PcbLayerId.B_CU ||
+                row.id === PcbLayerId.IN1_CU || row.id === PcbLayerId.IN2_CU) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create({ space: 2 });
+                        Row.width('100%');
+                        Row.padding({ left: 14, right: 6, bottom: 2 });
+                    }, Row);
+                    this.opacityChip.bind(this)('30%', row.id, 0.3);
+                    this.opacityChip.bind(this)('60%', row.id, 0.6);
+                    this.opacityChip.bind(this)('100%', row.id, 1.0);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(`${Math.round(row.opacity * 100)}%`);
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.margin({ left: 4 });
+                    }, Text);
+                    Text.pop();
+                    Row.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        Column.pop();
     }
     rerender() {
         this.updateDirtyElements();

@@ -1,6 +1,6 @@
 import type { PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad, PcbFootprintInst } from '../types/PcbTypes';
 import type { Point2D } from '../types/CommonTypes';
-import { padWorldPosition } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbZoneUtil";
+import { padWorldPosition, pointInPolygon } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbZoneUtil";
 export function guessNetClassId(netName: string, classes: PcbNetClass[]): string {
     const upper = (netName ?? '').toUpperCase();
     let powerId = 'nc_power';
@@ -15,9 +15,11 @@ export function guessNetClassId(netName: string, classes: PcbNetClass[]): string
             defaultId = c.id;
     }
     if (upper === 'GND' || upper === 'VSS' || upper === 'AGND' ||
+        upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
         upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0 ||
         upper.indexOf('3V3') >= 0 || upper.indexOf('5V') >= 0 ||
-        upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0) {
+        upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0 ||
+        upper.indexOf('VOUT') >= 0) {
         return powerId;
     }
     if (upper.length > 0) {
@@ -202,18 +204,42 @@ function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Poi
             touch(padWorldPosition(fp, pad));
         }
     }
-    // Zone 覆铜顶点加入连通检测（铜皮可连通同网焊盘）
-    for (const z of doc.zones) {
-        if (z.netId !== netId)
+    // Zone 覆铜：轮廓顶点 + 落在铺铜内且层兼容的同网焊盘/过孔（热焊盘仍视为连通）
+    for (let zi = 0; zi < doc.zones.length; zi++) {
+        const z = doc.zones[zi];
+        if (z.netId !== netId || z.outline.length < 3)
             continue;
+        const hub = `__zone_${zi}`;
+        if (!parent.has(hub))
+            parent.set(hub, hub);
         for (let i = 0; i < z.outline.length; i++) {
             const p = z.outline[i];
             touch(p);
+            union(keyOf(p), hub);
             if (i > 0)
                 union(keyOf(z.outline[i - 1]), keyOf(p));
         }
-        if (z.outline.length >= 3) {
-            union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
+        union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
+        for (const fp of doc.footprints) {
+            for (const pad of fp.pads) {
+                if (pad.netId !== netId)
+                    continue;
+                if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer))
+                    continue;
+                const wp = padWorldPosition(fp, pad);
+                if (!pointInPolygon(wp, z.outline))
+                    continue;
+                touch(wp);
+                union(keyOf(wp), hub);
+            }
+        }
+        for (const via of doc.vias) {
+            if (via.netId !== netId)
+                continue;
+            if (!pointInPolygon(via.position, z.outline))
+                continue;
+            touch(via.position);
+            union(keyOf(via.position), hub);
         }
     }
     // 近邻并查（焊盘/过孔与走线端点、Zone 顶点）
@@ -223,6 +249,8 @@ function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Poi
     });
     for (let i = 0; i < keys.length; i++) {
         for (let j = i + 1; j < keys.length; j++) {
+            if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_'))
+                continue;
             const partsI = keys[i].split('_');
             const partsJ = keys[j].split('_');
             if (partsI.length < 2 || partsJ.length < 2)
@@ -240,7 +268,19 @@ function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Poi
         return false;
     return find(ka) === find(kb);
 }
-/** 正交 L 折线（与画布预览一致） */
+/** 焊盘是否能接到指定铜层（通孔焊盘默认双面） */
+function padTouchesZoneLayer(layers: string[] | undefined | null, padType: string, zoneLayer: string): boolean {
+    if (padType === 'th' || padType === 'npth')
+        return true;
+    if (!layers || layers.length === 0)
+        return true;
+    for (let i = 0; i < layers.length; i++) {
+        if (layers[i] === zoneLayer)
+            return true;
+    }
+    return false;
+}
+/** 正交 L 折线（90°） */
 export function routeLPoints(a: Point2D, b: Point2D): Point2D[] {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -276,6 +316,37 @@ export function routeOrtho45Points(a: Point2D, b: Point2D): Point2D[] {
     const sy = dy > 0 ? 1 : -1;
     const mid: Point2D = { x: a.x, y: a.y + sy * (ady - adx) };
     return [a, mid, b];
+}
+/**
+ * 圆弧拐角：以 45° 折点为控制点的二次贝塞尔，离散为折线（可提交为多段 track）
+ */
+export function routeArcPoints(a: Point2D, b: Point2D, segments: number = 12): Point2D[] {
+    const base = routeOrtho45Points(a, b);
+    if (base.length < 3) {
+        return base;
+    }
+    const ctrl = base[1];
+    const n = Math.max(6, Math.min(24, segments));
+    const pts: Point2D[] = [];
+    for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const u = 1 - t;
+        pts.push({
+            x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
+            y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y
+        });
+    }
+    return pts;
+}
+/** 按拐角模式生成布线路径 */
+export function routeByCornerMode(a: Point2D, b: Point2D, mode: string): Point2D[] {
+    if (mode === 'ortho90') {
+        return routeLPoints(a, b);
+    }
+    if (mode === 'arc') {
+        return routeArcPoints(a, b, 12);
+    }
+    return routeOrtho45Points(a, b);
 }
 export function sumTrackLengthForNet(doc: PcbDocument, netId: string): number {
     let len = 0;

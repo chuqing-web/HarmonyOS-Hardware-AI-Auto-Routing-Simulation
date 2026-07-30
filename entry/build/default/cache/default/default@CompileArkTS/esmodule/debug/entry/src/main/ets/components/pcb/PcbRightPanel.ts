@@ -6,22 +6,51 @@ interface PcbRightPanel_Params {
     panelWidth?: number;
     selectionInfo?: string;
     selectedZoneId?: string;
+    selectedZoneCount?: number;
     activeLayer?: PcbLayerId;
     drcViolations?: PcbDrcViolation[];
+    selectedFpDefId?: string;
+    copperCount?: number;
+    stackLayers?: PcbStackLayer[];
+    viaKind?: PcbViaKind;
+    viaFrom?: PcbLayerId;
+    viaTo?: PcbLayerId;
+    copperLayerIds?: PcbLayerId[];
+    routeCornerMode?: PcbRouteCornerMode;
     onZonePriority?: (delta: number) => void;
     onZoneThermal?: () => void;
     onZoneRefreshCutouts?: () => void;
+    onPickFootprint?: (defId: string) => void;
+    onSetRouteCorner?: (mode: PcbRouteCornerMode) => void;
+    onSetCopperCount?: (n: number) => void;
+    onSetViaKind?: (k: PcbViaKind) => void;
+    onSetViaSpan?: (from: PcbLayerId, to: PcbLayerId) => void;
+    onSetAppearanceActiveOnly?: () => void;
+    onSetAppearanceDim?: () => void;
+    onSetAppearanceOverlay?: () => void;
+    onRunDrc?: () => void;
+    onPcbTemplateInserted?: () => void;
+    onExportGerber?: () => void;
+    getPcbDocument?: () => PcbDocument | null;
+    gerberDocRev?: number;
     activeTab?: PcbRightTab;
+    fpDefs?: PcbFootprintDef[];
+    teachStatus?: string;
 }
-import { PcbDrcSeverity, PcbLayerId } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { PcbDrcViolation } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { PcbDrcSeverity, PcbLayerId, PcbViaKind, PcbRouteCornerMode, PcbStackLayerType, getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { PcbDrcViolation, PcbFootprintDef, PcbStackLayer, PcbDocument } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { ProteusClassicBtn, ProteusChipTab, ProteusPanelTitle } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { PcbTeachingPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/components/pcb/PcbTeachingPanel";
+import { PcbGerberPreview } from "@bundle:com.elecdraw.aischsim/entry/ets/components/pcb/PcbGerberPreview";
 enum PcbRightTab {
     PROPERTIES = 0,
     DRC = 1,
-    LAYER = 2
+    LIBRARY = 2,
+    STACK = 3,
+    GERBER = 4,
+    TEACHING = 5
 }
 export class PcbRightPanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
@@ -33,12 +62,36 @@ export class PcbRightPanel extends ViewPU {
         this.__panelWidth = new SynchedPropertySimpleOneWayPU(params.panelWidth, this, "panelWidth");
         this.__selectionInfo = new SynchedPropertySimpleOneWayPU(params.selectionInfo, this, "selectionInfo");
         this.__selectedZoneId = new SynchedPropertySimpleOneWayPU(params.selectedZoneId, this, "selectedZoneId");
+        this.__selectedZoneCount = new SynchedPropertySimpleOneWayPU(params.selectedZoneCount, this, "selectedZoneCount");
         this.__activeLayer = new SynchedPropertySimpleOneWayPU(params.activeLayer, this, "activeLayer");
         this.__drcViolations = new SynchedPropertyObjectOneWayPU(params.drcViolations, this, "drcViolations");
+        this.__selectedFpDefId = new SynchedPropertySimpleOneWayPU(params.selectedFpDefId, this, "selectedFpDefId");
+        this.__copperCount = new SynchedPropertySimpleOneWayPU(params.copperCount, this, "copperCount");
+        this.__stackLayers = new SynchedPropertyObjectOneWayPU(params.stackLayers, this, "stackLayers");
+        this.__viaKind = new SynchedPropertySimpleOneWayPU(params.viaKind, this, "viaKind");
+        this.__viaFrom = new SynchedPropertySimpleOneWayPU(params.viaFrom, this, "viaFrom");
+        this.__viaTo = new SynchedPropertySimpleOneWayPU(params.viaTo, this, "viaTo");
+        this.__copperLayerIds = new SynchedPropertyObjectOneWayPU(params.copperLayerIds, this, "copperLayerIds");
+        this.__routeCornerMode = new SynchedPropertySimpleOneWayPU(params.routeCornerMode, this, "routeCornerMode");
         this.onZonePriority = (_d: number) => { };
         this.onZoneThermal = () => { };
         this.onZoneRefreshCutouts = () => { };
+        this.onPickFootprint = (_id: string) => { };
+        this.onSetRouteCorner = (_m: PcbRouteCornerMode) => { };
+        this.onSetCopperCount = (_n: number) => { };
+        this.onSetViaKind = (_k: PcbViaKind) => { };
+        this.onSetViaSpan = (_f: PcbLayerId, _t: PcbLayerId) => { };
+        this.onSetAppearanceActiveOnly = () => { };
+        this.onSetAppearanceDim = () => { };
+        this.onSetAppearanceOverlay = () => { };
+        this.onRunDrc = () => { };
+        this.onPcbTemplateInserted = () => { };
+        this.onExportGerber = () => { };
+        this.getPcbDocument = () => null;
+        this.__gerberDocRev = new SynchedPropertySimpleOneWayPU(params.gerberDocRev, this, "gerberDocRev");
         this.__activeTab = new ObservedPropertySimplePU(PcbRightTab.PROPERTIES, this, "activeTab");
+        this.__fpDefs = new ObservedPropertyObjectPU([], this, "fpDefs");
+        this.__teachStatus = new ObservedPropertySimplePU('', this, "teachStatus");
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -52,11 +105,38 @@ export class PcbRightPanel extends ViewPU {
         if (params.selectedZoneId === undefined) {
             this.__selectedZoneId.set('');
         }
+        if (params.selectedZoneCount === undefined) {
+            this.__selectedZoneCount.set(0);
+        }
         if (params.activeLayer === undefined) {
             this.__activeLayer.set(PcbLayerId.F_CU);
         }
         if (params.drcViolations === undefined) {
             this.__drcViolations.set([]);
+        }
+        if (params.selectedFpDefId === undefined) {
+            this.__selectedFpDefId.set('');
+        }
+        if (params.copperCount === undefined) {
+            this.__copperCount.set(2);
+        }
+        if (params.stackLayers === undefined) {
+            this.__stackLayers.set([]);
+        }
+        if (params.viaKind === undefined) {
+            this.__viaKind.set(PcbViaKind.THROUGH);
+        }
+        if (params.viaFrom === undefined) {
+            this.__viaFrom.set(PcbLayerId.F_CU);
+        }
+        if (params.viaTo === undefined) {
+            this.__viaTo.set(PcbLayerId.B_CU);
+        }
+        if (params.copperLayerIds === undefined) {
+            this.__copperLayerIds.set([PcbLayerId.F_CU, PcbLayerId.B_CU]);
+        }
+        if (params.routeCornerMode === undefined) {
+            this.__routeCornerMode.set(PcbRouteCornerMode.ORTHO45);
         }
         if (params.onZonePriority !== undefined) {
             this.onZonePriority = params.onZonePriority;
@@ -67,34 +147,113 @@ export class PcbRightPanel extends ViewPU {
         if (params.onZoneRefreshCutouts !== undefined) {
             this.onZoneRefreshCutouts = params.onZoneRefreshCutouts;
         }
+        if (params.onPickFootprint !== undefined) {
+            this.onPickFootprint = params.onPickFootprint;
+        }
+        if (params.onSetRouteCorner !== undefined) {
+            this.onSetRouteCorner = params.onSetRouteCorner;
+        }
+        if (params.onSetCopperCount !== undefined) {
+            this.onSetCopperCount = params.onSetCopperCount;
+        }
+        if (params.onSetViaKind !== undefined) {
+            this.onSetViaKind = params.onSetViaKind;
+        }
+        if (params.onSetViaSpan !== undefined) {
+            this.onSetViaSpan = params.onSetViaSpan;
+        }
+        if (params.onSetAppearanceActiveOnly !== undefined) {
+            this.onSetAppearanceActiveOnly = params.onSetAppearanceActiveOnly;
+        }
+        if (params.onSetAppearanceDim !== undefined) {
+            this.onSetAppearanceDim = params.onSetAppearanceDim;
+        }
+        if (params.onSetAppearanceOverlay !== undefined) {
+            this.onSetAppearanceOverlay = params.onSetAppearanceOverlay;
+        }
+        if (params.onRunDrc !== undefined) {
+            this.onRunDrc = params.onRunDrc;
+        }
+        if (params.onPcbTemplateInserted !== undefined) {
+            this.onPcbTemplateInserted = params.onPcbTemplateInserted;
+        }
+        if (params.onExportGerber !== undefined) {
+            this.onExportGerber = params.onExportGerber;
+        }
+        if (params.getPcbDocument !== undefined) {
+            this.getPcbDocument = params.getPcbDocument;
+        }
+        if (params.gerberDocRev === undefined) {
+            this.__gerberDocRev.set(0);
+        }
         if (params.activeTab !== undefined) {
             this.activeTab = params.activeTab;
+        }
+        if (params.fpDefs !== undefined) {
+            this.fpDefs = params.fpDefs;
+        }
+        if (params.teachStatus !== undefined) {
+            this.teachStatus = params.teachStatus;
         }
     }
     updateStateVars(params: PcbRightPanel_Params) {
         this.__panelWidth.reset(params.panelWidth);
         this.__selectionInfo.reset(params.selectionInfo);
         this.__selectedZoneId.reset(params.selectedZoneId);
+        this.__selectedZoneCount.reset(params.selectedZoneCount);
         this.__activeLayer.reset(params.activeLayer);
         this.__drcViolations.reset(params.drcViolations);
+        this.__selectedFpDefId.reset(params.selectedFpDefId);
+        this.__copperCount.reset(params.copperCount);
+        this.__stackLayers.reset(params.stackLayers);
+        this.__viaKind.reset(params.viaKind);
+        this.__viaFrom.reset(params.viaFrom);
+        this.__viaTo.reset(params.viaTo);
+        this.__copperLayerIds.reset(params.copperLayerIds);
+        this.__routeCornerMode.reset(params.routeCornerMode);
+        this.__gerberDocRev.reset(params.gerberDocRev);
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
         this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
         this.__panelWidth.purgeDependencyOnElmtId(rmElmtId);
         this.__selectionInfo.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedZoneId.purgeDependencyOnElmtId(rmElmtId);
+        this.__selectedZoneCount.purgeDependencyOnElmtId(rmElmtId);
         this.__activeLayer.purgeDependencyOnElmtId(rmElmtId);
         this.__drcViolations.purgeDependencyOnElmtId(rmElmtId);
+        this.__selectedFpDefId.purgeDependencyOnElmtId(rmElmtId);
+        this.__copperCount.purgeDependencyOnElmtId(rmElmtId);
+        this.__stackLayers.purgeDependencyOnElmtId(rmElmtId);
+        this.__viaKind.purgeDependencyOnElmtId(rmElmtId);
+        this.__viaFrom.purgeDependencyOnElmtId(rmElmtId);
+        this.__viaTo.purgeDependencyOnElmtId(rmElmtId);
+        this.__copperLayerIds.purgeDependencyOnElmtId(rmElmtId);
+        this.__routeCornerMode.purgeDependencyOnElmtId(rmElmtId);
+        this.__gerberDocRev.purgeDependencyOnElmtId(rmElmtId);
         this.__activeTab.purgeDependencyOnElmtId(rmElmtId);
+        this.__fpDefs.purgeDependencyOnElmtId(rmElmtId);
+        this.__teachStatus.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__themeRev.aboutToBeDeleted();
         this.__panelWidth.aboutToBeDeleted();
         this.__selectionInfo.aboutToBeDeleted();
         this.__selectedZoneId.aboutToBeDeleted();
+        this.__selectedZoneCount.aboutToBeDeleted();
         this.__activeLayer.aboutToBeDeleted();
         this.__drcViolations.aboutToBeDeleted();
+        this.__selectedFpDefId.aboutToBeDeleted();
+        this.__copperCount.aboutToBeDeleted();
+        this.__stackLayers.aboutToBeDeleted();
+        this.__viaKind.aboutToBeDeleted();
+        this.__viaFrom.aboutToBeDeleted();
+        this.__viaTo.aboutToBeDeleted();
+        this.__copperLayerIds.aboutToBeDeleted();
+        this.__routeCornerMode.aboutToBeDeleted();
+        this.__gerberDocRev.aboutToBeDeleted();
         this.__activeTab.aboutToBeDeleted();
+        this.__fpDefs.aboutToBeDeleted();
+        this.__teachStatus.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -126,6 +285,13 @@ export class PcbRightPanel extends ViewPU {
     set selectedZoneId(newValue: string) {
         this.__selectedZoneId.set(newValue);
     }
+    private __selectedZoneCount: SynchedPropertySimpleOneWayPU<number>;
+    get selectedZoneCount() {
+        return this.__selectedZoneCount.get();
+    }
+    set selectedZoneCount(newValue: number) {
+        this.__selectedZoneCount.set(newValue);
+    }
     private __activeLayer: SynchedPropertySimpleOneWayPU<PcbLayerId>;
     get activeLayer() {
         return this.__activeLayer.get();
@@ -140,15 +306,107 @@ export class PcbRightPanel extends ViewPU {
     set drcViolations(newValue: PcbDrcViolation[]) {
         this.__drcViolations.set(newValue);
     }
+    private __selectedFpDefId: SynchedPropertySimpleOneWayPU<string>;
+    get selectedFpDefId() {
+        return this.__selectedFpDefId.get();
+    }
+    set selectedFpDefId(newValue: string) {
+        this.__selectedFpDefId.set(newValue);
+    }
+    private __copperCount: SynchedPropertySimpleOneWayPU<number>;
+    get copperCount() {
+        return this.__copperCount.get();
+    }
+    set copperCount(newValue: number) {
+        this.__copperCount.set(newValue);
+    }
+    private __stackLayers: SynchedPropertySimpleOneWayPU<PcbStackLayer[]>;
+    get stackLayers() {
+        return this.__stackLayers.get();
+    }
+    set stackLayers(newValue: PcbStackLayer[]) {
+        this.__stackLayers.set(newValue);
+    }
+    private __viaKind: SynchedPropertySimpleOneWayPU<PcbViaKind>;
+    get viaKind() {
+        return this.__viaKind.get();
+    }
+    set viaKind(newValue: PcbViaKind) {
+        this.__viaKind.set(newValue);
+    }
+    private __viaFrom: SynchedPropertySimpleOneWayPU<PcbLayerId>;
+    get viaFrom() {
+        return this.__viaFrom.get();
+    }
+    set viaFrom(newValue: PcbLayerId) {
+        this.__viaFrom.set(newValue);
+    }
+    private __viaTo: SynchedPropertySimpleOneWayPU<PcbLayerId>;
+    get viaTo() {
+        return this.__viaTo.get();
+    }
+    set viaTo(newValue: PcbLayerId) {
+        this.__viaTo.set(newValue);
+    }
+    private __copperLayerIds: SynchedPropertySimpleOneWayPU<PcbLayerId[]>;
+    get copperLayerIds() {
+        return this.__copperLayerIds.get();
+    }
+    set copperLayerIds(newValue: PcbLayerId[]) {
+        this.__copperLayerIds.set(newValue);
+    }
+    private __routeCornerMode: SynchedPropertySimpleOneWayPU<PcbRouteCornerMode>;
+    get routeCornerMode() {
+        return this.__routeCornerMode.get();
+    }
+    set routeCornerMode(newValue: PcbRouteCornerMode) {
+        this.__routeCornerMode.set(newValue);
+    }
     private onZonePriority: (delta: number) => void;
     private onZoneThermal: () => void;
     private onZoneRefreshCutouts: () => void;
+    private onPickFootprint: (defId: string) => void;
+    private onSetRouteCorner: (mode: PcbRouteCornerMode) => void;
+    private onSetCopperCount: (n: number) => void;
+    private onSetViaKind: (k: PcbViaKind) => void;
+    private onSetViaSpan: (from: PcbLayerId, to: PcbLayerId) => void;
+    private onSetAppearanceActiveOnly: () => void;
+    private onSetAppearanceDim: () => void;
+    private onSetAppearanceOverlay: () => void;
+    private onRunDrc: () => void;
+    private onPcbTemplateInserted: () => void;
+    private onExportGerber: () => void;
+    private getPcbDocument: () => PcbDocument | null;
+    private __gerberDocRev: SynchedPropertySimpleOneWayPU<number>;
+    get gerberDocRev() {
+        return this.__gerberDocRev.get();
+    }
+    set gerberDocRev(newValue: number) {
+        this.__gerberDocRev.set(newValue);
+    }
     private __activeTab: ObservedPropertySimplePU<PcbRightTab>;
     get activeTab() {
         return this.__activeTab.get();
     }
     set activeTab(newValue: PcbRightTab) {
         this.__activeTab.set(newValue);
+    }
+    private __fpDefs: ObservedPropertyObjectPU<PcbFootprintDef[]>;
+    get fpDefs() {
+        return this.__fpDefs.get();
+    }
+    set fpDefs(newValue: PcbFootprintDef[]) {
+        this.__fpDefs.set(newValue);
+    }
+    private __teachStatus: ObservedPropertySimplePU<string>;
+    get teachStatus() {
+        return this.__teachStatus.get();
+    }
+    set teachStatus(newValue: string) {
+        this.__teachStatus.set(newValue);
+    }
+    aboutToAppear(): void {
+        this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
     }
     initialRender() {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -172,7 +430,7 @@ export class PcbRightPanel extends ViewPU {
                         selected: this.activeTab === PcbRightTab.PROPERTIES,
                         fillWidth: true,
                         onSelect: () => { this.activeTab = PcbRightTab.PROPERTIES; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 32, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 69, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -201,7 +459,7 @@ export class PcbRightPanel extends ViewPU {
                         selected: this.activeTab === PcbRightTab.DRC,
                         fillWidth: true,
                         onSelect: () => { this.activeTab = PcbRightTab.DRC; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 38, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 75, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -226,26 +484,119 @@ export class PcbRightPanel extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusChipTab(this, {
-                        label: '层',
-                        selected: this.activeTab === PcbRightTab.LAYER,
+                        label: '封装',
+                        selected: this.activeTab === PcbRightTab.LIBRARY,
                         fillWidth: true,
-                        onSelect: () => { this.activeTab = PcbRightTab.LAYER; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 44, col: 9 });
+                        onSelect: () => {
+                            this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
+                            this.activeTab = PcbRightTab.LIBRARY;
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 81, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            label: '层',
-                            selected: this.activeTab === PcbRightTab.LAYER,
+                            label: '封装',
+                            selected: this.activeTab === PcbRightTab.LIBRARY,
                             fillWidth: true,
-                            onSelect: () => { this.activeTab = PcbRightTab.LAYER; }
+                            onSelect: () => {
+                                this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
+                                this.activeTab = PcbRightTab.LIBRARY;
+                            }
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: '层',
-                        selected: this.activeTab === PcbRightTab.LAYER,
+                        label: '封装',
+                        selected: this.activeTab === PcbRightTab.LIBRARY,
+                        fillWidth: true
+                    });
+                }
+            }, { name: "ProteusChipTab" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusChipTab(this, {
+                        label: '层栈',
+                        selected: this.activeTab === PcbRightTab.STACK,
+                        fillWidth: true,
+                        onSelect: () => { this.activeTab = PcbRightTab.STACK; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 90, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '层栈',
+                            selected: this.activeTab === PcbRightTab.STACK,
+                            fillWidth: true,
+                            onSelect: () => { this.activeTab = PcbRightTab.STACK; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '层栈',
+                        selected: this.activeTab === PcbRightTab.STACK,
+                        fillWidth: true
+                    });
+                }
+            }, { name: "ProteusChipTab" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusChipTab(this, {
+                        label: 'Gerber',
+                        selected: this.activeTab === PcbRightTab.GERBER,
+                        fillWidth: true,
+                        onSelect: () => { this.activeTab = PcbRightTab.GERBER; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 96, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: 'Gerber',
+                            selected: this.activeTab === PcbRightTab.GERBER,
+                            fillWidth: true,
+                            onSelect: () => { this.activeTab = PcbRightTab.GERBER; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: 'Gerber',
+                        selected: this.activeTab === PcbRightTab.GERBER,
+                        fillWidth: true
+                    });
+                }
+            }, { name: "ProteusChipTab" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusChipTab(this, {
+                        label: '教学',
+                        selected: this.activeTab === PcbRightTab.TEACHING,
+                        fillWidth: true,
+                        onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 102, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '教学',
+                            selected: this.activeTab === PcbRightTab.TEACHING,
+                            fillWidth: true,
+                            onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '教学',
+                        selected: this.activeTab === PcbRightTab.TEACHING,
                         fillWidth: true
                     });
                 }
@@ -264,9 +615,70 @@ export class PcbRightPanel extends ViewPU {
                     this.buildDrcTab.bind(this)();
                 });
             }
-            else {
+            else if (this.activeTab === PcbRightTab.LIBRARY) {
                 this.ifElseBranchUpdateFunction(2, () => {
-                    this.buildLayerTab.bind(this)();
+                    this.buildLibraryTab.bind(this)();
+                });
+            }
+            else if (this.activeTab === PcbRightTab.STACK) {
+                this.ifElseBranchUpdateFunction(3, () => {
+                    this.buildStackTab.bind(this)();
+                });
+            }
+            else if (this.activeTab === PcbRightTab.GERBER) {
+                this.ifElseBranchUpdateFunction(4, () => {
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new PcbGerberPreview(this, {
+                                    docRev: this.gerberDocRev,
+                                    getDocument: (): PcbDocument | null => this.getPcbDocument(),
+                                    onExport: () => { this.onExportGerber(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 122, col: 9 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        docRev: this.gerberDocRev,
+                                        getDocument: (): PcbDocument | null => this.getPcbDocument(),
+                                        onExport: () => { this.onExportGerber(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    docRev: this.gerberDocRev
+                                });
+                            }
+                        }, { name: "PcbGerberPreview" });
+                    }
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(5, () => {
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new PcbTeachingPanel(this, {
+                                    statusMessage: this.__teachStatus,
+                                    onRunDrc: () => { this.onRunDrc(); },
+                                    onInserted: () => { this.onPcbTemplateInserted(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 128, col: 9 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        statusMessage: this.teachStatus,
+                                        onRunDrc: () => { this.onRunDrc(); },
+                                        onInserted: () => { this.onPcbTemplateInserted(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {});
+                            }
+                        }, { name: "PcbTeachingPanel" });
+                    }
                 });
             }
         }, If);
@@ -282,7 +694,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Selection' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 72, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Selection' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 144, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -338,13 +750,20 @@ export class PcbRightPanel extends ViewPU {
         }, If);
         If.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`活动层: ${this.activeLayer}`);
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.padding({ left: 10, right: 10, bottom: 8 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
             if (this.selectedZoneId.length > 0) {
                 this.ifElseBranchUpdateFunction(0, () => {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusPanelTitle(this, { title: '覆铜编辑' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 94, col: 9 });
+                                let componentCall = new ProteusPanelTitle(this, { title: '覆铜编辑' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 171, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -361,6 +780,25 @@ export class PcbRightPanel extends ViewPU {
                         }, { name: "ProteusPanelTitle" });
                     }
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.selectedZoneCount > 1) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    Text.create(`已选 ${this.selectedZoneCount} 个覆铜 — 操作作用于全部`);
+                                    Text.fontSize(10);
+                                    Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                                    Text.padding({ left: 10, right: 10, bottom: 4 });
+                                }, Text);
+                                Text.pop();
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create({ space: 4 });
                         Row.padding({ left: 8, right: 8, bottom: 4 });
                     }, Row);
@@ -371,7 +809,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '优先级-',
                                     widthVal: 72,
                                     onAction: () => { this.onZonePriority(-1); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 96, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 179, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -397,7 +835,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '优先级+',
                                     widthVal: 72,
                                     onAction: () => { this.onZonePriority(1); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 101, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 184, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -428,7 +866,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '热焊盘',
                                     widthVal: 72,
                                     onAction: () => { this.onZoneThermal(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 109, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 192, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -454,7 +892,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '刷新挖空',
                                     widthVal: 72,
                                     onAction: () => { this.onZoneRefreshCutouts(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 114, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 197, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -474,13 +912,6 @@ export class PcbRightPanel extends ViewPU {
                         }, { name: "ProteusClassicBtn" });
                     }
                     Row.pop();
-                    this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create('覆铜工具下再次点击可手动挖空');
-                        Text.fontSize(10);
-                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
-                        Text.padding({ left: 10, right: 10, bottom: 8 });
-                    }, Text);
-                    Text.pop();
                 });
             }
             else {
@@ -500,7 +931,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Design Rules Check' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 134, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Design Rules Check' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 213, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -603,7 +1034,7 @@ export class PcbRightPanel extends ViewPU {
         If.pop();
         Column.pop();
     }
-    buildLayerTab(parent = null) {
+    buildLibraryTab(parent = null) {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
             Column.layoutWeight(1);
@@ -612,39 +1043,696 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Active Layer' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 178, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Footprint Library' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 257, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            title: 'Active Layer'
+                            title: 'Footprint Library'
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        title: 'Active Layer'
+                        title: 'Footprint Library'
                     });
                 }
             }, { name: "ProteusPanelTitle" });
         }
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(this.activeLayer);
-            Text.fontSize(ProteusFonts.PARAM_VALUE);
-            Text.fontColor(ProteusColors.SELECTED);
-            Text.fontWeight(FontWeight.Bold);
-            Text.padding({ left: 12, top: 8, bottom: 8 });
+            Text.create(this.selectedFpDefId.length > 0
+                ? `已选: ${this.selectedFpDefId}`
+                : '点击条目后使用放置工具 (P)');
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.padding({ left: 10, right: 10, bottom: 6 });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('在左侧 Layers 面板点击切换活动层。\n走线时自动切换到 Front Copper。');
+            List.create();
+            List.layoutWeight(1);
+            List.scrollBar(BarState.Auto);
+        }, List);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = _item => {
+                const def = _item;
+                {
+                    const itemCreation = (elmtId, isInitialRender) => {
+                        ViewStackProcessor.StartGetAccessRecordingFor(elmtId);
+                        ListItem.create(deepRenderFunction, true);
+                        if (!isInitialRender) {
+                            ListItem.pop();
+                        }
+                        ViewStackProcessor.StopGetAccessRecording();
+                    };
+                    const itemCreation2 = (elmtId, isInitialRender) => {
+                        ListItem.create(deepRenderFunction, true);
+                    };
+                    const deepRenderFunction = (elmtId, isInitialRender) => {
+                        itemCreation(elmtId, isInitialRender);
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            Row.create();
+                            Row.width('100%');
+                            Row.padding({ left: 10, right: 10, top: 6, bottom: 6 });
+                            Row.backgroundColor(def.id === this.selectedFpDefId
+                                ? ProteusColors.TOOL_ACTIVE : Color.Transparent);
+                            Row.onClick(() => { this.onPickFootprint(def.id); });
+                        }, Row);
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            Text.create(def.name);
+                            Text.fontSize(ProteusFonts.STATUS);
+                            Text.fontColor(def.id === this.selectedFpDefId
+                                ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY);
+                            Text.fontWeight(def.id === this.selectedFpDefId ? FontWeight.Bold : FontWeight.Normal);
+                            Text.layoutWeight(1);
+                        }, Text);
+                        Text.pop();
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            Text.create(`${def.pads.length} pads`);
+                            Text.fontSize(10);
+                            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        }, Text);
+                        Text.pop();
+                        Row.pop();
+                        ListItem.pop();
+                    };
+                    this.observeComponentCreation2(itemCreation2, ListItem);
+                    ListItem.pop();
+                }
+            };
+            this.forEachUpdateFunction(elmtId, this.fpDefs, forEachItemGenFunction, (def: PcbFootprintDef) => def.id, false, false);
+        }, ForEach);
+        ForEach.pop();
+        List.pop();
+        Column.pop();
+    }
+    buildStackTab(parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create();
+            Scroll.layoutWeight(1);
+            Scroll.scrollBar(BarState.Auto);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('100%');
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusPanelTitle(this, { title: '铜层层数' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 297, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '铜层层数'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '铜层层数'
+                    });
+                }
+            }, { name: "ProteusPanelTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 4 });
+            Row.padding({ left: 8, right: 8, bottom: 8 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '2L',
+                        widthVal: 48,
+                        onAction: () => { this.onSetCopperCount(2); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 299, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '2L',
+                            widthVal: 48,
+                            onAction: () => { this.onSetCopperCount(2); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '2L',
+                        widthVal: 48
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '4L',
+                        widthVal: 48,
+                        onAction: () => { this.onSetCopperCount(4); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 304, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '4L',
+                            widthVal: 48,
+                            onAction: () => { this.onSetCopperCount(4); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '4L',
+                        widthVal: 48
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '6L',
+                        widthVal: 48,
+                        onAction: () => { this.onSetCopperCount(6); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 309, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '6L',
+                            widthVal: 48,
+                            onAction: () => { this.onSetCopperCount(6); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '6L',
+                        widthVal: 48
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '8L',
+                        widthVal: 48,
+                        onAction: () => { this.onSetCopperCount(8); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 314, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '8L',
+                            widthVal: 48,
+                            onAction: () => { this.onSetCopperCount(8); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '8L',
+                        widthVal: 48
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`当前: ${this.copperCount} 层铜`);
             Text.fontSize(10);
-            Text.fontColor(ProteusColors.TEXT_SECONDARY);
-            Text.padding({ left: 12, right: 12 });
-            Text.lineHeight(16);
+            Text.fontColor(ProteusColors.SELECTED);
+            Text.padding({ left: 10, bottom: 6 });
         }, Text);
         Text.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusPanelTitle(this, { title: '显示过滤' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 326, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '显示过滤'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '显示过滤'
+                    });
+                }
+            }, { name: "ProteusPanelTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 4 });
+            Row.padding({ left: 8, right: 8, bottom: 8 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '叠加',
+                        widthVal: 56,
+                        onAction: () => { this.onSetAppearanceOverlay(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 328, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '叠加',
+                            widthVal: 56,
+                            onAction: () => { this.onSetAppearanceOverlay(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '叠加',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '变暗',
+                        widthVal: 56,
+                        onAction: () => { this.onSetAppearanceDim(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 333, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '变暗',
+                            widthVal: 56,
+                            onAction: () => { this.onSetAppearanceDim(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '变暗',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '仅活动',
+                        widthVal: 56,
+                        onAction: () => { this.onSetAppearanceActiveOnly(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 338, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '仅活动',
+                            widthVal: 56,
+                            onAction: () => { this.onSetAppearanceActiveOnly(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '仅活动',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusPanelTitle(this, { title: '布线拐角' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 346, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '布线拐角'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '布线拐角'
+                    });
+                }
+            }, { name: "ProteusPanelTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 4 });
+            Row.padding({ left: 8, right: 8, bottom: 4 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '90°',
+                        widthVal: 56,
+                        onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO90); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 348, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '90°',
+                            widthVal: 56,
+                            onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO90); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '90°',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '45°',
+                        widthVal: 56,
+                        onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO45); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 353, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '45°',
+                            widthVal: 56,
+                            onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO45); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '45°',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '圆弧',
+                        widthVal: 56,
+                        onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ARC); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 358, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '圆弧',
+                            widthVal: 56,
+                            onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ARC); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '圆弧',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`当前: ${this.routeCornerMode === PcbRouteCornerMode.ORTHO90 ? '直角90°' :
+                (this.routeCornerMode === PcbRouteCornerMode.ARC ? '圆弧' : '45°斜角')}`);
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.SELECTED);
+            Text.padding({ left: 10, bottom: 8 });
+        }, Text);
+        Text.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusPanelTitle(this, { title: '过孔类型 / 跨度' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 371, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '过孔类型 / 跨度'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '过孔类型 / 跨度'
+                    });
+                }
+            }, { name: "ProteusPanelTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 4 });
+            Row.padding({ left: 8, right: 8, bottom: 4 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '通孔',
+                        widthVal: 56,
+                        onAction: () => { this.onSetViaKind(PcbViaKind.THROUGH); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 373, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '通孔',
+                            widthVal: 56,
+                            onAction: () => { this.onSetViaKind(PcbViaKind.THROUGH); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '通孔',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '盲孔',
+                        widthVal: 56,
+                        onAction: () => { this.onSetViaKind(PcbViaKind.BLIND); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 378, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '盲孔',
+                            widthVal: 56,
+                            onAction: () => { this.onSetViaKind(PcbViaKind.BLIND); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '盲孔',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '埋孔',
+                        widthVal: 56,
+                        onAction: () => { this.onSetViaKind(PcbViaKind.BURIED); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 383, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '埋孔',
+                            widthVal: 56,
+                            onAction: () => { this.onSetViaKind(PcbViaKind.BURIED); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '埋孔',
+                        widthVal: 56
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`类型: ${this.viaKind}`);
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.padding({ left: 10, bottom: 4 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`跨度: ${this.viaFrom} → ${this.viaTo}`);
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.SELECTED);
+            Text.padding({ left: 10, bottom: 6 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('起点层');
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_LABEL);
+            Text.padding({ left: 10, bottom: 2 });
+        }, Text);
+        Text.pop();
+        this.viaLayerPickRow.bind(this)(true);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('终点层');
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_LABEL);
+            Text.padding({ left: 10, top: 4, bottom: 2 });
+        }, Text);
+        Text.pop();
+        this.viaLayerPickRow.bind(this)(false);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusPanelTitle(this, { title: '物理层栈' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 410, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '物理层栈'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '物理层栈'
+                    });
+                }
+            }, { name: "ProteusPanelTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = _item => {
+                const sl = _item;
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Row.create();
+                    Row.width('100%');
+                    Row.padding({ left: 10, right: 10, top: 3, bottom: 3 });
+                }, Row);
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Column.create();
+                    Column.width(4);
+                    Column.height(18);
+                    Column.backgroundColor(this.stackColor(sl));
+                    Column.margin({ right: 6 });
+                }, Column);
+                Column.pop();
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Text.create(sl.name);
+                    Text.fontSize(ProteusFonts.STATUS);
+                    Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                    Text.layoutWeight(1);
+                }, Text);
+                Text.pop();
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Text.create(`${sl.thicknessMm.toFixed(3)} mm`);
+                    Text.fontSize(10);
+                    Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                }, Text);
+                Text.pop();
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Text.create(sl.type === PcbStackLayerType.COPPER ? 'Cu' :
+                        (sl.type === PcbStackLayerType.DIELECTRIC ? 'Diel' : 'Mask'));
+                    Text.fontSize(9);
+                    Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                    Text.width(32);
+                    Text.textAlign(TextAlign.End);
+                }, Text);
+                Text.pop();
+                Row.pop();
+            };
+            this.forEachUpdateFunction(elmtId, this.stackLayers, forEachItemGenFunction, (sl: PcbStackLayer) => sl.id, false, false);
+        }, ForEach);
+        ForEach.pop();
         Column.pop();
+        Scroll.pop();
+    }
+    viaLayerPickRow(isFrom: boolean, parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Flex.create({ wrap: FlexWrap.Wrap });
+            Flex.padding({ left: 8, right: 8 });
+        }, Flex);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = _item => {
+                const id = _item;
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Button.createWithChild({ type: ButtonType.Normal });
+                    Button.height(22);
+                    Button.padding({ left: 4, right: 4 });
+                    Button.margin({ right: 4, bottom: 4 });
+                    Button.backgroundColor((isFrom ? this.viaFrom : this.viaTo) === id
+                        ? ProteusColors.TOOL_ACTIVE : ProteusColors.BTN_BG);
+                    Button.border({ width: 1, color: ProteusColors.BORDER });
+                    Button.borderRadius(0);
+                    Button.stateEffect(false);
+                    Button.onClick(() => {
+                        if (isFrom) {
+                            this.onSetViaSpan(id, this.viaTo);
+                        }
+                        else {
+                            this.onSetViaSpan(this.viaFrom, id);
+                        }
+                    });
+                }, Button);
+                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                    Text.create(id);
+                    Text.fontSize(9);
+                    Text.fontColor((isFrom ? this.viaFrom : this.viaTo) === id
+                        ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY);
+                }, Text);
+                Text.pop();
+                Button.pop();
+            };
+            this.forEachUpdateFunction(elmtId, this.copperLayerIds, forEachItemGenFunction, (id: PcbLayerId) => `${isFrom ? 'f' : 't'}_${id}`, false, false);
+        }, ForEach);
+        ForEach.pop();
+        Flex.pop();
+    }
+    private stackColor(sl: PcbStackLayer): string {
+        if (sl.type === PcbStackLayerType.COPPER) {
+            return '#C83434';
+        }
+        if (sl.type === PcbStackLayerType.DIELECTRIC) {
+            return '#C8A878';
+        }
+        return '#2E8B57';
     }
     rerender() {
         this.updateDirtyElements();

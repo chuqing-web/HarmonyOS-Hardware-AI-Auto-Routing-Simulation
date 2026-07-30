@@ -477,6 +477,94 @@ export struct ProteusHomeNewsCard {
   }
 }
 
+/** 首页公告栏 — 图片 + 文字（可由服务器接口填充；无网时显示本地预留图） */
+@Component
+export struct ProteusHomeAnnouncementPanel {
+  @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
+  @Prop title: string = '';
+  @Prop body: string = '';
+  @Prop imageUrl: string = '';
+  @Prop publishedAt: string = '';
+  @Prop loading: boolean = false;
+
+  build() {
+    ProteusHomePanel({ title: '公告', panelWeight: 1 }) {
+      Column() {
+        if (this.loading) {
+          Text('加载公告…')
+            .fontSize(10)
+            .fontColor(ProteusHomeColors.TEXT_DIM)
+            .padding(12)
+        } else if (this.imageUrl.length > 0) {
+          Scroll() {
+            Column({ space: 8 }) {
+              Image(this.imageUrl)
+                .width('100%')
+                .constraintSize({ maxHeight: 220 })
+                .objectFit(ImageFit.Contain)
+                .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
+                .backgroundColor(ProteusHomeColors.PANEL_BG)
+              this.AnnouncementTextBlock()
+            }
+            .width('100%')
+            .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+        } else {
+          // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+          Column() {
+            Image($r('app.media.announcement_default'))
+              .width('100%')
+              .layoutWeight(1)
+              .objectFit(ImageFit.Contain)
+              .backgroundColor('#E8F4FC')
+            if (this.title.length > 0 || this.body.length > 0 || this.publishedAt.length > 0) {
+              Column({ space: 4 }) {
+                this.AnnouncementTextBlock()
+              }
+              .width('100%')
+              .padding({ left: 8, right: 8, bottom: 8 })
+            }
+          }
+          .width('100%')
+          .height('100%')
+          .padding({ left: 8, right: 8, top: 8 })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+  }
+
+  @Builder
+  AnnouncementTextBlock() {
+    if (this.title.length > 0) {
+      Text(this.title)
+        .fontSize(12)
+        .fontColor(ProteusHomeColors.TEXT)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+    }
+    if (this.publishedAt.length > 0) {
+      Text(this.publishedAt)
+        .fontSize(8)
+        .fontColor(ProteusHomeColors.TEXT_DIM)
+        .width('100%')
+    }
+    if (this.body.length > 0) {
+      Text(this.body)
+        .fontSize(10)
+        .fontColor(ProteusHomeColors.TEXT)
+        .width('100%')
+        .lineHeight(16)
+    }
+  }
+}
+
 /** New Project Wizard */
 @Component
 export struct ProteusHomeWizardDialog {

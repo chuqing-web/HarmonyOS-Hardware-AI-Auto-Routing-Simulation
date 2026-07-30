@@ -5,6 +5,7 @@ import { SchTopology, mapAwareStringify, mapAwareParse } from 'common';
 import {
   LabTemplateRegistry, LabTemplateDef, LabCoverageReport, ALL_CATALOG_LIBRARY_IDS
 } from './algorithms/LabTemplateRegistry';
+import { PcbLabTemplateRegistry, PcbLabTemplateDef } from './algorithms/PcbLabTemplateRegistry';
 import { DeviceUsageManual } from './algorithms/DeviceUsageManual';
 
 /** 模板关联的固件信息 */
@@ -31,6 +32,16 @@ export interface KnowledgeTip {
   componentType: string;
   title: string;
   content: string;
+}
+
+/** PCB 教学模板（面板列表项） */
+export interface PcbLabTemplate {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  knowledgePoints: string[];
+  pcbFile: string;
 }
 
 export class TeachingService {
@@ -141,6 +152,41 @@ export class TeachingService {
       powerNets[i].defaultVoltage = 5.0;
     }
     return result;
+  }
+
+  private static toPcbLabTemplate(def: PcbLabTemplateDef): PcbLabTemplate {
+    return {
+      id: def.id,
+      name: def.name,
+      category: def.category,
+      description: def.description,
+      knowledgePoints: def.knowledgePoints,
+      pcbFile: def.pcbFile
+    };
+  }
+
+  listPcbTemplates(): PcbLabTemplate[] {
+    return PcbLabTemplateRegistry.listTemplates().map(TeachingService.toPcbLabTemplate);
+  }
+
+  listPcbTemplatesByCategory(category: string): PcbLabTemplate[] {
+    return PcbLabTemplateRegistry.listByCategory(category).map(TeachingService.toPcbLabTemplate);
+  }
+
+  listPcbCategories(): string[] {
+    return PcbLabTemplateRegistry.listCategories();
+  }
+
+  getPcbTemplate(templateId: string): PcbLabTemplate | null {
+    const def = PcbLabTemplateRegistry.findById(templateId);
+    if (def === undefined) {
+      return null;
+    }
+    return TeachingService.toPcbLabTemplate(def);
+  }
+
+  registerPcbTemplate(def: PcbLabTemplateDef): void {
+    PcbLabTemplateRegistry.registerTemplate(def);
   }
 
   buildAiQuestion(topo: SchTopology, selectedUuid: string): string {

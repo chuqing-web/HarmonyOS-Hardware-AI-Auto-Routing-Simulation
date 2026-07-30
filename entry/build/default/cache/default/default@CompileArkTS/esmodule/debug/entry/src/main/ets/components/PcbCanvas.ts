@@ -19,6 +19,9 @@ interface PcbCanvas_Params {
     onStatusChange?: (msg: string) => void;
     onDocumentChanged?: () => void;
     onSelectionCleared?: () => void;
+    onActiveLayerChange?: (layer: PcbLayerId) => void;
+    onHoverNetChange?: (netName: string) => void;
+    onToolModeRequest?: (mode: PcbToolMode) => void;
     settings?: RenderingContextSettings;
     context?: CanvasRenderingContext2D;
     appService?: AppService;
@@ -29,10 +32,23 @@ interface PcbCanvas_Params {
     panning?: boolean;
     panLastX?: number;
     panLastY?: number;
+    orbiting3d?: boolean;
+    orbitLastX?: number;
+    orbitLastY?: number;
+    orbitLogAccYaw?: number;
+    orbitLogAccPitch?: number;
+    orbitLogLastMs?: number;
+    last3dClickMs?: number;
+    orbitMoved3d?: boolean;
+    orbitDownX?: number;
+    orbitDownY?: number;
+    measure3dPts?: Point2D[];
     viewWidth?: number;
     viewHeight?: number;
     redrawScheduled?: boolean;
     isTouchActive?: boolean;
+    lastTouchX?: number;
+    lastTouchY?: number;
     draggingItems?: boolean;
     selectingRect?: boolean;
     selectRectStart?: Point2D;
@@ -42,17 +58,21 @@ interface PcbCanvas_Params {
     pinchCenterX?: number;
     pinchCenterY?: number;
     lastSnapPoint?: Point2D | null;
+    lastPolyClickMs?: number;
+    lastPolyClickWorld?: Point2D | null;
     onPcbChanged?;
     onViewportChanged?;
 }
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
-import { PcbLayerId, EventBus, ModuleEvent, PcbPadType, padWorldPosition, PcbAppearanceMode, routeOrtho45Points, isCopperLayer } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { PcbDocument, PcbFootprintInst, ModuleEventPayload, Point2D, PcbAppearance } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { PcbLayerId, EventBus, ModuleEvent, PcbPadType, PcbPadShape, padWorldPosition, PcbAppearanceMode, routeByCornerMode, isCopperLayer, PcbViaKind, sumTrackLengthForNet, matchDiffPairLengths, tracePcb3d, tracePcbOp, Pcb3dDisplayMode, tracePcbView2dAudit, tracePcbView3dAudit, buildTrackPolylines } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { PcbDocument, PcbFootprintInst, PcbTrack, ModuleEventPayload, Point2D, PcbAppearance, PcbTrackPolyline } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { PcbToolMode } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/Index";
 import type { PcbEditorImpl } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/Index";
 import { PcbColors, ProteusColors } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { Pcb3dRenderer } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/Pcb3dRenderer";
+import { boardCenter, unprojectBoardOrtho, milToMm, dist3 } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/Pcb3dSceneUtil";
 interface PcbScreenRect {
     x: number;
     y: number;
@@ -82,6 +102,9 @@ export class PcbCanvas extends ViewPU {
         this.onStatusChange = () => { };
         this.onDocumentChanged = () => { };
         this.onSelectionCleared = () => { };
+        this.onActiveLayerChange = (_l: PcbLayerId) => { };
+        this.onHoverNetChange = (_n: string) => { };
+        this.onToolModeRequest = (_m: PcbToolMode) => { };
         this.settings = new RenderingContextSettings(true);
         this.context = new CanvasRenderingContext2D(this.settings);
         this.appService = AppService.getInstance();
@@ -92,10 +115,23 @@ export class PcbCanvas extends ViewPU {
         this.panning = false;
         this.panLastX = 0;
         this.panLastY = 0;
+        this.orbiting3d = false;
+        this.orbitLastX = 0;
+        this.orbitLastY = 0;
+        this.orbitLogAccYaw = 0;
+        this.orbitLogAccPitch = 0;
+        this.orbitLogLastMs = 0;
+        this.last3dClickMs = 0;
+        this.orbitMoved3d = false;
+        this.orbitDownX = 0;
+        this.orbitDownY = 0;
+        this.measure3dPts = [];
         this.viewWidth = 0;
         this.viewHeight = 0;
         this.redrawScheduled = false;
         this.isTouchActive = false;
+        this.lastTouchX = 0;
+        this.lastTouchY = 0;
         this.draggingItems = false;
         this.selectingRect = false;
         this.selectRectStart = { x: 0, y: 0 };
@@ -105,6 +141,8 @@ export class PcbCanvas extends ViewPU {
         this.pinchCenterX = 0;
         this.pinchCenterY = 0;
         this.lastSnapPoint = null;
+        this.lastPolyClickMs = 0;
+        this.lastPolyClickWorld = null;
         this.onPcbChanged = (_p: ModuleEventPayload): void => { this.scheduleRedraw(); };
         this.onViewportChanged = (_p: ModuleEventPayload): void => { this.scheduleRedraw(); };
         this.setInitiallyProvidedValue(params);
@@ -128,6 +166,15 @@ export class PcbCanvas extends ViewPU {
         }
         if (params.onSelectionCleared !== undefined) {
             this.onSelectionCleared = params.onSelectionCleared;
+        }
+        if (params.onActiveLayerChange !== undefined) {
+            this.onActiveLayerChange = params.onActiveLayerChange;
+        }
+        if (params.onHoverNetChange !== undefined) {
+            this.onHoverNetChange = params.onHoverNetChange;
+        }
+        if (params.onToolModeRequest !== undefined) {
+            this.onToolModeRequest = params.onToolModeRequest;
         }
         if (params.settings !== undefined) {
             this.settings = params.settings;
@@ -159,6 +206,39 @@ export class PcbCanvas extends ViewPU {
         if (params.panLastY !== undefined) {
             this.panLastY = params.panLastY;
         }
+        if (params.orbiting3d !== undefined) {
+            this.orbiting3d = params.orbiting3d;
+        }
+        if (params.orbitLastX !== undefined) {
+            this.orbitLastX = params.orbitLastX;
+        }
+        if (params.orbitLastY !== undefined) {
+            this.orbitLastY = params.orbitLastY;
+        }
+        if (params.orbitLogAccYaw !== undefined) {
+            this.orbitLogAccYaw = params.orbitLogAccYaw;
+        }
+        if (params.orbitLogAccPitch !== undefined) {
+            this.orbitLogAccPitch = params.orbitLogAccPitch;
+        }
+        if (params.orbitLogLastMs !== undefined) {
+            this.orbitLogLastMs = params.orbitLogLastMs;
+        }
+        if (params.last3dClickMs !== undefined) {
+            this.last3dClickMs = params.last3dClickMs;
+        }
+        if (params.orbitMoved3d !== undefined) {
+            this.orbitMoved3d = params.orbitMoved3d;
+        }
+        if (params.orbitDownX !== undefined) {
+            this.orbitDownX = params.orbitDownX;
+        }
+        if (params.orbitDownY !== undefined) {
+            this.orbitDownY = params.orbitDownY;
+        }
+        if (params.measure3dPts !== undefined) {
+            this.measure3dPts = params.measure3dPts;
+        }
         if (params.viewWidth !== undefined) {
             this.viewWidth = params.viewWidth;
         }
@@ -170,6 +250,12 @@ export class PcbCanvas extends ViewPU {
         }
         if (params.isTouchActive !== undefined) {
             this.isTouchActive = params.isTouchActive;
+        }
+        if (params.lastTouchX !== undefined) {
+            this.lastTouchX = params.lastTouchX;
+        }
+        if (params.lastTouchY !== undefined) {
+            this.lastTouchY = params.lastTouchY;
         }
         if (params.draggingItems !== undefined) {
             this.draggingItems = params.draggingItems;
@@ -197,6 +283,12 @@ export class PcbCanvas extends ViewPU {
         }
         if (params.lastSnapPoint !== undefined) {
             this.lastSnapPoint = params.lastSnapPoint;
+        }
+        if (params.lastPolyClickMs !== undefined) {
+            this.lastPolyClickMs = params.lastPolyClickMs;
+        }
+        if (params.lastPolyClickWorld !== undefined) {
+            this.lastPolyClickWorld = params.lastPolyClickWorld;
         }
         if (params.onPcbChanged !== undefined) {
             this.onPcbChanged = params.onPcbChanged;
@@ -344,6 +436,9 @@ export class PcbCanvas extends ViewPU {
     private onStatusChange: (msg: string) => void;
     private onDocumentChanged: () => void;
     private onSelectionCleared: () => void;
+    private onActiveLayerChange: (layer: PcbLayerId) => void;
+    private onHoverNetChange: (netName: string) => void;
+    private onToolModeRequest: (mode: PcbToolMode) => void;
     private settings: RenderingContextSettings;
     private context: CanvasRenderingContext2D;
     private appService: AppService;
@@ -354,20 +449,39 @@ export class PcbCanvas extends ViewPU {
     private panning: boolean;
     private panLastX: number;
     private panLastY: number;
+    /** 3D 轨道旋转拖拽中 */
+    private orbiting3d: boolean;
+    private orbitLastX: number;
+    private orbitLastY: number;
+    private orbitLogAccYaw: number;
+    private orbitLogAccPitch: number;
+    private orbitLogLastMs: number;
+    private last3dClickMs: number;
+    /** 3D 本次拖拽是否产生有效旋转（用于区分单击选中） */
+    private orbitMoved3d: boolean;
+    private orbitDownX: number;
+    private orbitDownY: number;
+    /** 3D 测量点（板面世界坐标） */
+    private measure3dPts: Point2D[];
     private viewWidth: number;
     private viewHeight: number;
     private redrawScheduled: boolean;
     private isTouchActive: boolean;
+    /** 最近一次有效触点（Touch Up 时 touches 可能为空） */
+    private lastTouchX: number;
+    private lastTouchY: number;
     private draggingItems: boolean;
     private selectingRect: boolean;
     private selectRectStart: Point2D;
     private selectRectCurrent: Point2D;
     private pinchStartZoom: number;
-    /** Ctrl 修饰键（KeyEvent.ctrlKey 在 API 12+ 不可用，与 Index 一致用 keyCode 跟踪） */
+    /** bit0=Ctrl, bit1=Shift */
     private modifierKeys: number;
     private pinchCenterX: number;
     private pinchCenterY: number;
     private lastSnapPoint: Point2D | null;
+    private lastPolyClickMs: number;
+    private lastPolyClickWorld: Point2D | null;
     aboutToAppear(): void {
         EventBus.getInstance().subscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
         EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
@@ -411,29 +525,34 @@ export class PcbCanvas extends ViewPU {
             ctx.fillText('无 PCB 文档 — 使用「更新 PCB」从原理图导入', 40, 60);
             return;
         }
-        // 板内阻焊层底色
-        this.drawSubstrate(ctx, doc, vp);
+        const appearance = editor.getAppearance();
+        if (appearance.show3d) {
+            this.drawSimple3d(ctx, doc, vp);
+            this.emitView3dInstrTrace(doc, false);
+            return;
+        }
+        // 工业层序：栅格 → 阻焊底色 → 敷铜/走线/过孔/焊盘 → 丝印 → Edge.Cuts → Overlay
+        // 层色仅读文档配置，不在绘制循环中覆写（避免冲掉用户透明度/自定义色）
         if (this.gridVisible && vp.gridVisible) {
             this.drawGrid(ctx, vp);
         }
-        this.drawBoardOutline(ctx, doc, vp);
-        const appearance = editor.getAppearance();
+        this.drawSubstrate(ctx, doc, vp);
         if (!appearance.hideZones) {
             this.drawZones(ctx, doc, vp);
         }
         this.drawTracks(ctx, doc, vp);
         this.drawVias(ctx, doc, vp);
-        this.drawFootprints(ctx, doc, vp);
+        this.drawFootprints(ctx, doc, vp, 'copper');
+        this.drawMaskAndPasteLayers(ctx, doc, vp);
+        this.drawFootprints(ctx, doc, vp, 'silk');
+        this.drawBoardOutline(ctx, doc, vp);
+        this.drawDrcMarkers(ctx, vp);
         if (appearance.showRatsnest) {
             this.drawRatsnest(ctx, vp);
         }
         this.drawZonePolyPreview(ctx, vp);
         this.drawOutlinePreview(ctx, vp);
         this.drawMeasure(ctx, vp);
-        if (appearance.show3d) {
-            this.drawSimple3d(ctx, doc, vp);
-        }
-        // 走线预览（45° / L 型）
         const rs = editor.getRouteStart();
         const rp = editor.getRoutePreview();
         const ds = editor.getDiffRouteState();
@@ -443,11 +562,9 @@ export class PcbCanvas extends ViewPU {
         else if (rs && rp) {
             this.drawRoutePreview(ctx, vp, rs, rp);
         }
-        // 框选矩形
         if (this.selectingRect) {
             this.drawSelectionRect(ctx, vp);
         }
-        // 吸附指示
         if (this.lastSnapPoint) {
             const sp = this.worldToScreenPt(this.lastSnapPoint, vp);
             ctx.strokeStyle = PcbColors.SNAP;
@@ -460,13 +577,67 @@ export class PcbCanvas extends ViewPU {
             ctx.lineTo(sp.x, sp.y + s);
             ctx.stroke();
         }
+        this.emitView2dInstrTrace(doc, false);
     }
-    /** 板框内阻焊层填充 */
+    /** 节流写入 instr_trace：2D 器件/走线位置与 UI 展示 */
+    private emitView2dInstrTrace(doc: PcbDocument, force: boolean): void {
+        const editor = this.getEditor();
+        const vp = editor.getViewport();
+        const ap = editor.getAppearance();
+        const sel = editor.getSelection();
+        const rats = editor.getRatsnest();
+        const drc = editor.getLastDrcViolations();
+        tracePcbView2dAudit(doc, {
+            viewWidth: this.viewWidth,
+            viewHeight: this.viewHeight,
+            viewport: vp,
+            appearance: ap,
+            selection: sel,
+            activeLayer: editor.getActiveLayer(),
+            toolMode: `${this.toolMode}`,
+            ratsnestCount: rats.length,
+            drcCount: drc.length
+        }, force ? 'force' : 'draw', force);
+    }
+    /** 节流写入 instr_trace：3D 相机/器件高度/干涉与展示参数 */
+    private emitView3dInstrTrace(doc: PcbDocument, force: boolean): void {
+        const editor = this.getEditor();
+        const ap = editor.getAppearance();
+        const sel = editor.getSelection();
+        const vp = editor.getViewport();
+        const mode = ap.view3dDisplayMode !== undefined
+            ? ap.view3dDisplayMode : Pcb3dDisplayMode.REALISTIC;
+        tracePcbView3dAudit(doc, {
+            viewWidth: this.viewWidth,
+            viewHeight: this.viewHeight,
+            zoom: Math.max(vp.zoom, 0.05),
+            panX: vp.panOffset.x,
+            panY: vp.panOffset.y,
+            yawDeg: ap.view3dYawDeg,
+            pitchDeg: ap.view3dPitchDeg,
+            ortho: ap.view3dOrtho !== false,
+            displayMode: `${mode}`,
+            usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
+            msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+            cutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : 0.55,
+            measure: ap.view3dMeasure === true,
+            showInterference: ap.view3dShowInterference === true,
+            highlightNetId: ap.highlightNetId,
+            selectedFpIds: sel.footprintIds,
+            selectedTrackIds: sel.trackIds,
+            selectedViaIds: sel.viaIds,
+            activeLayer: `${editor.getActiveLayer()}`,
+            appearanceMode: `${ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY}`,
+            hideZones: ap.hideZones === true,
+            dimAlpha: ap.dimAlpha
+        }, force ? 'force' : 'draw', force);
+    }
+    /** 板框内深绿阻焊（板外纯黑），对齐专业 EDA 成品板 2D 观感 */
     private drawSubstrate(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
         const pts = doc.boardOutline.points;
         if (pts.length < 3)
             return;
-        ctx.fillStyle = PcbColors.SUBSTRATE;
+        ctx.fillStyle = '#143D28';
         ctx.beginPath();
         const p0 = this.worldToScreenPt(pts[0], vp);
         ctx.moveTo(p0.x, p0.y);
@@ -477,42 +648,110 @@ export class PcbCanvas extends ViewPU {
         ctx.closePath();
         ctx.fill();
     }
+    /**
+     * 点阵网格 — 对齐 KiCad/EasyEDA（非实线）。
+     * 必须按屏幕间距做 LOD：默认 zoom=0.15、grid=5 时全视口可达数百万点，
+     * 会撑爆 Ace Canvas 指令队列并触发 THREAD_BLOCK_6S。
+     */
     private drawGrid(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
         const doc = this.getEditor().getDocument();
-        const g = doc?.metadata.gridSize ?? 50;
+        const baseG = Math.max(1, doc?.metadata.gridSize ?? vp.gridSize ?? 5);
         const majorEvery = 10;
+        // 屏幕上相邻点至少约 10px；过密时放大步进（×2），必要时只画主网格
+        const minScreenStep = 10;
+        let step = baseG;
+        let majorMul = majorEvery;
+        while (step * vp.zoom < minScreenStep && step < baseG * 1024) {
+            step *= 2;
+            majorMul = Math.max(1, Math.round(majorMul / 2));
+        }
+        // 仍过密（极小缩放）时跳过次网格，只保留主网格间距
+        if (step * vp.zoom < minScreenStep * 0.55) {
+            step = Math.max(step, baseG * majorEvery);
+            majorMul = 1;
+        }
         const topLeft = this.getEditor().screenToWorld(0, 0);
         const bottomRight = this.getEditor().screenToWorld(this.viewWidth, this.viewHeight);
-        ctx.lineWidth = 1;
-        const startX = Math.floor(topLeft.x / g) * g;
-        const startY = Math.floor(topLeft.y / g) * g;
+        const startX = Math.floor(topLeft.x / step) * step;
+        const startY = Math.floor(topLeft.y / step) * step;
+        const cols = Math.floor((bottomRight.x - startX) / step) + 1;
+        const rows = Math.floor((bottomRight.y - startY) / step) + 1;
+        if (cols <= 0 || rows <= 0) {
+            return;
+        }
+        // 硬上限：避免异常视口/极小 grid 再次卡死主线程
+        const maxDots = 12000;
+        if (cols * rows > maxDots) {
+            const scale = Math.ceil(Math.sqrt((cols * rows) / maxDots));
+            step *= scale;
+            majorMul = Math.max(1, Math.round(majorMul / scale));
+        }
+        const startX2 = Math.floor(topLeft.x / step) * step;
+        const startY2 = Math.floor(topLeft.y / step) * step;
+        const dotR = vp.zoom >= 0.8 ? 1.15 : (vp.zoom >= 0.35 ? 0.9 : 0.65);
+        const majorR = dotR + 0.35;
+        // 分两趟绘制，避免每个点都切换 fillStyle / beginPath
+        ctx.fillStyle = PcbColors.GRID;
+        ctx.beginPath();
         let col = 0;
-        for (let x = startX; x <= bottomRight.x; x += g) {
-            ctx.strokeStyle = (col % majorEvery === 0) ? PcbColors.GRID_MAJOR : PcbColors.GRID;
+        for (let x = startX2; x <= bottomRight.x; x += step) {
+            let row = 0;
             const sx = x * vp.zoom + vp.panOffset.x;
-            ctx.beginPath();
-            ctx.moveTo(sx, 0);
-            ctx.lineTo(sx, this.viewHeight);
-            ctx.stroke();
+            const isMajorCol = (col % majorMul === 0);
+            for (let y = startY2; y <= bottomRight.y; y += step) {
+                const isMajor = isMajorCol || (row % majorMul === 0);
+                if (!isMajor) {
+                    const sy = y * vp.zoom + vp.panOffset.y;
+                    ctx.moveTo(sx + dotR, sy);
+                    ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
+                }
+                row++;
+            }
             col++;
         }
-        let row = 0;
-        for (let y = startY; y <= bottomRight.y; y += g) {
-            ctx.strokeStyle = (row % majorEvery === 0) ? PcbColors.GRID_MAJOR : PcbColors.GRID;
-            const sy = y * vp.zoom + vp.panOffset.y;
-            ctx.beginPath();
-            ctx.moveTo(0, sy);
-            ctx.lineTo(this.viewWidth, sy);
-            ctx.stroke();
-            row++;
+        ctx.fill();
+        ctx.fillStyle = PcbColors.GRID_MAJOR;
+        ctx.beginPath();
+        col = 0;
+        for (let x = startX2; x <= bottomRight.x; x += step) {
+            let row = 0;
+            const sx = x * vp.zoom + vp.panOffset.x;
+            const isMajorCol = (col % majorMul === 0);
+            for (let y = startY2; y <= bottomRight.y; y += step) {
+                const isMajor = isMajorCol || (row % majorMul === 0);
+                if (isMajor) {
+                    const sy = y * vp.zoom + vp.panOffset.y;
+                    ctx.moveTo(sx + majorR, sy);
+                    ctx.arc(sx, sy, majorR, 0, Math.PI * 2);
+                }
+                row++;
+            }
+            col++;
         }
+        ctx.fill();
     }
     private drawBoardOutline(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
+        if (!isLayerVisible(doc, PcbLayerId.EDGE_CUTS))
+            return;
         const pts = doc.boardOutline.points;
         if (pts.length < 2)
             return;
-        ctx.strokeStyle = PcbColors.BOARD_OUTLINE;
-        ctx.lineWidth = Math.max(1, doc.boardOutline.width * vp.zoom);
+        // Edge.Cuts：闭合实体轮廓（生产铣边依据），非辅助虚线
+        const w = Math.max(2.0, Math.max(doc.boardOutline.width, 8) * vp.zoom);
+        const closed = pts.length >= 3;
+        let selfOk = true;
+        if (closed) {
+            const a = pts[0];
+            const b = pts[pts.length - 1];
+            const gap = Math.hypot(a.x - b.x, a.y - b.y);
+            // 首尾未闭合时标红预警
+            if (gap > Math.max(2, doc.boardOutline.width)) {
+                selfOk = false;
+            }
+        }
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.setLineDash([]);
         ctx.beginPath();
         const p0 = this.worldToScreenPt(pts[0], vp);
         ctx.moveTo(p0.x, p0.y);
@@ -520,18 +759,74 @@ export class PcbCanvas extends ViewPU {
             const p = this.worldToScreenPt(pts[i], vp);
             ctx.lineTo(p.x, p.y);
         }
-        ctx.closePath();
+        if (closed)
+            ctx.closePath();
+        ctx.strokeStyle = selfOk ? getLayerColor(doc, PcbLayerId.EDGE_CUTS) : PcbColors.DRC_ERROR;
+        ctx.lineWidth = w;
         ctx.stroke();
+        // 外描边增强对比
+        ctx.strokeStyle = selfOk ? 'rgba(0,0,0,0.45)' : 'rgba(255,80,80,0.5)';
+        ctx.lineWidth = Math.max(1, w * 0.35);
+        ctx.stroke();
+        if (pts.length >= 1) {
+            const origin = this.worldToScreenPt({ x: pts[0].x, y: pts[0].y }, vp);
+            const arm = Math.max(8, 12 * vp.zoom);
+            ctx.strokeStyle = '#FF3333';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(origin.x - arm, origin.y);
+            ctx.lineTo(origin.x + arm, origin.y);
+            ctx.moveTo(origin.x, origin.y - arm);
+            ctx.lineTo(origin.x, origin.y + arm);
+            ctx.stroke();
+            ctx.strokeStyle = '#E8A020';
+            ctx.beginPath();
+            ctx.arc(origin.x, origin.y, Math.max(3, 4 * vp.zoom), 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
     private drawZones(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
-        const selZoneIds = new Set(this.getEditor().getSelection().zoneIds);
-        for (const zone of doc.zones) {
+        const editor = this.getEditor();
+        const appearance = editor.getAppearance();
+        const active = editor.getActiveLayer();
+        const hl = appearance.highlightNetId;
+        const selZoneIds = new Set(editor.getSelection().zoneIds);
+        // 按铜层堆叠自下而上
+        const ordered: number[] = [];
+        for (let zi = 0; zi < doc.zones.length; zi++)
+            ordered.push(zi);
+        ordered.sort((a: number, b: number) => {
+            const ra = this.copperStackRank(doc.zones[a].layer);
+            const rb = this.copperStackRank(doc.zones[b].layer);
+            if (ra !== rb)
+                return ra - rb;
+            const pa = doc.zones[a].priority !== undefined ? doc.zones[a].priority : 0;
+            const pb = doc.zones[b].priority !== undefined ? doc.zones[b].priority : 0;
+            return pa - pb;
+        });
+        for (let oi = 0; oi < ordered.length; oi++) {
+            const zone = doc.zones[ordered[oi]];
             if (!isLayerVisible(doc, zone.layer) || zone.outline.length < 3)
                 continue;
+            if (appearance.mode === PcbAppearanceMode.ACTIVE_ONLY && isCopperLayer(zone.layer) &&
+                zone.layer !== active) {
+                continue;
+            }
             const isSel = selZoneIds.has(zone.id);
-            const baseColor = zone.netName.toUpperCase().includes('GND')
-                ? PcbColors.ZONE_GND : PcbColors.ZONE_SIGNAL;
-            ctx.fillStyle = isSel ? PcbColors.ZONE_SELECTED : baseColor;
+            const onHl = hl.length > 0 && zone.netId === hl;
+            const dimOther = hl.length > 0 && zone.netId !== hl;
+            const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
+                isCopperLayer(zone.layer) && zone.layer !== active;
+            // 用层色铺铜（B.Cu=#00E676），不要用近乎透明的 ZONE_GND
+            const layerCol = getLayerColor(doc, zone.layer);
+            const fillA = isSel || onHl ? 0.55 : (dimOther || dimLayer ? 0.18 : 0.42);
+            let fillColor = isSel || onHl
+                ? PcbColors.ZONE_SELECTED
+                : this.withAlpha(layerCol, fillA);
+            if (dimOther || dimLayer) {
+                fillColor = this.withAlpha(layerCol, Math.max(0.14, appearance.dimAlpha * 0.7));
+            }
+            ctx.fillStyle = fillColor;
             ctx.beginPath();
             const p0 = this.worldToScreenPt(zone.outline[0], vp);
             ctx.moveTo(p0.x, p0.y);
@@ -540,26 +835,33 @@ export class PcbCanvas extends ViewPU {
                 ctx.lineTo(p.x, p.y);
             }
             ctx.closePath();
-            ctx.fill();
+            // 挖空用 evenodd，避免用不透明深色块把绿铜盖成“发灰”
             if (zone.cutouts) {
-                ctx.fillStyle = PcbColors.SUBSTRATE;
                 for (const cut of zone.cutouts) {
                     if (cut.length < 3)
                         continue;
-                    ctx.beginPath();
-                    const c0 = this.worldToScreenPt(cut[0], vp);
-                    ctx.moveTo(c0.x, c0.y);
-                    for (let i = 1; i < cut.length; i++) {
+                    const last = cut.length - 1;
+                    const cLast = this.worldToScreenPt(cut[last], vp);
+                    ctx.moveTo(cLast.x, cLast.y);
+                    for (let i = last - 1; i >= 0; i--) {
                         const cp = this.worldToScreenPt(cut[i], vp);
                         ctx.lineTo(cp.x, cp.y);
                     }
                     ctx.closePath();
-                    ctx.fill();
                 }
             }
+            ctx.fill('evenodd');
+            ctx.strokeStyle = isSel || onHl ? ProteusColors.SELECTED : layerCol;
+            ctx.lineWidth = Math.max(1.5, isSel ? 2.5 : 2);
+            ctx.globalAlpha = dimLayer ? 0.45 : 0.9;
+            ctx.setLineDash([]);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
             if (zone.thermalRelief) {
-                ctx.fillStyle = isSel ? PcbColors.ZONE_SELECTED : baseColor;
-                const tw = zone.thermalWidth;
+                // 热焊盘连接筋：用层色高亮，标明同网仍连到本层覆铜
+                const spokeFill = isSel || onHl ? PcbColors.ZONE_SELECTED : this.withAlpha(layerCol, 0.9);
+                ctx.fillStyle = spokeFill;
+                const tw = Math.max(zone.thermalWidth, 6);
                 for (const fp of doc.footprints) {
                     for (const pad of fp.pads) {
                         if (pad.netId !== zone.netId)
@@ -582,6 +884,24 @@ export class PcbCanvas extends ViewPU {
                     }
                 }
             }
+            // 覆铜标注：仅选中/高亮网络时显示，贴在轮廓角避免挡板心
+            if (isSel || onHl) {
+                const corner = zone.outline[0];
+                const labelPt = this.worldToScreenPt(corner, vp);
+                const netNm = (zone.netName !== undefined && zone.netName.length > 0) ? zone.netName : '(no net)';
+                const cutN = zone.cutouts !== undefined ? zone.cutouts.length : 0;
+                const thTag = zone.thermalRelief ? '热焊盘' : '直连';
+                const label = `${netNm} · ${zone.layer} · ${thTag} · 挖空${cutN}`;
+                const fontPx = Math.max(10, Math.min(12, 11 * vp.zoom / 0.7));
+                ctx.font = `bold ${fontPx}px sans-serif`;
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'bottom';
+                const tw = ctx.measureText(label).width;
+                ctx.fillStyle = 'rgba(10,14,22,0.65)';
+                ctx.fillRect(labelPt.x + 4, labelPt.y - fontPx - 6, tw + 10, fontPx + 6);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText(label, labelPt.x + 8, labelPt.y - 4);
+            }
             if (isSel) {
                 ctx.strokeStyle = ProteusColors.SELECTED;
                 ctx.lineWidth = 2;
@@ -602,32 +922,114 @@ export class PcbCanvas extends ViewPU {
         const active = editor.getActiveLayer();
         const hl = appearance.highlightNetId;
         const selTrkIds = new Set(editor.getSelection().trackIds);
-        for (const trk of doc.tracks) {
+        const filtered: PcbTrack[] = [];
+        for (let ti = 0; ti < doc.tracks.length; ti++) {
+            const trk = doc.tracks[ti];
             if (!isLayerVisible(doc, trk.layer))
+                continue;
+            if (!this.segInView(trk.start, trk.end, vp, 40))
                 continue;
             if (appearance.mode === PcbAppearanceMode.ACTIVE_ONLY && isCopperLayer(trk.layer) &&
                 trk.layer !== active) {
                 continue;
             }
-            const selected = selTrkIds.has(trk.id);
-            const netHl = hl.length > 0 && trk.netId === hl;
-            const dimOther = hl.length > 0 && trk.netId !== hl;
-            const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
-                isCopperLayer(trk.layer) && trk.layer !== active;
-            let color = selected || netHl ? ProteusColors.SELECTED : getLayerColor(doc, trk.layer);
-            if (dimOther || dimLayer) {
-                color = this.withAlpha(color, appearance.dimAlpha);
-            }
-            ctx.strokeStyle = color;
-            ctx.lineWidth = Math.max(1, (trk.width + (selected || netHl ? 4 : 0)) * vp.zoom);
-            ctx.lineCap = 'round';
-            const s = this.worldToScreenPt(trk.start, vp);
-            const e = this.worldToScreenPt(trk.end, vp);
-            ctx.beginPath();
-            ctx.moveTo(s.x, s.y);
-            ctx.lineTo(e.x, e.y);
-            ctx.stroke();
+            filtered.push(trk);
         }
+        const polys = buildTrackPolylines(filtered);
+        // 底层铜先画
+        polys.sort((a: PcbTrackPolyline, b: PcbTrackPolyline) => this.copperStackRank(a.layer) - this.copperStackRank(b.layer));
+        for (let pi = 0; pi < polys.length; pi++) {
+            const poly = polys[pi];
+            if (poly.points.length < 2)
+                continue;
+            let selected = false;
+            for (let k = 0; k < poly.trackIds.length; k++) {
+                if (selTrkIds.has(poly.trackIds[k])) {
+                    selected = true;
+                    break;
+                }
+            }
+            const netHl = hl.length > 0 && poly.netId === hl;
+            const dimOther = hl.length > 0 && poly.netId !== hl;
+            const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
+                isCopperLayer(poly.layer) && poly.layer !== active;
+            const baseHex = selected || netHl ? ProteusColors.SELECTED : getLayerColor(doc, poly.layer);
+            let alpha = getLayerOpacity(doc, poly.layer);
+            if (dimOther || dimLayer) {
+                alpha = alpha * appearance.dimAlpha;
+            }
+            const color = this.withAlpha(baseHex, alpha);
+            const boost = (selected || netHl) ? Math.max(1.5, 2 * vp.zoom) : 0;
+            const baseW = Math.max(0.65, poly.width * vp.zoom + boost);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            // 一次折线描边：横竖斜在拐角处连续
+            ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+            ctx.lineWidth = baseW + 1.0;
+            ctx.beginPath();
+            const p0 = this.worldToScreenPt(poly.points[0], vp);
+            ctx.moveTo(p0.x, p0.y);
+            for (let i = 1; i < poly.points.length; i++) {
+                const p = this.worldToScreenPt(poly.points[i], vp);
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.stroke();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = baseW;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            for (let i = 1; i < poly.points.length; i++) {
+                const p = this.worldToScreenPt(poly.points[i], vp);
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.stroke();
+            // 拐点圆角：保证 T 接/直角处视觉一体
+            const r = baseW * 0.5;
+            ctx.fillStyle = color;
+            for (let i = 0; i < poly.points.length; i++) {
+                const p = this.worldToScreenPt(poly.points[i], vp);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        // 走线网络名：近距 LOD
+        if (vp.zoom >= 1.05) {
+            const seen = new Set<string>();
+            for (let ti = 0; ti < doc.tracks.length; ti++) {
+                const trk = doc.tracks[ti];
+                if (!trk.netName || trk.netName.length === 0)
+                    continue;
+                if (!isLayerVisible(doc, trk.layer))
+                    continue;
+                const key = `${trk.netId}`;
+                if (seen.has(key))
+                    continue;
+                seen.add(key);
+                const mid = this.worldToScreenPt({
+                    x: (trk.start.x + trk.end.x) / 2,
+                    y: (trk.start.y + trk.end.y) / 2
+                }, vp);
+                const fontPx = Math.max(8, Math.min(11, 8 + vp.zoom * 2));
+                this.drawOutlinedText(ctx, this.shortNetName(trk.netName), mid.x, mid.y - 7, getLayerColor(doc, trk.layer), '#000000', fontPx);
+            }
+        }
+    }
+    /** 铜层绘制顺序秩：数值越小越先画（底层） */
+    private copperStackRank(layer: PcbLayerId): number {
+        if (layer === PcbLayerId.B_CU)
+            return 0;
+        if (layer === PcbLayerId.IN4_CU)
+            return 1;
+        if (layer === PcbLayerId.IN3_CU)
+            return 2;
+        if (layer === PcbLayerId.IN2_CU)
+            return 3;
+        if (layer === PcbLayerId.IN1_CU)
+            return 4;
+        if (layer === PcbLayerId.F_CU)
+            return 5;
+        return 3;
     }
     private drawRatsnest(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
         const editor = this.getEditor();
@@ -635,22 +1037,24 @@ export class PcbCanvas extends ViewPU {
         const appearance = editor.getAppearance();
         const hl = appearance.highlightNetId;
         const dimAlpha = appearance.dimAlpha;
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([3, 5]);
         ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.45;
         for (const e of edges) {
             const onHl = hl.length > 0 && e.netId === hl;
             const dimOther = hl.length > 0 && e.netId !== hl;
             if (dimOther && dimAlpha < 0.05)
-                continue; // 变暗模式下极高亮外的飞线
+                continue;
             if (dimOther) {
-                ctx.strokeStyle = this.withAlpha(ProteusColors.TEXT_SECONDARY, dimAlpha * 0.6);
+                ctx.strokeStyle = this.withAlpha(ProteusColors.TEXT_SECONDARY, dimAlpha * 0.5);
             }
             else if (onHl) {
                 ctx.strokeStyle = ProteusColors.SELECTED;
                 ctx.lineWidth = 1.5;
+                ctx.globalAlpha = 0.85;
             }
             else {
-                ctx.strokeStyle = ProteusColors.TEXT_SECONDARY;
+                ctx.strokeStyle = 'rgba(180, 200, 220, 0.55)';
             }
             const a = this.worldToScreenPt(e.a, vp);
             const b = this.worldToScreenPt(e.b, vp);
@@ -659,7 +1063,9 @@ export class PcbCanvas extends ViewPU {
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
             ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.45;
         }
+        ctx.globalAlpha = 1;
         ctx.setLineDash([]);
     }
     private drawZonePolyPreview(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
@@ -710,100 +1116,108 @@ export class PcbCanvas extends ViewPU {
         if (pts.length === 2) {
             const a = this.worldToScreenPt(pts[0], vp);
             const b = this.worldToScreenPt(pts[1], vp);
+            const dx = pts[1].x - pts[0].x;
+            const dy = pts[1].y - pts[0].y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const mm = len * 0.0254;
+            const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+            // 正交辅助线
+            ctx.strokeStyle = 'rgba(0,191,255,0.55)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
             ctx.strokeStyle = ProteusColors.SELECTED;
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
-            const dx = pts[1].x - pts[0].x;
-            const dy = pts[1].y - pts[0].y;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            ctx.fillStyle = ProteusColors.TEXT_PRIMARY;
-            ctx.font = '11px sans-serif';
-            ctx.fillText(`${len.toFixed(1)} mil  (dx=${dx.toFixed(1)} dy=${dy.toFixed(1)})`, (a.x + b.x) / 2 + 6, (a.y + b.y) / 2 - 6);
+            const lx = (a.x + b.x) / 2 + 8;
+            const ly = (a.y + b.y) / 2 - 8;
+            ctx.fillStyle = 'rgba(10,14,22,0.78)';
+            ctx.fillRect(lx - 4, ly - 28, 210, 40);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText(`${len.toFixed(1)} mil  (${mm.toFixed(3)} mm)`, lx, ly - 12);
+            ctx.font = '10px sans-serif';
+            ctx.fillStyle = '#A8D4FF';
+            ctx.fillText(`ΔX=${dx.toFixed(1)}  ΔY=${dy.toFixed(1)}  ∠${ang.toFixed(1)}°`, lx, ly + 4);
         }
     }
-    /** 等轴测 3D 视图：板厚 + 封装 3D 盒体 */
+    /** @deprecated 层色已在 createDefaultPcbLayers / normalize 中设定，绘制期不再覆写 */
+    private ensureProfessionalLayerColors(_doc: PcbDocument): void {
+        // no-op：保留方法避免外部引用断裂
+    }
     private drawSimple3d(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
-        const isoAngle = 0.577; // tan(30°) ≈ 0.577
-        const zScale = vp.zoom * 0.08; // 高度缩放
-        let totalThick = 0;
-        for (const sl of doc.layerStack.layers) {
-            totalThick += sl.thicknessMm;
+        const editor = this.getEditor();
+        const ap = editor.getAppearance();
+        const sel = editor.getSelection();
+        const mode = ap.view3dDisplayMode !== undefined
+            ? ap.view3dDisplayMode : Pcb3dDisplayMode.REALISTIC;
+        if (ap.view3dMeasure !== true && this.measure3dPts.length > 0) {
+            this.measure3dPts = [];
         }
-        const boardThick = totalThick > 0 ? totalThick * 0.05 : 40;
-        const boardH = boardThick * zScale;
-        // 板框挤出
-        const outline = doc.boardOutline.points;
-        if (outline.length >= 3) {
-            ctx.globalAlpha = 0.15;
-            ctx.fillStyle = PcbColors.SUBSTRATE;
-            for (let i = 0; i < outline.length; i++) {
-                const a = outline[i];
-                const b = outline[(i + 1) % outline.length];
-                const sa = this.worldToScreenPt(a, vp);
-                const sb = this.worldToScreenPt(b, vp);
-                // 顶面
-                const saTop: Point2D = { x: sa.x + isoAngle * boardH, y: sa.y - boardH };
-                const sbTop: Point2D = { x: sb.x + isoAngle * boardH, y: sb.y - boardH };
-                ctx.beginPath();
-                ctx.moveTo(sa.x, sa.y);
-                ctx.lineTo(sb.x, sb.y);
-                ctx.lineTo(sbTop.x, sbTop.y);
-                ctx.lineTo(saTop.x, saTop.y);
-                ctx.closePath();
-                ctx.fill();
-                ctx.strokeStyle = PcbColors.BOARD_OUTLINE;
-                ctx.lineWidth = 0.5;
-                ctx.stroke();
-            }
-            ctx.globalAlpha = 1;
-        }
-        // 封装 3D 盒体
-        const lib = getGlobalPcbFootprintLibrary();
-        for (const fp of doc.footprints) {
-            const def = lib.getDef(fp.defId);
-            const hMil = def?.heightMil ?? 40;
-            const h = hMil * zScale;
-            const base = this.worldToScreenPt(fp.position, vp);
-            const topX = base.x + isoAngle * h;
-            const topY = base.y - h;
-            // 底面
-            ctx.globalAlpha = 0.2;
-            ctx.fillStyle = '#555555';
-            ctx.fillRect(base.x - 12, base.y - 8, 24, 16);
-            // 侧面
-            ctx.strokeStyle = '#666666';
-            ctx.lineWidth = 0.8;
-            ctx.beginPath();
-            ctx.moveTo(base.x - 12, base.y - 8);
-            ctx.lineTo(topX - 12, topY - 8);
-            ctx.lineTo(topX + 12, topY - 8);
-            ctx.lineTo(base.x + 12, base.y - 8);
-            ctx.closePath();
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(base.x + 12, base.y - 8);
-            ctx.lineTo(topX + 12, topY - 8);
-            ctx.lineTo(topX + 12, topY + 8);
-            ctx.lineTo(base.x + 12, base.y + 8);
-            ctx.closePath();
-            ctx.stroke();
-            // 顶面
-            ctx.fillStyle = '#888888';
-            ctx.fillRect(topX - 12, topY - 8, 24, 16);
-            ctx.strokeStyle = '#AAAAAA';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(topX - 12, topY - 8, 24, 16);
-            // 位号标注
-            ctx.globalAlpha = 0.7;
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = `${Math.max(8, 9 * vp.zoom)}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(fp.refDes, topX, topY - 12);
-        }
-        ctx.globalAlpha = 1;
+        Pcb3dRenderer.render(ctx, doc, {
+            viewWidth: this.viewWidth,
+            viewHeight: this.viewHeight,
+            zoom: Math.max(vp.zoom, 0.05),
+            panX: vp.panOffset.x,
+            panY: vp.panOffset.y,
+            yawDeg: ap.view3dYawDeg,
+            pitchDeg: ap.view3dPitchDeg,
+            ortho: ap.view3dOrtho !== false,
+            highlightNetId: ap.highlightNetId,
+            dimAlpha: ap.dimAlpha,
+            hideZones: ap.hideZones,
+            selectedFpIds: sel.footprintIds,
+            selectedTrackIds: sel.trackIds,
+            selectedViaIds: sel.viaIds,
+            displayMode: mode,
+            cutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : 0.55,
+            measurePts: this.measure3dPts,
+            showInterference: ap.view3dShowInterference === true,
+            usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
+            msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+            activeLayer: editor.getActiveLayer(),
+            appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
+        });
+    }
+    private build3dViewParams(): import('../utils/Pcb3dRenderer').Pcb3dViewParams {
+        const editor = this.getEditor();
+        const ap = editor.getAppearance();
+        const sel = editor.getSelection();
+        const vp = editor.getViewport();
+        const mode = ap.view3dDisplayMode !== undefined
+            ? ap.view3dDisplayMode : Pcb3dDisplayMode.REALISTIC;
+        return {
+            viewWidth: this.viewWidth,
+            viewHeight: this.viewHeight,
+            zoom: Math.max(vp.zoom, 0.05),
+            panX: vp.panOffset.x,
+            panY: vp.panOffset.y,
+            yawDeg: ap.view3dYawDeg,
+            pitchDeg: ap.view3dPitchDeg,
+            ortho: ap.view3dOrtho !== false,
+            highlightNetId: ap.highlightNetId,
+            dimAlpha: ap.dimAlpha,
+            hideZones: ap.hideZones,
+            selectedFpIds: sel.footprintIds,
+            selectedTrackIds: sel.trackIds,
+            selectedViaIds: sel.viaIds,
+            displayMode: mode,
+            cutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : 0.55,
+            measurePts: this.measure3dPts,
+            showInterference: ap.view3dShowInterference === true,
+            usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
+            msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+            activeLayer: editor.getActiveLayer(),
+            appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
+        };
     }
     private withAlpha(color: string, alpha: number): string {
         if (color.startsWith('#') && color.length === 7) {
@@ -816,28 +1230,87 @@ export class PcbCanvas extends ViewPU {
         const editor = this.getEditor();
         const selViaIds = new Set(editor.getSelection().viaIds);
         const appearance = editor.getAppearance();
+        const active = editor.getActiveLayer();
         const hl = appearance.highlightNetId;
         const dimAlpha = appearance.dimAlpha;
+        const lodFar = vp.zoom < 0.22;
         for (const via of doc.vias) {
+            if (!this.ptInView(via.position, vp, via.diameter))
+                continue;
+            const spansActive = via.layers.length === 0 ||
+                viaLayerHas(via.layers, active) ||
+                (viaLayerHas(via.layers, PcbLayerId.F_CU) && viaLayerHas(via.layers, PcbLayerId.B_CU));
+            if (appearance.mode === PcbAppearanceMode.ACTIVE_ONLY && isCopperLayer(active) && !spansActive) {
+                continue;
+            }
+            // 埋孔：非活动内层模式下可淡显
+            const kind = via.kind !== undefined ? via.kind : PcbViaKind.THROUGH;
+            if (kind === PcbViaKind.BURIED && appearance.mode === PcbAppearanceMode.ACTIVE_ONLY &&
+                (active === PcbLayerId.F_CU || active === PcbLayerId.B_CU)) {
+                continue;
+            }
             const p = this.worldToScreenPt(via.position, vp);
-            const r = Math.max(2, via.diameter * vp.zoom / 2);
+            const rOuter = Math.max(3.0, via.diameter * vp.zoom / 2);
+            const rDrill = Math.max(1.3, (via.drill > 0 ? via.drill : via.diameter * 0.45) * vp.zoom / 2);
             const selected = selViaIds.has(via.id);
             const onHl = hl.length > 0 && via.netId === hl;
             const dimOther = hl.length > 0 && via.netId !== hl;
+            const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
+                isCopperLayer(active) && !spansActive;
             let fillColor = selected || onHl ? ProteusColors.SELECTED : PcbColors.VIA_FILL;
-            if (dimOther)
-                fillColor = this.withAlpha(PcbColors.VIA_FILL, dimAlpha);
-            ctx.fillStyle = fillColor;
+            if (kind === PcbViaKind.BLIND)
+                fillColor = selected || onHl ? ProteusColors.SELECTED : '#C8A060';
+            if (kind === PcbViaKind.BURIED)
+                fillColor = selected || onHl ? ProteusColors.SELECTED : '#9090A8';
+            if (dimOther || dimLayer)
+                fillColor = this.withAlpha(fillColor, dimAlpha);
+            if (lodFar) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, Math.max(2, rOuter * 0.7), 0, Math.PI * 2);
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+                continue;
+            }
             ctx.beginPath();
-            ctx.arc(p.x, p.y, r + (selected ? 2 : 0), 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, rOuter + (selected ? 1.5 : 0), 0, Math.PI * 2);
+            ctx.fillStyle = fillColor;
             ctx.fill();
+            // 盲孔：半环标记；埋孔：虚线外环
+            if (kind === PcbViaKind.BLIND) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, rOuter + 2, -Math.PI * 0.15, Math.PI * 0.85);
+                ctx.strokeStyle = '#FFAA44';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            else if (kind === PcbViaKind.BURIED) {
+                ctx.setLineDash([3, 2]);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, rOuter + 2.5, 0, Math.PI * 2);
+                ctx.strokeStyle = '#A0A0C0';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
             ctx.strokeStyle = selected ? ProteusColors.HOVER_PREVIEW
                 : onHl ? ProteusColors.SELECTED : PcbColors.VIA_STROKE;
-            ctx.lineWidth = selected ? 2 : 1;
+            ctx.lineWidth = selected ? 2 : 1.5;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, rOuter, 0, Math.PI * 2);
             ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, rDrill, 0, Math.PI * 2);
+            ctx.fillStyle = '#000000';
+            ctx.fill();
+            if (appearance.showPadNumbers && via.netName && via.netName.length > 0 && vp.zoom >= 0.55) {
+                const tag = kind === PcbViaKind.THROUGH ? '' :
+                    (kind === PcbViaKind.BLIND ? 'B' : 'U');
+                this.drawOutlinedText(ctx, tag.length > 0 ? `${tag}:${this.shortNetName(via.netName)}`
+                    : this.shortNetName(via.netName), p.x, p.y - rOuter - 8, PcbColors.VIA_FILL, '#0A0A12', Math.max(9, 10 * vp.zoom));
+            }
         }
     }
-    private drawFootprints(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
+    private drawFootprints(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState, phase: string): void {
         const editor = this.getEditor();
         const appearance = editor.getAppearance();
         const hl = appearance.highlightNetId;
@@ -845,33 +1318,144 @@ export class PcbCanvas extends ViewPU {
         const lib = getGlobalPcbFootprintLibrary();
         const selFpIds = new Set(editor.getSelection().footprintIds);
         for (const fp of doc.footprints) {
-            const onActiveLayer = fp.layer === active ||
-                (fp.layer === PcbLayerId.B_CU && active === PcbLayerId.B_CU) ||
-                (fp.layer === PcbLayerId.F_CU && active === PcbLayerId.F_CU);
-            if (appearance.mode === PcbAppearanceMode.ACTIVE_ONLY && !onActiveLayer)
+            if (!this.ptInView(fp.position, vp, 120))
                 continue;
-            this.drawFootprint(ctx, fp, vp, lib, selFpIds.has(fp.id), hl, appearance);
+            const copperOnlyMode = appearance.mode === PcbAppearanceMode.ACTIVE_ONLY &&
+                isCopperLayer(active);
+            if (copperOnlyMode) {
+                // 内层仅活动层：只显示焊盘跨该层的封装（SMD 对侧隐藏）
+                if (active === PcbLayerId.F_CU || active === PcbLayerId.B_CU) {
+                    if (fp.layer !== active)
+                        continue;
+                }
+                else {
+                    let touches = false;
+                    for (let pi = 0; pi < fp.pads.length; pi++) {
+                        const layers = fp.pads[pi].layers;
+                        if (!layers || layers.length === 0) {
+                            if (fp.pads[pi].type !== PcbPadType.SMD) {
+                                touches = true;
+                                break;
+                            }
+                        }
+                        else {
+                            for (let li = 0; li < layers.length; li++) {
+                                if (layers[li] === active) {
+                                    touches = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (touches)
+                            break;
+                    }
+                    if (!touches)
+                        continue;
+                }
+            }
+            // 远距 LOD：丝印阶段只画位号
+            if (phase === 'silk' && vp.zoom < 0.28) {
+                const origin = this.worldToScreenPt(fp.position, vp);
+                this.drawOutlinedText(ctx, fp.refDes, origin.x, origin.y - 10, PcbColors.REFDES, '#05080E', Math.max(10, 9 + vp.zoom * 8));
+                continue;
+            }
+            this.drawFootprint(ctx, fp, vp, lib, selFpIds.has(fp.id), hl, appearance, phase);
         }
     }
-    private drawFootprint(ctx: CanvasRenderingContext2D, fp: PcbFootprintInst, vp: import('common').ViewportState, lib: import('common').PcbFootprintLibrary, selected: boolean, hlNetId: string, appearance: PcbAppearance): void {
+    private drawFootprint(ctx: CanvasRenderingContext2D, fp: PcbFootprintInst, vp: import('common').ViewportState, lib: import('common').PcbFootprintLibrary, selected: boolean, hlNetId: string, appearance: PcbAppearance, phase: string): void {
         const def = lib.getDef(fp.defId);
         const origin = this.worldToScreenPt(fp.position, vp);
         const hasHlNet = hlNetId.length > 0;
         const fpHasHlPad = hasHlNet && fp.pads.some(p => p.netId === hlNetId);
         const dimFp = hasHlNet && !fpHasHlPad;
         const dimAlpha = appearance.dimAlpha;
-        if (selected) {
-            ctx.strokeStyle = ProteusColors.SELECTED;
-            ctx.lineWidth = 2;
-            const bb = this.footprintScreenBBox(fp, def, vp);
-            ctx.strokeRect(bb.x, bb.y, bb.w, bb.h);
+        const isMount = fp.defId === 'FP_MOUNT' || fp.refDes.startsWith('H');
+        const doc = this.getEditor().getDocument();
+        // 阻焊开窗余量 ≈ 0.15mm ≈ 6 mil
+        const maskClear = 6 * vp.zoom;
+        if (phase === 'copper') {
+            if (selected) {
+                ctx.strokeStyle = ProteusColors.SELECTED;
+                ctx.lineWidth = 2;
+                const bb = this.footprintScreenBBox(fp, def, vp);
+                ctx.strokeRect(bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4);
+            }
+            for (const pad of fp.pads) {
+                const pp = this.localToScreen(pad.pos, fp, vp);
+                const hw = Math.max(2.0, pad.size.x * vp.zoom / 2);
+                const hh = Math.max(2.0, pad.size.y * vp.zoom / 2);
+                const padOnHl = hasHlNet && pad.netId === hlNetId;
+                const dimPad = hasHlNet && !padOnHl;
+                const copper = padOnHl ? ProteusColors.SELECTED
+                    : (pad.netName && pad.netName.length > 0 ? PcbColors.PAD_SMD_NET : PcbColors.PAD_SMD);
+                const thCopper = padOnHl ? ProteusColors.SELECTED : PcbColors.PAD_TH;
+                const fillCu = dimPad ? this.withAlpha(pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH ? thCopper : copper, dimAlpha)
+                    : (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH ? thCopper : copper);
+                const shape = pad.shape !== undefined ? pad.shape : PcbPadShape.RECT;
+                // 阻焊开窗：比铜盘略大，露出深绿缺口环
+                if (!isMount && vp.zoom >= 0.2) {
+                    this.fillPadShape(ctx, shape, pp.x, pp.y, hw + maskClear, hh + maskClear, '#0A2214');
+                }
+                if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+                    const r = Math.max(hw, hh);
+                    if (isMount) {
+                        // 非金属化安装孔：仅环 + 钻孔
+                        ctx.beginPath();
+                        ctx.arc(pp.x, pp.y, r, 0, Math.PI * 2);
+                        ctx.strokeStyle = dimPad ? this.withAlpha(thCopper, dimAlpha) : thCopper;
+                        ctx.lineWidth = Math.max(2, 8 * vp.zoom);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(pp.x, pp.y, Math.max(2, r * 0.55), 0, Math.PI * 2);
+                        ctx.fillStyle = '#000000';
+                        ctx.fill();
+                        ctx.strokeStyle = PcbColors.SILK;
+                        ctx.lineWidth = Math.max(1, 1.5);
+                        ctx.beginPath();
+                        ctx.moveTo(pp.x - r * 0.85, pp.y);
+                        ctx.lineTo(pp.x + r * 0.85, pp.y);
+                        ctx.moveTo(pp.x, pp.y - r * 0.85);
+                        ctx.lineTo(pp.x, pp.y + r * 0.85);
+                        ctx.stroke();
+                    }
+                    else {
+                        // 通孔：铜环 + 钻孔，双描边抗锯齿
+                        ctx.beginPath();
+                        ctx.arc(pp.x, pp.y, r, 0, Math.PI * 2);
+                        ctx.fillStyle = fillCu;
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(255,230,140,0.45)';
+                        ctx.lineWidth = 1.25;
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        const drillR = Math.max(1.4, (pad.drill !== undefined ? pad.drill : pad.size.x * 0.45) * vp.zoom / 2);
+                        ctx.beginPath();
+                        ctx.arc(pp.x, pp.y, drillR, 0, Math.PI * 2);
+                        ctx.fillStyle = '#000000';
+                        ctx.fill();
+                    }
+                }
+                else {
+                    // SMD：按 shape 渲染
+                    this.fillPadShape(ctx, shape, pp.x, pp.y, hw, hh, fillCu);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                    ctx.lineWidth = 1;
+                    this.strokePadShape(ctx, shape, pp.x, pp.y, hw, hh);
+                }
+            }
+            return;
         }
-        if (def && isLayerVisible(this.getEditor().getDocument()!, PcbLayerId.F_SILKS)) {
-            ctx.strokeStyle = dimFp ? this.withAlpha(PcbColors.SILK, dimAlpha) : PcbColors.SILK;
-            ctx.lineWidth = 1;
+        // —— silk 阶段：正反丝印分别受 F/B.SilkS 控制 ——
+        const silkLayer = fp.layer === PcbLayerId.B_CU ? PcbLayerId.B_SILKS : PcbLayerId.F_SILKS;
+        if (def && doc && isLayerVisible(doc, silkLayer)) {
+            const silkW = Math.max(1.0, Math.min(2.2, 4.5 * vp.zoom));
             for (const line of def.silkLines) {
                 if (line.length < 2)
                     continue;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
                 ctx.beginPath();
                 const p0 = this.localToScreen(line[0], fp, vp);
                 ctx.moveTo(p0.x, p0.y);
@@ -879,48 +1463,196 @@ export class PcbCanvas extends ViewPU {
                     const p = this.localToScreen(line[i], fp, vp);
                     ctx.lineTo(p.x, p.y);
                 }
+                ctx.strokeStyle = dimFp ? this.withAlpha(PcbColors.SILK, dimAlpha) : PcbColors.SILK;
+                ctx.lineWidth = silkW;
                 ctx.stroke();
             }
         }
-        for (const pad of fp.pads) {
-            const pp = this.localToScreen(pad.pos, fp, vp);
-            const hw = Math.max(2, pad.size.x * vp.zoom / 2);
-            const hh = Math.max(2, pad.size.y * vp.zoom / 2);
-            const padOnHl = hasHlNet && pad.netId === hlNetId;
-            const dimPad = hasHlNet && !padOnHl;
-            if (pad.type === PcbPadType.TH) {
-                ctx.fillStyle = dimPad ? this.withAlpha(PcbColors.PAD_TH, dimAlpha)
-                    : padOnHl ? ProteusColors.SELECTED : PcbColors.PAD_TH;
-                ctx.beginPath();
-                ctx.arc(pp.x, pp.y, Math.max(hw, hh), 0, Math.PI * 2);
-                ctx.fill();
-                if (padOnHl) {
-                    ctx.strokeStyle = ProteusColors.SELECTED;
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
+        if (!isMount && fp.pads.length >= 2) {
+            let pin1 = fp.pads[0];
+            for (let pi = 0; pi < fp.pads.length; pi++) {
+                if (fp.pads[pi].number === '1') {
+                    pin1 = fp.pads[pi];
+                    break;
                 }
             }
-            else {
-                ctx.fillStyle = dimPad ? this.withAlpha(PcbColors.PAD_UNCONNECTED, dimAlpha)
-                    : padOnHl ? ProteusColors.SELECTED
-                        : pad.netName ? PcbColors.PAD_SMD_NET : PcbColors.PAD_UNCONNECTED;
-                ctx.fillRect(pp.x - hw, pp.y - hh, hw * 2, hh * 2);
+            const markR = Math.max(2.5, 3.5 * vp.zoom);
+            const dx = pin1.pos.x === 0 ? 0 : (pin1.pos.x > 0 ? 1 : -1);
+            const dy = pin1.pos.y === 0 ? (dx === 0 ? -1 : 0) : (pin1.pos.y > 0 ? 1 : -1);
+            const ph = Math.max(pin1.size.x, pin1.size.y) / 2;
+            const mk = this.localToScreen({
+                x: pin1.pos.x + dx * (ph + 14),
+                y: pin1.pos.y + dy * (ph + 14)
+            }, fp, vp);
+            ctx.beginPath();
+            ctx.arc(mk.x, mk.y, markR, 0, Math.PI * 2);
+            ctx.fillStyle = dimFp ? this.withAlpha('#FF5555', dimAlpha) : '#FF5555';
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        const labeledNets = new Set<string>();
+        for (const pad of fp.pads) {
+            const pp = this.localToScreen(pad.pos, fp, vp);
+            const hw = Math.max(2.5, pad.size.x * vp.zoom / 2);
+            const hh = Math.max(2.5, pad.size.y * vp.zoom / 2);
+            const showNum = appearance.showPadNumbers && Math.min(hw, hh) >= 4 && !isMount;
+            if (showNum) {
+                const fontPx = Math.max(9, Math.min(15, Math.min(hw, hh) * 1.25));
+                this.drawOutlinedText(ctx, pad.number, pp.x, pp.y, '#FFFFFF', '#101018', fontPx);
+            }
+            if (pad.netId && pad.netName && pad.netName.length > 0 && vp.zoom >= 0.85 && !isMount) {
+                if (!labeledNets.has(pad.netId)) {
+                    labeledNets.add(pad.netId);
+                    const netLabel = this.shortNetName(pad.netName);
+                    const fontPx = Math.max(8, Math.min(11, 7 + vp.zoom * 3));
+                    const offY = hh + fontPx * 0.85 + 2;
+                    this.drawOutlinedText(ctx, netLabel, pp.x, pp.y + offY, '#D8E8F8', '#0A1018', fontPx);
+                }
             }
         }
-        ctx.fillStyle = dimFp ? this.withAlpha(PcbColors.REFDES, dimAlpha) : PcbColors.REFDES;
-        ctx.font = `${Math.max(9, 10 * vp.zoom)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText(fp.refDes, origin.x, origin.y - 18 * vp.zoom);
+        const refFont = Math.max(12, Math.min(18, 11 + vp.zoom * 6));
+        const labelY = origin.y - Math.max(16, 22 * vp.zoom);
+        this.drawOutlinedText(ctx, fp.refDes, origin.x, labelY, dimFp ? this.withAlpha(PcbColors.REFDES, dimAlpha) : PcbColors.REFDES, '#05080E', refFont);
+        if (fp.value && fp.value.length > 0 && fp.value !== fp.refDes && vp.zoom >= 0.35) {
+            const valFont = Math.max(10, refFont - 2);
+            this.drawOutlinedText(ctx, fp.value, origin.x, labelY + refFont + 2, dimFp ? this.withAlpha(PcbColors.SILK, dimAlpha) : PcbColors.SILK, '#05080E', valFont);
+        }
     }
-    /** 45°/L 型走线预览（含实时 DRC 违规红色提示） */
+    private fillPadShape(ctx: CanvasRenderingContext2D, shape: PcbPadShape, cx: number, cy: number, hw: number, hh: number, fill: string): void {
+        ctx.fillStyle = fill;
+        if (shape === PcbPadShape.CIRCLE ||
+            (shape === PcbPadShape.OVAL && Math.abs(hw - hh) < 0.5)) {
+            const r = Math.max(hw, hh);
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+            return;
+        }
+        if (shape === PcbPadShape.OVAL) {
+            ctx.beginPath();
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(Math.max(hw, 0.01), Math.max(hh, 0.01));
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.restore();
+            ctx.fill();
+            return;
+        }
+        const rx = shape === PcbPadShape.ROUNDRECT
+            ? Math.min(hw, hh) * 0.35
+            : Math.min(2.5, Math.min(hw, hh) * 0.2);
+        this.fillRoundRect(ctx, cx - hw, cy - hh, hw * 2, hh * 2, rx, fill);
+    }
+    private strokePadShape(ctx: CanvasRenderingContext2D, shape: PcbPadShape, cx: number, cy: number, hw: number, hh: number): void {
+        if (shape === PcbPadShape.CIRCLE ||
+            (shape === PcbPadShape.OVAL && Math.abs(hw - hh) < 0.5)) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.max(hw, hh), 0, Math.PI * 2);
+            ctx.stroke();
+            return;
+        }
+        if (shape === PcbPadShape.OVAL) {
+            ctx.beginPath();
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(Math.max(hw, 0.01), Math.max(hh, 0.01));
+            ctx.arc(0, 0, 1, 0, Math.PI * 2);
+            ctx.restore();
+            ctx.stroke();
+            return;
+        }
+        const rx = shape === PcbPadShape.ROUNDRECT
+            ? Math.min(hw, hh) * 0.35
+            : Math.min(2.5, Math.min(hw, hh) * 0.2);
+        this.strokeRoundRect(ctx, cx - hw, cy - hh, hw * 2, hh * 2, rx);
+    }
+    /** DRC 违规定位标记 */
+    private drawDrcMarkers(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
+        const violations = this.getEditor().getLastDrcViolations();
+        if (violations.length === 0)
+            return;
+        for (let i = 0; i < violations.length; i++) {
+            const v = violations[i];
+            if (!v.position)
+                continue;
+            const p = this.worldToScreenPt(v.position, vp);
+            const r = Math.max(5, 7 * Math.min(vp.zoom, 2));
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,60,60,0.35)';
+            ctx.fill();
+            ctx.strokeStyle = PcbColors.DRC_ERROR;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(p.x - r * 0.45, p.y - r * 0.45);
+            ctx.lineTo(p.x + r * 0.45, p.y + r * 0.45);
+            ctx.moveTo(p.x + r * 0.45, p.y - r * 0.45);
+            ctx.lineTo(p.x - r * 0.45, p.y + r * 0.45);
+            ctx.stroke();
+        }
+    }
+    /** 高对比描边文字（深底描边 + 亮色填充） */
+    private drawOutlinedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, fill: string, stroke: string, fontPx: number): void {
+        if (text.length === 0)
+            return;
+        ctx.font = `bold ${fontPx}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(2.5, fontPx * 0.22);
+        ctx.strokeStyle = stroke;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(text, x, y);
+        ctx.fillStyle = fill;
+        ctx.fillText(text, x, y);
+    }
+    private shortNetName(name: string): string {
+        if (name.length <= 8)
+            return name;
+        return `${name.substring(0, 7)}…`;
+    }
+    private fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string): void {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.lineTo(x + w - rr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+        ctx.lineTo(x + w, y + h - rr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+        ctx.lineTo(x + rr, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+        ctx.lineTo(x, y + rr);
+        ctx.quadraticCurveTo(x, y, x + rr, y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+    }
+    private strokeRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.lineTo(x + w - rr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+        ctx.lineTo(x + w, y + h - rr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+        ctx.lineTo(x + rr, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+        ctx.lineTo(x, y + rr);
+        ctx.quadraticCurveTo(x, y, x + rr, y);
+        ctx.closePath();
+        ctx.stroke();
+    }
+    /** 按当前拐角模式绘制走线预览（含实时 DRC 违规红色提示） */
     private drawRoutePreview(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState, start: Point2D, end: Point2D): void {
-        const path = routeOrtho45Points(start, end);
+        const mode = this.getEditor().getRouteCornerMode();
+        const path = routeByCornerMode(start, end, mode);
         const violating = this.getEditor().isRoutePreviewViolating();
         if (violating) {
             ctx.strokeStyle = PcbColors.DRC_ERROR;
             ctx.lineWidth = 3;
             ctx.setLineDash([]);
-            // 错误光晕
             ctx.shadowColor = 'rgba(255, 50, 50, 0.5)';
             ctx.shadowBlur = 8;
         }
@@ -929,6 +1661,8 @@ export class PcbCanvas extends ViewPU {
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
         }
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
         const p0 = this.worldToScreenPt(path[0], vp);
         ctx.moveTo(p0.x, p0.y);
@@ -941,13 +1675,31 @@ export class PcbCanvas extends ViewPU {
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
     }
-    /** 差分对走线预览 */
+    /** 差分对预览 + 蛇形等长预览 + 等长读数 */
     private drawDiffPairPreview(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState, ds: import('pcb_editor').DiffRouteState): void {
-        const pathP: Point2D[] = [ds.startP, ds.previewP];
-        const pathN: Point2D[] = [ds.startN, ds.previewN];
+        const mode = this.getEditor().getRouteCornerMode();
+        let pathP: Point2D[] = routeByCornerMode(ds.startP, ds.previewP, mode);
+        let pathN: Point2D[] = routeByCornerMode(ds.startN, ds.previewN, mode);
+        const doc = this.getEditor().getDocument();
+        let tol = 20;
+        if (doc) {
+            for (const dp of doc.diffPairs) {
+                if (dp.netIdP === ds.netIdP || dp.netIdN === ds.netIdN ||
+                    dp.netIdP === ds.netIdN || dp.netIdN === ds.netIdP) {
+                    tol = dp.lengthTolMil;
+                    break;
+                }
+            }
+            const existP = sumTrackLengthForNet(doc, ds.netIdP);
+            const existN = sumTrackLengthForNet(doc, ds.netIdN);
+            const matched = matchDiffPairLengths(pathP, pathN, existP, existN, tol, ds.gap);
+            pathP = matched[0];
+            pathN = matched[1];
+        }
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 3]);
-        // P 线 (蓝色)
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.strokeStyle = '#4488FF';
         ctx.beginPath();
         for (let k = 0; k < pathP.length; k++) {
@@ -958,7 +1710,6 @@ export class PcbCanvas extends ViewPU {
                 ctx.lineTo(sp.x, sp.y);
         }
         ctx.stroke();
-        // N 线 (品红)
         ctx.strokeStyle = '#FF44AA';
         ctx.beginPath();
         for (let k = 0; k < pathN.length; k++) {
@@ -969,26 +1720,156 @@ export class PcbCanvas extends ViewPU {
                 ctx.lineTo(sp.x, sp.y);
         }
         ctx.stroke();
-        // 间隙标注
-        ctx.setLineDash([2, 6]);
-        ctx.strokeStyle = 'rgba(200,200,200,0.5)';
-        ctx.lineWidth = 0.5;
-        const midPtP: Point2D = {
-            x: (ds.startP.x + ds.previewP.x) / 2,
-            y: (ds.startP.y + ds.previewP.y) / 2
-        };
-        const midPtN: Point2D = {
-            x: (ds.startN.x + ds.previewN.x) / 2,
-            y: (ds.startN.y + ds.previewN.y) / 2
-        };
-        const midP = this.worldToScreenPt(midPtP, vp);
-        const midN = this.worldToScreenPt(midPtN, vp);
-        ctx.beginPath();
-        ctx.moveTo(midP.x, midP.y);
-        ctx.lineTo(midN.x, midN.y);
-        ctx.stroke();
         ctx.setLineDash([]);
-        ctx.lineWidth = 1;
+        let lenP = 0;
+        let lenN = 0;
+        for (let i = 1; i < pathP.length; i++) {
+            lenP += Math.hypot(pathP[i].x - pathP[i - 1].x, pathP[i].y - pathP[i - 1].y);
+        }
+        for (let i = 1; i < pathN.length; i++) {
+            lenN += Math.hypot(pathN[i].x - pathN[i - 1].x, pathN[i].y - pathN[i - 1].y);
+        }
+        let totalP = lenP;
+        let totalN = lenN;
+        if (doc) {
+            totalP += sumTrackLengthForNet(doc, ds.netIdP);
+            totalN += sumTrackLengthForNet(doc, ds.netIdN);
+        }
+        const delta = Math.abs(totalP - totalN);
+        const midP = this.worldToScreenPt(ds.previewP, vp);
+        ctx.fillStyle = 'rgba(10,14,22,0.8)';
+        ctx.fillRect(midP.x + 6, midP.y - 34, 210, 52);
+        ctx.fillStyle = '#88BBFF';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`P ${totalP.toFixed(0)} mil`, midP.x + 12, midP.y - 18);
+        ctx.fillStyle = '#FF88CC';
+        ctx.fillText(`N ${totalN.toFixed(0)} mil`, midP.x + 12, midP.y - 4);
+        ctx.fillStyle = delta > tol ? '#FF8888' : '#88FFAA';
+        ctx.fillText(`ΔL ${delta.toFixed(0)}≤${tol}  gap ${ds.gap} 蛇形`, midP.x + 12, midP.y + 12);
+    }
+    /**
+     * 真负片阻焊：evenodd 挖空开窗，保留下方铜箔（不用 destination-out，避免打穿铜层）
+     */
+    private drawMaskAndPasteLayers(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
+        const showFMask = isLayerVisible(doc, PcbLayerId.F_MASK);
+        const showBMask = isLayerVisible(doc, PcbLayerId.B_MASK);
+        const showFPaste = isLayerVisible(doc, PcbLayerId.F_PASTE);
+        const showBPaste = isLayerVisible(doc, PcbLayerId.B_PASTE);
+        if (!showFMask && !showBMask && !showFPaste && !showBPaste)
+            return;
+        const maskClear = 6 * vp.zoom;
+        const pasteShrink = 2 * vp.zoom;
+        const outline = doc.boardOutline.points;
+        if (outline.length < 3)
+            return;
+        if (showFMask || showBMask) {
+            const maskAlpha = getLayerOpacity(doc, showFMask ? PcbLayerId.F_MASK : PcbLayerId.B_MASK);
+            ctx.beginPath();
+            // 外轮廓（顺时针）
+            const p0 = this.worldToScreenPt(outline[0], vp);
+            ctx.moveTo(p0.x, p0.y);
+            for (let i = 1; i < outline.length; i++) {
+                const p = this.worldToScreenPt(outline[i], vp);
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.closePath();
+            // 开窗作为子路径（逆时针弧 → evenodd/nonzero 挖空）
+            for (const fp of doc.footprints) {
+                const topSide = fp.layer === PcbLayerId.F_CU;
+                if ((topSide && !showFMask) || (!topSide && !showBMask))
+                    continue;
+                for (const pad of fp.pads) {
+                    const pp = this.localToScreen(pad.pos, fp, vp);
+                    const hw = Math.max(2, pad.size.x * vp.zoom / 2) + maskClear;
+                    const hh = Math.max(2, pad.size.y * vp.zoom / 2) + maskClear;
+                    if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+                        const r = Math.max(hw, hh);
+                        ctx.moveTo(pp.x + r, pp.y);
+                        ctx.arc(pp.x, pp.y, r, 0, -Math.PI * 2, true);
+                    }
+                    else {
+                        // 矩形孔：逆时针
+                        ctx.moveTo(pp.x - hw, pp.y - hh);
+                        ctx.lineTo(pp.x - hw, pp.y + hh);
+                        ctx.lineTo(pp.x + hw, pp.y + hh);
+                        ctx.lineTo(pp.x + hw, pp.y - hh);
+                        ctx.closePath();
+                    }
+                }
+            }
+            for (const via of doc.vias) {
+                const p = this.worldToScreenPt(via.position, vp);
+                const r = Math.max(3, via.diameter * vp.zoom / 2) + maskClear;
+                ctx.moveTo(p.x + r, p.y);
+                ctx.arc(p.x, p.y, r, 0, -Math.PI * 2, true);
+            }
+            ctx.fillStyle = this.withAlpha('#1B5E20', Math.min(0.55, Math.max(0.28, maskAlpha)));
+            // evenodd：开窗透出下方铜
+            try {
+                ctx.fill('evenodd');
+            }
+            catch (_e) {
+                ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(255, 180, 80, 0.4)';
+            ctx.lineWidth = 1;
+            for (const fp of doc.footprints) {
+                const topSide = fp.layer === PcbLayerId.F_CU;
+                if ((topSide && !showFMask) || (!topSide && !showBMask))
+                    continue;
+                for (const pad of fp.pads) {
+                    const pp = this.localToScreen(pad.pos, fp, vp);
+                    const hw = Math.max(2, pad.size.x * vp.zoom / 2) + maskClear;
+                    const hh = Math.max(2, pad.size.y * vp.zoom / 2) + maskClear;
+                    if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+                        ctx.beginPath();
+                        ctx.arc(pp.x, pp.y, Math.max(hw, hh), 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    else {
+                        this.strokeRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 2);
+                    }
+                }
+            }
+        }
+        if (showFPaste || showBPaste) {
+            this.drawPasteOpenings(ctx, doc, vp, showFPaste, showBPaste, pasteShrink);
+        }
+    }
+    private drawPasteOpenings(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState, showF: boolean, showB: boolean, pasteShrink: number): void {
+        for (const fp of doc.footprints) {
+            const topSide = fp.layer === PcbLayerId.F_CU;
+            if ((topSide && !showF) || (!topSide && !showB))
+                continue;
+            for (const pad of fp.pads) {
+                if (pad.type !== PcbPadType.SMD)
+                    continue;
+                const pp = this.localToScreen(pad.pos, fp, vp);
+                const hw = Math.max(1.5, pad.size.x * vp.zoom / 2 - pasteShrink);
+                const hh = Math.max(1.5, pad.size.y * vp.zoom / 2 - pasteShrink);
+                this.fillRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 1.5, 'rgba(220, 220, 230, 0.78)');
+                ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+                ctx.lineWidth = 1;
+                this.strokeRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 1.5);
+            }
+        }
+    }
+    /** 视口裁剪：点是否在可见范围内 */
+    private ptInView(w: Point2D, vp: import('common').ViewportState, margin: number): boolean {
+        const m = Math.max(20, margin);
+        const tl = this.getEditor().screenToWorld(0, 0);
+        const br = this.getEditor().screenToWorld(this.viewWidth, this.viewHeight);
+        const x1 = Math.min(tl.x, br.x) - m;
+        const x2 = Math.max(tl.x, br.x) + m;
+        const y1 = Math.min(tl.y, br.y) - m;
+        const y2 = Math.max(tl.y, br.y) + m;
+        return w.x >= x1 && w.x <= x2 && w.y >= y1 && w.y <= y2;
+    }
+    private segInView(a: Point2D, b: Point2D, vp: import('common').ViewportState, margin: number): boolean {
+        if (this.ptInView(a, vp, margin) || this.ptInView(b, vp, margin))
+            return true;
+        const mid: Point2D = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        return this.ptInView(mid, vp, margin);
     }
     private drawSelectionRect(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
         const s = this.selectRectStart;
@@ -1040,6 +1921,8 @@ export class PcbCanvas extends ViewPU {
     private localToScreen(local: Point2D, fp: PcbFootprintInst, vp: import('common').ViewportState): Point2D {
         let lx = local.x;
         let ly = local.y;
+        if (fp.mirrored)
+            lx = -lx;
         if (fp.rotation === 90) {
             const t = lx;
             lx = -ly;
@@ -1114,21 +1997,26 @@ export class PcbCanvas extends ViewPU {
             Canvas.onTouch((event: TouchEvent) => {
                 this.isTouchActive = true;
                 if (event.type === TouchType.Down && event.touches.length === 1) {
+                    this.lastTouchX = event.touches[0].x;
+                    this.lastTouchY = event.touches[0].y;
                     this.handlePointerDown(event.touches[0].x, event.touches[0].y, false, false, false);
                 }
                 else if (event.type === TouchType.Down && event.touches.length === 2) {
                     this.panning = true;
                 }
                 else if (event.type === TouchType.Move && event.touches.length === 1) {
+                    this.lastTouchX = event.touches[0].x;
+                    this.lastTouchY = event.touches[0].y;
                     this.handlePointerMove(event.touches[0].x, event.touches[0].y);
                 }
                 else if (event.type === TouchType.Up) {
-                    this.handlePointerUp(event.touches[0]?.x ?? 0, event.touches[0]?.y ?? 0);
+                    const ux = event.touches.length > 0 ? event.touches[0].x : this.lastTouchX;
+                    const uy = event.touches.length > 0 ? event.touches[0].y : this.lastTouchY;
+                    this.handlePointerUp(ux, uy);
                     setTimeout(() => { this.isTouchActive = false; }, 300);
                 }
             });
             Canvas.focusable(true);
-            Canvas.defaultFocus(true);
         }, Canvas);
         Canvas.pop();
         Stack.pop();
@@ -1136,14 +2024,148 @@ export class PcbCanvas extends ViewPU {
     // ═══════════════════════════════════════════════════
     //  Input handling
     // ═══════════════════════════════════════════════════
+    private handle3dClick(sx: number, sy: number): void {
+        const editor = this.getEditor();
+        const doc = editor.getDocument();
+        if (!doc)
+            return;
+        const ap = editor.getAppearance();
+        const params = this.build3dViewParams();
+        if (ap.view3dMeasure === true) {
+            let yawDeg = ap.view3dYawDeg;
+            let pitchDeg = ap.view3dPitchDeg;
+            if (!(yawDeg >= -10000 && yawDeg <= 10000))
+                yawDeg = 35;
+            if (!(pitchDeg >= 8 && pitchDeg <= 88))
+                pitchDeg = 55;
+            const yaw = yawDeg * Math.PI / 180;
+            const pitch = pitchDeg * Math.PI / 180;
+            const c = boardCenter(doc);
+            const zoom = Math.max(editor.getViewport().zoom, 0.05);
+            const boardH = Math.max(42, Math.min(72, 52 * Math.min(zoom, 1.4) / Math.max(zoom, 0.6)));
+            const ox = this.viewWidth / 2 + editor.getViewport().panOffset.x;
+            const oy = this.viewHeight / 2 + editor.getViewport().panOffset.y;
+            const wpt = unprojectBoardOrtho(sx, sy, c.x, c.y, yaw, pitch, zoom, ox, oy, boardH);
+            if (this.measure3dPts.length >= 2) {
+                this.measure3dPts = [];
+            }
+            const nextPts: Point2D[] = [];
+            for (let mi = 0; mi < this.measure3dPts.length; mi++) {
+                nextPts.push(this.measure3dPts[mi]);
+            }
+            nextPts.push(wpt);
+            this.measure3dPts = nextPts;
+            if (this.measure3dPts.length === 1) {
+                this.onStatusChange('3D 测量：已取点 1，再点第二点');
+            }
+            else if (this.measure3dPts.length >= 2) {
+                const d = dist3(this.measure3dPts[0], this.measure3dPts[1]);
+                this.onStatusChange(`3D 测距 ${d.toFixed(1)} mil (${milToMm(d).toFixed(2)} mm)`);
+            }
+            this.scheduleRedraw();
+            return;
+        }
+        const hit = Pcb3dRenderer.pick(doc, params, sx, sy);
+        if (!hit) {
+            editor.clearSelection();
+            this.syncSelectionFromEditor();
+            this.onStatusChange('3D：未选中对象');
+            return;
+        }
+        if (hit.kind === 'footprint') {
+            editor.selectFootprint(hit.id, false);
+            this.onStatusChange(`3D 选中封装`);
+        }
+        else if (hit.kind === 'track') {
+            editor.selectTrack(hit.id);
+            this.onStatusChange(`3D 选中走线`);
+        }
+        else {
+            editor.selectVia(hit.id);
+            this.onStatusChange(`3D 选中过孔`);
+        }
+        this.syncSelectionFromEditor();
+        tracePcb3d('PICK', `${hit.kind}:${hit.id}`);
+    }
     private handlePointerDown(sx: number, sy: number, rightBtn: boolean, middleBtn: boolean, ctrlKey: boolean): void {
         this.pointerDown = true;
         this.mouseX = sx;
         this.mouseY = sy;
         const editor = this.getEditor();
         const world = editor.screenToWorld(sx, sy);
-        // 中键或右键(非走线时) → 平移
-        if (middleBtn || (rightBtn && !editor.isRouteActive())) {
+        const shiftKey = (this.modifierKeys & 2) !== 0;
+        // ─── 3D 预览模式：旋转/平移/缩放；单击选中或测量 ───
+        if (editor.getAppearance().show3d) {
+            if (middleBtn || rightBtn || ctrlKey) {
+                this.panning = true;
+                this.orbiting3d = false;
+                this.panLastX = sx;
+                this.panLastY = sy;
+                tracePcb3d('PAN_START', `at=${Math.round(sx)},${Math.round(sy)}`);
+                return;
+            }
+            // 双击复位视角
+            const now = Date.now();
+            if (now - this.last3dClickMs < 350) {
+                this.last3dClickMs = 0;
+                this.pointerDown = false;
+                editor.resetView3d();
+                this.measure3dPts = [];
+                this.onStatusChange('3D 视角已复位');
+                this.scheduleRedraw();
+                return;
+            }
+            this.last3dClickMs = now;
+            this.orbiting3d = true;
+            this.orbitMoved3d = false;
+            this.orbitDownX = sx;
+            this.orbitDownY = sy;
+            this.panning = false;
+            this.orbitLastX = sx;
+            this.orbitLastY = sy;
+            this.orbitLogAccYaw = 0;
+            this.orbitLogAccPitch = 0;
+            this.orbitLogLastMs = now;
+            tracePcb3d('ORBIT_START', `yaw=${editor.getAppearance().view3dYawDeg.toFixed(1)} ` +
+                `pitch=${editor.getAppearance().view3dPitchDeg.toFixed(1)}`);
+            return;
+        }
+        // 右键提交多边形敷铜 / 板框（必须先于平移）
+        if (rightBtn && this.toolMode === PcbToolMode.ZONE_POLY) {
+            const z = editor.commitZonePoly();
+            this.pointerDown = false;
+            this.lastPolyClickMs = 0;
+            this.lastPolyClickWorld = null;
+            if (z) {
+                this.onDocumentChanged();
+                this.onStatusChange(`已创建多边形覆铜 ${z.netName}`);
+            }
+            else {
+                editor.cancelZonePoly();
+                this.onStatusChange('覆铜多边形已取消（至少 3 点）');
+            }
+            this.scheduleRedraw();
+            return;
+        }
+        if (rightBtn && this.toolMode === PcbToolMode.OUTLINE) {
+            const ok = editor.commitOutlineEdit();
+            this.pointerDown = false;
+            this.lastPolyClickMs = 0;
+            this.lastPolyClickWorld = null;
+            if (ok) {
+                this.onDocumentChanged();
+                this.onStatusChange('板框已更新');
+            }
+            else {
+                editor.cancelOutlineEdit();
+                this.onStatusChange('板框编辑取消（至少 3 点）');
+            }
+            this.scheduleRedraw();
+            return;
+        }
+        // 中键，或右键(非走线/非多边形工具) → 平移
+        if (middleBtn || (rightBtn && !editor.isRouteActive() &&
+            this.toolMode !== PcbToolMode.ZONE_POLY && this.toolMode !== PcbToolMode.OUTLINE)) {
             this.panning = true;
             this.panLastX = sx;
             this.panLastY = sy;
@@ -1166,35 +2188,6 @@ export class PcbCanvas extends ViewPU {
                 return;
             }
         }
-        // 右键提交多边形敷铜 / 板框
-        if (rightBtn && this.toolMode === PcbToolMode.ZONE_POLY) {
-            const z = editor.commitZonePoly();
-            this.pointerDown = false;
-            if (z) {
-                this.onDocumentChanged();
-                this.onStatusChange(`已创建多边形覆铜 ${z.netName}`);
-            }
-            else {
-                editor.cancelZonePoly();
-                this.onStatusChange('覆铜多边形已取消（至少 3 点）');
-            }
-            this.scheduleRedraw();
-            return;
-        }
-        if (rightBtn && this.toolMode === PcbToolMode.OUTLINE) {
-            const ok = editor.commitOutlineEdit();
-            this.pointerDown = false;
-            if (ok) {
-                this.onDocumentChanged();
-                this.onStatusChange('板框已更新');
-            }
-            else {
-                editor.cancelOutlineEdit();
-                this.onStatusChange('板框编辑取消（至少 3 点）');
-            }
-            this.scheduleRedraw();
-            return;
-        }
         // Ctrl+左键 → 平移
         if (ctrlKey) {
             this.panning = true;
@@ -1202,7 +2195,7 @@ export class PcbCanvas extends ViewPU {
             this.panLastY = sy;
             return;
         }
-        // 走线模式（差分对优先）
+        // 走线模式（差分对优先）；已有起点则提交下一段
         if (this.toolMode === PcbToolMode.ROUTE) {
             if (editor.isDiffRouteActive()) {
                 const result = editor.commitDiffRoute(world);
@@ -1211,10 +2204,24 @@ export class PcbCanvas extends ViewPU {
                     this.onStatusChange(`差分对已布线 (${result} 段) — 继续点击绘制下一段`);
                 }
             }
+            else if (editor.isRouteActive()) {
+                const track = editor.commitRoute(world);
+                if (track) {
+                    this.onDocumentChanged();
+                    this.onStatusChange('走线已添加 — 继续点击绘制下一段');
+                }
+                else if (editor.isRoutePreviewViolating()) {
+                    this.onStatusChange('间距违规，无法提交');
+                }
+                else {
+                    this.onStatusChange('走线过短或跨网络 — 继续移动');
+                }
+            }
             else {
                 const snapped = editor.startRoute(world);
                 this.lastSnapPoint = snapped;
                 this.onStatusChange('点击终点绘制走线 — 右键取消');
+                tracePcbOp('ROUTE_START', `at=${Math.round(snapped.x)},${Math.round(snapped.y)} layer=${editor.getActiveLayer()}`);
             }
             this.scheduleRedraw();
             return;
@@ -1223,9 +2230,12 @@ export class PcbCanvas extends ViewPU {
         if (this.toolMode === PcbToolMode.VIA) {
             const snapped = editor.snapToPadOrGrid(world);
             const net = editor.findNetAtPoint(snapped);
-            editor.addVia(snapped, net?.netId, net?.netName);
+            const span = editor.getViaSpan();
+            editor.addVia(snapped, net?.netId, net?.netName, editor.getViaKind(), span[0], span[1]);
             this.onDocumentChanged();
-            this.onStatusChange('过孔已放置');
+            this.onStatusChange(`过孔已放置 (${editor.getViaKind()})`);
+            tracePcbOp('VIA_ADD', `at=${Math.round(snapped.x)},${Math.round(snapped.y)} kind=${editor.getViaKind()} ` +
+                `net=${net?.netName ?? '(none)'}`);
             this.pointerDown = false;
             this.scheduleRedraw();
             return;
@@ -1263,22 +2273,30 @@ export class PcbCanvas extends ViewPU {
         }
         // 多边形敷铜
         if (this.toolMode === PcbToolMode.ZONE_POLY) {
+            if (this.tryCommitPolyDoubleClick(world, true)) {
+                return;
+            }
             if (editor.getZonePolyPreview().length === 0) {
                 editor.beginZonePoly();
             }
             editor.addZonePolyPoint(world);
-            this.onStatusChange(`敷铜多边形 ${editor.getZonePolyPreview().length} 点 — 双击或 Esc 结束`);
+            this.rememberPolyClick(world);
+            this.onStatusChange(`敷铜多边形 ${editor.getZonePolyPreview().length} 点 — 右键或双击提交`);
             this.pointerDown = false;
             this.scheduleRedraw();
             return;
         }
         // 板框编辑
         if (this.toolMode === PcbToolMode.OUTLINE) {
+            if (this.tryCommitPolyDoubleClick(world, false)) {
+                return;
+            }
             if (editor.getOutlinePreview().length === 0) {
                 editor.beginOutlineEdit();
             }
             editor.addOutlinePoint(world);
-            this.onStatusChange(`板框 ${editor.getOutlinePreview().length} 点 — 右键提交`);
+            this.rememberPolyClick(world);
+            this.onStatusChange(`板框 ${editor.getOutlinePreview().length} 点 — 右键或双击提交`);
             this.pointerDown = false;
             this.scheduleRedraw();
             return;
@@ -1311,10 +2329,7 @@ export class PcbCanvas extends ViewPU {
             return;
         }
         // SELECT 模式 — 尝试命中
-        const hit = editor.hitTestFootprint(world.x, world.y) ??
-            (editor.hitTestVia(world.x, world.y) ? undefined : undefined);
-        // 先尝试点击选择
-        editor.selectAt(world.x, world.y, false);
+        editor.selectAt(world.x, world.y, shiftKey);
         const sel = editor.getSelection();
         const hasSelection = sel.footprintIds.length > 0 || sel.trackIds.length > 0 ||
             sel.viaIds.length > 0 || sel.zoneIds.length > 0;
@@ -1323,6 +2338,7 @@ export class PcbCanvas extends ViewPU {
             this.dragLastWorld = { x: world.x, y: world.y };
             this.dragStartWorld = { x: world.x, y: world.y };
             this.draggingItems = true;
+            editor.beginMoveOperation();
         }
         else {
             // 空处：开始框选
@@ -1333,6 +2349,51 @@ export class PcbCanvas extends ViewPU {
         }
         this.scheduleRedraw();
     }
+    private rememberPolyClick(world: Point2D): void {
+        this.lastPolyClickMs = Date.now();
+        this.lastPolyClickWorld = { x: world.x, y: world.y };
+    }
+    /** 双击提交多边形覆铜或板框；返回 true 表示已处理 */
+    private tryCommitPolyDoubleClick(world: Point2D, isZone: boolean): boolean {
+        const now = Date.now();
+        const prev = this.lastPolyClickWorld;
+        if (!prev || now - this.lastPolyClickMs > 400) {
+            return false;
+        }
+        const dx = world.x - prev.x;
+        const dy = world.y - prev.y;
+        if (Math.sqrt(dx * dx + dy * dy) > 8) {
+            return false;
+        }
+        const editor = this.getEditor();
+        this.pointerDown = false;
+        this.lastPolyClickMs = 0;
+        this.lastPolyClickWorld = null;
+        if (isZone) {
+            const z = editor.commitZonePoly();
+            if (z) {
+                this.onDocumentChanged();
+                this.onStatusChange(`已创建多边形覆铜 ${z.netName}`);
+            }
+            else {
+                editor.cancelZonePoly();
+                this.onStatusChange('覆铜多边形已取消（至少 3 点）');
+            }
+        }
+        else {
+            const ok = editor.commitOutlineEdit();
+            if (ok) {
+                this.onDocumentChanged();
+                this.onStatusChange('板框已更新');
+            }
+            else {
+                editor.cancelOutlineEdit();
+                this.onStatusChange('板框编辑取消（至少 3 点）');
+            }
+        }
+        this.scheduleRedraw();
+        return true;
+    }
     private handlePointerMove(sx: number, sy: number): void {
         this.mouseX = sx;
         this.mouseY = sy;
@@ -1340,6 +2401,33 @@ export class PcbCanvas extends ViewPU {
         const world = editor.screenToWorld(sx, sy);
         this.worldMouseX = world.x;
         this.worldMouseY = world.y;
+        // 3D 轨道旋转
+        if (this.orbiting3d && this.pointerDown) {
+            const dx = sx - this.orbitLastX;
+            const dy = sy - this.orbitLastY;
+            this.orbitLastX = sx;
+            this.orbitLastY = sy;
+            if (Math.abs(sx - this.orbitDownX) > 4 || Math.abs(sy - this.orbitDownY) > 4) {
+                this.orbitMoved3d = true;
+            }
+            // 像素 → 角度：水平偏航、竖直俯仰
+            const dYaw = dx * 0.35;
+            const dPitch = dy * 0.35;
+            editor.orbit3d(dYaw, dPitch);
+            this.orbitLogAccYaw += dYaw;
+            this.orbitLogAccPitch += dPitch;
+            const now = Date.now();
+            if (now - this.orbitLogLastMs > 400) {
+                const ap = editor.getAppearance();
+                tracePcb3d('ORBIT', `Δyaw=${this.orbitLogAccYaw.toFixed(1)} Δpitch=${this.orbitLogAccPitch.toFixed(1)} ` +
+                    `→ yaw=${ap.view3dYawDeg.toFixed(1)} pitch=${ap.view3dPitchDeg.toFixed(1)}`);
+                this.orbitLogAccYaw = 0;
+                this.orbitLogAccPitch = 0;
+                this.orbitLogLastMs = now;
+            }
+            this.scheduleRedraw();
+            return;
+        }
         // 平移
         if (this.panning && this.pointerDown) {
             editor.panBy(sx - this.panLastX, sy - this.panLastY);
@@ -1388,18 +2476,24 @@ export class PcbCanvas extends ViewPU {
     private handlePointerUp(sx: number, sy: number): void {
         const editor = this.getEditor();
         const world = editor.screenToWorld(sx, sy);
-        // 走线提交（差分对优先）
+        if (editor.getAppearance().show3d) {
+            if (this.orbiting3d && !this.orbitMoved3d) {
+                this.handle3dClick(sx, sy);
+            }
+            else if (this.orbiting3d) {
+                const ap = editor.getAppearance();
+                tracePcb3d('ORBIT_END', `yaw=${ap.view3dYawDeg.toFixed(1)} pitch=${ap.view3dPitchDeg.toFixed(1)} ` +
+                    `accΔ=${this.orbitLogAccYaw.toFixed(1)},${this.orbitLogAccPitch.toFixed(1)}`);
+            }
+            this.pointerDown = false;
+            this.panning = false;
+            this.orbiting3d = false;
+            this.orbitMoved3d = false;
+            this.scheduleRedraw();
+            return;
+        }
+        // 走线提交：差分对与普通走线均在 pointerDown 提交，Up 仅收尾状态
         if (this.toolMode === PcbToolMode.ROUTE) {
-            if (editor.isDiffRouteActive()) {
-                // 差分对在 pointerDown 时提交，此处不处理
-            }
-            else if (editor.isRouteActive()) {
-                const track = editor.commitRoute(world);
-                if (track) {
-                    this.onDocumentChanged();
-                    this.onStatusChange('走线已添加 — 继续点击绘制下一段');
-                }
-            }
             this.pointerDown = false;
             this.scheduleRedraw();
             return;
@@ -1411,7 +2505,7 @@ export class PcbCanvas extends ViewPU {
             if (dx > 3 || dy > 3) {
                 const ws = editor.screenToWorld(this.selectRectStart.x, this.selectRectStart.y);
                 const we = editor.screenToWorld(sx, sy);
-                editor.selectRect(ws.x, ws.y, we.x, we.y, false);
+                editor.selectRect(ws.x, ws.y, we.x, we.y, (this.modifierKeys & 2) !== 0);
                 this.syncSelectionFromEditor();
             }
             this.selectingRect = false;
@@ -1427,6 +2521,7 @@ export class PcbCanvas extends ViewPU {
         }
         this.pointerDown = false;
         this.panning = false;
+        this.orbiting3d = false;
         this.draggingItems = false;
         this.lastSnapPoint = null;
         this.scheduleRedraw();
@@ -1441,6 +2536,7 @@ export class PcbCanvas extends ViewPU {
         this.worldMouseX = world.x;
         this.worldMouseY = world.y;
         editor.setHoverWorld(world);
+        this.onHoverNetChange(editor.getHoverNetName());
     }
     private handleKeyEvent(event: KeyEvent): void {
         if (event.type === KeyType.Down) {
@@ -1448,10 +2544,19 @@ export class PcbCanvas extends ViewPU {
                 this.modifierKeys |= 1;
                 return;
             }
+            // Shift Left/Right
+            if (event.keyCode === 2047 || event.keyCode === 2048 || event.keyCode === 16) {
+                this.modifierKeys |= 2;
+                return;
+            }
         }
         if (event.type === KeyType.Up) {
             if (event.keyCode === 2021 || event.keyCode === 2022) {
                 this.modifierKeys &= ~1;
+                return;
+            }
+            if (event.keyCode === 2047 || event.keyCode === 2048 || event.keyCode === 16) {
+                this.modifierKeys &= ~2;
                 return;
             }
         }
@@ -1529,16 +2634,53 @@ export class PcbCanvas extends ViewPU {
             this.scheduleRedraw();
             return;
         }
-        // 布线中按 V 切换到对面铜层并插过孔
-        if (kt === 'v' && this.toolMode === PcbToolMode.ROUTE) {
-            if (editor.isRouteActive()) {
+        // 工具快捷键（非 Ctrl）
+        if (!ctrl) {
+            if (kt === 's') {
+                this.onToolModeRequest(PcbToolMode.SELECT);
+                this.onStatusChange('工具: 选择');
+                return;
+            }
+            if (kt === 'x') {
+                this.onToolModeRequest(PcbToolMode.ROUTE);
+                this.onStatusChange('工具: 走线');
+                return;
+            }
+            if (kt === 'z') {
+                this.onToolModeRequest(PcbToolMode.ZONE_POLY);
+                this.onStatusChange('工具: 多边形覆铜');
+                return;
+            }
+            if (kt === 'o') {
+                this.onToolModeRequest(PcbToolMode.OUTLINE);
+                this.onStatusChange('工具: 板框');
+                return;
+            }
+            if (kt === 'm') {
+                this.onToolModeRequest(PcbToolMode.MEASURE);
+                this.onStatusChange('工具: 测量');
+                return;
+            }
+            if (kt === 'p') {
+                this.onToolModeRequest(PcbToolMode.PLACE_FP);
+                this.onStatusChange('工具: 放置封装');
+                return;
+            }
+        }
+        // 布线中按 V 切换到对面铜层并插过孔；非布线时切过孔工具
+        if (kt === 'v' && !ctrl) {
+            if (this.toolMode === PcbToolMode.ROUTE && editor.isRouteActive()) {
                 const cur = editor.getActiveLayer();
                 const next = cur === PcbLayerId.F_CU ? PcbLayerId.B_CU : PcbLayerId.F_CU;
                 editor.switchRouteLayer(next);
+                this.onActiveLayerChange(next);
                 this.onDocumentChanged();
                 this.onStatusChange(`已换层 ${next}（自动过孔）`);
+                this.scheduleRedraw();
+                return;
             }
-            this.scheduleRedraw();
+            this.onToolModeRequest(PcbToolMode.VIA);
+            this.onStatusChange('工具: 过孔');
             return;
         }
         // 按 D 启动/取消差分对布线模式
@@ -1623,12 +2765,40 @@ function isLayerVisible(doc: PcbDocument, layer: PcbLayerId): boolean {
     }
     return true;
 }
+function viaLayerHas(layers: PcbLayerId[], layer: PcbLayerId): boolean {
+    for (const l of layers) {
+        if (l === layer)
+            return true;
+    }
+    return false;
+}
 function getLayerColor(doc: PcbDocument, layer: PcbLayerId): string {
     for (const l of doc.layers) {
         if (l.id === layer)
             return l.color;
     }
-    return layer === PcbLayerId.B_CU ? '#3478C8' : '#C83434';
+    if (layer === PcbLayerId.B_CU)
+        return '#00E676';
+    if (layer === PcbLayerId.IN1_CU)
+        return '#D500F9';
+    if (layer === PcbLayerId.IN2_CU)
+        return '#FF9100';
+    if (layer === PcbLayerId.IN3_CU)
+        return '#651FFF';
+    if (layer === PcbLayerId.IN4_CU)
+        return '#00E5FF';
+    return '#FF1744';
+}
+function getLayerOpacity(doc: PcbDocument, layer: PcbLayerId): number {
+    for (const l of doc.layers) {
+        if (l.id === layer) {
+            const op = l.opacity;
+            if (op !== undefined && op > 0 && op <= 1)
+                return op;
+            return 1;
+        }
+    }
+    return layer === PcbLayerId.B_CU ? 0.78 : 0.92;
 }
 interface SpokeRect {
     x: number;
@@ -1639,7 +2809,7 @@ interface SpokeRect {
 function makeSpoke(center: Point2D, dx: number, dy: number, w: number, h: number): SpokeRect {
     return { x: center.x + dx, y: center.y + dy, w, h };
 }
-/** 生成 L 型走线路径点（兼容保留，优先用 routeOrtho45Points） */
+/** 兼容保留 */
 function routeLPoints(a: Point2D, b: Point2D): Point2D[] {
-    return routeOrtho45Points(a, b);
+    return routeByCornerMode(a, b, 'ortho45');
 }

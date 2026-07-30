@@ -42,10 +42,26 @@ export enum PcbViaKind {
   BURIED = 'buried'
 }
 
+/** 3D 显示模式（Canvas 近似：透视半透明 / 爆炸 / 剖切 / 高度色阶） */
+export enum Pcb3dDisplayMode {
+  REALISTIC = 'realistic',
+  XRAY = 'xray',
+  EXPLODE = 'explode',
+  CUTAWAY = 'cutaway',
+  HEIGHTMAP = 'heightmap'
+}
+
 export enum PcbAppearanceMode {
   OVERLAY = 'overlay',
   ACTIVE_ONLY = 'active_only',
   DIM_INACTIVE = 'dim_inactive'
+}
+
+/** 布线拐角模式 */
+export enum PcbRouteCornerMode {
+  ORTHO90 = 'ortho90',
+  ORTHO45 = 'ortho45',
+  ARC = 'arc'
 }
 
 export enum PcbStackLayerType {
@@ -80,6 +96,8 @@ export interface PcbFootprintDef {
   courtyard: Point2D[];
   /** 可选 3D 高度 (mil)，缺省按封装类型估算 */
   heightMil?: number;
+  /** 绑定的 STEP 模型 id（可选） */
+  model3dId?: string;
 }
 
 /** 板上封装实例 */
@@ -205,6 +223,24 @@ export interface PcbAppearance {
   showRatsnest: boolean;
   showPadNumbers: boolean;
   show3d: boolean;
+  /** 3D 绕竖直轴偏航角（度），左键拖拽旋转 */
+  view3dYawDeg: number;
+  /** 3D 俯仰角（度），约 15–85，避免翻转 */
+  view3dPitchDeg: number;
+  /** 3D 正交投影（工业默认）；false=透视 */
+  view3dOrtho: boolean;
+  /** 3D 显示模式 */
+  view3dDisplayMode: Pcb3dDisplayMode;
+  /** 剖切比例 0~1（沿板框 X 方向） */
+  view3dCutFraction: number;
+  /** 3D 测量模式：点击两点测距 */
+  view3dMeasure: boolean;
+  /** 显示元件干涉预警 */
+  view3dShowInterference: boolean;
+  /** 真 PBR+IBL+MSAA（写实模式） */
+  view3dPbr: boolean;
+  /** MSAA 样本：1 或 4 */
+  view3dMsaa: number;
 }
 
 export interface PcbMetadata {
@@ -224,6 +260,10 @@ export interface PcbDesignRules {
   defaultTrackWidth: number;
   minAnnularRing: number;
   minHoleToHole: number;
+  /** 丝印最小字高 (mil)，约 0.8mm ≈ 31mil */
+  minSilkHeight: number;
+  /** 丝印距焊盘最小间距 (mil)，约 0.2mm ≈ 8mil */
+  silkToPadClearance: number;
 }
 
 export interface PcbDocument {
@@ -257,7 +297,11 @@ export enum PcbDrcRuleType {
   VIA_ANNULAR = 'via_annular',
   PAD_CLEARANCE = 'pad_clearance',
   DIFF_LENGTH = 'diff_length',
-  KEEPOUT = 'keepout'
+  DIFF_GAP = 'diff_gap',
+  KEEPOUT = 'keepout',
+  SILK_PAD = 'silk_pad',
+  SILK_HEIGHT = 'silk_height',
+  EDGE_OPEN = 'edge_open'
 }
 
 export interface PcbDrcViolation {
@@ -285,7 +329,9 @@ export function defaultPcbDesignRules(): PcbDesignRules {
     minViaDrill: 12,
     defaultTrackWidth: 10,
     minAnnularRing: 4,
-    minHoleToHole: 10
+    minHoleToHole: 10,
+    minSilkHeight: 31,
+    silkToPadClearance: 8
   };
 }
 
@@ -312,9 +358,45 @@ export function defaultPcbAppearance(): PcbAppearance {
     dimAlpha: 0.28,
     highlightNetId: '',
     hideZones: false,
-    showRatsnest: true,
-    showPadNumbers: false,
-    show3d: false
+    showRatsnest: false,
+    showPadNumbers: true,
+    show3d: false,
+    view3dYawDeg: 35,
+    view3dPitchDeg: 55,
+    view3dOrtho: true,
+    view3dDisplayMode: Pcb3dDisplayMode.REALISTIC,
+    view3dCutFraction: 0.55,
+    view3dMeasure: false,
+    view3dShowInterference: false,
+    // 默认伪 3D：全量软件 PBR 易在模拟器主线程卡死（THREAD_BLOCK_6S）
+    view3dPbr: false,
+    view3dMsaa: 1
+  };
+}
+
+/** 合并残缺 appearance，避免旧会话缺字段崩溃 */
+export function normalizePcbAppearance(ap: PcbAppearance | null | undefined): PcbAppearance {
+  const d = defaultPcbAppearance();
+  if (ap === null || ap === undefined) {
+    return d;
+  }
+  return {
+    mode: ap.mode !== undefined ? ap.mode : d.mode,
+    dimAlpha: ap.dimAlpha !== undefined && ap.dimAlpha >= 0 ? ap.dimAlpha : d.dimAlpha,
+    highlightNetId: ap.highlightNetId !== undefined ? ap.highlightNetId : d.highlightNetId,
+    hideZones: ap.hideZones === true,
+    showRatsnest: ap.showRatsnest === true,
+    showPadNumbers: ap.showPadNumbers !== false,
+    show3d: ap.show3d === true,
+    view3dYawDeg: ap.view3dYawDeg !== undefined ? ap.view3dYawDeg : d.view3dYawDeg,
+    view3dPitchDeg: ap.view3dPitchDeg !== undefined ? ap.view3dPitchDeg : d.view3dPitchDeg,
+    view3dOrtho: ap.view3dOrtho !== false,
+    view3dDisplayMode: ap.view3dDisplayMode !== undefined ? ap.view3dDisplayMode : d.view3dDisplayMode,
+    view3dCutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : d.view3dCutFraction,
+    view3dMeasure: ap.view3dMeasure === true,
+    view3dShowInterference: ap.view3dShowInterference === true,
+    view3dPbr: ap.view3dPbr === true,
+    view3dMsaa: ap.view3dMsaa >= 4 ? 4 : 1
   };
 }
 
@@ -386,26 +468,26 @@ export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack 
 
 export function createDefaultPcbLayers(copperCount: number = 2): PcbLayerConfig[] {
   const layers: PcbLayerConfig[] = [
-    { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#C83434', opacity: 1 }
+    { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#FF1744', opacity: 0.95 }
   ];
   if (copperCount >= 4) {
-    layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#34C878', opacity: 1 });
-    layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#C87834', opacity: 1 });
+    layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#D500F9', opacity: 0.88 });
+    layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#FF9100', opacity: 0.88 });
   }
   if (copperCount >= 6) {
-    layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#7834C8', opacity: 1 });
+    layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#651FFF', opacity: 0.85 });
   }
   if (copperCount >= 8) {
-    layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#34C8C8', opacity: 1 });
+    layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
   }
-  layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#3478C8', opacity: 1 });
-  layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#F0F0F0', opacity: 1 });
-  layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#C8C8C8', opacity: 1 });
-  layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
-  layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#2E8B57', opacity: 0.35 });
+  layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#00E676', opacity: 0.92 });
+  layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#5CE1E6', opacity: 1 });
+  layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#80A0B0', opacity: 1 });
+  layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
+  layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
   layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
   layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
-  layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#FFD700', opacity: 1 });
+  layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#E8A020', opacity: 1 });
   layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
   return layers;
 }
@@ -509,6 +591,12 @@ export function normalizePcbDocument(doc: PcbDocument): void {
   for (const z of doc.zones) {
     if (!z.cutouts) z.cutouts = [];
     if (!z.manualCutouts) z.manualCutouts = [];
+    if (z.netName === undefined || z.netName === null) {
+      z.netName = '';
+    }
+    if (z.netId === undefined || z.netId === null) {
+      z.netId = '';
+    }
     if (z.clearance === undefined || z.clearance <= 0) {
       z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
     }
@@ -516,6 +604,28 @@ export function normalizePcbDocument(doc: PcbDocument): void {
     if (z.thermalGap === undefined || z.thermalGap <= 0) z.thermalGap = 12;
     if (z.thermalWidth === undefined || z.thermalWidth <= 0) z.thermalWidth = 10;
     if (z.priority === undefined) z.priority = 0;
+  }
+  for (const fp of doc.footprints) {
+    if (!fp.pads) fp.pads = [];
+    for (const pad of fp.pads) {
+      if (!pad.layers || pad.layers.length === 0) {
+        if (pad.type === PcbPadType.SMD) {
+          pad.layers = [fp.layer === PcbLayerId.B_CU ? PcbLayerId.B_CU : PcbLayerId.F_CU];
+        } else {
+          pad.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+        }
+      }
+      if (pad.netName === undefined || pad.netName === null) {
+        pad.netName = '';
+      }
+      if (pad.netId === undefined || pad.netId === null) {
+        pad.netId = '';
+      }
+    }
+  }
+  for (const trk of doc.tracks) {
+    if (trk.netName === undefined || trk.netName === null) trk.netName = '';
+    if (trk.netId === undefined || trk.netId === null) trk.netId = '';
   }
   if (!doc.layers || doc.layers.length === 0) {
     doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
@@ -525,15 +635,16 @@ export function normalizePcbDocument(doc: PcbDocument): void {
     ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
     ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
     if (doc.layerStack.copperCount >= 4) {
-      ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#34C878', true);
-      ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#C87834', true);
+      ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#D500F9', true);
+      ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#FF9100', true);
     }
     if (doc.layerStack.copperCount >= 6) {
-      ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#7834C8', true);
+      ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#651FFF', true);
     }
     if (doc.layerStack.copperCount >= 8) {
-      ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#34C8C8', true);
+      ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
     }
+    applyDistinctCopperColors(doc);
   }
   if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
     doc.boardOutline = {
@@ -557,6 +668,8 @@ export function normalizePcbDocument(doc: PcbDocument): void {
       const dr = doc.metadata.designRules;
       if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0) dr.minAnnularRing = 4;
       if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0) dr.minHoleToHole = 10;
+      if (dr.minSilkHeight === undefined || dr.minSilkHeight <= 0) dr.minSilkHeight = 31;
+      if (dr.silkToPadClearance === undefined || dr.silkToPadClearance <= 0) dr.silkToPadClearance = 8;
     }
     if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
       doc.metadata.gridSize = 5;
@@ -570,6 +683,27 @@ function ensureLayerPresent(doc: PcbDocument, id: PcbLayerId, name: string,
     if (l.id === id) return;
   }
   doc.layers.push({ id, name, visible, color, opacity: 1 });
+}
+
+/** 统一铜层高对比分色，保证全层可见时一眼可辨 */
+function applyDistinctCopperColors(doc: PcbDocument): void {
+  for (let i = 0; i < doc.layers.length; i++) {
+    const l = doc.layers[i];
+    let c = '';
+    if (l.id === PcbLayerId.F_CU) c = '#FF1744';
+    else if (l.id === PcbLayerId.B_CU) c = '#00E676';
+    else if (l.id === PcbLayerId.IN1_CU) c = '#D500F9';
+    else if (l.id === PcbLayerId.IN2_CU) c = '#FF9100';
+    else if (l.id === PcbLayerId.IN3_CU) c = '#651FFF';
+    else if (l.id === PcbLayerId.IN4_CU) c = '#00E5FF';
+    if (c.length > 0) {
+      l.color = c;
+      const op = l.opacity !== undefined ? l.opacity : 1;
+      if (op < 0.75) {
+        l.opacity = l.id === PcbLayerId.F_CU || l.id === PcbLayerId.B_CU ? 0.92 : 0.85;
+      }
+    }
+  }
 }
 
 /** 将铜层数切换为 2/4/6/8，同步 layers + layerStack */

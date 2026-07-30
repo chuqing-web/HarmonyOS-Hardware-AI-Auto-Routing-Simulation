@@ -22,6 +22,8 @@ interface HomePage_Params {
     helpDialogTitle?: string;
     helpDialogBody?: string;
     helpDialogPrimaryLabel?: string;
+    announcement?: HomeAnnouncement;
+    announcementLoading?: boolean;
     helpDialogPrimaryAction?: (() => void) | null;
     appService?: AppService;
     newsHighlightTimer?: number;
@@ -34,8 +36,10 @@ import fileUri from "@ohos:file.fileuri";
 import fs from "@ohos:file.fs";
 import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
+import { HomeAnnouncementService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeAnnouncementService";
+import type { HomeAnnouncement } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeAnnouncementService";
 import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
-import { ProteusHomeColors, ProteusHomeDownloadBtn, ProteusHomeIconLink, ProteusHomeInlineLink, ProteusHomePanel, ProteusHomeRecentRow, ProteusHomeTopBar, ProteusHomeWizardDialog, ProteusHomeBottomStrip, ProteusHomeTextDialog, ProteusHomeBackdrop, ProteusHomeAboutRow, ProteusHomeHelpDialog, ProteusHomeSectionTitle, ProteusHomeSectionDivider, ProteusHomeNewsRow } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusHomeWidgets";
+import { ProteusHomeColors, ProteusHomeDownloadBtn, ProteusHomeIconLink, ProteusHomeInlineLink, ProteusHomePanel, ProteusHomeRecentRow, ProteusHomeTopBar, ProteusHomeWizardDialog, ProteusHomeBottomStrip, ProteusHomeTextDialog, ProteusHomeBackdrop, ProteusHomeAboutRow, ProteusHomeHelpDialog, ProteusHomeSectionTitle, ProteusHomeSectionDivider, ProteusHomeNewsRow, ProteusHomeAnnouncementPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusHomeWidgets";
 import type { ProteusHomeNewsItem } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusHomeWidgets";
 import { maximizeAppWindow } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/WindowLaunchUtil";
 import { ProjectPaths } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/ProjectPaths";
@@ -73,27 +77,83 @@ const MIGRATION_GUIDE_TEXT: string = '从 Proteus / 其他 EDA 迁移到 AI-SCH 
     '5. 获取更多帮助\n' +
     '   · Help → Help Home 打开教学助手与实验模板库\n' +
     '   · Start → Open Sample 浏览 lab_* 教程工程';
-const HELP_HOME_TEXT: string = 'Help Home — 教学与实验\n\n' +
-    '· 进入编辑器后，右侧「教学」面板提供实验模板、步骤说明与 MCU 实验入口\n' +
-    '· 也可从 Start → Open Sample 打开 lab_* / Test_Template 教程工程\n' +
-    '· 快捷键 F5 运行仿真，F7 执行 ERC\n\n' +
-    '提示：点击下方「打开教学面板」将进入未保存工作区，不会自动创建工程文件。';
-const HELP_SCHEMATIC_TEXT: string = 'Schematic Capture — 原理图绘制\n\n' +
-    '· W：连线模式  · P：放置器件  · 拖放左侧库中元件到画布\n' +
-    '· Ctrl+S 保存工程  · Ctrl+N 通过系统对话框另存为新工程\n' +
-    '· 仿真前建议 F7 ERC 检查连接\n\n' +
-    '从 Getting Started → Schematic Capture 可进入空白画布（不自动写盘）。';
-const HELP_SIMULATION_TEXT: string = 'Simulation — 电路仿真\n\n' +
-    '· F5 或工具栏运行仿真，右侧「仿真 / 仪器」查看波形与探针\n' +
-    '· 需先放置电源、地及完整网表；空工程运行仿真不会生成工程文件\n\n' +
-    '从 Getting Started → Simulation 可打开仿真侧栏；保存请使用 文件 → 保存。';
-const HELP_PCB_TEXT: string = 'PCB Layout — KiCad 式 PCB 布局\n\n' +
-    '· 从原理图「更新 PCB」导入封装与网络\n' +
-    '· 选择/移动/旋转封装，走线、过孔工具\n' +
-    '· 左侧图层开关，右侧 DRC 检查\n' +
-    '· 与原理图共用 .schsim 工程文件';
-const HELP_VISUAL_DESIGNER_TEXT: string = 'Visual Designer 尚未在本版本中提供。\n\n' +
-    '请使用 Schematic Capture 与 Simulation 完成设计与验证。';
+const HELP_HOME_TEXT: string = 'AI-SCH Design Suite 操作手册\n' +
+    '================================\n\n' +
+    '一、启动与工程管理\n' +
+    '----------------\n' +
+    '1. 首页左侧 Getting Started\n' +
+    '   · Schematic Capture：进入空白原理图工作区（默认不写盘）\n' +
+    '   · PCB Layout：进入 PCB 布局编辑器\n' +
+    '   · Simulation：进入原理图并展开仿真侧栏\n\n' +
+    '2. 首页 Start 面板（左侧第二栏）\n' +
+    '   · Open Project：打开 .schsim / .pcbsim / .json 工程\n' +
+    '   · New Project：向导命名后进入未落盘工作区，保存请用 文件 → 保存\n' +
+    '   · Open Sample Design：浏览并打开内置 lab_* / Test_Template 教程工程\n' +
+    '   · Recent Projects：双击或选中后点 Open 打开最近工程\n\n' +
+    '3. 工程文件\n' +
+    '   · 原理图：.schsim（JSON 原理图工程）\n' +
+    '   · PCB：.pcbsim（PCB 工程，与原理图同目录 project/）\n' +
+    '   · Ctrl+N 新建 / Ctrl+O 打开 / Ctrl+S 保存 / 另存为走系统对话框\n' +
+    '   · 异常退出后可在最近列表中看到带恢复标记的工程\n\n' +
+    '二、原理图绘制（Schematic Capture）\n' +
+    '--------------------------------\n' +
+    '1. 器件放置\n' +
+    '   · P：放置模式；从左侧器件库拖放到画布\n' +
+    '   · 选中器件后可移动、旋转、删除属性编辑\n\n' +
+    '2. 连线与网络\n' +
+    '   · W：连线模式，点击引脚/导线端点建立连接\n' +
+    '   · 电源与地必须正确放置，否则仿真/ERC 会报错\n\n' +
+    '3. 电气规则检查（ERC）\n' +
+    '   · F7 或菜单「仿真 → ERC」检查悬空引脚、电源冲突等\n' +
+    '   · 建议仿真前先通过 ERC\n\n' +
+    '4. 从原理图到 PCB\n' +
+    '   · 在原理图侧使用「更新 PCB」将封装与网络同步到 PCB 编辑器\n' +
+    '   · PCB 可用「另存为」保存为 .pcbsim，与 .schsim 区分\n\n' +
+    '三、电路仿真（Simulation）\n' +
+    '------------------------\n' +
+    '1. 启动仿真\n' +
+    '   · F5 或工具栏运行/停止仿真\n' +
+    '   · Getting Started → Simulation 会打开右侧仿真相关面板\n\n' +
+    '2. 仪器与波形\n' +
+    '   · 右侧「仿真 / 仪器」面板：示波器、逻辑分析仪、探针等\n' +
+    '   · 放置电源、地及完整网表后再运行；空工程不会自动生成文件\n\n' +
+    '3. MCU / 教学实验\n' +
+    '   · 右侧「教学」面板：实验模板、步骤说明、MCU 实验入口\n' +
+    '   · Start → Open Sample 可打开 lab_* 教程工程\n' +
+    '   · 本对话框下方「打开教学面板」进入教学侧栏（不写盘）\n\n' +
+    '四、PCB 布局（PCB Layout）\n' +
+    '------------------------\n' +
+    '1. 进入方式\n' +
+    '   · Getting Started → PCB Layout，或原理图更新 PCB 后跳转\n\n' +
+    '2. 常用操作\n' +
+    '   · 选择 / 移动 / 旋转封装\n' +
+    '   · 走线、过孔工具布线\n' +
+    '   · 左侧图层面板开关各层显示\n' +
+    '   · 右侧执行 DRC（设计规则检查）\n\n' +
+    '3. 与原理图联动\n' +
+    '   · 网络与封装来自原理图同步；修改后请保存工程\n\n' +
+    '五、界面与面板\n' +
+    '------------\n' +
+    '· 左侧：器件库 / 图层等（随当前编辑器变化）\n' +
+    '· 中间：原理图或 PCB 画布\n' +
+    '· 右侧：属性、仿真、仪器、教学、AI 设置等页签\n' +
+    '· 底栏：状态与平台信息\n\n' +
+    '六、常用快捷键\n' +
+    '------------\n' +
+    '· Ctrl+N / Ctrl+O / Ctrl+S — 新建 / 打开 / 保存\n' +
+    '· W — 连线    · P — 放置器件\n' +
+    '· F5 — 运行/停止仿真    · F7 — ERC\n' +
+    '· Delete — 删除选中对象\n\n' +
+    '七、从其他 EDA 迁移\n' +
+    '----------------\n' +
+    '· 本软件使用 .schsim；通过 文件 → 打开 或 Start → Open Sample 开始\n' +
+    '· 内置 DeviceLibrary 与 proteus_alias.json 别名映射\n' +
+    '· 放置器件后使用 ERC 检查，再运行仿真验证\n\n' +
+    '八、版本与支持\n' +
+    '------------\n' +
+    '· 版本号见首页顶栏与 About 区域\n' +
+    '· 首页右侧「公告」可展示服务器下发的图片与文字通知\n' +
+    '· 更多教程：Start → Open Sample 或右侧教学面板\n';
 const UPDATES_INFO_TEXT: string = '版本更新通过应用分发渠道发布。\n\n' +
     '当前运行版本已在 News 列表中标记为 In Use。如需教程工程，请使用 Start → Open Sample。';
 interface HomeProjectEntry {
@@ -128,6 +188,8 @@ class HomePage extends ViewPU {
         this.__helpDialogTitle = new ObservedPropertySimplePU('', this, "helpDialogTitle");
         this.__helpDialogBody = new ObservedPropertySimplePU('', this, "helpDialogBody");
         this.__helpDialogPrimaryLabel = new ObservedPropertySimplePU('', this, "helpDialogPrimaryLabel");
+        this.__announcement = new ObservedPropertyObjectPU(HomeAnnouncementService.defaultAnnouncement(), this, "announcement");
+        this.__announcementLoading = new ObservedPropertySimplePU(false, this, "announcementLoading");
         this.helpDialogPrimaryAction = null;
         this.appService = AppService.getInstance();
         this.newsHighlightTimer = -1;
@@ -193,6 +255,12 @@ class HomePage extends ViewPU {
         if (params.helpDialogPrimaryLabel !== undefined) {
             this.helpDialogPrimaryLabel = params.helpDialogPrimaryLabel;
         }
+        if (params.announcement !== undefined) {
+            this.announcement = params.announcement;
+        }
+        if (params.announcementLoading !== undefined) {
+            this.announcementLoading = params.announcementLoading;
+        }
         if (params.helpDialogPrimaryAction !== undefined) {
             this.helpDialogPrimaryAction = params.helpDialogPrimaryAction;
         }
@@ -229,6 +297,8 @@ class HomePage extends ViewPU {
         this.__helpDialogTitle.purgeDependencyOnElmtId(rmElmtId);
         this.__helpDialogBody.purgeDependencyOnElmtId(rmElmtId);
         this.__helpDialogPrimaryLabel.purgeDependencyOnElmtId(rmElmtId);
+        this.__announcement.purgeDependencyOnElmtId(rmElmtId);
+        this.__announcementLoading.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__themeRev.aboutToBeDeleted();
@@ -251,6 +321,8 @@ class HomePage extends ViewPU {
         this.__helpDialogTitle.aboutToBeDeleted();
         this.__helpDialogBody.aboutToBeDeleted();
         this.__helpDialogPrimaryLabel.aboutToBeDeleted();
+        this.__announcement.aboutToBeDeleted();
+        this.__announcementLoading.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -394,6 +466,20 @@ class HomePage extends ViewPU {
     set helpDialogPrimaryLabel(newValue: string) {
         this.__helpDialogPrimaryLabel.set(newValue);
     }
+    private __announcement: ObservedPropertyObjectPU<HomeAnnouncement>;
+    get announcement() {
+        return this.__announcement.get();
+    }
+    set announcement(newValue: HomeAnnouncement) {
+        this.__announcement.set(newValue);
+    }
+    private __announcementLoading: ObservedPropertySimplePU<boolean>;
+    get announcementLoading() {
+        return this.__announcementLoading.get();
+    }
+    set announcementLoading(newValue: boolean) {
+        this.__announcementLoading.set(newValue);
+    }
     private helpDialogPrimaryAction: (() => void) | null;
     private appService: AppService;
     private newsHighlightTimer: number;
@@ -437,6 +523,7 @@ class HomePage extends ViewPU {
         }
         this.ready = true;
         Logger.info('HomePage', `ready ver=${appVersionLabel()} recent=${this.recentEntries.length}`);
+        void this.loadAnnouncement();
     }
     private initNewsItems(): void {
         this.newsItems = [
@@ -446,6 +533,15 @@ class HomePage extends ViewPU {
             { description: 'AI-SCH Professional 1.0 SP1 [1.0.1]', releaseDate: '22/10/2024', uscValid: 'Yes', actionLabel: 'Download' },
             { description: 'Sample tutorials (Test_Template)', releaseDate: '—', uscValid: '—', actionLabel: 'Open' }
         ];
+    }
+    private async loadAnnouncement(): Promise<void> {
+        this.announcementLoading = true;
+        try {
+            this.announcement = await HomeAnnouncementService.fetchLatest();
+        }
+        finally {
+            this.announcementLoading = false;
+        }
     }
     private refreshLists(): void {
         this.recentEntries = this.buildRecentEntries();
@@ -530,8 +626,11 @@ class HomePage extends ViewPU {
         const norm = path.replace(/\\/g, '/');
         const slash = norm.lastIndexOf('/');
         let name = slash >= 0 ? norm.substring(slash + 1) : norm;
-        if (name.endsWith('.schsim')) {
-            name = name.substring(0, name.length - 7);
+        if (name.endsWith(ProjectPaths.SCH_EXT)) {
+            name = name.substring(0, name.length - ProjectPaths.SCH_EXT.length);
+        }
+        else if (name.endsWith(ProjectPaths.PCB_EXT)) {
+            name = name.substring(0, name.length - ProjectPaths.PCB_EXT.length);
         }
         return name;
     }
@@ -597,6 +696,10 @@ class HomePage extends ViewPU {
             this.refreshLists();
             return;
         }
+        if (ProjectPaths.isPcbProjectPath(path)) {
+            this.goToPcbEditor({ launchMode: 'open', projectPath: path });
+            return;
+        }
         this.goToEditor({ launchMode: 'open', projectPath: path, showRecovery: showRecovery });
     }
     private openSelected(): void {
@@ -616,7 +719,7 @@ class HomePage extends ViewPU {
         try {
             const opt = new picker.DocumentSelectOptions();
             opt.maxSelectNumber = 1;
-            opt.fileSuffixFilters = ['.schsim', '.json'];
+            opt.fileSuffixFilters = ['.schsim', '.pcbsim', '.json'];
             const uri = fileUri.getUriFromPath(this.userProjectDir);
             if (uri.length > 0) {
                 opt.defaultFilePathUri = uri;
@@ -682,40 +785,16 @@ class HomePage extends ViewPU {
     }
     /** Help Home：说明 + 可选进入教学面板（仍不写盘） */
     openHelpHome(): void {
-        this.openHelpDialog('Help Home', HELP_HOME_TEXT, '打开教学面板', () => {
+        this.openHelpDialog('Help Home — 操作手册', HELP_HOME_TEXT, '打开教学面板', () => {
             const scratchOpts: HomeScratchOptions = { openRightTab: 6, expandRightPanel: true };
             this.launchScratchWorkspace(scratchOpts);
         });
-    }
-    openHelpTopicSchematic(): void {
-        this.openHelpDialog('Schematic Capture', HELP_SCHEMATIC_TEXT);
-    }
-    openHelpTopicSimulation(): void {
-        this.openHelpDialog('Simulation', HELP_SIMULATION_TEXT);
-    }
-    openHelpTopicPcb(): void {
-        this.openHelpDialog('PCB Layout', HELP_PCB_TEXT, '打开 PCB 编辑器', () => {
-            this.openPcbLayout();
-        });
-    }
-    openHelpTopicVisualDesigner(): void {
-        this.openHelpDialog('Visual Designer', HELP_VISUAL_DESIGNER_TEXT);
     }
     openFlowchartUnavailable(): void {
         this.openHelpDialog('New Flowchart', 'Flowchart 模块尚未在本版本中提供。\n\n请使用 Schematic Capture 绘制原理图。');
     }
     openMigrationGuide(): void {
         this.showMigrationGuide = true;
-    }
-    focusWhatsNew(): void {
-        this.newsHighlight = true;
-        if (this.newsHighlightTimer >= 0) {
-            clearTimeout(this.newsHighlightTimer);
-        }
-        this.newsHighlightTimer = setTimeout(() => {
-            this.newsHighlight = false;
-            this.newsHighlightTimer = -1;
-        }, 2800);
     }
     openSampleList(): void {
         this.showSamples = true;
@@ -767,7 +846,7 @@ class HomePage extends ViewPU {
                                         let componentCall = new ProteusHomeTopBar(this, {
                                             titleLine: 'Schematic & Simulation Suite',
                                             versionLabel: `Version ${APP_VERSION_NAME}`
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 505, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 546, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -805,7 +884,7 @@ class HomePage extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 523, col: 11 });
+                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 564, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -823,7 +902,7 @@ class HomePage extends ViewPU {
                             }
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 503, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 544, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -840,7 +919,7 @@ class HomePage extends ViewPU {
                                             let componentCall = new ProteusHomeTopBar(this, {
                                                 titleLine: 'Schematic & Simulation Suite',
                                                 versionLabel: `Version ${APP_VERSION_NAME}`
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 505, col: 11 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 546, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -878,7 +957,7 @@ class HomePage extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 523, col: 11 });
+                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 564, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -921,7 +1000,7 @@ class HomePage extends ViewPU {
                                     onBack: () => { this.wizardStep = 0; },
                                     onNext: () => { this.wizardStep = 1; },
                                     onFinish: () => { this.confirmWizardFinish(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 531, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 572, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -965,7 +1044,7 @@ class HomePage extends ViewPU {
                                     title: 'Migration Guide',
                                     body: MIGRATION_GUIDE_TEXT,
                                     onClose: () => { this.showMigrationGuide = false; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 544, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 585, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1005,7 +1084,7 @@ class HomePage extends ViewPU {
                                     primaryLabel: this.helpDialogPrimaryLabel,
                                     onPrimary: () => { this.runHelpDialogPrimary(); },
                                     onClose: () => { this.closeHelpDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 552, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 593, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1040,7 +1119,7 @@ class HomePage extends ViewPU {
     LeftSidebar(parent = null) {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
-            Column.width('21%');
+            Column.width('36%');
             Column.height('100%');
             Column.backgroundColor(ProteusHomeColors.SIDEBAR_BG);
             Column.border({ width: 1, color: ProteusHomeColors.PANEL_BORDER });
@@ -1049,7 +1128,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 569, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 610, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1074,7 +1153,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Schematic Capture', onAction: () => this.openBlankSchematic() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 571, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'Schematic Capture', onAction: () => this.openBlankSchematic() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 612, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1094,7 +1173,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 572, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 613, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1114,7 +1193,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Simulation', onAction: () => this.openSimulation() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 573, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'Simulation', onAction: () => this.openSimulation() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 614, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1131,51 +1210,11 @@ class HomePage extends ViewPU {
                 }
             }, { name: "ProteusHomeIconLink" });
         }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Migration Guide', onAction: () => this.openMigrationGuide() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 574, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'Migration Guide',
-                            onAction: () => this.openMigrationGuide()
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'Migration Guide'
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'What\'s New', onAction: () => this.focusWhatsNew() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 575, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'What\'s New',
-                            onAction: () => this.focusWhatsNew()
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'What\'s New'
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
         Column.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 581, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 620, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -1190,7 +1229,284 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 582, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Start' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 621, col: 7 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: 'Start'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: 'Start'
+                    });
+                }
+            }, { name: "ProteusHomeSectionTitle" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+            Column.create();
+            // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+            Column.width('100%');
+            // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+            Column.layoutWeight(1);
+            // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+            Column.backgroundColor(ProteusHomeColors.PANEL_INSET);
+        }, Column);
+        this.StartToolbar.bind(this)();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.showSamples) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create();
+                        Row.width('100%');
+                        Row.padding({ left: 8, bottom: 2 });
+                    }, Row);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusHomeInlineLink(this, {
+                                    label: 'Back to Recent Projects',
+                                    onAction: () => this.backToRecentList()
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 628, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: 'Back to Recent Projects',
+                                        onAction: () => this.backToRecentList()
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: 'Back to Recent Projects'
+                                });
+                            }
+                        }, { name: "ProteusHomeInlineLink" });
+                    }
+                    Row.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.showSamples ? 'Sample Projects' : 'Recent Projects');
+            Text.fontSize(10);
+            Text.fontColor(ProteusHomeColors.TEXT);
+            Text.fontWeight(FontWeight.Bold);
+            Text.width('100%');
+            Text.padding({ left: 8, bottom: 2 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('100%');
+            Column.layoutWeight(1);
+            Column.margin({ left: 6, right: 6, bottom: 4 });
+            Column.alignItems(HorizontalAlign.Start);
+            Column.justifyContent(FlexAlign.Start);
+            Column.backgroundColor(ProteusHomeColors.PANEL_BG);
+            Column.border({ width: 1, color: ProteusHomeColors.LISTBOX_BORDER });
+            Column.clip(true);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (!this.ready) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('Loading…');
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                        Text.padding({ left: 8, top: 6 });
+                        Text.width('100%');
+                        Text.textAlign(TextAlign.Start);
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else if (this.listEntries().length === 0) {
+                this.ifElseBranchUpdateFunction(1, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.width('100%');
+                        Column.padding({ left: 8, right: 8, top: 6, bottom: 6 });
+                        Column.alignItems(HorizontalAlign.Start);
+                        Column.justifyContent(FlexAlign.Start);
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.showSamples ? '(no samples)' : '(no recent projects)');
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (!this.showSamples) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    __Common__.create();
+                                    __Common__.margin({ top: 4 });
+                                }, __Common__);
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new ProteusHomeInlineLink(this, {
+                                                label: 'New Project…',
+                                                onAction: () => this.startNewProjectWizard()
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 659, col: 17 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    label: 'New Project…',
+                                                    onAction: () => this.startNewProjectWizard()
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                label: 'New Project…'
+                                            });
+                                        }
+                                    }, { name: "ProteusHomeInlineLink" });
+                                }
+                                __Common__.pop();
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    Column.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(2, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Scroll.create();
+                        Scroll.width('100%');
+                        Scroll.height('100%');
+                        Scroll.scrollBar(BarState.Auto);
+                        Scroll.align(Alignment.TopStart);
+                    }, Scroll);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.width('100%');
+                        Column.alignItems(HorizontalAlign.Start);
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        ForEach.create();
+                        const forEachItemGenFunction = _item => {
+                            const e = _item;
+                            {
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    if (isInitialRender) {
+                                        let componentCall = new ProteusHomeRecentRow(this, {
+                                            name: e.name,
+                                            selected: this.selectedPath === e.path,
+                                            warn: e.isRecovery,
+                                            onSelect: () => { this.selectedPath = e.path; },
+                                            onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 674, col: 19 });
+                                        ViewPU.create(componentCall);
+                                        let paramsLambda = () => {
+                                            return {
+                                                name: e.name,
+                                                selected: this.selectedPath === e.path,
+                                                warn: e.isRecovery,
+                                                onSelect: () => { this.selectedPath = e.path; },
+                                                onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
+                                            };
+                                        };
+                                        componentCall.paramsGenerator_ = paramsLambda;
+                                    }
+                                    else {
+                                        this.updateStateVarsOfChildByElmtId(elmtId, {
+                                            name: e.name,
+                                            selected: this.selectedPath === e.path,
+                                            warn: e.isRecovery
+                                        });
+                                    }
+                                }, { name: "ProteusHomeRecentRow" });
+                            }
+                        };
+                        this.forEachUpdateFunction(elmtId, this.listEntries(), forEachItemGenFunction, (e: HomeProjectEntry) => `${this.showSamples}_${e.path}`, false, false);
+                    }, ForEach);
+                    ForEach.pop();
+                    Column.pop();
+                    Scroll.pop();
+                });
+            }
+        }, If);
+        If.pop();
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create();
+            Row.width('100%');
+            Row.padding({ left: 8, right: 8, bottom: 4 });
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusHomeDownloadBtn(this, {
+                        label: 'Open',
+                        primary: true,
+                        btnEnabled: this.canOpenSelected(),
+                        onAction: () => this.openSelected()
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 702, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: 'Open',
+                            primary: true,
+                            btnEnabled: this.canOpenSelected(),
+                            onAction: () => this.openSelected()
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: 'Open',
+                        primary: true,
+                        btnEnabled: this.canOpenSelected()
+                    });
+                }
+            }, { name: "ProteusHomeDownloadBtn" });
+        }
+        Row.pop();
+        // Start 吃掉剩余高度：工程列表铺满，避免 About 下方大块空白
+        Column.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 716, col: 7 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {};
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {});
+                }
+            }, { name: "ProteusHomeSectionDivider" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 717, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1215,7 +1531,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 584, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 719, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1232,92 +1548,11 @@ class HomePage extends ViewPU {
                 }
             }, { name: "ProteusHomeIconLink" });
         }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Schematic Capture', onAction: () => this.openHelpTopicSchematic() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 585, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'Schematic Capture',
-                            onAction: () => this.openHelpTopicSchematic()
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'Schematic Capture'
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 586, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'PCB Layout',
-                            onAction: () => { this.openPcbLayout(); }
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'PCB Layout'
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Simulation', onAction: () => this.openHelpTopicSimulation() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 587, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'Simulation',
-                            onAction: () => this.openHelpTopicSimulation()
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'Simulation'
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Visual Designer', tabEnabled: false, onAction: () => { this.openHelpTopicVisualDesigner(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 588, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'Visual Designer',
-                            tabEnabled: false,
-                            onAction: () => { this.openHelpTopicVisualDesigner(); }
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'Visual Designer', tabEnabled: false
-                    });
-                }
-            }, { name: "ProteusHomeIconLink" });
-        }
         Column.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 594, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 725, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -1332,7 +1567,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 595, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 726, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1351,7 +1586,6 @@ class HomePage extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
             Column.width('100%');
-            Column.layoutWeight(1);
             Column.backgroundColor(ProteusHomeColors.PANEL_INSET);
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -1360,12 +1594,12 @@ class HomePage extends ViewPU {
             Text.fontColor(ProteusHomeColors.TEXT_DIM);
             Text.width('100%');
             Text.textAlign(TextAlign.Center);
-            Text.margin({ top: 6, bottom: 4 });
+            Text.margin({ top: 4, bottom: 2 });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(this.aboutInfo.releaseLine);
-            Text.fontSize(9);
+            Text.fontSize(8);
             Text.fontColor(ProteusHomeColors.TEXT);
             Text.width('100%');
             Text.textAlign(TextAlign.Center);
@@ -1378,15 +1612,15 @@ class HomePage extends ViewPU {
             Text.decoration({ type: TextDecorationType.Underline, color: ProteusHomeColors.LINK });
             Text.width('100%');
             Text.textAlign(TextAlign.Center);
-            Text.margin({ top: 2, bottom: 8 });
+            Text.margin({ top: 2, bottom: 4 });
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
             Column.width('100%');
-            Column.padding({ top: 2, bottom: 4 });
+            Column.padding({ top: 2, bottom: 2 });
             Column.border({ width: 1, color: ProteusHomeColors.ROW_BORDER });
-            Column.margin({ left: 6, right: 6 });
+            Column.margin({ left: 6, right: 6, bottom: 2 });
         }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -1395,7 +1629,7 @@ class HomePage extends ViewPU {
                         label: 'Registered To',
                         value: this.aboutInfo.registeredToLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 617, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 748, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1422,7 +1656,7 @@ class HomePage extends ViewPU {
                         label: 'Customer No.',
                         value: this.aboutInfo.customerNumberLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 622, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 753, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1449,7 +1683,7 @@ class HomePage extends ViewPU {
                         label: 'Licence Expires',
                         value: this.aboutInfo.licenseExpiresLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 627, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 758, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1471,15 +1705,11 @@ class HomePage extends ViewPU {
         }
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Blank.create();
-        }, Blank);
-        Blank.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Text.create(`Free Memory: ${this.aboutInfo.freeMemoryLine}`);
             Text.fontSize(8);
             Text.fontColor(ProteusHomeColors.TEXT_DIM);
             Text.width('100%');
-            Text.padding({ left: 8, bottom: 6 });
+            Text.padding({ left: 8, top: 2, bottom: 4 });
         }, Text);
         Text.pop();
         Column.pop();
@@ -1487,15 +1717,14 @@ class HomePage extends ViewPU {
     }
     StartToolbar(parent = null) {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Row.create();
-            Row.width('100%');
-            Row.padding({ left: 8, top: 6, bottom: 4 });
-            Row.alignItems(VerticalAlign.Center);
-        }, Row);
+            Flex.create({ wrap: FlexWrap.Wrap });
+            Flex.width('100%');
+            Flex.padding({ left: 8, top: 4, bottom: 2, right: 4 });
+        }, Flex);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 659, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 788, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1521,7 +1750,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 663, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 792, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1547,37 +1776,11 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Flowchart', onAction: () => { this.openFlowchartUnavailable(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 667, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 796, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            label: 'New Flowchart',
-                            onAction: () => { this.openFlowchartUnavailable(); }
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'New Flowchart'
-                    });
-                }
-            }, { name: "ProteusHomeInlineLink" });
-        }
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(' | ');
-            Text.fontSize(10);
-            Text.fontColor(ProteusHomeColors.TEXT_DIM);
-        }, Text);
-        Text.pop();
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample Design', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 671, col: 7 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            label: 'Open Sample Design',
+                            label: 'Open Sample',
                             onAction: () => this.openSampleList()
                         };
                     };
@@ -1585,12 +1788,12 @@ class HomePage extends ViewPU {
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: 'Open Sample Design'
+                        label: 'Open Sample'
                     });
                 }
             }, { name: "ProteusHomeInlineLink" });
         }
-        Row.pop();
+        Flex.pop();
     }
     RightWorkspace(parent = null) {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -1602,492 +1805,41 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomePanel(this, {
-                        title: 'Start', panelWeight: 6,
-                        body: () => {
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                Column.create();
-                                Column.width('100%');
-                                Column.height('100%');
-                                Column.alignItems(HorizontalAlign.Start);
-                            }, Column);
-                            this.StartToolbar.bind(this)();
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                If.create();
-                                if (this.showSamples) {
-                                    this.ifElseBranchUpdateFunction(0, () => {
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Row.create();
-                                            Row.width('100%');
-                                            Row.padding({ left: 8, bottom: 2 });
-                                        }, Row);
-                                        {
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                if (isInitialRender) {
-                                                    let componentCall = new ProteusHomeInlineLink(this, {
-                                                        label: 'Back to Recent Projects',
-                                                        onAction: () => this.backToRecentList()
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 687, col: 15 });
-                                                    ViewPU.create(componentCall);
-                                                    let paramsLambda = () => {
-                                                        return {
-                                                            label: 'Back to Recent Projects',
-                                                            onAction: () => this.backToRecentList()
-                                                        };
-                                                    };
-                                                    componentCall.paramsGenerator_ = paramsLambda;
-                                                }
-                                                else {
-                                                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                        label: 'Back to Recent Projects'
-                                                    });
-                                                }
-                                            }, { name: "ProteusHomeInlineLink" });
-                                        }
-                                        Row.pop();
-                                    });
-                                }
-                                else {
-                                    this.ifElseBranchUpdateFunction(1, () => {
-                                    });
-                                }
-                            }, If);
-                            If.pop();
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                Text.create(this.showSamples ? 'Sample Projects' : 'Recent Projects');
-                                Text.fontSize(10);
-                                Text.fontColor(ProteusHomeColors.TEXT);
-                                Text.fontWeight(FontWeight.Bold);
-                                Text.width('100%');
-                                Text.padding({ left: 8, bottom: 2 });
-                            }, Text);
-                            Text.pop();
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                Column.create();
-                                Column.width('100%');
-                                Column.layoutWeight(1);
-                                Column.margin({ left: 8, right: 8, bottom: 4 });
-                                Column.backgroundColor(ProteusHomeColors.PANEL_BG);
-                                Column.border({ width: 1, color: ProteusHomeColors.LISTBOX_BORDER });
-                            }, Column);
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                If.create();
-                                if (!this.ready) {
-                                    this.ifElseBranchUpdateFunction(0, () => {
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Text.create('Loading…');
-                                            Text.fontSize(10);
-                                            Text.fontColor(ProteusHomeColors.TEXT_DIM);
-                                            Text.padding(8);
-                                        }, Text);
-                                        Text.pop();
-                                    });
-                                }
-                                else if (this.listEntries().length === 0) {
-                                    this.ifElseBranchUpdateFunction(1, () => {
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Column.create();
-                                            Column.width('100%');
-                                            Column.padding(8);
-                                            Column.alignItems(HorizontalAlign.Start);
-                                        }, Column);
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Text.create(this.showSamples ? '(no samples)' : '(no recent projects)');
-                                            Text.fontSize(10);
-                                            Text.fontColor(ProteusHomeColors.TEXT_DIM);
-                                        }, Text);
-                                        Text.pop();
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            If.create();
-                                            if (!this.showSamples) {
-                                                this.ifElseBranchUpdateFunction(0, () => {
-                                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                        __Common__.create();
-                                                        __Common__.margin({ top: 4 });
-                                                    }, __Common__);
-                                                    {
-                                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                            if (isInitialRender) {
-                                                                let componentCall = new ProteusHomeInlineLink(this, {
-                                                                    label: 'New Project…',
-                                                                    onAction: () => this.startNewProjectWizard()
-                                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 715, col: 19 });
-                                                                ViewPU.create(componentCall);
-                                                                let paramsLambda = () => {
-                                                                    return {
-                                                                        label: 'New Project…',
-                                                                        onAction: () => this.startNewProjectWizard()
-                                                                    };
-                                                                };
-                                                                componentCall.paramsGenerator_ = paramsLambda;
-                                                            }
-                                                            else {
-                                                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                                    label: 'New Project…'
-                                                                });
-                                                            }
-                                                        }, { name: "ProteusHomeInlineLink" });
-                                                    }
-                                                    __Common__.pop();
-                                                });
-                                            }
-                                            else {
-                                                this.ifElseBranchUpdateFunction(1, () => {
-                                                });
-                                            }
-                                        }, If);
-                                        If.pop();
-                                        Column.pop();
-                                    });
-                                }
-                                else {
-                                    this.ifElseBranchUpdateFunction(2, () => {
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Scroll.create();
-                                            Scroll.width('100%');
-                                            Scroll.layoutWeight(1);
-                                            Scroll.scrollBar(BarState.Auto);
-                                        }, Scroll);
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            Column.create();
-                                            Column.width('100%');
-                                        }, Column);
-                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                            ForEach.create();
-                                            const forEachItemGenFunction = _item => {
-                                                const e = _item;
-                                                {
-                                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                        if (isInitialRender) {
-                                                            let componentCall = new ProteusHomeRecentRow(this, {
-                                                                name: e.name,
-                                                                selected: this.selectedPath === e.path,
-                                                                warn: e.isRecovery,
-                                                                onSelect: () => { this.selectedPath = e.path; },
-                                                                onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 729, col: 21 });
-                                                            ViewPU.create(componentCall);
-                                                            let paramsLambda = () => {
-                                                                return {
-                                                                    name: e.name,
-                                                                    selected: this.selectedPath === e.path,
-                                                                    warn: e.isRecovery,
-                                                                    onSelect: () => { this.selectedPath = e.path; },
-                                                                    onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                                                };
-                                                            };
-                                                            componentCall.paramsGenerator_ = paramsLambda;
-                                                        }
-                                                        else {
-                                                            this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                                name: e.name,
-                                                                selected: this.selectedPath === e.path,
-                                                                warn: e.isRecovery
-                                                            });
-                                                        }
-                                                    }, { name: "ProteusHomeRecentRow" });
-                                                }
-                                            };
-                                            this.forEachUpdateFunction(elmtId, this.listEntries(), forEachItemGenFunction, (e: HomeProjectEntry) => `${this.showSamples}_${e.path}`, false, false);
-                                        }, ForEach);
-                                        ForEach.pop();
-                                        Column.pop();
-                                        Scroll.pop();
-                                    });
-                                }
-                            }, If);
-                            If.pop();
-                            Column.pop();
-                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                Row.create();
-                                Row.width('100%');
-                                Row.padding({ left: 8, right: 8, bottom: 8 });
-                            }, Row);
-                            {
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    if (isInitialRender) {
-                                        let componentCall = new ProteusHomeDownloadBtn(this, {
-                                            label: 'Open',
-                                            primary: true,
-                                            btnEnabled: this.canOpenSelected(),
-                                            onAction: () => this.openSelected()
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 752, col: 13 });
-                                        ViewPU.create(componentCall);
-                                        let paramsLambda = () => {
-                                            return {
-                                                label: 'Open',
-                                                primary: true,
-                                                btnEnabled: this.canOpenSelected(),
-                                                onAction: () => this.openSelected()
-                                            };
-                                        };
-                                        componentCall.paramsGenerator_ = paramsLambda;
-                                    }
-                                    else {
-                                        this.updateStateVarsOfChildByElmtId(elmtId, {
-                                            label: 'Open',
-                                            primary: true,
-                                            btnEnabled: this.canOpenSelected()
-                                        });
-                                    }
-                                }, { name: "ProteusHomeDownloadBtn" });
-                            }
-                            Row.pop();
-                            Column.pop();
-                        }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 681, col: 7 });
+                    let componentCall = new ProteusHomeAnnouncementPanel(this, {
+                        title: this.announcement.title,
+                        body: this.announcement.body,
+                        imageUrl: this.announcement.imageUrl,
+                        publishedAt: this.announcement.publishedAt,
+                        loading: this.announcementLoading
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 805, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            title: 'Start',
-                            panelWeight: 6,
-                            body: () => {
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    Column.create();
-                                    Column.width('100%');
-                                    Column.height('100%');
-                                    Column.alignItems(HorizontalAlign.Start);
-                                }, Column);
-                                this.StartToolbar.bind(this)();
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    If.create();
-                                    if (this.showSamples) {
-                                        this.ifElseBranchUpdateFunction(0, () => {
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Row.create();
-                                                Row.width('100%');
-                                                Row.padding({ left: 8, bottom: 2 });
-                                            }, Row);
-                                            {
-                                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                    if (isInitialRender) {
-                                                        let componentCall = new ProteusHomeInlineLink(this, {
-                                                            label: 'Back to Recent Projects',
-                                                            onAction: () => this.backToRecentList()
-                                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 687, col: 15 });
-                                                        ViewPU.create(componentCall);
-                                                        let paramsLambda = () => {
-                                                            return {
-                                                                label: 'Back to Recent Projects',
-                                                                onAction: () => this.backToRecentList()
-                                                            };
-                                                        };
-                                                        componentCall.paramsGenerator_ = paramsLambda;
-                                                    }
-                                                    else {
-                                                        this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                            label: 'Back to Recent Projects'
-                                                        });
-                                                    }
-                                                }, { name: "ProteusHomeInlineLink" });
-                                            }
-                                            Row.pop();
-                                        });
-                                    }
-                                    else {
-                                        this.ifElseBranchUpdateFunction(1, () => {
-                                        });
-                                    }
-                                }, If);
-                                If.pop();
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    Text.create(this.showSamples ? 'Sample Projects' : 'Recent Projects');
-                                    Text.fontSize(10);
-                                    Text.fontColor(ProteusHomeColors.TEXT);
-                                    Text.fontWeight(FontWeight.Bold);
-                                    Text.width('100%');
-                                    Text.padding({ left: 8, bottom: 2 });
-                                }, Text);
-                                Text.pop();
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    Column.create();
-                                    Column.width('100%');
-                                    Column.layoutWeight(1);
-                                    Column.margin({ left: 8, right: 8, bottom: 4 });
-                                    Column.backgroundColor(ProteusHomeColors.PANEL_BG);
-                                    Column.border({ width: 1, color: ProteusHomeColors.LISTBOX_BORDER });
-                                }, Column);
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    If.create();
-                                    if (!this.ready) {
-                                        this.ifElseBranchUpdateFunction(0, () => {
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Text.create('Loading…');
-                                                Text.fontSize(10);
-                                                Text.fontColor(ProteusHomeColors.TEXT_DIM);
-                                                Text.padding(8);
-                                            }, Text);
-                                            Text.pop();
-                                        });
-                                    }
-                                    else if (this.listEntries().length === 0) {
-                                        this.ifElseBranchUpdateFunction(1, () => {
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Column.create();
-                                                Column.width('100%');
-                                                Column.padding(8);
-                                                Column.alignItems(HorizontalAlign.Start);
-                                            }, Column);
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Text.create(this.showSamples ? '(no samples)' : '(no recent projects)');
-                                                Text.fontSize(10);
-                                                Text.fontColor(ProteusHomeColors.TEXT_DIM);
-                                            }, Text);
-                                            Text.pop();
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                If.create();
-                                                if (!this.showSamples) {
-                                                    this.ifElseBranchUpdateFunction(0, () => {
-                                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                            __Common__.create();
-                                                            __Common__.margin({ top: 4 });
-                                                        }, __Common__);
-                                                        {
-                                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                                if (isInitialRender) {
-                                                                    let componentCall = new ProteusHomeInlineLink(this, {
-                                                                        label: 'New Project…',
-                                                                        onAction: () => this.startNewProjectWizard()
-                                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 715, col: 19 });
-                                                                    ViewPU.create(componentCall);
-                                                                    let paramsLambda = () => {
-                                                                        return {
-                                                                            label: 'New Project…',
-                                                                            onAction: () => this.startNewProjectWizard()
-                                                                        };
-                                                                    };
-                                                                    componentCall.paramsGenerator_ = paramsLambda;
-                                                                }
-                                                                else {
-                                                                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                                        label: 'New Project…'
-                                                                    });
-                                                                }
-                                                            }, { name: "ProteusHomeInlineLink" });
-                                                        }
-                                                        __Common__.pop();
-                                                    });
-                                                }
-                                                else {
-                                                    this.ifElseBranchUpdateFunction(1, () => {
-                                                    });
-                                                }
-                                            }, If);
-                                            If.pop();
-                                            Column.pop();
-                                        });
-                                    }
-                                    else {
-                                        this.ifElseBranchUpdateFunction(2, () => {
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Scroll.create();
-                                                Scroll.width('100%');
-                                                Scroll.layoutWeight(1);
-                                                Scroll.scrollBar(BarState.Auto);
-                                            }, Scroll);
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                Column.create();
-                                                Column.width('100%');
-                                            }, Column);
-                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                ForEach.create();
-                                                const forEachItemGenFunction = _item => {
-                                                    const e = _item;
-                                                    {
-                                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                            if (isInitialRender) {
-                                                                let componentCall = new ProteusHomeRecentRow(this, {
-                                                                    name: e.name,
-                                                                    selected: this.selectedPath === e.path,
-                                                                    warn: e.isRecovery,
-                                                                    onSelect: () => { this.selectedPath = e.path; },
-                                                                    onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 729, col: 21 });
-                                                                ViewPU.create(componentCall);
-                                                                let paramsLambda = () => {
-                                                                    return {
-                                                                        name: e.name,
-                                                                        selected: this.selectedPath === e.path,
-                                                                        warn: e.isRecovery,
-                                                                        onSelect: () => { this.selectedPath = e.path; },
-                                                                        onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                                                    };
-                                                                };
-                                                                componentCall.paramsGenerator_ = paramsLambda;
-                                                            }
-                                                            else {
-                                                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                                    name: e.name,
-                                                                    selected: this.selectedPath === e.path,
-                                                                    warn: e.isRecovery
-                                                                });
-                                                            }
-                                                        }, { name: "ProteusHomeRecentRow" });
-                                                    }
-                                                };
-                                                this.forEachUpdateFunction(elmtId, this.listEntries(), forEachItemGenFunction, (e: HomeProjectEntry) => `${this.showSamples}_${e.path}`, false, false);
-                                            }, ForEach);
-                                            ForEach.pop();
-                                            Column.pop();
-                                            Scroll.pop();
-                                        });
-                                    }
-                                }, If);
-                                If.pop();
-                                Column.pop();
-                                this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                    Row.create();
-                                    Row.width('100%');
-                                    Row.padding({ left: 8, right: 8, bottom: 8 });
-                                }, Row);
-                                {
-                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                        if (isInitialRender) {
-                                            let componentCall = new ProteusHomeDownloadBtn(this, {
-                                                label: 'Open',
-                                                primary: true,
-                                                btnEnabled: this.canOpenSelected(),
-                                                onAction: () => this.openSelected()
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 752, col: 13 });
-                                            ViewPU.create(componentCall);
-                                            let paramsLambda = () => {
-                                                return {
-                                                    label: 'Open',
-                                                    primary: true,
-                                                    btnEnabled: this.canOpenSelected(),
-                                                    onAction: () => this.openSelected()
-                                                };
-                                            };
-                                            componentCall.paramsGenerator_ = paramsLambda;
-                                        }
-                                        else {
-                                            this.updateStateVarsOfChildByElmtId(elmtId, {
-                                                label: 'Open',
-                                                primary: true,
-                                                btnEnabled: this.canOpenSelected()
-                                            });
-                                        }
-                                    }, { name: "ProteusHomeDownloadBtn" });
-                                }
-                                Row.pop();
-                                Column.pop();
-                            }
+                            title: this.announcement.title,
+                            body: this.announcement.body,
+                            imageUrl: this.announcement.imageUrl,
+                            publishedAt: this.announcement.publishedAt,
+                            loading: this.announcementLoading
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        title: 'Start', panelWeight: 6
+                        title: this.announcement.title,
+                        body: this.announcement.body,
+                        imageUrl: this.announcement.imageUrl,
+                        publishedAt: this.announcement.publishedAt,
+                        loading: this.announcementLoading
                     });
                 }
-            }, { name: "ProteusHomePanel" });
+            }, { name: "ProteusHomeAnnouncementPanel" });
         }
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusHomePanel(this, {
-                        title: 'News', panelWeight: 4, highlighted: this.newsHighlight,
+                        title: 'News', panelWeight: 1, highlighted: this.newsHighlight,
                         body: () => {
                             this.observeComponentCreation2((elmtId, isInitialRender) => {
                                 Column.create();
@@ -2161,7 +1913,7 @@ class HomePage extends ViewPU {
                                                     isCurrent: item.actionLabel === 'In Use',
                                                     showButton: item.actionLabel !== 'In Use',
                                                     onAction: () => { this.handleNewsAction(item); }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 799, col: 17 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 845, col: 17 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -2217,12 +1969,12 @@ class HomePage extends ViewPU {
                             Row.pop();
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 767, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 813, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             title: 'News',
-                            panelWeight: 4,
+                            panelWeight: 1,
                             highlighted: this.newsHighlight,
                             body: () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2297,7 +2049,7 @@ class HomePage extends ViewPU {
                                                         isCurrent: item.actionLabel === 'In Use',
                                                         showButton: item.actionLabel !== 'In Use',
                                                         onAction: () => { this.handleNewsAction(item); }
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 799, col: 17 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 845, col: 17 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {
@@ -2359,7 +2111,7 @@ class HomePage extends ViewPU {
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        title: 'News', panelWeight: 4, highlighted: this.newsHighlight
+                        title: 'News', panelWeight: 1, highlighted: this.newsHighlight
                     });
                 }
             }, { name: "ProteusHomePanel" });

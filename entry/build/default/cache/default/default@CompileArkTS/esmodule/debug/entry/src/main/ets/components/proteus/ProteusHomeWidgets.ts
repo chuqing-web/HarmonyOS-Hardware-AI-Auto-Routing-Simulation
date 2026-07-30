@@ -29,6 +29,14 @@ interface ProteusHomeWizardDialog_Params {
     onNext?: () => void;
     onFinish?: () => void;
 }
+interface ProteusHomeAnnouncementPanel_Params {
+    themeRev?: number;
+    title?: string;
+    body?: string;
+    imageUrl?: string;
+    publishedAt?: string;
+    loading?: boolean;
+}
 interface ProteusHomeNewsCard_Params {
     themeRev?: number;
     description?: string;
@@ -1503,6 +1511,380 @@ export class ProteusHomeNewsCard extends ViewPU {
         this.updateDirtyElements();
     }
 }
+export class ProteusHomeAnnouncementPanel extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__themeRev = this.createStorageProp(PROTEUS_THEME_REV_KEY, 0, "themeRev");
+        this.__title = new SynchedPropertySimpleOneWayPU(params.title, this, "title");
+        this.__body = new SynchedPropertySimpleOneWayPU(params.body, this, "body");
+        this.__imageUrl = new SynchedPropertySimpleOneWayPU(params.imageUrl, this, "imageUrl");
+        this.__publishedAt = new SynchedPropertySimpleOneWayPU(params.publishedAt, this, "publishedAt");
+        this.__loading = new SynchedPropertySimpleOneWayPU(params.loading, this, "loading");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params: ProteusHomeAnnouncementPanel_Params) {
+        if (params.title === undefined) {
+            this.__title.set('');
+        }
+        if (params.body === undefined) {
+            this.__body.set('');
+        }
+        if (params.imageUrl === undefined) {
+            this.__imageUrl.set('');
+        }
+        if (params.publishedAt === undefined) {
+            this.__publishedAt.set('');
+        }
+        if (params.loading === undefined) {
+            this.__loading.set(false);
+        }
+    }
+    updateStateVars(params: ProteusHomeAnnouncementPanel_Params) {
+        this.__title.reset(params.title);
+        this.__body.reset(params.body);
+        this.__imageUrl.reset(params.imageUrl);
+        this.__publishedAt.reset(params.publishedAt);
+        this.__loading.reset(params.loading);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__themeRev.purgeDependencyOnElmtId(rmElmtId);
+        this.__title.purgeDependencyOnElmtId(rmElmtId);
+        this.__body.purgeDependencyOnElmtId(rmElmtId);
+        this.__imageUrl.purgeDependencyOnElmtId(rmElmtId);
+        this.__publishedAt.purgeDependencyOnElmtId(rmElmtId);
+        this.__loading.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__themeRev.aboutToBeDeleted();
+        this.__title.aboutToBeDeleted();
+        this.__body.aboutToBeDeleted();
+        this.__imageUrl.aboutToBeDeleted();
+        this.__publishedAt.aboutToBeDeleted();
+        this.__loading.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    private __themeRev: ObservedPropertyAbstractPU<number>;
+    get themeRev() {
+        return this.__themeRev.get();
+    }
+    set themeRev(newValue: number) {
+        this.__themeRev.set(newValue);
+    }
+    private __title: SynchedPropertySimpleOneWayPU<string>;
+    get title() {
+        return this.__title.get();
+    }
+    set title(newValue: string) {
+        this.__title.set(newValue);
+    }
+    private __body: SynchedPropertySimpleOneWayPU<string>;
+    get body() {
+        return this.__body.get();
+    }
+    set body(newValue: string) {
+        this.__body.set(newValue);
+    }
+    private __imageUrl: SynchedPropertySimpleOneWayPU<string>;
+    get imageUrl() {
+        return this.__imageUrl.get();
+    }
+    set imageUrl(newValue: string) {
+        this.__imageUrl.set(newValue);
+    }
+    private __publishedAt: SynchedPropertySimpleOneWayPU<string>;
+    get publishedAt() {
+        return this.__publishedAt.get();
+    }
+    set publishedAt(newValue: string) {
+        this.__publishedAt.set(newValue);
+    }
+    private __loading: SynchedPropertySimpleOneWayPU<boolean>;
+    get loading() {
+        return this.__loading.get();
+    }
+    set loading(newValue: boolean) {
+        this.__loading.set(newValue);
+    }
+    initialRender() {
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusHomePanel(this, {
+                        title: '公告', panelWeight: 1,
+                        body: () => {
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                Column.create();
+                                Column.width('100%');
+                                Column.height('100%');
+                                Column.alignItems(HorizontalAlign.Start);
+                            }, Column);
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                If.create();
+                                if (this.loading) {
+                                    this.ifElseBranchUpdateFunction(0, () => {
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Text.create('加载公告…');
+                                            Text.fontSize(10);
+                                            Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                                            Text.padding(12);
+                                        }, Text);
+                                        Text.pop();
+                                    });
+                                }
+                                else if (this.imageUrl.length > 0) {
+                                    this.ifElseBranchUpdateFunction(1, () => {
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Scroll.create();
+                                            Scroll.width('100%');
+                                            Scroll.layoutWeight(1);
+                                            Scroll.scrollBar(BarState.Auto);
+                                        }, Scroll);
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Column.create({ space: 8 });
+                                            Column.width('100%');
+                                            Column.padding({ left: 8, right: 8, top: 8, bottom: 8 });
+                                            Column.alignItems(HorizontalAlign.Start);
+                                        }, Column);
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Image.create(this.imageUrl);
+                                            Image.width('100%');
+                                            Image.constraintSize({ maxHeight: 220 });
+                                            Image.objectFit(ImageFit.Contain);
+                                            Image.border({ width: 1, color: ProteusHomeColors.ROW_BORDER });
+                                            Image.backgroundColor(ProteusHomeColors.PANEL_BG);
+                                        }, Image);
+                                        this.AnnouncementTextBlock.bind(this)();
+                                        Column.pop();
+                                        Scroll.pop();
+                                    });
+                                }
+                                else {
+                                    this.ifElseBranchUpdateFunction(2, () => {
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                            Column.create();
+                                            // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                            Column.width('100%');
+                                            // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                            Column.height('100%');
+                                            // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                            Column.padding({ left: 8, right: 8, top: 8 });
+                                        }, Column);
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Image.create({ "id": 83886181, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
+                                            Image.width('100%');
+                                            Image.layoutWeight(1);
+                                            Image.objectFit(ImageFit.Contain);
+                                            Image.backgroundColor('#E8F4FC');
+                                        }, Image);
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            If.create();
+                                            if (this.title.length > 0 || this.body.length > 0 || this.publishedAt.length > 0) {
+                                                this.ifElseBranchUpdateFunction(0, () => {
+                                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                        Column.create({ space: 4 });
+                                                        Column.width('100%');
+                                                        Column.padding({ left: 8, right: 8, bottom: 8 });
+                                                    }, Column);
+                                                    this.AnnouncementTextBlock.bind(this)();
+                                                    Column.pop();
+                                                });
+                                            }
+                                            else {
+                                                this.ifElseBranchUpdateFunction(1, () => {
+                                                });
+                                            }
+                                        }, If);
+                                        If.pop();
+                                        // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                        Column.pop();
+                                    });
+                                }
+                            }, If);
+                            If.pop();
+                            Column.pop();
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 491, col: 5 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            title: '公告',
+                            panelWeight: 1,
+                            body: () => {
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    Column.create();
+                                    Column.width('100%');
+                                    Column.height('100%');
+                                    Column.alignItems(HorizontalAlign.Start);
+                                }, Column);
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    If.create();
+                                    if (this.loading) {
+                                        this.ifElseBranchUpdateFunction(0, () => {
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Text.create('加载公告…');
+                                                Text.fontSize(10);
+                                                Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                                                Text.padding(12);
+                                            }, Text);
+                                            Text.pop();
+                                        });
+                                    }
+                                    else if (this.imageUrl.length > 0) {
+                                        this.ifElseBranchUpdateFunction(1, () => {
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Scroll.create();
+                                                Scroll.width('100%');
+                                                Scroll.layoutWeight(1);
+                                                Scroll.scrollBar(BarState.Auto);
+                                            }, Scroll);
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Column.create({ space: 8 });
+                                                Column.width('100%');
+                                                Column.padding({ left: 8, right: 8, top: 8, bottom: 8 });
+                                                Column.alignItems(HorizontalAlign.Start);
+                                            }, Column);
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Image.create(this.imageUrl);
+                                                Image.width('100%');
+                                                Image.constraintSize({ maxHeight: 220 });
+                                                Image.objectFit(ImageFit.Contain);
+                                                Image.border({ width: 1, color: ProteusHomeColors.ROW_BORDER });
+                                                Image.backgroundColor(ProteusHomeColors.PANEL_BG);
+                                            }, Image);
+                                            this.AnnouncementTextBlock.bind(this)();
+                                            Column.pop();
+                                            Scroll.pop();
+                                        });
+                                    }
+                                    else {
+                                        this.ifElseBranchUpdateFunction(2, () => {
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                                Column.create();
+                                                // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                                Column.width('100%');
+                                                // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                                Column.height('100%');
+                                                // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                                Column.padding({ left: 8, right: 8, top: 8 });
+                                            }, Column);
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Image.create({ "id": 83886181, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
+                                                Image.width('100%');
+                                                Image.layoutWeight(1);
+                                                Image.objectFit(ImageFit.Contain);
+                                                Image.backgroundColor('#E8F4FC');
+                                            }, Image);
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                If.create();
+                                                if (this.title.length > 0 || this.body.length > 0 || this.publishedAt.length > 0) {
+                                                    this.ifElseBranchUpdateFunction(0, () => {
+                                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                            Column.create({ space: 4 });
+                                                            Column.width('100%');
+                                                            Column.padding({ left: 8, right: 8, bottom: 8 });
+                                                        }, Column);
+                                                        this.AnnouncementTextBlock.bind(this)();
+                                                        Column.pop();
+                                                    });
+                                                }
+                                                else {
+                                                    this.ifElseBranchUpdateFunction(1, () => {
+                                                    });
+                                                }
+                                            }, If);
+                                            If.pop();
+                                            // 无服务器 / 网络不佳 / 无配图：显示本地预留图
+                                            Column.pop();
+                                        });
+                                    }
+                                }, If);
+                                If.pop();
+                                Column.pop();
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        title: '公告', panelWeight: 1
+                    });
+                }
+            }, { name: "ProteusHomePanel" });
+        }
+    }
+    AnnouncementTextBlock(parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.title.length > 0) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.title);
+                        Text.fontSize(12);
+                        Text.fontColor(ProteusHomeColors.TEXT);
+                        Text.fontWeight(FontWeight.Bold);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.publishedAt.length > 0) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.publishedAt);
+                        Text.fontSize(8);
+                        Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.body.length > 0) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.body);
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusHomeColors.TEXT);
+                        Text.width('100%');
+                        Text.lineHeight(16);
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
 export class ProteusHomeWizardDialog extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -1693,7 +2075,7 @@ export class ProteusHomeWizardDialog extends ViewPU {
                                     placeholder: 'MyProject',
                                     onChange: (v: string) => this.onNameChange(v),
                                     onSubmit: () => this.onNext()
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 540, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 628, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1755,7 +2137,7 @@ export class ProteusHomeWizardDialog extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusClassicBtn(this, { label: 'Back', widthVal: 68, onAction: () => this.onBack() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 566, col: 13 });
+                                let componentCall = new ProteusClassicBtn(this, { label: 'Back', widthVal: 68, onAction: () => this.onBack() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 654, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1784,7 +2166,7 @@ export class ProteusHomeWizardDialog extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusClassicBtn(this, { label: 'Cancel', widthVal: 68, onAction: () => this.onCancel() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 568, col: 11 });
+                    let componentCall = new ProteusClassicBtn(this, { label: 'Cancel', widthVal: 68, onAction: () => this.onCancel() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 656, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1809,7 +2191,7 @@ export class ProteusHomeWizardDialog extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusClassicBtn(this, { label: 'Next', widthVal: 68, onAction: () => this.onNext() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 570, col: 13 });
+                                let componentCall = new ProteusClassicBtn(this, { label: 'Next', widthVal: 68, onAction: () => this.onNext() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 658, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1834,7 +2216,7 @@ export class ProteusHomeWizardDialog extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusClassicBtn(this, { label: 'Open', widthVal: 68, onAction: () => this.onFinish() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 572, col: 13 });
+                                let componentCall = new ProteusClassicBtn(this, { label: 'Open', widthVal: 68, onAction: () => this.onFinish() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 660, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2026,7 +2408,7 @@ export class ProteusHomeHelpDialog extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusHomeDownloadBtn(this, { label: this.primaryLabel, primary: false, onAction: () => this.onPrimary() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 643, col: 13 });
+                                let componentCall = new ProteusHomeDownloadBtn(this, { label: this.primaryLabel, primary: false, onAction: () => this.onPrimary() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 731, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2055,7 +2437,7 @@ export class ProteusHomeHelpDialog extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeDownloadBtn(this, { label: 'Close', primary: true, onAction: () => this.onClose() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 645, col: 11 });
+                    let componentCall = new ProteusHomeDownloadBtn(this, { label: 'Close', primary: true, onAction: () => this.onClose() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 733, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2220,7 +2602,7 @@ export class ProteusHomeTextDialog extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeDownloadBtn(this, { label: 'Close', primary: true, onAction: () => this.onClose() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 712, col: 11 });
+                    let componentCall = new ProteusHomeDownloadBtn(this, { label: 'Close', primary: true, onAction: () => this.onClose() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/proteus/ProteusHomeWidgets.ets", line: 800, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

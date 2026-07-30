@@ -1,0 +1,405 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚoexport function polylineLength(pts) {
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) {
+        len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    }
+    return len;
+}
+/**
+ * åœ¨è·¯å¾„æœ€é•¿ç›´çº¿æ®µä¸Šæ’å…¥è›‡å½¢å¼¯æŠ˜ï¼Œç›®æ ‡å¢åŠ  extraLenï¼ˆmilï¼‰ã€‚
+ * amplitude / pitch æ§åˆ¶æŒ¯å¹…ä¸èŠ‚è·ã€‚
+ */
+export function addSerpentineMeander(path, extraLen, amplitude = 20, pitch = 30) {
+    if (path.length < 2 || extraLen < 2) {
+        return path.slice();
+    }
+    // æ‰¾æœ€é•¿æ®µ
+    let bestI = 0;
+    let bestLen = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+        const L = Math.hypot(path[i + 1].x - path[i].x, path[i + 1].y - path[i].y);
+        if (L > bestLen) {
+            bestLen = L;
+            bestI = i;
+        }
+    }
+    if (bestLen < pitch * 2) {
+        return path.slice();
+    }
+    const a = path[bestI];
+    const b = path[bestI + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len;
+    const uy = dy / len;
+    // å‚ç›´æ–¹å‘
+    const px = -uy;
+    const py = ux;
+    // æ¯èŠ‚è›‡å½¢é¢å¤–é•¿åº¦ â‰ˆ 2 * (sqrt((pitch/2)^2 + amp^2) - pitch/2) * 2 â‰ˆ ç®€åŒ–ç”¨ 2*amp*2/pitch * pitch
+    // ä¸€èŠ‚ï¼ˆå»-å›ï¼‰é¢å¤–é•¿åº¦çº¦: 2 * (hypot(pitch/2, amp) - pitch/2) * 2
+    const half = pitch / 2;
+    const bump = Math.hypot(half, amplitude) - half;
+    const perCycle = bump * 4; // ä¸Šä¸‹å„ä¸€æ¬¡å¾€è¿”
+    if (perCycle < 1) {
+        return path.slice();
+    }
+    let cycles = Math.ceil(extraLen / perCycle);
+    const maxCycles = Math.max(1, Math.floor((len - pitch) / pitch));
+    if (cycles > maxCycles) {
+        cycles = maxCycles;
+    }
+    if (cycles < 1) {
+        return path.slice();
+    }
+    const usedLen = cycles * pitch;
+    const startT = (len - usedLen) / 2 / len;
+    const out = [];
+    for (let i = 0; i <= bestI; i++) {
+        out.push({ x: path[i].x, y: path[i].y });
+    }
+    // è¿›å…¥è›‡å½¢èµ·ç‚¹
+    const sx = a.x + ux * startT * len;
+    const sy = a.y + uy * startT * len;
+    if (Math.hypot(sx - out[out.length - 1].x, sy - out[out.length - 1].y) > 0.5) {
+        out.push({ x: sx, y: sy });
+    }
+    for (let c = 0; c < cycles; c++) {
+        const t0 = startT + (c * pitch) / len;
+        const t1 = startT + ((c + 0.5) * pitch) / len;
+        const t2 = startT + ((c + 1) * pitch) / len;
+        const sign = (c % 2 === 0) ? 1 : -1;
+        const mx = a.x + ux * t1 * len + px * amplitude * sign;
+        const my = a.y + uy * t1 * len + py * amplitude * sign;
+        const ex = a.x + ux * t2 * len;
+        const ey = a.y + uy * t2 * len;
+        out.push({ x: mx, y: my });
+        out.push({ x: ex, y: ey });
+    }
+    for (let i = bestI + 1; i < path.length; i++) {
+        out.push({ x: path[i].x, y: path[i].y });
+    }
+    return out;
+}
+/**
+ * ä½¿ shorter è·¯å¾„è¡¥é½åˆ°æ¥è¿‘ longer é•¿åº¦ï¼ˆå·®å€¼ â‰¤ tol å³åœæ­¢ï¼‰ã€‚
+ * è¿”å› [pathA', pathB']ï¼Œå…¶ä¸­è¾ƒçŸ­è€…å¯èƒ½è¢«è›‡å½¢åŠ é•¿ã€‚
+ */
+export function matchDiffPairLengths(pathP, pathN, existingLenP, existingLenN, tolMil, gapMil) {
+    const lp = existingLenP + polylineLength(pathP);
+    const ln = existingLenN + polylineLength(pathN);
+    const diff = Math.abs(lp - ln);
+    if (diff <= tolMil) {
+        return [pathP, pathN];
+    }
+    const amp = Math.max(12, Math.min(40, gapMil * 0.9));
+    const pitch = Math.max(18, amp * 1.4);
+    if (lp < ln) {
+        return [addSerpentineMeander(pathP, diff, amp, pitch), pathN];
+    }
+    return [pathP, addSerpentineMeander(pathN, diff, amp, pitch)];
+}
+//# sourceMappingURL=PcbSerpentineUtil.js.mapÂÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbSerpentineUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/PcbSerpentineUtil¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ®/**
+ * å·®åˆ†å¯¹è›‡å½¢ç­‰é•¿ â€” åœ¨è¾ƒçŸ­è·¯å¾„ä¸Šæ’å…¥æ‰‹é£ç´å¼¯æŠ˜è¡¥é½é•¿åº¦
+ */
+import { Point2D } from '../types/CommonTypes';
+
+export function polylineLength(pts: Point2D[]): number {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  }
+  return len;
+}
+
+/**
+ * åœ¨è·¯å¾„æœ€é•¿ç›´çº¿æ®µä¸Šæ’å…¥è›‡å½¢å¼¯æŠ˜ï¼Œç›®æ ‡å¢åŠ  extraLenï¼ˆmilï¼‰ã€‚
+ * amplitude / pitch æ§åˆ¶æŒ¯å¹…ä¸èŠ‚è·ã€‚
+ */
+export function addSerpentineMeander(
+  path: Point2D[],
+  extraLen: number,
+  amplitude: number = 20,
+  pitch: number = 30
+): Point2D[] {
+  if (path.length < 2 || extraLen < 2) {
+    return path.slice();
+  }
+  // æ‰¾æœ€é•¿æ®µ
+  let bestI = 0;
+  let bestLen = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const L = Math.hypot(path[i + 1].x - path[i].x, path[i + 1].y - path[i].y);
+    if (L > bestLen) {
+      bestLen = L;
+      bestI = i;
+    }
+  }
+  if (bestLen < pitch * 2) {
+    return path.slice();
+  }
+
+  const a = path[bestI];
+  const b = path[bestI + 1];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len;
+  const uy = dy / len;
+  // å‚ç›´æ–¹å‘
+  const px = -uy;
+  const py = ux;
+
+  // æ¯èŠ‚è›‡å½¢é¢å¤–é•¿åº¦ â‰ˆ 2 * (sqrt((pitch/2)^2 + amp^2) - pitch/2) * 2 â‰ˆ ç®€åŒ–ç”¨ 2*amp*2/pitch * pitch
+  // ä¸€èŠ‚ï¼ˆå»-å›ï¼‰é¢å¤–é•¿åº¦çº¦: 2 * (hypot(pitch/2, amp) - pitch/2) * 2
+  const half = pitch / 2;
+  const bump = Math.hypot(half, amplitude) - half;
+  const perCycle = bump * 4; // ä¸Šä¸‹å„ä¸€æ¬¡å¾€è¿”
+  if (perCycle < 1) {
+    return path.slice();
+  }
+  let cycles = Math.ceil(extraLen / perCycle);
+  const maxCycles = Math.max(1, Math.floor((len - pitch) / pitch));
+  if (cycles > maxCycles) {
+    cycles = maxCycles;
+  }
+  if (cycles < 1) {
+    return path.slice();
+  }
+
+  const usedLen = cycles * pitch;
+  const startT = (len - usedLen) / 2 / len;
+  const out: Point2D[] = [];
+  for (let i = 0; i <= bestI; i++) {
+    out.push({ x: path[i].x, y: path[i].y });
+  }
+
+  // è¿›å…¥è›‡å½¢èµ·ç‚¹
+  const sx = a.x + ux * startT * len;
+  const sy = a.y + uy * startT * len;
+  if (Math.hypot(sx - out[out.length - 1].x, sy - out[out.length - 1].y) > 0.5) {
+    out.push({ x: sx, y: sy });
+  }
+
+  for (let c = 0; c < cycles; c++) {
+    const t0 = startT + (c * pitch) / len;
+    const t1 = startT + ((c + 0.5) * pitch) / len;
+    const t2 = startT + ((c + 1) * pitch) / len;
+    const sign = (c % 2 === 0) ? 1 : -1;
+    const mx = a.x + ux * t1 * len + px * amplitude * sign;
+    const my = a.y + uy * t1 * len + py * amplitude * sign;
+    const ex = a.x + ux * t2 * len;
+    const ey = a.y + uy * t2 * len;
+    out.push({ x: mx, y: my });
+    out.push({ x: ex, y: ey });
+  }
+
+  for (let i = bestI + 1; i < path.length; i++) {
+    out.push({ x: path[i].x, y: path[i].y });
+  }
+  return out;
+}
+
+/**
+ * ä½¿ shorter è·¯å¾„è¡¥é½åˆ°æ¥è¿‘ longer é•¿åº¦ï¼ˆå·®å€¼ â‰¤ tol å³åœæ­¢ï¼‰ã€‚
+ * è¿”å› [pathA', pathB']ï¼Œå…¶ä¸­è¾ƒçŸ­è€…å¯èƒ½è¢«è›‡å½¢åŠ é•¿ã€‚
+ */
+export function matchDiffPairLengths(
+  pathP: Point2D[],
+  pathN: Point2D[],
+  existingLenP: number,
+  existingLenN: number,
+  tolMil: number,
+  gapMil: number
+): Point2D[][] {
+  const lp = existingLenP + polylineLength(pathP);
+  const ln = existingLenN + polylineLength(pathN);
+  const diff = Math.abs(lp - ln);
+  if (diff <= tolMil) {
+    return [pathP, pathN];
+  }
+  const amp = Math.max(12, Math.min(40, gapMil * 0.9));
+  const pitch = Math.max(18, amp * 1.4);
+  if (lp < ln) {
+    return [addSerpentineMeander(pathP, diff, amp, pitch), pathN];
+  }
+  return [pathP, addSerpentineMeander(pathN, diff, amp, pitch)];
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings´PcbSerpentineUtil.js ‘µPcbSerpentineUtil.etsÜ e–”   ” ” ” ” ”" -–” ” ” 	” ” ” Ü ” ”	 ” ” ” ” ” ” ” ” ” ”"  ”$ "”% #”' %”) 'Ü (” ” ” ” ” ” ” ” ” ” ”  ”! ”" ”% !”( $”) %”* &”- )”. *”/ +”0 ,”1 -”3 /”6 2”7 3”8 4”9 5”: 6”; 7”> :”ÌA =”ÌB >”ÌC ?”ÌF ÌB”ÌG ÌC”ÌH ÌD”ÌI ÌE”ÌJ ÌF”ÌK ÌG”ÌL ÌH‘” 	”” 
+” 
+	” 
+” 
+’”   ” ‘”   ‘” ”   ” ” ”$ $”% ”) ”+ ”3 ”5 ”ÌA ”ÌC ”ÌE ”ÌM ”ÌO œ” ” ” 
+” ” ” ” ” ”# !”& $”' %”) '—” ” ” ” ” ” ” ‘” ’” ” 	–” ” ” ” ” ” –” ” ” ” ” ” Ü ” ”	 ” ” ” ” ” ” ” ” ” ”# !”& $”' %”) '”* (”, *”. ,Ü )” ” 
+” ” ” ” ” ” ”! ”" ”# ”& "”' #”( $”) %”* &”- )”1 -”2 .”3 /”4 0”5 1”6 2”8 4”< 8”= 9”> :”ÌA =”ÌB >”ÌC ?”ÌD Ì@”ÌE ÌA”ÌH ÌD”ÌL ÌH”ÌM ÌI”ÌN ÌJ”ÌO ÌK”ÌP ÌL”ÌQ ÌM”ÌR ÌN”ÌS ÌO–” ” ” 	” ” ” •”  ”  ”  ”  ”  •” !” !” !” !” !‘”	 "‘” #˜” $” $” $” $” $” $” $” $—” %” %” %” %” %” %” %‘” &™” (”
+ (” (	” (” (” (” (” (” (›” )”
+ )” )	” )” )” )” )” )” )” )” )œ” *”
+ *” *
+” *” *” *” *” *” *” *” *” *œ” +”
+ +” +
+” +” +” +” +” +” +” +” +” +” ,”
+ ,” ,” ,” ,” ,” ,” ,” ,” ,”! ,”" , ”# ,!˜” -”
+ -” -
+” -” -” -” -” -˜” .”
+ .” .
+” .” .” .” .” .’” /” /	—” 0”
+ 0” 0
+” 0” 0” 0” 0–” 1”
+ 1” 1
+” 1” 1” 1’” 3”Ì[ 3ÌY’” 4”< 4:˜” 5”
+ 5” 5” 5” 5” 5” 5” 5Ÿ” 6”
+ 6” 6” 6” 6” 6” 6” 6”  6”" 6 ”+ 6)”, 6*”/ 6-”3 61”4 62š” 7”
+ 7” 7” 7” 7” 7” 7” 7” 7”) 7'–” 8” 8” 8” 8” 8” 8—” 9” 9” 9” 9” 9” 9” 9‘” :” ;” ;” ;” ;” ;” ;” ;” ;”# ;!”& ;$”. ;,”/ ;-”0 ;.Ü ” <”
+ <” <” <” <” <” <” <”  <”" < ”& <$”' <%”, <*”- <+”. <,”1 </”4 <2”9 <7”: <8”= <;”ÌB <Ì@”ÌC <ÌA”ÌD <ÌB”ÌE <ÌC–” =” =” =” =” =” =•” >” >
+” >” >” >‘” ?–” Ì@” Ì@” Ì@” Ì@” Ì@” Ì@—” ÌA” ÌA” ÌA” ÌA” ÌA” ÌA” ÌA‘” ÌB˜” ÌD”
+ ÌD” ÌD” ÌD” ÌD” ÌD”" ÌD ”# ÌD!” ÌE”
+ ÌE” ÌE” ÌE” ÌE” ÌE” ÌE”! ÌE”" ÌE ”% ÌE#”& ÌE$”) ÌE'”, ÌE*”- ÌE+–” ÌF”
+ ÌF” ÌF” ÌF” ÌF” ÌF” ÌG”	 ÌG” ÌG” ÌG” ÌG” ÌG” ÌG” ÌG” ÌG” ÌG”  ÌG”! ÌG”# ÌG!”% ÌG#Ü ” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH”! ÌH”" ÌH”$ ÌH ”( ÌH$”) ÌH%”* ÌH&”+ ÌH'”, ÌH(”- ÌH)”/ ÌH+”0 ÌH,”1 ÌH-‘” ÌI’” ÌK” ÌK” ÌL”
+ ÌL” ÌL
+” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL”  ÌL”# ÌL!”& ÌL$”' ÌL%” ÌM”
+ ÌM” ÌM
+” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌM”# ÌM!”& ÌM$”' ÌM%Ü #” ÌN” ÌN” ÌN
+” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN”  ÌN”& ÌN$”) ÌN'”* ÌN(”+ ÌN)”, ÌN*”- ÌN+”/ ÌN-”1 ÌN/”4 ÌN2”7 ÌN5”8 ÌN6”; ÌN9”< ÌN:”ÌB ÌNÌ@”ÌE ÌNÌC”ÌF ÌNÌD”ÌG ÌNÌE”ÌH ÌNÌF”ÌI ÌNÌG”ÌJ ÌNÌH”ÌM ÌNÌK”ÌP ÌNÌN”ÌR ÌNÌPÜ ” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO”! ÌO”" ÌO”# ÌO‘” ÌP” ÌR”	 ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR”  ÌR”! ÌR”# ÌR!”% ÌR#” ÌS” ÌS
+” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS”! ÌS”& ÌS"”' ÌS#”* ÌS&”- ÌS)”. ÌS*Ü ” ÌT” ÌT
+” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”% ÌT!”& ÌT"”) ÌT%”. ÌT*”/ ÌT+”2 ÌT.”5 ÌT1”6 ÌT2Ü ” ÌU” ÌU
+” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU” ÌU”" ÌU”# ÌU”$ ÌU ”' ÌU#”, ÌU(”- ÌU)”0 ÌU,”3 ÌU/”4 ÌU0Ü ” ÌV” ÌV
+” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”  ÌV”! ÌV”" ÌV”# ÌV”$ ÌV ”% ÌV!”& ÌV"”' ÌV#”( ÌV$”) ÌV%”* ÌV&”+ ÌV'”, ÌV(Ü ” ÌW” ÌW
+” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW”  ÌW”# ÌW”& ÌW"”) ÌW%”+ ÌW'”. ÌW*”7 ÌW3”: ÌW6”> ÌW:”? ÌW;Ü ” ÌX” ÌX
+” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”  ÌX”# ÌX”& ÌX"”) ÌX%”+ ÌX'”. ÌX*”7 ÌX3”: ÌX6”> ÌX:”? ÌX;” ÌY” ÌY
+” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”  ÌY”# ÌY”& ÌY"”' ÌY#” ÌZ” ÌZ
+” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”# ÌZ”& ÌZ"”' ÌZ#Ü ” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[”! Ì[”" Ì[”# Ì[Ü ” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\”! Ì\”" Ì\”# Ì\‘” Ì]Ü ” Ì_”	 Ì_” Ì_” Ì_” Ì_” Ì_” Ì_” Ì_” Ì_” Ì_”  Ì_”$ Ì_"”% Ì_#”+ Ì_)”- Ì_+”. Ì_,”0 Ì_.”2 Ì_0Ü ” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`” Ì`”! Ì`”" Ì`”$ Ì` ”( Ì`$”) Ì`%”* Ì`&”+ Ì`'”, Ì`(”- Ì`)”/ Ì`+”0 Ì`,”1 Ì`-‘” Ìa”” Ìb” Ìb	” Ìb” Ìb’”  Ìc ” Ìc‘”  Ìe ‘” ÌhÜ ”  Ìi ” Ìi” Ìi”$ Ìi$”% Ìj”* Ìj”, Ìk”1 Ìk”3 Ìl”? Ìl”ÌA Ìm”ÌM Ìm”ÌO Ìn”ÌU Ìn”ÌW Ìo”Ì] Ìo›” Ìq”
+ Ìq” Ìq
+” Ìq” Ìq” Ìq”, Ìq*”- Ìq+”2 Ìq0”3 Ìq1”4 Ìq2›” Ìr”
+ Ìr” Ìr
+” Ìr” Ìr” Ìr”, Ìr*”- Ìr+”2 Ìr0”3 Ìr1”4 Ìr2” Ìs”
+ Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs” Ìs”! Ìs”" Ìs ”# Ìs!–” Ìt” Ìt” Ìt
+” Ìt” Ìt” Ìt˜” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu‘” ÌvÜ ” Ìw”
+ Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw” Ìw”! Ìw”" Ìw ”% Ìw#”& Ìw$”( Ìw&”* Ìw(”0 Ìw.”3 Ìw1”6 Ìw4”7 Ìw5”8 Ìw6”9 Ìw7Ÿ” Ìx”
+ Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx”" Ìx ”% Ìx#”( Ìx&”) Ìx'”* Ìx(–” Ìy” Ìy”
+ Ìy” Ìy” Ìy” ÌyÜ ” Ìz” Ìz” Ìz”$ Ìz ”% Ìz!”* Ìz&”, Ìz(”0 Ìz,”2 Ìz.”5 Ìz1”7 Ìz3”< Ìz8”= Ìz9”? Ìz;”ÌD ÌzÌ@”ÌE ÌzÌA”ÌF ÌzÌB‘” Ì{Ü ” Ì|” Ì|	” Ì|
+” Ì|” Ì|”' Ì|%”( Ì|&”- Ì|+”/ Ì|-”3 Ì|1”5 Ì|3”8 Ì|6”: Ì|8”? Ì|=”Ì@ Ì|>”ÌA Ì|?”ÌB Ì|Ì@’”  Ì} ” Ì}ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ f‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache“ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÌÌÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌÌÔrK”¤type¥start£end¤nameªIdentifier®polylineLengthÂÂÂ‘KªIdentifier"£ptsÔrL”¤type¥start£end¤body®BlockStatement$ÌÌ“ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclaration+7‘ÔrN•¤type¥start£end¢id¤init²VariableDeclarator/6KªIdentifier/2£lenÔrO•¤type¥start£end¥value£raw§Literal56 ¡0£letÔrP—¤type¥start£end¤init¤test¦update¤body¬ForStatement=Ì¸M³VariableDeclarationÌBÌK‘N²VariableDeclaratorÌFÌKKªIdentifierÌFÌG¡iO§LiteralÌJÌK¡1£letÔrQ–¤type¥start£end¤left¨operator¥right°BinaryExpressionÌMÌ[KªIdentifierÌMÌN¡i¡<ÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌQÌ[KªIdentifierÌQÌT£ptsKªIdentifierÌUÌ[¦lengthÂÂÔrS–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÌ]Ì`¢++ÂKªIdentifierÌ]Ì^¡iL®BlockStatementÌbÌ¸‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÌmÌ±ÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÌmÌ°¢+=KªIdentifierÌmÌp£lenÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌtÌ°R°MemberExpressionÌtÌ~KªIdentifierÌtÌx¤MathKªIdentifierÌyÌ~¥hypotÂÂ’Q°BinaryExpressionÌÌ–R°MemberExpressionÌÌ‡R°MemberExpressionÌÌ…KªIdentifierÌÌ‚£ptsKªIdentifierÌƒÌ„¡iÃÂKªIdentifierÌ†Ì‡¡xÂÂ¡-R°MemberExpressionÌŠÌ–R°MemberExpressionÌŠÌ”KªIdentifierÌŠÌ£ptsQ°BinaryExpressionÌÌ“KªIdentifierÌÌ¡i¡-O§LiteralÌ’Ì“¡1ÃÂKªIdentifierÌ•Ì–¡xÂÂQ°BinaryExpressionÌ˜Ì¯R°MemberExpressionÌ˜Ì R°MemberExpressionÌ˜ÌKªIdentifierÌ˜Ì›£ptsKªIdentifierÌœÌ¡iÃÂKªIdentifierÌŸÌ ¡yÂÂ¡-R°MemberExpressionÌ£Ì¯R°MemberExpressionÌ£Ì­KªIdentifierÌ£Ì¦£ptsQ°BinaryExpressionÌ§Ì¬KªIdentifierÌ§Ì¨¡i¡-O§LiteralÌ«Ì¬¡1ÃÂKªIdentifierÌ®Ì¯¡yÂÂÂÔrW”¤type¥start£end¨argument¯ReturnStatementÌ¾ÌÉKªIdentifierÌÅÌÈ£lenÀI¶ExportNamedDeclarationÍÍ
+½J³FunctionDeclarationÍ&Í
+½KªIdentifierÍ/ÍC´addSerpentineMeanderÂÂÂ”KªIdentifierÍDÍH¤pathKªIdentifierÍJÍR¨extraLenÔrX•¤type¥start£end¤left¥right±AssignmentPatternÍTÍbKªIdentifierÍTÍ]©amplitudeO§LiteralÍ`Íb¢20X±AssignmentPatternÍdÍnKªIdentifierÍdÍi¥pitchO§LiteralÍlÍn¢30L®BlockStatementÍpÍ
+½Ü  ÔrY–¤type¥start£end¤testªconsequent©alternate«IfStatementÍwÍÂQ±LogicalExpressionÍ{ÍšQ°BinaryExpressionÍ{ÍŠR°MemberExpressionÍ{Í†KªIdentifierÍ{Í¤pathKªIdentifierÍ€Í†¦lengthÂÂ¡<O§LiteralÍ‰ÍŠ¡2¢||Q°BinaryExpressionÍÍšKªIdentifierÍÍ–¨extraLen¡<O§LiteralÍ™Íš¡2L®BlockStatementÍœÍÂ‘W¯ReturnStatementÍ§Í»V®CallExpressionÍ®ÍºR°MemberExpressionÍ®Í¸KªIdentifierÍ®Í²¤pathKªIdentifierÍ³Í¸¥sliceÂÂÂÀM³VariableDeclarationÍÕÍã‘N²VariableDeclaratorÍÙÍâKªIdentifierÍÙÍŞ¥bestIO§LiteralÍáÍâ ¡0£letM³VariableDeclarationÍéÍù‘N²VariableDeclaratorÍíÍøKªIdentifierÍíÍô§bestLenO§LiteralÍ÷Íø ¡0£letP¬ForStatementÍÿÍßM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ	¡iO§LiteralÍÍ ¡0£letQ°BinaryExpressionÍÍ"KªIdentifierÍÍ¡i¡<Q°BinaryExpressionÍÍ"R°MemberExpressionÍÍKªIdentifierÍÍ¤pathKªIdentifierÍÍ¦lengthÂÂ¡-O§LiteralÍ!Í"¡1S°UpdateExpressionÍ$Í'¢++ÂKªIdentifierÍ$Í%¡iL®BlockStatementÍ)Íß’M³VariableDeclarationÍ4Í‘N²VariableDeclaratorÍ:Í~KªIdentifierÍ:Í;¡LV®CallExpressionÍ>Í~R°MemberExpressionÍ>ÍHKªIdentifierÍ>ÍB¤MathKªIdentifierÍCÍH¥hypotÂÂ’Q°BinaryExpressionÍIÍbR°MemberExpressionÍIÍVR°MemberExpressionÍIÍTKªIdentifierÍIÍM¤pathQ°BinaryExpressionÍNÍSKªIdentifierÍNÍO¡i¡+O§LiteralÍRÍS¡1ÃÂKªIdentifierÍUÍV¡xÂÂ¡-R°MemberExpressionÍYÍbR°MemberExpressionÍYÍ`KªIdentifierÍYÍ]¤pathKªIdentifierÍ^Í_¡iÃÂKªIdentifierÍaÍb¡xÂÂQ°BinaryExpressionÍdÍ}R°MemberExpressionÍdÍqR°MemberExpressionÍdÍoKªIdentifierÍdÍh¤pathQ°BinaryExpressionÍiÍnKªIdentifierÍiÍj¡i¡+O§LiteralÍmÍn¡1ÃÂKªIdentifierÍpÍq¡yÂÂ¡-R°MemberExpressionÍtÍ}R°MemberExpressionÍtÍ{KªIdentifierÍtÍx¤pathKªIdentifierÍyÍz¡iÃÂKªIdentifierÍ|Í}¡yÂÂÂ¥constY«IfStatementÍ‰ÍØQ°BinaryExpressionÍÍ˜KªIdentifierÍÍ¡L¡>KªIdentifierÍ‘Í˜§bestLenL®BlockStatementÍšÍØ’T³ExpressionStatementÍ©ÍµU´AssignmentExpressionÍ©Í´¡=KªIdentifierÍ©Í°§bestLenKªIdentifierÍ³Í´¡LT³ExpressionStatementÍÃÍÍU´AssignmentExpressionÍÃÍÌ¡=KªIdentifierÍÃÍÈ¥bestIKªIdentifierÍËÍÌ¡iÀY«IfStatementÍåÍ$Q°BinaryExpressionÍéÍüKªIdentifierÍéÍğ§bestLen¡<Q°BinaryExpressionÍóÍüKªIdentifierÍóÍø¥pitch¡*O§LiteralÍûÍü¡2L®BlockStatementÍşÍ$‘W¯ReturnStatementÍ	ÍV®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¤pathKªIdentifierÍÍ¥sliceÂÂÂÀM³VariableDeclarationÍ*Í@‘N²VariableDeclaratorÍ0Í?KªIdentifierÍ0Í1¡aR°MemberExpressionÍ4Í?KªIdentifierÍ4Í8¤pathKªIdentifierÍ9Í>¥bestIÃÂ¥constM³VariableDeclarationÍFÍ`‘N²VariableDeclaratorÍLÍ_KªIdentifierÍLÍM¡bR°MemberExpressionÍPÍ_KªIdentifierÍPÍT¤pathQ°BinaryExpressionÍUÍ^KªIdentifierÍUÍZ¥bestI¡+O§LiteralÍ]Í^¡1ÃÂ¥constM³VariableDeclarationÍfÍ{‘N²VariableDeclaratorÍlÍzKªIdentifierÍlÍn¢dxQ°BinaryExpressionÍqÍzR°MemberExpressionÍqÍtKªIdentifierÍqÍr¡bKªIdentifierÍsÍt¡xÂÂ¡-R°MemberExpressionÍwÍzKªIdentifierÍwÍx¡aKªIdentifierÍyÍz¡xÂÂ¥constM³VariableDeclarationÍÍ–‘N²VariableDeclaratorÍ‡Í•KªIdentifierÍ‡Í‰¢dyQ°BinaryExpressionÍŒÍ•R°MemberExpressionÍŒÍKªIdentifierÍŒÍ¡bKªIdentifierÍÍ¡yÂÂ¡-R°MemberExpressionÍ’Í•KªIdentifierÍ’Í“¡aKªIdentifierÍ”Í•¡yÂÂ¥constM³VariableDeclarationÍœÍ»‘N²VariableDeclaratorÍ¢ÍºKªIdentifierÍ¢Í¥£lenV®CallExpressionÍ¨ÍºR°MemberExpressionÍ¨Í²KªIdentifierÍ¨Í¬¤MathKªIdentifierÍ­Í²¥hypotÂÂ’KªIdentifierÍ³Íµ¢dxKªIdentifierÍ·Í¹¢dyÂ¥constM³VariableDeclarationÍÁÍÕ‘N²VariableDeclaratorÍÇÍÔKªIdentifierÍÇÍÉ¢uxQ°BinaryExpressionÍÌÍÔKªIdentifierÍÌÍÎ¢dx¡/KªIdentifierÍÑÍÔ£len¥constM³VariableDeclarationÍÛÍï‘N²VariableDeclaratorÍáÍîKªIdentifierÍáÍã¢uyQ°BinaryExpressionÍæÍîKªIdentifierÍæÍè¢dy¡/KªIdentifierÍëÍî£len¥constM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ
+¢pxS¯UnaryExpressionÍÍ¡-ÃKªIdentifierÍÍ¢uy¥constM³VariableDeclarationÍÍ%‘N²VariableDeclaratorÍÍ$KªIdentifierÍÍ¢pyKªIdentifierÍ"Í$¢ux¥constM³VariableDeclarationÍÆÍİ‘N²VariableDeclaratorÍÌÍÜKªIdentifierÍÌÍĞ¤halfQ°BinaryExpressionÍÓÍÜKªIdentifierÍÓÍØ¥pitch¡/O§LiteralÍÛÍÜ¡2¥constM³VariableDeclarationÍãÍ‘N²VariableDeclaratorÍéÍKªIdentifierÍéÍí¤bumpQ°BinaryExpressionÍğÍV®CallExpressionÍğÍR°MemberExpressionÍğÍúKªIdentifierÍğÍô¤MathKªIdentifierÍõÍú¥hypotÂÂ’KªIdentifierÍûÍÿ¤halfKªIdentifierÍÍ
+©amplitudeÂ¡-KªIdentifierÍÍ¤half¥constM³VariableDeclarationÍÍ3‘N²VariableDeclaratorÍÍ2KªIdentifierÍÍ'¨perCycleQ°BinaryExpressionÍ*Í2KªIdentifierÍ*Í.¤bump¡*O§LiteralÍ1Í2¡4¥constY«IfStatementÍDÍ|Q°BinaryExpressionÍHÍTKªIdentifierÍHÍP¨perCycle¡<O§LiteralÍSÍT¡1L®BlockStatementÍVÍ|‘W¯ReturnStatementÍaÍuV®CallExpressionÍhÍtR°MemberExpressionÍhÍrKªIdentifierÍhÍl¤pathKªIdentifierÍmÍr¥sliceÂÂÂÀM³VariableDeclarationÍ‚Í®‘N²VariableDeclaratorÍ†Í­KªIdentifierÍ†ÍŒ¦cyclesV®CallExpressionÍÍ­R°MemberExpressionÍÍ˜KªIdentifierÍÍ“¤MathKªIdentifierÍ”Í˜¤ceilÂÂ‘Q°BinaryExpressionÍ™Í¬KªIdentifierÍ™Í¡¨extraLen¡/KªIdentifierÍ¤Í¬¨perCycleÂ£letM³VariableDeclarationÍ´Íõ‘N²VariableDeclaratorÍºÍôKªIdentifierÍºÍÃ©maxCyclesV®CallExpressionÍÆÍôR°MemberExpressionÍÆÍÎKªIdentifierÍÆÍÊ¤MathKªIdentifierÍËÍÎ£maxÂÂ’O§LiteralÍÏÍĞ¡1V®CallExpressionÍÒÍóR°MemberExpressionÍÒÍÜKªIdentifierÍÒÍÖ¤MathKªIdentifierÍ×ÍÜ¥floorÂÂ‘Q°BinaryExpressionÍİÍòQ°BinaryExpressionÍŞÍéKªIdentifierÍŞÍá£len¡-KªIdentifierÍäÍé¥pitch¡/KªIdentifierÍíÍò¥pitchÂÂ¥constY«IfStatementÍûÍ8Q°BinaryExpressionÍÿÍKªIdentifierÍÿÍ¦cycles¡>KªIdentifierÍÍ©maxCyclesL®BlockStatementÍÍ8‘T³ExpressionStatementÍÍ1U´AssignmentExpressionÍÍ0¡=KªIdentifierÍÍ$¦cyclesKªIdentifierÍ'Í0©maxCyclesÀY«IfStatementÍ>ÍtQ°BinaryExpressionÍBÍLKªIdentifierÍBÍH¦cycles¡<O§LiteralÍKÍL¡1L®BlockStatementÍNÍt‘W¯ReturnStatementÍYÍmV®CallExpressionÍ`ÍlR°MemberExpressionÍ`ÍjKªIdentifierÍ`Íd¤pathKªIdentifierÍeÍj¥sliceÂÂÂÀM³VariableDeclarationÍzÍ™‘N²VariableDeclaratorÍ€Í˜KªIdentifierÍ€Í‡§usedLenQ°BinaryExpressionÍŠÍ˜KªIdentifierÍŠÍ¦cycles¡*KªIdentifierÍ“Í˜¥pitch¥constM³VariableDeclarationÍŸÍÈ‘N²VariableDeclaratorÍ¥ÍÇKªIdentifierÍ¥Í«¦startTQ°BinaryExpressionÍ®ÍÇQ°BinaryExpressionÍ®ÍÁQ°BinaryExpressionÍ¯Í¼KªIdentifierÍ¯Í²£len¡-KªIdentifierÍµÍ¼§usedLen¡/O§LiteralÍÀÍÁ¡2¡/KªIdentifierÍÄÍÇ£len¥constM³VariableDeclarationÍÎÍİ‘N²VariableDeclaratorÍÔÍÜKªIdentifierÍÔÍ×£outÔrZ”¤type¥start£end¨elements¯ArrayExpressionÍÚÍÜ¥constP¬ForStatementÍãÍ?M³VariableDeclarationÍèÍñ‘N²VariableDeclaratorÍìÍñKªIdentifierÍìÍí¡iO§LiteralÍğÍñ ¡0£letQ°BinaryExpressionÍóÍıKªIdentifierÍóÍô¡i¢<=KªIdentifierÍøÍı¥bestIS°UpdateExpressionÍÿÍ¢++ÂKªIdentifierÍÿÍ ¡iL®BlockStatementÍÍ?‘T³ExpressionStatementÍÍ8V®CallExpressionÍÍ7R°MemberExpressionÍÍKªIdentifierÍÍ£outKªIdentifierÍÍ¤pushÂÂ‘Ôr[”¤type¥start£endªproperties°ObjectExpressionÍÍ6’Ôr\™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍ&ÂÂÂKªIdentifierÍÍ¡xR°MemberExpressionÍÍ&R°MemberExpressionÍÍ$KªIdentifierÍÍ!¤pathKªIdentifierÍ"Í#¡iÃÂKªIdentifierÍ%Í&¡xÂÂ¤init\¨PropertyÍ(Í4ÂÂÂKªIdentifierÍ(Í)¡yR°MemberExpressionÍ+Í4R°MemberExpressionÍ+Í2KªIdentifierÍ+Í/¤pathKªIdentifierÍ0Í1¡iÃÂKªIdentifierÍ3Í4¡yÂÂ¤initÂM³VariableDeclarationÍTÍw‘N²VariableDeclaratorÍZÍvKªIdentifierÍZÍ\¢sxQ°BinaryExpressionÍ_ÍvR°MemberExpressionÍ_ÍbKªIdentifierÍ_Í`¡aKªIdentifierÍaÍb¡xÂÂ¡+Q°BinaryExpressionÍeÍvQ°BinaryExpressionÍeÍpKªIdentifierÍeÍg¢ux¡*KªIdentifierÍjÍp¦startT¡*KªIdentifierÍsÍv£len¥constM³VariableDeclarationÍ}Í ‘N²VariableDeclaratorÍƒÍŸKªIdentifierÍƒÍ…¢syQ°BinaryExpressionÍˆÍŸR°MemberExpressionÍˆÍ‹KªIdentifierÍˆÍ‰¡aKªIdentifierÍŠÍ‹¡yÂÂ¡+Q°BinaryExpressionÍÍŸQ°BinaryExpressionÍÍ™KªIdentifierÍÍ¢uy¡*KªIdentifierÍ“Í™¦startT¡*KªIdentifierÍœÍŸ£len¥constY«IfStatementÍ¦Í!Q°BinaryExpressionÍªÍòV®CallExpressionÍªÍìR°MemberExpressionÍªÍ´KªIdentifierÍªÍ®¤MathKªIdentifierÍ¯Í´¥hypotÂÂ’Q°BinaryExpressionÍµÍÏKªIdentifierÍµÍ·¢sx¡-R°MemberExpressionÍºÍÏR°MemberExpressionÍºÍÍKªIdentifierÍºÍ½£outQ°BinaryExpressionÍ¾ÍÌR°MemberExpressionÍ¾ÍÈKªIdentifierÍ¾ÍÁ£outKªIdentifierÍÂÍÈ¦lengthÂÂ¡-O§LiteralÍËÍÌ¡1ÃÂKªIdentifierÍÎÍÏ¡xÂÂQ°BinaryExpressionÍÑÍëKªIdentifierÍÑÍÓ¢sy¡-R°MemberExpressionÍÖÍëR°MemberExpressionÍÖÍéKªIdentifierÍÖÍÙ£outQ°BinaryExpressionÍÚÍèR°MemberExpressionÍÚÍäKªIdentifierÍÚÍİ£outKªIdentifierÍŞÍä¦lengthÂÂ¡-O§LiteralÍçÍè¡1ÃÂKªIdentifierÍêÍë¡yÂÂÂ¡>O§LiteralÍïÍòË?à      £0.5L®BlockStatementÍôÍ!‘T³ExpressionStatementÍÿÍV®CallExpressionÍÿÍR°MemberExpressionÍÿÍKªIdentifierÍÿÍ£outKªIdentifierÍÍ¤pushÂÂ‘[°ObjectExpressionÍÍ’\¨PropertyÍ
+ÍÂÂÂKªIdentifierÍ
+Í¡xKªIdentifierÍÍ¢sx¤init\¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡yKªIdentifierÍÍ¢sy¤initÂÀP¬ForStatementÍ'Í
+:M³VariableDeclarationÍ,Í5‘N²VariableDeclaratorÍ0Í5KªIdentifierÍ0Í1¡cO§LiteralÍ4Í5 ¡0£letQ°BinaryExpressionÍ7ÍAKªIdentifierÍ7Í8¡c¡<KªIdentifierÍ;ÍA¦cyclesS°UpdateExpressionÍCÍF¢++ÂKªIdentifierÍCÍD¡cL®BlockStatementÍHÍ
+:šM³VariableDeclarationÍSÍy‘N²VariableDeclaratorÍYÍxKªIdentifierÍYÍ[¢t0Q°BinaryExpressionÍ^ÍxKªIdentifierÍ^Íd¦startT¡+Q°BinaryExpressionÍgÍxQ°BinaryExpressionÍhÍqKªIdentifierÍhÍi¡c¡*KªIdentifierÍlÍq¥pitch¡/KªIdentifierÍuÍx£len¥constM³VariableDeclarationÍƒÍ±‘N²VariableDeclaratorÍ‰Í°KªIdentifierÍ‰Í‹¢t1Q°BinaryExpressionÍÍ°KªIdentifierÍÍ”¦startT¡+Q°BinaryExpressionÍ—Í°Q°BinaryExpressionÍ˜Í©Q°BinaryExpressionÍ™Í KªIdentifierÍ™Íš¡c¡+O§LiteralÍÍ Ë?à      £0.5¡*KªIdentifierÍ¤Í©¥pitch¡/KªIdentifierÍ­Í°£len¥constM³VariableDeclarationÍ»Íç‘N²VariableDeclaratorÍÁÍæKªIdentifierÍÁÍÃ¢t2Q°BinaryExpressionÍÆÍæKªIdentifierÍÆÍÌ¦startT¡+Q°BinaryExpressionÍÏÍæQ°BinaryExpressionÍĞÍßQ°BinaryExpressionÍÑÍÖKªIdentifierÍÑÍÒ¡c¡+O§LiteralÍÕÍÖ¡1¡*KªIdentifierÍÚÍß¥pitch¡/KªIdentifierÍãÍæ£len¥constM³VariableDeclarationÍñÍ	‘N²VariableDeclaratorÍ÷Í	KªIdentifierÍ÷Íû¤signYµConditionalExpressionÍşÍ	Q°BinaryExpressionÍÿÍ	
+Q°BinaryExpressionÍÿÍ	KªIdentifierÍÿÍ	 ¡c¡%O§LiteralÍ	Í	¡2£===O§LiteralÍ		Í	
+ ¡0O§LiteralÍ	Í	¡1S¯UnaryExpressionÍ	Í	¡-ÃO§LiteralÍ	Í	¡1¥constM³VariableDeclarationÍ	Í	V‘N²VariableDeclaratorÍ	%Í	UKªIdentifierÍ	%Í	'¢mxQ°BinaryExpressionÍ	*Í	UQ°BinaryExpressionÍ	*Í	=R°MemberExpressionÍ	*Í	-KªIdentifierÍ	*Í	+¡aKªIdentifierÍ	,Í	-¡xÂÂ¡+Q°BinaryExpressionÍ	0Í	=Q°BinaryExpressionÍ	0Í	7KªIdentifierÍ	0Í	2¢ux¡*KªIdentifierÍ	5Í	7¢t1¡*KªIdentifierÍ	:Í	=£len¡+Q°BinaryExpressionÍ	@Í	UQ°BinaryExpressionÍ	@Í	NKªIdentifierÍ	@Í	B¢px¡*KªIdentifierÍ	EÍ	N©amplitude¡*KªIdentifierÍ	QÍ	U¤sign¥constM³VariableDeclarationÍ	`Í	—‘N²VariableDeclaratorÍ	fÍ	–KªIdentifierÍ	fÍ	h¢myQ°BinaryExpressionÍ	kÍ	–Q°BinaryExpressionÍ	kÍ	~R°MemberExpressionÍ	kÍ	nKªIdentifierÍ	kÍ	l¡aKªIdentifierÍ	mÍ	n¡yÂÂ¡+Q°BinaryExpressionÍ	qÍ	~Q°BinaryExpressionÍ	qÍ	xKªIdentifierÍ	qÍ	s¢uy¡*KªIdentifierÍ	vÍ	x¢t1¡*KªIdentifierÍ	{Í	~£len¡+Q°BinaryExpressionÍ	Í	–Q°BinaryExpressionÍ	Í	KªIdentifierÍ	Í	ƒ¢py¡*KªIdentifierÍ	†Í	©amplitude¡*KªIdentifierÍ	’Í	–¤sign¥constM³VariableDeclarationÍ	¡Í	À‘N²VariableDeclaratorÍ	§Í	¿KªIdentifierÍ	§Í	©¢exQ°BinaryExpressionÍ	¬Í	¿R°MemberExpressionÍ	¬Í	¯KªIdentifierÍ	¬Í	­¡aKªIdentifierÍ	®Í	¯¡xÂÂ¡+Q°BinaryExpressionÍ	²Í	¿Q°BinaryExpressionÍ	²Í	¹KªIdentifierÍ	²Í	´¢ux¡*KªIdentifierÍ	·Í	¹¢t2¡*KªIdentifierÍ	¼Í	¿£len¥constM³VariableDeclarationÍ	ÊÍ	é‘N²VariableDeclaratorÍ	ĞÍ	èKªIdentifierÍ	ĞÍ	Ò¢eyQ°BinaryExpressionÍ	ÕÍ	èR°MemberExpressionÍ	ÕÍ	ØKªIdentifierÍ	ÕÍ	Ö¡aKªIdentifierÍ	×Í	Ø¡yÂÂ¡+Q°BinaryExpressionÍ	ÛÍ	èQ°BinaryExpressionÍ	ÛÍ	âKªIdentifierÍ	ÛÍ	İ¢uy¡*KªIdentifierÍ	àÍ	â¢t2¡*KªIdentifierÍ	åÍ	è£len¥constT³ExpressionStatementÍ	óÍ
+V®CallExpressionÍ	óÍ
+R°MemberExpressionÍ	óÍ	ûKªIdentifierÍ	óÍ	ö£outKªIdentifierÍ	÷Í	û¤pushÂÂ‘[°ObjectExpressionÍ	üÍ
+’\¨PropertyÍ	şÍ
+ÂÂÂKªIdentifierÍ	şÍ	ÿ¡xKªIdentifierÍ
+Í
+¢mx¤init\¨PropertyÍ
+Í
+
+ÂÂÂKªIdentifierÍ
+Í
+¡yKªIdentifierÍ
+Í
+
+¢my¤initÂT³ExpressionStatementÍ
+Í
+3V®CallExpressionÍ
+Í
+2R°MemberExpressionÍ
+Í
+ KªIdentifierÍ
+Í
+£outKªIdentifierÍ
+Í
+ ¤pushÂÂ‘[°ObjectExpressionÍ
+!Í
+1’\¨PropertyÍ
+#Í
+(ÂÂÂKªIdentifierÍ
+#Í
+$¡xKªIdentifierÍ
+&Í
+(¢ex¤init\¨PropertyÍ
+*Í
+/ÂÂÂKªIdentifierÍ
+*Í
++¡yKªIdentifierÍ
+-Í
+/¢ey¤initÂP¬ForStatementÍ
+@Í
+©M³VariableDeclarationÍ
+EÍ
+V‘N²VariableDeclaratorÍ
+IÍ
+VKªIdentifierÍ
+IÍ
+J¡iQ°BinaryExpressionÍ
+MÍ
+VKªIdentifierÍ
+MÍ
+R¥bestI¡+O§LiteralÍ
+UÍ
+V¡1£letQ°BinaryExpressionÍ
+XÍ
+gKªIdentifierÍ
+XÍ
+Y¡i¡<R°MemberExpressionÍ
+\Í
+gKªIdentifierÍ
+\Í
+`¤pathKªIdentifierÍ
+aÍ
+g¦lengthÂÂS°UpdateExpressionÍ
+iÍ
+l¢++ÂKªIdentifierÍ
+iÍ
+j¡iL®BlockStatementÍ
+nÍ
+©‘T³ExpressionStatementÍ
+yÍ
+¢V®CallExpressionÍ
+yÍ
+¡R°MemberExpressionÍ
+yÍ
+KªIdentifierÍ
+yÍ
+|£outKªIdentifierÍ
+}Í
+¤pushÂÂ‘[°ObjectExpressionÍ
+‚Í
+ ’\¨PropertyÍ
+„Í
+ÂÂÂKªIdentifierÍ
+„Í
+…¡xR°MemberExpressionÍ
+‡Í
+R°MemberExpressionÍ
+‡Í
+KªIdentifierÍ
+‡Í
+‹¤pathKªIdentifierÍ
+ŒÍ
+¡iÃÂKªIdentifierÍ
+Í
+¡xÂÂ¤init\¨PropertyÍ
+’Í
+ÂÂÂKªIdentifierÍ
+’Í
+“¡yR°MemberExpressionÍ
+•Í
+R°MemberExpressionÍ
+•Í
+œKªIdentifierÍ
+•Í
+™¤pathKªIdentifierÍ
+šÍ
+›¡iÃÂKªIdentifierÍ
+Í
+¡yÂÂ¤initÂW¯ReturnStatementÍ
+¯Í
+ºKªIdentifierÍ
+¶Í
+¹£outÀI¶ExportNamedDeclarationÍÍbJ³FunctionDeclarationÍ%ÍbKªIdentifierÍ.ÍB´matchDiffPairLengthsÂÂÂ–KªIdentifierÍCÍH¥pathPKªIdentifierÍJÍO¥pathNKªIdentifierÍQÍ]¬existingLenPKªIdentifierÍ_Ík¬existingLenNKªIdentifierÍmÍs¦tolMilKªIdentifierÍuÍ{¦gapMilL®BlockStatementÍ}Íb˜M³VariableDeclarationÍ„Í´‘N²VariableDeclaratorÍŠÍ³KªIdentifierÍŠÍŒ¢lpQ°BinaryExpressionÍÍ³KªIdentifierÍÍ›¬existingLenP¡+V®CallExpressionÍÍ³KªIdentifierÍÍ¬®polylineLength‘KªIdentifierÍ­Í²¥pathPÂ¥constM³VariableDeclarationÍºÍê‘N²VariableDeclaratorÍÀÍéKªIdentifierÍÀÍÂ¢lnQ°BinaryExpressionÍÅÍéKªIdentifierÍÅÍÑ¬existingLenN¡+V®CallExpressionÍÔÍéKªIdentifierÍÔÍâ®polylineLength‘KªIdentifierÍãÍè¥pathNÂ¥constM³VariableDeclarationÍğÍ‘N²VariableDeclaratorÍöÍKªIdentifierÍöÍú¤diffV®CallExpressionÍıÍR°MemberExpressionÍıÍKªIdentifierÍıÍ¤MathKªIdentifierÍÍ£absÂÂ‘Q°BinaryExpressionÍÍKªIdentifierÍÍ¢lp¡-KªIdentifierÍÍ¢lnÂ¥constY«IfStatementÍÍQQ°BinaryExpressionÍÍ'KªIdentifierÍÍ¤diff¢<=KªIdentifierÍ!Í'¦tolMilL®BlockStatementÍ)ÍQ‘W¯ReturnStatementÍ4ÍJZ¯ArrayExpressionÍ;ÍI’KªIdentifierÍ<ÍA¥pathPKªIdentifierÍCÍH¥pathNÀM³VariableDeclarationÍWÍŒ‘N²VariableDeclaratorÍ]Í‹KªIdentifierÍ]Í`£ampV®CallExpressionÍcÍ‹R°MemberExpressionÍcÍkKªIdentifierÍcÍg¤MathKªIdentifierÍhÍk£maxÂÂ’O§LiteralÍlÍn¢12V®CallExpressionÍpÍŠR°MemberExpressionÍpÍxKªIdentifierÍpÍt¤MathKªIdentifierÍuÍx£minÂÂ’O§LiteralÍyÍ{(¢40Q°BinaryExpressionÍ}Í‰KªIdentifierÍ}Íƒ¦gapMil¡*O§LiteralÍ†Í‰Ë?ìÌÌÌÌÌÍ£0.9ÂÂ¥constM³VariableDeclarationÍ’Í¸‘N²VariableDeclaratorÍ˜Í·KªIdentifierÍ˜Í¥pitchV®CallExpressionÍ Í·R°MemberExpressionÍ Í¨KªIdentifierÍ Í¤¤MathKªIdentifierÍ¥Í¨£maxÂÂ’O§LiteralÍ©Í«¢18Q°BinaryExpressionÍ­Í¶KªIdentifierÍ­Í°£amp¡*O§LiteralÍ³Í¶Ë?öffffff£1.4Â¥constY«IfStatementÍ¾ÍQ°BinaryExpressionÍÂÍÉKªIdentifierÍÂÍÄ¢lp¡<KªIdentifierÍÇÍÉ¢lnL®BlockStatementÍËÍ‘W¯ReturnStatementÍÖÍZ¯ArrayExpressionÍİÍ’V®CallExpressionÍŞÍKªIdentifierÍŞÍò´addSerpentineMeander”KªIdentifierÍóÍø¥pathPKªIdentifierÍúÍş¤diffKªIdentifierÍ Í£ampKªIdentifierÍÍ
+¥pitchÂKªIdentifierÍÍ¥pathNÀW¯ReturnStatementÍ!Í_Z¯ArrayExpressionÍ(Í^’KªIdentifierÍ)Í.¥pathPV®CallExpressionÍ0Í]KªIdentifierÍ0ÍD´addSerpentineMeander”KªIdentifierÍEÍJ¥pathNKªIdentifierÍLÍP¤diffKªIdentifierÍRÍU£ampKªIdentifierÍWÍ\¥pitchÂÀ
