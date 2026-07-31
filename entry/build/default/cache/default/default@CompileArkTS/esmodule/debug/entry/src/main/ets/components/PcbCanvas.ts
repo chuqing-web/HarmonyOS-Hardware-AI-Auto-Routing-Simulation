@@ -531,8 +531,7 @@ export class PcbCanvas extends ViewPU {
             this.emitView3dInstrTrace(doc, false);
             return;
         }
-        // 工业层序：栅格 → 阻焊底色 → 敷铜/走线/过孔/焊盘 → 丝印 → Edge.Cuts → Overlay
-        // 层色仅读文档配置，不在绘制循环中覆写（避免冲掉用户透明度/自定义色）
+        // 工业层序：栅格 → 基板 → 浅透敷铜 → 阻焊 → 走线/过孔/焊盘 → 丝印 → Edge.Cuts
         if (this.gridVisible && vp.gridVisible) {
             this.drawGrid(ctx, vp);
         }
@@ -540,12 +539,13 @@ export class PcbCanvas extends ViewPU {
         if (!appearance.hideZones) {
             this.drawZones(ctx, doc, vp);
         }
+        this.drawMaskAndPasteLayers(ctx, doc, vp);
         this.drawTracks(ctx, doc, vp);
         this.drawVias(ctx, doc, vp);
         this.drawFootprints(ctx, doc, vp, 'copper');
-        this.drawMaskAndPasteLayers(ctx, doc, vp);
         this.drawFootprints(ctx, doc, vp, 'silk');
         this.drawBoardOutline(ctx, doc, vp);
+        this.drawCourtyardLayer(ctx, doc, vp);
         this.drawDrcMarkers(ctx, vp);
         if (appearance.showRatsnest) {
             this.drawRatsnest(ctx, vp);
@@ -817,14 +817,17 @@ export class PcbCanvas extends ViewPU {
             const dimOther = hl.length > 0 && zone.netId !== hl;
             const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
                 isCopperLayer(zone.layer) && zone.layer !== active;
-            // 用层色铺铜（B.Cu=#00E676），不要用近乎透明的 ZONE_GND
+            // 铺铜极浅透：用层色 + 元素倍率（zone=30%）
             const layerCol = getLayerColor(doc, zone.layer);
-            const fillA = isSel || onHl ? 0.55 : (dimOther || dimLayer ? 0.18 : 0.42);
-            let fillColor = isSel || onHl
-                ? PcbColors.ZONE_SELECTED
-                : this.withAlpha(layerCol, fillA);
+            const isGnd = (zone.netName ?? '').toUpperCase().includes('GND');
+            const zoneMult = this.copperElementAlpha(zone.layer, 'zone');
+            let fillColor = isGnd ? this.withAlpha(PcbColors.ZONE_GND, zoneMult)
+                : this.withAlpha(layerCol, 0.22 * zoneMult);
+            if (isSel || onHl) {
+                fillColor = isGnd ? PcbColors.ZONE_SELECTED : this.withAlpha(layerCol, 0.22);
+            }
             if (dimOther || dimLayer) {
-                fillColor = this.withAlpha(layerCol, Math.max(0.14, appearance.dimAlpha * 0.7));
+                fillColor = this.withAlpha(layerCol, Math.max(0.05, appearance.dimAlpha * 0.22));
             }
             ctx.fillStyle = fillColor;
             ctx.beginPath();
@@ -835,7 +838,6 @@ export class PcbCanvas extends ViewPU {
                 ctx.lineTo(p.x, p.y);
             }
             ctx.closePath();
-            // 挖空用 evenodd，避免用不透明深色块把绿铜盖成“发灰”
             if (zone.cutouts) {
                 for (const cut of zone.cutouts) {
                     if (cut.length < 3)
@@ -851,15 +853,14 @@ export class PcbCanvas extends ViewPU {
                 }
             }
             ctx.fill('evenodd');
-            ctx.strokeStyle = isSel || onHl ? ProteusColors.SELECTED : layerCol;
-            ctx.lineWidth = Math.max(1.5, isSel ? 2.5 : 2);
-            ctx.globalAlpha = dimLayer ? 0.45 : 0.9;
-            ctx.setLineDash([]);
+            // 细边框，不抢视线
+            ctx.strokeStyle = isSel || onHl ? ProteusColors.SELECTED : this.withAlpha(layerCol, 0.55);
+            ctx.lineWidth = isSel ? 2 : 1;
+            ctx.globalAlpha = dimLayer ? 0.4 : 0.7;
             ctx.stroke();
             ctx.globalAlpha = 1;
             if (zone.thermalRelief) {
-                // 热焊盘连接筋：用层色高亮，标明同网仍连到本层覆铜
-                const spokeFill = isSel || onHl ? PcbColors.ZONE_SELECTED : this.withAlpha(layerCol, 0.9);
+                const spokeFill = isSel || onHl ? PcbColors.ZONE_SELECTED : this.withAlpha(layerCol, 0.55);
                 ctx.fillStyle = spokeFill;
                 const tw = Math.max(zone.thermalWidth, 6);
                 for (const fp of doc.footprints) {
@@ -884,14 +885,12 @@ export class PcbCanvas extends ViewPU {
                     }
                 }
             }
-            // 覆铜标注：仅选中/高亮网络时显示，贴在轮廓角避免挡板心
-            if (isSel || onHl) {
+            // 覆铜标注：仅选中时显示
+            if (isSel) {
                 const corner = zone.outline[0];
                 const labelPt = this.worldToScreenPt(corner, vp);
                 const netNm = (zone.netName !== undefined && zone.netName.length > 0) ? zone.netName : '(no net)';
-                const cutN = zone.cutouts !== undefined ? zone.cutouts.length : 0;
-                const thTag = zone.thermalRelief ? '热焊盘' : '直连';
-                const label = `${netNm} · ${zone.layer} · ${thTag} · 挖空${cutN}`;
+                const label = `${netNm} · ${zone.layer}`;
                 const fontPx = Math.max(10, Math.min(12, 11 * vp.zoom / 0.7));
                 ctx.font = `bold ${fontPx}px sans-serif`;
                 ctx.textAlign = 'left';
@@ -954,18 +953,20 @@ export class PcbCanvas extends ViewPU {
             const dimLayer = appearance.mode === PcbAppearanceMode.DIM_INACTIVE &&
                 isCopperLayer(poly.layer) && poly.layer !== active;
             const baseHex = selected || netHl ? ProteusColors.SELECTED : getLayerColor(doc, poly.layer);
-            let alpha = getLayerOpacity(doc, poly.layer);
+            // 走线按层独立倍率：F.Cu=60%, B.Cu=100%
+            const trkMult = this.copperElementAlpha(poly.layer, 'track');
+            let alpha = Math.max(0.85, getLayerOpacity(doc, poly.layer)) * trkMult;
             if (dimOther || dimLayer) {
                 alpha = alpha * appearance.dimAlpha;
             }
             const color = this.withAlpha(baseHex, alpha);
             const boost = (selected || netHl) ? Math.max(1.5, 2 * vp.zoom) : 0;
-            const baseW = Math.max(0.65, poly.width * vp.zoom + boost);
+            const baseW = Math.max(1.0, poly.width * vp.zoom + boost);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            // 一次折线描边：横竖斜在拐角处连续
-            ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-            ctx.lineWidth = baseW + 1.0;
+            // 深底描边 + 层色走线，对比清晰
+            ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+            ctx.lineWidth = baseW + 1.8;
             ctx.beginPath();
             const p0 = this.worldToScreenPt(poly.points[0], vp);
             ctx.moveTo(p0.x, p0.y);
@@ -1019,17 +1020,43 @@ export class PcbCanvas extends ViewPU {
     private copperStackRank(layer: PcbLayerId): number {
         if (layer === PcbLayerId.B_CU)
             return 0;
-        if (layer === PcbLayerId.IN4_CU)
+        if (layer === PcbLayerId.IN6_CU)
             return 1;
-        if (layer === PcbLayerId.IN3_CU)
+        if (layer === PcbLayerId.IN5_CU)
             return 2;
-        if (layer === PcbLayerId.IN2_CU)
+        if (layer === PcbLayerId.IN4_CU)
             return 3;
-        if (layer === PcbLayerId.IN1_CU)
+        if (layer === PcbLayerId.IN3_CU)
             return 4;
-        if (layer === PcbLayerId.F_CU)
+        if (layer === PcbLayerId.IN2_CU)
             return 5;
-        return 3;
+        if (layer === PcbLayerId.IN1_CU)
+            return 6;
+        if (layer === PcbLayerId.F_CU)
+            return 7;
+        return 4;
+    }
+    /** 铜层各元素的相对显示强度倍率 */
+    private copperElementAlpha(layer: PcbLayerId, kind: string): number {
+        if (layer === PcbLayerId.F_CU) {
+            if (kind === 'zone')
+                return 0.30;
+            if (kind === 'track')
+                return 0.60;
+            if (kind === 'pad')
+                return 1.0;
+            return 1.0; // via / default
+        }
+        if (layer === PcbLayerId.B_CU) {
+            if (kind === 'zone')
+                return 0.30;
+            if (kind === 'track')
+                return 1.0;
+            if (kind === 'pad')
+                return 0.60;
+            return 1.0;
+        }
+        return 1.0;
     }
     private drawRatsnest(ctx: CanvasRenderingContext2D, vp: import('common').ViewportState): void {
         const editor = this.getEditor();
@@ -1220,9 +1247,15 @@ export class PcbCanvas extends ViewPU {
         };
     }
     private withAlpha(color: string, alpha: number): string {
-        if (color.startsWith('#') && color.length === 7) {
-            const a = Math.max(0, Math.min(255, Math.round(alpha * 255))).toString(16).padStart(2, '0');
-            return `${color}${a}`;
+        const a = Math.max(0, Math.min(1, alpha));
+        if (color.startsWith('#') && (color.length === 7 || color.length === 9)) {
+            const r = parseInt(color.substring(1, 3), 16);
+            const g = parseInt(color.substring(3, 5), 16);
+            const b = parseInt(color.substring(5, 7), 16);
+            if (!(r >= 0) || !(g >= 0) || !(b >= 0)) {
+                return `rgba(128,128,128,${a.toFixed(3)})`;
+            }
+            return `rgba(${r},${g},${b},${a.toFixed(3)})`;
         }
         return color;
     }
@@ -1374,6 +1407,9 @@ export class PcbCanvas extends ViewPU {
         // 阻焊开窗余量 ≈ 0.15mm ≈ 6 mil
         const maskClear = 6 * vp.zoom;
         if (phase === 'copper') {
+            const padMult = this.copperElementAlpha(fp.layer, 'pad');
+            const prevAlpha = ctx.globalAlpha;
+            ctx.globalAlpha = Math.min(1, Math.max(0.25, padMult));
             if (selected) {
                 ctx.strokeStyle = ProteusColors.SELECTED;
                 ctx.lineWidth = 2;
@@ -1445,6 +1481,7 @@ export class PcbCanvas extends ViewPU {
                     this.strokePadShape(ctx, shape, pp.x, pp.y, hw, hh);
                 }
             }
+            ctx.globalAlpha = prevAlpha;
             return;
         }
         // —— silk 阶段：正反丝印分别受 F/B.SilkS 控制 ——
@@ -1803,31 +1840,34 @@ export class PcbCanvas extends ViewPU {
                 ctx.moveTo(p.x + r, p.y);
                 ctx.arc(p.x, p.y, r, 0, -Math.PI * 2, true);
             }
-            ctx.fillStyle = this.withAlpha('#1B5E20', Math.min(0.55, Math.max(0.28, maskAlpha)));
-            // evenodd：开窗透出下方铜
+            // 阻焊极淡，基板深绿为主；避免整板洗成芥末绿
+            ctx.fillStyle = this.withAlpha('#0D4A28', Math.min(0.18, Math.max(0.08, maskAlpha * 0.35)));
             try {
                 ctx.fill('evenodd');
             }
             catch (_e) {
                 ctx.fill();
             }
-            ctx.strokeStyle = 'rgba(255, 180, 80, 0.4)';
-            ctx.lineWidth = 1;
-            for (const fp of doc.footprints) {
-                const topSide = fp.layer === PcbLayerId.F_CU;
-                if ((topSide && !showFMask) || (!topSide && !showBMask))
-                    continue;
-                for (const pad of fp.pads) {
-                    const pp = this.localToScreen(pad.pos, fp, vp);
-                    const hw = Math.max(2, pad.size.x * vp.zoom / 2) + maskClear;
-                    const hh = Math.max(2, pad.size.y * vp.zoom / 2) + maskClear;
-                    if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
-                        ctx.beginPath();
-                        ctx.arc(pp.x, pp.y, Math.max(hw, hh), 0, Math.PI * 2);
-                        ctx.stroke();
-                    }
-                    else {
-                        this.strokeRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 2);
+            // 开窗描边默认关闭（满屏橙框）；仅高倍时极淡提示
+            if (vp.zoom >= 1.2) {
+                ctx.strokeStyle = 'rgba(255, 180, 80, 0.10)';
+                ctx.lineWidth = 1;
+                for (const fp of doc.footprints) {
+                    const topSide = fp.layer === PcbLayerId.F_CU;
+                    if ((topSide && !showFMask) || (!topSide && !showBMask))
+                        continue;
+                    for (const pad of fp.pads) {
+                        const pp = this.localToScreen(pad.pos, fp, vp);
+                        const hw = Math.max(2, pad.size.x * vp.zoom / 2) + maskClear;
+                        const hh = Math.max(2, pad.size.y * vp.zoom / 2) + maskClear;
+                        if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+                            ctx.beginPath();
+                            ctx.arc(pp.x, pp.y, Math.max(hw, hh), 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                        else {
+                            this.strokeRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 2);
+                        }
                     }
                 }
             }
@@ -1853,6 +1893,37 @@ export class PcbCanvas extends ViewPU {
                 this.strokeRoundRect(ctx, pp.x - hw, pp.y - hh, hw * 2, hh * 2, 1.5);
             }
         }
+    }
+    /** Courtyard 元件边界：灰色半透明虚线 */
+    private drawCourtyardLayer(ctx: CanvasRenderingContext2D, doc: PcbDocument, vp: import('common').ViewportState): void {
+        if (!isLayerVisible(doc, PcbLayerId.COURTYARD))
+            return;
+        const layerAlpha = getLayerOpacity(doc, PcbLayerId.COURTYARD);
+        if (layerAlpha <= 0.03)
+            return;
+        const lib = getGlobalPcbFootprintLibrary();
+        ctx.strokeStyle = this.withAlpha('#A0A0B0', 0.30 * layerAlpha);
+        ctx.lineWidth = 1.0;
+        ctx.setLineDash([5, 8]);
+        for (const fp of doc.footprints) {
+            if (fp.layer === PcbLayerId.B_CU)
+                continue;
+            if (!this.ptInView(fp.position, vp, 120))
+                continue;
+            const def = lib.getDef(fp.defId);
+            if (def === null || def.courtyard.length < 3)
+                continue;
+            ctx.beginPath();
+            const p0 = this.localToScreen(def.courtyard[0], fp, vp);
+            ctx.moveTo(p0.x, p0.y);
+            for (let i = 1; i < def.courtyard.length; i++) {
+                const p = this.localToScreen(def.courtyard[i], fp, vp);
+                ctx.lineTo(p.x, p.y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        }
+        ctx.setLineDash([]);
     }
     /** 视口裁剪：点是否在可见范围内 */
     private ptInView(w: Point2D, vp: import('common').ViewportState, margin: number): boolean {
@@ -2787,6 +2858,10 @@ function getLayerColor(doc: PcbDocument, layer: PcbLayerId): string {
         return '#651FFF';
     if (layer === PcbLayerId.IN4_CU)
         return '#00E5FF';
+    if (layer === PcbLayerId.IN5_CU)
+        return '#FFD740';
+    if (layer === PcbLayerId.IN6_CU)
+        return '#69F0AE';
     return '#FF1744';
 }
 function getLayerOpacity(doc: PcbDocument, layer: PcbLayerId): number {

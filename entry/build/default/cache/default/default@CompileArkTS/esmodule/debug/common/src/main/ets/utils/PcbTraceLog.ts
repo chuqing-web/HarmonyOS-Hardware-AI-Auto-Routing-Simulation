@@ -756,39 +756,65 @@ export function tracePcbCanvasRealtime(doc: PcbDocument, canvas: PcbCanvasTraceS
 function fpApproxHalf(fp: PcbFootprintInst): Point2D {
     let hw = 40;
     let hh = 40;
+    const rot = ((fp.rotation % 360) + 360) % 360;
     for (let i = 0; i < fp.pads.length; i++) {
         const p = fp.pads[i];
-        hw = Math.max(hw, Math.abs(p.pos.x) + p.size.x * 0.5);
-        hh = Math.max(hh, Math.abs(p.pos.y) + p.size.y * 0.5);
+        let lx = p.pos.x;
+        let ly = p.pos.y;
+        let sx = p.size.x;
+        let sy = p.size.y;
+        if (fp.mirrored) {
+            lx = -lx;
+        }
+        if (rot === 90 || rot === 270) {
+            const tx = lx;
+            lx = rot === 90 ? -ly : ly;
+            ly = rot === 90 ? tx : -tx;
+            const ts = sx;
+            sx = sy;
+            sy = ts;
+        }
+        else if (rot === 180) {
+            lx = -lx;
+            ly = -ly;
+        }
+        hw = Math.max(hw, Math.abs(lx) + sx * 0.5);
+        hh = Math.max(hh, Math.abs(ly) + sy * 0.5);
     }
     return { x: hw, y: hh };
 }
-function segClearance(a0: Point2D, a1: Point2D, b0: Point2D, b1: Point2D): number {
-    // 端点到线段最小距离近似
-    let best = Number.POSITIVE_INFINITY;
-    const samples: Point2D[] = [a0, a1, b0, b1];
-    const midA: Point2D = { x: (a0.x + a1.x) * 0.5, y: (a0.y + a1.y) * 0.5 };
-    const midB: Point2D = { x: (b0.x + b1.x) * 0.5, y: (b0.y + b1.y) * 0.5 };
-    for (let i = 0; i < samples.length; i++) {
-        best = Math.min(best, Math.sqrt(dist2(samples[i], midA)));
-        best = Math.min(best, Math.sqrt(dist2(samples[i], midB)));
+/** 非重叠 AABB 的边距：同行/对角分离时不得用 min(gapX,gapY)（会把负投影当成过近） */
+function aabbEdgeGap(gapX: number, gapY: number): number {
+    if (gapX < 0 && gapY < 0) {
+        return -Math.min(0 - gapX, 0 - gapY);
     }
-    // 更准：点到另一线段
+    if (gapX < 0) {
+        return gapY;
+    }
+    if (gapY < 0) {
+        return gapX;
+    }
+    return Math.hypot(gapX, gapY);
+}
+function segClearance(a0: Point2D, a1: Point2D, b0: Point2D, b1: Point2D): number {
+    // 仅跨线段：端点→另一段。禁止用端点到本段中点（短线半长会被当成跨网间距）
     const checkPt = (p: Point2D, s: Point2D, e: Point2D): number => {
         const abx = e.x - s.x;
         const aby = e.y - s.y;
         const len2 = abx * abx + aby * aby;
-        if (len2 < 0.01)
+        if (len2 < 0.01) {
             return Math.sqrt(dist2(p, s));
+        }
         let t = ((p.x - s.x) * abx + (p.y - s.y) * aby) / len2;
-        if (t < 0)
+        if (t < 0) {
             t = 0;
-        if (t > 1)
+        }
+        if (t > 1) {
             t = 1;
+        }
         return Math.hypot(p.x - (s.x + t * abx), p.y - (s.y + t * aby));
     };
-    best = Math.min(best, checkPt(a0, b0, b1), checkPt(a1, b0, b1), checkPt(b0, a0, a1), checkPt(b1, a0, a1));
-    return best;
+    return Math.min(checkPt(a0, b0, b1), checkPt(a1, b0, b1), checkPt(b0, a0, a1), checkPt(b1, a0, a1));
 }
 interface CrowdPadSample {
     ref: string;
@@ -829,7 +855,7 @@ export function tracePcbLayoutCrowd(doc: PcbDocument, reason: string): void {
             const dy = Math.abs(a.position.y - b.position.y);
             const gapX = dx - ae.x - be.x;
             const gapY = dy - ae.y - be.y;
-            // AABB 真实重叠需两轴同时穿透；min(gapX,gapY)<0 会把对角分离误报为重叠
+            // AABB 真实重叠需两轴同时穿透；边距用 aabbEdgeGap（勿用 min 误报同行/对角）
             if (gapX < 0 && gapY < 0) {
                 overlapFp++;
                 if (overlapFp <= 40) {
@@ -839,11 +865,13 @@ export function tracePcbLayoutCrowd(doc: PcbDocument, reason: string): void {
                         `overlap≈${overlapAbs.toFixed(1)}mil layer=${a.layer}`);
                 }
             }
-            else if (Math.min(gapX, gapY) < clr * 2) {
-                tightFp++;
-                if (tightFp <= 30) {
-                    const gap = Math.min(gapX, gapY);
-                    tracePcbWarn('CROWD_FP_TIGHT', `${a.refDes}↔${b.refDes} gap≈${gap.toFixed(1)}mil < ${clr * 2}mil`);
+            else {
+                const gap = aabbEdgeGap(gapX, gapY);
+                if (gap < clr * 2) {
+                    tightFp++;
+                    if (tightFp <= 30) {
+                        tracePcbWarn('CROWD_FP_TIGHT', `${a.refDes}↔${b.refDes} gap≈${gap.toFixed(1)}mil < ${clr * 2}mil`);
+                    }
                 }
             }
         }

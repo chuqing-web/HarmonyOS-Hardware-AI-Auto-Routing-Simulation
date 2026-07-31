@@ -79,6 +79,10 @@ struct PcbPage {
   @State viaFrom: PcbLayerId = PcbLayerId.F_CU;
   @State viaTo: PcbLayerId = PcbLayerId.B_CU;
   @State copperLayerIds: PcbLayerId[] = [PcbLayerId.F_CU, PcbLayerId.B_CU];
+  /** 2D/3D 点选铜对象后递增，驱动层栈页切换并高亮 Cu */
+  @State stackFocusTick: number = 0;
+  /** 层栈中应高亮的铜层（过孔可多选跨越层） */
+  @State stackHighlightCopperIds: PcbLayerId[] = [];
   /** bit0=Ctrl, bit1=Shift — 页面级快捷键 */
   private pageModifierKeys: number = 0;
   private userProjectDir: string = '';
@@ -125,6 +129,14 @@ struct PcbPage {
         this.selectedZoneId = '';
         this.selectedZoneCount = 0;
       }
+    }
+    // 点选铜对象：同步活动铜层 + 打开层栈并高亮对应 Cu（过孔高亮全部跨越层）
+    this.syncActiveLayerFromEditor();
+    this.refreshStackHighlightFromSelection();
+    const copperPick = this.selectedTrackId.length > 0 || this.selectedViaId.length > 0 ||
+      this.selectedZoneId.length > 0;
+    if (copperPick) {
+      this.stackFocusTick++;
     }
     this.refreshSelectedInfo();
     this.canvasVersion++;
@@ -250,7 +262,8 @@ struct PcbPage {
     if (trkCount === 1) {
       for (const trk of doc.tracks) {
         if (trk.id === sel.trackIds[0]) {
-          this.selectedFootprintInfo = `走线 ${trk.netName || '?'}\n${trk.layer}  ${trk.width.toFixed(1)} mil`;
+          this.selectedFootprintInfo =
+            `走线 ${trk.netName || '?'}\n铜层 ${trk.layer}  ${trk.width.toFixed(1)} mil`;
           return;
         }
       }
@@ -258,7 +271,9 @@ struct PcbPage {
     if (viaCount === 1) {
       for (const via of doc.vias) {
         if (via.id === sel.viaIds[0]) {
-          this.selectedFootprintInfo = `过孔 ${via.netName || '?'}\nØ${via.diameter.toFixed(0)} mil`;
+          const span = via.layers.length > 0 ? via.layers.join('↔') : '?';
+          this.selectedFootprintInfo =
+            `过孔 ${via.netName || '?'}\nØ${via.diameter.toFixed(0)} mil\n铜层 ${span}`;
           return;
         }
       }
@@ -266,7 +281,8 @@ struct PcbPage {
     if (zoneCount === 1) {
       for (const zone of doc.zones) {
         if (zone.id === sel.zoneIds[0]) {
-          this.selectedFootprintInfo = `覆铜 ${zone.netName}\n优先级 ${zone.priority}  热焊盘:${zone.thermalRelief ? '开' : '关'}`;
+          this.selectedFootprintInfo =
+            `覆铜 ${zone.netName}\n优先级 ${zone.priority}  热焊盘:${zone.thermalRelief ? '开' : '关'}\n铜层 ${zone.layer}`;
           return;
         }
       }
@@ -384,6 +400,65 @@ struct PcbPage {
     this.activeLayer = this.getEditor().getActiveLayer();
   }
 
+  /** 根据当前点选计算层栈应高亮的铜层列表（过孔 = 跨越的全部铜层） */
+  private refreshStackHighlightFromSelection(): void {
+    const doc = this.getEditor().getDocument();
+    const ids: PcbLayerId[] = [];
+    if (!doc) {
+      this.stackHighlightCopperIds = ids;
+      return;
+    }
+    if (this.selectedTrackId.length > 0) {
+      for (let i = 0; i < doc.tracks.length; i++) {
+        const t = doc.tracks[i];
+        if (t.id === this.selectedTrackId && isCopperLayer(t.layer)) {
+          ids.push(t.layer);
+          break;
+        }
+      }
+    } else if (this.selectedZoneId.length > 0) {
+      for (let i = 0; i < doc.zones.length; i++) {
+        const z = doc.zones[i];
+        if (z.id === this.selectedZoneId && isCopperLayer(z.layer)) {
+          ids.push(z.layer);
+          break;
+        }
+      }
+    } else if (this.selectedViaId.length > 0) {
+      for (let i = 0; i < doc.vias.length; i++) {
+        const v = doc.vias[i];
+        if (v.id !== this.selectedViaId) {
+          continue;
+        }
+        // 按层栈顺序展开：通孔 F↔B 会覆盖中间全部铜层；盲/埋孔只覆盖端点之间
+        const order = copperLayersFromStack(doc.layerStack);
+        let minIdx = order.length;
+        let maxIdx = -1;
+        for (let li = 0; li < v.layers.length; li++) {
+          const idx = order.indexOf(v.layers[li]);
+          if (idx >= 0) {
+            minIdx = Math.min(minIdx, idx);
+            maxIdx = Math.max(maxIdx, idx);
+          }
+        }
+        if (maxIdx >= minIdx) {
+          for (let oi = minIdx; oi <= maxIdx; oi++) {
+            ids.push(order[oi]);
+          }
+        } else {
+          for (let li = 0; li < v.layers.length; li++) {
+            const ly = v.layers[li];
+            if (isCopperLayer(ly) && ids.indexOf(ly) < 0) {
+              ids.push(ly);
+            }
+          }
+        }
+        break;
+      }
+    }
+    this.stackHighlightCopperIds = ids;
+  }
+
   private syncStackUiFromEditor(): void {
     const doc = this.getEditor().getDocument();
     this.copperCount = this.getEditor().getLayerStackCopperCount();
@@ -396,7 +471,13 @@ struct PcbPage {
     this.viaTo = span[1];
   }
 
-  /** @param focusSolo 点铜层：淡化其他铜层但仍分色同显（不用 ACTIVE_ONLY，否则看不见 B.Cu 绿铜） */
+  /**
+   * 点层名（方案 A）：
+   * - 铜层 → 淡化其他铜（仍可见）
+   * - 丝印 → 加亮丝印，不藏铜
+   * - Mask/Paste/Edge → 只改活动层，3D 不藏铜
+   * - 「单层」预设才 ACTIVE_ONLY
+   */
   private setActiveLayerUi(id: PcbLayerId, focusSolo: boolean = false): void {
     const editor = this.getEditor();
     const doc = editor.getDocument();
@@ -411,7 +492,20 @@ struct PcbPage {
         }
       }
       editor.setAppearanceMode(PcbAppearanceMode.DIM_INACTIVE);
-      this.statusMessage = `活动层 ${id}`;
+      this.statusMessage = `活动铜 ${id}（另一面已淡化）·「单层」可只留一层`;
+      this.refreshLayers();
+    } else if (focusSolo && (id === PcbLayerId.F_SILKS || id === PcbLayerId.B_SILKS)) {
+      // 丝印聚焦：保持 OVERLAY/DIM，绝不 ACTIVE_ONLY 藏铜
+      if (editor.getAppearance().mode === PcbAppearanceMode.ACTIVE_ONLY) {
+        editor.setAppearanceMode(PcbAppearanceMode.OVERLAY);
+      }
+      this.statusMessage = `丝印 ${id}（铜仍可见，丝印加亮）`;
+      this.refreshLayers();
+    } else if (focusSolo) {
+      if (editor.getAppearance().mode === PcbAppearanceMode.ACTIVE_ONLY) {
+        editor.setAppearanceMode(PcbAppearanceMode.OVERLAY);
+      }
+      this.statusMessage = `活动层: ${id}`;
       this.refreshLayers();
     } else {
       this.statusMessage = `活动层: ${id}`;
@@ -425,14 +519,19 @@ struct PcbPage {
     const doc = editor.getDocument();
     if (!doc) return;
     if (preset === 'solo') {
-      const active = editor.getActiveLayer();
+      let active = editor.getActiveLayer();
+      if (!isCopperLayer(active)) {
+        active = PcbLayerId.F_CU;
+        editor.setActiveLayer(active);
+        this.activeLayer = active;
+      }
       for (const l of doc.layers) {
         if (isCopperLayer(l.id)) {
           editor.setLayerVisible(l.id, true);
         }
       }
       editor.setAppearanceMode(PcbAppearanceMode.ACTIVE_ONLY);
-      this.statusMessage = `单层：${active}`;
+      this.statusMessage = `单层铜：仅 ${active}`;
     } else if (preset === 'all') {
       editor.setSoloCopperLayer(false);
       for (const l of doc.layers) {
@@ -1213,6 +1312,7 @@ struct PcbPage {
               this.selectedZoneId = '';
               this.selectedZoneCount = 0;
               this.selectedFootprintInfo = '';
+              this.stackHighlightCopperIds = [];
             },
             onActiveLayerChange: (layer: PcbLayerId) => {
               this.activeLayer = layer;
@@ -1247,6 +1347,8 @@ struct PcbPage {
           viaTo: this.viaTo,
           copperLayerIds: this.copperLayerIds,
           routeCornerMode: this.routeCornerMode,
+          stackFocusTick: this.stackFocusTick,
+          stackHighlightCopperIds: this.stackHighlightCopperIds,
           gerberDocRev: this.gerberDocRev,
           getPcbDocument: () => this.getEditor().getDocument(),
           onExportGerber: () => { this.exportGerber(); },
@@ -1517,15 +1619,12 @@ struct PcbPage {
             const next = !ap.show3d;
             this.getEditor().setShow3d(next);
             if (next) {
-              this.getEditor().setAppearanceMode(PcbAppearanceMode.OVERLAY);
-              this.getEditor().setView3dDisplayMode(Pcb3dDisplayMode.REALISTIC);
               this.getEditor().setView3dOrtho(true);
-              // 略侧视，便于看层数与过孔跨层
               this.getEditor().setView3dPreset('iso');
             }
             this.canvasVersion++;
             this.statusMessage = next
-              ? '3D叠层透视：侧视可数层 · 过孔落点分色 · 拖转看侧面'
+              ? '3D：正交·左键旋转 · 中/右键平移 · 滚轮缩放'
               : '已关闭 3D 预览';
             tracePcb3d(next ? 'UI_TOGGLE_ON' : 'UI_TOGGLE_OFF', 'toolbar');
           }
@@ -1622,8 +1721,6 @@ struct PcbPage {
         const next = !ap.show3d;
         this.getEditor().setShow3d(next);
         if (next) {
-          this.getEditor().setAppearanceMode(PcbAppearanceMode.OVERLAY);
-          this.getEditor().setView3dDisplayMode(Pcb3dDisplayMode.REALISTIC);
           this.getEditor().setView3dOrtho(true);
           this.getEditor().setView3dPreset('iso');
         }
@@ -1631,8 +1728,8 @@ struct PcbPage {
         tracePcb3d(next ? 'UI_TOGGLE_ON' : 'UI_TOGGLE_OFF', 'menu');
         this.dumpPcbInstrTrace();
         this.statusMessage = next
-          ? '3D叠层透视：侧视可数层 · 过孔落点分色'
-          : '已关 3D · instr_trace 已写入 2D 诊断';
+          ? '3D：正交·左键旋转'
+          : '已关 3D';
       }},
       { label: '复位 3D 视角', action: () => {
         this.getEditor().resetView3d();

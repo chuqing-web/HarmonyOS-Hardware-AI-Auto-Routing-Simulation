@@ -415,9 +415,9 @@ const PCB_LIGHT: PcbThemePalette = {
     SNAP: '#00FF88',
     SEL_RECT: '#00BFFF',
     SEL_RECT_FILL: 'rgba(0, 191, 255, 0.12)',
-    ZONE_GND: 'rgba(0, 160, 0, 0.22)',
-    ZONE_SIGNAL: 'rgba(200, 40, 40, 0.18)',
-    ZONE_SELECTED: 'rgba(255, 220, 80, 0.40)',
+    ZONE_GND: 'rgba(0, 200, 80, 0.14)',
+    ZONE_SIGNAL: 'rgba(255, 60, 60, 0.12)',
+    ZONE_SELECTED: 'rgba(0, 230, 118, 0.26)',
     REFDES: '#FFFFFF'
 };
 /**
@@ -441,9 +441,9 @@ const PCB_DARK: PcbThemePalette = {
     SNAP: '#50FA7B',
     SEL_RECT: '#8BE9FD',
     SEL_RECT_FILL: 'rgba(139, 233, 253, 0.12)',
-    ZONE_GND: 'rgba(0, 140, 40, 0.28)',
-    ZONE_SIGNAL: 'rgba(200, 40, 40, 0.20)',
-    ZONE_SELECTED: 'rgba(255, 220, 80, 0.40)',
+    ZONE_GND: 'rgba(0, 200, 80, 0.16)',
+    ZONE_SIGNAL: 'rgba(255, 60, 60, 0.13)',
+    ZONE_SELECTED: 'rgba(0, 230, 118, 0.28)',
     REFDES: '#FFFFFF'
 };
 export class PcbColors {

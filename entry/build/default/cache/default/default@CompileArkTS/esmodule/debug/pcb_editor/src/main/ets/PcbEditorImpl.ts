@@ -254,17 +254,17 @@ export class PcbEditorImpl implements IPcbEditor {
         if (pitch < 12) {
             pitch = 12;
         }
-        else if (pitch > 88) {
-            pitch = 88;
+        else if (pitch > 82) {
+            pitch = 82;
         }
         this.appearance.view3dPitchDeg = pitch;
         this.publishChanged();
     }
     resetView3d(): void {
-        this.appearance.view3dYawDeg = 35;
-        this.appearance.view3dPitchDeg = 55;
+        this.appearance.view3dYawDeg = 38;
+        this.appearance.view3dPitchDeg = 52;
         this.appearance.view3dOrtho = true;
-        tracePcb3d('RESET_VIEW', 'yaw=35 pitch=55 ortho=1');
+        tracePcb3d('RESET_VIEW', 'yaw=38 pitch=52 ortho=1');
         this.publishChanged();
     }
     setView3dOrtho(ortho: boolean): void {
@@ -295,9 +295,9 @@ export class PcbEditorImpl implements IPcbEditor {
             this.appearance.view3dPitchDeg = 12;
         }
         else {
-            // iso 默认
-            this.appearance.view3dYawDeg = 35;
-            this.appearance.view3dPitchDeg = 55;
+            // iso：等轴约 52°，避免顶视 88° 看不出板厚
+            this.appearance.view3dYawDeg = 38;
+            this.appearance.view3dPitchDeg = 52;
         }
         this.normalizeView3dAngles();
         tracePcb3d('PRESET', p.length > 0 ? p : 'iso');
@@ -695,14 +695,45 @@ export class PcbEditorImpl implements IPcbEditor {
     }
     selectTrack(id: string): void {
         this.selection = { kind: PcbSelectionKind.TRACK, footprintIds: [], trackIds: [id], viaIds: [], zoneIds: [] };
+        if (this.document) {
+            for (let i = 0; i < this.document.tracks.length; i++) {
+                if (this.document.tracks[i].id === id) {
+                    const nid = this.document.tracks[i].netId;
+                    if (nid !== undefined && nid.length > 0) {
+                        this.appearance.highlightNetId = nid;
+                    }
+                    break;
+                }
+            }
+        }
         this.publishSelection();
     }
     selectVia(id: string): void {
         this.selection = { kind: PcbSelectionKind.VIA, footprintIds: [], trackIds: [], viaIds: [id], zoneIds: [] };
+        if (this.document) {
+            for (let i = 0; i < this.document.vias.length; i++) {
+                if (this.document.vias[i].id === id) {
+                    if (this.document.vias[i].netId.length > 0) {
+                        this.appearance.highlightNetId = this.document.vias[i].netId;
+                    }
+                    break;
+                }
+            }
+        }
         this.publishSelection();
     }
     selectZone(id: string): void {
         this.selection = { kind: PcbSelectionKind.ZONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [id] };
+        if (this.document) {
+            for (let i = 0; i < this.document.zones.length; i++) {
+                if (this.document.zones[i].id === id) {
+                    if (this.document.zones[i].netId.length > 0) {
+                        this.appearance.highlightNetId = this.document.zones[i].netId;
+                    }
+                    break;
+                }
+            }
+        }
         this.publishSelection();
     }
     // ═══════════════════════════════════════════════════
@@ -2428,7 +2459,68 @@ export class PcbEditorImpl implements IPcbEditor {
             pads, schematicCompId: src.schematicCompId
         };
     }
+    /**
+     * 2D/3D 点选走线/覆铜/过孔/封装 → 活动铜层切到对象所在层。
+     * 层栈高亮仅对 Cu 行（F.Cu/B.Cu）；Mask/Core 不因点选铜线而亮。
+     */
+    private syncActiveLayerFromSelection(): void {
+        if (!this.document) {
+            return;
+        }
+        const fpN = this.selection.footprintIds.length;
+        const trkN = this.selection.trackIds.length;
+        const viaN = this.selection.viaIds.length;
+        const zoneN = this.selection.zoneIds.length;
+        const total = fpN + trkN + viaN + zoneN;
+        if (total !== 1) {
+            return;
+        }
+        if (trkN === 1) {
+            for (let i = 0; i < this.document.tracks.length; i++) {
+                const t = this.document.tracks[i];
+                if (t.id === this.selection.trackIds[0] && isCopperLayer(t.layer)) {
+                    this.setActiveLayer(t.layer);
+                    return;
+                }
+            }
+            return;
+        }
+        if (zoneN === 1) {
+            for (let i = 0; i < this.document.zones.length; i++) {
+                const z = this.document.zones[i];
+                if (z.id === this.selection.zoneIds[0] && isCopperLayer(z.layer)) {
+                    this.setActiveLayer(z.layer);
+                    return;
+                }
+            }
+            return;
+        }
+        if (viaN === 1) {
+            for (let i = 0; i < this.document.vias.length; i++) {
+                const v = this.document.vias[i];
+                if (v.id !== this.selection.viaIds[0]) {
+                    continue;
+                }
+                // 活动层取跨越层首层（布线上下文）；层栈高亮由页面按 via 跨越层展开
+                if (v.layers.length > 0 && isCopperLayer(v.layers[0])) {
+                    this.setActiveLayer(v.layers[0]);
+                }
+                return;
+            }
+            return;
+        }
+        if (fpN === 1) {
+            for (let i = 0; i < this.document.footprints.length; i++) {
+                const fp = this.document.footprints[i];
+                if (fp.id === this.selection.footprintIds[0] && isCopperLayer(fp.layer)) {
+                    this.setActiveLayer(fp.layer);
+                    return;
+                }
+            }
+        }
+    }
     private publishSelection(): void {
+        this.syncActiveLayerFromSelection();
         const data = new PcbEditorSelectionData();
         data.footprintIds = [...this.selection.footprintIds];
         data.trackIds = [...this.selection.trackIds];

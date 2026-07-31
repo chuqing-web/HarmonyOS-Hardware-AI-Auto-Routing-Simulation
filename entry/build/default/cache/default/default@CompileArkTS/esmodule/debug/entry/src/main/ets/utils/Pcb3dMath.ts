@@ -291,34 +291,43 @@ export class Mesh3d {
         }
     }
 }
-/** 白皮书材质 */
+/** PBR 材质库（线性空间 albedo + GGX 粗糙度） */
 export class PbrMats {
+    /** 绿色阻焊：低粗糙度塑料 */
     static mask(): PbrMaterial {
-        return { albedo: hexToLin('#0D6B3A'), metallic: 0.0, roughness: 0.78 };
+        return { albedo: hexToLin('#0B7A3E'), metallic: 0.0, roughness: 0.62 };
     }
+    /** 铜箔：高金属度、中低粗糙度 */
     static copper(): PbrMaterial {
-        return { albedo: hexToLin('#B87333'), metallic: 1.0, roughness: 0.30 };
+        return { albedo: hexToLin('#D08050'), metallic: 1.0, roughness: 0.28 };
     }
+    /** ENIG 沉金：高金属度、低粗糙度（镜面反射） */
     static enig(): PbrMaterial {
-        return { albedo: hexToLin('#FFD700'), metallic: 1.0, roughness: 0.15 };
+        return { albedo: hexToLin('#F0D050'), metallic: 1.0, roughness: 0.12 };
     }
+    /** 塑封体：深灰、微粗糙 */
     static plastic(): PbrMaterial {
-        return { albedo: hexToLin('#1A1A1A'), metallic: 0.0, roughness: 0.70 };
+        return { albedo: hexToLin('#222228'), metallic: 0.0, roughness: 0.65 };
     }
+    /** 陶瓷电容：米黄、半光泽 */
     static ceramic(): PbrMaterial {
-        return { albedo: hexToLin('#E6C88A'), metallic: 0.0, roughness: 0.60 };
+        return { albedo: hexToLin('#ECD8A0'), metallic: 0.0, roughness: 0.48 };
     }
+    /** 引脚：银色金属 */
     static pin(): PbrMaterial {
-        return { albedo: hexToLin('#D0D0D0'), metallic: 1.0, roughness: 0.20 };
+        return { albedo: hexToLin('#D0D0D8'), metallic: 1.0, roughness: 0.18 };
     }
+    /** FR4 基板侧边：黄褐色纤维 */
     static fr4(): PbrMaterial {
-        return { albedo: hexToLin('#8B7355'), metallic: 0.0, roughness: 0.85 };
+        return { albedo: hexToLin('#A89068'), metallic: 0.0, roughness: 0.80 };
     }
+    /** 过孔沉铜孔壁 — 暖调电镀铜 */
     static barrel(): PbrMaterial {
-        return { albedo: hexToLin('#A05A2C'), metallic: 1.0, roughness: 0.45 };
+        return { albedo: hexToLin('#D08850'), metallic: 0.92, roughness: 0.35 };
     }
+    /** 丝印白字 */
     static silk(): PbrMaterial {
-        return { albedo: hexToLin('#F5F5F5'), metallic: 0.0, roughness: 0.65 };
+        return { albedo: hexToLin('#F8F8F8'), metallic: 0.0, roughness: 0.60 };
     }
 }
 function srgbToLin(c: number): number {

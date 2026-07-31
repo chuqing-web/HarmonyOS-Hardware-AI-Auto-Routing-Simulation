@@ -311,9 +311,10 @@ export class PcbLayerPanel extends ViewPU {
         Row.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
-            // 铜层透明度快捷调节
+            // 透明度快捷调节：铜层 + 丝印
             if (row.id === PcbLayerId.F_CU || row.id === PcbLayerId.B_CU ||
-                row.id === PcbLayerId.IN1_CU || row.id === PcbLayerId.IN2_CU) {
+                row.id === PcbLayerId.IN1_CU || row.id === PcbLayerId.IN2_CU ||
+                row.id === PcbLayerId.F_SILKS || row.id === PcbLayerId.B_SILKS) {
                 this.ifElseBranchUpdateFunction(0, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Row.create({ space: 2 });

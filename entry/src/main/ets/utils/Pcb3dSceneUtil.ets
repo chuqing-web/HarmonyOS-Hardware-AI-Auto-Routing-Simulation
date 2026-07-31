@@ -3,7 +3,7 @@
  */
 import {
   PcbDocument, PcbFootprintInst, PcbLayerId, Point2D, PcbViaKind,
-  PcbStackLayerType, copperLayersFromStack, isCopperLayer
+  PcbStackLayerType, PcbLayerStack, copperLayersFromStack, isCopperLayer
 } from 'common';
 
 export interface Pcb3dHit {
@@ -62,6 +62,18 @@ export function dist3(a: Point2D, b: Point2D): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+/** 板体厚度 mm（铜 + 介质，不含阻焊） */
+export function boardBodyThicknessMm(stack: PcbLayerStack | undefined): number {
+  if (!stack || !stack.layers) return 0;
+  let mm = 0;
+  for (let i = 0; i < stack.layers.length; i++) {
+    const sl = stack.layers[i];
+    if (sl.type === PcbStackLayerType.SOLDERMASK) continue;
+    if (sl.thicknessMm > 0) mm += sl.thicknessMm;
+  }
+  return mm;
+}
+
 /**
  * 3D 板厚（世界单位）：由层叠铜层数 / 物理厚度决定，不再跟 zoom 挂钩。
  * 2L≈56、4L≈72、6L≈96、8L≈120；若 stack 有 mm 厚度则优先换算。
@@ -71,33 +83,58 @@ export function boardThicknessWorld(doc: PcbDocument): number {
   const fromStack = stack ? copperLayersFromStack(stack) : [];
   const n = Math.max(2, stack?.copperCount ?? (fromStack.length > 0 ? fromStack.length : 2));
   const byCount = n <= 2 ? 56 : (n <= 4 ? 72 : (n <= 6 ? 96 : 120));
-  let mm = 0;
-  if (stack && stack.layers) {
-    for (let i = 0; i < stack.layers.length; i++) {
-      const sl = stack.layers[i];
-      if (sl.type === PcbStackLayerType.SOLDERMASK) continue;
-      if (sl.thicknessMm > 0) mm += sl.thicknessMm;
-    }
-  }
+  const mm = boardBodyThicknessMm(stack);
   if (mm >= 0.4) {
     // 历史标尺：1.6mm ≈ 56 世界单位
     const fromMm = mm * (56 / 1.6);
-    return Math.max(40, Math.min(160, Math.max(byCount * 0.9, fromMm)));
+    return Math.max(40, Math.min(160, fromMm));
   }
   return byCount;
 }
 
-/** 是否为板底侧铜层（用于先画底层、提高可见性） */
-export function isBottomSideCopper(layer: PcbLayerId, copperOrder: PcbLayerId[]): boolean {
-  return copperLayerNormZ(layer, copperOrder) < 0.45;
+/**
+ * 按 layerStack 各层 thicknessMm 自底向上累加，返回铜箔中心归一化高度 0=底 1=顶。
+ * stack 层序约定为顶→底（F.Mask … B.Mask）。失败返回 -1。
+ */
+function copperPhysicalNormZ(layer: PcbLayerId, stack: PcbLayerStack): number {
+  const total = boardBodyThicknessMm(stack);
+  if (total < 1e-6) return -1;
+  let acc = 0;
+  for (let i = stack.layers.length - 1; i >= 0; i--) {
+    const sl = stack.layers[i];
+    if (sl.type === PcbStackLayerType.SOLDERMASK) continue;
+    const t = sl.thicknessMm > 0 ? sl.thicknessMm : 0;
+    if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId === layer) {
+      const mid = (acc + t * 0.5) / total;
+      // 底铜略抬离 z=0，顶铜贴齐板面，避免与底板/阻焊 z-fighting
+      if (mid < 0.02) return 0.06;
+      if (mid > 0.98) return 1.0;
+      return mid;
+    }
+    acc += t;
+  }
+  return -1;
 }
 
-/** 铜层在板厚方向的归一化高度 0=底 1=顶（按 layerStack 铜层顺序均分） */
-export function copperLayerNormZ(layer: PcbLayerId, copperOrder: PcbLayerId[]): number {
+/** 是否为板底侧铜层（用于先画底层、提高可见性） */
+export function isBottomSideCopper(layer: PcbLayerId, copperOrder: PcbLayerId[],
+  stack?: PcbLayerStack): boolean {
+  return copperLayerNormZ(layer, copperOrder, stack) < 0.45;
+}
+
+/**
+ * 铜层在板厚方向的归一化高度 0=底 1=顶。
+ * 优先按 layerStack 各层 thicknessMm 累加；无有效厚度时回退为铜层顺序均分。
+ */
+export function copperLayerNormZ(layer: PcbLayerId, copperOrder: PcbLayerId[],
+  stack?: PcbLayerStack): number {
+  if (stack !== undefined && stack.layers !== undefined && stack.layers.length > 0) {
+    const phys = copperPhysicalNormZ(layer, stack);
+    if (phys >= 0) return phys;
+  }
   const idx = copperOrder.indexOf(layer);
   if (idx >= 0) {
     const n = Math.max(copperOrder.length - 1, 1);
-    // 底铜略抬离 z=0，顶铜贴齐板面，避免与底板/阻焊 z-fighting
     const t = 1.0 - idx / n;
     if (t <= 0.001) return 0.06;
     if (t >= 0.999) return 1.0;
@@ -109,67 +146,47 @@ export function copperLayerNormZ(layer: PcbLayerId, copperOrder: PcbLayerId[]): 
 }
 
 export function copperWorldZ(layer: PcbLayerId, boardH: number, copperOrder: PcbLayerId[],
-  explode: boolean, explodeGap: number): number {
-  const t = copperLayerNormZ(layer, copperOrder);
-  // explodeGap>0 时按层间距排布（爆炸 / 全层透视叠层共用）
-  if (explode || explodeGap > 0) {
+  explode: boolean, explodeGap: number, stack?: PcbLayerStack): number {
+  const t = copperLayerNormZ(layer, copperOrder, stack);
+  let z = t * boardH;
+  if (explode) {
     const idx = copperOrder.indexOf(layer);
     const i = idx >= 0 ? idx : 0;
-    const n = Math.max(copperOrder.length, 1);
-    const pitch = Math.max(explodeGap > 0 ? explodeGap : boardH * 0.55, 16);
-    // 底层在下、顶层在上；每层落在该档中部，侧面可数层
-    const fromBottom = n - 1 - i;
-    return fromBottom * pitch + pitch * 0.42;
+    z = (copperOrder.length - 1 - i) * explodeGap + t * 8;
   }
-  return t * boardH;
-}
-
-/** 单层铜箔挤出厚度（世界单位），叠层透视时加厚以便侧视辨层 */
-export function copperSlabThickness(boardH: number, copperOrder: PcbLayerId[],
-  stackPitch: number, lodFar: boolean): number {
-  const n = Math.max(copperOrder.length, 1);
-  if (stackPitch > 0) {
-    return lodFar ? Math.max(3, stackPitch * 0.22) : Math.max(5, stackPitch * 0.38);
-  }
-  return lodFar ? 1.2 : Math.max(3.5, boardH / (n * 3.5));
+  return z;
 }
 
 export function viaZSpan(viaLayers: PcbLayerId[], kind: PcbViaKind | undefined,
-  boardH: number, copperOrder: PcbLayerId[], explode: boolean, explodeGap: number): Point2D {
-  // reuse Point2D as {x:zBot, y:zTop}
-  const spaced = explode || explodeGap > 0;
+  boardH: number, copperOrder: PcbLayerId[], explode: boolean, explodeGap: number,
+  stack?: PcbLayerStack): Point2D {
+  let zBot = 0;
+  let zTop = boardH;
   if (viaLayers.length >= 2) {
-    let zBot = Number.POSITIVE_INFINITY;
-    let zTop = Number.NEGATIVE_INFINITY;
+    let minN = 1;
+    let maxN = 0;
     for (let i = 0; i < viaLayers.length; i++) {
-      const z = copperWorldZ(viaLayers[i], boardH, copperOrder, explode, explodeGap);
-      zBot = Math.min(zBot, z);
-      zTop = Math.max(zTop, z);
+      const n = copperLayerNormZ(viaLayers[i], copperOrder, stack);
+      minN = Math.min(minN, n);
+      maxN = Math.max(maxN, n);
     }
-    if (!Number.isFinite(zBot)) {
-      zBot = 0;
-      zTop = boardH;
+    zBot = minN * boardH;
+    zTop = maxN * boardH;
+    if (explode) {
+      zBot = copperWorldZ(viaLayers[viaLayers.length - 1], boardH, copperOrder, true, explodeGap, stack);
+      zTop = copperWorldZ(viaLayers[0], boardH, copperOrder, true, explodeGap, stack);
+      if (zBot > zTop) {
+        const t = zBot; zBot = zTop; zTop = t;
+      }
     }
-    return { x: zBot, y: zTop };
+  } else if (kind === PcbViaKind.BLIND) {
+    zBot = boardH * 0.45;
+    zTop = boardH;
+  } else if (kind === PcbViaKind.BURIED) {
+    zBot = boardH * 0.28;
+    zTop = boardH * 0.72;
   }
-  if (kind === PcbViaKind.BLIND) {
-    const zTop = copperWorldZ(PcbLayerId.F_CU, boardH, copperOrder, explode, explodeGap);
-    const zBot = spaced
-      ? copperWorldZ(copperOrder.length > 1 ? copperOrder[1] : PcbLayerId.B_CU,
-        boardH, copperOrder, explode, explodeGap)
-      : boardH * 0.45;
-    return { x: Math.min(zBot, zTop), y: Math.max(zBot, zTop) };
-  }
-  if (kind === PcbViaKind.BURIED) {
-    return { x: boardH * 0.28, y: boardH * 0.72 };
-  }
-  // 通孔默认贯通整叠
-  if (copperOrder.length >= 2) {
-    const zB = copperWorldZ(copperOrder[copperOrder.length - 1], boardH, copperOrder, explode, explodeGap);
-    const zT = copperWorldZ(copperOrder[0], boardH, copperOrder, explode, explodeGap);
-    return { x: Math.min(zB, zT), y: Math.max(zB, zT) };
-  }
-  return { x: 0, y: boardH };
+  return { x: zBot, y: zTop };
 }
 
 export function buildProjectFn(ctx: Pcb3dProjectCtx): (wx: number, wy: number, wz: number) => Point2D {
@@ -177,7 +194,7 @@ export function buildProjectFn(ctx: Pcb3dProjectCtx): (wx: number, wy: number, w
   const syaw = Math.sin(ctx.yaw);
   const cp = Math.cos(ctx.pitch);
   const sp = Math.sin(ctx.pitch);
-  const perspK = ctx.ortho ? 0 : 0.00022;
+  const perspK = ctx.ortho ? 0 : 0.00008;
   return (wx: number, wy: number, wz: number): Point2D => {
     const x0 = wx - ctx.boardCx;
     const y0 = wy - ctx.boardCy;

@@ -38,6 +38,10 @@ export struct PcbRightPanel {
   @Prop viaTo: PcbLayerId = PcbLayerId.B_CU;
   @Prop copperLayerIds: PcbLayerId[] = [PcbLayerId.F_CU, PcbLayerId.B_CU];
   @Prop routeCornerMode: PcbRouteCornerMode = PcbRouteCornerMode.ORTHO45;
+  /** 2D/3D 点选铜对象后递增 → 切到层栈并高亮对应 Cu 行 */
+  @Prop @Watch('onStackFocusTickChange') stackFocusTick: number = 0;
+  /** 层栈高亮铜层（过孔可含多个跨越层） */
+  @Prop stackHighlightCopperIds: PcbLayerId[] = [];
   onZonePriority: (delta: number) => void = (_d: number) => {};
   onZoneThermal: () => void = () => {};
   onZoneRefreshCutouts: () => void = () => {};
@@ -61,6 +65,12 @@ export struct PcbRightPanel {
 
   aboutToAppear(): void {
     this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
+  }
+
+  private onStackFocusTickChange(): void {
+    if (this.stackFocusTick > 0) {
+      this.activeTab = PcbRightTab.STACK;
+    }
   }
 
   build() {
@@ -408,29 +418,48 @@ export struct PcbRightPanel {
         this.viaLayerPickRow(false)
 
         ProteusPanelTitle({ title: '物理层栈' })
+        Text('点选铜线高亮所在 Cu；点选过孔高亮其跨越的全部铜层（通孔 F.Cu↔B.Cu 含中间层）')
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .padding({ left: 10, right: 10, bottom: 4 })
         ForEach(this.stackLayers, (sl: PcbStackLayer) => {
-          Row() {
-            Column()
-              .width(4)
-              .height(18)
-              .backgroundColor(this.stackColor(sl))
-              .margin({ right: 6 })
-            Text(sl.name)
-              .fontSize(ProteusFonts.STATUS)
-              .fontColor(ProteusColors.TEXT_PRIMARY)
-              .layoutWeight(1)
-            Text(`${sl.thicknessMm.toFixed(3)} mm`)
-              .fontSize(10)
-              .fontColor(ProteusColors.TEXT_SECONDARY)
-            Text(sl.type === PcbStackLayerType.COPPER ? 'Cu' :
-              (sl.type === PcbStackLayerType.DIELECTRIC ? 'Diel' : 'Mask'))
+          Column() {
+            Row() {
+              Column()
+                .width(4)
+                .height(18)
+                .backgroundColor(this.stackColor(sl))
+                .margin({ right: 6 })
+              Text(sl.name)
+                .fontSize(ProteusFonts.STATUS)
+                .fontColor(this.isStackRowActive(sl) ? ProteusColors.SELECTED : ProteusColors.TEXT_PRIMARY)
+                .fontWeight(this.isStackRowActive(sl) ? FontWeight.Bold : FontWeight.Normal)
+                .layoutWeight(1)
+              Text(`${sl.thicknessMm.toFixed(3)} mm`)
+                .fontSize(10)
+                .fontColor(ProteusColors.TEXT_SECONDARY)
+              Text(sl.type === PcbStackLayerType.COPPER ? 'Cu' :
+                (sl.type === PcbStackLayerType.DIELECTRIC ? 'Diel' : 'Mask'))
+                .fontSize(9)
+                .fontColor(ProteusColors.TEXT_SECONDARY)
+                .width(32)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            Text(this.stackDesc(sl))
               .fontSize(9)
-              .fontColor(ProteusColors.TEXT_SECONDARY)
-              .width(32)
-              .textAlign(TextAlign.End)
+              .fontColor(this.isStackRowActive(sl)
+                ? ProteusColors.TEXT_PRIMARY : ProteusColors.TEXT_SECONDARY)
+              .width('100%')
+              .padding({ left: 10, top: 1, bottom: 2 })
           }
           .width('100%')
           .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+          .backgroundColor(this.isStackRowActive(sl) ? ProteusColors.TREE_SELECTED : Color.Transparent)
+          .border({
+            width: this.isStackRowActive(sl) ? 1 : 0,
+            color: ProteusColors.SELECTED
+          })
         }, (sl: PcbStackLayer) => sl.id)
       }
       .width('100%')
@@ -478,5 +507,42 @@ export struct PcbRightPanel {
       return '#C8A878';
     }
     return '#2E8B57';
+  }
+
+  /** 仅铜层行可随点选高亮；过孔可同时高亮多个跨越层 */
+  private isStackRowActive(sl: PcbStackLayer): boolean {
+    if (sl.type !== PcbStackLayerType.COPPER) {
+      return false;
+    }
+    const id = sl.copperLayerId !== undefined ? sl.copperLayerId : (sl.name as PcbLayerId);
+    if (this.stackHighlightCopperIds.length > 0) {
+      return this.stackHighlightCopperIds.indexOf(id) >= 0;
+    }
+    return id === this.activeLayer;
+  }
+
+  private stackDesc(sl: PcbStackLayer): string {
+    if (sl.name === 'F.Mask') {
+      return '顶面阻焊（绿油等），挡住不该焊的铜';
+    }
+    if (sl.name === 'F.Cu' || sl.copperLayerId === PcbLayerId.F_CU) {
+      return '顶面铜箔（约 1 oz），走线/焊盘在这';
+    }
+    if (sl.name === 'Core') {
+      return '介质芯板（FR4），绝缘、定板厚';
+    }
+    if (sl.name === 'B.Cu' || sl.copperLayerId === PcbLayerId.B_CU) {
+      return '底面铜箔';
+    }
+    if (sl.name === 'B.Mask') {
+      return '底面阻焊';
+    }
+    if (sl.type === PcbStackLayerType.DIELECTRIC) {
+      return '介质层（半固化片/芯板），层间绝缘';
+    }
+    if (sl.type === PcbStackLayerType.COPPER) {
+      return '内层铜箔，走线/参考平面';
+    }
+    return '阻焊层';
   }
 }

@@ -6,6 +6,8 @@ export enum PcbLayerId {
     IN2_CU = "In2.Cu",
     IN3_CU = "In3.Cu",
     IN4_CU = "In4.Cu",
+    IN5_CU = "In5.Cu",
+    IN6_CU = "In6.Cu",
     B_CU = "B.Cu",
     F_SILKS = "F.SilkS",
     B_SILKS = "B.SilkS",
@@ -326,8 +328,8 @@ export function defaultPcbAppearance(): PcbAppearance {
         showRatsnest: false,
         showPadNumbers: true,
         show3d: false,
-        view3dYawDeg: 35,
-        view3dPitchDeg: 55,
+        view3dYawDeg: 38,
+        view3dPitchDeg: 52,
         view3dOrtho: true,
         view3dDisplayMode: Pcb3dDisplayMode.REALISTIC,
         view3dCutFraction: 0.55,
@@ -406,6 +408,14 @@ export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack 
             id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
             copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
         });
+        layers.push({
+            id: 'diel_3b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2b',
+            thicknessMm: 0.2, dielectricDk: 4.5
+        });
+        layers.push({
+            id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
+            copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
+        });
     }
     if (n >= 8) {
         layers.push({
@@ -413,8 +423,16 @@ export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack 
             thicknessMm: 0.2, dielectricDk: 4.5
         });
         layers.push({
-            id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
-            copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
+            id: 'cu_in5', type: PcbStackLayerType.COPPER, name: 'In5.Cu',
+            copperLayerId: PcbLayerId.IN5_CU, thicknessMm: 0.035, copperOz: 1
+        });
+        layers.push({
+            id: 'diel_4b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3b',
+            thicknessMm: 0.2, dielectricDk: 4.5
+        });
+        layers.push({
+            id: 'cu_in6', type: PcbStackLayerType.COPPER, name: 'In6.Cu',
+            copperLayerId: PcbLayerId.IN6_CU, thicknessMm: 0.035, copperOz: 1
         });
     }
     if (n >= 6) {
@@ -439,9 +457,11 @@ export function createDefaultPcbLayers(copperCount: number = 2): PcbLayerConfig[
     }
     if (copperCount >= 6) {
         layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#651FFF', opacity: 0.85 });
+        layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
     }
     if (copperCount >= 8) {
-        layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
+        layers.push({ id: PcbLayerId.IN5_CU, name: 'Inner5 Copper', visible: true, color: '#FFD740', opacity: 0.85 });
+        layers.push({ id: PcbLayerId.IN6_CU, name: 'Inner6 Copper', visible: true, color: '#69F0AE', opacity: 0.85 });
     }
     layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#00E676', opacity: 0.92 });
     layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#5CE1E6', opacity: 1 });
@@ -501,7 +521,8 @@ export function createDefaultPcbViewport(): ViewportState {
 export function isCopperLayer(layer: PcbLayerId): boolean {
     return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
         layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
-        layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU;
+        layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU ||
+        layer === PcbLayerId.IN5_CU || layer === PcbLayerId.IN6_CU;
 }
 export function copperLayersFromStack(stack: PcbLayerStack): PcbLayerId[] {
     const out: PcbLayerId[] = [];
@@ -609,9 +630,11 @@ export function normalizePcbDocument(doc: PcbDocument): void {
         }
         if (doc.layerStack.copperCount >= 6) {
             ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#651FFF', true);
+            ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
         }
         if (doc.layerStack.copperCount >= 8) {
-            ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
+            ensureLayerPresent(doc, PcbLayerId.IN5_CU, 'Inner5 Copper', '#FFD740', true);
+            ensureLayerPresent(doc, PcbLayerId.IN6_CU, 'Inner6 Copper', '#69F0AE', true);
         }
         applyDistinctCopperColors(doc);
     }
@@ -675,6 +698,10 @@ function applyDistinctCopperColors(doc: PcbDocument): void {
             c = '#651FFF';
         else if (l.id === PcbLayerId.IN4_CU)
             c = '#00E5FF';
+        else if (l.id === PcbLayerId.IN5_CU)
+            c = '#FFD740';
+        else if (l.id === PcbLayerId.IN6_CU)
+            c = '#69F0AE';
         if (c.length > 0) {
             l.color = c;
             const op = l.opacity !== undefined ? l.opacity : 1;

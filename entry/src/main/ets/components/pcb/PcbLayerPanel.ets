@@ -136,9 +136,10 @@ export struct PcbLayerPanel {
       .width('100%')
       .height(ProteusDimens.TREE_ROW_HEIGHT + 4)
 
-      // 铜层透明度快捷调节
+      // 透明度快捷调节：铜层 + 丝印
       if (row.id === PcbLayerId.F_CU || row.id === PcbLayerId.B_CU ||
-        row.id === PcbLayerId.IN1_CU || row.id === PcbLayerId.IN2_CU) {
+        row.id === PcbLayerId.IN1_CU || row.id === PcbLayerId.IN2_CU ||
+        row.id === PcbLayerId.F_SILKS || row.id === PcbLayerId.B_SILKS) {
         Row({ space: 2 }) {
           this.opacityChip('30%', row.id, 0.3)
           this.opacityChip('60%', row.id, 0.6)
