@@ -39,6 +39,10 @@ interface PcbLaunchParams {
   launchMode?: string;
   projectPath?: string;
   projectName?: string;
+  /** 进入后从当前原理图前向标注并保存为 .pcbsim */
+  importFromSchematic?: boolean;
+  /** 由原理图页跳转而来：返回按钮回到原理图而非首页 */
+  fromSchematic?: boolean;
 }
 
 @Entry
@@ -49,6 +53,10 @@ struct PcbPage {
   @State statusMessage: string = '';
   @State canvasVersion: number = 0;
   @State gerberDocRev: number = 0;
+  @State aiBusy: boolean = false;
+  @State aiProgress: number = 0;
+  @State aiStage: string = '';
+  @State aiTabFocusTick: number = 0;
   @State selectedFootprintId: string = '';
   @State selectedTrackId: string = '';
   @State selectedViaId: string = '';
@@ -63,7 +71,7 @@ struct PcbPage {
   @State toolMode: PcbToolMode = PcbToolMode.SELECT;
   @State gridVisible: boolean = true;
   @State leftPanelWidth: number = 180;
-  @State rightPanelWidth: number = 260;
+  @State rightPanelWidth: number = 300;
   @State drcViolations: PcbDrcViolation[] = [];
   @State layerRows: PcbLayerRow[] = [];
   @State appInitialized: boolean = false;
@@ -83,9 +91,12 @@ struct PcbPage {
   @State stackFocusTick: number = 0;
   /** 层栈中应高亮的铜层（过孔可多选跨越层） */
   @State stackHighlightCopperIds: PcbLayerId[] = [];
+  /** 由原理图跳转进入：Home/返回 回到原理图 */
+  @State fromSchematic: boolean = false;
   /** bit0=Ctrl, bit1=Shift — 页面级快捷键 */
   private pageModifierKeys: number = 0;
   private userProjectDir: string = '';
+  private prevAiGeneratingChanged: ((busy: boolean) => void) | null = null;
 
   private appService: AppService = AppService.getInstance();
 
@@ -93,11 +104,28 @@ struct PcbPage {
     EventBus.getInstance().subscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().subscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
+    // 链式挂钩：PCB AI 布线时同步 aiBusy，并保留原回调（如原理图页）
+    this.prevAiGeneratingChanged = this.appService.onAiGeneratingChanged;
+    this.appService.onAiGeneratingChanged = (busy: boolean): void => {
+      this.aiBusy = busy;
+      if (busy) {
+        this.toolMode = PcbToolMode.SELECT;
+        this.statusMessage = 'PCB AI 布线中，画布已锁定';
+      }
+      if (this.prevAiGeneratingChanged) {
+        this.prevAiGeneratingChanged(busy);
+      }
+    };
+    this.aiBusy = this.appService.isAiGenerating();
     void this.initPage();
   }
 
   aboutToDisappear(): void {
     this.syncPcbToProject();
+    if (this.prevAiGeneratingChanged !== null) {
+      this.appService.onAiGeneratingChanged = this.prevAiGeneratingChanged;
+      this.prevAiGeneratingChanged = null;
+    }
     EventBus.getInstance().unsubscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
@@ -167,6 +195,9 @@ struct PcbPage {
     } catch (_e) { /* no params */ }
 
     const mode = params['launchMode'] as string | undefined;
+    const importFromSchematic = params['importFromSchematic'] === true;
+    // 导出 PCB / 原理图跳转均标记为可返回原理图
+    this.fromSchematic = params['fromSchematic'] === true || importFromSchematic;
     if (mode === 'resume') {
       if (this.appService.currentProject !== null) {
         this.projectName = this.appService.currentProject.name;
@@ -175,6 +206,9 @@ struct PcbPage {
         this.refreshLayers();
         this.syncActiveLayerFromEditor();
         this.syncStackUiFromEditor();
+        if (importFromSchematic) {
+          await this.updateFromSchematicAndSave();
+        }
         setTimeout(() => {
           this.getEditor().fitBoardInView();
           this.zoomPercent = Math.round(this.getEditor().getViewport().zoom * 100);
@@ -188,6 +222,22 @@ struct PcbPage {
         await this.appService.loadProject(path);
         this.projectName = this.appService.currentProject?.name ?? 'Untitled';
       }
+    } else if (mode === 'new') {
+      const rawName = params['projectName'] as string | undefined;
+      const name = (rawName !== undefined && rawName.trim().length > 0)
+        ? rawName.trim().replace(/[\\/:*?"<>|]/g, '_')
+        : 'Untitled';
+      this.appService.newProject(name.length > 0 ? name : 'Untitled');
+      this.projectName = this.appService.currentProject?.name ?? name;
+      this.ensurePcbDocument();
+      const path = ProjectPaths.defaultUserPcbProject(this.appService.getAppBaseDir(), this.projectName);
+      try {
+        fs.accessSync(this.userProjectDir);
+      } catch (_e) {
+        try { fs.mkdirSync(this.userProjectDir, true); } catch (_e2) { /* best-effort */ }
+      }
+      const saved = await this.appService.saveProject(path, true);
+      this.statusMessage = saved ? `已创建: ${path}` : `创建失败，请检查工程目录: ${this.userProjectDir}`;
     } else if (mode === 'scratch' || mode === 'blank') {
       const name = (params['projectName'] as string) ?? 'Untitled';
       this.appService.newProject(name);
@@ -201,6 +251,9 @@ struct PcbPage {
     this.refreshLayers();
     this.syncActiveLayerFromEditor();
     this.syncStackUiFromEditor();
+    if (importFromSchematic) {
+      await this.updateFromSchematicAndSave();
+    }
     setTimeout(() => {
       this.getEditor().fitBoardInView();
       this.zoomPercent = Math.round(this.getEditor().getViewport().zoom * 100);
@@ -299,6 +352,10 @@ struct PcbPage {
   }
 
   private deleteSelected(): void {
+    if (this.appService.isAiGenerating()) {
+      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+      return;
+    }
     const sel = this.getEditor().getSelection();
     tracePcbOp('DELETE',
       `fp=${sel.footprintIds.length} trk=${sel.trackIds.length} via=${sel.viaIds.length} zone=${sel.zoneIds.length}`);
@@ -314,6 +371,10 @@ struct PcbPage {
   }
 
   private runAutoRoute(): void {
+    if (this.appService.isAiGenerating()) {
+      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+      return;
+    }
     tracePcbUi('AUTO_ROUTE', 'start');
     const result = this.getEditor().runAutoRoute();
     if (result.success && result.data !== undefined) {
@@ -328,6 +389,18 @@ struct PcbPage {
       this.statusMessage = result.error ?? '自动布线失败';
       tracePcbOp('AUTO_ROUTE', `fail ${result.error ?? 'unknown'}`);
     }
+  }
+
+  /** 打开右侧「AI布线」页签（与原理图 AI 助手同风格；运行在面板内） */
+  private openAiRouteTab(): void {
+    this.aiTabFocusTick++;
+    this.statusMessage = 'AI 布线面板已打开 — 可配置 API 并开始布线';
+    tracePcbUi('AI_PCB_TAB', 'open');
+  }
+
+  /** 兼容 F9 / 工具栏：切到 AI 页签（布线动作在面板内点「开始 AI 布线」） */
+  private async runAiAutoRoute(): Promise<void> {
+    this.openAiRouteTab();
   }
 
   private adjustSelectedZonePriority(delta: number): void {
@@ -492,7 +565,40 @@ struct PcbPage {
         }
       }
       editor.setAppearanceMode(PcbAppearanceMode.DIM_INACTIVE);
-      this.statusMessage = `活动铜 ${id}（另一面已淡化）·「单层」可只留一层`;
+      // 内电层常为整面铺铜、无走线：自动选中该层覆铜，避免「点了层却看不到线高亮」
+      let trackN = 0;
+      let zoneId = '';
+      let zoneNet = '';
+      if (doc) {
+        for (let ti = 0; ti < doc.tracks.length; ti++) {
+          if (doc.tracks[ti].layer === id) {
+            trackN++;
+          }
+        }
+        for (let zi = 0; zi < doc.zones.length; zi++) {
+          if (doc.zones[zi].layer === id) {
+            zoneId = doc.zones[zi].id;
+            zoneNet = doc.zones[zi].netName;
+            break;
+          }
+        }
+      }
+      if (trackN === 0 && zoneId.length > 0) {
+        editor.selectZone(zoneId);
+        this.selectedTrackId = '';
+        this.selectedViaId = '';
+        this.selectedFootprintId = '';
+        this.selectedZoneId = zoneId;
+        this.selectedZoneCount = 1;
+        this.refreshStackHighlightFromSelection();
+        this.refreshSelectedInfo();
+        this.statusMessage =
+          `活动铜 ${id}：内电层铺铜（无走线）· 已选中覆铜 ${zoneNet.length > 0 ? zoneNet : zoneId}`;
+      } else if (trackN === 0) {
+        this.statusMessage = `活动铜 ${id}：该层无走线/覆铜`;
+      } else {
+        this.statusMessage = `活动铜 ${id}（${trackN} 段走线）·「单层」可只留一层`;
+      }
       this.refreshLayers();
     } else if (focusSolo && (id === PcbLayerId.F_SILKS || id === PcbLayerId.B_SILKS)) {
       // 丝印聚焦：保持 OVERLAY/DIM，绝不 ACTIVE_ONLY 藏铜
@@ -775,18 +881,35 @@ struct PcbPage {
   }
 
   private async updateFromSchematic(): Promise<void> {
-    tracePcbUi('UPDATE_FROM_SCH', 'start');
+    await this.runForwardAnnotateFromSchematic(false);
+  }
+
+  /** 从原理图导出/同步到 PCB，并保存为 .pcbsim */
+  private async updateFromSchematicAndSave(): Promise<void> {
+    const ok = await this.runForwardAnnotateFromSchematic(true);
+    if (ok) {
+      await this.saveProject();
+    }
+  }
+
+  /**
+   * @returns true 表示前向标注成功
+   */
+  private async runForwardAnnotateFromSchematic(fromExport: boolean): Promise<boolean> {
+    tracePcbUi('UPDATE_FROM_SCH', fromExport ? 'export start' : 'start');
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
     editor.rebuildNetPinConnectivity();
     const sch = editor.getDocument();
     if (!sch || sch.components.length === 0) {
-      this.statusMessage = '原理图为空，请先放置器件';
+      this.statusMessage = fromExport
+        ? '原理图为空，已打开 PCB（无封装可导出）'
+        : '原理图为空，请先放置器件';
       tracePcbOp('UPDATE_FROM_SCH', 'fail empty schematic');
-      return;
+      return false;
     }
     if (!this.ercGatePassed()) {
       tracePcbOp('UPDATE_FROM_SCH', 'blocked by ERC');
-      return;
+      return false;
     }
     if (this.appService.currentProject) {
       this.appService.currentProject.schematic = sch;
@@ -796,14 +919,17 @@ struct PcbPage {
       this.syncPcbToProject();
       this.getEditor().fitBoardInView();
       this.zoomPercent = Math.round(this.getEditor().getViewport().zoom * 100);
-      this.statusMessage = `已从原理图更新 PCB（${result.data.footprints.length} 个封装）`;
+      this.statusMessage = fromExport
+        ? `已导出原理图到 PCB（${result.data.footprints.length} 个封装）`
+        : `已从原理图更新 PCB（${result.data.footprints.length} 个封装）`;
       this.canvasVersion++;
       this.unsavedChanges = true;
       tracePcbOp('UPDATE_FROM_SCH', `ok fp=${result.data.footprints.length}`);
-    } else {
-      this.statusMessage = result.error ?? '更新失败';
-      tracePcbOp('UPDATE_FROM_SCH', `fail ${result.error ?? 'unknown'}`);
+      return true;
     }
+    this.statusMessage = result.error ?? '更新失败';
+    tracePcbOp('UPDATE_FROM_SCH', `fail ${result.error ?? 'unknown'}`);
+    return false;
   }
 
   private runDrc(): void {
@@ -1005,7 +1131,20 @@ struct PcbPage {
       .catch((_e: BusinessError) => { /* ignore */ });
   }
 
+  /** 工具栏返回：原理图跳转进来则回原理图，否则回首页 */
+  private goBack(): void {
+    if (this.fromSchematic) {
+      this.goToSchematic();
+      return;
+    }
+    this.goToHome();
+  }
+
   private setToolMode(mode: PcbToolMode): void {
+    if (this.appService.isAiGenerating()) {
+      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+      return;
+    }
     const prev = this.toolMode;
     if (this.toolMode === PcbToolMode.ROUTE && mode !== PcbToolMode.ROUTE) {
       this.routeResetKey++;
@@ -1104,6 +1243,10 @@ struct PcbPage {
       }
     }
     if (event.type !== KeyType.Down) {
+      return;
+    }
+    if (this.appService.isAiGenerating()) {
+      this.statusMessage = 'PCB AI 布线中，画布已锁定';
       return;
     }
     const ctrl = (this.pageModifierKeys & 1) !== 0;
@@ -1221,6 +1364,10 @@ struct PcbPage {
       this.runAutoRoute();
       return;
     }
+    if (kt === 'f9' || event.keyCode === 300) {
+      this.openAiRouteTab();
+      return;
+    }
   }
 
   build() {
@@ -1249,6 +1396,7 @@ struct PcbPage {
             onUpdatePcb: () => { void this.updateFromSchematic(); },
             onDrc: () => { this.runDrc(); },
             onAutoRoute: () => { this.runAutoRoute(); },
+            onAiRoute: () => { this.openAiRouteTab(); },
             onCopy: () => { this.doCopy(); },
             onPaste: () => { this.doPaste(); }
           })
@@ -1326,6 +1474,33 @@ struct PcbPage {
           })
             .width('100%')
             .height('100%')
+
+          if (this.aiBusy) {
+            Column({ space: 10 }) {
+              Text('PCB AI 布线中')
+                .fontSize(18)
+                .fontColor('#FFFFFF')
+                .fontWeight(FontWeight.Medium)
+              Text(this.aiStage.length > 0 ? `${this.aiStage}  ${this.aiProgress}%` : `${this.aiProgress}%`)
+                .fontSize(13)
+                .fontColor('#E0E0E0')
+              Text('画布已锁定 · 仅允许 AI 自动放置与布线')
+                .fontSize(12)
+                .fontColor('#BDBDBD')
+              Text('详见右侧 AI 布线面板')
+                .fontSize(11)
+                .fontColor('#9E9E9E')
+            }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .backgroundColor('#CC1A1A1A')
+            .hitTestBehavior(HitTestMode.Default)
+            .onTouch((_e: TouchEvent) => {
+              // 吞掉触摸，禁止平移/缩放/放置
+            })
+          }
         }
         .layoutWeight(1)
         .height('100%')
@@ -1350,8 +1525,24 @@ struct PcbPage {
           stackFocusTick: this.stackFocusTick,
           stackHighlightCopperIds: this.stackHighlightCopperIds,
           gerberDocRev: this.gerberDocRev,
+          aiTabFocusTick: this.aiTabFocusTick,
+          statusMessage: $statusMessage,
+          aiBusy: $aiBusy,
+          aiProgress: $aiProgress,
+          aiStage: $aiStage,
           getPcbDocument: () => this.getEditor().getDocument(),
           onExportGerber: () => { this.exportGerber(); },
+          onAiRouteDone: () => {
+            this.syncPcbToProject();
+            this.canvasVersion++;
+            this.unsavedChanges = true;
+            this.refreshSelectedInfo();
+            const doc = this.getEditor().getDocument();
+            const tc = doc?.tracks.length ?? 0;
+            const vc = doc?.vias.length ?? 0;
+            this.statusMessage = `PCB AI 布线完成: ${tc} 段, ${vc} 过孔`;
+            tracePcbOp('AI_PCB_ROUTE', `ok tracks=${tc} vias=${vc}`);
+          },
           onZonePriority: (delta: number) => { this.adjustSelectedZonePriority(delta); },
           onZoneThermal: () => { this.toggleSelectedZoneThermal(); },
           onZoneRefreshCutouts: () => { this.refreshSelectedZoneCutouts(); },
@@ -1401,14 +1592,19 @@ struct PcbPage {
             this.canvasVersion++;
             this.statusMessage = '显示模式: 仅活动层';
           },
+          onSelectStackCopper: (id: PcbLayerId) => {
+            this.setActiveLayerUi(id, true);
+          },
           onRunDrc: () => { this.runDrc(); },
           onPcbTemplateInserted: () => {
             this.refreshLayers();
             this.syncActiveLayerFromEditor();
             this.syncStackUiFromEditor();
+            this.refreshStackHighlightFromSelection();
             this.canvasVersion++;
             this.gerberDocRev++;
-            this.statusMessage = '已插入 PCB 实验模板';
+            this.statusMessage =
+              `已插入 PCB 实验模板（${this.copperCount} 层铜）`;
           }
         })
       }
@@ -1441,9 +1637,9 @@ struct PcbPage {
       ProteusToolGroup({ title: 'Home' }) {
         ProteusToolButton({
           iconName: ProteusIconName.HOME,
-          tooltip: '返回首页',
+          tooltip: this.fromSchematic ? '返回原理图' : '返回首页',
           showLabel: false,
-          onAction: () => { this.goToHome(); }
+          onAction: () => { this.goBack(); }
         })
       }
       ProteusToolGroup({ title: 'File' }) {
@@ -1605,10 +1801,16 @@ struct PcbPage {
           onAction: () => { this.runDrc(); }
         })
         ProteusToolButton({
-          iconName: ProteusIconName.AI_ROUTE,
+          iconName: ProteusIconName.WIRE,
           tooltip: '自动布线 (F8)',
           showLabel: false,
           onAction: () => { this.runAutoRoute(); }
+        })
+        ProteusToolButton({
+          iconName: ProteusIconName.AI_ROUTE,
+          tooltip: 'AI 布线面板 (F9)',
+          showLabel: false,
+          onAction: () => { this.openAiRouteTab(); }
         })
         ProteusToolButton({
           iconName: ProteusIconName.LAYER,
@@ -1676,7 +1878,10 @@ struct PcbPage {
       { label: '另存为…', action: () => { void this.saveProjectAs(); } },
       { label: '导出 PCB', action: () => { void this.exportPcb(); } },
       { label: '导出 Gerber', action: () => { void this.exportGerber(); } },
-      { label: '返回首页', action: () => { this.goToHome(); } }
+      {
+        label: this.fromSchematic ? '返回原理图' : '返回首页',
+        action: () => { this.goBack(); }
+      }
     ];
   }
 
@@ -1865,7 +2070,8 @@ struct PcbPage {
       { label: '回写原理图（反向标注）', action: () => { this.reverseToSchematic(); } },
       { label: 'DRC 检查', action: () => { this.runDrc(); } },
       { label: 'instr_trace: 2D/3D 诊断转储', action: () => { this.dumpPcbInstrTrace(); } },
-      { label: '自动布线', action: () => { this.runAutoRoute(); } },
+      { label: '自动布线 (F8)', action: () => { this.runAutoRoute(); } },
+      { label: 'AI 布线面板 (F9)', action: () => { this.openAiRouteTab(); } },
       { label: '复制 (Ctrl+C) / 粘贴 (Ctrl+V)', action: () => {
         const count = this.getEditor().pasteClipboard();
         this.statusMessage = count > 0 ? `已粘贴 ${count} 个` : '剪贴板为空，先 Ctrl+C 复制';

@@ -1,0 +1,935 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚimport { IdUtil } from './IdUtil';
+import { routeLPoints } from './PcbNetUtil';
+import { pathClearOfTracks, clearanceForNet } from './pcb_route/PcbClearanceOracle';
+import { tracePcb } from './PcbTraceLog';
+const MAX_FOREIGN_REROUTE = 4;
+function pointDist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+function distPointSeg(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-9) {
+        return pointDist(p, a);
+    }
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    if (t < 0) {
+        t = 0;
+    }
+    else if (t > 1) {
+        t = 1;
+    }
+    return pointDist(p, { x: a.x + t * dx, y: a.y + t * dy });
+}
+function segClearance(a1, a2, b1, b2) {
+    return Math.min(distPointSeg(a1, b1, b2), distPointSeg(a2, b1, b2), distPointSeg(b1, a1, a2), distPointSeg(b2, a1, a2));
+}
+function tracksClearanceConflict(a, b, doc) {
+    if (a.layer !== b.layer) {
+        return false;
+    }
+    if (a.netId.length > 0 && a.netId === b.netId) {
+        return false;
+    }
+    const need = Math.max(clearanceForNet(doc, a.netId), clearanceForNet(doc, b.netId))
+        + a.width / 2 + b.width / 2;
+    return segClearance(a.start, a.end, b.start, b.end) < need;
+}
+function addTrack(doc, layer, a, b, netId, netName, width) {
+    if (pointDist(a, b) < 0.5) {
+        return null;
+    }
+    const track = {
+        id: IdUtil.generate('trk'),
+        layer,
+        start: { x: a.x, y: a.y },
+        end: { x: b.x, y: b.y },
+        width,
+        netId,
+        netName
+    };
+    doc.tracks.push(track);
+    return track;
+}
+/** ä¸¤ç«¯å‡åœ¨ç„Šç›˜ä¸Šçš„é€‰ä¸­æ®µï¼šæ”¹æˆ U æŠ˜ï¼Œä¸­é—´æ®µå¯ç»§ç»­æ‹–ï¼Œç„Šç›˜ä¸æ–­å¼€ã€‚è¿”å›å·² dogleg çš„ trackId */
+export function doglegPadToPadSelectedTracks(doc, trackIds, padLockedEnds, dx, dy) {
+    const doglegged = new Set();
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+        return doglegged;
+    }
+    let created = 0;
+    const toDogleg = [];
+    for (const trk of doc.tracks) {
+        if (!trackIds.has(trk.id)) {
+            continue;
+        }
+        const sLock = padLockedEnds.has(`${trk.id}|S`);
+        const eLock = padLockedEnds.has(`${trk.id}|E`);
+        if (sLock && eLock) {
+            toDogleg.push(trk);
+        }
+    }
+    for (const trk of toDogleg) {
+        const a = { x: trk.start.x, y: trk.start.y };
+        const b = { x: trk.end.x, y: trk.end.y };
+        const a2 = { x: a.x + dx, y: a.y + dy };
+        const b2 = { x: b.x + dx, y: b.y + dy };
+        trk.start.x = a2.x;
+        trk.start.y = a2.y;
+        trk.end.x = b2.x;
+        trk.end.y = b2.y;
+        doglegged.add(trk.id);
+        if (addTrack(doc, trk.layer, a, a2, trk.netId, trk.netName, trk.width)) {
+            created++;
+        }
+        if (addTrack(doc, trk.layer, b2, b, trk.netId, trk.netName, trk.width)) {
+            created++;
+        }
+    }
+    if (created > 0) {
+        tracePcb('TRACK_SHOVE_DOGLEG', `padToPad=${toDogleg.length} stubs=${created}`);
+    }
+    return doglegged;
+}
+function lCandidates(a, b) {
+    const out = [];
+    if (pointDist(a, b) < 0.5) {
+        return out;
+    }
+    const midH = { x: b.x, y: a.y };
+    out.push([a, midH, b]);
+    const midV = { x: a.x, y: b.y };
+    if (pointDist(midH, midV) > 0.5) {
+        out.push([a, midV, b]);
+    }
+    const def = routeLPoints(a, b);
+    if (def.length >= 2) {
+        out.push(def);
+    }
+    return out;
+}
+function pathOk(doc, layer, pts, netId, width, existing) {
+    for (let i = 0; i < pts.length - 1; i++) {
+        if (!pathClearOfTracks(doc, layer, pts[i], pts[i + 1], netId, width, existing)) {
+            return false;
+        }
+    }
+    return true;
+}
+function replaceTrackWithPolyline(doc, old, pts) {
+    const idx = doc.tracks.findIndex((t) => t.id === old.id);
+    if (idx < 0) {
+        return 0;
+    }
+    doc.tracks.splice(idx, 1);
+    let n = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+        if (addTrack(doc, old.layer, pts[i], pts[i + 1], old.netId, old.netName, old.width)) {
+            n++;
+        }
+    }
+    return n;
+}
+/**
+ * æ‹–åŠ¨é€‰ä¸­èµ°çº¿åï¼šå¯¹ä¸ä¹‹å†²çªçš„åŒå±‚å¼‚ç½‘æ®µåšå±€éƒ¨ L é‡å¸ƒã€‚
+ */
+export function shoveForeignTracksByLReroute(doc, movedTrackIds) {
+    if (movedTrackIds.size === 0) {
+        return 0;
+    }
+    const moved = [];
+    for (const trk of doc.tracks) {
+        if (movedTrackIds.has(trk.id)) {
+            moved.push(trk);
+        }
+    }
+    if (moved.length === 0) {
+        return 0;
+    }
+    const colliding = [];
+    for (const fr of doc.tracks) {
+        if (movedTrackIds.has(fr.id)) {
+            continue;
+        }
+        let hit = false;
+        for (const mv of moved) {
+            if (tracksClearanceConflict(fr, mv, doc)) {
+                hit = true;
+                break;
+            }
+        }
+        if (hit) {
+            colliding.push(fr);
+        }
+    }
+    const seenNet = new Set();
+    const ordered = [];
+    for (const fr of colliding) {
+        if (fr.netId.length > 0 && seenNet.has(fr.netId)) {
+            continue;
+        }
+        if (fr.netId.length > 0) {
+            seenNet.add(fr.netId);
+        }
+        ordered.push(fr);
+        if (ordered.length >= MAX_FOREIGN_REROUTE) {
+            break;
+        }
+    }
+    if (ordered.length < MAX_FOREIGN_REROUTE) {
+        for (const fr of colliding) {
+            let already = false;
+            for (const o of ordered) {
+                if (o.id === fr.id) {
+                    already = true;
+                    break;
+                }
+            }
+            if (already) {
+                continue;
+            }
+            ordered.push(fr);
+            if (ordered.length >= MAX_FOREIGN_REROUTE) {
+                break;
+            }
+        }
+    }
+    let rerouted = 0;
+    for (const fr of ordered) {
+        const candidates = lCandidates(fr.start, fr.end);
+        const obstacles = [];
+        for (const t of doc.tracks) {
+            if (t.id !== fr.id) {
+                obstacles.push(t);
+            }
+        }
+        let chosen = null;
+        for (const pts of candidates) {
+            if (pts.length < 2) {
+                continue;
+            }
+            if (pathOk(doc, fr.layer, pts, fr.netId, fr.width, obstacles)) {
+                chosen = pts;
+                break;
+            }
+        }
+        if (chosen === null) {
+            continue;
+        }
+        if (chosen.length === 2
+            && pointDist(chosen[0], fr.start) < 0.5
+            && pointDist(chosen[1], fr.end) < 0.5) {
+            continue;
+        }
+        const n = replaceTrackWithPolyline(doc, fr, chosen);
+        if (n > 0) {
+            rerouted++;
+        }
+    }
+    if (rerouted > 0 || colliding.length > 0) {
+        tracePcb('TRACK_SHOVE_L', `moved=${movedTrackIds.size} collide=${colliding.length} rerouted=${rerouted}`);
+    }
+    return rerouted;
+}
+//# sourceMappingURL=PcbTrackShoveUtil.js.mapÂ”ÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsÙWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackShoveUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ&./src/main/ets/utils/PcbTrackShoveUtil¦commonÃÚ /**
+ * èµ°çº¿æ¨æŒ¤ï¼ˆæ–¹æ¡ˆ 2ï¼‰ï¼šæ‹–åŠ¨åå¯¹åŒå±‚å¼‚ç½‘å†²çªæ®µåšå±€éƒ¨ L é‡å¸ƒç»•å¼€
+ */
+import { Point2D } from '../types/CommonTypes';
+import { PcbDocument, PcbTrack, PcbLayerId } from '../types/PcbTypes';
+import { IdUtil } from './IdUtil';
+import { routeLPoints } from './PcbNetUtil';
+import { pathClearOfTracks, clearanceForNet } from './pcb_route/PcbClearanceOracle';
+import { lockTrackEndpointsToPads } from './PcbTrackBindUtil';
+import { tracePcb } from './PcbTraceLog';
+
+const MAX_FOREIGN_REROUTE = 4;
+
+function pointDist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function distPointSeg(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) {
+    return pointDist(p, a);
+  }
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  if (t < 0) {
+    t = 0;
+  } else if (t > 1) {
+    t = 1;
+  }
+  return pointDist(p, { x: a.x + t * dx, y: a.y + t * dy });
+}
+
+function segClearance(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): number {
+  return Math.min(
+    distPointSeg(a1, b1, b2),
+    distPointSeg(a2, b1, b2),
+    distPointSeg(b1, a1, a2),
+    distPointSeg(b2, a1, a2)
+  );
+}
+
+function tracksClearanceConflict(a: PcbTrack, b: PcbTrack, doc: PcbDocument): boolean {
+  if (a.layer !== b.layer) {
+    return false;
+  }
+  if (a.netId.length > 0 && a.netId === b.netId) {
+    return false;
+  }
+  const need = Math.max(clearanceForNet(doc, a.netId), clearanceForNet(doc, b.netId))
+    + a.width / 2 + b.width / 2;
+  return segClearance(a.start, a.end, b.start, b.end) < need;
+}
+
+function addTrack(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D,
+  netId: string, netName: string, width: number): PcbTrack | null {
+  if (pointDist(a, b) < 0.5) {
+    return null;
+  }
+  const track: PcbTrack = {
+    id: IdUtil.generate('trk'),
+    layer,
+    start: { x: a.x, y: a.y },
+    end: { x: b.x, y: b.y },
+    width,
+    netId,
+    netName
+  };
+  doc.tracks.push(track);
+  return track;
+}
+
+/** ä¸¤ç«¯å‡åœ¨ç„Šç›˜ä¸Šçš„é€‰ä¸­æ®µï¼šæ”¹æˆ U æŠ˜ï¼Œä¸­é—´æ®µå¯ç»§ç»­æ‹–ï¼Œç„Šç›˜ä¸æ–­å¼€ã€‚è¿”å›å·² dogleg çš„ trackId */
+export function doglegPadToPadSelectedTracks(
+  doc: PcbDocument,
+  trackIds: Set<string>,
+  padLockedEnds: Set<string>,
+  dx: number,
+  dy: number
+): Set<string> {
+  const doglegged: Set<string> = new Set();
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+    return doglegged;
+  }
+  let created = 0;
+  const toDogleg: PcbTrack[] = [];
+  for (const trk of doc.tracks) {
+    if (!trackIds.has(trk.id)) {
+      continue;
+    }
+    const sLock = padLockedEnds.has(`${trk.id}|S`);
+    const eLock = padLockedEnds.has(`${trk.id}|E`);
+    if (sLock && eLock) {
+      toDogleg.push(trk);
+    }
+  }
+  for (const trk of toDogleg) {
+    const a: Point2D = { x: trk.start.x, y: trk.start.y };
+    const b: Point2D = { x: trk.end.x, y: trk.end.y };
+    const a2: Point2D = { x: a.x + dx, y: a.y + dy };
+    const b2: Point2D = { x: b.x + dx, y: b.y + dy };
+    trk.start.x = a2.x;
+    trk.start.y = a2.y;
+    trk.end.x = b2.x;
+    trk.end.y = b2.y;
+    doglegged.add(trk.id);
+    if (addTrack(doc, trk.layer, a, a2, trk.netId, trk.netName, trk.width)) {
+      created++;
+    }
+    if (addTrack(doc, trk.layer, b2, b, trk.netId, trk.netName, trk.width)) {
+      created++;
+    }
+  }
+  if (created > 0) {
+    tracePcb('TRACK_SHOVE_DOGLEG', `padToPad=${toDogleg.length} stubs=${created}`);
+  }
+  return doglegged;
+}
+
+function lCandidates(a: Point2D, b: Point2D): Point2D[][] {
+  const out: Point2D[][] = [];
+  if (pointDist(a, b) < 0.5) {
+    return out;
+  }
+  const midH: Point2D = { x: b.x, y: a.y };
+  out.push([a, midH, b]);
+  const midV: Point2D = { x: a.x, y: b.y };
+  if (pointDist(midH, midV) > 0.5) {
+    out.push([a, midV, b]);
+  }
+  const def = routeLPoints(a, b);
+  if (def.length >= 2) {
+    out.push(def);
+  }
+  return out;
+}
+
+function pathOk(doc: PcbDocument, layer: PcbLayerId, pts: Point2D[],
+  netId: string, width: number, existing: PcbTrack[]): boolean {
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (!pathClearOfTracks(doc, layer, pts[i], pts[i + 1], netId, width, existing)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function replaceTrackWithPolyline(doc: PcbDocument, old: PcbTrack, pts: Point2D[]): number {
+  const idx = doc.tracks.findIndex((t: PcbTrack) => t.id === old.id);
+  if (idx < 0) {
+    return 0;
+  }
+  doc.tracks.splice(idx, 1);
+  let n = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (addTrack(doc, old.layer, pts[i], pts[i + 1], old.netId, old.netName, old.width)) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * æ‹–åŠ¨é€‰ä¸­èµ°çº¿åï¼šå¯¹ä¸ä¹‹å†²çªçš„åŒå±‚å¼‚ç½‘æ®µåšå±€éƒ¨ L é‡å¸ƒã€‚
+ */
+export function shoveForeignTracksByLReroute(
+  doc: PcbDocument,
+  movedTrackIds: Set<string>
+): number {
+  if (movedTrackIds.size === 0) {
+    return 0;
+  }
+
+  const moved: PcbTrack[] = [];
+  for (const trk of doc.tracks) {
+    if (movedTrackIds.has(trk.id)) {
+      moved.push(trk);
+    }
+  }
+  if (moved.length === 0) {
+    return 0;
+  }
+
+  const colliding: PcbTrack[] = [];
+  for (const fr of doc.tracks) {
+    if (movedTrackIds.has(fr.id)) {
+      continue;
+    }
+    let hit = false;
+    for (const mv of moved) {
+      if (tracksClearanceConflict(fr, mv, doc)) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) {
+      colliding.push(fr);
+    }
+  }
+
+  const seenNet: Set<string> = new Set();
+  const ordered: PcbTrack[] = [];
+  for (const fr of colliding) {
+    if (fr.netId.length > 0 && seenNet.has(fr.netId)) {
+      continue;
+    }
+    if (fr.netId.length > 0) {
+      seenNet.add(fr.netId);
+    }
+    ordered.push(fr);
+    if (ordered.length >= MAX_FOREIGN_REROUTE) {
+      break;
+    }
+  }
+  if (ordered.length < MAX_FOREIGN_REROUTE) {
+    for (const fr of colliding) {
+      let already = false;
+      for (const o of ordered) {
+        if (o.id === fr.id) {
+          already = true;
+          break;
+        }
+      }
+      if (already) {
+        continue;
+      }
+      ordered.push(fr);
+      if (ordered.length >= MAX_FOREIGN_REROUTE) {
+        break;
+      }
+    }
+  }
+
+  let rerouted = 0;
+  for (const fr of ordered) {
+    const candidates = lCandidates(fr.start, fr.end);
+    const obstacles: PcbTrack[] = [];
+    for (const t of doc.tracks) {
+      if (t.id !== fr.id) {
+        obstacles.push(t);
+      }
+    }
+    let chosen: Point2D[] | null = null;
+    for (const pts of candidates) {
+      if (pts.length < 2) {
+        continue;
+      }
+      if (pathOk(doc, fr.layer, pts, fr.netId, fr.width, obstacles)) {
+        chosen = pts;
+        break;
+      }
+    }
+    if (chosen === null) {
+      continue;
+    }
+    if (chosen.length === 2
+      && pointDist(chosen[0], fr.start) < 0.5
+      && pointDist(chosen[1], fr.end) < 0.5) {
+      continue;
+    }
+    const n = replaceTrackWithPolyline(doc, fr, chosen);
+    if (n > 0) {
+      rerouted++;
+    }
+  }
+
+  if (rerouted > 0 || colliding.length > 0) {
+    tracePcb('TRACK_SHOVE_L',
+      `moved=${movedTrackIds.size} collide=${colliding.length} rerouted=${rerouted}`);
+  }
+  return rerouted;
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ í‘”   ‘”   ‘”   ‘”  	 ‘”   ‘”   ‘”  ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ! ‘”  # ‘”  $‘”  * ‘”  , ‘”  -‘”  .‘”  /‘”  0‘”  1‘”  2‘”  6 ‘”  8 ‘”  ;‘”  <‘”  =‘”  >‘”  Ì@‘”  ÌA‘”  ÌF‘”  ÌG‘”  ÌH ‘”  ÌJ ‘”  ÌK ‘”  ÌR‘”  ÌS‘”  ÌT‘”  ÌU‘”  ÌX‘”  Ì[‘”  Ì\‘”  Ì]‘”  Ì_‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìk‘”  Ìm‘”  Ìn‘”  Ìp‘”  Ìq‘”  Ìr‘”  Ìu‘”  Ìv‘”  Ìw ‘”  Ìy ‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì€‘”  Ìƒ‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ìˆ‘”  Ì‰ ‘”  Ì‹ ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì“ ‘”  Ì• ‘”  Ì˜‘”  Ì™‘”  Ìœ‘”  Ì‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¢ ‘”  Ì¤ ‘”  Ì¦‘”  Ì§ ‘”  Ì«‘”  Ì¬‘”  Ì­‘”  Ì°‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì·‘”  Ìº‘”  Ì½‘”  Ì¿‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÆ‘”  ÌÇ‘”  ÌÈ‘”  ÌÊ‘”  ÌÌ‘”  ÌÍ‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÖ‘”  Ì×‘”  ÌØ‘”  ÌÙ‘”  ÌÛ‘”  ÌÜ‘”  Ìß	‘”  Ìà‘”  Ìá‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìç‘”  Ìè‘”  Ìé‘”  Ìì‘”  Ìí‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìò‘”  Ìó‘”  Ìõ‘”  Ìö‘”  Ìø‘”  Ìü‘”  Ìı‘”  Í ‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í	‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í ‘ÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackShoveUtil.ets‘Ú /**
+ * èµ°çº¿æ¨æŒ¤ï¼ˆæ–¹æ¡ˆ 2ï¼‰ï¼šæ‹–åŠ¨åå¯¹åŒå±‚å¼‚ç½‘å†²çªæ®µåšå±€éƒ¨ L é‡å¸ƒç»•å¼€
+ */
+import { Point2D } from '../types/CommonTypes';
+import { PcbDocument, PcbTrack, PcbLayerId } from '../types/PcbTypes';
+import { IdUtil } from './IdUtil';
+import { routeLPoints } from './PcbNetUtil';
+import { pathClearOfTracks, clearanceForNet } from './pcb_route/PcbClearanceOracle';
+import { lockTrackEndpointsToPads } from './PcbTrackBindUtil';
+import { tracePcb } from './PcbTraceLog';
+
+const MAX_FOREIGN_REROUTE = 4;
+
+function pointDist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function distPointSeg(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) {
+    return pointDist(p, a);
+  }
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  if (t < 0) {
+    t = 0;
+  } else if (t > 1) {
+    t = 1;
+  }
+  return pointDist(p, { x: a.x + t * dx, y: a.y + t * dy });
+}
+
+function segClearance(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): number {
+  return Math.min(
+    distPointSeg(a1, b1, b2),
+    distPointSeg(a2, b1, b2),
+    distPointSeg(b1, a1, a2),
+    distPointSeg(b2, a1, a2)
+  );
+}
+
+function tracksClearanceConflict(a: PcbTrack, b: PcbTrack, doc: PcbDocument): boolean {
+  if (a.layer !== b.layer) {
+    return false;
+  }
+  if (a.netId.length > 0 && a.netId === b.netId) {
+    return false;
+  }
+  const need = Math.max(clearanceForNet(doc, a.netId), clearanceForNet(doc, b.netId))
+    + a.width / 2 + b.width / 2;
+  return segClearance(a.start, a.end, b.start, b.end) < need;
+}
+
+function addTrack(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D,
+  netId: string, netName: string, width: number): PcbTrack | null {
+  if (pointDist(a, b) < 0.5) {
+    return null;
+  }
+  const track: PcbTrack = {
+    id: IdUtil.generate('trk'),
+    layer,
+    start: { x: a.x, y: a.y },
+    end: { x: b.x, y: b.y },
+    width,
+    netId,
+    netName
+  };
+  doc.tracks.push(track);
+  return track;
+}
+
+/** ä¸¤ç«¯å‡åœ¨ç„Šç›˜ä¸Šçš„é€‰ä¸­æ®µï¼šæ”¹æˆ U æŠ˜ï¼Œä¸­é—´æ®µå¯ç»§ç»­æ‹–ï¼Œç„Šç›˜ä¸æ–­å¼€ã€‚è¿”å›å·² dogleg çš„ trackId */
+export function doglegPadToPadSelectedTracks(
+  doc: PcbDocument,
+  trackIds: Set<string>,
+  padLockedEnds: Set<string>,
+  dx: number,
+  dy: number
+): Set<string> {
+  const doglegged: Set<string> = new Set();
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+    return doglegged;
+  }
+  let created = 0;
+  const toDogleg: PcbTrack[] = [];
+  for (const trk of doc.tracks) {
+    if (!trackIds.has(trk.id)) {
+      continue;
+    }
+    const sLock = padLockedEnds.has(`${trk.id}|S`);
+    const eLock = padLockedEnds.has(`${trk.id}|E`);
+    if (sLock && eLock) {
+      toDogleg.push(trk);
+    }
+  }
+  for (const trk of toDogleg) {
+    const a: Point2D = { x: trk.start.x, y: trk.start.y };
+    const b: Point2D = { x: trk.end.x, y: trk.end.y };
+    const a2: Point2D = { x: a.x + dx, y: a.y + dy };
+    const b2: Point2D = { x: b.x + dx, y: b.y + dy };
+    trk.start.x = a2.x;
+    trk.start.y = a2.y;
+    trk.end.x = b2.x;
+    trk.end.y = b2.y;
+    doglegged.add(trk.id);
+    if (addTrack(doc, trk.layer, a, a2, trk.netId, trk.netName, trk.width)) {
+      created++;
+    }
+    if (addTrack(doc, trk.layer, b2, b, trk.netId, trk.netName, trk.width)) {
+      created++;
+    }
+  }
+  if (created > 0) {
+    tracePcb('TRACK_SHOVE_DOGLEG', `padToPad=${toDogleg.length} stubs=${created}`);
+  }
+  return doglegged;
+}
+
+function lCandidates(a: Point2D, b: Point2D): Point2D[][] {
+  const out: Point2D[][] = [];
+  if (pointDist(a, b) < 0.5) {
+    return out;
+  }
+  const midH: Point2D = { x: b.x, y: a.y };
+  out.push([a, midH, b]);
+  const midV: Point2D = { x: a.x, y: b.y };
+  if (pointDist(midH, midV) > 0.5) {
+    out.push([a, midV, b]);
+  }
+  const def = routeLPoints(a, b);
+  if (def.length >= 2) {
+    out.push(def);
+  }
+  return out;
+}
+
+function pathOk(doc: PcbDocument, layer: PcbLayerId, pts: Point2D[],
+  netId: string, width: number, existing: PcbTrack[]): boolean {
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (!pathClearOfTracks(doc, layer, pts[i], pts[i + 1], netId, width, existing)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function replaceTrackWithPolyline(doc: PcbDocument, old: PcbTrack, pts: Point2D[]): number {
+  const idx = doc.tracks.findIndex((t: PcbTrack) => t.id === old.id);
+  if (idx < 0) {
+    return 0;
+  }
+  doc.tracks.splice(idx, 1);
+  let n = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (addTrack(doc, old.layer, pts[i], pts[i + 1], old.netId, old.netName, old.width)) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * æ‹–åŠ¨é€‰ä¸­èµ°çº¿åï¼šå¯¹ä¸ä¹‹å†²çªçš„åŒå±‚å¼‚ç½‘æ®µåšå±€éƒ¨ L é‡å¸ƒã€‚
+ */
+export function shoveForeignTracksByLReroute(
+  doc: PcbDocument,
+  movedTrackIds: Set<string>
+): number {
+  if (movedTrackIds.size === 0) {
+    return 0;
+  }
+
+  const moved: PcbTrack[] = [];
+  for (const trk of doc.tracks) {
+    if (movedTrackIds.has(trk.id)) {
+      moved.push(trk);
+    }
+  }
+  if (moved.length === 0) {
+    return 0;
+  }
+
+  const colliding: PcbTrack[] = [];
+  for (const fr of doc.tracks) {
+    if (movedTrackIds.has(fr.id)) {
+      continue;
+    }
+    let hit = false;
+    for (const mv of moved) {
+      if (tracksClearanceConflict(fr, mv, doc)) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) {
+      colliding.push(fr);
+    }
+  }
+
+  const seenNet: Set<string> = new Set();
+  const ordered: PcbTrack[] = [];
+  for (const fr of colliding) {
+    if (fr.netId.length > 0 && seenNet.has(fr.netId)) {
+      continue;
+    }
+    if (fr.netId.length > 0) {
+      seenNet.add(fr.netId);
+    }
+    ordered.push(fr);
+    if (ordered.length >= MAX_FOREIGN_REROUTE) {
+      break;
+    }
+  }
+  if (ordered.length < MAX_FOREIGN_REROUTE) {
+    for (const fr of colliding) {
+      let already = false;
+      for (const o of ordered) {
+        if (o.id === fr.id) {
+          already = true;
+          break;
+        }
+      }
+      if (already) {
+        continue;
+      }
+      ordered.push(fr);
+      if (ordered.length >= MAX_FOREIGN_REROUTE) {
+        break;
+      }
+    }
+  }
+
+  let rerouted = 0;
+  for (const fr of ordered) {
+    const candidates = lCandidates(fr.start, fr.end);
+    const obstacles: PcbTrack[] = [];
+    for (const t of doc.tracks) {
+      if (t.id !== fr.id) {
+        obstacles.push(t);
+      }
+    }
+    let chosen: Point2D[] | null = null;
+    for (const pts of candidates) {
+      if (pts.length < 2) {
+        continue;
+      }
+      if (pathOk(doc, fr.layer, pts, fr.netId, fr.width, obstacles)) {
+        chosen = pts;
+        break;
+      }
+    }
+    if (chosen === null) {
+      continue;
+    }
+    if (chosen.length === 2
+      && pointDist(chosen[0], fr.start) < 0.5
+      && pointDist(chosen[1], fr.end) < 0.5) {
+      continue;
+    }
+    const n = replaceTrackWithPolyline(doc, fr, chosen);
+    if (n > 0) {
+      rerouted++;
+    }
+  }
+
+  if (rerouted > 0 || colliding.length > 0) {
+    tracePcb('TRACK_SHOVE_L',
+      `moved=${movedTrackIds.size} collide=${colliding.length} rerouted=${rerouted}`);
+  }
+  return rerouted;
+}
+ÔrE”¨./IdUtil¬./PcbNetUtil­./PcbTraceLog¾./pcb_route/PcbClearanceOracleÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂFAÂÙWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍéÍÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍğÍÔrK”¤type¥start£end¤nameªIdentifierÍùÍ¼doglegPadToPadSelectedTracksÂÂÂ•KªIdentifierÍÍ£docKªIdentifierÍÍ#¨trackIdsKªIdentifierÍ%Í2­padLockedEndsKªIdentifierÍ4Í6¢dxKªIdentifierÍ8Í:¢dyÔrL”¤type¥start£end¤body®BlockStatementÍ<Í˜ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÍCÍ_‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÍIÍ^KªIdentifierÍIÍR©dogleggedÔrO•¤type¥start£end¦callee©arguments­NewExpressionÍUÍ^KªIdentifierÍYÍ\£Set¥constÔrP–¤type¥start£end¤testªconsequent©alternate«IfStatementÍeÍ¸ÔrQ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍiÍ“Q°BinaryExpressionÍiÍ|ÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍiÍuÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍiÍqKªIdentifierÍiÍm¤MathKªIdentifierÍnÍq£absÂÂ‘KªIdentifierÍrÍt¢dxÂ¡<ÔrT•¤type¥start£end¥value£raw§LiteralÍxÍ|Ë?„záG®{¤0.01¢&&Q°BinaryExpressionÍ€Í“R®CallExpressionÍ€ÍŒS°MemberExpressionÍ€ÍˆKªIdentifierÍ€Í„¤MathKªIdentifierÍ…Íˆ£absÂÂ‘KªIdentifierÍ‰Í‹¢dyÂ¡<T§LiteralÍÍ“Ë?„záG®{¤0.01L®BlockStatementÍ•Í¸‘ÔrU”¤type¥start£end¨argument¯ReturnStatementÍ Í±KªIdentifierÍ§Í°©dogleggedÀM³VariableDeclarationÍ¾ÍÎ‘N²VariableDeclaratorÍÂÍÍKªIdentifierÍÂÍÉ§createdT§LiteralÍÌÍÍ ¡0£letM³VariableDeclarationÍÔÍè‘N²VariableDeclaratorÍÚÍçKªIdentifierÍÚÍâ¨toDoglegÔrV”¤type¥start£end¨elements¯ArrayExpressionÍåÍç¥constÔrW—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍîÍ	ÂM³VariableDeclarationÍóÍü‘N²VariableDeclaratorÍùÍüKªIdentifierÍùÍü£trkÀ¥constS°MemberExpressionÍ Í
+KªIdentifierÍ Í£docKªIdentifierÍÍ
+¦tracksÂÂL®BlockStatementÍÍ	”P«IfStatementÍÍUÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ0¡!ÃR®CallExpressionÍÍ0S°MemberExpressionÍÍ(KªIdentifierÍÍ$¨trackIdsKªIdentifierÍ%Í(£hasÂÂ‘S°MemberExpressionÍ)Í/KªIdentifierÍ)Í,£trkKªIdentifierÍ-Í/¢idÂÂÂL®BlockStatementÍ2ÍU‘ÔrY”¤type¥start£end¥label±ContinueStatementÍAÍJÀÀM³VariableDeclarationÍ_Í‘N²VariableDeclaratorÍeÍKªIdentifierÍeÍj¥sLockR®CallExpressionÍmÍS°MemberExpressionÍmÍ~KªIdentifierÍmÍz­padLockedEndsKªIdentifierÍ{Í~£hasÂÂ‘ÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍŒ‘S°MemberExpressionÍ‚ÍˆKªIdentifierÍ‚Í…£trkKªIdentifierÍ†Íˆ¢idÂÂ’Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ€Í€Ôr\’£raw¦cooked  Â[¯TemplateElementÍ‰Í‹\¢|S¢|SÃÂ¥constM³VariableDeclarationÍ˜ÍÇ‘N²VariableDeclaratorÍÍÆKªIdentifierÍÍ£¥eLockR®CallExpressionÍ¦ÍÆS°MemberExpressionÍ¦Í·KªIdentifierÍ¦Í³­padLockedEndsKªIdentifierÍ´Í·£hasÂÂ‘Z¯TemplateLiteralÍ¸ÍÅ‘S°MemberExpressionÍ»ÍÁKªIdentifierÍ»Í¾£trkKªIdentifierÍ¿ÍÁ¢idÂÂ’[¯TemplateElementÍ¹Í¹\  Â[¯TemplateElementÍÂÍÄ\¢|E¢|EÃÂ¥constP«IfStatementÍÑÍ	Q±LogicalExpressionÍÕÍãKªIdentifierÍÕÍÚ¥sLock¢&&KªIdentifierÍŞÍã¥eLockL®BlockStatementÍåÍ	‘Ôr]”¤type¥start£endªexpression³ExpressionStatementÍôÍ	R®CallExpressionÍôÍ	S°MemberExpressionÍôÍ	KªIdentifierÍôÍü¨toDoglegKªIdentifierÍıÍ	¤pushÂÂ‘KªIdentifierÍ	Í	£trkÂÀW®ForOfStatementÍ	ÍÂM³VariableDeclarationÍ	$Í	-‘N²VariableDeclaratorÍ	*Í	-KªIdentifierÍ	*Í	-£trkÀ¥constKªIdentifierÍ	1Í	9¨toDoglegL®BlockStatementÍ	;Í›M³VariableDeclarationÍ	FÍ	s‘N²VariableDeclaratorÍ	LÍ	rKªIdentifierÍ	LÍ	M¡aÔr^”¤type¥start£endªproperties°ObjectExpressionÍ	PÍ	r’Ôr_™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ	RÍ	`ÂÂÂKªIdentifierÍ	RÍ	S¡xS°MemberExpressionÍ	UÍ	`S°MemberExpressionÍ	UÍ	^KªIdentifierÍ	UÍ	X£trkKªIdentifierÍ	YÍ	^¥startÂÂKªIdentifierÍ	_Í	`¡xÂÂ¤init_¨PropertyÍ	bÍ	pÂÂÂKªIdentifierÍ	bÍ	c¡yS°MemberExpressionÍ	eÍ	pS°MemberExpressionÍ	eÍ	nKªIdentifierÍ	eÍ	h£trkKªIdentifierÍ	iÍ	n¥startÂÂKªIdentifierÍ	oÍ	p¡yÂÂ¤init¥constM³VariableDeclarationÍ	}Í	¦‘N²VariableDeclaratorÍ	ƒÍ	¥KªIdentifierÍ	ƒÍ	„¡b^°ObjectExpressionÍ	‡Í	¥’_¨PropertyÍ	‰Í	•ÂÂÂKªIdentifierÍ	‰Í	Š¡xS°MemberExpressionÍ	ŒÍ	•S°MemberExpressionÍ	ŒÍ	“KªIdentifierÍ	ŒÍ	£trkKªIdentifierÍ	Í	“£endÂÂKªIdentifierÍ	”Í	•¡xÂÂ¤init_¨PropertyÍ	—Í	£ÂÂÂKªIdentifierÍ	—Í	˜¡yS°MemberExpressionÍ	šÍ	£S°MemberExpressionÍ	šÍ	¡KªIdentifierÍ	šÍ	£trkKªIdentifierÍ	Í	¡£endÂÂKªIdentifierÍ	¢Í	£¡yÂÂ¤init¥constM³VariableDeclarationÍ	°Í	Ø‘N²VariableDeclaratorÍ	¶Í	×KªIdentifierÍ	¶Í	¸¢a2^°ObjectExpressionÍ	»Í	×’_¨PropertyÍ	½Í	ÈÂÂÂKªIdentifierÍ	½Í	¾¡xQ°BinaryExpressionÍ	ÀÍ	ÈS°MemberExpressionÍ	ÀÍ	ÃKªIdentifierÍ	ÀÍ	Á¡aKªIdentifierÍ	ÂÍ	Ã¡xÂÂ¡+KªIdentifierÍ	ÆÍ	È¢dx¤init_¨PropertyÍ	ÊÍ	ÕÂÂÂKªIdentifierÍ	ÊÍ	Ë¡yQ°BinaryExpressionÍ	ÍÍ	ÕS°MemberExpressionÍ	ÍÍ	ĞKªIdentifierÍ	ÍÍ	Î¡aKªIdentifierÍ	ÏÍ	Ğ¡yÂÂ¡+KªIdentifierÍ	ÓÍ	Õ¢dy¤init¥constM³VariableDeclarationÍ	âÍ
+
+‘N²VariableDeclaratorÍ	èÍ
+	KªIdentifierÍ	èÍ	ê¢b2^°ObjectExpressionÍ	íÍ
+	’_¨PropertyÍ	ïÍ	úÂÂÂKªIdentifierÍ	ïÍ	ğ¡xQ°BinaryExpressionÍ	òÍ	úS°MemberExpressionÍ	òÍ	õKªIdentifierÍ	òÍ	ó¡bKªIdentifierÍ	ôÍ	õ¡xÂÂ¡+KªIdentifierÍ	øÍ	ú¢dx¤init_¨PropertyÍ	üÍ
+ÂÂÂKªIdentifierÍ	üÍ	ı¡yQ°BinaryExpressionÍ	ÿÍ
+S°MemberExpressionÍ	ÿÍ
+KªIdentifierÍ	ÿÍ
+ ¡bKªIdentifierÍ
+Í
+¡yÂÂ¡+KªIdentifierÍ
+Í
+¢dy¤init¥const]³ExpressionStatementÍ
+Í
+'Ôr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ
+Í
+&¡=S°MemberExpressionÍ
+Í
+S°MemberExpressionÍ
+Í
+KªIdentifierÍ
+Í
+£trkKªIdentifierÍ
+Í
+¥startÂÂKªIdentifierÍ
+Í
+¡xÂÂS°MemberExpressionÍ
+"Í
+&KªIdentifierÍ
+"Í
+$¢a2KªIdentifierÍ
+%Í
+&¡xÂÂ]³ExpressionStatementÍ
+1Í
+D`´AssignmentExpressionÍ
+1Í
+C¡=S°MemberExpressionÍ
+1Í
+<S°MemberExpressionÍ
+1Í
+:KªIdentifierÍ
+1Í
+4£trkKªIdentifierÍ
+5Í
+:¥startÂÂKªIdentifierÍ
+;Í
+<¡yÂÂS°MemberExpressionÍ
+?Í
+CKªIdentifierÍ
+?Í
+A¢a2KªIdentifierÍ
+BÍ
+C¡yÂÂ]³ExpressionStatementÍ
+NÍ
+_`´AssignmentExpressionÍ
+NÍ
+^¡=S°MemberExpressionÍ
+NÍ
+WS°MemberExpressionÍ
+NÍ
+UKªIdentifierÍ
+NÍ
+Q£trkKªIdentifierÍ
+RÍ
+U£endÂÂKªIdentifierÍ
+VÍ
+W¡xÂÂS°MemberExpressionÍ
+ZÍ
+^KªIdentifierÍ
+ZÍ
+\¢b2KªIdentifierÍ
+]Í
+^¡xÂÂ]³ExpressionStatementÍ
+iÍ
+z`´AssignmentExpressionÍ
+iÍ
+y¡=S°MemberExpressionÍ
+iÍ
+rS°MemberExpressionÍ
+iÍ
+pKªIdentifierÍ
+iÍ
+l£trkKªIdentifierÍ
+mÍ
+p£endÂÂKªIdentifierÍ
+qÍ
+r¡yÂÂS°MemberExpressionÍ
+uÍ
+yKªIdentifierÍ
+uÍ
+w¢b2KªIdentifierÍ
+xÍ
+y¡yÂÂ]³ExpressionStatementÍ
+„Í
+šR®CallExpressionÍ
+„Í
+™S°MemberExpressionÍ
+„Í
+‘KªIdentifierÍ
+„Í
+©dogleggedKªIdentifierÍ
+Í
+‘£addÂÂ‘S°MemberExpressionÍ
+’Í
+˜KªIdentifierÍ
+’Í
+•£trkKªIdentifierÍ
+–Í
+˜¢idÂÂÂP«IfStatementÍ
+¤ÍR®CallExpressionÍ
+¨Í
+êKªIdentifierÍ
+¨Í
+°¨addTrack—KªIdentifierÍ
+±Í
+´£docS°MemberExpressionÍ
+¶Í
+¿KªIdentifierÍ
+¶Í
+¹£trkKªIdentifierÍ
+ºÍ
+¿¥layerÂÂKªIdentifierÍ
+ÁÍ
+Â¡aKªIdentifierÍ
+ÄÍ
+Æ¢a2S°MemberExpressionÍ
+ÈÍ
+ÑKªIdentifierÍ
+ÈÍ
+Ë£trkKªIdentifierÍ
+ÌÍ
+Ñ¥netIdÂÂS°MemberExpressionÍ
+ÓÍ
+ŞKªIdentifierÍ
+ÓÍ
+Ö£trkKªIdentifierÍ
+×Í
+Ş§netNameÂÂS°MemberExpressionÍ
+àÍ
+éKªIdentifierÍ
+àÍ
+ã£trkKªIdentifierÍ
+äÍ
+é¥widthÂÂÂL®BlockStatementÍ
+ìÍ‘]³ExpressionStatementÍ
+ûÍX°UpdateExpressionÍ
+ûÍ¢++ÂKªIdentifierÍ
+ûÍ§createdÀP«IfStatementÍÍ†R®CallExpressionÍÍ`KªIdentifierÍÍ&¨addTrack—KªIdentifierÍ'Í*£docS°MemberExpressionÍ,Í5KªIdentifierÍ,Í/£trkKªIdentifierÍ0Í5¥layerÂÂKªIdentifierÍ7Í9¢b2KªIdentifierÍ;Í<¡bS°MemberExpressionÍ>ÍGKªIdentifierÍ>ÍA£trkKªIdentifierÍBÍG¥netIdÂÂS°MemberExpressionÍIÍTKªIdentifierÍIÍL£trkKªIdentifierÍMÍT§netNameÂÂS°MemberExpressionÍVÍ_KªIdentifierÍVÍY£trkKªIdentifierÍZÍ_¥widthÂÂÂL®BlockStatementÍbÍ†‘]³ExpressionStatementÍqÍ{X°UpdateExpressionÍqÍz¢++ÂKªIdentifierÍqÍx§createdÀP«IfStatementÍ“ÍQ°BinaryExpressionÍ—Í¢KªIdentifierÍ—Í§created¡>T§LiteralÍ¡Í¢ ¡0L®BlockStatementÍ¤Í‘]³ExpressionStatementÍ¯ÍşR®CallExpressionÍ¯ÍıKªIdentifierÍ¯Í·¨tracePcb’T§LiteralÍ¸ÍÌ²TRACK_SHOVE_DOGLEG´'TRACK_SHOVE_DOGLEG'Z¯TemplateLiteralÍÎÍü’S°MemberExpressionÍÚÍéKªIdentifierÍÚÍâ¨toDoglegKªIdentifierÍãÍé¦lengthÂÂKªIdentifierÍóÍú§created“[¯TemplateElementÍÏÍØ\©padToPad=©padToPad=Â[¯TemplateElementÍêÍñ\§ stubs=§ stubs=Â[¯TemplateElementÍûÍû\  ÃÂÀU¯ReturnStatementÍÍKªIdentifierÍÍ©dogleggedÀI¶ExportNamedDeclarationÍŠÍxJ³FunctionDeclarationÍ‘ÍxKªIdentifierÍšÍ¶¼shoveForeignTracksByLRerouteÂÂÂ’KªIdentifierÍ·Íº£docKªIdentifierÍ¼ÍÉ­movedTrackIdsL®BlockStatementÍËÍxP«IfStatementÍÒÍQ°BinaryExpressionÍÖÍîS°MemberExpressionÍÖÍèKªIdentifierÍÖÍã­movedTrackIdsKªIdentifierÍäÍè¤sizeÂÂ£===T§LiteralÍíÍî ¡0L®BlockStatementÍğÍ‘U¯ReturnStatementÍûÍT§LiteralÍÍ ¡0ÀM³VariableDeclarationÍÍ"‘N²VariableDeclaratorÍÍ!KªIdentifierÍÍ¥movedV¯ArrayExpressionÍÍ!¥constW®ForOfStatementÍ(Í¡ÂM³VariableDeclarationÍ-Í6‘N²VariableDeclaratorÍ3Í6KªIdentifierÍ3Í6£trkÀ¥constS°MemberExpressionÍ:ÍDKªIdentifierÍ:Í=£docKªIdentifierÍ>ÍD¦tracksÂÂL®BlockStatementÍFÍ¡‘P«IfStatementÍQÍšR®CallExpressionÍUÍnS°MemberExpressionÍUÍfKªIdentifierÍUÍb­movedTrackIdsKªIdentifierÍcÍf£hasÂÂ‘S°MemberExpressionÍgÍmKªIdentifierÍgÍj£trkKªIdentifierÍkÍm¢idÂÂÂL®BlockStatementÍpÍš‘]³ExpressionStatementÍÍR®CallExpressionÍÍS°MemberExpressionÍÍ‰KªIdentifierÍÍ„¥movedKªIdentifierÍ…Í‰¤pushÂÂ‘KªIdentifierÍŠÍ£trkÂÀP«IfStatementÍ§ÍÚQ°BinaryExpressionÍ«Í½S°MemberExpressionÍ«Í·KªIdentifierÍ«Í°¥movedKªIdentifierÍ±Í·¦lengthÂÂ£===T§LiteralÍ¼Í½ ¡0L®BlockStatementÍ¿ÍÚ‘U¯ReturnStatementÍÊÍÓT§LiteralÍÑÍÒ ¡0ÀM³VariableDeclarationÍàÍõ‘N²VariableDeclaratorÍæÍôKªIdentifierÍæÍï©collidingV¯ArrayExpressionÍòÍô¥constW®ForOfStatementÍûÍpÂM³VariableDeclarationÍ Í‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¢frÀ¥constS°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍ¦tracksÂÂL®BlockStatementÍÍp”P«IfStatementÍ#ÍdR®CallExpressionÍ'Í?S°MemberExpressionÍ'Í8KªIdentifierÍ'Í4­movedTrackIdsKªIdentifierÍ5Í8£hasÂÂ‘S°MemberExpressionÍ9Í>KªIdentifierÍ9Í;¢frKªIdentifierÍ<Í>¢idÂÂÂL®BlockStatementÍAÍd‘Y±ContinueStatementÍPÍYÀÀM³VariableDeclarationÍnÍ~‘N²VariableDeclaratorÍrÍ}KªIdentifierÍrÍu£hitT§LiteralÍxÍ}Â¥false£letW®ForOfStatementÍˆÍ)ÂM³VariableDeclarationÍÍ•‘N²VariableDeclaratorÍ“Í•KªIdentifierÍ“Í•¢mvÀ¥constKªIdentifierÍ™Í¥movedL®BlockStatementÍ Í)‘P«IfStatementÍ¯ÍR®CallExpressionÍ³Í×KªIdentifierÍ³ÍÊ·tracksClearanceConflict“KªIdentifierÍËÍÍ¢frKªIdentifierÍÏÍÑ¢mvKªIdentifierÍÓÍÖ£docÂL®BlockStatementÍÙÍ’]³ExpressionStatementÍìÍ÷`´AssignmentExpressionÍìÍö¡=KªIdentifierÍìÍï£hitT§LiteralÍòÍöÃ¤trueY®BreakStatementÍ	ÍÀÀP«IfStatementÍ3ÍiKªIdentifierÍ7Í:£hitL®BlockStatementÍ<Íi‘]³ExpressionStatementÍKÍ^R®CallExpressionÍKÍ]S°MemberExpressionÍKÍYKªIdentifierÍKÍT©collidingKªIdentifierÍUÍY¤pushÂÂ‘KªIdentifierÍZÍ\¢frÂÀM³VariableDeclarationÍvÍ‘N²VariableDeclaratorÍ|ÍKªIdentifierÍ|Íƒ§seenNetO­NewExpressionÍ†ÍKªIdentifierÍŠÍ£Set¥constM³VariableDeclarationÍ–Í©‘N²VariableDeclaratorÍœÍ¨KªIdentifierÍœÍ£§orderedV¯ArrayExpressionÍ¦Í¨¥constW®ForOfStatementÍ¯ÍõÂM³VariableDeclarationÍ´Í¼‘N²VariableDeclaratorÍºÍ¼KªIdentifierÍºÍ¼¢frÀ¥constKªIdentifierÍÀÍÉ©collidingL®BlockStatementÍËÍõ”P«IfStatementÍÖÍ+Q±LogicalExpressionÍÚÍQ°BinaryExpressionÍÚÍíS°MemberExpressionÍÚÍéS°MemberExpressionÍÚÍâKªIdentifierÍÚÍÜ¢frKªIdentifierÍİÍâ¥netIdÂÂKªIdentifierÍãÍé¦lengthÂÂ¡>T§LiteralÍìÍí ¡0¢&&R®CallExpressionÍñÍS°MemberExpressionÍñÍüKªIdentifierÍñÍø§seenNetKªIdentifierÍùÍü£hasÂÂ‘S°MemberExpressionÍıÍKªIdentifierÍıÍÿ¢frKªIdentifierÍ Í¥netIdÂÂÂL®BlockStatementÍÍ+‘Y±ContinueStatementÍÍ ÀÀP«IfStatementÍ5Í~Q°BinaryExpressionÍ9ÍLS°MemberExpressionÍ9ÍHS°MemberExpressionÍ9ÍAKªIdentifierÍ9Í;¢frKªIdentifierÍ<ÍA¥netIdÂÂKªIdentifierÍBÍH¦lengthÂÂ¡>T§LiteralÍKÍL ¡0L®BlockStatementÍNÍ~‘]³ExpressionStatementÍ]ÍsR®CallExpressionÍ]ÍrS°MemberExpressionÍ]ÍhKªIdentifierÍ]Íd§seenNetKªIdentifierÍeÍh£addÂÂ‘S°MemberExpressionÍiÍqKªIdentifierÍiÍk¢frKªIdentifierÍlÍq¥netIdÂÂÂÀ]³ExpressionStatementÍˆÍ™R®CallExpressionÍˆÍ˜S°MemberExpressionÍˆÍ”KªIdentifierÍˆÍ§orderedKªIdentifierÍÍ”¤pushÂÂ‘KªIdentifierÍ•Í—¢frÂP«IfStatementÍ£ÍîQ°BinaryExpressionÍ§ÍÌS°MemberExpressionÍ§ÍµKªIdentifierÍ§Í®§orderedKªIdentifierÍ¯Íµ¦lengthÂÂ¢>=KªIdentifierÍ¹ÍÌ³MAX_FOREIGN_REROUTEL®BlockStatementÍÎÍî‘Y®BreakStatementÍİÍãÀÀP«IfStatementÍûÍùQ°BinaryExpressionÍÿÍ#S°MemberExpressionÍÿÍKªIdentifierÍÿÍ§orderedKªIdentifierÍÍ¦lengthÂÂ¡<KªIdentifierÍÍ#³MAX_FOREIGN_REROUTEL®BlockStatementÍ%Íù‘W®ForOfStatementÍ0ÍòÂM³VariableDeclarationÍ5Í=‘N²VariableDeclaratorÍ;Í=KªIdentifierÍ;Í=¢frÀ¥constKªIdentifierÍAÍJ©collidingL®BlockStatementÍLÍò•M³VariableDeclarationÍ[Ío‘N²VariableDeclaratorÍ_ÍnKªIdentifierÍ_Íf§alreadyT§LiteralÍiÍnÂ¥false£letW®ForOfStatementÍ}Í!ÂM³VariableDeclarationÍ‚Í‰‘N²VariableDeclaratorÍˆÍ‰KªIdentifierÍˆÍ‰¡oÀ¥constKªIdentifierÍÍ”§orderedL®BlockStatementÍ–Í!‘P«IfStatementÍ©ÍQ°BinaryExpressionÍ­Í»S°MemberExpressionÍ­Í±KªIdentifierÍ­Í®¡oKªIdentifierÍ¯Í±¢idÂÂ£===S°MemberExpressionÍ¶Í»KªIdentifierÍ¶Í¸¢frKªIdentifierÍ¹Í»¢idÂÂL®BlockStatementÍ½Í’]³ExpressionStatementÍÔÍã`´AssignmentExpressionÍÔÍâ¡=KªIdentifierÍÔÍÛ§alreadyT§LiteralÍŞÍâÃ¤trueY®BreakStatementÍùÍÿÀÀP«IfStatementÍ/ÍgKªIdentifierÍ3Í:§alreadyL®BlockStatementÍ<Íg‘Y±ContinueStatementÍOÍXÀÀ]³ExpressionStatementÍuÍ†R®CallExpressionÍuÍ…S°MemberExpressionÍuÍKªIdentifierÍuÍ|§orderedKªIdentifierÍ}Í¤pushÂÂ‘KªIdentifierÍ‚Í„¢frÂP«IfStatementÍ”ÍçQ°BinaryExpressionÍ˜Í½S°MemberExpressionÍ˜Í¦KªIdentifierÍ˜ÍŸ§orderedKªIdentifierÍ Í¦¦lengthÂÂ¢>=KªIdentifierÍªÍ½³MAX_FOREIGN_REROUTEL®BlockStatementÍ¿Íç‘Y®BreakStatementÍÒÍØÀÀÀM³VariableDeclarationÍÿÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¨reroutedT§LiteralÍÍ ¡0£letW®ForOfStatementÍÍ³ÂM³VariableDeclarationÍÍ#‘N²VariableDeclaratorÍ!Í#KªIdentifierÍ!Í#¢frÀ¥constKªIdentifierÍ'Í.§orderedL®BlockStatementÍ0Í³™M³VariableDeclarationÍ;Íl‘N²VariableDeclaratorÍAÍkKªIdentifierÍAÍKªcandidatesR®CallExpressionÍNÍkKªIdentifierÍNÍY«lCandidates’S°MemberExpressionÍZÍbKªIdentifierÍZÍ\¢frKªIdentifierÍ]Íb¥startÂÂS°MemberExpressionÍdÍjKªIdentifierÍdÍf¢frKªIdentifierÍgÍj£endÂÂÂ¥constM³VariableDeclarationÍvÍ‹‘N²VariableDeclaratorÍ|ÍŠKªIdentifierÍ|Í…©obstaclesV¯ArrayExpressionÍˆÍŠ¥constW®ForOfStatementÍ•ÍÂM³VariableDeclarationÍšÍ¡‘N²VariableDeclaratorÍ Í¡KªIdentifierÍ Í¡¡tÀ¥constS°MemberExpressionÍ¥Í¯KªIdentifierÍ¥Í¨£docKªIdentifierÍ©Í¯¦tracksÂÂL®BlockStatementÍ±Í‘P«IfStatementÍÀÍQ°BinaryExpressionÍÄÍÒS°MemberExpressionÍÄÍÈKªIdentifierÍÄÍÅ¡tKªIdentifierÍÆÍÈ¢idÂÂ£!==S°MemberExpressionÍÍÍÒKªIdentifierÍÍÍÏ¢frKªIdentifierÍĞÍÒ¢idÂÂL®BlockStatementÍÔÍ‘]³ExpressionStatementÍçÍùR®CallExpressionÍçÍøS°MemberExpressionÍçÍõKªIdentifierÍçÍğ©obstaclesKªIdentifierÍñÍõ¤pushÂÂ‘KªIdentifierÍöÍ÷¡tÂÀM³VariableDeclarationÍÍ/‘N²VariableDeclaratorÍ!Í.KªIdentifierÍ!Í'¦chosenT§LiteralÍ*Í.À¤null£letW®ForOfStatementÍ9ÍDÂM³VariableDeclarationÍ>ÍG‘N²VariableDeclaratorÍDÍGKªIdentifierÍDÍG£ptsÀ¥constKªIdentifierÍKÍUªcandidatesL®BlockStatementÍWÍD’P«IfStatementÍfÍ¥Q°BinaryExpressionÍjÍxS°MemberExpressionÍjÍtKªIdentifierÍjÍm£ptsKªIdentifierÍnÍt¦lengthÂÂ¡<T§LiteralÍwÍx¡2L®BlockStatementÍzÍ¥‘Y±ContinueStatementÍÍ–ÀÀP«IfStatementÍ³Í9R®CallExpressionÍ·ÍğKªIdentifierÍ·Í½¦pathOk–KªIdentifierÍ¾ÍÁ£docS°MemberExpressionÍÃÍËKªIdentifierÍÃÍÅ¢frKªIdentifierÍÆÍË¥layerÂÂKªIdentifierÍÍÍĞ£ptsS°MemberExpressionÍÒÍÚKªIdentifierÍÒÍÔ¢frKªIdentifierÍÕÍÚ¥netIdÂÂS°MemberExpressionÍÜÍäKªIdentifierÍÜÍŞ¢frKªIdentifierÍßÍä¥widthÂÂKªIdentifierÍæÍï©obstaclesÂL®BlockStatementÍòÍ9’]³ExpressionStatementÍÍ`´AssignmentExpressionÍÍ¡=KªIdentifierÍÍ¦chosenKªIdentifierÍÍ£ptsY®BreakStatementÍ$Í*ÀÀP«IfStatementÍNÍ†Q°BinaryExpressionÍRÍaKªIdentifierÍRÍX¦chosen£===T§LiteralÍ]ÍaÀ¤nullL®BlockStatementÍcÍ†‘Y±ContinueStatementÍrÍ{ÀÀP«IfStatementÍÍ4Q±LogicalExpressionÍ”ÍQ±LogicalExpressionÍ”ÍÜQ°BinaryExpressionÍ”Í§S°MemberExpressionÍ”Í¡KªIdentifierÍ”Íš¦chosenKªIdentifierÍ›Í¡¦lengthÂÂ£===T§LiteralÍ¦Í§¡2¢&&Q°BinaryExpressionÍ¸ÍÜR®CallExpressionÍ¸ÍÖKªIdentifierÍ¸ÍÁ©pointDist’S°MemberExpressionÍÂÍËKªIdentifierÍÂÍÈ¦chosenT§LiteralÍÉÍÊ ¡0ÃÂS°MemberExpressionÍÍÍÕKªIdentifierÍÍÍÏ¢frKªIdentifierÍĞÍÕ¥startÂÂÂ¡<T§LiteralÍÙÍÜË?à      £0.5¢&&Q°BinaryExpressionÍíÍR®CallExpressionÍíÍ	KªIdentifierÍíÍö©pointDist’S°MemberExpressionÍ÷Í KªIdentifierÍ÷Íı¦chosenT§LiteralÍşÍÿ¡1ÃÂS°MemberExpressionÍÍKªIdentifierÍÍ¢frKªIdentifierÍÍ£endÂÂÂ¡<T§LiteralÍÍË?à      £0.5L®BlockStatementÍÍ4‘Y±ContinueStatementÍ Í)ÀÀM³VariableDeclarationÍ>Ír‘N²VariableDeclaratorÍDÍqKªIdentifierÍDÍE¡nR®CallExpressionÍHÍqKªIdentifierÍHÍ`¸replaceTrackWithPolyline“KªIdentifierÍaÍd£docKªIdentifierÍfÍh¢frKªIdentifierÍjÍp¦chosenÂ¥constP«IfStatementÍ|Í¬Q°BinaryExpressionÍ€Í…KªIdentifierÍ€Í¡n¡>T§LiteralÍ„Í… ¡0L®BlockStatementÍ‡Í¬‘]³ExpressionStatementÍ–Í¡X°UpdateExpressionÍ–Í ¢++ÂKªIdentifierÍ–Í¨reroutedÀP«IfStatementÍ¹Í_Q±LogicalExpressionÍ½ÍáQ°BinaryExpressionÍ½ÍÉKªIdentifierÍ½ÍÅ¨rerouted¡>T§LiteralÍÈÍÉ ¡0¢||Q°BinaryExpressionÍÍÍáS°MemberExpressionÍÍÍİKªIdentifierÍÍÍÖ©collidingKªIdentifierÍ×Íİ¦lengthÂÂ¡>T§LiteralÍàÍá ¡0L®BlockStatementÍãÍ_‘]³ExpressionStatementÍîÍXR®CallExpressionÍîÍWKªIdentifierÍîÍö¨tracePcb’T§LiteralÍ÷Í­TRACK_SHOVE_L¯'TRACK_SHOVE_L'Z¯TemplateLiteralÍÍV“S°MemberExpressionÍÍ#KªIdentifierÍÍ­movedTrackIdsKªIdentifierÍÍ#¤sizeÂÂS°MemberExpressionÍ/Í?KªIdentifierÍ/Í8©collidingKªIdentifierÍ9Í?¦lengthÂÂKªIdentifierÍLÍT¨rerouted”[¯TemplateElementÍ	Í\¦moved=¦moved=Â[¯TemplateElementÍ$Í-\© collide=© collide=Â[¯TemplateElementÍ@ÍJ\ª rerouted=ª rerouted=Â[¯TemplateElementÍUÍU\  ÃÂÀU¯ReturnStatementÍeÍuKªIdentifierÍlÍt¨reroutedÀ”Ôra•¤type¥start£endªspecifiers¦source±ImportDeclaration "‘Ôrb•¤type¥start£end¨imported¥local¯ImportSpecifier	KªIdentifier	¦IdUtilKªIdentifier	¦IdUtilT§Literal!¨./IdUtilª'./IdUtil'a±ImportDeclaration$ÌP‘b¯ImportSpecifier-9KªIdentifier-9¬routeLPointsKªIdentifier-9¬routeLPointsT§LiteralÌAÌO¬./PcbNetUtil®'./PcbNetUtil'a±ImportDeclarationÌRÌ¦’b¯ImportSpecifierÌ[ÌlKªIdentifierÌ[Ìl±pathClearOfTracksKªIdentifierÌ[Ìl±pathClearOfTracksb¯ImportSpecifierÌnÌ}KªIdentifierÌnÌ}¯clearanceForNetKªIdentifierÌnÌ}¯clearanceForNetT§LiteralÌ…Ì¥¾./pcb_route/PcbClearanceOracleÙ './pcb_route/PcbClearanceOracle'a±ImportDeclarationÌ¨ÌÑ‘b¯ImportSpecifierÌ±Ì¹KªIdentifierÌ±Ì¹¨tracePcbKªIdentifierÌ±Ì¹¨tracePcbT§LiteralÌÁÌĞ­./PcbTraceLog¯'./PcbTraceLog'

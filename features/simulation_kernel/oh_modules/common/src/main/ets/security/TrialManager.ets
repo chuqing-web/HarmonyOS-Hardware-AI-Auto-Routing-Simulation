@@ -1,12 +1,11 @@
 /**
- * 试用期管理 — 首次运行 30 天宽限期
+ * 试用期管理 — 已废弃（产品全功能开放）；保留 API 兼容
  */
 import preferences from '@ohos.data.preferences';
 import { LicenseTier } from '../types/LicenseTypes';
 
 const PREFS_NAME = 'elecdraw_license';
 const KEY_FIRST_RUN = 'first_run_at_ms';
-const TRIAL_DAYS = 30;
 
 export interface TrialStatus {
   active: boolean;
@@ -29,27 +28,23 @@ export class TrialManager {
     } catch (_e) { /* prefs not available */ }
   }
 
+  /** 试用已取消：始终视为不限权 */
   static async getStatus(): Promise<TrialStatus> {
-    if (!TrialManager.prefs) {
-      return { active: false, daysRemaining: 0, expired: true, firstRunAt: 0 };
+    let firstRunAt = 0;
+    if (TrialManager.prefs) {
+      try {
+        firstRunAt = await TrialManager.prefs.get(KEY_FIRST_RUN, Date.now()) as number;
+      } catch (_e) { /* ignore */ }
     }
-    try {
-      const firstRunAt = await TrialManager.prefs.get(KEY_FIRST_RUN, Date.now()) as number;
-      const elapsed = Date.now() - firstRunAt;
-      const daysUsed = Math.floor(elapsed / (24 * 60 * 60 * 1000));
-      const daysRemaining = Math.max(0, TRIAL_DAYS - daysUsed);
-      return {
-        active: daysRemaining > 0,
-        daysRemaining: daysRemaining,
-        expired: daysRemaining <= 0,
-        firstRunAt: firstRunAt
-      };
-    } catch (_e) {
-      return { active: false, daysRemaining: 0, expired: true, firstRunAt: 0 };
-    }
+    return {
+      active: false,
+      daysRemaining: Number.MAX_SAFE_INTEGER,
+      expired: false,
+      firstRunAt: firstRunAt
+    };
   }
 
   static trialTier(): LicenseTier {
-    return LicenseTier.PERSONAL_PRO;
+    return LicenseTier.ENTERPRISE;
   }
 }

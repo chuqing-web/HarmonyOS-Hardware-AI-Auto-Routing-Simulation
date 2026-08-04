@@ -36,6 +36,7 @@ import {
   FaultType, FaultInjection, FaultScanResult, AccessibilityConfig,
   ExportPostProcessor, ApiResult, ResultHelper, ErrCode,
   LicenseManager, LicenseStatus, FeatureGate, UsageDashboard,
+  GitHubStarVerifier, StarCheckKind,
   SchematicAnnotationType, SchematicAnnotationStatus,
   SnapshotMeta, VersionCompareReport, IdUtil, calcSymbolBounds, SymbolBounds,
   paramMapGet, PrivacyConsentStore, Pin, McuFamily, SimulationState, SchematicDocument, NetType,
@@ -155,6 +156,8 @@ export class AppService {
   private readonly PERSIST_DEBOUNCE_MS: number = 2000;
   /** 防止连点模板重复合并导致器件翻倍 + 主线程叠加重活 */
   private templateLoadBusy: boolean = false;
+  /** 打开工程期间抑制 SCHEMATIC_CHANGED → reload，避免与 loadDocument 三重拓扑重建叠在同一 MMITask */
+  private projectLoadBusy: boolean = false;
   /** 防止连点启动仿真叠加重活 */
   private simStartBusy: boolean = false;
   /** 工程变更后延迟 ERC，与仿真启动共用，避免重复全量检查 */
@@ -166,6 +169,8 @@ export class AppService {
   private bindingPinHash: Map<string, string> = new Map();
   private appBaseDir: string = '';
   private templateBootstrapPromise: Promise<void> | null = null;
+  /** 授权文件 + GitHub Star 静默复验（记住账户后启动自动检测） */
+  private licenseBootstrapPromise: Promise<void> | null = null;
   private aiGenerating: boolean = false;
   /** 用户点取消后保持为 true，直到该次 await 收尾（禁止 endAiGenerate 提前清掉） */
   private aiGenCancelRequested: boolean = false;
@@ -258,40 +263,76 @@ export class AppService {
     this.templateBootstrapPromise = TemplateProjectBootstrap.ensure(context, baseDir);
     void this.bootstrapAndLoadLibrary(context, `${baseDir}/DeviceLibrary`);
     void this.loadProteusAliases(context);
-    // 先授权/试用，再灌金库，避免 FREE maxAiApis 截断已存多条 API
-    const licensePath = `${filesDir}/AISchSim/license.lic`;
-    const status = LicenseManager.getInstance().loadFromPath(licensePath);
-    void this.initAiApiVaultAfterLicense(context, status);
+    // 授权 + Star 静默复验：进程内只跑一次，避免 Index/PcbPage 再次 init 误降级
+    if (this.licenseBootstrapPromise === null) {
+      const licensePath = `${filesDir}/AISchSim/license.lic`;
+      const status = LicenseManager.getInstance().loadFromPath(licensePath);
+      this.licenseBootstrapPromise = this.initAiApiVaultAfterLicense(context, status);
+      void this.licenseBootstrapPromise;
+      this.onStatusMessage(LicenseManager.getInstance().getStatus().message);
+      EventBus.getInstance().publish({
+        event: ModuleEvent.LICENSE_CHANGED,
+        source: 'entry',
+        timestamp: Date.now(),
+        data: status
+      });
+    }
     void PrivacyConsentStore.init(context);
     this.pluginManager.setPluginInstallDir(`${filesDir}/AISchSim/Plugins`);
     this.collabSync.setSession(this.sessionHolderId, this.sessionUserName);
     FeatureGate.refresh();
-    const trialHint = status.valid ? status.message : LicenseManager.getInstance().getStatus().message;
-    this.onStatusMessage(trialHint);
-    EventBus.getInstance().publish({
-      event: ModuleEvent.LICENSE_CHANGED,
-      source: 'entry',
-      timestamp: Date.now(),
-      data: status
-    });
   }
 
+  /** 首页等待：token 已记住时完成静默 Star 复验后再刷新 About */
+  async waitLicenseBootstrap(): Promise<void> {
+    if (this.licenseBootstrapPromise !== null) {
+      await this.licenseBootstrapPromise;
+    }
+  }
   private async initAiApiVaultAfterLicense(
     context: common.UIAbilityContext,
     status: LicenseStatus
   ): Promise<void> {
     try {
       await LicenseManager.getInstance().applyTrialStatus(context);
-      FeatureGate.refresh();
     } catch (e) {
       Logger.warn(INSTR_TRACE_TAG, `[AI_API] applyTrialStatus failed: ${e}`);
     }
+    try {
+      const star = await GitHubStarVerifier.revalidateOnStartup(context);
+      Logger.info(INSTR_TRACE_TAG, `[LICENSE] star revalidate: ${star.kind} ${star.message}`);
+      this.onStatusMessage(LicenseManager.getInstance().getStatus().message);
+      EventBus.getInstance().publish({
+        event: ModuleEvent.LICENSE_CHANGED,
+        source: 'entry',
+        timestamp: Date.now(),
+        data: LicenseManager.getInstance().getStatus()
+      });
+    } catch (e) {
+      Logger.warn(INSTR_TRACE_TAG, `[LICENSE] star revalidate failed: ${e}`);
+      LicenseManager.getInstance().setStarUnlock(false, '');
+      FeatureGate.refresh();
+    }
+    FeatureGate.refresh();
     this.loadAiApiVaultOnStartup();
-    // 试用生效后刷新状态文案
     const refreshed = LicenseManager.getInstance().getStatus();
     if (refreshed.message !== status.message) {
       this.onStatusMessage(refreshed.message);
     }
+  }
+
+  /** About：Device Flow 绑定 + Star 检测入口（由页面驱动轮询） */
+  async revalidateGitHubStar(context: common.UIAbilityContext): Promise<string> {
+    const result = await GitHubStarVerifier.recheckNow(context);
+    FeatureGate.refresh();
+    EventBus.getInstance().publish({
+      event: ModuleEvent.LICENSE_CHANGED,
+      source: 'entry',
+      timestamp: Date.now(),
+      data: LicenseManager.getInstance().getStatus()
+    });
+    this.onStatusMessage(LicenseManager.getInstance().getStatus().message);
+    return result.message;
   }
 
   getLicenseStatus(): LicenseStatus {
@@ -1656,27 +1697,48 @@ export class AppService {
     } else {
       normalizePcbDocument(this.currentProject.pcb);
     }
-    this.pcbEditor.loadDocument(this.currentProject.pcb);
-    const editor = this.schematicEditor as SchematicEditorImpl;
-    editor.loadDocument(this.currentProject.schematic);
-    editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
-    editor.rebuildNetPinConnectivity();
-    // Editor doc is source of truth after LoadDocumentCommand (may not be same ref)
-    const doc = editor.getDocument();
-    this.currentProject.schematic = doc;
-    ensureNetPinConnectivity(doc, doc.metadata.gridSize || 10, this.pinGeometryResolver());
-    this.simulationKernel.loadSchematic(doc);
-    traceProjectOpenAudit(path, this.currentProject.name, doc, editor.getViewport());
-    traceDataFlow('LOAD', 'schematic→editor→netRebuild→kernel loadSchematic complete');
-    if (this.currentProject.mcuDebugConfig) {
-      this.hexDebugger.configure(this.currentProject.mcuDebugConfig);
+    this.projectLoadBusy = true;
+    if (this.schematicDebounceTimer >= 0) {
+      clearTimeout(this.schematicDebounceTimer);
+      this.schematicDebounceTimer = -1;
     }
-    // API 以全局金库为准；工程内遗留配置仅作一次性迁移
-    this.migrateProjectAiConfigsToVaultIfNeeded();
-    this.bindingPinHash.clear();
-    this.resetInstrumentUiForProjectSwitch();
-    this.autoWireAllInstruments();
-    this.onProjectChanged();
+    try {
+      this.pcbEditor.loadDocument(this.currentProject.pcb);
+      await MainThreadYield.yield();
+      const editor = this.schematicEditor as SchematicEditorImpl;
+      editor.loadDocument(this.currentProject.schematic);
+      await MainThreadYield.yield();
+      editor.loadAnnotations(this.currentProject.collaboration?.annotations ?? []);
+      // loadDocument 已 rebuildAll→ensureNetPinConnectivity；勿再强制 ensure（会二次全量 TOPO）
+      editor.rebuildNetPinConnectivity();
+      await MainThreadYield.yield();
+      const doc = editor.getDocument();
+      this.currentProject.schematic = doc;
+      this.simulationKernel.loadSchematic(doc);
+      await MainThreadYield.yield();
+      const projectName = this.currentProject.name;
+      const viewport = editor.getViewport();
+      // 审计日志延后，避免与装载叠在同一主线程时间片触发 THREAD_BLOCK
+      setTimeout((): void => {
+        traceProjectOpenAudit(path, projectName, doc, viewport);
+        traceDataFlow('LOAD', 'schematic→editor→netRebuild→kernel loadSchematic complete');
+      }, 1);
+      if (this.currentProject.mcuDebugConfig) {
+        this.hexDebugger.configure(this.currentProject.mcuDebugConfig);
+      }
+      // API 以全局金库为准；工程内遗留配置仅作一次性迁移
+      this.migrateProjectAiConfigsToVaultIfNeeded();
+      this.bindingPinHash.clear();
+      this.resetInstrumentUiForProjectSwitch();
+      this.autoWireAllInstruments();
+      this.onProjectChanged();
+    } finally {
+      this.projectLoadBusy = false;
+      if (this.schematicDebounceTimer >= 0) {
+        clearTimeout(this.schematicDebounceTimer);
+        this.schematicDebounceTimer = -1;
+      }
+    }
     return true;
   }
 
@@ -2494,6 +2556,154 @@ export class AppService {
     return false;
   }
 
+  /** PCB Layout AI 布线（与经典自动布线分离；失败不改板） */
+  async aiPcbAutoRoute(): Promise<boolean> {
+    if (this.aiGenerating) {
+      this.onStatusMessage('AI 正在运行，请稍候');
+      return false;
+    }
+    if (this.aiApiManager.isQuotaWarningActive()) {
+      this.onStatusMessage('AI 用量已达 80%，请注意额度');
+      this.appendAiGenLog('system', 'AI 用量已达 80%，请注意额度');
+    }
+    const editor = this.pcbEditor as PcbEditorImpl;
+    const doc = editor.getDocument();
+    if (!doc) {
+      this.onStatusMessage('无 PCB 文档');
+      return false;
+    }
+
+    this.beginPcbAiRoute(doc);
+    try {
+      const api = await this.aiEngine.aiPcbAutoRoute(
+        doc,
+        (d) => editor.runDrcForDoc(d),
+        (p) => this.handlePcbAiProgress(p)
+      );
+      if (this.aiGenCancelRequested) {
+        this.onStatusMessage('PCB AI 布线已取消');
+        this.appendAiGenLog('system', 'PCB AI 布线已取消');
+        return false;
+      }
+      if (!api.success || !api.data || !api.data.success) {
+        const msg = api.error ?? api.data?.abortReason ?? 'PCB AI 布线失败';
+        const stage = api.data?.abortStage ?? '';
+        const line = stage.length > 0 ? `AI 布线中止 [${stage}]: ${msg}` : msg;
+        this.onStatusMessage(line);
+        this.appendAiGenLog('system', line);
+        return false;
+      }
+      const r = api.data;
+      const cu = (r.trackCount ?? 0) + (r.viaCount ?? 0);
+      if (cu <= 0 || !r.tracks || !r.vias) {
+        const line = 'AI 布线无铜线结果，已拒绝写回（避免清空板铜）';
+        this.onStatusMessage(line);
+        this.appendAiGenLog('system', line);
+        return false;
+      }
+      // 硬 residual 拒写回（与 Coordinator / AiEngine 对齐）
+      if (r.deliveredWithResidual) {
+        const kind = r.residualKind ?? 'drc';
+        const note = (r.messages?.[0] ?? '').toUpperCase();
+        const hard = kind === 'unused_copper' || kind === 'signal_fail' || kind === 'placement_only' ||
+          note.indexOf('SHORT') >= 0 || note.indexOf('CLEARANCE') >= 0 ||
+          (kind !== 'unrouted' && kind !== 'none');
+        if (hard) {
+          const line =
+            `AI 布线残留不可接受[${kind}]，已拒绝写回：${r.messages?.[0] ?? kind}`;
+          this.onStatusMessage(line);
+          this.appendAiGenLog('system', line);
+          return false;
+        }
+      }
+      // 写回前短暂解除只读（apply 为 AI 内部写板，非用户编辑）
+      editor.setReadOnly(false);
+      const applied = editor.applyAiRouteResult(r.tracks, r.vias, r.footprints);
+      editor.setReadOnly(true);
+      if (!applied.success) {
+        const line = applied.error ?? '应用 AI 布线失败';
+        this.onStatusMessage(line);
+        this.appendAiGenLog('system', line);
+        return false;
+      }
+      this.onProjectChanged();
+      const hint = applied.data?.messages[0] ?? '';
+      const summary =
+        `布线完成: ${r.placedCount} 封装 / ${r.netCount} 网 / ${r.trackCount} 段铜 / ${r.viaCount} 过孔`;
+      this.appendAiGenLog('assistant', summary);
+      if (r.messages.length > 0 && r.messages[0].length > 0) {
+        this.appendAiGenLog('assistant', r.messages[0]);
+      }
+      if (r.deliveredWithResidual) {
+        const kind = r.residualKind && r.residualKind !== 'none' ? `[${r.residualKind}]` : '';
+        const residualNote =
+          (hint.length > 0 ? hint : 'PCB AI 布线完成') + `（残留未清零${kind}，已软接受）`;
+        this.onStatusMessage(`${summary} · ${residualNote}`);
+        this.appendAiGenLog('system', residualNote);
+      } else {
+        const line = hint.length > 0 ? `${summary} · ${hint}` : summary;
+        this.onStatusMessage(line);
+      }
+      return true;
+    } finally {
+      this.endPcbAiRoute();
+    }
+  }
+
+  private beginPcbAiRoute(doc: PcbDocument): void {
+    this.aiGenEpoch++;
+    this.aiGenerating = true;
+    this.aiGenCancelRequested = false;
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(true);
+    this.onAiGeneratingChanged(true);
+    this.onStatusMessage('PCB AI 布线中，画布已锁定（请耐心等待）');
+    this.appendAiGenLog('system',
+      `PCB AI 开始 · fp=${doc.footprints.length} nets=${doc.nets.length} · 画布已锁定`);
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_PCB_UI] canvas locked fp=${doc.footprints.length} nets=${doc.nets.length}`);
+  }
+
+  private endPcbAiRoute(): void {
+    this.aiGenerating = false;
+    this.aiGenCancelRequested = false;
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
+    this.onAiGeneratingChanged(false);
+    this.appendAiGenLog('system', 'PCB AI 结束 · 画布已解锁');
+    Logger.info(INSTR_TRACE_TAG, '[AI_PCB_UI] canvas unlocked');
+  }
+
+  /** PCB 进度：驱动 UI 条 + 写入 aiGenLogs（与原理图 handleAiGenProgress 同形） */
+  private handlePcbAiProgress(p: ProgressInfo): void {
+    if (this.aiGenCancelRequested) {
+      return;
+    }
+    this.onAiProgress(p);
+    if (p.stage.length === 0) {
+      return;
+    }
+    const line = this.formatAiStageLog(p.progress, p.stage);
+    if (line.length === 0) {
+      return;
+    }
+    if (this.aiGenLogs.length > 0) {
+      const last = this.aiGenLogs[this.aiGenLogs.length - 1];
+      if (last.role === 'assistant' && last.text.indexOf(`] ${p.stage}`) >= 0) {
+        const updated: AiGenLogEntry = {
+          id: last.id,
+          role: last.role,
+          text: line,
+          ts: Date.now()
+        };
+        const next = this.aiGenLogs.slice(0, this.aiGenLogs.length - 1);
+        next.push(updated);
+        this.aiGenLogs = next;
+        this.notifyAiGenLogs();
+        return;
+      }
+    }
+    this.appendAiGenLog('assistant', line);
+  }
+
   isAiGenerating(): boolean {
     return this.aiGenerating;
   }
@@ -2534,6 +2744,7 @@ export class AppService {
     if (this.aiGenerating) {
       this.aiGenerating = false;
       (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+      (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
       this.onAiGeneratingChanged(false);
     }
     this.appendAiGenLog('assistant', '已取消生成');
@@ -3104,6 +3315,7 @@ export class AppService {
     this.aiGenerating = false;
     this.aiGenCancelRequested = false;
     (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
     this.onAiGeneratingChanged(false);
   }
 
@@ -3595,7 +3807,8 @@ export class AppService {
         `id=${templateId} beforeFp=${beforeFp} beforeTrk=${beforeTrk} ` +
         `afterFp=${merged.footprints.length} afterTrk=${merged.tracks.length} ` +
         `afterVia=${merged.vias.length} afterZone=${merged.zones.length} ` +
-        `afterNet=${merged.nets.length} ratsnest=${canvasSnap.ratsnest.length}`);
+        `afterNet=${merged.nets.length} ratsnest=${canvasSnap.ratsnest.length} ` +
+        `stackCu=${merged.layerStack.copperCount}`);
       tracePcbFullState(merged, `after_insert:${templateId}`, canvasSnap);
       const def = this.teachingService.getPcbTemplate(templateId);
       const tplName = def !== null ? def.name : templateId;
@@ -3807,6 +4020,10 @@ export class AppService {
       this.persistDebounceTimer = -1;
       void this.persistWorkingCopy();
     }, this.PERSIST_DEBOUNCE_MS);
+    // 打开工程时 loadProject 已 stamp kernel；勿再 debounce reload（否则 TOPO×3 + OP×2）
+    if (this.projectLoadBusy || this.templateLoadBusy) {
+      return;
+    }
     // Debounce heavy reload/ERC while user is dragging — keeps edit path smooth
     if (this.schematicDebounceTimer >= 0) {
       clearTimeout(this.schematicDebounceTimer);

@@ -1,0 +1,501 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ Y/**
+ * GitHub Star å¤éªŒ â€” å¯åŠ¨é™é»˜æ£€æµ‹ï¼›å…¼å®¹é¸¿è’™å¯¹ 204 ç©ºä½“çš„å¼‚å¸¸
+ */
+import { Logger } from '../utils/Logger';
+import { GitHubOAuthConfig } from './GitHubOAuthConfig';
+import { GitHubDeviceAuth } from './GitHubDeviceAuth';
+import { LicenseManager } from './LicenseManager';
+import { FeatureGate } from './FeatureGate';
+const TAG = 'GitHubStarVerifier';
+export var StarCheckKind;
+(function (StarCheckKind) {
+    StarCheckKind["STARRED"] = "starred";
+    StarCheckKind["NOT_STARRED"] = "not_starred";
+    StarCheckKind["UNAUTHORIZED"] = "unauthorized";
+    StarCheckKind["NETWORK"] = "network";
+    StarCheckKind["NO_TOKEN"] = "no_token";
+})(StarCheckKind || (StarCheckKind = {}));
+export class GitHubStarVerifier {
+    /**
+     * å¯åŠ¨å¤éªŒï¼šæœ‰ token åˆ™æŸ¥ Starï¼›æ— ç½‘/å¤±è´¥ â†’ ä¸å‡ Proï¼ˆä¿ç•™ tokenï¼Œé™¤é 401ï¼‰ã€‚
+     */
+    static async revalidateOnStartup(context) {
+        await GitHubDeviceAuth.init(context);
+        const token = await GitHubDeviceAuth.getStoredToken();
+        if (token.length === 0) {
+            LicenseManager.getInstance().setStarUnlock(false, '');
+            FeatureGate.refresh();
+            Logger.info(TAG, 'startup: no token');
+            return { kind: StarCheckKind.NO_TOKEN, message: 'æœªç»‘å®š GitHub', login: '' };
+        }
+        Logger.info(TAG, `startup: token present len=${token.length}`);
+        const result = await GitHubStarVerifier.checkStarred(token);
+        await GitHubStarVerifier.applyResult(result, token);
+        Logger.info(TAG, `startup result: ${result.kind} ${result.message}`);
+        return result;
+    }
+    static async recheckNow(context) {
+        await GitHubDeviceAuth.init(context);
+        const token = await GitHubDeviceAuth.getStoredToken();
+        if (token.length === 0) {
+            LicenseManager.getInstance().setStarUnlock(false, '');
+            FeatureGate.refresh();
+            return { kind: StarCheckKind.NO_TOKEN, message: 'è¯·å…ˆå®Œæˆ GitHub æˆæƒ', login: '' };
+        }
+        const result = await GitHubStarVerifier.checkStarred(token);
+        await GitHubStarVerifier.applyResult(result, token);
+        return result;
+    }
+    static async activateWithToken(context, accessToken) {
+        await GitHubDeviceAuth.init(context);
+        const login = await GitHubDeviceAuth.fetchLogin(accessToken);
+        await GitHubDeviceAuth.saveToken(accessToken, login);
+        const result = await GitHubStarVerifier.checkStarred(accessToken);
+        if (result.login.length === 0 && login.length > 0) {
+            result.login = login;
+        }
+        await GitHubStarVerifier.applyResult(result, accessToken);
+        return result;
+    }
+    /**
+     * 1) GET /user/starred/{owner}/{repo} â†’ 204/404
+     * 2) è‹¥é¸¿è’™æŠŠ 204 å½“å¼‚å¸¸ï¼Œæˆ–ç»“æœä¸æ˜ â†’ å›é€€ GET /user/starred åˆ—è¡¨åŒ¹é…
+     */
+    static async checkStarred(accessToken) {
+        const login = await GitHubDeviceAuth.getStoredLogin();
+        const direct = await GitHubDeviceAuth.githubGet(GitHubOAuthConfig.starCheckUrl(), accessToken);
+        if (direct !== null) {
+            Logger.info(TAG, `starCheck HTTP ${direct.code} emptyQuirk=${direct.emptyBodyError}`);
+            if (direct.code === 204 || direct.emptyBodyError) {
+                return {
+                    kind: StarCheckKind.STARRED,
+                    message: 'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»',
+                    login
+                };
+            }
+            if (direct.code === 404) {
+                return {
+                    kind: StarCheckKind.NOT_STARRED,
+                    message: 'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹',
+                    login
+                };
+            }
+            if (direct.code === 401 || direct.code === 403) {
+                // å†è¯•åˆ—è¡¨æ¥å£ç¡®è®¤æ˜¯å¦çœŸçš„æœªæˆæƒ
+                const viaList = await GitHubStarVerifier.checkStarredViaList(accessToken, login);
+                if (viaList.kind !== StarCheckKind.UNAUTHORIZED && viaList.kind !== StarCheckKind.NETWORK) {
+                    return viaList;
+                }
+                return {
+                    kind: StarCheckKind.UNAUTHORIZED,
+                    message: 'GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ',
+                    login: ''
+                };
+            }
+            // å…¶å®ƒç ï¼šå›é€€åˆ—è¡¨
+            Logger.warn(TAG, `starCheck unexpected ${direct.code}, fallback list`);
+        }
+        else {
+            Logger.warn(TAG, 'starCheck request null, fallback list');
+        }
+        return await GitHubStarVerifier.checkStarredViaList(accessToken, login);
+    }
+    /** é€šè¿‡ starred åˆ—è¡¨åŒ¹é…ç›®æ ‡ä»“åº“ï¼ˆè¿”å› 200+JSONï¼Œé¿å… 204ï¼‰ */
+    static async checkStarredViaList(accessToken, login) {
+        const target = GitHubOAuthConfig.FULL_NAME.toLowerCase();
+        for (let page = 1; page <= 5; page++) {
+            const resp = await GitHubDeviceAuth.githubGet(GitHubOAuthConfig.starredListUrl(page, 100), accessToken);
+            if (resp === null) {
+                return {
+                    kind: StarCheckKind.NETWORK,
+                    message: 'æ— ç½‘ç»œæˆ–è¯·æ±‚å¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ',
+                    login
+                };
+            }
+            if (resp.code === 401 || resp.code === 403) {
+                return {
+                    kind: StarCheckKind.UNAUTHORIZED,
+                    message: 'GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ',
+                    login: ''
+                };
+            }
+            if (resp.code !== 200) {
+                Logger.warn(TAG, `starred list HTTP ${resp.code}`);
+                return {
+                    kind: StarCheckKind.NETWORK,
+                    message: `æ£€æµ‹å¤±è´¥ (HTTP ${resp.code})ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ`,
+                    login
+                };
+            }
+            try {
+                const arr = JSON.parse(resp.body.length > 0 ? resp.body : '[]');
+                if (!Array.isArray(arr) || arr.length === 0) {
+                    // ç©ºé¡µï¼šæœªæ‰¾åˆ°
+                    break;
+                }
+                for (let i = 0; i < arr.length; i++) {
+                    const item = arr[i];
+                    const full = `${item['full_name'] ?? ''}`.toLowerCase();
+                    if (full === target) {
+                        return {
+                            kind: StarCheckKind.STARRED,
+                            message: 'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»',
+                            login
+                        };
+                    }
+                }
+                if (arr.length < 100) {
+                    break;
+                }
+            }
+            catch (e) {
+                Logger.warn(TAG, `starred list parse: ${e}`);
+                return {
+                    kind: StarCheckKind.NETWORK,
+                    message: 'Star åˆ—è¡¨è§£æå¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ',
+                    login
+                };
+            }
+        }
+        return {
+            kind: StarCheckKind.NOT_STARRED,
+            message: 'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹',
+            login
+        };
+    }
+    static async applyResult(result, token) {
+        const mgr = LicenseManager.getInstance();
+        if (result.kind === StarCheckKind.STARRED) {
+            let login = result.login;
+            if (login.length === 0) {
+                login = await GitHubDeviceAuth.fetchLogin(token);
+                if (login.length > 0) {
+                    await GitHubDeviceAuth.saveToken(token, login);
+                    result.login = login;
+                }
+            }
+            mgr.setStarUnlock(true, login);
+        }
+        else if (result.kind === StarCheckKind.UNAUTHORIZED) {
+            await GitHubDeviceAuth.clearToken();
+            mgr.setStarUnlock(false, '');
+        }
+        else {
+            // NOT_STARRED / NETWORK / NO_TOKEN â€” ä¸å‡ Proï¼›NETWORK ä¿ç•™ token ä¾›ä¸‹æ¬¡é‡è¯•
+            mgr.setStarUnlock(false, result.login);
+        }
+        FeatureGate.refresh();
+    }
+}
+//# sourceMappingURL=GitHubStarVerifier.js.mapÂ•ÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\Logger.etsÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\GitHubOAuthConfig.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\GitHubDeviceAuth.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\FeatureGate.etsÙPC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\GitHubStarVerifier.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ*./src/main/ets/security/GitHubStarVerifier¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ/**
+ * GitHub Star å¤éªŒ â€” å¯åŠ¨é™é»˜æ£€æµ‹ï¼›å…¼å®¹é¸¿è’™å¯¹ 204 ç©ºä½“çš„å¼‚å¸¸
+ */
+import { Logger } from '../utils/Logger';
+import { GitHubOAuthConfig } from './GitHubOAuthConfig';
+import { GitHubDeviceAuth } from './GitHubDeviceAuth';
+import { LicenseManager } from './LicenseManager';
+import { FeatureGate } from './FeatureGate';
+
+const TAG = 'GitHubStarVerifier';
+
+export enum StarCheckKind {
+  STARRED = 'starred',
+  NOT_STARRED = 'not_starred',
+  UNAUTHORIZED = 'unauthorized',
+  NETWORK = 'network',
+  NO_TOKEN = 'no_token'
+}
+
+export interface StarCheckResult {
+  kind: StarCheckKind;
+  message: string;
+  login: string;
+}
+
+export class GitHubStarVerifier {
+  /**
+   * å¯åŠ¨å¤éªŒï¼šæœ‰ token åˆ™æŸ¥ Starï¼›æ— ç½‘/å¤±è´¥ â†’ ä¸å‡ Proï¼ˆä¿ç•™ tokenï¼Œé™¤é 401ï¼‰ã€‚
+   */
+  static async revalidateOnStartup(context: Context): Promise<StarCheckResult> {
+    await GitHubDeviceAuth.init(context);
+    const token = await GitHubDeviceAuth.getStoredToken();
+    if (token.length === 0) {
+      LicenseManager.getInstance().setStarUnlock(false, '');
+      FeatureGate.refresh();
+      Logger.info(TAG, 'startup: no token');
+      return { kind: StarCheckKind.NO_TOKEN, message: 'æœªç»‘å®š GitHub', login: '' };
+    }
+    Logger.info(TAG, `startup: token present len=${token.length}`);
+    const result = await GitHubStarVerifier.checkStarred(token);
+    await GitHubStarVerifier.applyResult(result, token);
+    Logger.info(TAG, `startup result: ${result.kind} ${result.message}`);
+    return result;
+  }
+
+  static async recheckNow(context: Context): Promise<StarCheckResult> {
+    await GitHubDeviceAuth.init(context);
+    const token = await GitHubDeviceAuth.getStoredToken();
+    if (token.length === 0) {
+      LicenseManager.getInstance().setStarUnlock(false, '');
+      FeatureGate.refresh();
+      return { kind: StarCheckKind.NO_TOKEN, message: 'è¯·å…ˆå®Œæˆ GitHub æˆæƒ', login: '' };
+    }
+    const result = await GitHubStarVerifier.checkStarred(token);
+    await GitHubStarVerifier.applyResult(result, token);
+    return result;
+  }
+
+  static async activateWithToken(context: Context, accessToken: string): Promise<StarCheckResult> {
+    await GitHubDeviceAuth.init(context);
+    const login = await GitHubDeviceAuth.fetchLogin(accessToken);
+    await GitHubDeviceAuth.saveToken(accessToken, login);
+    const result = await GitHubStarVerifier.checkStarred(accessToken);
+    if (result.login.length === 0 && login.length > 0) {
+      result.login = login;
+    }
+    await GitHubStarVerifier.applyResult(result, accessToken);
+    return result;
+  }
+
+  /**
+   * 1) GET /user/starred/{owner}/{repo} â†’ 204/404
+   * 2) è‹¥é¸¿è’™æŠŠ 204 å½“å¼‚å¸¸ï¼Œæˆ–ç»“æœä¸æ˜ â†’ å›é€€ GET /user/starred åˆ—è¡¨åŒ¹é…
+   */
+  static async checkStarred(accessToken: string): Promise<StarCheckResult> {
+    const login = await GitHubDeviceAuth.getStoredLogin();
+    const direct = await GitHubDeviceAuth.githubGet(GitHubOAuthConfig.starCheckUrl(), accessToken);
+
+    if (direct !== null) {
+      Logger.info(TAG, `starCheck HTTP ${direct.code} emptyQuirk=${direct.emptyBodyError}`);
+      if (direct.code === 204 || direct.emptyBodyError) {
+        return {
+          kind: StarCheckKind.STARRED,
+          message: 'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»',
+          login
+        };
+      }
+      if (direct.code === 404) {
+        return {
+          kind: StarCheckKind.NOT_STARRED,
+          message: 'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹',
+          login
+        };
+      }
+      if (direct.code === 401 || direct.code === 403) {
+        // å†è¯•åˆ—è¡¨æ¥å£ç¡®è®¤æ˜¯å¦çœŸçš„æœªæˆæƒ
+        const viaList = await GitHubStarVerifier.checkStarredViaList(accessToken, login);
+        if (viaList.kind !== StarCheckKind.UNAUTHORIZED && viaList.kind !== StarCheckKind.NETWORK) {
+          return viaList;
+        }
+        return {
+          kind: StarCheckKind.UNAUTHORIZED,
+          message: 'GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ',
+          login: ''
+        };
+      }
+      // å…¶å®ƒç ï¼šå›é€€åˆ—è¡¨
+      Logger.warn(TAG, `starCheck unexpected ${direct.code}, fallback list`);
+    } else {
+      Logger.warn(TAG, 'starCheck request null, fallback list');
+    }
+
+    return await GitHubStarVerifier.checkStarredViaList(accessToken, login);
+  }
+
+  /** é€šè¿‡ starred åˆ—è¡¨åŒ¹é…ç›®æ ‡ä»“åº“ï¼ˆè¿”å› 200+JSONï¼Œé¿å… 204ï¼‰ */
+  private static async checkStarredViaList(
+    accessToken: string,
+    login: string
+  ): Promise<StarCheckResult> {
+    const target = GitHubOAuthConfig.FULL_NAME.toLowerCase();
+    for (let page = 1; page <= 5; page++) {
+      const resp = await GitHubDeviceAuth.githubGet(
+        GitHubOAuthConfig.starredListUrl(page, 100),
+        accessToken
+      );
+      if (resp === null) {
+        return {
+          kind: StarCheckKind.NETWORK,
+          message: 'æ— ç½‘ç»œæˆ–è¯·æ±‚å¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ',
+          login
+        };
+      }
+      if (resp.code === 401 || resp.code === 403) {
+        return {
+          kind: StarCheckKind.UNAUTHORIZED,
+          message: 'GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ',
+          login: ''
+        };
+      }
+      if (resp.code !== 200) {
+        Logger.warn(TAG, `starred list HTTP ${resp.code}`);
+        return {
+          kind: StarCheckKind.NETWORK,
+          message: `æ£€æµ‹å¤±è´¥ (HTTP ${resp.code})ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ`,
+          login
+        };
+      }
+      try {
+        const arr = JSON.parse(resp.body.length > 0 ? resp.body : '[]') as Object[];
+        if (!Array.isArray(arr) || arr.length === 0) {
+          // ç©ºé¡µï¼šæœªæ‰¾åˆ°
+          break;
+        }
+        for (let i = 0; i < arr.length; i++) {
+          const item = arr[i] as Record<string, Object>;
+          const full = `${item['full_name'] ?? ''}`.toLowerCase();
+          if (full === target) {
+            return {
+              kind: StarCheckKind.STARRED,
+              message: 'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»',
+              login
+            };
+          }
+        }
+        if (arr.length < 100) {
+          break;
+        }
+      } catch (e) {
+        Logger.warn(TAG, `starred list parse: ${e}`);
+        return {
+          kind: StarCheckKind.NETWORK,
+          message: 'Star åˆ—è¡¨è§£æå¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ',
+          login
+        };
+      }
+    }
+    return {
+      kind: StarCheckKind.NOT_STARRED,
+      message: 'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹',
+      login
+    };
+  }
+
+  private static async applyResult(result: StarCheckResult, token: string): Promise<void> {
+    const mgr = LicenseManager.getInstance();
+    if (result.kind === StarCheckKind.STARRED) {
+      let login = result.login;
+      if (login.length === 0) {
+        login = await GitHubDeviceAuth.fetchLogin(token);
+        if (login.length > 0) {
+          await GitHubDeviceAuth.saveToken(token, login);
+          result.login = login;
+        }
+      }
+      mgr.setStarUnlock(true, login);
+    } else if (result.kind === StarCheckKind.UNAUTHORIZED) {
+      await GitHubDeviceAuth.clearToken();
+      mgr.setStarUnlock(false, '');
+    } else {
+      // NOT_STARRED / NETWORK / NO_TOKEN â€” ä¸å‡ Proï¼›NETWORK ä¿ç•™ token ä¾›ä¸‹æ¬¡é‡è¯•
+      mgr.setStarUnlock(false, result.login);
+    }
+    FeatureGate.refresh();
+  }
+}
+ÀÔrE•¯../utils/Logger³./GitHubOAuthConfig²./GitHubDeviceAuth­./FeatureGate°./LicenseManagerÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\Logger.etsAÃªoh-resolveÂFAÂÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\GitHubOAuthConfig.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\GitHubDeviceAuth.etsAÃªoh-resolveÂFAÂÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\FeatureGate.etsAÃªoh-resolveÂFAÂÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappingsµGitHubStarVerifier.js ‘¶GitHubStarVerifier.etsÜ ½‘”    ‘” ˜”   ” ”	 	” ” ” ”( (”) )˜”   ” ”	 	” ” ”" "”7 7”8 8˜”   ” ”	 	” ” ”! !”5 5”6 6˜”   ” ”	 	” ” ” ”1 1”2 2˜”   ” ”	 	” ” ” ”+ +”, ,–”  	 ” 	”	 		” 	”  	 ”! 	!•”   ” ”  ” ” “”   ” ” “” ”( ”) “” ”0 ”1 “” ”2 ”3 “” ”( ”) “” ”* ”+ —”   ” ” ” ” ”" ”* ””   ” ” ” ‘” ‘” ˜” ”
+ ” 	” ” ”$ "”% #”, 3™” ” 
+” ” ”# ”$  ”+ '”, (”- )š” ” 
+” ” ” ”, (”- )”; 7”= 9”> :˜”  ”  ”  ”  ”  ”  ”  ”   ” !” !” !”& ! ”( !"”) !#”6 !0”7 !1”< !6”> !8”Ì@ !:”ÌA !;”ÌB !<–” "” "” "” "”! "”" "š” #” #” #” #” #” #” #”0 #*”1 #+”2 #,Ü ” $” $” $” $” $”( $"”) $#”1 $+”3 $-”: $4”< $6”ÌH $ÌB”ÌJ $ÌD”ÌO $ÌI”ÌQ $ÌK”ÌS $ÌM”ÌU $ÌO”ÌV $ÌP‘”	 %” &” &
+” &” &” &” &” &”7 &3”< &8”= &9”ÌC &?”ÌE &ÌA”ÌF &ÌB”ÌG &ÌCœ” '” '
+” '” '” '”/ '+”0 ',”< '8”= '9”ÌB '>”ÌC '?”ÌD 'Ì@›” (” (
+”  (”! (”, ((”- ()”3 (/”5 (1”: (6”; (7”< (8Ü ” )” )
+” )” )” )” )” )”, )(”2 ).”3 )/”7 )3”; )7”ÌA )=”ÌB )>”ÌI )ÌE”ÌK )ÌG”ÌL )ÌH”ÌM )ÌI”” *” *” *” *’” +” +˜” -”
+ -” -	” -” -” -” -”# -*™” .” .
+” .” .”# .”$ . ”+ .'”, .(”- .)š” /” /
+” /” /” /”, /(”- /)”; /7”= /9”> /:˜” 0” 0” 0” 0” 0” 0” 0”  0” 1” 1” 1”& 1 ”( 1"”) 1#”6 10”7 11”< 16”> 18”Ì@ 1:”ÌA 1;”ÌB 1<–” 2” 2” 2” 2”! 2”" 2Ü ” 3” 3” 3” 3” 3”( 3"”) 3#”1 3+”3 3-”: 34”< 36”ÌL 3ÌF”ÌN 3ÌH”ÌS 3ÌM”ÌU 3ÌO”ÌW 3ÌQ”ÌY 3ÌS”ÌZ 3ÌT‘”	 4œ” 5” 5
+” 5” 5” 5”/ 5+”0 5,”< 58”= 59”ÌB 5>”ÌC 5?”ÌD 5Ì@›” 6” 6
+”  6”! 6”, 6(”- 6)”3 6/”5 61”: 66”; 67”< 68”” 7” 7” 7” 7’” 8” 8š” :”
+ :” :	” :” :”" : ”# :!”* :1”, :3”7 :ÌF™” ;” ;
+” ;” ;”# ;”$ ; ”+ ;'”, ;(”- ;)œ” <” <
+” <” <” <”, <(”- <)”7 <3”8 <4”ÌC <?”ÌD <Ì@”ÌE <ÌA›” =” =
+” =” =”( =$”) =%”4 =0”6 =2”; =7”< =8”= =9œ” >” >
+” >” >” >”/ >+”0 >,”< >8”= >9”ÌH >ÌD”ÌI >ÌE”ÌJ >ÌFÜ ” ?” ?” ?” ?” ?” ?” ?”$ ? ”% ?!”) ?%”. ?*”/ ?+”5 ?1”8 ?4”9 ?5”; ?7—” Ì@” Ì@” Ì@” Ì@” Ì@”  Ì@”! Ì@‘”	 ÌA›” ÌB” ÌB
+”  ÌB”! ÌB”, ÌB(”- ÌB)”3 ÌB/”5 ÌB1”Ì@ ÌB<”ÌA ÌB=”ÌB ÌB>”” ÌC” ÌC” ÌC” ÌC’” ÌD” ÌD‘” ÌF‘” ÌI˜” ÌJ”
+ ÌJ” ÌJ	” ÌJ” ÌJ” ÌJ” ÌJ”) ÌJ/š” ÌK” ÌK
+” ÌK” ÌK” ÌK”, ÌK(”- ÌK)”; ÌK7”= ÌK9”> ÌK:Ü ” ÌL” ÌL
+” ÌL” ÌL” ÌL”- ÌL)”. ÌL*”7 ÌL3”8 ÌL4”ÌI ÌLÌE”ÌJ ÌLÌF”ÌV ÌLÌR”ÌX ÌLÌT”ÌZ ÌLÌV”Ìe ÌLÌa”Ìf ÌLÌb”Ìg ÌLÌc–” ÌN” ÌN” ÌN” ÌN” ÌN” ÌNÜ ” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO”/ ÌO)”5 ÌO/”6 ÌO0”: ÌO4”ÌI ÌOÌC”ÌO ÌOÌI”ÌP ÌOÌJ”Ì^ ÌOÌX”Ì` ÌOÌZ”Ìa ÌOÌ[”Ìb ÌOÌ\œ” ÌP” ÌP
+” ÌP” ÌP” ÌP”  ÌP”# ÌP”' ÌP!”- ÌP'”. ÌP(”< ÌP6”> ÌP8’” ÌQ” ÌQ–” ÌR
+” ÌR” ÌR”' ÌR”( ÌR”/ ÌR%”” ÌS
+” ÌS” ÌS”, ÌS"’” ÌT
+” ÌT’” ÌU	” ÌU
+‘” ÌV˜” ÌW” ÌW
+” ÌW” ÌW” ÌW”  ÌW”# ÌW”% ÌW’” ÌX” ÌX–” ÌY
+” ÌY” ÌY”' ÌY”( ÌY”3 ÌY)”” ÌZ
+” ÌZ” ÌZ”6 ÌZ,’” Ì[
+” Ì[’” Ì\	” Ì\
+‘” Ì]” Ì^” Ì^
+” Ì^” Ì^” Ì^”  Ì^”# Ì^”' Ì^!”- Ì^'”. Ì^(”2 Ì^,”7 Ì^1”: Ì^4”< Ì^6’” Ì_”" Ì_” Ì`” Ì`” Ì`”  Ì`”& Ì`”8 Ì`0”9 Ì`1”ÌL Ì`ÌD”ÌM Ì`ÌE”ÌX Ì`ÌP”ÌZ Ì`ÌR”Ì_ Ì`ÌW”Ì` Ì`ÌX”Ìa Ì`ÌYÜ ” Ìa” Ìa” Ìa” Ìa”  Ìa”% Ìa”2 Ìa*”3 Ìa+”? Ìa7”ÌC Ìa;”ÌJ ÌaÌB”ÌK ÌaÌC”ÌO ÌaÌG”ÌT ÌaÌL”Ìa ÌaÌY”Ìb ÌaÌZ”Ìi ÌaÌa”Ìk ÌaÌc”” Ìb
+” Ìb”" Ìb”# Ìb‘” Ìc	’” Ìd” Ìd–” Ìe
+” Ìe” Ìe”' Ìe”( Ìe”4 Ìe*”” Ìf
+” Ìf” Ìf”0 Ìf&”” Ìg
+” Ìg” Ìg” Ìg’” Ìh	” Ìh
+‘” Ìi’” Ìj” Ìj” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”5 Ìk/”; Ìk5”< Ìk6”Ì@ Ìk:”ÌQ ÌkÌK”ÌR ÌkÌL”ÌS ÌkÌM‘”	 Ìl‘” Ìlš” Ìm” Ìm” Ìm” Ìm” Ìm” Ìm” Ìm”ÌD Ìm>”ÌE Ìm?”ÌF ÌmÌ@‘”	 Ìnœ” Ìp” Ìp” Ìp”' Ìp#”( Ìp$”; Ìp7”< Ìp8”ÌG ÌpÌC”ÌI ÌpÌE”ÌN ÌpÌJ”ÌO ÌpÌK”ÌP ÌpÌL’” Ìq” Ìq’” Ìs”2 Ìs0š” Ìt
+”
+ Ìt” Ìt” Ìt” Ìt”$ Ìt*”% Ìu”0 Ìu”2 Ìv”7 Ìv›” Ìx” Ìx
+” Ìx” Ìx”( Ìx$”) Ìx%”2 Ìx.”3 Ìx/”> Ìx:”Ì@ Ìx<”ÌA Ìx=” Ìy” Ìy	” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”# Ìy”$ Ìy ”& Ìy"”* Ìy&”, Ìy(”. Ìy*Ü ” Ìz” Ìz” Ìz” Ìz” Ìz”/ Ìz)”0 Ìz*”9 Ìz3”: Ì{”ÌK Ì{”ÌL Ì{”ÌZ Ì{(”Ì[ Ì{)”Ì_ Ì{-”Ìa Ì{/”Ìd Ì{2”Ìe Ì{3”Ìg Ì|”Ìr Ì|”Ìs Ì}”Ìt Ì}–” Ì~” Ì~
+” Ì~” Ì~” Ì~” Ì~’” Ì” Ì–” Ì€
+” Ì€” Ì€”' Ì€”( Ì€”/ Ì€%”” Ì
+” Ì” Ì”. Ì$’” Ì‚
+” Ì‚’” Ìƒ	” Ìƒ
+‘” Ì„” Ì…” Ì…
+” Ì…” Ì…” Ì…” Ì…”! Ì…”% Ì…”) Ì…#”* Ì…$”. Ì…(”3 Ì…-”6 Ì…0”8 Ì…2’” Ì†” Ì†–” Ì‡
+” Ì‡” Ì‡”' Ì‡”( Ì‡”4 Ì‡*”” Ìˆ
+” Ìˆ” Ìˆ”0 Ìˆ&”” Ì‰
+” Ì‰” Ì‰” Ì‰’” ÌŠ	” ÌŠ
+‘” Ì‹˜” ÌŒ” ÌŒ
+” ÌŒ” ÌŒ” ÌŒ” ÌŒ”! ÌŒ”# ÌŒ” Ì” Ì” Ì” Ì” Ì” Ì”! Ì”6 Ì.”: Ì2”; Ì3”? Ì7”ÌA Ì9”ÌB Ì:”ÌC Ì;’” Ì” Ì–” Ì
+” Ì” Ì”' Ì”( Ì”/ Ì%˜” Ì
+” Ì” Ì”+ Ì!”/ Ì%”0 Ì&”4 Ì*”> Ì4’” Ì‘
+” Ì‘’” Ì’	” Ì’
+‘” Ì“’” Ì”” Ì”
+Ü ” Ì•” Ì•” Ì•” Ì•”  Ì•”! Ì•”& Ì•”' Ì•”+ Ì•#”, Ì•$”0 Ì•(”1 Ì•)”7 Ì•/”: Ì•2”; Ì•3”< Ì•4”= Ì•5”> Ì•6”ÌB Ì•:”ÌC Ì•;”ÌG Ì•?”ÌH Ì•Ì@”ÌI Ì•ÌA”ÌJ Ì•ÌB”ÌN Ì•ÌF”ÌO Ì•ÌS”ÌP Ì•ÌTÜ ” Ì–” Ì–” Ì–” Ì–” Ì–”" Ì–”# Ì–”& Ì–”' Ì–”+ Ì–#”. Ì–&”/ Ì–'”5 Ì–-”: Ì–2”; Ì–3”= Ì–5’” Ì—
+” Ì—’” Ì˜
+” Ì˜‘” Ì™	Ü ” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”  Ìš”! Ìš”$ Ìš”' Ìš”( Ìš ”. Ìš&”0 Ìš(”1 Ìš)”3 Ìš+”5 Ìš-™” Ì›
+” Ì›” Ì›”! Ì›”$ Ì›”% Ì›”& Ì›”' Ì›7”( Ì›8Ü ” Ìœ
+” Ìœ” Ìœ”! Ìœ”$ Ìœ”( Ìœ”) Ìœ”4 Ìœ*”5 Ìœ+”9 Ìœ/”; Ìœ1”= Ìœ3”> Ìœ4”ÌI Ìœ?”ÌK ÌœÌA”ÌL ÌœÌB–” Ì
+” Ì” Ì”! Ì”' Ì”) Ì’” Ì” Ì–” ÌŸ”  ÌŸ”" ÌŸ”/ ÌŸ!”0 ÌŸ"”7 ÌŸ)”” Ì ”# Ì ”% Ì ”4 Ì &’” Ì¡”! Ì¡’” Ì¢” Ì¢‘” Ì£‘” Ì¤	˜” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥”! Ì¥”$ Ì¥”& Ì¥’” Ì¦
+” Ì¦‘” Ì§	‘” Ì¨”” Ì¨” Ì¨” Ì¨” Ì¨œ” Ì©” Ì©” Ì©” Ì©” Ì©” Ì©”! Ì©”8 Ì©0”9 Ì©1”; Ì©3”< Ì©4”= Ì©5’” Ìª” Ìª–” Ì«
+” Ì«” Ì«”' Ì«”( Ì«”/ Ì«%”” Ì¬
+” Ì¬” Ì¬”1 Ì¬'’” Ì­
+” Ì­’” Ì®	” Ì®
+‘” Ì¯‘”	 Ì°’” Ì±” Ì±–” Ì²” Ì²
+” Ì²” Ì²”  Ì²”+ Ì²%”” Ì³” Ì³” Ì³”. Ì³(’” Ì´” Ì´’”	 Ìµ”
+ Ìµ’” Ì¶” Ì¶š” Ì¸
+”
+ Ì¸” Ì¸” Ì¸” Ì¸” Ì¸"” Ì¸#”# Ì¸:”% Ì¸<”* Ì¸ÌI™” Ì¹” Ì¹
+” Ì¹” Ì¹”" Ì¹”# Ì¹”. Ì¹*”0 Ì¹,”1 Ì¹-š” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº”) Ìº%”* Ìº&”1 Ìº-”3 Ìº/˜” Ì»” Ì»
+” Ì»” Ì»” Ì»” Ì»”$ Ì»”% Ì»˜” Ì¼” Ì¼
+” Ì¼” Ì¼” Ì¼”! Ì¼”" Ì¼”$ Ì¼›” Ì½” Ì½” Ì½” Ì½”. Ì½&”/ Ì½'”9 Ì½1”: Ì½2”? Ì½7”Ì@ Ì½8”ÌA Ì½9˜” Ì¾” Ì¾” Ì¾” Ì¾”  Ì¾”# Ì¾”$ Ì¾”& Ì¾›” Ì¿
+” Ì¿”* Ì¿ ”+ Ì¿!”4 Ì¿*”5 Ì¿+”: Ì¿0”< Ì¿2”ÌA Ì¿7”ÌB Ì¿8”ÌC Ì¿9—” ÌÀ
+” ÌÀ” ÌÀ”  ÌÀ”# ÌÀ”( ÌÀ”) ÌÀ‘” ÌÁ	‘” ÌÂš” ÌÃ” ÌÃ	” ÌÃ
+” ÌÃ” ÌÃ”" ÌÃ”$ ÌÃ”) ÌÃ#”* ÌÃ$”+ ÌÃ%‘”	 ÌÄš” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ”! ÌÄ”. ÌÄ,”/ ÌÄ-”; ÌÄ9”= ÌÄ;—” ÌÅ” ÌÅ”" ÌÅ”# ÌÅ”- ÌÅ'”/ ÌÅ)”0 ÌÅ*š” ÌÆ” ÌÆ	” ÌÆ
+” ÌÆ” ÌÆ”# ÌÆ”% ÌÆ”' ÌÆ!”( ÌÆ"”) ÌÆ#‘”	 ÌÇ‘” ÌÇ’” ÌÈ”ÌO ÌÈÌIœ” ÌÉ” ÌÉ	” ÌÉ
+” ÌÉ” ÌÉ”# ÌÉ”% ÌÉ”+ ÌÉ%”, ÌÉ&”1 ÌÉ+”2 ÌÉ,”3 ÌÉ-‘”	 ÌÊ–” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË’” ÌÌ” ÌÌ‘” ÌÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ¾‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍXÍqÔrL•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ_Íq‘ÔrM•¤type¥start£end¢id¤init²VariableDeclaratorÍcÍpÔrN”¤type¥start£end¤nameªIdentifierÍcÍp­StarCheckKindÀ£varÀK¶ExportNamedDeclarationÍ§ÍaÔrO–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ®ÍaNªIdentifierÍ´ÍÆ²GitHubStarVerifierÀÔrP”¤type¥start£end¤body©ClassBodyÍÇÍa–ÔrQ˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍÍÃÂNªIdentifierÍ+Í>³revalidateOnStartup¦methodÔrR™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ>ÍÀÂÂÃ‘NªIdentifierÍ?ÍF§contextP®BlockStatementÍHÍ˜ÔrS”¤type¥start£endªexpression³ExpressionStatementÍSÍxÔrT”¤type¥start£end¨argument¯AwaitExpressionÍSÍwÔrU–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍYÍwÔrV—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍYÍnNªIdentifierÍYÍi°GitHubDeviceAuthNªIdentifierÍjÍn¤initÂÂ‘NªIdentifierÍoÍv§contextÂL³VariableDeclarationÍ‚Í¸‘M²VariableDeclaratorÍˆÍ·NªIdentifierÍˆÍ¥tokenT¯AwaitExpressionÍÍ·U®CallExpressionÍ–Í·V°MemberExpressionÍ–ÍµNªIdentifierÍ–Í¦°GitHubDeviceAuthNªIdentifierÍ§Íµ®getStoredTokenÂÂÂ¥constÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÂÍÚÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍÆÍØV°MemberExpressionÍÆÍÒNªIdentifierÍÆÍË¥tokenNªIdentifierÍÌÍÒ¦lengthÂÂ£===ÔrY•¤type¥start£end¥value£raw§LiteralÍ×ÍØ ¡0P®BlockStatementÍÚÍÚ”S³ExpressionStatementÍéÍU®CallExpressionÍéÍV°MemberExpressionÍéÍU®CallExpressionÍéÍV°MemberExpressionÍéÍNªIdentifierÍéÍ÷®LicenseManagerNªIdentifierÍøÍ«getInstanceÂÂÂNªIdentifierÍÍ­setStarUnlockÂÂ’Y§LiteralÍÍÂ¥falseY§LiteralÍÍ ¢''ÂS³ExpressionStatementÍ-ÍCU®CallExpressionÍ-ÍBV°MemberExpressionÍ-Í@NªIdentifierÍ-Í8«FeatureGateNªIdentifierÍ9Í@§refreshÂÂÂS³ExpressionStatementÍQÍwU®CallExpressionÍQÍvV°MemberExpressionÍQÍ\NªIdentifierÍQÍW¦LoggerNªIdentifierÍXÍ\¤infoÂÂ’NªIdentifierÍ]Í`£TAGY§LiteralÍbÍu±startup: no token³'startup: no token'ÂT¯ReturnStatementÍ…ÍÏÔrZ”¤type¥start£endªproperties°ObjectExpressionÍŒÍÎ“Ôr[™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍªÂÂÂNªIdentifierÍÍ’¤kindV°MemberExpressionÍ”ÍªNªIdentifierÍ”Í¡­StarCheckKindNªIdentifierÍ¢Íª¨NO_TOKENÂÂ¤init[¨PropertyÍ¬ÍÁÂÂÂNªIdentifierÍ¬Í³§messageY§LiteralÍµÍÁ°æœªç»‘å®š GitHub²'æœªç»‘å®š GitHub'¤init[¨PropertyÍÃÍÌÂÂÂNªIdentifierÍÃÍÈ¥loginY§LiteralÍÊÍÌ ¢''¤initÀS³ExpressionStatementÍäÍ#U®CallExpressionÍäÍ"V°MemberExpressionÍäÍïNªIdentifierÍäÍê¦LoggerNªIdentifierÍëÍï¤infoÂÂ’NªIdentifierÍğÍó£TAGÔr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍõÍ!‘V°MemberExpressionÍÍNªIdentifierÍÍ¥tokenNªIdentifierÍÍ¦lengthÂÂ’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍöÍÔr^’£raw¦cooked»startup: token present len=»startup: token present len=Â]¯TemplateElementÍ Í ^  ÃÂL³VariableDeclarationÍ-Íi‘M²VariableDeclaratorÍ3ÍhNªIdentifierÍ3Í9¦resultT¯AwaitExpressionÍ<ÍhU®CallExpressionÍBÍhV°MemberExpressionÍBÍaNªIdentifierÍBÍT²GitHubStarVerifierNªIdentifierÍUÍa¬checkStarredÂÂ‘NªIdentifierÍbÍg¥tokenÂ¥constS³ExpressionStatementÍsÍ§T¯AwaitExpressionÍsÍ¦U®CallExpressionÍyÍ¦V°MemberExpressionÍyÍ—NªIdentifierÍyÍ‹²GitHubStarVerifierNªIdentifierÍŒÍ—«applyResultÂÂ’NªIdentifierÍ˜Í¦resultNªIdentifierÍ Í¥¥tokenÂS³ExpressionStatementÍ±ÍöU®CallExpressionÍ±ÍõV°MemberExpressionÍ±Í¼NªIdentifierÍ±Í·¦LoggerNªIdentifierÍ¸Í¼¤infoÂÂ’NªIdentifierÍ½ÍÀ£TAG\¯TemplateLiteralÍÂÍô’V°MemberExpressionÍÕÍàNªIdentifierÍÕÍÛ¦resultNªIdentifierÍÜÍà¤kindÂÂV°MemberExpressionÍäÍòNªIdentifierÍäÍê¦resultNªIdentifierÍëÍò§messageÂÂ“]¯TemplateElementÍÃÍÓ^°startup result: °startup result: Â]¯TemplateElementÍáÍâ^¡ ¡ Â]¯TemplateElementÍóÍó^  ÃÂT¯ReturnStatementÍ ÍNªIdentifierÍÍ¦resultQ°MethodDefinitionÍÍAÃÂNªIdentifierÍ(Í2ªrecheckNow¦methodR²FunctionExpressionÍ2ÍAÀÂÂÃ‘NªIdentifierÍ3Í:§contextP®BlockStatementÍ<ÍA–S³ExpressionStatementÍGÍlT¯AwaitExpressionÍGÍkU®CallExpressionÍMÍkV°MemberExpressionÍMÍbNªIdentifierÍMÍ]°GitHubDeviceAuthNªIdentifierÍ^Íb¤initÂÂ‘NªIdentifierÍcÍj§contextÂL³VariableDeclarationÍvÍ¬‘M²VariableDeclaratorÍ|Í«NªIdentifierÍ|Í¥tokenT¯AwaitExpressionÍ„Í«U®CallExpressionÍŠÍ«V°MemberExpressionÍŠÍ©NªIdentifierÍŠÍš°GitHubDeviceAuthNªIdentifierÍ›Í©®getStoredTokenÂÂÂ¥constW«IfStatementÍ¶ÍX°BinaryExpressionÍºÍÌV°MemberExpressionÍºÍÆNªIdentifierÍºÍ¿¥tokenNªIdentifierÍÀÍÆ¦lengthÂÂ£===Y§LiteralÍËÍÌ ¡0P®BlockStatementÍÎÍ“S³ExpressionStatementÍİÍU®CallExpressionÍİÍV°MemberExpressionÍİÍU®CallExpressionÍİÍùV°MemberExpressionÍİÍ÷NªIdentifierÍİÍë®LicenseManagerNªIdentifierÍìÍ÷«getInstanceÂÂÂNªIdentifierÍúÍ­setStarUnlockÂÂ’Y§LiteralÍÍÂ¥falseY§LiteralÍÍ ¢''ÂS³ExpressionStatementÍ!Í7U®CallExpressionÍ!Í6V°MemberExpressionÍ!Í4NªIdentifierÍ!Í,«FeatureGateNªIdentifierÍ-Í4§refreshÂÂÂT¯ReturnStatementÍEÍ“Z°ObjectExpressionÍLÍ’“[¨PropertyÍNÍjÂÂÂNªIdentifierÍNÍR¤kindV°MemberExpressionÍTÍjNªIdentifierÍTÍa­StarCheckKindNªIdentifierÍbÍj¨NO_TOKENÂÂ¤init[¨PropertyÍlÍ…ÂÂÂNªIdentifierÍlÍs§messageY§LiteralÍuÍ…ºè¯·å…ˆå®Œæˆ GitHub æˆæƒ¼'è¯·å…ˆå®Œæˆ GitHub æˆæƒ'¤init[¨PropertyÍ‡ÍÂÂÂNªIdentifierÍ‡ÍŒ¥loginY§LiteralÍÍ ¢''¤initÀL³VariableDeclarationÍ¨Íä‘M²VariableDeclaratorÍ®ÍãNªIdentifierÍ®Í´¦resultT¯AwaitExpressionÍ·ÍãU®CallExpressionÍ½ÍãV°MemberExpressionÍ½ÍÜNªIdentifierÍ½ÍÏ²GitHubStarVerifierNªIdentifierÍĞÍÜ¬checkStarredÂÂ‘NªIdentifierÍİÍâ¥tokenÂ¥constS³ExpressionStatementÍîÍ"T¯AwaitExpressionÍîÍ!U®CallExpressionÍôÍ!V°MemberExpressionÍôÍNªIdentifierÍôÍ²GitHubStarVerifierNªIdentifierÍÍ«applyResultÂÂ’NªIdentifierÍÍ¦resultNªIdentifierÍÍ ¥tokenÂT¯ReturnStatementÍ,Í:NªIdentifierÍ3Í9¦resultQ°MethodDefinitionÍGÍ
+MÃÂNªIdentifierÍTÍe±activateWithToken¦methodR²FunctionExpressionÍeÍ
+MÀÂÂÃ’NªIdentifierÍfÍm§contextNªIdentifierÍoÍz«accessTokenP®BlockStatementÍ|Í
+M—S³ExpressionStatementÍ‡Í¬T¯AwaitExpressionÍ‡Í«U®CallExpressionÍÍ«V°MemberExpressionÍÍ¢NªIdentifierÍÍ°GitHubDeviceAuthNªIdentifierÍÍ¢¤initÂÂ‘NªIdentifierÍ£Íª§contextÂL³VariableDeclarationÍ¶Íó‘M²VariableDeclaratorÍ¼ÍòNªIdentifierÍ¼ÍÁ¥loginT¯AwaitExpressionÍÄÍòU®CallExpressionÍÊÍòV°MemberExpressionÍÊÍåNªIdentifierÍÊÍÚ°GitHubDeviceAuthNªIdentifierÍÛÍåªfetchLoginÂÂ‘NªIdentifierÍæÍñ«accessTokenÂ¥constS³ExpressionStatementÍıÍ	2T¯AwaitExpressionÍıÍ	1U®CallExpressionÍ	Í	1V°MemberExpressionÍ	Í	NªIdentifierÍ	Í	°GitHubDeviceAuthNªIdentifierÍ	Í	©saveTokenÂÂ’NªIdentifierÍ	Í	)«accessTokenNªIdentifierÍ	+Í	0¥loginÂL³VariableDeclarationÍ	<Í	~‘M²VariableDeclaratorÍ	BÍ	}NªIdentifierÍ	BÍ	H¦resultT¯AwaitExpressionÍ	KÍ	}U®CallExpressionÍ	QÍ	}V°MemberExpressionÍ	QÍ	pNªIdentifierÍ	QÍ	c²GitHubStarVerifierNªIdentifierÍ	dÍ	p¬checkStarredÂÂ‘NªIdentifierÍ	qÍ	|«accessTokenÂ¥constW«IfStatementÍ	ˆÍ	êX±LogicalExpressionÍ	ŒÍ	¹X°BinaryExpressionÍ	ŒÍ	¥V°MemberExpressionÍ	ŒÍ	ŸV°MemberExpressionÍ	ŒÍ	˜NªIdentifierÍ	ŒÍ	’¦resultNªIdentifierÍ	“Í	˜¥loginÂÂNªIdentifierÍ	™Í	Ÿ¦lengthÂÂ£===Y§LiteralÍ	¤Í	¥ ¡0¢&&X°BinaryExpressionÍ	©Í	¹V°MemberExpressionÍ	©Í	µNªIdentifierÍ	©Í	®¥loginNªIdentifierÍ	¯Í	µ¦lengthÂÂ¡>Y§LiteralÍ	¸Í	¹ ¡0P®BlockStatementÍ	»Í	ê‘S³ExpressionStatementÍ	ÊÍ	ßÔr_–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ	ÊÍ	Ş¡=V°MemberExpressionÍ	ÊÍ	ÖNªIdentifierÍ	ÊÍ	Ğ¦resultNªIdentifierÍ	ÑÍ	Ö¥loginÂÂNªIdentifierÍ	ÙÍ	Ş¥loginÀS³ExpressionStatementÍ	ôÍ
+.T¯AwaitExpressionÍ	ôÍ
+-U®CallExpressionÍ	úÍ
+-V°MemberExpressionÍ	úÍ
+NªIdentifierÍ	úÍ
+²GitHubStarVerifierNªIdentifierÍ
+Í
+«applyResultÂÂ’NªIdentifierÍ
+Í
+¦resultNªIdentifierÍ
+!Í
+,«accessTokenÂT¯ReturnStatementÍ
+8Í
+FNªIdentifierÍ
+?Í
+E¦resultQ°MethodDefinitionÍ
+ÕÍzÃÂNªIdentifierÍ
+âÍ
+î¬checkStarred¦methodR²FunctionExpressionÍ
+îÍzÀÂÂÃ‘NªIdentifierÍ
+ïÍ
+ú«accessTokenP®BlockStatementÍ
+üÍz”L³VariableDeclarationÍÍ=‘M²VariableDeclaratorÍÍ<NªIdentifierÍÍ¥loginT¯AwaitExpressionÍÍ<U®CallExpressionÍÍ<V°MemberExpressionÍÍ:NªIdentifierÍÍ+°GitHubDeviceAuthNªIdentifierÍ,Í:®getStoredLoginÂÂÂ¥constL³VariableDeclarationÍGÍ¦‘M²VariableDeclaratorÍMÍ¥NªIdentifierÍMÍS¦directT¯AwaitExpressionÍVÍ¥U®CallExpressionÍ\Í¥V°MemberExpressionÍ\ÍvNªIdentifierÍ\Íl°GitHubDeviceAuthNªIdentifierÍmÍv©githubGetÂÂ’U®CallExpressionÍwÍ—V°MemberExpressionÍwÍ•NªIdentifierÍwÍˆ±GitHubOAuthConfigNªIdentifierÍ‰Í•¬starCheckUrlÂÂÂNªIdentifierÍ™Í¤«accessTokenÂ¥constW«IfStatementÍ°Í!X°BinaryExpressionÍ´ÍÃNªIdentifierÍ´Íº¦direct£!==Y§LiteralÍ¿ÍÃÀ¤nullP®BlockStatementÍÅÍ¾•S³ExpressionStatementÍÔÍ*U®CallExpressionÍÔÍ)V°MemberExpressionÍÔÍßNªIdentifierÍÔÍÚ¦LoggerNªIdentifierÍÛÍß¤infoÂÂ’NªIdentifierÍàÍã£TAG\¯TemplateLiteralÍåÍ(’V°MemberExpressionÍ÷ÍNªIdentifierÍ÷Íı¦directNªIdentifierÍşÍ¤codeÂÂV°MemberExpressionÍÍ&NªIdentifierÍÍ¦directNªIdentifierÍÍ&®emptyBodyErrorÂÂ“]¯TemplateElementÍæÍõ^¯starCheck HTTP ¯starCheck HTTP Â]¯TemplateElementÍÍ^¬ emptyQuirk=¬ emptyQuirk=Â]¯TemplateElementÍ'Í'^  ÃÂW«IfStatementÍ8Í$X±LogicalExpressionÍ<ÍhX°BinaryExpressionÍ<ÍOV°MemberExpressionÍ<ÍGNªIdentifierÍ<ÍB¦directNªIdentifierÍCÍG¤codeÂÂ£===Y§LiteralÍLÍOÌÌ£204¢||V°MemberExpressionÍSÍhNªIdentifierÍSÍY¦directNªIdentifierÍZÍh®emptyBodyErrorÂÂP®BlockStatementÍjÍ$‘T¯ReturnStatementÍ}ÍZ°ObjectExpressionÍ„Í“[¨PropertyÍ›Í¶ÂÂÂNªIdentifierÍ›ÍŸ¤kindV°MemberExpressionÍ¡Í¶NªIdentifierÍ¡Í®­StarCheckKindNªIdentifierÍ¯Í¶§STARREDÂÂ¤init[¨PropertyÍÍÍåÂÂÂNªIdentifierÍÍÍÔ§messageY§LiteralÍÖÍå½å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»¿'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»'¤initÔr`™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍüÍÂÃÂNªIdentifierÍüÍ¥login¤initNªIdentifierÍüÍ¥loginÀW«IfStatementÍ2ÍX°BinaryExpressionÍ6ÍIV°MemberExpressionÍ6ÍANªIdentifierÍ6Í<¦directNªIdentifierÍ=ÍA¤codeÂÂ£===Y§LiteralÍFÍIÍ”£404P®BlockStatementÍKÍ‘T¯ReturnStatementÍ^ÍZ°ObjectExpressionÍeÍ“[¨PropertyÍ|Í›ÂÂÂNªIdentifierÍ|Í€¤kindV°MemberExpressionÍ‚Í›NªIdentifierÍ‚Í­StarCheckKindNªIdentifierÍÍ›«NOT_STARREDÂÂ¤init[¨PropertyÍ²ÍÔÂÂÂNªIdentifierÍ²Í¹§messageY§LiteralÍ»ÍÔÙ-å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹Ù/'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹'¤init`¨PropertyÍëÍğÂÃÂNªIdentifierÍëÍğ¥login¤initNªIdentifierÍëÍğ¥loginÀW«IfStatementÍ!ÍEX±LogicalExpressionÍ%ÍOX°BinaryExpressionÍ%Í8V°MemberExpressionÍ%Í0NªIdentifierÍ%Í+¦directNªIdentifierÍ,Í0¤codeÂÂ£===Y§LiteralÍ5Í8Í‘£401¢||X°BinaryExpressionÍ<ÍOV°MemberExpressionÍ<ÍGNªIdentifierÍ<ÍB¦directNªIdentifierÍCÍG¤codeÂÂ£===Y§LiteralÍLÍOÍ“£403P®BlockStatementÍQÍE“L³VariableDeclarationÍˆÍÙ‘M²VariableDeclaratorÍÍØNªIdentifierÍÍ•§viaListT¯AwaitExpressionÍ˜ÍØU®CallExpressionÍÍØV°MemberExpressionÍÍÄNªIdentifierÍÍ°²GitHubStarVerifierNªIdentifierÍ±ÍÄ³checkStarredViaListÂÂ’NªIdentifierÍÅÍĞ«accessTokenNªIdentifierÍÒÍ×¥loginÂ¥constW«IfStatementÍëÍX±LogicalExpressionÍïÍDX°BinaryExpressionÍïÍV°MemberExpressionÍïÍûNªIdentifierÍïÍö§viaListNªIdentifierÍ÷Íû¤kindÂÂ£!==V°MemberExpressionÍ ÍNªIdentifierÍ Í­StarCheckKindNªIdentifierÍÍ¬UNAUTHORIZEDÂÂ¢&&X°BinaryExpressionÍÍDV°MemberExpressionÍÍ*NªIdentifierÍÍ%§viaListNªIdentifierÍ&Í*¤kindÂÂ£!==V°MemberExpressionÍ/ÍDNªIdentifierÍ/Í<­StarCheckKindNªIdentifierÍ=ÍD§NETWORKÂÂP®BlockStatementÍFÍ‘T¯ReturnStatementÍ]ÍlNªIdentifierÍdÍk§viaListÀT¯ReturnStatementÍ‘Í6Z°ObjectExpressionÍ˜Í5“[¨PropertyÍ¯ÍÏÂÂÂNªIdentifierÍ¯Í³¤kindV°MemberExpressionÍµÍÏNªIdentifierÍµÍÂ­StarCheckKindNªIdentifierÍÃÍÏ¬UNAUTHORIZEDÂÂ¤init[¨PropertyÍæÍÂÂÂNªIdentifierÍæÍí§messageY§LiteralÍïÍÙ%GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒÙ''GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ'¤init[¨PropertyÍÍ"ÂÂÂNªIdentifierÍÍ¥loginY§LiteralÍ Í" ¢''¤initÀS³ExpressionStatementÍlÍ³U®CallExpressionÍlÍ²V°MemberExpressionÍlÍwNªIdentifierÍlÍr¦LoggerNªIdentifierÍsÍw¤warnÂÂ’NªIdentifierÍxÍ{£TAG\¯TemplateLiteralÍ}Í±‘V°MemberExpressionÍ•Í NªIdentifierÍ•Í›¦directNªIdentifierÍœÍ ¤codeÂÂ’]¯TemplateElementÍ~Í“^µstarCheck unexpected µstarCheck unexpected Â]¯TemplateElementÍ¡Í°^¯, fallback list¯, fallback listÃÂP®BlockStatementÍÍÍ!‘S³ExpressionStatementÍÜÍU®CallExpressionÍÜÍV°MemberExpressionÍÜÍçNªIdentifierÍÜÍâ¦LoggerNªIdentifierÍãÍç¤warnÂÂ’NªIdentifierÍèÍë£TAGY§LiteralÍíÍÙ%starCheck request null, fallback listÙ''starCheck request null, fallback list'ÂT¯ReturnStatementÍ+ÍsT¯AwaitExpressionÍ2ÍrU®CallExpressionÍ8ÍrV°MemberExpressionÍ8Í^NªIdentifierÍ8ÍJ²GitHubStarVerifierNªIdentifierÍKÍ^³checkStarredViaListÂÂ’NªIdentifierÍ_Íj«accessTokenNªIdentifierÍlÍq¥loginÂQ°MethodDefinitionÍ´ÍÒÃÂNªIdentifierÍÁÍÔ³checkStarredViaList¦methodR²FunctionExpressionÍÔÍÒÀÂÂÃ’NªIdentifierÍÕÍà«accessTokenNªIdentifierÍâÍç¥loginP®BlockStatementÍéÍÒ“L³VariableDeclarationÍôÍ-‘M²VariableDeclaratorÍúÍ,NªIdentifierÍúÍ ¦targetU®CallExpressionÍÍ,V°MemberExpressionÍÍ*V°MemberExpressionÍÍNªIdentifierÍÍ±GitHubOAuthConfigNªIdentifierÍÍ©FULL_NAMEÂÂNªIdentifierÍÍ*«toLowerCaseÂÂÂ¥constÔra—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ7Í;L³VariableDeclarationÍ<ÍH‘M²VariableDeclaratorÍ@ÍHNªIdentifierÍ@ÍD¤pageY§LiteralÍGÍH¡1£letX°BinaryExpressionÍJÍSNªIdentifierÍJÍN¤page¢<=Y§LiteralÍRÍS¡5Ôrb–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍUÍ[¢++ÂNªIdentifierÍUÍY¤pageP®BlockStatementÍ]Í;•L³VariableDeclarationÍlÍÔ‘M²VariableDeclaratorÍrÍÓNªIdentifierÍrÍv¤respT¯AwaitExpressionÍyÍÓU®CallExpressionÍÍÓV°MemberExpressionÍÍ™NªIdentifierÍÍ°GitHubDeviceAuthNªIdentifierÍÍ™©githubGetÂÂ’U®CallExpressionÍšÍÅV°MemberExpressionÍšÍºNªIdentifierÍšÍ«±GitHubOAuthConfigNªIdentifierÍ¬Íº®starredListUrlÂÂ’NªIdentifierÍ»Í¿¤pageY§LiteralÍÁÍÄÌd£100ÂNªIdentifierÍÇÍÒ«accessTokenÂ¥constW«IfStatementÍâÍ±X°BinaryExpressionÍæÍóNªIdentifierÍæÍê¤resp£===Y§LiteralÍïÍóÀ¤nullP®BlockStatementÍõÍ±‘T¯ReturnStatementÍÍ¢Z°ObjectExpressionÍÍ¡“[¨PropertyÍ&ÍAÂÂÂNªIdentifierÍ&Í*¤kindV°MemberExpressionÍ,ÍANªIdentifierÍ,Í9­StarCheckKindNªIdentifierÍ:ÍA§NETWORKÂÂ¤init[¨PropertyÍXÍrÂÂÂNªIdentifierÍXÍ_§messageY§LiteralÍaÍrÙ-æ— ç½‘ç»œæˆ–è¯·æ±‚å¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡ŒÙ/'æ— ç½‘ç»œæˆ–è¯·æ±‚å¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ'¤init`¨PropertyÍ‰ÍÂÃÂNªIdentifierÍ‰Í¥login¤initNªIdentifierÍ‰Í¥loginÀW«IfStatementÍ¿Í²X±LogicalExpressionÍÃÍéX°BinaryExpressionÍÃÍÔV°MemberExpressionÍÃÍÌNªIdentifierÍÃÍÇ¤respNªIdentifierÍÈÍÌ¤codeÂÂ£===Y§LiteralÍÑÍÔÍ‘£401¢||X°BinaryExpressionÍØÍéV°MemberExpressionÍØÍáNªIdentifierÍØÍÜ¤respNªIdentifierÍİÍá¤codeÂÂ£===Y§LiteralÍæÍéÍ“£403P®BlockStatementÍëÍ²‘T¯ReturnStatementÍşÍ£Z°ObjectExpressionÍÍ¢“[¨PropertyÍÍ<ÂÂÂNªIdentifierÍÍ ¤kindV°MemberExpressionÍ"Í<NªIdentifierÍ"Í/­StarCheckKindNªIdentifierÍ0Í<¬UNAUTHORIZEDÂÂ¤init[¨PropertyÍSÍoÂÂÂNªIdentifierÍSÍZ§messageY§LiteralÍ\ÍoÙ%GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒÙ''GitHub æˆæƒå¤±æ•ˆï¼Œè¯·é‡æ–°æˆæƒ'¤init[¨PropertyÍ†ÍÂÂÂNªIdentifierÍ†Í‹¥loginY§LiteralÍÍ ¢''¤initÀW«IfStatementÍÀÍèX°BinaryExpressionÍÄÍÕV°MemberExpressionÍÄÍÍNªIdentifierÍÄÍÈ¤respNªIdentifierÍÉÍÍ¤codeÂÂ£!==Y§LiteralÍÒÍÕÌÈ£200P®BlockStatementÍ×Íè’S³ExpressionStatementÍêÍU®CallExpressionÍêÍV°MemberExpressionÍêÍõNªIdentifierÍêÍğ¦LoggerNªIdentifierÍñÍõ¤warnÂÂ’NªIdentifierÍöÍù£TAG\¯TemplateLiteralÍûÍ‘V°MemberExpressionÍÍNªIdentifierÍÍ¤respNªIdentifierÍÍ¤codeÂÂ’]¯TemplateElementÍüÍ^²starred list HTTP ²starred list HTTP Â]¯TemplateElementÍÍ^  ÃÂT¯ReturnStatementÍ/ÍÙZ°ObjectExpressionÍ6ÍØ“[¨PropertyÍMÍhÂÂÂNªIdentifierÍMÍQ¤kindV°MemberExpressionÍSÍhNªIdentifierÍSÍ`­StarCheckKindNªIdentifierÍaÍh§NETWORKÂÂ¤init[¨PropertyÍÍ©ÂÂÂNªIdentifierÍÍ†§message\¯TemplateLiteralÍˆÍ©‘V°MemberExpressionÍ–ÍŸNªIdentifierÍ–Íš¤respNªIdentifierÍ›ÍŸ¤codeÂÂ’]¯TemplateElementÍ‰Í”^³æ£€æµ‹å¤±è´¥ (HTTP ³æ£€æµ‹å¤±è´¥ (HTTP Â]¯TemplateElementÍ Í¨^¶)ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ¶)ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡ŒÃ¤init`¨PropertyÍÀÍÅÂÃÂNªIdentifierÍÀÍÅ¥login¤initNªIdentifierÍÀÍÅ¥loginÀÔrc–¤type¥start£end¥block§handler©finalizer¬TryStatementÍöÍ0P®BlockStatementÍúÍ”L³VariableDeclarationÍÍM‘M²VariableDeclaratorÍÍLNªIdentifierÍÍ£arrU®CallExpressionÍÍLV°MemberExpressionÍÍ#NªIdentifierÍÍ¤JSONNªIdentifierÍÍ#¥parseÂÂ‘WµConditionalExpressionÍ$ÍKX°BinaryExpressionÍ$Í8V°MemberExpressionÍ$Í4V°MemberExpressionÍ$Í-NªIdentifierÍ$Í(¤respNªIdentifierÍ)Í-¤bodyÂÂNªIdentifierÍ.Í4¦lengthÂÂ¡>Y§LiteralÍ7Í8 ¡0V°MemberExpressionÍ;ÍDNªIdentifierÍ;Í?¤respNªIdentifierÍ@ÍD¤bodyÂÂY§LiteralÍGÍK¢[]¤'[]'Â¥constW«IfStatementÍ_ÍÛX±LogicalExpressionÍcÍŠb¯UnaryExpressionÍcÍv¡!ÃU®CallExpressionÍdÍvV°MemberExpressionÍdÍqNªIdentifierÍdÍi¥ArrayNªIdentifierÍjÍq§isArrayÂÂ‘NªIdentifierÍrÍu£arrÂ¢||X°BinaryExpressionÍzÍŠV°MemberExpressionÍzÍ„NªIdentifierÍzÍ}£arrNªIdentifierÍ~Í„¦lengthÂÂ£===Y§LiteralÍ‰ÍŠ ¡0P®BlockStatementÍŒÍÛ‘Ôrd”¤type¥start£end¥label®BreakStatementÍÂÍÈÀÀa¬ForStatementÍíÍ³L³VariableDeclarationÍòÍû‘M²VariableDeclaratorÍöÍûNªIdentifierÍöÍ÷¡iY§LiteralÍúÍû ¡0£letX°BinaryExpressionÍıÍNªIdentifierÍıÍş¡i¡<V°MemberExpressionÍÍNªIdentifierÍÍ£arrNªIdentifierÍÍ¦lengthÂÂb°UpdateExpressionÍÍ¢++ÂNªIdentifierÍÍ¡iP®BlockStatementÍÍ³“L³VariableDeclarationÍ)Í=‘M²VariableDeclaratorÍ/Í<NªIdentifierÍ/Í3¤itemV°MemberExpressionÍ6Í<NªIdentifierÍ6Í9£arrNªIdentifierÍ:Í;¡iÃÂ¥constL³VariableDeclarationÍSÍ‹‘M²VariableDeclaratorÍYÍŠNªIdentifierÍYÍ]¤fullU®CallExpressionÍ`ÍŠV°MemberExpressionÍ`Íˆ\¯TemplateLiteralÍ`Í|‘X±LogicalExpressionÍcÍzV°MemberExpressionÍcÍtNªIdentifierÍcÍg¤itemY§LiteralÍhÍs©full_name«'full_name'ÃÂ¢??Y§LiteralÍxÍz ¢''’]¯TemplateElementÍaÍa^  Â]¯TemplateElementÍ{Í{^  ÃNªIdentifierÍ}Íˆ«toLowerCaseÂÂÂ¥constW«IfStatementÍ¡Í X°BinaryExpressionÍ¥Í´NªIdentifierÍ¥Í©¤full£===NªIdentifierÍ®Í´¦targetP®BlockStatementÍ¶Í ‘T¯ReturnStatementÍÑÍ‰Z°ObjectExpressionÍØÍˆ“[¨PropertyÍ÷ÍÂÂÂNªIdentifierÍ÷Íû¤kindV°MemberExpressionÍıÍNªIdentifierÍıÍ
+­StarCheckKindNªIdentifierÍÍ§STARREDÂÂ¤init[¨PropertyÍ1ÍIÂÂÂNªIdentifierÍ1Í8§messageY§LiteralÍ:ÍI½å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»¿'å·² Starï¼Œä¸“ä¸šç‰ˆå·²æ¿€æ´»'¤init`¨PropertyÍhÍmÂÃÂNªIdentifierÍhÍm¥login¤initNªIdentifierÍhÍm¥loginÀW«IfStatementÍÅÍX°BinaryExpressionÍÉÍÙV°MemberExpressionÍÉÍÓNªIdentifierÍÉÍÌ£arrNªIdentifierÍÍÍÓ¦lengthÂÂ¡<Y§LiteralÍÖÍÙÌd£100P®BlockStatementÍÛÍ‘d®BreakStatementÍòÍøÀÀÔre•¤type¥start£end¥param¤body«CatchClauseÍ(Í0NªIdentifierÍ/Í0¡eP®BlockStatementÍ2Í0’S³ExpressionStatementÍEÍrU®CallExpressionÍEÍqV°MemberExpressionÍEÍPNªIdentifierÍEÍK¦LoggerNªIdentifierÍLÍP¤warnÂÂ’NªIdentifierÍQÍT£TAG\¯TemplateLiteralÍVÍp‘NªIdentifierÍmÍn¡e’]¯TemplateElementÍWÍk^´starred list parse: ´starred list parse: Â]¯TemplateElementÍoÍo^  ÃÂT¯ReturnStatementÍ„Í!Z°ObjectExpressionÍ‹Í “[¨PropertyÍ¢Í½ÂÂÂNªIdentifierÍ¢Í¦¤kindV°MemberExpressionÍ¨Í½NªIdentifierÍ¨Íµ­StarCheckKindNªIdentifierÍ¶Í½§NETWORKÂÂ¤init[¨PropertyÍÔÍñÂÂÂNªIdentifierÍÔÍÛ§messageY§LiteralÍİÍñÙ,Star åˆ—è¡¨è§£æå¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡ŒÙ.'Star åˆ—è¡¨è§£æå¤±è´¥ï¼ŒæŒ‰å…è´¹ç‰ˆè¿è¡Œ'¤init`¨PropertyÍÍÂÃÂNªIdentifierÍÍ¥login¤initNªIdentifierÍÍ¥loginÀT¯ReturnStatementÍEÍËZ°ObjectExpressionÍLÍÊ“[¨PropertyÍ[ÍzÂÂÂNªIdentifierÍ[Í_¤kindV°MemberExpressionÍaÍzNªIdentifierÍaÍn­StarCheckKindNªIdentifierÍoÍz«NOT_STARREDÂÂ¤init[¨PropertyÍ‰Í«ÂÂÂNªIdentifierÍ‰Í§messageY§LiteralÍ’Í«Ù-å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹Ù/'å°šæœª Star ä»“åº“ï¼Œè¯·å…ˆ Star åå†æ£€æµ‹'¤init`¨PropertyÍºÍ¿ÂÃÂNªIdentifierÍºÍ¿¥login¤initNªIdentifierÍºÍ¿¥loginQ°MethodDefinitionÍØÍ^ÃÂNªIdentifierÍåÍğ«applyResult¦methodR²FunctionExpressionÍğÍ^ÀÂÂÃ’NªIdentifierÍñÍ÷¦resultNªIdentifierÍùÍş¥tokenP®BlockStatementÍ Í^“L³VariableDeclarationÍÍ4‘M²VariableDeclaratorÍÍ3NªIdentifierÍÍ£mgrU®CallExpressionÍÍ3V°MemberExpressionÍÍ1NªIdentifierÍÍ%®LicenseManagerNªIdentifierÍ&Í1«getInstanceÂÂÂ¥constW«IfStatementÍ>Í7X°BinaryExpressionÍBÍgV°MemberExpressionÍBÍMNªIdentifierÍBÍH¦resultNªIdentifierÍIÍM¤kindÂÂ£===V°MemberExpressionÍRÍgNªIdentifierÍRÍ_­StarCheckKindNªIdentifierÍ`Íg§STARREDÂÂP®BlockStatementÍiÍî“L³VariableDeclarationÍxÍ‘‘M²VariableDeclaratorÍ|ÍNªIdentifierÍ|Í¥loginV°MemberExpressionÍ„ÍNªIdentifierÍ„ÍŠ¦resultNªIdentifierÍ‹Í¥loginÂÂ£letW«IfStatementÍŸÍ¶X°BinaryExpressionÍ£ÍµV°MemberExpressionÍ£Í¯NªIdentifierÍ£Í¨¥loginNªIdentifierÍ©Í¯¦lengthÂÂ£===Y§LiteralÍ´Íµ ¡0P®BlockStatementÍ·Í¶’S³ExpressionStatementÍÊÍû_´AssignmentExpressionÍÊÍú¡=NªIdentifierÍÊÍÏ¥loginT¯AwaitExpressionÍÒÍúU®CallExpressionÍØÍúV°MemberExpressionÍØÍóNªIdentifierÍØÍè°GitHubDeviceAuthNªIdentifierÍéÍóªfetchLoginÂÂ‘NªIdentifierÍôÍù¥tokenÂW«IfStatementÍÍ§X°BinaryExpressionÍÍ!V°MemberExpressionÍÍNªIdentifierÍÍ¥loginNªIdentifierÍÍ¦lengthÂÂ¡>Y§LiteralÍ Í! ¡0P®BlockStatementÍ#Í§’S³ExpressionStatementÍ:ÍiT¯AwaitExpressionÍ:ÍhU®CallExpressionÍ@ÍhV°MemberExpressionÍ@ÍZNªIdentifierÍ@ÍP°GitHubDeviceAuthNªIdentifierÍQÍZ©saveTokenÂÂ’NªIdentifierÍ[Í`¥tokenNªIdentifierÍbÍg¥loginÂS³ExpressionStatementÍÍ”_´AssignmentExpressionÍÍ“¡=V°MemberExpressionÍÍ‹NªIdentifierÍÍ…¦resultNªIdentifierÍ†Í‹¥loginÂÂNªIdentifierÍÍ“¥loginÀÀS³ExpressionStatementÍÄÍãU®CallExpressionÍÄÍâV°MemberExpressionÍÄÍÕNªIdentifierÍÄÍÇ£mgrNªIdentifierÍÈÍÕ­setStarUnlockÂÂ’Y§LiteralÍÖÍÚÃ¤trueNªIdentifierÍÜÍá¥loginÂW«IfStatementÍıÍ7X°BinaryExpressionÍÍ+V°MemberExpressionÍÍNªIdentifierÍÍ¦resultNªIdentifierÍÍ¤kindÂÂ£===V°MemberExpressionÍÍ+NªIdentifierÍÍ­StarCheckKindNªIdentifierÍÍ+¬UNAUTHORIZEDÂÂP®BlockStatementÍ-Í–’S³ExpressionStatementÍ<Í`T¯AwaitExpressionÍ<Í_U®CallExpressionÍBÍ_V°MemberExpressionÍBÍ]NªIdentifierÍBÍR°GitHubDeviceAuthNªIdentifierÍSÍ]ªclearTokenÂÂÂS³ExpressionStatementÍnÍ‹U®CallExpressionÍnÍŠV°MemberExpressionÍnÍNªIdentifierÍnÍq£mgrNªIdentifierÍrÍ­setStarUnlockÂÂ’Y§LiteralÍ€Í…Â¥falseY§LiteralÍ‡Í‰ ¢''ÂP®BlockStatementÍ¥Í7‘S³ExpressionStatementÍÍ,U®CallExpressionÍÍ+V°MemberExpressionÍÍNªIdentifierÍÍ£mgrNªIdentifierÍ	Í­setStarUnlockÂÂ’Y§LiteralÍÍÂ¥falseV°MemberExpressionÍÍ*NªIdentifierÍÍ$¦resultNªIdentifierÍ%Í*¥loginÂÂÂS³ExpressionStatementÍAÍWU®CallExpressionÍAÍVV°MemberExpressionÍAÍTNªIdentifierÍAÍL«FeatureGateNªIdentifierÍMÍT§refreshÂÂÂÀ•Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclaration6Ì_‘Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifier?ÌENªIdentifier?ÌE¦LoggerNªIdentifier?ÌE¦LoggerY§LiteralÌMÌ^¯../utils/Logger±'../utils/Logger'f±ImportDeclarationÌaÌ™‘g¯ImportSpecifierÌjÌ{NªIdentifierÌjÌ{±GitHubOAuthConfigNªIdentifierÌjÌ{±GitHubOAuthConfigY§LiteralÌƒÌ˜³./GitHubOAuthConfigµ'./GitHubOAuthConfig'f±ImportDeclarationÌ›ÌÑ‘g¯ImportSpecifierÌ¤Ì´NªIdentifierÌ¤Ì´°GitHubDeviceAuthNªIdentifierÌ¤Ì´°GitHubDeviceAuthY§LiteralÌ¼ÌĞ²./GitHubDeviceAuth´'./GitHubDeviceAuth'f±ImportDeclarationÌÓÍ‘g¯ImportSpecifierÌÜÌêNªIdentifierÌÜÌê®LicenseManagerNªIdentifierÌÜÌê®LicenseManagerY§LiteralÌòÍ°./LicenseManager²'./LicenseManager'f±ImportDeclarationÍÍ3‘g¯ImportSpecifierÍÍNªIdentifierÍÍ«FeatureGateNªIdentifierÍÍ«FeatureGateY§LiteralÍ#Í2­./FeatureGate¯'./FeatureGate'

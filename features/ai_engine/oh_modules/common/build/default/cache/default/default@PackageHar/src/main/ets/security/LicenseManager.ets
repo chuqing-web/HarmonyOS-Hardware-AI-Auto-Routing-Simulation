@@ -65,7 +65,7 @@ export class LicenseManager {
         return {
           maxDevices: 200,
           dailyAiCalls: 50,
-          maxAiApis: 1,
+          maxAiApis: 8,
           stm32AdvancedPeriph: false,
           monteCarlo: false,
           faultInjection: false,
@@ -157,6 +157,39 @@ export class LicenseManager {
 
   getDeviceCode(): string {
     return HardwareFingerprint.getDeviceCode();
+  }
+
+  getLicenseeName(): string {
+    if (this.license !== null && this.license.licensee.length > 0) {
+      return this.license.licensee;
+    }
+    return '';
+  }
+
+  /** Proteus 风格 DD/MM/YYYY */
+  getLicenseExpiryLabel(): string {
+    if (this.license !== null && this.license.expiresAt.length > 0) {
+      return LicenseManager.formatDisplayDate(this.license.expiresAt);
+    }
+    if (this.trialActive && this.trialDaysRemaining > 0) {
+      const endMs = Date.now() + this.trialDaysRemaining * 86400000;
+      return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
+    }
+    return '01/01/2130';
+  }
+
+  isEvaluationMode(): boolean {
+    return this.license === null;
+  }
+
+  private static formatDisplayDate(iso: string): string {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) {
+      return iso;
+    }
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
   }
 
   /** 开发/测试：根据设备码生成签名授权 JSON */

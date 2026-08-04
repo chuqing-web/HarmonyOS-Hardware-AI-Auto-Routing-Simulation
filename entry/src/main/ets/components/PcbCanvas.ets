@@ -1677,11 +1677,17 @@ export struct PcbCanvas {
         .gesture(
           PinchGesture()
             .onActionStart((event: GestureEvent) => {
+              if (this.appService.isAiGenerating()) {
+                return;
+              }
               this.pinchStartZoom = this.getEditor().getViewport().zoom;
               this.pinchCenterX = event.pinchCenterX;
               this.pinchCenterY = event.pinchCenterY;
             })
             .onActionUpdate((event: GestureEvent) => {
+              if (this.appService.isAiGenerating()) {
+                return;
+              }
               const editor = this.getEditor();
               const targetZoom = this.pinchStartZoom * event.scale;
               const factor = targetZoom / editor.getViewport().zoom;
@@ -1780,6 +1786,11 @@ export struct PcbCanvas {
   }
 
   private handlePointerDown(sx: number, sy: number, rightBtn: boolean, middleBtn: boolean, ctrlKey: boolean): void {
+    // AI 布线期间锁定编辑（中键/双指平移仍允许看图）
+    if (this.appService.isAiGenerating() && !middleBtn) {
+      this.onStatusChange('PCB AI 布线中，画布已锁定');
+      return;
+    }
     this.pointerDown = true;
     this.mouseX = sx; this.mouseY = sy;
     const editor = this.getEditor();
@@ -2242,6 +2253,10 @@ export struct PcbCanvas {
   }
 
   private handleKeyEvent(event: KeyEvent): void {
+    if (this.appService.isAiGenerating()) {
+      this.onStatusChange('PCB AI 布线中，画布已锁定');
+      return;
+    }
     if (event.type === KeyType.Down) {
       if (event.keyCode === 2021 || event.keyCode === 2022) {
         this.modifierKeys |= 1;
@@ -2444,6 +2459,9 @@ export struct PcbCanvas {
 
   /** 滚轮：以鼠标位置为中心缩放 */
   private handleAxisZoom(event: AxisEvent): void {
+    if (this.appService.isAiGenerating()) {
+      return;
+    }
     const v = event.getVerticalAxisValue();
     if (v === 0) return;
     const factor = v < 0 ? 1.12 : (1 / 1.12);

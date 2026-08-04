@@ -40,7 +40,11 @@ export enum AiTaskType {
 
   /** 选型 → 摆放 → 布线 → ERC 全闭环 */
 
-  TASK_FULL_PIPELINE = 13
+  TASK_FULL_PIPELINE = 13,
+
+  /** PCB 布局 AI：placement → net_plan → route_policy → geometry → qa */
+
+  TASK_PCB_AUTO_ROUTE = 14
 
 }
 

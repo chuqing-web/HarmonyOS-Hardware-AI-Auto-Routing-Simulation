@@ -1,0 +1,8 @@
+{
+  "line": 644,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "      L(disch, [eb, { x: b.x + 100, y: b.y }, b], 12, 'F.Cu');",
+  "new_string": "      // 回焊盘：先到焊盘右侧再入，H 不与 pin6 CAP stub 同高抢道\n      L(disch, [eb, { x: b.x + 100, y: b.y + 40 }, { x: b.x + 100, y: b.y }, b], 12, 'F.Cu');"
+}

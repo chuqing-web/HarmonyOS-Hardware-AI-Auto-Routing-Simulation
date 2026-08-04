@@ -4,6 +4,7 @@
  */
 import { ErrCode } from './ErrCode';
 import { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+import { PcbDocument } from './PcbTypes';
 
 // ==================== 基础几何类型 ====================
 
@@ -289,7 +290,9 @@ export enum AiCapability {
   FAULT_DIAGNOSIS = 'fault_diagnosis',
   COMPONENT_RECOMMEND = 'component_recommend',
   CIRCUIT_GENERATION = 'circuit_generation',
-  WAVEFORM_ANALYSIS = 'waveform_analysis'
+  WAVEFORM_ANALYSIS = 'waveform_analysis',
+  /** PCB 布局 AI 布线 / 布局管线 */
+  PCB_AUTO_ROUTE = 'pcb_auto_route'
 }
 
 export enum AiProviderType {
@@ -388,6 +391,8 @@ export interface ProjectFile {
   version: string;
   name: string;
   schematic: SchematicDocument;
+  /** PCB 布局文档（可选，KiCad 式双文档工程） */
+  pcb?: PcbDocument;
   simulationConfig: SimulationConfig;
   mcuDebugConfig?: McuDebugConfig;
   aiConfigs: AiApiConfig[];
@@ -415,7 +420,8 @@ export enum ErcRuleType {
   POWER_REVERSED = 'power_reversed',
   IO_OVERCURRENT = 'io_overcurrent',
   PARAM_MISMATCH = 'param_mismatch',
-  PORT_MISMATCH = 'port_mismatch'
+  PORT_MISMATCH = 'port_mismatch',
+  LABEL_OVER_DEVICE = 'label_over_device'
 }
 
 export interface ErcViolation {
@@ -451,7 +457,8 @@ export enum ModuleEvent {
   LICENSE_CHANGED = 'license_changed',
   ANNOTATION_CHANGED = 'annotation_changed',
   SNAPSHOT_CREATED = 'snapshot_created',
-  PROJECT_LOCK_CHANGED = 'project_lock_changed'
+  PROJECT_LOCK_CHANGED = 'project_lock_changed',
+  PCB_CHANGED = 'pcb_changed'
 }
 
 export interface ModuleEventPayload {

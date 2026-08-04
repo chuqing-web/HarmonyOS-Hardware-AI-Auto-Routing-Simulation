@@ -1,5 +1,6 @@
 /**
  * 授权、激活、计费类型定义
+ * 运行时档位：FREE（默认）/ PERSONAL_PRO（GitHub Star 或授权文件）/ EDUCATION / ENTERPRISE
  */
 
 export enum LicenseTier {

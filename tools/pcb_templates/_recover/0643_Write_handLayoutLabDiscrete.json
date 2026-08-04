@@ -1,0 +1,11 @@
+{
+  "line": 643,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_analog.mjs",
+  "hit": [
+    "handLayoutLabDiscrete",
+    "handLayoutLabAnalog"
+  ],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\n\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_hand_analog_ic.mjs', 'utf8').trimEnd() + '\\n\\n';\n\nconst end = s.indexOf('function handLayoutLabDiscrete(doc)');\nconst startFn = s.indexOf('function handLayoutLabAnalogIc(doc)');\nif (startFn < 0 || end < 0) {\n  console.error('markers', startFn, end);\n  process.exit(1);\n}\n\n// Remove ALL consecutive \"模拟 IC\" docblocks before the function\nlet cStart = startFn;\nfor (;;) {\n  const chunk = s.slice(Math.max(0, cStart - 600), cStart);\n  const m = chunk.match(/(\\/\\*\\*[\\s\\S]*?模拟 IC[\\s\\S]*?\\*\\/)\\s*$/);\n  if (!m) break;\n  cStart = cStart - m[0].length;\n}\n\ns = s.slice(0, cStart) + neu + s.slice(end);\nwriteFileSync(p, s);\nconsole.log({\n  nFn: (s.match(/function handLayoutLabAnalogIc/g) || []).length,\n  nDoc: (s.match(/模拟 IC 检测手布/g) || []).length,\n  has100: s.includes('b.x + 100')\n});\n"
+}

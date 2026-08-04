@@ -3,7 +3,8 @@
  * 合并后保证：板框 / 覆铜 / 器件坐标系一致，无负坐标错位
  */
 import {
-  PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbNet, PcbPad, Point2D, IdUtil
+  PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbNet, PcbPad, Point2D, IdUtil,
+  applyCopperLayerCount
 } from 'common';
 
 interface PcbContentBounds {
@@ -183,6 +184,13 @@ export class PcbTemplateMergeUtil {
         thermalWidth: z.thermalWidth
       };
       target.zones.push(zone);
+    }
+
+    // 模板含内电层时必须抬升当前板层叠，否则 UI/2D/3D 仍按默认 2 层（Core 1.5mm）显示
+    const srcCu = source.layerStack !== undefined ? source.layerStack.copperCount : 2;
+    const tgtCu = target.layerStack !== undefined ? target.layerStack.copperCount : 2;
+    if (srcCu > tgtCu) {
+      applyCopperLayerCount(target, srcCu);
     }
 
     PcbTemplateMergeUtil.finalizeBoardGeometry(target);

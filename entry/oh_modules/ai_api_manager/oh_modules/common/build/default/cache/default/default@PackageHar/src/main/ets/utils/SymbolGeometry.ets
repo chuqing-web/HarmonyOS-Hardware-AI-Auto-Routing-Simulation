@@ -12,13 +12,13 @@ export interface SymbolBounds {
   height: number;
 }
 
-/** 仪器类符号主体半宽下限（示波器 70×80、逻辑分析仪 64×100） */
-const INSTRUMENT_BODY_HALF_MIN = 50;
+/** 仪器类符号主体半宽下限（示波器/表头等）；勿过大，否则单侧引脚被深埋进选中区无法连线 */
+const INSTRUMENT_BODY_HALF_MIN = 28;
 
 /**
  * 单侧引脚簇（示波器/电压表等）：符号主体画在原点附近，
  * 若仅用引脚 AABB，选中区会偏到引脚一侧，主体右半落在区外。
- * 将 AABB 扩到覆盖原点对称主体。
+ * 将 AABB 扩到覆盖原点对称主体——但引脚所在边保持贴齐引脚，禁止把脚深埋进区内。
  */
 export function coverOriginCenteredBody(
   minX: number, maxX: number, minY: number, maxY: number
@@ -32,24 +32,47 @@ export function coverOriginCenteredBody(
 
   if (!spansBothX) {
     const pinHalfX = Math.max(Math.abs(minX), Math.abs(maxX));
-    // 引脚距原点 ≥18：覆盖小仪器/表头（±20/±30）；VCC 单脚通常 <15
+    // 引脚距原点 ≥18：覆盖小仪器/表头；VCC 单脚通常 <15
     if (pinHalfX >= 18) {
-      const halfX = Math.max(pinHalfX, INSTRUMENT_BODY_HALF_MIN);
-      const halfY = Math.max(Math.abs(minY), Math.abs(maxY), INSTRUMENT_BODY_HALF_MIN);
-      outMinX = Math.min(outMinX, -halfX);
-      outMaxX = Math.max(outMaxX, halfX);
-      outMinY = Math.min(outMinY, -halfY);
-      outMaxY = Math.max(outMaxY, halfY);
+      const bodyHalfX = Math.max(Math.min(pinHalfX, 45), INSTRUMENT_BODY_HALF_MIN);
+      const bodyHalfY = Math.max(Math.abs(minY), Math.abs(maxY), INSTRUMENT_BODY_HALF_MIN);
+      // 仅向「无脚的一侧」扩主体；有脚一侧贴齐引脚，避免 HIT_PAD 后再埋 20~50px
+      if (maxX <= 8 && minX < -4) {
+        // 脚在左侧（电压表/功率表等）
+        outMaxX = Math.max(outMaxX, bodyHalfX);
+      } else if (minX >= -8 && maxX > 4) {
+        // 脚在右侧
+        outMinX = Math.min(outMinX, -bodyHalfX);
+      } else {
+        outMinX = Math.min(outMinX, -bodyHalfX);
+        outMaxX = Math.max(outMaxX, bodyHalfX);
+      }
+      outMinY = Math.min(outMinY, -bodyHalfY);
+      outMaxY = Math.max(outMaxY, bodyHalfY);
     }
   } else if (!spansBothY) {
+    // 左右已有脚 + 另有竖直方向引脚（如 TO-220：IN/OUT + 底 GND）。
+    // 仅在存在竖直脚伸出时扩 Y；R/C 等纯水平双脚（pinHalfY≈0、半宽≈30）不得扩，
+    // 否则 height≥40 会误触发 IC backdrop 画出大黑框。
     const pinHalfY = Math.max(Math.abs(minY), Math.abs(maxY));
     if (pinHalfY >= 18) {
-      const halfY = Math.max(pinHalfY, INSTRUMENT_BODY_HALF_MIN);
-      const halfX = Math.max(Math.abs(minX), Math.abs(maxX), INSTRUMENT_BODY_HALF_MIN);
-      outMinY = Math.min(outMinY, -halfY);
-      outMaxY = Math.max(outMaxY, halfY);
-      outMinX = Math.min(outMinX, -halfX);
-      outMaxX = Math.max(outMaxX, halfX);
+      const bodyHalfY = 20;
+      if (maxY <= 8 && minY < -4) {
+        outMaxY = Math.max(outMaxY, bodyHalfY);
+      } else if (minY >= -8 && maxY > 4) {
+        outMinY = Math.min(outMinY, -bodyHalfY);
+      } else {
+        outMinY = Math.min(outMinY, -bodyHalfY);
+        outMaxY = Math.max(outMaxY, bodyHalfY);
+      }
+    } else {
+      // 水平穿通型仪器（电流表 I+…I- 在 ±40）：表头上下略伸，但勿过大盖住邻器件脚
+      const pinHalfX = Math.max(Math.abs(minX), Math.abs(maxX));
+      if (pinHalfX >= 35) {
+        const bodyHalfY = 22;
+        outMinY = Math.min(outMinY, -bodyHalfY);
+        outMaxY = Math.max(outMaxY, bodyHalfY);
+      }
     }
   }
 
@@ -102,6 +125,16 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
   const id = libraryId.toLowerCase();
   const behavior = behaviorModel.toLowerCase();
 
+  // Power rails MUST be resolved by id before svg/filename heuristics —
+  // DeviceLibrary historically pointed VCC/GND at regulator.svg, which would
+  // otherwise mis-classify them as TO-220 regulators.
+  if (id === 'vcc' || id.endsWith('/vcc') || behavior === 'vcc') return 'vcc';
+  if (id === 'gnd' || id.endsWith('/gnd') || behavior === 'gnd') return 'gnd';
+  if (id === 'vee' || id.endsWith('/vee') || behavior === 'vee') return 'vee';
+  if (id === 'vac' || id.endsWith('/vac') || behavior === 'ac_source' || behavior === 'vac') {
+    return 'vac';
+  }
+
   if (id.startsWith('r_') || svg.includes('resistor')) return 'resistor';
   if (id.startsWith('pot_') || behavior === 'potentiometer' || svg.includes('potentiometer')) {
     return 'potentiometer';
@@ -125,10 +158,21 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
   if (svg.includes('gate_and') || behavior.includes('and')) return 'gate_and';
   if (svg.includes('gate_or') || behavior.includes('or')) return 'gate_or';
   if (svg.includes('gate_xor') || behavior.includes('xor')) return 'gate_xor';
-  if (svg.includes('oscilloscope') || id === 'oscilloscope') return 'oscilloscope';
-  if (svg.includes('multimeter') || id === 'virtual_meter') return 'multimeter';
-  if (svg.includes('logic_analyzer')) return 'logic_analyzer';
-  if (svg.includes('uart') || id === 'uart_terminal') return 'uart_terminal';
+  // signal_gen before oscilloscope: DeviceLibrary historically mis-pointed SIGNAL_GEN
+  // at oscilloscope.svg, which would otherwise draw a scope body.
+  if (id === 'signal_gen' || behavior === 'signal_gen' || svg.includes('signal_gen')) {
+    return 'signal_gen';
+  }
+  if (svg.includes('oscilloscope') || id === 'oscilloscope' || behavior === 'oscilloscope') {
+    return 'oscilloscope';
+  }
+  if (svg.includes('multimeter') || id === 'virtual_meter' || behavior === 'multimeter') {
+    return 'multimeter';
+  }
+  if (svg.includes('logic_analyzer') || behavior === 'logic_analyzer') return 'logic_analyzer';
+  if (svg.includes('uart') || id === 'uart_terminal' || behavior === 'uart_terminal') {
+    return 'uart_terminal';
+  }
   if (svg.includes('voltmeter') || id === 'voltmeter_dc') return 'voltmeter';
   if (svg.includes('ammeter') || id === 'ammeter_dc') return 'ammeter';
   if (svg.includes('power_meter') || id === 'power_meter') return 'power_meter';
@@ -140,13 +184,12 @@ export function resolveSymbolKey(libraryId: string, svgSymbol: string, behaviorM
   if (svg.includes('memory') || behavior.startsWith('mem_')) return 'memory';
   if (id === 'sw_push') return 'switch';
   if (id === 'relay_spdt' || id.startsWith('relay_')) return 'relay';
-  if (id === 'signal_gen' || svg.includes('signal_gen') || behavior === 'signal_gen') {
-    return 'signal_gen';
-  }
   if (id === 'buzzer') return 'buzzer';
   if (id === 'ds18b20' || id === 'hall_sensor' || id === 'ldr') return 'sensor';
   if (id === 'cd4017') return 'counter';
-  if (id === 'vcc' || svg.includes('vcc') || behavior === 'vcc') return 'vcc';
-  if (id === 'gnd' || svg.includes('gnd') || behavior === 'gnd') return 'gnd';
+  if (svg.includes('vcc.svg') || behavior === 'vcc') return 'vcc';
+  if (svg.includes('gnd.svg') || behavior === 'gnd') return 'gnd';
+  if (svg.includes('vee.svg') || behavior === 'vee') return 'vee';
+  if (svg.includes('vac.svg') || behavior === 'vac' || behavior === 'ac_source') return 'vac';
   return 'generic_ic';
 }

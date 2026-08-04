@@ -29,7 +29,7 @@ import {
   CallbackRegistry, ErcError, ProgressInfo, Point2D, ComponentCategory,
   ComponentInstance, SchematicDocument, EventBus, ModuleEvent, ModuleEventPayload,
   McuFamily, isInstrumentLibraryId, traceBurn, formatFirmwarePreview,
-  appVersionLabel, Logger, INSTR_TRACE_TAG
+  appVersionLabel, Logger, INSTR_TRACE_TAG, MainThreadYield
 } from 'common';
 import { SchematicEditorImpl, AlignType } from 'schematic_editor';
 import { SimulationKernelImpl } from 'simulation_kernel';
@@ -209,8 +209,12 @@ struct Index {
       this.deferCanvasFit();
     });
 
+    // 先让出主线程，结束首页点击的 MMITask，避免与工程装载叠出 THREAD_BLOCK_6S
+    await MainThreadYield.yield();
+
     // 首页传入 launchMode 时按意图打开；否则创建空白工程（不再自动恢复 session / 欢迎弹窗）
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
+    await MainThreadYield.yield();
     if (await this.applyLaunchFromRouter()) {
       return;
     }
@@ -786,10 +790,27 @@ struct Index {
     try {
       await this.getUIContext().getRouter().replaceUrl({
         url: 'pages/PcbPage',
-        params: { launchMode: 'resume' }
+        params: { launchMode: 'resume', fromSchematic: true }
       });
     } catch (_e) {
       this.statusMessage = '无法打开 PCB 编辑器';
+    }
+  }
+
+  /** 导出当前原理图到 PCB：跳转 PCB 页并前向标注保存为 .pcbsim */
+  async exportSchematicToPcb(): Promise<void> {
+    this.appService.syncProjectFromModules();
+    if (this.appService.currentProject === null) {
+      this.statusMessage = '请先新建或打开工程';
+      return;
+    }
+    try {
+      await this.getUIContext().getRouter().replaceUrl({
+        url: 'pages/PcbPage',
+        params: { launchMode: 'resume', importFromSchematic: true, fromSchematic: true }
+      });
+    } catch (_e) {
+      this.statusMessage = '无法导出到 PCB 编辑器';
     }
   }
 
@@ -1577,6 +1598,7 @@ struct Index {
       { label: $r('app.string.toolbar_open'), shortcut: 'Ctrl+O', icon: ProteusIconName.OPEN, action: () => { void this.handleOpenProject(); } },
       { label: $r('app.string.toolbar_save'), shortcut: 'Ctrl+S', icon: ProteusIconName.SAVE, action: () => { void this.handleSaveProject(); } },
       { label: '', separator: true, action: () => {} },
+      { label: $r('app.string.toolbar_export_pcb'), icon: ProteusIconName.LAYER, action: () => { void this.exportSchematicToPcb(); } },
       { label: 'PCB Layout', action: () => { void this.goToPcbPage(); } }
     ];
   }
@@ -1616,6 +1638,13 @@ struct Index {
         ProteusToolButton({ iconName: ProteusIconName.NEW, tooltip: '新建文件 (Ctrl+N)', showLabel: false, onAction: () => { void this.handleNewProject(); } })
         ProteusToolButton({ iconName: ProteusIconName.OPEN, tooltip: '打开文件 (Ctrl+O)', showLabel: false, onAction: () => { void this.handleOpenProject(); } })
         ProteusToolButton({ iconName: ProteusIconName.SAVE, tooltip: '保存文件 (Ctrl+S)', showLabel: false, onAction: () => { void this.handleSaveProject(); } })
+        ProteusToolButton({
+          iconName: ProteusIconName.LAYER,
+          label: $r('app.string.toolbar_export_pcb'),
+          showLabel: true,
+          tooltip: '导出 PCB：将当前原理图同步为 PCB 文件并打开 PCB 编辑器',
+          onAction: () => { void this.exportSchematicToPcb(); }
+        })
       }
 
       ProteusToolGroup({ title: 'History' }) {

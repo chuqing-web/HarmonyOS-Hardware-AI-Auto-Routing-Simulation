@@ -1,0 +1,10 @@
+  if (isMcu51Lib(lib)) return 'FP_DIP40';
+  if (isMcuStm32F103C8Lib(lib) || (lib.includes('stm32f103') && lib.includes('c8'))) return 'FP_QFP48';
+  if (fp.includes('qfp') && fp.includes('48')) return 'FP_QFP48';
+  if (lib.includes('555') || lib.includes('741') || lib.includes('lm358') || lib.includes('tl082') ||
+      lib.includes('74hc') || lib.includes('cd4017') ||
+      lib.includes('stm32') || lib.includes('2764') || lib.includes('62256') || lib.includes('24c') ||
+      lib.includes('w25q') || lib.includes('lcd') || lib.includes('oled') || lib.includes('ds18') ||
+      lib.includes('hall') || lib.includes('ldr')) {
+    return lib.includes('stm32') ? 'FP_QFP48' : 'FP_SOIC8';
+  }

@@ -1,0 +1,10 @@
+{
+  "line": 397,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "isMcuStm32"
+  ],
+  "old_string": "  if (isMcu51Lib(lib)) return 'FP_DIP40';\n  if (lib.includes('555') || lib.includes('741') || lib.includes('lm358') || lib.includes('tl082') ||\n      lib.includes('74hc') || lib.includes('cd4017') ||\n      lib.includes('stm32') || lib.includes('2764') || lib.includes('62256') || lib.includes('24c') ||\n      lib.includes('w25q') || lib.includes('lcd') || lib.includes('oled') || lib.includes('ds18') ||\n      lib.includes('hall') || lib.includes('ldr')) {\n    return lib.includes('stm32') ? 'FP_DIP8' : 'FP_SOIC8';\n  }",
+  "new_string": "  if (isMcu51Lib(lib)) return 'FP_DIP40';\n  if (isMcuStm32F103C8Lib(lib) || (lib.includes('stm32f103') && lib.includes('c8'))) return 'FP_QFP48';\n  if (fp.includes('qfp') && fp.includes('48')) return 'FP_QFP48';\n  if (lib.includes('555') || lib.includes('741') || lib.includes('lm358') || lib.includes('tl082') ||\n      lib.includes('74hc') || lib.includes('cd4017') ||\n      lib.includes('stm32') || lib.includes('2764') || lib.includes('62256') || lib.includes('24c') ||\n      lib.includes('w25q') || lib.includes('lcd') || lib.includes('oled') || lib.includes('ds18') ||\n      lib.includes('hall') || lib.includes('ldr')) {\n    return lib.includes('stm32') ? 'FP_QFP48' : 'FP_SOIC8';\n  }"
+}

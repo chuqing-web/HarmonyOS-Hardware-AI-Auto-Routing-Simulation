@@ -1,12 +1,13 @@
 # AI-SCH Simulator
 
-**Schematic-centric hardware simulation and AI-assisted circuit design on HarmonyOS NEXT**
+**Schematic-centric hardware simulation, PCB layout, and AI-assisted circuit design on HarmonyOS NEXT**
 
-A Proteus-class editing and mixed-signal experience—native to HarmonyOS—with 8051/STM32 HEX debugging, virtual instruments, and a closed loop driven by **engineered AI Prompts** and a **multi-agent quality bus**: **clarify → select → place → net-plan → WAR route → QA**. Built for university labs, contest training, and early design verification.
+A Proteus-class editing and mixed-signal experience—native to HarmonyOS—with 8051/STM32 HEX debugging, virtual instruments, **PCB 2D layout & 3D board preview**, and closed loops driven by **engineered AI Prompts** and a **multi-agent quality bus**: schematic **clarify → select → place → net-plan → WAR route → QA**, plus PCB **placement → net-plan → layer policy → geometry route → QA**. Built for university labs, contest training, and early design verification.
 
 [简体中文](./README.zh-CN.md) | English
 
-**Competition materials:** [作品说明文档 (Project Brief)](./docs/作品说明文档.md) (concept / design / intro / test report)
+**Competition materials:** [作品说明文档 (Project Brief)](./docs/作品说明文档.md) (concept / design / intro / test report)  
+**Product site / announcement feed:** [`Announcement_Page/`](./Announcement_Page/README.md) → [GitHub Pages](https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web/)
 
 <p align="center">
   <img src="./picture/design-poster.png" alt="AI-SCH Simulator design poster" width="900">
@@ -38,10 +39,10 @@ A Proteus-class editing and mixed-signal experience—native to HarmonyOS—with
 
 Electronics education and embedded prototyping still rely heavily on **Windows + Proteus / Multisim**. As HarmonyOS NEXT spreads across 2in1 PCs, tablets, and classroom devices, the ecosystem still lacks a tool that is:
 
-1. **Native to HarmonyOS** for schematic-level simulation;  
-2. Capable of **analog / digital / MCU** mixed-signal labs in one product;  
-3. Able to turn **LLM output into executable topology** (not chat-only Q&A)—with versioned, auditable, evolvable Prompts;  
-4. Equipped for teaching: **lab templates, staged power-on, fault injection, coverage metrics**.
+1. **Native to HarmonyOS** for schematic-level simulation **and** PCB layout;  
+2. Capable of **analog / digital / MCU** mixed-signal labs plus **SCH↔PCB** teaching boards in one product;  
+3. Able to turn **LLM output into executable topology and copper-aware boards** (not chat-only Q&A)—with versioned, auditable, evolvable Prompts;  
+4. Equipped for teaching: **lab templates (.schsim / .pcbsim), staged power-on, fault injection, coverage metrics**.
 
 **AI-SCH Simulator** (`com.elecdraw.aischsim`, vendor ElecDraw, **v1.1.0**) addresses that gap. It is implemented in ArkTS / ArkUI (Stage model) with modular HAR packages, centered on a shared topology contract—`SchTopology`—across editing, simulation, AI, persistence, and teaching.
 
@@ -70,11 +71,12 @@ The differentiator is not “another chatbot”—it is **constraining LLMs into
 | 5 | **Modular parallel generation** | Complex circuits: **oneshot** or **modular**—global plan + boundary gates → parallel sub-pipelines → pin-to-pin joint merge |
 | 6 | **Device usage-manual injection** | After library match, inject BOM-scoped `DeviceUsageManual` (real pins / typical wiring / anti-patterns) into layout / net-plan / route |
 | 7 | **Native mixed-signal kernel** | In-house MNA analog, event-driven digital, 8051 / in-process Cortex-M3 teaching paths, global nanosecond scheduler |
-| 8 | **Teach–sim–diagnose loop** | 20 `.schsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
+| 8 | **Teach–sim–diagnose loop** | 20 paired `.schsim` / `.pcbsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
 | 9 | **Multi-vendor AI governance** | 17 provider templates, per-task API binding, quota dashboard, offline / proxy / degrade policies |
+| 10 | **PCB 2D/3D + AI copper pipeline** | KiCad-style layers (F/B + In1…), forward/reverse annotate, classic + AI auto-route (`PcbRouteCoordinator`: placement → net-plan → layer roles → geometry → QA); DRC; Gerber / KiCad / STEP preview; interactive 3D (orbit / cutaway / PBR) |
 
-**Versus classic desktop EDA:** native HarmonyOS + executable AI + measurable teaching.  
-**Versus chat-only assistants:** staged Prompt engineering, multi-agent gates, topology landing, ERC / sim verification, diagnosable failures.
+**Versus classic desktop EDA:** native HarmonyOS + executable AI + SCH/PCB teaching loop.  
+**Versus chat-only assistants:** staged Prompt engineering, multi-agent gates, topology & copper landing, ERC / DRC / sim verification, diagnosable failures.
 
 ---
 
@@ -116,6 +118,10 @@ LLM constraint JSON  →  Agent stages + local engines  →  SchTopology
 | Diagnosis | `06_diag.md` | `diag` | Static / dynamic diagnosis tasks |
 | Legacy full sch | `07_gen_sch.md` | `gen_sch` | Compat path (do not rely on for production full-gen) |
 | Modular plan | `08_modular_plan.md` | `modular_plan` | Parallel gen: module boundaries + joint gates |
+| PCB placement | `10_pcb_placement.md` | `pcb_placement` | `PcbPlacementAgent`: footprint poses (no track coords) |
+| PCB net plan | `11_pcb_net_plan.md` | `pcb_net_plan` | `PcbNetPlanAgent`: forceTrack / pour / defer per net |
+| PCB route policy | `12_pcb_route.md` | `pcb_route` | `PcbRoutePolicyAgent`: **every copper layer** gets a role |
+| PCB QA repair | `13_pcb_qa_repair.md` | `pcb_qa_repair` | `PcbQaAgent`: DRC / missing-layer repair decisions |
 
 Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragments`, `EditPlanPrompt` (local edit), `StageCapabilities`, injected with shared rules.
 
@@ -158,7 +164,7 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 - Digital: `DigitalEngine` (event-driven; 74HC timing, fanout, setup/hold)  
 - MCU: 8051 and Cortex-M3 **in-process** paths (`QemuMcuBridge` = teaching-grade Thumb interpreter—**not** external QEMU), synced with analog/digital nets (GPIO, ADC, USART)  
 - Scheduler: `GlobalScheduler` (nanosecond, adaptive step)  
-- Analysis APIs: transient / DC / AC / mixed / noise / Monte Carlo / parameter scan (advanced items gated by `FeatureGate`)  
+- Analysis APIs: transient / DC / AC / mixed / noise / Monte Carlo / parameter scan (all unlocked)  
 - Interaction: pushbuttons, pot wipers, relay contacts  
 - Fault injection: **9** enum types; wave/batch engines cover a common subset (open/short, cap leak, …)  
 
@@ -215,12 +221,36 @@ Production requires a **real LLM + local hard engines**; **no** lab-template / `
 
 ### 4.6 Projects & extensibility
 
-- `.schsim` save/load, autosave, crash guard, session restore  
+- `.schsim` / `.pcbsim` save/load, autosave, crash guard, session restore  
 - Import: Proteus / KiCad / LTspice **basic parsers** (common subsets, not full EDA parity)  
-- Export: PNG / SVG (`exportSchImage`), minimal PDF, wave CSV, BOM / netlist  
+- Export: PNG / SVG (`exportSchImage`), minimal PDF, wave CSV, BOM / netlist; PCB **Gerber** / **KiCad `.kicad_pcb`** / simplified STEP  
 - Collaboration: local snapshots, project locks, annotations; **live WebSocket sync needs an external server** (skeleton)  
 - Plugins: manifest parse, signature check, permission gates; sandbox is a **permission-gated stub executor** (not a full script VM)  
-- Licensing: `LicenseManager` / `TrialManager` / `FeatureGate` (Monte Carlo, fault injection, plugins, …)  
+- Licensing: `LicenseManager` / `FeatureGate`; **Free tier by default**; unlock Pro via GitHub OAuth Device Flow after starring [`HarmonyOS-Hardware-AI-Auto-Routing-Simulation`](https://github.com/chuqing-web/HarmonyOS-Hardware-AI-Auto-Routing-Simulation); **re-check on every launch; offline = Free**  
+- Public site: static bilingual homepage + announcement JSON under [`Announcement_Page/`](./Announcement_Page/README.md)  
+
+### 4.7 PCB layout & 3D preview
+
+KiCad-inspired PCB workspace (`features/pcb_editor` + `entry` `PcbPage` / `PcbCanvas`):
+
+| Capability | Detail |
+|------------|--------|
+| Layers | F.Cu / B.Cu, In1…In6, silk / mask / paste, Edge.Cuts; configurable copper count (2 / 4 / 6 / 8) |
+| Edit tools | Select, route (90° / 45° / arc), via (through / blind / buried), pour & polygon zones, outline, measure, place footprint |
+| SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic`; ratsnest; pad–net binding |
+| Auto-route | Classic L-chain `runAutoRoute`; AI path `aiPcbAutoRoute` → `PcbRouteCoordinator` + local `PcbGeometryRouter` / clearance oracle |
+| DRC | Clearance, shorts, unconnected, missing copper usage (`ensureAllCopperUsed` for teaching boards) |
+| 2D view | Layer solo / dim / overlay, net highlight, shove & serpentine helpers |
+| 3D view | Orbit / presets / ortho, realistic · x-ray · explode · cutaway · heightmap; optional STEP bind & PBR/MSAA |
+| Export | Gerber set, KiCad PCB, simplified STEP preview |
+
+<p align="center">
+  <img src="./picture/pcb-2D.png" alt="PCB 2D copper layout and placement" width="900">
+</p>
+
+<p align="center">
+  <img src="./picture/pcb-3D.png" alt="PCB 3D board preview" width="900">
+</p>
 
 ---
 
@@ -230,28 +260,28 @@ Production requires a **real LLM + local hard engines**; **no** lab-template / `
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  entry (HAP)   UI shell · AppService façade · SimWorker host │
+│  entry (HAP)   UI shell · AppService · SimWorker · PcbPage  │
 ├─────────────────────────────────────────────────────────────┤
 │  features/* (HAR)                                             │
-│  schematic_editor │ component_library │ simulation_kernel     │
-│  hex_debugger │ instruments │ ai_engine │ ai_api_manager      │
-│  file_persistence │ plugin_system                             │
+│  schematic_editor │ pcb_editor │ component_library            │
+│  simulation_kernel │ hex_debugger │ instruments               │
+│  ai_engine │ ai_api_manager │ file_persistence │ plugin_system│
 ├─────────────────────────────────────────────────────────────┤
-│  common (HAR)  SchTopology · ErrCode · EventBus · ERC · license│
-│               NamedDevicePinDefaults · WarRouteOrder · Ai gates│
+│  common (HAR)  SchTopology · PcbDocument · ERC/DRC helpers    │
+│               WAR · PcbAutoRouter / Gerber / KiCad / AI route │
 ├─────────────────────────────────────────────────────────────┤
-│  Assets  DeviceLibrary · skill/prompts · Test_Template · HEX  │
-│          (ai_prompt_lib = legacy JSON; authority is skill)    │
+│  Assets  DeviceLibrary · skill/prompts · Test_Template        │
+│          (.schsim + .pcbsim) · HEX · Announcement_Page        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 Shared contract: `SchTopology`
+### 5.2 Shared contracts: `SchTopology` & `PcbDocument`
 
-Editor, simulation kernel, AI pipeline, persistence, plugins, and teaching templates share one topology model (device instances, nets, wires, buses, probes, net labels, subcircuits, ERC errors). `TopologyAdapter` bridges document models and topology so modules stay interoperable.
+Editor, simulation kernel, AI pipeline, persistence, plugins, and teaching templates share **`SchTopology`** (devices, nets, wires, buses, probes, net labels, subcircuits, ERC). The PCB path shares **`PcbDocument`** (footprints, tracks, vias, zones, layer stack, nets, DRC). Forward/reverse annotators and `TopologyAdapter` keep SCH ↔ PCB interoperable.
 
 ### 5.3 EventBus decoupling
 
-`EventBus` covers schematic changes, sim start/stop/step, MCU state, AI progress, file I/O, ERC completion, wave refresh, breakpoint hits, UART, license changes, and more. `AppService` orchestrates the major modules into end-to-end scenarios.
+`EventBus` covers schematic changes, **PCB changes**, sim start/stop/step, MCU state, AI progress, file I/O, ERC/DRC completion, wave refresh, breakpoint hits, UART, license changes, and more. `AppService` orchestrates the major modules into end-to-end scenarios.
 
 ### 5.4 Simulation threading
 
@@ -271,6 +301,7 @@ UI / AppService
 entry
 ├── common
 ├── schematic_editor      → common
+├── pcb_editor            → common
 ├── component_library     → common
 ├── simulation_kernel     → common
 ├── hex_debugger          → common
@@ -279,7 +310,8 @@ entry
 ├── plugin_system         → common
 ├── ai_api_manager        → common
 └── ai_engine             → common, ai_api_manager, component_library
-    └── algorithms/agents/   AgentPipelineCoordinator + stage agents
+    ├── algorithms/agents/       # SCH multi-agent quality bus
+    └── algorithms/pcb_agents/   # PCB AI route coordinator
 ```
 
 ---
@@ -287,6 +319,8 @@ entry
 ## 6. AI Closed-Loop Pipeline
 
 Production path: `AiEngineImpl.runFullPipeline` → **`AgentPipelineCoordinator`** (oneshot / edit / append; modular via `runModular`). Legacy `AiPipelineOrchestrator` remains the shared executor / modular merge backend and the `skipLlm` fallback.
+
+PCB AI path: `aiPcbAutoRoute` → **`PcbRouteCoordinator`** (placement → net-plan → route policy → geometry → QA repair).
 
 ### 6.1 Oneshot (multi-agent)
 
@@ -331,11 +365,38 @@ User chooses “modular”
 
 Gate highlights: 2–4 modules, boundary pins present, joints resolvable, in-library models, power joints required; KEEP_RETRY critique loops on failure—**no** silent template fake schematic.
 
-### 6.3 API highlights
+### 6.3 PCB AI copper pipeline
+
+```
+PcbDocument (after forward annotate / load .pcbsim)
+    │
+    ▼
+① PcbPlacementAgent → LLM pcb_placement → PlacementExecutor
+    │
+    ▼
+② PcbNetPlanAgent → LLM pcb_net_plan (forceTrack / pour / defer)
+    │
+    ▼
+③ PcbRoutePolicyAgent → LLM pcb_route (layerRoles cover ALL Cu layers)
+    │
+    ▼
+④ PcbGeometryAgent → local PcbGeometryRouter + clearance oracle
+       (+ power-bus helpers / ensureAllCopperUsed)
+    │
+    ▼
+⑤ PcbQaAgent → DRC + LLM pcb_qa_repair (rip / re-place / role patch)
+    │
+    ▼
+Routable · DRC-checked PcbDocument (2D edit + 3D preview)
+```
+
+Hard rules mirror the schematic path: LLM emits **policies and poses only**—never raw track polylines; geometry and DRC run locally; teaching labs prefer clash≈0 / every copper layer used.
+
+### 6.4 API highlights
 
 | Capability | API highlights |
 |------------|----------------|
-| Full loop | `runFullPipeline` → Coordinator (`generateStrategy: oneshot \| modular`) |
+| Full SCH loop | `runFullPipeline` → Coordinator (`generateStrategy: oneshot \| modular`) |
 | Modular parallel | `runModular` / `runModularParallelPipeline` |
 | Self-check | `runSelfCheckPipeline` (WAR + QA) |
 | Clarification resume | `clarificationAnswers` + `resumeSnapshotJson` / `getLastAgentSnapshotJson` |
@@ -344,6 +405,8 @@ Gate highlights: 2–4 modules, boundary pins present, joints resolvable, in-lib
 | Generation | `aiGenFullSchematic` / `aiGenSubCircuit` (legacy; production full-gen uses `runFullPipeline`) |
 | Diagnosis | `aiStaticDiagnose` / `aiDynamicDiagnose` / `aiAnalyzeWave` |
 | Engineering aids | `aiRecommendParam` / `aiGetReplaceDevice` / `aiOptimizeBom` |
+| PCB AI route | `aiPcbAutoRoute` → `PcbRouteCoordinator`; editor `applyAiRouteResult` / `runAutoRoute` |
+| SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic` |
 
 Provider templates cover Doubao, Tongyi, DeepSeek, Wenxin, Zhipu, Kimi, OpenAI, Claude, Gemini, Ollama, and more (**17**), with per-task binding and quota controls.
 
@@ -356,10 +419,11 @@ Provider templates cover Doubao, Tongyi, DeepSeek, Wenxin, Zhipu, Kimi, OpenAI, 
 | Engines | AnalogEngine, DigitalEngine, MCU (8051 / Cortex-M3), GlobalScheduler |
 | SPICE | SpiceMatrixBuilder, SpiceRunner; Ngspice NAPI **stub** (`native=false` → in-house AnalogEngine) |
 | MCU bridge | `QemuMcuBridge`: **in-process** teaching Thumb interpreter + register model (not external QEMU; full peripheral QEMU is roadmap) |
-| Analysis | Parameter scan, Monte Carlo, noise analysis (`FeatureGate`-gated) |
+| Analysis | Parameter scan, Monte Carlo, noise analysis (unlocked) |
 | Faults | 9 enum types; wave/batch engines cover a common subset |
 | Debug | HEX load, address/data breakpoints, stepping, registers/memory, UART |
 | Instruments | Live waves, protocol decode, meter↔net binding; scope full-history expand + peak-preserve roll resample |
+| PCB board | Forward/reverse annotate, classic + AI copper route, DRC, 2D/3D preview, Gerber / KiCad export |
 | Threading | Default main-thread budget pump; ThreadWorker implemented but off by default |
 
 ---
@@ -390,7 +454,9 @@ The authoritative runtime catalog is `component_library` built-ins (`BuiltinComp
 
 **Op-amp pick tip:** single/classic → UA741; dual / single-supply → LM358; high-Z dual-supply → TL082. Spoken “LED / LED lamp” → `LED_RED|GREEN|BLUE` (series current-limit R required).
 
-### 8.2 Twenty lab templates
+### 8.2 Twenty paired lab templates
+
+Each official lab ships **`.schsim` + `.pcbsim`** (see `template_manifest.json` `pcbFile`). Hand-laid copper aims for clash≈0 and used inner layers when Cu≥4.
 
 | ID | Lab | Teaching focus | HEX |
 |----|-----|----------------|-----|
@@ -415,7 +481,7 @@ The authoritative runtime catalog is `component_library` built-ins (`BuiltinComp
 | `lab_555_astable` | 555 astable | Multivibrator, duty | — |
 | `lab_555_monostable` | 555 monostable | Timing, trigger | — |
 
-Assets: `Test_Template/`, `hex_files/` (7 HEX), `template_manifest.json`. The teaching panel shows coverage metrics and AI Q&A (same source as `DeviceUsageManual`).
+Assets: `Test_Template/` (20× `.schsim` + 20× `.pcbsim`), `hex_files/` (7 HEX), `template_manifest.json`. Builders/audits under `tools/lab_templates/` and `tools/pcb_templates/`. The teaching panel shows coverage metrics and AI Q&A (same source as `DeviceUsageManual`); PCB teaching UI via `PcbTeachingPanel`.
 
 <p align="center">
   <img src="./picture/lab-templates-1.png" alt="Lab template example: 8051 LED chase" width="900">
@@ -432,33 +498,37 @@ Assets: `Test_Template/`, `hex_files/` (7 HEX), `template_manifest.json`. The te
 ```
 ElecDraw_Harmony/
 ├── AppScope/                    # Bundle config & global resources
-├── entry/                       # HAP: pages, components, AppService, SimWorker
+├── entry/                       # HAP: pages, components, AppService, SimWorker, PcbPage
 │   └── src/main/resources/rawfile/  # Bundled DeviceLibrary / templates / HEX / i18n
-├── common/                      # Shared types, ERC, EventBus, license, WAR helpers
+├── common/                      # SchTopology, PcbDocument, ERC/DRC, EventBus, routers, exporters
 ├── features/
-│   ├── schematic_editor/        # Schematic edit engine
+│   ├── schematic_editor/        # Schematic edit engine + WAR
+│   ├── pcb_editor/              # ★ PCB editor API (IPcbEditor / PcbEditorImpl)
 │   ├── component_library/       # Catalog & loaders (BuiltinComponents)
 │   ├── simulation_kernel/       # Mixed-signal kernel (+ native/ngspice_napi)
 │   ├── hex_debugger/            # HEX / MCU debug
-│   ├── ai_engine/               # AI pipeline, PromptLoader, teaching
-│   │   └── .../algorithms/agents/  # ★ Multi-agent quality bus
+│   ├── ai_engine/               # AI pipelines, PromptLoader, teaching
+│   │   ├── .../algorithms/agents/       # SCH multi-agent quality bus
+│   │   └── .../algorithms/pcb_agents/   # PCB AI route coordinator
 │   ├── ai_api_manager/          # Multi-vendor API & quotas
 │   ├── file_persistence/        # Projects / import-export / collab
 │   ├── instruments/             # Virtual instrument engines + IVirtualInstruments
 │   │   └── .../engines/         # Oscilloscope / LA / meters / signal gen / UART …
 │   └── plugin_system/           # Plugin sandbox
-├── skill/                       # ★ AI rule book + Prompt authority
+├── skill/                       # ★ AI rule book + Prompt authority (00–13)
 │   ├── SKILL.md
-│   ├── prompts/                 # Staged md 00–09 (sync → templates/*.ets)
+│   ├── prompts/                 # Staged md (SCH 00–09 + PCB 10–13) → templates/*.ets
 │   └── references/              # Catalog, ERC, pin maps, pipeline-stages, …
 ├── DeviceLibrary/               # Tri-part devices, symbols, index.lib.json
 ├── ai_prompt_lib/               # Legacy LLM prompt JSON (not authority)
-├── Test_Template/               # Lab .schsim (20 sets) + template_manifest.json
+├── Test_Template/               # Lab .schsim + .pcbsim (20 pairs) + template_manifest.json
 ├── hex_files/                   # Lab firmware HEX (7 files)
-├── picture/                     # README / brief screenshots (ASCII filenames)
+├── picture/                     # README / brief screenshots (incl. pcb-2D / pcb-3D)
+├── Announcement_Page/           # Static bilingual site + announcement JSON feed
 ├── tools/                       # HEX/template build, verify, audit, smoke
-│   └── lab_templates/           # builders / export / verify_*.mjs
-├── docs/                        # Competition brief (作品说明文档.md)
+│   ├── lab_templates/           # SCH builders / export / verify_*.mjs
+│   └── pcb_templates/           # PCB hand-layout / splice / export helpers
+├── docs/                        # Competition brief + design specs
 ├── project/                     # Local project placeholder
 ├── build-profile.json5
 └── oh-package.json5
@@ -468,21 +538,24 @@ ElecDraw_Harmony/
 
 | Module | Role |
 |--------|------|
-| `entry` | UI shell, orchestration, worker host, theme & shortcuts; instrument panels & expand overlay |
-| `common` | `SchTopology`, `ErrCode`, ERC, EventBus, License / FeatureGate, named pins / WAR / net-label utils, `InstrumentTraceLog` |
+| `entry` | UI shell, orchestration, worker host, theme & shortcuts; instrument panels; **PcbPage / PcbCanvas / 3D renderer** |
+| `common` | `SchTopology`, `PcbDocument`, ERC/DRC helpers, EventBus, License / FeatureGate, WAR, **PcbAutoRouter / Gerber / KiCad / geometry route / annotators** |
 | `schematic_editor` | Edit commands, layers, topology I/O, sim interlock, WireAutoRouter |
+| `pcb_editor` | `IPcbEditor` / `PcbEditorImpl`: layers, route, via, zone, DRC, annotate, auto/AI route apply |
 | `component_library` | Built-in catalog, SVG cache, Proteus aliases |
 | `simulation_kernel` | Three engines + scheduler + fault injection + SpiceRunner |
 | `hex_debugger` | HEX, 8051 / Cortex-M3, breakpoints & behavior sim |
-| `ai_engine` | `AgentPipelineCoordinator`, PromptLoader, GA / WAR, modular parallel, TeachingService |
+| `ai_engine` | `AgentPipelineCoordinator`, **`PcbRouteCoordinator`**, PromptLoader, GA / WAR, modular parallel, TeachingService |
 | `ai_api_manager` | Providers, network modes, quota dashboard |
-| `file_persistence` | `.schsim`, crash guard, export, collab skeleton |
+| `file_persistence` | `.schsim` / `.pcbsim`, crash guard, export, collab skeleton |
 | `instruments` | `VirtualInstrumentsImpl`, scope/LA/meter engines, `getOscilloscopeWave` / `getOscilloscopeWaveFull` |
 | `plugin_system` | Plugin lifecycle & sandbox |
 
-**Agent modules** (`features/ai_engine/.../algorithms/agents/`): `AgentPipelineCoordinator`, `CircuitBlackboard`, `RequirementsAgent`, `SelectAgent`, `LayoutAgent`, `NetAgent`, `RouteAgent`, `QaAgent`, `StageCritic`, `StageHooks`, `ModularModuleAgent`.
+**SCH agent modules** (`features/ai_engine/.../algorithms/agents/`): `AgentPipelineCoordinator`, `CircuitBlackboard`, `RequirementsAgent`, `SelectAgent`, `LayoutAgent`, `NetAgent`, `RouteAgent`, `QaAgent`, `StageCritic`, `StageHooks`, `ModularModuleAgent`.
 
-**Selected UI components:** `SchematicCanvas`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `InstrumentWaveExpandOverlay` / `InstrumentWaveExpandStore`, `OscilloscopeWaveCanvas`, `LogicAnalyzerWaveCanvas`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, and more.
+**PCB agent modules** (`.../algorithms/pcb_agents/`): `PcbRouteCoordinator`, `PcbPlacementAgent`, `PcbNetPlanAgent`, `PcbRoutePolicyAgent`, `PcbGeometryAgent`, `PcbQaAgent`.
+
+**Selected UI components:** `SchematicCanvas`, `PcbCanvas`, `PcbPage`, `PcbAiRoutePanel`, `PcbLayerPanel`, `PcbTeachingPanel`, `AppLeftPanel` / `AppRightPanel`, `AiSettingsPanel`, `McuDebugPanel`, `InstrumentPanel`, `InstrumentWaveExpandOverlay` / `InstrumentWaveExpandStore`, `OscilloscopeWaveCanvas`, `LogicAnalyzerWaveCanvas`, `FaultInjectionPanel`, `TeachingPanel`, `PlatformSettingsPanel`, and more.
 
 ---
 
@@ -529,16 +602,17 @@ node tools/export-builtin-device-library.mjs
 
 ## 11. Demo Script for Judges
 
-Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent gates → simulatable topology → teachable verification**:
+Suggested 5–10 minute recording emphasizing **engineered Prompt → multi-agent gates → simulatable topology → PCB copper → teachable verification**:
 
 1. **Launch & shell** — Splash → Proteus-style main UI; library & navigator.  
 2. **Teaching template** — Load `lab_uart` / `lab_555_astable`; show coverage and tips.  
 3. **HEX debug** — Burn companion HEX, run sim, UART echo / LED chase.  
 4. **Instruments** — Open `lab_amp` / `lab_filter`; observe on the scope; double-click the wave to expand and **fit-all** one full simulation run, then zoom/pan for detail.  
 5. **AI Prompt loop** — Prompt “STM32 min-system + LED”; show clarify (if any) / select / layout / net-plan / WAR / QA and ERC.  
-6. **Modular parallel (bonus)** — Complex request with “modular”; show plan → parallel sub-gens → joint merge.  
-7. **Self-check / fault injection** — Run AI self-check, or inject resistor-open and compare waves / diagnosis.  
-8. **Project polish** — Save `.schsim`, theme toggle, AI quota / offline mode (optional).  
+6. **PCB 2D / 3D** — Open paired `.pcbsim` or forward-annotate; show copper layers, ratsnest, classic or AI auto-route; switch to **3D** orbit / cutaway.  
+7. **Modular parallel (bonus)** — Complex request with “modular”; show plan → parallel sub-gens → joint merge.  
+8. **Self-check / fault injection** — Run AI self-check, or inject resistor-open and compare waves / diagnosis.  
+9. **Project polish** — Save `.schsim` / `.pcbsim`, export Gerber preview, theme toggle, AI quota / offline mode (optional).  
 
 ---
 
@@ -546,11 +620,11 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 
 | Scenario | Value |
 |----------|-------|
-| University analog / digital / MCU labs | Schematic-level experiments without a board; Prompt-driven Q&A and topology gen |
-| Electronics / embedded contest training | Fast circuits, HEX burn, waves & serial; modular parallel for complex briefs |
-| Engineer pre-validation | AI draft + local sim to catch errors before hardware |
+| University analog / digital / MCU labs | Schematic-level experiments without a board; paired PCB templates; Prompt-driven Q&A and topology gen |
+| Electronics / embedded contest training | Fast circuits, HEX burn, waves & serial; modular SCH + AI PCB copper for complex briefs |
+| Engineer pre-validation | AI draft + local sim + Gerber/KiCad export before hardware |
 | HarmonyOS classrooms / 2in1 terminals | Native OS deployment, less Windows dependency |
-| AI + EDA teaching demos | Full staged-Prompt + multi-agent engineering story—ideal for courses and reviews |
+| AI + EDA teaching demos | Full staged-Prompt + multi-agent SCH/PCB story—ideal for courses and reviews |
 
 ---
 
@@ -560,11 +634,13 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 |------|-------------|
 | AI acceptance suite | `AiPipelineValidator`: min-system+LED, hallucination chip block, modular-merge checks, API-failure degrade; via `runValidationSuite()` |
 | Multi-agent gates | `qualityHardFail`, stage critique limits, QA residual abort, `usedLlm` triple gate on commit |
+| PCB route gates | Layer-role coverage, DRC residual, `ensureAllCopperUsed`, KEEP_RETRY on PCB agents |
 | Engineering verify scripts | `tools/lab_templates/verify_*.mjs` (MNA, diode Newton, digital logic, geometry audit, template merge, …) |
+| PCB template tooling | `tools/pcb_templates/` hand-layout / splice / export; `tools/test_pcb_*.mjs` |
 | Audit / smoke | `tools/_audit_*.mjs`, `osc_*_smoke.mjs`, `war_route_order_smoke.mjs` |
 | Template & firmware builders | `tools/_build_lab_*.py` / `.mjs`, `tools/lab_templates/` |
 | Catalog export | `tools/export-builtin-device-library.mjs` |
-| Prompt sync | `skill/prompts` ↔ `features/ai_engine/.../templates/*.ets` |
+| Prompt sync | `skill/prompts` (00–13) ↔ `features/ai_engine/.../templates/*.ets` |
 | Unit-test framework | Root dep `@ohos/hypium` (expanding) |
 | Native integration notes | `features/simulation_kernel/native/ngspice_napi/README.md` |
 
@@ -573,6 +649,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 - Ngspice NAPI remains a stub (`native=false`); default is the in-house AnalogEngine  
 - MCU: in-process Thumb / 8051 teaching models; **external QEMU peripheral-level sim** is roadmap  
 - Sim thread: default main-thread budget pump; ThreadWorker exists but is off by default  
+- PCB 3D is a Canvas approximation (not full CAD kernel); STEP import/bind is optional/limited  
 - Fault injection / plugin sandbox / live collab: skeleton or subset—do not equate to full desktop EDA  
 - Hypium automation is expanding; core acceptance is `AiPipelineValidator` + `tools/lab_templates/verify_*.mjs`  
 
@@ -582,13 +659,14 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 
 1. **Ngspice NAPI** — Cross-compile Ngspice; replace analog fallback path  
 2. **External QEMU-MCU** — Full STM32 peripheral-level simulation (replace in-process teaching interpreter)  
-3. **Prompt / Skill toolchain** — Semi-auto md→ets sync and regression diffs  
-4. **Library growth** — Bulk tri-part import, fuller Proteus `.lib` compatibility  
-5. **Performance** — Enable ThreadWorker stably (frame diffs); large-schematic rendering  
-6. **Collab & cloud** — Real-time co-edit and lab report sync  
-7. **Testing** — Broader Hypium automation and acceptance cases  
-8. **Fault injection / plugin sandbox** — Complete engine and executor coverage  
-9. **Agent modular Phase-2** — Deeper Agentization of modular parallel path  
+3. **Prompt / Skill toolchain** — Semi-auto md→ets sync and regression diffs (SCH + PCB stages)  
+4. **Library growth** — Bulk tri-part import, fuller Proteus `.lib` compatibility; richer footprint / STEP library  
+5. **PCB depth** — Stronger AI geometry router, better blind/buried via flows, fab-ready Gerber QA  
+6. **Performance** — Enable ThreadWorker stably (frame diffs); large-schematic / large-board rendering  
+7. **Collab & cloud** — Real-time co-edit and lab report sync  
+8. **Testing** — Broader Hypium automation and acceptance cases  
+9. **Fault injection / plugin sandbox** — Complete engine and executor coverage  
+10. **Agent modular Phase-2** — Deeper Agentization of modular parallel path  
 
 ---
 
@@ -597,7 +675,7 @@ Suggested 5–8 minute recording emphasizing **engineered Prompt → multi-agent
 - License: **Apache-2.0** — full text in root [`LICENSE`](LICENSE); also declared in `oh-package.json5`  
 
 - “Proteus” is used only as a capability/UI reference; no affiliation with Labcenter  
-- Cloud AI depends on third-party terms and quotas; offline edit/sim/lab templates are available—**no** silent template posing as AI full-gen  
+- Cloud AI depends on third-party terms and quotas; offline edit / sim / SCH·PCB lab templates are available—**no** silent template posing as AI full-gen  
 
 ---
 

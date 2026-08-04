@@ -1,0 +1,10 @@
+{
+  "line": 574,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_analog.mjs",
+  "hit": [
+    "handLayoutLabAnalog"
+  ],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_analog_ic_tail.mjs', 'utf8');\nconst start = s.indexOf('  const vBusTop = 40;', s.indexOf('function handLayoutLabAnalogIc'));\nconst end = s.indexOf('/**\\n * 分立器件检测手布');\nif (start < 0 || end < 0) {\n  console.error('markers', start, end);\n  process.exit(1);\n}\ns = s.slice(0, start) + neu + s.slice(end);\nwriteFileSync(p, s);\nconsole.log('spliced', end - start, '->', neu.length, 'hasLow', s.includes(\"mode === 'low'\"));\n"
+}

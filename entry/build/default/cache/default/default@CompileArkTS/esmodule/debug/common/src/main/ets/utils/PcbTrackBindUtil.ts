@@ -284,6 +284,69 @@ export function syncMovedTrackJunctions(doc: PcbDocument, movedTrackIds: Set<str
     }
     return updated;
 }
+/**
+ * 检测走线端点是否落在同网络焊盘上；若是则吸附到焊盘中心并标记锁定。
+ * 返回键：`${trackId}|S` / `${trackId}|E`，供拖拽时跳过平移。
+ */
+export function lockTrackEndpointsToPads(doc: PcbDocument, trackIds: Set<string>): Set<string> {
+    const locked: Set<string> = new Set();
+    if (trackIds.size === 0) {
+        return locked;
+    }
+    const gridSize = doc.metadata.gridSize ?? 5;
+    let snapped = 0;
+    for (const trk of doc.tracks) {
+        if (!trackIds.has(trk.id)) {
+            continue;
+        }
+        const startPad = findPadAnchorForEndpoint(doc, trk.start, trk.netId, gridSize);
+        if (startPad !== null) {
+            if (pointDist(trk.start, startPad) > 0.01) {
+                trk.start.x = startPad.x;
+                trk.start.y = startPad.y;
+                snapped++;
+            }
+            locked.add(`${trk.id}|S`);
+        }
+        const endPad = findPadAnchorForEndpoint(doc, trk.end, trk.netId, gridSize);
+        if (endPad !== null) {
+            if (pointDist(trk.end, endPad) > 0.01) {
+                trk.end.x = endPad.x;
+                trk.end.y = endPad.y;
+                snapped++;
+            }
+            locked.add(`${trk.id}|E`);
+        }
+    }
+    if (locked.size > 0) {
+        tracePcb('TRACK_PAD_LOCK', `tracks=${trackIds.size} lockedEnds=${locked.size} snapped=${snapped} mode=both-ends-if-any-pad`);
+    }
+    return locked;
+}
+/** 同网焊盘锚定：端点在焊盘吸附容差内则返回焊盘中心，否则 null */
+function findPadAnchorForEndpoint(doc: PcbDocument, pt: Point2D, netId: string, gridSize: number): Point2D | null {
+    let best: Point2D | null = null;
+    let bestDist = Infinity;
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            const padNet = pad.netId ?? '';
+            if (netId.length > 0 && padNet.length > 0 && padNet !== netId) {
+                continue;
+            }
+            if (netId.length > 0 && padNet.length === 0) {
+                continue;
+            }
+            const wp = padWorldPosition(fp, pad);
+            const tol = padSnapTolerance(pad, gridSize);
+            const d = pointDist(pt, wp);
+            if (d <= tol && d < bestDist) {
+                bestDist = d;
+                best = { x: wp.x, y: wp.y };
+            }
+        }
+    }
+    return best;
+}
 /** 收集移动封装所涉及的网络 ID（用于移动后局部重布） */
 export function collectNetIdsForFootprints(doc: PcbDocument, footprintIds: Set<string>): Set<string> {
     const netIds: Set<string> = new Set();
@@ -300,10 +363,12 @@ export function collectNetIdsForFootprints(doc: PcbDocument, footprintIds: Set<s
     }
     return netIds;
 }
-/** 将现有走线端点吸附到同网络最近焊盘（自动布线/导入后校正） */
+/** 将现有走线端点吸附到同网络最近焊盘（自动布线/导入后校正）
+ * 按折点整体移动：同一坐标上的所有端点一起挪，避免 L 拐角只动一段而「拆开」。
+ */
 export function snapTrackEndpointsToPads(doc: PcbDocument): number {
     const gridSize = doc.metadata.gridSize ?? 5;
-    let snapped = 0;
+    const junctionTol = junctionMatchTolerance(gridSize);
     const pads: PcbPadSnapRef[] = [];
     for (const fp of doc.footprints) {
         for (const pad of fp.pads) {
@@ -316,22 +381,19 @@ export function snapTrackEndpointsToPads(doc: PcbDocument): number {
             pads.push(ref);
         }
     }
-    const snapEndpoint = (pt: Point2D, netId: string): boolean => {
+    const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
         let best: Point2D | null = null;
         let bestDist = Infinity;
         for (const pr of pads) {
-            // 有网络时必须同网，禁止乱吸附到异网焊盘
             if (netId.length > 0) {
                 if (pr.netId.length === 0 || pr.netId !== netId) {
                     continue;
                 }
             }
             else if (pr.netId.length > 0) {
-                // 无网络走线只允许吸附到无网络焊盘，避免乱吸
                 continue;
             }
             const d = pointDist(pt, pr.pos);
-            // 收紧：仅在焊盘半径范围内吸附，不再用过大容差
             const tightTol = Math.min(pr.tol, Math.max(pr.tol * 0.55, 12));
             if (d <= tightTol && d < bestDist) {
                 bestDist = d;
@@ -339,23 +401,76 @@ export function snapTrackEndpointsToPads(doc: PcbDocument): number {
             }
         }
         if (best !== null && bestDist > 0.01) {
-            pt.x = best.x;
-            pt.y = best.y;
-            return true;
+            return best;
         }
-        return false;
+        return null;
     };
-    for (const trk of doc.tracks) {
-        if (snapEndpoint(trk.start, trk.netId))
-            snapped++;
-        if (snapEndpoint(trk.end, trk.netId))
-            snapped++;
+    // 收集唯一折点（net + 量化坐标）
+    interface JunctionBucket {
+        netId: string;
+        pos: Point2D;
+        refs: TrackEndpointRef[];
     }
+    const buckets: Map<string, JunctionBucket> = new Map();
+    for (const trk of doc.tracks) {
+        const addEnd = (isStart: boolean): void => {
+            const pt = getTrackEndpoint(trk, isStart);
+            const key = junctionKey(pt, trk.netId, junctionTol);
+            let b = buckets.get(key);
+            if (b === undefined) {
+                b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+                buckets.set(key, b);
+            }
+            b.refs.push({ track: trk, isStart });
+        };
+        addEnd(true);
+        addEnd(false);
+    }
+    let snapped = 0;
+    buckets.forEach((bucket: JunctionBucket) => {
+        const target = findSnapTarget(bucket.pos, bucket.netId);
+        if (target === null) {
+            return;
+        }
+        // 若整体挪到焊盘会使任一段塌成零长，则跳过该折点（保留短 stub，不断开邻居）
+        let wouldCollapse = false;
+        for (const ref of bucket.refs) {
+            const other = getTrackEndpoint(ref.track, !ref.isStart);
+            if (pointDist(target, other) < 0.5) {
+                wouldCollapse = true;
+                break;
+            }
+        }
+        if (wouldCollapse) {
+            return;
+        }
+        for (const ref of bucket.refs) {
+            const pt = getTrackEndpoint(ref.track, ref.isStart);
+            if (pointDist(pt, target) > 0.01) {
+                pt.x = target.x;
+                pt.y = target.y;
+                snapped++;
+            }
+        }
+    });
     return snapped;
+}
+/** 删除零长/近零长走线（吸附塌缩后的兜底清理） */
+export function pruneZeroLengthTracks(doc: PcbDocument): number {
+    const before = doc.tracks.length;
+    const kept: PcbTrack[] = [];
+    for (let i = 0; i < doc.tracks.length; i++) {
+        const t = doc.tracks[i];
+        if (pointDist(t.start, t.end) >= 0.5) {
+            kept.push(t);
+        }
+    }
+    doc.tracks = kept;
+    return before - kept.length;
 }
 /**
  * 仅吸附「与指定封装同网且端点已靠近其焊盘」的走线端点。
- * 用于移动/旋转后校正，避免全局 snap 把无关走线乱吸到远处焊盘。
+ * 折点整体移动，避免只动一段把拐角拆开。
  */
 export function snapTrackEndpointsNearFootprints(doc: PcbDocument, footprintIds: Set<string>): number {
     if (footprintIds.size === 0) {
@@ -382,36 +497,75 @@ export function snapTrackEndpointsNearFootprints(doc: PcbDocument, footprintIds:
     if (pads.length === 0) {
         return 0;
     }
-    let snapped = 0;
+    const gridSize = doc.metadata.gridSize ?? 5;
+    const junctionTol = junctionMatchTolerance(gridSize);
+    const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
+        let best: Point2D | null = null;
+        let bestDist = Infinity;
+        for (const pr of pads) {
+            if (netId.length > 0 && pr.netId !== netId) {
+                continue;
+            }
+            const d = pointDist(pt, pr.pos);
+            if (d <= pr.tol && d < bestDist) {
+                bestDist = d;
+                best = pr.pos;
+            }
+        }
+        if (best !== null && bestDist > 0.01) {
+            return best;
+        }
+        return null;
+    };
+    interface JunctionBucket {
+        netId: string;
+        pos: Point2D;
+        refs: TrackEndpointRef[];
+    }
+    const buckets: Map<string, JunctionBucket> = new Map();
     for (const trk of doc.tracks) {
         if (trk.netId.length > 0 && !netIds.has(trk.netId)) {
             continue;
         }
-        const trySnap = (pt: Point2D): boolean => {
-            let best: Point2D | null = null;
-            let bestDist = Infinity;
-            for (const pr of pads) {
-                if (trk.netId.length > 0 && pr.netId !== trk.netId) {
-                    continue;
-                }
-                const d = pointDist(pt, pr.pos);
-                if (d <= pr.tol && d < bestDist) {
-                    bestDist = d;
-                    best = pr.pos;
-                }
+        const addEnd = (isStart: boolean): void => {
+            const pt = getTrackEndpoint(trk, isStart);
+            const key = junctionKey(pt, trk.netId, junctionTol);
+            let b = buckets.get(key);
+            if (b === undefined) {
+                b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+                buckets.set(key, b);
             }
-            if (best !== null && bestDist > 0.01) {
-                pt.x = best.x;
-                pt.y = best.y;
-                return true;
-            }
-            return false;
+            b.refs.push({ track: trk, isStart });
         };
-        if (trySnap(trk.start))
-            snapped++;
-        if (trySnap(trk.end))
-            snapped++;
+        addEnd(true);
+        addEnd(false);
     }
+    let snapped = 0;
+    buckets.forEach((bucket: JunctionBucket) => {
+        const target = findSnapTarget(bucket.pos, bucket.netId);
+        if (target === null) {
+            return;
+        }
+        let wouldCollapse = false;
+        for (const ref of bucket.refs) {
+            const other = getTrackEndpoint(ref.track, !ref.isStart);
+            if (pointDist(target, other) < 0.5) {
+                wouldCollapse = true;
+                break;
+            }
+        }
+        if (wouldCollapse) {
+            return;
+        }
+        for (const ref of bucket.refs) {
+            const pt = getTrackEndpoint(ref.track, ref.isStart);
+            if (pointDist(pt, target) > 0.01) {
+                pt.x = target.x;
+                pt.y = target.y;
+                snapped++;
+            }
+        }
+    });
     if (snapped > 0) {
         tracePcb('TRACK_SNAP_NEAR_FP', `fps=${footprintIds.size} endpoints=${snapped}`);
     }

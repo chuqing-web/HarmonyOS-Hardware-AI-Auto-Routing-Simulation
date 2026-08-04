@@ -84,10 +84,13 @@ export class QuotaTracker {
         const tier = LicenseManager.getInstance().getTier();
         let billingNote = '本地 Ollama 不计费';
         if (tier === LicenseTier.FREE) {
-            billingNote = `免费版每日 AI 上限 ${limit} 次`;
+            billingNote = `免费版每日 AI 上限 ${limit} 次 · Star 仓库可解锁专业版`;
         }
-        else if (tier === LicenseTier.ENTERPRISE) {
-            billingNote = '企业版无调用上限，支持商用授权';
+        else if (LicenseManager.getInstance().isStarUnlocked()) {
+            billingNote = '专业版（GitHub Star）无调用上限；本地 Ollama 不计费';
+        }
+        else {
+            billingNote = '专业版无调用上限；本地 Ollama 不计费';
         }
         return {
             tier,

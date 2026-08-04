@@ -6,11 +6,13 @@ import {
   PcbRouteCornerMode, PcbStackLayer, PcbStackLayerType, PcbDocument,
   getGlobalPcbFootprintLibrary
 } from 'common';
-import { ProteusColors, ProteusDimens, ProteusFonts } from '../../theme/ProteusTheme';
+import { ProteusColors, ProteusFonts } from '../../theme/ProteusTheme';
 import { PROTEUS_THEME_REV_KEY } from '../../theme/ThemeManager';
-import { ProteusClassicBtn, ProteusChipTab, ProteusPanelTitle } from '../proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusPanelTitle, ProteusSidebarTab } from '../proteus/ProteusWidgets';
+import { ProteusIconName } from '../proteus/ProteusIcons';
 import { PcbTeachingPanel } from './PcbTeachingPanel';
 import { PcbGerberPreview } from './PcbGerberPreview';
+import { PcbAiRoutePanel } from './PcbAiRoutePanel';
 
 enum PcbRightTab {
   PROPERTIES = 0,
@@ -18,7 +20,8 @@ enum PcbRightTab {
   LIBRARY = 2,
   STACK = 3,
   GERBER = 4,
-  TEACHING = 5
+  TEACHING = 5,
+  AI_ROUTE = 6
 }
 
 @Component
@@ -53,11 +56,19 @@ export struct PcbRightPanel {
   onSetAppearanceActiveOnly: () => void = () => {};
   onSetAppearanceDim: () => void = () => {};
   onSetAppearanceOverlay: () => void = () => {};
+  onSelectStackCopper: (id: PcbLayerId) => void = (_id: PcbLayerId) => {};
   onRunDrc: () => void = () => {};
   onPcbTemplateInserted: () => void = () => {};
   onExportGerber: () => void = () => {};
   getPcbDocument: () => PcbDocument | null = () => null;
   @Prop gerberDocRev: number = 0;
+  /** 外部请求切到 AI 布线 Tab（递增） */
+  @Prop @Watch('onAiTabFocusTick') aiTabFocusTick: number = 0;
+  @Link statusMessage: string;
+  @Link aiBusy: boolean;
+  @Link aiProgress: number;
+  @Link aiStage: string;
+  onAiRouteDone: () => void = () => {};
 
   @State private activeTab: PcbRightTab = PcbRightTab.PROPERTIES;
   @State private fpDefs: PcbFootprintDef[] = [];
@@ -73,79 +84,126 @@ export struct PcbRightPanel {
     }
   }
 
+  private onAiTabFocusTick(): void {
+    if (this.aiTabFocusTick > 0) {
+      this.activeTab = PcbRightTab.AI_ROUTE;
+    }
+  }
+
+  private panelTitle(): string {
+    if (this.activeTab === PcbRightTab.DRC) {
+      return 'DRC';
+    }
+    if (this.activeTab === PcbRightTab.LIBRARY) {
+      return '封装库';
+    }
+    if (this.activeTab === PcbRightTab.STACK) {
+      return '层栈';
+    }
+    if (this.activeTab === PcbRightTab.GERBER) {
+      return 'Gerber';
+    }
+    if (this.activeTab === PcbRightTab.TEACHING) {
+      return '教学';
+    }
+    if (this.activeTab === PcbRightTab.AI_ROUTE) {
+      return 'AI 布线';
+    }
+    return '属性';
+  }
+
   build() {
     Column() {
-      Row({ space: 2 }) {
-        ProteusChipTab({
-          label: '属性',
-          selected: this.activeTab === PcbRightTab.PROPERTIES,
-          fillWidth: true,
-          onSelect: () => { this.activeTab = PcbRightTab.PROPERTIES; }
-        })
-        ProteusChipTab({
-          label: 'DRC',
-          selected: this.activeTab === PcbRightTab.DRC,
-          fillWidth: true,
-          onSelect: () => { this.activeTab = PcbRightTab.DRC; }
-        })
-        ProteusChipTab({
-          label: '封装',
-          selected: this.activeTab === PcbRightTab.LIBRARY,
-          fillWidth: true,
-          onSelect: () => {
-            this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
-            this.activeTab = PcbRightTab.LIBRARY;
-          }
-        })
-        ProteusChipTab({
-          label: '层栈',
-          selected: this.activeTab === PcbRightTab.STACK,
-          fillWidth: true,
-          onSelect: () => { this.activeTab = PcbRightTab.STACK; }
-        })
-        ProteusChipTab({
-          label: 'Gerber',
-          selected: this.activeTab === PcbRightTab.GERBER,
-          fillWidth: true,
-          onSelect: () => { this.activeTab = PcbRightTab.GERBER; }
-        })
-        ProteusChipTab({
-          label: '教学',
-          selected: this.activeTab === PcbRightTab.TEACHING,
-          fillWidth: true,
-          onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
-        })
-      }
-      .width('100%')
-      .padding({ left: 4, right: 4, top: 4, bottom: 4 })
-      .backgroundColor(ProteusColors.PANEL_TITLE_BG)
+      ProteusPanelTitle({ title: this.panelTitle() })
+      Row() {
+        if (this.activeTab === PcbRightTab.PROPERTIES) {
+          this.buildPropertiesTab()
+        } else if (this.activeTab === PcbRightTab.DRC) {
+          this.buildDrcTab()
+        } else if (this.activeTab === PcbRightTab.LIBRARY) {
+          this.buildLibraryTab()
+        } else if (this.activeTab === PcbRightTab.STACK) {
+          this.buildStackTab()
+        } else if (this.activeTab === PcbRightTab.GERBER) {
+          PcbGerberPreview({
+            docRev: this.gerberDocRev,
+            getDocument: (): PcbDocument | null => this.getPcbDocument(),
+            onExport: () => { this.onExportGerber(); }
+          })
+            .layoutWeight(1)
+            .height('100%')
+        } else if (this.activeTab === PcbRightTab.TEACHING) {
+          PcbTeachingPanel({
+            statusMessage: $teachStatus,
+            onRunDrc: () => { this.onRunDrc(); },
+            onInserted: () => { this.onPcbTemplateInserted(); }
+          })
+            .layoutWeight(1)
+            .height('100%')
+        } else {
+          PcbAiRoutePanel({
+            statusMessage: $statusMessage,
+            aiBusy: $aiBusy,
+            aiProgress: $aiProgress,
+            aiStage: $aiStage,
+            onRouteDone: () => { this.onAiRouteDone(); }
+          })
+            .layoutWeight(1)
+            .height('100%')
+        }
 
-      if (this.activeTab === PcbRightTab.PROPERTIES) {
-        this.buildPropertiesTab()
-      } else if (this.activeTab === PcbRightTab.DRC) {
-        this.buildDrcTab()
-      } else if (this.activeTab === PcbRightTab.LIBRARY) {
-        this.buildLibraryTab()
-      } else if (this.activeTab === PcbRightTab.STACK) {
-        this.buildStackTab()
-      } else if (this.activeTab === PcbRightTab.GERBER) {
-        PcbGerberPreview({
-          docRev: this.gerberDocRev,
-          getDocument: (): PcbDocument | null => this.getPcbDocument(),
-          onExport: () => { this.onExportGerber(); }
-        })
-      } else {
-        PcbTeachingPanel({
-          statusMessage: $teachStatus,
-          onRunDrc: () => { this.onRunDrc(); },
-          onInserted: () => { this.onPcbTemplateInserted(); }
-        })
+        Column() {
+          ProteusSidebarTab({
+            label: '属性', tooltip: '属性面板', icon: ProteusIconName.SETTINGS,
+            selected: this.activeTab === PcbRightTab.PROPERTIES,
+            onSelect: () => { this.activeTab = PcbRightTab.PROPERTIES; }
+          })
+          ProteusSidebarTab({
+            label: 'DRC', tooltip: '设计规则检查', icon: ProteusIconName.ERC,
+            selected: this.activeTab === PcbRightTab.DRC,
+            onSelect: () => { this.activeTab = PcbRightTab.DRC; }
+          })
+          ProteusSidebarTab({
+            label: '封装', tooltip: '封装库', icon: ProteusIconName.COMPONENT,
+            selected: this.activeTab === PcbRightTab.LIBRARY,
+            onSelect: () => {
+              this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
+              this.activeTab = PcbRightTab.LIBRARY;
+            }
+          })
+          ProteusSidebarTab({
+            label: '层栈', tooltip: '铜层 / 过孔 / 层栈', icon: ProteusIconName.LAYER,
+            selected: this.activeTab === PcbRightTab.STACK,
+            onSelect: () => { this.activeTab = PcbRightTab.STACK; }
+          })
+          ProteusSidebarTab({
+            label: 'Gerber', tooltip: 'Gerber 预览与导出', icon: ProteusIconName.SEARCH,
+            selected: this.activeTab === PcbRightTab.GERBER,
+            onSelect: () => { this.activeTab = PcbRightTab.GERBER; }
+          })
+          ProteusSidebarTab({
+            label: '教学', tooltip: 'PCB 教学模板', icon: ProteusIconName.LABEL,
+            selected: this.activeTab === PcbRightTab.TEACHING,
+            onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
+          })
+          ProteusSidebarTab({
+            label: 'AI', tooltip: 'AI 布线', icon: ProteusIconName.AI_ROUTE,
+            selected: this.activeTab === PcbRightTab.AI_ROUTE,
+            onSelect: () => { this.activeTab = PcbRightTab.AI_ROUTE; }
+          })
+        }
+        .width(44)
+        .height('100%')
+        .backgroundColor(ProteusColors.SIDEBAR_BG)
+        .border({ width: { left: 1 }, color: ProteusColors.SIDEBAR_TAB_BORDER })
       }
+      .layoutWeight(1)
+      .width('100%')
     }
     .width(this.panelWidth)
     .height('100%')
-    .backgroundColor(ProteusColors.SIDEBAR_BG)
-    .border({ width: { left: 1 }, color: ProteusColors.BORDER })
+    .backgroundColor(ProteusColors.CANVAS_BG)
+    .border({ width: { left: 1 }, color: ProteusColors.DIVIDER })
   }
 
   @Builder
@@ -418,7 +476,7 @@ export struct PcbRightPanel {
         this.viaLayerPickRow(false)
 
         ProteusPanelTitle({ title: '物理层栈' })
-        Text('点选铜线高亮所在 Cu；点选过孔高亮其跨越的全部铜层（通孔 F.Cu↔B.Cu 含中间层）')
+        Text(`当前 ${this.copperCount} 层铜。点铜线→高亮所在 Cu；点过孔→高亮跨越层；点内电层行→选中该层铺铜（内电层常无走线）`)
           .fontSize(9)
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .padding({ left: 10, right: 10, bottom: 4 })
@@ -459,6 +517,12 @@ export struct PcbRightPanel {
           .border({
             width: this.isStackRowActive(sl) ? 1 : 0,
             color: ProteusColors.SELECTED
+          })
+          .onClick(() => {
+            if (sl.type === PcbStackLayerType.COPPER) {
+              const id = sl.copperLayerId !== undefined ? sl.copperLayerId : (sl.name as PcbLayerId);
+              this.onSelectStackCopper(id);
+            }
           })
         }, (sl: PcbStackLayer) => sl.id)
       }
@@ -536,6 +600,12 @@ export struct PcbRightPanel {
     }
     if (sl.name === 'B.Mask') {
       return '底面阻焊';
+    }
+    if (sl.copperLayerId === PcbLayerId.IN1_CU || sl.name === 'In1.Cu') {
+      return '内电层1：整面铺铜/参考平面（本实验多为 GND，通常无走线）';
+    }
+    if (sl.copperLayerId === PcbLayerId.IN2_CU || sl.name === 'In2.Cu') {
+      return '内电层2：整面铺铜/参考平面（本实验多为 VCC，通常无走线）';
     }
     if (sl.type === PcbStackLayerType.DIELECTRIC) {
       return '介质层（半固化片/芯板），层间绝缘';

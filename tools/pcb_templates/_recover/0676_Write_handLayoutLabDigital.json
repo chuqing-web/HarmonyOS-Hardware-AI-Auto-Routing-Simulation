@@ -1,0 +1,10 @@
+{
+  "line": 676,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_digital.mjs",
+  "hit": [
+    "handLayoutLabDigital"
+  ],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\n\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_hand_digital.mjs', 'utf8').trimEnd() + '\\n\\n';\n\nconst startFn = s.indexOf('function handLayoutLabDigital(doc)');\nif (startFn < 0) {\n  console.error('function not found');\n  process.exit(1);\n}\nlet cStart = startFn;\nfor (;;) {\n  const chunk = s.slice(Math.max(0, cStart - 500), cStart);\n  const m = chunk.match(/(\\/\\*\\*[\\s\\S]*?\\*\\/)\\s*$/);\n  if (!m || !m[0].includes('数字逻辑')) break;\n  cStart -= m[0].length;\n}\nconst end = s.indexOf('\\nfunction main()', startFn);\nif (end < 0) {\n  console.error('main not found');\n  process.exit(1);\n}\ns = s.slice(0, cStart) + neu + s.slice(end + 1);\nwriteFileSync(p, s);\nconsole.log({\n  nFn: (s.match(/function handLayoutLabDigital/g) || []).length,\n  hasSignalComment: s.includes('每层都有信号走线'),\n  noGndTrunkComment: !s.includes('In1.Cu — GND 干线')\n});\n"
+}

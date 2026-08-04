@@ -25,10 +25,12 @@ export {
 export {
   applyNetLabelConnectivity, isAutoNetLabelText, isPowerRailLabelText,
   isGroundLabelText, isPowerSupplyLabelText, normalizePowerLabelFlags,
-  canonicalizeRailLabelText, mergeNetInto
+  canonicalizeRailLabelText, mergeNetInto, labelCopperTouchTol, snapLabelsOntoCopper
 } from './src/main/ets/utils/NetLabelConnectivity';
 
-export { rebuildWireNetTopology } from './src/main/ets/utils/WireNetTopology';
+export {
+  rebuildWireNetTopology, computeTopoJunctionRadius, computeTopoTJunctionTol
+} from './src/main/ets/utils/WireNetTopology';
 
 export {
   INSTR_TRACE_TAG, INSTR_TRACE_SIM_STEP, setInstrTraceSimStep,
@@ -38,7 +40,8 @@ export {
   traceAnalogOpSummary, traceNetConnectivity,
   traceAnalogDeviceStamp, traceAnalogNetlistSummary, AnalogResistorStamp,
   traceDataFlow, traceCanvasInfo, traceComponentLayout, traceWireTopology, traceNetPinDetail,
-  traceDigitalLogic, traceDigitalThevenin, traceLogicAnalyzerChannels,
+  traceDigitalLogic, traceDigitalAd, traceDigitalAdSnapshot, traceCd4017,
+  traceDigitalThevenin, traceLogicAnalyzerChannels, traceLaCapture, traceLaUiChannels,
   traceUnconnectedComponents, traceInstrumentInventory, traceConnectionPointSimData,
   traceSpiceNodeMap, traceSimGlobalSnapshot, traceProjectOpenAudit, traceSimStartupAudit,
   traceTopologyHealthCheck, tracePinMultiNetConflicts, traceWireEndpointCollisions,
@@ -50,7 +53,15 @@ export {
   traceMcuTick, traceMcuGpioSync, traceLedVfSample, traceSwitchSample, traceRelaySample,
   traceInteractiveInstrumentLive, InteractiveMeterSnap,
   BindingTraceInfo,
-  traceAiPayload, traceAiOp, traceAiDiag, traceAiStage
+  traceAiPayload, traceAiOp, traceAiDiag, traceAiStage,
+  traceAiWireDraw, traceAiWireFix, traceAiWireInventory,
+  traceWireConnectBegin, traceWirePinSnap, traceWirePinSnapReject,
+  traceWireSnapMissNearCopper,
+  traceWireConnectEnd, traceWireConnectPinAudit, traceWirePinRowShort,
+  isTraceAutoSignalNetName, traceTopoNetNameScan, traceTopoNetInheritDecision,
+  traceTopoSignalAssignSummary, traceTopoWireNetReassign, traceNetEnsureCreate,
+  traceWireSnapEndpointDecision, traceWireWireMerge, traceWirePinAttach,
+  tracePinPinMerge, traceCompMoveWireFollow, traceWireEndpointNudge
 } from './src/main/ets/utils/InstrumentTraceLog';
 
 export {
@@ -63,11 +74,17 @@ export { ErcEngine } from './src/main/ets/utils/ErcEngine';
 export { AiErcGateUtil } from './src/main/ets/utils/AiErcGateUtil';
 
 export {
-  DeviceHitGeometry, SELECTION_HIT_PAD, FOREIGN_PIN_CLEARANCE,
-  WorldHitRect, WirePathCoverage
+  DeviceHitGeometry, SELECTION_HIT_PAD, WIRE_OBSTACLE_PAD, FOREIGN_PIN_CLEARANCE,
+  WorldHitRect, WirePathCoverage, LabelPlaceHints, NetLabelAnchorInfo
 } from './src/main/ets/utils/DeviceHitGeometry';
 
 export { WireConflictGeometry } from './src/main/ets/utils/WireConflictGeometry';
+
+export {
+  WireAutoRouter, WarCompObstacle, WarRouteContext, WirePathPreviewResult
+} from './src/main/ets/utils/WireAutoRouter';
+
+export { WarRouteOrder, WarOrderPin } from './src/main/ets/utils/WarRouteOrder';
 
 export { DeepErcEngine } from './src/main/ets/utils/DeepErcEngine';
 
@@ -152,9 +169,21 @@ export {
 
   NetPriorityRule, SpecialNetRule, RoutingLlmOutput, RoutingWeightPrefs, AiPipelineResult,
 
-  DevicePosition
+  DevicePosition,
+
+  ClarificationQuestion, ClarificationAnswer, RequirementSpec, RequirementPowerSpec,
+  emptyRequirementSpec
 
 } from './src/main/ets/types/AiExtendedTypes';
+
+export {
+  PcbLayerRole, PcbRouteMode, PcbNetKind,
+  PcbPlacementItem, PcbPlacementGroup, PcbPlacementPlan,
+  PcbNetPlanEntry, PcbNetPlanResult,
+  PcbViaPreference, PcbRoutePolicy, PcbQaRepairPlan,
+  PcbGeometrySeg, PcbGeometryResult, PcbAiRouteResult, PcbPadEndpoint,
+  emptyPcbAiRouteResult, copperRoleKeys, policyCoversCopperLayers
+} from './src/main/ets/types/PcbAiRouteTypes';
 
 export {
 
@@ -317,4 +346,94 @@ export {
   PaginatedResult
 
 } from './src/main/ets/types/CommonTypes';
+
+export {
+  PcbLayerId, PcbPadShape, PcbPadType, PcbViaKind, PcbAppearanceMode, Pcb3dDisplayMode, PcbRouteCornerMode, PcbStackLayerType,
+  PcbPad, PcbFootprintDef, PcbFootprintInst,
+  PcbTrack, PcbVia, PcbZone, PcbBoardOutline, PcbLayerConfig, PcbMetadata,
+  PcbDesignRules, PcbDocument, PcbDrcSeverity, PcbDrcRuleType, PcbDrcViolation,
+  PcbNet, PcbNetClass, PcbDiffPair, PcbStackLayer, PcbLayerStack, PcbAppearance,
+  PcbRatsnestEdge,
+  defaultPcbDesignRules, defaultPcbNetClasses, defaultPcbAppearance, normalizePcbAppearance,
+  createDefaultPcbLayers, createDefaultLayerStack, createEmptyPcbDocument, createDefaultPcbViewport,
+  normalizePcbDocument, applyCopperLayerCount, isCopperLayer, copperLayersFromStack,
+  PcbNetRef, PcbPadNetPreserved, PcbPadHit,
+  PcbEditorSelectionData, PcbSelectionKind, PcbSelectionState, PcbSelectionRect,
+  PcbHistorySnapshot, pcbSelectionEmpty, pcbSelectionFromData
+} from './src/main/ets/types/PcbTypes';
+
+export { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './src/main/ets/utils/PcbFootprintLibrary';
+
+export { PcbForwardAnnotator, ForwardAnnotateResult, forwardAnnotatePcb } from './src/main/ets/utils/PcbForwardAnnotator';
+
+export { ReverseAnnotateResult, reverseAnnotatePcb } from './src/main/ets/utils/PcbReverseAnnotator';
+
+export { GerberLayerFile, GerberExportResult, exportPcbGerber } from './src/main/ets/utils/PcbGerberExporter';
+
+export { KiCadPcbExportResult, exportPcbKiCad } from './src/main/ets/utils/PcbKiCadExporter';
+
+export { autoRoutePcb, AutoRouteResult, rerouteNets, RerouteResult } from './src/main/ets/utils/PcbAutoRouter';
+
+export { ensureBoardAccessories, clearCopperForNets, BoardAccessoriesResult, AccessoryNetHint,
+  accessoryHintsFromSchematicNets
+} from './src/main/ets/utils/PcbBoardAccessories';
+
+export { runPcbGeometryRoute } from './src/main/ets/utils/pcb_route/PcbGeometryRouter';
+export { routePowerBuses, PowerBusRouteOut } from './src/main/ets/utils/pcb_route/PowerBusRouter';
+export { createViaAt } from './src/main/ets/utils/pcb_route/PcbViaFactory';
+export { ensureAllCopperUsed } from './src/main/ets/utils/pcb_route/ensureAllCopperUsed';
+export { applyPcbPlacementPlan, PlacementApplyResult } from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
+export {
+  pathClearOfTracks, clearanceForNet, trackWidthForNet
+} from './src/main/ets/utils/pcb_route/PcbClearanceOracle';
+
+export {
+  registerSchPinToPadNet, lookupPadNet, registerPadNetKey
+} from './src/main/ets/utils/PcbPinBindUtil';
+
+export {
+  tracePcb, tracePcbWarn, tracePcbUi, tracePcbOp, tracePcb3d,
+  tracePcbForwardResult, tracePcbAutoRoute,
+  tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded,
+  tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult,
+  tracePcbFullState, tracePcbPinConnectivity, tracePcbCanvasRealtime, PcbCanvasTraceSnapshot,
+  tracePcbLayoutCrowd, tracePcbView2dAudit, tracePcbView3dAudit, tracePcbDisplayDump,
+  PcbView2dTraceParams, PcbView3dTraceParams
+} from './src/main/ets/utils/PcbTraceLog';
+
+export {
+  collectFootprintPadPositions, updateTracksForFootprintTransform,
+  updateTracksForFootprintTransformDetailed, syncMovedTrackJunctions,
+  lockTrackEndpointsToPads,
+  collectNetIdsForFootprints, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints,
+  pruneZeroLengthTracks,
+  orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
+  pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
+} from './src/main/ets/utils/PcbTrackBindUtil';
+
+export {
+  doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute
+} from './src/main/ets/utils/PcbTrackShoveUtil';
+
+export {
+  padWorldPosition, rebuildZoneCutouts, pointInPolygon, makeRectCutout,
+  thermalSpokeRects, ThermalSpokeRect, normalizeZoneFields, defaultZoneFields
+} from './src/main/ets/utils/PcbZoneUtil';
+
+export {
+  rebuildPcbNets, buildRatsnest, routeLPoints, routeOrtho45Points, routeArcPoints, routeByCornerMode,
+  findNetClass, guessNetClassId, sumTrackLengthForNet
+} from './src/main/ets/utils/PcbNetUtil';
+
+export {
+  buildTrackPolylines, polylineJointPoints, PcbTrackPolyline
+} from './src/main/ets/utils/PcbTrackChainUtil';
+
+export {
+  PcbSpatialIndex, PcbSpatialItem, PcbSpatialKind, PcbSpatialRect
+} from './src/main/ets/utils/PcbSpatialIndex';
+
+export {
+  polylineLength, addSerpentineMeander, matchDiffPairLengths
+} from './src/main/ets/utils/PcbSerpentineUtil';
 

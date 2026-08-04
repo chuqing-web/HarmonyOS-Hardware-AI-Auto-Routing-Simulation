@@ -25,6 +25,10 @@
 | `07_gen_sch.md` | `gen_sch` | `GenSchPrompt.ets` | 遗留整图 |
 | `08_modular_plan.md` | `modular_plan` | `ModularPlanPrompt.ets` | `fetchModularPlanLlm` |
 | `09_requirement.md` | `requirement` | `RequirementPrompt.ets` | `RequirementsAgent` |
+| `10_pcb_placement.md` | `pcb_placement` | `PcbPlacementPrompt.ets` | `PcbPlacementAgent` |
+| `11_pcb_net_plan.md` | `pcb_net_plan` | `PcbNetPlanPrompt.ets` | `PcbNetPlanAgent` |
+| `12_pcb_route.md` | `pcb_route` | `PcbRoutePrompt.ets` | `PcbRoutePolicyAgent` |
+| `13_pcb_qa_repair.md` | `pcb_qa_repair` | `PcbQaRepairPrompt.ets` | `PcbQaAgent` |
 
 ## md 结构
 

@@ -1,4 +1,4 @@
-import { IdUtil } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { IdUtil, applyCopperLayerCount } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbNet, PcbPad, Point2D } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 interface PcbContentBounds {
     minX: number;
@@ -171,6 +171,12 @@ export class PcbTemplateMergeUtil {
                 thermalWidth: z.thermalWidth
             };
             target.zones.push(zone);
+        }
+        // 模板含内电层时必须抬升当前板层叠，否则 UI/2D/3D 仍按默认 2 层（Core 1.5mm）显示
+        const srcCu = source.layerStack !== undefined ? source.layerStack.copperCount : 2;
+        const tgtCu = target.layerStack !== undefined ? target.layerStack.copperCount : 2;
+        if (srcCu > tgtCu) {
+            applyCopperLayerCount(target, srcCu);
         }
         PcbTemplateMergeUtil.finalizeBoardGeometry(target);
         target.metadata.modifiedAt = new Date().toISOString();

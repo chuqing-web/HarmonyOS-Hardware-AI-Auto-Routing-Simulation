@@ -290,7 +290,9 @@ export enum AiCapability {
   FAULT_DIAGNOSIS = 'fault_diagnosis',
   COMPONENT_RECOMMEND = 'component_recommend',
   CIRCUIT_GENERATION = 'circuit_generation',
-  WAVEFORM_ANALYSIS = 'waveform_analysis'
+  WAVEFORM_ANALYSIS = 'waveform_analysis',
+  /** PCB 布局 AI 布线 / 布局管线 */
+  PCB_AUTO_ROUTE = 'pcb_auto_route'
 }
 
 export enum AiProviderType {

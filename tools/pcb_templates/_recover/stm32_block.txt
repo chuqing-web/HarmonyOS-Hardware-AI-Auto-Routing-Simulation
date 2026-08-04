@@ -1,0 +1,11 @@
+  } else if (isMcu51Lib(libDevId)) {
+    for (const pin of [pinId, pinName]) {
+      const pad = MCU51_PIN_TO_PAD.get((pin || '').toUpperCase());
+      if (pad) registerPadNetKey(map, compId, pad, netId, netName);
+    }
+  } else if (isMcuStm32F103C8Lib(libDevId) || (libDevId || '').toLowerCase().includes('stm32f103')) {
+    for (const pin of [pinId, pinName]) {
+      const pad = STM32F103C8_PIN_TO_PAD.get((pin || '').toUpperCase());
+      if (pad) registerPadNetKey(map, compId, pad, netId, netName);
+    }
+  } else {

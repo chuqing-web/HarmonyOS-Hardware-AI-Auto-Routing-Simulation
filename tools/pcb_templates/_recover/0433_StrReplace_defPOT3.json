@@ -1,0 +1,10 @@
+{
+  "line": 433,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "defPOT3"
+  ],
+  "old_string": "function defTHT2() {\n  return {\n    id: 'FP_THT2', name: 'THT-2', description: '2-pin THT',\n    pads: [thPad('1', -50, 0, 35, 60), thPad('2', 50, 0, 35, 60)],\n    silkLines: rectSilk(60, 30),\n    courtyard: [{ x: -80, y: -40 }, { x: 80, y: -40 }, { x: 80, y: 40 }, { x: -80, y: 40 }]\n  };\n}",
+  "new_string": "function defTHT2() {\n  return {\n    id: 'FP_THT2', name: 'THT-2', description: '2-pin THT',\n    pads: [thPad('1', -50, 0, 35, 60), thPad('2', 50, 0, 35, 60)],\n    silkLines: rectSilk(60, 30),\n    courtyard: [{ x: -80, y: -40 }, { x: 80, y: -40 }, { x: 80, y: 40 }, { x: -80, y: 40 }]\n  };\n}\n/** 电位器 3 脚：1/2=两端，3=W 滑臂 */\nfunction defPOT3() {\n  return {\n    id: 'FP_POT3', name: 'Potentiometer-3', description: '3-pin potentiometer',\n    pads: [\n      thPad('1', -60, 0, 35, 60),\n      thPad('2', 60, 0, 35, 60),\n      thPad('3', 0, 70, 35, 60)\n    ],\n    silkLines: rectSilk(70, 50),\n    courtyard: [{ x: -90, y: -40 }, { x: 90, y: -40 }, { x: 90, y: 100 }, { x: -90, y: 100 }]\n  };\n}"
+}

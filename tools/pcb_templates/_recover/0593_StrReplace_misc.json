@@ -1,0 +1,8 @@
+{
+  "line": 593,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  let slot = 0;\n  const toHdr = (net, src, jPad) => {\n    if (!net || !src || !jPad) return;\n    const s = slot++;\n    const riseX = 2620 + s * 45;\n    const runY = 70 + s * 35;\n    const esc = { x: src.x + (src.x < 2000 ? 40 : -40), y: src.y };\n    add(net, src, esc, 12, 'F.Cu');\n    addVia(net, esc);\n    // 长跑全 B：竖→横→竖，互异 runY / riseX，不占 F\n    L(net, [\n      esc, { x: esc.x, y: runY }, { x: riseX, y: runY }, { x: riseX, y: jPad.y }\n    ], 12, 'B.Cu');\n    addVia(net, { x: riseX, y: jPad.y });\n    add(net, { x: riseX, y: jPad.y }, jPad, 12, 'F.Cu');\n  };",
+  "new_string": "  let slot = 0;\n  const toHdr = (net, src, jPad) => {\n    if (!net || !src || !jPad) return;\n    const s = slot++;\n    const riseX = 2650 + s * 45;\n    const runY = 60 + s * 32;\n    // 板内走 F（横/竖分层靠互异 runY）；仅右缘 riseX 用 B 下落，避开本地 B 绕行\n    L(net, [\n      src, { x: src.x, y: runY }, { x: riseX, y: runY }\n    ], 12, 'F.Cu');\n    addVia(net, { x: riseX, y: runY });\n    add(net, { x: riseX, y: runY }, { x: riseX, y: jPad.y }, 12, 'B.Cu');\n    addVia(net, { x: riseX, y: jPad.y });\n    add(net, { x: riseX, y: jPad.y }, jPad, 12, 'F.Cu');\n  };"
+}

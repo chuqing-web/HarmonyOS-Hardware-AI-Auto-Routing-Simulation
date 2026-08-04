@@ -1,12 +1,15 @@
 /**
  * ElecDraw 启动页 — 工业灰阶布局
- * 顶栏 | 左栏(Getting Started / Start / Help / About) | 右栏(公告 / News)
+ * 顶栏 | 左栏(Getting Started / Start / Help / About) | 右栏(Announcement / News)
  */
 import { BusinessError } from '@kit.BasicServicesKit';
-import { common } from '@kit.AbilityKit';
+import { Want, common } from '@kit.AbilityKit';
 import { picker, fileUri } from '@kit.CoreFileKit';
 import fs from '@ohos.file.fs';
-import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger } from 'common';
+import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger,
+  GitHubDeviceAuth, GitHubOAuthConfig, GitHubStarVerifier, StarCheckKind,
+  LicenseManager, FeatureGate, EventBus, ModuleEvent
+} from 'common';
 import { AppService } from '../services/AppService';
 import { HomeAnnouncement, HomeAnnouncementService } from '../services/HomeAnnouncementService';
 import { PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
@@ -20,7 +23,10 @@ import {
 } from '../components/proteus/ProteusHomeWidgets';
 import { maximizeAppWindow } from '../utils/WindowLaunchUtil';
 import { ProjectPaths } from '../utils/ProjectPaths';
-import { collectHomeAboutInfo, defaultHomeAboutSnapshot, HomeAboutSnapshot } from '../utils/HomeAboutInfo';
+import {
+  collectHomeAboutInfo, defaultHomeAboutSnapshot, HomeAboutSnapshot, HOME_OFFICIAL_WEBSITE_URL
+} from '../utils/HomeAboutInfo';
+import { ProteusFonts } from '../theme/ProteusTheme';
 
 interface HomeLaunchParams {
   launchMode: string;
@@ -63,10 +69,9 @@ const HELP_HOME_TEXT: string =
   '================================\n\n' +
   '一、启动与工程管理\n' +
   '----------------\n' +
-  '1. 首页左侧 Getting Started\n' +
-  '   · Schematic Capture：进入空白原理图工作区（默认不写盘）\n' +
-  '   · PCB Layout：进入 PCB 布局编辑器\n' +
-  '   · Simulation：进入原理图并展开仿真侧栏\n\n' +
+  '1. 首页左侧 Getting Started（双击进入，须先新建工程文件）\n' +
+  '   · PCB Layout：向导命名 → 创建 .pcbsim 并进入 PCB 编辑器\n' +
+  '   · Simulation：向导命名 → 创建 .schsim 并进入原理图（展开仿真侧栏）\n\n' +
   '2. 首页 Start 面板（左侧第二栏）\n' +
   '   · Open Project：打开 .schsim / .pcbsim / .json 工程\n' +
   '   · New Project：向导命名后进入未落盘工作区，保存请用 文件 → 保存\n' +
@@ -77,8 +82,8 @@ const HELP_HOME_TEXT: string =
   '   · PCB：.pcbsim（PCB 工程，与原理图同目录 project/）\n' +
   '   · Ctrl+N 新建 / Ctrl+O 打开 / Ctrl+S 保存 / 另存为走系统对话框\n' +
   '   · 异常退出后可在最近列表中看到带恢复标记的工程\n\n' +
-  '二、原理图绘制（Schematic Capture）\n' +
-  '--------------------------------\n' +
+  '二、原理图绘制\n' +
+  '------------\n' +
   '1. 器件放置\n' +
   '   · P：放置模式；从左侧器件库拖放到画布\n' +
   '   · 选中器件后可移动、旋转、删除属性编辑\n\n' +
@@ -89,16 +94,16 @@ const HELP_HOME_TEXT: string =
   '   · F7 或菜单「仿真 → ERC」检查悬空引脚、电源冲突等\n' +
   '   · 建议仿真前先通过 ERC\n\n' +
   '4. 从原理图到 PCB\n' +
-  '   · 在原理图侧使用「更新 PCB」将封装与网络同步到 PCB 编辑器\n' +
+  '   · 工具栏 / 工程菜单「导出 PCB」：跳转 PCB 页并将当前原理图同步为 PCB 文件\n' +
   '   · PCB 可用「另存为」保存为 .pcbsim，与 .schsim 区分\n\n' +
   '三、电路仿真（Simulation）\n' +
   '------------------------\n' +
   '1. 启动仿真\n' +
   '   · F5 或工具栏运行/停止仿真\n' +
-  '   · Getting Started → Simulation 会打开右侧仿真相关面板\n\n' +
+  '   · Getting Started → Simulation（双击）新建工程后打开仿真侧栏\n\n' +
   '2. 仪器与波形\n' +
   '   · 右侧「仿真 / 仪器」面板：示波器、逻辑分析仪、探针等\n' +
-  '   · 放置电源、地及完整网表后再运行；空工程不会自动生成文件\n\n' +
+  '   · 放置电源、地及完整网表后再运行\n\n' +
   '3. MCU / 教学实验\n' +
   '   · 右侧「教学」面板：实验模板、步骤说明、MCU 实验入口\n' +
   '   · Start → Open Sample 可打开 lab_* 教程工程\n' +
@@ -106,7 +111,7 @@ const HELP_HOME_TEXT: string =
   '四、PCB 布局（PCB Layout）\n' +
   '------------------------\n' +
   '1. 进入方式\n' +
-  '   · Getting Started → PCB Layout，或原理图更新 PCB 后跳转\n\n' +
+  '   · Getting Started → PCB Layout（双击新建），或原理图「导出 PCB」后跳转\n\n' +
   '2. 常用操作\n' +
   '   · 选择 / 移动 / 旋转封装\n' +
   '   · 走线、过孔工具布线\n' +
@@ -134,7 +139,7 @@ const HELP_HOME_TEXT: string =
   '八、版本与支持\n' +
   '------------\n' +
   '· 版本号见首页顶栏与 About 区域\n' +
-  '· 首页右侧「公告」可展示服务器下发的图片与文字通知\n' +
+  '· Announcement panel on the right can show server-pushed image + text notices\n' +
   '· 更多教程：Start → Open Sample 或右侧教学面板\n';
 
 const UPDATES_INFO_TEXT: string =
@@ -171,13 +176,28 @@ struct HomePage {
   @State helpDialogTitle: string = '';
   @State helpDialogBody: string = '';
   @State helpDialogPrimaryLabel: string = '';
+  @State showGitHubUnlock: boolean = false;
+  @State githubUserCode: string = '';
+  @State githubUnlockStatus: string = '';
+  @State githubUnlockBusy: boolean = false;
+  /** 已记住 GitHub 账户（本地有 token） */
+  @State githubHasToken: boolean = false;
+  @State githubBoundLogin: string = '';
+  /** true=正在走 Device Flow（显示设备码区） */
+  @State githubShowDeviceCode: boolean = false;
   @State announcement: HomeAnnouncement = HomeAnnouncementService.defaultAnnouncement();
   @State announcementLoading: boolean = false;
+  @State wizardModulesHint: string = 'Schematic · Simulation';
+  @State wizardWillCreateFile: boolean = false;
   private helpDialogPrimaryAction: (() => void) | null = null;
+  private githubDeviceCode: string = '';
+  private githubVerifyUri: string = GitHubOAuthConfig.VERIFICATION_URI_FALLBACK;
 
   private appService: AppService = AppService.getInstance();
   private newsHighlightTimer: number = -1;
   private launchGuard: boolean = false;
+  /** New Project 向导完成后的目标：default | pcb | simulation */
+  private wizardLaunchTarget: string = 'default';
 
   onPageShow(): void {
     this.launchGuard = false;
@@ -212,6 +232,8 @@ struct HomePage {
     this.appService.initPlatform(ctx);
     void maximizeAppWindow(ctx);
     await this.appService.ensureTemplatesReady();
+    // 等待记住的 GitHub 账户完成静默 Star 复验，再刷新 About
+    await this.appService.waitLicenseBootstrap();
     this.userProjectDir = this.appService.getUserProjectDir();
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
     this.initNewsItems();
@@ -239,8 +261,190 @@ struct HomePage {
     this.announcementLoading = true;
     try {
       this.announcement = await HomeAnnouncementService.fetchLatest();
+      if (this.announcement.id !== 'local-default' &&
+        (this.announcement.title.length > 0 || this.announcement.body.length > 0)) {
+        Logger.info('HomePage', `Announcement loaded: ${this.announcement.id}`);
+      }
     } finally {
       this.announcementLoading = false;
+    }
+  }
+
+  /** About 网址 → 系统浏览器打开官方站 */
+  private openOfficialWebsite(): void {
+    const raw = (this.aboutInfo.websiteUrl ?? HOME_OFFICIAL_WEBSITE_URL).trim();
+    const url = raw.length > 0 ? raw : HOME_OFFICIAL_WEBSITE_URL;
+    this.openExternalUrl(url);
+  }
+
+  private openExternalUrl(url: string): void {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const want: Want = {
+        action: 'ohos.want.action.viewData',
+        entities: ['entity.system.browsable'],
+        uri: url
+      };
+      void ctx.startAbility(want).catch((e: BusinessError) => {
+        Logger.warn('HomePage', `open url failed: ${e.code} ${e.message}`);
+      });
+    } catch (e) {
+      Logger.warn('HomePage', `open url error: ${e}`);
+    }
+  }
+
+  private openGitHubUnlockDialog(): void {
+    this.showGitHubUnlock = true;
+    this.githubUnlockStatus = '';
+    this.githubUserCode = '';
+    this.githubUnlockBusy = false;
+    this.githubShowDeviceCode = false;
+    void this.prepareGitHubUnlockDialog();
+  }
+
+  /** 打开对话框：若已记住账户则直接检测 Star，跳过重新登录 */
+  private async prepareGitHubUnlockDialog(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await GitHubDeviceAuth.init(ctx);
+      const token = await GitHubDeviceAuth.getStoredToken();
+      const login = await GitHubDeviceAuth.getStoredLogin();
+      this.githubHasToken = token.length > 0;
+      this.githubBoundLogin = login;
+      if (token.length === 0) {
+        this.githubUnlockStatus = '首次使用请授权一次；授权后将记住账户，下次自动检测';
+        return;
+      }
+      this.githubUnlockStatus = login.length > 0
+        ? `已记住账户 @${login}，正在检测 Star…`
+        : '已记住账户，正在检测 Star…';
+      await this.recheckGitHubStar();
+      // 检测后刷新绑定显示
+      this.githubBoundLogin = await GitHubDeviceAuth.getStoredLogin();
+      this.githubHasToken = (await GitHubDeviceAuth.getStoredToken()).length > 0;
+    } catch (e) {
+      this.githubUnlockStatus = `读取账户失败: ${e}`;
+      Logger.warn('HomePage', `prepareGitHubUnlock: ${e}`);
+    }
+  }
+
+  private closeGitHubUnlockDialog(): void {
+    GitHubDeviceAuth.cancelPolling();
+    this.showGitHubUnlock = false;
+    this.githubUnlockBusy = false;
+    this.githubShowDeviceCode = false;
+  }
+
+  private async startGitHubDeviceFlow(): Promise<void> {
+    if (this.githubUnlockBusy) {
+      return;
+    }
+    this.githubUnlockBusy = true;
+    this.githubShowDeviceCode = true;
+    this.githubUnlockStatus = '正在申请设备码…';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await GitHubDeviceAuth.init(ctx);
+      const session = await GitHubDeviceAuth.requestDeviceCode();
+      if (session === null) {
+        this.githubUnlockStatus = '申请设备码失败。请确认 OAuth App 已 Enable Device Flow，并检查网络。';
+        this.githubUnlockBusy = false;
+        return;
+      }
+      this.githubDeviceCode = session.deviceCode;
+      this.githubUserCode = session.userCode;
+      this.githubVerifyUri = session.verificationUri;
+      this.githubUnlockStatus = '请在浏览器输入上方代码并授权，然后 Star 仓库';
+      this.openExternalUrl(session.verificationUri);
+
+      const auth = await GitHubDeviceAuth.pollForToken(session, (msg: string) => {
+        this.githubUnlockStatus = msg;
+      });
+      if (!auth.success) {
+        this.githubUnlockStatus = auth.error.length > 0 ? auth.error : '授权未完成';
+        this.githubUnlockBusy = false;
+        return;
+      }
+
+      this.githubUnlockStatus = '授权成功，账户已记住，正在检测 Star…';
+      const star = await GitHubStarVerifier.activateWithToken(ctx, auth.accessToken);
+      this.githubHasToken = true;
+      this.githubBoundLogin = star.login.length > 0
+        ? star.login
+        : await GitHubDeviceAuth.getStoredLogin();
+      this.githubShowDeviceCode = false;
+      FeatureGate.refresh();
+      EventBus.getInstance().publish({
+        event: ModuleEvent.LICENSE_CHANGED,
+        source: 'entry',
+        timestamp: Date.now(),
+        data: LicenseManager.getInstance().getStatus()
+      });
+      this.refreshAboutInfo();
+
+      if (star.kind === StarCheckKind.STARRED) {
+        this.githubUnlockStatus = star.message + '（账户已记住，下次启动自动检测）';
+        this.githubUnlockBusy = false;
+        this.showGitHubUnlock = false;
+        return;
+      }
+      if (star.kind === StarCheckKind.NOT_STARRED) {
+        this.githubUnlockStatus = '账户已记住。请 Star 仓库后点「检测 Star」。';
+      } else {
+        this.githubUnlockStatus = star.message;
+      }
+    } catch (e) {
+      this.githubUnlockStatus = `解锁失败: ${e}`;
+      Logger.warn('HomePage', `device flow: ${e}`);
+    }
+    this.githubUnlockBusy = false;
+  }
+
+  private async recheckGitHubStar(): Promise<void> {
+    if (this.githubUnlockBusy) {
+      return;
+    }
+    this.githubUnlockBusy = true;
+    this.githubUnlockStatus = this.githubBoundLogin.length > 0
+      ? `使用已记住账户 @${this.githubBoundLogin} 检测中…`
+      : '正在检测 Star…';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const msg = await this.appService.revalidateGitHubStar(ctx);
+      this.githubHasToken = (await GitHubDeviceAuth.getStoredToken()).length > 0;
+      this.githubBoundLogin = await GitHubDeviceAuth.getStoredLogin();
+      this.refreshAboutInfo();
+      this.githubUnlockStatus = msg;
+      if (LicenseManager.getInstance().isStarUnlocked()) {
+        this.githubUnlockStatus = msg + '（账户已记住）';
+        this.showGitHubUnlock = false;
+      } else if (!this.githubHasToken) {
+        this.githubUnlockStatus = '授权已失效，请重新授权一次';
+      }
+    } catch (e) {
+      this.githubUnlockStatus = `检测失败: ${e}`;
+    }
+    this.githubUnlockBusy = false;
+  }
+
+  private async clearRememberedGitHubAccount(): Promise<void> {
+    if (this.githubUnlockBusy) {
+      return;
+    }
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await GitHubDeviceAuth.init(ctx);
+      await GitHubDeviceAuth.clearToken();
+      LicenseManager.getInstance().setStarUnlock(false, '');
+      FeatureGate.refresh();
+      this.githubHasToken = false;
+      this.githubBoundLogin = '';
+      this.githubUserCode = '';
+      this.githubShowDeviceCode = false;
+      this.refreshAboutInfo();
+      this.githubUnlockStatus = '已清除记住的账户，请重新授权';
+    } catch (e) {
+      this.githubUnlockStatus = `清除失败: ${e}`;
     }
   }
 
@@ -289,7 +493,8 @@ struct HomePage {
       if (this.fileExists(path) && !seen.has(path)) {
         seen.add(path);
         const e = this.entryFromPath(path, false);
-        entries.push({ path: path, name: labs[i].name, modifiedMs: e.modifiedMs, isRecovery: false });
+        // 与 Recent 一致：名称后附文件后缀，标明原理图/PCB
+        entries.push({ path: path, name: e.name, modifiedMs: e.modifiedMs, isRecovery: false });
       }
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -315,16 +520,11 @@ struct HomePage {
     return { path: path, name: this.baseName(path), modifiedMs: modifiedMs, isRecovery: isRecovery };
   }
 
+  /** 列表显示名：保留 .schsim / .pcbsim 后缀，便于区分原理图与 PCB */
   private baseName(path: string): string {
     const norm = path.replace(/\\/g, '/');
     const slash = norm.lastIndexOf('/');
-    let name = slash >= 0 ? norm.substring(slash + 1) : norm;
-    if (name.endsWith(ProjectPaths.SCH_EXT)) {
-      name = name.substring(0, name.length - ProjectPaths.SCH_EXT.length);
-    } else if (name.endsWith(ProjectPaths.PCB_EXT)) {
-      name = name.substring(0, name.length - ProjectPaths.PCB_EXT.length);
-    }
-    return name;
+    return slash >= 0 ? norm.substring(slash + 1) : norm;
   }
 
   private listEntries(): HomeProjectEntry[] {
@@ -428,9 +628,20 @@ struct HomePage {
     } catch (_e) { /* ignore */ }
   }
 
-  startNewProjectWizard(): void {
+  startNewProjectWizard(target: string = 'default'): void {
+    this.wizardLaunchTarget = target;
     this.wizardProjectName = '';
     this.wizardStep = 0;
+    if (target === 'pcb') {
+      this.wizardModulesHint = 'PCB Layout';
+      this.wizardWillCreateFile = true;
+    } else if (target === 'simulation') {
+      this.wizardModulesHint = 'Schematic · Simulation';
+      this.wizardWillCreateFile = true;
+    } else {
+      this.wizardModulesHint = 'Schematic · Simulation';
+      this.wizardWillCreateFile = false;
+    }
     this.showWizard = true;
   }
 
@@ -439,7 +650,22 @@ struct HomePage {
     if (name.length === 0) {
       name = 'Untitled';
     }
+    const target = this.wizardLaunchTarget;
+    this.wizardLaunchTarget = 'default';
     this.showWizard = false;
+    if (target === 'pcb') {
+      this.goToPcbEditor({ launchMode: 'new', projectName: name });
+      return;
+    }
+    if (target === 'simulation') {
+      this.goToEditor({
+        launchMode: 'new',
+        projectName: name,
+        openRightTab: 1,
+        expandRightPanel: true
+      });
+      return;
+    }
     const scratchOpts: HomeScratchOptions = { projectName: name };
     this.launchScratchWorkspace(scratchOpts);
   }
@@ -460,29 +686,14 @@ struct HomePage {
     }
   }
 
-  /** Getting Started：PCB 布局工作区 */
+  /** Getting Started：双击后经新建向导创建 .pcbsim 进入 PCB */
   openPcbLayout(): void {
-    const app = AppService.getInstance();
-    if (app.currentProject !== null) {
-      this.goToPcbEditor({ launchMode: 'resume' });
-      return;
-    }
-    this.goToPcbEditor({ launchMode: 'scratch', persistProject: false });
+    this.startNewProjectWizard('pcb');
   }
 
-  /** Getting Started：空白原理图工作区（不写盘） */
-  openBlankSchematic(): void {
-    this.launchScratchWorkspace();
-  }
-
-  /** Getting Started：打开仿真侧栏；空工程不自动落盘 */
+  /** Getting Started：双击后经新建向导创建 .schsim 并打开仿真侧栏 */
   openSimulation(): void {
-    const scratchOpts: HomeScratchOptions = {
-      autoStartSim: false,
-      openRightTab: 1,
-      expandRightPanel: true
-    };
-    this.launchScratchWorkspace(scratchOpts);
+    this.startNewProjectWizard('simulation');
   }
 
   /** Help Home：说明 + 可选进入教学面板（仍不写盘） */
@@ -501,7 +712,7 @@ struct HomePage {
   openFlowchartUnavailable(): void {
     this.openHelpDialog(
       'New Flowchart',
-      'Flowchart 模块尚未在本版本中提供。\n\n请使用 Schematic Capture 绘制原理图。'
+      'Flowchart 模块尚未在本版本中提供。\n\n请使用 Simulation 或打开示例工程绘制原理图。'
     );
   }
 
@@ -573,8 +784,13 @@ struct HomePage {
           step: this.wizardStep,
           projectName: this.wizardProjectName,
           projectDir: this.userProjectDir,
+          modulesHint: this.wizardModulesHint,
+          willCreateFile: this.wizardWillCreateFile,
           onNameChange: (v: string) => { this.wizardProjectName = v; },
-          onCancel: () => { this.showWizard = false; },
+          onCancel: () => {
+            this.showWizard = false;
+            this.wizardLaunchTarget = 'default';
+          },
           onBack: () => { this.wizardStep = 0; },
           onNext: () => { this.wizardStep = 1; },
           onFinish: () => { this.confirmWizardFinish(); }
@@ -598,6 +814,10 @@ struct HomePage {
           onClose: () => { this.closeHelpDialog(); }
         })
       }
+
+      if (this.showGitHubUnlock) {
+        this.GitHubUnlockDialog()
+      }
     }
     .width('100%')
     .height('100%')
@@ -605,13 +825,255 @@ struct HomePage {
   }
 
   @Builder
+  GitHubUnlockDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#00000066')
+        .onClick(() => this.closeGitHubUnlockDialog())
+
+      Column() {
+        Row() {
+          Text('GitHub Star 解锁专业版')
+            .fontSize(ProteusFonts.TITLE)
+            .fontColor(ProteusHomeColors.PANEL_HEAD_TEXT)
+            .fontWeight(FontWeight.Bold)
+            .layoutWeight(1)
+            .padding({ left: 12 })
+          Text('×')
+            .fontSize(16)
+            .fontColor(ProteusHomeColors.TEXT_DIM)
+            .width(32)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .onClick(() => this.closeGitHubUnlockDialog())
+        }
+        .width('100%')
+        .height(34)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(ProteusHomeColors.PANEL_HEAD_BG)
+        .border({ width: { bottom: 1 }, color: ProteusHomeColors.PANEL_BORDER })
+
+        Column() {
+          // 已记住账户
+          if (this.githubHasToken) {
+            Column() {
+              Text('已记住账户')
+                .fontSize(9)
+                .fontColor(ProteusHomeColors.TEXT_DIM)
+                .width('100%')
+              Text(this.githubBoundLogin.length > 0
+                ? `@${this.githubBoundLogin}`
+                : 'GitHub 已授权')
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(ProteusHomeColors.LINK)
+                .width('100%')
+                .margin({ top: 2, bottom: 4 })
+              Text('下次启动将自动用此账户检测 Star，无需再次登录')
+                .fontSize(9)
+                .fontColor(ProteusHomeColors.TEXT_DIM)
+                .width('100%')
+            }
+            .width('100%')
+            .padding(10)
+            .margin({ bottom: 8 })
+            .backgroundColor(ProteusHomeColors.PANEL_BG)
+            .border({ width: 1, color: ProteusHomeColors.PANEL_BORDER })
+            .alignItems(HorizontalAlign.Start)
+          } else {
+            Text('首次解锁（仅需一次）')
+              .fontSize(10)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(ProteusHomeColors.TEXT)
+              .width('100%')
+              .margin({ bottom: 6 })
+            this.GitHubUnlockStepRow('1', '点「开始授权」，浏览器登录 GitHub')
+            this.GitHubUnlockStepRow('2', '输入设备码完成授权（账户将被记住）')
+            this.GitHubUnlockStepRow('3', 'Star 仓库后自动成为专业版')
+            this.GitHubUnlockStepRow('4', '之后每次启动联网自动复验，无需再登录')
+          }
+
+          // 仅在重新授权流程中显示设备码
+          if (this.githubShowDeviceCode || (!this.githubHasToken && this.githubUserCode.length > 0)) {
+            Column() {
+              Text('设备码')
+                .fontSize(9)
+                .fontColor(ProteusHomeColors.TEXT_DIM)
+                .width('100%')
+                .margin({ bottom: 4 })
+              Text(this.githubUserCode.length > 0 ? this.githubUserCode : '— — — —')
+                .fontSize(22)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.githubUserCode.length > 0
+                  ? ProteusHomeColors.LINK
+                  : ProteusHomeColors.TEXT_DIM)
+                .letterSpacing(2)
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({ top: 8, bottom: 8 })
+              Text('在 github.com/login/device 输入上述代码')
+                .fontSize(8)
+                .fontColor(ProteusHomeColors.TEXT_DIM)
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
+            .width('100%')
+            .padding(10)
+            .margin({ top: 4, bottom: 8 })
+            .backgroundColor(ProteusHomeColors.PANEL_BG)
+            .border({ width: 1, color: ProteusHomeColors.PANEL_BORDER })
+          }
+
+          Row() {
+            Circle()
+              .width(7)
+              .height(7)
+              .fill(this.githubUnlockBusy
+                ? ProteusHomeColors.ACCENT
+                : (this.aboutInfo.isStarPro
+                  ? '#2F7D4A'
+                  : ProteusHomeColors.TEXT_DIM))
+              .margin({ right: 6 })
+            Text(this.githubUnlockStatus.length > 0
+              ? this.githubUnlockStatus
+              : (this.githubHasToken ? '就绪 · 将自动检测' : '就绪 · 首次请授权'))
+              .fontSize(9)
+              .fontColor(ProteusHomeColors.TEXT)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .backgroundColor(ProteusHomeColors.ACCENT_SOFT)
+          .border({ width: 1, color: ProteusHomeColors.ACCENT_HOVER })
+          .margin({ bottom: 4 })
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 12, bottom: 8 })
+        .backgroundColor(ProteusHomeColors.PANEL_INSET)
+        .alignItems(HorizontalAlign.Start)
+
+        // 主操作：有账户 → 检测；无账户 → 授权
+        Row({ space: 8 }) {
+          if (this.githubHasToken && !this.githubShowDeviceCode) {
+            ProteusHomeDownloadBtn({
+              label: this.githubUnlockBusy ? '检测中…' : '检测 Star',
+              primary: true,
+              btnEnabled: !this.githubUnlockBusy,
+              onAction: () => { void this.recheckGitHubStar(); }
+            })
+            ProteusHomeDownloadBtn({
+              label: '打开仓库',
+              primary: false,
+              btnEnabled: true,
+              onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
+            })
+          } else {
+            ProteusHomeDownloadBtn({
+              label: this.githubUnlockBusy ? '进行中…' : '开始授权',
+              primary: true,
+              btnEnabled: !this.githubUnlockBusy,
+              onAction: () => { void this.startGitHubDeviceFlow(); }
+            })
+            ProteusHomeDownloadBtn({
+              label: '打开验证页',
+              primary: false,
+              btnEnabled: this.githubVerifyUri.length > 0 && !this.githubUnlockBusy,
+              onAction: () => this.openExternalUrl(this.githubVerifyUri)
+            })
+            ProteusHomeDownloadBtn({
+              label: '打开仓库',
+              primary: false,
+              btnEnabled: true,
+              onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
+            })
+          }
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 4, bottom: 6 })
+        .backgroundColor(ProteusHomeColors.PANEL_INSET)
+
+        Row({ space: 8 }) {
+          if (this.githubHasToken && !this.githubShowDeviceCode) {
+            ProteusHomeDownloadBtn({
+              label: '换账号重新授权',
+              primary: false,
+              btnEnabled: !this.githubUnlockBusy,
+              onAction: () => { void this.startGitHubDeviceFlow(); }
+            })
+            ProteusHomeDownloadBtn({
+              label: '清除账户',
+              primary: false,
+              btnEnabled: !this.githubUnlockBusy,
+              onAction: () => { void this.clearRememberedGitHubAccount(); }
+            })
+          }
+          Blank()
+          ProteusHomeDownloadBtn({
+            label: '关闭',
+            primary: false,
+            btnEnabled: true,
+            onAction: () => this.closeGitHubUnlockDialog()
+          })
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 2, bottom: 12 })
+        .backgroundColor(ProteusHomeColors.PANEL_INSET)
+      }
+      .width(460)
+      .border({ width: 1, color: ProteusHomeColors.PANEL_BORDER })
+      .clip(true)
+      .onClick(() => { /* 阻止点穿关闭 */ })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  GitHubUnlockStepRow(num: string, text: string) {
+    Row() {
+      Text(num)
+        .fontSize(9)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(ProteusHomeColors.BTN_PRIMARY_TEXT)
+        .textAlign(TextAlign.Center)
+        .width(18)
+        .height(18)
+        .backgroundColor(ProteusHomeColors.BTN_PRIMARY)
+        .borderRadius(2)
+        .margin({ right: 8 })
+      Text(text)
+        .fontSize(10)
+        .fontColor(ProteusHomeColors.TEXT)
+        .layoutWeight(1)
+        .lineHeight(16)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+    .margin({ bottom: 5 })
+  }
+
+  @Builder
   LeftSidebar() {
     Column() {
       ProteusHomeSectionTitle({ title: 'Getting Started' })
       Column() {
-        ProteusHomeIconLink({ label: 'Schematic Capture', onAction: () => this.openBlankSchematic() })
-        ProteusHomeIconLink({ label: 'PCB Layout', onAction: () => { this.openPcbLayout(); } })
-        ProteusHomeIconLink({ label: 'Simulation', onAction: () => this.openSimulation() })
+        Text('双击 · 须先新建工程')
+          .fontSize(8)
+          .fontColor(ProteusHomeColors.TEXT_DIM)
+          .width('100%')
+          .padding({ left: 10, right: 8, top: 2, bottom: 1 })
+        ProteusHomeIconLink({
+          label: 'Simulation',
+          requireDoubleClick: true,
+          onAction: () => this.openSimulation()
+        })
+        ProteusHomeIconLink({
+          label: 'PCB Layout',
+          requireDoubleClick: true,
+          onAction: () => { this.openPcbLayout(); }
+        })
       }
       .width('100%')
       .padding({ top: 2, bottom: 4 })
@@ -743,8 +1205,15 @@ struct HomePage {
           .width('100%')
           .textAlign(TextAlign.Center)
           .margin({ top: 2, bottom: 4 })
+          .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+          .onClick(() => this.openOfficialWebsite())
 
         Column() {
+          ProteusHomeAboutRow({
+            label: 'Licence',
+            value: this.aboutInfo.licenseTierLine,
+            warn: this.aboutInfo.isEvaluation
+          })
           ProteusHomeAboutRow({
             label: 'Registered To',
             value: this.aboutInfo.registeredToLine,
@@ -765,6 +1234,17 @@ struct HomePage {
         .padding({ top: 2, bottom: 2 })
         .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
         .margin({ left: 6, right: 6, bottom: 2 })
+
+        Text(this.aboutInfo.isStarPro || !this.aboutInfo.isEvaluation
+          ? '专业版已激活'
+          : 'GitHub Star 解锁专业版…')
+          .fontSize(8)
+          .fontColor(ProteusHomeColors.LINK)
+          .decoration({ type: TextDecorationType.Underline, color: ProteusHomeColors.LINK })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 2, bottom: 2 })
+          .onClick(() => this.openGitHubUnlockDialog())
 
         Text(`Free Memory: ${this.aboutInfo.freeMemoryLine}`)
           .fontSize(8)
@@ -807,7 +1287,8 @@ struct HomePage {
         body: this.announcement.body,
         imageUrl: this.announcement.imageUrl,
         publishedAt: this.announcement.publishedAt,
-        loading: this.announcementLoading
+        loading: this.announcementLoading,
+        panelWeight: 2.6
       })
 
       ProteusHomePanel({ title: 'News', panelWeight: 1, highlighted: this.newsHighlight }) {

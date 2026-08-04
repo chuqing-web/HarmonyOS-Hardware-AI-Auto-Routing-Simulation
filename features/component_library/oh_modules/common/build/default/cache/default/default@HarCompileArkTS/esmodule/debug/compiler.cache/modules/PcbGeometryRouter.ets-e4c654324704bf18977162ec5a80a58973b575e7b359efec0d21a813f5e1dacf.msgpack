@@ -1,0 +1,833 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ!/**
+ * ä¿¡å·å¤šå±‚å‡ ä½• â€” æŒ‰ LLM å±‚è§’è‰²é€‰ H/V/stub å±‚ï¼Œæ¢å±‚å¿… viaï¼›æ‰§è¡Œç­–ç•¥ä¸è‡ªåˆ›è§’è‰²
+ */
+import { copperLayersFromStack } from '../../types/PcbTypes';
+import { IdUtil } from '../IdUtil';
+import { padWorldPosition } from '../PcbZoneUtil';
+import { orderPointsNearestNeighbor } from '../PcbTrackBindUtil';
+import { createViaAt } from './PcbViaFactory';
+import { pathClearOfTracks, trackWidthForNet } from './PcbClearanceOracle';
+import { routePowerBuses } from './PowerBusRouter';
+import { ensureAllCopperUsed } from './ensureAllCopperUsed';
+import { policyCoversCopperLayers } from '../../types/PcbAiRouteTypes';
+import { tracePcb, tracePcbWarn } from '../PcbTraceLog';
+function snap(v, grid) {
+    if (grid <= 0) {
+        return v;
+    }
+    return Math.round(v / grid) * grid;
+}
+function dist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+function findLayerForRole(policy, role) {
+    const keys = Object.keys(policy.layerRoles);
+    for (let i = 0; i < keys.length; i++) {
+        if (policy.layerRoles[keys[i]] === role) {
+            return keys[i];
+        }
+    }
+    return null;
+}
+function addSeg(tracks, layer, a, b, netId, netName, width) {
+    if (dist(a, b) < 0.5) {
+        return;
+    }
+    tracks.push({
+        id: IdUtil.generate('trk'),
+        layer,
+        start: { x: a.x, y: a.y },
+        end: { x: b.x, y: b.y },
+        width,
+        netId,
+        netName
+    });
+}
+function resolveSignalLayers(policy, _copper) {
+    const h = findLayerForRole(policy, 'signal_h');
+    const stub = findLayerForRole(policy, 'stub');
+    // å‚ç›´å±‚ï¼šä»…å¤ç”¨ LLM å·²å£°æ˜çš„ signal_v æˆ– stubï¼Œç¦æ­¢ç”¨é“œå±‚åˆ—è¡¨å†’å……
+    const v = findLayerForRole(policy, 'signal_v') ?? stub;
+    if (!h || !stub || !v) {
+        return null;
+    }
+    return { h, v, stub };
+}
+function routePairOrtho(doc, policy, layers, a, b, netId, netName, width, grid, existing, tracks, vias) {
+    const midH = { x: snap(b.x, grid), y: snap(a.y, grid) };
+    const midV = { x: snap(a.x, grid), y: snap(b.y, grid) };
+    const tryHFirst = dist(a, midH) + dist(midH, b) <= dist(a, midV) + dist(midV, b);
+    const mid = tryHFirst ? midH : midV;
+    // æ°´å¹³æ®µèµ° signal_hï¼Œå‚ç›´æ®µèµ° signal_vï¼›èµ·ç‚¹å…ˆ stub å¼•å‡º
+    const startLayer = layers.stub;
+    const hLayer = layers.h;
+    const vLayer = layers.v;
+    const segs = [];
+    if (dist(a, mid) >= 0.5) {
+        const horiz = Math.abs(a.y - mid.y) < 0.5;
+        const seg0 = { layer: horiz ? hLayer : vLayer, p0: a, p1: mid };
+        segs.push(seg0);
+    }
+    if (dist(mid, b) >= 0.5) {
+        const horiz = Math.abs(mid.y - b.y) < 0.5;
+        const seg1 = { layer: horiz ? hLayer : vLayer, p0: mid, p1: b };
+        segs.push(seg1);
+    }
+    if (segs.length === 0) {
+        return true;
+    }
+    // stub å¼•å‡ºåˆ°ç¬¬ä¸€æŠ˜ç‚¹å±‚
+    let curLayer = startLayer;
+    const first = segs[0];
+    if (curLayer !== first.layer) {
+        const viaPos = { x: snap(a.x, grid), y: snap(a.y, grid) };
+        if (!pathClearOfTracks(doc, curLayer, a, viaPos, netId, width, existing.concat(tracks))) {
+            // åŒç‚¹ via ä»å…è®¸
+        }
+        vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, first.layer));
+        curLayer = first.layer;
+    }
+    for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        if (curLayer !== s.layer) {
+            const viaPos = { x: snap(s.p0.x, grid), y: snap(s.p0.y, grid) };
+            vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, s.layer));
+            curLayer = s.layer;
+        }
+        if (!pathClearOfTracks(doc, s.layer, s.p0, s.p1, netId, width, existing.concat(tracks))) {
+            return false;
+        }
+        addSeg(tracks, s.layer, s.p0, s.p1, netId, netName, width);
+    }
+    return true;
+}
+function collectNetPads(doc, netId) {
+    const pts = [];
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            if ((pad.netId ?? '') === netId) {
+                pts.push(padWorldPosition(fp, pad));
+            }
+        }
+    }
+    return pts;
+}
+/**
+ * æ‰§è¡Œ LLM ç­–ç•¥çš„å®Œæ•´å‡ ä½•å¸ƒçº¿ï¼ˆç”µæºæ€»çº¿ + ä¿¡å·ï¼‰
+ */
+export function runPcbGeometryRoute(doc, policy, netPlan) {
+    const empty = {
+        ok: false, tracks: [], vias: [], routedNetIds: [], failedNetIds: [],
+        missingCopperLayers: [], reason: ''
+    };
+    if (!policy.fromLlm) {
+        empty.reason = 'route policy not from LLM';
+        return empty;
+    }
+    if (!netPlan.fromLlm) {
+        empty.reason = 'net plan not from LLM';
+        return empty;
+    }
+    const copper = copperLayersFromStack(doc.layerStack);
+    const missingRoles = policyCoversCopperLayers(policy, copper);
+    if (missingRoles.length > 0) {
+        empty.reason = `LLM layerRoles missing copper: ${missingRoles.join(',')}`;
+        return empty;
+    }
+    const grid = doc.metadata.gridSize ?? 5;
+    const tracks = [];
+    const vias = [];
+    const routed = [];
+    const failed = [];
+    const power = routePowerBuses(doc, policy, netPlan.nets);
+    if (!power.ok) {
+        empty.reason = power.reason;
+        return empty;
+    }
+    for (let i = 0; i < power.tracks.length; i++) {
+        tracks.push(power.tracks[i]);
+    }
+    for (let i = 0; i < power.vias.length; i++) {
+        vias.push(power.vias[i]);
+    }
+    for (let i = 0; i < netPlan.nets.length; i++) {
+        const ne = netPlan.nets[i];
+        if ((ne.kind === 'gnd' || ne.kind === 'power') && ne.routeMode !== 'defer') {
+            routed.push(ne.netId);
+        }
+    }
+    const sigLayers = resolveSignalLayers(policy, copper);
+    if (!sigLayers) {
+        empty.reason = 'LLM policy missing signal_h/stub roles for signal routing';
+        return empty;
+    }
+    // æŒ‰ priorityOrder å†æŒ‰ entry.priority
+    const order = [];
+    const byId = new Map();
+    for (let i = 0; i < netPlan.nets.length; i++) {
+        byId.set(netPlan.nets[i].netId, netPlan.nets[i]);
+    }
+    for (let i = 0; i < netPlan.priorityOrder.length; i++) {
+        const e = byId.get(netPlan.priorityOrder[i]);
+        if (e) {
+            order.push(e);
+        }
+    }
+    for (let i = 0; i < netPlan.nets.length; i++) {
+        if (order.indexOf(netPlan.nets[i]) < 0) {
+            order.push(netPlan.nets[i]);
+        }
+    }
+    order.sort((a, b) => b.priority - a.priority);
+    for (let i = 0; i < order.length; i++) {
+        const ne = order[i];
+        if (ne.kind === 'gnd' || ne.kind === 'power') {
+            continue;
+        }
+        if (ne.routeMode === 'defer') {
+            continue;
+        }
+        if (ne.routeMode !== 'forceTrack' && ne.routeMode !== 'forcePour') {
+            continue;
+        }
+        const pads = collectNetPads(doc, ne.netId);
+        if (pads.length < 2) {
+            continue;
+        }
+        const width = trackWidthForNet(doc, ne.netId);
+        const ordered = orderPointsNearestNeighbor(pads);
+        let okNet = true;
+        for (let j = 0; j < ordered.length - 1; j++) {
+            const ok = routePairOrtho(doc, policy, sigLayers, ordered[j], ordered[j + 1], ne.netId, ne.netName, width, grid, doc.tracks, tracks, vias);
+            if (!ok) {
+                okNet = false;
+                break;
+            }
+        }
+        if (okNet) {
+            routed.push(ne.netId);
+            tracePcb('AI_GEO_NET', `${ne.netName} ok pads=${pads.length}`);
+        }
+        else {
+            failed.push(ne.netId);
+            tracePcbWarn('AI_GEO_FAIL', `${ne.netName} clearance/path fail`);
+        }
+    }
+    const missingCopper = ensureAllCopperUsed(doc, tracks);
+    if (failed.length > 0) {
+        return {
+            ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+            missingCopperLayers: missingCopper,
+            reason: `signal nets failed: ${failed.length}`
+        };
+    }
+    if (missingCopper.length > 0) {
+        return {
+            ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+            missingCopperLayers: missingCopper,
+            reason: `copper layers unused: ${missingCopper.join(',')}`
+        };
+    }
+    return {
+        ok: true, tracks, vias, routedNetIds: routed, failedNetIds: [],
+        missingCopperLayers: [], reason: 'ok'
+    };
+}
+//# sourceMappingURL=PcbGeometryRouter.js.mapÂšÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙRC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbViaFactory.etsÙWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsÙSC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PowerBusRouter.etsÙXC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\ensureAllCopperUsed.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙVC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbGeometryRouter.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ0./src/main/ets/utils/pcb_route/PcbGeometryRouter¦commonÃÚ##/**
+ * ä¿¡å·å¤šå±‚å‡ ä½• â€” æŒ‰ LLM å±‚è§’è‰²é€‰ H/V/stub å±‚ï¼Œæ¢å±‚å¿… viaï¼›æ‰§è¡Œç­–ç•¥ä¸è‡ªåˆ›è§’è‰²
+ */
+import {
+  PcbDocument, PcbLayerId, PcbTrack, PcbVia, copperLayersFromStack
+} from '../../types/PcbTypes';
+import { Point2D } from '../../types/CommonTypes';
+import {
+  PcbGeometryResult, PcbLayerRole, PcbNetPlanEntry, PcbNetPlanResult, PcbRoutePolicy
+} from '../../types/PcbAiRouteTypes';
+import { IdUtil } from '../IdUtil';
+import { padWorldPosition } from '../PcbZoneUtil';
+import { orderPointsNearestNeighbor } from '../PcbTrackBindUtil';
+import { createViaAt } from './PcbViaFactory';
+import { pathClearOfTracks, trackWidthForNet } from './PcbClearanceOracle';
+import { routePowerBuses } from './PowerBusRouter';
+import { ensureAllCopperUsed } from './ensureAllCopperUsed';
+import { policyCoversCopperLayers } from '../../types/PcbAiRouteTypes';
+import { tracePcb, tracePcbWarn } from '../PcbTraceLog';
+
+function snap(v: number, grid: number): number {
+  if (grid <= 0) {
+    return v;
+  }
+  return Math.round(v / grid) * grid;
+}
+
+function dist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function findLayerForRole(policy: PcbRoutePolicy, role: PcbLayerRole): PcbLayerId | null {
+  const keys = Object.keys(policy.layerRoles);
+  for (let i = 0; i < keys.length; i++) {
+    if (policy.layerRoles[keys[i]] === role) {
+      return keys[i] as PcbLayerId;
+    }
+  }
+  return null;
+}
+
+function addSeg(tracks: PcbTrack[], layer: PcbLayerId, a: Point2D, b: Point2D,
+  netId: string, netName: string, width: number): void {
+  if (dist(a, b) < 0.5) {
+    return;
+  }
+  tracks.push({
+    id: IdUtil.generate('trk'),
+    layer,
+    start: { x: a.x, y: a.y },
+    end: { x: b.x, y: b.y },
+    width,
+    netId,
+    netName
+  });
+}
+
+interface LayerPair {
+  h: PcbLayerId;
+  v: PcbLayerId;
+  stub: PcbLayerId;
+}
+
+interface RouteSeg {
+  layer: PcbLayerId;
+  p0: Point2D;
+  p1: Point2D;
+}
+
+function resolveSignalLayers(policy: PcbRoutePolicy, _copper: PcbLayerId[]): LayerPair | null {
+  const h = findLayerForRole(policy, 'signal_h');
+  const stub = findLayerForRole(policy, 'stub');
+  // å‚ç›´å±‚ï¼šä»…å¤ç”¨ LLM å·²å£°æ˜çš„ signal_v æˆ– stubï¼Œç¦æ­¢ç”¨é“œå±‚åˆ—è¡¨å†’å……
+  const v = findLayerForRole(policy, 'signal_v') ?? stub;
+  if (!h || !stub || !v) {
+    return null;
+  }
+  return { h, v, stub };
+}
+
+function routePairOrtho(
+  doc: PcbDocument,
+  policy: PcbRoutePolicy,
+  layers: LayerPair,
+  a: Point2D,
+  b: Point2D,
+  netId: string,
+  netName: string,
+  width: number,
+  grid: number,
+  existing: PcbTrack[],
+  tracks: PcbTrack[],
+  vias: PcbVia[]
+): boolean {
+  const midH: Point2D = { x: snap(b.x, grid), y: snap(a.y, grid) };
+  const midV: Point2D = { x: snap(a.x, grid), y: snap(b.y, grid) };
+  const tryHFirst = dist(a, midH) + dist(midH, b) <= dist(a, midV) + dist(midV, b);
+  const mid = tryHFirst ? midH : midV;
+  // æ°´å¹³æ®µèµ° signal_hï¼Œå‚ç›´æ®µèµ° signal_vï¼›èµ·ç‚¹å…ˆ stub å¼•å‡º
+  const startLayer = layers.stub;
+  const hLayer = layers.h;
+  const vLayer = layers.v;
+
+  const segs: RouteSeg[] = [];
+  if (dist(a, mid) >= 0.5) {
+    const horiz = Math.abs(a.y - mid.y) < 0.5;
+    const seg0: RouteSeg = { layer: horiz ? hLayer : vLayer, p0: a, p1: mid };
+    segs.push(seg0);
+  }
+  if (dist(mid, b) >= 0.5) {
+    const horiz = Math.abs(mid.y - b.y) < 0.5;
+    const seg1: RouteSeg = { layer: horiz ? hLayer : vLayer, p0: mid, p1: b };
+    segs.push(seg1);
+  }
+  if (segs.length === 0) {
+    return true;
+  }
+
+  // stub å¼•å‡ºåˆ°ç¬¬ä¸€æŠ˜ç‚¹å±‚
+  let curLayer = startLayer;
+  const first = segs[0];
+  if (curLayer !== first.layer) {
+    const viaPos: Point2D = { x: snap(a.x, grid), y: snap(a.y, grid) };
+    if (!pathClearOfTracks(doc, curLayer, a, viaPos, netId, width, existing.concat(tracks))) {
+      // åŒç‚¹ via ä»å…è®¸
+    }
+    vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, first.layer));
+    curLayer = first.layer;
+  }
+
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (curLayer !== s.layer) {
+      const viaPos: Point2D = { x: snap(s.p0.x, grid), y: snap(s.p0.y, grid) };
+      vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, s.layer));
+      curLayer = s.layer;
+    }
+    if (!pathClearOfTracks(doc, s.layer, s.p0, s.p1, netId, width, existing.concat(tracks))) {
+      return false;
+    }
+    addSeg(tracks, s.layer, s.p0, s.p1, netId, netName, width);
+  }
+  return true;
+}
+
+function collectNetPads(doc: PcbDocument, netId: string): Point2D[] {
+  const pts: Point2D[] = [];
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if ((pad.netId ?? '') === netId) {
+        pts.push(padWorldPosition(fp, pad));
+      }
+    }
+  }
+  return pts;
+}
+
+/**
+ * æ‰§è¡Œ LLM ç­–ç•¥çš„å®Œæ•´å‡ ä½•å¸ƒçº¿ï¼ˆç”µæºæ€»çº¿ + ä¿¡å·ï¼‰
+ */
+export function runPcbGeometryRoute(
+  doc: PcbDocument,
+  policy: PcbRoutePolicy,
+  netPlan: PcbNetPlanResult
+): PcbGeometryResult {
+  const empty: PcbGeometryResult = {
+    ok: false, tracks: [], vias: [], routedNetIds: [], failedNetIds: [],
+    missingCopperLayers: [], reason: ''
+  };
+
+  if (!policy.fromLlm) {
+    empty.reason = 'route policy not from LLM';
+    return empty;
+  }
+  if (!netPlan.fromLlm) {
+    empty.reason = 'net plan not from LLM';
+    return empty;
+  }
+
+  const copper = copperLayersFromStack(doc.layerStack);
+  const missingRoles = policyCoversCopperLayers(policy, copper);
+  if (missingRoles.length > 0) {
+    empty.reason = `LLM layerRoles missing copper: ${missingRoles.join(',')}`;
+    return empty;
+  }
+
+  const grid = doc.metadata.gridSize ?? 5;
+  const tracks: PcbTrack[] = [];
+  const vias: PcbVia[] = [];
+  const routed: string[] = [];
+  const failed: string[] = [];
+
+  const power = routePowerBuses(doc, policy, netPlan.nets);
+  if (!power.ok) {
+    empty.reason = power.reason;
+    return empty;
+  }
+  for (let i = 0; i < power.tracks.length; i++) {
+    tracks.push(power.tracks[i]);
+  }
+  for (let i = 0; i < power.vias.length; i++) {
+    vias.push(power.vias[i]);
+  }
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    const ne = netPlan.nets[i];
+    if ((ne.kind === 'gnd' || ne.kind === 'power') && ne.routeMode !== 'defer') {
+      routed.push(ne.netId);
+    }
+  }
+
+  const sigLayers = resolveSignalLayers(policy, copper);
+  if (!sigLayers) {
+    empty.reason = 'LLM policy missing signal_h/stub roles for signal routing';
+    return empty;
+  }
+
+  // æŒ‰ priorityOrder å†æŒ‰ entry.priority
+  const order: PcbNetPlanEntry[] = [];
+  const byId: Map<string, PcbNetPlanEntry> = new Map();
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    byId.set(netPlan.nets[i].netId, netPlan.nets[i]);
+  }
+  for (let i = 0; i < netPlan.priorityOrder.length; i++) {
+    const e = byId.get(netPlan.priorityOrder[i]);
+    if (e) {
+      order.push(e);
+    }
+  }
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    if (order.indexOf(netPlan.nets[i]) < 0) {
+      order.push(netPlan.nets[i]);
+    }
+  }
+  order.sort((a, b) => b.priority - a.priority);
+
+  for (let i = 0; i < order.length; i++) {
+    const ne = order[i];
+    if (ne.kind === 'gnd' || ne.kind === 'power') {
+      continue;
+    }
+    if (ne.routeMode === 'defer') {
+      continue;
+    }
+    if (ne.routeMode !== 'forceTrack' && ne.routeMode !== 'forcePour') {
+      continue;
+    }
+    const pads = collectNetPads(doc, ne.netId);
+    if (pads.length < 2) {
+      continue;
+    }
+    const width = trackWidthForNet(doc, ne.netId);
+    const ordered = orderPointsNearestNeighbor(pads);
+    let okNet = true;
+    for (let j = 0; j < ordered.length - 1; j++) {
+      const ok = routePairOrtho(doc, policy, sigLayers, ordered[j], ordered[j + 1],
+        ne.netId, ne.netName, width, grid, doc.tracks, tracks, vias);
+      if (!ok) {
+        okNet = false;
+        break;
+      }
+    }
+    if (okNet) {
+      routed.push(ne.netId);
+      tracePcb('AI_GEO_NET', `${ne.netName} ok pads=${pads.length}`);
+    } else {
+      failed.push(ne.netId);
+      tracePcbWarn('AI_GEO_FAIL', `${ne.netName} clearance/path fail`);
+    }
+  }
+
+  const missingCopper = ensureAllCopperUsed(doc, tracks);
+  if (failed.length > 0) {
+    return {
+      ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+      missingCopperLayers: missingCopper,
+      reason: `signal nets failed: ${failed.length}`
+    };
+  }
+  if (missingCopper.length > 0) {
+    return {
+      ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+      missingCopperLayers: missingCopper,
+      reason: `copper layers unused: ${missingCopper.join(',')}`
+    };
+  }
+
+  return {
+    ok: true, tracks, vias, routedNetIds: routed, failedNetIds: [],
+    missingCopperLayers: [], reason: 'ok'
+  };
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ î‘”    ‘”  ‘”   ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”   ‘”   ‘”  ‘”   ‘”  ! ‘”  #‘”  %‘”  &‘”  '‘”  (‘”  ) ‘”  + ‘”  /‘”  1‘”  3‘”  4‘”  8‘”  9 ‘”  ÌG ‘”  ÌM‘”  ÌN‘”  ÌO‘”  ÌP ‘”  ÌR ‘”  Ìb‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìk‘”  Ìm‘”  Ìn‘”  Ìp‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìv‘”  Ìz‘”  Ì{‘”  Ì‘”  Ì‘”  Ì‚‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘ ‘”  Ì“ ‘”  Ì•‘”  Ì–‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì ‘”  ÌŸ ‘”  Ì¡‘”  Ì¢ ‘”  Ì§‘”  Ì¨‘”  Ì©‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì°‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì·‘”  Ì¹‘”  Ìº‘”  ÌÂ‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÆ‘”  ÌÇ‘”  ÌÉ‘”  ÌÊ‘”  ÌÌ‘”  ÌÍ‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ‘”  ÌÒ‘”  ÌÖ‘”  Ì×‘”  ÌØ‘”  ÌÜ‘”  Ìİ‘”  ÌŞ‘”  Ìß‘”  Ìà‘”  Ìá‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìç‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìí‘”  Ìî‘”  Ìñ‘”  Ìò‘”  Ìô‘”  Ì÷‘”  Ìù‘”  Ìû‘”  Ìı‘”  Ìÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
+‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í!‘”  Í"‘”  Í$ ‘ÙVC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbGeometryRouter.ets‘Ú##/**
+ * ä¿¡å·å¤šå±‚å‡ ä½• â€” æŒ‰ LLM å±‚è§’è‰²é€‰ H/V/stub å±‚ï¼Œæ¢å±‚å¿… viaï¼›æ‰§è¡Œç­–ç•¥ä¸è‡ªåˆ›è§’è‰²
+ */
+import {
+  PcbDocument, PcbLayerId, PcbTrack, PcbVia, copperLayersFromStack
+} from '../../types/PcbTypes';
+import { Point2D } from '../../types/CommonTypes';
+import {
+  PcbGeometryResult, PcbLayerRole, PcbNetPlanEntry, PcbNetPlanResult, PcbRoutePolicy
+} from '../../types/PcbAiRouteTypes';
+import { IdUtil } from '../IdUtil';
+import { padWorldPosition } from '../PcbZoneUtil';
+import { orderPointsNearestNeighbor } from '../PcbTrackBindUtil';
+import { createViaAt } from './PcbViaFactory';
+import { pathClearOfTracks, trackWidthForNet } from './PcbClearanceOracle';
+import { routePowerBuses } from './PowerBusRouter';
+import { ensureAllCopperUsed } from './ensureAllCopperUsed';
+import { policyCoversCopperLayers } from '../../types/PcbAiRouteTypes';
+import { tracePcb, tracePcbWarn } from '../PcbTraceLog';
+
+function snap(v: number, grid: number): number {
+  if (grid <= 0) {
+    return v;
+  }
+  return Math.round(v / grid) * grid;
+}
+
+function dist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function findLayerForRole(policy: PcbRoutePolicy, role: PcbLayerRole): PcbLayerId | null {
+  const keys = Object.keys(policy.layerRoles);
+  for (let i = 0; i < keys.length; i++) {
+    if (policy.layerRoles[keys[i]] === role) {
+      return keys[i] as PcbLayerId;
+    }
+  }
+  return null;
+}
+
+function addSeg(tracks: PcbTrack[], layer: PcbLayerId, a: Point2D, b: Point2D,
+  netId: string, netName: string, width: number): void {
+  if (dist(a, b) < 0.5) {
+    return;
+  }
+  tracks.push({
+    id: IdUtil.generate('trk'),
+    layer,
+    start: { x: a.x, y: a.y },
+    end: { x: b.x, y: b.y },
+    width,
+    netId,
+    netName
+  });
+}
+
+interface LayerPair {
+  h: PcbLayerId;
+  v: PcbLayerId;
+  stub: PcbLayerId;
+}
+
+interface RouteSeg {
+  layer: PcbLayerId;
+  p0: Point2D;
+  p1: Point2D;
+}
+
+function resolveSignalLayers(policy: PcbRoutePolicy, _copper: PcbLayerId[]): LayerPair | null {
+  const h = findLayerForRole(policy, 'signal_h');
+  const stub = findLayerForRole(policy, 'stub');
+  // å‚ç›´å±‚ï¼šä»…å¤ç”¨ LLM å·²å£°æ˜çš„ signal_v æˆ– stubï¼Œç¦æ­¢ç”¨é“œå±‚åˆ—è¡¨å†’å……
+  const v = findLayerForRole(policy, 'signal_v') ?? stub;
+  if (!h || !stub || !v) {
+    return null;
+  }
+  return { h, v, stub };
+}
+
+function routePairOrtho(
+  doc: PcbDocument,
+  policy: PcbRoutePolicy,
+  layers: LayerPair,
+  a: Point2D,
+  b: Point2D,
+  netId: string,
+  netName: string,
+  width: number,
+  grid: number,
+  existing: PcbTrack[],
+  tracks: PcbTrack[],
+  vias: PcbVia[]
+): boolean {
+  const midH: Point2D = { x: snap(b.x, grid), y: snap(a.y, grid) };
+  const midV: Point2D = { x: snap(a.x, grid), y: snap(b.y, grid) };
+  const tryHFirst = dist(a, midH) + dist(midH, b) <= dist(a, midV) + dist(midV, b);
+  const mid = tryHFirst ? midH : midV;
+  // æ°´å¹³æ®µèµ° signal_hï¼Œå‚ç›´æ®µèµ° signal_vï¼›èµ·ç‚¹å…ˆ stub å¼•å‡º
+  const startLayer = layers.stub;
+  const hLayer = layers.h;
+  const vLayer = layers.v;
+
+  const segs: RouteSeg[] = [];
+  if (dist(a, mid) >= 0.5) {
+    const horiz = Math.abs(a.y - mid.y) < 0.5;
+    const seg0: RouteSeg = { layer: horiz ? hLayer : vLayer, p0: a, p1: mid };
+    segs.push(seg0);
+  }
+  if (dist(mid, b) >= 0.5) {
+    const horiz = Math.abs(mid.y - b.y) < 0.5;
+    const seg1: RouteSeg = { layer: horiz ? hLayer : vLayer, p0: mid, p1: b };
+    segs.push(seg1);
+  }
+  if (segs.length === 0) {
+    return true;
+  }
+
+  // stub å¼•å‡ºåˆ°ç¬¬ä¸€æŠ˜ç‚¹å±‚
+  let curLayer = startLayer;
+  const first = segs[0];
+  if (curLayer !== first.layer) {
+    const viaPos: Point2D = { x: snap(a.x, grid), y: snap(a.y, grid) };
+    if (!pathClearOfTracks(doc, curLayer, a, viaPos, netId, width, existing.concat(tracks))) {
+      // åŒç‚¹ via ä»å…è®¸
+    }
+    vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, first.layer));
+    curLayer = first.layer;
+  }
+
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (curLayer !== s.layer) {
+      const viaPos: Point2D = { x: snap(s.p0.x, grid), y: snap(s.p0.y, grid) };
+      vias.push(createViaAt(doc, policy, viaPos, netId, netName, curLayer, s.layer));
+      curLayer = s.layer;
+    }
+    if (!pathClearOfTracks(doc, s.layer, s.p0, s.p1, netId, width, existing.concat(tracks))) {
+      return false;
+    }
+    addSeg(tracks, s.layer, s.p0, s.p1, netId, netName, width);
+  }
+  return true;
+}
+
+function collectNetPads(doc: PcbDocument, netId: string): Point2D[] {
+  const pts: Point2D[] = [];
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if ((pad.netId ?? '') === netId) {
+        pts.push(padWorldPosition(fp, pad));
+      }
+    }
+  }
+  return pts;
+}
+
+/**
+ * æ‰§è¡Œ LLM ç­–ç•¥çš„å®Œæ•´å‡ ä½•å¸ƒçº¿ï¼ˆç”µæºæ€»çº¿ + ä¿¡å·ï¼‰
+ */
+export function runPcbGeometryRoute(
+  doc: PcbDocument,
+  policy: PcbRoutePolicy,
+  netPlan: PcbNetPlanResult
+): PcbGeometryResult {
+  const empty: PcbGeometryResult = {
+    ok: false, tracks: [], vias: [], routedNetIds: [], failedNetIds: [],
+    missingCopperLayers: [], reason: ''
+  };
+
+  if (!policy.fromLlm) {
+    empty.reason = 'route policy not from LLM';
+    return empty;
+  }
+  if (!netPlan.fromLlm) {
+    empty.reason = 'net plan not from LLM';
+    return empty;
+  }
+
+  const copper = copperLayersFromStack(doc.layerStack);
+  const missingRoles = policyCoversCopperLayers(policy, copper);
+  if (missingRoles.length > 0) {
+    empty.reason = `LLM layerRoles missing copper: ${missingRoles.join(',')}`;
+    return empty;
+  }
+
+  const grid = doc.metadata.gridSize ?? 5;
+  const tracks: PcbTrack[] = [];
+  const vias: PcbVia[] = [];
+  const routed: string[] = [];
+  const failed: string[] = [];
+
+  const power = routePowerBuses(doc, policy, netPlan.nets);
+  if (!power.ok) {
+    empty.reason = power.reason;
+    return empty;
+  }
+  for (let i = 0; i < power.tracks.length; i++) {
+    tracks.push(power.tracks[i]);
+  }
+  for (let i = 0; i < power.vias.length; i++) {
+    vias.push(power.vias[i]);
+  }
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    const ne = netPlan.nets[i];
+    if ((ne.kind === 'gnd' || ne.kind === 'power') && ne.routeMode !== 'defer') {
+      routed.push(ne.netId);
+    }
+  }
+
+  const sigLayers = resolveSignalLayers(policy, copper);
+  if (!sigLayers) {
+    empty.reason = 'LLM policy missing signal_h/stub roles for signal routing';
+    return empty;
+  }
+
+  // æŒ‰ priorityOrder å†æŒ‰ entry.priority
+  const order: PcbNetPlanEntry[] = [];
+  const byId: Map<string, PcbNetPlanEntry> = new Map();
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    byId.set(netPlan.nets[i].netId, netPlan.nets[i]);
+  }
+  for (let i = 0; i < netPlan.priorityOrder.length; i++) {
+    const e = byId.get(netPlan.priorityOrder[i]);
+    if (e) {
+      order.push(e);
+    }
+  }
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    if (order.indexOf(netPlan.nets[i]) < 0) {
+      order.push(netPlan.nets[i]);
+    }
+  }
+  order.sort((a, b) => b.priority - a.priority);
+
+  for (let i = 0; i < order.length; i++) {
+    const ne = order[i];
+    if (ne.kind === 'gnd' || ne.kind === 'power') {
+      continue;
+    }
+    if (ne.routeMode === 'defer') {
+      continue;
+    }
+    if (ne.routeMode !== 'forceTrack' && ne.routeMode !== 'forcePour') {
+      continue;
+    }
+    const pads = collectNetPads(doc, ne.netId);
+    if (pads.length < 2) {
+      continue;
+    }
+    const width = trackWidthForNet(doc, ne.netId);
+    const ordered = orderPointsNearestNeighbor(pads);
+    let okNet = true;
+    for (let j = 0; j < ordered.length - 1; j++) {
+      const ok = routePairOrtho(doc, policy, sigLayers, ordered[j], ordered[j + 1],
+        ne.netId, ne.netName, width, grid, doc.tracks, tracks, vias);
+      if (!ok) {
+        okNet = false;
+        break;
+      }
+    }
+    if (okNet) {
+      routed.push(ne.netId);
+      tracePcb('AI_GEO_NET', `${ne.netName} ok pads=${pads.length}`);
+    } else {
+      failed.push(ne.netId);
+      tracePcbWarn('AI_GEO_FAIL', `${ne.netName} clearance/path fail`);
+    }
+  }
+
+  const missingCopper = ensureAllCopperUsed(doc, tracks);
+  if (failed.length > 0) {
+    return {
+      ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+      missingCopperLayers: missingCopper,
+      reason: `signal nets failed: ${failed.length}`
+    };
+  }
+  if (missingCopper.length > 0) {
+    return {
+      ok: false, tracks, vias, routedNetIds: routed, failedNetIds: failed,
+      missingCopperLayers: missingCopper,
+      reason: `copper layers unused: ${missingCopper.join(',')}`
+    };
+  }
+
+  return {
+    ok: true, tracks, vias, routedNetIds: routed, failedNetIds: [],
+    missingCopperLayers: [], reason: 'ok'
+  };
+}
+ÔrEš´../../types/PcbTypes©../IdUtil®../PcbZoneUtil³../PcbTrackBindUtil´./PcbClearanceOracle¯./PcbViaFactory®../PcbTraceLog°./PowerBusRouterµ./ensureAllCopperUsed»../../types/PcbAiRouteTypesÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsAÃªoh-resolveÂFAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂFAÂÙWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsAÃªoh-resolveÂFAÂÙRC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbViaFactory.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂFAÂÙSC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PowerBusRouter.etsAÃªoh-resolveÂFAÂÙXC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\ensureAllCopperUsed.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ3Í ˜ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ:Í ˜ÔrK”¤type¥start£end¤nameªIdentifierÍCÍV³runPcbGeometryRouteÂÂÂ“KªIdentifierÍWÍZ£docKªIdentifierÍ\Íb¦policyKªIdentifierÍdÍk§netPlanÔrL”¤type¥start£end¤body®BlockStatementÍmÍ ˜Ü ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÍtÍ‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÍzÍKªIdentifierÍzÍ¥emptyÔrO”¤type¥start£endªproperties°ObjectExpressionÍ‚Í—ÔrP™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍ–ÂÂÂKªIdentifierÍÍ¢okÔrQ•¤type¥start£end¥value£raw§LiteralÍ‘Í–Â¥false¤initP¨PropertyÍ˜Í¢ÂÂÂKªIdentifierÍ˜Í¦tracksÔrR”¤type¥start£end¨elements¯ArrayExpressionÍ Í¢¤initP¨PropertyÍ¤Í¬ÂÂÂKªIdentifierÍ¤Í¨¤viasR¯ArrayExpressionÍªÍ¬¤initP¨PropertyÍ®Í¾ÂÂÂKªIdentifierÍ®Íº¬routedNetIdsR¯ArrayExpressionÍ¼Í¾¤initP¨PropertyÍÀÍĞÂÂÂKªIdentifierÍÀÍÌ¬failedNetIdsR¯ArrayExpressionÍÎÍĞ¤initP¨PropertyÍÛÍòÂÂÂKªIdentifierÍÛÍî³missingCopperLayersR¯ArrayExpressionÍğÍò¤initP¨PropertyÍôÍşÂÂÂKªIdentifierÍôÍú¦reasonQ§LiteralÍüÍş ¢''¤init¥constÔrS–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍuÔrT–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ¡!ÃÔrU—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÍKªIdentifierÍÍ¦policyKªIdentifierÍÍ§fromLlmÂÂL®BlockStatementÍ!Íu’ÔrV”¤type¥start£endªexpression³ExpressionStatementÍ,ÍWÔrW–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ,ÍV¡=U°MemberExpressionÍ,Í8KªIdentifierÍ,Í1¥emptyKªIdentifierÍ2Í8¦reasonÂÂQ§LiteralÍ;ÍV¹route policy not from LLM»'route policy not from LLM'ÔrX”¤type¥start£end¨argument¯ReturnStatementÍaÍnKªIdentifierÍhÍm¥emptyÀS«IfStatementÍ{ÍáT¯UnaryExpressionÍÍ¡!ÃU°MemberExpressionÍ€ÍKªIdentifierÍ€Í‡§netPlanKªIdentifierÍˆÍ§fromLlmÂÂL®BlockStatementÍ‘Íá’V³ExpressionStatementÍœÍÃW´AssignmentExpressionÍœÍÂ¡=U°MemberExpressionÍœÍ¨KªIdentifierÍœÍ¡¥emptyKªIdentifierÍ¢Í¨¦reasonÂÂQ§LiteralÍ«ÍÂµnet plan not from LLM·'net plan not from LLM'X¯ReturnStatementÍÍÍÚKªIdentifierÍÔÍÙ¥emptyÀM³VariableDeclarationÍçÍ‘N²VariableDeclaratorÍíÍKªIdentifierÍíÍó¦copperÔrY–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍöÍKªIdentifierÍöÍµcopperLayersFromStack‘U°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍªlayerStackÂÂÂ¥constM³VariableDeclarationÍ"Í`‘N²VariableDeclaratorÍ(Í_KªIdentifierÍ(Í4¬missingRolesY®CallExpressionÍ7Í_KªIdentifierÍ7ÍO¸policyCoversCopperLayers’KªIdentifierÍPÍV¦policyKªIdentifierÍXÍ^¦copperÂ¥constS«IfStatementÍfÍöÔrZ–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍjÍU°MemberExpressionÍjÍ}KªIdentifierÍjÍv¬missingRolesKªIdentifierÍwÍ}¦lengthÂÂ¡>Q§LiteralÍ€Í ¡0L®BlockStatementÍƒÍö’V³ExpressionStatementÍÍØW´AssignmentExpressionÍÍ×¡=U°MemberExpressionÍÍšKªIdentifierÍÍ“¥emptyKªIdentifierÍ”Íš¦reasonÂÂÔr[•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍ×‘Y®CallExpressionÍ¿ÍÕU°MemberExpressionÍ¿ÍĞKªIdentifierÍ¿ÍË¬missingRolesKªIdentifierÍÌÍĞ¤joinÂÂ‘Q§LiteralÍÑÍÔ¡,£','Â’Ôr\•¤type¥start£end¥value¤tail¯TemplateElementÍÍ½Ôr]’£raw¦cooked¿LLM layerRoles missing copper: ¿LLM layerRoles missing copper: Â\¯TemplateElementÍÖÍÖ]  ÃX¯ReturnStatementÍâÍïKªIdentifierÍéÍî¥emptyÀM³VariableDeclarationÍüÍ$‘N²VariableDeclaratorÍÍ#KªIdentifierÍÍ¤gridZ±LogicalExpressionÍ	Í#U°MemberExpressionÍ	ÍU°MemberExpressionÍ	ÍKªIdentifierÍ	Í£docKªIdentifierÍÍ¨metadataÂÂKªIdentifierÍÍ¨gridSizeÂÂ¢??Q§LiteralÍ"Í#¡5¥constM³VariableDeclarationÍ*Í<‘N²VariableDeclaratorÍ0Í;KªIdentifierÍ0Í6¦tracksR¯ArrayExpressionÍ9Í;¥constM³VariableDeclarationÍBÍR‘N²VariableDeclaratorÍHÍQKªIdentifierÍHÍL¤viasR¯ArrayExpressionÍOÍQ¥constM³VariableDeclarationÍXÍj‘N²VariableDeclaratorÍ^ÍiKªIdentifierÍ^Íd¦routedR¯ArrayExpressionÍgÍi¥constM³VariableDeclarationÍpÍ‚‘N²VariableDeclaratorÍvÍKªIdentifierÍvÍ|¦failedR¯ArrayExpressionÍÍ¥constM³VariableDeclarationÍˆÍÁ‘N²VariableDeclaratorÍÍÀKªIdentifierÍÍ“¥powerY®CallExpressionÍ–ÍÀKªIdentifierÍ–Í¥¯routePowerBuses“KªIdentifierÍ¦Í©£docKªIdentifierÍ«Í±¦policyU°MemberExpressionÍ³Í¿KªIdentifierÍ³Íº§netPlanKªIdentifierÍ»Í¿¤netsÂÂÂ¥constS«IfStatementÍÇÍT¯UnaryExpressionÍËÍÔ¡!ÃU°MemberExpressionÍÌÍÔKªIdentifierÍÌÍÑ¥powerKªIdentifierÍÒÍÔ¢okÂÂL®BlockStatementÍÖÍ’V³ExpressionStatementÍáÍıW´AssignmentExpressionÍáÍü¡=U°MemberExpressionÍáÍíKªIdentifierÍáÍæ¥emptyKªIdentifierÍçÍí¦reasonÂÂU°MemberExpressionÍğÍüKªIdentifierÍğÍõ¥powerKªIdentifierÍöÍü¦reasonÂÂX¯ReturnStatementÍÍKªIdentifierÍÍ¥emptyÀÔr^—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ!Í~M³VariableDeclarationÍ&Í/‘N²VariableDeclaratorÍ*Í/KªIdentifierÍ*Í+¡iQ§LiteralÍ.Í/ ¡0£letZ°BinaryExpressionÍ1ÍHKªIdentifierÍ1Í2¡i¡<U°MemberExpressionÍ5ÍHU°MemberExpressionÍ5ÍAKªIdentifierÍ5Í:¥powerKªIdentifierÍ;ÍA¦tracksÂÂKªIdentifierÍBÍH¦lengthÂÂT°UpdateExpressionÍJÍM¢++ÂKªIdentifierÍJÍK¡iL®BlockStatementÍOÍ~‘V³ExpressionStatementÍZÍwY®CallExpressionÍZÍvU°MemberExpressionÍZÍeKªIdentifierÍZÍ`¦tracksKªIdentifierÍaÍe¤pushÂÂ‘U°MemberExpressionÍfÍuU°MemberExpressionÍfÍrKªIdentifierÍfÍk¥powerKªIdentifierÍlÍr¦tracksÂÂKªIdentifierÍsÍt¡iÃÂÂ^¬ForStatementÍ„ÍÛM³VariableDeclarationÍ‰Í’‘N²VariableDeclaratorÍÍ’KªIdentifierÍÍ¡iQ§LiteralÍ‘Í’ ¡0£letZ°BinaryExpressionÍ”Í©KªIdentifierÍ”Í•¡i¡<U°MemberExpressionÍ˜Í©U°MemberExpressionÍ˜Í¢KªIdentifierÍ˜Í¥powerKªIdentifierÍÍ¢¤viasÂÂKªIdentifierÍ£Í©¦lengthÂÂT°UpdateExpressionÍ«Í®¢++ÂKªIdentifierÍ«Í¬¡iL®BlockStatementÍ°ÍÛ‘V³ExpressionStatementÍ»ÍÔY®CallExpressionÍ»ÍÓU°MemberExpressionÍ»ÍÄKªIdentifierÍ»Í¿¤viasKªIdentifierÍÀÍÄ¤pushÂÂ‘U°MemberExpressionÍÅÍÒU°MemberExpressionÍÅÍÏKªIdentifierÍÅÍÊ¥powerKªIdentifierÍËÍÏ¤viasÂÂKªIdentifierÍĞÍÑ¡iÃÂÂ^¬ForStatementÍáÍÂM³VariableDeclarationÍæÍï‘N²VariableDeclaratorÍêÍïKªIdentifierÍêÍë¡iQ§LiteralÍîÍï ¡0£letZ°BinaryExpressionÍñÍKªIdentifierÍñÍò¡i¡<U°MemberExpressionÍõÍU°MemberExpressionÍõÍKªIdentifierÍõÍü§netPlanKªIdentifierÍıÍ¤netsÂÂKªIdentifierÍÍ¦lengthÂÂT°UpdateExpressionÍ
+Í¢++ÂKªIdentifierÍ
+Í¡iL®BlockStatementÍÍÂ’M³VariableDeclarationÍÍ5‘N²VariableDeclaratorÍ Í4KªIdentifierÍ Í"¢neU°MemberExpressionÍ%Í4U°MemberExpressionÍ%Í1KªIdentifierÍ%Í,§netPlanKªIdentifierÍ-Í1¤netsÂÂKªIdentifierÍ2Í3¡iÃÂ¥constS«IfStatementÍ?Í»Z±LogicalExpressionÍCÍ‰Z±LogicalExpressionÍDÍlZ°BinaryExpressionÍDÍUU°MemberExpressionÍDÍKKªIdentifierÍDÍF¢neKªIdentifierÍGÍK¤kindÂÂ£===Q§LiteralÍPÍU£gnd¥'gnd'¢||Z°BinaryExpressionÍYÍlU°MemberExpressionÍYÍ`KªIdentifierÍYÍ[¢neKªIdentifierÍ\Í`¤kindÂÂ£===Q§LiteralÍeÍl¥power§'power'¢&&Z°BinaryExpressionÍqÍ‰U°MemberExpressionÍqÍ}KªIdentifierÍqÍs¢neKªIdentifierÍtÍ}©routeModeÂÂ£!==Q§LiteralÍ‚Í‰¥defer§'defer'L®BlockStatementÍ‹Í»‘V³ExpressionStatementÍšÍ°Y®CallExpressionÍšÍ¯U°MemberExpressionÍšÍ¥KªIdentifierÍšÍ ¦routedKªIdentifierÍ¡Í¥¤pushÂÂ‘U°MemberExpressionÍ¦Í®KªIdentifierÍ¦Í¨¢neKªIdentifierÍ©Í®¥netIdÂÂÂÀM³VariableDeclarationÍÈÍş‘N²VariableDeclaratorÍÎÍıKªIdentifierÍÎÍ×©sigLayersY®CallExpressionÍÚÍıKªIdentifierÍÚÍí³resolveSignalLayers’KªIdentifierÍîÍô¦policyKªIdentifierÍöÍü¦copperÂ¥constS«IfStatementÍÍˆT¯UnaryExpressionÍÍ¡!ÃKªIdentifierÍ	Í©sigLayersL®BlockStatementÍÍˆ’V³ExpressionStatementÍÍjW´AssignmentExpressionÍÍi¡=U°MemberExpressionÍÍ+KªIdentifierÍÍ$¥emptyKªIdentifierÍ%Í+¦reasonÂÂQ§LiteralÍ.ÍiÙ9LLM policy missing signal_h/stub roles for signal routingÙ;'LLM policy missing signal_h/stub roles for signal routing'X¯ReturnStatementÍtÍKªIdentifierÍ{Í€¥emptyÀM³VariableDeclarationÍ¸ÍÉ‘N²VariableDeclaratorÍ¾ÍÈKªIdentifierÍ¾ÍÃ¥orderR¯ArrayExpressionÍÆÍÈ¥constM³VariableDeclarationÍÏÍæ‘N²VariableDeclaratorÍÕÍåKªIdentifierÍÕÍÙ¤byIdÔr_•¤type¥start£end¦callee©arguments­NewExpressionÍÜÍåKªIdentifierÍàÍã£Map¥const^¬ForStatementÍìÍ]M³VariableDeclarationÍñÍú‘N²VariableDeclaratorÍõÍúKªIdentifierÍõÍö¡iQ§LiteralÍùÍú ¡0£letZ°BinaryExpressionÍüÍKªIdentifierÍüÍı¡i¡<U°MemberExpressionÍ ÍU°MemberExpressionÍ ÍKªIdentifierÍ Í§netPlanKªIdentifierÍÍ¤netsÂÂKªIdentifierÍÍ¦lengthÂÂT°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¡iL®BlockStatementÍÍ]‘V³ExpressionStatementÍ%ÍVY®CallExpressionÍ%ÍUU°MemberExpressionÍ%Í-KªIdentifierÍ%Í)¤byIdKªIdentifierÍ*Í-£setÂÂ’U°MemberExpressionÍ.ÍCU°MemberExpressionÍ.Í=U°MemberExpressionÍ.Í:KªIdentifierÍ.Í5§netPlanKªIdentifierÍ6Í:¤netsÂÂKªIdentifierÍ;Í<¡iÃÂKªIdentifierÍ>ÍC¥netIdÂÂU°MemberExpressionÍEÍTU°MemberExpressionÍEÍQKªIdentifierÍEÍL§netPlanKªIdentifierÍMÍQ¤netsÂÂKªIdentifierÍRÍS¡iÃÂÂ^¬ForStatementÍcÍM³VariableDeclarationÍhÍq‘N²VariableDeclaratorÍlÍqKªIdentifierÍlÍm¡iQ§LiteralÍpÍq ¡0£letZ°BinaryExpressionÍsÍ“KªIdentifierÍsÍt¡i¡<U°MemberExpressionÍwÍ“U°MemberExpressionÍwÍŒKªIdentifierÍwÍ~§netPlanKªIdentifierÍÍŒ­priorityOrderÂÂKªIdentifierÍÍ“¦lengthÂÂT°UpdateExpressionÍ•Í˜¢++ÂKªIdentifierÍ•Í–¡iL®BlockStatementÍšÍ’M³VariableDeclarationÍ¥ÍÒ‘N²VariableDeclaratorÍ«ÍÑKªIdentifierÍ«Í¬¡eY®CallExpressionÍ¯ÍÑU°MemberExpressionÍ¯Í·KªIdentifierÍ¯Í³¤byIdKªIdentifierÍ´Í·£getÂÂ‘U°MemberExpressionÍ¸ÍĞU°MemberExpressionÍ¸ÍÍKªIdentifierÍ¸Í¿§netPlanKªIdentifierÍÀÍÍ­priorityOrderÂÂKªIdentifierÍÎÍÏ¡iÃÂÂ¥constS«IfStatementÍÜÍKªIdentifierÍàÍá¡eL®BlockStatementÍãÍ‘V³ExpressionStatementÍòÍ Y®CallExpressionÍòÍÿU°MemberExpressionÍòÍüKªIdentifierÍòÍ÷¥orderKªIdentifierÍøÍü¤pushÂÂ‘KªIdentifierÍıÍş¡eÂÀ^¬ForStatementÍÍ¶M³VariableDeclarationÍÍ&‘N²VariableDeclaratorÍ!Í&KªIdentifierÍ!Í"¡iQ§LiteralÍ%Í& ¡0£letZ°BinaryExpressionÍ(Í?KªIdentifierÍ(Í)¡i¡<U°MemberExpressionÍ,Í?U°MemberExpressionÍ,Í8KªIdentifierÍ,Í3§netPlanKªIdentifierÍ4Í8¤netsÂÂKªIdentifierÍ9Í?¦lengthÂÂT°UpdateExpressionÍAÍD¢++ÂKªIdentifierÍAÍB¡iL®BlockStatementÍFÍ¶‘S«IfStatementÍQÍ¯Z°BinaryExpressionÍUÍwY®CallExpressionÍUÍsU°MemberExpressionÍUÍbKªIdentifierÍUÍZ¥orderKªIdentifierÍ[Íb§indexOfÂÂ‘U°MemberExpressionÍcÍrU°MemberExpressionÍcÍoKªIdentifierÍcÍj§netPlanKªIdentifierÍkÍo¤netsÂÂKªIdentifierÍpÍq¡iÃÂÂ¡<Q§LiteralÍvÍw ¡0L®BlockStatementÍyÍ¯‘V³ExpressionStatementÍˆÍ¤Y®CallExpressionÍˆÍ£U°MemberExpressionÍˆÍ’KªIdentifierÍˆÍ¥orderKªIdentifierÍÍ’¤pushÂÂ‘U°MemberExpressionÍ“Í¢U°MemberExpressionÍ“ÍŸKªIdentifierÍ“Íš§netPlanKªIdentifierÍ›ÍŸ¤netsÂÂKªIdentifierÍ Í¡¡iÃÂÂÀV³ExpressionStatementÍ¼ÍêY®CallExpressionÍ¼ÍéU°MemberExpressionÍ¼ÍÆKªIdentifierÍ¼ÍÁ¥orderKªIdentifierÍÂÍÆ¤sortÂÂ‘J·ArrowFunctionExpressionÍÇÍèÀÃÂÂ’KªIdentifierÍÈÍÉ¡aKªIdentifierÍËÍÌ¡bZ°BinaryExpressionÍÑÍèU°MemberExpressionÍÑÍÛKªIdentifierÍÑÍÒ¡bKªIdentifierÍÓÍÛ¨priorityÂÂ¡-U°MemberExpressionÍŞÍèKªIdentifierÍŞÍß¡aKªIdentifierÍàÍè¨priorityÂÂÂ^¬ForStatementÍğÍ³M³VariableDeclarationÍõÍş‘N²VariableDeclaratorÍùÍşKªIdentifierÍùÍú¡iQ§LiteralÍıÍş ¡0£letZ°BinaryExpressionÍ ÍKªIdentifierÍ Í¡i¡<U°MemberExpressionÍÍKªIdentifierÍÍ	¥orderKªIdentifierÍ
+Í¦lengthÂÂT°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¡iL®BlockStatementÍÍ³›M³VariableDeclarationÍ"Í6‘N²VariableDeclaratorÍ(Í5KªIdentifierÍ(Í*¢neU°MemberExpressionÍ-Í5KªIdentifierÍ-Í2¥orderKªIdentifierÍ3Í4¡iÃÂ¥constS«IfStatementÍ@Í‘Z±LogicalExpressionÍDÍlZ°BinaryExpressionÍDÍUU°MemberExpressionÍDÍKKªIdentifierÍDÍF¢neKªIdentifierÍGÍK¤kindÂÂ£===Q§LiteralÍPÍU£gnd¥'gnd'¢||Z°BinaryExpressionÍYÍlU°MemberExpressionÍYÍ`KªIdentifierÍYÍ[¢neKªIdentifierÍ\Í`¤kindÂÂ£===Q§LiteralÍeÍl¥power§'power'L®BlockStatementÍnÍ‘‘Ôr`”¤type¥start£end¥label±ContinueStatementÍ}Í†ÀÀS«IfStatementÍ›ÍÜZ°BinaryExpressionÍŸÍ·U°MemberExpressionÍŸÍ«KªIdentifierÍŸÍ¡¢neKªIdentifierÍ¢Í«©routeModeÂÂ£===Q§LiteralÍ°Í·¥defer§'defer'L®BlockStatementÍ¹ÍÜ‘`±ContinueStatementÍÈÍÑÀÀS«IfStatementÍæÍLZ±LogicalExpressionÍêÍ'Z°BinaryExpressionÍêÍU°MemberExpressionÍêÍöKªIdentifierÍêÍì¢neKªIdentifierÍíÍö©routeModeÂÂ£!==Q§LiteralÍûÍªforceTrack¬'forceTrack'¢&&Z°BinaryExpressionÍÍ'U°MemberExpressionÍÍKªIdentifierÍÍ¢neKªIdentifierÍÍ©routeModeÂÂ£!==Q§LiteralÍÍ'©forcePour«'forcePour'L®BlockStatementÍ)ÍL‘`±ContinueStatementÍ8ÍAÀÀM³VariableDeclarationÍVÍ‘N²VariableDeclaratorÍ\Í€KªIdentifierÍ\Í`¤padsY®CallExpressionÍcÍ€KªIdentifierÍcÍq®collectNetPads’KªIdentifierÍrÍu£docU°MemberExpressionÍwÍKªIdentifierÍwÍy¢neKªIdentifierÍzÍ¥netIdÂÂÂ¥constS«IfStatementÍ‹ÍÃZ°BinaryExpressionÍÍU°MemberExpressionÍÍšKªIdentifierÍÍ“¤padsKªIdentifierÍ”Íš¦lengthÂÂ¡<Q§LiteralÍÍ¡2L®BlockStatementÍ ÍÃ‘`±ContinueStatementÍ¯Í¸ÀÀM³VariableDeclarationÍÍÍû‘N²VariableDeclaratorÍÓÍúKªIdentifierÍÓÍØ¥widthY®CallExpressionÍÛÍúKªIdentifierÍÛÍë°trackWidthForNet’KªIdentifierÍìÍï£docU°MemberExpressionÍñÍùKªIdentifierÍñÍó¢neKªIdentifierÍôÍù¥netIdÂÂÂ¥constM³VariableDeclarationÍÍ6‘N²VariableDeclaratorÍÍ5KªIdentifierÍÍ§orderedY®CallExpressionÍÍ5KªIdentifierÍÍ/ºorderPointsNearestNeighbor‘KªIdentifierÍ0Í4¤padsÂ¥constM³VariableDeclarationÍ@ÍQ‘N²VariableDeclaratorÍDÍPKªIdentifierÍDÍI¥okNetQ§LiteralÍLÍPÃ¤true£let^¬ForStatementÍ[ÍŒM³VariableDeclarationÍ`Íi‘N²VariableDeclaratorÍdÍiKªIdentifierÍdÍe¡jQ§LiteralÍhÍi ¡0£letZ°BinaryExpressionÍkÍKªIdentifierÍkÍl¡j¡<Z°BinaryExpressionÍoÍU°MemberExpressionÍoÍ}KªIdentifierÍoÍv§orderedKªIdentifierÍwÍ}¦lengthÂÂ¡-Q§LiteralÍ€Í¡1T°UpdateExpressionÍƒÍ†¢++ÂKªIdentifierÍƒÍ„¡jL®BlockStatementÍˆÍŒ’M³VariableDeclarationÍ—Í"‘N²VariableDeclaratorÍÍ!KªIdentifierÍÍŸ¢okY®CallExpressionÍ¢Í!KªIdentifierÍ¢Í°®routePairOrthoœKªIdentifierÍ±Í´£docKªIdentifierÍ¶Í¼¦policyKªIdentifierÍ¾ÍÇ©sigLayersU°MemberExpressionÍÉÍÓKªIdentifierÍÉÍĞ§orderedKªIdentifierÍÑÍÒ¡jÃÂU°MemberExpressionÍÕÍãKªIdentifierÍÕÍÜ§orderedZ°BinaryExpressionÍİÍâKªIdentifierÍİÍŞ¡j¡+Q§LiteralÍáÍâ¡1ÃÂU°MemberExpressionÍåÍíKªIdentifierÍåÍç¢neKªIdentifierÍèÍí¥netIdÂÂU°MemberExpressionÍïÍùKªIdentifierÍïÍñ¢neKªIdentifierÍòÍù§netNameÂÂKªIdentifierÍûÍ ¥widthKªIdentifierÍÍ¤gridU°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍ¦tracksÂÂKªIdentifierÍÍ¦tracksKªIdentifierÍÍ ¤viasÂ¥constS«IfStatementÍ0ÍT¯UnaryExpressionÍ4Í7¡!ÃKªIdentifierÍ5Í7¢okL®BlockStatementÍ9Í’V³ExpressionStatementÍLÍZW´AssignmentExpressionÍLÍY¡=KªIdentifierÍLÍQ¥okNetQ§LiteralÍTÍYÂ¥false`®BreakStatementÍlÍrÀÀS«IfStatementÍ–Í¬KªIdentifierÍšÍŸ¥okNetL®BlockStatementÍ¡Í’V³ExpressionStatementÍ°ÍÆY®CallExpressionÍ°ÍÅU°MemberExpressionÍ°Í»KªIdentifierÍ°Í¶¦routedKªIdentifierÍ·Í»¤pushÂÂ‘U°MemberExpressionÍ¼ÍÄKªIdentifierÍ¼Í¾¢neKªIdentifierÍ¿ÍÄ¥netIdÂÂÂV³ExpressionStatementÍÔÍY®CallExpressionÍÔÍKªIdentifierÍÔÍÜ¨tracePcb’Q§LiteralÍİÍéªAI_GEO_NET¬'AI_GEO_NET'[¯TemplateLiteralÍëÍ’U°MemberExpressionÍîÍøKªIdentifierÍîÍğ¢neKªIdentifierÍñÍø§netNameÂÂU°MemberExpressionÍÍKªIdentifierÍÍ¤padsKªIdentifierÍ	Í¦lengthÂÂ“\¯TemplateElementÍìÍì]  Â\¯TemplateElementÍùÍ]© ok pads=© ok pads=Â\¯TemplateElementÍÍ]  ÃÂL®BlockStatementÍ-Í¬’V³ExpressionStatementÍ<ÍRY®CallExpressionÍ<ÍQU°MemberExpressionÍ<ÍGKªIdentifierÍ<ÍB¦failedKªIdentifierÍCÍG¤pushÂÂ‘U°MemberExpressionÍHÍPKªIdentifierÍHÍJ¢neKªIdentifierÍKÍP¥netIdÂÂÂV³ExpressionStatementÍ`Í¡Y®CallExpressionÍ`Í KªIdentifierÍ`Íl¬tracePcbWarn’Q§LiteralÍmÍz«AI_GEO_FAIL­'AI_GEO_FAIL'[¯TemplateLiteralÍ|ÍŸ‘U°MemberExpressionÍÍ‰KªIdentifierÍÍ¢neKªIdentifierÍ‚Í‰§netNameÂÂ’\¯TemplateElementÍ}Í}]  Â\¯TemplateElementÍŠÍ]´ clearance/path fail´ clearance/path failÃÂM³VariableDeclarationÍ¹Íğ‘N²VariableDeclaratorÍ¿ÍïKªIdentifierÍ¿ÍÌ­missingCopperY®CallExpressionÍÏÍïKªIdentifierÍÏÍâ³ensureAllCopperUsed’KªIdentifierÍãÍæ£docKªIdentifierÍèÍî¦tracksÂ¥constS«IfStatementÍöÍòZ°BinaryExpressionÍúÍU°MemberExpressionÍúÍKªIdentifierÍúÍ ¦failedKªIdentifierÍÍ¦lengthÂÂ¡>Q§LiteralÍ
+Í ¡0L®BlockStatementÍÍò‘X¯ReturnStatementÍÍëO°ObjectExpressionÍÍê—P¨PropertyÍ.Í7ÂÂÂKªIdentifierÍ.Í0¢okQ§LiteralÍ2Í7Â¥false¤initÔra™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ9Í?ÂÃÂKªIdentifierÍ9Í?¦tracks¤initKªIdentifierÍ9Í?¦tracksa¨PropertyÍAÍEÂÃÂKªIdentifierÍAÍE¤vias¤initKªIdentifierÍAÍE¤viasP¨PropertyÍGÍ[ÂÂÂKªIdentifierÍGÍS¬routedNetIdsKªIdentifierÍUÍ[¦routed¤initP¨PropertyÍ]ÍqÂÂÂKªIdentifierÍ]Íi¬failedNetIdsKªIdentifierÍkÍq¦failed¤initP¨PropertyÍ€Í¢ÂÂÂKªIdentifierÍ€Í“³missingCopperLayersKªIdentifierÍ•Í¢­missingCopper¤initP¨PropertyÍ±ÍßÂÂÂKªIdentifierÍ±Í·¦reason[¯TemplateLiteralÍ¹Íß‘U°MemberExpressionÍĞÍİKªIdentifierÍĞÍÖ¦failedKªIdentifierÍ×Íİ¦lengthÂÂ’\¯TemplateElementÍºÍÎ]´signal nets failed: ´signal nets failed: Â\¯TemplateElementÍŞÍŞ]  Ã¤initÀS«IfStatementÍøÍ Z°BinaryExpressionÍüÍU°MemberExpressionÍüÍKªIdentifierÍüÍ	­missingCopperKªIdentifierÍ
+Í¦lengthÂÂ¡>Q§LiteralÍÍ ¡0L®BlockStatementÍÍ ‘X¯ReturnStatementÍ!Í  O°ObjectExpressionÍ(Íÿ—P¨PropertyÍ7Í@ÂÂÂKªIdentifierÍ7Í9¢okQ§LiteralÍ;Í@Â¥false¤inita¨PropertyÍBÍHÂÃÂKªIdentifierÍBÍH¦tracks¤initKªIdentifierÍBÍH¦tracksa¨PropertyÍJÍNÂÃÂKªIdentifierÍJÍN¤vias¤initKªIdentifierÍJÍN¤viasP¨PropertyÍPÍdÂÂÂKªIdentifierÍPÍ\¬routedNetIdsKªIdentifierÍ^Íd¦routed¤initP¨PropertyÍfÍzÂÂÂKªIdentifierÍfÍr¬failedNetIdsKªIdentifierÍtÍz¦failed¤initP¨PropertyÍ‰Í«ÂÂÂKªIdentifierÍ‰Íœ³missingCopperLayersKªIdentifierÍÍ«­missingCopper¤initP¨PropertyÍºÍôÂÂÂKªIdentifierÍºÍÀ¦reason[¯TemplateLiteralÍÂÍô‘Y®CallExpressionÍÛÍòU°MemberExpressionÍÛÍíKªIdentifierÍÛÍè­missingCopperKªIdentifierÍéÍí¤joinÂÂ‘Q§LiteralÍîÍñ¡,£','Â’\¯TemplateElementÍÃÍÙ]¶copper layers unused: ¶copper layers unused: Â\¯TemplateElementÍóÍó]  Ã¤initÀX¯ReturnStatementÍ Í •O°ObjectExpressionÍ Í ”—P¨PropertyÍ Í 'ÂÂÂKªIdentifierÍ Í !¢okQ§LiteralÍ #Í 'Ã¤true¤inita¨PropertyÍ )Í /ÂÃÂKªIdentifierÍ )Í /¦tracks¤initKªIdentifierÍ )Í /¦tracksa¨PropertyÍ 1Í 5ÂÃÂKªIdentifierÍ 1Í 5¤vias¤initKªIdentifierÍ 1Í 5¤viasP¨PropertyÍ 7Í KÂÂÂKªIdentifierÍ 7Í C¬routedNetIdsKªIdentifierÍ EÍ K¦routed¤initP¨PropertyÍ MÍ ]ÂÂÂKªIdentifierÍ MÍ Y¬failedNetIdsR¯ArrayExpressionÍ [Í ]¤initP¨PropertyÍ hÍ ÂÂÂKªIdentifierÍ hÍ {³missingCopperLayersR¯ArrayExpressionÍ }Í ¤initP¨PropertyÍ Í ÂÂÂKªIdentifierÍ Í ‡¦reasonQ§LiteralÍ ‰Í ¢ok¤'ok'¤initÀšÔrb•¤type¥start£endªspecifiers¦source±ImportDeclaration?Ì|‘Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifierÌHÌ]KªIdentifierÌHÌ]µcopperLayersFromStackKªIdentifierÌHÌ]µcopperLayersFromStackQ§LiteralÌeÌ{´../../types/PcbTypes¶'../../types/PcbTypes'b±ImportDeclarationÌ~Ì¡‘c¯ImportSpecifierÌ‡ÌKªIdentifierÌ‡Ì¦IdUtilKªIdentifierÌ‡Ì¦IdUtilQ§LiteralÌ•Ì ©../IdUtil«'../IdUtil'b±ImportDeclarationÌ£ÌÕ‘c¯ImportSpecifierÌ¬Ì¼KªIdentifierÌ¬Ì¼°padWorldPositionKªIdentifierÌ¬Ì¼°padWorldPositionQ§LiteralÌÄÌÔ®../PcbZoneUtil°'../PcbZoneUtil'b±ImportDeclarationÌ×Í‘c¯ImportSpecifierÌàÌúKªIdentifierÌàÌúºorderPointsNearestNeighborKªIdentifierÌàÌúºorderPointsNearestNeighborQ§LiteralÍÍ³../PcbTrackBindUtilµ'../PcbTrackBindUtil'b±ImportDeclarationÍÍH‘c¯ImportSpecifierÍ#Í.KªIdentifierÍ#Í.«createViaAtKªIdentifierÍ#Í.«createViaAtQ§LiteralÍ6ÍG¯./PcbViaFactory±'./PcbViaFactory'b±ImportDeclarationÍJÍ•’c¯ImportSpecifierÍSÍdKªIdentifierÍSÍd±pathClearOfTracksKªIdentifierÍSÍd±pathClearOfTracksc¯ImportSpecifierÍfÍvKªIdentifierÍfÍv°trackWidthForNetKªIdentifierÍfÍv°trackWidthForNetQ§LiteralÍ~Í”´./PcbClearanceOracle¶'./PcbClearanceOracle'b±ImportDeclarationÍ—ÍÊ‘c¯ImportSpecifierÍ Í¯KªIdentifierÍ Í¯¯routePowerBusesKªIdentifierÍ Í¯¯routePowerBusesQ§LiteralÍ·ÍÉ°./PowerBusRouter²'./PowerBusRouter'b±ImportDeclarationÍÌÍ‘c¯ImportSpecifierÍÕÍèKªIdentifierÍÕÍè³ensureAllCopperUsedKªIdentifierÍÕÍè³ensureAllCopperUsedQ§LiteralÍğÍµ./ensureAllCopperUsed·'./ensureAllCopperUsed'b±ImportDeclarationÍ
+ÍQ‘c¯ImportSpecifierÍÍ+KªIdentifierÍÍ+¸policyCoversCopperLayersKªIdentifierÍÍ+¸policyCoversCopperLayersQ§LiteralÍ3ÍP»../../types/PcbAiRouteTypes½'../../types/PcbAiRouteTypes'b±ImportDeclarationÍSÍ‹’c¯ImportSpecifierÍ\ÍdKªIdentifierÍ\Íd¨tracePcbKªIdentifierÍ\Íd¨tracePcbc¯ImportSpecifierÍfÍrKªIdentifierÍfÍr¬tracePcbWarnKªIdentifierÍfÍr¬tracePcbWarnQ§LiteralÍzÍŠ®../PcbTraceLog°'../PcbTraceLog'

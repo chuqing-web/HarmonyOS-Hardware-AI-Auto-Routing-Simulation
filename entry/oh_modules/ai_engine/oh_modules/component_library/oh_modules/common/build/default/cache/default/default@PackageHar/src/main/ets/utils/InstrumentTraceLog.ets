@@ -16,7 +16,7 @@ import {
 
 } from '../types/CommonTypes';
 
-import { ErcError } from '../types/TopologyTypes';
+import { ErcError, RouteLine } from '../types/TopologyTypes';
 
 import { HexFileInfo } from '../types/HexExtendedTypes';
 
@@ -262,6 +262,27 @@ export function traceDigitalLogic(
 
 
 
+/** A→D / CD4017 时钟排查（电平变化或显式 force 时打 info） */
+export function traceDigitalAd(detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] A2D | ${detail}`);
+}
+
+/** A→D 周期快照（默认 ~5Hz，避免刷屏） */
+let _adSnapLastMs = 0;
+export function traceDigitalAdSnapshot(detail: string, minIntervalMs: number = 200): void {
+  const now = Date.now();
+  if (now - _adSnapLastMs < minIntervalMs && !INSTR_TRACE_SIM_STEP) {
+    return;
+  }
+  _adSnapLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] A2D_SNAP | ${detail}`);
+}
+
+/** CD4017 边沿 / 阻塞原因 */
+export function traceCd4017(detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[DIGITAL] CD4017 | ${detail}`);
+}
+
 /** 数字→模拟 Thevenin 注入摘要 */
 
 export function traceDigitalThevenin(parts: string[]): void {
@@ -292,6 +313,30 @@ export function traceLogicAnalyzerChannels(
 
   Logger.info(INSTR_TRACE_TAG, `[LA] ${refDes} | ${channels.join(' ')}`);
 
+}
+
+/** LA 捕获路径：probe 匹配 / 边沿数 / 电压跨度（限流） */
+let _laCaptureLastMs: number = 0;
+
+export function traceLaCapture(detail: string, minIntervalMs: number = 400): void {
+  const now = Date.now();
+  if (now - _laCaptureLastMs < minIntervalMs) {
+    return;
+  }
+  _laCaptureLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[LA] CAPTURE | ${detail}`);
+}
+
+/** LA UI 刷新：各通道边沿摘要（限流） */
+let _laUiLastMs: number = 0;
+
+export function traceLaUiChannels(detail: string, minIntervalMs: number = 500): void {
+  const now = Date.now();
+  if (now - _laUiLastMs < minIntervalMs) {
+    return;
+  }
+  _laUiLastMs = now;
+  Logger.info(INSTR_TRACE_TAG, `[LA] UI | ${detail}`);
 }
 
 
@@ -573,6 +618,38 @@ export function traceInstrumentWiringIssues(doc: SchematicDocument): void {
       if (iPlus !== null && iMinus !== null && iPlus === iMinus) {
         Logger.warn(INSTR_TRACE_TAG,
           `[INSTR_SHORT] ${comp.refDes} I+ and I- on same net ${netName(iPlus)} — reading will be 0A`);
+      }
+    } else if (kind === 'power') {
+      const vPlus = findNet(['V+', 'VP', 'PLUS', '+']);
+      const vMinus = findNet(['V-', 'COM', 'GND', '-']);
+      const iPlus = findNet(['I+', 'IP']);
+      const iMinus = findNet(['I-', 'IM']);
+      if (vPlus !== null && vMinus !== null && vPlus === vMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} V+/V- on same net ${netName(vPlus)} — power V=0`);
+      }
+      if (iPlus !== null && iMinus !== null && iPlus === iMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} I+/I- on same net ${netName(iPlus)} — not series`);
+      } else if (iPlus !== null && iMinus !== null && vPlus !== null && vMinus !== null &&
+        iPlus === vPlus && iMinus === vMinus) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_WIRING] ${comp.refDes} I path identical to V path — current not series-inserted`);
+      }
+    } else if (kind === 'freq' || kind === 'osc' || kind === 'logic') {
+      const sig = kind === 'freq' ? findNet(['IN', 'SIG', 'INPUT']) : findNet(['CH1', 'IN1', '1']);
+      const gnd = findNet(['GND', 'COM', 'VSS']);
+      if (sig !== null && gnd !== null && sig === gnd) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} signal and GND on same net ${netName(sig)}`);
+      }
+    } else if (kind === 'sig') {
+      const out = findNet(['OUT', '1', '+']);
+      const gnd = findNet(['GND', '2', '-']);
+      if (out !== null && gnd !== null && out === gnd) {
+        Logger.warn(INSTR_TRACE_TAG,
+          `[INSTR_SHORT] ${comp.refDes} OUT and GND on same net ${netName(out)} — ` +
+          `wires formed one copper loop; pin-to-pin series path required (not a closed wire box)`);
       }
     }
   }
@@ -994,8 +1071,9 @@ export function formatFirmwarePreview(data: Uint8Array, maxBytes: number = 16): 
   return parts.join(' ');
 }
 
-/** ERC / 运行时错误列表 — 与导航栏错误列表一致，输出到 instr_trace */
-export function traceErcErrorList(errors: ErcError[], context: string = 'ERC'): void {
+/** ERC / 运行时错误列表 — 摘要 + 少量明细，避免主线程刷屏触发 THREAD_BLOCK */
+export function traceErcErrorList(errors: ErcError[], context: string = 'ERC',
+  maxDetail: number = 8): void {
   if (errors.length === 0) {
     Logger.info(INSTR_TRACE_TAG, `[${context}] errors=0`);
     return;
@@ -1010,21 +1088,32 @@ export function traceErcErrorList(errors: ErcError[], context: string = 'ERC'): 
     }
   }
   Logger.info(INSTR_TRACE_TAG,
-    `[${context}] errors=${errors.length} critical=${errCount} warn=${warnCount} ----------`);
-  for (let i = 0; i < errors.length; i++) {
-    const e = errors[i];
-    const target = e.targetUuid.length > 0 ? e.targetUuid : '-';
-    const line = `[${context}] #${i + 1} ${e.severity} type=${e.errType} target=${target} ${e.desc}`;
-    if (e.severity === 'error' || e.severity === 'critical') {
-      Logger.warn(INSTR_TRACE_TAG, line);
-    } else {
-      Logger.info(INSTR_TRACE_TAG, line);
-    }
-    if (e.suggest.length > 0) {
-      Logger.info(INSTR_TRACE_TAG, `[${context}]     fix: ${e.suggest}`);
+    `[${context}] errors=${errors.length} critical=${errCount} warn=${warnCount}`);
+  // Prefer critical/error, then warning; skip info flood on main thread
+  let shown = 0;
+  for (let pass = 0; pass < 2 && shown < maxDetail; pass++) {
+    for (let i = 0; i < errors.length && shown < maxDetail; i++) {
+      const e = errors[i];
+      const isHard = e.severity === 'error' || e.severity === 'critical';
+      if (pass === 0 && !isHard) {
+        continue;
+      }
+      if (pass === 1 && (isHard || e.severity === 'info')) {
+        continue;
+      }
+      const target = e.targetUuid.length > 0 ? e.targetUuid : '-';
+      const line = `[${context}] #${i + 1} ${e.severity} type=${e.errType} target=${target} ${e.desc}`;
+      if (isHard) {
+        Logger.warn(INSTR_TRACE_TAG, line);
+      } else {
+        Logger.info(INSTR_TRACE_TAG, line);
+      }
+      shown++;
     }
   }
-  Logger.info(INSTR_TRACE_TAG, `[${context}] ---------- END errors=${errors.length} ----------`);
+  if (errors.length > shown) {
+    Logger.info(INSTR_TRACE_TAG, `[${context}] ...+${errors.length - shown} more (UI list has full set)`);
+  }
 }
 
 
@@ -1467,36 +1556,23 @@ export function traceSimStep(
 
 
 export function traceCaptureWave(
-
   channel: number, probe: string, source: string, pointCount: number, lastV: number,
-
-  vpp: number = 0, rawSpanSec: number = 0, estFreq: number = 0): void {
-
+  vpp: number = 0, rawSpanSec: number = 0, estFreq: number = 0,
+  timebaseLabel: string = ''): void {
   const spanMs = rawSpanSec * 1e3;
-
+  const tb = timebaseLabel.length > 0 ? ` tb=${timebaseLabel}` : '';
   const msg =
-
     `scope CH${channel + 1} probe=${probe.length > 18 ? probe.substring(0, 18) : probe} ` +
-
     `src=${source} pts=${pointCount} last=${lastV.toFixed(4)}V ` +
-
-    `Vpp=${vpp.toFixed(4)}V span=${spanMs.toFixed(3)}ms f=${estFreq > 0 ? estFreq.toFixed(1) : '--'}Hz`;
-
-  // 短窗/低 Vpp 用 info，便于现场确认是否仍在「仿真时间几乎不前进」
-
-  if (vpp < 0.05 || rawSpanSec < 5e-4 || source === 'history' || source === 'flatDC') {
-
+    `Vpp=${vpp.toFixed(4)}V span=${spanMs.toFixed(3)}ms f=${estFreq > 0 ? estFreq.toFixed(1) : '--'}Hz${tb}`;
+  // 短窗/低 Vpp / 长窗(易左侧拥挤) 用 info，便于现场确认
+  if (vpp < 0.05 || rawSpanSec < 5e-4 || rawSpanSec > 0.5 ||
+    source === 'history' || source === 'flatDC' || source === 'historyLonger') {
     Logger.info(INSTR_TRACE_TAG, msg);
-
   } else {
-
     Logger.debug(INSTR_TRACE_TAG, msg);
-
   }
-
 }
-
-
 
 export function traceUiRefresh(
 
@@ -1681,7 +1757,7 @@ export function traceInteractiveInstrumentLive(
   activeRefOrId: string,
   force: boolean = false
 ): void {
-  const prefer = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', 'GND'];
+  const prefer = ['VCC', 'HI', 'NET_2', 'MID', 'ADC', '1WIRE', 'HALL', 'GND'];
   const netParts: string[] = [];
   for (let i = 0; i < prefer.length; i++) {
     const n = prefer[i];
@@ -1801,5 +1877,380 @@ export function traceAiDiag(prefix: string, stage: string, lines: string[],
     Logger.info(INSTR_TRACE_TAG,
       `[${prefix}] DIAG ${stage} <<< truncated +${n - show}`);
   }
+}
+
+/**
+ * AI 画线明细 — 过滤 instr_trace 前缀 [AI_WIRE] DRAW
+ * via: war | net_plan_stub | fix_stub | a_star | other
+ */
+export function traceAiWireDraw(via: string, detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] DRAW via=${via} | ${detail}`);
+}
+
+/**
+ * AI 拆线/改线明细 — 过滤 [AI_WIRE] DROP / MOVE
+ * action: DROP（删导线）| MOVE（脚改挂网）| KEEP（幂等跳过）
+ */
+export function traceAiWireFix(action: string, detail: string): void {
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] ${action} | ${detail}`);
+}
+
+/**
+ * AI 导线清单快照 — 过滤 [AI_WIRE] INV
+ * stage 例：net_plan_end / war_end / fix_batch_end / finalize
+ */
+export function traceAiWireInventory(stage: string, wires: RouteLine[],
+  netNameOf: (netUuid: string) => string, maxLines: number = 40): void {
+  const n = wires.length;
+  const show = Math.min(n, Math.max(1, maxLines));
+  Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} | total=${n}` +
+    `${n > show ? ` show=${show}` : ''}`);
+  if (n === 0) {
+    Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} | (no wires)`);
+    return;
+  }
+  for (let i = 0; i < show; i++) {
+    const w = wires[i];
+    const pts = w.points ?? [];
+    const a = pts.length > 0 ? pts[0] : undefined;
+    const b = pts.length > 0 ? pts[pts.length - 1] : undefined;
+    const ends = a && b
+      ? `(${Math.round(a.x)},${Math.round(a.y)})→(${Math.round(b.x)},${Math.round(b.y)})`
+      : '(no-pts)';
+    Logger.info(INSTR_TRACE_TAG,
+      `[AI_WIRE] INV|${stage}|${i} wireId=${w.uuid ?? '?'} net=${netNameOf(w.netUuid)}` +
+      ` pts=${pts.length} ${ends}`);
+  }
+  if (n > show) {
+    Logger.info(INSTR_TRACE_TAG, `[AI_WIRE] INV ${stage} <<< truncated +${n - show}`);
+  }
+}
+
+/** 连线落线开始 — 过滤 instr_trace，前缀 [WIRE_CONN] */
+export function traceWireConnectBegin(
+  wireId: string, netId: string, pts: number,
+  fromX: number, fromY: number, toX: number, toY: number,
+  inherited: boolean
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] BEGIN wire=${wireId} net=${netId} pts=${pts} ` +
+    `from=(${Math.round(fromX)},${Math.round(fromY)}) ` +
+    `to=(${Math.round(toX)},${Math.round(toY)}) inherited=${inherited}`);
+}
+
+/** 导线端点吸附到引脚的结果 */
+export function traceWirePinSnap(
+  endLabel: string, epX: number, epY: number,
+  hit: boolean, refDes: string, pinName: string, pinId: string,
+  dist: number, action: string
+): void {
+  if (hit) {
+    Logger.info(INSTR_TRACE_TAG,
+      `[WIRE_CONN] SNAP ${endLabel} ep=(${Math.round(epX)},${Math.round(epY)}) ` +
+      `→ ${refDes}.${pinName}(${pinId}) dist=${dist.toFixed(1)} ${action}`);
+  } else {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[WIRE_CONN] SNAP ${endLabel} ep=(${Math.round(epX)},${Math.round(epY)}) ` +
+      `→ (no pin within threshold) ${action}`);
+  }
+}
+
+/**
+ * 端点未吸到脚时补充：距最近异导线铜皮距离（T 接候选）。
+ * 用于区分「真悬空」vs「图上 T 到线上但 connectWireToPins 只认脚」。
+ */
+export function traceWireSnapMissNearCopper(
+  endLabel: string, epX: number, epY: number,
+  nearestDist: number, nearestWireId: string, nearestNetId: string,
+  placeTol: number
+): void {
+  if (nearestDist < 0) {
+    Logger.info(INSTR_TRACE_TAG,
+      `[WIRE_CONN] SNAP ${endLabel} MISS-pin no other copper nearby (true stub)`);
+    return;
+  }
+  const within = nearestDist <= placeTol;
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] SNAP ${endLabel} MISS-pin but near copper d=${nearestDist.toFixed(1)} ` +
+    `tol=${placeTol.toFixed(1)} wire=${nearestWireId} net=${nearestNetId} ` +
+    `${within ? 'T_CANDIDATE (topology must merge)' : 'TOO_FAR (visual only?)'}`);
+}
+
+/** 吸附被拒（异网占用 / 同器件邻脚已在网） */
+export function traceWirePinSnapReject(
+  endLabel: string, refDes: string, pinName: string, reason: string
+): void {
+  Logger.warn(INSTR_TRACE_TAG,
+    `[WIRE_CONN] REJECT ${endLabel} ${refDes}.${pinName}: ${reason}`);
+}
+
+/** 连线拓扑：导线中段压过同器件邻脚（脚排短路）被拒绝 */
+export function traceWirePinRowShort(
+  pinLabel: string, ax: number, ay: number, bx: number, by: number
+): void {
+  Logger.warn(INSTR_TRACE_TAG,
+    `[WIRE_CONN] PIN_ROW_SHORT ${pinLabel} on segment ` +
+    `(${Math.round(ax)},${Math.round(ay)})-(${Math.round(bx)},${Math.round(by)})`);
+}
+
+/** 落线后即时拓扑摘要（重建前/后各打一次也可） */
+export function traceWireConnectEnd(
+  wireId: string, netId: string, snappedPins: number, doc: SchematicDocument
+): void {
+  const wireNets = new Map<string, number>();
+  for (let i = 0; i < doc.wires.length; i++) {
+    const nid = doc.wires[i].netId;
+    wireNets.set(nid, (wireNets.get(nid) ?? 0) + 1);
+  }
+  const netParts: string[] = [];
+  wireNets.forEach((count: number, nid: string) => {
+    let name = nid;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      if (doc.nets[ni].id === nid) {
+        name = doc.nets[ni].name || nid;
+        break;
+      }
+    }
+    netParts.push(`${name}×${count}`);
+  });
+  let pinOnNet = 0;
+  for (let ni = 0; ni < doc.nets.length; ni++) {
+    if (doc.nets[ni].id === netId) {
+      pinOnNet = doc.nets[ni].pinIds.length;
+      break;
+    }
+  }
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] END wire=${wireId} net=${netId} snapPins=${snappedPins} ` +
+    `netPinCount=${pinOnNet} wires=${doc.wires.length} ` +
+    `wireNetBag={${netParts.join(', ')}}`);
+}
+
+/**
+ * 落线后每个器件引脚是否挂网 — 便于对照「画上有线但仿真 skip」。
+ */
+export function traceWireConnectPinAudit(doc: SchematicDocument, maxComps: number = 12): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] PIN_AUDIT comps=${doc.components.length} nets=${doc.nets.length} wires=${doc.wires.length}`);
+  const show = Math.min(doc.components.length, maxComps);
+  for (let ci = 0; ci < show; ci++) {
+    const comp = doc.components[ci];
+    const pinsOnNet: string[] = [];
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      const net = doc.nets[ni];
+      for (let pi = 0; pi < net.pinIds.length; pi++) {
+        const parsed = parsePinRef(net.pinIds[pi]);
+        if (parsed !== null && parsed.compId === comp.id) {
+          pinsOnNet.push(`${parsed.pinName || parsed.pinId}->${net.name || net.id}`);
+        }
+      }
+    }
+    const detail = pinsOnNet.length > 0 ? pinsOnNet.join(', ') : '(none — floating)';
+    if (pinsOnNet.length === 0) {
+      Logger.warn(INSTR_TRACE_TAG,
+        `[WIRE_CONN] PIN_AUDIT ${comp.refDes}[${comp.libraryId}] ${detail}`);
+    } else {
+      Logger.info(INSTR_TRACE_TAG,
+        `[WIRE_CONN] PIN_AUDIT ${comp.refDes}[${comp.libraryId}] ${detail}`);
+    }
+  }
+  if (doc.components.length > show) {
+    Logger.info(INSTR_TRACE_TAG,
+      `[WIRE_CONN] PIN_AUDIT ...+${doc.components.length - show} more comps`);
+  }
+}
+
+/** 自动/可丢弃信号网名（与 WireNetTopology.isAutoGeneratedSignalNetName 保持一致） */
+export function isTraceAutoSignalNetName(nm: string): boolean {
+  const name = (nm ?? '').trim();
+  if (name.length === 0) {
+    return true;
+  }
+  if (/^net_topo/i.test(name)) {
+    return true;
+  }
+  if (/^NET_\d+$/i.test(name) || /^NET_net_/i.test(name)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 拓扑重建前扫描网名：撞名（尤其旧版 NET_net_17）是「多线并一网」的首要嫌疑。
+ */
+export function traceTopoNetNameScan(doc: SchematicDocument): void {
+  const byName = new Map<string, number>();
+  let autoCount = 0;
+  let semanticCount = 0;
+  let emptyCount = 0;
+  const autoDupSamples: string[] = [];
+  for (let i = 0; i < doc.nets.length; i++) {
+    const nm = (doc.nets[i].name ?? '').trim();
+    if (nm.length === 0) {
+      emptyCount++;
+      continue;
+    }
+    byName.set(nm, (byName.get(nm) ?? 0) + 1);
+    if (isTraceAutoSignalNetName(nm)) {
+      autoCount++;
+    } else {
+      semanticCount++;
+    }
+  }
+  byName.forEach((count: number, nm: string) => {
+    if (count > 1 && autoDupSamples.length < 6) {
+      autoDupSamples.push(`${nm}×${count}`);
+    }
+  });
+  Logger.info(INSTR_TRACE_TAG,
+    `[TOPO] NET_NAME_SCAN nets=${doc.nets.length} wires=${doc.wires.length} ` +
+    `auto=${autoCount} semantic=${semanticCount} empty=${emptyCount}` +
+    (autoDupSamples.length > 0 ? ` DUP_NAMES={${autoDupSamples.join(', ')}}` : ' dup=none'));
+  if (autoDupSamples.length > 0) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[TOPO] NET_NAME_COLLISION 检测到重复网名 — 拓扑若按名继承会把独立导线并成一网: ` +
+      autoDupSamples.join(', '));
+  }
+}
+
+/** 网名继承：跳过自动名 / 保留语义名 / 同分量冲突 */
+export function traceTopoNetInheritDecision(
+  action: 'skip_auto' | 'keep' | 'conflict_clear',
+  detail: string
+): void {
+  if (action === 'conflict_clear') {
+    Logger.warn(INSTR_TRACE_TAG, `[TOPO] NET_INHERIT conflict_clear ${detail}`);
+    return;
+  }
+  Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_INHERIT ${action} ${detail}`);
+}
+
+/**
+ * 信号分量赋网摘要。collapseReps>1 且共用同一 netId = 撞名并网 bug 特征。
+ */
+export function traceTopoSignalAssignSummary(
+  signalReps: number,
+  freshCount: number,
+  inheritExistingCount: number,
+  inheritNewCount: number,
+  collapseHits: string[]
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[TOPO] NET_ASSIGN signalReps=${signalReps} fresh=${freshCount} ` +
+    `inheritExisting=${inheritExistingCount} inheritNew=${inheritNewCount}`);
+  if (collapseHits.length > 0) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[TOPO] NET_COLLAPSE 多个几何分量落到同一 netId（撞名/错误继承）: ` +
+      collapseHits.slice(0, 8).join('; '));
+  }
+}
+
+/** 拓扑重建后：每根导线 old→new 网名（截断），便于逐步对照 */
+export function traceTopoWireNetReassign(
+  changes: string[],
+  reassignCount: number,
+  signalNets: number,
+  junctions: number,
+  wireNetBag: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[TOPO] rebuilt wire nets: ${reassignCount} wires reassigned, ` +
+    `signalNets=${signalNets} junctions=${junctions} wireNetBag={${wireNetBag}}`);
+  const show = Math.min(changes.length, 12);
+  for (let i = 0; i < show; i++) {
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_REASSIGN #${i + 1} ${changes[i]}`);
+  }
+  if (changes.length > show) {
+    Logger.info(INSTR_TRACE_TAG, `[TOPO] NET_REASSIGN ...+${changes.length - show} more`);
+  }
+}
+
+/** 新建信号网（ensureNetExists） */
+export function traceNetEnsureCreate(netId: string, name: string, totalNets: number): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[NET] ensureNetExists CREATE id=${netId} name=${name} total=${totalNets}`);
+  if (/^NET_net_/i.test(name)) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[NET] ensureNetExists LEGACY_PATTERN name=${name} — 旧版 substring 撞名模式，应使用唯一 NET_N`);
+  }
+}
+
+/**
+ * 落线端点吸附决策：脚优先 vs 导线 T 接。
+ * 排查「看起来连到仪器脚，实际被吸到附近铜皮」根因。
+ */
+export function traceWireSnapEndpointDecision(
+  endLabel: string,
+  rawX: number, rawY: number,
+  resultX: number, resultY: number,
+  mode: string,
+  detail: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] SNAP_EP ${endLabel} raw=(${Math.round(rawX)},${Math.round(rawY)}) ` +
+    `→ (${Math.round(resultX)},${Math.round(resultY)}) mode=${mode} ${detail}`);
+}
+
+/** 导线↔导线并网（共端点 / T 接） */
+export function traceWireWireMerge(
+  kind: string,
+  wireA: string, netA: string,
+  wireB: string, netB: string,
+  atX: number, atY: number,
+  canonicalNet: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_WIRE ${kind} ` +
+    `A=${wireA}(${netA}) B=${wireB}(${netB}) ` +
+    `at=(${Math.round(atX)},${Math.round(atY)}) → net=${canonicalNet}`);
+}
+
+/** 导线↔引脚挂网（端点吸附 / 中段压脚 / 共位并脚） */
+export function traceWirePinAttach(
+  kind: string,
+  refDes: string, pinName: string, pinId: string,
+  wireId: string, netId: string,
+  dist: number, worldX: number, worldY: number
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_PIN ${kind} ${refDes}.${pinName}(${pinId}) ` +
+    `wire=${wireId} net=${netId} dist=${dist.toFixed(2)} ` +
+    `at=(${Math.round(worldX)},${Math.round(worldY)})`);
+}
+
+/** 引脚↔引脚共位并网（异器件压在同一点） */
+export function tracePinPinMerge(
+  refA: string, pinA: string,
+  refB: string, pinB: string,
+  netId: string, atX: number, atY: number
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] PIN_PIN coloc ${refA}.${pinA} + ${refB}.${pinB} ` +
+    `→ net=${netId} at=(${Math.round(atX)},${Math.round(atY)})`);
+}
+
+/** 移动器件时导线是否跟上引脚 */
+export function traceCompMoveWireFollow(
+  refDes: string, compId: string,
+  pinHits: number, wireUpdates: number,
+  midSegSplits: number, misses: string
+): void {
+  const missPart = misses.length > 0 ? ` miss=[${misses}]` : '';
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] COMP_MOVE ${refDes}(${compId}) pinHits=${pinHits} ` +
+    `wiresUpdated=${wireUpdates} midSegSplit=${midSegSplits}${missPart}`);
+}
+
+/** 端点被纠正到精确引脚坐标（防移动后脱线） */
+export function traceWireEndpointNudge(
+  wireId: string, endLabel: string,
+  fromX: number, fromY: number,
+  toX: number, toY: number,
+  refDes: string, pinName: string
+): void {
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] NUDGE ${endLabel} wire=${wireId} ` +
+    `(${Math.round(fromX)},${Math.round(fromY)})→(${Math.round(toX)},${Math.round(toY)}) ` +
+    `→ ${refDes}.${pinName}`);
 }
 

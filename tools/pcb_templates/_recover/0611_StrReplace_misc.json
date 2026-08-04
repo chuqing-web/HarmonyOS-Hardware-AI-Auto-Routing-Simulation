@@ -1,0 +1,8 @@
+{
+  "line": 611,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  // B：上 LM555 / 下 VOUT + DISCH（不同 col，H-first）\n  fanTop(out555, pw('RLED', 1), j555, 'B.Cu', 130, 2640);\n  fanBot(vout0, pw('REG1', 3), jV0, 'B.Cu', 2700);\n  fanBot(disch, pw('RA', 2), jDs, 'B.Cu', 2780);",
+  "new_string": "  // B：上 LM555；DISCH 走更上廊 y=40；VOUT 下廊 H-first\n  fanTop(out555, pw('RLED', 1), j555, 'B.Cu', 130, 2640);\n  fanTop(disch, pw('RA', 2), jDs, 'B.Cu', 40, 2780);\n  fanBot(vout0, pw('REG1', 3), jV0, 'B.Cu', 2700);"
+}

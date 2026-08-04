@@ -1,0 +1,352 @@
+/**
+ * PCB 网络表重建、飞线、正交 L 路径、网络高亮辅助
+ */
+import {
+  PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad,
+  PcbFootprintInst
+} from '../types/PcbTypes';
+import { Point2D } from '../types/CommonTypes';
+import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
+
+export function guessNetClassId(netName: string, classes: PcbNetClass[]): string {
+  const upper = (netName ?? '').toUpperCase();
+  let powerId = 'nc_power';
+  let signalId = 'nc_signal';
+  let defaultId = 'nc_default';
+  for (const c of classes) {
+    if (c.name === 'Power') powerId = c.id;
+    if (c.name === 'Signal') signalId = c.id;
+    if (c.name === 'Default') defaultId = c.id;
+  }
+  if (upper === 'GND' || upper === 'VSS' || upper === 'AGND' ||
+    upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
+    upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0 ||
+    upper.indexOf('3V3') >= 0 || upper.indexOf('5V') >= 0 ||
+    upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0 ||
+    upper.indexOf('VOUT') >= 0) {
+    return powerId;
+  }
+  if (upper.length > 0) {
+    return signalId;
+  }
+  return defaultId;
+}
+
+export function findNetClass(doc: PcbDocument, classId?: string): PcbNetClass {
+  if (classId) {
+    for (const c of doc.netClasses) {
+      if (c.id === classId) return c;
+    }
+  }
+  for (const c of doc.netClasses) {
+    if (c.name === 'Default') return c;
+  }
+  return doc.netClasses[0];
+}
+
+/** 从焊盘/走线/过孔重建 nets[] */
+export function rebuildPcbNets(doc: PcbDocument): void {
+  const map: Map<string, PcbNet> = new Map();
+  const add = (netId?: string, netName?: string): void => {
+    if (!netId || netId.length === 0) return;
+    if (map.has(netId)) return;
+    const name = netName && netName.length > 0 ? netName : netId;
+    map.set(netId, {
+      id: netId,
+      name,
+      classId: guessNetClassId(name, doc.netClasses)
+    });
+  };
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      add(pad.netId, pad.netName);
+    }
+  }
+  for (const trk of doc.tracks) {
+    add(trk.netId, trk.netName);
+  }
+  for (const via of doc.vias) {
+    add(via.netId, via.netName);
+  }
+  for (const z of doc.zones) {
+    add(z.netId, z.netName);
+  }
+  const nets: PcbNet[] = [];
+  map.forEach((v: PcbNet) => {
+    nets.push(v);
+  });
+  nets.sort((a: PcbNet, b: PcbNet) => a.name.localeCompare(b.name));
+  doc.nets = nets;
+}
+
+interface PadNode {
+  key: string;
+  netId: string;
+  netName: string;
+  pos: Point2D;
+}
+
+/** 未连接焊盘对飞线（同网最小生成树边，过滤已有铜连通） */
+export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
+  const nodesByNet: Map<string, PadNode[]> = new Map();
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (!pad.netId || pad.netId.length === 0) continue;
+      const pos = padWorldPosition(fp, pad);
+      const list = nodesByNet.get(pad.netId) ?? [];
+      list.push({
+        key: `${fp.id}:${pad.number}`,
+        netId: pad.netId,
+        netName: pad.netName ?? pad.netId,
+        pos
+      });
+      nodesByNet.set(pad.netId, list);
+    }
+  }
+
+  const edges: PcbRatsnestEdge[] = [];
+  nodesByNet.forEach((nodes: PadNode[], netId: string) => {
+    if (nodes.length < 2) return;
+    if (isNetFullyConnected(doc, netId, nodes)) return;
+    // Prim MST on pads
+    const used: boolean[] = [];
+    for (let i = 0; i < nodes.length; i++) used.push(false);
+    used[0] = true;
+    let usedCount = 1;
+    while (usedCount < nodes.length) {
+      let bestI = -1;
+      let bestJ = -1;
+      let bestD = Infinity;
+      for (let i = 0; i < nodes.length; i++) {
+        if (!used[i]) continue;
+        for (let j = 0; j < nodes.length; j++) {
+          if (used[j]) continue;
+          const dx = nodes[i].pos.x - nodes[j].pos.x;
+          const dy = nodes[i].pos.y - nodes[j].pos.y;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) {
+            bestD = d;
+            bestI = i;
+            bestJ = j;
+          }
+        }
+      }
+      if (bestJ < 0) break;
+      used[bestJ] = true;
+      usedCount++;
+      if (!padsCopperConnected(doc, netId, nodes[bestI].pos, nodes[bestJ].pos)) {
+        edges.push({
+          netId,
+          netName: nodes[bestI].netName,
+          a: { x: nodes[bestI].pos.x, y: nodes[bestI].pos.y },
+          b: { x: nodes[bestJ].pos.x, y: nodes[bestJ].pos.y }
+        });
+      }
+    }
+  });
+  return edges;
+}
+
+function isNetFullyConnected(doc: PcbDocument, netId: string, nodes: PadNode[]): boolean {
+  if (nodes.length < 2) return true;
+  for (let i = 1; i < nodes.length; i++) {
+    if (!padsCopperConnected(doc, netId, nodes[0].pos, nodes[i].pos)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 简化连通：同网铜皮图元端点网格并查集（含 Zone 覆铜） */
+function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
+  const tol = 15;
+  const keyOf = (p: Point2D): string =>
+    `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
+  const parent: Map<string, string> = new Map();
+  const find = (k: string): string => {
+    let p = parent.get(k) ?? k;
+    if (!parent.has(k)) parent.set(k, k);
+    while (p !== (parent.get(p) ?? p)) {
+      const pp = parent.get(p) ?? p;
+      parent.set(p, parent.get(pp) ?? pp);
+      p = parent.get(p) ?? p;
+    }
+    return p;
+  };
+  const union = (x: string, y: string): void => {
+    const rx = find(x);
+    const ry = find(y);
+    if (rx !== ry) parent.set(rx, ry);
+  };
+  const touch = (p: Point2D): void => {
+    const k = keyOf(p);
+    if (!parent.has(k)) parent.set(k, k);
+  };
+
+  for (const trk of doc.tracks) {
+    if (trk.netId !== netId) continue;
+    touch(trk.start);
+    touch(trk.end);
+    union(keyOf(trk.start), keyOf(trk.end));
+  }
+  for (const via of doc.vias) {
+    if (via.netId !== netId) continue;
+    touch(via.position);
+  }
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (pad.netId !== netId) continue;
+      touch(padWorldPosition(fp, pad));
+    }
+  }
+  // Zone 覆铜：轮廓顶点 + 落在铺铜内且层兼容的同网焊盘/过孔（热焊盘仍视为连通）
+  for (let zi = 0; zi < doc.zones.length; zi++) {
+    const z = doc.zones[zi];
+    if (z.netId !== netId || z.outline.length < 3) continue;
+    const hub = `__zone_${zi}`;
+    if (!parent.has(hub)) parent.set(hub, hub);
+    for (let i = 0; i < z.outline.length; i++) {
+      const p = z.outline[i];
+      touch(p);
+      union(keyOf(p), hub);
+      if (i > 0) union(keyOf(z.outline[i - 1]), keyOf(p));
+    }
+    union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
+    for (const fp of doc.footprints) {
+      for (const pad of fp.pads) {
+        if (pad.netId !== netId) continue;
+        if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer)) continue;
+        const wp = padWorldPosition(fp, pad);
+        if (!pointInPolygon(wp, z.outline)) continue;
+        touch(wp);
+        union(keyOf(wp), hub);
+      }
+    }
+    for (const via of doc.vias) {
+      if (via.netId !== netId) continue;
+      if (!pointInPolygon(via.position, z.outline)) continue;
+      touch(via.position);
+      union(keyOf(via.position), hub);
+    }
+  }
+  // 近邻并查（焊盘/过孔与走线端点、Zone 顶点）
+  const keys: string[] = [];
+  parent.forEach((_v: string, k: string) => {
+    keys.push(k);
+  });
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_')) continue;
+      const partsI = keys[i].split('_');
+      const partsJ = keys[j].split('_');
+      if (partsI.length < 2 || partsJ.length < 2) continue;
+      const dx = Number(partsI[0]) - Number(partsJ[0]);
+      const dy = Number(partsI[1]) - Number(partsJ[1]);
+      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
+        union(keys[i], keys[j]);
+      }
+    }
+  }
+  const ka = keyOf(a);
+  const kb = keyOf(b);
+  if (!parent.has(ka) || !parent.has(kb)) return false;
+  return find(ka) === find(kb);
+}
+
+/** 焊盘是否能接到指定铜层（通孔焊盘默认双面） */
+function padTouchesZoneLayer(layers: string[] | undefined | null, padType: string,
+  zoneLayer: string): boolean {
+  if (padType === 'th' || padType === 'npth') return true;
+  if (!layers || layers.length === 0) return true;
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i] === zoneLayer) return true;
+  }
+  return false;
+}
+
+/** 正交 L 折线（90°） */
+export function routeLPoints(a: Point2D, b: Point2D): Point2D[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+    return [a, b];
+  }
+  const midH: Point2D = { x: b.x, y: a.y };
+  const midV: Point2D = { x: a.x, y: b.y };
+  const lenH = Math.abs(dx) + Math.abs(b.y - a.y);
+  const lenV = Math.abs(dy) + Math.abs(b.x - a.x);
+  if (lenH <= lenV) {
+    return [a, midH, b];
+  }
+  return [a, midV, b];
+}
+
+/** 45° 折线（优先） */
+export function routeOrtho45Points(a: Point2D, b: Point2D): Point2D[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
+    return [a, b];
+  }
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  if (Math.abs(adx - ady) < 0.5) {
+    return [a, b];
+  }
+  if (adx > ady) {
+    const sx = dx > 0 ? 1 : -1;
+    const mid: Point2D = { x: a.x + sx * (adx - ady), y: a.y };
+    return [a, mid, b];
+  }
+  const sy = dy > 0 ? 1 : -1;
+  const mid: Point2D = { x: a.x, y: a.y + sy * (ady - adx) };
+  return [a, mid, b];
+}
+
+/**
+ * 圆弧拐角：以 45° 折点为控制点的二次贝塞尔，离散为折线（可提交为多段 track）
+ */
+export function routeArcPoints(a: Point2D, b: Point2D, segments: number = 12): Point2D[] {
+  const base = routeOrtho45Points(a, b);
+  if (base.length < 3) {
+    return base;
+  }
+  const ctrl = base[1];
+  const n = Math.max(6, Math.min(24, segments));
+  const pts: Point2D[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const u = 1 - t;
+    pts.push({
+      x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y
+    });
+  }
+  return pts;
+}
+
+/** 按拐角模式生成布线路径 */
+export function routeByCornerMode(a: Point2D, b: Point2D, mode: string): Point2D[] {
+  if (mode === 'ortho90') {
+    return routeLPoints(a, b);
+  }
+  if (mode === 'arc') {
+    return routeArcPoints(a, b, 12);
+  }
+  return routeOrtho45Points(a, b);
+}
+
+export function sumTrackLengthForNet(doc: PcbDocument, netId: string): number {
+  let len = 0;
+  for (const trk of doc.tracks) {
+    if (trk.netId !== netId) continue;
+    const dx = trk.end.x - trk.start.x;
+    const dy = trk.end.y - trk.start.y;
+    len += Math.sqrt(dx * dx + dy * dy);
+  }
+  return len;
+}
+
+export function collectPadWorld(fp: PcbFootprintInst, pad: PcbPad): Point2D {
+  return padWorldPosition(fp, pad);
+}

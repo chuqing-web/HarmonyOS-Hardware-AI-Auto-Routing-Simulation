@@ -1,0 +1,20 @@
+/** QFP-48（教学尺度 50mil 节距）：STM32F103C8 */
+function defQFP48() {
+  const pads = [];
+  for (let i = 0; i < 12; i++) {
+    pads.push(smdPad(`${i + 1}`, -280, -275 + i * 50, 50, 14));
+    pads.push(smdPad(`${13 + i}`, -275 + i * 50, 280, 50, 14));
+    pads.push(smdPad(`${25 + i}`, 280, 275 - i * 50, 50, 14));
+    pads.push(smdPad(`${37 + i}`, 275 - i * 50, -280, 50, 14));
+  }
+  return {
+    id: 'FP_QFP48', name: 'QFP-48', description: 'QFP-48 (STM32F103C8 teaching)',
+    pads,
+    silkLines: rectSilk(260, 260),
+    courtyard: [
+      { x: -300, y: -300 }, { x: 300, y: -300 }, { x: 300, y: 300 }, { x: -300, y: 300 }
+    ]
+  };
+}
+/** 晶振 HC-49 两脚 */
+function defHC49() {

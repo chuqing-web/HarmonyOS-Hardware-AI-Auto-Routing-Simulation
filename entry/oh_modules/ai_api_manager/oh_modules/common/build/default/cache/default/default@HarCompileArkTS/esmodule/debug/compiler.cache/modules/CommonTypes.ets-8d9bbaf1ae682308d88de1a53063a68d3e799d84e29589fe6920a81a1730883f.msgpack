@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ Z// ==================== ç”µæ°”åŸºç¡€ç±»å‹ ====================
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ!0// ==================== ç”µæ°”åŸºç¡€ç±»å‹ ====================
 export var PinType;
 (function (PinType) {
     PinType["INPUT"] = "input";
@@ -94,6 +94,8 @@ export var AiCapability;
     AiCapability["COMPONENT_RECOMMEND"] = "component_recommend";
     AiCapability["CIRCUIT_GENERATION"] = "circuit_generation";
     AiCapability["WAVEFORM_ANALYSIS"] = "waveform_analysis";
+    /** PCB å¸ƒå±€ AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ */
+    AiCapability["PCB_AUTO_ROUTE"] = "pcb_auto_route";
 })(AiCapability || (AiCapability = {}));
 export var AiProviderType;
 (function (AiProviderType) {
@@ -166,6 +168,7 @@ export var ErcRuleType;
     ErcRuleType["IO_OVERCURRENT"] = "io_overcurrent";
     ErcRuleType["PARAM_MISMATCH"] = "param_mismatch";
     ErcRuleType["PORT_MISMATCH"] = "port_mismatch";
+    ErcRuleType["LABEL_OVER_DEVICE"] = "label_over_device";
 })(ErcRuleType || (ErcRuleType = {}));
 // ==================== æ¨¡å—äº‹ä»¶æ€»çº¿ ====================
 export var ModuleEvent;
@@ -189,13 +192,15 @@ export var ModuleEvent;
     ModuleEvent["ANNOTATION_CHANGED"] = "annotation_changed";
     ModuleEvent["SNAPSHOT_CREATED"] = "snapshot_created";
     ModuleEvent["PROJECT_LOCK_CHANGED"] = "project_lock_changed";
+    ModuleEvent["PCB_CHANGED"] = "pcb_changed";
 })(ModuleEvent || (ModuleEvent = {}));
-//# sourceMappingURL=CommonTypes.js.mapÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName´../types/CommonTypes¦commonCÙ ./src/main/ets/types/CommonTypes¦commonÃÚ(ÿ/**
+//# sourceMappingURL=CommonTypes.js.mapÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName´../types/CommonTypes¦commonCÙ ./src/main/ets/types/CommonTypes¦commonÃÚ*"/**
  * AI-SCHä»¿çœŸå™¨ - å…¬å…±ç±»å‹å®šä¹‰
  * ä¸ƒå¤§æ¨¡å—é—´é€šä¿¡çš„æ ‡å‡†æ•°æ®ç»“æ„
  */
 import { ErrCode } from './ErrCode';
 import { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+import { PcbDocument } from './PcbTypes';
 
 // ==================== åŸºç¡€å‡ ä½•ç±»å‹ ====================
 
@@ -481,7 +486,9 @@ export enum AiCapability {
   FAULT_DIAGNOSIS = 'fault_diagnosis',
   COMPONENT_RECOMMEND = 'component_recommend',
   CIRCUIT_GENERATION = 'circuit_generation',
-  WAVEFORM_ANALYSIS = 'waveform_analysis'
+  WAVEFORM_ANALYSIS = 'waveform_analysis',
+  /** PCB å¸ƒå±€ AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ */
+  PCB_AUTO_ROUTE = 'pcb_auto_route'
 }
 
 export enum AiProviderType {
@@ -580,6 +587,8 @@ export interface ProjectFile {
   version: string;
   name: string;
   schematic: SchematicDocument;
+  /** PCB å¸ƒå±€æ–‡æ¡£ï¼ˆå¯é€‰ï¼ŒKiCad å¼åŒæ–‡æ¡£å·¥ç¨‹ï¼‰ */
+  pcb?: PcbDocument;
   simulationConfig: SimulationConfig;
   mcuDebugConfig?: McuDebugConfig;
   aiConfigs: AiApiConfig[];
@@ -607,7 +616,8 @@ export enum ErcRuleType {
   POWER_REVERSED = 'power_reversed',
   IO_OVERCURRENT = 'io_overcurrent',
   PARAM_MISMATCH = 'param_mismatch',
-  PORT_MISMATCH = 'port_mismatch'
+  PORT_MISMATCH = 'port_mismatch',
+  LABEL_OVER_DEVICE = 'label_over_device'
 }
 
 export interface ErcViolation {
@@ -643,7 +653,8 @@ export enum ModuleEvent {
   LICENSE_CHANGED = 'license_changed',
   ANNOTATION_CHANGED = 'annotation_changed',
   SNAPSHOT_CREATED = 'snapshot_created',
-  PROJECT_LOCK_CHANGED = 'project_lock_changed'
+  PROJECT_LOCK_CHANGED = 'project_lock_changed',
+  PCB_CHANGED = 'pcb_changed'
 }
 
 export interface ModuleEventPayload {
@@ -670,12 +681,13 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
 }
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ Á‘”  & ‘”  ( ‘”  ( ‘”  )‘”  *‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  0‘”  1 ‘”  3 ‘”  3 ‘”  4‘”  5‘”  6‘”  7‘”  8 ‘”  : ‘”  : ‘”  ;‘”  <‘”  =‘”  >‘”  ? ‘”  ÌA ‘”  ÌA ‘”  ÌB‘”  ÌC‘”  ÌD‘”  ÌE ‘”  ÌG ‘”  ÌG ‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌK ‘”  Ìx ‘”  Ìz ‘”  Ìz ‘”  Ì{‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì† ‘”  ÌÄ ‘”  ÌÆ ‘”  ÌÆ ‘”  ÌÇ‘”  ÌÈ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ ‘”  ÌĞ ‘”  ÌĞ ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ ‘”  Ìñ ‘”  Ìó ‘”  Ìó ‘”  Ìô‘”  Ìõ‘”  Ìö‘”  Ì÷‘”  Ìø ‘”  Ìú ‘”  Ìú ‘”  Ìû‘”  Ìü‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í$ ‘”  Í& ‘”  Í& ‘”  Í'‘”  Í(‘”  Í)‘”  Í*‘”  Í+‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í0‘”  Í1‘”  Í2‘”  Í3‘”  Í4‘”  Í5‘”  Í6‘”  Í7‘”  Í8 ‘”  Í: ‘”  Í: ‘”  Í;‘”  Í<‘”  Í=‘”  Í>‘”  Í?‘”  Í@ ‘”  ÍB ‘”  ÍB ‘”  ÍC‘”  ÍD‘”  ÍE‘”  ÍF‘”  ÍG‘”  ÍH‘”  ÍI ‘”  Ír ‘”  Ít ‘”  Ít ‘”  Íu‘”  Ív‘”  Íw‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í|‘”  Í}‘”  Í~‘”  Í‘”  Í€ ‘”  Í ‘”  Í‘ ‘”  Í‘ ‘”  Í’‘”  Í“‘”  Í”‘”  Í• ‘”  Í— ‘”  Í— ‘”  Í˜‘”  Í™‘”  Íš‘”  Í›‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¡‘”  Í¢ ‘”  Í° ‘”  Í² ‘”  Í² ‘”  Í³‘”  Í´‘”  Íµ‘”  Í¶‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÀ‘”  ÍÁ‘”  ÍÂ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ ‘ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.ets‘Ú(ÿ/**
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ Å‘”  ' ‘”  ) ‘”  ) ‘”  *‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  0‘”  1‘”  2 ‘”  4 ‘”  4 ‘”  5‘”  6‘”  7‘”  8‘”  9 ‘”  ; ‘”  ; ‘”  <‘”  =‘”  >‘”  ?‘”  Ì@ ‘”  ÌB ‘”  ÌB ‘”  ÌC‘”  ÌD‘”  ÌE‘”  ÌF ‘”  ÌH ‘”  ÌH ‘”  ÌI‘”  ÌJ‘”  ÌK‘”  ÌL ‘”  Ìy ‘”  Ì{ ‘”  Ì{ ‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡ ‘”  ÌÅ ‘”  ÌÇ ‘”  ÌÇ ‘”  ÌÈ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ‘”  ÌÏ ‘”  ÌÑ ‘”  ÌÑ ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ‘”  Ì× ‘”  Ìò ‘”  Ìô ‘”  Ìô ‘”  Ìõ‘”  Ìö‘”  Ì÷‘”  Ìø‘”  Ìù ‘”  Ìû ‘”  Ìû ‘”  Ìü‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í$‘”  Í&‘”  Í' ‘”  Í) ‘”  Í) ‘”  Í*‘”  Í+‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í0‘”  Í1‘”  Í2‘”  Í3‘”  Í4‘”  Í5‘”  Í6‘”  Í7‘”  Í8‘”  Í9‘”  Í:‘”  Í; ‘”  Í= ‘”  Í= ‘”  Í>‘”  Í?‘”  Í@‘”  ÍA‘”  ÍB‘”  ÍC ‘”  ÍE ‘”  ÍE ‘”  ÍF‘”  ÍG‘”  ÍH‘”  ÍI‘”  ÍJ‘”  ÍK‘”  ÍL ‘”  Íu ‘”  Íw ‘”  Íw ‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í|‘”  Í}‘”  Í~‘”  Í‘”  Í€‘”  Í‘”  Í‚‘”  Íƒ ‘”  Í” ‘”  Í– ‘”  Í– ‘”  Í—‘”  Í˜‘”  Í™‘”  Íš ‘”  Íœ ‘”  Íœ ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¡‘”  Í¢‘”  Í£‘”  Í¤‘”  Í¥‘”  Í¦‘”  Í§‘”  Í¨ ‘”  Í¶ ‘”  Í¸ ‘”  Í¸ ‘”  Í¹‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÀ‘”  ÍÁ‘”  ÍÂ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ‘”  ÍÇ‘”  ÍÈ‘”  ÍÉ‘”  ÍÊ‘”  ÍË‘”  ÍÌ‘”  ÍÍ ‘ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.ets‘Ú*"/**
  * AI-SCHä»¿çœŸå™¨ - å…¬å…±ç±»å‹å®šä¹‰
  * ä¸ƒå¤§æ¨¡å—é—´é€šä¿¡çš„æ ‡å‡†æ•°æ®ç»“æ„
  */
 import { ErrCode } from './ErrCode';
 import { CollaborationData, SchematicAnnotation } from './CollaborationTypes';
+import { PcbDocument } from './PcbTypes';
 
 // ==================== åŸºç¡€å‡ ä½•ç±»å‹ ====================
 
@@ -961,7 +973,9 @@ export enum AiCapability {
   FAULT_DIAGNOSIS = 'fault_diagnosis',
   COMPONENT_RECOMMEND = 'component_recommend',
   CIRCUIT_GENERATION = 'circuit_generation',
-  WAVEFORM_ANALYSIS = 'waveform_analysis'
+  WAVEFORM_ANALYSIS = 'waveform_analysis',
+  /** PCB å¸ƒå±€ AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ */
+  PCB_AUTO_ROUTE = 'pcb_auto_route'
 }
 
 export enum AiProviderType {
@@ -1060,6 +1074,8 @@ export interface ProjectFile {
   version: string;
   name: string;
   schematic: SchematicDocument;
+  /** PCB å¸ƒå±€æ–‡æ¡£ï¼ˆå¯é€‰ï¼ŒKiCad å¼åŒæ–‡æ¡£å·¥ç¨‹ï¼‰ */
+  pcb?: PcbDocument;
   simulationConfig: SimulationConfig;
   mcuDebugConfig?: McuDebugConfig;
   aiConfigs: AiApiConfig[];
@@ -1087,7 +1103,8 @@ export enum ErcRuleType {
   POWER_REVERSED = 'power_reversed',
   IO_OVERCURRENT = 'io_overcurrent',
   PARAM_MISMATCH = 'param_mismatch',
-  PORT_MISMATCH = 'port_mismatch'
+  PORT_MISMATCH = 'port_mismatch',
+  LABEL_OVER_DEVICE = 'label_over_device'
 }
 
 export interface ErcViolation {
@@ -1123,7 +1140,8 @@ export enum ModuleEvent {
   LICENSE_CHANGED = 'license_changed',
   ANNOTATION_CHANGED = 'annotation_changed',
   SNAPSHOT_CREATED = 'snapshot_created',
-  PROJECT_LOCK_CHANGED = 'project_lock_changed'
+  PROJECT_LOCK_CHANGED = 'project_lock_changed',
+  PCB_CHANGED = 'pcb_changed'
 }
 
 export interface ModuleEventPayload {
@@ -1150,4 +1168,6 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
 }
-A‘ÔrE’§missing¦pluginÃ¦genAbcÂÔ  ÔrF”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrG–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration5ÌHÔrH•¤type¥start£end¬declarations¤kind³VariableDeclaration<ÌH‘ÔrI•¤type¥start£end¢id¤init²VariableDeclaratorÌ@ÌGÔrJ”¤type¥start£end¤nameªIdentifierÌ@ÌG§PinTypeÀ£varÀG¶ExportNamedDeclarationÍµÍÈH³VariableDeclarationÍ¼ÍÈ‘I²VariableDeclaratorÍÀÍÇJªIdentifierÍÀÍÇ§NetTypeÀ£varÀG¶ExportNamedDeclarationÍ…Í›H³VariableDeclarationÍŒÍ›‘I²VariableDeclaratorÍÍšJªIdentifierÍÍšªLogicStateÀ£varÀG¶ExportNamedDeclarationÍ]ÍqH³VariableDeclarationÍdÍq‘I²VariableDeclaratorÍhÍpJªIdentifierÍhÍp¨BusWidthÀ£varÀG¶ExportNamedDeclarationÍCÍXH³VariableDeclarationÍJÍX‘I²VariableDeclaratorÍNÍWJªIdentifierÍNÍW©WireStyleÀ£varÀG¶ExportNamedDeclarationÍGÍdH³VariableDeclarationÍNÍd‘I²VariableDeclaratorÍRÍcJªIdentifierÍRÍc±ComponentCategoryÀ£varÀG¶ExportNamedDeclarationÍÍ1H³VariableDeclarationÍÍ1‘I²VariableDeclaratorÍ"Í0JªIdentifierÍ"Í0®SimulationModeÀ£varÀG¶ExportNamedDeclarationÍ	³Í	ÎH³VariableDeclarationÍ	ºÍ	Î‘I²VariableDeclaratorÍ	¾Í	ÍJªIdentifierÍ	¾Í	Í¯SimulationStateÀ£varÀG¶ExportNamedDeclarationÍ*Í?H³VariableDeclarationÍ1Í?‘I²VariableDeclaratorÍ5Í>JªIdentifierÍ5Í>©McuFamilyÀ£varÀG¶ExportNamedDeclarationÍ$Í:H³VariableDeclarationÍ+Í:‘I²VariableDeclaratorÍ/Í9JªIdentifierÍ/Í9ªDebugStateÀ£varÀG¶ExportNamedDeclarationÍuÍH³VariableDeclarationÍ|Í‘I²VariableDeclaratorÍ€ÍŒJªIdentifierÍ€ÍŒ¬AiCapabilityÀ£varÀG¶ExportNamedDeclarationÍÍH³VariableDeclarationÍÍ‘I²VariableDeclaratorÍÍJªIdentifierÍÍ®AiProviderTypeÀ£varÀG¶ExportNamedDeclarationÍ9ÍTH³VariableDeclarationÍ@ÍT‘I²VariableDeclaratorÍDÍSJªIdentifierÍDÍS¯LoadBalanceModeÀ£varÀG¶ExportNamedDeclarationÍ¶ÍÕH³VariableDeclarationÍ½ÍÕ‘I²VariableDeclaratorÍÁÍÔJªIdentifierÍÁÍÔ³ApiConnectionStatusÀ£varÀG¶ExportNamedDeclarationÍœÍ²H³VariableDeclarationÍ£Í²‘I²VariableDeclaratorÍ§Í±JªIdentifierÍ§Í±ªFileFormatÀ£varÀG¶ExportNamedDeclarationÍÆÍİH³VariableDeclarationÍÍÍİ‘I²VariableDeclaratorÍÑÍÜJªIdentifierÍÑÍÜ«ErcSeverityÀ£varÀG¶ExportNamedDeclarationÍ“ÍªH³VariableDeclarationÍšÍª‘I²VariableDeclaratorÍÍ©JªIdentifierÍÍ©«ErcRuleTypeÀ£varÀG¶ExportNamedDeclarationÍ@ÍWH³VariableDeclarationÍGÍW‘I²VariableDeclaratorÍKÍVJªIdentifierÍKÍV«ModuleEventÀ£varÀ
+A‘ÔrE’§missing¦pluginÃ¦genAbcÂÔ  ÔrF”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrG–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration5ÌHÔrH•¤type¥start£end¬declarations¤kind³VariableDeclaration<ÌH‘ÔrI•¤type¥start£end¢id¤init²VariableDeclaratorÌ@ÌGÔrJ”¤type¥start£end¤nameªIdentifierÌ@ÌG§PinTypeÀ£varÀG¶ExportNamedDeclarationÍµÍÈH³VariableDeclarationÍ¼ÍÈ‘I²VariableDeclaratorÍÀÍÇJªIdentifierÍÀÍÇ§NetTypeÀ£varÀG¶ExportNamedDeclarationÍ…Í›H³VariableDeclarationÍŒÍ›‘I²VariableDeclaratorÍÍšJªIdentifierÍÍšªLogicStateÀ£varÀG¶ExportNamedDeclarationÍ]ÍqH³VariableDeclarationÍdÍq‘I²VariableDeclaratorÍhÍpJªIdentifierÍhÍp¨BusWidthÀ£varÀG¶ExportNamedDeclarationÍCÍXH³VariableDeclarationÍJÍX‘I²VariableDeclaratorÍNÍWJªIdentifierÍNÍW©WireStyleÀ£varÀG¶ExportNamedDeclarationÍGÍdH³VariableDeclarationÍNÍd‘I²VariableDeclaratorÍRÍcJªIdentifierÍRÍc±ComponentCategoryÀ£varÀG¶ExportNamedDeclarationÍÍ1H³VariableDeclarationÍÍ1‘I²VariableDeclaratorÍ"Í0JªIdentifierÍ"Í0®SimulationModeÀ£varÀG¶ExportNamedDeclarationÍ	³Í	ÎH³VariableDeclarationÍ	ºÍ	Î‘I²VariableDeclaratorÍ	¾Í	ÍJªIdentifierÍ	¾Í	Í¯SimulationStateÀ£varÀG¶ExportNamedDeclarationÍ*Í?H³VariableDeclarationÍ1Í?‘I²VariableDeclaratorÍ5Í>JªIdentifierÍ5Í>©McuFamilyÀ£varÀG¶ExportNamedDeclarationÍ$Í:H³VariableDeclarationÍ+Í:‘I²VariableDeclaratorÍ/Í9JªIdentifierÍ/Í9ªDebugStateÀ£varÀG¶ExportNamedDeclarationÍuÍH³VariableDeclarationÍ|Í‘I²VariableDeclaratorÍ€ÍŒJªIdentifierÍ€ÍŒ¬AiCapabilityÀ£varÀG¶ExportNamedDeclarationÍYÍsH³VariableDeclarationÍ`Ís‘I²VariableDeclaratorÍdÍrJªIdentifierÍdÍr®AiProviderTypeÀ£varÀG¶ExportNamedDeclarationÍ‘Í¬H³VariableDeclarationÍ˜Í¬‘I²VariableDeclaratorÍœÍ«JªIdentifierÍœÍ«¯LoadBalanceModeÀ£varÀG¶ExportNamedDeclarationÍÍ-H³VariableDeclarationÍÍ-‘I²VariableDeclaratorÍÍ,JªIdentifierÍÍ,³ApiConnectionStatusÀ£varÀG¶ExportNamedDeclarationÍôÍ
+H³VariableDeclarationÍûÍ
+‘I²VariableDeclaratorÍÿÍ	JªIdentifierÍÿÍ	ªFileFormatÀ£varÀG¶ExportNamedDeclarationÍÍ5H³VariableDeclarationÍ%Í5‘I²VariableDeclaratorÍ)Í4JªIdentifierÍ)Í4«ErcSeverityÀ£varÀG¶ExportNamedDeclarationÍëÍH³VariableDeclarationÍòÍ‘I²VariableDeclaratorÍöÍJªIdentifierÍöÍ«ErcRuleTypeÀ£varÀG¶ExportNamedDeclarationÍÕÍìH³VariableDeclarationÍÜÍì‘I²VariableDeclaratorÍàÍëJªIdentifierÍàÍë«ModuleEventÀ£varÀ

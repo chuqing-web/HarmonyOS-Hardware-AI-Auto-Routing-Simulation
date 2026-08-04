@@ -1,0 +1,10 @@
+{
+  "line": 546,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "defSIP5"
+  ],
+  "old_string": "function defTO2203() {\n  return {\n    id: 'FP_TO2203', name: 'TO-220-3', description: 'TO-220-3',\n    pads: [thPad('1', -90, 0, 40, 70), thPad('2', 0, 90, 40, 70), thPad('3', 90, 0, 40, 70)],\n    silkLines: rectSilk(100, 110),\n    courtyard: [{ x: -120, y: -50 }, { x: 120, y: -50 }, { x: 120, y: 130 }, { x: -120, y: 130 }]\n  };\n}",
+  "new_string": "function defTO2203() {\n  return {\n    id: 'FP_TO2203', name: 'TO-220-3', description: 'TO-220-3',\n    pads: [thPad('1', -90, 0, 40, 70), thPad('2', 0, 90, 40, 70), thPad('3', 90, 0, 40, 70)],\n    silkLines: rectSilk(100, 110),\n    courtyard: [{ x: -120, y: -50 }, { x: 120, y: -50 }, { x: 120, y: 130 }, { x: -120, y: 130 }]\n  };\n}\n/** LM2596 等 5 脚直插：1 VIN  2 OUT  3 GND  4 FB  5 ON */\nfunction defSIP5() {\n  const pads = [];\n  const pitch = 100;\n  const startX = -200;\n  for (let i = 0; i < 5; i++) {\n    pads.push(thPad(`${i + 1}`, startX + i * pitch, 0, 40, 70));\n  }\n  return {\n    id: 'FP_SIP5', name: 'SIP-5', description: '5-pin SIP (LM2596 teaching)',\n    pads,\n    silkLines: rectSilk(220, 40),\n    courtyard: [{ x: -240, y: -50 }, { x: 240, y: -50 }, { x: 240, y: 50 }, { x: -240, y: 50 }]\n  };\n}"
+}

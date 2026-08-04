@@ -63,9 +63,11 @@ export interface SpiceResult {
 export function defaultSimConfig(): SimConfig {
   return {
     simMode: 'mixed',
-    transientTotalTime: 0.01,
+    // Interactive scope: near-infinite horizon; runBudgetSteps also slides stopTime
+    transientTotalTime: 3600.0,
     minTimeStep: 1e-9,
-    maxTimeStep: 1e-6,
+    // 1µs cap + rail-snap shrink → op-amp oscillators looked frozen on scope
+    maxTimeStep: 1e-5,
     dcVoltageScan: { start: 0, end: 5, step: 0.1 },
     acFreqStart: 10,
     acFreqEnd: 1e6,

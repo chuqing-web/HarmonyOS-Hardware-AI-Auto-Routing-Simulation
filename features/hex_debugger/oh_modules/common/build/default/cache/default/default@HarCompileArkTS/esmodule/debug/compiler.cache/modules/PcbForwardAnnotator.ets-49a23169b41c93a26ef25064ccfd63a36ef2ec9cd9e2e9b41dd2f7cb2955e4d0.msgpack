@@ -1,0 +1,973 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ+ó/**
+ * åŸç†å›¾ â†’ PCB æ­£å‘æ ‡æ³¨ï¼ˆKiCad Update PCB from Schematic è¯­ä¹‰ï¼‰
+ */
+import { NetType } from '../types/CommonTypes';
+import { createEmptyPcbDocument } from '../types/PcbTypes';
+import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+import { parsePinRef } from './PinRefUtil';
+import { paramMapGet } from './MapHelpers';
+import { registerSchPinToPadNet, lookupPadNet } from './PcbPinBindUtil';
+import { tracePcbForwardResult } from './PcbTraceLog';
+import { collectFootprintPadPositions, updateTracksForFootprintTransform, snapTrackEndpointsToPads, pruneZeroLengthTracks } from './PcbTrackBindUtil';
+import { ensureBoardAccessories, accessoryHintsFromSchematicNets } from './PcbBoardAccessories';
+function extractFootprint(comp) {
+    const keys = ['footprint', 'package', 'Package', 'å°è£…', 'pkg'];
+    for (const k of keys) {
+        const v = paramMapGet(comp.parameters, k, '');
+        if (v.length > 0)
+            return v;
+    }
+    return '';
+}
+function extractValue(comp) {
+    return paramMapGet(comp.parameters, 'value', paramMapGet(comp.parameters, 'Value', comp.libraryId));
+}
+/** è·³è¿‡ç”µæº/åœ°/æ¢é’ˆ/ä»ªå™¨ç­‰ä¸å¯å¸ƒå±€å™¨ä»¶ */
+function isLayoutable(comp) {
+    const lib = comp.libraryId.toLowerCase();
+    if (lib.startsWith('gnd') || lib.startsWith('vcc') || lib.startsWith('vee') ||
+        lib.startsWith('power') || lib.includes('probe') || lib.includes('instrument') ||
+        lib.includes('oscilloscope') || lib.includes('multimeter') || lib.includes('generator')) {
+        return false;
+    }
+    if (comp.refDes.startsWith('#'))
+        return false;
+    return true;
+}
+/** æ ¹æ® courtyard ä¼°ç®—å°è£…å ä½åŠå®½/åŠé«˜ (mil) */
+function footprintHalfExtents(lib, defId) {
+    const def = lib.getDef(defId);
+    let halfW = 60;
+    let halfH = 40;
+    if (!def) {
+        const result = { halfW: halfW, halfH: halfH };
+        return result;
+    }
+    for (const pad of def.pads) {
+        halfW = Math.max(halfW, Math.abs(pad.pos.x) + pad.size.x / 2);
+        halfH = Math.max(halfH, Math.abs(pad.pos.y) + pad.size.y / 2);
+    }
+    if (def.courtyard.length >= 2) {
+        for (const pt of def.courtyard) {
+            halfW = Math.max(halfW, Math.abs(pt.x));
+            halfH = Math.max(halfH, Math.abs(pt.y));
+        }
+    }
+    const result = { halfW: halfW, halfH: halfH };
+    return result;
+}
+export class PcbForwardAnnotator {
+    constructor(lib) {
+        this.lib = lib ?? getGlobalPcbFootprintLibrary();
+    }
+    /** ä»åŸç†å›¾æ–‡æ¡£ç”Ÿæˆ/æ›´æ–° PCBï¼ˆä¿ç•™å·²æœ‰èµ°çº¿ï¼Œæ›´æ–°å°è£…ä½ç½®ä¸ç½‘ç»œï¼‰ */
+    annotateFromSchematic(schematic, existing) {
+        const doc = existing ?? createEmptyPcbDocument(schematic.name);
+        doc.name = schematic.name;
+        const messages = [];
+        let placed = 0;
+        let skipped = 0;
+        const existingBySchId = new Map();
+        for (const fp of doc.footprints) {
+            if (fp.schematicCompId) {
+                existingBySchId.set(fp.schematicCompId, fp);
+            }
+        }
+        const newFootprints = [];
+        /** ç„Šç›˜å‡ ä½•åˆ·æ–°å‰çš„ä¸–ç•Œåæ ‡ï¼Œç”¨äºèµ°çº¿ç«¯ç‚¹è·Ÿéšï¼Œé¿å…ã€Œçº¿è¢«æ‹†å¼€ã€ */
+        const pendingTrackFollow = [];
+        const pendingFpIds = [];
+        const courtyardGap = 40;
+        const originX = 180;
+        const originY = 180;
+        const nComp = schematic.components.filter(c => isLayoutable(c)).length;
+        const cols = Math.max(2, Math.ceil(Math.sqrt(Math.max(nComp, 1) * 1.4)));
+        const maxRowWidth = Math.max(cols * 240, 720);
+        let cursorX = originX;
+        let cursorY = originY;
+        let rowMaxH = 0;
+        for (const comp of schematic.components) {
+            if (!isLayoutable(comp)) {
+                skipped++;
+                continue;
+            }
+            const fpStr = extractFootprint(comp);
+            const defId = this.lib.resolveFootprintId(fpStr, comp.libraryId);
+            const value = extractValue(comp);
+            let inst = existingBySchId.get(comp.id);
+            if (inst) {
+                inst.refDes = comp.refDes;
+                inst.value = value;
+                inst.rotation = comp.rotation;
+                const oldDefId = inst.defId;
+                const oldPadPos = collectFootprintPadPositions(inst);
+                // å§‹ç»ˆä»åº“åˆ·æ–°ç„Šç›˜å‡ ä½•ï¼ˆä¿ç•™åŒå·ç½‘ç»œ/idï¼‰ï¼Œé¿å…åº“ä¿®æ­£åæ—§å®ä¾‹ä»ç”¨é”™è¯¯è„šè·
+                this.lib.resyncPadsFromDef(inst, defId);
+                pendingTrackFollow.push(oldPadPos);
+                pendingFpIds.push(inst.id);
+                if (oldDefId !== defId) {
+                    messages.push(`${comp.refDes}: å°è£… ${oldDefId} â†’ ${defId}`);
+                }
+                newFootprints.push(inst);
+                placed++;
+                continue;
+            }
+            const ext = footprintHalfExtents(this.lib, defId);
+            const slotW = ext.halfW * 2 + courtyardGap * 2;
+            const slotH = ext.halfH * 2 + courtyardGap * 2;
+            if (cursorX - originX + slotW > maxRowWidth && cursorX > originX) {
+                cursorX = originX;
+                cursorY += rowMaxH;
+                rowMaxH = 0;
+            }
+            const placeX = cursorX + ext.halfW + courtyardGap;
+            const placeY = cursorY + ext.halfH + courtyardGap;
+            cursorX += slotW;
+            rowMaxH = Math.max(rowMaxH, slotH);
+            const created = this.lib.instantiate(defId, comp.refDes, value, { x: placeX, y: placeY }, comp.rotation, comp.id);
+            if (created) {
+                newFootprints.push(created);
+                placed++;
+            }
+            else {
+                skipped++;
+                messages.push(`æ— æ³•åˆ›å»ºå°è£…: ${comp.refDes}`);
+            }
+        }
+        doc.footprints = newFootprints;
+        // ç„Šç›˜å±€éƒ¨åæ ‡å˜åŒ–åï¼ŒæŠŠä»æŒ‚åœ¨æ—§ç„Šç›˜ä¸–ç•Œåæ ‡ä¸Šçš„èµ°çº¿ç«¯ç‚¹ä¸€èµ·æŒªè¿‡å»
+        for (let i = 0; i < pendingFpIds.length; i++) {
+            const fpSet = new Set([pendingFpIds[i]]);
+            updateTracksForFootprintTransform(doc, fpSet, pendingTrackFollow[i]);
+        }
+        snapTrackEndpointsToPads(doc);
+        pruneZeroLengthTracks(doc);
+        doc.metadata.modifiedAt = new Date().toISOString();
+        this.bindNetsFromSchematic(schematic, doc);
+        this.expandBoardOutline(doc);
+        const acc = ensureBoardAccessories(doc, this.lib, accessoryHintsFromSchematicNets(schematic.nets));
+        if (acc.message.length > 0) {
+            messages.push(acc.message);
+        }
+        if (placed === 0) {
+            messages.push('åŸç†å›¾ä¸­æ²¡æœ‰å¯å¸ƒå±€çš„å™¨ä»¶');
+        }
+        else {
+            messages.push(`å·²æ”¾ç½® ${placed} ä¸ªå°è£…`);
+        }
+        const out = {
+            document: doc, placedCount: placed, skippedCount: skipped, messages
+        };
+        tracePcbForwardResult(schematic, doc, placed, skipped, messages);
+        return out;
+    }
+    annotateFromTopology(topo, existing) {
+        const schematic = {
+            id: topo.schUuid,
+            name: topo.schName,
+            version: '1.0',
+            components: [],
+            wires: [],
+            nets: [],
+            netLabels: [],
+            subcircuits: [],
+            metadata: {
+                author: '', createdAt: '', modifiedAt: '',
+                description: '', gridSize: 10, units: 'mil', undoLimit: 1000
+            }
+        };
+        for (const d of topo.deviceList) {
+            schematic.components.push({
+                id: d.instUuid,
+                libraryId: d.libDevId,
+                refDes: d.refName,
+                position: { x: d.x, y: d.y },
+                rotation: d.rotate,
+                mirrored: d.mirrorH,
+                parameters: d.params
+            });
+        }
+        for (const n of topo.netList) {
+            const pinIds = [];
+            for (const node of n.nodeList) {
+                const pinName = node.pinName && node.pinName.length > 0 ? node.pinName : node.pinId;
+                pinIds.push(`${node.devUuid}:${node.pinId}:${pinName}`);
+            }
+            schematic.nets.push({
+                id: n.netUuid,
+                name: n.netName.length > 0 ? n.netName : n.displayName,
+                type: n.isPower ? NetType.POWER : NetType.SIGNAL,
+                pinIds
+            });
+        }
+        return this.annotateFromSchematic(schematic, existing);
+    }
+    /** å°†åŸç†å›¾ç½‘ç»œåç»‘å®šåˆ°ç„Šç›˜ï¼ˆcompId:pinId æ ‡å‡†å¼•è„šå¼•ç”¨ï¼‰ */
+    bindNetsFromSchematic(schematic, doc) {
+        const netByCompPad = new Map();
+        for (const net of schematic.nets) {
+            for (const pinRef of net.pinIds) {
+                const parsed = parsePinRef(pinRef);
+                if (!parsed)
+                    continue;
+                registerSchPinToPadNet(netByCompPad, parsed.compId, parsed.pinId, parsed.pinName, net.id, net.name);
+            }
+        }
+        for (const fp of doc.footprints) {
+            if (!fp.schematicCompId)
+                continue;
+            for (const pad of fp.pads) {
+                const bound = lookupPadNet(netByCompPad, fp.schematicCompId, pad.number);
+                if (bound !== undefined) {
+                    pad.netName = bound.netName;
+                    pad.netId = bound.netId;
+                }
+                else {
+                    pad.netName = undefined;
+                    pad.netId = undefined;
+                }
+            }
+        }
+    }
+    expandBoardOutline(doc) {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let has = false;
+        for (const fp of doc.footprints) {
+            has = true;
+            minX = Math.min(minX, fp.position.x - 80);
+            minY = Math.min(minY, fp.position.y - 80);
+            maxX = Math.max(maxX, fp.position.x + 80);
+            maxY = Math.max(maxY, fp.position.y + 80);
+        }
+        if (!has) {
+            doc.boardOutline.points = [
+                { x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 700 }, { x: 0, y: 700 }
+            ];
+            return;
+        }
+        const margin = 140;
+        const shiftX = minX - margin;
+        const shiftY = minY - margin;
+        if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
+            for (const fp of doc.footprints) {
+                fp.position.x -= shiftX;
+                fp.position.y -= shiftY;
+            }
+            maxX -= shiftX;
+            maxY -= shiftY;
+        }
+        const boardW = Math.max(maxX + margin, 800);
+        const boardH = Math.max(maxY + margin, 600);
+        doc.boardOutline.points = [
+            { x: 0, y: 0 }, { x: boardW, y: 0 }, { x: boardW, y: boardH }, { x: 0, y: boardH }
+        ];
+    }
+}
+export function forwardAnnotatePcb(schematic, existing) {
+    return new PcbForwardAnnotator().annotateFromSchematic(schematic, existing);
+}
+//# sourceMappingURL=PcbForwardAnnotator.js.mapÂ™ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbPinBindUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbForwardAnnotator.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ(./src/main/ets/utils/PcbForwardAnnotator¦commonÃÚ)Ï/**
+ * åŸç†å›¾ â†’ PCB æ­£å‘æ ‡æ³¨ï¼ˆKiCad Update PCB from Schematic è¯­ä¹‰ï¼‰
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D } from '../types/CommonTypes';
+import { SchTopology } from '../types/TopologyTypes';
+import {
+  PcbDocument, PcbFootprintInst, createEmptyPcbDocument, PcbNetRef
+} from '../types/PcbTypes';
+import { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+import { parsePinRef } from './PinRefUtil';
+import { paramMapGet } from './MapHelpers';
+import { registerSchPinToPadNet, lookupPadNet } from './PcbPinBindUtil';
+import { tracePcbForwardResult } from './PcbTraceLog';
+import {
+  collectFootprintPadPositions, updateTracksForFootprintTransform,
+  snapTrackEndpointsToPads, pruneZeroLengthTracks
+} from './PcbTrackBindUtil';
+import { ensureBoardAccessories, accessoryHintsFromSchematicNets } from './PcbBoardAccessories';
+
+export interface ForwardAnnotateResult {
+  document: PcbDocument;
+  placedCount: number;
+  skippedCount: number;
+  messages: string[];
+}
+
+function extractFootprint(comp: ComponentInstance): string {
+  const keys: string[] = ['footprint', 'package', 'Package', 'å°è£…', 'pkg'];
+  for (const k of keys) {
+    const v = paramMapGet(comp.parameters, k, '');
+    if (v.length > 0) return v;
+  }
+  return '';
+}
+
+function extractValue(comp: ComponentInstance): string {
+  return paramMapGet(comp.parameters, 'value', paramMapGet(comp.parameters, 'Value', comp.libraryId));
+}
+
+/** è·³è¿‡ç”µæº/åœ°/æ¢é’ˆ/ä»ªå™¨ç­‰ä¸å¯å¸ƒå±€å™¨ä»¶ */
+function isLayoutable(comp: ComponentInstance): boolean {
+  const lib = comp.libraryId.toLowerCase();
+  if (lib.startsWith('gnd') || lib.startsWith('vcc') || lib.startsWith('vee') ||
+    lib.startsWith('power') || lib.includes('probe') || lib.includes('instrument') ||
+    lib.includes('oscilloscope') || lib.includes('multimeter') || lib.includes('generator')) {
+    return false;
+  }
+  if (comp.refDes.startsWith('#')) return false;
+  return true;
+}
+
+interface FootprintHalfExtents {
+  halfW: number;
+  halfH: number;
+}
+
+/** æ ¹æ® courtyard ä¼°ç®—å°è£…å ä½åŠå®½/åŠé«˜ (mil) */
+function footprintHalfExtents(lib: PcbFootprintLibrary, defId: string): FootprintHalfExtents {
+  const def = lib.getDef(defId);
+  let halfW = 60;
+  let halfH = 40;
+  if (!def) {
+    const result: FootprintHalfExtents = { halfW: halfW, halfH: halfH };
+    return result;
+  }
+  for (const pad of def.pads) {
+    halfW = Math.max(halfW, Math.abs(pad.pos.x) + pad.size.x / 2);
+    halfH = Math.max(halfH, Math.abs(pad.pos.y) + pad.size.y / 2);
+  }
+  if (def.courtyard.length >= 2) {
+    for (const pt of def.courtyard) {
+      halfW = Math.max(halfW, Math.abs(pt.x));
+      halfH = Math.max(halfH, Math.abs(pt.y));
+    }
+  }
+  const result: FootprintHalfExtents = { halfW: halfW, halfH: halfH };
+  return result;
+}
+
+export class PcbForwardAnnotator {
+  private lib: PcbFootprintLibrary;
+
+  constructor(lib?: PcbFootprintLibrary) {
+    this.lib = lib ?? getGlobalPcbFootprintLibrary();
+  }
+
+  /** ä»åŸç†å›¾æ–‡æ¡£ç”Ÿæˆ/æ›´æ–° PCBï¼ˆä¿ç•™å·²æœ‰èµ°çº¿ï¼Œæ›´æ–°å°è£…ä½ç½®ä¸ç½‘ç»œï¼‰ */
+  annotateFromSchematic(schematic: SchematicDocument, existing?: PcbDocument): ForwardAnnotateResult {
+    const doc = existing ?? createEmptyPcbDocument(schematic.name);
+    doc.name = schematic.name;
+    const messages: string[] = [];
+    let placed = 0;
+    let skipped = 0;
+
+    const existingBySchId: Map<string, PcbFootprintInst> = new Map();
+    for (const fp of doc.footprints) {
+      if (fp.schematicCompId) {
+        existingBySchId.set(fp.schematicCompId, fp);
+      }
+    }
+
+    const newFootprints: PcbFootprintInst[] = [];
+    /** ç„Šç›˜å‡ ä½•åˆ·æ–°å‰çš„ä¸–ç•Œåæ ‡ï¼Œç”¨äºèµ°çº¿ç«¯ç‚¹è·Ÿéšï¼Œé¿å…ã€Œçº¿è¢«æ‹†å¼€ã€ */
+    const pendingTrackFollow: Array<Map<string, Point2D>> = [];
+    const pendingFpIds: string[] = [];
+    const courtyardGap = 40;
+    const originX = 180;
+    const originY = 180;
+    const nComp = schematic.components.filter(c => isLayoutable(c)).length;
+    const cols = Math.max(2, Math.ceil(Math.sqrt(Math.max(nComp, 1) * 1.4)));
+    const maxRowWidth = Math.max(cols * 240, 720);
+    let cursorX = originX;
+    let cursorY = originY;
+    let rowMaxH = 0;
+
+    for (const comp of schematic.components) {
+      if (!isLayoutable(comp)) {
+        skipped++;
+        continue;
+      }
+      const fpStr = extractFootprint(comp);
+      const defId = this.lib.resolveFootprintId(fpStr, comp.libraryId);
+      const value = extractValue(comp);
+
+      let inst = existingBySchId.get(comp.id);
+      if (inst) {
+        inst.refDes = comp.refDes;
+        inst.value = value;
+        inst.rotation = comp.rotation;
+        const oldDefId = inst.defId;
+        const oldPadPos = collectFootprintPadPositions(inst);
+        // å§‹ç»ˆä»åº“åˆ·æ–°ç„Šç›˜å‡ ä½•ï¼ˆä¿ç•™åŒå·ç½‘ç»œ/idï¼‰ï¼Œé¿å…åº“ä¿®æ­£åæ—§å®ä¾‹ä»ç”¨é”™è¯¯è„šè·
+        this.lib.resyncPadsFromDef(inst, defId);
+        pendingTrackFollow.push(oldPadPos);
+        pendingFpIds.push(inst.id);
+        if (oldDefId !== defId) {
+          messages.push(`${comp.refDes}: å°è£… ${oldDefId} â†’ ${defId}`);
+        }
+        newFootprints.push(inst);
+        placed++;
+        continue;
+      }
+
+      const ext = footprintHalfExtents(this.lib, defId);
+      const slotW = ext.halfW * 2 + courtyardGap * 2;
+      const slotH = ext.halfH * 2 + courtyardGap * 2;
+      if (cursorX - originX + slotW > maxRowWidth && cursorX > originX) {
+        cursorX = originX;
+        cursorY += rowMaxH;
+        rowMaxH = 0;
+      }
+      const placeX = cursorX + ext.halfW + courtyardGap;
+      const placeY = cursorY + ext.halfH + courtyardGap;
+      cursorX += slotW;
+      rowMaxH = Math.max(rowMaxH, slotH);
+
+      const created = this.lib.instantiate(defId, comp.refDes, value,
+        { x: placeX, y: placeY }, comp.rotation, comp.id);
+      if (created) {
+        newFootprints.push(created);
+        placed++;
+      } else {
+        skipped++;
+        messages.push(`æ— æ³•åˆ›å»ºå°è£…: ${comp.refDes}`);
+      }
+    }
+
+    doc.footprints = newFootprints;
+    // ç„Šç›˜å±€éƒ¨åæ ‡å˜åŒ–åï¼ŒæŠŠä»æŒ‚åœ¨æ—§ç„Šç›˜ä¸–ç•Œåæ ‡ä¸Šçš„èµ°çº¿ç«¯ç‚¹ä¸€èµ·æŒªè¿‡å»
+    for (let i = 0; i < pendingFpIds.length; i++) {
+      const fpSet: Set<string> = new Set([pendingFpIds[i]]);
+      updateTracksForFootprintTransform(doc, fpSet, pendingTrackFollow[i]);
+    }
+    snapTrackEndpointsToPads(doc);
+    pruneZeroLengthTracks(doc);
+    doc.metadata.modifiedAt = new Date().toISOString();
+    this.bindNetsFromSchematic(schematic, doc);
+    this.expandBoardOutline(doc);
+    const acc = ensureBoardAccessories(doc, this.lib,
+      accessoryHintsFromSchematicNets(schematic.nets));
+    if (acc.message.length > 0) {
+      messages.push(acc.message);
+    }
+
+    if (placed === 0) {
+      messages.push('åŸç†å›¾ä¸­æ²¡æœ‰å¯å¸ƒå±€çš„å™¨ä»¶');
+    } else {
+      messages.push(`å·²æ”¾ç½® ${placed} ä¸ªå°è£…`);
+    }
+    const out: ForwardAnnotateResult = {
+      document: doc, placedCount: placed, skippedCount: skipped, messages
+    };
+    tracePcbForwardResult(schematic, doc, placed, skipped, messages);
+    return out;
+  }
+
+  annotateFromTopology(topo: SchTopology, existing?: PcbDocument): ForwardAnnotateResult {
+    const schematic: SchematicDocument = {
+      id: topo.schUuid,
+      name: topo.schName,
+      version: '1.0',
+      components: [],
+      wires: [],
+      nets: [],
+      netLabels: [],
+      subcircuits: [],
+      metadata: {
+        author: '', createdAt: '', modifiedAt: '',
+        description: '', gridSize: 10, units: 'mil', undoLimit: 1000
+      }
+    };
+    for (const d of topo.deviceList) {
+      schematic.components.push({
+        id: d.instUuid,
+        libraryId: d.libDevId,
+        refDes: d.refName,
+        position: { x: d.x, y: d.y },
+        rotation: d.rotate as 0 | 90 | 180 | 270,
+        mirrored: d.mirrorH,
+        parameters: d.params
+      });
+    }
+    for (const n of topo.netList) {
+      const pinIds: string[] = [];
+      for (const node of n.nodeList) {
+        const pinName = node.pinName && node.pinName.length > 0 ? node.pinName : node.pinId;
+        pinIds.push(`${node.devUuid}:${node.pinId}:${pinName}`);
+      }
+      schematic.nets.push({
+        id: n.netUuid,
+        name: n.netName.length > 0 ? n.netName : n.displayName,
+        type: n.isPower ? NetType.POWER : NetType.SIGNAL,
+        pinIds
+      });
+    }
+    return this.annotateFromSchematic(schematic, existing);
+  }
+
+  /** å°†åŸç†å›¾ç½‘ç»œåç»‘å®šåˆ°ç„Šç›˜ï¼ˆcompId:pinId æ ‡å‡†å¼•è„šå¼•ç”¨ï¼‰ */
+  private bindNetsFromSchematic(schematic: SchematicDocument, doc: PcbDocument): void {
+    const netByCompPad: Map<string, PcbNetRef> = new Map();
+    for (const net of schematic.nets) {
+      for (const pinRef of net.pinIds) {
+        const parsed = parsePinRef(pinRef);
+        if (!parsed) continue;
+        registerSchPinToPadNet(netByCompPad, parsed.compId, parsed.pinId, parsed.pinName, net.id, net.name);
+      }
+    }
+    for (const fp of doc.footprints) {
+      if (!fp.schematicCompId) continue;
+      for (const pad of fp.pads) {
+        const bound = lookupPadNet(netByCompPad, fp.schematicCompId, pad.number);
+        if (bound !== undefined) {
+          pad.netName = bound.netName;
+          pad.netId = bound.netId;
+        } else {
+          pad.netName = undefined;
+          pad.netId = undefined;
+        }
+      }
+    }
+  }
+
+  private expandBoardOutline(doc: PcbDocument): void {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let has = false;
+    for (const fp of doc.footprints) {
+      has = true;
+      minX = Math.min(minX, fp.position.x - 80);
+      minY = Math.min(minY, fp.position.y - 80);
+      maxX = Math.max(maxX, fp.position.x + 80);
+      maxY = Math.max(maxY, fp.position.y + 80);
+    }
+    if (!has) {
+      doc.boardOutline.points = [
+        { x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 700 }, { x: 0, y: 700 }
+      ];
+      return;
+    }
+    const margin = 140;
+    const shiftX = minX - margin;
+    const shiftY = minY - margin;
+    if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
+      for (const fp of doc.footprints) {
+        fp.position.x -= shiftX;
+        fp.position.y -= shiftY;
+      }
+      maxX -= shiftX;
+      maxY -= shiftY;
+    }
+    const boardW = Math.max(maxX + margin, 800);
+    const boardH = Math.max(maxY + margin, 600);
+    doc.boardOutline.points = [
+      { x: 0, y: 0 }, { x: boardW, y: 0 }, { x: boardW, y: boardH }, { x: 0, y: boardH }
+    ];
+  }
+}
+
+export function forwardAnnotatePcb(schematic: SchematicDocument,
+  existing?: PcbDocument): ForwardAnnotateResult {
+  return new PcbForwardAnnotator().annotateFromSchematic(schematic, existing);
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ‘”    ‘”  ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”   ‘”  ! ‘”  # ‘”  % ‘”  ' ‘”  ( ‘”  *‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  /#‘”  0‘”  1 ‘”  8 ‘”  9 ‘”  ?‘”  Ì@‘”  ÌA‘”  ÌD‘”  ÌE‘”  ÌF‘”  ÌG‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌL‘”  ÌM ‘”  ÌO ‘”  ÌR‘”  ÌS‘”  ÌY‘”  Ì^‘”  Ì_‘”  Ìb‘”  Ìc‘”  Ìl‘”  Ìm‘”  Ìn‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìw‘”  Ìx‘”  Ìy‘”  Ìz‘”  Ì}‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ì…‘”  Ì†‘”  Ìˆ
+‘”  Ì‰	‘”  ÌŠ‘”  Ì‹‘”  Ì‘”  Ì–‘”  Ìœ‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¡‘”  Ì¢‘”  Ì¤‘”  Ì¥‘”  Ì§‘”  Ì©‘”  Ìª‘”  Ì¬‘”  Ì°‘”  Ì±‘”  Ì²‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì¹‘”  Ìº‘”  Ìº‘”  Ì»‘”  Ì¼‘”  Ì½‘”  ÌÁ‘”  ÌÅ‘”  ÌÈ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ‘”  ÌĞ‘”  ÌÑ‘”  ÌÓ‘”  ÌÔ‘”  ÌØ‘”  ÌÜ‘”  Ìİ‘”  ÌŞ‘”  Ìà‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìæ‘”  Ìç‘”  Ìé‘”  Ìê‘”  Ìğ‘”  Ìñ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìö‘”  Ì÷‘”  Ìø‘”  Ìú‘”  Ìû‘”  Ìı
+‘”  Ìş
+‘”  Ìÿ	‘”  Ìÿ‘”  Í 
+‘”  Í
+‘”  Í	‘”  Í‘”  Í‘”  Í
+‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í!‘”  Í$‘”  Í%‘”  Í&‘”  Í'‘”  Í(‘”  Í+‘”  Í- ‘”  Í0 ‘ÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbForwardAnnotator.ets‘Ú)Ï/**
+ * åŸç†å›¾ â†’ PCB æ­£å‘æ ‡æ³¨ï¼ˆKiCad Update PCB from Schematic è¯­ä¹‰ï¼‰
+ */
+import { SchematicDocument, ComponentInstance, NetType, Point2D } from '../types/CommonTypes';
+import { SchTopology } from '../types/TopologyTypes';
+import {
+  PcbDocument, PcbFootprintInst, createEmptyPcbDocument, PcbNetRef
+} from '../types/PcbTypes';
+import { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+import { parsePinRef } from './PinRefUtil';
+import { paramMapGet } from './MapHelpers';
+import { registerSchPinToPadNet, lookupPadNet } from './PcbPinBindUtil';
+import { tracePcbForwardResult } from './PcbTraceLog';
+import {
+  collectFootprintPadPositions, updateTracksForFootprintTransform,
+  snapTrackEndpointsToPads, pruneZeroLengthTracks
+} from './PcbTrackBindUtil';
+import { ensureBoardAccessories, accessoryHintsFromSchematicNets } from './PcbBoardAccessories';
+
+export interface ForwardAnnotateResult {
+  document: PcbDocument;
+  placedCount: number;
+  skippedCount: number;
+  messages: string[];
+}
+
+function extractFootprint(comp: ComponentInstance): string {
+  const keys: string[] = ['footprint', 'package', 'Package', 'å°è£…', 'pkg'];
+  for (const k of keys) {
+    const v = paramMapGet(comp.parameters, k, '');
+    if (v.length > 0) return v;
+  }
+  return '';
+}
+
+function extractValue(comp: ComponentInstance): string {
+  return paramMapGet(comp.parameters, 'value', paramMapGet(comp.parameters, 'Value', comp.libraryId));
+}
+
+/** è·³è¿‡ç”µæº/åœ°/æ¢é’ˆ/ä»ªå™¨ç­‰ä¸å¯å¸ƒå±€å™¨ä»¶ */
+function isLayoutable(comp: ComponentInstance): boolean {
+  const lib = comp.libraryId.toLowerCase();
+  if (lib.startsWith('gnd') || lib.startsWith('vcc') || lib.startsWith('vee') ||
+    lib.startsWith('power') || lib.includes('probe') || lib.includes('instrument') ||
+    lib.includes('oscilloscope') || lib.includes('multimeter') || lib.includes('generator')) {
+    return false;
+  }
+  if (comp.refDes.startsWith('#')) return false;
+  return true;
+}
+
+interface FootprintHalfExtents {
+  halfW: number;
+  halfH: number;
+}
+
+/** æ ¹æ® courtyard ä¼°ç®—å°è£…å ä½åŠå®½/åŠé«˜ (mil) */
+function footprintHalfExtents(lib: PcbFootprintLibrary, defId: string): FootprintHalfExtents {
+  const def = lib.getDef(defId);
+  let halfW = 60;
+  let halfH = 40;
+  if (!def) {
+    const result: FootprintHalfExtents = { halfW: halfW, halfH: halfH };
+    return result;
+  }
+  for (const pad of def.pads) {
+    halfW = Math.max(halfW, Math.abs(pad.pos.x) + pad.size.x / 2);
+    halfH = Math.max(halfH, Math.abs(pad.pos.y) + pad.size.y / 2);
+  }
+  if (def.courtyard.length >= 2) {
+    for (const pt of def.courtyard) {
+      halfW = Math.max(halfW, Math.abs(pt.x));
+      halfH = Math.max(halfH, Math.abs(pt.y));
+    }
+  }
+  const result: FootprintHalfExtents = { halfW: halfW, halfH: halfH };
+  return result;
+}
+
+export class PcbForwardAnnotator {
+  private lib: PcbFootprintLibrary;
+
+  constructor(lib?: PcbFootprintLibrary) {
+    this.lib = lib ?? getGlobalPcbFootprintLibrary();
+  }
+
+  /** ä»åŸç†å›¾æ–‡æ¡£ç”Ÿæˆ/æ›´æ–° PCBï¼ˆä¿ç•™å·²æœ‰èµ°çº¿ï¼Œæ›´æ–°å°è£…ä½ç½®ä¸ç½‘ç»œï¼‰ */
+  annotateFromSchematic(schematic: SchematicDocument, existing?: PcbDocument): ForwardAnnotateResult {
+    const doc = existing ?? createEmptyPcbDocument(schematic.name);
+    doc.name = schematic.name;
+    const messages: string[] = [];
+    let placed = 0;
+    let skipped = 0;
+
+    const existingBySchId: Map<string, PcbFootprintInst> = new Map();
+    for (const fp of doc.footprints) {
+      if (fp.schematicCompId) {
+        existingBySchId.set(fp.schematicCompId, fp);
+      }
+    }
+
+    const newFootprints: PcbFootprintInst[] = [];
+    /** ç„Šç›˜å‡ ä½•åˆ·æ–°å‰çš„ä¸–ç•Œåæ ‡ï¼Œç”¨äºèµ°çº¿ç«¯ç‚¹è·Ÿéšï¼Œé¿å…ã€Œçº¿è¢«æ‹†å¼€ã€ */
+    const pendingTrackFollow: Array<Map<string, Point2D>> = [];
+    const pendingFpIds: string[] = [];
+    const courtyardGap = 40;
+    const originX = 180;
+    const originY = 180;
+    const nComp = schematic.components.filter(c => isLayoutable(c)).length;
+    const cols = Math.max(2, Math.ceil(Math.sqrt(Math.max(nComp, 1) * 1.4)));
+    const maxRowWidth = Math.max(cols * 240, 720);
+    let cursorX = originX;
+    let cursorY = originY;
+    let rowMaxH = 0;
+
+    for (const comp of schematic.components) {
+      if (!isLayoutable(comp)) {
+        skipped++;
+        continue;
+      }
+      const fpStr = extractFootprint(comp);
+      const defId = this.lib.resolveFootprintId(fpStr, comp.libraryId);
+      const value = extractValue(comp);
+
+      let inst = existingBySchId.get(comp.id);
+      if (inst) {
+        inst.refDes = comp.refDes;
+        inst.value = value;
+        inst.rotation = comp.rotation;
+        const oldDefId = inst.defId;
+        const oldPadPos = collectFootprintPadPositions(inst);
+        // å§‹ç»ˆä»åº“åˆ·æ–°ç„Šç›˜å‡ ä½•ï¼ˆä¿ç•™åŒå·ç½‘ç»œ/idï¼‰ï¼Œé¿å…åº“ä¿®æ­£åæ—§å®ä¾‹ä»ç”¨é”™è¯¯è„šè·
+        this.lib.resyncPadsFromDef(inst, defId);
+        pendingTrackFollow.push(oldPadPos);
+        pendingFpIds.push(inst.id);
+        if (oldDefId !== defId) {
+          messages.push(`${comp.refDes}: å°è£… ${oldDefId} â†’ ${defId}`);
+        }
+        newFootprints.push(inst);
+        placed++;
+        continue;
+      }
+
+      const ext = footprintHalfExtents(this.lib, defId);
+      const slotW = ext.halfW * 2 + courtyardGap * 2;
+      const slotH = ext.halfH * 2 + courtyardGap * 2;
+      if (cursorX - originX + slotW > maxRowWidth && cursorX > originX) {
+        cursorX = originX;
+        cursorY += rowMaxH;
+        rowMaxH = 0;
+      }
+      const placeX = cursorX + ext.halfW + courtyardGap;
+      const placeY = cursorY + ext.halfH + courtyardGap;
+      cursorX += slotW;
+      rowMaxH = Math.max(rowMaxH, slotH);
+
+      const created = this.lib.instantiate(defId, comp.refDes, value,
+        { x: placeX, y: placeY }, comp.rotation, comp.id);
+      if (created) {
+        newFootprints.push(created);
+        placed++;
+      } else {
+        skipped++;
+        messages.push(`æ— æ³•åˆ›å»ºå°è£…: ${comp.refDes}`);
+      }
+    }
+
+    doc.footprints = newFootprints;
+    // ç„Šç›˜å±€éƒ¨åæ ‡å˜åŒ–åï¼ŒæŠŠä»æŒ‚åœ¨æ—§ç„Šç›˜ä¸–ç•Œåæ ‡ä¸Šçš„èµ°çº¿ç«¯ç‚¹ä¸€èµ·æŒªè¿‡å»
+    for (let i = 0; i < pendingFpIds.length; i++) {
+      const fpSet: Set<string> = new Set([pendingFpIds[i]]);
+      updateTracksForFootprintTransform(doc, fpSet, pendingTrackFollow[i]);
+    }
+    snapTrackEndpointsToPads(doc);
+    pruneZeroLengthTracks(doc);
+    doc.metadata.modifiedAt = new Date().toISOString();
+    this.bindNetsFromSchematic(schematic, doc);
+    this.expandBoardOutline(doc);
+    const acc = ensureBoardAccessories(doc, this.lib,
+      accessoryHintsFromSchematicNets(schematic.nets));
+    if (acc.message.length > 0) {
+      messages.push(acc.message);
+    }
+
+    if (placed === 0) {
+      messages.push('åŸç†å›¾ä¸­æ²¡æœ‰å¯å¸ƒå±€çš„å™¨ä»¶');
+    } else {
+      messages.push(`å·²æ”¾ç½® ${placed} ä¸ªå°è£…`);
+    }
+    const out: ForwardAnnotateResult = {
+      document: doc, placedCount: placed, skippedCount: skipped, messages
+    };
+    tracePcbForwardResult(schematic, doc, placed, skipped, messages);
+    return out;
+  }
+
+  annotateFromTopology(topo: SchTopology, existing?: PcbDocument): ForwardAnnotateResult {
+    const schematic: SchematicDocument = {
+      id: topo.schUuid,
+      name: topo.schName,
+      version: '1.0',
+      components: [],
+      wires: [],
+      nets: [],
+      netLabels: [],
+      subcircuits: [],
+      metadata: {
+        author: '', createdAt: '', modifiedAt: '',
+        description: '', gridSize: 10, units: 'mil', undoLimit: 1000
+      }
+    };
+    for (const d of topo.deviceList) {
+      schematic.components.push({
+        id: d.instUuid,
+        libraryId: d.libDevId,
+        refDes: d.refName,
+        position: { x: d.x, y: d.y },
+        rotation: d.rotate as 0 | 90 | 180 | 270,
+        mirrored: d.mirrorH,
+        parameters: d.params
+      });
+    }
+    for (const n of topo.netList) {
+      const pinIds: string[] = [];
+      for (const node of n.nodeList) {
+        const pinName = node.pinName && node.pinName.length > 0 ? node.pinName : node.pinId;
+        pinIds.push(`${node.devUuid}:${node.pinId}:${pinName}`);
+      }
+      schematic.nets.push({
+        id: n.netUuid,
+        name: n.netName.length > 0 ? n.netName : n.displayName,
+        type: n.isPower ? NetType.POWER : NetType.SIGNAL,
+        pinIds
+      });
+    }
+    return this.annotateFromSchematic(schematic, existing);
+  }
+
+  /** å°†åŸç†å›¾ç½‘ç»œåç»‘å®šåˆ°ç„Šç›˜ï¼ˆcompId:pinId æ ‡å‡†å¼•è„šå¼•ç”¨ï¼‰ */
+  private bindNetsFromSchematic(schematic: SchematicDocument, doc: PcbDocument): void {
+    const netByCompPad: Map<string, PcbNetRef> = new Map();
+    for (const net of schematic.nets) {
+      for (const pinRef of net.pinIds) {
+        const parsed = parsePinRef(pinRef);
+        if (!parsed) continue;
+        registerSchPinToPadNet(netByCompPad, parsed.compId, parsed.pinId, parsed.pinName, net.id, net.name);
+      }
+    }
+    for (const fp of doc.footprints) {
+      if (!fp.schematicCompId) continue;
+      for (const pad of fp.pads) {
+        const bound = lookupPadNet(netByCompPad, fp.schematicCompId, pad.number);
+        if (bound !== undefined) {
+          pad.netName = bound.netName;
+          pad.netId = bound.netId;
+        } else {
+          pad.netName = undefined;
+          pad.netId = undefined;
+        }
+      }
+    }
+  }
+
+  private expandBoardOutline(doc: PcbDocument): void {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let has = false;
+    for (const fp of doc.footprints) {
+      has = true;
+      minX = Math.min(minX, fp.position.x - 80);
+      minY = Math.min(minY, fp.position.y - 80);
+      maxX = Math.max(maxX, fp.position.x + 80);
+      maxY = Math.max(maxY, fp.position.y + 80);
+    }
+    if (!has) {
+      doc.boardOutline.points = [
+        { x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 700 }, { x: 0, y: 700 }
+      ];
+      return;
+    }
+    const margin = 140;
+    const shiftX = minX - margin;
+    const shiftY = minY - margin;
+    if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
+      for (const fp of doc.footprints) {
+        fp.position.x -= shiftX;
+        fp.position.y -= shiftY;
+      }
+      maxX -= shiftX;
+      maxY -= shiftY;
+    }
+    const boardW = Math.max(maxX + margin, 800);
+    const boardH = Math.max(maxY + margin, 600);
+    doc.boardOutline.points = [
+      { x: 0, y: 0 }, { x: boardW, y: 0 }, { x: boardW, y: boardH }, { x: 0, y: boardH }
+    ];
+  }
+}
+
+export function forwardAnnotatePcb(schematic: SchematicDocument,
+  existing?: PcbDocument): ForwardAnnotateResult {
+  return new PcbForwardAnnotator().annotateFromSchematic(schematic, existing);
+}
+ÔrE™´../types/CommonTypes±../types/PcbTypes¬./PinRefUtilµ./PcbFootprintLibrary¬./MapHelpers­./PcbTraceLog²./PcbTrackBindUtilµ./PcbBoardAccessories°./PcbPinBindUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PinRefUtil.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂFAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.etsAÃªoh-resolveÂFAÂÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbPinBindUtil.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ	+Í)ˆÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ	2Í)ˆÔrK”¤type¥start£end¤nameªIdentifierÍ	8Í	K³PcbForwardAnnotatorÀÔrL”¤type¥start£end¤body©ClassBodyÍ	LÍ)ˆ•ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ	SÍ	§ÂÂKªIdentifierÍ	SÍ	^«constructor«constructorÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ	^Í	§ÀÂÂÂ‘KªIdentifierÍ	_Í	b£libL®BlockStatementÍ	dÍ	§‘ÔrO”¤type¥start£endªexpression³ExpressionStatementÍ	oÍ	 ÔrP–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ	oÍ	Ÿ¡=ÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ	oÍ	wÔrR“¤type¥start£end®ThisExpressionÍ	oÍ	sKªIdentifierÍ	tÍ	w£libÂÂÔrS–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ	zÍ	ŸKªIdentifierÍ	zÍ	}£lib¢??ÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ	Í	ŸKªIdentifierÍ	Í	¼getGlobalPcbFootprintLibraryÂM°MethodDefinitionÍ	ÛÍOÂÂKªIdentifierÍ	ÛÍ	ğµannotateFromSchematic¦methodN²FunctionExpressionÍ	ğÍOÀÂÂÂ’KªIdentifierÍ	ñÍ	ú©schematicKªIdentifierÍ	üÍ
+¨existingL®BlockStatementÍ
+ÍOÜ !ÔrU•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ
+Í
+P‘ÔrV•¤type¥start£end¢id¤init²VariableDeclaratorÍ
+Í
+OKªIdentifierÍ
+Í
+£docS±LogicalExpressionÍ
+Í
+OKªIdentifierÍ
+Í
+%¨existing¢??T®CallExpressionÍ
+)Í
+OKªIdentifierÍ
+)Í
+?¶createEmptyPcbDocument‘Q°MemberExpressionÍ
+@Í
+NKªIdentifierÍ
+@Í
+I©schematicKªIdentifierÍ
+JÍ
+N¤nameÂÂÂ¥constO³ExpressionStatementÍ
+ZÍ
+tP´AssignmentExpressionÍ
+ZÍ
+s¡=Q°MemberExpressionÍ
+ZÍ
+bKªIdentifierÍ
+ZÍ
+]£docKªIdentifierÍ
+^Í
+b¤nameÂÂQ°MemberExpressionÍ
+eÍ
+sKªIdentifierÍ
+eÍ
+n©schematicKªIdentifierÍ
+oÍ
+s¤nameÂÂU³VariableDeclarationÍ
+~Í
+’‘V²VariableDeclaratorÍ
+„Í
+‘KªIdentifierÍ
+„Í
+Œ¨messagesÔrW”¤type¥start£end¨elements¯ArrayExpressionÍ
+Í
+‘¥constU³VariableDeclarationÍ
+œÍ
+«‘V²VariableDeclaratorÍ
+ Í
+ªKªIdentifierÍ
+ Í
+¦¦placedÔrX•¤type¥start£end¥value£raw§LiteralÍ
+©Í
+ª ¡0£letU³VariableDeclarationÍ
+µÍ
+Å‘V²VariableDeclaratorÍ
+¹Í
+ÄKªIdentifierÍ
+¹Í
+À§skippedX§LiteralÍ
+ÃÍ
+Ä ¡0£letU³VariableDeclarationÍ
+ÏÍ
+ñ‘V²VariableDeclaratorÍ
+ÕÍ
+ğKªIdentifierÍ
+ÕÍ
+ä¯existingBySchIdÔrY•¤type¥start£end¦callee©arguments­NewExpressionÍ
+çÍ
+ğKªIdentifierÍ
+ëÍ
+î£Map¥constÔrZ—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ
+ûÍœÂU³VariableDeclarationÍ Í‘V²VariableDeclaratorÍÍKªIdentifierÍÍ¢fpÀ¥constQ°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍªfootprintsÂÂL®BlockStatementÍÍœ‘Ôr[–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ+Í‘Q°MemberExpressionÍ/ÍAKªIdentifierÍ/Í1¢fpKªIdentifierÍ2ÍA¯schematicCompIdÂÂL®BlockStatementÍCÍ‘‘O³ExpressionStatementÍVÍ‚T®CallExpressionÍVÍQ°MemberExpressionÍVÍiKªIdentifierÍVÍe¯existingBySchIdKªIdentifierÍfÍi£setÂÂ’Q°MemberExpressionÍjÍ|KªIdentifierÍjÍl¢fpKªIdentifierÍmÍ|¯schematicCompIdÂÂKªIdentifierÍ~Í€¢fpÂÀU³VariableDeclarationÍ¦Í¿‘V²VariableDeclaratorÍ¬Í¾KªIdentifierÍ¬Í¹­newFootprintsW¯ArrayExpressionÍ¼Í¾¥constU³VariableDeclarationÍøÍ‘V²VariableDeclaratorÍşÍKªIdentifierÍşÍ²pendingTrackFollowW¯ArrayExpressionÍÍ¥constU³VariableDeclarationÍ Í8‘V²VariableDeclaratorÍ&Í7KªIdentifierÍ&Í2¬pendingFpIdsW¯ArrayExpressionÍ5Í7¥constU³VariableDeclarationÍBÍZ‘V²VariableDeclaratorÍHÍYKªIdentifierÍHÍT¬courtyardGapX§LiteralÍWÍY(¢40¥constU³VariableDeclarationÍdÍx‘V²VariableDeclaratorÍjÍwKªIdentifierÍjÍq§originXX§LiteralÍtÍwÌ´£180¥constU³VariableDeclarationÍ‚Í–‘V²VariableDeclaratorÍˆÍ•KªIdentifierÍˆÍ§originYX§LiteralÍ’Í•Ì´£180¥constU³VariableDeclarationÍ Íç‘V²VariableDeclaratorÍ¦ÍæKªIdentifierÍ¦Í«¥nCompQ°MemberExpressionÍ®ÍæT®CallExpressionÍ®ÍßQ°MemberExpressionÍ®ÍÉQ°MemberExpressionÍ®ÍÂKªIdentifierÍ®Í·©schematicKªIdentifierÍ¸ÍÂªcomponentsÂÂKªIdentifierÍÃÍÉ¦filterÂÂ‘N·ArrowFunctionExpressionÍÊÍŞÀÃÂÂ‘KªIdentifierÍÊÍË¡cT®CallExpressionÍÏÍŞKªIdentifierÍÏÍÛ¬isLayoutable‘KªIdentifierÍÜÍİ¡cÂÂKªIdentifierÍàÍæ¦lengthÂÂ¥constU³VariableDeclarationÍñÍ:‘V²VariableDeclaratorÍ÷Í9KªIdentifierÍ÷Íû¤colsT®CallExpressionÍşÍ9Q°MemberExpressionÍşÍKªIdentifierÍşÍ¤MathKªIdentifierÍÍ£maxÂÂ’X§LiteralÍÍ¡2T®CallExpressionÍ
+Í8Q°MemberExpressionÍ
+ÍKªIdentifierÍ
+Í¤MathKªIdentifierÍÍ¤ceilÂÂ‘T®CallExpressionÍÍ7Q°MemberExpressionÍÍKªIdentifierÍÍ¤MathKªIdentifierÍÍ¤sqrtÂÂ‘S°BinaryExpressionÍÍ6T®CallExpressionÍÍ0Q°MemberExpressionÍÍ&KªIdentifierÍÍ"¤MathKªIdentifierÍ#Í&£maxÂÂ’KªIdentifierÍ'Í,¥nCompX§LiteralÍ.Í/¡1Â¡*X§LiteralÍ3Í6Ë?öffffff£1.4ÂÂÂ¥constU³VariableDeclarationÍDÍr‘V²VariableDeclaratorÍJÍqKªIdentifierÍJÍU«maxRowWidthT®CallExpressionÍXÍqQ°MemberExpressionÍXÍ`KªIdentifierÍXÍ\¤MathKªIdentifierÍ]Í`£maxÂÂ’S°BinaryExpressionÍaÍkKªIdentifierÍaÍe¤cols¡*X§LiteralÍhÍkÌğ£240X§LiteralÍmÍpÍĞ£720Â¥constU³VariableDeclarationÍ|Í’‘V²VariableDeclaratorÍ€Í‘KªIdentifierÍ€Í‡§cursorXKªIdentifierÍŠÍ‘§originX£letU³VariableDeclarationÍœÍ²‘V²VariableDeclaratorÍ Í±KªIdentifierÍ Í§§cursorYKªIdentifierÍªÍ±§originY£letU³VariableDeclarationÍ¼ÍÌ‘V²VariableDeclaratorÍÀÍËKªIdentifierÍÀÍÇ§rowMaxHX§LiteralÍÊÍË ¡0£letZ®ForOfStatementÍÖÍÂU³VariableDeclarationÍÛÍå‘V²VariableDeclaratorÍáÍåKªIdentifierÍáÍå¤compÀ¥constQ°MemberExpressionÍéÍıKªIdentifierÍéÍò©schematicKªIdentifierÍóÍıªcomponentsÂÂL®BlockStatementÍÿÍÜ [«IfStatementÍÍnÔr\–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ%¡!ÃT®CallExpressionÍÍ%KªIdentifierÍÍ¬isLayoutable‘KªIdentifierÍ Í$¤compÂL®BlockStatementÍ'Ín’O³ExpressionStatementÍ:ÍD\°UpdateExpressionÍ:ÍC¢++ÂKªIdentifierÍ:ÍA§skippedÔr]”¤type¥start£end¥label±ContinueStatementÍVÍ_ÀÀU³VariableDeclarationÍ|Í¡‘V²VariableDeclaratorÍ‚Í KªIdentifierÍ‚Í‡¥fpStrT®CallExpressionÍŠÍ KªIdentifierÍŠÍš°extractFootprint‘KªIdentifierÍ›ÍŸ¤compÂ¥constU³VariableDeclarationÍ¯Íğ‘V²VariableDeclaratorÍµÍïKªIdentifierÍµÍº¥defIdT®CallExpressionÍ½ÍïQ°MemberExpressionÍ½ÍØQ°MemberExpressionÍ½ÍÅR®ThisExpressionÍ½ÍÁKªIdentifierÍÂÍÅ£libÂÂKªIdentifierÍÆÍØ²resolveFootprintIdÂÂ’KªIdentifierÍÙÍŞ¥fpStrQ°MemberExpressionÍàÍîKªIdentifierÍàÍä¤compKªIdentifierÍåÍî©libraryIdÂÂÂ¥constU³VariableDeclarationÍşÍ‘V²VariableDeclaratorÍÍKªIdentifierÍÍ	¥valueT®CallExpressionÍÍKªIdentifierÍÍ¬extractValue‘KªIdentifierÍÍ¤compÂ¥constU³VariableDeclarationÍ-ÍU‘V²VariableDeclaratorÍ1ÍTKªIdentifierÍ1Í5¤instT®CallExpressionÍ8ÍTQ°MemberExpressionÍ8ÍKKªIdentifierÍ8ÍG¯existingBySchIdKªIdentifierÍHÍK£getÂÂ‘Q°MemberExpressionÍLÍSKªIdentifierÍLÍP¤compKªIdentifierÍQÍS¢idÂÂÂ£let[«IfStatementÍcÍ9KªIdentifierÍgÍk¤instL®BlockStatementÍmÍ9œO³ExpressionStatementÍ€ÍšP´AssignmentExpressionÍ€Í™¡=Q°MemberExpressionÍ€Í‹KªIdentifierÍ€Í„¤instKªIdentifierÍ…Í‹¦refDesÂÂQ°MemberExpressionÍÍ™KªIdentifierÍÍ’¤compKªIdentifierÍ“Í™¦refDesÂÂO³ExpressionStatementÍ¬Í¿P´AssignmentExpressionÍ¬Í¾¡=Q°MemberExpressionÍ¬Í¶KªIdentifierÍ¬Í°¤instKªIdentifierÍ±Í¶¥valueÂÂKªIdentifierÍ¹Í¾¥valueO³ExpressionStatementÍÑÍïP´AssignmentExpressionÍÑÍî¡=Q°MemberExpressionÍÑÍŞKªIdentifierÍÑÍÕ¤instKªIdentifierÍÖÍŞ¨rotationÂÂQ°MemberExpressionÍáÍîKªIdentifierÍáÍå¤compKªIdentifierÍæÍî¨rotationÂÂU³VariableDeclarationÍÍ‘V²VariableDeclaratorÍÍKªIdentifierÍÍ¨oldDefIdQ°MemberExpressionÍÍKªIdentifierÍÍ¤instKªIdentifierÍÍ¥defIdÂÂ¥constU³VariableDeclarationÍ/Íd‘V²VariableDeclaratorÍ5ÍcKªIdentifierÍ5Í>©oldPadPosT®CallExpressionÍAÍcKªIdentifierÍAÍ]¼collectFootprintPadPositions‘KªIdentifierÍ^Íb¤instÂ¥constO³ExpressionStatementÍ°ÍØT®CallExpressionÍ°Í×Q°MemberExpressionÍ°ÍÊQ°MemberExpressionÍ°Í¸R®ThisExpressionÍ°Í´KªIdentifierÍµÍ¸£libÂÂKªIdentifierÍ¹ÍÊ±resyncPadsFromDefÂÂ’KªIdentifierÍËÍÏ¤instKªIdentifierÍÑÍÖ¥defIdÂO³ExpressionStatementÍêÍT®CallExpressionÍêÍQ°MemberExpressionÍêÍKªIdentifierÍêÍü²pendingTrackFollowKªIdentifierÍıÍ¤pushÂÂ‘KªIdentifierÍÍ©oldPadPosÂO³ExpressionStatementÍÍ:T®CallExpressionÍÍ9Q°MemberExpressionÍÍ0KªIdentifierÍÍ+¬pendingFpIdsKªIdentifierÍ,Í0¤pushÂÂ‘Q°MemberExpressionÍ1Í8KªIdentifierÍ1Í5¤instKªIdentifierÍ6Í8¢idÂÂÂ[«IfStatementÍLÍÉS°BinaryExpressionÍPÍbKªIdentifierÍPÍX¨oldDefId£!==KªIdentifierÍ]Íb¥defIdL®BlockStatementÍdÍÉ‘O³ExpressionStatementÍ{Í¶T®CallExpressionÍ{ÍµQ°MemberExpressionÍ{ÍˆKªIdentifierÍ{Íƒ¨messagesKªIdentifierÍ„Íˆ¤pushÂÂ‘Ôr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ‰Í´“Q°MemberExpressionÍŒÍ—KªIdentifierÍŒÍ¤compKªIdentifierÍ‘Í—¦refDesÂÂKªIdentifierÍŸÍ§¨oldDefIdKªIdentifierÍ­Í²¥defId”Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍŠÍŠÔr`’£raw¦cooked  Â_¯TemplateElementÍ˜Í`©: å°è£… ©: å°è£… Â_¯TemplateElementÍ¨Í«`¥ â†’ ¥ â†’ Â_¯TemplateElementÍ³Í³`  ÃÂÀO³ExpressionStatementÍÛÍôT®CallExpressionÍÛÍóQ°MemberExpressionÍÛÍíKªIdentifierÍÛÍè­newFootprintsKªIdentifierÍéÍí¤pushÂÂ‘KªIdentifierÍîÍò¤instÂO³ExpressionStatementÍÍ\°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¦placed]±ContinueStatementÍ!Í*ÀÀU³VariableDeclarationÍGÍy‘V²VariableDeclaratorÍMÍxKªIdentifierÍMÍP£extT®CallExpressionÍSÍxKªIdentifierÍSÍg´footprintHalfExtents’Q°MemberExpressionÍhÍpR®ThisExpressionÍhÍlKªIdentifierÍmÍp£libÂÂKªIdentifierÍrÍw¥defIdÂ¥constU³VariableDeclarationÍ‡Í¶‘V²VariableDeclaratorÍÍµKªIdentifierÍÍ’¥slotWS°BinaryExpressionÍ•ÍµS°BinaryExpressionÍ•Í¢Q°MemberExpressionÍ•ÍKªIdentifierÍ•Í˜£extKªIdentifierÍ™Í¥halfWÂÂ¡*X§LiteralÍ¡Í¢¡2¡+S°BinaryExpressionÍ¥ÍµKªIdentifierÍ¥Í±¬courtyardGap¡*X§LiteralÍ´Íµ¡2¥constU³VariableDeclarationÍÄÍó‘V²VariableDeclaratorÍÊÍòKªIdentifierÍÊÍÏ¥slotHS°BinaryExpressionÍÒÍòS°BinaryExpressionÍÒÍßQ°MemberExpressionÍÒÍÛKªIdentifierÍÒÍÕ£extKªIdentifierÍÖÍÛ¥halfHÂÂ¡*X§LiteralÍŞÍß¡2¡+S°BinaryExpressionÍâÍòKªIdentifierÍâÍî¬courtyardGap¡*X§LiteralÍñÍò¡2¥const[«IfStatementÍÍºS±LogicalExpressionÍÍAS°BinaryExpressionÍÍ,S°BinaryExpressionÍÍS°BinaryExpressionÍÍKªIdentifierÍÍ§cursorX¡-KªIdentifierÍÍ§originX¡+KªIdentifierÍÍ¥slotW¡>KªIdentifierÍ!Í,«maxRowWidth¢&&S°BinaryExpressionÍ0ÍAKªIdentifierÍ0Í7§cursorX¡>KªIdentifierÍ:ÍA§originXL®BlockStatementÍCÍº“O³ExpressionStatementÍVÍhP´AssignmentExpressionÍVÍg¡=KªIdentifierÍVÍ]§cursorXKªIdentifierÍ`Íg§originXO³ExpressionStatementÍzÍP´AssignmentExpressionÍzÍŒ¢+=KªIdentifierÍzÍ§cursorYKªIdentifierÍ…ÍŒ§rowMaxHO³ExpressionStatementÍŸÍ«P´AssignmentExpressionÍŸÍª¡=KªIdentifierÍŸÍ¦§rowMaxHX§LiteralÍ©Íª ¡0ÀU³VariableDeclarationÍÈÍú‘V²VariableDeclaratorÍÎÍùKªIdentifierÍÎÍÔ¦placeXS°BinaryExpressionÍ×ÍùS°BinaryExpressionÍ×ÍêKªIdentifierÍ×ÍŞ§cursorX¡+Q°MemberExpressionÍáÍêKªIdentifierÍáÍä£extKªIdentifierÍåÍê¥halfWÂÂ¡+KªIdentifierÍíÍù¬courtyardGap¥constU³VariableDeclarationÍÍ:‘V²VariableDeclaratorÍÍ9KªIdentifierÍÍ¦placeYS°BinaryExpressionÍÍ9S°BinaryExpressionÍÍ*KªIdentifierÍÍ§cursorY¡+Q°MemberExpressionÍ!Í*KªIdentifierÍ!Í$£extKªIdentifierÍ%Í*¥halfHÂÂ¡+KªIdentifierÍ-Í9¬courtyardGap¥constO³ExpressionStatementÍHÍYP´AssignmentExpressionÍHÍX¢+=KªIdentifierÍHÍO§cursorXKªIdentifierÍSÍX¥slotWO³ExpressionStatementÍgÍŠP´AssignmentExpressionÍgÍ‰¡=KªIdentifierÍgÍn§rowMaxHT®CallExpressionÍqÍ‰Q°MemberExpressionÍqÍyKªIdentifierÍqÍu¤MathKªIdentifierÍvÍy£maxÂÂ’KªIdentifierÍzÍ§rowMaxHKªIdentifierÍƒÍˆ¥slotHÂU³VariableDeclarationÍ˜Í
+‘V²VariableDeclaratorÍÍ	KªIdentifierÍÍ¥§createdT®CallExpressionÍ¨Í	Q°MemberExpressionÍ¨Í¼Q°MemberExpressionÍ¨Í°R®ThisExpressionÍ¨Í¬KªIdentifierÍ­Í°£libÂÂKªIdentifierÍ±Í¼«instantiateÂÂ–KªIdentifierÍ½ÍÂ¥defIdQ°MemberExpressionÍÄÍÏKªIdentifierÍÄÍÈ¤compKªIdentifierÍÉÍÏ¦refDesÂÂKªIdentifierÍÑÍÖ¥valueÔra”¤type¥start£endªproperties°ObjectExpressionÍØÍğ’Ôrb™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÚÍãÂÂÂKªIdentifierÍÚÍÛ¡xKªIdentifierÍİÍã¦placeX¤initb¨PropertyÍåÍîÂÂÂKªIdentifierÍåÍæ¡yKªIdentifierÍèÍî¦placeY¤initQ°MemberExpressionÍòÍÿKªIdentifierÍòÍö¤compKªIdentifierÍ÷Íÿ¨rotationÂÂQ°MemberExpressionÍÍKªIdentifierÍÍ¤compKªIdentifierÍÍ¢idÂÂÂ¥const[«IfStatementÍÍ÷KªIdentifierÍÍ#§createdL®BlockStatementÍ%Í~’O³ExpressionStatementÍ8ÍTT®CallExpressionÍ8ÍSQ°MemberExpressionÍ8ÍJKªIdentifierÍ8ÍE­newFootprintsKªIdentifierÍFÍJ¤pushÂÂ‘KªIdentifierÍKÍR§createdÂO³ExpressionStatementÍfÍo\°UpdateExpressionÍfÍn¢++ÂKªIdentifierÍfÍl¦placedL®BlockStatementÍ‘Í÷’O³ExpressionStatementÍ¤Í®\°UpdateExpressionÍ¤Í­¢++ÂKªIdentifierÍ¤Í«§skippedO³ExpressionStatementÍÀÍèT®CallExpressionÍÀÍçQ°MemberExpressionÍÀÍÍKªIdentifierÍÀÍÈ¨messagesKªIdentifierÍÉÍÍ¤pushÂÂ‘^¯TemplateLiteralÍÎÍæ‘Q°MemberExpressionÍÙÍäKªIdentifierÍÙÍİ¤compKªIdentifierÍŞÍä¦refDesÂÂ’_¯TemplateElementÍÏÍ×`´æ— æ³•åˆ›å»ºå°è£…: ´æ— æ³•åˆ›å»ºå°è£…: Â_¯TemplateElementÍåÍå`  ÃÂO³ExpressionStatementÍÍ+P´AssignmentExpressionÍÍ*¡=Q°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍªfootprintsÂÂKªIdentifierÍÍ*­newFootprintsÔrc—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍbÍ&U³VariableDeclarationÍgÍp‘V²VariableDeclaratorÍkÍpKªIdentifierÍkÍl¡iX§LiteralÍoÍp ¡0£letS°BinaryExpressionÍrÍ‰KªIdentifierÍrÍs¡i¡<Q°MemberExpressionÍvÍ‰KªIdentifierÍvÍ‚¬pendingFpIdsKªIdentifierÍƒÍ‰¦lengthÂÂ\°UpdateExpressionÍ‹Í¢++ÂKªIdentifierÍ‹ÍŒ¡iL®BlockStatementÍÍ&’U³VariableDeclarationÍŸÍÈ‘V²VariableDeclaratorÍ¥ÍÇKªIdentifierÍ¥Íª¥fpSetY­NewExpressionÍ­ÍÇKªIdentifierÍ±Í´£Set‘W¯ArrayExpressionÍµÍÆ‘Q°MemberExpressionÍ¶ÍÅKªIdentifierÍ¶ÍÂ¬pendingFpIdsKªIdentifierÍÃÍÄ¡iÃÂ¥constO³ExpressionStatementÍÖÍT®CallExpressionÍÖÍKªIdentifierÍÖÍ÷Ù!updateTracksForFootprintTransform“KªIdentifierÍøÍû£docKªIdentifierÍıÍ¥fpSetQ°MemberExpressionÍÍKªIdentifierÍÍ²pendingTrackFollowKªIdentifierÍÍ¡iÃÂÂO³ExpressionStatementÍ0ÍNT®CallExpressionÍ0ÍMKªIdentifierÍ0ÍH¸snapTrackEndpointsToPads‘KªIdentifierÍIÍL£docÂO³ExpressionStatementÍXÍsT®CallExpressionÍXÍrKªIdentifierÍXÍmµpruneZeroLengthTracks‘KªIdentifierÍnÍq£docÂO³ExpressionStatementÍ}Í°P´AssignmentExpressionÍ}Í¯¡=Q°MemberExpressionÍ}Í”Q°MemberExpressionÍ}Í‰KªIdentifierÍ}Í€£docKªIdentifierÍÍ‰¨metadataÂÂKªIdentifierÍŠÍ”ªmodifiedAtÂÂT®CallExpressionÍ—Í¯Q°MemberExpressionÍ—Í­Y­NewExpressionÍ—Í¡KªIdentifierÍ›ÍŸ¤DateKªIdentifierÍ¢Í­«toISOStringÂÂÂO³ExpressionStatementÍºÍåT®CallExpressionÍºÍäQ°MemberExpressionÍºÍÔR®ThisExpressionÍºÍ¾KªIdentifierÍ¿ÍÔµbindNetsFromSchematicÂÂ’KªIdentifierÍÕÍŞ©schematicKªIdentifierÍàÍã£docÂO³ExpressionStatementÍïÍT®CallExpressionÍïÍQ°MemberExpressionÍïÍR®ThisExpressionÍïÍóKªIdentifierÍôÍ²expandBoardOutlineÂÂ‘KªIdentifierÍÍ
+£docÂU³VariableDeclarationÍÍy‘V²VariableDeclaratorÍÍxKªIdentifierÍÍ£accT®CallExpressionÍ"ÍxKªIdentifierÍ"Í8¶ensureBoardAccessories“KªIdentifierÍ9Í<£docQ°MemberExpressionÍ>ÍFR®ThisExpressionÍ>ÍBKªIdentifierÍCÍF£libÂÂT®CallExpressionÍHÍwKªIdentifierÍHÍg¿accessoryHintsFromSchematicNets‘Q°MemberExpressionÍhÍvKªIdentifierÍhÍq©schematicKªIdentifierÍrÍv¤netsÂÂÂÂ¥const[«IfStatementÍƒÍÔS°BinaryExpressionÍ‡ÍQ°MemberExpressionÍ‡Í™Q°MemberExpressionÍ‡Í’KªIdentifierÍ‡ÍŠ£accKªIdentifierÍ‹Í’§messageÂÂKªIdentifierÍ“Í™¦lengthÂÂ¡>X§LiteralÍœÍ ¡0L®BlockStatementÍŸÍÔ‘O³ExpressionStatementÍ®ÍÉT®CallExpressionÍ®ÍÈQ°MemberExpressionÍ®Í»KªIdentifierÍ®Í¶¨messagesKªIdentifierÍ·Í»¤pushÂÂ‘Q°MemberExpressionÍ¼ÍÇKªIdentifierÍ¼Í¿£accKªIdentifierÍÀÍÇ§messageÂÂÂÀ[«IfStatementÍŞÍtS°BinaryExpressionÍâÍîKªIdentifierÍâÍè¦placed£===X§LiteralÍíÍî ¡0L®BlockStatementÍğÍ(‘O³ExpressionStatementÍÿÍT®CallExpressionÍÿÍQ°MemberExpressionÍÿÍKªIdentifierÍÿÍ¨messagesKªIdentifierÍÍ¤pushÂÂ‘X§LiteralÍÍÙ$åŸç†å›¾ä¸­æ²¡æœ‰å¯å¸ƒå±€çš„å™¨ä»¶Ù&'åŸç†å›¾ä¸­æ²¡æœ‰å¯å¸ƒå±€çš„å™¨ä»¶'ÂL®BlockStatementÍ7Ít‘O³ExpressionStatementÍFÍiT®CallExpressionÍFÍhQ°MemberExpressionÍFÍSKªIdentifierÍFÍN¨messagesKªIdentifierÍOÍS¤pushÂÂ‘^¯TemplateLiteralÍTÍg‘KªIdentifierÍ[Ía¦placed’_¯TemplateElementÍUÍY`ªå·²æ”¾ç½® ªå·²æ”¾ç½® Â_¯TemplateElementÍbÍf`ª ä¸ªå°è£…ª ä¸ªå°è£…ÃÂU³VariableDeclarationÍ~Íè‘V²VariableDeclaratorÍ„ÍçKªIdentifierÍ„Í‡£outa°ObjectExpressionÍŠÍç”b¨PropertyÍ™Í¦ÂÂÂKªIdentifierÍ™Í¡¨documentKªIdentifierÍ£Í¦£doc¤initb¨PropertyÍ¨Í»ÂÂÂKªIdentifierÍ¨Í³«placedCountKªIdentifierÍµÍ»¦placed¤initb¨PropertyÍ½ÍÒÂÂÂKªIdentifierÍ½ÍÉ¬skippedCountKªIdentifierÍËÍÒ§skipped¤initÔrd™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍÔÍÜÂÃÂKªIdentifierÍÔÍÜ¨messages¤initKªIdentifierÍÔÍÜ¨messages¥constO³ExpressionStatementÍòÍ3T®CallExpressionÍòÍ2KªIdentifierÍòÍµtracePcbForwardResult•KªIdentifierÍÍ©schematicKªIdentifierÍÍ£docKªIdentifierÍÍ¦placedKªIdentifierÍ Í'§skippedKªIdentifierÍ)Í1¨messagesÂÔre”¤type¥start£end¨argument¯ReturnStatementÍ=ÍHKªIdentifierÍDÍG£outM°MethodDefinitionÍUÍ 8ÂÂKªIdentifierÍUÍi´annotateFromTopology¦methodN²FunctionExpressionÍiÍ 8ÀÂÂÂ’KªIdentifierÍjÍn¤topoKªIdentifierÍpÍx¨existingL®BlockStatementÍzÍ 8”U³VariableDeclarationÍ…Í9‘V²VariableDeclaratorÍ‹Í8KªIdentifierÍ‹Í”©schematica°ObjectExpressionÍ—Í8™b¨PropertyÍ¦Í¶ÂÂÂKªIdentifierÍ¦Í¨¢idQ°MemberExpressionÍªÍ¶KªIdentifierÍªÍ®¤topoKªIdentifierÍ¯Í¶§schUuidÂÂ¤initb¨PropertyÍÅÍ×ÂÂÂKªIdentifierÍÅÍÉ¤nameQ°MemberExpressionÍËÍ×KªIdentifierÍËÍÏ¤topoKªIdentifierÍĞÍ×§schNameÂÂ¤initb¨PropertyÍæÍôÂÂÂKªIdentifierÍæÍí§versionX§LiteralÍïÍô£1.0¥'1.0'¤initb¨PropertyÍÍÂÂÂKªIdentifierÍÍªcomponentsW¯ArrayExpressionÍÍ¤initb¨PropertyÍ Í)ÂÂÂKªIdentifierÍ Í%¥wiresW¯ArrayExpressionÍ'Í)¤initb¨PropertyÍ8Í@ÂÂÂKªIdentifierÍ8Í<¤netsW¯ArrayExpressionÍ>Í@¤initb¨PropertyÍOÍ\ÂÂÂKªIdentifierÍOÍX©netLabelsW¯ArrayExpressionÍZÍ\¤initb¨PropertyÍkÍzÂÂÂKªIdentifierÍkÍv«subcircuitsW¯ArrayExpressionÍxÍz¤initb¨PropertyÍ‰Í-ÂÂÂKªIdentifierÍ‰Í‘¨metadataa°ObjectExpressionÍ“Í-—b¨PropertyÍ¦Í°ÂÂÂKªIdentifierÍ¦Í¬¦authorX§LiteralÍ®Í° ¢''¤initb¨PropertyÍ²Í¿ÂÂÂKªIdentifierÍ²Í»©createdAtX§LiteralÍ½Í¿ ¢''¤initb¨PropertyÍÁÍÏÂÂÂKªIdentifierÍÁÍËªmodifiedAtX§LiteralÍÍÍÏ ¢''¤initb¨PropertyÍâÍñÂÂÂKªIdentifierÍâÍí«descriptionX§LiteralÍïÍñ ¢''¤initb¨PropertyÍóÍÿÂÂÂKªIdentifierÍóÍû¨gridSizeX§LiteralÍıÍÿ
+¢10¤initb¨PropertyÍÍÂÂÂKªIdentifierÍÍ¥unitsX§LiteralÍÍ£mil¥'mil'¤initb¨PropertyÍÍÂÂÂKªIdentifierÍÍ©undoLimitX§LiteralÍÍÍè¤1000¤init¤init¥constZ®ForOfStatementÍCÍ·ÂU³VariableDeclarationÍHÍO‘V²VariableDeclaratorÍNÍOKªIdentifierÍNÍO¡dÀ¥constQ°MemberExpressionÍSÍbKªIdentifierÍSÍW¤topoKªIdentifierÍXÍbªdeviceListÂÂL®BlockStatementÍdÍ·‘O³ExpressionStatementÍsÍ¬T®CallExpressionÍsÍ«Q°MemberExpressionÍsÍŒQ°MemberExpressionÍsÍ‡KªIdentifierÍsÍ|©schematicKªIdentifierÍ}Í‡ªcomponentsÂÂKªIdentifierÍˆÍŒ¤pushÂÂ‘a°ObjectExpressionÍÍª—b¨PropertyÍ Í®ÂÂÂKªIdentifierÍ Í¢¢idQ°MemberExpressionÍ¤Í®KªIdentifierÍ¤Í¥¡dKªIdentifierÍ¦Í®¨instUuidÂÂ¤initb¨PropertyÍÁÍÖÂÂÂKªIdentifierÍÁÍÊ©libraryIdQ°MemberExpressionÍÌÍÖKªIdentifierÍÌÍÍ¡dKªIdentifierÍÎÍÖ¨libDevIdÂÂ¤initb¨PropertyÍéÍúÂÂÂKªIdentifierÍéÍï¦refDesQ°MemberExpressionÍñÍúKªIdentifierÍñÍò¡dKªIdentifierÍóÍú§refNameÂÂ¤initb¨PropertyÍÍ)ÂÂÂKªIdentifierÍÍ¨positiona°ObjectExpressionÍÍ)’b¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡xQ°MemberExpressionÍÍKªIdentifierÍÍ¡dKªIdentifierÍÍ¡xÂÂ¤initb¨PropertyÍ!Í'ÂÂÂKªIdentifierÍ!Í"¡yQ°MemberExpressionÍ$Í'KªIdentifierÍ$Í%¡dKªIdentifierÍ&Í'¡yÂÂ¤init¤initb¨PropertyÍ<ÍNÂÂÂKªIdentifierÍ<ÍD¨rotationQ°MemberExpressionÍFÍNKªIdentifierÍFÍG¡dKªIdentifierÍHÍN¦rotateÂÂ¤initb¨PropertyÍaÍtÂÂÂKªIdentifierÍaÍi¨mirroredQ°MemberExpressionÍkÍtKªIdentifierÍkÍl¡dKªIdentifierÍmÍt§mirrorHÂÂ¤initb¨PropertyÍ‡Í›ÂÂÂKªIdentifierÍ‡Í‘ªparametersQ°MemberExpressionÍ“Í›KªIdentifierÍ“Í”¡dKªIdentifierÍ•Í›¦paramsÂÂ¤initÂZ®ForOfStatementÍÁÍğÂU³VariableDeclarationÍÆÍÍ‘V²VariableDeclaratorÍÌÍÍKªIdentifierÍÌÍÍ¡nÀ¥constQ°MemberExpressionÍÑÍİKªIdentifierÍÑÍÕ¤topoKªIdentifierÍÖÍİ§netListÂÂL®BlockStatementÍßÍğ“U³VariableDeclarationÍîÍ ‘V²VariableDeclaratorÍôÍÿKªIdentifierÍôÍú¦pinIdsW¯ArrayExpressionÍıÍÿ¥constZ®ForOfStatementÍÍíÂU³VariableDeclarationÍÍ‘V²VariableDeclaratorÍÍKªIdentifierÍÍ¤nodeÀ¥constQ°MemberExpressionÍ!Í+KªIdentifierÍ!Í"¡nKªIdentifierÍ#Í+¨nodeListÂÂL®BlockStatementÍ-Íí’U³VariableDeclarationÍ@Í”‘V²VariableDeclaratorÍFÍ“KªIdentifierÍFÍM§pinName[µConditionalExpressionÍPÍ“S±LogicalExpressionÍPÍwQ°MemberExpressionÍPÍ\KªIdentifierÍPÍT¤nodeKªIdentifierÍUÍ\§pinNameÂÂ¢&&S°BinaryExpressionÍ`ÍwQ°MemberExpressionÍ`ÍsQ°MemberExpressionÍ`ÍlKªIdentifierÍ`Íd¤nodeKªIdentifierÍeÍl§pinNameÂÂKªIdentifierÍmÍs¦lengthÂÂ¡>X§LiteralÍvÍw ¡0Q°MemberExpressionÍzÍ†KªIdentifierÍzÍ~¤nodeKªIdentifierÍÍ†§pinNameÂÂQ°MemberExpressionÍ‰Í“KªIdentifierÍ‰Í¤nodeKªIdentifierÍÍ“¥pinIdÂÂ¥constO³ExpressionStatementÍ¦ÍŞT®CallExpressionÍ¦ÍİQ°MemberExpressionÍ¦Í±KªIdentifierÍ¦Í¬¦pinIdsKªIdentifierÍ­Í±¤pushÂÂ‘^¯TemplateLiteralÍ²ÍÜ“Q°MemberExpressionÍµÍÁKªIdentifierÍµÍ¹¤nodeKªIdentifierÍºÍÁ§devUuidÂÂQ°MemberExpressionÍÅÍÏKªIdentifierÍÅÍÉ¤nodeKªIdentifierÍÊÍÏ¥pinIdÂÂKªIdentifierÍÓÍÚ§pinName”_¯TemplateElementÍ³Í³`  Â_¯TemplateElementÍÂÍÃ`¡:¡:Â_¯TemplateElementÍĞÍÑ`¡:¡:Â_¯TemplateElementÍÛÍÛ`  ÃÂO³ExpressionStatementÍûÍåT®CallExpressionÍûÍäQ°MemberExpressionÍûÍQ°MemberExpressionÍûÍ	KªIdentifierÍûÍ©schematicKªIdentifierÍÍ	¤netsÂÂKªIdentifierÍ
+Í¤pushÂÂ‘a°ObjectExpressionÍÍã”b¨PropertyÍ"Í/ÂÂÂKªIdentifierÍ"Í$¢idQ°MemberExpressionÍ&Í/KªIdentifierÍ&Í'¡nKªIdentifierÍ(Í/§netUuidÂÂ¤initb¨PropertyÍBÍxÂÂÂKªIdentifierÍBÍF¤name[µConditionalExpressionÍHÍxS°BinaryExpressionÍHÍ\Q°MemberExpressionÍHÍXQ°MemberExpressionÍHÍQKªIdentifierÍHÍI¡nKªIdentifierÍJÍQ§netNameÂÂKªIdentifierÍRÍX¦lengthÂÂ¡>X§LiteralÍ[Í\ ¡0Q°MemberExpressionÍ_ÍhKªIdentifierÍ_Í`¡nKªIdentifierÍaÍh§netNameÂÂQ°MemberExpressionÍkÍxKªIdentifierÍkÍl¡nKªIdentifierÍmÍx«displayNameÂÂ¤initb¨PropertyÍ‹Í»ÂÂÂKªIdentifierÍ‹Í¤type[µConditionalExpressionÍ‘Í»Q°MemberExpressionÍ‘ÍšKªIdentifierÍ‘Í’¡nKªIdentifierÍ“Íš§isPowerÂÂQ°MemberExpressionÍÍªKªIdentifierÍÍ¤§NetTypeKªIdentifierÍ¥Íª¥POWERÂÂQ°MemberExpressionÍ­Í»KªIdentifierÍ­Í´§NetTypeKªIdentifierÍµÍ»¦SIGNALÂÂ¤initd¨PropertyÍÎÍÔÂÃÂKªIdentifierÍÎÍÔ¦pinIds¤initKªIdentifierÍÎÍÔ¦pinIdsÂe¯ReturnStatementÍúÍ 1T®CallExpressionÍ Í 0Q°MemberExpressionÍ Í R®ThisExpressionÍ Í KªIdentifierÍ Í µannotateFromSchematicÂÂ’KªIdentifierÍ Í %©schematicKªIdentifierÍ 'Í /¨existingÂM°MethodDefinitionÍ lÍ$RÂÂKªIdentifierÍ lÍ µbindNetsFromSchematic¦methodN²FunctionExpressionÍ Í$RÀÂÂÂ’KªIdentifierÍ ‚Í ‹©schematicKªIdentifierÍ Í £docL®BlockStatementÍ ’Í$R“U³VariableDeclarationÍ Í ¼‘V²VariableDeclaratorÍ £Í »KªIdentifierÍ £Í ¯¬netByCompPadY­NewExpressionÍ ²Í »KªIdentifierÍ ¶Í ¹£Map¥constZ®ForOfStatementÍ ÆÍ"ÂU³VariableDeclarationÍ ËÍ Ô‘V²VariableDeclaratorÍ ÑÍ ÔKªIdentifierÍ ÑÍ Ô£netÀ¥constQ°MemberExpressionÍ ØÍ æKªIdentifierÍ ØÍ á©schematicKªIdentifierÍ âÍ æ¤netsÂÂL®BlockStatementÍ èÍ"‘Z®ForOfStatementÍ ÷Í"ÂU³VariableDeclarationÍ üÍ!‘V²VariableDeclaratorÍ!Í!KªIdentifierÍ!Í!¦pinRefÀ¥constQ°MemberExpressionÍ!Í!KªIdentifierÍ!Í!£netKªIdentifierÍ!Í!¦pinIdsÂÂL®BlockStatementÍ!Í"“U³VariableDeclarationÍ!+Í!N‘V²VariableDeclaratorÍ!1Í!MKªIdentifierÍ!1Í!7¦parsedT®CallExpressionÍ!:Í!MKªIdentifierÍ!:Í!E«parsePinRef‘KªIdentifierÍ!FÍ!L¦pinRefÂ¥const[«IfStatementÍ!`Í!‹\¯UnaryExpressionÍ!dÍ!k¡!ÃKªIdentifierÍ!eÍ!k¦parsed]±ContinueStatementÍ!‚Í!‹ÀÀO³ExpressionStatementÍ!Í"T®CallExpressionÍ!Í" KªIdentifierÍ!Í!³¶registerSchPinToPadNet–KªIdentifierÍ!´Í!À¬netByCompPadQ°MemberExpressionÍ!ÂÍ!ÏKªIdentifierÍ!ÂÍ!È¦parsedKªIdentifierÍ!ÉÍ!Ï¦compIdÂÂQ°MemberExpressionÍ!ÑÍ!İKªIdentifierÍ!ÑÍ!×¦parsedKªIdentifierÍ!ØÍ!İ¥pinIdÂÂQ°MemberExpressionÍ!ßÍ!íKªIdentifierÍ!ßÍ!å¦parsedKªIdentifierÍ!æÍ!í§pinNameÂÂQ°MemberExpressionÍ!ïÍ!õKªIdentifierÍ!ïÍ!ò£netKªIdentifierÍ!óÍ!õ¢idÂÂQ°MemberExpressionÍ!÷Í!ÿKªIdentifierÍ!÷Í!ú£netKªIdentifierÍ!ûÍ!ÿ¤nameÂÂÂZ®ForOfStatementÍ"%Í$KÂU³VariableDeclarationÍ"*Í"2‘V²VariableDeclaratorÍ"0Í"2KªIdentifierÍ"0Í"2¢fpÀ¥constQ°MemberExpressionÍ"6Í"DKªIdentifierÍ"6Í"9£docKªIdentifierÍ":Í"DªfootprintsÂÂL®BlockStatementÍ"FÍ$K’[«IfStatementÍ"UÍ"ˆ\¯UnaryExpressionÍ"YÍ"l¡!ÃQ°MemberExpressionÍ"ZÍ"lKªIdentifierÍ"ZÍ"\¢fpKªIdentifierÍ"]Í"l¯schematicCompIdÂÂ]±ContinueStatementÍ"Í"ˆÀÀZ®ForOfStatementÍ"–Í$@ÂU³VariableDeclarationÍ"›Í"¤‘V²VariableDeclaratorÍ"¡Í"¤KªIdentifierÍ"¡Í"¤£padÀ¥constQ°MemberExpressionÍ"¨Í"¯KªIdentifierÍ"¨Í"ª¢fpKªIdentifierÍ"«Í"¯¤padsÂÂL®BlockStatementÍ"±Í$@’U³VariableDeclarationÍ"ÄÍ#‘V²VariableDeclaratorÍ"ÊÍ#KªIdentifierÍ"ÊÍ"Ï¥boundT®CallExpressionÍ"ÒÍ#KªIdentifierÍ"ÒÍ"Ş¬lookupPadNet“KªIdentifierÍ"ßÍ"ë¬netByCompPadQ°MemberExpressionÍ"íÍ"ÿKªIdentifierÍ"íÍ"ï¢fpKªIdentifierÍ"ğÍ"ÿ¯schematicCompIdÂÂQ°MemberExpressionÍ#Í#KªIdentifierÍ#Í#£padKªIdentifierÍ#Í#¦numberÂÂÂ¥const[«IfStatementÍ#Í$1S°BinaryExpressionÍ##Í#6KªIdentifierÍ##Í#(¥bound£!==KªIdentifierÍ#-Í#6©undefinedL®BlockStatementÍ#8Í#¬’O³ExpressionStatementÍ#OÍ#kP´AssignmentExpressionÍ#OÍ#j¡=Q°MemberExpressionÍ#OÍ#ZKªIdentifierÍ#OÍ#R£padKªIdentifierÍ#SÍ#Z§netNameÂÂQ°MemberExpressionÍ#]Í#jKªIdentifierÍ#]Í#b¥boundKªIdentifierÍ#cÍ#j§netNameÂÂO³ExpressionStatementÍ#Í#™P´AssignmentExpressionÍ#Í#˜¡=Q°MemberExpressionÍ#Í#ŠKªIdentifierÍ#Í#„£padKªIdentifierÍ#…Í#Š¥netIdÂÂQ°MemberExpressionÍ#Í#˜KªIdentifierÍ#Í#’¥boundKªIdentifierÍ#“Í#˜¥netIdÂÂL®BlockStatementÍ#ÃÍ$1’O³ExpressionStatementÍ#ÚÍ#òP´AssignmentExpressionÍ#ÚÍ#ñ¡=Q°MemberExpressionÍ#ÚÍ#åKªIdentifierÍ#ÚÍ#İ£padKªIdentifierÍ#ŞÍ#å§netNameÂÂKªIdentifierÍ#èÍ#ñ©undefinedO³ExpressionStatementÍ$Í$P´AssignmentExpressionÍ$Í$¡=Q°MemberExpressionÍ$Í$KªIdentifierÍ$Í$£padKªIdentifierÍ$Í$¥netIdÂÂKªIdentifierÍ$Í$©undefinedM°MethodDefinitionÍ$XÍ)…ÂÂKªIdentifierÍ$XÍ$j²expandBoardOutline¦methodN²FunctionExpressionÍ$jÍ)…ÀÂÂÂ‘KªIdentifierÍ$kÍ$n£docL®BlockStatementÍ$pÍ)…U³VariableDeclarationÍ${Í$‘V²VariableDeclaratorÍ$Í$KªIdentifierÍ$Í$ƒ¤minXKªIdentifierÍ$†Í$¨Infinity£letU³VariableDeclarationÍ$™Í$­‘V²VariableDeclaratorÍ$Í$¬KªIdentifierÍ$Í$¡¤minYKªIdentifierÍ$¤Í$¬¨Infinity£letU³VariableDeclarationÍ$·Í$Ì‘V²VariableDeclaratorÍ$»Í$ËKªIdentifierÍ$»Í$¿¤maxX\¯UnaryExpressionÍ$ÂÍ$Ë¡-ÃKªIdentifierÍ$ÃÍ$Ë¨Infinity£letU³VariableDeclarationÍ$ÖÍ$ë‘V²VariableDeclaratorÍ$ÚÍ$êKªIdentifierÍ$ÚÍ$Ş¤maxY\¯UnaryExpressionÍ$áÍ$ê¡-ÃKªIdentifierÍ$âÍ$ê¨Infinity£letU³VariableDeclarationÍ$õÍ%‘V²VariableDeclaratorÍ$ùÍ%KªIdentifierÍ$ùÍ$ü£hasX§LiteralÍ$ÿÍ%Â¥false£letZ®ForOfStatementÍ%Í&5ÂU³VariableDeclarationÍ%Í%‘V²VariableDeclaratorÍ%Í%KªIdentifierÍ%Í%¢fpÀ¥constQ°MemberExpressionÍ% Í%.KªIdentifierÍ% Í%#£docKªIdentifierÍ%$Í%.ªfootprintsÂÂL®BlockStatementÍ%0Í&5•O³ExpressionStatementÍ%?Í%JP´AssignmentExpressionÍ%?Í%I¡=KªIdentifierÍ%?Í%B£hasX§LiteralÍ%EÍ%IÃ¤trueO³ExpressionStatementÍ%XÍ%‚P´AssignmentExpressionÍ%XÍ%¡=KªIdentifierÍ%XÍ%\¤minXT®CallExpressionÍ%_Í%Q°MemberExpressionÍ%_Í%gKªIdentifierÍ%_Í%c¤MathKªIdentifierÍ%dÍ%g£minÂÂ’KªIdentifierÍ%hÍ%l¤minXS°BinaryExpressionÍ%nÍ%€Q°MemberExpressionÍ%nÍ%{Q°MemberExpressionÍ%nÍ%yKªIdentifierÍ%nÍ%p¢fpKªIdentifierÍ%qÍ%y¨positionÂÂKªIdentifierÍ%zÍ%{¡xÂÂ¡-X§LiteralÍ%~Í%€ÌP¢80ÂO³ExpressionStatementÍ%Í%ºP´AssignmentExpressionÍ%Í%¹¡=KªIdentifierÍ%Í%”¤minYT®CallExpressionÍ%—Í%¹Q°MemberExpressionÍ%—Í%ŸKªIdentifierÍ%—Í%›¤MathKªIdentifierÍ%œÍ%Ÿ£minÂÂ’KªIdentifierÍ% Í%¤¤minYS°BinaryExpressionÍ%¦Í%¸Q°MemberExpressionÍ%¦Í%³Q°MemberExpressionÍ%¦Í%±KªIdentifierÍ%¦Í%¨¢fpKªIdentifierÍ%©Í%±¨positionÂÂKªIdentifierÍ%²Í%³¡yÂÂ¡-X§LiteralÍ%¶Í%¸ÌP¢80ÂO³ExpressionStatementÍ%ÈÍ%òP´AssignmentExpressionÍ%ÈÍ%ñ¡=KªIdentifierÍ%ÈÍ%Ì¤maxXT®CallExpressionÍ%ÏÍ%ñQ°MemberExpressionÍ%ÏÍ%×KªIdentifierÍ%ÏÍ%Ó¤MathKªIdentifierÍ%ÔÍ%×£maxÂÂ’KªIdentifierÍ%ØÍ%Ü¤maxXS°BinaryExpressionÍ%ŞÍ%ğQ°MemberExpressionÍ%ŞÍ%ëQ°MemberExpressionÍ%ŞÍ%éKªIdentifierÍ%ŞÍ%à¢fpKªIdentifierÍ%áÍ%é¨positionÂÂKªIdentifierÍ%êÍ%ë¡xÂÂ¡+X§LiteralÍ%îÍ%ğÌP¢80ÂO³ExpressionStatementÍ& Í&*P´AssignmentExpressionÍ& Í&)¡=KªIdentifierÍ& Í&¤maxYT®CallExpressionÍ&Í&)Q°MemberExpressionÍ&Í&KªIdentifierÍ&Í&¤MathKªIdentifierÍ&Í&£maxÂÂ’KªIdentifierÍ&Í&¤maxYS°BinaryExpressionÍ&Í&(Q°MemberExpressionÍ&Í&#Q°MemberExpressionÍ&Í&!KªIdentifierÍ&Í&¢fpKªIdentifierÍ&Í&!¨positionÂÂKªIdentifierÍ&"Í&#¡yÂÂ¡+X§LiteralÍ&&Í&(ÌP¢80Â[«IfStatementÍ&?Í&ı\¯UnaryExpressionÍ&CÍ&G¡!ÃKªIdentifierÍ&DÍ&G£hasL®BlockStatementÍ&IÍ&ı’O³ExpressionStatementÍ&XÍ&İP´AssignmentExpressionÍ&XÍ&Ü¡=Q°MemberExpressionÍ&XÍ&oQ°MemberExpressionÍ&XÍ&hKªIdentifierÍ&XÍ&[£docKªIdentifierÍ&\Í&h¬boardOutlineÂÂKªIdentifierÍ&iÍ&o¦pointsÂÂW¯ArrayExpressionÍ&rÍ&Ü”a°ObjectExpressionÍ&…Í&“’b¨PropertyÍ&‡Í&‹ÂÂÂKªIdentifierÍ&‡Í&ˆ¡xX§LiteralÍ&ŠÍ&‹ ¡0¤initb¨PropertyÍ&Í&‘ÂÂÂKªIdentifierÍ&Í&¡yX§LiteralÍ&Í&‘ ¡0¤inita°ObjectExpressionÍ&•Í&¦’b¨PropertyÍ&—Í&ÂÂÂKªIdentifierÍ&—Í&˜¡xX§LiteralÍ&šÍ&Íè¤1000¤initb¨PropertyÍ& Í&¤ÂÂÂKªIdentifierÍ& Í&¡¡yX§LiteralÍ&£Í&¤ ¡0¤inita°ObjectExpressionÍ&¨Í&»’b¨PropertyÍ&ªÍ&±ÂÂÂKªIdentifierÍ&ªÍ&«¡xX§LiteralÍ&­Í&±Íè¤1000¤initb¨PropertyÍ&³Í&¹ÂÂÂKªIdentifierÍ&³Í&´¡yX§LiteralÍ&¶Í&¹Í¼£700¤inita°ObjectExpressionÍ&½Í&Í’b¨PropertyÍ&¿Í&ÃÂÂÂKªIdentifierÍ&¿Í&À¡xX§LiteralÍ&ÂÍ&Ã ¡0¤initb¨PropertyÍ&ÅÍ&ËÂÂÂKªIdentifierÍ&ÅÍ&Æ¡yX§LiteralÍ&ÈÍ&ËÍ¼£700¤inite¯ReturnStatementÍ&ëÍ&òÀÀU³VariableDeclarationÍ'Í'‘V²VariableDeclaratorÍ'Í'KªIdentifierÍ'Í'¦marginX§LiteralÍ'Í'ÌŒ£140¥constU³VariableDeclarationÍ'$Í'A‘V²VariableDeclaratorÍ'*Í'@KªIdentifierÍ'*Í'0¦shiftXS°BinaryExpressionÍ'3Í'@KªIdentifierÍ'3Í'7¤minX¡-KªIdentifierÍ':Í'@¦margin¥constU³VariableDeclarationÍ'KÍ'h‘V²VariableDeclaratorÍ'QÍ'gKªIdentifierÍ'QÍ'W¦shiftYS°BinaryExpressionÍ'ZÍ'gKªIdentifierÍ'ZÍ'^¤minY¡-KªIdentifierÍ'aÍ'g¦margin¥const[«IfStatementÍ'rÍ(S±LogicalExpressionÍ'vÍ'¦S°BinaryExpressionÍ'vÍ'ŒT®CallExpressionÍ'vÍ'†Q°MemberExpressionÍ'vÍ'~KªIdentifierÍ'vÍ'z¤MathKªIdentifierÍ'{Í'~£absÂÂ‘KªIdentifierÍ'Í'…¦shiftXÂ¡>X§LiteralÍ'‰Í'ŒË?à      £0.5¢||S°BinaryExpressionÍ'Í'¦T®CallExpressionÍ'Í' Q°MemberExpressionÍ'Í'˜KªIdentifierÍ'Í'”¤MathKªIdentifierÍ'•Í'˜£absÂÂ‘KªIdentifierÍ'™Í'Ÿ¦shiftYÂ¡>X§LiteralÍ'£Í'¦Ë?à      £0.5L®BlockStatementÍ'¨Í(“Z®ForOfStatementÍ'·Í(<ÂU³VariableDeclarationÍ'¼Í'Ä‘V²VariableDeclaratorÍ'ÂÍ'ÄKªIdentifierÍ'ÂÍ'Ä¢fpÀ¥constQ°MemberExpressionÍ'ÈÍ'ÖKªIdentifierÍ'ÈÍ'Ë£docKªIdentifierÍ'ÌÍ'ÖªfootprintsÂÂL®BlockStatementÍ'ØÍ(<’O³ExpressionStatementÍ'ëÍ(P´AssignmentExpressionÍ'ëÍ(¢-=Q°MemberExpressionÍ'ëÍ'øQ°MemberExpressionÍ'ëÍ'öKªIdentifierÍ'ëÍ'í¢fpKªIdentifierÍ'îÍ'ö¨positionÂÂKªIdentifierÍ'÷Í'ø¡xÂÂKªIdentifierÍ'üÍ(¦shiftXO³ExpressionStatementÍ(Í(-P´AssignmentExpressionÍ(Í(,¢-=Q°MemberExpressionÍ(Í("Q°MemberExpressionÍ(Í( KªIdentifierÍ(Í(¢fpKªIdentifierÍ(Í( ¨positionÂÂKªIdentifierÍ(!Í("¡yÂÂKªIdentifierÍ(&Í(,¦shiftYO³ExpressionStatementÍ(JÍ(YP´AssignmentExpressionÍ(JÍ(X¢-=KªIdentifierÍ(JÍ(N¤maxXKªIdentifierÍ(RÍ(X¦shiftXO³ExpressionStatementÍ(gÍ(vP´AssignmentExpressionÍ(gÍ(u¢-=KªIdentifierÍ(gÍ(k¤maxYKªIdentifierÍ(oÍ(u¦shiftYÀU³VariableDeclarationÍ(‹Í(·‘V²VariableDeclaratorÍ(‘Í(¶KªIdentifierÍ(‘Í(—¦boardWT®CallExpressionÍ(šÍ(¶Q°MemberExpressionÍ(šÍ(¢KªIdentifierÍ(šÍ(¤MathKªIdentifierÍ(ŸÍ(¢£maxÂÂ’S°BinaryExpressionÍ(£Í(°KªIdentifierÍ(£Í(§¤maxX¡+KªIdentifierÍ(ªÍ(°¦marginX§LiteralÍ(²Í(µÍ £800Â¥constU³VariableDeclarationÍ(ÁÍ(í‘V²VariableDeclaratorÍ(ÇÍ(ìKªIdentifierÍ(ÇÍ(Í¦boardHT®CallExpressionÍ(ĞÍ(ìQ°MemberExpressionÍ(ĞÍ(ØKªIdentifierÍ(ĞÍ(Ô¤MathKªIdentifierÍ(ÕÍ(Ø£maxÂÂ’S°BinaryExpressionÍ(ÙÍ(æKªIdentifierÍ(ÙÍ(İ¤maxY¡+KªIdentifierÍ(àÍ(æ¦marginX§LiteralÍ(èÍ(ëÍX£600Â¥constO³ExpressionStatementÍ(÷Í)~P´AssignmentExpressionÍ(÷Í)}¡=Q°MemberExpressionÍ(÷Í)Q°MemberExpressionÍ(÷Í)KªIdentifierÍ(÷Í(ú£docKªIdentifierÍ(ûÍ)¬boardOutlineÂÂKªIdentifierÍ)Í)¦pointsÂÂW¯ArrayExpressionÍ)Í)}”a°ObjectExpressionÍ) Í).’b¨PropertyÍ)"Í)&ÂÂÂKªIdentifierÍ)"Í)#¡xX§LiteralÍ)%Í)& ¡0¤initb¨PropertyÍ)(Í),ÂÂÂKªIdentifierÍ)(Í))¡yX§LiteralÍ)+Í), ¡0¤inita°ObjectExpressionÍ)0Í)C’b¨PropertyÍ)2Í);ÂÂÂKªIdentifierÍ)2Í)3¡xKªIdentifierÍ)5Í);¦boardW¤initb¨PropertyÍ)=Í)AÂÂÂKªIdentifierÍ)=Í)>¡yX§LiteralÍ)@Í)A ¡0¤inita°ObjectExpressionÍ)EÍ)]’b¨PropertyÍ)GÍ)PÂÂÂKªIdentifierÍ)GÍ)H¡xKªIdentifierÍ)JÍ)P¦boardW¤initb¨PropertyÍ)RÍ)[ÂÂÂKªIdentifierÍ)RÍ)S¡yKªIdentifierÍ)UÍ)[¦boardH¤inita°ObjectExpressionÍ)_Í)r’b¨PropertyÍ)aÍ)eÂÂÂKªIdentifierÍ)aÍ)b¡xX§LiteralÍ)dÍ)e ¡0¤initb¨PropertyÍ)gÍ)pÂÂÂKªIdentifierÍ)gÍ)h¡yKªIdentifierÍ)jÍ)p¦boardH¤initÀI¶ExportNamedDeclarationÍ)ŠÍ*N³FunctionDeclarationÍ)‘Í*KªIdentifierÍ)šÍ)¬²forwardAnnotatePcbÂÂÂ’KªIdentifierÍ)­Í)¶©schematicKªIdentifierÍ)¸Í)À¨existingL®BlockStatementÍ)ÂÍ*‘e¯ReturnStatementÍ)ÉÍ*T®CallExpressionÍ)ĞÍ*Q°MemberExpressionÍ)ĞÍ)ÿY­NewExpressionÍ)ĞÍ)éKªIdentifierÍ)ÔÍ)ç³PcbForwardAnnotatorKªIdentifierÍ)êÍ)ÿµannotateFromSchematicÂÂ’KªIdentifierÍ* Í*	©schematicKªIdentifierÍ*Í*¨existingÂÀ™Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclarationÌAÌp‘Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifierÌJÌQKªIdentifierÌJÌQ§NetTypeKªIdentifierÌJÌQ§NetTypeX§LiteralÌYÌo´../types/CommonTypes¶'../types/CommonTypes'f±ImportDeclarationÌrÌ­‘g¯ImportSpecifierÌ{Ì‘KªIdentifierÌ{Ì‘¶createEmptyPcbDocumentKªIdentifierÌ{Ì‘¶createEmptyPcbDocumentX§LiteralÌ™Ì¬±../types/PcbTypes³'../types/PcbTypes'f±ImportDeclarationÌ¯Ìô‘g¯ImportSpecifierÌ¸ÌÔKªIdentifierÌ¸ÌÔ¼getGlobalPcbFootprintLibraryKªIdentifierÌ¸ÌÔ¼getGlobalPcbFootprintLibraryX§LiteralÌÜÌóµ./PcbFootprintLibrary·'./PcbFootprintLibrary'f±ImportDeclarationÌöÍ!‘g¯ImportSpecifierÌÿÍ
+KªIdentifierÌÿÍ
+«parsePinRefKªIdentifierÌÿÍ
+«parsePinRefX§LiteralÍÍ ¬./PinRefUtil®'./PinRefUtil'f±ImportDeclarationÍ#ÍN‘g¯ImportSpecifierÍ,Í7KªIdentifierÍ,Í7«paramMapGetKªIdentifierÍ,Í7«paramMapGetX§LiteralÍ?ÍM¬./MapHelpers®'./MapHelpers'f±ImportDeclarationÍPÍ˜’g¯ImportSpecifierÍYÍoKªIdentifierÍYÍo¶registerSchPinToPadNetKªIdentifierÍYÍo¶registerSchPinToPadNetg¯ImportSpecifierÍqÍ}KªIdentifierÍqÍ}¬lookupPadNetKªIdentifierÍqÍ}¬lookupPadNetX§LiteralÍ…Í—°./PcbPinBindUtil²'./PcbPinBindUtil'f±ImportDeclarationÍšÍĞ‘g¯ImportSpecifierÍ£Í¸KªIdentifierÍ£Í¸µtracePcbForwardResultKªIdentifierÍ£Í¸µtracePcbForwardResultX§LiteralÍÀÍÏ­./PcbTraceLog¯'./PcbTraceLog'f±ImportDeclarationÍÒÍh”g¯ImportSpecifierÍÛÍ÷KªIdentifierÍÛÍ÷¼collectFootprintPadPositionsKªIdentifierÍÛÍ÷¼collectFootprintPadPositionsg¯ImportSpecifierÍùÍKªIdentifierÍùÍÙ!updateTracksForFootprintTransformKªIdentifierÍùÍÙ!updateTracksForFootprintTransformg¯ImportSpecifierÍÍ4KªIdentifierÍÍ4¸snapTrackEndpointsToPadsKªIdentifierÍÍ4¸snapTrackEndpointsToPadsg¯ImportSpecifierÍ6ÍKKªIdentifierÍ6ÍKµpruneZeroLengthTracksKªIdentifierÍ6ÍKµpruneZeroLengthTracksX§LiteralÍSÍg²./PcbTrackBindUtil´'./PcbTrackBindUtil'f±ImportDeclarationÍjÍÊ’g¯ImportSpecifierÍsÍ‰KªIdentifierÍsÍ‰¶ensureBoardAccessoriesKªIdentifierÍsÍ‰¶ensureBoardAccessoriesg¯ImportSpecifierÍ‹ÍªKªIdentifierÍ‹Íª¿accessoryHintsFromSchematicNetsKªIdentifierÍ‹Íª¿accessoryHintsFromSchematicNetsX§LiteralÍ²ÍÉµ./PcbBoardAccessories·'./PcbBoardAccessories'

@@ -1,0 +1,8 @@
+{
+  "line": 610,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  if (gnd && jGnd) {\n    addVia(gnd, jGnd);\n    add(gnd, jGnd, { x: jGnd.x - 40, y: jGnd.y }, 14, 'In1.Cu');\n  }\n  if (vcc && jVcc) {\n    addVia(vcc, jVcc);\n    add(vcc, jVcc, { x: jVcc.x - 40, y: jVcc.y }, 14, 'In2.Cu');\n    add(vcc, { x: jVcc.x - 40, y: jVcc.y }, { x: jVcc.x - 40, y: vccSpineY }, 14, 'In2.Cu');\n  }\n\n  // In1：上 SIG / 下 VOUT\n  fanTo(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  fanTo(vout0, pw('REG1', 3), jV0, 'In1.Cu', 1180, 2720);\n  // In2：上 LM_OUT / 下 BUCK\n  fanTo(lmOut, pw('Rf3', 2), jLm, 'In2.Cu', 90, 2680);\n  fanTo(buckOut, pw('CBO', 1), jBk, 'In2.Cu', 1220, 2720);\n  // B：上 LM555 / 下 DISCH\n  fanTo(out555, pw('RLED', 1), j555, 'B.Cu', 130, 2680);\n  fanTo(disch, pw('RA', 2), jDs, 'B.Cu', 1260, 2720);",
+  "new_string": "  if (gnd && jGnd) {\n    addVia(gnd, jGnd);\n    add(gnd, jGnd, { x: jGnd.x - 40, y: jGnd.y }, 14, 'In1.Cu');\n  }\n  if (vcc && jVcc) {\n    addVia(vcc, jVcc);\n    add(vcc, jVcc, { x: jVcc.x - 40, y: jVcc.y }, 14, 'In2.Cu');\n    add(vcc, { x: jVcc.x - 40, y: jVcc.y }, { x: jVcc.x - 40, y: vccSpineY }, 14, 'In2.Cu');\n  }\n\n  // In1：仅上廊 SIG（下廊留给 B，避免穿 GND 干线）\n  fanTop(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  // In2：上 LM_OUT / 下 BUCK\n  fanTop(lmOut, pw('Rf3', 2), jLm, 'In2.Cu', 90, 2680);\n  fanBot(buckOut, pw('CBO', 1), jBk, 'In2.Cu', 2760);\n  // B：上 LM555 / 下 VOUT + DISCH（不同 col，H-first）\n  fanTop(out555, pw('RLED', 1), j555, 'B.Cu', 130, 2640);\n  fanBot(vout0, pw('REG1', 3), jV0, 'B.Cu', 2700);\n  fanBot(disch, pw('RA', 2), jDs, 'B.Cu', 2780);"
+}

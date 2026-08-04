@@ -1,5 +1,5 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚI/**
- * åŠŸèƒ½æƒé™é—¨é—¸ â€” å„æ¨¡å—ç»Ÿä¸€å…¥å£æ ¡éªŒ
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚä/**
+ * åŠŸèƒ½æƒé™é—¨é—¸ â€” æŒ‰ LicenseManager æ¡£ä½é™æƒ
  */
 import { ErrCode } from '../types/ErrCode';
 import { LicenseManager } from './LicenseManager';
@@ -21,7 +21,7 @@ export class FeatureGate {
         FeatureGate.assertNotTampered();
         const max = FeatureGate.getFeatures().maxDevices;
         if (currentCount >= max) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, `å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ${max} ä¸ªå™¨ä»¶ï¼Œè¯·å‡çº§ä¸“ä¸šç‰ˆ`);
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, `å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ${max} ä¸ªå™¨ä»¶ï¼Œè¯· GitHub Star è§£é”ä¸“ä¸šç‰ˆ`);
         }
         return ResultHelper.ok();
     }
@@ -29,7 +29,7 @@ export class FeatureGate {
         FeatureGate.assertNotTampered();
         const limit = FeatureGate.getFeatures().dailyAiCalls;
         if (globalDailyCount >= limit) {
-            return ResultHelper.fail(ErrCode.ERR_QUOTA_EXCEEDED, `ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (${limit})ï¼Œè¯·å‡çº§æˆ–æ˜æ—¥å†è¯•`);
+            return ResultHelper.fail(ErrCode.ERR_QUOTA_EXCEEDED, `ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (${limit})ï¼Œè¯· Star è§£é”æˆ–æ˜æ—¥å†è¯•`);
         }
         return ResultHelper.ok();
     }
@@ -42,49 +42,49 @@ export class FeatureGate {
     }
     static canUseStm32Advanced() {
         if (!FeatureGate.getFeatures().stm32AdvancedPeriph) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canUseMonteCarlo() {
         if (!FeatureGate.getFeatures().monteCarlo) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canUseFaultInjection() {
         if (!FeatureGate.getFeatures().faultInjection) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canUsePlugins() {
         if (!FeatureGate.getFeatures().pluginSystem) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canEncryptProject() {
         if (!FeatureGate.getFeatures().projectEncryption) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canUseTeamCollaboration() {
         if (!FeatureGate.getFeatures().teamAnnotation) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canUseVersionCompare() {
         if (!FeatureGate.getFeatures().versionCompare) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
     static canBatchExportBom() {
         if (!FeatureGate.getFeatures().batchBomExport) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆ');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
         }
         return ResultHelper.ok();
     }
@@ -95,8 +95,8 @@ export class FeatureGate {
     }
 }
 FeatureGate.licenseMgr = LicenseManager.getInstance();
-//# sourceMappingURL=FeatureGate.js.mapÂ“ÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ResultHelper.etsÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\FeatureGate.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ#./src/main/ets/security/FeatureGate¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ§/**
- * åŠŸèƒ½æƒé™é—¨é—¸ â€” å„æ¨¡å—ç»Ÿä¸€å…¥å£æ ¡éªŒ
+//# sourceMappingURL=FeatureGate.js.mapÂ“ÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ResultHelper.etsÙIC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\FeatureGate.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ#./src/main/ets/security/FeatureGate¦commonD­./FeatureGate¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚB/**
+ * åŠŸèƒ½æƒé™é—¨é—¸ â€” æŒ‰ LicenseManager æ¡£ä½é™æƒ
  */
 import { ErrCode } from '../types/ErrCode';
 import { LicenseManager } from './LicenseManager';
@@ -128,7 +128,7 @@ export class FeatureGate {
     if (currentCount >= max) {
       return ResultHelper.fail(
         ErrCode.ERR_FEATURE_LOCKED,
-        `å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ${max} ä¸ªå™¨ä»¶ï¼Œè¯·å‡çº§ä¸“ä¸šç‰ˆ`
+        `å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ${max} ä¸ªå™¨ä»¶ï¼Œè¯· GitHub Star è§£é”ä¸“ä¸šç‰ˆ`
       );
     }
     return ResultHelper.ok();
@@ -140,7 +140,7 @@ export class FeatureGate {
     if (globalDailyCount >= limit) {
       return ResultHelper.fail(
         ErrCode.ERR_QUOTA_EXCEEDED,
-        `ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (${limit})ï¼Œè¯·å‡çº§æˆ–æ˜æ—¥å†è¯•`
+        `ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (${limit})ï¼Œè¯· Star è§£é”æˆ–æ˜æ—¥å†è¯•`
       );
     }
     return ResultHelper.ok();
@@ -156,56 +156,56 @@ export class FeatureGate {
 
   static canUseStm32Advanced(): ApiResult<void> {
     if (!FeatureGate.getFeatures().stm32AdvancedPeriph) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canUseMonteCarlo(): ApiResult<void> {
     if (!FeatureGate.getFeatures().monteCarlo) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canUseFaultInjection(): ApiResult<void> {
     if (!FeatureGate.getFeatures().faultInjection) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canUsePlugins(): ApiResult<void> {
     if (!FeatureGate.getFeatures().pluginSystem) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canEncryptProject(): ApiResult<void> {
     if (!FeatureGate.getFeatures().projectEncryption) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canUseTeamCollaboration(): ApiResult<void> {
     if (!FeatureGate.getFeatures().teamAnnotation) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canUseVersionCompare(): ApiResult<void> {
     if (!FeatureGate.getFeatures().versionCompare) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
 
   static canBatchExportBom(): ApiResult<void> {
     if (!FeatureGate.getFeatures().batchBomExport) {
-      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆ');
+      return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰');
     }
     return ResultHelper.ok();
   }
@@ -216,91 +216,85 @@ export class FeatureGate {
     }
   }
 }
-ÀÔrE“°../types/ErrCodeµ../utils/ResultHelper°./LicenseManagerÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsAÃªoh-resolveÂFAÂÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ResultHelper.etsAÃªoh-resolveÂFAÂÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings®FeatureGate.js ‘¯FeatureGate.etsÜ a‘”    ‘” ˜”   ” ”	 	” ” ” ”* *”+ +˜”   ” ”	 	” ” ” ”1 1”2 2˜”   ” ”	 ”  ” "” (”4 ?”5 Ì@””   ” ” ” ”” ”
+ÀÔrE“°./LicenseManager°../types/ErrCodeµ../utils/ResultHelperÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsAÃªoh-resolveÂFAÂÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsAÃªoh-resolveÂFAÂÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ResultHelper.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings®FeatureGate.js ‘¯FeatureGate.etsÜ a‘”    ‘” ˜”   ” ”	 	” ” ” ”* *”+ +˜”   ” ”	 	” ” ” ”1 1”2 2˜”   ” ”	 ”  ” "” (”4 ?”5 Ì@””   ” ” ” ”” ”
  ” 	” š” ” ” ” ”! ”/ +”0 ,”; 7”= 9”> :’” ” ”” ”
  ” 	” ™” ” ” ” ”% !”& "”- )”/ +”0 ,’” ” ”” ”
  ” 	” ™” ” ” ” ”% !”& "”1 -”3 /”4 0’” ” ”” ”
  ” 	” ›” ” ” ” ”% !”& "”/ +”1 -”2 .”7 3”8 4’” ” –” ”
  ” 	” ” ”$ *–” ” ” ”% !”' #”( $›” ” 
-” ” ” ”  ”+ '”- )”. *”8 4”9 5–” ” ” ” ” ”! Ÿ” ” ” ”  ”$ ”%  ”,  ”-  ”?  "”ÌA !”ÌM !”ÌP !”Ì] !$”Ì^ "”Ì_ "‘”	 #—” $” $” $” $” $”  $”! $’” %” %–” '”
+” ” ” ”  ”+ '”- )”. *”8 4”9 5–” ” ” ” ” ”! Ÿ” ” ” ”  ”$ ”%  ”,  ”-  ”?  "”ÌA !”ÌM !”ÌP !”Ìj !1”Ìk "”Ìl "‘”	 #—” $” $” $” $” $”  $”! $’” %” %–” '”
  '” '	” '” '”( '.–” (” (” (”% (!”' (#”( ($›” )” )
-” )” )”! )”" )”- ))”/ )+”0 ),”< )8”= )9–” *” *” *”  *”% *!”' *#Ÿ” +” +” +”  +”$ +”% ,”, ,”- ,”? ,"”ÌA -”ÌR -”ÌW -”Ìc -*”Ìd .”Ìe .‘”	 /—” 0” 0” 0” 0” 0”  0”! 0’” 1” 1–” 3”
+” )” )”! )”" )”- ))”/ )+”0 ),”< )8”= )9–” *” *” *”  *”% *!”' *#Ÿ” +” +” +”  +”$ +”% ,”, ,”- ,”? ,"”ÌA -”ÌR -”ÌW -”Ìi -0”Ìj .”Ìk .‘”	 /—” 0” 0” 0” 0” 0”  0”! 0’” 1” 1–” 3”
  3” 3	” 3” 3”# 3)›” 4” 4
 ” 4” 4” 4”  4”+ 4'”- 4)”. 4*”7 43”8 44–” 5” 5” 5” 5” 5”! 5Ÿ” 6” 6” 6”  6”$ 6”% 6”, 6&”- 6'”? 69”ÌA 6;”ÌM 6ÌG”ÌP 6ÌJ”Ì[ 6ÌU”Ì\ 6ÌV”Ì] 6ÌW‘”	 7—” 8” 8” 8” 8” 8”  8”! 8’” 9” 9”” ;”
- ;” ;	” ;š” <” <” <	” <” <”$ < ”& <"”' <#”: <6”< <8” =” =” =”  =”$ =”% =”, =&”- ='”? =9”ÌA =;”ÌS =ÌM”ÌT =ÌN”ÌU =ÌO‘”	 >—” ?” ?” ?” ?” ?”  ?”! ?’” Ì@” Ì@”” ÌB”
- ÌB” ÌB	” ÌBš” ÌC” ÌC” ÌC	” ÌC” ÌC”$ ÌC ”& ÌC"”' ÌC#”1 ÌC-”3 ÌC/” ÌD” ÌD” ÌD”  ÌD”$ ÌD”% ÌD”, ÌD&”- ÌD'”? ÌD9”ÌA ÌD;”ÌO ÌDÌI”ÌP ÌDÌJ”ÌQ ÌDÌK‘”	 ÌE—” ÌF” ÌF” ÌF” ÌF” ÌF”  ÌF”! ÌF’” ÌG” ÌG”” ÌI”
- ÌI” ÌI	” ÌIš” ÌJ” ÌJ” ÌJ	” ÌJ” ÌJ”$ ÌJ ”& ÌJ"”' ÌJ#”5 ÌJ1”7 ÌJ3” ÌK” ÌK” ÌK”  ÌK”$ ÌK”% ÌK”, ÌK&”- ÌK'”? ÌK9”ÌA ÌK;”ÌM ÌKÌG”ÌN ÌKÌH”ÌO ÌKÌI‘”	 ÌL—” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌM”! ÌM’” ÌN” ÌN”” ÌP”
- ÌP” ÌP	” ÌPš” ÌQ” ÌQ” ÌQ	” ÌQ” ÌQ”$ ÌQ ”& ÌQ"”' ÌQ#”3 ÌQ/”5 ÌQ1” ÌR” ÌR” ÌR”  ÌR”$ ÌR”% ÌR”, ÌR&”- ÌR'”? ÌR9”ÌA ÌR;”ÌM ÌRÌG”ÌN ÌRÌH”ÌO ÌRÌI‘”	 ÌS—” ÌT” ÌT” ÌT” ÌT” ÌT”  ÌT”! ÌT’” ÌU” ÌU”” ÌW”
- ÌW” ÌW	” ÌWš” ÌX” ÌX” ÌX	” ÌX” ÌX”$ ÌX ”& ÌX"”' ÌX#”8 ÌX4”: ÌX6” ÌY” ÌY” ÌY”  ÌY”$ ÌY”% ÌY”, ÌY&”- ÌY'”? ÌY9”ÌA ÌY;”ÌM ÌYÌG”ÌN ÌYÌH”ÌO ÌYÌI‘”	 ÌZ—” Ì[” Ì[” Ì[” Ì[” Ì[”  Ì[”! Ì[’” Ì\” Ì\”” Ì^”
- Ì^” Ì^	”" Ì^ š” Ì_” Ì_” Ì_	” Ì_” Ì_”$ Ì_ ”& Ì_"”' Ì_#”5 Ì_1”7 Ì_3” Ì`” Ì`” Ì`”  Ì`”$ Ì`”% Ì`”, Ì`&”- Ì`'”? Ì`9”ÌA Ì`;”ÌP Ì`ÌJ”ÌQ Ì`ÌK”ÌR Ì`ÌL‘”	 Ìa—” Ìb” Ìb” Ìb” Ìb” Ìb”  Ìb”! Ìb’” Ìc” Ìc”” Ìe”
- Ìe” Ìe	” Ìeš” Ìf” Ìf” Ìf	” Ìf” Ìf”$ Ìf ”& Ìf"”' Ìf#”5 Ìf1”7 Ìf3” Ìg” Ìg” Ìg”  Ìg”$ Ìg”% Ìg”, Ìg&”- Ìg'”? Ìg9”ÌA Ìg;”ÌP ÌgÌJ”ÌQ ÌgÌK”ÌR ÌgÌL‘”	 Ìh—” Ìi” Ìi” Ìi” Ìi” Ìi”  Ìi”! Ìi’” Ìj” Ìj”” Ìl”
- Ìl” Ìl	” Ìlš” Ìm” Ìm” Ìm	” Ìm” Ìm”$ Ìm ”& Ìm"”' Ìm#”5 Ìm1”7 Ìm3” Ìn” Ìn” Ìn”  Ìn”$ Ìn”% Ìn”, Ìn&”- Ìn'”? Ìn9”ÌA Ìn;”ÌP ÌnÌJ”ÌQ ÌnÌK”ÌR ÌnÌL‘”	 Ìo—” Ìp” Ìp” Ìp” Ìp” Ìp”  Ìp”! Ìp’” Ìq” Ìq”” Ìs
+ ;” ;	” ;š” <” <” <	” <” <”$ < ”& <"”' <#”: <6”< <8” =” =” =”  =”$ =”% =”, =&”- ='”? =9”ÌA =;”Ìa =Ì[”Ìb =Ì\”Ìc =Ì]‘”	 >—” ?” ?” ?” ?” ?”  ?”! ?’” Ì@” Ì@”” ÌB”
+ ÌB” ÌB	” ÌBš” ÌC” ÌC” ÌC	” ÌC” ÌC”$ ÌC ”& ÌC"”' ÌC#”1 ÌC-”3 ÌC/” ÌD” ÌD” ÌD”  ÌD”$ ÌD”% ÌD”, ÌD&”- ÌD'”? ÌD9”ÌA ÌD;”Ì] ÌDÌW”Ì^ ÌDÌX”Ì_ ÌDÌY‘”	 ÌE—” ÌF” ÌF” ÌF” ÌF” ÌF”  ÌF”! ÌF’” ÌG” ÌG”” ÌI”
+ ÌI” ÌI	” ÌIš” ÌJ” ÌJ” ÌJ	” ÌJ” ÌJ”$ ÌJ ”& ÌJ"”' ÌJ#”5 ÌJ1”7 ÌJ3” ÌK” ÌK” ÌK”  ÌK”$ ÌK”% ÌK”, ÌK&”- ÌK'”? ÌK9”ÌA ÌK;”Ì[ ÌKÌU”Ì\ ÌKÌV”Ì] ÌKÌW‘”	 ÌL—” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌM”! ÌM’” ÌN” ÌN”” ÌP”
+ ÌP” ÌP	” ÌPš” ÌQ” ÌQ” ÌQ	” ÌQ” ÌQ”$ ÌQ ”& ÌQ"”' ÌQ#”3 ÌQ/”5 ÌQ1” ÌR” ÌR” ÌR”  ÌR”$ ÌR”% ÌR”, ÌR&”- ÌR'”? ÌR9”ÌA ÌR;”Ì[ ÌRÌU”Ì\ ÌRÌV”Ì] ÌRÌW‘”	 ÌS—” ÌT” ÌT” ÌT” ÌT” ÌT”  ÌT”! ÌT’” ÌU” ÌU”” ÌW”
+ ÌW” ÌW	” ÌWš” ÌX” ÌX” ÌX	” ÌX” ÌX”$ ÌX ”& ÌX"”' ÌX#”8 ÌX4”: ÌX6” ÌY” ÌY” ÌY”  ÌY”$ ÌY”% ÌY”, ÌY&”- ÌY'”? ÌY9”ÌA ÌY;”Ì[ ÌYÌU”Ì\ ÌYÌV”Ì] ÌYÌW‘”	 ÌZ—” Ì[” Ì[” Ì[” Ì[” Ì[”  Ì[”! Ì[’” Ì\” Ì\”” Ì^”
+ Ì^” Ì^	”" Ì^ š” Ì_” Ì_” Ì_	” Ì_” Ì_”$ Ì_ ”& Ì_"”' Ì_#”5 Ì_1”7 Ì_3” Ì`” Ì`” Ì`”  Ì`”$ Ì`”% Ì`”, Ì`&”- Ì`'”? Ì`9”ÌA Ì`;”Ì[ Ì`ÌU”Ì\ Ì`ÌV”Ì] Ì`ÌW‘”	 Ìa—” Ìb” Ìb” Ìb” Ìb” Ìb”  Ìb”! Ìb’” Ìc” Ìc”” Ìe”
+ Ìe” Ìe	” Ìeš” Ìf” Ìf” Ìf	” Ìf” Ìf”$ Ìf ”& Ìf"”' Ìf#”5 Ìf1”7 Ìf3” Ìg” Ìg” Ìg”  Ìg”$ Ìg”% Ìg”, Ìg&”- Ìg'”? Ìg9”ÌA Ìg;”Ì[ ÌgÌU”Ì\ ÌgÌV”Ì] ÌgÌW‘”	 Ìh—” Ìi” Ìi” Ìi” Ìi” Ìi”  Ìi”! Ìi’” Ìj” Ìj”” Ìl”
+ Ìl” Ìl	” Ìlš” Ìm” Ìm” Ìm	” Ìm” Ìm”$ Ìm ”& Ìm"”' Ìm#”5 Ìm1”7 Ìm3” Ìn” Ìn” Ìn”  Ìn”$ Ìn”% Ìn”, Ìn&”- Ìn'”? Ìn9”ÌA Ìn;”Ì` ÌnÌZ”Ìa ÌnÌ[”Ìb ÌnÌ\‘”	 Ìo—” Ìp” Ìp” Ìp” Ìp” Ìp”  Ìp”! Ìp’” Ìq” Ìq”” Ìs
 ”
  Ìs” Ìs” Ìs"™” Ìt” Ìt” Ìt” Ìt”" Ìt”# Ìt”- Ìt)”/ Ìt+”1 Ìt-˜” Ìu” Ìu” Ìu”" Ìu”# Ìu”. Ìu(”0 Ìu*”1 Ìu+‘”	 Ìv’” Ìw” Ìw˜”  	” 	” 	”' 	,”( 	-”3 	8”5 	:”6 	;ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ b‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ¹ÍÄÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌÀÍÄÔrM”¤type¥start£end¤nameªIdentifierÌÆÌÑ«FeatureGateÀÔrN”¤type¥start£end¤body©ClassBodyÌÒÍÄÜ ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌÙÍ2ÃÂMªIdentifierÌàÌç§refresh¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌçÍ2ÀÂÂÂN®BlockStatementÌêÍ2‘ÔrQ”¤type¥start£endªexpression³ExpressionStatementÌõÍ+ÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÌõÍ*¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌõÍMªIdentifierÌõÍ «FeatureGateMªIdentifierÍÍªlicenseMgrÂÂÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ*S°MemberExpressionÍÍ(MªIdentifierÍÍ®LicenseManagerMªIdentifierÍÍ(«getInstanceÂÂÂO°MethodDefinitionÍ8ÍƒÃÂMªIdentifierÍ?ÍF§getTier¦methodP²FunctionExpressionÍFÍƒÀÂÂÂN®BlockStatementÍIÍƒ‘ÔrU”¤type¥start£end¨argument¯ReturnStatementÍTÍ|T®CallExpressionÍ[Í{S°MemberExpressionÍ[ÍyS°MemberExpressionÍ[ÍqMªIdentifierÍ[Íf«FeatureGateMªIdentifierÍgÍqªlicenseMgrÂÂMªIdentifierÍrÍy§getTierÂÂÂO°MethodDefinitionÍ‰ÍÜÃÂMªIdentifierÍÍ›«getFeatures¦methodP²FunctionExpressionÍ›ÍÜÀÂÂÂN®BlockStatementÍÍÜ‘U¯ReturnStatementÍ©ÍÕT®CallExpressionÍ°ÍÔS°MemberExpressionÍ°ÍÒS°MemberExpressionÍ°ÍÆMªIdentifierÍ°Í»«FeatureGateMªIdentifierÍ¼ÍÆªlicenseMgrÂÂMªIdentifierÍÇÍÒ«getFeaturesÂÂÂO°MethodDefinitionÍâÍ<ÃÂMªIdentifierÍéÍ÷®isLicenseValid¦methodP²FunctionExpressionÍ÷Í<ÀÂÂÂN®BlockStatementÍúÍ<‘U¯ReturnStatementÍÍ5S°MemberExpressionÍÍ4T®CallExpressionÍÍ.S°MemberExpressionÍÍ,S°MemberExpressionÍÍ"MªIdentifierÍÍ«FeatureGateMªIdentifierÍÍ"ªlicenseMgrÂÂMªIdentifierÍ#Í,©getStatusÂÂÂMªIdentifierÍ/Í4¥validÂÂO°MethodDefinitionÍBÍ„ÃÂMªIdentifierÍIÍU¬canAddDevice¦methodP²FunctionExpressionÍUÍ„ÀÂÂÂ‘MªIdentifierÍVÍb¬currentCountN®BlockStatementÍdÍ„”Q³ExpressionStatementÍoÍT®CallExpressionÍoÍS°MemberExpressionÍoÍŒMªIdentifierÍoÍz«FeatureGateMªIdentifierÍ{ÍŒ±assertNotTamperedÂÂÂÔrV•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ™ÍÊ‘ÔrW•¤type¥start£end¢id¤init²VariableDeclaratorÍŸÍÉMªIdentifierÍŸÍ¢£maxS°MemberExpressionÍ¥ÍÉT®CallExpressionÍ¥Í¾S°MemberExpressionÍ¥Í¼MªIdentifierÍ¥Í°«FeatureGateMªIdentifierÍ±Í¼«getFeaturesÂÂÂMªIdentifierÍ¿ÍÉªmaxDevicesÂÂ¥constÔrX–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÔÍZÔrY–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍØÍëMªIdentifierÍØÍä¬currentCount¢>=MªIdentifierÍèÍë£maxN®BlockStatementÍíÍZ‘U¯ReturnStatementÍüÍOT®CallExpressionÍÍNS°MemberExpressionÍÍMªIdentifierÍÍ¬ResultHelperMªIdentifierÍÍ¤failÂÂ’S°MemberExpressionÍÍ/MªIdentifierÍÍ§ErrCodeMªIdentifierÍÍ/²ERR_FEATURE_LOCKEDÂÂÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ1ÍM‘MªIdentifierÍ=Í@£max’Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ2Í;Ôr\’£raw¦cooked¹å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ¹å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š Â[¯TemplateElementÍAÍL\¿ ä¸ªå™¨ä»¶ï¼Œè¯·å‡çº§ä¸“ä¸šç‰ˆ¿ ä¸ªå™¨ä»¶ï¼Œè¯·å‡çº§ä¸“ä¸šç‰ˆÃÂÀU¯ReturnStatementÍdÍ}T®CallExpressionÍkÍ|S°MemberExpressionÍkÍzMªIdentifierÍkÍw¬ResultHelperMªIdentifierÍxÍz¢okÂÂÂO°MethodDefinitionÍŠÍàÃÂMªIdentifierÍ‘Í¬canUseAiCall¦methodP²FunctionExpressionÍÍàÀÂÂÂ‘MªIdentifierÍÍ®°globalDailyCountN®BlockStatementÍ°Íà”Q³ExpressionStatementÍ»ÍÛT®CallExpressionÍ»ÍÚS°MemberExpressionÍ»ÍØMªIdentifierÍ»ÍÆ«FeatureGateMªIdentifierÍÇÍØ±assertNotTamperedÂÂÂV³VariableDeclarationÍåÍ‘W²VariableDeclaratorÍëÍMªIdentifierÍëÍğ¥limitS°MemberExpressionÍóÍT®CallExpressionÍóÍS°MemberExpressionÍóÍ
-MªIdentifierÍóÍş«FeatureGateMªIdentifierÍÿÍ
-«getFeaturesÂÂÂMªIdentifierÍÍ¬dailyAiCallsÂÂ¥constX«IfStatementÍ$Í¶Y°BinaryExpressionÍ(ÍAMªIdentifierÍ(Í8°globalDailyCount¢>=MªIdentifierÍ<ÍA¥limitN®BlockStatementÍCÍ¶‘U¯ReturnStatementÍRÍ«T®CallExpressionÍYÍªS°MemberExpressionÍYÍjMªIdentifierÍYÍe¬ResultHelperMªIdentifierÍfÍj¤failÂÂ’S°MemberExpressionÍkÍ…MªIdentifierÍkÍr§ErrCodeMªIdentifierÍsÍ…²ERR_QUOTA_EXCEEDEDÂÂZ¯TemplateLiteralÍ‡Í©‘MªIdentifierÍ˜Í¥limit’[¯TemplateElementÍˆÍ–\¾ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (¾ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (Â[¯TemplateElementÍÍ¨\¼)ï¼Œè¯·å‡çº§æˆ–æ˜æ—¥å†è¯•¼)ï¼Œè¯·å‡çº§æˆ–æ˜æ—¥å†è¯•ÃÂÀU¯ReturnStatementÍÀÍÙT®CallExpressionÍÇÍØS°MemberExpressionÍÇÍÖMªIdentifierÍÇÍÓ¬ResultHelperMªIdentifierÍÔÍÖ¢okÂÂÂO°MethodDefinitionÍæÍúÃÂMªIdentifierÍíÍø«canAddAiApi¦methodP²FunctionExpressionÍøÍúÀÂÂÂ‘MªIdentifierÍùÍ¬currentCountN®BlockStatementÍÍú“V³VariableDeclarationÍÍB‘W²VariableDeclaratorÍÍAMªIdentifierÍÍ£maxS°MemberExpressionÍÍAT®CallExpressionÍÍ7S°MemberExpressionÍÍ5MªIdentifierÍÍ)«FeatureGateMªIdentifierÍ*Í5«getFeaturesÂÂÂMªIdentifierÍ8ÍA©maxAiApisÂÂ¥constX«IfStatementÍLÍĞY°BinaryExpressionÍPÍcMªIdentifierÍPÍ\¬currentCount¢>=MªIdentifierÍ`Íc£maxN®BlockStatementÍeÍĞ‘U¯ReturnStatementÍtÍÅT®CallExpressionÍ{ÍÄS°MemberExpressionÍ{ÍŒMªIdentifierÍ{Í‡¬ResultHelperMªIdentifierÍˆÍŒ¤failÂÂ’S°MemberExpressionÍÍ§MªIdentifierÍÍ”§ErrCodeMªIdentifierÍ•Í§²ERR_FEATURE_LOCKEDÂÂZ¯TemplateLiteralÍ©ÍÃ‘MªIdentifierÍµÍ¸£max’[¯TemplateElementÍªÍ³\¹å½“å‰ç‰ˆæœ¬æœ€å¤šé…ç½® ¹å½“å‰ç‰ˆæœ¬æœ€å¤šé…ç½® Â[¯TemplateElementÍ¹ÍÂ\« ä¸ª AI API« ä¸ª AI APIÃÂÀU¯ReturnStatementÍÚÍóT®CallExpressionÍáÍòS°MemberExpressionÍáÍğMªIdentifierÍáÍí¬ResultHelperMªIdentifierÍîÍğ¢okÂÂÂO°MethodDefinitionÍ ÍéÃÂMªIdentifierÍÍ³canUseStm32Advanced¦methodP²FunctionExpressionÍÍéÀÂÂÂN®BlockStatementÍÍé’X«IfStatementÍ(Í¿Ôr]–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ,ÍZ¡!ÃS°MemberExpressionÍ-ÍZT®CallExpressionÍ-ÍFS°MemberExpressionÍ-ÍDMªIdentifierÍ-Í8«FeatureGateMªIdentifierÍ9ÍD«getFeaturesÂÂÂMªIdentifierÍGÍZ³stm32AdvancedPeriphÂÂN®BlockStatementÍ\Í¿‘U¯ReturnStatementÍkÍ´T®CallExpressionÍrÍ³S°MemberExpressionÍrÍƒMªIdentifierÍrÍ~¬ResultHelperMªIdentifierÍÍƒ¤failÂÂ’S°MemberExpressionÍ„ÍMªIdentifierÍ„Í‹§ErrCodeMªIdentifierÍŒÍ²ERR_FEATURE_LOCKEDÂÂÔr^•¤type¥start£end¥value£raw§LiteralÍ Í²Ù$STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆæˆæƒÙ&'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆæˆæƒ'ÂÀU¯ReturnStatementÍÉÍâT®CallExpressionÍĞÍáS°MemberExpressionÍĞÍßMªIdentifierÍĞÍÜ¬ResultHelperMªIdentifierÍİÍß¢okÂÂÂO°MethodDefinitionÍïÍÈÃÂMªIdentifierÍöÍ°canUseMonteCarlo¦methodP²FunctionExpressionÍÍÈÀÂÂÂN®BlockStatementÍ	ÍÈ’X«IfStatementÍÍ]¯UnaryExpressionÍÍ=¡!ÃS°MemberExpressionÍÍ=T®CallExpressionÍÍ2S°MemberExpressionÍÍ0MªIdentifierÍÍ$«FeatureGateMªIdentifierÍ%Í0«getFeaturesÂÂÂMªIdentifierÍ3Í=ªmonteCarloÂÂN®BlockStatementÍ?Í‘U¯ReturnStatementÍNÍ“T®CallExpressionÍUÍ’S°MemberExpressionÍUÍfMªIdentifierÍUÍa¬ResultHelperMªIdentifierÍbÍf¤failÂÂ’S°MemberExpressionÍgÍMªIdentifierÍgÍn§ErrCodeMªIdentifierÍoÍ²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍƒÍ‘Ù$è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆæˆæƒÙ&'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆæˆæƒ'ÂÀU¯ReturnStatementÍ¨ÍÁT®CallExpressionÍ¯ÍÀS°MemberExpressionÍ¯Í¾MªIdentifierÍ¯Í»¬ResultHelperMªIdentifierÍ¼Í¾¢okÂÂÂO°MethodDefinitionÍÎÍ­ÃÂMªIdentifierÍÕÍé´canUseFaultInjection¦methodP²FunctionExpressionÍéÍ­ÀÂÂÂN®BlockStatementÍìÍ­’X«IfStatementÍ÷Íƒ]¯UnaryExpressionÍûÍ$¡!ÃS°MemberExpressionÍüÍ$T®CallExpressionÍüÍS°MemberExpressionÍüÍMªIdentifierÍüÍ«FeatureGateMªIdentifierÍÍ«getFeaturesÂÂÂMªIdentifierÍÍ$®faultInjectionÂÂN®BlockStatementÍ&Íƒ‘U¯ReturnStatementÍ5ÍxT®CallExpressionÍ<ÍwS°MemberExpressionÍ<ÍMMªIdentifierÍ<ÍH¬ResultHelperMªIdentifierÍIÍM¤failÂÂ’S°MemberExpressionÍNÍhMªIdentifierÍNÍU§ErrCodeMªIdentifierÍVÍh²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍjÍv¾æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆæˆæƒÙ 'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆæˆæƒ'ÂÀU¯ReturnStatementÍÍ¦T®CallExpressionÍ”Í¥S°MemberExpressionÍ”Í£MªIdentifierÍ”Í ¬ResultHelperMªIdentifierÍ¡Í£¢okÂÂÂO°MethodDefinitionÍ³Í	‰ÃÂMªIdentifierÍºÍÇ­canUsePlugins¦methodP²FunctionExpressionÍÇÍ	‰ÀÂÂÂN®BlockStatementÍÊÍ	‰’X«IfStatementÍÕÍ	_]¯UnaryExpressionÍÙÍ	 ¡!ÃS°MemberExpressionÍÚÍ	 T®CallExpressionÍÚÍóS°MemberExpressionÍÚÍñMªIdentifierÍÚÍå«FeatureGateMªIdentifierÍæÍñ«getFeaturesÂÂÂMªIdentifierÍôÍ	 ¬pluginSystemÂÂN®BlockStatementÍ	Í	_‘U¯ReturnStatementÍ	Í	TT®CallExpressionÍ	Í	SS°MemberExpressionÍ	Í	)MªIdentifierÍ	Í	$¬ResultHelperMªIdentifierÍ	%Í	)¤failÂÂ’S°MemberExpressionÍ	*Í	DMªIdentifierÍ	*Í	1§ErrCodeMªIdentifierÍ	2Í	D²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ	FÍ	R¾æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆæˆæƒÙ 'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆæˆæƒ'ÂÀU¯ReturnStatementÍ	iÍ	‚T®CallExpressionÍ	pÍ	S°MemberExpressionÍ	pÍ	MªIdentifierÍ	pÍ	|¬ResultHelperMªIdentifierÍ	}Í	¢okÂÂÂO°MethodDefinitionÍ	Í
-nÃÂMªIdentifierÍ	–Í	§±canEncryptProject¦methodP²FunctionExpressionÍ	§Í
-nÀÂÂÂN®BlockStatementÍ	ªÍ
-n’X«IfStatementÍ	µÍ
-D]¯UnaryExpressionÍ	¹Í	å¡!ÃS°MemberExpressionÍ	ºÍ	åT®CallExpressionÍ	ºÍ	ÓS°MemberExpressionÍ	ºÍ	ÑMªIdentifierÍ	ºÍ	Å«FeatureGateMªIdentifierÍ	ÆÍ	Ñ«getFeaturesÂÂÂMªIdentifierÍ	ÔÍ	å±projectEncryptionÂÂN®BlockStatementÍ	çÍ
-D‘U¯ReturnStatementÍ	öÍ
-9T®CallExpressionÍ	ıÍ
-8S°MemberExpressionÍ	ıÍ
-MªIdentifierÍ	ıÍ
-	¬ResultHelperMªIdentifierÍ
-
-Í
-¤failÂÂ’S°MemberExpressionÍ
-Í
-)MªIdentifierÍ
-Í
-§ErrCodeMªIdentifierÍ
-Í
-)²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌÅÍOÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌÌÍOÔrM”¤type¥start£end¤nameªIdentifierÌÒÌİ«FeatureGateÀÔrN”¤type¥start£end¤body©ClassBodyÌŞÍOÜ ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌåÍ>ÃÂMªIdentifierÌìÌó§refresh¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌóÍ>ÀÂÂÂN®BlockStatementÌöÍ>‘ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍÍ7ÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ6¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÍMªIdentifierÍÍ«FeatureGateMªIdentifierÍÍªlicenseMgrÂÂÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ6S°MemberExpressionÍÍ4MªIdentifierÍÍ(®LicenseManagerMªIdentifierÍ)Í4«getInstanceÂÂÂO°MethodDefinitionÍDÍÃÂMªIdentifierÍKÍR§getTier¦methodP²FunctionExpressionÍRÍÀÂÂÂN®BlockStatementÍUÍ‘ÔrU”¤type¥start£end¨argument¯ReturnStatementÍ`ÍˆT®CallExpressionÍgÍ‡S°MemberExpressionÍgÍ…S°MemberExpressionÍgÍ}MªIdentifierÍgÍr«FeatureGateMªIdentifierÍsÍ}ªlicenseMgrÂÂMªIdentifierÍ~Í…§getTierÂÂÂO°MethodDefinitionÍ•ÍèÃÂMªIdentifierÍœÍ§«getFeatures¦methodP²FunctionExpressionÍ§ÍèÀÂÂÂN®BlockStatementÍªÍè‘U¯ReturnStatementÍµÍáT®CallExpressionÍ¼ÍàS°MemberExpressionÍ¼ÍŞS°MemberExpressionÍ¼ÍÒMªIdentifierÍ¼ÍÇ«FeatureGateMªIdentifierÍÈÍÒªlicenseMgrÂÂMªIdentifierÍÓÍŞ«getFeaturesÂÂÂO°MethodDefinitionÍîÍHÃÂMªIdentifierÍõÍ®isLicenseValid¦methodP²FunctionExpressionÍÍHÀÂÂÂN®BlockStatementÍÍH‘U¯ReturnStatementÍÍAS°MemberExpressionÍÍ@T®CallExpressionÍÍ:S°MemberExpressionÍÍ8S°MemberExpressionÍÍ.MªIdentifierÍÍ#«FeatureGateMªIdentifierÍ$Í.ªlicenseMgrÂÂMªIdentifierÍ/Í8©getStatusÂÂÂMªIdentifierÍ;Í@¥validÂÂO°MethodDefinitionÍNÍÃÂMªIdentifierÍUÍa¬canAddDevice¦methodP²FunctionExpressionÍaÍÀÂÂÂ‘MªIdentifierÍbÍn¬currentCountN®BlockStatementÍpÍ”Q³ExpressionStatementÍ{Í›T®CallExpressionÍ{ÍšS°MemberExpressionÍ{Í˜MªIdentifierÍ{Í†«FeatureGateMªIdentifierÍ‡Í˜±assertNotTamperedÂÂÂÔrV•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ¥ÍÖ‘ÔrW•¤type¥start£end¢id¤init²VariableDeclaratorÍ«ÍÕMªIdentifierÍ«Í®£maxS°MemberExpressionÍ±ÍÕT®CallExpressionÍ±ÍÊS°MemberExpressionÍ±ÍÈMªIdentifierÍ±Í¼«FeatureGateMªIdentifierÍ½ÍÈ«getFeaturesÂÂÂMªIdentifierÍËÍÕªmaxDevicesÂÂ¥constÔrX–¤type¥start£end¤testªconsequent©alternate«IfStatementÍàÍsÔrY–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍäÍ÷MªIdentifierÍäÍğ¬currentCount¢>=MªIdentifierÍôÍ÷£maxN®BlockStatementÍùÍs‘U¯ReturnStatementÍÍhT®CallExpressionÍÍgS°MemberExpressionÍÍ MªIdentifierÍÍ¬ResultHelperMªIdentifierÍÍ ¤failÂÂ’S°MemberExpressionÍ!Í;MªIdentifierÍ!Í(§ErrCodeMªIdentifierÍ)Í;²ERR_FEATURE_LOCKEDÂÂÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ=Íf‘MªIdentifierÍIÍL£max’Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ>ÍGÔr\’£raw¦cooked¹å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š ¹å…è´¹ç‰ˆå•å·¥ç¨‹æœ€å¤š Â[¯TemplateElementÍMÍe\Ù, ä¸ªå™¨ä»¶ï¼Œè¯· GitHub Star è§£é”ä¸“ä¸šç‰ˆÙ, ä¸ªå™¨ä»¶ï¼Œè¯· GitHub Star è§£é”ä¸“ä¸šç‰ˆÃÂÀU¯ReturnStatementÍ}Í–T®CallExpressionÍ„Í•S°MemberExpressionÍ„Í“MªIdentifierÍ„Í¬ResultHelperMªIdentifierÍ‘Í“¢okÂÂÂO°MethodDefinitionÍ£ÍÿÃÂMªIdentifierÍªÍ¶¬canUseAiCall¦methodP²FunctionExpressionÍ¶ÍÿÀÂÂÂ‘MªIdentifierÍ·ÍÇ°globalDailyCountN®BlockStatementÍÉÍÿ”Q³ExpressionStatementÍÔÍôT®CallExpressionÍÔÍóS°MemberExpressionÍÔÍñMªIdentifierÍÔÍß«FeatureGateMªIdentifierÍàÍñ±assertNotTamperedÂÂÂV³VariableDeclarationÍşÍ3‘W²VariableDeclaratorÍÍ2MªIdentifierÍÍ	¥limitS°MemberExpressionÍÍ2T®CallExpressionÍÍ%S°MemberExpressionÍÍ#MªIdentifierÍÍ«FeatureGateMªIdentifierÍÍ#«getFeaturesÂÂÂMªIdentifierÍ&Í2¬dailyAiCallsÂÂ¥constX«IfStatementÍ=ÍÕY°BinaryExpressionÍAÍZMªIdentifierÍAÍQ°globalDailyCount¢>=MªIdentifierÍUÍZ¥limitN®BlockStatementÍ\ÍÕ‘U¯ReturnStatementÍkÍÊT®CallExpressionÍrÍÉS°MemberExpressionÍrÍƒMªIdentifierÍrÍ~¬ResultHelperMªIdentifierÍÍƒ¤failÂÂ’S°MemberExpressionÍ„ÍMªIdentifierÍ„Í‹§ErrCodeMªIdentifierÍŒÍ²ERR_QUOTA_EXCEEDEDÂÂZ¯TemplateLiteralÍ ÍÈ‘MªIdentifierÍ±Í¶¥limit’[¯TemplateElementÍ¡Í¯\¾ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (¾ä»Šæ—¥ AI è°ƒç”¨å·²è¾¾ä¸Šé™ (Â[¯TemplateElementÍ·ÍÇ\Ù")ï¼Œè¯· Star è§£é”æˆ–æ˜æ—¥å†è¯•Ù")ï¼Œè¯· Star è§£é”æˆ–æ˜æ—¥å†è¯•ÃÂÀU¯ReturnStatementÍßÍøT®CallExpressionÍæÍ÷S°MemberExpressionÍæÍõMªIdentifierÍæÍò¬ResultHelperMªIdentifierÍóÍõ¢okÂÂÂO°MethodDefinitionÍÍÃÂMªIdentifierÍÍ«canAddAiApi¦methodP²FunctionExpressionÍÍÀÂÂÂ‘MªIdentifierÍÍ$¬currentCountN®BlockStatementÍ&Í“V³VariableDeclarationÍ1Ía‘W²VariableDeclaratorÍ7Í`MªIdentifierÍ7Í:£maxS°MemberExpressionÍ=Í`T®CallExpressionÍ=ÍVS°MemberExpressionÍ=ÍTMªIdentifierÍ=ÍH«FeatureGateMªIdentifierÍIÍT«getFeaturesÂÂÂMªIdentifierÍWÍ`©maxAiApisÂÂ¥constX«IfStatementÍkÍïY°BinaryExpressionÍoÍ‚MªIdentifierÍoÍ{¬currentCount¢>=MªIdentifierÍÍ‚£maxN®BlockStatementÍ„Íï‘U¯ReturnStatementÍ“ÍäT®CallExpressionÍšÍãS°MemberExpressionÍšÍ«MªIdentifierÍšÍ¦¬ResultHelperMªIdentifierÍ§Í«¤failÂÂ’S°MemberExpressionÍ¬ÍÆMªIdentifierÍ¬Í³§ErrCodeMªIdentifierÍ´ÍÆ²ERR_FEATURE_LOCKEDÂÂZ¯TemplateLiteralÍÈÍâ‘MªIdentifierÍÔÍ×£max’[¯TemplateElementÍÉÍÒ\¹å½“å‰ç‰ˆæœ¬æœ€å¤šé…ç½® ¹å½“å‰ç‰ˆæœ¬æœ€å¤šé…ç½® Â[¯TemplateElementÍØÍá\« ä¸ª AI API« ä¸ª AI APIÃÂÀU¯ReturnStatementÍùÍT®CallExpressionÍ ÍS°MemberExpressionÍ ÍMªIdentifierÍ Í¬ResultHelperMªIdentifierÍÍ¢okÂÂÂO°MethodDefinitionÍÍÃÂMªIdentifierÍ&Í9³canUseStm32Advanced¦methodP²FunctionExpressionÍ9ÍÀÂÂÂN®BlockStatementÍ<Í’X«IfStatementÍGÍìÔr]–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍKÍy¡!ÃS°MemberExpressionÍLÍyT®CallExpressionÍLÍeS°MemberExpressionÍLÍcMªIdentifierÍLÍW«FeatureGateMªIdentifierÍXÍc«getFeaturesÂÂÂMªIdentifierÍfÍy³stm32AdvancedPeriphÂÂN®BlockStatementÍ{Íì‘U¯ReturnStatementÍŠÍáT®CallExpressionÍ‘ÍàS°MemberExpressionÍ‘Í¢MªIdentifierÍ‘Í¬ResultHelperMªIdentifierÍÍ¢¤failÂÂ’S°MemberExpressionÍ£Í½MªIdentifierÍ£Íª§ErrCodeMªIdentifierÍ«Í½²ERR_FEATURE_LOCKEDÂÂÔr^•¤type¥start£end¥value£raw§LiteralÍ¿ÍßÙ6STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù8'STM32 é«˜çº§å¤–è®¾éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍöÍT®CallExpressionÍıÍS°MemberExpressionÍıÍMªIdentifierÍıÍ	¬ResultHelperMªIdentifierÍ
+Í¢okÂÂÂO°MethodDefinitionÍÍÃÂMªIdentifierÍ#Í3°canUseMonteCarlo¦methodP²FunctionExpressionÍ3ÍÀÂÂÂN®BlockStatementÍ6Í’X«IfStatementÍAÍÙ]¯UnaryExpressionÍEÍj¡!ÃS°MemberExpressionÍFÍjT®CallExpressionÍFÍ_S°MemberExpressionÍFÍ]MªIdentifierÍFÍQ«FeatureGateMªIdentifierÍRÍ]«getFeaturesÂÂÂMªIdentifierÍ`ÍjªmonteCarloÂÂN®BlockStatementÍlÍÙ‘U¯ReturnStatementÍ{ÍÎT®CallExpressionÍ‚ÍÍS°MemberExpressionÍ‚Í“MªIdentifierÍ‚Í¬ResultHelperMªIdentifierÍÍ“¤failÂÂ’S°MemberExpressionÍ”Í®MªIdentifierÍ”Í›§ErrCodeMªIdentifierÍœÍ®²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ°ÍÌÙ6è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù8'è’™ç‰¹å¡æ´›ä»¿çœŸéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍãÍüT®CallExpressionÍêÍûS°MemberExpressionÍêÍùMªIdentifierÍêÍö¬ResultHelperMªIdentifierÍ÷Íù¢okÂÂÂO°MethodDefinitionÍ	ÍöÃÂMªIdentifierÍÍ$´canUseFaultInjection¦methodP²FunctionExpressionÍ$ÍöÀÂÂÂN®BlockStatementÍ'Íö’X«IfStatementÍ2ÍÌ]¯UnaryExpressionÍ6Í_¡!ÃS°MemberExpressionÍ7Í_T®CallExpressionÍ7ÍPS°MemberExpressionÍ7ÍNMªIdentifierÍ7ÍB«FeatureGateMªIdentifierÍCÍN«getFeaturesÂÂÂMªIdentifierÍQÍ_®faultInjectionÂÂN®BlockStatementÍaÍÌ‘U¯ReturnStatementÍpÍÁT®CallExpressionÍwÍÀS°MemberExpressionÍwÍˆMªIdentifierÍwÍƒ¬ResultHelperMªIdentifierÍ„Íˆ¤failÂÂ’S°MemberExpressionÍ‰Í£MªIdentifierÍ‰Í§ErrCodeMªIdentifierÍ‘Í£²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ¥Í¿Ù0æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù2'æ•…éšœæ³¨å…¥éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍÖÍïT®CallExpressionÍİÍîS°MemberExpressionÍİÍìMªIdentifierÍİÍé¬ResultHelperMªIdentifierÍêÍì¢okÂÂÂO°MethodDefinitionÍüÍ	àÃÂMªIdentifierÍ	Í	­canUsePlugins¦methodP²FunctionExpressionÍ	Í	àÀÂÂÂN®BlockStatementÍ	Í	à’X«IfStatementÍ	Í	¶]¯UnaryExpressionÍ	"Í	I¡!ÃS°MemberExpressionÍ	#Í	IT®CallExpressionÍ	#Í	<S°MemberExpressionÍ	#Í	:MªIdentifierÍ	#Í	.«FeatureGateMªIdentifierÍ	/Í	:«getFeaturesÂÂÂMªIdentifierÍ	=Í	I¬pluginSystemÂÂN®BlockStatementÍ	KÍ	¶‘U¯ReturnStatementÍ	ZÍ	«T®CallExpressionÍ	aÍ	ªS°MemberExpressionÍ	aÍ	rMªIdentifierÍ	aÍ	m¬ResultHelperMªIdentifierÍ	nÍ	r¤failÂÂ’S°MemberExpressionÍ	sÍ	MªIdentifierÍ	sÍ	z§ErrCodeMªIdentifierÍ	{Í	²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ	Í	©Ù0æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù2'æ’ä»¶ç³»ç»Ÿéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍ	ÀÍ	ÙT®CallExpressionÍ	ÇÍ	ØS°MemberExpressionÍ	ÇÍ	ÖMªIdentifierÍ	ÇÍ	Ó¬ResultHelperMªIdentifierÍ	ÔÍ	Ö¢okÂÂÂO°MethodDefinitionÍ	æÍ
+ÓÃÂMªIdentifierÍ	íÍ	ş±canEncryptProject¦methodP²FunctionExpressionÍ	şÍ
+ÓÀÂÂÂN®BlockStatementÍ
+Í
+Ó’X«IfStatementÍ
+Í
+©]¯UnaryExpressionÍ
+Í
+<¡!ÃS°MemberExpressionÍ
+Í
+<T®CallExpressionÍ
+Í
+*S°MemberExpressionÍ
+Í
+(MªIdentifierÍ
+Í
+«FeatureGateMªIdentifierÍ
+Í
+(«getFeaturesÂÂÂMªIdentifierÍ
 +Í
-7¾å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆæˆæƒÙ 'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆæˆæƒ'ÂÀU¯ReturnStatementÍ
-NÍ
-gT®CallExpressionÍ
-UÍ
-fS°MemberExpressionÍ
-UÍ
-dMªIdentifierÍ
-UÍ
-a¬ResultHelperMªIdentifierÍ
-bÍ
-d¢okÂÂÂO°MethodDefinitionÍ
-tÍYÃÂMªIdentifierÍ
-{Í
-’·canUseTeamCollaboration¦methodP²FunctionExpressionÍ
-’ÍYÀÂÂÂN®BlockStatementÍ
-•ÍY’X«IfStatementÍ
- Í/]¯UnaryExpressionÍ
-¤Í
-Í¡!ÃS°MemberExpressionÍ
-¥Í
-ÍT®CallExpressionÍ
-¥Í
-¾S°MemberExpressionÍ
-¥Í
-¼MªIdentifierÍ
-¥Í
-°«FeatureGateMªIdentifierÍ
-±Í
-¼«getFeaturesÂÂÂMªIdentifierÍ
-¿Í
-Í®teamAnnotationÂÂN®BlockStatementÍ
-ÏÍ/‘U¯ReturnStatementÍ
-ŞÍ$T®CallExpressionÍ
-åÍ#S°MemberExpressionÍ
-åÍ
-öMªIdentifierÍ
-åÍ
-ñ¬ResultHelperMªIdentifierÍ
-òÍ
-ö¤failÂÂ’S°MemberExpressionÍ
-÷ÍMªIdentifierÍ
-÷Í
-ş§ErrCodeMªIdentifierÍ
-ÿÍ²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍÍ"Ù'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸ŠæˆæƒÙ)'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ'ÂÀU¯ReturnStatementÍ9ÍRT®CallExpressionÍ@ÍQS°MemberExpressionÍ@ÍOMªIdentifierÍ@ÍL¬ResultHelperMªIdentifierÍMÍO¢okÂÂÂO°MethodDefinitionÍ_ÍAÃÂMªIdentifierÍfÍz´canUseVersionCompare¦methodP²FunctionExpressionÍzÍAÀÂÂÂN®BlockStatementÍ}ÍA’X«IfStatementÍˆÍ]¯UnaryExpressionÍŒÍµ¡!ÃS°MemberExpressionÍÍµT®CallExpressionÍÍ¦S°MemberExpressionÍÍ¤MªIdentifierÍÍ˜«FeatureGateMªIdentifierÍ™Í¤«getFeaturesÂÂÂMªIdentifierÍ§Íµ®versionCompareÂÂN®BlockStatementÍ·Í‘U¯ReturnStatementÍÆÍT®CallExpressionÍÍÍS°MemberExpressionÍÍÍŞMªIdentifierÍÍÍÙ¬ResultHelperMªIdentifierÍÚÍŞ¤failÂÂ’S°MemberExpressionÍßÍùMªIdentifierÍßÍæ§ErrCodeMªIdentifierÍçÍù²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍûÍ
-Ù'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸ŠæˆæƒÙ)'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆåŠä»¥ä¸Šæˆæƒ'ÂÀU¯ReturnStatementÍ!Í:T®CallExpressionÍ(Í9S°MemberExpressionÍ(Í7MªIdentifierÍ(Í4¬ResultHelperMªIdentifierÍ5Í7¢okÂÂÂO°MethodDefinitionÍGÍ&ÃÂMªIdentifierÍNÍ_±canBatchExportBom¦methodP²FunctionExpressionÍ_Í&ÀÂÂÂN®BlockStatementÍbÍ&’X«IfStatementÍmÍü]¯UnaryExpressionÍqÍš¡!ÃS°MemberExpressionÍrÍšT®CallExpressionÍrÍ‹S°MemberExpressionÍrÍ‰MªIdentifierÍrÍ}«FeatureGateMªIdentifierÍ~Í‰«getFeaturesÂÂÂMªIdentifierÍŒÍš®batchBomExportÂÂN®BlockStatementÍœÍü‘U¯ReturnStatementÍ«ÍñT®CallExpressionÍ²ÍğS°MemberExpressionÍ²ÍÃMªIdentifierÍ²Í¾¬ResultHelperMªIdentifierÍ¿ÍÃ¤failÂÂ’S°MemberExpressionÍÄÍŞMªIdentifierÍÄÍË§ErrCodeMªIdentifierÍÌÍŞ²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍàÍï½æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆ¿'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆ'ÂÀU¯ReturnStatementÍÍT®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¬ResultHelperMªIdentifierÍÍ¢okÂÂÂO°MethodDefinitionÍ,ÍÁÃÂMªIdentifierÍ3ÍD±assertNotTampered¦methodP²FunctionExpressionÍDÍÁÀÂÂÂN®BlockStatementÍGÍÁ‘X«IfStatementÍRÍºT®CallExpressionÍVÍyS°MemberExpressionÍVÍwS°MemberExpressionÍVÍlMªIdentifierÍVÍa«FeatureGateMªIdentifierÍbÍlªlicenseMgrÂÂMªIdentifierÍmÍwªisTamperedÂÂÂN®BlockStatementÍ{Íº‘Q³ExpressionStatementÍŠÍ¯T®CallExpressionÍŠÍ®S°MemberExpressionÍŠÍ¬S°MemberExpressionÍŠÍ MªIdentifierÍŠÍ•«FeatureGateMªIdentifierÍ–Í ªlicenseMgrÂÂMªIdentifierÍ¡Í¬«getFeaturesÂÂÂÀÀ“Ôr_•¤type¥start£endªspecifiers¦source±ImportDeclaration!ÌL‘Ôr`•¤type¥start£end¨imported¥local¯ImportSpecifier*1MªIdentifier*1§ErrCodeMªIdentifier*1§ErrCode^§Literal9ÌK°../types/ErrCode²'../types/ErrCode'_±ImportDeclarationÌNÌ€‘`¯ImportSpecifierÌWÌeMªIdentifierÌWÌe®LicenseManagerMªIdentifierÌWÌe®LicenseManager^§LiteralÌmÌ°./LicenseManager²'./LicenseManager'_±ImportDeclarationÌ‚Ì·‘`¯ImportSpecifierÌ‹Ì—MªIdentifierÌ‹Ì—¬ResultHelperMªIdentifierÌ‹Ì—¬ResultHelper^§LiteralÌŸÌ¶µ../utils/ResultHelper·'../utils/ResultHelper'
+<±projectEncryptionÂÂN®BlockStatementÍ
+>Í
+©‘U¯ReturnStatementÍ
+MÍ
+T®CallExpressionÍ
+TÍ
+S°MemberExpressionÍ
+TÍ
+eMªIdentifierÍ
+TÍ
+`¬ResultHelperMªIdentifierÍ
+aÍ
+e¤failÂÂ’S°MemberExpressionÍ
+fÍ
+€MªIdentifierÍ
+fÍ
+m§ErrCodeMªIdentifierÍ
+nÍ
+€²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ
+‚Í
+œÙ0å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù2'å·¥ç¨‹åŠ å¯†éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍ
+³Í
+ÌT®CallExpressionÍ
+ºÍ
+ËS°MemberExpressionÍ
+ºÍ
+ÉMªIdentifierÍ
+ºÍ
+Æ¬ResultHelperMªIdentifierÍ
+ÇÍ
+É¢okÂÂÂO°MethodDefinitionÍ
+ÙÍÉÃÂMªIdentifierÍ
+àÍ
+÷·canUseTeamCollaboration¦methodP²FunctionExpressionÍ
+÷ÍÉÀÂÂÂN®BlockStatementÍ
+úÍÉ’X«IfStatementÍÍŸ]¯UnaryExpressionÍ	Í2¡!ÃS°MemberExpressionÍ
+Í2T®CallExpressionÍ
+Í#S°MemberExpressionÍ
+Í!MªIdentifierÍ
+Í«FeatureGateMªIdentifierÍÍ!«getFeaturesÂÂÂMªIdentifierÍ$Í2®teamAnnotationÂÂN®BlockStatementÍ4ÍŸ‘U¯ReturnStatementÍCÍ”T®CallExpressionÍJÍ“S°MemberExpressionÍJÍ[MªIdentifierÍJÍV¬ResultHelperMªIdentifierÍWÍ[¤failÂÂ’S°MemberExpressionÍ\ÍvMªIdentifierÍ\Íc§ErrCodeMªIdentifierÍdÍv²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍxÍ’Ù0å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù2'å›¢é˜Ÿæ‰¹æ³¨éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍ©ÍÂT®CallExpressionÍ°ÍÁS°MemberExpressionÍ°Í¿MªIdentifierÍ°Í¼¬ResultHelperMªIdentifierÍ½Í¿¢okÂÂÂO°MethodDefinitionÍÏÍ¼ÃÂMªIdentifierÍÖÍê´canUseVersionCompare¦methodP²FunctionExpressionÍêÍ¼ÀÂÂÂN®BlockStatementÍíÍ¼’X«IfStatementÍøÍ’]¯UnaryExpressionÍüÍ%¡!ÃS°MemberExpressionÍıÍ%T®CallExpressionÍıÍS°MemberExpressionÍıÍMªIdentifierÍıÍ«FeatureGateMªIdentifierÍ	Í«getFeaturesÂÂÂMªIdentifierÍÍ%®versionCompareÂÂN®BlockStatementÍ'Í’‘U¯ReturnStatementÍ6Í‡T®CallExpressionÍ=Í†S°MemberExpressionÍ=ÍNMªIdentifierÍ=ÍI¬ResultHelperMªIdentifierÍJÍN¤failÂÂ’S°MemberExpressionÍOÍiMªIdentifierÍOÍV§ErrCodeMªIdentifierÍWÍi²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍkÍ…Ù0ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù2'ç‰ˆæœ¬å¯¹æ¯”éœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍœÍµT®CallExpressionÍ£Í´S°MemberExpressionÍ£Í²MªIdentifierÍ£Í¯¬ResultHelperMªIdentifierÍ°Í²¢okÂÂÂO°MethodDefinitionÍÂÍ±ÃÂMªIdentifierÍÉÍÚ±canBatchExportBom¦methodP²FunctionExpressionÍÚÍ±ÀÂÂÂN®BlockStatementÍİÍ±’X«IfStatementÍèÍ‡]¯UnaryExpressionÍìÍ¡!ÃS°MemberExpressionÍíÍT®CallExpressionÍíÍS°MemberExpressionÍíÍMªIdentifierÍíÍø«FeatureGateMªIdentifierÍùÍ«getFeaturesÂÂÂMªIdentifierÍÍ®batchBomExportÂÂN®BlockStatementÍÍ‡‘U¯ReturnStatementÍ&Í|T®CallExpressionÍ-Í{S°MemberExpressionÍ-Í>MªIdentifierÍ-Í9¬ResultHelperMªIdentifierÍ:Í>¤failÂÂ’S°MemberExpressionÍ?ÍYMªIdentifierÍ?ÍF§ErrCodeMªIdentifierÍGÍY²ERR_FEATURE_LOCKEDÂÂ^§LiteralÍ[ÍzÙ5æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰Ù7'æ‰¹é‡ BOM å¯¼å‡ºéœ€ä¸“ä¸šç‰ˆï¼ˆGitHub Star è§£é”ï¼‰'ÂÀU¯ReturnStatementÍ‘ÍªT®CallExpressionÍ˜Í©S°MemberExpressionÍ˜Í§MªIdentifierÍ˜Í¤¬ResultHelperMªIdentifierÍ¥Í§¢okÂÂÂO°MethodDefinitionÍ·ÍLÃÂMªIdentifierÍ¾ÍÏ±assertNotTampered¦methodP²FunctionExpressionÍÏÍLÀÂÂÂN®BlockStatementÍÒÍL‘X«IfStatementÍİÍET®CallExpressionÍáÍS°MemberExpressionÍáÍS°MemberExpressionÍáÍ÷MªIdentifierÍáÍì«FeatureGateMªIdentifierÍíÍ÷ªlicenseMgrÂÂMªIdentifierÍøÍªisTamperedÂÂÂN®BlockStatementÍÍE‘Q³ExpressionStatementÍÍ:T®CallExpressionÍÍ9S°MemberExpressionÍÍ7S°MemberExpressionÍÍ+MªIdentifierÍÍ «FeatureGateMªIdentifierÍ!Í+ªlicenseMgrÂÂMªIdentifierÍ,Í7«getFeaturesÂÂÂÀÀ“Ôr_•¤type¥start£endªspecifiers¦source±ImportDeclaration-ÌX‘Ôr`•¤type¥start£end¨imported¥local¯ImportSpecifier6=MªIdentifier6=§ErrCodeMªIdentifier6=§ErrCode^§LiteralÌEÌW°../types/ErrCode²'../types/ErrCode'_±ImportDeclarationÌZÌŒ‘`¯ImportSpecifierÌcÌqMªIdentifierÌcÌq®LicenseManagerMªIdentifierÌcÌq®LicenseManager^§LiteralÌyÌ‹°./LicenseManager²'./LicenseManager'_±ImportDeclarationÌÌÃ‘`¯ImportSpecifierÌ—Ì£MªIdentifierÌ—Ì£¬ResultHelperMªIdentifierÌ—Ì£¬ResultHelper^§LiteralÌ«ÌÂµ../utils/ResultHelper·'../utils/ResultHelper'

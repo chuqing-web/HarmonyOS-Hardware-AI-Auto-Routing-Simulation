@@ -1,0 +1,8 @@
+{
+  "line": 638,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  {\n    const a = pw('RB', 1); const b = pw('U5', 7);\n    if (a && b) {\n      const ea = { x: a.x, y: a.y + 80 };\n      const eb = { x: b.x + 55, y: b.y + 80 };\n      add(disch, a, ea, 12, 'F.Cu'); addVia(disch, ea);\n      L(disch, [ea, { x: ea.x, y: 400 }, { x: eb.x, y: 400 }, eb], 12, 'B.Cu');\n      addVia(disch, eb); add(disch, eb, b, 12, 'F.Cu');\n    }\n  }",
+  "new_string": "  {\n    const a = pw('RB', 1); const b = pw('U5', 7);\n    if (a && b) {\n      const ea = { x: a.x, y: a.y + 80 };\n      const eb = { x: b.x + 60, y: b.y + 80 };\n      add(disch, a, ea, 12, 'F.Cu'); addVia(disch, ea);\n      L(disch, [ea, { x: ea.x, y: 400 }, { x: eb.x, y: 400 }, eb], 12, 'B.Cu');\n      addVia(disch, eb);\n      // 正交回焊盘，避免斜线穿 CAP\n      L(disch, [eb, { x: b.x + 60, y: b.y }, b], 12, 'F.Cu');\n    }\n  }"
+}

@@ -1,46 +1,72 @@
 import deviceInfo from "@ohos:deviceInfo";
 import hidebug from "@ohos:hidebug";
-import { APP_VERSION_CODE, APP_VERSION_NAME, LicenseManager } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { APP_VERSION_CODE, APP_VERSION_NAME, LicenseManager, LicenseTier } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AppService } from '../services/AppService';
 export interface HomeAboutSnapshot {
     copyrightLine: string;
     releaseLine: string;
+    /** About 面板展示用（通常不含协议头） */
     websiteLine: string;
+    /** 浏览器跳转用完整 HTTPS URL */
+    websiteUrl: string;
     registeredToLine: string;
     customerNumberLine: string;
     licenseExpiresLine: string;
+    /** Free / Pro (GitHub Star) / 正式授权 */
+    licenseTierLine: string;
     freeMemoryLine: string;
     platformLine: string;
     isEvaluation: boolean;
+    isStarPro: boolean;
 }
+/** 官方公告 / 产品站（GitHub Pages） */
+export const HOME_OFFICIAL_WEBSITE_HOST: string = 'chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web';
+export const HOME_OFFICIAL_WEBSITE_URL: string = `https://${HOME_OFFICIAL_WEBSITE_HOST}/`;
 export function defaultHomeAboutSnapshot(): HomeAboutSnapshot {
     return {
         copyrightLine: 'AI-SCH Simulator 2024–2026',
         releaseLine: `Release ${APP_VERSION_NAME} SP0 (Build ${APP_VERSION_CODE}) with Advanced Simulation`,
-        websiteLine: 'www.elecdraw.local',
-        registeredToLine: 'Evaluation User',
+        websiteLine: HOME_OFFICIAL_WEBSITE_HOST,
+        websiteUrl: HOME_OFFICIAL_WEBSITE_URL,
+        registeredToLine: 'Free User',
         customerNumberLine: '—',
-        licenseExpiresLine: '01/01/2130',
+        licenseExpiresLine: '—',
+        licenseTierLine: 'Free',
         freeMemoryLine: '—',
         platformLine: 'HarmonyOS',
-        isEvaluation: true
+        isEvaluation: true,
+        isStarPro: false
     };
 }
 export function collectHomeAboutInfo(appService: AppService): HomeAboutSnapshot {
     const licMgr = LicenseManager.getInstance();
-    const status = appService.getLicenseStatus();
     const licensee = licMgr.getLicenseeName();
-    const isEvaluation = !status.valid || licMgr.isEvaluationMode();
+    const isEvaluation = licMgr.isEvaluationMode();
+    const isStarPro = licMgr.isStarUnlocked();
+    const tier = licMgr.getTier();
+    let licenseTierLine = 'Free';
+    if (tier === LicenseTier.ENTERPRISE) {
+        licenseTierLine = 'Enterprise';
+    }
+    else if (tier === LicenseTier.EDUCATION) {
+        licenseTierLine = 'Education';
+    }
+    else if (tier === LicenseTier.PERSONAL_PRO) {
+        licenseTierLine = isStarPro ? 'Pro (GitHub Star)' : 'Pro';
+    }
     return {
         copyrightLine: 'AI-SCH Simulator 2024–2026',
         releaseLine: `Release ${APP_VERSION_NAME} SP0 (Build ${APP_VERSION_CODE}) with Advanced Simulation`,
-        websiteLine: 'www.elecdraw.local',
-        registeredToLine: licensee.length > 0 ? licensee : resolveRegisteredFallback(),
+        websiteLine: HOME_OFFICIAL_WEBSITE_HOST,
+        websiteUrl: HOME_OFFICIAL_WEBSITE_URL,
+        registeredToLine: licensee.length > 0 ? licensee : (isEvaluation ? 'Free User' : resolveRegisteredFallback()),
         customerNumberLine: formatCustomerNumber(appService.getDeviceCode()),
         licenseExpiresLine: licMgr.getLicenseExpiryLabel(),
+        licenseTierLine: licenseTierLine,
         freeMemoryLine: formatFreeMemory(readFreeMemoryMb()),
         platformLine: formatPlatformLine(),
-        isEvaluation: isEvaluation
+        isEvaluation: isEvaluation,
+        isStarPro: isStarPro
     };
 }
 function resolveRegisteredFallback(): string {
@@ -55,7 +81,7 @@ function resolveRegisteredFallback(): string {
         }
     }
     catch (_e) { /* ignore */ }
-    return 'Evaluation User';
+    return 'AI-SCH User';
 }
 /** Proteus 风格客户号：12-11083-810 */
 function formatCustomerNumber(code: string): string {

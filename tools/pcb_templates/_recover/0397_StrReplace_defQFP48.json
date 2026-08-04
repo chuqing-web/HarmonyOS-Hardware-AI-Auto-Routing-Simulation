@@ -1,0 +1,10 @@
+{
+  "line": 397,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "defQFP48"
+  ],
+  "old_string": "for (const d of [\n  def0805(), def0603(), def1206(), defSOIC8(), defDIP8(), defDIP40(), defHC49(),\n  defSOT23(), defTHT2(), defTO2203(),\n  defPinHeader(4), defPinHeader(6), defPinHeader(8), defMountHole()\n]) {\n  DEFS.set(d.id, d);\n}",
+  "new_string": "for (const d of [\n  def0805(), def0603(), def1206(), defSOIC8(), defDIP8(), defDIP40(), defQFP48(), defHC49(),\n  defSOT23(), defTHT2(), defTO2203(),\n  defPinHeader(4), defPinHeader(6), defPinHeader(8), defMountHole()\n]) {\n  DEFS.set(d.id, d);\n}"
+}

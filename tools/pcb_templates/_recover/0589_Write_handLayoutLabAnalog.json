@@ -1,0 +1,10 @@
+{
+  "line": 589,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_analog.mjs",
+  "hit": [
+    "handLayoutLabAnalog"
+  ],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_hand_analog_ic.mjs', 'utf8').trimEnd() + '\\n\\n';\nconst start = s.indexOf('/**\\n * 模拟 IC 检测手布');\nconst end = s.indexOf('/**\\n * 分立器件检测手布');\nif (start < 0 || end < 0) {\n  console.error('markers', start, end);\n  process.exit(1);\n}\ns = s.slice(0, start) + neu + s.slice(end);\ns = s.replace(\n  \"id === 'lab_passive' || id === 'lab_discrete' || id === 'lab_analog_ic'\",\n  \"id === 'lab_passive' || id === 'lab_discrete'\"\n);\nif (!s.includes(\"id === 'lab_uart' || id === 'lab_analog_ic'\")) {\n  s = s.replace(\n    \"id === 'lab_51_led' || id === 'lab_uart'\",\n    \"id === 'lab_51_led' || id === 'lab_uart' || id === 'lab_analog_ic'\"\n  );\n}\nwriteFileSync(p, s);\nconsole.log('ok funcs', (s.match(/function handLayoutLabAnalogIc/g) || []).length);\nconsole.log('cu4', s.includes(\"lab_uart' || id === 'lab_analog_ic'\"));\n"
+}

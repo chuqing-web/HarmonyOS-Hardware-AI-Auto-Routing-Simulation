@@ -1,6 +1,7 @@
 /**
  * Proteus/KiCad Net Label semantics: same label text (case-sensitive) ⇒ same net.
  * Rebinds labels to nearby wire geometry after topology rebuild, then unions nets.
+ * KiCad 对齐：标号须触到铜皮（半格内），禁止松散垂距误并邻线。
  */
 import { SchematicDocument, Net, NetType, NetLabel, Point2D } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
@@ -36,6 +37,63 @@ function perpDistToSegment(p: Point2D, a: Point2D, b: Point2D, endPad: number): 
   const projX = a.x + t * dx;
   const projY = a.y + t * dy;
   return Math.hypot(p.x - projX, p.y - projY);
+}
+
+/**
+ * KiCad-like copper touch tolerance：半格（下限 5mil）。
+ * 标号锚点须落在导线端点或线段上，禁止 1.5×grid 松吸附误并邻 stub。
+ */
+export function labelCopperTouchTol(gridSize: number): number {
+  const g = gridSize > 0 ? gridSize : 10;
+  return Math.max(g * 0.5, 5);
+}
+
+/**
+ * 半格触铜过严时：把标号吸附到最近导线端点（优先搜索半径 searchTol），
+ * 避免 AI stub/浮点导致「标号未并网」。返回吸附次数。
+ */
+export function snapLabelsOntoCopper(doc: SchematicDocument, gridSize: number = 10): number {
+  if (doc.netLabels === undefined || doc.netLabels.length === 0 || doc.wires.length === 0) {
+    return 0;
+  }
+  const touchTol = labelCopperTouchTol(gridSize);
+  const searchTol = Math.max(touchTol * 4, gridSize * 2, 20);
+  let snapped = 0;
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const label = doc.netLabels[li];
+    if (isAutoNetLabelText(label.text)) {
+      continue;
+    }
+    // 已在触铜范围内则不动
+    if (findNearestWireNetId(doc, label.position, touchTol) !== null) {
+      continue;
+    }
+    let best: Point2D | null = null;
+    let bestD = searchTol;
+    let preferNet = label.netId;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const w = doc.wires[wi];
+      if (w.points.length < 2) {
+        continue;
+      }
+      // 优先吸到已声明同网的导线端点
+      const sameNet = preferNet.length > 0 && w.netId === preferNet;
+      const ends: Point2D[] = [w.points[0], w.points[w.points.length - 1]];
+      for (let ei = 0; ei < ends.length; ei++) {
+        const d = Math.hypot(label.position.x - ends[ei].x, label.position.y - ends[ei].y);
+        const score = sameNet ? d - 1 : d;
+        if (score < bestD) {
+          bestD = score;
+          best = { x: ends[ei].x, y: ends[ei].y };
+        }
+      }
+    }
+    if (best !== null) {
+      label.position = best;
+      snapped++;
+    }
+  }
+  return snapped;
 }
 
 /** Auto-generated topo names must not participate in label merging. */
@@ -109,15 +167,15 @@ export function normalizePowerLabelFlags(doc: SchematicDocument): number {
 
 /**
  * Nearest wire net for a label. Prefer endpoints (especially short stubs);
- * mid-segment only with tight perpendicular distance so adjacent parallel
- * stubs (e.g. V+/COM) do not steal.
+ * mid-segment only within copper-touch tol so adjacent parallel stubs
+ * (e.g. V+/COM) do not steal.
  */
-function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: number): string | null {
+function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, touchTol: number): string | null {
   let bestId: string | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
-  const endTol2 = endTol * endTol;
-  const segPerpTol = Math.min(4, endTol * 0.25);
-  const stubLenMax = Math.max(endTol * 4, 80);
+  const endTol2 = touchTol * touchTol;
+  const segPerpTol = touchTol;
+  const stubLenMax = Math.max(touchTol * 8, 80);
 
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
@@ -132,7 +190,7 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     if (dEnd <= endTol2) {
       const pathLen = wirePathLength(wire.points);
       // Prefer short stubs over long routes when both endpoints are in range
-      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : endTol * 0.5);
+      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : touchTol * 0.5);
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -141,12 +199,12 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     for (let si = 0; si < wire.points.length - 1; si++) {
       const a = wire.points[si];
       const b = wire.points[si + 1];
-      const perp = perpDistToSegment(pos, a, b, endTol);
+      const perp = perpDistToSegment(pos, a, b, touchTol);
       if (perp < 0 || perp > segPerpTol) {
         continue;
       }
       // Mid-segment hits are secondary to endpoint/stub matches
-      const score = perp + endTol;
+      const score = perp + touchTol;
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -221,8 +279,8 @@ export function mergeNetInto(doc: SchematicDocument, fromId: string, toId: strin
 }
 
 /**
- * After geometric topology rebuild: bind labels to nearby wires, then union
- * all nets that share the same exclusive label text (case-sensitive).
+ * After geometric topology rebuild: bind labels to copper (half-grid touch),
+ * then union all nets that share the same exclusive label text (case-sensitive).
  * Geo-nets claimed by conflicting label texts are left unmerged.
  */
 export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: number = 10): number {
@@ -230,8 +288,9 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     return 0;
   }
   normalizePowerLabelFlags(doc);
-  // Tight endpoint snap — loose mid-segment previously pulled COM→V+ (20px apart)
-  const endTol = Math.max(gridSize * 1.5, 12);
+  // 先吸附到铜皮端点，再半格触铜绑定（兼容 AI stub 浮点/过松放置）
+  snapLabelsOntoCopper(doc, gridSize);
+  const touchTol = labelCopperTouchTol(gridSize);
   let mergeCount = 0;
 
   for (let li = 0; li < doc.netLabels.length; li++) {
@@ -239,7 +298,7 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     if (isAutoNetLabelText(label.text)) {
       continue;
     }
-    const hit = findNearestWireNetId(doc, label.position, endTol);
+    const hit = findNearestWireNetId(doc, label.position, touchTol);
     if (hit !== null) {
       label.netId = hit;
     }

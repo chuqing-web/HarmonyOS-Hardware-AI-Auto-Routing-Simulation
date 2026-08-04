@@ -1,0 +1,11 @@
+{
+  "line": 548,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "handLayoutLabDiscrete",
+    "handLayoutLabAnalog"
+  ],
+  "old_string": "    } else if (id === 'lab_discrete') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabDiscrete(doc);\n    } else {\n      route = autoRoute(doc);\n    }\n    applyLabBoardSize(doc, sch, id);\n    const gndNet = doc.nets.find(n => isGndNet(n.name));\n    const handLabs = ['lab_power', 'lab_amp', 'lab_filter', 'lab_51_led', 'lab_uart', 'lab_passive', 'lab_discrete'];",
+  "new_string": "    } else if (id === 'lab_discrete') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabDiscrete(doc);\n    } else if (id === 'lab_analog_ic') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabAnalogIc(doc);\n    } else {\n      route = autoRoute(doc);\n    }\n    applyLabBoardSize(doc, sch, id);\n    const gndNet = doc.nets.find(n => isGndNet(n.name));\n    const handLabs = ['lab_power', 'lab_amp', 'lab_filter', 'lab_51_led', 'lab_uart', 'lab_passive', 'lab_discrete', 'lab_analog_ic'];"
+}

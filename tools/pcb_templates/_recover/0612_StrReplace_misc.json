@@ -1,0 +1,8 @@
+{
+  "line": 612,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  // In1：仅上廊 SIG（下廊留给 B，避免穿 GND 干线）\n  fanTop(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  // In2：上 LM_OUT / 下 BUCK\n  fanTop(lmOut, pw('Rf3', 2), jLm, 'In2.Cu', 90, 2680);\n  fanBot(buckOut, pw('CBO', 1), jBk, 'In2.Cu', 2760);\n  // B：上 LM555；DISCH 走更上廊 y=40；VOUT 下廊 H-first\n  fanTop(out555, pw('RLED', 1), j555, 'B.Cu', 130, 2640);\n  fanTop(disch, pw('RA', 2), jDs, 'B.Cu', 40, 2780);\n  fanBot(vout0, pw('REG1', 3), jV0, 'B.Cu', 2700);",
+  "new_string": "  // In1：上廊 SIG；LM_OUT 本地已在 In1，扇出走 B 上廊\n  fanTop(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  // In2：仅下廊 BUCK（上层留给 VCC 总线）\n  fanBot(buckOut, pw('CBO', 1), jBk, 'In2.Cu', 2760);\n  // B：LM_OUT / LM555 / DISCH 上廊互异 runY·col；VOUT 下廊\n  fanTop(lmOut, pw('Rf3', 2), jLm, 'B.Cu', 90, 2600);\n  fanTop(out555, pw('RLED', 1), j555, 'B.Cu', 140, 2660);\n  fanTop(disch, pw('RA', 2), jDs, 'B.Cu', 40, 2800);\n  fanBot(vout0, pw('REG1', 3), jV0, 'B.Cu', 2720);"
+}

@@ -1,0 +1,11 @@
+{
+  "line": 642,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_analog.mjs",
+  "hit": [
+    "handLayoutLabDiscrete",
+    "handLayoutLabAnalog"
+  ],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\n\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_hand_analog_ic.mjs', 'utf8').trimEnd() + '\\n\\n';\n\nconst start = s.indexOf('function handLayoutLabAnalogIc(doc)');\nconst end = s.indexOf('function handLayoutLabDiscrete(doc)');\nif (start < 0 || end < 0) {\n  console.error('markers', start, end);\n  process.exit(1);\n}\n\n// Strip any duplicated doc-comments immediately before the function\nlet cStart = start;\nwhile (cStart > 0) {\n  const prev = s.lastIndexOf('/**', cStart - 1);\n  if (prev < 0 || start - prev > 800) break;\n  const between = s.slice(prev, start);\n  if (!/^\\s*\\/\\*\\*[\\s\\S]*\\*\\/\\s*$/.test(between) && !between.includes('模拟 IC')) break;\n  // If it's only comment blocks about analog IC, include them in the replace range\n  if (between.includes('模拟 IC') || between.includes('handLayoutLabAnalogIc')) {\n    cStart = prev;\n  } else break;\n  if (cStart === prev) {\n    // keep walking back over consecutive analog comments\n    const earlier = s.lastIndexOf('/**', cStart - 1);\n    if (earlier >= 0 && start - earlier < 2000 && s.slice(earlier, cStart).includes('模拟 IC')) {\n      cStart = earlier;\n      continue;\n    }\n    break;\n  }\n}\n\ns = s.slice(0, cStart) + neu + s.slice(end);\n\nwriteFileSync(p, s);\nconst nFn = (s.match(/function handLayoutLabAnalogIc/g) || []).length;\nconst nDoc = (s.match(/模拟 IC 检测手布/g) || []).length;\nconsole.log({ nFn, nDoc, hasOrtho: s.includes('正交回焊盘'), hasUpLeft: s.includes('先上再左') });\n"
+}

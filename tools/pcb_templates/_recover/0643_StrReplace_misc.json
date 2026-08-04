@@ -1,0 +1,8 @@
+{
+  "line": 643,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "      const e2 = { x: t2.x - 55, y: t2.y };\n      const e6 = { x: t6.x + 55, y: t6.y };\n      add(cap555, t2, e2, 12, 'F.Cu'); addVia(cap555, e2);\n      L(cap555, [e2, { x: e2.x, y: 540 }, { x: e6.x, y: 540 }, e6], 12, 'In1.Cu');\n      addVia(cap555, e6); add(cap555, e6, t6, 12, 'F.Cu');",
+  "new_string": "      const e2 = { x: t2.x - 55, y: t2.y };\n      const e6 = { x: t6.x, y: t6.y - 55 };\n      add(cap555, t2, e2, 12, 'F.Cu'); addVia(cap555, e2);\n      L(cap555, [e2, { x: e2.x, y: 540 }, { x: e6.x, y: 540 }, e6], 12, 'In1.Cu');\n      addVia(cap555, e6); add(cap555, e6, t6, 12, 'F.Cu');"
+}

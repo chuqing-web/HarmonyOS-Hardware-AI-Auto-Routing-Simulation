@@ -1,0 +1,8 @@
+{
+  "line": 621,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  setPos('CD555', 2140, 150, 0);\n  setPos('CC555', 2140, 450, 0);\n  setPos('RLED', 2140, 300, 0);\n  setPos('D555', 2300, 300, 0);",
+  "new_string": "  // CD555 VCC 上逃，避开 555 区 F 线\n  // （toPlane 列表里 CD555 已是 0,-40；U5 周边再拉开）\n  setPos('CD555', 2140, 120, 0);\n  setPos('CC555', 2360, 450, 0);\n  setPos('RLED', 2140, 320, 0);\n  setPos('D555', 2360, 320, 0);"
+}

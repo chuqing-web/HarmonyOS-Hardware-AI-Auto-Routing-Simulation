@@ -1,6 +1,7 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ(-/**
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ1$/**
  * Proteus/KiCad Net Label semantics: same label text (case-sensitive) â‡’ same net.
  * Rebinds labels to nearby wire geometry after topology rebuild, then unions nets.
+ * KiCad å¯¹é½ï¼šæ ‡å·é¡»è§¦åˆ°é“œçš®ï¼ˆåŠæ ¼å†…ï¼‰ï¼Œç¦æ­¢æ¾æ•£å‚è·è¯¯å¹¶é‚»çº¿ã€‚
  */
 import { NetType } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
@@ -33,6 +34,61 @@ function perpDistToSegment(p, a, b, endPad) {
     const projX = a.x + t * dx;
     const projY = a.y + t * dy;
     return Math.hypot(p.x - projX, p.y - projY);
+}
+/**
+ * KiCad-like copper touch toleranceï¼šåŠæ ¼ï¼ˆä¸‹é™ 5milï¼‰ã€‚
+ * æ ‡å·é”šç‚¹é¡»è½åœ¨å¯¼çº¿ç«¯ç‚¹æˆ–çº¿æ®µä¸Šï¼Œç¦æ­¢ 1.5Ã—grid æ¾å¸é™„è¯¯å¹¶é‚» stubã€‚
+ */
+export function labelCopperTouchTol(gridSize) {
+    const g = gridSize > 0 ? gridSize : 10;
+    return Math.max(g * 0.5, 5);
+}
+/**
+ * åŠæ ¼è§¦é“œè¿‡ä¸¥æ—¶ï¼šæŠŠæ ‡å·å¸é™„åˆ°æœ€è¿‘å¯¼çº¿ç«¯ç‚¹ï¼ˆä¼˜å…ˆæœç´¢åŠå¾„ searchTolï¼‰ï¼Œ
+ * é¿å… AI stub/æµ®ç‚¹å¯¼è‡´ã€Œæ ‡å·æœªå¹¶ç½‘ã€ã€‚è¿”å›å¸é™„æ¬¡æ•°ã€‚
+ */
+export function snapLabelsOntoCopper(doc, gridSize = 10) {
+    if (doc.netLabels === undefined || doc.netLabels.length === 0 || doc.wires.length === 0) {
+        return 0;
+    }
+    const touchTol = labelCopperTouchTol(gridSize);
+    const searchTol = Math.max(touchTol * 4, gridSize * 2, 20);
+    let snapped = 0;
+    for (let li = 0; li < doc.netLabels.length; li++) {
+        const label = doc.netLabels[li];
+        if (isAutoNetLabelText(label.text)) {
+            continue;
+        }
+        // å·²åœ¨è§¦é“œèŒƒå›´å†…åˆ™ä¸åŠ¨
+        if (findNearestWireNetId(doc, label.position, touchTol) !== null) {
+            continue;
+        }
+        let best = null;
+        let bestD = searchTol;
+        let preferNet = label.netId;
+        for (let wi = 0; wi < doc.wires.length; wi++) {
+            const w = doc.wires[wi];
+            if (w.points.length < 2) {
+                continue;
+            }
+            // ä¼˜å…ˆå¸åˆ°å·²å£°æ˜åŒç½‘çš„å¯¼çº¿ç«¯ç‚¹
+            const sameNet = preferNet.length > 0 && w.netId === preferNet;
+            const ends = [w.points[0], w.points[w.points.length - 1]];
+            for (let ei = 0; ei < ends.length; ei++) {
+                const d = Math.hypot(label.position.x - ends[ei].x, label.position.y - ends[ei].y);
+                const score = sameNet ? d - 1 : d;
+                if (score < bestD) {
+                    bestD = score;
+                    best = { x: ends[ei].x, y: ends[ei].y };
+                }
+            }
+        }
+        if (best !== null) {
+            label.position = best;
+            snapped++;
+        }
+    }
+    return snapped;
 }
 /** Auto-generated topo names must not participate in label merging. */
 export function isAutoNetLabelText(text) {
@@ -99,15 +155,15 @@ export function normalizePowerLabelFlags(doc) {
 }
 /**
  * Nearest wire net for a label. Prefer endpoints (especially short stubs);
- * mid-segment only with tight perpendicular distance so adjacent parallel
- * stubs (e.g. V+/COM) do not steal.
+ * mid-segment only within copper-touch tol so adjacent parallel stubs
+ * (e.g. V+/COM) do not steal.
  */
-function findNearestWireNetId(doc, pos, endTol) {
+function findNearestWireNetId(doc, pos, touchTol) {
     let bestId = null;
     let bestScore = Number.POSITIVE_INFINITY;
-    const endTol2 = endTol * endTol;
-    const segPerpTol = Math.min(4, endTol * 0.25);
-    const stubLenMax = Math.max(endTol * 4, 80);
+    const endTol2 = touchTol * touchTol;
+    const segPerpTol = touchTol;
+    const stubLenMax = Math.max(touchTol * 8, 80);
     for (let wi = 0; wi < doc.wires.length; wi++) {
         const wire = doc.wires[wi];
         if (wire.points.length < 2 || wire.netId.length === 0) {
@@ -121,7 +177,7 @@ function findNearestWireNetId(doc, pos, endTol) {
         if (dEnd <= endTol2) {
             const pathLen = wirePathLength(wire.points);
             // Prefer short stubs over long routes when both endpoints are in range
-            const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : endTol * 0.5);
+            const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : touchTol * 0.5);
             if (score < bestScore) {
                 bestScore = score;
                 bestId = wire.netId;
@@ -130,12 +186,12 @@ function findNearestWireNetId(doc, pos, endTol) {
         for (let si = 0; si < wire.points.length - 1; si++) {
             const a = wire.points[si];
             const b = wire.points[si + 1];
-            const perp = perpDistToSegment(pos, a, b, endTol);
+            const perp = perpDistToSegment(pos, a, b, touchTol);
             if (perp < 0 || perp > segPerpTol) {
                 continue;
             }
             // Mid-segment hits are secondary to endpoint/stub matches
-            const score = perp + endTol;
+            const score = perp + touchTol;
             if (score < bestScore) {
                 bestScore = score;
                 bestId = wire.netId;
@@ -207,8 +263,8 @@ export function mergeNetInto(doc, fromId, toId) {
     }
 }
 /**
- * After geometric topology rebuild: bind labels to nearby wires, then union
- * all nets that share the same exclusive label text (case-sensitive).
+ * After geometric topology rebuild: bind labels to copper (half-grid touch),
+ * then union all nets that share the same exclusive label text (case-sensitive).
  * Geo-nets claimed by conflicting label texts are left unmerged.
  */
 export function applyNetLabelConnectivity(doc, gridSize = 10) {
@@ -216,15 +272,16 @@ export function applyNetLabelConnectivity(doc, gridSize = 10) {
         return 0;
     }
     normalizePowerLabelFlags(doc);
-    // Tight endpoint snap â€” loose mid-segment previously pulled COMâ†’V+ (20px apart)
-    const endTol = Math.max(gridSize * 1.5, 12);
+    // å…ˆå¸é™„åˆ°é“œçš®ç«¯ç‚¹ï¼Œå†åŠæ ¼è§¦é“œç»‘å®šï¼ˆå…¼å®¹ AI stub æµ®ç‚¹/è¿‡æ¾æ”¾ç½®ï¼‰
+    snapLabelsOntoCopper(doc, gridSize);
+    const touchTol = labelCopperTouchTol(gridSize);
     let mergeCount = 0;
     for (let li = 0; li < doc.netLabels.length; li++) {
         const label = doc.netLabels[li];
         if (isAutoNetLabelText(label.text)) {
             continue;
         }
-        const hit = findNearestWireNetId(doc, label.position, endTol);
+        const hit = findNearestWireNetId(doc, label.position, touchTol);
         if (hit !== null) {
             label.netId = hit;
         }
@@ -291,9 +348,10 @@ export function applyNetLabelConnectivity(doc, gridSize = 10) {
     });
     return mergeCount;
 }
-//# sourceMappingURL=NetLabelConnectivity.js.mapÂ’ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName¶./NetLabelConnectivity¦commonCÙ)./src/main/ets/utils/NetLabelConnectivity¦commonÃÚ&®/**
+//# sourceMappingURL=NetLabelConnectivity.js.mapÂ’ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName¶./NetLabelConnectivity¦commonCÙ)./src/main/ets/utils/NetLabelConnectivity¦commonÃÚ/%/**
  * Proteus/KiCad Net Label semantics: same label text (case-sensitive) â‡’ same net.
  * Rebinds labels to nearby wire geometry after topology rebuild, then unions nets.
+ * KiCad å¯¹é½ï¼šæ ‡å·é¡»è§¦åˆ°é“œçš®ï¼ˆåŠæ ¼å†…ï¼‰ï¼Œç¦æ­¢æ¾æ•£å‚è·è¯¯å¹¶é‚»çº¿ã€‚
  */
 import { SchematicDocument, Net, NetType, NetLabel, Point2D } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
@@ -329,6 +387,63 @@ function perpDistToSegment(p: Point2D, a: Point2D, b: Point2D, endPad: number): 
   const projX = a.x + t * dx;
   const projY = a.y + t * dy;
   return Math.hypot(p.x - projX, p.y - projY);
+}
+
+/**
+ * KiCad-like copper touch toleranceï¼šåŠæ ¼ï¼ˆä¸‹é™ 5milï¼‰ã€‚
+ * æ ‡å·é”šç‚¹é¡»è½åœ¨å¯¼çº¿ç«¯ç‚¹æˆ–çº¿æ®µä¸Šï¼Œç¦æ­¢ 1.5Ã—grid æ¾å¸é™„è¯¯å¹¶é‚» stubã€‚
+ */
+export function labelCopperTouchTol(gridSize: number): number {
+  const g = gridSize > 0 ? gridSize : 10;
+  return Math.max(g * 0.5, 5);
+}
+
+/**
+ * åŠæ ¼è§¦é“œè¿‡ä¸¥æ—¶ï¼šæŠŠæ ‡å·å¸é™„åˆ°æœ€è¿‘å¯¼çº¿ç«¯ç‚¹ï¼ˆä¼˜å…ˆæœç´¢åŠå¾„ searchTolï¼‰ï¼Œ
+ * é¿å… AI stub/æµ®ç‚¹å¯¼è‡´ã€Œæ ‡å·æœªå¹¶ç½‘ã€ã€‚è¿”å›å¸é™„æ¬¡æ•°ã€‚
+ */
+export function snapLabelsOntoCopper(doc: SchematicDocument, gridSize: number = 10): number {
+  if (doc.netLabels === undefined || doc.netLabels.length === 0 || doc.wires.length === 0) {
+    return 0;
+  }
+  const touchTol = labelCopperTouchTol(gridSize);
+  const searchTol = Math.max(touchTol * 4, gridSize * 2, 20);
+  let snapped = 0;
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const label = doc.netLabels[li];
+    if (isAutoNetLabelText(label.text)) {
+      continue;
+    }
+    // å·²åœ¨è§¦é“œèŒƒå›´å†…åˆ™ä¸åŠ¨
+    if (findNearestWireNetId(doc, label.position, touchTol) !== null) {
+      continue;
+    }
+    let best: Point2D | null = null;
+    let bestD = searchTol;
+    let preferNet = label.netId;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const w = doc.wires[wi];
+      if (w.points.length < 2) {
+        continue;
+      }
+      // ä¼˜å…ˆå¸åˆ°å·²å£°æ˜åŒç½‘çš„å¯¼çº¿ç«¯ç‚¹
+      const sameNet = preferNet.length > 0 && w.netId === preferNet;
+      const ends: Point2D[] = [w.points[0], w.points[w.points.length - 1]];
+      for (let ei = 0; ei < ends.length; ei++) {
+        const d = Math.hypot(label.position.x - ends[ei].x, label.position.y - ends[ei].y);
+        const score = sameNet ? d - 1 : d;
+        if (score < bestD) {
+          bestD = score;
+          best = { x: ends[ei].x, y: ends[ei].y };
+        }
+      }
+    }
+    if (best !== null) {
+      label.position = best;
+      snapped++;
+    }
+  }
+  return snapped;
 }
 
 /** Auto-generated topo names must not participate in label merging. */
@@ -402,15 +517,15 @@ export function normalizePowerLabelFlags(doc: SchematicDocument): number {
 
 /**
  * Nearest wire net for a label. Prefer endpoints (especially short stubs);
- * mid-segment only with tight perpendicular distance so adjacent parallel
- * stubs (e.g. V+/COM) do not steal.
+ * mid-segment only within copper-touch tol so adjacent parallel stubs
+ * (e.g. V+/COM) do not steal.
  */
-function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: number): string | null {
+function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, touchTol: number): string | null {
   let bestId: string | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
-  const endTol2 = endTol * endTol;
-  const segPerpTol = Math.min(4, endTol * 0.25);
-  const stubLenMax = Math.max(endTol * 4, 80);
+  const endTol2 = touchTol * touchTol;
+  const segPerpTol = touchTol;
+  const stubLenMax = Math.max(touchTol * 8, 80);
 
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
@@ -425,7 +540,7 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     if (dEnd <= endTol2) {
       const pathLen = wirePathLength(wire.points);
       // Prefer short stubs over long routes when both endpoints are in range
-      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : endTol * 0.5);
+      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : touchTol * 0.5);
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -434,12 +549,12 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     for (let si = 0; si < wire.points.length - 1; si++) {
       const a = wire.points[si];
       const b = wire.points[si + 1];
-      const perp = perpDistToSegment(pos, a, b, endTol);
+      const perp = perpDistToSegment(pos, a, b, touchTol);
       if (perp < 0 || perp > segPerpTol) {
         continue;
       }
       // Mid-segment hits are secondary to endpoint/stub matches
-      const score = perp + endTol;
+      const score = perp + touchTol;
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -514,8 +629,8 @@ export function mergeNetInto(doc: SchematicDocument, fromId: string, toId: strin
 }
 
 /**
- * After geometric topology rebuild: bind labels to nearby wires, then union
- * all nets that share the same exclusive label text (case-sensitive).
+ * After geometric topology rebuild: bind labels to copper (half-grid touch),
+ * then union all nets that share the same exclusive label text (case-sensitive).
  * Geo-nets claimed by conflicting label texts are left unmerged.
  */
 export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: number = 10): number {
@@ -523,8 +638,9 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     return 0;
   }
   normalizePowerLabelFlags(doc);
-  // Tight endpoint snap â€” loose mid-segment previously pulled COMâ†’V+ (20px apart)
-  const endTol = Math.max(gridSize * 1.5, 12);
+  // å…ˆå¸é™„åˆ°é“œçš®ç«¯ç‚¹ï¼Œå†åŠæ ¼è§¦é“œç»‘å®šï¼ˆå…¼å®¹ AI stub æµ®ç‚¹/è¿‡æ¾æ”¾ç½®ï¼‰
+  snapLabelsOntoCopper(doc, gridSize);
+  const touchTol = labelCopperTouchTol(gridSize);
   let mergeCount = 0;
 
   for (let li = 0; li < doc.netLabels.length; li++) {
@@ -532,7 +648,7 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     if (isAutoNetLabelText(label.text)) {
       continue;
     }
-    const hit = findNearestWireNetId(doc, label.position, endTol);
+    const hit = findNearestWireNetId(doc, label.position, touchTol);
     if (hit !== null) {
       label.netId = hit;
     }
@@ -602,11 +718,11 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
 
   return mergeCount;
 }
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ&‘”    ‘”  ‘”   ‘”   ‘”   ‘”  
-‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  "‘”  %‘”  & ‘”  ( ‘”  ) ‘”  *‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  0‘”  1‘”  2‘”  3‘”  4 ‘”  6 ‘”  7 ‘”  8‘”  :‘”  ; ‘”  = ‘”  >‘”  Ì@ ‘”  ÌB ‘”  ÌC‘”  ÌD‘”  ÌE ‘”  ÌG ‘”  ÌH ‘”  ÌI‘”  ÌK‘”  ÌL‘”  ÌN‘”  ÌO‘”  ÌP‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌT ‘”  ÌV ‘”  ÌW ‘”  ÌX‘”  ÌY‘”  ÌZ‘”  Ì\‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìi‘”  Ìj‘”  Ìk ‘”  Ìm ‘”  Ìq‘”  Ìr ‘”  Ìt‘”  Ìu‘”  Ìv‘”  Ìw‘”  Ìy‘”  Ì{‘”  Ì}‘”  Ì‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì’‘”  Ì”‘”  Ì—‘”  Ì˜‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ ‘”  Ì ‘”  ÌŸ‘”  Ì  ‘”  Ì¢ ‘”  Ì£‘”  Ì¤‘”  Ì¥‘”  Ì¦‘”  Ì©‘”  Ìª‘”  Ì«‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì°‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì·‘”  Ì¹‘”  Ìº‘”  Ì» ‘”  Ì½ ‘”  Ì¾ ‘”  ÌÁ‘”  ÌÆ‘”  ÌÇ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌĞ‘”  ÌÑ‘”  ÌÒ‘”  ÌÔ‘”  Ì×‘”  ÌØ‘”  ÌÙ‘”  ÌÚ‘”  ÌÛ‘”  ÌÜ ‘”  ÌŞ ‘”  Ìâ‘”  Ìã ‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìé‘”  Ìì‘”  Ìî‘”  Ìğ‘”  Ìñ‘”  Ìó‘”  Ìô‘”  Ìõ‘”  Ìø‘”  Ìù‘”  Ìû‘”  Ìı‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í$‘”  Í%‘”  Í*	‘”  Í+‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í0‘”  Í0‘”  Í1‘”  Í2‘”  Í3‘”  Í5‘”  Í6 ‘ÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.ets‘Ú&®/**
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ_‘”    ‘”  ‘”   ‘”   ‘”   ‘”  ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”   ‘”   ‘”   ‘”  ‘”  ‘”   ‘”  #‘”  &‘”  ' ‘”  ) ‘”  ,‘”  - ‘”  .‘”  0 ‘”  2 ‘”  5‘”  6 ‘”  8‘”  9‘”  :‘”  ;‘”  =‘”  ?‘”  ÌA‘”  ÌC‘”  ÌE‘”  ÌH‘”  ÌI‘”  ÌK‘”  ÌM‘”  ÌO‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌW	‘”  ÌX‘”  ÌY‘”  Ì[‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì` ‘”  Ìb ‘”  Ìc ‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìi‘”  Ìj‘”  Ìk‘”  Ìl‘”  Ìm‘”  Ìn ‘”  Ìp ‘”  Ìq ‘”  Ìr‘”  Ìt‘”  Ìu ‘”  Ìw ‘”  Ìx‘”  Ìz ‘”  Ì| ‘”  Ì}‘”  Ì~‘”  Ì ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ‘”  Ì…‘”  Ì†‘”  Ìˆ‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì–‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì¥ ‘”  Ì§ ‘”  Ì«‘”  Ì¬ ‘”  Ì®‘”  Ì¯‘”  Ì±‘”  Ì³‘”  Ìµ‘”  Ì·‘”  Ì¹‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÆ‘”  ÌÉ‘”  ÌÊ‘”  ÌÌ‘”  ÌÎ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ ‘”  ÌØ ‘”  ÌÙ‘”  ÌÚ ‘”  ÌÜ ‘”  Ìİ‘”  ÌŞ‘”  Ìß‘”  Ìà‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìç‘”  Ìè‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìì‘”  Ìí‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìó‘”  Ìô‘”  Ìõ ‘”  Ì÷ ‘”  Ìø ‘”  Ìû‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í‘”  Í‘”  Í ‘”  Í#‘”  Í$‘”  Í'‘”  Í)‘”  Í+‘”  Í,‘”  Í.‘”  Í/‘”  Í0‘”  Í3‘”  Í4‘”  Í6‘”  Í8‘”  Í;‘”  Í=‘”  Í>‘”  Í?‘”  ÍB‘”  ÍE‘”  ÍG‘”  ÍI‘”  ÍJ‘”  ÍL‘”  ÍP‘”  ÍQ‘”  ÍR‘”  ÍS‘”  ÍT‘”  ÍU‘”  ÍY‘”  Í[‘”  Í\‘”  Í]‘”  Í^‘”  Í_‘”  Í`‘”  Íe	‘”  Íf‘”  Íg‘”  Íh‘”  Íi‘”  Íj‘”  Ík‘”  Ík‘”  Íl‘”  Ím‘”  Ín‘”  Íp‘”  Íq ‘ÙOC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\NetLabelConnectivity.ets‘Ú/%/**
  * Proteus/KiCad Net Label semantics: same label text (case-sensitive) â‡’ same net.
  * Rebinds labels to nearby wire geometry after topology rebuild, then unions nets.
+ * KiCad å¯¹é½ï¼šæ ‡å·é¡»è§¦åˆ°é“œçš®ï¼ˆåŠæ ¼å†…ï¼‰ï¼Œç¦æ­¢æ¾æ•£å‚è·è¯¯å¹¶é‚»çº¿ã€‚
  */
 import { SchematicDocument, Net, NetType, NetLabel, Point2D } from '../types/CommonTypes';
 import { IdUtil } from './IdUtil';
@@ -642,6 +758,63 @@ function perpDistToSegment(p: Point2D, a: Point2D, b: Point2D, endPad: number): 
   const projX = a.x + t * dx;
   const projY = a.y + t * dy;
   return Math.hypot(p.x - projX, p.y - projY);
+}
+
+/**
+ * KiCad-like copper touch toleranceï¼šåŠæ ¼ï¼ˆä¸‹é™ 5milï¼‰ã€‚
+ * æ ‡å·é”šç‚¹é¡»è½åœ¨å¯¼çº¿ç«¯ç‚¹æˆ–çº¿æ®µä¸Šï¼Œç¦æ­¢ 1.5Ã—grid æ¾å¸é™„è¯¯å¹¶é‚» stubã€‚
+ */
+export function labelCopperTouchTol(gridSize: number): number {
+  const g = gridSize > 0 ? gridSize : 10;
+  return Math.max(g * 0.5, 5);
+}
+
+/**
+ * åŠæ ¼è§¦é“œè¿‡ä¸¥æ—¶ï¼šæŠŠæ ‡å·å¸é™„åˆ°æœ€è¿‘å¯¼çº¿ç«¯ç‚¹ï¼ˆä¼˜å…ˆæœç´¢åŠå¾„ searchTolï¼‰ï¼Œ
+ * é¿å… AI stub/æµ®ç‚¹å¯¼è‡´ã€Œæ ‡å·æœªå¹¶ç½‘ã€ã€‚è¿”å›å¸é™„æ¬¡æ•°ã€‚
+ */
+export function snapLabelsOntoCopper(doc: SchematicDocument, gridSize: number = 10): number {
+  if (doc.netLabels === undefined || doc.netLabels.length === 0 || doc.wires.length === 0) {
+    return 0;
+  }
+  const touchTol = labelCopperTouchTol(gridSize);
+  const searchTol = Math.max(touchTol * 4, gridSize * 2, 20);
+  let snapped = 0;
+  for (let li = 0; li < doc.netLabels.length; li++) {
+    const label = doc.netLabels[li];
+    if (isAutoNetLabelText(label.text)) {
+      continue;
+    }
+    // å·²åœ¨è§¦é“œèŒƒå›´å†…åˆ™ä¸åŠ¨
+    if (findNearestWireNetId(doc, label.position, touchTol) !== null) {
+      continue;
+    }
+    let best: Point2D | null = null;
+    let bestD = searchTol;
+    let preferNet = label.netId;
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const w = doc.wires[wi];
+      if (w.points.length < 2) {
+        continue;
+      }
+      // ä¼˜å…ˆå¸åˆ°å·²å£°æ˜åŒç½‘çš„å¯¼çº¿ç«¯ç‚¹
+      const sameNet = preferNet.length > 0 && w.netId === preferNet;
+      const ends: Point2D[] = [w.points[0], w.points[w.points.length - 1]];
+      for (let ei = 0; ei < ends.length; ei++) {
+        const d = Math.hypot(label.position.x - ends[ei].x, label.position.y - ends[ei].y);
+        const score = sameNet ? d - 1 : d;
+        if (score < bestD) {
+          bestD = score;
+          best = { x: ends[ei].x, y: ends[ei].y };
+        }
+      }
+    }
+    if (best !== null) {
+      label.position = best;
+      snapped++;
+    }
+  }
+  return snapped;
 }
 
 /** Auto-generated topo names must not participate in label merging. */
@@ -715,15 +888,15 @@ export function normalizePowerLabelFlags(doc: SchematicDocument): number {
 
 /**
  * Nearest wire net for a label. Prefer endpoints (especially short stubs);
- * mid-segment only with tight perpendicular distance so adjacent parallel
- * stubs (e.g. V+/COM) do not steal.
+ * mid-segment only within copper-touch tol so adjacent parallel stubs
+ * (e.g. V+/COM) do not steal.
  */
-function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: number): string | null {
+function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, touchTol: number): string | null {
   let bestId: string | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
-  const endTol2 = endTol * endTol;
-  const segPerpTol = Math.min(4, endTol * 0.25);
-  const stubLenMax = Math.max(endTol * 4, 80);
+  const endTol2 = touchTol * touchTol;
+  const segPerpTol = touchTol;
+  const stubLenMax = Math.max(touchTol * 8, 80);
 
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
@@ -738,7 +911,7 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     if (dEnd <= endTol2) {
       const pathLen = wirePathLength(wire.points);
       // Prefer short stubs over long routes when both endpoints are in range
-      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : endTol * 0.5);
+      const score = Math.sqrt(dEnd) + (pathLen <= stubLenMax ? 0 : touchTol * 0.5);
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -747,12 +920,12 @@ function findNearestWireNetId(doc: SchematicDocument, pos: Point2D, endTol: numb
     for (let si = 0; si < wire.points.length - 1; si++) {
       const a = wire.points[si];
       const b = wire.points[si + 1];
-      const perp = perpDistToSegment(pos, a, b, endTol);
+      const perp = perpDistToSegment(pos, a, b, touchTol);
       if (perp < 0 || perp > segPerpTol) {
         continue;
       }
       // Mid-segment hits are secondary to endpoint/stub matches
-      const score = perp + endTol;
+      const score = perp + touchTol;
       if (score < bestScore) {
         bestScore = score;
         bestId = wire.netId;
@@ -827,8 +1000,8 @@ export function mergeNetInto(doc: SchematicDocument, fromId: string, toId: strin
 }
 
 /**
- * After geometric topology rebuild: bind labels to nearby wires, then union
- * all nets that share the same exclusive label text (case-sensitive).
+ * After geometric topology rebuild: bind labels to copper (half-grid touch),
+ * then union all nets that share the same exclusive label text (case-sensitive).
  * Geo-nets claimed by conflicting label texts are left unmerged.
  */
 export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: number = 10): number {
@@ -836,8 +1009,9 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     return 0;
   }
   normalizePowerLabelFlags(doc);
-  // Tight endpoint snap â€” loose mid-segment previously pulled COMâ†’V+ (20px apart)
-  const endTol = Math.max(gridSize * 1.5, 12);
+  // å…ˆå¸é™„åˆ°é“œçš®ç«¯ç‚¹ï¼Œå†åŠæ ¼è§¦é“œç»‘å®šï¼ˆå…¼å®¹ AI stub æµ®ç‚¹/è¿‡æ¾æ”¾ç½®ï¼‰
+  snapLabelsOntoCopper(doc, gridSize);
+  const touchTol = labelCopperTouchTol(gridSize);
   let mergeCount = 0;
 
   for (let li = 0; li < doc.netLabels.length; li++) {
@@ -845,7 +1019,7 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
     if (isAutoNetLabelText(label.text)) {
       continue;
     }
-    const hit = findNearestWireNetId(doc, label.position, endTol);
+    const hit = findNearestWireNetId(doc, label.position, touchTol);
     if (hit !== null) {
       label.netId = hit;
     }
@@ -915,60 +1089,144 @@ export function applyNetLabelConnectivity(doc: SchematicDocument, gridSize: numb
 
   return mergeCount;
 }
-ÔrE’¨./IdUtil´../types/CommonTypesÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache˜ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ&ÍÔrK”¤type¥start£end¤nameªIdentifierÍ/ÍA²isAutoNetLabelTextÂÂÂ‘KªIdentifierÍBÍF¤textÔrL”¤type¥start£end¤body®BlockStatementÍHÍ”ÔrM–¤type¥start£end¤testªconsequent©alternate«IfStatementÍOÍ„ÔrN–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍSÍdÔrO—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍSÍ^KªIdentifierÍSÍW¤textKªIdentifierÍXÍ^¦lengthÂÂ£===ÔrP•¤type¥start£end¥value£raw§LiteralÍcÍd ¡0L®BlockStatementÍfÍ„‘ÔrQ”¤type¥start£end¨argument¯ReturnStatementÍqÍ}P§LiteralÍxÍ|Ã¤trueÀM«IfStatementÍŠÍÅÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ¥O°MemberExpressionÍÍŸÔrS–¤type¥start£end¥value£raw¥regex§LiteralÍÍš’©^NET_\d+$¡i¬/^NET_\d+$/iÔrT’§pattern¥flags©^NET_\d+$¡iKªIdentifierÍ›ÍŸ¤testÂÂ‘KªIdentifierÍ Í¤¤textÂL®BlockStatementÍ§ÍÅ‘Q¯ReturnStatementÍ²Í¾P§LiteralÍ¹Í½Ã¤trueÀM«IfStatementÍËÍR®CallExpressionÍÏÍæO°MemberExpressionÍÏÍàS§LiteralÍÏÍÛ’©^net_topo¡i¬/^net_topo/iT©^net_topo¡iKªIdentifierÍÜÍà¤testÂÂ‘KªIdentifierÍáÍå¤textÂL®BlockStatementÍèÍ‘Q¯ReturnStatementÍóÍÿP§LiteralÍúÍşÃ¤trueÀQ¯ReturnStatementÍÍP§LiteralÍÍÂ¥falseÀI¶ExportNamedDeclarationÍlÍWJ³FunctionDeclarationÍsÍWKªIdentifierÍ|Í´isPowerRailLabelTextÂÂÂ‘KªIdentifierÍ‘Í•¤textL®BlockStatementÍ—ÍW’ÔrU•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍ¿‘ÔrV•¤type¥start£end¢id¤init²VariableDeclaratorÍ¤Í¾KªIdentifierÍ¤Í©¥upperR®CallExpressionÍ¬Í¾O°MemberExpressionÍ¬Í¼KªIdentifierÍ¬Í°¤textKªIdentifierÍ±Í¼«toUpperCaseÂÂÂ¥constQ¯ReturnStatementÍÅÍTN±LogicalExpressionÍÌÍSN±LogicalExpressionÍÌÍBN±LogicalExpressionÍÌÍ/N±LogicalExpressionÍÌÍN±LogicalExpressionÍÌÍ N±LogicalExpressionÍÌÍîN°BinaryExpressionÍÌÍÛKªIdentifierÍÌÍÑ¥upper£===P§LiteralÍÖÍÛ£VCC¥'VCC'¢||N°BinaryExpressionÍßÍîKªIdentifierÍßÍä¥upper£===P§LiteralÍéÍî£VDD¥'VDD'¢||N°BinaryExpressionÍòÍ KªIdentifierÍòÍ÷¥upper£===P§LiteralÍüÍ ¢V+¤'V+'¢||N°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===P§LiteralÍÍ£GND¥'GND'¢||N°BinaryExpressionÍ Í/KªIdentifierÍ Í%¥upper£===P§LiteralÍ*Í/£VSS¥'VSS'¢||N°BinaryExpressionÍ3ÍBKªIdentifierÍ3Í8¥upper£===P§LiteralÍ=ÍB£VEE¥'VEE'¢||N°BinaryExpressionÍFÍSKªIdentifierÍFÍK¥upper£===P§LiteralÍPÍS¡0£'0'ÀI¶ExportNamedDeclarationÍYÍíJ³FunctionDeclarationÍ`ÍíKªIdentifierÍiÍz±isGroundLabelTextÂÂÂ‘KªIdentifierÍ{Í¤textL®BlockStatementÍÍí’U³VariableDeclarationÍˆÍ©‘V²VariableDeclaratorÍÍ¨KªIdentifierÍÍ“¥upperR®CallExpressionÍ–Í¨O°MemberExpressionÍ–Í¦KªIdentifierÍ–Íš¤textKªIdentifierÍ›Í¦«toUpperCaseÂÂÂ¥constQ¯ReturnStatementÍ¯ÍêN±LogicalExpressionÍ¶ÍéN±LogicalExpressionÍ¶ÍØN°BinaryExpressionÍ¶ÍÅKªIdentifierÍ¶Í»¥upper£===P§LiteralÍÀÍÅ£GND¥'GND'¢||N°BinaryExpressionÍÉÍØKªIdentifierÍÉÍÎ¥upper£===P§LiteralÍÓÍØ£VSS¥'VSS'¢||N°BinaryExpressionÍÜÍéKªIdentifierÍÜÍá¥upper£===P§LiteralÍæÍé¡0£'0'ÀI¶ExportNamedDeclarationÍïÍœJ³FunctionDeclarationÍöÍœKªIdentifierÍÿÍ¶isPowerSupplyLabelTextÂÂÂ‘KªIdentifierÍÍ¤textL®BlockStatementÍÍœ’U³VariableDeclarationÍ#ÍD‘V²VariableDeclaratorÍ)ÍCKªIdentifierÍ)Í.¥upperR®CallExpressionÍ1ÍCO°MemberExpressionÍ1ÍAKªIdentifierÍ1Í5¤textKªIdentifierÍ6ÍA«toUpperCaseÂÂÂ¥constQ¯ReturnStatementÍJÍ™N±LogicalExpressionÍQÍ˜N±LogicalExpressionÍQÍ…N±LogicalExpressionÍQÍsN°BinaryExpressionÍQÍ`KªIdentifierÍQÍV¥upper£===P§LiteralÍ[Í`£VCC¥'VCC'¢||N°BinaryExpressionÍdÍsKªIdentifierÍdÍi¥upper£===P§LiteralÍnÍs£VDD¥'VDD'¢||N°BinaryExpressionÍwÍ…KªIdentifierÍwÍ|¥upper£===P§LiteralÍÍ…¢V+¤'V+'¢||N°BinaryExpressionÍ‰Í˜KªIdentifierÍ‰Í¥upper£===P§LiteralÍ“Í˜£VEE¥'VEE'ÀI¶ExportNamedDeclarationÍïÍ
-eJ³FunctionDeclarationÍöÍ
-eKªIdentifierÍÿÍ	¹canonicalizeRailLabelTextÂÂÂ‘KªIdentifierÍ	Í	¤textL®BlockStatementÍ	Í
-e•U³VariableDeclarationÍ	&Í	G‘V²VariableDeclaratorÍ	,Í	FKªIdentifierÍ	,Í	1¥upperR®CallExpressionÍ	4Í	FO°MemberExpressionÍ	4Í	DKªIdentifierÍ	4Í	8¤textKªIdentifierÍ	9Í	D«toUpperCaseÂÂÂ¥constM«IfStatementÍ	MÍ	¥N±LogicalExpressionÍ	QÍ	„N±LogicalExpressionÍ	QÍ	sN°BinaryExpressionÍ	QÍ	`KªIdentifierÍ	QÍ	V¥upper£===P§LiteralÍ	[Í	`£GND¥'GND'¢||N°BinaryExpressionÍ	dÍ	sKªIdentifierÍ	dÍ	i¥upper£===P§LiteralÍ	nÍ	s£VSS¥'VSS'¢||N°BinaryExpressionÍ	wÍ	„KªIdentifierÍ	wÍ	|¥upper£===P§LiteralÍ	Í	„¡0£'0'L®BlockStatementÍ	†Í	¥‘Q¯ReturnStatementÍ	‘Í	P§LiteralÍ	˜Í	£GND¥'GND'ÀM«IfStatementÍ	«Í
-N±LogicalExpressionÍ	¯Í	ãN±LogicalExpressionÍ	¯Í	ÑN°BinaryExpressionÍ	¯Í	¾KªIdentifierÍ	¯Í	´¥upper£===P§LiteralÍ	¹Í	¾£VCC¥'VCC'¢||N°BinaryExpressionÍ	ÂÍ	ÑKªIdentifierÍ	ÂÍ	Ç¥upper£===P§LiteralÍ	ÌÍ	Ñ£VDD¥'VDD'¢||N°BinaryExpressionÍ	ÕÍ	ãKªIdentifierÍ	ÕÍ	Ú¥upper£===P§LiteralÍ	ßÍ	ã¢V+¤'V+'L®BlockStatementÍ	åÍ
-‘Q¯ReturnStatementÍ	ğÍ	ıP§LiteralÍ	÷Í	ü£VCC¥'VCC'ÀM«IfStatementÍ
+ÔrE’´../types/CommonTypes¨./IdUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCachešÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍfÍçÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍmÍçÔrK”¤type¥start£end¤nameªIdentifierÍvÍ‰³labelCopperTouchTolÂÂÂ‘KªIdentifierÍŠÍ’¨gridSizeÔrL”¤type¥start£end¤body®BlockStatementÍ”Íç’ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ›ÍÂ‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÍ¡ÍÁKªIdentifierÍ¡Í¢¡gÔrO–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍ¥ÍÁÔrP–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ¥Í±KªIdentifierÍ¥Í­¨gridSize¡>ÔrQ•¤type¥start£end¥value£raw§LiteralÍ°Í± ¡0KªIdentifierÍ´Í¼¨gridSizeQ§LiteralÍ¿ÍÁ
+¢10¥constÔrR”¤type¥start£end¨argument¯ReturnStatementÍÈÍäÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÏÍãÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÏÍ×KªIdentifierÍÏÍÓ¤MathKªIdentifierÍÔÍ×£maxÂÂ’P°BinaryExpressionÍØÍßKªIdentifierÍØÍÙ¡g¡*Q§LiteralÍÜÍßË?à      £0.5Q§LiteralÍáÍâ¡5ÂÀI¶ExportNamedDeclarationÍBÍŠJ³FunctionDeclarationÍIÍŠKªIdentifierÍRÍf´snapLabelsOntoCopperÂÂÂ’KªIdentifierÍgÍj£docÔrU•¤type¥start£end¤left¥right±AssignmentPatternÍlÍyKªIdentifierÍlÍt¨gridSizeQ§LiteralÍwÍy
+¢10L®BlockStatementÍ{ÍŠ–O«IfStatementÍ‚ÍöP±LogicalExpressionÍ†ÍÙP±LogicalExpressionÍ†Í¿P°BinaryExpressionÍ†Í¡T°MemberExpressionÍ†Í“KªIdentifierÍ†Í‰£docKªIdentifierÍŠÍ“©netLabelsÂÂ£===KªIdentifierÍ˜Í¡©undefined¢||P°BinaryExpressionÍ¥Í¿T°MemberExpressionÍ¥Í¹T°MemberExpressionÍ¥Í²KªIdentifierÍ¥Í¨£docKªIdentifierÍ©Í²©netLabelsÂÂKªIdentifierÍ³Í¹¦lengthÂÂ£===Q§LiteralÍ¾Í¿ ¡0¢||P°BinaryExpressionÍÃÍÙT°MemberExpressionÍÃÍÓT°MemberExpressionÍÃÍÌKªIdentifierÍÃÍÆ£docKªIdentifierÍÇÍÌ¥wiresÂÂKªIdentifierÍÍÍÓ¦lengthÂÂ£===Q§LiteralÍØÍÙ ¡0L®BlockStatementÍÛÍö‘R¯ReturnStatementÍæÍïQ§LiteralÍíÍî ¡0ÀM³VariableDeclarationÍüÍ+‘N²VariableDeclaratorÍÍ*KªIdentifierÍÍ
+¨touchTolS®CallExpressionÍÍ*KªIdentifierÍÍ ³labelCopperTouchTol‘KªIdentifierÍ!Í)¨gridSizeÂ¥constM³VariableDeclarationÍ1Íl‘N²VariableDeclaratorÍ7ÍkKªIdentifierÍ7Í@©searchTolS®CallExpressionÍCÍkT°MemberExpressionÍCÍKKªIdentifierÍCÍG¤MathKªIdentifierÍHÍK£maxÂÂ“P°BinaryExpressionÍLÍXKªIdentifierÍLÍT¨touchTol¡*Q§LiteralÍWÍX¡4P°BinaryExpressionÍZÍfKªIdentifierÍZÍb¨gridSize¡*Q§LiteralÍeÍf¡2Q§LiteralÍhÍj¢20Â¥constM³VariableDeclarationÍrÍ‚‘N²VariableDeclaratorÍvÍKªIdentifierÍvÍ}§snappedQ§LiteralÍ€Í ¡0£letÔrV—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍˆÍrM³VariableDeclarationÍÍ—‘N²VariableDeclaratorÍ‘Í—KªIdentifierÍ‘Í“¢liQ§LiteralÍ–Í— ¡0£letP°BinaryExpressionÍ™Í²KªIdentifierÍ™Í›¢li¡<T°MemberExpressionÍÍ²T°MemberExpressionÍÍ«KªIdentifierÍÍ¡£docKªIdentifierÍ¢Í«©netLabelsÂÂKªIdentifierÍ¬Í²¦lengthÂÂÔrW–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ´Í¸¢++ÂKªIdentifierÍ´Í¶¢liL®BlockStatementÍºÍr˜M³VariableDeclarationÍÅÍå‘N²VariableDeclaratorÍËÍäKªIdentifierÍËÍĞ¥labelT°MemberExpressionÍÓÍäT°MemberExpressionÍÓÍàKªIdentifierÍÓÍÖ£docKªIdentifierÍ×Íà©netLabelsÂÂKªIdentifierÍáÍã¢liÃÂ¥constO«IfStatementÍïÍ6S®CallExpressionÍóÍKªIdentifierÍóÍ²isAutoNetLabelText‘T°MemberExpressionÍÍKªIdentifierÍÍ¥labelKªIdentifierÍÍ¤textÂÂÂL®BlockStatementÍÍ6‘ÔrX”¤type¥start£end¥label±ContinueStatementÍ"Í+ÀÀO«IfStatementÍWÍ¼P°BinaryExpressionÍ[Í—S®CallExpressionÍ[ÍKªIdentifierÍ[Ío´findNearestWireNetId“KªIdentifierÍpÍs£docT°MemberExpressionÍuÍƒKªIdentifierÍuÍz¥labelKªIdentifierÍ{Íƒ¨positionÂÂKªIdentifierÍ…Í¨touchTolÂ£!==Q§LiteralÍ“Í—À¤nullL®BlockStatementÍ™Í¼‘X±ContinueStatementÍ¨Í±ÀÀM³VariableDeclarationÍÆÍÖ‘N²VariableDeclaratorÍÊÍÕKªIdentifierÍÊÍÎ¤bestQ§LiteralÍÑÍÕÀ¤null£letM³VariableDeclarationÍàÍö‘N²VariableDeclaratorÍäÍõKªIdentifierÍäÍé¥bestDKªIdentifierÍìÍõ©searchTol£letM³VariableDeclarationÍ	 Í	‘N²VariableDeclaratorÍ	Í	KªIdentifierÍ	Í	©preferNetT°MemberExpressionÍ	Í	KªIdentifierÍ	Í	¥labelKªIdentifierÍ	Í	¥netIdÂÂ£letV¬ForStatementÍ	&ÍM³VariableDeclarationÍ	+Í	5‘N²VariableDeclaratorÍ	/Í	5KªIdentifierÍ	/Í	1¢wiQ§LiteralÍ	4Í	5 ¡0£letP°BinaryExpressionÍ	7Í	LKªIdentifierÍ	7Í	9¢wi¡<T°MemberExpressionÍ	<Í	LT°MemberExpressionÍ	<Í	EKªIdentifierÍ	<Í	?£docKªIdentifierÍ	@Í	E¥wiresÂÂKªIdentifierÍ	FÍ	L¦lengthÂÂW°UpdateExpressionÍ	NÍ	R¢++ÂKªIdentifierÍ	NÍ	P¢wiL®BlockStatementÍ	TÍ•M³VariableDeclarationÍ	cÍ	{‘N²VariableDeclaratorÍ	iÍ	zKªIdentifierÍ	iÍ	j¡wT°MemberExpressionÍ	mÍ	zT°MemberExpressionÍ	mÍ	vKªIdentifierÍ	mÍ	p£docKªIdentifierÍ	qÍ	v¥wiresÂÂKªIdentifierÍ	wÍ	y¢wiÃÂ¥constO«IfStatementÍ	‰Í	ÍP°BinaryExpressionÍ	Í	 T°MemberExpressionÍ	Í	œT°MemberExpressionÍ	Í	•KªIdentifierÍ	Í	¡wKªIdentifierÍ	Í	•¦pointsÂÂKªIdentifierÍ	–Í	œ¦lengthÂÂ¡<Q§LiteralÍ	ŸÍ	 ¡2L®BlockStatementÍ	¢Í	Í‘X±ContinueStatementÍ	µÍ	¾ÀÀM³VariableDeclarationÍ	úÍ
+8‘N²VariableDeclaratorÍ
+ Í
+7KªIdentifierÍ
+ Í
+§sameNetP±LogicalExpressionÍ
 
 Í
-PN±LogicalExpressionÍ
-Í
-/N°BinaryExpressionÍ
-Í
-KªIdentifierÍ
-Í
-¥upper£===P§LiteralÍ
-Í
-£VEE¥'VEE'¢||N°BinaryExpressionÍ
-!Í
-/KªIdentifierÍ
-!Í
-&¥upper£===P§LiteralÍ
-+Í
-/¢V-¤'V-'L®BlockStatementÍ
-1Í
-P‘Q¯ReturnStatementÍ
-<Í
-IP§LiteralÍ
-CÍ
-H£VEE¥'VEE'ÀQ¯ReturnStatementÍ
+7P°BinaryExpressionÍ
+
+Í
+T°MemberExpressionÍ
+
+Í
+KªIdentifierÍ
+
+Í
+©preferNetKªIdentifierÍ
+Í
+¦lengthÂÂ¡>Q§LiteralÍ
+Í
+ ¡0¢&&P°BinaryExpressionÍ
+"Í
+7T°MemberExpressionÍ
+"Í
+)KªIdentifierÍ
+"Í
+#¡wKªIdentifierÍ
+$Í
+)¥netIdÂÂ£===KªIdentifierÍ
+.Í
+7©preferNet¥constM³VariableDeclarationÍ
+FÍ
+€‘N²VariableDeclaratorÍ
+LÍ
+KªIdentifierÍ
+LÍ
+P¤endsÔrY”¤type¥start£end¨elements¯ArrayExpressionÍ
+SÍ
+’T°MemberExpressionÍ
+TÍ
+_T°MemberExpressionÍ
+TÍ
+\KªIdentifierÍ
+TÍ
+U¡wKªIdentifierÍ
 VÍ
-bP§LiteralÍ
+\¦pointsÂÂQ§LiteralÍ
 ]Í
-aÀ¤nullÀI¶ExportNamedDeclarationÍ
-»ÍüJ³FunctionDeclarationÍ
-ÂÍüKªIdentifierÍ
-ËÍ
-ã¸normalizePowerLabelFlagsÂÂÂ‘KªIdentifierÍ
-äÍ
-ç£docL®BlockStatementÍ
-éÍü”M«IfStatementÍ
-ğÍ,N°BinaryExpressionÍ
-ôÍO°MemberExpressionÍ
-ôÍKªIdentifierÍ
-ôÍ
-÷£docKªIdentifierÍ
-øÍ©netLabelsÂÂ£===KªIdentifierÍÍ©undefinedL®BlockStatementÍÍ,‘Q¯ReturnStatementÍÍ%P§LiteralÍ#Í$ ¡0ÀU³VariableDeclarationÍ2Í<‘V²VariableDeclaratorÍ6Í;KªIdentifierÍ6Í7¡nP§LiteralÍ:Í; ¡0£letÔrW—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍBÍêU³VariableDeclarationÍGÍP‘V²VariableDeclaratorÍKÍPKªIdentifierÍKÍL¡iP§LiteralÍOÍP ¡0£letN°BinaryExpressionÍRÍjKªIdentifierÍRÍS¡i¡<O°MemberExpressionÍVÍjO°MemberExpressionÍVÍcKªIdentifierÍVÍY£docKªIdentifierÍZÍc©netLabelsÂÂKªIdentifierÍdÍj¦lengthÂÂÔrX–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍlÍo¢++ÂKªIdentifierÍlÍm¡iL®BlockStatementÍqÍê“U³VariableDeclarationÍ|Í›‘V²VariableDeclaratorÍ‚ÍšKªIdentifierÍ‚Í‡¥labelO°MemberExpressionÍŠÍšO°MemberExpressionÍŠÍ—KªIdentifierÍŠÍ£docKªIdentifierÍÍ—©netLabelsÂÂKªIdentifierÍ˜Í™¡iÃÂ¥constU³VariableDeclarationÍ¥ÍÙ‘V²VariableDeclaratorÍ«ÍØKªIdentifierÍ«Í°¥canonR®CallExpressionÍ³ÍØKªIdentifierÍ³ÍÌ¹canonicalizeRailLabelText‘O°MemberExpressionÍÍÍ×KªIdentifierÍÍÍÒ¥labelKªIdentifierÍÓÍ×¤textÂÂÂ¥constM«IfStatementÍãÍãN°BinaryExpressionÍçÍõKªIdentifierÍçÍì¥canon£!==P§LiteralÍñÍõÀ¤nullL®BlockStatementÍ÷Íã’M«IfStatementÍÍkN°BinaryExpressionÍ
-ÍO°MemberExpressionÍ
-ÍKªIdentifierÍ
-Í¥labelKªIdentifierÍÍ¤textÂÂ£!==KªIdentifierÍÍ¥canonL®BlockStatementÍ Ík’ÔrY”¤type¥start£endªexpression³ExpressionStatementÍ3ÍFÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ3ÍE¡=O°MemberExpressionÍ3Í=KªIdentifierÍ3Í8¥labelKªIdentifierÍ9Í=¤textÂÂKªIdentifierÍ@ÍE¥canonY³ExpressionStatementÍXÍ\X°UpdateExpressionÍXÍ[¢++ÂKªIdentifierÍXÍY¡nÀM«IfStatementÍyÍØX¯UnaryExpressionÍ}ÍŠ¡!ÃO°MemberExpressionÍ~ÍŠKªIdentifierÍ~Íƒ¥labelKªIdentifierÍ„ÍŠ¦globalÂÂL®BlockStatementÍŒÍØ’Y³ExpressionStatementÍŸÍ³Z´AssignmentExpressionÍŸÍ²¡=O°MemberExpressionÍŸÍ«KªIdentifierÍŸÍ¤¥labelKªIdentifierÍ¥Í«¦globalÂÂP§LiteralÍ®Í²Ã¤trueY³ExpressionStatementÍÅÍÉX°UpdateExpressionÍÅÍÈ¢++ÂKªIdentifierÍÅÍÆ¡nÀÀQ¯ReturnStatementÍğÍùKªIdentifierÍ÷Íø¡nÀI¶ExportNamedDeclarationÍÙÍšJ³FunctionDeclarationÍàÍšKªIdentifierÍéÍõ¬mergeNetIntoÂÂÂ“KªIdentifierÍöÍù£docKªIdentifierÍûÍ¦fromIdKªIdentifierÍÍ¤toIdL®BlockStatementÍ	Íš—M«IfStatementÍÍ>N°BinaryExpressionÍÍ#KªIdentifierÍÍ¦fromId£===KªIdentifierÍÍ#¤toIdL®BlockStatementÍ%Í>‘Q¯ReturnStatementÍ0Í7ÀÀU³VariableDeclarationÍDÍi‘V²VariableDeclaratorÍJÍhKªIdentifierÍJÍQ§fromNetR®CallExpressionÍTÍhKªIdentifierÍTÍ[§findNet’KªIdentifierÍ\Í_£docKªIdentifierÍaÍg¦fromIdÂ¥constU³VariableDeclarationÍoÍ‘V²VariableDeclaratorÍuÍKªIdentifierÍuÍz¥toNetR®CallExpressionÍ}ÍKªIdentifierÍ}Í„§findNet’KªIdentifierÍ…Íˆ£docKªIdentifierÍŠÍ¤toIdÂ¥constM«IfStatementÍ–ÍÈN°BinaryExpressionÍšÍ­KªIdentifierÍšÍŸ¥toNet£===KªIdentifierÍ¤Í­©undefinedL®BlockStatementÍ¯ÍÈ‘Q¯ReturnStatementÍºÍÁÀÀW¬ForStatementÍÎÍgU³VariableDeclarationÍÓÍİ‘V²VariableDeclaratorÍ×ÍİKªIdentifierÍ×ÍÙ¢wiP§LiteralÍÜÍİ ¡0£letN°BinaryExpressionÍßÍôKªIdentifierÍßÍá¢wi¡<O°MemberExpressionÍäÍôO°MemberExpressionÍäÍíKªIdentifierÍäÍç£docKªIdentifierÍèÍí¥wiresÂÂKªIdentifierÍîÍô¦lengthÂÂX°UpdateExpressionÍöÍú¢++ÂKªIdentifierÍöÍø¢wiL®BlockStatementÍüÍg‘M«IfStatementÍÍ`N°BinaryExpressionÍÍ)O°MemberExpressionÍÍO°MemberExpressionÍÍO°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍ¥wiresÂÂKªIdentifierÍÍ¢wiÃÂKªIdentifierÍÍ¥netIdÂÂ£===KªIdentifierÍ#Í)¦fromIdL®BlockStatementÍ+Í`‘Y³ExpressionStatementÍ:ÍUZ´AssignmentExpressionÍ:ÍT¡=O°MemberExpressionÍ:ÍMO°MemberExpressionÍ:ÍGO°MemberExpressionÍ:ÍCKªIdentifierÍ:Í=£docKªIdentifierÍ>ÍC¥wiresÂÂKªIdentifierÍDÍF¢wiÃÂKªIdentifierÍHÍM¥netIdÂÂKªIdentifierÍPÍT¤toIdÀM«IfStatementÍmÍUN°BinaryExpressionÍqÍŒO°MemberExpressionÍqÍ~KªIdentifierÍqÍt£docKªIdentifierÍuÍ~©netLabelsÂÂ£!==KªIdentifierÍƒÍŒ©undefinedL®BlockStatementÍÍU‘W¬ForStatementÍ™ÍNU³VariableDeclarationÍÍ¨‘V²VariableDeclaratorÍ¢Í¨KªIdentifierÍ¢Í¤¢liP§LiteralÍ§Í¨ ¡0£letN°BinaryExpressionÍªÍÃKªIdentifierÍªÍ¬¢li¡<O°MemberExpressionÍ¯ÍÃO°MemberExpressionÍ¯Í¼KªIdentifierÍ¯Í²£docKªIdentifierÍ³Í¼©netLabelsÂÂKªIdentifierÍ½ÍÃ¦lengthÂÂX°UpdateExpressionÍÅÍÉ¢++ÂKªIdentifierÍÅÍÇ¢liL®BlockStatementÍËÍN‘M«IfStatementÍÚÍCN°BinaryExpressionÍŞÍ O°MemberExpressionÍŞÍõO°MemberExpressionÍŞÍïO°MemberExpressionÍŞÍëKªIdentifierÍŞÍá£docKªIdentifierÍâÍë©netLabelsÂÂKªIdentifierÍìÍî¢liÃÂKªIdentifierÍğÍõ¥netIdÂÂ£===KªIdentifierÍúÍ ¦fromIdL®BlockStatementÍÍC‘Y³ExpressionStatementÍÍ4Z´AssignmentExpressionÍÍ3¡=O°MemberExpressionÍÍ,O°MemberExpressionÍÍ&O°MemberExpressionÍÍ"KªIdentifierÍÍ£docKªIdentifierÍÍ"©netLabelsÂÂKªIdentifierÍ#Í%¢liÃÂKªIdentifierÍ'Í,¥netIdÂÂKªIdentifierÍ/Í3¤toIdÀÀM«IfStatementÍ[Í—N°BinaryExpressionÍ_ÍtKªIdentifierÍ_Íf§fromNet£!==KªIdentifierÍkÍt©undefinedL®BlockStatementÍvÍ—’W¬ForStatementÍÍUU³VariableDeclarationÍ†Í‘V²VariableDeclaratorÍŠÍKªIdentifierÍŠÍŒ¢piP§LiteralÍÍ ¡0£letN°BinaryExpressionÍ’Í¬KªIdentifierÍ’Í”¢pi¡<O°MemberExpressionÍ—Í¬O°MemberExpressionÍ—Í¥KªIdentifierÍ—Í§fromNetKªIdentifierÍŸÍ¥¦pinIdsÂÂKªIdentifierÍ¦Í¬¦lengthÂÂX°UpdateExpressionÍ®Í²¢++ÂKªIdentifierÍ®Í°¢piL®BlockStatementÍ´ÍU’U³VariableDeclarationÍÃÍâ‘V²VariableDeclaratorÍÉÍáKªIdentifierÍÉÍÌ£refO°MemberExpressionÍÏÍáO°MemberExpressionÍÏÍİKªIdentifierÍÏÍÖ§fromNetKªIdentifierÍ×Íİ¦pinIdsÂÂKªIdentifierÍŞÍà¢piÃÂ¥constM«IfStatementÍğÍJX¯UnaryExpressionÍôÍ¡!ÃR®CallExpressionÍõÍO°MemberExpressionÍõÍ
-O°MemberExpressionÍõÍKªIdentifierÍõÍú¥toNetKªIdentifierÍûÍ¦pinIdsÂÂKªIdentifierÍÍ
-¨includesÂÂ‘KªIdentifierÍÍ£refÂL®BlockStatementÍÍJ‘Y³ExpressionStatementÍ$Í;R®CallExpressionÍ$Í:O°MemberExpressionÍ$Í5O°MemberExpressionÍ$Í0KªIdentifierÍ$Í)¥toNetKªIdentifierÍ*Í0¦pinIdsÂÂKªIdentifierÍ1Í5¤pushÂÂ‘KªIdentifierÍ6Í9£refÂÀY³ExpressionStatementÍ_ÍZ´AssignmentExpressionÍ_Í¡=O°MemberExpressionÍ_ÍgKªIdentifierÍ_Íb£docKªIdentifierÍcÍg¤netsÂÂR®CallExpressionÍjÍO°MemberExpressionÍjÍyO°MemberExpressionÍjÍrKªIdentifierÍjÍm£docKªIdentifierÍnÍr¤netsÂÂKªIdentifierÍsÍy¦filterÂÂ‘J·ArrowFunctionExpressionÍzÍÀÃÂÂ‘KªIdentifierÍzÍ{¡nN°BinaryExpressionÍÍO°MemberExpressionÍÍƒKªIdentifierÍÍ€¡nKªIdentifierÍÍƒ¢idÂÂ£!==KªIdentifierÍˆÍ¦fromIdÂÀÀI¶ExportNamedDeclarationÍÍ'·J³FunctionDeclarationÍ†Í'·KªIdentifierÍÍ¨¹applyNetLabelConnectivityÂÂÂ’KªIdentifierÍ©Í¬£docÔr[•¤type¥start£end¤left¥right±AssignmentPatternÍ®Í»KªIdentifierÍ®Í¶¨gridSizeP§LiteralÍ¹Í»
-¢10L®BlockStatementÍ½Í'·›M«IfStatementÍÄÍN±LogicalExpressionÍÈÍN°BinaryExpressionÍÈÍãO°MemberExpressionÍÈÍÕKªIdentifierÍÈÍË£docKªIdentifierÍÌÍÕ©netLabelsÂÂ£===KªIdentifierÍÚÍã©undefined¢||N°BinaryExpressionÍçÍO°MemberExpressionÍçÍûO°MemberExpressionÍçÍôKªIdentifierÍçÍê£docKªIdentifierÍëÍô©netLabelsÂÂKªIdentifierÍõÍû¦lengthÂÂ£===P§LiteralÍ Í ¡0L®BlockStatementÍÍ‘Q¯ReturnStatementÍÍP§LiteralÍÍ ¡0ÀY³ExpressionStatementÍ$ÍBR®CallExpressionÍ$ÍAKªIdentifierÍ$Í<¸normalizePowerLabelFlags‘KªIdentifierÍ=Í@£docÂU³VariableDeclarationÍÍÊ‘V²VariableDeclaratorÍ¤ÍÉKªIdentifierÍ¤Íª¦endTolR®CallExpressionÍ­ÍÉO°MemberExpressionÍ­ÍµKªIdentifierÍ­Í±¤MathKªIdentifierÍ²Íµ£maxÂÂ’N°BinaryExpressionÍ¶ÍÄKªIdentifierÍ¶Í¾¨gridSize¡*P§LiteralÍÁÍÄË?ø      £1.5P§LiteralÍÆÍÈ¢12Â¥constU³VariableDeclarationÍĞÍã‘V²VariableDeclaratorÍÔÍâKªIdentifierÍÔÍŞªmergeCountP§LiteralÍáÍâ ¡0£letW¬ForStatementÍéÍ.U³VariableDeclarationÍîÍø‘V²VariableDeclaratorÍòÍøKªIdentifierÍòÍô¢liP§LiteralÍ÷Íø ¡0£letN°BinaryExpressionÍúÍKªIdentifierÍúÍü¢li¡<O°MemberExpressionÍÿÍO°MemberExpressionÍÿÍKªIdentifierÍÿÍ£docKªIdentifierÍÍ©netLabelsÂÂKªIdentifierÍÍ¦lengthÂÂX°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¢liL®BlockStatementÍÍ.”U³VariableDeclarationÍ&ÍF‘V²VariableDeclaratorÍ,ÍEKªIdentifierÍ,Í1¥labelO°MemberExpressionÍ4ÍEO°MemberExpressionÍ4ÍAKªIdentifierÍ4Í7£docKªIdentifierÍ8ÍA©netLabelsÂÂKªIdentifierÍBÍD¢liÃÂ¥constM«IfStatementÍPÍ—R®CallExpressionÍTÍrKªIdentifierÍTÍf²isAutoNetLabelText‘O°MemberExpressionÍgÍqKªIdentifierÍgÍl¥labelKªIdentifierÍmÍq¤textÂÂÂL®BlockStatementÍtÍ—‘Ôr\”¤type¥start£end¥label±ContinueStatementÍƒÍŒÀÀU³VariableDeclarationÍ¡Íß‘V²VariableDeclaratorÍ§ÍŞKªIdentifierÍ§Íª£hitR®CallExpressionÍ­ÍŞKªIdentifierÍ­ÍÁ´findNearestWireNetId“KªIdentifierÍÂÍÅ£docO°MemberExpressionÍÇÍÕKªIdentifierÍÇÍÌ¥labelKªIdentifierÍÍÍÕ¨positionÂÂKªIdentifierÍ×Íİ¦endTolÂ¥constM«IfStatementÍéÍ'N°BinaryExpressionÍíÍùKªIdentifierÍíÍğ£hit£!==P§LiteralÍõÍùÀ¤nullL®BlockStatementÍûÍ'‘Y³ExpressionStatementÍ
-ÍZ´AssignmentExpressionÍ
-Í¡=O°MemberExpressionÍ
-ÍKªIdentifierÍ
-Í¥labelKªIdentifierÍÍ¥netIdÂÂKªIdentifierÍÍ£hitÀU³VariableDeclarationÍhÍ…‘V²VariableDeclaratorÍnÍ„KªIdentifierÍnÍxªtextsOnNetÔr]•¤type¥start£end¦callee©arguments­NewExpressionÍ{Í„KªIdentifierÍÍ‚£Map¥constW¬ForStatementÍ‹Í!$U³VariableDeclarationÍÍš‘V²VariableDeclaratorÍ”ÍšKªIdentifierÍ”Í–¢liP§LiteralÍ™Íš ¡0£letN°BinaryExpressionÍœÍµKªIdentifierÍœÍ¢li¡<O°MemberExpressionÍ¡ÍµO°MemberExpressionÍ¡Í®KªIdentifierÍ¡Í¤£docKªIdentifierÍ¥Í®©netLabelsÂÂKªIdentifierÍ¯Íµ¦lengthÂÂX°UpdateExpressionÍ·Í»¢++ÂKªIdentifierÍ·Í¹¢liL®BlockStatementÍ½Í!$•U³VariableDeclarationÍÈÍè‘V²VariableDeclaratorÍÎÍçKªIdentifierÍÎÍÓ¥labelO°MemberExpressionÍÖÍçO°MemberExpressionÍÖÍãKªIdentifierÍÖÍÙ£docKªIdentifierÍÚÍã©netLabelsÂÂKªIdentifierÍäÍæ¢liÃÂ¥constM«IfStatementÍòÍ UN±LogicalExpressionÍöÍ 0R®CallExpressionÍöÍ KªIdentifierÍöÍ ²isAutoNetLabelText‘O°MemberExpressionÍ 	Í KªIdentifierÍ 	Í ¥labelKªIdentifierÍ Í ¤textÂÂÂ¢||N°BinaryExpressionÍ Í 0O°MemberExpressionÍ Í *O°MemberExpressionÍ Í #KªIdentifierÍ Í ¥labelKªIdentifierÍ Í #¥netIdÂÂKªIdentifierÍ $Í *¦lengthÂÂ£===P§LiteralÍ /Í 0 ¡0L®BlockStatementÍ 2Í U‘\±ContinueStatementÍ AÍ JÀÀU³VariableDeclarationÍ _Í …‘V²VariableDeclaratorÍ cÍ „KªIdentifierÍ cÍ f£setR®CallExpressionÍ iÍ „O°MemberExpressionÍ iÍ wKªIdentifierÍ iÍ sªtextsOnNetKªIdentifierÍ tÍ w£getÂÂ‘O°MemberExpressionÍ xÍ ƒKªIdentifierÍ xÍ }¥labelKªIdentifierÍ ~Í ƒ¥netIdÂÂÂ£letM«IfStatementÍ Í ÿN°BinaryExpressionÍ “Í ¤KªIdentifierÍ “Í –£set£===KªIdentifierÍ ›Í ¤©undefinedL®BlockStatementÍ ¦Í ÿ’Y³ExpressionStatementÍ µÍ ÅZ´AssignmentExpressionÍ µÍ Ä¡=KªIdentifierÍ µÍ ¸£set]­NewExpressionÍ »Í ÄKªIdentifierÍ ¿Í Â£SetY³ExpressionStatementÍ ÓÍ ôR®CallExpressionÍ ÓÍ óO°MemberExpressionÍ ÓÍ áKªIdentifierÍ ÓÍ İªtextsOnNetKªIdentifierÍ ŞÍ á£setÂÂ’O°MemberExpressionÍ âÍ íKªIdentifierÍ âÍ ç¥labelKªIdentifierÍ èÍ í¥netIdÂÂKªIdentifierÍ ïÍ ò£setÂÀY³ExpressionStatementÍ!	Í!R®CallExpressionÍ!	Í!O°MemberExpressionÍ!	Í!KªIdentifierÍ!	Í!£setKªIdentifierÍ!Í!£addÂÂ‘O°MemberExpressionÍ!Í!KªIdentifierÍ!Í!¥labelKªIdentifierÍ!Í!¤textÂÂÂU³VariableDeclarationÍ!iÍ!ˆ‘V²VariableDeclaratorÍ!oÍ!‡KªIdentifierÍ!oÍ!{¬netIdsByText]­NewExpressionÍ!~Í!‡KªIdentifierÍ!‚Í!…£Map¥constY³ExpressionStatementÍ!Í#R®CallExpressionÍ!Í#œO°MemberExpressionÍ!Í! KªIdentifierÍ!Í!˜ªtextsOnNetKªIdentifierÍ!™Í! §forEachÂÂ‘J·ArrowFunctionExpressionÍ!¡Í#›ÀÂÂÂ’KªIdentifierÍ!¢Í!§¥textsKªIdentifierÍ!©Í!®¥netIdL®BlockStatementÍ!³Í#›—M«IfStatementÍ!èÍ"N°BinaryExpressionÍ!ìÍ!üO°MemberExpressionÍ!ìÍ!öKªIdentifierÍ!ìÍ!ñ¥textsKªIdentifierÍ!òÍ!ö¤sizeÂÂ£!==P§LiteralÍ!ûÍ!ü¡1L®BlockStatementÍ!şÍ"‘Q¯ReturnStatementÍ"Í"ÀÀU³VariableDeclarationÍ")Í"7‘V²VariableDeclaratorÍ"-Í"6KªIdentifierÍ"-Í"1¤onlyP§LiteralÍ"4Í"6 ¢''£letY³ExpressionStatementÍ"AÍ"eR®CallExpressionÍ"AÍ"dO°MemberExpressionÍ"AÍ"NKªIdentifierÍ"AÍ"F¥textsKªIdentifierÍ"GÍ"N§forEachÂÂ‘J·ArrowFunctionExpressionÍ"OÍ"cÀÂÂÂ‘KªIdentifierÍ"PÍ"Q¡tL®BlockStatementÍ"VÍ"c‘Y³ExpressionStatementÍ"XÍ"aZ´AssignmentExpressionÍ"XÍ"`¡=KªIdentifierÍ"XÍ"\¤onlyKªIdentifierÍ"_Í"`¡tÂM«IfStatementÍ"oÍ"§N°BinaryExpressionÍ"sÍ"„O°MemberExpressionÍ"sÍ"~KªIdentifierÍ"sÍ"w¤onlyKªIdentifierÍ"xÍ"~¦lengthÂÂ£===P§LiteralÍ"ƒÍ"„ ¡0L®BlockStatementÍ"†Í"§‘Q¯ReturnStatementÍ"•Í"œÀÀU³VariableDeclarationÍ"±Í"Ó‘V²VariableDeclaratorÍ"µÍ"ÒKªIdentifierÍ"µÍ"¹¤listR®CallExpressionÍ"¼Í"ÒO°MemberExpressionÍ"¼Í"ÌKªIdentifierÍ"¼Í"È¬netIdsByTextKªIdentifierÍ"ÉÍ"Ì£getÂÂ‘KªIdentifierÍ"ÍÍ"Ñ¤onlyÂ£letM«IfStatementÍ"İÍ#DN°BinaryExpressionÍ"áÍ"óKªIdentifierÍ"áÍ"å¤list£===KªIdentifierÍ"êÍ"ó©undefinedL®BlockStatementÍ"õÍ#D’Y³ExpressionStatementÍ#Í#Z´AssignmentExpressionÍ#Í#¡=KªIdentifierÍ#Í#¤listÔr^”¤type¥start£end¨elements¯ArrayExpressionÍ#Í#Y³ExpressionStatementÍ#Í#9R®CallExpressionÍ#Í#8O°MemberExpressionÍ#Í#,KªIdentifierÍ#Í#(¬netIdsByTextKªIdentifierÍ#)Í#,£setÂÂ’KªIdentifierÍ#-Í#1¤onlyKªIdentifierÍ#3Í#7¤listÂÀM«IfStatementÍ#NÍ#”X¯UnaryExpressionÍ#RÍ#g¡!ÃR®CallExpressionÍ#SÍ#gO°MemberExpressionÍ#SÍ#`KªIdentifierÍ#SÍ#W¤listKªIdentifierÍ#XÍ#`¨includesÂÂ‘KªIdentifierÍ#aÍ#f¥netIdÂL®BlockStatementÍ#iÍ#”‘Y³ExpressionStatementÍ#xÍ#‰R®CallExpressionÍ#xÍ#ˆO°MemberExpressionÍ#xÍ#KªIdentifierÍ#xÍ#|¤listKªIdentifierÍ#}Í#¤pushÂÂ‘KªIdentifierÍ#‚Í#‡¥netIdÂÀÂY³ExpressionStatementÍ#£Í'œR®CallExpressionÍ#£Í'›O°MemberExpressionÍ#£Í#·KªIdentifierÍ#£Í#¯¬netIdsByTextKªIdentifierÍ#°Í#·§forEachÂÂ‘J·ArrowFunctionExpressionÍ#¸Í'šÀÂÂÂ’KªIdentifierÍ#¹Í#¿¦netIdsKªIdentifierÍ#ÁÍ#Å¤textL®BlockStatementÍ#ÊÍ'š•U³VariableDeclarationÍ#ÕÍ$‘V²VariableDeclaratorÍ#ÛÍ$ KªIdentifierÍ#ÛÍ#ä©canonicalR®CallExpressionÍ#çÍ$ KªIdentifierÍ#çÍ#õ®ensureNamedNet’KªIdentifierÍ#öÍ#ù£docKªIdentifierÍ#ûÍ#ÿ¤textÂ¥constW¬ForStatementÍ$Í$ÙU³VariableDeclarationÍ$Í$‘V²VariableDeclaratorÍ$Í$KªIdentifierÍ$Í$¡iP§LiteralÍ$Í$ ¡0£letN°BinaryExpressionÍ$Í$,KªIdentifierÍ$Í$¡i¡<O°MemberExpressionÍ$Í$,KªIdentifierÍ$Í$%¦netIdsKªIdentifierÍ$&Í$,¦lengthÂÂX°UpdateExpressionÍ$.Í$1¢++ÂKªIdentifierÍ$.Í$/¡iL®BlockStatementÍ$3Í$Ù‘M«IfStatementÍ$BÍ$ÎN°BinaryExpressionÍ$FÍ$`O°MemberExpressionÍ$FÍ$OKªIdentifierÍ$FÍ$L¦netIdsKªIdentifierÍ$MÍ$N¡iÃÂ£!==O°MemberExpressionÍ$TÍ$`KªIdentifierÍ$TÍ$]©canonicalKªIdentifierÍ$^Í$`¢idÂÂL®BlockStatementÍ$bÍ$Î’Y³ExpressionStatementÍ$uÍ$ R®CallExpressionÍ$uÍ$ŸKªIdentifierÍ$uÍ$¬mergeNetInto“KªIdentifierÍ$‚Í$…£docO°MemberExpressionÍ$‡Í$KªIdentifierÍ$‡Í$¦netIdsKªIdentifierÍ$Í$¡iÃÂO°MemberExpressionÍ$’Í$KªIdentifierÍ$’Í$›©canonicalKªIdentifierÍ$œÍ$¢idÂÂÂY³ExpressionStatementÍ$²Í$¿X°UpdateExpressionÍ$²Í$¾¢++ÂKªIdentifierÍ$²Í$¼ªmergeCountÀW¬ForStatementÍ$ãÍ&¨U³VariableDeclarationÍ$èÍ$ò‘V²VariableDeclaratorÍ$ìÍ$òKªIdentifierÍ$ìÍ$î¢liP§LiteralÍ$ñÍ$ò ¡0£letN°BinaryExpressionÍ$ôÍ%KªIdentifierÍ$ôÍ$ö¢li¡<O°MemberExpressionÍ$ùÍ%O°MemberExpressionÍ$ùÍ%KªIdentifierÍ$ùÍ$ü£docKªIdentifierÍ$ıÍ%©netLabelsÂÂKªIdentifierÍ%Í%¦lengthÂÂX°UpdateExpressionÍ%Í%¢++ÂKªIdentifierÍ%Í%¢liL®BlockStatementÍ%Í&¨‘M«IfStatementÍ%$Í&N±LogicalExpressionÍ%(Í%dN°BinaryExpressionÍ%(Í%GO°MemberExpressionÍ%(Í%>O°MemberExpressionÍ%(Í%9O°MemberExpressionÍ%(Í%5KªIdentifierÍ%(Í%+£docKªIdentifierÍ%,Í%5©netLabelsÂÂKªIdentifierÍ%6Í%8¢liÃÂKªIdentifierÍ%:Í%>¤textÂÂ£===KªIdentifierÍ%CÍ%G¤text¢&&X¯UnaryExpressionÍ%KÍ%d¡!ÃR®CallExpressionÍ%LÍ%dKªIdentifierÍ%LÍ%^²isAutoNetLabelText‘KªIdentifierÍ%_Í%c¤textÂL®BlockStatementÍ%fÍ&“U³VariableDeclarationÍ%yÍ%‘V²VariableDeclaratorÍ%Í%œKªIdentifierÍ%Í%‚£nidO°MemberExpressionÍ%…Í%œO°MemberExpressionÍ%…Í%–O°MemberExpressionÍ%…Í%’KªIdentifierÍ%…Í%ˆ£docKªIdentifierÍ%‰Í%’©netLabelsÂÂKªIdentifierÍ%“Í%•¢liÃÂKªIdentifierÍ%—Í%œ¥netIdÂÂ¥constU³VariableDeclarationÍ%¯Í%Ñ‘V²VariableDeclaratorÍ%µÍ%ĞKªIdentifierÍ%µÍ%º¥claimR®CallExpressionÍ%½Í%ĞO°MemberExpressionÍ%½Í%ËKªIdentifierÍ%½Í%ÇªtextsOnNetKªIdentifierÍ%ÈÍ%Ë£getÂÂ‘KªIdentifierÍ%ÌÍ%Ï£nidÂ¥constM«IfStatementÍ%ãÍ&N±LogicalExpressionÍ%çÍ&;N°BinaryExpressionÍ%çÍ%ûKªIdentifierÍ%çÍ%ê£nid£===O°MemberExpressionÍ%ïÍ%ûKªIdentifierÍ%ïÍ%ø©canonicalKªIdentifierÍ%ùÍ%û¢idÂÂ¢||N±LogicalExpressionÍ& Í&:N±LogicalExpressionÍ& Í&'N°BinaryExpressionÍ& Í&KªIdentifierÍ& Í&¥claim£!==KªIdentifierÍ&
-Í&©undefined¢&&N°BinaryExpressionÍ&Í&'O°MemberExpressionÍ&Í&!KªIdentifierÍ&Í&¥claimKªIdentifierÍ&Í&!¤sizeÂÂ£===P§LiteralÍ&&Í&'¡1¢&&R®CallExpressionÍ&+Í&:O°MemberExpressionÍ&+Í&4KªIdentifierÍ&+Í&0¥claimKªIdentifierÍ&1Í&4£hasÂÂ‘KªIdentifierÍ&5Í&9¤textÂL®BlockStatementÍ&=Í&‘Y³ExpressionStatementÍ&TÍ&{Z´AssignmentExpressionÍ&TÍ&z¡=O°MemberExpressionÍ&TÍ&kO°MemberExpressionÍ&TÍ&eO°MemberExpressionÍ&TÍ&aKªIdentifierÍ&TÍ&W£docKªIdentifierÍ&XÍ&a©netLabelsÂÂKªIdentifierÍ&bÍ&d¢liÃÂKªIdentifierÍ&fÍ&k¥netIdÂÂO°MemberExpressionÍ&nÍ&zKªIdentifierÍ&nÍ&w©canonicalKªIdentifierÍ&xÍ&z¢idÂÂÀÀY³ExpressionStatementÍ&²Í&ÈZ´AssignmentExpressionÍ&²Í&Ç¡=O°MemberExpressionÍ&²Í&ÀKªIdentifierÍ&²Í&»©canonicalKªIdentifierÍ&¼Í&À¤nameÂÂKªIdentifierÍ&ÃÍ&Ç¤textM«IfStatementÍ&ÒÍ'“R®CallExpressionÍ&ÖÍ&òKªIdentifierÍ&ÖÍ&ì¶isPowerSupplyLabelText‘KªIdentifierÍ&íÍ&ñ¤textÂL®BlockStatementÍ&ôÍ'-‘Y³ExpressionStatementÍ'Í'"Z´AssignmentExpressionÍ'Í'!¡=O°MemberExpressionÍ'Í'KªIdentifierÍ'Í'©canonicalKªIdentifierÍ'Í'¤typeÂÂO°MemberExpressionÍ'Í'!KªIdentifierÍ'Í'§NetTypeKªIdentifierÍ'Í'!¥POWERÂÂM«IfStatementÍ'<Í'“R®CallExpressionÍ'@Í'WKªIdentifierÍ'@Í'Q±isGroundLabelText‘KªIdentifierÍ'RÍ'V¤textÂL®BlockStatementÍ'YÍ'“‘Y³ExpressionStatementÍ'hÍ'ˆZ´AssignmentExpressionÍ'hÍ'‡¡=O°MemberExpressionÍ'hÍ'vKªIdentifierÍ'hÍ'q©canonicalKªIdentifierÍ'rÍ'v¤typeÂÂO°MemberExpressionÍ'yÍ'‡KªIdentifierÍ'yÍ'€§NetTypeKªIdentifierÍ'Í'‡¦GROUNDÂÂÀÂQ¯ReturnStatementÍ'¢Í'´KªIdentifierÍ'©Í'³ªmergeCountÀ’Ôr_•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ³Ìâ‘Ôr`•¤type¥start£end¨imported¥local¯ImportSpecifierÌ¼ÌÃKªIdentifierÌ¼ÌÃ§NetTypeKªIdentifierÌ¼ÌÃ§NetTypeP§LiteralÌËÌá´../types/CommonTypes¶'../types/CommonTypes'_±ImportDeclarationÌäÍ‘`¯ImportSpecifierÌíÌóKªIdentifierÌíÌó¦IdUtilKªIdentifierÌíÌó¦IdUtilP§LiteralÌûÍ¨./IdUtilª'./IdUtil'
+^ ¡0ÃÂT°MemberExpressionÍ
+aÍ
+~T°MemberExpressionÍ
+aÍ
+iKªIdentifierÍ
+aÍ
+b¡wKªIdentifierÍ
+cÍ
+i¦pointsÂÂP°BinaryExpressionÍ
+jÍ
+}T°MemberExpressionÍ
+jÍ
+yT°MemberExpressionÍ
+jÍ
+rKªIdentifierÍ
+jÍ
+k¡wKªIdentifierÍ
+lÍ
+r¦pointsÂÂKªIdentifierÍ
+sÍ
+y¦lengthÂÂ¡-Q§LiteralÍ
+|Í
+}¡1ÃÂ¥constV¬ForStatementÍ
+ÍûM³VariableDeclarationÍ
+“Í
+‘N²VariableDeclaratorÍ
+—Í
+KªIdentifierÍ
+—Í
+™¢eiQ§LiteralÍ
+œÍ
+ ¡0£letP°BinaryExpressionÍ
+ŸÍ
+¯KªIdentifierÍ
+ŸÍ
+¡¢ei¡<T°MemberExpressionÍ
+¤Í
+¯KªIdentifierÍ
+¤Í
+¨¤endsKªIdentifierÍ
+©Í
+¯¦lengthÂÂW°UpdateExpressionÍ
+±Í
+µ¢++ÂKªIdentifierÍ
+±Í
+³¢eiL®BlockStatementÍ
+·Íû“M³VariableDeclarationÍ
+ÊÍ‘N²VariableDeclaratorÍ
+ĞÍKªIdentifierÍ
+ĞÍ
+Ñ¡dS®CallExpressionÍ
+ÔÍT°MemberExpressionÍ
+ÔÍ
+ŞKªIdentifierÍ
+ÔÍ
+Ø¤MathKªIdentifierÍ
+ÙÍ
+Ş¥hypotÂÂ’P°BinaryExpressionÍ
+ßÍ
+üT°MemberExpressionÍ
+ßÍ
+ïT°MemberExpressionÍ
+ßÍ
+íKªIdentifierÍ
+ßÍ
+ä¥labelKªIdentifierÍ
+åÍ
+í¨positionÂÂKªIdentifierÍ
+îÍ
+ï¡xÂÂ¡-T°MemberExpressionÍ
+òÍ
+üT°MemberExpressionÍ
+òÍ
+úKªIdentifierÍ
+òÍ
+ö¤endsKªIdentifierÍ
+÷Í
+ù¢eiÃÂKªIdentifierÍ
+ûÍ
+ü¡xÂÂP°BinaryExpressionÍ
+şÍT°MemberExpressionÍ
+şÍT°MemberExpressionÍ
+şÍKªIdentifierÍ
+şÍ¥labelKªIdentifierÍÍ¨positionÂÂKªIdentifierÍÍ¡yÂÂ¡-T°MemberExpressionÍÍT°MemberExpressionÍÍKªIdentifierÍÍ¤endsKªIdentifierÍÍ¢eiÃÂKªIdentifierÍÍ¡yÂÂÂ¥constM³VariableDeclarationÍ/ÍQ‘N²VariableDeclaratorÍ5ÍPKªIdentifierÍ5Í:¥scoreOµConditionalExpressionÍ=ÍPKªIdentifierÍ=ÍD§sameNetP°BinaryExpressionÍGÍLKªIdentifierÍGÍH¡d¡-Q§LiteralÍKÍL¡1KªIdentifierÍOÍP¡d¥constO«IfStatementÍcÍìP°BinaryExpressionÍgÍtKªIdentifierÍgÍl¥score¡<KªIdentifierÍoÍt¥bestDL®BlockStatementÍvÍì’ÔrZ”¤type¥start£endªexpression³ExpressionStatementÍÍ›Ôr[–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍš¡=KªIdentifierÍÍ’¥bestDKªIdentifierÍ•Íš¥scoreZ³ExpressionStatementÍ±ÍÙ[´AssignmentExpressionÍ±ÍØ¡=KªIdentifierÍ±Íµ¤bestÔr\”¤type¥start£endªproperties°ObjectExpressionÍ¸ÍØ’Ôr]™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍºÍÇÂÂÂKªIdentifierÍºÍ»¡xT°MemberExpressionÍ½ÍÇT°MemberExpressionÍ½ÍÅKªIdentifierÍ½ÍÁ¤endsKªIdentifierÍÂÍÄ¢eiÃÂKªIdentifierÍÆÍÇ¡xÂÂ¤init]¨PropertyÍÉÍÖÂÂÂKªIdentifierÍÉÍÊ¡yT°MemberExpressionÍÌÍÖT°MemberExpressionÍÌÍÔKªIdentifierÍÌÍĞ¤endsKªIdentifierÍÑÍÓ¢eiÃÂKªIdentifierÍÕÍÖ¡yÂÂ¤initÀO«IfStatementÍÍkP°BinaryExpressionÍÍ!KªIdentifierÍÍ¤best£!==Q§LiteralÍÍ!À¤nullL®BlockStatementÍ#Ík’Z³ExpressionStatementÍ2ÍH[´AssignmentExpressionÍ2ÍG¡=T°MemberExpressionÍ2Í@KªIdentifierÍ2Í7¥labelKªIdentifierÍ8Í@¨positionÂÂKªIdentifierÍCÍG¤bestZ³ExpressionStatementÍVÍ`W°UpdateExpressionÍVÍ_¢++ÂKªIdentifierÍVÍ]§snappedÀR¯ReturnStatementÍxÍ‡KªIdentifierÍÍ†§snappedÀI¶ExportNamedDeclarationÍÕÍÒJ³FunctionDeclarationÍÜÍÒKªIdentifierÍåÍ÷²isAutoNetLabelTextÂÂÂ‘KªIdentifierÍøÍü¤textL®BlockStatementÍşÍÒ”O«IfStatementÍÍ:P°BinaryExpressionÍ	ÍT°MemberExpressionÍ	ÍKªIdentifierÍ	Í¤textKªIdentifierÍÍ¦lengthÂÂ£===Q§LiteralÍÍ ¡0L®BlockStatementÍÍ:‘R¯ReturnStatementÍ'Í3Q§LiteralÍ.Í2Ã¤trueÀO«IfStatementÍ@Í{S®CallExpressionÍDÍ[T°MemberExpressionÍDÍUÔr^–¤type¥start£end¥value£raw¥regex§LiteralÍDÍP’©^NET_\d+$¡i¬/^NET_\d+$/iÔr_’§pattern¥flags©^NET_\d+$¡iKªIdentifierÍQÍU¤testÂÂ‘KªIdentifierÍVÍZ¤textÂL®BlockStatementÍ]Í{‘R¯ReturnStatementÍhÍtQ§LiteralÍoÍsÃ¤trueÀO«IfStatementÍÍ¼S®CallExpressionÍ…ÍœT°MemberExpressionÍ…Í–^§LiteralÍ…Í‘’©^net_topo¡i¬/^net_topo/i_©^net_topo¡iKªIdentifierÍ’Í–¤testÂÂ‘KªIdentifierÍ—Í›¤textÂL®BlockStatementÍÍ¼‘R¯ReturnStatementÍ©ÍµQ§LiteralÍ°Í´Ã¤trueÀR¯ReturnStatementÍÂÍÏQ§LiteralÍÉÍÎÂ¥falseÀI¶ExportNamedDeclarationÍ"ÍJ³FunctionDeclarationÍ)ÍKªIdentifierÍ2ÍF´isPowerRailLabelTextÂÂÂ‘KªIdentifierÍGÍK¤textL®BlockStatementÍMÍ’M³VariableDeclarationÍTÍu‘N²VariableDeclaratorÍZÍtKªIdentifierÍZÍ_¥upperS®CallExpressionÍbÍtT°MemberExpressionÍbÍrKªIdentifierÍbÍf¤textKªIdentifierÍgÍr«toUpperCaseÂÂÂ¥constR¯ReturnStatementÍ{Í
+P±LogicalExpressionÍ‚Í	P±LogicalExpressionÍ‚ÍøP±LogicalExpressionÍ‚ÍåP±LogicalExpressionÍ‚ÍÒP±LogicalExpressionÍ‚Í¶P±LogicalExpressionÍ‚Í¤P°BinaryExpressionÍ‚Í‘KªIdentifierÍ‚Í‡¥upper£===Q§LiteralÍŒÍ‘£VCC¥'VCC'¢||P°BinaryExpressionÍ•Í¤KªIdentifierÍ•Íš¥upper£===Q§LiteralÍŸÍ¤£VDD¥'VDD'¢||P°BinaryExpressionÍ¨Í¶KªIdentifierÍ¨Í­¥upper£===Q§LiteralÍ²Í¶¢V+¤'V+'¢||P°BinaryExpressionÍÃÍÒKªIdentifierÍÃÍÈ¥upper£===Q§LiteralÍÍÍÒ£GND¥'GND'¢||P°BinaryExpressionÍÖÍåKªIdentifierÍÖÍÛ¥upper£===Q§LiteralÍàÍå£VSS¥'VSS'¢||P°BinaryExpressionÍéÍøKªIdentifierÍéÍî¥upper£===Q§LiteralÍóÍø£VEE¥'VEE'¢||P°BinaryExpressionÍüÍ	KªIdentifierÍüÍ¥upper£===Q§LiteralÍÍ	¡0£'0'ÀI¶ExportNamedDeclarationÍÍ£J³FunctionDeclarationÍÍ£KªIdentifierÍÍ0±isGroundLabelTextÂÂÂ‘KªIdentifierÍ1Í5¤textL®BlockStatementÍ7Í£’M³VariableDeclarationÍ>Í_‘N²VariableDeclaratorÍDÍ^KªIdentifierÍDÍI¥upperS®CallExpressionÍLÍ^T°MemberExpressionÍLÍ\KªIdentifierÍLÍP¤textKªIdentifierÍQÍ\«toUpperCaseÂÂÂ¥constR¯ReturnStatementÍeÍ P±LogicalExpressionÍlÍŸP±LogicalExpressionÍlÍP°BinaryExpressionÍlÍ{KªIdentifierÍlÍq¥upper£===Q§LiteralÍvÍ{£GND¥'GND'¢||P°BinaryExpressionÍÍKªIdentifierÍÍ„¥upper£===Q§LiteralÍ‰Í£VSS¥'VSS'¢||P°BinaryExpressionÍ’ÍŸKªIdentifierÍ’Í—¥upper£===Q§LiteralÍœÍŸ¡0£'0'ÀI¶ExportNamedDeclarationÍ¥ÍRJ³FunctionDeclarationÍ¬ÍRKªIdentifierÍµÍË¶isPowerSupplyLabelTextÂÂÂ‘KªIdentifierÍÌÍĞ¤textL®BlockStatementÍÒÍR’M³VariableDeclarationÍÙÍú‘N²VariableDeclaratorÍßÍùKªIdentifierÍßÍä¥upperS®CallExpressionÍçÍùT°MemberExpressionÍçÍ÷KªIdentifierÍçÍë¤textKªIdentifierÍìÍ÷«toUpperCaseÂÂÂ¥constR¯ReturnStatementÍ ÍOP±LogicalExpressionÍÍNP±LogicalExpressionÍÍ;P±LogicalExpressionÍÍ)P°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===Q§LiteralÍÍ£VCC¥'VCC'¢||P°BinaryExpressionÍÍ)KªIdentifierÍÍ¥upper£===Q§LiteralÍ$Í)£VDD¥'VDD'¢||P°BinaryExpressionÍ-Í;KªIdentifierÍ-Í2¥upper£===Q§LiteralÍ7Í;¢V+¤'V+'¢||P°BinaryExpressionÍ?ÍNKªIdentifierÍ?ÍD¥upper£===Q§LiteralÍIÍN£VEE¥'VEE'ÀI¶ExportNamedDeclarationÍ¥ÍJ³FunctionDeclarationÍ¬ÍKªIdentifierÍµÍÎ¹canonicalizeRailLabelTextÂÂÂ‘KªIdentifierÍÏÍÓ¤textL®BlockStatementÍÕÍ•M³VariableDeclarationÍÜÍı‘N²VariableDeclaratorÍâÍüKªIdentifierÍâÍç¥upperS®CallExpressionÍêÍüT°MemberExpressionÍêÍúKªIdentifierÍêÍî¤textKªIdentifierÍïÍú«toUpperCaseÂÂÂ¥constO«IfStatementÍÍ[P±LogicalExpressionÍÍ:P±LogicalExpressionÍÍ)P°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===Q§LiteralÍÍ£GND¥'GND'¢||P°BinaryExpressionÍÍ)KªIdentifierÍÍ¥upper£===Q§LiteralÍ$Í)£VSS¥'VSS'¢||P°BinaryExpressionÍ-Í:KªIdentifierÍ-Í2¥upper£===Q§LiteralÍ7Í:¡0£'0'L®BlockStatementÍ<Í[‘R¯ReturnStatementÍGÍTQ§LiteralÍNÍS£GND¥'GND'ÀO«IfStatementÍaÍºP±LogicalExpressionÍeÍ™P±LogicalExpressionÍeÍ‡P°BinaryExpressionÍeÍtKªIdentifierÍeÍj¥upper£===Q§LiteralÍoÍt£VCC¥'VCC'¢||P°BinaryExpressionÍxÍ‡KªIdentifierÍxÍ}¥upper£===Q§LiteralÍ‚Í‡£VDD¥'VDD'¢||P°BinaryExpressionÍ‹Í™KªIdentifierÍ‹Í¥upper£===Q§LiteralÍ•Í™¢V+¤'V+'L®BlockStatementÍ›Íº‘R¯ReturnStatementÍ¦Í³Q§LiteralÍ­Í²£VCC¥'VCC'ÀO«IfStatementÍÀÍP±LogicalExpressionÍÄÍåP°BinaryExpressionÍÄÍÓKªIdentifierÍÄÍÉ¥upper£===Q§LiteralÍÎÍÓ£VEE¥'VEE'¢||P°BinaryExpressionÍ×ÍåKªIdentifierÍ×ÍÜ¥upper£===Q§LiteralÍáÍå¢V-¤'V-'L®BlockStatementÍçÍ‘R¯ReturnStatementÍòÍÿQ§LiteralÍùÍş£VEE¥'VEE'ÀR¯ReturnStatementÍÍQ§LiteralÍÍÀ¤nullÀI¶ExportNamedDeclarationÍqÍ²J³FunctionDeclarationÍxÍ²KªIdentifierÍÍ™¸normalizePowerLabelFlagsÂÂÂ‘KªIdentifierÍšÍ£docL®BlockStatementÍŸÍ²”O«IfStatementÍ¦ÍâP°BinaryExpressionÍªÍÅT°MemberExpressionÍªÍ·KªIdentifierÍªÍ­£docKªIdentifierÍ®Í·©netLabelsÂÂ£===KªIdentifierÍ¼ÍÅ©undefinedL®BlockStatementÍÇÍâ‘R¯ReturnStatementÍÒÍÛQ§LiteralÍÙÍÚ ¡0ÀM³VariableDeclarationÍèÍò‘N²VariableDeclaratorÍìÍñKªIdentifierÍìÍí¡nQ§LiteralÍğÍñ ¡0£letV¬ForStatementÍøÍ M³VariableDeclarationÍıÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¡iQ§LiteralÍÍ ¡0£letP°BinaryExpressionÍÍ KªIdentifierÍÍ	¡i¡<T°MemberExpressionÍÍ T°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍ©netLabelsÂÂKªIdentifierÍÍ ¦lengthÂÂW°UpdateExpressionÍ"Í%¢++ÂKªIdentifierÍ"Í#¡iL®BlockStatementÍ'Í “M³VariableDeclarationÍ2ÍQ‘N²VariableDeclaratorÍ8ÍPKªIdentifierÍ8Í=¥labelT°MemberExpressionÍ@ÍPT°MemberExpressionÍ@ÍMKªIdentifierÍ@ÍC£docKªIdentifierÍDÍM©netLabelsÂÂKªIdentifierÍNÍO¡iÃÂ¥constM³VariableDeclarationÍ[Í‘N²VariableDeclaratorÍaÍKªIdentifierÍaÍf¥canonS®CallExpressionÍiÍKªIdentifierÍiÍ‚¹canonicalizeRailLabelText‘T°MemberExpressionÍƒÍKªIdentifierÍƒÍˆ¥labelKªIdentifierÍ‰Í¤textÂÂÂ¥constO«IfStatementÍ™Í™P°BinaryExpressionÍÍ«KªIdentifierÍÍ¢¥canon£!==Q§LiteralÍ§Í«À¤nullL®BlockStatementÍ­Í™’O«IfStatementÍ¼Í!P°BinaryExpressionÍÀÍÔT°MemberExpressionÍÀÍÊKªIdentifierÍÀÍÅ¥labelKªIdentifierÍÆÍÊ¤textÂÂ£!==KªIdentifierÍÏÍÔ¥canonL®BlockStatementÍÖÍ!’Z³ExpressionStatementÍéÍü[´AssignmentExpressionÍéÍû¡=T°MemberExpressionÍéÍóKªIdentifierÍéÍî¥labelKªIdentifierÍïÍó¤textÂÂKªIdentifierÍöÍû¥canonZ³ExpressionStatementÍÍW°UpdateExpressionÍÍ¢++ÂKªIdentifierÍÍ¡nÀO«IfStatementÍ/ÍW¯UnaryExpressionÍ3Í@¡!ÃT°MemberExpressionÍ4Í@KªIdentifierÍ4Í9¥labelKªIdentifierÍ:Í@¦globalÂÂL®BlockStatementÍBÍ’Z³ExpressionStatementÍUÍi[´AssignmentExpressionÍUÍh¡=T°MemberExpressionÍUÍaKªIdentifierÍUÍZ¥labelKªIdentifierÍ[Ía¦globalÂÂQ§LiteralÍdÍhÃ¤trueZ³ExpressionStatementÍ{ÍW°UpdateExpressionÍ{Í~¢++ÂKªIdentifierÍ{Í|¡nÀÀR¯ReturnStatementÍ¦Í¯KªIdentifierÍ­Í®¡nÀI¶ExportNamedDeclarationÍÍ#BJ³FunctionDeclarationÍˆÍ#BKªIdentifierÍ‘Í¬mergeNetIntoÂÂÂ“KªIdentifierÍÍ¡£docKªIdentifierÍ£Í©¦fromIdKªIdentifierÍ«Í¯¤toIdL®BlockStatementÍ±Í#B—O«IfStatementÍ¸ÍæP°BinaryExpressionÍ¼ÍËKªIdentifierÍ¼ÍÂ¦fromId£===KªIdentifierÍÇÍË¤toIdL®BlockStatementÍÍÍæ‘R¯ReturnStatementÍØÍßÀÀM³VariableDeclarationÍìÍ ‘N²VariableDeclaratorÍòÍ KªIdentifierÍòÍù§fromNetS®CallExpressionÍüÍ KªIdentifierÍüÍ §findNet’KªIdentifierÍ Í £docKªIdentifierÍ 	Í ¦fromIdÂ¥constM³VariableDeclarationÍ Í 8‘N²VariableDeclaratorÍ Í 7KªIdentifierÍ Í "¥toNetS®CallExpressionÍ %Í 7KªIdentifierÍ %Í ,§findNet’KªIdentifierÍ -Í 0£docKªIdentifierÍ 2Í 6¤toIdÂ¥constO«IfStatementÍ >Í pP°BinaryExpressionÍ BÍ UKªIdentifierÍ BÍ G¥toNet£===KªIdentifierÍ LÍ U©undefinedL®BlockStatementÍ WÍ p‘R¯ReturnStatementÍ bÍ iÀÀV¬ForStatementÍ vÍ!M³VariableDeclarationÍ {Í …‘N²VariableDeclaratorÍ Í …KªIdentifierÍ Í ¢wiQ§LiteralÍ „Í … ¡0£letP°BinaryExpressionÍ ‡Í œKªIdentifierÍ ‡Í ‰¢wi¡<T°MemberExpressionÍ ŒÍ œT°MemberExpressionÍ ŒÍ •KªIdentifierÍ ŒÍ £docKªIdentifierÍ Í •¥wiresÂÂKªIdentifierÍ –Í œ¦lengthÂÂW°UpdateExpressionÍ Í ¢¢++ÂKªIdentifierÍ Í  ¢wiL®BlockStatementÍ ¤Í!‘O«IfStatementÍ ¯Í!P°BinaryExpressionÍ ³Í ÑT°MemberExpressionÍ ³Í ÆT°MemberExpressionÍ ³Í ÀT°MemberExpressionÍ ³Í ¼KªIdentifierÍ ³Í ¶£docKªIdentifierÍ ·Í ¼¥wiresÂÂKªIdentifierÍ ½Í ¿¢wiÃÂKªIdentifierÍ ÁÍ Æ¥netIdÂÂ£===KªIdentifierÍ ËÍ Ñ¦fromIdL®BlockStatementÍ ÓÍ!‘Z³ExpressionStatementÍ âÍ ı[´AssignmentExpressionÍ âÍ ü¡=T°MemberExpressionÍ âÍ õT°MemberExpressionÍ âÍ ïT°MemberExpressionÍ âÍ ëKªIdentifierÍ âÍ å£docKªIdentifierÍ æÍ ë¥wiresÂÂKªIdentifierÍ ìÍ î¢wiÃÂKªIdentifierÍ ğÍ õ¥netIdÂÂKªIdentifierÍ øÍ ü¤toIdÀO«IfStatementÍ!Í!ıP°BinaryExpressionÍ!Í!4T°MemberExpressionÍ!Í!&KªIdentifierÍ!Í!£docKªIdentifierÍ!Í!&©netLabelsÂÂ£!==KªIdentifierÍ!+Í!4©undefinedL®BlockStatementÍ!6Í!ı‘V¬ForStatementÍ!AÍ!öM³VariableDeclarationÍ!FÍ!P‘N²VariableDeclaratorÍ!JÍ!PKªIdentifierÍ!JÍ!L¢liQ§LiteralÍ!OÍ!P ¡0£letP°BinaryExpressionÍ!RÍ!kKªIdentifierÍ!RÍ!T¢li¡<T°MemberExpressionÍ!WÍ!kT°MemberExpressionÍ!WÍ!dKªIdentifierÍ!WÍ!Z£docKªIdentifierÍ![Í!d©netLabelsÂÂKªIdentifierÍ!eÍ!k¦lengthÂÂW°UpdateExpressionÍ!mÍ!q¢++ÂKªIdentifierÍ!mÍ!o¢liL®BlockStatementÍ!sÍ!ö‘O«IfStatementÍ!‚Í!ëP°BinaryExpressionÍ!†Í!¨T°MemberExpressionÍ!†Í!T°MemberExpressionÍ!†Í!—T°MemberExpressionÍ!†Í!“KªIdentifierÍ!†Í!‰£docKªIdentifierÍ!ŠÍ!“©netLabelsÂÂKªIdentifierÍ!”Í!–¢liÃÂKªIdentifierÍ!˜Í!¥netIdÂÂ£===KªIdentifierÍ!¢Í!¨¦fromIdL®BlockStatementÍ!ªÍ!ë‘Z³ExpressionStatementÍ!½Í!Ü[´AssignmentExpressionÍ!½Í!Û¡=T°MemberExpressionÍ!½Í!ÔT°MemberExpressionÍ!½Í!ÎT°MemberExpressionÍ!½Í!ÊKªIdentifierÍ!½Í!À£docKªIdentifierÍ!ÁÍ!Ê©netLabelsÂÂKªIdentifierÍ!ËÍ!Í¢liÃÂKªIdentifierÍ!ÏÍ!Ô¥netIdÂÂKªIdentifierÍ!×Í!Û¤toIdÀÀO«IfStatementÍ"Í#?P°BinaryExpressionÍ"Í"KªIdentifierÍ"Í"§fromNet£!==KªIdentifierÍ"Í"©undefinedL®BlockStatementÍ"Í#?’V¬ForStatementÍ")Í"ıM³VariableDeclarationÍ".Í"8‘N²VariableDeclaratorÍ"2Í"8KªIdentifierÍ"2Í"4¢piQ§LiteralÍ"7Í"8 ¡0£letP°BinaryExpressionÍ":Í"TKªIdentifierÍ":Í"<¢pi¡<T°MemberExpressionÍ"?Í"TT°MemberExpressionÍ"?Í"MKªIdentifierÍ"?Í"F§fromNetKªIdentifierÍ"GÍ"M¦pinIdsÂÂKªIdentifierÍ"NÍ"T¦lengthÂÂW°UpdateExpressionÍ"VÍ"Z¢++ÂKªIdentifierÍ"VÍ"X¢piL®BlockStatementÍ"\Í"ı’M³VariableDeclarationÍ"kÍ"Š‘N²VariableDeclaratorÍ"qÍ"‰KªIdentifierÍ"qÍ"t£refT°MemberExpressionÍ"wÍ"‰T°MemberExpressionÍ"wÍ"…KªIdentifierÍ"wÍ"~§fromNetKªIdentifierÍ"Í"…¦pinIdsÂÂKªIdentifierÍ"†Í"ˆ¢piÃÂ¥constO«IfStatementÍ"˜Í"òW¯UnaryExpressionÍ"œÍ"·¡!ÃS®CallExpressionÍ"Í"·T°MemberExpressionÍ"Í"²T°MemberExpressionÍ"Í"©KªIdentifierÍ"Í"¢¥toNetKªIdentifierÍ"£Í"©¦pinIdsÂÂKªIdentifierÍ"ªÍ"²¨includesÂÂ‘KªIdentifierÍ"³Í"¶£refÂL®BlockStatementÍ"¹Í"ò‘Z³ExpressionStatementÍ"ÌÍ"ãS®CallExpressionÍ"ÌÍ"âT°MemberExpressionÍ"ÌÍ"İT°MemberExpressionÍ"ÌÍ"ØKªIdentifierÍ"ÌÍ"Ñ¥toNetKªIdentifierÍ"ÒÍ"Ø¦pinIdsÂÂKªIdentifierÍ"ÙÍ"İ¤pushÂÂ‘KªIdentifierÍ"ŞÍ"á£refÂÀZ³ExpressionStatementÍ#Í#8[´AssignmentExpressionÍ#Í#7¡=T°MemberExpressionÍ#Í#KªIdentifierÍ#Í#
+£docKªIdentifierÍ#Í#¤netsÂÂS®CallExpressionÍ#Í#7T°MemberExpressionÍ#Í#!T°MemberExpressionÍ#Í#KªIdentifierÍ#Í#£docKªIdentifierÍ#Í#¤netsÂÂKªIdentifierÍ#Í#!¦filterÂÂ‘J·ArrowFunctionExpressionÍ#"Í#6ÀÃÂÂ‘KªIdentifierÍ#"Í##¡nP°BinaryExpressionÍ#'Í#6T°MemberExpressionÍ#'Í#+KªIdentifierÍ#'Í#(¡nKªIdentifierÍ#)Í#+¢idÂÂ£!==KªIdentifierÍ#0Í#6¦fromIdÂÀÀI¶ExportNamedDeclarationÍ$3Í/qJ³FunctionDeclarationÍ$:Í/qKªIdentifierÍ$CÍ$\¹applyNetLabelConnectivityÂÂÂ’KªIdentifierÍ$]Í$`£docU±AssignmentPatternÍ$bÍ$oKªIdentifierÍ$bÍ$j¨gridSizeQ§LiteralÍ$mÍ$o
+¢10L®BlockStatementÍ$qÍ/qœO«IfStatementÍ$xÍ$ÒP±LogicalExpressionÍ$|Í$µP°BinaryExpressionÍ$|Í$—T°MemberExpressionÍ$|Í$‰KªIdentifierÍ$|Í$£docKªIdentifierÍ$€Í$‰©netLabelsÂÂ£===KªIdentifierÍ$Í$—©undefined¢||P°BinaryExpressionÍ$›Í$µT°MemberExpressionÍ$›Í$¯T°MemberExpressionÍ$›Í$¨KªIdentifierÍ$›Í$£docKªIdentifierÍ$ŸÍ$¨©netLabelsÂÂKªIdentifierÍ$©Í$¯¦lengthÂÂ£===Q§LiteralÍ$´Í$µ ¡0L®BlockStatementÍ$·Í$Ò‘R¯ReturnStatementÍ$ÂÍ$ËQ§LiteralÍ$ÉÍ$Ê ¡0ÀZ³ExpressionStatementÍ$ØÍ$öS®CallExpressionÍ$ØÍ$õKªIdentifierÍ$ØÍ$ğ¸normalizePowerLabelFlags‘KªIdentifierÍ$ñÍ$ô£docÂZ³ExpressionStatementÍ%)Í%MS®CallExpressionÍ%)Í%LKªIdentifierÍ%)Í%=´snapLabelsOntoCopper’KªIdentifierÍ%>Í%A£docKªIdentifierÍ%CÍ%K¨gridSizeÂM³VariableDeclarationÍ%SÍ%‚‘N²VariableDeclaratorÍ%YÍ%KªIdentifierÍ%YÍ%a¨touchTolS®CallExpressionÍ%dÍ%KªIdentifierÍ%dÍ%w³labelCopperTouchTol‘KªIdentifierÍ%xÍ%€¨gridSizeÂ¥constM³VariableDeclarationÍ%ˆÍ%›‘N²VariableDeclaratorÍ%ŒÍ%šKªIdentifierÍ%ŒÍ%–ªmergeCountQ§LiteralÍ%™Í%š ¡0£letV¬ForStatementÍ%¡Í&èM³VariableDeclarationÍ%¦Í%°‘N²VariableDeclaratorÍ%ªÍ%°KªIdentifierÍ%ªÍ%¬¢liQ§LiteralÍ%¯Í%° ¡0£letP°BinaryExpressionÍ%²Í%ËKªIdentifierÍ%²Í%´¢li¡<T°MemberExpressionÍ%·Í%ËT°MemberExpressionÍ%·Í%ÄKªIdentifierÍ%·Í%º£docKªIdentifierÍ%»Í%Ä©netLabelsÂÂKªIdentifierÍ%ÅÍ%Ë¦lengthÂÂW°UpdateExpressionÍ%ÍÍ%Ñ¢++ÂKªIdentifierÍ%ÍÍ%Ï¢liL®BlockStatementÍ%ÓÍ&è”M³VariableDeclarationÍ%ŞÍ%ş‘N²VariableDeclaratorÍ%äÍ%ıKªIdentifierÍ%äÍ%é¥labelT°MemberExpressionÍ%ìÍ%ıT°MemberExpressionÍ%ìÍ%ùKªIdentifierÍ%ìÍ%ï£docKªIdentifierÍ%ğÍ%ù©netLabelsÂÂKªIdentifierÍ%úÍ%ü¢liÃÂ¥constO«IfStatementÍ&Í&OS®CallExpressionÍ&Í&*KªIdentifierÍ&Í&²isAutoNetLabelText‘T°MemberExpressionÍ&Í&)KªIdentifierÍ&Í&$¥labelKªIdentifierÍ&%Í&)¤textÂÂÂL®BlockStatementÍ&,Í&O‘X±ContinueStatementÍ&;Í&DÀÀM³VariableDeclarationÍ&YÍ&™‘N²VariableDeclaratorÍ&_Í&˜KªIdentifierÍ&_Í&b£hitS®CallExpressionÍ&eÍ&˜KªIdentifierÍ&eÍ&y´findNearestWireNetId“KªIdentifierÍ&zÍ&}£docT°MemberExpressionÍ&Í&KªIdentifierÍ&Í&„¥labelKªIdentifierÍ&…Í&¨positionÂÂKªIdentifierÍ&Í&—¨touchTolÂ¥constO«IfStatementÍ&£Í&áP°BinaryExpressionÍ&§Í&³KªIdentifierÍ&§Í&ª£hit£!==Q§LiteralÍ&¯Í&³À¤nullL®BlockStatementÍ&µÍ&á‘Z³ExpressionStatementÍ&ÄÍ&Ö[´AssignmentExpressionÍ&ÄÍ&Õ¡=T°MemberExpressionÍ&ÄÍ&ÏKªIdentifierÍ&ÄÍ&É¥labelKªIdentifierÍ&ÊÍ&Ï¥netIdÂÂKªIdentifierÍ&ÒÍ&Õ£hitÀM³VariableDeclarationÍ'"Í'?‘N²VariableDeclaratorÍ'(Í'>KªIdentifierÍ'(Í'2ªtextsOnNetÔr`•¤type¥start£end¦callee©arguments­NewExpressionÍ'5Í'>KªIdentifierÍ'9Í'<£Map¥constV¬ForStatementÍ'EÍ(ŞM³VariableDeclarationÍ'JÍ'T‘N²VariableDeclaratorÍ'NÍ'TKªIdentifierÍ'NÍ'P¢liQ§LiteralÍ'SÍ'T ¡0£letP°BinaryExpressionÍ'VÍ'oKªIdentifierÍ'VÍ'X¢li¡<T°MemberExpressionÍ'[Í'oT°MemberExpressionÍ'[Í'hKªIdentifierÍ'[Í'^£docKªIdentifierÍ'_Í'h©netLabelsÂÂKªIdentifierÍ'iÍ'o¦lengthÂÂW°UpdateExpressionÍ'qÍ'u¢++ÂKªIdentifierÍ'qÍ's¢liL®BlockStatementÍ'wÍ(Ş•M³VariableDeclarationÍ'‚Í'¢‘N²VariableDeclaratorÍ'ˆÍ'¡KªIdentifierÍ'ˆÍ'¥labelT°MemberExpressionÍ'Í'¡T°MemberExpressionÍ'Í'KªIdentifierÍ'Í'“£docKªIdentifierÍ'”Í'©netLabelsÂÂKªIdentifierÍ'Í' ¢liÃÂ¥constO«IfStatementÍ'¬Í(P±LogicalExpressionÍ'°Í'êS®CallExpressionÍ'°Í'ÎKªIdentifierÍ'°Í'Â²isAutoNetLabelText‘T°MemberExpressionÍ'ÃÍ'ÍKªIdentifierÍ'ÃÍ'È¥labelKªIdentifierÍ'ÉÍ'Í¤textÂÂÂ¢||P°BinaryExpressionÍ'ÒÍ'êT°MemberExpressionÍ'ÒÍ'äT°MemberExpressionÍ'ÒÍ'İKªIdentifierÍ'ÒÍ'×¥labelKªIdentifierÍ'ØÍ'İ¥netIdÂÂKªIdentifierÍ'ŞÍ'ä¦lengthÂÂ£===Q§LiteralÍ'éÍ'ê ¡0L®BlockStatementÍ'ìÍ(‘X±ContinueStatementÍ'ûÍ(ÀÀM³VariableDeclarationÍ(Í(?‘N²VariableDeclaratorÍ(Í(>KªIdentifierÍ(Í( £setS®CallExpressionÍ(#Í(>T°MemberExpressionÍ(#Í(1KªIdentifierÍ(#Í(-ªtextsOnNetKªIdentifierÍ(.Í(1£getÂÂ‘T°MemberExpressionÍ(2Í(=KªIdentifierÍ(2Í(7¥labelKªIdentifierÍ(8Í(=¥netIdÂÂÂ£letO«IfStatementÍ(IÍ(¹P°BinaryExpressionÍ(MÍ(^KªIdentifierÍ(MÍ(P£set£===KªIdentifierÍ(UÍ(^©undefinedL®BlockStatementÍ(`Í(¹’Z³ExpressionStatementÍ(oÍ([´AssignmentExpressionÍ(oÍ(~¡=KªIdentifierÍ(oÍ(r£set`­NewExpressionÍ(uÍ(~KªIdentifierÍ(yÍ(|£SetZ³ExpressionStatementÍ(Í(®S®CallExpressionÍ(Í(­T°MemberExpressionÍ(Í(›KªIdentifierÍ(Í(—ªtextsOnNetKªIdentifierÍ(˜Í(›£setÂÂ’T°MemberExpressionÍ(œÍ(§KªIdentifierÍ(œÍ(¡¥labelKªIdentifierÍ(¢Í(§¥netIdÂÂKªIdentifierÍ(©Í(¬£setÂÀZ³ExpressionStatementÍ(ÃÍ(×S®CallExpressionÍ(ÃÍ(ÖT°MemberExpressionÍ(ÃÍ(ÊKªIdentifierÍ(ÃÍ(Æ£setKªIdentifierÍ(ÇÍ(Ê£addÂÂ‘T°MemberExpressionÍ(ËÍ(ÕKªIdentifierÍ(ËÍ(Ğ¥labelKªIdentifierÍ(ÑÍ(Õ¤textÂÂÂM³VariableDeclarationÍ)#Í)B‘N²VariableDeclaratorÍ))Í)AKªIdentifierÍ))Í)5¬netIdsByText`­NewExpressionÍ)8Í)AKªIdentifierÍ)<Í)?£Map¥constZ³ExpressionStatementÍ)HÍ+WS®CallExpressionÍ)HÍ+VT°MemberExpressionÍ)HÍ)ZKªIdentifierÍ)HÍ)RªtextsOnNetKªIdentifierÍ)SÍ)Z§forEachÂÂ‘J·ArrowFunctionExpressionÍ)[Í+UÀÂÂÂ’KªIdentifierÍ)\Í)a¥textsKªIdentifierÍ)cÍ)h¥netIdL®BlockStatementÍ)mÍ+U—O«IfStatementÍ)¢Í)ÙP°BinaryExpressionÍ)¦Í)¶T°MemberExpressionÍ)¦Í)°KªIdentifierÍ)¦Í)«¥textsKªIdentifierÍ)¬Í)°¤sizeÂÂ£!==Q§LiteralÍ)µÍ)¶¡1L®BlockStatementÍ)¸Í)Ù‘R¯ReturnStatementÍ)ÇÍ)ÎÀÀM³VariableDeclarationÍ)ãÍ)ñ‘N²VariableDeclaratorÍ)çÍ)ğKªIdentifierÍ)çÍ)ë¤onlyQ§LiteralÍ)îÍ)ğ ¢''£letZ³ExpressionStatementÍ)ûÍ*S®CallExpressionÍ)ûÍ*T°MemberExpressionÍ)ûÍ*KªIdentifierÍ)ûÍ* ¥textsKªIdentifierÍ*Í*§forEachÂÂ‘J·ArrowFunctionExpressionÍ*	Í*ÀÂÂÂ‘KªIdentifierÍ*
+Í*¡tL®BlockStatementÍ*Í*‘Z³ExpressionStatementÍ*Í*[´AssignmentExpressionÍ*Í*¡=KªIdentifierÍ*Í*¤onlyKªIdentifierÍ*Í*¡tÂO«IfStatementÍ*)Í*aP°BinaryExpressionÍ*-Í*>T°MemberExpressionÍ*-Í*8KªIdentifierÍ*-Í*1¤onlyKªIdentifierÍ*2Í*8¦lengthÂÂ£===Q§LiteralÍ*=Í*> ¡0L®BlockStatementÍ*@Í*a‘R¯ReturnStatementÍ*OÍ*VÀÀM³VariableDeclarationÍ*kÍ*‘N²VariableDeclaratorÍ*oÍ*ŒKªIdentifierÍ*oÍ*s¤listS®CallExpressionÍ*vÍ*ŒT°MemberExpressionÍ*vÍ*†KªIdentifierÍ*vÍ*‚¬netIdsByTextKªIdentifierÍ*ƒÍ*†£getÂÂ‘KªIdentifierÍ*‡Í*‹¤onlyÂ£letO«IfStatementÍ*—Í*şP°BinaryExpressionÍ*›Í*­KªIdentifierÍ*›Í*Ÿ¤list£===KªIdentifierÍ*¤Í*­©undefinedL®BlockStatementÍ*¯Í*ş’Z³ExpressionStatementÍ*¾Í*È[´AssignmentExpressionÍ*¾Í*Ç¡=KªIdentifierÍ*¾Í*Â¤listY¯ArrayExpressionÍ*ÅÍ*ÇZ³ExpressionStatementÍ*ÖÍ*óS®CallExpressionÍ*ÖÍ*òT°MemberExpressionÍ*ÖÍ*æKªIdentifierÍ*ÖÍ*â¬netIdsByTextKªIdentifierÍ*ãÍ*æ£setÂÂ’KªIdentifierÍ*çÍ*ë¤onlyKªIdentifierÍ*íÍ*ñ¤listÂÀO«IfStatementÍ+Í+NW¯UnaryExpressionÍ+Í+!¡!ÃS®CallExpressionÍ+Í+!T°MemberExpressionÍ+Í+KªIdentifierÍ+Í+¤listKªIdentifierÍ+Í+¨includesÂÂ‘KªIdentifierÍ+Í+ ¥netIdÂL®BlockStatementÍ+#Í+N‘Z³ExpressionStatementÍ+2Í+CS®CallExpressionÍ+2Í+BT°MemberExpressionÍ+2Í+;KªIdentifierÍ+2Í+6¤listKªIdentifierÍ+7Í+;¤pushÂÂ‘KªIdentifierÍ+<Í+A¥netIdÂÀÂZ³ExpressionStatementÍ+]Í/VS®CallExpressionÍ+]Í/UT°MemberExpressionÍ+]Í+qKªIdentifierÍ+]Í+i¬netIdsByTextKªIdentifierÍ+jÍ+q§forEachÂÂ‘J·ArrowFunctionExpressionÍ+rÍ/TÀÂÂÂ’KªIdentifierÍ+sÍ+y¦netIdsKªIdentifierÍ+{Í+¤textL®BlockStatementÍ+„Í/T•M³VariableDeclarationÍ+Í+»‘N²VariableDeclaratorÍ+•Í+ºKªIdentifierÍ+•Í+©canonicalS®CallExpressionÍ+¡Í+ºKªIdentifierÍ+¡Í+¯®ensureNamedNet’KªIdentifierÍ+°Í+³£docKªIdentifierÍ+µÍ+¹¤textÂ¥constV¬ForStatementÍ+ÅÍ,“M³VariableDeclarationÍ+ÊÍ+Ó‘N²VariableDeclaratorÍ+ÎÍ+ÓKªIdentifierÍ+ÎÍ+Ï¡iQ§LiteralÍ+ÒÍ+Ó ¡0£letP°BinaryExpressionÍ+ÕÍ+æKªIdentifierÍ+ÕÍ+Ö¡i¡<T°MemberExpressionÍ+ÙÍ+æKªIdentifierÍ+ÙÍ+ß¦netIdsKªIdentifierÍ+àÍ+æ¦lengthÂÂW°UpdateExpressionÍ+èÍ+ë¢++ÂKªIdentifierÍ+èÍ+é¡iL®BlockStatementÍ+íÍ,“‘O«IfStatementÍ+üÍ,ˆP°BinaryExpressionÍ, Í,T°MemberExpressionÍ, Í,	KªIdentifierÍ, Í,¦netIdsKªIdentifierÍ,Í,¡iÃÂ£!==T°MemberExpressionÍ,Í,KªIdentifierÍ,Í,©canonicalKªIdentifierÍ,Í,¢idÂÂL®BlockStatementÍ,Í,ˆ’Z³ExpressionStatementÍ,/Í,ZS®CallExpressionÍ,/Í,YKªIdentifierÍ,/Í,;¬mergeNetInto“KªIdentifierÍ,<Í,?£docT°MemberExpressionÍ,AÍ,JKªIdentifierÍ,AÍ,G¦netIdsKªIdentifierÍ,HÍ,I¡iÃÂT°MemberExpressionÍ,LÍ,XKªIdentifierÍ,LÍ,U©canonicalKªIdentifierÍ,VÍ,X¢idÂÂÂZ³ExpressionStatementÍ,lÍ,yW°UpdateExpressionÍ,lÍ,x¢++ÂKªIdentifierÍ,lÍ,vªmergeCountÀV¬ForStatementÍ,Í.bM³VariableDeclarationÍ,¢Í,¬‘N²VariableDeclaratorÍ,¦Í,¬KªIdentifierÍ,¦Í,¨¢liQ§LiteralÍ,«Í,¬ ¡0£letP°BinaryExpressionÍ,®Í,ÇKªIdentifierÍ,®Í,°¢li¡<T°MemberExpressionÍ,³Í,ÇT°MemberExpressionÍ,³Í,ÀKªIdentifierÍ,³Í,¶£docKªIdentifierÍ,·Í,À©netLabelsÂÂKªIdentifierÍ,ÁÍ,Ç¦lengthÂÂW°UpdateExpressionÍ,ÉÍ,Í¢++ÂKªIdentifierÍ,ÉÍ,Ë¢liL®BlockStatementÍ,ÏÍ.b‘O«IfStatementÍ,ŞÍ.WP±LogicalExpressionÍ,âÍ-P°BinaryExpressionÍ,âÍ-T°MemberExpressionÍ,âÍ,øT°MemberExpressionÍ,âÍ,óT°MemberExpressionÍ,âÍ,ïKªIdentifierÍ,âÍ,å£docKªIdentifierÍ,æÍ,ï©netLabelsÂÂKªIdentifierÍ,ğÍ,ò¢liÃÂKªIdentifierÍ,ôÍ,ø¤textÂÂ£===KªIdentifierÍ,ıÍ-¤text¢&&W¯UnaryExpressionÍ-Í-¡!ÃS®CallExpressionÍ-Í-KªIdentifierÍ-Í-²isAutoNetLabelText‘KªIdentifierÍ-Í-¤textÂL®BlockStatementÍ- Í.W“M³VariableDeclarationÍ-3Í-W‘N²VariableDeclaratorÍ-9Í-VKªIdentifierÍ-9Í-<£nidT°MemberExpressionÍ-?Í-VT°MemberExpressionÍ-?Í-PT°MemberExpressionÍ-?Í-LKªIdentifierÍ-?Í-B£docKªIdentifierÍ-CÍ-L©netLabelsÂÂKªIdentifierÍ-MÍ-O¢liÃÂKªIdentifierÍ-QÍ-V¥netIdÂÂ¥constM³VariableDeclarationÍ-iÍ-‹‘N²VariableDeclaratorÍ-oÍ-ŠKªIdentifierÍ-oÍ-t¥claimS®CallExpressionÍ-wÍ-ŠT°MemberExpressionÍ-wÍ-…KªIdentifierÍ-wÍ-ªtextsOnNetKªIdentifierÍ-‚Í-…£getÂÂ‘KªIdentifierÍ-†Í-‰£nidÂ¥constO«IfStatementÍ-Í.HP±LogicalExpressionÍ-¡Í-õP°BinaryExpressionÍ-¡Í-µKªIdentifierÍ-¡Í-¤£nid£===T°MemberExpressionÍ-©Í-µKªIdentifierÍ-©Í-²©canonicalKªIdentifierÍ-³Í-µ¢idÂÂ¢||P±LogicalExpressionÍ-ºÍ-ôP±LogicalExpressionÍ-ºÍ-áP°BinaryExpressionÍ-ºÍ-ÍKªIdentifierÍ-ºÍ-¿¥claim£!==KªIdentifierÍ-ÄÍ-Í©undefined¢&&P°BinaryExpressionÍ-ÑÍ-áT°MemberExpressionÍ-ÑÍ-ÛKªIdentifierÍ-ÑÍ-Ö¥claimKªIdentifierÍ-×Í-Û¤sizeÂÂ£===Q§LiteralÍ-àÍ-á¡1¢&&S®CallExpressionÍ-åÍ-ôT°MemberExpressionÍ-åÍ-îKªIdentifierÍ-åÍ-ê¥claimKªIdentifierÍ-ëÍ-î£hasÂÂ‘KªIdentifierÍ-ïÍ-ó¤textÂL®BlockStatementÍ-÷Í.H‘Z³ExpressionStatementÍ.Í.5[´AssignmentExpressionÍ.Í.4¡=T°MemberExpressionÍ.Í.%T°MemberExpressionÍ.Í.T°MemberExpressionÍ.Í.KªIdentifierÍ.Í.£docKªIdentifierÍ.Í.©netLabelsÂÂKªIdentifierÍ.Í.¢liÃÂKªIdentifierÍ. Í.%¥netIdÂÂT°MemberExpressionÍ.(Í.4KªIdentifierÍ.(Í.1©canonicalKªIdentifierÍ.2Í.4¢idÂÂÀÀZ³ExpressionStatementÍ.lÍ.‚[´AssignmentExpressionÍ.lÍ.¡=T°MemberExpressionÍ.lÍ.zKªIdentifierÍ.lÍ.u©canonicalKªIdentifierÍ.vÍ.z¤nameÂÂKªIdentifierÍ.}Í.¤textO«IfStatementÍ.ŒÍ/MS®CallExpressionÍ.Í.¬KªIdentifierÍ.Í.¦¶isPowerSupplyLabelText‘KªIdentifierÍ.§Í.«¤textÂL®BlockStatementÍ.®Í.ç‘Z³ExpressionStatementÍ.½Í.Ü[´AssignmentExpressionÍ.½Í.Û¡=T°MemberExpressionÍ.½Í.ËKªIdentifierÍ.½Í.Æ©canonicalKªIdentifierÍ.ÇÍ.Ë¤typeÂÂT°MemberExpressionÍ.ÎÍ.ÛKªIdentifierÍ.ÎÍ.Õ§NetTypeKªIdentifierÍ.ÖÍ.Û¥POWERÂÂO«IfStatementÍ.öÍ/MS®CallExpressionÍ.úÍ/KªIdentifierÍ.úÍ/±isGroundLabelText‘KªIdentifierÍ/Í/¤textÂL®BlockStatementÍ/Í/M‘Z³ExpressionStatementÍ/"Í/B[´AssignmentExpressionÍ/"Í/A¡=T°MemberExpressionÍ/"Í/0KªIdentifierÍ/"Í/+©canonicalKªIdentifierÍ/,Í/0¤typeÂÂT°MemberExpressionÍ/3Í/AKªIdentifierÍ/3Í/:§NetTypeKªIdentifierÍ/;Í/A¦GROUNDÂÂÀÂR¯ReturnStatementÍ/\Í/nKªIdentifierÍ/cÍ/mªmergeCountÀ’Ôra•¤type¥start£endªspecifiers¦source±ImportDeclarationÌÙÍ‘Ôrb•¤type¥start£end¨imported¥local¯ImportSpecifierÌâÌéKªIdentifierÌâÌé§NetTypeKªIdentifierÌâÌé§NetTypeQ§LiteralÌñÍ´../types/CommonTypes¶'../types/CommonTypes'a±ImportDeclarationÍ
+Í,‘b¯ImportSpecifierÍÍKªIdentifierÍÍ¦IdUtilKªIdentifierÍÍ¦IdUtilQ§LiteralÍ!Í+¨./IdUtilª'./IdUtil'

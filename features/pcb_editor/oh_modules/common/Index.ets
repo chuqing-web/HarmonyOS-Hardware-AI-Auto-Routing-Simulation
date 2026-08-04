@@ -129,6 +129,16 @@ export { FeatureGate } from './src/main/ets/security/FeatureGate';
 
 export { TrialManager, TrialStatus } from './src/main/ets/security/TrialManager';
 
+export { GitHubOAuthConfig } from './src/main/ets/security/GitHubOAuthConfig';
+
+export {
+  GitHubDeviceAuth, DeviceCodeSession, DeviceAuthResult
+} from './src/main/ets/security/GitHubDeviceAuth';
+
+export {
+  GitHubStarVerifier, StarCheckKind, StarCheckResult
+} from './src/main/ets/security/GitHubStarVerifier';
+
 export { PrivacyConsentStore, PrivacyConsentRecord } from './src/main/ets/security/PrivacyConsentStore';
 
 export { Mcu8051Engine, Mcu8051State } from './src/main/ets/engines/Mcu8051Engine';
@@ -175,6 +185,16 @@ export {
   emptyRequirementSpec
 
 } from './src/main/ets/types/AiExtendedTypes';
+
+export {
+  PcbLayerRole, PcbRouteMode, PcbNetKind, PcbResidualKind,
+  PcbPlacementItem, PcbPlacementGroup, PcbPlacementPlan,
+  PcbNetPlanEntry, PcbNetPlanResult,
+  PcbViaPreference, PcbRoutePolicy, PcbQaRepairPlan,
+  PcbGeometrySeg, PcbGeometryResult, PcbAiRouteResult, PcbPadEndpoint,
+  emptyPcbAiRouteResult, copperRoleKeys, policyCoversCopperLayers,
+  validateLayerRoleSemantics, policyHasStub
+} from './src/main/ets/types/PcbAiRouteTypes';
 
 export {
 
@@ -365,6 +385,19 @@ export { KiCadPcbExportResult, exportPcbKiCad } from './src/main/ets/utils/PcbKi
 
 export { autoRoutePcb, AutoRouteResult, rerouteNets, RerouteResult } from './src/main/ets/utils/PcbAutoRouter';
 
+export { ensureBoardAccessories, clearCopperForNets, BoardAccessoriesResult, AccessoryNetHint,
+  accessoryHintsFromSchematicNets
+} from './src/main/ets/utils/PcbBoardAccessories';
+
+export { runPcbGeometryRoute } from './src/main/ets/utils/pcb_route/PcbGeometryRouter';
+export { routePowerBuses, PowerBusRouteOut } from './src/main/ets/utils/pcb_route/PowerBusRouter';
+export { createViaAt } from './src/main/ets/utils/pcb_route/PcbViaFactory';
+export { ensureAllCopperUsed, fillUnusedCopperLayers } from './src/main/ets/utils/pcb_route/ensureAllCopperUsed';
+export { applyPcbPlacementPlan, PlacementApplyResult } from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
+export {
+  pathClearOfTracks, clearanceForNet, trackWidthForNet
+} from './src/main/ets/utils/pcb_route/PcbClearanceOracle';
+
 export {
   registerSchPinToPadNet, lookupPadNet, registerPadNetKey
 } from './src/main/ets/utils/PcbPinBindUtil';
@@ -382,10 +415,16 @@ export {
 export {
   collectFootprintPadPositions, updateTracksForFootprintTransform,
   updateTracksForFootprintTransformDetailed, syncMovedTrackJunctions,
+  lockTrackEndpointsToPads,
   collectNetIdsForFootprints, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints,
+  pruneZeroLengthTracks,
   orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
   pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
 } from './src/main/ets/utils/PcbTrackBindUtil';
+
+export {
+  doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute
+} from './src/main/ets/utils/PcbTrackShoveUtil';
 
 export {
   padWorldPosition, rebuildZoneCutouts, pointInPolygon, makeRectCutout,

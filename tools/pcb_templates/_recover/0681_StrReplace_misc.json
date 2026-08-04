@@ -1,0 +1,8 @@
+{
+  "line": 681,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_digital.mjs",
+  "hit": [],
+  "old_string": "  const fanTop = (net, src, jPad, layer, runY, colX) => {\n    if (!net || !src || !jPad) return;\n    const esc = { x: src.x + (src.x < 3200 ? 45 : -45), y: src.y };\n    add(net, src, esc, 12, 'F.Cu');\n    addVia(net, esc);\n    L(net, [esc, { x: esc.x, y: runY }, { x: colX, y: runY }, { x: colX, y: jPad.y }], 12, layer);\n    addVia(net, { x: colX, y: jPad.y });\n    add(net, { x: colX, y: jPad.y }, jPad, 12, 'F.Cu');\n  };",
+  "new_string": "  const fanTop = (net, src, jPad, layer, runY, colX) => {\n    if (!net || !src || !jPad) return;\n    // 相对 U7 中心外逃，避免钻进封装柱\n    const esc = { x: src.x + (src.x < 3100 ? -55 : 55), y: src.y };\n    add(net, src, esc, 12, 'F.Cu');\n    addVia(net, esc);\n    L(net, [esc, { x: esc.x, y: runY }, { x: colX, y: runY }, { x: colX, y: jPad.y }], 12, layer);\n    addVia(net, { x: colX, y: jPad.y });\n    add(net, { x: colX, y: jPad.y }, jPad, 12, 'F.Cu');\n  };"
+}

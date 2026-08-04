@@ -429,6 +429,10 @@ export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack 
       id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
       copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
     });
+    layers.push({
+      id: 'diel_2', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
+      thicknessMm: 0.2, dielectricDk: 4.5
+    });
   } else {
     layers.push({
       id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
@@ -744,6 +748,14 @@ export function applyCopperLayerCount(doc: PcbDocument, copperCount: number): vo
     const prev = visibility.get(l.id);
     if (prev !== undefined) {
       l.visible = prev;
+    }
+  }
+  // 通孔默认贯穿全部铜层（含内电层）
+  const copper = copperLayersFromStack(doc.layerStack);
+  for (let i = 0; i < doc.vias.length; i++) {
+    const via = doc.vias[i];
+    if (via.kind === undefined || via.kind === PcbViaKind.THROUGH) {
+      via.layers = copper.slice();
     }
   }
 }

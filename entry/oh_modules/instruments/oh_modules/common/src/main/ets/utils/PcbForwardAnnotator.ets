@@ -1,7 +1,7 @@
 /**
  * 原理图 → PCB 正向标注（KiCad Update PCB from Schematic 语义）
  */
-import { SchematicDocument, ComponentInstance, NetType } from '../types/CommonTypes';
+import { SchematicDocument, ComponentInstance, NetType, Point2D } from '../types/CommonTypes';
 import { SchTopology } from '../types/TopologyTypes';
 import {
   PcbDocument, PcbFootprintInst, createEmptyPcbDocument, PcbNetRef
@@ -11,6 +11,11 @@ import { parsePinRef } from './PinRefUtil';
 import { paramMapGet } from './MapHelpers';
 import { registerSchPinToPadNet, lookupPadNet } from './PcbPinBindUtil';
 import { tracePcbForwardResult } from './PcbTraceLog';
+import {
+  collectFootprintPadPositions, updateTracksForFootprintTransform,
+  snapTrackEndpointsToPads, pruneZeroLengthTracks
+} from './PcbTrackBindUtil';
+import { ensureBoardAccessories, accessoryHintsFromSchematicNets } from './PcbBoardAccessories';
 
 export interface ForwardAnnotateResult {
   document: PcbDocument;
@@ -95,6 +100,9 @@ export class PcbForwardAnnotator {
     }
 
     const newFootprints: PcbFootprintInst[] = [];
+    /** 焊盘几何刷新前的世界坐标，用于走线端点跟随，避免「线被拆开」 */
+    const pendingTrackFollow: Array<Map<string, Point2D>> = [];
+    const pendingFpIds: string[] = [];
     const courtyardGap = 40;
     const originX = 180;
     const originY = 180;
@@ -119,12 +127,14 @@ export class PcbForwardAnnotator {
         inst.refDes = comp.refDes;
         inst.value = value;
         inst.rotation = comp.rotation;
-        if (inst.defId !== defId) {
-          const oldDefId = inst.defId;
-          this.lib.resyncPadsFromDef(inst, defId);
+        const oldDefId = inst.defId;
+        const oldPadPos = collectFootprintPadPositions(inst);
+        // 始终从库刷新焊盘几何（保留同号网络/id），避免库修正后旧实例仍用错误脚距
+        this.lib.resyncPadsFromDef(inst, defId);
+        pendingTrackFollow.push(oldPadPos);
+        pendingFpIds.push(inst.id);
+        if (oldDefId !== defId) {
           messages.push(`${comp.refDes}: 封装 ${oldDefId} → ${defId}`);
-        } else {
-          inst.defId = defId;
         }
         newFootprints.push(inst);
         placed++;
@@ -156,9 +166,21 @@ export class PcbForwardAnnotator {
     }
 
     doc.footprints = newFootprints;
+    // 焊盘局部坐标变化后，把仍挂在旧焊盘世界坐标上的走线端点一起挪过去
+    for (let i = 0; i < pendingFpIds.length; i++) {
+      const fpSet: Set<string> = new Set([pendingFpIds[i]]);
+      updateTracksForFootprintTransform(doc, fpSet, pendingTrackFollow[i]);
+    }
+    snapTrackEndpointsToPads(doc);
+    pruneZeroLengthTracks(doc);
     doc.metadata.modifiedAt = new Date().toISOString();
     this.bindNetsFromSchematic(schematic, doc);
     this.expandBoardOutline(doc);
+    const acc = ensureBoardAccessories(doc, this.lib,
+      accessoryHintsFromSchematicNets(schematic.nets));
+    if (acc.message.length > 0) {
+      messages.push(acc.message);
+    }
 
     if (placed === 0) {
       messages.push('原理图中没有可布局的器件');

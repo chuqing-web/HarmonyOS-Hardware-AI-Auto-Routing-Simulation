@@ -4,9 +4,14 @@
  */
 import { SchematicDocument, ComponentInstance, NetType, Point2D, Rotation } from '../types/CommonTypes';
 import { buildPinRef, parsePinRef } from './PinRefUtil';
-import { traceNetConnectivity } from './InstrumentTraceLog';
+import {
+  traceNetConnectivity, INSTR_TRACE_TAG, traceWireConnectPinAudit,
+  traceWirePinAttach, tracePinPinMerge
+} from './InstrumentTraceLog';
+import { Logger } from './Logger';
 import { rebuildWireNetTopology } from './WireNetTopology';
 import { applyNetLabelConnectivity, mergeNetInto } from './NetLabelConnectivity';
+import { namedMcuPinGeoms, namedDevicePinGeoms, DefaultPinGeom } from './NamedDevicePinDefaults';
 
 export interface PinGeometry {
   id: string;
@@ -63,8 +68,8 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
   }
   if (lib === 'AMMETER_DC' || lib.includes('AMMETER')) {
     return [
-      { id: 'I+', name: 'I+', x: -30, y: 0 },
-      { id: 'I-', name: 'I-', x: -30, y: 20 }
+      { id: 'I+', name: 'I+', x: -40, y: 0 },
+      { id: 'I-', name: 'I-', x: 40, y: 0 }
     ];
   }
   if (lib.includes('OSCILLOSCOPE')) {
@@ -107,8 +112,10 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
   }
   if (lib.includes('VIRTUAL_METER')) {
     return [
-      { id: 'V', name: 'V', x: -30, y: -25 },
-      { id: 'COM', name: 'COM', x: -30, y: 25 }
+      { id: 'V', name: 'V', x: -30, y: -30 },
+      { id: 'A', name: 'A', x: -30, y: -10 },
+      { id: 'OHM', name: 'OHM', x: -30, y: 10 },
+      { id: 'COM', name: 'COM', x: -30, y: 30 }
     ];
   }
   if (lib.includes('LM7805') || lib.includes('LM7812') || lib.includes('AMS1117')) {
@@ -159,9 +166,12 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
       { id: 'VCC', name: 'VCC', x: 40, y: -30 }
     ];
   }
-  // MCU DIP (match BuiltinComponents.genMcuPins) — without this, kernel
-  // ensureNetPinConnectivity(doc, grid) treats AT89/STM32 as R/C 2-pin and
-  // drops P1..P8 → [MCU] GPIO_MISS / LED will not animate.
+  // 具名封装回退（传感器/LCD/存储/buck/4017）
+  const namedDev = toPinGeometry(namedDevicePinGeoms(lib));
+  if (namedDev.length > 0) {
+    return namedDev;
+  }
+  // MCU DIP — 具名脚（与 NamedDevicePins 对齐）；禁止旧 P1..Pn
   const mcuPins = mcuDefaultPins(lib);
   if (mcuPins.length > 0) {
     return mcuPins;
@@ -179,34 +189,19 @@ function defaultPinsForLib(libraryId: string, resolver?: PinGeometryResolver): P
   ];
 }
 
-/** DIP MCU pin layout: left P1..Pn/2 @ x=-50, right rest @ x=+50, spacing 10. */
+/** DIP MCU 具名脚：与 NamedDevicePins / BuiltinComponents 对齐 */
+function toPinGeometry(src: DefaultPinGeom[]): PinGeometry[] {
+  const out: PinGeometry[] = [];
+  for (let i = 0; i < src.length; i++) {
+    const s = src[i];
+    const g: PinGeometry = { id: s.id, name: s.name, x: s.x, y: s.y };
+    out.push(g);
+  }
+  return out;
+}
+
 function mcuDefaultPins(libUpper: string): PinGeometry[] {
-  let count = 0;
-  if (libUpper.includes('AT89') || libUpper.includes('STC89') || libUpper.includes('STC15') ||
-    libUpper.includes('8051') || libUpper.includes('MCS51')) {
-    count = 40;
-  } else if (libUpper.includes('STM32') && libUpper.includes('F407')) {
-    count = 100;
-  } else if (libUpper.includes('STM32')) {
-    count = 48;
-  }
-  if (count <= 0) {
-    return [];
-  }
-  const pins: PinGeometry[] = [];
-  const leftCount = Math.ceil(count / 2);
-  const rightCount = Math.floor(count / 2);
-  const spacing = 10;
-  const bodyHalf = Math.max(leftCount, rightCount) * spacing / 2;
-  for (let i = 0; i < leftCount; i++) {
-    const id = `P${i + 1}`;
-    pins.push({ id: id, name: id, x: -50, y: i * spacing - bodyHalf });
-  }
-  for (let i = 0; i < rightCount; i++) {
-    const id = `P${leftCount + i + 1}`;
-    pins.push({ id: id, name: id, x: 50, y: i * spacing - bodyHalf });
-  }
-  return pins;
+  return toPinGeometry(namedMcuPinGeoms(libUpper));
 }
 
 function countPinRefs(doc: SchematicDocument): number {
@@ -255,6 +250,38 @@ function addPinToNet(doc: SchematicDocument, netId: string, compId: string,
     }
   }
   net.pinIds.push(pinRef);
+}
+
+function pointToSegmentDist(p: Point2D, a: Point2D, b: Point2D): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len2 = abx * abx + aby * aby;
+  if (len2 < 1e-6) {
+    return Math.hypot(p.x - a.x, p.y - a.y);
+  }
+  let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+  if (t < 0) {
+    t = 0;
+  } else if (t > 1) {
+    t = 1;
+  }
+  return Math.hypot(p.x - (a.x + t * abx), p.y - (a.y + t * aby));
+}
+
+/** 网上是否已有同器件的另一只脚（禁止二端器件经吸附短路） */
+function netHasSiblingPin(doc: SchematicDocument, netId: string,
+  compId: string, pinId: string): boolean {
+  const net = doc.nets.find(n => n.id === netId);
+  if (net === undefined) {
+    return false;
+  }
+  for (let i = 0; i < net.pinIds.length; i++) {
+    const parsed = parsePinRef(net.pinIds[i]);
+    if (parsed !== null && parsed.compId === compId && parsed.pinId !== pinId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function countCompPinConnections(doc: SchematicDocument, compId: string): number {
@@ -322,6 +349,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
     pinId: string;
     pinName: string;
     libraryId: string;
+    refDes: string;
     world: Point2D;
   }
   const allCandidates: PinCandidate[] = [];
@@ -336,6 +364,7 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
         pinId: pin.id,
         pinName: pin.name,
         libraryId: comp.libraryId,
+        refDes: comp.refDes,
         world: { x: comp.position.x + local.x, y: comp.position.y + local.y }
       });
     }
@@ -345,6 +374,9 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
   const pinOwnerNet = new Map<string, string>();
 
   let connected = 0;
+  let endpointHits = 0;
+  let midHits = 0;
+  let colocHits = 0;
   for (let wi = 0; wi < doc.wires.length; wi++) {
     const wire = doc.wires[wi];
     if (wire.points.length < 2) {
@@ -362,7 +394,24 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
         const dx = ep.x - c.world.x;
         const dy = ep.y - c.world.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist >= bestDist) {
+        // Cap by half-distance to nearest sibling pin on same device (MCU pitch=10)
+        let maxDist = threshold;
+        for (let sj = 0; sj < allCandidates.length; sj++) {
+          if (sj === ci) {
+            continue;
+          }
+          const o = allCandidates[sj];
+          if (o.compId !== c.compId) {
+            continue;
+          }
+          const sdx = c.world.x - o.world.x;
+          const sdy = c.world.y - o.world.y;
+          const half = Math.sqrt(sdx * sdx + sdy * sdy) * 0.5;
+          if (half > 1 && half < maxDist) {
+            maxDist = half;
+          }
+        }
+        if (dist >= maxDist || dist >= bestDist) {
           continue;
         }
         // 宽松阈值：禁止掠夺电源/地符号脚（精确接触仍允许）
@@ -382,26 +431,89 @@ function connectWireEndpoints(doc: SchematicDocument, threshold: number,
 
       if (bestIdx >= 0) {
         const best = allCandidates[bestIdx];
+        if (netHasSiblingPin(doc, wire.netId, best.compId, best.pinId)) {
+          continue;
+        }
         addPinToNet(doc, wire.netId, best.compId, best.pinId, best.pinName);
         pinOwnerNet.set(`${best.compId}:${best.pinId}`, wire.netId);
         connected++;
-        // Also add co-located pins (junction)
+        endpointHits++;
+        traceWirePinAttach('endpoint', best.refDes, best.pinName, best.pinId,
+          wire.id, wire.netId, bestDist, best.world.x, best.world.y);
+        // Also add co-located pins (junction) — never same-component distinct pins
         for (let ci = 0; ci < allCandidates.length; ci++) {
           if (ci === bestIdx) {
             continue;
           }
           const c = allCandidates[ci];
+          if (c.compId === best.compId) {
+            continue;
+          }
           const dx = best.world.x - c.world.x;
           const dy = best.world.y - c.world.y;
           if (Math.abs(dx) <= junctionRadius && Math.abs(dy) <= junctionRadius) {
+            const ck = `${c.compId}:${c.pinId}`;
+            const cOwner = pinOwnerNet.get(ck);
+            if (cOwner !== undefined && cOwner !== wire.netId) {
+              continue;
+            }
+            if (netHasSiblingPin(doc, wire.netId, c.compId, c.pinId)) {
+              continue;
+            }
             addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
-            pinOwnerNet.set(`${c.compId}:${c.pinId}`, wire.netId);
+            pinOwnerNet.set(ck, wire.netId);
             connected++;
+            colocHits++;
+            tracePinPinMerge(best.refDes, best.pinName, c.refDes, c.pinName,
+              wire.netId, best.world.x, best.world.y);
+            traceWirePinAttach('coloc', c.refDes, c.pinName, c.pinId,
+              wire.id, wire.netId, 0, c.world.x, c.world.y);
           }
         }
       }
     }
   }
+
+  // 导线中段过脚：引脚压在铜皮任意点上即挂网（Proteus）；同器件异脚已在网则拒绝
+  // 与导线 T 接容差对齐（约 3–5），避免「脚贴在线上但仍 floating」
+  const midTol = Math.min(Math.max(3, threshold * 0.2), 5);
+  for (let ci = 0; ci < allCandidates.length; ci++) {
+    const c = allCandidates[ci];
+    const pinKey = `${c.compId}:${c.pinId}`;
+    const owner = pinOwnerNet.get(pinKey);
+    if (owner !== undefined) {
+      continue;
+    }
+    for (let wi = 0; wi < doc.wires.length; wi++) {
+      const wire = doc.wires[wi];
+      if (wire.points.length < 2) {
+        continue;
+      }
+      let bestSegDist = midTol + 1;
+      for (let si = 0; si < wire.points.length - 1; si++) {
+        const d = pointToSegmentDist(c.world, wire.points[si], wire.points[si + 1]);
+        if (d < bestSegDist) {
+          bestSegDist = d;
+        }
+      }
+      if (bestSegDist > midTol) {
+        continue;
+      }
+      if (netHasSiblingPin(doc, wire.netId, c.compId, c.pinId)) {
+        continue;
+      }
+      addPinToNet(doc, wire.netId, c.compId, c.pinId, c.pinName);
+      pinOwnerNet.set(pinKey, wire.netId);
+      connected++;
+      midHits++;
+      traceWirePinAttach('mid_segment', c.refDes, c.pinName, c.pinId,
+        wire.id, wire.netId, bestSegDist, c.world.x, c.world.y);
+      break;
+    }
+  }
+  Logger.info(INSTR_TRACE_TAG,
+    `[WIRE_CONN] WIRE_PIN summary endpoint=${endpointHits} mid=${midHits} ` +
+    `coloc=${colocHits} total=${connected} threshold=${threshold.toFixed(1)} midTol=${midTol.toFixed(1)}`);
   return connected;
 }
 
@@ -520,6 +632,30 @@ export function ensureNetPinConnectivity(doc: SchematicDocument, gridSize: numbe
 
   const after = countPinRefs(doc);
   traceNetConnectivity(before, after, wired, doc.components.length, doc.wires.length);
+
+  // 重建后对照：wireNetBag + 每器件挂脚（排查「SNAP 成功但缺 GND/COM」）
+  const wireNets = new Map<string, number>();
+  for (let i = 0; i < doc.wires.length; i++) {
+    const nid = doc.wires[i].netId;
+    wireNets.set(nid, (wireNets.get(nid) ?? 0) + 1);
+  }
+  const bag: string[] = [];
+  wireNets.forEach((count: number, nid: string) => {
+    let name = nid;
+    for (let ni = 0; ni < doc.nets.length; ni++) {
+      if (doc.nets[ni].id === nid) {
+        name = doc.nets[ni].name || nid;
+        break;
+      }
+    }
+    bag.push(`${name}×${count}`);
+  });
+  Logger.info(INSTR_TRACE_TAG,
+    `[TOPO] PIN_REBUILD_DONE pins=${after} wires=${doc.wires.length} ` +
+    `wireNetBag={${bag.join(', ')}} nets=${summarizeNetPins(doc, 8)}`);
+  if (doc.wires.length > 0 && doc.wires.length <= 12) {
+    traceWireConnectPinAudit(doc, 8);
+  }
 }
 
 /** Strip and rebuild all pinIds from wires (simulation reload). */

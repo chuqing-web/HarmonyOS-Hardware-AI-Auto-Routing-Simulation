@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÃexport var AiTaskType;
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚlexport var AiTaskType;
 (function (AiTaskType) {
     AiTaskType[AiTaskType["TASK_AUTO_ROUTE_GLOBAL"] = 0] = "TASK_AUTO_ROUTE_GLOBAL";
     AiTaskType[AiTaskType["TASK_AUTO_ROUTE_SELECT"] = 1] = "TASK_AUTO_ROUTE_SELECT";
@@ -17,6 +17,8 @@
     AiTaskType[AiTaskType["TASK_LAYOUT_PLACE"] = 12] = "TASK_LAYOUT_PLACE";
     /** é€‰å‹ â†’ æ‘†æ”¾ â†’ å¸ƒçº¿ â†’ ERC å…¨é—­ç¯ */
     AiTaskType[AiTaskType["TASK_FULL_PIPELINE"] = 13] = "TASK_FULL_PIPELINE";
+    /** PCB å¸ƒå±€ AIï¼šplacement â†’ net_plan â†’ route_policy â†’ geometry â†’ qa */
+    AiTaskType[AiTaskType["TASK_PCB_AUTO_ROUTE"] = 14] = "TASK_PCB_AUTO_ROUTE";
 })(AiTaskType || (AiTaskType = {}));
 export function emptyRequirementSpec() {
     return {
@@ -31,7 +33,7 @@ export function emptyRequirementSpec() {
         openQuestions: []
     };
 }
-//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚNimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
+//# sourceMappingURL=AiExtendedTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\AiExtendedTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/AiExtendedTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚÁimport { SchTopology, RouteResult, ErcError } from './TopologyTypes';
 
 import { ErrCode } from './ErrCode';
 
@@ -73,7 +75,11 @@ export enum AiTaskType {
 
   /** é€‰å‹ â†’ æ‘†æ”¾ â†’ å¸ƒçº¿ â†’ ERC å…¨é—­ç¯ */
 
-  TASK_FULL_PIPELINE = 13
+  TASK_FULL_PIPELINE = 13,
+
+  /** PCB å¸ƒå±€ AIï¼šplacement â†’ net_plan â†’ route_policy â†’ geometry â†’ qa */
+
+  TASK_PCB_AUTO_ROUTE = 14
 
 }
 
@@ -552,8 +558,8 @@ export interface AiPipelineResult {
 
 }
 
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²AiExtendedTypes.js ‘³AiExtendedTypes.etsÜ !•”   ” ”  ” ” ,“”   ” ” “” 
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²AiExtendedTypes.js ‘³AiExtendedTypes.etsÜ #•”   ” ”  ” ” 0“”   ” ” “” 
 ”ÌS 
 ”ÌT 
-“” ”ÌS ”ÌT “” ”ÌM ”ÌN “” ”ÌW ”ÌX “” ”ÌY ”ÌZ “” ”ÌI ”ÌJ “” ”ÌO ”ÌP “” ”ÌI ”ÌJ “” ”ÌK ”ÌL “” ”ÌS ”ÌT “” ”ÌJ ”ÌK ’”  ”  “” "”ÌL "”ÌM "’” $” $“” &”ÌJ &”ÌK &’” (”! (“” *”ÌL *”ÌM *—”  , ” ,” ” ” ” ”$ ,””  Ìa ” Ìa” Ìa”$ Ìa$’” Ìb” Ìb	”” Ìc” Ìc” Ìc” Ìc”” Ìd” Ìd” Ìd” Ìd˜” Ìe” Ìe	” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe”” Ìf” Ìf” Ìf” Ìf”” Ìg” Ìg” Ìg” Ìg”” Ìh” Ìh” Ìh” Ìh”” Ìi” Ìi” Ìi” Ìi”” Ìj” Ìj” Ìj” Ìj”” Ìk” Ìk” Ìk” Ìk’” Ìl” Ìl’”  Ìm ” ÌmÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ "‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÔrL”¤type¥start£end¤nameªIdentifierªAiTaskTypeÀ£varÀI¶ExportNamedDeclarationÍ1ÍXÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ8ÍXLªIdentifierÍAÍU´emptyRequirementSpecÂÂÂÔrN”¤type¥start£end¤body®BlockStatementÍXÍX‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÍ_ÍUÔrP”¤type¥start£endªproperties°ObjectExpressionÍfÍT™ÔrQ™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍqÍ|ÂÂÂLªIdentifierÍqÍx§summaryÔrR•¤type¥start£end¥value£raw§LiteralÍzÍ| ¢''¤initQ¨PropertyÍ‡Í’ÂÂÂLªIdentifierÍ‡Í§modulesÔrS”¤type¥start£end¨elements¯ArrayExpressionÍÍ’¤initQ¨PropertyÍÍ±ÂÂÂLªIdentifierÍÍ¢¥powerP°ObjectExpressionÍ¤Í±‘Q¨PropertyÍ¦Í¯ÂÂÂLªIdentifierÍ¦Í«¥railsS¯ArrayExpressionÍ­Í¯¤init¤initQ¨PropertyÍ¼ÍËÂÂÂLªIdentifierÍ¼ÍÄ¨needsMcuR§LiteralÍÆÍËÂ¥false¤initQ¨PropertyÍÖÍåÂÂÂLªIdentifierÍÖÍá«instrumentsS¯ArrayExpressionÍãÍå¤initQ¨PropertyÍğÍ ÂÂÂLªIdentifierÍğÍü¬measureGoalsS¯ArrayExpressionÍşÍ ¤initQ¨PropertyÍÍÂÂÂLªIdentifierÍÍ«constraintsS¯ArrayExpressionÍÍ¤initQ¨PropertyÍ%Í1ÂÂÂLªIdentifierÍ%Í-¨oodHintsS¯ArrayExpressionÍ/Í1¤initQ¨PropertyÍ<ÍMÂÂÂLªIdentifierÍ<ÍI­openQuestionsS¯ArrayExpressionÍKÍM¤initÀ
+“” ”ÌS ”ÌT “” ”ÌM ”ÌN “” ”ÌW ”ÌX “” ”ÌY ”ÌZ “” ”ÌI ”ÌJ “” ”ÌO ”ÌP “” ”ÌI ”ÌJ “” ”ÌK ”ÌL “” ”ÌS ”ÌT “” ”ÌJ ”ÌK ’”  ”  “” "”ÌL "”ÌM "’” $” $“” &”ÌJ &”ÌK &’” (”! (“” *”ÌL *”ÌM *’” ,”ÌH ,ÌF“” .”ÌN .”ÌO .—”  0 ” 0” ” ” ” ”$ 0””  Ìe ” Ìe” Ìe”$ Ìe$’” Ìf” Ìf	”” Ìg” Ìg” Ìg” Ìg”” Ìh” Ìh” Ìh” Ìh˜” Ìi” Ìi	” Ìi” Ìi” Ìi” Ìi” Ìi” Ìi”” Ìj” Ìj” Ìj” Ìj”” Ìk” Ìk” Ìk” Ìk”” Ìl” Ìl” Ìl” Ìl”” Ìm” Ìm” Ìm” Ìm”” Ìn” Ìn” Ìn” Ìn”” Ìo” Ìo” Ìo” Ìo’” Ìp” Ìp’”  Ìq ” ÌqÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ $‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÔrJ•¤type¥start£end¬declarations¤kind³VariableDeclaration‘ÔrK•¤type¥start£end¢id¤init²VariableDeclaratorÔrL”¤type¥start£end¤nameªIdentifierªAiTaskTypeÀ£varÀI¶ExportNamedDeclarationÍÌÍóÔrM™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍÓÍóLªIdentifierÍÜÍğ´emptyRequirementSpecÂÂÂÔrN”¤type¥start£end¤body®BlockStatementÍóÍó‘ÔrO”¤type¥start£end¨argument¯ReturnStatementÍúÍğÔrP”¤type¥start£endªproperties°ObjectExpressionÍÍï™ÔrQ™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍÂÂÂLªIdentifierÍÍ§summaryÔrR•¤type¥start£end¥value£raw§LiteralÍÍ ¢''¤initQ¨PropertyÍ"Í-ÂÂÂLªIdentifierÍ"Í)§modulesÔrS”¤type¥start£end¨elements¯ArrayExpressionÍ+Í-¤initQ¨PropertyÍ8ÍLÂÂÂLªIdentifierÍ8Í=¥powerP°ObjectExpressionÍ?ÍL‘Q¨PropertyÍAÍJÂÂÂLªIdentifierÍAÍF¥railsS¯ArrayExpressionÍHÍJ¤init¤initQ¨PropertyÍWÍfÂÂÂLªIdentifierÍWÍ_¨needsMcuR§LiteralÍaÍfÂ¥false¤initQ¨PropertyÍqÍ€ÂÂÂLªIdentifierÍqÍ|«instrumentsS¯ArrayExpressionÍ~Í€¤initQ¨PropertyÍ‹Í›ÂÂÂLªIdentifierÍ‹Í—¬measureGoalsS¯ArrayExpressionÍ™Í›¤initQ¨PropertyÍ¦ÍµÂÂÂLªIdentifierÍ¦Í±«constraintsS¯ArrayExpressionÍ³Íµ¤initQ¨PropertyÍÀÍÌÂÂÂLªIdentifierÍÀÍÈ¨oodHintsS¯ArrayExpressionÍÊÍÌ¤initQ¨PropertyÍ×ÍèÂÂÂLªIdentifierÍ×Íä­openQuestionsS¯ArrayExpressionÍæÍè¤initÀ

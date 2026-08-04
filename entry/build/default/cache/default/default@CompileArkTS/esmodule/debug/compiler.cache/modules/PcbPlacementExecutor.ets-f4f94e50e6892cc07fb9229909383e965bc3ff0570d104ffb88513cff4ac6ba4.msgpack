@@ -1,0 +1,617 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ ,import { collectFootprintPadPositions, updateTracksForFootprintTransform } from '../PcbTrackBindUtil';
+import { tracePcb } from '../PcbTraceLog';
+function boardBounds(doc) {
+    const pts = doc.boardOutline?.points ?? [];
+    if (pts.length === 0) {
+        return { minX: -1e9, minY: -1e9, maxX: 1e9, maxY: 1e9 };
+    }
+    let minX = pts[0].x;
+    let minY = pts[0].y;
+    let maxX = pts[0].x;
+    let maxY = pts[0].y;
+    for (let i = 1; i < pts.length; i++) {
+        if (pts[i].x < minX) {
+            minX = pts[i].x;
+        }
+        if (pts[i].y < minY) {
+            minY = pts[i].y;
+        }
+        if (pts[i].x > maxX) {
+            maxX = pts[i].x;
+        }
+        if (pts[i].y > maxY) {
+            maxY = pts[i].y;
+        }
+    }
+    return { minX, minY, maxX, maxY };
+}
+function snapRotation(deg) {
+    const n = ((Math.round(deg / 90) * 90) % 360 + 360) % 360;
+    if (n === 90) {
+        return 90;
+    }
+    if (n === 180) {
+        return 180;
+    }
+    if (n === 270) {
+        return 270;
+    }
+    return 0;
+}
+function centersTooClose(a, b, minDist) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy) < minDist;
+}
+/** å®‰è£…å­”ï¼šåº”é”å®šè§’ç‚¹ï¼Œä¸è®¡å…¥é˜²å¤è¯» */
+function isMountHole(fp) {
+    const d = (fp.defId ?? '').toUpperCase();
+    if (d.indexOf('MOUNT') >= 0) {
+        return true;
+    }
+    const r = (fp.refDes ?? '').toUpperCase();
+    // H1/H2â€¦ ä¸”éæ’é’ˆ
+    if (r.length >= 2 && r.charAt(0) === 'H' && d.indexOf('PINHDR') < 0) {
+        let allDigit = true;
+        for (let i = 1; i < r.length; i++) {
+            const c = r.charCodeAt(i);
+            if (c < 48 || c > 57) {
+                allDigit = false;
+                break;
+            }
+        }
+        return allDigit;
+    }
+    return false;
+}
+function validateGroups(plan, byId, pendingById, bounds) {
+    const groups = plan.groups ?? [];
+    if (groups.length === 0) {
+        return '';
+    }
+    const boardDiag = Math.sqrt(Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
+    const maxSpan = Math.max(boardDiag * 0.55, 200);
+    for (let gi = 0; gi < groups.length; gi++) {
+        const g = groups[gi];
+        const ids = g.footprintIds ?? [];
+        if (ids.length < 2) {
+            continue;
+        }
+        const pts = [];
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            if (!byId.has(id)) {
+                return `group ${g.name} unknown footprintId ${id}`;
+            }
+            const pend = pendingById.get(id);
+            const fp = byId.get(id);
+            if (pend) {
+                pts.push({ x: pend.x, y: pend.y });
+            }
+            else if (fp) {
+                pts.push({ x: fp.position.x, y: fp.position.y });
+            }
+        }
+        let maxD = 0;
+        for (let i = 0; i < pts.length; i++) {
+            for (let j = i + 1; j < pts.length; j++) {
+                const dx = pts[i].x - pts[j].x;
+                const dy = pts[i].y - pts[j].y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d > maxD) {
+                    maxD = d;
+                }
+            }
+        }
+        if (maxD > maxSpan) {
+            return `group ${g.name || gi} too spread span=${Math.round(maxD)}>${Math.round(maxSpan)}`;
+        }
+    }
+    return '';
+}
+export function applyPcbPlacementPlan(doc, plan) {
+    if (!plan.fromLlm) {
+        return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
+    }
+    if (!plan.placements || plan.placements.length === 0) {
+        return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
+    }
+    const locked = new Set(plan.lockedIds ?? []);
+    // å®‰è£…å­”æœªåœ¨ placements æ—¶è‡ªåŠ¨è§†ä¸ºé”å®šï¼ˆé¿å…å¼ºè¿« LLM æŠ„è§’ç‚¹ï¼‰
+    for (const fp of doc.footprints) {
+        if (isMountHole(fp) && !fp.locked) {
+            locked.add(fp.id);
+        }
+    }
+    const bounds = boardBounds(doc);
+    const byId = new Map();
+    for (const fp of doc.footprints) {
+        byId.set(fp.id, fp);
+    }
+    const pending = [];
+    const pendingById = new Map();
+    for (let i = 0; i < plan.placements.length; i++) {
+        const item = plan.placements[i];
+        if (locked.has(item.footprintId)) {
+            continue;
+        }
+        const fp = byId.get(item.footprintId);
+        if (!fp) {
+            return { ok: false, placedCount: 0, reason: `unknown footprintId ${item.footprintId}` };
+        }
+        if (fp.locked) {
+            continue;
+        }
+        if (item.x < bounds.minX || item.x > bounds.maxX || item.y < bounds.minY || item.y > bounds.maxY) {
+            return {
+                ok: false, placedCount: 0,
+                reason: `LLM placement out of board: ${fp.refDes} (${item.x},${item.y})`
+            };
+        }
+        const pend = {
+            fp: fp,
+            x: item.x,
+            y: item.y,
+            rot: snapRotation(item.rotationDeg),
+            mir: item.mirrored === true
+        };
+        pending.push(pend);
+        pendingById.set(fp.id, pend);
+    }
+    let unlocked = 0;
+    for (const fp of doc.footprints) {
+        if (!fp.locked && !locked.has(fp.id)) {
+            unlocked++;
+        }
+    }
+    if (unlocked > 0 && pending.length < unlocked) {
+        return {
+            ok: false, placedCount: pending.length,
+            reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints`
+        };
+    }
+    // é˜²åŸä½å¤è¯»ï¼šéå®‰è£…å­”ä¸­ â‰¥85% åæ ‡+æ—‹è½¬æœªå˜ â†’ æ‹’ç»
+    const grid = doc.metadata.gridSize ?? 5;
+    let echoable = 0;
+    let echoed = 0;
+    for (let i = 0; i < pending.length; i++) {
+        const p = pending[i];
+        if (isMountHole(p.fp)) {
+            continue;
+        }
+        echoable++;
+        const dx = Math.abs(p.x - p.fp.position.x);
+        const dy = Math.abs(p.y - p.fp.position.y);
+        const sameRot = snapRotation(p.fp.rotation) === p.rot;
+        if (dx <= grid && dy <= grid && sameRot) {
+            echoed++;
+        }
+    }
+    if (echoable >= 3 && echoed / echoable >= 0.85) {
+        return {
+            ok: false, placedCount: 0,
+            reason: `placement echo ${(echoed)}/${echoable} â€” refuse copy of current poses; rearrange functional footprints`
+        };
+    }
+    const groupErr = validateGroups(plan, byId, pendingById, bounds);
+    if (groupErr.length > 0) {
+        return { ok: false, placedCount: 0, reason: groupErr };
+    }
+    if ((plan.groups?.length ?? 0) > 0) {
+        tracePcb('AI_PLACE_GROUPS', `n=${plan.groups.length}`);
+    }
+    const minDist = Math.max(grid * 8, 40);
+    for (let i = 0; i < pending.length; i++) {
+        for (let j = i + 1; j < pending.length; j++) {
+            const a = { x: pending[i].x, y: pending[i].y };
+            const b = { x: pending[j].x, y: pending[j].y };
+            if (centersTooClose(a, b, minDist)) {
+                return {
+                    ok: false, placedCount: 0,
+                    reason: `LLM placements overlap: ${pending[i].fp.refDes} / ${pending[j].fp.refDes}`
+                };
+            }
+        }
+    }
+    const oldPositions = new Map();
+    const movedIds = new Set();
+    for (let i = 0; i < pending.length; i++) {
+        const p = pending[i];
+        const before = collectFootprintPadPositions(p.fp);
+        before.forEach((pos, key) => {
+            oldPositions.set(key, { x: pos.x, y: pos.y });
+        });
+        p.fp.position = { x: p.x, y: p.y };
+        p.fp.rotation = p.rot;
+        p.fp.mirrored = p.mir;
+        movedIds.add(p.fp.id);
+        tracePcb('AI_PLACE', `${p.fp.refDes} -> (${p.x},${p.y}) r=${p.rot}`);
+    }
+    if (movedIds.size > 0) {
+        updateTracksForFootprintTransform(doc, movedIds, oldPositions);
+    }
+    // å†™å›æœ‰æ•ˆ lockedIdsï¼ˆå«è‡ªåŠ¨å®‰è£…å­”ï¼‰
+    plan.lockedIds = Array.from(locked);
+    return { ok: true, placedCount: pending.length, reason: 'ok' };
+}
+//# sourceMappingURL=PcbPlacementExecutor.js.mapÂ’ÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙYC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbPlacementExecutor.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ3./src/main/ets/utils/pcb_route/PcbPlacementExecutor¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ!!/**
+ * Apply LLM placement only â€” no auto-nudge; out-of-board / overlap / echo / group fail.
+ */
+import { PcbDocument, PcbFootprintInst } from '../../types/PcbTypes';
+import { PcbPlacementPlan, PcbPlacementGroup } from '../../types/PcbAiRouteTypes';
+import { Point2D, Rotation } from '../../types/CommonTypes';
+import {
+  collectFootprintPadPositions, updateTracksForFootprintTransform
+} from '../PcbTrackBindUtil';
+import { tracePcb } from '../PcbTraceLog';
+
+export interface PlacementApplyResult {
+  ok: boolean;
+  placedCount: number;
+  reason: string;
+}
+
+interface BoardBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+interface PendingPlacement {
+  fp: PcbFootprintInst;
+  x: number;
+  y: number;
+  rot: Rotation;
+  mir: boolean;
+}
+
+function boardBounds(doc: PcbDocument): BoardBounds {
+  const pts = doc.boardOutline?.points ?? [];
+  if (pts.length === 0) {
+    return { minX: -1e9, minY: -1e9, maxX: 1e9, maxY: 1e9 };
+  }
+  let minX = pts[0].x;
+  let minY = pts[0].y;
+  let maxX = pts[0].x;
+  let maxY = pts[0].y;
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].x < minX) {
+      minX = pts[i].x;
+    }
+    if (pts[i].y < minY) {
+      minY = pts[i].y;
+    }
+    if (pts[i].x > maxX) {
+      maxX = pts[i].x;
+    }
+    if (pts[i].y > maxY) {
+      maxY = pts[i].y;
+    }
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function snapRotation(deg: number): Rotation {
+  const n = ((Math.round(deg / 90) * 90) % 360 + 360) % 360;
+  if (n === 90) {
+    return 90;
+  }
+  if (n === 180) {
+    return 180;
+  }
+  if (n === 270) {
+    return 270;
+  }
+  return 0;
+}
+
+function centersTooClose(a: Point2D, b: Point2D, minDist: number): boolean {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy) < minDist;
+}
+
+/** å®‰è£…å­”ï¼šåº”é”å®šè§’ç‚¹ï¼Œä¸è®¡å…¥é˜²å¤è¯» */
+function isMountHole(fp: PcbFootprintInst): boolean {
+  const d = (fp.defId ?? '').toUpperCase();
+  if (d.indexOf('MOUNT') >= 0) {
+    return true;
+  }
+  const r = (fp.refDes ?? '').toUpperCase();
+  // H1/H2â€¦ ä¸”éæ’é’ˆ
+  if (r.length >= 2 && r.charAt(0) === 'H' && d.indexOf('PINHDR') < 0) {
+    let allDigit = true;
+    for (let i = 1; i < r.length; i++) {
+      const c = r.charCodeAt(i);
+      if (c < 48 || c > 57) {
+        allDigit = false;
+        break;
+      }
+    }
+    return allDigit;
+  }
+  return false;
+}
+
+function validateGroups(
+  plan: PcbPlacementPlan,
+  byId: Map<string, PcbFootprintInst>,
+  pendingById: Map<string, PendingPlacement>,
+  bounds: BoardBounds
+): string {
+  const groups = plan.groups ?? [];
+  if (groups.length === 0) {
+    return '';
+  }
+  const boardDiag = Math.sqrt(
+    Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
+  const maxSpan = Math.max(boardDiag * 0.55, 200);
+
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g: PcbPlacementGroup = groups[gi];
+    const ids = g.footprintIds ?? [];
+    if (ids.length < 2) {
+      continue;
+    }
+    const pts: Point2D[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (!byId.has(id)) {
+        return `group ${g.name} unknown footprintId ${id}`;
+      }
+      const pend = pendingById.get(id);
+      const fp = byId.get(id);
+      if (pend) {
+        pts.push({ x: pend.x, y: pend.y });
+      } else if (fp) {
+        pts.push({ x: fp.position.x, y: fp.position.y });
+      }
+    }
+    let maxD = 0;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x;
+        const dy = pts[i].y - pts[j].y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > maxD) {
+          maxD = d;
+        }
+      }
+    }
+    if (maxD > maxSpan) {
+      return `group ${g.name || gi} too spread span=${Math.round(maxD)}>${Math.round(maxSpan)}`;
+    }
+  }
+  return '';
+}
+
+export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan): PlacementApplyResult {
+  if (!plan.fromLlm) {
+    return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
+  }
+  if (!plan.placements || plan.placements.length === 0) {
+    return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
+  }
+
+  const locked: Set<string> = new Set(plan.lockedIds ?? []);
+  // å®‰è£…å­”æœªåœ¨ placements æ—¶è‡ªåŠ¨è§†ä¸ºé”å®šï¼ˆé¿å…å¼ºè¿« LLM æŠ„è§’ç‚¹ï¼‰
+  for (const fp of doc.footprints) {
+    if (isMountHole(fp) && !fp.locked) {
+      locked.add(fp.id);
+    }
+  }
+
+  const bounds = boardBounds(doc);
+  const byId: Map<string, PcbFootprintInst> = new Map();
+  for (const fp of doc.footprints) {
+    byId.set(fp.id, fp);
+  }
+
+  const pending: PendingPlacement[] = [];
+  const pendingById: Map<string, PendingPlacement> = new Map();
+  for (let i = 0; i < plan.placements.length; i++) {
+    const item = plan.placements[i];
+    if (locked.has(item.footprintId)) {
+      continue;
+    }
+    const fp = byId.get(item.footprintId);
+    if (!fp) {
+      return { ok: false, placedCount: 0, reason: `unknown footprintId ${item.footprintId}` };
+    }
+    if (fp.locked) {
+      continue;
+    }
+    if (item.x < bounds.minX || item.x > bounds.maxX || item.y < bounds.minY || item.y > bounds.maxY) {
+      return {
+        ok: false, placedCount: 0,
+        reason: `LLM placement out of board: ${fp.refDes} (${item.x},${item.y})`
+      };
+    }
+    const pend: PendingPlacement = {
+      fp: fp,
+      x: item.x,
+      y: item.y,
+      rot: snapRotation(item.rotationDeg),
+      mir: item.mirrored === true
+    };
+    pending.push(pend);
+    pendingById.set(fp.id, pend);
+  }
+
+  let unlocked = 0;
+  for (const fp of doc.footprints) {
+    if (!fp.locked && !locked.has(fp.id)) {
+      unlocked++;
+    }
+  }
+  if (unlocked > 0 && pending.length < unlocked) {
+    return {
+      ok: false, placedCount: pending.length,
+      reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints`
+    };
+  }
+
+  // é˜²åŸä½å¤è¯»ï¼šéå®‰è£…å­”ä¸­ â‰¥85% åæ ‡+æ—‹è½¬æœªå˜ â†’ æ‹’ç»
+  const grid = doc.metadata.gridSize ?? 5;
+  let echoable = 0;
+  let echoed = 0;
+  for (let i = 0; i < pending.length; i++) {
+    const p = pending[i];
+    if (isMountHole(p.fp)) {
+      continue;
+    }
+    echoable++;
+    const dx = Math.abs(p.x - p.fp.position.x);
+    const dy = Math.abs(p.y - p.fp.position.y);
+    const sameRot = snapRotation(p.fp.rotation) === p.rot;
+    if (dx <= grid && dy <= grid && sameRot) {
+      echoed++;
+    }
+  }
+  if (echoable >= 3 && echoed / echoable >= 0.85) {
+    return {
+      ok: false, placedCount: 0,
+      reason: `placement echo ${(echoed)}/${echoable} â€” refuse copy of current poses; rearrange functional footprints`
+    };
+  }
+
+  const groupErr = validateGroups(plan, byId, pendingById, bounds);
+  if (groupErr.length > 0) {
+    return { ok: false, placedCount: 0, reason: groupErr };
+  }
+  if ((plan.groups?.length ?? 0) > 0) {
+    tracePcb('AI_PLACE_GROUPS', `n=${plan.groups!.length}`);
+  }
+
+  const minDist = Math.max(grid * 8, 40);
+  for (let i = 0; i < pending.length; i++) {
+    for (let j = i + 1; j < pending.length; j++) {
+      const a: Point2D = { x: pending[i].x, y: pending[i].y };
+      const b: Point2D = { x: pending[j].x, y: pending[j].y };
+      if (centersTooClose(a, b, minDist)) {
+        return {
+          ok: false, placedCount: 0,
+          reason: `LLM placements overlap: ${pending[i].fp.refDes} / ${pending[j].fp.refDes}`
+        };
+      }
+    }
+  }
+
+  const oldPositions: Map<string, Point2D> = new Map();
+  const movedIds: Set<string> = new Set();
+  for (let i = 0; i < pending.length; i++) {
+    const p = pending[i];
+    const before = collectFootprintPadPositions(p.fp);
+    before.forEach((pos: Point2D, key: string) => {
+      oldPositions.set(key, { x: pos.x, y: pos.y });
+    });
+    p.fp.position = { x: p.x, y: p.y };
+    p.fp.rotation = p.rot;
+    p.fp.mirrored = p.mir;
+    movedIds.add(p.fp.id);
+    tracePcb('AI_PLACE', `${p.fp.refDes} -> (${p.x},${p.y}) r=${p.rot}`);
+  }
+  if (movedIds.size > 0) {
+    updateTracksForFootprintTransform(doc, movedIds, oldPositions);
+  }
+
+  // å†™å›æœ‰æ•ˆ lockedIdsï¼ˆå«è‡ªåŠ¨å®‰è£…å­”ï¼‰
+  plan.lockedIds = Array.from(locked);
+
+  return { ok: true, placedCount: pending.length, reason: 'ok' };
+}
+ÀÔrE’³../PcbTrackBindUtil®../PcbTraceLogÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings·PcbPlacementExecutor.js ‘¸PcbPlacementExecutor.etsÜ ìš”   ” ”	 ”% ”'  ”ÌH ÌA”ÌJ ”ÌP ”Ìe ”Ìf ˜”  	 ” 	”	 		” 	” 	” 	”) 	)”* 	*•”    ”	  	”  ”  ”  %œ” !”
+ !” !” !” !” !”  !”" ! ”( !&”, !*”. !,”/ !-˜” "” "” "	” "
+” "” "” "” "Ü ” #” #” #” #” #” #” #” #”! #”# #”$ # ”' ##”) #%”- #)”/ #+”2 #.”4 #0”8 #4”: #6”= #9”? #;”Ì@ #<‘” $›” %” %” %
+” %” %” %” %” %” %” %” %›” &” &” &
+” &” &” &” &” &” &” &” &›” '” '” '
+” '” '” '” '” '” '” '” '›” (” (” (
+” (” (” (” (” (” (” (” (Ü ” )”	 )” )” )” )” )” )” )” )” )” )”" ) ”$ )"”% )#”' )%”) )'›” *” *” *” *” *” *” *” *” *” *” *š” +” +
+” +” +” +” +” +” +” +” +‘”	 ,›” -” -” -” -” -” -” -” -” -” -” -š” .” .
+” .” .” .” .” .” .” .” .‘”	 /›” 0” 0” 0” 0” 0” 0” 0” 0” 0” 0” 0š” 1” 1
+” 1” 1” 1” 1” 1” 1” 1” 1‘”	 2›” 3” 3” 3” 3” 3” 3” 3” 3” 3” 3” 3š” 4” 4
+” 4” 4” 4” 4” 4” 4” 4” 4‘”	 5‘” 6œ” 7” 7	” 7” 7” 7” 7” 7” 7” 7”# 7!”% 7#”& 7$’”  8 ” 8•”  : ”	 :	” :” :” :!Ü ” ;”
+ ;” ;	” ;” ;” ;” ;” ;” ;” ;” ;”! ;”# ;!”$ ;"”' ;%”) ;'”* ;(”- ;+”0 ;.”3 ;1”6 ;4”7 ;5”: ;8”= ;;”> ;<–” <” <”	 <” <” <” <”” =” =” =” =‘” >–” ?” ?”	 ?” ?” ?” ?”” Ì@” Ì@” Ì@” Ì@‘” ÌA–” ÌB” ÌB”	 ÌB” ÌB” ÌB” ÌB”” ÌC” ÌC” ÌC” ÌC‘” ÌD”” ÌE” ÌE	” ÌE
+” ÌE’”  ÌF ” ÌF™”  ÌH ”	 ÌH	” ÌH” ÌH” ÌH#” ÌH%” ÌH/” ÌH1”& ÌHÌ@œ” ÌI”
+ ÌI” ÌI
+” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI” ÌIœ” ÌJ”
+ ÌJ” ÌJ
+” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJÜ ” ÌK” ÌK	” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK”! ÌK”$ ÌK"”& ÌK$”' ÌK%”* ÌK(”1 ÌK/”2 ÌK0’”  ÌL ” ÌL’”  ÌN ” ÌN•”  ÌO ”	 ÌO	” ÌO” ÌO” ÌO)Ÿ” ÌP”
+ ÌP” ÌP	” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP”* ÌP(”, ÌP*”- ÌP+›” ÌQ” ÌQ”	 ÌQ”
+ ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”! ÌQ”” ÌR” ÌR” ÌR” ÌR‘” ÌSŸ” ÌT”
+ ÌT” ÌT	” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”  ÌT”+ ÌT)”- ÌT+”. ÌT,’” ÌU” ÌUÜ ” ÌV” ÌV”	 ÌV”
+ ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”! ÌV”" ÌV ”# ÌV!”$ ÌV"”) ÌV'”, ÌV*”0 ÌV.”1 ÌV/”2 ÌV0”9 ÌV7”: ÌV8”ÌB ÌVÌ@”ÌC ÌVÌA”ÌF ÌVÌD”ÌG ÌVÌE”ÌI ÌVÌG–” ÌW” ÌW” ÌW” ÌW” ÌW” ÌWÜ ” ÌX” ÌX	” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”$ ÌX ”& ÌX"”' ÌX#”) ÌX%”+ ÌX'›” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”" ÌY”# ÌY”$ ÌY”% ÌY”& ÌY š” ÌZ” ÌZ
+” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”" ÌZ•” Ì[” Ì[” Ì[”  Ì[”! Ì[’” Ì\” Ì\‘” Ì]‘”	 Ì^”” Ì_” Ì_” Ì_” Ì_‘” Ì`”” Ìa” Ìa	” Ìa” Ìa’”  Ìb ” Ìb›”  Ìd ”	 Ìd	” Ìd” Ìe” Ìe” Ìf”" Ìf%”$ Ìg”/ Ìg,”1 Ìh”7 Ìhš” Ìj”
+ Ìj” Ìj” Ìj” Ìj” Ìj” Ìj”" Ìj ”$ Ìj"”% Ìj#˜” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”” Ìl” Ìl” Ìl” Ìl‘” ÌmÜ '” Ìn”
+ Ìn” Ìn” Ìn” Ìn” Ìn” Ìn”  Ìo”$ Ìo”% Ìo	”( Ìo”) Ìo”/ Ìo”0 Ìo”4 Ìo”7 Ìo”= Ìo!”> Ìo"”ÌB Ìo&”ÌD Ìo(”ÌE Ìo)”ÌF Ìo*”ÌI Ìo-”ÌM Ìo1”ÌN Ìo2”ÌQ Ìo5”ÌR Ìo6”ÌX Ìo<”ÌY Ìo=”Ì] ÌoÌA”Ì` ÌoÌD”Ìf ÌoÌJ”Ìg ÌoÌK”Ìk ÌoÌO”Ìm ÌoÌQ”Ìn ÌoÌR”Ìo ÌoÌS”Ìp ÌoÌT”Ìq ÌoÌUŸ” Ìp”
+ Ìp” Ìp” Ìp” Ìp” Ìp” Ìp” Ìp”& Ìp$”) Ìp'”- Ìp+”/ Ìp-”2 Ìp0”3 Ìp1”4 Ìp2Ü ” Ìr”	 Ìr” Ìr” Ìr” Ìr” Ìr” Ìr” Ìr” Ìr”  Ìr”! Ìr”' Ìr%”) Ìr'”+ Ìr)”- Ìr+”/ Ìr-™” Ìs” Ìs
+” Ìs” Ìs!” Ìs'” Ìs(” Ìs*” Ìs+” Ìs,š” Ìt” Ìt
+” Ìt” Ìt” Ìt” Ìt”" Ìt”& Ìt"”( Ìt$”) Ìt%˜” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu’” Ìv” Ìv‘”	 Ìw–” Ìx” Ìx
+” Ìx” Ìx” Ìx” ÌxÜ ” Ìy” Ìy	” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”  Ìy”& Ìy"”( Ìy$”) Ìy%”+ Ìy'”- Ìy)™” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìzš” Ì{” Ì{
+” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{š” Ì|” Ì|”  Ì|”! Ì|”" Ì|”& Ì|”> Ì|6”Ì@ Ì|8”ÌB Ì|:”ÌC Ì|;‘” Ì}›” Ì~” Ì~” Ì~” Ì~”$ Ì~”% Ì~”( Ì~"”) Ì~#”+ Ì~%”, Ì~&”- Ì~'›” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”" Ì”# Ì”$ Ì”” Ì€” Ì€
+” Ì€” Ì€Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”" Ì”# Ì”$ Ì”& Ì”' Ì”) Ì!”- Ì%”. Ì&”/ Ì'”1 Ì)”2 Ì*”3 Ì+‘” Ì‚”” Ì‚” Ì‚” Ì‚” Ì‚Ü ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”! Ìƒ”) Ìƒ!”* Ìƒ"”+ Ìƒ#”- Ìƒ%”. Ìƒ&”0 Ìƒ(”2 Ìƒ*”3 Ìƒ+”; Ìƒ3”< Ìƒ4”= Ìƒ5”? Ìƒ7”Ì@ Ìƒ8”ÌA Ìƒ9‘” Ì„‘”	 Ì…–” Ì†” Ì†” Ì†” Ì†” Ì†” Ì†Ü ” Ì‡” Ì‡	” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡”  Ì‡”& Ì‡"”( Ì‡$”) Ì‡%”+ Ì‡'”- Ì‡)Ü ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”  Ìˆ”! Ìˆ”$ Ìˆ”' Ìˆ!”( Ìˆ"”. Ìˆ(”0 Ìˆ*”1 Ìˆ+”3 Ìˆ-”5 Ìˆ/Ü ” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”  Ì‰”! Ì‰”" Ì‰”# Ì‰”& Ì‰”) Ì‰!”* Ì‰"”+ Ì‰#”, Ì‰$”- Ì‰%”. Ì‰&”/ Ì‰'Ü ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ”  ÌŠ”! ÌŠ”" ÌŠ”# ÌŠ”& ÌŠ”) ÌŠ!”* ÌŠ"”+ ÌŠ#”, ÌŠ$”- ÌŠ%”. ÌŠ&”/ ÌŠ'Ü ” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹”# Ì‹”$ Ì‹”& Ì‹”) Ì‹!”+ Ì‹#”. Ì‹&”0 Ì‹(”3 Ì‹+”5 Ì‹-”6 Ì‹.”7 Ì‹/–” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ•” Ì
+” Ì” Ì” Ì” Ì‘” Ì	‘” Ì‘”	 Ì–” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘Ü ” Ì’” Ì’” Ì’” Ì’” Ì’”" Ì’”& Ì’ ”( Ì’"”< Ì’6”Ì@ Ì’:”ÌA Ì’;”ÌF Ì’Ì@”ÌG Ì’ÌA”ÌK Ì’ÌE”ÌL Ì’ÌF”ÌP Ì’ÌJ”ÌT Ì’ÌN”ÌU Ì’ÌO”ÌZ Ì’ÌT”Ì[ Ì’ÌU”Ìb Ì’Ì\”Ìc Ì’Ì]”Ìe Ì’Ì_”Ìf Ì’Ì`‘”	 Ì“‘” Ì””” Ì•” Ì•	” Ì•” Ì•’”  Ì– ” Ì–˜”  Ì˜ ” Ì˜” Ì˜”% Ì˜%”& Ì˜&”) Ì˜6”+ Ì˜8”/ Ì˜ÌN—” Ì™” Ì™”	 Ì™” Ì™” Ì™” Ì™” Ì™Ü ” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”' Ìš#”) Ìš%”* Ìš&”, Ìš(”2 Ìš.”4 Ìš0”ÌQ ÌšÌM”ÌS ÌšÌO”ÌT ÌšÌP‘” Ì›Ÿ” Ìœ” Ìœ”	 Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”  Ìœ”! Ìœ”+ Ìœ)”, Ìœ*”2 Ìœ0”7 Ìœ5”8 Ìœ6”: Ìœ8Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì”' Ì#”) Ì%”* Ì&”, Ì(”2 Ì.”4 Ì0”ÌS ÌÌO”ÌU ÌÌQ”ÌV ÌÌR‘” Ì” Ì ”
+ Ì ” Ì ” Ì ” Ì "” Ì %” Ì &” Ì *”  Ì +”) Ì 4”- Ì 8”/ Ì :”0 Ì ;”1 Ì <’” Ì¡”- Ì¡+™” Ì¢”	 Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”# Ì¢!”% Ì¢#œ” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”  Ì£”" Ì£”# Ì£”) Ì£%”+ Ì£'š” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤‘”	 Ì¥‘” Ì¦™” Ì¨”
+ Ì¨” Ì¨” Ì¨” Ì¨” Ì¨”" Ì¨ ”# Ì¨!”$ Ì¨"˜” Ì©”
+ Ì©” Ì©” Ì©.” Ì©2” Ì©5” Ì©7” Ì©8™” Ìª”	 Ìª” Ìª” Ìª” Ìª” Ìª” Ìª”# Ìª!”% Ìª#œ” Ì«” Ì«” Ì«	” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«‘” Ì¬–” Ì®”
+ Ì®” Ì®” Ì®&” Ì®(” Ì®)˜” Ì¯”
+ Ì¯” Ì¯” Ì¯5” Ì¯9” Ì¯<”! Ì¯>”" Ì¯?Ü ” Ì°”	 Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°”' Ì°%”( Ì°&”. Ì°,”0 Ì°.”1 Ì°/”3 Ì°1”5 Ì°3›” Ì±” Ì±
+” Ì±” Ì±” Ì±” Ì±”$ Ì± ”% Ì±!”& Ì±"”' Ì±#”( Ì±$›” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²”' Ì²#”( Ì²$”* Ì²&’” Ì³” Ì³‘”	 Ì´” Ìµ” Ìµ
+” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”  Ìµ”! Ìµ”, Ìµ(”- Ìµ)”. Ìµ*•” Ì¶” Ì¶” Ì¶	” Ì¶” Ì¶Ü ” Ì·” Ì·” Ì·” Ì·” Ì·” Ì·”  Ì·”+ Ì·%”- Ì·'”. Ì·(”0 Ì·*”6 Ì·0”8 Ì·2”ÌO Ì·ÌI”ÌS Ì·ÌM”ÌT Ì·ÌN”Ì_ Ì·ÌY”Ìa Ì·Ì[”Ìc Ì·Ì]”Ìd Ì·Ì^‘”	 Ì¸–” Ì¹” Ì¹” Ì¹
+” Ì¹” Ì¹” Ì¹’” Ìº” Ìº‘”	 Ì»Ü "” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”  Ì¼”$ Ì¼ ”( Ì¼$”) Ì¼%”* Ì¼&”- Ì¼)”3 Ì¼/”4 Ì¼0”8 Ì¼4”< Ì¼8”Ì@ Ì¼<”ÌA Ì¼=”ÌB Ì¼>”ÌE Ì¼ÌA”ÌK Ì¼ÌG”ÌL Ì¼ÌH”ÌP Ì¼ÌL”ÌT Ì¼ÌP”ÌX Ì¼ÌT”ÌY Ì¼ÌU”ÌZ Ì¼ÌV”Ì] Ì¼ÌY”Ìc Ì¼Ì_”Ìd Ì¼Ì`”Ìh Ì¼Ìd”Ìj Ì¼Ìf’” Ì½” Ì½˜” Ì¾” Ì¾
+” Ì¾” Ì¾” Ì¾”& Ì¾”( Ì¾ ”) Ì¾!Ü ” Ì¿” Ì¿” Ì¿”7 Ì¿/”9 Ì¿1”: Ì¿2”Ì@ Ì¿8”ÌE Ì¿=”ÌI Ì¿ÌA”ÌJ Ì¿ÌB”ÌK Ì¿ÌC”ÌO Ì¿ÌG”ÌS Ì¿ÌK”ÌT Ì¿ÌL”ÌU Ì¿ÌM”ÌX Ì¿ÌP’” ÌÀ” ÌÀ‘”	 ÌÁ”” ÌÂ” ÌÂ
+” ÌÂ” ÌÂ#”” ÌÃ” ÌÃ” ÌÃ
+” ÌÃ–” ÌÄ” ÌÄ” ÌÄ	” ÌÄ” ÌÄ” ÌÄ–” ÌÅ” ÌÅ” ÌÅ	” ÌÅ” ÌÅ” ÌÅ™” ÌÆ” ÌÆ	” ÌÆ” ÌÆ” ÌÆ”" ÌÆ”# ÌÆ”. ÌÆ(”/ ÌÆ)˜” ÌÇ” ÌÇ	” ÌÇ” ÌÇ” ÌÇ” ÌÇ”# ÌÇ”' ÌÇ!’”	 ÌÈ”
+ ÌÈ˜” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉœ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”# ÌÊ”$ ÌÊ ”% ÌÊ!‘” ÌË–” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ™” ÌÎ”	 ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”# ÌÎ!”% ÌÎ#Ü ” ÌÏ” ÌÏ” ÌÏ	” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ”! ÌÏ”" ÌÏ”% ÌÏ!”& ÌÏ"”( ÌÏ$”) ÌÏ%”+ ÌÏ'”, ÌÏ(”. ÌÏ*”” ÌĞ” ÌĞ” ÌĞ” ÌĞ‘”	 ÌÑ‘” ÌÒœ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”  ÌÓ”& ÌÓ$”) ÌÓ'”1 ÌÓ/”3 ÌÓ1’” ÌÔ” ÌÔš” ÌÕ” ÌÕ” ÌÕ
+” ÌÕ” ÌÕ”" ÌÕ”$ ÌÕ”+ ÌÕ%”, ÌÕ&”2 ÌÕ,š” ÌÖ” ÌÖ” ÌÖ”* ÌÖ$”1 ÌÖ+”2 ÌÖ,”8 ÌÖ2”< ÌÖ6”ÌD ÌÖ>”ÌZ ÌÖÌT’”	 Ì×”
+ Ì×‘” ÌØ’” ÌÚ”$ ÌÚ"œ” ÌÛ”
+ ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ”& ÌÛ$”* ÌÛ(”+ ÌÛ)”, ÌÛ*–” ÌÜ” ÌÜ” ÌÜ” ÌÜ” ÌÜ” ÌÜ–” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ” ÌİÜ ” ÌŞ”	 ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”  ÌŞ”& ÌŞ$”( ÌŞ&”) ÌŞ'”+ ÌŞ)”- ÌŞ+™” Ìß” Ìß
+” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß™” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà’” Ìá” Ìá‘”	 Ìâ”” Ìã” Ìã” Ìã” ÌãÜ ” Ìä” Ìä
+” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä”" Ìä”# Ìä”$ Ìä ”& Ìä"”' Ìä#”/ Ìä+”0 Ìä,”1 Ìä-”2 Ìä.”3 Ìä/Ü ” Ìå” Ìå
+” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå”" Ìå”# Ìå”$ Ìå ”& Ìå"”' Ìå#”/ Ìå+”0 Ìå,”1 Ìå-”2 Ìå.”3 Ìå/Ü ” Ìæ” Ìæ
+” Ìæ” Ìæ”$ Ìæ ”% Ìæ!”& Ìæ"”' Ìæ#”) Ìæ%”* Ìæ&”2 Ìæ.”3 Ìæ/”8 Ìæ4”9 Ìæ5”: Ìæ6”= Ìæ9”> Ìæ:œ” Ìç” Ìç” Ìç
+” Ìç” Ìç” Ìç” Ìç”  Ìç”$ Ìç ”( Ìç$”/ Ìç+”1 Ìç-”” Ìè” Ìè” Ìè” Ìè‘”	 Ìé‘” Ìêœ” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë”" Ìë ”* Ìë(”. Ìë,”2 Ìë0”4 Ìë2’” Ìì” Ìì˜” Ìí” Ìí” Ìí
+” Ìí” Ìí”" Ìí”$ Ìí”% Ìíš” Ìî” Ìî” Ìî”& Ìî ”' Ìî!”- Ìî'”. Ìî(”2 Ìî,”: Ìî4”Ì| ÌîÌv’”	 Ìï”
+ Ìï‘” ÌğŸ” Ìò”
+ Ìò” Ìò” Ìò”# Ìò!”$ Ìò"”( Ìò&”* Ìò(”. Ìò,”0 Ìò.”; Ìò9”= Ìò;”ÌC ÌòÌA”ÌD ÌòÌB”ÌE ÌòÌC˜” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” ÌóÜ ” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô”' Ìô#”) Ìô%”* Ìô&”, Ìô(”2 Ìô.”4 Ìô0”< Ìô8”> Ìô:”? Ìô;‘” Ìõ” Ìö” Ìö”	 Ìö” Ìö” Ìö” Ìö” Ìö” Ìö”  Ìö”! Ìö”" Ìö ”% Ìö#”& Ìö$”( Ìö&” Ì÷” Ì÷” Ì÷”" Ì÷”$ Ì÷ ”) Ì÷%”- Ì÷)”. Ì÷*”4 Ì÷1”5 Ì÷2”; Ì÷8”= Ì÷:”> Ì÷;”? Ì÷<‘” ÌøŸ” Ìú”
+ Ìú” Ìú” Ìú” Ìú” Ìú” Ìú” Ìú”! Ìú”$ Ìú"”% Ìú#”' Ìú%”) Ìú'”* Ìú(”+ Ìú)Ü ” Ìû”	 Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû”  Ìû”& Ìû$”( Ìû&”) Ìû'”+ Ìû)”- Ìû+Ü ” Ìü” Ìü	” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”  Ìü”' Ìü#”( Ìü$”. Ìü*”0 Ìü,”1 Ìü-”3 Ìü/”5 Ìü1Ü ” Ìı” Ìı” Ìı” Ìı” Ìı” Ìı” Ìı”" Ìı%”# Ìı&”$ Ìı'”% Ìı(”& Ìı)”' Ìı*”) Ìı,”* Ìı-”, Ìı/”3 Ìı6”4 Ìı7”5 Ìı8”6 Ìı9”7 Ìı:”8 Ìı;”: Ìı=”; Ìı>Ü ” Ìş” Ìş” Ìş” Ìş” Ìş” Ìş” Ìş”" Ìş%”# Ìş&”$ Ìş'”% Ìş(”& Ìş)”' Ìş*”) Ìş,”* Ìş-”, Ìş/”3 Ìş6”4 Ìş7”5 Ìş8”6 Ìş9”7 Ìş:”8 Ìş;”: Ìş=”; Ìş>›” Ìÿ” Ìÿ
+” Ìÿ”  Ìÿ”! Ìÿ”# Ìÿ”$ Ìÿ”& Ìÿ ”- Ìÿ'”. Ìÿ(”0 Ìÿ*’” Í ” Í ˜” Í
+” Í” Í” Í” Í”* Í ”, Í"”- Í#Ü ” Í
+” Í” Í”7 Í-”> Í4”? Í5”Ì@ Í6”ÌA Í7”ÌB Í8”ÌD Í:”ÌE Í;”ÌK ÍÌA”ÌQ ÍÌG”ÌX ÍÌN”ÌY ÍÌO”ÌZ ÍÌP”Ì[ ÍÌQ”Ì\ ÍÌR”Ì^ ÍÌT”Ì_ ÍÌU”Ìe ÍÌ[”Ìg ÍÌ]’” Í	” Í
+‘” Í‘”	 Í‘” Í˜” Í”
+ Í” Í” Í-” Í1”  Í4”" Í6”# Í7˜” Í	”
+ Í	” Í	” Í	 ” Í	$” Í	'” Í	)” Í	*Ü ” Í
+”	 Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+”  Í
+”& Í
+$”( Í
+&”) Í
+'”+ Í
+)”- Í
++™” Í” Í
+” Í” Í” Í” Í” Í” Í” Í›” Í” Í
+” Í” Í”3 Í/”4 Í0”5 Í1”6 Í2”8 Í4”9 Í5”: Í6›” Í” Í
+” Í” Í” Í” Í” Í ” Í"”  Í-”" Í/”$ Í1Ü ” Í” Í” Í” Í” Í”  Í”" Í”$ Í”% Í”' Í!”* Í$”+ Í%”, Í&”. Í(”/ Í)”1 Í+”4 Í.”5 Í/”6 Í0”8 Í2”9 Í3”: Í4”” Í”	 Í”
+ Í” ÍÜ ” Í”	 Í”
+ Í” Í” Í	” Í” Í” Í” Í” Í” Í” Í”  Í”" Í”# Í”% Í!”& Í"”' Í#”( Í$”* Í&”+ Í'›” Í”	 Í”
+ Í” Í” Í	” Í” Í” Í” Í” Í” Í›” Í”	 Í”
+ Í” Í” Í	” Í” Í” Í” Í” Í” Íœ” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í” ÍÜ ” Í” Í” Í” Í” Í”  Í”! Í”" Í”$ Í ”% Í!”+ Í'”3 Í/”4 Í0”5 Í1”6 Í2”: Í6”; Í7”< Í8”= Í9”ÌD ÍÌ@”ÌE ÍÌA”ÌF ÍÌB”ÌI ÍÌE”ÌK ÍÌG”ÌL ÍÌH”ÌM ÍÌI‘” Í˜” Í” Í” Í” Í” Í” Í” Í” Íš” Í”) Í%”* Í&”- Í)”/ Í+”7 Í3”9 Í5”ÌE ÍÌA”ÌF ÍÌB”ÌG ÍÌC‘” Í’” Í” Íœ” Í” Í”	 Í” Í” Í” Í” Í” Í”  Í”& Í$”' Í%”( Í&Ü ” Í” Í	” Í” Í” Í” Í” Í”" Í ”$ Í"”+ Í)”, Í*”2 Í0”4 Í2”: Í8”< Í:”Ì@ Í>”ÌB ÍÌ@”ÌC ÍÌA’”  Í ” ÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ í‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍiÍbÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍpÍbÔrM”¤type¥start£end¤nameªIdentifierÍyÍµapplyPcbPlacementPlanÂÂÂ’MªIdentifierÍÍ’£docMªIdentifierÍ”Í˜¤planÔrN”¤type¥start£end¤body®BlockStatementÍšÍbÜ ÔrO–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ¡ÍÔrP–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ¥Í²¡!ÃÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¦Í²MªIdentifierÍ¦Íª¤planMªIdentifierÍ«Í²§fromLlmÂÂN®BlockStatementÍ´Í‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÍ¿ÍÔrS”¤type¥start£endªproperties°ObjectExpressionÍÆÍ
+“ÔrT™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÈÍÑÂÂÂMªIdentifierÍÈÍÊ¢okÔrU•¤type¥start£end¥value£raw§LiteralÍÌÍÑÂ¥false¤initT¨PropertyÍÓÍáÂÂÂMªIdentifierÍÓÍŞ«placedCountU§LiteralÍàÍá ¡0¤initT¨PropertyÍãÍÂÂÂMªIdentifierÍãÍé¦reasonU§LiteralÍëÍ»placement plan not from LLM½'placement plan not from LLM'¤initÀO«IfStatementÍÍ®ÔrV–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍÍLP¯UnaryExpressionÍÍ,¡!ÃQ°MemberExpressionÍÍ,MªIdentifierÍÍ!¤planMªIdentifierÍ"Í,ªplacementsÂÂ¢||V°BinaryExpressionÍ0ÍLQ°MemberExpressionÍ0ÍFQ°MemberExpressionÍ0Í?MªIdentifierÍ0Í4¤planMªIdentifierÍ5Í?ªplacementsÂÂMªIdentifierÍ@ÍF¦lengthÂÂ£===U§LiteralÍKÍL ¡0N®BlockStatementÍNÍ®‘R¯ReturnStatementÍYÍ§S°ObjectExpressionÍ`Í¦“T¨PropertyÍbÍkÂÂÂMªIdentifierÍbÍd¢okU§LiteralÍfÍkÂ¥false¤initT¨PropertyÍmÍ{ÂÂÂMªIdentifierÍmÍx«placedCountU§LiteralÍzÍ{ ¡0¤initT¨PropertyÍ}Í¤ÂÂÂMªIdentifierÍ}Íƒ¦reasonU§LiteralÍ…Í¤½empty placement plan from LLM¿'empty placement plan from LLM'¤initÀÔrW•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ´Íá‘ÔrX•¤type¥start£end¢id¤init²VariableDeclaratorÍºÍàMªIdentifierÍºÍÀ¦lockedÔrY•¤type¥start£end¦callee©arguments­NewExpressionÍÃÍàMªIdentifierÍÇÍÊ£Set‘V±LogicalExpressionÍËÍßQ°MemberExpressionÍËÍÙMªIdentifierÍËÍÏ¤planMªIdentifierÍĞÍÙ©lockedIdsÂÂ¢??ÔrZ”¤type¥start£end¨elements¯ArrayExpressionÍİÍß¥constÔr[—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÍ˜ÂW³VariableDeclarationÍÍ#‘X²VariableDeclaratorÍ!Í#MªIdentifierÍ!Í#¢fpÀ¥constQ°MemberExpressionÍ'Í5MªIdentifierÍ'Í*£docMªIdentifierÍ+Í5ªfootprintsÂÂN®BlockStatementÍ7Í˜‘O«IfStatementÍBÍ‘V±LogicalExpressionÍFÍcÔr\–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍFÍUMªIdentifierÍFÍQ«isMountHole‘MªIdentifierÍRÍT¢fpÂ¢&&P¯UnaryExpressionÍYÍc¡!ÃQ°MemberExpressionÍZÍcMªIdentifierÍZÍ\¢fpMªIdentifierÍ]Íc¦lockedÂÂN®BlockStatementÍeÍ‘‘Ôr]”¤type¥start£endªexpression³ExpressionStatementÍtÍ†\®CallExpressionÍtÍ…Q°MemberExpressionÍtÍ~MªIdentifierÍtÍz¦lockedMªIdentifierÍ{Í~£addÂÂ‘Q°MemberExpressionÍÍ„MªIdentifierÍÍ¢fpMªIdentifierÍ‚Í„¢idÂÂÂÀW³VariableDeclarationÍÍ¾‘X²VariableDeclaratorÍ¤Í½MªIdentifierÍ¤Íª¦bounds\®CallExpressionÍ­Í½MªIdentifierÍ­Í¸«boardBounds‘MªIdentifierÍ¹Í¼£docÂ¥constW³VariableDeclarationÍÄÍÛ‘X²VariableDeclaratorÍÊÍÚMªIdentifierÍÊÍÎ¤byIdY­NewExpressionÍÑÍÚMªIdentifierÍÕÍØ£Map¥const[®ForOfStatementÍáÍ(ÂW³VariableDeclarationÍæÍî‘X²VariableDeclaratorÍìÍîMªIdentifierÍìÍî¢fpÀ¥constQ°MemberExpressionÍòÍ MªIdentifierÍòÍõ£docMªIdentifierÍöÍ ªfootprintsÂÂN®BlockStatementÍÍ(‘]³ExpressionStatementÍÍ!\®CallExpressionÍÍ Q°MemberExpressionÍÍMªIdentifierÍÍ¤byIdMªIdentifierÍÍ£setÂÂ’Q°MemberExpressionÍÍMªIdentifierÍÍ¢fpMªIdentifierÍÍ¢idÂÂMªIdentifierÍÍ¢fpÂW³VariableDeclarationÍ.ÍA‘X²VariableDeclaratorÍ4Í@MªIdentifierÍ4Í;§pendingZ¯ArrayExpressionÍ>Í@¥constW³VariableDeclarationÍGÍe‘X²VariableDeclaratorÍMÍdMªIdentifierÍMÍX«pendingByIdY­NewExpressionÍ[ÍdMªIdentifierÍ_Íb£Map¥constÔr^—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍkÍ:W³VariableDeclarationÍpÍy‘X²VariableDeclaratorÍtÍyMªIdentifierÍtÍu¡iU§LiteralÍxÍy ¡0£letV°BinaryExpressionÍ{Í•MªIdentifierÍ{Í|¡i¡<Q°MemberExpressionÍÍ•Q°MemberExpressionÍÍMªIdentifierÍÍƒ¤planMªIdentifierÍ„ÍªplacementsÂÂMªIdentifierÍÍ•¦lengthÂÂP°UpdateExpressionÍ—Íš¢++ÂMªIdentifierÍ—Í˜¡iN®BlockStatementÍœÍ:™W³VariableDeclarationÍ§ÍÇ‘X²VariableDeclaratorÍ­ÍÆMªIdentifierÍ­Í±¤itemQ°MemberExpressionÍ´ÍÆQ°MemberExpressionÍ´ÍÃMªIdentifierÍ´Í¸¤planMªIdentifierÍ¹ÍÃªplacementsÂÂMªIdentifierÍÄÍÅ¡iÃÂ¥constO«IfStatementÍÑÍ\®CallExpressionÍÕÍñQ°MemberExpressionÍÕÍßMªIdentifierÍÕÍÛ¦lockedMªIdentifierÍÜÍß£hasÂÂ‘Q°MemberExpressionÍàÍğMªIdentifierÍàÍä¤itemMªIdentifierÍåÍğ«footprintIdÂÂÂN®BlockStatementÍóÍ‘Ôr_”¤type¥start£end¥label±ContinueStatementÍÍÀÀW³VariableDeclarationÍ ÍF‘X²VariableDeclaratorÍ&ÍEMªIdentifierÍ&Í(¢fp\®CallExpressionÍ+ÍEQ°MemberExpressionÍ+Í3MªIdentifierÍ+Í/¤byIdMªIdentifierÍ0Í3£getÂÂ‘Q°MemberExpressionÍ4ÍDMªIdentifierÍ4Í8¤itemMªIdentifierÍ9ÍD«footprintIdÂÂÂ¥constO«IfStatementÍPÍËP¯UnaryExpressionÍTÍW¡!ÃMªIdentifierÍUÍW¢fpN®BlockStatementÍYÍË‘R¯ReturnStatementÍhÍÀS°ObjectExpressionÍoÍ¿“T¨PropertyÍqÍzÂÂÂMªIdentifierÍqÍs¢okU§LiteralÍuÍzÂ¥false¤initT¨PropertyÍ|ÍŠÂÂÂMªIdentifierÍ|Í‡«placedCountU§LiteralÍ‰ÍŠ ¡0¤initT¨PropertyÍŒÍ½ÂÂÂMªIdentifierÍŒÍ’¦reasonÔr`•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ”Í½‘Q°MemberExpressionÍ«Í»MªIdentifierÍ«Í¯¤itemMªIdentifierÍ°Í»«footprintIdÂÂ’Ôra•¤type¥start£end¥value¤tail¯TemplateElementÍ•Í©Ôrb’£raw¦cooked´unknown footprintId ´unknown footprintId Âa¯TemplateElementÍ¼Í¼b  Ã¤initÀO«IfStatementÍÕÍQ°MemberExpressionÍÙÍâMªIdentifierÍÙÍÛ¢fpMªIdentifierÍÜÍâ¦lockedÂÂN®BlockStatementÍäÍ‘_±ContinueStatementÍóÍüÀÀO«IfStatementÍÍ+V±LogicalExpressionÍÍqV±LogicalExpressionÍÍYV±LogicalExpressionÍÍAV°BinaryExpressionÍÍ)Q°MemberExpressionÍÍMªIdentifierÍÍ¤itemMªIdentifierÍÍ¡xÂÂ¡<Q°MemberExpressionÍÍ)MªIdentifierÍÍ$¦boundsMªIdentifierÍ%Í)¤minXÂÂ¢||V°BinaryExpressionÍ-ÍAQ°MemberExpressionÍ-Í3MªIdentifierÍ-Í1¤itemMªIdentifierÍ2Í3¡xÂÂ¡>Q°MemberExpressionÍ6ÍAMªIdentifierÍ6Í<¦boundsMªIdentifierÍ=ÍA¤maxXÂÂ¢||V°BinaryExpressionÍEÍYQ°MemberExpressionÍEÍKMªIdentifierÍEÍI¤itemMªIdentifierÍJÍK¡yÂÂ¡<Q°MemberExpressionÍNÍYMªIdentifierÍNÍT¦boundsMªIdentifierÍUÍY¤minYÂÂ¢||V°BinaryExpressionÍ]ÍqQ°MemberExpressionÍ]ÍcMªIdentifierÍ]Ía¤itemMªIdentifierÍbÍc¡yÂÂ¡>Q°MemberExpressionÍfÍqMªIdentifierÍfÍl¦boundsMªIdentifierÍmÍq¤maxYÂÂN®BlockStatementÍsÍ+‘R¯ReturnStatementÍ‚Í S°ObjectExpressionÍ‰Í“T¨PropertyÍœÍ¥ÂÂÂMªIdentifierÍœÍ¢okU§LiteralÍ Í¥Â¥false¤initT¨PropertyÍ§ÍµÂÂÂMªIdentifierÍ§Í²«placedCountU§LiteralÍ´Íµ ¡0¤initT¨PropertyÍÈÍÂÂÂMªIdentifierÍÈÍÎ¦reason`¯TemplateLiteralÍĞÍ“Q°MemberExpressionÍïÍøMªIdentifierÍïÍñ¢fpMªIdentifierÍòÍø¦refDesÂÂQ°MemberExpressionÍıÍMªIdentifierÍıÍ¤itemMªIdentifierÍÍ¡xÂÂQ°MemberExpressionÍÍMªIdentifierÍÍ¤itemMªIdentifierÍÍ¡yÂÂ”a¯TemplateElementÍÑÍíb¼LLM placement out of board: ¼LLM placement out of board: Âa¯TemplateElementÍùÍûb¢ (¢ (Âa¯TemplateElementÍÍb¡,¡,Âa¯TemplateElementÍÍb¡)¡)Ã¤initÀW³VariableDeclarationÍ5Íï‘X²VariableDeclaratorÍ;ÍîMªIdentifierÍ;Í?¤pendS°ObjectExpressionÍBÍî•T¨PropertyÍQÍWÂÂÂMªIdentifierÍQÍS¢fpMªIdentifierÍUÍW¢fp¤initT¨PropertyÍfÍoÂÂÂMªIdentifierÍfÍg¡xQ°MemberExpressionÍiÍoMªIdentifierÍiÍm¤itemMªIdentifierÍnÍo¡xÂÂ¤initT¨PropertyÍ~Í‡ÂÂÂMªIdentifierÍ~Í¡yQ°MemberExpressionÍÍ‡MªIdentifierÍÍ…¤itemMªIdentifierÍ†Í‡¡yÂÂ¤initT¨PropertyÍ–Í¹ÂÂÂMªIdentifierÍ–Í™£rot\®CallExpressionÍ›Í¹MªIdentifierÍ›Í§¬snapRotation‘Q°MemberExpressionÍ¨Í¸MªIdentifierÍ¨Í¬¤itemMªIdentifierÍ­Í¸«rotationDegÂÂÂ¤initT¨PropertyÍÈÍãÂÂÂMªIdentifierÍÈÍË£mirV°BinaryExpressionÍÍÍãQ°MemberExpressionÍÍÍÚMªIdentifierÍÍÍÑ¤itemMªIdentifierÍÒÍÚ¨mirroredÂÂ£===U§LiteralÍßÍãÃ¤true¤init¥const]³ExpressionStatementÍùÍ\®CallExpressionÍùÍQ°MemberExpressionÍùÍMªIdentifierÍùÍ §pendingMªIdentifierÍÍ¤pushÂÂ‘MªIdentifierÍÍ
+¤pendÂ]³ExpressionStatementÍÍ3\®CallExpressionÍÍ2Q°MemberExpressionÍÍ%MªIdentifierÍÍ!«pendingByIdMªIdentifierÍ"Í%£setÂÂ’Q°MemberExpressionÍ&Í+MªIdentifierÍ&Í(¢fpMªIdentifierÍ)Í+¢idÂÂMªIdentifierÍ-Í1¤pendÂW³VariableDeclarationÍ@ÍQ‘X²VariableDeclaratorÍDÍPMªIdentifierÍDÍL¨unlockedU§LiteralÍOÍP ¡0£let[®ForOfStatementÍWÍÕÂW³VariableDeclarationÍ\Íd‘X²VariableDeclaratorÍbÍdMªIdentifierÍbÍd¢fpÀ¥constQ°MemberExpressionÍhÍvMªIdentifierÍhÍk£docMªIdentifierÍlÍvªfootprintsÂÂN®BlockStatementÍxÍÕ‘O«IfStatementÍƒÍÎV±LogicalExpressionÍ‡Í§P¯UnaryExpressionÍ‡Í‘¡!ÃQ°MemberExpressionÍˆÍ‘MªIdentifierÍˆÍŠ¢fpMªIdentifierÍ‹Í‘¦lockedÂÂ¢&&P¯UnaryExpressionÍ•Í§¡!Ã\®CallExpressionÍ–Í§Q°MemberExpressionÍ–Í MªIdentifierÍ–Íœ¦lockedMªIdentifierÍÍ £hasÂÂ‘Q°MemberExpressionÍ¡Í¦MªIdentifierÍ¡Í£¢fpMªIdentifierÍ¤Í¦¢idÂÂÂN®BlockStatementÍ©ÍÎ‘]³ExpressionStatementÍ¸ÍÃP°UpdateExpressionÍ¸ÍÂ¢++ÂMªIdentifierÍ¸ÍÀ¨unlockedÀO«IfStatementÍÛÍÁV±LogicalExpressionÍßÍV°BinaryExpressionÍßÍëMªIdentifierÍßÍç¨unlocked¡>U§LiteralÍêÍë ¡0¢&&V°BinaryExpressionÍïÍQ°MemberExpressionÍïÍıMªIdentifierÍïÍö§pendingMªIdentifierÍ÷Íı¦lengthÂÂ¡<MªIdentifierÍ Í¨unlockedN®BlockStatementÍ
+ÍÁ‘R¯ReturnStatementÍÍºS°ObjectExpressionÍÍ¹“T¨PropertyÍ+Í4ÂÂÂMªIdentifierÍ+Í-¢okU§LiteralÍ/Í4Â¥false¤initT¨PropertyÍ6ÍQÂÂÂMªIdentifierÍ6ÍA«placedCountQ°MemberExpressionÍCÍQMªIdentifierÍCÍJ§pendingMªIdentifierÍKÍQ¦lengthÂÂ¤initT¨PropertyÍ`Í®ÂÂÂMªIdentifierÍ`Íf¦reason`¯TemplateLiteralÍhÍ®’Q°MemberExpressionÍ~ÍŒMªIdentifierÍ~Í…§pendingMªIdentifierÍ†ÍŒ¦lengthÂÂMªIdentifierÍÍ˜¨unlocked“a¯TemplateElementÍiÍ|b³placement coverage ³placement coverage Âa¯TemplateElementÍÍb¡/¡/Âa¯TemplateElementÍ™Í­b´ unlocked footprints´ unlocked footprintsÃ¤initÀW³VariableDeclarationÍíÍ‘X²VariableDeclaratorÍóÍMªIdentifierÍóÍ÷¤gridV±LogicalExpressionÍúÍQ°MemberExpressionÍúÍQ°MemberExpressionÍúÍMªIdentifierÍúÍı£docMªIdentifierÍşÍ¨metadataÂÂMªIdentifierÍÍ¨gridSizeÂÂ¢??U§LiteralÍÍ¡5¥constW³VariableDeclarationÍÍ,‘X²VariableDeclaratorÍÍ+MªIdentifierÍÍ'¨echoableU§LiteralÍ*Í+ ¡0£letW³VariableDeclarationÍ2ÍA‘X²VariableDeclaratorÍ6Í@MªIdentifierÍ6Í<¦echoedU§LiteralÍ?Í@ ¡0£let^¬ForStatementÍGÍğW³VariableDeclarationÍLÍU‘X²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍiMªIdentifierÍWÍX¡i¡<Q°MemberExpressionÍ[ÍiMªIdentifierÍ[Íb§pendingMªIdentifierÍcÍi¦lengthÂÂP°UpdateExpressionÍkÍn¢++ÂMªIdentifierÍkÍl¡iN®BlockStatementÍpÍğ—W³VariableDeclarationÍ{Í‘X²VariableDeclaratorÍÍMªIdentifierÍÍ‚¡pQ°MemberExpressionÍ…ÍMªIdentifierÍ…ÍŒ§pendingMªIdentifierÍÍ¡iÃÂ¥constO«IfStatementÍšÍÔ\®CallExpressionÍÍ¯MªIdentifierÍÍ©«isMountHole‘Q°MemberExpressionÍªÍ®MªIdentifierÍªÍ«¡pMªIdentifierÍ¬Í®¢fpÂÂÂN®BlockStatementÍ±ÍÔ‘_±ContinueStatementÍÀÍÉÀÀ]³ExpressionStatementÍŞÍéP°UpdateExpressionÍŞÍè¢++ÂMªIdentifierÍŞÍæ¨echoableW³VariableDeclarationÍóÍ‘X²VariableDeclaratorÍùÍMªIdentifierÍùÍû¢dx\®CallExpressionÍşÍQ°MemberExpressionÍşÍMªIdentifierÍşÍ¤MathMªIdentifierÍÍ£absÂÂ‘V°BinaryExpressionÍÍQ°MemberExpressionÍÍ
+MªIdentifierÍÍ¡pMªIdentifierÍ	Í
+¡xÂÂ¡-Q°MemberExpressionÍÍQ°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¡pMªIdentifierÍÍ¢fpÂÂMªIdentifierÍÍ¨positionÂÂMªIdentifierÍÍ¡xÂÂÂ¥constW³VariableDeclarationÍ(ÍS‘X²VariableDeclaratorÍ.ÍRMªIdentifierÍ.Í0¢dy\®CallExpressionÍ3ÍRQ°MemberExpressionÍ3Í;MªIdentifierÍ3Í7¤MathMªIdentifierÍ8Í;£absÂÂ‘V°BinaryExpressionÍ<ÍQQ°MemberExpressionÍ<Í?MªIdentifierÍ<Í=¡pMªIdentifierÍ>Í?¡yÂÂ¡-Q°MemberExpressionÍBÍQQ°MemberExpressionÍBÍOQ°MemberExpressionÍBÍFMªIdentifierÍBÍC¡pMªIdentifierÍDÍF¢fpÂÂMªIdentifierÍGÍO¨positionÂÂMªIdentifierÍPÍQ¡yÂÂÂ¥constW³VariableDeclarationÍ]Í“‘X²VariableDeclaratorÍcÍ’MªIdentifierÍcÍj§sameRotV°BinaryExpressionÍmÍ’\®CallExpressionÍmÍˆMªIdentifierÍmÍy¬snapRotation‘Q°MemberExpressionÍzÍ‡Q°MemberExpressionÍzÍ~MªIdentifierÍzÍ{¡pMªIdentifierÍ|Í~¢fpÂÂMªIdentifierÍÍ‡¨rotationÂÂÂ£===Q°MemberExpressionÍÍ’MªIdentifierÍÍ¡pMªIdentifierÍÍ’£rotÂÂ¥constO«IfStatementÍÍéV±LogicalExpressionÍ¡ÍÄV±LogicalExpressionÍ¡Í¹V°BinaryExpressionÍ¡Í«MªIdentifierÍ¡Í£¢dx¢<=MªIdentifierÍ§Í«¤grid¢&&V°BinaryExpressionÍ¯Í¹MªIdentifierÍ¯Í±¢dy¢<=MªIdentifierÍµÍ¹¤grid¢&&MªIdentifierÍ½ÍÄ§sameRotN®BlockStatementÍÆÍé‘]³ExpressionStatementÍÕÍŞP°UpdateExpressionÍÕÍİ¢++ÂMªIdentifierÍÕÍÛ¦echoedÀO«IfStatementÍöÍòV±LogicalExpressionÍúÍ$V°BinaryExpressionÍúÍMªIdentifierÍúÍ¨echoable¢>=U§LiteralÍÍ¡3¢&&V°BinaryExpressionÍÍ$V°BinaryExpressionÍÍMªIdentifierÍÍ¦echoed¡/MªIdentifierÍÍ¨echoable¢>=U§LiteralÍ Í$Ë?ë333333¤0.85N®BlockStatementÍ&Íò‘R¯ReturnStatementÍ1ÍëS°ObjectExpressionÍ8Íê“T¨PropertyÍGÍPÂÂÂMªIdentifierÍGÍI¢okU§LiteralÍKÍPÂ¥false¤initT¨PropertyÍRÍ`ÂÂÂMªIdentifierÍRÍ]«placedCountU§LiteralÍ_Í` ¡0¤initT¨PropertyÍoÍßÂÂÂMªIdentifierÍoÍu¦reason`¯TemplateLiteralÍwÍß’MªIdentifierÍŠÍ¦echoedMªIdentifierÍ•Í¨echoable“a¯TemplateElementÍxÍ‡b¯placement echo ¯placement echo Âa¯TemplateElementÍ’Í“b¡/¡/Âa¯TemplateElementÍÍŞbÙB â€” refuse copy of current poses; rearrange functional footprintsÙB â€” refuse copy of current poses; rearrange functional footprintsÃ¤initÀW³VariableDeclarationÍøÍ9‘X²VariableDeclaratorÍşÍ8MªIdentifierÍşÍ¨groupErr\®CallExpressionÍ	Í8MªIdentifierÍ	Í®validateGroups”MªIdentifierÍÍ¤planMªIdentifierÍÍ"¤byIdMªIdentifierÍ$Í/«pendingByIdMªIdentifierÍ1Í7¦boundsÂ¥constO«IfStatementÍ?Í¡V°BinaryExpressionÍCÍVQ°MemberExpressionÍCÍRMªIdentifierÍCÍK¨groupErrMªIdentifierÍLÍR¦lengthÂÂ¡>U§LiteralÍUÍV ¡0N®BlockStatementÍXÍ¡‘R¯ReturnStatementÍcÍšS°ObjectExpressionÍjÍ™“T¨PropertyÍlÍuÂÂÂMªIdentifierÍlÍn¢okU§LiteralÍpÍuÂ¥false¤initT¨PropertyÍwÍ…ÂÂÂMªIdentifierÍwÍ‚«placedCountU§LiteralÍ„Í… ¡0¤initT¨PropertyÍ‡Í—ÂÂÂMªIdentifierÍ‡Í¦reasonMªIdentifierÍÍ—¨groupErr¤initÀO«IfStatementÍ§ÍV°BinaryExpressionÍ«ÍÉV±LogicalExpressionÍ¬ÍÄ]¯ChainExpressionÍ¬Í¿Q°MemberExpressionÍ¬Í¿Q°MemberExpressionÍ¬Í·MªIdentifierÍ¬Í°¤planMªIdentifierÍ±Í·¦groupsÂÂMªIdentifierÍ¹Í¿¦lengthÂÃ¢??U§LiteralÍÃÍÄ ¡0¡>U§LiteralÍÈÍÉ ¡0N®BlockStatementÍËÍ‘]³ExpressionStatementÍÖÍ\®CallExpressionÍÖÍMªIdentifierÍÖÍŞ¨tracePcb’U§LiteralÍßÍğ¯AI_PLACE_GROUPS±'AI_PLACE_GROUPS'`¯TemplateLiteralÍòÍ‘Q°MemberExpressionÍ÷Í	Q°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íû¤planMªIdentifierÍüÍ¦groupsÂÂMªIdentifierÍÍ	¦lengthÂÂ’a¯TemplateElementÍóÍõb¢n=¢n=Âa¯TemplateElementÍ
+Í
+b  ÃÂÀW³VariableDeclarationÍÍA‘X²VariableDeclaratorÍ Í@MªIdentifierÍ Í'§minDist\®CallExpressionÍ*Í@Q°MemberExpressionÍ*Í2MªIdentifierÍ*Í.¤MathMªIdentifierÍ/Í2£maxÂÂ’V°BinaryExpressionÍ3Í;MªIdentifierÍ3Í7¤grid¡*U§LiteralÍ:Í;¡8U§LiteralÍ=Í?(¢40Â¥const^¬ForStatementÍGÍ>W³VariableDeclarationÍLÍU‘X²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍiMªIdentifierÍWÍX¡i¡<Q°MemberExpressionÍ[ÍiMªIdentifierÍ[Íb§pendingMªIdentifierÍcÍi¦lengthÂÂP°UpdateExpressionÍkÍn¢++ÂMªIdentifierÍkÍl¡iN®BlockStatementÍpÍ>‘^¬ForStatementÍ{Í7W³VariableDeclarationÍ€Í‘X²VariableDeclaratorÍ„ÍMªIdentifierÍ„Í…¡jV°BinaryExpressionÍˆÍMªIdentifierÍˆÍ‰¡i¡+U§LiteralÍŒÍ¡1£letV°BinaryExpressionÍÍ¡MªIdentifierÍÍ¡j¡<Q°MemberExpressionÍ“Í¡MªIdentifierÍ“Íš§pendingMªIdentifierÍ›Í¡¦lengthÂÂP°UpdateExpressionÍ£Í¦¢++ÂMªIdentifierÍ£Í¤¡jN®BlockStatementÍ¨Í7“W³VariableDeclarationÍ·Íæ‘X²VariableDeclaratorÍ½ÍåMªIdentifierÍ½Í¾¡aS°ObjectExpressionÍÁÍå’T¨PropertyÍÃÍÒÂÂÂMªIdentifierÍÃÍÄ¡xQ°MemberExpressionÍÆÍÒQ°MemberExpressionÍÆÍĞMªIdentifierÍÆÍÍ§pendingMªIdentifierÍÎÍÏ¡iÃÂMªIdentifierÍÑÍÒ¡xÂÂ¤initT¨PropertyÍÔÍãÂÂÂMªIdentifierÍÔÍÕ¡yQ°MemberExpressionÍ×ÍãQ°MemberExpressionÍ×ÍáMªIdentifierÍ×ÍŞ§pendingMªIdentifierÍßÍà¡iÃÂMªIdentifierÍâÍã¡yÂÂ¤init¥constW³VariableDeclarationÍôÍ#‘X²VariableDeclaratorÍúÍ"MªIdentifierÍúÍû¡bS°ObjectExpressionÍşÍ"’T¨PropertyÍ ÍÂÂÂMªIdentifierÍ Í¡xQ°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ
+§pendingMªIdentifierÍÍ¡jÃÂMªIdentifierÍÍ¡xÂÂ¤initT¨PropertyÍÍ ÂÂÂMªIdentifierÍÍ¡yQ°MemberExpressionÍÍ Q°MemberExpressionÍÍMªIdentifierÍÍ§pendingMªIdentifierÍÍ¡jÃÂMªIdentifierÍÍ ¡yÂÂ¤init¥constO«IfStatementÍ1Í,\®CallExpressionÍ5ÍSMªIdentifierÍ5ÍD¯centersTooClose“MªIdentifierÍEÍF¡aMªIdentifierÍHÍI¡bMªIdentifierÍKÍR§minDistÂN®BlockStatementÍUÍ,‘R¯ReturnStatementÍhÍS°ObjectExpressionÍoÍ“T¨PropertyÍ†ÍÂÂÂMªIdentifierÍ†Íˆ¢okU§LiteralÍŠÍÂ¥false¤initT¨PropertyÍ‘ÍŸÂÂÂMªIdentifierÍ‘Íœ«placedCountU§LiteralÍÍŸ ¡0¤initT¨PropertyÍ¶Í	ÂÂÂMªIdentifierÍ¶Í¼¦reason`¯TemplateLiteralÍ¾Í	’Q°MemberExpressionÍÙÍíQ°MemberExpressionÍÙÍæQ°MemberExpressionÍÙÍãMªIdentifierÍÙÍà§pendingMªIdentifierÍáÍâ¡iÃÂMªIdentifierÍäÍæ¢fpÂÂMªIdentifierÍçÍí¦refDesÂÂQ°MemberExpressionÍóÍQ°MemberExpressionÍóÍ Q°MemberExpressionÍóÍıMªIdentifierÍóÍú§pendingMªIdentifierÍûÍü¡jÃÂMªIdentifierÍşÍ ¢fpÂÂMªIdentifierÍÍ¦refDesÂÂ“a¯TemplateElementÍ¿Í×b¸LLM placements overlap: ¸LLM placements overlap: Âa¯TemplateElementÍîÍñb£ / £ / Âa¯TemplateElementÍÍb  Ã¤initÀW³VariableDeclarationÍDÍc‘X²VariableDeclaratorÍJÍbMªIdentifierÍJÍV¬oldPositionsY­NewExpressionÍYÍbMªIdentifierÍ]Í`£Map¥constW³VariableDeclarationÍiÍ„‘X²VariableDeclaratorÍoÍƒMªIdentifierÍoÍw¨movedIdsY­NewExpressionÍzÍƒMªIdentifierÍ~Í£Set¥const^¬ForStatementÍŠÍcW³VariableDeclarationÍÍ˜‘X²VariableDeclaratorÍ“Í˜MªIdentifierÍ“Í”¡iU§LiteralÍ—Í˜ ¡0£letV°BinaryExpressionÍšÍ¬MªIdentifierÍšÍ›¡i¡<Q°MemberExpressionÍÍ¬MªIdentifierÍÍ¥§pendingMªIdentifierÍ¦Í¬¦lengthÂÂP°UpdateExpressionÍ®Í±¢++ÂMªIdentifierÍ®Í¯¡iN®BlockStatementÍ³Íc˜W³VariableDeclarationÍ¾ÍÓ‘X²VariableDeclaratorÍÄÍÒMªIdentifierÍÄÍÅ¡pQ°MemberExpressionÍÈÍÒMªIdentifierÍÈÍÏ§pendingMªIdentifierÍĞÍÑ¡iÃÂ¥constW³VariableDeclarationÍİÍ‘X²VariableDeclaratorÍãÍMªIdentifierÍãÍé¦before\®CallExpressionÍìÍMªIdentifierÍìÍ¼collectFootprintPadPositions‘Q°MemberExpressionÍ	ÍMªIdentifierÍ	Í
+¡pMªIdentifierÍÍ¢fpÂÂÂ¥const]³ExpressionStatementÍÍ€\®CallExpressionÍÍQ°MemberExpressionÍÍ'MªIdentifierÍÍ¦beforeMªIdentifierÍ Í'§forEachÂÂ‘L·ArrowFunctionExpressionÍ(Í~ÀÂÂÂ’MªIdentifierÍ)Í,£posMªIdentifierÍ.Í1£keyN®BlockStatementÍ6Í~‘]³ExpressionStatementÍEÍs\®CallExpressionÍEÍrQ°MemberExpressionÍEÍUMªIdentifierÍEÍQ¬oldPositionsMªIdentifierÍRÍU£setÂÂ’MªIdentifierÍVÍY£keyS°ObjectExpressionÍ[Íq’T¨PropertyÍ]ÍeÂÂÂMªIdentifierÍ]Í^¡xQ°MemberExpressionÍ`ÍeMªIdentifierÍ`Íc£posMªIdentifierÍdÍe¡xÂÂ¤initT¨PropertyÍgÍoÂÂÂMªIdentifierÍgÍh¡yQ°MemberExpressionÍjÍoMªIdentifierÍjÍm£posMªIdentifierÍnÍo¡yÂÂ¤initÂÂ]³ExpressionStatementÍŠÍ­Ôrc–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍŠÍ¬¡=Q°MemberExpressionÍŠÍ—Q°MemberExpressionÍŠÍMªIdentifierÍŠÍ‹¡pMªIdentifierÍŒÍ¢fpÂÂMªIdentifierÍÍ—¨positionÂÂS°ObjectExpressionÍšÍ¬’T¨PropertyÍœÍ¢ÂÂÂMªIdentifierÍœÍ¡xQ°MemberExpressionÍŸÍ¢MªIdentifierÍŸÍ ¡pMªIdentifierÍ¡Í¢¡xÂÂ¤initT¨PropertyÍ¤ÍªÂÂÂMªIdentifierÍ¤Í¥¡yQ°MemberExpressionÍ§ÍªMªIdentifierÍ§Í¨¡pMªIdentifierÍ©Íª¡yÂÂ¤init]³ExpressionStatementÍ·ÍÍc´AssignmentExpressionÍ·ÍÌ¡=Q°MemberExpressionÍ·ÍÄQ°MemberExpressionÍ·Í»MªIdentifierÍ·Í¸¡pMªIdentifierÍ¹Í»¢fpÂÂMªIdentifierÍ¼ÍÄ¨rotationÂÂQ°MemberExpressionÍÇÍÌMªIdentifierÍÇÍÈ¡pMªIdentifierÍÉÍÌ£rotÂÂ]³ExpressionStatementÍ×Ííc´AssignmentExpressionÍ×Íì¡=Q°MemberExpressionÍ×ÍäQ°MemberExpressionÍ×ÍÛMªIdentifierÍ×ÍØ¡pMªIdentifierÍÙÍÛ¢fpÂÂMªIdentifierÍÜÍä¨mirroredÂÂQ°MemberExpressionÍçÍìMªIdentifierÍçÍè¡pMªIdentifierÍéÍì£mirÂÂ]³ExpressionStatementÍ÷Í\®CallExpressionÍ÷ÍQ°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íÿ¨movedIdsMªIdentifierÍ Í£addÂÂ‘Q°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¡pMªIdentifierÍÍ¢fpÂÂMªIdentifierÍ	Í¢idÂÂÂ]³ExpressionStatementÍÍ\\®CallExpressionÍÍ[MªIdentifierÍÍ¨tracePcb’U§LiteralÍ Í*¨AI_PLACEª'AI_PLACE'`¯TemplateLiteralÍ,ÍZ”Q°MemberExpressionÍ/Í:Q°MemberExpressionÍ/Í3MªIdentifierÍ/Í0¡pMªIdentifierÍ1Í3¢fpÂÂMªIdentifierÍ4Í:¦refDesÂÂQ°MemberExpressionÍBÍEMªIdentifierÍBÍC¡pMªIdentifierÍDÍE¡xÂÂQ°MemberExpressionÍIÍLMªIdentifierÍIÍJ¡pMªIdentifierÍKÍL¡yÂÂQ°MemberExpressionÍSÍXMªIdentifierÍSÍT¡pMªIdentifierÍUÍX£rotÂÂ•a¯TemplateElementÍ-Í-b  Âa¯TemplateElementÍ;Í@b¥ -> (¥ -> (Âa¯TemplateElementÍFÍGb¡,¡,Âa¯TemplateElementÍMÍQb¤) r=¤) r=Âa¯TemplateElementÍYÍYb  ÃÂO«IfStatementÍiÍÑV°BinaryExpressionÍmÍ~Q°MemberExpressionÍmÍzMªIdentifierÍmÍu¨movedIdsMªIdentifierÍvÍz¤sizeÂÂ¡>U§LiteralÍ}Í~ ¡0N®BlockStatementÍ€ÍÑ‘]³ExpressionStatementÍ‹ÍÊ\®CallExpressionÍ‹ÍÉMªIdentifierÍ‹Í¬Ù!updateTracksForFootprintTransform“MªIdentifierÍ­Í°£docMªIdentifierÍ²Íº¨movedIdsMªIdentifierÍ¼ÍÈ¬oldPositionsÂÀ]³ExpressionStatementÍöÍc´AssignmentExpressionÍöÍ¡=Q°MemberExpressionÍöÍMªIdentifierÍöÍú¤planMªIdentifierÍûÍ©lockedIdsÂÂ\®CallExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¥ArrayMªIdentifierÍÍ¤fromÂÂ‘MªIdentifierÍÍ¦lockedÂR¯ReturnStatementÍ Í_S°ObjectExpressionÍ'Í^“T¨PropertyÍ)Í1ÂÂÂMªIdentifierÍ)Í+¢okU§LiteralÍ-Í1Ã¤true¤initT¨PropertyÍ3ÍNÂÂÂMªIdentifierÍ3Í>«placedCountQ°MemberExpressionÍ@ÍNMªIdentifierÍ@ÍG§pendingMªIdentifierÍHÍN¦lengthÂÂ¤initT¨PropertyÍPÍ\ÂÂÂMªIdentifierÍPÍV¦reasonU§LiteralÍXÍ\¢ok¤'ok'¤initÀ’Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration Ìf’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	%MªIdentifier	%¼collectFootprintPadPositionsMªIdentifier	%¼collectFootprintPadPositionse¯ImportSpecifier'ÌHMªIdentifier'ÌHÙ!updateTracksForFootprintTransformMªIdentifier'ÌHÙ!updateTracksForFootprintTransformU§LiteralÌPÌe³../PcbTrackBindUtilµ'../PcbTrackBindUtil'd±ImportDeclarationÌhÌ’‘e¯ImportSpecifierÌqÌyMªIdentifierÌqÌy¨tracePcbMªIdentifierÌqÌy¨tracePcbU§LiteralÌÌ‘®../PcbTraceLog°'../PcbTraceLog'

@@ -1,0 +1,11 @@
+{
+  "line": 397,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "STM32F103C8_PIN",
+    "isMcuStm32"
+  ],
+  "old_string": "  } else if (isMcu51Lib(libDevId)) {\n    for (const pin of [pinId, pinName]) {\n      const pad = MCU51_PIN_TO_PAD.get((pin || '').toUpperCase());\n      if (pad) registerPadNetKey(map, compId, pad, netId, netName);\n    }\n  } else {",
+  "new_string": "  } else if (isMcu51Lib(libDevId)) {\n    for (const pin of [pinId, pinName]) {\n      const pad = MCU51_PIN_TO_PAD.get((pin || '').toUpperCase());\n      if (pad) registerPadNetKey(map, compId, pad, netId, netName);\n    }\n  } else if (isMcuStm32F103C8Lib(libDevId) || (libDevId || '').toLowerCase().includes('stm32f103')) {\n    for (const pin of [pinId, pinName]) {\n      const pad = STM32F103C8_PIN_TO_PAD.get((pin || '').toUpperCase());\n      if (pad) registerPadNetKey(map, compId, pad, netId, netName);\n    }\n  } else {"
+}

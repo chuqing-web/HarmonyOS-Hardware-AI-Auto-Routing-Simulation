@@ -8,6 +8,8 @@ export function getTaskCapability(taskType: AiTaskType): AiCapability | undefine
     case AiTaskType.TASK_ROUTE_OPTIMIZE:
     case AiTaskType.TASK_LAYOUT_PLACE:
       return AiCapability.AUTO_WIRING;
+    case AiTaskType.TASK_PCB_AUTO_ROUTE:
+      return AiCapability.PCB_AUTO_ROUTE;
     case AiTaskType.TASK_CIRCUIT_DIAG_STATIC:
     case AiTaskType.TASK_CIRCUIT_DIAG_DYNAMIC:
       return AiCapability.FAULT_DIAGNOSIS;
@@ -33,7 +35,8 @@ export function getAllAiCapabilities(): AiCapability[] {
     AiCapability.FAULT_DIAGNOSIS,
     AiCapability.CIRCUIT_GENERATION,
     AiCapability.WAVEFORM_ANALYSIS,
-    AiCapability.COMPONENT_RECOMMEND
+    AiCapability.COMPONENT_RECOMMEND,
+    AiCapability.PCB_AUTO_ROUTE
   ];
 }
 

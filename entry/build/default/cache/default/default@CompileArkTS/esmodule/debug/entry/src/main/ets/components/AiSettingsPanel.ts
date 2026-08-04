@@ -9,6 +9,7 @@ interface AiSettingsPanel_Params {
     apiList?: AiApiConfig[];
     showAddForm?: boolean;
     apiSectionExpanded?: boolean;
+    apiRefreshTick?: number;
     promptText?: string;
     logs?: AiGenLogEntry[];
     showStrategyDialog?: boolean;
@@ -48,6 +49,7 @@ import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/App
 import type { AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiApiConfig, ClarificationQuestion, ClarificationAnswer, Result } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { AiApiConfigSection } from "@bundle:com.elecdraw.aischsim/entry/ets/components/AiApiConfigSection";
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 interface ApiFormatOption {
@@ -67,6 +69,7 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList = new ObservedPropertyObjectPU([], this, "apiList");
         this.__showAddForm = new ObservedPropertySimplePU(false, this, "showAddForm");
         this.__apiSectionExpanded = new ObservedPropertySimplePU(false, this, "apiSectionExpanded");
+        this.__apiRefreshTick = new ObservedPropertySimplePU(0, this, "apiRefreshTick");
         this.__promptText = new ObservedPropertySimplePU('', this, "promptText");
         this.__logs = new ObservedPropertyObjectPU([], this, "logs");
         this.__showStrategyDialog = new ObservedPropertySimplePU(false, this, "showStrategyDialog");
@@ -125,6 +128,9 @@ export class AiSettingsPanel extends ViewPU {
         }
         if (params.apiSectionExpanded !== undefined) {
             this.apiSectionExpanded = params.apiSectionExpanded;
+        }
+        if (params.apiRefreshTick !== undefined) {
+            this.apiRefreshTick = params.apiRefreshTick;
         }
         if (params.promptText !== undefined) {
             this.promptText = params.promptText;
@@ -239,6 +245,7 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList.purgeDependencyOnElmtId(rmElmtId);
         this.__showAddForm.purgeDependencyOnElmtId(rmElmtId);
         this.__apiSectionExpanded.purgeDependencyOnElmtId(rmElmtId);
+        this.__apiRefreshTick.purgeDependencyOnElmtId(rmElmtId);
         this.__promptText.purgeDependencyOnElmtId(rmElmtId);
         this.__logs.purgeDependencyOnElmtId(rmElmtId);
         this.__showStrategyDialog.purgeDependencyOnElmtId(rmElmtId);
@@ -276,6 +283,7 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList.aboutToBeDeleted();
         this.__showAddForm.aboutToBeDeleted();
         this.__apiSectionExpanded.aboutToBeDeleted();
+        this.__apiRefreshTick.aboutToBeDeleted();
         this.__promptText.aboutToBeDeleted();
         this.__logs.aboutToBeDeleted();
         this.__showStrategyDialog.aboutToBeDeleted();
@@ -355,6 +363,13 @@ export class AiSettingsPanel extends ViewPU {
     }
     set apiSectionExpanded(newValue: boolean) {
         this.__apiSectionExpanded.set(newValue);
+    }
+    private __apiRefreshTick: ObservedPropertySimplePU<number>;
+    get apiRefreshTick() {
+        return this.__apiRefreshTick.get();
+    }
+    set apiRefreshTick(newValue: number) {
+        this.__apiRefreshTick.set(newValue);
     }
     private __promptText: ObservedPropertySimplePU<string>;
     get promptText() {
@@ -981,6 +996,9 @@ export class AiSettingsPanel extends ViewPU {
             Text.padding({ left: 6, right: 6, top: 4, bottom: 4 });
             Text.onClick(() => {
                 this.apiSectionExpanded = !this.apiSectionExpanded;
+                if (this.apiSectionExpanded) {
+                    this.apiRefreshTick++;
+                }
             });
         }, Text);
         Text.pop();
@@ -1032,7 +1050,29 @@ export class AiSettingsPanel extends ViewPU {
             If.create();
             if (this.apiSectionExpanded) {
                 this.ifElseBranchUpdateFunction(0, () => {
-                    this.ApiConfigSection.bind(this)();
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new AiApiConfigSection(this, {
+                                    statusMessage: this.__statusMessage,
+                                    refreshTick: this.apiRefreshTick
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 511, col: 9 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        statusMessage: this.statusMessage,
+                                        refreshTick: this.apiRefreshTick
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    refreshTick: this.apiRefreshTick
+                                });
+                            }
+                        }, { name: "AiApiConfigSection" });
+                    }
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Divider.create();
                         Divider.color(ProteusColors.DIVIDER);
@@ -1174,7 +1214,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'A');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 552, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 560, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1206,7 +1246,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'B');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 560, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1238,7 +1278,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'C');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 568, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 576, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1272,7 +1312,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyFreeById.set(q.id, v);
                                                         this.clarifyFreeById = new Map(this.clarifyFreeById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 576, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 584, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1319,7 +1359,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.submitClarification();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 595, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 603, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1406,7 +1446,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.showSelfCheckDialog = false;
                                                 void this.runSelfCheck();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 622, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 630, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1439,7 +1479,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.appService.dismissAiSelfCheckPrompt();
                                                 this.statusMessage = '已跳过自检修复';
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 630, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 638, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1526,7 +1566,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('oneshot');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 660, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 668, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1556,7 +1596,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('modular');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 667, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 675, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1586,7 +1626,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showStrategyDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 674, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 682, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1664,7 +1704,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('replace');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 698, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 706, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1694,7 +1734,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('append');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 705, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 713, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1724,7 +1764,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('edit');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 712, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 720, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1761,7 +1801,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showModeDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 723, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 731, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1825,7 +1865,7 @@ export class AiSettingsPanel extends ViewPU {
                         areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
                         isEnabled: !this.aiGenerating,
                         onChange: (v: string) => { this.promptText = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 747, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 755, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1898,7 +1938,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestGenerate();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 783, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 791, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1928,7 +1968,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestEditExisting();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 790, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 798, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1970,7 +2010,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.showModeDialog = false;
                             void this.runSelfCheck();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 802, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 810, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2006,7 +2046,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.appService.clearAiGenLogs();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 815, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 823, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2067,7 +2107,7 @@ export class AiSettingsPanel extends ViewPU {
                                 this.showAddForm = true;
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 844, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 852, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2160,7 +2200,7 @@ export class AiSettingsPanel extends ViewPU {
                                             this.newAuthField = '';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 868, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 876, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2247,7 +2287,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'https://example.com （可选）',
                                     text: this.newApiUrl,
                                     onChange: (v: string) => { this.newApiUrl = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 913, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 921, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2293,7 +2333,7 @@ export class AiSettingsPanel extends ViewPU {
                                     text: this.newApiKey,
                                     password: true,
                                     onChange: (v: string) => { this.newApiKey = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 925, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 933, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2369,7 +2409,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'x-api-key（Claude）或留空用 Bearer',
                                     text: this.newAuthField,
                                     onChange: (v: string) => { this.newAuthField = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 954, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 962, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2415,7 +2455,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'claude-sonnet-4-6',
                                     text: this.newApiModel,
                                     onChange: (v: string) => { this.newApiModel = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 966, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 974, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2445,7 +2485,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.saveApiFromForm();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 975, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 983, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2500,7 +2540,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 995, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1003, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2627,7 +2667,7 @@ export class AiSettingsPanel extends ViewPU {
                                 onAction: () => {
                                     this.selectAsDefault(api);
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1042, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1050, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2656,7 +2696,7 @@ export class AiSettingsPanel extends ViewPU {
                                 onAction: () => {
                                     this.beginEditApi(api);
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1049, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1057, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2693,7 +2733,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1055, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1063, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2737,7 +2777,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1072, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1080, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2779,7 +2819,7 @@ export class AiSettingsPanel extends ViewPU {
                                     Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1084, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1092, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {

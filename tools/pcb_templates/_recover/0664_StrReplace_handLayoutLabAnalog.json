@@ -1,0 +1,11 @@
+{
+  "line": 664,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "handLayoutLabAnalog",
+    "handLayoutLabDigital"
+  ],
+  "old_string": "    } else if (id === 'lab_analog_ic') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabAnalogIc(doc);\n    } else {\n      route = autoRoute(doc);\n    }",
+  "new_string": "    } else if (id === 'lab_analog_ic') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabAnalogIc(doc);\n    } else if (id === 'lab_digital') {\n      doc.footprints = doc.footprints.filter(f => !!f.schematicCompId);\n      doc.tracks = [];\n      doc.vias = [];\n      doc.zones = [];\n      route = handLayoutLabDigital(doc);\n    } else {\n      route = autoRoute(doc);\n    }"
+}

@@ -8,14 +8,16 @@ import {
   PcbEditorSelectionData, Point2D, ViewportState, EventBus, ModuleEvent, IdUtil,
   createDefaultPcbViewport, createEmptyPcbDocument,
   forwardAnnotatePcb, reverseAnnotatePcb, getGlobalPcbFootprintLibrary,
-  autoRoutePcb, AutoRouteResult,
+  autoRoutePcb, AutoRouteResult, AccessoryNetHint,
   rebuildZoneCutouts, pointInPolygon, makeRectCutout, normalizeZoneFields, defaultZoneFields,
   SchematicDocument, ApiResult, ResultHelper, ErrCode,
   normalizePcbDocument, isCopperLayer, applyCopperLayerCount, copperLayersFromStack,
   PcbSelectionState, PcbSelectionKind, PcbHistorySnapshot,
   pcbSelectionEmpty, PcbSelectionRect, padWorldPosition,
   collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance,
-  snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions, TrackEndpointSnapshot,
+  snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions,
+  lockTrackEndpointsToPads, doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute,
+  TrackEndpointSnapshot,
   tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject,
   tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary,
   tracePcbUi, tracePcbOp, tracePcb3d,
@@ -74,6 +76,9 @@ export class PcbEditorImpl implements IPcbEditor {
   private measurePoints: Point2D[] = [];
   private placeFpDefId: string = '';
 
+  // ── AI / 只读锁（对标原理图 setReadOnly）──
+  private readOnlyMode: boolean = false;
+
   // ── Clipboard ──
   private clipboard: PcbFootprintInst[] = [];
 
@@ -96,6 +101,19 @@ export class PcbEditorImpl implements IPcbEditor {
   setCanvasSize(w: number, h: number): void {
     this.canvasViewW = w;
     this.canvasViewH = h;
+  }
+
+  setReadOnly(readOnly: boolean): void {
+    this.readOnlyMode = readOnly;
+  }
+
+  isReadOnly(): boolean {
+    return this.readOnlyMode;
+  }
+
+  /** true = 已锁定，调用方应中止编辑 */
+  private guardEdit(): boolean {
+    return this.readOnlyMode;
   }
 
   loadDocument(doc: PcbDocument): void {
@@ -779,6 +797,9 @@ export class PcbEditorImpl implements IPcbEditor {
   private moveInProgress: boolean = false;
 
   beginMoveOperation(): void {
+    if (this.guardEdit()) {
+      return;
+    }
     if (!this.moveInProgress) {
       this.saveSnapshot();
       this.moveInProgress = true;
@@ -808,6 +829,9 @@ export class PcbEditorImpl implements IPcbEditor {
 
   /** 移动所有被选中对象（封装 + 走线端点 + 过孔），未选中的走线端点跟随焊盘并传播折点 */
   moveSelected(dx: number, dy: number): void {
+    if (this.guardEdit()) {
+      return;
+    }
     if (!this.document) return;
     if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return;
 
@@ -827,7 +851,16 @@ export class PcbEditorImpl implements IPcbEditor {
     }
 
     const trackSnapshots: TrackEndpointSnapshot[] = [];
+    let padLockedEnds: Set<string> = new Set();
+    let dogleggedIds: Set<string> = new Set();
     if (!movingFootprints && trkSet.size > 0) {
+      // 焊盘端钉住；两端都在焊盘则 U 折，便于推挤
+      padLockedEnds = lockTrackEndpointsToPads(this.document, trkSet);
+      dogleggedIds = doglegPadToPadSelectedTracks(
+        this.document, trkSet, padLockedEnds, dx, dy);
+      if (dogleggedIds.size > 0) {
+        padLockedEnds = lockTrackEndpointsToPads(this.document, trkSet);
+      }
       for (const trk of this.document.tracks) {
         if (trkSet.has(trk.id)) {
           trackSnapshots.push({
@@ -850,9 +883,19 @@ export class PcbEditorImpl implements IPcbEditor {
     }
     if (!movingFootprints) {
       for (const trk of this.document.tracks) {
-        if (trkSet.has(trk.id)) {
+        if (!trkSet.has(trk.id)) {
+          continue;
+        }
+        // 本帧已 dogleg 平移过中间段，避免重复叠加
+        if (dogleggedIds.has(trk.id)) {
+          continue;
+        }
+        // 焊盘端钉住；自由端可拖（异网冲突稍后 L 重布绕开）
+        if (!padLockedEnds.has(`${trk.id}|S`)) {
           trk.start.x += dx;
           trk.start.y += dy;
+        }
+        if (!padLockedEnds.has(`${trk.id}|E`)) {
           trk.end.x += dx;
           trk.end.y += dy;
         }
@@ -874,6 +917,10 @@ export class PcbEditorImpl implements IPcbEditor {
       syncMovedTrackJunctions(this.document, trkSet, trackSnapshots);
     }
 
+    if (!movingFootprints && trkSet.size > 0) {
+      shoveForeignTracksByLReroute(this.document, trkSet);
+    }
+
     this.touchModified();
     this.publishChanged();
   }
@@ -883,6 +930,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   rotateSelected(clockwise: boolean = true): void {
+    if (this.guardEdit()) {
+      return;
+    }
     if (!this.document) return;
     this.saveSnapshot();
     const delta = clockwise ? 90 : 270;
@@ -1259,6 +1309,9 @@ export class PcbEditorImpl implements IPcbEditor {
 
   addTrack(start: Point2D, end: Point2D, netId?: string, netName?: string,
     skipSnapshot: boolean = false): PcbTrack | null {
+    if (this.guardEdit()) {
+      return null;
+    }
     if (!this.document) return null;
     if (!isCopperLayer(this.activeLayer)) return null;
     const dx = end.x - start.x;
@@ -1311,6 +1364,9 @@ export class PcbEditorImpl implements IPcbEditor {
 
   addVia(pos: Point2D, netId?: string, netName?: string, kind: PcbViaKind = PcbViaKind.THROUGH,
     fromLayer?: PcbLayerId, toLayer?: PcbLayerId): PcbVia | null {
+    if (this.guardEdit()) {
+      return null;
+    }
     if (!this.document) return null;
     this.saveSnapshot();
     const atNet = this.findNetAtPoint(pos);
@@ -1486,6 +1542,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   beginZonePoly(netId?: string, netName?: string): void {
+    if (this.guardEdit()) {
+      return;
+    }
     this.zonePolyPoints = [];
     this.zonePolyNetId = netId ?? '';
     this.zonePolyNetName = netName && netName.length > 0 ? netName : 'GND';
@@ -1509,6 +1568,10 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   commitZonePoly(): PcbZone | null {
+    if (this.guardEdit()) {
+      this.zonePolyPoints = [];
+      return null;
+    }
     if (!this.document || this.zonePolyPoints.length < 3) {
       this.zonePolyPoints = [];
       return null;
@@ -1553,16 +1616,26 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   beginOutlineEdit(): void {
+    if (this.guardEdit()) {
+      return;
+    }
     this.outlineEditPoints = [];
     this.publishChanged();
   }
 
   addOutlinePoint(pt: Point2D): void {
+    if (this.guardEdit()) {
+      return;
+    }
     this.outlineEditPoints.push(this.snapPoint(pt));
     this.publishChanged();
   }
 
   commitOutlineEdit(): boolean {
+    if (this.guardEdit()) {
+      this.outlineEditPoints = [];
+      return false;
+    }
     if (!this.document || this.outlineEditPoints.length < 3) {
       this.outlineEditPoints = [];
       return false;
@@ -1619,6 +1692,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   placeFootprintAt(pos: Point2D): PcbFootprintInst | null {
+    if (this.guardEdit()) {
+      return null;
+    }
     if (!this.document || this.placeFpDefId.length === 0) return null;
     const def = getGlobalPcbFootprintLibrary().getDef(this.placeFpDefId);
     if (!def) return null;
@@ -1658,6 +1734,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   flipSelected(): void {
+    if (this.guardEdit()) {
+      return;
+    }
     if (!this.document) return;
     if (this.selection.footprintIds.length === 0) return;
     this.saveSnapshot();
@@ -1694,14 +1773,67 @@ export class PcbEditorImpl implements IPcbEditor {
   // ═══════════════════════════════════════════════════
 
   runAutoRoute(): ApiResult<AutoRouteResult> {
+    if (this.guardEdit()) {
+      return ResultHelper.fail(ErrCode.ERR_PROJECT_LOCKED, 'PCB AI 布线中，画布已锁定');
+    }
     if (!this.document) return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '无 PCB 文档');
     this.saveSnapshot();
     const layer = isCopperLayer(this.activeLayer) ? this.activeLayer : PcbLayerId.F_CU;
-    const result = autoRoutePcb(this.document, layer);
+    const sch = this.schematicProvider?.() ?? null;
+    const schHints: AccessoryNetHint[] = [];
+    if (sch) {
+      for (const n of sch.nets) {
+        schHints.push({
+          id: n.id,
+          name: n.name,
+          schPinCount: n.pinIds !== undefined ? n.pinIds.length : 0
+        });
+      }
+    }
+    const result = autoRoutePcb(this.document, layer, schHints);
+    this.refreshConnectivity();
     tracePcbAutoRoute(this.document, layer, result.netCount, result.trackCount, result.messages);
     this.touchModified();
     this.publishChanged();
     return ResultHelper.ok(result);
+  }
+
+  applyAiRouteResult(tracks: PcbTrack[], vias: PcbVia[],
+    footprints?: PcbFootprintInst[]): ApiResult<AutoRouteResult> {
+    if (!this.document) {
+      return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '无 PCB 文档');
+    }
+    this.saveSnapshot();
+    if (footprints && footprints.length > 0) {
+      this.document.footprints = footprints;
+    }
+    this.document.tracks = tracks.slice();
+    this.document.vias = vias.slice();
+    this.document.metadata.modifiedAt = new Date().toISOString();
+    const netIds: Set<string> = new Set();
+    for (let i = 0; i < tracks.length; i++) {
+      if (tracks[i].netId.length > 0) {
+        netIds.add(tracks[i].netId);
+      }
+    }
+    const result: AutoRouteResult = {
+      trackCount: tracks.length,
+      netCount: netIds.size,
+      messages: [`AI 布线 ${netIds.size} 网, ${tracks.length} 段, ${vias.length} 过孔`]
+    };
+    this.refreshConnectivity();
+    tracePcbAutoRoute(this.document, this.activeLayer, result.netCount, result.trackCount, result.messages);
+    this.touchModified();
+    this.publishChanged();
+    return ResultHelper.ok(result);
+  }
+
+  runDrcForDoc(doc: PcbDocument): PcbDrcViolation[] {
+    const prev = this.document;
+    this.document = doc;
+    const v = this.runDrc();
+    this.document = prev;
+    return v;
   }
 
   runDrc(): PcbDrcViolation[] {
@@ -1979,6 +2111,9 @@ export class PcbEditorImpl implements IPcbEditor {
   // ═══════════════════════════════════════════════════
 
   deleteSelected(): void {
+    if (this.guardEdit()) {
+      return;
+    }
     if (!this.document) return;
     this.saveSnapshot();
     const fpSet = new Set(this.selection.footprintIds);
@@ -2011,6 +2146,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   pasteClipboard(): number {
+    if (this.guardEdit()) {
+      return 0;
+    }
     if (!this.document || this.clipboard.length === 0) return 0;
     this.saveSnapshot();
     let count = 0;
@@ -2247,6 +2385,9 @@ export class PcbEditorImpl implements IPcbEditor {
   canRedo(): boolean { return this.historyIndex < this.history.length - 1; }
 
   undo(): boolean {
+    if (this.guardEdit()) {
+      return false;
+    }
     if (!this.canUndo()) return false;
     this.historyLocked = true;
     this.historyIndex--;
@@ -2258,6 +2399,9 @@ export class PcbEditorImpl implements IPcbEditor {
   }
 
   redo(): boolean {
+    if (this.guardEdit()) {
+      return false;
+    }
     if (!this.canRedo()) return false;
     this.historyLocked = true;
     this.historyIndex++;

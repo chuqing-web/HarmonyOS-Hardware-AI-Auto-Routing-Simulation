@@ -1,0 +1,8 @@
+{
+  "line": 583,
+  "name": "Write",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_splice_analog.mjs",
+  "hit": [],
+  "old_string": null,
+  "new_string": "import { readFileSync, writeFileSync } from 'fs';\nconst p = 'tools/pcb_templates/export.mjs';\nlet s = readFileSync(p, 'utf8');\nconst neu = readFileSync('tools/pcb_templates/_hand_analog_ic.mjs', 'utf8').trimEnd() + '\\n\\n';\nconst start = s.indexOf('/**\\n * 模拟 IC 检测手布');\nconst end = s.indexOf('/**\\n * 分立器件检测手布');\nif (start < 0 || end < 0) {\n  console.error('markers', start, end);\n  process.exit(1);\n}\ns = s.slice(0, start) + neu + s.slice(end);\n// Cu=4\ns = s.replace(\n  `if (id === 'lab_power' || id === 'lab_amp' || id === 'lab_filter' ||\n      id === 'lab_passive' || id === 'lab_discrete' || id === 'lab_analog_ic') {\n    n = 2;\n  }\n  if (id === 'lab_51_led' || id === 'lab_uart') {\n    n = 4;\n  }`,\n  `if (id === 'lab_power' || id === 'lab_amp' || id === 'lab_filter' ||\n      id === 'lab_passive' || id === 'lab_discrete') {\n    n = 2;\n  }\n  if (id === 'lab_51_led' || id === 'lab_uart' || id === 'lab_analog_ic') {\n    n = 4;\n  }`\n);\nwriteFileSync(p, s);\nconsole.log('ok', end - start, '->', neu.length);\n"
+}

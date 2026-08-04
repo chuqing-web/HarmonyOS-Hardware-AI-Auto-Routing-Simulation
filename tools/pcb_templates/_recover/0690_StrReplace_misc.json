@@ -1,0 +1,8 @@
+{
+  "line": 690,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_digital.mjs",
+  "hit": [],
+  "old_string": "/**\n * 数字逻辑检测手布（4 层，每层都有信号走线）：\n *   F.Cu  — 焊盘 stub / 过孔扇出（不做长竖穿封装）\n *   In1.Cu — LOGIC_H 总线 + H→排针 + Q1 扇出（GND 仅短桩）\n *   In2.Cu — LOGIC_L 总线 + L→排针 + CLK 扇出（VCC 仅短桩）\n *   B.Cu  — LOGIC_L→U7 + Q0/Q2 扇出\n */",
+  "new_string": "/**\n * 数字逻辑检测手布（4 层，每层都有信号走线）：\n *   F.Cu  — 焊盘 stub / 过孔扇出\n *   In1.Cu — LOGIC_H 总线 + H→排针 + Q1 下廊（GND 仅短桩）\n *   In2.Cu — LOGIC_L 总线 + L→排针 + CLK 下廊（VCC 仅短桩）\n *   B.Cu  — LOGIC_L→U7 下廊 + Q0 上廊 + Q2 下廊\n */"
+}

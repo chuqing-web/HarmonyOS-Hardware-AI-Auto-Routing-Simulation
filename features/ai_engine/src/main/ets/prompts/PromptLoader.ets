@@ -26,6 +26,10 @@ import { GEN_SCH_PROMPT } from './templates/GenSchPrompt';
 import { MODULAR_PLAN_PROMPT } from './templates/ModularPlanPrompt';
 import { EDIT_PLAN_PROMPT } from './templates/EditPlanPrompt';
 import { REQUIREMENT_PROMPT } from './templates/RequirementPrompt';
+import { PCB_PLACEMENT_PROMPT } from './templates/PcbPlacementPrompt';
+import { PCB_NET_PLAN_PROMPT } from './templates/PcbNetPlanPrompt';
+import { PCB_ROUTE_PROMPT } from './templates/PcbRoutePrompt';
+import { PCB_QA_REPAIR_PROMPT } from './templates/PcbQaRepairPrompt';
 import { CircuitIntent } from '../algorithms/CircuitIntent';
 import {
   assembleDeviceSelectSystem, assembleNetPlanSystem
@@ -304,6 +308,7 @@ function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
 /** 从 template.id 推断阶段名（device_select_v5 → device_select） */
 function inferStageFromTemplateId(id: string): string {
   const keys = [
+    'pcb_placement', 'pcb_net_plan', 'pcb_route', 'pcb_qa_repair',
     'device_select', 'modular_plan', 'net_plan', 'self_review',
     'edit_plan', 'gen_sch', 'layout', 'route', 'diag'
   ];
@@ -340,6 +345,14 @@ export class PromptLoader {
         return MODULAR_PLAN_PROMPT;
       case 'edit_plan':
         return EDIT_PLAN_PROMPT;
+      case 'pcb_placement':
+        return PCB_PLACEMENT_PROMPT;
+      case 'pcb_net_plan':
+        return PCB_NET_PLAN_PROMPT;
+      case 'pcb_route':
+        return PCB_ROUTE_PROMPT;
+      case 'pcb_qa_repair':
+        return PCB_QA_REPAIR_PROMPT;
       default:
         Logger.error(INSTR_TRACE_TAG,
           `[AI_PROMPT] unknown template name="${name}" — refuse silent DEVICE_SELECT fallback`);

@@ -4,6 +4,7 @@
 import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG,
   ClarificationQuestion, ClarificationAnswer, Result } from 'common';
+import { AiApiConfigSection } from './AiApiConfigSection';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
@@ -21,6 +22,7 @@ export struct AiSettingsPanel {
   @State apiList: AiApiConfig[] = [];
   @State showAddForm: boolean = false;
   @State apiSectionExpanded: boolean = false;
+  @State apiRefreshTick: number = 0;
   @State promptText: string = '';
   @State logs: AiGenLogEntry[] = [];
   @State showStrategyDialog: boolean = false;
@@ -480,6 +482,9 @@ export struct AiSettingsPanel {
           .padding({ left: 6, right: 6, top: 4, bottom: 4 })
           .onClick(() => {
             this.apiSectionExpanded = !this.apiSectionExpanded;
+            if (this.apiSectionExpanded) {
+              this.apiRefreshTick++;
+            }
           })
         if (this.aiGenerating) {
           Text('取消')
@@ -503,7 +508,10 @@ export struct AiSettingsPanel {
       }
 
       if (this.apiSectionExpanded) {
-        this.ApiConfigSection()
+        AiApiConfigSection({
+          statusMessage: $statusMessage,
+          refreshTick: this.apiRefreshTick
+        })
         Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
       }
 

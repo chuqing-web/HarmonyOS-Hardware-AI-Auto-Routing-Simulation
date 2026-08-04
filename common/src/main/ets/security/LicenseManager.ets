@@ -1,5 +1,5 @@
 /**
- * 授权文件加载、校验与分级功能矩阵
+ * 授权文件加载、校验与分级；支持 GitHub Star 会话解锁专业版
  */
 import fs from '@ohos.file.fs';
 import { arrayBufferToString } from '../utils/MapHelpers';
@@ -10,16 +10,14 @@ import {
   LicenseTier, LicenseFile, LicenseFeatures, LicenseStatus
 } from '../types/LicenseTypes';
 
-const LICENSE_SALT = 'AISchSim_License_v1';
-
 export class LicenseManager {
   private static instance: LicenseManager;
   private license: LicenseFile | null = null;
   private licensePath: string = '';
   private tampered: boolean = false;
-  private trialActive: boolean = false;
-  private trialDaysRemaining: number = 0;
-  private trialMessage: string = '';
+  /** 本会话 Star 复验通过（不持久化为离线 Pro） */
+  private starUnlockActive: boolean = false;
+  private starGithubLogin: string = '';
 
   static getInstance(): LicenseManager {
     if (!LicenseManager.instance) {
@@ -32,20 +30,6 @@ export class LicenseManager {
     switch (tier) {
       case LicenseTier.PERSONAL_PRO:
       case LicenseTier.EDUCATION:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
       case LicenseTier.ENTERPRISE:
         return {
           maxDevices: Number.MAX_SAFE_INTEGER,
@@ -79,6 +63,19 @@ export class LicenseManager {
     }
   }
 
+  setStarUnlock(active: boolean, githubLogin: string = ''): void {
+    this.starUnlockActive = active;
+    this.starGithubLogin = githubLogin;
+  }
+
+  isStarUnlocked(): boolean {
+    return this.starUnlockActive;
+  }
+
+  getStarGithubLogin(): string {
+    return this.starGithubLogin;
+  }
+
   loadFromPath(path: string): LicenseStatus {
     this.licensePath = path;
     this.tampered = false;
@@ -89,7 +86,7 @@ export class LicenseManager {
       return this.applyLicense(lic);
     } catch (_e) {
       this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, '未找到授权文件，运行免费版');
+      return this.buildEffectiveStatus();
     }
   }
 
@@ -98,13 +95,14 @@ export class LicenseManager {
       const lic = JSON.parse(json) as LicenseFile;
       return this.applyLicense(lic);
     } catch (e) {
+      this.license = null;
       return this.buildStatus(false, LicenseTier.FREE, `授权解析失败: ${e}`);
     }
   }
 
   importAndSave(path: string, json: string): LicenseStatus {
     const status = this.applyLicenseContent(json);
-    if (status.valid) {
+    if (status.valid && this.license !== null) {
       try {
         const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
         fs.writeSync(fileHandle.fd, json);
@@ -114,41 +112,30 @@ export class LicenseManager {
         return this.buildStatus(false, LicenseTier.FREE, `授权保存失败: ${e}`);
       }
     }
-    return status;
+    return this.buildEffectiveStatus();
   }
 
   getStatus(): LicenseStatus {
-    if (!this.license) {
-      if (this.trialActive) {
-        return this.buildStatus(true, LicenseTier.PERSONAL_PRO,
-          this.trialMessage || `试用期剩余 ${this.trialDaysRemaining} 天`, this.trialDaysRemaining);
-      }
-      return this.buildStatus(false, LicenseTier.FREE, '免费版');
-    }
-    return this.validateCurrent();
+    return this.buildEffectiveStatus();
   }
 
   async applyTrialStatus(context: Context): Promise<void> {
     await TrialManager.init(context);
-    const trial = await TrialManager.getStatus();
-    this.trialActive = trial.active && !this.license;
-    this.trialDaysRemaining = trial.daysRemaining;
-    this.trialMessage = trial.active ? `试用期剩余 ${trial.daysRemaining} 天` : '试用期已结束';
   }
 
   getTier(): LicenseTier {
-    if (this.trialActive && !this.license) return LicenseTier.PERSONAL_PRO;
-    return this.license?.tier ?? LicenseTier.FREE;
+    const fileStatus = this.validateLicenseOnly();
+    if (fileStatus !== null && fileStatus.valid) {
+      return fileStatus.tier;
+    }
+    if (this.starUnlockActive) {
+      return LicenseTier.PERSONAL_PRO;
+    }
+    return LicenseTier.FREE;
   }
 
   getFeatures(): LicenseFeatures {
-    if (this.trialActive && !this.license) {
-      return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-    }
-    if (!this.license || !this.validateCurrent().valid) {
-      return this.getDefaultFeatures(LicenseTier.FREE);
-    }
-    return this.license.features;
+    return this.getDefaultFeatures(this.getTier());
   }
 
   isTampered(): boolean {
@@ -163,23 +150,57 @@ export class LicenseManager {
     if (this.license !== null && this.license.licensee.length > 0) {
       return this.license.licensee;
     }
+    if (this.starGithubLogin.length > 0) {
+      return `@${this.starGithubLogin}`;
+    }
     return '';
   }
 
-  /** Proteus 风格 DD/MM/YYYY */
   getLicenseExpiryLabel(): string {
     if (this.license !== null && this.license.expiresAt.length > 0) {
       return LicenseManager.formatDisplayDate(this.license.expiresAt);
     }
-    if (this.trialActive && this.trialDaysRemaining > 0) {
-      const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-      return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
+    if (this.starUnlockActive) {
+      return 'GitHub Star';
     }
-    return '01/01/2130';
+    return '—';
   }
 
   isEvaluationMode(): boolean {
-    return this.license === null;
+    return this.getTier() === LicenseTier.FREE;
+  }
+
+  private buildEffectiveStatus(): LicenseStatus {
+    const fileStatus = this.validateLicenseOnly();
+    if (fileStatus !== null && fileStatus.valid) {
+      return fileStatus;
+    }
+    if (this.starUnlockActive) {
+      return this.buildStatus(
+        true,
+        LicenseTier.PERSONAL_PRO,
+        this.starGithubLogin.length > 0
+          ? `专业版（GitHub Star · @${this.starGithubLogin}）`
+          : '专业版（GitHub Star）',
+        Number.MAX_SAFE_INTEGER
+      );
+    }
+    return this.buildStatus(false, LicenseTier.FREE, '免费版 · Star 仓库可解锁专业版');
+  }
+
+  /** 仅校验 license 文件；无效返回 null 或 invalid status */
+  private validateLicenseOnly(): LicenseStatus | null {
+    if (!this.license) {
+      return null;
+    }
+    const expires = new Date(this.license.expiresAt).getTime();
+    const now = Date.now();
+    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
+    if (now > expires) {
+      this.license = null;
+      return this.buildStatus(false, LicenseTier.FREE, '授权已过期');
+    }
+    return this.buildStatus(true, this.license.tier, `授权有效，剩余 ${daysRemaining} 天`, daysRemaining);
   }
 
   private static formatDisplayDate(iso: string): string {
@@ -192,7 +213,6 @@ export class LicenseManager {
     return `${dd}/${mm}/${d.getFullYear()}`;
   }
 
-  /** 开发/测试：根据设备码生成签名授权 JSON */
   static buildSignedLicense(
     tier: LicenseTier,
     deviceCode: string,
@@ -227,7 +247,7 @@ export class LicenseManager {
     if (lic.signature !== expectedSig) {
       this.tampered = true;
       this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, '授权签名校验失败，已降级免费版');
+      return this.buildEffectiveStatus();
     }
     const localCode = HardwareFingerprint.getDeviceCode();
     if (lic.deviceCode.toUpperCase() !== localCode) {
@@ -235,21 +255,7 @@ export class LicenseManager {
       return this.buildStatus(false, LicenseTier.FREE, '设备码不匹配');
     }
     this.license = lic;
-    return this.validateCurrent();
-  }
-
-  private validateCurrent(): LicenseStatus {
-    if (!this.license) {
-      return this.buildStatus(false, LicenseTier.FREE, '免费版');
-    }
-    const expires = new Date(this.license.expiresAt).getTime();
-    const now = Date.now();
-    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-    if (now > expires) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, '授权已过期，已降级免费版');
-    }
-    return this.buildStatus(true, this.license.tier, `授权有效，剩余 ${daysRemaining} 天`, daysRemaining);
+    return this.buildEffectiveStatus();
   }
 
   private buildStatus(

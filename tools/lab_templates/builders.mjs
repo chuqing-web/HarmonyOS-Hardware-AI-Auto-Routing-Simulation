@@ -1084,6 +1084,45 @@ export function buildLabIntegrator(doc) {
 }
 
 /**
+ * lab_differentiator: UA741 反相 RC 微分器 + 三角/方波激励 → 示波器观尖峰/方波边沿
+ * 串联 C1=100nF → IN-；Rf=10k 反馈；Cf=1nF 并联 Rf 作实用阻尼（抑高频打轨）
+ * CH1=激励 CH2=微分输出；全部 joinByLabel
+ */
+export function buildLabDifferentiator(doc) {
+  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 360, y: 40 });
+  vcc.parameters.voltage = '12V';
+  const vee = K.place(doc, 'VEE', 'VEE1', { x: 360, y: 360 });
+  vee.parameters.voltage = '-12V';
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 60, y: 360 });
+  const sig = K.place(doc, 'SIGNAL_GEN', 'SG1', { x: 60, y: 180 });
+  sig.parameters.waveform = 'triangle';
+  sig.parameters.amplitude = '5V';
+  sig.parameters.frequency = '1kHz';
+  sig.parameters.offset = '0V';
+  const cIn = C(doc, 'C_100nF', 'C1', 180, 180);
+  const opa = K.place(doc, 'UA741', 'U1', { x: 360, y: 180 });
+  const rf = R(doc, 'R_10k', 'Rf', 500, 40);
+  const cf = C(doc, 'C_1nF', 'Cf', 500, 100);
+  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 680, y: 180 });
+
+  K.joinByLabel(doc, 'INPUT_SIG', NetType.SIGNAL, [
+    p(sig, 'OUT', 'OUT'), p(cIn, '1'), p(osc, 'CH1', 'CH1')
+  ]);
+  K.joinByLabel(doc, 'DIFF_NODE', NetType.SIGNAL, [
+    p(cIn, '2'), p(opa, 'IN-', 'IN-'), p(rf, '1'), p(cf, '1')
+  ]);
+  K.joinByLabel(doc, 'OUTPUT_SIG', NetType.SIGNAL, [
+    p(opa, 'OUT', 'OUT'), p(rf, '2'), p(cf, '2'), p(osc, 'CH2', 'CH2')
+  ]);
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(opa, 'VCC', 'VCC')]);
+  K.joinByLabel(doc, 'VEE', NetType.POWER, [p(vee, '1', 'VEE'), p(opa, 'VEE', 'VEE')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(sig, 'GND', 'GND'), p(opa, 'IN+', 'IN+')
+  ]);
+  K.stubLabel(doc, p(osc, 'GND', 'GND'), 'GND', NetType.GROUND);
+}
+
+/**
  * lab_555_astable: LM555（E555 同类）无稳态多谐振荡 + OUT→R→LED，示波器观方波
  * f≈1.44/((RA+2·RB)·C)≈69Hz（RA=1k RB=10k C=1µF）；默认示波器 10ms/div 可看方波
  * （10µF≈7Hz 时 1ms/div 整屏只有 10ms，波形会被截成平线）
@@ -1195,6 +1234,7 @@ export const TEMPLATE_DEFS = [
     build: buildLabDigitalGates },
   { id: 'lab_schmitt', name: '运放滞回比较器整形', description: 'UA741 正反馈滞回 + 正弦激励，示波器观测整形方波', build: buildLabSchmitt },
   { id: 'lab_integrator', name: 'RC积分电路', description: 'UA741 反相积分 + 方波激励，示波器观测三角波', build: buildLabIntegrator },
+  { id: 'lab_differentiator', name: 'RC微分电路', description: 'UA741 反相微分 + 三角波激励，示波器观测边沿尖峰', build: buildLabDifferentiator },
   { id: 'lab_555_astable', name: '555多谐振荡器', description: 'LM555 无稳态振荡(~69Hz) + LED，示波器 10ms/div 观测方波', build: buildLab555Astable },
   { id: 'lab_555_monostable', name: '555单稳态延时', description: 'LM555(NE555同类) 单稳态 + 按键触发 + RC(~1.1s) + LED 延时熄灭', build: buildLab555Monostable }
 ];

@@ -27,6 +27,10 @@ interface AnnouncementApiPayload {
   title?: string;
   body?: string;
   text?: string;
+  title_zh?: string;
+  title_en?: string;
+  body_zh?: string;
+  body_en?: string;
   imageUrl?: string;
   image_url?: string;
   linkUrl?: string;
@@ -38,10 +42,12 @@ interface AnnouncementApiPayload {
 
 export class HomeAnnouncementService {
   /**
-   * 公告接口地址。部署后改为真实服务器 URL。
-   * 期望 GET 返回 JSON：{ id, title, body|text, imageUrl|image_url, linkUrl?, publishedAt? }
+   * 公告接口地址（GitHub Pages 静态 JSON）。
+   * 期望 GET 返回 JSON：双语 title_zh/en、body_zh/en，以及兼容字段 title/body、imageUrl…
+   * 本迭代优先映射中文到 HomeAnnouncement.title/body。
    */
-  static endpoint: string = '';
+  static endpoint: string =
+    'https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web/api/announcement.json';
 
   static defaultAnnouncement(): HomeAnnouncement {
     return {
@@ -100,8 +106,9 @@ export class HomeAnnouncementService {
     const fallback = HomeAnnouncementService.defaultAnnouncement();
     try {
       const data = JSON.parse(rawJson) as AnnouncementApiPayload;
-      const title = (data.title ?? '').trim();
-      const body = (data.body ?? data.text ?? '').trim();
+      // App 暂用中文；保留 en 字段供后续系统语言映射
+      const title = (data.title_zh ?? data.title ?? '').trim();
+      const body = (data.body_zh ?? data.body ?? data.text ?? '').trim();
       if (title.length === 0 && body.length === 0) {
         return fallback;
       }
@@ -111,7 +118,7 @@ export class HomeAnnouncementService {
       const id = (data.id ?? '').trim();
       return {
         id: id.length > 0 ? id : `remote-${Date.now()}`,
-        title: title.length > 0 ? title : '公告',
+        title: title.length > 0 ? title : 'Announcement',
         body: body,
         imageUrl: imageUrl,
         linkUrl: linkUrl,

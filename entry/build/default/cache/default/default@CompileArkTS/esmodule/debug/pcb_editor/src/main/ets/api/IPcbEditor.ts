@@ -37,6 +37,9 @@ export interface IPcbEditor {
     setLayerVisible(layer: PcbLayerId, visible: boolean): void;
     setLayerOpacity(layer: PcbLayerId, opacity: number): void;
     setSoloCopperLayer(solo: boolean): void;
+    /** AI 布线期间只读锁（对标原理图） */
+    setReadOnly(readOnly: boolean): void;
+    isReadOnly(): boolean;
     /** Appearance / 网络高亮 */
     getAppearance(): PcbAppearance;
     setAppearanceMode(mode: PcbAppearanceMode): void;
@@ -118,7 +121,12 @@ export interface IPcbEditor {
     hitTestVia(worldX: number, worldY: number): PcbVia | null;
     hitTestZone(worldX: number, worldY: number): PcbZone | null;
     hitTestFootprint(worldX: number, worldY: number): PcbFootprintInst | null;
+    /** 经典自动布线（L 链，非 AI） */
     runAutoRoute(): ApiResult<AutoRouteResult>;
+    /** 应用 PCB AI 布线结果 */
+    applyAiRouteResult(tracks: PcbTrack[], vias: PcbVia[], footprints?: PcbFootprintInst[]): ApiResult<AutoRouteResult>;
+    /** 对指定文档跑 DRC（不切换当前编辑文档的发布） */
+    runDrcForDoc(doc: PcbDocument): PcbDrcViolation[];
     snapPoint(pt: Point2D): Point2D;
     snapToPadOrGrid(world: Point2D): Point2D;
     screenToWorld(sx: number, sy: number): Point2D;

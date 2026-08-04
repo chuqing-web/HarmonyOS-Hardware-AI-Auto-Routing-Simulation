@@ -1,0 +1,257 @@
+‘r@ü™assertions§code¥customTransformCache¨dependencies¢id§meta±moduleSideEffects¨originalCode±originalSourcemap´resolvedIdsÆsourcemapChainµsyntheticNamedExportsµtransformDependenciesÆtransformFiles®cacheAst‘rAê⁄Ö/**
+ * ÊåâÁ≠ñÁï•ÁîüÊàêËøáÂ≠î ‚Äî ÂÜ≤Á™ÅÊó∂ÁΩëÊ†ºËû∫ÊóãÂÅèÁßªÔºõÊîØÊåÅ blind/buried
+ */
+import { PcbLayerId, PcbViaKind, copperLayersFromStack } from '../../types/PcbTypes';
+import { IdUtil } from '../IdUtil';
+import { findNetClass } from '../PcbNetUtil';
+import { viaClearAt } from './PcbClearanceOracle';
+export function createViaAt(doc, policy, pos, netId, netName, fromLayer, toLayer, existingTracks, existingVias) {
+    const rules = doc.metadata.designRules;
+    let diameter = rules.minViaDrill + 8;
+    let drill = rules.minViaDrill;
+    if (netId.length > 0) {
+        for (const n of doc.nets) {
+            if (n.id === netId) {
+                const nc = findNetClass(doc, n.classId);
+                diameter = nc.viaDiameter;
+                drill = nc.viaDrill;
+                break;
+            }
+        }
+    }
+    const copper = copperLayersFromStack(doc.layerStack);
+    let layers = copper.length > 0 ? copper.slice() : [PcbLayerId.F_CU, PcbLayerId.B_CU];
+    let kind = PcbViaKind.THROUGH;
+    const preferThrough = policy.viaPreference === undefined || policy.viaPreference.preferThrough;
+    if (!preferThrough && fromLayer !== undefined && toLayer !== undefined && fromLayer !== toLayer) {
+        const fi = copper.indexOf(fromLayer);
+        const ti = copper.indexOf(toLayer);
+        if (fi >= 0 && ti >= 0) {
+            const lo = Math.min(fi, ti);
+            const hi = Math.max(fi, ti);
+            layers = [];
+            for (let i = lo; i <= hi; i++) {
+                layers.push(copper[i]);
+            }
+            if (lo === 0 && hi === copper.length - 1) {
+                kind = PcbViaKind.THROUGH;
+            }
+            else if (lo === 0 || hi === copper.length - 1) {
+                kind = PcbViaKind.BLIND;
+            }
+            else {
+                kind = PcbViaKind.BURIED;
+            }
+        }
+    }
+    const grid = doc.metadata.gridSize ?? 5;
+    let finalPos = { x: pos.x, y: pos.y };
+    const tracks = existingTracks ?? doc.tracks;
+    const vias = existingVias ?? doc.vias;
+    if (!viaClearAt(doc, finalPos, netId, diameter, layers, tracks, vias)) {
+        const offsets = [
+            [grid, 0], [-grid, 0], [0, grid], [0, -grid],
+            [grid * 2, 0], [-grid * 2, 0], [0, grid * 2], [0, -grid * 2],
+            [grid, grid], [-grid, grid], [grid, -grid], [-grid, -grid]
+        ];
+        let found = false;
+        for (let i = 0; i < offsets.length; i++) {
+            const cand = { x: pos.x + offsets[i][0], y: pos.y + offsets[i][1] };
+            if (viaClearAt(doc, cand, netId, diameter, layers, tracks, vias)) {
+                finalPos = cand;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // ‰ªçÊîæÁΩÆÂéü‰ΩçÔºå‰∫§Áî± DRC/QA Â§ÑÁêÜÔºàÈÅøÂÖçÊï¥ÁΩëÈùôÈªò‰∏¢ viaÔºâ
+            finalPos = { x: pos.x, y: pos.y };
+        }
+    }
+    const via = {
+        id: IdUtil.generate('via'),
+        position: finalPos,
+        drill,
+        diameter,
+        netId,
+        netName,
+        layers,
+        kind
+    };
+    return via;
+}
+//# sourceMappingURL=PcbViaFactory.js.map¬îŸCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsŸAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsŸEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsŸWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsŸRC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbViaFactory.ets‘rBõ™moduleName±isLocalDependencyØisNodeEntryFileßpkgPath±belongProjectPathßpkgName™pkgVersion±dependencyPkgInfoØhostModulesInfo∞belongModulePath¨shouldEmitJs¶common√¬Ÿ#C:\Projects\ElecDraw_Harmony\commonºC:\Projects\ElecDraw_Harmony¶common•1.0.0‘rCíßpkgName™pkgVersion¶common•1.0.0í‘rDí≤hostDependencyNameÆhostModuleNameŸ,./src/main/ets/utils/pcb_route/PcbViaFactory¶commonDØ./PcbViaFactory¶commonŸ#C:\Projects\ElecDraw_Harmony\common√√⁄R/**
+ * ÊåâÁ≠ñÁï•ÁîüÊàêËøáÂ≠î ‚Äî ÂÜ≤Á™ÅÊó∂ÁΩëÊ†ºËû∫ÊóãÂÅèÁßªÔºõÊîØÊåÅ blind/buried
+ */
+import {
+  PcbDocument, PcbLayerId, PcbVia, PcbViaKind, PcbTrack, copperLayersFromStack
+} from '../../types/PcbTypes';
+import { Point2D } from '../../types/CommonTypes';
+import { PcbRoutePolicy } from '../../types/PcbAiRouteTypes';
+import { IdUtil } from '../IdUtil';
+import { findNetClass } from '../PcbNetUtil';
+import { viaClearAt } from './PcbClearanceOracle';
+
+export function createViaAt(
+  doc: PcbDocument,
+  policy: PcbRoutePolicy,
+  pos: Point2D,
+  netId: string,
+  netName: string,
+  fromLayer?: PcbLayerId,
+  toLayer?: PcbLayerId,
+  existingTracks?: PcbTrack[],
+  existingVias?: PcbVia[]
+): PcbVia {
+  const rules = doc.metadata.designRules;
+  let diameter = rules.minViaDrill + 8;
+  let drill = rules.minViaDrill;
+  if (netId.length > 0) {
+    for (const n of doc.nets) {
+      if (n.id === netId) {
+        const nc = findNetClass(doc, n.classId);
+        diameter = nc.viaDiameter;
+        drill = nc.viaDrill;
+        break;
+      }
+    }
+  }
+
+  const copper = copperLayersFromStack(doc.layerStack);
+  let layers: PcbLayerId[] = copper.length > 0 ? copper.slice() : [PcbLayerId.F_CU, PcbLayerId.B_CU];
+  let kind = PcbViaKind.THROUGH;
+
+  const preferThrough = policy.viaPreference === undefined || policy.viaPreference.preferThrough;
+  if (!preferThrough && fromLayer !== undefined && toLayer !== undefined && fromLayer !== toLayer) {
+    const fi = copper.indexOf(fromLayer);
+    const ti = copper.indexOf(toLayer);
+    if (fi >= 0 && ti >= 0) {
+      const lo = Math.min(fi, ti);
+      const hi = Math.max(fi, ti);
+      layers = [];
+      for (let i = lo; i <= hi; i++) {
+        layers.push(copper[i]);
+      }
+      if (lo === 0 && hi === copper.length - 1) {
+        kind = PcbViaKind.THROUGH;
+      } else if (lo === 0 || hi === copper.length - 1) {
+        kind = PcbViaKind.BLIND;
+      } else {
+        kind = PcbViaKind.BURIED;
+      }
+    }
+  }
+
+  const grid = doc.metadata.gridSize ?? 5;
+  let finalPos: Point2D = { x: pos.x, y: pos.y };
+  const tracks = existingTracks ?? doc.tracks;
+  const vias = existingVias ?? doc.vias;
+  if (!viaClearAt(doc, finalPos, netId, diameter, layers, tracks, vias)) {
+    const offsets = [
+      [grid, 0], [-grid, 0], [0, grid], [0, -grid],
+      [grid * 2, 0], [-grid * 2, 0], [0, grid * 2], [0, -grid * 2],
+      [grid, grid], [-grid, grid], [grid, -grid], [-grid, -grid]
+    ];
+    let found = false;
+    for (let i = 0; i < offsets.length; i++) {
+      const cand: Point2D = { x: pos.x + offsets[i][0], y: pos.y + offsets[i][1] };
+      if (viaClearAt(doc, cand, netId, diameter, layers, tracks, vias)) {
+        finalPos = cand;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // ‰ªçÊîæÁΩÆÂéü‰ΩçÔºå‰∫§Áî± DRC/QA Â§ÑÁêÜÔºàÈÅøÂÖçÊï¥ÁΩëÈùôÈªò‰∏¢ viaÔºâ
+      finalPos = { x: pos.x, y: pos.y };
+    }
+  }
+
+  const via: PcbVia = {
+    id: IdUtil.generate('via'),
+    position: finalPos,
+    drill,
+    diameter,
+    netId,
+    netName,
+    layers,
+    kind
+  };
+  return via;
+}
+¿‘rEî©../IdUtil¥../../types/PcbTypes¥./PcbClearanceOracle≠../PcbNetUtil‘rFó™assertions®external¢id§meta±moduleSideEffects™resolvedByµsyntheticNamedExportsA¬ŸAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsA√™oh-resolve¬FA¬ŸCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsA√™oh-resolve¬FA¬ŸWC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbClearanceOracle.etsA√™oh-resolve¬FA¬ŸEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsA√™oh-resolve¬ì‘rGñßversion§file™sourceRootßsources•names®mappings∞PcbViaFactory.js†ë±PcbViaFactory.etsê‹ Rëî    êëî úî   î î	 î î #î -î! 9î6 ÃNî8 î> îÃT îÃU òî   î î	 	î î î î" "î# #òî  	 î 	î	 		î 	î 	î 	î, 	,î- 	-òî  
+ î 
+î	 
+	î 
+î 
+î 
+î1 
+1î2 
+2‹ î   î î î î î î! î' î) î, î. î3 î5 î< î> îÃG îÃI îÃP îÃR îÃ` îÃb îÃn öî î
+ î î î î î î î* (î+ )öî î î î î î î$ "î' %î( &î) 'òî î î î î î î! î"  òî î î î î î î î ôî î 	î î î î î î  î" òî î 
+î î î î î î  ùî î î î î' î(  î+ #î- %î. &î/ 'î6 .î7 /î8 0óî î î î î î) !î* "óî î î î î î# î$ íî  î  ëî !ëî	 "ëî #õî %î
+ %î %î %î( %&î) %'î, %*î- %+î7 %5î8 %6î9 %7‹ î &î &î &î &î &#î &$î &*î! &-î" &.î# &/î$ &0î% &1î+ &7î, &8î1 &=î3 &?î4 &Ã@î5 &ÃAî6 &ÃBî7 &ÃCîÃA &ÃMîÃB &ÃNîÃF &ÃRîÃH &ÃTîÃR &Ã^îÃS &Ã_îÃW &ÃcîÃX &ÃdîÃY &Ãeòî 'î 'î '
+î 'î 'î 'î! 'î" ' ‹ î )î
+ )î )î )î  )î! )î. ),î3 )1î< ):îÃ@ )>îÃF )ÃDîÃG )ÃEîÃT )ÃRîÃU )ÃSîÃb )Ã`îÃc )Ãa‹ î *î *î	 *î *î *î# *!î( *&î1 */î5 *3î< *:îÃA *?îÃJ *ÃHîÃN *ÃLîÃW *ÃUîÃ\ *ÃZîÃc *ÃaîÃe *Ãcõî +î +
+î +î +î +î +î! +î" +î+ +'î, +(î- +)õî ,î ,
+î ,î ,î ,î ,î! ,î" ,î) ,%î* ,&î+ ,'öî -î -î -
+î -î -î -î -î -î -î  -ùî .î .î .î .î .î .î .î  .î" .î$ .î& . î' .!î( ."ùî /î /î /î /î /î /î /î  /î" /î$ /î& / î' /!î( /"ïî 0î 0î 0î 0î 0ûî 1î 1î 1î 1î 1î 1î 1î 1î" 1î$ 1î& 1 î' 1!î) 1#î+ 1%õî 2î 2î 2î 2î 2î" 2î# 2î$ 2î% 2î& 2î' 2ëî 3ûî 4î 4
+î 4î 4î 4î 4î 4î# 4î) 4#î* 4$î0 4*î3 4-î4 4.î6 40óî 5î 5î 5î! 5î" 5î) 5!î* 5"ëî 6ûî 6î 6î 6î 6î 6î! 6î# 6î( 6$î. 6*î/ 6+î5 61î8 64î9 65î; 67óî 7î 7î 7î! 7î" 7î' 7î( 7 ëî 8ëî 8óî 9î 9î 9î! 9î" 9î( 9 î) 9!ëî :ëî	 ;ëî <úî >î
+ >î >î >î >î >î >î >î& >$î* >(î+ >)î, >*‹ î ?î ?î ?î ?î ?î ?î ?î ?"î ?#î ?$î ?&î  ?'î" ?)î% ?,î& ?-î' ?.î) ?0î* ?1öî Ã@î
+ Ã@î Ã@î Ã@î! Ã@î% Ã@#î( Ã@&î) Ã@'î/ Ã@-î0 Ã@.öî ÃAî
+ ÃAî ÃAî ÃAî ÃAî! ÃAî$ ÃA"î% ÃA#î) ÃA'î* ÃA(‹ î ÃBî ÃBî	 ÃBî ÃBî ÃBî ÃBî ÃBî! ÃBî# ÃB!î( ÃB&î* ÃB(î2 ÃB0î4 ÃB2î: ÃB8î< ÃB:îÃB ÃBÃ@îÃD ÃBÃBîÃH ÃBÃFîÃI ÃBÃGîÃK ÃBÃIîî ÃCî ÃC
+î ÃCî ÃC‹ î ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî ÃDî  ÃDî! ÃDî# ÃDî$ ÃDî% ÃDî' ÃD!î+ ÃD%î, ÃD&î. ÃD(î/ ÃD)î0 ÃD*î2 ÃD,î3 ÃD-î7 ÃD1î8 ÃD2‹ "î ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî ÃEî! ÃEî$ ÃEî% ÃEî' ÃE!î( ÃE"î) ÃE#î+ ÃE%î, ÃE&î- ÃE'î/ ÃE)î3 ÃE-î6 ÃE0î7 ÃE1î8 ÃE2î: ÃE4î; ÃE5î< ÃE6î> ÃE8î? ÃE9îÃC ÃE=îÃF ÃEÃ@îÃG ÃEÃAîÃH ÃEÃB‹ î ÃFî ÃFî ÃFî ÃFî ÃFî ÃFî ÃFî ÃFî ÃFî  ÃFî" ÃFî& ÃF î' ÃF!î) ÃF#î* ÃF$î. ÃF(î0 ÃF*î1 ÃF+î5 ÃF/î6 ÃF0î8 ÃF2î9 ÃF3î: ÃF4î> ÃF8îÃ@ ÃF:îÃA ÃF;îÃE ÃF?îÃF ÃFÃ@íî	 ÃGî
+ ÃGñî ÃHî ÃHî ÃHî ÃHî ÃHî ÃH‹ î ÃIî ÃI	î ÃIî ÃIî ÃIî ÃIî ÃIî ÃIî ÃIî# ÃIî$ ÃI î* ÃI&î, ÃI(î- ÃI)î/ ÃI+î1 ÃI-‹ "î ÃJî ÃJî ÃJî ÃJî ÃJî ÃJî ÃJ!î! ÃJ$î" ÃJ%î# ÃJ&î& ÃJ)î- ÃJ0î. ÃJ1î/ ÃJ2î0 ÃJ3î1 ÃJ4î2 ÃJ5î3 ÃJ6î5 ÃJ8î6 ÃJ9î8 ÃJ;î; ÃJ>î< ÃJ?î= ÃJÃ@îÃ@ ÃJÃCîÃG ÃJÃJîÃH ÃJÃKîÃI ÃJÃLîÃJ ÃJÃMîÃK ÃJÃNîÃL ÃJÃOîÃM ÃJÃPîÃO ÃJÃRîÃP ÃJÃS‹ î ÃKî ÃK
+î ÃKî ÃKî ÃKî  ÃKî$ ÃKî& ÃK î+ ÃK%î- ÃK'î5 ÃK/î7 ÃK1î= ÃK7î? ÃK9îÃE ÃK?îÃG ÃKÃAîÃK ÃKÃEîÃL ÃKÃFîÃN ÃKÃHïî ÃLî ÃLî ÃLî ÃLî  ÃLïî ÃMî ÃMî ÃMî ÃMî ÃMíî ÃNî ÃNëî ÃOëî	 ÃPïî ÃQî ÃQî ÃQ	î ÃQî ÃQíî ÃRî. ÃR(‹ î ÃSî ÃSî ÃSî ÃSî ÃSî ÃSî ÃSî  ÃSî! ÃSî# ÃSî$ ÃSî& ÃS î) ÃS#î* ÃS$î+ ÃS%î- ÃS'î. ÃS(ëî	 ÃTëî ÃUîî ÃWî
+ ÃWî ÃWî ÃWôî ÃXî
+ ÃXî ÃXî ÃXî ÃXî ÃXî ÃXî! ÃXî" ÃXîî ÃYî ÃYî ÃYî ÃYíî ÃZî ÃZ	íî Ã[î Ã[íî Ã\î Ã\	íî Ã]î Ã]íî Ã^î Ã^
+íî Ã_î Ã_íî Ã`î Ã`îî Ãaî Ãa	î Ãaî Ãaíî  Ãb î Ãb‘rHñßversion§fileßsourcesÆsourcesContent•names®mappings¿ë¿ë¿ê‹ Sëî    ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî  	 ëî  
+ ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî   ëî    ëî  ! ëî  " ëî  # ëî  $ ëî  % ëî  & ëî  ' ëî  ( ëî  ) ëî  * ëî  + ëî  , ëî  - ëî  . ëî  / ëî  0 ëî  1 ëî  2 ëî  3 ëî  4 ëî  5 ëî  6 ëî  7 ëî  8 ëî  9 ëî  : ëî  ; ëî  < ëî  = ëî  > ëî  ? ëî  Ã@ ëî  ÃA ëî  ÃB ëî  ÃC ëî  ÃD ëî  ÃE ëî  ÃF ëî  ÃG ëî  ÃH ëî  ÃI ëî  ÃJ ëî  ÃK ëî  ÃL ëî  ÃM ëî  ÃN ëî  ÃO ëî  ÃP ëî  ÃQ ëî  ÃR ‘rIíßmissing¶plugin√¶genAbc¬ê‘  ‘rJî≤dynamicImportCacheπexportAllDeclarationCacheªexportNamedDeclarationCache´importCacheêêë‘rKñ§type•start£end´declaration™specifiers¶source∂ExportNamedDeclarationÕÕ‘rLô§type•start£end¢id™expression©generator•async¶params§body≥FunctionDeclarationÕÕ‘rMî§type•start£end§name™IdentifierÕ!Õ,´createViaAt¬¬¬ôM™IdentifierÕ-Õ0£docM™IdentifierÕ2Õ8¶policyM™IdentifierÕ:Õ=£posM™IdentifierÕ?ÕD•netIdM™IdentifierÕFÕMßnetNameM™IdentifierÕOÕX©fromLayerM™IdentifierÕZÕaßtoLayerM™IdentifierÕcÕqÆexistingTracksM™IdentifierÕsÕ¨existingVias‘rNî§type•start£end§bodyÆBlockStatementÕÅÕ‹ ‘rOï§type•start£end¨declarations§kind≥VariableDeclarationÕàÕØë‘rPï§type•start£end¢id§init≤VariableDeclaratorÕéÕÆM™IdentifierÕéÕì•rules‘rQó§type•start£end¶object®property®computed®optional∞MemberExpressionÕñÕÆQ∞MemberExpressionÕñÕ¢M™IdentifierÕñÕô£docM™IdentifierÕöÕ¢®metadata¬¬M™IdentifierÕ£ÕÆ´designRules¬¬•constO≥VariableDeclarationÕµÕ⁄ëP≤VariableDeclaratorÕπÕŸM™IdentifierÕπÕ¡®diameter‘rRñ§type•start£end§left®operator•right∞BinaryExpressionÕƒÕŸQ∞MemberExpressionÕƒÕ’M™IdentifierÕƒÕ…•rulesM™IdentifierÕ Õ’´minViaDrill¬¬°+‘rSï§type•start£end•value£rawßLiteralÕÿÕŸ°8£letO≥VariableDeclarationÕ‡Õ˛ëP≤VariableDeclaratorÕ‰Õ˝M™IdentifierÕ‰ÕÈ•drillQ∞MemberExpressionÕÏÕ˝M™IdentifierÕÏÕÒ•rulesM™IdentifierÕÚÕ˝´minViaDrill¬¬£let‘rTñ§type•start£end§test™consequent©alternate´IfStatementÕÕ(R∞BinaryExpressionÕÕQ∞MemberExpressionÕÕM™IdentifierÕÕ•netIdM™IdentifierÕÕ¶length¬¬°>SßLiteralÕÕ °0NÆBlockStatementÕÕ(ë‘rUó§type•start£end•await§left•right§bodyÆForOfStatementÕ%Õ!¬O≥VariableDeclarationÕ*Õ1ëP≤VariableDeclaratorÕ0Õ1M™IdentifierÕ0Õ1°n¿•constQ∞MemberExpressionÕ5Õ=M™IdentifierÕ5Õ8£docM™IdentifierÕ9Õ=§nets¬¬NÆBlockStatementÕ?Õ!ëT´IfStatementÕNÕR∞BinaryExpressionÕRÕ`Q∞MemberExpressionÕRÕVM™IdentifierÕRÕS°nM™IdentifierÕTÕV¢id¬¬£===M™IdentifierÕ[Õ`•netIdNÆBlockStatementÕbÕîO≥VariableDeclarationÕuÕùëP≤VariableDeclaratorÕ{ÕúM™IdentifierÕ{Õ}¢nc‘rVñ§type•start£end¶callee©arguments®optionalÆCallExpressionÕÄÕúM™IdentifierÕÄÕå¨findNetClassíM™IdentifierÕçÕê£docQ∞MemberExpressionÕíÕõM™IdentifierÕíÕì°nM™IdentifierÕîÕõßclassId¬¬¬•const‘rWî§type•start£end™expression≥ExpressionStatementÕØÕ…‘rXñ§type•start£end®operator§left•right¥AssignmentExpressionÕØÕ»°=M™IdentifierÕØÕ∑®diameterQ∞MemberExpressionÕ∫Õ»M™IdentifierÕ∫Õº¢ncM™IdentifierÕΩÕ»´viaDiameter¬¬W≥ExpressionStatementÕ€ÕÔX¥AssignmentExpressionÕ€ÕÓ°=M™IdentifierÕ€Õ‡•drillQ∞MemberExpressionÕ„ÕÓM™IdentifierÕ„ÕÂ¢ncM™IdentifierÕÊÕÓ®viaDrill¬¬‘rYî§type•start£end•labelÆBreakStatementÕÕ¿¿¿O≥VariableDeclarationÕ.ÕcëP≤VariableDeclaratorÕ4ÕbM™IdentifierÕ4Õ:¶copperVÆCallExpressionÕ=ÕbM™IdentifierÕ=ÕRµcopperLayersFromStackëQ∞MemberExpressionÕSÕaM™IdentifierÕSÕV£docM™IdentifierÕWÕa™layerStack¬¬¬•constO≥VariableDeclarationÕiÕæëP≤VariableDeclaratorÕmÕΩM™IdentifierÕmÕs¶layersTµConditionalExpressionÕvÕΩR∞BinaryExpressionÕvÕáQ∞MemberExpressionÕvÕÉM™IdentifierÕvÕ|¶copperM™IdentifierÕ}ÕÉ¶length¬¬°>SßLiteralÕÜÕá °0VÆCallExpressionÕäÕòQ∞MemberExpressionÕäÕñM™IdentifierÕäÕê¶copperM™IdentifierÕëÕñ•slice¬¬ê¬‘rZî§type•start£end®elementsØArrayExpressionÕõÕΩíQ∞MemberExpressionÕúÕ´M™IdentifierÕúÕ¶™PcbLayerIdM™IdentifierÕßÕ´§F_CU¬¬Q∞MemberExpressionÕ≠ÕºM™IdentifierÕ≠Õ∑™PcbLayerIdM™IdentifierÕ∏Õº§B_CU¬¬£letO≥VariableDeclarationÕƒÕ‚ëP≤VariableDeclaratorÕ»Õ·M™IdentifierÕ»ÕÃ§kindQ∞MemberExpressionÕœÕ·M™IdentifierÕœÕŸ™PcbViaKindM™IdentifierÕ⁄Õ·ßTHROUGH¬¬£letO≥VariableDeclarationÕËÕGëP≤VariableDeclaratorÕÓÕFM™IdentifierÕÓÕ˚≠preferThroughR±LogicalExpressionÕ˛ÕFR∞BinaryExpressionÕ˛Õ Q∞MemberExpressionÕ˛ÕM™IdentifierÕ˛Õ¶policyM™IdentifierÕÕ≠viaPreference¬¬£===M™IdentifierÕÕ ©undefined¢||Q∞MemberExpressionÕ$ÕFQ∞MemberExpressionÕ$Õ8M™IdentifierÕ$Õ*¶policyM™IdentifierÕ+Õ8≠viaPreference¬¬M™IdentifierÕ9ÕF≠preferThrough¬¬•constT´IfStatementÕMÕMR±LogicalExpressionÕQÕ¨R±LogicalExpressionÕQÕìR±LogicalExpressionÕQÕz‘r[ñ§type•start£end®operator¶prefix®argumentØUnaryExpressionÕQÕ_°!√M™IdentifierÕRÕ_≠preferThrough¢&&R∞BinaryExpressionÕcÕzM™IdentifierÕcÕl©fromLayer£!==M™IdentifierÕqÕz©undefined¢&&R∞BinaryExpressionÕ~ÕìM™IdentifierÕ~ÕÖßtoLayer£!==M™IdentifierÕäÕì©undefined¢&&R∞BinaryExpressionÕóÕ¨M™IdentifierÕóÕ†©fromLayer£!==M™IdentifierÕ•Õ¨ßtoLayerNÆBlockStatementÕÆÕMìO≥VariableDeclarationÕπÕﬁëP≤VariableDeclaratorÕøÕ›M™IdentifierÕøÕ¡¢fiVÆCallExpressionÕƒÕ›Q∞MemberExpressionÕƒÕ“M™IdentifierÕƒÕ ¶copperM™IdentifierÕÀÕ“ßindexOf¬¬ëM™IdentifierÕ”Õ‹©fromLayer¬•constO≥VariableDeclarationÕËÕëP≤VariableDeclaratorÕÓÕ
+M™IdentifierÕÓÕ¢tiVÆCallExpressionÕÛÕ
+Q∞MemberExpressionÕÛÕM™IdentifierÕÛÕ˘¶copperM™IdentifierÕ˙ÕßindexOf¬¬ëM™IdentifierÕÕ	ßtoLayer¬•constT´IfStatementÕÕFR±LogicalExpressionÕÕ+R∞BinaryExpressionÕÕ M™IdentifierÕÕ¢fi¢>=SßLiteralÕÕ  °0¢&&R∞BinaryExpressionÕ$Õ+M™IdentifierÕ$Õ&¢ti¢>=SßLiteralÕ*Õ+ °0NÆBlockStatementÕ-ÕFïO≥VariableDeclarationÕ<ÕXëP≤VariableDeclaratorÕBÕWM™IdentifierÕBÕD¢loVÆCallExpressionÕGÕWQ∞MemberExpressionÕGÕOM™IdentifierÕGÕK§MathM™IdentifierÕLÕO£min¬¬íM™IdentifierÕPÕR¢fiM™IdentifierÕTÕV¢ti¬•constO≥VariableDeclarationÕfÕÇëP≤VariableDeclaratorÕlÕÅM™IdentifierÕlÕn¢hiVÆCallExpressionÕqÕÅQ∞MemberExpressionÕqÕyM™IdentifierÕqÕu§MathM™IdentifierÕvÕy£max¬¬íM™IdentifierÕzÕ|¢fiM™IdentifierÕ~ÕÄ¢ti¬•constW≥ExpressionStatementÕêÕúX¥AssignmentExpressionÕêÕõ°=M™IdentifierÕêÕñ¶layersZØArrayExpressionÕôÕõê‘r\ó§type•start£end§init§test¶update§body¨ForStatementÕ™ÕO≥VariableDeclarationÕØÕπëP≤VariableDeclaratorÕ≥ÕπM™IdentifierÕ≥Õ¥°iM™IdentifierÕ∑Õπ¢lo£letR∞BinaryExpressionÕªÕ¬M™IdentifierÕªÕº°i¢<=M™IdentifierÕ¿Õ¬¢hi[∞UpdateExpressionÕƒÕ«¢++¬M™IdentifierÕƒÕ≈°iNÆBlockStatementÕ…ÕëW≥ExpressionStatementÕ‹ÕÛVÆCallExpressionÕ‹ÕÚQ∞MemberExpressionÕ‹ÕÁM™IdentifierÕ‹Õ‚¶layersM™IdentifierÕ„ÕÁ§push¬¬ëQ∞MemberExpressionÕËÕÒM™IdentifierÕËÕÓ¶copperM™IdentifierÕÔÕ°i√¬¬T´IfStatementÕÕ;R±LogicalExpressionÕÕ8R∞BinaryExpressionÕÕM™IdentifierÕÕ¢lo£===SßLiteralÕÕ °0¢&&R∞BinaryExpressionÕ Õ8M™IdentifierÕ Õ"¢hi£===R∞BinaryExpressionÕ'Õ8Q∞MemberExpressionÕ'Õ4M™IdentifierÕ'Õ-¶copperM™IdentifierÕ.Õ4¶length¬¬°-SßLiteralÕ7Õ8°1NÆBlockStatementÕ:ÕvëW≥ExpressionStatementÕMÕgX¥AssignmentExpressionÕMÕf°=M™IdentifierÕMÕQ§kindQ∞MemberExpressionÕTÕfM™IdentifierÕTÕ^™PcbViaKindM™IdentifierÕ_ÕfßTHROUGH¬¬T´IfStatementÕâÕ;R±LogicalExpressionÕçÕ±R∞BinaryExpressionÕçÕïM™IdentifierÕçÕè¢lo£===SßLiteralÕîÕï °0¢||R∞BinaryExpressionÕôÕ±M™IdentifierÕôÕõ¢hi£===R∞BinaryExpressionÕ†Õ±Q∞MemberExpressionÕ†Õ≠M™IdentifierÕ†Õ¶¶copperM™IdentifierÕßÕ≠¶length¬¬°-SßLiteralÕ∞Õ±°1NÆBlockStatementÕ≥ÕÌëW≥ExpressionStatementÕ∆ÕﬁX¥AssignmentExpressionÕ∆Õ›°=M™IdentifierÕ∆Õ §kindQ∞MemberExpressionÕÕÕ›M™IdentifierÕÕÕ◊™PcbViaKindM™IdentifierÕÿÕ›•BLIND¬¬NÆBlockStatementÕ Õ;ëW≥ExpressionStatementÕÕ,X¥AssignmentExpressionÕÕ+°=M™IdentifierÕÕ§kindQ∞MemberExpressionÕÕ+M™IdentifierÕÕ$™PcbViaKindM™IdentifierÕ%Õ+¶BURIED¬¬¿¿O≥VariableDeclarationÕSÕ{ëP≤VariableDeclaratorÕYÕzM™IdentifierÕYÕ]§gridR±LogicalExpressionÕ`ÕzQ∞MemberExpressionÕ`ÕuQ∞MemberExpressionÕ`ÕlM™IdentifierÕ`Õc£docM™IdentifierÕdÕl®metadata¬¬M™IdentifierÕmÕu®gridSize¬¬¢??SßLiteralÕyÕz°5•constO≥VariableDeclarationÕÅÕßëP≤VariableDeclaratorÕÖÕ¶M™IdentifierÕÖÕç®finalPos‘r]î§type•start£end™properties∞ObjectExpressionÕêÕ¶í‘r^ô§type•start£end¶method©shorthand®computed£key•value§kind®PropertyÕíÕö¬¬¬M™IdentifierÕíÕì°xQ∞MemberExpressionÕïÕöM™IdentifierÕïÕò£posM™IdentifierÕôÕö°x¬¬§init^®PropertyÕúÕ§¬¬¬M™IdentifierÕúÕù°yQ∞MemberExpressionÕüÕ§M™IdentifierÕüÕ¢£posM™IdentifierÕ£Õ§°y¬¬§init£letO≥VariableDeclarationÕ≠ÕŸëP≤VariableDeclaratorÕ≥ÕÿM™IdentifierÕ≥Õπ¶tracksR±LogicalExpressionÕºÕÿM™IdentifierÕºÕ ÆexistingTracks¢??Q∞MemberExpressionÕŒÕÿM™IdentifierÕŒÕ—£docM™IdentifierÕ“Õÿ¶tracks¬¬•constO≥VariableDeclarationÕﬂÕëP≤VariableDeclaratorÕÂÕM™IdentifierÕÂÕÈ§viasR±LogicalExpressionÕÏÕM™IdentifierÕÏÕ¯¨existingVias¢??Q∞MemberExpressionÕ¸ÕM™IdentifierÕ¸Õˇ£docM™IdentifierÕ Õ§vias¬¬•constT´IfStatementÕÕ7[ØUnaryExpressionÕÕP°!√VÆCallExpressionÕÕPM™IdentifierÕÕ™viaClearAtóM™IdentifierÕÕ£docM™IdentifierÕ Õ(®finalPosM™IdentifierÕ*Õ/•netIdM™IdentifierÕ1Õ9®diameterM™IdentifierÕ;ÕA¶layersM™IdentifierÕCÕI¶tracksM™IdentifierÕKÕO§vias¬NÆBlockStatementÕRÕ7îO≥VariableDeclarationÕ]Õ	HëP≤VariableDeclaratorÕcÕ	GM™IdentifierÕcÕjßoffsetsZØArrayExpressionÕmÕ	GúZØArrayExpressionÕ|ÕÖíM™IdentifierÕ}ÕÅ§gridSßLiteralÕÉÕÑ °0ZØArrayExpressionÕáÕëí[ØUnaryExpressionÕàÕç°-√M™IdentifierÕâÕç§gridSßLiteralÕèÕê °0ZØArrayExpressionÕìÕúíSßLiteralÕîÕï °0M™IdentifierÕóÕõ§gridZØArrayExpressionÕûÕ®íSßLiteralÕüÕ† °0[ØUnaryExpressionÕ¢Õß°-√M™IdentifierÕ£Õß§gridZØArrayExpressionÕ∑ÕƒíR∞BinaryExpressionÕ∏Õ¿M™IdentifierÕ∏Õº§grid°*SßLiteralÕøÕ¿°2SßLiteralÕ¬Õ√ °0ZØArrayExpressionÕ∆Õ‘íR∞BinaryExpressionÕ«Õ–[ØUnaryExpressionÕ«ÕÃ°-√M™IdentifierÕ»ÕÃ§grid°*SßLiteralÕœÕ–°2SßLiteralÕ“Õ” °0ZØArrayExpressionÕ÷Õ„íSßLiteralÕ◊Õÿ °0R∞BinaryExpressionÕ⁄Õ‚M™IdentifierÕ⁄Õﬁ§grid°*SßLiteralÕ·Õ‚°2ZØArrayExpressionÕÂÕÛíSßLiteralÕÊÕÁ °0R∞BinaryExpressionÕÈÕÚ[ØUnaryExpressionÕÈÕÓ°-√M™IdentifierÕÍÕÓ§grid°*SßLiteralÕÒÕÚ°2ZØArrayExpressionÕ	Õ	íM™IdentifierÕ	Õ	§gridM™IdentifierÕ		Õ	§gridZØArrayExpressionÕ	Õ	í[ØUnaryExpressionÕ	Õ	°-√M™IdentifierÕ	Õ	§gridM™IdentifierÕ	Õ	§gridZØArrayExpressionÕ	Õ	,íM™IdentifierÕ	 Õ	$§grid[ØUnaryExpressionÕ	&Õ	+°-√M™IdentifierÕ	'Õ	+§gridZØArrayExpressionÕ	.Õ	<í[ØUnaryExpressionÕ	/Õ	4°-√M™IdentifierÕ	0Õ	4§grid[ØUnaryExpressionÕ	6Õ	;°-√M™IdentifierÕ	7Õ	;§grid•constO≥VariableDeclarationÕ	RÕ	dëP≤VariableDeclaratorÕ	VÕ	cM™IdentifierÕ	VÕ	[•foundSßLiteralÕ	^Õ	c¬•false£let\¨ForStatementÕ	nÕ
+ÆO≥VariableDeclarationÕ	sÕ	|ëP≤VariableDeclaratorÕ	wÕ	|M™IdentifierÕ	wÕ	x°iSßLiteralÕ	{Õ	| °0£letR∞BinaryExpressionÕ	~Õ	êM™IdentifierÕ	~Õ	°i°<Q∞MemberExpressionÕ	ÇÕ	êM™IdentifierÕ	ÇÕ	âßoffsetsM™IdentifierÕ	äÕ	ê¶length¬¬[∞UpdateExpressionÕ	íÕ	ï¢++¬M™IdentifierÕ	íÕ	ì°iNÆBlockStatementÕ	óÕ
+ÆíO≥VariableDeclarationÕ	¶Õ	ÍëP≤VariableDeclaratorÕ	¨Õ	ÈM™IdentifierÕ	¨Õ	∞§cand]∞ObjectExpressionÕ	≥Õ	Èí^®PropertyÕ	µÕ	Õ¬¬¬M™IdentifierÕ	µÕ	∂°xR∞BinaryExpressionÕ	∏Õ	ÕQ∞MemberExpressionÕ	∏Õ	ΩM™IdentifierÕ	∏Õ	ª£posM™IdentifierÕ	ºÕ	Ω°x¬¬°+Q∞MemberExpressionÕ	¿Õ	ÕQ∞MemberExpressionÕ	¿Õ	 M™IdentifierÕ	¿Õ	«ßoffsetsM™IdentifierÕ	»Õ	…°i√¬SßLiteralÕ	ÀÕ	Ã °0√¬§init^®PropertyÕ	œÕ	Á¬¬¬M™IdentifierÕ	œÕ	–°yR∞BinaryExpressionÕ	“Õ	ÁQ∞MemberExpressionÕ	“Õ	◊M™IdentifierÕ	“Õ	’£posM™IdentifierÕ	÷Õ	◊°y¬¬°+Q∞MemberExpressionÕ	⁄Õ	ÁQ∞MemberExpressionÕ	⁄Õ	‰M™IdentifierÕ	⁄Õ	·ßoffsetsM™IdentifierÕ	‚Õ	„°i√¬SßLiteralÕ	ÂÕ	Ê°1√¬§init•constT´IfStatementÕ	¯Õ
+£VÆCallExpressionÕ	¸Õ
+8M™IdentifierÕ	¸Õ
+™viaClearAtóM™IdentifierÕ
+Õ
+
+£docM™IdentifierÕ
+Õ
+§candM™IdentifierÕ
+Õ
+•netIdM™IdentifierÕ
+Õ
+!®diameterM™IdentifierÕ
+#Õ
+)¶layersM™IdentifierÕ
++Õ
+1¶tracksM™IdentifierÕ
+3Õ
+7§vias¬NÆBlockStatementÕ
+:Õ
+£ìW≥ExpressionStatementÕ
+MÕ
+]X¥AssignmentExpressionÕ
+MÕ
+\°=M™IdentifierÕ
+MÕ
+U®finalPosM™IdentifierÕ
+XÕ
+\§candW≥ExpressionStatementÕ
+oÕ
+|X¥AssignmentExpressionÕ
+oÕ
+{°=M™IdentifierÕ
+oÕ
+t•foundSßLiteralÕ
+wÕ
+{√§trueYÆBreakStatementÕ
+éÕ
+î¿¿T´IfStatementÕ
+∏Õ0[ØUnaryExpressionÕ
+ºÕ
+¬°!√M™IdentifierÕ
+ΩÕ
+¬•foundNÆBlockStatementÕ
+ƒÕ0ëW≥ExpressionStatementÕÕ%X¥AssignmentExpressionÕÕ$°=M™IdentifierÕÕ®finalPos]∞ObjectExpressionÕÕ$í^®PropertyÕÕ¬¬¬M™IdentifierÕÕ°xQ∞MemberExpressionÕÕM™IdentifierÕÕ£posM™IdentifierÕÕ°x¬¬§init^®PropertyÕÕ"¬¬¬M™IdentifierÕÕ°yQ∞MemberExpressionÕÕ"M™IdentifierÕÕ £posM™IdentifierÕ!Õ"°y¬¬§init¿¿O≥VariableDeclarationÕ=Õ¯ëP≤VariableDeclaratorÕCÕ˜M™IdentifierÕCÕF£via]∞ObjectExpressionÕIÕ˜ò^®PropertyÕTÕn¬¬¬M™IdentifierÕTÕV¢idVÆCallExpressionÕXÕnQ∞MemberExpressionÕXÕgM™IdentifierÕXÕ^¶IdUtilM™IdentifierÕ_Õg®generate¬¬ëSßLiteralÕhÕm£via•'via'¬§init^®PropertyÕyÕã¬¬¬M™IdentifierÕyÕÅ®positionM™IdentifierÕÉÕã®finalPos§init‘r_ô§type•start£end¶method©shorthand®computed£key§kind•value®PropertyÕñÕõ¬√¬M™IdentifierÕñÕõ•drill§initM™IdentifierÕñÕõ•drill_®PropertyÕ¶ÕÆ¬√¬M™IdentifierÕ¶ÕÆ®diameter§initM™IdentifierÕ¶ÕÆ®diameter_®PropertyÕπÕæ¬√¬M™IdentifierÕπÕæ•netId§initM™IdentifierÕπÕæ•netId_®PropertyÕ…Õ–¬√¬M™IdentifierÕ…Õ–ßnetName§initM™IdentifierÕ…Õ–ßnetName_®PropertyÕ€Õ·¬√¬M™IdentifierÕ€Õ·¶layers§initM™IdentifierÕ€Õ·¶layers_®PropertyÕÏÕ¬√¬M™IdentifierÕÏÕ§kind§initM™IdentifierÕÏÕ§kind•const‘r`î§type•start£end®argumentØReturnStatementÕ˛Õ	M™IdentifierÕÕ£viaê¿î‘raï§type•start£end™specifiers¶source±ImportDeclaration2Ãáì‘rbï§type•start£end®imported•localØImportSpecifier;ÃEM™Identifier;ÃE™PcbLayerIdM™Identifier;ÃE™PcbLayerIdbØImportSpecifierÃGÃQM™IdentifierÃGÃQ™PcbViaKindM™IdentifierÃGÃQ™PcbViaKindbØImportSpecifierÃSÃhM™IdentifierÃSÃhµcopperLayersFromStackM™IdentifierÃSÃhµcopperLayersFromStackSßLiteralÃpÃÜ¥../../types/PcbTypes∂'../../types/PcbTypes'a±ImportDeclarationÃâÃ¨ëbØImportSpecifierÃíÃòM™IdentifierÃíÃò¶IdUtilM™IdentifierÃíÃò¶IdUtilSßLiteralÃ†Ã´©../IdUtil´'../IdUtil'a±ImportDeclarationÃÆÃ€ëbØImportSpecifierÃ∑Ã√M™IdentifierÃ∑Ã√¨findNetClassM™IdentifierÃ∑Ã√¨findNetClassSßLiteralÃÀÃ⁄≠../PcbNetUtilØ'../PcbNetUtil'a±ImportDeclarationÃ›ÕëbØImportSpecifierÃÊÃM™IdentifierÃÊÃ™viaClearAtM™IdentifierÃÊÃ™viaClearAtSßLiteralÃ¯Õ¥./PcbClearanceOracle∂'./PcbClearanceOracle'

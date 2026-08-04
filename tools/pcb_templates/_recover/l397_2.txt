@@ -1,0 +1,7 @@
+for (const d of [
+  def0805(), def0603(), def1206(), defSOIC8(), defDIP8(), defDIP40(), defQFP48(), defHC49(),
+  defSOT23(), defTHT2(), defTO2203(),
+  defPinHeader(4), defPinHeader(6), defPinHeader(8), defMountHole()
+]) {
+  DEFS.set(d.id, d);
+}

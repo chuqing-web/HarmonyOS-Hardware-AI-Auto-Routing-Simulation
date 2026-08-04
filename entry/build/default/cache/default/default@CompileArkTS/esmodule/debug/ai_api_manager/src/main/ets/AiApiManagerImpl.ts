@@ -228,9 +228,7 @@ export class AiApiManagerImpl implements IAiApiManager {
         return this.addApiInternal(config, false);
     }
     /**
-     * 金库/工程恢复专用：跳过 FeatureGate 数量上限。
-     * 否则启动时试用/授权尚未生效（FREE maxAiApis 过低）会只灌入 1 条，
-     * 随后 sync 再把金库整表写穿成 1 条。
+     * 金库/工程恢复专用：跳过 FeatureGate（历史兼容；当前全功能开放时与 addApi 等价）。
      */
     restoreApi(config: AiApiConfig): Result<void> {
         return this.addApiInternal(config, true);

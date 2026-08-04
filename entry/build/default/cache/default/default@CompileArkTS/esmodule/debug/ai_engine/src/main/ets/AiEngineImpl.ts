@@ -16,10 +16,11 @@ import { AiResultCache } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets
 import { TeachingService } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/TeachingService";
 import type { IComponentLibrary } from 'component_library';
 import { AiCapability, EventBus, ModuleEvent, ErcSeverity, ErcRuleType, AiTaskType, ErrCode, ResultHelper, TopologyAdapter, makeProgress, makeRouteLine, emptySchTopology, DynamicErcEngine, Logger, INSTR_TRACE_TAG, AiErcGateUtil, traceAiDiag, traceAiOp } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { AiRequest, AiResponse, SchematicDocument, SimulationResult, ErcViolation, Result, LogicState, SchTopology, AiTaskResult, DiagError, BomOptResult, WaveData, ProgressCallback, ApiResult, RouteResult, RouteLine, DeviceSelectLlmOutput, RoutingLlmOutput, AiPipelineResult, DeviceSelectResult } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { AiRequest, AiResponse, SchematicDocument, SimulationResult, ErcViolation, Result, LogicState, SchTopology, AiTaskResult, DiagError, BomOptResult, WaveData, ProgressCallback, ApiResult, RouteResult, RouteLine, DeviceSelectLlmOutput, RoutingLlmOutput, AiPipelineResult, DeviceSelectResult, PcbDocument, PcbAiRouteResult, PcbDrcViolation } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import type { AiTaskExtra, DiagLevel, DiagTargetType } from './internal/AiEngineTypes';
 import { arrayMax, arrayMin, arraySum, buildBomCounts, buildBomReplacements, concatStringArrays, copyParamsFromRecord, filterSchematicComponents, getAllAiCapabilities, getTaskCapability, iterateSignalEntries, paramsMapToRecord, replacementsToMap } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/internal/AiEngineHelpers";
+import { PcbRouteCoordinator } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbRouteCoordinator";
 export class AiEngineImpl implements IAiEngine {
     private apiManager: IAiApiManager;
     private componentLibrary: IComponentLibrary | null = null;
@@ -435,6 +436,42 @@ export class AiEngineImpl implements IAiEngine {
         const routeLlm = await this.fetchRoutingConstraints(topo);
         let routeResult = await this.constrainedWiring.routeUntilCleanAsync(topo, routeLlm, undefined, undefined, 3);
         return ResultHelper.ok(routeResult);
+    }
+    async aiPcbAutoRoute(doc: PcbDocument, runDrc: (d: PcbDocument) => PcbDrcViolation[], onProgress?: ProgressCallback): Promise<ApiResult<PcbAiRouteResult>> {
+        this.cancelled = false;
+        this.apiManager.clearChatCancel();
+        if (!this.isEnabled(AiCapability.PCB_AUTO_ROUTE)) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'PCB AI 布线未启用');
+        }
+        const quota = this.apiManager.checkGlobalAiQuota();
+        if (!quota.success) {
+            return ResultHelper.fail(quota.errCode ?? ErrCode.ERR_QUOTA_EXCEEDED, quota.error ?? 'AI 配额不足');
+        }
+        onProgress?.(makeProgress(5, 'PCB AI 布线开始'));
+        Logger.info(INSTR_TRACE_TAG, '[AI_TASK] START TASK_PCB_AUTO_ROUTE');
+        const coord = new PcbRouteCoordinator();
+        const result = await coord.run(doc, this.apiManager, runDrc, () => this.cancelled, onProgress);
+        onProgress?.(makeProgress(100, result.success ? 'PCB AI 布线完成' : 'PCB AI 布线失败', true));
+        if (!result.success) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, `${result.abortStage}: ${result.abortReason}`);
+        }
+        if (!result.usedLlm) {
+            return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, 'PCB AI 拒绝非 LLM 交付');
+        }
+        // 硬 residual 双保险：unused_copper / signal_fail / SHORT|CLEARANCE 拒交付
+        if (result.deliveredWithResidual) {
+            const kind = result.residualKind ?? 'drc';
+            const note = (result.messages[0] ?? '').toUpperCase();
+            const hard = kind === 'unused_copper' || kind === 'signal_fail' || kind === 'placement_only' ||
+                note.indexOf('SHORT') >= 0 || note.indexOf('CLEARANCE') >= 0 ||
+                (kind !== 'unrouted' && kind !== 'none');
+            if (hard) {
+                Logger.error(INSTR_TRACE_TAG, `[AI_TASK] TASK_PCB_AUTO_ROUTE refuse dirty residual kind=${kind}`);
+                return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, `refuse dirty residual[${kind}]: ${result.messages[0] ?? ''}`);
+            }
+            Logger.warn(INSTR_TRACE_TAG, `[AI_TASK] TASK_PCB_AUTO_ROUTE soft residual | ${result.messages[0] ?? ''}`);
+        }
+        return ResultHelper.ok(result);
     }
     async aiStaticDiagnose(topo: SchTopology): Promise<ApiResult<DiagError[]>> {
         const cached = this.resultCache.getCachedDiag(topo);

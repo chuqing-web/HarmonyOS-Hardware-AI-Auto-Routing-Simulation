@@ -81,16 +81,17 @@ export class Pcb3dMeshBuilder {
             const zh = cuH * 0.6;
             mesh.addBox(new Vec3(xMin, yMin, zMid - zh * 0.5), new Vec3(xMax, yMax, zMid + zh * 0.5), PbrMats.copper());
         }
-        // 过孔：提高圆柱段数（16 段外筒 + 12 段内筒）
+        // 过孔：整段等径金黄筒（外径=焊盘）+ 贴面环
         for (let i = 0; i < doc.vias.length; i++) {
             if (mesh.tris.length > maxTris)
                 break;
             const v = doc.vias[i];
             const rOut = v.diameter * 0.5;
-            const rIn = Math.max(2, v.drill * 0.5);
-            mesh.addCylinder(v.position.x, v.position.y, -cuH, boardH + cuH, rIn + 0.8, 16, PbrMats.barrel(), false);
-            mesh.addCylinder(v.position.x, v.position.y, boardH + 0.5, boardH + cuH + 0.2, rOut, 16, PbrMats.enig(), true);
-            mesh.addCylinder(v.position.x, v.position.y, -cuH - 0.2, 0.2, rOut, 16, PbrMats.copper(), true);
+            const ringH = Math.max(0.35, cuH * 0.35);
+            // 孔壁外径与焊盘一致，避免中间收细
+            mesh.addCylinder(v.position.x, v.position.y, 0.2, boardH - 0.2, rOut, 16, PbrMats.enig(), false);
+            mesh.addCylinder(v.position.x, v.position.y, boardH - 0.05, boardH + ringH, rOut, 16, PbrMats.enig(), true);
+            mesh.addCylinder(v.position.x, v.position.y, -ringH, 0.15, rOut, 16, PbrMats.enig(), true);
         }
         // 封装
         for (let fi = 0; fi < doc.footprints.length; fi++) {

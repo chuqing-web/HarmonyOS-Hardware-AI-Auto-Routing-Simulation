@@ -62,5 +62,41 @@ export function stageCapabilityBlurb(stage: string): string {
             '- 非生产整图路径；生产请走 full pipeline\n' +
             '- 不可用：当作模板回退入口';
     }
+    else if (key === 'pcb_placement') {
+        body = '【本阶段能力 — pcb_placement】:\n' +
+            '- 输出：placements 位姿 + groups 分组 + lockedIds\n' +
+            '- 安装孔写入 lockedIds；禁止原位复读（echo 门禁）\n' +
+            '- groups 同组须空间聚集，否则失败\n' +
+            '- 不可用：track/via 折点坐标；本地网格冒充布局\n' +
+            '- 工具边界：只规划位姿；走线由 pcb_route + 几何引擎';
+    }
+    else if (key === 'pcb_net_plan') {
+        body = '【本阶段能力 — pcb_net_plan】:\n' +
+            '- 输出：nets[] kind/routeMode/priority/layerHint/busYOffset + priorityOrder\n' +
+            '- Cu=2 有信号时电源/地优先 forceTrack（勿 forcePour）\n' +
+            '- busYOffset：同层多电源 Y 错开；layerHint 供几何选层\n' +
+            '- 不可用：发明新电气网；输出铜线坐标\n' +
+            '- 工具边界：覆盖已有网络策略；层角色留给 pcb_route';
+    }
+    else if (key === 'pcb_route') {
+        body = '【本阶段能力 — pcb_route】:\n' +
+            '- 输出：layerRoles（覆盖每一铜层）+ viaPreference + netPriority\n' +
+            '- netPriority 被几何引擎用于布线先后（越大越先）\n' +
+            '- gnd/power 非 defer 时需 gnd_bus|vcc_bus|power_h|power_v（Cu=2 可 B.Cu=signal_h 兼用）\n' +
+            '- Cu≥4/6/8：禁止空层；每层须有真实角色；保留至少一层 stub\n' +
+            '- 不可用：跳过本阶段；用本地 Cu 默认表冒充；输出走线折点\n' +
+            '- 工具边界：策略填写；几何由 PcbGeometryAgent 执行';
+    }
+    else if (key === 'pcb_qa_repair') {
+        body = '【本阶段能力 — pcb_qa_repair】:\n' +
+            '- 输出：ripNetIds / layerRolePatch / routeModePatch / busYOffsetPatch / raiseCopperTo / rePlaceFootprintIds\n' +
+            '- layerRolePatch 的 key=铜层名(F.Cu/B.Cu)，value=合法角色；禁止网络名作 key\n' +
+            '- power bus clearance：优先 routeModePatch forcePour→forceTrack，或 busYOffsetPatch 错开；勿反复翻层角色\n' +
+            '- Cu=2 持续冲突可 raiseCopperTo=4/6/8 并补齐新层角色\n' +
+            '- 禁止删唯一 stub；信号 clearance 优先 ripNetIds（可用网名）\n' +
+            '- 不可用：忽略违规继续交付；无 LLM 的盲重试几何\n' +
+            '- 工具边界：只决定修复方案；执行仍走几何/布局 Agent\n' +
+            '- 批判耗尽由管线 KEEP_RETRY/ACCEPT residual（须有铜），禁止因本阶段主动 ABORT';
+    }
     return body.length > 0 ? `\n${body}\n` : '';
 }

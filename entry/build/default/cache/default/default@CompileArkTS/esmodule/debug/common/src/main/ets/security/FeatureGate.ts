@@ -21,7 +21,7 @@ export class FeatureGate {
         FeatureGate.assertNotTampered();
         const max = FeatureGate.getFeatures().maxDevices;
         if (currentCount >= max) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, `免费版单工程最多 ${max} 个器件，请升级专业版`);
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, `免费版单工程最多 ${max} 个器件，请 GitHub Star 解锁专业版`);
         }
         return ResultHelper.ok();
     }
@@ -29,7 +29,7 @@ export class FeatureGate {
         FeatureGate.assertNotTampered();
         const limit = FeatureGate.getFeatures().dailyAiCalls;
         if (globalDailyCount >= limit) {
-            return ResultHelper.fail(ErrCode.ERR_QUOTA_EXCEEDED, `今日 AI 调用已达上限 (${limit})，请升级或明日再试`);
+            return ResultHelper.fail(ErrCode.ERR_QUOTA_EXCEEDED, `今日 AI 调用已达上限 (${limit})，请 Star 解锁或明日再试`);
         }
         return ResultHelper.ok();
     }
@@ -42,49 +42,49 @@ export class FeatureGate {
     }
     static canUseStm32Advanced(): ApiResult<void> {
         if (!FeatureGate.getFeatures().stm32AdvancedPeriph) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 高级外设需专业版授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, 'STM32 高级外设需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canUseMonteCarlo(): ApiResult<void> {
         if (!FeatureGate.getFeatures().monteCarlo) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '蒙特卡洛仿真需专业版授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '蒙特卡洛仿真需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canUseFaultInjection(): ApiResult<void> {
         if (!FeatureGate.getFeatures().faultInjection) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '故障注入需专业版授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '故障注入需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canUsePlugins(): ApiResult<void> {
         if (!FeatureGate.getFeatures().pluginSystem) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '插件系统需专业版授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '插件系统需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canEncryptProject(): ApiResult<void> {
         if (!FeatureGate.getFeatures().projectEncryption) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '工程加密需专业版授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '工程加密需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canUseTeamCollaboration(): ApiResult<void> {
         if (!FeatureGate.getFeatures().teamAnnotation) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '团队批注需专业版及以上授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '团队批注需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canUseVersionCompare(): ApiResult<void> {
         if (!FeatureGate.getFeatures().versionCompare) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '版本对比需专业版及以上授权');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '版本对比需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }
     static canBatchExportBom(): ApiResult<void> {
         if (!FeatureGate.getFeatures().batchBomExport) {
-            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '批量 BOM 导出需专业版');
+            return ResultHelper.fail(ErrCode.ERR_FEATURE_LOCKED, '批量 BOM 导出需专业版（GitHub Star 解锁）');
         }
         return ResultHelper.ok();
     }

@@ -1,0 +1,10 @@
+{
+  "line": 482,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\export.mjs",
+  "hit": [
+    "BJT_PIN_TO_PAD"
+  ],
+  "old_string": "function isDualOpAmpLib(libDevId) {\n  const lib = (libDevId || '').toLowerCase();\n  return lib.includes('lm358') || lib.includes('tl082') || lib.includes('lm324') ||\n    lib.includes('ne5532') || lib === '741' || lib.includes('opamp');\n}",
+  "new_string": "function isDualOpAmpLib(libDevId) {\n  const lib = (libDevId || '').toLowerCase();\n  return lib.includes('lm358') || lib.includes('tl082') || lib.includes('lm324') ||\n    lib.includes('ne5532') || lib === '741' || lib.includes('opamp');\n}\n\n/** SOT-23 / TO-220 教学脚位：与 DeviceLibrary meta 一致 1=B/G 2=C/D 3=E/S */\nconst BJT_PIN_TO_PAD = new Map([\n  ['B', '1'], ['BASE', '1'],\n  ['C', '2'], ['COLLECTOR', '2'],\n  ['E', '3'], ['EMITTER', '3']\n]);\nconst MOS_PIN_TO_PAD = new Map([\n  ['G', '1'], ['GATE', '1'],\n  ['D', '2'], ['DRAIN', '2'],\n  ['S', '3'], ['SOURCE', '3']\n]);\n\nfunction isBjtLib(libDevId) {\n  const lib = (libDevId || '').toLowerCase();\n  if (lib.includes('2n7000') || lib.includes('2n7002')) return false;\n  return lib.includes('2n2222') || lib.includes('2n2907') || lib.includes('bjt') ||\n    (lib.startsWith('2n') && !lib.includes('700'));\n}\nfunction isMosLib(libDevId) {\n  const lib = (libDevId || '').toLowerCase();\n  return lib.includes('2n7000') || lib.includes('2n7002') || lib.includes('irf') ||\n    lib.includes('mosfet') || (lib.includes('mos') && !lib.includes('cmos'));\n}"
+}

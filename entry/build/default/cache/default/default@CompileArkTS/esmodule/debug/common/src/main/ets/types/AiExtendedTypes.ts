@@ -18,7 +18,9 @@ export enum AiTaskType {
     /** LLM 布局约束 + GA 坐标优化 */
     TASK_LAYOUT_PLACE = 12,
     /** 选型 → 摆放 → 布线 → ERC 全闭环 */
-    TASK_FULL_PIPELINE = 13
+    TASK_FULL_PIPELINE = 13,
+    /** PCB 布局 AI：placement → net_plan → route_policy → geometry → qa */
+    TASK_PCB_AUTO_ROUTE = 14
 }
 export interface DiagError {
     level: 'warning' | 'error' | 'critical';

@@ -1,12 +1,11 @@
 /**
  * 内置封装库 — KiCad 常用 SMD/THT 封装（简化几何）
- * 覆盖全部 82 种内置 libraryId
+ * 封装映射与 tools/pcb_templates + Test_Template 对齐（全部内置 libraryId）
  */
 import { IdUtil } from './IdUtil';
 import { Point2D } from '../types/CommonTypes';
 import {
-  PcbFootprintDef, PcbPad, PcbPadShape, PcbPadType, PcbLayerId, PcbFootprintInst,
-  PcbPadNetPreserved
+  PcbFootprintDef, PcbPad, PcbPadShape, PcbPadType, PcbLayerId, PcbFootprintInst
 } from '../types/PcbTypes';
 
 const MIL = 1;
@@ -276,6 +275,26 @@ function defTO2203(): PcbFootprintDef {
   };
 }
 
+/** LM2596 等 5 脚直插（与模板 lab_analog_ic 一致） */
+function defSIP5(): PcbFootprintDef {
+  const pads: PcbPad[] = [];
+  const pitch = 100;
+  const startX = -200;
+  for (let i = 0; i < 5; i++) {
+    pads.push(thPad(`${i + 1}`, startX + i * pitch, 0, 40, 70));
+  }
+  return {
+    id: 'FP_SIP5',
+    name: 'SIP-5',
+    description: '5-pin SIP (LM2596 teaching)',
+    pads: pads,
+    silkLines: rectSilk(220, 40),
+    courtyard: [
+      { x: -240, y: -50 }, { x: 240, y: -50 }, { x: 240, y: 50 }, { x: -240, y: 50 }
+    ]
+  };
+}
+
 /** TO-92 三极管/传感器封装 */
 function defTO92(): PcbFootprintDef {
   return {
@@ -354,15 +373,17 @@ function defAxialDiode(): PcbFootprintDef {
   };
 }
 
-/** 电解电容（径向） */
-function defRadialCap(halfW: number = 35, padSpan: number = 60): PcbFootprintDef {
+/** 电解电容（径向）：脚距须大于焊盘外径，否则两盘相切/重叠 */
+function defRadialCap(halfW: number = 100, padSpan: number = 200): PcbFootprintDef {
+  // 默认 ~5mm 脚距、~70mil 盘径：边缘间隙 = padSpan - outer > 0
+  const outer = 70;
   return {
     id: 'FP_RADIAL_CAP',
     name: 'Radial-Cap',
     description: 'Radial electrolytic capacitor',
     pads: [
-      thPad('1', -padSpan / 2, 0, 35, 60),
-      thPad('2', padSpan / 2, 0, 35, 60)
+      thPad('1', -padSpan / 2, 0, 35, outer),
+      thPad('2', padSpan / 2, 0, 35, outer)
     ],
     silkLines: circleSilk(halfW + 8),
     courtyard: [
@@ -396,17 +417,18 @@ function defPinHeader(n: number): PcbFootprintDef {
 }
 
 function defMountHole(): PcbFootprintDef {
+  // 与 tools/pcb_templates 一致：紧凑孔，中心可贴到距边≈半焊盘处
   return {
     id: 'FP_MOUNT',
     name: 'MountingHole',
-    description: 'M3 mounting hole',
-    pads: [thPad('1', 0, 0, 120, 160)],
+    description: 'Corner mounting hole',
+    pads: [thPad('1', 0, 0, 32, 40)],
     silkLines: [
-      [{ x: -90, y: 0 }, { x: 90, y: 0 }],
-      [{ x: 0, y: -90 }, { x: 0, y: 90 }]
+      [{ x: -22, y: 0 }, { x: 22, y: 0 }],
+      [{ x: 0, y: -22 }, { x: 0, y: 22 }]
     ],
     courtyard: [
-      { x: -100, y: -100 }, { x: 100, y: -100 }, { x: 100, y: 100 }, { x: -100, y: 100 }
+      { x: -24, y: -24 }, { x: 24, y: -24 }, { x: 24, y: 24 }, { x: -24, y: 24 }
     ]
   };
 }
@@ -570,20 +592,33 @@ function defPot3Pin(): PcbFootprintDef {
   };
 }
 
-/** 晶振 2 脚 */
+/** 晶振 HC-49（与模板 FP_HC49 一致） */
+function defHC49(): PcbFootprintDef {
+  return {
+    id: 'FP_HC49',
+    name: 'HC-49',
+    description: 'Crystal HC-49',
+    pads: [
+      thPad('1', -60, 0, 35, 60),
+      thPad('2', 60, 0, 35, 60)
+    ],
+    silkLines: rectSilk(80, 40),
+    courtyard: [
+      { x: -100, y: -50 }, { x: 100, y: -50 }, { x: 100, y: 50 }, { x: -100, y: 50 }
+    ]
+  };
+}
+
+/** 兼容旧 id */
 function defXtal2Pin(): PcbFootprintDef {
+  const d = defHC49();
   return {
     id: 'FP_XTAL2',
     name: 'Crystal-2Pin',
-    description: '2-pin crystal oscillator',
-    pads: [
-      thPad('1', -100, 0, 35, 60),
-      thPad('2', 100, 0, 35, 60)
-    ],
-    silkLines: rectSilk(102, 32),
-    courtyard: [
-      { x: -120, y: -45 }, { x: 120, y: -45 }, { x: 120, y: 45 }, { x: -120, y: 45 }
-    ]
+    description: d.description,
+    pads: d.pads,
+    silkLines: d.silkLines,
+    courtyard: d.courtyard
   };
 }
 
@@ -775,6 +810,29 @@ function defGeneric2Pin(): PcbFootprintDef {
   return def0805();
 }
 
+/** MCU 分类（与 tools/pcb_templates/export.mjs 一致） */
+function isMcu51Lib(lib: string): boolean {
+  return lib.includes('at89') || lib.includes('at89c51') || lib.includes('8051') ||
+    lib.includes('stc89') || lib.includes('stc90') || lib.includes('stc15') ||
+    lib === 'mcs51';
+}
+
+function isMcuStm32F103C8Lib(lib: string): boolean {
+  return lib.includes('stm32f103c8') || lib === 'stm32f103c8tx';
+}
+
+function isMcuStm32F103RCLib(lib: string): boolean {
+  return lib.includes('stm32f103rc');
+}
+
+function isMcuStm32F407Lib(lib: string): boolean {
+  return lib.includes('stm32f407');
+}
+
+function isMcuStm32Tssop20Lib(lib: string): boolean {
+  return lib.includes('stm32f030') || lib.includes('stm32l431');
+}
+
 const BUILTIN_DEFS: PcbFootprintDef[] = [
   // SMD 片式
   def0805(), def0603(), def0402(), def1206(),
@@ -782,10 +840,10 @@ const BUILTIN_DEFS: PcbFootprintDef[] = [
   defSOIC8(), defSOP8(), defSOIC8W(),
   // DIP 系列
   defDIP8(), defDIP14(), defDIP16(), defDIP28(), defDIP40(),
-  // 晶体管
-  defSOT23(), defTO92(), defTO2203(),
+  // 晶体管 / 稳压 / SIP
+  defSOT23(), defTO92(), defTO2203(), defSIP5(),
   // 连接器
-  defTHT2Pin(), defPinHeader(4), defPinHeader(6), defPinHeader(8),
+  defTHT2Pin(), defPinHeader(4), defPinHeader(6), defPinHeader(8), defPinHeader(10),
   // 安装孔
   defMountHole(),
   // LED / 二极管
@@ -794,8 +852,8 @@ const BUILTIN_DEFS: PcbFootprintDef[] = [
   defRadialCap(),
   // QFP / TSSOP
   defQFP44(), defQFP48(), defQFP64(), defQFP100(), defTSSOP20(),
-  // 电位器 / 晶振
-  defPot3Pin(), defXtal2Pin(),
+  // 电位器 / 晶振（HC-49 与模板一致；XTAL2 兼容旧 id）
+  defPot3Pin(), defHC49(), defXtal2Pin(),
   // 开关 / 继电器 / 蜂鸣器
   defSwPush(), defRelaySpdt(), defBuzzer(),
   // 显示
@@ -825,132 +883,75 @@ export class PcbFootprintLibrary {
     return Array.from(this.defs.values());
   }
 
-  /** 从 BOM footprint 字符串 + libraryId 解析封装 ID（覆盖全部 82 种内置器件） */
+  /** 从 BOM footprint 字符串 + libraryId 解析封装 ID
+   * 标准：tools/pcb_templates/export.mjs + Test_Template 板级结果（83 种器件） */
   resolveFootprintId(footprintStr: string, libraryId: string): string {
     const fp = footprintStr.toLowerCase();
     const lib = libraryId.toLowerCase();
 
-    // --- SMD 片式尺寸 ---
-    if (fp.includes('0402') || fp.includes('1005')) return 'FP_0402';
+    // --- 显式 footprint 字符串（与模板同序） ---
+    if (fp.includes('0402')) return 'FP_0805';
     if (fp.includes('0603') || fp.includes('1608')) return 'FP_0603';
-    if (fp.includes('0805') || fp.includes('2012')) return 'FP_0805';
     if (fp.includes('1206') || fp.includes('3216')) return 'FP_1206';
-
-    // --- 封装字符串显式匹配 ---
+    if (fp.includes('0805') || fp.includes('2012')) return 'FP_0805';
     if (fp.includes('to-220') || fp.includes('to220')) return 'FP_TO2203';
-    if (fp.includes('to-92') || fp.includes('to92')) return 'FP_TO92';
+    if (fp.includes('sip') && fp.includes('5')) return 'FP_SIP5';
+    if (fp.includes('soic')) return 'FP_SOIC8';
+    if (fp.includes('dip-28') || fp.includes('dip28') || fp.includes('pdip-28')) return 'FP_DIP28';
+    if (fp.includes('dip-16') || fp.includes('dip16') || fp.includes('pdip-16')) return 'FP_DIP16';
+    if (fp.includes('dip-14') || fp.includes('dip14') || fp.includes('pdip-14')) return 'FP_DIP14';
+    if (fp.includes('dip-40') || fp.includes('dip40') || fp.includes('pdip-40')) return 'FP_DIP40';
+    if (fp.includes('dip') || fp.includes('pdip')) return 'FP_DIP8';
+    if (fp.includes('hc-49') || fp.includes('hc49') || fp.includes('crystal')) return 'FP_HC49';
     if (fp.includes('sot') && fp.includes('23')) return 'FP_SOT23';
     if (fp.includes('tssop') && (fp.includes('20') || fp.includes('-20'))) return 'FP_TSSOP20';
     if (fp.includes('qfp') && fp.includes('100')) return 'FP_QFP100';
     if (fp.includes('qfp') && fp.includes('64')) return 'FP_QFP64';
     if (fp.includes('qfp') && fp.includes('48')) return 'FP_QFP48';
-    if (fp.includes('qfp') && fp.includes('44')) return 'FP_QFP44';
-    if (fp.includes('soic') && (fp.includes('8') || fp.includes('-8'))) return 'FP_SOIC8';
-    if (fp.includes('dip') && fp.includes('40')) return 'FP_DIP40';
-    if (fp.includes('dip') && fp.includes('28')) return 'FP_DIP28';
-    if (fp.includes('dip') && fp.includes('16')) return 'FP_DIP16';
-    if (fp.includes('dip') && fp.includes('14')) return 'FP_DIP14';
-    if (fp.includes('dip') && fp.includes('8')) return 'FP_DIP8';
-    if (fp.includes('dip') || fp.includes('pdip')) return 'FP_DIP8';
 
-    // --- libraryId 精准匹配 ---
-    // 电源/信号端子
-    if (lib === 'vcc' || lib === 'gnd' || lib === 'vee' || lib === 'vac' || lib === 'signal_gen') {
-      return 'FP_TERMINAL2';
+    // --- libraryId（与 Test_Template 板级封装对齐） ---
+    // OLED 必须先于 led_，避免 oled 被当成 led
+    if (lib.includes('oled')) return 'FP_OLED';
+    if (lib.includes('lcd')) return 'FP_LCD1602';
+    if (lib.includes('lm2596')) return 'FP_SIP5';
+    if (lib.includes('7805') || lib.includes('7812') || lib.includes('ams1117')) return 'FP_TO2203';
+    if (lib.startsWith('r_') || lib.startsWith('c_') || lib.startsWith('l_') ||
+      lib.startsWith('led_') || lib.includes('1n') || lib.includes('fuse')) {
+      return lib.includes('fuse') ? 'FP_1206' : 'FP_0805';
+    }
+    if (lib.includes('irf')) return 'FP_TO2203';
+    if (lib.includes('2n') || lib.includes('mos') || lib.includes('bjt')) return 'FP_SOT23';
+    if (lib.includes('pot')) return 'FP_POT3';
+    if (lib.includes('ds18')) return 'FP_TO92_SENSOR';
+    if (lib.includes('hall')) return 'FP_TO92_SENSOR';
+    if (lib.includes('ldr')) return 'FP_LDR';
+    if (lib.includes('sw_')) return 'FP_SW_PUSH';
+    if (lib.includes('buzzer')) return 'FP_BUZZER';
+    if (lib.includes('relay')) return 'FP_RELAY_SPDT';
+    if (lib.includes('xtal') || lib.includes('crystal')) return 'FP_HC49';
+    if (isMcu51Lib(lib)) return 'FP_DIP40';
+    if (isMcuStm32F103C8Lib(lib)) return 'FP_QFP48';
+    if (isMcuStm32F103RCLib(lib)) return 'FP_QFP64';
+    if (isMcuStm32F407Lib(lib)) return 'FP_QFP100';
+    if (isMcuStm32Tssop20Lib(lib)) return 'FP_TSSOP20';
+    if (lib.includes('2764') || lib.includes('62256')) return 'FP_DIP28';
+    if (lib.includes('cd4017') || lib.includes('4017')) return 'FP_DIP16';
+    if (lib.includes('74hc') || lib.includes('74ls') || lib.includes('cd40')) return 'FP_DIP14';
+    if (lib.includes('555') || lib.includes('741') || lib.includes('lm358') || lib.includes('tl082') ||
+      lib.includes('stm32') || lib.includes('24c') || lib.includes('w25q')) {
+      return lib.includes('stm32') ? 'FP_QFP48' : 'FP_SOIC8';
     }
 
-    // 电阻系列
-    if (lib.startsWith('r_')) return 'FP_0805';
-    // 电容系列
-    if (lib.startsWith('c_')) {
-      if (lib === 'c_10uf' || lib === 'c_100uf') return 'FP_RADIAL_CAP';
-      return 'FP_0805';
+    // 仪器探针（与 lab_instruments 手布探针封装一致）
+    if (lib.includes('logic_analyzer')) return 'FP_PINHDR_10';
+    if (lib.includes('oscilloscope')) return 'FP_PINHDR_6';
+    if (lib.includes('power_meter') || lib.includes('uart_terminal') || lib.includes('virtual_meter')) {
+      return 'FP_PINHDR_4';
     }
-    // 电感
-    if (lib.startsWith('l_')) return 'FP_AXIAL_IND';
-    // 晶振
-    if (lib.startsWith('xtal_')) return 'FP_XTAL2';
-    // 保险丝
-    if (lib.startsWith('fuse_')) return 'FP_FUSE';
-
-    // LED
-    if (lib.startsWith('led_')) return 'FP_LED5';
-
-    // 二极管
-    if (lib === '1n4148' || lib === '1n4007' || lib === '1n5819') return 'FP_AXIAL_DIODE';
-
-    // 三极管 TO-92 封装
-    if (lib === '2n2222' || lib === '2n2907') return 'FP_TO92';
-    // MOSFET
-    if (lib === '2n7000') return 'FP_TO92';
-    if (lib === 'irf540') return 'FP_TO2203';
-
-    // 模拟 IC
-    if (lib === 'lm555') return 'FP_DIP8';
-    if (lib === 'ua741' || lib === 'lm358' || lib === 'tl082') return 'FP_DIP8';
-
-    // 电源管理 IC
-    if (lib === 'lm7805' || lib === 'lm7812') return 'FP_TO2203';
-    if (lib === 'ams1117_3v3') return 'FP_SOT23';
-    if (lib === 'lm2596') return 'FP_TO2203';
-
-    // 数字逻辑 IC
-    if (lib.startsWith('74hc')) return 'FP_DIP14';
-    if (lib === 'cd4017') return 'FP_DIP16';
-
-    // 存储器
-    if (lib === '2764' || lib === '62256') return 'FP_DIP28';
-    if (lib === '24c02') return 'FP_SOP8';
-    if (lib === 'w25q64') return 'FP_SOIC8W';
-
-    // 8051 MCU
-    if (lib === 'at89c51' || lib === 'at89c52' || lib === 'stc89c52') return 'FP_DIP40';
-    if (lib === 'stc15w408as') return 'FP_QFP44';
-
-    // STM32 MCU
-    if (lib === 'stm32f103c8') return 'FP_QFP48';
-    if (lib === 'stm32f103rc') return 'FP_QFP64';
-    if (lib === 'stm32f407vg') return 'FP_QFP100';
-    if (lib === 'stm32l431cb' || lib === 'stm32f030f4') return 'FP_TSSOP20';
-
-    // 开关
-    if (lib === 'sw_push') return 'FP_SW_PUSH';
-    // 继电器
-    if (lib.startsWith('relay_')) return 'FP_RELAY_SPDT';
-    // 蜂鸣器
-    if (lib === 'buzzer') return 'FP_BUZZER';
-
-    // 显示屏
-    if (lib === 'lcd1602' || lib.startsWith('lcd')) return 'FP_LCD1602';
-    if (lib === 'oled_12864' || lib.startsWith('oled')) return 'FP_OLED';
-
-    // 传感器
-    if (lib === 'ds18b20') return 'FP_TO92_SENSOR';
-    if (lib === 'hall_sensor') return 'FP_TO92_SENSOR';
-    if (lib === 'ldr') return 'FP_LDR';
-
-    // 仪器探针
-    if (lib === 'oscilloscope' || lib === 'virtual_meter' || lib === 'voltmeter_dc' ||
-      lib === 'ammeter_dc' || lib === 'power_meter' || lib === 'freq_counter' ||
-      lib === 'logic_analyzer' || lib === 'uart_terminal') {
-      return 'FP_INSTRUMENT';
+    if (lib.includes('ammeter') || lib.includes('voltmeter') || lib.includes('freq_counter') ||
+      lib.includes('signal_gen')) {
+      return 'FP_THT2';
     }
-
-    // 电位器
-    if (lib === 'pot_1k' || lib === 'pot_10k' || lib === 'pot_100k') return 'FP_POT3';
-
-    // refDes 回退
-    if (lib.startsWith('r_') || lib.startsWith('c_') || lib.startsWith('l_')) return 'FP_0805';
-    if (lib.includes('fuse')) return 'FP_FUSE';
-    if (lib.includes('led')) return 'FP_LED5';
-    if (lib.includes('diode')) return 'FP_AXIAL_DIODE';
-    if (lib.includes('transistor') || lib.includes('bjt') || lib.includes('mosfet')) return 'FP_SOT23';
-    if (lib.includes('voltmeter') || lib.includes('ammeter') || lib.includes('multimeter') ||
-      lib.includes('oscilloscope') || lib.includes('probe')) {
-      return 'FP_INSTRUMENT';
-    }
-    if (lib.includes('ic') || lib.includes('mcu') || lib.includes('opamp')) return 'FP_SOIC8';
-    if (lib.includes('conn') || lib.includes('header')) return 'FP_THT2';
 
     return 'FP_0805';
   }
@@ -988,21 +989,20 @@ export class PcbFootprintLibrary {
     };
   }
 
-  /** 按库定义刷新焊盘几何，保留同号焊盘的网络绑定 */
+  /** 按库定义刷新焊盘几何，保留同号焊盘的网络绑定与 id（便于走线跟随） */
   resyncPadsFromDef(inst: PcbFootprintInst, defId?: string): void {
     const targetId = defId ?? inst.defId;
     const def = this.defs.get(targetId) ?? this.defs.get('FP_0805');
     if (!def) return;
-    const netByNumber: Map<string, PcbPadNetPreserved> = new Map();
+    const oldByNumber: Map<string, PcbPad> = new Map();
     for (const p of inst.pads) {
-      const preserved: PcbPadNetPreserved = { netId: p.netId, netName: p.netName };
-      netByNumber.set(p.number, preserved);
+      oldByNumber.set(p.number, p);
     }
     const pads: PcbPad[] = [];
     for (const p of def.pads) {
-      const preserved = netByNumber.get(p.number);
+      const old = oldByNumber.get(p.number);
       pads.push({
-        id: IdUtil.generate('pad'),
+        id: old !== undefined ? old.id : IdUtil.generate('pad'),
         number: p.number,
         type: p.type,
         shape: p.shape,
@@ -1010,8 +1010,8 @@ export class PcbFootprintLibrary {
         size: { x: p.size.x, y: p.size.y },
         drill: p.drill,
         layers: [...p.layers],
-        netId: preserved?.netId,
-        netName: preserved?.netName
+        netId: old?.netId,
+        netName: old?.netName
       });
     }
     inst.defId = def.id;

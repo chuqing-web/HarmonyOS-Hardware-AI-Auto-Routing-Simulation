@@ -359,9 +359,9 @@ export class PbrMats {
   static fr4(): PbrMaterial {
     return { albedo: hexToLin('#A89068'), metallic: 0.0, roughness: 0.80 };
   }
-  /** 过孔沉铜孔壁 — 暖调电镀铜 */
+  /** 过孔孔壁 — 与焊盘同系金黄（ENIG） */
   static barrel(): PbrMaterial {
-    return { albedo: hexToLin('#D08850'), metallic: 0.92, roughness: 0.35 };
+    return { albedo: hexToLin('#F0D050'), metallic: 1.0, roughness: 0.18 };
   }
   /** 丝印白字 */
   static silk(): PbrMaterial {

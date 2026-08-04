@@ -1,0 +1,23 @@
+function isMcu51Lib(libDevId) {
+  const lib = (libDevId || '').toLowerCase();
+  return lib.includes('at89') || lib.includes('at89c51') || lib.includes('8051') ||
+    lib.includes('stc89') || lib.includes('stc90') || lib === 'mcs51';
+}
+
+function isMcuStm32F103C8Lib(libDevId) {
+  const lib = (libDevId || '').toLowerCase();
+  return lib.includes('stm32f103c8') || lib === 'stm32f103c8tx';
+}
+
+/** STM32F103C8 LQFP-48：符号脚名 → 焊盘号（仅绑定本实验用到的脚） */
+const STM32F103C8_PIN_TO_PAD = new Map([
+  ['OSC_IN', '5'], ['PD0', '5'],
+  ['OSC_OUT', '6'], ['PD1', '6'],
+  ['NRST', '7'], ['RESET', '7'],
+  ['VSSA', '8'],
+  ['VDDA', '9'],
+  ['VSS', '23'], ['VSS_1', '23'], ['VSS_2', '35'], ['VSS_3', '47'],
+  ['VDD', '24'], ['VDD_1', '24'], ['VDD_2', '36'], ['VDD_3', '48'],
+  ['PA9', '30'], ['USART1_TX', '30'],
+  ['PA10', '31'], ['USART1_RX', '31']
+]);

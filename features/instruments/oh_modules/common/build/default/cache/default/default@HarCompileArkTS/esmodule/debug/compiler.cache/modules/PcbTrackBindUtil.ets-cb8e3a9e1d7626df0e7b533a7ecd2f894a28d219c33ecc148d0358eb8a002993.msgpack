@@ -1,0 +1,2024 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚOimport { padWorldPosition } from './PcbZoneUtil';
+import { tracePcb } from './PcbTraceLog';
+function copyPoint2D(p) {
+    const pt = { x: p.x, y: p.y };
+    return pt;
+}
+/** ç„Šç›˜ä¸–ç•Œåæ ‡ç´¢å¼•é”®ï¼šfootprintId:padId */
+export function pcbPadPosKey(fpId, padId) {
+    return `${fpId}:${padId}`;
+}
+/** æ”¶é›†å•ä¸ªå°è£…æ‰€æœ‰ç„Šç›˜çš„ä¸–ç•Œåæ ‡ */
+export function collectFootprintPadPositions(fp) {
+    const map = new Map();
+    for (const pad of fp.pads) {
+        const wp = padWorldPosition(fp, pad);
+        map.set(pcbPadPosKey(fp.id, pad.id), { x: wp.x, y: wp.y });
+    }
+    return map;
+}
+/** æ ¹æ®ç„Šç›˜å°ºå¯¸è®¡ç®—å¸é™„å®¹å·®ï¼ˆä¿è¯èµ°çº¿ç«¯ç‚¹èƒ½åŒ¹é…åˆ°ç„Šç›˜ï¼‰ */
+export function padSnapTolerance(pad, gridSize) {
+    const padRadius = Math.max(pad.size.x, pad.size.y) / 2;
+    const g = gridSize > 0 ? gridSize : 5;
+    return Math.max(padRadius + g * 2, g * 4, 20);
+}
+/** æŠ˜ç‚¹/èµ°çº¿ç«¯ç‚¹åŒ¹é…å®¹å·® */
+export function junctionMatchTolerance(gridSize) {
+    const g = gridSize > 0 ? gridSize : 5;
+    return Math.max(g, 8);
+}
+function pointDist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+function junctionKey(pos, netId, tol) {
+    const q = tol > 0 ? tol : 8;
+    return `${netId}|${Math.round(pos.x / q)}|${Math.round(pos.y / q)}`;
+}
+function getTrackEndpoint(trk, isStart) {
+    return isStart ? trk.start : trk.end;
+}
+function netsCompatible(trackNetId, taskNetId) {
+    if (taskNetId.length === 0 || trackNetId.length === 0) {
+        return true;
+    }
+    return trackNetId === taskNetId;
+}
+function isEndpointOnStationaryPad(pt, doc, movedFootprintIds, gridSize) {
+    for (const fp of doc.footprints) {
+        if (movedFootprintIds.has(fp.id)) {
+            continue;
+        }
+        for (const pad of fp.pads) {
+            const wp = padWorldPosition(fp, pad);
+            const tol = padSnapTolerance(pad, gridSize);
+            if (pointDist(pt, wp) <= tol) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+function findEndpointsAtJunction(doc, pos, netId, tol) {
+    const refs = [];
+    for (const trk of doc.tracks) {
+        if (!netsCompatible(trk.netId, netId)) {
+            continue;
+        }
+        if (pointDist(trk.start, pos) <= tol) {
+            refs.push({ track: trk, isStart: true });
+        }
+        if (pointDist(trk.end, pos) <= tol) {
+            refs.push({ track: trk, isStart: false });
+        }
+    }
+    return refs;
+}
+function trackEndKey(trackId, isStart) {
+    return `${trackId}:${isStart ? 'S' : 'E'}`;
+}
+function applyJunctionMove(doc, seed, movedFootprintIds, gridSize, junctionTol, visited, movedEnds, affectedNetIds) {
+    const queue = [seed];
+    let updated = 0;
+    // ç„Šç›˜ç§å­ç”¨æ›´å¤§å®¹å·®åŒ¹é…ç«¯ç‚¹ï¼ˆä¸ padSnapTolerance å¯¹é½ï¼‰ï¼ŒæŠ˜ç‚¹ä¼ æ’­ä»ç”¨ junctionTol
+    const seedFindTol = Math.max(junctionTol, 20);
+    while (queue.length > 0) {
+        const task = queue.shift();
+        const oldKey = junctionKey(task.oldPos, task.netId, junctionTol);
+        if (visited.has(oldKey)) {
+            continue;
+        }
+        visited.add(oldKey);
+        const deltaX = task.newPos.x - task.oldPos.x;
+        const deltaY = task.newPos.y - task.oldPos.y;
+        if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+            continue;
+        }
+        const matchTol = (task === seed) ? seedFindTol : junctionTol;
+        const endpoints = findEndpointsAtJunction(doc, task.oldPos, task.netId, matchTol);
+        if (endpoints.length === 0) {
+            continue;
+        }
+        for (const ref of endpoints) {
+            const endKey = trackEndKey(ref.track.id, ref.isStart);
+            if (movedEnds.has(endKey)) {
+                continue;
+            }
+            const pt = getTrackEndpoint(ref.track, ref.isStart);
+            if (pointDist(pt, task.oldPos) > matchTol) {
+                continue;
+            }
+            if (isEndpointOnStationaryPad(pt, doc, movedFootprintIds, gridSize)) {
+                continue;
+            }
+            pt.x += deltaX;
+            pt.y += deltaY;
+            movedEnds.add(endKey);
+            updated++;
+            if (ref.track.netId.length > 0) {
+                affectedNetIds.add(ref.track.netId);
+            }
+            const otherIsStart = !ref.isStart;
+            const otherEndKey = trackEndKey(ref.track.id, otherIsStart);
+            if (movedEnds.has(otherEndKey)) {
+                continue;
+            }
+            const otherPt = getTrackEndpoint(ref.track, otherIsStart);
+            if (pointDist(otherPt, task.oldPos) <= junctionTol) {
+                continue;
+            }
+            if (isEndpointOnStationaryPad(otherPt, doc, movedFootprintIds, gridSize)) {
+                continue;
+            }
+            const nextNetId = ref.track.netId;
+            const nextOldKey = junctionKey(otherPt, nextNetId, junctionTol);
+            if (visited.has(nextOldKey)) {
+                continue;
+            }
+            queue.push({
+                oldPos: { x: otherPt.x, y: otherPt.y },
+                newPos: { x: otherPt.x + deltaX, y: otherPt.y + deltaY },
+                netId: nextNetId
+            });
+        }
+    }
+    return updated;
+}
+/**
+ * å°è£…ç§»åŠ¨/æ—‹è½¬åï¼Œå°†è¿æ¥åˆ°å…¶ç„Šç›˜çš„èµ°çº¿ç«¯ç‚¹æ›´æ–°åˆ°æ–°ç„Šç›˜ä½ç½®ï¼Œ
+ * å¹¶æ²¿èµ°çº¿æ‹“æ‰‘ä¼ æ’­ä½ç§»ç›´åˆ°å›ºå®šç„Šç›˜ï¼Œé¿å…æŠ˜ç‚¹æ–­å¼€ã€‚
+ */
+export function updateTracksForFootprintTransform(doc, movedFootprintIds, oldPositions, affectedNetIds) {
+    const result = updateTracksForFootprintTransformDetailed(doc, movedFootprintIds, oldPositions);
+    if (affectedNetIds !== undefined) {
+        result.affectedNetIds.forEach((nid) => affectedNetIds.add(nid));
+    }
+    return result.updated;
+}
+/** å¸¦å—å½±å“ç½‘ç»œä¿¡æ¯çš„å°è£…ç§»åŠ¨èµ°çº¿è·Ÿéš */
+export function updateTracksForFootprintTransformDetailed(doc, movedFootprintIds, oldPositions) {
+    const empty = { updated: 0, affectedNetIds: new Set() };
+    if (oldPositions.size === 0 || movedFootprintIds.size === 0) {
+        return empty;
+    }
+    const gridSize = doc.metadata.gridSize ?? 5;
+    const junctionTol = junctionMatchTolerance(gridSize);
+    const newPositions = new Map();
+    const padByKey = new Map();
+    for (const fp of doc.footprints) {
+        if (!movedFootprintIds.has(fp.id)) {
+            continue;
+        }
+        for (const pad of fp.pads) {
+            const key = pcbPadPosKey(fp.id, pad.id);
+            const wp = padWorldPosition(fp, pad);
+            newPositions.set(key, { x: wp.x, y: wp.y });
+            padByKey.set(key, pad);
+        }
+    }
+    const visited = new Set();
+    const movedEnds = new Set();
+    const nets = new Set();
+    const queue = [];
+    oldPositions.forEach((oldPos, padKey) => {
+        const newPos = newPositions.get(padKey);
+        if (newPos === undefined) {
+            return;
+        }
+        const pad = padByKey.get(padKey);
+        queue.push({
+            oldPos: { x: oldPos.x, y: oldPos.y },
+            newPos: { x: newPos.x, y: newPos.y },
+            netId: pad?.netId ?? ''
+        });
+        if (pad !== undefined && (pad.netId ?? '').length > 0) {
+            nets.add(pad.netId ?? '');
+        }
+    });
+    let updated = 0;
+    for (const task of queue) {
+        updated += applyJunctionMove(doc, task, movedFootprintIds, gridSize, junctionTol, visited, movedEnds, nets);
+    }
+    if (updated > 0) {
+        tracePcb('TRACK_FOLLOW', `footprints=${movedFootprintIds.size} endpoints=${updated} nets=${nets.size} propagate=on`);
+    }
+    return { updated, affectedNetIds: nets };
+}
+/**
+ * é€‰ä¸­èµ°çº¿å¹³ç§»åï¼ŒåŒæ­¥åŒä¸€æŠ˜ç‚¹ä¸Šæœªé€‰ä¸­èµ°çº¿çš„ç«¯ç‚¹ï¼Œä¿æŒæ‹“æ‰‘è¿æ¥ã€‚
+ * è½åœ¨ç„Šç›˜ä¸Šçš„ç«¯ç‚¹ä¸è·Ÿéšå¹³ç§»ï¼Œé¿å…æŠŠå…¶ä»–èµ°çº¿ä»ç„Šç›˜ä¸Šæ‹½å¼€ã€‚
+ */
+export function syncMovedTrackJunctions(doc, movedTrackIds, snapshots) {
+    if (snapshots.length === 0 || movedTrackIds.size === 0) {
+        return 0;
+    }
+    const gridSize = doc.metadata.gridSize ?? 5;
+    const junctionTol = junctionMatchTolerance(gridSize);
+    const emptyMoved = new Set();
+    let updated = 0;
+    for (const snap of snapshots) {
+        const trk = doc.tracks.find((t) => t.id === snap.trackId);
+        if (trk === undefined) {
+            continue;
+        }
+        const newPos = snap.isStart ? trk.start : trk.end;
+        const deltaX = newPos.x - snap.pos.x;
+        const deltaY = newPos.y - snap.pos.y;
+        if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+            continue;
+        }
+        for (const other of doc.tracks) {
+            if (movedTrackIds.has(other.id)) {
+                continue;
+            }
+            if (snap.netId.length > 0 && other.netId.length > 0 && other.netId !== snap.netId) {
+                continue;
+            }
+            if (pointDist(other.start, snap.pos) <= junctionTol) {
+                if (!isEndpointOnStationaryPad(other.start, doc, emptyMoved, gridSize)) {
+                    other.start.x += deltaX;
+                    other.start.y += deltaY;
+                    updated++;
+                }
+            }
+            if (pointDist(other.end, snap.pos) <= junctionTol) {
+                if (!isEndpointOnStationaryPad(other.end, doc, emptyMoved, gridSize)) {
+                    other.end.x += deltaX;
+                    other.end.y += deltaY;
+                    updated++;
+                }
+            }
+        }
+    }
+    if (updated > 0) {
+        tracePcb('TRACK_JUNCTION_SYNC', `movedTracks=${movedTrackIds.size} synced=${updated}`);
+    }
+    return updated;
+}
+/**
+ * æ£€æµ‹èµ°çº¿ç«¯ç‚¹æ˜¯å¦è½åœ¨åŒç½‘ç»œç„Šç›˜ä¸Šï¼›è‹¥æ˜¯åˆ™å¸é™„åˆ°ç„Šç›˜ä¸­å¿ƒå¹¶æ ‡è®°é”å®šã€‚
+ * è¿”å›é”®ï¼š`${trackId}|S` / `${trackId}|E`ï¼Œä¾›æ‹–æ‹½æ—¶è·³è¿‡å¹³ç§»ã€‚
+ */
+export function lockTrackEndpointsToPads(doc, trackIds) {
+    const locked = new Set();
+    if (trackIds.size === 0) {
+        return locked;
+    }
+    const gridSize = doc.metadata.gridSize ?? 5;
+    let snapped = 0;
+    for (const trk of doc.tracks) {
+        if (!trackIds.has(trk.id)) {
+            continue;
+        }
+        const startPad = findPadAnchorForEndpoint(doc, trk.start, trk.netId, gridSize);
+        if (startPad !== null) {
+            if (pointDist(trk.start, startPad) > 0.01) {
+                trk.start.x = startPad.x;
+                trk.start.y = startPad.y;
+                snapped++;
+            }
+            locked.add(`${trk.id}|S`);
+        }
+        const endPad = findPadAnchorForEndpoint(doc, trk.end, trk.netId, gridSize);
+        if (endPad !== null) {
+            if (pointDist(trk.end, endPad) > 0.01) {
+                trk.end.x = endPad.x;
+                trk.end.y = endPad.y;
+                snapped++;
+            }
+            locked.add(`${trk.id}|E`);
+        }
+    }
+    if (locked.size > 0) {
+        tracePcb('TRACK_PAD_LOCK', `tracks=${trackIds.size} lockedEnds=${locked.size} snapped=${snapped} mode=both-ends-if-any-pad`);
+    }
+    return locked;
+}
+/** åŒç½‘ç„Šç›˜é”šå®šï¼šç«¯ç‚¹åœ¨ç„Šç›˜å¸é™„å®¹å·®å†…åˆ™è¿”å›ç„Šç›˜ä¸­å¿ƒï¼Œå¦åˆ™ null */
+function findPadAnchorForEndpoint(doc, pt, netId, gridSize) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            const padNet = pad.netId ?? '';
+            if (netId.length > 0 && padNet.length > 0 && padNet !== netId) {
+                continue;
+            }
+            if (netId.length > 0 && padNet.length === 0) {
+                continue;
+            }
+            const wp = padWorldPosition(fp, pad);
+            const tol = padSnapTolerance(pad, gridSize);
+            const d = pointDist(pt, wp);
+            if (d <= tol && d < bestDist) {
+                bestDist = d;
+                best = { x: wp.x, y: wp.y };
+            }
+        }
+    }
+    return best;
+}
+/** æ”¶é›†ç§»åŠ¨å°è£…æ‰€æ¶‰åŠçš„ç½‘ç»œ IDï¼ˆç”¨äºç§»åŠ¨åå±€éƒ¨é‡å¸ƒï¼‰ */
+export function collectNetIdsForFootprints(doc, footprintIds) {
+    const netIds = new Set();
+    for (const fp of doc.footprints) {
+        if (!footprintIds.has(fp.id)) {
+            continue;
+        }
+        for (const pad of fp.pads) {
+            const nid = pad.netId ?? '';
+            if (nid.length > 0) {
+                netIds.add(nid);
+            }
+        }
+    }
+    return netIds;
+}
+/** å°†ç°æœ‰èµ°çº¿ç«¯ç‚¹å¸é™„åˆ°åŒç½‘ç»œæœ€è¿‘ç„Šç›˜ï¼ˆè‡ªåŠ¨å¸ƒçº¿/å¯¼å…¥åæ ¡æ­£ï¼‰
+ * æŒ‰æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼šåŒä¸€åæ ‡ä¸Šçš„æ‰€æœ‰ç«¯ç‚¹ä¸€èµ·æŒªï¼Œé¿å… L æ‹è§’åªåŠ¨ä¸€æ®µè€Œã€Œæ‹†å¼€ã€ã€‚
+ */
+export function snapTrackEndpointsToPads(doc) {
+    const gridSize = doc.metadata.gridSize ?? 5;
+    const junctionTol = junctionMatchTolerance(gridSize);
+    const pads = [];
+    for (const fp of doc.footprints) {
+        for (const pad of fp.pads) {
+            const wp = padWorldPosition(fp, pad);
+            const ref = {
+                pos: wp,
+                netId: pad.netId ?? '',
+                tol: padSnapTolerance(pad, gridSize)
+            };
+            pads.push(ref);
+        }
+    }
+    const findSnapTarget = (pt, netId) => {
+        let best = null;
+        let bestDist = Infinity;
+        for (const pr of pads) {
+            if (netId.length > 0) {
+                if (pr.netId.length === 0 || pr.netId !== netId) {
+                    continue;
+                }
+            }
+            else if (pr.netId.length > 0) {
+                continue;
+            }
+            const d = pointDist(pt, pr.pos);
+            const tightTol = Math.min(pr.tol, Math.max(pr.tol * 0.55, 12));
+            if (d <= tightTol && d < bestDist) {
+                bestDist = d;
+                best = pr.pos;
+            }
+        }
+        if (best !== null && bestDist > 0.01) {
+            return best;
+        }
+        return null;
+    };
+    const buckets = new Map();
+    for (const trk of doc.tracks) {
+        const addEnd = (isStart) => {
+            const pt = getTrackEndpoint(trk, isStart);
+            const key = junctionKey(pt, trk.netId, junctionTol);
+            let b = buckets.get(key);
+            if (b === undefined) {
+                b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+                buckets.set(key, b);
+            }
+            b.refs.push({ track: trk, isStart });
+        };
+        addEnd(true);
+        addEnd(false);
+    }
+    let snapped = 0;
+    buckets.forEach((bucket) => {
+        const target = findSnapTarget(bucket.pos, bucket.netId);
+        if (target === null) {
+            return;
+        }
+        // è‹¥æ•´ä½“æŒªåˆ°ç„Šç›˜ä¼šä½¿ä»»ä¸€æ®µå¡Œæˆé›¶é•¿ï¼Œåˆ™è·³è¿‡è¯¥æŠ˜ç‚¹ï¼ˆä¿ç•™çŸ­ stubï¼Œä¸æ–­å¼€é‚»å±…ï¼‰
+        let wouldCollapse = false;
+        for (const ref of bucket.refs) {
+            const other = getTrackEndpoint(ref.track, !ref.isStart);
+            if (pointDist(target, other) < 0.5) {
+                wouldCollapse = true;
+                break;
+            }
+        }
+        if (wouldCollapse) {
+            return;
+        }
+        for (const ref of bucket.refs) {
+            const pt = getTrackEndpoint(ref.track, ref.isStart);
+            if (pointDist(pt, target) > 0.01) {
+                pt.x = target.x;
+                pt.y = target.y;
+                snapped++;
+            }
+        }
+    });
+    return snapped;
+}
+/** åˆ é™¤é›¶é•¿/è¿‘é›¶é•¿èµ°çº¿ï¼ˆå¸é™„å¡Œç¼©åçš„å…œåº•æ¸…ç†ï¼‰ */
+export function pruneZeroLengthTracks(doc) {
+    const before = doc.tracks.length;
+    const kept = [];
+    for (let i = 0; i < doc.tracks.length; i++) {
+        const t = doc.tracks[i];
+        if (pointDist(t.start, t.end) >= 0.5) {
+            kept.push(t);
+        }
+    }
+    doc.tracks = kept;
+    return before - kept.length;
+}
+/**
+ * ä»…å¸é™„ã€Œä¸æŒ‡å®šå°è£…åŒç½‘ä¸”ç«¯ç‚¹å·²é è¿‘å…¶ç„Šç›˜ã€çš„èµ°çº¿ç«¯ç‚¹ã€‚
+ * æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼Œé¿å…åªåŠ¨ä¸€æ®µæŠŠæ‹è§’æ‹†å¼€ã€‚
+ */
+export function snapTrackEndpointsNearFootprints(doc, footprintIds) {
+    if (footprintIds.size === 0) {
+        return 0;
+    }
+    const pads = [];
+    const netIds = new Set();
+    for (const fp of doc.footprints) {
+        if (!footprintIds.has(fp.id)) {
+            continue;
+        }
+        for (const pad of fp.pads) {
+            const nid = pad.netId ?? '';
+            if (nid.length > 0) {
+                netIds.add(nid);
+            }
+            pads.push({
+                pos: padWorldPosition(fp, pad),
+                netId: nid,
+                tol: Math.max(Math.max(pad.size.x, pad.size.y) / 2 + 2, 10)
+            });
+        }
+    }
+    if (pads.length === 0) {
+        return 0;
+    }
+    const gridSize = doc.metadata.gridSize ?? 5;
+    const junctionTol = junctionMatchTolerance(gridSize);
+    const findSnapTarget = (pt, netId) => {
+        let best = null;
+        let bestDist = Infinity;
+        for (const pr of pads) {
+            if (netId.length > 0 && pr.netId !== netId) {
+                continue;
+            }
+            const d = pointDist(pt, pr.pos);
+            if (d <= pr.tol && d < bestDist) {
+                bestDist = d;
+                best = pr.pos;
+            }
+        }
+        if (best !== null && bestDist > 0.01) {
+            return best;
+        }
+        return null;
+    };
+    const buckets = new Map();
+    for (const trk of doc.tracks) {
+        if (trk.netId.length > 0 && !netIds.has(trk.netId)) {
+            continue;
+        }
+        const addEnd = (isStart) => {
+            const pt = getTrackEndpoint(trk, isStart);
+            const key = junctionKey(pt, trk.netId, junctionTol);
+            let b = buckets.get(key);
+            if (b === undefined) {
+                b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+                buckets.set(key, b);
+            }
+            b.refs.push({ track: trk, isStart });
+        };
+        addEnd(true);
+        addEnd(false);
+    }
+    let snapped = 0;
+    buckets.forEach((bucket) => {
+        const target = findSnapTarget(bucket.pos, bucket.netId);
+        if (target === null) {
+            return;
+        }
+        let wouldCollapse = false;
+        for (const ref of bucket.refs) {
+            const other = getTrackEndpoint(ref.track, !ref.isStart);
+            if (pointDist(target, other) < 0.5) {
+                wouldCollapse = true;
+                break;
+            }
+        }
+        if (wouldCollapse) {
+            return;
+        }
+        for (const ref of bucket.refs) {
+            const pt = getTrackEndpoint(ref.track, ref.isStart);
+            if (pointDist(pt, target) > 0.01) {
+                pt.x = target.x;
+                pt.y = target.y;
+                snapped++;
+            }
+        }
+    });
+    if (snapped > 0) {
+        tracePcb('TRACK_SNAP_NEAR_FP', `fps=${footprintIds.size} endpoints=${snapped}`);
+    }
+    return snapped;
+}
+/** æœ€è¿‘é‚»æ’åºç„Šç›˜åæ ‡ï¼Œç”¨äºé“¾å¼è‡ªåŠ¨å¸ƒçº¿ */
+export function orderPointsNearestNeighbor(points) {
+    if (points.length <= 2) {
+        const out = [];
+        for (const p of points) {
+            out.push(copyPoint2D(p));
+        }
+        return out;
+    }
+    const remaining = [];
+    for (const p of points) {
+        remaining.push(copyPoint2D(p));
+    }
+    const ordered = [];
+    let current = remaining.shift();
+    ordered.push(current);
+    while (remaining.length > 0) {
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < remaining.length; i++) {
+            const d = pointDist(current, remaining[i]);
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
+        }
+        current = remaining.splice(bestIdx, 1)[0];
+        ordered.push(current);
+    }
+    return ordered;
+}
+//# sourceMappingURL=PcbTrackBindUtil.js.mapÂ’ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  “ÔrC’²hostDependencyName®hostModuleName²./PcbTrackBindUtil¦commonC³../PcbTrackBindUtil¦commonCÙ%./src/main/ets/utils/PcbTrackBindUtil¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚQ/**
+ * PCB èµ°çº¿-ç„Šç›˜æ‹“æ‰‘ç»‘å®š â€” ç§»åŠ¨/æ—‹è½¬å°è£…æ—¶èµ°çº¿ç«¯ç‚¹è·Ÿéšç„Šç›˜ï¼ŒæŠ˜ç‚¹è”åŠ¨ä¼ æ’­
+ */
+import { PcbDocument, PcbFootprintInst, PcbPad, PcbTrack } from '../types/PcbTypes';
+import { Point2D } from '../types/CommonTypes';
+import { padWorldPosition } from './PcbZoneUtil';
+import { tracePcb } from './PcbTraceLog';
+
+interface PcbPadSnapRef {
+  pos: Point2D;
+  netId: string;
+  tol: number;
+}
+
+interface TrackEndpointRef {
+  track: PcbTrack;
+  isStart: boolean;
+}
+
+interface JunctionMoveTask {
+  oldPos: Point2D;
+  newPos: Point2D;
+  netId: string;
+}
+
+export interface TrackFollowResult {
+  updated: number;
+  affectedNetIds: Set<string>;
+}
+
+function copyPoint2D(p: Point2D): Point2D {
+  const pt: Point2D = { x: p.x, y: p.y };
+  return pt;
+}
+
+/** ç„Šç›˜ä¸–ç•Œåæ ‡ç´¢å¼•é”®ï¼šfootprintId:padId */
+export function pcbPadPosKey(fpId: string, padId: string): string {
+  return `${fpId}:${padId}`;
+}
+
+/** æ”¶é›†å•ä¸ªå°è£…æ‰€æœ‰ç„Šç›˜çš„ä¸–ç•Œåæ ‡ */
+export function collectFootprintPadPositions(fp: PcbFootprintInst): Map<string, Point2D> {
+  const map: Map<string, Point2D> = new Map();
+  for (const pad of fp.pads) {
+    const wp = padWorldPosition(fp, pad);
+    map.set(pcbPadPosKey(fp.id, pad.id), { x: wp.x, y: wp.y });
+  }
+  return map;
+}
+
+/** æ ¹æ®ç„Šç›˜å°ºå¯¸è®¡ç®—å¸é™„å®¹å·®ï¼ˆä¿è¯èµ°çº¿ç«¯ç‚¹èƒ½åŒ¹é…åˆ°ç„Šç›˜ï¼‰ */
+export function padSnapTolerance(pad: PcbPad, gridSize: number): number {
+  const padRadius = Math.max(pad.size.x, pad.size.y) / 2;
+  const g = gridSize > 0 ? gridSize : 5;
+  return Math.max(padRadius + g * 2, g * 4, 20);
+}
+
+/** æŠ˜ç‚¹/èµ°çº¿ç«¯ç‚¹åŒ¹é…å®¹å·® */
+export function junctionMatchTolerance(gridSize: number): number {
+  const g = gridSize > 0 ? gridSize : 5;
+  return Math.max(g, 8);
+}
+
+function pointDist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function junctionKey(pos: Point2D, netId: string, tol: number): string {
+  const q = tol > 0 ? tol : 8;
+  return `${netId}|${Math.round(pos.x / q)}|${Math.round(pos.y / q)}`;
+}
+
+function getTrackEndpoint(trk: PcbTrack, isStart: boolean): Point2D {
+  return isStart ? trk.start : trk.end;
+}
+
+function netsCompatible(trackNetId: string, taskNetId: string): boolean {
+  if (taskNetId.length === 0 || trackNetId.length === 0) {
+    return true;
+  }
+  return trackNetId === taskNetId;
+}
+
+function isEndpointOnStationaryPad(
+  pt: Point2D,
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  gridSize: number
+): boolean {
+  for (const fp of doc.footprints) {
+    if (movedFootprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const wp = padWorldPosition(fp, pad);
+      const tol = padSnapTolerance(pad, gridSize);
+      if (pointDist(pt, wp) <= tol) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function findEndpointsAtJunction(
+  doc: PcbDocument,
+  pos: Point2D,
+  netId: string,
+  tol: number
+): TrackEndpointRef[] {
+  const refs: TrackEndpointRef[] = [];
+  for (const trk of doc.tracks) {
+    if (!netsCompatible(trk.netId, netId)) {
+      continue;
+    }
+    if (pointDist(trk.start, pos) <= tol) {
+      refs.push({ track: trk, isStart: true });
+    }
+    if (pointDist(trk.end, pos) <= tol) {
+      refs.push({ track: trk, isStart: false });
+    }
+  }
+  return refs;
+}
+
+function trackEndKey(trackId: string, isStart: boolean): string {
+  return `${trackId}:${isStart ? 'S' : 'E'}`;
+}
+
+function applyJunctionMove(
+  doc: PcbDocument,
+  seed: JunctionMoveTask,
+  movedFootprintIds: Set<string>,
+  gridSize: number,
+  junctionTol: number,
+  visited: Set<string>,
+  movedEnds: Set<string>,
+  affectedNetIds: Set<string>
+): number {
+  const queue: JunctionMoveTask[] = [seed];
+  let updated = 0;
+  // ç„Šç›˜ç§å­ç”¨æ›´å¤§å®¹å·®åŒ¹é…ç«¯ç‚¹ï¼ˆä¸ padSnapTolerance å¯¹é½ï¼‰ï¼ŒæŠ˜ç‚¹ä¼ æ’­ä»ç”¨ junctionTol
+  const seedFindTol = Math.max(junctionTol, 20);
+
+  while (queue.length > 0) {
+    const task = queue.shift()!;
+    const oldKey = junctionKey(task.oldPos, task.netId, junctionTol);
+    if (visited.has(oldKey)) {
+      continue;
+    }
+    visited.add(oldKey);
+
+    const deltaX = task.newPos.x - task.oldPos.x;
+    const deltaY = task.newPos.y - task.oldPos.y;
+    if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+      continue;
+    }
+
+    const matchTol = (task === seed) ? seedFindTol : junctionTol;
+    const endpoints = findEndpointsAtJunction(doc, task.oldPos, task.netId, matchTol);
+    if (endpoints.length === 0) {
+      continue;
+    }
+
+    for (const ref of endpoints) {
+      const endKey = trackEndKey(ref.track.id, ref.isStart);
+      if (movedEnds.has(endKey)) {
+        continue;
+      }
+
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, task.oldPos) > matchTol) {
+        continue;
+      }
+      if (isEndpointOnStationaryPad(pt, doc, movedFootprintIds, gridSize)) {
+        continue;
+      }
+
+      pt.x += deltaX;
+      pt.y += deltaY;
+      movedEnds.add(endKey);
+      updated++;
+      if (ref.track.netId.length > 0) {
+        affectedNetIds.add(ref.track.netId);
+      }
+
+      const otherIsStart = !ref.isStart;
+      const otherEndKey = trackEndKey(ref.track.id, otherIsStart);
+      if (movedEnds.has(otherEndKey)) {
+        continue;
+      }
+
+      const otherPt = getTrackEndpoint(ref.track, otherIsStart);
+      if (pointDist(otherPt, task.oldPos) <= junctionTol) {
+        continue;
+      }
+      if (isEndpointOnStationaryPad(otherPt, doc, movedFootprintIds, gridSize)) {
+        continue;
+      }
+
+      const nextNetId = ref.track.netId;
+      const nextOldKey = junctionKey(otherPt, nextNetId, junctionTol);
+      if (visited.has(nextOldKey)) {
+        continue;
+      }
+
+      queue.push({
+        oldPos: { x: otherPt.x, y: otherPt.y },
+        newPos: { x: otherPt.x + deltaX, y: otherPt.y + deltaY },
+        netId: nextNetId
+      });
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * å°è£…ç§»åŠ¨/æ—‹è½¬åï¼Œå°†è¿æ¥åˆ°å…¶ç„Šç›˜çš„èµ°çº¿ç«¯ç‚¹æ›´æ–°åˆ°æ–°ç„Šç›˜ä½ç½®ï¼Œ
+ * å¹¶æ²¿èµ°çº¿æ‹“æ‰‘ä¼ æ’­ä½ç§»ç›´åˆ°å›ºå®šç„Šç›˜ï¼Œé¿å…æŠ˜ç‚¹æ–­å¼€ã€‚
+ */
+export function updateTracksForFootprintTransform(
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  oldPositions: Map<string, Point2D>,
+  affectedNetIds?: Set<string>
+): number {
+  const result = updateTracksForFootprintTransformDetailed(doc, movedFootprintIds, oldPositions);
+  if (affectedNetIds !== undefined) {
+    result.affectedNetIds.forEach((nid: string) => affectedNetIds.add(nid));
+  }
+  return result.updated;
+}
+
+/** å¸¦å—å½±å“ç½‘ç»œä¿¡æ¯çš„å°è£…ç§»åŠ¨èµ°çº¿è·Ÿéš */
+export function updateTracksForFootprintTransformDetailed(
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  oldPositions: Map<string, Point2D>
+): TrackFollowResult {
+  const empty: TrackFollowResult = { updated: 0, affectedNetIds: new Set() };
+  if (oldPositions.size === 0 || movedFootprintIds.size === 0) {
+    return empty;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+  const newPositions: Map<string, Point2D> = new Map();
+  const padByKey: Map<string, PcbPad> = new Map();
+
+  for (const fp of doc.footprints) {
+    if (!movedFootprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const key = pcbPadPosKey(fp.id, pad.id);
+      const wp = padWorldPosition(fp, pad);
+      newPositions.set(key, { x: wp.x, y: wp.y });
+      padByKey.set(key, pad);
+    }
+  }
+
+  const visited: Set<string> = new Set();
+  const movedEnds: Set<string> = new Set();
+  const nets: Set<string> = new Set();
+  const queue: JunctionMoveTask[] = [];
+
+  oldPositions.forEach((oldPos: Point2D, padKey: string) => {
+    const newPos = newPositions.get(padKey);
+    if (newPos === undefined) {
+      return;
+    }
+    const pad = padByKey.get(padKey);
+    queue.push({
+      oldPos: { x: oldPos.x, y: oldPos.y },
+      newPos: { x: newPos.x, y: newPos.y },
+      netId: pad?.netId ?? ''
+    });
+    if (pad !== undefined && (pad.netId ?? '').length > 0) {
+      nets.add(pad.netId ?? '');
+    }
+  });
+
+  let updated = 0;
+  for (const task of queue) {
+    updated += applyJunctionMove(
+      doc, task, movedFootprintIds, gridSize, junctionTol, visited, movedEnds, nets);
+  }
+
+  if (updated > 0) {
+    tracePcb('TRACK_FOLLOW',
+      `footprints=${movedFootprintIds.size} endpoints=${updated} nets=${nets.size} propagate=on`);
+  }
+
+  return { updated, affectedNetIds: nets };
+}
+
+/** æ‹–æ‹½èµ°çº¿æ®µå‰è®°å½•çš„ç«¯ç‚¹å¿«ç…§ */
+export interface TrackEndpointSnapshot {
+  trackId: string;
+  isStart: boolean;
+  pos: Point2D;
+  netId: string;
+}
+
+/**
+ * é€‰ä¸­èµ°çº¿å¹³ç§»åï¼ŒåŒæ­¥åŒä¸€æŠ˜ç‚¹ä¸Šæœªé€‰ä¸­èµ°çº¿çš„ç«¯ç‚¹ï¼Œä¿æŒæ‹“æ‰‘è¿æ¥ã€‚
+ * è½åœ¨ç„Šç›˜ä¸Šçš„ç«¯ç‚¹ä¸è·Ÿéšå¹³ç§»ï¼Œé¿å…æŠŠå…¶ä»–èµ°çº¿ä»ç„Šç›˜ä¸Šæ‹½å¼€ã€‚
+ */
+export function syncMovedTrackJunctions(
+  doc: PcbDocument,
+  movedTrackIds: Set<string>,
+  snapshots: TrackEndpointSnapshot[]
+): number {
+  if (snapshots.length === 0 || movedTrackIds.size === 0) {
+    return 0;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+  const emptyMoved: Set<string> = new Set();
+  let updated = 0;
+
+  for (const snap of snapshots) {
+    const trk = doc.tracks.find((t: PcbTrack) => t.id === snap.trackId);
+    if (trk === undefined) {
+      continue;
+    }
+    const newPos = snap.isStart ? trk.start : trk.end;
+    const deltaX = newPos.x - snap.pos.x;
+    const deltaY = newPos.y - snap.pos.y;
+    if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+      continue;
+    }
+
+    for (const other of doc.tracks) {
+      if (movedTrackIds.has(other.id)) {
+        continue;
+      }
+      if (snap.netId.length > 0 && other.netId.length > 0 && other.netId !== snap.netId) {
+        continue;
+      }
+
+      if (pointDist(other.start, snap.pos) <= junctionTol) {
+        if (!isEndpointOnStationaryPad(other.start, doc, emptyMoved, gridSize)) {
+          other.start.x += deltaX;
+          other.start.y += deltaY;
+          updated++;
+        }
+      }
+      if (pointDist(other.end, snap.pos) <= junctionTol) {
+        if (!isEndpointOnStationaryPad(other.end, doc, emptyMoved, gridSize)) {
+          other.end.x += deltaX;
+          other.end.y += deltaY;
+          updated++;
+        }
+      }
+    }
+  }
+
+  if (updated > 0) {
+    tracePcb('TRACK_JUNCTION_SYNC', `movedTracks=${movedTrackIds.size} synced=${updated}`);
+  }
+  return updated;
+}
+
+/**
+ * æ£€æµ‹èµ°çº¿ç«¯ç‚¹æ˜¯å¦è½åœ¨åŒç½‘ç»œç„Šç›˜ä¸Šï¼›è‹¥æ˜¯åˆ™å¸é™„åˆ°ç„Šç›˜ä¸­å¿ƒå¹¶æ ‡è®°é”å®šã€‚
+ * è¿”å›é”®ï¼š`${trackId}|S` / `${trackId}|E`ï¼Œä¾›æ‹–æ‹½æ—¶è·³è¿‡å¹³ç§»ã€‚
+ */
+export function lockTrackEndpointsToPads(
+  doc: PcbDocument,
+  trackIds: Set<string>
+): Set<string> {
+  const locked: Set<string> = new Set();
+  if (trackIds.size === 0) {
+    return locked;
+  }
+  const gridSize = doc.metadata.gridSize ?? 5;
+  let snapped = 0;
+
+  for (const trk of doc.tracks) {
+    if (!trackIds.has(trk.id)) {
+      continue;
+    }
+    const startPad = findPadAnchorForEndpoint(doc, trk.start, trk.netId, gridSize);
+    if (startPad !== null) {
+      if (pointDist(trk.start, startPad) > 0.01) {
+        trk.start.x = startPad.x;
+        trk.start.y = startPad.y;
+        snapped++;
+      }
+      locked.add(`${trk.id}|S`);
+    }
+    const endPad = findPadAnchorForEndpoint(doc, trk.end, trk.netId, gridSize);
+    if (endPad !== null) {
+      if (pointDist(trk.end, endPad) > 0.01) {
+        trk.end.x = endPad.x;
+        trk.end.y = endPad.y;
+        snapped++;
+      }
+      locked.add(`${trk.id}|E`);
+    }
+  }
+
+  if (locked.size > 0) {
+    tracePcb('TRACK_PAD_LOCK',
+      `tracks=${trackIds.size} lockedEnds=${locked.size} snapped=${snapped} mode=both-ends-if-any-pad`);
+  }
+  return locked;
+}
+
+/** åŒç½‘ç„Šç›˜é”šå®šï¼šç«¯ç‚¹åœ¨ç„Šç›˜å¸é™„å®¹å·®å†…åˆ™è¿”å›ç„Šç›˜ä¸­å¿ƒï¼Œå¦åˆ™ null */
+function findPadAnchorForEndpoint(
+  doc: PcbDocument,
+  pt: Point2D,
+  netId: string,
+  gridSize: number
+): Point2D | null {
+  let best: Point2D | null = null;
+  let bestDist = Infinity;
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      const padNet = pad.netId ?? '';
+      if (netId.length > 0 && padNet.length > 0 && padNet !== netId) {
+        continue;
+      }
+      if (netId.length > 0 && padNet.length === 0) {
+        continue;
+      }
+      const wp = padWorldPosition(fp, pad);
+      const tol = padSnapTolerance(pad, gridSize);
+      const d = pointDist(pt, wp);
+      if (d <= tol && d < bestDist) {
+        bestDist = d;
+        best = { x: wp.x, y: wp.y };
+      }
+    }
+  }
+  return best;
+}
+
+/** æ”¶é›†ç§»åŠ¨å°è£…æ‰€æ¶‰åŠçš„ç½‘ç»œ IDï¼ˆç”¨äºç§»åŠ¨åå±€éƒ¨é‡å¸ƒï¼‰ */
+export function collectNetIdsForFootprints(doc: PcbDocument, footprintIds: Set<string>): Set<string> {
+  const netIds: Set<string> = new Set();
+  for (const fp of doc.footprints) {
+    if (!footprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const nid = pad.netId ?? '';
+      if (nid.length > 0) {
+        netIds.add(nid);
+      }
+    }
+  }
+  return netIds;
+}
+
+/** å°†ç°æœ‰èµ°çº¿ç«¯ç‚¹å¸é™„åˆ°åŒç½‘ç»œæœ€è¿‘ç„Šç›˜ï¼ˆè‡ªåŠ¨å¸ƒçº¿/å¯¼å…¥åæ ¡æ­£ï¼‰
+ * æŒ‰æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼šåŒä¸€åæ ‡ä¸Šçš„æ‰€æœ‰ç«¯ç‚¹ä¸€èµ·æŒªï¼Œé¿å… L æ‹è§’åªåŠ¨ä¸€æ®µè€Œã€Œæ‹†å¼€ã€ã€‚
+ */
+export function snapTrackEndpointsToPads(doc: PcbDocument): number {
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+
+  const pads: PcbPadSnapRef[] = [];
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      const wp = padWorldPosition(fp, pad);
+      const ref: PcbPadSnapRef = {
+        pos: wp,
+        netId: pad.netId ?? '',
+        tol: padSnapTolerance(pad, gridSize)
+      };
+      pads.push(ref);
+    }
+  }
+
+  const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
+    let best: Point2D | null = null;
+    let bestDist = Infinity;
+    for (const pr of pads) {
+      if (netId.length > 0) {
+        if (pr.netId.length === 0 || pr.netId !== netId) {
+          continue;
+        }
+      } else if (pr.netId.length > 0) {
+        continue;
+      }
+      const d = pointDist(pt, pr.pos);
+      const tightTol = Math.min(pr.tol, Math.max(pr.tol * 0.55, 12));
+      if (d <= tightTol && d < bestDist) {
+        bestDist = d;
+        best = pr.pos;
+      }
+    }
+    if (best !== null && bestDist > 0.01) {
+      return best;
+    }
+    return null;
+  };
+
+  // æ”¶é›†å”¯ä¸€æŠ˜ç‚¹ï¼ˆnet + é‡åŒ–åæ ‡ï¼‰
+  interface JunctionBucket {
+    netId: string;
+    pos: Point2D;
+    refs: TrackEndpointRef[];
+  }
+  const buckets: Map<string, JunctionBucket> = new Map();
+  for (const trk of doc.tracks) {
+    const addEnd = (isStart: boolean): void => {
+      const pt = getTrackEndpoint(trk, isStart);
+      const key = junctionKey(pt, trk.netId, junctionTol);
+      let b = buckets.get(key);
+      if (b === undefined) {
+        b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+        buckets.set(key, b);
+      }
+      b.refs.push({ track: trk, isStart });
+    };
+    addEnd(true);
+    addEnd(false);
+  }
+
+  let snapped = 0;
+  buckets.forEach((bucket: JunctionBucket) => {
+    const target = findSnapTarget(bucket.pos, bucket.netId);
+    if (target === null) {
+      return;
+    }
+
+    // è‹¥æ•´ä½“æŒªåˆ°ç„Šç›˜ä¼šä½¿ä»»ä¸€æ®µå¡Œæˆé›¶é•¿ï¼Œåˆ™è·³è¿‡è¯¥æŠ˜ç‚¹ï¼ˆä¿ç•™çŸ­ stubï¼Œä¸æ–­å¼€é‚»å±…ï¼‰
+    let wouldCollapse = false;
+    for (const ref of bucket.refs) {
+      const other = getTrackEndpoint(ref.track, !ref.isStart);
+      if (pointDist(target, other) < 0.5) {
+        wouldCollapse = true;
+        break;
+      }
+    }
+    if (wouldCollapse) {
+      return;
+    }
+
+    for (const ref of bucket.refs) {
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, target) > 0.01) {
+        pt.x = target.x;
+        pt.y = target.y;
+        snapped++;
+      }
+    }
+  });
+  return snapped;
+}
+
+/** åˆ é™¤é›¶é•¿/è¿‘é›¶é•¿èµ°çº¿ï¼ˆå¸é™„å¡Œç¼©åçš„å…œåº•æ¸…ç†ï¼‰ */
+export function pruneZeroLengthTracks(doc: PcbDocument): number {
+  const before = doc.tracks.length;
+  const kept: PcbTrack[] = [];
+  for (let i = 0; i < doc.tracks.length; i++) {
+    const t = doc.tracks[i];
+    if (pointDist(t.start, t.end) >= 0.5) {
+      kept.push(t);
+    }
+  }
+  doc.tracks = kept;
+  return before - kept.length;
+}
+
+/**
+ * ä»…å¸é™„ã€Œä¸æŒ‡å®šå°è£…åŒç½‘ä¸”ç«¯ç‚¹å·²é è¿‘å…¶ç„Šç›˜ã€çš„èµ°çº¿ç«¯ç‚¹ã€‚
+ * æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼Œé¿å…åªåŠ¨ä¸€æ®µæŠŠæ‹è§’æ‹†å¼€ã€‚
+ */
+export function snapTrackEndpointsNearFootprints(
+  doc: PcbDocument,
+  footprintIds: Set<string>
+): number {
+  if (footprintIds.size === 0) {
+    return 0;
+  }
+  const pads: PcbPadSnapRef[] = [];
+  const netIds: Set<string> = new Set();
+  for (const fp of doc.footprints) {
+    if (!footprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const nid = pad.netId ?? '';
+      if (nid.length > 0) {
+        netIds.add(nid);
+      }
+      pads.push({
+        pos: padWorldPosition(fp, pad),
+        netId: nid,
+        tol: Math.max(Math.max(pad.size.x, pad.size.y) / 2 + 2, 10)
+      });
+    }
+  }
+  if (pads.length === 0) {
+    return 0;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+
+  const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
+    let best: Point2D | null = null;
+    let bestDist = Infinity;
+    for (const pr of pads) {
+      if (netId.length > 0 && pr.netId !== netId) {
+        continue;
+      }
+      const d = pointDist(pt, pr.pos);
+      if (d <= pr.tol && d < bestDist) {
+        bestDist = d;
+        best = pr.pos;
+      }
+    }
+    if (best !== null && bestDist > 0.01) {
+      return best;
+    }
+    return null;
+  };
+
+  interface JunctionBucket {
+    netId: string;
+    pos: Point2D;
+    refs: TrackEndpointRef[];
+  }
+  const buckets: Map<string, JunctionBucket> = new Map();
+  for (const trk of doc.tracks) {
+    if (trk.netId.length > 0 && !netIds.has(trk.netId)) {
+      continue;
+    }
+    const addEnd = (isStart: boolean): void => {
+      const pt = getTrackEndpoint(trk, isStart);
+      const key = junctionKey(pt, trk.netId, junctionTol);
+      let b = buckets.get(key);
+      if (b === undefined) {
+        b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+        buckets.set(key, b);
+      }
+      b.refs.push({ track: trk, isStart });
+    };
+    addEnd(true);
+    addEnd(false);
+  }
+
+  let snapped = 0;
+  buckets.forEach((bucket: JunctionBucket) => {
+    const target = findSnapTarget(bucket.pos, bucket.netId);
+    if (target === null) {
+      return;
+    }
+    let wouldCollapse = false;
+    for (const ref of bucket.refs) {
+      const other = getTrackEndpoint(ref.track, !ref.isStart);
+      if (pointDist(target, other) < 0.5) {
+        wouldCollapse = true;
+        break;
+      }
+    }
+    if (wouldCollapse) {
+      return;
+    }
+    for (const ref of bucket.refs) {
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, target) > 0.01) {
+        pt.x = target.x;
+        pt.y = target.y;
+        snapped++;
+      }
+    }
+  });
+  if (snapped > 0) {
+    tracePcb('TRACK_SNAP_NEAR_FP', `fps=${footprintIds.size} endpoints=${snapped}`);
+  }
+  return snapped;
+}
+
+/** æœ€è¿‘é‚»æ’åºç„Šç›˜åæ ‡ï¼Œç”¨äºé“¾å¼è‡ªåŠ¨å¸ƒçº¿ */
+export function orderPointsNearestNeighbor(points: Point2D[]): Point2D[] {
+  if (points.length <= 2) {
+    const out: Point2D[] = [];
+    for (const p of points) {
+      out.push(copyPoint2D(p));
+    }
+    return out;
+  }
+  const remaining: Point2D[] = [];
+  for (const p of points) {
+    remaining.push(copyPoint2D(p));
+  }
+  const ordered: Point2D[] = [];
+  let current = remaining.shift()!;
+  ordered.push(current);
+
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = pointDist(current, remaining[i]);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    current = remaining.splice(bestIdx, 1)[0];
+    ordered.push(current);
+  }
+  return ordered;
+}
+ÔrD•§version¨mappings¥names§sources®sourcesContentÜ7‘”   ‘”   ‘”   ‘”  ‘”   ‘”  ! ‘”  # ‘”  $ ‘”  %‘”  & ‘”  ( ‘”  ) ‘”  *‘”  +‘”  -‘”  .‘”  /‘”  0 ‘”  2 ‘”  3 ‘”  5‘”  6‘”  7 ‘”  9 ‘”  : ‘”  ;‘”  = ‘”  ? ‘”  ÌB‘”  ÌC ‘”  ÌE ‘”  ÌF‘”  ÌH ‘”  ÌJ ‘”  ÌK‘”  ÌL ‘”  ÌN ‘”  ÌP‘”  ÌQ‘”  ÌS ‘”  ÌU ‘”  Ì[‘”  Ì^‘”  Ì_‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh ‘”  Ìj ‘”  Ìq‘”  Ìt‘”  Ìv‘”  Ìw‘”  Ìy‘”  Ìz‘”  Ì{‘”  Ì|‘”  Ì} ‘”  Ì ‘”  Ì€‘”  Ì ‘”  Ìƒ ‘”  Ì‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì•‘”  Ì—‘”  Ì˜‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì¤‘”  Ì¦‘”  Ì§‘”  Ì¨‘”  Ìª‘”  Ì¬‘”  Ì¯‘”  Ì²‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì·‘”  Ìº‘”  Ì¼‘”  Ì½‘”  Ì¾‘”  ÌÀ‘”  ÌÅ‘”  ÌÈ‘”  ÌÊ‘”  ÌÌ‘”  ÌÎ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ‘”  ÌØ‘”  ÌÙ ‘”  ÌÛ ‘”  ÌŞ‘”  Ìß ‘”  Ìç‘”  Ìè‘”  Ìê ‘”  Ìì ‘”  Ìí ‘”  Ìò‘”  Ìô‘”  Ìõ‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìü‘”  Ìÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í!‘”  Í$‘”  Í&‘”  Í(‘”  Í) ‘”  Í3 ‘”  Í6‘”  Í7 ‘”  Í=‘”  Í>‘”  ÍA‘”  ÍB‘”  ÍE‘”  ÍI‘”  ÍJ‘”  ÍM‘”  ÍO‘”  ÍQ‘”  ÍT‘”  ÍW‘”  ÍY‘”  ÍZ‘”  Í[
+‘”  Í\
+‘”  Í]
+‘”  Í^	‘”  Í_‘”  Í`‘”  Ía‘”  Íb
+‘”  Íc
+‘”  Íd
+‘”  Íe	‘”  Íf‘”  Íg‘”  Íh‘”  Íl‘”  Ím‘”  Ín ‘”  Íp ‘”  Ís‘”  Ít ‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í‘”  Í‚‘”  Íƒ‘”  Íˆ‘”  Í‰‘”  Í‹‘”  ÍŒ‘”  Í‘‘”  Í’‘”  Í”‘”  Í•‘”  Í—‘”  Í˜‘”  Íš‘”  Í›‘”  Íœ ‘”  Í ‘”  ÍŸ ‘”  Í§‘”  Í¨‘”  Í©‘”  Íª‘”  Í¬‘”  Í¯‘”  Í³‘”  Íµ‘”  Í¶‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº ‘”  Í¼ ‘”  Í½ ‘”  Í¾‘”  Í¿‘”  ÍÂ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ‘”  ÍÇ‘”  ÍÈ‘”  ÍÉ‘”  ÍÊ‘”  ÍË ‘”  ÍÍ ‘”  ÍÏ‘”  ÍĞ ‘”  ÍÒ‘”  ÍÕ‘”  ÍÖ‘”  ÍØ‘”  ÍÙ‘”  ÍÚ‘”  ÍÛ‘”  Íİ‘”  ÍŞ‘”  Íß‘”  Íá‘”  Íä‘”  Íå‘”  Íæ‘”  Íè	‘”  Íé‘”  Íé‘”  Íë‘”  Íî‘”  Íğ‘”  Íñ‘”  Íò‘”  Íó‘”  Íô‘”  Íõ‘”  Íö‘”  Í÷‘”  Íÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
+‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í!‘”  Í#‘”  Í$‘”  Í&‘”  Í'‘”  Í(‘”  Í)‘”  Í*‘”  Í+‘”  Í,‘”  Í- ‘”  Í/ ‘”  Í0 ‘”  Í1‘”  Í3‘”  Í5‘”  Í6‘”  Í7‘”  Í8‘”  Í9‘”  Í:‘”  Í; ‘”  Í= ‘”  Í@‘”  ÍA ‘”  ÍE‘”  ÍF‘”  ÍG‘”  ÍI‘”  ÍJ‘”  ÍM‘”  ÍN‘”  ÍO‘”  ÍP‘”  ÍQ‘”  ÍR‘”  ÍT‘”  ÍU‘”  ÍW‘”  ÍX‘”  ÍY‘”  ÍZ‘”  Í[‘”  Í\‘”  Í_‘”  Ía‘”  Íd‘”  Íg‘”  Ík‘”  Íl‘”  Ím‘”  Ín‘”  Ío‘”  Íp‘”  Íq‘”  Ír‘”  Íy‘”  Íz‘”  Í{‘”  Í}‘”  Í~‘”  Í€‘”  Íƒ‘”  Í„‘”  Í…‘”  Í†‘”  Í‡‘”  ÍŠ‘”  Í‘”  Í‘”  Í‘‘”  Í“‘”  Í”‘”  Í˜‘”  Í™‘”  Íš‘”  Íœ‘”  Í‘”  Í‘”  Í ‘”  Í¡‘”  Í¢‘”  Í£‘”  Í¤‘”  Í¥‘”  Í¨‘”  Í©‘”  Íª ‘”  Í¬ ‘”  Í­ ‘”  Í®‘”  Í°‘”  Í²‘”  Í³‘”  Í´‘”  Í¶‘”  Í¸‘”  Íº‘”  Í»‘”  Í½‘”  ÍÀ‘”  ÍÅ‘”  ÍÆ‘”  ÍÇ‘”  ÍÈ‘”  ÍÉ‘”  ÍÊ‘”  ÍË ‘ÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.ets‘ÚQ/**
+ * PCB èµ°çº¿-ç„Šç›˜æ‹“æ‰‘ç»‘å®š â€” ç§»åŠ¨/æ—‹è½¬å°è£…æ—¶èµ°çº¿ç«¯ç‚¹è·Ÿéšç„Šç›˜ï¼ŒæŠ˜ç‚¹è”åŠ¨ä¼ æ’­
+ */
+import { PcbDocument, PcbFootprintInst, PcbPad, PcbTrack } from '../types/PcbTypes';
+import { Point2D } from '../types/CommonTypes';
+import { padWorldPosition } from './PcbZoneUtil';
+import { tracePcb } from './PcbTraceLog';
+
+interface PcbPadSnapRef {
+  pos: Point2D;
+  netId: string;
+  tol: number;
+}
+
+interface TrackEndpointRef {
+  track: PcbTrack;
+  isStart: boolean;
+}
+
+interface JunctionMoveTask {
+  oldPos: Point2D;
+  newPos: Point2D;
+  netId: string;
+}
+
+export interface TrackFollowResult {
+  updated: number;
+  affectedNetIds: Set<string>;
+}
+
+function copyPoint2D(p: Point2D): Point2D {
+  const pt: Point2D = { x: p.x, y: p.y };
+  return pt;
+}
+
+/** ç„Šç›˜ä¸–ç•Œåæ ‡ç´¢å¼•é”®ï¼šfootprintId:padId */
+export function pcbPadPosKey(fpId: string, padId: string): string {
+  return `${fpId}:${padId}`;
+}
+
+/** æ”¶é›†å•ä¸ªå°è£…æ‰€æœ‰ç„Šç›˜çš„ä¸–ç•Œåæ ‡ */
+export function collectFootprintPadPositions(fp: PcbFootprintInst): Map<string, Point2D> {
+  const map: Map<string, Point2D> = new Map();
+  for (const pad of fp.pads) {
+    const wp = padWorldPosition(fp, pad);
+    map.set(pcbPadPosKey(fp.id, pad.id), { x: wp.x, y: wp.y });
+  }
+  return map;
+}
+
+/** æ ¹æ®ç„Šç›˜å°ºå¯¸è®¡ç®—å¸é™„å®¹å·®ï¼ˆä¿è¯èµ°çº¿ç«¯ç‚¹èƒ½åŒ¹é…åˆ°ç„Šç›˜ï¼‰ */
+export function padSnapTolerance(pad: PcbPad, gridSize: number): number {
+  const padRadius = Math.max(pad.size.x, pad.size.y) / 2;
+  const g = gridSize > 0 ? gridSize : 5;
+  return Math.max(padRadius + g * 2, g * 4, 20);
+}
+
+/** æŠ˜ç‚¹/èµ°çº¿ç«¯ç‚¹åŒ¹é…å®¹å·® */
+export function junctionMatchTolerance(gridSize: number): number {
+  const g = gridSize > 0 ? gridSize : 5;
+  return Math.max(g, 8);
+}
+
+function pointDist(a: Point2D, b: Point2D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function junctionKey(pos: Point2D, netId: string, tol: number): string {
+  const q = tol > 0 ? tol : 8;
+  return `${netId}|${Math.round(pos.x / q)}|${Math.round(pos.y / q)}`;
+}
+
+function getTrackEndpoint(trk: PcbTrack, isStart: boolean): Point2D {
+  return isStart ? trk.start : trk.end;
+}
+
+function netsCompatible(trackNetId: string, taskNetId: string): boolean {
+  if (taskNetId.length === 0 || trackNetId.length === 0) {
+    return true;
+  }
+  return trackNetId === taskNetId;
+}
+
+function isEndpointOnStationaryPad(
+  pt: Point2D,
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  gridSize: number
+): boolean {
+  for (const fp of doc.footprints) {
+    if (movedFootprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const wp = padWorldPosition(fp, pad);
+      const tol = padSnapTolerance(pad, gridSize);
+      if (pointDist(pt, wp) <= tol) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function findEndpointsAtJunction(
+  doc: PcbDocument,
+  pos: Point2D,
+  netId: string,
+  tol: number
+): TrackEndpointRef[] {
+  const refs: TrackEndpointRef[] = [];
+  for (const trk of doc.tracks) {
+    if (!netsCompatible(trk.netId, netId)) {
+      continue;
+    }
+    if (pointDist(trk.start, pos) <= tol) {
+      refs.push({ track: trk, isStart: true });
+    }
+    if (pointDist(trk.end, pos) <= tol) {
+      refs.push({ track: trk, isStart: false });
+    }
+  }
+  return refs;
+}
+
+function trackEndKey(trackId: string, isStart: boolean): string {
+  return `${trackId}:${isStart ? 'S' : 'E'}`;
+}
+
+function applyJunctionMove(
+  doc: PcbDocument,
+  seed: JunctionMoveTask,
+  movedFootprintIds: Set<string>,
+  gridSize: number,
+  junctionTol: number,
+  visited: Set<string>,
+  movedEnds: Set<string>,
+  affectedNetIds: Set<string>
+): number {
+  const queue: JunctionMoveTask[] = [seed];
+  let updated = 0;
+  // ç„Šç›˜ç§å­ç”¨æ›´å¤§å®¹å·®åŒ¹é…ç«¯ç‚¹ï¼ˆä¸ padSnapTolerance å¯¹é½ï¼‰ï¼ŒæŠ˜ç‚¹ä¼ æ’­ä»ç”¨ junctionTol
+  const seedFindTol = Math.max(junctionTol, 20);
+
+  while (queue.length > 0) {
+    const task = queue.shift()!;
+    const oldKey = junctionKey(task.oldPos, task.netId, junctionTol);
+    if (visited.has(oldKey)) {
+      continue;
+    }
+    visited.add(oldKey);
+
+    const deltaX = task.newPos.x - task.oldPos.x;
+    const deltaY = task.newPos.y - task.oldPos.y;
+    if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+      continue;
+    }
+
+    const matchTol = (task === seed) ? seedFindTol : junctionTol;
+    const endpoints = findEndpointsAtJunction(doc, task.oldPos, task.netId, matchTol);
+    if (endpoints.length === 0) {
+      continue;
+    }
+
+    for (const ref of endpoints) {
+      const endKey = trackEndKey(ref.track.id, ref.isStart);
+      if (movedEnds.has(endKey)) {
+        continue;
+      }
+
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, task.oldPos) > matchTol) {
+        continue;
+      }
+      if (isEndpointOnStationaryPad(pt, doc, movedFootprintIds, gridSize)) {
+        continue;
+      }
+
+      pt.x += deltaX;
+      pt.y += deltaY;
+      movedEnds.add(endKey);
+      updated++;
+      if (ref.track.netId.length > 0) {
+        affectedNetIds.add(ref.track.netId);
+      }
+
+      const otherIsStart = !ref.isStart;
+      const otherEndKey = trackEndKey(ref.track.id, otherIsStart);
+      if (movedEnds.has(otherEndKey)) {
+        continue;
+      }
+
+      const otherPt = getTrackEndpoint(ref.track, otherIsStart);
+      if (pointDist(otherPt, task.oldPos) <= junctionTol) {
+        continue;
+      }
+      if (isEndpointOnStationaryPad(otherPt, doc, movedFootprintIds, gridSize)) {
+        continue;
+      }
+
+      const nextNetId = ref.track.netId;
+      const nextOldKey = junctionKey(otherPt, nextNetId, junctionTol);
+      if (visited.has(nextOldKey)) {
+        continue;
+      }
+
+      queue.push({
+        oldPos: { x: otherPt.x, y: otherPt.y },
+        newPos: { x: otherPt.x + deltaX, y: otherPt.y + deltaY },
+        netId: nextNetId
+      });
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * å°è£…ç§»åŠ¨/æ—‹è½¬åï¼Œå°†è¿æ¥åˆ°å…¶ç„Šç›˜çš„èµ°çº¿ç«¯ç‚¹æ›´æ–°åˆ°æ–°ç„Šç›˜ä½ç½®ï¼Œ
+ * å¹¶æ²¿èµ°çº¿æ‹“æ‰‘ä¼ æ’­ä½ç§»ç›´åˆ°å›ºå®šç„Šç›˜ï¼Œé¿å…æŠ˜ç‚¹æ–­å¼€ã€‚
+ */
+export function updateTracksForFootprintTransform(
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  oldPositions: Map<string, Point2D>,
+  affectedNetIds?: Set<string>
+): number {
+  const result = updateTracksForFootprintTransformDetailed(doc, movedFootprintIds, oldPositions);
+  if (affectedNetIds !== undefined) {
+    result.affectedNetIds.forEach((nid: string) => affectedNetIds.add(nid));
+  }
+  return result.updated;
+}
+
+/** å¸¦å—å½±å“ç½‘ç»œä¿¡æ¯çš„å°è£…ç§»åŠ¨èµ°çº¿è·Ÿéš */
+export function updateTracksForFootprintTransformDetailed(
+  doc: PcbDocument,
+  movedFootprintIds: Set<string>,
+  oldPositions: Map<string, Point2D>
+): TrackFollowResult {
+  const empty: TrackFollowResult = { updated: 0, affectedNetIds: new Set() };
+  if (oldPositions.size === 0 || movedFootprintIds.size === 0) {
+    return empty;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+  const newPositions: Map<string, Point2D> = new Map();
+  const padByKey: Map<string, PcbPad> = new Map();
+
+  for (const fp of doc.footprints) {
+    if (!movedFootprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const key = pcbPadPosKey(fp.id, pad.id);
+      const wp = padWorldPosition(fp, pad);
+      newPositions.set(key, { x: wp.x, y: wp.y });
+      padByKey.set(key, pad);
+    }
+  }
+
+  const visited: Set<string> = new Set();
+  const movedEnds: Set<string> = new Set();
+  const nets: Set<string> = new Set();
+  const queue: JunctionMoveTask[] = [];
+
+  oldPositions.forEach((oldPos: Point2D, padKey: string) => {
+    const newPos = newPositions.get(padKey);
+    if (newPos === undefined) {
+      return;
+    }
+    const pad = padByKey.get(padKey);
+    queue.push({
+      oldPos: { x: oldPos.x, y: oldPos.y },
+      newPos: { x: newPos.x, y: newPos.y },
+      netId: pad?.netId ?? ''
+    });
+    if (pad !== undefined && (pad.netId ?? '').length > 0) {
+      nets.add(pad.netId ?? '');
+    }
+  });
+
+  let updated = 0;
+  for (const task of queue) {
+    updated += applyJunctionMove(
+      doc, task, movedFootprintIds, gridSize, junctionTol, visited, movedEnds, nets);
+  }
+
+  if (updated > 0) {
+    tracePcb('TRACK_FOLLOW',
+      `footprints=${movedFootprintIds.size} endpoints=${updated} nets=${nets.size} propagate=on`);
+  }
+
+  return { updated, affectedNetIds: nets };
+}
+
+/** æ‹–æ‹½èµ°çº¿æ®µå‰è®°å½•çš„ç«¯ç‚¹å¿«ç…§ */
+export interface TrackEndpointSnapshot {
+  trackId: string;
+  isStart: boolean;
+  pos: Point2D;
+  netId: string;
+}
+
+/**
+ * é€‰ä¸­èµ°çº¿å¹³ç§»åï¼ŒåŒæ­¥åŒä¸€æŠ˜ç‚¹ä¸Šæœªé€‰ä¸­èµ°çº¿çš„ç«¯ç‚¹ï¼Œä¿æŒæ‹“æ‰‘è¿æ¥ã€‚
+ * è½åœ¨ç„Šç›˜ä¸Šçš„ç«¯ç‚¹ä¸è·Ÿéšå¹³ç§»ï¼Œé¿å…æŠŠå…¶ä»–èµ°çº¿ä»ç„Šç›˜ä¸Šæ‹½å¼€ã€‚
+ */
+export function syncMovedTrackJunctions(
+  doc: PcbDocument,
+  movedTrackIds: Set<string>,
+  snapshots: TrackEndpointSnapshot[]
+): number {
+  if (snapshots.length === 0 || movedTrackIds.size === 0) {
+    return 0;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+  const emptyMoved: Set<string> = new Set();
+  let updated = 0;
+
+  for (const snap of snapshots) {
+    const trk = doc.tracks.find((t: PcbTrack) => t.id === snap.trackId);
+    if (trk === undefined) {
+      continue;
+    }
+    const newPos = snap.isStart ? trk.start : trk.end;
+    const deltaX = newPos.x - snap.pos.x;
+    const deltaY = newPos.y - snap.pos.y;
+    if (Math.abs(deltaX) < 0.01 && Math.abs(deltaY) < 0.01) {
+      continue;
+    }
+
+    for (const other of doc.tracks) {
+      if (movedTrackIds.has(other.id)) {
+        continue;
+      }
+      if (snap.netId.length > 0 && other.netId.length > 0 && other.netId !== snap.netId) {
+        continue;
+      }
+
+      if (pointDist(other.start, snap.pos) <= junctionTol) {
+        if (!isEndpointOnStationaryPad(other.start, doc, emptyMoved, gridSize)) {
+          other.start.x += deltaX;
+          other.start.y += deltaY;
+          updated++;
+        }
+      }
+      if (pointDist(other.end, snap.pos) <= junctionTol) {
+        if (!isEndpointOnStationaryPad(other.end, doc, emptyMoved, gridSize)) {
+          other.end.x += deltaX;
+          other.end.y += deltaY;
+          updated++;
+        }
+      }
+    }
+  }
+
+  if (updated > 0) {
+    tracePcb('TRACK_JUNCTION_SYNC', `movedTracks=${movedTrackIds.size} synced=${updated}`);
+  }
+  return updated;
+}
+
+/**
+ * æ£€æµ‹èµ°çº¿ç«¯ç‚¹æ˜¯å¦è½åœ¨åŒç½‘ç»œç„Šç›˜ä¸Šï¼›è‹¥æ˜¯åˆ™å¸é™„åˆ°ç„Šç›˜ä¸­å¿ƒå¹¶æ ‡è®°é”å®šã€‚
+ * è¿”å›é”®ï¼š`${trackId}|S` / `${trackId}|E`ï¼Œä¾›æ‹–æ‹½æ—¶è·³è¿‡å¹³ç§»ã€‚
+ */
+export function lockTrackEndpointsToPads(
+  doc: PcbDocument,
+  trackIds: Set<string>
+): Set<string> {
+  const locked: Set<string> = new Set();
+  if (trackIds.size === 0) {
+    return locked;
+  }
+  const gridSize = doc.metadata.gridSize ?? 5;
+  let snapped = 0;
+
+  for (const trk of doc.tracks) {
+    if (!trackIds.has(trk.id)) {
+      continue;
+    }
+    const startPad = findPadAnchorForEndpoint(doc, trk.start, trk.netId, gridSize);
+    if (startPad !== null) {
+      if (pointDist(trk.start, startPad) > 0.01) {
+        trk.start.x = startPad.x;
+        trk.start.y = startPad.y;
+        snapped++;
+      }
+      locked.add(`${trk.id}|S`);
+    }
+    const endPad = findPadAnchorForEndpoint(doc, trk.end, trk.netId, gridSize);
+    if (endPad !== null) {
+      if (pointDist(trk.end, endPad) > 0.01) {
+        trk.end.x = endPad.x;
+        trk.end.y = endPad.y;
+        snapped++;
+      }
+      locked.add(`${trk.id}|E`);
+    }
+  }
+
+  if (locked.size > 0) {
+    tracePcb('TRACK_PAD_LOCK',
+      `tracks=${trackIds.size} lockedEnds=${locked.size} snapped=${snapped} mode=both-ends-if-any-pad`);
+  }
+  return locked;
+}
+
+/** åŒç½‘ç„Šç›˜é”šå®šï¼šç«¯ç‚¹åœ¨ç„Šç›˜å¸é™„å®¹å·®å†…åˆ™è¿”å›ç„Šç›˜ä¸­å¿ƒï¼Œå¦åˆ™ null */
+function findPadAnchorForEndpoint(
+  doc: PcbDocument,
+  pt: Point2D,
+  netId: string,
+  gridSize: number
+): Point2D | null {
+  let best: Point2D | null = null;
+  let bestDist = Infinity;
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      const padNet = pad.netId ?? '';
+      if (netId.length > 0 && padNet.length > 0 && padNet !== netId) {
+        continue;
+      }
+      if (netId.length > 0 && padNet.length === 0) {
+        continue;
+      }
+      const wp = padWorldPosition(fp, pad);
+      const tol = padSnapTolerance(pad, gridSize);
+      const d = pointDist(pt, wp);
+      if (d <= tol && d < bestDist) {
+        bestDist = d;
+        best = { x: wp.x, y: wp.y };
+      }
+    }
+  }
+  return best;
+}
+
+/** æ”¶é›†ç§»åŠ¨å°è£…æ‰€æ¶‰åŠçš„ç½‘ç»œ IDï¼ˆç”¨äºç§»åŠ¨åå±€éƒ¨é‡å¸ƒï¼‰ */
+export function collectNetIdsForFootprints(doc: PcbDocument, footprintIds: Set<string>): Set<string> {
+  const netIds: Set<string> = new Set();
+  for (const fp of doc.footprints) {
+    if (!footprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const nid = pad.netId ?? '';
+      if (nid.length > 0) {
+        netIds.add(nid);
+      }
+    }
+  }
+  return netIds;
+}
+
+/** å°†ç°æœ‰èµ°çº¿ç«¯ç‚¹å¸é™„åˆ°åŒç½‘ç»œæœ€è¿‘ç„Šç›˜ï¼ˆè‡ªåŠ¨å¸ƒçº¿/å¯¼å…¥åæ ¡æ­£ï¼‰
+ * æŒ‰æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼šåŒä¸€åæ ‡ä¸Šçš„æ‰€æœ‰ç«¯ç‚¹ä¸€èµ·æŒªï¼Œé¿å… L æ‹è§’åªåŠ¨ä¸€æ®µè€Œã€Œæ‹†å¼€ã€ã€‚
+ */
+export function snapTrackEndpointsToPads(doc: PcbDocument): number {
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+
+  const pads: PcbPadSnapRef[] = [];
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      const wp = padWorldPosition(fp, pad);
+      const ref: PcbPadSnapRef = {
+        pos: wp,
+        netId: pad.netId ?? '',
+        tol: padSnapTolerance(pad, gridSize)
+      };
+      pads.push(ref);
+    }
+  }
+
+  const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
+    let best: Point2D | null = null;
+    let bestDist = Infinity;
+    for (const pr of pads) {
+      if (netId.length > 0) {
+        if (pr.netId.length === 0 || pr.netId !== netId) {
+          continue;
+        }
+      } else if (pr.netId.length > 0) {
+        continue;
+      }
+      const d = pointDist(pt, pr.pos);
+      const tightTol = Math.min(pr.tol, Math.max(pr.tol * 0.55, 12));
+      if (d <= tightTol && d < bestDist) {
+        bestDist = d;
+        best = pr.pos;
+      }
+    }
+    if (best !== null && bestDist > 0.01) {
+      return best;
+    }
+    return null;
+  };
+
+  // æ”¶é›†å”¯ä¸€æŠ˜ç‚¹ï¼ˆnet + é‡åŒ–åæ ‡ï¼‰
+  interface JunctionBucket {
+    netId: string;
+    pos: Point2D;
+    refs: TrackEndpointRef[];
+  }
+  const buckets: Map<string, JunctionBucket> = new Map();
+  for (const trk of doc.tracks) {
+    const addEnd = (isStart: boolean): void => {
+      const pt = getTrackEndpoint(trk, isStart);
+      const key = junctionKey(pt, trk.netId, junctionTol);
+      let b = buckets.get(key);
+      if (b === undefined) {
+        b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+        buckets.set(key, b);
+      }
+      b.refs.push({ track: trk, isStart });
+    };
+    addEnd(true);
+    addEnd(false);
+  }
+
+  let snapped = 0;
+  buckets.forEach((bucket: JunctionBucket) => {
+    const target = findSnapTarget(bucket.pos, bucket.netId);
+    if (target === null) {
+      return;
+    }
+
+    // è‹¥æ•´ä½“æŒªåˆ°ç„Šç›˜ä¼šä½¿ä»»ä¸€æ®µå¡Œæˆé›¶é•¿ï¼Œåˆ™è·³è¿‡è¯¥æŠ˜ç‚¹ï¼ˆä¿ç•™çŸ­ stubï¼Œä¸æ–­å¼€é‚»å±…ï¼‰
+    let wouldCollapse = false;
+    for (const ref of bucket.refs) {
+      const other = getTrackEndpoint(ref.track, !ref.isStart);
+      if (pointDist(target, other) < 0.5) {
+        wouldCollapse = true;
+        break;
+      }
+    }
+    if (wouldCollapse) {
+      return;
+    }
+
+    for (const ref of bucket.refs) {
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, target) > 0.01) {
+        pt.x = target.x;
+        pt.y = target.y;
+        snapped++;
+      }
+    }
+  });
+  return snapped;
+}
+
+/** åˆ é™¤é›¶é•¿/è¿‘é›¶é•¿èµ°çº¿ï¼ˆå¸é™„å¡Œç¼©åçš„å…œåº•æ¸…ç†ï¼‰ */
+export function pruneZeroLengthTracks(doc: PcbDocument): number {
+  const before = doc.tracks.length;
+  const kept: PcbTrack[] = [];
+  for (let i = 0; i < doc.tracks.length; i++) {
+    const t = doc.tracks[i];
+    if (pointDist(t.start, t.end) >= 0.5) {
+      kept.push(t);
+    }
+  }
+  doc.tracks = kept;
+  return before - kept.length;
+}
+
+/**
+ * ä»…å¸é™„ã€Œä¸æŒ‡å®šå°è£…åŒç½‘ä¸”ç«¯ç‚¹å·²é è¿‘å…¶ç„Šç›˜ã€çš„èµ°çº¿ç«¯ç‚¹ã€‚
+ * æŠ˜ç‚¹æ•´ä½“ç§»åŠ¨ï¼Œé¿å…åªåŠ¨ä¸€æ®µæŠŠæ‹è§’æ‹†å¼€ã€‚
+ */
+export function snapTrackEndpointsNearFootprints(
+  doc: PcbDocument,
+  footprintIds: Set<string>
+): number {
+  if (footprintIds.size === 0) {
+    return 0;
+  }
+  const pads: PcbPadSnapRef[] = [];
+  const netIds: Set<string> = new Set();
+  for (const fp of doc.footprints) {
+    if (!footprintIds.has(fp.id)) {
+      continue;
+    }
+    for (const pad of fp.pads) {
+      const nid = pad.netId ?? '';
+      if (nid.length > 0) {
+        netIds.add(nid);
+      }
+      pads.push({
+        pos: padWorldPosition(fp, pad),
+        netId: nid,
+        tol: Math.max(Math.max(pad.size.x, pad.size.y) / 2 + 2, 10)
+      });
+    }
+  }
+  if (pads.length === 0) {
+    return 0;
+  }
+
+  const gridSize = doc.metadata.gridSize ?? 5;
+  const junctionTol = junctionMatchTolerance(gridSize);
+
+  const findSnapTarget = (pt: Point2D, netId: string): Point2D | null => {
+    let best: Point2D | null = null;
+    let bestDist = Infinity;
+    for (const pr of pads) {
+      if (netId.length > 0 && pr.netId !== netId) {
+        continue;
+      }
+      const d = pointDist(pt, pr.pos);
+      if (d <= pr.tol && d < bestDist) {
+        bestDist = d;
+        best = pr.pos;
+      }
+    }
+    if (best !== null && bestDist > 0.01) {
+      return best;
+    }
+    return null;
+  };
+
+  interface JunctionBucket {
+    netId: string;
+    pos: Point2D;
+    refs: TrackEndpointRef[];
+  }
+  const buckets: Map<string, JunctionBucket> = new Map();
+  for (const trk of doc.tracks) {
+    if (trk.netId.length > 0 && !netIds.has(trk.netId)) {
+      continue;
+    }
+    const addEnd = (isStart: boolean): void => {
+      const pt = getTrackEndpoint(trk, isStart);
+      const key = junctionKey(pt, trk.netId, junctionTol);
+      let b = buckets.get(key);
+      if (b === undefined) {
+        b = { netId: trk.netId, pos: { x: pt.x, y: pt.y }, refs: [] };
+        buckets.set(key, b);
+      }
+      b.refs.push({ track: trk, isStart });
+    };
+    addEnd(true);
+    addEnd(false);
+  }
+
+  let snapped = 0;
+  buckets.forEach((bucket: JunctionBucket) => {
+    const target = findSnapTarget(bucket.pos, bucket.netId);
+    if (target === null) {
+      return;
+    }
+    let wouldCollapse = false;
+    for (const ref of bucket.refs) {
+      const other = getTrackEndpoint(ref.track, !ref.isStart);
+      if (pointDist(target, other) < 0.5) {
+        wouldCollapse = true;
+        break;
+      }
+    }
+    if (wouldCollapse) {
+      return;
+    }
+    for (const ref of bucket.refs) {
+      const pt = getTrackEndpoint(ref.track, ref.isStart);
+      if (pointDist(pt, target) > 0.01) {
+        pt.x = target.x;
+        pt.y = target.y;
+        snapped++;
+      }
+    }
+  });
+  if (snapped > 0) {
+    tracePcb('TRACK_SNAP_NEAR_FP', `fps=${footprintIds.size} endpoints=${snapped}`);
+  }
+  return snapped;
+}
+
+/** æœ€è¿‘é‚»æ’åºç„Šç›˜åæ ‡ï¼Œç”¨äºé“¾å¼è‡ªåŠ¨å¸ƒçº¿ */
+export function orderPointsNearestNeighbor(points: Point2D[]): Point2D[] {
+  if (points.length <= 2) {
+    const out: Point2D[] = [];
+    for (const p of points) {
+      out.push(copyPoint2D(p));
+    }
+    return out;
+  }
+  const remaining: Point2D[] = [];
+  for (const p of points) {
+    remaining.push(copyPoint2D(p));
+  }
+  const ordered: Point2D[] = [];
+  let current = remaining.shift()!;
+  ordered.push(current);
+
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = pointDist(current, remaining[i]);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    current = remaining.splice(bestIdx, 1)[0];
+    ordered.push(current);
+  }
+  return ordered;
+}
+ÔrE’­./PcbZoneUtil­./PcbTraceLogÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌÔÍ"ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌÛÍ"ÔrK”¤type¥start£end¤nameªIdentifierÌäÌğ¬pcbPadPosKeyÂÂÂ’KªIdentifierÌñÌõ¤fpIdKªIdentifierÌ÷Ìü¥padIdÔrL”¤type¥start£end¤body®BlockStatementÌşÍ"‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÍÍÔrN•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍ’KªIdentifierÍÍ¤fpIdKªIdentifierÍÍ¥padId“ÔrO•¤type¥start£end¥value¤tail¯TemplateElementÍÍÔrP’£raw¦cooked  ÂO¯TemplateElementÍÍP¡:¡:ÂO¯TemplateElementÍÍP  ÃÀI¶ExportNamedDeclarationÍ<Í;J³FunctionDeclarationÍCÍ;KªIdentifierÍLÍh¼collectFootprintPadPositionsÂÂÂ‘KªIdentifierÍiÍk¢fpL®BlockStatementÍmÍ;“ÔrQ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍtÍŠ‘ÔrR•¤type¥start£end¢id¤init²VariableDeclaratorÍzÍ‰KªIdentifierÍzÍ}£mapÔrS•¤type¥start£end¦callee©arguments­NewExpressionÍ€Í‰KªIdentifierÍ„Í‡£Map¥constÔrT—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÍ'ÂQ³VariableDeclarationÍ•Í‘R²VariableDeclaratorÍ›ÍKªIdentifierÍ›Í£padÀ¥constÔrU—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¢Í©KªIdentifierÍ¢Í¤¢fpKªIdentifierÍ¥Í©¤padsÂÂL®BlockStatementÍ«Í'’Q³VariableDeclarationÍ¶ÍÛ‘R²VariableDeclaratorÍ¼ÍÚKªIdentifierÍ¼Í¾¢wpÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÁÍÚKªIdentifierÍÁÍÑ°padWorldPosition’KªIdentifierÍÒÍÔ¢fpKªIdentifierÍÖÍÙ£padÂ¥constÔrW”¤type¥start£endªexpression³ExpressionStatementÍåÍ V®CallExpressionÍåÍU°MemberExpressionÍåÍìKªIdentifierÍåÍè£mapKªIdentifierÍéÍì£setÂÂ’V®CallExpressionÍíÍKªIdentifierÍíÍù¬pcbPadPosKey’U°MemberExpressionÍúÍÿKªIdentifierÍúÍü¢fpKªIdentifierÍıÍÿ¢idÂÂU°MemberExpressionÍÍKªIdentifierÍÍ£padKªIdentifierÍÍ¢idÂÂÂÔrX”¤type¥start£endªproperties°ObjectExpressionÍ
+Í’ÔrY™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡xU°MemberExpressionÍÍKªIdentifierÍÍ¢wpKªIdentifierÍÍ¡xÂÂ¤initY¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡yU°MemberExpressionÍÍKªIdentifierÍÍ¢wpKªIdentifierÍÍ¡yÂÂ¤initÂM¯ReturnStatementÍ-Í8KªIdentifierÍ4Í7£mapÀI¶ExportNamedDeclarationÍ`Í1J³FunctionDeclarationÍgÍ1KªIdentifierÍpÍ€°padSnapToleranceÂÂÂ’KªIdentifierÍÍ„£padKªIdentifierÍ†Í¨gridSizeL®BlockStatementÍÍ1“Q³VariableDeclarationÍ—ÍÎ‘R²VariableDeclaratorÍÍÍKªIdentifierÍÍ¦©padRadiusÔrZ–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ©ÍÍV®CallExpressionÍ©ÍÉU°MemberExpressionÍ©Í±KªIdentifierÍ©Í­¤MathKªIdentifierÍ®Í±£maxÂÂ’U°MemberExpressionÍ²Í¼U°MemberExpressionÍ²ÍºKªIdentifierÍ²Íµ£padKªIdentifierÍ¶Íº¤sizeÂÂKªIdentifierÍ»Í¼¡xÂÂU°MemberExpressionÍ¾ÍÈU°MemberExpressionÍ¾ÍÆKªIdentifierÍ¾ÍÁ£padKªIdentifierÍÂÍÆ¤sizeÂÂKªIdentifierÍÇÍÈ¡yÂÂÂ¡/Ôr[•¤type¥start£end¥value£raw§LiteralÍÌÍÍ¡2¥constQ³VariableDeclarationÍÔÍú‘R²VariableDeclaratorÍÚÍùKªIdentifierÍÚÍÛ¡gÔr\–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍŞÍùZ°BinaryExpressionÍŞÍêKªIdentifierÍŞÍæ¨gridSize¡>[§LiteralÍéÍê ¡0KªIdentifierÍíÍõ¨gridSize[§LiteralÍøÍù¡5¥constM¯ReturnStatementÍ Í.V®CallExpressionÍÍ-U°MemberExpressionÍÍKªIdentifierÍÍ¤MathKªIdentifierÍÍ£maxÂÂ“Z°BinaryExpressionÍÍ!KªIdentifierÍÍ©padRadius¡+Z°BinaryExpressionÍÍ!KªIdentifierÍÍ¡g¡*[§LiteralÍ Í!¡2Z°BinaryExpressionÍ#Í(KªIdentifierÍ#Í$¡g¡*[§LiteralÍ'Í(¡4[§LiteralÍ*Í,¢20ÂÀI¶ExportNamedDeclarationÍGÍÄJ³FunctionDeclarationÍNÍÄKªIdentifierÍWÍm¶junctionMatchToleranceÂÂÂ‘KªIdentifierÍnÍv¨gridSizeL®BlockStatementÍxÍÄ’Q³VariableDeclarationÍÍ¥‘R²VariableDeclaratorÍ…Í¤KªIdentifierÍ…Í†¡g\µConditionalExpressionÍ‰Í¤Z°BinaryExpressionÍ‰Í•KªIdentifierÍ‰Í‘¨gridSize¡>[§LiteralÍ”Í• ¡0KªIdentifierÍ˜Í ¨gridSize[§LiteralÍ£Í¤¡5¥constM¯ReturnStatementÍ«ÍÁV®CallExpressionÍ²ÍÀU°MemberExpressionÍ²ÍºKªIdentifierÍ²Í¶¤MathKªIdentifierÍ·Íº£maxÂÂ’KªIdentifierÍ»Í¼¡g[§LiteralÍ¾Í¿¡8ÂÀI¶ExportNamedDeclarationÍ­ÍJ³FunctionDeclarationÍ´ÍKªIdentifierÍ½ÍŞÙ!updateTracksForFootprintTransformÂÂÂ”KªIdentifierÍßÍâ£docKªIdentifierÍäÍõ±movedFootprintIdsKªIdentifierÍ÷Í¬oldPositionsKªIdentifierÍÍ®affectedNetIdsL®BlockStatementÍÍ“Q³VariableDeclarationÍÍ{‘R²VariableDeclaratorÍ"ÍzKªIdentifierÍ"Í(¦resultV®CallExpressionÍ+ÍzKªIdentifierÍ+ÍTÙ)updateTracksForFootprintTransformDetailed“KªIdentifierÍUÍX£docKªIdentifierÍZÍk±movedFootprintIdsKªIdentifierÍmÍy¬oldPositionsÂ¥const\«IfStatementÍÍõZ°BinaryExpressionÍ…Í¡KªIdentifierÍ…Í“®affectedNetIds£!==KªIdentifierÍ˜Í¡©undefinedL®BlockStatementÍ£Íõ‘W³ExpressionStatementÍ®ÍîV®CallExpressionÍ®ÍíU°MemberExpressionÍ®ÍËU°MemberExpressionÍ®ÍÃKªIdentifierÍ®Í´¦resultKªIdentifierÍµÍÃ®affectedNetIdsÂÂKªIdentifierÍÄÍË§forEachÂÂ‘J·ArrowFunctionExpressionÍÌÍìÀÃÂÂ‘KªIdentifierÍÍÍĞ£nidV®CallExpressionÍÕÍìU°MemberExpressionÍÕÍçKªIdentifierÍÕÍã®affectedNetIdsKªIdentifierÍäÍç£addÂÂ‘KªIdentifierÍèÍë£nidÂÂÀM¯ReturnStatementÍûÍU°MemberExpressionÍÍKªIdentifierÍÍ¦resultKªIdentifierÍ	Í§updatedÂÂÀI¶ExportNamedDeclarationÍ0ÍTJ³FunctionDeclarationÍ7ÍTKªIdentifierÍ@ÍiÙ)updateTracksForFootprintTransformDetailedÂÂÂ“KªIdentifierÍjÍm£docKªIdentifierÍoÍ€±movedFootprintIdsKªIdentifierÍ‚Í¬oldPositionsL®BlockStatementÍÍTÜ Q³VariableDeclarationÍ—ÍÏ‘R²VariableDeclaratorÍÍÎKªIdentifierÍÍ¢¥emptyX°ObjectExpressionÍ¥ÍÎ’Y¨PropertyÍ§Í±ÂÂÂKªIdentifierÍ§Í®§updated[§LiteralÍ°Í± ¡0¤initY¨PropertyÍ³ÍÌÂÂÂKªIdentifierÍ³ÍÁ®affectedNetIdsS­NewExpressionÍÃÍÌKªIdentifierÍÇÍÊ£Set¤init¥const\«IfStatementÍÕÍ1Z±LogicalExpressionÍÙÍZ°BinaryExpressionÍÙÍğU°MemberExpressionÍÙÍêKªIdentifierÍÙÍå¬oldPositionsKªIdentifierÍæÍê¤sizeÂÂ£===[§LiteralÍïÍğ ¡0¢||Z°BinaryExpressionÍôÍU°MemberExpressionÍôÍ
+KªIdentifierÍôÍ±movedFootprintIdsKªIdentifierÍÍ
+¤sizeÂÂ£===[§LiteralÍÍ ¡0L®BlockStatementÍÍ1‘M¯ReturnStatementÍÍ*KªIdentifierÍ$Í)¥emptyÀQ³VariableDeclarationÍ7Íc‘R²VariableDeclaratorÍ=ÍbKªIdentifierÍ=ÍE¨gridSizeZ±LogicalExpressionÍHÍbU°MemberExpressionÍHÍ]U°MemberExpressionÍHÍTKªIdentifierÍHÍK£docKªIdentifierÍLÍT¨metadataÂÂKªIdentifierÍUÍ]¨gridSizeÂÂ¢??[§LiteralÍaÍb¡5¥constQ³VariableDeclarationÍiÍ‘R²VariableDeclaratorÍoÍKªIdentifierÍoÍz«junctionTolV®CallExpressionÍ}ÍKªIdentifierÍ}Í“¶junctionMatchTolerance‘KªIdentifierÍ”Íœ¨gridSizeÂ¥constQ³VariableDeclarationÍ¤ÍÃ‘R²VariableDeclaratorÍªÍÂKªIdentifierÍªÍ¶¬newPositionsS­NewExpressionÍ¹ÍÂKªIdentifierÍ½ÍÀ£Map¥constQ³VariableDeclarationÍÉÍä‘R²VariableDeclaratorÍÏÍãKªIdentifierÍÏÍ×¨padByKeyS­NewExpressionÍÚÍãKªIdentifierÍŞÍá£Map¥constT®ForOfStatementÍêÍ\ÂQ³VariableDeclarationÍïÍ÷‘R²VariableDeclaratorÍõÍ÷KªIdentifierÍõÍ÷¢fpÀ¥constU°MemberExpressionÍûÍ	KªIdentifierÍûÍş£docKªIdentifierÍÿÍ	ªfootprintsÂÂL®BlockStatementÍÍ\’\«IfStatementÍÍ\Ôr]–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ7¡!ÃV®CallExpressionÍÍ7U°MemberExpressionÍÍ0KªIdentifierÍÍ,±movedFootprintIdsKªIdentifierÍ-Í0£hasÂÂ‘U°MemberExpressionÍ1Í6KªIdentifierÍ1Í3¢fpKªIdentifierÍ4Í6¢idÂÂÂL®BlockStatementÍ9Í\‘Ôr^”¤type¥start£end¥label±ContinueStatementÍHÍQÀÀT®ForOfStatementÍfÍUÂQ³VariableDeclarationÍkÍt‘R²VariableDeclaratorÍqÍtKªIdentifierÍqÍt£padÀ¥constU°MemberExpressionÍxÍKªIdentifierÍxÍz¢fpKªIdentifierÍ{Í¤padsÂÂL®BlockStatementÍÍU”Q³VariableDeclarationÍÍ¸‘R²VariableDeclaratorÍ–Í·KªIdentifierÍ–Í™£keyV®CallExpressionÍœÍ·KªIdentifierÍœÍ¨¬pcbPadPosKey’U°MemberExpressionÍ©Í®KªIdentifierÍ©Í«¢fpKªIdentifierÍ¬Í®¢idÂÂU°MemberExpressionÍ°Í¶KªIdentifierÍ°Í³£padKªIdentifierÍ´Í¶¢idÂÂÂ¥constQ³VariableDeclarationÍÆÍë‘R²VariableDeclaratorÍÌÍêKªIdentifierÍÌÍÎ¢wpV®CallExpressionÍÑÍêKªIdentifierÍÑÍá°padWorldPosition’KªIdentifierÍâÍä¢fpKªIdentifierÍæÍé£padÂ¥constW³ExpressionStatementÍùÍ%V®CallExpressionÍùÍ$U°MemberExpressionÍùÍ	KªIdentifierÍùÍ¬newPositionsKªIdentifierÍÍ	£setÂÂ’KªIdentifierÍ
+Í£keyX°ObjectExpressionÍÍ#’Y¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡xU°MemberExpressionÍÍKªIdentifierÍÍ¢wpKªIdentifierÍÍ¡xÂÂ¤initY¨PropertyÍÍ!ÂÂÂKªIdentifierÍÍ¡yU°MemberExpressionÍÍ!KªIdentifierÍÍ¢wpKªIdentifierÍ Í!¡yÂÂ¤initÂW³ExpressionStatementÍ3ÍJV®CallExpressionÍ3ÍIU°MemberExpressionÍ3Í?KªIdentifierÍ3Í;¨padByKeyKªIdentifierÍ<Í?£setÂÂ’KªIdentifierÍ@ÍC£keyKªIdentifierÍEÍH£padÂQ³VariableDeclarationÍbÍ|‘R²VariableDeclaratorÍhÍ{KªIdentifierÍhÍo§visitedS­NewExpressionÍrÍ{KªIdentifierÍvÍy£Set¥constQ³VariableDeclarationÍ‚Í‘R²VariableDeclaratorÍˆÍKªIdentifierÍˆÍ‘©movedEndsS­NewExpressionÍ”ÍKªIdentifierÍ˜Í›£Set¥constQ³VariableDeclarationÍ¤Í»‘R²VariableDeclaratorÍªÍºKªIdentifierÍªÍ®¤netsS­NewExpressionÍ±ÍºKªIdentifierÍµÍ¸£Set¥constQ³VariableDeclarationÍÁÍÒ‘R²VariableDeclaratorÍÇÍÑKªIdentifierÍÇÍÌ¥queueÔr_”¤type¥start£end¨elements¯ArrayExpressionÍÏÍÑ¥constW³ExpressionStatementÍØÍĞV®CallExpressionÍØÍÏU°MemberExpressionÍØÍìKªIdentifierÍØÍä¬oldPositionsKªIdentifierÍåÍì§forEachÂÂ‘J·ArrowFunctionExpressionÍíÍÎÀÂÂÂ’KªIdentifierÍîÍô¦oldPosKªIdentifierÍöÍü¦padKeyL®BlockStatementÍÍÎ•Q³VariableDeclarationÍÍ4‘R²VariableDeclaratorÍÍ3KªIdentifierÍÍ¦newPosV®CallExpressionÍÍ3U°MemberExpressionÍÍ+KªIdentifierÍÍ'¬newPositionsKªIdentifierÍ(Í+£getÂÂ‘KªIdentifierÍ,Í2¦padKeyÂ¥const\«IfStatementÍ>ÍyZ°BinaryExpressionÍBÍVKªIdentifierÍBÍH¦newPos£===KªIdentifierÍMÍV©undefinedL®BlockStatementÍXÍy‘M¯ReturnStatementÍgÍnÀÀQ³VariableDeclarationÍƒÍ¤‘R²VariableDeclaratorÍ‰Í£KªIdentifierÍ‰ÍŒ£padV®CallExpressionÍÍ£U°MemberExpressionÍÍ›KªIdentifierÍÍ—¨padByKeyKªIdentifierÍ˜Í›£getÂÂ‘KªIdentifierÍœÍ¢¦padKeyÂ¥constW³ExpressionStatementÍ®ÍRV®CallExpressionÍ®ÍQU°MemberExpressionÍ®Í¸KªIdentifierÍ®Í³¥queueKªIdentifierÍ´Í¸¤pushÂÂ‘X°ObjectExpressionÍ¹ÍP“Y¨PropertyÍÈÍìÂÂÂKªIdentifierÍÈÍÎ¦oldPosX°ObjectExpressionÍĞÍì’Y¨PropertyÍÒÍİÂÂÂKªIdentifierÍÒÍÓ¡xU°MemberExpressionÍÕÍİKªIdentifierÍÕÍÛ¦oldPosKªIdentifierÍÜÍİ¡xÂÂ¤initY¨PropertyÍßÍêÂÂÂKªIdentifierÍßÍà¡yU°MemberExpressionÍâÍêKªIdentifierÍâÍè¦oldPosKªIdentifierÍéÍê¡yÂÂ¤init¤initY¨PropertyÍûÍÂÂÂKªIdentifierÍûÍ¦newPosX°ObjectExpressionÍÍ’Y¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡xU°MemberExpressionÍÍKªIdentifierÍÍ¦newPosKªIdentifierÍÍ¡xÂÂ¤initY¨PropertyÍÍÂÂÂKªIdentifierÍÍ¡yU°MemberExpressionÍÍKªIdentifierÍÍ¦newPosKªIdentifierÍÍ¡yÂÂ¤init¤initY¨PropertyÍ.ÍEÂÂÂKªIdentifierÍ.Í3¥netIdZ±LogicalExpressionÍ5ÍEW¯ChainExpressionÍ5Í?U°MemberExpressionÍ5Í?KªIdentifierÍ5Í8£padKªIdentifierÍ:Í?¥netIdÂÃ¢??[§LiteralÍCÍE ¢''¤initÂ\«IfStatementÍ\ÍÇZ±LogicalExpressionÍ`Í‘Z°BinaryExpressionÍ`ÍqKªIdentifierÍ`Íc£pad£!==KªIdentifierÍhÍq©undefined¢&&Z°BinaryExpressionÍuÍ‘U°MemberExpressionÍuÍZ±LogicalExpressionÍvÍ…U°MemberExpressionÍvÍKªIdentifierÍvÍy£padKªIdentifierÍzÍ¥netIdÂÂ¢??[§LiteralÍƒÍ… ¢''KªIdentifierÍ‡Í¦lengthÂÂ¡>[§LiteralÍÍ‘ ¡0L®BlockStatementÍ“ÍÇ‘W³ExpressionStatementÍ¢Í¼V®CallExpressionÍ¢Í»U°MemberExpressionÍ¢ÍªKªIdentifierÍ¢Í¦¤netsKªIdentifierÍ§Íª£addÂÂ‘Z±LogicalExpressionÍ«ÍºU°MemberExpressionÍ«Í´KªIdentifierÍ«Í®£padKªIdentifierÍ¯Í´¥netIdÂÂ¢??[§LiteralÍ¸Íº ¢''ÂÀÂQ³VariableDeclarationÍÖÍæ‘R²VariableDeclaratorÍÚÍåKªIdentifierÍÚÍá§updated[§LiteralÍäÍå ¡0£letT®ForOfStatementÍìÍ„ÂQ³VariableDeclarationÍñÍû‘R²VariableDeclaratorÍ÷ÍûKªIdentifierÍ÷Íû¤taskÀ¥constKªIdentifierÍÿÍ¥queueL®BlockStatementÍÍ„‘W³ExpressionStatementÍÍ}Ôr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ|¢+=KªIdentifierÍÍ§updatedV®CallExpressionÍÍ|KªIdentifierÍÍ-±applyJunctionMove˜KªIdentifierÍ.Í1£docKªIdentifierÍ3Í7¤taskKªIdentifierÍ9ÍJ±movedFootprintIdsKªIdentifierÍLÍT¨gridSizeKªIdentifierÍVÍa«junctionTolKªIdentifierÍcÍj§visitedKªIdentifierÍlÍu©movedEndsKªIdentifierÍwÍ{¤netsÂ\«IfStatementÍŠÍ"Z°BinaryExpressionÍÍ™KªIdentifierÍÍ•§updated¡>[§LiteralÍ˜Í™ ¡0L®BlockStatementÍ›Í"‘W³ExpressionStatementÍ¦ÍV®CallExpressionÍ¦ÍKªIdentifierÍ¦Í®¨tracePcb’[§LiteralÍ¯Í½¬TRACK_FOLLOW®'TRACK_FOLLOW'N¯TemplateLiteralÍ¿Í“U°MemberExpressionÍÍÍãKªIdentifierÍÍÍŞ±movedFootprintIdsKªIdentifierÍßÍã¤sizeÂÂKªIdentifierÍñÍø§updatedU°MemberExpressionÍÍ
+KªIdentifierÍÍ¤netsKªIdentifierÍÍ
+¤sizeÂÂ”O¯TemplateElementÍÀÍËP«footprints=«footprints=ÂO¯TemplateElementÍäÍïP« endpoints=« endpoints=ÂO¯TemplateElementÍùÍÿP¦ nets=¦ nets=ÂO¯TemplateElementÍÍP­ propagate=on­ propagate=onÃÂÀM¯ReturnStatementÍ(ÍQX°ObjectExpressionÍ/ÍP’Ôra™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ1Í8ÂÃÂKªIdentifierÍ1Í8§updated¤initKªIdentifierÍ1Í8§updatedY¨PropertyÍ:ÍNÂÂÂKªIdentifierÍ:ÍH®affectedNetIdsKªIdentifierÍJÍN¤nets¤initÀI¶ExportNamedDeclarationÍ¥Í$ÅJ³FunctionDeclarationÍ¬Í$ÅKªIdentifierÍµÍÌ·syncMovedTrackJunctionsÂÂÂ“KªIdentifierÍÍÍĞ£docKªIdentifierÍÒÍß­movedTrackIdsKªIdentifierÍáÍê©snapshotsL®BlockStatementÍìÍ$Å˜\«IfStatementÍóÍFZ±LogicalExpressionÍ÷Í)Z°BinaryExpressionÍ÷ÍU°MemberExpressionÍ÷ÍKªIdentifierÍ÷Í ©snapshotsKªIdentifierÍÍ¦lengthÂÂ£===[§LiteralÍÍ ¡0¢||Z°BinaryExpressionÍÍ)U°MemberExpressionÍÍ#KªIdentifierÍÍ­movedTrackIdsKªIdentifierÍÍ#¤sizeÂÂ£===[§LiteralÍ(Í) ¡0L®BlockStatementÍ+ÍF‘M¯ReturnStatementÍ6Í?[§LiteralÍ=Í> ¡0ÀQ³VariableDeclarationÍLÍx‘R²VariableDeclaratorÍRÍwKªIdentifierÍRÍZ¨gridSizeZ±LogicalExpressionÍ]ÍwU°MemberExpressionÍ]ÍrU°MemberExpressionÍ]ÍiKªIdentifierÍ]Í`£docKªIdentifierÍaÍi¨metadataÂÂKªIdentifierÍjÍr¨gridSizeÂÂ¢??[§LiteralÍvÍw¡5¥constQ³VariableDeclarationÍ~Í³‘R²VariableDeclaratorÍ„Í²KªIdentifierÍ„Í«junctionTolV®CallExpressionÍ’Í²KªIdentifierÍ’Í¨¶junctionMatchTolerance‘KªIdentifierÍ©Í±¨gridSizeÂ¥constQ³VariableDeclarationÍ¹ÍÖ‘R²VariableDeclaratorÍ¿ÍÕKªIdentifierÍ¿ÍÉªemptyMovedS­NewExpressionÍÌÍÕKªIdentifierÍĞÍÓ£Set¥constQ³VariableDeclarationÍÜÍì‘R²VariableDeclaratorÍàÍëKªIdentifierÍàÍç§updated[§LiteralÍêÍë ¡0£letT®ForOfStatementÍòÍ$-ÂQ³VariableDeclarationÍ÷Í‘R²VariableDeclaratorÍıÍKªIdentifierÍıÍ¤snapÀ¥constKªIdentifierÍÍ©snapshotsL®BlockStatementÍÍ$-—Q³VariableDeclarationÍÍU‘R²VariableDeclaratorÍ!ÍTKªIdentifierÍ!Í$£trkV®CallExpressionÍ'ÍTU°MemberExpressionÍ'Í6U°MemberExpressionÍ'Í1KªIdentifierÍ'Í*£docKªIdentifierÍ+Í1¦tracksÂÂKªIdentifierÍ2Í6¤findÂÂ‘J·ArrowFunctionExpressionÍ7ÍSÀÃÂÂ‘KªIdentifierÍ8Í9¡tZ°BinaryExpressionÍ>ÍSU°MemberExpressionÍ>ÍBKªIdentifierÍ>Í?¡tKªIdentifierÍ@ÍB¢idÂÂ£===U°MemberExpressionÍGÍSKªIdentifierÍGÍK¤snapKªIdentifierÍLÍS§trackIdÂÂÂ¥const\«IfStatementÍ_Í™Z°BinaryExpressionÍcÍtKªIdentifierÍcÍf£trk£===KªIdentifierÍkÍt©undefinedL®BlockStatementÍvÍ™‘^±ContinueStatementÍ…ÍÀÀQ³VariableDeclarationÍ£ÍÕ‘R²VariableDeclaratorÍ©ÍÔKªIdentifierÍ©Í¯¦newPos\µConditionalExpressionÍ²ÍÔU°MemberExpressionÍ²Í¾KªIdentifierÍ²Í¶¤snapKªIdentifierÍ·Í¾§isStartÂÂU°MemberExpressionÍÁÍÊKªIdentifierÍÁÍÄ£trkKªIdentifierÍÅÍÊ¥startÂÂU°MemberExpressionÍÍÍÔKªIdentifierÍÍÍĞ£trkKªIdentifierÍÑÍÔ£endÂÂ¥constQ³VariableDeclarationÍßÍ ‘R²VariableDeclaratorÍåÍ KªIdentifierÍåÍë¦deltaXZ°BinaryExpressionÍîÍ U°MemberExpressionÍîÍöKªIdentifierÍîÍô¦newPosKªIdentifierÍõÍö¡xÂÂ¡-U°MemberExpressionÍùÍ U°MemberExpressionÍùÍ KªIdentifierÍùÍı¤snapKªIdentifierÍşÍ £posÂÂKªIdentifierÍ Í ¡xÂÂ¥constQ³VariableDeclarationÍ Í 3‘R²VariableDeclaratorÍ Í 2KªIdentifierÍ Í ¦deltaYZ°BinaryExpressionÍ Í 2U°MemberExpressionÍ Í %KªIdentifierÍ Í #¦newPosKªIdentifierÍ $Í %¡yÂÂ¡-U°MemberExpressionÍ (Í 2U°MemberExpressionÍ (Í 0KªIdentifierÍ (Í ,¤snapKªIdentifierÍ -Í 0£posÂÂKªIdentifierÍ 1Í 2¡yÂÂ¥const\«IfStatementÍ =Í ˜Z±LogicalExpressionÍ AÍ sZ°BinaryExpressionÍ AÍ XV®CallExpressionÍ AÍ QU°MemberExpressionÍ AÍ IKªIdentifierÍ AÍ E¤MathKªIdentifierÍ FÍ I£absÂÂ‘KªIdentifierÍ JÍ P¦deltaXÂ¡<[§LiteralÍ TÍ XË?„záG®{¤0.01¢&&Z°BinaryExpressionÍ \Í sV®CallExpressionÍ \Í lU°MemberExpressionÍ \Í dKªIdentifierÍ \Í `¤MathKªIdentifierÍ aÍ d£absÂÂ‘KªIdentifierÍ eÍ k¦deltaYÂ¡<[§LiteralÍ oÍ sË?„záG®{¤0.01L®BlockStatementÍ uÍ ˜‘^±ContinueStatementÍ „Í ÀÀT®ForOfStatementÍ ¢Í$&ÂQ³VariableDeclarationÍ §Í ²‘R²VariableDeclaratorÍ ­Í ²KªIdentifierÍ ­Í ²¥otherÀ¥constU°MemberExpressionÍ ¶Í ÀKªIdentifierÍ ¶Í ¹£docKªIdentifierÍ ºÍ À¦tracksÂÂL®BlockStatementÍ ÂÍ$&”\«IfStatementÍ ÑÍ!V®CallExpressionÍ ÕÍ ğU°MemberExpressionÍ ÕÍ æKªIdentifierÍ ÕÍ â­movedTrackIdsKªIdentifierÍ ãÍ æ£hasÂÂ‘U°MemberExpressionÍ çÍ ïKªIdentifierÍ çÍ ì¥otherKªIdentifierÍ íÍ ï¢idÂÂÂL®BlockStatementÍ òÍ!‘^±ContinueStatementÍ!Í!ÀÀ\«IfStatementÍ!+Í!©Z±LogicalExpressionÍ!/Í!|Z±LogicalExpressionÍ!/Í!^Z°BinaryExpressionÍ!/Í!DU°MemberExpressionÍ!/Í!@U°MemberExpressionÍ!/Í!9KªIdentifierÍ!/Í!3¤snapKªIdentifierÍ!4Í!9¥netIdÂÂKªIdentifierÍ!:Í!@¦lengthÂÂ¡>[§LiteralÍ!CÍ!D ¡0¢&&Z°BinaryExpressionÍ!HÍ!^U°MemberExpressionÍ!HÍ!ZU°MemberExpressionÍ!HÍ!SKªIdentifierÍ!HÍ!M¥otherKªIdentifierÍ!NÍ!S¥netIdÂÂKªIdentifierÍ!TÍ!Z¦lengthÂÂ¡>[§LiteralÍ!]Í!^ ¡0¢&&Z°BinaryExpressionÍ!bÍ!|U°MemberExpressionÍ!bÍ!mKªIdentifierÍ!bÍ!g¥otherKªIdentifierÍ!hÍ!m¥netIdÂÂ£!==U°MemberExpressionÍ!rÍ!|KªIdentifierÍ!rÍ!v¤snapKªIdentifierÍ!wÍ!|¥netIdÂÂL®BlockStatementÍ!~Í!©‘^±ContinueStatementÍ!‘Í!šÀÀ\«IfStatementÍ!·Í"æZ°BinaryExpressionÍ!»Í!êV®CallExpressionÍ!»Í!ÛKªIdentifierÍ!»Í!Ä©pointDist’U°MemberExpressionÍ!ÅÍ!ĞKªIdentifierÍ!ÅÍ!Ê¥otherKªIdentifierÍ!ËÍ!Ğ¥startÂÂU°MemberExpressionÍ!ÒÍ!ÚKªIdentifierÍ!ÒÍ!Ö¤snapKªIdentifierÍ!×Í!Ú£posÂÂÂ¢<=KªIdentifierÍ!ßÍ!ê«junctionTolL®BlockStatementÍ!ìÍ"æ‘\«IfStatementÍ!ÿÍ"×]¯UnaryExpressionÍ"Í"E¡!ÃV®CallExpressionÍ"Í"EKªIdentifierÍ"Í"¹isEndpointOnStationaryPad”U°MemberExpressionÍ"Í")KªIdentifierÍ"Í"#¥otherKªIdentifierÍ"$Í")¥startÂÂKªIdentifierÍ"+Í".£docKªIdentifierÍ"0Í":ªemptyMovedKªIdentifierÍ"<Í"D¨gridSizeÂL®BlockStatementÍ"GÍ"×“W³ExpressionStatementÍ"^Í"v`´AssignmentExpressionÍ"^Í"u¢+=U°MemberExpressionÍ"^Í"kU°MemberExpressionÍ"^Í"iKªIdentifierÍ"^Í"c¥otherKªIdentifierÍ"dÍ"i¥startÂÂKªIdentifierÍ"jÍ"k¡xÂÂKªIdentifierÍ"oÍ"u¦deltaXW³ExpressionStatementÍ"ŒÍ"¤`´AssignmentExpressionÍ"ŒÍ"£¢+=U°MemberExpressionÍ"ŒÍ"™U°MemberExpressionÍ"ŒÍ"—KªIdentifierÍ"ŒÍ"‘¥otherKªIdentifierÍ"’Í"—¥startÂÂKªIdentifierÍ"˜Í"™¡yÂÂKªIdentifierÍ"Í"£¦deltaYW³ExpressionStatementÍ"ºÍ"Ä]°UpdateExpressionÍ"ºÍ"Ã¢++ÂKªIdentifierÍ"ºÍ"Á§updatedÀÀ\«IfStatementÍ"ôÍ$Z°BinaryExpressionÍ"øÍ#%V®CallExpressionÍ"øÍ#KªIdentifierÍ"øÍ#©pointDist’U°MemberExpressionÍ#Í#KªIdentifierÍ#Í#¥otherKªIdentifierÍ#Í#£endÂÂU°MemberExpressionÍ#Í#KªIdentifierÍ#Í#¤snapKªIdentifierÍ#Í#£posÂÂÂ¢<=KªIdentifierÍ#Í#%«junctionTolL®BlockStatementÍ#'Í$‘\«IfStatementÍ#:Í$]¯UnaryExpressionÍ#>Í#~¡!ÃV®CallExpressionÍ#?Í#~KªIdentifierÍ#?Í#X¹isEndpointOnStationaryPad”U°MemberExpressionÍ#YÍ#bKªIdentifierÍ#YÍ#^¥otherKªIdentifierÍ#_Í#b£endÂÂKªIdentifierÍ#dÍ#g£docKªIdentifierÍ#iÍ#sªemptyMovedKªIdentifierÍ#uÍ#}¨gridSizeÂL®BlockStatementÍ#€Í$“W³ExpressionStatementÍ#—Í#­`´AssignmentExpressionÍ#—Í#¬¢+=U°MemberExpressionÍ#—Í#¢U°MemberExpressionÍ#—Í# KªIdentifierÍ#—Í#œ¥otherKªIdentifierÍ#Í# £endÂÂKªIdentifierÍ#¡Í#¢¡xÂÂKªIdentifierÍ#¦Í#¬¦deltaXW³ExpressionStatementÍ#ÃÍ#Ù`´AssignmentExpressionÍ#ÃÍ#Ø¢+=U°MemberExpressionÍ#ÃÍ#ÎU°MemberExpressionÍ#ÃÍ#ÌKªIdentifierÍ#ÃÍ#È¥otherKªIdentifierÍ#ÉÍ#Ì£endÂÂKªIdentifierÍ#ÍÍ#Î¡yÂÂKªIdentifierÍ#ÒÍ#Ø¦deltaYW³ExpressionStatementÍ#ïÍ#ù]°UpdateExpressionÍ#ïÍ#ø¢++ÂKªIdentifierÍ#ïÍ#ö§updatedÀÀ\«IfStatementÍ$3Í$­Z°BinaryExpressionÍ$7Í$BKªIdentifierÍ$7Í$>§updated¡>[§LiteralÍ$AÍ$B ¡0L®BlockStatementÍ$DÍ$­‘W³ExpressionStatementÍ$OÍ$¦V®CallExpressionÍ$OÍ$¥KªIdentifierÍ$OÍ$W¨tracePcb’[§LiteralÍ$XÍ$m³TRACK_JUNCTION_SYNCµ'TRACK_JUNCTION_SYNC'N¯TemplateLiteralÍ$oÍ$¤’U°MemberExpressionÍ$~Í$KªIdentifierÍ$~Í$‹­movedTrackIdsKªIdentifierÍ$ŒÍ$¤sizeÂÂKªIdentifierÍ$›Í$¢§updated“O¯TemplateElementÍ$pÍ$|P¬movedTracks=¬movedTracks=ÂO¯TemplateElementÍ$‘Í$™P¨ synced=¨ synced=ÂO¯TemplateElementÍ$£Í$£P  ÃÂÀM¯ReturnStatementÍ$³Í$ÂKªIdentifierÍ$ºÍ$Á§updatedÀI¶ExportNamedDeclarationÍ%)Í)ıJ³FunctionDeclarationÍ%0Í)ıKªIdentifierÍ%9Í%Q¸lockTrackEndpointsToPadsÂÂÂ’KªIdentifierÍ%RÍ%U£docKªIdentifierÍ%WÍ%_¨trackIdsL®BlockStatementÍ%aÍ)ı—Q³VariableDeclarationÍ%hÍ%‘R²VariableDeclaratorÍ%nÍ%€KªIdentifierÍ%nÍ%t¦lockedS­NewExpressionÍ%wÍ%€KªIdentifierÍ%{Í%~£Set¥const\«IfStatementÍ%‡Í%ÀZ°BinaryExpressionÍ%‹Í%U°MemberExpressionÍ%‹Í%˜KªIdentifierÍ%‹Í%“¨trackIdsKªIdentifierÍ%”Í%˜¤sizeÂÂ£===[§LiteralÍ%Í% ¡0L®BlockStatementÍ% Í%À‘M¯ReturnStatementÍ%«Í%¹KªIdentifierÍ%²Í%¸¦lockedÀQ³VariableDeclarationÍ%ÆÍ%ò‘R²VariableDeclaratorÍ%ÌÍ%ñKªIdentifierÍ%ÌÍ%Ô¨gridSizeZ±LogicalExpressionÍ%×Í%ñU°MemberExpressionÍ%×Í%ìU°MemberExpressionÍ%×Í%ãKªIdentifierÍ%×Í%Ú£docKªIdentifierÍ%ÛÍ%ã¨metadataÂÂKªIdentifierÍ%äÍ%ì¨gridSizeÂÂ¢??[§LiteralÍ%ğÍ%ñ¡5¥constQ³VariableDeclarationÍ%øÍ&‘R²VariableDeclaratorÍ%üÍ&KªIdentifierÍ%üÍ&§snapped[§LiteralÍ&Í& ¡0£letT®ForOfStatementÍ&Í)<ÂQ³VariableDeclarationÍ&Í&‘R²VariableDeclaratorÍ&Í&KªIdentifierÍ&Í&£trkÀ¥constU°MemberExpressionÍ& Í&*KªIdentifierÍ& Í&#£docKªIdentifierÍ&$Í&*¦tracksÂÂL®BlockStatementÍ&,Í)<•\«IfStatementÍ&7Í&u]¯UnaryExpressionÍ&;Í&P¡!ÃV®CallExpressionÍ&<Í&PU°MemberExpressionÍ&<Í&HKªIdentifierÍ&<Í&D¨trackIdsKªIdentifierÍ&EÍ&H£hasÂÂ‘U°MemberExpressionÍ&IÍ&OKªIdentifierÍ&IÍ&L£trkKªIdentifierÍ&MÍ&O¢idÂÂÂL®BlockStatementÍ&RÍ&u‘^±ContinueStatementÍ&aÍ&jÀÀQ³VariableDeclarationÍ&Í&Î‘R²VariableDeclaratorÍ&…Í&ÍKªIdentifierÍ&…Í&¨startPadV®CallExpressionÍ&Í&ÍKªIdentifierÍ&Í&¨¸findPadAnchorForEndpoint”KªIdentifierÍ&©Í&¬£docU°MemberExpressionÍ&®Í&·KªIdentifierÍ&®Í&±£trkKªIdentifierÍ&²Í&·¥startÂÂU°MemberExpressionÍ&¹Í&ÂKªIdentifierÍ&¹Í&¼£trkKªIdentifierÍ&½Í&Â¥netIdÂÂKªIdentifierÍ&ÄÍ&Ì¨gridSizeÂ¥const\«IfStatementÍ&ØÍ'ŞZ°BinaryExpressionÍ&ÜÍ&íKªIdentifierÍ&ÜÍ&ä¨startPad£!==[§LiteralÍ&éÍ&íÀ¤nullL®BlockStatementÍ&ïÍ'Ş’\«IfStatementÍ&şÍ'«Z°BinaryExpressionÍ'Í''V®CallExpressionÍ'Í' KªIdentifierÍ'Í'©pointDist’U°MemberExpressionÍ'Í'KªIdentifierÍ'Í'£trkKªIdentifierÍ'Í'¥startÂÂKªIdentifierÍ'Í'¨startPadÂ¡>[§LiteralÍ'#Í''Ë?„záG®{¤0.01L®BlockStatementÍ')Í'«“W³ExpressionStatementÍ'<Í'U`´AssignmentExpressionÍ'<Í'T¡=U°MemberExpressionÍ'<Í'GU°MemberExpressionÍ'<Í'EKªIdentifierÍ'<Í'?£trkKªIdentifierÍ'@Í'E¥startÂÂKªIdentifierÍ'FÍ'G¡xÂÂU°MemberExpressionÍ'JÍ'TKªIdentifierÍ'JÍ'R¨startPadKªIdentifierÍ'SÍ'T¡xÂÂW³ExpressionStatementÍ'gÍ'€`´AssignmentExpressionÍ'gÍ'¡=U°MemberExpressionÍ'gÍ'rU°MemberExpressionÍ'gÍ'pKªIdentifierÍ'gÍ'j£trkKªIdentifierÍ'kÍ'p¥startÂÂKªIdentifierÍ'qÍ'r¡yÂÂU°MemberExpressionÍ'uÍ'KªIdentifierÍ'uÍ'}¨startPadKªIdentifierÍ'~Í'¡yÂÂW³ExpressionStatementÍ'’Í'œ]°UpdateExpressionÍ'’Í'›¢++ÂKªIdentifierÍ'’Í'™§snappedÀW³ExpressionStatementÍ'¹Í'ÓV®CallExpressionÍ'¹Í'ÒU°MemberExpressionÍ'¹Í'ÃKªIdentifierÍ'¹Í'¿¦lockedKªIdentifierÍ'ÀÍ'Ã£addÂÂ‘N¯TemplateLiteralÍ'ÄÍ'Ñ‘U°MemberExpressionÍ'ÇÍ'ÍKªIdentifierÍ'ÇÍ'Ê£trkKªIdentifierÍ'ËÍ'Í¢idÂÂ’O¯TemplateElementÍ'ÅÍ'ÅP  ÂO¯TemplateElementÍ'ÎÍ'ĞP¢|S¢|SÃÂÀQ³VariableDeclarationÍ'èÍ(3‘R²VariableDeclaratorÍ'îÍ(2KªIdentifierÍ'îÍ'ô¦endPadV®CallExpressionÍ'÷Í(2KªIdentifierÍ'÷Í(¸findPadAnchorForEndpoint”KªIdentifierÍ(Í(£docU°MemberExpressionÍ(Í(KªIdentifierÍ(Í(£trkKªIdentifierÍ(Í(£endÂÂU°MemberExpressionÍ(Í('KªIdentifierÍ(Í(!£trkKªIdentifierÍ("Í('¥netIdÂÂKªIdentifierÍ()Í(1¨gridSizeÂ¥const\«IfStatementÍ(=Í)5Z°BinaryExpressionÍ(AÍ(PKªIdentifierÍ(AÍ(G¦endPad£!==[§LiteralÍ(LÍ(PÀ¤nullL®BlockStatementÍ(RÍ)5’\«IfStatementÍ(aÍ)Z°BinaryExpressionÍ(eÍ(†V®CallExpressionÍ(eÍ(KªIdentifierÍ(eÍ(n©pointDist’U°MemberExpressionÍ(oÍ(vKªIdentifierÍ(oÍ(r£trkKªIdentifierÍ(sÍ(v£endÂÂKªIdentifierÍ(xÍ(~¦endPadÂ¡>[§LiteralÍ(‚Í(†Ë?„záG®{¤0.01L®BlockStatementÍ(ˆÍ)“W³ExpressionStatementÍ(›Í(°`´AssignmentExpressionÍ(›Í(¯¡=U°MemberExpressionÍ(›Í(¤U°MemberExpressionÍ(›Í(¢KªIdentifierÍ(›Í(£trkKªIdentifierÍ(ŸÍ(¢£endÂÂKªIdentifierÍ(£Í(¤¡xÂÂU°MemberExpressionÍ(§Í(¯KªIdentifierÍ(§Í(­¦endPadKªIdentifierÍ(®Í(¯¡xÂÂW³ExpressionStatementÍ(ÂÍ(×`´AssignmentExpressionÍ(ÂÍ(Ö¡=U°MemberExpressionÍ(ÂÍ(ËU°MemberExpressionÍ(ÂÍ(ÉKªIdentifierÍ(ÂÍ(Å£trkKªIdentifierÍ(ÆÍ(É£endÂÂKªIdentifierÍ(ÊÍ(Ë¡yÂÂU°MemberExpressionÍ(ÎÍ(ÖKªIdentifierÍ(ÎÍ(Ô¦endPadKªIdentifierÍ(ÕÍ(Ö¡yÂÂW³ExpressionStatementÍ(éÍ(ó]°UpdateExpressionÍ(éÍ(ò¢++ÂKªIdentifierÍ(éÍ(ğ§snappedÀW³ExpressionStatementÍ)Í)*V®CallExpressionÍ)Í))U°MemberExpressionÍ)Í)KªIdentifierÍ)Í)¦lockedKªIdentifierÍ)Í)£addÂÂ‘N¯TemplateLiteralÍ)Í)(‘U°MemberExpressionÍ)Í)$KªIdentifierÍ)Í)!£trkKªIdentifierÍ)"Í)$¢idÂÂ’O¯TemplateElementÍ)Í)P  ÂO¯TemplateElementÍ)%Í)'P¢|E¢|EÃÂÀ\«IfStatementÍ)BÍ)æZ°BinaryExpressionÍ)FÍ)UU°MemberExpressionÍ)FÍ)QKªIdentifierÍ)FÍ)L¦lockedKªIdentifierÍ)MÍ)Q¤sizeÂÂ¡>[§LiteralÍ)TÍ)U ¡0L®BlockStatementÍ)WÍ)æ‘W³ExpressionStatementÍ)bÍ)ßV®CallExpressionÍ)bÍ)ŞKªIdentifierÍ)bÍ)j¨tracePcb’[§LiteralÍ)kÍ){®TRACK_PAD_LOCK°'TRACK_PAD_LOCK'N¯TemplateLiteralÍ)}Í)İ“U°MemberExpressionÍ)‡Í)”KªIdentifierÍ)‡Í)¨trackIdsKªIdentifierÍ)Í)”¤sizeÂÂU°MemberExpressionÍ)£Í)®KªIdentifierÍ)£Í)©¦lockedKªIdentifierÍ)ªÍ)®¤sizeÂÂKªIdentifierÍ)ºÍ)Á§snapped”O¯TemplateElementÍ)~Í)…P§tracks=§tracks=ÂO¯TemplateElementÍ)•Í)¡P¬ lockedEnds=¬ lockedEnds=ÂO¯TemplateElementÍ)¯Í)¸P© snapped=© snapped=ÂO¯TemplateElementÍ)ÂÍ)ÜPº mode=both-ends-if-any-padº mode=both-ends-if-any-padÃÂÀM¯ReturnStatementÍ)ìÍ)úKªIdentifierÍ)óÍ)ù¦lockedÀI¶ExportNamedDeclarationÍ-^Í.üJ³FunctionDeclarationÍ-eÍ.üKªIdentifierÍ-nÍ-ˆºcollectNetIdsForFootprintsÂÂÂ’KªIdentifierÍ-‰Í-Œ£docKªIdentifierÍ-Í-š¬footprintIdsL®BlockStatementÍ-œÍ.ü“Q³VariableDeclarationÍ-£Í-¼‘R²VariableDeclaratorÍ-©Í-»KªIdentifierÍ-©Í-¯¦netIdsS­NewExpressionÍ-²Í-»KªIdentifierÍ-¶Í-¹£Set¥constT®ForOfStatementÍ-ÂÍ.åÂQ³VariableDeclarationÍ-ÇÍ-Ï‘R²VariableDeclaratorÍ-ÍÍ-ÏKªIdentifierÍ-ÍÍ-Ï¢fpÀ¥constU°MemberExpressionÍ-ÓÍ-áKªIdentifierÍ-ÓÍ-Ö£docKªIdentifierÍ-×Í-áªfootprintsÂÂL®BlockStatementÍ-ãÍ.å’\«IfStatementÍ-îÍ./]¯UnaryExpressionÍ-òÍ.
+¡!ÃV®CallExpressionÍ-óÍ.
+U°MemberExpressionÍ-óÍ.KªIdentifierÍ-óÍ-ÿ¬footprintIdsKªIdentifierÍ. Í.£hasÂÂ‘U°MemberExpressionÍ.Í.	KªIdentifierÍ.Í.¢fpKªIdentifierÍ.Í.	¢idÂÂÂL®BlockStatementÍ.Í./‘^±ContinueStatementÍ.Í.$ÀÀT®ForOfStatementÍ.9Í.ŞÂQ³VariableDeclarationÍ.>Í.G‘R²VariableDeclaratorÍ.DÍ.GKªIdentifierÍ.DÍ.G£padÀ¥constU°MemberExpressionÍ.KÍ.RKªIdentifierÍ.KÍ.M¢fpKªIdentifierÍ.NÍ.R¤padsÂÂL®BlockStatementÍ.TÍ.Ş’Q³VariableDeclarationÍ.cÍ.‘R²VariableDeclaratorÍ.iÍ.~KªIdentifierÍ.iÍ.l£nidZ±LogicalExpressionÍ.oÍ.~U°MemberExpressionÍ.oÍ.xKªIdentifierÍ.oÍ.r£padKªIdentifierÍ.sÍ.x¥netIdÂÂ¢??[§LiteralÍ.|Í.~ ¢''¥const\«IfStatementÍ.Í.ÓZ°BinaryExpressionÍ.‘Í.ŸU°MemberExpressionÍ.‘Í.›KªIdentifierÍ.‘Í.”£nidKªIdentifierÍ.•Í.›¦lengthÂÂ¡>[§LiteralÍ.Í.Ÿ ¡0L®BlockStatementÍ.¡Í.Ó‘W³ExpressionStatementÍ.´Í.ÄV®CallExpressionÍ.´Í.ÃU°MemberExpressionÍ.´Í.¾KªIdentifierÍ.´Í.º¦netIdsKªIdentifierÍ.»Í.¾£addÂÂ‘KªIdentifierÍ.¿Í.Â£nidÂÀM¯ReturnStatementÍ.ëÍ.ùKªIdentifierÍ.òÍ.ø¦netIdsÀI¶ExportNamedDeclarationÍ/RÍ:J³FunctionDeclarationÍ/YÍ:KªIdentifierÍ/bÍ/z¸snapTrackEndpointsToPadsÂÂÂ‘KªIdentifierÍ/{Í/~£docL®BlockStatementÍ/€Í:šQ³VariableDeclarationÍ/‡Í/³‘R²VariableDeclaratorÍ/Í/²KªIdentifierÍ/Í/•¨gridSizeZ±LogicalExpressionÍ/˜Í/²U°MemberExpressionÍ/˜Í/­U°MemberExpressionÍ/˜Í/¤KªIdentifierÍ/˜Í/›£docKªIdentifierÍ/œÍ/¤¨metadataÂÂKªIdentifierÍ/¥Í/­¨gridSizeÂÂ¢??[§LiteralÍ/±Í/²¡5¥constQ³VariableDeclarationÍ/¹Í/î‘R²VariableDeclaratorÍ/¿Í/íKªIdentifierÍ/¿Í/Ê«junctionTolV®CallExpressionÍ/ÍÍ/íKªIdentifierÍ/ÍÍ/ã¶junctionMatchTolerance‘KªIdentifierÍ/äÍ/ì¨gridSizeÂ¥constQ³VariableDeclarationÍ/ôÍ0‘R²VariableDeclaratorÍ/úÍ0KªIdentifierÍ/úÍ/ş¤pads_¯ArrayExpressionÍ0Í0¥constT®ForOfStatementÍ0
+Í1XÂQ³VariableDeclarationÍ0Í0‘R²VariableDeclaratorÍ0Í0KªIdentifierÍ0Í0¢fpÀ¥constU°MemberExpressionÍ0Í0)KªIdentifierÍ0Í0£docKªIdentifierÍ0Í0)ªfootprintsÂÂL®BlockStatementÍ0+Í1X‘T®ForOfStatementÍ06Í1QÂQ³VariableDeclarationÍ0;Í0D‘R²VariableDeclaratorÍ0AÍ0DKªIdentifierÍ0AÍ0D£padÀ¥constU°MemberExpressionÍ0HÍ0OKªIdentifierÍ0HÍ0J¢fpKªIdentifierÍ0KÍ0O¤padsÂÂL®BlockStatementÍ0QÍ1Q“Q³VariableDeclarationÍ0`Í0…‘R²VariableDeclaratorÍ0fÍ0„KªIdentifierÍ0fÍ0h¢wpV®CallExpressionÍ0kÍ0„KªIdentifierÍ0kÍ0{°padWorldPosition’KªIdentifierÍ0|Í0~¢fpKªIdentifierÍ0€Í0ƒ£padÂ¥constQ³VariableDeclarationÍ0“Í1)‘R²VariableDeclaratorÍ0™Í1(KªIdentifierÍ0™Í0œ£refX°ObjectExpressionÍ0ŸÍ1(“Y¨PropertyÍ0²Í0¹ÂÂÂKªIdentifierÍ0²Í0µ£posKªIdentifierÍ0·Í0¹¢wp¤initY¨PropertyÍ0ÌÍ0âÂÂÂKªIdentifierÍ0ÌÍ0Ñ¥netIdZ±LogicalExpressionÍ0ÓÍ0âU°MemberExpressionÍ0ÓÍ0ÜKªIdentifierÍ0ÓÍ0Ö£padKªIdentifierÍ0×Í0Ü¥netIdÂÂ¢??[§LiteralÍ0àÍ0â ¢''¤initY¨PropertyÍ0õÍ1ÂÂÂKªIdentifierÍ0õÍ0ø£tolV®CallExpressionÍ0úÍ1KªIdentifierÍ0úÍ1
+°padSnapTolerance’KªIdentifierÍ1Í1£padKªIdentifierÍ1Í1¨gridSizeÂ¤init¥constW³ExpressionStatementÍ17Í1FV®CallExpressionÍ17Í1EU°MemberExpressionÍ17Í1@KªIdentifierÍ17Í1;¤padsKªIdentifierÍ1<Í1@¤pushÂÂ‘KªIdentifierÍ1AÍ1D£refÂQ³VariableDeclarationÍ1^Í4^‘R²VariableDeclaratorÍ1dÍ4]KªIdentifierÍ1dÍ1r®findSnapTargetJ·ArrowFunctionExpressionÍ1uÍ4]ÀÂÂÂ’KªIdentifierÍ1vÍ1x¢ptKªIdentifierÍ1zÍ1¥netIdL®BlockStatementÍ1„Í4]•Q³VariableDeclarationÍ1Í1Ÿ‘R²VariableDeclaratorÍ1“Í1KªIdentifierÍ1“Í1—¤best[§LiteralÍ1šÍ1À¤null£letQ³VariableDeclarationÍ1©Í1Á‘R²VariableDeclaratorÍ1­Í1ÀKªIdentifierÍ1­Í1µ¨bestDistKªIdentifierÍ1¸Í1À¨Infinity£letT®ForOfStatementÍ1ËÍ3êÂQ³VariableDeclarationÍ1ĞÍ1Ø‘R²VariableDeclaratorÍ1ÖÍ1ØKªIdentifierÍ1ÖÍ1Ø¢prÀ¥constKªIdentifierÍ1ÜÍ1à¤padsL®BlockStatementÍ1âÍ3ê”\«IfStatementÍ1ñÍ2äZ°BinaryExpressionÍ1õÍ2U°MemberExpressionÍ1õÍ2KªIdentifierÍ1õÍ1ú¥netIdKªIdentifierÍ1ûÍ2¦lengthÂÂ¡>[§LiteralÍ2Í2 ¡0L®BlockStatementÍ2Í2‘\«IfStatementÍ2Í2~Z±LogicalExpressionÍ2Í2IZ°BinaryExpressionÍ2Í23U°MemberExpressionÍ2Í2-U°MemberExpressionÍ2Í2&KªIdentifierÍ2Í2 ¢prKªIdentifierÍ2!Í2&¥netIdÂÂKªIdentifierÍ2'Í2-¦lengthÂÂ£===[§LiteralÍ22Í23 ¡0¢||Z°BinaryExpressionÍ27Í2IU°MemberExpressionÍ27Í2?KªIdentifierÍ27Í29¢prKªIdentifierÍ2:Í2?¥netIdÂÂ£!==KªIdentifierÍ2DÍ2I¥netIdL®BlockStatementÍ2KÍ2~‘^±ContinueStatementÍ2bÍ2kÀÀ\«IfStatementÍ2 Í2äZ°BinaryExpressionÍ2¤Í2·U°MemberExpressionÍ2¤Í2³U°MemberExpressionÍ2¤Í2¬KªIdentifierÍ2¤Í2¦¢prKªIdentifierÍ2§Í2¬¥netIdÂÂKªIdentifierÍ2­Í2³¦lengthÂÂ¡>[§LiteralÍ2¶Í2· ¡0L®BlockStatementÍ2¹Í2ä‘^±ContinueStatementÍ2ÌÍ2ÕÀÀQ³VariableDeclarationÍ2òÍ3‘R²VariableDeclaratorÍ2øÍ3KªIdentifierÍ2øÍ2ù¡dV®CallExpressionÍ2üÍ3KªIdentifierÍ2üÍ3©pointDist’KªIdentifierÍ3Í3¢ptU°MemberExpressionÍ3
+Í3KªIdentifierÍ3
+Í3¢prKªIdentifierÍ3Í3£posÂÂÂ¥constQ³VariableDeclarationÍ3 Í3_‘R²VariableDeclaratorÍ3&Í3^KªIdentifierÍ3&Í3.¨tightTolV®CallExpressionÍ31Í3^U°MemberExpressionÍ31Í39KªIdentifierÍ31Í35¤MathKªIdentifierÍ36Í39£minÂÂ’U°MemberExpressionÍ3:Í3@KªIdentifierÍ3:Í3<¢prKªIdentifierÍ3=Í3@£tolÂÂV®CallExpressionÍ3BÍ3]U°MemberExpressionÍ3BÍ3JKªIdentifierÍ3BÍ3F¤MathKªIdentifierÍ3GÍ3J£maxÂÂ’Z°BinaryExpressionÍ3KÍ3XU°MemberExpressionÍ3KÍ3QKªIdentifierÍ3KÍ3M¢prKªIdentifierÍ3NÍ3Q£tolÂÂ¡*[§LiteralÍ3TÍ3XË?á™™™™™š¤0.55[§LiteralÍ3ZÍ3\¢12ÂÂ¥const\«IfStatementÍ3mÍ3ßZ±LogicalExpressionÍ3qÍ3Z°BinaryExpressionÍ3qÍ3~KªIdentifierÍ3qÍ3r¡d¢<=KªIdentifierÍ3vÍ3~¨tightTol¢&&Z°BinaryExpressionÍ3‚Í3KªIdentifierÍ3‚Í3ƒ¡d¡<KªIdentifierÍ3†Í3¨bestDistL®BlockStatementÍ3Í3ß’W³ExpressionStatementÍ3£Í3°`´AssignmentExpressionÍ3£Í3¯¡=KªIdentifierÍ3£Í3«¨bestDistKªIdentifierÍ3®Í3¯¡dW³ExpressionStatementÍ3ÂÍ3Ğ`´AssignmentExpressionÍ3ÂÍ3Ï¡=KªIdentifierÍ3ÂÍ3Æ¤bestU°MemberExpressionÍ3ÉÍ3ÏKªIdentifierÍ3ÉÍ3Ë¢prKªIdentifierÍ3ÌÍ3Ï£posÂÂÀ\«IfStatementÍ3ôÍ4@Z±LogicalExpressionÍ3øÍ4Z°BinaryExpressionÍ3øÍ4KªIdentifierÍ3øÍ3ü¤best£!==[§LiteralÍ4Í4À¤null¢&&Z°BinaryExpressionÍ4	Í4KªIdentifierÍ4	Í4¨bestDist¡>[§LiteralÍ4Í4Ë?„záG®{¤0.01L®BlockStatementÍ4Í4@‘M¯ReturnStatementÍ4)Í45KªIdentifierÍ40Í44¤bestÀM¯ReturnStatementÍ4JÍ4V[§LiteralÍ4QÍ4UÀ¤null¥constQ³VariableDeclarationÍ4dÍ4~‘R²VariableDeclaratorÍ4jÍ4}KªIdentifierÍ4jÍ4q§bucketsS­NewExpressionÍ4tÍ4}KªIdentifierÍ4xÍ4{£Map¥constT®ForOfStatementÍ4„Í6‰ÂQ³VariableDeclarationÍ4‰Í4’‘R²VariableDeclaratorÍ4Í4’KªIdentifierÍ4Í4’£trkÀ¥constU°MemberExpressionÍ4–Í4 KªIdentifierÍ4–Í4™£docKªIdentifierÍ4šÍ4 ¦tracksÂÂL®BlockStatementÍ4¢Í6‰“Q³VariableDeclarationÍ4­Í6S‘R²VariableDeclaratorÍ4³Í6RKªIdentifierÍ4³Í4¹¦addEndJ·ArrowFunctionExpressionÍ4¼Í6RÀÂÂÂ‘KªIdentifierÍ4½Í4Ä§isStartL®BlockStatementÍ4ÉÍ6R•Q³VariableDeclarationÍ4ØÍ5‘R²VariableDeclaratorÍ4ŞÍ5KªIdentifierÍ4ŞÍ4à¢ptV®CallExpressionÍ4ãÍ5KªIdentifierÍ4ãÍ4ó°getTrackEndpoint’KªIdentifierÍ4ôÍ4÷£trkKªIdentifierÍ4ùÍ5 §isStartÂ¥constQ³VariableDeclarationÍ5Í5D‘R²VariableDeclaratorÍ5Í5CKªIdentifierÍ5Í5£keyV®CallExpressionÍ5Í5CKªIdentifierÍ5Í5'«junctionKey“KªIdentifierÍ5(Í5*¢ptU°MemberExpressionÍ5,Í55KªIdentifierÍ5,Í5/£trkKªIdentifierÍ50Í55¥netIdÂÂKªIdentifierÍ57Í5B«junctionTolÂ¥constQ³VariableDeclarationÍ5RÍ5k‘R²VariableDeclaratorÍ5VÍ5jKªIdentifierÍ5VÍ5W¡bV®CallExpressionÍ5ZÍ5jU°MemberExpressionÍ5ZÍ5eKªIdentifierÍ5ZÍ5a§bucketsKªIdentifierÍ5bÍ5e£getÂÂ‘KªIdentifierÍ5fÍ5i£keyÂ£let\«IfStatementÍ5yÍ6Z°BinaryExpressionÍ5}Í5ŒKªIdentifierÍ5}Í5~¡b£===KªIdentifierÍ5ƒÍ5Œ©undefinedL®BlockStatementÍ5Í6’W³ExpressionStatementÍ5¡Í5ß`´AssignmentExpressionÍ5¡Í5Ş¡=KªIdentifierÍ5¡Í5¢¡bX°ObjectExpressionÍ5¥Í5Ş“Y¨PropertyÍ5§Í5·ÂÂÂKªIdentifierÍ5§Í5¬¥netIdU°MemberExpressionÍ5®Í5·KªIdentifierÍ5®Í5±£trkKªIdentifierÍ5²Í5·¥netIdÂÂ¤initY¨PropertyÍ5¹Í5ÒÂÂÂKªIdentifierÍ5¹Í5¼£posX°ObjectExpressionÍ5¾Í5Ò’Y¨PropertyÍ5ÀÍ5ÇÂÂÂKªIdentifierÍ5ÀÍ5Á¡xU°MemberExpressionÍ5ÃÍ5ÇKªIdentifierÍ5ÃÍ5Å¢ptKªIdentifierÍ5ÆÍ5Ç¡xÂÂ¤initY¨PropertyÍ5ÉÍ5ĞÂÂÂKªIdentifierÍ5ÉÍ5Ê¡yU°MemberExpressionÍ5ÌÍ5ĞKªIdentifierÍ5ÌÍ5Î¢ptKªIdentifierÍ5ÏÍ5Ğ¡yÂÂ¤init¤initY¨PropertyÍ5ÔÍ5ÜÂÂÂKªIdentifierÍ5ÔÍ5Ø¤refs_¯ArrayExpressionÍ5ÚÍ5Ü¤initW³ExpressionStatementÍ5ñÍ6V®CallExpressionÍ5ñÍ6U°MemberExpressionÍ5ñÍ5üKªIdentifierÍ5ñÍ5ø§bucketsKªIdentifierÍ5ùÍ5ü£setÂÂ’KªIdentifierÍ5ıÍ6 £keyKªIdentifierÍ6Í6¡bÂÀW³ExpressionStatementÍ6"Í6GV®CallExpressionÍ6"Í6FU°MemberExpressionÍ6"Í6-U°MemberExpressionÍ6"Í6(KªIdentifierÍ6"Í6#¡bKªIdentifierÍ6$Í6(¤refsÂÂKªIdentifierÍ6)Í6-¤pushÂÂ‘X°ObjectExpressionÍ6.Í6E’Y¨PropertyÍ60Í6:ÂÂÂKªIdentifierÍ60Í65¥trackKªIdentifierÍ67Í6:£trk¤inita¨PropertyÍ6<Í6CÂÃÂKªIdentifierÍ6<Í6C§isStart¤initKªIdentifierÍ6<Í6C§isStartÂ¥constW³ExpressionStatementÍ6]Í6jV®CallExpressionÍ6]Í6iKªIdentifierÍ6]Í6c¦addEnd‘[§LiteralÍ6dÍ6hÃ¤trueÂW³ExpressionStatementÍ6tÍ6‚V®CallExpressionÍ6tÍ6KªIdentifierÍ6tÍ6z¦addEnd‘[§LiteralÍ6{Í6€Â¥falseÂQ³VariableDeclarationÍ6Í6Ÿ‘R²VariableDeclaratorÍ6“Í6KªIdentifierÍ6“Í6š§snapped[§LiteralÍ6Í6 ¡0£letW³ExpressionStatementÍ6¥Í9öV®CallExpressionÍ6¥Í9õU°MemberExpressionÍ6¥Í6´KªIdentifierÍ6¥Í6¬§bucketsKªIdentifierÍ6­Í6´§forEachÂÂ‘J·ArrowFunctionExpressionÍ6µÍ9ôÀÂÂÂ‘KªIdentifierÍ6¶Í6¼¦bucketL®BlockStatementÍ6ÁÍ9ô–Q³VariableDeclarationÍ6ÌÍ7‘R²VariableDeclaratorÍ6ÒÍ7KªIdentifierÍ6ÒÍ6Ø¦targetV®CallExpressionÍ6ÛÍ7KªIdentifierÍ6ÛÍ6é®findSnapTarget’U°MemberExpressionÍ6êÍ6ôKªIdentifierÍ6êÍ6ğ¦bucketKªIdentifierÍ6ñÍ6ô£posÂÂU°MemberExpressionÍ6öÍ7KªIdentifierÍ6öÍ6ü¦bucketKªIdentifierÍ6ıÍ7¥netIdÂÂÂ¥const\«IfStatementÍ7Í7DZ°BinaryExpressionÍ7Í7!KªIdentifierÍ7Í7¦target£===[§LiteralÍ7Í7!À¤nullL®BlockStatementÍ7#Í7D‘M¯ReturnStatementÍ72Í79ÀÀQ³VariableDeclarationÍ7‚Í7œ‘R²VariableDeclaratorÍ7†Í7›KªIdentifierÍ7†Í7“­wouldCollapse[§LiteralÍ7–Í7›Â¥false£letT®ForOfStatementÍ7¦Í8˜ÂQ³VariableDeclarationÍ7«Í7´‘R²VariableDeclaratorÍ7±Í7´KªIdentifierÍ7±Í7´£refÀ¥constU°MemberExpressionÍ7¸Í7ÃKªIdentifierÍ7¸Í7¾¦bucketKªIdentifierÍ7¿Í7Ã¤refsÂÂL®BlockStatementÍ7ÅÍ8˜’Q³VariableDeclarationÍ7ÔÍ8‘R²VariableDeclaratorÍ7ÚÍ8KªIdentifierÍ7ÚÍ7ß¥otherV®CallExpressionÍ7âÍ8KªIdentifierÍ7âÍ7ò°getTrackEndpoint’U°MemberExpressionÍ7óÍ7üKªIdentifierÍ7óÍ7ö£refKªIdentifierÍ7÷Í7ü¥trackÂÂ]¯UnaryExpressionÍ7şÍ8
+¡!ÃU°MemberExpressionÍ7ÿÍ8
+KªIdentifierÍ7ÿÍ8£refKªIdentifierÍ8Í8
+§isStartÂÂÂ¥const\«IfStatementÍ8Í8Z°BinaryExpressionÍ8Í8<V®CallExpressionÍ8Í86KªIdentifierÍ8Í8'©pointDist’KªIdentifierÍ8(Í8.¦targetKªIdentifierÍ80Í85¥otherÂ¡<[§LiteralÍ89Í8<Ë?à      £0.5L®BlockStatementÍ8>Í8’W³ExpressionStatementÍ8QÍ8f`´AssignmentExpressionÍ8QÍ8e¡=KªIdentifierÍ8QÍ8^­wouldCollapse[§LiteralÍ8aÍ8eÃ¤true^®BreakStatementÍ8xÍ8~ÀÀ\«IfStatementÍ8¢Í8ÖKªIdentifierÍ8¦Í8³­wouldCollapseL®BlockStatementÍ8µÍ8Ö‘M¯ReturnStatementÍ8ÄÍ8ËÀÀT®ForOfStatementÍ8àÍ9íÂQ³VariableDeclarationÍ8åÍ8î‘R²VariableDeclaratorÍ8ëÍ8îKªIdentifierÍ8ëÍ8î£refÀ¥constU°MemberExpressionÍ8òÍ8ıKªIdentifierÍ8òÍ8ø¦bucketKªIdentifierÍ8ùÍ8ı¤refsÂÂL®BlockStatementÍ8ÿÍ9í’Q³VariableDeclarationÍ9Í9B‘R²VariableDeclaratorÍ9Í9AKªIdentifierÍ9Í9¢ptV®CallExpressionÍ9Í9AKªIdentifierÍ9Í9)°getTrackEndpoint’U°MemberExpressionÍ9*Í93KªIdentifierÍ9*Í9-£refKªIdentifierÍ9.Í93¥trackÂÂU°MemberExpressionÍ95Í9@KªIdentifierÍ95Í98£refKªIdentifierÍ99Í9@§isStartÂÂÂ¥const\«IfStatementÍ9PÍ9âZ°BinaryExpressionÍ9TÍ9pV®CallExpressionÍ9TÍ9iKªIdentifierÍ9TÍ9]©pointDist’KªIdentifierÍ9^Í9`¢ptKªIdentifierÍ9bÍ9h¦targetÂ¡>[§LiteralÍ9lÍ9pË?„záG®{¤0.01L®BlockStatementÍ9rÍ9â“W³ExpressionStatementÍ9…Í9•`´AssignmentExpressionÍ9…Í9”¡=U°MemberExpressionÍ9…Í9‰KªIdentifierÍ9…Í9‡¢ptKªIdentifierÍ9ˆÍ9‰¡xÂÂU°MemberExpressionÍ9ŒÍ9”KªIdentifierÍ9ŒÍ9’¦targetKªIdentifierÍ9“Í9”¡xÂÂW³ExpressionStatementÍ9§Í9·`´AssignmentExpressionÍ9§Í9¶¡=U°MemberExpressionÍ9§Í9«KªIdentifierÍ9§Í9©¢ptKªIdentifierÍ9ªÍ9«¡yÂÂU°MemberExpressionÍ9®Í9¶KªIdentifierÍ9®Í9´¦targetKªIdentifierÍ9µÍ9¶¡yÂÂW³ExpressionStatementÍ9ÉÍ9Ó]°UpdateExpressionÍ9ÉÍ9Ò¢++ÂKªIdentifierÍ9ÉÍ9Ğ§snappedÀÂM¯ReturnStatementÍ9üÍ:KªIdentifierÍ:Í:
+§snappedÀI¶ExportNamedDeclarationÍ:/Í;ˆJ³FunctionDeclarationÍ:6Í;ˆKªIdentifierÍ:?Í:TµpruneZeroLengthTracksÂÂÂ‘KªIdentifierÍ:UÍ:X£docL®BlockStatementÍ:ZÍ;ˆ•Q³VariableDeclarationÍ:aÍ:‚‘R²VariableDeclaratorÍ:gÍ:KªIdentifierÍ:gÍ:m¦beforeU°MemberExpressionÍ:pÍ:U°MemberExpressionÍ:pÍ:zKªIdentifierÍ:pÍ:s£docKªIdentifierÍ:tÍ:z¦tracksÂÂKªIdentifierÍ:{Í:¦lengthÂÂ¥constQ³VariableDeclarationÍ:ˆÍ:˜‘R²VariableDeclaratorÍ:Í:—KªIdentifierÍ:Í:’¤kept_¯ArrayExpressionÍ:•Í:—¥constÔrb—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ:Í;KQ³VariableDeclarationÍ:£Í:¬‘R²VariableDeclaratorÍ:§Í:¬KªIdentifierÍ:§Í:¨¡i[§LiteralÍ:«Í:¬ ¡0£letZ°BinaryExpressionÍ:®Í:ÃKªIdentifierÍ:®Í:¯¡i¡<U°MemberExpressionÍ:²Í:ÃU°MemberExpressionÍ:²Í:¼KªIdentifierÍ:²Í:µ£docKªIdentifierÍ:¶Í:¼¦tracksÂÂKªIdentifierÍ:½Í:Ã¦lengthÂÂ]°UpdateExpressionÍ:ÅÍ:È¢++ÂKªIdentifierÍ:ÅÍ:Æ¡iL®BlockStatementÍ:ÊÍ;K’Q³VariableDeclarationÍ:ÕÍ:í‘R²VariableDeclaratorÍ:ÛÍ:ìKªIdentifierÍ:ÛÍ:Ü¡tU°MemberExpressionÍ:ßÍ:ìU°MemberExpressionÍ:ßÍ:éKªIdentifierÍ:ßÍ:â£docKªIdentifierÍ:ãÍ:é¦tracksÂÂKªIdentifierÍ:êÍ:ë¡iÃÂ¥const\«IfStatementÍ:÷Í;DZ°BinaryExpressionÍ:ûÍ;V®CallExpressionÍ:ûÍ;KªIdentifierÍ:ûÍ;©pointDist’U°MemberExpressionÍ;Í;KªIdentifierÍ;Í;¡tKªIdentifierÍ;Í;¥startÂÂU°MemberExpressionÍ;Í;KªIdentifierÍ;Í;¡tKªIdentifierÍ;Í;£endÂÂÂ¢>=[§LiteralÍ;Í;Ë?à      £0.5L®BlockStatementÍ;Í;D‘W³ExpressionStatementÍ;,Í;9V®CallExpressionÍ;,Í;8U°MemberExpressionÍ;,Í;5KªIdentifierÍ;,Í;0¤keptKªIdentifierÍ;1Í;5¤pushÂÂ‘KªIdentifierÍ;6Í;7¡tÂÀW³ExpressionStatementÍ;QÍ;c`´AssignmentExpressionÍ;QÍ;b¡=U°MemberExpressionÍ;QÍ;[KªIdentifierÍ;QÍ;T£docKªIdentifierÍ;UÍ;[¦tracksÂÂKªIdentifierÍ;^Í;b¤keptM¯ReturnStatementÍ;iÍ;…Z°BinaryExpressionÍ;pÍ;„KªIdentifierÍ;pÍ;v¦before¡-U°MemberExpressionÍ;yÍ;„KªIdentifierÍ;yÍ;}¤keptKªIdentifierÍ;~Í;„¦lengthÂÂÀI¶ExportNamedDeclarationÍ;ÌÍGˆJ³FunctionDeclarationÍ;ÓÍGˆKªIdentifierÍ;ÜÍ;üÙ snapTrackEndpointsNearFootprintsÂÂÂ’KªIdentifierÍ;ıÍ< £docKªIdentifierÍ<Í<¬footprintIdsL®BlockStatementÍ<ÍGˆ\«IfStatementÍ<Í<OZ°BinaryExpressionÍ<Í<2U°MemberExpressionÍ<Í<,KªIdentifierÍ<Í<'¬footprintIdsKªIdentifierÍ<(Í<,¤sizeÂÂ£===[§LiteralÍ<1Í<2 ¡0L®BlockStatementÍ<4Í<O‘M¯ReturnStatementÍ<?Í<H[§LiteralÍ<FÍ<G ¡0ÀQ³VariableDeclarationÍ<UÍ<e‘R²VariableDeclaratorÍ<[Í<dKªIdentifierÍ<[Í<_¤pads_¯ArrayExpressionÍ<bÍ<d¥constQ³VariableDeclarationÍ<kÍ<„‘R²VariableDeclaratorÍ<qÍ<ƒKªIdentifierÍ<qÍ<w¦netIdsS­NewExpressionÍ<zÍ<ƒKªIdentifierÍ<~Í<£Set¥constT®ForOfStatementÍ<ŠÍ>rÂQ³VariableDeclarationÍ<Í<—‘R²VariableDeclaratorÍ<•Í<—KªIdentifierÍ<•Í<—¢fpÀ¥constU°MemberExpressionÍ<›Í<©KªIdentifierÍ<›Í<£docKªIdentifierÍ<ŸÍ<©ªfootprintsÂÂL®BlockStatementÍ<«Í>r’\«IfStatementÍ<¶Í<÷]¯UnaryExpressionÍ<ºÍ<Ò¡!ÃV®CallExpressionÍ<»Í<ÒU°MemberExpressionÍ<»Í<ËKªIdentifierÍ<»Í<Ç¬footprintIdsKªIdentifierÍ<ÈÍ<Ë£hasÂÂ‘U°MemberExpressionÍ<ÌÍ<ÑKªIdentifierÍ<ÌÍ<Î¢fpKªIdentifierÍ<ÏÍ<Ñ¢idÂÂÂL®BlockStatementÍ<ÔÍ<÷‘^±ContinueStatementÍ<ãÍ<ìÀÀT®ForOfStatementÍ=Í>kÂQ³VariableDeclarationÍ=Í=‘R²VariableDeclaratorÍ=Í=KªIdentifierÍ=Í=£padÀ¥constU°MemberExpressionÍ=Í=KªIdentifierÍ=Í=¢fpKªIdentifierÍ=Í=¤padsÂÂL®BlockStatementÍ=Í>k“Q³VariableDeclarationÍ=+Í=G‘R²VariableDeclaratorÍ=1Í=FKªIdentifierÍ=1Í=4£nidZ±LogicalExpressionÍ=7Í=FU°MemberExpressionÍ=7Í=@KªIdentifierÍ=7Í=:£padKªIdentifierÍ=;Í=@¥netIdÂÂ¢??[§LiteralÍ=DÍ=F ¢''¥const\«IfStatementÍ=UÍ=›Z°BinaryExpressionÍ=YÍ=gU°MemberExpressionÍ=YÍ=cKªIdentifierÍ=YÍ=\£nidKªIdentifierÍ=]Í=c¦lengthÂÂ¡>[§LiteralÍ=fÍ=g ¡0L®BlockStatementÍ=iÍ=›‘W³ExpressionStatementÍ=|Í=ŒV®CallExpressionÍ=|Í=‹U°MemberExpressionÍ=|Í=†KªIdentifierÍ=|Í=‚¦netIdsKªIdentifierÍ=ƒÍ=†£addÂÂ‘KªIdentifierÍ=‡Í=Š£nidÂÀW³ExpressionStatementÍ=©Í>`V®CallExpressionÍ=©Í>_U°MemberExpressionÍ=©Í=²KªIdentifierÍ=©Í=­¤padsKªIdentifierÍ=®Í=²¤pushÂÂ‘X°ObjectExpressionÍ=³Í>^“Y¨PropertyÍ=ÆÍ=äÂÂÂKªIdentifierÍ=ÆÍ=É£posV®CallExpressionÍ=ËÍ=äKªIdentifierÍ=ËÍ=Û°padWorldPosition’KªIdentifierÍ=ÜÍ=Ş¢fpKªIdentifierÍ=àÍ=ã£padÂ¤initY¨PropertyÍ=÷Í>ÂÂÂKªIdentifierÍ=÷Í=ü¥netIdKªIdentifierÍ=şÍ>£nid¤initY¨PropertyÍ>Í>OÂÂÂKªIdentifierÍ>Í>£tolV®CallExpressionÍ>Í>OU°MemberExpressionÍ>Í>!KªIdentifierÍ>Í>¤MathKªIdentifierÍ>Í>!£maxÂÂ’Z°BinaryExpressionÍ>"Í>JZ°BinaryExpressionÍ>"Í>FV®CallExpressionÍ>"Í>BU°MemberExpressionÍ>"Í>*KªIdentifierÍ>"Í>&¤MathKªIdentifierÍ>'Í>*£maxÂÂ’U°MemberExpressionÍ>+Í>5U°MemberExpressionÍ>+Í>3KªIdentifierÍ>+Í>.£padKªIdentifierÍ>/Í>3¤sizeÂÂKªIdentifierÍ>4Í>5¡xÂÂU°MemberExpressionÍ>7Í>AU°MemberExpressionÍ>7Í>?KªIdentifierÍ>7Í>:£padKªIdentifierÍ>;Í>?¤sizeÂÂKªIdentifierÍ>@Í>A¡yÂÂÂ¡/[§LiteralÍ>EÍ>F¡2¡+[§LiteralÍ>IÍ>J¡2[§LiteralÍ>LÍ>N
+¢10Â¤initÂ\«IfStatementÍ>xÍ>ªZ°BinaryExpressionÍ>|Í>U°MemberExpressionÍ>|Í>‡KªIdentifierÍ>|Í>€¤padsKªIdentifierÍ>Í>‡¦lengthÂÂ£===[§LiteralÍ>ŒÍ> ¡0L®BlockStatementÍ>Í>ª‘M¯ReturnStatementÍ>šÍ>£[§LiteralÍ>¡Í>¢ ¡0ÀQ³VariableDeclarationÍ>°Í>Ü‘R²VariableDeclaratorÍ>¶Í>ÛKªIdentifierÍ>¶Í>¾¨gridSizeZ±LogicalExpressionÍ>ÁÍ>ÛU°MemberExpressionÍ>ÁÍ>ÖU°MemberExpressionÍ>ÁÍ>ÍKªIdentifierÍ>ÁÍ>Ä£docKªIdentifierÍ>ÅÍ>Í¨metadataÂÂKªIdentifierÍ>ÎÍ>Ö¨gridSizeÂÂ¢??[§LiteralÍ>ÚÍ>Û¡5¥constQ³VariableDeclarationÍ>âÍ?‘R²VariableDeclaratorÍ>èÍ?KªIdentifierÍ>èÍ>ó«junctionTolV®CallExpressionÍ>öÍ?KªIdentifierÍ>öÍ?¶junctionMatchTolerance‘KªIdentifierÍ?Í?¨gridSizeÂ¥constQ³VariableDeclarationÍ?ÍA2‘R²VariableDeclaratorÍ?#ÍA1KªIdentifierÍ?#Í?1®findSnapTargetJ·ArrowFunctionExpressionÍ?4ÍA1ÀÂÂÂ’KªIdentifierÍ?5Í?7¢ptKªIdentifierÍ?9Í?>¥netIdL®BlockStatementÍ?CÍA1•Q³VariableDeclarationÍ?NÍ?^‘R²VariableDeclaratorÍ?RÍ?]KªIdentifierÍ?RÍ?V¤best[§LiteralÍ?YÍ?]À¤null£letQ³VariableDeclarationÍ?hÍ?€‘R²VariableDeclaratorÍ?lÍ?KªIdentifierÍ?lÍ?t¨bestDistKªIdentifierÍ?wÍ?¨Infinity£letT®ForOfStatementÍ?ŠÍ@¾ÂQ³VariableDeclarationÍ?Í?—‘R²VariableDeclaratorÍ?•Í?—KªIdentifierÍ?•Í?—¢prÀ¥constKªIdentifierÍ?›Í?Ÿ¤padsL®BlockStatementÍ?¡Í@¾“\«IfStatementÍ?°Í@Z±LogicalExpressionÍ?´Í?ÚZ°BinaryExpressionÍ?´Í?ÄU°MemberExpressionÍ?´Í?ÀKªIdentifierÍ?´Í?¹¥netIdKªIdentifierÍ?ºÍ?À¦lengthÂÂ¡>[§LiteralÍ?ÃÍ?Ä ¡0¢&&Z°BinaryExpressionÍ?ÈÍ?ÚU°MemberExpressionÍ?ÈÍ?ĞKªIdentifierÍ?ÈÍ?Ê¢prKªIdentifierÍ?ËÍ?Ğ¥netIdÂÂ£!==KªIdentifierÍ?ÕÍ?Ú¥netIdL®BlockStatementÍ?ÜÍ@‘^±ContinueStatementÍ?ïÍ?øÀÀQ³VariableDeclarationÍ@Í@5‘R²VariableDeclaratorÍ@Í@4KªIdentifierÍ@Í@¡dV®CallExpressionÍ@Í@4KªIdentifierÍ@Í@(©pointDist’KªIdentifierÍ@)Í@+¢ptU°MemberExpressionÍ@-Í@3KªIdentifierÍ@-Í@/¢prKªIdentifierÍ@0Í@3£posÂÂÂ¥const\«IfStatementÍ@CÍ@³Z±LogicalExpressionÍ@GÍ@bZ°BinaryExpressionÍ@GÍ@RKªIdentifierÍ@GÍ@H¡d¢<=U°MemberExpressionÍ@LÍ@RKªIdentifierÍ@LÍ@N¢prKªIdentifierÍ@OÍ@R£tolÂÂ¢&&Z°BinaryExpressionÍ@VÍ@bKªIdentifierÍ@VÍ@W¡d¡<KªIdentifierÍ@ZÍ@b¨bestDistL®BlockStatementÍ@dÍ@³’W³ExpressionStatementÍ@wÍ@„`´AssignmentExpressionÍ@wÍ@ƒ¡=KªIdentifierÍ@wÍ@¨bestDistKªIdentifierÍ@‚Í@ƒ¡dW³ExpressionStatementÍ@–Í@¤`´AssignmentExpressionÍ@–Í@£¡=KªIdentifierÍ@–Í@š¤bestU°MemberExpressionÍ@Í@£KªIdentifierÍ@Í@Ÿ¢prKªIdentifierÍ@ Í@££posÂÂÀ\«IfStatementÍ@ÈÍAZ±LogicalExpressionÍ@ÌÍ@ìZ°BinaryExpressionÍ@ÌÍ@ÙKªIdentifierÍ@ÌÍ@Ğ¤best£!==[§LiteralÍ@ÕÍ@ÙÀ¤null¢&&Z°BinaryExpressionÍ@İÍ@ìKªIdentifierÍ@İÍ@å¨bestDist¡>[§LiteralÍ@èÍ@ìË?„záG®{¤0.01L®BlockStatementÍ@îÍA‘M¯ReturnStatementÍ@ıÍA	KªIdentifierÍAÍA¤bestÀM¯ReturnStatementÍAÍA*[§LiteralÍA%ÍA)À¤null¥constQ³VariableDeclarationÍA8ÍAR‘R²VariableDeclaratorÍA>ÍAQKªIdentifierÍA>ÍAE§bucketsS­NewExpressionÍAHÍAQKªIdentifierÍALÍAO£Map¥constT®ForOfStatementÍAXÍC¾ÂQ³VariableDeclarationÍA]ÍAf‘R²VariableDeclaratorÍAcÍAfKªIdentifierÍAcÍAf£trkÀ¥constU°MemberExpressionÍAjÍAtKªIdentifierÍAjÍAm£docKªIdentifierÍAnÍAt¦tracksÂÂL®BlockStatementÍAvÍC¾”\«IfStatementÍAÍAØZ±LogicalExpressionÍA…ÍA³Z°BinaryExpressionÍA…ÍA™U°MemberExpressionÍA…ÍA•U°MemberExpressionÍA…ÍAKªIdentifierÍA…ÍAˆ£trkKªIdentifierÍA‰ÍA¥netIdÂÂKªIdentifierÍAÍA•¦lengthÂÂ¡>[§LiteralÍA˜ÍA™ ¡0¢&&]¯UnaryExpressionÍAÍA³¡!ÃV®CallExpressionÍAÍA³U°MemberExpressionÍAÍA¨KªIdentifierÍAÍA¤¦netIdsKªIdentifierÍA¥ÍA¨£hasÂÂ‘U°MemberExpressionÍA©ÍA²KªIdentifierÍA©ÍA¬£trkKªIdentifierÍA­ÍA²¥netIdÂÂÂL®BlockStatementÍAµÍAØ‘^±ContinueStatementÍAÄÍAÍÀÀQ³VariableDeclarationÍAâÍCˆ‘R²VariableDeclaratorÍAèÍC‡KªIdentifierÍAèÍAî¦addEndJ·ArrowFunctionExpressionÍAñÍC‡ÀÂÂÂ‘KªIdentifierÍAòÍAù§isStartL®BlockStatementÍAşÍC‡•Q³VariableDeclarationÍBÍB7‘R²VariableDeclaratorÍBÍB6KªIdentifierÍBÍB¢ptV®CallExpressionÍBÍB6KªIdentifierÍBÍB(°getTrackEndpoint’KªIdentifierÍB)ÍB,£trkKªIdentifierÍB.ÍB5§isStartÂ¥constQ³VariableDeclarationÍBEÍBy‘R²VariableDeclaratorÍBKÍBxKªIdentifierÍBKÍBN£keyV®CallExpressionÍBQÍBxKªIdentifierÍBQÍB\«junctionKey“KªIdentifierÍB]ÍB_¢ptU°MemberExpressionÍBaÍBjKªIdentifierÍBaÍBd£trkKªIdentifierÍBeÍBj¥netIdÂÂKªIdentifierÍBlÍBw«junctionTolÂ¥constQ³VariableDeclarationÍB‡ÍB ‘R²VariableDeclaratorÍB‹ÍBŸKªIdentifierÍB‹ÍBŒ¡bV®CallExpressionÍBÍBŸU°MemberExpressionÍBÍBšKªIdentifierÍBÍB–§bucketsKªIdentifierÍB—ÍBš£getÂÂ‘KªIdentifierÍB›ÍB£keyÂ£let\«IfStatementÍB®ÍCIZ°BinaryExpressionÍB²ÍBÁKªIdentifierÍB²ÍB³¡b£===KªIdentifierÍB¸ÍBÁ©undefinedL®BlockStatementÍBÃÍCI’W³ExpressionStatementÍBÖÍC`´AssignmentExpressionÍBÖÍC¡=KªIdentifierÍBÖÍB×¡bX°ObjectExpressionÍBÚÍC“Y¨PropertyÍBÜÍBìÂÂÂKªIdentifierÍBÜÍBá¥netIdU°MemberExpressionÍBãÍBìKªIdentifierÍBãÍBæ£trkKªIdentifierÍBçÍBì¥netIdÂÂ¤initY¨PropertyÍBîÍCÂÂÂKªIdentifierÍBîÍBñ£posX°ObjectExpressionÍBóÍC’Y¨PropertyÍBõÍBüÂÂÂKªIdentifierÍBõÍBö¡xU°MemberExpressionÍBøÍBüKªIdentifierÍBøÍBú¢ptKªIdentifierÍBûÍBü¡xÂÂ¤initY¨PropertyÍBşÍCÂÂÂKªIdentifierÍBşÍBÿ¡yU°MemberExpressionÍCÍCKªIdentifierÍCÍC¢ptKªIdentifierÍCÍC¡yÂÂ¤init¤initY¨PropertyÍC	ÍCÂÂÂKªIdentifierÍC	ÍC¤refs_¯ArrayExpressionÍCÍC¤initW³ExpressionStatementÍC&ÍC:V®CallExpressionÍC&ÍC9U°MemberExpressionÍC&ÍC1KªIdentifierÍC&ÍC-§bucketsKªIdentifierÍC.ÍC1£setÂÂ’KªIdentifierÍC2ÍC5£keyKªIdentifierÍC7ÍC8¡bÂÀW³ExpressionStatementÍCWÍC|V®CallExpressionÍCWÍC{U°MemberExpressionÍCWÍCbU°MemberExpressionÍCWÍC]KªIdentifierÍCWÍCX¡bKªIdentifierÍCYÍC]¤refsÂÂKªIdentifierÍC^ÍCb¤pushÂÂ‘X°ObjectExpressionÍCcÍCz’Y¨PropertyÍCeÍCoÂÂÂKªIdentifierÍCeÍCj¥trackKªIdentifierÍClÍCo£trk¤inita¨PropertyÍCqÍCxÂÃÂKªIdentifierÍCqÍCx§isStart¤initKªIdentifierÍCqÍCx§isStartÂ¥constW³ExpressionStatementÍC’ÍCŸV®CallExpressionÍC’ÍCKªIdentifierÍC’ÍC˜¦addEnd‘[§LiteralÍC™ÍCÃ¤trueÂW³ExpressionStatementÍC©ÍC·V®CallExpressionÍC©ÍC¶KªIdentifierÍC©ÍC¯¦addEnd‘[§LiteralÍC°ÍCµÂ¥falseÂQ³VariableDeclarationÍCÄÍCÔ‘R²VariableDeclaratorÍCÈÍCÓKªIdentifierÍCÈÍCÏ§snapped[§LiteralÍCÒÍCÓ ¡0£letW³ExpressionStatementÍCÚÍF÷V®CallExpressionÍCÚÍFöU°MemberExpressionÍCÚÍCéKªIdentifierÍCÚÍCá§bucketsKªIdentifierÍCâÍCé§forEachÂÂ‘J·ArrowFunctionExpressionÍCêÍFõÀÂÂÂ‘KªIdentifierÍCëÍCñ¦bucketL®BlockStatementÍCöÍFõ–Q³VariableDeclarationÍDÍD9‘R²VariableDeclaratorÍDÍD8KªIdentifierÍDÍD¦targetV®CallExpressionÍDÍD8KªIdentifierÍDÍD®findSnapTarget’U°MemberExpressionÍDÍD)KªIdentifierÍDÍD%¦bucketKªIdentifierÍD&ÍD)£posÂÂU°MemberExpressionÍD+ÍD7KªIdentifierÍD+ÍD1¦bucketKªIdentifierÍD2ÍD7¥netIdÂÂÂ¥const\«IfStatementÍDCÍDyZ°BinaryExpressionÍDGÍDVKªIdentifierÍDGÍDM¦target£===[§LiteralÍDRÍDVÀ¤nullL®BlockStatementÍDXÍDy‘M¯ReturnStatementÍDgÍDnÀÀQ³VariableDeclarationÍDƒÍD‘R²VariableDeclaratorÍD‡ÍDœKªIdentifierÍD‡ÍD”­wouldCollapse[§LiteralÍD—ÍDœÂ¥false£letT®ForOfStatementÍD§ÍE™ÂQ³VariableDeclarationÍD¬ÍDµ‘R²VariableDeclaratorÍD²ÍDµKªIdentifierÍD²ÍDµ£refÀ¥constU°MemberExpressionÍD¹ÍDÄKªIdentifierÍD¹ÍD¿¦bucketKªIdentifierÍDÀÍDÄ¤refsÂÂL®BlockStatementÍDÆÍE™’Q³VariableDeclarationÍDÕÍE‘R²VariableDeclaratorÍDÛÍEKªIdentifierÍDÛÍDà¥otherV®CallExpressionÍDãÍEKªIdentifierÍDãÍDó°getTrackEndpoint’U°MemberExpressionÍDôÍDıKªIdentifierÍDôÍD÷£refKªIdentifierÍDøÍDı¥trackÂÂ]¯UnaryExpressionÍDÿÍE¡!ÃU°MemberExpressionÍE ÍEKªIdentifierÍE ÍE£refKªIdentifierÍEÍE§isStartÂÂÂ¥const\«IfStatementÍEÍEZ°BinaryExpressionÍEÍE=V®CallExpressionÍEÍE7KªIdentifierÍEÍE(©pointDist’KªIdentifierÍE)ÍE/¦targetKªIdentifierÍE1ÍE6¥otherÂ¡<[§LiteralÍE:ÍE=Ë?à      £0.5L®BlockStatementÍE?ÍE’W³ExpressionStatementÍERÍEg`´AssignmentExpressionÍERÍEf¡=KªIdentifierÍERÍE_­wouldCollapse[§LiteralÍEbÍEfÃ¤true^®BreakStatementÍEyÍEÀÀ\«IfStatementÍE£ÍE×KªIdentifierÍE§ÍE´­wouldCollapseL®BlockStatementÍE¶ÍE×‘M¯ReturnStatementÍEÅÍEÌÀÀT®ForOfStatementÍEáÍFîÂQ³VariableDeclarationÍEæÍEï‘R²VariableDeclaratorÍEìÍEïKªIdentifierÍEìÍEï£refÀ¥constU°MemberExpressionÍEóÍEşKªIdentifierÍEóÍEù¦bucketKªIdentifierÍEúÍEş¤refsÂÂL®BlockStatementÍF ÍFî’Q³VariableDeclarationÍFÍFC‘R²VariableDeclaratorÍFÍFBKªIdentifierÍFÍF¢ptV®CallExpressionÍFÍFBKªIdentifierÍFÍF*°getTrackEndpoint’U°MemberExpressionÍF+ÍF4KªIdentifierÍF+ÍF.£refKªIdentifierÍF/ÍF4¥trackÂÂU°MemberExpressionÍF6ÍFAKªIdentifierÍF6ÍF9£refKªIdentifierÍF:ÍFA§isStartÂÂÂ¥const\«IfStatementÍFQÍFãZ°BinaryExpressionÍFUÍFqV®CallExpressionÍFUÍFjKªIdentifierÍFUÍF^©pointDist’KªIdentifierÍF_ÍFa¢ptKªIdentifierÍFcÍFi¦targetÂ¡>[§LiteralÍFmÍFqË?„záG®{¤0.01L®BlockStatementÍFsÍFã“W³ExpressionStatementÍF†ÍF–`´AssignmentExpressionÍF†ÍF•¡=U°MemberExpressionÍF†ÍFŠKªIdentifierÍF†ÍFˆ¢ptKªIdentifierÍF‰ÍFŠ¡xÂÂU°MemberExpressionÍFÍF•KªIdentifierÍFÍF“¦targetKªIdentifierÍF”ÍF•¡xÂÂW³ExpressionStatementÍF¨ÍF¸`´AssignmentExpressionÍF¨ÍF·¡=U°MemberExpressionÍF¨ÍF¬KªIdentifierÍF¨ÍFª¢ptKªIdentifierÍF«ÍF¬¡yÂÂU°MemberExpressionÍF¯ÍF·KªIdentifierÍF¯ÍFµ¦targetKªIdentifierÍF¶ÍF·¡yÂÂW³ExpressionStatementÍFÊÍFÔ]°UpdateExpressionÍFÊÍFÓ¢++ÂKªIdentifierÍFÊÍFÑ§snappedÀÂ\«IfStatementÍFıÍGpZ°BinaryExpressionÍGÍGKªIdentifierÍGÍG§snapped¡>[§LiteralÍGÍG ¡0L®BlockStatementÍGÍGp‘W³ExpressionStatementÍGÍGiV®CallExpressionÍGÍGhKªIdentifierÍGÍG!¨tracePcb’[§LiteralÍG"ÍG6²TRACK_SNAP_NEAR_FP´'TRACK_SNAP_NEAR_FP'N¯TemplateLiteralÍG8ÍGg’U°MemberExpressionÍG?ÍGPKªIdentifierÍG?ÍGK¬footprintIdsKªIdentifierÍGLÍGP¤sizeÂÂKªIdentifierÍG^ÍGe§snapped“O¯TemplateElementÍG9ÍG=P¤fps=¤fps=ÂO¯TemplateElementÍGQÍG\P« endpoints=« endpoints=ÂO¯TemplateElementÍGfÍGfP  ÃÂÀM¯ReturnStatementÍGvÍG…KªIdentifierÍG}ÍG„§snappedÀI¶ExportNamedDeclarationÍG¥ÍKJ³FunctionDeclarationÍG¬ÍKKªIdentifierÍGµÍGÏºorderPointsNearestNeighborÂÂÂ‘KªIdentifierÍGĞÍGÖ¦pointsL®BlockStatementÍGØÍK˜\«IfStatementÍGßÍH‚Z°BinaryExpressionÍGãÍGõU°MemberExpressionÍGãÍGğKªIdentifierÍGãÍGé¦pointsKªIdentifierÍGêÍGğ¦lengthÂÂ¢<=[§LiteralÍGôÍGõ¡2L®BlockStatementÍG÷ÍH‚“Q³VariableDeclarationÍHÍH‘R²VariableDeclaratorÍHÍHKªIdentifierÍHÍH£out_¯ArrayExpressionÍHÍH¥constT®ForOfStatementÍHÍHfÂQ³VariableDeclarationÍH ÍH'‘R²VariableDeclaratorÍH&ÍH'KªIdentifierÍH&ÍH'¡pÀ¥constKªIdentifierÍH+ÍH1¦pointsL®BlockStatementÍH3ÍHf‘W³ExpressionStatementÍHBÍH[V®CallExpressionÍHBÍHZU°MemberExpressionÍHBÍHJKªIdentifierÍHBÍHE£outKªIdentifierÍHFÍHJ¤pushÂÂ‘V®CallExpressionÍHKÍHYKªIdentifierÍHKÍHV«copyPoint2D‘KªIdentifierÍHWÍHX¡pÂÂM¯ReturnStatementÍHpÍH{KªIdentifierÍHwÍHz£outÀQ³VariableDeclarationÍHˆÍH‘R²VariableDeclaratorÍHÍHœKªIdentifierÍHÍH—©remaining_¯ArrayExpressionÍHšÍHœ¥constT®ForOfStatementÍH£ÍHìÂQ³VariableDeclarationÍH¨ÍH¯‘R²VariableDeclaratorÍH®ÍH¯KªIdentifierÍH®ÍH¯¡pÀ¥constKªIdentifierÍH³ÍH¹¦pointsL®BlockStatementÍH»ÍHì‘W³ExpressionStatementÍHÆÍHåV®CallExpressionÍHÆÍHäU°MemberExpressionÍHÆÍHÔKªIdentifierÍHÆÍHÏ©remainingKªIdentifierÍHĞÍHÔ¤pushÂÂ‘V®CallExpressionÍHÕÍHãKªIdentifierÍHÕÍHà«copyPoint2D‘KªIdentifierÍHáÍHâ¡pÂÂQ³VariableDeclarationÍHòÍI‘R²VariableDeclaratorÍHøÍIKªIdentifierÍHøÍHÿ§ordered_¯ArrayExpressionÍIÍI¥constQ³VariableDeclarationÍIÍI+‘R²VariableDeclaratorÍIÍI*KªIdentifierÍIÍI§currentV®CallExpressionÍIÍI*U°MemberExpressionÍIÍI(KªIdentifierÍIÍI"©remainingKªIdentifierÍI#ÍI(¥shiftÂÂÂ£letW³ExpressionStatementÍI1ÍIGV®CallExpressionÍI1ÍIFU°MemberExpressionÍI1ÍI=KªIdentifierÍI1ÍI8§orderedKªIdentifierÍI9ÍI=¤pushÂÂ‘KªIdentifierÍI>ÍIE§currentÂÔrc•¤type¥start£end¤test¤body®WhileStatementÍIMÍJéZ°BinaryExpressionÍITÍIhU°MemberExpressionÍITÍIdKªIdentifierÍITÍI]©remainingKªIdentifierÍI^ÍId¦lengthÂÂ¡>[§LiteralÍIgÍIh ¡0L®BlockStatementÍIjÍJé•Q³VariableDeclarationÍIuÍI…‘R²VariableDeclaratorÍIyÍI„KªIdentifierÍIyÍI€§bestIdx[§LiteralÍIƒÍI„ ¡0£letQ³VariableDeclarationÍIÍI§‘R²VariableDeclaratorÍI“ÍI¦KªIdentifierÍI“ÍI›¨bestDistKªIdentifierÍIÍI¦¨Infinity£letb¬ForStatementÍI±ÍJQ³VariableDeclarationÍI¶ÍI¿‘R²VariableDeclaratorÍIºÍI¿KªIdentifierÍIºÍI»¡i[§LiteralÍI¾ÍI¿ ¡0£letZ°BinaryExpressionÍIÁÍIÕKªIdentifierÍIÁÍIÂ¡i¡<U°MemberExpressionÍIÅÍIÕKªIdentifierÍIÅÍIÎ©remainingKªIdentifierÍIÏÍIÕ¦lengthÂÂ]°UpdateExpressionÍI×ÍIÚ¢++ÂKªIdentifierÍI×ÍIØ¡iL®BlockStatementÍIÜÍJ’Q³VariableDeclarationÍIëÍJ‘R²VariableDeclaratorÍIñÍJKªIdentifierÍIñÍIò¡dV®CallExpressionÍIõÍJKªIdentifierÍIõÍIş©pointDist’KªIdentifierÍIÿÍJ§currentU°MemberExpressionÍJÍJKªIdentifierÍJÍJ©remainingKªIdentifierÍJÍJ¡iÃÂÂ¥const\«IfStatementÍJ$ÍJƒZ°BinaryExpressionÍJ(ÍJ4KªIdentifierÍJ(ÍJ)¡d¡<KªIdentifierÍJ,ÍJ4¨bestDistL®BlockStatementÍJ6ÍJƒ’W³ExpressionStatementÍJIÍJV`´AssignmentExpressionÍJIÍJU¡=KªIdentifierÍJIÍJQ¨bestDistKªIdentifierÍJTÍJU¡dW³ExpressionStatementÍJhÍJt`´AssignmentExpressionÍJhÍJs¡=KªIdentifierÍJhÍJo§bestIdxKªIdentifierÍJrÍJs¡iÀW³ExpressionStatementÍJ˜ÍJÂ`´AssignmentExpressionÍJ˜ÍJÁ¡=KªIdentifierÍJ˜ÍJŸ§currentU°MemberExpressionÍJ¢ÍJÁV®CallExpressionÍJ¢ÍJ¾U°MemberExpressionÍJ¢ÍJ²KªIdentifierÍJ¢ÍJ«©remainingKªIdentifierÍJ¬ÍJ²¦spliceÂÂ’KªIdentifierÍJ³ÍJº§bestIdx[§LiteralÍJ¼ÍJ½¡1Â[§LiteralÍJ¿ÍJÀ ¡0ÃÂW³ExpressionStatementÍJÌÍJâV®CallExpressionÍJÌÍJáU°MemberExpressionÍJÌÍJØKªIdentifierÍJÌÍJÓ§orderedKªIdentifierÍJÔÍJØ¤pushÂÂ‘KªIdentifierÍJÙÍJà§currentÂM¯ReturnStatementÍJïÍJşKªIdentifierÍJöÍJı§orderedÀ’Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration 1‘Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	KªIdentifier	°padWorldPositionKªIdentifier	°padWorldPosition[§Literal!0­./PcbZoneUtil¯'./PcbZoneUtil'd±ImportDeclaration3Ì\‘e¯ImportSpecifier<ÌDKªIdentifier<ÌD¨tracePcbKªIdentifier<ÌD¨tracePcb[§LiteralÌLÌ[­./PcbTraceLog¯'./PcbTraceLog'

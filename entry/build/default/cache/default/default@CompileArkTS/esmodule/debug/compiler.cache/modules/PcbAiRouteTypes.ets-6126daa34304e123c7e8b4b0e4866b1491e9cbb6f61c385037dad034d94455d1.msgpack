@@ -1,0 +1,388 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ±export function emptyPcbAiRouteResult(stage, reason, usedLlm) {
+    return {
+        success: false,
+        usedLlm,
+        abortStage: stage,
+        abortReason: reason,
+        trackCount: 0,
+        viaCount: 0,
+        netCount: 0,
+        placedCount: 0,
+        messages: [reason],
+        residualKind: 'none'
+    };
+}
+export function copperRoleKeys(roles) {
+    return Object.keys(roles);
+}
+/** æ ¡éªŒ policy æ˜¯å¦ä¸ºæ¯ä¸ªé“œå±‚éƒ½æŒ‡å®šäº†è§’è‰² */
+export function policyCoversCopperLayers(policy, copperLayers) {
+    const missing = [];
+    for (let i = 0; i < copperLayers.length; i++) {
+        const lid = copperLayers[i];
+        if (!policy.layerRoles[lid]) {
+            missing.push(lid);
+        }
+    }
+    return missing;
+}
+function roleInPolicy(policy, role) {
+    const keys = Object.keys(policy.layerRoles);
+    for (let i = 0; i < keys.length; i++) {
+        if (policy.layerRoles[keys[i]] === role) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * ç›¸å¯¹ netPlan çš„å±‚è§’è‰²è¯­ä¹‰æ ¡éªŒã€‚
+ * è¿”å›ç©ºæ•°ç»„=é€šè¿‡ï¼›å¦åˆ™ä¸ºå¯æ³¨å…¥ LLM çš„å¤±è´¥åŸå› ã€‚
+ */
+export function validateLayerRoleSemantics(policy, netPlan) {
+    const errs = [];
+    let needGnd = false;
+    let needPower = false;
+    let needSignal = false;
+    for (let i = 0; i < netPlan.nets.length; i++) {
+        const n = netPlan.nets[i];
+        if (n.routeMode === 'defer') {
+            continue;
+        }
+        if (n.kind === 'gnd') {
+            needGnd = true;
+        }
+        else if (n.kind === 'power') {
+            needPower = true;
+        }
+        else {
+            needSignal = true;
+        }
+    }
+    const hasGndBus = roleInPolicy(policy, 'gnd_bus') || roleInPolicy(policy, 'power_h') ||
+        roleInPolicy(policy, 'power_v') || roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'stub');
+    const hasVccBus = roleInPolicy(policy, 'vcc_bus') || roleInPolicy(policy, 'power_v') ||
+        roleInPolicy(policy, 'power_h') || roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'stub');
+    if (needGnd && !hasGndBus) {
+        errs.push('missing gnd_bus|power_h for gnd nets');
+    }
+    if (needPower && !hasVccBus) {
+        errs.push('missing vcc_bus|power_h for power nets');
+    }
+    if (needSignal) {
+        const hasH = roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'power_h') ||
+            roleInPolicy(policy, 'gnd_bus') || roleInPolicy(policy, 'vcc_bus');
+        const hasStub = roleInPolicy(policy, 'stub') || roleInPolicy(policy, 'signal_v') ||
+            roleInPolicy(policy, 'signal_h');
+        if (!hasH || !hasStub) {
+            errs.push('missing signal_h/stub for signal nets');
+        }
+    }
+    return errs;
+}
+/** patch åæ˜¯å¦ä»ä¿ç•™ stubï¼ˆæœ‰å†…å±‚æ€»çº¿æ—¶å¿…éœ€ï¼‰ */
+export function policyHasStub(policy) {
+    return roleInPolicy(policy, 'stub');
+}
+//# sourceMappingURL=PcbAiRouteTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/PcbAiRouteTypes¦commonD»../../types/PcbAiRouteTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ[/**
+ * PCB AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ç±»å‹ â€” LLM ç­–ç•¥äº§ç‰© + å‡ ä½•æ‰§è¡Œç»“æœ
+ * åæ ‡ç­–ç•¥ï¼šLLM å¯è¾“å‡ºå°è£…ä½å§¿ï¼›ç¦æ­¢è¾“å‡º track/via æŠ˜ç‚¹ã€‚
+ */
+import { PcbLayerId, PcbTrack, PcbVia, PcbViaKind, PcbFootprintInst } from './PcbTypes';
+import { Point2D } from './CommonTypes';
+
+/** é“œå±‚è§’è‰²ï¼ˆç”± LLM å¡«æ»¡å½“å‰ Cu æ ˆæ¯ä¸€å±‚ï¼‰ */
+export type PcbLayerRole = 'gnd_bus' | 'vcc_bus' | 'signal_h' | 'signal_v' | 'stub' | 'power_h' | 'power_v';
+
+/** ç½‘ç»œå¸ƒçº¿æ¨¡å¼ï¼ˆå¯¹æ ‡åŸç†å›¾ forceWire / forceLabelï¼‰ */
+export type PcbRouteMode = 'forceTrack' | 'forcePour' | 'defer';
+
+export type PcbNetKind = 'power' | 'gnd' | 'signal';
+
+/** residual åˆ†ç±»ï¼Œä¾› UI / å†™å›ç­–ç•¥åˆ†æµ */
+export type PcbResidualKind =
+  'none' | 'drc' | 'unrouted' | 'unused_copper' | 'signal_fail' | 'placement_only';
+
+export interface PcbPlacementItem {
+  footprintId: string;
+  x: number;
+  y: number;
+  rotationDeg: number;
+  mirrored?: boolean;
+}
+
+export interface PcbPlacementGroup {
+  name: string;
+  footprintIds: string[];
+  note?: string;
+}
+
+/** LLM pcb_placement è¾“å‡º */
+export interface PcbPlacementPlan {
+  fromLlm: boolean;
+  placements: PcbPlacementItem[];
+  groups?: PcbPlacementGroup[];
+  lockedIds?: string[];
+  reason?: string;
+}
+
+export interface PcbNetPlanEntry {
+  netId: string;
+  netName: string;
+  kind: PcbNetKind;
+  routeMode: PcbRouteMode;
+  /** å»ºè®®å±‚è§’è‰²é”®ï¼Œå¦‚ gnd_bus / signal_h */
+  layerHint?: string;
+  /** ç”µæºæ€»çº¿ Y åç§»ï¼ˆmilï¼Œç›¸å¯¹ pad å‡å€¼ï¼›QA/ç­–ç•¥å¯å†™ï¼‰ */
+  busYOffset?: number;
+  priority: number;
+}
+
+/** LLM pcb_net_plan è¾“å‡º */
+export interface PcbNetPlanResult {
+  fromLlm: boolean;
+  nets: PcbNetPlanEntry[];
+  priorityOrder: string[];
+  reason?: string;
+}
+
+export interface PcbViaPreference {
+  kind: PcbViaKind;
+  preferThrough: boolean;
+}
+
+/** LLM pcb_route è¾“å‡º â€” å±‚è§’è‰²å¿…é¡»è¦†ç›–æ–‡æ¡£å…¨éƒ¨é“œå±‚ */
+export interface PcbRoutePolicy {
+  fromLlm: boolean;
+  layerRoles: Record<string, PcbLayerRole>;
+  netPriority: Record<string, number>;
+  viaPreference: PcbViaPreference;
+  globalConstraint: string;
+  reason?: string;
+}
+
+/** LLM pcb_qa_repair è¾“å‡º */
+export interface PcbQaRepairPlan {
+  fromLlm: boolean;
+  ripNetIds: string[];
+  /** è¦†ç›–/è¡¥ä¸å±‚è§’è‰² */
+  layerRolePatch?: Record<string, PcbLayerRole>;
+  rePlaceFootprintIds?: string[];
+  /**
+   * æ”¹ routeModeï¼škey=netId æˆ–ç½‘åï¼›Cu=2 ç”µæºæ€»çº¿ clearance å¤±è´¥æ—¶ä¼˜å…ˆ
+   * å°† forcePourâ†’forceTrackï¼ˆæ”¹èµ°ä¿¡å·å‡ ä½•ï¼Œé¿å¼€å®½æ€»çº¿ï¼‰
+   */
+  routeModePatch?: Record<string, PcbRouteMode>;
+  /** ç”µæºæ€»çº¿ Y åç§»è¡¥ä¸ï¼škey=netId|ç½‘åï¼Œvalue=mil */
+  busYOffsetPatch?: Record<string, number>;
+  /** å‡é“œå±‚ï¼š2â†’4/6/8ï¼›æ‰§è¡Œåé¡»è¡¥ layerRolePatch è¦†ç›–æ–°å±‚ï¼ˆç¼ºåˆ™æœ¬åœ°å¡«é»˜è®¤ï¼‰ */
+  raiseCopperTo?: number;
+  notes: string;
+}
+
+export interface PcbGeometrySeg {
+  track?: PcbTrack;
+  via?: PcbVia;
+}
+
+export interface PcbGeometryResult {
+  ok: boolean;
+  tracks: PcbTrack[];
+  vias: PcbVia[];
+  routedNetIds: string[];
+  failedNetIds: string[];
+  missingCopperLayers: PcbLayerId[];
+  reason: string;
+}
+
+export interface PcbAiRouteResult {
+  success: boolean;
+  usedLlm: boolean;
+  abortStage: string;
+  abortReason: string;
+  trackCount: number;
+  viaCount: number;
+  netCount: number;
+  placedCount: number;
+  messages: string[];
+  /** å¯¹æ ‡åŸç†å›¾ deliveredWithResidualï¼šcritique/DRC æœªæ¸…é›¶ä½† ACCEPT äº¤ä»˜ */
+  deliveredWithResidual?: boolean;
+  residualKind?: PcbResidualKind;
+  /** æˆåŠŸæ—¶å·¥ä½œå‰¯æœ¬ç»“æœï¼›è°ƒç”¨æ–¹è´Ÿè´£æäº¤ï¼Œabort æ—¶å‹¿å†™å› */
+  tracks?: PcbTrack[];
+  vias?: PcbVia[];
+  footprints?: PcbFootprintInst[];
+  placementPlan?: PcbPlacementPlan;
+  netPlan?: PcbNetPlanResult;
+  routePolicy?: PcbRoutePolicy;
+}
+
+export function emptyPcbAiRouteResult(stage: string, reason: string, usedLlm: boolean): PcbAiRouteResult {
+  return {
+    success: false,
+    usedLlm,
+    abortStage: stage,
+    abortReason: reason,
+    trackCount: 0,
+    viaCount: 0,
+    netCount: 0,
+    placedCount: 0,
+    messages: [reason],
+    residualKind: 'none'
+  };
+}
+
+export function copperRoleKeys(roles: Record<string, PcbLayerRole>): string[] {
+  return Object.keys(roles);
+}
+
+/** æ ¡éªŒ policy æ˜¯å¦ä¸ºæ¯ä¸ªé“œå±‚éƒ½æŒ‡å®šäº†è§’è‰² */
+export function policyCoversCopperLayers(policy: PcbRoutePolicy, copperLayers: PcbLayerId[]): string[] {
+  const missing: string[] = [];
+  for (let i = 0; i < copperLayers.length; i++) {
+    const lid = copperLayers[i] as string;
+    if (!policy.layerRoles[lid]) {
+      missing.push(lid);
+    }
+  }
+  return missing;
+}
+
+function roleInPolicy(policy: PcbRoutePolicy, role: PcbLayerRole): boolean {
+  const keys = Object.keys(policy.layerRoles);
+  for (let i = 0; i < keys.length; i++) {
+    if (policy.layerRoles[keys[i]] === role) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * ç›¸å¯¹ netPlan çš„å±‚è§’è‰²è¯­ä¹‰æ ¡éªŒã€‚
+ * è¿”å›ç©ºæ•°ç»„=é€šè¿‡ï¼›å¦åˆ™ä¸ºå¯æ³¨å…¥ LLM çš„å¤±è´¥åŸå› ã€‚
+ */
+export function validateLayerRoleSemantics(
+  policy: PcbRoutePolicy,
+  netPlan: PcbNetPlanResult
+): string[] {
+  const errs: string[] = [];
+  let needGnd = false;
+  let needPower = false;
+  let needSignal = false;
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    const n = netPlan.nets[i];
+    if (n.routeMode === 'defer') {
+      continue;
+    }
+    if (n.kind === 'gnd') {
+      needGnd = true;
+    } else if (n.kind === 'power') {
+      needPower = true;
+    } else {
+      needSignal = true;
+    }
+  }
+  const hasGndBus = roleInPolicy(policy, 'gnd_bus') || roleInPolicy(policy, 'power_h') ||
+    roleInPolicy(policy, 'power_v') || roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'stub');
+  const hasVccBus = roleInPolicy(policy, 'vcc_bus') || roleInPolicy(policy, 'power_v') ||
+    roleInPolicy(policy, 'power_h') || roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'stub');
+  if (needGnd && !hasGndBus) {
+    errs.push('missing gnd_bus|power_h for gnd nets');
+  }
+  if (needPower && !hasVccBus) {
+    errs.push('missing vcc_bus|power_h for power nets');
+  }
+  if (needSignal) {
+    const hasH = roleInPolicy(policy, 'signal_h') || roleInPolicy(policy, 'power_h') ||
+      roleInPolicy(policy, 'gnd_bus') || roleInPolicy(policy, 'vcc_bus');
+    const hasStub = roleInPolicy(policy, 'stub') || roleInPolicy(policy, 'signal_v') ||
+      roleInPolicy(policy, 'signal_h');
+    if (!hasH || !hasStub) {
+      errs.push('missing signal_h/stub for signal nets');
+    }
+  }
+  return errs;
+}
+
+/** patch åæ˜¯å¦ä»ä¿ç•™ stubï¼ˆæœ‰å†…å±‚æ€»çº¿æ—¶å¿…éœ€ï¼‰ */
+export function policyHasStub(policy: PcbRoutePolicy): boolean {
+  return roleInPolicy(policy, 'stub');
+}
+
+export interface PcbPadEndpoint {
+  netId: string;
+  netName: string;
+  footprintId: string;
+  padId: string;
+  pos: Point2D;
+}
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbAiRouteTypes.js ‘³PcbAiRouteTypes.etsÜ Vš”  Ì… ” Ì…” Ì…”% Ì…%”& Ì…&”+ Ì…3”- Ì…5”3 Ì…ÌC”5 Ì…ÌE”< Ì…ÌU’” Ì†” Ì†	”” Ì‡” Ì‡” Ì‡” Ì‡’” Ìˆ” Ìˆ”” Ì‰” Ì‰” Ì‰” Ì‰”” ÌŠ” ÌŠ” ÌŠ” ÌŠ”” Ì‹” Ì‹” Ì‹” Ì‹”” ÌŒ” ÌŒ” ÌŒ” ÌŒ”” Ì” Ì” Ì” Ì”” Ì” Ì” Ì” Ì–” Ì” Ì” Ì” Ì” Ì” Ì”” Ì” Ì” Ì” Ì’” Ì‘” Ì‘’”  Ì’ ” Ì’–”  Ì” ” Ì”” Ì”” Ì”” Ì””$ Ì”ÌB™” Ì•” Ì•	” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•’”  Ì– ” Ì–’”  Ì˜ ” Ì˜˜”  Ì™ ” Ì™” Ì™”( Ì™(”) Ì™)”/ Ì™?”1 Ì™ÌA”= Ì™Ì[–” Ìš”
+ Ìš” Ìš” Ìš” Ìš” ÌšÜ ” Ì›”	 Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›”$ Ì›"”% Ì›#”+ Ì›)”- Ì›+”. Ì›,”0 Ì›.”2 Ì›0™” Ìœ” Ìœ
+” Ìœ” Ìœ”  Ìœ”! Ìœ”" Ìœ”# Ìœ)”$ Ìœ*š” Ì” Ì” Ì	” Ì” Ì” Ì” Ì”" Ì”# Ì”% Ì!˜” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì‘”	 ÌŸ‘” Ì ”” Ì¡” Ì¡	” Ì¡” Ì¡’”  Ì¢ ” Ì¢—”  Ì¤ ”	 Ì¤	” Ì¤” Ì¤” Ì¤,” Ì¤.”" Ì¤Ì@” Ì¥”
+ Ì¥” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥”# Ì¥!”$ Ì¥"”. Ì¥,”/ Ì¥-”0 Ì¥.Ü ” Ì¦”	 Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦”# Ì¦!”% Ì¦#”& Ì¦$”( Ì¦&”* Ì¦(” Ì§” Ì§” Ì§” Ì§” Ì§” Ì§”" Ì§”# Ì§”$ Ì§ ”% Ì§!”& Ì§"”+ Ì§'”/ Ì§+”1 Ì§-”” Ì¨” Ì¨” Ì¨” Ì¨‘”	 Ì©‘” Ìª”” Ì«” Ì«	” Ì«” Ì«’”  Ì¬ ” Ì¬‘”  Ì® ‘” Ì±˜”  Ì² ” Ì²” Ì²”* Ì²*”+ Ì³”1 Ì³”3 Ì´”: Ì´–” Ì¶”
+ Ì¶” Ì¶” Ì¶” Ì¶” Ì¶–” Ì·” Ì·” Ì·” Ì·” Ì·” Ì·–” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸–” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹Ü ” Ìº”	 Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº”  Ìº”$ Ìº"”% Ìº#”+ Ìº)”- Ìº+”. Ìº,”0 Ìº.”2 Ìº0›” Ì»” Ì»
+” Ì»” Ì»” Ì»” Ì»” Ì»” Ì»”  Ì»”! Ì»”" Ì»˜” Ì¼” Ì¼” Ì¼	” Ì¼
+” Ì¼” Ì¼”# Ì¼”% Ì¼!’” Ì½” Ì½‘”	 Ì¾˜” Ì¿” Ì¿” Ì¿	” Ì¿
+” Ì¿” Ì¿” Ì¿” Ì¿•” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ‘”	 ÌÁ˜” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”# ÌÁ!”% ÌÁ#•” ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ‘”	 ÌÃ‘” ÌÃ•” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ‘”	 ÌÅ‘” ÌÆÜ ” ÌÇ”
+ ÌÇ” ÌÇ” ÌÇ”" ÌÇ ”# ÌÇ!”) ÌÇ'”+ ÌÇ)”4 ÌÇ2”5 ÌÇ3”9 ÌÇ7”ÌE ÌÇÌC”ÌF ÌÇÌD”ÌL ÌÇÌJ”ÌN ÌÇÌL”ÌW ÌÇÌU”ÌX ÌÇÌVÜ ” ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ”& ÌÈ"”' ÌÈ#”+ ÌÈ'”7 ÌÈ3”8 ÌÈ4”> ÌÈ:”Ì@ ÌÈ<”ÌJ ÌÈÌF”ÌK ÌÈÌG”ÌO ÌÈÌK”Ì[ ÌÈÌW”Ì\ ÌÈÌX”Ìb ÌÈÌ^”Ìd ÌÈÌ`”Ìj ÌÈÌf”Ìk ÌÈÌg”Ìl ÌÈÌhÜ ” ÌÉ”
+ ÌÉ” ÌÉ” ÌÉ”" ÌÉ ”# ÌÉ!”) ÌÉ'”+ ÌÉ)”4 ÌÉ2”5 ÌÉ3”9 ÌÉ7”ÌE ÌÉÌC”ÌF ÌÉÌD”ÌL ÌÉÌJ”ÌN ÌÉÌL”ÌW ÌÉÌU”ÌX ÌÉÌVÜ ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”& ÌÊ"”' ÌÊ#”+ ÌÊ'”7 ÌÊ3”8 ÌÊ4”> ÌÊ:”Ì@ ÌÊ<”ÌJ ÌÊÌF”ÌK ÌÊÌG”ÌO ÌÊÌK”Ì[ ÌÊÌW”Ì\ ÌÊÌX”Ìb ÌÊÌ^”Ìd ÌÊÌ`”Ìj ÌÊÌf”Ìk ÌÊÌg”Ìl ÌÊÌh—” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË˜” ÌÌ” ÌÌ” ÌÌ	” ÌÌ” ÌÌ”8 ÌÌ4”9 ÌÌ5”: ÌÌ6‘” ÌÍ—” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”! ÌÎ˜” ÌÏ” ÌÏ” ÌÏ	” ÌÏ” ÌÏ”: ÌÏ6”; ÌÏ7”< ÌÏ8‘” ÌĞ”” ÌÑ” ÌÑ” ÌÑ” ÌÑÜ ” ÌÒ” ÌÒ
+” ÌÒ” ÌÒ”! ÌÒ”" ÌÒ”( ÌÒ$”* ÌÒ&”4 ÌÒ0”5 ÌÒ1”9 ÌÒ5”ÌE ÌÒÌA”ÌF ÌÒÌB”ÌL ÌÒÌH”ÌN ÌÒÌJ”ÌW ÌÒÌS”ÌX ÌÒÌTŸ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”! ÌÓ”* ÌÓ$”+ ÌÓ%”/ ÌÓ)”; ÌÓ5”< ÌÓ6”ÌB ÌÓ<”ÌD ÌÓ>”ÌM ÌÓÌG”ÌN ÌÓÌH”ÌO ÌÓÌIÜ ” ÌÔ” ÌÔ
+” ÌÔ” ÌÔ”$ ÌÔ ”% ÌÔ!”+ ÌÔ'”- ÌÔ)”3 ÌÔ/”4 ÌÔ0”8 ÌÔ4”ÌD ÌÔÌ@”ÌE ÌÔÌA”ÌK ÌÔÌG”ÌM ÌÔÌI”ÌW ÌÔÌS”ÌX ÌÔÌT˜” ÌÕ” ÌÕ” ÌÕ” ÌÕ”! ÌÕ”+ ÌÕ%”, ÌÕ&”- ÌÕ'˜” ÌÖ” ÌÖ” ÌÖ	” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ˜” Ì×” Ì×
+” Ì×” Ì×” Ì×”= Ì×7”> Ì×8”? Ì×9‘”	 ÌØ‘” ÌÙ”” ÌÚ” ÌÚ	” ÌÚ” ÌÚ’”  ÌÛ ” ÌÛ’”  Ìİ ”" Ìİ"–”  ÌŞ ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”$ ÌŞ4™” Ìß” Ìß	” Ìß” Ìß” Ìß”  Ìß”& Ìß$”' Ìß%”( Ìß&’”  Ìà ” ÌàÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ W‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache•ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍUÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍUÔrK”¤type¥start£end¤nameªIdentifier%µemptyPcbAiRouteResultÂÂÂ“KªIdentifier&+¥stageKªIdentifier-3¦reasonKªIdentifier5<§usedLlmÔrL”¤type¥start£end¤body®BlockStatement>ÍU‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÌEÍRÔrN”¤type¥start£endªproperties°ObjectExpressionÌLÍQšÔrO™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌWÌeÂÂÂKªIdentifierÌWÌ^§successÔrP•¤type¥start£end¥value£raw§LiteralÌ`ÌeÂ¥false¤initÔrQ™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÌpÌwÂÃÂKªIdentifierÌpÌw§usedLlm¤initKªIdentifierÌpÌw§usedLlmO¨PropertyÌ‚Ì“ÂÂÂKªIdentifierÌ‚ÌŒªabortStageKªIdentifierÌÌ“¥stage¤initO¨PropertyÌÌ±ÂÂÂKªIdentifierÌÌ©«abortReasonKªIdentifierÌ«Ì±¦reason¤initO¨PropertyÌ¼ÌÉÂÂÂKªIdentifierÌ¼ÌÆªtrackCountP§LiteralÌÈÌÉ ¡0¤initO¨PropertyÌÔÌßÂÂÂKªIdentifierÌÔÌÜ¨viaCountP§LiteralÌŞÌß ¡0¤initO¨PropertyÌêÌõÂÂÂKªIdentifierÌêÌò¨netCountP§LiteralÌôÌõ ¡0¤initO¨PropertyÍ ÍÂÂÂKªIdentifierÍ Í«placedCountP§LiteralÍÍ ¡0¤initO¨PropertyÍÍ+ÂÂÂKªIdentifierÍÍ!¨messagesÔrR”¤type¥start£end¨elements¯ArrayExpressionÍ#Í+‘KªIdentifierÍ$Í*¦reason¤initO¨PropertyÍ6ÍJÂÂÂKªIdentifierÍ6ÍB¬residualKindP§LiteralÍDÍJ¤none¦'none'¤initÀI¶ExportNamedDeclarationÍWÍ¡J³FunctionDeclarationÍ^Í¡KªIdentifierÍgÍu®copperRoleKeysÂÂÂ‘KªIdentifierÍvÍ{¥rolesL®BlockStatementÍ}Í¡‘M¯ReturnStatementÍ„ÍÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ‹ÍÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ‹Í–KªIdentifierÍ‹Í‘¦ObjectKªIdentifierÍ’Í–¤keysÂÂ‘KªIdentifierÍ—Íœ¥rolesÂÀI¶ExportNamedDeclarationÍÃÍéJ³FunctionDeclarationÍÊÍéKªIdentifierÍÓÍë¸policyCoversCopperLayersÂÂÂ’KªIdentifierÍìÍò¦policyKªIdentifierÍôÍ ¬copperLayersL®BlockStatementÍÍé“ÔrU•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ	Í‘ÔrV•¤type¥start£end¢id¤init²VariableDeclaratorÍÍKªIdentifierÍÍ§missingR¯ArrayExpressionÍÍ¥constÔrW—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ"ÍÑU³VariableDeclarationÍ'Í0‘V²VariableDeclaratorÍ+Í0KªIdentifierÍ+Í,¡iP§LiteralÍ/Í0 ¡0£letÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ2ÍIKªIdentifierÍ2Í3¡i¡<T°MemberExpressionÍ6ÍIKªIdentifierÍ6ÍB¬copperLayersKªIdentifierÍCÍI¦lengthÂÂÔrY–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍKÍN¢++ÂKªIdentifierÍKÍL¡iL®BlockStatementÍPÍÑ’U³VariableDeclarationÍ[Íw‘V²VariableDeclaratorÍaÍvKªIdentifierÍaÍd£lidT°MemberExpressionÍgÍvKªIdentifierÍgÍs¬copperLayersKªIdentifierÍtÍu¡iÃÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍÊY¯UnaryExpressionÍ…Íœ¡!ÃT°MemberExpressionÍ†ÍœT°MemberExpressionÍ†Í—KªIdentifierÍ†ÍŒ¦policyKªIdentifierÍÍ—ªlayerRolesÂÂKªIdentifierÍ˜Í›£lidÃÂL®BlockStatementÍÍÊ‘Ôr[”¤type¥start£endªexpression³ExpressionStatementÍ­Í¿S®CallExpressionÍ­Í¾T°MemberExpressionÍ­Í¹KªIdentifierÍ­Í´§missingKªIdentifierÍµÍ¹¤pushÂÂ‘KªIdentifierÍºÍ½£lidÂÀM¯ReturnStatementÍ×ÍæKªIdentifierÍŞÍå§missingÀI¶ExportNamedDeclarationÍ)Í
+J³FunctionDeclarationÍ0Í
+KªIdentifierÍ9ÍSºvalidateLayerRoleSemanticsÂÂÂ’KªIdentifierÍTÍZ¦policyKªIdentifierÍ\Íc§netPlanL®BlockStatementÍeÍ
+›U³VariableDeclarationÍlÍ|‘V²VariableDeclaratorÍrÍ{KªIdentifierÍrÍv¤errsR¯ArrayExpressionÍyÍ{¥constU³VariableDeclarationÍ‚Í–‘V²VariableDeclaratorÍ†Í•KªIdentifierÍ†Í§needGndP§LiteralÍÍ•Â¥false£letU³VariableDeclarationÍœÍ²‘V²VariableDeclaratorÍ Í±KªIdentifierÍ Í©©needPowerP§LiteralÍ¬Í±Â¥false£letU³VariableDeclarationÍ¸ÍÏ‘V²VariableDeclaratorÍ¼ÍÎKªIdentifierÍ¼ÍÆªneedSignalP§LiteralÍÉÍÎÂ¥false£letW¬ForStatementÍÕÍOU³VariableDeclarationÍÚÍã‘V²VariableDeclaratorÍŞÍãKªIdentifierÍŞÍß¡iP§LiteralÍâÍã ¡0£letX°BinaryExpressionÍåÍüKªIdentifierÍåÍæ¡i¡<T°MemberExpressionÍéÍüT°MemberExpressionÍéÍõKªIdentifierÍéÍğ§netPlanKªIdentifierÍñÍõ¤netsÂÂKªIdentifierÍöÍü¦lengthÂÂY°UpdateExpressionÍşÍ¢++ÂKªIdentifierÍşÍÿ¡iL®BlockStatementÍÍO“U³VariableDeclarationÍÍ(‘V²VariableDeclaratorÍÍ'KªIdentifierÍÍ¡nT°MemberExpressionÍÍ'T°MemberExpressionÍÍ$KªIdentifierÍÍ§netPlanKªIdentifierÍ Í$¤netsÂÂKªIdentifierÍ%Í&¡iÃÂ¥constZ«IfStatementÍ2ÍrX°BinaryExpressionÍ6ÍMT°MemberExpressionÍ6ÍAKªIdentifierÍ6Í7¡nKªIdentifierÍ8ÍA©routeModeÂÂ£===P§LiteralÍFÍM¥defer§'defer'L®BlockStatementÍOÍr‘Ôr\”¤type¥start£end¥label±ContinueStatementÍ^ÍgÀÀZ«IfStatementÍ|ÍHX°BinaryExpressionÍ€ÍT°MemberExpressionÍ€Í†KªIdentifierÍ€Í¡nKªIdentifierÍ‚Í†¤kindÂÂ£===P§LiteralÍ‹Í£gnd¥'gnd'L®BlockStatementÍ’Í»‘[³ExpressionStatementÍ¡Í°Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ¡Í¯¡=KªIdentifierÍ¡Í¨§needGndP§LiteralÍ«Í¯Ã¤trueZ«IfStatementÍÊÍHX°BinaryExpressionÍÎÍàT°MemberExpressionÍÎÍÔKªIdentifierÍÎÍÏ¡nKªIdentifierÍĞÍÔ¤kindÂÂ£===P§LiteralÍÙÍà¥power§'power'L®BlockStatementÍâÍ‘[³ExpressionStatementÍñÍ]´AssignmentExpressionÍñÍ¡=KªIdentifierÍñÍú©needPowerP§LiteralÍıÍÃ¤trueL®BlockStatementÍÍH‘[³ExpressionStatementÍ+Í=]´AssignmentExpressionÍ+Í<¡=KªIdentifierÍ+Í5ªneedSignalP§LiteralÍ8Í<Ã¤trueU³VariableDeclarationÍUÍ‘V²VariableDeclaratorÍ[ÍKªIdentifierÍ[Íd©hasGndBusX±LogicalExpressionÍgÍX±LogicalExpressionÍgÍùX±LogicalExpressionÍgÍÕX±LogicalExpressionÍgÍ©S®CallExpressionÍgÍ†KªIdentifierÍgÍs¬roleInPolicy’KªIdentifierÍtÍz¦policyP§LiteralÍ|Í…§gnd_bus©'gnd_bus'Â¢||S®CallExpressionÍŠÍ©KªIdentifierÍŠÍ–¬roleInPolicy’KªIdentifierÍ—Í¦policyP§LiteralÍŸÍ¨§power_h©'power_h'Â¢||S®CallExpressionÍ¶ÍÕKªIdentifierÍ¶ÍÂ¬roleInPolicy’KªIdentifierÍÃÍÉ¦policyP§LiteralÍËÍÔ§power_v©'power_v'Â¢||S®CallExpressionÍÙÍùKªIdentifierÍÙÍå¬roleInPolicy’KªIdentifierÍæÍì¦policyP§LiteralÍîÍø¨signal_hª'signal_h'Â¢||S®CallExpressionÍıÍKªIdentifierÍıÍ	¬roleInPolicy’KªIdentifierÍ
+Í¦policyP§LiteralÍÍ¤stub¦'stub'Â¥constU³VariableDeclarationÍ Íå‘V²VariableDeclaratorÍ&ÍäKªIdentifierÍ&Í/©hasVccBusX±LogicalExpressionÍ2ÍäX±LogicalExpressionÍ2ÍÄX±LogicalExpressionÍ2Í X±LogicalExpressionÍ2ÍtS®CallExpressionÍ2ÍQKªIdentifierÍ2Í>¬roleInPolicy’KªIdentifierÍ?ÍE¦policyP§LiteralÍGÍP§vcc_bus©'vcc_bus'Â¢||S®CallExpressionÍUÍtKªIdentifierÍUÍa¬roleInPolicy’KªIdentifierÍbÍh¦policyP§LiteralÍjÍs§power_v©'power_v'Â¢||S®CallExpressionÍÍ KªIdentifierÍÍ¬roleInPolicy’KªIdentifierÍÍ”¦policyP§LiteralÍ–ÍŸ§power_h©'power_h'Â¢||S®CallExpressionÍ¤ÍÄKªIdentifierÍ¤Í°¬roleInPolicy’KªIdentifierÍ±Í·¦policyP§LiteralÍ¹ÍÃ¨signal_hª'signal_h'Â¢||S®CallExpressionÍÈÍäKªIdentifierÍÈÍÔ¬roleInPolicy’KªIdentifierÍÕÍÛ¦policyP§LiteralÍİÍã¤stub¦'stub'Â¥constZ«IfStatementÍëÍJX±LogicalExpressionÍïÍKªIdentifierÍïÍö§needGnd¢&&Y¯UnaryExpressionÍúÍ¡!ÃKªIdentifierÍûÍ©hasGndBusL®BlockStatementÍÍJ‘[³ExpressionStatementÍÍCS®CallExpressionÍÍBT°MemberExpressionÍÍKªIdentifierÍÍ¤errsKªIdentifierÍÍ¤pushÂÂ‘P§LiteralÍÍAÙ$missing gnd_bus|power_h for gnd netsÙ&'missing gnd_bus|power_h for gnd nets'ÂÀZ«IfStatementÍPÍ³X±LogicalExpressionÍTÍkKªIdentifierÍTÍ]©needPower¢&&Y¯UnaryExpressionÍaÍk¡!ÃKªIdentifierÍbÍk©hasVccBusL®BlockStatementÍmÍ³‘[³ExpressionStatementÍxÍ¬S®CallExpressionÍxÍ«T°MemberExpressionÍxÍKªIdentifierÍxÍ|¤errsKªIdentifierÍ}Í¤pushÂÂ‘P§LiteralÍ‚ÍªÙ&missing vcc_bus|power_h for power netsÙ('missing vcc_bus|power_h for power nets'ÂÀZ«IfStatementÍ¹Í
+yKªIdentifierÍ½ÍÇªneedSignalL®BlockStatementÍÉÍ
+y“U³VariableDeclarationÍÔÍ	x‘V²VariableDeclaratorÍÚÍ	wKªIdentifierÍÚÍŞ¤hasHX±LogicalExpressionÍáÍ	wX±LogicalExpressionÍáÍ	TX±LogicalExpressionÍáÍ	$S®CallExpressionÍáÍ	KªIdentifierÍáÍí¬roleInPolicy’KªIdentifierÍîÍô¦policyP§LiteralÍöÍ	 ¨signal_hª'signal_h'Â¢||S®CallExpressionÍ	Í	$KªIdentifierÍ	Í	¬roleInPolicy’KªIdentifierÍ	Í	¦policyP§LiteralÍ	Í	#§power_h©'power_h'Â¢||S®CallExpressionÍ	5Í	TKªIdentifierÍ	5Í	A¬roleInPolicy’KªIdentifierÍ	BÍ	H¦policyP§LiteralÍ	JÍ	S§gnd_bus©'gnd_bus'Â¢||S®CallExpressionÍ	XÍ	wKªIdentifierÍ	XÍ	d¬roleInPolicy’KªIdentifierÍ	eÍ	k¦policyP§LiteralÍ	mÍ	v§vcc_bus©'vcc_bus'Â¥constU³VariableDeclarationÍ	‚Í
+‘V²VariableDeclaratorÍ	ˆÍ
+KªIdentifierÍ	ˆÍ	§hasStubX±LogicalExpressionÍ	’Í
+X±LogicalExpressionÍ	’Í	ÒS®CallExpressionÍ	’Í	®KªIdentifierÍ	’Í	¬roleInPolicy’KªIdentifierÍ	ŸÍ	¥¦policyP§LiteralÍ	§Í	­¤stub¦'stub'Â¢||S®CallExpressionÍ	²Í	ÒKªIdentifierÍ	²Í	¾¬roleInPolicy’KªIdentifierÍ	¿Í	Å¦policyP§LiteralÍ	ÇÍ	Ñ¨signal_vª'signal_v'Â¢||S®CallExpressionÍ	ãÍ
+KªIdentifierÍ	ãÍ	ï¬roleInPolicy’KªIdentifierÍ	ğÍ	ö¦policyP§LiteralÍ	øÍ
+¨signal_hª'signal_h'Â¥constZ«IfStatementÍ
+Í
+rX±LogicalExpressionÍ
+Í
+#Y¯UnaryExpressionÍ
+Í
+¡!ÃKªIdentifierÍ
+Í
+¤hasH¢||Y¯UnaryExpressionÍ
+Í
+#¡!ÃKªIdentifierÍ
+Í
+#§hasStubL®BlockStatementÍ
+%Í
+r‘[³ExpressionStatementÍ
+4Í
+gS®CallExpressionÍ
+4Í
+fT°MemberExpressionÍ
+4Í
+=KªIdentifierÍ
+4Í
+8¤errsKªIdentifierÍ
+9Í
+=¤pushÂÂ‘P§LiteralÍ
+>Í
+eÙ%missing signal_h/stub for signal netsÙ''missing signal_h/stub for signal nets'ÂÀÀM¯ReturnStatementÍ
+Í
+‹KªIdentifierÍ
+†Í
+Š¤errsÀI¶ExportNamedDeclarationÍ
+´ÍJ³FunctionDeclarationÍ
+»ÍKªIdentifierÍ
+ÄÍ
+Ñ­policyHasStubÂÂÂ‘KªIdentifierÍ
+ÒÍ
+Ø¦policyL®BlockStatementÍ
+ÚÍ‘M¯ReturnStatementÍ
+áÍS®CallExpressionÍ
+èÍKªIdentifierÍ
+èÍ
+ô¬roleInPolicy’KªIdentifierÍ
+õÍ
+û¦policyP§LiteralÍ
+ıÍ¤stub¦'stub'ÂÀ

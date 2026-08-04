@@ -1,5 +1,5 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ'/**
- * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§åŠŸèƒ½çŸ©é˜µ
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ%*/**
+ * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§ï¼›æ”¯æŒ GitHub Star ä¼šè¯è§£é”ä¸“ä¸šç‰ˆ
  */
 import fs from '@ohos.file.fs';
 import { arrayBufferToString } from '../utils/MapHelpers';
@@ -7,15 +7,14 @@ import { CryptoUtil } from '../utils/CryptoUtil';
 import { HardwareFingerprint } from './HardwareFingerprint';
 import { TrialManager } from './TrialManager';
 import { LicenseTier } from '../types/LicenseTypes';
-const LICENSE_SALT = 'AISchSim_License_v1';
 export class LicenseManager {
     constructor() {
         this.license = null;
         this.licensePath = '';
         this.tampered = false;
-        this.trialActive = false;
-        this.trialDaysRemaining = 0;
-        this.trialMessage = '';
+        /** æœ¬ä¼šè¯ Star å¤éªŒé€šè¿‡ï¼ˆä¸æŒä¹…åŒ–ä¸ºç¦»çº¿ Proï¼‰ */
+        this.starUnlockActive = false;
+        this.starGithubLogin = '';
     }
     static getInstance() {
         if (!LicenseManager.instance) {
@@ -27,20 +26,6 @@ export class LicenseManager {
         switch (tier) {
             case LicenseTier.PERSONAL_PRO:
             case LicenseTier.EDUCATION:
-                return {
-                    maxDevices: Number.MAX_SAFE_INTEGER,
-                    dailyAiCalls: Number.MAX_SAFE_INTEGER,
-                    maxAiApis: Number.MAX_SAFE_INTEGER,
-                    stm32AdvancedPeriph: true,
-                    monteCarlo: true,
-                    faultInjection: true,
-                    pluginSystem: true,
-                    projectEncryption: true,
-                    multiMonitorLayout: true,
-                    teamAnnotation: true,
-                    versionCompare: true,
-                    batchBomExport: true
-                };
             case LicenseTier.ENTERPRISE:
                 return {
                     maxDevices: Number.MAX_SAFE_INTEGER,
@@ -73,6 +58,16 @@ export class LicenseManager {
                 };
         }
     }
+    setStarUnlock(active, githubLogin = '') {
+        this.starUnlockActive = active;
+        this.starGithubLogin = githubLogin;
+    }
+    isStarUnlocked() {
+        return this.starUnlockActive;
+    }
+    getStarGithubLogin() {
+        return this.starGithubLogin;
+    }
     loadFromPath(path) {
         this.licensePath = path;
         this.tampered = false;
@@ -84,7 +79,7 @@ export class LicenseManager {
         }
         catch (_e) {
             this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ');
+            return this.buildEffectiveStatus();
         }
     }
     applyLicenseContent(json) {
@@ -93,12 +88,13 @@ export class LicenseManager {
             return this.applyLicense(lic);
         }
         catch (e) {
+            this.license = null;
             return this.buildStatus(false, LicenseTier.FREE, `æˆæƒè§£æå¤±è´¥: ${e}`);
         }
     }
     importAndSave(path, json) {
         const status = this.applyLicenseContent(json);
-        if (status.valid) {
+        if (status.valid && this.license !== null) {
             try {
                 const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
                 fs.writeSync(fileHandle.fd, json);
@@ -109,37 +105,26 @@ export class LicenseManager {
                 return this.buildStatus(false, LicenseTier.FREE, `æˆæƒä¿å­˜å¤±è´¥: ${e}`);
             }
         }
-        return status;
+        return this.buildEffectiveStatus();
     }
     getStatus() {
-        if (!this.license) {
-            if (this.trialActive) {
-                return this.buildStatus(true, LicenseTier.PERSONAL_PRO, this.trialMessage || `è¯•ç”¨æœŸå‰©ä½™ ${this.trialDaysRemaining} å¤©`, this.trialDaysRemaining);
-            }
-            return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-        }
-        return this.validateCurrent();
+        return this.buildEffectiveStatus();
     }
     async applyTrialStatus(context) {
         await TrialManager.init(context);
-        const trial = await TrialManager.getStatus();
-        this.trialActive = trial.active && !this.license;
-        this.trialDaysRemaining = trial.daysRemaining;
-        this.trialMessage = trial.active ? `è¯•ç”¨æœŸå‰©ä½™ ${trial.daysRemaining} å¤©` : 'è¯•ç”¨æœŸå·²ç»“æŸ';
     }
     getTier() {
-        if (this.trialActive && !this.license)
+        const fileStatus = this.validateLicenseOnly();
+        if (fileStatus !== null && fileStatus.valid) {
+            return fileStatus.tier;
+        }
+        if (this.starUnlockActive) {
             return LicenseTier.PERSONAL_PRO;
-        return this.license?.tier ?? LicenseTier.FREE;
+        }
+        return LicenseTier.FREE;
     }
     getFeatures() {
-        if (this.trialActive && !this.license) {
-            return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-        }
-        if (!this.license || !this.validateCurrent().valid) {
-            return this.getDefaultFeatures(LicenseTier.FREE);
-        }
-        return this.license.features;
+        return this.getDefaultFeatures(this.getTier());
     }
     isTampered() {
         return this.tampered;
@@ -151,21 +136,48 @@ export class LicenseManager {
         if (this.license !== null && this.license.licensee.length > 0) {
             return this.license.licensee;
         }
+        if (this.starGithubLogin.length > 0) {
+            return `@${this.starGithubLogin}`;
+        }
         return '';
     }
-    /** Proteus é£æ ¼ DD/MM/YYYY */
     getLicenseExpiryLabel() {
         if (this.license !== null && this.license.expiresAt.length > 0) {
             return LicenseManager.formatDisplayDate(this.license.expiresAt);
         }
-        if (this.trialActive && this.trialDaysRemaining > 0) {
-            const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-            return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
+        if (this.starUnlockActive) {
+            return 'GitHub Star';
         }
-        return '01/01/2130';
+        return 'â€”';
     }
     isEvaluationMode() {
-        return this.license === null;
+        return this.getTier() === LicenseTier.FREE;
+    }
+    buildEffectiveStatus() {
+        const fileStatus = this.validateLicenseOnly();
+        if (fileStatus !== null && fileStatus.valid) {
+            return fileStatus;
+        }
+        if (this.starUnlockActive) {
+            return this.buildStatus(true, LicenseTier.PERSONAL_PRO, this.starGithubLogin.length > 0
+                ? `ä¸“ä¸šç‰ˆï¼ˆGitHub Star Â· @${this.starGithubLogin}ï¼‰`
+                : 'ä¸“ä¸šç‰ˆï¼ˆGitHub Starï¼‰', Number.MAX_SAFE_INTEGER);
+        }
+        return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ Â· Star ä»“åº“å¯è§£é”ä¸“ä¸šç‰ˆ');
+    }
+    /** ä»…æ ¡éªŒ license æ–‡ä»¶ï¼›æ— æ•ˆè¿”å› null æˆ– invalid status */
+    validateLicenseOnly() {
+        if (!this.license) {
+            return null;
+        }
+        const expires = new Date(this.license.expiresAt).getTime();
+        const now = Date.now();
+        const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
+        if (now > expires) {
+            this.license = null;
+            return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸ');
+        }
+        return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
     }
     static formatDisplayDate(iso) {
         const d = new Date(iso);
@@ -176,7 +188,6 @@ export class LicenseManager {
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         return `${dd}/${mm}/${d.getFullYear()}`;
     }
-    /** å¼€å‘/æµ‹è¯•ï¼šæ ¹æ®è®¾å¤‡ç ç”Ÿæˆç­¾åæˆæƒ JSON */
     static buildSignedLicense(tier, deviceCode, licensee, daysValid = 365) {
         const now = new Date();
         const expires = new Date(now.getTime() + daysValid * 86400000);
@@ -205,7 +216,7 @@ export class LicenseManager {
         if (lic.signature !== expectedSig) {
             this.tampered = true;
             this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ');
+            return this.buildEffectiveStatus();
         }
         const localCode = HardwareFingerprint.getDeviceCode();
         if (lic.deviceCode.toUpperCase() !== localCode) {
@@ -213,20 +224,7 @@ export class LicenseManager {
             return this.buildStatus(false, LicenseTier.FREE, 'è®¾å¤‡ç ä¸åŒ¹é…');
         }
         this.license = lic;
-        return this.validateCurrent();
-    }
-    validateCurrent() {
-        if (!this.license) {
-            return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-        }
-        const expires = new Date(this.license.expiresAt).getTime();
-        const now = Date.now();
-        const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-        if (now > expires) {
-            this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-        }
-        return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
+        return this.buildEffectiveStatus();
     }
     buildStatus(valid, tier, message, daysRemaining = 0) {
         return {
@@ -261,8 +259,8 @@ export class LicenseManager {
         }
     }
 }
-//# sourceMappingURL=LicenseManager.js.mapÂ–Ùg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ&./src/main/ets/security/LicenseManager¦commonD°./LicenseManager¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ%/**
- * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§åŠŸèƒ½çŸ©é˜µ
+//# sourceMappingURL=LicenseManager.js.mapÂ–Ùg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ&./src/main/ets/security/LicenseManager¦commonD°./LicenseManager¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ#/**
+ * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§ï¼›æ”¯æŒ GitHub Star ä¼šè¯è§£é”ä¸“ä¸šç‰ˆ
  */
 import fs from '@ohos.file.fs';
 import { arrayBufferToString } from '../utils/MapHelpers';
@@ -273,16 +271,14 @@ import {
   LicenseTier, LicenseFile, LicenseFeatures, LicenseStatus
 } from '../types/LicenseTypes';
 
-const LICENSE_SALT = 'AISchSim_License_v1';
-
 export class LicenseManager {
   private static instance: LicenseManager;
   private license: LicenseFile | null = null;
   private licensePath: string = '';
   private tampered: boolean = false;
-  private trialActive: boolean = false;
-  private trialDaysRemaining: number = 0;
-  private trialMessage: string = '';
+  /** æœ¬ä¼šè¯ Star å¤éªŒé€šè¿‡ï¼ˆä¸æŒä¹…åŒ–ä¸ºç¦»çº¿ Proï¼‰ */
+  private starUnlockActive: boolean = false;
+  private starGithubLogin: string = '';
 
   static getInstance(): LicenseManager {
     if (!LicenseManager.instance) {
@@ -295,20 +291,6 @@ export class LicenseManager {
     switch (tier) {
       case LicenseTier.PERSONAL_PRO:
       case LicenseTier.EDUCATION:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
       case LicenseTier.ENTERPRISE:
         return {
           maxDevices: Number.MAX_SAFE_INTEGER,
@@ -342,6 +324,19 @@ export class LicenseManager {
     }
   }
 
+  setStarUnlock(active: boolean, githubLogin: string = ''): void {
+    this.starUnlockActive = active;
+    this.starGithubLogin = githubLogin;
+  }
+
+  isStarUnlocked(): boolean {
+    return this.starUnlockActive;
+  }
+
+  getStarGithubLogin(): string {
+    return this.starGithubLogin;
+  }
+
   loadFromPath(path: string): LicenseStatus {
     this.licensePath = path;
     this.tampered = false;
@@ -352,7 +347,7 @@ export class LicenseManager {
       return this.applyLicense(lic);
     } catch (_e) {
       this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ');
+      return this.buildEffectiveStatus();
     }
   }
 
@@ -361,13 +356,14 @@ export class LicenseManager {
       const lic = JSON.parse(json) as LicenseFile;
       return this.applyLicense(lic);
     } catch (e) {
+      this.license = null;
       return this.buildStatus(false, LicenseTier.FREE, `æˆæƒè§£æå¤±è´¥: ${e}`);
     }
   }
 
   importAndSave(path: string, json: string): LicenseStatus {
     const status = this.applyLicenseContent(json);
-    if (status.valid) {
+    if (status.valid && this.license !== null) {
       try {
         const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
         fs.writeSync(fileHandle.fd, json);
@@ -377,41 +373,30 @@ export class LicenseManager {
         return this.buildStatus(false, LicenseTier.FREE, `æˆæƒä¿å­˜å¤±è´¥: ${e}`);
       }
     }
-    return status;
+    return this.buildEffectiveStatus();
   }
 
   getStatus(): LicenseStatus {
-    if (!this.license) {
-      if (this.trialActive) {
-        return this.buildStatus(true, LicenseTier.PERSONAL_PRO,
-          this.trialMessage || `è¯•ç”¨æœŸå‰©ä½™ ${this.trialDaysRemaining} å¤©`, this.trialDaysRemaining);
-      }
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    return this.validateCurrent();
+    return this.buildEffectiveStatus();
   }
 
   async applyTrialStatus(context: Context): Promise<void> {
     await TrialManager.init(context);
-    const trial = await TrialManager.getStatus();
-    this.trialActive = trial.active && !this.license;
-    this.trialDaysRemaining = trial.daysRemaining;
-    this.trialMessage = trial.active ? `è¯•ç”¨æœŸå‰©ä½™ ${trial.daysRemaining} å¤©` : 'è¯•ç”¨æœŸå·²ç»“æŸ';
   }
 
   getTier(): LicenseTier {
-    if (this.trialActive && !this.license) return LicenseTier.PERSONAL_PRO;
-    return this.license?.tier ?? LicenseTier.FREE;
+    const fileStatus = this.validateLicenseOnly();
+    if (fileStatus !== null && fileStatus.valid) {
+      return fileStatus.tier;
+    }
+    if (this.starUnlockActive) {
+      return LicenseTier.PERSONAL_PRO;
+    }
+    return LicenseTier.FREE;
   }
 
   getFeatures(): LicenseFeatures {
-    if (this.trialActive && !this.license) {
-      return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-    }
-    if (!this.license || !this.validateCurrent().valid) {
-      return this.getDefaultFeatures(LicenseTier.FREE);
-    }
-    return this.license.features;
+    return this.getDefaultFeatures(this.getTier());
   }
 
   isTampered(): boolean {
@@ -426,23 +411,57 @@ export class LicenseManager {
     if (this.license !== null && this.license.licensee.length > 0) {
       return this.license.licensee;
     }
+    if (this.starGithubLogin.length > 0) {
+      return `@${this.starGithubLogin}`;
+    }
     return '';
   }
 
-  /** Proteus é£æ ¼ DD/MM/YYYY */
   getLicenseExpiryLabel(): string {
     if (this.license !== null && this.license.expiresAt.length > 0) {
       return LicenseManager.formatDisplayDate(this.license.expiresAt);
     }
-    if (this.trialActive && this.trialDaysRemaining > 0) {
-      const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-      return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
+    if (this.starUnlockActive) {
+      return 'GitHub Star';
     }
-    return '01/01/2130';
+    return 'â€”';
   }
 
   isEvaluationMode(): boolean {
-    return this.license === null;
+    return this.getTier() === LicenseTier.FREE;
+  }
+
+  private buildEffectiveStatus(): LicenseStatus {
+    const fileStatus = this.validateLicenseOnly();
+    if (fileStatus !== null && fileStatus.valid) {
+      return fileStatus;
+    }
+    if (this.starUnlockActive) {
+      return this.buildStatus(
+        true,
+        LicenseTier.PERSONAL_PRO,
+        this.starGithubLogin.length > 0
+          ? `ä¸“ä¸šç‰ˆï¼ˆGitHub Star Â· @${this.starGithubLogin}ï¼‰`
+          : 'ä¸“ä¸šç‰ˆï¼ˆGitHub Starï¼‰',
+        Number.MAX_SAFE_INTEGER
+      );
+    }
+    return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ Â· Star ä»“åº“å¯è§£é”ä¸“ä¸šç‰ˆ');
+  }
+
+  /** ä»…æ ¡éªŒ license æ–‡ä»¶ï¼›æ— æ•ˆè¿”å› null æˆ– invalid status */
+  private validateLicenseOnly(): LicenseStatus | null {
+    if (!this.license) {
+      return null;
+    }
+    const expires = new Date(this.license.expiresAt).getTime();
+    const now = Date.now();
+    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
+    if (now > expires) {
+      this.license = null;
+      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸ');
+    }
+    return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
   }
 
   private static formatDisplayDate(iso: string): string {
@@ -455,7 +474,6 @@ export class LicenseManager {
     return `${dd}/${mm}/${d.getFullYear()}`;
   }
 
-  /** å¼€å‘/æµ‹è¯•ï¼šæ ¹æ®è®¾å¤‡ç ç”Ÿæˆç­¾åæˆæƒ JSON */
   static buildSignedLicense(
     tier: LicenseTier,
     deviceCode: string,
@@ -490,7 +508,7 @@ export class LicenseManager {
     if (lic.signature !== expectedSig) {
       this.tampered = true;
       this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ');
+      return this.buildEffectiveStatus();
     }
     const localCode = HardwareFingerprint.getDeviceCode();
     if (lic.deviceCode.toUpperCase() !== localCode) {
@@ -498,21 +516,7 @@ export class LicenseManager {
       return this.buildStatus(false, LicenseTier.FREE, 'è®¾å¤‡ç ä¸åŒ¹é…');
     }
     this.license = lic;
-    return this.validateCurrent();
-  }
-
-  private validateCurrent(): LicenseStatus {
-    if (!this.license) {
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    const expires = new Date(this.license.expiresAt).getTime();
-    const now = Date.now();
-    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-    if (now > expires) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-    }
-    return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
+    return this.buildEffectiveStatus();
   }
 
   private buildStatus(
@@ -554,148 +558,176 @@ export class LicenseManager {
     }
   }
 }
-ÀÔrE–­@ohos.file.fs³../utils/MapHelpers³../utils/CryptoUtilµ../types/LicenseTypesµ./HardwareFingerprint®./TrialManagerÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsAÃªoh-resolveÂFAÂÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsAÃªoh-resolveÂFAÂÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings±LicenseManager.js ‘²LicenseManager.etsÜ‘”    ‘” –”   ” ”	 	” ” ” ˜”   ” ”	 	” ” ”$ $”9 9”: :˜”   ” ”	 	” ” ” ”0 0”1 1˜”   ” ”	 	” ” ”$ $”; ;”< <˜”   ” ”	 	” ” ” ”- -”. .˜”   ” ”	 	” 	” 
+ÀÔrE–­@ohos.file.fs³../utils/MapHelpers³../utils/CryptoUtilµ../types/LicenseTypesµ./HardwareFingerprint®./TrialManagerÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsAÃªoh-resolveÂFAÂÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsAÃªoh-resolveÂFAÂÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings±LicenseManager.js ‘²LicenseManager.etsÜ‘”    ‘” –”   ” ”	 	” ” ” ˜”   ” ”	 	” ” ”$ $”9 9”: :˜”   ” ”	 	” ” ” ”0 0”1 1˜”   ” ”	 	” ” ”$ $”; ;”< <˜”   ” ”	 	” ” ” ”- -”. .˜”   ” ”	 	” 	” 
 ” 
 ”3 
 ”4 
-–”   ” ” ” ”* *”+ +””   ” ” ” ‘”  •” 
-” ” (” ,” -•” 
-” ”  ” "” #•” 
-” ” ” #” $•” 
-” ” !”  &”! '•” 
-” ”" '”# (”$ )•” 
-” ” !” #” $’” Í$ ” Í$”” ”
- ” 	” —” ” ” 	” ” ”$  ”& "™” ” ” ”# ”&  ”* $”8 2”: 4”; 5‘”	 –” ” ” ” ”& "”' #’” ” ”” ” ” ” &”” ” ” ” –”  ”  ”  ”  ”)  #”*  $•” !” !” !” !”& ! ’” "” "–” #
-” #”  #”& #”' #”7 #-–” $
-”  $”" $”( $”) $”9 $/–” %
-” %” %”% %”& %”6 %,”” &
-”' &”) &”- &#”” '
-” '”  '”$ '”” (
-”" (”$ (”( (”” )
-”  )”" )”& )”” *
-”% *”' *”+ *!”” +
-”& +”( +”, +"”” ,
+””   ” ” ” ‘”  •” 
+” ” (” ,” -•” 
+” ”  ” "” #•” 
+” ” ” #” $’” ”) #•” 
+” ”  &”% +”& ,•” 
+” ” $”! &”" '’” Í* ” Í*”” ”
+ ” 	” —” ” ” 	” ” ”$  ”& "™” ” ” ”# ”&  ”* $”8 2”: 4”; 5‘”	 –” ” ” ” ”& "”' #’” ” ”” ” ” ” &”” ” ” ” –” ” ” ” ”) #”* $–” ” ” ” ”&  ”' !•”  ”  ”  ”  ”'  !’” !” !–” "
+” "”  "”& "”' "”7 "-–” #
+”  #”" #”( #”) #”9 #/–” $
+” $” $”% $”& $”6 $,”” %
+”' %”) %”- %#”” &
+” &”  &”$ &”” '
+”" '”$ '”( '”” (
+”  (”" (”& (”” )
+”% )”' )”+ )!”” *
+”& *”( *”, *"”” +
+”" +”$ +”( +”” ,
 ”" ,”$ ,”( ,”” -
-”" -”$ -”( -”” .
-”" .”$ .”( .’” /	” /
-•” 0” 0” 0” 0”' 0!’” 1” 1–” 2
-” 2”  2”& 2”' 2”7 2-–” 3
-”  3”" 3”( 3”) 3”9 3/–” 4
-” 4” 4”% 4”& 4”6 4,”” 5
-”' 5”) 5”- 5#”” 6
-” 6”  6”$ 6”” 7
-”" 7”$ 7”( 7”” 8
-”  8”" 8”& 8”” 9
-”% 9”' 9”+ 9!”” :
-”& :”( :”, :"”” ;
-”" ;”$ ;”( ;”” <
-”" <”$ <”( <”” =
-”" =”$ =”( =’” >	” >
-‘” ?’” Ì@” Ì@”” ÌA
-” ÌA”  ÌA”# ÌA”” ÌB
-”  ÌB”" ÌB”$ ÌB”” ÌC
-” ÌC” ÌC”  ÌC”” ÌD
-”' ÌD”) ÌD”. ÌD$”” ÌE
-” ÌE”  ÌE”% ÌE”” ÌF
-”" ÌF”$ ÌF”) ÌF”” ÌG
-”  ÌG”" ÌG”' ÌG”” ÌH
-”% ÌH”' ÌH”, ÌH"”” ÌI
-”& ÌI”( ÌI”- ÌI#”” ÌJ
-”" ÌJ”$ ÌJ”) ÌJ”” ÌK
-”" ÌK”$ ÌK”) ÌK”” ÌL
-”" ÌL”$ ÌL”) ÌL’” ÌM	” ÌM
-‘”	 ÌN’” ÌO” ÌO”” ÌQ” ÌQ” ÌQ” ÌQ—” ÌR” ÌR” ÌR	” ÌR” ÌR” ÌR”  ÌR—” ÌS” ÌS” ÌS	” ÌS” ÌS” ÌS” ÌS’” ÌT” ÌT˜” ÌU” ÌU” ÌU	” ÌU” ÌU” ÌU” ÌU”  ÌU›” ÌV” ÌV” ÌV” ÌV”' ÌV!”( ÌV"”0 ÌV*”1 ÌV+”5 ÌV/”6 ÌV0”7 ÌV1›” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW”" ÌW”# ÌW”' ÌW!”( ÌW1”) ÌW2™” ÌX” ÌX” ÌX” ÌX”$ ÌX”% ÌX”( ÌX"”) ÌX#”* ÌX$‘”	 ÌY”” ÌY” ÌY” ÌY” ÌY—” ÌZ” ÌZ
-” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZŸ” Ì[” Ì[” Ì[” Ì[”# Ì[”$ Ì[”) Ì[#”+ Ì[%”6 Ì[0”7 Ì[1”; Ì[5”= Ì[7”ÌL Ì[ÌF”ÌM Ì[ÌG”ÌN Ì[ÌH‘”	 Ì\’” Ì]” Ì]”” Ì_” Ì_” Ì_” Ì_"’” Ì`” Ì`›” Ìa” Ìa” Ìa” Ìa” Ìa” Ìa”" Ìa”# Ìa”' Ìa!”( Ìa1”) Ìa2™” Ìb” Ìb” Ìb” Ìb”$ Ìb”% Ìb”( Ìb"”) Ìb#”* Ìb$‘”	 Ìc”” Ìc” Ìc” Ìc” ÌcÜ ” Ìd” Ìd” Ìd” Ìd”# Ìd”$ Ìd”) Ìd#”+ Ìd%”6 Ìd0”7 Ìd1”; Ìd5”= Ìd7”ÌH ÌdÌB”ÌI ÌdÌC”ÌK ÌdÌE”ÌL ÌdÌF”ÌM ÌdÌG‘”	 Ìe’” Ìf” Ìf–” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh*›” Ìi” Ìi
-” Ìi” Ìi” Ìi” Ìi”/ Ìi+”0 Ìi,”4 Ìi0”5 Ìi1”6 Ìi2–” Ìj” Ìj” Ìj” Ìj” Ìj” Ìj’” Ìk” Ìk
-Ü ” Ìl” Ìl”  Ìl”# Ìl”% Ìl”& Ìl”. Ìl&”/ Ìl'”3 Ìl+”5 Ìl-”7 Ìl/”8 Ìl0”Ì@ Ìl8”ÌA Ìl9”ÌG Ìl?”ÌJ ÌlÌB”ÌL ÌlÌD”ÌM ÌlÌE”ÌU ÌlÌM”ÌV ÌlÌN”Ì` ÌlÌX”Ìc ÌlÌ[”Ìe ÌlÌ]”Ìf ÌlÌ^”Ìn ÌlÌf”Ìo ÌlÌg”Ìt ÌlÌl”Ìu ÌlÌm”Ìv ÌlÌnœ” Ìm” Ìm
-” Ìm” Ìm” Ìm”' Ìm”( Ìm ”* Ìm"”, Ìm$”0 Ìm(”1 Ìm)”2 Ìm*˜” Ìn” Ìn
-” Ìn” Ìn” Ìn”' Ìn”( Ìn ”) Ìn!—” Ìo” Ìo” Ìo”  Ìo”# Ìo”' Ìo”( Ìo ‘” Ìp”” Ìp” Ìp” Ìp” ÌpÜ ” Ìq” Ìq” Ìq” Ìq”' Ìq”( Ìq ”- Ìq%”/ Ìq'”: Ìq2”; Ìq3”? Ìq7”ÌA Ìq9”ÌL ÌqÌD”ÌM ÌqÌE”ÌO ÌqÌG”ÌP ÌqÌH”ÌQ ÌqÌI‘” Ìr‘”	 Ìs”” Ìt” Ìt” Ìt” Ìt’” Ìu” Ìu’” Ìw” Ìw—” Ìx” Ìx” Ìx	” Ìx” Ìx” Ìx” Ìx–” Ìy” Ìy
-” Ìy” Ìy”  Ìy”" ÌyÜ ” Ìz” Ìz” Ìz” Ìz”' Ìz”( Ìz ”, Ìz$”. Ìz&”9 Ìz1”: Ìz2”ÌF Ìz>”ÌH Ì{
-”ÌL Ì{”ÌM Ì{”ÌY Ì{”Ì] Ì{”Ìf Ì{(”Ìj Ì{,”Ìk Ì{-”Ì} Ì{?”Ì Ì{ÌC”Ìƒ Ì{ÌE”Ì‡ Ì{ÌI”Ìˆ Ì{ÌJ”Ìš Ì{Ì\”Ì› Ì{Ì]”Ìœ Ì{Ì^‘” Ì|Ÿ” Ì}” Ì}” Ì}” Ì}”# Ì}”$ Ì}”) Ì}#”+ Ì}%”6 Ì}0”7 Ì}1”; Ì}5”= Ì}7”ÌB Ì}<”ÌC Ì}=”ÌD Ì}>‘”	 Ì~—” Ì” Ì” Ì” Ì”# Ì”% Ì!”& Ì"’” Ì€” Ì€–” Ì‚”	 Ì‚”
- Ì‚” Ì‚” Ì‚”" Ì‚)™” Ìƒ” Ìƒ
-” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”' Ìƒ#”( Ìƒ$”) Ìƒ%š” Ì„” Ì„
-” Ì„” Ì„” Ì„”( Ì„$”) Ì„%”2 Ì„.”4 Ì„0”5 Ì„1” Ì…” Ì…” Ì…	” Ì…” Ì…”  Ì…”! Ì…”' Ì…#”+ Ì…'”, Ì…(”0 Ì…,”1 Ì…-”8 Ì…4”9 Ì…5™” Ì†” Ì†” Ì†	” Ì†”" Ì†”' Ì†#”( Ì†$”5 Ì†1”6 Ì†2Ü ” Ì‡” Ì‡” Ì‡	” Ì‡” Ì‡”! Ì‡”" Ì‡”( Ì‡$”) Ì‡%”* Ì‡&”+ Ì‡'”4 Ì‡0”9 Ì‡5”: Ì‡6”ÌG Ì‡ÌC”ÌK Ì‡ÌG”ÌL Ì‡ÌH”ÌM Ì‡ÌI”ÌN Ì‡ÌJ”ÌV Ì‡ÌR”ÌW Ì‡ÌS’” Ìˆ” Ìˆ’” ÌŠ” ÌŠ	š” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹”  Ì‹”! Ì‹”% Ì‹!”& Ì‹"”- Ì‹)–” Ì‹+” Ì‹2” Ì‹=” Ì‹>”+ Ì‹ÌJ”, Ì‹ÌKœ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”! ÌŒ”% ÌŒ!”0 ÌŒ,”1 ÌŒ-”5 ÌŒ1”6 ÌŒ2’” Ì” Ì’” Ì” Ì›” Ì” Ì” Ì” Ì” Ì”  Ì”! Ì”% Ì!”& Ì"”- Ì)”/ Ì+›” Ì‘” Ì‘” Ì‘” Ì‘”* Ì‘$”+ Ì‘%”6 Ì‘0”7 Ì‘1”ÌC Ì‘=”ÌD Ì‘>”ÌE Ì‘?‘”	 Ì’Ÿ” Ì“” Ì“” Ì“	” Ì“” Ì“” Ì“” Ì“” Ì“”" Ì“”# Ì“”2 Ì“.”4 Ì“0”5 Ì“1”: Ì“6”< Ì“8›” Ì”” Ì”” Ì”” Ì””* Ì”$”+ Ì”%”6 Ì”0”7 Ì”1”; Ì”5”< Ì”6”= Ì”7‘”	 Ì•˜” Ì–” Ì–” Ì–” Ì–” Ì–” Ì–”$ Ì– ”% Ì–!’” Ì—” Ì—’” Ì™” Ì™–” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš’” Ì›” Ì›’” Ì” Ì—” Ì” Ì”" Ì”# Ì”0 Ì,”2 Ì.”3 Ì/’” ÌŸ” ÌŸ’” Ì¡” Ì¡Ü ” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”! Ì¢”% Ì¢!”) Ì¢%”* Ì¢&”1 Ì¢-”2 Ì¢.”: Ì¢6”; Ì¢7”ÌA Ì¢=”ÌD Ì¢Ì@”ÌE Ì¢ÌA”ÌG Ì¢ÌC˜” Ì£” Ì£” Ì£” Ì£” Ì£”  Ì£”( Ì£"”) Ì£#‘”	 Ì¤”” Ì¥” Ì¥” Ì¥” Ì¥’” Ì¦” Ì¦’” Ì¨”  Ì¨’” Ì©” Ì©Ü ” Ìª” Ìª” Ìª” Ìª” Ìª” Ìª”! Ìª”% Ìª!”) Ìª%”* Ìª&”1 Ìª-”2 Ìª.”; Ìª7”< Ìª8”ÌB Ìª>”ÌE ÌªÌA”ÌF ÌªÌB”ÌH ÌªÌD” Ì«” Ì«”! Ì«”" Ì«”3 Ì«-”4 Ì«.”8 Ì«2”9 Ì«3”Ì@ Ì«:”ÌA Ì«;”ÌJ Ì«ÌD”ÌK Ì«ÌE”ÌL Ì«ÌF‘”	 Ì¬œ” Ì­” Ì­” Ì­” Ì­” Ì­”  Ì­”$ Ì­ ”% Ì­!”7 Ì­3”: Ì­6”; Ì­7”= Ì­9Ÿ” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®”" Ì®”$ Ì®”' Ì®!”+ Ì®%”, Ì®&”> Ì®8”ÌA Ì®;”ÌI Ì®ÌC”ÌJ Ì®ÌDÜ ” Ì¯” Ì¯”! Ì¯”" Ì¯”3 Ì¯-”4 Ì¯.”8 Ì¯2”< Ì¯6”= Ì¯7”ÌB Ì¯<”ÌC Ì¯=”ÌD Ì¯>”ÌO Ì¯ÌI”ÌQ Ì¯ÌK”ÌR Ì¯ÌL”ÌS Ì¯ÌM‘”	 Ì°”” Ì±” Ì±” Ì±” Ì±’” Ì²” Ì²’” Ì´” Ì´˜” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”  Ìµ”$ Ìµ ”% Ìµ!’” Ì¶” Ì¶–” Ì¸
+”" -”$ -”( -’” .	” .
+‘” /’” 0” 0”” 1
+” 1”  1”# 1”” 2
+”  2”" 2”$ 2”” 3
+” 3” 3”  3”” 4
+”' 4”) 4”. 4$”” 5
+” 5”  5”% 5”” 6
+”" 6”$ 6”) 6”” 7
+”  7”" 7”' 7”” 8
+”% 8”' 8”, 8"”” 9
+”& 9”( 9”- 9#”” :
+”" :”$ :”) :”” ;
+”" ;”$ ;”) ;”” <
+”" <”$ <”) <’” =	” =
+‘”	 >’” ?” ?—” ÌA” ÌA” ÌA” ÌA” ÌA!”( ÌA7”* ÌA9—” ÌB” ÌB” ÌB	” ÌB”  ÌB”& ÌB"”' ÌB#—” ÌC” ÌC” ÌC	” ÌC” ÌC”* ÌC&”+ ÌC'’” ÌD” ÌD’” ÌF” ÌF–” ÌG” ÌG” ÌG” ÌG”$ ÌG ”% ÌG!’” ÌH” ÌH’” ÌJ” ÌJ–” ÌK” ÌK” ÌK” ÌK”# ÌK”$ ÌK ’” ÌL” ÌL”” ÌN” ÌN” ÌN” ÌN—” ÌO” ÌO” ÌO	” ÌO” ÌO” ÌO”  ÌO—” ÌP” ÌP” ÌP	” ÌP” ÌP” ÌP” ÌP’” ÌQ” ÌQ˜” ÌR” ÌR” ÌR	” ÌR” ÌR” ÌR” ÌR”  ÌR›” ÌS” ÌS” ÌS” ÌS”' ÌS!”( ÌS"”0 ÌS*”1 ÌS+”5 ÌS/”6 ÌS0”7 ÌS1›” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”# ÌT”' ÌT!”( ÌT1”) ÌT2™” ÌU” ÌU” ÌU” ÌU”$ ÌU”% ÌU”( ÌU"”) ÌU#”* ÌU$‘”	 ÌV”” ÌV” ÌV” ÌV” ÌV—” ÌW” ÌW
+” ÌW” ÌW” ÌW” ÌW”  ÌW—” ÌX” ÌX” ÌX” ÌX”, ÌX&”. ÌX(”/ ÌX)‘”	 ÌY’” ÌZ” ÌZ”” Ì\” Ì\” Ì\” Ì\"’” Ì]” Ì]›” Ì^” Ì^” Ì^” Ì^” Ì^” Ì^”" Ì^”# Ì^”' Ì^!”( Ì^1”) Ì^2™” Ì_” Ì_” Ì_” Ì_”$ Ì_”% Ì_”( Ì_"”) Ì_#”* Ì_$‘”	 Ì`”” Ì`” Ì`” Ì`” Ì`—” Ìa” Ìa
+” Ìa” Ìa” Ìa” Ìa”  ÌaÜ ” Ìb” Ìb” Ìb” Ìb”# Ìb”$ Ìb”) Ìb#”+ Ìb%”6 Ìb0”7 Ìb1”; Ìb5”= Ìb7”ÌH ÌbÌB”ÌI ÌbÌC”ÌK ÌbÌE”ÌL ÌbÌF”ÌM ÌbÌG‘”	 Ìc’” Ìd” Ìd–” Ìf” Ìf” Ìf” Ìf” Ìf” Ìf*›” Ìg” Ìg
+” Ìg” Ìg” Ìg” Ìg”/ Ìg+”0 Ìg,”4 Ìg0”5 Ìg1”6 Ìg2œ” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh”  Ìh”! Ìh”( Ìh$”- Ìh)”1 Ìh-”3 Ìh/’” Ìi” Ìi
+Ü ” Ìj” Ìj”  Ìj”# Ìj”% Ìj”& Ìj”. Ìj&”/ Ìj'”3 Ìj+”5 Ìj-”7 Ìj/”8 Ìj0”Ì@ Ìj8”ÌA Ìj9”ÌG Ìj?”ÌJ ÌjÌB”ÌL ÌjÌD”ÌM ÌjÌE”ÌU ÌjÌM”ÌV ÌjÌN”Ì` ÌjÌX”Ìc ÌjÌ[”Ìe ÌjÌ]”Ìf ÌjÌ^”Ìn ÌjÌf”Ìo ÌjÌg”Ìt ÌjÌl”Ìu ÌjÌm”Ìv ÌjÌnœ” Ìk” Ìk
+” Ìk” Ìk” Ìk”' Ìk”( Ìk ”* Ìk"”, Ìk$”0 Ìk(”1 Ìk)”2 Ìk*˜” Ìl” Ìl
+” Ìl” Ìl” Ìl”' Ìl”( Ìl ”) Ìl!—” Ìm” Ìm” Ìm”  Ìm”# Ìm”' Ìm”( Ìm ‘” Ìn”” Ìn” Ìn” Ìn” ÌnÜ ” Ìo” Ìo” Ìo” Ìo”' Ìo”( Ìo ”- Ìo%”/ Ìo'”: Ìo2”; Ìo3”? Ìo7”ÌA Ìo9”ÌL ÌoÌD”ÌM ÌoÌE”ÌO ÌoÌG”ÌP ÌoÌH”ÌQ ÌoÌI‘” Ìp‘”	 Ìq—” Ìr” Ìr” Ìr” Ìr”( Ìr$”* Ìr&”+ Ìr'’” Ìs” Ìs’” Ìu” Ìu—” Ìv” Ìv” Ìv” Ìv”( Ìv$”* Ìv&”+ Ìv'’” Ìw” Ìw–” Ìy”	 Ìy”
+ Ìy” Ìy” Ìy”" Ìy)™” Ìz” Ìz
+” Ìz” Ìz” Ìz”  Ìz”' Ìz#”( Ìz$”) Ìz%’” Ì{” Ì{’” Ì}” Ì}	™” Ì~” Ì~
+” Ì~” Ì~” Ì~”  Ì~”3 Ì~/”5 Ì~1”6 Ì~2š” Ì” Ì” Ì” Ì” Ì”# Ì”- Ì)”. Ì*”3 Ì/”5 Ì1–” Ì€” Ì€” Ì€” Ì€”" Ì€”# Ì€‘”	 Ì–” Ì‚” Ì‚” Ì‚” Ì‚”! Ì‚”# Ì‚–” Ìƒ” Ìƒ” Ìƒ” Ìƒ”+ Ìƒ%”, Ìƒ&‘”	 Ì„–” Ì…” Ì…” Ì…” Ì…” Ì…”  Ì…’” Ì†” Ì†’” Ìˆ” Ìˆœ” Ì‰” Ì‰” Ì‰” Ì‰”& Ì‰"”' Ì‰#”+ Ì‰'”, Ì‰(”3 Ì‰/”5 Ì‰1”6 Ì‰2”7 Ì‰3’” ÌŠ” ÌŠ’” ÌŒ” ÌŒ–” Ì” Ì” Ì” Ì” Ì” Ì’” Ì” Ì’” Ì” Ì—” Ì‘” Ì‘”" Ì‘”# Ì‘”0 Ì‘,”2 Ì‘.”3 Ì‘/’” Ì’” Ì’’” Ì”” Ì”Ü ” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•”! Ì•”% Ì•!”) Ì•%”* Ì•&”1 Ì•-”2 Ì•.”: Ì•6”; Ì•7”ÌA Ì•=”ÌD Ì•Ì@”ÌE Ì•ÌA”ÌG Ì•ÌC˜” Ì–” Ì–” Ì–” Ì–” Ì–”  Ì–”( Ì–"”) Ì–#‘”	 Ì—š” Ì˜” Ì˜” Ì˜” Ì˜”  Ì˜”! Ì˜”' Ì˜#”* Ì˜&”+ Ì˜'”- Ì˜)˜” Ì™” Ì™” Ì™” Ì™” Ì™”+ Ì™%”- Ì™'”. Ì™(‘”	 Ìš”” Ì›” Ì›” Ì›” Ì›’” Ìœ” Ìœ’” Ì” ÌÜ ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”! ÌŸ”% ÌŸ!”) ÌŸ%”* ÌŸ&”1 ÌŸ-”2 ÌŸ.”; ÌŸ7”< ÌŸ8”ÌB ÌŸ>”ÌE ÌŸÌA”ÌF ÌŸÌB”ÌH ÌŸÌD” Ì ” Ì ”! Ì ”" Ì ”3 Ì -”4 Ì .”8 Ì 2”9 Ì 3”Ì@ Ì :”ÌA Ì ;”ÌJ Ì ÌD”ÌK Ì ÌE”ÌL Ì ÌF‘”	 Ì¡–” Ì¢” Ì¢” Ì¢” Ì¢”! Ì¢”# Ì¢”” Ì£” Ì£”  Ì£”! Ì£‘”	 Ì¤”” Ì¥” Ì¥” Ì¥” Ì¥’” Ì¦” Ì¦’” Ì¨” Ì¨›” Ì©” Ì©” Ì©” Ì©” Ì©” Ì©”" Ì©”- Ì©)”. Ì©*”2 Ì©.”3 Ì©/’” Ìª” Ìª’” Ì¬
+” Ì¬™” Ì­” Ì­
+” Ì­” Ì­” Ì­”  Ì­”3 Ì­/”5 Ì­1”6 Ì­2š” Ì®” Ì®” Ì®” Ì®” Ì®”# Ì®”- Ì®)”. Ì®*”3 Ì®/”5 Ì®1”” Ì¯” Ì¯” Ì¯” Ì¯‘”	 Ì°–” Ì±” Ì±” Ì±” Ì±”! Ì±”# Ì±Ü ” Ì²” Ì²” Ì²” Ì²”# Ì²”$ Ì³”( Ì³”* Ì´”5 Ì´”6 Ì´”ÌB Ì´ ”ÌD Ìµ”ÌH Ìµ”ÌI Ìµ”ÌX Ìµ”ÌY Ìµ”Ì_ Ìµ#”Ìb Ìµ&”Ìc Ìµ'˜” Ì¶
+” Ì¶” Ì¶”( Ì¶"”, Ì¶&”- Ì¶'”< Ì¶6”? Ì¶9š” Ì·
+” Ì·” Ì·”$ Ì·”& Ì¸”, Ì¸”- Ì¸”= Ì¸”> Ì¹”? Ì¹‘”	 ÌºŸ” Ì»” Ì»” Ì»” Ì»” Ì»”  Ì»”% Ì»!”' Ì»#”2 Ì».”3 Ì»/”7 Ì»3”9 Ì»5”ÌN Ì»ÌJ”ÌO Ì»ÌK”ÌP Ì»ÌL’” Ì¼” Ì¼’” Ì¾”4 Ì¾2’” Ì¿
+” Ì¿—” ÌÀ” ÌÀ” ÌÀ	” ÌÀ” ÌÀ” ÌÀ” ÌÀ”” ÌÁ” ÌÁ” ÌÁ” ÌÁ‘”	 ÌÂÜ ” ÌÃ” ÌÃ
+” ÌÃ” ÌÃ” ÌÃ”  ÌÃ”! ÌÃ”% ÌÃ!”& ÌÃ"”- ÌÃ)”. ÌÃ*”7 ÌÃ3”8 ÌÃ4”9 ÌÃ5”Ì@ ÌÃ<”ÌB ÌÃ>”ÌC ÌÃ?™” ÌÄ” ÌÄ
+” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄÜ ” ÌÅ” ÌÅ
+” ÌÅ” ÌÅ”" ÌÅ”# ÌÅ”& ÌÅ"”' ÌÅ#”( ÌÅ$”* ÌÅ&”. ÌÅ*”/ ÌÅ+”3 ÌÅ/”4 ÌÅ0”5 ÌÅ1”< ÌÅ8”? ÌÅ;”ÌB ÌÅ>”ÌC ÌÅ?”ÌF ÌÅÌB”ÌN ÌÅÌJ”ÌO ÌÅÌK”ÌP ÌÅÌL”ÌQ ÌÅÌM–” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ—” ÌÇ” ÌÇ
+” ÌÇ” ÌÇ” ÌÇ” ÌÇ”  ÌÇŸ” ÌÈ” ÌÈ” ÌÈ” ÌÈ”# ÌÈ”$ ÌÈ”) ÌÈ#”+ ÌÈ%”6 ÌÈ0”7 ÌÈ1”; ÌÈ5”= ÌÈ7”ÌD ÌÈ>”ÌE ÌÈ?”ÌF ÌÈÌ@‘”	 ÌÉÜ ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”$ ÌÊ ”& ÌÊ"”* ÌÊ&”+ ÌÊ'”2 ÌÊ.”3 ÌÊ/”7 ÌÊ3”9 ÌÊ5”ÌD ÌÊÌ@”ÌQ ÌÊÌM”ÌU ÌÊÌQ”ÌW ÌÊÌS”Ìd ÌÊÌ`”Ìe ÌÊÌa”Ìf ÌÊÌb’” ÌË” ÌË–” ÌÍ
 ”
- Ì¸” Ì¸” Ì¸"” Ì¸#”  Ì¸.š” Ì¹” Ì¹
-” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹”  Ì¹š” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº”  Ìº”” Ì»” Ì»” Ì»” Ì»‘”	 Ì¼Ü ” Ì½” Ì½
-” Ì½” Ì½” Ì½” Ì½” Ì½” Ì½”# Ì½”% Ì½!”& Ì½"”' Ì½#”/ Ì½+”0 Ì½,”1 Ì½-”3 Ì½/”6 Ì½2”7 Ì½3”8 Ì½4Ü ” Ì¾” Ì¾
-” Ì¾” Ì¾” Ì¾” Ì¾” Ì¾” Ì¾”$ Ì¾ ”& Ì¾"”) Ì¾%”* Ì¾&”+ Ì¾'”, Ì¾(”4 Ì¾0”5 Ì¾1”6 Ì¾2”8 Ì¾4”; Ì¾7”< Ì¾8”= Ì¾9” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿”  Ì¿”+ Ì¿'”- Ì¿)”/ Ì¿+”0 Ì¿,’” ÌÀ” ÌÀ’” ÌÂ”! ÌÂ” ÌÃ”
- ÌÃ” ÌÃ	” ÌÃ” ÌÄ”" ÌÄ”$ ÌÅ”. ÌÅ”0 ÌÆ”8 ÌÆ”: ÌÇ”ÌF ÌÇ”ÌI ÌÇ˜” ÌÉ” ÌÉ
-” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉÜ ” ÌÊ” ÌÊ
-” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”! ÌÊ”$ ÌÊ ”% ÌÊ!”, ÌÊ(”. ÌÊ*”1 ÌÊ-”: ÌÊ6”= ÌÊ9”ÌE ÌÊÌA”ÌF ÌÊÌB”ÌG ÌÊÌC™” ÌË” ÌË
-” ÌË” ÌË”" ÌË”# ÌË”. ÌË*”0 ÌË,”1 ÌË-”” ÌÌ” ÌÌ
-” ÌÌ” ÌÌ!’” ÌÍ” ÌÍ
-’” ÌÎ” ÌÎ—” ÌÏ” ÌÏ” ÌÏ”" ÌÏ”# ÌÏ”. ÌÏ(”0 ÌÏ*—” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ”% ÌĞ”' ÌĞ!—” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ”* ÌÑ$”, ÌÑ&”” ÌÒ” ÌÒ” ÌÒ” ÌÒ™” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”, ÌÓ&”- ÌÓ'”1 ÌÓ+”2 ÌÓ,”” ÌÔ” ÌÔ” ÌÔ” ÌÔ’”	 ÌÕ”
- ÌÕ˜” ÌÖ” ÌÖ
-” ÌÖ” ÌÖ” ÌÖ” ÌÖ”' ÌÖ#”( ÌÖ$–” Ì×” Ì×
-” Ì×” Ì×” Ì×” Ì×–” ÌØ” ÌØ” ÌØ” ÌØ”  ÌØ”* ÌØ$–” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ”( ÌÙ"–” ÌÚ” ÌÚ” ÌÚ” ÌÚ” ÌÚ”& ÌÚ “”	 ÌÛ”
- ÌÛ” ÌÛœ” ÌÜ” ÌÜ” ÌÜ” ÌÜ” ÌÜ”& ÌÜ"”' ÌÜ#”9 ÌÜ5”: ÌÜ6”ÌB ÌÜ>”ÌC ÌÜ?”ÌD ÌÜÌ@” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ”% Ìİ!”' Ìİ#”+ Ìİ'”- Ìİ)”. Ìİ*”/ Ìİ+”0 Ìİ,’” ÌŞ” ÌŞ”” Ìà
-” Ìà” Ìà” Ìà'›” Ìá” Ìá
-” Ìá” Ìá”* Ìá&”+ Ìá'”; Ìá7”< Ìá8”? Ìá;”Ì@ Ìá<”ÌA Ìá=˜” Ìâ” Ìâ” Ìâ” Ìâ” Ìâ” Ìâ”) Ìâ%”+ Ìâ'—” Ìã” Ìã
-” Ìã” Ìã” Ìã”  Ìã”! Ìã—” Ìä” Ìä
-” Ìä” Ìä” Ìä” Ìä”  ÌäŸ” Ìå” Ìå” Ìå” Ìå”# Ìå”$ Ìå”) Ìå#”+ Ìå%”6 Ìå0”7 Ìå1”; Ìå5”= Ìå7”ÌN ÌåÌH”ÌO ÌåÌI”ÌP ÌåÌJ‘”	 Ìæ™” Ìç” Ìç
-” Ìç” Ìç”- Ìç)”. Ìç*”; Ìç7”= Ìç9”> Ìç:›” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè”& Ìè"”( Ìè$”- Ìè)”6 Ìè2”8 Ìè4—” Ìé” Ìé
-” Ìé” Ìé” Ìé” Ìé”  ÌéŸ” Ìê” Ìê” Ìê” Ìê”# Ìê”$ Ìê”) Ìê#”+ Ìê%”6 Ìê0”7 Ìê1”; Ìê5”= Ìê7”ÌE Ìê?”ÌF ÌêÌ@”ÌG ÌêÌA‘”	 Ìë—” Ìì” Ìì” Ìì	” Ìì” Ìì” Ìì” Ìì—” Ìí” Ìí” Ìí” Ìí”# Ìí”% Ìí!”& Ìí"’” Ìî” Ìî’” Ìğ
-” Ìğ—” Ìñ” Ìñ” Ìñ	” Ìñ” Ìñ” Ìñ” ÌñŸ” Ìò” Ìò” Ìò” Ìò”# Ìò”$ Ìò”) Ìò#”+ Ìò%”6 Ìò0”7 Ìò1”; Ìò5”= Ìò7”ÌB Ìò<”ÌC Ìò=”ÌD Ìò>‘”	 ÌóÜ ” Ìô” Ìô
-” Ìô” Ìô” Ìô”  Ìô”! Ìô”% Ìô!”& Ìô"”- Ìô)”. Ìô*”7 Ìô3”8 Ìô4”9 Ìô5”Ì@ Ìô<”ÌB Ìô>”ÌC Ìô?™” Ìõ” Ìõ
-” Ìõ” Ìõ” Ìõ” Ìõ” Ìõ” Ìõ” ÌõÜ ” Ìö” Ìö
-” Ìö” Ìö”" Ìö”# Ìö”& Ìö"”' Ìö#”( Ìö$”* Ìö&”. Ìö*”/ Ìö+”3 Ìö/”4 Ìö0”5 Ìö1”< Ìö8”? Ìö;”ÌB Ìö>”ÌC Ìö?”ÌF ÌöÌB”ÌN ÌöÌJ”ÌO ÌöÌK”ÌP ÌöÌL”ÌQ ÌöÌM–” Ì÷” Ì÷” Ì÷” Ì÷” Ì÷” Ì÷—” Ìø” Ìø
-” Ìø” Ìø” Ìø” Ìø”  ÌøŸ” Ìù” Ìù” Ìù” Ìù”# Ìù”$ Ìù”) Ìù#”+ Ìù%”6 Ìù0”7 Ìù1”; Ìù5”= Ìù7”ÌK ÌùÌE”ÌL ÌùÌF”ÌM ÌùÌG‘”	 ÌúÜ ” Ìû” Ìû” Ìû” Ìû” Ìû”  Ìû”$ Ìû ”& Ìû"”* Ìû&”+ Ìû'”2 Ìû.”3 Ìû/”7 Ìû3”9 Ìû5”ÌD ÌûÌ@”ÌQ ÌûÌM”ÌU ÌûÌQ”ÌW ÌûÌS”Ìd ÌûÌ`”Ìe ÌûÌa”Ìf ÌûÌb’” Ìü” Ìü›” Ìş
-” Ìş” Ìÿ” Ìÿ” Í ” Í ” Í”$ Í”& Í”6 Í”7 Í’” Í” Í’” Í” Í” Í” Í
-” Í” Í” Í” Í” Í” Í” Í”  Í”! Í”, Í&”- Í'”1 Í+”” Í” Í” Í”  Íœ” Í” Í” Í” Í” Í” Í”& Í ”' Í!”/ Í)”0 Í*”4 Í.”5 Í/’” Í	” Í	’” Í
-” Í
-’”	 Í”
- Í’” Í” Í–” Í
+ ÌÍ” ÌÍ” ÌÍ"” ÌÍ#”  ÌÍ.š” ÌÎ” ÌÎ
+” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”  ÌÎš” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ”  ÌÏ”” ÌĞ” ÌĞ” ÌĞ” ÌĞ‘”	 ÌÑÜ ” ÌÒ” ÌÒ
+” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ” ÌÒ”# ÌÒ”% ÌÒ!”& ÌÒ"”' ÌÒ#”/ ÌÒ+”0 ÌÒ,”1 ÌÒ-”3 ÌÒ/”6 ÌÒ2”7 ÌÒ3”8 ÌÒ4Ü ” ÌÓ” ÌÓ
+” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”$ ÌÓ ”& ÌÓ"”) ÌÓ%”* ÌÓ&”+ ÌÓ'”, ÌÓ(”4 ÌÓ0”5 ÌÓ1”6 ÌÓ2”8 ÌÓ4”; ÌÓ7”< ÌÓ8”= ÌÓ9” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ”  ÌÔ”+ ÌÔ'”- ÌÔ)”/ ÌÔ+”0 ÌÔ,’” ÌÕ” ÌÕ” Ì×”
+ Ì×” Ì×	” Ì×” ÌØ”" ÌØ”$ ÌÙ”. ÌÙ”0 ÌÚ”8 ÌÚ”: ÌÛ”ÌF ÌÛ”ÌI ÌÛ˜” Ìİ” Ìİ
+” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ” ÌİÜ ” ÌŞ” ÌŞ
+” ÌŞ” ÌŞ” ÌŞ”  ÌŞ”! ÌŞ”$ ÌŞ ”% ÌŞ!”, ÌŞ(”. ÌŞ*”1 ÌŞ-”: ÌŞ6”= ÌŞ9”ÌE ÌŞÌA”ÌF ÌŞÌB”ÌG ÌŞÌC™” Ìß” Ìß
+” Ìß” Ìß”" Ìß”# Ìß”. Ìß*”0 Ìß,”1 Ìß-”” Ìà” Ìà
+” Ìà” Ìà!’” Ìá” Ìá
+’” Ìâ” Ìâ—” Ìã” Ìã” Ìã”" Ìã”# Ìã”. Ìã(”0 Ìã*—” Ìä” Ìä” Ìä” Ìä” Ìä”% Ìä”' Ìä!—” Ìå” Ìå” Ìå” Ìå” Ìå”* Ìå$”, Ìå&”” Ìæ” Ìæ” Ìæ” Ìæ™” Ìç” Ìç” Ìç” Ìç” Ìç”, Ìç&”- Ìç'”1 Ìç+”2 Ìç,”” Ìè” Ìè” Ìè” Ìè’”	 Ìé”
+ Ìé˜” Ìê” Ìê
+” Ìê” Ìê” Ìê” Ìê”' Ìê#”( Ìê$–” Ìë” Ìë
+” Ìë” Ìë” Ìë” Ìë–” Ìì” Ìì” Ìì” Ìì”  Ìì”* Ìì$–” Ìí” Ìí” Ìí” Ìí” Ìí”( Ìí"–” Ìî” Ìî” Ìî” Ìî” Ìî”& Ìî “”	 Ìï”
+ Ìï” Ìïœ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ”& Ìğ"”' Ìğ#”9 Ìğ5”: Ìğ6”ÌB Ìğ>”ÌC Ìğ?”ÌD ÌğÌ@” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ”% Ìñ!”' Ìñ#”+ Ìñ'”- Ìñ)”. Ìñ*”/ Ìñ+”0 Ìñ,’” Ìò” Ìò”” Ìô
+” Ìô” Ìô” Ìô'›” Ìõ” Ìõ
+” Ìõ” Ìõ”* Ìõ&”+ Ìõ'”; Ìõ7”< Ìõ8”? Ìõ;”Ì@ Ìõ<”ÌA Ìõ=˜” Ìö” Ìö” Ìö” Ìö” Ìö” Ìö”) Ìö%”+ Ìö'—” Ì÷” Ì÷
+” Ì÷” Ì÷” Ì÷”  Ì÷”! Ì÷—” Ìø” Ìø
+” Ìø” Ìø” Ìø” Ìø”  Ìø—” Ìù” Ìù” Ìù” Ìù”, Ìù&”. Ìù(”/ Ìù)‘”	 Ìú™” Ìû” Ìû
+” Ìû” Ìû”- Ìû)”. Ìû*”; Ìû7”= Ìû9”> Ìû:›” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”& Ìü"”( Ìü$”- Ìü)”6 Ìü2”8 Ìü4—” Ìı” Ìı
+” Ìı” Ìı” Ìı” Ìı”  ÌıŸ” Ìş” Ìş” Ìş” Ìş”# Ìş”$ Ìş”) Ìş#”+ Ìş%”6 Ìş0”7 Ìş1”; Ìş5”= Ìş7”ÌE Ìş?”ÌF ÌşÌ@”ÌG ÌşÌA‘”	 Ìÿ—” Í ” Í ” Í 	” Í ” Í ” Í ” Í —” Í” Í” Í” Í”( Í$”* Í&”+ Í'’” Í” Í›” Í
+” Í” Í” Í” Í” Í” Í”$ Í”& Í”6 Í”7 Í’” Í
+” Í
+’” Í” Í” Í” Í
+” Í” Í” Í” Í” Í” Í” Í”  Í”! Í”, Í&”- Í'”1 Í+”” Í” Í” Í”  Íœ” Í” Í” Í” Í” Í” Í”& Í ”' Í!”/ Í)”0 Í*”4 Í.”5 Í/’” Í” Í’” Í” Í’”	 Í”
+ Í’” Í” Í–” Í
 ”
- Í” Í” Í!” Í"” Í2˜” Í” Í
-” Í” Í” Í” Í”' Í#”( Í$–” Í” Í
-” Í” Í” Í” Í–” Í” Í” Í” Í” Í”& Í –” Í” Í” Í” Í” Í”$ Í–” Í” Í” Í” Í” Í”" Í“”	 Í”
- Í” Í™” Í” Í” Í” Í”, Í(”- Í)”5 Í1”6 Í2”7 Í3’” Í” Í–” Í
+ Í” Í” Í!” Í"” Í2˜” Í” Í
+” Í” Í” Í” Í”' Í#”( Í$–” Í” Í
+” Í” Í” Í” Í–” Í” Í” Í” Í” Í”& Í –” Í” Í” Í” Í” Í”$ Í–” Í” Í” Í” Í” Í”" Í“”	 Í”
+ Í” Í™” Í” Í” Í” Í”, Í(”- Í)”5 Í1”6 Í2”7 Í3’” Í” Í–” Í
 ”
- Í” Í” Í” Í” Í&’” Í” ÍÜ ” Í” Í” Í” Í”! Í”" Í”* Í$”+ Í%”/ Í)”1 Í+”3 Í-”4 Í.”< Í6”= Í7”ÌF ÍÌ@”ÌG ÍÌA”ÌH ÍÌB›” Í” Í” Í” Í” Í” Í”$ Í”% Í”) Í#”* Í$”+ Í%œ” Í” Í” Í” Í” Í”* Í$”+ Í%”/ Í)”0 Í*”4 Í.”5 Í/”6 Í0œ” Í” Í” Í	” Í” Í”" Í”# Í”% Í”' Í!”- Í'”. Í(”/ Í)˜” Í” Í” Í	” Í” Í”# Í”$ Í”% Í—” Í” Í”& Í ”' Í!”- Í'”. Í(”/ Í)‘”	 Í ”” Í ” Í ” Í ” Í š” Í!” Í!” Í!” Í!” Í!”4 Í!.”8 Í!2”: Í!4”; Í!5”< Í!6‘”	 Í"’” Í#” Í#‘” Í$ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ€Í&YÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ‡Í&YÔrM”¤type¥start£end¤nameªIdentifierÍÍ›®LicenseManagerÀÔrN”¤type¥start£end¤body©ClassBodyÍœÍ&YÜ ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ£ÍÂÂMªIdentifierÍ£Í®«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ®ÍÀÂÂÂN®BlockStatementÍ±Í–ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍ¼ÍĞÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ¼ÍÏ¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¼ÍÈÔrT“¤type¥start£end®ThisExpressionÍ¼ÍÀMªIdentifierÍÁÍÈ§licenseÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍËÍÏÀ¤nullQ³ExpressionStatementÍÚÍğR´AssignmentExpressionÍÚÍï¡=S°MemberExpressionÍÚÍêT®ThisExpressionÍÚÍŞMªIdentifierÍßÍê«licensePathÂÂU§LiteralÍíÍï ¢''Q³ExpressionStatementÍúÍR´AssignmentExpressionÍúÍ¡=S°MemberExpressionÍúÍT®ThisExpressionÍúÍşMªIdentifierÍÿÍ¨tamperedÂÂU§LiteralÍ
-ÍÂ¥falseQ³ExpressionStatementÍÍ3R´AssignmentExpressionÍÍ2¡=S°MemberExpressionÍÍ*T®ThisExpressionÍÍMªIdentifierÍÍ*«trialActiveÂÂU§LiteralÍ-Í2Â¥falseQ³ExpressionStatementÍ=ÍYR´AssignmentExpressionÍ=ÍX¡=S°MemberExpressionÍ=ÍTT®ThisExpressionÍ=ÍAMªIdentifierÍBÍT²trialDaysRemainingÂÂU§LiteralÍWÍX ¡0Q³ExpressionStatementÍcÍzR´AssignmentExpressionÍcÍy¡=S°MemberExpressionÍcÍtT®ThisExpressionÍcÍgMªIdentifierÍhÍt¬trialMessageÂÂU§LiteralÍwÍy ¢''O°MethodDefinitionÍ‡Í>ÃÂMªIdentifierÍÍ™«getInstance¦methodP²FunctionExpressionÍ™Í>ÀÂÂÂN®BlockStatementÍœÍ>’ÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ§ÍÔrW–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ«ÍÃ¡!ÃS°MemberExpressionÍ¬ÍÃMªIdentifierÍ¬Íº®LicenseManagerMªIdentifierÍ»ÍÃ¨instanceÂÂN®BlockStatementÍÅÍ‘Q³ExpressionStatementÍÔÍR´AssignmentExpressionÍÔÍ¡=S°MemberExpressionÍÔÍëMªIdentifierÍÔÍâ®LicenseManagerMªIdentifierÍãÍë¨instanceÂÂÔrX•¤type¥start£end¦callee©arguments­NewExpressionÍîÍMªIdentifierÍòÍ ®LicenseManagerÀÔrY”¤type¥start£end¨argument¯ReturnStatementÍÍ7S°MemberExpressionÍÍ6MªIdentifierÍÍ-®LicenseManagerMªIdentifierÍ.Í6¨instanceÂÂO°MethodDefinitionÍDÍÂÂMªIdentifierÍDÍV²getDefaultFeatures¦methodP²FunctionExpressionÍVÍÀÂÂÂ‘MªIdentifierÍWÍ[¤tierN®BlockStatementÍ]Í‘ÔrZ•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍhÍMªIdentifierÍpÍt¤tier”Ôr[•¤type¥start£endªconsequent¤testªSwitchCaseÍ…Í£S°MemberExpressionÍŠÍ¢MªIdentifierÍŠÍ•«LicenseTierMªIdentifierÍ–Í¢¬PERSONAL_PROÂÂ[ªSwitchCaseÍ±Í1‘Y¯ReturnStatementÍŞÍ1Ôr\”¤type¥start£endªproperties°ObjectExpressionÍåÍ0œÔr]™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍüÍÂÂÂMªIdentifierÍüÍªmaxDevicesS°MemberExpressionÍÍMªIdentifierÍÍ¦NumberMªIdentifierÍÍ°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍ6Í[ÂÂÂMªIdentifierÍ6ÍB¬dailyAiCallsS°MemberExpressionÍDÍ[MªIdentifierÍDÍJ¦NumberMªIdentifierÍKÍ[°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍrÍ”ÂÂÂMªIdentifierÍrÍ{©maxAiApisS°MemberExpressionÍ}Í”MªIdentifierÍ}Íƒ¦NumberMªIdentifierÍ„Í”°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍ«ÍÄÂÂÂMªIdentifierÍ«Í¾³stm32AdvancedPeriphU§LiteralÍÀÍÄÃ¤true¤init]¨PropertyÍÛÍëÂÂÂMªIdentifierÍÛÍåªmonteCarloU§LiteralÍçÍëÃ¤true¤init]¨PropertyÍÍÂÂÂMªIdentifierÍÍ®faultInjectionU§LiteralÍÍÃ¤true¤init]¨PropertyÍ-Í?ÂÂÂMªIdentifierÍ-Í9¬pluginSystemU§LiteralÍ;Í?Ã¤true¤init]¨PropertyÍVÍmÂÂÂMªIdentifierÍVÍg±projectEncryptionU§LiteralÍiÍmÃ¤true¤init]¨PropertyÍ„ÍœÂÂÂMªIdentifierÍ„Í–²multiMonitorLayoutU§LiteralÍ˜ÍœÃ¤true¤init]¨PropertyÍ³ÍÇÂÂÂMªIdentifierÍ³ÍÁ®teamAnnotationU§LiteralÍÃÍÇÃ¤true¤init]¨PropertyÍŞÍòÂÂÂMªIdentifierÍŞÍì®versionCompareU§LiteralÍîÍòÃ¤true¤init]¨PropertyÍ	ÍÂÂÂMªIdentifierÍ	Í®batchBomExportU§LiteralÍÍÃ¤true¤initS°MemberExpressionÍ¶ÍËMªIdentifierÍ¶ÍÁ«LicenseTierMªIdentifierÍÂÍË©EDUCATIONÂÂ[ªSwitchCaseÍ?ÍÀ‘Y¯ReturnStatementÍmÍÀ\°ObjectExpressionÍtÍ¿œ]¨PropertyÍ‹Í®ÂÂÂMªIdentifierÍ‹Í•ªmaxDevicesS°MemberExpressionÍ—Í®MªIdentifierÍ—Í¦NumberMªIdentifierÍÍ®°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍÅÍêÂÂÂMªIdentifierÍÅÍÑ¬dailyAiCallsS°MemberExpressionÍÓÍêMªIdentifierÍÓÍÙ¦NumberMªIdentifierÍÚÍê°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍÍ#ÂÂÂMªIdentifierÍÍ
-©maxAiApisS°MemberExpressionÍÍ#MªIdentifierÍÍ¦NumberMªIdentifierÍÍ#°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍ:ÍSÂÂÂMªIdentifierÍ:ÍM³stm32AdvancedPeriphU§LiteralÍOÍSÃ¤true¤init]¨PropertyÍjÍzÂÂÂMªIdentifierÍjÍtªmonteCarloU§LiteralÍvÍzÃ¤true¤init]¨PropertyÍ‘Í¥ÂÂÂMªIdentifierÍ‘ÍŸ®faultInjectionU§LiteralÍ¡Í¥Ã¤true¤init]¨PropertyÍ¼ÍÎÂÂÂMªIdentifierÍ¼ÍÈ¬pluginSystemU§LiteralÍÊÍÎÃ¤true¤init]¨PropertyÍåÍüÂÂÂMªIdentifierÍåÍö±projectEncryptionU§LiteralÍøÍüÃ¤true¤init]¨PropertyÍÍ+ÂÂÂMªIdentifierÍÍ%²multiMonitorLayoutU§LiteralÍ'Í+Ã¤true¤init]¨PropertyÍBÍVÂÂÂMªIdentifierÍBÍP®teamAnnotationU§LiteralÍRÍVÃ¤true¤init]¨PropertyÍmÍÂÂÂMªIdentifierÍmÍ{®versionCompareU§LiteralÍ}ÍÃ¤true¤init]¨PropertyÍ˜Í¬ÂÂÂMªIdentifierÍ˜Í¦®batchBomExportU§LiteralÍ¨Í¬Ã¤true¤initS°MemberExpressionÍDÍZMªIdentifierÍDÍO«LicenseTierMªIdentifierÍPÍZªENTERPRISEÂÂ[ªSwitchCaseÍÎÍ‘Y¯ReturnStatementÍèÍ\°ObjectExpressionÍïÍœ]¨PropertyÍ	Í	ÂÂÂMªIdentifierÍ	Í	ªmaxDevicesU§LiteralÍ	Í	ÌÈ£200¤init]¨PropertyÍ	,Í	<ÂÂÂMªIdentifierÍ	,Í	8¬dailyAiCallsU§LiteralÍ	:Í	<2¢50¤init]¨PropertyÍ	SÍ	_ÂÂÂMªIdentifierÍ	SÍ	\©maxAiApisU§LiteralÍ	^Í	_¡8¤init]¨PropertyÍ	vÍ	ÂÂÂMªIdentifierÍ	vÍ	‰³stm32AdvancedPeriphU§LiteralÍ	‹Í	Â¥false¤init]¨PropertyÍ	§Í	¸ÂÂÂMªIdentifierÍ	§Í	±ªmonteCarloU§LiteralÍ	³Í	¸Â¥false¤init]¨PropertyÍ	ÏÍ	äÂÂÂMªIdentifierÍ	ÏÍ	İ®faultInjectionU§LiteralÍ	ßÍ	äÂ¥false¤init]¨PropertyÍ	ûÍ
-ÂÂÂMªIdentifierÍ	ûÍ
-¬pluginSystemU§LiteralÍ
-	Í
-Â¥false¤init]¨PropertyÍ
-%Í
-=ÂÂÂMªIdentifierÍ
-%Í
-6±projectEncryptionU§LiteralÍ
-8Í
-=Â¥false¤init]¨PropertyÍ
-TÍ
-mÂÂÂMªIdentifierÍ
-TÍ
-f²multiMonitorLayoutU§LiteralÍ
+ Í” Í” Í” Í” Í&’” Í” ÍÜ ” Í ” Í ” Í ” Í ”! Í ”" Í ”* Í $”+ Í %”/ Í )”1 Í +”3 Í -”4 Í .”< Í 6”= Í 7”ÌF Í Ì@”ÌG Í ÌA”ÌH Í ÌB›” Í!” Í!” Í!” Í!” Í!” Í!”$ Í!”% Í!”) Í!#”* Í!$”+ Í!%œ” Í"” Í"” Í"” Í"” Í"”* Í"$”+ Í"%”/ Í")”0 Í"*”4 Í".”5 Í"/”6 Í"0œ” Í#” Í#” Í#	” Í#” Í#”" Í#”# Í#”% Í#”' Í#!”- Í#'”. Í#(”/ Í#)˜” Í$” Í$” Í$	” Í$” Í$”# Í$”$ Í$”% Í$—” Í%” Í%”& Í% ”' Í%!”- Í%'”. Í%(”/ Í%)‘”	 Í&”” Í&” Í&” Í&” Í&š” Í'” Í'” Í'” Í'” Í'”4 Í'.”8 Í'2”: Í'4”; Í'5”< Í'6‘”	 Í(’” Í)” Í)‘” Í*ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍfÍ$,ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍmÍ$,ÔrM”¤type¥start£end¤nameªIdentifierÍsÍ®LicenseManagerÀÔrN”¤type¥start£end¤body©ClassBodyÍ‚Í$,Ü ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ‰ÍtÂÂMªIdentifierÍ‰Í”«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ”ÍtÀÂÂÂN®BlockStatementÍ—Ít•ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍ¢Í¶ÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ¢Íµ¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¢Í®ÔrT“¤type¥start£end®ThisExpressionÍ¢Í¦MªIdentifierÍ§Í®§licenseÂÂÔrU•¤type¥start£end¥value£raw§LiteralÍ±ÍµÀ¤nullQ³ExpressionStatementÍÀÍÖR´AssignmentExpressionÍÀÍÕ¡=S°MemberExpressionÍÀÍĞT®ThisExpressionÍÀÍÄMªIdentifierÍÅÍĞ«licensePathÂÂU§LiteralÍÓÍÕ ¢''Q³ExpressionStatementÍàÍöR´AssignmentExpressionÍàÍõ¡=S°MemberExpressionÍàÍíT®ThisExpressionÍàÍäMªIdentifierÍåÍí¨tamperedÂÂU§LiteralÍğÍõÂ¥falseQ³ExpressionStatementÍ+ÍIR´AssignmentExpressionÍ+ÍH¡=S°MemberExpressionÍ+Í@T®ThisExpressionÍ+Í/MªIdentifierÍ0Í@°starUnlockActiveÂÂU§LiteralÍCÍHÂ¥falseQ³ExpressionStatementÍSÍmR´AssignmentExpressionÍSÍl¡=S°MemberExpressionÍSÍgT®ThisExpressionÍSÍWMªIdentifierÍXÍg¯starGithubLoginÂÂU§LiteralÍjÍl ¢''O°MethodDefinitionÍzÍ1ÃÂMªIdentifierÍÍŒ«getInstance¦methodP²FunctionExpressionÍŒÍ1ÀÂÂÂN®BlockStatementÍÍ1’ÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍšÍÔrW–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ¶¡!ÃS°MemberExpressionÍŸÍ¶MªIdentifierÍŸÍ­®LicenseManagerMªIdentifierÍ®Í¶¨instanceÂÂN®BlockStatementÍ¸Í‘Q³ExpressionStatementÍÇÍöR´AssignmentExpressionÍÇÍõ¡=S°MemberExpressionÍÇÍŞMªIdentifierÍÇÍÕ®LicenseManagerMªIdentifierÍÖÍŞ¨instanceÂÂÔrX•¤type¥start£end¦callee©arguments­NewExpressionÍáÍõMªIdentifierÍåÍó®LicenseManagerÀÔrY”¤type¥start£end¨argument¯ReturnStatementÍÍ*S°MemberExpressionÍÍ)MªIdentifierÍÍ ®LicenseManagerMªIdentifierÍ!Í)¨instanceÂÂO°MethodDefinitionÍ7Í¥ÂÂMªIdentifierÍ7ÍI²getDefaultFeatures¦methodP²FunctionExpressionÍIÍ¥ÀÂÂÂ‘MªIdentifierÍJÍN¤tierN®BlockStatementÍPÍ¥‘ÔrZ•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍ[ÍMªIdentifierÍcÍg¤tier”Ôr[•¤type¥start£endªconsequent¤testªSwitchCaseÍxÍ–S°MemberExpressionÍ}Í•MªIdentifierÍ}Íˆ«LicenseTierMªIdentifierÍ‰Í•¬PERSONAL_PROÂÂ[ªSwitchCaseÍ¤Í¿S°MemberExpressionÍ©Í¾MªIdentifierÍ©Í´«LicenseTierMªIdentifierÍµÍ¾©EDUCATIONÂÂ[ªSwitchCaseÍÍÍN‘Y¯ReturnStatementÍûÍNÔr\”¤type¥start£endªproperties°ObjectExpressionÍÍMœÔr]™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍ<ÂÂÂMªIdentifierÍÍ#ªmaxDevicesS°MemberExpressionÍ%Í<MªIdentifierÍ%Í+¦NumberMªIdentifierÍ,Í<°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍSÍxÂÂÂMªIdentifierÍSÍ_¬dailyAiCallsS°MemberExpressionÍaÍxMªIdentifierÍaÍg¦NumberMªIdentifierÍhÍx°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍÍ±ÂÂÂMªIdentifierÍÍ˜©maxAiApisS°MemberExpressionÍšÍ±MªIdentifierÍšÍ ¦NumberMªIdentifierÍ¡Í±°MAX_SAFE_INTEGERÂÂ¤init]¨PropertyÍÈÍáÂÂÂMªIdentifierÍÈÍÛ³stm32AdvancedPeriphU§LiteralÍİÍáÃ¤true¤init]¨PropertyÍøÍÂÂÂMªIdentifierÍøÍªmonteCarloU§LiteralÍÍÃ¤true¤init]¨PropertyÍÍ3ÂÂÂMªIdentifierÍÍ-®faultInjectionU§LiteralÍ/Í3Ã¤true¤init]¨PropertyÍJÍ\ÂÂÂMªIdentifierÍJÍV¬pluginSystemU§LiteralÍXÍ\Ã¤true¤init]¨PropertyÍsÍŠÂÂÂMªIdentifierÍsÍ„±projectEncryptionU§LiteralÍ†ÍŠÃ¤true¤init]¨PropertyÍ¡Í¹ÂÂÂMªIdentifierÍ¡Í³²multiMonitorLayoutU§LiteralÍµÍ¹Ã¤true¤init]¨PropertyÍĞÍäÂÂÂMªIdentifierÍĞÍŞ®teamAnnotationU§LiteralÍàÍäÃ¤true¤init]¨PropertyÍûÍÂÂÂMªIdentifierÍûÍ	®versionCompareU§LiteralÍÍÃ¤true¤init]¨PropertyÍ&Í:ÂÂÂMªIdentifierÍ&Í4®batchBomExportU§LiteralÍ6Í:Ã¤true¤initS°MemberExpressionÍÒÍèMªIdentifierÍÒÍİ«LicenseTierMªIdentifierÍŞÍèªENTERPRISEÂÂ[ªSwitchCaseÍ\Í“‘Y¯ReturnStatementÍvÍ“\°ObjectExpressionÍ}Í’œ]¨PropertyÍ”Í£ÂÂÂMªIdentifierÍ”ÍªmaxDevicesU§LiteralÍ Í£ÌÈ£200¤init]¨PropertyÍºÍÊÂÂÂMªIdentifierÍºÍÆ¬dailyAiCallsU§LiteralÍÈÍÊ2¢50¤init]¨PropertyÍáÍíÂÂÂMªIdentifierÍáÍê©maxAiApisU§LiteralÍìÍí¡8¤init]¨PropertyÍÍÂÂÂMªIdentifierÍÍ³stm32AdvancedPeriphU§LiteralÍÍÂ¥false¤init]¨PropertyÍ5ÍFÂÂÂMªIdentifierÍ5Í?ªmonteCarloU§LiteralÍAÍFÂ¥false¤init]¨PropertyÍ]ÍrÂÂÂMªIdentifierÍ]Ík®faultInjectionU§LiteralÍmÍrÂ¥false¤init]¨PropertyÍ‰ÍœÂÂÂMªIdentifierÍ‰Í•¬pluginSystemU§LiteralÍ—ÍœÂ¥false¤init]¨PropertyÍ³ÍËÂÂÂMªIdentifierÍ³ÍÄ±projectEncryptionU§LiteralÍÆÍËÂ¥false¤init]¨PropertyÍâÍûÂÂÂMªIdentifierÍâÍô²multiMonitorLayoutU§LiteralÍöÍûÂ¥false¤init]¨PropertyÍÍ'ÂÂÂMªIdentifierÍÍ ®teamAnnotationU§LiteralÍ"Í'Â¥false¤init]¨PropertyÍ>ÍSÂÂÂMªIdentifierÍ>ÍL®versionCompareU§LiteralÍNÍSÂ¥false¤init]¨PropertyÍjÍÂÂÂMªIdentifierÍjÍx®batchBomExportU§LiteralÍzÍÂ¥false¤initÀO°MethodDefinitionÍ«Í	1ÂÂMªIdentifierÍ«Í¸­setStarUnlock¦methodP²FunctionExpressionÍ¸Í	1ÀÂÂÂ’MªIdentifierÍ¹Í¿¦activeÔr^•¤type¥start£end¤left¥right±AssignmentPatternÍÁÍÑMªIdentifierÍÁÍÌ«githubLoginU§LiteralÍÏÍÑ ¢''N®BlockStatementÍÓÍ	1’Q³ExpressionStatementÍŞÍıR´AssignmentExpressionÍŞÍü¡=S°MemberExpressionÍŞÍóT®ThisExpressionÍŞÍâMªIdentifierÍãÍó°starUnlockActiveÂÂMªIdentifierÍöÍü¦activeQ³ExpressionStatementÍ	Í	*R´AssignmentExpressionÍ	Í	)¡=S°MemberExpressionÍ	Í	T®ThisExpressionÍ	Í	MªIdentifierÍ	Í	¯starGithubLoginÂÂMªIdentifierÍ	Í	)«githubLoginO°MethodDefinitionÍ	7Í	wÂÂMªIdentifierÍ	7Í	E®isStarUnlocked¦methodP²FunctionExpressionÍ	EÍ	wÀÂÂÂN®BlockStatementÍ	HÍ	w‘Y¯ReturnStatementÍ	SÍ	pS°MemberExpressionÍ	ZÍ	oT®ThisExpressionÍ	ZÍ	^MªIdentifierÍ	_Í	o°starUnlockActiveÂÂO°MethodDefinitionÍ	}Í	ÀÂÂMªIdentifierÍ	}Í	²getStarGithubLogin¦methodP²FunctionExpressionÍ	Í	ÀÀÂÂÂN®BlockStatementÍ	’Í	À‘Y¯ReturnStatementÍ	Í	¹S°MemberExpressionÍ	¤Í	¸T®ThisExpressionÍ	¤Í	¨MªIdentifierÍ	©Í	¸¯starGithubLoginÂÂO°MethodDefinitionÍ	ÆÍcÂÂMªIdentifierÍ	ÆÍ	Ò¬loadFromPath¦methodP²FunctionExpressionÍ	ÒÍcÀÂÂÂ‘MªIdentifierÍ	ÓÍ	×¤pathN®BlockStatementÍ	ÙÍc“Q³ExpressionStatementÍ	äÍ	üR´AssignmentExpressionÍ	äÍ	û¡=S°MemberExpressionÍ	äÍ	ôT®ThisExpressionÍ	äÍ	èMªIdentifierÍ	éÍ	ô«licensePathÂÂMªIdentifierÍ	÷Í	û¤pathQ³ExpressionStatementÍ
+Í
+R´AssignmentExpressionÍ
+Í
+¡=S°MemberExpressionÍ
+Í
+T®ThisExpressionÍ
+Í
+
+MªIdentifierÍ
+Í
+¨tamperedÂÂU§LiteralÍ
+Í
+Â¥falseÔr_–¤type¥start£end¥block§handler©finalizer¬TryStatementÍ
+&Í\N®BlockStatementÍ
+*Í
+è”Q³ExpressionStatementÍ
+9Í
+MÔr`–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ
+9Í
+LS°MemberExpressionÍ
+9Í
+FMªIdentifierÍ
+9Í
+;¢fsMªIdentifierÍ
+<Í
+FªaccessSyncÂÂ‘MªIdentifierÍ
+GÍ
+K¤pathÂÔra•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ
+[Í
+†‘Ôrb•¤type¥start£end¢id¤init²VariableDeclaratorÍ
+aÍ
+…MªIdentifierÍ
+aÍ
+e¤json`®CallExpressionÍ
 hÍ
-mÂ¥false¤init]¨PropertyÍ
-„Í
-™ÂÂÂMªIdentifierÍ
-„Í
-’®teamAnnotationU§LiteralÍ
+…S°MemberExpressionÍ
+hÍ
+MªIdentifierÍ
+hÍ
+v®LicenseManagerMªIdentifierÍ
+wÍ
+¨readTextÂÂ‘MªIdentifierÍ
+€Í
+„¤pathÂ¥consta³VariableDeclarationÍ
 ”Í
-™Â¥false¤init]¨PropertyÍ
-°Í
-ÅÂÂÂMªIdentifierÍ
-°Í
-¾®versionCompareU§LiteralÍ
-ÀÍ
-ÅÂ¥false¤init]¨PropertyÍ
-ÜÍ
-ñÂÂÂMªIdentifierÍ
-ÜÍ
-ê®batchBomExportU§LiteralÍ
-ìÍ
-ñÂ¥false¤initÀO°MethodDefinitionÍÍÙÂÂMªIdentifierÍÍ)¬loadFromPath¦methodP²FunctionExpressionÍ)ÍÙÀÂÂÂ‘MªIdentifierÍ*Í.¤pathN®BlockStatementÍ0ÍÙ“Q³ExpressionStatementÍ;ÍSR´AssignmentExpressionÍ;ÍR¡=S°MemberExpressionÍ;ÍKT®ThisExpressionÍ;Í?MªIdentifierÍ@ÍK«licensePathÂÂMªIdentifierÍNÍR¤pathQ³ExpressionStatementÍ]ÍsR´AssignmentExpressionÍ]Ír¡=S°MemberExpressionÍ]ÍjT®ThisExpressionÍ]ÍaMªIdentifierÍbÍj¨tamperedÂÂU§LiteralÍmÍrÂ¥falseÔr^–¤type¥start£end¥block§handler©finalizer¬TryStatementÍ}ÍÒN®BlockStatementÍÍ?”Q³ExpressionStatementÍÍ¤Ôr_–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ£S°MemberExpressionÍÍMªIdentifierÍÍ’¢fsMªIdentifierÍ“ÍªaccessSyncÂÂ‘MªIdentifierÍÍ¢¤pathÂÔr`•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ²Íİ‘Ôra•¤type¥start£end¢id¤init²VariableDeclaratorÍ¸ÍÜMªIdentifierÍ¸Í¼¤json_®CallExpressionÍ¿ÍÜS°MemberExpressionÍ¿ÍÖMªIdentifierÍ¿ÍÍ®LicenseManagerMªIdentifierÍÎÍÖ¨readTextÂÂ‘MªIdentifierÍ×ÍÛ¤pathÂ¥const`³VariableDeclarationÍëÍ‘a²VariableDeclaratorÍñÍMªIdentifierÍñÍô£lic_®CallExpressionÍ÷ÍS°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íû¤JSONMªIdentifierÍüÍ¥parseÂÂ‘MªIdentifierÍÍ¤jsonÂ¥constY¯ReturnStatementÍÍ4_®CallExpressionÍÍ3S°MemberExpressionÍÍ.T®ThisExpressionÍÍ!MªIdentifierÍ"Í.¬applyLicenseÂÂ‘MªIdentifierÍ/Í2£licÂÔrb•¤type¥start£end¥param¤body«CatchClauseÍIÍÒMªIdentifierÍPÍR¢_eN®BlockStatementÍTÍÒ’Q³ExpressionStatementÍcÍwR´AssignmentExpressionÍcÍv¡=S°MemberExpressionÍcÍoT®ThisExpressionÍcÍgMªIdentifierÍhÍo§licenseÂÂU§LiteralÍrÍvÀ¤nullY¯ReturnStatementÍ…ÍÇ_®CallExpressionÍŒÍÆS°MemberExpressionÍŒÍœT®ThisExpressionÍŒÍMªIdentifierÍ‘Íœ«buildStatusÂÂ“U§LiteralÍÍ¢Â¥falseS°MemberExpressionÍ¤Í´MªIdentifierÍ¤Í¯«LicenseTierMªIdentifierÍ°Í´¤FREEÂÂU§LiteralÍ¶ÍÅÙ'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆÙ)'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ'ÂÀO°MethodDefinitionÍßÍáÂÂMªIdentifierÍßÍò³applyLicenseContent¦methodP²FunctionExpressionÍòÍáÀÂÂÂ‘MªIdentifierÍóÍ÷¤jsonN®BlockStatementÍùÍá‘^¬TryStatementÍÍÚN®BlockStatementÍÍk’`³VariableDeclarationÍÍ4‘a²VariableDeclaratorÍÍ3MªIdentifierÍÍ £lic_®CallExpressionÍ#Í3S°MemberExpressionÍ#Í-MªIdentifierÍ#Í'¤JSONMªIdentifierÍ(Í-¥parseÂÂ‘MªIdentifierÍ.Í2¤jsonÂ¥constY¯ReturnStatementÍBÍ`_®CallExpressionÍIÍ_S°MemberExpressionÍIÍZT®ThisExpressionÍIÍMMªIdentifierÍNÍZ¬applyLicenseÂÂ‘MªIdentifierÍ[Í^£licÂb«CatchClauseÍuÍÚMªIdentifierÍ|Í}¡eN®BlockStatementÍÍÚ‘Y¯ReturnStatementÍÍÏ_®CallExpressionÍ•ÍÎS°MemberExpressionÍ•Í¥T®ThisExpressionÍ•Í™MªIdentifierÍšÍ¥«buildStatusÂÂ“U§LiteralÍ¦Í«Â¥falseS°MemberExpressionÍ­Í½MªIdentifierÍ­Í¸«LicenseTierMªIdentifierÍ¹Í½¤FREEÂÂÔrc•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ¿ÍÍ‘MªIdentifierÍÊÍË¡e’Ôrd•¤type¥start£end¥value¤tail¯TemplateElementÍÀÍÈÔre’£raw¦cooked´æˆæƒè§£æå¤±è´¥: ´æˆæƒè§£æå¤±è´¥: Âd¯TemplateElementÍÌÍÌe  ÃÂÀO°MethodDefinitionÍçÍÂÂMªIdentifierÍçÍô­importAndSave¦methodP²FunctionExpressionÍôÍÀÂÂÂ’MªIdentifierÍõÍù¤pathMªIdentifierÍûÍÿ¤jsonN®BlockStatementÍÍ“`³VariableDeclarationÍÍ:‘a²VariableDeclaratorÍÍ9MªIdentifierÍÍ¦status_®CallExpressionÍÍ9S°MemberExpressionÍÍ3T®ThisExpressionÍÍMªIdentifierÍ Í3³applyLicenseContentÂÂ‘MªIdentifierÍ4Í8¤jsonÂ¥constV«IfStatementÍDÍ S°MemberExpressionÍHÍTMªIdentifierÍHÍN¦statusMªIdentifierÍOÍT¥validÂÂN®BlockStatementÍVÍ ‘^¬TryStatementÍeÍõN®BlockStatementÍiÍz”`³VariableDeclarationÍ|Íâ‘a²VariableDeclaratorÍ‚ÍáMªIdentifierÍ‚ÍŒªfileHandle_®CallExpressionÍÍáS°MemberExpressionÍÍšMªIdentifierÍÍ‘¢fsMªIdentifierÍ’Íš¨openSyncÂÂ’MªIdentifierÍ›ÍŸ¤pathÔrf–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ¡Íàf°BinaryExpressionÍ¡ÍÌS°MemberExpressionÍ¡Í³S°MemberExpressionÍ¡Í¬MªIdentifierÍ¡Í£¢fsMªIdentifierÍ¤Í¬¨OpenModeÂÂMªIdentifierÍ­Í³¦CREATEÂÂ¡|S°MemberExpressionÍ¶ÍÌS°MemberExpressionÍ¶ÍÁMªIdentifierÍ¶Í¸¢fsMªIdentifierÍ¹ÍÁ¨OpenModeÂÂMªIdentifierÍÂÍÌªWRITE_ONLYÂÂ¡|S°MemberExpressionÍÏÍàS°MemberExpressionÍÏÍÚMªIdentifierÍÏÍÑ¢fsMªIdentifierÍÒÍÚ¨OpenModeÂÂMªIdentifierÍÛÍà¥TRUNCÂÂÂ¥constQ³ExpressionStatementÍôÍ_®CallExpressionÍôÍS°MemberExpressionÍôÍ MªIdentifierÍôÍö¢fsMªIdentifierÍ÷Í ©writeSyncÂÂ’S°MemberExpressionÍÍMªIdentifierÍÍªfileHandleMªIdentifierÍÍ¢fdÂÂMªIdentifierÍÍ¤jsonÂQ³ExpressionStatementÍ(ÍA_®CallExpressionÍ(Í@S°MemberExpressionÍ(Í4MªIdentifierÍ(Í*¢fsMªIdentifierÍ+Í4©closeSyncÂÂ‘MªIdentifierÍ5Í?ªfileHandleÂQ³ExpressionStatementÍSÍkR´AssignmentExpressionÍSÍj¡=S°MemberExpressionÍSÍcT®ThisExpressionÍSÍWMªIdentifierÍXÍc«licensePathÂÂMªIdentifierÍfÍj¤pathb«CatchClauseÍˆÍõMªIdentifierÍÍ¡eN®BlockStatementÍ’Íõ‘Y¯ReturnStatementÍ¥Íæ_®CallExpressionÍ¬ÍåS°MemberExpressionÍ¬Í¼T®ThisExpressionÍ¬Í°MªIdentifierÍ±Í¼«buildStatusÂÂ“U§LiteralÍ½ÍÂÂ¥falseS°MemberExpressionÍÄÍÔMªIdentifierÍÄÍÏ«LicenseTierMªIdentifierÍĞÍÔ¤FREEÂÂc¯TemplateLiteralÍÖÍä‘MªIdentifierÍáÍâ¡e’d¯TemplateElementÍ×Íße´æˆæƒä¿å­˜å¤±è´¥: ´æˆæƒä¿å­˜å¤±è´¥: Âd¯TemplateElementÍãÍãe  ÃÂÀÀY¯ReturnStatementÍ
-ÍMªIdentifierÍÍ¦statusO°MethodDefinitionÍ%Í¢ÂÂMªIdentifierÍ%Í.©getStatus¦methodP²FunctionExpressionÍ.Í¢ÀÂÂÂN®BlockStatementÍ1Í¢’V«IfStatementÍ<ÍsW¯UnaryExpressionÍ@ÍM¡!ÃS°MemberExpressionÍAÍMT®ThisExpressionÍAÍEMªIdentifierÍFÍM§licenseÂÂN®BlockStatementÍOÍs’V«IfStatementÍ^Í"S°MemberExpressionÍbÍrT®ThisExpressionÍbÍfMªIdentifierÍgÍr«trialActiveÂÂN®BlockStatementÍtÍ"‘Y¯ReturnStatementÍ‡Í_®CallExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍ’MªIdentifierÍ“Í«buildStatusÂÂ”U§LiteralÍŸÍ£Ã¤trueS°MemberExpressionÍ¥Í½MªIdentifierÍ¥Í°«LicenseTierMªIdentifierÍ±Í½¬PERSONAL_PROÂÂf±LogicalExpressionÍ¿ÍøS°MemberExpressionÍ¿ÍĞT®ThisExpressionÍ¿ÍÃMªIdentifierÍÄÍĞ¬trialMessageÂÂ¢||c¯TemplateLiteralÍÔÍø‘S°MemberExpressionÍİÍôT®ThisExpressionÍİÍáMªIdentifierÍâÍô²trialDaysRemainingÂÂ’d¯TemplateElementÍÕÍÛe°è¯•ç”¨æœŸå‰©ä½™ °è¯•ç”¨æœŸå‰©ä½™ Âd¯TemplateElementÍõÍ÷e¤ å¤©¤ å¤©ÃS°MemberExpressionÍúÍT®ThisExpressionÍúÍşMªIdentifierÍÿÍ²trialDaysRemainingÂÂÂÀY¯ReturnStatementÍ0Íh_®CallExpressionÍ7ÍgS°MemberExpressionÍ7ÍGT®ThisExpressionÍ7Í;MªIdentifierÍ<ÍG«buildStatusÂÂ“U§LiteralÍHÍMÂ¥falseS°MemberExpressionÍOÍ_MªIdentifierÍOÍZ«LicenseTierMªIdentifierÍ[Í_¤FREEÂÂU§LiteralÍaÍf©å…è´¹ç‰ˆ«'å…è´¹ç‰ˆ'ÂÀY¯ReturnStatementÍ}Í›_®CallExpressionÍ„ÍšS°MemberExpressionÍ„Í˜T®ThisExpressionÍ„ÍˆMªIdentifierÍ‰Í˜¯validateCurrentÂÂÂO°MethodDefinitionÍ¨ÍşÂÂMªIdentifierÍ®Í¾°applyTrialStatus¦methodP²FunctionExpressionÍ¾ÍşÀÂÂÃ‘MªIdentifierÍ¿ÍÆ§contextN®BlockStatementÍÈÍş•Q³ExpressionStatementÍÓÍôY¯AwaitExpressionÍÓÍó_®CallExpressionÍÙÍóS°MemberExpressionÍÙÍêMªIdentifierÍÙÍå¬TrialManagerMªIdentifierÍæÍê¤initÂÂ‘MªIdentifierÍëÍò§contextÂ`³VariableDeclarationÍşÍ+‘a²VariableDeclaratorÍÍ*MªIdentifierÍÍ	¥trialY¯AwaitExpressionÍÍ*_®CallExpressionÍÍ*S°MemberExpressionÍÍ(MªIdentifierÍÍ¬TrialManagerMªIdentifierÍÍ(©getStatusÂÂÂ¥constQ³ExpressionStatementÍ5ÍfR´AssignmentExpressionÍ5Íe¡=S°MemberExpressionÍ5ÍET®ThisExpressionÍ5Í9MªIdentifierÍ:ÍE«trialActiveÂÂf±LogicalExpressionÍHÍeS°MemberExpressionÍHÍTMªIdentifierÍHÍM¥trialMªIdentifierÍNÍT¦activeÂÂ¢&&W¯UnaryExpressionÍXÍe¡!ÃS°MemberExpressionÍYÍeT®ThisExpressionÍYÍ]MªIdentifierÍ^Íe§licenseÂÂQ³ExpressionStatementÍpÍR´AssignmentExpressionÍpÍ¡=S°MemberExpressionÍpÍ‡T®ThisExpressionÍpÍtMªIdentifierÍuÍ‡²trialDaysRemainingÂÂS°MemberExpressionÍŠÍMªIdentifierÍŠÍ¥trialMªIdentifierÍÍ­daysRemainingÂÂQ³ExpressionStatementÍ¨Í÷R´AssignmentExpressionÍ¨Íö¡=S°MemberExpressionÍ¨Í¹T®ThisExpressionÍ¨Í¬MªIdentifierÍ­Í¹¬trialMessageÂÂVµConditionalExpressionÍ¼ÍöS°MemberExpressionÍ¼ÍÈMªIdentifierÍ¼ÍÁ¥trialMªIdentifierÍÂÍÈ¦activeÂÂc¯TemplateLiteralÍËÍë‘S°MemberExpressionÍÔÍçMªIdentifierÍÔÍÙ¥trialMªIdentifierÍÚÍç­daysRemainingÂÂ’d¯TemplateElementÍÌÍÒe°è¯•ç”¨æœŸå‰©ä½™ °è¯•ç”¨æœŸå‰©ä½™ Âd¯TemplateElementÍèÍêe¤ å¤©¤ å¤©ÃU§LiteralÍîÍö²è¯•ç”¨æœŸå·²ç»“æŸ´'è¯•ç”¨æœŸå·²ç»“æŸ'O°MethodDefinitionÍÍ¬ÂÂMªIdentifierÍÍ§getTier¦methodP²FunctionExpressionÍÍ¬ÀÂÂÂN®BlockStatementÍÍ¬’V«IfStatementÍÍmf±LogicalExpressionÍÍ>S°MemberExpressionÍÍ-T®ThisExpressionÍÍ!MªIdentifierÍ"Í-«trialActiveÂÂ¢&&W¯UnaryExpressionÍ1Í>¡!ÃS°MemberExpressionÍ2Í>T®ThisExpressionÍ2Í6MªIdentifierÍ7Í>§licenseÂÂY¯ReturnStatementÍMÍmS°MemberExpressionÍTÍlMªIdentifierÍTÍ_«LicenseTierMªIdentifierÍ`Íl¬PERSONAL_PROÂÂÀY¯ReturnStatementÍwÍ¥f±LogicalExpressionÍ~Í¤Q¯ChainExpressionÍ~ÍS°MemberExpressionÍ~ÍS°MemberExpressionÍ~ÍŠT®ThisExpressionÍ~Í‚MªIdentifierÍƒÍŠ§licenseÂÂMªIdentifierÍŒÍ¤tierÂÃ¢??S°MemberExpressionÍ”Í¤MªIdentifierÍ”ÍŸ«LicenseTierMªIdentifierÍ Í¤¤FREEÂÂO°MethodDefinitionÍ²ÍüÂÂMªIdentifierÍ²Í½«getFeatures¦methodP²FunctionExpressionÍ½ÍüÀÂÂÂN®BlockStatementÍÀÍü“V«IfStatementÍËÍEf±LogicalExpressionÍÏÍğS°MemberExpressionÍÏÍßT®ThisExpressionÍÏÍÓMªIdentifierÍÔÍß«trialActiveÂÂ¢&&W¯UnaryExpressionÍãÍğ¡!ÃS°MemberExpressionÍäÍğT®ThisExpressionÍäÍèMªIdentifierÍéÍğ§licenseÂÂN®BlockStatementÍòÍE‘Y¯ReturnStatementÍÍ:_®CallExpressionÍÍ9S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ²getDefaultFeaturesÂÂ‘S°MemberExpressionÍ Í8MªIdentifierÍ Í+«LicenseTierMªIdentifierÍ,Í8¬PERSONAL_PROÂÂÂÀV«IfStatementÍOÍÎf±LogicalExpressionÍSÍW¯UnaryExpressionÍSÍ`¡!ÃS°MemberExpressionÍTÍ`T®ThisExpressionÍTÍXMªIdentifierÍYÍ`§licenseÂÂ¢||W¯UnaryExpressionÍdÍ¡!ÃS°MemberExpressionÍeÍ_®CallExpressionÍeÍ{S°MemberExpressionÍeÍyT®ThisExpressionÍeÍiMªIdentifierÍjÍy¯validateCurrentÂÂÂMªIdentifierÍ|Í¥validÂÂN®BlockStatementÍƒÍÎ‘Y¯ReturnStatementÍ’ÍÃ_®CallExpressionÍ™ÍÂS°MemberExpressionÍ™Í°T®ThisExpressionÍ™ÍMªIdentifierÍÍ°²getDefaultFeaturesÂÂ‘S°MemberExpressionÍ±ÍÁMªIdentifierÍ±Í¼«LicenseTierMªIdentifierÍ½ÍÁ¤FREEÂÂÂÀY¯ReturnStatementÍØÍõS°MemberExpressionÍßÍôS°MemberExpressionÍßÍëT®ThisExpressionÍßÍãMªIdentifierÍäÍë§licenseÂÂMªIdentifierÍìÍô¨featuresÂÂO°MethodDefinitionÍÍ6ÂÂMªIdentifierÍÍªisTampered¦methodP²FunctionExpressionÍÍ6ÀÂÂÂN®BlockStatementÍÍ6‘Y¯ReturnStatementÍÍ/S°MemberExpressionÍ!Í.T®ThisExpressionÍ!Í%MªIdentifierÍ&Í.¨tamperedÂÂO°MethodDefinitionÍ<Í‰ÂÂMªIdentifierÍ<ÍI­getDeviceCode¦methodP²FunctionExpressionÍIÍ‰ÀÂÂÂN®BlockStatementÍLÍ‰‘Y¯ReturnStatementÍWÍ‚_®CallExpressionÍ^ÍS°MemberExpressionÍ^ÍMªIdentifierÍ^Íq³HardwareFingerprintMªIdentifierÍrÍ­getDeviceCodeÂÂÂO°MethodDefinitionÍÍ=ÂÂMªIdentifierÍÍ¯getLicenseeName¦methodP²FunctionExpressionÍÍ=ÀÂÂÂN®BlockStatementÍ¡Í=’V«IfStatementÍ¬Í"f±LogicalExpressionÍ°Íéf°BinaryExpressionÍ°ÍÅS°MemberExpressionÍ°Í¼T®ThisExpressionÍ°Í´MªIdentifierÍµÍ¼§licenseÂÂ£!==U§LiteralÍÁÍÅÀ¤null¢&&f°BinaryExpressionÍÉÍéS°MemberExpressionÍÉÍåS°MemberExpressionÍÉÍŞS°MemberExpressionÍÉÍÕT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍÕ§licenseÂÂMªIdentifierÍÖÍŞ¨licenseeÂÂMªIdentifierÍßÍå¦lengthÂÂ¡>U§LiteralÍèÍé ¡0N®BlockStatementÍëÍ"‘Y¯ReturnStatementÍúÍS°MemberExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§licenseÂÂMªIdentifierÍÍ¨licenseeÂÂÀY¯ReturnStatementÍ,Í6U§LiteralÍ3Í5 ¢''O°MethodDefinitionÍeÍ3ÂÂMªIdentifierÍeÍzµgetLicenseExpiryLabel¦methodP²FunctionExpressionÍzÍ3ÀÂÂÂN®BlockStatementÍ}Í3“V«IfStatementÍˆÍ"f±LogicalExpressionÍŒÍÆf°BinaryExpressionÍŒÍ¡S°MemberExpressionÍŒÍ˜T®ThisExpressionÍŒÍMªIdentifierÍ‘Í˜§licenseÂÂ£!==U§LiteralÍÍ¡À¤null¢&&f°BinaryExpressionÍ¥ÍÆS°MemberExpressionÍ¥ÍÂS°MemberExpressionÍ¥Í»S°MemberExpressionÍ¥Í±T®ThisExpressionÍ¥Í©MªIdentifierÍªÍ±§licenseÂÂMªIdentifierÍ²Í»©expiresAtÂÂMªIdentifierÍ¼ÍÂ¦lengthÂÂ¡>U§LiteralÍÅÍÆ ¡0N®BlockStatementÍÈÍ"‘Y¯ReturnStatementÍ×Í_®CallExpressionÍŞÍS°MemberExpressionÍŞÍşMªIdentifierÍŞÍì®LicenseManagerMªIdentifierÍíÍş±formatDisplayDateÂÂ‘S°MemberExpressionÍÿÍS°MemberExpressionÍÿÍT®ThisExpressionÍÿÍMªIdentifierÍÍ§licenseÂÂMªIdentifierÍÍ©expiresAtÂÂÂÀV«IfStatementÍ,Íf±LogicalExpressionÍ0Í_S°MemberExpressionÍ0Í@T®ThisExpressionÍ0Í4MªIdentifierÍ5Í@«trialActiveÂÂ¢&&f°BinaryExpressionÍDÍ_S°MemberExpressionÍDÍ[T®ThisExpressionÍDÍHMªIdentifierÍIÍ[²trialDaysRemainingÂÂ¡>U§LiteralÍ^Í_ ¡0N®BlockStatementÍaÍ’`³VariableDeclarationÍpÍ®‘a²VariableDeclaratorÍvÍ­MªIdentifierÍvÍ{¥endMsf°BinaryExpressionÍ~Í­_®CallExpressionÍ~ÍˆS°MemberExpressionÍ~Í†MªIdentifierÍ~Í‚¤DateMªIdentifierÍƒÍ†£nowÂÂÂ¡+f°BinaryExpressionÍ‹Í­S°MemberExpressionÍ‹Í¢T®ThisExpressionÍ‹ÍMªIdentifierÍÍ¢²trialDaysRemainingÂÂ¡*U§LiteralÍ¥Í­Î&\ ¨86400000¥constY¯ReturnStatementÍ¼Í_®CallExpressionÍÃÍS°MemberExpressionÍÃÍãMªIdentifierÍÃÍÑ®LicenseManagerMªIdentifierÍÒÍã±formatDisplayDateÂÂ‘_®CallExpressionÍäÍS°MemberExpressionÍäÍÿX­NewExpressionÍäÍóMªIdentifierÍèÍì¤Date‘MªIdentifierÍíÍò¥endMsMªIdentifierÍôÍÿ«toISOStringÂÂÂÂÀY¯ReturnStatementÍÍ,U§LiteralÍÍ+ª01/01/2130¬'01/01/2130'O°MethodDefinitionÍ9Í{ÂÂMªIdentifierÍ9ÍI°isEvaluationMode¦methodP²FunctionExpressionÍIÍ{ÀÂÂÂN®BlockStatementÍLÍ{‘Y¯ReturnStatementÍWÍtf°BinaryExpressionÍ^ÍsS°MemberExpressionÍ^ÍjT®ThisExpressionÍ^ÍbMªIdentifierÍcÍj§licenseÂÂ£===U§LiteralÍoÍsÀ¤nullO°MethodDefinitionÍÍ»ÃÂMªIdentifierÍˆÍ™±formatDisplayDate¦methodP²FunctionExpressionÍ™Í»ÀÂÂÂ‘MªIdentifierÍšÍ£isoN®BlockStatementÍŸÍ»•`³VariableDeclarationÍªÍÂ‘a²VariableDeclaratorÍ°ÍÁMªIdentifierÍ°Í±¡dX­NewExpressionÍ´ÍÁMªIdentifierÍ¸Í¼¤Date‘MªIdentifierÍ½ÍÀ£iso¥constV«IfStatementÍÌÍ	_®CallExpressionÍĞÍâMªIdentifierÍĞÍÕ¥isNaN‘_®CallExpressionÍÖÍáS°MemberExpressionÍÖÍßMªIdentifierÍÖÍ×¡dMªIdentifierÍØÍß§getTimeÂÂÂÂN®BlockStatementÍäÍ	‘Y¯ReturnStatementÍóÍşMªIdentifierÍúÍı£isoÀ`³VariableDeclarationÍÍC‘a²VariableDeclaratorÍÍBMªIdentifierÍÍ¢dd_®CallExpressionÍÍBS°MemberExpressionÍÍ:_®CallExpressionÍÍ1MªIdentifierÍÍ$¦String‘_®CallExpressionÍ%Í0S°MemberExpressionÍ%Í.MªIdentifierÍ%Í&¡dMªIdentifierÍ'Í.§getDateÂÂÂÂMªIdentifierÍ2Í:¨padStartÂÂ’U§LiteralÍ;Í<¡2U§LiteralÍ>ÍA¡0£'0'Â¥const`³VariableDeclarationÍMÍ‚‘a²VariableDeclaratorÍSÍMªIdentifierÍSÍU¢mm_®CallExpressionÍXÍS°MemberExpressionÍXÍy_®CallExpressionÍXÍpMªIdentifierÍXÍ^¦String‘f°BinaryExpressionÍ_Ío_®CallExpressionÍ_ÍkS°MemberExpressionÍ_ÍiMªIdentifierÍ_Í`¡dMªIdentifierÍaÍi¨getMonthÂÂÂ¡+U§LiteralÍnÍo¡1ÂMªIdentifierÍqÍy¨padStartÂÂ’U§LiteralÍzÍ{¡2U§LiteralÍ}Í€¡0£'0'Â¥constY¯ReturnStatementÍŒÍ´c¯TemplateLiteralÍ“Í³“MªIdentifierÍ–Í˜¢ddMªIdentifierÍœÍ¢mm_®CallExpressionÍ¢Í±S°MemberExpressionÍ¢Í¯MªIdentifierÍ¢Í£¡dMªIdentifierÍ¤Í¯«getFullYearÂÂÂ”d¯TemplateElementÍ”Í”e  Âd¯TemplateElementÍ™Íše¡/¡/Âd¯TemplateElementÍŸÍ e¡/¡/Âd¯TemplateElementÍ²Í²e  ÃO°MethodDefinitionÍäÍmÃÂMªIdentifierÍëÍı²buildSignedLicense¦methodP²FunctionExpressionÍıÍmÀÂÂÂ”MªIdentifierÍşÍ¤tierMªIdentifierÍÍªdeviceCodeMªIdentifierÍÍ¨licenseeÔrg•¤type¥start£end¤left¥right±AssignmentPatternÍÍ)MªIdentifierÍÍ#©daysValidU§LiteralÍ&Í)Ím£365N®BlockStatementÍ+Ím—`³VariableDeclarationÍ6ÍM‘a²VariableDeclaratorÍ<ÍLMªIdentifierÍ<Í?£nowX­NewExpressionÍBÍLMªIdentifierÍFÍJ¤Date¥const`³VariableDeclarationÍWÍ–‘a²VariableDeclaratorÍ]Í•MªIdentifierÍ]Íd§expiresX­NewExpressionÍgÍ•MªIdentifierÍkÍo¤Date‘f°BinaryExpressionÍpÍ”_®CallExpressionÍpÍ}S°MemberExpressionÍpÍ{MªIdentifierÍpÍs£nowMªIdentifierÍtÍ{§getTimeÂÂÂ¡+f°BinaryExpressionÍ€Í”MªIdentifierÍ€Í‰©daysValid¡*U§LiteralÍŒÍ”Î&\ ¨86400000¥const`³VariableDeclarationÍ ÍÉ‘a²VariableDeclaratorÍ¦ÍÈMªIdentifierÍ¦Í©£mgr_®CallExpressionÍ¬ÍÈS°MemberExpressionÍ¬ÍÆMªIdentifierÍ¬Íº®LicenseManagerMªIdentifierÍ»ÍÆ«getInstanceÂÂÂ¥const`³VariableDeclarationÍÓÍ‘a²VariableDeclaratorÍÙÍMªIdentifierÍÙÍà§payload\°ObjectExpressionÍãÍ˜Ôrh™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍòÍöÂÃÂMªIdentifierÍòÍö¤tier¤initMªIdentifierÍòÍö¤tierh¨PropertyÍÍÂÃÂMªIdentifierÍÍ¨licensee¤initMªIdentifierÍÍ¨licensee]¨PropertyÍÍ@ÂÂÂMªIdentifierÍÍ&ªdeviceCode_®CallExpressionÍ(Í@S°MemberExpressionÍ(Í>MªIdentifierÍ(Í2ªdeviceCodeMªIdentifierÍ3Í>«toUpperCaseÂÂÂ¤init]¨PropertyÍOÍjÂÂÂMªIdentifierÍOÍW¨issuedAt_®CallExpressionÍYÍjS°MemberExpressionÍYÍhMªIdentifierÍYÍ\£nowMªIdentifierÍ]Íh«toISOStringÂÂÂ¤init]¨PropertyÍyÍ™ÂÂÂMªIdentifierÍyÍ‚©expiresAt_®CallExpressionÍ„Í™S°MemberExpressionÍ„Í—MªIdentifierÍ„Í‹§expiresMªIdentifierÍŒÍ—«toISOStringÂÂÂ¤init]¨PropertyÍ¨Í¸ÂÂÂMªIdentifierÍ¨Í³«offlineDaysU§LiteralÍµÍ¸Ím£365¤init]¨PropertyÍÇÍíÂÂÂMªIdentifierÍÇÍÏ¨features_®CallExpressionÍÑÍíS°MemberExpressionÍÑÍçMªIdentifierÍÑÍÔ£mgrMªIdentifierÍÕÍç²getDefaultFeaturesÂÂ‘MªIdentifierÍèÍì¤tierÂ¤init]¨PropertyÍüÍ	ÂÂÂMªIdentifierÍüÍ©signatureU§LiteralÍÍ	 ¢''¤init¥const`³VariableDeclarationÍÍî‘a²VariableDeclaratorÍ%ÍíMªIdentifierÍ%Í-¨signBody_®CallExpressionÍ0ÍíS°MemberExpressionÍ0Í>MªIdentifierÍ0Í4¤JSONMªIdentifierÍ5Í>©stringifyÂÂ‘\°ObjectExpressionÍ?Íì”]¨PropertyÍNÍ`ÂÂÂMªIdentifierÍNÍR¤tierS°MemberExpressionÍTÍ`MªIdentifierÍTÍ[§payloadMªIdentifierÍ\Í`¤tierÂÂ¤init]¨PropertyÍoÍÂÂÂMªIdentifierÍoÍyªdeviceCodeS°MemberExpressionÍ{ÍMªIdentifierÍ{Í‚§payloadMªIdentifierÍƒÍªdeviceCodeÂÂ¤init]¨PropertyÍœÍ¸ÂÂÂMªIdentifierÍœÍ¥©expiresAtS°MemberExpressionÍ§Í¸MªIdentifierÍ§Í®§payloadMªIdentifierÍ¯Í¸©expiresAtÂÂ¤init]¨PropertyÍÇÍáÂÂÂMªIdentifierÍÇÍÏ¨licenseeS°MemberExpressionÍÑÍáMªIdentifierÍÑÍØ§payloadMªIdentifierÍÙÍá¨licenseeÂÂ¤initÂ¥constQ³ExpressionStatementÍøÍ4R´AssignmentExpressionÍøÍ3¡=S°MemberExpressionÍøÍ	MªIdentifierÍøÍÿ§payloadMªIdentifierÍ Í	©signatureÂÂ_®CallExpressionÍÍ3S°MemberExpressionÍÍ)MªIdentifierÍÍªCryptoUtilMªIdentifierÍÍ)²signLicensePayloadÂÂ‘MªIdentifierÍ*Í2¨signBodyÂY¯ReturnStatementÍ>Íf_®CallExpressionÍEÍeS°MemberExpressionÍEÍSMªIdentifierÍEÍI¤JSONMªIdentifierÍJÍS©stringifyÂÂ“MªIdentifierÍTÍ[§payloadU§LiteralÍ]ÍaÀ¤nullU§LiteralÍcÍd¡2ÂO°MethodDefinitionÍsÍÖÂÂMªIdentifierÍsÍ¬applyLicense¦methodP²FunctionExpressionÍÍÖÀÂÂÂ‘MªIdentifierÍ€Íƒ£licN®BlockStatementÍ…ÍÖ–`³VariableDeclarationÍÍÉ‘a²VariableDeclaratorÍ–ÍÈMªIdentifierÍ–Í¡«expectedSig_®CallExpressionÍ¤ÍÈS°MemberExpressionÍ¤ÍÃMªIdentifierÍ¤Í²®LicenseManagerMªIdentifierÍ³ÍÃ°computeSignatureÂÂ‘MªIdentifierÍÄÍÇ£licÂ¥constV«IfStatementÍÓÍ™f°BinaryExpressionÍ×ÍôS°MemberExpressionÍ×ÍäMªIdentifierÍ×ÍÚ£licMªIdentifierÍÛÍä©signatureÂÂ£!==MªIdentifierÍéÍô«expectedSigN®BlockStatementÍöÍ™“Q³ExpressionStatementÍÍR´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍ	MªIdentifierÍ
-Í¨tamperedÂÂU§LiteralÍÍÃ¤trueQ³ExpressionStatementÍ(Í<R´AssignmentExpressionÍ(Í;¡=S°MemberExpressionÍ(Í4T®ThisExpressionÍ(Í,MªIdentifierÍ-Í4§licenseÂÂU§LiteralÍ7Í;À¤nullY¯ReturnStatementÍJÍ_®CallExpressionÍQÍS°MemberExpressionÍQÍaT®ThisExpressionÍQÍUMªIdentifierÍVÍa«buildStatusÂÂ“U§LiteralÍbÍgÂ¥falseS°MemberExpressionÍiÍyMªIdentifierÍiÍt«LicenseTierMªIdentifierÍuÍy¤FREEÂÂU§LiteralÍ{ÍŒÙ-æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆÙ/'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ'ÂÀ`³VariableDeclarationÍ£ÍÙ‘a²VariableDeclaratorÍ©ÍØMªIdentifierÍ©Í²©localCode_®CallExpressionÍµÍØS°MemberExpressionÍµÍÖMªIdentifierÍµÍÈ³HardwareFingerprintMªIdentifierÍÉÍÖ­getDeviceCodeÂÂÂ¥constV«IfStatementÍãÍŠf°BinaryExpressionÍçÍ_®CallExpressionÍçÍS°MemberExpressionÍçÍS°MemberExpressionÍçÍõMªIdentifierÍçÍê£licMªIdentifierÍëÍõªdeviceCodeÂÂMªIdentifierÍöÍ«toUpperCaseÂÂÂ£!==MªIdentifierÍÍ©localCodeN®BlockStatementÍÍŠ’Q³ExpressionStatementÍ"Í6R´AssignmentExpressionÍ"Í5¡=S°MemberExpressionÍ"Í.T®ThisExpressionÍ"Í&MªIdentifierÍ'Í.§licenseÂÂU§LiteralÍ1Í5À¤nullY¯ReturnStatementÍDÍ_®CallExpressionÍKÍ~S°MemberExpressionÍKÍ[T®ThisExpressionÍKÍOMªIdentifierÍPÍ[«buildStatusÂÂ“U§LiteralÍ\ÍaÂ¥falseS°MemberExpressionÍcÍsMªIdentifierÍcÍn«LicenseTierMªIdentifierÍoÍs¤FREEÂÂU§LiteralÍuÍ}²è®¾å¤‡ç ä¸åŒ¹é…´'è®¾å¤‡ç ä¸åŒ¹é…'ÂÀQ³ExpressionStatementÍ”Í§R´AssignmentExpressionÍ”Í¦¡=S°MemberExpressionÍ”Í T®ThisExpressionÍ”Í˜MªIdentifierÍ™Í §licenseÂÂMªIdentifierÍ£Í¦£licY¯ReturnStatementÍ±ÍÏ_®CallExpressionÍ¸ÍÎS°MemberExpressionÍ¸ÍÌT®ThisExpressionÍ¸Í¼MªIdentifierÍ½ÍÌ¯validateCurrentÂÂÂO°MethodDefinitionÍÜÍ" ÂÂMªIdentifierÍÜÍë¯validateCurrent¦methodP²FunctionExpressionÍëÍ" ÀÂÂÂN®BlockStatementÍîÍ" –V«IfStatementÍùÍ ^W¯UnaryExpressionÍıÍ 
-¡!ÃS°MemberExpressionÍşÍ 
-T®ThisExpressionÍşÍ MªIdentifierÍ Í 
-§licenseÂÂN®BlockStatementÍ Í ^‘Y¯ReturnStatementÍ Í S_®CallExpressionÍ "Í RS°MemberExpressionÍ "Í 2T®ThisExpressionÍ "Í &MªIdentifierÍ 'Í 2«buildStatusÂÂ“U§LiteralÍ 3Í 8Â¥falseS°MemberExpressionÍ :Í JMªIdentifierÍ :Í E«LicenseTierMªIdentifierÍ FÍ J¤FREEÂÂU§LiteralÍ LÍ Q©å…è´¹ç‰ˆ«'å…è´¹ç‰ˆ'ÂÀ`³VariableDeclarationÍ hÍ £‘a²VariableDeclaratorÍ nÍ ¢MªIdentifierÍ nÍ u§expires_®CallExpressionÍ xÍ ¢S°MemberExpressionÍ xÍ  X­NewExpressionÍ xÍ ˜MªIdentifierÍ |Í €¤Date‘S°MemberExpressionÍ Í —S°MemberExpressionÍ Í T®ThisExpressionÍ Í …MªIdentifierÍ †Í §licenseÂÂMªIdentifierÍ Í —©expiresAtÂÂMªIdentifierÍ ™Í  §getTimeÂÂÂ¥const`³VariableDeclarationÍ ­Í Ä‘a²VariableDeclaratorÍ ³Í ÃMªIdentifierÍ ³Í ¶£now_®CallExpressionÍ ¹Í ÃS°MemberExpressionÍ ¹Í ÁMªIdentifierÍ ¹Í ½¤DateMªIdentifierÍ ¾Í Á£nowÂÂÂ¥const`³VariableDeclarationÍ ÎÍ!‘a²VariableDeclaratorÍ ÔÍ!MªIdentifierÍ ÔÍ á­daysRemaining_®CallExpressionÍ äÍ!S°MemberExpressionÍ äÍ ìMªIdentifierÍ äÍ è¤MathMªIdentifierÍ éÍ ì£maxÂÂ’U§LiteralÍ íÍ î ¡0_®CallExpressionÍ ğÍ!S°MemberExpressionÍ ğÍ ùMªIdentifierÍ ğÍ ô¤MathMªIdentifierÍ õÍ ù¤ceilÂÂ‘f°BinaryExpressionÍ úÍ!f°BinaryExpressionÍ ûÍ!MªIdentifierÍ ûÍ!§expires¡-MªIdentifierÍ!Í!£now¡/U§LiteralÍ!Í!Î&\ ¨86400000ÂÂ¥constV«IfStatementÍ!!Í!±f°BinaryExpressionÍ!%Í!2MªIdentifierÍ!%Í!(£now¡>MªIdentifierÍ!+Í!2§expiresN®BlockStatementÍ!4Í!±’Q³ExpressionStatementÍ!CÍ!WR´AssignmentExpressionÍ!CÍ!V¡=S°MemberExpressionÍ!CÍ!OT®ThisExpressionÍ!CÍ!GMªIdentifierÍ!HÍ!O§licenseÂÂU§LiteralÍ!RÍ!VÀ¤nullY¯ReturnStatementÍ!eÍ!¦_®CallExpressionÍ!lÍ!¥S°MemberExpressionÍ!lÍ!|T®ThisExpressionÍ!lÍ!pMªIdentifierÍ!qÍ!|«buildStatusÂÂ“U§LiteralÍ!}Í!‚Â¥falseS°MemberExpressionÍ!„Í!”MªIdentifierÍ!„Í!«LicenseTierMªIdentifierÍ!Í!”¤FREEÂÂU§LiteralÍ!–Í!¤Ù$æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆÙ&'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ'ÂÀY¯ReturnStatementÍ!»Í"_®CallExpressionÍ!ÂÍ"S°MemberExpressionÍ!ÂÍ!ÒT®ThisExpressionÍ!ÂÍ!ÆMªIdentifierÍ!ÇÍ!Ò«buildStatusÂÂ”U§LiteralÍ!ÓÍ!×Ã¤trueS°MemberExpressionÍ!ÙÍ!êS°MemberExpressionÍ!ÙÍ!åT®ThisExpressionÍ!ÙÍ!İMªIdentifierÍ!ŞÍ!å§licenseÂÂMªIdentifierÍ!æÍ!ê¤tierÂÂc¯TemplateLiteralÍ!ìÍ"‘MªIdentifierÍ!÷Í"­daysRemaining’d¯TemplateElementÍ!íÍ!õe¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ Âd¯TemplateElementÍ"Í"e¤ å¤©¤ å¤©ÃMªIdentifierÍ"
-Í"­daysRemainingÂO°MethodDefinitionÍ"&Í#UÂÂMªIdentifierÍ"&Í"1«buildStatus¦methodP²FunctionExpressionÍ"1Í#UÀÂÂÂ”MªIdentifierÍ"2Í"7¥validMªIdentifierÍ"9Í"=¤tierMªIdentifierÍ"?Í"F§messageg±AssignmentPatternÍ"HÍ"YMªIdentifierÍ"HÍ"U­daysRemainingU§LiteralÍ"XÍ"Y ¡0N®BlockStatementÍ"[Í#U‘Y¯ReturnStatementÍ"fÍ#N\°ObjectExpressionÍ"mÍ#M–h¨PropertyÍ"|Í"ÂÃÂMªIdentifierÍ"|Í"¥valid¤initMªIdentifierÍ"|Í"¥valid]¨PropertyÍ"Í"µÂÂÂMªIdentifierÍ"Í"”¤tierVµConditionalExpressionÍ"–Í"µMªIdentifierÍ"–Í"›¥validMªIdentifierÍ"Í"¢¤tierS°MemberExpressionÍ"¥Í"µMªIdentifierÍ"¥Í"°«LicenseTierMªIdentifierÍ"±Í"µ¤FREEÂÂ¤init]¨PropertyÍ"ÄÍ"ØÂÂÂMªIdentifierÍ"ÄÍ"Ñ­deviceMatchedMªIdentifierÍ"ÓÍ"Ø¥valid¤init]¨PropertyÍ"çÍ#ÂÂÂMªIdentifierÍ"çÍ"î§expiredf±LogicalExpressionÍ"ğÍ#W¯UnaryExpressionÍ"ğÍ"ö¡!ÃMªIdentifierÍ"ñÍ"ö¥valid¢&&_®CallExpressionÍ"úÍ#S°MemberExpressionÍ"úÍ#
-MªIdentifierÍ"úÍ#§messageMªIdentifierÍ#Í#
-¨includesÂÂ‘U§LiteralÍ#Í#¦è¿‡æœŸ¨'è¿‡æœŸ'Â¤inith¨PropertyÍ#Í#,ÂÃÂMªIdentifierÍ#Í#,­daysRemaining¤initMªIdentifierÍ#Í#,­daysRemainingh¨PropertyÍ#;Í#BÂÃÂMªIdentifierÍ#;Í#B§message¤initMªIdentifierÍ#;Í#B§messageO°MethodDefinitionÍ#[Í$‚ÃÂMªIdentifierÍ#bÍ#r°computeSignature¦methodP²FunctionExpressionÍ#rÍ$‚ÀÂÂÂ‘MªIdentifierÍ#sÍ#v£licN®BlockStatementÍ#xÍ$‚’`³VariableDeclarationÍ#ƒÍ$B‘a²VariableDeclaratorÍ#‰Í$AMªIdentifierÍ#‰Í#‘¨signBody_®CallExpressionÍ#”Í$AS°MemberExpressionÍ#”Í#¢MªIdentifierÍ#”Í#˜¤JSONMªIdentifierÍ#™Í#¢©stringifyÂÂ‘\°ObjectExpressionÍ#£Í$@”]¨PropertyÍ#²Í#ÀÂÂÂMªIdentifierÍ#²Í#¶¤tierS°MemberExpressionÍ#¸Í#ÀMªIdentifierÍ#¸Í#»£licMªIdentifierÍ#¼Í#À¤tierÂÂ¤init]¨PropertyÍ#ÏÍ#éÂÂÂMªIdentifierÍ#ÏÍ#ÙªdeviceCodeS°MemberExpressionÍ#ÛÍ#éMªIdentifierÍ#ÛÍ#Ş£licMªIdentifierÍ#ßÍ#éªdeviceCodeÂÂ¤init]¨PropertyÍ#øÍ$ÂÂÂMªIdentifierÍ#øÍ$©expiresAtS°MemberExpressionÍ$Í$MªIdentifierÍ$Í$£licMªIdentifierÍ$Í$©expiresAtÂÂ¤init]¨PropertyÍ$Í$5ÂÂÂMªIdentifierÍ$Í$'¨licenseeS°MemberExpressionÍ$)Í$5MªIdentifierÍ$)Í$,£licMªIdentifierÍ$-Í$5¨licenseeÂÂ¤initÂ¥constY¯ReturnStatementÍ$LÍ${_®CallExpressionÍ$SÍ$zS°MemberExpressionÍ$SÍ$pMªIdentifierÍ$SÍ$]ªCryptoUtilMªIdentifierÍ$^Í$p²signLicensePayloadÂÂ‘MªIdentifierÍ$qÍ$y¨signBodyÂO°MethodDefinitionÍ$ˆÍ&VÃÂMªIdentifierÍ$Í$—¨readText¦methodP²FunctionExpressionÍ$—Í&VÀÂÂÂ‘MªIdentifierÍ$˜Í$œ¤pathN®BlockStatementÍ$Í&V‘^¬TryStatementÍ$©Í&ON®BlockStatementÍ$­Í%ñ–`³VariableDeclarationÍ$¼Í$ø‘a²VariableDeclaratorÍ$ÂÍ$÷MªIdentifierÍ$ÂÍ$ÌªfileHandle_®CallExpressionÍ$ÏÍ$÷S°MemberExpressionÍ$ÏÍ$ÚMªIdentifierÍ$ÏÍ$Ñ¢fsMªIdentifierÍ$ÒÍ$Ú¨openSyncÂÂ’MªIdentifierÍ$ÛÍ$ß¤pathS°MemberExpressionÍ$áÍ$öS°MemberExpressionÍ$áÍ$ìMªIdentifierÍ$áÍ$ã¢fsMªIdentifierÍ$äÍ$ì¨OpenModeÂÂMªIdentifierÍ$íÍ$ö©READ_ONLYÂÂÂ¥const`³VariableDeclarationÍ%Í%%‘a²VariableDeclaratorÍ%Í%$MªIdentifierÍ%Í%¤stat_®CallExpressionÍ%Í%$S°MemberExpressionÍ%Í%MªIdentifierÍ%Í%¢fsMªIdentifierÍ%Í%¨statSyncÂÂ‘MªIdentifierÍ%Í%#¤pathÂ¥const`³VariableDeclarationÍ%3Í%]‘a²VariableDeclaratorÍ%9Í%\MªIdentifierÍ%9Í%?¦bufferX­NewExpressionÍ%BÍ%\MªIdentifierÍ%FÍ%Q«ArrayBuffer‘S°MemberExpressionÍ%RÍ%[MªIdentifierÍ%RÍ%V¤statMªIdentifierÍ%WÍ%[¤sizeÂÂ¥constQ³ExpressionStatementÍ%kÍ%_®CallExpressionÍ%kÍ%S°MemberExpressionÍ%kÍ%vMªIdentifierÍ%kÍ%m¢fsMªIdentifierÍ%nÍ%v¨readSyncÂÂ’S°MemberExpressionÍ%wÍ%„MªIdentifierÍ%wÍ%ªfileHandleMªIdentifierÍ%‚Í%„¢fdÂÂMªIdentifierÍ%†Í%Œ¦bufferÂQ³ExpressionStatementÍ%œÍ%µ_®CallExpressionÍ%œÍ%´S°MemberExpressionÍ%œÍ%¨MªIdentifierÍ%œÍ%¢fsMªIdentifierÍ%ŸÍ%¨©closeSyncÂÂ‘MªIdentifierÍ%©Í%³ªfileHandleÂY¯ReturnStatementÍ%ÃÍ%æ_®CallExpressionÍ%ÊÍ%åMªIdentifierÍ%ÊÍ%İ³arrayBufferToString‘MªIdentifierÍ%ŞÍ%ä¦bufferÂb«CatchClauseÍ%ûÍ&OMªIdentifierÍ&Í&¡eN®BlockStatementÍ&Í&O‘Y®ThrowStatementÍ&Í&DX­NewExpressionÍ&Í&CMªIdentifierÍ&Í&#¥Error‘c¯TemplateLiteralÍ&$Í&B‘MªIdentifierÍ&<Í&@¤path’d¯TemplateElementÍ&%Í&:eµFailed to read file: µFailed to read file: Âd¯TemplateElementÍ&AÍ&Ae  ÃÀÀ–Ôri•¤type¥start£endªspecifiers¦source±ImportDeclaration>‘Ôrj”¤type¥start£end¥local¶ImportDefaultSpecifier&(MªIdentifier&(¢fsU§Literal.=­@ohos.file.fs¯'@ohos.file.fs'i±ImportDeclarationÌ@Ìz‘Ôrk•¤type¥start£end¨imported¥local¯ImportSpecifierÌIÌ\MªIdentifierÌIÌ\³arrayBufferToStringMªIdentifierÌIÌ\³arrayBufferToStringU§LiteralÌdÌy³../utils/MapHelpersµ'../utils/MapHelpers'i±ImportDeclarationÌ|Ì­‘k¯ImportSpecifierÌ…ÌMªIdentifierÌ…ÌªCryptoUtilMªIdentifierÌ…ÌªCryptoUtilU§LiteralÌ—Ì¬³../utils/CryptoUtilµ'../utils/CryptoUtil'i±ImportDeclarationÌ¯Ìë‘k¯ImportSpecifierÌ¸ÌËMªIdentifierÌ¸ÌË³HardwareFingerprintMªIdentifierÌ¸ÌË³HardwareFingerprintU§LiteralÌÓÌêµ./HardwareFingerprint·'./HardwareFingerprint'i±ImportDeclarationÌíÍ‘k¯ImportSpecifierÌöÍMªIdentifierÌöÍ¬TrialManagerMªIdentifierÌöÍ¬TrialManagerU§LiteralÍ
-Í®./TrialManager°'./TrialManager'i±ImportDeclarationÍÍQ‘k¯ImportSpecifierÍ&Í1MªIdentifierÍ&Í1«LicenseTierMªIdentifierÍ&Í1«LicenseTierU§LiteralÍ9ÍPµ../types/LicenseTypes·'../types/LicenseTypes'
+±‘b²VariableDeclaratorÍ
+šÍ
+°MªIdentifierÍ
+šÍ
+£lic`®CallExpressionÍ
+ Í
+°S°MemberExpressionÍ
+ Í
+ªMªIdentifierÍ
+ Í
+¤¤JSONMªIdentifierÍ
+¥Í
+ª¥parseÂÂ‘MªIdentifierÍ
+«Í
+¯¤jsonÂ¥constY¯ReturnStatementÍ
+¿Í
+İ`®CallExpressionÍ
+ÆÍ
+ÜS°MemberExpressionÍ
+ÆÍ
+×T®ThisExpressionÍ
+ÆÍ
+ÊMªIdentifierÍ
+ËÍ
+×¬applyLicenseÂÂ‘MªIdentifierÍ
+ØÍ
+Û£licÂÔrc•¤type¥start£end¥param¤body«CatchClauseÍ
+òÍ\MªIdentifierÍ
+ùÍ
+û¢_eN®BlockStatementÍ
+ıÍ\’Q³ExpressionStatementÍÍ R´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§licenseÂÂU§LiteralÍÍÀ¤nullY¯ReturnStatementÍ.ÍQ`®CallExpressionÍ5ÍPS°MemberExpressionÍ5ÍNT®ThisExpressionÍ5Í9MªIdentifierÍ:ÍN´buildEffectiveStatusÂÂÂÀO°MethodDefinitionÍiÍÂÂMªIdentifierÍiÍ|³applyLicenseContent¦methodP²FunctionExpressionÍ|ÍÀÂÂÂ‘MªIdentifierÍ}Í¤jsonN®BlockStatementÍƒÍ‘_¬TryStatementÍÍ†N®BlockStatementÍ’Íõ’a³VariableDeclarationÍ¡Í¾‘b²VariableDeclaratorÍ§Í½MªIdentifierÍ§Íª£lic`®CallExpressionÍ­Í½S°MemberExpressionÍ­Í·MªIdentifierÍ­Í±¤JSONMªIdentifierÍ²Í·¥parseÂÂ‘MªIdentifierÍ¸Í¼¤jsonÂ¥constY¯ReturnStatementÍÌÍê`®CallExpressionÍÓÍéS°MemberExpressionÍÓÍäT®ThisExpressionÍÓÍ×MªIdentifierÍØÍä¬applyLicenseÂÂ‘MªIdentifierÍåÍè£licÂc«CatchClauseÍÿÍ†MªIdentifierÍÍ¡eN®BlockStatementÍ	Í†’Q³ExpressionStatementÍÍ,R´AssignmentExpressionÍÍ+¡=S°MemberExpressionÍÍ$T®ThisExpressionÍÍMªIdentifierÍÍ$§licenseÂÂU§LiteralÍ'Í+À¤nullY¯ReturnStatementÍ:Í{`®CallExpressionÍAÍzS°MemberExpressionÍAÍQT®ThisExpressionÍAÍEMªIdentifierÍFÍQ«buildStatusÂÂ“U§LiteralÍRÍWÂ¥falseS°MemberExpressionÍYÍiMªIdentifierÍYÍd«LicenseTierMªIdentifierÍeÍi¤FREEÂÂÔrd•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍkÍy‘MªIdentifierÍvÍw¡e’Ôre•¤type¥start£end¥value¤tail¯TemplateElementÍlÍtÔrf’£raw¦cooked´æˆæƒè§£æå¤±è´¥: ´æˆæƒè§£æå¤±è´¥: Âe¯TemplateElementÍxÍxf  ÃÂÀO°MethodDefinitionÍ“ÍùÂÂMªIdentifierÍ“Í ­importAndSave¦methodP²FunctionExpressionÍ ÍùÀÂÂÂ’MªIdentifierÍ¡Í¥¤pathMªIdentifierÍ§Í«¤jsonN®BlockStatementÍ­Íù“a³VariableDeclarationÍ¸Íæ‘b²VariableDeclaratorÍ¾ÍåMªIdentifierÍ¾ÍÄ¦status`®CallExpressionÍÇÍåS°MemberExpressionÍÇÍßT®ThisExpressionÍÇÍËMªIdentifierÍÌÍß³applyLicenseContentÂÂ‘MªIdentifierÍàÍä¤jsonÂ¥constV«IfStatementÍğÍÅÔrg–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍôÍS°MemberExpressionÍôÍ MªIdentifierÍôÍú¦statusMªIdentifierÍûÍ ¥validÂÂ¢&&g°BinaryExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍ	Í§licenseÂÂ£!==U§LiteralÍÍÀ¤nullN®BlockStatementÍÍÅ‘_¬TryStatementÍ*ÍºN®BlockStatementÍ.Í?”a³VariableDeclarationÍAÍ§‘b²VariableDeclaratorÍGÍ¦MªIdentifierÍGÍQªfileHandle`®CallExpressionÍTÍ¦S°MemberExpressionÍTÍ_MªIdentifierÍTÍV¢fsMªIdentifierÍWÍ_¨openSyncÂÂ’MªIdentifierÍ`Íd¤pathg°BinaryExpressionÍfÍ¥g°BinaryExpressionÍfÍ‘S°MemberExpressionÍfÍxS°MemberExpressionÍfÍqMªIdentifierÍfÍh¢fsMªIdentifierÍiÍq¨OpenModeÂÂMªIdentifierÍrÍx¦CREATEÂÂ¡|S°MemberExpressionÍ{Í‘S°MemberExpressionÍ{Í†MªIdentifierÍ{Í}¢fsMªIdentifierÍ~Í†¨OpenModeÂÂMªIdentifierÍ‡Í‘ªWRITE_ONLYÂÂ¡|S°MemberExpressionÍ”Í¥S°MemberExpressionÍ”ÍŸMªIdentifierÍ”Í–¢fsMªIdentifierÍ—ÍŸ¨OpenModeÂÂMªIdentifierÍ Í¥¥TRUNCÂÂÂ¥constQ³ExpressionStatementÍ¹ÍÛ`®CallExpressionÍ¹ÍÚS°MemberExpressionÍ¹ÍÅMªIdentifierÍ¹Í»¢fsMªIdentifierÍ¼ÍÅ©writeSyncÂÂ’S°MemberExpressionÍÆÍÓMªIdentifierÍÆÍĞªfileHandleMªIdentifierÍÑÍÓ¢fdÂÂMªIdentifierÍÕÍÙ¤jsonÂQ³ExpressionStatementÍíÍ`®CallExpressionÍíÍS°MemberExpressionÍíÍùMªIdentifierÍíÍï¢fsMªIdentifierÍğÍù©closeSyncÂÂ‘MªIdentifierÍúÍªfileHandleÂQ³ExpressionStatementÍÍ0R´AssignmentExpressionÍÍ/¡=S°MemberExpressionÍÍ(T®ThisExpressionÍÍMªIdentifierÍÍ(«licensePathÂÂMªIdentifierÍ+Í/¤pathc«CatchClauseÍMÍºMªIdentifierÍTÍU¡eN®BlockStatementÍWÍº‘Y¯ReturnStatementÍjÍ«`®CallExpressionÍqÍªS°MemberExpressionÍqÍT®ThisExpressionÍqÍuMªIdentifierÍvÍ«buildStatusÂÂ“U§LiteralÍ‚Í‡Â¥falseS°MemberExpressionÍ‰Í™MªIdentifierÍ‰Í”«LicenseTierMªIdentifierÍ•Í™¤FREEÂÂd¯TemplateLiteralÍ›Í©‘MªIdentifierÍ¦Í§¡e’e¯TemplateElementÍœÍ¤f´æˆæƒä¿å­˜å¤±è´¥: ´æˆæƒä¿å­˜å¤±è´¥: Âe¯TemplateElementÍ¨Í¨f  ÃÂÀÀY¯ReturnStatementÍÏÍò`®CallExpressionÍÖÍñS°MemberExpressionÍÖÍïT®ThisExpressionÍÖÍÚMªIdentifierÍÛÍï´buildEffectiveStatusÂÂÂO°MethodDefinitionÍÿÍ@ÂÂMªIdentifierÍÿÍ©getStatus¦methodP²FunctionExpressionÍÍ@ÀÂÂÂN®BlockStatementÍÍ@‘Y¯ReturnStatementÍÍ9`®CallExpressionÍÍ8S°MemberExpressionÍÍ6T®ThisExpressionÍÍ!MªIdentifierÍ"Í6´buildEffectiveStatusÂÂÂO°MethodDefinitionÍFÍ™ÂÂMªIdentifierÍLÍ\°applyTrialStatus¦methodP²FunctionExpressionÍ\Í™ÀÂÂÃ‘MªIdentifierÍ]Íd§contextN®BlockStatementÍfÍ™‘Q³ExpressionStatementÍqÍ’Y¯AwaitExpressionÍqÍ‘`®CallExpressionÍwÍ‘S°MemberExpressionÍwÍˆMªIdentifierÍwÍƒ¬TrialManagerMªIdentifierÍ„Íˆ¤initÂÂ‘MªIdentifierÍ‰Í§contextÂO°MethodDefinitionÍŸÍÒÂÂMªIdentifierÍŸÍ¦§getTier¦methodP²FunctionExpressionÍ¦ÍÒÀÂÂÂN®BlockStatementÍ©ÍÒ”a³VariableDeclarationÍ´Íâ‘b²VariableDeclaratorÍºÍáMªIdentifierÍºÍÄªfileStatus`®CallExpressionÍÇÍáS°MemberExpressionÍÇÍßT®ThisExpressionÍÇÍËMªIdentifierÍÌÍß³validateLicenseOnlyÂÂÂ¥constV«IfStatementÍìÍJg±LogicalExpressionÍğÍg°BinaryExpressionÍğÍMªIdentifierÍğÍúªfileStatus£!==U§LiteralÍÿÍÀ¤null¢&&S°MemberExpressionÍÍMªIdentifierÍÍªfileStatusMªIdentifierÍÍ¥validÂÂN®BlockStatementÍÍJ‘Y¯ReturnStatementÍ(Í?S°MemberExpressionÍ/Í>MªIdentifierÍ/Í9ªfileStatusMªIdentifierÍ:Í>¤tierÂÂÀV«IfStatementÍTÍ©S°MemberExpressionÍXÍmT®ThisExpressionÍXÍ\MªIdentifierÍ]Ím°starUnlockActiveÂÂN®BlockStatementÍoÍ©‘Y¯ReturnStatementÍ~ÍS°MemberExpressionÍ…ÍMªIdentifierÍ…Í«LicenseTierMªIdentifierÍ‘Í¬PERSONAL_PROÂÂÀY¯ReturnStatementÍ³ÍËS°MemberExpressionÍºÍÊMªIdentifierÍºÍÅ«LicenseTierMªIdentifierÍÆÍÊ¤FREEÂÂO°MethodDefinitionÍØÍ'ÂÂMªIdentifierÍØÍã«getFeatures¦methodP²FunctionExpressionÍãÍ'ÀÂÂÂN®BlockStatementÍæÍ'‘Y¯ReturnStatementÍñÍ `®CallExpressionÍøÍS°MemberExpressionÍøÍT®ThisExpressionÍøÍüMªIdentifierÍıÍ²getDefaultFeaturesÂÂ‘`®CallExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§getTierÂÂÂÂO°MethodDefinitionÍ-ÍaÂÂMªIdentifierÍ-Í7ªisTampered¦methodP²FunctionExpressionÍ7ÍaÀÂÂÂN®BlockStatementÍ:Ía‘Y¯ReturnStatementÍEÍZS°MemberExpressionÍLÍYT®ThisExpressionÍLÍPMªIdentifierÍQÍY¨tamperedÂÂO°MethodDefinitionÍgÍ´ÂÂMªIdentifierÍgÍt­getDeviceCode¦methodP²FunctionExpressionÍtÍ´ÀÂÂÂN®BlockStatementÍwÍ´‘Y¯ReturnStatementÍ‚Í­`®CallExpressionÍ‰Í¬S°MemberExpressionÍ‰ÍªMªIdentifierÍ‰Íœ³HardwareFingerprintMªIdentifierÍÍª­getDeviceCodeÂÂÂO°MethodDefinitionÍºÍÓÂÂMªIdentifierÍºÍÉ¯getLicenseeName¦methodP²FunctionExpressionÍÉÍÓÀÂÂÂN®BlockStatementÍÌÍÓ“V«IfStatementÍ×ÍMg±LogicalExpressionÍÛÍg°BinaryExpressionÍÛÍğS°MemberExpressionÍÛÍçT®ThisExpressionÍÛÍßMªIdentifierÍàÍç§licenseÂÂ£!==U§LiteralÍìÍğÀ¤null¢&&g°BinaryExpressionÍôÍS°MemberExpressionÍôÍS°MemberExpressionÍôÍ	S°MemberExpressionÍôÍ T®ThisExpressionÍôÍøMªIdentifierÍùÍ §licenseÂÂMªIdentifierÍÍ	¨licenseeÂÂMªIdentifierÍ
+Í¦lengthÂÂ¡>U§LiteralÍÍ ¡0N®BlockStatementÍÍM‘Y¯ReturnStatementÍ%ÍBS°MemberExpressionÍ,ÍAS°MemberExpressionÍ,Í8T®ThisExpressionÍ,Í0MªIdentifierÍ1Í8§licenseÂÂMªIdentifierÍ9ÍA¨licenseeÂÂÀV«IfStatementÍWÍ¸g°BinaryExpressionÍ[ÍzS°MemberExpressionÍ[ÍvS°MemberExpressionÍ[ÍoT®ThisExpressionÍ[Í_MªIdentifierÍ`Ío¯starGithubLoginÂÂMªIdentifierÍpÍv¦lengthÂÂ¡>U§LiteralÍyÍz ¡0N®BlockStatementÍ|Í¸‘Y¯ReturnStatementÍ‹Í­d¯TemplateLiteralÍ’Í¬‘S°MemberExpressionÍ–ÍªT®ThisExpressionÍ–ÍšMªIdentifierÍ›Íª¯starGithubLoginÂÂ’e¯TemplateElementÍ“Í”f¡@¡@Âe¯TemplateElementÍ«Í«f  ÃÀY¯ReturnStatementÍÂÍÌU§LiteralÍÉÍË ¢''O°MethodDefinitionÍÙÍÂÂMªIdentifierÍÙÍîµgetLicenseExpiryLabel¦methodP²FunctionExpressionÍîÍÀÂÂÂN®BlockStatementÍñÍ“V«IfStatementÍüÍ–g±LogicalExpressionÍ Í:g°BinaryExpressionÍ ÍS°MemberExpressionÍ ÍT®ThisExpressionÍ ÍMªIdentifierÍÍ§licenseÂÂ£!==U§LiteralÍÍÀ¤null¢&&g°BinaryExpressionÍÍ:S°MemberExpressionÍÍ6S°MemberExpressionÍÍ/S°MemberExpressionÍÍ%T®ThisExpressionÍÍMªIdentifierÍÍ%§licenseÂÂMªIdentifierÍ&Í/©expiresAtÂÂMªIdentifierÍ0Í6¦lengthÂÂ¡>U§LiteralÍ9Í: ¡0N®BlockStatementÍ<Í–‘Y¯ReturnStatementÍKÍ‹`®CallExpressionÍRÍŠS°MemberExpressionÍRÍrMªIdentifierÍRÍ`®LicenseManagerMªIdentifierÍaÍr±formatDisplayDateÂÂ‘S°MemberExpressionÍsÍ‰S°MemberExpressionÍsÍT®ThisExpressionÍsÍwMªIdentifierÍxÍ§licenseÂÂMªIdentifierÍ€Í‰©expiresAtÂÂÂÀV«IfStatementÍ ÍêS°MemberExpressionÍ¤Í¹T®ThisExpressionÍ¤Í¨MªIdentifierÍ©Í¹°starUnlockActiveÂÂN®BlockStatementÍ»Íê‘Y¯ReturnStatementÍÊÍßU§LiteralÍÑÍŞ«GitHub Star­'GitHub Star'ÀY¯ReturnStatementÍôÍÿU§LiteralÍûÍş£â€”¥'â€”'O°MethodDefinitionÍÍ\ÂÂMªIdentifierÍÍ°isEvaluationMode¦methodP²FunctionExpressionÍÍ\ÀÂÂÂN®BlockStatementÍÍ\‘Y¯ReturnStatementÍ*ÍUg°BinaryExpressionÍ1ÍT`®CallExpressionÍ1Í?S°MemberExpressionÍ1Í=T®ThisExpressionÍ1Í5MªIdentifierÍ6Í=§getTierÂÂÂ£===S°MemberExpressionÍDÍTMªIdentifierÍDÍO«LicenseTierMªIdentifierÍPÍT¤FREEÂÂO°MethodDefinitionÍbÍ†ÂÂMªIdentifierÍbÍv´buildEffectiveStatus¦methodP²FunctionExpressionÍvÍ†ÀÂÂÂN®BlockStatementÍyÍ†”a³VariableDeclarationÍ„Í²‘b²VariableDeclaratorÍŠÍ±MªIdentifierÍŠÍ”ªfileStatus`®CallExpressionÍ—Í±S°MemberExpressionÍ—Í¯T®ThisExpressionÍ—Í›MªIdentifierÍœÍ¯³validateLicenseOnlyÂÂÂ¥constV«IfStatementÍ¼Íg±LogicalExpressionÍÀÍçg°BinaryExpressionÍÀÍÓMªIdentifierÍÀÍÊªfileStatus£!==U§LiteralÍÏÍÓÀ¤null¢&&S°MemberExpressionÍ×ÍçMªIdentifierÍ×ÍáªfileStatusMªIdentifierÍâÍç¥validÂÂN®BlockStatementÍéÍ‘Y¯ReturnStatementÍøÍ
+MªIdentifierÍÿÍ	ªfileStatusÀV«IfStatementÍÍ-S°MemberExpressionÍ#Í8T®ThisExpressionÍ#Í'MªIdentifierÍ(Í8°starUnlockActiveÂÂN®BlockStatementÍ:Í-‘Y¯ReturnStatementÍIÍ"`®CallExpressionÍPÍ!S°MemberExpressionÍPÍ`T®ThisExpressionÍPÍTMªIdentifierÍUÍ`«buildStatusÂÂ”U§LiteralÍaÍeÃ¤trueS°MemberExpressionÍgÍMªIdentifierÍgÍr«LicenseTierMªIdentifierÍsÍ¬PERSONAL_PROÂÂVµConditionalExpressionÍÍg°BinaryExpressionÍÍ S°MemberExpressionÍÍœS°MemberExpressionÍÍ•T®ThisExpressionÍÍ…MªIdentifierÍ†Í•¯starGithubLoginÂÂMªIdentifierÍ–Íœ¦lengthÂÂ¡>U§LiteralÍŸÍ  ¡0d¯TemplateLiteralÍ´Íá‘S°MemberExpressionÍÊÍŞT®ThisExpressionÍÊÍÎMªIdentifierÍÏÍŞ¯starGithubLoginÂÂ’e¯TemplateElementÍµÍÈf¼ä¸“ä¸šç‰ˆï¼ˆGitHub Star Â· @¼ä¸“ä¸šç‰ˆï¼ˆGitHub Star Â· @Âe¯TemplateElementÍßÍàf£ï¼‰£ï¼‰ÃU§LiteralÍõÍºä¸“ä¸šç‰ˆï¼ˆGitHub Starï¼‰¼'ä¸“ä¸šç‰ˆï¼ˆGitHub Starï¼‰'S°MemberExpressionÍ	Í MªIdentifierÍ	Í¦NumberMªIdentifierÍÍ °MAX_SAFE_INTEGERÂÂÂÀY¯ReturnStatementÍ7Í`®CallExpressionÍ>Í~S°MemberExpressionÍ>ÍNT®ThisExpressionÍ>ÍBMªIdentifierÍCÍN«buildStatusÂÂ“U§LiteralÍOÍTÂ¥falseS°MemberExpressionÍVÍfMªIdentifierÍVÍa«LicenseTierMªIdentifierÍbÍf¤FREEÂÂU§LiteralÍhÍ}Ù*å…è´¹ç‰ˆ Â· Star ä»“åº“å¯è§£é”ä¸“ä¸šç‰ˆÙ,'å…è´¹ç‰ˆ Â· Star ä»“åº“å¯è§£é”ä¸“ä¸šç‰ˆ'ÂO°MethodDefinitionÍÂÍ×ÂÂMªIdentifierÍÂÍÕ³validateLicenseOnly¦methodP²FunctionExpressionÍÕÍ×ÀÂÂÂN®BlockStatementÍØÍ×–V«IfStatementÍãÍW¯UnaryExpressionÍçÍô¡!ÃS°MemberExpressionÍèÍôT®ThisExpressionÍèÍìMªIdentifierÍíÍô§licenseÂÂN®BlockStatementÍöÍ‘Y¯ReturnStatementÍÍU§LiteralÍÍÀ¤nullÀa³VariableDeclarationÍ&Ía‘b²VariableDeclaratorÍ,Í`MªIdentifierÍ,Í3§expires`®CallExpressionÍ6Í`S°MemberExpressionÍ6Í^X­NewExpressionÍ6ÍVMªIdentifierÍ:Í>¤Date‘S°MemberExpressionÍ?ÍUS°MemberExpressionÍ?ÍKT®ThisExpressionÍ?ÍCMªIdentifierÍDÍK§licenseÂÂMªIdentifierÍLÍU©expiresAtÂÂMªIdentifierÍWÍ^§getTimeÂÂÂ¥consta³VariableDeclarationÍkÍ‚‘b²VariableDeclaratorÍqÍMªIdentifierÍqÍt£now`®CallExpressionÍwÍS°MemberExpressionÍwÍMªIdentifierÍwÍ{¤DateMªIdentifierÍ|Í£nowÂÂÂ¥consta³VariableDeclarationÍŒÍÕ‘b²VariableDeclaratorÍ’ÍÔMªIdentifierÍ’ÍŸ­daysRemaining`®CallExpressionÍ¢ÍÔS°MemberExpressionÍ¢ÍªMªIdentifierÍ¢Í¦¤MathMªIdentifierÍ§Íª£maxÂÂ’U§LiteralÍ«Í¬ ¡0`®CallExpressionÍ®ÍÓS°MemberExpressionÍ®Í·MªIdentifierÍ®Í²¤MathMªIdentifierÍ³Í·¤ceilÂÂ‘g°BinaryExpressionÍ¸ÍÒg°BinaryExpressionÍ¹ÍÆMªIdentifierÍ¹ÍÀ§expires¡-MªIdentifierÍÃÍÆ£now¡/U§LiteralÍÊÍÒÎ&\ ¨86400000ÂÂ¥constV«IfStatementÍßÍhg°BinaryExpressionÍãÍğMªIdentifierÍãÍæ£now¡>MªIdentifierÍéÍğ§expiresN®BlockStatementÍòÍh’Q³ExpressionStatementÍÍR´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ§licenseÂÂU§LiteralÍÍÀ¤nullY¯ReturnStatementÍ#Í]`®CallExpressionÍ*Í\S°MemberExpressionÍ*Í:T®ThisExpressionÍ*Í.MªIdentifierÍ/Í:«buildStatusÂÂ“U§LiteralÍ;Í@Â¥falseS°MemberExpressionÍBÍRMªIdentifierÍBÍM«LicenseTierMªIdentifierÍNÍR¤FREEÂÂU§LiteralÍTÍ[¯æˆæƒå·²è¿‡æœŸ±'æˆæƒå·²è¿‡æœŸ'ÂÀY¯ReturnStatementÍrÍĞ`®CallExpressionÍyÍÏS°MemberExpressionÍyÍ‰T®ThisExpressionÍyÍ}MªIdentifierÍ~Í‰«buildStatusÂÂ”U§LiteralÍŠÍÃ¤trueS°MemberExpressionÍÍ¡S°MemberExpressionÍÍœT®ThisExpressionÍÍ”MªIdentifierÍ•Íœ§licenseÂÂMªIdentifierÍÍ¡¤tierÂÂd¯TemplateLiteralÍ£Í¿‘MªIdentifierÍ®Í»­daysRemaining’e¯TemplateElementÍ¤Í¬f¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ Âe¯TemplateElementÍ¼Í¾f¤ å¤©¤ å¤©ÃMªIdentifierÍÁÍÎ­daysRemainingÂO°MethodDefinitionÍİÍÃÂMªIdentifierÍäÍõ±formatDisplayDate¦methodP²FunctionExpressionÍõÍÀÂÂÂ‘MªIdentifierÍöÍù£isoN®BlockStatementÍûÍ•a³VariableDeclarationÍÍ‘b²VariableDeclaratorÍÍMªIdentifierÍÍ¡dX­NewExpressionÍÍMªIdentifierÍÍ¤Date‘MªIdentifierÍÍ£iso¥constV«IfStatementÍ(Íe`®CallExpressionÍ,Í>MªIdentifierÍ,Í1¥isNaN‘`®CallExpressionÍ2Í=S°MemberExpressionÍ2Í;MªIdentifierÍ2Í3¡dMªIdentifierÍ4Í;§getTimeÂÂÂÂN®BlockStatementÍ@Íe‘Y¯ReturnStatementÍOÍZMªIdentifierÍVÍY£isoÀa³VariableDeclarationÍoÍŸ‘b²VariableDeclaratorÍuÍMªIdentifierÍuÍw¢dd`®CallExpressionÍzÍS°MemberExpressionÍzÍ–`®CallExpressionÍzÍMªIdentifierÍzÍ€¦String‘`®CallExpressionÍÍŒS°MemberExpressionÍÍŠMªIdentifierÍÍ‚¡dMªIdentifierÍƒÍŠ§getDateÂÂÂÂMªIdentifierÍÍ–¨padStartÂÂ’U§LiteralÍ—Í˜¡2U§LiteralÍšÍ¡0£'0'Â¥consta³VariableDeclarationÍ©ÍŞ‘b²VariableDeclaratorÍ¯ÍİMªIdentifierÍ¯Í±¢mm`®CallExpressionÍ´ÍİS°MemberExpressionÍ´ÍÕ`®CallExpressionÍ´ÍÌMªIdentifierÍ´Íº¦String‘g°BinaryExpressionÍ»ÍË`®CallExpressionÍ»ÍÇS°MemberExpressionÍ»ÍÅMªIdentifierÍ»Í¼¡dMªIdentifierÍ½ÍÅ¨getMonthÂÂÂ¡+U§LiteralÍÊÍË¡1ÂMªIdentifierÍÍÍÕ¨padStartÂÂ’U§LiteralÍÖÍ×¡2U§LiteralÍÙÍÜ¡0£'0'Â¥constY¯ReturnStatementÍèÍd¯TemplateLiteralÍïÍ“MªIdentifierÍòÍô¢ddMªIdentifierÍøÍú¢mm`®CallExpressionÍşÍS°MemberExpressionÍşÍMªIdentifierÍşÍÿ¡dMªIdentifierÍ Í«getFullYearÂÂÂ”e¯TemplateElementÍğÍğf  Âe¯TemplateElementÍõÍöf¡/¡/Âe¯TemplateElementÍûÍüf¡/¡/Âe¯TemplateElementÍÍf  ÃO°MethodDefinitionÍÍ¦ÃÂMªIdentifierÍ$Í6²buildSignedLicense¦methodP²FunctionExpressionÍ6Í¦ÀÂÂÂ”MªIdentifierÍ7Í;¤tierMªIdentifierÍ=ÍGªdeviceCodeMªIdentifierÍIÍQ¨licensee^±AssignmentPatternÍSÍbMªIdentifierÍSÍ\©daysValidU§LiteralÍ_ÍbÍm£365N®BlockStatementÍdÍ¦—a³VariableDeclarationÍoÍ†‘b²VariableDeclaratorÍuÍ…MªIdentifierÍuÍx£nowX­NewExpressionÍ{Í…MªIdentifierÍÍƒ¤Date¥consta³VariableDeclarationÍÍÏ‘b²VariableDeclaratorÍ–ÍÎMªIdentifierÍ–Í§expiresX­NewExpressionÍ ÍÎMªIdentifierÍ¤Í¨¤Date‘g°BinaryExpressionÍ©ÍÍ`®CallExpressionÍ©Í¶S°MemberExpressionÍ©Í´MªIdentifierÍ©Í¬£nowMªIdentifierÍ­Í´§getTimeÂÂÂ¡+g°BinaryExpressionÍ¹ÍÍMªIdentifierÍ¹ÍÂ©daysValid¡*U§LiteralÍÅÍÍÎ&\ ¨86400000¥consta³VariableDeclarationÍÙÍ‘b²VariableDeclaratorÍßÍMªIdentifierÍßÍâ£mgr`®CallExpressionÍåÍS°MemberExpressionÍåÍÿMªIdentifierÍåÍó®LicenseManagerMªIdentifierÍôÍÿ«getInstanceÂÂÂ¥consta³VariableDeclarationÍÍN‘b²VariableDeclaratorÍÍMMªIdentifierÍÍ§payload\°ObjectExpressionÍÍM˜Ôrh™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ+Í/ÂÃÂMªIdentifierÍ+Í/¤tier¤initMªIdentifierÍ+Í/¤tierh¨PropertyÍ>ÍFÂÃÂMªIdentifierÍ>ÍF¨licensee¤initMªIdentifierÍ>ÍF¨licensee]¨PropertyÍUÍyÂÂÂMªIdentifierÍUÍ_ªdeviceCode`®CallExpressionÍaÍyS°MemberExpressionÍaÍwMªIdentifierÍaÍkªdeviceCodeMªIdentifierÍlÍw«toUpperCaseÂÂÂ¤init]¨PropertyÍˆÍ£ÂÂÂMªIdentifierÍˆÍ¨issuedAt`®CallExpressionÍ’Í£S°MemberExpressionÍ’Í¡MªIdentifierÍ’Í•£nowMªIdentifierÍ–Í¡«toISOStringÂÂÂ¤init]¨PropertyÍ²ÍÒÂÂÂMªIdentifierÍ²Í»©expiresAt`®CallExpressionÍ½ÍÒS°MemberExpressionÍ½ÍĞMªIdentifierÍ½ÍÄ§expiresMªIdentifierÍÅÍĞ«toISOStringÂÂÂ¤init]¨PropertyÍáÍñÂÂÂMªIdentifierÍáÍì«offlineDaysU§LiteralÍîÍñÍm£365¤init]¨PropertyÍ Í&ÂÂÂMªIdentifierÍ Í¨features`®CallExpressionÍ
+Í&S°MemberExpressionÍ
+Í MªIdentifierÍ
+Í£mgrMªIdentifierÍÍ ²getDefaultFeaturesÂÂ‘MªIdentifierÍ!Í%¤tierÂ¤init]¨PropertyÍ5ÍBÂÂÂMªIdentifierÍ5Í>©signatureU§LiteralÍ@ÍB ¢''¤init¥consta³VariableDeclarationÍXÍ'‘b²VariableDeclaratorÍ^Í&MªIdentifierÍ^Íf¨signBody`®CallExpressionÍiÍ&S°MemberExpressionÍiÍwMªIdentifierÍiÍm¤JSONMªIdentifierÍnÍw©stringifyÂÂ‘\°ObjectExpressionÍxÍ%”]¨PropertyÍ‡Í™ÂÂÂMªIdentifierÍ‡Í‹¤tierS°MemberExpressionÍÍ™MªIdentifierÍÍ”§payloadMªIdentifierÍ•Í™¤tierÂÂ¤init]¨PropertyÍ¨ÍÆÂÂÂMªIdentifierÍ¨Í²ªdeviceCodeS°MemberExpressionÍ´ÍÆMªIdentifierÍ´Í»§payloadMªIdentifierÍ¼ÍÆªdeviceCodeÂÂ¤init]¨PropertyÍÕÍñÂÂÂMªIdentifierÍÕÍŞ©expiresAtS°MemberExpressionÍàÍñMªIdentifierÍàÍç§payloadMªIdentifierÍèÍñ©expiresAtÂÂ¤init]¨PropertyÍ ÍÂÂÂMªIdentifierÍ Í¨licenseeS°MemberExpressionÍ
+ÍMªIdentifierÍ
+Í§payloadMªIdentifierÍÍ¨licenseeÂÂ¤initÂ¥constQ³ExpressionStatementÍ1ÍmR´AssignmentExpressionÍ1Íl¡=S°MemberExpressionÍ1ÍBMªIdentifierÍ1Í8§payloadMªIdentifierÍ9ÍB©signatureÂÂ`®CallExpressionÍEÍlS°MemberExpressionÍEÍbMªIdentifierÍEÍOªCryptoUtilMªIdentifierÍPÍb²signLicensePayloadÂÂ‘MªIdentifierÍcÍk¨signBodyÂY¯ReturnStatementÍwÍŸ`®CallExpressionÍ~ÍS°MemberExpressionÍ~ÍŒMªIdentifierÍ~Í‚¤JSONMªIdentifierÍƒÍŒ©stringifyÂÂ“MªIdentifierÍÍ”§payloadU§LiteralÍ–ÍšÀ¤nullU§LiteralÍœÍ¡2ÂO°MethodDefinitionÍ¬ÍóÂÂMªIdentifierÍ¬Í¸¬applyLicense¦methodP²FunctionExpressionÍ¸ÍóÀÂÂÂ‘MªIdentifierÍ¹Í¼£licN®BlockStatementÍ¾Íó–a³VariableDeclarationÍÉÍ‘b²VariableDeclaratorÍÏÍMªIdentifierÍÏÍÚ«expectedSig`®CallExpressionÍİÍS°MemberExpressionÍİÍüMªIdentifierÍİÍë®LicenseManagerMªIdentifierÍìÍü°computeSignatureÂÂ‘MªIdentifierÍıÍ £licÂ¥constV«IfStatementÍÍ±g°BinaryExpressionÍÍ-S°MemberExpressionÍÍMªIdentifierÍÍ£licMªIdentifierÍÍ©signatureÂÂ£!==MªIdentifierÍ"Í-«expectedSigN®BlockStatementÍ/Í±“Q³ExpressionStatementÍ>ÍSR´AssignmentExpressionÍ>ÍR¡=S°MemberExpressionÍ>ÍKT®ThisExpressionÍ>ÍBMªIdentifierÍCÍK¨tamperedÂÂU§LiteralÍNÍRÃ¤trueQ³ExpressionStatementÍaÍuR´AssignmentExpressionÍaÍt¡=S°MemberExpressionÍaÍmT®ThisExpressionÍaÍeMªIdentifierÍfÍm§licenseÂÂU§LiteralÍpÍtÀ¤nullY¯ReturnStatementÍƒÍ¦`®CallExpressionÍŠÍ¥S°MemberExpressionÍŠÍ£T®ThisExpressionÍŠÍMªIdentifierÍÍ£´buildEffectiveStatusÂÂÂÀa³VariableDeclarationÍ»Íñ‘b²VariableDeclaratorÍÁÍğMªIdentifierÍÁÍÊ©localCode`®CallExpressionÍÍÍğS°MemberExpressionÍÍÍîMªIdentifierÍÍÍà³HardwareFingerprintMªIdentifierÍáÍî­getDeviceCodeÂÂÂ¥constV«IfStatementÍûÍ¢g°BinaryExpressionÍÿÍ)`®CallExpressionÍÿÍS°MemberExpressionÍÿÍS°MemberExpressionÍÿÍMªIdentifierÍÿÍ£licMªIdentifierÍÍªdeviceCodeÂÂMªIdentifierÍÍ«toUpperCaseÂÂÂ£!==MªIdentifierÍ Í)©localCodeN®BlockStatementÍ+Í¢’Q³ExpressionStatementÍ:ÍNR´AssignmentExpressionÍ:ÍM¡=S°MemberExpressionÍ:ÍFT®ThisExpressionÍ:Í>MªIdentifierÍ?ÍF§licenseÂÂU§LiteralÍIÍMÀ¤nullY¯ReturnStatementÍ\Í—`®CallExpressionÍcÍ–S°MemberExpressionÍcÍsT®ThisExpressionÍcÍgMªIdentifierÍhÍs«buildStatusÂÂ“U§LiteralÍtÍyÂ¥falseS°MemberExpressionÍ{Í‹MªIdentifierÍ{Í†«LicenseTierMªIdentifierÍ‡Í‹¤FREEÂÂU§LiteralÍÍ•²è®¾å¤‡ç ä¸åŒ¹é…´'è®¾å¤‡ç ä¸åŒ¹é…'ÂÀQ³ExpressionStatementÍ¬Í¿R´AssignmentExpressionÍ¬Í¾¡=S°MemberExpressionÍ¬Í¸T®ThisExpressionÍ¬Í°MªIdentifierÍ±Í¸§licenseÂÂMªIdentifierÍ»Í¾£licY¯ReturnStatementÍÉÍì`®CallExpressionÍĞÍëS°MemberExpressionÍĞÍéT®ThisExpressionÍĞÍÔMªIdentifierÍÕÍé´buildEffectiveStatusÂÂÂO°MethodDefinitionÍùÍ!(ÂÂMªIdentifierÍùÍ «buildStatus¦methodP²FunctionExpressionÍ Í!(ÀÂÂÂ”MªIdentifierÍ Í 
+¥validMªIdentifierÍ Í ¤tierMªIdentifierÍ Í §message^±AssignmentPatternÍ Í ,MªIdentifierÍ Í (­daysRemainingU§LiteralÍ +Í , ¡0N®BlockStatementÍ .Í!(‘Y¯ReturnStatementÍ 9Í!!\°ObjectExpressionÍ @Í! –h¨PropertyÍ OÍ TÂÃÂMªIdentifierÍ OÍ T¥valid¤initMªIdentifierÍ OÍ T¥valid]¨PropertyÍ cÍ ˆÂÂÂMªIdentifierÍ cÍ g¤tierVµConditionalExpressionÍ iÍ ˆMªIdentifierÍ iÍ n¥validMªIdentifierÍ qÍ u¤tierS°MemberExpressionÍ xÍ ˆMªIdentifierÍ xÍ ƒ«LicenseTierMªIdentifierÍ „Í ˆ¤FREEÂÂ¤init]¨PropertyÍ —Í «ÂÂÂMªIdentifierÍ —Í ¤­deviceMatchedMªIdentifierÍ ¦Í «¥valid¤init]¨PropertyÍ ºÍ ãÂÂÂMªIdentifierÍ ºÍ Á§expiredg±LogicalExpressionÍ ÃÍ ãW¯UnaryExpressionÍ ÃÍ É¡!ÃMªIdentifierÍ ÄÍ É¥valid¢&&`®CallExpressionÍ ÍÍ ãS°MemberExpressionÍ ÍÍ İMªIdentifierÍ ÍÍ Ô§messageMªIdentifierÍ ÕÍ İ¨includesÂÂ‘U§LiteralÍ ŞÍ â¦è¿‡æœŸ¨'è¿‡æœŸ'Â¤inith¨PropertyÍ òÍ ÿÂÃÂMªIdentifierÍ òÍ ÿ­daysRemaining¤initMªIdentifierÍ òÍ ÿ­daysRemainingh¨PropertyÍ!Í!ÂÃÂMªIdentifierÍ!Í!§message¤initMªIdentifierÍ!Í!§messageO°MethodDefinitionÍ!.Í"UÃÂMªIdentifierÍ!5Í!E°computeSignature¦methodP²FunctionExpressionÍ!EÍ"UÀÂÂÂ‘MªIdentifierÍ!FÍ!I£licN®BlockStatementÍ!KÍ"U’a³VariableDeclarationÍ!VÍ"‘b²VariableDeclaratorÍ!\Í"MªIdentifierÍ!\Í!d¨signBody`®CallExpressionÍ!gÍ"S°MemberExpressionÍ!gÍ!uMªIdentifierÍ!gÍ!k¤JSONMªIdentifierÍ!lÍ!u©stringifyÂÂ‘\°ObjectExpressionÍ!vÍ"”]¨PropertyÍ!…Í!“ÂÂÂMªIdentifierÍ!…Í!‰¤tierS°MemberExpressionÍ!‹Í!“MªIdentifierÍ!‹Í!£licMªIdentifierÍ!Í!“¤tierÂÂ¤init]¨PropertyÍ!¢Í!¼ÂÂÂMªIdentifierÍ!¢Í!¬ªdeviceCodeS°MemberExpressionÍ!®Í!¼MªIdentifierÍ!®Í!±£licMªIdentifierÍ!²Í!¼ªdeviceCodeÂÂ¤init]¨PropertyÍ!ËÍ!ãÂÂÂMªIdentifierÍ!ËÍ!Ô©expiresAtS°MemberExpressionÍ!ÖÍ!ãMªIdentifierÍ!ÖÍ!Ù£licMªIdentifierÍ!ÚÍ!ã©expiresAtÂÂ¤init]¨PropertyÍ!òÍ"ÂÂÂMªIdentifierÍ!òÍ!ú¨licenseeS°MemberExpressionÍ!üÍ"MªIdentifierÍ!üÍ!ÿ£licMªIdentifierÍ" Í"¨licenseeÂÂ¤initÂ¥constY¯ReturnStatementÍ"Í"N`®CallExpressionÍ"&Í"MS°MemberExpressionÍ"&Í"CMªIdentifierÍ"&Í"0ªCryptoUtilMªIdentifierÍ"1Í"C²signLicensePayloadÂÂ‘MªIdentifierÍ"DÍ"L¨signBodyÂO°MethodDefinitionÍ"[Í$)ÃÂMªIdentifierÍ"bÍ"j¨readText¦methodP²FunctionExpressionÍ"jÍ$)ÀÂÂÂ‘MªIdentifierÍ"kÍ"o¤pathN®BlockStatementÍ"qÍ$)‘_¬TryStatementÍ"|Í$"N®BlockStatementÍ"€Í#Ä–a³VariableDeclarationÍ"Í"Ë‘b²VariableDeclaratorÍ"•Í"ÊMªIdentifierÍ"•Í"ŸªfileHandle`®CallExpressionÍ"¢Í"ÊS°MemberExpressionÍ"¢Í"­MªIdentifierÍ"¢Í"¤¢fsMªIdentifierÍ"¥Í"­¨openSyncÂÂ’MªIdentifierÍ"®Í"²¤pathS°MemberExpressionÍ"´Í"ÉS°MemberExpressionÍ"´Í"¿MªIdentifierÍ"´Í"¶¢fsMªIdentifierÍ"·Í"¿¨OpenModeÂÂMªIdentifierÍ"ÀÍ"É©READ_ONLYÂÂÂ¥consta³VariableDeclarationÍ"ÙÍ"ø‘b²VariableDeclaratorÍ"ßÍ"÷MªIdentifierÍ"ßÍ"ã¤stat`®CallExpressionÍ"æÍ"÷S°MemberExpressionÍ"æÍ"ñMªIdentifierÍ"æÍ"è¢fsMªIdentifierÍ"éÍ"ñ¨statSyncÂÂ‘MªIdentifierÍ"òÍ"ö¤pathÂ¥consta³VariableDeclarationÍ#Í#0‘b²VariableDeclaratorÍ#Í#/MªIdentifierÍ#Í#¦bufferX­NewExpressionÍ#Í#/MªIdentifierÍ#Í#$«ArrayBuffer‘S°MemberExpressionÍ#%Í#.MªIdentifierÍ#%Í#)¤statMªIdentifierÍ#*Í#.¤sizeÂÂ¥constQ³ExpressionStatementÍ#>Í#a`®CallExpressionÍ#>Í#`S°MemberExpressionÍ#>Í#IMªIdentifierÍ#>Í#@¢fsMªIdentifierÍ#AÍ#I¨readSyncÂÂ’S°MemberExpressionÍ#JÍ#WMªIdentifierÍ#JÍ#TªfileHandleMªIdentifierÍ#UÍ#W¢fdÂÂMªIdentifierÍ#YÍ#_¦bufferÂQ³ExpressionStatementÍ#oÍ#ˆ`®CallExpressionÍ#oÍ#‡S°MemberExpressionÍ#oÍ#{MªIdentifierÍ#oÍ#q¢fsMªIdentifierÍ#rÍ#{©closeSyncÂÂ‘MªIdentifierÍ#|Í#†ªfileHandleÂY¯ReturnStatementÍ#–Í#¹`®CallExpressionÍ#Í#¸MªIdentifierÍ#Í#°³arrayBufferToString‘MªIdentifierÍ#±Í#·¦bufferÂc«CatchClauseÍ#ÎÍ$"MªIdentifierÍ#ÕÍ#Ö¡eN®BlockStatementÍ#ØÍ$"‘Y®ThrowStatementÍ#çÍ$X­NewExpressionÍ#íÍ$MªIdentifierÍ#ñÍ#ö¥Error‘d¯TemplateLiteralÍ#÷Í$‘MªIdentifierÍ$Í$¤path’e¯TemplateElementÍ#øÍ$fµFailed to read file: µFailed to read file: Âe¯TemplateElementÍ$Í$f  ÃÀÀ–Ôri•¤type¥start£endªspecifiers¦source±ImportDeclaration2ÌQ‘Ôrj”¤type¥start£end¥local¶ImportDefaultSpecifier9;MªIdentifier9;¢fsU§LiteralÌAÌP­@ohos.file.fs¯'@ohos.file.fs'i±ImportDeclarationÌSÌ‘Ôrk•¤type¥start£end¨imported¥local¯ImportSpecifierÌ\ÌoMªIdentifierÌ\Ìo³arrayBufferToStringMªIdentifierÌ\Ìo³arrayBufferToStringU§LiteralÌwÌŒ³../utils/MapHelpersµ'../utils/MapHelpers'i±ImportDeclarationÌÌÀ‘k¯ImportSpecifierÌ˜Ì¢MªIdentifierÌ˜Ì¢ªCryptoUtilMªIdentifierÌ˜Ì¢ªCryptoUtilU§LiteralÌªÌ¿³../utils/CryptoUtilµ'../utils/CryptoUtil'i±ImportDeclarationÌÂÌş‘k¯ImportSpecifierÌËÌŞMªIdentifierÌËÌŞ³HardwareFingerprintMªIdentifierÌËÌŞ³HardwareFingerprintU§LiteralÌæÌıµ./HardwareFingerprint·'./HardwareFingerprint'i±ImportDeclarationÍ Í.‘k¯ImportSpecifierÍ	ÍMªIdentifierÍ	Í¬TrialManagerMªIdentifierÍ	Í¬TrialManagerU§LiteralÍÍ-®./TrialManager°'./TrialManager'i±ImportDeclarationÍ0Íd‘k¯ImportSpecifierÍ9ÍDMªIdentifierÍ9ÍD«LicenseTierMªIdentifierÍ9ÍD«LicenseTierU§LiteralÍLÍcµ../types/LicenseTypes·'../types/LicenseTypes'

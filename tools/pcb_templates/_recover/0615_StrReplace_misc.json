@@ -1,0 +1,8 @@
+{
+  "line": 615,
+  "name": "StrReplace",
+  "path": "c:\\Projects\\ElecDraw_Harmony\\tools\\pcb_templates\\_hand_analog_ic.mjs",
+  "hit": [],
+  "old_string": "  // In1：上廊 SIG + LM_OUT（互异 runY/col）\n  fanTop(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  fanTop(lmOut, pw('Rf3', 2), jLm, 'In1.Cu', 100, 2740);",
+  "new_string": "  // In1：SIG 上廊 V-first；LM_OUT 用 H-first（源 Y），避免穿 SIG 列\n  fanTop(sig, pw('R1', 1), jSig, 'In1.Cu', 50, 2680);\n  fanBot(lmOut, pw('Rf3', 2), jLm, 'In1.Cu', 2740);"
+}

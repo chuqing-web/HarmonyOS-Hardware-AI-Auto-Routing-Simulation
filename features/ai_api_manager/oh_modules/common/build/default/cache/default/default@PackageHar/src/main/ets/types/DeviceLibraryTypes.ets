@@ -1,6 +1,11 @@
 /**
  * 器件库三分体文件规范类型定义
  * meta.json + symbol.svg + model.(spice|mcu|digital)
+ *
+ * pin_list 写法（强制）:
+ * - pin_id: 封装脚位数字字符串（"1"/"8"/"42"…），禁止写语义名
+ * - pin_label: 原理图/AI 语义脚名（OUT1、PA0、CH1、V+…）
+ * 加载时 DeviceMetaAdapter 将 number=pin_id、id/name=pin_label
  */
 
 export type DeviceModelType = 'spice' | 'mcu_51' | 'mcu_stm32' | 'digital' | 'instrument' | 'opamp';
@@ -8,7 +13,9 @@ export type DeviceModelType = 'spice' | 'mcu_51' | 'mcu_stm32' | 'digital' | 'in
 export type DeviceParamValue = string | number | boolean;
 
 export interface DevicePinMeta {
+  /** 封装脚号（数字字符串，如 "1"/"42"） */
   pin_id: string;
+  /** 语义脚名（如 OUT1 / PA0 / CH1） */
   pin_label: string;
   pin_type: string;
   x: number;

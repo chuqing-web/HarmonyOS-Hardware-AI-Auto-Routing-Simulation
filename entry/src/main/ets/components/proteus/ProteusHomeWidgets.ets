@@ -205,8 +205,29 @@ export struct ProteusHomeIconLink {
   @Prop label: string = '';
   @Prop iconTag: string = '';
   @Prop tabEnabled: boolean = true;
+  /** true：仅双击触发 onAction（Getting Started 入口） */
+  @Prop requireDoubleClick: boolean = false;
   onAction: () => void = () => {};
   @State private pressed: boolean = false;
+  /** 双击判定：上次单击时间（非 @State，避免重建打断） */
+  private lastClickMs: number = 0;
+
+  private handleClick(): void {
+    if (!this.tabEnabled) {
+      return;
+    }
+    if (!this.requireDoubleClick) {
+      this.onAction();
+      return;
+    }
+    const now = Date.now();
+    if (this.lastClickMs > 0 && now - this.lastClickMs <= 450) {
+      this.lastClickMs = 0;
+      this.onAction();
+      return;
+    }
+    this.lastClickMs = now;
+  }
 
   build() {
     Row() {
@@ -227,10 +248,12 @@ export struct ProteusHomeIconLink {
     .width('100%')
     .padding({ left: 10, right: 8, top: 3, bottom: 3 })
     .backgroundColor(this.pressed && this.tabEnabled ? ProteusHomeColors.ACCENT_HOVER : '#00000000')
-    .onClick(() => {
-      this.onAction();
-    })
+    .onClick(() => this.handleClick())
     .onTouch((event: TouchEvent) => {
+      // 双击入口避免 @State 刷新打断两次点击间隔判定
+      if (this.requireDoubleClick) {
+        return;
+      }
       if (event.type === TouchType.Down) {
         this.pressed = true;
       } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
@@ -481,57 +504,91 @@ export struct ProteusHomeNewsCard {
 @Component
 export struct ProteusHomeAnnouncementPanel {
   @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
+  @Prop @Watch('onImageUrlChange') imageUrl: string = '';
   @Prop title: string = '';
   @Prop body: string = '';
-  @Prop imageUrl: string = '';
   @Prop publishedAt: string = '';
   @Prop loading: boolean = false;
+  /** 相对 News 的高度权重，默认更大 */
+  @Prop panelWeight: number = 2.4;
+  @State private imageLoadFailed: boolean = false;
+
+  onImageUrlChange(): void {
+    this.imageLoadFailed = false;
+  }
+
+  private hasRemoteImage(): boolean {
+    return this.imageUrl.length > 0 && !this.imageLoadFailed;
+  }
+
+  private hasText(): boolean {
+    return this.title.length > 0 || this.body.length > 0 || this.publishedAt.length > 0;
+  }
 
   build() {
-    ProteusHomePanel({ title: '公告', panelWeight: 1 }) {
+    ProteusHomePanel({ title: 'Announcement', panelWeight: this.panelWeight }) {
       Column() {
         if (this.loading) {
-          Text('加载公告…')
-            .fontSize(10)
-            .fontColor(ProteusHomeColors.TEXT_DIM)
-            .padding(12)
-        } else if (this.imageUrl.length > 0) {
-          Scroll() {
-            Column({ space: 8 }) {
-              Image(this.imageUrl)
-                .width('100%')
-                .constraintSize({ maxHeight: 220 })
-                .objectFit(ImageFit.Contain)
-                .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
-                .backgroundColor(ProteusHomeColors.PANEL_BG)
-              this.AnnouncementTextBlock()
-            }
-            .width('100%')
-            .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-            .alignItems(HorizontalAlign.Start)
+          Column({ space: 8 }) {
+            LoadingProgress()
+              .width(28)
+              .height(28)
+              .color(ProteusHomeColors.TEXT_DIM)
+            Text('Loading announcement…')
+              .fontSize(10)
+              .fontColor(ProteusHomeColors.TEXT_DIM)
           }
           .width('100%')
           .layoutWeight(1)
-          .scrollBar(BarState.Auto)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
         } else {
-          // 无服务器 / 网络不佳 / 无配图：显示本地预留图
-          Column() {
-            Image($r('app.media.announcement_default'))
-              .width('100%')
-              .layoutWeight(1)
-              .objectFit(ImageFit.Contain)
-              .backgroundColor('#E8F4FC')
-            if (this.title.length > 0 || this.body.length > 0 || this.publishedAt.length > 0) {
-              Column({ space: 4 }) {
-                this.AnnouncementTextBlock()
+          Column({ space: 8 }) {
+            // 配图占剩余高度，Contain 保证完整可见、按比例自适应
+            if (this.hasRemoteImage()) {
+              Image(this.imageUrl)
+                .width('100%')
+                .layoutWeight(1)
+                .objectFit(ImageFit.Contain)
+                .borderRadius(4)
+                .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
+                .backgroundColor('#EEF1F5')
+                .onError(() => {
+                  this.imageLoadFailed = true;
+                })
+            } else {
+              Image($r('app.media.announcement_default'))
+                .width('100%')
+                .layoutWeight(1)
+                .objectFit(ImageFit.Contain)
+                .borderRadius(4)
+                .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
+                .backgroundColor('#EEF1F5')
+            }
+
+            Scroll() {
+              Column({ space: 6 }) {
+                if (this.hasText()) {
+                  this.AnnouncementTextBlock()
+                } else {
+                  Text('No announcement yet. Connect to the network to fetch the latest news.')
+                    .fontSize(10)
+                    .fontColor(ProteusHomeColors.TEXT_DIM)
+                    .width('100%')
+                    .lineHeight(15)
+                }
               }
               .width('100%')
-              .padding({ left: 8, right: 8, bottom: 8 })
+              .alignItems(HorizontalAlign.Start)
             }
+            .width('100%')
+            .constraintSize({ maxHeight: 140 })
+            .scrollBar(BarState.Auto)
           }
           .width('100%')
           .height('100%')
-          .padding({ left: 8, right: 8, top: 8 })
+          .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+          .alignItems(HorizontalAlign.Start)
         }
       }
       .width('100%')
@@ -542,26 +599,33 @@ export struct ProteusHomeAnnouncementPanel {
 
   @Builder
   AnnouncementTextBlock() {
-    if (this.title.length > 0) {
-      Text(this.title)
-        .fontSize(12)
-        .fontColor(ProteusHomeColors.TEXT)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
+    Column({ space: 6 }) {
+      if (this.title.length > 0) {
+        Text(this.title)
+          .fontSize(13)
+          .fontColor(ProteusHomeColors.TEXT)
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      if (this.publishedAt.length > 0) {
+        Text(this.publishedAt)
+          .fontSize(9)
+          .fontColor(ProteusHomeColors.TEXT_DIM)
+          .width('100%')
+      }
+      if (this.body.length > 0) {
+        Text(this.body)
+          .fontSize(11)
+          .fontColor(ProteusHomeColors.TEXT)
+          .width('100%')
+          .lineHeight(17)
+          .opacity(0.92)
+      }
     }
-    if (this.publishedAt.length > 0) {
-      Text(this.publishedAt)
-        .fontSize(8)
-        .fontColor(ProteusHomeColors.TEXT_DIM)
-        .width('100%')
-    }
-    if (this.body.length > 0) {
-      Text(this.body)
-        .fontSize(10)
-        .fontColor(ProteusHomeColors.TEXT)
-        .width('100%')
-        .lineHeight(16)
-    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 }
 
@@ -572,6 +636,10 @@ export struct ProteusHomeWizardDialog {
   @Prop step: number = 0;
   @Prop projectName: string = '';
   @Prop projectDir: string = '';
+  /** 向导第二步模块说明，如 "PCB Layout" / "Schematic · Simulation" */
+  @Prop modulesHint: string = 'Schematic · Simulation';
+  /** true：Finish 后落盘创建工程文件 */
+  @Prop willCreateFile: boolean = false;
   onNameChange: (v: string) => void = () => {};
   onCancel: () => void = () => {};
   onBack: () => void = () => {};
@@ -614,7 +682,9 @@ export struct ProteusHomeWizardDialog {
               .fontColor(ProteusHomeColors.TEXT)
               .width('100%')
               .margin({ bottom: 4 })
-            Text('Save via File → Save in the editor. No file is created here.')
+            Text(this.willCreateFile
+              ? 'Finish 后将创建工程文件并进入编辑器。'
+              : 'Save via File → Save in the editor. No file is created here.')
               .fontSize(9)
               .fontColor(ProteusHomeColors.TEXT_DIM)
               .width('100%')
@@ -638,7 +708,7 @@ export struct ProteusHomeWizardDialog {
               .fontColor(ProteusHomeColors.TEXT)
               .width('100%')
               .margin({ bottom: 4 })
-            Text('Modules: Schematic · Simulation')
+            Text(`Modules: ${this.modulesHint}`)
               .fontSize(10)
               .fontColor(ProteusHomeColors.TEXT_DIM)
               .width('100%')
